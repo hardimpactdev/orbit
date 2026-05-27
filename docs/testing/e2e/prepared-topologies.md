@@ -70,9 +70,11 @@ once per node/user and gives each test an isolated hardlink copy with fresh
 runtime files.
 
 Tests request the smallest topology kind that covers the behavior under test.
-The Docker provider starts requested gateway-backed roles from prepared role
-images, prunes gateway registry rows for roles that were not requested, and
-primes the gateway API for active container addresses.
+The Docker provider starts requested gateway-backed roles from the matching
+prepared role images for that topology kind, prunes gateway registry rows for
+roles that were not requested, and primes the gateway API for active container
+addresses. Docker feature runs do not source smaller topologies from the
+`operator_gateway_app-dev_app-prod_agent` superset.
 
 The Incus provider clones only selected roles from the prepared
 `operator_gateway_app-dev_app-prod_agent` snapshots, starts those VMs, retargets
@@ -84,17 +86,23 @@ booted.
 Required prepared sources for feature lanes:
 
 - `operator` for operator-only tests.
-- Docker role images from `operator_gateway_app-dev_app-prod_agent`: operator,
-  gateway, app-dev, app-prod, and agent.
+- Docker role images for each gateway-backed topology kind used by the lane.
+  For example, `operator_gateway_app-dev_app-prod` uses only that kind's
+  operator, gateway, app-dev, and app-prod images; `operator_gateway_agent`
+  uses only that kind's operator, gateway, and agent images.
 - Docker runtime support images: `orbit-runtime:<namespace>-current`,
-  `orbit-e2e-topology-runtime:<namespace>-current`, and `caddy:2-alpine`.
+  `orbit-e2e-topology-runtime:<namespace>-current`, `caddy:2-alpine`, and
+  every FrankenPHP image supported by `PhpRuntimeCatalog` for app/workspace
+  topologies.
 - `operator_gateway_app-dev_app-prod_agent` Incus role snapshots for selective
   VM boot.
 
-Prepare the default sources with:
+Prepare the Docker topology kinds you need with the matching kind argument;
+repeat the Docker command for each topology kind that should be available on
+the host pool:
 
 ```bash
-composer e2e:prepare-docker-hosts -- --force operator_gateway_app-dev_app-prod_agent
+composer e2e:prepare-docker-hosts -- --force operator_gateway_app-dev_app-prod
 
 composer e2e:prepare-topology -- --force operator_gateway_app-dev_app-prod_agent
 ```

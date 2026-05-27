@@ -63,10 +63,11 @@ it('runs mounted Orbit commands through the entrypoint orbit shim', function ():
     $bin = "{$root}/bin";
     $capture = "{$root}/capture";
 
-    mkdir($source, recursive: true);
+    mkdir("{$source}/apps/gateway", recursive: true);
     mkdir($bin, recursive: true);
 
     file_put_contents("{$source}/artisan", "<?php\n");
+    file_put_contents("{$source}/apps/gateway/artisan", "<?php\n");
     file_put_contents("{$bin}/php", <<<'BASH'
 #!/usr/bin/env bash
 printf 'argv=%s\n' "$*" > "$PHP_CAPTURE"
@@ -95,7 +96,7 @@ BASH);
         expect($process->getExitCode())
             ->toBe(0, $process->getOutput().$process->getErrorOutput())
             ->and(file_get_contents($capture))
-            ->toContain("argv={$source}/artisan about --ansi")
+            ->toContain("argv={$source}/apps/gateway/artisan about --ansi")
             ->toContain('host_cwd=/srv/apps/example');
     } finally {
         (new Process(['rm', '-rf', $root]))->run();
@@ -115,6 +116,132 @@ it('fails clearly when the orbit source mount is missing', function (): void {
         ->toBe(1)
         ->and($process->getErrorOutput())
         ->toContain('Orbit source is not mounted at /missing/orbit/source');
+});
+
+it('falls back to the root artisan shim when a relocated gateway artisan is unavailable', function (): void {
+    $root = sys_get_temp_dir().'/orbit-runtime-entrypoint-root-'.bin2hex(random_bytes(6));
+    $source = "{$root}/source";
+    $bin = "{$root}/bin";
+    $capture = "{$root}/capture";
+
+    mkdir($source, recursive: true);
+    mkdir($bin, recursive: true);
+
+    file_put_contents("{$source}/artisan", "<?php\n");
+    file_put_contents("{$bin}/php", <<<'BASH'
+#!/usr/bin/env bash
+printf 'argv=%s\n' "$*" > "$PHP_CAPTURE"
+BASH);
+    chmod("{$bin}/php", 0755);
+
+    try {
+        $process = new Process(
+            ['bash', base_path('docker/orbit-runtime/entrypoint.sh'), 'orbit', 'about'],
+            null,
+            [
+                'ORBIT_SOURCE_PATH' => $source,
+                'PATH' => $bin.':'.getenv('PATH'),
+                'PHP_CAPTURE' => $capture,
+            ],
+        );
+
+        $process->run();
+
+        expect($process->getExitCode())
+            ->toBe(0, $process->getOutput().$process->getErrorOutput())
+            ->and(file_get_contents($capture))
+            ->toContain("argv={$source}/artisan about");
+    } finally {
+        (new Process(['rm', '-rf', $root]))->run();
+    }
+});
+
+it('loads gateway app classes ahead of stale root Composer autoload mappings', function (): void {
+    $root = sys_get_temp_dir().'/orbit-gateway-artisan-autoload-'.bin2hex(random_bytes(6));
+    $gateway = "{$root}/apps/gateway";
+
+    mkdir("{$gateway}/app/Console", recursive: true);
+    mkdir("{$gateway}/bootstrap", recursive: true);
+    mkdir("{$gateway}/stale/app/Console", recursive: true);
+    mkdir("{$gateway}/symfony/Input", recursive: true);
+    mkdir("{$gateway}/vendor", recursive: true);
+
+    file_put_contents("{$gateway}/artisan", file_get_contents(base_path('apps/gateway/artisan')));
+    chmod("{$gateway}/artisan", 0755);
+
+    file_put_contents("{$gateway}/bootstrap/app.php", <<<'PHP'
+<?php
+
+return new App\Console\Kernel;
+PHP);
+
+    file_put_contents("{$gateway}/app/Console/Kernel.php", <<<'PHP'
+<?php
+
+namespace App\Console;
+
+class Kernel
+{
+    public function handleCommand(object $input): int
+    {
+        echo 'gateway';
+
+        return 0;
+    }
+}
+PHP);
+
+    file_put_contents("{$gateway}/stale/app/Console/Kernel.php", <<<'PHP'
+<?php
+
+namespace App\Console;
+
+class Kernel
+{
+    public function handleCommand(object $input): int
+    {
+        echo 'stale';
+
+        return 0;
+    }
+}
+PHP);
+
+    file_put_contents("{$gateway}/symfony/Input/ArgvInput.php", <<<'PHP'
+<?php
+
+namespace Symfony\Component\Console\Input;
+
+class ArgvInput {}
+PHP);
+
+    file_put_contents("{$gateway}/vendor/autoload.php", <<<'PHP'
+<?php
+
+spl_autoload_register(static function (string $class): void {
+    if ($class === 'Symfony\\Component\\Console\\Input\\ArgvInput') {
+        require __DIR__.'/../symfony/Input/ArgvInput.php';
+
+        return;
+    }
+
+    if ($class === 'App\\Console\\Kernel') {
+        require __DIR__.'/../stale/app/Console/Kernel.php';
+    }
+}, prepend: true);
+PHP);
+
+    try {
+        $process = new Process(['php', "{$gateway}/artisan"]);
+        $process->run();
+
+        expect($process->getExitCode())
+            ->toBe(0, $process->getOutput().$process->getErrorOutput())
+            ->and($process->getOutput())
+            ->toBe('gateway');
+    } finally {
+        (new Process(['rm', '-rf', $root]))->run();
+    }
 });
 
 it('passes non-orbit entrypoint commands through unchanged', function (): void {

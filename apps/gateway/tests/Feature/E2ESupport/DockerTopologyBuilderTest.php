@@ -546,7 +546,7 @@ it('defines downstream small topology role matrices for current roles', function
         ->and(DockerTopologyBuilder::rolesFor(E2ETopologyKind::OperatorGatewayAgent))->toBe(['operator', 'gateway', 'agent'])
         ->and(DockerTopologyBuilder::rolesFor(E2ETopologyKind::OperatorGatewayAppdevAppprod))->toBe(['operator', 'gateway', 'dev', 'prod'])
         ->and(DockerTopologyBuilder::rolesFor(E2ETopologyKind::OperatorGatewayAppdevAppprodAgent))->toBe(['operator', 'gateway', 'dev', 'prod', 'agent'])
-        ->and(DockerTopologyBuilder::rolesFor(E2ETopologyKind::OperatorGatewayAppprodIngress))->toBe(['operator', 'gateway', 'prod', 'ingress']);
+        ->and(DockerTopologyBuilder::rolesFor(E2ETopologyKind::OperatorGatewayAppprodIngress))->toBe(['operator', 'gateway', 'prod']);
 });
 
 it('does not accept bare client aliases for downstream small topology fixtures', function (): void {
@@ -785,7 +785,7 @@ it('bakes dns alias topology registry data and mode-specific image tags', functi
         && str_contains($process->command, 'org.orbit.e2e.cert-san-set=DNS:gateway,IP:10.6.0.2'));
 });
 
-it('bakes ingress docker topology registry data without dev or agent roles', function (): void {
+it('bakes app production ingress docker topology registry data without dev or agent roles', function (): void {
     Process::fake([
         "docker image inspect 'orbit-e2e-topology-runtime:prepared-current' >/dev/null" => Process::result(),
         "docker image inspect 'orbit-runtime:prepared-current' >/dev/null" => Process::result(),
@@ -825,17 +825,13 @@ it('bakes ingress docker topology registry data without dev or agent roles', fun
         ->build(E2ETopologyKind::OperatorGatewayAppprodIngress, 'dns-alias');
 
     $networkPlan = DockerTopologyNetworkPlan::fromEnvironment('orbit-e2e-prepared-build-operator_gateway_app-prod_ingress');
-    $ingressIp = $networkPlan->ipForRole('ingress');
     $prodIp = $networkPlan->ipForRole('prod');
 
-    expect(array_column($manifest, 'role'))->toBe(['operator', 'gateway', 'prod', 'ingress'])
+    expect(array_column($manifest, 'role'))->toBe(['operator', 'gateway', 'prod'])
         ->and($manifest[0]['image'])->toBe('orbit-e2e-topology:prepared-operator_gateway_app-prod_ingress-operator-dns-alias-current');
 
-    Process::assertRan(fn ($process): bool => is_string($process->command)
-        && str_contains($process->command, 'docker run -d')
-        && str_contains($process->command, "--name 'orbit-e2e-prepared-build-operator_gateway_app-prod_ingress-ingress'")
-        && str_contains($process->command, "--network-alias 'ingress'")
-        && str_contains($process->command, "--ip '{$ingressIp}'"));
+    Process::assertNotRan(fn ($process): bool => is_string($process->command)
+        && str_contains($process->command, "--name 'orbit-e2e-prepared-build-operator_gateway_app-prod_ingress-ingress'"));
 
     Process::assertRan(fn ($process): bool => is_string($process->command)
         && str_contains($process->command, 'orbit:internal:bootstrap-gateway-local gateway 10.6.0.2')
@@ -843,15 +839,15 @@ it('bakes ingress docker topology registry data without dev or agent roles', fun
 
     Process::assertRan(fn ($process): bool => is_string($process->command)
         && str_contains($process->command, 'ssh-keyscan -T 2')
-        && str_contains($process->command, $ingressIp));
+        && str_contains($process->command, $prodIp));
 
     Process::assertRan(fn ($process): bool => is_string($process->command)
-        && str_contains($process->command, 'orbit:internal:bake-ingress-node edge-1')
-        && str_contains($process->command, '--host=ingress')
+        && str_contains($process->command, 'orbit:internal:bake-ingress-node app-prod-1')
+        && str_contains($process->command, '--host=prod')
         && str_contains($process->command, '--host-key-host=')
-        && str_contains($process->command, $ingressIp)
-        && str_contains($process->command, '10.6.0.7')
-        && str_contains($process->command, '--wireguard-address=10.6.0.7'));
+        && str_contains($process->command, $prodIp)
+        && str_contains($process->command, '10.6.0.5')
+        && str_contains($process->command, '--wireguard-address=10.6.0.5'));
 
     Process::assertRan(fn ($process): bool => is_string($process->command)
         && str_contains($process->command, 'orbit:internal:bake-app-node app-prod-1')
@@ -860,7 +856,7 @@ it('bakes ingress docker topology registry data without dev or agent roles', fun
         && str_contains($process->command, '--host-key-host=')
         && str_contains($process->command, $prodIp)
         && ! str_contains($process->command, '--environment=production')
-        && str_contains($process->command, '--ingress-node=edge-1'));
+        && str_contains($process->command, '--ingress-node=app-prod-1'));
 
     Process::assertNotRan(fn ($process): bool => is_string($process->command)
         && (str_contains($process->command, 'app-dev-1') || str_contains($process->command, 'agent-1')));

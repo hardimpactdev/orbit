@@ -19,13 +19,13 @@ it('maps current-role topology requests to the operator-gateway source artifact'
         ->and(E2EPreparedTopology::sourceKindFor(E2ETopologyKind::OperatorGatewayAppprodIngress))->toBe(E2ETopologyKind::OperatorGateway);
 });
 
-it('keeps Docker artifacts sourced from standalone operator and default role images', function (): void {
+it('keeps Docker artifacts scoped to standalone operator and requested topology images', function (): void {
     expect(E2EPreparedTopology::dockerArtifactSourceKindsFor(E2ETopologyKind::OperatorGatewayAppdevAppprodAgent))
-        ->toBe([E2ETopologyKind::Operator, E2ETopologyKind::OperatorGatewayAppdevAppprodAgent])
+        ->toBe([E2ETopologyKind::OperatorGatewayAppdevAppprodAgent])
         ->and(E2EPreparedTopology::dockerArtifactSourceKindsFor(E2ETopologyKind::OperatorGatewayAgent))
-        ->toBe([E2ETopologyKind::Operator, E2ETopologyKind::OperatorGatewayAppdevAppprodAgent])
+        ->toBe([E2ETopologyKind::OperatorGatewayAgent])
         ->and(E2EPreparedTopology::dockerSourceKindFor(E2ETopologyKind::OperatorGatewayAppprodIngress))
-        ->toBe(E2ETopologyKind::OperatorGatewayAppdevAppprodAgent)
+        ->toBe(E2ETopologyKind::OperatorGatewayAppprodIngress)
         ->and(E2EPreparedTopology::dockerArtifactSourceKindsFor(E2ETopologyKind::Operator))
         ->toBe([E2ETopologyKind::Operator]);
 });

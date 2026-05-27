@@ -179,13 +179,13 @@ it('requires the orbit runtime sibling image only for gateway-backed Docker topo
         ->and($provider->availability(E2ETopologyKind::ControlGateway)->message)->toContain('orbit-runtime:prepared-current');
 });
 
-it('requires the default FrankenPHP image for app-node Docker topologies', function (): void {
+it('requires every supported FrankenPHP image for app-node Docker topologies', function (): void {
     Process::fake(function ($process) {
         if ($process->command === 'command -v docker >/dev/null' || $process->command === 'docker info >/dev/null') {
             return Process::result();
         }
 
-        if ($process->command === "docker image inspect 'dunglas/frankenphp:1-php8.5-bookworm' >/dev/null") {
+        if ($process->command === "docker image inspect 'dunglas/frankenphp:1-php8.4-bookworm' >/dev/null") {
             return Process::result(exitCode: 1);
         }
 
@@ -200,7 +200,7 @@ it('requires the default FrankenPHP image for app-node Docker topologies', funct
 
     expect($provider->availability(E2ETopologyKind::OperatorGateway)->available)->toBeTrue()
         ->and($provider->availability(E2ETopologyKind::OperatorGatewayAppdev)->available)->toBeFalse()
-        ->and($provider->availability(E2ETopologyKind::OperatorGatewayAppdev)->message)->toContain('dunglas/frankenphp:1-php8.5-bookworm');
+        ->and($provider->availability(E2ETopologyKind::OperatorGatewayAppdev)->message)->toContain('dunglas/frankenphp:1-php8.4-bookworm');
 });
 
 it('advertises container feature capabilities', function (): void {
@@ -492,8 +492,8 @@ it('reuses image resolution from host selection when starting docker containers'
 
     $lease = $provider->acquire(E2ETopologyKind::ControlGateway, 'run123', new E2EPhaseTimer, new E2ETopologyAcquisitionOptions);
 
-    expect($imageInspectCounts["docker image inspect 'orbit-e2e-topology:prepared-operator_gateway_app-dev_app-prod_agent-operator-dns-alias-current' >/dev/null"])->toBe(1)
-        ->and($imageInspectCounts["docker image inspect 'orbit-e2e-topology:prepared-operator_gateway_app-dev_app-prod_agent-gateway-dns-alias-current' >/dev/null"])->toBe(1);
+    expect($imageInspectCounts["docker image inspect 'orbit-e2e-topology:prepared-operator_gateway-operator-dns-alias-current' >/dev/null"])->toBe(1)
+        ->and($imageInspectCounts["docker image inspect 'orbit-e2e-topology:prepared-operator_gateway-gateway-dns-alias-current' >/dev/null"])->toBe(1);
 
     $lease->cleanup();
 });
@@ -563,8 +563,8 @@ it('launches operator-gateway from the prepared base image', function (): void {
             return Process::result();
         }
 
-        if (str_contains($command, 'prepared-operator_gateway_app-dev_app-prod_agent-operator')
-            || str_contains($command, 'prepared-operator_gateway_app-dev_app-prod_agent-gateway')) {
+        if (str_contains($command, 'prepared-operator_gateway-operator')
+            || str_contains($command, 'prepared-operator_gateway-gateway')) {
             return Process::result();
         }
 
@@ -596,10 +596,10 @@ it('launches operator-gateway from the prepared base image', function (): void {
 
     $setup = implode("\n", $commands);
 
-    expect($setup)->toContain("docker image inspect 'orbit-e2e-topology:prepared-operator_gateway_app-dev_app-prod_agent-operator-dns-alias-current' >/dev/null")
-        ->and($setup)->toContain("docker image inspect 'orbit-e2e-topology:prepared-operator_gateway_app-dev_app-prod_agent-gateway-dns-alias-current' >/dev/null")
-        ->and($setup)->toContain('orbit-e2e-topology:prepared-operator_gateway_app-dev_app-prod_agent-operator-dns-alias-current')
-        ->and($setup)->toContain('orbit-e2e-topology:prepared-operator_gateway_app-dev_app-prod_agent-gateway-dns-alias-current')
+    expect($setup)->toContain("docker image inspect 'orbit-e2e-topology:prepared-operator_gateway-operator-dns-alias-current' >/dev/null")
+        ->and($setup)->toContain("docker image inspect 'orbit-e2e-topology:prepared-operator_gateway-gateway-dns-alias-current' >/dev/null")
+        ->and($setup)->toContain('orbit-e2e-topology:prepared-operator_gateway-operator-dns-alias-current')
+        ->and($setup)->toContain('orbit-e2e-topology:prepared-operator_gateway-gateway-dns-alias-current')
         ->and($setup)->not->toContain('orbit-e2e-run123-dev')
         ->and($setup)->not->toContain('orbit-e2e-run123-prod')
         ->and($setup)->not->toContain('orbit-e2e-run123-agent');
@@ -621,6 +621,8 @@ it('launches app production ingress as a prod-node role', function (): void {
             || $command === "docker image inspect 'orbit-runtime:prepared-current' >/dev/null"
             || $command === "docker image inspect 'orbit-e2e-topology-runtime:prepared-current' >/dev/null"
             || $command === "docker image inspect 'dunglas/frankenphp:1-php8.5-bookworm' >/dev/null"
+            || $command === "docker image inspect 'dunglas/frankenphp:1-php8.4-bookworm' >/dev/null"
+            || $command === "docker image inspect 'dunglas/frankenphp:1-php8.3-bookworm' >/dev/null"
             || $command === "docker ps --format '{{.Names}}' --filter 'name=orbit-e2e-'"
             || str_starts_with($command, 'docker network create ')
             || str_starts_with($command, 'docker exec ')
@@ -628,9 +630,9 @@ it('launches app production ingress as a prod-node role', function (): void {
             return Process::result();
         }
 
-        if (str_contains($command, 'prepared-operator_gateway_app-dev_app-prod_agent-operator')
-            || str_contains($command, 'prepared-operator_gateway_app-dev_app-prod_agent-gateway')
-            || str_contains($command, 'prepared-operator_gateway_app-dev_app-prod_agent-prod')) {
+        if (str_contains($command, 'prepared-operator_gateway_app-prod_ingress-operator')
+            || str_contains($command, 'prepared-operator_gateway_app-prod_ingress-gateway')
+            || str_contains($command, 'prepared-operator_gateway_app-prod_ingress-prod')) {
             return Process::result();
         }
 
@@ -673,16 +675,14 @@ it('launches app production ingress as a prod-node role', function (): void {
     $setup = implode("\n", $commands);
 
     expect($setup)
-        ->toContain("docker image inspect 'orbit-e2e-topology:prepared-operator_gateway_app-dev_app-prod_agent-operator-dns-alias-current' >/dev/null")
-        ->toContain("docker image inspect 'orbit-e2e-topology:prepared-operator_gateway_app-dev_app-prod_agent-gateway-dns-alias-current' >/dev/null")
-        ->toContain("docker image inspect 'orbit-e2e-topology:prepared-operator_gateway_app-dev_app-prod_agent-prod-dns-alias-current' >/dev/null")
-        ->toContain('orbit-e2e-topology:prepared-operator_gateway_app-dev_app-prod_agent-prod-dns-alias-current')
+        ->toContain("docker image inspect 'orbit-e2e-topology:prepared-operator_gateway_app-prod_ingress-operator-dns-alias-current' >/dev/null")
+        ->toContain("docker image inspect 'orbit-e2e-topology:prepared-operator_gateway_app-prod_ingress-gateway-dns-alias-current' >/dev/null")
+        ->toContain("docker image inspect 'orbit-e2e-topology:prepared-operator_gateway_app-prod_ingress-prod-dns-alias-current' >/dev/null")
+        ->toContain('orbit-e2e-topology:prepared-operator_gateway_app-prod_ingress-prod-dns-alias-current')
         ->toContain("docker run -d --name 'orbit-e2e-run123-prod'")
         ->toContain('app-prod-1')
         ->not->toContain('orbit-e2e-run123-ingress')
         ->not->toContain('orbit-e2e-topology-runtime:prepared-current')
-        ->not->toContain('orbit orbit:internal:bake-ingress-node app-prod-1')
-        ->not->toContain('orbit orbit:internal:bake-app-node app-prod-1 --role=app-prod')
         ->not->toContain('edge-1');
 });
 
@@ -691,8 +691,8 @@ it('uses the parallel worker token to create a non-overlapping docker network', 
         'command -v docker >/dev/null' => Process::result(),
         'docker info >/dev/null' => Process::result(),
         "docker image inspect 'orbit-runtime:prepared-current' >/dev/null" => Process::result(),
-        "docker image inspect 'orbit-e2e-topology:prepared-operator_gateway_app-dev_app-prod_agent-operator-dns-alias-current' >/dev/null" => Process::result(),
-        "docker image inspect 'orbit-e2e-topology:prepared-operator_gateway_app-dev_app-prod_agent-gateway-dns-alias-current' >/dev/null" => Process::result(),
+        "docker image inspect 'orbit-e2e-topology:prepared-operator_gateway-operator-dns-alias-current' >/dev/null" => Process::result(),
+        "docker image inspect 'orbit-e2e-topology:prepared-operator_gateway-gateway-dns-alias-current' >/dev/null" => Process::result(),
         "docker ps --format '{{.Names}}' --filter 'name=orbit-e2e-'" => Process::result(),
         "docker network create --subnet * 'orbit-e2e-run123'" => Process::result(),
         "docker run -d --name 'orbit-e2e-run123-operator' *" => Process::result(output: "control-id\n"),
@@ -902,8 +902,8 @@ it('starts docker containers as a batch and rolls back when one start fails', fu
             'command -v docker >/dev/null' => Process::result(),
             'docker info >/dev/null' => Process::result(),
             "docker image inspect 'orbit-runtime:prepared-current' >/dev/null" => Process::result(),
-            "docker image inspect 'orbit-e2e-topology:prepared-operator_gateway_app-dev_app-prod_agent-operator-dns-alias-current' >/dev/null" => Process::result(),
-            "docker image inspect 'orbit-e2e-topology:prepared-operator_gateway_app-dev_app-prod_agent-gateway-dns-alias-current' >/dev/null" => Process::result(),
+            "docker image inspect 'orbit-e2e-topology:prepared-operator_gateway-operator-dns-alias-current' >/dev/null" => Process::result(),
+            "docker image inspect 'orbit-e2e-topology:prepared-operator_gateway-gateway-dns-alias-current' >/dev/null" => Process::result(),
             "docker ps --format '{{.Names}}' --filter 'name=orbit-e2e-'" => Process::result(),
             "docker network create --subnet * 'orbit-e2e-run123'" => Process::result(),
             "docker run -d --name 'orbit-e2e-run123-operator' *" => Process::result(exitCode: 1, errorOutput: "control failed\n"),
@@ -923,7 +923,7 @@ it('starts docker containers as a batch and rolls back when one start fails', fu
             && str_contains($process->command, '--group-add "$(stat -c %g /var/run/docker.sock 2>/dev/null || stat -f %g /var/run/docker.sock)"')
             && str_contains($process->command, "--volume '/var/run/docker.sock:/var/run/docker.sock'")
             && str_contains($process->command, "--env 'ORBIT_RUNTIME_CONTAINER=orbit-e2e-run123-gateway-orbit-runtime'")
-            && str_contains($process->command, "'orbit-e2e-topology:prepared-operator_gateway_app-dev_app-prod_agent-gateway-dns-alias-current'"));
+            && str_contains($process->command, "'orbit-e2e-topology:prepared-operator_gateway-gateway-dns-alias-current'"));
         Process::assertRan("docker rm -f 'orbit-e2e-run123-operator-orbit-caddy' 'orbit-e2e-run123-operator' 'orbit-e2e-run123-gateway-orbit-runtime' 'orbit-e2e-run123-gateway-orbit-caddy' 'orbit-e2e-run123-gateway' >/dev/null 2>&1 || true");
     });
 });
@@ -954,8 +954,8 @@ it('uses dns aliases and primes the gateway api in Docker topology runs', functi
         'command -v docker >/dev/null' => Process::result(),
         'docker info >/dev/null' => Process::result(),
         "docker image inspect 'orbit-runtime:prepared-current' >/dev/null" => Process::result(),
-        "docker image inspect 'orbit-e2e-topology:prepared-operator_gateway_app-dev_app-prod_agent-operator-dns-alias-current' >/dev/null" => Process::result(),
-        "docker image inspect 'orbit-e2e-topology:prepared-operator_gateway_app-dev_app-prod_agent-gateway-dns-alias-current' >/dev/null" => Process::result(),
+        "docker image inspect 'orbit-e2e-topology:prepared-operator_gateway-operator-dns-alias-current' >/dev/null" => Process::result(),
+        "docker image inspect 'orbit-e2e-topology:prepared-operator_gateway-gateway-dns-alias-current' >/dev/null" => Process::result(),
         "docker ps --format '{{.Names}}' --filter 'name=orbit-e2e-'" => Process::result(),
         "docker network create --subnet * 'orbit-e2e-run123'" => Process::result(),
         "docker run -d --name 'orbit-e2e-run123-operator' *" => Process::result(output: "control-id\n"),

@@ -16,15 +16,20 @@ refresh each configured Docker host:
 ```bash
 ORBIT_E2E_DOCKER_TEST_RUNNERS=sidecar1:4:28,sidecar2:4:28 \
 ORBIT_E2E_DOCKER_IMAGE_BUILD_HOSTS=beast \
-composer e2e:prepare-docker-hosts -- --force operator_gateway_app-dev_app-prod_agent
+composer e2e:prepare-docker-hosts -- --force operator_gateway_app-dev_app-prod
 ```
 
 For single-host local debugging, the lower-level equivalents are:
 
 ```bash
 composer e2e:prepare-docker-runtime -- --force
-composer e2e:prepare-docker-topology -- --force operator_gateway_app-dev_app-prod_agent
+composer e2e:prepare-docker-topology -- --force operator_gateway_app-dev_app-prod
 ```
+
+Prepare each Docker topology kind that the lane should be able to run. Docker
+feature tests use the smallest matching prepared role images for their requested
+topology rather than sourcing every gateway-backed test from
+`operator_gateway_app-dev_app-prod_agent`.
 
 ## Host transport
 

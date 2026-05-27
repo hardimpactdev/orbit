@@ -38,10 +38,13 @@ class E2EPrepareDockerRuntimeCommand extends Command
                 'image' => OrbitCaddyContainer::Image,
                 'action' => 'pull',
             ],
-            [
-                'image' => DockerTopologyProvider::defaultPhpRuntimeImage(),
-                'action' => 'pull',
-            ],
+            ...array_map(
+                fn (string $image): array => [
+                    'image' => $image,
+                    'action' => 'pull',
+                ],
+                DockerTopologyProvider::phpRuntimeImages(),
+            ),
             [
                 'image' => DockerTopologyBuilder::composerHelperImage(),
                 'action' => 'pull',

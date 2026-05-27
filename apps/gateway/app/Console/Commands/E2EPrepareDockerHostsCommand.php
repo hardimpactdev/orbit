@@ -18,7 +18,7 @@ use Illuminate\Support\Facades\Process;
 use Throwable;
 
 #[Signature('e2e:prepare-docker-hosts
-    {kind=operator_gateway_app-dev_app-prod_agent : Topology kind to prepare (operator|operator_gateway|operator_gateway_app-dev|operator_gateway_app-dev_app-prod|operator_gateway_agent|operator_gateway_app-dev_app-prod_agent|operator_gateway_app-prod_ingress)}
+    {kind : Topology kind to prepare (operator|operator_gateway|operator_gateway_app-dev|operator_gateway_app-dev_app-prod|operator_gateway_agent|operator_gateway_app-dev_app-prod_agent|operator_gateway_app-prod_ingress)}
     {--force : Ensure Docker runtime and topology images exist on the build host and sync them to runners}
     {--runtime-only : Prepare only the Docker runtime image}
     {--topology-only : Prepare only the Docker prepared topology images}
@@ -167,7 +167,10 @@ class E2EPrepareDockerHostsCommand extends Command
                 ['role' => 'topology-runtime', 'image' => DockerTopologyBuilder::runtimeImage()],
                 ['role' => 'orbit-runtime', 'image' => DockerTopologyProvider::runtimeSiblingImage()],
                 ['role' => 'orbit-caddy', 'image' => OrbitCaddyContainer::Image],
-                ['role' => 'frankenphp-runtime', 'image' => DockerTopologyProvider::defaultPhpRuntimeImage()],
+                ...array_map(
+                    fn (string $image): array => ['role' => 'frankenphp-runtime', 'image' => $image],
+                    DockerTopologyProvider::phpRuntimeImages(),
+                ),
             ],
         ];
     }

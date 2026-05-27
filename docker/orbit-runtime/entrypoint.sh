@@ -3,7 +3,6 @@
 set -Eeuo pipefail
 
 source_path="${ORBIT_SOURCE_PATH:-/opt/orbit}"
-orbit_artisan="${source_path}/artisan"
 invoked_as="$(basename "${0}")"
 
 truthy() {
@@ -17,17 +16,30 @@ truthy() {
     esac
 }
 
+orbit_artisan() {
+    if [ -f "${source_path}/apps/gateway/artisan" ]; then
+        printf '%s\n' "${source_path}/apps/gateway/artisan"
+        return
+    fi
+
+    printf '%s\n' "${source_path}/artisan"
+}
+
 run_orbit() {
-    if [ ! -f "$orbit_artisan" ]; then
+    local artisan
+
+    artisan="$(orbit_artisan)"
+
+    if [ ! -f "$artisan" ]; then
         printf 'orbit-runtime: Orbit source is not mounted at %s\n' "$source_path" >&2
         exit 1
     fi
 
-    exec php "$orbit_artisan" "$@"
+    exec php "$artisan" "$@"
 }
 
 wait_for_source() {
-    while [ ! -f "$orbit_artisan" ]; do
+    while [ ! -f "${source_path}/apps/gateway/artisan" ] && [ ! -f "${source_path}/artisan" ]; do
         printf 'orbit-runtime: waiting for Orbit source at %s\n' "$source_path" >&2
         sleep 1
     done
@@ -37,10 +49,13 @@ start_gateway_http_server() {
     local host="${ORBIT_API_HOST:-0.0.0.0}"
     local port="${ORBIT_API_PORT:-8080}"
     local workers="${PHP_CLI_SERVER_WORKERS:-4}"
+    local artisan
+
+    artisan="$(orbit_artisan)"
 
     printf 'orbit-runtime: starting gateway API server on %s:%s (workers=%s)\n' "$host" "$port" "$workers" >&2
 
-    PHP_CLI_SERVER_WORKERS="$workers" php "$orbit_artisan" serve --host="$host" --port="$port" --no-reload &
+    PHP_CLI_SERVER_WORKERS="$workers" php "$artisan" serve --host="$host" --port="$port" --no-reload &
 }
 
 run_scheduler() {

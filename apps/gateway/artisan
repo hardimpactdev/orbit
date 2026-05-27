@@ -1,6 +1,8 @@
 #!/usr/bin/env php
 <?php
 
+declare(strict_types=1);
+
 use Illuminate\Foundation\Application;
 use Symfony\Component\Console\Input\ArgvInput;
 
@@ -15,6 +17,8 @@ if (! is_file($autoload)) {
 
 require $autoload;
 
+registerGatewayAutoloadFallback();
+
 // Bootstrap Laravel and handle the command...
 /** @var Application $app */
 $app = require_once __DIR__.'/bootstrap/app.php';
@@ -22,3 +26,28 @@ $app = require_once __DIR__.'/bootstrap/app.php';
 $status = $app->handleCommand(new ArgvInput);
 
 exit($status);
+
+function registerGatewayAutoloadFallback(): void
+{
+    $prefixes = [
+        'App\\' => __DIR__.'/app/',
+        'Database\\Factories\\' => __DIR__.'/database/factories/',
+        'Database\\Seeders\\' => __DIR__.'/database/seeders/',
+    ];
+
+    spl_autoload_register(static function (string $class) use ($prefixes): void {
+        foreach ($prefixes as $prefix => $directory) {
+            if (! str_starts_with($class, $prefix)) {
+                continue;
+            }
+
+            $path = $directory.str_replace('\\', '/', substr($class, strlen($prefix))).'.php';
+
+            if (is_file($path)) {
+                require $path;
+            }
+
+            return;
+        }
+    }, prepend: true);
+}

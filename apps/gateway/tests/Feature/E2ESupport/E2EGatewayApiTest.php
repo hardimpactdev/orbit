@@ -323,7 +323,8 @@ it('stops Docker gateway API TLS shim before restarting', function (): void {
         ->toContain('/tmp/orbit-')
         ->toContain('-tls.php')
         ->toContain('orbit\ serve\ --host=')
-        ->toContain('php\ *artisan\ serve\ --host=');
+        ->toContain('php\ *artisan\ serve\ --host=')
+        ->toContain('php\ */apps/gateway/artisan\ serve\ --host=');
 
     expect($tlsStart)->toBeString()
         ->toContain('/tmp/orbit-docker-gateway-api-tls.php');
@@ -336,6 +337,9 @@ it('stops Docker gateway API HTTP processes after the runtime entrypoint execs a
     expect(gatewayStopScriptMatchesCommand(
         'php /home/orbit/orbit/artisan serve --host=0.0.0.0 --port=80 --tries=1 --no-reload --quiet',
     ))->toBeTrue()
+        ->and(gatewayStopScriptMatchesCommand(
+            'php /home/orbit/orbit/apps/gateway/artisan serve --host=0.0.0.0 --port=80 --tries=1 --no-reload --quiet',
+        ))->toBeTrue()
         ->and(gatewayStopScriptMatchesCommand(
             '/usr/local/bin/php -S 0.0.0.0:80 /home/orbit/orbit/vendor/laravel/framework/src/Illuminate/Foundation/Console/../resources/server.php',
         ))->toBeTrue()

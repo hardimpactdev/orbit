@@ -1688,7 +1688,7 @@ for file in /proc/[0-9]*/cmdline; do
     command="$(tr '\000' ' ' < "$file" 2>/dev/null || true)"
 
     case "$command" in
-        */tmp/orbit-*-http-router.php*|*/tmp/orbit-*-tls.php*|*orbit\ serve\ --host=*--port=80*|*php\ *artisan\ serve\ --host=*--port=80*|*php\ -S\ *:80\ */server.php*)
+        */tmp/orbit-*-http-router.php*|*/tmp/orbit-*-tls.php*|*orbit\ serve\ --host=*--port=80*|*php\ *artisan\ serve\ --host=*--port=80*|*php\ */apps/gateway/artisan\ serve\ --host=*--port=80*|*php\ -S\ *:80\ */server.php*)
             pids="$pids $pid"
             kill -TERM "$pid" >/dev/null 2>&1 || true
             ;;

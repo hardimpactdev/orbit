@@ -21,6 +21,15 @@ it('is hidden', function (): void {
     expect($command->isHidden())->toBeTrue();
 });
 
+it('requires an explicit topology kind', function (): void {
+    $argument = app(E2EPrepareDockerHostsCommand::class)
+        ->getDefinition()
+        ->getArgument('kind');
+
+    expect($argument->isRequired())->toBeTrue()
+        ->and($argument->getDefault())->toBeNull();
+});
+
 it('documents host preparation without force using docker test runners', function (): void {
     Process::fake();
 
@@ -122,7 +131,10 @@ it('builds docker images once on the build host and distributes them to runner h
         ->and($distributions[0]['images'][0])->toBe(['role' => 'topology-runtime', 'image' => 'orbit-e2e-topology-runtime:prepared-current'])
         ->and($distributions[0]['images'][1])->toBe(['role' => 'orbit-runtime', 'image' => 'orbit-runtime:prepared-current'])
         ->and($distributions[0]['images'][2])->toBe(['role' => 'orbit-caddy', 'image' => 'caddy:2-alpine'])
-        ->and($distributions[0]['images'][3])->toBe(['role' => 'frankenphp-runtime', 'image' => 'dunglas/frankenphp:1-php8.5-bookworm']);
+        ->and($distributions[0]['images'][3])->toBe(['role' => 'frankenphp-runtime', 'image' => 'dunglas/frankenphp:1-php8.5-bookworm'])
+        ->and($distributions[0]['images'][4])->toBe(['role' => 'frankenphp-runtime', 'image' => 'dunglas/frankenphp:1-php8.4-bookworm'])
+        ->and($distributions[0]['images'][5])->toBe(['role' => 'frankenphp-runtime', 'image' => 'dunglas/frankenphp:1-php8.3-bookworm'])
+        ->and($distributions[0]['images'][6])->toBe(['role' => 'operator', 'image' => 'orbit-e2e-topology:prepared-operator_gateway_app-dev_app-prod-operator-dns-alias-current']);
 });
 
 it('distributes docker images from the prepared artifact namespace', function (): void {
@@ -180,13 +192,14 @@ it('distributes docker images from the prepared artifact namespace', function ()
         ->and($distributions[0]['images'][1])->toBe(['role' => 'orbit-runtime', 'image' => 'orbit-runtime:prepared-current'])
         ->and($distributions[0]['images'][2])->toBe(['role' => 'orbit-caddy', 'image' => 'caddy:2-alpine'])
         ->and($distributions[0]['images'][3])->toBe(['role' => 'frankenphp-runtime', 'image' => 'dunglas/frankenphp:1-php8.5-bookworm'])
-        ->and($distributions[0]['images'])->toHaveCount(10)
-        ->and($distributions[0]['images'][4])->toBe(['role' => 'operator', 'image' => 'orbit-e2e-topology:prepared-operator-operator-dns-alias-current'])
-        ->and($distributions[0]['images'][5])->toBe(['role' => 'operator', 'image' => 'orbit-e2e-topology:prepared-operator_gateway_app-dev_app-prod_agent-operator-dns-alias-current'])
-        ->and($distributions[0]['images'][6])->toBe(['role' => 'gateway', 'image' => 'orbit-e2e-topology:prepared-operator_gateway_app-dev_app-prod_agent-gateway-dns-alias-current'])
-        ->and($distributions[0]['images'][7])->toBe(['role' => 'dev', 'image' => 'orbit-e2e-topology:prepared-operator_gateway_app-dev_app-prod_agent-dev-dns-alias-current'])
-        ->and($distributions[0]['images'][8])->toBe(['role' => 'prod', 'image' => 'orbit-e2e-topology:prepared-operator_gateway_app-dev_app-prod_agent-prod-dns-alias-current'])
-        ->and($distributions[0]['images'][9])->toBe(['role' => 'agent', 'image' => 'orbit-e2e-topology:prepared-operator_gateway_app-dev_app-prod_agent-agent-dns-alias-current'])
+        ->and($distributions[0]['images'][4])->toBe(['role' => 'frankenphp-runtime', 'image' => 'dunglas/frankenphp:1-php8.4-bookworm'])
+        ->and($distributions[0]['images'][5])->toBe(['role' => 'frankenphp-runtime', 'image' => 'dunglas/frankenphp:1-php8.3-bookworm'])
+        ->and($distributions[0]['images'])->toHaveCount(11)
+        ->and($distributions[0]['images'][6])->toBe(['role' => 'operator', 'image' => 'orbit-e2e-topology:prepared-operator_gateway_app-dev_app-prod_agent-operator-dns-alias-current'])
+        ->and($distributions[0]['images'][7])->toBe(['role' => 'gateway', 'image' => 'orbit-e2e-topology:prepared-operator_gateway_app-dev_app-prod_agent-gateway-dns-alias-current'])
+        ->and($distributions[0]['images'][8])->toBe(['role' => 'dev', 'image' => 'orbit-e2e-topology:prepared-operator_gateway_app-dev_app-prod_agent-dev-dns-alias-current'])
+        ->and($distributions[0]['images'][9])->toBe(['role' => 'prod', 'image' => 'orbit-e2e-topology:prepared-operator_gateway_app-dev_app-prod_agent-prod-dns-alias-current'])
+        ->and($distributions[0]['images'][10])->toBe(['role' => 'agent', 'image' => 'orbit-e2e-topology:prepared-operator_gateway_app-dev_app-prod_agent-agent-dns-alias-current'])
         ->and($buildRuns[1]['command'])->toContain("'operator_gateway_app-dev_app-prod_agent'");
 });
 
@@ -223,7 +236,7 @@ it('syncs existing build host images without rebuilding', function (): void {
             '--force' => true,
         ])
             ->expectsOutputToContain('existing: beast runtime')
-            ->expectsOutputToContain('existing: beast topology:operator+operator_gateway_app-dev_app-prod_agent')
+            ->expectsOutputToContain('existing: beast topology:operator_gateway_agent')
             ->assertSuccessful();
     });
 
@@ -232,10 +245,10 @@ it('syncs existing build host images without rebuilding', function (): void {
         ->not->toContain('composer e2e:prepare-docker-topology')
         ->and($distributions)->toHaveCount(1)
         ->and($distributions[0]['hosts'])->toBe(['sidecar1', 'sidecar2'])
-        ->and($distributions[0]['images'])->toHaveCount(10);
+        ->and($distributions[0]['images'])->toHaveCount(9);
 });
 
-it('prepares app production ingress from the default docker role images', function (): void {
+it('prepares app production ingress from the requested docker role images', function (): void {
     $runs = [];
     $distributions = [];
 
@@ -277,11 +290,10 @@ it('prepares app production ingress from the default docker role images', functi
 
     expect($buildRuns)
         ->toContain("'operator_gateway_app-prod_ingress'")
-        ->and($distributions[0]['images'])->toHaveCount(10)
-        ->and($distributions[0]['images'][4])->toBe(['role' => 'operator', 'image' => 'orbit-e2e-topology:prepared-operator-operator-dns-alias-current'])
-        ->and($distributions[0]['images'][5])->toBe(['role' => 'operator', 'image' => 'orbit-e2e-topology:prepared-operator_gateway_app-dev_app-prod_agent-operator-dns-alias-current'])
-        ->and($distributions[0]['images'][6])->toBe(['role' => 'gateway', 'image' => 'orbit-e2e-topology:prepared-operator_gateway_app-dev_app-prod_agent-gateway-dns-alias-current'])
-        ->and($distributions[0]['images'][8])->toBe(['role' => 'prod', 'image' => 'orbit-e2e-topology:prepared-operator_gateway_app-dev_app-prod_agent-prod-dns-alias-current']);
+        ->and($distributions[0]['images'])->toHaveCount(9)
+        ->and($distributions[0]['images'][6])->toBe(['role' => 'operator', 'image' => 'orbit-e2e-topology:prepared-operator_gateway_app-prod_ingress-operator-dns-alias-current'])
+        ->and($distributions[0]['images'][7])->toBe(['role' => 'gateway', 'image' => 'orbit-e2e-topology:prepared-operator_gateway_app-prod_ingress-gateway-dns-alias-current'])
+        ->and($distributions[0]['images'][8])->toBe(['role' => 'prod', 'image' => 'orbit-e2e-topology:prepared-operator_gateway_app-prod_ingress-prod-dns-alias-current']);
 });
 
 it('rejects multiple docker image build hosts to keep topology images combined', function (): void {

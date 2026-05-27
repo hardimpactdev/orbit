@@ -30,27 +30,11 @@ final readonly class E2EPreparedTopology
      */
     public static function dockerArtifactSourceKindsFor(E2ETopologyKind $kind): array
     {
-        if ($kind === E2ETopologyKind::Operator) {
-            return [E2ETopologyKind::Operator];
-        }
-
-        if (self::usesOperatorGatewayBase($kind)) {
-            return [E2ETopologyKind::Operator, E2ETopologyKind::OperatorGatewayAppdevAppprodAgent];
-        }
-
         return [$kind];
     }
 
     public static function dockerSourceKindFor(E2ETopologyKind $kind): E2ETopologyKind
     {
-        if ($kind === E2ETopologyKind::Operator) {
-            return E2ETopologyKind::Operator;
-        }
-
-        if (self::usesOperatorGatewayBase($kind)) {
-            return E2ETopologyKind::OperatorGatewayAppdevAppprodAgent;
-        }
-
         return $kind;
     }
 

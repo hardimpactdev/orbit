@@ -37,8 +37,8 @@ state:
 composer e2e:preflight
 composer e2e:prepare-topology
 composer e2e:prepare-docker-runtime
-composer e2e:prepare-docker-topology
-composer e2e:prepare-docker-hosts
+composer e2e:prepare-docker-topology -- --force operator_gateway_app-dev_app-prod
+composer e2e:prepare-docker-hosts -- --force operator_gateway_app-dev_app-prod
 composer e2e:prepare-base-image
 composer e2e:reap-incus
 composer e2e:reap-docker

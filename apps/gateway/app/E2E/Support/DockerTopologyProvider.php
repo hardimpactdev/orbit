@@ -177,6 +177,14 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
     }
 
     /**
+     * @return list<string>
+     */
+    public static function phpRuntimeImages(): array
+    {
+        return (new PhpRuntimeCatalog)->supportedImages();
+    }
+
+    /**
      * @param  list<string>|null  $hostNames
      * @return array{host: DockerHost|null, failures: list<string>, image_names?: array<string, string>}
      */
@@ -214,8 +222,12 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
                 continue;
             }
 
-            if (self::rolesNeedPhpRuntimeImage($roles) && ! $this->hasDefaultPhpRuntimeImage($host)) {
-                $failures[] = "{$hostName}: Docker PHP runtime image ".self::defaultPhpRuntimeImage().' is not available';
+            $missingPhpRuntimeImage = self::rolesNeedPhpRuntimeImage($roles)
+                ? $this->missingPhpRuntimeImage($host)
+                : null;
+
+            if ($missingPhpRuntimeImage !== null) {
+                $failures[] = "{$hostName}: Docker PHP runtime image {$missingPhpRuntimeImage} is not available";
 
                 continue;
             }
@@ -311,12 +323,20 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
         )->successful();
     }
 
-    private function hasDefaultPhpRuntimeImage(DockerHost $host): bool
+    private function missingPhpRuntimeImage(DockerHost $host): ?string
     {
-        return $host->run(
-            sprintf('docker image inspect %s >/dev/null', escapeshellarg(self::defaultPhpRuntimeImage())),
-            timeoutSeconds: $this->dockerMetadataProbeTimeoutSeconds(),
-        )->successful();
+        foreach (self::phpRuntimeImages() as $image) {
+            if ($host->run(
+                sprintf('docker image inspect %s >/dev/null', escapeshellarg($image)),
+                timeoutSeconds: $this->dockerMetadataProbeTimeoutSeconds(),
+            )->successful()) {
+                continue;
+            }
+
+            return $image;
+        }
+
+        return null;
     }
 
     private function runningE2EContainerCount(DockerHost $host): int

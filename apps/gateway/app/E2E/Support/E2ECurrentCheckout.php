@@ -135,19 +135,24 @@ final class E2ECurrentCheckout
                 '    "${env_args[@]}" \\',
                 '    --workdir "${runtime_workdir}" \\',
                 '    "${runtime_container}" \\',
-                '    php '.escapeshellarg("{$checkout}/artisan").' "$@"',
+                '    php '.escapeshellarg(self::gatewayArtisanPath($checkout)).' "$@"',
                 '',
             ]);
         }
 
         $php = 'p'.'hp';
 
-        return "#!/usr/bin/env bash\nset -euo pipefail\nexec {$php} ".escapeshellarg("{$checkout}/artisan").' "$@"'."\n";
+        return "#!/usr/bin/env bash\nset -euo pipefail\nexec {$php} ".escapeshellarg(self::gatewayArtisanPath($checkout)).' "$@"'."\n";
     }
 
     private static function escapeDoubleQuotedShellValue(string $value): string
     {
         return str_replace(['\\', '"', '$', '`'], ['\\\\', '\\"', '\\$', '\\`'], $value);
+    }
+
+    private static function gatewayArtisanPath(string $checkout): string
+    {
+        return "{$checkout}/apps/gateway/artisan";
     }
 
     private static function checkoutCacheEnabled(): bool
@@ -315,7 +320,7 @@ final class E2ECurrentCheckout
     private static function extractCheckoutCommand(string $remotePath): string
     {
         return implode(' && ', [
-            'rm -rf '.escapeshellarg($remotePath),
+            'sudo rm -rf '.escapeshellarg($remotePath),
             'mkdir -p '.escapeshellarg($remotePath),
             'tar --warning=no-unknown-keyword -xzf /tmp/orbit-current.tar.gz -C '.escapeshellarg($remotePath),
             'sudo rm -f /tmp/orbit-current.tar.gz',
@@ -427,7 +432,7 @@ final class E2ECurrentCheckout
         return implode(' && ', [
             "if [ -f {$seedEnv} ]; then cp {$seedEnv} .env; else cp .env.example .env; fi",
             'mkdir -p apps/gateway/database',
-            "if [ -f {$seedDatabase} ]; then cp {$seedDatabase} apps/gateway/database/database.sqlite; else touch apps/gateway/database/database.sqlite; fi",
+            "if [ -f {$seedDatabase} ]; then rm -f apps/gateway/database/database.sqlite apps/gateway/database/database.sqlite-* && cp {$seedDatabase} apps/gateway/database/database.sqlite; else touch apps/gateway/database/database.sqlite; fi",
             "if [ -d {$seedStorageApp} ]; then mkdir -p storage && rm -rf storage/app && cp -a {$seedStorageApp} storage/app; fi",
             $runtimeDirectories,
             self::dockerTopologyProviderEnvCommand($dockerTopology),
@@ -570,7 +575,7 @@ PHP;
             escapeshellarg("ORBIT_SOURCE_PATH={$remotePath}"),
             escapeshellarg($remotePath),
             escapeshellarg($dockerRuntimeContainer),
-            escapeshellarg("{$remotePath}/artisan"),
+            escapeshellarg(self::gatewayArtisanPath($remotePath)),
             $arguments,
         );
     }
@@ -591,14 +596,14 @@ PHP;
         $quotedRemotePath = escapeshellarg($remotePath);
 
         return implode(' && ', [
-            "rm -rf {$quotedRemotePath}",
+            "sudo rm -rf {$quotedRemotePath}",
             "mkdir -p {$quotedRemotePath}",
             "cd {$quotedBasePath}",
             "find . -mindepth 1 -maxdepth 1 ! -name vendor ! -name storage ! -name .env -exec sh -c 'target=\$1; shift; for path do cp -al \"\$path\" \"\$target\"/ 2>/dev/null || cp -a --reflink=always \"\$path\" \"\$target\"/ 2>/dev/null || cp -a \"\$path\" \"\$target\"/; done' sh {$quotedRemotePath} {} +",
             self::cloneCachedVendorCommand($basePath, $remotePath),
             "if [ -f {$quotedBasePath}/.env ]; then cp {$quotedBasePath}/.env {$quotedRemotePath}/.env; fi",
             "mkdir -p {$quotedRemotePath}/apps/gateway/database",
-            "if [ -f {$quotedBasePath}/apps/gateway/database/database.sqlite ]; then cp {$quotedBasePath}/apps/gateway/database/database.sqlite {$quotedRemotePath}/apps/gateway/database/database.sqlite; else touch {$quotedRemotePath}/apps/gateway/database/database.sqlite; fi",
+            "if [ -f {$quotedBasePath}/apps/gateway/database/database.sqlite ]; then rm -f {$quotedRemotePath}/apps/gateway/database/database.sqlite {$quotedRemotePath}/apps/gateway/database/database.sqlite-* && cp {$quotedBasePath}/apps/gateway/database/database.sqlite {$quotedRemotePath}/apps/gateway/database/database.sqlite; else touch {$quotedRemotePath}/apps/gateway/database/database.sqlite; fi",
             self::cloneCachedStorageCommand($basePath, $remotePath),
         ]);
     }
@@ -619,7 +624,7 @@ PHP;
 
         return implode(' && ', [
             "mkdir -p {$remoteStorage}/framework/cache/data {$remoteStorage}/framework/sessions {$remoteStorage}/framework/testing {$remoteStorage}/framework/views {$remoteStorage}/logs",
-            "if [ -d {$baseStorageApp} ]; then cp -a {$baseStorageApp} {$remoteStorageApp}; fi",
+            "if [ -d {$baseStorageApp} ]; then rm -rf {$remoteStorageApp} && cp -a {$baseStorageApp} {$remoteStorageApp}; fi",
         ]);
     }
 

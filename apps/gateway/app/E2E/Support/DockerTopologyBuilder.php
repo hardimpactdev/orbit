@@ -178,7 +178,7 @@ final readonly class DockerTopologyBuilder
             E2ETopologyKind::OperatorGatewayAppdevAppprod => ['operator', 'gateway', 'dev', 'prod'],
             E2ETopologyKind::OperatorGatewayAgent => ['operator', 'gateway', 'agent'],
             E2ETopologyKind::OperatorGatewayAppdevAppprodAgent => ['operator', 'gateway', 'dev', 'prod', 'agent'],
-            E2ETopologyKind::OperatorGatewayAppprodIngress => ['operator', 'gateway', 'prod', 'ingress'],
+            E2ETopologyKind::OperatorGatewayAppprodIngress => ['operator', 'gateway', 'prod'],
         };
     }
 

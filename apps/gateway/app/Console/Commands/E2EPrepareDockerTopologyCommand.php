@@ -15,7 +15,7 @@ use Illuminate\Console\Command;
 use RuntimeException;
 
 #[Signature('e2e:prepare-docker-topology
-    {kind=operator_gateway_app-dev_app-prod_agent : Topology kind to prepare (operator|operator_gateway|operator_gateway_app-dev|operator_gateway_app-dev_app-prod|operator_gateway_agent|operator_gateway_app-dev_app-prod_agent|operator_gateway_app-prod_ingress)}
+    {kind : Topology kind to prepare (operator|operator_gateway|operator_gateway_app-dev|operator_gateway_app-dev_app-prod|operator_gateway_agent|operator_gateway_app-dev_app-prod_agent|operator_gateway_app-prod_ingress)}
     {--force : Build the Docker prepared per-role images}
     {--json : Output as JSON}')]
 #[Description('Prepare per-role Docker images used by the Docker prepared topology provider')]

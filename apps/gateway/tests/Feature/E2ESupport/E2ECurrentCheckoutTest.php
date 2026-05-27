@@ -127,7 +127,7 @@ it('can seed the current checkout from prepared topology state', function (): vo
     $commandOutput = implode("\n", $commands);
 
     expect($commandOutput)->toContain("cp '/home/orbit/orbit/.env' .env")
-        ->and($commandOutput)->toContain("cp '/home/orbit/orbit/apps/gateway/database/database.sqlite' apps/gateway/database/database.sqlite")
+        ->and($commandOutput)->toContain("rm -f apps/gateway/database/database.sqlite apps/gateway/database/database.sqlite-* && cp '/home/orbit/orbit/apps/gateway/database/database.sqlite' apps/gateway/database/database.sqlite")
         ->and($commandOutput)->toContain("cp -a '/home/orbit/orbit/storage/app' storage/app");
 });
 
@@ -456,6 +456,7 @@ it('installs the current checkout on Docker topology nodes through the runtime c
         ->toContain('sudo docker exec --env')
         ->toContain('orbit-e2e-run123-operator-orbit-runtime')
         ->toContain('key:generate --force --no-interaction --ansi')
+        ->toContain('/home/orbit/orbit-current/apps/gateway/artisan')
         ->toContain('migrate --force --ansi')
         ->toContain('/home/orbit/orbit/apps/cli/vendor')
         ->toContain('rm -rf apps/cli/vendor')
@@ -620,6 +621,7 @@ it('refreshes Docker gateway checkout host keys through the runtime container', 
         ->toContain('sudo docker exec --env')
         ->toContain('orbit-e2e-run123-gateway-orbit-runtime')
         ->toContain('orbit:internal:pin-node-host-keys --json')
+        ->toContain('/home/orbit/orbit-current/apps/gateway/artisan')
         ->not->toContain('orbit orbit:internal:pin-node-host-keys --json')
         ->not->toContain('php artisan orbit:internal:pin-node-host-keys --json')
         ->not->toContain('composer dump-autoload')
@@ -685,6 +687,10 @@ it('can cache the checkout install and clone isolated runtime paths', function (
             ->and($commandOutput)->toContain('! -name composer ! -name autoload.php -exec ln -s {} vendor/')
             ->and(substr_count($commandOutput, 'copy '))->toBe(1)
             ->and($commandOutput)->not->toMatch("/cp -al '\\/home\\/orbit\\/orbit-current-base-[0-9a-f]+' '\\/home\\/orbit\\/orbit-current-[^']+'/")
+            ->and($commandOutput)->toContain("/apps/gateway/database/database.sqlite '{$firstPath}'/apps/gateway/database/database.sqlite")
+            ->and($commandOutput)->toContain("rm -f '{$firstPath}'/apps/gateway/database/database.sqlite")
+            ->and($commandOutput)->toContain("/apps/gateway/database/database.sqlite '{$secondPath}'/apps/gateway/database/database.sqlite")
+            ->and($commandOutput)->toContain("rm -f '{$secondPath}'/apps/gateway/database/database.sqlite")
             ->and($commandOutput)->not->toContain("/storage' '{$firstPath}/storage")
             ->and($commandOutput)->not->toContain("/storage' '{$secondPath}/storage")
             ->and($commandOutput)->toContain("/storage/app' '{$firstPath}/storage/app")

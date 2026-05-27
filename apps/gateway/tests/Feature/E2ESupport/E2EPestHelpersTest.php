@@ -52,9 +52,9 @@ it('builds provider aware current checkout orbit wrappers', function (): void {
         ->toContain('runtime_workdir="${ORBIT_HOST_CWD:-$PWD}"')
         ->toContain('--workdir "${runtime_workdir}"')
         ->not->toContain('exec php')
-        ->toContain("php '/home/orbit/orbit-current/artisan' \"\$@\"")
+        ->toContain("php '/home/orbit/orbit-current/apps/gateway/artisan' \"\$@\"")
         ->and($incus)
-        ->toContain("exec php '/home/orbit/orbit-current/artisan'")
+        ->toContain("exec php '/home/orbit/orbit-current/apps/gateway/artisan'")
         ->not->toContain('sudo docker exec');
 });
 
