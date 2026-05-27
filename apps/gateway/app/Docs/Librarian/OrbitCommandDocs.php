@@ -111,6 +111,11 @@ final readonly class OrbitCommandDocs
         return "{$this->config->path}/domains";
     }
 
+    public function docsRoot(): string
+    {
+        return $this->config->path;
+    }
+
     public function repositoryRoot(): string
     {
         return dirname($this->config->path);

@@ -30,6 +30,7 @@ use App\Docs\Librarian\Rules\JsonWarningShapeRule;
 use App\Docs\Librarian\Rules\MarkdownLinkIntegrityRule;
 use App\Docs\Librarian\Rules\NextActionContractRule;
 use App\Docs\Librarian\Rules\NoCommandAmbiguityFilesRule;
+use App\Docs\Librarian\Rules\NoLegacyNarrativeRule;
 use App\Docs\Librarian\Rules\NonStateDomainHandoffRule;
 use App\Docs\Librarian\Rules\NoPerCommandAuthorizationSectionRule;
 use App\Docs\Librarian\Rules\ProductCodeNamespaceRule;
@@ -112,6 +113,7 @@ beforeEach(function (): void {
         NonStateDomainHandoffRule::class,
         ReaderAddressRule::class,
         CommandContractComplexityRule::class,
+        NoLegacyNarrativeRule::class,
     ]);
 
     app()->forgetInstance(DocsConfig::class);
@@ -1225,6 +1227,57 @@ it('opts into package prose hygiene rules through Librarian config', function ()
             'librarian.requirement_smell',
             'librarian.section_opener_prose',
         );
+});
+
+it('flags legacy-narrative terms in docs as warnings', function (): void {
+    writeOrbitDocsFile(
+        $this->docsRoot,
+        'docs/architecture.md',
+        "# Architecture\n\nThe legacy control name is retained for compatibility.\nThis behavior is no longer the default.\n",
+    );
+
+    $exitCode = Artisan::call('librarian:lint', [
+        '--format' => 'agent',
+        '--path' => 'docs/architecture.md',
+        '--group' => 'prose',
+    ]);
+    $payload = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
+
+    $matchingFindings = findingsForRule($payload, 'command_docs.no_legacy_narrative');
+
+    expect($exitCode)->toBe(0)
+        ->and($matchingFindings)->toHaveCount(2)
+        ->and($matchingFindings[0])->toMatchArray([
+            'path' => 'docs/architecture.md',
+            'line' => 3,
+            'severity' => 'warning',
+            'rule' => 'command_docs.no_legacy_narrative',
+        ])
+        ->and($matchingFindings[0]['message'])->toContain('legacy')
+        ->and($matchingFindings[1])->toMatchArray([
+            'path' => 'docs/architecture.md',
+            'line' => 4,
+            'severity' => 'warning',
+        ])
+        ->and($matchingFindings[1]['message'])->toContain('no longer');
+});
+
+it('skips docs/superpowers when checking legacy-narrative terms', function (): void {
+    writeOrbitDocsFile(
+        $this->docsRoot,
+        'docs/superpowers/plans/2026-01-01-cleanup.md',
+        "# Cleanup Plan\n\nThe legacy adapter is retired; do not reintroduce it.\n",
+    );
+
+    $exitCode = Artisan::call('librarian:lint', [
+        '--format' => 'agent',
+        '--path' => 'docs/superpowers',
+        '--group' => 'prose',
+    ]);
+    $payload = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
+
+    expect($exitCode)->toBe(0)
+        ->and(findingsForRule($payload, 'command_docs.no_legacy_narrative'))->toBe([]);
 });
 
 function makeOrbitLibrarianDocsFixture(): string

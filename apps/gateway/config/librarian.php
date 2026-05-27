@@ -30,6 +30,7 @@ use App\Docs\Librarian\Rules\JsonWarningShapeRule;
 use App\Docs\Librarian\Rules\MarkdownLinkIntegrityRule;
 use App\Docs\Librarian\Rules\NextActionContractRule;
 use App\Docs\Librarian\Rules\NoCommandAmbiguityFilesRule;
+use App\Docs\Librarian\Rules\NoLegacyNarrativeRule;
 use App\Docs\Librarian\Rules\NonStateDomainHandoffRule;
 use App\Docs\Librarian\Rules\NoPerCommandAuthorizationSectionRule;
 use App\Docs\Librarian\Rules\ProductCodeNamespaceRule;
@@ -120,5 +121,6 @@ return [
         NonStateDomainHandoffRule::class,
         ReaderAddressRule::class,
         CommandContractComplexityRule::class,
+        NoLegacyNarrativeRule::class,
     ],
 ];
