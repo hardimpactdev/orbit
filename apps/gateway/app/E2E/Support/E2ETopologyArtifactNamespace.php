@@ -8,6 +8,12 @@ final readonly class E2ETopologyArtifactNamespace
 {
     public const string EnvironmentVariable = 'ORBIT_E2E_TOPOLOGY_ARTIFACT_NAMESPACE';
 
+    public const string DockerRoleImageRepository = 'orbit-e2e';
+
+    public const string DockerBaseArtifactSet = 'base';
+
+    public const string BaseArtifactSet = 'base';
+
     public static function current(): string
     {
         $namespace = getenv(self::EnvironmentVariable);
@@ -19,11 +25,34 @@ final readonly class E2ETopologyArtifactNamespace
         return 'prepared';
     }
 
-    public static function dockerImageSlug(string $slug): string
+    public static function dockerRoleArtifactSet(): string
     {
-        $namespace = self::current();
+        return self::artifactSet();
+    }
 
-        return "{$namespace}-{$slug}";
+    public static function dockerRoleImage(string $role, ?string $artifactSet = null): string
+    {
+        $artifactSet ??= self::dockerRoleArtifactSet();
+
+        return self::DockerRoleImageRepository.":{$role}_{$artifactSet}";
+    }
+
+    public static function artifactSet(): string
+    {
+        $namespace = getenv(self::EnvironmentVariable);
+
+        if (is_string($namespace) && trim($namespace) !== '') {
+            return self::sanitize($namespace);
+        }
+
+        return self::BaseArtifactSet;
+    }
+
+    public static function hasCustomArtifactSet(): bool
+    {
+        $namespace = getenv(self::EnvironmentVariable);
+
+        return is_string($namespace) && trim($namespace) !== '';
     }
 
     public static function dockerRuntimeImage(string $repository): string
@@ -49,20 +78,40 @@ final readonly class E2ETopologyArtifactNamespace
 
     public static function incusTemplateName(string $name): string
     {
-        $namespace = self::current();
-
         if (! str_starts_with($name, 'orbit-template-')) {
             return $name;
         }
 
-        return 'orbit-template-'.$namespace.'-'.substr($name, strlen('orbit-template-'));
+        return self::incusTemplateNameForArtifactSet($name, self::artifactSet());
+    }
+
+    public static function incusBaseTemplateName(string $name): string
+    {
+        return self::incusTemplateNameForArtifactSet($name, self::BaseArtifactSet);
+    }
+
+    private static function incusTemplateNameForArtifactSet(string $name, string $artifactSet): string
+    {
+        if (! str_starts_with($name, 'orbit-template-')) {
+            return $name;
+        }
+
+        return 'orbit-template-'.substr($name, strlen('orbit-template-'))."-{$artifactSet}";
     }
 
     public static function incusSnapshotName(E2ETopologyKind $kind): string
     {
-        $namespace = self::current();
+        return self::incusSnapshotNameForArtifactSet($kind, self::artifactSet());
+    }
 
-        return "clean-{$namespace}-{$kind->value}";
+    public static function incusBaseSnapshotName(E2ETopologyKind $kind): string
+    {
+        return self::incusSnapshotNameForArtifactSet($kind, self::BaseArtifactSet);
+    }
+
+    private static function incusSnapshotNameForArtifactSet(E2ETopologyKind $kind, string $artifactSet): string
+    {
+        return "clean-{$kind->value}-{$artifactSet}";
     }
 
     private static function sanitize(string $namespace): string

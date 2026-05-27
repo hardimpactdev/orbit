@@ -128,8 +128,14 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
         $mode ??= $this->topologyMode();
 
         $sourceRole = $role === 'control' ? 'operator' : $role;
+        $candidate = $this->imageNameFor($kind, $sourceRole, $mode);
+        $baseCandidate = DockerTopologyBuilder::baseImageNameFor($kind, $sourceRole, $mode);
 
-        return [$this->imageNameFor($kind, $sourceRole, $mode)];
+        if ($candidate === $baseCandidate) {
+            return [$candidate];
+        }
+
+        return [$candidate, $baseCandidate];
     }
 
     /**

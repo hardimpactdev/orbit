@@ -26,9 +26,9 @@ default). It builds one reusable base image plus prepared source snapshots:
    PHP 8.5 CLI baseline used by Orbit itself. It does not contain Orbit source.
    It is used by the provisioning lane's base-VM lifecycle test and as the
    source for prepared topology roles.
-2. Prepared source templates `orbit-template-prepared-control`,
-   `orbit-template-prepared-gateway`, `orbit-template-prepared-dev`,
-   `orbit-template-prepared-prod`, and `orbit-template-prepared-agent`. Build
+2. Prepared source templates `orbit-template-operator-base`,
+   `orbit-template-gateway-base`, `orbit-template-app-dev-base`,
+   `orbit-template-app-prod-base`, and `orbit-template-agent-base`. Build
    them with
    `composer e2e:prepare-topology -- --force operator_gateway_app-dev_app-prod_agent`.
 
@@ -41,6 +41,18 @@ tests clone only their requested roles from that full prepared source.
 
 App-dev carries database and Redis state by default. App-prod carries the
 ingress role by default.
+
+The shared prepared Incus artifact set is `base`: role templates are named
+`orbit-template-<role>-base`, and source snapshots are named
+`clean-<source-topology>-base`. Set
+`ORBIT_E2E_TOPOLOGY_ARTIFACT_NAMESPACE=<slug>` only when preparing branch or
+worktree-specific role artifacts. Incus feature acquisition resolves each role
+independently by trying `orbit-template-<role>-<slug>` with
+`clean-<source-topology>-<slug>` first, then falling back to the matching
+`base` template and snapshot for that role.
+Custom namespace preparation without `--roles` or `--all-roles` is rejected.
+Forced targeted Incus `--roles` rebakes are guarded until the builder can refresh
+only selected role templates from the base source snapshot.
 
 ## Source bundle and archives
 

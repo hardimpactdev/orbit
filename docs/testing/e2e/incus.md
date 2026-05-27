@@ -81,7 +81,7 @@ When this value is set, prepared templates must be built on the same pool.
 Verify with:
 
 ```bash
-ssh beast 'for name in orbit-template-prepared-control orbit-template-prepared-gateway orbit-template-prepared-dev orbit-template-prepared-prod orbit-template-prepared-agent; do echo "--- $name"; incus config show "$name" --expanded | sed -n "/root:/,/^[^ ]/p" | head -n 4; done'
+ssh beast 'for name in orbit-template-operator-base orbit-template-gateway-base orbit-template-app-dev-base orbit-template-app-prod-base orbit-template-agent-base; do echo "--- $name"; incus config show "$name" --expanded | sed -n "/root:/,/^[^ ]/p" | head -n 4; done'
 ```
 
 Every listed template should show `pool: orbit-e2e`. If templates show
@@ -91,6 +91,18 @@ prepared topology before trusting Incus feature-lane timings:
 ```bash
 composer e2e:prepare-topology -- --force operator_gateway_app-dev_app-prod_agent
 ```
+
+Branch-specific Incus artifacts use the same role suffix model as Docker:
+`orbit-template-<role>-<slug>` plus `clean-<source-topology>-<slug>`. Missing
+branch role artifacts fall back to the matching `base` template and snapshot, so
+a branch override does not need to rebuild every role.
+
+Incus acquisition already resolves branch/base artifacts per role. Forced Incus
+preparation currently supports the shared `base` rebuild and explicit full
+namespaced rebuilds with `--all-roles`. Targeted `--roles=<role>` rebakes are
+guarded until the builder can refresh only the selected VMs from the base source
+snapshot.
+A custom namespace without `--roles` or `--all-roles` is rejected.
 
 The regression signature for a storage-pool mismatch is
 `ORBIT_E2E_TIMINGS=1 composer test:e2e:incus` reporting `batch.copy-start` near

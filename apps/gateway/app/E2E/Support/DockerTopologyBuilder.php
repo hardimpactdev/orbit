@@ -21,9 +21,10 @@ final readonly class DockerTopologyBuilder
     ) {}
 
     /**
+     * @param  list<string>|null  $artifactRoles
      * @return list<array{role: string, container: string, image: string}>
      */
-    public function build(E2ETopologyKind $kind, string $mode = 'dns-alias'): array
+    public function build(E2ETopologyKind $kind, string $mode = 'dns-alias', ?array $artifactRoles = null): array
     {
         $network = E2ETopologyArtifactNamespace::dockerBuildName($this->config->instancePrefix, $kind);
         $roles = self::rolesFor($kind);
@@ -88,14 +89,21 @@ final readonly class DockerTopologyBuilder
             foreach ($roles as $role) {
                 $container = "{$network}-{$role}";
                 $image = self::imageNameFor($kind, $role, $mode);
+                $artifactRole = E2EPreparedTopology::artifactRoleForDockerRole($role);
+
+                if ($artifactRoles !== null && ! in_array($artifactRole, $artifactRoles, true)) {
+                    continue;
+                }
 
                 if (! self::shouldCommitRole($kind, $role)) {
-                    $manifest[] = [
-                        'role' => $role,
-                        'container' => $container,
-                        'image' => $image,
-                        'reused' => true,
-                    ];
+                    if ($artifactRoles === null) {
+                        $manifest[] = [
+                            'role' => $role,
+                            'container' => $container,
+                            'image' => $image,
+                            'reused' => true,
+                        ];
+                    }
 
                     continue;
                 }
@@ -186,14 +194,19 @@ final readonly class DockerTopologyBuilder
     {
         $role = self::canonicalRole($role);
 
-        return self::imageNameForCanonicalRole($kind, $role, $mode);
+        return self::imageNameForArtifactSet($role, E2ETopologyArtifactNamespace::dockerRoleArtifactSet());
     }
 
-    private static function imageNameForCanonicalRole(E2ETopologyKind $kind, string $role, string $mode): string
+    public static function baseImageNameFor(E2ETopologyKind $kind, string $role, string $mode = 'dns-alias'): string
     {
-        $imageSlug = E2ETopologyArtifactNamespace::dockerImageSlug(self::imageRoleSlug($role));
+        $role = self::canonicalRole($role);
 
-        return "orbit-e2e-topology:{$imageSlug}-{$mode}-current";
+        return self::imageNameForArtifactSet($role, E2ETopologyArtifactNamespace::DockerBaseArtifactSet);
+    }
+
+    private static function imageNameForArtifactSet(string $role, string $artifactSet): string
+    {
+        return E2ETopologyArtifactNamespace::dockerRoleImage(self::imageRoleSlug($role), $artifactSet);
     }
 
     private static function imageRoleSlug(string $role): string

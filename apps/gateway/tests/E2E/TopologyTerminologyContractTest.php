@@ -6,7 +6,6 @@ use App\E2E\Support\DockerTopologyBuilder;
 use App\E2E\Support\DockerTopologyProvider;
 use App\E2E\Support\E2EConfig;
 use App\E2E\Support\E2EInstance;
-use App\E2E\Support\E2ETopologyArtifactNamespace;
 use App\E2E\Support\E2ETopologyHarness;
 use App\E2E\Support\E2ETopologyKind;
 use App\E2E\Support\E2ETopologyLease;
@@ -59,9 +58,9 @@ it('uses operator topology names for docker images while preserving control role
     $provider = new DockerTopologyProvider(E2EConfig::fromEnvironment());
 
     expect(DockerTopologyBuilder::imageNameFor(E2ETopologyKind::OperatorGatewayAppdev, 'control'))
-        ->toBe('orbit-e2e-topology:'.E2ETopologyArtifactNamespace::dockerImageSlug('operator_gateway_app-dev-operator-dns-alias').'-current')
+        ->toBe('orbit-e2e:operator_base')
         ->and($provider->imageNameFor(E2ETopologyKind::OperatorGatewayAppdevAppprod, 'gateway'))
-        ->toBe('orbit-e2e-topology:'.E2ETopologyArtifactNamespace::dockerImageSlug('operator_gateway_app-dev_app-prod-gateway-dns-alias').'-current')
+        ->toBe('orbit-e2e:gateway_base')
         ->and(DockerTopologyBuilder::rolesFor(E2ETopologyKind::OperatorGatewayAppdev))
         ->toBe(['operator', 'gateway', 'dev']);
 });

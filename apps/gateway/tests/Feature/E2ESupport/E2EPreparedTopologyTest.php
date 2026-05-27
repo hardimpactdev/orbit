@@ -32,13 +32,13 @@ it('maps Docker topology requests to composable role image sources', function ()
         ->toBe([E2ETopologyKind::OperatorGateway]);
 
     expect(DockerTopologyBuilder::imageNameFor(E2ETopologyKind::OperatorGatewayAgent, 'operator'))
-        ->toBe('orbit-e2e-topology:prepared-operator-dns-alias-current')
+        ->toBe('orbit-e2e:operator_base')
         ->and(DockerTopologyBuilder::imageNameFor(E2ETopologyKind::OperatorGatewayAgent, 'gateway'))
-        ->toBe('orbit-e2e-topology:prepared-gateway-dns-alias-current')
+        ->toBe('orbit-e2e:gateway_base')
         ->and(DockerTopologyBuilder::imageNameFor(E2ETopologyKind::OperatorGatewayAgent, 'agent'))
-        ->toBe('orbit-e2e-topology:prepared-agent-dns-alias-current')
+        ->toBe('orbit-e2e:agent_base')
         ->and(DockerTopologyBuilder::imageNameFor(E2ETopologyKind::OperatorGatewayAppprodIngress, 'prod'))
-        ->toBe('orbit-e2e-topology:prepared-app-prod-dns-alias-current');
+        ->toBe('orbit-e2e:app-prod_base');
 });
 
 it('sources Incus downstream roles from the prepared full snapshot', function (): void {
@@ -82,9 +82,25 @@ it('does not retain a split ingress node when app production ingress boots only 
         ->not->toContain('edge-1');
 });
 
+it('normalizes prepared artifact role selections', function (): void {
+    expect(E2EPreparedTopology::parseArtifactRoles('control, gateway, dev, prod, agent'))
+        ->toBe(['operator', 'gateway', 'app-dev', 'app-prod', 'agent'])
+        ->and(E2EPreparedTopology::parseArtifactRoles('operator,app-dev,app-prod,agent,operator'))
+        ->toBe(['operator', 'app-dev', 'app-prod', 'agent'])
+        ->and(E2EPreparedTopology::dockerRoleForArtifactRole('app-dev'))
+        ->toBe('dev')
+        ->and(E2EPreparedTopology::incusRoleForArtifactRole('operator'))
+        ->toBe('control');
+});
+
+it('rejects unknown prepared artifact roles', function (): void {
+    expect(fn () => E2EPreparedTopology::parseArtifactRoles('operator,ingress'))
+        ->toThrow(InvalidArgumentException::class, 'Unsupported prepared artifact role [ingress].');
+});
+
 it('uses a separate topology artifact namespace by default', function (): void {
     expect(DockerTopologyBuilder::imageNameFor(E2ETopologyKind::OperatorGateway, 'control', 'dns-alias'))
-        ->toBe('orbit-e2e-topology:prepared-operator-dns-alias-current')
+        ->toBe('orbit-e2e:operator_base')
         ->and(DockerTopologyBuilder::runtimeImage())
         ->toBe('orbit-e2e-topology-runtime:prepared-current')
         ->and(DockerTopologyProvider::runtimeSiblingImage())
@@ -94,9 +110,9 @@ it('uses a separate topology artifact namespace by default', function (): void {
         ->and(E2ETopologyArtifactNamespace::runtimeInstancePrefix('orbit-e2e'))
         ->toBe('orbit-e2e-prepared')
         ->and(IncusTopologyTemplate::templateName(E2ETopologyKind::OperatorGateway, 'control'))
-        ->toBe('orbit-template-prepared-control')
+        ->toBe('orbit-template-operator-base')
         ->and(IncusTopologyTemplate::snapshotName(E2ETopologyKind::OperatorGateway))
-        ->toBe('clean-prepared-operator_gateway');
+        ->toBe('clean-operator_gateway-base');
 });
 
 it('allows a custom topology artifact namespace for isolated benchmark runs', function (): void {
@@ -104,7 +120,7 @@ it('allows a custom topology artifact namespace for isolated benchmark runs', fu
         'ORBIT_E2E_TOPOLOGY_ARTIFACT_NAMESPACE' => 'Branch A/B',
     ], function (): void {
         expect(DockerTopologyBuilder::imageNameFor(E2ETopologyKind::OperatorGateway, 'control'))
-            ->toBe('orbit-e2e-topology:branch-a-b-operator-dns-alias-current')
+            ->toBe('orbit-e2e:operator_branch-a-b')
             ->and(DockerTopologyBuilder::runtimeImage())
             ->toBe('orbit-e2e-topology-runtime:branch-a-b-current')
             ->and(DockerTopologyProvider::runtimeSiblingImage())
@@ -112,8 +128,8 @@ it('allows a custom topology artifact namespace for isolated benchmark runs', fu
             ->and(E2ETopologyArtifactNamespace::runtimeInstancePrefix('orbit-e2e'))
             ->toBe('orbit-e2e-branch-a-b')
             ->and(IncusTopologyTemplate::templateName(E2ETopologyKind::OperatorGateway, 'control'))
-            ->toBe('orbit-template-branch-a-b-control')
+            ->toBe('orbit-template-operator-branch-a-b')
             ->and(IncusTopologyTemplate::snapshotName(E2ETopologyKind::OperatorGateway))
-            ->toBe('clean-branch-a-b-operator_gateway');
+            ->toBe('clean-operator_gateway-branch-a-b');
     });
 });

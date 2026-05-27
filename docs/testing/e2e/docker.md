@@ -33,6 +33,33 @@ the smallest active topology they need; the Docker provider composes that
 topology from the canonical operator, gateway, app-dev, app-prod, and agent
 images.
 
+The canonical reusable role images are:
+
+- `orbit-e2e:operator_base`
+- `orbit-e2e:gateway_base`
+- `orbit-e2e:app-dev_base`
+- `orbit-e2e:app-prod_base`
+- `orbit-e2e:agent_base`
+
+Set `ORBIT_E2E_TOPOLOGY_ARTIFACT_NAMESPACE=<slug>` only when a branch needs a
+role-specific image override. The Docker provider first tries
+`orbit-e2e:<role>_<slug>` for each requested role, then falls back to
+`orbit-e2e:<role>_base` for that role. Setting the namespace does not make every
+role branch-specific; unchanged roles keep reusing the base images.
+
+When preparing artifacts with a custom namespace, pass the changed roles
+explicitly. This builds and distributes only those role images; absent roles keep
+falling back to `base`:
+
+```bash
+ORBIT_E2E_TOPOLOGY_ARTIFACT_NAMESPACE=agent-isolation \
+composer e2e:prepare-docker-hosts -- --force --topology-only --roles=agent operator_gateway_app-dev_app-prod_agent
+```
+
+Use `--all-roles` only when the branch intentionally needs a full namespaced
+role-image set. A custom namespace without `--roles` or `--all-roles` is
+rejected so a worktree cannot accidentally rebuild every Docker role.
+
 Runner hosts need the five canonical role images plus the runtime support
 images used by gateway-backed topologies: `orbit-runtime`, `orbit-caddy`, and
 the FrankenPHP images listed by `PhpRuntimeCatalog`. `orbit-e2e-topology-runtime`
@@ -103,6 +130,10 @@ Docker exercises gateway API, certificate, and registry behavior over isolated
 Docker bridge networks from the `10.90.N.0/24` pool. The DNS alias mode keeps
 canonical `10.6.0.x` WireGuard identities inside seeded gateway state. Docker
 does not exercise real WireGuard interfaces, peer routing, VM boot, or systemd.
+DNS alias mode is the only supported Docker prepared-topology mode. Parallel
+test isolation comes from per-run container names, Docker bridge networks, and
+subnet allocation; image tags do not carry topology kind, DNS mode, or run
+identity.
 
 ### Feature scope
 

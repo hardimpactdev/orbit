@@ -39,6 +39,7 @@ ORBIT_E2E_TOPOLOGY_CPUS=1
 ORBIT_E2E_TOPOLOGY_MEMORY=2GiB
 ORBIT_E2E_TOPOLOGY_ROOT_SIZE=16GiB
 ORBIT_E2E_TOPOLOGY_STATE_SIZE=4GiB
+ORBIT_E2E_TOPOLOGY_ARTIFACT_NAMESPACE=
 ```
 
 ## Provider variables
@@ -75,3 +76,27 @@ namespaces in the same shared lease directory. Docker feature tests read
 By default those namespaces do not block each other. Add a host to
 `ORBIT_E2E_EXCLUSIVE_HOSTS` when the same machine appears in more than one
 backend pool and the backend families must not overlap.
+
+## Artifact namespace
+
+Leave `ORBIT_E2E_TOPOLOGY_ARTIFACT_NAMESPACE` empty for normal prepared
+topology feature tests. Docker then uses the shared role images
+`orbit-e2e:<role>_base`; Incus uses shared role templates
+`orbit-template-<role>-base` and snapshots
+`clean-<source-topology>-base`.
+
+Set it to a branch or worktree slug only when that branch has role-specific
+prepared artifacts. With `ORBIT_E2E_TOPOLOGY_ARTIFACT_NAMESPACE=agent-isolation`,
+the Docker provider tries `orbit-e2e:agent_agent-isolation` for the agent role
+and falls back to `orbit-e2e:agent_base` when that override is absent. The same
+per-role fallback applies to operator, gateway, app-dev, and app-prod. Incus
+uses the same rule with template and snapshot suffixes: it tries
+`orbit-template-agent-agent-isolation` plus
+`clean-<source-topology>-agent-isolation`, then falls back to
+`orbit-template-agent-base` plus `clean-<source-topology>-base` for that role.
+
+Preparing artifacts while this variable is set requires an explicit scope. Use
+`--roles=<comma-separated roles>` for Docker role-image overrides or
+`--all-roles` for an intentional full namespaced rebuild. Incus targeted
+`--roles` preparation is guarded until selected-role rebakes are implemented;
+Incus acquisition still falls back per role when branch artifacts are absent.

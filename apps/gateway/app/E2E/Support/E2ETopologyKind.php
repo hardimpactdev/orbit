@@ -63,19 +63,6 @@ enum E2ETopologyKind: string
         };
     }
 
-    public function dockerImageSlug(): string
-    {
-        return match ($this) {
-            self::Operator => 'operator',
-            self::OperatorGateway => 'operator_gateway',
-            self::OperatorGatewayAppdev => 'operator_gateway_app-dev',
-            self::OperatorGatewayAppdevAppprod => 'operator_gateway_app-dev_app-prod',
-            self::OperatorGatewayAgent => 'operator_gateway_agent',
-            self::OperatorGatewayAppdevAppprodAgent => 'operator_gateway_app-dev_app-prod_agent',
-            self::OperatorGatewayAppprodIngress => 'operator_gateway_app-prod_ingress',
-        };
-    }
-
     public function featureGroup(): string
     {
         return 'e2e-feature-'.$this->value;

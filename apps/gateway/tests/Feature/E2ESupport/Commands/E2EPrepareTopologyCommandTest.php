@@ -43,11 +43,11 @@ function fakeBundleProcessing(): void
 
 it('defaults to the prepared full Incus source kind', function (): void {
     $this->artisan('e2e:prepare-topology')
-        ->expectsOutputToContain('planned: orbit-template-prepared-control (snapshot: clean-prepared-operator_gateway_app-dev_app-prod_agent)')
-        ->expectsOutputToContain('planned: orbit-template-prepared-gateway (snapshot: clean-prepared-operator_gateway_app-dev_app-prod_agent)')
-        ->expectsOutputToContain('planned: orbit-template-prepared-dev (snapshot: clean-prepared-operator_gateway_app-dev_app-prod_agent)')
-        ->expectsOutputToContain('planned: orbit-template-prepared-prod (snapshot: clean-prepared-operator_gateway_app-dev_app-prod_agent)')
-        ->expectsOutputToContain('planned: orbit-template-prepared-agent (snapshot: clean-prepared-operator_gateway_app-dev_app-prod_agent)')
+        ->expectsOutputToContain('planned: orbit-template-operator-base (snapshot: clean-operator_gateway_app-dev_app-prod_agent-base)')
+        ->expectsOutputToContain('planned: orbit-template-gateway-base (snapshot: clean-operator_gateway_app-dev_app-prod_agent-base)')
+        ->expectsOutputToContain('planned: orbit-template-app-dev-base (snapshot: clean-operator_gateway_app-dev_app-prod_agent-base)')
+        ->expectsOutputToContain('planned: orbit-template-app-prod-base (snapshot: clean-operator_gateway_app-dev_app-prod_agent-base)')
+        ->expectsOutputToContain('planned: orbit-template-agent-base (snapshot: clean-operator_gateway_app-dev_app-prod_agent-base)')
         ->assertSuccessful();
 });
 
@@ -56,11 +56,11 @@ it('supports operator kind', function (): void {
         ->expectsOutputToContain('requested roles: control')
         ->expectsOutputToContain('source topology: operator_gateway_app-dev_app-prod_agent')
         ->expectsOutputToContain('source roles: control, gateway, dev, prod, agent')
-        ->expectsOutputToContain('planned: orbit-template-prepared-control (snapshot: clean-prepared-operator_gateway_app-dev_app-prod_agent)')
-        ->expectsOutputToContain('planned: orbit-template-prepared-gateway (snapshot: clean-prepared-operator_gateway_app-dev_app-prod_agent)')
-        ->expectsOutputToContain('planned: orbit-template-prepared-dev (snapshot: clean-prepared-operator_gateway_app-dev_app-prod_agent)')
-        ->expectsOutputToContain('planned: orbit-template-prepared-prod (snapshot: clean-prepared-operator_gateway_app-dev_app-prod_agent)')
-        ->expectsOutputToContain('planned: orbit-template-prepared-agent (snapshot: clean-prepared-operator_gateway_app-dev_app-prod_agent)')
+        ->expectsOutputToContain('planned: orbit-template-operator-base (snapshot: clean-operator_gateway_app-dev_app-prod_agent-base)')
+        ->expectsOutputToContain('planned: orbit-template-gateway-base (snapshot: clean-operator_gateway_app-dev_app-prod_agent-base)')
+        ->expectsOutputToContain('planned: orbit-template-app-dev-base (snapshot: clean-operator_gateway_app-dev_app-prod_agent-base)')
+        ->expectsOutputToContain('planned: orbit-template-app-prod-base (snapshot: clean-operator_gateway_app-dev_app-prod_agent-base)')
+        ->expectsOutputToContain('planned: orbit-template-agent-base (snapshot: clean-operator_gateway_app-dev_app-prod_agent-base)')
         ->assertSuccessful();
 });
 
@@ -69,21 +69,21 @@ it('supports operator_gateway kind', function (): void {
         ->expectsOutputToContain('requested roles: control, gateway')
         ->expectsOutputToContain('source topology: operator_gateway_app-dev_app-prod_agent')
         ->expectsOutputToContain('source roles: control, gateway, dev, prod, agent')
-        ->expectsOutputToContain('planned: orbit-template-prepared-control (snapshot: clean-prepared-operator_gateway_app-dev_app-prod_agent)')
-        ->expectsOutputToContain('planned: orbit-template-prepared-gateway (snapshot: clean-prepared-operator_gateway_app-dev_app-prod_agent)')
-        ->expectsOutputToContain('planned: orbit-template-prepared-dev (snapshot: clean-prepared-operator_gateway_app-dev_app-prod_agent)')
-        ->expectsOutputToContain('planned: orbit-template-prepared-prod (snapshot: clean-prepared-operator_gateway_app-dev_app-prod_agent)')
-        ->expectsOutputToContain('planned: orbit-template-prepared-agent (snapshot: clean-prepared-operator_gateway_app-dev_app-prod_agent)')
+        ->expectsOutputToContain('planned: orbit-template-operator-base (snapshot: clean-operator_gateway_app-dev_app-prod_agent-base)')
+        ->expectsOutputToContain('planned: orbit-template-gateway-base (snapshot: clean-operator_gateway_app-dev_app-prod_agent-base)')
+        ->expectsOutputToContain('planned: orbit-template-app-dev-base (snapshot: clean-operator_gateway_app-dev_app-prod_agent-base)')
+        ->expectsOutputToContain('planned: orbit-template-app-prod-base (snapshot: clean-operator_gateway_app-dev_app-prod_agent-base)')
+        ->expectsOutputToContain('planned: orbit-template-agent-base (snapshot: clean-operator_gateway_app-dev_app-prod_agent-base)')
         ->assertSuccessful();
 });
 
 it('supports operator_gateway_app-dev kind', function (): void {
     $this->artisan('e2e:prepare-topology', ['kind' => 'operator_gateway_app-dev'])
-        ->expectsOutputToContain('planned: orbit-template-prepared-control (snapshot: clean-prepared-operator_gateway_app-dev_app-prod_agent)')
-        ->expectsOutputToContain('planned: orbit-template-prepared-gateway (snapshot: clean-prepared-operator_gateway_app-dev_app-prod_agent)')
-        ->expectsOutputToContain('planned: orbit-template-prepared-dev (snapshot: clean-prepared-operator_gateway_app-dev_app-prod_agent)')
-        ->expectsOutputToContain('planned: orbit-template-prepared-prod (snapshot: clean-prepared-operator_gateway_app-dev_app-prod_agent)')
-        ->expectsOutputToContain('planned: orbit-template-prepared-agent (snapshot: clean-prepared-operator_gateway_app-dev_app-prod_agent)')
+        ->expectsOutputToContain('planned: orbit-template-operator-base (snapshot: clean-operator_gateway_app-dev_app-prod_agent-base)')
+        ->expectsOutputToContain('planned: orbit-template-gateway-base (snapshot: clean-operator_gateway_app-dev_app-prod_agent-base)')
+        ->expectsOutputToContain('planned: orbit-template-app-dev-base (snapshot: clean-operator_gateway_app-dev_app-prod_agent-base)')
+        ->expectsOutputToContain('planned: orbit-template-app-prod-base (snapshot: clean-operator_gateway_app-dev_app-prod_agent-base)')
+        ->expectsOutputToContain('planned: orbit-template-agent-base (snapshot: clean-operator_gateway_app-dev_app-prod_agent-base)')
         ->assertSuccessful();
 });
 
@@ -92,11 +92,11 @@ it('supports operator_gateway_agent kind', function (): void {
         ->expectsOutputToContain('requested roles: control, gateway, agent')
         ->expectsOutputToContain('source topology: operator_gateway_app-dev_app-prod_agent')
         ->expectsOutputToContain('source roles: control, gateway, dev, prod, agent')
-        ->expectsOutputToContain('planned: orbit-template-prepared-control (snapshot: clean-prepared-operator_gateway_app-dev_app-prod_agent)')
-        ->expectsOutputToContain('planned: orbit-template-prepared-gateway (snapshot: clean-prepared-operator_gateway_app-dev_app-prod_agent)')
-        ->expectsOutputToContain('planned: orbit-template-prepared-dev (snapshot: clean-prepared-operator_gateway_app-dev_app-prod_agent)')
-        ->expectsOutputToContain('planned: orbit-template-prepared-prod (snapshot: clean-prepared-operator_gateway_app-dev_app-prod_agent)')
-        ->expectsOutputToContain('planned: orbit-template-prepared-agent (snapshot: clean-prepared-operator_gateway_app-dev_app-prod_agent)')
+        ->expectsOutputToContain('planned: orbit-template-operator-base (snapshot: clean-operator_gateway_app-dev_app-prod_agent-base)')
+        ->expectsOutputToContain('planned: orbit-template-gateway-base (snapshot: clean-operator_gateway_app-dev_app-prod_agent-base)')
+        ->expectsOutputToContain('planned: orbit-template-app-dev-base (snapshot: clean-operator_gateway_app-dev_app-prod_agent-base)')
+        ->expectsOutputToContain('planned: orbit-template-app-prod-base (snapshot: clean-operator_gateway_app-dev_app-prod_agent-base)')
+        ->expectsOutputToContain('planned: orbit-template-agent-base (snapshot: clean-operator_gateway_app-dev_app-prod_agent-base)')
         ->assertSuccessful();
 });
 
@@ -105,26 +105,79 @@ it('supports operator_gateway_app-prod_ingress kind', function (): void {
         ->expectsOutputToContain('requested roles: control, gateway, prod')
         ->expectsOutputToContain('source topology: operator_gateway_app-dev_app-prod_agent')
         ->expectsOutputToContain('source roles: control, gateway, dev, prod, agent')
-        ->expectsOutputToContain('planned: orbit-template-prepared-control (snapshot: clean-prepared-operator_gateway_app-dev_app-prod_agent)')
-        ->expectsOutputToContain('planned: orbit-template-prepared-gateway (snapshot: clean-prepared-operator_gateway_app-dev_app-prod_agent)')
-        ->expectsOutputToContain('planned: orbit-template-prepared-dev (snapshot: clean-prepared-operator_gateway_app-dev_app-prod_agent)')
-        ->expectsOutputToContain('planned: orbit-template-prepared-prod (snapshot: clean-prepared-operator_gateway_app-dev_app-prod_agent)')
-        ->expectsOutputToContain('planned: orbit-template-prepared-agent (snapshot: clean-prepared-operator_gateway_app-dev_app-prod_agent)')
-        ->doesntExpectOutputToContain('planned: orbit-template-prepared-ingress')
+        ->expectsOutputToContain('planned: orbit-template-operator-base (snapshot: clean-operator_gateway_app-dev_app-prod_agent-base)')
+        ->expectsOutputToContain('planned: orbit-template-gateway-base (snapshot: clean-operator_gateway_app-dev_app-prod_agent-base)')
+        ->expectsOutputToContain('planned: orbit-template-app-dev-base (snapshot: clean-operator_gateway_app-dev_app-prod_agent-base)')
+        ->expectsOutputToContain('planned: orbit-template-app-prod-base (snapshot: clean-operator_gateway_app-dev_app-prod_agent-base)')
+        ->expectsOutputToContain('planned: orbit-template-agent-base (snapshot: clean-operator_gateway_app-dev_app-prod_agent-base)')
+        ->doesntExpectOutputToContain('planned: orbit-template-ingress-base')
         ->assertSuccessful();
 });
 
 it('documents Incus topology templates in a separate namespace', function (): void {
     withE2ETopologyEnvironment([], function (): void {
         $this->artisan('e2e:prepare-topology', ['kind' => 'operator_gateway_app-dev_app-prod_agent'])
-            ->expectsOutputToContain('planned: orbit-template-prepared-control (snapshot: clean-prepared-operator_gateway_app-dev_app-prod_agent)')
-            ->expectsOutputToContain('planned: orbit-template-prepared-gateway (snapshot: clean-prepared-operator_gateway_app-dev_app-prod_agent)')
-            ->expectsOutputToContain('planned: orbit-template-prepared-dev (snapshot: clean-prepared-operator_gateway_app-dev_app-prod_agent)')
-            ->expectsOutputToContain('planned: orbit-template-prepared-prod (snapshot: clean-prepared-operator_gateway_app-dev_app-prod_agent)')
-            ->expectsOutputToContain('planned: orbit-template-prepared-agent (snapshot: clean-prepared-operator_gateway_app-dev_app-prod_agent)')
+            ->expectsOutputToContain('planned: orbit-template-operator-base (snapshot: clean-operator_gateway_app-dev_app-prod_agent-base)')
+            ->expectsOutputToContain('planned: orbit-template-gateway-base (snapshot: clean-operator_gateway_app-dev_app-prod_agent-base)')
+            ->expectsOutputToContain('planned: orbit-template-app-dev-base (snapshot: clean-operator_gateway_app-dev_app-prod_agent-base)')
+            ->expectsOutputToContain('planned: orbit-template-app-prod-base (snapshot: clean-operator_gateway_app-dev_app-prod_agent-base)')
+            ->expectsOutputToContain('planned: orbit-template-agent-base (snapshot: clean-operator_gateway_app-dev_app-prod_agent-base)')
             ->doesntExpectOutputToContain('planned: orbit-template-control (snapshot: clean-operator_gateway_app-dev_app-prod_agent)')
             ->assertSuccessful();
     });
+});
+
+it('rejects custom Incus artifact namespace preparation without explicit roles', function (): void {
+    Process::fake();
+
+    withE2ETopologyEnvironment([
+        'ORBIT_E2E_TOPOLOGY_ARTIFACT_NAMESPACE' => 'Agent isolation',
+    ], function (): void {
+        $this->artisan('e2e:prepare-topology', ['kind' => 'operator_gateway_agent'])
+            ->expectsOutputToContain('Set --roles or --all-roles when ORBIT_E2E_TOPOLOGY_ARTIFACT_NAMESPACE is set')
+            ->assertFailed();
+    });
+
+    Process::assertNothingRan();
+});
+
+it('plans only selected branch Incus role templates', function (): void {
+    Process::fake();
+
+    withE2ETopologyEnvironment([
+        'ORBIT_E2E_TOPOLOGY_ARTIFACT_NAMESPACE' => 'Agent isolation',
+    ], function (): void {
+        $this->artisan('e2e:prepare-topology', [
+            'kind' => 'operator_gateway_agent',
+            '--roles' => 'agent',
+        ])
+            ->expectsOutputToContain('planned: orbit-template-agent-agent-isolation (snapshot: clean-operator_gateway_app-dev_app-prod_agent-agent-isolation)')
+            ->doesntExpectOutputToContain('orbit-template-operator-agent-isolation')
+            ->doesntExpectOutputToContain('orbit-template-gateway-agent-isolation')
+            ->doesntExpectOutputToContain('orbit-template-app-dev-agent-isolation')
+            ->doesntExpectOutputToContain('orbit-template-app-prod-agent-isolation')
+            ->assertSuccessful();
+    });
+
+    Process::assertNothingRan();
+});
+
+it('fails clearly before mutation when targeted Incus role preparation is forced', function (): void {
+    Process::fake();
+
+    withE2ETopologyEnvironment([
+        'ORBIT_E2E_TOPOLOGY_ARTIFACT_NAMESPACE' => 'Agent isolation',
+    ], function (): void {
+        $this->artisan('e2e:prepare-topology', [
+            'kind' => 'operator_gateway_agent',
+            '--force' => true,
+            '--roles' => 'agent',
+        ])
+            ->expectsOutputToContain('Targeted Incus role artifact preparation is not implemented yet')
+            ->assertFailed();
+    });
+
+    Process::assertNothingRan();
 });
 
 it('rejects invalid kind', function (): void {
@@ -248,11 +301,11 @@ it('--force uses the default Incus host when host environment is unset', functio
     $previousHost = getenv('ORBIT_E2E_HOST');
     $previousProvider = getenv('ORBIT_E2E_PROVIDER');
     $manifest = [
-        ['role' => 'control', 'name' => 'orbit-template-prepared-control', 'snapshot' => 'clean-prepared-operator_gateway_app-dev_app-prod_agent'],
-        ['role' => 'gateway', 'name' => 'orbit-template-prepared-gateway', 'snapshot' => 'clean-prepared-operator_gateway_app-dev_app-prod_agent'],
-        ['role' => 'dev', 'name' => 'orbit-template-prepared-dev', 'snapshot' => 'clean-prepared-operator_gateway_app-dev_app-prod_agent'],
-        ['role' => 'prod', 'name' => 'orbit-template-prepared-prod', 'snapshot' => 'clean-prepared-operator_gateway_app-dev_app-prod_agent'],
-        ['role' => 'agent', 'name' => 'orbit-template-prepared-agent', 'snapshot' => 'clean-prepared-operator_gateway_app-dev_app-prod_agent'],
+        ['role' => 'control', 'name' => 'orbit-template-operator-base', 'snapshot' => 'clean-operator_gateway_app-dev_app-prod_agent-base'],
+        ['role' => 'gateway', 'name' => 'orbit-template-gateway-base', 'snapshot' => 'clean-operator_gateway_app-dev_app-prod_agent-base'],
+        ['role' => 'dev', 'name' => 'orbit-template-app-dev-base', 'snapshot' => 'clean-operator_gateway_app-dev_app-prod_agent-base'],
+        ['role' => 'prod', 'name' => 'orbit-template-app-prod-base', 'snapshot' => 'clean-operator_gateway_app-dev_app-prod_agent-base'],
+        ['role' => 'agent', 'name' => 'orbit-template-agent-base', 'snapshot' => 'clean-operator_gateway_app-dev_app-prod_agent-base'],
     ];
     $selectedHost = null;
 

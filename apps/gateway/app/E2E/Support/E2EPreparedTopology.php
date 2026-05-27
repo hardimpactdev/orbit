@@ -59,6 +59,104 @@ final readonly class E2EPreparedTopology
         return "Prepared topology does not support [{$kind->value}]. Supported kinds are ".self::supportedKindsForHelp().'.';
     }
 
+    /**
+     * @return list<string>
+     */
+    public static function artifactRoles(): array
+    {
+        return ['operator', 'gateway', 'app-dev', 'app-prod', 'agent'];
+    }
+
+    /**
+     * @return list<string>
+     */
+    public static function parseArtifactRoles(string $roles): array
+    {
+        $selected = [];
+
+        foreach (explode(',', $roles) as $role) {
+            $role = trim($role);
+
+            if ($role === '') {
+                continue;
+            }
+
+            $canonical = self::canonicalArtifactRole($role);
+
+            if ($canonical === null) {
+                throw new \InvalidArgumentException("Unsupported prepared artifact role [{$role}]. Supported roles are ".implode(', ', self::artifactRoles()).'.');
+            }
+
+            if (in_array($canonical, $selected, true)) {
+                continue;
+            }
+
+            $selected[] = $canonical;
+        }
+
+        if ($selected === []) {
+            throw new \InvalidArgumentException('At least one prepared artifact role must be provided.');
+        }
+
+        return $selected;
+    }
+
+    public static function dockerRoleForArtifactRole(string $role): string
+    {
+        $role = self::requireArtifactRole($role);
+
+        return match ($role) {
+            'app-dev' => 'dev',
+            'app-prod' => 'prod',
+            default => $role,
+        };
+    }
+
+    public static function incusRoleForArtifactRole(string $role): string
+    {
+        $role = self::requireArtifactRole($role);
+
+        return match ($role) {
+            'operator' => 'control',
+            'app-dev' => 'dev',
+            'app-prod' => 'prod',
+            default => $role,
+        };
+    }
+
+    public static function artifactRoleForDockerRole(string $role): string
+    {
+        return self::requireArtifactRole($role);
+    }
+
+    public static function artifactRoleForIncusRole(string $role): string
+    {
+        return self::requireArtifactRole($role);
+    }
+
+    private static function requireArtifactRole(string $role): string
+    {
+        $canonical = self::canonicalArtifactRole($role);
+
+        if ($canonical === null) {
+            throw new \InvalidArgumentException("Unsupported prepared artifact role [{$role}]. Supported roles are ".implode(', ', self::artifactRoles()).'.');
+        }
+
+        return $canonical;
+    }
+
+    private static function canonicalArtifactRole(string $role): ?string
+    {
+        return match (strtolower(trim($role))) {
+            'operator', 'control' => 'operator',
+            'gateway' => 'gateway',
+            'app-dev', 'appdev', 'dev' => 'app-dev',
+            'app-prod', 'appprod', 'prod' => 'app-prod',
+            'agent' => 'agent',
+            default => null,
+        };
+    }
+
     private static function usesOperatorGatewayBase(E2ETopologyKind $kind): bool
     {
         $currentRoleKinds = [

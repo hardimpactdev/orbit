@@ -30,7 +30,12 @@ final readonly class IncusTopologyTemplate
 
     public static function templateName(E2ETopologyKind $kind, string $role): string
     {
-        return E2ETopologyArtifactNamespace::incusTemplateName("orbit-template-{$role}");
+        return E2ETopologyArtifactNamespace::incusTemplateName('orbit-template-'.self::artifactRole($role));
+    }
+
+    public static function baseTemplateName(E2ETopologyKind $kind, string $role): string
+    {
+        return E2ETopologyArtifactNamespace::incusBaseTemplateName('orbit-template-'.self::artifactRole($role));
     }
 
     public static function snapshotName(E2ETopologyKind $kind): string
@@ -38,12 +43,31 @@ final readonly class IncusTopologyTemplate
         return E2ETopologyArtifactNamespace::incusSnapshotName($kind);
     }
 
-    /**
-     * @return list<string>
-     */
-    public static function snapshotCandidates(E2ETopologyKind $kind): array
+    public static function baseSnapshotName(E2ETopologyKind $kind): string
     {
-        return [self::snapshotName(E2EPreparedTopology::incusSourceKindFor($kind))];
+        return E2ETopologyArtifactNamespace::incusBaseSnapshotName($kind);
+    }
+
+    /**
+     * @return list<array{template: string, snapshot: string}>
+     */
+    public static function snapshotCandidates(E2ETopologyKind $kind, string $role): array
+    {
+        $sourceKind = E2EPreparedTopology::incusSourceKindFor($kind);
+        $candidate = [
+            'template' => self::templateName($sourceKind, $role),
+            'snapshot' => self::snapshotName($sourceKind),
+        ];
+        $baseCandidate = [
+            'template' => self::baseTemplateName($sourceKind, $role),
+            'snapshot' => self::baseSnapshotName($sourceKind),
+        ];
+
+        if ($candidate === $baseCandidate) {
+            return [$candidate];
+        }
+
+        return [$candidate, $baseCandidate];
     }
 
     public static function cloneName(string $runId, string $role): string
@@ -56,12 +80,9 @@ final readonly class IncusTopologyTemplate
         $checks = [];
 
         foreach (self::rolesFor($kind) as $role) {
-            $template = self::templateName($kind, $role);
-            $checks[] = 'incus info '.escapeshellarg($template).' >/dev/null 2>&1';
-
             $snapshotChecks = array_map(
-                static fn (string $snapshot): string => self::snapshotExistsCommand($template, $snapshot),
-                self::snapshotCandidates($kind),
+                static fn (array $candidate): string => 'incus info '.escapeshellarg($candidate['template']).' >/dev/null 2>&1 && '.self::snapshotExistsCommand($candidate['template'], $candidate['snapshot']),
+                self::snapshotCandidates($kind, $role),
             );
 
             $checks[] = '('.implode(' || ', $snapshotChecks).')';
@@ -125,8 +146,8 @@ final readonly class IncusTopologyTemplate
         $index = 0;
         foreach ($roles as $role) {
             $index++;
-            $snapshot = self::resolveSnapshotName($host, $kind, $role);
-            $template = escapeshellarg(self::templateName($kind, $role)."/{$snapshot}");
+            $source = self::resolveSnapshotSource($host, $kind, $role);
+            $template = escapeshellarg("{$source['template']}/{$source['snapshot']}");
             $clone = escapeshellarg(self::cloneName($runId, $role));
             $macAddress = escapeshellarg(self::cloneMacAddress($runId, $role));
 
@@ -164,19 +185,33 @@ final readonly class IncusTopologyTemplate
         return '00:16:3e:'.implode(':', str_split($hash, 2));
     }
 
-    private static function resolveSnapshotName(IncusHost $host, E2ETopologyKind $kind, string $role): string
+    private static function artifactRole(string $role): string
     {
-        $template = self::templateName($kind, $role);
+        return match ($role) {
+            'control' => 'operator',
+            'dev' => 'app-dev',
+            'prod' => 'app-prod',
+            default => $role,
+        };
+    }
 
-        foreach (self::snapshotCandidates($kind) as $snapshot) {
-            $result = $host->run(self::snapshotExistsCommand($template, $snapshot), timeoutSeconds: 30);
+    /**
+     * @return array{template: string, snapshot: string}
+     */
+    private static function resolveSnapshotSource(IncusHost $host, E2ETopologyKind $kind, string $role): array
+    {
+        foreach (self::snapshotCandidates($kind, $role) as $candidate) {
+            $result = $host->run(
+                'incus info '.escapeshellarg($candidate['template']).' >/dev/null 2>&1 && '.self::snapshotExistsCommand($candidate['template'], $candidate['snapshot']),
+                timeoutSeconds: 30,
+            );
 
             if ($result->successful()) {
-                return $snapshot;
+                return $candidate;
             }
         }
 
-        return self::snapshotName($kind);
+        return self::snapshotCandidates($kind, $role)[0];
     }
 
     private static function snapshotExistsCommand(string $template, string $snapshot): string

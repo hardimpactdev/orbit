@@ -93,7 +93,10 @@ Required prepared sources for feature lanes:
 - Docker role images for the composable gateway-backed set: operator and
   gateway from `operator_gateway`; app-dev, app-prod, and agent from
   `operator_gateway_app-dev_app-prod_agent`. App-dev carries database and Redis
-  registry state by default, and app-prod carries the ingress role.
+  registry state by default, and app-prod carries the ingress role. Canonical
+  base role images are `orbit-e2e:operator_base`, `orbit-e2e:gateway_base`,
+  `orbit-e2e:app-dev_base`, `orbit-e2e:app-prod_base`, and
+  `orbit-e2e:agent_base`.
 - Docker runner support images: `orbit-runtime:<namespace>-current`,
   `caddy:2-alpine`, and every FrankenPHP image supported by
   `PhpRuntimeCatalog` for app/workspace topologies.
@@ -115,12 +118,23 @@ Docker uses a lockfile-keyed volume or the optional
 `ORBIT_E2E_DOCKER_COMPOSER_CACHE` bind mount. Incus stages the local
 `~/.cache/orbit-e2e/composer` cache into the provisioning bundle when present.
 
-Prepared topology artifacts use an explicit namespace by default. Docker
-topology images are tagged with `prepared-...`, runtime images use
-`prepared-current`, and Incus template snapshots use `clean-prepared-...` on
-`orbit-template-prepared-*` template instances. Set
-`ORBIT_E2E_TOPOLOGY_ARTIFACT_NAMESPACE=<slug>` to isolate a branch, benchmark, or
-worktree run without colliding with another prepared run.
+Prepared topology artifacts use an explicit namespace by default. Docker role
+images use `orbit-e2e:<role>_<artifact-set>`, where the shared artifact set is
+`base`. Set `ORBIT_E2E_TOPOLOGY_ARTIFACT_NAMESPACE=<slug>` only for branch,
+benchmark, or worktree role-image overrides. The Docker provider resolves each
+role independently by trying `orbit-e2e:<role>_<slug>` first, then
+`orbit-e2e:<role>_base`. Incus role templates use
+`orbit-template-<role>-<artifact-set>` with snapshots named
+`clean-<source-topology>-<artifact-set>` and the same per-role fallback to the
+`base` artifact set. Runtime support images continue to use
+`<namespace>-current`.
+
+Custom artifact preparation must declare intent. Docker accepts
+`--roles=operator,gateway,app-dev,app-prod,agent` to build only selected role
+images, or `--all-roles` for an explicit full namespaced role set. Incus
+acquisition has the same per-role fallback, but forced targeted Incus rebakes
+are blocked until the builder can refresh only selected VM templates without
+mutating the rest of the artifact set.
 
 ## Contract
 

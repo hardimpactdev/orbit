@@ -8,6 +8,7 @@ use App\E2E\Support\DockerTopologyBuilder;
 use App\E2E\Support\DockerTopologyProvider;
 use App\E2E\Support\E2EConfig;
 use App\E2E\Support\E2EPreparedTopology;
+use App\E2E\Support\E2ETopologyArtifactNamespace;
 use App\E2E\Support\E2ETopologyKind;
 use App\Services\E2E\DockerImageDistributor;
 use App\Services\Runtime\OrbitCaddyContainer;
@@ -15,6 +16,7 @@ use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Process;
+use InvalidArgumentException;
 use Throwable;
 
 #[Signature('e2e:prepare-docker-hosts
@@ -22,6 +24,8 @@ use Throwable;
     {--force : Ensure Docker runtime and topology images exist on the build host and sync them to runners}
     {--runtime-only : Prepare only the Docker runtime image}
     {--topology-only : Prepare only the Docker prepared topology images}
+    {--roles= : Comma-separated prepared artifact roles to build (operator,gateway,app-dev,app-prod,agent)}
+    {--all-roles : Explicitly build every prepared artifact role when a custom namespace is set}
     {--json : Output as JSON}')]
 #[Description('Prepare Docker E2E images across all configured Docker hosts')]
 class E2EPrepareDockerHostsCommand extends Command
@@ -46,6 +50,12 @@ class E2EPrepareDockerHostsCommand extends Command
             return $this->failCommand(E2EPreparedTopology::unsupportedKindMessage($kind));
         }
 
+        try {
+            $artifactRoles = $this->selectedArtifactRoles(includeTopology: ! (bool) $this->option('runtime-only'));
+        } catch (InvalidArgumentException $exception) {
+            return $this->failCommand($exception->getMessage());
+        }
+
         $config = E2EConfig::fromEnvironment();
 
         if (count($config->dockerImageBuildHosts) > 1) {
@@ -56,7 +66,12 @@ class E2EPrepareDockerHostsCommand extends Command
         $buildHosts = $this->buildHosts($config, $hosts);
         $buildHost = $buildHosts[0] ?? 'local';
         $runtimeStep = $this->runtimeStep();
-        $topologySteps = $this->topologySteps($kind);
+        $topologySteps = $this->topologySteps($kind, $artifactRoles);
+
+        if (! (bool) $this->option('runtime-only') && $artifactRoles !== null && $topologySteps === []) {
+            return $this->failCommand("Selected roles are not prepared by Docker topology source [{$kind->value}].");
+        }
+
         $steps = array_values(array_filter([
             $runtimeStep,
             ...$topologySteps,
@@ -181,9 +196,10 @@ class E2EPrepareDockerHostsCommand extends Command
     }
 
     /**
+     * @param  list<string>|null  $artifactRoles
      * @return list<array{name: string, command: string, images: list<array{role: string, image: string}>}>
      */
-    private function topologySteps(E2ETopologyKind $kind): array
+    private function topologySteps(E2ETopologyKind $kind, ?array $artifactRoles = null): array
     {
         if ((bool) $this->option('runtime-only')) {
             return [];
@@ -193,10 +209,11 @@ class E2EPrepareDockerHostsCommand extends Command
         $images = [];
 
         foreach ($buildKinds as $buildKind) {
-            $roles = array_values(array_filter(
-                DockerTopologyBuilder::rolesFor($buildKind),
-                fn (string $role): bool => DockerTopologyBuilder::ownsImage($buildKind, $role),
-            ));
+            $roles = $this->ownedTopologyRolesFor($buildKind, $artifactRoles);
+
+            if ($roles === []) {
+                continue;
+            }
 
             $images = [
                 ...$images,
@@ -210,11 +227,85 @@ class E2EPrepareDockerHostsCommand extends Command
             ];
         }
 
+        if ($images === []) {
+            return [];
+        }
+
         return [[
             'name' => 'topology:'.$this->topologyStepName($buildKinds),
-            'command' => sprintf('composer e2e:prepare-docker-topology -- --force %s', escapeshellarg($kind->value)),
+            'command' => sprintf(
+                'composer e2e:prepare-docker-topology -- --force%s%s %s',
+                $artifactRoles !== null ? ' --roles='.implode(',', $artifactRoles) : '',
+                (bool) $this->option('all-roles') ? ' --all-roles' : '',
+                escapeshellarg($kind->value),
+            ),
             'images' => $images,
         ]];
+    }
+
+    /**
+     * @param  list<string>|null  $artifactRoles
+     * @return list<string>
+     */
+    private function ownedTopologyRolesFor(E2ETopologyKind $kind, ?array $artifactRoles): array
+    {
+        $roles = array_values(array_filter(
+            DockerTopologyBuilder::rolesFor($kind),
+            fn (string $role): bool => DockerTopologyBuilder::ownsImage($kind, $role),
+        ));
+
+        if ($artifactRoles === null) {
+            return $roles;
+        }
+
+        return array_values(array_filter(
+            $roles,
+            fn (string $role): bool => in_array(E2EPreparedTopology::artifactRoleForDockerRole($role), $artifactRoles, true),
+        ));
+    }
+
+    /**
+     * @return list<string>|null
+     */
+    private function selectedArtifactRoles(bool $includeTopology): ?array
+    {
+        $roles = $this->stringOption('roles');
+        $allRoles = (bool) $this->option('all-roles');
+
+        if ($roles !== null && $allRoles) {
+            throw new InvalidArgumentException('Choose either --roles or --all-roles, not both.');
+        }
+
+        if (! $includeTopology && $roles !== null) {
+            throw new InvalidArgumentException('--roles can only be used when topology images are prepared.');
+        }
+
+        if (! $includeTopology && $allRoles) {
+            throw new InvalidArgumentException('--all-roles can only be used when topology images are prepared.');
+        }
+
+        if ($includeTopology && E2ETopologyArtifactNamespace::hasCustomArtifactSet() && $roles === null && ! $allRoles) {
+            throw new InvalidArgumentException('Set --roles or --all-roles when ORBIT_E2E_TOPOLOGY_ARTIFACT_NAMESPACE is set.');
+        }
+
+        if ($roles === null) {
+            return null;
+        }
+
+        return E2EPreparedTopology::parseArtifactRoles($roles);
+    }
+
+    private function stringOption(string $name): ?string
+    {
+        $value = $this->option($name);
+
+        if (! is_string($value)) {
+            return null;
+        }
+
+        $value = trim($value);
+
+        return $value === '' ? null : $value;
     }
 
     /**

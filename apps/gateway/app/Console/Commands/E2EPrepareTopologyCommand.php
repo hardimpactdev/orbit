@@ -7,6 +7,7 @@ namespace App\Console\Commands;
 use App\E2E\Support\E2EConfig;
 use App\E2E\Support\E2EPhaseTimer;
 use App\E2E\Support\E2EPreparedTopology;
+use App\E2E\Support\E2ETopologyArtifactNamespace;
 use App\E2E\Support\E2ETopologyKind;
 use App\E2E\Support\IncusHost;
 use App\E2E\Support\IncusHostPool;
@@ -17,6 +18,7 @@ use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Process;
+use InvalidArgumentException;
 use RuntimeException;
 
 #[Signature('e2e:prepare-topology
@@ -25,6 +27,8 @@ use RuntimeException;
     {--branch= : Build the source archive from the named git ref via git archive}
     {--source-archive= : Use this pre-built source archive instead of tarring the current checkout}
     {--composer-cache= : Local composer cache directory to ship in the bundle (default ~/.cache/orbit-e2e/composer when present)}
+    {--roles= : Comma-separated prepared artifact roles to build (operator,gateway,app-dev,app-prod,agent)}
+    {--all-roles : Explicitly build every prepared artifact role when a custom namespace is set}
     {--json : Output as JSON}')]
 #[Description('Prepare Incus topology templates used by ephemeral E2E tests')]
 class E2EPrepareTopologyCommand extends Command
@@ -65,9 +69,20 @@ class E2EPrepareTopologyCommand extends Command
             return $this->failValidation(E2EPreparedTopology::unsupportedKindMessage($kind));
         }
 
+        try {
+            $artifactRoles = $this->selectedArtifactRoles();
+        } catch (InvalidArgumentException $exception) {
+            return $this->failValidation($exception->getMessage());
+        }
+
         $buildKind = E2EPreparedTopology::incusSourceKindFor($kind);
         $requestedRoles = IncusTopologyTemplate::rolesFor($kind);
-        $sourceRoles = IncusTopologyTemplate::rolesFor($buildKind);
+        $sourceRoles = $this->sourceRolesFor($buildKind, $artifactRoles);
+
+        if ($sourceRoles === []) {
+            return $this->failValidation("Selected roles are not prepared by Incus topology source [{$kind->value}].");
+        }
+
         $templates = [];
 
         foreach ($sourceRoles as $role) {
@@ -111,6 +126,10 @@ class E2EPrepareTopologyCommand extends Command
             }
 
             return self::SUCCESS;
+        }
+
+        if ($artifactRoles !== null) {
+            return $this->failCommand('Targeted Incus role artifact preparation is not implemented yet. Use --all-roles for an explicit full artifact-set rebuild, or leave ORBIT_E2E_TOPOLOGY_ARTIFACT_NAMESPACE empty to rebuild the shared base set.');
         }
 
         $hostPool = IncusHostPool::fromEnvironment($config);
@@ -339,6 +358,47 @@ class E2EPrepareTopologyCommand extends Command
         $value = trim($value);
 
         return $value === '' ? null : $value;
+    }
+
+    /**
+     * @return list<string>|null
+     */
+    private function selectedArtifactRoles(): ?array
+    {
+        $roles = $this->stringOption('roles');
+        $allRoles = (bool) $this->option('all-roles');
+
+        if ($roles !== null && $allRoles) {
+            throw new InvalidArgumentException('Choose either --roles or --all-roles, not both.');
+        }
+
+        if (E2ETopologyArtifactNamespace::hasCustomArtifactSet() && $roles === null && ! $allRoles) {
+            throw new InvalidArgumentException('Set --roles or --all-roles when ORBIT_E2E_TOPOLOGY_ARTIFACT_NAMESPACE is set.');
+        }
+
+        if ($roles === null) {
+            return null;
+        }
+
+        return E2EPreparedTopology::parseArtifactRoles($roles);
+    }
+
+    /**
+     * @param  list<string>|null  $artifactRoles
+     * @return list<string>
+     */
+    private function sourceRolesFor(E2ETopologyKind $buildKind, ?array $artifactRoles): array
+    {
+        $roles = IncusTopologyTemplate::rolesFor($buildKind);
+
+        if ($artifactRoles === null) {
+            return $roles;
+        }
+
+        return array_values(array_filter(
+            $roles,
+            fn (string $role): bool => in_array(E2EPreparedTopology::artifactRoleForIncusRole($role), $artifactRoles, true),
+        ));
     }
 
     private function failValidation(string $message): int

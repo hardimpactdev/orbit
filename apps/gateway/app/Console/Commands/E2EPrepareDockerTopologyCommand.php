@@ -7,16 +7,20 @@ namespace App\Console\Commands;
 use App\E2E\Support\DockerTopologyBuilder;
 use App\E2E\Support\E2EConfig;
 use App\E2E\Support\E2EPreparedTopology;
+use App\E2E\Support\E2ETopologyArtifactNamespace;
 use App\E2E\Support\E2ETopologyKind;
 use Closure;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
+use InvalidArgumentException;
 use RuntimeException;
 
 #[Signature('e2e:prepare-docker-topology
     {kind : Topology kind to prepare (operator|operator_gateway|operator_gateway_app-dev|operator_gateway_app-dev_app-prod|operator_gateway_agent|operator_gateway_app-dev_app-prod_agent|operator_gateway_app-prod_ingress)}
     {--force : Build the Docker prepared per-role images}
+    {--roles= : Comma-separated prepared artifact roles to build (operator,gateway,app-dev,app-prod,agent)}
+    {--all-roles : Explicitly build every prepared artifact role when a custom namespace is set}
     {--json : Output as JSON}')]
 #[Description('Prepare per-role Docker images used by the Docker prepared topology provider')]
 class E2EPrepareDockerTopologyCommand extends Command
@@ -50,7 +54,17 @@ class E2EPrepareDockerTopologyCommand extends Command
             return $this->failValidation(E2EPreparedTopology::unsupportedKindMessage($kind));
         }
 
-        $images = $this->imagesFor($kind);
+        try {
+            $artifactRoles = $this->selectedArtifactRoles();
+        } catch (InvalidArgumentException $exception) {
+            return $this->failValidation($exception->getMessage());
+        }
+
+        $images = $this->imagesFor($kind, $artifactRoles);
+
+        if ($images === []) {
+            return $this->failValidation("Selected roles are not prepared by Docker topology source [{$kind->value}].");
+        }
 
         if (! (bool) $this->option('force')) {
             $result = [
@@ -82,8 +96,12 @@ class E2EPrepareDockerTopologyCommand extends Command
 
             $manifest = [];
 
-            foreach ($this->buildKindsFor($kind) as $buildKind) {
-                array_push($manifest, ...$builder->build($buildKind));
+            foreach ($this->buildKindsFor($kind, $artifactRoles) as $buildKind) {
+                $entries = $artifactRoles === null
+                    ? $builder->build($buildKind)
+                    : $builder->build($buildKind, 'dns-alias', $artifactRoles);
+
+                array_push($manifest, ...$entries);
             }
         } catch (RuntimeException $exception) {
             return $this->failCommand($exception->getMessage());
@@ -112,17 +130,15 @@ class E2EPrepareDockerTopologyCommand extends Command
     }
 
     /**
+     * @param  list<string>|null  $artifactRoles
      * @return list<array{role: string, image: string}>
      */
-    private function imagesFor(E2ETopologyKind $kind): array
+    private function imagesFor(E2ETopologyKind $kind, ?array $artifactRoles = null): array
     {
         $images = [];
 
-        foreach ($this->buildKindsFor($kind) as $buildKind) {
-            $roles = array_values(array_filter(
-                DockerTopologyBuilder::rolesFor($buildKind),
-                fn (string $role): bool => DockerTopologyBuilder::ownsImage($buildKind, $role),
-            ));
+        foreach ($this->buildKindsFor($kind, $artifactRoles) as $buildKind) {
+            $roles = $this->ownedRolesFor($buildKind, $artifactRoles);
 
             array_push($images, ...array_map(
                 fn (string $role): array => [
@@ -137,11 +153,78 @@ class E2EPrepareDockerTopologyCommand extends Command
     }
 
     /**
+     * @param  list<string>|null  $artifactRoles
      * @return list<E2ETopologyKind>
      */
-    private function buildKindsFor(E2ETopologyKind $kind): array
+    private function buildKindsFor(E2ETopologyKind $kind, ?array $artifactRoles = null): array
     {
-        return E2EPreparedTopology::dockerArtifactSourceKindsFor($kind);
+        $buildKinds = E2EPreparedTopology::dockerArtifactSourceKindsFor($kind);
+
+        if ($artifactRoles === null) {
+            return $buildKinds;
+        }
+
+        return array_values(array_filter(
+            $buildKinds,
+            fn (E2ETopologyKind $buildKind): bool => $this->ownedRolesFor($buildKind, $artifactRoles) !== [],
+        ));
+    }
+
+    /**
+     * @param  list<string>|null  $artifactRoles
+     * @return list<string>
+     */
+    private function ownedRolesFor(E2ETopologyKind $kind, ?array $artifactRoles): array
+    {
+        $roles = array_values(array_filter(
+            DockerTopologyBuilder::rolesFor($kind),
+            fn (string $role): bool => DockerTopologyBuilder::ownsImage($kind, $role),
+        ));
+
+        if ($artifactRoles === null) {
+            return $roles;
+        }
+
+        return array_values(array_filter(
+            $roles,
+            fn (string $role): bool => in_array(E2EPreparedTopology::artifactRoleForDockerRole($role), $artifactRoles, true),
+        ));
+    }
+
+    /**
+     * @return list<string>|null
+     */
+    private function selectedArtifactRoles(): ?array
+    {
+        $roles = $this->stringOption('roles');
+        $allRoles = (bool) $this->option('all-roles');
+
+        if ($roles !== null && $allRoles) {
+            throw new InvalidArgumentException('Choose either --roles or --all-roles, not both.');
+        }
+
+        if (E2ETopologyArtifactNamespace::hasCustomArtifactSet() && $roles === null && ! $allRoles) {
+            throw new InvalidArgumentException('Set --roles or --all-roles when ORBIT_E2E_TOPOLOGY_ARTIFACT_NAMESPACE is set.');
+        }
+
+        if ($roles === null) {
+            return null;
+        }
+
+        return E2EPreparedTopology::parseArtifactRoles($roles);
+    }
+
+    private function stringOption(string $name): ?string
+    {
+        $value = $this->option($name);
+
+        if (! is_string($value)) {
+            return null;
+        }
+
+        $value = trim($value);
+
+        return $value === '' ? null : $value;
     }
 
     private function failValidation(string $message): int

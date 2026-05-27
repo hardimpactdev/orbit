@@ -44,7 +44,7 @@ function mockIncusTopologyCurrentSnapshots(IncusHost $host, int $count): void
     $host->shouldReceive('run')
         ->times($count)
         ->withArgs(fn (string $command, int $timeoutSeconds): bool => $timeoutSeconds === 30
-            && str_contains($command, '/snapshots/clean-prepared-'))
+            && str_contains($command, '/snapshots/clean-'))
         ->andReturn(successfulProcessResult());
 }
 
@@ -89,15 +89,15 @@ it('maps each topology kind to expected roles', function (): void {
 
 it('generates correct template and clone names', function (): void {
     expect(IncusTopologyTemplate::templateName(E2ETopologyKind::ControlGateway, 'gateway'))
-        ->toBe('orbit-template-prepared-gateway')
+        ->toBe('orbit-template-gateway-base')
         ->and(IncusTopologyTemplate::templateName(E2ETopologyKind::OperatorGatewayAppprodIngress, 'control'))
-        ->toBe('orbit-template-prepared-control')
+        ->toBe('orbit-template-operator-base')
         ->and(IncusTopologyTemplate::templateName(E2ETopologyKind::OperatorGatewayAppprodIngress, 'gateway'))
-        ->toBe('orbit-template-prepared-gateway')
+        ->toBe('orbit-template-gateway-base')
         ->and(IncusTopologyTemplate::templateName(E2ETopologyKind::OperatorGatewayAppprodIngress, 'prod'))
-        ->toBe('orbit-template-prepared-prod')
+        ->toBe('orbit-template-app-prod-base')
         ->and(IncusTopologyTemplate::snapshotName(E2ETopologyKind::ControlGateway))
-        ->toBe('clean-prepared-operator_gateway')
+        ->toBe('clean-operator_gateway-base')
         ->and(IncusTopologyTemplate::cloneName('abc123', 'control'))
         ->toBe('orbit-e2e-abc123-control');
 });
@@ -108,12 +108,12 @@ it('returns true when all template instances and clean snapshots exist', functio
         ->once()
         ->withArgs(function (string $command, int $timeoutSeconds): bool {
             return $timeoutSeconds === 30
-                && str_contains($command, 'orbit-template-prepared-control')
-                && str_contains($command, 'orbit-template-prepared-gateway')
-                && str_contains($command, 'orbit-template-prepared-dev')
-                && str_contains($command, '/1.0/instances/orbit-template-prepared-control/snapshots/clean-prepared-operator_gateway_app-dev_app-prod_agent')
+                && str_contains($command, 'orbit-template-operator-base')
+                && str_contains($command, 'orbit-template-gateway-base')
+                && str_contains($command, 'orbit-template-app-dev-base')
+                && str_contains($command, '/1.0/instances/orbit-template-operator-base/snapshots/clean-operator_gateway_app-dev_app-prod_agent-base')
                 && ! str_contains($command, 'grep -q')
-                && substr_count($command, '/snapshots/clean-prepared-') === 3;
+                && substr_count($command, '/snapshots/clean-operator_gateway_app-dev_app-prod_agent-base') === 3;
         })
         ->andReturn(successfulProcessResult());
 
@@ -125,14 +125,25 @@ it('checks prepared snapshots by exact snapshot path instead of prefix matching'
     $host->shouldReceive('run')
         ->once()
         ->withArgs(function (string $command): bool {
-            return str_contains($command, "incus query '/1.0/instances/orbit-template-prepared-control/snapshots/clean-prepared-operator_gateway_app-dev_app-prod_agent' >/dev/null 2>&1")
-                && str_contains($command, "incus query '/1.0/instances/orbit-template-prepared-gateway/snapshots/clean-prepared-operator_gateway_app-dev_app-prod_agent' >/dev/null 2>&1")
-                && ! str_contains($command, 'incus info \'orbit-template-prepared-control\' --show-log=false')
+            return str_contains($command, "incus query '/1.0/instances/orbit-template-operator-base/snapshots/clean-operator_gateway_app-dev_app-prod_agent-base' >/dev/null 2>&1")
+                && str_contains($command, "incus query '/1.0/instances/orbit-template-gateway-base/snapshots/clean-operator_gateway_app-dev_app-prod_agent-base' >/dev/null 2>&1")
+                && ! str_contains($command, 'incus info \'orbit-template-operator-base\' --show-log=false')
                 && ! str_contains($command, 'grep -q');
         })
         ->andReturn(failedProcessResult());
 
     expect(IncusTopologyTemplate::availableOn($host, E2ETopologyKind::ControlGateway))->toBeFalse();
+});
+
+it('uses artifact-set suffixes for branch-specific Incus templates and snapshots', function (): void {
+    withE2ETopologyEnvironment([
+        'ORBIT_E2E_TOPOLOGY_ARTIFACT_NAMESPACE' => 'Branch A/B',
+    ], function (): void {
+        expect(IncusTopologyTemplate::templateName(E2ETopologyKind::ControlGateway, 'gateway'))
+            ->toBe('orbit-template-gateway-branch-a-b')
+            ->and(IncusTopologyTemplate::snapshotName(E2ETopologyKind::ControlGateway))
+            ->toBe('clean-operator_gateway-branch-a-b');
+    });
 });
 
 it('returns false when any template instance is missing', function (): void {
@@ -386,7 +397,14 @@ it('builds a batch script that copies all roles in parallel, applies limits, the
 
     // Every role gets a backgrounded copy with a captured pid.
     foreach (['control', 'gateway', 'dev', 'prod'] as $role) {
-        expect($script)->toContain("incus copy 'orbit-template-prepared-{$role}/clean-prepared-operator_gateway_app-dev_app-prod_agent' 'orbit-e2e-runX-{$role}' &");
+        $artifactRole = match ($role) {
+            'control' => 'operator',
+            'dev' => 'app-dev',
+            'prod' => 'app-prod',
+            default => $role,
+        };
+
+        expect($script)->toContain("incus copy 'orbit-template-{$artifactRole}-base/clean-operator_gateway_app-dev_app-prod_agent-base' 'orbit-e2e-runX-{$role}' &");
         expect($script)->toContain("incus start 'orbit-e2e-runX-{$role}' &");
         expect($script)->toContain("incus config set 'orbit-e2e-runX-{$role}' limits.cpu='1' limits.memory='2GiB'");
         expect($script)->toContain("incus config device override 'orbit-e2e-runX-{$role}' eth0 hwaddr=");
@@ -398,12 +416,59 @@ it('builds a batch script that copies all roles in parallel, applies limits, the
     $firstStartPos = strpos($script, 'incus start');
     $firstIdentityPos = strpos($script, 'incus config device override');
     foreach (['control', 'gateway', 'dev', 'prod'] as $role) {
-        $copyPos = strpos($script, "incus copy 'orbit-template-prepared-{$role}/clean-prepared-operator_gateway_app-dev_app-prod_agent'");
+        $artifactRole = match ($role) {
+            'control' => 'operator',
+            'dev' => 'app-dev',
+            'prod' => 'app-prod',
+            default => $role,
+        };
+        $copyPos = strpos($script, "incus copy 'orbit-template-{$artifactRole}-base/clean-operator_gateway_app-dev_app-prod_agent-base'");
         expect($copyPos)->toBeLessThan($firstStartPos);
     }
 
     expect($firstIdentityPos)->toBeLessThan($firstStartPos);
     expect(strpos($script, "root size='16GiB'"))->toBeLessThan($firstStartPos);
+});
+
+it('falls back from branch-specific Incus snapshots to base snapshots per role', function (): void {
+    withE2ETopologyEnvironment([
+        'ORBIT_E2E_TOPOLOGY_ARTIFACT_NAMESPACE' => 'Branch A/B',
+    ], function (): void {
+        $config = makeIncusTopologyTemplateTestConfig();
+        $host = m::mock(IncusHost::class, [$config])->makePartial();
+        $checks = [];
+
+        $host->shouldReceive('run')
+            ->andReturnUsing(function (string $command) use (&$checks): ProcessResult {
+                if (str_contains($command, '/snapshots/')) {
+                    $checks[] = $command;
+                }
+
+                if (str_contains($command, 'orbit-template-agent-branch-a-b')) {
+                    return failedProcessResult();
+                }
+
+                return successfulProcessResult();
+            });
+
+        $script = IncusTopologyTemplate::buildBatchScript(
+            $host,
+            E2ETopologyKind::OperatorGatewayAgent,
+            'runBranch',
+            IncusTopologyTemplate::rolesFor(E2ETopologyKind::OperatorGatewayAgent),
+        );
+        $checkedSnapshots = implode("\n", $checks);
+
+        expect($script)
+            ->toContain("incus copy 'orbit-template-operator-branch-a-b/clean-operator_gateway_app-dev_app-prod_agent-branch-a-b'")
+            ->toContain("incus copy 'orbit-template-gateway-branch-a-b/clean-operator_gateway_app-dev_app-prod_agent-branch-a-b'")
+            ->toContain("incus copy 'orbit-template-agent-base/clean-operator_gateway_app-dev_app-prod_agent-base'")
+            ->not->toContain('orbit-template-operator-base/clean-operator_gateway_app-dev_app-prod_agent-base')
+            ->not->toContain('orbit-template-gateway-base/clean-operator_gateway_app-dev_app-prod_agent-base')
+            ->and($checkedSnapshots)
+            ->toContain('orbit-template-agent-branch-a-b/snapshots/clean-operator_gateway_app-dev_app-prod_agent-branch-a-b')
+            ->toContain('orbit-template-agent-base/snapshots/clean-operator_gateway_app-dev_app-prod_agent-base');
+    });
 });
 
 it('adds an explicit storage pool to topology clone copies when configured', function (): void {
@@ -418,8 +483,8 @@ it('adds an explicit storage pool to topology clone copies when configured', fun
         IncusTopologyTemplate::rolesFor(E2ETopologyKind::ControlGateway),
     );
 
-    expect($script)->toContain("incus copy 'orbit-template-prepared-control/clean-prepared-operator_gateway_app-dev_app-prod_agent' 'orbit-e2e-runZ-control' --storage 'orbit-e2e' &")
-        ->and($script)->toContain("incus copy 'orbit-template-prepared-gateway/clean-prepared-operator_gateway_app-dev_app-prod_agent' 'orbit-e2e-runZ-gateway' --storage 'orbit-e2e' &");
+    expect($script)->toContain("incus copy 'orbit-template-operator-base/clean-operator_gateway_app-dev_app-prod_agent-base' 'orbit-e2e-runZ-control' --storage 'orbit-e2e' &")
+        ->and($script)->toContain("incus copy 'orbit-template-gateway-base/clean-operator_gateway_app-dev_app-prod_agent-base' 'orbit-e2e-runZ-gateway' --storage 'orbit-e2e' &");
 });
 
 it('requires the requested Incus roles in the prepared full snapshot', function (): void {
@@ -429,16 +494,16 @@ it('requires the requested Incus roles in the prepared full snapshot', function 
         $host->shouldReceive('run')
             ->once()
             ->withArgs(fn (string $command, int $timeoutSeconds): bool => $timeoutSeconds === 30
-                && str_contains($command, "incus info 'orbit-template-prepared-control'")
-                && str_contains($command, "incus info 'orbit-template-prepared-gateway'")
-                && str_contains($command, "incus info 'orbit-template-prepared-dev'")
-                && str_contains($command, "incus info 'orbit-template-prepared-prod'")
-                && str_contains($command, "incus info 'orbit-template-prepared-agent'")
-                && str_contains($command, 'clean-prepared-operator_gateway_app-dev_app-prod_agent')
+                && str_contains($command, "incus info 'orbit-template-operator-base'")
+                && str_contains($command, "incus info 'orbit-template-gateway-base'")
+                && str_contains($command, "incus info 'orbit-template-app-dev-base'")
+                && str_contains($command, "incus info 'orbit-template-app-prod-base'")
+                && str_contains($command, "incus info 'orbit-template-agent-base'")
+                && str_contains($command, 'clean-operator_gateway_app-dev_app-prod_agent-base')
                 && ! str_contains($command, "incus image info 'orbit-base-ubuntu-26.04'")
-                && ! str_contains($command, "snapshots/clean-prepared-operator'")
-                && ! str_contains($command, "snapshots/clean-prepared-operator_gateway'")
-                && ! str_contains($command, 'orbit-template-prepared-ingress'))
+                && ! str_contains($command, "snapshots/clean-operator-base'")
+                && ! str_contains($command, "snapshots/clean-operator_gateway-base'")
+                && ! str_contains($command, 'orbit-template-ingress-base'))
             ->andReturn(successfulProcessResult());
 
         expect(IncusTopologyTemplate::availableOn($host, E2ETopologyKind::OperatorGatewayAppdevAppprodAgent))->toBeTrue();
@@ -469,16 +534,16 @@ it('clones only requested Incus roles from the prepared full snapshot', function
         $checkedSnapshots = implode("\n", $snapshotChecks);
 
         expect($script)
-            ->toContain("incus copy 'orbit-template-prepared-control/clean-prepared-operator_gateway_app-dev_app-prod_agent'")
-            ->toContain("incus copy 'orbit-template-prepared-gateway/clean-prepared-operator_gateway_app-dev_app-prod_agent'")
-            ->toContain("incus copy 'orbit-template-prepared-agent/clean-prepared-operator_gateway_app-dev_app-prod_agent'")
-            ->not->toContain('orbit-template-prepared-dev')
-            ->not->toContain('orbit-template-prepared-prod')
-            ->not->toContain("orbit-template-prepared-control/clean-prepared-operator'")
+            ->toContain("incus copy 'orbit-template-operator-base/clean-operator_gateway_app-dev_app-prod_agent-base'")
+            ->toContain("incus copy 'orbit-template-gateway-base/clean-operator_gateway_app-dev_app-prod_agent-base'")
+            ->toContain("incus copy 'orbit-template-agent-base/clean-operator_gateway_app-dev_app-prod_agent-base'")
+            ->not->toContain('orbit-template-app-dev-base')
+            ->not->toContain('orbit-template-app-prod-base')
+            ->not->toContain("orbit-template-operator-base/clean-operator-base'")
             ->and($checkedSnapshots)
-            ->toContain("snapshots/clean-prepared-operator_gateway_app-dev_app-prod_agent'")
-            ->not->toContain("snapshots/clean-prepared-operator_gateway'")
-            ->not->toContain("snapshots/clean-prepared-operator'");
+            ->toContain("snapshots/clean-operator_gateway_app-dev_app-prod_agent-base'")
+            ->not->toContain("snapshots/clean-operator_gateway-base'")
+            ->not->toContain("snapshots/clean-operator-base'");
     });
 });
 

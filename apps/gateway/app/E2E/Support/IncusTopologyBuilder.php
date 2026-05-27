@@ -371,6 +371,7 @@ class IncusTopologyBuilder
                     continue;
                 }
 
+                $names[] = E2ETopologyArtifactNamespace::incusTemplateName("orbit-template-{$role}");
                 $names[] = E2ETopologyArtifactNamespace::incusTemplateName("orbit-template-{$stage->value}-{$role}");
 
                 foreach ($stage->deprecatedValues() as $deprecatedValue) {
