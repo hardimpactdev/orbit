@@ -34,10 +34,10 @@ default). It builds one reusable base image plus prepared source snapshots:
 
 During topology preparation, Orbit tars the current checkout, ships it plus
 `bin/install-orbit` and `bin/e2e-provision-node` to the host, installs Orbit on
-the operator template from the base image, snapshots `clean-operator`, then
-starts that template and provisions the gateway through real `node:new`. After
-the gateway is seeded, app-dev, app-prod, and agent are provisioned in parallel
-before the five-role source snapshot is taken.
+the operator template from the base image, then provisions the gateway through
+real `node:new`. After the gateway is seeded, app-dev, app-prod, and agent are
+provisioned in parallel before the five-role source snapshot is taken. Feature
+tests clone only their requested roles from that full prepared source.
 
 App-dev carries database and Redis state by default. App-prod carries the
 ingress role by default.
@@ -45,9 +45,8 @@ ingress role by default.
 ## Source bundle and archives
 
 Source code lives in the per-run bundle, not in the base image. Forced topology
-preparation resumes from the highest complete canonical prerequisite snapshot
-set and rebuilds only later roles. Rebuild the base image only when the
-base image shape changes.
+preparation rebuilds the canonical full prepared source from the base image.
+Rebuild the base image only when the base image shape changes.
 
 The provisioning bundle stages host-local `orbit-runtime:current`,
 `caddy:2-alpine`, `4km3/dnsmasq:latest`, and

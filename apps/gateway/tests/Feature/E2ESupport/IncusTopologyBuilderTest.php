@@ -182,7 +182,7 @@ it('rebuilds prerequisites when no complete reusable base exists', function (): 
         ->and($deleted)->toBe(array_reverse($existing));
 });
 
-it('reuses the highest complete prior stage before rebuilding a larger topology', function (): void {
+it('does not reuse an operator-gateway stage when rebuilding the prepared full topology', function (): void {
     $config = E2EConfig::fromEnvironment();
     $deleted = [];
 
@@ -224,6 +224,8 @@ it('reuses the highest complete prior stage before rebuilding a larger topology'
             'orbit-template-prepared-agent',
             'orbit-template-prepared-prod',
             'orbit-template-prepared-dev',
+            'orbit-template-prepared-gateway',
+            'orbit-template-prepared-control',
         ]);
 });
 

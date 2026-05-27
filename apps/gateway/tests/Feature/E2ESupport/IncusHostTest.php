@@ -380,6 +380,39 @@ it('passes staged Docker image archives to the in-guest provisioner when present
         ->toContain('--operator-user=');
 });
 
+it('passes a staged Composer cache to the in-guest provisioner when present', function (): void {
+    $commands = [];
+    $host = new class(incusHostTestConfig(), $commands) extends IncusHost
+    {
+        /** @var list<string> */
+        private array $commands;
+
+        /**
+         * @param  list<string>  $commands
+         */
+        public function __construct(E2EConfig $config, array &$commands)
+        {
+            parent::__construct($config);
+            $this->commands = &$commands;
+        }
+
+        public function run(string $command, ?int $timeoutSeconds = null): ProcessResult
+        {
+            $this->commands[] = $command;
+
+            return incusHostTestProcessResult();
+        }
+    };
+
+    $host->provisionInstance('orbit-e2e-run-gateway', 'gateway', '/tmp/orbit-e2e-stage-test/orbit-e2e-bundle', 'orbit');
+
+    $commandOutput = implode("\n", $commands);
+
+    expect($commandOutput)
+        ->toContain("test -d '/tmp/orbit-e2e-stage-test/orbit-e2e-bundle/composer-cache'")
+        ->toContain('--composer-cache=/var/tmp/orbit-e2e-bundle/composer-cache');
+});
+
 it('does not pass the wg-easy image archive to non-gateway in-guest provisioning', function (): void {
     $commands = [];
     $host = new class(incusHostTestConfig(), $commands) extends IncusHost

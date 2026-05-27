@@ -119,12 +119,17 @@ class E2EPrepareDockerTopologyCommand extends Command
         $images = [];
 
         foreach ($this->buildKindsFor($kind) as $buildKind) {
+            $roles = array_values(array_filter(
+                DockerTopologyBuilder::rolesFor($buildKind),
+                fn (string $role): bool => DockerTopologyBuilder::ownsImage($buildKind, $role),
+            ));
+
             array_push($images, ...array_map(
                 fn (string $role): array => [
                     'role' => $role,
                     'image' => DockerTopologyBuilder::imageNameFor($buildKind, $role),
                 ],
-                DockerTopologyBuilder::rolesFor($buildKind),
+                $roles,
             ));
         }
 

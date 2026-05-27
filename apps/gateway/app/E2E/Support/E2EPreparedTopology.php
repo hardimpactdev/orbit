@@ -16,13 +16,7 @@ final readonly class E2EPreparedTopology
      */
     public static function artifactSourceKindsFor(E2ETopologyKind $kind): array
     {
-        $sourceKind = self::sourceKindFor($kind);
-
-        if ($sourceKind === E2ETopologyKind::OperatorGateway) {
-            return [E2ETopologyKind::Operator, E2ETopologyKind::OperatorGateway];
-        }
-
-        return [$sourceKind];
+        return [self::sourceKindFor($kind)];
     }
 
     /**
@@ -30,34 +24,25 @@ final readonly class E2EPreparedTopology
      */
     public static function dockerArtifactSourceKindsFor(E2ETopologyKind $kind): array
     {
-        return [$kind];
-    }
+        if ($kind === E2ETopologyKind::Operator || $kind === E2ETopologyKind::OperatorGateway) {
+            return [E2ETopologyKind::OperatorGateway];
+        }
 
-    public static function dockerSourceKindFor(E2ETopologyKind $kind): E2ETopologyKind
-    {
-        return $kind;
+        if (self::usesOperatorGatewayBase($kind)) {
+            return [E2ETopologyKind::OperatorGateway, E2ETopologyKind::OperatorGatewayAppdevAppprodAgent];
+        }
+
+        return [$kind];
     }
 
     public static function sourceKindFor(E2ETopologyKind $kind): E2ETopologyKind
     {
-        if ($kind === E2ETopologyKind::Operator) {
-            return E2ETopologyKind::Operator;
-        }
-
-        if (self::usesOperatorGatewayBase($kind)) {
-            return E2ETopologyKind::OperatorGateway;
-        }
-
-        return $kind;
+        return self::incusSourceKindFor($kind);
     }
 
     public static function incusSourceKindFor(E2ETopologyKind $kind): E2ETopologyKind
     {
-        if ($kind === E2ETopologyKind::Operator || $kind === E2ETopologyKind::OperatorGateway) {
-            return $kind;
-        }
-
-        if (self::usesOperatorGatewayBase($kind)) {
+        if ($kind === E2ETopologyKind::Operator || self::usesOperatorGatewayBase($kind)) {
             return E2ETopologyKind::OperatorGatewayAppdevAppprodAgent;
         }
 

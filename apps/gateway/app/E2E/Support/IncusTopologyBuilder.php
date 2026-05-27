@@ -111,6 +111,10 @@ class IncusTopologyBuilder
 
     private function resolveReusableBaseStage(E2ETopologyKind $kind): ?E2ETopologyKind
     {
+        if ($kind === E2ETopologyKind::OperatorGatewayAppdevAppprodAgent) {
+            return null;
+        }
+
         if ($kind === E2ETopologyKind::OperatorGatewayAppprodIngress) {
             return $this->stageSnapshotsAvailable(E2ETopologyKind::OperatorGateway)
                 ? E2ETopologyKind::OperatorGateway

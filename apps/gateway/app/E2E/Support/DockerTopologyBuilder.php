@@ -191,15 +191,28 @@ final readonly class DockerTopologyBuilder
 
     private static function imageNameForCanonicalRole(E2ETopologyKind $kind, string $role, string $mode): string
     {
-        $effectiveKind = self::imageKindFor($kind, $role);
-        $imageSlug = E2ETopologyArtifactNamespace::dockerImageSlug($effectiveKind->dockerImageSlug());
+        $imageSlug = E2ETopologyArtifactNamespace::dockerImageSlug(self::imageRoleSlug($role));
 
-        return "orbit-e2e-topology:{$imageSlug}-{$role}-{$mode}-current";
+        return "orbit-e2e-topology:{$imageSlug}-{$mode}-current";
+    }
+
+    private static function imageRoleSlug(string $role): string
+    {
+        return match ($role) {
+            'dev' => 'app-dev',
+            'prod' => 'app-prod',
+            default => $role,
+        };
     }
 
     private static function imageKindFor(E2ETopologyKind $kind, string $role): E2ETopologyKind
     {
-        return $kind;
+        return match ($role) {
+            'operator' => E2ETopologyKind::OperatorGateway,
+            'gateway' => E2ETopologyKind::OperatorGateway,
+            'dev', 'prod', 'agent' => E2ETopologyKind::OperatorGatewayAppdevAppprodAgent,
+            default => $kind,
+        };
     }
 
     private static function shouldCommitRole(E2ETopologyKind $kind, string $role): bool
@@ -761,36 +774,44 @@ SH;
         $this->seedRemoteShellAgentSshAccess($gateway, $containers);
         $this->waitForManagedSshHostKeys($gateway, $containers, $networkPlan);
 
+        $this->seedDownstreamRoles($gateway, $containers, $kind, $mode, $networkPlan, $gatewayEndpoint);
+    }
+
+    /**
+     * @param  array<string, DockerBuildInstance>  $containers
+     */
+    private function seedDownstreamRoles(DockerBuildInstance $gateway, array $containers, E2ETopologyKind $kind, string $mode, DockerTopologyNetworkPlan $networkPlan, string $gatewayEndpoint): void
+    {
+        $tasks = [];
+
         if (isset($containers['dev'])) {
             $host = $this->hostForRole('dev', $networkPlan, $mode);
             $hostKeyHost = $this->hostKeyHostOption('dev', $networkPlan, $mode);
             $wireGuardAddress = $this->wireGuardAddressForRole('dev', $networkPlan, $mode);
-
-            E2ECommand::ssh($gateway, 'orbit', $key, sprintf(
-                'cd /home/orbit/orbit && orbit orbit:internal:bake-app-node app-dev-1 --role=app-dev --host=%s%s --wireguard-address=%s --tld=test --gateway-endpoint=%s --user=orbit',
-                $host,
-                $hostKeyHost,
-                $wireGuardAddress,
-                $gatewayEndpoint,
-            ), timeoutSeconds: 120);
-            $this->refreshRuntimeSource($gateway->name(), 'gateway');
-            $this->seedAppdevDatabaseAndRedis($gateway, $key);
-            $this->refreshRuntimeSource($gateway->name(), 'gateway');
+            $tasks['dev'] = implode(' && ', [
+                'cd /home/orbit/orbit',
+                sprintf(
+                    'orbit orbit:internal:bake-app-node app-dev-1 --role=app-dev --host=%s%s --wireguard-address=%s --tld=test --gateway-endpoint=%s --user=orbit',
+                    $host,
+                    $hostKeyHost,
+                    $wireGuardAddress,
+                    $gatewayEndpoint,
+                ),
+                'orbit tinker --execute='.escapeshellarg(E2EPreparedTopologyRegistry::appdevDatabaseAndRedisPhp()),
+            ]);
         }
 
         if (isset($containers['ingress'])) {
             $host = $this->hostForRole('ingress', $networkPlan, $mode);
             $hostKeyHost = $this->hostKeyHostOption('ingress', $networkPlan, $mode);
             $wireGuardAddress = $this->wireGuardAddressForRole('ingress', $networkPlan, $mode);
-
-            E2ECommand::ssh($gateway, 'orbit', $key, sprintf(
+            $tasks['ingress'] = sprintf(
                 'cd /home/orbit/orbit && orbit orbit:internal:bake-ingress-node edge-1 --host=%s%s --wireguard-address=%s --gateway-endpoint=%s --user=orbit',
                 $host,
                 $hostKeyHost,
                 $wireGuardAddress,
                 $gatewayEndpoint,
-            ), timeoutSeconds: 120);
-            $this->refreshRuntimeSource($gateway->name(), 'gateway');
+            );
         }
 
         if (isset($containers['prod'])) {
@@ -798,16 +819,16 @@ SH;
             $hostKeyHost = $this->hostKeyHostOption('prod', $networkPlan, $mode);
             $wireGuardAddress = $this->wireGuardAddressForRole('prod', $networkPlan, $mode);
             $prodHostsIngress = E2EPreparedTopology::prodHostsIngressRole($kind) && ! isset($containers['ingress']);
+            $commands = ['cd /home/orbit/orbit'];
 
             if ($prodHostsIngress) {
-                E2ECommand::ssh($gateway, 'orbit', $key, sprintf(
-                    'cd /home/orbit/orbit && orbit orbit:internal:bake-ingress-node app-prod-1 --host=%s%s --wireguard-address=%s --gateway-endpoint=%s --user=orbit',
+                $commands[] = sprintf(
+                    'orbit orbit:internal:bake-ingress-node app-prod-1 --host=%s%s --wireguard-address=%s --gateway-endpoint=%s --user=orbit',
                     $host,
                     $hostKeyHost,
                     $wireGuardAddress,
                     $gatewayEndpoint,
-                ), timeoutSeconds: 120);
-                $this->refreshRuntimeSource($gateway->name(), 'gateway');
+                );
             }
 
             $ingressNode = match (true) {
@@ -817,31 +838,78 @@ SH;
             };
             $ingress = $ingressNode !== null ? " --ingress-node={$ingressNode}" : '';
 
-            E2ECommand::ssh($gateway, 'orbit', $key, sprintf(
-                'cd /home/orbit/orbit && orbit orbit:internal:bake-app-node app-prod-1 --role=app-prod --host=%s%s --wireguard-address=%s --gateway-endpoint=%s --user=orbit%s',
+            $commands[] = sprintf(
+                'orbit orbit:internal:bake-app-node app-prod-1 --role=app-prod --host=%s%s --wireguard-address=%s --gateway-endpoint=%s --user=orbit%s',
                 $host,
                 $hostKeyHost,
                 $wireGuardAddress,
                 $gatewayEndpoint,
                 $ingress,
-            ), timeoutSeconds: 120);
-            $this->refreshRuntimeSource($gateway->name(), 'gateway');
+            );
+            $tasks['prod'] = implode(' && ', $commands);
         }
 
         if (isset($containers['agent'])) {
             $host = $this->hostForRole('agent', $networkPlan, $mode);
             $hostKeyHost = $this->hostKeyHostOption('agent', $networkPlan, $mode);
             $wireGuardAddress = $this->wireGuardAddressForRole('agent', $networkPlan, $mode);
-
-            E2ECommand::ssh($gateway, 'orbit', $key, sprintf(
+            $tasks['agent'] = sprintf(
                 'cd /home/orbit/orbit && orbit orbit:internal:bake-agent-node agent-1 --host=%s%s --wireguard-address=%s --tld=agent --gateway-endpoint=%s --user=orbit',
                 $host,
                 $hostKeyHost,
                 $wireGuardAddress,
                 $gatewayEndpoint,
-            ), timeoutSeconds: 120);
-            $this->refreshRuntimeSource($gateway->name(), 'gateway');
+            );
         }
+
+        if ($tasks === []) {
+            return;
+        }
+
+        $script = $this->parallelDownstreamProvisioningScript($tasks);
+        $scriptPath = '/tmp/orbit-e2e-docker-downstream.sh';
+        $scriptPathArgument = escapeshellarg($scriptPath);
+
+        E2ECommand::exec(
+            $gateway,
+            "cat > {$scriptPathArgument} <<'BASH'\n{$script}\nBASH\nchmod 755 {$scriptPathArgument}\nchown orbit:orbit {$scriptPathArgument}",
+            'Could not write Docker downstream provisioning script',
+            timeoutSeconds: 30,
+        );
+        E2ECommand::orbit(
+            $gateway,
+            $scriptPath,
+            'Could not prepare Docker downstream role images in parallel',
+            timeoutSeconds: 900,
+        );
+        $this->refreshRuntimeSource($gateway->name(), 'gateway');
+    }
+
+    /**
+     * @param  array<string, string>  $tasks
+     */
+    private function parallelDownstreamProvisioningScript(array $tasks): string
+    {
+        $lines = [
+            'set -euo pipefail;',
+            'STATUS=0;',
+        ];
+        $pids = [];
+
+        foreach ($tasks as $role => $command) {
+            $pid = 'PID_NODE_NEW_'.strtoupper(str_replace('-', '_', $role));
+            $log = "/tmp/orbit-e2e-docker-node-new-{$role}.log";
+            $lines[] = "({$command}) > {$log} 2>&1 & {$pid}=\$!;";
+            $pids[$role] = [$pid, $log];
+        }
+
+        foreach ($pids as $role => [$pid, $log]) {
+            $lines[] = "wait \"\${$pid}\" || { CODE=\$?; echo \"Docker downstream {$role} provisioning failed\" >&2; cat {$log} >&2 || true; if [ \"\$STATUS\" -eq 0 ]; then STATUS=\$CODE; fi; };";
+        }
+
+        $lines[] = 'exit "$STATUS";';
+
+        return implode("\n", $lines);
     }
 
     /**
@@ -1144,17 +1212,6 @@ SH;
             'ingress' => '10.6.0.7',
             default => throw new RuntimeException("Unknown Docker topology role {$role}."),
         };
-    }
-
-    private function seedAppdevDatabaseAndRedis(DockerBuildInstance $gateway, SshKeyPair $key): void
-    {
-        E2ECommand::ssh(
-            $gateway,
-            'orbit',
-            $key,
-            'cd /home/orbit/orbit && orbit tinker --execute='.escapeshellarg(E2EPreparedTopologyRegistry::appdevDatabaseAndRedisPhp()),
-            timeoutSeconds: 120,
-        );
     }
 
     private function composerLockHash(): string

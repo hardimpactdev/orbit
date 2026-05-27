@@ -74,7 +74,7 @@ class E2EPrepareDockerHostsCommand extends Command
             if (! $this->runBuildStep($buildHost, $runtimeStep, $results)) {
                 $failed = true;
             } else {
-                $this->queuePendingImages($pendingImagesByHost, $buildHost, $runtimeStep['images']);
+                $this->queuePendingImages($pendingImagesByHost, $buildHost, $this->distributionImagesFor($runtimeStep));
             }
         }
 
@@ -86,7 +86,7 @@ class E2EPrepareDockerHostsCommand extends Command
                     break;
                 }
 
-                $this->queuePendingImages($pendingImagesByHost, $buildHost, $step['images']);
+                $this->queuePendingImages($pendingImagesByHost, $buildHost, $this->distributionImagesFor($step));
             }
         }
 
@@ -152,7 +152,7 @@ class E2EPrepareDockerHostsCommand extends Command
     }
 
     /**
-     * @return array{name: string, command: string, images: list<array{role: string, image: string}>}|null
+     * @return array{name: string, command: string, images: list<array{role: string, image: string}>, distribution_images?: list<array{role: string, image: string}>}|null
      */
     private function runtimeStep(): ?array
     {
@@ -160,18 +160,23 @@ class E2EPrepareDockerHostsCommand extends Command
             return null;
         }
 
+        $runnerImages = [
+            ['role' => 'orbit-runtime', 'image' => DockerTopologyProvider::runtimeSiblingImage()],
+            ['role' => 'orbit-caddy', 'image' => OrbitCaddyContainer::Image],
+            ...array_map(
+                fn (string $image): array => ['role' => 'frankenphp-runtime', 'image' => $image],
+                DockerTopologyProvider::phpRuntimeImages(),
+            ),
+        ];
+
         return [
             'name' => 'runtime',
             'command' => 'composer e2e:prepare-docker-runtime -- --force',
             'images' => [
                 ['role' => 'topology-runtime', 'image' => DockerTopologyBuilder::runtimeImage()],
-                ['role' => 'orbit-runtime', 'image' => DockerTopologyProvider::runtimeSiblingImage()],
-                ['role' => 'orbit-caddy', 'image' => OrbitCaddyContainer::Image],
-                ...array_map(
-                    fn (string $image): array => ['role' => 'frankenphp-runtime', 'image' => $image],
-                    DockerTopologyProvider::phpRuntimeImages(),
-                ),
+                ...$runnerImages,
             ],
+            'distribution_images' => $runnerImages,
         ];
     }
 
@@ -346,6 +351,15 @@ class E2EPrepareDockerHostsCommand extends Command
             ...($pendingImagesByHost[$buildHost] ?? []),
             ...$images,
         ];
+    }
+
+    /**
+     * @param  array{name: string, command: string, images: list<array{role: string, image: string}>, distribution_images?: list<array{role: string, image: string}>}  $step
+     * @return list<array{role: string, image: string}>
+     */
+    private function distributionImagesFor(array $step): array
+    {
+        return $step['distribution_images'] ?? $step['images'];
     }
 
     /**

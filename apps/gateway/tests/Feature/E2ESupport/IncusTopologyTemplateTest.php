@@ -125,8 +125,8 @@ it('checks prepared snapshots by exact snapshot path instead of prefix matching'
     $host->shouldReceive('run')
         ->once()
         ->withArgs(function (string $command): bool {
-            return str_contains($command, "incus query '/1.0/instances/orbit-template-prepared-control/snapshots/clean-prepared-operator_gateway' >/dev/null 2>&1")
-                && str_contains($command, "incus query '/1.0/instances/orbit-template-prepared-gateway/snapshots/clean-prepared-operator_gateway' >/dev/null 2>&1")
+            return str_contains($command, "incus query '/1.0/instances/orbit-template-prepared-control/snapshots/clean-prepared-operator_gateway_app-dev_app-prod_agent' >/dev/null 2>&1")
+                && str_contains($command, "incus query '/1.0/instances/orbit-template-prepared-gateway/snapshots/clean-prepared-operator_gateway_app-dev_app-prod_agent' >/dev/null 2>&1")
                 && ! str_contains($command, 'incus info \'orbit-template-prepared-control\' --show-log=false')
                 && ! str_contains($command, 'grep -q');
         })
@@ -418,8 +418,8 @@ it('adds an explicit storage pool to topology clone copies when configured', fun
         IncusTopologyTemplate::rolesFor(E2ETopologyKind::ControlGateway),
     );
 
-    expect($script)->toContain("incus copy 'orbit-template-prepared-control/clean-prepared-operator_gateway' 'orbit-e2e-runZ-control' --storage 'orbit-e2e' &")
-        ->and($script)->toContain("incus copy 'orbit-template-prepared-gateway/clean-prepared-operator_gateway' 'orbit-e2e-runZ-gateway' --storage 'orbit-e2e' &");
+    expect($script)->toContain("incus copy 'orbit-template-prepared-control/clean-prepared-operator_gateway_app-dev_app-prod_agent' 'orbit-e2e-runZ-control' --storage 'orbit-e2e' &")
+        ->and($script)->toContain("incus copy 'orbit-template-prepared-gateway/clean-prepared-operator_gateway_app-dev_app-prod_agent' 'orbit-e2e-runZ-gateway' --storage 'orbit-e2e' &");
 });
 
 it('requires the requested Incus roles in the prepared full snapshot', function (): void {

@@ -470,7 +470,7 @@ it('normalizes persisted gateway orbit state ownership before committing prepare
         && str_contains($command, '/home/orbit/orbit/storage/app/orbit'));
     $commit = collect($commands)->first(fn (string $command): bool => str_contains($command, 'docker commit')
         && str_contains($command, "'orbit-e2e-prepared-build-operator_gateway-gateway'")
-        && str_contains($command, 'operator_gateway-gateway-dns-alias-current'));
+        && str_contains($command, 'prepared-gateway-dns-alias-current'));
 
     expect($persist)->toBeString()
         ->and($ownership)->toBeString()
@@ -579,6 +579,57 @@ it('seeds appdev docker topology with database role and Redis expectation for do
         ->toContain('running');
 });
 
+it('provisions Docker downstream role source images in parallel after the gateway baseline', function (): void {
+    $commands = [];
+
+    Process::fake(function ($process) use (&$commands) {
+        $commands[] = $process->command;
+
+        if (str_contains($process->command, 'ssh-keygen -t ed25519') || str_contains($process->command, 'id_ed25519.pub')) {
+            return Process::result(output: "ssh-ed25519 AAAATEST orbit-e2e-gateway\n");
+        }
+
+        return Process::result(output: str_starts_with($process->command, 'docker run -d ') ? "container-id\n" : '');
+    });
+
+    (new DockerTopologyBuilder(E2EConfig::fromEnvironment()))
+        ->build(E2ETopologyKind::OperatorGatewayAppdevAppprodAgent);
+
+    $gatewayBootstrap = collect($commands)
+        ->first(fn (string $command): bool => str_contains($command, 'orbit:internal:bootstrap-gateway-local gateway 10.6.0.2'));
+    $scriptWrite = collect($commands)
+        ->first(fn (string $command): bool => str_contains($command, 'cat >')
+            && str_contains($command, 'orbit-e2e-docker-downstream.sh'));
+    $scriptRun = collect($commands)
+        ->first(fn (string $command): bool => str_contains($command, 'sudo -iu orbit env')
+            && str_contains($command, '/tmp/orbit-e2e-docker-downstream.sh'));
+
+    expect($gatewayBootstrap)->toBeString()
+        ->and($scriptWrite)->toBeString()
+        ->and($scriptRun)->toBeString()
+        ->and(array_search($gatewayBootstrap, $commands, strict: true))->toBeLessThan(array_search($scriptWrite, $commands, strict: true))
+        ->and(array_search($scriptWrite, $commands, strict: true))->toBeLessThan(array_search($scriptRun, $commands, strict: true));
+
+    expect($scriptWrite)
+        ->toContain('orbit:internal:bake-app-node app-dev-1')
+        ->toContain('orbit:internal:bake-ingress-node app-prod-1')
+        ->toContain('orbit:internal:bake-app-node app-prod-1')
+        ->toContain('orbit:internal:bake-agent-node agent-1')
+        ->toContain('PID_NODE_NEW_DEV=$!;')
+        ->toContain('PID_NODE_NEW_PROD=$!;')
+        ->toContain('PID_NODE_NEW_AGENT=$!;')
+        ->toContain('wait "$PID_NODE_NEW_DEV"')
+        ->toContain('wait "$PID_NODE_NEW_PROD"')
+        ->toContain('wait "$PID_NODE_NEW_AGENT"')
+        ->toContain('/tmp/orbit-e2e-docker-node-new-dev.log')
+        ->toContain('/tmp/orbit-e2e-docker-node-new-prod.log')
+        ->toContain('/tmp/orbit-e2e-docker-node-new-agent.log');
+
+    Process::assertNotRan(fn ($process): bool => is_string($process->command)
+        && str_contains($process->command, "docker exec --user 'orbit'")
+        && (str_contains($process->command, 'bake-app-node') || str_contains($process->command, 'bake-agent-node')));
+});
+
 it('builds operator_gateway prepared images through transient docker resources', function (): void {
     Process::fake([
         "docker image inspect 'orbit-e2e-topology-runtime:prepared-current' >/dev/null" => Process::result(),
@@ -610,8 +661,8 @@ it('builds operator_gateway prepared images through transient docker resources',
         "docker exec --user 'orbit' 'orbit-e2e-prepared-build-operator_gateway-operator' sh -lc *curl*" => Process::result(),
         "docker exec --user 'orbit' 'orbit-e2e-prepared-build-operator_gateway-operator' sh -lc *tinker*" => Process::result(),
         'docker exec *ORBIT_GATEWAY_URL*' => Process::result(),
-        "docker commit --change * 'orbit-e2e-prepared-build-operator_gateway-operator' 'orbit-e2e-topology:prepared-operator_gateway-operator-dns-alias-current'" => Process::result(),
-        "docker commit --change * 'orbit-e2e-prepared-build-operator_gateway-gateway' 'orbit-e2e-topology:prepared-operator_gateway-gateway-dns-alias-current'" => Process::result(),
+        "docker commit --change * 'orbit-e2e-prepared-build-operator_gateway-operator' 'orbit-e2e-topology:prepared-operator-dns-alias-current'" => Process::result(),
+        "docker commit --change * 'orbit-e2e-prepared-build-operator_gateway-gateway' 'orbit-e2e-topology:prepared-gateway-dns-alias-current'" => Process::result(),
         "docker rm -f 'orbit-e2e-prepared-build-operator_gateway-operator-composer' 'orbit-e2e-prepared-build-operator_gateway-operator-orbit-caddy' 'orbit-e2e-prepared-build-operator_gateway-operator' >/dev/null 2>&1 || true" => Process::result(),
         "docker rm -f 'orbit-e2e-prepared-build-operator_gateway-gateway-orbit-runtime' 'orbit-e2e-prepared-build-operator_gateway-gateway-orbit-caddy' 'orbit-e2e-prepared-build-operator_gateway-gateway' >/dev/null 2>&1 || true" => Process::result(),
         'docker volume rm -f *' => Process::result(),
@@ -622,8 +673,8 @@ it('builds operator_gateway prepared images through transient docker resources',
         ->build(E2ETopologyKind::OperatorGateway);
 
     expect($manifest)->toBe([
-        ['role' => 'operator', 'container' => 'orbit-e2e-prepared-build-operator_gateway-operator', 'image' => 'orbit-e2e-topology:prepared-operator_gateway-operator-dns-alias-current'],
-        ['role' => 'gateway', 'container' => 'orbit-e2e-prepared-build-operator_gateway-gateway', 'image' => 'orbit-e2e-topology:prepared-operator_gateway-gateway-dns-alias-current'],
+        ['role' => 'operator', 'container' => 'orbit-e2e-prepared-build-operator_gateway-operator', 'image' => 'orbit-e2e-topology:prepared-operator-dns-alias-current'],
+        ['role' => 'gateway', 'container' => 'orbit-e2e-prepared-build-operator_gateway-gateway', 'image' => 'orbit-e2e-topology:prepared-gateway-dns-alias-current'],
     ]);
 
     Process::assertRan(fn ($process): bool => is_string($process->command)
@@ -633,7 +684,7 @@ it('builds operator_gateway prepared images through transient docker resources',
         && str_contains($process->command, 'org.orbit.e2e.topology-mode=dns-alias')
         && str_contains($process->command, 'org.orbit.e2e.cert-san-set=DNS:gateway,IP:10.6.0.2')
         && str_contains($process->command, "'orbit-e2e-prepared-build-operator_gateway-operator'")
-        && str_contains($process->command, "'orbit-e2e-topology:prepared-operator_gateway-operator-dns-alias-current'"));
+        && str_contains($process->command, "'orbit-e2e-topology:prepared-operator-dns-alias-current'"));
     Process::assertRan("docker network rm 'orbit-e2e-prepared-build-operator_gateway' >/dev/null 2>&1 || true");
 });
 
@@ -663,11 +714,13 @@ it('seeds gateway to app node ssh access for remote shell feature tests', functi
         'docker exec *ssh-keygen*' => Process::result(output: "ssh-ed25519 AAAATEST orbit-e2e-gateway\n"),
         'docker exec *id_ed25519*' => Process::result(),
         'docker exec *cat*' => Process::result(),
+        'docker exec *orbit-e2e-docker-downstream.sh*' => Process::result(),
         "docker exec 'orbit-e2e-prepared-build-operator_gateway_app-dev-gateway' sh -lc 'if [ -f /home/orbit/.ssh/id_ed25519 ]; then install -d -m 700 /root/.ssh && cp /home/orbit/.ssh/id_ed25519 /root/.ssh/id_ed25519 && chmod 600 /root/.ssh/id_ed25519 && if [ -f /home/orbit/.ssh/id_ed25519.pub ]; then cp /home/orbit/.ssh/id_ed25519.pub /root/.ssh/id_ed25519.pub; fi; fi'" => Process::result(),
         "docker exec 'orbit-e2e-prepared-build-operator_gateway_app-dev-dev' sh -lc *authorized_keys*" => Process::result(),
         'docker exec --user *ssh-keyscan*' => Process::result(),
         'docker exec --user *bake-ingress-node*' => Process::result(),
         'docker exec --user *bake-app-node*' => Process::result(),
+        'docker exec --user *bake-agent-node*' => Process::result(),
         'docker commit --change *' => Process::result(),
         'docker rm -f *' => Process::result(),
         'docker volume rm -f *' => Process::result(),
@@ -699,8 +752,8 @@ it('uses the configured instance prefix for transient resources but stable image
         'docker exec -i *tar --warning=no-unknown-keyword*orbit-current-*' => Process::result(),
         'docker exec --user *' => Process::result(),
         'docker exec *' => Process::result(),
-        "docker commit --change * 'ci-foo-prepared-build-operator_gateway-operator' 'orbit-e2e-topology:prepared-operator_gateway-operator-dns-alias-current'" => Process::result(),
-        "docker commit --change * 'ci-foo-prepared-build-operator_gateway-gateway' 'orbit-e2e-topology:prepared-operator_gateway-gateway-dns-alias-current'" => Process::result(),
+        "docker commit --change * 'ci-foo-prepared-build-operator_gateway-operator' 'orbit-e2e-topology:prepared-operator-dns-alias-current'" => Process::result(),
+        "docker commit --change * 'ci-foo-prepared-build-operator_gateway-gateway' 'orbit-e2e-topology:prepared-gateway-dns-alias-current'" => Process::result(),
         "docker rm -f 'ci-foo-prepared-build-operator_gateway-operator-composer' 'ci-foo-prepared-build-operator_gateway-operator-orbit-caddy' 'ci-foo-prepared-build-operator_gateway-operator' >/dev/null 2>&1 || true" => Process::result(),
         "docker rm -f 'ci-foo-prepared-build-operator_gateway-gateway-orbit-runtime' 'ci-foo-prepared-build-operator_gateway-gateway-orbit-caddy' 'ci-foo-prepared-build-operator_gateway-gateway' >/dev/null 2>&1 || true" => Process::result(),
         'docker volume rm -f *' => Process::result(),
@@ -714,8 +767,8 @@ it('uses the configured instance prefix for transient resources but stable image
             ->build(E2ETopologyKind::ControlGateway);
 
         expect($manifest)->toBe([
-            ['role' => 'operator', 'container' => 'ci-foo-prepared-build-operator_gateway-operator', 'image' => 'orbit-e2e-topology:prepared-operator_gateway-operator-dns-alias-current'],
-            ['role' => 'gateway', 'container' => 'ci-foo-prepared-build-operator_gateway-gateway', 'image' => 'orbit-e2e-topology:prepared-operator_gateway-gateway-dns-alias-current'],
+            ['role' => 'operator', 'container' => 'ci-foo-prepared-build-operator_gateway-operator', 'image' => 'orbit-e2e-topology:prepared-operator-dns-alias-current'],
+            ['role' => 'gateway', 'container' => 'ci-foo-prepared-build-operator_gateway-gateway', 'image' => 'orbit-e2e-topology:prepared-gateway-dns-alias-current'],
         ]);
     });
 });
@@ -725,7 +778,7 @@ it('bakes dns alias topology registry data and mode-specific image tags', functi
         "docker image inspect 'orbit-e2e-topology-runtime:prepared-current' >/dev/null" => Process::result(),
         "docker image inspect 'orbit-runtime:prepared-current' >/dev/null" => Process::result(),
         "docker image inspect 'composer:2' >/dev/null" => Process::result(),
-        "docker network create --subnet * 'orbit-e2e-prepared-build-operator_gateway_app-dev_app-prod'" => Process::result(),
+        "docker network create --subnet * 'orbit-e2e-prepared-build-operator_gateway_app-dev_app-prod_agent'" => Process::result(),
         'docker run -d *' => Process::result(output: "container-id\n"),
         'docker exec *rm -rf*install -d*' => Process::result(),
         'COPYFILE_DISABLE=1 tar *' => Process::result(),
@@ -746,10 +799,12 @@ it('bakes dns alias topology registry data and mode-specific image tags', functi
         'docker exec *ssh-keygen*' => Process::result(output: "ssh-ed25519 AAAATEST orbit-e2e-gateway\n"),
         'docker exec *id_ed25519*' => Process::result(),
         'docker exec *cat*' => Process::result(),
+        'docker exec *orbit-e2e-docker-downstream.sh*' => Process::result(),
         'docker exec *authorized_keys*' => Process::result(),
         'docker exec --user *ssh-keyscan*' => Process::result(),
         'docker exec --user *bake-ingress-node*' => Process::result(),
         'docker exec --user *bake-app-node*' => Process::result(),
+        'docker exec --user *bake-agent-node*' => Process::result(),
         'docker commit --change *' => Process::result(),
         'docker rm -f *' => Process::result(),
         'docker volume rm -f *' => Process::result(),
@@ -757,9 +812,14 @@ it('bakes dns alias topology registry data and mode-specific image tags', functi
     ]);
 
     $manifest = (new DockerTopologyBuilder(E2EConfig::fromEnvironment()))
-        ->build(E2ETopologyKind::ControlGatewayDevProd, 'dns-alias');
+        ->build(E2ETopologyKind::OperatorGatewayAppdevAppprodAgent, 'dns-alias');
 
-    expect($manifest[0]['image'])->toBe('orbit-e2e-topology:prepared-operator_gateway_app-dev_app-prod-operator-dns-alias-current');
+    expect($manifest[0]['image'])->toBe('orbit-e2e-topology:prepared-operator-dns-alias-current')
+        ->and($manifest[0]['reused'])->toBeTrue()
+        ->and($manifest[2]['image'])->toBe('orbit-e2e-topology:prepared-app-dev-dns-alias-current')
+        ->and($manifest[2])->not->toHaveKey('reused')
+        ->and($manifest[3]['image'])->toBe('orbit-e2e-topology:prepared-app-prod-dns-alias-current')
+        ->and($manifest[3])->not->toHaveKey('reused');
 
     Process::assertRan(fn ($process): bool => is_string($process->command)
         && str_contains($process->command, 'orbit:internal:bake-app-node app-dev-1')
@@ -811,6 +871,7 @@ it('bakes app production ingress docker topology registry data without dev or ag
         'docker exec *ssh-keygen*' => Process::result(output: "ssh-ed25519 AAAATEST orbit-e2e-gateway\n"),
         'docker exec *id_ed25519*' => Process::result(),
         'docker exec *cat*' => Process::result(),
+        'docker exec *orbit-e2e-docker-downstream.sh*' => Process::result(),
         'docker exec *authorized_keys*' => Process::result(),
         'docker exec --user *ssh-keyscan*' => Process::result(),
         'docker exec --user *bake-ingress-node*' => Process::result(),
@@ -828,7 +889,10 @@ it('bakes app production ingress docker topology registry data without dev or ag
     $prodIp = $networkPlan->ipForRole('prod');
 
     expect(array_column($manifest, 'role'))->toBe(['operator', 'gateway', 'prod'])
-        ->and($manifest[0]['image'])->toBe('orbit-e2e-topology:prepared-operator_gateway_app-prod_ingress-operator-dns-alias-current');
+        ->and($manifest[0]['image'])->toBe('orbit-e2e-topology:prepared-operator-dns-alias-current')
+        ->and($manifest[0]['reused'])->toBeTrue()
+        ->and($manifest[2]['image'])->toBe('orbit-e2e-topology:prepared-app-prod-dns-alias-current')
+        ->and($manifest[2]['reused'])->toBeTrue();
 
     Process::assertNotRan(fn ($process): bool => is_string($process->command)
         && str_contains($process->command, "--name 'orbit-e2e-prepared-build-operator_gateway_app-prod_ingress-ingress'"));
@@ -879,7 +943,17 @@ it('bakes prepared app production image with a colocated ingress role', function
         $manifest = (new DockerTopologyBuilder(E2EConfig::fromEnvironment()))
             ->build(E2ETopologyKind::OperatorGatewayAppdevAppprodAgent, 'dns-alias');
 
-        expect(array_column($manifest, 'role'))->toBe(['operator', 'gateway', 'dev', 'prod', 'agent']);
+        expect(array_column($manifest, 'role'))->toBe(['operator', 'gateway', 'dev', 'prod', 'agent'])
+            ->and($manifest[0]['image'])->toBe('orbit-e2e-topology:prepared-operator-dns-alias-current')
+            ->and($manifest[0]['reused'])->toBeTrue()
+            ->and($manifest[1]['image'])->toBe('orbit-e2e-topology:prepared-gateway-dns-alias-current')
+            ->and($manifest[1]['reused'])->toBeTrue()
+            ->and($manifest[2]['image'])->toBe('orbit-e2e-topology:prepared-app-dev-dns-alias-current')
+            ->and($manifest[2])->not->toHaveKey('reused')
+            ->and($manifest[3]['image'])->toBe('orbit-e2e-topology:prepared-app-prod-dns-alias-current')
+            ->and($manifest[3])->not->toHaveKey('reused')
+            ->and($manifest[4]['image'])->toBe('orbit-e2e-topology:prepared-agent-dns-alias-current')
+            ->and($manifest[4])->not->toHaveKey('reused');
     });
 
     $setup = implode("\n", $commands);

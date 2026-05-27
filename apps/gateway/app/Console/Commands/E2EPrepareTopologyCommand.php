@@ -20,7 +20,7 @@ use Illuminate\Support\Facades\Process;
 use RuntimeException;
 
 #[Signature('e2e:prepare-topology
-    {kind=operator_gateway_app-dev_app-prod : Topology kind to prepare (operator|operator_gateway|operator_gateway_app-dev|operator_gateway_app-dev_app-prod|operator_gateway_agent|operator_gateway_app-dev_app-prod_agent|operator_gateway_app-prod_ingress)}
+    {kind=operator_gateway_app-dev_app-prod_agent : Topology kind to prepare (operator|operator_gateway|operator_gateway_app-dev|operator_gateway_app-dev_app-prod|operator_gateway_agent|operator_gateway_app-dev_app-prod_agent|operator_gateway_app-prod_ingress)}
     {--force : Create Incus topology templates}
     {--branch= : Build the source archive from the named git ref via git archive}
     {--source-archive= : Use this pre-built source archive instead of tarring the current checkout}

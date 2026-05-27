@@ -1,5 +1,14 @@
 # E2E Docker Topology Driver Implementation Plan
 
+> **Superseded contract note:** This historical implementation plan is not
+> product authority for the current Docker E2E image contract. Current authority
+> is `docs/testing/e2e/docker.md` and
+> `docs/testing/e2e/prepared-topologies.md`. Docker now uses composable role
+> images: operator and gateway from `operator_gateway`, app-dev/app-prod/agent
+> from `operator_gateway_app-dev_app-prod_agent`, plus runtime support images.
+> Do not implement or restore per-topology Docker image families from the older
+> task text below.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Add Docker as an optional fast prepared-topology provider for feature E2E without weakening VM-backed provisioning coverage.
@@ -1646,7 +1655,7 @@ git commit -m "test: add docker runtime image scaffolding"
 - Test: `tests/Feature/Commands/E2EPrepareDockerTopologyCommandTest.php`
 - Test: `tests/Feature/DockerTopologyBuilderTest.php`
 
-This task mirrors the prepared topology state that `IncusTopologyBuilder::provisionInstances()` produces, but not its exact mechanics. Incus has a two-stage setup: gateway image preparation bakes gateway-local CA state, then topology preparation runs `gateway:add` and `node:new`. Docker has no separate gateway-image bake stage, so Docker collapses both stages into this one topology bake: it creates gateway-local CA state inside the transient gateway build container, then commits the seeded role containers into per-role per-topology images. Per-test acquire (Task 6c) launches from those images and skips the seeding work.
+This historical task mirrored the prepared topology state that `IncusTopologyBuilder::provisionInstances()` produced at the time, but the current Docker image contract has since changed. Docker now prepares composable role images, not per-topology image families: operator and gateway from `operator_gateway`, then app-dev, app-prod, and agent from `operator_gateway_app-dev_app-prod_agent`. Use the current testing docs for implementation details.
 
 Each role has its own checkout and SQLite database:
 
@@ -2689,10 +2698,10 @@ Run:
 
 ```bash
 composer e2e:prepare-docker-runtime -- --force
-composer e2e:prepare-docker-topology -- --force control-gateway-dev-prod
+composer e2e:prepare-docker-topology -- --force operator_gateway_app-dev_app-prod_agent
 ```
 
-Expected: `orbit-e2e-topology-runtime:current` and the per-role per-topology images exist.
+Expected: `orbit-e2e-topology-runtime:current` and the composable role images exist.
 
 - [x] Warm up Docker provider page caches.
 

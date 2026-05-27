@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\E2E\Support;
 
 use App\Services\Php\PhpRuntimeCatalog;
+use App\Services\Runtime\OrbitCaddyContainer;
 use Illuminate\Support\Facades\Process;
 
 final readonly class DockerTopologyProvider implements E2ETopologyProvider
@@ -126,10 +127,9 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
     {
         $mode ??= $this->topologyMode();
 
-        $sourceKind = E2EPreparedTopology::dockerSourceKindFor($kind);
         $sourceRole = $role === 'control' ? 'operator' : $role;
 
-        return [$this->imageNameFor($sourceKind, $sourceRole, $mode)];
+        return [$this->imageNameFor($kind, $sourceRole, $mode)];
     }
 
     /**
@@ -218,6 +218,12 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
 
             if (self::rolesNeedRuntimeSibling($roles) && ! $this->hasRuntimeSiblingImage($host)) {
                 $failures[] = "{$hostName}: docker runtime image ".self::runtimeSiblingImage().' is not available';
+
+                continue;
+            }
+
+            if (! $this->hasOrbitCaddyImage($host)) {
+                $failures[] = "{$hostName}: Docker orbit-caddy image ".OrbitCaddyContainer::Image.' is not available';
 
                 continue;
             }
@@ -319,6 +325,14 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
     {
         return $host->run(
             sprintf('docker image inspect %s >/dev/null', escapeshellarg(self::runtimeSiblingImage())),
+            timeoutSeconds: $this->dockerMetadataProbeTimeoutSeconds(),
+        )->successful();
+    }
+
+    private function hasOrbitCaddyImage(DockerHost $host): bool
+    {
+        return $host->run(
+            sprintf('docker image inspect %s >/dev/null', escapeshellarg(OrbitCaddyContainer::Image)),
             timeoutSeconds: $this->dockerMetadataProbeTimeoutSeconds(),
         )->successful();
     }

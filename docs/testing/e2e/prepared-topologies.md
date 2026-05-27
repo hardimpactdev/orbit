@@ -7,8 +7,13 @@ Legacy `control-*` aliases remain accepted for existing topology kinds. New
 topology kinds use the canonical `operator*` spelling.
 
 For Incus, topology names describe the roles that should be booted for a test.
-They do not mean each kind has a separate Incus source build. Gateway-backed
-subsets use the prepared five-role source and start only the listed nodes.
+They do not mean each kind has a separate Incus source build. Incus uses the
+prepared five-role source and starts only the listed nodes.
+
+For Docker, topology names also describe the active roles requested by a test,
+not separate per-topology image families. Docker prepares composable role
+images: operator and gateway from `operator_gateway`, then app-dev, app-prod,
+and agent from `operator_gateway_app-dev_app-prod_agent`.
 
 ## Topology kinds
 
@@ -70,11 +75,11 @@ once per node/user and gives each test an isolated hardlink copy with fresh
 runtime files.
 
 Tests request the smallest topology kind that covers the behavior under test.
-The Docker provider starts requested gateway-backed roles from the matching
-prepared role images for that topology kind, prunes gateway registry rows for
-roles that were not requested, and primes the gateway API for active container
-addresses. Docker feature runs do not source smaller topologies from the
-`operator_gateway_app-dev_app-prod_agent` superset.
+The Docker provider starts only the requested roles from the canonical
+composable role images, prunes gateway registry rows for roles that were not
+requested, and primes the gateway API for active container addresses. Operator
+and gateway come from `operator_gateway`; app-dev, app-prod, and agent come from
+`operator_gateway_app-dev_app-prod_agent`.
 
 The Incus provider clones only selected roles from the prepared
 `operator_gateway_app-dev_app-prod_agent` snapshots, starts those VMs, retargets
@@ -85,27 +90,30 @@ booted.
 
 Required prepared sources for feature lanes:
 
-- `operator` for operator-only tests.
-- Docker role images for each gateway-backed topology kind used by the lane.
-  For example, `operator_gateway_app-dev_app-prod` uses only that kind's
-  operator, gateway, app-dev, and app-prod images; `operator_gateway_agent`
-  uses only that kind's operator, gateway, and agent images.
-- Docker runtime support images: `orbit-runtime:<namespace>-current`,
-  `orbit-e2e-topology-runtime:<namespace>-current`, `caddy:2-alpine`, and
-  every FrankenPHP image supported by `PhpRuntimeCatalog` for app/workspace
-  topologies.
+- Docker role images for the composable gateway-backed set: operator and
+  gateway from `operator_gateway`; app-dev, app-prod, and agent from
+  `operator_gateway_app-dev_app-prod_agent`. App-dev carries database and Redis
+  registry state by default, and app-prod carries the ingress role.
+- Docker runner support images: `orbit-runtime:<namespace>-current`,
+  `caddy:2-alpine`, and every FrankenPHP image supported by
+  `PhpRuntimeCatalog` for app/workspace topologies.
+- Docker build-host helpers: `orbit-e2e-topology-runtime:<namespace>-current`
+  and `composer:2`, used only to prepare the canonical role images.
 - `operator_gateway_app-dev_app-prod_agent` Incus role snapshots for selective
-  VM boot.
+  VM boot, including operator-only and operator-gateway tests.
 
-Prepare the Docker topology kinds you need with the matching kind argument;
-repeat the Docker command for each topology kind that should be available on
-the host pool:
+Prepare the canonical Docker role image set once for the host pool:
 
 ```bash
-composer e2e:prepare-docker-hosts -- --force operator_gateway_app-dev_app-prod
+composer e2e:prepare-docker-hosts -- --force operator_gateway_app-dev_app-prod_agent
 
 composer e2e:prepare-topology -- --force operator_gateway_app-dev_app-prod_agent
 ```
+
+Docker and Incus preparation both use Composer caches during provisioning.
+Docker uses a lockfile-keyed volume or the optional
+`ORBIT_E2E_DOCKER_COMPOSER_CACHE` bind mount. Incus stages the local
+`~/.cache/orbit-e2e/composer` cache into the provisioning bundle when present.
 
 Prepared topology artifacts use an explicit namespace by default. Docker
 topology images are tagged with `prepared-...`, runtime images use

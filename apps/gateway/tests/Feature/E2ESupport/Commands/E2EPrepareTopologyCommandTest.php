@@ -41,7 +41,7 @@ function fakeBundleProcessing(): void
     ]);
 }
 
-it('defaults to operator_gateway_app-dev_app-prod kind', function (): void {
+it('defaults to the prepared full Incus source kind', function (): void {
     $this->artisan('e2e:prepare-topology')
         ->expectsOutputToContain('planned: orbit-template-prepared-control (snapshot: clean-prepared-operator_gateway_app-dev_app-prod_agent)')
         ->expectsOutputToContain('planned: orbit-template-prepared-gateway (snapshot: clean-prepared-operator_gateway_app-dev_app-prod_agent)')
@@ -53,14 +53,27 @@ it('defaults to operator_gateway_app-dev_app-prod kind', function (): void {
 
 it('supports operator kind', function (): void {
     $this->artisan('e2e:prepare-topology', ['kind' => 'operator'])
-        ->expectsOutputToContain('planned: orbit-template-prepared-control (snapshot: clean-prepared-operator)')
+        ->expectsOutputToContain('requested roles: control')
+        ->expectsOutputToContain('source topology: operator_gateway_app-dev_app-prod_agent')
+        ->expectsOutputToContain('source roles: control, gateway, dev, prod, agent')
+        ->expectsOutputToContain('planned: orbit-template-prepared-control (snapshot: clean-prepared-operator_gateway_app-dev_app-prod_agent)')
+        ->expectsOutputToContain('planned: orbit-template-prepared-gateway (snapshot: clean-prepared-operator_gateway_app-dev_app-prod_agent)')
+        ->expectsOutputToContain('planned: orbit-template-prepared-dev (snapshot: clean-prepared-operator_gateway_app-dev_app-prod_agent)')
+        ->expectsOutputToContain('planned: orbit-template-prepared-prod (snapshot: clean-prepared-operator_gateway_app-dev_app-prod_agent)')
+        ->expectsOutputToContain('planned: orbit-template-prepared-agent (snapshot: clean-prepared-operator_gateway_app-dev_app-prod_agent)')
         ->assertSuccessful();
 });
 
 it('supports operator_gateway kind', function (): void {
     $this->artisan('e2e:prepare-topology', ['kind' => 'operator_gateway'])
-        ->expectsOutputToContain('planned: orbit-template-prepared-control (snapshot: clean-prepared-operator_gateway)')
-        ->expectsOutputToContain('planned: orbit-template-prepared-gateway (snapshot: clean-prepared-operator_gateway)')
+        ->expectsOutputToContain('requested roles: control, gateway')
+        ->expectsOutputToContain('source topology: operator_gateway_app-dev_app-prod_agent')
+        ->expectsOutputToContain('source roles: control, gateway, dev, prod, agent')
+        ->expectsOutputToContain('planned: orbit-template-prepared-control (snapshot: clean-prepared-operator_gateway_app-dev_app-prod_agent)')
+        ->expectsOutputToContain('planned: orbit-template-prepared-gateway (snapshot: clean-prepared-operator_gateway_app-dev_app-prod_agent)')
+        ->expectsOutputToContain('planned: orbit-template-prepared-dev (snapshot: clean-prepared-operator_gateway_app-dev_app-prod_agent)')
+        ->expectsOutputToContain('planned: orbit-template-prepared-prod (snapshot: clean-prepared-operator_gateway_app-dev_app-prod_agent)')
+        ->expectsOutputToContain('planned: orbit-template-prepared-agent (snapshot: clean-prepared-operator_gateway_app-dev_app-prod_agent)')
         ->assertSuccessful();
 });
 
@@ -127,7 +140,7 @@ it('defaults to dry run', function (): void {
 });
 
 it('outputs json for dry run with default kind', function (): void {
-    $kind = E2EPreparedTopology::incusSourceKindFor(E2ETopologyKind::ControlGatewayDevProd);
+    $kind = E2EPreparedTopology::incusSourceKindFor(E2ETopologyKind::OperatorGatewayAppdevAppprodAgent);
     $templates = [];
 
     foreach (IncusTopologyTemplate::rolesFor($kind) as $role) {
@@ -143,9 +156,9 @@ it('outputs json for dry run with default kind', function (): void {
             'data' => [
                 'provider' => 'incus',
                 'dry_run' => true,
-                'kind' => 'operator_gateway_app-dev_app-prod',
+                'kind' => 'operator_gateway_app-dev_app-prod_agent',
                 'source_kind' => $kind->value,
-                'requested_roles' => IncusTopologyTemplate::rolesFor(E2ETopologyKind::ControlGatewayDevProd),
+                'requested_roles' => IncusTopologyTemplate::rolesFor(E2ETopologyKind::OperatorGatewayAppdevAppprodAgent),
                 'source_roles' => IncusTopologyTemplate::rolesFor($kind),
                 'templates' => $templates,
             ],
@@ -235,14 +248,18 @@ it('--force uses the default Incus host when host environment is unset', functio
     $previousHost = getenv('ORBIT_E2E_HOST');
     $previousProvider = getenv('ORBIT_E2E_PROVIDER');
     $manifest = [
-        ['role' => 'control', 'name' => 'orbit-template-control', 'snapshot' => 'clean-control'],
+        ['role' => 'control', 'name' => 'orbit-template-prepared-control', 'snapshot' => 'clean-prepared-operator_gateway_app-dev_app-prod_agent'],
+        ['role' => 'gateway', 'name' => 'orbit-template-prepared-gateway', 'snapshot' => 'clean-prepared-operator_gateway_app-dev_app-prod_agent'],
+        ['role' => 'dev', 'name' => 'orbit-template-prepared-dev', 'snapshot' => 'clean-prepared-operator_gateway_app-dev_app-prod_agent'],
+        ['role' => 'prod', 'name' => 'orbit-template-prepared-prod', 'snapshot' => 'clean-prepared-operator_gateway_app-dev_app-prod_agent'],
+        ['role' => 'agent', 'name' => 'orbit-template-prepared-agent', 'snapshot' => 'clean-prepared-operator_gateway_app-dev_app-prod_agent'],
     ];
     $selectedHost = null;
 
     $builder = m::mock(IncusTopologyBuilder::class);
     $builder->shouldReceive('useBundle')->once();
     $builder->shouldReceive('build')
-        ->with(E2ETopologyKind::Control, true)
+        ->with(E2ETopologyKind::OperatorGatewayAppdevAppprodAgent, true)
         ->andReturn($manifest);
 
     $command = app(E2EPrepareTopologyCommand::class);
@@ -287,7 +304,7 @@ it('--force builds the source archive and forwards the bundle path to the builde
             $forwardedBundle = $path;
         });
     $builder->shouldReceive('build')
-        ->with(E2ETopologyKind::Control, true)
+        ->with(E2ETopologyKind::OperatorGatewayAppdevAppprodAgent, true)
         ->andReturn($manifest);
 
     $command = app(E2EPrepareTopologyCommand::class);
@@ -323,7 +340,7 @@ it('--force excludes persisted orbit certificate material from the source archiv
     $builder = m::mock(IncusTopologyBuilder::class);
     $builder->shouldReceive('useBundle')->once();
     $builder->shouldReceive('build')
-        ->with(E2ETopologyKind::Control, true)
+        ->with(E2ETopologyKind::OperatorGatewayAppdevAppprodAgent, true)
         ->andReturn([]);
 
     $command = app(E2EPrepareTopologyCommand::class);
@@ -352,7 +369,7 @@ it('--force records prepare topology phase timings', function (): void {
     $builder = m::mock(IncusTopologyBuilder::class);
     $builder->shouldReceive('useBundle')->once();
     $builder->shouldReceive('build')
-        ->with(E2ETopologyKind::Control, true)
+        ->with(E2ETopologyKind::OperatorGatewayAppdevAppprodAgent, true)
         ->andReturn($manifest);
 
     $command = app(E2EPrepareTopologyCommand::class);
@@ -477,7 +494,7 @@ it('--force outputs JSON success envelope when builder returns a manifest', func
     $builder = m::mock(IncusTopologyBuilder::class);
     $builder->shouldReceive('useBundle')->once();
     $builder->shouldReceive('build')
-        ->with(E2ETopologyKind::Control, true)
+        ->with(E2ETopologyKind::OperatorGatewayAppdevAppprodAgent, true)
         ->andReturn($manifest);
 
     $command = app(E2EPrepareTopologyCommand::class);
@@ -490,9 +507,9 @@ it('--force outputs JSON success envelope when builder returns a manifest', func
                 'provider' => 'incus',
                 'dry_run' => false,
                 'kind' => 'operator',
-                'source_kind' => 'operator',
+                'source_kind' => 'operator_gateway_app-dev_app-prod_agent',
                 'requested_roles' => ['control'],
-                'source_roles' => ['control'],
+                'source_roles' => ['control', 'gateway', 'dev', 'prod', 'agent'],
                 'templates' => $manifest,
             ],
         ],

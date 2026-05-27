@@ -1,5 +1,11 @@
 # Gateway CLI Monorepo Local Executor Implementation Plan
 
+> **E2E Docker contract note:** This historical plan contains older examples
+> for preparing individual Docker topology kinds. Current Docker E2E authority
+> is `docs/testing/e2e/docker.md` and
+> `docs/testing/e2e/prepared-topologies.md`: prepare composable role images,
+> not per-topology image families.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Split Orbit into a full Laravel gateway app, a Laravel Zero CLI/local-executor app, and a narrow shared core package while preserving the gateway-owned authority path and removing host `python3`/`sqlite3` helper dependencies.

@@ -16,20 +16,28 @@ refresh each configured Docker host:
 ```bash
 ORBIT_E2E_DOCKER_TEST_RUNNERS=sidecar1:4:28,sidecar2:4:28 \
 ORBIT_E2E_DOCKER_IMAGE_BUILD_HOSTS=beast \
-composer e2e:prepare-docker-hosts -- --force operator_gateway_app-dev_app-prod
+composer e2e:prepare-docker-hosts -- --force operator_gateway_app-dev_app-prod_agent
 ```
 
 For single-host local debugging, the lower-level equivalents are:
 
 ```bash
 composer e2e:prepare-docker-runtime -- --force
-composer e2e:prepare-docker-topology -- --force operator_gateway_app-dev_app-prod
+composer e2e:prepare-docker-topology -- --force operator_gateway_app-dev_app-prod_agent
 ```
 
-Prepare each Docker topology kind that the lane should be able to run. Docker
-feature tests use the smallest matching prepared role images for their requested
-topology rather than sourcing every gateway-backed test from
-`operator_gateway_app-dev_app-prod_agent`.
+Prepare the composable Docker role image set once. The Docker preparation flow
+builds `operator_gateway` first, then provisions the downstream app-dev,
+app-prod, and agent roles from the full role source. Feature tests still request
+the smallest active topology they need; the Docker provider composes that
+topology from the canonical operator, gateway, app-dev, app-prod, and agent
+images.
+
+Runner hosts need the five canonical role images plus the runtime support
+images used by gateway-backed topologies: `orbit-runtime`, `orbit-caddy`, and
+the FrankenPHP images listed by `PhpRuntimeCatalog`. `orbit-e2e-topology-runtime`
+and `composer:2` are build-host helpers for preparing those images; they are not
+separate topology roles.
 
 ## Host transport
 
@@ -96,6 +104,8 @@ Docker bridge networks from the `10.90.N.0/24` pool. The DNS alias mode keeps
 canonical `10.6.0.x` WireGuard identities inside seeded gateway state. Docker
 does not exercise real WireGuard interfaces, peer routing, VM boot, or systemd.
 
+### Feature scope
+
 Docker topologies are disposable containers seeded from per-role prepared images.
 They are useful for fast command, registry, gateway API, CA trust,
 HTTPS-verification, and forwarding assertions where command behavior is the
@@ -108,6 +118,12 @@ The Docker topology build context intentionally includes the local `vendor/`
 directory. Client prepared topology dependencies are installed or reused through
 transient `composer:2` helper containers and then persisted into the node image.
 Gateway source is synchronized to the gateway `orbit-runtime` sibling.
+
+Docker provisioning uses a Composer cache during image preparation. By default
+the cache is a lockfile-keyed Docker volume; set
+`ORBIT_E2E_DOCKER_COMPOSER_CACHE` to bind a build-host cache directory, and set
+`ORBIT_E2E_DOCKER_COMPOSER_CACHE_READ_ONLY=1` when the mounted cache should not
+be mutated by the helper containers.
 
 Docker is a valid lane for `process:*`, `schedule:*`, and `workspace:*` runtime
 assertions because the Docker topologies that include a gateway provide
