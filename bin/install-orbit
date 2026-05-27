@@ -732,6 +732,11 @@ ensure_forward_install_image_archives_flag() {
     export ORBIT_FORWARD_INSTALL_IMAGE_ARCHIVES=1
 }
 
+clear_laravel_bootstrap_cache() {
+    run rm -f \
+        "$TARGET_DIR/apps/gateway/bootstrap/cache"/*.php
+}
+
 bootstrap_runtime() {
     require_docker
 
@@ -748,6 +753,7 @@ bootstrap_runtime() {
     ensure_operation_token_secret
     ensure_node_identity
     ensure_forward_install_image_archives_flag
+    clear_laravel_bootstrap_cache
 
     run docker_cli run --rm \
         --pull never \

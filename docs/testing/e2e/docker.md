@@ -124,6 +124,11 @@ composer test:e2e:docker
 Set `ORBIT_E2E_PARALLEL_PROCESSES=<n>` only as a temporary Docker debugging cap;
 do not keep it in `.env.e2e` for normal runs.
 
+Docker subnets that are scoped to a test run support up to 16 parallel workers.
+When the configured runner pool has more slots than that, `e2e:test` reduces the
+effective host slots before starting Pest so workers do not fail inside topology
+acquisition.
+
 ## Docker topology behavior
 
 Docker exercises gateway API, certificate, and registry behavior over isolated

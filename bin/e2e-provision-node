@@ -20,9 +20,9 @@ usage() {
     cat <<'HELP'
 usage: bin/e2e-provision-node --role=operator|gateway|app --source-archive=PATH [options]
 
-Provision a freshly-cloned Orbit blank VM by pushing a source archive into place
-via bin/install-orbit. Designed to run inside the VM after the bundle has been
-pushed.
+Provision an Orbit role VM cloned from the supported E2E base image by pushing
+a source archive into place via bin/install-orbit. Designed to run inside the
+VM after the bundle has been pushed.
 
 Required:
   --role=operator|gateway|app  Topology role being installed.

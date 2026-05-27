@@ -373,7 +373,7 @@ it('--force builds the source archive and forwards the bundle path to the builde
     Process::assertRan(fn (PendingProcess $p): bool => str_contains((string) $p->command, 'tar ') && str_contains((string) $p->command, '-czf'));
 });
 
-it('--force excludes persisted orbit certificate material from the source archive', function (): void {
+it('--force excludes persisted orbit runtime state from the source archive', function (): void {
     $tarCommand = null;
 
     Process::fake(function ($process) use (&$tarCommand) {
@@ -406,9 +406,8 @@ it('--force excludes persisted orbit certificate material from the source archiv
     ])->assertSuccessful();
 
     expect($tarCommand)
-        ->toContain("--exclude='./storage/app/orbit/ca/*'")
-        ->toContain("--exclude='./storage/app/orbit/certs/*'")
-        ->toContain("--exclude='./storage/app/orbit/keys/*'");
+        ->toContain("--exclude='./storage/app/orbit/*'")
+        ->toContain("--exclude='./apps/gateway/bootstrap/cache/*.php'");
 });
 
 it('--force records prepare topology phase timings', function (): void {

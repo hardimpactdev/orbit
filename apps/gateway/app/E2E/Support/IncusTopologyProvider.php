@@ -154,7 +154,7 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
         $timer->measure('known-hosts', fn () => $this->clearKnownHosts($instances));
         $timer->measure('wireguard', fn () => $this->retargetRealWireGuard($instances));
         $timer->measure('retarget', fn () => $this->retargetTopology($instances, $config, $sshKeyPair, $kind));
-        $timer->measure('network-ready', fn () => $this->waitForPeerRoutes($instances));
+        $timer->measure('network-ready', fn () => $this->waitForPeerRoutes($instances, $config));
 
         if ($options->startGatewayApi && isset($instances['gateway'])) {
             $timer->measure('gateway-api.start', fn () => E2EGatewayApi::start(
@@ -243,7 +243,7 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
 
             $cycleTimer->measure('reset.wireguard', fn () => $this->retargetRealWireGuard($instances));
             $cycleTimer->measure('reset.retarget', fn () => $this->retargetTopology($instances, $this->config, $sshKeyPair, $kind));
-            $cycleTimer->measure('reset.network-ready', fn () => $this->waitForPeerRoutes($instances));
+            $cycleTimer->measure('reset.network-ready', fn () => $this->waitForPeerRoutes($instances, $this->config));
 
             if ($startGatewayApi && isset($instances['gateway'])) {
                 $cycleTimer->measure('reset.gateway-api.start', fn () => E2EGatewayApi::start(
@@ -558,9 +558,10 @@ PHP;
     /**
      * @param  array<string, IncusInstance>  $instances
      */
-    private function waitForPeerRoutes(array $instances): void
+    private function waitForPeerRoutes(array $instances, E2EConfig $config): void
     {
         $gateway = $instances['gateway'] ?? null;
+        $control = $instances['control'] ?? null;
 
         if ($gateway === null) {
             return;
@@ -571,7 +572,13 @@ PHP;
                 continue;
             }
 
-            $this->waitForGatewaySsh($gateway, $this->wireGuardIpForRole($role));
+            $wireGuardIp = $this->wireGuardIpForRole($role);
+
+            $this->waitForGatewaySsh($gateway, $wireGuardIp);
+
+            if ($control !== null) {
+                $this->waitForControlHostKeyScan($control, $config, $wireGuardIp);
+            }
         }
     }
 
@@ -609,6 +616,20 @@ PHP;
             new SshKeyPair('/dev/null', '/dev/null'),
             sprintf(
                 'deadline=$((SECONDS+60)); until ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=5 orbit@%s true; do if [ "$SECONDS" -ge "$deadline" ]; then exit 1; fi; sleep 2; done',
+                escapeshellarg($wireGuardIp),
+            ),
+            timeoutSeconds: 75,
+        );
+    }
+
+    private function waitForControlHostKeyScan(IncusInstance $control, E2EConfig $config, string $wireGuardIp): void
+    {
+        E2ECommand::ssh(
+            $control,
+            $config->controlUser,
+            new SshKeyPair('/dev/null', '/dev/null'),
+            sprintf(
+                'deadline=$((SECONDS+60)); until ssh-keyscan -T 5 -t ed25519,ecdsa,rsa %1$s >/dev/null 2>&1; do if [ "$SECONDS" -ge "$deadline" ]; then ssh-keyscan -T 10 -t ed25519,ecdsa,rsa %1$s; exit 1; fi; sleep 2; done',
                 escapeshellarg($wireGuardIp),
             ),
             timeoutSeconds: 75,

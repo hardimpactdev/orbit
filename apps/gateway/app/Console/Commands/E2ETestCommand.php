@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Console\Commands;
 
 use App\E2E\Support\DockerHost;
+use App\E2E\Support\DockerTopologyNetworkPlan;
 use App\E2E\Support\DockerTopologyProvider;
 use App\E2E\Support\E2EConfig;
 use App\E2E\Support\E2ETopologyArtifactNamespace;
@@ -396,7 +397,10 @@ class E2ETestCommand extends Command
             $hostSlots[$host] = min($slots, $capacitySlots);
         }
 
-        $hostSlots = $this->limitHostSlots($hostSlots, $requestedProcesses);
+        $hostSlots = $this->limitHostSlots(
+            $hostSlots,
+            min($requestedProcesses, DockerTopologyNetworkPlan::maxRunScopedParallelWorkers()),
+        );
 
         $processes = array_sum($hostSlots);
 

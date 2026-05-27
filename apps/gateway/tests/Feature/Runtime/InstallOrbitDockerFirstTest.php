@@ -114,6 +114,18 @@ describe('install-orbit Docker-first runtime contract', function (): void {
             ->not->toContain('cd $target && php artisan');
     });
 
+    it('clears stale Laravel bootstrap cache files before no-dev runtime composer install', function (): void {
+        $cacheClear = strpos($this->installer, "\n    clear_laravel_bootstrap_cache\n");
+        $composerInstall = strpos($this->installer, 'composer install --no-dev --no-interaction --prefer-dist --optimize-autoloader');
+
+        expect($this->installer)
+            ->toContain('clear_laravel_bootstrap_cache()')
+            ->toContain('"$TARGET_DIR/apps/gateway/bootstrap/cache"/*.php')
+            ->and($cacheClear)->not->toBeFalse()
+            ->and($composerInstall)->not->toBeFalse()
+            ->and($cacheClear)->toBeLessThan($composerInstall);
+    });
+
     it('creates operation token secrets for the gateway app and CLI local executor during bootstrap', function (): void {
         expect($this->installer)
             ->toContain('ensure_operation_token_secret')
@@ -340,7 +352,7 @@ BASH);
 
             expect($dockerRunCalls)->not->toBeEmpty('expected install-orbit to start orbit-runtime through sudo-wrapped docker run');
         } finally {
-            (new Process(['rm', '-rf', $root]))->run();
+            File::deleteDirectory($root);
         }
     });
 

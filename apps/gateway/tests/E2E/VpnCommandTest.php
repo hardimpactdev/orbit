@@ -207,7 +207,7 @@ it('administers VPN clients through gateway execution and control SSH forwarding
         expect($created->successful())->toBeTrue()
             ->and($createdPayload['success']['data']['client'])->toMatchArray([
                 'name' => 'tablet',
-                'address' => '10.6.0.7',
+                'address' => '10.6.0.8',
                 'enabled' => true,
                 'kind' => 'admin',
             ])

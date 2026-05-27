@@ -118,7 +118,7 @@ SH,
      */
     public function verifyRole(E2EInstance $instance, string $role, array $peerRoles): void
     {
-        $commands = [
+        $checkCommands = [
             'set -euo pipefail',
             'ip link show wg-orbit >/dev/null',
             'wg show wg-orbit >/dev/null',
@@ -126,15 +126,44 @@ SH,
         ];
 
         foreach ($peerRoles as $peerRole) {
-            $commands[] = sprintf('ping -c 1 -W 2 %s >/dev/null', escapeshellarg($this->addressFor($peerRole)));
+            $checkCommands[] = sprintf('ping -c 1 -W 2 %s >/dev/null', escapeshellarg($this->addressFor($peerRole)));
         }
+
+        $checks = $this->indentShell(implode("\n", $checkCommands));
+        $script = implode("\n", [
+            'set -uo pipefail',
+            'deadline=$((SECONDS+60))',
+            '',
+            'while true; do',
+            '    if (',
+            $checks,
+            '    ) >/tmp/orbit-wg-verify.log 2>&1; then',
+            '        exit 0',
+            '    fi',
+            '',
+            '    if [ "$SECONDS" -ge "$deadline" ]; then',
+            '        cat /tmp/orbit-wg-verify.log >&2 || true',
+            '        exit 1',
+            '    fi',
+            '',
+            '    sleep 2',
+            'done',
+        ]);
 
         E2ECommand::exec(
             $instance,
-            implode("\n", $commands),
+            $script,
             "Could not verify wg-orbit on {$instance->name()}",
-            timeoutSeconds: 60,
+            timeoutSeconds: 75,
         );
+    }
+
+    private function indentShell(string $script): string
+    {
+        return implode("\n", array_map(
+            static fn (string $line): string => "        {$line}",
+            explode("\n", $script),
+        ));
     }
 
     /**

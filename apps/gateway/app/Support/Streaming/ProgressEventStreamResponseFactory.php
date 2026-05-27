@@ -21,12 +21,6 @@ final readonly class ProgressEventStreamResponseFactory
     public function make(callable $streamer): StreamedResponse
     {
         return new StreamedResponse(function () use ($streamer): void {
-            if ($this->sapi === 'fpm-fcgi' || $this->sapi === 'cli-server') {
-                while (ob_get_level() > 0) {
-                    ob_end_flush();
-                }
-            }
-
             $emitter = new ProgressEventStreamEmitter($this->sapi);
 
             app()->instance(ProgressReporter::class, new SseProgressReporter($emitter));

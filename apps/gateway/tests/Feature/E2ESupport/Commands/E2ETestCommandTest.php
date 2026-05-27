@@ -211,6 +211,25 @@ it('derives docker worker counts from configured runner slots', function (): voi
     });
 });
 
+it('caps docker worker counts at the run-scoped subnet allocator capacity', function (): void {
+    withE2EEnvironment([], [
+        'ORBIT_E2E_DOCKER_TEST_RUNNERS' => 'sidecar1:5:35,sidecar2:5:35,nmbp:5:35,beast:5:35',
+    ], function (): void {
+        $exitCode = Artisan::call('e2e:test', [
+            '--dry-run' => true,
+            '--json' => true,
+            '--lanes' => 'docker',
+        ]);
+        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+        $lane = $payload['success']['data']['lanes'][0];
+
+        expect($exitCode)->toBe(0)
+            ->and($lane['environment']['ORBIT_E2E_DOCKER_TEST_RUNNERS'])->toBe('sidecar1:4:35,sidecar2:4:35,nmbp:4:35,beast:4:35')
+            ->and($lane['environment']['ORBIT_E2E_PARALLEL_PROCESSES'])->toBe('16')
+            ->and($lane['command'])->toContain('--processes=16');
+    });
+});
+
 it('uses requested docker worker counts by reducing host slots', function (): void {
     withE2EEnvironment(['ORBIT_E2E_PARALLEL_PROCESSES'], [
         'ORBIT_E2E_DOCKER_TEST_RUNNERS' => 'sidecar1:4:28,sidecar2:4:28',

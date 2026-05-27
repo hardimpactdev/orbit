@@ -11,6 +11,12 @@ final readonly class DockerTopologyNetworkPlan
 {
     private const int BaseSecondOctet = 90;
 
+    private const int RunScopedSubnetsPerWorker = 14;
+
+    private const int MaxRunScopedParallelWorkers = 16;
+
+    private const int RunScopedSubnetCount = self::RunScopedSubnetsPerWorker * self::MaxRunScopedParallelWorkers;
+
     public function __construct(
         private int $thirdOctet,
     ) {
@@ -29,16 +35,16 @@ final readonly class DockerTopologyNetworkPlan
 
         if ($runId !== null && $runId !== '') {
             if (! is_string($token) || $token === '') {
-                return new self((self::runHash($runId) + $attempt) % 224);
+                return new self((self::runHash($runId) + $attempt) % self::RunScopedSubnetCount);
             }
 
             $worker = (int) $token;
 
-            if ($worker < 1 || $worker > 14) {
+            if ($worker < 1 || $worker > self::MaxRunScopedParallelWorkers) {
                 throw new RuntimeException("Unsupported parallel test token [{$token}] for run-scoped Docker E2E subnet allocation.");
             }
 
-            return new self((($worker - 1) * 16) + ((self::runHash($runId) + $attempt) % 16));
+            return new self((($worker - 1) * self::RunScopedSubnetsPerWorker) + ((self::runHash($runId) + $attempt) % self::RunScopedSubnetsPerWorker));
         }
 
         if (! is_string($token) || $token === '') {
@@ -52,6 +58,16 @@ final readonly class DockerTopologyNetworkPlan
         }
 
         return new self(224 + $worker);
+    }
+
+    public static function runScopedAttemptsPerWorker(): int
+    {
+        return self::RunScopedSubnetsPerWorker;
+    }
+
+    public static function maxRunScopedParallelWorkers(): int
+    {
+        return self::MaxRunScopedParallelWorkers;
     }
 
     public function subnet(): string

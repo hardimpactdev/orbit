@@ -67,12 +67,12 @@ it('allocates a run-scoped docker subnet for parallel topology leases', function
     try {
         $plan = DockerTopologyNetworkPlan::fromEnvironment('run123');
 
-        expect($plan->subnet())->toBe('10.90.22.0/24')
-            ->and($plan->ipForRole('gateway'))->toBe('10.90.22.2')
-            ->and($plan->ipForRole('operator'))->toBe('10.90.22.3')
-            ->and($plan->ipForRole('control'))->toBe('10.90.22.3')
-            ->and($plan->ipForRole('dev'))->toBe('10.90.22.4')
-            ->and($plan->ipForRole('prod'))->toBe('10.90.22.5');
+        expect($plan->subnet())->toBe('10.90.26.0/24')
+            ->and($plan->ipForRole('gateway'))->toBe('10.90.26.2')
+            ->and($plan->ipForRole('operator'))->toBe('10.90.26.3')
+            ->and($plan->ipForRole('control'))->toBe('10.90.26.3')
+            ->and($plan->ipForRole('dev'))->toBe('10.90.26.4')
+            ->and($plan->ipForRole('prod'))->toBe('10.90.26.5');
     } finally {
         restoreTestToken($previous);
     }
@@ -85,13 +85,38 @@ it('can advance to the next run-scoped docker subnet after an overlap', function
     try {
         $plan = DockerTopologyNetworkPlan::fromEnvironment('run123', attempt: 1);
 
-        expect($plan->subnet())->toBe('10.90.23.0/24')
-            ->and($plan->ipForRole('gateway'))->toBe('10.90.23.2')
-            ->and($plan->ipForRole('operator'))->toBe('10.90.23.3');
+        expect($plan->subnet())->toBe('10.90.27.0/24')
+            ->and($plan->ipForRole('gateway'))->toBe('10.90.27.2')
+            ->and($plan->ipForRole('operator'))->toBe('10.90.27.3');
     } finally {
         restoreTestToken($previous);
     }
 });
+
+it('supports sixteen run-scoped docker workers for expanded runner pools', function (): void {
+    $previous = getenv('TEST_TOKEN');
+    putenv('TEST_TOKEN=16');
+
+    try {
+        $plan = DockerTopologyNetworkPlan::fromEnvironment('run123');
+
+        expect($plan->subnet())->toBe('10.90.222.0/24')
+            ->and($plan->ipForRole('gateway'))->toBe('10.90.222.2');
+    } finally {
+        restoreTestToken($previous);
+    }
+});
+
+it('rejects run-scoped docker workers above the allocator capacity', function (): void {
+    $previous = getenv('TEST_TOKEN');
+    putenv('TEST_TOKEN=17');
+
+    try {
+        DockerTopologyNetworkPlan::fromEnvironment('run123');
+    } finally {
+        restoreTestToken($previous);
+    }
+})->throws(RuntimeException::class, 'Unsupported parallel test token [17] for run-scoped Docker E2E subnet allocation.');
 
 function restoreTestToken(string|false $previous): void
 {

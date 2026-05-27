@@ -38,8 +38,22 @@ it('emits heartbeat comments', function (): void {
 
 it('flushes output under fpm-fcgi and cli-server sapi', function (): void {
     $emitter = new ProgressEventStreamEmitter('cli-server');
+    $flushedOutput = '';
 
-    $emitter->tree('Test', [['key' => 'step', 'label' => 'Step']]);
+    ob_start(function (string $chunk) use (&$flushedOutput): string {
+        $flushedOutput .= $chunk;
+
+        return '';
+    });
+
+    try {
+        $emitter->tree('Test', [['key' => 'step', 'label' => 'Step']]);
+    } finally {
+        ob_end_clean();
+    }
+
+    expect($flushedOutput)->toContain("event: tree\n")
+        ->and($flushedOutput)->toContain('"title":"Test"');
 });
 
 it('skips flush under cli sapi', function (): void {

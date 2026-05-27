@@ -150,7 +150,9 @@ final readonly class DockerTopologyBuilder
     private function createNetwork(string $network): DockerTopologyNetworkPlan
     {
         $token = getenv('TEST_TOKEN');
-        $maxAttempts = is_string($token) && $token !== '' ? 16 : 224;
+        $maxAttempts = is_string($token) && $token !== ''
+            ? DockerTopologyNetworkPlan::runScopedAttemptsPerWorker()
+            : 224;
         $lastError = null;
 
         for ($attempt = 0; $attempt < $maxAttempts; $attempt++) {

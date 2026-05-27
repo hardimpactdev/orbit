@@ -50,6 +50,7 @@ it('prints help with --help', function (): void {
     expect($result->output())->toContain('--frankenphp-image-archive=PATH');
     expect($result->output())->toContain('--wg-easy-image-archive=PATH');
     expect($result->output())->toContain('Topology role being installed');
+    expect($result->output())->not->toContain('blank VM');
 });
 
 it('runs install-orbit without role semantics', function (): void {

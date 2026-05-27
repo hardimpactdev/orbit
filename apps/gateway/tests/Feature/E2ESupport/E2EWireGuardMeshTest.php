@@ -201,7 +201,9 @@ it('verifies a role interface and peer reachability', function (): void {
 
     $mesh->verifyRole($instance, 'gateway', ['control', 'dev']);
 
-    expect($commands[0])->toContain('ip link show wg-orbit')
+    expect($commands[0])->toContain('deadline=$((SECONDS+60))')
+        ->and($commands[0])->toContain('while true; do')
+        ->and($commands[0])->toContain('ip link show wg-orbit')
         ->and($commands[0])->toContain('wg show wg-orbit')
         ->and($commands[0])->toContain("ping -c 1 -W 2 '10.6.0.3'")
         ->and($commands[0])->toContain("ping -c 1 -W 2 '10.6.0.4'");

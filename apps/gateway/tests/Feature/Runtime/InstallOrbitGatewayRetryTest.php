@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use Illuminate\Support\Facades\File;
 use Symfony\Component\Process\Process;
 
 function installOrbitGatewayRetryTempPath(): string
@@ -164,8 +165,10 @@ BASH;
 }
 
 afterEach(function (): void {
-    if (isset($this->tempRoot) && is_dir($this->tempRoot)) {
-        (new Process(['rm', '-rf', $this->tempRoot]))->run();
+    foreach (($this->tempRoots ?? []) as $tempRoot) {
+        if (is_string($tempRoot) && is_dir($tempRoot)) {
+            File::deleteDirectory($tempRoot);
+        }
     }
 });
 
@@ -185,7 +188,7 @@ describe('install-orbit gateway retry', function (): void {
                 ],
             ],
         );
-        $this->tempRoot = $result['temp_root'];
+        $this->tempRoots = [$result['temp_root'], dirname($targetDir)];
 
         expect($result['exit_code'])->toBe(0, $result['error_output']);
 
@@ -227,7 +230,7 @@ describe('install-orbit gateway retry', function (): void {
                 ],
             ],
         );
-        $this->tempRoot = $result['temp_root'];
+        $this->tempRoots = [$result['temp_root'], dirname($targetDir)];
 
         expect($result['exit_code'])->toBe(0, $result['error_output']);
 
@@ -258,7 +261,7 @@ describe('install-orbit gateway retry', function (): void {
                 ],
             ],
         );
-        $this->tempRoot = $result['temp_root'];
+        $this->tempRoots = [$result['temp_root'], dirname($targetDir)];
 
         expect($result['exit_code'])->toBe(0, $result['error_output']);
 
@@ -286,7 +289,7 @@ describe('install-orbit gateway retry', function (): void {
                 ],
             ],
         );
-        $this->tempRoot = $result['temp_root'];
+        $this->tempRoots = [$result['temp_root'], dirname($targetDir)];
 
         expect($result['exit_code'])->toBe(0, $result['error_output']);
 
@@ -316,7 +319,7 @@ describe('install-orbit gateway retry', function (): void {
                 ],
             ],
         );
-        $this->tempRoot = $result['temp_root'];
+        $this->tempRoots = [$result['temp_root'], dirname($targetDir)];
 
         expect($result['exit_code'])->toBe(0, $result['error_output']);
 
@@ -348,7 +351,7 @@ describe('install-orbit gateway retry', function (): void {
                 ],
             ],
         );
-        $this->tempRoot = $result['temp_root'];
+        $this->tempRoots = [$result['temp_root'], dirname($targetDir)];
 
         expect($result['exit_code'])->toBe(0, $result['error_output']);
 
