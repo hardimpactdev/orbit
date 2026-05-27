@@ -15,6 +15,7 @@ use App\Services\Ca\OrbitCaService;
 use App\Services\Proxy\ProxyRouteFixer;
 use App\Services\Proxy\ProxyRouteRenderer;
 use App\Services\Runtime\OrbitCaddyContainer;
+use App\Tools\CaddyTool;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\Fakes\SiteCertificateInstallerFake;
 use Tests\TestCase;
@@ -53,8 +54,8 @@ describe('ProxyRouteFixer', function (): void {
             ->and($shell->scripts[0])->toContain('/etc/caddy/sites/vite.docs.test.caddy')
             ->and($caddySite)->toContain('reverse_proxy http://host.docker.internal:5173')
             ->and($caddySite)->not->toContain('127.0.0.1')
-            ->and($shell->scripts[0])->toContain("docker restart 'orbit-caddy'")
-            ->and($shell->scripts[0])->not->toContain('caddy reload')
+            ->and($shell->scripts[0])->toContain(CaddyTool::reloadCommand())
+            ->and($shell->scripts[0])->not->toContain("docker restart 'orbit-caddy'")
             ->and($shell->scripts[0])->not->toContain('sudo systemctl reload caddy')
             ->and($route->refresh()->source_hash)->toBe(hash('sha256', $caddySite))
             ->and($route->refresh()->source_hash)->toBe($renderer->sourceHash($route));
@@ -276,8 +277,8 @@ describe('ProxyRouteFixer', function (): void {
             ->and($shell->scripts[0])->not->toContain('orbit_caddy_group')
             ->and($shell->scripts[0])->not->toContain('getent group caddy')
             ->and($shell->scripts[0])->not->toContain('chgrp')
-            ->and($shell->scripts[0])->toContain("docker restart 'orbit-caddy'")
-            ->and($shell->scripts[0])->not->toContain('caddy reload')
+            ->and($shell->scripts[0])->toContain(CaddyTool::reloadCommand())
+            ->and($shell->scripts[0])->not->toContain("docker restart 'orbit-caddy'")
             ->and($shell->scripts[0])->not->toContain('sudo systemctl reload caddy');
     });
 

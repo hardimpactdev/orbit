@@ -775,6 +775,41 @@ describe('doctor command contract', function (): void {
             ]);
     });
 
+    it('does not report managed private backend proxy artifacts as extra routes', function (): void {
+        createDoctorLocalNode('gateway');
+        $edge = createDoctorIngressNode('edge-1');
+        $backend = createDoctorProductionBackendNode('web-1');
+        $app = App::factory()->create([
+            'node_id' => $backend->id,
+            'name' => 'docs',
+            'document_root' => 'public',
+        ]);
+        ProxyRoute::factory()->create([
+            'node_id' => $edge->id,
+            'app_id' => $app->id,
+            'domain' => 'docs.test',
+            'owner_type' => 'app',
+            'kind' => 'app',
+            'source_hash' => str_repeat('a', 64),
+            'config' => [
+                'placement' => 'ingress',
+                'backend_artifacts' => [[
+                    'node_id' => $backend->id,
+                    'source_hash' => str_repeat('b', 64),
+                ]],
+            ],
+        ]);
+        app()->instance(RemoteShell::class, new DoctorProxyRemoteShell(
+            nodeLevelStdout: "docs.test.backend\t".str_repeat('b', 64)."\t\t\t0\t0\n",
+        ));
+
+        $exitCode = Artisan::call('doctor', ['--node' => 'web-1', '--family' => ['proxy'], '--json' => true]);
+        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(0)
+            ->and($payload['success']['data']['doctor']['summary']['issues'])->toBe(0);
+    });
+
     it('lets restore mode remove extra proxy routes through family dispatch', function (): void {
         createDoctorLocalNode('gateway');
         $appNode = createDoctorHostedAppNode('app-1');

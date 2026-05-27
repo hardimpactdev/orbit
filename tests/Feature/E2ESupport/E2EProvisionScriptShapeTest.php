@@ -48,6 +48,7 @@ it('prints help with --help', function (): void {
     expect($result->output())->toContain('--caddy-image-archive=PATH');
     expect($result->output())->toContain('--dnsmasq-image-archive=PATH');
     expect($result->output())->toContain('--frankenphp-image-archive=PATH');
+    expect($result->output())->toContain('--wg-easy-image-archive=PATH');
     expect($result->output())->toContain('Topology role being installed');
 });
 
@@ -81,10 +82,14 @@ it('keeps the E2E dependency helper off the SQLite CLI', function (): void {
         ->and($phpPackages->output())->toContain('php8.5-sqlite3');
 });
 
-it('copies staged Docker image archives into user readable guest tmp files before install', function (): void {
+it('copies staged Docker image archives into user readable guest var tmp files before install', function (): void {
     $provisioner = file_get_contents(provisionScript());
 
     expect($provisioner)
+        ->toContain('guest_stage_dir="/var/tmp/orbit-e2e-install"')
+        ->toContain('sudo_run install -d -m 0755 -o "$user" -g "$user" "$guest_stage_dir"')
+        ->toContain('staged_source_archive="${guest_stage_dir}/orbit-source.tar.gz"')
+        ->toContain('staged_installer="${guest_stage_dir}/install-orbit"')
         ->toContain('sudo_run install -m 0644 -o "$user" -g "$user" "$RUNTIME_IMAGE_ARCHIVE" "$staged_runtime_image_archive"')
         ->toContain('runtime_image_args=(--runtime-image-archive="$staged_runtime_image_archive")')
         ->toContain('sudo_run install -m 0644 -o "$user" -g "$user" "$CADDY_IMAGE_ARCHIVE" "$staged_caddy_image_archive"')
@@ -93,10 +98,14 @@ it('copies staged Docker image archives into user readable guest tmp files befor
         ->toContain('dnsmasq_image_args=(--dnsmasq-image-archive="$staged_dnsmasq_image_archive")')
         ->toContain('sudo_run install -m 0644 -o "$user" -g "$user" "$FRANKENPHP_IMAGE_ARCHIVE" "$staged_frankenphp_image_archive"')
         ->toContain('frankenphp_image_args=(--frankenphp-image-archive="$staged_frankenphp_image_archive")')
-        ->toContain('/tmp/orbit-runtime-current.tar')
-        ->toContain('/tmp/caddy-2-alpine.tar')
-        ->toContain('/tmp/dnsmasq-latest.tar')
-        ->toContain('/tmp/frankenphp-1-php8.5-bookworm.tar');
+        ->toContain('sudo_run install -m 0644 -o "$user" -g "$user" "$WG_EASY_IMAGE_ARCHIVE" "$staged_wg_easy_image_archive"')
+        ->toContain('wg_easy_image_args=(--wg-easy-image-archive="$staged_wg_easy_image_archive")')
+        ->toContain('${guest_stage_dir}/orbit-runtime-current.tar')
+        ->toContain('${guest_stage_dir}/caddy-2-alpine.tar')
+        ->toContain('${guest_stage_dir}/dnsmasq-latest.tar')
+        ->toContain('${guest_stage_dir}/frankenphp-1-php8.5-bookworm.tar')
+        ->toContain('${guest_stage_dir}/wg-easy-15.tar')
+        ->toContain('sudo_run rm -rf /var/tmp/orbit-e2e-install');
 });
 
 it('fails when --role is missing', function (): void {
@@ -194,6 +203,24 @@ it('fails when frankenphp image archive does not exist', function (): void {
 
         expect($result->successful())->toBeFalse();
         expect($result->errorOutput())->toContain('frankenphp image archive not found');
+    } finally {
+        @unlink($source);
+    }
+});
+
+it('fails when wg-easy image archive does not exist', function (): void {
+    $source = tempnam(sys_get_temp_dir(), 'orbit-provision-source-');
+
+    try {
+        $result = Process::run([
+            provisionScript(),
+            '--role=gateway',
+            "--source-archive={$source}",
+            '--wg-easy-image-archive=/tmp/orbit-wg-easy-does-not-exist.tar',
+        ]);
+
+        expect($result->successful())->toBeFalse();
+        expect($result->errorOutput())->toContain('wg-easy image archive not found');
     } finally {
         @unlink($source);
     }

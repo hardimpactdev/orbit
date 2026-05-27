@@ -233,7 +233,8 @@ describe('proxy backend and TLS reality', function (): void {
             'key_exists' => true,
         ])
             ->and($shell->nodes[0]->is($node))->toBeTrue()
-            ->and($shell->options[0]['metadata']['ORBIT_PROXY_DOMAIN'])->toBe('vite.docs.test');
+            ->and($shell->options[0]['metadata']['ORBIT_PROXY_DOMAIN'])->toBe('vite.docs.test')
+            ->and($shell->options[0]['metadata']['ORBIT_PROXY_SUFFIX'])->toBe('');
     });
 
     it('detects missing ingress route artifacts separately from backend artifacts', function (): void {
@@ -279,6 +280,35 @@ describe('proxy backend and TLS reality', function (): void {
 
         expect(proxyProbeIssue($drift, 'proxy.public_route_missing')?->kind)->toBe(DriftKind::Missing)
             ->and(proxyProbeIssue($drift, 'proxy.backend_route_missing'))->toBeNull();
+    });
+
+    it('does not report managed private backend artifacts as extra node routes', function (): void {
+        $edge = Node::factory()->create(['name' => 'edge-1', 'role' => 'control', 'status' => 'active']);
+        $backend = Node::factory()->create(['name' => 'web-1', 'role' => 'control', 'status' => 'active']);
+        assignProxyProbeRole($edge, 'ingress');
+        assignProxyProbeRole($backend, 'app-production');
+
+        ProxyRoute::factory()->create([
+            'node_id' => $edge->id,
+            'domain' => 'docs.test',
+            'owner_type' => 'app',
+            'kind' => 'app',
+            'app_id' => App::factory()->create(['node_id' => $backend->id])->id,
+            'source_hash' => str_repeat('a', 64),
+            'config' => [
+                'placement' => 'ingress',
+                'backend_artifacts' => [[
+                    'node_id' => $backend->id,
+                    'source_hash' => str_repeat('b', 64),
+                ]],
+            ],
+        ]);
+
+        $drift = (new ProxyRouteProbe)->diffNode($backend, new ProbeSnapshot([
+            'docs.test.backend' => ['route_exists' => true, 'route_hash' => str_repeat('b', 64)],
+        ]));
+
+        expect(proxyProbeIssue($drift, 'docs.test.backend'))->toBeNull();
     });
 
     it('detects mismatched router artifacts for ingress routes', function (): void {

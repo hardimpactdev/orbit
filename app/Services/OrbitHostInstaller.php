@@ -11,6 +11,7 @@ use App\Services\Security\HomeDirectoryLockdownInstaller;
 use App\Services\Security\SshdHardenedInstaller;
 use App\Services\Security\SysctlBaselineInstaller;
 use App\Services\Security\UnattendedUpgradesInstaller;
+use App\Services\Vpn\WgEasyServiceInstaller;
 use Illuminate\Contracts\Process\ProcessResult;
 use Illuminate\Support\Facades\Process;
 use Illuminate\Support\Str;
@@ -175,7 +176,7 @@ class OrbitHostInstaller
     }
 
     /**
-     * @return array{runtime?: string, caddy?: string, dnsmasq?: string, frankenphp?: string}
+     * @return array{runtime?: string, caddy?: string, dnsmasq?: string, frankenphp?: string, wg_easy?: string}
      */
     private function buildForwardedImageArchives(): array
     {
@@ -191,6 +192,7 @@ class OrbitHostInstaller
             'caddy' => ['image' => 'caddy:2-alpine', 'name' => 'caddy-2-alpine'],
             'dnsmasq' => ['image' => '4km3/dnsmasq:latest', 'name' => 'dnsmasq-latest'],
             'frankenphp' => ['image' => $phpRuntimeCatalog->imageFor(PhpRuntimeCatalog::DEFAULT), 'name' => 'frankenphp-1-php8.5-bookworm'],
+            'wg_easy' => ['image' => WgEasyServiceInstaller::Image, 'name' => 'wg-easy-15'],
         ] as $key => $image) {
             $inspect = Process::timeout(30)->run(sprintf(
                 'docker image inspect %s >/dev/null 2>&1',
@@ -221,8 +223,8 @@ class OrbitHostInstaller
     }
 
     /**
-     * @param  array{runtime?: string, caddy?: string, dnsmasq?: string, frankenphp?: string}  $localImageArchives
-     * @return array{runtime?: string, caddy?: string, dnsmasq?: string, frankenphp?: string}
+     * @param  array{runtime?: string, caddy?: string, dnsmasq?: string, frankenphp?: string, wg_easy?: string}  $localImageArchives
+     * @return array{runtime?: string, caddy?: string, dnsmasq?: string, frankenphp?: string, wg_easy?: string}
      */
     private function remoteImageArchives(string $remotePrefix, array $localImageArchives): array
     {
@@ -234,6 +236,7 @@ class OrbitHostInstaller
                 'caddy' => "{$remotePrefix}-caddy-2-alpine.tar",
                 'dnsmasq' => "{$remotePrefix}-dnsmasq-latest.tar",
                 'frankenphp' => "{$remotePrefix}-frankenphp-1-php8.5-bookworm.tar",
+                'wg_easy' => "{$remotePrefix}-wg-easy-15.tar",
             };
         }
 
@@ -241,7 +244,7 @@ class OrbitHostInstaller
     }
 
     /**
-     * @param  array{runtime?: string, caddy?: string, dnsmasq?: string, frankenphp?: string}  $remoteImageArchives
+     * @param  array{runtime?: string, caddy?: string, dnsmasq?: string, frankenphp?: string, wg_easy?: string}  $remoteImageArchives
      */
     private function imageArchiveInstallerFlags(array $remoteImageArchives): string
     {
@@ -261,6 +264,10 @@ class OrbitHostInstaller
 
         if (isset($remoteImageArchives['frankenphp'])) {
             $flags .= ' --frankenphp-image-archive='.escapeshellarg($remoteImageArchives['frankenphp']);
+        }
+
+        if (isset($remoteImageArchives['wg_easy'])) {
+            $flags .= ' --wg-easy-image-archive='.escapeshellarg($remoteImageArchives['wg_easy']);
         }
 
         return $flags;

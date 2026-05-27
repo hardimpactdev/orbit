@@ -30,6 +30,14 @@ describe('first-gateway provisioning contract', function (): void {
             ->not->toContain("'cd %s && php artisan orbit:internal:detect-platform");
     });
 
+    it('budgets first-gateway identity bootstrap for runtime image loading and container convergence', function (): void {
+        $nodeNew = file_get_contents(base_path('app/Console/Commands/NodeNewCommand.php'));
+
+        expect($nodeNew)
+            ->toContain('private const int FIRST_GATEWAY_BOOTSTRAP_TIMEOUT_SECONDS = 600')
+            ->and(preg_match('/Process::timeout\(self::FIRST_GATEWAY_BOOTSTRAP_TIMEOUT_SECONDS\)\s*->input\(\$identityJson\)\s*->run/s', $nodeNew))->toBe(1);
+    });
+
     it('starts orbit-runtime with ORBIT_IS_GATEWAY=1 when install-orbit is invoked with --gateway', function (): void {
         $script = file_get_contents(base_path('bin/install-orbit'));
 
@@ -86,7 +94,7 @@ describe('GatewayApiRuntimeInstaller orbit-caddy convergence', function (): void
         }
     });
 
-    it('converges the orbit-caddy container before writing the gateway API site and restarting it', function (): void {
+    it('converges the orbit-caddy container before writing the gateway API site and reloading it', function (): void {
         $shellScripts = [];
 
         Process::fake(function ($process) use (&$shellScripts) {
@@ -299,10 +307,12 @@ CADDY;
         app(GatewayApiRuntimeInstaller::class)->install('10.6.0.2');
 
         expect($writtenGlobalCaddyfile)
-            ->toContain('admin off')
+            ->toContain('admin localhost:2019')
+            ->toContain('local_certs')
             ->toContain('import /etc/caddy/sites/*.caddy')
             ->toContain('import /etc/caddy/orbit/orbit-web.caddy')
-            ->toContain('import /etc/caddy/orbit/*.caddy');
+            ->toContain('import /etc/caddy/orbit/*.caddy')
+            ->not->toContain('admin off');
 
         // Force-touch CaddyGlobalConfig so the imports list is the source of truth.
         expect((new CaddyGlobalConfig)->fresh())

@@ -384,8 +384,12 @@ BASH;
     public function diffNode(Node $node, ProbeSnapshot $snapshot): array
     {
         $drift = [];
-        $dbRoutes = ProxyRoute::query()->where('node_id', $node->id)->get();
+        $allRoutes = ProxyRoute::query()->get();
+        $dbRoutes = $allRoutes
+            ->filter(fn (ProxyRoute $route): bool => $route->node_id === $node->id)
+            ->values();
         $observedDomains = $snapshot->keys();
+        $expectedDomains = $this->expectedRouteDomainsForNode($allRoutes->all(), $node);
 
         foreach ($dbRoutes as $route) {
             $routeDrift = $this->diff($route, $snapshot);
@@ -413,12 +417,10 @@ BASH;
             $drift = array_merge($drift, $routeDrift);
         }
 
-        $dbDomains = $dbRoutes->pluck('domain')->all();
-
         foreach ($snapshot->keys() as $domain) {
             $domain = (string) $domain;
 
-            if (in_array($domain, $dbDomains, true)) {
+            if (in_array($domain, $expectedDomains, true)) {
                 continue;
             }
 
@@ -431,6 +433,43 @@ BASH;
         }
 
         return $drift;
+    }
+
+    /**
+     * @return list<string>
+     */
+    public function expectedDomainsForNode(Node $node): array
+    {
+        return $this->expectedRouteDomainsForNode(ProxyRoute::query()->get()->all(), $node);
+    }
+
+    /**
+     * @param  list<ProxyRoute>  $routes
+     * @return list<string>
+     */
+    private function expectedRouteDomainsForNode(array $routes, Node $node): array
+    {
+        $domains = [];
+
+        foreach ($routes as $route) {
+            if ($route->node_id === $node->id) {
+                $domains[] = $route->domain;
+            }
+
+            $routerNodeId = $this->routerArtifact($route)['node_id'] ?? null;
+
+            if ($routerNodeId === $node->id) {
+                $domains[] = $route->domain;
+            }
+
+            foreach ($this->backendArtifacts($route) as $artifact) {
+                if (($artifact['node_id'] ?? null) === $node->id) {
+                    $domains[] = "{$route->domain}.backend";
+                }
+            }
+        }
+
+        return array_values(array_unique(array_filter($domains, is_string(...))));
     }
 
     /**

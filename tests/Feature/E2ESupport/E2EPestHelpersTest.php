@@ -26,6 +26,17 @@ it('loads e2e pest helper functions from the pest bootstrap', function (): void 
         ->and(function_exists('e2eCheckout'))->toBeTrue();
 });
 
+it('provisions app nodes through canonical node roles in the provision lane', function (): void {
+    $helpers = file_get_contents(base_path('tests/E2E/Support/Pest.php'));
+
+    expect($helpers)
+        ->toContain("'development' => 'app-dev'")
+        ->toContain("'production' => 'app-prod'")
+        ->toContain('$parts[] = \'--role=ingress\';')
+        ->not->toContain("'--role=app',")
+        ->not->toContain("'--environment='");
+});
+
 it('builds provider aware current checkout orbit wrappers', function (): void {
     $docker = e2eOrbitWrapperScript('/home/orbit/orbit-current', dockerRuntime: true, executorNodeIdentity: 'app-dev-1', hostLauncher: true);
     $incus = e2eOrbitWrapperScript('/home/orbit/orbit-current', dockerRuntime: false);

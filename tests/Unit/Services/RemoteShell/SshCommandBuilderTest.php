@@ -86,6 +86,28 @@ it('enforces pinned host keys for node ssh commands', function (): void {
         ->and($command)->not->toContain('accept-new');
 });
 
+it('stores generated known hosts outside shared app storage', function (): void {
+    $node = Node::factory()->create([
+        'host' => 'public.example.com',
+        'wireguard_address' => '10.6.0.12',
+        'user' => 'orbit',
+        'host_key_type' => 'ssh-ed25519',
+        'host_key_public' => 'AAAAC3NzaC1lZDI1NTE5AAAAITestPinnedPublicKey',
+        'host_key_fingerprint' => 'SHA256:pinned',
+        'host_key_pin_mode' => 'verified',
+        'host_key_pinned_at' => now(),
+    ]);
+
+    $command = app(SshCommandBuilder::class)->enforceForNode(
+        node: $node,
+        remoteCommand: 'hostname',
+    );
+
+    expect($command)
+        ->toContain(rtrim(sys_get_temp_dir(), DIRECTORY_SEPARATOR).'/orbit-ssh-known-hosts-')
+        ->not->toContain(storage_path('framework/ssh-known-hosts'));
+});
+
 it('can enforce pinned host keys for the bootstrap user over the public host', function (): void {
     $node = Node::factory()->create([
         'host' => 'public.example.com',

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\E2E\Support;
 
 use App\Services\Php\PhpRuntimeCatalog;
+use App\Services\Vpn\WgEasyServiceInstaller;
 use Illuminate\Contracts\Process\ProcessResult;
 use Illuminate\Support\Facades\Process;
 use RuntimeException;
@@ -14,6 +15,8 @@ class IncusHost
     private const string GuestBundleDirectory = '/var/tmp/orbit-e2e-bundle';
 
     private const string DefaultFrankenPhpImageArchive = 'frankenphp-1-php8.5-bookworm.tar';
+
+    private const string DefaultWgEasyImageArchive = 'wg-easy-15.tar';
 
     public function __construct(
         public readonly E2EConfig $config,
@@ -78,9 +81,10 @@ class IncusHost
             }
 
             $this->stageDockerImageArchive('orbit-runtime:current', 'orbit-runtime-current.tar', $bundleDir);
-            $this->stageDockerImageArchive('caddy:2-alpine', 'caddy-2-alpine.tar', $bundleDir);
-            $this->stageDockerImageArchive('4km3/dnsmasq:latest', 'dnsmasq-latest.tar', $bundleDir);
-            $this->stageDockerImageArchive($this->defaultFrankenPhpImage(), self::DefaultFrankenPhpImageArchive, $bundleDir);
+            $this->stageDockerImageArchive('caddy:2-alpine', 'caddy-2-alpine.tar', $bundleDir, pullIfMissing: true);
+            $this->stageDockerImageArchive('4km3/dnsmasq:latest', 'dnsmasq-latest.tar', $bundleDir, pullIfMissing: true);
+            $this->stageDockerImageArchive($this->defaultFrankenPhpImage(), self::DefaultFrankenPhpImageArchive, $bundleDir, pullIfMissing: true);
+            $this->stageDockerImageArchive(WgEasyServiceInstaller::Image, self::DefaultWgEasyImageArchive, $bundleDir, pullIfMissing: true);
 
             return $bundleDir;
         }
@@ -97,9 +101,10 @@ class IncusHost
         }
 
         $this->stageDockerImageArchive('orbit-runtime:current', 'orbit-runtime-current.tar', $bundleDir);
-        $this->stageDockerImageArchive('caddy:2-alpine', 'caddy-2-alpine.tar', $bundleDir);
-        $this->stageDockerImageArchive('4km3/dnsmasq:latest', 'dnsmasq-latest.tar', $bundleDir);
-        $this->stageDockerImageArchive($this->defaultFrankenPhpImage(), self::DefaultFrankenPhpImageArchive, $bundleDir);
+        $this->stageDockerImageArchive('caddy:2-alpine', 'caddy-2-alpine.tar', $bundleDir, pullIfMissing: true);
+        $this->stageDockerImageArchive('4km3/dnsmasq:latest', 'dnsmasq-latest.tar', $bundleDir, pullIfMissing: true);
+        $this->stageDockerImageArchive($this->defaultFrankenPhpImage(), self::DefaultFrankenPhpImageArchive, $bundleDir, pullIfMissing: true);
+        $this->stageDockerImageArchive(WgEasyServiceInstaller::Image, self::DefaultWgEasyImageArchive, $bundleDir, pullIfMissing: true);
 
         return $bundleDir;
     }
@@ -109,14 +114,19 @@ class IncusHost
         return (new PhpRuntimeCatalog)->imageFor(PhpRuntimeCatalog::DEFAULT);
     }
 
-    private function stageDockerImageArchive(string $image, string $fileName, string $bundleDir): void
+    private function stageDockerImageArchive(string $image, string $fileName, string $bundleDir, bool $pullIfMissing = false): void
     {
         $archive = "{$bundleDir}/{$fileName}";
+        $quotedImage = escapeshellarg($image);
+        $pullCommand = $pullIfMissing
+            ? "if ! docker image inspect {$quotedImage} >/dev/null 2>&1; then docker pull {$quotedImage}; fi; "
+            : '';
 
         $result = $this->run(sprintf(
-            'if command -v docker >/dev/null 2>&1 && docker image inspect %s >/dev/null 2>&1; then docker save %s -o %s; chmod 0644 %s; fi',
-            escapeshellarg($image),
-            escapeshellarg($image),
+            'if command -v docker >/dev/null 2>&1; then %s if docker image inspect %s >/dev/null 2>&1; then docker save %s -o %s; chmod 0644 %s; fi; fi',
+            $pullCommand,
+            $quotedImage,
+            $quotedImage,
             escapeshellarg($archive),
             escapeshellarg($archive),
         ), timeoutSeconds: 600);
@@ -213,9 +223,19 @@ class IncusHost
             ? " --frankenphp-image-archive={$guestBundleDirectory}/".self::DefaultFrankenPhpImageArchive
             : '';
 
+        $hasWgEasyImageArchive = $role === 'gateway'
+            && $this->run(
+                'test -f '.escapeshellarg("{$remoteBundleDir}/".self::DefaultWgEasyImageArchive),
+                timeoutSeconds: 5,
+            )->successful();
+
+        $wgEasyImageArchiveArg = $hasWgEasyImageArchive
+            ? " --wg-easy-image-archive={$guestBundleDirectory}/".self::DefaultWgEasyImageArchive
+            : '';
+
         $script = sprintf(
             'chmod +x %1$s/e2e-provision-node %1$s/install-orbit %1$s/_e2e-deps.sh && '
-            .'%1$s/e2e-provision-node --role=%2$s --source-archive=%1$s/orbit-source.tar.gz --installer=%1$s/install-orbit%3$s%4$s%5$s%6$s%7$s%8$s',
+            .'%1$s/e2e-provision-node --role=%2$s --source-archive=%1$s/orbit-source.tar.gz --installer=%1$s/install-orbit%3$s%4$s%5$s%6$s%7$s%8$s%9$s',
             $guestBundleDirectory,
             escapeshellarg($role),
             $operatorUserArg,
@@ -224,6 +244,7 @@ class IncusHost
             $caddyImageArchiveArg,
             $dnsmasqImageArchiveArg,
             $frankenPhpImageArchiveArg,
+            $wgEasyImageArchiveArg,
         );
 
         $command = sprintf(

@@ -10,6 +10,7 @@ use App\E2E\Support\E2EProvisioningBundle;
 use App\E2E\Support\E2ERun;
 use App\E2E\Support\IncusProvider;
 use App\E2E\Support\ProviderPool;
+use App\E2E\Support\SshKeyPair;
 
 pest()->group('e2e-provision');
 
@@ -30,6 +31,26 @@ PHP),
     );
 
     return json_decode(trim($route->output()), associative: true, flags: JSON_THROW_ON_ERROR);
+}
+
+/**
+ * @return list<array<string, mixed>>
+ */
+function ingressProductionNodeRoles(E2EInstance $control, E2EConfig $config, SshKeyPair $key, string $node): array
+{
+    $nodeName = escapeshellarg($node);
+    $show = E2ECommand::ssh(
+        $control,
+        $config->controlUser,
+        $key,
+        "cd /home/{$config->controlUser}/orbit && orbit node:show {$nodeName} --json",
+        timeoutSeconds: 600,
+    );
+
+    $payload = json_decode(trim($show->output()), associative: true, flags: JSON_THROW_ON_ERROR);
+    $roles = $payload['success']['data']['node']['roles'] ?? [];
+
+    return is_array($roles) ? array_values($roles) : [];
 }
 
 it('serves a production app on a colocated ingress node', function (): void {
@@ -61,21 +82,24 @@ it('serves a production app on a colocated ingress node', function (): void {
         );
 
         $appPayload = e2eCreateProductionApp($control, $config, $key, node: 'web-1', domain: 'docs.example.test');
+        $nodeRoles = ingressProductionNodeRoles($control, $config, $key, 'web-1');
+        $nodeRoleNames = array_map(
+            fn (array $role): mixed => $role['role'] ?? null,
+            $nodeRoles,
+        );
+        sort($nodeRoleNames);
         $route = ingressProductionTopologyRoute($gateway, 'docs.example.test');
 
-        expect($nodePayload['success']['data']['roles'])
-            ->sequence(
-                fn ($role) => $role->role->toBe('ingress'),
-                fn ($role) => $role->role->toBe('app-production'),
-            )
+        expect($nodePayload['success']['data']['node']['name'])->toBe('web-1')
+            ->and($nodeRoleNames)->toBe(['app-production', 'ingress'])
             ->and($appPayload['success']['data']['app']['url'])->toBe('https://docs.example.test')
             ->and($route['node'])->toBe('web-1')
             ->and($route['placement'])->toBe('ingress')
             ->and($route['router'])->toMatchArray([
-                'node' => 'gateway',
+                'node' => 'gateway-1',
                 'url' => 'http://10.6.0.2:80',
                 'backend_pool' => [
-                    ['node' => 'web-1', 'url' => 'http://10.6.0.4:80'],
+                    ['node' => 'web-1', 'url' => 'http://10.6.0.4:8081'],
                 ],
             ]);
 
@@ -133,10 +157,10 @@ it('serves a production app through a dedicated ingress node', function (): void
             ->and($route['node'])->toBe('edge-1')
             ->and($route['placement'])->toBe('ingress')
             ->and($route['router'])->toMatchArray([
-                'node' => 'gateway',
+                'node' => 'gateway-1',
                 'url' => 'http://10.6.0.2:80',
                 'backend_pool' => [
-                    ['node' => 'web-1', 'url' => 'http://10.6.0.5:80'],
+                    ['node' => 'web-1', 'url' => 'http://10.6.0.5:8081'],
                 ],
             ]);
 

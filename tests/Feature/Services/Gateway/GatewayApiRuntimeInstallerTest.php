@@ -8,6 +8,7 @@ use App\Services\Runtime\DockerCommandBuilder;
 use App\Services\Runtime\OrbitCaddyContainer;
 use App\Services\Runtime\OrbitContainerNames;
 use App\Services\Runtime\OrbitRuntimeContainerRenderer;
+use App\Tools\CaddyTool;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Process;
@@ -189,7 +190,7 @@ describe('GatewayApiRuntimeInstaller', function (): void {
 
         $runtimeCreateIndex = null;
         $caddyConfigWriteIndex = null;
-        $caddyRestartIndex = null;
+        $caddyReloadIndex = null;
 
         foreach ($invocations as $i => $command) {
             if ($command === $builder->runDetached($runtimeContainer)) {
@@ -198,16 +199,16 @@ describe('GatewayApiRuntimeInstaller', function (): void {
             if (str_contains($command, 'tee /etc/caddy/orbit/orbit-api.caddy')) {
                 $caddyConfigWriteIndex = $i;
             }
-            if ($command === "docker restart 'orbit-caddy'") {
-                $caddyRestartIndex = $i;
+            if ($command === CaddyTool::reloadCommand('orbit-caddy')) {
+                $caddyReloadIndex = $i;
             }
         }
 
         expect($runtimeCreateIndex)->not->toBeNull('orbit-runtime container must be created')
             ->and($caddyConfigWriteIndex)->not->toBeNull('gateway API Caddy config must be written')
-            ->and($caddyRestartIndex)->not->toBeNull('orbit-caddy must be restarted')
+            ->and($caddyReloadIndex)->not->toBeNull('orbit-caddy must be reloaded')
             ->and($runtimeCreateIndex)->toBeLessThan($caddyConfigWriteIndex, 'orbit-runtime must be created before the Caddy config is written')
-            ->and($caddyConfigWriteIndex)->toBeLessThan($caddyRestartIndex, 'Caddy config must be written before orbit-caddy is restarted');
+            ->and($caddyConfigWriteIndex)->toBeLessThan($caddyReloadIndex, 'Caddy config must be written before orbit-caddy is reloaded');
     });
 
     it('reloads the orbit-caddy container and never installs or restarts host PHP-FPM or host Caddy', function (): void {
@@ -238,7 +239,7 @@ describe('GatewayApiRuntimeInstaller', function (): void {
 
         Process::assertRan('sudo install -d -m 0755 /etc/caddy /etc/caddy/orbit /etc/caddy/sites');
         Process::assertRan('sudo tee /etc/caddy/orbit/orbit-api.caddy > /dev/null');
-        Process::assertRan("docker restart 'orbit-caddy'");
+        Process::assertRan(CaddyTool::reloadCommand('orbit-caddy'));
 
         Process::assertNotRan(fn ($process): bool => is_string($process->command)
             && str_contains($process->command, 'systemctl'));
@@ -358,7 +359,8 @@ CADDY);
 
         app(GatewayApiRuntimeInstaller::class)->install('10.6.0.2', orbitPath: '/home/orbit/orbit');
 
-        expect($writtenGlobalCaddyfile)->toContain('admin off')
+        expect($writtenGlobalCaddyfile)->toContain('admin localhost:2019')
+            ->and($writtenGlobalCaddyfile)->toContain('local_certs')
             ->and($writtenGlobalCaddyfile)->toContain('import /etc/caddy/sites/*.caddy')
             ->and($writtenGlobalCaddyfile)->toContain('import /etc/caddy/orbit/orbit-web.caddy')
             ->and($writtenGlobalCaddyfile)->toContain('import /etc/caddy/orbit/tld-proxies.caddy')
@@ -366,7 +368,8 @@ CADDY);
             ->and(substr_count($writtenGlobalCaddyfile, 'import /etc/caddy/sites/*.caddy'))->toBe(1)
             ->and(substr_count($writtenGlobalCaddyfile, 'import /etc/caddy/orbit/*.caddy'))->toBe(1)
             ->and(substr_count($writtenGlobalCaddyfile, '{'))->toBe(substr_count($writtenGlobalCaddyfile, '}'))
-            ->and(substr_count($writtenGlobalCaddyfile, 'admin off'))->toBe(1)
+            ->and(substr_count($writtenGlobalCaddyfile, 'admin localhost:2019'))->toBe(1)
+            ->and($writtenGlobalCaddyfile)->not->toContain('admin off')
             ->and($writtenGatewayApiCaddyfile)->toContain(':80 {')
             ->and($writtenGatewayApiCaddyfile)->toContain(':443 {')
             ->and($writtenGatewayApiCaddyfile)->not->toContain('https://10.6.0.2:443');

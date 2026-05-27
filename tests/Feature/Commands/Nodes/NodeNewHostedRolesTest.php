@@ -708,6 +708,63 @@ it('forwards canonical hosted app roles without legacy environment metadata', fu
     ]);
 });
 
+it('forwards private app production ingress names without requiring local registry sync', function (): void {
+    config(['orbit.is_gateway' => false]);
+
+    LocalGatewaySettings::current()->fill([
+        'gateway_url' => 'https://10.6.0.2',
+        'gateway_wg_ip' => '10.6.0.2',
+        'ca_pem_path' => '/tmp/fake-orbit-ca.pem',
+    ])->save();
+
+    $mock = new MockClient([
+        CreateNodeRequest::class => MockResponse::make([
+            'success' => [
+                'data' => [
+                    'result' => ['action' => 'created'],
+                    'node' => [
+                        'name' => 'web-1',
+                        'role' => 'app',
+                        'environment' => 'production',
+                        'status' => 'active',
+                    ],
+                    'provisioning' => [
+                        'transport' => 'ssh',
+                        'host' => '192.0.2.41',
+                        'status' => 'complete',
+                    ],
+                    'next_steps' => [],
+                ],
+            ],
+        ]),
+    ]);
+
+    $connector = new GatewayConnector;
+    $connector->withMockClient($mock);
+    app()->instance(GatewayConnector::class, $connector);
+
+    $exitCode = Artisan::call('node:new', [
+        'name' => 'web-1',
+        '--role' => ['app-production'],
+        '--host' => '192.0.2.41',
+        '--ingress' => 'edge-1',
+        '--json' => true,
+    ]);
+
+    expect($exitCode)->toBe(0);
+
+    $mock->assertSent(fn (CreateNodeRequest $request): bool => $request->body()->all() === [
+        'name' => 'web-1',
+        'role' => 'app-production',
+        'roles' => ['app-production'],
+        'host' => '192.0.2.41',
+        'environment' => null,
+        'tld' => null,
+        'user' => 'root',
+        'ingress_node' => 'edge-1',
+    ]);
+});
+
 it('maps the legacy app role to app-development', function (): void {
     $exitCode = Artisan::call('node:new', [
         'name' => 'legacy-dev-1',

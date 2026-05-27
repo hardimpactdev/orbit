@@ -45,6 +45,7 @@ describe('install-orbit Docker-first runtime contract', function (): void {
             ->toContain('-t "orbit-runtime:current"')
             ->toContain('docker_cli pull "caddy:2-alpine"')
             ->toContain('docker_cli pull "dunglas/frankenphp:1-php8.5-bookworm"')
+            ->toContain('ghcr.io/wg-easy/wg-easy:15')
             ->not->toContain('docker/orbit-caddy/Dockerfile')
             ->not->toContain('-t "orbit-caddy:current"');
     });
@@ -55,20 +56,44 @@ describe('install-orbit Docker-first runtime contract', function (): void {
             ->toContain('CADDY_IMAGE_ARCHIVE="${ORBIT_CADDY_IMAGE_ARCHIVE:-}"')
             ->toContain('DNSMASQ_IMAGE_ARCHIVE="${ORBIT_DNSMASQ_IMAGE_ARCHIVE:-}"')
             ->toContain('FRANKENPHP_IMAGE_ARCHIVE="${ORBIT_FRANKENPHP_IMAGE_ARCHIVE:-}"')
+            ->toContain('WG_EASY_IMAGE_ARCHIVE="${ORBIT_WG_EASY_IMAGE_ARCHIVE:-}"')
             ->toContain('--runtime-image-archive=PATH')
             ->toContain('--caddy-image-archive=PATH')
             ->toContain('--dnsmasq-image-archive=PATH')
             ->toContain('--frankenphp-image-archive=PATH')
+            ->toContain('--wg-easy-image-archive=PATH')
             ->toContain('docker_cli load -i "$RUNTIME_IMAGE_ARCHIVE"')
             ->toContain('docker_cli load -i "$CADDY_IMAGE_ARCHIVE"')
             ->toContain('docker_cli load -i "$DNSMASQ_IMAGE_ARCHIVE"')
             ->toContain('docker_cli load -i "$FRANKENPHP_IMAGE_ARCHIVE"')
+            ->toContain('docker_cli load -i "$WG_EASY_IMAGE_ARCHIVE"')
             ->toContain('docker_cli image inspect "orbit-runtime:current"')
             ->toContain('docker_cli image inspect "4km3/dnsmasq:latest"')
             ->toContain('docker_cli image inspect "caddy:2-alpine"')
             ->toContain('docker_cli image inspect "dunglas/frankenphp:1-php8.5-bookworm"')
+            ->toContain('docker_cli image inspect "ghcr.io/wg-easy/wg-easy:15"')
             ->toContain('docker_cli pull "caddy:2-alpine"')
             ->toContain('docker_cli pull "dunglas/frankenphp:1-php8.5-bookworm"');
+    });
+
+    it('fails early when a supplied wg-easy image archive is missing', function (): void {
+        $source = tempnam(sys_get_temp_dir(), 'orbit-install-source-');
+
+        try {
+            $process = new Process([
+                base_path('bin/install-orbit'),
+                "--source-archive={$source}",
+                '--wg-easy-image-archive=/tmp/orbit-wg-easy-does-not-exist.tar',
+                '--skip-prerequisites',
+            ]);
+
+            $process->run();
+
+            expect($process->isSuccessful())->toBeFalse();
+            expect($process->getErrorOutput())->toContain('wg-easy image archive not found');
+        } finally {
+            @unlink($source);
+        }
     });
 
     it('marks archive-seeded installs so node:new can forward local runtime images during E2E provisioning', function (): void {

@@ -347,12 +347,12 @@ final readonly class DoctorReportRunner
 
             if ($node->status === 'active' && $this->canServeGatewayOrAppHost($node)) {
                 $snapshot = $this->proxyRouteProbe->introspectNode($node);
-                $dbDomains = ProxyRoute::query()->where('node_id', $node->id)->pluck('domain')->all();
+                $expectedDomains = $this->proxyRouteProbe->expectedDomainsForNode($node);
 
                 foreach ($snapshot->keys() as $domain) {
                     $domain = (string) $domain;
 
-                    if (in_array($domain, $dbDomains, true)) {
+                    if (in_array($domain, $expectedDomains, true)) {
                         continue;
                     }
 

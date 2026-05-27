@@ -120,12 +120,19 @@ function e2eProvisionAppThroughNodeNew(
     $parts = [
         "cd /home/{$config->controlUser}/orbit && orbit node:new",
         escapeshellarg($name),
-        '--role=app',
+        '--role='.escapeshellarg(match ($environment) {
+            'development' => 'app-dev',
+            'production' => 'app-prod',
+            default => throw new InvalidArgumentException("Unsupported app environment [{$environment}]."),
+        }),
         '--host='.escapeshellarg($app->waitForIpv4()),
-        '--environment='.escapeshellarg($environment),
         '--user='.escapeshellarg($config->bootstrapUser),
         '--json',
     ];
+
+    if ($environment === 'production') {
+        $parts[] = '--role=ingress';
+    }
 
     if ($tld !== null) {
         $parts[] = '--tld='.escapeshellarg($tld);

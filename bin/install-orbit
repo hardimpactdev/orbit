@@ -10,6 +10,7 @@ RUNTIME_IMAGE_ARCHIVE="${ORBIT_RUNTIME_IMAGE_ARCHIVE:-}"
 CADDY_IMAGE_ARCHIVE="${ORBIT_CADDY_IMAGE_ARCHIVE:-}"
 DNSMASQ_IMAGE_ARCHIVE="${ORBIT_DNSMASQ_IMAGE_ARCHIVE:-}"
 FRANKENPHP_IMAGE_ARCHIVE="${ORBIT_FRANKENPHP_IMAGE_ARCHIVE:-}"
+WG_EASY_IMAGE_ARCHIVE="${ORBIT_WG_EASY_IMAGE_ARCHIVE:-}"
 LINK_PATH="${ORBIT_BIN_PATH:-/usr/local/bin/orbit}"
 USE_SUDO=1
 SKIP_PREREQUISITES="${ORBIT_INSTALL_SKIP_PREREQUISITES:-0}"
@@ -44,6 +45,9 @@ Options:
                                Load dunglas/frankenphp:1-php8.5-bookworm from
                                this Docker image archive before falling back
                                to Docker Hub.
+  --wg-easy-image-archive=PATH Load ghcr.io/wg-easy/wg-easy:15 from this Docker
+                               image archive before the gateway VPN runtime
+                               starts.
   --bin=PATH                   Symlink path for the orbit executable.
                                Defaults to "/usr/local/bin/orbit".
   --skip-prerequisites         Skip Docker / package prerequisite installation.
@@ -218,6 +222,9 @@ parse_args() {
             --frankenphp-image-archive=*)
                 FRANKENPHP_IMAGE_ARCHIVE="${1#*=}"
                 ;;
+            --wg-easy-image-archive=*)
+                WG_EASY_IMAGE_ARCHIVE="${1#*=}"
+                ;;
             --bin=*)
                 LINK_PATH="${1#*=}"
                 ;;
@@ -264,6 +271,10 @@ validate_args() {
 
     if [ -n "$FRANKENPHP_IMAGE_ARCHIVE" ] && [ ! -f "$FRANKENPHP_IMAGE_ARCHIVE" ]; then
         fail validation_failed "frankenphp image archive not found: $FRANKENPHP_IMAGE_ARCHIVE"
+    fi
+
+    if [ -n "$WG_EASY_IMAGE_ARCHIVE" ] && [ ! -f "$WG_EASY_IMAGE_ARCHIVE" ]; then
+        fail validation_failed "wg-easy image archive not found: $WG_EASY_IMAGE_ARCHIVE"
     fi
 }
 
@@ -542,6 +553,7 @@ build_runtime_images() {
     ensure_caddy_image
     ensure_dnsmasq_image
     ensure_frankenphp_image
+    ensure_wg_easy_image
 }
 
 ensure_runtime_image() {
@@ -617,6 +629,24 @@ ensure_frankenphp_image() {
     fi
 
     run docker_cli pull "dunglas/frankenphp:1-php8.5-bookworm"
+}
+
+ensure_wg_easy_image() {
+    if docker_cli image inspect "ghcr.io/wg-easy/wg-easy:15" >/dev/null 2>&1; then
+        return
+    fi
+
+    if [ -z "$WG_EASY_IMAGE_ARCHIVE" ]; then
+        return
+    fi
+
+    run docker_cli load -i "$WG_EASY_IMAGE_ARCHIVE"
+
+    if docker_cli image inspect "ghcr.io/wg-easy/wg-easy:15" >/dev/null 2>&1; then
+        return
+    fi
+
+    fail validation_failed "wg-easy image archive did not load ghcr.io/wg-easy/wg-easy:15: $WG_EASY_IMAGE_ARCHIVE"
 }
 
 read_env_var() {

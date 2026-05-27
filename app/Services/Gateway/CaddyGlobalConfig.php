@@ -31,7 +31,7 @@ final readonly class CaddyGlobalConfig
             return $this->fresh();
         }
 
-        return $this->ensureImports($this->ensureSnippets($contents));
+        return $this->ensureImports($this->ensureSnippets($this->ensureGlobalOptions($contents)));
     }
 
     private function globalOptions(): string
@@ -39,9 +39,37 @@ final readonly class CaddyGlobalConfig
         return <<<'CADDY'
 {
     local_certs
-    admin off
+    admin localhost:2019
 }
 CADDY;
+    }
+
+    private function ensureGlobalOptions(string $contents): string
+    {
+        $updated = rtrim($contents);
+
+        if (! str_starts_with(ltrim($updated), '{')) {
+            return $this->globalOptions()."\n\n".$updated;
+        }
+
+        if (preg_match('/\A\s*\{(?P<body>.*?)\}/s', $updated, $matches) !== 1) {
+            return $this->globalOptions()."\n\n".$updated;
+        }
+
+        $block = $matches[0];
+        $body = (string) $matches['body'];
+
+        if (! preg_match('/^\s*local_certs\s*$/m', $body)) {
+            $block = preg_replace('/\{\s*/', "{\n    local_certs\n", $block, 1) ?? $block;
+        }
+
+        if (preg_match('/^\s*admin\s+off\s*$/m', $block)) {
+            $block = preg_replace('/^\s*admin\s+off\s*$/m', '    admin localhost:2019', $block, 1) ?? $block;
+        } elseif (! preg_match('/^\s*admin\s+/m', $block)) {
+            $block = preg_replace('/\{\s*/', "{\n    admin localhost:2019\n", $block, 1) ?? $block;
+        }
+
+        return substr_replace($updated, $block, 0, strlen($matches[0]));
     }
 
     private function ensureSnippets(string $contents): string

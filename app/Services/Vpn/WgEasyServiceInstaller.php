@@ -15,6 +15,8 @@ use RuntimeException;
 
 class WgEasyServiceInstaller
 {
+    public const string Image = 'ghcr.io/wg-easy/wg-easy:15';
+
     private const string WG_EASY_STATE_COMMAND = 'internal:wg-easy:state';
 
     private const string ACTION_UPDATE_USER = 'update-user';
@@ -258,10 +260,12 @@ SH,
         int $wireguardPort,
         string $dnsIp,
     ): string {
+        $image = self::Image;
+
         return <<<YAML
 services:
   wg-easy:
-    image: ghcr.io/wg-easy/wg-easy:15
+    image: {$image}
     container_name: wg-easy
     restart: unless-stopped
     environment:

@@ -91,6 +91,8 @@ class NodeNewCommand extends Command
 {
     private const string DEFAULT_RUNTIME_USER = 'orbit';
 
+    private const int FIRST_GATEWAY_BOOTSTRAP_TIMEOUT_SECONDS = 600;
+
     private const string TRUST_LABEL = 'orbit';
 
     public function handle(
@@ -141,7 +143,10 @@ class NodeNewCommand extends Command
                 return $inputs;
             }
 
-            $placement = $this->resolveIngressPlacement($requestedRoles['hosted']);
+            $placement = $this->resolveIngressPlacement(
+                $requestedRoles['hosted'],
+                validateLocalIngressRegistry: $executionContext === 'gateway',
+            );
 
             if (is_int($placement)) {
                 return $placement;
@@ -2339,7 +2344,7 @@ SCRIPT,
             ? $bootstrapCommand
             : sprintf('sudo su - %s -c %s', escapeshellarg($runtimeUser), escapeshellarg($bootstrapCommand));
 
-        $bootstrap = Process::timeout(120)->input($identityJson)->run($this->ssh(
+        $bootstrap = Process::timeout(self::FIRST_GATEWAY_BOOTSTRAP_TIMEOUT_SECONDS)->input($identityJson)->run($this->ssh(
             user: $sshUser,
             host: $host,
             command: $command,
@@ -3607,7 +3612,7 @@ SCRIPT,
      * @param  list<string>  $roles
      * @return array{roles: list<string>, ingress_node_id: ?int, ingress_node_name: ?string}|int
      */
-    private function resolveIngressPlacement(array $roles): array|int
+    private function resolveIngressPlacement(array $roles, bool $validateLocalIngressRegistry = true): array|int
     {
         $roles = array_values(array_unique($roles));
         $ingressNodeName = $this->stringOption('ingress');
@@ -3637,6 +3642,14 @@ SCRIPT,
         }
 
         if ($ingressNodeName !== null) {
+            if (! $validateLocalIngressRegistry) {
+                return [
+                    'roles' => $this->orderHostedRoles($roles),
+                    'ingress_node_id' => null,
+                    'ingress_node_name' => $ingressNodeName,
+                ];
+            }
+
             $ingressNode = $this->findActiveIngressNodeByName($ingressNodeName);
 
             if (! $ingressNode instanceof Node) {

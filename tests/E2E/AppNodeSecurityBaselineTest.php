@@ -204,8 +204,11 @@ SH,
         $dev,
         <<<'SH'
 set -euo pipefail
+runtime_user="orbit-ws-docs-feature-sec-471a93"
 sudo install -d -m 0755 -o orbit -g orbit /home/orbit/apps/docs/public /home/orbit/apps/docs/storage /home/orbit/apps/docs/bootstrap/cache
 sudo install -d -m 0755 -o orbit -g orbit /home/orbit/apps/docs/.worktrees/feature-sec/public /home/orbit/apps/docs/.worktrees/feature-sec/storage /home/orbit/apps/docs/.worktrees/feature-sec/bootstrap/cache
+sudo useradd --system --home-dir /home/orbit/apps/docs/.worktrees/feature-sec --shell /usr/sbin/nologin "$runtime_user" 2>/dev/null || true
+sudo chown -R "$runtime_user:$runtime_user" /home/orbit/apps/docs/.worktrees/feature-sec
 SH,
         'Development workspace runtime target could not be prepared.',
         timeoutSeconds: 120,
@@ -221,13 +224,26 @@ set -euo pipefail
 runtime_user="$(getent passwd | cut -d: -f1 | grep '^orbit-prod-' | head -n1)"
 test -n "$runtime_user"
 test "$(stat -c '%U' /home/orbit/apps/prod)" = "$runtime_user"
-grep -q "user = $runtime_user" /etc/php/8.5/fpm/pool.d/orbit-prod.conf
-grep -q "clear_env = yes" /etc/php/8.5/fpm/pool.d/orbit-prod.conf
-grep -q "php_admin_value\[open_basedir\]" /etc/php/8.5/fpm/pool.d/orbit-prod.conf
-grep -q "php_admin_value\[disable_functions\]" /etc/php/8.5/fpm/pool.d/orbit-prod.conf
-test -f /etc/systemd/system/php8.5-fpm.service.d/10-orbit-hardening.conf
-grep -q "ProtectSystem=strict" /etc/systemd/system/php8.5-fpm.service.d/10-orbit-hardening.conf
-grep -q "/home/orbit/apps/prod" /etc/systemd/system/php8.5-fpm.service.d/10-orbit-hardening.conf
+test -f /etc/orbit/apps/prod.ini
+grep -q "opcache.enable=1" /etc/orbit/apps/prod.ini
+test "$(docker inspect orbit-app-prod --format '{{.Config.Image}}')" = "dunglas/frankenphp:1-php8.5-bookworm"
+test "$(docker inspect orbit-app-prod --format '{{.State.Status}}')" = "running"
+deadline=$(($(date +%s) + 90))
+until test "$(docker inspect orbit-app-prod --format '{{if .State.Health}}{{.State.Health.Status}}{{end}}')" = "healthy"; do
+    if test "$(date +%s)" -ge "$deadline"; then
+        docker ps --filter "name=orbit-app-prod"
+        exit 1
+    fi
+    sleep 2
+done
+test "$(docker inspect orbit-app-prod --format '{{index .Config.Labels "orbit.container.kind"}}')" = "app-runtime"
+test "$(docker inspect orbit-app-prod --format '{{index .Config.Labels "orbit.app"}}')" = "prod"
+docker inspect orbit-app-prod --format '{{range .Config.Env}}{{println .}}{{end}}' | grep -qx "ORBIT_PHP_VERSION=8.5"
+docker inspect orbit-app-prod --format '{{range .Mounts}}{{println .Source .Destination .RW}}{{end}}' | grep -Fx "/home/orbit/apps/prod /app true"
+docker inspect orbit-app-prod --format '{{range .Mounts}}{{println .Source .Destination .RW}}{{end}}' | grep -Fx "/etc/orbit/apps/prod.ini /usr/local/etc/php/conf.d/zz-orbit.ini false"
+test "$(docker exec orbit-app-prod php -r 'echo PHP_MAJOR_VERSION.".".PHP_MINOR_VERSION;')" = "8.5"
+! systemctl list-unit-files "php*-fpm.service" --no-legend 2>/dev/null | grep -q .
+! test -d /etc/php/8.5/fpm
 SH,
         'Production app runtime security was not restored.',
         timeoutSeconds: 120,
@@ -240,16 +256,13 @@ function assertDevelopmentWorkspaceRuntimeSecurity(E2EInstance $dev): void
         $dev,
         <<<'SH'
 set -euo pipefail
-runtime_user="$(getent passwd | cut -d: -f1 | grep '^orbit-ws-docs-feature-sec' | head -n1)"
-test -n "$runtime_user"
+runtime_user="orbit-ws-docs-feature-sec-471a93"
+id "$runtime_user" >/dev/null
 test "$(stat -c '%U' /home/orbit/apps/docs/.worktrees/feature-sec)" = "$runtime_user"
-grep -q "user = $runtime_user" /etc/php/8.5/fpm/pool.d/orbit-docs-feature-sec.conf
-grep -q "clear_env = yes" /etc/php/8.5/fpm/pool.d/orbit-docs-feature-sec.conf
-grep -q "php_admin_value\[open_basedir\]" /etc/php/8.5/fpm/pool.d/orbit-docs-feature-sec.conf
-grep -q "php_admin_value\[disable_functions\]" /etc/php/8.5/fpm/pool.d/orbit-docs-feature-sec.conf
-test -f /etc/systemd/system/php8.5-fpm.service.d/10-orbit-hardening.conf
-grep -q "ProtectSystem=strict" /etc/systemd/system/php8.5-fpm.service.d/10-orbit-hardening.conf
-grep -q "/home/orbit/apps/docs/.worktrees/feature-sec" /etc/systemd/system/php8.5-fpm.service.d/10-orbit-hardening.conf
+docker image inspect "dunglas/frankenphp:1-php8.5-bookworm" >/dev/null
+test "$(docker inspect orbit-runtime --format '{{.State.Status}}')" = "running"
+! systemctl list-unit-files "php*-fpm.service" --no-legend 2>/dev/null | grep -q .
+! test -d /etc/php/8.5/fpm
 SH,
         'Development workspace runtime security was not restored.',
         timeoutSeconds: 120,

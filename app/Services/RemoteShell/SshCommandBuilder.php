@@ -248,12 +248,21 @@ final class SshCommandBuilder
             throw HostKeyMissing::forNode($node->name);
         }
 
-        $path = storage_path("framework/ssh-known-hosts/node-{$node->getKey()}");
+        $path = $this->knownHostsDirectory()."/node-{$node->getKey()}";
         File::ensureDirectoryExists(dirname($path));
+        @chmod(dirname($path), 0700);
         File::put($path, $this->knownHostsContent($node));
         @chmod($path, 0600);
 
         return $path;
+    }
+
+    private function knownHostsDirectory(): string
+    {
+        $uid = function_exists('posix_geteuid') ? (string) posix_geteuid() : (string) getmyuid();
+        $project = substr(sha1(base_path()), 0, 12);
+
+        return rtrim(sys_get_temp_dir(), DIRECTORY_SEPARATOR)."/orbit-ssh-known-hosts-{$uid}-{$project}";
     }
 
     private function knownHostsContent(Node $node): string

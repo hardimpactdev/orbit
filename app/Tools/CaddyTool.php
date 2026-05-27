@@ -36,7 +36,7 @@ final class CaddyTool extends BaseTool
 
     public static function reloadCommand(string $container = 'orbit-caddy'): string
     {
-        return 'docker restart '.escapeshellarg($container);
+        return 'docker exec '.escapeshellarg($container).' caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile --address localhost:2019';
     }
 
     public function updateScript(array $config = []): string

@@ -86,3 +86,14 @@ it('allows local executor operation id metadata', function (): void {
 
     Process::assertRan(fn (PendingProcess $process): bool => str_contains((string) $process->command, 'export ORBIT_OPERATION_ID='));
 });
+
+it('allows proxy route suffix metadata used by doctor probes', function (): void {
+    Process::fake(['*' => Process::result(output: "ok\n")]);
+    Process::preventStrayProcesses();
+
+    (new SshRemoteShell)->run(nodeWithPinnedHostKeyForMetadata(), 'echo "$ORBIT_PROXY_SUFFIX"', [
+        'metadata' => ['ORBIT_PROXY_SUFFIX' => '.backend'],
+    ]);
+
+    Process::assertRan(fn (PendingProcess $process): bool => str_contains((string) $process->command, 'export ORBIT_PROXY_SUFFIX='));
+});

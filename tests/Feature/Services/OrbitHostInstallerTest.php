@@ -122,6 +122,10 @@ it('forwards local runtime image archives to install-orbit when enabled for arch
         && str_contains((string) $process->command, "'dunglas/frankenphp:1-php8.5-bookworm'")
         && str_contains((string) $process->command, '/var/tmp/frankenphp-1-php8.5-bookworm-'));
 
+    Process::assertRan(fn ($process): bool => str_contains((string) $process->command, 'docker save')
+        && str_contains((string) $process->command, "'ghcr.io/wg-easy/wg-easy:15'")
+        && str_contains((string) $process->command, '/var/tmp/wg-easy-15-'));
+
     Process::assertRan(fn ($process): bool => str_contains((string) $process->command, 'scp')
         && str_contains((string) $process->command, '/var/tmp/orbit-runtime-current-')
         && str_contains((string) $process->command, "'root'@'192.0.2.20'"));
@@ -130,6 +134,7 @@ it('forwards local runtime image archives to install-orbit when enabled for arch
         && str_contains((string) $process->command, '--caddy-image-archive=')
         && str_contains((string) $process->command, '--dnsmasq-image-archive=')
         && str_contains((string) $process->command, '--frankenphp-image-archive=')
+        && str_contains((string) $process->command, '--wg-easy-image-archive=')
         && str_contains((string) $process->command, '--gateway'));
 });
 

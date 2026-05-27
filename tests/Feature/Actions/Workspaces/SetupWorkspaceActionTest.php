@@ -17,6 +17,7 @@ use App\Models\Workspace;
 use App\Models\WorkspaceRun;
 use App\Models\WorkspaceStep;
 use App\Services\Workspaces\EnsureWorkspaceProxyRoute;
+use App\Tools\CaddyTool;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 
@@ -153,8 +154,8 @@ it('registers workspace proxy routes against the FrankenPHP runtime container', 
     expect($caddySite)->toContain('tls /home/gateway/.config/orbit/certs/feature-a.demo.crt /home/gateway/.config/orbit/certs/feature-a.demo.key')
         ->and($caddySite)->toContain('reverse_proxy http://orbit-ws-demo-feature-a')
         ->and($caddySite)->not->toContain('php_fastcgi')
-        ->and((string) $siteScript)->toContain("docker restart 'orbit-caddy'")
-        ->and((string) $siteScript)->not->toContain('caddy reload')
+        ->and((string) $siteScript)->toContain(CaddyTool::reloadCommand())
+        ->and((string) $siteScript)->not->toContain("docker restart 'orbit-caddy'")
         ->and((string) $siteScript)->not->toContain('sudo systemctl reload caddy')
         ->and($route?->config['runtime_upstream'])->toBe('http://orbit-ws-demo-feature-a')
         ->and($route?->config['php_socket'])->toBeNull()

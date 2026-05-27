@@ -15,6 +15,7 @@ use App\Models\NodeRoleAssignment;
 use App\Models\NodeTool;
 use App\Models\ProxyRoute;
 use App\Services\Runtime\OrbitCaddyContainer;
+use App\Tools\CaddyTool;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
 use Saloon\Http\Faking\MockClient;
@@ -720,9 +721,9 @@ it('records and enacts an app-owned proxy route after app intent is durable', fu
         ->and($remoteShell->scripts[8] ?? '')->toContain("docker image inspect 'caddy:2-alpine'")
         ->and($remoteShell->scripts[8] ?? '')->toContain('docker run -d')
         ->and($remoteShell->scripts[8] ?? '')->toContain("--publish '10.6.0.4:80:80'")
-        ->and($remoteShell->scripts[8] ?? '')->toContain("docker restart 'orbit-caddy'")
+        ->and($remoteShell->scripts[8] ?? '')->toContain(CaddyTool::reloadCommand())
         ->and($remoteShell->scripts[8] ?? '')->not->toContain('exit 0')
-        ->and($remoteShell->scripts[8] ?? '')->not->toContain('caddy reload')
+        ->and($remoteShell->scripts[8] ?? '')->not->toContain("docker restart 'orbit-caddy'")
         ->and($remoteShell->scripts[8] ?? '')->not->toContain('sudo systemctl reload caddy');
 });
 
@@ -787,7 +788,7 @@ it('keeps app and proxy route intent when proxy backend enactment needs later co
         // EnsureAppProxyRoute: cat Caddyfile + write Caddyfile + site install failure
         new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
         new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
-        new RemoteShellResult(exitCode: 1, stdout: '', stderr: 'caddy restart failed', durationMs: 1),
+        new RemoteShellResult(exitCode: 1, stdout: '', stderr: 'caddy reload failed', durationMs: 1),
     ]));
 
     $exitCode = Artisan::call('app:new', [

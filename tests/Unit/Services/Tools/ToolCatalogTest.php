@@ -39,7 +39,8 @@ describe('tool catalog definitions', function (): void {
             ])
             ->and($repairCommands['lifecycle_running'] ?? null)->toContain('docker start')
             ->and($repairCommands['lifecycle_running'] ?? null)->toContain('orbit-caddy')
-            ->and($repairCommands['lifecycle_reloaded'] ?? null)->toContain('docker restart')
+            ->and($repairCommands['lifecycle_reloaded'] ?? null)->toContain('docker exec')
+            ->and($repairCommands['lifecycle_reloaded'] ?? null)->toContain('caddy reload')
             ->and($repairCommands['lifecycle_reloaded'] ?? null)->toContain('orbit-caddy')
             ->and($catalog->logCommand('caddy', 50))->toContain('docker logs')
             ->and($catalog->logCommand('caddy', 50))->toContain('orbit-caddy');
@@ -53,13 +54,15 @@ describe('tool catalog definitions', function (): void {
         }
     });
 
-    it('uses a container restart for caddy config changes while the admin endpoint is disabled', function (): void {
+    it('uses caddy reload through the container-local admin endpoint for config changes', function (): void {
         $reloadScript = app(ToolCatalog::class)->reconfigureScript('caddy');
 
         expect((new CaddyGlobalConfig)->fresh())
-            ->toContain('admin off')
-            ->and($reloadScript)->toBe("docker restart 'orbit-caddy'")
-            ->and($reloadScript)->not->toContain('caddy reload');
+            ->toContain('admin localhost:2019')
+            ->and($reloadScript)->toBe(CaddyTool::reloadCommand('orbit-caddy'))
+            ->and($reloadScript)->toContain('caddy reload')
+            ->and($reloadScript)->toContain('--address localhost:2019')
+            ->and($reloadScript)->not->toContain('docker restart');
     });
 
     it('converges drifted orbit-caddy containers by recreating them from the declared spec', function (): void {

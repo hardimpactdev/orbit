@@ -131,6 +131,10 @@ beforeEach(function (): void {
             return Process::result(output: "ssh-ed25519 AAAATEST gateway\n");
         }
 
+        if (str_contains($command, 'ssh-keyscan')) {
+            return Process::result(output: "192.0.2.10 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMockEd25519KeyForOrbitTests\n");
+        }
+
         if ($command === 'wg genkey') {
             return Process::result(output: "agent-private-key\n");
         }
@@ -145,6 +149,10 @@ beforeEach(function (): void {
 
         if (str_contains($command, 'orbit:internal:detect-platform')) {
             return Process::result(output: "ubuntu_24-04\n");
+        }
+
+        if (str_contains($command, 'wg show wg0 public-key')) {
+            return Process::result(output: "gateway-wg-public-key\n");
         }
 
         return Process::result();
@@ -180,7 +188,7 @@ it('provisions an agent node and verifies node doctor readiness', function (): v
             ->first()
         : null;
 
-    expect($nodeNewExitCode)->toBe(0)
+    expect($nodeNewExitCode)->toBe(0, json_encode($nodeNewPayload, JSON_THROW_ON_ERROR))
         ->and($nodeNewPayload['success']['data']['node']['name'] ?? null)->toBe('agent-1')
         ->and($node)->toBeInstanceOf(Node::class)
         ->and($node->roleAssignments)->toHaveCount(1)

@@ -10,6 +10,7 @@ RUNTIME_IMAGE_ARCHIVE=""
 CADDY_IMAGE_ARCHIVE=""
 DNSMASQ_IMAGE_ARCHIVE=""
 FRANKENPHP_IMAGE_ARCHIVE=""
+WG_EASY_IMAGE_ARCHIVE=""
 OPERATOR_USER="${ORBIT_E2E_OPERATOR_USER:-${ORBIT_E2E_CONTROL_USER:-orbit}}"
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" >/dev/null && pwd)"
 CURRENT_STEP=""
@@ -47,6 +48,10 @@ Optional:
                                Local Docker image archive for
                                dunglas/frankenphp:1-php8.5-bookworm. If given,
                                forwarded to install-orbit for app runtime
+                               bootstrap.
+  --wg-easy-image-archive=PATH Local Docker image archive for
+                               ghcr.io/wg-easy/wg-easy:15. If given,
+                               forwarded to install-orbit for gateway VPN
                                bootstrap.
   --operator-user=NAME         Operator steady-state user. Defaults to
                                $ORBIT_E2E_OPERATOR_USER, then
@@ -156,6 +161,9 @@ parse_args() {
             --frankenphp-image-archive=*)
                 FRANKENPHP_IMAGE_ARCHIVE="${1#*=}"
                 ;;
+            --wg-easy-image-archive=*)
+                WG_EASY_IMAGE_ARCHIVE="${1#*=}"
+                ;;
             --operator-user=*)
                 OPERATOR_USER="${1#*=}"
                 ;;
@@ -210,6 +218,10 @@ validate_args() {
 
     if [ -n "$FRANKENPHP_IMAGE_ARCHIVE" ] && [ ! -f "$FRANKENPHP_IMAGE_ARCHIVE" ]; then
         fail validation_failed "frankenphp image archive not found: $FRANKENPHP_IMAGE_ARCHIVE"
+    fi
+
+    if [ -n "$WG_EASY_IMAGE_ARCHIVE" ] && [ ! -f "$WG_EASY_IMAGE_ARCHIVE" ]; then
+        fail validation_failed "wg-easy image archive not found: $WG_EASY_IMAGE_ARCHIVE"
     fi
 
     [ -n "$OPERATOR_USER" ] || fail validation_failed "--operator-user must not be empty"
@@ -283,62 +295,79 @@ install_role() {
     local user
     local home_dir
     local target_dir
+    local guest_stage_dir
+    local staged_source_archive
+    local staged_installer
     local staged_runtime_image_archive=""
     local staged_caddy_image_archive=""
     local staged_dnsmasq_image_archive=""
     local staged_frankenphp_image_archive=""
+    local staged_wg_easy_image_archive=""
     local runtime_image_args=()
     local caddy_image_args=()
     local dnsmasq_image_args=()
     local frankenphp_image_args=()
+    local wg_easy_image_args=()
 
     user="$(target_user_for_role)"
     home_dir="/home/${user}"
     target_dir="${home_dir}/orbit"
+    guest_stage_dir="/var/tmp/orbit-e2e-install"
+    staged_source_archive="${guest_stage_dir}/orbit-source.tar.gz"
+    staged_installer="${guest_stage_dir}/install-orbit"
 
-    sudo_run install -m 0644 -o "$user" -g "$user" "$SOURCE_ARCHIVE" "/tmp/orbit-source.tar.gz"
-    sudo_run install -m 0755 "$INSTALLER" "/tmp/install-orbit"
+    sudo_run rm -rf "$guest_stage_dir"
+    sudo_run install -d -m 0755 -o "$user" -g "$user" "$guest_stage_dir"
+    sudo_run install -m 0644 -o "$user" -g "$user" "$SOURCE_ARCHIVE" "$staged_source_archive"
+    sudo_run install -m 0755 -o "$user" -g "$user" "$INSTALLER" "$staged_installer"
 
     if [ -n "$RUNTIME_IMAGE_ARCHIVE" ]; then
-        staged_runtime_image_archive="/tmp/orbit-runtime-current.tar"
+        staged_runtime_image_archive="${guest_stage_dir}/orbit-runtime-current.tar"
         sudo_run install -m 0644 -o "$user" -g "$user" "$RUNTIME_IMAGE_ARCHIVE" "$staged_runtime_image_archive"
         runtime_image_args=(--runtime-image-archive="$staged_runtime_image_archive")
     fi
 
     if [ -n "$CADDY_IMAGE_ARCHIVE" ]; then
-        staged_caddy_image_archive="/tmp/caddy-2-alpine.tar"
+        staged_caddy_image_archive="${guest_stage_dir}/caddy-2-alpine.tar"
         sudo_run install -m 0644 -o "$user" -g "$user" "$CADDY_IMAGE_ARCHIVE" "$staged_caddy_image_archive"
         caddy_image_args=(--caddy-image-archive="$staged_caddy_image_archive")
     fi
 
     if [ -n "$DNSMASQ_IMAGE_ARCHIVE" ]; then
-        staged_dnsmasq_image_archive="/tmp/dnsmasq-latest.tar"
+        staged_dnsmasq_image_archive="${guest_stage_dir}/dnsmasq-latest.tar"
         sudo_run install -m 0644 -o "$user" -g "$user" "$DNSMASQ_IMAGE_ARCHIVE" "$staged_dnsmasq_image_archive"
         dnsmasq_image_args=(--dnsmasq-image-archive="$staged_dnsmasq_image_archive")
     fi
 
     if [ -n "$FRANKENPHP_IMAGE_ARCHIVE" ]; then
-        staged_frankenphp_image_archive="/tmp/frankenphp-1-php8.5-bookworm.tar"
+        staged_frankenphp_image_archive="${guest_stage_dir}/frankenphp-1-php8.5-bookworm.tar"
         sudo_run install -m 0644 -o "$user" -g "$user" "$FRANKENPHP_IMAGE_ARCHIVE" "$staged_frankenphp_image_archive"
         frankenphp_image_args=(--frankenphp-image-archive="$staged_frankenphp_image_archive")
+    fi
+
+    if [ "$ROLE" = "gateway" ] && [ -n "$WG_EASY_IMAGE_ARCHIVE" ]; then
+        staged_wg_easy_image_archive="${guest_stage_dir}/wg-easy-15.tar"
+        sudo_run install -m 0644 -o "$user" -g "$user" "$WG_EASY_IMAGE_ARCHIVE" "$staged_wg_easy_image_archive"
+        wg_easy_image_args=(--wg-easy-image-archive="$staged_wg_easy_image_archive")
     fi
 
     sudo_run runuser -u "$user" -- env \
         "HOME=${home_dir}" \
         "COMPOSER_HOME=${home_dir}/.composer" \
         PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
-        /tmp/install-orbit \
+        "$staged_installer" \
         "--path=${target_dir}" \
-        --source-archive=/tmp/orbit-source.tar.gz \
+        "--source-archive=${staged_source_archive}" \
         --bin=/usr/local/bin/orbit \
         "${runtime_image_args[@]}" \
         "${caddy_image_args[@]}" \
         "${dnsmasq_image_args[@]}" \
-        "${frankenphp_image_args[@]}"
+        "${frankenphp_image_args[@]}" \
+        "${wg_easy_image_args[@]}"
 }
 
 cleanup_bundle() {
-    sudo_run rm -f /tmp/orbit-source.tar.gz /tmp/install-orbit /tmp/orbit-runtime-current.tar /tmp/caddy-2-alpine.tar /tmp/dnsmasq-latest.tar /tmp/frankenphp-1-php8.5-bookworm.tar
+    sudo_run rm -rf /var/tmp/orbit-e2e-install
 }
 
 main() {
