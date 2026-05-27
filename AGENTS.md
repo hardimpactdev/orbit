@@ -11,13 +11,16 @@ Orbit is a clean Laravel 13 codebase.
 
 ## Product Authority
 
-Orbit's current product contract lives in this repo:
+Orbit's current product contract lives in this repo under `apps/docs/content/`:
 
-- `docs/architecture.md`
-- `docs/mission.md`
-- `docs/concepts.md`
-- `docs/tech-stack.md`
-- `docs/domains/**`
+- `apps/docs/content/architecture.md`
+- `apps/docs/content/mission.md`
+- `apps/docs/content/concepts.md`
+- `apps/docs/content/tech-stack.md`
+- `apps/docs/content/domains/**`
+
+Session artifacts (plans, specs) stay at `docs/superpowers/`. They are not
+product authority and are not linted as product docs.
 
 Do not use external historical Orbit repositories as product authority or
 implementation reference material. Current docs, current tests, and current
@@ -26,7 +29,7 @@ user explicitly provides additional source material for a specific task.
 
 ## Development and debugging Rules
 
-- Always make sure that the documentation at docs/ describe the correct behavior. If the docs are lacking or contradicting with is requested. Flag it first before proceeding.
+- Always make sure that the documentation at apps/docs/content/ describes the correct behavior. If the docs are lacking or contradicting with what is requested, flag it first before proceeding.
 - When the documentation is aligned, proceed with checking wether there is a corresponding test in place. If not first create a (failing) test. Or create/adjust the test that mirrors the correct behavior.
 - From the failing test work on the implementation/fix. Always make sure the docs, tests, and code are aligned and do not drift
 - When an issue is reported about orbit running against live nodes. Make sure to verify the fix against those running nodes.
@@ -47,7 +50,7 @@ user explicitly provides additional source material for a specific task.
 ## Verification
 
 Before adding, changing, debugging, or running E2E tests, read
-`docs/testing/README.md`.
+`apps/docs/content/testing/README.md`.
 It is the authoritative lane map for prepared-topology feature tests,
 provisioning tests, host pools, cache strategy, and performance baselines.
 
@@ -72,7 +75,7 @@ composer test:e2e
 
 There is no standing live-node test lane. Provisioning, host-mutation, and
 repair/adoption flows belong in `composer test:e2e:provision`. See
-`docs/testing/README.md` for the full verification model and lane map.
+`apps/docs/content/testing/README.md` for the full verification model and lane map.
 
 ## AI Guideline Precedence
 

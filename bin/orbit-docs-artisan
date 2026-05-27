@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+
+set -Eeuo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." >/dev/null 2>&1 && pwd)"
+APP_ROOT="${ROOT}/apps/docs"
+
+cd "$APP_ROOT"
+
+if [ "${1:-}" = "test" ]; then
+    shift
+
+    exec "${ROOT}/bin/orbit-docs-pest" "$@"
+fi
+
+exec php "${APP_ROOT}/artisan" "$@"

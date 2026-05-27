@@ -64,8 +64,8 @@ it('reports command docs lint severities in agent format', function (): void {
     expect($docsLintScript)
         ->toContain('artisan librarian:lint')
         ->toContain('--format=agent')
-        ->toContain('--path=docs/domains')
-        ->toContain('--path=docs/testing')
+        ->toContain('--path=content/domains')
+        ->toContain('--path=content/testing')
         ->not->toContain('--strict');
 });
 
@@ -83,7 +83,7 @@ it('keeps the aggregate quality gate complete', function (): void {
 
     expect($script)
         ->toContain('librarian:lint')
-        ->toContain('--path=docs/testing')
+        ->toContain('--path=content/testing')
         ->toContain('phpstan analyse')
         ->toContain('rector process')
         ->toContain('bin/orbit-gateway-vendor-bin pint')
@@ -136,9 +136,9 @@ it('runs default ephemeral e2e through prepared topology lanes', function (): vo
 
 it('documents the supported verification lanes', function (): void {
     $testing = implode("\n", [
-        file_get_contents(base_path('docs/testing/README.md')),
-        file_get_contents(base_path('docs/testing/in-memory/README.md')),
-        file_get_contents(base_path('docs/testing/e2e/README.md')),
+        file_get_contents(base_path('apps/docs/content/testing/README.md')),
+        file_get_contents(base_path('apps/docs/content/testing/in-memory/README.md')),
+        file_get_contents(base_path('apps/docs/content/testing/e2e/README.md')),
     ]);
 
     expect(base_path('TESTING.md'))->not->toBeFile();
@@ -159,7 +159,7 @@ it('documents the supported verification lanes', function (): void {
 });
 
 it('documents the e2e docker benchmark protocol', function (): void {
-    $testing = file_get_contents(base_path('docs/testing/e2e/performance.md'));
+    $testing = file_get_contents(base_path('apps/docs/content/testing/e2e/performance.md'));
 
     expect($testing)
         ->toContain('## E2E Docker lane - benchmark protocol')
@@ -177,7 +177,7 @@ it('documents the e2e docker benchmark protocol', function (): void {
 });
 
 it('keeps active testing and orchestration docs on current e2e script names', function (): void {
-    $testing = file_get_contents(base_path('docs/testing/e2e/README.md'));
+    $testing = file_get_contents(base_path('apps/docs/content/testing/e2e/README.md'));
     $orchestration = file_get_contents(base_path('docs/superpowers/plans/solo-orchestration/README.md'));
 
     expect($testing)
@@ -439,7 +439,7 @@ it('aligns orbit checkout ownership with the home parent so non-root users can w
 });
 
 it('documents e2e topology timing event names', function (): void {
-    $testing = file_get_contents(base_path('docs/testing/e2e/performance.md'));
+    $testing = file_get_contents(base_path('apps/docs/content/testing/e2e/performance.md'));
 
     expect($testing)
         ->toContain('batch.copy-start')

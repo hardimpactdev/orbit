@@ -724,7 +724,7 @@ function remoteLocalExecutorActivityLogger(): ActivityLogger
 
 function remoteLocalExecutorStartUnsupportedMessage(): string
 {
-    return 'RemoteLocalExecutor::startInternal() is not supported. Long-running local-executor processes are not currently audited; use runInternal() for completion-based dispatch. See docs/execution-lanes.md.';
+    return 'RemoteLocalExecutor::startInternal() is not supported. Long-running local-executor processes are not currently audited; use runInternal() for completion-based dispatch. See apps/docs/content/execution-lanes.md.';
 }
 
 function remoteLocalExecutorTokenFactory(?Closure $clock = null): OperationTokenFactory

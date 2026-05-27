@@ -76,8 +76,11 @@
             "npx concurrently -c \"#93c5fd,#c4b5fd,#fb7185,#fdba74\" \"bin/orbit-gateway-artisan serve\" \"bin/orbit-gateway-artisan queue:listen --tries=1 --timeout=0\" \"bin/orbit-gateway-artisan pail --timeout=0\" \"npm run dev\" --names=server,queue,logs,vite --kill-others"
         ],
         "docs-lint": [
-            "bin/orbit-gateway-artisan librarian:lint --format=agent --path=docs/domains",
-            "bin/orbit-gateway-artisan librarian:lint --format=agent --path=docs/testing"
+            "bin/orbit-docs-artisan librarian:lint --format=agent --path=content/domains",
+            "bin/orbit-docs-artisan librarian:lint --format=agent --path=content/testing"
+        ],
+        "docs-test": [
+            "bin/orbit-docs-pest --compact"
         ],
         "test": [
             "Composer\\Config::disableProcessTimeout",

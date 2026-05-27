@@ -42,8 +42,8 @@ run_bg() {
     eval "${label}_PID=$!"
 }
 
-run_bg docs_lint bin/orbit-gateway-artisan librarian:lint --format=agent --path=docs/domains
-run_bg docs_testing bin/orbit-gateway-artisan librarian:lint --format=agent --path=docs/testing
+run_bg docs_lint bin/orbit-docs-artisan librarian:lint --format=agent --path=content/domains
+run_bg docs_testing bin/orbit-docs-artisan librarian:lint --format=agent --path=content/testing
 run_bg phpstan bin/orbit-gateway-vendor-bin phpstan analyse --memory-limit=512M --no-progress
 run_bg rector bin/orbit-gateway-vendor-bin rector process "${RECTOR_ARGS[@]}"
 run_bg pint bin/orbit-gateway-vendor-bin pint "${PINT_ARGS[@]}"

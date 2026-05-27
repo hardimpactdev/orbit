@@ -23,7 +23,7 @@ use RuntimeException;
  * the WireGuard address, and reloads orbit-caddy. It does not install or
  * restart host PHP, host PHP-FPM, or host Caddy.
  *
- * @see docs/domains/2_gateway/README.md — "The gateway API runtime is the
+ * @see apps/docs/content/domains/2_gateway/README.md — "The gateway API runtime is the
  *     gateway `orbit-runtime` container, exposed on the Orbit network
  *     through the gateway `orbit-caddy` container."
  */
