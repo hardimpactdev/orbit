@@ -56,7 +56,7 @@ for this default.
    - Orbit must not read `composer.json`, `package.json`, `.php-version`,
      or any other project file content during `workspace:new` to infer the
      parent app. Project-file inspection is reserved for
-     `doctor --fix --family=workspace --adopt` (`composer.json` only, and only
+     `doctor --family=workspace --adopt` (`composer.json` only, and only
      for PHP-version hints during workspace adoption).
    - Interactive prompt or non-interactive failure if still unresolved.
 2. **Resolve Workspace Name:** Use the positional `name` argument. If
@@ -96,7 +96,7 @@ for this default.
 `workspace:new` is an atomic creation + provisioning command. It does not
 support partial-creation flags (e.g. `--keep-files`); operators who want to
 register an existing path use
-`doctor --fix --family=workspace --adopt` instead. The command performs:
+`doctor --family=workspace --adopt` instead. The command performs:
 
 1. **Workspace Source Provisioning:** Resolve the parent app's effective
    agent IDE adapter from app -> node -> default, then create the source
@@ -148,7 +148,7 @@ register an existing path use
    `workspace.runtime_container_missing`, `workspace.runtime_container_mismatch`,
    `workspace.runtime_config_missing`, `workspace.runtime_config_mismatch`, plus
    `proxy` handoffs for workspace route drift). The operator repairs drift via
-   `doctor --fix --family=workspace --restore`. This matches the
+   `doctor --family=workspace --restore`. This matches the
    `app:new`/`app:register` pattern: once configuration is durable, apply drift
    is convergence work, not a hard failure.
    HTTP probe failures that occur at setup time use the command-owned
@@ -190,10 +190,10 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 - **Family:** `workspace` (see [`workspace-doctor.md`](../../workspace-doctor.md)).
 - **Probe:** `doctor --family=workspace --workspace=<name> --app=<app>`
   verifies registry configuration and runtime artifacts.
-- **Convergence:** `doctor --fix --family=workspace --restore` repairs missing or
+- **Convergence:** `doctor --family=workspace --restore` repairs missing or
   divergent runtime container, runtime configuration, and source path drift surfaced by
   `workspace:new` warnings.
-- **Adoption:** `doctor --fix --family=workspace --adopt` is the only path for
+- **Adoption:** `doctor --family=workspace --adopt` is the only path for
   registering an existing workspace path under a parent app;
   `workspace:new` itself never adopts unmanaged paths.
 

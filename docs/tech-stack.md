@@ -63,7 +63,7 @@ The sections below walk through each layer of the stack in the same order as the
 | Scheduler | Gateway scheduler loop inside `orbit-runtime` |
 | Process logs | Docker stdout/stderr logs for Docker process runtime units; Supervisor logs only for explicit `supervisor` runtime units |
 | Service containers | Docker for Orbit runtime containers and backing services |
-| Host prerequisites | Git, Docker, host PHP 8.5 CLI for the CLI/local-executor artifact with `pdo_sqlite`, `openssl`, `curl`, `mbstring`, and `json`, Orbit launcher, WireGuard/SSH identity; VitePlus on app nodes |
+| Host prerequisites | Git, Docker, host PHP 8.5 CLI for the CLI/local-executor artifact with `pdo_sqlite`, `openssl`, `curl`, `mbstring`, and `json`, Orbit launcher, WireGuard/SSH identity, and the GitHub CLI (`gh`) — required fleet-wide for authenticated public and private repository operations during cloning and deployment; VitePlus on app nodes |
 | Production HTTP ingress | `orbit-caddy` on `ingress` nodes terminating public HTTPS and forwarding to `router` over WireGuard |
 | Private production routing | `orbit-caddy` on the gateway-coupled `router` role selecting private HTTP/WebSocket/S3 routes, `.orbit` service names, and backend pools |
 | Production app backend | `orbit-caddy` on `app-production` nodes bound to the node's WireGuard address and forwarding to FrankenPHP app containers over the node Docker network |
@@ -117,7 +117,7 @@ See [Architecture: State Model](architecture.md#state-model) and [Architecture: 
 
 `orbit-caddy` serves the gateway's HTTPS API only on the gateway's WireGuard address. It is not a public internet vhost.
 
-The gateway API ingress is an internal `proxy` entry the gateway owns — managed by the same proxy family that handles every other route. Its proxy and TLS artifact is repaired by `doctor --fix --family=proxy --restore`, not by a backend-named provisioning command.
+The gateway API ingress is an internal `proxy` entry the gateway owns — managed by the same proxy family that handles every other route. Its proxy and TLS artifact is repaired by `doctor --family=proxy --restore`, not by a backend-named provisioning command.
 
 The gateway API listener must not trust client-supplied forwarding identity. `orbit-caddy` strips `X-Forwarded-For`, `X-Real-IP`, `Forwarded`, and any incoming `X-Orbit-WireGuard-Ip` before proxying to Laravel. It then injects `X-Orbit-WireGuard-Ip` from the observed WireGuard peer address for the private `orbit-runtime` hop, and gateway-mode `orbit-runtime` trusts that proxy-owned header. Caller identity still comes from the Orbit network identity model, not from caller-supplied headers.
 

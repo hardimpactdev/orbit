@@ -2,6 +2,10 @@
 
 [Back to Database commands.](README.md)
 
+The database family doctor implements the
+[Family Doctor Implementation Contract](../11_operation/3_doctor/technical/1_doctor.md#family-doctor-implementation-contract).
+`key()` returns `database_connection`.
+
 `doctor --family=database_connection` verifies whether gateway database
 connection state still matches the supported env configuration for databases
 that is present in app and workspace `.env` files.

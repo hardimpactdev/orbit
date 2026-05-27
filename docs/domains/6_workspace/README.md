@@ -27,7 +27,7 @@ These rules govern all workspace family commands.
   and Artisan execution run through that runtime container.
 - Orbit must not create, require, read, or trust `.php-version` files in app or
   workspace project trees.
-- During `doctor --fix --family=workspace --adopt`, project files are adoption hints
+- During `doctor --family=workspace --adopt`, project files are adoption hints
   only. `composer.json` is the only project file Orbit may inspect for PHP
   version hints, and only when the workspace is a PHP project.
 - Workspace hostnames are represented in `proxy` as workspace-owned
@@ -158,7 +158,7 @@ The terms below define the key vocabulary used across workspace command contract
 The CLI is a thin gateway client. The gateway authenticates the caller's
 WireGuard peer and applies the scoped permission set stored on the grant that
 connects the caller to the workspace's owning node. The CLI does not inspect
-legacy role labels locally.
+role labels locally.
 
 Self-targeting workspace commands — `workspace:setup` from inside a workspace
 path on the owning node — flow through the gateway like any other

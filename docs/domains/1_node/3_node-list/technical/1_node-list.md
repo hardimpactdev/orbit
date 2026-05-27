@@ -75,7 +75,7 @@ invocations.
 
 ### Filter and sort rules
 
-- If `--role` is present, include only nodes with the matching effective role assignment. The filter uses active `node_roles` assignments, not legacy node-row shadow fields.
+- If `--role` is present, include only nodes with the matching effective role assignment. The filter uses active `node_roles` assignments.
 - If `--environment` is present, include only nodes with the matching
   environment. The filter uses active app role assignments.
 - Filters combine with AND semantics.

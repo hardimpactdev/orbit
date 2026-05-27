@@ -68,12 +68,11 @@ it as the shared unprivileged `agent` user, never as the privileged
 update path through the Orbit-managed binary and then restarts the runtime
 container that wraps it.
 
-`tool:update openclaw` from the node itself requires
-`tool:update:agent-tools` on the self-grant. `tool:install openclaw`,
-`tool:remove openclaw`, `tool:stop openclaw`, `tool:reconfigure openclaw`,
-and updates to baseline tools (Docker, WireGuard) are not part
-of the default agent self-grant; they require explicit permissions from a
-gateway-admin.
+`tool:update openclaw` from the node itself requires `tool:update` on the
+self-grant. `tool:install openclaw`, `tool:remove openclaw`,
+`tool:stop openclaw`, `tool:reconfigure openclaw`, and `tool:credentials` are
+not part of the default agent self-grant; they require explicit permissions
+from a gateway-admin.
 
 Installing or starting OpenClaw while another agent tool is already
 running on the same node emits the

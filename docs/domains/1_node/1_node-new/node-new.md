@@ -17,7 +17,7 @@ initiating client and stores the local gateway configuration.
 Run this command to register a new node and provision it when required.
 
 ```bash
-orbit node:new [name] [--role=<role>]... [--host=<host>] [--control-name=<name>] [--environment=development|production] [--tld=<tld>] [--user=<user>] [--ingress=<node>] [--redis-node=<node>] [--s3-data-path=<path>] [--self-grant=<mode>] [--agent-tool=<tool>]... [--grant-to=<node|all>] [--grant-to-preset=<preset>] [--grant-to-permissions=<list>] [--grant-from=<node|all>] [--grant-from-preset=<preset>] [--grant-from-permissions=<list>] [--json]
+orbit node:new [name] [--role=<role>]... [--host=<host>] [--control-name=<name>] [--tld=<tld>] [--user=<user>] [--ingress=<node>] [--redis-node=<node>] [--s3-data-path=<path>] [--self-grant=<mode>] [--agent-tool=<tool>]... [--grant-to=<node|all>] [--grant-to-preset=<preset>] [--grant-to-permissions=<list>] [--grant-from=<node|all>] [--grant-from-preset=<preset>] [--grant-from-permissions=<list>] [--json]
 orbit node:new
 ```
 
@@ -49,7 +49,7 @@ orbit node:new agent-1 --role=agent --host=192.0.2.10 --grant-to=all --grant-to-
 - `--role`: repeatable initial role assignment. Supported roles:
   `app-dev`, `app-prod`, `app-development`, `app-production`, `database`,
   `agent`, `ingress`, `websocket`, and `s3`. `app-dev` maps to `app-development`;
-  `app-prod` maps to `app-production`. No assigned role means a client/control identity.
+  `app-prod` maps to `app-production`. No assigned role means a client identity.
   `gateway` remains an internal
   bootstrap path. `agent` is exclusive and may only be selected during
   `node:new`; combining it with another role fails before side effects.
@@ -60,9 +60,6 @@ orbit node:new agent-1 --role=agent --host=192.0.2.10 --grant-to=all --grant-to-
   (a client with no configured gateway running `--role=gateway`).
   Defaults to the normalized local short hostname. Forbidden outside
   first-gateway bootstrap.
-- `--environment`: deprecated legacy compatibility input only. Prefer
-  `--role=app-dev` or `--role=app-prod`; `--role=app --environment=...` is
-  retained only while old automation is migrated.
 - `--tld`: required for `app-development`. Used by `agent` as the agent
   TLD (default `agent`). Must be a single lowercase DNS label without a
   leading dot.
@@ -103,13 +100,9 @@ orbit node:new agent-1 --role=agent --host=192.0.2.10 --grant-to=all --grant-to-
 
 **Client identity**
 
-Creates a joined client identity with no hosted roles by default. This is the
-new baseline meaning of `node:new <name>` with no `--role` values. The
+Creates a client identity with no role assignments by default. The
 `--role=operator` option uses this client identity shape for an operator
 node: a node that operates one or more nodes through the gateway by grant.
-
-Legacy `--role=control` is accepted for one compatibility cycle and maps to the
-same client identity. Human output warns when a legacy mapping is used.
 
 **`app-dev` / `app-development`**
 
@@ -206,11 +199,14 @@ Bootstraps or adopts the gateway node that owns fleet configuration, WireGuard
 identity, gateway APIs, and node access policy.
 
 When a client with no configured gateway bootstraps the first gateway,
-`node:new --role=gateway` also mints and installs the initiating client's
-WireGuard identity named by `--control-name`, trusts the gateway CA, stores the
-local gateway endpoint, creates the initiating client-to-gateway
-gateway-admin grant, and verifies gateway API access. After that successful
-flow, the initiating client does not run `gateway:add`.
+`node:new --role=gateway` also handles initiating-client onboarding:
+
+- mints and installs the initiating client's WireGuard identity named by `--control-name`;
+- trusts the gateway CA and stores the local gateway endpoint;
+- creates the initiating client-to-gateway gateway-admin grant;
+- verifies gateway API access.
+
+After that successful flow, the initiating client does not run `gateway:add`.
 
 Gateway bootstrap also installs the runtime substrate for the gateway-coupled
 `vpn` role:

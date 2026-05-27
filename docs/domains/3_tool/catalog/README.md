@@ -67,18 +67,20 @@ create them from scratch unless the tool file says otherwise.
 | --- | --- |
 | [`caddy`](caddy.md) | `orbit-caddy` container for HTTP server and proxy runtime |
 | [`docker`](docker.md) | Container runtime substrate |
-| [`viteplus`](viteplus.md) | Development frontend runtime helper |
-| [`gh`](gh.md) | GitHub CLI utility |
+| [`gh`](gh.md) | GitHub CLI utility — required fleet-wide for authenticated public and private repository operations during cloning and deployment |
 | [`dns`](dns.md) | VPN-facing development DNS runtime |
-| [`rustfs`](rustfs.md) | RustFS object storage runtime materialized by the `s3` role |
 
 PHP, Composer, and Caddy runtime capabilities live in Orbit-managed
 containers. Supervisor is available only as an explicit residual process
 runtime where configured, not as a required baseline tool.
 
-RustFS is a role baseline service tool, not a standalone app helper. It is
-materialized by the `s3` role and uses Orbit's Docker-first runtime container
-rendering model.
+Role baseline tools are not in the fleet-wide table above. They are
+materialized by their owning role and only required on nodes carrying that role:
+
+| Tool | Owning role(s) |
+| --- | --- |
+| [`viteplus`](viteplus.md) | `app-development`, `app-production` |
+| [`rustfs`](rustfs.md) | `s3` |
 
 ## Installable Tools
 

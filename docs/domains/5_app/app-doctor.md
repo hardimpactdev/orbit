@@ -2,6 +2,10 @@
 
 [Back to App commands.](README.md)
 
+The app family doctor implements the
+[Family Doctor Implementation Contract](../11_operation/3_doctor/technical/1_doctor.md#family-doctor-implementation-contract).
+`key()` returns `app`.
+
 `doctor --family=app` verifies whether gateway app records still match the
 app facts that make those records runnable on their owning nodes. It also
 detects stale runtime artifacts owned by Orbit whose identity no longer maps
@@ -180,8 +184,8 @@ Required test files:
 | `apps/gateway/tests/Feature/Doctor/AppsFamilyDoctorContractTest.php` | Apps-family dispatch, probe-layer selection, issue codes (including deployment health), fix map, adopt map, denied fix/adopt cases, related-family handoff, and scope filtering. |
 | `apps/gateway/tests/Unit/Services/Apps/AppsProbeTest.php` | In-memory app probe diff behavior (see breakdown below). |
 | `apps/gateway/tests/E2E/Read/AppsDoctorTest.php` | Real read-only `doctor --family=app --json` against registered development and production apps. |
-| `apps/gateway/tests/E2E/Ephemeral/AppsDoctorFixTest.php` | Real `doctor --fix --family=app --restore` repair of safe app runtime drift. |
-| `apps/gateway/tests/E2E/Ephemeral/AppsDoctorAdoptTest.php` | Real `doctor --fix --family=app --adopt` for compatible selected app path adoption and supported runtime configuration adoption. |
+| `apps/gateway/tests/E2E/Ephemeral/AppsDoctorFixTest.php` | Real `doctor --family=app --restore` repair of safe app runtime drift. |
+| `apps/gateway/tests/E2E/Ephemeral/AppsDoctorAdoptTest.php` | Real `doctor --family=app --adopt` for compatible selected app path adoption and supported runtime configuration adoption. |
 
 `AppsProbeTest` covers registry configuration, owning node eligibility, source
 path, document root, PHP runtime, runtime container configuration, runtime

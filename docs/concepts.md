@@ -191,6 +191,7 @@ Source: [App Concepts](domains/5_app/app-concepts.md).
 - **Development app**
 - **Production app**
 - **App PHP version**
+- **App runtime kind**
 - **App runtime container**
 - **FrankenPHP app runtime**
 - **Worker mode**
@@ -198,8 +199,10 @@ Source: [App Concepts](domains/5_app/app-concepts.md).
 - **App WebSocket binding**
 - **Reverb app credentials**
 - **App agent IDE adapter**
+- **App exec**
 - **App registration**
 - **App adoption**
+- **App adoption flag**
 - **App pruning**
 - **App-owned route**
 - **App-family boundaries**
@@ -216,13 +219,17 @@ Source: [Workspace Concepts](domains/6_workspace/workspace-concepts.md).
 - **Workspace path**
 - **Workspace lifecycle status**
 - **Workspace PHP override**
+- **Workspace PHP inheritance flag**
 - **Workspace runtime container**
+- **Workspace agent IDE adapter**
+- **Workspace agent IDE identifier**
 - **Host cwd context**
 - **Setup step definition**
 - **Setup steps phase**
 - **Teardown step definition**
 - **Lifecycle step environment**
 - **Workspace adoption**
+- **Workspace adoption flag**
 - **Workspace history**
 - **Workspace-owned route**
 - **Workspace-family boundaries**
@@ -298,6 +305,8 @@ Source: [Schedule Concepts](domains/9_schedule/schedule-concepts.md).
 - **Laravel scheduler**
 - **Execution source**
 - **Portable interval expression**
+- **Schedule timezone**
+- **Schedule configuration status**
 - **Orbit Scheduler**
 - **Scheduler heartbeat**
 - **Schedule run**

@@ -2,6 +2,10 @@
 
 [Back to Tool commands.](README.md)
 
+The tool family doctor implements the
+[Family Doctor Implementation Contract](../11_operation/3_doctor/technical/1_doctor.md#family-doctor-implementation-contract).
+`key()` returns `tool`.
+
 `doctor --family=tool` verifies whether gateway tool rows still match the node
 capabilities those rows expect. It covers both managed tools, where Orbit owns
 installation or lifecycle artifacts, and observational tools, where Orbit only
@@ -133,7 +137,16 @@ This table shows what `doctor --adopt` does for each adoptable issue code.
 | `tool.version_mismatch` | Update expected version only when the observed version is supported and the operator selected the specific tool for adoption. |
 | `tool.config_mismatch` | Update expected config when the tool definition can prove the observed config belongs to the selected tool row and every adopted field is supported. |
 | `tool.credentials_mismatch` | Update credential metadata only when the tool definition declares the observed credential material safe to adopt. |
-| `tool.dns_config_drift` | Record the observed `dnsmasq.conf` content as the gateway intent. Narrow use case: an operator hand-edited the file for an emergency and now wants Orbit to adopt that change. |
+| `tool.dns_config_drift` | Parse the observed `dnsmasq.conf` into node-family mapping triples and adopt those into node-family state; re-render `dnsmasq.conf` from canonical state afterward. See note below. |
+
+`tool.dns_config_drift` adoption crosses into node-family state on purpose. The
+tool family does not own DNS records; the node family does (see
+[Architecture: DNS responsibilities](../../architecture.md#dns-responsibilities)).
+The adopt path parses each `(node, tld, wireguard_address)` triple from the
+observed `dnsmasq.conf`, records those triples into node-family state, then
+re-renders `dnsmasq.conf` from the canonical node state so the file and DB
+stay in lockstep. Narrow use case: an operator hand-edited the file for an
+emergency and wants Orbit to adopt the change.
 
 `tool.unregistered_capability` adoption requires three conditions:
 
@@ -154,8 +167,8 @@ Required test files:
 | `apps/gateway/tests/Feature/Doctor/ToolsFamilyDoctorContractTest.php` | Tools-family dispatch, probe-layer selection, tool issue codes, tool fix map, tool adopt map, denied fix/adopt cases, and scope filtering as it affects tool probes. |
 | `apps/gateway/tests/Unit/Services/Tools/ToolsProbeTest.php` | In-memory tool probe diff behavior (scope below). |
 | `apps/gateway/tests/E2E/Read/ToolsDoctorTest.php` | Real read-only `doctor --family=tool --json` against nodes with managed and observational tool rows. |
-| `apps/gateway/tests/E2E/Ephemeral/ToolsDoctorFixTest.php` | Real `doctor --fix --family=tool --restore` repair of safe managed tool drift. |
-| `apps/gateway/tests/E2E/Ephemeral/ToolsDoctorAdoptTest.php` | Real `doctor --fix --family=tool --adopt` for compatible selected observed tool adoption. |
+| `apps/gateway/tests/E2E/Ephemeral/ToolsDoctorFixTest.php` | Real `doctor --family=tool --restore` repair of safe managed tool drift. |
+| `apps/gateway/tests/E2E/Ephemeral/ToolsDoctorAdoptTest.php` | Real `doctor --family=tool --adopt` for compatible selected observed tool adoption. |
 
 `ToolsProbeTest` covers registry configuration, node eligibility, capability
 presence, version/configuration/credential/lifecycle drift, and adoption

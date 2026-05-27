@@ -118,7 +118,7 @@ worktree paths must live under `<app path>/.worktrees/`.
      `workspace:setup` does not inspect project files such as `composer.json`,
      `package.json`, or `.php-version` to infer workspace identity, app
      ownership, or PHP version. Project-file adoption hints belong only to
-     `doctor --fix --family=workspace --adopt` as documented in the Workspaces
+     `doctor --family=workspace --adopt` as documented in the Workspaces
      README.
 
 ## Input Mode Contracts

@@ -114,8 +114,9 @@ successful and reports repair guidance in machine-readable metadata.
 ## Requirements
 
 - Must run on the gateway host or from a configured client.
-- Operator callers must be authorized to operate on the gateway node.
-- App-role callers are rejected before prompts or side effects.
+- The caller's grant on the target node must include the `node:remove`
+  permission (gateway-admin grants escalate this requirement). Denials surface
+  as `authorization_failed`.
 - The target node must exist in gateway configuration.
 - The target node must not be any gateway node.
 - Removing a non-existent node is a validation failure, not an idempotent

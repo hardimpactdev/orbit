@@ -59,7 +59,7 @@ These terms define what the DNS command domain must not touch.
 
 - **Development DNS mapping owned by the gateway:** Development DNS state for the node family
   created during app-role provisioning and repaired by
-  `doctor --fix --family=node --restore`. DNS commands must not create, inspect, or
+  `doctor --family=node --restore`. DNS commands must not create, inspect, or
   repair these mappings.
 - **Private `.orbit` service name:** Stable service name such as `redis.orbit`,
   `postgres.orbit`, or `websocket.orbit` that resolves inside the Orbit network.

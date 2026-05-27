@@ -74,7 +74,7 @@ Operator peers must not:
 - SSH to app or gateway nodes for doctor probes;
 - read or mutate gateway database state directly;
 - run local family probes for non-control fleet reality;
-- repair or adopt state from `doctor` without a resolution mode flag; resolution requires `doctor --fix`, `doctor --restore`, or `doctor --adopt`.
+- repair or adopt state from `doctor` without a resolution mode flag; resolution requires `doctor`, `doctor --restore`, or `doctor --adopt`.
 
 ## Progress and rendering
 

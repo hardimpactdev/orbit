@@ -41,7 +41,7 @@ Authorization failures use `authorization_failed` with standard
   FrankenPHP containers.
 - Firewall commands do not create public SSH policy exceptions for nodes.
 - Firewall reads use gateway configuration by default. Live firewall reality belongs to `doctor --family=firewall_rule`.
-- Node reality import is not part of the firewall command surface. Adoption of observed firewall reality must use explicit `doctor --fix --family=firewall_rule --adopt` semantics.
+- Node reality import is not part of the firewall command surface. Adoption of observed firewall reality must use explicit `doctor --family=firewall_rule --adopt` semantics.
 
 ## Firewall Rule JSON Entity
 

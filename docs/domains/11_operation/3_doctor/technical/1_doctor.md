@@ -136,6 +136,30 @@ and [`3_doctor_on-gateway-node.md`](3_doctor_on-gateway-node.md).
 
 Successful update commands are not doctor convergence; `doctor` must run its own selected family probes before reporting a healthy result.
 
+## Family Doctor Implementation Contract
+
+Every family doctor probe must expose the same service method surface so the
+global `doctor` orchestrator can dispatch, verify, restore, and adopt
+uniformly. Family-specific behavior lives in the family doctor doc.
+
+| Method | Purpose |
+| --- | --- |
+| `key()` | Returns the **singular** state family key (`node`, `app`, `workspace`, `process`, `proxy`, `schedule`, `tool`, `firewall_rule`, `database_connection`). Plural keys are invalid and must be rejected by family-doctor tests. |
+| `label()` | Returns the human-readable family label used by renderers. |
+| `introspect(<owner>)` | Reads physical reality needed for ordinary drift checks. Returns the family-specific `ProbeSnapshot`. May return an empty snapshot when the family's diff layers do not need preloaded state. |
+| `diff(<owner>, ProbeSnapshot $snapshot)` | Compares gateway configuration with snapshot reality into `DriftEntry` results. |
+| `canReconcile()` | Returns whether `doctor --family=<F> --restore` is supported. |
+| `reconcile(<owner>, DriftEntry $entry)` | Applies restore behavior for supported keys and throws for unsupported keys. |
+| `canAdopt()` | Returns whether `doctor --family=<F> --adopt` is supported. |
+| `snapshotForAdopt(<owner>)` | Reads adoption-specific proof such as identity artifacts, runtime readiness, or external substrate facts. |
+| `adopt(<owner>, ProbeSnapshot $snapshot)` | Attempts supported adoption paths and returns `AdoptResult` rows with `updated`, `skipped`, or `conflict` actions. |
+
+Family doctor contracts state their per-family `<owner>` type, `key()` value,
+and which issue codes are restorable or adoptable. New probe layers add their
+issue code to the family doctor doc, add focused Pest coverage in the family
+probe test, and document restore/adopt behavior before the code starts
+returning the new key.
+
 ## Issue Kinds
 
 Generic doctor issue kinds describe the relationship between gateway configuration and observed reality:

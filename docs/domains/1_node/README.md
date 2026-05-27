@@ -239,9 +239,6 @@ These rules apply to all node commands and define the invariants the family enfo
   `--force` removes Orbit-owned dependents and configuration but preserves data.
   `--force --purge-data` deletes role-owned data only where an explicit command
   contract supports that purge.
-- Current implementation may retain legacy node-row role, environment, and TLD
-  shadow fields during migration. Role assignments remain the product
-  contract.
 - WireGuard, SSH, and certificates are node infrastructure details. They support
   node identity and reachability, but they are not separate product domains in
   the command contract.
@@ -374,12 +371,13 @@ constraints belong to access policy, not to the argument names.
 
 Each grant carries a normalized permission set stored on the grant row. The
 permission set is what the consuming node may do on the serving node once the
-grant edge already permits the call. Presets such as `agent-self`, `operator`,
-`developer`, `admin`, and `gateway-admin` expand into normalized permission
-sets; custom permissions can be supplied as a comma-separated list. Examples:
+grant edge already permits the call. Presets `agent-self`, `operator`,
+`read-only`, `developer`, `admin`, and `gateway-admin` expand into normalized
+permission sets; custom permissions can be supplied as a comma-separated list.
+Examples:
 
 ```json
-["doctor:verify", "node:read", "tool:read", "tool:restart", "tool:update:agent-tools"]
+["doctor:verify", "node:read", "tool:read", "tool:restart", "tool:update"]
 ```
 
 ```json

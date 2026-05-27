@@ -53,7 +53,7 @@ requested intent change is explicit after a tool is managed.
 - Starts the tool when expected status is running.
 - If remote installation, configuration, or start fails after gateway configuration is
   written, Orbit keeps the expected tool row and reports the node as not yet
-  converged; `doctor --fix --family=tool --restore` owns later convergence when the tool
+  converged; `doctor --family=tool --restore` owns later convergence when the tool
   definition declares a safe repair path.
 
 ### Scope Boundaries

@@ -59,7 +59,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 `vpn-client:remove` must not remove Orbit node records, node access grants, or
 active node peers. Removing Orbit node peers belongs to `node:remove`; stale
-node peers after node removal belong to `doctor --fix --family=node --restore`.
+node peers after node removal belong to `doctor --family=node --restore`.
 
 ## Renderer Contracts
 

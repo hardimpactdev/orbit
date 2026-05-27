@@ -5,7 +5,7 @@ declare(strict_types=1);
 return [
     'required' => [
         'name' => 'string',
-        'role' => 'string',
+        'role' => 'string|null',
         'environment' => 'string|null',
         'platform' => 'string',
         'status' => 'string',

@@ -11,13 +11,15 @@ These fields describe the VitePlus tool's identity, backend, and support model i
 | Slug | `viteplus` |
 | Label | VitePlus |
 | Backend | system binary |
-| Support model | Required baseline, adopted and kept converged |
-| Category | `always` |
+| Support model | Role baseline tool for the `app-development` and `app-production` roles |
+| Category | `runtime` |
 
 ## Capabilities
 
-`viteplus` is probed and adopted as a baseline CLI utility. It does not support
-tool lifecycle commands, reload, logs, credentials, or removal.
+`viteplus` is probed and adopted as the role baseline tool materialized by the
+`app-development` and `app-production` roles. It is not required on nodes
+without an app role. It does not support tool lifecycle commands, reload, logs,
+credentials, or removal.
 
 ## Credentials
 

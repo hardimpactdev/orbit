@@ -105,14 +105,6 @@ Each term below has a precise meaning in the node command family.
   CLI request. Operation is WireGuard identity plus gateway grants, not a
   built-in role. The CLI does not store or check a caller role locally.
 
-## Legacy Terminology
-
-Orbit now talks in nodes, clients, operators, and role assignments.
-Earlier wording used "control node" for the operator that operates the fleet.
-Legacy `control` terms remain only where migration compatibility still matters,
-such as persisted compatibility values, old CLI flags like `--control-name`,
-legacy JSON examples, or historical test and file names.
-
 ## Role Compatibility
 
 Assignments in `active`, `pending`, or `error` must satisfy this matrix:
@@ -327,10 +319,10 @@ exists.
   `--preset`. Presets do not embed wildcard permissions except the
   `gateway-admin` preset.
 - **Agent self preset:** Preset used by `agent` self-grants. Contains
-  `doctor:verify`, `node:read`, `tool:read`, `tool:restart`, and
-  `tool:update:agent-tools`. Excludes `node:update`, `tool:credentials`, `tool:install`,
-  `tool:remove`, `tool:stop`, `tool:reconfigure`, firewall writes, grant
-  writes, node role writes, VPN writes, `doctor:restore`, and `doctor:adopt`.
+  `doctor:verify`, `node:read`, `tool:read`, `tool:restart`, and `tool:update`.
+  Excludes `node:update`, `tool:credentials`, `tool:install`, `tool:remove`,
+  `tool:stop`, `tool:reconfigure`, firewall writes, grant writes, node role
+  writes, VPN writes, `doctor:restore`, and `doctor:adopt`.
 - **Operator preset:** Default cross-node preset for nodes with the `agent`
   role and the general-purpose preset for fleet operators. Reads firewall
   rules and database registry or schema metadata, and reports firewall doctor

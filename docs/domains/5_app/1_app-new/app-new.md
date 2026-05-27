@@ -48,7 +48,7 @@ The steps below describe what the command does during a successful run.
 - **Retry Safety:** If source creation fails, no app configuration is written; fix the
   node-side source problem and rerun `app:new`. After gateway configuration is written,
   registration failures preserve that configuration. Subsequent runs of
-  `app:register` or `doctor --fix --family=app --restore` will attempt to complete
+  `app:register` or `doctor --family=app --restore` will attempt to complete
   artifact convergence. If a previous `app:new` run already cloned the requested
   repository but failed before writing app configuration, rerunning `app:new`
   reuses that matching checkout instead of cloning again.

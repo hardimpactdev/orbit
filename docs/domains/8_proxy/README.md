@@ -65,7 +65,7 @@ These rules govern ownership, route kinds, and the boundaries of the proxy comma
   to `doctor --family=proxy`.
 - Backend discovery/import is not part of the proxy command surface. Adoption
   of observed backend routes must use explicit
-  `doctor --fix --family=proxy --adopt` semantics.
+  `doctor --family=proxy --adopt` semantics.
 
 ## Permissions
 

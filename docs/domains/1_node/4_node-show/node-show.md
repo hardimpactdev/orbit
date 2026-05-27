@@ -64,8 +64,7 @@ Run `node:show` to inspect a single node's registry record without triggering an
 
 Human output is a registry detail view. It shows role assignments as the
 primary role view (`Roles` when multiple assignments exist, `Role` when one
-assignment exists), omits the legacy environment column, and renders grants from
-the target node's perspective:
+assignment exists) and renders grants from the target node's perspective:
 
 - `Serving`: nodes that are allowed to consume this node.
 - `Consuming`: nodes this node is allowed to consume.

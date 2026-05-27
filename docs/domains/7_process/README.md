@@ -96,8 +96,8 @@ residual runtime, and the Orbit Scheduler live in
 
 Process commands are authorized by the gateway against the authenticated
 WireGuard peer and the scoped permission set stored on the grant that
-connects the caller to the app's owning node. The CLI
-does not detect or branch on the legacy node-role column locally.
+connects the caller to the app's owning node. The CLI does not detect or
+branch on the node-role column locally.
 
 - `process:list` requires `process:read` on a grant to the resolved app's
   owning node.

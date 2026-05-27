@@ -38,7 +38,7 @@ The following steps describe the removal sequence in order.
 1. **Configuration Removal:** Deletes the gateway app configuration record. This is the point of no return.
 2. **Dependent Cleanup:** Removes app-owned records from `proxy`, schedules, workspace configuration, and process artifacts.
 3. **Artifact Cleanup:** Cleans node-side runtime artifacts (runtime container config, app-owned directories) over SSH where possible.
-4. **Drift Monitoring:** Removed apps disappear from `app:list` and `app:show`. Once Step 1 succeeds, any failure during later cleanup is a non-fatal warning pointing at the affected `doctor --fix --family=<family> --restore`. App-owned node artifacts are reported as orphaned app drift by [`app-doctor.md`](../app-doctor.md).
+4. **Drift Monitoring:** Removed apps disappear from `app:list` and `app:show`. Once Step 1 succeeds, any failure during later cleanup is a non-fatal warning pointing at the affected `doctor --family=<family> --restore`. App-owned node artifacts are reported as orphaned app drift by [`app-doctor.md`](../app-doctor.md).
 
 ## Output Summary
 

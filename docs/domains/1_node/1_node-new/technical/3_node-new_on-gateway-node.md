@@ -11,38 +11,27 @@ execution.
 - The gateway can issue or verify WireGuard node identity material.
 
 **Post-input path eligibility:**
-- For omitted `--role` or compatibility `--role=control`, the gateway identity
-  service can mint a WireGuard peer.
-- For canonical `--role=app-development`, `node_new.name`, `node_new.role`,
+- For omitted `--role`, the gateway identity service can mint a WireGuard peer.
+- For `--role=app-development`, `node_new.name`, `node_new.role`,
   `node_new.host`, and `node_new.user` can be resolved, the target host is
   reachable over SSH as `node_new.user`, and `node_new.tld` can be resolved,
   is unique in gateway node configuration, and is not already mapped to another
   gateway development DNS target.
-- For canonical `--role=app-development`, the gateway can use the internal DNS
-  applier for the node family to converge `*.{node_new.tld}` to the node's
-  WireGuard address without exposing a public resolver.
-- For canonical `--role=app-production`, `node_new.name`, `node_new.role`,
+- For `--role=app-development`, the gateway can use the internal DNS applier
+  for the node family to converge `*.{node_new.tld}` to the node's WireGuard
+  address without exposing a public resolver.
+- For `--role=app-production`, `node_new.name`, `node_new.role`,
   `node_new.host`, and `node_new.user` can be resolved, and the target host is
   reachable over SSH as `node_new.user`.
-- For canonical role requests that include `database` alongside an app
-  role, the shared host-provisioning preconditions for that app role apply.
-- For canonical role requests that include `database` alone, no
-  SSH/bootstrap-only inputs are required.
-- For canonical `--role=s3`, `node_new.name`, `node_new.role`,
-  `node_new.host`, `node_new.user`, and `node_new.s3_data_path` can be
-  resolved, the target host is reachable over SSH as `node_new.user`, and the
-  data path is absolute.
-- For compatibility `--role=app`, `node_new.name`, `node_new.role`,
-  `node_new.environment`, `node_new.host`, and `node_new.user` can be
-  resolved, and the target host is reachable over SSH as `node_new.user`.
-- For compatibility `--role=app --environment=development`, `node_new.tld` can
-  be resolved, is unique in gateway node configuration, and is not already
-  mapped to another gateway development DNS target.
-- For compatibility `--role=app --environment=development`, the gateway can use
-  the internal DNS applier for the node family to converge `*.{node_new.tld}` to
-  the node's WireGuard address without exposing a public resolver.
-- For canonical or compatibility host-provisioned workload requests, the target
-  host platform is supported for the requested role set.
+- For role requests that include `database` alongside an app role, the shared
+  host-provisioning preconditions for that app role apply.
+- For role requests that include `database` alone, no SSH/bootstrap-only inputs
+  are required.
+- For `--role=s3`, `node_new.name`, `node_new.role`, `node_new.host`,
+  `node_new.user`, and `node_new.s3_data_path` can be resolved, the target
+  host is reachable over SSH as `node_new.user`, and the data path is absolute.
+- For host-provisioned workload requests, the target host platform is supported
+  for the requested role set.
 - For `--role=gateway`, `node_new.host` can be resolved and is compatible with
   the requested gateway identity before convergence or adoption begins.
 - For `--role=gateway` when adoption is used, `node_new.user` can be
@@ -50,12 +39,12 @@ execution.
   the target host platform is supported for the gateway role.
 
 Evaluate each path eligibility rule as soon as the fields needed for that rule
-are known. For example, inputs that are forbidden for client provisioning fail as soon
-as `node_new.role=control` and the forbidden supplied input are known, before
-prompting for unrelated later input. In interactive input mode, a correctable
-path blocker shows a validation message at the current corrective prompt so the
-operator can change course or cancel. All path eligibility must complete before
-side effects that the gateway owns begin.
+are known. For example, inputs that are forbidden for client provisioning fail
+as soon as the no-role identity and the forbidden supplied input are known,
+before prompting for unrelated later input. In interactive input mode, a
+correctable path blocker shows a validation message at the current corrective
+prompt so the operator can change course or cancel. All path eligibility must
+complete before side effects that the gateway owns begin.
 
 ## Allowed Paths
 
@@ -63,14 +52,13 @@ side effects that the gateway owns begin.
 | --- | --- |
 | `gateway` | Converge the existing gateway node record. Missing gateway-row materialization is outside this command path. |
 | omitted `--role` | Enroll a client identity with no roles by minting a WireGuard peer and active node record. |
-| `control` | Compatibility alias for the no-role client enrollment path. |
 | `app-development` | Provision or adopt an app-development node over SSH, then create the role assignment. |
 | `app-production` | Provision or adopt an app-production node over SSH, then create the role assignment. |
 | `database` | Create the base node identity plus an active database role assignment. When requested alone, no SSH provisioning path runs. |
+| `agent` | Provision or adopt an agent node over SSH, then create the role assignment with `tld`. |
 | `websocket` | Provision or adopt a private websocket node over SSH, then create the role assignment with `redis_node_id`. |
 | `s3` | Provision or adopt a private S3 node over SSH, then create the role assignment with `data_path`. |
 | repeated roles | Provision or adopt one compatible host for the requested role set, then create each role assignment. Supported initial combinations are `app-development` + `database`, `app-development` + `websocket`, `app-development` + `s3`, `database` + `websocket`, `database` + `s3`, `websocket` + `s3`, `app-development` + `database` + `websocket`, `app-development` + `database` + `s3`, `app-development` + `websocket` + `s3`, `database` + `websocket` + `s3`, `app-development` + `database` + `websocket` + `s3`, and `app-production` + `ingress`. |
-| `app` | Compatibility path. Provision or adopt a node with an app role over SSH using `node_new.environment`, then create the mapped role assignment. |
 
 ## Gateway Authority Rules
 
@@ -81,8 +69,8 @@ side effects that the gateway owns begin.
   must not bind UDP `51820`.
 - Gateway execution may write durable node state directly.
 - Gateway execution may use SSH to provision app-hosting nodes.
-- Gateway execution must not SSH to client identities for omitted
-  `--role` or compatibility `--role=control`.
+- Gateway execution must not SSH to client identities created with no
+  `--role` values.
 
 ## Gateway convergence and adoption
 
@@ -118,13 +106,13 @@ recovery, and reset flows require a separate explicit contract.
 `--json` only selects the JSON renderer and non-interactive input mode. It never
 changes the matrix and never authorizes reset or destructive reprovisioning.
 
-## Joined/Client Enrollment
+## Client Enrollment
 
-For omitted `--role` or compatibility `--role=control`:
+For omitted `--role`:
 
 1. Resolve `node_new.name` and `node_new.role`.
-2. Apply the canonical forbidden-input rules for a no-role identity,
-   including SSH/bootstrap-only inputs.
+2. Apply the forbidden-input rules for a no-role identity, including
+   SSH/bootstrap-only inputs.
 3. Mint a WireGuard peer.
 4. Create or converge the active client row with matching `wg_ip`.
 5. Return the WireGuard configuration and next-step instructions.
@@ -138,33 +126,30 @@ minimum runtime readiness, node identity readiness, narrow event-hook readiness,
 and development TLD mapping when applicable. Managed firewall configuration and
 drift belong to the `firewall_rule` family after the node exists.
 
-For canonical `--role=app-development`, `--role=app-production`,
-`--role=websocket`, `--role=s3`, compatible repeated role sets that include those
-host-provisioned roles, and compatibility `--role=app`:
+For `--role=app-development`, `--role=app-production`, `--role=websocket`,
+`--role=s3`, and compatible repeated role sets that include those
+host-provisioned roles:
 
 1. Resolve `node_new.name`, `node_new.host`, and `node_new.user`.
-2. For canonical app-hosting roles, derive the internal app environment from
-   the requested role set:
+2. Derive the internal app environment from the requested role set:
    - `app-development` maps to internal environment `development`;
    - `app-production` maps to internal environment `production`.
-3. For compatibility `--role=app`, resolve `node_new.environment` from input.
-4. When the derived or compatibility environment is `development`, resolve
-   `node_new.tld`.
-5. When the role set includes `websocket`, resolve `node_new.redis_node` and
+3. When the derived environment is `development`, resolve `node_new.tld`.
+4. When the role set includes `websocket`, resolve `node_new.redis_node` and
    verify that it references an active `database` role node with Redis expected
    or installed.
-6. When the role set includes `s3`, resolve `node_new.s3_data_path` with the
+5. When the role set includes `s3`, resolve `node_new.s3_data_path` with the
    default `/srv/orbit/s3/data` when omitted and verify that it is absolute.
-7. Verify the target host is reachable over SSH.
-8. Verify the target host platform is supported for every requested role.
-9. Install or converge the Orbit runtime.
-10. Mint or verify WireGuard identity.
-11. Register node configuration, including `nodes.tld` for development nodes.
-12. Configure the node's local TLD default for development nodes.
-13. Use the internal DNS applier for the node family to create or converge
-   the development DNS mapping that the gateway owns for `*.{node_new.tld}` to the node's WireGuard
-   address.
-14. Verify node readiness.
+6. Verify the target host is reachable over SSH.
+7. Verify the target host platform is supported for every requested role.
+8. Install or converge the Orbit runtime.
+9. Mint or verify WireGuard identity.
+10. Register node configuration, including `nodes.tld` for development nodes.
+11. Configure the node's local TLD default for development nodes.
+12. Use the internal DNS applier for the node family to create or converge
+    the development DNS mapping that the gateway owns for `*.{node_new.tld}` to
+    the node's WireGuard address.
+13. Verify node readiness.
 
 The development DNS configuration model that the gateway owns is derived from the
 active development app-role row, not from a public DNS command record. The
@@ -181,7 +166,7 @@ against live WireGuard reality. Adopting a missing peer on an active node may at
 unowned live WireGuard reality only when the adoption flow proves the
 selected node name, role, supported platform, live interface public key, and
 WireGuard address through a bounded read of non-secret identity artifacts.
-Adoption of an unknown host requires a separate materialization path before
+Adoption of an unknown host still requires a separate materialization path before
 `node:new` can safely attach unowned live reality to gateway configuration.
 Without that proof, `node:new` reports incomplete provisioning or node drift
 and points to `doctor --family=node --restore` or
@@ -252,7 +237,8 @@ Primary test owners:
 | Path | Coverage |
 | --- | --- |
 | `apps/gateway/tests/Feature/Commands/NodeNewCommandTest.php` | Gateway-caller behavior (see breakdown below). |
-| `apps/gateway/tests/E2E/IncusTopologyBuilderTest.php` | Superset provisioning gate for real gateway, app-dev, app-prod, and agent `node:new` convergence. |
+| `apps/gateway/tests/E2E/NodeNewDevelopmentAppTest.php` | Real-node smoke coverage for gateway-owned development app-role provisioning and development TLD mapping. |
+| `apps/gateway/tests/E2E/NodeNewProductionAppTest.php` | Real-node smoke coverage for gateway-owned production app-role provisioning without development TLD mapping. |
 
 `NodeNewCommandTest.php` covers:
 

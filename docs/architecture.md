@@ -251,7 +251,7 @@ This grant model lets you scope access naturally:
 
 - A developer's client might have a `developer` preset to nodes with the `app-development` role and no grant at all to nodes with the `app-production` role.
 - A CI runner's client might have an `operator` preset only to the apps it deploys.
-- A node's self-grant gives its own local CLI the actions it needs on itself — for example, a node with the `agent` role has a self-grant that includes `tool:restart` and `tool:update:agent-tools` but excludes `tool:credentials`, `tool:install`, firewall writes, and node role mutation.
+- A node's self-grant gives its own local CLI the actions it needs on itself — for example, a node with the `agent` role has a self-grant that includes `tool:restart` and `tool:update` but excludes `tool:credentials`, `tool:install`, firewall writes, and node role mutation.
 
 Permissions are revocable from the gateway. Removing a grant immediately revokes access — no key rotation, no node-side config edit, no SSH key removal needed. `node:grant` creates the initial grant edge and its initial permissions; long-term editing of a grant's permission set is owned by `node:permissions`, which is itself a gateway-admin-only surface.
 

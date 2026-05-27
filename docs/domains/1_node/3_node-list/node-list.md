@@ -34,12 +34,9 @@ This section defines each accepted filter and output flag for `node:list`.
 
 ### `--role`
 
-Filters by effective role assignment. Accepts a single current role value:
+Filters by effective role assignment. Accepts a single role value:
 `gateway`, `vpn`, `router`, `app-development`, `app-production`, `database`,
-`agent`, `ingress`, `websocket`, or `s3`. Legacy aliases still supported by the
-command are `app`, which matches both app host roles, and `control`, which
-matches nodes without an active role assignment. Comma-separated input is
-rejected.
+`agent`, `ingress`, `websocket`, or `s3`. Comma-separated input is rejected.
 
 ### `--environment`
 

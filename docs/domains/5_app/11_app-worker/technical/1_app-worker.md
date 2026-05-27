@@ -82,7 +82,7 @@ Every required token must be present in the probe output:
 | Token | Meaning |
 | --- | --- |
 | `octane:installed` | `vendor/laravel/octane/` exists under the app source path. |
-| `frankenphp-worker-file:present` | The FrankenPHP worker file exists at the path the runtime renderer points `FRANKENPHP_CONFIG` at. The path is resolved as `<document_root>/frankenphp-worker.php` so an app with `document_root=web` is checked at `web/frankenphp-worker.php`, not the legacy hardcoded `public/frankenphp-worker.php`. |
+| `frankenphp-worker-file:present` | The FrankenPHP worker file exists at the path the runtime renderer points `FRANKENPHP_CONFIG` at. The path is resolved as `<document_root>/frankenphp-worker.php`, so an app with `document_root=web` is checked at `web/frankenphp-worker.php`. |
 | `frankenphp:configured` | `config/octane.php` references `frankenphp` outside of `//`, `#`, and `/* */` comments. |
 
 Probe output is captured in `error.meta.probe_output` when readiness fails.

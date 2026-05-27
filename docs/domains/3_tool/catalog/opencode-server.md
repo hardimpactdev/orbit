@@ -50,8 +50,8 @@ Example JSON shape:
 ```
 
 Orbit-managed OpenCode Server must have generated authentication credentials.
-When legacy or adopted state has no password configured, the credential fields
-must explicitly indicate that no authentication is set rather than returning a
+When adopted state has no password configured, the credential fields must
+explicitly indicate that no authentication is set rather than returning a
 misleading empty password.
 
 ## Service Endpoint

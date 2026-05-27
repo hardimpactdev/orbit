@@ -10,10 +10,13 @@ sync with fleet state and verified by `doctor`. It is referenced from
 (`orbit:internal:bootstrap-gateway-local`).
 
 DNS *commands* — `dns:resolve-tld`, `dns:list` — stay caller-local and are
-covered by `docs/domains/16_dns/**`. The **tool family**, **node family**, and
-**bootstrap** own development and agent TLD DNS here. Stable private `.orbit`
-service names are service contracts owned by the router, not by this `dns`
-tool contract.
+covered by `docs/domains/16_dns/**`. The **node family** owns development and
+agent TLD DNS records (per
+[Architecture: DNS responsibilities](../../architecture.md#dns-responsibilities));
+the **tool family** owns the runtime substrate (the `orbit-dns` container and
+`dnsmasq.conf` artifact rendered from node-family state); **bootstrap** wires
+the two together at gateway install. Stable private `.orbit` service names are
+service contracts owned by the router, not by this `dns` tool contract.
 
 ## Ownership
 
@@ -137,12 +140,17 @@ second call.
 | --------------------------- | ------------------------------------------------------------------ | ---------- | --------- |
 | `tool.dns_container_missing`  | `orbit-dns` not in `docker ps -a`.                                 | Yes (rerun installer). | No |
 | `tool.dns_port_not_listening` | `orbit-dns` running but no listener on `53` inside wg-easy's netns. | Yes (restart container). | No |
-| `tool.dns_config_drift`       | `dnsmasq.conf` differs from `DnsmasqConfigBuilder` output for current DB state. | Yes (rewrite + restart). | Yes (record observed content as intent). |
+| `tool.dns_config_drift`       | `dnsmasq.conf` differs from `DnsmasqConfigBuilder` output for current DB state. | Yes (rewrite + restart). | Yes (parse file into `(node, tld, wireguard_address)` triples and adopt into node-family state). |
 
 `tool.dns_config_drift` is the only adoptable drift, and the use case is narrow:
-an operator hand-edited the file for an emergency and now wants Orbit to
-adopt the new content as the source of truth. Adoption persists the observed
-content into the corresponding DB state so future builds match.
+an operator hand-edited the file for an emergency and now wants Orbit to adopt
+the new content as the source of truth. Adoption parses the observed
+`dnsmasq.conf` into `(node, tld, wireguard_address)` triples and records those
+into **node-family** state. The tool family does not own DNS records; the node
+family does (see
+[Architecture: DNS responsibilities](../../architecture.md#dns-responsibilities)).
+After adoption, `dnsmasq.conf` is re-rendered from the canonical node state so
+the file and DB stay in lockstep.
 
 ## Why install/remove are not operator commands
 

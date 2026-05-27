@@ -93,7 +93,7 @@ node over SSH. The execution sequence has two phases.
 5. **Drift Monitoring:** Removed workspaces disappear from registry-backed
    workspace command output. Once Phase A succeeds, any failure during Phase B
    is reported as a non-fatal warning that points at the affected
-   `doctor --fix --family=<family> --restore`. Workspace-owned node artifacts are
+   `doctor --family=<family> --restore`. Workspace-owned node artifacts are
    reported as orphaned workspace drift by
    [`workspace-doctor.md`](../workspace-doctor.md).
 

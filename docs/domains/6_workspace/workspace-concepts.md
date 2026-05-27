@@ -43,6 +43,17 @@ These terms describe how PHP version is resolved for workspaces.
   and JSON renderers report `php_inherited=true`. The selected version chooses
   the workspace runtime container image; it does not install host PHP or render
   host FPM pools.
+- **Workspace PHP inheritance flag:** Boolean entity field that records whether
+  a workspace's effective PHP version comes from the parent app (`true`) or
+  from its own override (`false`). Exposed in JSON as `php_inherited`.
+- **Workspace agent IDE adapter:** Effective agent IDE adapter for a workspace,
+  resolved per session through the chain `app override → owning node default →
+  none`. Exposed in JSON as `agent_ide.adapter`. Reserved for the future
+  workspace-level override.
+- **Workspace agent IDE identifier:** Adapter-specific identifier the agent IDE
+  uses to reference a workspace, such as the OpenCode project id. Exposed in
+  JSON as `agent_ide.workspace_id`. `null` when no agent IDE is in effect or
+  the adapter does not expose a workspace identifier.
 
 ## Setup and teardown
 
@@ -67,6 +78,9 @@ The terms below describe how a workspace moves through its active states.
 - **Workspace adoption:** Result of `workspace:setup` against an existing path
   that was not previously Orbit-managed. The resulting workspace entity reports
   `adopted=true`.
+- **Workspace adoption flag:** Boolean entity field that records whether a
+  workspace was adopted from an existing path (`true`) or created fresh
+  (`false`). Exposed in JSON as `adopted`.
 - **Workspace history:** Durable record of workspace setup and teardown step
   runs, read through `workspace:history` and `workspace:log`. It is not
   workspace-unit configuration.

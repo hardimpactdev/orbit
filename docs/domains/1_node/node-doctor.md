@@ -78,7 +78,7 @@ The node probe reads gateway node records and checks these layers:
 11. **Node security posture:** provisioned Linux nodes satisfy node-owned
    security checks. These issue keys use the `node.security.*` prefix and remain
    inside the `node` family; `security` is not a doctor family. Persisted
-   `nodes.user` values other than `orbit` are reported as legacy drift. The
+   `nodes.user` values other than `orbit` are reported as drift. The
    `node:new --user` option remains valid as a bootstrap-only SSH user and is
    not itself drift.
 12. **Node update posture:** managed Ubuntu server nodes may expose
@@ -179,7 +179,7 @@ Each code below identifies a specific kind of node-family drift that `doctor --f
 | Code | Detected when |
 | --- | --- |
 | `node.record_incomplete` | A selected node record lacks required platform-version identifier, required host/endpoint metadata, or WireGuard address. |
-| `node.role_assignment_missing` | A selected active node still depends on a legacy role shape, but no compatible active role assignment exists. |
+| `node.role_assignment_missing` | A selected active node has no compatible active role assignment for the role implied by its registry record. |
 | `node.role_assignment_invalid` | A persisted role assignment names an unknown role or otherwise cannot be validated as a real role row. |
 | `node.role_conflict` | Active, pending, or error role assignments violate the compatibility matrix. Assignments already in `removing` are ignored. |
 | `node.role_settings_invalid` | A role assignment's typed settings cannot be hydrated or are missing required values such as the `app-development` `tld`. |
@@ -315,11 +315,15 @@ observed node reality back into gateway configuration). `--restore` and
 
 ## Implementation Contract
 
-The node-family doctor implementation lives in `App\Services\Nodes\NodesProbe`.
-There is no separate domain-local technical contract; this document is the
-canonical product and implementation reference for the node-family probe.
+The node-family doctor implements the
+[Family Doctor Implementation Contract](../11_operation/3_doctor/technical/1_doctor.md#family-doctor-implementation-contract).
+`key()` returns `node`.
 
-`NodesProbe` exposes these service methods:
+The implementation lives in `App\Services\Nodes\NodesProbe`. There is no
+separate domain-local technical contract; this document is the canonical
+product and implementation reference for the node-family probe.
+
+Family-specific notes on the shared method surface:
 
 | Method | Purpose |
 | --- | --- |

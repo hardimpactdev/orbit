@@ -71,7 +71,7 @@ Family contracts remain authoritative for exact probe facts, issue codes, restor
 
 ## Resolution Boundary
 
-Gateway peers may resolve drift only when `--fix`, `--restore`, or `--adopt` is supplied. Verify-mode runs must not mutate configuration or reality. Resolution orchestration uses `doctor --fix` (interactive), `doctor --restore` (bulk gateway-to-node), or `doctor --adopt` (bulk node-to-gateway).
+Gateway peers may resolve drift only when `--fix`, `--restore`, or `--adopt` is supplied. Verify-mode runs must not mutate configuration or reality. Resolution orchestration uses `doctor` (interactive), `doctor --restore` (bulk gateway-to-node), or `doctor --adopt` (bulk node-to-gateway).
 
 Gateway peers must not:
 

@@ -27,12 +27,12 @@ These rules govern what the tool command family owns and what it may not touch.
 - `tool:reload` reloads configuration without a full restart only when the tool
   definition supports reload.
 - Tools observed on a node without a gateway tool row are unmanaged inventory,
-  not drift, unless explicit `doctor --fix --family=tool --adopt` semantics are used.
+  not drift, unless explicit `doctor --family=tool --adopt` semantics are used.
 - Role baseline tools are materialized as tool rows during node provisioning, so
   doctor has one gateway-owned source of truth per node.
 - Node reality import is not part of the tool command surface. If an adoption
   flow needs to adopt node reality, it must use explicit
-  `doctor --fix --family=tool --adopt` semantics.
+  `doctor --family=tool --adopt` semantics.
 - Credential-bearing managed service tools use Orbit-owned generated secrets.
   The default service username is `orbit` when the protocol has a username
   concept.
@@ -66,7 +66,7 @@ tool-specific contracts live in [`catalog/`](catalog/README.md).
 | [`caddy`](catalog/caddy.md) | Caddy | `orbit-caddy` Docker container | Role baseline where HTTP routing is needed, adopted and kept converged | `always` | lifecycle, reload, reconfigure, update, logs, fix, adopt |
 | [`supervisor`](catalog/supervisor.md) | Supervisor | system service | Explicit residual runtime only where configured | `runtime` | lifecycle, reload, logs, fix, adopt |
 | [`docker`](catalog/docker.md) | Docker | system service | Required baseline, adopted and kept converged | `always` | probe, fix, adopt, prerequisite for Docker-backed tools |
-| [`viteplus`](catalog/viteplus.md) | VitePlus | system binary | Required baseline, adopted and kept converged | `always` | probe, adopt |
+| [`viteplus`](catalog/viteplus.md) | VitePlus | system binary | Role baseline tool for the `app-development` and `app-production` roles | `runtime` | probe, adopt |
 | [`php-cli`](catalog/php-cli.md) | PHP CLI | runtime container capability | Provided by `orbit-runtime` and app/workspace PHP images | `runtime` | probe |
 | [`gh`](catalog/gh.md) | GitHub CLI | system binary | Required baseline, adopted and kept converged | `always` | update, adopt |
 | [`composer`](catalog/composer.md) | Composer | runtime container capability | Provided inside `orbit-runtime` and app/workspace PHP images | `runtime` | update |

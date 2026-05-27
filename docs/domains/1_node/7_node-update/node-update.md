@@ -15,10 +15,11 @@ refreshed automatically.
 orbit node:update [name] [--host=<host>] [--environment=<development|production>] [--tld=<tld>] [--public-ipv4=<address>] [--public-ipv6=<address>] [--json]
 ```
 
-Run without arguments from a control or gateway node in a TTY to let the
-interactive input mode prompt for the node name and which field to change.
-App-role callers are gateway clients; the gateway rejects them before
-gateway-owned side effects.
+Run without arguments in a TTY to let the interactive input mode prompt for
+the node name and which field to change. Authorization is gateway-side and
+grants-only — the caller's grant on the target node must include
+`node:update`; the gateway rejects unauthorized requests with
+`authorization_failed` before gateway-owned side effects.
 
 In non-interactive input mode, at least one field flag must be provided;
 otherwise the command fails before side effects.
@@ -109,9 +110,8 @@ for the envelope shape.
 ## Requirements
 
 - Must run on the gateway host or from a configured client.
-- Operator callers must be authorized to operate on the gateway node.
-- App-role callers are gateway clients; the gateway rejects them before
-  gateway-owned side effects.
+- The caller's grant on the target node must include the `node:update`
+  permission. Denials surface as `authorization_failed`.
 - The target node must exist in gateway configuration.
 - At least one supported field must be provided in non-interactive input mode.
 

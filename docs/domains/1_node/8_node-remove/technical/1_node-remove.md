@@ -151,14 +151,14 @@ Partial WireGuard detach during removal is reported as success with a structured
 warning, not as a command failure. The node record is removed; the stale peer is
 node-family drift. JSON output reports this under `success.meta.warnings` with
 `code=node.wireguard_peer_extra` and
-`next_command=doctor --fix --family=node --restore`.
+`next_command=doctor --family=node --restore`.
 
 Partial development DNS cleanup is reported as success with a structured
 warning, not as a command failure. The node record is removed; the stale
 DNS artifact served by the active `vpn` role is node-family drift.
 JSON output reports this under
 `success.meta.warnings` with `code=node.role_baseline_mismatch` and
-`next_command=doctor --fix --family=node --restore`.
+`next_command=doctor --family=node --restore`.
 
 The absent-target rule is intentionally different from `node:revoke`.
 `node:revoke` validates both endpoint node identities and then makes the

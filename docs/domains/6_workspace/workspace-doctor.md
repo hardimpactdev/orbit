@@ -2,6 +2,10 @@
 
 [Back to Workspace commands.](README.md)
 
+The workspace family doctor implements the
+[Family Doctor Implementation Contract](../11_operation/3_doctor/technical/1_doctor.md#family-doctor-implementation-contract).
+`key()` returns `workspace`.
+
 `doctor --family=workspace` verifies whether gateway workspace records still
 match the workspace facts that make those records usable development contexts
 on their parent app's node. It also detects stale workspace artifacts owned by Orbit
@@ -149,8 +153,8 @@ Required test files:
 | `apps/gateway/tests/Feature/Doctor/WorkspacesFamilyDoctorContractTest.php` | Workspaces-family dispatch, probe-layer selection, issue codes, fix map, adopt map, denied fix/adopt cases, related-family handoff, and scope filtering. |
 | `apps/gateway/tests/Unit/Services/Workspaces/WorkspacesProbeTest.php` | In-memory workspace probe diff behavior; see detail below. |
 | `apps/gateway/tests/E2E/Read/WorkspacesDoctorTest.php` | Real read-only `doctor --family=workspace --json` against registered workspaces. |
-| `apps/gateway/tests/E2E/Ephemeral/WorkspacesDoctorFixTest.php` | Real `doctor --fix --family=workspace --restore` repair of safe workspace runtime drift. |
-| `apps/gateway/tests/E2E/Ephemeral/WorkspacesDoctorAdoptTest.php` | Real `doctor --fix --family=workspace --adopt` for compatible selected workspace path adoption and supported runtime configuration adoption. |
+| `apps/gateway/tests/E2E/Ephemeral/WorkspacesDoctorFixTest.php` | Real `doctor --family=workspace --restore` repair of safe workspace runtime drift. |
+| `apps/gateway/tests/E2E/Ephemeral/WorkspacesDoctorAdoptTest.php` | Real `doctor --family=workspace --adopt` for compatible selected workspace path adoption and supported runtime configuration adoption. |
 
 `WorkspacesProbeTest.php` covers registry configuration, parent app eligibility,
 source path, workspace path policy, PHP runtime, runtime container configuration,

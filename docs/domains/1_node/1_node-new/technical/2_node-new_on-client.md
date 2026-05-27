@@ -37,26 +37,20 @@ same blocker. All path eligibility must complete before side effects begin.
 | Requested role | Behavior |
 | --- | --- |
 | `gateway` | Bootstrap the first gateway and complete local client onboarding when no gateway is configured yet. When a gateway is configured, forward to the gateway for convergence or adoption. |
-| omitted `--role` | Forward a joined/client identity request with no roles to the configured gateway over HTTPS. |
-| `control` | Legacy compatibility alias for the no-role joined/client forwarding path. Human mode warns that `control` now maps to a client identity with no roles. |
+| omitted `--role` | Forward a client identity request with no roles to the configured gateway over HTTPS. |
 | `app-dev` / `app-development` | Resolve canonical role inputs, then forward to the gateway over HTTPS as `roles: ['app-development']`. Requires `node_new.host`, `node_new.user`, and `node_new.tld`. |
 | `app-prod` / `app-production` | Resolve canonical role inputs and production placement, then forward to the gateway over HTTPS as either colocated `roles: ['app-production', 'ingress']` or private `roles: ['app-production']` plus `ingress_node=<node>`. Requires `node_new.host` and `node_new.user`; private placement also requires selecting an active `ingress` node. |
 | `database` | Forward a canonical role request as `roles: ['database']`. No SSH/bootstrap inputs are required when requested alone. |
+| `agent` | Resolve canonical role inputs, then forward to the gateway over HTTPS as `roles: ['agent']`. Requires `node_new.host`, `node_new.user`, and `node_new.tld`; forwards any selected agent tools. |
 | `websocket` | Resolve canonical role inputs, then forward to the gateway over HTTPS as `roles: ['websocket']`. Requires `node_new.host`, `node_new.user`, and `node_new.redis_node`. |
 | `s3` | Resolve canonical role inputs, then forward to the gateway over HTTPS as `roles: ['s3']`. Requires `node_new.host` and `node_new.user`; forwards `node_new.s3_data_path` with its default when omitted. |
 | repeated roles | Forward compatible canonical role arrays with shared host/user fields and any role-specific fields already resolved. |
-| `app` | Legacy compatibility path. See app-role forwarding below. |
 
 Repeated-role examples include `roles: ['app-production', 'ingress']`,
 `roles: ['app-development', 'database']`, and
 `roles: ['app-development', 'database', 'websocket', 's3']`. Development app
 roles also forward `node_new.tld`; websocket roles forward
 `node_new.redis_node`; S3 roles forward `node_new.s3_data_path`.
-
-For deprecated legacy `--role=app`, resolve app-role inputs, then forward to the gateway over
-HTTPS using the legacy app contract with `node_new.environment`. Human mode
-warns that `app` now maps to app role assignments after the environment is resolved
-interactively or from flags.
 
 ## First-Gateway Bootstrap
 
@@ -91,10 +85,9 @@ When a gateway is configured:
   including:
   - `node_new.host` and `node_new.user` for gateway convergence or adoption;
   - canonical `roles[]` arrays for role requests;
-  - `node_new.tld` for development app-role provisioning;
+  - `node_new.tld` for development app-role and agent provisioning;
   - `node_new.redis_node` for websocket role provisioning;
-  - `node_new.s3_data_path` for S3 role provisioning;
-  - legacy `node_new.environment` only for legacy `--role=app` forwarding.
+  - `node_new.s3_data_path` for S3 role provisioning.
 - Use the CLI's WireGuard identity for gateway API authorization.
 - Do not write durable node records locally.
 - Do not SSH directly to nodes from the CLI.
@@ -132,8 +125,8 @@ first-gateway bootstrap eligibility, complete local onboarding for the
 initiating CLI named by `node_new.control_name`, initial gateway endpoint seeded
 from `node_new.host`, gateway-connected forwarding for
 convergence/adoption/app-role creation/client enrollment, forwarded host
-and TLD input, missing-gateway failure for app/control requests, and no durable
-node state written locally outside first-gateway onboarding.
+and TLD input, missing-gateway failure for non-bootstrap requests, and no
+durable node state written locally outside first-gateway onboarding.
 
 `NodeNewGatewayBootstrapTest.php` exercises the flow from a client with
 no gateway configured, including SSH bootstrap, explicit initiating

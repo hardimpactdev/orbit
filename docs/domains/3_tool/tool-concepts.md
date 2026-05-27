@@ -62,7 +62,7 @@ These terms describe how Orbit relates to each tool in the catalog.
   `tool.multiple_agent_tools_running` under `success.meta.warnings[]` and
   the command proceeds.
 - **Unmanaged inventory:** Tools observed on a node without a gateway tool
-  row. Not drift unless adopted through `doctor --fix --family=tool --adopt`.
+  row. Not drift unless adopted through `doctor --family=tool --adopt`.
 
 ## Service Surfaces
 

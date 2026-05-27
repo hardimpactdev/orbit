@@ -106,7 +106,7 @@ certificate lifecycle belongs to the route-owning domain and its doctor family.
 - Provision hosts.
 - Act as a broad repair or reset command. After local onboarding exists,
   standalone CA trust repair belongs to `gateway:trust`, and broader node drift
-  belongs to `doctor --fix --family=node --restore`.
+  belongs to `doctor --family=node --restore`.
 
 It also must not issue, upload, renew, or clean up app, workspace, proxy,
 gateway, or tool route leaf certificates.
@@ -138,7 +138,7 @@ Already-configured convergence is success, not failure.
 - `doctor --family=node` verifies the gateway-owned node identity and access
   policy.
 - `gateway:add` owns only the explicit local onboarding flow for an already
-  issued client identity. `doctor --fix --family=node --restore` owns later safe
+  issued client identity. `doctor --family=node --restore` owns later safe
   repair of node drift when the caller has enough information and
   authorization.
 - `gateway:trust` owns the standalone repair command for local gateway CA trust

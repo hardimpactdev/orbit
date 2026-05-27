@@ -45,9 +45,14 @@ record.
 - **App PHP version:** Gateway-tracked configuration for the PHP version used by the
   app's FrankenPHP runtime container and app command execution. Workspaces
   inherit this value unless they store an override.
+- **App runtime kind:** The runtime shape selected for an app. `php` apps run
+  in a dedicated FrankenPHP container; `static` apps serve files directly
+  through `orbit-caddy` without a PHP runtime container and have no PHP image,
+  worker mode, or worker config. Exposed in JSON as `runtime_kind`.
 - **App runtime container:** Dedicated Docker container for one PHP app runtime.
   It mounts the app source, uses the selected PHP image, receives app
   environment, and is targeted by `orbit-caddy` over the node Docker network.
+  Static apps do not have a runtime container.
 - **FrankenPHP app runtime:** PHP app/workspace web runtime. Classic mode is
   the default. It serves HTTP for PHP apps and workspaces and must carry
   OPcache, realpath cache, Composer autoload optimization, Laravel cache warmup,
@@ -82,6 +87,9 @@ The terms below describe how an app moves through its active states.
   re-apply management to an existing app, or retry production domain activation.
 - **App adoption:** Result of `app:register` against an existing path that was
   not previously Orbit-managed. The resulting app entity reports `adopted=true`.
+- **App adoption flag:** Boolean entity field that records whether an app was
+  adopted from an existing path (`true`) or created fresh (`false`). Exposed in
+  JSON as `adopted`.
 - **App pruning:** Source-of-truth cleanup performed by `app:prune`. Removes
   stale apps, workspaces, and configured agent IDE associations. It is not
   doctor drift repair.

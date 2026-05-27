@@ -2,6 +2,10 @@
 
 [Back to Proxy commands.](README.md)
 
+The proxy family doctor implements the
+[Family Doctor Implementation Contract](../11_operation/3_doctor/technical/1_doctor.md#family-doctor-implementation-contract).
+`key()` returns `proxy`.
+
 `doctor --family=proxy` verifies whether gateway proxy route configuration still matches node proxy and TLS reality. It covers Orbit-owned ingress routes only.
 
 The proxy family owns these facts:
@@ -116,5 +120,5 @@ Required test files:
 | `apps/gateway/tests/Feature/Doctor/ProxyFamilyDoctorContractTest.php` | Proxy-family dispatch, probe-layer selection, proxy issue codes, fix map, adopt map, denied fix/adopt cases, and scope filtering as it affects proxy probes. |
 | `apps/gateway/tests/Unit/Services/Proxy/ProxyRouteProbeTest.php` | In-memory proxy probe diff behavior for registry configuration, owner eligibility, node eligibility, conflict boundaries, missing routes, mismatched routes, TLS drift, and selected extra routes in adoption scope. |
 | `apps/gateway/tests/E2E/Read/ProxyDoctorTest.php` | Real read-only `doctor --family=proxy --json` against nodes with managed proxy routes. |
-| `apps/gateway/tests/E2E/Ephemeral/ProxyDoctorFixTest.php` | Real `doctor --fix --family=proxy --restore` repair of safe managed proxy and TLS drift. |
-| `apps/gateway/tests/E2E/Ephemeral/ProxyDoctorAdoptTest.php` | Real `doctor --fix --family=proxy --adopt` for compatible selected custom route adoption. |
+| `apps/gateway/tests/E2E/Ephemeral/ProxyDoctorFixTest.php` | Real `doctor --family=proxy --restore` repair of safe managed proxy and TLS drift. |
+| `apps/gateway/tests/E2E/Ephemeral/ProxyDoctorAdoptTest.php` | Real `doctor --family=proxy --adopt` for compatible selected custom route adoption. |

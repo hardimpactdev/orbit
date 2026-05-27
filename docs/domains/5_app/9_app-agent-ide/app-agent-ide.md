@@ -95,9 +95,8 @@ payload shape.
 
 ## Requirements
 
-- The CLI caller role is `control` or `gateway`. App-role callers are denied
-  before prompts or side effects.
-- The current node identity is authorized to manage the app.
+- The caller's grant on the app's owning node must include the `app:agent`
+  permission. Denials surface as `authorization_failed`.
 - The adapter must be present in the gateway-owned adapter registry. Adapters
   shipped by installed Orbit extensions become valid only after the extension
   has registered them with the gateway.

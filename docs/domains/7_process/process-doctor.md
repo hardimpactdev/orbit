@@ -2,6 +2,10 @@
 
 [Back to Process commands.](README.md)
 
+The process family doctor implements the
+[Family Doctor Implementation Contract](../11_operation/3_doctor/technical/1_doctor.md#family-doctor-implementation-contract).
+`key()` returns `process`.
+
 `doctor --family=process` verifies whether gateway process definitions still match the runtime-unit artifacts that make those definitions executable on their owning nodes.
 
 The process family owns these facts:
@@ -131,7 +135,7 @@ Required test files:
 | `apps/gateway/tests/Feature/Doctor/ProcessesFamilyDoctorContractTest.php` | Processes-family contract for the global doctor command (see breakdown below). |
 | `apps/gateway/tests/Unit/Services/Processes/ProcessesProbeTest.php` | In-memory probe diff behavior for the processes family (see breakdown below). |
 | `apps/gateway/tests/E2E/Read/ProcessesDoctorTest.php` | Real read-only `doctor --family=process --json` on a topology with Docker-rendered process runtime units. |
-| `apps/gateway/tests/E2E/Ephemeral/ProcessesDoctorFixTest.php` | Real `doctor --fix --family=process --restore` repair of missing or divergent process runtime artifacts and lifecycle event notifier material. |
+| `apps/gateway/tests/E2E/Ephemeral/ProcessesDoctorFixTest.php` | Real `doctor --family=process --restore` repair of missing or divergent process runtime artifacts and lifecycle event notifier material. |
 
 `ProcessesFamilyDoctorContractTest` covers processes-family dispatch,
 probe-layer selection, process issue codes, the process fix map, denied

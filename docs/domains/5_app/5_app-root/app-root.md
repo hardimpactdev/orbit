@@ -63,9 +63,8 @@ Use `--json` to receive structured output; omit it for a human-readable summary.
 ## Requirements
 
 - The application must exist and be managed by Orbit.
-- The CLI caller role must be `control` or `gateway`. App-role callers are
-  denied before prompts or side effects.
-- The caller must have permission to manage the target application.
+- The caller's grant on the app's owning node must include the `app:root`
+  permission. Denials surface as `authorization_failed`.
 - The application node must be reachable by the gateway over SSH.
 
 ## Related Commands

@@ -44,7 +44,7 @@ node. Orbit never selects a target just because only one tool node is visible.
 5. Reports the restart result.
 
 The command does not repair divergent configuration. Use
-[`tool:reconfigure`](../12_tool-reconfigure/tool-reconfigure.md) or `doctor --fix --family=tool --restore`
+[`tool:reconfigure`](../12_tool-reconfigure/tool-reconfigure.md) or `doctor --family=tool --restore`
 for configuration convergence.
 
 ## Output

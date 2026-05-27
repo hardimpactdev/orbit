@@ -32,6 +32,14 @@ These terms describe how schedules run and how their history is captured.
 - **Portable interval expression:** Orbit's interval language used by all
   schedules, such as `every 5 minutes`, `daily at 09:00`,
   `weekdays at 09:00`, or `weekly on monday at 09:00`.
+- **Schedule timezone:** IANA timezone identifier (such as `Europe/Amsterdam`
+  or `UTC`) used to evaluate the schedule's interval expression. Stored on the
+  schedule row and exposed in JSON as `timezone`.
+- **Schedule configuration status:** Gateway-tracked status of the schedule
+  definition, exposed in JSON as `status`. Reports whether gateway
+  configuration is `expected`, `disabled`, or in another configuration state.
+  This is distinct from live scheduler verification, which belongs to
+  `doctor --family=schedule`.
 - **Orbit Scheduler:** Resident `orbit-scheduler` Artisan-command daemon inside
   the gateway `orbit-runtime` container.
   - Owns schedule evaluation, due-run dispatch, lock claim, and overlap policy for every schedule across the fleet.

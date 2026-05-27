@@ -144,7 +144,7 @@ reuse the `app` doctor vocabulary defined in [`app-doctor.md`](../../app-doctor.
 | `app.runtime_config_mismatch` | `app` | Managed app runtime configuration could not be re-applied to match gateway configuration. |
 | `app.runtime_config_missing` | `app` | Managed app runtime configuration could not be installed while applying. |
 
-`next_command` for each warning is `doctor --fix --family=app --app=<app> --restore`.
+`next_command` for each warning is `doctor --family=app --app=<app> --restore`.
 
 `app.enactment_failed` and other drift codes specific to this command are
 not used; the app family already owns the precise vocabulary for runtime container and
@@ -159,7 +159,7 @@ runtime configuration drift.
   `app.runtime_container_*` / `app.runtime_config_*` drift surfaced as warnings
   here.
 - Repairing drift caused by a partial success of `app:root` belongs to
-  `doctor --fix --family=app --restore`.
+  `doctor --family=app --restore`.
 - The filesystem reality of the document root (`app.root_outside_path`,
   `app.root_missing`) is doctor-owned and never duplicated as `app:root`
   input validation.

@@ -157,7 +157,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 - **Apply Drift:** If configuration is written but registration (runtime
   container, runtime configuration, or proxy handoff) encounters retryable conditions, the
   command reports success and surfaces the drift in `success.meta.warnings[]`
-  with a `next_command` handoff (e.g. `doctor --fix --family=app --restore` or
+  with a `next_command` handoff (e.g. `doctor --family=app --restore` or
   `app:register [name] --domain=<host>`). Examples include unavailable PHP
   images on the node (`app.php_version_unavailable`) or domain activation
   (`proxy.domain_inactive`). Process runtime-unit drift is surfaced
@@ -169,7 +169,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 - **Family:** `app` (see [`app-doctor.md`](../../app-doctor.md)).
 - **Probe:** `doctor --family=app --app=<name>` verifies registry configuration and
   runtime artifacts.
-- **Convergence:** `doctor --fix --family=app --restore` repairs missing or divergent
+- **Convergence:** `doctor --family=app --restore` repairs missing or divergent
   runtime container/runtime configuration.
 
 ## Activity Logging

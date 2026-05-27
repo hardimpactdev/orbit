@@ -57,4 +57,4 @@ These terms define what firewall commands may and may not change.
   - They do not create public SSH exceptions for nodes.
   - They do not mutate protected rows with `owner != 'user'`; those are
     repaired through the owning family doctor path.
-  - They do not import observed node reality outside explicit `doctor --fix --family=firewall_rule --adopt` semantics.
+  - They do not import observed node reality outside explicit `doctor --family=firewall_rule --adopt` semantics.

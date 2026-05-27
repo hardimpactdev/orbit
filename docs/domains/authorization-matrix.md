@@ -52,8 +52,8 @@ authority](../architecture.md#gateway-implicit-authority).
 | `dns:list` | n/a - local-only | n/a | Deployment-context command | n/a | n/a |
 | `dns:resolve-tld` | n/a - local-only | n/a | Deployment-context command | n/a | n/a |
 | `doctor` verify mode | `doctor:verify` | per selected scope | None | `authorization_failed` | Standard missing-permission meta plus scope |
-| `doctor --fix --restore` | `doctor:restore` | per selected scope | None | `authorization_failed` | Standard missing-permission meta plus scope |
-| `doctor --fix --adopt` | `doctor:adopt` | per selected scope | None | `authorization_failed` | Standard missing-permission meta plus scope |
+| `doctor --restore` | `doctor:restore` | per selected scope | None | `authorization_failed` | Standard missing-permission meta plus scope |
+| `doctor --adopt` | `doctor:adopt` | per selected scope | None | `authorization_failed` | Standard missing-permission meta plus scope |
 | `firewall:allow` | `firewall_rule:write` | target node | None | `authorization_failed` | Standard missing-permission meta plus target node |
 | `firewall:deny` | `firewall_rule:write` | target node | None | `authorization_failed` | Standard missing-permission meta plus target node |
 | `firewall:list` | `firewall_rule:read` | target node or each visible node | Row-level filtering applies | `authorization_failed` | Standard missing-permission meta plus target node when requested |
@@ -109,7 +109,7 @@ authority](../architecture.md#gateway-implicit-authority).
 | `tool:show` | `tool:read` | target node | None | `authorization_failed` | Standard missing-permission meta plus tool |
 | `tool:start` | `tool:start` | target node | None | `authorization_failed` | Standard missing-permission meta plus tool |
 | `tool:stop` | `tool:stop` | target node | None | `authorization_failed` | Standard missing-permission meta plus tool |
-| `tool:update` | `tool:update` | target node | Agent self preset only implies `tool:update:agent-tools` | `authorization_failed` | Standard missing-permission meta plus tool |
+| `tool:update` | `tool:update` | target node | None | `authorization_failed` | Standard missing-permission meta plus tool |
 | `update` | n/a - local-only | n/a | Updates caller's own checkout | n/a | n/a |
 | `update:all` | gateway-admin only | gateway | No narrow permission | `authorization_failed` | `reason=missing_gateway_admin`, `serving_node=<gateway>` |
 | `vpn-client:disable` | `vpn:write` | gateway | v1 gateway-coupled VPN role | `authorization_failed` | Standard missing-permission meta plus client |
