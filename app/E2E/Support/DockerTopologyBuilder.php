@@ -608,7 +608,7 @@ SH;
             $commands[] = sprintf('cd %s && %s', escapeshellarg("{$sourcePath}/apps/cli"), $composerInstall);
         }
 
-        if ($role === 'gateway') {
+        if ($role === 'gateway' && $this->hasRelocatedGatewayApp()) {
             $commands[] = sprintf(
                 'if [ -f %s ]; then cd %s && %s; fi',
                 escapeshellarg("{$sourcePath}/apps/gateway/composer.json"),
@@ -643,7 +643,7 @@ SH;
 
     private function runtimeDependencyKeyForRole(string $role): string
     {
-        if ($role === 'gateway' && is_file(base_path('apps/gateway/composer.json'))) {
+        if ($role === 'gateway' && $this->hasRelocatedGatewayApp()) {
             return 'gateway';
         }
 
@@ -654,11 +654,17 @@ SH;
     {
         $sourcePath = $this->orbitPathForRole($role);
 
-        if ($role === 'gateway' && is_file(base_path('apps/gateway/composer.json'))) {
+        if ($role === 'gateway' && $this->hasRelocatedGatewayApp()) {
             return "{$sourcePath}/apps/gateway";
         }
 
         return "{$sourcePath}/apps/cli";
+    }
+
+    private function hasRelocatedGatewayApp(): bool
+    {
+        return is_file(base_path('apps/gateway/composer.json'))
+            && is_file(base_path('apps/gateway/artisan'));
     }
 
     private function copyPathBetweenContainersCommand(string $sourceContainer, string $targetContainer, string $parentPath, string $pathName): string
