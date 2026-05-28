@@ -1,0 +1,117 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Commands\Process;
+
+use App\Commands\Concerns\ResolvesHostContext;
+use App\Commands\GatewayCommand;
+use App\Exceptions\GatewayApiException;
+
+final class ProcessLogsCommand extends GatewayCommand
+{
+    use ResolvesHostContext;
+
+    protected $signature = 'process:logs
+        {name? : Process name}
+        {--app= : Parent app slug}
+        {--workspace= : Workspace name}
+        {--follow : Follow log output}
+        {--lines=100 : Number of historical lines}
+        {--json}';
+
+    protected $description = 'Read app process runtime logs (non-follow).';
+
+    public function handle(): int
+    {
+        $name = $this->stringArgument('name');
+
+        if ($name === null) {
+            return $this->renderFailure('validation_failed', 'The process name is required.', ['field' => 'name']);
+        }
+
+        $lines = $this->lines();
+
+        if ($lines === null) {
+            return $this->renderFailure('validation_failed', 'The --lines value must be a positive integer.', ['field' => 'lines']);
+        }
+
+        if ($this->option('follow') === true) {
+            return $this->renderFailure('validation_failed', 'Follow mode is handled by the gateway bridge until streaming is ported.', ['field' => 'follow']);
+        }
+
+        try {
+            $response = $this->gatewayGet('/api/processes/'.rawurlencode($name).'/log', $this->filledQuery([
+                'app' => $this->stringOption('app') ?? $this->appFromOrbitMarker(),
+                'workspace' => $this->stringOption('workspace'),
+                'lines' => $lines,
+            ]));
+        } catch (GatewayApiException $exception) {
+            return $this->renderFailure($exception->cliFailureCode(), $exception->getMessage());
+        }
+
+        if ($this->wantsJson()) {
+            return $this->renderSuccess($response);
+        }
+
+        $this->renderLogLines($response);
+
+        return self::SUCCESS;
+    }
+
+    private function lines(): ?int
+    {
+        $value = $this->option('lines');
+
+        if (! is_numeric($value)) {
+            return null;
+        }
+
+        $lines = (int) $value;
+
+        return $lines > 0 ? $lines : null;
+    }
+
+    /**
+     * @param  array<string, mixed>  $response
+     */
+    private function renderLogLines(array $response): void
+    {
+        $data = $this->successData($response);
+        $logs = is_array($data['logs'] ?? null) ? $data['logs'] : [];
+        $lines = is_array($logs['lines'] ?? null) ? $logs['lines'] : [];
+
+        if ($lines === []) {
+            $this->line('No log lines found.');
+
+            return;
+        }
+
+        foreach ($lines as $line) {
+            if (! is_array($line)) {
+                continue;
+            }
+
+            $timestamp = is_string($line['timestamp'] ?? null) && trim($line['timestamp']) !== ''
+                ? trim($line['timestamp']).' '
+                : '';
+
+            $this->line($timestamp.(string) ($line['message'] ?? ''));
+        }
+    }
+
+    /**
+     * @param  array<string, mixed>  $response
+     * @return array<string, mixed>
+     */
+    private function successData(array $response): array
+    {
+        $success = $response['success'] ?? null;
+
+        if (is_array($success) && is_array($success['data'] ?? null)) {
+            return $success['data'];
+        }
+
+        return $response;
+    }
+}

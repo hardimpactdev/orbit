@@ -4,14 +4,11 @@ declare(strict_types=1);
 
 namespace App\Commands\Internal;
 
-use App\Commands\OrbitCommand;
-use App\Exceptions\OperationTokenGuardException;
-use App\Services\Executor\OperationTokenGuard;
 use PDO;
 use PDOException;
 use PDOStatement;
 
-final class WgEasyStateCommand extends OrbitCommand
+final class WgEasyStateCommand extends InternalExecutorCommand
 {
     private const string ActionUpdateUser = 'update-user';
 
@@ -82,18 +79,10 @@ final class WgEasyStateCommand extends OrbitCommand
     #[\Override]
     protected $description = 'Update wg-easy state through the internal local executor';
 
-    public function handle(OperationTokenGuard $guard): int
+    public function handle(): int
     {
-        $compactToken = $this->option('operation-token');
-
-        if (! is_string($compactToken) || trim($compactToken) === '') {
-            return $this->renderFailure('missing_token', 'Operation token is required.', []);
-        }
-
-        try {
-            $guard->verify($compactToken, 'internal:wg-easy:state');
-        } catch (OperationTokenGuardException) {
-            return $this->renderFailure('invalid_token', 'Operation token is invalid.', []);
+        if (! $this->verifyOperationToken('internal:wg-easy:state')) {
+            return self::FAILURE;
         }
 
         $action = $this->stringValue($this->option('action'));
@@ -170,7 +159,7 @@ final class WgEasyStateCommand extends OrbitCommand
             );
         }
 
-        return $this->renderSuccess([
+        return $this->emitInternalSuccess([
             'action' => self::ActionUpdateUser,
             'updated' => true,
         ], []);
@@ -205,7 +194,7 @@ final class WgEasyStateCommand extends OrbitCommand
             );
         }
 
-        return $this->renderSuccess([
+        return $this->emitInternalSuccess([
             'action' => self::ActionUpdateGeneral,
             'updated' => true,
         ], []);
@@ -335,7 +324,7 @@ final class WgEasyStateCommand extends OrbitCommand
             );
         }
 
-        return $this->renderSuccess([
+        return $this->emitInternalSuccess([
             'action' => self::ActionUpsertPeer,
             'upserted' => true,
         ], []);
@@ -377,7 +366,7 @@ final class WgEasyStateCommand extends OrbitCommand
             );
         }
 
-        return $this->renderSuccess([
+        return $this->emitInternalSuccess([
             'action' => self::ActionDeletePeer,
             'deleted' => true,
         ], []);
@@ -424,7 +413,7 @@ final class WgEasyStateCommand extends OrbitCommand
             );
         }
 
-        return $this->renderSuccess([
+        return $this->emitInternalSuccess([
             'action' => self::ActionUpdateInterface,
             'updated' => true,
         ], []);
@@ -467,7 +456,7 @@ final class WgEasyStateCommand extends OrbitCommand
             );
         }
 
-        return $this->renderSuccess([
+        return $this->emitInternalSuccess([
             'action' => self::ActionUpdateUserPassword,
             'updated' => true,
         ], []);
@@ -510,7 +499,7 @@ final class WgEasyStateCommand extends OrbitCommand
             );
         }
 
-        return $this->renderSuccess([
+        return $this->emitInternalSuccess([
             'action' => self::ActionUpdateSessionPassword,
             'updated' => true,
         ], []);
@@ -543,7 +532,7 @@ final class WgEasyStateCommand extends OrbitCommand
         clearstatcache(true, $path);
 
         if (is_writable($path)) {
-            return $this->renderSuccess([
+            return $this->emitInternalSuccess([
                 'action' => self::ActionEnsureWritable,
                 'writable' => true,
                 'ownership_changed' => false,
@@ -576,7 +565,7 @@ final class WgEasyStateCommand extends OrbitCommand
             );
         }
 
-        return $this->renderSuccess([
+        return $this->emitInternalSuccess([
             'action' => self::ActionEnsureWritable,
             'writable' => true,
             'ownership_changed' => true,

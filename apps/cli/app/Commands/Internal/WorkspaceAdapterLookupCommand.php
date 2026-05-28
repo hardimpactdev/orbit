@@ -4,15 +4,12 @@ declare(strict_types=1);
 
 namespace App\Commands\Internal;
 
-use App\Commands\OrbitCommand;
-use App\Exceptions\OperationTokenGuardException;
-use App\Services\Executor\OperationTokenGuard;
 use JsonException;
 use PDO;
 use PDOException;
 use PDOStatement;
 
-final class WorkspaceAdapterLookupCommand extends OrbitCommand
+final class WorkspaceAdapterLookupCommand extends InternalExecutorCommand
 {
     private const string AdapterPolyscope = 'polyscope';
 
@@ -24,18 +21,10 @@ final class WorkspaceAdapterLookupCommand extends OrbitCommand
     #[\Override]
     protected $description = 'Look up agent IDE workspace adapter state';
 
-    public function handle(OperationTokenGuard $guard): int
+    public function handle(): int
     {
-        $compactToken = $this->option('operation-token');
-
-        if (! is_string($compactToken) || trim($compactToken) === '') {
-            return $this->renderFailure('missing_token', 'Operation token is required.', []);
-        }
-
-        try {
-            $guard->verify($compactToken, 'internal:workspace-adapter:lookup');
-        } catch (OperationTokenGuardException) {
-            return $this->renderFailure('invalid_token', 'Operation token is invalid.', []);
+        if (! $this->verifyOperationToken('internal:workspace-adapter:lookup')) {
+            return self::FAILURE;
         }
 
         $adapter = $this->adapterOption();
@@ -101,7 +90,7 @@ final class WorkspaceAdapterLookupCommand extends OrbitCommand
             );
         }
 
-        return $this->renderSuccess($payload, []);
+        return $this->emitInternalSuccess($payload);
     }
 
     /**
@@ -145,13 +134,14 @@ final class WorkspaceAdapterLookupCommand extends OrbitCommand
             );
         }
 
-        return $this->renderSuccess([
-            'api_token' => $this->stringValue($settings['authToken'] ?? null),
+        // Only non-secret config metadata. Raw Polyscope auth token (or any equivalent)
+        // must never be emitted through the internal result boundary.
+        return $this->emitInternalSuccess([
             'server_id' => $this->stringValue($settings['serverId'] ?? null),
             'repository_id' => $repositoryId,
             'base_url' => $this->stringValue($settings['backendUrl'] ?? null)
                 ?? $this->stringValue($settings['backend'] ?? null),
-        ], []);
+        ]);
     }
 
     /**

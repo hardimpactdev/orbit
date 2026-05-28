@@ -122,7 +122,9 @@ describe('internal workspace adapter lookup command', function (): void {
             ));
     });
 
-    it('returns the Polyscope config lookup payload from fixture files', function (): void {
+    it('returns only non-secret Polyscope config metadata (no raw auth token) for --lookup=config', function (): void {
+        // TDD: demonstrates regression where Polyscope auth token was emitted as 'api_token'.
+        // Required: only non-secret metadata (ids, urls) needed by callers; raw token never leaves result boundary.
         createPolyscopeConfigDatabase("{$this->workspaceAdapterTemp}/polyscope.db");
         file_put_contents("{$this->workspaceAdapterTemp}/settings.json", json_encode([
             'authToken' => 'poly-token',
@@ -138,16 +140,17 @@ describe('internal workspace adapter lookup command', function (): void {
             '--json' => true,
         ]);
 
+        $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+
         expect($exitCode)->toBe(0)
-            ->and($output)->toBe(json_encode(
-                JsonEnvelope::success([
-                    'api_token' => 'poly-token',
-                    'server_id' => 'server-1',
-                    'repository_id' => 'repo-docs',
-                    'base_url' => 'https://polyscope.test',
-                ]),
-                JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES,
-            ));
+            ->and($decoded)->toBe(JsonEnvelope::success([
+                'server_id' => 'server-1',
+                'repository_id' => 'repo-docs',
+                'base_url' => 'https://polyscope.test',
+            ]))
+            ->and($output)->not->toContain('api_token')
+            ->and($output)->not->toContain('poly-token')
+            ->and($output)->not->toContain('authToken');
     });
 
     it('returns a failure envelope when the adapter database is missing', function (): void {

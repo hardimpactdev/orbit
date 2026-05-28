@@ -5,7 +5,13 @@ declare(strict_types=1);
 
 define('LARAVEL_START', microtime(true));
 
-fallbackToGatewayArtisanWhenCommandIsUnported($_SERVER['argv'] ?? []);
+require __DIR__.'/CompatibilityBridge.php';
+
+$argv = $_SERVER['argv'] ?? [];
+
+fallbackToGatewayArtisanWhenCommandIsUnported($argv);
+
+$_SERVER['argv'] = normalizeNativeMultiTokenCommandArgv($argv);
 
 $autoload = __DIR__.'/vendor/autoload.php';
 
@@ -29,70 +35,3 @@ $status = $kernel->handle(
 $kernel->terminate($input, $status);
 
 exit($status);
-
-/**
- * @param  list<string>  $argv
- */
-function fallbackToGatewayArtisanWhenCommandIsUnported(array $argv): void
-{
-    $command = commandNameFromArgv($argv);
-
-    if ($command === null || isNativeCliCommand($command)) {
-        return;
-    }
-
-    $artisan = dirname(__DIR__, 2).'/apps/gateway/artisan';
-
-    if (! is_file($artisan)) {
-        return;
-    }
-
-    passthruCommand(PHP_BINARY, [$artisan, ...array_slice($argv, 1)]);
-}
-
-/**
- * @param  list<string>  $argv
- */
-function commandNameFromArgv(array $argv): ?string
-{
-    foreach (array_slice($argv, 1) as $argument) {
-        if ($argument === '--') {
-            return null;
-        }
-
-        if ($argument === '' || str_starts_with($argument, '-')) {
-            continue;
-        }
-
-        return $argument;
-    }
-
-    return null;
-}
-
-function isNativeCliCommand(string $command): bool
-{
-    return in_array($command, [
-        '_complete',
-        'completion',
-        'gateway:status',
-        'help',
-        'internal:executor:verify',
-        'internal:wg-easy:state',
-        'internal:workspace-adapter:lookup',
-        'list',
-    ], true);
-}
-
-/**
- * @param  list<string>  $arguments
- */
-function passthruCommand(string $binary, array $arguments): never
-{
-    $parts = [$binary, ...$arguments];
-    $command = implode(' ', array_map('escapeshellarg', $parts));
-
-    passthru($command, $status);
-
-    exit($status);
-}

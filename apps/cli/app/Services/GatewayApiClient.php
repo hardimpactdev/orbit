@@ -10,11 +10,19 @@ use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Http;
 
+/**
+ * Per decision D2: the CLI never sends a bearer identity. Production gateway API identity
+ * comes from WireGuard peer resolution (X-Orbit-WireGuard-Ip via orbit-caddy, or direct
+ * peer address when caddy is not in the path). The CLI never spoofs that header.
+ *
+ * Per decision D15: when the gateway is not reachable because WireGuard is down or no peer
+ * route exists, calls fail with the distinct error code `gateway_unreachable_wireguard`,
+ * not the generic `gateway_unavailable`.
+ */
 final readonly class GatewayApiClient
 {
     public function __construct(
         private ?string $baseUrl,
-        private ?string $identity,
         private int $timeout,
     ) {}
 
@@ -42,6 +50,39 @@ final readonly class GatewayApiClient
 
     /**
      * @param  array<string, mixed>  $payload
+     * @return array<string, mixed>
+     */
+    public function put(string $path, array $payload = []): array
+    {
+        return $this->decode(
+            $this->request(fn () => $this->pendingRequest()->put($this->path($path), $payload)),
+        );
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     * @return array<string, mixed>
+     */
+    public function patch(string $path, array $payload = []): array
+    {
+        return $this->decode(
+            $this->request(fn () => $this->pendingRequest()->patch($this->path($path), $payload)),
+        );
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     * @return array<string, mixed>
+     */
+    public function delete(string $path, array $payload = []): array
+    {
+        return $this->decode(
+            $this->request(fn () => $this->pendingRequest()->delete($this->path($path), $payload)),
+        );
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
      * @param  callable(string, array<string, mixed>): void  $onEvent
      */
     public function streamEvents(string $path, array $payload, callable $onEvent): int
@@ -52,18 +93,11 @@ final readonly class GatewayApiClient
     private function pendingRequest(): PendingRequest
     {
         $baseUrl = $this->normalizedBaseUrl();
-        $request = Http::baseUrl($baseUrl)
+
+        return Http::baseUrl($baseUrl)
             ->acceptJson()
             ->asJson()
             ->timeout($this->timeout);
-
-        $identity = $this->normalizedIdentity();
-
-        if ($identity === null) {
-            return $request;
-        }
-
-        return $request->withToken($identity);
     }
 
     private function normalizedBaseUrl(): string
@@ -75,13 +109,6 @@ final readonly class GatewayApiClient
         }
 
         return rtrim($baseUrl, '/');
-    }
-
-    private function normalizedIdentity(): ?string
-    {
-        $identity = is_string($this->identity) ? trim($this->identity) : '';
-
-        return $identity === '' ? null : $identity;
     }
 
     private function path(string $path): string
@@ -97,7 +124,7 @@ final readonly class GatewayApiClient
         try {
             $response = $callback();
         } catch (ConnectionException $exception) {
-            throw GatewayApiException::networkError($exception);
+            throw $this->classifyNetworkError($exception);
         }
 
         if ($response->failed()) {
@@ -105,6 +132,28 @@ final readonly class GatewayApiClient
         }
 
         return $response;
+    }
+
+    /**
+     * Distinguish a WireGuard-unreachable failure from a generic gateway-down failure so the
+     * CLI can surface `gateway_unreachable_wireguard` per D15. A best-effort signal: connection
+     * timeouts or DNS/host-unreachable errors when the URL is a WireGuard address point at WG
+     * being down. Anything else stays as the generic gateway-unavailable error.
+     */
+    private function classifyNetworkError(ConnectionException $exception): GatewayApiException
+    {
+        $message = strtolower($exception->getMessage());
+
+        $isWireGuardReachabilityFailure = str_contains($message, 'timed out')
+            || str_contains($message, 'no route to host')
+            || str_contains($message, 'network is unreachable')
+            || str_contains($message, 'could not resolve host');
+
+        if ($isWireGuardReachabilityFailure) {
+            return GatewayApiException::wireguardUnreachable($exception);
+        }
+
+        return GatewayApiException::networkError($exception);
     }
 
     /**

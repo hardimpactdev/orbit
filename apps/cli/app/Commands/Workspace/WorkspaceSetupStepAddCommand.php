@@ -1,0 +1,28 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Commands\Workspace;
+
+final class WorkspaceSetupStepAddCommand extends AbstractWorkspaceStepAddCommand
+{
+    protected $signature = 'workspace-setup-step:add
+        {--command= : Shell command to run during workspace setup}
+        {--app= : Parent app slug}
+        {--before= : Insert before this setup step id}
+        {--after= : Insert after this setup step id}
+        {--timeout=600 : Timeout in seconds}
+        {--json : Output JSON}';
+
+    protected $description = 'Add a workspace setup step for an app.';
+
+    protected function phase(): string
+    {
+        return 'setup';
+    }
+
+    protected function phaseLabel(): string
+    {
+        return 'setup';
+    }
+}

@@ -4,14 +4,11 @@ declare(strict_types=1);
 
 namespace App\Commands\Internal;
 
-use App\Commands\OrbitCommand;
-use App\Exceptions\OperationTokenGuardException;
-use App\Services\Executor\OperationTokenGuard;
 use PDO;
 use PDOException;
 use PDOStatement;
 
-final class WorkspaceAdapterUpdateCommand extends OrbitCommand
+final class WorkspaceAdapterUpdateCommand extends InternalExecutorCommand
 {
     private const string AdapterPolyscope = 'polyscope';
 
@@ -36,18 +33,10 @@ final class WorkspaceAdapterUpdateCommand extends OrbitCommand
     #[\Override]
     protected $hidden = true;
 
-    public function handle(OperationTokenGuard $guard): int
+    public function handle(): int
     {
-        $compactToken = $this->option('operation-token');
-
-        if (! is_string($compactToken) || trim($compactToken) === '') {
-            return $this->renderFailure('missing_token', 'Operation token is required.', []);
-        }
-
-        try {
-            $guard->verify($compactToken, 'internal:workspace-adapter:update');
-        } catch (OperationTokenGuardException) {
-            return $this->renderFailure('invalid_token', 'Operation token is invalid.', []);
+        if (! $this->verifyOperationToken('internal:workspace-adapter:update')) {
+            return self::FAILURE;
         }
 
         $adapter = $this->stringValue($this->option('adapter'));
@@ -119,13 +108,13 @@ final class WorkspaceAdapterUpdateCommand extends OrbitCommand
             );
         }
 
-        return $this->renderSuccess([
+        return $this->emitInternalSuccess([
             'adapter' => self::AdapterPolyscope,
             'update' => self::UpdateWorkspaceBranch,
             'workspace_id' => $workspaceId,
             'branch' => $branch,
             'updated' => true,
-        ], []);
+        ]);
     }
 
     private function openWritablePolyscopeDatabase(): PDO|int

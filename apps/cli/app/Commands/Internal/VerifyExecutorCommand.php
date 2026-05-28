@@ -4,11 +4,9 @@ declare(strict_types=1);
 
 namespace App\Commands\Internal;
 
-use App\Commands\OrbitCommand;
-use App\Exceptions\OperationTokenGuardException;
-use App\Services\Executor\OperationTokenGuard;
+use Orbit\Core\Security\OperationToken;
 
-final class VerifyExecutorCommand extends OrbitCommand
+final class VerifyExecutorCommand extends InternalExecutorCommand
 {
     #[\Override]
     protected $signature = 'internal:executor:verify {--operation-token=} {--json}';
@@ -16,7 +14,7 @@ final class VerifyExecutorCommand extends OrbitCommand
     #[\Override]
     protected $description = 'Verify an internal executor operation token';
 
-    public function handle(OperationTokenGuard $guard): int
+    public function handle(): int
     {
         $compactToken = $this->option('operation-token');
 
@@ -24,16 +22,16 @@ final class VerifyExecutorCommand extends OrbitCommand
             return $this->renderFailure('missing_token', 'Operation token is required.', []);
         }
 
-        try {
-            $token = $guard->verify($compactToken, 'internal:executor:verify');
-        } catch (OperationTokenGuardException) {
-            return $this->renderFailure('invalid_token', 'Operation token is invalid.', []);
+        if (! $this->verifyOperationToken('internal:executor:verify')) {
+            return self::FAILURE;
         }
 
-        return $this->renderSuccess([
+        $token = OperationToken::parse($compactToken);
+
+        return $this->emitInternalSuccess([
             'operation_id' => $token->id,
             'node' => $token->node,
             'command' => $token->command,
-        ], []);
+        ]);
     }
 }

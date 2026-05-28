@@ -22,7 +22,7 @@ final class GatewayStatusCommand extends OrbitCommand
             $response = $this->gateway()->get(self::ENDPOINT);
         } catch (GatewayApiException $exception) {
             return $this->renderFailure(
-                'gateway_unavailable',
+                $exception->cliFailureCode(),
                 $exception->getMessage(),
                 $this->failureMeta($exception),
             );

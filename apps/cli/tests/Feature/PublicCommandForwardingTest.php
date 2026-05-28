@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Services\GatewayApiClient;
 use Illuminate\Console\OutputStyle;
 use Illuminate\Contracts\Console\Kernel;
+use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
 use Orbit\Core\Http\JsonEnvelope;
@@ -99,6 +100,22 @@ describe('public command forwarding', function (): void {
 
         Http::assertSent(fn (Request $request): bool => $request->method() === 'GET'
             && $request->url() === 'https://gateway.test/api/status');
+    });
+
+    it('outputs gateway_unreachable_wireguard for WireGuard route failures in JSON mode', function (): void {
+        configureGatewayStatusCommand();
+
+        Http::fake(function () {
+            throw new ConnectionException('Connection timed out after 30 seconds');
+        });
+
+        [$exitCode, $output] = runPublicCommand($this, 'gateway:status', ['--json' => true]);
+
+        $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(1)
+            ->and($decoded['error']['code'])->toBe('gateway_unreachable_wireguard')
+            ->and($decoded['error']['message'])->toContain('WireGuard');
     });
 
     it('outputs a failure envelope as JSON for gateway HTTP errors', function (): void {
