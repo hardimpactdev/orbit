@@ -105,7 +105,7 @@ beforeEach(function (): void {
 
     $gateway = Node::factory()->create([
         'name' => 'gateway-1',
-        'role' => 'gateway',
+
         'platform' => 'ubuntu',
         'host' => '10.6.0.2',
         'wireguard_address' => '10.6.0.2',

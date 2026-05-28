@@ -17,7 +17,6 @@ uses(RefreshDatabase::class);
 it('logs vpn api activity with safe metadata', function (): void {
     $node = createTestGatewayNode([
         'name' => 'gateway-1',
-        'role' => 'gateway',
         'host' => '10.6.0.2',
         'wireguard_address' => '10.6.0.2',
         'status' => 'active',
@@ -51,7 +50,6 @@ it('logs vpn api activity with safe metadata', function (): void {
 it('returns vpn runtime unavailable when no active vpn role node exists', function (): void {
     createTestGatewayNode([
         'name' => 'gateway-1',
-        'role' => 'gateway',
         'host' => '10.6.0.2',
         'wireguard_address' => '10.6.0.2',
         'status' => 'active',
@@ -70,7 +68,6 @@ it('returns vpn runtime unavailable when no active vpn role node exists', functi
 it('uses the configured fake backend without requiring an active vpn role node', function (): void {
     createTestGatewayNode([
         'name' => 'gateway-1',
-        'role' => 'gateway',
         'host' => '10.6.0.2',
         'wireguard_address' => '10.6.0.2',
         'status' => 'active',
@@ -106,7 +103,6 @@ it('uses the configured fake backend without requiring an active vpn role node',
 it('requires vpn read grants for non-gateway api callers', function (): void {
     $gateway = createTestGatewayNode([
         'name' => 'gateway-1',
-        'role' => 'gateway',
         'wireguard_address' => '10.6.0.2',
         'status' => 'active',
     ]);
@@ -117,7 +113,7 @@ it('requires vpn read grants for non-gateway api callers', function (): void {
     ]);
     Node::factory()->create([
         'name' => 'control-1',
-        'role' => 'control',
+
         'wireguard_address' => '10.6.0.9',
         'status' => 'active',
     ]);
@@ -134,7 +130,6 @@ it('requires vpn read grants for non-gateway api callers', function (): void {
 it('allows non-gateway api callers with vpn read grants', function (): void {
     $gateway = createTestGatewayNode([
         'name' => 'gateway-1',
-        'role' => 'gateway',
         'wireguard_address' => '10.6.0.2',
         'status' => 'active',
     ]);
@@ -145,7 +140,7 @@ it('allows non-gateway api callers with vpn read grants', function (): void {
     ]);
     $caller = Node::factory()->create([
         'name' => 'control-1',
-        'role' => 'control',
+
         'wireguard_address' => '10.6.0.9',
         'status' => 'active',
     ]);
@@ -169,7 +164,6 @@ it('allows non-gateway api callers with vpn read grants', function (): void {
 it('requires vpn write grants for non-gateway api writes', function (): void {
     $gateway = createTestGatewayNode([
         'name' => 'gateway-1',
-        'role' => 'gateway',
         'wireguard_address' => '10.6.0.2',
         'status' => 'active',
     ]);
@@ -180,7 +174,7 @@ it('requires vpn write grants for non-gateway api writes', function (): void {
     ]);
     Node::factory()->create([
         'name' => 'control-1',
-        'role' => 'control',
+
         'wireguard_address' => '10.6.0.9',
         'status' => 'active',
     ]);

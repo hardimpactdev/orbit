@@ -478,8 +478,8 @@ describe('owner app eligibility', function (): void {
 
         expect(issue($drift, 'process.owner_app_invalid')?->kind)->toBe(DriftKind::Divergent);
     })->with([
-        'gateway owner node' => [['role' => 'gateway', 'status' => 'active']],
-        'inactive app owner node' => [['role' => 'app', 'status' => 'inactive']],
+        'gateway owner node' => [['status' => 'active']],
+        'inactive app owner node' => [['status' => 'inactive']],
     ]);
 });
 

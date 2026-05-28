@@ -22,7 +22,7 @@ use Tests\TestCase;
 uses(TestCase::class, RefreshDatabase::class);
 
 it('aligns a Polyscope workspace branch through the app node', function (): void {
-    $node = Node::factory()->create(['name' => 'beast', 'role' => 'app']);
+    $node = Node::factory()->create(['name' => 'beast']);
     $hostShell = new PolyscopeBranchAlignerRecordingShell(
         new RemoteShellResult(exitCode: 0, stdout: '{"branch":"cta"}', stderr: '', durationMs: 1),
     );
@@ -79,7 +79,7 @@ it('aligns a Polyscope workspace branch through the app node', function (): void
 });
 
 it('does not leak host branch rename output when a Polyscope branch cannot be aligned', function (): void {
-    $node = Node::factory()->create(['name' => 'beast', 'role' => 'app']);
+    $node = Node::factory()->create(['name' => 'beast']);
     $secret = 'remote-host-secret';
     $hostShell = new PolyscopeBranchAlignerRecordingShell(
         new RemoteShellResult(exitCode: 1, stdout: "stdout {$secret}", stderr: "stderr {$secret}", durationMs: 1),
@@ -113,7 +113,7 @@ it('does not leak host branch rename output when a Polyscope branch cannot be al
 });
 
 it('does not leak local executor output when Polyscope adapter metadata cannot be updated', function (): void {
-    $node = Node::factory()->create(['name' => 'beast', 'role' => 'app']);
+    $node = Node::factory()->create(['name' => 'beast']);
     $secret = 'remote-update-secret';
     $hostShell = new PolyscopeBranchAlignerRecordingShell(
         new RemoteShellResult(exitCode: 0, stdout: '{"branch":"cta"}', stderr: '', durationMs: 1),

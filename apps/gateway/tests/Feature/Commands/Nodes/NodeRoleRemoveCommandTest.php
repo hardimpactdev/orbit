@@ -30,11 +30,11 @@ describe('node role:remove', function (): void {
             'environment' => null,
         ]);
 
-        assignNodeRole($node, 'app-development', settings: ['tld' => 'test']);
+        assignNodeRole($node, 'app-dev', settings: ['tld' => 'test']);
 
         $exitCode = Artisan::call('node role:remove', [
             'node' => 'client-1',
-            'role' => 'app-development',
+            'role' => 'app-dev',
             '--json' => true,
         ]);
 
@@ -43,7 +43,7 @@ describe('node role:remove', function (): void {
         expect($exitCode)->toBe(1)
             ->and($payload['error']['code'])->toBe('validation_failed')
             ->and($payload['error']['meta']['field'])->toBe('force')
-            ->and($node->roleAssignments()->where('role', 'app-development')->exists())->toBeTrue();
+            ->and($node->roleAssignments()->where('role', 'app-dev')->exists())->toBeTrue();
     });
 
     it('blocks removal when dependents exist after interactive confirmation', function (): void {
@@ -54,7 +54,7 @@ describe('node role:remove', function (): void {
             'environment' => null,
         ]);
 
-        assignNodeRole($node, 'app-development', settings: ['tld' => 'test']);
+        assignNodeRole($node, 'app-dev', settings: ['tld' => 'test']);
         App::factory()->create([
             'node_id' => $node->id,
             'environment' => 'development',
@@ -63,13 +63,13 @@ describe('node role:remove', function (): void {
         /** @phpstan-ignore-next-line Pest resolves artisan() on the bound Laravel test case at runtime. */
         $this->artisan('node role:remove', [
             'node' => 'client-1',
-            'role' => 'app-development',
+            'role' => 'app-dev',
         ])
-            ->expectsConfirmation("Remove role 'app-development' from 'client-1'?", 'yes')
-            ->expectsOutputToContain("Role 'app-development' cannot be removed while dependents exist.")
+            ->expectsConfirmation("Remove role 'app-dev' from 'client-1'?", 'yes')
+            ->expectsOutputToContain("Role 'app-dev' cannot be removed while dependents exist.")
             ->assertExitCode(1);
 
-        expect($node->roleAssignments()->where('role', 'app-development')->exists())->toBeTrue();
+        expect($node->roleAssignments()->where('role', 'app-dev')->exists())->toBeTrue();
     });
 
     it('requires force when purge-data is requested', function (): void {
@@ -210,7 +210,7 @@ describe('node role:remove', function (): void {
             'tld' => 'test',
         ]);
 
-        assignNodeRole($node, 'app-development', settings: ['tld' => 'test']);
+        assignNodeRole($node, 'app-dev', settings: ['tld' => 'test']);
         NodeAccess::query()->create([
             'consumer_node_id' => $node->id,
             'serving_node_id' => $node->id,
@@ -220,7 +220,7 @@ describe('node role:remove', function (): void {
 
         $removeExitCode = Artisan::call('node role:remove', [
             'node' => 'client-1',
-            'role' => 'app-development',
+            'role' => 'app-dev',
             '--force' => true,
             '--json' => true,
         ]);
@@ -368,7 +368,7 @@ describe('node role:remove', function (): void {
             'role' => 'control',
             'environment' => null,
         ]);
-        $assignment = assignNodeRole($node, 'app-development', settings: ['tld' => 'test']);
+        $assignment = assignNodeRole($node, 'app-dev', settings: ['tld' => 'test']);
 
         app()->instance(NodeRoleBaselineConverger::class, new class extends NodeRoleBaselineConverger
         {
@@ -391,7 +391,7 @@ describe('node role:remove', function (): void {
 
         $exitCode = Artisan::call('node role:remove', [
             'node' => 'client-1',
-            'role' => 'app-development',
+            'role' => 'app-dev',
             '--force' => true,
             '--json' => true,
         ]);

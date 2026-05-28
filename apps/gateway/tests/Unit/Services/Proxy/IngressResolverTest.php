@@ -19,7 +19,7 @@ describe('IngressResolver', function (): void {
         $web = Node::factory()->create(['name' => 'web-1', 'status' => 'active']);
         NodeRoleAssignment::factory()->create([
             'node_id' => $web->id,
-            'role' => 'app-production',
+            'role' => 'app-prod',
             'status' => 'active',
             'settings' => ['ingress_node_id' => $edge->id],
         ]);
@@ -41,7 +41,7 @@ describe('IngressResolver', function (): void {
         $web = Node::factory()->create(['name' => 'web-1', 'status' => 'active']);
         NodeRoleAssignment::factory()->create([
             'node_id' => $web->id,
-            'role' => 'app-production',
+            'role' => 'app-prod',
             'status' => 'active',
             'settings' => ['ingress_node_id' => $edge->id],
         ]);
@@ -57,7 +57,7 @@ describe('IngressResolver', function (): void {
         $web = Node::factory()->create(['name' => 'web-1', 'status' => 'active']);
         NodeRoleAssignment::factory()->create([
             'node_id' => $web->id,
-            'role' => 'app-production',
+            'role' => 'app-prod',
             'status' => 'active',
             'settings' => ['ingress_node_id' => 999999],
         ]);

@@ -26,7 +26,7 @@ function createToolStopLocalNode(string $role = 'gateway'): Node
 {
     return Node::factory()->create([
         'name' => "local-{$role}",
-        'role' => $role,
+
         'host' => '10.6.0.1',
         'wireguard_address' => '10.6.0.1',
     ]);
@@ -36,7 +36,6 @@ function createToolStopTarget(string $nodeName, ?string $tld = null): Node
 {
     return createTestAppHostNode([
         'name' => $nodeName,
-        'role' => 'app',
         'status' => 'active',
         'tld' => $tld,
     ]);
@@ -287,7 +286,6 @@ describe('tool:stop command contract', function (): void {
                     'data' => [
                         'self' => [
                             'name' => 'control-self',
-                            'role' => 'control',
                         ],
                     ],
                 ],

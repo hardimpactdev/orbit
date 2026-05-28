@@ -21,11 +21,9 @@ function apiRevokeNodeRow(array $overrides = []): array
 {
     return array_merge([
         'name' => 'app-1',
-        'role' => 'app',
         'host' => '10.6.0.7',
         'orbit_path' => '/home/nckrtl/orbit',
         'status' => 'active',
-        'environment' => 'development',
         'platform' => 'ubuntu_24-04',
         'wireguard_address' => '10.6.0.7',
         'created_at' => now(),
@@ -37,9 +35,7 @@ function createRevokeCallerNode(string $role = 'control'): int
 {
     return (int) DB::table('nodes')->insertGetId(apiRevokeNodeRow([
         'name' => "{$role}-caller",
-        'role' => $role,
         'host' => REVOKE_CALLER_WG_IP,
-        'environment' => $role === 'app' ? 'development' : null,
         'wireguard_address' => REVOKE_CALLER_WG_IP,
     ]));
 }
@@ -48,9 +44,7 @@ function createRevokeGatewayNode(): int
 {
     $gatewayId = (int) DB::table('nodes')->insertGetId(apiRevokeNodeRow([
         'name' => 'gateway-1',
-        'role' => 'gateway',
         'host' => '10.6.0.2',
-        'environment' => null,
         'wireguard_address' => '10.6.0.2',
     ]));
 
@@ -109,8 +103,6 @@ describe('NodeRevokeController', function (): void {
         grantRevokeAccess($callerId, $gatewayId);
         $consumingId = (int) DB::table('nodes')->insertGetId(apiRevokeNodeRow([
             'name' => 'control-1',
-            'role' => 'control',
-            'environment' => null,
             'wireguard_address' => '10.6.0.11',
         ]));
         $servingId = (int) DB::table('nodes')->insertGetId(apiRevokeNodeRow([
@@ -150,8 +142,6 @@ describe('NodeRevokeController', function (): void {
         grantRevokeAccess($callerId, $gatewayId);
         $consumingId = (int) DB::table('nodes')->insertGetId(apiRevokeNodeRow([
             'name' => 'control-1',
-            'role' => 'control',
-            'environment' => null,
             'wireguard_address' => '10.6.0.11',
         ]));
         $servingId = (int) DB::table('nodes')->insertGetId(apiRevokeNodeRow([
@@ -185,8 +175,6 @@ describe('NodeRevokeController', function (): void {
         assignRevokeNodeRole(createRevokeCallerNode('gateway'), 'gateway');
         $consumingId = (int) DB::table('nodes')->insertGetId(apiRevokeNodeRow([
             'name' => 'control-1',
-            'role' => 'control',
-            'environment' => null,
             'wireguard_address' => '10.6.0.11',
         ]));
         $servingId = (int) DB::table('nodes')->insertGetId(apiRevokeNodeRow([
@@ -216,8 +204,6 @@ describe('NodeRevokeController', function (): void {
         createRevokeGatewayNode();
         $consumingId = (int) DB::table('nodes')->insertGetId(apiRevokeNodeRow([
             'name' => 'control-1',
-            'role' => 'control',
-            'environment' => null,
             'wireguard_address' => '10.6.0.11',
         ]));
         $servingId = (int) DB::table('nodes')->insertGetId(apiRevokeNodeRow([
@@ -251,8 +237,6 @@ describe('NodeRevokeController', function (): void {
         grantRevokeAccess($callerId, $gatewayId);
         $consumingId = (int) DB::table('nodes')->insertGetId(apiRevokeNodeRow([
             'name' => 'control-1',
-            'role' => 'control',
-            'environment' => null,
             'wireguard_address' => '10.6.0.11',
         ]));
         $servingId = (int) DB::table('nodes')->insertGetId(apiRevokeNodeRow([
@@ -281,17 +265,13 @@ describe('NodeRevokeController', function (): void {
         $callerId = createRevokeCallerNode();
         $staleGatewayId = (int) DB::table('nodes')->insertGetId(apiRevokeNodeRow([
             'name' => 'alpha-gateway',
-            'role' => 'gateway',
             'host' => '10.6.0.3',
-            'environment' => null,
             'wireguard_address' => '10.6.0.3',
         ]));
         grantRevokeAccess($callerId, $staleGatewayId);
         createRevokeGatewayNode();
         $consumingId = (int) DB::table('nodes')->insertGetId(apiRevokeNodeRow([
             'name' => 'control-1',
-            'role' => 'control',
-            'environment' => null,
             'wireguard_address' => '10.6.0.11',
         ]));
         $servingId = (int) DB::table('nodes')->insertGetId(apiRevokeNodeRow([
@@ -324,8 +304,6 @@ describe('NodeRevokeController', function (): void {
         grantRevokeAccess($callerId, $gatewayId);
         DB::table('nodes')->insert(apiRevokeNodeRow([
             'name' => 'control-1',
-            'role' => 'control',
-            'environment' => null,
             'wireguard_address' => '10.6.0.11',
         ]));
         DB::table('nodes')->insert(apiRevokeNodeRow([
@@ -387,8 +365,6 @@ describe('NodeRevokeController', function (): void {
         createRevokeGatewayNode();
         $consumingId = (int) DB::table('nodes')->insertGetId(apiRevokeNodeRow([
             'name' => 'control-1',
-            'role' => 'control',
-            'environment' => null,
             'wireguard_address' => '10.6.0.11',
         ]));
         $servingId = (int) DB::table('nodes')->insertGetId(apiRevokeNodeRow([
@@ -420,8 +396,6 @@ describe('NodeRevokeController', function (): void {
         createRevokeGatewayNode();
         $consumingId = (int) DB::table('nodes')->insertGetId(apiRevokeNodeRow([
             'name' => 'control-1',
-            'role' => 'control',
-            'environment' => null,
             'wireguard_address' => '10.6.0.11',
         ]));
         $servingId = (int) DB::table('nodes')->insertGetId(apiRevokeNodeRow([

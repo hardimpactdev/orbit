@@ -16,7 +16,7 @@ function createActivityListCallerNode(array $overrides = []): Node
 {
     return Node::factory()->create(array_merge([
         'name' => 'caller',
-        'role' => 'gateway',
+
         'host' => ACTIVITY_LIST_CALLER_WG_IP,
         'wireguard_address' => ACTIVITY_LIST_CALLER_WG_IP,
     ], $overrides));
@@ -53,7 +53,7 @@ function createActivityEntry(
 describe('ActivityListController', function (): void {
     it('lists destructive activity newest first with normalized metadata', function (): void {
         $caller = createActivityListCallerNode();
-        $appNode = Node::factory()->create(['name' => 'app-1', 'role' => 'app']);
+        $appNode = Node::factory()->create(['name' => 'app-1']);
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
 
         createActivityEntry('node.listed', 'read', $caller);

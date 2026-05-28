@@ -220,7 +220,7 @@ function expectPreparedProdIngressTopology(E2ETopologyLease $topology, E2EConfig
     expectPreparedAppNode($prodNode, 'production', null, expectedPreparedGatewayEndpoint());
 
     expect($prodNode['wireguard_address'])->toBe('10.6.0.5')
-        ->and($state['roles'])->toContain('app-production')
+        ->and($state['roles'])->toContain('app-prod')
         ->and($state['roles'])->toContain('ingress')
         ->and($state['app_production_ingress_node'])->toBe('app-prod-1')
         ->and($state['node_names'])->toBe(['app-prod-1', 'gateway', 'operator-1']);
@@ -250,7 +250,7 @@ function expectPreparedDevDatabaseAndRedis(E2ETopologyLease $topology): void
 
     $state = readPreparedDevServiceState($gateway);
 
-    expect($state['roles'])->toContain('app-development')
+    expect($state['roles'])->toContain('app-dev')
         ->and($state['roles'])->toContain('database')
         ->and($state['redis_expected_state'])->toBe('running');
 }

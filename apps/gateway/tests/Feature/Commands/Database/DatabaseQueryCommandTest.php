@@ -19,7 +19,7 @@ function configureDatabaseQueryGatewayCaller(): void
     config(['orbit.is_gateway' => true]);
     Node::factory()->create([
         'name' => 'gateway',
-        'role' => 'gateway',
+
         'host' => '10.9.0.1',
         'wireguard_address' => '10.9.0.1',
     ]);
@@ -37,7 +37,7 @@ function strictDatabaseQueryCommandPayload(): array
 describe('database:query', function (): void {
     it('runs sqlite queries on the owning node with the payload passed through stdin', function (): void {
         configureDatabaseQueryGatewayCaller();
-        $node = Node::factory()->create(['name' => 'app-node', 'role' => 'app']);
+        $node = Node::factory()->create(['name' => 'app-node']);
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
         $connection = DatabaseConnection::factory()->create([
             'node_id' => $node->id,
@@ -97,7 +97,7 @@ describe('database:query', function (): void {
 
     it('requires an explicit connection when a target has multiple non-default mappings', function (): void {
         configureDatabaseQueryGatewayCaller();
-        $node = Node::factory()->create(['name' => 'app-node', 'role' => 'app']);
+        $node = Node::factory()->create(['name' => 'app-node']);
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
         $primary = DatabaseConnection::factory()->create(['node_id' => $node->id, 'slug' => 'primary-db']);
         $analytics = DatabaseConnection::factory()->create(['node_id' => $node->id, 'slug' => 'analytics-db']);
@@ -133,7 +133,7 @@ describe('database:query', function (): void {
 
     it('requires explicit connection selectors to belong to the app target', function (): void {
         configureDatabaseQueryGatewayCaller();
-        $node = Node::factory()->create(['name' => 'app-node', 'role' => 'app']);
+        $node = Node::factory()->create(['name' => 'app-node']);
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
         $attached = DatabaseConnection::factory()->create(['node_id' => $node->id, 'slug' => 'docs-db']);
         $other = DatabaseConnection::factory()->create(['node_id' => $node->id, 'slug' => 'other-db']);
@@ -171,7 +171,7 @@ describe('database:query', function (): void {
 
     it('resolves workspace targets and explicit attached workspace connections', function (): void {
         configureDatabaseQueryGatewayCaller();
-        $node = Node::factory()->create(['name' => 'app-node', 'role' => 'app']);
+        $node = Node::factory()->create(['name' => 'app-node']);
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
         $workspace = Workspace::factory()->create(['name' => 'feature-docs', 'app_id' => $app->id]);
         $default = DatabaseConnection::factory()->create([
@@ -240,7 +240,7 @@ describe('database:query', function (): void {
 
     it('returns an error when remote sqlite query output is mixed with logs', function (): void {
         configureDatabaseQueryGatewayCaller();
-        $node = Node::factory()->create(['name' => 'app-node', 'role' => 'app']);
+        $node = Node::factory()->create(['name' => 'app-node']);
         $connection = DatabaseConnection::factory()->create([
             'node_id' => $node->id,
             'slug' => 'docs-db',

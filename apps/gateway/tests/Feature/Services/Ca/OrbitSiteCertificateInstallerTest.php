@@ -22,7 +22,6 @@ beforeEach(function (): void {
 
     Node::create([
         'name' => 'gateway',
-        'role' => 'gateway',
         'status' => 'active',
         'host' => '10.6.0.1',
         'orbit_path' => '/home/orbit/orbit',

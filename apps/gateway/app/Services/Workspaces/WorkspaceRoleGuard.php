@@ -26,14 +26,14 @@ final readonly class WorkspaceRoleGuard
             return;
         }
 
-        if (! $this->nodeRoleAssignments->nodeHasActiveRole($node, 'app-production')) {
+        if (! $this->nodeRoleAssignments->nodeHasActiveRole($node, 'app-prod')) {
             return;
         }
 
         throw new WorkspaceUnsupportedForProduction([
             'app' => $app->name,
             'node' => $node->name,
-            'role' => 'app-production',
+            'role' => 'app-prod',
         ]);
     }
 

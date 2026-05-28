@@ -181,14 +181,12 @@ function fakeGatewayCaRootThroughLaravelHttp(): MockClient
  * @param  array<string, mixed>  $attributes
  * @param  array<string, mixed>  $settings
  */
-function createTestAppHostNode(array $attributes = [], string $role = 'app-development', array $settings = ['tld' => 'test']): Node
+function createTestAppHostNode(array $attributes = [], string $role = 'app-dev', array $settings = ['tld' => 'test']): Node
 {
-    $environment = $role === 'app-production' ? 'production' : 'development';
+    unset($attributes['role'], $attributes['environment']);
 
     $node = Node::factory()->create([
-        'role' => 'app',
         'status' => 'active',
-        'environment' => $environment,
         'tld' => $settings['tld'] ?? null,
         ...$attributes,
     ]);
@@ -197,7 +195,7 @@ function createTestAppHostNode(array $attributes = [], string $role = 'app-devel
         'node_id' => $node->id,
         'role' => $role,
         'status' => 'active',
-        'settings' => $role === 'app-development' ? $settings : [],
+        'settings' => $role === 'app-dev' ? $settings : [],
     ]);
 
     return $node;
@@ -208,8 +206,9 @@ function createTestAppHostNode(array $attributes = [], string $role = 'app-devel
  */
 function createTestGatewayNode(array $attributes = []): Node
 {
+    unset($attributes['role'], $attributes['environment']);
+
     $node = Node::factory()->create([
-        'role' => 'gateway',
         'status' => 'active',
         ...$attributes,
     ]);
@@ -264,7 +263,6 @@ function createPhpLocalNode(string $role = 'gateway'): Node
 {
     return Node::factory()->create([
         'name' => "local-{$role}",
-        'role' => $role,
         'host' => '10.6.0.1',
         'wireguard_address' => '10.6.0.1',
     ]);
@@ -297,7 +295,6 @@ function vpnLocalNode(string $role): Node
 {
     return Node::factory()->create([
         'name' => "local-{$role}",
-        'role' => $role,
         'host' => '10.6.0.2',
         'wireguard_address' => '10.6.0.2',
         'status' => 'active',
@@ -376,7 +373,6 @@ function gatewayIdentityEnvelope(array $self = [], array $gateway = []): array
             'data' => [
                 'self' => [
                     'name' => 'control-1',
-                    'role' => 'control',
                     'status' => 'active',
                     'platform' => 'unknown',
                     'addresses' => ['wireguard' => '10.6.0.8'],
@@ -384,7 +380,6 @@ function gatewayIdentityEnvelope(array $self = [], array $gateway = []): array
                 ],
                 'gateway' => [
                     'name' => 'gateway-1',
-                    'role' => 'gateway',
                     'status' => 'active',
                     'platform' => 'unknown',
                     'addresses' => ['wireguard' => '10.6.0.2'],

@@ -187,7 +187,7 @@ final readonly class WorkspaceShowController implements Loggable
      */
     private function hostedAppNodeIds(): array
     {
-        return $this->nodeRoleAssignments->activeNodeIdsForRole('app-development');
+        return $this->nodeRoleAssignments->activeNodeIdsForRole('app-dev');
     }
 
     /**

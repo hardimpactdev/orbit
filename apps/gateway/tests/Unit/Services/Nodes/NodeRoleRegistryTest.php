@@ -17,43 +17,43 @@ describe('node role registry', function (): void {
         $registry = new NodeRoleRegistry;
 
         expect($registry->definition('gateway')->conflictsWith)->toBe([
-            'app-development',
-            'app-production',
+            'app-dev',
+            'app-prod',
             'database',
             'agent',
             'ingress',
         ]);
 
         expect($registry->definition('vpn')->conflictsWith)->toBe([
-            'app-development',
-            'app-production',
+            'app-dev',
+            'app-prod',
             'database',
             'agent',
             'ingress',
         ]);
 
         expect($registry->definition('router')->conflictsWith)->toBe([
-            'app-development',
-            'app-production',
+            'app-dev',
+            'app-prod',
             'database',
             'agent',
             'ingress',
         ]);
 
-        expect($registry->definition('app-development')->conflictsWith)->toBe([
+        expect($registry->definition('app-dev')->conflictsWith)->toBe([
             'gateway',
             'vpn',
             'router',
-            'app-production',
+            'app-prod',
             'agent',
             'ingress',
         ]);
 
-        expect($registry->definition('app-production')->conflictsWith)->toBe([
+        expect($registry->definition('app-prod')->conflictsWith)->toBe([
             'gateway',
             'vpn',
             'router',
-            'app-development',
+            'app-dev',
             'database',
             'agent',
         ]);
@@ -62,7 +62,7 @@ describe('node role registry', function (): void {
             'gateway',
             'vpn',
             'router',
-            'app-production',
+            'app-prod',
             'agent',
             'ingress',
         ]);
@@ -71,8 +71,8 @@ describe('node role registry', function (): void {
             'gateway',
             'vpn',
             'router',
-            'app-development',
-            'app-production',
+            'app-dev',
+            'app-prod',
             'database',
             'ingress',
         ]);
@@ -81,7 +81,7 @@ describe('node role registry', function (): void {
             'gateway',
             'vpn',
             'router',
-            'app-development',
+            'app-dev',
             'database',
             'agent',
         ]);
@@ -96,12 +96,12 @@ describe('node role registry', function (): void {
             ->and($registry->definition('router')->supportedPlatforms)->toBe(['ubuntu'])
             ->and($registry->definition('router')->assignableByRoleCommand)->toBeFalse()
             ->and($registry->definition('router')->assignableByNodeNew)->toBeFalse()
-            ->and($registry->definition('app-development')->supportedPlatforms)->toBe(['ubuntu'])
-            ->and($registry->definition('app-development')->assignableByRoleCommand)->toBeTrue()
-            ->and($registry->definition('app-development')->assignableByNodeNew)->toBeTrue()
-            ->and($registry->definition('app-production')->supportedPlatforms)->toBe(['ubuntu'])
-            ->and($registry->definition('app-production')->assignableByRoleCommand)->toBeTrue()
-            ->and($registry->definition('app-production')->assignableByNodeNew)->toBeTrue()
+            ->and($registry->definition('app-dev')->supportedPlatforms)->toBe(['ubuntu'])
+            ->and($registry->definition('app-dev')->assignableByRoleCommand)->toBeTrue()
+            ->and($registry->definition('app-dev')->assignableByNodeNew)->toBeTrue()
+            ->and($registry->definition('app-prod')->supportedPlatforms)->toBe(['ubuntu'])
+            ->and($registry->definition('app-prod')->assignableByRoleCommand)->toBeTrue()
+            ->and($registry->definition('app-prod')->assignableByNodeNew)->toBeTrue()
             ->and($registry->definition('database')->supportedPlatforms)->toBe(['ubuntu'])
             ->and($registry->definition('database')->assignableByRoleCommand)->toBeTrue()
             ->and($registry->definition('database')->assignableByNodeNew)->toBeTrue()
@@ -118,7 +118,7 @@ describe('node role registry', function (): void {
 
     it('hydrates role-specific settings dtos', function (): void {
         $settings = (new NodeRoleRegistry)
-            ->definition('app-production')
+            ->definition('app-prod')
             ->settingsFromArray(['ingress_node_id' => 12]);
 
         expect($settings)
@@ -129,7 +129,7 @@ describe('node role registry', function (): void {
 
     it('hydrates app development settings dtos', function (): void {
         $settings = (new NodeRoleRegistry)
-            ->definition('app-development')
+            ->definition('app-dev')
             ->settingsFromArray(['tld' => 'test']);
 
         expect($settings)
@@ -215,21 +215,21 @@ describe('node role registry', function (): void {
 
     it('rejects invalid app development settings', function (): void {
         expect(fn () => (new NodeRoleRegistry)
-            ->definition('app-development')
+            ->definition('app-dev')
             ->settingsFromArray(['tld' => '']))
             ->toThrow(InvalidArgumentException::class, 'The app-development role requires a valid tld setting.');
     });
 
     it('rejects path-like app development tld settings', function (): void {
         expect(fn () => (new NodeRoleRegistry)
-            ->definition('app-development')
+            ->definition('app-dev')
             ->settingsFromArray(['tld' => '../../orbit']))
             ->toThrow(InvalidArgumentException::class, 'The app-development role requires a valid tld setting.');
     });
 
     it('rejects unknown app development settings', function (): void {
         expect(fn () => (new NodeRoleRegistry)
-            ->definition('app-development')
+            ->definition('app-dev')
             ->settingsFromArray(['tld' => 'test', 'unexpected' => 'value']))
             ->toThrow(InvalidArgumentException::class, 'The app-development role does not accept unknown settings.');
     });
@@ -291,7 +291,7 @@ describe('node role registry', function (): void {
 
     it('accepts empty app production settings for compatibility with existing rows', function (): void {
         $settings = (new NodeRoleRegistry)
-            ->definition('app-production')
+            ->definition('app-prod')
             ->settingsFromArray([]);
 
         expect($settings)
@@ -302,7 +302,7 @@ describe('node role registry', function (): void {
 
     it('rejects invalid app production settings', function (array $settings, string $message): void {
         expect(fn () => (new NodeRoleRegistry)
-            ->definition('app-production')
+            ->definition('app-prod')
             ->settingsFromArray($settings))
             ->toThrow(InvalidArgumentException::class, $message);
     })->with([
@@ -324,8 +324,8 @@ describe('node role registry', function (): void {
             'gateway',
             'vpn',
             'router',
-            'app-development',
-            'app-production',
+            'app-dev',
+            'app-prod',
             'database',
             'agent',
             'ingress',

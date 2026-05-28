@@ -20,13 +20,11 @@ function nodeRevokeJsonRow(array $overrides = []): array
 {
     return array_merge([
         'name' => 'app-1',
-        'role' => 'app',
         'host' => '10.6.0.7',
         'wireguard_address' => '10.6.0.7',
         'user' => 'nckrtl',
         'orbit_path' => '/home/nckrtl/orbit',
         'status' => 'active',
-        'environment' => 'development',
         'platform' => 'ubuntu_24-04',
         'created_at' => now(),
         'updated_at' => now(),
@@ -79,8 +77,6 @@ function setupNodeRevokeGatewayCallerJson(): void
 
     DB::table('nodes')->insert(nodeRevokeJsonRow([
         'name' => 'gateway-1',
-        'role' => 'gateway',
-        'environment' => null,
     ]));
 }
 
@@ -89,8 +85,6 @@ describe('node:revoke JSON renderer contract', function (): void {
         setupNodeRevokeGatewayCallerJson();
         DB::table('nodes')->insert(nodeRevokeJsonRow([
             'name' => 'control-1',
-            'role' => 'control',
-            'environment' => null,
         ]));
         DB::table('nodes')->insert(nodeRevokeJsonRow());
         DB::table('node_access')->insert([
@@ -117,8 +111,6 @@ describe('node:revoke JSON renderer contract', function (): void {
         setupNodeRevokeGatewayCallerJson();
         DB::table('nodes')->insert(nodeRevokeJsonRow([
             'name' => 'control-1',
-            'role' => 'control',
-            'environment' => null,
         ]));
         DB::table('nodes')->insert(nodeRevokeJsonRow());
         DB::table('node_access')->insert([
@@ -153,8 +145,6 @@ describe('node:revoke JSON renderer contract', function (): void {
         setupNodeRevokeGatewayCallerJson();
         DB::table('nodes')->insert(nodeRevokeJsonRow([
             'name' => 'control-1',
-            'role' => 'control',
-            'environment' => null,
         ]));
         DB::table('nodes')->insert(nodeRevokeJsonRow());
 
@@ -186,13 +176,9 @@ describe('node:revoke JSON renderer contract', function (): void {
 
         $consumerId = DB::table('nodes')->insertGetId(nodeRevokeJsonRow([
             'name' => 'self-lockout-test',
-            'role' => 'gateway',
-            'environment' => null,
         ]));
         $servingId = DB::table('nodes')->insertGetId(nodeRevokeJsonRow([
             'name' => 'gateway-target',
-            'role' => 'gateway',
-            'environment' => null,
         ]));
         DB::table('node_access')->insert([
             'consumer_node_id' => $consumerId,
@@ -240,8 +226,6 @@ describe('node:revoke JSON renderer contract', function (): void {
         setupNodeRevokeGatewayCallerJson();
         DB::table('nodes')->insert(nodeRevokeJsonRow([
             'name' => 'control-1',
-            'role' => 'control',
-            'environment' => null,
         ]));
 
         $exitCode = Artisan::call('node:revoke', [
@@ -267,8 +251,6 @@ describe('node:revoke JSON renderer contract', function (): void {
         setupNodeRevokeGatewayCallerJson();
         DB::table('nodes')->insert(nodeRevokeJsonRow([
             'name' => 'control-1',
-            'role' => 'control',
-            'environment' => null,
         ]));
         DB::table('nodes')->insert(nodeRevokeJsonRow());
 
@@ -344,8 +326,6 @@ describe('node:revoke JSON renderer contract', function (): void {
         setupNodeRevokeGatewayCallerJson();
         DB::table('nodes')->insert(nodeRevokeJsonRow([
             'name' => 'control-1',
-            'role' => 'control',
-            'environment' => null,
         ]));
         DB::table('nodes')->insert(nodeRevokeJsonRow());
         DB::table('node_access')->insert([
@@ -369,8 +349,6 @@ describe('node:revoke JSON renderer contract', function (): void {
         setupNodeRevokeGatewayCallerJson();
         DB::table('nodes')->insert(nodeRevokeJsonRow([
             'name' => 'control-1',
-            'role' => 'control',
-            'environment' => null,
         ]));
         DB::table('nodes')->insert(nodeRevokeJsonRow());
 

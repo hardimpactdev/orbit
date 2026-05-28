@@ -34,7 +34,7 @@ function createProcessEditLocalNode(string $role = 'gateway'): Node
 {
     return Node::factory()->create([
         'name' => "local-{$role}",
-        'role' => $role,
+
         'host' => '10.6.0.1',
         'wireguard_address' => '10.6.0.1',
     ]);
@@ -43,7 +43,7 @@ function createProcessEditLocalNode(string $role = 'gateway'): Node
 describe('process:edit base contract', function (): void {
     it('updates process intent and re-renders main and workspace runtime units', function (): void {
         createProcessEditLocalNode('gateway');
-        $node = Node::factory()->create(['role' => 'app', 'name' => 'app-1']);
+        $node = Node::factory()->create(['name' => 'app-1']);
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id, 'path' => '/home/orbit/apps/docs']);
         Workspace::factory()->create(['name' => 'feature-docs', 'app_id' => $app->id, 'path' => '/home/orbit/apps/docs/.worktrees/feature-docs']);
         // Pin runtime to supervisor so the base-contract test asserts the
@@ -84,7 +84,7 @@ describe('process:edit base contract', function (): void {
 
     it('restarts runtime units via supervisor when the process runtime is supervisor', function (): void {
         createProcessEditLocalNode('gateway');
-        $node = Node::factory()->create(['role' => 'app']);
+        $node = Node::factory()->create([]);
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
         Process::factory()->create(['app_id' => $app->id, 'name' => 'queue', 'command' => 'php artisan queue:work', 'sort_order' => 1, 'runtime' => ProcessRuntime::Supervisor]);
         $remoteShell = new ProcessEditRemoteShell([
@@ -109,7 +109,7 @@ describe('process:edit base contract', function (): void {
 
     it('restarts runtime units via docker when the process runtime is docker', function (): void {
         createProcessEditLocalNode('gateway');
-        $node = Node::factory()->create(['role' => 'app']);
+        $node = Node::factory()->create([]);
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id, 'path' => '/home/orbit/apps/docs', 'php_version' => '8.5']);
         Process::factory()->create(['app_id' => $app->id, 'name' => 'queue', 'command' => 'php artisan queue:work', 'sort_order' => 1, 'runtime' => ProcessRuntime::Docker]);
         $remoteShell = new ProcessEditRemoteShell([
@@ -141,7 +141,7 @@ describe('process:edit base contract', function (): void {
 
     it('returns success with warnings when re-rendering fails after intent update', function (): void {
         createProcessEditLocalNode('gateway');
-        $node = Node::factory()->create(['role' => 'app']);
+        $node = Node::factory()->create([]);
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
         // Pin supervisor runtime so the install-script failure produces the
         // documented process.runtime_unit_missing warning.
@@ -166,7 +166,7 @@ describe('process:edit base contract', function (): void {
 
     it('rejects invalid input before changing intent', function (array $arguments, string $field, string $code): void {
         createProcessEditLocalNode('gateway');
-        $node = Node::factory()->create(['role' => 'app']);
+        $node = Node::factory()->create([]);
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
         Process::factory()->create(['app_id' => $app->id, 'name' => 'vite', 'command' => 'npm run dev']);
         app()->instance(RemoteShell::class, new ProcessEditRemoteShell([]));
@@ -251,7 +251,7 @@ describe('process:edit base contract', function (): void {
 
     it('renders human progress and success prose', function (): void {
         createProcessEditLocalNode('gateway');
-        $node = Node::factory()->create(['role' => 'app']);
+        $node = Node::factory()->create([]);
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
         Process::factory()->create(['app_id' => $app->id, 'name' => 'vite', 'command' => 'npm run dev']);
         app()->instance(RemoteShell::class, new ProcessEditRemoteShell([
@@ -279,7 +279,7 @@ describe('process:edit base contract', function (): void {
 describe('process:edit runtime selection', function (): void {
     it('switches process runtime from docker to supervisor', function (): void {
         createProcessEditLocalNode('gateway');
-        $node = Node::factory()->create(['role' => 'app']);
+        $node = Node::factory()->create([]);
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
         Process::factory()->create([
             'app_id' => $app->id,
@@ -309,7 +309,7 @@ describe('process:edit runtime selection', function (): void {
 
     it('treats --runtime as a sufficient editable field on its own', function (): void {
         createProcessEditLocalNode('gateway');
-        $node = Node::factory()->create(['role' => 'app']);
+        $node = Node::factory()->create([]);
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
         Process::factory()->create([
             'app_id' => $app->id,
@@ -337,7 +337,7 @@ describe('process:edit runtime selection', function (): void {
 
     it('rejects invalid runtime values before changing intent', function (): void {
         createProcessEditLocalNode('gateway');
-        $node = Node::factory()->create(['role' => 'app']);
+        $node = Node::factory()->create([]);
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
         Process::factory()->create([
             'app_id' => $app->id,

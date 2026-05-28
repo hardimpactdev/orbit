@@ -55,7 +55,7 @@ final class EnsureAppProxyRouteTestCertificateInstaller implements SiteCertifica
 }
 
 it('creates a PHP app proxy route targeting the FrankenPHP runtime container', function (): void {
-    $node = Node::factory()->create(['role' => 'app', 'tld' => 'test']);
+    $node = Node::factory()->create(['tld' => 'test']);
     $app = App::factory()->for($node, 'node')->create([
         'name' => 'docs',
         'document_root' => 'public',
@@ -83,7 +83,7 @@ it('creates a PHP app proxy route targeting the FrankenPHP runtime container', f
 });
 
 it('creates a static app proxy route with file_server', function (): void {
-    $node = Node::factory()->create(['role' => 'app', 'tld' => 'test']);
+    $node = Node::factory()->create(['tld' => 'test']);
     $app = App::factory()->for($node, 'node')->static()->create([
         'name' => 'marketing',
         'document_root' => 'public',

@@ -21,12 +21,10 @@ function apiRemoveNodeRow(array $overrides = []): array
 {
     return array_merge([
         'name' => 'app-1',
-        'role' => 'app',
         'host' => '10.6.0.7',
         'user' => 'nckrtl',
         'orbit_path' => '/home/nckrtl/orbit',
         'status' => 'active',
-        'environment' => 'development',
         'platform' => 'ubuntu_24-04',
         'wireguard_address' => '10.6.0.7',
         'created_at' => now(),
@@ -38,9 +36,7 @@ function createRemoveCallerNode(string $role = 'control'): int
 {
     return (int) DB::table('nodes')->insertGetId(apiRemoveNodeRow([
         'name' => "{$role}-caller",
-        'role' => $role,
         'host' => REMOVE_CALLER_WG_IP,
-        'environment' => $role === 'app' ? 'development' : null,
         'wireguard_address' => REMOVE_CALLER_WG_IP,
     ]));
 }
@@ -49,15 +45,12 @@ function createRemoveGatewayNode(): int
 {
     $gatewayId = (int) DB::table('nodes')->insertGetId(apiRemoveNodeRow([
         'name' => 'gateway-1',
-        'role' => 'gateway',
         'host' => '10.6.0.2',
-        'environment' => null,
         'wireguard_address' => '10.6.0.2',
     ]));
 
     NodeRoleAssignment::factory()->create([
         'node_id' => $gatewayId,
-        'role' => 'gateway',
         'status' => 'active',
     ]);
 
@@ -266,15 +259,12 @@ describe('NodeRemoveController', function (): void {
 
         $target = Node::query()->create(apiRemoveNodeRow([
             'name' => 'gateway-shadow-stale',
-            'role' => 'control',
             'host' => '10.6.0.44',
-            'environment' => null,
             'wireguard_address' => '10.6.0.44',
         ]));
 
         NodeRoleAssignment::factory()->create([
             'node_id' => $target->id,
-            'role' => 'gateway',
             'status' => 'active',
         ]);
 

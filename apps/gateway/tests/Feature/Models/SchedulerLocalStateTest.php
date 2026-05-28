@@ -11,7 +11,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 uses(RefreshDatabase::class);
 
 it('stores the gateway scheduler heartbeat state', function (): void {
-    $node = Node::factory()->create(['name' => 'gateway', 'role' => 'gateway']);
+    $node = Node::factory()->create(['name' => 'gateway']);
 
     $state = SchedulerState::factory()->create([
         'node_id' => $node->id,
@@ -35,7 +35,7 @@ it('keeps scheduler state unique per node', function (): void {
 });
 
 it('stores gateway schedule locks by stable schedule key', function (): void {
-    $gateway = Node::factory()->create(['name' => 'gateway', 'role' => 'gateway']);
+    $gateway = Node::factory()->create(['name' => 'gateway']);
 
     $firstLock = ScheduleLock::factory()->create([
         'node_id' => $gateway->id,
@@ -52,7 +52,7 @@ it('stores gateway schedule locks by stable schedule key', function (): void {
 });
 
 it('keeps schedule lock keys unique on the gateway', function (): void {
-    $node = Node::factory()->create(['name' => 'gateway', 'role' => 'gateway']);
+    $node = Node::factory()->create(['name' => 'gateway']);
 
     ScheduleLock::factory()->create([
         'node_id' => $node->id,

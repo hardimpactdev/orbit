@@ -32,7 +32,7 @@ beforeEach(function (): void {
 
     $this->vpnNode = Node::factory()->create([
         'name' => 'gateway-1',
-        'role' => 'gateway',
+
         'host' => '10.6.0.2',
         'wireguard_address' => '10.6.0.2',
         'status' => 'active',

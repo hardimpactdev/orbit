@@ -10,7 +10,6 @@ use App\Services\Nodes\NodeIdentityArtifactProbe;
 it('reads non-secret node identity facts from the selected host', function (): void {
     $node = new Node([
         'name' => 'app-1',
-        'role' => 'app',
         'orbit_path' => '/home/orbit/orbit',
     ]);
 
@@ -18,7 +17,6 @@ it('reads non-secret node identity facts from the selected host', function (): v
         exitCode: 0,
         stdout: json_encode([
             'name' => 'app-1',
-            'role' => 'app',
             'local_role' => 'app',
             'status' => 'active',
             'platform' => 'ubuntu_24-04',

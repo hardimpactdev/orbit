@@ -12,11 +12,10 @@ uses(RefreshDatabase::class);
 
 describe('app:list JSON renderer contract', function (): void {
     it('selects JSON renderer with --json and returns the canonical app entity shape', function (): void {
-        $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'tld' => 'test']);
+        $node = Node::factory()->create(['name' => 'app-1', 'tld' => 'test']);
         $app = App::factory()->create([
             'name' => 'docs',
             'node_id' => $node->id,
-            'environment' => 'development',
             'domain' => null,
             'path' => '/srv/docs',
             'document_root' => 'public',
@@ -58,11 +57,10 @@ describe('app:list JSON renderer contract', function (): void {
     });
 
     it('exposes runtime_kind=static for static apps', function (): void {
-        $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'tld' => 'test']);
+        $node = Node::factory()->create(['name' => 'app-1', 'tld' => 'test']);
         App::factory()->static()->create([
             'name' => 'marketing',
             'node_id' => $node->id,
-            'environment' => 'development',
             'domain' => null,
             'path' => '/srv/marketing',
             'document_root' => 'public',

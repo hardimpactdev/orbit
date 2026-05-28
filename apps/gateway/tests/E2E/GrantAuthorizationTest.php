@@ -92,7 +92,6 @@ it('enforces grants through real gateway middleware and node access rows', funct
         expect($removeRole['status'])->toBe(200)
             ->and($removeRole['body']['success']['data'])->toMatchArray([
                 'node' => 'app-dev-1',
-                'role' => 'app-development',
             ]);
 
         grantAuthorizationE2eApplyAppDevelopmentRole($topology);
@@ -303,7 +302,6 @@ function grantAuthorizationE2eApplyAppDevelopmentRole(E2ETopologyHarness $topolo
         path: '/nodes/app-dev-1/roles',
         wireGuardIp: '10.6.0.2',
         payload: [
-            'role' => 'app-development',
             'settings' => ['tld' => 'test'],
         ],
         timeoutSeconds: 180,
@@ -368,7 +366,6 @@ function grantAuthorizationE2eSeedWorkspaceApp(E2ETopologyHarness $topology, str
     'name' => 'grant-docs',
 ], [
     'node_id' => \$node->id,
-    'environment' => 'development',
     'path' => {$appPathValue},
     'document_root' => 'public',
     'php_version' => '8.5',

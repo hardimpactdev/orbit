@@ -23,7 +23,7 @@ function createToolStartJsonLocalNode(string $role = 'gateway'): Node
 {
     return Node::factory()->create([
         'name' => "tool-start-json-{$role}",
-        'role' => $role,
+
         'host' => '10.11.0.1',
         'wireguard_address' => '10.11.0.1',
     ]);

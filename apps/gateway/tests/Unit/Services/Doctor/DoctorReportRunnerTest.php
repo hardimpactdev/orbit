@@ -39,14 +39,14 @@ function createDoctorRunnerAppHostNode(array $attributes = []): Node
 {
     $node = Node::factory()->create([
         'name' => 'app-1',
-        'role' => 'app',
+
         'status' => 'active',
         ...$attributes,
     ]);
 
     NodeRoleAssignment::factory()->create([
         'node_id' => $node->id,
-        'role' => 'app-development',
+        'role' => 'app-dev',
         'status' => 'active',
         'settings' => ['tld' => 'test'],
     ]);
@@ -87,7 +87,7 @@ function createDoctorRunnerUpdateGateway(array $attributes = []): Node
 {
     $node = Node::factory()->create([
         'name' => 'updates-gateway',
-        'role' => 'gateway',
+
         'status' => 'active',
         'platform' => 'ubuntu_24-04',
         'host' => '10.6.0.1',
@@ -868,7 +868,7 @@ describe('DoctorReportRunner', function (): void {
     });
 
     it('suppresses resolved issues when a supported restore completes', function (): void {
-        $gateway = Node::factory()->create(['name' => 'gateway-1', 'role' => 'gateway', 'status' => 'active']);
+        $gateway = Node::factory()->create(['name' => 'gateway-1', 'status' => 'active']);
         NodeRoleAssignment::factory()->create([
             'node_id' => $gateway->id,
             'role' => 'gateway',
@@ -903,7 +903,7 @@ describe('DoctorReportRunner', function (): void {
     });
 
     it('installs missing tools through restore mode family dispatch', function (): void {
-        $gateway = Node::factory()->create(['name' => 'gateway-1', 'role' => 'gateway', 'status' => 'active']);
+        $gateway = Node::factory()->create(['name' => 'gateway-1', 'status' => 'active']);
         $node = createDoctorRunnerAppHostNode();
         NodeTool::factory()->create(['node_id' => $node->id, 'name' => 'redis']);
         $shell = new DoctorReportRunnerRemoteShell([
@@ -932,7 +932,7 @@ describe('DoctorReportRunner', function (): void {
     });
 
     it('suppresses resolved tool version issues when a safe update restore completes', function (): void {
-        $gateway = Node::factory()->create(['name' => 'gateway-1', 'role' => 'gateway', 'status' => 'active']);
+        $gateway = Node::factory()->create(['name' => 'gateway-1', 'status' => 'active']);
         $node = createDoctorRunnerAppHostNode();
         NodeTool::factory()->create([
             'node_id' => $node->id,
@@ -965,7 +965,7 @@ describe('DoctorReportRunner', function (): void {
     });
 
     it('keeps the issue visible and records a failed action when a restore throws', function (): void {
-        $gateway = Node::factory()->create(['name' => 'gateway-1', 'role' => 'gateway', 'status' => 'active']);
+        $gateway = Node::factory()->create(['name' => 'gateway-1', 'status' => 'active']);
         NodeRoleAssignment::factory()->create([
             'node_id' => $gateway->id,
             'role' => 'gateway',
@@ -1007,7 +1007,7 @@ describe('DoctorReportRunner', function (): void {
 
         $node = Node::factory()->create([
             'name' => 'app-1',
-            'role' => 'control',
+
             'status' => 'active',
             'platform' => 'ubuntu_24-04',
             'host' => '10.0.0.1',
@@ -1021,7 +1021,7 @@ describe('DoctorReportRunner', function (): void {
 
         NodeRoleAssignment::factory()->create([
             'node_id' => $node->id,
-            'role' => 'app-development',
+            'role' => 'app-dev',
             'status' => 'active',
             'settings' => ['tld' => 'test'],
         ]);
@@ -1051,7 +1051,7 @@ describe('DoctorReportRunner', function (): void {
     it('skips unsupported node role drift during restore', function (): void {
         $node = Node::factory()->create([
             'name' => 'app-1',
-            'role' => 'control',
+
             'status' => 'active',
             'platform' => 'ubuntu_24-04',
             'host' => '10.0.0.1',
@@ -1065,7 +1065,7 @@ describe('DoctorReportRunner', function (): void {
 
         NodeRoleAssignment::factory()->create([
             'node_id' => $node->id,
-            'role' => 'app-development',
+            'role' => 'app-dev',
             'status' => 'active',
             'settings' => [],
         ]);
@@ -1093,7 +1093,7 @@ describe('DoctorReportRunner', function (): void {
 
     it('supports the database connection family on app nodes but not database-only nodes', function (): void {
         $appNode = createDoctorRunnerAppHostNode();
-        $databaseNode = Node::factory()->create(['role' => 'database', 'status' => 'active']);
+        $databaseNode = Node::factory()->create(['status' => 'active']);
 
         $runner = app(DoctorReportRunner::class);
 

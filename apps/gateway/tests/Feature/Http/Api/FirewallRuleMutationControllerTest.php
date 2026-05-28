@@ -21,7 +21,6 @@ function createFirewallRuleMutationCallerNode(array $overrides = []): Node
 {
     $attributes = array_merge([
         'name' => 'caller',
-        'role' => 'control',
         'host' => FIREWALL_RULE_MUTATION_CALLER_WG_IP,
         'wireguard_address' => FIREWALL_RULE_MUTATION_CALLER_WG_IP,
         'platform' => 'ubuntu',

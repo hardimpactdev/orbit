@@ -28,11 +28,9 @@ function nodeListJsonRow(array $overrides = []): array
 {
     return array_merge([
         'name' => 'app-1',
-        'role' => 'app',
         'host' => '10.6.0.7',
         'orbit_path' => '/home/nckrtl/orbit',
         'status' => 'active',
-        'environment' => 'development',
         'tld' => 'test',
         'platform' => 'ubuntu_24-04',
         'wireguard_address' => '10.6.0.7',
@@ -107,11 +105,9 @@ describe('node:list JSON renderer contract', function (): void {
 
         DB::table('nodes')->insert([
             'name' => 'local-gateway',
-            'role' => 'gateway',
             'host' => '10.6.0.1',
             'orbit_path' => '/home/orbit/orbit',
             'status' => 'active',
-            'environment' => null,
             'platform' => 'ubuntu_24-04',
             'wireguard_address' => '10.6.0.1',
             'created_at' => now(),
@@ -124,8 +120,6 @@ describe('node:list JSON renderer contract', function (): void {
         DB::table('nodes')->insert([
             nodeListJsonRow([
                 'name' => 'gateway-1',
-                'role' => 'gateway',
-                'environment' => null,
             ]),
         ]);
 
@@ -143,8 +137,6 @@ describe('node:list JSON renderer contract', function (): void {
         DB::table('nodes')->insert([
             nodeListJsonRow([
                 'name' => 'app-1',
-                'role' => 'app',
-                'environment' => 'development',
             ]),
         ]);
 
@@ -165,18 +157,14 @@ describe('node:list JSON renderer contract', function (): void {
         DB::table('nodes')->insert([
             nodeListJsonRow([
                 'name' => 'gateway-1',
-                'role' => 'gateway',
-                'environment' => null,
                 'platform' => 'ubuntu_24-04',
             ]),
             nodeListJsonRow([
                 'name' => 'app-1',
-                'role' => 'app',
-                'environment' => 'development',
                 'platform' => 'ubuntu_24-04',
             ]),
         ]);
-        assignNodeListJsonRole('app-1', 'app-development', ['tld' => 'test']);
+        assignNodeListJsonRole('app-1', 'app-dev', ['tld' => 'test']);
 
         $exitCode = Artisan::call('node:list', ['--json' => true]);
         $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
@@ -188,19 +176,16 @@ describe('node:list JSON renderer contract', function (): void {
 
         expect($indexed['app-1'])->toBe([
             'name' => 'app-1',
-            'role' => 'app',
-            'environment' => 'development',
             'platform' => 'ubuntu_24-04',
             'status' => 'active',
             'roles' => [
                 [
-                    'role' => 'app-development',
                     'status' => 'active',
                     'settings' => ['tld' => 'test'],
                     'last_error' => null,
                     'converged_at' => NodeRoleAssignment::query()
                         ->where('node_id', DB::table('nodes')->where('name', 'app-1')->value('id'))
-                        ->where('role', 'app-development')
+                        ->where('role', 'app-dev')
                         ->first()
                         ?->converged_at
                         ?->toJSON(),
@@ -209,8 +194,6 @@ describe('node:list JSON renderer contract', function (): void {
         ])
             ->and($indexed['gateway-1'])->toBe([
                 'name' => 'gateway-1',
-                'role' => 'gateway',
-                'environment' => null,
                 'platform' => 'ubuntu_24-04',
                 'status' => 'active',
                 'roles' => [],
@@ -221,8 +204,6 @@ describe('node:list JSON renderer contract', function (): void {
         DB::table('nodes')->insert([
             nodeListJsonRow([
                 'name' => 'gateway-1',
-                'role' => 'gateway',
-                'environment' => null,
                 'wireguard_address' => '10.6.0.2',
             ]),
         ]);
@@ -256,14 +237,11 @@ describe('node:list JSON renderer contract', function (): void {
             ->and($gatewayNode)
             ->toMatchArray([
                 'name' => 'gateway-1',
-                'role' => 'gateway',
-                'environment' => null,
                 'platform' => 'ubuntu_24-04',
                 'status' => 'active',
             ]);
 
         expect($roleAssignments['gateway'])->toMatchArray([
-            'role' => 'gateway',
             'status' => 'active',
             'settings' => [],
             'last_error' => null,
@@ -277,7 +255,6 @@ describe('node:list JSON renderer contract', function (): void {
         );
 
         expect($roleAssignments['vpn'])->toMatchArray([
-            'role' => 'vpn',
             'status' => 'active',
             'settings' => [
                 'public_endpoint' => 'vpn.example.test',
@@ -320,8 +297,6 @@ describe('node:list JSON renderer contract', function (): void {
     it('defaults platform to unknown when null', function (): void {
         DB::table('nodes')->insert(nodeListJsonRow([
             'name' => 'gateway-1',
-            'role' => 'gateway',
-            'environment' => null,
             'platform' => null,
         ]));
 
@@ -347,8 +322,6 @@ describe('node:list JSON renderer contract', function (): void {
     it('environment is null for non-app nodes', function (): void {
         DB::table('nodes')->insert(nodeListJsonRow([
             'name' => 'gateway-1',
-            'role' => 'gateway',
-            'environment' => null,
         ]));
 
         $exitCode = Artisan::call('node:list', ['--json' => true]);
@@ -366,8 +339,6 @@ describe('node:list JSON renderer contract', function (): void {
     it('platform is never null and uses unknown sentinel when undetected', function (): void {
         DB::table('nodes')->insert(nodeListJsonRow([
             'name' => 'gateway-1',
-            'role' => 'gateway',
-            'environment' => null,
             'platform' => null,
         ]));
 
@@ -387,25 +358,19 @@ describe('node:list JSON renderer contract', function (): void {
         DB::table('nodes')->insert([
             nodeListJsonRow([
                 'name' => 'legacy-app',
-                'role' => 'app',
-                'environment' => 'development',
                 'wireguard_address' => '10.6.0.8',
             ]),
             nodeListJsonRow([
                 'name' => 'control-app',
-                'role' => 'control',
-                'environment' => null,
                 'wireguard_address' => '10.6.0.9',
             ]),
             nodeListJsonRow([
                 'name' => 'prod-app',
-                'role' => 'app',
-                'environment' => 'production',
                 'wireguard_address' => '10.6.0.10',
             ]),
         ]);
-        assignNodeListJsonRole('control-app', 'app-development', ['tld' => 'test']);
-        assignNodeListJsonRole('prod-app', 'app-production');
+        assignNodeListJsonRole('control-app', 'app-dev', ['tld' => 'test']);
+        assignNodeListJsonRole('prod-app', 'app-prod');
 
         $exitCode = Artisan::call('node:list', ['--json' => true, '--environment' => 'development']);
         $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
@@ -421,18 +386,12 @@ describe('node:list JSON renderer contract', function (): void {
         DB::table('nodes')->insert([
             nodeListJsonRow([
                 'name' => 'gateway-1',
-                'role' => 'gateway',
-                'environment' => null,
             ]),
             nodeListJsonRow([
                 'name' => 'app-1',
-                'role' => 'app',
-                'environment' => 'development',
             ]),
             nodeListJsonRow([
                 'name' => 'control-1',
-                'role' => 'control',
-                'environment' => null,
                 'status' => 'provisioning',
             ]),
         ]);
@@ -489,10 +448,9 @@ describe('node:list JSON renderer contract', function (): void {
     it('attaches doctor meta when --doctor is present and issues are found', function (): void {
         $node = createTestAppHostNode(nodeListJsonRow([
             'name' => 'incomplete-app',
-            'environment' => 'production',
             'tld' => null,
             'wireguard_address' => null,
-        ]), 'app-production');
+        ]), 'app-prod');
         markNodeSecurityBaselineClean($node);
         markNodeListJsonAppProductionToolsInstalled($node);
 

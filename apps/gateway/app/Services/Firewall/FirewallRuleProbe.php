@@ -222,7 +222,7 @@ final readonly class FirewallRuleProbe
                     summary: "Firewall rule {$rule->name} targets node {$rule->node->name}, which is not an active Ubuntu gateway or app node.",
                     detail: [
                         'node' => $rule->node->name,
-                        'role' => $rule->node->role,
+                        'role' => $rule->node->displayRole(),
                         'status' => $rule->node->status,
                         'platform' => $rule->node->platform,
                     ],

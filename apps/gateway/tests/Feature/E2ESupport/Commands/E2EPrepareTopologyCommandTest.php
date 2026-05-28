@@ -257,7 +257,6 @@ it('outputs json for dry run with default kind', function (): void {
 
     foreach (IncusTopologyTemplate::rolesFor($kind) as $role) {
         $templates[] = [
-            'role' => $role,
             'name' => IncusTopologyTemplate::templateName($kind, $role),
             'snapshot' => IncusTopologyTemplate::snapshotName($kind),
         ];
@@ -291,7 +290,6 @@ it('outputs json for each supported kind', function (string $kindValue): void {
 
     foreach (IncusTopologyTemplate::rolesFor($buildKind) as $role) {
         $templates[] = [
-            'role' => $role,
             'name' => IncusTopologyTemplate::templateName($buildKind, $role),
             'snapshot' => IncusTopologyTemplate::snapshotName($buildKind),
         ];

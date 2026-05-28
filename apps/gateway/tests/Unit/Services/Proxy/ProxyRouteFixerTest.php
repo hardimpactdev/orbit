@@ -25,7 +25,7 @@ uses(RefreshDatabase::class);
 
 describe('ProxyRouteFixer', function (): void {
     it('re-applies missing custom proxy routes from gateway intent', function (): void {
-        $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app']);
+        $node = Node::factory()->create(['name' => 'app-1']);
         $route = ProxyRoute::factory()->create([
             'node_id' => $node->id,
             'domain' => 'vite.docs.test',
@@ -62,12 +62,12 @@ describe('ProxyRouteFixer', function (): void {
     });
 
     it('re-applies ingress routes and names the public side', function (): void {
-        $edge = Node::factory()->create(['name' => 'edge-1', 'role' => 'control']);
-        $router = Node::factory()->create(['name' => 'gateway-1', 'role' => 'gateway']);
-        $backend = Node::factory()->create(['name' => 'web-1', 'role' => 'control']);
+        $edge = Node::factory()->create(['name' => 'edge-1']);
+        $router = Node::factory()->create(['name' => 'gateway-1']);
+        $backend = Node::factory()->create(['name' => 'web-1']);
         NodeRoleAssignment::factory()->create(['node_id' => $edge->id, 'role' => 'ingress', 'status' => 'active']);
         NodeRoleAssignment::factory()->create(['node_id' => $router->id, 'role' => 'router', 'status' => 'active']);
-        NodeRoleAssignment::factory()->create(['node_id' => $backend->id, 'role' => 'app-production', 'status' => 'active']);
+        NodeRoleAssignment::factory()->create(['node_id' => $backend->id, 'role' => 'app-prod', 'status' => 'active']);
         $app = App::factory()->create(['node_id' => $backend->id, 'name' => 'docs']);
         $route = ProxyRoute::factory()->create([
             'node_id' => $edge->id,
@@ -109,12 +109,12 @@ describe('ProxyRouteFixer', function (): void {
     });
 
     it('re-applies router routes and names the router side', function (): void {
-        $edge = Node::factory()->create(['name' => 'edge-1', 'role' => 'control']);
-        $router = Node::factory()->create(['name' => 'gateway-1', 'role' => 'gateway']);
-        $backend = Node::factory()->create(['name' => 'web-1', 'role' => 'control']);
+        $edge = Node::factory()->create(['name' => 'edge-1']);
+        $router = Node::factory()->create(['name' => 'gateway-1']);
+        $backend = Node::factory()->create(['name' => 'web-1']);
         NodeRoleAssignment::factory()->create(['node_id' => $edge->id, 'role' => 'ingress', 'status' => 'active']);
         NodeRoleAssignment::factory()->create(['node_id' => $router->id, 'role' => 'router', 'status' => 'active']);
-        NodeRoleAssignment::factory()->create(['node_id' => $backend->id, 'role' => 'app-production', 'status' => 'active']);
+        NodeRoleAssignment::factory()->create(['node_id' => $backend->id, 'role' => 'app-prod', 'status' => 'active']);
         $app = App::factory()->create(['node_id' => $backend->id, 'name' => 'docs']);
         $route = ProxyRoute::factory()->create([
             'node_id' => $edge->id,
@@ -156,10 +156,10 @@ describe('ProxyRouteFixer', function (): void {
     });
 
     it('re-applies private backend artifacts and names the backend side', function (): void {
-        $edge = Node::factory()->create(['name' => 'edge-1', 'role' => 'control']);
-        $backend = Node::factory()->create(['name' => 'web-1', 'role' => 'control']);
+        $edge = Node::factory()->create(['name' => 'edge-1']);
+        $backend = Node::factory()->create(['name' => 'web-1']);
         NodeRoleAssignment::factory()->create(['node_id' => $edge->id, 'role' => 'ingress', 'status' => 'active']);
-        NodeRoleAssignment::factory()->create(['node_id' => $backend->id, 'role' => 'app-production', 'status' => 'active']);
+        NodeRoleAssignment::factory()->create(['node_id' => $backend->id, 'role' => 'app-prod', 'status' => 'active']);
         $app = App::factory()->create(['node_id' => $backend->id, 'name' => 'docs']);
         $route = ProxyRoute::factory()->create([
             'node_id' => $edge->id,
@@ -201,12 +201,12 @@ describe('ProxyRouteFixer', function (): void {
     });
 
     it('does not repair backend routes without an explicit matching backend node id', function (array $detail): void {
-        $edge = Node::factory()->create(['name' => 'edge-1', 'role' => 'control']);
-        $backend = Node::factory()->create(['name' => 'web-1', 'role' => 'control']);
-        $otherBackend = Node::factory()->create(['name' => 'web-2', 'role' => 'control']);
+        $edge = Node::factory()->create(['name' => 'edge-1']);
+        $backend = Node::factory()->create(['name' => 'web-1']);
+        $otherBackend = Node::factory()->create(['name' => 'web-2']);
         NodeRoleAssignment::factory()->create(['node_id' => $edge->id, 'role' => 'ingress', 'status' => 'active']);
-        NodeRoleAssignment::factory()->create(['node_id' => $backend->id, 'role' => 'app-production', 'status' => 'active']);
-        NodeRoleAssignment::factory()->create(['node_id' => $otherBackend->id, 'role' => 'app-production', 'status' => 'active']);
+        NodeRoleAssignment::factory()->create(['node_id' => $backend->id, 'role' => 'app-prod', 'status' => 'active']);
+        NodeRoleAssignment::factory()->create(['node_id' => $otherBackend->id, 'role' => 'app-prod', 'status' => 'active']);
         $app = App::factory()->create(['node_id' => $backend->id, 'name' => 'docs']);
         $route = ProxyRoute::factory()->create([
             'node_id' => $edge->id,
@@ -246,7 +246,7 @@ describe('ProxyRouteFixer', function (): void {
     ]);
 
     it('repairs missing Orbit-managed TLS material for custom proxy routes', function (): void {
-        $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app']);
+        $node = Node::factory()->create(['name' => 'app-1']);
         $route = ProxyRoute::factory()->create([
             'node_id' => $node->id,
             'domain' => 'vite.docs.test',
@@ -283,7 +283,7 @@ describe('ProxyRouteFixer', function (): void {
     });
 
     it('re-applies app proxy routes from gateway intent', function (): void {
-        $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app']);
+        $node = Node::factory()->create(['name' => 'app-1']);
         $app = App::factory()->create([
             'node_id' => $node->id,
             'name' => 'docs',
@@ -330,7 +330,7 @@ describe('ProxyRouteFixer', function (): void {
     });
 
     it('repairs app route TLS through the site certificate installer', function (): void {
-        $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app']);
+        $node = Node::factory()->create(['name' => 'app-1']);
         $app = App::factory()->create([
             'node_id' => $node->id,
             'name' => 'docs',
@@ -372,7 +372,7 @@ describe('ProxyRouteFixer', function (): void {
     });
 
     it('restores a legacy app route persisted with only php_socket by deriving the FrankenPHP runtime upstream from the app identity (instead of throwing)', function (): void {
-        $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app']);
+        $node = Node::factory()->create(['name' => 'app-1']);
         $app = App::factory()->for($node, 'node')->create(['name' => 'legacy-docs']);
         $route = ProxyRoute::factory()
             ->for($node, 'node')
@@ -410,7 +410,7 @@ describe('ProxyRouteFixer', function (): void {
     });
 
     it('starts the orbit-caddy container on the serving node when proxy.caddy_container_down is reported', function (): void {
-        $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app']);
+        $node = Node::factory()->create(['name' => 'app-1']);
         $shell = new ProxyFixerRecordingRemoteShell;
 
         $action = (new ProxyRouteFixer($shell, new ProxyRouteRenderer, new ProxyFixerFakeCa, new SiteCertificateInstallerFake))->fixCaddyContainer(
@@ -437,7 +437,7 @@ describe('ProxyRouteFixer', function (): void {
     });
 
     it('reconciles the orbit-caddy container on the serving node using the per-node managed spec when proxy.caddy_container_missing is reported', function (): void {
-        $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'wireguard_address' => '10.6.0.21']);
+        $node = Node::factory()->create(['name' => 'app-1', 'wireguard_address' => '10.6.0.21']);
         // Persist a role-specific spec on the NodeTool record so the fixer
         // recreates orbit-caddy with the per-node bindings (private node) and
         // not the generic default spec.
@@ -477,7 +477,7 @@ describe('ProxyRouteFixer', function (): void {
     });
 
     it('refuses to recreate orbit-caddy when the node has no managed caddy tool record', function (): void {
-        $node = Node::factory()->create(['name' => 'app-2', 'role' => 'app']);
+        $node = Node::factory()->create(['name' => 'app-2']);
         $shell = new ProxyFixerRecordingRemoteShell;
 
         $action = (new ProxyRouteFixer($shell, new ProxyRouteRenderer, new ProxyFixerFakeCa, new SiteCertificateInstallerFake))->fixCaddyContainer(
@@ -503,7 +503,7 @@ describe('ProxyRouteFixer', function (): void {
     });
 
     it('uses the public-ingress spec when the node is an ingress role host', function (): void {
-        $node = Node::factory()->create(['name' => 'edge-1', 'role' => 'control', 'wireguard_address' => '10.6.0.4']);
+        $node = Node::factory()->create(['name' => 'edge-1', 'wireguard_address' => '10.6.0.4']);
         NodeRoleAssignment::factory()->create(['node_id' => $node->id, 'role' => 'ingress', 'status' => 'active']);
         // Spec containing public-ingress port bindings (80/443/443 udp +
         // wireguard backend port). These do not appear in the default spec.
@@ -534,9 +534,9 @@ describe('ProxyRouteFixer', function (): void {
     });
 
     it('restores a legacy private backend artifact persisted with only php_socket by deriving runtime_upstream from the app identity', function (): void {
-        $edge = Node::factory()->create(['name' => 'edge-1', 'role' => 'control']);
-        $backend = Node::factory()->create(['name' => 'web-1', 'role' => 'control']);
-        NodeRoleAssignment::factory()->create(['node_id' => $backend->id, 'role' => 'app-production', 'status' => 'active']);
+        $edge = Node::factory()->create(['name' => 'edge-1']);
+        $backend = Node::factory()->create(['name' => 'web-1']);
+        NodeRoleAssignment::factory()->create(['node_id' => $backend->id, 'role' => 'app-prod', 'status' => 'active']);
         $app = App::factory()->for($backend, 'node')->create(['name' => 'legacy-docs']);
         $route = ProxyRoute::factory()
             ->for($edge, 'node')

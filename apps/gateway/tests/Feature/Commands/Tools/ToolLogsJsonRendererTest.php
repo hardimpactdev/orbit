@@ -23,7 +23,7 @@ function createToolLogsJsonLocalNode(string $role = 'gateway'): Node
 {
     return Node::factory()->create([
         'name' => "tool-logs-json-{$role}",
-        'role' => $role,
+
         'host' => '10.8.0.1',
         'wireguard_address' => '10.8.0.1',
     ]);
@@ -33,7 +33,6 @@ function createToolLogsJsonManagedTool(string $nodeName = 'app-json-1', string $
 {
     $node = createTestAppHostNode([
         'name' => $nodeName,
-        'role' => 'app',
         'status' => 'active',
     ]);
 

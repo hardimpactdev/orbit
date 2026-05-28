@@ -28,13 +28,11 @@ function nodeShowRolePathRow(array $overrides = []): array
 {
     return array_merge([
         'name' => 'app-1',
-        'role' => 'app',
         'host' => '10.6.0.7',
         'wireguard_address' => '10.6.0.7',
         'user' => 'nckrtl',
         'orbit_path' => '/home/nckrtl/orbit',
         'status' => 'active',
-        'environment' => 'development',
         'platform' => 'ubuntu_24-04',
         'created_at' => now(),
         'updated_at' => now(),
@@ -47,8 +45,6 @@ function setupNodeShowRolePathGatewayCaller(): void
 
     DB::table('nodes')->insert(nodeShowRolePathRow([
         'name' => 'local-gateway',
-        'role' => 'gateway',
-        'environment' => null,
     ]));
 }
 
@@ -83,13 +79,10 @@ describe('node:show role paths', function (): void {
                     'data' => [
                         'node' => [
                             'name' => 'gateway-1',
-                            'role' => 'gateway',
                             'status' => 'active',
-                            'environment' => null,
                             'platform' => 'ubuntu_24-04',
                             'roles' => [
                                 [
-                                    'role' => 'gateway',
                                     'status' => 'active',
                                     'settings' => [],
                                     'last_error' => null,
@@ -114,7 +107,6 @@ describe('node:show role paths', function (): void {
             ->and($payload['success']['data']['node']['name'])->toBe('gateway-1')
             ->and($payload['success']['data']['node']['roles'])->toBe([
                 [
-                    'role' => 'gateway',
                     'status' => 'active',
                     'settings' => [],
                     'last_error' => null,
@@ -133,9 +125,7 @@ describe('node:show role paths', function (): void {
                     'data' => [
                         'node' => [
                             'name' => 'app-1',
-                            'role' => 'app',
                             'status' => 'active',
-                            'environment' => 'development',
                             'platform' => 'ubuntu_24-04',
                             'wireguard_address' => '10.6.0.7',
                             'grants' => [
@@ -228,9 +218,7 @@ describe('node:show role paths', function (): void {
                     'data' => [
                         'node' => [
                             'name' => 'default-app',
-                            'role' => 'app',
                             'status' => 'active',
-                            'environment' => 'development',
                             'platform' => 'ubuntu_24-04',
                             'wireguard_address' => '10.6.0.8',
                             'grants' => [

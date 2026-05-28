@@ -21,7 +21,6 @@ beforeEach(function (): void {
     DB::table('nodes')->insert([
         [
             'name' => 'gateway',
-            'role' => 'gateway',
             'host' => 'gateway',
             'orbit_path' => '/home/gateway/orbit',
             'status' => 'active',
@@ -30,7 +29,6 @@ beforeEach(function (): void {
         ],
         [
             'name' => 'beast',
-            'role' => 'app',
             'host' => 'beast',
             'orbit_path' => '/home/nckrtl/orbit',
             'status' => 'active',
@@ -41,7 +39,7 @@ beforeEach(function (): void {
 
     DB::table('node_roles')->insert([
         'node_id' => DB::table('nodes')->where('name', 'beast')->value('id'),
-        'role' => 'app-development',
+        'role' => 'app-dev',
         'status' => 'active',
         'settings' => json_encode(['tld' => 'test'], JSON_THROW_ON_ERROR),
         'last_error' => null,
@@ -84,13 +82,11 @@ it('renders success envelope shape with updates array and summary', function ():
     expect($payload['success']['data']['updates'][0])->toBe([
         'target' => 'local',
         'node' => null,
-        'role' => null,
         'status' => 'completed',
     ]);
     expect($payload['success']['data']['updates'][1])->toBe([
         'target' => 'beast',
         'node' => 'beast',
-        'role' => 'app',
         'status' => 'completed',
     ]);
     expect($payload['success']['meta']['summary'])->toBe([
@@ -103,7 +99,6 @@ it('renders success envelope shape with updates array and summary', function ():
 it('updates app nodes in parallel while preserving json target order', function (): void {
     DB::table('nodes')->insert([
         'name' => 'sidecar',
-        'role' => 'app',
         'host' => 'sidecar',
         'orbit_path' => '/home/nckrtl/orbit',
         'status' => 'active',
@@ -112,7 +107,7 @@ it('updates app nodes in parallel while preserving json target order', function 
     ]);
     DB::table('node_roles')->insert([
         'node_id' => DB::table('nodes')->where('name', 'sidecar')->value('id'),
-        'role' => 'app-production',
+        'role' => 'app-prod',
         'status' => 'active',
         'settings' => json_encode([], JSON_THROW_ON_ERROR),
         'last_error' => null,
@@ -246,7 +241,6 @@ it('excludes legacy control identities from updates array', function (): void {
     DB::table('nodes')->insert([
         [
             'name' => 'mini',
-            'role' => 'control',
             'host' => 'mini',
             'orbit_path' => '/Users/nckrtl/orbit',
             'status' => 'active',

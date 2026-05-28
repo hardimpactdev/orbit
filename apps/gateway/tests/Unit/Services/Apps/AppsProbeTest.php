@@ -555,12 +555,11 @@ describe('managed runtime config reality', function (): void {
 
 describe('production security reality', function (): void {
     it('detects production app runtime container isolation drift', function (): void {
-        $node = appNode([], role: 'app-production');
+        $node = appNode([], role: 'app-prod');
         $app = App::factory()
             ->for($node, 'node')
             ->create([
                 'name' => 'docs',
-                'environment' => 'production',
                 'path' => '/home/orbit/apps/docs',
             ]);
 
@@ -586,7 +585,6 @@ describe('production security reality', function (): void {
             ->for($node, 'node')
             ->create([
                 'name' => 'docs',
-                'environment' => 'development',
             ]);
 
         $snapshot = new ProbeSnapshot([
@@ -621,7 +619,6 @@ describe('registry intent', function (): void {
         $id = DB::table('apps')->insertGetId([
             'name' => 'incomplete',
             'node_id' => $node->id,
-            'environment' => '',
             'path' => '',
             'document_root' => 'public',
             'php_version' => '8.5',
@@ -655,8 +652,8 @@ describe('owning node eligibility', function (): void {
         expect($ownerIssues)->toHaveCount(1);
         expect($ownerIssues[0]->kind)->toBe(DriftKind::Divergent);
     })->with([
-        'gateway owner' => [['role' => 'gateway', 'status' => 'active']],
-        'inactive app owner' => [['role' => 'app', 'status' => 'inactive']],
+        'gateway owner' => [['status' => 'active']],
+        'inactive app owner' => [['status' => 'inactive']],
     ]);
 
     it('accepts active app node owners', function (): void {
@@ -814,7 +811,7 @@ function convergedRuntimeSnapshot(array $overrides = []): array
     ];
 }
 
-function appNode(array $overrides = [], string $role = 'app-development'): Node
+function appNode(array $overrides = [], string $role = 'app-dev'): Node
 {
     return createTestAppHostNode([
         ...$overrides,

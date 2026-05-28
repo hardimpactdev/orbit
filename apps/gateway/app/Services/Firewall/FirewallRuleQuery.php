@@ -106,11 +106,7 @@ class FirewallRuleQuery
         return $query
             ->where('status', 'active')
             ->where('platform', 'ubuntu')
-            ->where(function (Builder $query): void {
-                $query
-                    ->where('role', 'gateway')
-                    ->orWhereIn('id', app(NodeRoleAssignments::class)->activeNodeIdsForRoles($this->eligibleTargetRoles()));
-            });
+            ->whereIn('id', app(NodeRoleAssignments::class)->activeNodeIdsForRoles($this->eligibleTargetRoles()));
     }
 
     /**

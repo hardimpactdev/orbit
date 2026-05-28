@@ -108,7 +108,7 @@ describe('orbit-caddy container coverage of route renderer outputs', function ()
 
     it('mounts the /etc/orbit fallback that custom proxy routes default TLS paths to', function (): void {
         $renderer = new ProxyRouteRenderer;
-        $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app']);
+        $node = Node::factory()->create(['name' => 'app-1']);
         $route = ProxyRoute::factory()->create([
             'node_id' => $node->id,
             'domain' => 'vite.docs.test',

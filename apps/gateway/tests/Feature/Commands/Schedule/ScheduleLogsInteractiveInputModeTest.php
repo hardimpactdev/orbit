@@ -17,7 +17,7 @@ function createScheduleLogsInteractiveNode(string $role = 'gateway'): Node
 {
     return Node::factory()->create([
         'name' => "local-{$role}",
-        'role' => $role,
+
         'host' => '10.6.0.1',
         'wireguard_address' => '10.6.0.1',
     ]);
@@ -25,7 +25,7 @@ function createScheduleLogsInteractiveNode(string $role = 'gateway'): Node
 
 it('prompts for name in interactive mode when name is missing', function (): void {
     createScheduleLogsInteractiveNode('gateway');
-    $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app']);
+    $node = Node::factory()->create(['name' => 'app-1']);
     $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
     Schedule::factory()->forApp($app)->create([
         'name' => 'my-schedule',
@@ -46,7 +46,7 @@ it('prompts for name in interactive mode when name is missing', function (): voi
 
 it('does not prompt when name argument is supplied in interactive mode', function (): void {
     createScheduleLogsInteractiveNode('gateway');
-    $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app']);
+    $node = Node::factory()->create(['name' => 'app-1']);
     $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
     Schedule::factory()->forApp($app)->create([
         'name' => 'my-schedule',

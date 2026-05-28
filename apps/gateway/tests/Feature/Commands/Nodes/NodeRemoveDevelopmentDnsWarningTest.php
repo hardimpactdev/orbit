@@ -75,13 +75,11 @@ function nodeRemoveDnsRow(array $overrides = []): array
 {
     return array_merge([
         'name' => 'app-1',
-        'role' => 'app',
         'host' => '10.6.0.7',
         'wireguard_address' => '10.6.0.7',
         'user' => 'nckrtl',
         'orbit_path' => '/home/nckrtl/orbit',
         'status' => 'active',
-        'environment' => 'development',
         'platform' => 'ubuntu_24-04',
         'tld' => 'test',
         'created_at' => now(),
@@ -95,8 +93,6 @@ function setupNodeRemoveDnsGatewayCaller(): void
 
     $gatewayId = (int) DB::table('nodes')->insertGetId(nodeRemoveDnsRow([
         'name' => 'gateway-1',
-        'role' => 'gateway',
-        'environment' => null,
         'tld' => null,
     ]));
 
@@ -113,8 +109,6 @@ function setupNodeRemoveDnsControlCaller(): void
 
     DB::table('nodes')->insert(nodeRemoveDnsRow([
         'name' => 'control-1',
-        'role' => 'control',
-        'environment' => null,
         'tld' => null,
     ]));
 
@@ -151,19 +145,15 @@ function setupNodeRemoveDnsGatewayApiCaller(): void
 {
     $callerId = (int) DB::table('nodes')->insertGetId(nodeRemoveDnsRow([
         'name' => 'control-api',
-        'role' => 'control',
         'host' => '10.6.0.99',
         'wireguard_address' => '10.6.0.99',
-        'environment' => null,
         'tld' => null,
     ]));
 
     $gatewayId = (int) DB::table('nodes')->insertGetId(nodeRemoveDnsRow([
         'name' => 'gateway-1',
-        'role' => 'gateway',
         'host' => '10.6.0.2',
         'wireguard_address' => '10.6.0.2',
-        'environment' => null,
         'tld' => null,
     ]));
 
@@ -421,7 +411,7 @@ describe('node:remove development DNS cleanup warnings', function (): void {
             ->and($fake->mappingCalls)->toBe(1)
             ->and($fake->removeCalls)->toBe(0);
     })->with([
-        'legacy control identity' => [['role' => 'control', 'environment' => null, 'tld' => null]],
-        'production app node' => [['environment' => 'production']],
+        'legacy control identity' => [['tld' => null]],
+        'production app node' => [[]],
     ]);
 });

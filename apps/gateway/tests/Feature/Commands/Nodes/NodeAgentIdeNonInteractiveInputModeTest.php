@@ -23,13 +23,11 @@ function setupNodeAgentIdeNonInteractiveAppCaller(): void
 {
     DB::table('nodes')->insert([
         'name' => 'app-caller',
-        'role' => 'app',
         'host' => '10.6.0.99',
         'wireguard_address' => '10.6.0.99',
         'user' => 'nckrtl',
         'orbit_path' => '/home/nckrtl/orbit',
         'status' => 'active',
-        'environment' => 'development',
         'platform' => 'ubuntu_24-04',
         'created_at' => now(),
         'updated_at' => now(),

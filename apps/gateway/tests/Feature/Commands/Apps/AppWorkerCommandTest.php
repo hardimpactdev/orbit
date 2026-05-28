@@ -26,7 +26,7 @@ afterEach(function (): void {
 
 function createWorkerCommandApp(array $overrides = []): App
 {
-    $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'tld' => 'test']);
+    $node = Node::factory()->create(['name' => 'app-1', 'tld' => 'test']);
 
     return App::factory()->for($node, 'node')->create(array_merge([
         'name' => 'docs',
@@ -201,7 +201,7 @@ describe('app:worker command', function (): void {
     });
 
     it('resolves by exact app name first; a domain match on a different app does not win when a name match exists', function (): void {
-        $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'tld' => 'test']);
+        $node = Node::factory()->create(['name' => 'app-1', 'tld' => 'test']);
 
         // App "alpha" carries the domain. If resolution short-circuits on
         // the domain match it will return "alpha" instead of "docs.test".
@@ -273,7 +273,7 @@ describe('app:worker command', function (): void {
 
     it('returns gateway_unavailable when a control-mode caller cannot reach the gateway worker endpoint', function (): void {
         config(['orbit.is_gateway' => false]);
-        Node::factory()->create(['name' => 'control-1', 'role' => 'control']);
+        Node::factory()->create(['name' => 'control-1']);
 
         LocalGatewaySettings::current()->fill([
             'gateway_url' => 'https://10.6.0.1',
@@ -307,7 +307,7 @@ describe('app:worker command', function (): void {
     });
 
     it('falls back to domain match when no name matches the selector', function (): void {
-        $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'tld' => 'test']);
+        $node = Node::factory()->create(['name' => 'app-1', 'tld' => 'test']);
 
         App::factory()->for($node, 'node')->create([
             'name' => 'alpha',

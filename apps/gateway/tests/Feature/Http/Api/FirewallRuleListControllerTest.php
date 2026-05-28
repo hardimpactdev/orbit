@@ -15,7 +15,6 @@ function createFirewallRuleListCallerNode(array $overrides = []): Node
 {
     $attributes = array_merge([
         'name' => 'caller',
-        'role' => 'control',
         'host' => FIREWALL_RULE_LIST_CALLER_WG_IP,
         'wireguard_address' => FIREWALL_RULE_LIST_CALLER_WG_IP,
         'platform' => 'ubuntu',
@@ -74,7 +73,7 @@ describe('FirewallRuleListController', function (): void {
 
     it('returns validation failure for unsupported node scopes', function (): void {
         createFirewallRuleListCallerNode(['role' => 'gateway']);
-        Node::factory()->create(['name' => 'control-1', 'role' => 'control', 'platform' => 'ubuntu']);
+        Node::factory()->create(['name' => 'control-1', 'platform' => 'ubuntu']);
 
         $response = $this->call('GET', '/api/firewall-rules?node=control-1', [], [], [], ['REMOTE_ADDR' => FIREWALL_RULE_LIST_CALLER_WG_IP]);
 

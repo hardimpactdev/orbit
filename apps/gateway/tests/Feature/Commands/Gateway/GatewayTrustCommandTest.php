@@ -159,7 +159,6 @@ it('logs gateway trust activity', function (): void {
 it('does not fall back to active gateway node when local settings are empty', function (): void {
     Node::query()->create([
         'name' => 'gateway',
-        'role' => 'gateway',
         'status' => 'active',
         'host' => '10.6.0.2',
         'wireguard_address' => '10.6.0.2',
@@ -185,14 +184,12 @@ it('fails when no gateway is configured', function (): void {
 it('ignores registry gateway candidates when local settings are empty', function (): void {
     Node::query()->create([
         'name' => 'gw1',
-        'role' => 'gateway',
         'status' => 'active',
         'host' => '10.6.0.2',
         'orbit_path' => '/home/orbit/orbit',
     ]);
     Node::query()->create([
         'name' => 'gw2',
-        'role' => 'gateway',
         'status' => 'active',
         'host' => '10.6.0.3',
         'orbit_path' => '/home/orbit/orbit',

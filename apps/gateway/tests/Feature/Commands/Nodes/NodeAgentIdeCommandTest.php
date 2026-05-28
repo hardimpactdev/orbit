@@ -32,13 +32,11 @@ function nodeAgentIdeRow(array $overrides = []): array
 {
     return array_merge([
         'name' => 'app-1',
-        'role' => 'app',
         'host' => '10.6.0.7',
         'wireguard_address' => '10.6.0.7',
         'user' => 'nckrtl',
         'orbit_path' => '/home/nckrtl/orbit',
         'status' => 'active',
-        'environment' => 'development',
         'platform' => 'ubuntu_24-04',
         'public_ipv4' => null,
         'public_ipv6' => null,
@@ -54,8 +52,6 @@ function setupNodeAgentIdeGatewayCaller(): void
 
     DB::table('nodes')->insert(nodeAgentIdeRow([
         'name' => 'gateway-1',
-        'role' => 'gateway',
-        'environment' => null,
     ]));
 }
 
@@ -63,8 +59,6 @@ function setupNodeAgentIdeControlCaller(): void
 {
     DB::table('nodes')->insert(nodeAgentIdeRow([
         'name' => 'control-1',
-        'role' => 'control',
-        'environment' => null,
     ]));
 
     LocalGatewaySettings::current()->fill([
@@ -332,9 +326,7 @@ describe('node:agent-ide command', function (): void {
                         'nodes' => [
                             [
                                 'name' => 'app-1',
-                                'role' => 'app',
                                 'status' => 'active',
-                                'environment' => 'development',
                                 'host' => '10.6.0.7',
                             ],
                         ],
@@ -395,9 +387,7 @@ describe('node:agent-ide command', function (): void {
                         'nodes' => [
                             [
                                 'name' => 'app-1',
-                                'role' => 'app',
                                 'status' => 'active',
-                                'environment' => 'development',
                                 'host' => '10.6.0.7',
                             ],
                         ],

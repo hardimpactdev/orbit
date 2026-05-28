@@ -27,7 +27,7 @@ function createScheduleAddLocalNode(string $role = 'gateway', bool $withSchedule
 {
     $node = Node::factory()->create([
         'name' => "local-{$role}",
-        'role' => $role,
+
         'host' => '10.6.0.1',
         'wireguard_address' => '10.6.0.1',
     ]);
@@ -41,7 +41,7 @@ function createScheduleAddLocalNode(string $role = 'gateway', bool $withSchedule
 
 it('creates an app scoped schedule on the gateway', function (): void {
     createScheduleAddLocalNode('gateway');
-    $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app']);
+    $node = Node::factory()->create(['name' => 'app-1']);
     App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
 
     $exitCode = Artisan::call('schedule:add', [
@@ -62,7 +62,7 @@ it('creates an app scoped schedule on the gateway', function (): void {
 
 it('records intent and returns target unreachable when pickup cannot be confirmed', function (): void {
     createScheduleAddLocalNode('gateway', withSchedulerHeartbeat: false);
-    $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app']);
+    $node = Node::factory()->create(['name' => 'app-1']);
     App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
 
     $exitCode = Artisan::call('schedule:add', [
@@ -149,7 +149,7 @@ it('forwards non-gateway schedule adds through the typed gateway request', funct
 
 it('renders human progress and success prose', function (): void {
     createScheduleAddLocalNode('gateway');
-    $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app']);
+    $node = Node::factory()->create(['name' => 'app-1']);
     App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
 
     $this->artisan('schedule:add', [
@@ -171,7 +171,7 @@ it('renders human progress and success prose', function (): void {
 
 it('renders a decorated schedule add progress tree', function (): void {
     createScheduleAddLocalNode('gateway');
-    $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app']);
+    $node = Node::factory()->create(['name' => 'app-1']);
     App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
 
     $output = new BufferedOutput(OutputInterface::VERBOSITY_NORMAL, true);
@@ -198,10 +198,10 @@ it('exposes schedule add over the authenticated gateway API', function (): void 
     createScheduleAddLocalNode('gateway');
     $caller = Node::factory()->create([
         'name' => 'control-1',
-        'role' => 'control',
+
         'wireguard_address' => '10.6.0.50',
     ]);
-    $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app']);
+    $node = Node::factory()->create(['name' => 'app-1']);
     DB::table('node_access')->insert([
         'consumer_node_id' => $caller->id,
         'serving_node_id' => $node->id,

@@ -33,13 +33,11 @@ function nodeDefaultJsonRow(array $overrides = []): array
 {
     return array_merge([
         'name' => 'app-1',
-        'role' => 'app',
         'host' => '10.6.0.7',
         'wireguard_address' => '10.6.0.7',
         'user' => 'nckrtl',
         'orbit_path' => '/home/nckrtl/orbit',
         'status' => 'active',
-        'environment' => 'development',
         'platform' => 'ubuntu_24-04',
         'created_at' => now(),
         'updated_at' => now(),
@@ -89,7 +87,6 @@ function assignNodeDefaultJsonRole(string $nodeName, string $role, string $statu
 
     return NodeRoleAssignment::factory()->create([
         'node_id' => $nodeId,
-        'role' => $role,
         'status' => $status,
         'settings' => $settings,
     ]);
@@ -119,11 +116,9 @@ function nodeDefaultJsonIdentityEnvelope(): array
             'data' => [
                 'self' => [
                     'name' => 'control-1',
-                    'role' => 'control',
                 ],
                 'gateway' => [
                     'name' => 'gateway-1',
-                    'role' => 'gateway',
                 ],
             ],
         ],
@@ -167,8 +162,6 @@ describe('node:default JSON renderer contract', function (): void {
                         'action' => 'show',
                         'default_node' => [
                             'name' => 'app-1',
-                            'role' => 'app',
-                            'environment' => 'development',
                         ],
                     ],
                 ],
@@ -208,7 +201,7 @@ describe('node:default JSON renderer contract', function (): void {
 
     it('returns set success with default_node object', function (): void {
         DB::table('nodes')->insert(nodeDefaultJsonRow());
-        assignNodeDefaultJsonRole('app-1', 'app-development', settings: ['tld' => 'test']);
+        assignNodeDefaultJsonRole('app-1', 'app-dev', settings: ['tld' => 'test']);
 
         $exitCode = Artisan::call('node:default', [
             'name' => 'app-1',
@@ -223,8 +216,6 @@ describe('node:default JSON renderer contract', function (): void {
                         'action' => 'set',
                         'default_node' => [
                             'name' => 'app-1',
-                            'role' => 'app',
-                            'environment' => 'development',
                         ],
                     ],
                 ],
@@ -233,7 +224,7 @@ describe('node:default JSON renderer contract', function (): void {
 
     it('omits meta from JSON success for set', function (): void {
         DB::table('nodes')->insert(nodeDefaultJsonRow());
-        assignNodeDefaultJsonRole('app-1', 'app-development', settings: ['tld' => 'test']);
+        assignNodeDefaultJsonRole('app-1', 'app-dev', settings: ['tld' => 'test']);
 
         Artisan::call('node:default', ['name' => 'app-1', '--json' => true]);
         $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
@@ -401,8 +392,6 @@ describe('node:default JSON renderer contract', function (): void {
     it('returns node.invalid_role error with correct metadata', function (): void {
         DB::table('nodes')->insert(nodeDefaultJsonRow([
             'name' => 'gateway-1',
-            'role' => 'gateway',
-            'environment' => null,
         ]));
 
         $exitCode = Artisan::call('node:default', [
@@ -421,9 +410,7 @@ describe('node:default JSON renderer contract', function (): void {
             ->and($error['message'])->toBe("Node 'gateway-1' is not a development app node.")
             ->and($error['meta'])->toBe([
                 'name' => 'gateway-1',
-                'role' => 'gateway',
-                'environment' => null,
-                'required_role_assignment' => 'app-development',
+                'required_role_assignment' => 'app-dev',
             ]);
     });
 

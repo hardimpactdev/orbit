@@ -33,7 +33,7 @@ function createCloudflareLocalNode(string $role = 'gateway'): Node
 {
     return Node::factory()->create([
         'name' => "local-{$role}",
-        'role' => $role,
+
         'host' => '10.6.0.1',
         'wireguard_address' => '10.6.0.1',
         'platform' => 'ubuntu',
@@ -305,7 +305,7 @@ it('removes address DNS records with force', function (): void {
 
 it('flushes cache, manages cache rules, and updates SSL settings', function (): void {
     createCloudflareLocalNode();
-    $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'platform' => 'ubuntu']);
+    $node = Node::factory()->create(['name' => 'app-1', 'platform' => 'ubuntu']);
     App::factory()->create([
         'name' => 'lindaretel',
         'node_id' => $node->id,

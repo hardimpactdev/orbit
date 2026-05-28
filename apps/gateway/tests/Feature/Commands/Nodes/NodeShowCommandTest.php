@@ -18,13 +18,11 @@ function nodeShowCommandRow(array $overrides = []): array
 {
     return array_merge([
         'name' => 'app-1',
-        'role' => 'app',
         'host' => '10.6.0.7',
         'wireguard_address' => '10.6.0.7',
         'user' => 'nckrtl',
         'orbit_path' => '/home/nckrtl/orbit',
         'status' => 'active',
-        'environment' => 'development',
         'platform' => 'ubuntu_24-04',
         'created_at' => now(),
         'updated_at' => now(),
@@ -37,8 +35,6 @@ function setupNodeShowCommandGatewayCaller(): void
 
     $nodeId = (int) DB::table('nodes')->insertGetId(nodeShowCommandRow([
         'name' => 'gateway-1',
-        'role' => 'gateway',
-        'environment' => null,
     ]));
 
     NodeRoleAssignment::factory()->create([
@@ -52,8 +48,6 @@ function setupNodeShowCommandControlCaller(): void
 {
     DB::table('nodes')->insert(nodeShowCommandRow([
         'name' => 'control-1',
-        'role' => 'control',
-        'environment' => null,
     ]));
 }
 
@@ -61,8 +55,6 @@ function setupNodeShowCommandAppCaller(): void
 {
     DB::table('nodes')->insert(nodeShowCommandRow([
         'name' => 'app-local',
-        'role' => 'app',
-        'environment' => 'development',
     ]));
 }
 
@@ -70,8 +62,6 @@ function setupNodeShowCommandUnknownCaller(): void
 {
     DB::table('nodes')->insert(nodeShowCommandRow([
         'name' => 'weird',
-        'role' => 'bogus',
-        'environment' => null,
     ]));
 }
 
@@ -192,17 +182,12 @@ describe('node:show caller role behavior', function (): void {
         DB::table('nodes')->insert([
             nodeShowCommandRow([
                 'name' => 'app-1',
-                'role' => 'app',
             ]),
             nodeShowCommandRow([
                 'name' => 'control-1',
-                'role' => 'control',
-                'environment' => null,
             ]),
             nodeShowCommandRow([
                 'name' => 'control-2',
-                'role' => 'control',
-                'environment' => null,
             ]),
         ]);
 

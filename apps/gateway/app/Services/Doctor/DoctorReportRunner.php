@@ -433,7 +433,7 @@ final readonly class DoctorReportRunner
             'scope' => [
                 'families' => $selectedFamilies,
                 'node' => $node->name,
-                'role' => $node->role,
+                'role' => $node->displayRole(),
                 'self' => false,
                 'app' => null,
                 'workspace' => null,

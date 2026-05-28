@@ -38,7 +38,6 @@ foreach (['operator-1', 'app-dev-1'] as $name) {
 \App\Models\NodeRoleAssignment::query()->updateOrCreate(
     [
         'node_id' => $nodes->get('app-dev-1'),
-        'role' => 'app-development',
     ],
     [
         'status' => 'active',
@@ -51,7 +50,6 @@ foreach (['operator-1', 'app-dev-1'] as $name) {
 $app = \App\Models\App::query()->create([
     'name' => 'docs',
     'node_id' => $nodes->get('app-dev-1'),
-    'environment' => 'development',
     'path' => '/srv/docs',
     'document_root' => 'public',
 ]);

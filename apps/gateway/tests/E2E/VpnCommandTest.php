@@ -68,7 +68,6 @@ if (! \$gateway instanceof \App\Models\Node) {
 \$hostKey = app(\App\Services\Security\SshHostKeyPinner::class)->pin('gateway');
 
 \$gateway->forceFill([
-    'role' => 'gateway',
     'host' => 'gateway',
     'wireguard_address' => '10.6.0.2',
     'user' => 'orbit',

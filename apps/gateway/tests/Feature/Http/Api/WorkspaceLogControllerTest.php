@@ -19,7 +19,6 @@ function createWorkspaceLogCallerNode(array $overrides = []): Node
 {
     $attributes = array_merge([
         'name' => 'log-caller',
-        'role' => 'control',
         'host' => WORKSPACE_LOG_CALLER_WG_IP,
         'wireguard_address' => WORKSPACE_LOG_CALLER_WG_IP,
     ], $overrides);

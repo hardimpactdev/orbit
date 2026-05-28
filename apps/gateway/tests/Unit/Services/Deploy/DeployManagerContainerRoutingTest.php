@@ -57,14 +57,12 @@ function createDeployManagerTestApp(array $overrides = []): App
 {
     $node = Node::factory()->create([
         'name' => 'app-prod-1',
-        'role' => 'app',
-        'environment' => 'production',
+
     ]);
 
     return App::factory()->create(array_merge([
         'name' => 'docs',
         'node_id' => $node->id,
-        'environment' => 'production',
         'path' => '/srv/docs',
         'runtime_kind' => AppRuntimeKind::Php,
     ], $overrides));

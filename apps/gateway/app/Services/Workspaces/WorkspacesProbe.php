@@ -252,7 +252,7 @@ PHP;
             return [];
         }
 
-        if ($this->nodeRoleAssignments()->nodeHasActiveRole($workspace->app->node, 'app-production')) {
+        if ($this->nodeRoleAssignments()->nodeHasActiveRole($workspace->app->node, 'app-prod')) {
             return [
                 new DriftEntry(
                     family: $this->key(),
@@ -268,7 +268,7 @@ PHP;
             ];
         }
 
-        if (! $this->nodeRoleAssignments()->nodeHasActiveRole($workspace->app->node, 'app-development')) {
+        if (! $this->nodeRoleAssignments()->nodeHasActiveRole($workspace->app->node, 'app-dev')) {
             return [];
         }
 

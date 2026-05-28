@@ -97,7 +97,7 @@ beforeEach(function (): void {
 
     $gateway = Node::factory()->create([
         'name' => 'gateway-1',
-        'role' => 'gateway',
+
         'platform' => 'ubuntu',
         'host' => '10.6.0.2',
         'wireguard_address' => '10.6.0.2',
@@ -272,14 +272,14 @@ it('creates an agent node with custom self-grant permissions', function (): void
 it('expands grant-to=all to all current eligible nodes', function (): void {
     $appNode = Node::factory()->create([
         'name' => 'app-1',
-        'role' => 'app',
+
         'status' => 'active',
         'wireguard_address' => '10.6.0.5',
     ]);
 
     $dbNode = Node::factory()->create([
         'name' => 'db-1',
-        'role' => 'control',
+
         'status' => 'active',
         'wireguard_address' => '10.6.0.6',
     ]);
@@ -316,7 +316,7 @@ it('expands grant-to=all to all current eligible nodes', function (): void {
 it('expands grant-from=all to all current eligible nodes', function (): void {
     $controlNode = Node::factory()->create([
         'name' => 'control-1',
-        'role' => 'control',
+
         'status' => 'active',
         'wireguard_address' => '10.6.0.5',
     ]);
@@ -508,7 +508,7 @@ it('rejects non-agent tools via agent-tool option', function (): void {
 it('does not create accidental self-grant via grant-to=all', function (): void {
     Node::factory()->create([
         'name' => 'app-1',
-        'role' => 'app',
+
         'status' => 'active',
         'wireguard_address' => '10.6.0.5',
     ]);
@@ -544,7 +544,7 @@ it('does not create accidental self-grant via grant-to=all', function (): void {
 it('does not create accidental self-grant via grant-from=all', function (): void {
     Node::factory()->create([
         'name' => 'control-1',
-        'role' => 'control',
+
         'status' => 'active',
         'wireguard_address' => '10.6.0.5',
     ]);
@@ -672,7 +672,6 @@ it('forwards agent setup inputs from operator node to gateway', function (): voi
                     'result' => ['action' => 'created'],
                     'node' => [
                         'name' => 'agent-1',
-                        'role' => 'app',
                         'status' => 'active',
                     ],
                     'provisioning' => [
@@ -708,10 +707,8 @@ it('forwards agent setup inputs from operator node to gateway', function (): voi
 
     $mock->assertSent(fn (CreateNodeRequest $request): bool => $request->body()->all() === [
         'name' => 'agent-1',
-        'role' => 'agent',
         'roles' => ['agent'],
         'host' => '192.0.2.10',
-        'environment' => null,
         'tld' => 'agent',
         'user' => 'root',
         'self_grant' => 'default',
@@ -888,7 +885,6 @@ it('preserves gateway success.meta.warnings through control-node forwarding', fu
                     'result' => ['action' => 'created'],
                     'node' => [
                         'name' => 'agent-1',
-                        'role' => 'agent',
                         'status' => 'active',
                     ],
                 ],

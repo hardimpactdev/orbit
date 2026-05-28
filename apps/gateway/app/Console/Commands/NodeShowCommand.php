@@ -216,7 +216,7 @@ class NodeShowCommand extends Command
 
         return [
             'name' => $node->name,
-            'role' => $node->role,
+            'role' => $node->displayRole(),
             'status' => $node->status,
             'environment' => app(NodeRoleAssignments::class)->activeAppHostEnvironment($node),
             'platform' => $node->platform ?? 'unknown',

@@ -45,16 +45,16 @@ function assignAppNewRole(Node $node, string $role, string $status = 'active', a
 it('creates source on the target app node before writing gateway app intent', function (): void {
     Node::factory()->create([
         'name' => 'gateway-1',
-        'role' => 'gateway',
+
     ]);
 
     $targetNode = Node::factory()->create([
         'name' => 'app-1',
-        'role' => 'app',
+
         'tld' => 'test',
         'status' => 'active',
     ]);
-    assignAppNewRole($targetNode, 'app-development', settings: ['tld' => 'test']);
+    assignAppNewRole($targetNode, 'app-dev', settings: ['tld' => 'test']);
 
     $remoteShell = new RecordingRemoteShell;
     app()->instance(RemoteShell::class, $remoteShell);
@@ -93,17 +93,16 @@ it('creates source on the target app node before writing gateway app intent', fu
 it('uses local node default in non-interactive mode when node option is missing', function (): void {
     Node::factory()->create([
         'name' => 'gateway-1',
-        'role' => 'gateway',
+
     ]);
 
     $targetNode = Node::factory()->create([
         'name' => 'app-2',
-        'role' => 'app',
-        'environment' => 'development',
+
         'tld' => 'test',
         'status' => 'active',
     ]);
-    assignAppNewRole($targetNode, 'app-development', settings: ['tld' => 'test']);
+    assignAppNewRole($targetNode, 'app-dev', settings: ['tld' => 'test']);
 
     LocalNodeDefault::query()->create([
         'default_node_name' => 'app-2',
@@ -128,17 +127,16 @@ it('uses local node default in non-interactive mode when node option is missing'
 it('uses a configured gateway-local default node when it has active app-development despite legacy shadow mismatch', function (): void {
     Node::factory()->create([
         'name' => 'gateway-1',
-        'role' => 'gateway',
+
     ]);
 
     $targetNode = Node::factory()->create([
         'name' => 'app-2',
-        'role' => 'database',
-        'environment' => 'production',
+
         'tld' => 'test',
         'status' => 'active',
     ]);
-    assignAppNewRole($targetNode, 'app-development', settings: ['tld' => 'test']);
+    assignAppNewRole($targetNode, 'app-dev', settings: ['tld' => 'test']);
 
     LocalNodeDefault::query()->create([
         'default_node_name' => 'app-2',
@@ -162,13 +160,12 @@ it('uses a configured gateway-local default node when it has active app-developm
 it('ignores a configured gateway-local default node when it only has legacy app-development shadows', function (): void {
     Node::factory()->create([
         'name' => 'gateway-1',
-        'role' => 'gateway',
+
     ]);
 
     Node::factory()->create([
         'name' => 'app-2',
-        'role' => 'app',
-        'environment' => 'development',
+
         'tld' => 'test',
         'status' => 'active',
     ]);
@@ -198,7 +195,7 @@ it('uses a visible control-mode default node based on active app-development pay
 
     Node::factory()->create([
         'name' => 'control-1',
-        'role' => 'control',
+
     ]);
 
     LocalGatewaySettings::current()->fill([
@@ -219,11 +216,9 @@ it('uses a visible control-mode default node based on active app-development pay
                 'data' => [
                     'nodes' => [[
                         'name' => 'app-1',
-                        'role' => 'database',
-                        'environment' => 'production',
                         'status' => 'active',
                         'roles' => [
-                            ['role' => 'app-development', 'status' => 'active'],
+                            ['role' => 'app-dev', 'status' => 'active'],
                         ],
                     ]],
                 ],
@@ -236,7 +231,6 @@ it('uses a visible control-mode default node based on active app-development pay
                     'app' => [
                         'name' => 'docs',
                         'node' => 'app-1',
-                        'environment' => 'development',
                         'url' => 'https://docs.test',
                         'path' => '/home/orbit/apps/docs',
                         'root' => 'public',
@@ -273,20 +267,20 @@ it('uses a visible control-mode default node based on active app-development pay
 it('accepts active app-production nodes for production app creation on the gateway', function (): void {
     $router = Node::factory()->create([
         'name' => 'gateway-1',
-        'role' => 'gateway',
+
         'wireguard_address' => '10.6.0.2',
     ]);
     assignAppNewRole($router, 'router');
 
     $targetNode = Node::factory()->create([
         'name' => 'prod-1',
-        'role' => 'app',
+
         'status' => 'active',
         'tld' => null,
         'wireguard_address' => '10.6.0.5',
     ]);
     assignAppNewRole($targetNode, 'ingress');
-    assignAppNewRole($targetNode, 'app-production', settings: ['ingress_node_id' => $targetNode->id]);
+    assignAppNewRole($targetNode, 'app-prod', settings: ['ingress_node_id' => $targetNode->id]);
 
     $remoteShell = new RecordingRemoteShell;
     app()->instance(RemoteShell::class, $remoteShell);
@@ -309,12 +303,12 @@ it('accepts active app-production nodes for production app creation on the gatew
 it('rejects gateway-local app creation on database-only nodes', function (): void {
     Node::factory()->create([
         'name' => 'gateway-1',
-        'role' => 'gateway',
+
     ]);
 
     $targetNode = Node::factory()->create([
         'name' => 'db-1',
-        'role' => 'app',
+
         'status' => 'active',
     ]);
     assignAppNewRole($targetNode, 'database');
@@ -333,21 +327,21 @@ it('rejects gateway-local app creation on database-only nodes', function (): voi
     expect($exitCode)->toBe(1)
         ->and($remoteShell->runs)->toBe([])
         ->and($payload['error']['code'])->toBe('app.ineligible_node')
-        ->and($payload['error']['meta']['required_role'])->toBe('app-development');
+        ->and($payload['error']['meta']['required_role'])->toBe('app-dev');
 });
 
 it('rejects gateway-local app creation on pending app-development nodes', function (): void {
     Node::factory()->create([
         'name' => 'gateway-1',
-        'role' => 'gateway',
+
     ]);
 
     $targetNode = Node::factory()->create([
         'name' => 'app-1',
-        'role' => 'app',
+
         'status' => 'active',
     ]);
-    assignAppNewRole($targetNode, 'app-development', 'pending', ['tld' => 'test']);
+    assignAppNewRole($targetNode, 'app-dev', 'pending', ['tld' => 'test']);
 
     $remoteShell = new RecordingRemoteShell;
     app()->instance(RemoteShell::class, $remoteShell);
@@ -363,22 +357,22 @@ it('rejects gateway-local app creation on pending app-development nodes', functi
     expect($exitCode)->toBe(1)
         ->and($remoteShell->runs)->toBe([])
         ->and($payload['error']['code'])->toBe('app.ineligible_node')
-        ->and($payload['error']['meta']['required_role'])->toBe('app-development');
+        ->and($payload['error']['meta']['required_role'])->toBe('app-dev');
 });
 
 it('uses gh cli for github shorthand source creation and registry write', function (): void {
     Node::factory()->create([
         'name' => 'gateway-1',
-        'role' => 'gateway',
+
     ]);
 
     $targetNode = Node::factory()->create([
         'name' => 'app-1',
-        'role' => 'app',
+
         'user' => 'deploy',
         'status' => 'active',
     ]);
-    assignAppNewRole($targetNode, 'app-development', settings: ['tld' => 'test']);
+    assignAppNewRole($targetNode, 'app-dev', settings: ['tld' => 'test']);
 
     $remoteShell = new RecordingRemoteShell;
     app()->instance(RemoteShell::class, $remoteShell);
@@ -404,16 +398,16 @@ it('uses gh cli for github shorthand source creation and registry write', functi
 it('uses gh cli for github urls', function (): void {
     Node::factory()->create([
         'name' => 'gateway-1',
-        'role' => 'gateway',
+
     ]);
 
     $targetNode = Node::factory()->create([
         'name' => 'app-1',
-        'role' => 'app',
+
         'user' => 'deploy',
         'status' => 'active',
     ]);
-    assignAppNewRole($targetNode, 'app-development', settings: ['tld' => 'test']);
+    assignAppNewRole($targetNode, 'app-dev', settings: ['tld' => 'test']);
 
     $remoteShell = new RecordingRemoteShell;
     app()->instance(RemoteShell::class, $remoteShell);
@@ -434,16 +428,16 @@ it('uses gh cli for github urls', function (): void {
 it('uses git clone for non-github repositories', function (): void {
     Node::factory()->create([
         'name' => 'gateway-1',
-        'role' => 'gateway',
+
     ]);
 
     $targetNode = Node::factory()->create([
         'name' => 'app-1',
-        'role' => 'app',
+
         'user' => 'deploy',
         'status' => 'active',
     ]);
-    assignAppNewRole($targetNode, 'app-development', settings: ['tld' => 'test']);
+    assignAppNewRole($targetNode, 'app-dev', settings: ['tld' => 'test']);
 
     $remoteShell = new RecordingRemoteShell;
     app()->instance(RemoteShell::class, $remoteShell);
@@ -464,15 +458,15 @@ it('uses git clone for non-github repositories', function (): void {
 it('does not write gateway app intent when source creation fails', function (): void {
     Node::factory()->create([
         'name' => 'gateway-1',
-        'role' => 'gateway',
+
     ]);
 
     $targetNode = Node::factory()->create([
         'name' => 'app-1',
-        'role' => 'app',
+
         'status' => 'active',
     ]);
-    assignAppNewRole($targetNode, 'app-development', settings: ['tld' => 'test']);
+    assignAppNewRole($targetNode, 'app-dev', settings: ['tld' => 'test']);
 
     $remoteShell = new RecordingRemoteShell(new RemoteShellResult(
         exitCode: 128,
@@ -503,15 +497,15 @@ it('does not write gateway app intent when source creation fails', function (): 
 it('keeps gateway app intent and reports a warning when runtime enactment needs later convergence', function (): void {
     Node::factory()->create([
         'name' => 'gateway-1',
-        'role' => 'gateway',
+
     ]);
 
     $targetNode = Node::factory()->create([
         'name' => 'app-1',
-        'role' => 'app',
+
         'status' => 'active',
     ]);
-    assignAppNewRole($targetNode, 'app-development', settings: ['tld' => 'test']);
+    assignAppNewRole($targetNode, 'app-dev', settings: ['tld' => 'test']);
 
     app()->instance(RemoteShell::class, new SequencedRecordingRemoteShell([
         // source create
@@ -547,15 +541,15 @@ it('keeps gateway app intent and reports a warning when runtime enactment needs 
 it('keeps gateway app intent and reports app.php_version_unavailable warning when the FrankenPHP image is missing on the node', function (): void {
     Node::factory()->create([
         'name' => 'gateway-1',
-        'role' => 'gateway',
+
     ]);
 
     $targetNode = Node::factory()->create([
         'name' => 'app-1',
-        'role' => 'app',
+
         'status' => 'active',
     ]);
-    assignAppNewRole($targetNode, 'app-development', settings: ['tld' => 'test']);
+    assignAppNewRole($targetNode, 'app-dev', settings: ['tld' => 'test']);
 
     app()->instance(RemoteShell::class, new SequencedRecordingRemoteShell([
         // source create
@@ -590,15 +584,15 @@ it('keeps gateway app intent and reports app.php_version_unavailable warning whe
 it('converges a FrankenPHP app runtime container after app intent is durable', function (): void {
     Node::factory()->create([
         'name' => 'gateway-1',
-        'role' => 'gateway',
+
     ]);
 
     $targetNode = Node::factory()->create([
         'name' => 'app-1',
-        'role' => 'app',
+
         'status' => 'active',
     ]);
-    assignAppNewRole($targetNode, 'app-development', settings: ['tld' => 'test']);
+    assignAppNewRole($targetNode, 'app-dev', settings: ['tld' => 'test']);
 
     $remoteShell = new SequencedRecordingRemoteShell([
         // source create
@@ -642,17 +636,17 @@ it('converges a FrankenPHP app runtime container after app intent is durable', f
 it('records and enacts an app-owned proxy route after app intent is durable', function (): void {
     Node::factory()->create([
         'name' => 'gateway-1',
-        'role' => 'gateway',
+
     ]);
 
     $targetNode = Node::factory()->create([
         'name' => 'app-1',
-        'role' => 'app',
+
         'tld' => 'test',
         'status' => 'active',
         'wireguard_address' => '10.6.0.4',
     ]);
-    assignAppNewRole($targetNode, 'app-development', settings: ['tld' => 'test']);
+    assignAppNewRole($targetNode, 'app-dev', settings: ['tld' => 'test']);
     NodeTool::factory()->create([
         'node_id' => $targetNode->id,
         'name' => 'caddy',
@@ -730,20 +724,20 @@ it('records and enacts an app-owned proxy route after app intent is durable', fu
 it('uses the production domain as the app-owned proxy route domain', function (): void {
     $router = Node::factory()->create([
         'name' => 'gateway-1',
-        'role' => 'gateway',
+
         'wireguard_address' => '10.6.0.2',
     ]);
     assignAppNewRole($router, 'router');
 
     $targetNode = Node::factory()->create([
         'name' => 'app-1',
-        'role' => 'app',
+
         'tld' => 'test',
         'status' => 'active',
         'wireguard_address' => '10.6.0.5',
     ]);
     assignAppNewRole($targetNode, 'ingress');
-    assignAppNewRole($targetNode, 'app-production', settings: ['ingress_node_id' => $targetNode->id]);
+    assignAppNewRole($targetNode, 'app-prod', settings: ['ingress_node_id' => $targetNode->id]);
 
     app()->instance(RemoteShell::class, new RecordingRemoteShell);
 
@@ -762,16 +756,16 @@ it('uses the production domain as the app-owned proxy route domain', function ()
 it('keeps app and proxy route intent when proxy backend enactment needs later convergence', function (): void {
     Node::factory()->create([
         'name' => 'gateway-1',
-        'role' => 'gateway',
+
     ]);
 
     $targetNode = Node::factory()->create([
         'name' => 'app-1',
-        'role' => 'app',
+
         'tld' => 'test',
         'status' => 'active',
     ]);
-    assignAppNewRole($targetNode, 'app-development', settings: ['tld' => 'test']);
+    assignAppNewRole($targetNode, 'app-dev', settings: ['tld' => 'test']);
 
     app()->instance(RemoteShell::class, new SequencedRecordingRemoteShell([
         // source create
@@ -813,16 +807,16 @@ it('keeps app and proxy route intent when proxy backend enactment needs later co
 it('fails before source creation when the proxy route domain is already registered', function (): void {
     Node::factory()->create([
         'name' => 'gateway-1',
-        'role' => 'gateway',
+
     ]);
 
     $targetNode = Node::factory()->create([
         'name' => 'app-1',
-        'role' => 'app',
+
         'tld' => 'test',
         'status' => 'active',
     ]);
-    assignAppNewRole($targetNode, 'app-development', settings: ['tld' => 'test']);
+    assignAppNewRole($targetNode, 'app-dev', settings: ['tld' => 'test']);
 
     ProxyRoute::query()->create([
         'node_id' => $targetNode->id,
@@ -857,15 +851,15 @@ it('fails before source creation when the proxy route domain is already register
 it('fails before remote work when the app name is already registered', function (): void {
     Node::factory()->create([
         'name' => 'gateway-1',
-        'role' => 'gateway',
+
     ]);
 
     $existingNode = Node::factory()->create([
         'name' => 'app-1',
-        'role' => 'app',
+
         'status' => 'active',
     ]);
-    assignAppNewRole($existingNode, 'app-development', settings: ['tld' => 'test']);
+    assignAppNewRole($existingNode, 'app-dev', settings: ['tld' => 'test']);
 
     App::factory()->create([
         'name' => 'docs',
@@ -897,7 +891,7 @@ it('forwards configured control callers through the typed gateway request', func
 
     Node::factory()->create([
         'name' => 'control-1',
-        'role' => 'control',
+
     ]);
 
     LocalGatewaySettings::current()->fill([
@@ -916,7 +910,6 @@ it('forwards configured control callers through the typed gateway request', func
                     'app' => [
                         'name' => 'docs',
                         'node' => 'app-1',
-                        'environment' => 'development',
                         'url' => 'https://docs.test',
                         'path' => '/home/orbit/apps/docs',
                         'root' => 'public',

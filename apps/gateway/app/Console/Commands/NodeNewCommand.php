@@ -774,8 +774,8 @@ class NodeNewCommand extends Command
             ],
             'node' => [
                 'name' => $name,
-                'role' => $node->role,
-                'environment' => $node->environment,
+                'role' => $node->displayRole(),
+                'environment' => app(NodeRoleAssignments::class)->activeAppHostEnvironment($node),
                 'tld' => $node->tld,
                 'platform' => $node->platform,
                 'addresses' => [
@@ -1385,13 +1385,13 @@ SH;
     {
         $existing = Node::query()->where('name', $name)->first();
 
-        if ($existing instanceof Node && $existing->role !== 'control') {
+        if ($existing instanceof Node && ! $existing->isOperator()) {
             return $this->failCommand(
                 code: 'node.incompatible',
                 message: "Node '{$name}' already exists with a different role.",
                 meta: [
                     'name' => $name,
-                    'existing_role' => $existing->role,
+                    'existing_role' => $existing->displayRole(),
                     'requested_role' => 'operator',
                 ],
             );
@@ -1533,7 +1533,7 @@ SH;
         if (
             $existing instanceof Node
             && $existing->status === 'active'
-            && $existing->role === 'app'
+            && app(NodeRoleAssignments::class)->nodeHasActiveAppHostRole($existing)
             && ! WireGuardPeer::query()->where('node_id', $existing->id)->exists()
         ) {
             return $this->adoptExistingAppNode($nodesProbe, $existing, $inputs, $roleAssignmentService, $initialHostedRoles, $appProductionIngressNodeId);
@@ -1859,8 +1859,8 @@ SH;
     private function identityArtifactMatchesAppRequest(NodeIdentityArtifact $artifact, string $name): bool
     {
         return $artifact->name === $name
-            && $artifact->role === 'app'
-            && $artifact->localRole === 'app'
+            && in_array($artifact->role, ['app', 'app-dev', 'app-prod'], true)
+            && in_array($artifact->localRole, ['app', 'app-dev', 'app-prod'], true)
             && $artifact->status === 'active'
             && is_string($artifact->platform)
             && str_starts_with($artifact->platform, 'ubuntu_');
@@ -1880,16 +1880,17 @@ SH;
     ): int {
         $incompatibleFields = [];
 
-        if ($node->role !== 'app') {
-            $incompatibleFields['role'] = $node->role;
+        if (! app(NodeRoleAssignments::class)->nodeHasActiveAppHostRole($node)) {
+            $incompatibleFields['role'] = $node->displayRole();
         }
 
         if ($node->host !== $inputs['host']) {
             $incompatibleFields['host'] = $node->host;
         }
 
-        if ($node->environment !== $inputs['environment']) {
-            $incompatibleFields['environment'] = $node->environment;
+        $nodeEnvironment = app(NodeRoleAssignments::class)->activeAppHostEnvironment($node);
+        if ($nodeEnvironment !== $inputs['environment']) {
+            $incompatibleFields['environment'] = $nodeEnvironment;
         }
 
         if ($node->tld !== $inputs['tld']) {
@@ -1968,8 +1969,8 @@ SH;
             ],
             'node' => [
                 'name' => $node->name,
-                'role' => 'app',
-                'environment' => $node->environment,
+                'role' => $node->displayRole(),
+                'environment' => app(NodeRoleAssignments::class)->activeAppHostEnvironment($node),
                 'tld' => $node->tld,
                 'platform' => $node->platform ?? 'unknown',
                 'addresses' => [
@@ -1986,7 +1987,7 @@ SH;
             'next_steps' => [],
         ];
 
-        if ($node->environment === 'development') {
+        if (app(NodeRoleAssignments::class)->activeAppHostEnvironment($node) === 'development') {
             $payload['development_tld'] = [
                 'tld' => $node->tld,
                 'gateway_dns' => [

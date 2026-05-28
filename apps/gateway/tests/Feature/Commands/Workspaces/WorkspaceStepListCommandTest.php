@@ -29,7 +29,7 @@ function createWorkspaceStepListLocalNode(string $role = 'gateway'): Node
 
     return Node::factory()->create([
         'name' => "local-{$role}",
-        'role' => $role,
+
         'host' => '10.6.0.1',
         'wireguard_address' => '10.6.0.1',
     ]);
@@ -37,7 +37,7 @@ function createWorkspaceStepListLocalNode(string $role = 'gateway'): Node
 
 function createWorkspaceStepListApp(): App
 {
-    $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app']);
+    $node = Node::factory()->create(['name' => 'app-1']);
 
     return App::factory()->create([
         'name' => 'docs',

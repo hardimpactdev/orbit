@@ -18,7 +18,7 @@ function createToolRemoveApiCallerNode(array $overrides = []): Node
 {
     return Node::factory()->create(array_merge([
         'name' => 'tool-remove-api-caller',
-        'role' => 'control',
+
         'host' => TOOL_REMOVE_API_CALLER_WG_IP,
         'wireguard_address' => TOOL_REMOVE_API_CALLER_WG_IP,
     ], $overrides));

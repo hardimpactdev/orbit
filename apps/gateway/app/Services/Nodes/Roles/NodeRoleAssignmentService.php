@@ -253,41 +253,20 @@ class NodeRoleAssignmentService
             ->orderBy('role')
             ->get();
 
-        $role = 'control';
-        $environment = null;
         $tld = null;
 
-        $gateway = $activeAssignments->firstWhere('role', NodeRoleName::Gateway->value);
         $appDevelopment = $activeAssignments->firstWhere('role', NodeRoleName::AppDevelopment->value);
-        $appProduction = $activeAssignments->firstWhere('role', NodeRoleName::AppProduction->value);
-        $database = $activeAssignments->firstWhere('role', NodeRoleName::Database->value);
         $agent = $activeAssignments->firstWhere('role', NodeRoleName::Agent->value);
 
-        if ($gateway instanceof NodeRoleAssignment) {
-            $role = NodeRoleName::Gateway->value;
-        } elseif ($appDevelopment instanceof NodeRoleAssignment) {
-            $role = 'app';
-            $environment = 'development';
-
+        if ($appDevelopment instanceof NodeRoleAssignment) {
             $developmentTld = $appDevelopment->settings['tld'] ?? null;
             $tld = is_string($developmentTld) ? $developmentTld : null;
-        } elseif ($appProduction instanceof NodeRoleAssignment) {
-            $role = 'app';
-            $environment = 'production';
-        } elseif ($database instanceof NodeRoleAssignment) {
-            $role = NodeRoleName::Database->value;
         } elseif ($agent instanceof NodeRoleAssignment) {
-            $role = NodeRoleName::Agent->value;
-
             $agentTld = $agent->settings['tld'] ?? null;
             $tld = is_string($agentTld) ? $agentTld : null;
         }
 
-        $node->forceFill([
-            'role' => $role,
-            'environment' => $environment,
-            'tld' => $tld,
-        ])->save();
+        $node->forceFill(['tld' => $tld])->save();
 
         $node->unsetRelation('roleAssignments');
     }

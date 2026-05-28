@@ -22,13 +22,11 @@ function nodeDefaultComposableRolesRow(array $overrides = []): array
 {
     return array_merge([
         'name' => 'app-1',
-        'role' => 'app',
         'host' => '10.6.0.7',
         'wireguard_address' => '10.6.0.7',
         'user' => 'nckrtl',
         'orbit_path' => '/home/nckrtl/orbit',
         'status' => 'active',
-        'environment' => 'development',
         'platform' => 'ubuntu_24-04',
         'created_at' => now(),
         'updated_at' => now(),
@@ -53,7 +51,7 @@ function assignDefaultComposableRole(Node $node, string $role, string $status = 
 describe('node:default composable roles', function (): void {
     it('accepts only active app-development nodes as the local default', function (): void {
         $node = createNodeDefaultComposableNode();
-        assignDefaultComposableRole($node, 'app-development', settings: ['tld' => 'test']);
+        assignDefaultComposableRole($node, 'app-dev', settings: ['tld' => 'test']);
 
         $exitCode = Artisan::call('node:default', [
             'name' => $node->name,
@@ -83,10 +81,9 @@ describe('node:default composable roles', function (): void {
     it('rejects app-production nodes as the local default', function (): void {
         $node = createNodeDefaultComposableNode([
             'name' => 'prod-1',
-            'environment' => 'production',
             'tld' => null,
         ]);
-        assignDefaultComposableRole($node, 'app-production');
+        assignDefaultComposableRole($node, 'app-prod');
 
         $exitCode = Artisan::call('node:default', [
             'name' => $node->name,

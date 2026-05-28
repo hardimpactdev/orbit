@@ -50,7 +50,6 @@ afterEach(function (): void {
 it('selects non-interactive mode with --json flag', function (): void {
     Node::query()->create([
         'name' => 'control-1',
-        'role' => 'control',
         'status' => 'active',
         'host' => '10.6.0.8',
         'orbit_path' => '/home/orbit/orbit',
@@ -88,7 +87,6 @@ it('fails when gateway_ip is missing in non-interactive mode', function (): void
 it('derives gateway_ip in non-interactive mode when the active WireGuard network is unambiguous', function (): void {
     Node::query()->create([
         'name' => 'control-1',
-        'role' => 'control',
         'status' => 'active',
         'host' => '10.6.0.8',
         'orbit_path' => '/home/orbit/orbit',

@@ -18,7 +18,7 @@ function createProcessRestartInteractiveLocalNode(string $role = 'gateway'): Nod
 {
     return Node::factory()->create([
         'name' => "local-{$role}",
-        'role' => $role,
+
         'host' => '10.6.0.1',
         'wireguard_address' => '10.6.0.1',
     ]);
@@ -26,7 +26,7 @@ function createProcessRestartInteractiveLocalNode(string $role = 'gateway'): Nod
 
 it('prompts for app when app is absent', function (): void {
     createProcessRestartInteractiveLocalNode('gateway');
-    $node = Node::factory()->create(['role' => 'app']);
+    $node = Node::factory()->create([]);
     $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
     Process::factory()->create(['app_id' => $app->id, 'name' => 'web']);
 
@@ -47,7 +47,7 @@ it('prompts for app when app is absent', function (): void {
 
 it('does not prompt when --app is supplied', function (): void {
     createProcessRestartInteractiveLocalNode('gateway');
-    $node = Node::factory()->create(['role' => 'app']);
+    $node = Node::factory()->create([]);
     $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
     Process::factory()->create(['app_id' => $app->id, 'name' => 'web']);
 

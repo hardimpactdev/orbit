@@ -17,7 +17,7 @@ uses(RefreshDatabase::class);
 
 describe('FirewallRuleFixer', function (): void {
     it('re-applies missing firewall rules from gateway intent', function (): void {
-        $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'platform' => 'ubuntu']);
+        $node = Node::factory()->create(['name' => 'app-1', 'platform' => 'ubuntu']);
         $rule = FirewallRule::factory()->create([
             'node_id' => $node->id,
             'name' => 'local-vite',
@@ -45,7 +45,7 @@ describe('FirewallRuleFixer', function (): void {
     });
 
     it('deletes mismatched observed rules before re-applying intent', function (): void {
-        $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'platform' => 'ubuntu']);
+        $node = Node::factory()->create(['name' => 'app-1', 'platform' => 'ubuntu']);
         $rule = FirewallRule::factory()->create([
             'node_id' => $node->id,
             'name' => 'local-vite',

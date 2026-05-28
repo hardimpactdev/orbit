@@ -18,14 +18,17 @@ const PROCESS_START_CALLER_WG_IP = '10.6.0.92';
 
 function createProcessStartCallerNode(array $overrides = []): Node
 {
+    $role = $overrides['role'] ?? null;
+
     $attributes = array_merge([
         'name' => 'caller',
-        'role' => 'control',
         'host' => PROCESS_START_CALLER_WG_IP,
         'wireguard_address' => PROCESS_START_CALLER_WG_IP,
     ], $overrides);
 
-    return match ($attributes['role']) {
+    unset($attributes['role']);
+
+    return match ($role) {
         'app' => createTestAppHostNode($attributes),
         'gateway' => createTestGatewayNode($attributes),
         default => Node::factory()->create($attributes),

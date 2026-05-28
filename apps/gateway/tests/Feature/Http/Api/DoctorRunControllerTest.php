@@ -36,7 +36,6 @@ function createDoctorRunCallerNode(array $overrides = []): Node
 {
     $attributes = array_merge([
         'name' => 'caller',
-        'role' => 'gateway',
         'host' => DOCTOR_RUN_CALLER_WG_IP,
         'wireguard_address' => DOCTOR_RUN_CALLER_WG_IP,
         'platform' => 'ubuntu',
@@ -82,7 +81,7 @@ describe('DoctorRunController', function (): void {
         createDoctorRunCallerNode(['platform' => 'linux']);
         Node::factory()->create([
             'name' => 'legacy-app',
-            'role' => 'app',
+
             'status' => 'active',
             'platform' => null,
             'wireguard_address' => null,

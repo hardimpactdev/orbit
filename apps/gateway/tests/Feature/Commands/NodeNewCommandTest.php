@@ -280,8 +280,6 @@ describe('node:new', function (): void {
             ->and($payload['success']['data']['result']['action'])->toBe('created')
             ->and($payload['success']['data']['node'])->toMatchArray([
                 'name' => 'gateway-1',
-                'role' => 'gateway',
-                'environment' => null,
                 'tld' => null,
                 'platform' => 'ubuntu_24-04',
                 'addresses' => [
@@ -292,13 +290,11 @@ describe('node:new', function (): void {
             ])
             ->and($payload['success']['data']['roles'])->toBe([
                 [
-                    'role' => 'gateway',
                     'status' => 'active',
                     'settings' => [],
                     'last_error' => null,
                 ],
                 [
-                    'role' => 'vpn',
                     'status' => 'active',
                     'settings' => [
                         'public_endpoint' => '192.0.2.10',
@@ -309,7 +305,6 @@ describe('node:new', function (): void {
                     'last_error' => null,
                 ],
                 [
-                    'role' => 'router',
                     'status' => 'active',
                     'settings' => [],
                     'last_error' => null,
@@ -322,8 +317,6 @@ describe('node:new', function (): void {
             ])
             ->and($payload['success']['data']['local_operator_node'])->toMatchArray([
                 'name' => 'mini',
-                'role' => null,
-                'environment' => null,
                 'tld' => null,
                 'platform' => nodeNewExpectedLocalPlatform(),
                 'addresses' => [
@@ -810,8 +803,6 @@ describe('node:new', function (): void {
 
         $gatewayId = DB::table('nodes')->insertGetId([
             'name' => 'gateway-1',
-            'role' => 'gateway',
-            'environment' => null,
             'tld' => null,
             'platform' => 'unknown',
             'host' => '10.6.0.2',
@@ -897,8 +888,6 @@ describe('node:new', function (): void {
             ->and($payload['success']['data']['result']['action'])->toBe('created')
             ->and($payload['success']['data']['node'])->toMatchArray([
                 'name' => 'app-dev-1',
-                'role' => 'app',
-                'environment' => 'development',
                 'tld' => 'test',
                 'status' => 'active',
             ])
@@ -949,8 +938,6 @@ describe('node:new', function (): void {
 
         $gatewayId = DB::table('nodes')->insertGetId([
             'name' => 'gateway-1',
-            'role' => 'gateway',
-            'environment' => null,
             'tld' => null,
             'platform' => 'unknown',
             'host' => '10.6.0.2',
@@ -1034,8 +1021,6 @@ describe('node:new', function (): void {
         expect($exitCode)->toBe(0)
             ->and($payload['success']['data']['node'])->toMatchArray([
                 'name' => 'app-prod-1',
-                'role' => 'app',
-                'environment' => 'production',
                 'tld' => null,
                 'status' => 'active',
             ])
@@ -1050,8 +1035,6 @@ describe('node:new', function (): void {
 
         DB::table('nodes')->insert([
             'name' => 'gateway-1',
-            'role' => 'gateway',
-            'environment' => null,
             'tld' => null,
             'platform' => 'unknown',
             'host' => '10.6.0.2',
@@ -1104,8 +1087,6 @@ describe('node:new', function (): void {
 
         DB::table('nodes')->insert([
             'name' => 'gateway-1',
-            'role' => 'gateway',
-            'environment' => null,
             'tld' => null,
             'platform' => 'unknown',
             'host' => '10.6.0.2',
@@ -1119,8 +1100,6 @@ describe('node:new', function (): void {
 
         $nodeId = DB::table('nodes')->insertGetId([
             'name' => 'app-adopt-1',
-            'role' => 'app',
-            'environment' => 'development',
             'tld' => 'test',
             'platform' => 'ubuntu_24-04',
             'host' => '192.0.2.30',
@@ -1162,8 +1141,6 @@ describe('node:new', function (): void {
             ->and($payload['success']['data']['result']['action'])->toBe('adopted')
             ->and($payload['success']['data']['node'])->toMatchArray([
                 'name' => 'app-adopt-1',
-                'role' => 'app',
-                'environment' => 'development',
                 'tld' => 'test',
                 'platform' => 'ubuntu_24-04',
                 'addresses' => [
@@ -1191,8 +1168,6 @@ describe('node:new', function (): void {
 
         DB::table('nodes')->insert([
             'name' => 'gateway-1',
-            'role' => 'gateway',
-            'environment' => null,
             'tld' => null,
             'platform' => 'unknown',
             'host' => '10.6.0.2',
@@ -1206,8 +1181,6 @@ describe('node:new', function (): void {
 
         $nodeId = DB::table('nodes')->insertGetId([
             'name' => 'app-unproven-1',
-            'role' => 'app',
-            'environment' => 'development',
             'tld' => 'test',
             'platform' => 'ubuntu_24-04',
             'host' => '192.0.2.31',
@@ -1270,8 +1243,6 @@ describe('node:new', function (): void {
 
         DB::table('nodes')->insert([
             'name' => 'gateway-1',
-            'role' => 'gateway',
-            'environment' => null,
             'tld' => null,
             'platform' => 'unknown',
             'host' => '10.6.0.2',
@@ -1285,8 +1256,6 @@ describe('node:new', function (): void {
 
         $nodeId = DB::table('nodes')->insertGetId([
             'name' => 'app-peer-missing-1',
-            'role' => 'app',
-            'environment' => 'development',
             'tld' => 'test',
             'platform' => 'ubuntu_24-04',
             'host' => '192.0.2.32',
@@ -1303,7 +1272,6 @@ describe('node:new', function (): void {
         app()->instance(RemoteShell::class, new NodeNewSequencedRemoteShell([
             new RemoteShellResult(exitCode: 0, stdout: json_encode([
                 'name' => 'app-peer-missing-1',
-                'role' => 'app',
                 'local_role' => 'app',
                 'status' => 'active',
                 'platform' => 'ubuntu_24-04',
@@ -1337,8 +1305,6 @@ describe('node:new', function (): void {
             ->and($payload['success']['data']['result']['action'])->toBe('adopted')
             ->and($payload['success']['data']['node'])->toMatchArray([
                 'name' => 'app-peer-missing-1',
-                'role' => 'app',
-                'environment' => 'development',
                 'tld' => 'test',
                 'addresses' => [
                     'wireguard' => '10.6.0.8',
@@ -1357,8 +1323,6 @@ describe('node:new', function (): void {
 
         DB::table('nodes')->insert([
             'name' => 'gateway-1',
-            'role' => 'gateway',
-            'environment' => null,
             'tld' => null,
             'platform' => 'unknown',
             'host' => '10.6.0.2',
@@ -1373,7 +1337,6 @@ describe('node:new', function (): void {
         app()->instance(RemoteShell::class, new NodeNewSequencedRemoteShell([
             new RemoteShellResult(exitCode: 0, stdout: json_encode([
                 'name' => 'app-unknown-1',
-                'role' => 'app',
                 'local_role' => 'app',
                 'status' => 'active',
                 'platform' => 'ubuntu_24-04',
@@ -1383,7 +1346,6 @@ describe('node:new', function (): void {
             ], JSON_THROW_ON_ERROR), stderr: '', durationMs: 1),
             new RemoteShellResult(exitCode: 0, stdout: json_encode([
                 'name' => 'app-unknown-1',
-                'role' => 'app',
                 'local_role' => 'app',
                 'status' => 'active',
                 'platform' => 'ubuntu_24-04',
@@ -1418,8 +1380,6 @@ describe('node:new', function (): void {
             ->and($payload['success']['data']['result']['action'])->toBe('adopted')
             ->and($payload['success']['data']['node'])->toMatchArray([
                 'name' => 'app-unknown-1',
-                'role' => 'app',
-                'environment' => 'development',
                 'tld' => 'test',
                 'platform' => 'ubuntu_24-04',
                 'addresses' => [
@@ -1444,8 +1404,6 @@ describe('node:new', function (): void {
 
         DB::table('nodes')->insert([
             'name' => 'gateway-1',
-            'role' => 'gateway',
-            'environment' => null,
             'tld' => null,
             'platform' => 'unknown',
             'host' => '10.6.0.2',
@@ -1481,8 +1439,6 @@ describe('node:new', function (): void {
     it('forwards app-node creation from a configured operator node to the gateway API', function (): void {
         DB::table('nodes')->insert([
             'name' => 'control-1',
-            'role' => 'control',
-            'environment' => null,
             'tld' => null,
             'platform' => 'unknown',
             'host' => '127.0.0.1',
@@ -1498,8 +1454,6 @@ describe('node:new', function (): void {
 
         DB::table('nodes')->insert([
             'name' => 'gateway-1',
-            'role' => 'gateway',
-            'environment' => null,
             'tld' => null,
             'platform' => 'unknown',
             'host' => '10.6.0.2',
@@ -1527,8 +1481,6 @@ describe('node:new', function (): void {
                     'result' => ['action' => 'created'],
                     'node' => [
                         'name' => 'app-dev-1',
-                        'role' => 'app',
-                        'environment' => 'development',
                         'tld' => 'test',
                         'platform' => 'unknown',
                         'addresses' => [
@@ -1568,10 +1520,8 @@ describe('node:new', function (): void {
         $mock->assertSent(fn (CreateNodeRequest $request): bool => $request->resolveEndpoint() === '/api/nodes'
             && $request->body()->all() === [
                 'name' => 'app-dev-1',
-                'role' => 'app',
                 'roles' => ['app'],
                 'host' => '192.0.2.20',
-                'environment' => 'development',
                 'tld' => 'test',
                 'user' => 'provisioner',
             ]);
@@ -1582,8 +1532,6 @@ describe('node:new', function (): void {
     it('renders gateway_unavailable when forwarded app-node creation cannot reach the gateway API', function (): void {
         DB::table('nodes')->insert([
             'name' => 'gateway-1',
-            'role' => 'gateway',
-            'environment' => null,
             'tld' => null,
             'platform' => 'unknown',
             'host' => '10.6.0.2',
@@ -1633,8 +1581,6 @@ describe('node:new', function (): void {
                     'result' => ['action' => 'created'],
                     'node' => [
                         'name' => 'app-dev-1',
-                        'role' => 'app',
-                        'environment' => 'development',
                         'tld' => 'test',
                         'platform' => 'unknown',
                         'addresses' => [
@@ -1673,10 +1619,8 @@ describe('node:new', function (): void {
         $mock->assertSent(fn (CreateNodeRequest $request): bool => $request->resolveEndpoint() === '/api/nodes'
             && $request->body()->all() === [
                 'name' => 'app-dev-1',
-                'role' => 'app',
                 'roles' => ['app'],
                 'host' => '192.0.2.20',
-                'environment' => 'development',
                 'tld' => 'test',
                 'user' => 'provisioner',
             ]);
@@ -1701,8 +1645,6 @@ describe('node:new', function (): void {
                     'result' => ['action' => 'created'],
                     'node' => [
                         'name' => 'agent-1',
-                        'role' => 'agent',
-                        'environment' => null,
                         'tld' => 'agent',
                         'platform' => 'ubuntu',
                         'addresses' => [
@@ -1738,10 +1680,8 @@ describe('node:new', function (): void {
         $mock->assertSent(fn (CreateNodeRequest $request): bool => $request->resolveEndpoint() === '/api/nodes'
             && $request->body()->all() === [
                 'name' => 'agent-1',
-                'role' => 'agent',
                 'roles' => ['agent'],
                 'host' => '192.0.2.40',
-                'environment' => null,
                 'tld' => 'agent',
                 'user' => 'root',
             ]);
@@ -1766,8 +1706,6 @@ describe('node:new', function (): void {
                     'result' => ['action' => 'adopted'],
                     'node' => [
                         'name' => 'app-adopt-1',
-                        'role' => 'app',
-                        'environment' => 'development',
                         'tld' => 'test',
                         'platform' => 'ubuntu_24-04',
                         'addresses' => [
@@ -1807,10 +1745,8 @@ describe('node:new', function (): void {
         $mock->assertSent(fn (CreateNodeRequest $request): bool => $request->resolveEndpoint() === '/api/nodes'
             && $request->body()->all() === [
                 'name' => 'app-adopt-1',
-                'role' => 'app',
                 'roles' => ['app'],
                 'host' => '192.0.2.30',
-                'environment' => 'development',
                 'tld' => 'test',
                 'user' => 'provisioner',
             ]);
@@ -1835,8 +1771,6 @@ describe('node:new', function (): void {
                     'result' => ['action' => 'enrolled'],
                     'node' => [
                         'name' => 'operator-2',
-                        'role' => null,
-                        'environment' => null,
                         'tld' => null,
                         'platform' => 'unknown',
                         'addresses' => [
@@ -1880,10 +1814,8 @@ describe('node:new', function (): void {
         $mock->assertSent(fn (CreateNodeRequest $request): bool => $request->resolveEndpoint() === '/api/nodes'
             && $request->body()->all() === [
                 'name' => 'operator-2',
-                'role' => 'control',
                 'roles' => ['control'],
                 'host' => null,
-                'environment' => null,
                 'tld' => null,
                 'user' => null,
             ]);
@@ -1908,8 +1840,6 @@ describe('node:new', function (): void {
                     'result' => ['action' => 'converged'],
                     'node' => [
                         'name' => 'gateway-1',
-                        'role' => 'gateway',
-                        'environment' => null,
                         'tld' => null,
                         'platform' => 'ubuntu_24-04',
                         'addresses' => [
@@ -1948,10 +1878,8 @@ describe('node:new', function (): void {
         $mock->assertSent(fn (CreateNodeRequest $request): bool => $request->resolveEndpoint() === '/api/nodes'
             && $request->body()->all() === [
                 'name' => 'gateway-1',
-                'role' => 'gateway',
                 'roles' => ['gateway'],
                 'host' => '203.0.113.2',
-                'environment' => null,
                 'tld' => null,
                 'user' => 'provisioner',
             ]);
@@ -1964,7 +1892,6 @@ describe('node:new', function (): void {
 
         DB::table('nodes')->insert([
             'name' => 'gateway-1',
-            'role' => 'gateway',
             'host' => '10.6.0.2',
             'wireguard_address' => '10.6.0.2',
             'orbit_path' => '/home/orbit/orbit',
@@ -2007,8 +1934,6 @@ describe('node:new', function (): void {
             ->and($payload['success']['data']['result']['action'])->toBe('enrolled')
             ->and($payload['success']['data']['node'])->toMatchArray([
                 'name' => 'operator-2',
-                'role' => null,
-                'environment' => null,
                 'tld' => null,
                 'platform' => 'unknown',
                 'addresses' => [
@@ -2049,7 +1974,6 @@ describe('node:new', function (): void {
 
         DB::table('nodes')->insert([
             'name' => 'gateway-1',
-            'role' => 'gateway',
             'host' => '203.0.113.2',
             'wireguard_address' => '10.6.0.2',
             'gateway_endpoint' => '203.0.113.2',
@@ -2081,8 +2005,6 @@ describe('node:new', function (): void {
                         ],
                         'node' => [
                             'name' => 'gateway-1',
-                            'role' => 'gateway',
-                            'environment' => null,
                             'tld' => null,
                             'platform' => 'ubuntu_24-04',
                             'addresses' => [
@@ -2107,7 +2029,6 @@ describe('node:new', function (): void {
     it('does not reprovision a gateway while gateway forwarding is unavailable', function (): void {
         DB::table('nodes')->insert([
             'name' => 'gateway-1',
-            'role' => 'gateway',
             'host' => '10.6.0.2',
             'orbit_path' => '/home/orbit/orbit',
             'status' => 'active',

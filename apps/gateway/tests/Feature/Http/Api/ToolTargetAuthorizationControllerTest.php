@@ -17,7 +17,7 @@ function createToolTargetAuthCaller(): Node
 {
     return Node::factory()->create([
         'name' => 'caller',
-        'role' => 'control',
+
         'host' => TOOL_TARGET_AUTH_CALLER_WG_IP,
         'wireguard_address' => TOOL_TARGET_AUTH_CALLER_WG_IP,
     ]);
@@ -114,7 +114,6 @@ describe('tool API target authorization', function (): void {
     it('allows hosted callers to target their own app tool node with an explicit self grant', function (): void {
         $caller = createTestAppHostNode([
             'name' => 'caller',
-            'role' => 'app',
             'host' => TOOL_TARGET_AUTH_CALLER_WG_IP,
             'wireguard_address' => TOOL_TARGET_AUTH_CALLER_WG_IP,
         ]);

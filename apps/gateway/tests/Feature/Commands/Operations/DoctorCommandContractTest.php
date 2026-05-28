@@ -51,11 +51,11 @@ function createDoctorLocalNode(string $role = 'gateway'): Node
 
     $node = Node::factory()->create([
         'name' => "local-{$role}",
-        'role' => $role,
+
         'host' => '10.6.0.1',
         'wireguard_address' => '10.6.0.1',
         'platform' => 'linux',
-        'environment' => $role === 'app' ? 'development' : null,
+
     ]);
 
     if ($role === 'gateway') {
@@ -70,7 +70,7 @@ function createDoctorLocalNode(string $role = 'gateway'): Node
     if ($role === 'app') {
         NodeRoleAssignment::factory()->create([
             'node_id' => $node->id,
-            'role' => 'app-development',
+            'role' => 'app-dev',
             'status' => 'active',
             'settings' => ['tld' => 'test'],
         ]);
@@ -83,9 +83,9 @@ function createDoctorHostedAppNode(string $name = 'app-1', array $attributes = [
 {
     $node = Node::factory()->create(array_merge([
         'name' => $name,
-        'role' => 'app',
+
         'status' => 'active',
-        'environment' => 'development',
+
         'host' => '10.6.0.2',
         'wireguard_address' => '10.6.0.2',
         'platform' => 'ubuntu_24-04',
@@ -93,7 +93,7 @@ function createDoctorHostedAppNode(string $name = 'app-1', array $attributes = [
 
     NodeRoleAssignment::factory()->create([
         'node_id' => $node->id,
-        'role' => 'app-development',
+        'role' => 'app-dev',
         'status' => 'active',
         'settings' => ['tld' => 'test'],
     ]);
@@ -105,7 +105,7 @@ function createDoctorIngressNode(string $name = 'edge-1'): Node
 {
     $node = Node::factory()->create([
         'name' => $name,
-        'role' => 'control',
+
         'status' => 'active',
         'host' => '10.6.0.10',
         'wireguard_address' => '10.6.0.10',
@@ -126,7 +126,7 @@ function createDoctorRouterNode(string $name = 'gateway-1'): Node
 {
     $node = Node::factory()->create([
         'name' => $name,
-        'role' => 'gateway',
+
         'status' => 'active',
         'host' => '10.6.0.2',
         'wireguard_address' => '10.6.0.2',
@@ -147,7 +147,7 @@ function createDoctorProductionBackendNode(string $name = 'web-1'): Node
 {
     $node = Node::factory()->create([
         'name' => $name,
-        'role' => 'control',
+
         'status' => 'active',
         'host' => '10.6.0.21',
         'wireguard_address' => '10.6.0.21',
@@ -156,7 +156,7 @@ function createDoctorProductionBackendNode(string $name = 'web-1'): Node
 
     NodeRoleAssignment::factory()->create([
         'node_id' => $node->id,
-        'role' => 'app-production',
+        'role' => 'app-prod',
         'status' => 'active',
         'settings' => [],
     ]);
@@ -200,7 +200,7 @@ describe('doctor command contract', function (): void {
         createDoctorLocalNode('gateway');
         Node::factory()->create([
             'name' => 'legacy-app',
-            'role' => 'app',
+
             'status' => 'active',
             'platform' => null,
             'wireguard_address' => null,

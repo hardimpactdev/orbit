@@ -23,7 +23,6 @@ function createExecControllerCaller(array $overrides = []): Node
 {
     $attributes = array_merge([
         'name' => 'caller',
-        'role' => 'control',
         'host' => APP_EXEC_CALLER_WG_IP,
         'wireguard_address' => APP_EXEC_CALLER_WG_IP,
     ], $overrides);

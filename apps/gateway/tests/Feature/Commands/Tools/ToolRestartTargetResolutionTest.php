@@ -26,7 +26,7 @@ function createToolRestartTargetLocalNode(string $role = 'gateway'): Node
 {
     return Node::factory()->create([
         'name' => "tool-restart-target-{$role}",
-        'role' => $role,
+
         'host' => '10.12.0.1',
         'wireguard_address' => '10.12.0.1',
     ]);
@@ -36,7 +36,6 @@ function createToolRestartTarget(string $nodeName, ?string $tld = null): Node
 {
     return createTestAppHostNode([
         'name' => $nodeName,
-        'role' => 'app',
         'status' => 'active',
         'tld' => $tld,
     ]);
@@ -185,7 +184,6 @@ describe('tool:restart target resolution', function (): void {
                     'data' => [
                         'self' => [
                             'name' => 'control-self',
-                            'role' => 'control',
                         ],
                     ],
                 ],

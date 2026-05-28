@@ -52,9 +52,10 @@ final class FakeApiAgentIdeMessageAdapter implements AgentIdeMessageAdapter
 
 function createAgentIdeMessageCallerNode(array $overrides = []): Node
 {
+    unset($overrides['role'], $overrides['environment']);
+
     return Node::factory()->create(array_merge([
         'name' => 'caller',
-        'role' => 'control',
         'host' => AGENT_IDE_MESSAGE_CALLER_WG_IP,
         'wireguard_address' => AGENT_IDE_MESSAGE_CALLER_WG_IP,
     ], $overrides));
@@ -94,7 +95,7 @@ it('sends an app-target message for an authorized control caller', function (): 
     $caller = createAgentIdeMessageCallerNode();
     $appNode = Node::factory()->create([
         'name' => 'app-1',
-        'role' => 'app',
+
         'agent_ide_config' => ['adapter' => 'polyscope'],
     ]);
     grantAgentIdeMessageAccess($caller, $appNode);
@@ -131,7 +132,7 @@ it('logs message delivery activity without storing message bodies', function ():
     $caller = createAgentIdeMessageCallerNode();
     $appNode = Node::factory()->create([
         'name' => 'app-1',
-        'role' => 'app',
+
     ]);
     grantAgentIdeMessageAccess($caller, $appNode);
 
@@ -168,7 +169,7 @@ it('sends an app-target message for an authorized app caller', function (): void
     $caller = createAgentIdeMessageCallerNode(['role' => 'app']);
     $appNode = Node::factory()->create([
         'name' => 'app-2',
-        'role' => 'app',
+
         'agent_ide_config' => ['adapter' => 'polyscope'],
     ]);
     grantAgentIdeMessageAccess($caller, $appNode);
@@ -201,7 +202,7 @@ it('sends a workspace-target message for an authorized caller', function (): voi
     $caller = createAgentIdeMessageCallerNode();
     $appNode = Node::factory()->create([
         'name' => 'app-1',
-        'role' => 'app',
+
         'agent_ide_config' => ['adapter' => 'polyscope'],
     ]);
     grantAgentIdeMessageAccess($caller, $appNode);
@@ -241,7 +242,7 @@ it('resolves a workspace-target message from a forwarded path', function (): voi
     $caller = createAgentIdeMessageCallerNode();
     $appNode = Node::factory()->create([
         'name' => 'app-1',
-        'role' => 'app',
+
     ]);
     grantAgentIdeMessageAccess($caller, $appNode);
 
@@ -279,7 +280,7 @@ it('returns adapter delivery diagnostics under error data', function (): void {
     $caller = createAgentIdeMessageCallerNode();
     $appNode = Node::factory()->create([
         'name' => 'app-1',
-        'role' => 'app',
+
     ]);
     grantAgentIdeMessageAccess($caller, $appNode);
 
@@ -321,7 +322,7 @@ it('rejects unauthorized callers without delivering', function (): void {
     createAgentIdeMessageCallerNode();
     $appNode = Node::factory()->create([
         'name' => 'app-1',
-        'role' => 'app',
+
     ]);
 
     App::factory()->create([

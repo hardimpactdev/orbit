@@ -33,7 +33,7 @@ function createCloudflareApiCallerNode(string $role = 'gateway'): Node
 
     return Node::factory()->create([
         'name' => "cf-api-{$role}",
-        'role' => $role,
+
         'host' => CLOUDFLARE_API_CALLER_WG_IP,
         'wireguard_address' => CLOUDFLARE_API_CALLER_WG_IP,
         'platform' => 'ubuntu',

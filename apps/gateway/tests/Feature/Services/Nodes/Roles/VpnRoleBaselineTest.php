@@ -58,7 +58,6 @@ describe('VpnRoleBaseline', function (): void {
     it('installs wg-easy and orbit-dns when the vpn role has a public endpoint', function (): void {
         $node = Node::factory()->create();
         $assignment = NodeRoleAssignment::factory()->for($node)->create([
-            'role' => 'vpn',
             'settings' => [
                 'public_endpoint' => 'vpn.example.com',
                 'wireguard_cidr' => '10.7.0.0/24',
@@ -88,7 +87,6 @@ describe('VpnRoleBaseline', function (): void {
 
         $node = Node::factory()->create();
         $assignment = NodeRoleAssignment::factory()->for($node)->create([
-            'role' => 'vpn',
             'settings' => [
                 'public_endpoint' => 'vpn.example.com',
             ],
@@ -107,7 +105,6 @@ describe('VpnRoleBaseline', function (): void {
     it('does nothing when the vpn role has no public endpoint', function (): void {
         $node = Node::factory()->create();
         $assignment = NodeRoleAssignment::factory()->for($node)->create([
-            'role' => 'vpn',
             'settings' => [
                 'public_endpoint' => null,
             ],
@@ -126,7 +123,6 @@ describe('VpnRoleBaseline', function (): void {
 
         $node = Node::factory()->create();
         $assignment = NodeRoleAssignment::factory()->for($node)->create([
-            'role' => 'vpn',
             'settings' => [
                 'public_endpoint' => 'vpn.example.com',
             ],
@@ -141,7 +137,6 @@ describe('VpnRoleBaseline', function (): void {
     it('cannot be removed independently', function (): void {
         $node = Node::factory()->create();
         $assignment = NodeRoleAssignment::factory()->for($node)->create([
-            'role' => 'vpn',
         ]);
 
         $baseline = new VpnRoleBaseline($this->wgEasyInstaller, $this->dnsInstaller);

@@ -21,11 +21,9 @@ function apiNodeAgentIdeRow(array $overrides = []): array
 {
     return array_merge([
         'name' => 'app-1',
-        'role' => 'app',
         'host' => '10.6.0.7',
         'orbit_path' => '/home/nckrtl/orbit',
         'status' => 'active',
-        'environment' => 'development',
         'platform' => 'ubuntu_24-04',
         'wireguard_address' => '10.6.0.7',
         'public_ipv4' => null,
@@ -40,9 +38,7 @@ function createAgentIdeCallerNode(string $role = 'control'): int
 {
     return (int) DB::table('nodes')->insertGetId(apiNodeAgentIdeRow([
         'name' => "{$role}-caller",
-        'role' => $role,
         'host' => AGENT_IDE_CALLER_WG_IP,
-        'environment' => $role === 'app' ? 'development' : null,
         'wireguard_address' => AGENT_IDE_CALLER_WG_IP,
     ]));
 }

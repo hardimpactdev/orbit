@@ -21,13 +21,11 @@ function nodeShowHumanRow(array $overrides = []): array
 {
     return array_merge([
         'name' => 'app-1',
-        'role' => 'app',
         'host' => '10.6.0.7',
         'wireguard_address' => '10.6.0.7',
         'user' => 'nckrtl',
         'orbit_path' => '/home/nckrtl/orbit',
         'status' => 'active',
-        'environment' => 'development',
         'platform' => 'ubuntu_24-04',
         'created_at' => now(),
         'updated_at' => now(),
@@ -40,8 +38,6 @@ function setupNodeShowHumanGatewayCaller(): void
 
     DB::table('nodes')->insert(nodeShowHumanRow([
         'name' => 'local-gateway',
-        'role' => 'gateway',
-        'environment' => null,
     ]));
 }
 
@@ -173,7 +169,7 @@ describe('node:show human renderer contract', function (): void {
 
     it('renders singular role assignment without legacy role or environment in human output', function (): void {
         DB::table('nodes')->insert(nodeShowHumanRow());
-        assignNodeShowHumanRole('app-1', 'app-development', ['tld' => 'test']);
+        assignNodeShowHumanRole('app-1', 'app-dev', ['tld' => 'test']);
 
         $exitCode = Artisan::call('node:show', ['name' => 'app-1']);
         $output = Artisan::output();
@@ -181,7 +177,7 @@ describe('node:show human renderer contract', function (): void {
         expect($exitCode)->toBe(0);
         expect($output)->toContain('Node: app-1')
             ->and($output)->toContain('Role')
-            ->and($output)->toContain('app-development')
+            ->and($output)->toContain('app-dev')
             ->and($output)->not->toContain('Roles')
             ->and($output)->not->toContain('Environment')
             ->and($output)->toContain('OS')
@@ -195,8 +191,6 @@ describe('node:show human renderer contract', function (): void {
     it('omits environment line and falls back to legacy role when assignments are absent', function (): void {
         DB::table('nodes')->insert(nodeShowHumanRow([
             'name' => 'gateway-2',
-            'role' => 'gateway',
-            'environment' => null,
         ]));
 
         $exitCode = Artisan::call('node:show', ['name' => 'gateway-2']);
@@ -229,17 +223,12 @@ describe('node:show human renderer contract', function (): void {
         DB::table('nodes')->insert([
             nodeShowHumanRow([
                 'name' => 'app-1',
-                'role' => 'app',
             ]),
             nodeShowHumanRow([
                 'name' => 'control-1',
-                'role' => 'control',
-                'environment' => null,
             ]),
             nodeShowHumanRow([
                 'name' => 'control-2',
-                'role' => 'control',
-                'environment' => null,
             ]),
         ]);
 

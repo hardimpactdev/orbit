@@ -13,13 +13,11 @@ function nodeRoleNodeRow(array $overrides = []): array
 {
     return array_merge([
         'name' => 'node-1',
-        'role' => 'control',
         'host' => '10.6.0.10',
         'wireguard_address' => '10.6.0.10',
         'user' => 'nckrtl',
         'orbit_path' => '/home/nckrtl/orbit',
         'status' => 'active',
-        'environment' => null,
         'platform' => 'ubuntu',
         'created_at' => now(),
         'updated_at' => now(),
@@ -32,7 +30,6 @@ function setupNodeRoleGatewayCaller(): void
 
     DB::table('nodes')->insert(nodeRoleNodeRow([
         'name' => 'gateway-1',
-        'role' => 'gateway',
     ]));
 }
 
@@ -42,7 +39,6 @@ function setupNodeRoleControlCaller(): void
 
     DB::table('nodes')->insert(nodeRoleNodeRow([
         'name' => 'control-1',
-        'role' => 'control',
     ]));
 
     LocalGatewaySettings::current()->fill([
@@ -56,8 +52,6 @@ function createHostedNode(array $overrides = []): Node
 {
     return Node::query()->create(nodeRoleNodeRow(array_merge([
         'name' => 'host-1',
-        'role' => 'app',
-        'environment' => 'development',
         'host' => '10.6.0.20',
         'wireguard_address' => '10.6.0.20',
     ], $overrides)));

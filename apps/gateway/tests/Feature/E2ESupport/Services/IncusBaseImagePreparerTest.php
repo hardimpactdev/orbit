@@ -45,7 +45,6 @@ it('returns dry-run plan when force is false', function (): void {
     $result = $preparer->build(baseImageOptions(force: false));
 
     expect($result)->toBe([
-        'role' => 'base',
         'alias' => 'orbit-base-ubuntu-26.04',
         'action' => 'planned',
     ]);

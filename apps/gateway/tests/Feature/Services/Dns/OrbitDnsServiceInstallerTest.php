@@ -71,13 +71,13 @@ it('writes the initial dnsmasq.conf before starting the container', function ():
 
     Node::factory()->create([
         'name' => 'gateway',
-        'role' => 'gateway',
+
         'tld' => 'gateway',
         'wireguard_address' => '10.6.0.2',
     ]);
     Node::factory()->create([
         'name' => 'app-1',
-        'role' => 'app',
+
         'tld' => 'app-1.test',
         'wireguard_address' => '10.6.0.3',
     ]);

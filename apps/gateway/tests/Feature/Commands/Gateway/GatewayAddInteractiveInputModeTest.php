@@ -50,7 +50,6 @@ afterEach(function (): void {
 it('selects interactive mode in tty without --json', function (): void {
     Node::query()->create([
         'name' => 'control-1',
-        'role' => 'control',
         'status' => 'active',
         'host' => '10.6.0.8',
         'orbit_path' => '/home/orbit/orbit',
@@ -75,7 +74,6 @@ it('selects interactive mode in tty without --json', function (): void {
 it('does not prompt when gateway_ip is supplied in interactive mode', function (): void {
     Node::query()->create([
         'name' => 'control-1',
-        'role' => 'control',
         'status' => 'active',
         'host' => '10.6.0.8',
         'orbit_path' => '/home/orbit/orbit',
@@ -101,7 +99,6 @@ it('does not prompt when gateway_ip is supplied in interactive mode', function (
 it('does not prompt when gateway_ip is derived in interactive mode', function (): void {
     Node::query()->create([
         'name' => 'control-1',
-        'role' => 'control',
         'status' => 'active',
         'host' => '10.6.0.8',
         'orbit_path' => '/home/orbit/orbit',

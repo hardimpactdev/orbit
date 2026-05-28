@@ -17,10 +17,10 @@ uses(RefreshDatabase::class);
 
 const UPDATE_ALL_CALLER_WG_IP = '10.6.0.99';
 
-function createUpdateAllAppHostNode(array $attributes, string $role = 'app-development'): Node
+function createUpdateAllAppHostNode(array $attributes, string $role = 'app-dev'): Node
 {
     $node = Node::factory()->create([
-        'role' => 'control',
+
         'status' => 'active',
         ...$attributes,
     ]);
@@ -29,7 +29,7 @@ function createUpdateAllAppHostNode(array $attributes, string $role = 'app-devel
         'node_id' => $node->id,
         'role' => $role,
         'status' => 'active',
-        'settings' => $role === 'app-development' ? ['tld' => 'test'] : [],
+        'settings' => $role === 'app-dev' ? ['tld' => 'test'] : [],
     ]);
 
     return $node;
@@ -38,7 +38,6 @@ function createUpdateAllAppHostNode(array $attributes, string $role = 'app-devel
 beforeEach(function (): void {
     createTestGatewayNode([
         'name' => 'gateway',
-        'role' => 'gateway',
         'host' => 'gateway',
         'orbit_path' => '/home/gateway/orbit',
         'status' => 'active',
@@ -141,7 +140,7 @@ it('updates app nodes in parallel after gateway checkout succeeds', function ():
         'name' => 'sidecar',
         'host' => 'sidecar',
         'orbit_path' => '/home/nckrtl/orbit',
-    ], 'app-production');
+    ], 'app-prod');
 
     Process::fake([
         '*' => Process::result(output: '', errorOutput: '', exitCode: 0),
@@ -196,7 +195,7 @@ it('starts app node updates concurrently in the streamed gateway path without pc
         'name' => 'main1',
         'host' => 'main1',
         'orbit_path' => '/home/nckrtl/orbit',
-    ], 'app-production');
+    ], 'app-prod');
 
     Process::fake([
         '*' => Process::result(output: '', errorOutput: '', exitCode: 0),
@@ -265,14 +264,14 @@ it('starts app node updates concurrently in the streamed gateway path without pc
 it('excludes control nodes from remote updates', function (): void {
     Node::factory()->create([
         'name' => 'mini',
-        'role' => 'control',
+
         'host' => 'mini',
         'orbit_path' => '/Users/nckrtl/orbit',
         'status' => 'active',
     ]);
     Node::factory()->create([
         'name' => 'legacy-app-only',
-        'role' => 'app',
+
         'host' => 'legacy-app-only',
         'orbit_path' => '/home/nckrtl/orbit',
         'status' => 'active',
@@ -328,7 +327,7 @@ it('rejects unauthenticated requests', function (): void {
 it('requires gateway-admin authority for non-gateway callers', function (): void {
     Node::factory()->create([
         'name' => 'control-1',
-        'role' => 'control',
+
         'status' => 'active',
         'wireguard_address' => '10.6.0.90',
     ]);
@@ -344,7 +343,7 @@ it('allows non-gateway callers with gateway-admin authority', function (): void 
     $gateway = Node::query()->where('name', 'gateway')->firstOrFail();
     $caller = Node::factory()->create([
         'name' => 'control-1',
-        'role' => 'control',
+
         'status' => 'active',
         'wireguard_address' => '10.6.0.90',
     ]);

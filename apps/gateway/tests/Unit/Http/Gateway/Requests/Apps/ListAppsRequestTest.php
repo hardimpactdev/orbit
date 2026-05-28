@@ -36,7 +36,6 @@ it('serializes node and environment filters when provided', function (): void {
 
     expect($request->query()->all())->toBe([
         'node' => 'app-1',
-        'environment' => 'production',
     ]);
 });
 

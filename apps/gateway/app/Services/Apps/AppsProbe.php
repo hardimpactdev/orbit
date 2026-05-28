@@ -898,7 +898,7 @@ BASH;
             ];
         }
 
-        $requiredRole = $app->environment === 'production' ? 'app-production' : 'app-development';
+        $requiredRole = $app->environment === 'production' ? 'app-prod' : 'app-dev';
 
         if ($app->node->status !== 'active' || ! $this->nodeRoleAssignments()->nodeHasActiveRole($app->node, $requiredRole)) {
             return [
@@ -1096,6 +1096,6 @@ BASH;
         $app->loadMissing('node');
 
         return $app->environment === 'production'
-            || ($app->node instanceof Node && $this->nodeRoleAssignments()->nodeHasActiveRole($app->node, 'app-production'));
+            || ($app->node instanceof Node && $this->nodeRoleAssignments()->nodeHasActiveRole($app->node, 'app-prod'));
     }
 }

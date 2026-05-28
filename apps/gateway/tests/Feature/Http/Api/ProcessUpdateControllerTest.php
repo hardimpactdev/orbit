@@ -24,7 +24,6 @@ function createProcessUpdateCallerNode(array $overrides = []): Node
 {
     $attributes = array_merge([
         'name' => 'caller',
-        'role' => 'control',
         'host' => PROCESS_UPDATE_CALLER_WG_IP,
         'wireguard_address' => PROCESS_UPDATE_CALLER_WG_IP,
     ], $overrides);

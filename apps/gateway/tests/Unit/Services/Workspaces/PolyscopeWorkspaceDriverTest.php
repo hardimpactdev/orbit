@@ -27,7 +27,7 @@ uses(TestCase::class, RefreshDatabase::class);
 it('reads Polyscope config through the local executor lookup command with stdout suppressed in activity logs', function (): void {
     $node = Node::factory()->create([
         'name' => 'app-dev',
-        'role' => 'app',
+
         'agent_ide_config' => null,
     ]);
     $app = App::factory()->create([
@@ -87,7 +87,7 @@ it('does not leak Polyscope api tokens from config lookup output into workspace 
     $secret = 'poly-token-secret-round-2';
     $node = Node::factory()->create([
         'name' => 'app-dev',
-        'role' => 'app',
+
         'agent_ide_config' => null,
     ]);
     $app = App::factory()->create([
@@ -148,7 +148,7 @@ it('treats Polyscope config lookup error messages as untrusted remote output', f
     $secret = 'secret-token-probe-XYZ';
     $node = Node::factory()->create([
         'name' => 'app-dev',
-        'role' => 'app',
+
         'agent_ide_config' => null,
     ]);
     $app = App::factory()->create([

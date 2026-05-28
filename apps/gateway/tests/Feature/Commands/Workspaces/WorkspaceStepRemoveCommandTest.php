@@ -25,7 +25,7 @@ function createWorkspaceStepRemoveLocalNode(string $role = 'gateway'): Node
 
     return Node::factory()->create([
         'name' => "local-{$role}",
-        'role' => $role,
+
         'host' => '10.6.0.1',
         'wireguard_address' => '10.6.0.1',
     ]);
@@ -33,7 +33,7 @@ function createWorkspaceStepRemoveLocalNode(string $role = 'gateway'): Node
 
 function createWorkspaceStepRemoveApp(): App
 {
-    $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app']);
+    $node = Node::factory()->create(['name' => 'app-1']);
 
     return App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
 }

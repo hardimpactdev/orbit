@@ -37,7 +37,6 @@ it('outputs json for the dry-run plan', function (): void {
                 'provider' => 'incus',
                 'dry_run' => true,
                 'image' => [
-                    'role' => 'base',
                     'alias' => 'orbit-base-ubuntu-26.04',
                     'source' => 'images:ubuntu/26.04/cloud',
                 ],
@@ -53,7 +52,6 @@ it('outputs json for the dry-run plan', function (): void {
 it('--force invokes the preparer and emits a JSON success envelope', function (): void {
     $preparer = m::mock(IncusBaseImagePreparer::class);
     $preparer->shouldReceive('build')->andReturn([
-        'role' => 'base',
         'alias' => 'orbit-base-ubuntu-26.04',
         'action' => 'built',
     ]);
@@ -69,14 +67,12 @@ it('--force invokes the preparer and emits a JSON success envelope', function ()
                 'dry_run' => false,
                 'image' => [
                     'host' => 'beast',
-                    'role' => 'base',
                     'alias' => 'orbit-base-ubuntu-26.04',
                     'action' => 'built',
                 ],
                 'images' => [
                     [
                         'host' => 'beast',
-                        'role' => 'base',
                         'alias' => 'orbit-base-ubuntu-26.04',
                         'action' => 'built',
                     ],
@@ -102,7 +98,6 @@ it('--force builds on the configured image build host and distributes to configu
     $preparer = m::mock(IncusBaseImagePreparer::class);
     $preparer->shouldReceive('build')
         ->andReturn([
-            'role' => 'base',
             'alias' => 'orbit-base-ubuntu-26.04',
             'action' => 'built',
         ]);
@@ -112,13 +107,11 @@ it('--force builds on the configured image build host and distributes to configu
         ->andReturn([
             [
                 'host' => 'sidecar1',
-                'role' => 'base',
                 'alias' => 'orbit-base-ubuntu-26.04',
                 'action' => 'imported',
             ],
             [
                 'host' => 'sidecar2',
-                'role' => 'base',
                 'alias' => 'orbit-base-ubuntu-26.04',
                 'action' => 'imported',
             ],
@@ -144,26 +137,22 @@ it('--force builds on the configured image build host and distributes to configu
                 'dry_run' => false,
                 'image' => [
                     'host' => 'beast',
-                    'role' => 'base',
                     'alias' => 'orbit-base-ubuntu-26.04',
                     'action' => 'built',
                 ],
                 'images' => [
                     [
                         'host' => 'beast',
-                        'role' => 'base',
                         'alias' => 'orbit-base-ubuntu-26.04',
                         'action' => 'built',
                     ],
                     [
                         'host' => 'sidecar1',
-                        'role' => 'base',
                         'alias' => 'orbit-base-ubuntu-26.04',
                         'action' => 'imported',
                     ],
                     [
                         'host' => 'sidecar2',
-                        'role' => 'base',
                         'alias' => 'orbit-base-ubuntu-26.04',
                         'action' => 'imported',
                     ],

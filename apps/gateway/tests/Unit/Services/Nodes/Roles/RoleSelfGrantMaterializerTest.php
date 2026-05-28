@@ -17,7 +17,7 @@ function roleSelfGrantNode(): Node
 {
     return Node::factory()->create([
         'platform' => 'ubuntu',
-        'role' => 'control',
+
     ]);
 }
 

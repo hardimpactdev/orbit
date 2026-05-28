@@ -57,15 +57,15 @@ final readonly class NodeDefaultController implements Loggable
             );
         }
 
-        if (! $this->nodeRoleAssignments->nodeHasActiveRole($node, 'app-development')) {
+        if (! $this->nodeRoleAssignments->nodeHasActiveRole($node, 'app-dev')) {
             return $this->error(
                 code: 'node.invalid_role',
                 message: "Node '{$name}' is not a development app node.",
                 meta: [
                     'name' => $name,
-                    'role' => $node->role,
-                    'environment' => $node->environment,
-                    'required_role_assignment' => 'app-development',
+                    'role' => $node->displayRole(),
+                    'environment' => $this->nodeRoleAssignments->activeAppHostEnvironment($node),
+                    'required_role_assignment' => 'app-dev',
                 ],
                 status: 422,
             );

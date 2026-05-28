@@ -18,7 +18,6 @@ function createWorkspaceStepListCallerNode(array $overrides = []): Node
 {
     $attributes = array_merge([
         'name' => 'step-list-caller',
-        'role' => 'control',
         'host' => WORKSPACE_STEP_LIST_CALLER_WG_IP,
         'wireguard_address' => WORKSPACE_STEP_LIST_CALLER_WG_IP,
     ], $overrides);

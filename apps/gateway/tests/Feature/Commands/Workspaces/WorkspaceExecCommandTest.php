@@ -31,7 +31,7 @@ afterEach(function (): void {
 
 function createExecCommandWorkspace(array $appOverrides = [], array $workspaceOverrides = []): Workspace
 {
-    $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'tld' => 'test']);
+    $node = Node::factory()->create(['name' => 'app-1', 'tld' => 'test']);
     $app = App::factory()->for($node, 'node')->create(array_merge([
         'name' => 'docs',
         'path' => '/home/orbit/apps/docs',
@@ -331,7 +331,7 @@ describe('workspace:exec command', function (): void {
 
     it('returns gateway_unavailable when a control-mode caller cannot reach the gateway exec endpoint', function (): void {
         config(['orbit.is_gateway' => false]);
-        Node::factory()->create(['name' => 'control-1', 'role' => 'control']);
+        Node::factory()->create(['name' => 'control-1']);
 
         LocalGatewaySettings::current()->fill([
             'gateway_url' => 'https://10.6.0.1',
@@ -355,7 +355,7 @@ describe('workspace:exec command', function (): void {
 
     it('forwards a successful gateway exec response back to the caller in control mode', function (): void {
         config(['orbit.is_gateway' => false]);
-        Node::factory()->create(['name' => 'control-1', 'role' => 'control']);
+        Node::factory()->create(['name' => 'control-1']);
 
         LocalGatewaySettings::current()->fill([
             'gateway_url' => 'https://10.6.0.1',
@@ -428,7 +428,7 @@ describe('workspace:exec command', function (): void {
     });
 
     it('refuses an ambiguous workspace name when two apps host workspaces with the same name and --app is omitted', function (): void {
-        $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'tld' => 'test']);
+        $node = Node::factory()->create(['name' => 'app-1', 'tld' => 'test']);
         $appA = App::factory()->for($node, 'node')->create([
             'name' => 'docs',
             'path' => '/home/orbit/apps/docs',
@@ -457,7 +457,7 @@ describe('workspace:exec command', function (): void {
     });
 
     it('resolves an ambiguous workspace name to the correct app when --app is supplied', function (): void {
-        $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'tld' => 'test']);
+        $node = Node::factory()->create(['name' => 'app-1', 'tld' => 'test']);
         $appA = App::factory()->for($node, 'node')->create([
             'name' => 'docs',
             'path' => '/home/orbit/apps/docs',
@@ -520,7 +520,7 @@ describe('workspace:exec command', function (): void {
         // that state. The CLI's job is to forward the raw host cwd and let
         // the gateway resolve.
         config(['orbit.is_gateway' => false]);
-        Node::factory()->create(['name' => 'control-1', 'role' => 'control']);
+        Node::factory()->create(['name' => 'control-1']);
 
         LocalGatewaySettings::current()->fill([
             'gateway_url' => 'https://10.6.0.1',
@@ -570,7 +570,7 @@ describe('workspace:exec command', function (): void {
 
     it('forwards --app filter and explicit selector through the gateway request when both are present in control mode', function (): void {
         config(['orbit.is_gateway' => false]);
-        Node::factory()->create(['name' => 'control-1', 'role' => 'control']);
+        Node::factory()->create(['name' => 'control-1']);
 
         LocalGatewaySettings::current()->fill([
             'gateway_url' => 'https://10.6.0.1',

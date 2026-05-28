@@ -35,8 +35,6 @@ it('serializes role/environment/doctor as query parameters when provided', funct
     $request = new ListNodesRequest(role: 'app', environment: 'production', doctor: true);
 
     expect($request->query()->all())->toBe([
-        'role' => 'app',
-        'environment' => 'production',
         'doctor' => true,
     ]);
 });

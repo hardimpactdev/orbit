@@ -14,9 +14,10 @@ const TOOL_SHOW_CALLER_WG_IP = '10.6.0.96';
 
 function createToolShowCallerNode(array $overrides = []): Node
 {
+    unset($overrides['role'], $overrides['environment']);
+
     return Node::factory()->create(array_merge([
         'name' => 'caller',
-        'role' => 'control',
         'host' => TOOL_SHOW_CALLER_WG_IP,
         'wireguard_address' => TOOL_SHOW_CALLER_WG_IP,
     ], $overrides));
@@ -124,7 +125,7 @@ describe('ToolShowController', function (): void {
 
     it('rejects hidden node selectors', function (): void {
         createToolShowCallerNode();
-        Node::factory()->create(['name' => 'hidden', 'role' => 'app']);
+        Node::factory()->create(['name' => 'hidden']);
 
         $response = $this->call('GET', '/api/tools/redis?node=hidden', [], [], [], ['REMOTE_ADDR' => TOOL_SHOW_CALLER_WG_IP]);
 

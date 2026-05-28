@@ -14,7 +14,7 @@ function createActivityShowCallerNode(): Node
 {
     return Node::factory()->create([
         'name' => 'caller',
-        'role' => 'gateway',
+
         'host' => ACTIVITY_SHOW_CALLER_WG_IP,
         'wireguard_address' => ACTIVITY_SHOW_CALLER_WG_IP,
     ]);

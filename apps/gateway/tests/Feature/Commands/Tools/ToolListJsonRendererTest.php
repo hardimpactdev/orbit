@@ -21,7 +21,7 @@ function createToolListJsonLocalNode(string $role = 'gateway'): Node
 {
     return Node::factory()->create([
         'name' => "tool-list-json-{$role}",
-        'role' => $role,
+
         'host' => '10.7.0.1',
         'wireguard_address' => '10.7.0.1',
     ]);

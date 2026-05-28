@@ -25,7 +25,7 @@ function makeAppOnDevNode(AppRuntimeKind $kind = AppRuntimeKind::Php): App
     ]);
     NodeRoleAssignment::factory()->create([
         'node_id' => $node->id,
-        'role' => 'app-development',
+        'role' => 'app-dev',
         'status' => 'active',
     ]);
 

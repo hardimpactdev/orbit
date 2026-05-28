@@ -451,13 +451,12 @@ foreach ([{$consumerValue}, {$servingValue}] as \$name) {
 }
 
 \$servingName = {$servingValue};
-\$servingRole = str_contains(\$servingName, 'app-prod') ? 'app-production' : (str_contains(\$servingName, 'app-dev') ? 'app-development' : null);
+\$servingRole = str_contains(\$servingName, 'app-prod') ? 'app-prod' : (str_contains(\$servingName, 'app-dev') ? 'app-dev' : null);
 
 if (\$servingRole !== null) {
     \\App\\Models\\NodeRoleAssignment::query()->updateOrCreate(
         [
             'node_id' => \$nodes->get({$servingValue}),
-            'role' => \$servingRole,
         ],
         [
             'status' => 'active',

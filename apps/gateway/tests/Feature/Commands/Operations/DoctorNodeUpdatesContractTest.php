@@ -28,7 +28,7 @@ function createDoctorNodeUpdatesGateway(array $attributes = []): Node
 
     $node = Node::factory()->create([
         'name' => 'updates-gateway',
-        'role' => 'gateway',
+
         'status' => 'active',
         'platform' => 'ubuntu_24-04',
         'host' => '10.6.0.1',

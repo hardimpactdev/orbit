@@ -20,11 +20,9 @@ function apiPermsNodeRow(array $overrides = []): array
 {
     return array_merge([
         'name' => 'app-1',
-        'role' => 'app',
         'host' => '10.6.0.7',
         'orbit_path' => '/home/nckrtl/orbit',
         'status' => 'active',
-        'environment' => 'development',
         'platform' => 'ubuntu_24-04',
         'wireguard_address' => '10.6.0.7',
         'created_at' => now(),
@@ -36,9 +34,7 @@ function createPermsCallerNode(string $role = 'gateway'): int
 {
     $nodeId = (int) DB::table('nodes')->insertGetId(apiPermsNodeRow([
         'name' => "{$role}-caller",
-        'role' => $role,
         'host' => PERMS_CALLER_WG_IP,
-        'environment' => $role === 'app' ? 'development' : null,
         'wireguard_address' => PERMS_CALLER_WG_IP,
     ]));
 
@@ -83,8 +79,6 @@ describe('NodePermissionsController', function (): void {
         createPermsCallerNode('gateway');
         $controlId = (int) DB::table('nodes')->insertGetId(apiPermsNodeRow([
             'name' => 'control-1',
-            'role' => 'control',
-            'environment' => null,
             'wireguard_address' => '10.6.0.11',
         ]));
         $appId = (int) DB::table('nodes')->insertGetId(apiPermsNodeRow([
@@ -114,8 +108,6 @@ describe('NodePermissionsController', function (): void {
         createPermsCallerNode('gateway');
         DB::table('nodes')->insert(apiPermsNodeRow([
             'name' => 'control-1',
-            'role' => 'control',
-            'environment' => null,
             'wireguard_address' => '10.6.0.11',
         ]));
         DB::table('nodes')->insert(apiPermsNodeRow([
@@ -136,8 +128,6 @@ describe('NodePermissionsController', function (): void {
         createPermsCallerNode('gateway');
         $controlId = (int) DB::table('nodes')->insertGetId(apiPermsNodeRow([
             'name' => 'control-1',
-            'role' => 'control',
-            'environment' => null,
             'wireguard_address' => '10.6.0.11',
         ]));
         $appId = (int) DB::table('nodes')->insertGetId(apiPermsNodeRow([
@@ -174,8 +164,6 @@ describe('NodePermissionsController', function (): void {
         createPermsCallerNode('gateway');
         $controlId = (int) DB::table('nodes')->insertGetId(apiPermsNodeRow([
             'name' => 'control-1',
-            'role' => 'control',
-            'environment' => null,
             'wireguard_address' => '10.6.0.11',
         ]));
         $appId = (int) DB::table('nodes')->insertGetId(apiPermsNodeRow([
@@ -204,8 +192,6 @@ describe('NodePermissionsController', function (): void {
         createPermsCallerNode('gateway');
         $controlId = (int) DB::table('nodes')->insertGetId(apiPermsNodeRow([
             'name' => 'control-1',
-            'role' => 'control',
-            'environment' => null,
             'wireguard_address' => '10.6.0.11',
         ]));
         $appId = (int) DB::table('nodes')->insertGetId(apiPermsNodeRow([
@@ -238,8 +224,6 @@ describe('NodePermissionsController', function (): void {
         createPermsCallerNode('gateway');
         DB::table('nodes')->insert(apiPermsNodeRow([
             'name' => 'control-1',
-            'role' => 'control',
-            'environment' => null,
             'wireguard_address' => '10.6.0.11',
         ]));
         DB::table('nodes')->insert(apiPermsNodeRow([
@@ -260,17 +244,13 @@ describe('NodePermissionsController', function (): void {
     it('allows non-gateway callers with node read permission to read permissions', function (): void {
         $gatewayId = (int) DB::table('nodes')->insertGetId(apiPermsNodeRow([
             'name' => 'gateway-1',
-            'role' => 'gateway',
-            'environment' => null,
             'wireguard_address' => '10.6.0.2',
         ]));
         assignPermsGatewayRole($gatewayId);
 
         $callerId = (int) DB::table('nodes')->insertGetId(apiPermsNodeRow([
             'name' => 'control-caller',
-            'role' => 'control',
             'host' => PERMS_CALLER_WG_IP,
-            'environment' => null,
             'wireguard_address' => PERMS_CALLER_WG_IP,
         ]));
 
@@ -284,8 +264,6 @@ describe('NodePermissionsController', function (): void {
 
         $controlId = (int) DB::table('nodes')->insertGetId(apiPermsNodeRow([
             'name' => 'control-1',
-            'role' => 'control',
-            'environment' => null,
             'wireguard_address' => '10.6.0.11',
         ]));
         $appId = (int) DB::table('nodes')->insertGetId(apiPermsNodeRow([
@@ -314,17 +292,13 @@ describe('NodePermissionsController', function (): void {
     it('allows non-gateway callers with node permissions authority to manage permissions', function (): void {
         $gatewayId = (int) DB::table('nodes')->insertGetId(apiPermsNodeRow([
             'name' => 'gateway-1',
-            'role' => 'gateway',
-            'environment' => null,
             'wireguard_address' => '10.6.0.2',
         ]));
         assignPermsGatewayRole($gatewayId);
 
         $callerId = (int) DB::table('nodes')->insertGetId(apiPermsNodeRow([
             'name' => 'control-caller',
-            'role' => 'control',
             'host' => PERMS_CALLER_WG_IP,
-            'environment' => null,
             'wireguard_address' => PERMS_CALLER_WG_IP,
         ]));
 
@@ -338,8 +312,6 @@ describe('NodePermissionsController', function (): void {
 
         $controlId = (int) DB::table('nodes')->insertGetId(apiPermsNodeRow([
             'name' => 'control-1',
-            'role' => 'control',
-            'environment' => null,
             'wireguard_address' => '10.6.0.11',
         ]));
         $appId = (int) DB::table('nodes')->insertGetId(apiPermsNodeRow([
@@ -368,17 +340,13 @@ describe('NodePermissionsController', function (): void {
     it('rejects non-gateway caller with only node:grant permission', function (): void {
         $gatewayId = (int) DB::table('nodes')->insertGetId(apiPermsNodeRow([
             'name' => 'gateway-1',
-            'role' => 'gateway',
-            'environment' => null,
             'wireguard_address' => '10.6.0.2',
         ]));
         assignPermsGatewayRole($gatewayId);
 
         $callerId = (int) DB::table('nodes')->insertGetId(apiPermsNodeRow([
             'name' => 'control-caller',
-            'role' => 'control',
             'host' => PERMS_CALLER_WG_IP,
-            'environment' => null,
             'wireguard_address' => PERMS_CALLER_WG_IP,
         ]));
 
@@ -392,8 +360,6 @@ describe('NodePermissionsController', function (): void {
 
         DB::table('nodes')->insert(apiPermsNodeRow([
             'name' => 'control-1',
-            'role' => 'control',
-            'environment' => null,
             'wireguard_address' => '10.6.0.11',
         ]));
         DB::table('nodes')->insert(apiPermsNodeRow([
@@ -419,8 +385,6 @@ describe('NodePermissionsController', function (): void {
         createPermsCallerNode('gateway');
         DB::table('nodes')->insert(apiPermsNodeRow([
             'name' => 'control-1',
-            'role' => 'control',
-            'environment' => null,
             'wireguard_address' => '10.6.0.11',
         ]));
         DB::table('nodes')->insert(apiPermsNodeRow([
@@ -443,8 +407,6 @@ describe('NodePermissionsController', function (): void {
         createPermsCallerNode('gateway');
         DB::table('nodes')->insert(apiPermsNodeRow([
             'name' => 'control-1',
-            'role' => 'control',
-            'environment' => null,
             'wireguard_address' => '10.6.0.11',
         ]));
         DB::table('nodes')->insert(apiPermsNodeRow([
@@ -467,8 +429,6 @@ describe('NodePermissionsController', function (): void {
         createPermsCallerNode('gateway');
         $controlId = (int) DB::table('nodes')->insertGetId(apiPermsNodeRow([
             'name' => 'control-1',
-            'role' => 'control',
-            'environment' => null,
             'wireguard_address' => '10.6.0.11',
         ]));
         $appId = (int) DB::table('nodes')->insertGetId(apiPermsNodeRow([

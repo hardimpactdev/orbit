@@ -90,7 +90,6 @@ it('builds and distributes only selected branch Docker role images', function ()
     Process::fake(function ($process) use (&$runs) {
         $runs[] = [
             'command' => $process->command,
-            'environment' => $process->environment,
         ];
 
         if (str_starts_with($process->command, 'docker image inspect ')) {
@@ -151,7 +150,6 @@ it('rebuilds and distributes selected Docker role images even when they already 
     Process::fake(function ($process) use (&$runs) {
         $runs[] = [
             'command' => $process->command,
-            'environment' => $process->environment,
         ];
 
         return Process::result();
@@ -204,7 +202,6 @@ it('builds docker images once on the build host and distributes them to runner h
     Process::fake(function ($process) use (&$runs) {
         $runs[] = [
             'command' => $process->command,
-            'environment' => $process->environment,
         ];
 
         if (str_starts_with($process->command, 'docker image inspect ')) {
@@ -277,7 +274,6 @@ it('distributes docker images from the prepared artifact namespace', function ()
     Process::fake(function ($process) use (&$runs) {
         $runs[] = [
             'command' => $process->command,
-            'environment' => $process->environment,
         ];
 
         if (str_starts_with($process->command, 'docker image inspect ')) {

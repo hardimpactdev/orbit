@@ -116,9 +116,7 @@ final readonly class NodesProbe
 
     private function nodeIsMissingRequiredRecordFields(Node $node): bool
     {
-        return ! is_string($node->role)
-            || $node->role === ''
-            || ! is_string($node->status)
+        return ! is_string($node->status)
             || $node->status === ''
             || ! is_string($node->platform)
             || $node->platform === ''
@@ -138,10 +136,6 @@ final readonly class NodesProbe
 
     private function nodeRequiresHost(Node $node): bool
     {
-        if (in_array($node->role, ['gateway', 'app'], true)) {
-            return true;
-        }
-
         return $node->hasActiveRole(NodeRoleName::Gateway->value)
             || $node->hasActiveRole(NodeRoleName::AppDevelopment->value)
             || $node->hasActiveRole(NodeRoleName::AppProduction->value);
@@ -268,22 +262,8 @@ final readonly class NodesProbe
             return false;
         }
 
-        $expectedRoles = match ($node->role) {
-            'gateway' => [NodeRoleName::Gateway->value],
-            'app' => match ($node->environment) {
-                'development' => [NodeRoleName::AppDevelopment->value],
-                'production' => [NodeRoleName::AppProduction->value],
-                default => [NodeRoleName::AppDevelopment->value, NodeRoleName::AppProduction->value],
-            },
-            'database' => [NodeRoleName::Database->value],
-            default => [],
-        };
-
-        if ($expectedRoles === []) {
-            return false;
-        }
-
-        return array_all($assignments, fn ($assignment) => ! ($assignment->status === NodeRoleStatus::Active->value && in_array($assignment->role, $expectedRoles, true)));
+        // Legacy nodes.role/nodes.environment columns dropped in Phase 1; backfill check no longer applies.
+        return false;
     }
 
     private function assignmentSettingsAreValid(NodeRoleDefinition $definition, NodeRoleAssignment $assignment): bool
@@ -493,8 +473,6 @@ final readonly class NodesProbe
     private function developmentNodeFromAssignment(Node $node, string $tld): Node
     {
         $developmentNode = clone $node;
-        $developmentNode->role = 'app';
-        $developmentNode->environment = 'development';
         $developmentNode->status = 'active';
         $developmentNode->tld = $tld;
 
@@ -506,7 +484,7 @@ final readonly class NodesProbe
      */
     private function checkLocalDefault(Node $node): array
     {
-        if ($node->role !== 'control') {
+        if (! $node->isOperator()) {
             return [];
         }
 
@@ -1366,8 +1344,8 @@ final readonly class NodesProbe
     private function identityArtifactMatchesNode(Node $node, NodeIdentityArtifact $artifact, string $observedAddress): bool
     {
         return $artifact->name === $node->name
-            && $artifact->role === $node->role
-            && $artifact->localRole === $node->role
+            && $artifact->role === $node->displayRole()
+            && $artifact->localRole === $node->displayRole()
             && $artifact->status === 'active'
             && $artifact->platform === $node->platform
             && $artifact->wireguardAddress === $node->wireguard_address

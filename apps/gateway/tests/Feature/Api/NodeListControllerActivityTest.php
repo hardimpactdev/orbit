@@ -15,7 +15,6 @@ describe('NodeListController activity logging', function (): void {
     beforeEach(function (): void {
         DB::table('nodes')->insert([
             'name' => 'caller',
-            'role' => 'control',
             'host' => NODE_ACTIVITY_WG_IP,
             'orbit_path' => '/home/test/orbit',
             'status' => 'active',
@@ -26,7 +25,6 @@ describe('NodeListController activity logging', function (): void {
 
         $gatewayId = (int) DB::table('nodes')->insertGetId([
             'name' => 'gw',
-            'role' => 'control',
             'host' => '10.6.0.1',
             'orbit_path' => '/home/test/orbit',
             'status' => 'active',

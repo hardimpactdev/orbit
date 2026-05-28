@@ -279,7 +279,7 @@ BASH;
                     summary: "Tool {$tool->name} targets node {$tool->node->name}, which is not an active gateway or app node.",
                     detail: [
                         'node' => $tool->node->name,
-                        'role' => $tool->node->role,
+                        'role' => $tool->node->displayRole(),
                         'status' => $tool->node->status,
                     ],
                 ),

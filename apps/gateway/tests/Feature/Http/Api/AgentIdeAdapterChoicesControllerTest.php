@@ -18,11 +18,9 @@ function agentIdeChoicesNodeRow(array $overrides = []): array
 {
     return array_merge([
         'name' => 'control-1',
-        'role' => 'control',
         'host' => AGENT_IDE_CHOICES_CALLER_WG_IP,
         'orbit_path' => '/home/orbit/orbit',
         'status' => 'active',
-        'environment' => null,
         'platform' => 'ubuntu_24-04',
         'wireguard_address' => AGENT_IDE_CHOICES_CALLER_WG_IP,
         'public_ipv4' => null,

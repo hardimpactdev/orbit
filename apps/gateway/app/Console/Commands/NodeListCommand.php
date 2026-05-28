@@ -32,7 +32,7 @@ use function Laravel\Prompts\table;
 #[Description('List nodes registered in the gateway registry')]
 class NodeListCommand extends Command
 {
-    private const array VALID_ROLES = ['gateway', 'vpn', 'router', 'app', 'app-development', 'app-production', 'database', 'agent', 'ingress', 'control'];
+    private const array VALID_ROLES = ['gateway', 'vpn', 'router', 'app', 'app-dev', 'app-prod', 'database', 'agent', 'ingress', 'control'];
 
     private const array VALID_ENVIRONMENTS = ['development', 'production'];
 
@@ -219,7 +219,7 @@ class NodeListCommand extends Command
     {
         return [
             'name' => $node->name,
-            'role' => $node->role,
+            'role' => $node->displayRole(),
             'environment' => app(NodeRoleAssignments::class)->activeAppHostEnvironment($node),
             'platform' => $node->platform ?? 'unknown',
             'status' => $node->status,

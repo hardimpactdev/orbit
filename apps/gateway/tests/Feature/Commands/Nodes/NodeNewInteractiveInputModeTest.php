@@ -22,14 +22,12 @@ function nodeNewInteractiveRow(array $overrides = []): array
 {
     return array_merge([
         'name' => 'control-1',
-        'role' => 'control',
         'host' => '127.0.0.1',
         'wireguard_address' => '10.6.0.3',
         'user' => 'nckrtl',
         'user' => 'nckrtl',
         'orbit_path' => '/home/nckrtl/orbit',
         'status' => 'active',
-        'environment' => null,
         'platform' => 'macos_15-4',
         'created_at' => now(),
         'updated_at' => now(),
@@ -56,10 +54,8 @@ function setupNodeNewInteractiveAppCaller(): void
 {
     DB::table('nodes')->insert(nodeNewInteractiveRow([
         'name' => 'local-app',
-        'role' => 'app',
         'host' => '10.6.0.7',
         'wireguard_address' => '10.6.0.7',
-        'environment' => 'development',
     ]));
 }
 
@@ -95,8 +91,6 @@ describe('node:new interactive input mode', function (): void {
                     'result' => ['action' => 'enrolled'],
                     'node' => [
                         'name' => 'control-2',
-                        'role' => 'control',
-                        'environment' => null,
                         'tld' => null,
                         'status' => 'active',
                     ],
@@ -133,8 +127,6 @@ describe('node:new interactive input mode', function (): void {
                     'result' => ['action' => 'created'],
                     'node' => [
                         'name' => 'app-1',
-                        'role' => 'app',
-                        'environment' => 'development',
                         'tld' => 'test',
                         'status' => 'active',
                     ],
@@ -169,8 +161,6 @@ describe('node:new interactive input mode', function (): void {
                     'result' => ['action' => 'created'],
                     'node' => [
                         'name' => 'db-1',
-                        'role' => 'control',
-                        'environment' => null,
                         'tld' => null,
                         'status' => 'active',
                     ],
@@ -200,8 +190,6 @@ describe('node:new interactive input mode', function (): void {
                     'result' => ['action' => 'created'],
                     'node' => [
                         'name' => 'app-1',
-                        'role' => 'app',
-                        'environment' => 'production',
                         'tld' => null,
                         'status' => 'active',
                     ],
@@ -233,8 +221,6 @@ describe('node:new interactive input mode', function (): void {
                     'result' => ['action' => 'created'],
                     'node' => [
                         'name' => 'app-1',
-                        'role' => 'app',
-                        'environment' => 'production',
                         'tld' => null,
                         'status' => 'active',
                     ],

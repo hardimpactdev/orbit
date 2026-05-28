@@ -176,8 +176,8 @@ class ProcessListPayload
         }
 
         $visibleNodeIds = array_values(array_unique([
-            ...$this->nodeRoleAssignments->activeNodeIdsForRole('app-development'),
-            ...$this->nodeRoleAssignments->activeNodeIdsForRole('app-production'),
+            ...$this->nodeRoleAssignments->activeNodeIdsForRole('app-dev'),
+            ...$this->nodeRoleAssignments->activeNodeIdsForRole('app-prod'),
         ]));
 
         return Node::query()

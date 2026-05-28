@@ -24,7 +24,7 @@ function createToolShowJsonLocalNode(string $role = 'gateway'): Node
 {
     return Node::factory()->create([
         'name' => "tool-show-json-{$role}",
-        'role' => $role,
+
         'host' => '10.8.0.1',
         'wireguard_address' => '10.8.0.1',
     ]);
@@ -189,7 +189,7 @@ describe('tool:show JSON renderer', function (): void {
     it('uses live inspection when the gateway API receives live=1', function (): void {
         $caller = Node::factory()->create([
             'name' => 'caller',
-            'role' => 'control',
+
             'host' => '10.8.0.96',
             'wireguard_address' => '10.8.0.96',
         ]);

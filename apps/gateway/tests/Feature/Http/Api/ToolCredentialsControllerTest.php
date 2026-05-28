@@ -16,7 +16,7 @@ function createToolCredentialsCallerNode(array $overrides = []): Node
 {
     return Node::factory()->create(array_merge([
         'name' => 'caller',
-        'role' => 'control',
+
         'host' => TOOL_CREDENTIALS_CALLER_WG_IP,
         'wireguard_address' => TOOL_CREDENTIALS_CALLER_WG_IP,
     ], $overrides));
@@ -38,7 +38,7 @@ describe('ToolCredentialsController', function (): void {
         $caller = createToolCredentialsCallerNode();
         $agentNode = Node::factory()->create([
             'name' => 'agent-1',
-            'role' => 'app',
+
             'status' => 'active',
         ]);
 
@@ -75,7 +75,7 @@ describe('ToolCredentialsController', function (): void {
         $caller = createToolCredentialsCallerNode();
         $agentNode = Node::factory()->create([
             'name' => 'agent-1',
-            'role' => 'app',
+
             'status' => 'active',
         ]);
 
@@ -109,7 +109,7 @@ describe('ToolCredentialsController', function (): void {
     it('rejects agent self credential requests', function (): void {
         $agentNode = Node::factory()->create([
             'name' => 'agent-1',
-            'role' => 'app',
+
             'status' => 'active',
             'host' => TOOL_CREDENTIALS_CALLER_WG_IP,
             'wireguard_address' => TOOL_CREDENTIALS_CALLER_WG_IP,

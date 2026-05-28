@@ -64,7 +64,7 @@ describe('RequiresPermission attribute', function (): void {
 
 describe('ServingNodeResolver', function (): void {
     it('resolves the active gateway node', function (): void {
-        $gateway = Node::factory()->create(['name' => 'gateway-1', 'role' => 'gateway']);
+        $gateway = Node::factory()->create(['name' => 'gateway-1']);
         NodeRoleAssignment::factory()->create([
             'node_id' => $gateway->id,
             'role' => NodeRoleName::Gateway->value,

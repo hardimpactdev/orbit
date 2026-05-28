@@ -515,22 +515,18 @@ it('builds prepared topology templates through staged node:new snapshots', funct
 
     expect($manifest)->toBe([
         [
-            'role' => 'operator',
             'name' => 'orbit-template-operator-base',
             'snapshot' => 'clean-operator_gateway_app-dev_app-prod-base',
         ],
         [
-            'role' => 'gateway',
             'name' => 'orbit-template-gateway-base',
             'snapshot' => 'clean-operator_gateway_app-dev_app-prod-base',
         ],
         [
-            'role' => 'dev',
             'name' => 'orbit-template-app-dev-base',
             'snapshot' => 'clean-operator_gateway_app-dev_app-prod-base',
         ],
         [
-            'role' => 'prod',
             'name' => 'orbit-template-app-prod-base',
             'snapshot' => 'clean-operator_gateway_app-dev_app-prod-base',
         ],
@@ -620,17 +616,14 @@ it('builds app production ingress on the prod template without development or ag
 
     expect($manifest)->toBe([
         [
-            'role' => 'operator',
             'name' => 'orbit-template-operator-base',
             'snapshot' => 'clean-operator_gateway_app-prod_ingress-base',
         ],
         [
-            'role' => 'gateway',
             'name' => 'orbit-template-gateway-base',
             'snapshot' => 'clean-operator_gateway_app-prod_ingress-base',
         ],
         [
-            'role' => 'prod',
             'name' => 'orbit-template-app-prod-base',
             'snapshot' => 'clean-operator_gateway_app-prod_ingress-base',
         ],

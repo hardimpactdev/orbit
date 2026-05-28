@@ -20,12 +20,10 @@ function nodeRoleApiContractRow(array $overrides = []): array
 {
     return array_merge([
         'name' => 'target-1',
-        'role' => 'control',
         'host' => '10.6.0.20',
         'user' => 'nckrtl',
         'orbit_path' => '/home/nckrtl/orbit',
         'status' => 'active',
-        'environment' => null,
         'platform' => 'ubuntu',
         'wireguard_address' => '10.6.0.20',
         'created_at' => now(),
@@ -46,7 +44,6 @@ function createNodeRoleApiContractGateway(): Node
 {
     $gateway = Node::query()->create(nodeRoleApiContractRow([
         'name' => 'gateway-1',
-        'role' => 'gateway',
         'host' => '10.6.0.2',
         'wireguard_address' => '10.6.0.2',
     ]));

@@ -44,12 +44,11 @@ beforeEach(function (): void {
 
 function makeProductionAppForList(string $name = 'docs'): App
 {
-    $node = Node::factory()->create(['name' => 'list-app-node', 'role' => 'app']);
+    $node = Node::factory()->create(['name' => 'list-app-node']);
 
     return App::factory()->create([
         'name' => $name,
         'node_id' => $node->id,
-        'environment' => 'production',
         'path' => '/srv/'.$name,
     ]);
 }

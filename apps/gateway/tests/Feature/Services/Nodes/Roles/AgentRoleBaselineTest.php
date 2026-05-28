@@ -54,7 +54,7 @@ describe('agent role baseline', function (): void {
     it('converges caddy and supervisor as desired tools', function (): void {
         $node = Node::factory()->create([
             'platform' => 'ubuntu',
-            'role' => 'control',
+
             'wireguard_address' => '10.6.0.50',
         ]);
 
@@ -88,7 +88,7 @@ describe('agent role baseline', function (): void {
     it('materializes a gateway-owned agent dns mapping for the tld', function (): void {
         $node = Node::factory()->create([
             'platform' => 'ubuntu',
-            'role' => 'control',
+
             'wireguard_address' => '10.6.0.50',
         ]);
 
@@ -114,7 +114,7 @@ describe('agent role baseline', function (): void {
     it('converges the shared unprivileged agent user via remote shell', function (): void {
         $node = Node::factory()->create([
             'platform' => 'ubuntu',
-            'role' => 'control',
+
             'wireguard_address' => '10.6.0.50',
         ]);
 
@@ -144,7 +144,7 @@ describe('agent role baseline', function (): void {
     it('rejects agent convergence without a wireguard address', function (): void {
         $node = Node::factory()->create([
             'platform' => 'ubuntu',
-            'role' => 'control',
+
             'wireguard_address' => null,
         ]);
 
@@ -166,7 +166,7 @@ describe('agent role baseline', function (): void {
     it('rejects agent convergence on gateway nodes', function (): void {
         $node = Node::factory()->create([
             'platform' => 'ubuntu',
-            'role' => 'gateway',
+
             'wireguard_address' => '10.6.0.2',
         ]);
 
@@ -194,7 +194,7 @@ describe('agent role baseline', function (): void {
     it('rejects agent convergence on non-ubuntu platforms', function (): void {
         $node = Node::factory()->create([
             'platform' => 'macos_15',
-            'role' => 'control',
+
             'wireguard_address' => '10.6.0.50',
         ]);
 
@@ -216,7 +216,7 @@ describe('agent role baseline', function (): void {
     it('removes agent baseline including dns mapping and tools', function (): void {
         $node = Node::factory()->create([
             'platform' => 'ubuntu',
-            'role' => 'control',
+
             'wireguard_address' => '10.6.0.50',
         ]);
 
@@ -247,22 +247,21 @@ describe('agent role tld uniqueness', function (): void {
     it('rejects agent assignment during creation when another active node owns the tld via app-development', function (): void {
         $existingNode = Node::factory()->create([
             'platform' => 'ubuntu',
-            'role' => 'app',
-            'environment' => 'development',
+
             'tld' => null,
             'wireguard_address' => '10.0.0.11',
         ]);
 
         NodeRoleAssignment::factory()->create([
             'node_id' => $existingNode->id,
-            'role' => 'app-development',
+            'role' => 'app-dev',
             'status' => NodeRoleStatus::Active->value,
             'settings' => ['tld' => 'test'],
         ]);
 
         $node = Node::factory()->create([
             'platform' => 'ubuntu',
-            'role' => 'control',
+
             'wireguard_address' => '10.0.0.12',
         ]);
 
@@ -275,7 +274,7 @@ describe('agent role tld uniqueness', function (): void {
     it('rejects agent assignment during creation when another active agent node owns the tld', function (): void {
         $existingNode = Node::factory()->create([
             'platform' => 'ubuntu',
-            'role' => 'control',
+
             'wireguard_address' => '10.0.0.11',
         ]);
 
@@ -288,7 +287,7 @@ describe('agent role tld uniqueness', function (): void {
 
         $node = Node::factory()->create([
             'platform' => 'ubuntu',
-            'role' => 'control',
+
             'wireguard_address' => '10.0.0.12',
         ]);
 
@@ -301,7 +300,7 @@ describe('agent role tld uniqueness', function (): void {
     it('rejects app-development assignment when an active agent node owns the tld', function (): void {
         $existingNode = Node::factory()->create([
             'platform' => 'ubuntu',
-            'role' => 'control',
+
             'wireguard_address' => '10.0.0.11',
         ]);
 
@@ -314,13 +313,13 @@ describe('agent role tld uniqueness', function (): void {
 
         $node = Node::factory()->create([
             'platform' => 'ubuntu',
-            'role' => 'control',
+
             'wireguard_address' => '10.0.0.12',
         ]);
 
-        expect(fn () => app(NodeRoleAssignmentService::class)->add($node, 'app-development', ['tld' => 'test']))
+        expect(fn () => app(NodeRoleAssignmentService::class)->add($node, 'app-dev', ['tld' => 'test']))
             ->toThrow(InvalidArgumentException::class, "Development TLD 'test' is already assigned to another node.");
 
-        expect($node->roleAssignments()->where('role', 'app-development')->exists())->toBeFalse();
+        expect($node->roleAssignments()->where('role', 'app-dev')->exists())->toBeFalse();
     });
 });

@@ -15,7 +15,6 @@ function createAppShowCallerNode(array $overrides = []): Node
 {
     $attributes = array_merge([
         'name' => 'caller',
-        'role' => 'control',
         'host' => APP_SHOW_CALLER_WG_IP,
         'wireguard_address' => APP_SHOW_CALLER_WG_IP,
     ], $overrides);
@@ -51,7 +50,6 @@ describe('AppShowController', function (): void {
         App::factory()->create([
             'name' => 'docs',
             'node_id' => $node->id,
-            'environment' => 'production',
             'domain' => 'docs.example.com',
             'path' => '/srv/docs',
             'document_root' => 'public',

@@ -12,12 +12,11 @@ uses(RefreshDatabase::class);
 it('stores multiple role assignments with typed status and settings per node', function (): void {
     $node = Node::factory()->create([
         'name' => 'dev-1',
-        'role' => 'control',
     ]);
 
     NodeRoleAssignment::query()->create([
         'node_id' => $node->id,
-        'role' => 'app-development',
+        'role' => 'app-dev',
         'status' => 'active',
         'settings' => ['tld' => 'test'],
     ]);
@@ -32,7 +31,7 @@ it('stores multiple role assignments with typed status and settings per node', f
     expect($node->fresh()->roleAssignments)
         ->toHaveCount(2)
         ->and($node->fresh()->roleAssignments->pluck('role')->all())
-        ->toBe(['app-development', 'database']);
+        ->toBe(['app-dev', 'database']);
 });
 
 it('enforces one assignment per role per node', function (): void {

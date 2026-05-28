@@ -20,21 +20,18 @@ function createDeployApiFixture(string $executionContext, array $permissions): a
 {
     $node = createTestAppHostNode([
         'name' => 'app-prod-1',
-        'role' => 'app',
-        'environment' => 'production',
         'host' => '10.6.0.7',
-    ], 'app-production');
+    ], 'app-prod');
 
     $app = App::factory()->create([
         'name' => 'docs',
         'node_id' => $node->id,
-        'environment' => 'production',
         'path' => '/srv/docs',
     ]);
 
     $caller = Node::factory()->create([
         'name' => "deploy-api-{$executionContext}",
-        'role' => $executionContext,
+
         'status' => 'active',
         'wireguard_address' => DEPLOY_API_CALLER_WG_IP,
     ]);

@@ -16,7 +16,7 @@ function createToolLogsStreamCallerNode(array $overrides = []): Node
 {
     $node = Node::factory()->create(array_merge([
         'name' => 'caller',
-        'role' => 'control',
+
         'host' => TOOL_LOGS_STREAM_CALLER_WG_IP,
         'wireguard_address' => TOOL_LOGS_STREAM_CALLER_WG_IP,
     ], $overrides));

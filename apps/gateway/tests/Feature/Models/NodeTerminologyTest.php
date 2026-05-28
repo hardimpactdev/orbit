@@ -19,7 +19,7 @@ it('exposes operator terminology for legacy control rows', function (): void {
 
 it('keeps non-control roles unchanged in the display label', function (): void {
     $node = Node::factory()->create([
-        'role' => 'gateway',
+
     ]);
 
     expect($node->isOperator())->toBeFalse()

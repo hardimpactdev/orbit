@@ -98,7 +98,7 @@ final readonly class DatabaseConnectionRestorer
     {
         $node = $this->targetNode($target);
 
-        return $node->role === 'gateway';
+        return $node->hasActiveRole('gateway');
     }
 
     private function targetNode(DatabaseConnectionTarget $target): Node

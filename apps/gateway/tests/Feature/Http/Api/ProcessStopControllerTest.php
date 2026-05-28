@@ -19,7 +19,6 @@ function createProcessStopCallerNode(array $overrides = []): Node
 {
     $attributes = array_merge([
         'name' => 'caller',
-        'role' => 'control',
         'host' => PROCESS_STOP_CALLER_WG_IP,
         'wireguard_address' => PROCESS_STOP_CALLER_WG_IP,
     ], $overrides);

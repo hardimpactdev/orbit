@@ -311,7 +311,6 @@ describe('orbit:internal:bootstrap-gateway-local', function (): void {
     it('keeps existing legacy control identities when creating the gateway record', function (): void {
         Node::query()->create([
             'name' => 'old-control',
-            'role' => 'control',
             'host' => '127.0.0.1',
             'orbit_path' => base_path(),
             'status' => 'active',

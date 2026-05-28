@@ -51,7 +51,6 @@ afterEach(function (): void {
 it('allows control caller', function (): void {
     Node::query()->create([
         'name' => 'control-1',
-        'role' => 'control',
         'status' => 'active',
         'host' => '10.6.0.8',
         'orbit_path' => '/home/orbit/orbit',

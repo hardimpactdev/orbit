@@ -35,13 +35,11 @@ function nodeRemoveRow(array $overrides = []): array
 {
     return array_merge([
         'name' => 'app-1',
-        'role' => 'app',
         'host' => '10.6.0.7',
         'wireguard_address' => '10.6.0.7',
         'user' => 'nckrtl',
         'orbit_path' => '/home/nckrtl/orbit',
         'status' => 'active',
-        'environment' => 'development',
         'platform' => 'ubuntu_24-04',
         'created_at' => now(),
         'updated_at' => now(),
@@ -54,8 +52,6 @@ function setupNodeRemoveGatewayCaller(): void
 
     $nodeId = (int) DB::table('nodes')->insertGetId(nodeRemoveRow([
         'name' => 'gateway-1',
-        'role' => 'gateway',
-        'environment' => null,
     ]));
 
     NodeRoleAssignment::factory()->create([
@@ -69,8 +65,6 @@ function setupNodeRemoveControlCaller(): void
 {
     DB::table('nodes')->insert(nodeRemoveRow([
         'name' => 'control-1',
-        'role' => 'control',
-        'environment' => null,
     ]));
 
     LocalGatewaySettings::current()->fill([
@@ -95,8 +89,6 @@ describe('node:remove base contract', function (): void {
         setupNodeRemoveGatewayCaller();
         DB::table('nodes')->insert(nodeRemoveRow([
             'name' => 'control-1',
-            'role' => 'control',
-            'environment' => null,
         ]));
         DB::table('nodes')->insert(nodeRemoveRow());
         DB::table('node_access')->insert([
@@ -118,8 +110,6 @@ describe('node:remove base contract', function (): void {
         setupNodeRemoveGatewayCaller();
         DB::table('nodes')->insert(nodeRemoveRow([
             'name' => 'control-1',
-            'role' => 'control',
-            'environment' => null,
         ]));
         DB::table('nodes')->insert(nodeRemoveRow());
         DB::table('nodes')->insert(nodeRemoveRow([
@@ -208,7 +198,7 @@ describe('node:remove base contract', function (): void {
         $node = Node::query()->where('name', 'app-1')->firstOrFail();
         DB::table('node_roles')->insert([
             'node_id' => $node->id,
-            'role' => 'app-development',
+            'role' => 'app-dev',
             'status' => 'active',
             'settings' => json_encode(['tld' => 'test'], JSON_THROW_ON_ERROR),
             'last_error' => null,
@@ -236,8 +226,6 @@ describe('node:remove base contract', function (): void {
         setupNodeRemoveGatewayCaller();
         $gatewayId = (int) DB::table('nodes')->insertGetId(nodeRemoveRow([
             'name' => 'gateway-2',
-            'role' => 'gateway',
-            'environment' => null,
         ]));
         NodeRoleAssignment::factory()->create([
             'node_id' => $gatewayId,
@@ -264,8 +252,6 @@ describe('node:remove base contract', function (): void {
 
         $gateway = Node::query()->create(nodeRemoveRow([
             'name' => 'gateway-1',
-            'role' => 'control',
-            'environment' => null,
         ]));
 
         NodeRoleAssignment::factory()->create([
@@ -292,8 +278,6 @@ describe('node:remove base contract', function (): void {
 
         DB::table('nodes')->insert(nodeRemoveRow([
             'name' => 'control-1',
-            'role' => 'control',
-            'environment' => null,
         ]));
         DB::table('nodes')->insert(nodeRemoveRow());
 

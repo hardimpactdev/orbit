@@ -16,7 +16,7 @@ it('enrolls operator nodes locally and writes gateway-owned node state', functio
 
     $gateway = Node::factory()->create([
         'name' => 'gateway-1',
-        'role' => 'gateway',
+
         'host' => '10.6.0.2',
         'wireguard_address' => '10.6.0.2',
         'gateway_endpoint' => 'gateway.example.com',

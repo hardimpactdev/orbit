@@ -20,7 +20,7 @@ function configureDatabaseActivityGatewayCaller(): void
 
     Node::factory()->create([
         'name' => 'gateway',
-        'role' => 'gateway',
+
         'host' => '10.9.0.1',
         'wireguard_address' => '10.9.0.1',
     ]);
@@ -29,7 +29,7 @@ function configureDatabaseActivityGatewayCaller(): void
 describe('database command activity logs', function (): void {
     it('logs query audit metadata without SQL rows or credentials', function (): void {
         configureDatabaseActivityGatewayCaller();
-        $node = Node::factory()->create(['name' => 'app-node', 'role' => 'app']);
+        $node = Node::factory()->create(['name' => 'app-node']);
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
         $connection = DatabaseConnection::factory()->create([
             'node_id' => $node->id,
@@ -177,7 +177,7 @@ describe('database command activity logs', function (): void {
 
     it('logs write affected row counts without SQL text', function (): void {
         configureDatabaseActivityGatewayCaller();
-        $node = Node::factory()->create(['name' => 'app-node', 'role' => 'app']);
+        $node = Node::factory()->create(['name' => 'app-node']);
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
         $connection = DatabaseConnection::factory()->create([
             'node_id' => $node->id,
@@ -231,7 +231,7 @@ describe('database command activity logs', function (): void {
 
     it('logs schema count metadata without result rows', function (): void {
         configureDatabaseActivityGatewayCaller();
-        $node = Node::factory()->create(['name' => 'app-node', 'role' => 'app']);
+        $node = Node::factory()->create(['name' => 'app-node']);
         $connection = DatabaseConnection::factory()->create([
             'node_id' => $node->id,
             'slug' => 'docs-db',

@@ -21,7 +21,7 @@ it('runs local nodes through bash without ssh', function (): void {
     ]);
 
     $node = Node::factory()->create([
-        'role' => 'gateway',
+
     ]);
     NodeRoleAssignment::factory()->create([
         'node_id' => $node->id,
@@ -52,7 +52,7 @@ it('runs nodes with an assigned gateway role through bash without ssh', function
     ]);
 
     $node = Node::factory()->create([
-        'role' => 'control',
+
     ]);
 
     NodeRoleAssignment::factory()->create([
@@ -84,7 +84,7 @@ it('runs gateway host work over ssh when dispatched from orbit-runtime', functio
         $node = Node::factory()->create([
             'host' => 'gateway.example.com',
             'wireguard_address' => '10.6.0.2',
-            'role' => 'gateway',
+
             'user' => 'orbit',
             ...sshRemoteShellPinnedHostKey(),
         ]);
@@ -127,7 +127,7 @@ it('rejects invalid metadata keys before composing shell commands', function ():
     Process::fake();
 
     $node = Node::factory()->create([
-        'role' => 'gateway',
+
     ]);
     NodeRoleAssignment::factory()->create([
         'node_id' => $node->id,

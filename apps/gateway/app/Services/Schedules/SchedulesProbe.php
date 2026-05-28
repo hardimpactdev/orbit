@@ -189,7 +189,7 @@ final readonly class SchedulesProbe
                     detail: [
                         'schedule' => $schedule->name,
                         'node' => $node->name,
-                        'role' => $node->role,
+                        'role' => $node->displayRole(),
                         'status' => $node->status,
                     ],
                 ),
@@ -419,14 +419,12 @@ final readonly class SchedulesProbe
 
     private function canRunSchedules(Node $node): bool
     {
-        return $this->nodeRoleAssignments->nodeCanServeGatewayOrAppHostWorkloads($node)
-            || ($node->role === 'gateway' && $node->status === 'active');
+        return $this->nodeRoleAssignments->nodeCanServeGatewayOrAppHostWorkloads($node);
     }
 
     private function isGatewayNode(Node $node): bool
     {
-        return $this->nodeRoleAssignments->nodeIsGateway($node)
-            || ($node->role === 'gateway' && $node->status === 'active');
+        return $this->nodeRoleAssignments->nodeIsGateway($node);
     }
 
     private function runtimeInspectionScript(): string

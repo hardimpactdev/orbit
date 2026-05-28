@@ -22,7 +22,7 @@ function adoptResultByKey(array $results, string $key): mixed
 
 describe('ProxyRouteAdopter', function (): void {
     it('creates custom proxy intent for observed reverse_proxy routes', function (): void {
-        $node = Node::factory()->create(['role' => 'app', 'status' => 'active']);
+        $node = Node::factory()->create(['status' => 'active']);
         $body = "vite.docs.test {\n    reverse_proxy localhost:8080\n}\n";
         $snapshot = new ProbeSnapshot([
             'vite.docs.test' => [
@@ -49,7 +49,7 @@ describe('ProxyRouteAdopter', function (): void {
     });
 
     it('creates custom redirect intent for observed redir routes', function (): void {
-        $node = Node::factory()->create(['role' => 'app', 'status' => 'active']);
+        $node = Node::factory()->create(['status' => 'active']);
         $body = "old.docs.test {\n    redir https://new.docs.test{uri} 301\n}\n";
         $snapshot = new ProbeSnapshot([
             'old.docs.test' => [
@@ -71,7 +71,7 @@ describe('ProxyRouteAdopter', function (): void {
     });
 
     it('skips routes already in registry', function (): void {
-        $node = Node::factory()->create(['role' => 'app', 'status' => 'active']);
+        $node = Node::factory()->create(['status' => 'active']);
         ProxyRoute::factory()->create([
             'node_id' => $node->id,
             'domain' => 'vite.docs.test',
@@ -92,7 +92,7 @@ describe('ProxyRouteAdopter', function (): void {
     });
 
     it('skips routes that conflict with app domains', function (): void {
-        $node = Node::factory()->create(['role' => 'app', 'status' => 'active']);
+        $node = Node::factory()->create(['status' => 'active']);
         App::factory()->create(['node_id' => $node->id, 'domain' => 'docs.test']);
         $snapshot = new ProbeSnapshot([
             'docs.test' => [
@@ -108,7 +108,7 @@ describe('ProxyRouteAdopter', function (): void {
     });
 
     it('skips routes that match workspace patterns', function (): void {
-        $node = Node::factory()->create(['role' => 'app', 'status' => 'active', 'tld' => 'test']);
+        $node = Node::factory()->create(['status' => 'active', 'tld' => 'test']);
         $app = App::factory()->create(['node_id' => $node->id, 'name' => 'docs', 'domain' => 'docs.test']);
         Workspace::factory()->create(['app_id' => $app->id, 'name' => 'feature']);
         $snapshot = new ProbeSnapshot([
@@ -125,7 +125,7 @@ describe('ProxyRouteAdopter', function (): void {
     });
 
     it('skips routes with root directive', function (): void {
-        $node = Node::factory()->create(['role' => 'app', 'status' => 'active']);
+        $node = Node::factory()->create(['status' => 'active']);
         $snapshot = new ProbeSnapshot([
             'docs.test' => [
                 'hash' => str_repeat('a', 64),
@@ -140,7 +140,7 @@ describe('ProxyRouteAdopter', function (): void {
     });
 
     it('skips internal ip-address routes', function (): void {
-        $node = Node::factory()->create(['role' => 'app', 'status' => 'active']);
+        $node = Node::factory()->create(['status' => 'active']);
         $snapshot = new ProbeSnapshot([
             '10.6.0.2' => [
                 'hash' => str_repeat('a', 64),
@@ -155,7 +155,7 @@ describe('ProxyRouteAdopter', function (): void {
     });
 
     it('skips unclassifiable routes', function (): void {
-        $node = Node::factory()->create(['role' => 'app', 'status' => 'active']);
+        $node = Node::factory()->create(['status' => 'active']);
         $snapshot = new ProbeSnapshot([
             'weird.test' => [
                 'hash' => str_repeat('a', 64),

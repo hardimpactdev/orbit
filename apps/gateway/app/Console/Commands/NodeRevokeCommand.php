@@ -325,8 +325,8 @@ class NodeRevokeCommand extends Command
         }
 
         $isSelfLockout = (bool) config('orbit.is_gateway', false)
-            && $consumer->role === 'gateway'
-            && $serving->role === 'gateway';
+            && $consumer->hasActiveRole('gateway')
+            && $serving->hasActiveRole('gateway');
 
         if (! $this->option('force')) {
             if (! $this->isInteractiveInput()) {

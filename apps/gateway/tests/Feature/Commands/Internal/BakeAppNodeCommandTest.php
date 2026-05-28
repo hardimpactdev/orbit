@@ -117,7 +117,7 @@ describe('orbit:internal:bake-app-node', function (): void {
     it('stores the selected ingress node for production placement', function (): void {
         $edge = Node::factory()->create([
             'name' => 'edge-1',
-            'role' => 'control',
+
             'host' => '10.6.0.7',
             'wireguard_address' => '10.6.0.7',
         ]);
@@ -151,7 +151,7 @@ describe('orbit:internal:bake-app-node', function (): void {
     it('requires the selected ingress node to have an active ingress assignment', function (): void {
         Node::factory()->create([
             'name' => 'edge-1',
-            'role' => 'control',
+
             'host' => '10.6.0.7',
             'wireguard_address' => '10.6.0.7',
         ]);

@@ -17,7 +17,6 @@ function createProcessEventIngestNode(array $overrides = []): Node
 {
     $attributes = array_merge([
         'name' => 'app-node',
-        'role' => 'app',
         'status' => 'active',
         'host' => PROCESS_EVENT_INGEST_APP_WG_IP,
         'wireguard_address' => PROCESS_EVENT_INGEST_APP_WG_IP,

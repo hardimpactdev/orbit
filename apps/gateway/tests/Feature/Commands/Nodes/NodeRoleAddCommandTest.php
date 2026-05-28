@@ -20,7 +20,7 @@ describe('node role:add', function (): void {
             'environment' => 'production',
         ]);
 
-        assignNodeRole($node, 'app-production');
+        assignNodeRole($node, 'app-prod');
 
         $exitCode = Artisan::call('node role:add', [
             'node' => 'prod-1',
@@ -32,7 +32,7 @@ describe('node role:add', function (): void {
 
         expect($exitCode)->toBe(1)
             ->and($payload['error']['code'])->toBe('validation_failed')
-            ->and($payload['error']['message'])->toBe("Role 'database' conflicts with active role 'app-production'.")
+            ->and($payload['error']['message'])->toBe("Role 'database' conflicts with active role 'app-prod'.")
             ->and(NodeTool::query()->where('node_id', $node->id)->where('name', 'docker')->exists())->toBeFalse();
     });
 
@@ -46,7 +46,7 @@ describe('node role:add', function (): void {
 
         $exitCode = Artisan::call('node role:add', [
             'node' => 'client-1',
-            'role' => 'app-development',
+            'role' => 'app-dev',
             '--tld' => 'test',
             '--json' => true,
         ]);
@@ -158,7 +158,7 @@ describe('node role:add', function (): void {
 
         $exitCode = Artisan::call('node role:add', [
             'node' => 'client-1',
-            'role' => 'app-development',
+            'role' => 'app-dev',
             '--json' => true,
         ]);
 
@@ -178,7 +178,7 @@ describe('node role:add', function (): void {
 
         $exitCode = Artisan::call('node role:add', [
             'node' => 'prod-1',
-            'role' => 'app-production',
+            'role' => 'app-prod',
             '--tld' => 'test',
             '--json' => true,
         ]);
@@ -198,7 +198,7 @@ describe('node role:add', function (): void {
 
         $exitCode = Artisan::call('node role:add', [
             'node' => 'prod-1',
-            'role' => 'app-production',
+            'role' => 'app-prod',
             '--tld' => '',
             '--json' => true,
         ]);
@@ -238,11 +238,11 @@ describe('node role:add', function (): void {
             'environment' => null,
         ]);
 
-        assignNodeRole($node, 'app-development', settings: ['tld' => 'test']);
+        assignNodeRole($node, 'app-dev', settings: ['tld' => 'test']);
 
         $exitCode = Artisan::call('node role:add', [
             'node' => 'client-1',
-            'role' => 'app-production',
+            'role' => 'app-prod',
             '--json' => true,
         ]);
 
@@ -281,14 +281,14 @@ describe('node role:add', function (): void {
             'success' => [
                 'data' => [
                     'node' => 'client-1',
-                    'assignment' => nodeRoleAssignmentPayload('app-development', 'active', ['tld' => 'test'], null, now()->toJSON()),
+                    'assignment' => nodeRoleAssignmentPayload('app-dev', 'active', ['tld' => 'test'], null, now()->toJSON()),
                 ],
             ],
         ]);
 
         $exitCode = Artisan::call('node role:add', [
             'node' => 'client-1',
-            'role' => 'app-development',
+            'role' => 'app-dev',
             '--tld' => 'test',
             '--json' => true,
         ]);
@@ -296,7 +296,7 @@ describe('node role:add', function (): void {
         expect($exitCode)->toBe(0);
 
         $mock->assertSent(fn (AddNodeRoleRequest $request): bool => $request->body()->all() === [
-            'role' => 'app-development',
+            'role' => 'app-dev',
             'settings' => ['tld' => 'test'],
         ]);
     });

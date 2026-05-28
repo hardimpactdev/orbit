@@ -33,11 +33,11 @@ function createRoleAwareLocalNode(string $role, string $name = 'local-node'): No
 
     $node = Node::factory()->create([
         'name' => $name,
-        'role' => $role,
+
         'host' => '10.6.0.1',
         'wireguard_address' => '10.6.0.1',
         'platform' => 'linux',
-        'environment' => $role === 'app' ? 'development' : null,
+
     ]);
 
     if ($role === 'gateway') {
@@ -58,7 +58,7 @@ function createRoleAwareLocalNode(string $role, string $name = 'local-node'): No
     if ($role === 'app') {
         NodeRoleAssignment::factory()->create([
             'node_id' => $node->id,
-            'role' => 'app-development',
+            'role' => 'app-dev',
             'status' => 'active',
             'settings' => ['tld' => 'test'],
         ]);
@@ -69,11 +69,11 @@ function createRoleAwareLocalNode(string $role, string $name = 'local-node'): No
 
 function createRoleAwareAppHostNode(string $name): Node
 {
-    $node = Node::factory()->create(['name' => $name, 'role' => 'app', 'status' => 'active']);
+    $node = Node::factory()->create(['name' => $name, 'status' => 'active']);
 
     NodeRoleAssignment::factory()->create([
         'node_id' => $node->id,
-        'role' => 'app-development',
+        'role' => 'app-dev',
         'status' => 'active',
         'settings' => ['tld' => 'test'],
     ]);
@@ -85,14 +85,13 @@ function createRoleAwareProductionAppHostNode(string $name): Node
 {
     $node = Node::factory()->create([
         'name' => $name,
-        'role' => 'app',
-        'environment' => 'production',
+
         'status' => 'active',
     ]);
 
     NodeRoleAssignment::factory()->create([
         'node_id' => $node->id,
-        'role' => 'app-production',
+        'role' => 'app-prod',
         'status' => 'active',
         'settings' => [],
     ]);
@@ -104,7 +103,7 @@ function createRoleAwareIngressNode(string $name): Node
 {
     $node = Node::factory()->create([
         'name' => $name,
-        'role' => 'control',
+
         'status' => 'active',
     ]);
 
@@ -166,10 +165,10 @@ describe('doctor role-aware categories', function (): void {
     it('keeps workspace in the app-development category set only', function (): void {
         $runner = app(DoctorReportRunner::class);
 
-        expect($runner->categoriesForRole('app-development'))->toBe([
+        expect($runner->categoriesForRole('app-dev'))->toBe([
             'node', 'app', 'workspace', 'process', 'proxy', 'firewall_rule', 'tool', 'schedule', 'database_connection',
         ])
-            ->and($runner->categoriesForRole('app-production'))->toBe([
+            ->and($runner->categoriesForRole('app-prod'))->toBe([
                 'node', 'app', 'process', 'proxy', 'firewall_rule', 'tool', 'schedule', 'database_connection',
             ]);
     });
@@ -183,7 +182,7 @@ describe('doctor role-aware categories', function (): void {
     it('derives hosted category sets from active role assignments instead of legacy app shadows', function (): void {
         $runner = app(DoctorReportRunner::class);
         $appHost = createRoleAwareAppHostNode('app-host');
-        $legacyAppOnly = Node::factory()->create(['name' => 'legacy-app-only', 'role' => 'app', 'status' => 'active']);
+        $legacyAppOnly = Node::factory()->create(['name' => 'legacy-app-only', 'status' => 'active']);
 
         expect($runner->categoriesForNode($appHost))->toBe([
             'node', 'app', 'workspace', 'process', 'proxy', 'firewall_rule', 'tool', 'schedule', 'database_connection',
@@ -202,7 +201,7 @@ describe('doctor role-aware categories', function (): void {
 
     it('derives database-only targets as node and tool categories', function (): void {
         $runner = app(DoctorReportRunner::class);
-        $databaseNode = Node::factory()->create(['name' => 'db-1', 'role' => 'control', 'status' => 'active']);
+        $databaseNode = Node::factory()->create(['name' => 'db-1', 'status' => 'active']);
 
         NodeRoleAssignment::factory()->create([
             'node_id' => $databaseNode->id,
@@ -250,12 +249,12 @@ describe('doctor role-aware categories', function (): void {
         createRoleAwareLocalNode('gateway', 'local-gateway');
         Node::factory()->create([
             'name' => 'legacy-app-only',
-            'role' => 'app',
+
             'status' => 'active',
             'host' => '10.6.0.2',
             'wireguard_address' => '10.6.0.2',
             'platform' => 'linux',
-            'environment' => 'development',
+
         ]);
         config(['orbit.is_gateway' => true]);
 

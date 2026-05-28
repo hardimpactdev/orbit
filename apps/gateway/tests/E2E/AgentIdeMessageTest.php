@@ -36,7 +36,6 @@ $app = \App\Models\App::query()->updateOrCreate(
     ['name' => 'docs'],
     [
         'node_id' => $node->id,
-        'environment' => 'development',
         'domain' => null,
         'path' => '/srv/docs',
         'document_root' => 'public',

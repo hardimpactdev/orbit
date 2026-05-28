@@ -17,7 +17,7 @@ beforeEach(function (): void {
 it('renders baseline profile timing in human mode', function (): void {
     $gateway = Node::factory()->create([
         'name' => 'gateway',
-        'role' => 'gateway',
+
     ]);
 
     App::factory()->create([
@@ -72,7 +72,7 @@ it('renders baseline profile timing in human mode', function (): void {
 it('renders toolbar stages and query summary in human mode', function (): void {
     $gateway = Node::factory()->create([
         'name' => 'gateway',
-        'role' => 'gateway',
+
     ]);
 
     App::factory()->create([

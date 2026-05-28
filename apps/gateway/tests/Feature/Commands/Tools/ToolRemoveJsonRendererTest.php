@@ -23,7 +23,7 @@ function createToolRemoveJsonLocalNode(string $role = 'gateway'): Node
 {
     return Node::factory()->create([
         'name' => "tool-remove-json-{$role}",
-        'role' => $role,
+
         'host' => '10.10.0.1',
         'wireguard_address' => '10.10.0.1',
     ]);

@@ -32,13 +32,11 @@ function nodeDefaultHumanRow(array $overrides = []): array
 {
     return array_merge([
         'name' => 'app-1',
-        'role' => 'app',
         'host' => '10.6.0.7',
         'wireguard_address' => '10.6.0.7',
         'user' => 'nckrtl',
         'orbit_path' => '/home/nckrtl/orbit',
         'status' => 'active',
-        'environment' => 'development',
         'platform' => 'ubuntu_24-04',
         'created_at' => now(),
         'updated_at' => now(),
@@ -106,11 +104,9 @@ function nodeDefaultHumanIdentityEnvelope(): array
             'data' => [
                 'self' => [
                     'name' => 'control-1',
-                    'role' => 'control',
                 ],
                 'gateway' => [
                     'name' => 'gateway-1',
-                    'role' => 'gateway',
                 ],
             ],
         ],
@@ -259,8 +255,6 @@ describe('node:default human renderer contract', function (): void {
     it('renders not-a-development-app-node prose error with two lines', function (): void {
         DB::table('nodes')->insert(nodeDefaultHumanRow([
             'name' => 'gateway-1',
-            'role' => 'gateway',
-            'environment' => null,
         ]));
 
         $exitCode = Artisan::call('node:default', ['name' => 'gateway-1']);

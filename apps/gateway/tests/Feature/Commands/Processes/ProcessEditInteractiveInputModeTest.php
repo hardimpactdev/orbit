@@ -25,7 +25,6 @@ function createProcessEditInteractiveLocalNode(string $role = 'gateway'): Node
 {
     $attributes = [
         'name' => "local-{$role}",
-        'role' => $role,
         'host' => '10.6.0.1',
         'wireguard_address' => '10.6.0.1',
     ];

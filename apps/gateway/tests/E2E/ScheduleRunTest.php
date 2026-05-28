@@ -32,7 +32,6 @@ it('runs a schedule from the operator node through the gateway api and records h
     ['name' => '{$appName}'],
     [
         'node_id' => \$node->id,
-        'environment' => 'development',
         'path' => '/home/orbit/apps/{$appName}',
         'document_root' => 'public',
         'php_version' => '8.5',

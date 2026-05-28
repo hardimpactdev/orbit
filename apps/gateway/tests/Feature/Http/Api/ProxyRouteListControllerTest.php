@@ -15,9 +15,10 @@ const PROXY_ROUTE_LIST_CALLER_WG_IP = '10.6.0.91';
 
 function createProxyRouteListCallerNode(array $overrides = []): Node
 {
+    unset($overrides['role'], $overrides['environment']);
+
     return Node::factory()->create(array_merge([
         'name' => 'caller',
-        'role' => 'control',
         'host' => PROXY_ROUTE_LIST_CALLER_WG_IP,
         'wireguard_address' => PROXY_ROUTE_LIST_CALLER_WG_IP,
     ], $overrides));
@@ -39,7 +40,7 @@ function assignProxyRouteListRole(Node $node, string $role = 'gateway'): void
         'node_id' => $node->id,
         'role' => $role,
         'status' => 'active',
-        'settings' => $role === 'app-development' ? ['tld' => 'test'] : [],
+        'settings' => $role === 'app-dev' ? ['tld' => 'test'] : [],
     ]);
 }
 
@@ -114,7 +115,7 @@ describe('ProxyRouteListController', function (): void {
 
     it('returns authorization failure when the caller has no route visibility', function (): void {
         $caller = createProxyRouteListCallerNode(['role' => 'app']);
-        assignProxyRouteListRole($caller, 'app-development');
+        assignProxyRouteListRole($caller, 'app-dev');
 
         $response = $this->call('GET', '/api/proxy-routes', [], [], [], ['REMOTE_ADDR' => PROXY_ROUTE_LIST_CALLER_WG_IP]);
 

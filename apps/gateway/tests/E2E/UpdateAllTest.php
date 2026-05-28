@@ -31,7 +31,6 @@ beforeEach(function (): void {
     DB::table('nodes')->insert([
         [
             'name' => 'gateway',
-            'role' => 'gateway',
             'host' => 'gateway',
             'orbit_path' => '/home/orbit/orbit',
             'status' => 'active',
@@ -40,7 +39,6 @@ beforeEach(function (): void {
         ],
         [
             'name' => 'app-node-1',
-            'role' => 'app',
             'host' => 'app-node-1',
             'orbit_path' => '/home/orbit/orbit',
             'status' => 'active',
@@ -70,7 +68,6 @@ it('emits json success envelope when local and all nodes succeed', function (): 
     expect($local)->toBe([
         'target' => 'local',
         'node' => null,
-        'role' => null,
         'status' => 'completed',
     ]);
 

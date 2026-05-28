@@ -16,7 +16,7 @@ function createToolInstallRoleLocalNode(string $role = 'gateway'): Node
 {
     return Node::factory()->create([
         'name' => "tool-install-role-{$role}",
-        'role' => $role,
+
         'host' => '10.16.0.1',
         'wireguard_address' => '10.16.0.1',
     ]);
@@ -24,9 +24,10 @@ function createToolInstallRoleLocalNode(string $role = 'gateway'): Node
 
 function createToolInstallRoleTargetNode(string $name, array $overrides = []): Node
 {
+    unset($overrides['role'], $overrides['environment']);
+
     return Node::factory()->create(array_merge([
         'name' => $name,
-        'role' => 'app',
         'status' => 'active',
     ], $overrides));
 }
@@ -79,7 +80,7 @@ describe('tool:install node role eligibility', function (): void {
     it('rejects mysql on a node without an active database role', function (): void {
         createToolInstallRoleLocalNode('gateway');
         $node = createToolInstallRoleTargetNode('web-1');
-        assignToolInstallRole($node, 'app-production');
+        assignToolInstallRole($node, 'app-prod');
         $shell = new ToolInstallNodeRoleRecordingShell;
         app()->instance(RemoteShell::class, $shell);
 
@@ -103,7 +104,7 @@ describe('tool:install node role eligibility', function (): void {
     it('keeps allowing redis on a node without a database role', function (): void {
         createToolInstallRoleLocalNode('gateway');
         $node = createToolInstallRoleTargetNode('web-1');
-        assignToolInstallRole($node, 'app-production');
+        assignToolInstallRole($node, 'app-prod');
         $shell = new ToolInstallNodeRoleRecordingShell;
         app()->instance(RemoteShell::class, $shell);
 

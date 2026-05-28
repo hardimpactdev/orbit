@@ -477,12 +477,11 @@ describe('agent tool fixes', function (): void {
 function createAgentToolForFixer(): array
 {
     $node = Node::factory()->create([
-        'role' => 'control',
+
         'status' => 'active',
         'tld' => 'agent',
     ]);
     $node->roleAssignments()->create([
-        'role' => 'agent',
         'status' => 'active',
         'settings' => ['tld' => 'agent'],
     ]);

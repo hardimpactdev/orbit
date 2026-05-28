@@ -14,7 +14,6 @@ describe('NodeRoleAddController', function (): void {
         [, , $target] = setUpNodeRoleApiContractAccess(['role:add']);
 
         $response = postNodeRoleApiContractJson('/api/nodes/target-1/roles', [
-            'role' => 'database',
             'settings' => [],
         ]);
 
@@ -32,7 +31,6 @@ describe('NodeRoleAddController', function (): void {
         [, , $target] = setUpNodeRoleApiContractAccess(['role:add']);
 
         $response = postNodeRoleApiContractJson('/api/nodes/target-1/roles', [
-            'role' => 'gateway',
             'settings' => [],
         ]);
 
@@ -50,7 +48,6 @@ describe('NodeRoleAddController', function (): void {
         [, , $target] = setUpNodeRoleApiContractAccess(['role:add']);
 
         $response = postNodeRoleApiContractJson('/api/nodes/target-1/roles', [
-            'role' => 'app-development',
             'settings' => ['tld' => 'test'],
         ]);
 

@@ -141,7 +141,6 @@ $node = \App\Models\Node::query()->where('name', 'app-dev-1')->firstOrFail();
     ['name' => 'docs'],
     [
         'node_id' => $node->id,
-        'environment' => 'development',
         'path' => '/srv/docs',
         'document_root' => 'public',
     ],

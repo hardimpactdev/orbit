@@ -15,7 +15,7 @@ uses(RefreshDatabase::class);
 
 function appAtPath(string $name, string $path): App
 {
-    $node = Node::factory()->create(['name' => "app-{$name}", 'role' => 'app', 'tld' => 'test']);
+    $node = Node::factory()->create(['name' => "app-{$name}", 'tld' => 'test']);
 
     return App::factory()->for($node, 'node')->create([
         'name' => $name,

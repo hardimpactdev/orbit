@@ -28,11 +28,9 @@ function nodeListHumanRow(array $overrides = []): array
 {
     return array_merge([
         'name' => 'app-1',
-        'role' => 'app',
         'host' => '10.6.0.7',
         'orbit_path' => '/home/nckrtl/orbit',
         'status' => 'active',
-        'environment' => 'development',
         'tld' => 'test',
         'platform' => 'ubuntu_24-04',
         'wireguard_address' => '10.6.0.7',
@@ -79,11 +77,9 @@ describe('node:list human renderer contract', function (): void {
 
         DB::table('nodes')->insert([
             'name' => 'local-gateway',
-            'role' => 'gateway',
             'host' => '10.6.0.1',
             'orbit_path' => '/home/orbit/orbit',
             'status' => 'active',
-            'environment' => null,
             'platform' => 'ubuntu_24-04',
             'wireguard_address' => '10.6.0.1',
             'created_at' => now(),
@@ -96,8 +92,6 @@ describe('node:list human renderer contract', function (): void {
         DB::table('nodes')->insert([
             nodeListHumanRow([
                 'name' => 'app-1',
-                'role' => 'app',
-                'environment' => 'development',
             ]),
         ]);
 
@@ -115,13 +109,9 @@ describe('node:list human renderer contract', function (): void {
         DB::table('nodes')->insert([
             nodeListHumanRow([
                 'name' => 'app-1',
-                'role' => 'app',
-                'environment' => 'development',
             ]),
             nodeListHumanRow([
                 'name' => 'gateway-1',
-                'role' => 'gateway',
-                'environment' => null,
             ]),
         ]);
 
@@ -142,8 +132,6 @@ describe('node:list human renderer contract', function (): void {
         DB::table('nodes')->insert([
             nodeListHumanRow([
                 'name' => 'app-1',
-                'role' => 'app',
-                'environment' => 'development',
                 'wireguard_address' => '10.6.0.20',
             ]),
         ]);
@@ -170,18 +158,12 @@ describe('node:list human renderer contract', function (): void {
         DB::table('nodes')->insert([
             nodeListHumanRow([
                 'name' => 'gateway-1',
-                'role' => 'gateway',
-                'environment' => null,
             ]),
             nodeListHumanRow([
                 'name' => 'app-1',
-                'role' => 'app',
-                'environment' => 'development',
             ]),
             nodeListHumanRow([
                 'name' => 'control-1',
-                'role' => 'control',
-                'environment' => null,
             ]),
         ]);
 
@@ -199,8 +181,6 @@ describe('node:list human renderer contract', function (): void {
         DB::table('nodes')->insert([
             nodeListHumanRow([
                 'name' => 'gateway-1',
-                'role' => 'gateway',
-                'environment' => null,
             ]),
         ]);
 
@@ -229,8 +209,6 @@ describe('node:list human renderer contract', function (): void {
         DB::table('nodes')->insert([
             nodeListHumanRow([
                 'name' => 'control-1',
-                'role' => 'control',
-                'environment' => null,
             ]),
         ]);
 
@@ -290,10 +268,9 @@ describe('node:list human renderer contract', function (): void {
     it('renders doctor issue summary without failing the list command', function (): void {
         $node = createTestAppHostNode(nodeListHumanRow([
             'name' => 'incomplete-app',
-            'environment' => 'production',
             'tld' => null,
             'wireguard_address' => null,
-        ]), 'app-production');
+        ]), 'app-prod');
         markNodeSecurityBaselineClean($node);
         markNodeListHumanAppProductionToolsInstalled($node);
 

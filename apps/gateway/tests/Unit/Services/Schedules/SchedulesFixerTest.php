@@ -21,7 +21,7 @@ uses(RefreshDatabase::class);
 
 function createSchedulesFixerGatewayNode(): Node
 {
-    $node = Node::factory()->create(['name' => 'gateway-1', 'role' => 'gateway', 'status' => 'active']);
+    $node = Node::factory()->create(['name' => 'gateway-1', 'status' => 'active']);
 
     NodeRoleAssignment::factory()->create([
         'node_id' => $node->id,

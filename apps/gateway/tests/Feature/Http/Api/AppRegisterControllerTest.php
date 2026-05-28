@@ -24,7 +24,6 @@ function createAppRegisterCallerNode(array $overrides = []): Node
 {
     $attributes = array_merge([
         'name' => 'caller',
-        'role' => 'control',
         'host' => APP_REGISTER_CALLER_WG_IP,
         'wireguard_address' => APP_REGISTER_CALLER_WG_IP,
     ], $overrides);
@@ -55,13 +54,11 @@ describe('AppRegisterController', function (): void {
     it('registers an existing app path for authorized callers', function (): void {
         createTestGatewayNode([
             'name' => 'gateway-1',
-            'role' => 'gateway',
         ]);
 
         $caller = createAppRegisterCallerNode();
         $targetNode = createTestAppHostNode([
             'name' => 'app-1',
-            'role' => 'app',
             'tld' => 'test',
             'status' => 'active',
         ]);
@@ -98,13 +95,11 @@ describe('AppRegisterController', function (): void {
     it('rejects registration when the caller lacks app:register on the target app node', function (): void {
         createTestGatewayNode([
             'name' => 'gateway-1',
-            'role' => 'gateway',
         ]);
 
         $caller = createAppRegisterCallerNode();
         $targetNode = createTestAppHostNode([
             'name' => 'app-1',
-            'role' => 'app',
             'status' => 'active',
         ]);
         grantAppRegisterAccess($caller, $targetNode, ['app:read']);
@@ -130,13 +125,11 @@ describe('AppRegisterController', function (): void {
     it('rejects omitted-node registration when the caller cannot access the inferred target app node', function (): void {
         createTestGatewayNode([
             'name' => 'gateway-1',
-            'role' => 'gateway',
         ]);
 
         createAppRegisterCallerNode();
         createTestAppHostNode([
             'name' => 'app-1',
-            'role' => 'app',
             'tld' => 'test',
             'status' => 'active',
         ]);
@@ -161,13 +154,11 @@ describe('AppRegisterController', function (): void {
     it('rejects production registration when the target node lacks the app-production role', function (): void {
         createTestGatewayNode([
             'name' => 'gateway-1',
-            'role' => 'gateway',
         ]);
 
         $caller = createAppRegisterCallerNode();
         $targetNode = createTestAppHostNode([
             'name' => 'app-1',
-            'role' => 'app',
             'tld' => 'test',
             'status' => 'active',
         ]);
@@ -185,7 +176,7 @@ describe('AppRegisterController', function (): void {
 
         $response->assertStatus(422)
             ->assertJsonPath('error.code', 'app.ineligible_node')
-            ->assertJsonPath('error.meta.required_role', 'app-production');
+            ->assertJsonPath('error.meta.required_role', 'app-prod');
 
         expect(App::query()->count())->toBe(0)
             ->and($remoteShell->scripts)->toBe([]);
@@ -194,7 +185,6 @@ describe('AppRegisterController', function (): void {
     it('allows database-role callers when app:register is granted on the target app node', function (): void {
         createTestGatewayNode([
             'name' => 'gateway-1',
-            'role' => 'gateway',
         ]);
 
         $caller = createAppRegisterCallerNode();
@@ -205,7 +195,6 @@ describe('AppRegisterController', function (): void {
         ]);
         $targetNode = createTestAppHostNode([
             'name' => 'app-1',
-            'role' => 'app',
             'status' => 'active',
         ]);
         grantAppRegisterAccess($caller, $targetNode);

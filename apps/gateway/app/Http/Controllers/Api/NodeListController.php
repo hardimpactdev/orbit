@@ -21,7 +21,7 @@ use Illuminate\Http\Request;
 
 final readonly class NodeListController implements Loggable
 {
-    private const array VALID_ROLES = ['gateway', 'vpn', 'router', 'app', 'app-development', 'app-production', 'database', 'agent', 'ingress', 'control'];
+    private const array VALID_ROLES = ['gateway', 'vpn', 'router', 'app', 'app-dev', 'app-prod', 'database', 'agent', 'ingress', 'control'];
 
     private const array VALID_ENVIRONMENTS = ['development', 'production'];
 
@@ -153,7 +153,7 @@ final readonly class NodeListController implements Loggable
     {
         return $nodes->map(fn (Node $node): array => [
             'name' => $node->name,
-            'role' => $node->role,
+            'role' => $node->displayRole(),
             'host' => $node->host,
             'environment' => app(NodeRoleAssignments::class)->activeAppHostEnvironment($node),
             'platform' => $node->platform ?? 'unknown',

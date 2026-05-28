@@ -33,29 +33,25 @@ function rollbackGatewayCoupledVpnRoleBackfillMigration(): void
 it('backfills legacy node roles into node role assignments', function (): void {
     $gateway = Node::factory()->create([
         'name' => 'gateway-1',
-        'role' => 'gateway',
-        'environment' => null,
+
         'tld' => null,
     ]);
 
     $control = Node::factory()->create([
         'name' => 'control-1',
-        'role' => 'control',
-        'environment' => null,
+
         'tld' => null,
     ]);
 
     $appDevelopment = Node::factory()->create([
         'name' => 'app-dev-1',
-        'role' => 'app',
-        'environment' => 'development',
+
         'tld' => 'orbit.test',
     ]);
 
     $appProduction = Node::factory()->create([
         'name' => 'app-prod-1',
-        'role' => 'app',
-        'environment' => 'production',
+
         'tld' => 'example.com',
     ]);
 
@@ -66,7 +62,6 @@ it('backfills legacy node roles into node role assignments', function (): void {
 
     expect(DB::table('node_roles')->where([
         'node_id' => $gateway->id,
-        'role' => 'gateway',
         'status' => 'active',
         'settings' => json_encode([]),
     ])->exists())->toBeTrue();
@@ -75,14 +70,12 @@ it('backfills legacy node roles into node role assignments', function (): void {
 
     expect(DB::table('node_roles')->where([
         'node_id' => $appDevelopment->id,
-        'role' => 'app-development',
         'status' => 'active',
         'settings' => json_encode(['tld' => 'orbit.test']),
     ])->exists())->toBeTrue();
 
     expect(DB::table('node_roles')->where([
         'node_id' => $appProduction->id,
-        'role' => 'app-production',
         'status' => 'active',
         'settings' => json_encode([]),
     ])->exists())->toBeTrue();
@@ -111,13 +104,12 @@ it('backfills legacy node roles into node role assignments', function (): void {
 it('is idempotent when matching role assignments already exist', function (): void {
     $gateway = Node::factory()->create([
         'name' => 'gateway-1',
-        'role' => 'gateway',
+
     ]);
 
     $appDevelopment = Node::factory()->create([
         'name' => 'app-dev-1',
-        'role' => 'app',
-        'environment' => 'development',
+
         'tld' => 'orbit.test',
     ]);
 
@@ -130,7 +122,7 @@ it('is idempotent when matching role assignments already exist', function (): vo
 
     NodeRoleAssignment::factory()->create([
         'node_id' => $appDevelopment->id,
-        'role' => 'app-development',
+        'role' => 'app-dev',
         'status' => 'active',
         'settings' => ['tld' => 'orbit.test'],
     ]);
@@ -145,7 +137,7 @@ it('is idempotent when matching role assignments already exist', function (): vo
 it('backfills vpn role assignments for active gateway role assignments', function (): void {
     $activeGateway = Node::factory()->create([
         'name' => 'gateway-1',
-        'role' => 'gateway',
+
         'host' => 'gateway-1.internal',
         'gateway_endpoint' => 'gateway.example.com',
         'status' => 'active',
@@ -153,7 +145,7 @@ it('backfills vpn role assignments for active gateway role assignments', functio
 
     $inactiveGateway = Node::factory()->create([
         'name' => 'gateway-2',
-        'role' => 'gateway',
+
         'host' => 'gateway-2.internal',
         'gateway_endpoint' => 'gateway-2.example.com',
         'status' => 'inactive',
@@ -161,7 +153,7 @@ it('backfills vpn role assignments for active gateway role assignments', functio
 
     $existingVpnGateway = Node::factory()->create([
         'name' => 'gateway-3',
-        'role' => 'gateway',
+
         'host' => 'gateway-3.internal',
         'gateway_endpoint' => null,
         'status' => 'active',
@@ -169,7 +161,7 @@ it('backfills vpn role assignments for active gateway role assignments', functio
 
     $hostFallbackGateway = Node::factory()->create([
         'name' => 'gateway-4',
-        'role' => 'gateway',
+
         'host' => 'gateway-4.internal',
         'gateway_endpoint' => null,
         'status' => 'active',
@@ -219,7 +211,6 @@ it('backfills vpn role assignments for active gateway role assignments', functio
 
     expect(DB::table('node_roles')->where([
         'node_id' => $activeGateway->id,
-        'role' => 'vpn',
         'status' => 'active',
         'settings' => json_encode([
             'public_endpoint' => 'gateway.example.com',
@@ -231,17 +222,14 @@ it('backfills vpn role assignments for active gateway role assignments', functio
 
     expect(DB::table('node_roles')->where([
         'node_id' => $inactiveGateway->id,
-        'role' => 'vpn',
     ])->exists())->toBeFalse();
 
     expect(DB::table('node_roles')->where([
         'node_id' => $existingVpnGateway->id,
-        'role' => 'vpn',
     ])->count())->toBe(1);
 
     expect(DB::table('node_roles')->where([
         'node_id' => $hostFallbackGateway->id,
-        'role' => 'vpn',
         'status' => 'active',
         'settings' => json_encode([
             'public_endpoint' => 'gateway-4.internal',
@@ -255,7 +243,7 @@ it('backfills vpn role assignments for active gateway role assignments', functio
 it('preserves vpn role assignments on rollback', function (): void {
     $gateway = Node::factory()->create([
         'name' => 'gateway-1',
-        'role' => 'gateway',
+
         'status' => 'active',
     ]);
 
@@ -275,6 +263,5 @@ it('preserves vpn role assignments on rollback', function (): void {
 
     expect(DB::table('node_roles')->where([
         'node_id' => $gateway->id,
-        'role' => 'vpn',
     ])->exists())->toBeTrue();
 });

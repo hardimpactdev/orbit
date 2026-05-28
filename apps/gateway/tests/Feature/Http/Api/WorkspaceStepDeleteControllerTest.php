@@ -18,7 +18,6 @@ function createWorkspaceStepDeleteCallerNode(array $overrides = []): Node
 {
     $attributes = array_merge([
         'name' => 'step-delete-caller',
-        'role' => 'control',
         'host' => WORKSPACE_STEP_DELETE_CALLER_WG_IP,
         'wireguard_address' => WORKSPACE_STEP_DELETE_CALLER_WG_IP,
     ], $overrides);

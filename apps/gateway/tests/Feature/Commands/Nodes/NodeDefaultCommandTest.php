@@ -32,13 +32,11 @@ function nodeDefaultCommandRow(array $overrides = []): array
 {
     return array_merge([
         'name' => 'app-1',
-        'role' => 'app',
         'host' => '10.6.0.7',
         'wireguard_address' => '10.6.0.7',
         'user' => 'nckrtl',
         'orbit_path' => '/home/nckrtl/orbit',
         'status' => 'active',
-        'environment' => 'development',
         'platform' => 'ubuntu_24-04',
         'created_at' => now(),
         'updated_at' => now(),
@@ -60,7 +58,6 @@ function assignNodeDefaultCommandRole(string $nodeName, string $role, string $st
 
     return NodeRoleAssignment::factory()->create([
         'node_id' => $nodeId,
-        'role' => $role,
         'status' => $status,
         'settings' => $settings,
     ]);
@@ -70,8 +67,6 @@ function setupConfiguredControlNodeDefaultCaller(): void
 {
     DB::table('nodes')->insert(nodeDefaultCommandRow([
         'name' => 'local-control',
-        'role' => 'control',
-        'environment' => null,
     ]));
 
     LocalGatewaySettings::current()->fill([
@@ -98,8 +93,6 @@ function nodeDefaultGatewayNode(
 ): array {
     return array_merge([
         'name' => $name,
-        'role' => 'app',
-        'environment' => 'development',
         'platform' => 'ubuntu_24-04',
         'status' => 'active',
         'roles' => $roles,
@@ -113,11 +106,9 @@ function nodeDefaultCommandIdentityEnvelope(): array
             'data' => [
                 'self' => [
                     'name' => 'control-1',
-                    'role' => 'control',
                 ],
                 'gateway' => [
                     'name' => 'gateway-1',
-                    'role' => 'gateway',
                 ],
             ],
         ],
@@ -145,7 +136,7 @@ describe('node:default command contract', function (): void {
 
     it('routes to set sub-action when name is provided', function (): void {
         DB::table('nodes')->insert(nodeDefaultCommandRow());
-        assignNodeDefaultCommandRole('app-1', 'app-development', settings: ['tld' => 'test']);
+        assignNodeDefaultCommandRole('app-1', 'app-dev', settings: ['tld' => 'test']);
 
         $exitCode = Artisan::call('node:default', [
             'name' => 'app-1',
@@ -208,8 +199,6 @@ describe('node:default command contract', function (): void {
     it('rejects non-development node for set', function (): void {
         DB::table('nodes')->insert(nodeDefaultCommandRow([
             'name' => 'gateway-1',
-            'role' => 'gateway',
-            'environment' => null,
         ]));
 
         $exitCode = Artisan::call('node:default', [
@@ -225,8 +214,6 @@ describe('node:default command contract', function (): void {
     it('rejects production app node for set', function (): void {
         DB::table('nodes')->insert(nodeDefaultCommandRow([
             'name' => 'prod-1',
-            'role' => 'app',
-            'environment' => 'production',
         ]));
 
         $exitCode = Artisan::call('node:default', [
@@ -241,7 +228,7 @@ describe('node:default command contract', function (): void {
 
     it('persists default to local_node_defaults table on set', function (): void {
         DB::table('nodes')->insert(nodeDefaultCommandRow());
-        assignNodeDefaultCommandRole('app-1', 'app-development', settings: ['tld' => 'test']);
+        assignNodeDefaultCommandRole('app-1', 'app-dev', settings: ['tld' => 'test']);
 
         Artisan::call('node:default', ['name' => 'app-1']);
 
@@ -256,8 +243,8 @@ describe('node:default command contract', function (): void {
             nodeDefaultCommandRow(['name' => 'app-1']),
             nodeDefaultCommandRow(['name' => 'app-2']),
         ]);
-        assignNodeDefaultCommandRole('app-1', 'app-development', settings: ['tld' => 'test']);
-        assignNodeDefaultCommandRole('app-2', 'app-development', settings: ['tld' => 'test']);
+        assignNodeDefaultCommandRole('app-1', 'app-dev', settings: ['tld' => 'test']);
+        assignNodeDefaultCommandRole('app-2', 'app-dev', settings: ['tld' => 'test']);
 
         Artisan::call('node:default', ['name' => 'app-1']);
         Artisan::call('node:default', ['name' => 'app-2']);
@@ -275,7 +262,7 @@ describe('node:default command contract', function (): void {
             ShowGatewayIdentityRequest::class => MockResponse::make(nodeDefaultCommandIdentityEnvelope(), 200),
             ListNodesRequest::class => MockResponse::make(nodeDefaultGatewayResponse([
                 nodeDefaultGatewayNode('remote-app', [
-                    ['role' => 'app-development', 'status' => 'active'],
+                    ['role' => 'app-dev', 'status' => 'active'],
                 ]),
             ]), 200),
         ]);
@@ -291,8 +278,6 @@ describe('node:default command contract', function (): void {
                 'action' => 'set',
                 'default_node' => [
                     'name' => 'remote-app',
-                    'role' => 'app',
-                    'environment' => 'development',
                 ],
             ])
             ->and(DB::table('local_node_defaults')->value('default_node_name'))->toBe('remote-app')
@@ -308,10 +293,10 @@ describe('node:default command contract', function (): void {
             ShowGatewayIdentityRequest::class => MockResponse::make(nodeDefaultCommandIdentityEnvelope(), 200),
             ListNodesRequest::class => MockResponse::make(nodeDefaultGatewayResponse([
                 nodeDefaultGatewayNode('remote-app-1', [
-                    ['role' => 'app-development', 'status' => 'active'],
+                    ['role' => 'app-dev', 'status' => 'active'],
                 ]),
                 nodeDefaultGatewayNode('remote-app-2', [
-                    ['role' => 'app-development', 'status' => 'active'],
+                    ['role' => 'app-dev', 'status' => 'active'],
                 ]),
             ]), 200),
         ]);
@@ -334,10 +319,8 @@ describe('node:default command contract', function (): void {
             ShowGatewayIdentityRequest::class => MockResponse::make(nodeDefaultCommandIdentityEnvelope(), 200),
             ListNodesRequest::class => MockResponse::make(nodeDefaultGatewayResponse([
                 nodeDefaultGatewayNode('remote-app', [
-                    ['role' => 'app-development', 'status' => 'active'],
+                    ['role' => 'app-dev', 'status' => 'active'],
                 ], [
-                    'role' => 'database',
-                    'environment' => 'production',
                 ]),
             ]), 200),
         ]);
@@ -378,7 +361,7 @@ describe('node:default command contract', function (): void {
     })->with([
         'missing role assignments' => [[]],
         'database only' => [[['role' => 'database', 'status' => 'active']]],
-        'pending app-development' => [[['role' => 'app-development', 'status' => 'pending']]],
+        'pending app-development' => [[['role' => 'app-dev', 'status' => 'pending']]],
     ]);
 
     it('keeps show and clear local-only for configured callers', function (): void {
@@ -449,7 +432,7 @@ describe('node:default command contract', function (): void {
 
     it('does not invoke SSH or external processes', function (): void {
         DB::table('nodes')->insert(nodeDefaultCommandRow());
-        assignNodeDefaultCommandRole('app-1', 'app-development', settings: ['tld' => 'test']);
+        assignNodeDefaultCommandRole('app-1', 'app-dev', settings: ['tld' => 'test']);
 
         $exitCode = Artisan::call('node:default', ['name' => 'app-1']);
 

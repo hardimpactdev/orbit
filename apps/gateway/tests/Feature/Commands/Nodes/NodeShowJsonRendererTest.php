@@ -21,13 +21,11 @@ function nodeShowJsonRow(array $overrides = []): array
 {
     return array_merge([
         'name' => 'app-1',
-        'role' => 'app',
         'host' => '10.6.0.7',
         'wireguard_address' => '10.6.0.7',
         'user' => 'nckrtl',
         'orbit_path' => '/home/nckrtl/orbit',
         'status' => 'active',
-        'environment' => 'development',
         'platform' => 'ubuntu_24-04',
         'agent_ide_config' => null,
         'created_at' => now(),
@@ -41,8 +39,6 @@ function setupNodeShowJsonGatewayCaller(): void
 
     DB::table('nodes')->insert(nodeShowJsonRow([
         'name' => 'local-gateway',
-        'role' => 'gateway',
-        'environment' => null,
     ]));
 }
 
@@ -144,7 +140,7 @@ describe('node:show JSON renderer contract', function (): void {
 
     it('returns success.data.node with all documented fields', function (): void {
         DB::table('nodes')->insert(nodeShowJsonRow());
-        assignNodeShowJsonRole('app-1', 'app-development', ['tld' => 'test']);
+        assignNodeShowJsonRole('app-1', 'app-dev', ['tld' => 'test']);
 
         $exitCode = Artisan::call('node:show', ['name' => 'app-1', '--json' => true]);
         $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
@@ -184,8 +180,6 @@ describe('node:show JSON renderer contract', function (): void {
     it('shows gateway-coupled vpn role assignments with full payload fields', function (): void {
         DB::table('nodes')->insert(nodeShowJsonRow([
             'name' => 'gateway-1',
-            'role' => 'gateway',
-            'environment' => null,
             'wireguard_address' => '10.6.0.2',
         ]));
 
@@ -216,7 +210,6 @@ describe('node:show JSON renderer contract', function (): void {
         expect($exitCode)->toBe(0)
             ->and($payload['success']['data']['node']['role'])->toBe('gateway')
             ->and($roles['gateway'])->toMatchArray([
-                'role' => 'gateway',
                 'status' => 'active',
                 'settings' => [],
                 'last_error' => null,
@@ -230,7 +223,6 @@ describe('node:show JSON renderer contract', function (): void {
                     ?->toJSON(),
             )
             ->and($roles['vpn'])->toMatchArray([
-                'role' => 'vpn',
                 'status' => 'active',
                 'settings' => [
                     'public_endpoint' => 'vpn.example.test',
@@ -253,10 +245,8 @@ describe('node:show JSON renderer contract', function (): void {
     it('derives environment from active app role assignments', function (): void {
         DB::table('nodes')->insert(nodeShowJsonRow([
             'name' => 'host-1',
-            'role' => 'control',
-            'environment' => null,
         ]));
-        assignNodeShowJsonRole('host-1', 'app-production');
+        assignNodeShowJsonRole('host-1', 'app-prod');
 
         $exitCode = Artisan::call('node:show', ['name' => 'host-1', '--json' => true]);
         $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
@@ -268,8 +258,6 @@ describe('node:show JSON renderer contract', function (): void {
     it('returns environment null for non-app roles', function (): void {
         DB::table('nodes')->insert(nodeShowJsonRow([
             'name' => 'gateway-1',
-            'role' => 'gateway',
-            'environment' => 'should-be-ignored',
         ]));
 
         $exitCode = Artisan::call('node:show', ['name' => 'gateway-1', '--json' => true]);
@@ -283,8 +271,6 @@ describe('node:show JSON renderer contract', function (): void {
     it('defaults platform to unknown when null', function (): void {
         DB::table('nodes')->insert(nodeShowJsonRow([
             'name' => 'gateway-1',
-            'role' => 'gateway',
-            'environment' => null,
             'platform' => null,
         ]));
 
@@ -359,17 +345,12 @@ describe('node:show JSON renderer contract', function (): void {
         DB::table('nodes')->insert([
             nodeShowJsonRow([
                 'name' => 'app-1',
-                'role' => 'app',
             ]),
             nodeShowJsonRow([
                 'name' => 'control-1',
-                'role' => 'control',
-                'environment' => null,
             ]),
             nodeShowJsonRow([
                 'name' => 'control-2',
-                'role' => 'control',
-                'environment' => null,
             ]),
         ]);
 
@@ -460,18 +441,12 @@ describe('node:show JSON renderer contract', function (): void {
         DB::table('nodes')->insert([
             nodeShowJsonRow([
                 'name' => 'gateway-1',
-                'role' => 'gateway',
-                'environment' => null,
             ]),
             nodeShowJsonRow([
                 'name' => 'app-1',
-                'role' => 'app',
-                'environment' => 'development',
             ]),
             nodeShowJsonRow([
                 'name' => 'control-1',
-                'role' => 'control',
-                'environment' => null,
             ]),
         ]);
 
@@ -487,8 +462,6 @@ describe('node:show JSON renderer contract', function (): void {
     it('platform is never null', function (): void {
         DB::table('nodes')->insert(nodeShowJsonRow([
             'name' => 'gateway-1',
-            'role' => 'gateway',
-            'environment' => null,
             'platform' => null,
         ]));
 

@@ -20,9 +20,10 @@ const WORKSPACE_SHOW_CALLER_WG_IP = '10.6.0.96';
 
 function createWorkspaceShowCallerNode(array $overrides = []): Node
 {
+    unset($overrides['role'], $overrides['environment']);
+
     return Node::factory()->create(array_merge([
         'name' => 'caller',
-        'role' => 'control',
         'host' => WORKSPACE_SHOW_CALLER_WG_IP,
         'wireguard_address' => WORKSPACE_SHOW_CALLER_WG_IP,
     ], $overrides));
@@ -40,13 +41,13 @@ function grantWorkspaceShowAccess(Node $caller, Node $appNode): void
     ]);
 }
 
-function assignWorkspaceShowRole(Node $node, string $role = 'app-development'): void
+function assignWorkspaceShowRole(Node $node, string $role = 'app-dev'): void
 {
     NodeRoleAssignment::factory()->create([
         'node_id' => $node->id,
         'role' => $role,
         'status' => 'active',
-        'settings' => $role === 'app-development' ? ['tld' => 'test'] : [],
+        'settings' => $role === 'app-dev' ? ['tld' => 'test'] : [],
     ]);
 }
 
@@ -55,7 +56,7 @@ describe('WorkspaceShowController', function (): void {
         $caller = createWorkspaceShowCallerNode();
         $node = Node::factory()->create([
             'name' => 'app-1',
-            'role' => 'app',
+
             'host' => '1.2.3.4',
             'tld' => 'test',
             'agent_ide_config' => ['adapter' => 'opencode'],
@@ -117,8 +118,8 @@ describe('WorkspaceShowController', function (): void {
     it('returns ambiguous name errors when app is omitted', function (): void {
         $gateway = createWorkspaceShowCallerNode(['role' => 'gateway']);
         assignWorkspaceShowRole($gateway, 'gateway');
-        $firstNode = Node::factory()->create(['name' => 'app-1', 'role' => 'app']);
-        $secondNode = Node::factory()->create(['name' => 'app-2', 'role' => 'app']);
+        $firstNode = Node::factory()->create(['name' => 'app-1']);
+        $secondNode = Node::factory()->create(['name' => 'app-2']);
         assignWorkspaceShowRole($firstNode);
         assignWorkspaceShowRole($secondNode);
         $docs = App::factory()->create(['name' => 'docs', 'node_id' => $firstNode->id]);
@@ -136,7 +137,7 @@ describe('WorkspaceShowController', function (): void {
 
     it('resolves a visible workspace by path prefix', function (): void {
         $caller = createWorkspaceShowCallerNode();
-        $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app']);
+        $node = Node::factory()->create(['name' => 'app-1']);
         assignWorkspaceShowRole($node);
         grantWorkspaceShowAccess($caller, $node);
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
@@ -155,7 +156,7 @@ describe('WorkspaceShowController', function (): void {
 
     it('returns not found for hidden workspaces', function (): void {
         createWorkspaceShowCallerNode();
-        $node = Node::factory()->create(['role' => 'app']);
+        $node = Node::factory()->create([]);
         assignWorkspaceShowRole($node);
         $app = App::factory()->create(['node_id' => $node->id]);
         Workspace::factory()->create(['name' => 'hidden', 'app_id' => $app->id]);
@@ -168,7 +169,7 @@ describe('WorkspaceShowController', function (): void {
 
     it('does not grant fleet-wide visibility to legacy gateway callers without an active gateway assignment', function (): void {
         createWorkspaceShowCallerNode(['role' => 'gateway']);
-        $node = Node::factory()->create(['role' => 'app']);
+        $node = Node::factory()->create([]);
         assignWorkspaceShowRole($node);
         $app = App::factory()->create(['node_id' => $node->id]);
         Workspace::factory()->create(['name' => 'hidden', 'app_id' => $app->id]);

@@ -95,7 +95,6 @@ it('reaps docker slot hosts when no docker host list is configured', function ()
     Process::fake(function ($process) use (&$runs) {
         $runs[] = [
             'command' => $process->command,
-            'environment' => $process->environment,
         ];
 
         return match ($process->command) {

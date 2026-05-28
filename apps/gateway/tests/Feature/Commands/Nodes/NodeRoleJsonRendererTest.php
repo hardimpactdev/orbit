@@ -45,7 +45,7 @@ describe('node role json renderer', function (): void {
 
         Artisan::call('node role:add', [
             'node' => 'client-1',
-            'role' => 'app-development',
+            'role' => 'app-dev',
             '--tld' => 'test',
             '--json' => true,
         ]);
@@ -54,7 +54,7 @@ describe('node role json renderer', function (): void {
 
         expect(array_keys($payload))->toBe(['success'])
             ->and($payload)->not->toHaveKey('error')
-            ->and($payload['success']['data']['assignment']['role'])->toBe('app-development')
+            ->and($payload['success']['data']['assignment']['role'])->toBe('app-dev')
             ->and($payload['success']['data']['assignment']['settings'])->toBe(['tld' => 'test']);
     });
 
@@ -117,7 +117,7 @@ describe('node role json renderer', function (): void {
 
         Artisan::call('node role:add', [
             'node' => 'client-1',
-            'role' => 'app-development',
+            'role' => 'app-dev',
             '--json' => true,
         ]);
 

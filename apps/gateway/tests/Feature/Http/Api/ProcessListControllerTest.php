@@ -19,7 +19,6 @@ function createProcessListCallerNode(array $overrides = []): Node
 {
     $attributes = array_merge([
         'name' => 'caller',
-        'role' => 'control',
         'host' => PROCESS_LIST_CALLER_WG_IP,
         'wireguard_address' => PROCESS_LIST_CALLER_WG_IP,
     ], $overrides);

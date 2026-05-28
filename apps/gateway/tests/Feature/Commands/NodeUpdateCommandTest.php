@@ -20,13 +20,11 @@ function nodeUpdateRow(array $overrides = []): array
 {
     return array_merge([
         'name' => 'app-1',
-        'role' => 'app',
         'host' => '10.6.0.7',
         'wireguard_address' => '10.6.0.7',
         'user' => 'nckrtl',
         'orbit_path' => '/home/nckrtl/orbit',
         'status' => 'active',
-        'environment' => 'development',
         'platform' => 'ubuntu_24-04',
         'public_ipv4' => null,
         'public_ipv6' => null,
@@ -41,8 +39,6 @@ function setupGatewayCaller(): void
 
     DB::table('nodes')->insert(nodeUpdateRow([
         'name' => 'gateway-1',
-        'role' => 'gateway',
-        'environment' => null,
     ]));
 }
 

@@ -38,25 +38,21 @@ it('exports docker images from the build host and imports them on target hosts',
     expect($result)->toBe([
         [
             'host' => 'sidecar1',
-            'role' => 'runtime',
             'image' => 'orbit-e2e-topology-runtime:current',
             'action' => 'imported',
         ],
         [
             'host' => 'sidecar1',
-            'role' => 'gateway',
             'image' => 'orbit-e2e:gateway_base',
             'action' => 'imported',
         ],
         [
             'host' => 'sidecar2',
-            'role' => 'runtime',
             'image' => 'orbit-e2e-topology-runtime:current',
             'action' => 'imported',
         ],
         [
             'host' => 'sidecar2',
-            'role' => 'gateway',
             'image' => 'orbit-e2e:gateway_base',
             'action' => 'imported',
         ],

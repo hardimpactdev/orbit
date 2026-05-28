@@ -42,7 +42,6 @@ foreach (['operator-1', 'app-dev-1'] as $name) {
 $app = \App\Models\App::query()->create([
     'name' => 'docs',
     'node_id' => $nodes->get('app-dev-1'),
-    'environment' => 'development',
     'path' => '/srv/docs',
     'document_root' => 'public',
 ]);

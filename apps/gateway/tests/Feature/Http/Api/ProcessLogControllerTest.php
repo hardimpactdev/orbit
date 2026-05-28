@@ -18,7 +18,6 @@ function createProcessLogCallerNode(array $overrides = []): Node
 {
     $attributes = array_merge([
         'name' => 'caller',
-        'role' => 'control',
         'host' => PROCESS_LOG_CALLER_WG_IP,
         'wireguard_address' => PROCESS_LOG_CALLER_WG_IP,
     ], $overrides);

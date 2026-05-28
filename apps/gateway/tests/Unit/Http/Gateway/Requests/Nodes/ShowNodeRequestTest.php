@@ -38,7 +38,6 @@ it('returns a NodeShowResponse DTO with node array', function (): void {
                 'data' => [
                     'node' => [
                         'name' => 'gw-1',
-                        'role' => 'gateway',
                         'status' => 'active',
                         'wireguard_address' => '10.6.0.2',
                     ],
@@ -55,7 +54,6 @@ it('returns a NodeShowResponse DTO with node array', function (): void {
     expect($dto)->toBeInstanceOf(NodeShowResponse::class);
     expect($dto->node)->toMatchArray([
         'name' => 'gw-1',
-        'role' => 'gateway',
         'status' => 'active',
         'wireguard_address' => '10.6.0.2',
     ]);

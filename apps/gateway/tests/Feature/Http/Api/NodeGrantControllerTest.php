@@ -22,11 +22,9 @@ function apiGrantNodeRow(array $overrides = []): array
 {
     return array_merge([
         'name' => 'app-1',
-        'role' => 'app',
         'host' => '10.6.0.7',
         'orbit_path' => '/home/nckrtl/orbit',
         'status' => 'active',
-        'environment' => 'development',
         'platform' => 'ubuntu_24-04',
         'wireguard_address' => '10.6.0.7',
         'created_at' => now(),
@@ -38,9 +36,7 @@ function createGrantCallerNode(string $role = 'control'): int
 {
     $nodeId = (int) DB::table('nodes')->insertGetId(apiGrantNodeRow([
         'name' => "{$role}-caller",
-        'role' => $role,
         'host' => GRANT_CALLER_WG_IP,
-        'environment' => $role === 'app' ? 'development' : null,
         'wireguard_address' => GRANT_CALLER_WG_IP,
     ]));
 
@@ -55,9 +51,7 @@ function createGrantGatewayNode(): int
 {
     $nodeId = (int) DB::table('nodes')->insertGetId(apiGrantNodeRow([
         'name' => 'gateway-1',
-        'role' => 'gateway',
         'host' => '10.6.0.2',
-        'environment' => null,
         'wireguard_address' => '10.6.0.2',
     ]));
 
@@ -121,8 +115,6 @@ describe('NodeGrantController', function (): void {
         grantGatewayManagementAccess($callerId, $gatewayId);
         $consumingId = (int) DB::table('nodes')->insertGetId(apiGrantNodeRow([
             'name' => 'control-1',
-            'role' => 'control',
-            'environment' => null,
             'wireguard_address' => '10.6.0.11',
         ]));
         $servingId = (int) DB::table('nodes')->insertGetId(apiGrantNodeRow([
@@ -160,8 +152,6 @@ describe('NodeGrantController', function (): void {
         grantGatewayManagementAccess($callerId, $gatewayId);
         DB::table('nodes')->insert(apiGrantNodeRow([
             'name' => 'control-1',
-            'role' => 'control',
-            'environment' => null,
             'wireguard_address' => '10.6.0.11',
         ]));
         $servingId = (int) DB::table('nodes')->insertGetId(apiGrantNodeRow([
@@ -193,8 +183,6 @@ describe('NodeGrantController', function (): void {
         createGrantCallerNode('gateway');
         $consumingId = (int) DB::table('nodes')->insertGetId(apiGrantNodeRow([
             'name' => 'control-1',
-            'role' => 'control',
-            'environment' => null,
             'wireguard_address' => '10.6.0.11',
         ]));
         $servingId = (int) DB::table('nodes')->insertGetId(apiGrantNodeRow([
@@ -222,8 +210,6 @@ describe('NodeGrantController', function (): void {
         assignApiGrantGatewayRole($callerId);
         $consumingId = (int) DB::table('nodes')->insertGetId(apiGrantNodeRow([
             'name' => 'control-1',
-            'role' => 'control',
-            'environment' => null,
             'wireguard_address' => '10.6.0.11',
         ]));
         $servingId = (int) DB::table('nodes')->insertGetId(apiGrantNodeRow([
@@ -252,8 +238,6 @@ describe('NodeGrantController', function (): void {
         grantGatewayManagementAccess($callerId, $gatewayId);
         $consumingId = (int) DB::table('nodes')->insertGetId(apiGrantNodeRow([
             'name' => 'control-1',
-            'role' => 'control',
-            'environment' => null,
             'wireguard_address' => '10.6.0.11',
         ]));
         $servingId = (int) DB::table('nodes')->insertGetId(apiGrantNodeRow([
@@ -302,8 +286,6 @@ describe('NodeGrantController', function (): void {
         createGrantGatewayNode();
         DB::table('nodes')->insert(apiGrantNodeRow([
             'name' => 'control-1',
-            'role' => 'control',
-            'environment' => null,
             'wireguard_address' => '10.6.0.11',
         ]));
         DB::table('nodes')->insert(apiGrantNodeRow([
@@ -329,16 +311,12 @@ describe('NodeGrantController', function (): void {
     it('rejects stale gateway role shadows without node grant permission before mutation', function (): void {
         DB::table('nodes')->insert(apiGrantNodeRow([
             'name' => 'gateway-caller',
-            'role' => 'gateway',
             'host' => GRANT_CALLER_WG_IP,
-            'environment' => null,
             'wireguard_address' => GRANT_CALLER_WG_IP,
         ]));
         createGrantGatewayNode();
         $consumingId = (int) DB::table('nodes')->insertGetId(apiGrantNodeRow([
             'name' => 'control-1',
-            'role' => 'control',
-            'environment' => null,
             'wireguard_address' => '10.6.0.11',
         ]));
         $servingId = (int) DB::table('nodes')->insertGetId(apiGrantNodeRow([
@@ -370,8 +348,6 @@ describe('NodeGrantController', function (): void {
         grantGatewayManagementAccess($callerId, $gatewayId);
         $consumingId = (int) DB::table('nodes')->insertGetId(apiGrantNodeRow([
             'name' => 'control-1',
-            'role' => 'control',
-            'environment' => null,
             'wireguard_address' => '10.6.0.11',
         ]));
         $servingId = (int) DB::table('nodes')->insertGetId(apiGrantNodeRow([
@@ -399,8 +375,6 @@ describe('NodeGrantController', function (): void {
         createGrantGatewayNode();
         DB::table('nodes')->insert(apiGrantNodeRow([
             'name' => 'control-1',
-            'role' => 'control',
-            'environment' => null,
             'wireguard_address' => '10.6.0.11',
         ]));
         DB::table('nodes')->insert(apiGrantNodeRow([
@@ -427,17 +401,13 @@ describe('NodeGrantController', function (): void {
         $callerId = createGrantCallerNode();
         $gatewayId = (int) DB::table('nodes')->insertGetId(apiGrantNodeRow([
             'name' => 'gateway-1',
-            'role' => 'control',
             'host' => '10.6.0.2',
-            'environment' => null,
             'wireguard_address' => '10.6.0.2',
         ]));
         assignApiGrantGatewayRole($gatewayId);
         grantGatewayManagementAccess($callerId, $gatewayId);
         $consumingId = (int) DB::table('nodes')->insertGetId(apiGrantNodeRow([
             'name' => 'control-1',
-            'role' => 'control',
-            'environment' => null,
             'wireguard_address' => '10.6.0.11',
         ]));
         $servingId = (int) DB::table('nodes')->insertGetId(apiGrantNodeRow([
@@ -463,24 +433,18 @@ describe('NodeGrantController', function (): void {
         $callerId = createGrantCallerNode();
         DB::table('nodes')->insert(apiGrantNodeRow([
             'name' => 'aaa-gateway',
-            'role' => 'gateway',
             'host' => '10.6.0.2',
-            'environment' => null,
             'wireguard_address' => '10.6.0.2',
         ]));
         $authorizedGatewayId = (int) DB::table('nodes')->insertGetId(apiGrantNodeRow([
             'name' => 'zzz-gateway',
-            'role' => 'control',
             'host' => '10.6.0.3',
-            'environment' => null,
             'wireguard_address' => '10.6.0.3',
         ]));
         assignApiGrantGatewayRole($authorizedGatewayId);
         grantGatewayManagementAccess($callerId, $authorizedGatewayId);
         $consumingId = (int) DB::table('nodes')->insertGetId(apiGrantNodeRow([
             'name' => 'control-1',
-            'role' => 'control',
-            'environment' => null,
             'wireguard_address' => '10.6.0.11',
         ]));
         $servingId = (int) DB::table('nodes')->insertGetId(apiGrantNodeRow([
@@ -557,8 +521,6 @@ describe('NodeGrantController', function (): void {
         grantGatewayManagementAccess($callerId, $gatewayId);
         DB::table('nodes')->insert(apiGrantNodeRow([
             'name' => 'control-1',
-            'role' => 'control',
-            'environment' => null,
             'wireguard_address' => '10.6.0.11',
         ]));
         DB::table('nodes')->insert(apiGrantNodeRow([
@@ -586,8 +548,6 @@ describe('NodeGrantController', function (): void {
         createGrantCallerNode('gateway');
         $consumingId = (int) DB::table('nodes')->insertGetId(apiGrantNodeRow([
             'name' => 'control-1',
-            'role' => 'control',
-            'environment' => null,
             'wireguard_address' => '10.6.0.11',
         ]));
 
@@ -608,8 +568,6 @@ describe('NodeGrantController', function (): void {
         createGrantCallerNode('gateway');
         $consumingId = (int) DB::table('nodes')->insertGetId(apiGrantNodeRow([
             'name' => 'control-1',
-            'role' => 'control',
-            'environment' => null,
             'wireguard_address' => '10.6.0.11',
         ]));
         $servingId = (int) DB::table('nodes')->insertGetId(apiGrantNodeRow([
@@ -640,16 +598,12 @@ describe('NodeGrantController', function (): void {
         createGrantCallerNode('gateway');
         $gatewayId = (int) DB::table('nodes')->insertGetId(apiGrantNodeRow([
             'name' => 'target-gateway',
-            'role' => 'gateway',
             'host' => '10.6.0.12',
-            'environment' => null,
             'wireguard_address' => '10.6.0.12',
         ]));
         assignApiGrantGatewayRole($gatewayId);
         DB::table('nodes')->insert(apiGrantNodeRow([
             'name' => 'control-1',
-            'role' => 'control',
-            'environment' => null,
             'wireguard_address' => '10.6.0.11',
         ]));
 
@@ -668,15 +622,11 @@ describe('NodeGrantController', function (): void {
         createGrantCallerNode('gateway');
         $consumingId = (int) DB::table('nodes')->insertGetId(apiGrantNodeRow([
             'name' => 'control-1',
-            'role' => 'control',
-            'environment' => null,
             'wireguard_address' => '10.6.0.11',
         ]));
         $servingId = (int) DB::table('nodes')->insertGetId(apiGrantNodeRow([
             'name' => 'target-gateway',
-            'role' => 'gateway',
             'host' => '10.6.0.12',
-            'environment' => null,
             'wireguard_address' => '10.6.0.12',
         ]));
         assignApiGrantGatewayRole($servingId);
@@ -704,8 +654,6 @@ describe('NodeGrantController', function (): void {
         createGrantCallerNode('gateway');
         $consumingId = (int) DB::table('nodes')->insertGetId(apiGrantNodeRow([
             'name' => 'control-1',
-            'role' => 'control',
-            'environment' => null,
             'wireguard_address' => '10.6.0.11',
         ]));
         $servingId = (int) DB::table('nodes')->insertGetId(apiGrantNodeRow([
@@ -743,8 +691,6 @@ describe('NodeGrantController', function (): void {
     it('stores normalized permissions', function (): void {
         $consumingId = (int) DB::table('nodes')->insertGetId(apiGrantNodeRow([
             'name' => 'control-1',
-            'role' => 'control',
-            'environment' => null,
             'wireguard_address' => '10.6.0.11',
         ]));
         $servingId = (int) DB::table('nodes')->insertGetId(apiGrantNodeRow([

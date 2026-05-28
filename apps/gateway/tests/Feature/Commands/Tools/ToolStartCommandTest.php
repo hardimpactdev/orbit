@@ -27,7 +27,7 @@ function createToolStartLocalNode(string $role = 'gateway'): Node
 {
     return Node::factory()->create([
         'name' => "local-{$role}",
-        'role' => $role,
+
         'host' => '10.6.0.1',
         'wireguard_address' => '10.6.0.1',
     ]);
@@ -353,14 +353,14 @@ function createToolStartTargetWithApp(string $nodeName, string $appName, ?string
 {
     $node = Node::factory()->create([
         'name' => $nodeName,
-        'role' => 'control',
+
         'status' => 'active',
         'tld' => $tld,
     ]);
 
     assignToolStartAppHostRole(
         $node,
-        $domain === null ? 'app-development' : 'app-production',
+        $domain === null ? 'app-dev' : 'app-prod',
         $domain === null ? ['tld' => $tld ?? 'test'] : [],
     );
 
@@ -379,7 +379,7 @@ function createToolStartTargetWithApp(string $nodeName, string $appName, ?string
     return $node;
 }
 
-function assignToolStartAppHostRole(Node $node, string $role = 'app-development', array $settings = ['tld' => 'test']): void
+function assignToolStartAppHostRole(Node $node, string $role = 'app-dev', array $settings = ['tld' => 'test']): void
 {
     NodeRoleAssignment::factory()->create([
         'node_id' => $node->id,
@@ -399,12 +399,10 @@ function toolStartGatewayIdentityEnvelope(string $selfName): array
             'data' => [
                 'self' => [
                     'name' => $selfName,
-                    'role' => 'control',
                     'status' => 'active',
                 ],
                 'gateway' => [
                     'name' => 'gateway-1',
-                    'role' => 'gateway',
                     'status' => 'active',
                 ],
             ],

@@ -19,7 +19,6 @@ class FirewallRuleFactory extends Factory
     {
         return [
             'node_id' => Node::factory()->state([
-                'role' => 'app',
                 'platform' => 'ubuntu',
                 'status' => 'active',
             ]),

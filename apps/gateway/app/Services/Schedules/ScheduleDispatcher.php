@@ -233,8 +233,7 @@ final readonly class ScheduleDispatcher
 
     private function isGatewayNode(Node $node): bool
     {
-        return $this->nodeRoleAssignments->nodeIsGateway($node)
-            || ($node->role === 'gateway' && $node->status === 'active');
+        return $this->nodeRoleAssignments->nodeIsGateway($node);
     }
 
     private function runLocally(Schedule $schedule): RemoteShellResult

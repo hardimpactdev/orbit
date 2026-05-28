@@ -29,7 +29,7 @@ function createWorkspaceLogLocalNode(string $role = 'gateway'): Node
 
     return Node::factory()->create([
         'name' => "local-{$role}",
-        'role' => $role,
+
         'host' => '10.6.0.1',
         'wireguard_address' => '10.6.0.1',
     ]);
@@ -37,7 +37,7 @@ function createWorkspaceLogLocalNode(string $role = 'gateway'): Node
 
 function createWorkspaceLogRun(array $runOverrides = [], array $stepOverrides = []): WorkspaceRun
 {
-    $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app']);
+    $node = Node::factory()->create(['name' => 'app-1']);
     $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
     $workspace = Workspace::factory()->create(['name' => 'feature-docs', 'app_id' => $app->id]);
     $step = WorkspaceStep::factory()->create([

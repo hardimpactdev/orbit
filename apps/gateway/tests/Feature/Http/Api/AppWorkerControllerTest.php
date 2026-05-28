@@ -22,7 +22,6 @@ function createWorkerControllerCaller(array $overrides = []): Node
 {
     $attributes = array_merge([
         'name' => 'caller',
-        'role' => 'control',
         'host' => APP_WORKER_CALLER_WG_IP,
         'wireguard_address' => APP_WORKER_CALLER_WG_IP,
     ], $overrides);

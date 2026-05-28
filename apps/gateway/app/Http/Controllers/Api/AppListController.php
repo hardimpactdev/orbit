@@ -129,8 +129,8 @@ final readonly class AppListController implements Loggable
     private function hostedAppNodeIds(): array
     {
         return array_values(array_unique([
-            ...$this->nodeRoleAssignments->activeNodeIdsForRole('app-development'),
-            ...$this->nodeRoleAssignments->activeNodeIdsForRole('app-production'),
+            ...$this->nodeRoleAssignments->activeNodeIdsForRole('app-dev'),
+            ...$this->nodeRoleAssignments->activeNodeIdsForRole('app-prod'),
         ]));
     }
 

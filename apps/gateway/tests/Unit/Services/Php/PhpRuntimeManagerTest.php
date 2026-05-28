@@ -16,7 +16,7 @@ uses(TestCase::class);
 uses(RefreshDatabase::class);
 
 it('maps PHP runtime view with inherited workspace version', function (): void {
-    $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app']);
+    $node = Node::factory()->create(['name' => 'app-1']);
     NodeTool::factory()->create(['node_id' => $node->id, 'name' => 'php', 'config' => ['versions' => ['8.5'], 'cli_version' => '8.5']]);
     $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id, 'php_version' => '8.5']);
     Workspace::factory()->create(['name' => 'feature-docs', 'app_id' => $app->id, 'php_version' => null]);
@@ -32,7 +32,7 @@ it('maps PHP runtime view with inherited workspace version', function (): void {
 });
 
 it('frankenphp selects app runtime from approved image facts', function (): void {
-    $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app']);
+    $node = Node::factory()->create(['name' => 'app-1']);
     NodeTool::factory()->create([
         'node_id' => $node->id,
         'name' => 'php',
@@ -57,7 +57,7 @@ it('frankenphp selects app runtime from approved image facts', function (): void
 });
 
 it('frankenphp exposes available image facts in runtime views', function (): void {
-    $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app']);
+    $node = Node::factory()->create(['name' => 'app-1']);
     NodeTool::factory()->create([
         'node_id' => $node->id,
         'name' => 'php',
@@ -78,7 +78,7 @@ it('frankenphp exposes available image facts in runtime views', function (): voi
 });
 
 it('frankenphp rejects app writes when --node does not own the app', function (): void {
-    $appNode = Node::factory()->create(['name' => 'app-1', 'role' => 'app']);
+    $appNode = Node::factory()->create(['name' => 'app-1']);
     NodeTool::factory()->create([
         'node_id' => $appNode->id,
         'name' => 'php',
@@ -88,7 +88,7 @@ it('frankenphp rejects app writes when --node does not own the app', function ()
         ],
     ]);
 
-    $imageNode = Node::factory()->create(['name' => 'image-node', 'role' => 'app']);
+    $imageNode = Node::factory()->create(['name' => 'image-node']);
     NodeTool::factory()->create([
         'node_id' => $imageNode->id,
         'name' => 'php',
@@ -116,7 +116,7 @@ it('frankenphp rejects app writes when --node does not own the app', function ()
 });
 
 it('rejects CLI PHP selection for versions other than 8.5', function (): void {
-    $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app']);
+    $node = Node::factory()->create(['name' => 'app-1']);
     $tool = NodeTool::factory()->create([
         'node_id' => $node->id,
         'name' => 'php',
@@ -142,7 +142,7 @@ it('rejects CLI PHP selection for versions other than 8.5', function (): void {
 });
 
 it('frankenphp rejects workspace writes when --node does not own the parent app', function (): void {
-    $appNode = Node::factory()->create(['name' => 'app-1', 'role' => 'app']);
+    $appNode = Node::factory()->create(['name' => 'app-1']);
     NodeTool::factory()->create([
         'node_id' => $appNode->id,
         'name' => 'php',
@@ -152,7 +152,7 @@ it('frankenphp rejects workspace writes when --node does not own the parent app'
         ],
     ]);
 
-    $imageNode = Node::factory()->create(['name' => 'image-node', 'role' => 'app']);
+    $imageNode = Node::factory()->create(['name' => 'image-node']);
     NodeTool::factory()->create([
         'node_id' => $imageNode->id,
         'name' => 'php',
@@ -181,7 +181,7 @@ it('frankenphp rejects workspace writes when --node does not own the parent app'
 });
 
 it('frankenphp rejects host PHP and FPM fallback facts even when legacy version facts exist', function (): void {
-    $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app']);
+    $node = Node::factory()->create(['name' => 'app-1']);
     NodeTool::factory()->create([
         'node_id' => $node->id,
         'name' => 'php',
@@ -217,7 +217,7 @@ it('frankenphp rejects host PHP and FPM fallback facts even when legacy version 
 });
 
 it('frankenphp rejects legacy versions-only PHP facts without approved image evidence', function (): void {
-    $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app']);
+    $node = Node::factory()->create(['name' => 'app-1']);
     NodeTool::factory()->create([
         'node_id' => $node->id,
         'name' => 'php',
@@ -241,7 +241,7 @@ it('frankenphp rejects legacy versions-only PHP facts without approved image evi
 });
 
 it('frankenphp rejects workspace inheritance when inherited app version lacks approved image evidence', function (): void {
-    $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app']);
+    $node = Node::factory()->create(['name' => 'app-1']);
     NodeTool::factory()->create([
         'node_id' => $node->id,
         'name' => 'php',

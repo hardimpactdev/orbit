@@ -16,7 +16,7 @@ function configureDatabaseSchemaGatewayCaller(): void
     config(['orbit.is_gateway' => true]);
     Node::factory()->create([
         'name' => 'gateway',
-        'role' => 'gateway',
+
         'host' => '10.9.0.1',
         'wireguard_address' => '10.9.0.1',
     ]);
@@ -34,7 +34,7 @@ function strictDatabaseSchemaCommandPayload(): array
 describe('database schema commands', function (): void {
     it('lists tables as strict json for sqlite connections through the owning node', function (): void {
         configureDatabaseSchemaGatewayCaller();
-        $node = Node::factory()->create(['name' => 'app-node', 'role' => 'app']);
+        $node = Node::factory()->create(['name' => 'app-node']);
         $connection = DatabaseConnection::factory()->create([
             'node_id' => $node->id,
             'slug' => 'docs-db',
@@ -79,7 +79,7 @@ describe('database schema commands', function (): void {
 
     it('lists tables in human output with the prompts table primitive', function (): void {
         configureDatabaseSchemaGatewayCaller();
-        $node = Node::factory()->create(['name' => 'app-node', 'role' => 'app']);
+        $node = Node::factory()->create(['name' => 'app-node']);
         $connection = DatabaseConnection::factory()->create([
             'node_id' => $node->id,
             'slug' => 'docs-db',
@@ -117,7 +117,7 @@ describe('database schema commands', function (): void {
 
     it('describes a table in human output without leaking passwords', function (): void {
         configureDatabaseSchemaGatewayCaller();
-        $node = Node::factory()->create(['name' => 'app-node', 'role' => 'app']);
+        $node = Node::factory()->create(['name' => 'app-node']);
         $connection = DatabaseConnection::factory()->create([
             'node_id' => $node->id,
             'slug' => 'docs-db',
@@ -162,7 +162,7 @@ describe('database schema commands', function (): void {
 
     it('returns an error when remote sqlite schema output is mixed with logs', function (): void {
         configureDatabaseSchemaGatewayCaller();
-        $node = Node::factory()->create(['name' => 'app-node', 'role' => 'app']);
+        $node = Node::factory()->create(['name' => 'app-node']);
         $connection = DatabaseConnection::factory()->create([
             'node_id' => $node->id,
             'slug' => 'docs-db',

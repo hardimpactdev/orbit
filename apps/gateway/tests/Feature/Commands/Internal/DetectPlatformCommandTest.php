@@ -34,7 +34,6 @@ describe('orbit:internal:detect-platform', function (): void {
 
         $node = Node::query()->create([
             'name' => 'gateway-1',
-            'role' => 'gateway',
             'platform' => 'unknown',
             'host' => '10.6.0.2',
             'wireguard_address' => '10.6.0.2',

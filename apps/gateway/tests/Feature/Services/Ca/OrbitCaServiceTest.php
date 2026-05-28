@@ -71,7 +71,6 @@ describe('OrbitCaService', function () {
         it('generates root.crt and root.key on a local gateway node', function () {
             Node::create([
                 'name' => 'test-gateway',
-                'role' => 'gateway',
                 'status' => 'active',
                 'host' => '10.6.0.1',
                 'orbit_path' => '/home/orbit/orbit',
@@ -92,7 +91,6 @@ describe('OrbitCaService', function () {
         it('is idempotent: running twice leaves files unchanged', function () {
             Node::create([
                 'name' => 'test-gateway',
-                'role' => 'gateway',
                 'status' => 'active',
                 'host' => '10.6.0.1',
                 'orbit_path' => '/home/orbit/orbit',
@@ -115,7 +113,6 @@ describe('OrbitCaService', function () {
         it('throws with "restore" message when only root.crt exists', function () {
             Node::create([
                 'name' => 'test-gateway',
-                'role' => 'gateway',
                 'status' => 'active',
                 'host' => '10.6.0.1',
                 'orbit_path' => '/home/orbit/orbit',
@@ -137,7 +134,6 @@ describe('OrbitCaService', function () {
         it('throws mentioning "gateway" when no local gateway node exists', function () {
             Node::create([
                 'name' => 'not-a-gateway',
-                'role' => 'control',
                 'status' => 'active',
                 'host' => '127.0.0.1',
                 'orbit_path' => base_path(),
@@ -154,7 +150,6 @@ describe('OrbitCaService', function () {
         beforeEach(function () {
             Node::create([
                 'name' => 'test-gateway',
-                'role' => 'gateway',
                 'status' => 'active',
                 'host' => '10.6.0.1',
                 'orbit_path' => '/home/orbit/orbit',
@@ -272,7 +267,6 @@ describe('OrbitCaService', function () {
         it('returns PEM content of root.crt', function () {
             Node::create([
                 'name' => 'test-gateway',
-                'role' => 'gateway',
                 'status' => 'active',
                 'host' => '10.6.0.1',
                 'orbit_path' => '/home/orbit/orbit',
@@ -300,7 +294,6 @@ describe('OrbitCaService', function () {
         it('prevents issueLeaf on non-gateway even when CA files exist', function () {
             Node::create([
                 'name' => 'test-gateway',
-                'role' => 'gateway',
                 'status' => 'active',
                 'host' => '10.6.0.1',
                 'orbit_path' => '/home/orbit/orbit',
@@ -312,7 +305,6 @@ describe('OrbitCaService', function () {
             Node::query()->delete();
             Node::create([
                 'name' => 'test-control',
-                'role' => 'control',
                 'status' => 'active',
                 'host' => '127.0.0.1',
                 'orbit_path' => base_path(),
@@ -325,7 +317,6 @@ describe('OrbitCaService', function () {
         it('prevents rootCert on non-gateway even when CA files exist', function () {
             Node::create([
                 'name' => 'test-gateway',
-                'role' => 'gateway',
                 'status' => 'active',
                 'host' => '10.6.0.1',
                 'orbit_path' => '/home/orbit/orbit',
@@ -337,7 +328,6 @@ describe('OrbitCaService', function () {
             Node::query()->delete();
             Node::create([
                 'name' => 'test-control',
-                'role' => 'control',
                 'status' => 'active',
                 'host' => '127.0.0.1',
                 'orbit_path' => base_path(),

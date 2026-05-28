@@ -30,12 +30,12 @@ afterEach(function (): void {
 it('removes app intent and owned artifacts from a gateway caller', function (): void {
     Node::factory()->create([
         'name' => 'gateway-1',
-        'role' => 'gateway',
+
     ]);
 
     $node = Node::factory()->create([
         'name' => 'app-1',
-        'role' => 'app',
+
         'tld' => 'test',
         'status' => 'active',
     ]);
@@ -134,12 +134,12 @@ it('removes app intent and owned artifacts from a gateway caller', function (): 
 it('prompts for a missing app argument with a data table before removing it', function (): void {
     Node::factory()->create([
         'name' => 'gateway-1',
-        'role' => 'gateway',
+
     ]);
 
     $node = Node::factory()->create([
         'name' => 'app-1',
-        'role' => 'app',
+
         'tld' => 'test',
         'status' => 'active',
     ]);
@@ -176,7 +176,7 @@ it('prompts for a missing app argument with a data table before removing it', fu
 it('requires destructive consent in non-interactive mode', function (): void {
     Node::factory()->create([
         'name' => 'gateway-1',
-        'role' => 'gateway',
+
     ]);
 
     $app = App::factory()->create([
@@ -203,7 +203,7 @@ it('requires destructive consent in non-interactive mode', function (): void {
 it('returns app not found for already absent apps', function (): void {
     Node::factory()->create([
         'name' => 'gateway-1',
-        'role' => 'gateway',
+
     ]);
 
     app()->instance(RemoteShell::class, new AppRemoveSequencedRemoteShell([]));
@@ -228,7 +228,7 @@ it('forwards app-node CLI callers through the typed gateway request without loca
 
     Node::factory()->create([
         'name' => 'app-local',
-        'role' => 'app',
+
     ]);
 
     $app = App::factory()->create([
@@ -288,7 +288,7 @@ it('forwards app-node CLI callers through the typed gateway request without loca
 it('reports node cleanup drift as success warnings after intent removal', function (): void {
     Node::factory()->create([
         'name' => 'gateway-1',
-        'role' => 'gateway',
+
     ]);
 
     App::factory()->create([
@@ -331,12 +331,12 @@ it('reports node cleanup drift as success warnings after intent removal', functi
 it('reports static apps as not removed without warnings since static apps have no managed runtime artifacts', function (): void {
     Node::factory()->create([
         'name' => 'gateway-1',
-        'role' => 'gateway',
+
     ]);
 
     $node = Node::factory()->create([
         'name' => 'app-1',
-        'role' => 'app',
+
         'tld' => 'test',
         'status' => 'active',
     ]);
@@ -376,7 +376,7 @@ it('reports static apps as not removed without warnings since static apps have n
 it('reports an absent container and absent runtime config as not removed without emitting warnings', function (): void {
     Node::factory()->create([
         'name' => 'gateway-1',
-        'role' => 'gateway',
+
     ]);
 
     App::factory()->create([
@@ -412,7 +412,7 @@ it('reports an absent container and absent runtime config as not removed without
 it('reports app.runtime_container_extra warning when the docker inspect probe fails for an unknown reason during cleanup', function (): void {
     Node::factory()->create([
         'name' => 'gateway-1',
-        'role' => 'gateway',
+
     ]);
 
     App::factory()->create([
@@ -449,7 +449,7 @@ it('reports app.runtime_container_extra warning when the docker inspect probe fa
 it('reports app.runtime_config_extra warning when the sudo runtime config probe fails for an unknown reason during cleanup', function (): void {
     Node::factory()->create([
         'name' => 'gateway-1',
-        'role' => 'gateway',
+
     ]);
 
     App::factory()->create([
@@ -488,7 +488,7 @@ it('forwards configured control callers through the typed gateway request', func
 
     Node::factory()->create([
         'name' => 'control-1',
-        'role' => 'control',
+
     ]);
 
     LocalGatewaySettings::current()->fill([
@@ -548,12 +548,12 @@ it('forwards configured control callers through the typed gateway request', func
 it('prompts for destructive confirmation and renders the documented human progress tree', function (): void {
     Node::factory()->create([
         'name' => 'gateway-1',
-        'role' => 'gateway',
+
     ]);
 
     $node = Node::factory()->create([
         'name' => 'app-1',
-        'role' => 'app',
+
         'tld' => 'test',
         'status' => 'active',
     ]);
@@ -588,7 +588,7 @@ it('prompts for destructive confirmation and renders the documented human progre
 it('cancels before side effects when interactive destructive confirmation is declined', function (): void {
     Node::factory()->create([
         'name' => 'gateway-1',
-        'role' => 'gateway',
+
     ]);
 
     $app = App::factory()->create([
@@ -610,7 +610,7 @@ it('cancels before side effects when interactive destructive confirmation is dec
 it('renders drift details in human output when node cleanup leaves warnings', function (): void {
     Node::factory()->create([
         'name' => 'gateway-1',
-        'role' => 'gateway',
+
     ]);
 
     App::factory()->create([

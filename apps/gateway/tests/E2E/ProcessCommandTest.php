@@ -153,7 +153,6 @@ $node->update(['status' => 'active', 'platform' => 'ubuntu']);
     ['name' => '__APP__'],
     [
         'node_id' => $node->id,
-        'environment' => 'development',
         'path' => '__PATH__',
         'document_root' => 'public',
         'php_version' => '8.5',

@@ -26,7 +26,7 @@ function createToolLogsTargetLocalNode(string $role = 'gateway'): Node
 {
     return Node::factory()->create([
         'name' => "tool-logs-target-{$role}",
-        'role' => $role,
+
         'host' => '10.9.0.1',
         'wireguard_address' => '10.9.0.1',
     ]);
@@ -36,7 +36,6 @@ function createToolLogsTarget(string $nodeName, ?string $tld = null): Node
 {
     return createTestAppHostNode([
         'name' => $nodeName,
-        'role' => 'app',
         'status' => 'active',
         'tld' => $tld,
     ]);
@@ -185,7 +184,6 @@ describe('tool:logs target resolution', function (): void {
                     'data' => [
                         'self' => [
                             'name' => 'control-self',
-                            'role' => 'control',
                         ],
                     ],
                 ],

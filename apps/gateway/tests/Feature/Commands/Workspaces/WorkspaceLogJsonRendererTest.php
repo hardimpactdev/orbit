@@ -21,11 +21,11 @@ function createWorkspaceLogJsonRun(array $runOverrides = [], array $stepOverride
 {
     Node::factory()->create([
         'name' => 'local-gateway',
-        'role' => 'gateway',
+
         'host' => '10.6.0.1',
         'wireguard_address' => '10.6.0.1',
     ]);
-    $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app']);
+    $node = Node::factory()->create(['name' => 'app-1']);
     $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
     $workspace = Workspace::factory()->create(['name' => 'feature-docs', 'app_id' => $app->id]);
     $step = WorkspaceStep::factory()->create([

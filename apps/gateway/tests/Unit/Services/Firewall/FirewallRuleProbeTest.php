@@ -26,7 +26,7 @@ function firewallProbeIssue(array $drift, string $key): mixed
 function createFirewallRuleProbeAppHostNode(array $attributes = []): Node
 {
     $node = Node::factory()->create([
-        'role' => 'app',
+
         'status' => 'active',
         'platform' => 'ubuntu',
         ...$attributes,
@@ -34,7 +34,7 @@ function createFirewallRuleProbeAppHostNode(array $attributes = []): Node
 
     NodeRoleAssignment::factory()->create([
         'node_id' => $node->id,
-        'role' => 'app-development',
+        'role' => 'app-dev',
         'status' => 'active',
         'settings' => ['tld' => 'test'],
     ]);
@@ -45,7 +45,7 @@ function createFirewallRuleProbeAppHostNode(array $attributes = []): Node
 function createFirewallRuleProbeGatewayAssignmentNode(array $attributes = []): Node
 {
     $node = Node::factory()->create([
-        'role' => 'control',
+
         'status' => 'active',
         'platform' => 'ubuntu',
         ...$attributes,
@@ -244,9 +244,9 @@ describe('firewall registry probe foundation', function (): void {
 
         expect(firewallProbeIssue($drift, 'firewall_rule.node_invalid')?->kind)->toBe(DriftKind::Divergent);
     })->with([
-        'control node' => [['role' => 'control', 'status' => 'active', 'platform' => 'ubuntu']],
-        'inactive app node' => [['role' => 'app', 'status' => 'inactive', 'platform' => 'ubuntu']],
-        'unsupported platform' => [['role' => 'app', 'status' => 'active', 'platform' => 'macos']],
+        'control node' => [['status' => 'active', 'platform' => 'ubuntu']],
+        'inactive app node' => [['status' => 'inactive', 'platform' => 'ubuntu']],
+        'unsupported platform' => [['status' => 'active', 'platform' => 'macos']],
     ]);
 
     it('detects baseline policy boundary conflicts', function (): void {

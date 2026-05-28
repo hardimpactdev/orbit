@@ -67,13 +67,13 @@ describe('orbit:internal:pin-node-host-keys', function (): void {
 
         $app = Node::factory()->create([
             'name' => 'app-dev-1',
-            'role' => 'app',
+
             'host' => '10.6.0.4',
         ]);
 
         $gateway = Node::factory()->create([
             'name' => 'gateway',
-            'role' => 'gateway',
+
             'host' => '10.6.0.2',
         ]);
         $operator = Node::factory()->operator()->create([
@@ -99,7 +99,7 @@ describe('orbit:internal:pin-node-host-keys', function (): void {
 
         Node::factory()->create([
             'name' => 'app-dev-1',
-            'role' => 'app',
+
             'host' => '10.6.0.4',
         ]);
 

@@ -12,7 +12,7 @@ uses(RefreshDatabase::class);
 
 it('prompts for version in interactive mode when version is missing', function (): void {
     createPhpLocalNode('gateway');
-    $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app']);
+    $node = Node::factory()->create(['name' => 'app-1']);
     createPhpTool($node, ['versions' => ['8.5', '8.4', '8.3']]);
     App::factory()->create(['name' => 'docs', 'node_id' => $node->id, 'php_version' => '8.4']);
 
@@ -23,7 +23,7 @@ it('prompts for version in interactive mode when version is missing', function (
 
 it('does not prompt when version argument is supplied in interactive mode', function (): void {
     createPhpLocalNode('gateway');
-    $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app']);
+    $node = Node::factory()->create(['name' => 'app-1']);
     createPhpTool($node, ['versions' => ['8.5', '8.4', '8.3']]);
     App::factory()->create(['name' => 'docs', 'node_id' => $node->id, 'php_version' => '8.4']);
 
@@ -34,7 +34,7 @@ it('does not prompt when version argument is supplied in interactive mode', func
 
 it('returns validation_failed in non-interactive mode when version is missing', function (): void {
     createPhpLocalNode('gateway');
-    $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app']);
+    $node = Node::factory()->create(['name' => 'app-1']);
     App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
 
     $exitCode = Artisan::call('php:use', ['--app' => 'docs', '--json' => true]);

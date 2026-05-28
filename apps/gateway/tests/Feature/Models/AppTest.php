@@ -13,13 +13,12 @@ describe('App model', function (): void {
     it('persists the canonical app registry fields', function (): void {
         $node = Node::factory()->create([
             'name' => 'app-1',
-            'role' => 'app',
+
         ]);
 
         $app = App::query()->create([
             'name' => 'docs',
             'node_id' => $node->id,
-            'environment' => 'production',
             'domain' => 'docs.example.com',
             'path' => '/home/orbit/apps/docs',
             'document_root' => 'public',
@@ -44,7 +43,7 @@ describe('App model', function (): void {
     it('defaults optional registry fields for a development app', function (): void {
         $node = Node::factory()->create([
             'name' => 'dev-1',
-            'role' => 'app',
+
             'tld' => 'test',
         ]);
 

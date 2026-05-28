@@ -15,9 +15,10 @@ const TOOL_LIST_CALLER_WG_IP = '10.6.0.97';
 
 function createToolListCallerNode(array $overrides = []): Node
 {
+    unset($overrides['role'], $overrides['environment']);
+
     return Node::factory()->create(array_merge([
         'name' => 'caller',
-        'role' => 'control',
         'host' => TOOL_LIST_CALLER_WG_IP,
         'wireguard_address' => TOOL_LIST_CALLER_WG_IP,
     ], $overrides));
@@ -119,7 +120,7 @@ describe('ToolListController', function (): void {
         assignToolListGatewayRole($caller);
         $firstNode = createTestAppHostNode(['name' => 'app-1', 'role' => 'app']);
         $secondNode = createTestAppHostNode(['name' => 'app-2', 'role' => 'app']);
-        $controlNode = Node::factory()->create(['name' => 'control-1', 'role' => 'control']);
+        $controlNode = Node::factory()->create(['name' => 'control-1']);
 
         NodeTool::factory()->create(['name' => 'redis', 'node_id' => $firstNode->id]);
         NodeTool::factory()->create(['name' => 'php', 'node_id' => $secondNode->id]);
@@ -177,7 +178,7 @@ describe('ToolListController', function (): void {
 
     it('returns authorization failure when the caller has no tool registry visibility', function (): void {
         createToolListCallerNode();
-        $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app']);
+        $node = Node::factory()->create(['name' => 'app-1']);
         NodeTool::factory()->create(['name' => 'redis', 'node_id' => $node->id]);
 
         $response = $this->call('GET', '/api/tools', [], [], [], ['REMOTE_ADDR' => TOOL_LIST_CALLER_WG_IP]);

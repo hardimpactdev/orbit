@@ -20,8 +20,7 @@ describe('node:show composable roles', function (): void {
 
         Node::factory()->create([
             'name' => 'local-gateway',
-            'role' => 'gateway',
-            'environment' => null,
+
             'host' => '10.6.0.1',
             'wireguard_address' => '10.6.0.1',
             'platform' => 'ubuntu_24-04',
@@ -32,8 +31,7 @@ describe('node:show composable roles', function (): void {
     it('includes composable role assignments in JSON while preserving legacy fields', function (): void {
         $node = Node::factory()->create([
             'name' => 'host-1',
-            'role' => 'app',
-            'environment' => 'development',
+
             'host' => '10.6.0.7',
             'wireguard_address' => '10.6.0.7',
             'platform' => 'ubuntu_24-04',
@@ -42,7 +40,7 @@ describe('node:show composable roles', function (): void {
 
         $appDevelopmentRole = NodeRoleAssignment::factory()->create([
             'node_id' => $node->id,
-            'role' => 'app-development',
+            'role' => 'app-dev',
             'status' => 'active',
             'settings' => ['tld' => 'orbit.test'],
         ]);
@@ -63,14 +61,12 @@ describe('node:show composable roles', function (): void {
             ->and($payload['success']['data']['node']['environment'])->toBe('development')
             ->and($payload['success']['data']['node']['roles'])->toBe([
                 [
-                    'role' => 'app-development',
                     'status' => 'active',
                     'settings' => ['tld' => 'orbit.test'],
                     'last_error' => null,
                     'converged_at' => $appDevelopmentRole->converged_at?->toJSON(),
                 ],
                 [
-                    'role' => 'database',
                     'status' => 'error',
                     'settings' => [],
                     'last_error' => null,
@@ -84,8 +80,7 @@ describe('node:show composable roles', function (): void {
     it('renders composable role assignments in the human output', function (): void {
         $node = Node::factory()->create([
             'name' => 'host-1',
-            'role' => 'app',
-            'environment' => 'development',
+
             'host' => '10.6.0.7',
             'wireguard_address' => '10.6.0.7',
             'platform' => 'ubuntu_24-04',
@@ -94,7 +89,7 @@ describe('node:show composable roles', function (): void {
 
         NodeRoleAssignment::factory()->create([
             'node_id' => $node->id,
-            'role' => 'app-development',
+            'role' => 'app-dev',
             'status' => 'active',
             'settings' => ['tld' => 'orbit.test'],
         ]);

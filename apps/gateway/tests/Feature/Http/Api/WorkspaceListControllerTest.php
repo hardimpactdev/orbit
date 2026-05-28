@@ -16,25 +16,26 @@ const WORKSPACE_LIST_CALLER_WG_IP = '10.6.0.97';
 
 function createWorkspaceListCallerNode(array $overrides = []): Node
 {
+    unset($overrides['role'], $overrides['environment']);
+
     return Node::factory()->create(array_merge([
         'name' => 'caller',
-        'role' => 'control',
         'host' => WORKSPACE_LIST_CALLER_WG_IP,
         'wireguard_address' => WORKSPACE_LIST_CALLER_WG_IP,
     ], $overrides));
 }
 
-function createWorkspaceListAppNode(array $overrides = [], string $role = 'app-development'): Node
+function createWorkspaceListAppNode(array $overrides = [], string $role = 'app-dev'): Node
 {
     $node = Node::factory()->create(array_merge([
-        'role' => 'app',
+
     ], $overrides));
 
     NodeRoleAssignment::factory()->create([
         'node_id' => $node->id,
         'role' => $role,
         'status' => 'active',
-        'settings' => $role === 'app-development' ? ['tld' => 'test'] : [],
+        'settings' => $role === 'app-dev' ? ['tld' => 'test'] : [],
     ]);
 
     return $node;
@@ -89,7 +90,7 @@ describe('WorkspaceListController', function (): void {
     it('filters workspaces by app and node', function (): void {
         $caller = createWorkspaceListCallerNode();
         $devNode = createWorkspaceListAppNode(['name' => 'dev-1']);
-        $prodNode = createWorkspaceListAppNode(['name' => 'prod-1'], 'app-production');
+        $prodNode = createWorkspaceListAppNode(['name' => 'prod-1'], 'app-prod');
         grantWorkspaceListAccess($caller, $devNode);
         grantWorkspaceListAccess($caller, $prodNode);
 

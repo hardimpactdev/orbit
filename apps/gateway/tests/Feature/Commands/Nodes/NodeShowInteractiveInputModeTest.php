@@ -57,13 +57,11 @@ function nodeShowInteractiveRow(array $overrides = []): array
 {
     return array_merge([
         'name' => 'app-1',
-        'role' => 'app',
         'host' => '10.6.0.7',
         'wireguard_address' => '10.6.0.7',
         'user' => 'nckrtl',
         'orbit_path' => '/home/nckrtl/orbit',
         'status' => 'active',
-        'environment' => 'development',
         'platform' => 'ubuntu_24-04',
         'created_at' => now(),
         'updated_at' => now(),
@@ -76,8 +74,6 @@ function setupShowInteractiveGatewayCaller(): void
 
     DB::table('nodes')->insert(nodeShowInteractiveRow([
         'name' => 'test-gateway',
-        'role' => 'gateway',
-        'environment' => null,
     ]));
 }
 
@@ -227,9 +223,7 @@ describe('node:show interactive input mode', function (): void {
                         'nodes' => [
                             [
                                 'name' => 'visible-app',
-                                'role' => 'app',
                                 'status' => 'active',
-                                'environment' => 'development',
                                 'platform' => 'ubuntu_24-04',
                                 'host' => '10.6.0.7',
                             ],
@@ -242,9 +236,7 @@ describe('node:show interactive input mode', function (): void {
                     'data' => [
                         'node' => [
                             'name' => 'visible-app',
-                            'role' => 'app',
                             'status' => 'active',
-                            'environment' => 'development',
                             'platform' => 'ubuntu_24-04',
                             'wireguard_address' => '10.6.0.7',
                             'addresses' => ['wireguard' => '10.6.0.7'],

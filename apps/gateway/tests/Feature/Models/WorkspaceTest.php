@@ -19,7 +19,7 @@ uses(RefreshDatabase::class);
 it('stores workspace registry intent and derives canonical fields', function (): void {
     $node = Node::factory()->create([
         'name' => 'app-1',
-        'role' => 'app',
+
         'tld' => 'test',
     ]);
 

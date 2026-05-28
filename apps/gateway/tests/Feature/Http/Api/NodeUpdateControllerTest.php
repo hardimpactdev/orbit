@@ -22,11 +22,9 @@ function apiUpdateNodeRow(array $overrides = []): array
 {
     return array_merge([
         'name' => 'app-1',
-        'role' => 'app',
         'host' => '10.6.0.7',
         'orbit_path' => '/home/nckrtl/orbit',
         'status' => 'active',
-        'environment' => 'development',
         'platform' => 'ubuntu_24-04',
         'wireguard_address' => '10.6.0.7',
         'public_ipv4' => null,
@@ -40,9 +38,7 @@ function createUpdateCallerNode(string $role = 'control'): int
 {
     return (int) DB::table('nodes')->insertGetId(apiUpdateNodeRow([
         'name' => "{$role}-caller",
-        'role' => $role,
         'host' => UPDATE_CALLER_WG_IP,
-        'environment' => $role === 'app' ? 'development' : null,
         'wireguard_address' => UPDATE_CALLER_WG_IP,
     ]));
 }
@@ -51,9 +47,7 @@ function createUpdateGatewayNode(): int
 {
     $gatewayId = (int) DB::table('nodes')->insertGetId(apiUpdateNodeRow([
         'name' => 'gateway-1',
-        'role' => 'gateway',
         'host' => '10.6.0.2',
-        'environment' => null,
         'wireguard_address' => '10.6.0.2',
     ]));
 
@@ -130,7 +124,6 @@ describe('NodeUpdateController', function (): void {
 
         $response = putUpdateNodeJson('/api/nodes/app-1', [
             'host' => '10.6.0.8',
-            'environment' => 'production',
             'public_ipv4' => '203.0.113.10',
         ], ['REMOTE_ADDR' => UPDATE_CALLER_WG_IP]);
 
@@ -160,7 +153,6 @@ describe('NodeUpdateController', function (): void {
 
         $response = putUpdateNodeJson('/api/nodes/app-1', [
             'host' => '10.6.0.8',
-            'environment' => 'production',
             'public_ipv4' => '203.0.113.10',
         ], ['REMOTE_ADDR' => UPDATE_CALLER_WG_IP]);
 
@@ -320,9 +312,7 @@ describe('NodeUpdateController', function (): void {
         $callerId = createUpdateCallerNode();
         $staleGatewayId = (int) DB::table('nodes')->insertGetId(apiUpdateNodeRow([
             'name' => 'alpha-gateway',
-            'role' => 'gateway',
             'host' => '10.6.0.3',
-            'environment' => null,
             'wireguard_address' => '10.6.0.3',
         ]));
         grantUpdateGatewayAccess($callerId, $staleGatewayId);
@@ -428,7 +418,7 @@ describe('NodeUpdateController', function (): void {
         $callerId = createUpdateCallerNode();
         $gatewayId = createUpdateGatewayNode();
         grantUpdateGatewayAccess($callerId, $gatewayId);
-        DB::table('nodes')->insert(apiUpdateNodeRow(['environment' => 'production']));
+        DB::table('nodes')->insert(apiUpdateNodeRow([]));
 
         $response = putUpdateNodeJson('/api/nodes/app-1', ['tld' => 'test'], ['REMOTE_ADDR' => UPDATE_CALLER_WG_IP]);
 

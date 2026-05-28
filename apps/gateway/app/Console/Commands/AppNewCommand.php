@@ -63,7 +63,7 @@ class AppNewCommand extends Command
             return $this->forwardCreate($input);
         }
 
-        $requiredRole = $input['domain'] !== null ? 'app-production' : 'app-development';
+        $requiredRole = $input['domain'] !== null ? 'app-prod' : 'app-dev';
         $node = $this->resolveTargetNode($input['node'], $requiredRole);
 
         if (is_int($node)) {
@@ -579,7 +579,7 @@ class AppNewCommand extends Command
                 return null;
             }
 
-            return app(NodeRoleAssignments::class)->nodeHasActiveRole($node, 'app-development')
+            return app(NodeRoleAssignments::class)->nodeHasActiveRole($node, 'app-dev')
                 ? $node->name
                 : null;
         }
@@ -591,7 +591,7 @@ class AppNewCommand extends Command
         }
 
         foreach ($nodes as $node) {
-            if (($node['name'] ?? null) === $name && $this->payloadHasActiveRole($node, 'app-development')) {
+            if (($node['name'] ?? null) === $name && $this->payloadHasActiveRole($node, 'app-dev')) {
                 return $name;
             }
         }

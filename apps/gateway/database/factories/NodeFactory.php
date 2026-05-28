@@ -16,7 +16,6 @@ class NodeFactory extends Factory
     {
         return [
             'name' => fake()->unique()->bothify('node-####'),
-            'role' => 'app',
             'host' => fake()->unique()->bothify('node-####.test'),
             'user' => 'orbit',
             'orbit_path' => '/home/orbit/orbit',
@@ -27,8 +26,6 @@ class NodeFactory extends Factory
     public function operator(): static
     {
         return $this->state(fn (): array => [
-            'role' => Node::OPERATOR_STORAGE_ROLE,
-            'environment' => null,
             'tld' => null,
         ]);
     }

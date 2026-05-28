@@ -97,13 +97,11 @@ it('exports from the build host and imports on target hosts', function (): void 
     expect($result)->toBe([
         [
             'host' => 'sidecar1',
-            'role' => 'base',
             'alias' => 'orbit-base-ubuntu-26.04',
             'action' => 'imported',
         ],
         [
             'host' => 'sidecar2',
-            'role' => 'base',
             'alias' => 'orbit-base-ubuntu-26.04',
             'action' => 'imported',
         ],

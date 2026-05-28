@@ -12,7 +12,7 @@ uses(RefreshDatabase::class);
 
 describe('app:list human renderer contract', function (): void {
     it('renders grouped app tables by owning node', function (): void {
-        $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app']);
+        $node = Node::factory()->create(['name' => 'app-1']);
 
         App::factory()->create(['name' => 'docs', 'node_id' => $node->id, 'environment' => 'development', 'domain' => 'docs.test']);
         App::factory()->create(['name' => 'site', 'node_id' => $node->id, 'environment' => 'production', 'domain' => 'site.test']);
@@ -31,7 +31,7 @@ describe('app:list human renderer contract', function (): void {
     });
 
     it('renders workspace child rows below their parent app', function (): void {
-        $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'tld' => 'test']);
+        $node = Node::factory()->create(['name' => 'app-1', 'tld' => 'test']);
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id, 'environment' => 'development', 'domain' => null]);
 
         Workspace::factory()->create(['name' => 'feature-docs', 'app_id' => $app->id]);

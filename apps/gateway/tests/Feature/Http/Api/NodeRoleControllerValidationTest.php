@@ -18,12 +18,10 @@ function apiNodeRoleRow(array $overrides = []): array
 {
     return array_merge([
         'name' => 'app-1',
-        'role' => 'app',
         'host' => '10.6.0.7',
         'user' => 'nckrtl',
         'orbit_path' => '/home/nckrtl/orbit',
         'status' => 'active',
-        'environment' => 'development',
         'platform' => 'ubuntu_24-04',
         'wireguard_address' => '10.6.0.7',
         'created_at' => now(),
@@ -35,9 +33,7 @@ function createNodeRoleApiCaller(string $role = 'control'): int
 {
     return (int) DB::table('nodes')->insertGetId(apiNodeRoleRow([
         'name' => "{$role}-caller",
-        'role' => $role,
         'host' => NODE_ROLE_API_CALLER_WG_IP,
-        'environment' => $role === 'app' ? 'development' : null,
         'wireguard_address' => NODE_ROLE_API_CALLER_WG_IP,
     ]));
 }
@@ -46,9 +42,7 @@ function createNodeRoleApiGateway(): int
 {
     $nodeId = (int) DB::table('nodes')->insertGetId(apiNodeRoleRow([
         'name' => 'gateway-1',
-        'role' => 'gateway',
         'host' => '10.6.0.2',
-        'environment' => null,
         'wireguard_address' => '10.6.0.2',
     ]));
 
@@ -155,7 +149,6 @@ describe('node role api validation envelopes', function (): void {
 
     it('returns the orbit error envelope for non-array settings on add', function (): void {
         $response = postNodeRoleApiJson('/api/nodes/target-1/roles', [
-            'role' => 'database',
             'settings' => 'invalid',
         ], ['REMOTE_ADDR' => NODE_ROLE_API_CALLER_WG_IP]);
 
@@ -168,7 +161,6 @@ describe('node role api validation envelopes', function (): void {
 
     it('returns the orbit error envelope for non-string ingress node on add', function (): void {
         $response = postNodeRoleApiJson('/api/nodes/target-1/roles', [
-            'role' => 'app-production',
             'ingress_node' => ['edge-1'],
         ], ['REMOTE_ADDR' => NODE_ROLE_API_CALLER_WG_IP]);
 
@@ -181,7 +173,6 @@ describe('node role api validation envelopes', function (): void {
 
     it('rejects ingress node for non-app-production add requests', function (): void {
         $response = postNodeRoleApiJson('/api/nodes/target-1/roles', [
-            'role' => 'ingress',
             'ingress_node' => 'edge-1',
         ], ['REMOTE_ADDR' => NODE_ROLE_API_CALLER_WG_IP]);
 
@@ -201,21 +192,19 @@ describe('node role api validation envelopes', function (): void {
         assignNodeRoleApiRole($targetId, 'ingress');
 
         $response = postNodeRoleApiJson('/api/nodes/target-1/roles', [
-            'role' => 'app-production',
             'ingress_node' => 'edge-1',
         ], ['REMOTE_ADDR' => NODE_ROLE_API_CALLER_WG_IP]);
 
         $response->assertUnprocessable()
             ->assertJsonPath('error.code', 'validation_failed')
             ->assertJsonPath('error.meta.field', 'ingress_node')
-            ->assertJsonPath('error.meta.role', 'app-production')
+            ->assertJsonPath('error.meta.role', 'app-prod')
             ->assertJsonPath('error.message', 'The app-production role does not accept ingress_node when the target node already hosts ingress.')
             ->assertJsonMissingPath('success');
     });
 
     it('rejects path-like app-development tld settings on add', function (): void {
         $response = postNodeRoleApiJson('/api/nodes/target-1/roles', [
-            'role' => 'app-development',
             'settings' => ['tld' => '../../orbit'],
         ], ['REMOTE_ADDR' => NODE_ROLE_API_CALLER_WG_IP]);
 
@@ -233,7 +222,6 @@ describe('node role api validation envelopes', function (): void {
         assignNodeRoleApiRole($targetId, 'database');
 
         $response = postNodeRoleApiJson('/api/nodes/target-1/roles', [
-            'role' => 'database',
             'settings' => [],
         ], ['REMOTE_ADDR' => NODE_ROLE_API_CALLER_WG_IP]);
 
@@ -254,7 +242,6 @@ describe('node role api validation envelopes', function (): void {
         assignNodeRoleApiRole($targetId, 'database');
 
         $response = postNodeRoleApiJson('/api/nodes/target-1/roles', [
-            'role' => 'gateway',
             'settings' => [],
         ], ['REMOTE_ADDR' => NODE_ROLE_API_CALLER_WG_IP]);
 
@@ -304,7 +291,6 @@ describe('node role api validation envelopes', function (): void {
         assignNodeRoleApiRole($callerId, 'gateway');
 
         $response = postNodeRoleApiJson('/api/nodes/target-1/roles', [
-            'role' => 'database',
             'settings' => [],
         ], ['REMOTE_ADDR' => NODE_ROLE_API_CALLER_WG_IP]);
 
@@ -316,7 +302,6 @@ describe('node role api validation envelopes', function (): void {
         DB::table('node_access')->delete();
 
         $response = postNodeRoleApiJson('/api/nodes/target-1/roles', [
-            'role' => 'database',
             'settings' => [],
         ], ['REMOTE_ADDR' => NODE_ROLE_API_CALLER_WG_IP]);
 
@@ -341,7 +326,6 @@ describe('node role api validation envelopes', function (): void {
         grantNodeRoleApiAccess($callerId, $gatewayId, ['*']);
 
         $response = postNodeRoleApiJson('/api/nodes/target-1/roles', [
-            'role' => 'database',
             'settings' => [],
         ], ['REMOTE_ADDR' => NODE_ROLE_API_CALLER_WG_IP]);
 

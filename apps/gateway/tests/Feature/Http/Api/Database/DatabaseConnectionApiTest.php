@@ -23,7 +23,7 @@ function createDatabaseApiCallerNode(array $overrides = []): Node
 {
     return Node::factory()->create(array_merge([
         'name' => 'database-api-caller',
-        'role' => 'control',
+
         'host' => DATABASE_API_CALLER_WG_IP,
         'wireguard_address' => DATABASE_API_CALLER_WG_IP,
     ], $overrides));
@@ -88,7 +88,7 @@ describe('database connection api', function (): void {
             'host' => '10.9.0.98',
             'wireguard_address' => '10.9.0.98',
         ]);
-        assignDatabaseApiRole($caller, 'app-development');
+        assignDatabaseApiRole($caller, 'app-dev');
         $node = createTestAppHostNode(['name' => 'db-node', 'role' => 'app']);
         grantDatabaseApiAccess($caller, $node, ['database:read']);
         DatabaseConnection::factory()->create(['slug' => 'primary-db', 'node_id' => $node->id]);
@@ -237,7 +237,7 @@ describe('database connection api', function (): void {
             'host' => '10.9.0.98',
             'wireguard_address' => '10.9.0.98',
         ]);
-        assignDatabaseApiRole($appCaller, 'app-development');
+        assignDatabaseApiRole($appCaller, 'app-dev');
 
         $databaseCaller = createDatabaseApiCallerNode([
             'name' => 'database-api-database-caller',
@@ -262,13 +262,11 @@ describe('database connection api', function (): void {
     it('rejects active app and database legacy-role callers without active assignments', function (): void {
         createDatabaseApiCallerNode([
             'name' => 'database-api-legacy-app-caller',
-            'role' => 'app',
             'host' => '10.9.0.100',
             'wireguard_address' => '10.9.0.100',
         ]);
         createDatabaseApiCallerNode([
             'name' => 'database-api-legacy-database-caller',
-            'role' => 'database',
             'host' => '10.9.0.101',
             'wireguard_address' => '10.9.0.101',
         ]);

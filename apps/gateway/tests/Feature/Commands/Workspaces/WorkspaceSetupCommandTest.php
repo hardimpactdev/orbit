@@ -29,7 +29,6 @@ beforeEach(function (): void {
     DB::table('nodes')->insert([
         [
             'name' => 'gateway',
-            'role' => 'gateway',
             'host' => 'gateway',
             'orbit_path' => '/home/gateway/orbit',
             'status' => 'active',
@@ -39,7 +38,6 @@ beforeEach(function (): void {
         ],
         [
             'name' => 'app-1',
-            'role' => 'app',
             'host' => 'app-1',
             'orbit_path' => '/home/nckrtl/orbit',
             'status' => 'active',
@@ -56,7 +54,6 @@ beforeEach(function (): void {
             'node_id' => 2,
             'path' => '/home/nckrtl/apps/demo',
             'php_version' => '8.5',
-            'environment' => 'development',
             'document_root' => 'public',
             'created_at' => now(),
             'updated_at' => now(),

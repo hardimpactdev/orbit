@@ -44,7 +44,7 @@ final class NodeShowController implements Loggable
                 'data' => [
                     'node' => [
                         'name' => $node->name,
-                        'role' => $node->role,
+                        'role' => $node->displayRole(),
                         'status' => $node->status,
                         'environment' => app(NodeRoleAssignments::class)->activeAppHostEnvironment($node),
                         'platform' => $node->platform ?? 'unknown',

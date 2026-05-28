@@ -22,7 +22,7 @@ beforeEach(function (): void {
 it('prompts for missing name and target app node', function (): void {
     Node::factory()->create([
         'name' => 'gateway-1',
-        'role' => 'gateway',
+
     ]);
 
     createTestAppHostNode([
@@ -47,19 +47,17 @@ it('prompts for missing name and target app node', function (): void {
 it('preselects the local default app node when prompting for the target node', function (): void {
     Node::factory()->create([
         'name' => 'gateway-1',
-        'role' => 'gateway',
+
     ]);
 
     createTestAppHostNode([
         'name' => 'app-1',
-        'environment' => 'development',
         'tld' => 'test',
         'status' => 'active',
     ]);
 
     $defaultNode = createTestAppHostNode([
         'name' => 'app-2',
-        'environment' => 'development',
         'tld' => 'test',
         'status' => 'active',
     ]);
@@ -84,7 +82,7 @@ it('preselects the local default app node when prompting for the target node', f
 it('validates prompted app name availability before asking for repository input', function (): void {
     Node::factory()->create([
         'name' => 'gateway-1',
-        'role' => 'gateway',
+
     ]);
 
     $targetNode = createTestAppHostNode([
@@ -113,7 +111,7 @@ it('validates prompted app name availability before asking for repository input'
 it('prompts for an optional repository and canonicalizes github shorthand', function (): void {
     Node::factory()->create([
         'name' => 'gateway-1',
-        'role' => 'gateway',
+
     ]);
 
     createTestAppHostNode([

@@ -70,8 +70,8 @@ $node = $peer instanceof App\Models\WireGuardPeer
     : null;
 echo json_encode([
     "name" => $node?->name,
-    "role" => $node?->role,
-    "local_role" => $node?->role,
+    "role" => $node?->displayRole(),
+    "local_role" => $node?->displayRole(),
     "status" => $node?->status,
     "platform" => $node?->platform,
     "wireguard_address" => $node?->wireguard_address,

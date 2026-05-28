@@ -90,7 +90,6 @@ it('mints client configs with the wireguard server dns address', function (): vo
 it('routes password and session secret updates through wg-easy state actions with redacted output summaries', function (): void {
     $node = Node::factory()->create([
         'name' => 'gateway-1',
-        'role' => 'gateway',
         'host' => '10.6.0.2',
         'wireguard_address' => '10.6.0.2',
         'status' => 'active',
@@ -405,7 +404,6 @@ function wgEasyVpnBackendReadyForPasswordRotation(
 ): WgEasyVpnBackend {
     $node = Node::factory()->create([
         'name' => 'gateway-1',
-        'role' => 'gateway',
         'host' => '10.6.0.2',
         'wireguard_address' => '10.6.0.2',
         'status' => 'active',

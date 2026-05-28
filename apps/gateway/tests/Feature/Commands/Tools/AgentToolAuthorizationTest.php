@@ -20,7 +20,7 @@ function createAgentToolAuthAgentNode(array $overrides = []): Node
 {
     $node = Node::factory()->create(array_merge([
         'name' => 'agent-1',
-        'role' => 'agent',
+
         'status' => 'active',
         'host' => AGENT_TOOL_AUTH_WG_IP,
         'wireguard_address' => AGENT_TOOL_AUTH_WG_IP,
@@ -454,7 +454,7 @@ describe('agent tool authorization CLI', function (): void {
     it('warns when gateway installs a second running agent tool', function (): void {
         $gateway = Node::factory()->create([
             'name' => 'gateway-1',
-            'role' => 'gateway',
+
             'status' => 'active',
         ]);
 
@@ -490,7 +490,7 @@ describe('agent tool authorization CLI', function (): void {
     it('warns when gateway starts an agent tool while another is running', function (): void {
         $gateway = Node::factory()->create([
             'name' => 'gateway-1',
-            'role' => 'gateway',
+
             'status' => 'active',
         ]);
 
@@ -883,7 +883,7 @@ describe('agent tool authorization API', function (): void {
     it('warns via API when gateway installs a second running agent tool', function (): void {
         $gateway = Node::factory()->create([
             'name' => 'gateway-1',
-            'role' => 'gateway',
+
             'status' => 'active',
             'wireguard_address' => '10.6.0.1',
         ]);
@@ -921,7 +921,7 @@ describe('agent tool authorization API', function (): void {
     it('warns via API when gateway starts an agent tool while another is running', function (): void {
         $gateway = Node::factory()->create([
             'name' => 'gateway-1',
-            'role' => 'gateway',
+
             'status' => 'active',
             'wireguard_address' => '10.6.0.1',
         ]);

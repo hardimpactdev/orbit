@@ -27,7 +27,7 @@ function createProcessLogsLocalNode(string $role = 'gateway'): Node
 {
     return Node::factory()->create([
         'name' => "local-{$role}",
-        'role' => $role,
+
         'host' => '10.6.0.1',
         'wireguard_address' => '10.6.0.1',
     ]);
@@ -36,7 +36,7 @@ function createProcessLogsLocalNode(string $role = 'gateway'): Node
 describe('process:logs base contract', function (): void {
     it('reads bounded gateway-local process logs as JSON', function (): void {
         createProcessLogsLocalNode('gateway');
-        $node = Node::factory()->create(['role' => 'app']);
+        $node = Node::factory()->create([]);
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
         Process::factory()->create(['app_id' => $app->id, 'name' => 'vite', 'runtime' => ProcessRuntime::Supervisor]);
         $remoteShell = new ProcessLogsRemoteShell([
@@ -64,7 +64,7 @@ describe('process:logs base contract', function (): void {
 
     it('reads workspace logs in follow mode through tail -F for human output', function (): void {
         createProcessLogsLocalNode('gateway');
-        $node = Node::factory()->create(['role' => 'app']);
+        $node = Node::factory()->create([]);
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
         Workspace::factory()->create(['name' => 'feature-docs', 'app_id' => $app->id]);
         Process::factory()->create(['app_id' => $app->id, 'name' => 'vite', 'runtime' => ProcessRuntime::Supervisor]);
@@ -112,7 +112,7 @@ describe('process:logs base contract', function (): void {
 
     it('reports process not found and log read failures', function (array $results, string $code): void {
         createProcessLogsLocalNode('gateway');
-        $node = Node::factory()->create(['role' => 'app']);
+        $node = Node::factory()->create([]);
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
         if ($code === 'process.log_read_failed') {
             Process::factory()->create(['app_id' => $app->id, 'name' => 'vite', 'runtime' => ProcessRuntime::Supervisor]);
@@ -192,7 +192,7 @@ describe('process:logs base contract', function (): void {
 describe('process:logs runtime routing', function (): void {
     it('reads docker logs for docker runtime processes', function (): void {
         createProcessLogsLocalNode('gateway');
-        $node = Node::factory()->create(['role' => 'app']);
+        $node = Node::factory()->create([]);
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id, 'runtime_kind' => AppRuntimeKind::Php]);
         Process::factory()->create(['app_id' => $app->id, 'name' => 'queue', 'runtime' => ProcessRuntime::Docker]);
         $remoteShell = new ProcessLogsRemoteShell([
@@ -220,7 +220,7 @@ describe('process:logs runtime routing', function (): void {
 
     it('reads supervisor logs for supervisor runtime processes', function (): void {
         createProcessLogsLocalNode('gateway');
-        $node = Node::factory()->create(['role' => 'app']);
+        $node = Node::factory()->create([]);
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id, 'runtime_kind' => AppRuntimeKind::Static]);
         Process::factory()->create(['app_id' => $app->id, 'name' => 'vite', 'runtime' => ProcessRuntime::Supervisor]);
         $remoteShell = new ProcessLogsRemoteShell([
@@ -243,7 +243,7 @@ describe('process:logs runtime routing', function (): void {
 
     it('follows docker logs for docker runtime processes with --follow', function (): void {
         createProcessLogsLocalNode('gateway');
-        $node = Node::factory()->create(['role' => 'app']);
+        $node = Node::factory()->create([]);
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id, 'runtime_kind' => AppRuntimeKind::Php]);
         Process::factory()->create(['app_id' => $app->id, 'name' => 'queue', 'runtime' => ProcessRuntime::Docker]);
         $remoteShell = new ProcessLogsRemoteShell([

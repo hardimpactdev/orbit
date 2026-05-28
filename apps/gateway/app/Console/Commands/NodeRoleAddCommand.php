@@ -148,7 +148,7 @@ class NodeRoleAddCommand extends Command
     {
         $tld = $this->option('tld');
 
-        if ($role === 'app-development') {
+        if ($role === 'app-dev') {
             if (! is_string($tld) || trim($tld) === '') {
                 return $this->failCommand('validation_failed', 'The app-development role requires --tld.', ['field' => 'tld']);
             }

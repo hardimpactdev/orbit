@@ -34,7 +34,7 @@ it('acquires app production ingress on the prod node', function (): void {
             ->and($prodNode['environment'])->toBe('production')
             ->and($prodNode['gateway_endpoint'])->toBe('10.6.0.2')
             ->and($prodNode['wireguard_address'])->toBe('10.6.0.5')
-            ->and($state['roles'])->toContain('app-production')
+            ->and($state['roles'])->toContain('app-prod')
             ->and($state['roles'])->toContain('ingress')
             ->and($state['app_production_ingress_node'])->toBe('app-prod-1')
             ->and($state['node_names'])->toBe(['app-prod-1', 'gateway', 'operator-1']);

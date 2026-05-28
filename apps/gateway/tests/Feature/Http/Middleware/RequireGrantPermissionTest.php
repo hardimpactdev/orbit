@@ -50,7 +50,7 @@ function requireGrantNode(string $name, ?string $wireguardAddress = null): Node
 {
     return Node::factory()->create([
         'name' => $name,
-        'role' => 'control',
+
         'status' => 'active',
         'wireguard_address' => $wireguardAddress,
     ]);
@@ -60,7 +60,7 @@ function requireGrantGatewayNode(): Node
 {
     $gateway = Node::factory()->create([
         'name' => 'gateway-1',
-        'role' => 'gateway',
+
         'status' => 'active',
         'wireguard_address' => REQUIRE_GRANT_GATEWAY_WG_IP,
     ]);

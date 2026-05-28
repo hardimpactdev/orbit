@@ -48,19 +48,17 @@ function deployCommandCreateApp(string $environment = 'production'): App
 {
     Node::factory()->create([
         'name' => 'gateway-1',
-        'role' => 'gateway',
+
     ]);
 
     $node = Node::factory()->create([
         'name' => 'app-prod-1',
-        'role' => 'app',
-        'environment' => 'production',
+
     ]);
 
     return App::factory()->create([
         'name' => 'docs',
         'node_id' => $node->id,
-        'environment' => $environment,
         'path' => '/srv/docs',
     ]);
 }
@@ -245,7 +243,7 @@ it('streams deploy run progress through the gateway for control callers', functi
 
     Node::factory()->create([
         'name' => 'control-1',
-        'role' => 'control',
+
     ]);
 
     LocalGatewaySettings::current()->fill([
@@ -392,7 +390,6 @@ it('fails before side effects for non-production apps', function (): void {
             'code' => 'deploy.production_app_required',
             'meta' => [
                 'app' => 'docs',
-                'environment' => 'development',
             ],
         ])
         ->and(DeployStep::query()->count())->toBe(0);
@@ -403,7 +400,7 @@ it('forwards control callers through typed gateway requests', function (): void 
 
     Node::factory()->create([
         'name' => 'control-1',
-        'role' => 'control',
+
     ]);
 
     LocalGatewaySettings::current()->fill([

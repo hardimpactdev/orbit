@@ -59,12 +59,11 @@ beforeEach(function (): void {
 
 function makeProductionAppForRemove(string $name = 'docs'): App
 {
-    $node = Node::factory()->create(['name' => 'remove-app-node', 'role' => 'app']);
+    $node = Node::factory()->create(['name' => 'remove-app-node']);
 
     return App::factory()->create([
         'name' => $name,
         'node_id' => $node->id,
-        'environment' => 'production',
         'path' => '/srv/'.$name,
     ]);
 }

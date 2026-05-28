@@ -27,7 +27,7 @@ function createWorkspaceHistoryLocalNode(string $role = 'gateway'): Node
 
     return Node::factory()->create([
         'name' => "local-{$role}",
-        'role' => $role,
+
         'host' => '10.6.0.1',
         'wireguard_address' => '10.6.0.1',
     ]);
@@ -36,7 +36,7 @@ function createWorkspaceHistoryLocalNode(string $role = 'gateway'): Node
 describe('workspace:history base contract', function (): void {
     it('shows workspace run history for gateway callers', function (): void {
         createWorkspaceHistoryLocalNode('gateway');
-        $node = Node::factory()->create(['role' => 'app']);
+        $node = Node::factory()->create([]);
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
         $workspace = Workspace::factory()->create(['name' => 'feature-docs', 'app_id' => $app->id]);
         WorkspaceRun::factory()->create([
@@ -168,7 +168,7 @@ describe('workspace:history base contract', function (): void {
         Process::preventStrayProcesses();
 
         createWorkspaceHistoryLocalNode('gateway');
-        $node = Node::factory()->create(['role' => 'app']);
+        $node = Node::factory()->create([]);
         $app = App::factory()->create(['node_id' => $node->id]);
         $workspace = Workspace::factory()->create(['name' => 'feature-docs', 'app_id' => $app->id]);
         WorkspaceRun::factory()->create(['workspace_id' => $workspace->id]);

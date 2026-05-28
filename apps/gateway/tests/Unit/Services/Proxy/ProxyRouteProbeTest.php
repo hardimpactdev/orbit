@@ -27,7 +27,7 @@ function proxyProbeIssue(array $drift, string $key): mixed
 
 function createProxyProbeGatewayAssignmentNode(): Node
 {
-    $node = Node::factory()->create(['role' => 'control', 'status' => 'active']);
+    $node = Node::factory()->create(['status' => 'active']);
 
     NodeRoleAssignment::factory()->create([
         'node_id' => $node->id,
@@ -160,8 +160,8 @@ describe('proxy registry probe foundation', function (): void {
 
         expect(proxyProbeIssue($drift, 'proxy.node_invalid')?->kind)->toBe(DriftKind::Divergent);
     })->with([
-        'control node' => [['role' => 'control', 'status' => 'active']],
-        'inactive app node' => [['role' => 'app', 'status' => 'inactive']],
+        'control node' => [['status' => 'active']],
+        'inactive app node' => [['status' => 'inactive']],
     ]);
 
     it('detects custom route conflicts with app domains', function (): void {
@@ -238,12 +238,12 @@ describe('proxy backend and TLS reality', function (): void {
     });
 
     it('detects missing ingress route artifacts separately from backend artifacts', function (): void {
-        $edge = Node::factory()->create(['name' => 'edge-1', 'role' => 'control', 'status' => 'active']);
-        $router = Node::factory()->create(['name' => 'gateway-1', 'role' => 'gateway', 'status' => 'active']);
-        $backend = Node::factory()->create(['name' => 'web-1', 'role' => 'control', 'status' => 'active']);
+        $edge = Node::factory()->create(['name' => 'edge-1', 'status' => 'active']);
+        $router = Node::factory()->create(['name' => 'gateway-1', 'status' => 'active']);
+        $backend = Node::factory()->create(['name' => 'web-1', 'status' => 'active']);
         assignProxyProbeRole($edge, 'ingress');
         assignProxyProbeRole($router, 'router');
-        assignProxyProbeRole($backend, 'app-production');
+        assignProxyProbeRole($backend, 'app-prod');
 
         $route = ProxyRoute::factory()->create([
             'node_id' => $edge->id,
@@ -283,10 +283,10 @@ describe('proxy backend and TLS reality', function (): void {
     });
 
     it('does not report managed private backend artifacts as extra node routes', function (): void {
-        $edge = Node::factory()->create(['name' => 'edge-1', 'role' => 'control', 'status' => 'active']);
-        $backend = Node::factory()->create(['name' => 'web-1', 'role' => 'control', 'status' => 'active']);
+        $edge = Node::factory()->create(['name' => 'edge-1', 'status' => 'active']);
+        $backend = Node::factory()->create(['name' => 'web-1', 'status' => 'active']);
         assignProxyProbeRole($edge, 'ingress');
-        assignProxyProbeRole($backend, 'app-production');
+        assignProxyProbeRole($backend, 'app-prod');
 
         ProxyRoute::factory()->create([
             'node_id' => $edge->id,
@@ -312,12 +312,12 @@ describe('proxy backend and TLS reality', function (): void {
     });
 
     it('detects mismatched router artifacts for ingress routes', function (): void {
-        $edge = Node::factory()->create(['name' => 'edge-1', 'role' => 'control', 'status' => 'active']);
-        $router = Node::factory()->create(['name' => 'gateway-1', 'role' => 'gateway', 'status' => 'active']);
-        $backend = Node::factory()->create(['name' => 'web-1', 'role' => 'control', 'status' => 'active']);
+        $edge = Node::factory()->create(['name' => 'edge-1', 'status' => 'active']);
+        $router = Node::factory()->create(['name' => 'gateway-1', 'status' => 'active']);
+        $backend = Node::factory()->create(['name' => 'web-1', 'status' => 'active']);
         assignProxyProbeRole($edge, 'ingress');
         assignProxyProbeRole($router, 'router');
-        assignProxyProbeRole($backend, 'app-production');
+        assignProxyProbeRole($backend, 'app-prod');
 
         $route = ProxyRoute::factory()->create([
             'node_id' => $edge->id,
@@ -357,12 +357,12 @@ describe('proxy backend and TLS reality', function (): void {
     });
 
     it('detects mismatched backend artifacts for ingress routes', function (): void {
-        $edge = Node::factory()->create(['name' => 'edge-1', 'role' => 'control', 'status' => 'active']);
-        $router = Node::factory()->create(['name' => 'gateway-1', 'role' => 'gateway', 'status' => 'active']);
-        $backend = Node::factory()->create(['name' => 'web-1', 'role' => 'control', 'status' => 'active']);
+        $edge = Node::factory()->create(['name' => 'edge-1', 'status' => 'active']);
+        $router = Node::factory()->create(['name' => 'gateway-1', 'status' => 'active']);
+        $backend = Node::factory()->create(['name' => 'web-1', 'status' => 'active']);
         assignProxyProbeRole($edge, 'ingress');
         assignProxyProbeRole($router, 'router');
-        assignProxyProbeRole($backend, 'app-production');
+        assignProxyProbeRole($backend, 'app-prod');
 
         $route = ProxyRoute::factory()->create([
             'node_id' => $edge->id,
@@ -406,12 +406,12 @@ describe('proxy backend and TLS reality', function (): void {
     });
 
     it('detects invalid backend artifact nodes for ingress routes', function (): void {
-        $edge = Node::factory()->create(['name' => 'edge-1', 'role' => 'control', 'status' => 'active']);
-        $router = Node::factory()->create(['name' => 'gateway-1', 'role' => 'gateway', 'status' => 'active']);
-        $backend = Node::factory()->create(['name' => 'web-1', 'role' => 'control', 'status' => 'inactive']);
+        $edge = Node::factory()->create(['name' => 'edge-1', 'status' => 'active']);
+        $router = Node::factory()->create(['name' => 'gateway-1', 'status' => 'active']);
+        $backend = Node::factory()->create(['name' => 'web-1', 'status' => 'inactive']);
         assignProxyProbeRole($edge, 'ingress');
         assignProxyProbeRole($router, 'router');
-        assignProxyProbeRole($backend, 'app-production');
+        assignProxyProbeRole($backend, 'app-prod');
 
         $route = ProxyRoute::factory()->create([
             'node_id' => $edge->id,
@@ -886,10 +886,10 @@ describe('legacy php_fastcgi route convergence after Docker-first runtime backfi
     });
 
     it('reports proxy.backend_route_mismatch when an observed legacy private-backend php_fastcgi Caddyfile hash differs from the post-backfill Docker-first backend_artifact source_hash', function (): void {
-        $edge = Node::factory()->create(['name' => 'edge-1', 'role' => 'control', 'status' => 'active', 'wireguard_address' => '10.6.0.4']);
-        $backend = Node::factory()->create(['name' => 'web-1', 'role' => 'control', 'status' => 'active', 'wireguard_address' => '10.6.0.21']);
+        $edge = Node::factory()->create(['name' => 'edge-1', 'status' => 'active', 'wireguard_address' => '10.6.0.4']);
+        $backend = Node::factory()->create(['name' => 'web-1', 'status' => 'active', 'wireguard_address' => '10.6.0.21']);
         assignProxyProbeRole($edge, 'ingress');
-        assignProxyProbeRole($backend, 'app-production');
+        assignProxyProbeRole($backend, 'app-prod');
         $app = App::factory()->create([
             'name' => 'legacy-docs',
             'document_root' => 'public',

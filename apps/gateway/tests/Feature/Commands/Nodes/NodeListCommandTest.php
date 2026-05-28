@@ -26,11 +26,9 @@ function nodeListRow(array $overrides = []): array
 {
     return array_merge([
         'name' => 'app-1',
-        'role' => 'app',
         'host' => '10.6.0.7',
         'orbit_path' => '/home/nckrtl/orbit',
         'status' => 'active',
-        'environment' => 'development',
         'platform' => 'ubuntu_24-04',
         'wireguard_address' => '10.6.0.7',
         'created_at' => now(),
@@ -62,14 +60,14 @@ describe('node:list base contract', function (): void {
 
     it('sorts nodes by effective role assignment then name', function (): void {
         DB::table('nodes')->insert([
-            nodeListRow(['name' => 'zebra-app', 'role' => 'control']),
-            nodeListRow(['name' => 'alpha-app', 'role' => 'app']),
-            nodeListRow(['name' => 'database-1', 'role' => 'control', 'environment' => null]),
-            nodeListRow(['name' => 'gateway-1', 'role' => 'control', 'environment' => null]),
-            nodeListRow(['name' => 'control-1', 'role' => 'control', 'environment' => null]),
+            nodeListRow(['name' => 'zebra-app']),
+            nodeListRow(['name' => 'alpha-app']),
+            nodeListRow(['name' => 'database-1']),
+            nodeListRow(['name' => 'gateway-1']),
+            nodeListRow(['name' => 'control-1']),
         ]);
-        assignNodeListRole('zebra-app', 'app-development', ['tld' => 'test']);
-        assignNodeListRole('alpha-app', 'app-development', ['tld' => 'test']);
+        assignNodeListRole('zebra-app', 'app-dev', ['tld' => 'test']);
+        assignNodeListRole('alpha-app', 'app-dev', ['tld' => 'test']);
         assignNodeListRole('database-1', 'database');
         assignNodeListRole('gateway-1', 'gateway');
 
@@ -96,38 +94,26 @@ describe('node:list filters', function (): void {
         DB::table('nodes')->insert([
             nodeListRow([
                 'name' => 'gateway-1',
-                'role' => 'control',
-                'environment' => null,
             ]),
             nodeListRow([
                 'name' => 'dev-app',
-                'role' => 'control',
-                'environment' => 'development',
             ]),
             nodeListRow([
                 'name' => 'prod-app',
-                'role' => 'control',
-                'environment' => 'production',
             ]),
             nodeListRow([
                 'name' => 'db-1',
-                'role' => 'control',
-                'environment' => null,
             ]),
             nodeListRow([
                 'name' => 'control-1',
-                'role' => 'control',
-                'environment' => null,
             ]),
             nodeListRow([
                 'name' => 'gateway-vpn-1',
-                'role' => 'gateway',
-                'environment' => null,
             ]),
         ]);
         assignNodeListRole('gateway-1', 'gateway');
-        assignNodeListRole('dev-app', 'app-development', ['tld' => 'test']);
-        assignNodeListRole('prod-app', 'app-production');
+        assignNodeListRole('dev-app', 'app-dev', ['tld' => 'test']);
+        assignNodeListRole('prod-app', 'app-prod');
         assignNodeListRole('db-1', 'database');
         assignNodeListRole('gateway-vpn-1', 'gateway');
         assignNodeListRole('gateway-vpn-1', 'vpn', [
@@ -181,8 +167,8 @@ describe('node:list filters', function (): void {
             ->and($nodes)->toHaveCount(1)
             ->and($nodes[0]['name'])->toBe($node);
     })->with([
-        ['app-development', 'dev-app'],
-        ['app-production', 'prod-app'],
+        ['app-dev', 'dev-app'],
+        ['app-prod', 'prod-app'],
         ['database', 'db-1'],
     ]);
 
@@ -251,7 +237,7 @@ describe('node:list validation', function (): void {
             ->and($payload['error']['code'])->toBe('validation_failed')
             ->and($payload['error']['meta']['field'])->toBe('role')
             ->and($payload['error']['meta']['value'])->toBe('bogus')
-            ->and($payload['error']['meta']['allowed'])->toBe(['gateway', 'vpn', 'router', 'app', 'app-development', 'app-production', 'database', 'agent', 'ingress', 'control']);
+            ->and($payload['error']['meta']['allowed'])->toBe(['gateway', 'vpn', 'router', 'app', 'app-dev', 'app-prod', 'database', 'agent', 'ingress', 'control']);
     });
 
     it('rejects invalid --role with human error message', function (): void {
@@ -305,8 +291,8 @@ describe('node:list read-only guarantee', function (): void {
 
     it('makes no DB writes during base list', function (): void {
         DB::table('nodes')->insert([
-            nodeListRow(['name' => 'gateway-1', 'role' => 'gateway', 'environment' => null]),
-            nodeListRow(['name' => 'app-1', 'role' => 'app']),
+            nodeListRow(['name' => 'gateway-1']),
+            nodeListRow(['name' => 'app-1']),
         ]);
 
         $countBefore = DB::table('nodes')->count();
@@ -321,7 +307,7 @@ describe('node:list read-only guarantee', function (): void {
         Process::preventStrayProcesses();
 
         DB::table('nodes')->insert([
-            nodeListRow(['name' => 'gateway-1', 'role' => 'gateway', 'environment' => null]),
+            nodeListRow(['name' => 'gateway-1']),
             nodeListRow(['name' => 'app-1']),
         ]);
 
@@ -335,11 +321,9 @@ describe('node:list control-caller forwarding', function (): void {
     beforeEach(function (): void {
         DB::table('nodes')->insert([
             'name' => 'local-control',
-            'role' => 'control',
             'host' => '10.6.0.2',
             'orbit_path' => '/home/nckrtl/orbit',
             'status' => 'active',
-            'environment' => null,
             'platform' => 'ubuntu_24-04',
             'wireguard_address' => '10.6.0.2',
             'created_at' => now(),
@@ -362,15 +346,11 @@ describe('node:list control-caller forwarding', function (): void {
                         'nodes' => [
                             [
                                 'name' => 'gateway-1',
-                                'role' => 'gateway',
-                                'environment' => null,
                                 'platform' => 'ubuntu_24-04',
                                 'status' => 'active',
                             ],
                             [
                                 'name' => 'app-1',
-                                'role' => 'app',
-                                'environment' => 'development',
                                 'platform' => 'ubuntu_24-04',
                                 'status' => 'active',
                             ],
@@ -402,8 +382,6 @@ describe('node:list control-caller forwarding', function (): void {
                                 'nodes' => [
                                     [
                                         'name' => 'app-1',
-                                        'role' => 'app',
-                                        'environment' => 'development',
                                         'platform' => 'ubuntu_24-04',
                                         'status' => 'active',
                                     ],
@@ -441,8 +419,6 @@ describe('node:list control-caller forwarding', function (): void {
                                 'nodes' => [
                                     [
                                         'name' => 'gateway-1',
-                                        'role' => 'gateway',
-                                        'environment' => null,
                                         'platform' => 'ubuntu_24-04',
                                         'status' => 'active',
                                     ],

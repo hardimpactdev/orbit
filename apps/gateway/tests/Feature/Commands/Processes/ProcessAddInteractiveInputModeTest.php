@@ -23,7 +23,7 @@ function createProcessAddInteractiveLocalNode(string $role = 'gateway'): Node
 {
     return Node::factory()->create([
         'name' => "local-{$role}",
-        'role' => $role,
+
         'host' => '10.6.0.1',
         'wireguard_address' => '10.6.0.1',
     ]);
@@ -31,7 +31,7 @@ function createProcessAddInteractiveLocalNode(string $role = 'gateway'): Node
 
 it('prompts for app, name, and command when all are absent', function (): void {
     createProcessAddInteractiveLocalNode('gateway');
-    $node = Node::factory()->create(['role' => 'app', 'name' => 'app-1', 'user' => 'orbit']);
+    $node = Node::factory()->create(['name' => 'app-1', 'user' => 'orbit']);
     App::factory()->create(['name' => 'docs', 'node_id' => $node->id, 'path' => '/home/orbit/apps/docs']);
 
     $remoteShell = new class implements RemoteShell
@@ -53,7 +53,7 @@ it('prompts for app, name, and command when all are absent', function (): void {
 
 it('does not prompt for app when --app is supplied', function (): void {
     createProcessAddInteractiveLocalNode('gateway');
-    $node = Node::factory()->create(['role' => 'app', 'name' => 'app-1', 'user' => 'orbit']);
+    $node = Node::factory()->create(['name' => 'app-1', 'user' => 'orbit']);
     App::factory()->create(['name' => 'docs', 'node_id' => $node->id, 'path' => '/home/orbit/apps/docs']);
 
     $remoteShell = new class implements RemoteShell
@@ -74,7 +74,7 @@ it('does not prompt for app when --app is supplied', function (): void {
 
 it('does not prompt when all required args are supplied', function (): void {
     createProcessAddInteractiveLocalNode('gateway');
-    $node = Node::factory()->create(['role' => 'app', 'name' => 'app-1', 'user' => 'orbit']);
+    $node = Node::factory()->create(['name' => 'app-1', 'user' => 'orbit']);
     App::factory()->create(['name' => 'docs', 'node_id' => $node->id, 'path' => '/home/orbit/apps/docs']);
 
     $remoteShell = new class implements RemoteShell

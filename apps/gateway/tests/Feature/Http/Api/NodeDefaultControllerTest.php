@@ -25,11 +25,9 @@ function apiDefaultNodeRow(array $overrides = []): array
 {
     return array_merge([
         'name' => 'app-1',
-        'role' => 'app',
         'host' => '10.6.0.7',
         'orbit_path' => '/home/nckrtl/orbit',
         'status' => 'active',
-        'environment' => 'development',
         'platform' => 'ubuntu_24-04',
         'wireguard_address' => '10.6.0.7',
         'created_at' => now(),
@@ -41,9 +39,7 @@ function createDefaultCallerNode(string $role = 'control'): int
 {
     return (int) DB::table('nodes')->insertGetId(apiDefaultNodeRow([
         'name' => "{$role}-caller",
-        'role' => $role,
         'host' => DEFAULT_CALLER_WG_IP,
-        'environment' => $role === 'app' ? 'development' : null,
         'wireguard_address' => DEFAULT_CALLER_WG_IP,
     ]));
 }
@@ -96,8 +92,6 @@ describe('NodeDefaultController', function (): void {
                         'action' => 'show',
                         'default_node' => [
                             'name' => 'app-1',
-                            'role' => 'app',
-                            'environment' => 'development',
                         ],
                     ],
                 ],
@@ -139,7 +133,7 @@ describe('NodeDefaultController', function (): void {
     it('sets an authorized development app node as default', function (): void {
         createDefaultCallerNode();
         $appId = (int) DB::table('nodes')->insertGetId(apiDefaultNodeRow());
-        assignApiDefaultRole($appId, 'app-development', settings: ['tld' => 'test']);
+        assignApiDefaultRole($appId, 'app-dev', settings: ['tld' => 'test']);
 
         $response = nodeDefaultJson('PUT', '/api/nodes/default', ['name' => 'app-1'], ['REMOTE_ADDR' => DEFAULT_CALLER_WG_IP]);
 
@@ -153,7 +147,7 @@ describe('NodeDefaultController', function (): void {
     it('logs activity when setting the default node', function (): void {
         createDefaultCallerNode();
         $appId = (int) DB::table('nodes')->insertGetId(apiDefaultNodeRow());
-        assignApiDefaultRole($appId, 'app-development', settings: ['tld' => 'test']);
+        assignApiDefaultRole($appId, 'app-dev', settings: ['tld' => 'test']);
 
         $response = nodeDefaultJson('PUT', '/api/nodes/default', ['name' => 'app-1'], ['REMOTE_ADDR' => DEFAULT_CALLER_WG_IP]);
 
@@ -175,8 +169,8 @@ describe('NodeDefaultController', function (): void {
         createDefaultCallerNode();
         $firstId = (int) DB::table('nodes')->insertGetId(apiDefaultNodeRow(['name' => 'app-1']));
         $secondId = (int) DB::table('nodes')->insertGetId(apiDefaultNodeRow(['name' => 'app-2']));
-        assignApiDefaultRole($firstId, 'app-development', settings: ['tld' => 'test']);
-        assignApiDefaultRole($secondId, 'app-development', settings: ['tld' => 'test']);
+        assignApiDefaultRole($firstId, 'app-dev', settings: ['tld' => 'test']);
+        assignApiDefaultRole($secondId, 'app-dev', settings: ['tld' => 'test']);
 
         nodeDefaultJson('PUT', '/api/nodes/default', ['name' => 'app-1'], ['REMOTE_ADDR' => DEFAULT_CALLER_WG_IP]);
         $response = nodeDefaultJson('PUT', '/api/nodes/default', ['name' => 'app-2'], ['REMOTE_ADDR' => DEFAULT_CALLER_WG_IP]);
@@ -293,16 +287,15 @@ describe('NodeDefaultController', function (): void {
         createDefaultCallerNode();
         $prodId = (int) DB::table('nodes')->insertGetId(apiDefaultNodeRow([
             'name' => 'prod-1',
-            'environment' => 'production',
         ]));
-        assignApiDefaultRole($prodId, 'app-production');
+        assignApiDefaultRole($prodId, 'app-prod');
 
         $response = nodeDefaultJson('PUT', '/api/nodes/default', ['name' => 'prod-1'], ['REMOTE_ADDR' => DEFAULT_CALLER_WG_IP]);
 
         $response->assertUnprocessable()
             ->assertJsonPath('error.code', 'node.invalid_role')
             ->assertJsonPath('error.message', "Node 'prod-1' is not a development app node.")
-            ->assertJsonPath('error.meta.required_role_assignment', 'app-development');
+            ->assertJsonPath('error.meta.required_role_assignment', 'app-dev');
     });
 
 });

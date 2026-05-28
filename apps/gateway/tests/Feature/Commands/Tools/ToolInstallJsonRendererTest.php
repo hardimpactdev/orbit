@@ -24,7 +24,7 @@ function createToolInstallJsonLocalNode(string $role = 'gateway'): Node
 {
     return Node::factory()->create([
         'name' => "tool-install-json-{$role}",
-        'role' => $role,
+
         'host' => '10.9.0.1',
         'wireguard_address' => '10.9.0.1',
     ]);

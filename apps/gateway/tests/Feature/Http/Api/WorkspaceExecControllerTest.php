@@ -23,7 +23,6 @@ function createWorkspaceExecCaller(array $overrides = []): Node
 {
     $attributes = array_merge([
         'name' => 'caller',
-        'role' => 'control',
         'host' => WORKSPACE_EXEC_CALLER_WG_IP,
         'wireguard_address' => WORKSPACE_EXEC_CALLER_WG_IP,
     ], $overrides);

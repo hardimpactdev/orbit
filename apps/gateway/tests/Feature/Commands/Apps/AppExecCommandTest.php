@@ -31,7 +31,7 @@ afterEach(function (): void {
 
 function createExecCommandApp(array $overrides = []): App
 {
-    $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'tld' => 'test']);
+    $node = Node::factory()->create(['name' => 'app-1', 'tld' => 'test']);
 
     return App::factory()->for($node, 'node')->create(array_merge([
         'name' => 'docs',
@@ -394,7 +394,7 @@ describe('app:exec command', function (): void {
 
     it('returns gateway_unavailable when a control-mode caller cannot reach the gateway exec endpoint', function (): void {
         config(['orbit.is_gateway' => false]);
-        Node::factory()->create(['name' => 'control-1', 'role' => 'control']);
+        Node::factory()->create(['name' => 'control-1']);
 
         LocalGatewaySettings::current()->fill([
             'gateway_url' => 'https://10.6.0.1',
@@ -418,7 +418,7 @@ describe('app:exec command', function (): void {
 
     it('forwards a successful gateway exec response back to the caller in control mode', function (): void {
         config(['orbit.is_gateway' => false]);
-        Node::factory()->create(['name' => 'control-1', 'role' => 'control']);
+        Node::factory()->create(['name' => 'control-1']);
 
         LocalGatewaySettings::current()->fill([
             'gateway_url' => 'https://10.6.0.1',
@@ -453,7 +453,7 @@ describe('app:exec command', function (): void {
     });
 
     it('resolves by exact app name first; a domain collision does not redirect resolution', function (): void {
-        $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'tld' => 'test']);
+        $node = Node::factory()->create(['name' => 'app-1', 'tld' => 'test']);
 
         App::factory()->for($node, 'node')->create([
             'name' => 'alpha',
@@ -511,7 +511,7 @@ describe('app:exec command', function (): void {
 
     it('forwards the raw ORBIT_HOST_CWD through the gateway typed request without touching local App rows in control mode', function (): void {
         config(['orbit.is_gateway' => false]);
-        Node::factory()->create(['name' => 'control-1', 'role' => 'control']);
+        Node::factory()->create(['name' => 'control-1']);
 
         LocalGatewaySettings::current()->fill([
             'gateway_url' => 'https://10.6.0.1',
@@ -560,7 +560,7 @@ describe('app:exec command', function (): void {
 
     it('forwards an explicit selector through the gateway request in control mode', function (): void {
         config(['orbit.is_gateway' => false]);
-        Node::factory()->create(['name' => 'control-1', 'role' => 'control']);
+        Node::factory()->create(['name' => 'control-1']);
 
         LocalGatewaySettings::current()->fill([
             'gateway_url' => 'https://10.6.0.1',

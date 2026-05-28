@@ -79,7 +79,6 @@ describe('GatewayApiRuntimeInstaller orbit-caddy convergence', function (): void
 
         Node::query()->create([
             'name' => 'gateway-1',
-            'role' => 'gateway',
             'host' => '10.6.0.2',
             'wireguard_address' => '10.6.0.2',
             'user' => 'orbit',

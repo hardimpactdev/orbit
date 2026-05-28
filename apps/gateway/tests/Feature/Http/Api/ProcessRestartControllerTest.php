@@ -19,7 +19,6 @@ function createProcessRestartCallerNode(array $overrides = []): Node
 {
     $attributes = array_merge([
         'name' => 'caller',
-        'role' => 'control',
         'host' => PROCESS_RESTART_CALLER_WG_IP,
         'wireguard_address' => PROCESS_RESTART_CALLER_WG_IP,
     ], $overrides);

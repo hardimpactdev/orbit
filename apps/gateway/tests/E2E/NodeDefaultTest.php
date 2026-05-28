@@ -20,13 +20,11 @@ function nodeDefaultSeedLocal(E2ETopologyHarness $topology): void
 
 $nodeId = \Illuminate\Support\Facades\DB::table('nodes')->insertGetId([
     'name' => 'app-dev-1',
-    'role' => 'app',
     'host' => '10.6.0.7',
     'wireguard_address' => '10.6.0.7',
     'user' => 'orbit',
     'orbit_path' => '/home/orbit/orbit',
     'status' => 'active',
-    'environment' => 'development',
     'platform' => 'ubuntu_24-04',
     'created_at' => now(),
     'updated_at' => now(),
@@ -34,7 +32,7 @@ $nodeId = \Illuminate\Support\Facades\DB::table('nodes')->insertGetId([
 
 \Illuminate\Support\Facades\DB::table('node_roles')->insert([
     'node_id' => $nodeId,
-    'role' => 'app-development',
+    'role' => 'app-dev',
     'status' => 'active',
     'settings' => json_encode(['tld' => 'test'], JSON_THROW_ON_ERROR),
     'converged_at' => now(),
@@ -63,13 +61,11 @@ function nodeDefaultSeedWithDefault(E2ETopologyHarness $topology): void
 
 $nodeId = \Illuminate\Support\Facades\DB::table('nodes')->insertGetId([
     'name' => 'app-dev-1',
-    'role' => 'app',
     'host' => '10.6.0.7',
     'wireguard_address' => '10.6.0.7',
     'user' => 'orbit',
     'orbit_path' => '/home/orbit/orbit',
     'status' => 'active',
-    'environment' => 'development',
     'platform' => 'ubuntu_24-04',
     'created_at' => now(),
     'updated_at' => now(),
@@ -77,7 +73,7 @@ $nodeId = \Illuminate\Support\Facades\DB::table('nodes')->insertGetId([
 
 \Illuminate\Support\Facades\DB::table('node_roles')->insert([
     'node_id' => $nodeId,
-    'role' => 'app-development',
+    'role' => 'app-dev',
     'status' => 'active',
     'settings' => json_encode(['tld' => 'test'], JSON_THROW_ON_ERROR),
     'converged_at' => now(),

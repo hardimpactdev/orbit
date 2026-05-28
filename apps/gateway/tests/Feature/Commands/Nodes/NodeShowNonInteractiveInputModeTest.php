@@ -17,13 +17,11 @@ function nodeShowNonInteractiveRow(array $overrides = []): array
 {
     return array_merge([
         'name' => 'app-1',
-        'role' => 'app',
         'host' => '10.6.0.7',
         'wireguard_address' => '10.6.0.7',
         'user' => 'nckrtl',
         'orbit_path' => '/home/nckrtl/orbit',
         'status' => 'active',
-        'environment' => 'development',
         'platform' => 'ubuntu_24-04',
         'created_at' => now(),
         'updated_at' => now(),
@@ -36,8 +34,6 @@ function setupShowNonInteractiveGatewayCaller(): void
 
     $nodeId = (int) DB::table('nodes')->insertGetId(nodeShowNonInteractiveRow([
         'name' => 'test-gateway',
-        'role' => 'gateway',
-        'environment' => null,
     ]));
 
     NodeRoleAssignment::factory()->create([
@@ -118,7 +114,7 @@ describe('node:show non-interactive input mode', function (): void {
     });
 
     it('resolves calling node when no default is set and name is missing', function (): void {
-        DB::table('nodes')->insert(nodeShowNonInteractiveRow(['name' => 'other-gateway', 'role' => 'gateway']));
+        DB::table('nodes')->insert(nodeShowNonInteractiveRow(['name' => 'other-gateway']));
 
         $result = callShowNonInteractiveJsonCommand('node:show');
 

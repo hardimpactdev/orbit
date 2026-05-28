@@ -16,13 +16,11 @@ function nodeUpdateNonInteractiveRow(array $overrides = []): array
 {
     return array_merge([
         'name' => 'app-1',
-        'role' => 'app',
         'host' => '10.6.0.7',
         'wireguard_address' => '10.6.0.7',
         'user' => 'nckrtl',
         'orbit_path' => '/home/nckrtl/orbit',
         'status' => 'active',
-        'environment' => 'development',
         'platform' => 'ubuntu_24-04',
         'tld' => null,
         'public_ipv4' => null,
@@ -38,8 +36,6 @@ function setupNodeUpdateNonInteractiveGatewayCaller(): void
 
     DB::table('nodes')->insert(nodeUpdateNonInteractiveRow([
         'name' => 'gateway-1',
-        'role' => 'gateway',
-        'environment' => null,
     ]));
 }
 
@@ -99,7 +95,6 @@ describe('node:update non-interactive input mode', function (): void {
     it('rejects tld on a production app that remains production', function (): void {
         setupNodeUpdateNonInteractiveGatewayCaller();
         DB::table('nodes')->insert(nodeUpdateNonInteractiveRow([
-            'environment' => 'production',
         ]));
 
         $exitCode = Artisan::call('node:update', [
@@ -137,7 +132,6 @@ describe('node:update non-interactive input mode', function (): void {
     it('updates production app to development and tld in the same non-interactive invocation', function (): void {
         setupNodeUpdateNonInteractiveGatewayCaller();
         DB::table('nodes')->insert(nodeUpdateNonInteractiveRow([
-            'environment' => 'production',
         ]));
 
         $exitCode = Artisan::call('node:update', [

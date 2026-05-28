@@ -25,7 +25,6 @@ function createAppAgentIdeCallerNode(array $overrides = []): Node
 {
     $attributes = array_merge([
         'name' => 'caller',
-        'role' => 'control',
         'host' => APP_AGENT_IDE_CALLER_WG_IP,
         'wireguard_address' => APP_AGENT_IDE_CALLER_WG_IP,
     ], $overrides);
@@ -87,7 +86,7 @@ describe('AppAgentIdeController', function (): void {
         $caller = createAppAgentIdeCallerNode();
         $appNode = Node::factory()->create([
             'name' => 'app-1',
-            'role' => 'app',
+
             'agent_ide_config' => ['adapter' => 'polyscope'],
         ]);
         grantAppAgentIdeAccess($caller, $appNode);
@@ -116,7 +115,7 @@ describe('AppAgentIdeController', function (): void {
         createAppAgentIdeCallerNode(['role' => 'gateway']);
         $appNode = Node::factory()->create([
             'name' => 'app-1',
-            'role' => 'app',
+
             'agent_ide_config' => ['adapter' => 'polyscope'],
         ]);
 
@@ -142,7 +141,7 @@ describe('AppAgentIdeController', function (): void {
         $caller = createAppAgentIdeCallerNode();
         $appNode = Node::factory()->create([
             'name' => 'app-1',
-            'role' => 'app',
+
         ]);
         grantAppAgentIdeAccess($caller, $appNode);
 
@@ -174,7 +173,7 @@ describe('AppAgentIdeController', function (): void {
         $caller = createAppAgentIdeCallerNode();
         $appNode = Node::factory()->create([
             'name' => 'app-1',
-            'role' => 'app',
+
         ]);
         grantAppAgentIdeAccess($caller, $appNode, ['app:read']);
 

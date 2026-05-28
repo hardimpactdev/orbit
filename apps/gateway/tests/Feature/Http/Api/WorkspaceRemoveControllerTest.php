@@ -19,7 +19,6 @@ function createWorkspaceRemoveCallerNode(array $overrides = []): Node
 {
     $attributes = array_merge([
         'name' => 'caller',
-        'role' => 'control',
         'host' => WORKSPACE_REMOVE_CALLER_WG_IP,
         'wireguard_address' => WORKSPACE_REMOVE_CALLER_WG_IP,
     ], $overrides);
@@ -48,7 +47,6 @@ describe('WorkspaceRemoveController', function (): void {
         $caller = createWorkspaceRemoveCallerNode();
         $targetNode = createTestAppHostNode([
             'name' => 'app-1',
-            'role' => 'app',
             'status' => 'active',
         ]);
         grantWorkspaceRemoveAccess($caller, $targetNode);
@@ -104,7 +102,6 @@ describe('WorkspaceRemoveController', function (): void {
         $caller = createWorkspaceRemoveCallerNode();
         $targetNode = createTestAppHostNode([
             'name' => 'app-1',
-            'role' => 'app',
             'status' => 'active',
         ]);
         grantWorkspaceRemoveAccess($caller, $targetNode);
@@ -132,7 +129,6 @@ describe('WorkspaceRemoveController', function (): void {
         createWorkspaceRemoveCallerNode();
         $targetNode = createTestAppHostNode([
             'name' => 'app-1',
-            'role' => 'app',
             'status' => 'active',
         ]);
 

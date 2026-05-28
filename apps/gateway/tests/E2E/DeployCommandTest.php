@@ -14,7 +14,6 @@ $node = \App\Models\Node::query()->where('name', 'app-dev-1')->firstOrFail();
     ['name' => 'docs'],
     [
         'node_id' => $node->id,
-        'environment' => 'production',
         'domain' => null,
         'path' => '__PATH__',
         'document_root' => 'public',

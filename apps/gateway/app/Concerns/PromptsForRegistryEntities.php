@@ -19,6 +19,7 @@ use App\Models\App;
 use App\Models\Node;
 use App\Models\Schedule;
 use App\Models\Workspace;
+use App\Services\Nodes\Roles\NodeRoleAssignments;
 use Illuminate\Database\Eloquent\Builder;
 use Throwable;
 
@@ -449,8 +450,8 @@ trait PromptsForRegistryEntities
     {
         return [
             'name' => $node->name,
-            'role' => $node->role,
-            'environment' => $node->environment,
+            'role' => $node->displayRole(),
+            'environment' => app(NodeRoleAssignments::class)->activeAppHostEnvironment($node),
             'host' => $node->host,
             'wireguard_address' => $node->wireguard_address,
             'status' => $node->status,

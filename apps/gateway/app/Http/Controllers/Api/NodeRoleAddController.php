@@ -45,7 +45,7 @@ final class NodeRoleAddController implements Loggable
         $settings = $request->settings();
         $ingressNode = $request->ingressNode();
 
-        if ($request->role() !== 'app-production' && $ingressNode !== null) {
+        if ($request->role() !== 'app-prod' && $ingressNode !== null) {
             return $this->error(
                 'validation_failed',
                 "Role '{$request->role()}' does not accept ingress_node.",
@@ -54,7 +54,7 @@ final class NodeRoleAddController implements Loggable
             );
         }
 
-        if ($request->role() === 'app-production') {
+        if ($request->role() === 'app-prod') {
             $settings = $this->resolveAppProductionSettings($node, $ingressNode, $settings);
 
             if ($settings instanceof JsonResponse) {
@@ -94,7 +94,7 @@ final class NodeRoleAddController implements Loggable
                 return $this->error(
                     'validation_failed',
                     'The app-production role does not accept ingress_node when the target node already hosts ingress.',
-                    ['field' => 'ingress_node', 'role' => 'app-production'],
+                    ['field' => 'ingress_node', 'role' => 'app-prod'],
                     422,
                 );
             }

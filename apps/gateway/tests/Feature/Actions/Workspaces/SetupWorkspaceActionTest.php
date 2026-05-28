@@ -27,7 +27,6 @@ beforeEach(function (): void {
     DB::table('nodes')->insert([
         [
             'name' => 'gateway',
-            'role' => 'gateway',
             'host' => 'gateway',
             'user' => 'gateway',
             'orbit_path' => '/home/gateway/orbit',
@@ -44,7 +43,6 @@ beforeEach(function (): void {
             'node_id' => 1,
             'path' => '/home/nckrtl/apps/demo',
             'php_version' => '8.5',
-            'environment' => 'development',
             'document_root' => 'public',
             'created_at' => now(),
             'updated_at' => now(),
@@ -170,14 +168,14 @@ it('registers workspace proxy routes against the FrankenPHP runtime container', 
 it('registers production workspace routes on ingress with a private backend site', function (): void {
     Node::factory()->create([
         'name' => 'edge-1',
-        'role' => 'app',
+
         'status' => 'active',
         'user' => 'orbit',
     ]);
 
     $router = Node::factory()->create([
         'name' => 'gateway-1',
-        'role' => 'gateway',
+
         'status' => 'active',
         'wireguard_address' => '10.6.0.2',
     ]);
@@ -196,14 +194,13 @@ it('registers production workspace routes on ingress with a private backend site
 
     NodeRoleAssignment::factory()->create([
         'node_id' => 1,
-        'role' => 'app-production',
+        'role' => 'app-prod',
         'status' => 'active',
         'settings' => ['ingress_node_id' => 2],
     ]);
 
     App::query()->whereKey(1)->update([
         'domain' => 'demo.example.com',
-        'environment' => 'production',
     ]);
 
     Node::query()->whereKey(1)->update([

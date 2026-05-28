@@ -18,7 +18,6 @@ const WORKSPACE_STORE_CALLER_WG_IP = '10.6.0.99';
 beforeEach(function (): void {
     createTestGatewayNode([
         'name' => 'gateway',
-        'role' => 'gateway',
         'host' => 'gateway',
         'orbit_path' => '/home/gateway/orbit',
         'status' => 'active',
@@ -30,7 +29,6 @@ beforeEach(function (): void {
         'domain' => 'demo.beast',
         'path' => '/home/nckrtl/apps/demo',
         'php_version' => '8.5',
-        'environment' => 'development',
     ]);
 
     app()->instance(RemoteShell::class, new WorkspaceStoreTestShell);
@@ -62,7 +60,7 @@ it('creates a workspace for an authorized gateway caller', function (): void {
 it('rejects callers without workspace creation permission', function (): void {
     Node::factory()->create([
         'name' => 'beast',
-        'role' => 'app',
+
         'host' => 'beast',
         'wireguard_address' => '10.6.0.7',
         'status' => 'active',
@@ -121,7 +119,7 @@ it('rejects workspace creation for production app nodes', function (): void {
         'name' => 'prod-1',
         'host' => 'prod-1',
         'wireguard_address' => '10.6.0.8',
-    ], role: 'app-production');
+    ], role: 'app-prod');
     App::factory()
         ->for($node, 'node')
         ->create([
@@ -129,7 +127,6 @@ it('rejects workspace creation for production app nodes', function (): void {
             'domain' => 'prod.test',
             'path' => '/home/orbit/apps/prod',
             'php_version' => '8.5',
-            'environment' => 'production',
         ]);
 
     $response = $this->call('POST', '/api/workspaces', [

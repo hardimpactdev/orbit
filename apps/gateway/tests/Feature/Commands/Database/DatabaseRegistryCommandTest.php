@@ -27,7 +27,7 @@ function createDatabaseRegistryLocalNode(string $role = 'gateway'): Node
 {
     return Node::factory()->create([
         'name' => "database-registry-{$role}",
-        'role' => $role,
+
         'host' => '10.9.0.1',
         'wireguard_address' => '10.9.0.1',
     ]);

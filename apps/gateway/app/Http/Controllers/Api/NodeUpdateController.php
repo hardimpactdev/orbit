@@ -155,29 +155,27 @@ final class NodeUpdateController implements Loggable
      */
     private function detectRoleIncompatibleField(Node $node, array $providedFields): ?array
     {
-        $role = $node->role;
+        $role = $node->displayRole();
 
-        if (isset($providedFields['environment']) && $role !== 'app') {
+        if (isset($providedFields['environment'])) {
             return ['field' => 'environment', 'role' => $role];
         }
 
-        if (isset($providedFields['host']) && $role === 'control') {
+        if (isset($providedFields['host']) && $node->isOperator()) {
             return ['field' => 'host', 'role' => $role];
         }
 
         if (isset($providedFields['tld'])) {
-            $effectiveEnvironment = $providedFields['environment'] ?? $node->environment;
-
-            if ($role !== 'app' || $effectiveEnvironment !== 'development') {
+            if (! $node->hasActiveRole('app-dev')) {
                 return ['field' => 'tld', 'role' => $role];
             }
         }
 
-        if (isset($providedFields['public_ipv4']) && $role === 'control') {
+        if (isset($providedFields['public_ipv4']) && $node->isOperator()) {
             return ['field' => 'public_ipv4', 'role' => $role];
         }
 
-        if (isset($providedFields['public_ipv6']) && $role === 'control') {
+        if (isset($providedFields['public_ipv6']) && $node->isOperator()) {
             return ['field' => 'public_ipv6', 'role' => $role];
         }
 
@@ -194,10 +192,6 @@ final class NodeUpdateController implements Loggable
 
         if (isset($providedFields['host']) && $providedFields['host'] !== $node->host) {
             $changes['host'] = $providedFields['host'];
-        }
-
-        if (isset($providedFields['environment']) && $providedFields['environment'] !== $node->environment) {
-            $changes['environment'] = $providedFields['environment'];
         }
 
         if (isset($providedFields['tld']) && $providedFields['tld'] !== $node->tld) {

@@ -17,7 +17,7 @@ function createAppPruneCallerNode(array $overrides = []): Node
 {
     return Node::factory()->create(array_merge([
         'name' => 'caller',
-        'role' => 'control',
+
         'host' => APP_PRUNE_CALLER_WG_IP,
         'wireguard_address' => APP_PRUNE_CALLER_WG_IP,
     ], $overrides));
@@ -45,7 +45,7 @@ beforeEach(function (): void {
 describe('AppPruneController', function (): void {
     it('prunes stale workspaces for callers with app:prune on the app node', function (): void {
         $caller = createAppPruneCallerNode();
-        $appNode = Node::factory()->create(['name' => 'app-1', 'role' => 'app']);
+        $appNode = Node::factory()->create(['name' => 'app-1']);
         grantAppPruneAccess($caller, $appNode);
         $app = App::factory()->create([
             'name' => 'docs',
@@ -71,7 +71,7 @@ describe('AppPruneController', function (): void {
 
     it('rejects callers without app:prune on the app node', function (): void {
         $caller = createAppPruneCallerNode();
-        $appNode = Node::factory()->create(['name' => 'app-1', 'role' => 'app']);
+        $appNode = Node::factory()->create(['name' => 'app-1']);
         grantAppPruneAccess($caller, $appNode, ['app:read']);
         App::factory()->create([
             'name' => 'docs',

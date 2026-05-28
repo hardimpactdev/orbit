@@ -20,13 +20,11 @@ function nodeGrantHumanRow(array $overrides = []): array
 {
     return array_merge([
         'name' => 'app-1',
-        'role' => 'app',
         'host' => '10.6.0.7',
         'wireguard_address' => '10.6.0.7',
         'user' => 'nckrtl',
         'orbit_path' => '/home/nckrtl/orbit',
         'status' => 'active',
-        'environment' => 'development',
         'platform' => 'ubuntu_24-04',
         'created_at' => now(),
         'updated_at' => now(),
@@ -79,8 +77,6 @@ function setupGrantGatewayCallerHuman(): void
 
     DB::table('nodes')->insert(nodeGrantHumanRow([
         'name' => 'gateway-1',
-        'role' => 'gateway',
-        'environment' => null,
     ]));
 }
 
@@ -89,8 +85,6 @@ describe('node:grant human renderer contract', function (): void {
         setupGrantGatewayCallerHuman();
         DB::table('nodes')->insert(nodeGrantHumanRow([
             'name' => 'control-1',
-            'role' => 'control',
-            'environment' => null,
         ]));
         DB::table('nodes')->insert(nodeGrantHumanRow());
 
@@ -110,8 +104,6 @@ describe('node:grant human renderer contract', function (): void {
         setupGrantGatewayCallerHuman();
         DB::table('nodes')->insert(nodeGrantHumanRow([
             'name' => 'control-1',
-            'role' => 'control',
-            'environment' => null,
         ]));
         DB::table('nodes')->insert(nodeGrantHumanRow());
 
@@ -133,8 +125,6 @@ describe('node:grant human renderer contract', function (): void {
         setupGrantGatewayCallerHuman();
         DB::table('nodes')->insert(nodeGrantHumanRow([
             'name' => 'control-1',
-            'role' => 'control',
-            'environment' => null,
         ]));
         DB::table('nodes')->insert(nodeGrantHumanRow());
 
@@ -155,8 +145,6 @@ describe('node:grant human renderer contract', function (): void {
         setupGrantGatewayCallerHuman();
         DB::table('nodes')->insert(nodeGrantHumanRow([
             'name' => 'control-1',
-            'role' => 'control',
-            'environment' => null,
         ]));
         DB::table('nodes')->insert(nodeGrantHumanRow());
 
@@ -198,8 +186,6 @@ describe('node:grant human renderer contract', function (): void {
         setupGrantGatewayCallerHuman();
         DB::table('nodes')->insert(nodeGrantHumanRow([
             'name' => 'control-1',
-            'role' => 'control',
-            'environment' => null,
         ]));
 
         $exitCode = Artisan::call('node:grant', [
@@ -216,8 +202,6 @@ describe('node:grant human renderer contract', function (): void {
         setupGrantGatewayCallerHuman();
         DB::table('nodes')->insert(nodeGrantHumanRow([
             'name' => 'control-1',
-            'role' => 'control',
-            'environment' => null,
         ]));
 
         $exitCode = Artisan::call('node:grant', [

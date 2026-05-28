@@ -37,7 +37,7 @@ final class AppStoreController implements Loggable
             return $input;
         }
 
-        $requiredRole = $input['domain'] !== null ? 'app-production' : 'app-development';
+        $requiredRole = $input['domain'] !== null ? 'app-prod' : 'app-dev';
         $node = $this->resolveTargetNode($input['node'], $requiredRole);
 
         if ($node instanceof JsonResponse) {

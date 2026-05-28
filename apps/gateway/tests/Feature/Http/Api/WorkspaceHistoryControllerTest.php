@@ -17,7 +17,6 @@ function createWorkspaceHistoryCallerNode(array $overrides = []): Node
 {
     $attributes = array_merge([
         'name' => 'caller',
-        'role' => 'control',
         'host' => WORKSPACE_HISTORY_CALLER_WG_IP,
         'wireguard_address' => WORKSPACE_HISTORY_CALLER_WG_IP,
     ], $overrides);

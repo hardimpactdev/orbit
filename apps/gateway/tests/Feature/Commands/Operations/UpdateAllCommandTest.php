@@ -52,13 +52,11 @@ it('forwards control callers to gateway after local update succeeds', function (
                         [
                             'target' => 'gateway',
                             'node' => 'gateway',
-                            'role' => 'gateway',
                             'status' => 'completed',
                         ],
                         [
                             'target' => 'beast',
                             'node' => 'beast',
-                            'role' => 'app',
                             'status' => 'completed',
                         ],
                     ],
@@ -158,7 +156,6 @@ it('preserves gateway local failure output for control callers', function (): vo
     expect($payload['error']['data']['updates'][0])->toBe([
         'target' => 'local',
         'node' => null,
-        'role' => null,
         'status' => 'completed',
     ]);
 });
@@ -187,13 +184,11 @@ it('forwards control callers to gateway and reports remote failure', function ()
                         [
                             'target' => 'gateway',
                             'node' => 'gateway',
-                            'role' => 'gateway',
                             'status' => 'completed',
                         ],
                         [
                             'target' => 'beast',
                             'node' => 'beast',
-                            'role' => 'app',
                             'status' => 'failed',
                             'output' => 'Connection refused',
                         ],

@@ -19,7 +19,7 @@ function createGatewayNode(): Node
 {
     $node = Node::factory()->create([
         'name' => 'gateway-1',
-        'role' => 'gateway',
+
         'status' => 'active',
     ]);
 
@@ -36,14 +36,14 @@ function createAppNode(): Node
 {
     $node = Node::factory()->create([
         'name' => 'app-1',
-        'role' => 'app',
+
         'status' => 'active',
         'platform' => 'ubuntu',
     ]);
 
     NodeRoleAssignment::factory()->create([
         'node_id' => $node->id,
-        'role' => 'app-development',
+        'role' => 'app-dev',
         'status' => 'active',
     ]);
 
@@ -54,7 +54,7 @@ function createControlNode(): Node
 {
     return Node::factory()->create([
         'name' => 'control-1',
-        'role' => 'control',
+
         'status' => 'active',
     ]);
 }
@@ -231,7 +231,7 @@ describe('NodeAccessAuthorizer', function (): void {
     it('allows agent-self preset permissions', function (): void {
         $agent = Node::factory()->create([
             'name' => 'agent-1',
-            'role' => 'app',
+
             'status' => 'active',
             'platform' => 'ubuntu',
         ]);
@@ -256,7 +256,7 @@ describe('NodeAccessAuthorizer', function (): void {
     it('denies agent-self preset for credentials and firewall writes', function (): void {
         $agent = Node::factory()->create([
             'name' => 'agent-1',
-            'role' => 'app',
+
             'status' => 'active',
             'platform' => 'ubuntu',
         ]);

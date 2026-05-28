@@ -23,7 +23,7 @@ function createAppListLocalNode(string $role = 'gateway'): Node
 {
     return Node::factory()->create([
         'name' => "local-{$role}",
-        'role' => $role,
+
         'host' => '10.6.0.1',
         'wireguard_address' => '10.6.0.1',
     ]);
@@ -32,8 +32,8 @@ function createAppListLocalNode(string $role = 'gateway'): Node
 describe('app:list base contract', function (): void {
     it('lists apps sorted by node then app name for gateway callers', function (): void {
         createAppListLocalNode('gateway');
-        $zNode = Node::factory()->create(['name' => 'z-node', 'role' => 'app']);
-        $aNode = Node::factory()->create(['name' => 'a-node', 'role' => 'app']);
+        $zNode = Node::factory()->create(['name' => 'z-node']);
+        $aNode = Node::factory()->create(['name' => 'a-node']);
 
         App::factory()->create(['name' => 'zebra', 'node_id' => $zNode->id]);
         App::factory()->create(['name' => 'beta', 'node_id' => $aNode->id]);
@@ -48,11 +48,11 @@ describe('app:list base contract', function (): void {
 
     it('filters by node and environment', function (): void {
         createAppListLocalNode('gateway');
-        $devNode = Node::factory()->create(['name' => 'dev-1', 'role' => 'app']);
-        $prodNode = Node::factory()->create(['name' => 'prod-1', 'role' => 'app']);
+        $devNode = Node::factory()->create(['name' => 'dev-1']);
+        $prodNode = Node::factory()->create(['name' => 'prod-1']);
 
-        App::factory()->create(['name' => 'docs', 'node_id' => $devNode->id, 'environment' => 'development']);
-        App::factory()->create(['name' => 'site', 'node_id' => $prodNode->id, 'environment' => 'production']);
+        App::factory()->create(['name' => 'docs', 'node_id' => $devNode->id]);
+        App::factory()->create(['name' => 'site', 'node_id' => $prodNode->id]);
 
         $exitCode = Artisan::call('app:list', [
             '--json' => true,
@@ -161,7 +161,7 @@ describe('app:list base contract', function (): void {
         Process::preventStrayProcesses();
 
         createAppListLocalNode('gateway');
-        $node = Node::factory()->create(['role' => 'app']);
+        $node = Node::factory()->create([]);
         App::factory()->count(2)->create(['node_id' => $node->id]);
 
         $appCount = DB::table('apps')->count();

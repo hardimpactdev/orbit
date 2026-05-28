@@ -24,13 +24,11 @@ function nodeRevokeRow(array $overrides = []): array
 {
     return array_merge([
         'name' => 'app-1',
-        'role' => 'app',
         'host' => '10.6.0.7',
         'wireguard_address' => '10.6.0.7',
         'user' => 'nckrtl',
         'orbit_path' => '/home/nckrtl/orbit',
         'status' => 'active',
-        'environment' => 'development',
         'platform' => 'ubuntu_24-04',
         'created_at' => now(),
         'updated_at' => now(),
@@ -43,8 +41,6 @@ function setupNodeRevokeGatewayCaller(): void
 
     DB::table('nodes')->insert(nodeRevokeRow([
         'name' => 'gateway-1',
-        'role' => 'gateway',
-        'environment' => null,
     ]));
 }
 
@@ -52,8 +48,6 @@ function setupRevokeControlCaller(): void
 {
     DB::table('nodes')->insert(nodeRevokeRow([
         'name' => 'control-1',
-        'role' => 'control',
-        'environment' => null,
     ]));
 
     LocalGatewaySettings::current()->fill([
@@ -78,8 +72,6 @@ describe('node:revoke base contract', function (): void {
         setupNodeRevokeGatewayCaller();
         DB::table('nodes')->insert(nodeRevokeRow([
             'name' => 'control-1',
-            'role' => 'control',
-            'environment' => null,
         ]));
         DB::table('nodes')->insert(nodeRevokeRow());
         DB::table('node_access')->insert([
@@ -101,8 +93,6 @@ describe('node:revoke base contract', function (): void {
         setupNodeRevokeGatewayCaller();
         DB::table('nodes')->insert(nodeRevokeRow([
             'name' => 'control-1',
-            'role' => 'control',
-            'environment' => null,
         ]));
         DB::table('nodes')->insert(nodeRevokeRow());
 
@@ -124,8 +114,6 @@ describe('node:revoke base contract', function (): void {
         setupNodeRevokeGatewayCaller();
         DB::table('nodes')->insert(nodeRevokeRow([
             'name' => 'control-1',
-            'role' => 'control',
-            'environment' => null,
         ]));
         DB::table('nodes')->insert(nodeRevokeRow());
 
@@ -147,8 +135,6 @@ describe('node:revoke base contract', function (): void {
         setupNodeRevokeGatewayCaller();
         DB::table('nodes')->insert(nodeRevokeRow([
             'name' => 'control-1',
-            'role' => 'control',
-            'environment' => null,
         ]));
         DB::table('nodes')->insert(nodeRevokeRow());
 
@@ -189,8 +175,6 @@ describe('node:revoke base contract', function (): void {
         setupNodeRevokeGatewayCaller();
         DB::table('nodes')->insert(nodeRevokeRow([
             'name' => 'control-1',
-            'role' => 'control',
-            'environment' => null,
         ]));
 
         $exitCode = Artisan::call('node:revoke', [
@@ -213,8 +197,6 @@ describe('node:revoke base contract', function (): void {
 
         DB::table('nodes')->insert(nodeRevokeRow([
             'name' => 'control-1',
-            'role' => 'control',
-            'environment' => null,
         ]));
         DB::table('nodes')->insert(nodeRevokeRow());
 
@@ -235,8 +217,6 @@ describe('node:revoke base contract', function (): void {
         setupNodeRevokeGatewayCaller();
         DB::table('nodes')->insert(nodeRevokeRow([
             'name' => 'control-1',
-            'role' => 'control',
-            'environment' => null,
         ]));
         DB::table('nodes')->insert(nodeRevokeRow());
         DB::table('node_access')->insert([
@@ -258,8 +238,6 @@ describe('node:revoke base contract', function (): void {
         setupNodeRevokeGatewayCaller();
         DB::table('nodes')->insert(nodeRevokeRow([
             'name' => 'control-1',
-            'role' => 'control',
-            'environment' => null,
         ]));
         DB::table('nodes')->insert(nodeRevokeRow());
 
@@ -432,7 +410,6 @@ describe('node:revoke control forwarding', function (): void {
         setupRevokeControlCaller();
         DB::table('nodes')->insert(nodeRevokeRow([
             'name' => 'app-1',
-            'role' => 'app',
         ]));
         $controlNodeId = DB::table('nodes')->where('name', 'control-1')->value('id');
         $appNodeId = DB::table('nodes')->where('name', 'app-1')->value('id');
@@ -508,8 +485,6 @@ describe('node:revoke safety', function (): void {
 
         DB::table('nodes')->insert(nodeRevokeRow([
             'name' => 'control-1',
-            'role' => 'control',
-            'environment' => null,
         ]));
         DB::table('nodes')->insert(nodeRevokeRow());
         DB::table('node_access')->insert([
@@ -530,8 +505,6 @@ describe('node:revoke safety', function (): void {
         setupNodeRevokeGatewayCaller();
         DB::table('nodes')->insert(nodeRevokeRow([
             'name' => 'control-1',
-            'role' => 'control',
-            'environment' => null,
         ]));
         DB::table('nodes')->insert(nodeRevokeRow());
         DB::table('node_access')->insert([

@@ -235,15 +235,15 @@ class NodeDefaultCommand extends Command
             );
         }
 
-        if (! app(NodeRoleAssignments::class)->nodeHasActiveRole($node, 'app-development')) {
+        if (! app(NodeRoleAssignments::class)->nodeHasActiveRole($node, 'app-dev')) {
             return $this->failCommand(
                 code: 'node.invalid_role',
                 message: "Node '{$name}' is not a development app node.",
                 meta: [
                     'name' => $name,
-                    'role' => $node->role,
-                    'environment' => $node->environment,
-                    'required_role_assignment' => 'app-development',
+                    'role' => $node->displayRole(),
+                    'environment' => app(NodeRoleAssignments::class)->activeAppHostEnvironment($node),
+                    'required_role_assignment' => 'app-dev',
                 ],
                 humanMessage: "Node '{$name}' is not a development app node.\nOnly development app nodes may be set as the local default.",
             );
@@ -297,7 +297,7 @@ class NodeDefaultCommand extends Command
      */
     private function fetchLocalDevelopmentAppNodes(): array
     {
-        $nodeIds = app(NodeRoleAssignments::class)->activeNodeIdsForRole('app-development');
+        $nodeIds = app(NodeRoleAssignments::class)->activeNodeIdsForRole('app-dev');
 
         return Node::query()
             ->whereIn('id', $nodeIds)
@@ -306,8 +306,8 @@ class NodeDefaultCommand extends Command
             ->get()
             ->map(fn (Node $node): array => [
                 'name' => $node->name,
-                'role' => $node->role,
-                'environment' => $node->environment,
+                'role' => $node->displayRole(),
+                'environment' => app(NodeRoleAssignments::class)->activeAppHostEnvironment($node),
             ])
             ->all();
     }
@@ -339,7 +339,7 @@ class NodeDefaultCommand extends Command
 
         return collect($roles)
             ->contains(fn (mixed $assignment): bool => is_array($assignment)
-                && ($assignment['role'] ?? null) === 'app-development'
+                && ($assignment['role'] ?? null) === 'app-dev'
                 && ($assignment['status'] ?? null) === 'active');
     }
 

@@ -38,7 +38,7 @@ it('renders the exact already-provisioned first-gateway convergence line', funct
 
     Node::factory()->create([
         'name' => 'gateway-1',
-        'role' => 'gateway',
+
         'host' => '203.0.113.2',
         'wireguard_address' => '10.6.0.2',
         'gateway_endpoint' => '203.0.113.2',
@@ -48,7 +48,7 @@ it('renders the exact already-provisioned first-gateway convergence line', funct
 
     Node::factory()->create([
         'name' => 'operator-1',
-        'role' => 'control',
+
         'host' => '127.0.0.1',
         'wireguard_address' => '10.6.0.3',
         'platform' => 'macos_15-4',
@@ -69,13 +69,11 @@ it('renders the exact already-provisioned first-gateway convergence line', funct
                 'data' => [
                     'self' => [
                         'name' => 'operator-1',
-                        'role' => 'control',
                         'status' => 'active',
                         'addresses' => ['wireguard' => '10.6.0.3'],
                     ],
                     'gateway' => [
                         'name' => 'gateway-1',
-                        'role' => 'gateway',
                         'status' => 'active',
                         'addresses' => ['wireguard' => '10.6.0.2'],
                     ],

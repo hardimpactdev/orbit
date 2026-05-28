@@ -11,11 +11,10 @@ uses(RefreshDatabase::class);
 
 describe('app:show JSON renderer contract', function (): void {
     it('returns app and details under the success envelope', function (): void {
-        $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'host' => '10.6.0.7']);
+        $node = Node::factory()->create(['name' => 'app-1', 'host' => '10.6.0.7']);
         App::factory()->create([
             'name' => 'docs',
             'node_id' => $node->id,
-            'environment' => 'production',
             'domain' => 'docs.example.com',
             'path' => '/srv/docs',
             'document_root' => 'public',

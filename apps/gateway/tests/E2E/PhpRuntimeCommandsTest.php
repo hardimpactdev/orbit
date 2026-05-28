@@ -34,7 +34,6 @@ foreach (['operator-1', 'app-dev-1'] as $name) {
 $app = \App\Models\App::query()->create([
     'name' => 'docs',
     'node_id' => $nodes->get('app-dev-1'),
-    'environment' => 'development',
     'path' => '/home/orbit/apps/docs',
     'document_root' => 'public',
     'php_version' => '8.4',

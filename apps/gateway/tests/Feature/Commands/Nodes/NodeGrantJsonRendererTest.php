@@ -20,13 +20,11 @@ function nodeGrantJsonRow(array $overrides = []): array
 {
     return array_merge([
         'name' => 'app-1',
-        'role' => 'app',
         'host' => '10.6.0.7',
         'wireguard_address' => '10.6.0.7',
         'user' => 'nckrtl',
         'orbit_path' => '/home/nckrtl/orbit',
         'status' => 'active',
-        'environment' => 'development',
         'platform' => 'ubuntu_24-04',
         'created_at' => now(),
         'updated_at' => now(),
@@ -79,8 +77,6 @@ function setupGrantGatewayCallerJson(): void
 
     DB::table('nodes')->insert(nodeGrantJsonRow([
         'name' => 'gateway-1',
-        'role' => 'gateway',
-        'environment' => null,
     ]));
 }
 
@@ -89,8 +85,6 @@ describe('node:grant JSON renderer contract', function (): void {
         setupGrantGatewayCallerJson();
         DB::table('nodes')->insert(nodeGrantJsonRow([
             'name' => 'control-1',
-            'role' => 'control',
-            'environment' => null,
         ]));
         DB::table('nodes')->insert(nodeGrantJsonRow());
 
@@ -113,8 +107,6 @@ describe('node:grant JSON renderer contract', function (): void {
         setupGrantGatewayCallerJson();
         DB::table('nodes')->insert(nodeGrantJsonRow([
             'name' => 'control-1',
-            'role' => 'control',
-            'environment' => null,
         ]));
         DB::table('nodes')->insert(nodeGrantJsonRow());
 
@@ -144,8 +136,6 @@ describe('node:grant JSON renderer contract', function (): void {
         setupGrantGatewayCallerJson();
         DB::table('nodes')->insert(nodeGrantJsonRow([
             'name' => 'control-1',
-            'role' => 'control',
-            'environment' => null,
         ]));
         DB::table('nodes')->insert(nodeGrantJsonRow());
 
@@ -203,8 +193,6 @@ describe('node:grant JSON renderer contract', function (): void {
         setupGrantGatewayCallerJson();
         DB::table('nodes')->insert(nodeGrantJsonRow([
             'name' => 'control-1',
-            'role' => 'control',
-            'environment' => null,
         ]));
 
         $exitCode = Artisan::call('node:grant', [
@@ -229,8 +217,6 @@ describe('node:grant JSON renderer contract', function (): void {
         setupGrantGatewayCallerJson();
         DB::table('nodes')->insert(nodeGrantJsonRow([
             'name' => 'control-1',
-            'role' => 'control',
-            'environment' => null,
         ]));
 
         $exitCode = Artisan::call('node:grant', [
@@ -259,8 +245,6 @@ describe('node:grant JSON renderer contract', function (): void {
         setupGrantGatewayCallerJson();
         DB::table('nodes')->insert(nodeGrantJsonRow([
             'name' => 'control-1',
-            'role' => 'control',
-            'environment' => null,
         ]));
         DB::table('nodes')->insert(nodeGrantJsonRow());
 
@@ -280,8 +264,6 @@ describe('node:grant JSON renderer contract', function (): void {
         setupGrantGatewayCallerJson();
         DB::table('nodes')->insert(nodeGrantJsonRow([
             'name' => 'control-1',
-            'role' => 'control',
-            'environment' => null,
         ]));
         DB::table('nodes')->insert(nodeGrantJsonRow());
 

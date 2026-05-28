@@ -26,7 +26,6 @@ function toolProbeIssue(array $drift, string $key): mixed
 function createToolsProbeAppHostNode(array $attributes = []): Node
 {
     return createTestAppHostNode([
-        'role' => 'app',
         'status' => 'active',
         ...$attributes,
     ]);
@@ -35,12 +34,11 @@ function createToolsProbeAppHostNode(array $attributes = []): Node
 function createToolsProbeAgentNode(): Node
 {
     $node = Node::factory()->create([
-        'role' => 'control',
+
         'status' => 'active',
         'tld' => 'agent',
     ]);
     $node->roleAssignments()->create([
-        'role' => 'agent',
         'status' => 'active',
         'settings' => ['tld' => 'agent'],
     ]);
@@ -95,7 +93,7 @@ describe('ToolsProbe', function (): void {
     });
 
     it('requires active app or gateway nodes', function (): void {
-        $node = Node::factory()->create(['role' => 'control', 'status' => 'active']);
+        $node = Node::factory()->create(['status' => 'active']);
         $tool = NodeTool::factory()->create(['node_id' => $node->id, 'name' => 'redis']);
 
         $drift = (new ToolsProbe)->diff($tool, new ProbeSnapshot([]));

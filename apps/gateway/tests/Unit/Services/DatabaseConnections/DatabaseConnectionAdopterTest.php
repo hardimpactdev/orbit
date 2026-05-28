@@ -20,7 +20,7 @@ uses(RefreshDatabase::class);
 
 describe('DatabaseConnectionAdopter', function (): void {
     it('materializes a connection and target for an existing app env and encrypts the password', function (): void {
-        $node = Node::factory()->create(['role' => 'gateway', 'status' => 'active']);
+        $node = Node::factory()->create(['status' => 'active']);
         $path = storage_path('framework/testing/database-adopter-app');
         File::ensureDirectoryExists($path);
         File::put($path.'/.env', "DB_CONNECTION=pgsql\nDB_HOST=db.internal\nDB_PORT=5432\nDB_DATABASE=docs\nDB_USERNAME=orbit\nDB_PASSWORD=secret\n");
@@ -43,7 +43,7 @@ describe('DatabaseConnectionAdopter', function (): void {
     });
 
     it('materializes a workspace connection with the workspace-app slug', function (): void {
-        $node = Node::factory()->create(['role' => 'app', 'status' => 'active']);
+        $node = Node::factory()->create(['status' => 'active']);
         $app = App::factory()->create(['node_id' => $node->id, 'name' => 'docs']);
         Workspace::factory()->create([
             'app_id' => $app->id,
@@ -62,7 +62,7 @@ describe('DatabaseConnectionAdopter', function (): void {
     });
 
     it('normalizes adopted app and workspace slugs from human names', function (): void {
-        $node = Node::factory()->create(['role' => 'gateway', 'status' => 'active']);
+        $node = Node::factory()->create(['status' => 'active']);
         $appPath = storage_path('framework/testing/database-adopter-normalized-app');
         File::ensureDirectoryExists($appPath);
         File::put($appPath.'/.env', "DB_CONNECTION=pgsql\nDB_HOST=db.internal\nDB_PORT=5432\nDB_DATABASE=docs\nDB_USERNAME=orbit\nDB_PASSWORD=secret\nANALYTICS_DB_CONNECTION=mysql\nANALYTICS_DB_HOST=analytics.internal\nANALYTICS_DB_PORT=3306\nANALYTICS_DB_DATABASE=analytics\nANALYTICS_DB_USERNAME=analytics\nANALYTICS_DB_PASSWORD=top-secret\n");
@@ -88,7 +88,7 @@ describe('DatabaseConnectionAdopter', function (): void {
     });
 
     it('reuses an existing app target connection instead of creating slug duplicates on rerun', function (): void {
-        $node = Node::factory()->create(['role' => 'gateway', 'status' => 'active']);
+        $node = Node::factory()->create(['status' => 'active']);
         $path = storage_path('framework/testing/database-adopter-idempotent-app');
         File::ensureDirectoryExists($path);
         File::put($path.'/.env', "DB_CONNECTION=mysql\nDB_HOST=new-host\nDB_PORT=3306\nDB_DATABASE=docs_v2\nDB_USERNAME=new-user\nDB_PASSWORD=new-secret\n");
@@ -130,7 +130,7 @@ describe('DatabaseConnectionAdopter', function (): void {
     });
 
     it('adopts both DB and ANALYTICS_DB prefixes for the same app', function (): void {
-        $node = Node::factory()->create(['role' => 'gateway', 'status' => 'active']);
+        $node = Node::factory()->create(['status' => 'active']);
         $path = storage_path('framework/testing/database-adopter-multi-prefix-app');
         File::ensureDirectoryExists($path);
         File::put($path.'/.env', <<<'ENV'
@@ -163,7 +163,7 @@ ENV);
     });
 
     it('adopts custom complete prefixes for the same app', function (): void {
-        $node = Node::factory()->create(['role' => 'gateway', 'status' => 'active']);
+        $node = Node::factory()->create(['status' => 'active']);
         $path = storage_path('framework/testing/database-adopter-custom-prefix-app');
         File::ensureDirectoryExists($path);
         File::put($path.'/.env', "REPORTING_DB_CONNECTION=pgsql\nREPORTING_DB_HOST=reporting.internal\nREPORTING_DB_PORT=5432\nREPORTING_DB_DATABASE=reporting\nREPORTING_DB_USERNAME=reporting\n");
@@ -182,7 +182,7 @@ ENV);
     });
 
     it('does not adopt partial mapped env payloads', function (): void {
-        $node = Node::factory()->create(['role' => 'gateway', 'status' => 'active']);
+        $node = Node::factory()->create(['status' => 'active']);
         $path = storage_path('framework/testing/database-adopter-partial-update');
         File::ensureDirectoryExists($path);
         File::put($path.'/.env', "DB_CONNECTION=pgsql\nDB_PORT=6432\nDB_USERNAME=partial-user\n");
@@ -222,7 +222,7 @@ ENV);
     });
 
     it('does not create a new connection from an otherwise empty env group', function (): void {
-        $node = Node::factory()->create(['role' => 'gateway', 'status' => 'active']);
+        $node = Node::factory()->create(['status' => 'active']);
         $path = storage_path('framework/testing/database-adopter-empty-group');
         File::ensureDirectoryExists($path);
         File::put($path.'/.env', "DB_CONNECTION=pgsql\n");
@@ -241,7 +241,7 @@ ENV);
     });
 
     it('stores adopted sqlite database values as path only', function (): void {
-        $node = Node::factory()->create(['role' => 'gateway', 'status' => 'active']);
+        $node = Node::factory()->create(['status' => 'active']);
         $path = storage_path('framework/testing/database-adopter-sqlite');
         File::ensureDirectoryExists($path);
         File::put($path.'/.env', "DB_CONNECTION=sqlite\nDB_DATABASE=/srv/docs/database/database.sqlite\n");
@@ -264,8 +264,8 @@ ENV);
     });
 
     it('does not reuse sqlite connections owned by another node', function (): void {
-        $node = Node::factory()->create(['role' => 'gateway', 'status' => 'active']);
-        $otherNode = Node::factory()->create(['role' => 'gateway', 'status' => 'active']);
+        $node = Node::factory()->create(['status' => 'active']);
+        $otherNode = Node::factory()->create(['status' => 'active']);
         $path = storage_path('framework/testing/database-adopter-sqlite-node');
         File::ensureDirectoryExists($path);
         File::put($path.'/.env', "DB_CONNECTION=sqlite\nDB_DATABASE=/srv/docs/database/database.sqlite\n");

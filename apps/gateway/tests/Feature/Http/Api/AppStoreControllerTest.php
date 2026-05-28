@@ -21,7 +21,7 @@ function createAppStoreCallerNode(array $overrides = []): Node
 {
     return Node::factory()->create(array_merge([
         'name' => 'caller',
-        'role' => 'control',
+
         'host' => APP_STORE_CALLER_WG_IP,
         'wireguard_address' => APP_STORE_CALLER_WG_IP,
     ], $overrides));
@@ -57,11 +57,11 @@ describe('AppStoreController', function (): void {
         $caller = createAppStoreCallerNode();
         $targetNode = Node::factory()->create([
             'name' => 'app-1',
-            'role' => 'app',
+
             'tld' => 'test',
             'status' => 'active',
         ]);
-        assignAppStoreRole($targetNode, 'app-development', settings: ['tld' => 'test']);
+        assignAppStoreRole($targetNode, 'app-dev', settings: ['tld' => 'test']);
         grantAppStoreAccess($caller, $targetNode);
 
         $remoteShell = new AppStoreRecordingRemoteShell;
@@ -94,10 +94,10 @@ describe('AppStoreController', function (): void {
         $caller = createAppStoreCallerNode();
         $targetNode = Node::factory()->create([
             'name' => 'app-1',
-            'role' => 'app',
+
             'status' => 'active',
         ]);
-        assignAppStoreRole($targetNode, 'app-development', settings: ['tld' => 'test']);
+        assignAppStoreRole($targetNode, 'app-dev', settings: ['tld' => 'test']);
         grantAppStoreAccess($caller, $targetNode, ['app:read']);
 
         $remoteShell = new AppStoreRecordingRemoteShell;
@@ -122,11 +122,11 @@ describe('AppStoreController', function (): void {
         assignAppStoreRole($caller, 'database');
         $targetNode = Node::factory()->create([
             'name' => 'app-1',
-            'role' => 'app',
+
             'tld' => 'test',
             'status' => 'active',
         ]);
-        assignAppStoreRole($targetNode, 'app-development', settings: ['tld' => 'test']);
+        assignAppStoreRole($targetNode, 'app-dev', settings: ['tld' => 'test']);
         grantAppStoreAccess($caller, $targetNode);
 
         $remoteShell = new AppStoreRecordingRemoteShell;
@@ -151,11 +151,11 @@ describe('AppStoreController', function (): void {
         $caller = createAppStoreCallerNode();
         $targetNode = Node::factory()->create([
             'name' => 'app-1',
-            'role' => 'app',
+
             'tld' => 'test',
             'status' => 'active',
         ]);
-        assignAppStoreRole($targetNode, 'app-development', settings: ['tld' => 'test']);
+        assignAppStoreRole($targetNode, 'app-dev', settings: ['tld' => 'test']);
         grantAppStoreAccess($caller, $targetNode);
 
         ProxyRoute::query()->create([
@@ -186,10 +186,10 @@ describe('AppStoreController', function (): void {
         $caller = createAppStoreCallerNode();
         $targetNode = Node::factory()->create([
             'name' => 'app-1',
-            'role' => 'app',
+
             'status' => 'active',
         ]);
-        assignAppStoreRole($targetNode, 'app-development', settings: ['tld' => 'test']);
+        assignAppStoreRole($targetNode, 'app-dev', settings: ['tld' => 'test']);
         grantAppStoreAccess($caller, $targetNode);
 
         $remoteShell = new AppStoreRecordingRemoteShell(new RemoteShellResult(
@@ -219,27 +219,26 @@ describe('AppStoreController', function (): void {
         $caller = createAppStoreCallerNode();
         $router = Node::factory()->create([
             'name' => 'gateway-1',
-            'role' => 'gateway',
+
             'status' => 'active',
             'wireguard_address' => '10.6.0.2',
         ]);
         assignAppStoreRole($router, 'router');
         $ingress = Node::factory()->create([
             'name' => 'edge-1',
-            'role' => 'app',
+
             'status' => 'active',
         ]);
         assignAppStoreRole($ingress, 'ingress');
 
         $targetNode = Node::factory()->create([
             'name' => 'app-1',
-            'role' => 'app',
-            'environment' => 'production',
+
             'status' => 'active',
             'wireguard_address' => '10.6.0.21',
             'user' => 'orbit',
         ]);
-        assignAppStoreRole($targetNode, 'app-production', settings: ['ingress_node_id' => $ingress->id]);
+        assignAppStoreRole($targetNode, 'app-prod', settings: ['ingress_node_id' => $ingress->id]);
         grantAppStoreAccess($caller, $targetNode);
 
         $remoteShell = new AppStoreRecordingRemoteShell;

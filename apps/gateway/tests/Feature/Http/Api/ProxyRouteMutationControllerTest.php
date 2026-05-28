@@ -16,7 +16,6 @@ function createProxyRouteMutationCallerNode(array $overrides = []): Node
 {
     $attributes = array_merge([
         'name' => 'caller',
-        'role' => 'control',
         'host' => PROXY_ROUTE_MUTATION_CALLER_WG_IP,
         'wireguard_address' => PROXY_ROUTE_MUTATION_CALLER_WG_IP,
     ], $overrides);

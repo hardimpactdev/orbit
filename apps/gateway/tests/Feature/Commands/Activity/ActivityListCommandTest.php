@@ -22,7 +22,7 @@ function createActivityListLocalNode(string $role = 'gateway'): Node
 {
     return Node::factory()->create([
         'name' => "local-{$role}",
-        'role' => $role,
+
         'host' => '10.6.0.1',
         'wireguard_address' => '10.6.0.1',
     ]);
@@ -52,7 +52,7 @@ function createCommandActivityEntry(
 describe('activity:list command', function (): void {
     it('lists destructive activity locally for gateway callers', function (): void {
         $caller = createActivityListLocalNode('gateway');
-        $appNode = Node::factory()->create(['name' => 'app-1', 'role' => 'app']);
+        $appNode = Node::factory()->create(['name' => 'app-1']);
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
 
         createCommandActivityEntry('node.listed', 'read', $caller);

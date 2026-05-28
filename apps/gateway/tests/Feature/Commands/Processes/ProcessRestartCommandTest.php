@@ -28,7 +28,7 @@ function createProcessRestartLocalNode(string $role = 'gateway'): Node
 {
     return Node::factory()->create([
         'name' => "local-{$role}",
-        'role' => $role,
+
         'host' => '10.6.0.1',
         'wireguard_address' => '10.6.0.1',
     ]);
@@ -37,7 +37,7 @@ function createProcessRestartLocalNode(string $role = 'gateway'): Node
 describe('process:restart base contract', function (): void {
     it('restarts a named gateway-local app process and records a durable event', function (): void {
         createProcessRestartLocalNode('gateway');
-        $node = Node::factory()->create(['role' => 'app']);
+        $node = Node::factory()->create([]);
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
         Process::factory()->create(['app_id' => $app->id, 'name' => 'vite', 'runtime' => ProcessRuntime::Supervisor]);
         $remoteShell = new ProcessRestartRemoteShell([
@@ -61,7 +61,7 @@ describe('process:restart base contract', function (): void {
 
     it('restarts all processes in process order for a workspace context', function (): void {
         createProcessRestartLocalNode('gateway');
-        $node = Node::factory()->create(['role' => 'app']);
+        $node = Node::factory()->create([]);
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
         Workspace::factory()->create(['name' => 'feature-docs', 'app_id' => $app->id]);
         Process::factory()->create(['app_id' => $app->id, 'name' => 'queue', 'sort_order' => 20, 'runtime' => ProcessRuntime::Supervisor]);
@@ -88,7 +88,7 @@ describe('process:restart base contract', function (): void {
 
     it('reports partial bulk failures with runtime data', function (): void {
         createProcessRestartLocalNode('gateway');
-        $node = Node::factory()->create(['role' => 'app']);
+        $node = Node::factory()->create([]);
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
         Process::factory()->create(['app_id' => $app->id, 'name' => 'vite', 'sort_order' => 10, 'runtime' => ProcessRuntime::Supervisor]);
         Process::factory()->create(['app_id' => $app->id, 'name' => 'queue', 'sort_order' => 20, 'runtime' => ProcessRuntime::Supervisor]);
@@ -169,7 +169,7 @@ describe('process:restart base contract', function (): void {
 
     it('renders human progress and success prose', function (): void {
         createProcessRestartLocalNode('gateway');
-        $node = Node::factory()->create(['role' => 'app']);
+        $node = Node::factory()->create([]);
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
         Process::factory()->create(['app_id' => $app->id, 'name' => 'vite', 'runtime' => ProcessRuntime::Supervisor]);
         app()->instance(RemoteShell::class, new ProcessRestartRemoteShell([
@@ -193,7 +193,7 @@ describe('process:restart base contract', function (): void {
 describe('process:restart runtime routing', function (): void {
     it('dispatches docker restart for docker runtime processes', function (): void {
         createProcessRestartLocalNode('gateway');
-        $node = Node::factory()->create(['role' => 'app']);
+        $node = Node::factory()->create([]);
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id, 'runtime_kind' => AppRuntimeKind::Php]);
         Process::factory()->create(['app_id' => $app->id, 'name' => 'queue', 'runtime' => ProcessRuntime::Docker]);
         $remoteShell = new ProcessRestartRemoteShell([
@@ -216,7 +216,7 @@ describe('process:restart runtime routing', function (): void {
 
     it('dispatches supervisorctl restart for supervisor runtime processes', function (): void {
         createProcessRestartLocalNode('gateway');
-        $node = Node::factory()->create(['role' => 'app']);
+        $node = Node::factory()->create([]);
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id, 'runtime_kind' => AppRuntimeKind::Static]);
         Process::factory()->create(['app_id' => $app->id, 'name' => 'vite', 'runtime' => ProcessRuntime::Supervisor]);
         $remoteShell = new ProcessRestartRemoteShell([

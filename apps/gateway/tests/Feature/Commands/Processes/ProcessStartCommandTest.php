@@ -28,7 +28,7 @@ function createProcessStartLocalNode(string $role = 'gateway'): Node
 {
     return Node::factory()->create([
         'name' => "local-{$role}",
-        'role' => $role,
+
         'host' => '10.6.0.1',
         'wireguard_address' => '10.6.0.1',
     ]);
@@ -37,7 +37,7 @@ function createProcessStartLocalNode(string $role = 'gateway'): Node
 describe('process:start base contract', function (): void {
     it('starts a named gateway-local app process and records a durable event', function (): void {
         createProcessStartLocalNode('gateway');
-        $node = Node::factory()->create(['role' => 'app']);
+        $node = Node::factory()->create([]);
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
         Process::factory()->create(['app_id' => $app->id, 'name' => 'vite', 'runtime' => ProcessRuntime::Supervisor]);
         $remoteShell = new ProcessStartRemoteShell([
@@ -61,7 +61,7 @@ describe('process:start base contract', function (): void {
 
     it('starts all processes in process order for a workspace context', function (): void {
         createProcessStartLocalNode('gateway');
-        $node = Node::factory()->create(['role' => 'app']);
+        $node = Node::factory()->create([]);
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
         Workspace::factory()->create(['name' => 'feature-docs', 'app_id' => $app->id]);
         Process::factory()->create(['app_id' => $app->id, 'name' => 'queue', 'sort_order' => 20, 'runtime' => ProcessRuntime::Supervisor]);
@@ -93,7 +93,7 @@ describe('process:start base contract', function (): void {
 
     it('reports partial bulk failures with runtime data and preserves successful events', function (): void {
         createProcessStartLocalNode('gateway');
-        $node = Node::factory()->create(['role' => 'app']);
+        $node = Node::factory()->create([]);
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
         Process::factory()->create(['app_id' => $app->id, 'name' => 'vite', 'sort_order' => 10, 'runtime' => ProcessRuntime::Supervisor]);
         Process::factory()->create(['app_id' => $app->id, 'name' => 'queue', 'sort_order' => 20, 'runtime' => ProcessRuntime::Supervisor]);
@@ -117,7 +117,7 @@ describe('process:start base contract', function (): void {
 
     it('does not mutate process intent while starting runtime units', function (): void {
         createProcessStartLocalNode('gateway');
-        $node = Node::factory()->create(['role' => 'app']);
+        $node = Node::factory()->create([]);
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
         Process::factory()->create(['app_id' => $app->id, 'name' => 'vite', 'runtime' => ProcessRuntime::Supervisor]);
         app()->instance(RemoteShell::class, new ProcessStartRemoteShell([
@@ -136,7 +136,7 @@ describe('process:start base contract', function (): void {
 
     it('rejects validation and not found failures before runtime side effects', function (array $arguments, string $field, string $code): void {
         createProcessStartLocalNode('gateway');
-        $node = Node::factory()->create(['role' => 'app']);
+        $node = Node::factory()->create([]);
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
         Process::factory()->create(['app_id' => $app->id, 'name' => 'vite', 'runtime' => ProcessRuntime::Supervisor]);
         $remoteShell = new ProcessStartRemoteShell([]);
@@ -214,7 +214,7 @@ describe('process:start base contract', function (): void {
 
     it('renders human progress and success prose', function (): void {
         createProcessStartLocalNode('gateway');
-        $node = Node::factory()->create(['role' => 'app']);
+        $node = Node::factory()->create([]);
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
         Process::factory()->create(['app_id' => $app->id, 'name' => 'vite', 'runtime' => ProcessRuntime::Supervisor]);
         app()->instance(RemoteShell::class, new ProcessStartRemoteShell([
@@ -238,7 +238,7 @@ describe('process:start base contract', function (): void {
 describe('process:start runtime routing', function (): void {
     it('dispatches docker start for docker runtime processes', function (): void {
         createProcessStartLocalNode('gateway');
-        $node = Node::factory()->create(['role' => 'app']);
+        $node = Node::factory()->create([]);
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id, 'runtime_kind' => AppRuntimeKind::Php]);
         Process::factory()->create(['app_id' => $app->id, 'name' => 'queue', 'runtime' => ProcessRuntime::Docker]);
         $remoteShell = new ProcessStartRemoteShell([
@@ -261,7 +261,7 @@ describe('process:start runtime routing', function (): void {
 
     it('dispatches supervisorctl start for supervisor runtime processes', function (): void {
         createProcessStartLocalNode('gateway');
-        $node = Node::factory()->create(['role' => 'app']);
+        $node = Node::factory()->create([]);
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id, 'runtime_kind' => AppRuntimeKind::Static]);
         Process::factory()->create(['app_id' => $app->id, 'name' => 'vite', 'runtime' => ProcessRuntime::Supervisor]);
         $remoteShell = new ProcessStartRemoteShell([

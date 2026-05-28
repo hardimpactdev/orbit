@@ -17,7 +17,6 @@ function createWorkspaceStepStoreCallerNode(array $overrides = []): Node
 {
     $attributes = array_merge([
         'name' => 'step-store-caller',
-        'role' => 'control',
         'host' => WORKSPACE_STEP_STORE_CALLER_WG_IP,
         'wireguard_address' => WORKSPACE_STEP_STORE_CALLER_WG_IP,
     ], $overrides);

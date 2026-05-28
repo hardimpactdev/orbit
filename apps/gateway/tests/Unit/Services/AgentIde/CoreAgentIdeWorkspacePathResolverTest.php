@@ -21,7 +21,7 @@ use Tests\TestCase;
 uses(TestCase::class, RefreshDatabase::class);
 
 it('resolves OpenCode workspace paths through the local executor lookup command', function (): void {
-    $node = Node::factory()->create(['role' => 'app']);
+    $node = Node::factory()->create([]);
     $app = App::factory()->create([
         'name' => 'docs',
         'node_id' => $node->id,
@@ -61,7 +61,7 @@ it('resolves OpenCode workspace paths through the local executor lookup command'
 });
 
 it('resolves Polyscope workspace paths through the local executor lookup command', function (): void {
-    $node = Node::factory()->create(['role' => 'app']);
+    $node = Node::factory()->create([]);
     $app = App::factory()->create([
         'name' => 'docs',
         'node_id' => $node->id,
