@@ -40,7 +40,8 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 - Rejects write-capable SQL unless `--write` is supplied.
 - Uses gateway execution for reachable `mysql` and `pgsql` connections.
 - Uses SQLite locality for `sqlite`: the gateway invokes the hidden internal
-  `database:query-local` command on the owning node with a strict JSON stdin payload.
+  `internal:database-query-local` CLI command on the owning node through
+  `RemoteLocalExecutor` with a strict JSON stdin payload.
 
 ### Audit Rules
 

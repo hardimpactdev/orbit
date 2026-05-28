@@ -172,7 +172,7 @@ Use these commands to inspect or query a resolved stored connection.
 
 These hidden commands support gateway orchestration and are not public workflow entrypoints.
 
-- [`orbit database:query-local` (internal, non-public)](internal/1_database-query-local/database-query-local.md)
+- [`orbit internal:database-query-local` (internal, non-public)](internal/1_database-query-local/database-query-local.md)
 
 ## Related
 

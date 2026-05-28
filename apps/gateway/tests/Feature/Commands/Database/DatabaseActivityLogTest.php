@@ -2,34 +2,44 @@
 
 declare(strict_types=1);
 
-use App\Contracts\RemoteShell;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Models\App;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseConnectionTarget;
 use App\Models\Node;
+use App\Services\ActivityLogCorrelation;
+use App\Services\ActivityLogger;
+use App\Services\Operations\OperationRunRecorder;
+use App\Services\Operations\OperationTokenFactory;
+use App\Services\RemoteShell\LocalExecutorCommandBuilder;
+use App\Services\RemoteShell\RemoteExecutor;
+use App\Services\RemoteShell\RemoteLocalExecutor;
+use Illuminate\Contracts\Process\InvokedProcess;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
+use Orbit\Core\Security\OperationTokenSigner;
 use Spatie\Activitylog\Models\Activity;
 
 uses(RefreshDatabase::class);
 
 function configureDatabaseActivityGatewayCaller(): void
 {
-    config(['orbit.is_gateway' => true]);
+    config([
+        'orbit.is_gateway' => true,
+        'orbit.operation_token_secret' => 'gateway-secret',
+        'orbit.operation_token_ttl_seconds' => 120,
+    ]);
 
     Node::factory()->create([
         'name' => 'gateway',
-        'role' => 'gateway',
         'host' => '10.9.0.1',
-        'wireguard_address' => '10.9.0.1',
-    ]);
+        'wireguard_address' => '10.9.0.1']);
 }
 
 describe('database command activity logs', function (): void {
     it('logs query audit metadata without SQL rows or credentials', function (): void {
         configureDatabaseActivityGatewayCaller();
-        $node = Node::factory()->create(['name' => 'app-node', 'role' => 'app']);
+        $node = Node::factory()->appDev()->create(['name' => 'app-node']);
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
         $connection = DatabaseConnection::factory()->create([
             'node_id' => $node->id,
@@ -40,26 +50,21 @@ describe('database command activity logs', function (): void {
             'database' => null,
             'path' => '/srv/docs/database/database.sqlite',
             'username' => null,
-            'credentials' => ['password' => 'never-log-password'],
-        ]);
+            'credentials' => ['password' => 'never-log-password']]);
         DatabaseConnectionTarget::factory()->for($connection, 'connection')->forApp($app)->create(['env_prefix' => 'DB']);
-        app()->instance(RemoteShell::class, new DatabaseActivityLogRemoteShell(new RemoteShellResult(
+        bindDatabaseActivityLogLocalExecutor(new DatabaseActivityLogRemoteShell(new RemoteShellResult(
             exitCode: 0,
             stdout: json_encode([
                 'success' => [
                     'data' => [
                         'columns' => ['email'],
-                        'rows' => [['email' => 'ada@example.test']],
-                    ],
+                        'rows' => [['email' => 'ada@example.test']]],
                     'meta' => [
                         'mode' => 'read',
                         'limit' => 50,
                         'returned_rows' => 1,
                         'truncated' => false,
-                        'duration_ms' => 12,
-                    ],
-                ],
-            ], JSON_THROW_ON_ERROR),
+                        'duration_ms' => 12]]], JSON_THROW_ON_ERROR),
             stderr: '',
             durationMs: 5,
         )));
@@ -67,8 +72,7 @@ describe('database command activity logs', function (): void {
         $sql = 'select email from users where token = "raw-token-value"';
         $exitCode = Artisan::call('database:query', [
             'target' => 'docs',
-            '--sql' => $sql,
-        ]);
+            '--sql' => $sql]);
 
         $entry = Activity::query()->where('event', 'database:query')->first();
         $properties = $entry?->properties;
@@ -99,7 +103,7 @@ describe('database command activity logs', function (): void {
 
     it('logs registry operations without passwords', function (): void {
         configureDatabaseActivityGatewayCaller();
-        createTestAppHostNode(['name' => 'db-node', 'role' => 'app']);
+        createTestAppHostNode(['name' => 'db-node']);
 
         $exitCode = Artisan::call('database:add', [
             'slug' => 'primary-db',
@@ -109,8 +113,7 @@ describe('database command activity logs', function (): void {
             '--database' => 'orbit',
             '--username' => 'orbit',
             '--password' => 'never-log-password',
-            '--node' => 'db-node',
-        ]);
+            '--node' => 'db-node']);
 
         $entry = Activity::query()->where('event', 'database:add')->first();
         $properties = $entry?->properties;
@@ -133,8 +136,7 @@ describe('database command activity logs', function (): void {
             'slug' => 'primary-db',
             '--driver' => 'pgsql',
             '--node' => 'missing-node',
-            '--password' => 'never-log-password',
-        ]);
+            '--password' => 'never-log-password']);
 
         $entry = Activity::query()->where('event', 'database:add')->first();
         $properties = $entry?->properties;
@@ -156,8 +158,7 @@ describe('database command activity logs', function (): void {
         $sql = 'select email from users where token = "raw-token-value"';
         $exitCode = Artisan::call('database:query', [
             'target' => 'missing-target',
-            '--sql' => $sql,
-        ]);
+            '--sql' => $sql]);
 
         $entry = Activity::query()->where('event', 'database:query')->first();
         $properties = $entry?->properties;
@@ -177,7 +178,7 @@ describe('database command activity logs', function (): void {
 
     it('logs write affected row counts without SQL text', function (): void {
         configureDatabaseActivityGatewayCaller();
-        $node = Node::factory()->create(['name' => 'app-node', 'role' => 'app']);
+        $node = Node::factory()->appDev()->create(['name' => 'app-node']);
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
         $connection = DatabaseConnection::factory()->create([
             'node_id' => $node->id,
@@ -187,17 +188,14 @@ describe('database command activity logs', function (): void {
             'port' => null,
             'database' => null,
             'path' => '/srv/docs/database/database.sqlite',
-            'username' => null,
-        ]);
+            'username' => null]);
         DatabaseConnectionTarget::factory()->for($connection, 'connection')->forApp($app)->create(['env_prefix' => 'DB']);
-        app()->instance(RemoteShell::class, new DatabaseActivityLogRemoteShell(new RemoteShellResult(
+        bindDatabaseActivityLogLocalExecutor(new DatabaseActivityLogRemoteShell(new RemoteShellResult(
             exitCode: 0,
             stdout: json_encode([
                 'success' => [
                     'data' => ['affected_rows' => 3],
-                    'meta' => ['mode' => 'write', 'duration_ms' => 15],
-                ],
-            ], JSON_THROW_ON_ERROR),
+                    'meta' => ['mode' => 'write', 'duration_ms' => 15]]], JSON_THROW_ON_ERROR),
             stderr: '',
             durationMs: 5,
         )));
@@ -206,8 +204,7 @@ describe('database command activity logs', function (): void {
         $exitCode = Artisan::call('database:query', [
             'target' => 'docs',
             '--sql' => $sql,
-            '--write' => true,
-        ]);
+            '--write' => true]);
 
         $entry = Activity::query()->where('event', 'database:query')->first();
         $properties = $entry?->properties;
@@ -231,7 +228,7 @@ describe('database command activity logs', function (): void {
 
     it('logs schema count metadata without result rows', function (): void {
         configureDatabaseActivityGatewayCaller();
-        $node = Node::factory()->create(['name' => 'app-node', 'role' => 'app']);
+        $node = Node::factory()->appDev()->create(['name' => 'app-node']);
         $connection = DatabaseConnection::factory()->create([
             'node_id' => $node->id,
             'slug' => 'docs-db',
@@ -240,27 +237,22 @@ describe('database command activity logs', function (): void {
             'port' => null,
             'database' => null,
             'path' => '/srv/docs/database/database.sqlite',
-            'username' => null,
-        ]);
-        app()->instance(RemoteShell::class, new DatabaseActivityLogRemoteShell(new RemoteShellResult(
+            'username' => null]);
+        bindDatabaseActivityLogLocalExecutor(new DatabaseActivityLogRemoteShell(new RemoteShellResult(
             exitCode: 0,
             stdout: json_encode([
                 'success' => [
                     'data' => [
                         'columns' => ['name'],
-                        'rows' => [['name' => 'users']],
-                    ],
-                    'meta' => ['mode' => 'read', 'returned_rows' => 1, 'duration_ms' => 8],
-                ],
-            ], JSON_THROW_ON_ERROR),
+                        'rows' => [['name' => 'users']]],
+                    'meta' => ['mode' => 'read', 'returned_rows' => 1, 'duration_ms' => 8]]], JSON_THROW_ON_ERROR),
             stderr: '',
             durationMs: 5,
         )));
 
         $exitCode = Artisan::call('database:tables', [
             'target' => $connection->slug,
-            '--json' => true,
-        ]);
+            '--json' => true]);
 
         $entry = Activity::query()->where('event', 'database:tables')->first();
         $properties = $entry?->properties;
@@ -278,12 +270,33 @@ describe('database command activity logs', function (): void {
     });
 });
 
-final class DatabaseActivityLogRemoteShell implements RemoteShell
+function bindDatabaseActivityLogLocalExecutor(DatabaseActivityLogRemoteShell $transport): void
+{
+    app()->instance(RemoteLocalExecutor::class, new RemoteLocalExecutor(
+        transport: $transport,
+        commands: new LocalExecutorCommandBuilder,
+        operationTokens: new OperationTokenFactory(
+            signer: new OperationTokenSigner,
+            secret: 'gateway-secret',
+            ttlSeconds: 120,
+            clock: static fn (): int => 1_798_105_200,
+        ),
+        activityLogger: new ActivityLogger(new ActivityLogCorrelation),
+        operationRuns: app(OperationRunRecorder::class),
+    ));
+}
+
+final class DatabaseActivityLogRemoteShell implements RemoteExecutor
 {
     public function __construct(private readonly RemoteShellResult $result) {}
 
     public function run(Node $node, string $script, array $options = []): RemoteShellResult
     {
         return $this->result;
+    }
+
+    public function start(Node $node, string $script, array $options = []): InvokedProcess
+    {
+        throw new RuntimeException('Process start is not used in this test.');
     }
 }

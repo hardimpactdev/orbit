@@ -18,6 +18,7 @@ final readonly class LocalExecutorCommandBuilder
     private const array ALLOWED_COMMAND_ROLES = [
         'internal:executor:verify' => ['gateway', 'vpn', 'router', 'app-dev', 'app-prod', 'database', 'agent', 'ingress'],
         'internal:wg-easy:state' => ['vpn'],
+        'internal:database-query-local' => ['app-dev', 'app-prod', 'database'],
         'internal:workspace-adapter:lookup' => ['app-dev'],
         'internal:workspace-adapter:update' => ['app-dev'],
     ];

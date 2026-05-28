@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace App\Services\DatabaseConnections;
 
-use App\Contracts\RemoteShell;
 use App\Models\DatabaseConnection;
+use App\Services\RemoteShell\RemoteLocalExecutor;
 use JsonException;
 use RuntimeException;
 
@@ -14,7 +14,7 @@ final readonly class DatabaseConnectionExecutor
     public function __construct(
         private DatabaseQueryRunner $runner,
         private DatabaseSchemaInspector $inspector,
-        private RemoteShell $shell,
+        private RemoteLocalExecutor $localExecutor,
     ) {}
 
     /**
@@ -81,7 +81,7 @@ final readonly class DatabaseConnectionExecutor
             );
         }
 
-        $result = $this->shell->run($connection->node, 'orbit database:query-local', [
+        $result = $this->localExecutor->runInternal($connection->node, 'internal:database-query-local', [], [], [
             'input' => json_encode([
                 'connection' => $this->executionPayload($connection),
                 'sql' => $sql,

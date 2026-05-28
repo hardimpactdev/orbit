@@ -50,6 +50,7 @@ use App\Commands\Firewall\FirewallRemoveCommand;
 use App\Commands\Gateway\GatewayAddCommand;
 use App\Commands\Gateway\GatewayTrustCommand;
 use App\Commands\GatewayStatusCommand;
+use App\Commands\Internal\DatabaseQueryLocalCommand;
 use App\Commands\Internal\VerifyExecutorCommand;
 use App\Commands\Internal\WgEasyStateCommand;
 use App\Commands\Internal\WorkspaceAdapterLookupCommand;
@@ -280,6 +281,7 @@ return [
         // Internal executor commands — always hidden from public CLI output.
         VerifyExecutorCommand::class,
         WgEasyStateCommand::class,
+        DatabaseQueryLocalCommand::class,
         WorkspaceAdapterLookupCommand::class,
         WorkspaceAdapterUpdateCommand::class,
     ],

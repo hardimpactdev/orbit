@@ -2,24 +2,35 @@
 
 declare(strict_types=1);
 
-use App\Contracts\RemoteShell;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Models\App;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseConnectionTarget;
 use App\Models\Node;
 use App\Models\Workspace;
+use App\Services\ActivityLogCorrelation;
+use App\Services\ActivityLogger;
+use App\Services\Operations\OperationRunRecorder;
+use App\Services\Operations\OperationTokenFactory;
+use App\Services\RemoteShell\LocalExecutorCommandBuilder;
+use App\Services\RemoteShell\RemoteExecutor;
+use App\Services\RemoteShell\RemoteLocalExecutor;
+use Illuminate\Contracts\Process\InvokedProcess;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
+use Orbit\Core\Security\OperationTokenSigner;
 
 uses(RefreshDatabase::class);
 
 function configureDatabaseQueryGatewayCaller(): void
 {
-    config(['orbit.is_gateway' => true]);
+    config([
+        'orbit.is_gateway' => true,
+        'orbit.operation_token_secret' => 'gateway-secret',
+        'orbit.operation_token_ttl_seconds' => 120,
+    ]);
     Node::factory()->create([
         'name' => 'gateway',
-        'role' => 'gateway',
         'host' => '10.9.0.1',
         'wireguard_address' => '10.9.0.1',
     ]);
@@ -37,7 +48,7 @@ function strictDatabaseQueryCommandPayload(): array
 describe('database:query', function (): void {
     it('runs sqlite queries on the owning node with the payload passed through stdin', function (): void {
         configureDatabaseQueryGatewayCaller();
-        $node = Node::factory()->create(['name' => 'app-node', 'role' => 'app']);
+        $node = Node::factory()->appDev()->create(['name' => 'app-node']);
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
         $connection = DatabaseConnection::factory()->create([
             'node_id' => $node->id,
@@ -70,7 +81,7 @@ describe('database:query', function (): void {
             stderr: '',
             durationMs: 5,
         ));
-        app()->instance(RemoteShell::class, $shell);
+        bindDatabaseQueryCommandLocalExecutor($shell);
 
         $exitCode = Artisan::call('database:query', [
             'target' => 'docs',
@@ -84,7 +95,8 @@ describe('database:query', function (): void {
             ->and($payload['success']['meta']['connection'])->toBe('docs-db')
             ->and(Artisan::output())->not->toContain('+---')
             ->and($shell->node->is($node))->toBeTrue()
-            ->and($shell->script)->toBe('orbit database:query-local')
+            ->and($shell->script)->toContain('/usr/local/bin/orbit internal:database-query-local')
+            ->and($shell->script)->not->toContain('orbit database:query-local')
             ->and($shell->options)->toHaveKey('input')
             ->and(json_encode(array_diff_key($shell->options, ['input' => true]), JSON_THROW_ON_ERROR))->not->toContain('never-print-me')
             ->and($remotePayload['connection']['path'])->toBe('/srv/docs/database/database.sqlite')
@@ -97,7 +109,7 @@ describe('database:query', function (): void {
 
     it('requires an explicit connection when a target has multiple non-default mappings', function (): void {
         configureDatabaseQueryGatewayCaller();
-        $node = Node::factory()->create(['name' => 'app-node', 'role' => 'app']);
+        $node = Node::factory()->appDev()->create(['name' => 'app-node']);
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
         $primary = DatabaseConnection::factory()->create(['node_id' => $node->id, 'slug' => 'primary-db']);
         $analytics = DatabaseConnection::factory()->create(['node_id' => $node->id, 'slug' => 'analytics-db']);
@@ -133,7 +145,7 @@ describe('database:query', function (): void {
 
     it('requires explicit connection selectors to belong to the app target', function (): void {
         configureDatabaseQueryGatewayCaller();
-        $node = Node::factory()->create(['name' => 'app-node', 'role' => 'app']);
+        $node = Node::factory()->appDev()->create(['name' => 'app-node']);
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
         $attached = DatabaseConnection::factory()->create(['node_id' => $node->id, 'slug' => 'docs-db']);
         $other = DatabaseConnection::factory()->create(['node_id' => $node->id, 'slug' => 'other-db']);
@@ -171,7 +183,7 @@ describe('database:query', function (): void {
 
     it('resolves workspace targets and explicit attached workspace connections', function (): void {
         configureDatabaseQueryGatewayCaller();
-        $node = Node::factory()->create(['name' => 'app-node', 'role' => 'app']);
+        $node = Node::factory()->appDev()->create(['name' => 'app-node']);
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
         $workspace = Workspace::factory()->create(['name' => 'feature-docs', 'app_id' => $app->id]);
         $default = DatabaseConnection::factory()->create([
@@ -203,7 +215,7 @@ describe('database:query', function (): void {
             stderr: '',
             durationMs: 5,
         ));
-        app()->instance(RemoteShell::class, $defaultShell);
+        bindDatabaseQueryCommandLocalExecutor($defaultShell);
 
         $defaultExitCode = Artisan::call('database:query', [
             'target' => 'feature-docs',
@@ -219,7 +231,7 @@ describe('database:query', function (): void {
             stderr: '',
             durationMs: 5,
         ));
-        app()->instance(RemoteShell::class, $explicitShell);
+        bindDatabaseQueryCommandLocalExecutor($explicitShell);
 
         $explicitExitCode = Artisan::call('database:query', [
             'target' => 'feature-docs',
@@ -240,7 +252,7 @@ describe('database:query', function (): void {
 
     it('returns an error when remote sqlite query output is mixed with logs', function (): void {
         configureDatabaseQueryGatewayCaller();
-        $node = Node::factory()->create(['name' => 'app-node', 'role' => 'app']);
+        $node = Node::factory()->appDev()->create(['name' => 'app-node']);
         $connection = DatabaseConnection::factory()->create([
             'node_id' => $node->id,
             'slug' => 'docs-db',
@@ -251,7 +263,7 @@ describe('database:query', function (): void {
             'path' => '/srv/docs/database/database.sqlite',
             'username' => null,
         ]);
-        app()->instance(RemoteShell::class, new DatabaseQueryCommandRemoteShell(new RemoteShellResult(
+        bindDatabaseQueryCommandLocalExecutor(new DatabaseQueryCommandRemoteShell(new RemoteShellResult(
             exitCode: 0,
             stdout: "debug log\n".json_encode(['success' => ['data' => ['rows' => []], 'meta' => []]], JSON_THROW_ON_ERROR),
             stderr: '',
@@ -270,7 +282,23 @@ describe('database:query', function (): void {
     });
 });
 
-final class DatabaseQueryCommandRemoteShell implements RemoteShell
+function bindDatabaseQueryCommandLocalExecutor(DatabaseQueryCommandRemoteShell $transport): void
+{
+    app()->instance(RemoteLocalExecutor::class, new RemoteLocalExecutor(
+        transport: $transport,
+        commands: new LocalExecutorCommandBuilder,
+        operationTokens: new OperationTokenFactory(
+            signer: new OperationTokenSigner,
+            secret: 'gateway-secret',
+            ttlSeconds: 120,
+            clock: static fn (): int => 1_798_105_200,
+        ),
+        activityLogger: new ActivityLogger(new ActivityLogCorrelation),
+        operationRuns: app(OperationRunRecorder::class),
+    ));
+}
+
+final class DatabaseQueryCommandRemoteShell implements RemoteExecutor
 {
     public Node $node;
 
@@ -288,5 +316,10 @@ final class DatabaseQueryCommandRemoteShell implements RemoteShell
         $this->options = $options;
 
         return $this->result;
+    }
+
+    public function start(Node $node, string $script, array $options = []): InvokedProcess
+    {
+        throw new RuntimeException('Process start is not used in this test.');
     }
 }

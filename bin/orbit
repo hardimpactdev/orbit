@@ -72,7 +72,7 @@ command_name() {
 
 is_local_executor_command() {
     case "$1" in
-        internal:executor:verify|internal:wg-easy:state|internal:workspace-adapter:lookup)
+        internal:executor:verify|internal:wg-easy:state|internal:database-query-local|internal:workspace-adapter:lookup)
             return 0
             ;;
         *)

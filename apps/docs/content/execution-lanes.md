@@ -82,8 +82,8 @@ runtime container on Docker-first-managed nodes.
 Required work:
 
 - Orbit `php artisan ...` commands executed on a node.
-- Gateway Laravel boot, Eloquent/PDO access, database query helpers, and local
-  SQLite work that belongs to the gateway runtime container.
+- Gateway Laravel boot, Eloquent/PDO access, and database query helpers for
+  gateway-owned runtime state.
 - Composer operations for Orbit itself.
 - VPN command forwarding when the forwarded command is an Orbit Artisan command
   that belongs to the gateway runtime container.
@@ -108,13 +108,36 @@ logic that needs host file access and PHP/PDO without relying on ad hoc
 The gateway primitive composes `/usr/local/bin/orbit internal:* ...` commands
 with `LocalExecutorCommandBuilder`, mints a short-lived gateway operation token,
 and dispatches that host command through the SSH transport. It never wraps local
-executor work in `docker exec orbit-runtime`; the role-aware host `orbit`
-launcher selects `apps/cli` on non-gateway nodes.
+executor work in `docker exec orbit-runtime`; the host `orbit` launcher always
+selects `apps/cli/orbit` on every node role. `RemoteLocalExecutor` cannot
+invoke public commands; operation tokens are checked once at internal-command
+entry before any side effects.
+
+#### Result-boundary redaction patterns
+
+Activity rows, operation_runs rows, internal-command JSON results, and
+exception messages must never contain raw secret material. Every redaction
+layer (the internal command's own pre-serialization scan, the gateway-side
+`OperationResultHandler`, and `RemoteLocalExecutor`'s exception sanitizer)
+scrubs values matching this pattern set:
+
+- `--operation-token=...` arguments (with or without whitespace around `=`)
+  and the exact minted token value
+- keys named `operation_token`, `executor_secret`, `password`, `bearer`,
+  `secret`, `_token`, `api_key`
+- substrings matching PEM blocks
+  (`-----BEGIN [A-Z ]+-----` through `-----END [A-Z ]+-----`)
+
+Redaction is applied at both the internal-command result boundary (before
+JSON serialization) and the gateway `OperationResultHandler` (before
+persistence). Tests assert both layers for every pattern.
 
 Required work:
 
 - Workspace adapter SQLite lookups for Polyscope and OpenCode when the adapter
   database lives in a node-local host path.
+- SQLite database query helpers for app, workspace, or database-role files
+  resolved by the gateway but executed on the owning node's host path.
 - Wg-easy SQLite state updates and ownership checks that must preserve
   node-local file access and ownership semantics.
 - Prepared-topology fixture helpers that must run inside a topology node and
@@ -170,6 +193,7 @@ Current allowed hidden CLI commands:
 | --- | --- |
 | `internal:executor:verify` | any active workload role |
 | `internal:wg-easy:state` | `vpn` |
+| `internal:database-query-local` | `app-dev`, `app-prod`, `database` |
 | `internal:workspace-adapter:lookup` | `app-dev` |
 | `internal:workspace-adapter:update` | `app-dev` |
 

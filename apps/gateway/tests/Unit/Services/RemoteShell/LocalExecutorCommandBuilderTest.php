@@ -140,6 +140,7 @@ describe(LocalExecutorCommandBuilder::class, function (): void {
         expect(LocalExecutorCommandBuilder::allowedCommandRoles())->toBe([
             'internal:executor:verify' => ['gateway', 'vpn', 'router', 'app-dev', 'app-prod', 'database', 'agent', 'ingress'],
             'internal:wg-easy:state' => ['vpn'],
+            'internal:database-query-local' => ['app-dev', 'app-prod', 'database'],
             'internal:workspace-adapter:lookup' => ['app-dev'],
             'internal:workspace-adapter:update' => ['app-dev'],
         ]);
@@ -168,6 +169,7 @@ describe(LocalExecutorCommandBuilder::class, function (): void {
     })->with([
         'executor verify' => ['internal:executor:verify', ['gateway'], []],
         'wg-easy state' => ['internal:wg-easy:state', ['vpn'], ['app-dev']],
+        'database query local' => ['internal:database-query-local', ['database'], ['vpn']],
         'workspace adapter lookup' => ['internal:workspace-adapter:lookup', ['app-dev'], ['vpn']],
         'workspace adapter update' => ['internal:workspace-adapter:update', ['app-dev'], ['gateway']],
     ]);

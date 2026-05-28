@@ -302,6 +302,12 @@ describe('command list visibility', function (): void {
             ->and($command['hidden'] ?? false)->toBeTrue();
     });
 
+    it('hides internal:database-query-local', function (): void {
+        $command = findCommandInList(orbitCommandList(), 'internal:database-query-local');
+        expect($command)->not->toBeNull()
+            ->and($command['hidden'] ?? false)->toBeTrue();
+    });
+
     it('hides internal:workspace-adapter:lookup', function (): void {
         $command = findCommandInList(orbitCommandList(), 'internal:workspace-adapter:lookup');
         expect($command)->not->toBeNull()
