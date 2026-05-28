@@ -20,4 +20,12 @@ enum OperationStatus: string
     case Failed = 'failed';
     case Expired = 'expired';
     case Rejected = 'rejected';
+
+    public function isTerminal(): bool
+    {
+        return match ($this) {
+            self::Queued, self::Running => false,
+            self::Succeeded, self::Failed, self::Expired, self::Rejected => true,
+        };
+    }
 }

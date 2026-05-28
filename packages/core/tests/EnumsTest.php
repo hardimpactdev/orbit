@@ -74,4 +74,13 @@ describe(OperationStatus::class, function (): void {
         ], JSON_THROW_ON_ERROR))->toBe('["queued","running","succeeded","failed","expired","rejected"]')
             ->and(OperationStatus::from('succeeded'))->toBe(OperationStatus::Succeeded);
     });
+
+    it('reports whether an operation status is terminal', function (): void {
+        expect(OperationStatus::Queued->isTerminal())->toBeFalse()
+            ->and(OperationStatus::Running->isTerminal())->toBeFalse()
+            ->and(OperationStatus::Succeeded->isTerminal())->toBeTrue()
+            ->and(OperationStatus::Failed->isTerminal())->toBeTrue()
+            ->and(OperationStatus::Expired->isTerminal())->toBeTrue()
+            ->and(OperationStatus::Rejected->isTerminal())->toBeTrue();
+    });
 });
