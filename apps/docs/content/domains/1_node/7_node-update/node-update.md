@@ -4,15 +4,19 @@
 
 Update node registry metadata and role-owned settings.
 
-Modifies existing gateway-tracked node attributes such as host, environment, or
+Modifies existing gateway-tracked node attributes such as host, TLD, or
 public IP metadata that the operator supplies, without updating system packages or
 re-provisioning the host. Public IPv4/IPv6 metadata is never detected or
 refreshed automatically.
 
+Environment switching (between `app-dev` and `app-prod`) is a role-assignment
+change, not a metadata update — use [`node role:remove`](../14_node-role-remove/node-role-remove.md)
+and [`node role:add`](../12_node-role-add/node-role-add.md).
+
 ## Usage
 
 ```bash
-orbit node:update [name] [--host=<host>] [--environment=<development|production>] [--tld=<tld>] [--public-ipv4=<address>] [--public-ipv6=<address>] [--json]
+orbit node:update [name] [--host=<host>] [--tld=<tld>] [--public-ipv4=<address>] [--public-ipv6=<address>] [--json]
 ```
 
 Run without arguments in a TTY to let the interactive input mode prompt for
@@ -28,8 +32,7 @@ otherwise the command fails before side effects.
 
 ```bash
 orbit node:update app-1 --host=app-1.ssh.example.com
-orbit node:update app-1 --environment=production
-orbit node:update app-1 --environment=development --tld=test
+orbit node:update app-1 --tld=test
 orbit node:update gateway-1 --public-ipv4=203.0.113.2
 orbit node:update app-1 --host=203.0.113.20 --public-ipv4=203.0.113.20 --json
 ```
@@ -37,19 +40,20 @@ orbit node:update app-1 --host=203.0.113.20 --public-ipv4=203.0.113.20 --json
 ## Arguments and options
 
 - `name`: node name to update. Must exist in gateway node configuration.
-- `--host=<host>`: SSH/bootstrap endpoint. Valid for `gateway` and `app`
-  nodes. Forbidden on `operator` nodes. Updating this does not change the
-  gateway endpoint used in WireGuard peer configs. `node:new --role=gateway
-  --host=<host>` seeds that endpoint only during first-gateway bootstrap before
-  peer configs have been issued; `node:update --host` is later node metadata.
-- `--environment=<development|production>`: app-role environment. Only valid
-  for `app` nodes.
-- `--tld=<tld>`: development TLD for development nodes. Valid only when the
-  effective environment is `development`.
-- `--public-ipv4=<address>`: public IPv4 metadata supplied by the operator. Valid for
-  `gateway` and `app` nodes. Forbidden on `operator` nodes.
-- `--public-ipv6=<address>`: public IPv6 metadata supplied by the operator. Valid for
-  `gateway` and `app` nodes. Forbidden on `operator` nodes.
+- `--host=<host>`: SSH/bootstrap endpoint. Valid for `gateway` and any
+  workload-role-bearing node. Forbidden on operator-identity nodes. Updating
+  this does not change the gateway endpoint used in WireGuard peer configs.
+  `node:new --role=gateway --host=<host>` seeds that endpoint only during
+  first-gateway bootstrap before peer configs have been issued;
+  `node:update --host` is later node metadata.
+- `--tld=<tld>`: development TLD. Valid only for nodes carrying an active
+  `app-dev` role assignment.
+- `--public-ipv4=<address>`: public IPv4 metadata supplied by the operator.
+  Valid for `gateway` and workload-role-bearing nodes. Forbidden on
+  operator-identity nodes.
+- `--public-ipv6=<address>`: public IPv6 metadata supplied by the operator.
+  Valid for `gateway` and workload-role-bearing nodes. Forbidden on
+  operator-identity nodes.
 - `--json`: Output JSON.
 
 Each field flag may be supplied at most once per invocation. Supplying the
@@ -74,8 +78,8 @@ that are directly affected by the changed metadata.
   effects. Re-applying unchanged configuration is owned by
   [`doctor --family=node --restore`](../node-doctor.md), not `node:update`.
 - Changes a development node's TLD when `--tld` is supplied. `--tld` is
-  valid only for targets that are nodes and whose effective environment is `development`;
-  gateway targets, operator targets, and production-effective app targets are
+  valid only for nodes carrying an active `app-dev` role assignment;
+  gateway targets, operator-identity targets, and `app-prod` targets are
   rejected before side effects. Broader drift repair after a TLD change belongs
   to [`doctor --family=node --restore`](../node-doctor.md).
 - Reconciles the active `vpn` role DNS runtime when `tld` or
