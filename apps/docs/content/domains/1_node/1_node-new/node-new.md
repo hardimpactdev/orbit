@@ -22,9 +22,11 @@ orbit node:new
 ```
 
 The CLI calls the gateway; the gateway authenticates the presented WireGuard
-peer identity and authorizes the request based on the caller's gateway-known
-role. First-gateway bootstrap is the exception, because no gateway exists yet
-to authenticate against.
+peer identity and authorizes the request against the scoped permission set on
+the caller's grant to the gateway (`node:new` permission, or the `gateway-admin`
+preset). First-gateway bootstrap is the one no-gateway path; the bootstrap flow
+materializes the initial gateway-admin grant from the initiating
+operator-identity client to the new gateway.
 
 ## Examples
 
