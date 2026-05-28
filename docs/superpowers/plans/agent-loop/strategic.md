@@ -12,7 +12,18 @@ to idle.
    `<todo_id>`.
 3. If the message starts with `validate readiness`, run the Readiness Procedure
    for each listed `<todo_id>`.
-4. Return to idle without setting any timer.
+4. Nudge `MECHANICAL` per the Nudges section of
+   `docs/superpowers/plans/agent-loop/state-model.md`, then return to idle
+   without setting any timer.
+
+## Safety
+
+The `main` checkout may hold unrelated uncommitted work. Never run `git stash`,
+`git reset --hard`, `git checkout -- `, broad `git restore`, or `git clean`, and
+never discard or overwrite changes you did not create. Only fast-forward or
+create a merge commit. If the merge is not a clean fast-forward or would touch
+files dirty in the `main` checkout, stop, tag the todo `needs-direction`, and
+post `NEEDS_DIRECTION`.
 
 ## Merge Procedure
 

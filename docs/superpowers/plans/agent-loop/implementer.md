@@ -17,6 +17,9 @@ todo's worktree, then stay open to fix review feedback.
    `vendor/bin/pint --dirty --format agent`.
 6. Commit the change on the worktree branch.
 7. Post `IMPLEMENTED` on the todo with a one-line summary and the gate evidence.
+8. Nudge `MECHANICAL` per the Nudges section of
+   `docs/superpowers/plans/agent-loop/state-model.md` so the reviewer is spawned,
+   then stay open for review feedback.
 
 ## Feedback Procedure
 

@@ -16,5 +16,6 @@ implementer's work and loop with the implementer until it is clean.
    `IMPLEMENTER-<todo_id>` process the findings.
 5. When the implementer posts `IMPLEMENTED` again, remove `changes-requested`
    and return to step 2.
-6. When the diff is clean and the focused gate evidence holds, post `APPROVED`
-   and stop.
+6. When the diff is clean and the focused gate evidence holds, post `APPROVED`,
+   nudge `MECHANICAL` per the Nudges section of
+   `docs/superpowers/plans/agent-loop/state-model.md`, and stop.

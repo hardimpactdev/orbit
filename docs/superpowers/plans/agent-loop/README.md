@@ -25,18 +25,21 @@ It is the only agent that spawns processes. The strategic orchestrator never
 holds a timer; it only acts when the mechanical orchestrator messages it, then
 returns to idle. If strategic is not alive, mechanical re-spawns it.
 
+Handoffs are event-driven: when an agent finishes a step it nudges the next
+owner (`send_input`) instead of waiting to be polled. The implementer nudges
+mechanical after `IMPLEMENTED` so the reviewer is spawned; the reviewer nudges
+mechanical on `APPROVED`; strategic nudges mechanical after `MERGED`/`READY`.
 The implementer/reviewer back-and-forth in stage 3 happens directly between the
-two agents via `send_input`. Mechanical does not mediate it — it only polls for
-the terminal `APPROVED` signal on each tick.
+two agents via `send_input`. The mechanical tick timer is only a safety net that
+catches missed nudges or dead agents.
 
 ## State Machine
 
-The loop acts only on open todos; completed todos are out of scope, and any
-open todo with no phase tag is treated as `draft` — so existing open todos are
-the loop's draft source without manual tagging. One phase tag per open todo.
-Mechanical advances `ready -> prepared -> implementing -> reviewing ->
-approved`. Strategic produces `ready` (stage 5) and consumes `approved`
-(stage 4).
+The loop acts only on open todos that carry an agent-loop phase tag; completed
+and untagged todos are out of scope. A todo is enrolled into the loop by tagging
+it `draft`. One phase tag per enrolled todo. Mechanical advances `ready ->
+prepared -> implementing -> reviewing -> approved`. Strategic produces `ready`
+(stage 5) and consumes `approved` (stage 4).
 
 ```
         STRATEGIC S5                MECHANICAL S1   S2            S3
@@ -60,7 +63,8 @@ Structured Solo state wins over comments when they disagree. Read state in this
 order: control-config, completion state, locks, tags, blockers, processes,
 timers, then lifecycle comments. Comments are an append-only audit and the
 carrier for handoff payloads (such as review findings); tags are the queryable
-authority for a todo's current phase.
+authority for a todo's current phase. Read Solo state only through Solo tools;
+never read `.claude/**`, tool-result files, or other CLI internals.
 
 ## Starting The Loop
 
