@@ -24,11 +24,17 @@ use App\Commands\Cloudflare\CfDnsRemoveCommand;
 use App\Commands\Cloudflare\CfSslDisableCommand;
 use App\Commands\Cloudflare\CfSslEnableCommand;
 use App\Commands\Cloudflare\CfZoneListCommand;
+use App\Commands\Database\DatabaseAddCommand;
+use App\Commands\Database\DatabaseAttachCommand;
 use App\Commands\Database\DatabaseDescribeCommand;
+use App\Commands\Database\DatabaseDetachCommand;
 use App\Commands\Database\DatabaseListCommand;
+use App\Commands\Database\DatabaseQueryCommand;
+use App\Commands\Database\DatabaseRemoveCommand;
 use App\Commands\Database\DatabaseSchemaCommand;
 use App\Commands\Database\DatabaseShowCommand;
 use App\Commands\Database\DatabaseTablesCommand;
+use App\Commands\Database\DatabaseUpdateCommand;
 use App\Commands\Deploy\DeployHistoryCommand;
 use App\Commands\Deploy\DeployStepListCommand;
 use App\Commands\Dns\DnsListCommand;
@@ -154,11 +160,17 @@ return [
         CfSslDisableCommand::class,
         CfSslEnableCommand::class,
         CfZoneListCommand::class,
+        DatabaseAddCommand::class,
+        DatabaseAttachCommand::class,
+        DatabaseDetachCommand::class,
         DatabaseDescribeCommand::class,
         DatabaseListCommand::class,
+        DatabaseQueryCommand::class,
+        DatabaseRemoveCommand::class,
         DatabaseSchemaCommand::class,
         DatabaseShowCommand::class,
         DatabaseTablesCommand::class,
+        DatabaseUpdateCommand::class,
         DnsListCommand::class,
         DnsResolveTldCommand::class,
         DeployHistoryCommand::class,

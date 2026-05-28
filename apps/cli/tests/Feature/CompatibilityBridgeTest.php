@@ -265,28 +265,23 @@ describe('compatibility bridge command parsing', function (): void {
         'vpn-web-ui:change-password',
     ]);
 
-    it('does not bridge ported php and database read commands', function (string $command): void {
+    it('does not bridge ported php and database commands', function (string $command): void {
         expect(isUnportedPublicCommand($command))->toBeFalse()
             ->and(gatewayArtisanArgumentsFromArgv(['orbit', $command, '--json']))->toBeNull();
     })->with([
         'php:list',
         'php:use',
-        'database:list',
-        'database:show',
-        'database:tables',
-        'database:schema',
-        'database:describe',
-    ]);
-
-    it('continues to bridge database write commands outside this slice', function (string $command): void {
-        expect(isUnportedPublicCommand($command))->toBeTrue();
-    })->with([
         'database:add',
         'database:attach',
         'database:detach',
         'database:query',
         'database:remove',
         'database:update',
+        'database:list',
+        'database:show',
+        'database:tables',
+        'database:schema',
+        'database:describe',
     ]);
 
     it('does not bridge ported deploy read commands', function (string $command): void {
