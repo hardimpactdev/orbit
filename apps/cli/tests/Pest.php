@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Services\GatewayApiClient;
+use App\Services\GatewayLogStreamClient;
 use App\Services\GatewayStreamClient;
 use Illuminate\Console\OutputStyle;
 use Illuminate\Contracts\Console\Kernel;
@@ -42,6 +43,8 @@ function fakeGateway(array $body, int $status = 200): void
     config()->set('orbit.gateway.url', 'https://gateway.test');
     config()->set('orbit.gateway.timeout', 30);
     app()->forgetInstance(GatewayApiClient::class);
+    app()->forgetInstance(GatewayLogStreamClient::class);
+    app()->forgetInstance(GatewayStreamClient::class);
 
     Http::fake(['https://gateway.test/*' => Http::response($body, $status)]);
 }
@@ -60,11 +63,27 @@ function fakeGatewayProgressStream(string $body, int $status = 200): void
     config()->set('orbit.gateway.url', 'https://gateway.test');
     config()->set('orbit.gateway.timeout', 30);
     app()->forgetInstance(GatewayApiClient::class);
+    app()->forgetInstance(GatewayLogStreamClient::class);
     app()->forgetInstance(GatewayStreamClient::class);
 
     Http::fake([
         'https://gateway.test/*' => Http::response($body, $status, [
             'Content-Type' => 'text/event-stream',
+        ]),
+    ]);
+}
+
+function fakeGatewayTextStream(string $body, int $status = 200): void
+{
+    config()->set('orbit.gateway.url', 'https://gateway.test');
+    config()->set('orbit.gateway.timeout', 30);
+    app()->forgetInstance(GatewayApiClient::class);
+    app()->forgetInstance(GatewayLogStreamClient::class);
+    app()->forgetInstance(GatewayStreamClient::class);
+
+    Http::fake([
+        'https://gateway.test/*' => Http::response($body, $status, [
+            'Content-Type' => 'text/plain; charset=UTF-8',
         ]),
     ]);
 }
@@ -77,6 +96,8 @@ function fakeGatewayDown(string $message = 'connection refused'): void
     config()->set('orbit.gateway.url', 'https://gateway.test');
     config()->set('orbit.gateway.timeout', 30);
     app()->forgetInstance(GatewayApiClient::class);
+    app()->forgetInstance(GatewayLogStreamClient::class);
+    app()->forgetInstance(GatewayStreamClient::class);
 
     Http::fake(function () use ($message): never {
         throw new ConnectionException($message);

@@ -142,7 +142,7 @@ describe('tool:logs', function (): void {
             ->and($decoded['error']['meta']['field'])->toBe('lines');
     });
 
-    it('keeps follow mode out of the native finite-read implementation', function (): void {
+    it('rejects JSON follow mode before opening the gateway stream', function (): void {
         Http::fake();
 
         [$exitCode, $output] = runCommand($this, 'tool:logs', [
@@ -157,7 +157,7 @@ describe('tool:logs', function (): void {
 
         expect($exitCode)->toBe(1)
             ->and($decoded['error']['code'])->toBe('validation_failed')
-            ->and($decoded['error']['meta']['field'])->toBe('follow');
+            ->and($decoded['error']['meta']['field'])->toBe('json');
     });
 
     it('passes through gateway error codes from HTTP failures', function (): void {

@@ -36,6 +36,7 @@ use App\Commands\Database\DatabaseShowCommand;
 use App\Commands\Database\DatabaseTablesCommand;
 use App\Commands\Database\DatabaseUpdateCommand;
 use App\Commands\Deploy\DeployHistoryCommand;
+use App\Commands\Deploy\DeployLogCommand;
 use App\Commands\Deploy\DeployRunCommand;
 use App\Commands\Deploy\DeployStepAddCommand;
 use App\Commands\Deploy\DeployStepListCommand;
@@ -177,6 +178,7 @@ return [
         DnsListCommand::class,
         DnsResolveTldCommand::class,
         DeployHistoryCommand::class,
+        DeployLogCommand::class,
         DeployRunCommand::class,
         DeployStepAddCommand::class,
         DeployStepListCommand::class,

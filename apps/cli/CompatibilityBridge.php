@@ -18,8 +18,6 @@ declare(strict_types=1);
  *   - unknown commands
  */
 const ORBIT_COMPATIBILITY_BRIDGE_ALLOW_LIST = [
-    // deploy
-    'deploy:log',
     // doctor
     'doctor',
     // operation
@@ -55,10 +53,7 @@ const ORBIT_NATIVE_MULTI_TOKEN_COMMANDS = [
     'node role:remove',
 ];
 
-const ORBIT_COMPATIBILITY_BRIDGE_OPTION_ALLOW_LIST = [
-    'process:logs' => ['--follow'],
-    'tool:logs' => ['--follow'],
-];
+const ORBIT_COMPATIBILITY_BRIDGE_OPTION_ALLOW_LIST = [];
 
 /**
  * @param  list<string>  $argv

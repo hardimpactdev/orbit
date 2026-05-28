@@ -8,6 +8,7 @@ use App\Commands\Concerns\ResolvesHostContext;
 use App\Commands\GatewayCommand;
 use App\Exceptions\GatewayApiException;
 use App\Exceptions\OrbitConfigStoreException;
+use App\Services\GatewayLogStreamClient;
 
 final class ToolLogsCommand extends GatewayCommand
 {
@@ -21,7 +22,7 @@ final class ToolLogsCommand extends GatewayCommand
         {--lines=100 : Number of historical lines}
         {--json}';
 
-    protected $description = 'Read managed tool logs (non-follow).';
+    protected $description = 'Read managed tool logs.';
 
     public function handle(): int
     {
@@ -31,14 +32,18 @@ final class ToolLogsCommand extends GatewayCommand
             return $this->renderFailure('validation_failed', 'The tool argument is required.', ['field' => 'tool']);
         }
 
-        if ($this->option('follow') === true) {
-            return $this->renderFailure('validation_failed', 'Follow mode is handled by the gateway bridge until streaming is ported.', ['field' => 'follow']);
+        if ($this->option('follow') === true && $this->wantsJson()) {
+            return $this->renderFailure('validation_failed', '--json cannot be combined with --follow for log streams.', ['field' => 'json']);
         }
 
         $lines = $this->lines();
 
         if ($lines === null) {
             return $this->renderFailure('validation_failed', 'The --lines value must be a positive integer.', ['field' => 'lines']);
+        }
+
+        if ($this->option('follow') === true) {
+            return $this->followLogs($tool, $lines);
         }
 
         try {
@@ -60,6 +65,27 @@ final class ToolLogsCommand extends GatewayCommand
         $this->renderLogLines($response);
 
         return self::SUCCESS;
+    }
+
+    private function followLogs(string $tool, int $lines): int
+    {
+        try {
+            return app(GatewayLogStreamClient::class)->streamText(
+                '/api/tools/'.rawurlencode($tool).'/logs/stream',
+                $this->filledQuery([
+                    'app' => $this->stringOption('app'),
+                    'node' => $this->targetNodeOptionOrDefault(),
+                    'lines' => $lines,
+                ]),
+                function (string $chunk): void {
+                    $this->output->write($chunk);
+                },
+            );
+        } catch (OrbitConfigStoreException $exception) {
+            return $this->renderFailure($exception->orbitCode, $exception->getMessage());
+        } catch (GatewayApiException $exception) {
+            return $this->renderGatewayFailure($exception);
+        }
     }
 
     private function lines(): ?int

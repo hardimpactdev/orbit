@@ -7,6 +7,7 @@ namespace App\Commands\Process;
 use App\Commands\Concerns\ResolvesHostContext;
 use App\Commands\GatewayCommand;
 use App\Exceptions\GatewayApiException;
+use App\Services\GatewayLogStreamClient;
 
 final class ProcessLogsCommand extends GatewayCommand
 {
@@ -20,7 +21,7 @@ final class ProcessLogsCommand extends GatewayCommand
         {--lines=100 : Number of historical lines}
         {--json}';
 
-    protected $description = 'Read app process runtime logs (non-follow).';
+    protected $description = 'Read app process runtime logs.';
 
     public function handle(): int
     {
@@ -36,8 +37,12 @@ final class ProcessLogsCommand extends GatewayCommand
             return $this->renderFailure('validation_failed', 'The --lines value must be a positive integer.', ['field' => 'lines']);
         }
 
+        if ($this->option('follow') === true && $this->wantsJson()) {
+            return $this->renderFailure('validation_failed', '--json cannot be combined with --follow for log streams.', ['field' => 'json']);
+        }
+
         if ($this->option('follow') === true) {
-            return $this->renderFailure('validation_failed', 'Follow mode is handled by the gateway bridge until streaming is ported.', ['field' => 'follow']);
+            return $this->followLogs($name, $lines);
         }
 
         try {
@@ -47,7 +52,7 @@ final class ProcessLogsCommand extends GatewayCommand
                 'lines' => $lines,
             ]));
         } catch (GatewayApiException $exception) {
-            return $this->renderFailure($exception->cliFailureCode(), $exception->getMessage());
+            return $this->renderGatewayFailure($exception);
         }
 
         if ($this->wantsJson()) {
@@ -57,6 +62,26 @@ final class ProcessLogsCommand extends GatewayCommand
         $this->renderLogLines($response);
 
         return self::SUCCESS;
+    }
+
+    private function followLogs(string $name, int $lines): int
+    {
+        try {
+            return app(GatewayLogStreamClient::class)->streamText(
+                '/api/processes/'.rawurlencode($name).'/log',
+                $this->filledQuery([
+                    'app' => $this->stringOption('app') ?? $this->appFromOrbitMarker(),
+                    'workspace' => $this->stringOption('workspace'),
+                    'lines' => $lines,
+                    'follow' => 1,
+                ]),
+                function (string $chunk): void {
+                    $this->output->write($chunk);
+                },
+            );
+        } catch (GatewayApiException $exception) {
+            return $this->renderGatewayFailure($exception);
+        }
     }
 
     private function lines(): ?int

@@ -17,6 +17,7 @@ use App\Services\Nodes\Access\NodeAccessAuthorizer;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 #[RequiresPermission('process:logs', servingNode: ServingNode::AppOwning)]
 final class ProcessLogController implements Loggable
@@ -27,7 +28,7 @@ final class ProcessLogController implements Loggable
         private readonly NodeAccessAuthorizer $authorizer,
     ) {}
 
-    public function __invoke(string $name, Request $request, ShowProcessLogs $showProcessLogs): JsonResponse
+    public function __invoke(string $name, Request $request, ShowProcessLogs $showProcessLogs): JsonResponse|StreamedResponse
     {
         /** @var mixed $caller */
         $caller = $request->user();
@@ -48,6 +49,31 @@ final class ProcessLogController implements Loggable
 
         if ($authorization instanceof JsonResponse) {
             return $authorization;
+        }
+
+        if ($request->boolean('follow')) {
+            try {
+                $target = $showProcessLogs->streamTarget($app, $workspace, $name, $this->lines($request));
+            } catch (GatewayApiException $e) {
+                return $this->error($e->errorCode() ?? 'validation_failed', $e->getMessage(), $e->errorMeta(), $this->statusFor($e));
+            }
+
+            $this->activitySubject = $app;
+
+            return response()->stream(function () use ($showProcessLogs, $target): void {
+                $showProcessLogs->followTarget($target, function (string $output): void {
+                    echo $output;
+
+                    if (PHP_SAPI === 'fpm-fcgi' || PHP_SAPI === 'cli-server') {
+                        @ob_flush();
+                        @flush();
+                    }
+                });
+            }, 200, [
+                'Cache-Control' => 'no-cache',
+                'Content-Type' => 'text/plain; charset=UTF-8',
+                'X-Accel-Buffering' => 'no',
+            ]);
         }
 
         try {

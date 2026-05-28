@@ -5,9 +5,11 @@ declare(strict_types=1);
 namespace App\Actions\Processes;
 
 use App\Contracts\RemoteShell;
+use App\Contracts\RemoteShellStream;
 use App\Enums\Processes\ProcessRuntime;
 use App\Http\Gateway\GatewayApiException;
 use App\Models\App;
+use App\Models\Node;
 use App\Models\Process;
 use App\Models\Workspace;
 use App\Services\Processes\ProcessDockerContainerRenderer;
@@ -17,6 +19,7 @@ final readonly class ShowProcessLogs
 {
     public function __construct(
         private RemoteShell $remoteShell,
+        private RemoteShellStream $remoteShellStream,
         private SupervisorProgramRenderer $renderer,
         private ProcessDockerContainerRenderer $dockerRenderer,
     ) {}
@@ -25,6 +28,64 @@ final readonly class ShowProcessLogs
      * @return array{data: array{logs: array<string, mixed>}, meta: array{line_count: int}}
      */
     public function handle(App $app, ?Workspace $workspace, string $name, int $lines, bool $follow = false): array
+    {
+        $target = $this->target($app, $workspace, $name, $lines, $follow);
+
+        $result = $this->remoteShell->run($target['node'], $target['script']);
+
+        if (! $result->successful()) {
+            throw new GatewayApiException('The runtime backend could not read the process log.', 'process.log_read_failed', [
+                'process' => $name,
+                'runtime_unit' => $target['runtime_unit'],
+            ]);
+        }
+
+        $parsedLines = $this->parseLines($result->output());
+
+        return [
+            'data' => [
+                'logs' => [
+                    'process' => $target['process']->name,
+                    'app' => $app->name,
+                    'workspace' => $workspace?->name,
+                    'runtime_unit' => $target['runtime_unit'],
+                    'lines' => $parsedLines,
+                ],
+            ],
+            'meta' => [
+                'line_count' => count($parsedLines),
+            ],
+        ];
+    }
+
+    /**
+     * @return array{node: Node, process: Process, runtime_unit: string, script: string}
+     */
+    public function streamTarget(App $app, ?Workspace $workspace, string $name, int $lines): array
+    {
+        return $this->target($app, $workspace, $name, $lines, true);
+    }
+
+    /**
+     * @param  array{node: Node, process: Process, runtime_unit: string, script: string}  $target
+     * @param  callable(string): void  $onOutput
+     */
+    public function followTarget(array $target, callable $onOutput): void
+    {
+        $exitCode = $this->remoteShellStream->stream($target['node'], $target['script'], $onOutput);
+
+        if ($exitCode !== 0) {
+            throw new GatewayApiException('The runtime backend could not stream the process log.', 'process.log_read_failed', [
+                'process' => $target['process']->name,
+                'runtime_unit' => $target['runtime_unit'],
+            ]);
+        }
+    }
+
+    /**
+     * @return array{node: Node, process: Process, runtime_unit: string, script: string}
+     */
+    private function target(App $app, ?Workspace $workspace, string $name, int $lines, bool $follow): array
     {
         if ($lines < 1) {
             throw new GatewayApiException('The --lines value must be a positive integer.', 'validation_failed', [
@@ -47,39 +108,19 @@ final readonly class ShowProcessLogs
             ]);
         }
 
-        if ($app->node === null) {
+        if (! $app->node instanceof Node) {
             throw new GatewayApiException("App '{$app->name}' has no node.", 'process.log_read_failed', [
                 'app' => $app->name,
             ]);
         }
 
         $runtimeUnit = $this->resolveRuntimeUnit($app, $process, $workspace);
-        $script = $this->buildLogScript($app, $process, $workspace, $runtimeUnit, $lines, $follow);
-
-        $result = $this->remoteShell->run($app->node, $script);
-
-        if (! $result->successful()) {
-            throw new GatewayApiException('The runtime backend could not read the process log.', 'process.log_read_failed', [
-                'process' => $name,
-                'runtime_unit' => $runtimeUnit,
-            ]);
-        }
-
-        $parsedLines = $this->parseLines($result->output());
 
         return [
-            'data' => [
-                'logs' => [
-                    'process' => $process->name,
-                    'app' => $app->name,
-                    'workspace' => $workspace?->name,
-                    'runtime_unit' => $runtimeUnit,
-                    'lines' => $parsedLines,
-                ],
-            ],
-            'meta' => [
-                'line_count' => count($parsedLines),
-            ],
+            'node' => $app->node,
+            'process' => $process,
+            'runtime_unit' => $runtimeUnit,
+            'script' => $this->buildLogScript($app, $process, $workspace, $runtimeUnit, $lines, $follow),
         ];
     }
 
@@ -100,6 +141,7 @@ final readonly class ShowProcessLogs
                 "--tail {$lines}",
                 $follow ? '--follow' : null,
                 escapeshellarg($runtimeUnit),
+                '2>&1',
             ])->filter()->implode(' ');
         }
 

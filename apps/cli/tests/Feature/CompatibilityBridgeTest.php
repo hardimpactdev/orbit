@@ -198,9 +198,9 @@ describe('compatibility bridge command parsing', function (): void {
         'process:stop',
     ]);
 
-    it('keeps process:logs --follow in the bridge until the streaming phase', function (): void {
+    it('does not bridge ported process:logs follow mode', function (): void {
         expect(gatewayArtisanArgumentsFromArgv(['orbit', 'process:logs', 'vite', '--app=docs', '--follow']))
-            ->toBe(['process:logs', 'vite', '--app=docs', '--follow']);
+            ->toBeNull();
     });
 
     it('does not bridge ported proxy commands', function (string $command): void {
@@ -234,9 +234,9 @@ describe('compatibility bridge command parsing', function (): void {
         'tool:show',
     ]);
 
-    it('keeps tool:logs --follow in the bridge until the streaming phase', function (): void {
+    it('does not bridge ported tool:logs follow mode', function (): void {
         expect(gatewayArtisanArgumentsFromArgv(['orbit', 'tool:logs', 'supervisor', '--node=app-1', '--follow']))
-            ->toBe(['tool:logs', 'supervisor', '--node=app-1', '--follow']);
+            ->toBeNull();
     });
 
     it('does not bridge ported tool write and lifecycle commands by default', function (string $command): void {
@@ -289,16 +289,11 @@ describe('compatibility bridge command parsing', function (): void {
             ->and(gatewayArtisanArgumentsFromArgv(['orbit', $command, '--json']))->toBeNull();
     })->with([
         'deploy:history',
+        'deploy:log',
         'deploy:run',
         'deploy:step-add',
         'deploy:step-list',
         'deploy:step-remove',
-    ]);
-
-    it('continues to bridge deploy log commands outside this slice', function (string $command): void {
-        expect(isUnportedPublicCommand($command))->toBeTrue();
-    })->with([
-        'deploy:log',
     ]);
 });
 

@@ -12,6 +12,7 @@ use App\Services\Gateway\FetchGatewayRootCa;
 use App\Services\Gateway\VerifiesGatewayIdentity;
 use App\Services\Gateway\VerifyGatewayIdentity;
 use App\Services\GatewayApiClient;
+use App\Services\GatewayLogStreamClient;
 use App\Services\GatewayStreamClient;
 use App\Services\OrbitConfigStore;
 use App\Services\Trust\LinuxTrustStoreInstaller;
@@ -81,6 +82,15 @@ final class GatewayApiServiceProvider extends ServiceProvider
             $config = $this->gatewayConnectionConfig();
 
             return new GatewayStreamClient(
+                baseUrl: $config['base_url'],
+                timeout: $config['timeout'],
+            );
+        });
+
+        $this->app->singleton(GatewayLogStreamClient::class, function (): GatewayLogStreamClient {
+            $config = $this->gatewayConnectionConfig();
+
+            return new GatewayLogStreamClient(
                 baseUrl: $config['base_url'],
                 timeout: $config['timeout'],
             );
