@@ -10,6 +10,32 @@ use Symfony\Component\EventDispatcher\EventDispatcher;
 
 class Kernel extends BaseKernel
 {
+    private const array GATEWAY_VISIBLE_COMMAND_NAMES = [
+        'db',
+        'docs',
+        'migrate',
+        'orbit-scheduler',
+        'schedule:clear-cache',
+        'schedule:finish',
+        'schedule:interrupt',
+        'schedule:pause',
+        'schedule:resume',
+        'schedule:test',
+        'schedule:work',
+        'tinker',
+    ];
+
+    private const array GATEWAY_VISIBLE_COMMAND_PREFIXES = [
+        'cache:',
+        'db:',
+        'e2e:',
+        'librarian:',
+        'make:',
+        'migrate:',
+        'orbit:internal:',
+        'queue:',
+    ];
+
     #[\Override]
     public function bootstrap()
     {
@@ -44,18 +70,37 @@ class Kernel extends BaseKernel
         $this->artisan->setVersion((string) config('app.version', '0.0.0'));
 
         foreach ($this->artisan->all() as $command) {
-            $this->hideNonOrbitCommand($command);
+            $this->applyGatewayCommandVisibility($command);
         }
 
         return $this->artisan;
     }
 
-    private function hideNonOrbitCommand(SymfonyCommand $command): void
+    private function applyGatewayCommandVisibility(SymfonyCommand $command): void
     {
-        if (str_starts_with($command::class, 'App\\Console\\Commands\\')) {
+        $name = $command->getName();
+
+        if (is_string($name) && $this->shouldExposeGatewayCommand($name)) {
+            $command->setHidden(false);
+
             return;
         }
 
         $command->setHidden(true);
+    }
+
+    private function shouldExposeGatewayCommand(string $name): bool
+    {
+        if (in_array($name, self::GATEWAY_VISIBLE_COMMAND_NAMES, true)) {
+            return true;
+        }
+
+        foreach (self::GATEWAY_VISIBLE_COMMAND_PREFIXES as $prefix) {
+            if (str_starts_with($name, $prefix)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 }
