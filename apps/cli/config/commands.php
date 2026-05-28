@@ -26,7 +26,10 @@ use App\Commands\Deploy\DeployHistoryCommand;
 use App\Commands\Deploy\DeployStepListCommand;
 use App\Commands\Dns\DnsListCommand;
 use App\Commands\Dns\DnsResolveTldCommand;
+use App\Commands\Firewall\FirewallAllowCommand;
+use App\Commands\Firewall\FirewallDenyCommand;
 use App\Commands\Firewall\FirewallListCommand;
+use App\Commands\Firewall\FirewallRemoveCommand;
 use App\Commands\Gateway\GatewayAddCommand;
 use App\Commands\Gateway\GatewayTrustCommand;
 use App\Commands\GatewayStatusCommand;
@@ -139,7 +142,10 @@ return [
         DnsResolveTldCommand::class,
         DeployHistoryCommand::class,
         DeployStepListCommand::class,
+        FirewallAllowCommand::class,
+        FirewallDenyCommand::class,
         FirewallListCommand::class,
+        FirewallRemoveCommand::class,
         GatewayAddCommand::class,
         GatewayTrustCommand::class,
         GatewayStatusCommand::class,

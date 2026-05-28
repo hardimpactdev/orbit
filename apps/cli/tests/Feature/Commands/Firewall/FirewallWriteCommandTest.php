@@ -1,0 +1,219 @@
+<?php
+
+declare(strict_types=1);
+
+use App\Services\OrbitConfigStore;
+use Illuminate\Http\Client\Request;
+use Illuminate\Support\Facades\Http;
+
+describe('firewall write commands', function (): void {
+    it('posts firewall:allow payloads to the gateway', function (): void {
+        fakeGateway(fakeSuccessEnvelope([
+            'rule' => [
+                'name' => 'local-vite',
+                'node' => 'app-1',
+                'action' => 'allow',
+                'status' => 'expected',
+            ],
+        ], [
+            'backend_enacted' => true,
+            'warnings' => [],
+        ]));
+
+        [$exitCode, $output] = runCommand($this, 'firewall:allow', [
+            'name' => 'local-vite',
+            '--node' => 'app-1',
+            '--port' => '5173',
+            '--direction' => 'incoming',
+            '--from' => '10.6.0.0/24',
+            '--to' => '10.6.0.20',
+            '--protocol' => 'tcp',
+            '--reason' => 'local development server',
+            '--json' => true,
+        ]);
+
+        $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+
+        Http::assertSent(fn (Request $request): bool => $request->method() === 'POST'
+            && $request->url() === 'https://gateway.test/api/firewall-rules'
+            && $request->data() === [
+                'action' => 'allow',
+                'name' => 'local-vite',
+                'node' => 'app-1',
+                'direction' => 'incoming',
+                'source' => '10.6.0.0/24',
+                'destination' => '10.6.0.20',
+                'port' => '5173',
+                'protocol' => 'tcp',
+                'reason' => 'local development server',
+            ]);
+
+        expect($exitCode)->toBe(0)
+            ->and($decoded['success']['data']['rule']['action'])->toBe('allow')
+            ->and($decoded['success']['meta']['backend_enacted'])->toBeTrue();
+    });
+
+    it('uses the local default node for firewall:deny when --node is omitted', function (): void {
+        $store = new OrbitConfigStore(overridePath: base_path('tests/.tmp-firewall-deny-config.json'));
+        @unlink($store->path());
+        $store->save(['defaults' => ['node' => 'default-app', 'profile' => null]]);
+        app()->instance(OrbitConfigStore::class, $store);
+
+        fakeGateway(fakeSuccessEnvelope([
+            'rule' => [
+                'name' => 'block-admin',
+                'node' => 'default-app',
+                'action' => 'deny',
+            ],
+        ], [
+            'backend_enacted' => true,
+            'warnings' => [],
+        ]));
+
+        [$exitCode, $output] = runCommand($this, 'firewall:deny', [
+            'name' => 'block-admin',
+            '--port' => '9000',
+            '--json' => true,
+        ]);
+
+        $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+
+        Http::assertSent(fn (Request $request): bool => $request->method() === 'POST'
+            && $request->url() === 'https://gateway.test/api/firewall-rules'
+            && $request->data() === [
+                'action' => 'deny',
+                'name' => 'block-admin',
+                'node' => 'default-app',
+                'direction' => 'incoming',
+                'source' => 'any',
+                'port' => '9000',
+                'protocol' => 'tcp',
+            ]);
+
+        expect($exitCode)->toBe(0)
+            ->and($decoded['success']['data']['rule']['node'])->toBe('default-app');
+
+        @unlink($store->path());
+    });
+
+    it('validates required firewall:allow input before contacting the gateway', function (): void {
+        fakeGateway(fakeSuccessEnvelope());
+
+        [$missingNameExitCode, $missingNameOutput] = runCommand($this, 'firewall:allow', [
+            '--node' => 'app-1',
+            '--port' => '5173',
+            '--json' => true,
+        ]);
+
+        [$missingPortExitCode, $missingPortOutput] = runCommand($this, 'firewall:allow', [
+            'name' => 'local-vite',
+            '--node' => 'app-1',
+            '--json' => true,
+        ]);
+
+        $missingName = json_decode($missingNameOutput, associative: true, flags: JSON_THROW_ON_ERROR);
+        $missingPort = json_decode($missingPortOutput, associative: true, flags: JSON_THROW_ON_ERROR);
+
+        Http::assertNothingSent();
+
+        expect($missingNameExitCode)->toBe(1)
+            ->and($missingName['error']['code'])->toBe('validation_failed')
+            ->and($missingName['error']['meta']['field'])->toBe('name')
+            ->and($missingPortExitCode)->toBe(1)
+            ->and($missingPort['error']['code'])->toBe('validation_failed')
+            ->and($missingPort['error']['meta']['field'])->toBe('port');
+    });
+
+    it('requires a firewall node target before contacting the gateway', function (): void {
+        $store = new OrbitConfigStore(overridePath: base_path('tests/.tmp-firewall-empty-config.json'));
+        @unlink($store->path());
+        app()->instance(OrbitConfigStore::class, $store);
+        fakeGateway(fakeSuccessEnvelope());
+
+        [$exitCode, $output] = runCommand($this, 'firewall:allow', [
+            'name' => 'local-vite',
+            '--port' => '5173',
+            '--json' => true,
+        ]);
+
+        $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+
+        Http::assertNothingSent();
+
+        expect($exitCode)->toBe(1)
+            ->and($decoded['error']['code'])->toBe('node_target_required')
+            ->and($decoded['error']['meta']['field'])->toBe('node');
+
+        @unlink($store->path());
+    });
+
+    it('requires force before removing a firewall rule non-interactively', function (): void {
+        fakeGateway(fakeSuccessEnvelope());
+
+        [$exitCode, $output] = runCommand($this, 'firewall:remove', [
+            'name' => 'local-vite',
+            '--node' => 'app-1',
+            '--json' => true,
+        ]);
+
+        $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+
+        Http::assertNothingSent();
+
+        expect($exitCode)->toBe(1)
+            ->and($decoded['error']['code'])->toBe('destructive_consent_required')
+            ->and($decoded['error']['meta']['field'])->toBe('force');
+    });
+
+    it('deletes firewall:remove targets with destructive consent when forced', function (): void {
+        fakeGateway(fakeSuccessEnvelope([
+            'rule' => [
+                'name' => 'local-vite',
+                'node' => 'app-1',
+                'status' => 'removed_with_drift',
+            ],
+        ], [
+            'backend_removed' => true,
+            'warnings' => [],
+        ]));
+
+        [$exitCode, $output] = runCommand($this, 'firewall:remove', [
+            'name' => 'local-vite',
+            '--node' => 'app-1',
+            '--force' => true,
+            '--json' => true,
+        ]);
+
+        $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+
+        Http::assertSent(fn (Request $request): bool => $request->method() === 'DELETE'
+            && $request->url() === 'https://gateway.test/api/firewall-rules/local-vite'
+            && $request->data() === [
+                'node' => 'app-1',
+                'destructive_consent' => true,
+            ]);
+
+        expect($exitCode)->toBe(0)
+            ->and($decoded['success']['data']['rule']['status'])->toBe('removed_with_drift');
+    });
+
+    it('preserves gateway error envelopes for firewall writes', function (): void {
+        fakeGateway(fakeErrorEnvelope('firewall_rule.baseline_conflict', 'Baseline policy cannot be mutated.', [
+            'name' => 'ssh',
+            'node' => 'app-1',
+        ]), 409);
+
+        [$exitCode, $output] = runCommand($this, 'firewall:allow', [
+            'name' => 'ssh',
+            '--node' => 'app-1',
+            '--port' => '22',
+            '--json' => true,
+        ]);
+
+        $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(1)
+            ->and($decoded['error']['code'])->toBe('firewall_rule.baseline_conflict')
+            ->and($decoded['error']['meta']['name'])->toBe('ssh');
+    });
+});

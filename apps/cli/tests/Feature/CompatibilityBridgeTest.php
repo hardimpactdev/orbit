@@ -146,11 +146,13 @@ describe('compatibility bridge command parsing', function (): void {
             ->and(gatewayArtisanArgumentsFromArgv(['orbit', 'node:default', '--json']))->toBeNull();
     });
 
-    it('continues to bridge firewall write commands outside this slice', function (string $command): void {
-        expect(isUnportedPublicCommand($command))->toBeTrue();
+    it('does not bridge ported firewall commands', function (string $command): void {
+        expect(isUnportedPublicCommand($command))->toBeFalse()
+            ->and(gatewayArtisanArgumentsFromArgv(['orbit', $command, '--json']))->toBeNull();
     })->with([
         'firewall:allow',
         'firewall:deny',
+        'firewall:list',
         'firewall:remove',
     ]);
 

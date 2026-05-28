@@ -40,10 +40,6 @@ const ORBIT_COMPATIBILITY_BRIDGE_ALLOW_LIST = [
     'deploy:step-remove',
     // doctor
     'doctor',
-    // firewall
-    'firewall:allow',
-    'firewall:deny',
-    'firewall:remove',
     // php
     'php:use',
     // operation
