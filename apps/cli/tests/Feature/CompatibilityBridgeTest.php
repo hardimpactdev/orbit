@@ -169,6 +169,7 @@ describe('compatibility bridge command parsing', function (): void {
         'workspace:list',
         'workspace:show',
         'workspace:history',
+        'workspace:log',
         'workspace:new',
         'workspace:setup',
         'workspace:remove',
@@ -178,12 +179,6 @@ describe('compatibility bridge command parsing', function (): void {
         'workspace-teardown-step:add',
         'workspace-teardown-step:list',
         'workspace-teardown-step:remove',
-    ]);
-
-    it('continues to bridge workspace log outside this slice', function (string $command): void {
-        expect(isUnportedPublicCommand($command))->toBeTrue();
-    })->with([
-        'workspace:log',
     ]);
 
     it('does not bridge ported process commands by default', function (string $command): void {

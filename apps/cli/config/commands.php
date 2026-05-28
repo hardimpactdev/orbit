@@ -111,6 +111,7 @@ use App\Commands\Vpn\VpnWebUiChangePasswordCommand;
 use App\Commands\Workspace\WorkspaceExecCommand;
 use App\Commands\Workspace\WorkspaceHistoryCommand;
 use App\Commands\Workspace\WorkspaceListCommand;
+use App\Commands\Workspace\WorkspaceLogCommand;
 use App\Commands\Workspace\WorkspaceNewCommand;
 use App\Commands\Workspace\WorkspaceRemoveCommand;
 use App\Commands\Workspace\WorkspaceSetupCommand;
@@ -249,6 +250,7 @@ return [
         WorkspaceExecCommand::class,
         WorkspaceHistoryCommand::class,
         WorkspaceListCommand::class,
+        WorkspaceLogCommand::class,
         WorkspaceNewCommand::class,
         WorkspaceRemoveCommand::class,
         WorkspaceSetupCommand::class,

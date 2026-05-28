@@ -21,8 +21,6 @@ const ORBIT_COMPATIBILITY_BRIDGE_ALLOW_LIST = [
     // process
     // profile
     'profile',
-    // workspace
-    'workspace:log',
 ];
 
 const ORBIT_COMPATIBILITY_BRIDGE_FORBIDDEN_PREFIXES = [
