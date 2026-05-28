@@ -1021,6 +1021,7 @@ PHP;
     {
         $deadline = time() + 30;
         $last = null;
+        $command = $this->gatewayScheduleDoctorCommand($gateway);
 
         do {
             $this->persistRuntimeSource($gateway->name(), 'gateway');
@@ -1029,7 +1030,7 @@ PHP;
                 $gateway,
                 'orbit',
                 $key,
-                'cd /home/orbit/orbit && orbit doctor --node=gateway --family=schedule --restore --json',
+                $command,
                 timeoutSeconds: 120,
                 allowFailure: true,
             );
@@ -1041,7 +1042,19 @@ PHP;
             sleep(1);
         } while (time() < $deadline);
 
-        throw new RuntimeException(trim("SSH command failed: cd /home/orbit/orbit && orbit doctor --node=gateway --family=schedule --restore --json\n".$last->output().$last->errorOutput()));
+        throw new RuntimeException(trim("SSH command failed: {$command}\n".$last->output().$last->errorOutput()));
+    }
+
+    private function gatewayScheduleDoctorCommand(DockerBuildInstance $gateway): string
+    {
+        return sprintf(
+            'cd /home/orbit/orbit && sudo docker exec --env %s --env %s --workdir %s %s php %s doctor --node=gateway --family=schedule --restore --json',
+            escapeshellarg('ORBIT_SOURCE_PATH=/home/orbit/orbit'),
+            escapeshellarg('ORBIT_IS_GATEWAY=1'),
+            escapeshellarg('/home/orbit/orbit'),
+            escapeshellarg($this->runtimeContainerName($gateway->name())),
+            escapeshellarg('/home/orbit/orbit/apps/gateway/artisan'),
+        );
     }
 
     /**
