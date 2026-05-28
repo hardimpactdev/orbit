@@ -95,12 +95,9 @@ class Kernel extends BaseKernel
             return true;
         }
 
-        foreach (self::GATEWAY_VISIBLE_COMMAND_PREFIXES as $prefix) {
-            if (str_starts_with($name, $prefix)) {
-                return true;
-            }
-        }
-
-        return false;
+        return array_any(
+            self::GATEWAY_VISIBLE_COMMAND_PREFIXES,
+            fn ($prefix): bool => str_starts_with($name, (string) $prefix),
+        );
     }
 }

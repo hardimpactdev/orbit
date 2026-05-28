@@ -70,7 +70,7 @@ final class ProfileAppSelector
         $data = is_array($success['data'] ?? null) ? $success['data'] : [];
         $apps = is_array($data['apps'] ?? null) ? $data['apps'] : [];
 
-        return array_values(array_filter($apps, fn (mixed $app): bool => is_array($app)));
+        return array_values(array_filter($apps, is_array(...)));
     }
 
     /**
