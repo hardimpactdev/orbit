@@ -118,7 +118,7 @@ describe('GatewayStreamClient', function (): void {
             ->and($exception?->cliFailureCode())->toBe('gateway_unavailable');
     });
 
-    it('skips malformed SSE frames and still completes on a valid terminal frame', function (): void {
+    it('throws when an SSE frame is malformed', function (): void {
         $body = "event: step\ndata: not-json\n\nevent: complete\ndata: {\"ok\":true}\n\n";
 
         Http::fake([
@@ -127,14 +127,18 @@ describe('GatewayStreamClient', function (): void {
             ]),
         ]);
 
-        $events = [];
-        $exitCode = (new GatewayStreamClient('https://gateway.test', 30))
-            ->streamEvents('/api/stream', [], function (ProgressEventType $type, array $payload) use (&$events): void {
-                $events[] = $type->value;
-            });
+        $exception = null;
 
-        expect($exitCode)->toBe(0)
-            ->and($events)->toBe(['complete']);
+        try {
+            (new GatewayStreamClient('https://gateway.test', 30))
+                ->streamEvents('/api/stream', [], fn () => null);
+        } catch (GatewayApiException $caught) {
+            $exception = $caught;
+        }
+
+        expect($exception)->toBeInstanceOf(GatewayApiException::class)
+            ->and($exception?->failureKind())->toBe(GatewayApiFailureKind::StreamMalformed)
+            ->and($exception?->cliFailureCode())->toBe('gateway_unavailable');
     });
 
     it('treats a stream of only malformed frames as gateway_unavailable', function (): void {
@@ -156,7 +160,7 @@ describe('GatewayStreamClient', function (): void {
         }
 
         expect($exception)->toBeInstanceOf(GatewayApiException::class)
-            ->and($exception?->failureKind())->toBe(GatewayApiFailureKind::StreamClosedBeforeTerminal)
+            ->and($exception?->failureKind())->toBe(GatewayApiFailureKind::StreamMalformed)
             ->and($exception?->cliFailureCode())->toBe('gateway_unavailable');
     });
 

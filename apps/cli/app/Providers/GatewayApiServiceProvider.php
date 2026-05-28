@@ -12,6 +12,7 @@ use App\Services\Gateway\FetchGatewayRootCa;
 use App\Services\Gateway\VerifiesGatewayIdentity;
 use App\Services\Gateway\VerifyGatewayIdentity;
 use App\Services\GatewayApiClient;
+use App\Services\GatewayStreamClient;
 use App\Services\OrbitConfigStore;
 use App\Services\Trust\LinuxTrustStoreInstaller;
 use App\Services\Trust\MacOsTrustStoreInstaller;
@@ -68,19 +69,41 @@ final class GatewayApiServiceProvider extends ServiceProvider
         });
 
         $this->app->singleton(GatewayApiClient::class, function (): GatewayApiClient {
-            $jsonGateway = $this->safeActiveGateway();
-
-            $envUrl = $this->nullableString(config('orbit.gateway.url'));
-            $jsonUrl = is_array($jsonGateway) ? $this->nullableString($jsonGateway['url'] ?? null) : null;
-
-            $envTimeout = config('orbit.gateway.timeout');
-            $jsonTimeout = is_array($jsonGateway) ? ($jsonGateway['timeout'] ?? null) : null;
+            $config = $this->gatewayConnectionConfig();
 
             return new GatewayApiClient(
-                baseUrl: $envUrl ?? $jsonUrl,
-                timeout: $this->positiveInteger($envTimeout ?? $jsonTimeout, OrbitConfigStore::DEFAULT_TIMEOUT_SECONDS),
+                baseUrl: $config['base_url'],
+                timeout: $config['timeout'],
             );
         });
+
+        $this->app->singleton(GatewayStreamClient::class, function (): GatewayStreamClient {
+            $config = $this->gatewayConnectionConfig();
+
+            return new GatewayStreamClient(
+                baseUrl: $config['base_url'],
+                timeout: $config['timeout'],
+            );
+        });
+    }
+
+    /**
+     * @return array{base_url: string|null, timeout: int}
+     */
+    private function gatewayConnectionConfig(): array
+    {
+        $jsonGateway = $this->safeActiveGateway();
+
+        $envUrl = $this->nullableString(config('orbit.gateway.url'));
+        $jsonUrl = is_array($jsonGateway) ? $this->nullableString($jsonGateway['url'] ?? null) : null;
+
+        $envTimeout = config('orbit.gateway.timeout');
+        $jsonTimeout = is_array($jsonGateway) ? ($jsonGateway['timeout'] ?? null) : null;
+
+        return [
+            'base_url' => $envUrl ?? $jsonUrl,
+            'timeout' => $this->positiveInteger($envTimeout ?? $jsonTimeout, OrbitConfigStore::DEFAULT_TIMEOUT_SECONDS),
+        ];
     }
 
     /**

@@ -14,7 +14,7 @@ use Orbit\Core\Progress\ProgressEventType;
  * Usage: add `use StreamsGatewayProgress;` to a GatewayCommand subclass.
  *
  * In --json mode the stream is consumed silently and only the terminal
- * (complete / error) frame is emitted as a canonical envelope.
+ * (complete / error) frame is emitted.
  * In human mode each tree/step line is written to the console as it arrives.
  */
 trait StreamsGatewayProgress
@@ -74,22 +74,119 @@ trait StreamsGatewayProgress
     }
 
     /**
+     * @param  array<string, mixed>  $payload
+     */
+    protected function renderProgressTerminalFrame(ProgressEventType $type, array $payload): int
+    {
+        if ($this->wantsJson()) {
+            $this->line(json_encode([
+                'event' => $type->value,
+                'data' => $payload,
+            ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES));
+
+            return $type === ProgressEventType::Complete ? self::SUCCESS : self::FAILURE;
+        }
+
+        if ($type === ProgressEventType::Error) {
+            return $this->renderProgressErrorFrame($payload);
+        }
+
+        $data = $this->frameData($payload);
+        $footer = $this->frameString($data, 'footer') ?? $this->frameString($payload, 'footer');
+
+        if ($footer !== null) {
+            $this->line($footer);
+
+            return self::SUCCESS;
+        }
+
+        return $this->renderSuccess($data);
+    }
+
+    /**
      * @param  array<string, mixed>  $eventPayload
      */
     private function renderProgressFrame(ProgressEventType $type, array $eventPayload): void
     {
-        $label = match ($type) {
-            ProgressEventType::Tree => '[tree]',
-            ProgressEventType::Step => '[step]',
-            default => "[{$type->value}]",
-        };
+        if ($type === ProgressEventType::Tree) {
+            $title = $this->frameString($eventPayload, 'title') ?? $this->frameString($eventPayload, 'name');
 
-        $message = $eventPayload['message'] ?? $eventPayload['name'] ?? '';
+            $this->line($title === null ? '[tree]' : "[tree] {$title}");
 
-        if (is_string($message) && $message !== '') {
-            $this->line("{$label} {$message}");
-        } else {
-            $this->line($label);
+            $steps = $eventPayload['steps'] ?? [];
+
+            if (is_array($steps)) {
+                foreach ($steps as $step) {
+                    if (! is_array($step)) {
+                        continue;
+                    }
+
+                    $label = $this->frameString($step, 'label');
+
+                    if ($label !== null) {
+                        $this->line("  [step] {$label}");
+                    }
+                }
+            }
+
+            return;
         }
+
+        $message = $this->frameString($eventPayload, 'message')
+            ?? $this->frameString($eventPayload, 'status')
+            ?? $this->frameString($eventPayload, 'key');
+
+        $this->line($message === null ? "[{$type->value}]" : "[{$type->value}] {$message}");
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     */
+    private function renderProgressErrorFrame(array $payload): int
+    {
+        $data = $this->frameData($payload);
+        $code = $this->frameString($data, 'code') ?? $this->frameString($payload, 'code') ?? 'gateway_stream_error';
+        $message = $this->frameString($data, 'message') ?? $this->frameString($payload, 'message') ?? 'Gateway progress stream failed.';
+        $meta = $this->frameArray($data, 'meta') ?? $this->frameArray($payload, 'meta') ?? [];
+
+        return $this->renderFailure($code, $message, $meta);
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     * @return array<string, mixed>
+     */
+    private function frameData(array $payload): array
+    {
+        $data = $payload['data'] ?? null;
+
+        return is_array($data) ? $data : $payload;
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     */
+    private function frameString(array $payload, string $key): ?string
+    {
+        $value = $payload[$key] ?? null;
+
+        if (! is_string($value)) {
+            return null;
+        }
+
+        $value = trim($value);
+
+        return $value === '' ? null : $value;
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     * @return array<string, mixed>|null
+     */
+    private function frameArray(array $payload, string $key): ?array
+    {
+        $value = $payload[$key] ?? null;
+
+        return is_array($value) ? $value : null;
     }
 }

@@ -4,12 +4,15 @@ declare(strict_types=1);
 
 namespace App\Commands\Workspace;
 
-use App\Exceptions\GatewayApiException;
+use App\Commands\Concerns\StreamsGatewayProgress;
+use Orbit\Core\Progress\ProgressEventType;
 
 use function Laravel\Prompts\text;
 
 final class WorkspaceNewCommand extends WorkspaceGatewayCommand
 {
+    use StreamsGatewayProgress;
+
     protected $signature = 'workspace:new
         {name? : Workspace name}
         {--app= : Parent app name}
@@ -39,18 +42,12 @@ final class WorkspaceNewCommand extends WorkspaceGatewayCommand
             return $this->failValidation('app', 'Parent app is required. Pass --app= or run from an app directory.');
         }
 
-        try {
-            $response = $this->gatewayPost('/api/workspaces', [
-                'name' => $name,
-                'app' => $app,
-                'base' => $this->stringOption('base') ?? 'main',
-                'php_version' => $this->stringOption('php-version'),
-            ]);
-        } catch (GatewayApiException $exception) {
-            return $this->renderGatewayFailure($exception);
-        }
-
-        return $this->renderSuccess($response);
+        return $this->streamProgress('/api/workspaces', [
+            'name' => $name,
+            'app' => $app,
+            'base' => $this->stringOption('base') ?? 'main',
+            'php_version' => $this->stringOption('php-version'),
+        ], fn (ProgressEventType $type, array $payload): int => $this->renderProgressTerminalFrame($type, $payload));
     }
 
     private function resolveName(): ?string

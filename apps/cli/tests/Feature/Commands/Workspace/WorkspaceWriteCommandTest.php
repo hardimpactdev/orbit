@@ -2,15 +2,24 @@
 
 declare(strict_types=1);
 
+use App\Services\GatewayStreamClient;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
 
 describe('workspace write commands', function (): void {
     it('posts workspace:new payloads to the gateway workspaces endpoint', function (): void {
-        fakeGateway(fakeSuccessEnvelope([
-            'result' => ['action' => 'created'],
-            'workspace' => ['name' => 'feature-docs', 'app' => 'docs'],
-        ]));
+        config()->set('orbit.gateway.url', 'https://gateway.test');
+        config()->set('orbit.gateway.timeout', 30);
+        app()->forgetInstance(GatewayStreamClient::class);
+
+        Http::fake([
+            'https://gateway.test/*' => Http::response(
+                "event: complete\n"
+                .'data: {"exit_code":0,"data":{"result":{"result":{"action":"created"},"workspace":{"name":"feature-docs","app":"docs"}}}}'."\n\n",
+                200,
+                ['Content-Type' => 'text/event-stream'],
+            ),
+        ]);
 
         [$exitCode, $output] = runCommand($this, 'workspace:new', [
             'name' => 'feature-docs',
@@ -32,7 +41,8 @@ describe('workspace write commands', function (): void {
             ]);
 
         expect($exitCode)->toBe(0)
-            ->and($decoded['success']['data']['result']['action'])->toBe('created');
+            ->and($decoded['event'])->toBe('complete')
+            ->and($decoded['data']['data']['result']['result']['action'])->toBe('created');
     });
 
     it('validates workspace:new names before contacting the gateway', function (): void {
@@ -58,11 +68,18 @@ describe('workspace write commands', function (): void {
         putenv('ORBIT_HOST_CWD=/Users/nckrtl/Sites/docs/.worktrees/feature-docs');
 
         try {
-            fakeGateway(fakeSuccessEnvelope([
-                'workspace' => 'feature-docs',
-                'app' => 'docs',
-                'action' => 'set_up',
-            ]));
+            config()->set('orbit.gateway.url', 'https://gateway.test');
+            config()->set('orbit.gateway.timeout', 30);
+            app()->forgetInstance(GatewayStreamClient::class);
+
+            Http::fake([
+                'https://gateway.test/*' => Http::response(
+                    "event: complete\n"
+                    .'data: {"exit_code":0,"data":{"result":{"workspace":"feature-docs","app":"docs","action":"set_up"}}}'."\n\n",
+                    200,
+                    ['Content-Type' => 'text/event-stream'],
+                ),
+            ]);
 
             [$exitCode] = runCommand($this, 'workspace:setup', [
                 'name' => 'feature-docs',

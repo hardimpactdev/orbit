@@ -70,6 +70,15 @@ final class GatewayApiException extends RuntimeException
         );
     }
 
+    public static function streamMalformed(Throwable $exception): self
+    {
+        return new self(
+            'Gateway progress stream returned a malformed frame.',
+            GatewayApiFailureKind::StreamMalformed,
+            previous: $exception,
+        );
+    }
+
     public function failureKind(): GatewayApiFailureKind
     {
         return $this->failureKind;

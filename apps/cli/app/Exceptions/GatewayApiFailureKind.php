@@ -10,6 +10,7 @@ enum GatewayApiFailureKind
     case Network;
     case WireguardUnreachable;
     case StreamClosedBeforeTerminal;
+    case StreamMalformed;
     case Generic;
 
     public function cliFailureCode(): string

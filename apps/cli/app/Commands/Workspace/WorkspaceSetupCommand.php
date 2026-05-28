@@ -4,10 +4,13 @@ declare(strict_types=1);
 
 namespace App\Commands\Workspace;
 
-use App\Exceptions\GatewayApiException;
+use App\Commands\Concerns\StreamsGatewayProgress;
+use Orbit\Core\Progress\ProgressEventType;
 
 final class WorkspaceSetupCommand extends WorkspaceGatewayCommand
 {
+    use StreamsGatewayProgress;
+
     protected $signature = 'workspace:setup
         {name? : Workspace name}
         {--app= : Parent app name}
@@ -24,17 +27,11 @@ final class WorkspaceSetupCommand extends WorkspaceGatewayCommand
             return $this->failValidation('path', 'Path must be absolute.');
         }
 
-        try {
-            $response = $this->gatewayPost('/api/workspaces/setup', [
-                'name' => $this->stringArgument('name'),
-                'app' => $this->stringOption('app') ?? $this->appFromOrbitMarker(),
-                'path' => $path,
-                'caller_cwd' => $this->hostCwd(),
-            ]);
-        } catch (GatewayApiException $exception) {
-            return $this->renderGatewayFailure($exception);
-        }
-
-        return $this->renderSuccess($response);
+        return $this->streamProgress('/api/workspaces/setup', [
+            'name' => $this->stringArgument('name'),
+            'app' => $this->stringOption('app') ?? $this->appFromOrbitMarker(),
+            'path' => $path,
+            'caller_cwd' => $this->hostCwd(),
+        ], fn (ProgressEventType $type, array $payload): int => $this->renderProgressTerminalFrame($type, $payload));
     }
 }
