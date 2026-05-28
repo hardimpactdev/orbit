@@ -1710,7 +1710,7 @@ PHP;
     {
         return implode(' && ', [
             "(grep -q '^APP_KEY=' apps/gateway/.env || printf '%s\\n' 'APP_KEY=' >> apps/gateway/.env)",
-            "(grep -Eq '^APP_KEY=base64:.+' apps/gateway/.env || orbit key:generate --force --no-interaction)",
+            "(grep -Eq '^APP_KEY=base64:.+' apps/gateway/.env || php apps/gateway/artisan key:generate --force --no-interaction)",
             "grep -Eq '^APP_KEY=base64:.+' apps/gateway/.env",
         ]);
     }

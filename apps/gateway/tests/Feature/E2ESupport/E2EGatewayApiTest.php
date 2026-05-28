@@ -193,7 +193,8 @@ it('prepares runtime environment before issuing gateway api certificates', funct
         ->toContain("APP_KEY='")
         ->toContain('printf')
         ->toContain('APP_KEY=base64:.+')
-        ->toContain('orbit key:generate --force --no-interaction')
+        ->toContain('php apps/gateway/artisan key:generate --force --no-interaction')
+        ->not->toContain('orbit key:generate')
         ->not->toContain("grep -q '^APP_KEY=base64:' apps/gateway/.env");
 });
 
@@ -240,7 +241,7 @@ it('starts Docker gateway API support through runtime container commands without
         && str_contains($command, 'php apps/gateway/artisan tinker --execute='));
     $certificateSetup = collect($commands)->first(fn (string $command): bool => str_contains($command, 'sudo docker exec --env')
         && str_contains($command, 'orbit-e2e-run123-gateway-orbit-runtime')
-        && str_contains($command, 'orbit key:generate --force --no-interaction')
+        && str_contains($command, 'php apps/gateway/artisan key:generate --force --no-interaction')
         && str_contains($command, 'issueLeaf'));
     $runtimeIdentity = collect($commands)->first(fn (string $command): bool => str_contains($command, 'sudo docker exec')
         && str_contains($command, 'orbit-e2e-run123-gateway-orbit-runtime')
@@ -266,6 +267,7 @@ it('starts Docker gateway API support through runtime container commands without
         ->toContain('([ -f apps/gateway/.env ] || cp apps/gateway/.env.example apps/gateway/.env)')
         ->toContain('ORBIT_SOURCE_PATH=/home/orbit/orbit')
         ->toContain('--workdir')
+        ->not->toContain('orbit key:generate')
         ->not->toContain('sudo -iu orbit');
 
     expect(array_search($runtimeIdentity, $commands, strict: true))
