@@ -59,6 +59,7 @@ use App\Commands\Node\NodeShowCommand;
 use App\Commands\Node\NodeUpdateCommand;
 use App\Commands\Operation\UpdateCommand;
 use App\Commands\Php\PhpListCommand;
+use App\Commands\Php\PhpUseCommand;
 use App\Commands\Process\ProcessAddCommand;
 use App\Commands\Process\ProcessEditCommand;
 use App\Commands\Process\ProcessListCommand;
@@ -183,6 +184,7 @@ return [
         NodeShowCommand::class,
         NodeUpdateCommand::class,
         PhpListCommand::class,
+        PhpUseCommand::class,
         ProcessAddCommand::class,
         ProcessEditCommand::class,
         ProcessListCommand::class,

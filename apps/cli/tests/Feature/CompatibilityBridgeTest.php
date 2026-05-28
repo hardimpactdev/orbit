@@ -270,6 +270,7 @@ describe('compatibility bridge command parsing', function (): void {
             ->and(gatewayArtisanArgumentsFromArgv(['orbit', $command, '--json']))->toBeNull();
     })->with([
         'php:list',
+        'php:use',
         'database:list',
         'database:show',
         'database:tables',
@@ -277,10 +278,9 @@ describe('compatibility bridge command parsing', function (): void {
         'database:describe',
     ]);
 
-    it('continues to bridge php and database write commands outside this slice', function (string $command): void {
+    it('continues to bridge database write commands outside this slice', function (string $command): void {
         expect(isUnportedPublicCommand($command))->toBeTrue();
     })->with([
-        'php:use',
         'database:add',
         'database:attach',
         'database:detach',
