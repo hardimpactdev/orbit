@@ -31,9 +31,12 @@ the terminal `APPROVED` signal on each tick.
 
 ## State Machine
 
-One phase tag per todo. Mechanical advances `ready -> prepared -> implementing
--> reviewing -> approved`. Strategic produces `ready` (stage 5) and consumes
-`approved` (stage 4).
+The loop acts only on open todos; completed todos are out of scope, and any
+open todo with no phase tag is treated as `draft` — so existing open todos are
+the loop's draft source without manual tagging. One phase tag per open todo.
+Mechanical advances `ready -> prepared -> implementing -> reviewing ->
+approved`. Strategic produces `ready` (stage 5) and consumes `approved`
+(stage 4).
 
 ```
         STRATEGIC S5                MECHANICAL S1   S2            S3
@@ -61,11 +64,16 @@ authority for a todo's current phase.
 
 ## Starting The Loop
 
-The user starts the loop by spawning one mechanical orchestrator:
+The launcher starts the loop by spawning one mechanical orchestrator:
 
-```text
-You are the Orbit agent-loop mechanical orchestrator. Read docs/superpowers/plans/agent-loop/mechanical.md before any other action.
-```
+1. Spawn the `agents.mechanical` runtime named `MECHANICAL`, applying its
+   descriptor setup lines from
+   `docs/superpowers/plans/agent-loop/references/agent-specs.md`.
+2. Send the bootstrap:
+
+   ```text
+   You are the Orbit agent-loop mechanical orchestrator. Read docs/superpowers/plans/agent-loop/mechanical.md before any other action.
+   ```
 
 Mechanical spawns and keeps the strategic orchestrator warm on its first tick.
 To stop the loop, set `mechanical.enabled` to `false` in `control-config.md`.

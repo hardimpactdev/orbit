@@ -6,9 +6,11 @@ and structured state disagree, structured state wins.
 
 ## Phase Tags
 
-Exactly one phase tag per active todo:
+The loop acts only on open todos; completed todos are out of scope. Each open
+todo carries exactly one phase tag. An open todo with no phase tag is treated
+as `draft`, so any open todo enters the loop without manual tagging.
 
-- `draft` — created, content not yet validated against current `main`.
+- `draft` — open, content not yet validated against current `main`.
 - `ready` — content validated against `main`; dispatchable.
 - `prepared` — worktree created, dependencies installed, tests green.
 - `implementing` — implementer is working.
@@ -44,8 +46,8 @@ comment.
 
 ## Process Names
 
-- `MECHANICAL <run_id>` — persistent clock.
-- `STRATEGIC <run_id>` — persistent warm service.
+- `MECHANICAL` — persistent clock.
+- `STRATEGIC` — persistent warm service.
 - `IMPLEMENTER-<todo_id>` — long-lived through review; closed after merge.
 - `REVIEWER-<todo_id>` — closed when it posts `APPROVED`.
 
