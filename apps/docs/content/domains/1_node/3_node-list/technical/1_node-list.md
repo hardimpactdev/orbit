@@ -13,7 +13,7 @@
 ## Signature
 
 ```bash
-orbit node:list [--role=<gateway|vpn|router|app-dev|app-prod|database|agent|ingress|websocket|s3|app|operator>] [--environment=<development|production>] [--doctor] [--json]
+orbit node:list [--role=<gateway|vpn|router|app-dev|app-prod|database|agent|ingress|websocket|s3>] [--doctor] [--json]
 ```
 
 ## Input Contract
@@ -26,28 +26,21 @@ options are optional.
 
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
-| `role` | `--role` | Optional. | Never. | None. | One of `gateway`, `vpn`, `router`, `app-dev`, `app-prod`, `database`, `agent`, `ingress`, `websocket`, `s3`, `app`, or `operator`. See alias notes below. |
-| `environment` | `--environment` | Optional. | Never. | None. | One of `development`, `production`. |
+| `role` | `--role` | Optional. | Never. | None. | One of `gateway`, `vpn`, `router`, `app-dev`, `app-prod`, `database`, `agent`, `ingress`, `websocket`, `s3`. |
 | `doctor` | `--doctor` | Optional. | Never. | `false`. | Boolean flag. Explicit secondary operation. |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer and non-interactive input mode according to the shared invocation model in [`docs/domains/README.md`](../../../README.md#invocation-model). |
 
-`--role` aliases: `app` matches both app host roles; `operator` matches
-gateway-known operator identities without an active workload role assignment.
-They are query aliases, not stored role names.
-
-`--role` and `--environment` are scalar enum filters with single-value
-semantics; comma-separated input fails as `validation_failed` because it is not
-one of the allowed values, and invalid values fail before side effects.
-Multi-value semantics are not part of the initial contract. Operators who need
-to query multiple roles or environments at once should run `node:list --json`
-without that filter and post-filter the result, or run separate scoped
-invocations.
+`--role` is a scalar enum filter with single-value semantics; comma-separated
+input fails as `validation_failed` because it is not one of the allowed
+values, and invalid values fail before side effects. Multi-value semantics
+are not part of the initial contract. Operators who need to query multiple
+roles at once should run `node:list --json` without that filter and
+post-filter the result, or run separate scoped invocations.
 
 ## Input Resolution
 
 1. Resolve `node_list.role` from `--role` when present. Validate immediately.
-2. Resolve `node_list.environment` from `--environment` when present. Validate immediately.
-3. Resolve `node_list.doctor` from `--doctor`. Default `false`.
+2. Resolve `node_list.doctor` from `--doctor`. Default `false`.
 4. Select the output renderer and query the gateway for visible node registry
    configuration.
 5. If `--doctor` is present, run node doctor checks as an explicit secondary
@@ -76,9 +69,6 @@ invocations.
 ### Filter and sort rules
 
 - If `--role` is present, include only nodes with the matching effective role assignment. The filter uses active `node_roles` assignments.
-- If `--environment` is present, include only nodes with the matching
-  environment. The filter uses active app role assignments.
-- Filters combine with AND semantics.
 - Preserve the gateway's sort order for every output renderer. The gateway sorts
   by effective role assignment and then by node name. Renderer contracts own
   presentation shape.
@@ -110,7 +100,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 
 | Failure | Condition | Outcome |
 | --- | --- | --- |
-| Invalid filter value | `--role` or `--environment` contains an unsupported value, including comma-separated input. | Failure |
+| Invalid filter value | `--role` contains an unsupported value, including comma-separated input. | Failure |
 
 Doctor findings are not failures of `node:list`. When `--doctor` is present
 and the secondary doctor probe reports drift on one or more nodes, the
