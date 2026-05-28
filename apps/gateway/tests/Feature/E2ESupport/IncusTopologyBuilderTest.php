@@ -229,7 +229,7 @@ it('does not reuse an operator-gateway stage when rebuilding the prepared full t
         ]);
 });
 
-it('builds full prepared roles from the gateway base with parallel downstream provisioning', function (): void {
+it('builds full prepared roles from the gateway base with parallel downstream baking', function (): void {
     withE2ETopologyEnvironment([], function (): void {
         $config = incusTopologyBuilderConfig();
         $commands = [];
@@ -298,18 +298,22 @@ it('builds full prepared roles from the gateway base with parallel downstream pr
             ->and($commandOutput)->toContain("incus launch 'orbit-base-ubuntu-26.04' 'orbit-template-app-dev-base'")
             ->and($commandOutput)->toContain("incus launch 'orbit-base-ubuntu-26.04' 'orbit-template-app-prod-base'")
             ->and($commandOutput)->toContain("incus launch 'orbit-base-ubuntu-26.04' 'orbit-template-agent-base'")
-            ->and($commandOutput)->toContain('PID_NODE_NEW_DEV=$!')
-            ->and($commandOutput)->toContain('PID_NODE_NEW_PROD=$!')
-            ->and($commandOutput)->toContain('PID_NODE_NEW_AGENT=$!')
+            ->and($commandOutput)->toContain('PID_BAKE_DEV=$!')
+            ->and($commandOutput)->toContain('PID_BAKE_PROD=$!')
+            ->and($commandOutput)->toContain('PID_BAKE_AGENT=$!')
             ->and($commandOutput)->toContain('set -euo pipefail;')
-            ->and($commandOutput)->toContain('PID_NODE_NEW_DEV=$!;')
+            ->and($commandOutput)->toContain('PID_BAKE_DEV=$!;')
             ->and($commandOutput)->toContain("incus exec 'orbit-template-gateway-base' -- sh -lc 'sudo -iu orbit")
             ->and($commandOutput)->toContain('php apps/gateway/artisan tinker --execute=')
             ->and($commandOutput)->not->toContain('cd /home/orbit/orbit && php artisan')
+            ->and($commandOutput)->toContain('php apps/gateway/artisan orbit:internal:bake-app-node')
+            ->and($commandOutput)->toContain('php apps/gateway/artisan orbit:internal:bake-ingress-node')
+            ->and($commandOutput)->toContain('php apps/gateway/artisan orbit:internal:bake-agent-node')
             ->and($commandOutput)->toContain('app-dev-1')
             ->and($commandOutput)->toContain('app-prod-1')
             ->and($commandOutput)->toContain('agent-1')
-            ->and(substr_count($commandOutput, 'ORBIT_E2E_NODE_WIREGUARD_ADDRESS='))->toBe(3)
+            ->and($commandOutput)->toContain('/tmp/orbit-e2e-prepared-bake.sh')
+            ->and(substr_count($commandOutput, 'ORBIT_E2E_NODE_WIREGUARD_ADDRESS='))->toBe(0)
             ->and($commandOutput)->toContain('prepared Incus base image is missing E2E dependencies')
             ->and($commandOutput)->toContain('for command in composer git supervisorctl wg wg-quick dig ufw; do')
             ->and($commandOutput)->not->toContain('apt-get')
@@ -460,7 +464,7 @@ it('records phase timings while building topology templates', function (): void 
         ->and($eventNames)->toContain('workdir.cleanup');
 });
 
-it('builds prepared topology templates through staged node:new snapshots', function (): void {
+it('builds prepared topology templates through staged internal gateway baking', function (): void {
     $config = incusTopologyBuilderConfig();
     $commands = [];
 
@@ -472,10 +476,10 @@ it('builds prepared topology templates through staged node:new snapshots', funct
     $host = m::mock(IncusHost::class, [$config])->makePartial();
     $host->shouldReceive('imageExists')->with($config->baseImage)->andReturn(true);
     $host->shouldReceive('instanceExists')->andReturn(false);
-    $host->shouldReceive('waitForCloudInit')->times(4);
+    $host->shouldReceive('waitForCloudInit')->times(5);
     $host->shouldReceive('provisionInstance')->with('orbit-template-operator-base', 'operator', '/tmp/orbit-e2e-bundle-test', 'operator')->once()->andReturn(incusTopologyBuilderProcessResult());
-    $host->shouldReceive('stopInstance')->times(10)->andReturn(incusTopologyBuilderProcessResult());
-    $host->shouldReceive('snapshotInstance')->times(10)->andReturn(incusTopologyBuilderProcessResult());
+    $host->shouldReceive('stopInstance')->times(8)->andReturn(incusTopologyBuilderProcessResult());
+    $host->shouldReceive('snapshotInstance')->times(8)->andReturn(incusTopologyBuilderProcessResult());
     $host->shouldReceive('run')->andReturnUsing(function (string $command, ?int $timeoutSeconds = null) use (&$commands): ProcessResult {
         $commands[] = $command;
 
@@ -495,6 +499,10 @@ it('builds prepared topology templates through staged node:new snapshots', funct
             return incusTopologyBuilderProcessResult("10.201.0.12\n");
         }
 
+        if (str_contains($command, 'orbit-template-agent-base')) {
+            return incusTopologyBuilderProcessResult("10.201.0.14\n");
+        }
+
         if (str_contains($command, 'orbit-template-gateway-base')) {
             return incusTopologyBuilderProcessResult("10.201.0.11\n");
         }
@@ -509,7 +517,7 @@ it('builds prepared topology templates through staged node:new snapshots', funct
     $builder = new IncusTopologyBuilder($host);
     $builder->useBundle('/tmp/orbit-e2e-bundle-test');
 
-    $manifest = $builder->build(E2ETopologyKind::OperatorGatewayAppdevAppprod);
+    $manifest = $builder->build(E2ETopologyKind::OperatorGatewayAppdevAppprodAgent);
 
     $commandOutput = implode("\n", $commands);
 
@@ -517,27 +525,33 @@ it('builds prepared topology templates through staged node:new snapshots', funct
         [
             'role' => 'operator',
             'name' => 'orbit-template-operator-base',
-            'snapshot' => 'clean-operator_gateway_app-dev_app-prod-base',
+            'snapshot' => 'clean-operator_gateway_app-dev_app-prod_agent-base',
         ],
         [
             'role' => 'gateway',
             'name' => 'orbit-template-gateway-base',
-            'snapshot' => 'clean-operator_gateway_app-dev_app-prod-base',
+            'snapshot' => 'clean-operator_gateway_app-dev_app-prod_agent-base',
         ],
         [
             'role' => 'dev',
             'name' => 'orbit-template-app-dev-base',
-            'snapshot' => 'clean-operator_gateway_app-dev_app-prod-base',
+            'snapshot' => 'clean-operator_gateway_app-dev_app-prod_agent-base',
         ],
         [
             'role' => 'prod',
             'name' => 'orbit-template-app-prod-base',
-            'snapshot' => 'clean-operator_gateway_app-dev_app-prod-base',
+            'snapshot' => 'clean-operator_gateway_app-dev_app-prod_agent-base',
+        ],
+        [
+            'role' => 'agent',
+            'name' => 'orbit-template-agent-base',
+            'snapshot' => 'clean-operator_gateway_app-dev_app-prod_agent-base',
         ],
     ])->and($commandOutput)->toContain("incus launch 'orbit-base-ubuntu-26.04' 'orbit-template-operator-base'")
         ->and($commandOutput)->toContain("incus launch 'orbit-base-ubuntu-26.04' 'orbit-template-gateway-base'")
         ->and($commandOutput)->toContain("incus launch 'orbit-base-ubuntu-26.04' 'orbit-template-app-dev-base'")
         ->and($commandOutput)->toContain("incus launch 'orbit-base-ubuntu-26.04' 'orbit-template-app-prod-base'")
+        ->and($commandOutput)->toContain("incus launch 'orbit-base-ubuntu-26.04' 'orbit-template-agent-base'")
         ->and($commandOutput)->not->toContain('orbit-template-operator_gateway_app-dev_app-prod-operator-base')
         ->and($commandOutput)->not->toContain('orbit node:new gateway-1')
         ->and($commandOutput)->not->toContain('--role=gateway')
@@ -559,15 +573,21 @@ it('builds prepared topology templates through staged node:new snapshots', funct
         ->and($commandOutput)->toContain('php apps/gateway/artisan orbit:internal:bootstrap-gateway-local gateway')
         ->and($commandOutput)->toContain('php apps/gateway/artisan tinker --execute=')
         ->and($commandOutput)->not->toContain('cd /home/orbit/orbit && php artisan')
-        ->and($commandOutput)->toContain('orbit node:new')
         ->and($commandOutput)->toContain('app-dev-1')
         ->and($commandOutput)->toContain('10.201.0.12')
         ->and($commandOutput)->toContain('--user=')
         ->and($commandOutput)->toContain('provisioner')
         ->and($commandOutput)->toContain('app-prod-1')
         ->and($commandOutput)->toContain('10.201.0.13')
-        ->and($commandOutput)->toContain('--roles=app-prod,ingress')
-        ->and($commandOutput)->not->toContain('orbit:internal:bake-app-node');
+        ->and($commandOutput)->toContain('php apps/gateway/artisan orbit:internal:bake-app-node')
+        ->and($commandOutput)->toContain('php apps/gateway/artisan orbit:internal:bake-ingress-node')
+        ->and($commandOutput)->toContain('php apps/gateway/artisan orbit:internal:bake-agent-node')
+        ->and($commandOutput)->toContain('--role=app-dev')
+        ->and($commandOutput)->toContain('--role=app-prod')
+        ->and($commandOutput)->toContain('--ingress-node=')
+        ->and($commandOutput)->not->toContain('/tmp/orbit-e2e-prepared-node-new.sh')
+        ->and($commandOutput)->not->toContain('ORBIT_E2E_NODE_WIREGUARD_ADDRESS=')
+        ->and($commandOutput)->not->toContain('--roles=app-prod,ingress');
 });
 
 it('builds app production ingress on the prod template without development or agent stages', function (): void {

@@ -33,7 +33,8 @@ class IncusTopologyBuilder
     /**
      * Stage a remote bundle directory that the builder will use to install the
      * operator node. Gateway and app roles are then provisioned through
-     * node:new from that operator node.
+     * gateway-local internal bake commands or public CLI flows from that
+     * operator node, depending on the topology stage.
      */
     public function useBundle(string $remoteBundleDir): void
     {
@@ -580,7 +581,7 @@ class IncusTopologyBuilder
         $instances['prod'] = $prod;
         $instances['agent'] = $agent;
 
-        $this->timer->measure('prepared.downstream.node-new', fn () => $this->runPreparedDownstreamNodeNewInParallel(
+        $this->timer->measure('prepared.downstream.bake', fn () => $this->runPreparedDownstreamBakeInParallel(
             $instances['gateway'],
             $devIp,
             $prodIp,
@@ -825,69 +826,76 @@ PHP;
         E2EGatewayApi::waitForGatewayApi($operator, $this->host->config->operatorUser, $key);
     }
 
-    private function runPreparedDownstreamNodeNewInParallel(
+    private function runPreparedDownstreamBakeInParallel(
         IncusInstance $gateway,
         string $devHost,
         string $prodHost,
         string $agentHost,
     ): void {
         $devCommand = implode(' ', [
-            'ORBIT_E2E=1',
-            'ORBIT_E2E_NODE_WIREGUARD_ADDRESS='.escapeshellarg(self::DevWireGuardIp),
-            'orbit node:new',
+            'php apps/gateway/artisan orbit:internal:bake-app-node',
             escapeshellarg('app-dev-1'),
-            '--roles=app-dev',
+            '--role=app-dev',
             '--host='.escapeshellarg($devHost),
+            '--wireguard-address='.escapeshellarg(self::DevWireGuardIp),
+            '--gateway-endpoint='.escapeshellarg(self::GatewayWireGuardIp),
             '--user='.escapeshellarg($this->host->config->bootstrapUser),
             '--tld='.escapeshellarg('test'),
-            '--json',
         ]);
-        $prodCommand = implode(' ', [
-            'ORBIT_E2E=1',
-            'ORBIT_E2E_NODE_WIREGUARD_ADDRESS='.escapeshellarg(self::ProdWireGuardIp),
-            'orbit node:new',
+        $prodIngressCommand = implode(' ', [
+            'php apps/gateway/artisan orbit:internal:bake-ingress-node',
             escapeshellarg('app-prod-1'),
-            '--roles=app-prod,ingress',
             '--host='.escapeshellarg($prodHost),
+            '--wireguard-address='.escapeshellarg(self::ProdWireGuardIp),
+            '--gateway-endpoint='.escapeshellarg(self::GatewayWireGuardIp),
             '--user='.escapeshellarg($this->host->config->bootstrapUser),
-            '--json',
         ]);
-        $agentCommand = implode(' ', [
-            'ORBIT_E2E=1',
-            'ORBIT_E2E_NODE_WIREGUARD_ADDRESS='.escapeshellarg(self::AgentWireGuardIp),
-            'orbit node:new',
-            escapeshellarg('agent-1'),
-            '--roles=agent',
-            '--host='.escapeshellarg($agentHost),
+        $prodAppCommand = implode(' ', [
+            'php apps/gateway/artisan orbit:internal:bake-app-node',
+            escapeshellarg('app-prod-1'),
+            '--role=app-prod',
+            '--host='.escapeshellarg($prodHost),
+            '--wireguard-address='.escapeshellarg(self::ProdWireGuardIp),
+            '--gateway-endpoint='.escapeshellarg(self::GatewayWireGuardIp),
             '--user='.escapeshellarg($this->host->config->bootstrapUser),
-            '--json',
+            '--ingress-node='.escapeshellarg('app-prod-1'),
+        ]);
+        $prodCommand = "{$prodIngressCommand} && {$prodAppCommand}";
+        $agentCommand = implode(' ', [
+            'php apps/gateway/artisan orbit:internal:bake-agent-node',
+            escapeshellarg('agent-1'),
+            '--host='.escapeshellarg($agentHost),
+            '--wireguard-address='.escapeshellarg(self::AgentWireGuardIp),
+            '--gateway-endpoint='.escapeshellarg(self::GatewayWireGuardIp),
+            '--user='.escapeshellarg($this->host->config->bootstrapUser),
+            '--tld='.escapeshellarg('agent'),
         ]);
         $script = <<<BASH
 set -euo pipefail;
 cd /home/orbit/orbit;
-({$devCommand}) > /tmp/orbit-e2e-node-new-dev.log 2>&1 & PID_NODE_NEW_DEV=\$!;
-({$prodCommand}) > /tmp/orbit-e2e-node-new-prod.log 2>&1 & PID_NODE_NEW_PROD=\$!;
-({$agentCommand}) > /tmp/orbit-e2e-node-new-agent.log 2>&1 & PID_NODE_NEW_AGENT=\$!;
+({$devCommand}) > /tmp/orbit-e2e-bake-dev.log 2>&1 & PID_BAKE_DEV=\$!;
+({$prodCommand}) > /tmp/orbit-e2e-bake-prod.log 2>&1 & PID_BAKE_PROD=\$!;
+({$agentCommand}) > /tmp/orbit-e2e-bake-agent.log 2>&1 & PID_BAKE_AGENT=\$!;
 
 STATUS=0;
-wait "\$PID_NODE_NEW_DEV" || { CODE=\$?; echo "node:new app-dev failed" >&2; cat /tmp/orbit-e2e-node-new-dev.log >&2 || true; if [ "\$STATUS" -eq 0 ]; then STATUS=\$CODE; fi; };
-wait "\$PID_NODE_NEW_PROD" || { CODE=\$?; echo "node:new app-prod failed" >&2; cat /tmp/orbit-e2e-node-new-prod.log >&2 || true; if [ "\$STATUS" -eq 0 ]; then STATUS=\$CODE; fi; };
-wait "\$PID_NODE_NEW_AGENT" || { CODE=\$?; echo "node:new agent failed" >&2; cat /tmp/orbit-e2e-node-new-agent.log >&2 || true; if [ "\$STATUS" -eq 0 ]; then STATUS=\$CODE; fi; };
+wait "\$PID_BAKE_DEV" || { CODE=\$?; echo "bake app-dev failed" >&2; cat /tmp/orbit-e2e-bake-dev.log >&2 || true; if [ "\$STATUS" -eq 0 ]; then STATUS=\$CODE; fi; };
+wait "\$PID_BAKE_PROD" || { CODE=\$?; echo "bake app-prod failed" >&2; cat /tmp/orbit-e2e-bake-prod.log >&2 || true; if [ "\$STATUS" -eq 0 ]; then STATUS=\$CODE; fi; };
+wait "\$PID_BAKE_AGENT" || { CODE=\$?; echo "bake agent failed" >&2; cat /tmp/orbit-e2e-bake-agent.log >&2 || true; if [ "\$STATUS" -eq 0 ]; then STATUS=\$CODE; fi; };
 exit "\$STATUS";
 BASH;
-        $scriptPath = '/tmp/orbit-e2e-prepared-node-new.sh';
+        $scriptPath = '/tmp/orbit-e2e-prepared-bake.sh';
         $scriptPathArgument = escapeshellarg($scriptPath);
 
         E2ECommand::exec(
             $gateway,
             "cat > {$scriptPathArgument} <<'BASH'\n{$script}\nBASH\nchmod 755 {$scriptPathArgument}\nchown orbit:orbit {$scriptPathArgument}",
-            'Could not write prepared downstream node:new script',
+            'Could not write prepared downstream bake script',
             timeoutSeconds: 30,
         );
         E2ECommand::orbit(
             $gateway,
             $scriptPathArgument,
-            'Could not create prepared downstream nodes in parallel',
+            'Could not bake prepared downstream nodes in parallel',
             timeoutSeconds: 900,
         );
     }
