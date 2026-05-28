@@ -418,11 +418,19 @@ it('starts the build gateway scheduler before schedule doctor verification', fun
     $setup = implode("\n", $commands);
     $bootstrap = strpos($setup, 'orbit:internal:bootstrap-gateway-local gateway 10.6.0.2');
     $scheduler = strpos($setup, "docker exec --detach --workdir '/home/orbit/orbit' 'orbit-e2e-prepared-build-operator_gateway-gateway-orbit-runtime' orbit orbit-scheduler");
-    $doctor = strpos($setup, "sudo docker exec --env 'ORBIT_SOURCE_PATH=/home/orbit/orbit' --env 'ORBIT_IS_GATEWAY=1' --workdir '/home/orbit/orbit' 'orbit-e2e-prepared-build-operator_gateway-gateway-orbit-runtime' php '/home/orbit/orbit/apps/gateway/artisan' doctor --node=gateway --family=schedule --restore --json");
+    $doctor = strpos($setup, 'doctor --node=gateway --family=schedule --restore --json');
+    $doctorGatewayRuntime = strpos($setup, 'gateway-orbit-runtime');
+    $doctorGatewayEnv = strpos($setup, 'ORBIT_IS_GATEWAY=1');
+    $doctorGatewayArtisan = strpos($setup, 'apps/gateway/artisan');
+    $publicCliDoctor = strpos($setup, 'orbit doctor --node=gateway --family=schedule --restore --json');
 
     expect($bootstrap)->toBeInt()
         ->and($scheduler)->toBeInt()
         ->and($doctor)->toBeInt()
+        ->and($doctorGatewayRuntime)->toBeInt()
+        ->and($doctorGatewayEnv)->toBeInt()
+        ->and($doctorGatewayArtisan)->toBeInt()
+        ->and($publicCliDoctor)->toBeFalse()
         ->and($bootstrap)->toBeLessThan($scheduler)
         ->and($scheduler)->toBeLessThan($doctor);
 });
