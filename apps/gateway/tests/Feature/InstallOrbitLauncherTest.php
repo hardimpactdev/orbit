@@ -128,30 +128,15 @@ describe('install-orbit always-cli launcher contract', function (): void {
             ->not->toContain("__DIR__.'/../../autoload.php'");
     });
 
-    it('uses an explicit compatibility bridge allow-list inside the CLI artifact', function (): void {
-        $bridge = File::get(repo_path('apps/cli/CompatibilityBridge.php'));
+    it('keeps the CLI artifact free of the removed bridge launcher path', function (): void {
+        $launcher = File::get(repo_path('apps/cli/orbit'));
 
-        expect($bridge)
-            ->toContain('ORBIT_COMPATIBILITY_BRIDGE_ALLOW_LIST')
-            ->toContain("dirname(__DIR__, 2).'/apps/gateway/artisan'")
-            ->toContain('passthruCommand(PHP_BINARY')
-            ->toContain('isUnportedPublicCommand')
-            ->not->toContain("'profile'")
-            ->not->toContain("'app:new'")
-            ->not->toContain("'dns:list'");
-    });
+        expect($launcher)
+            ->toContain("__DIR__.'/NativeCommandNormalizer.php'")
+            ->not->toContain('CompatibilityBridge.php')
+            ->not->toContain("dirname(__DIR__, 2).'/apps/gateway/artisan'");
 
-    it('refuses to forward hidden internal and gateway-runtime commands through the compatibility bridge', function (): void {
-        $bridge = File::get(repo_path('apps/cli/CompatibilityBridge.php'));
-
-        expect($bridge)
-            ->toContain("'internal:'")
-            ->toContain("'orbit:internal:'")
-            ->toContain("'make:'")
-            ->toContain("'queue:'")
-            ->toContain("'cache:'")
-            ->toContain("'db:'")
-            ->toContain("'migrate'");
+        expect(File::exists(repo_path('apps/cli/CompatibilityBridge.php')))->toBeFalse();
     });
 
     it('keeps the launcher allow-list in sync with the CLI hidden internal commands', function (): void {

@@ -5,11 +5,9 @@ declare(strict_types=1);
 
 define('LARAVEL_START', microtime(true));
 
-require __DIR__.'/CompatibilityBridge.php';
+require __DIR__.'/NativeCommandNormalizer.php';
 
 $argv = $_SERVER['argv'] ?? [];
-
-fallbackToGatewayArtisanWhenCommandIsUnported($argv);
 
 $_SERVER['argv'] = normalizeNativeMultiTokenCommandArgv($argv);
 
