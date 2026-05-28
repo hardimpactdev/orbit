@@ -253,6 +253,18 @@ describe('compatibility bridge command parsing', function (): void {
         'tool:update',
     ]);
 
+    it('does not bridge ported vpn commands', function (string $command): void {
+        expect(isUnportedPublicCommand($command))->toBeFalse()
+            ->and(gatewayArtisanArgumentsFromArgv(['orbit', $command, '--json']))->toBeNull();
+    })->with([
+        'vpn-client:disable',
+        'vpn-client:enable',
+        'vpn-client:list',
+        'vpn-client:new',
+        'vpn-client:remove',
+        'vpn-web-ui:change-password',
+    ]);
+
     it('does not bridge ported php and database read commands', function (string $command): void {
         expect(isUnportedPublicCommand($command))->toBeFalse()
             ->and(gatewayArtisanArgumentsFromArgv(['orbit', $command, '--json']))->toBeNull();

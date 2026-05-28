@@ -88,6 +88,12 @@ use App\Commands\Tool\ToolShowCommand;
 use App\Commands\Tool\ToolStartCommand;
 use App\Commands\Tool\ToolStopCommand;
 use App\Commands\Tool\ToolUpdateCommand;
+use App\Commands\Vpn\VpnClientDisableCommand;
+use App\Commands\Vpn\VpnClientEnableCommand;
+use App\Commands\Vpn\VpnClientListCommand;
+use App\Commands\Vpn\VpnClientNewCommand;
+use App\Commands\Vpn\VpnClientRemoveCommand;
+use App\Commands\Vpn\VpnWebUiChangePasswordCommand;
 use App\Commands\Workspace\WorkspaceExecCommand;
 use App\Commands\Workspace\WorkspaceHistoryCommand;
 use App\Commands\Workspace\WorkspaceListCommand;
@@ -206,6 +212,12 @@ return [
         ToolStartCommand::class,
         ToolStopCommand::class,
         ToolUpdateCommand::class,
+        VpnClientDisableCommand::class,
+        VpnClientEnableCommand::class,
+        VpnClientListCommand::class,
+        VpnClientNewCommand::class,
+        VpnClientRemoveCommand::class,
+        VpnWebUiChangePasswordCommand::class,
         UpdateCommand::class,
         WorkspaceExecCommand::class,
         WorkspaceHistoryCommand::class,

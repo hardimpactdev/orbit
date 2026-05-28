@@ -39,13 +39,6 @@ const ORBIT_COMPATIBILITY_BRIDGE_ALLOW_LIST = [
     // process
     // profile
     'profile',
-    // vpn
-    'vpn-client:disable',
-    'vpn-client:enable',
-    'vpn-client:list',
-    'vpn-client:new',
-    'vpn-client:remove',
-    'vpn-web-ui:change-password',
     // workspace
     'workspace:log',
 ];
