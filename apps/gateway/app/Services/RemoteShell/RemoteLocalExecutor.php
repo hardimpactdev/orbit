@@ -227,6 +227,7 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor
         string $operationId,
     ): array {
         $this->commands->build(
+            targetNode: $node,
             commandName: $commandName,
             arguments: $arguments,
             options: $commandOptions,
@@ -242,12 +243,14 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor
         return [
             'operationToken' => $operationToken,
             'script' => $this->commands->build(
+                targetNode: $node,
                 commandName: $commandName,
                 arguments: $arguments,
                 options: $commandOptions,
                 operationToken: $operationToken,
             ),
             'auditLine' => $this->commands->buildAuditLine(
+                targetNode: $node,
                 commandName: $commandName,
                 arguments: $arguments,
                 options: $commandOptions,

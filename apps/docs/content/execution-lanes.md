@@ -159,9 +159,19 @@ token-bearing method arguments from the failed transport call.
 
 `LocalExecutorCommandBuilder` is the only sanctioned way to compose internal
 CLI invocations sent through this lane. It validates the `internal:*` command
-name and option keys, escapes every positional argument and option value,
-always appends `--operation-token` and `--json`, and exposes a token-redacted
-audit line. Do not hand-build local-executor shell strings at call sites.
+name and option keys, enforces a closed command-and-target-role allow-list,
+escapes every positional argument and option value, always appends
+`--operation-token` and `--json`, and exposes a token-redacted audit line. Do
+not hand-build local-executor shell strings at call sites.
+
+Current allowed hidden CLI commands:
+
+| Command | Allowed target roles |
+| --- | --- |
+| `internal:executor:verify` | any active workload role |
+| `internal:wg-easy:state` | `vpn` |
+| `internal:workspace-adapter:lookup` | `app-dev` |
+| `internal:workspace-adapter:update` | `app-dev` |
 
 Callers that need arguments or command options use:
 

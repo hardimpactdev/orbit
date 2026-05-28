@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\RemoteShell;
 
+use App\Models\Node;
 use App\Services\RemoteShell\Exceptions\LocalExecutorCommandBuilderException;
 
 final readonly class LocalExecutorCommandBuilder
@@ -14,13 +15,29 @@ final readonly class LocalExecutorCommandBuilder
 
     private const string OPTION_KEY_PATTERN = '/\A[a-z][a-z0-9-]*\z/';
 
+    private const array ALLOWED_COMMAND_ROLES = [
+        'internal:executor:verify' => ['gateway', 'vpn', 'router', 'app-dev', 'app-prod', 'database', 'agent', 'ingress'],
+        'internal:wg-easy:state' => ['vpn'],
+        'internal:workspace-adapter:lookup' => ['app-dev'],
+        'internal:workspace-adapter:update' => ['app-dev'],
+    ];
+
+    /**
+     * @return array<string, list<string>>
+     */
+    public static function allowedCommandRoles(): array
+    {
+        return self::ALLOWED_COMMAND_ROLES;
+    }
+
     /**
      * @param  array<int|string, mixed>  $arguments
      * @param  array<int|string, mixed>  $options
      */
-    public function build(string $commandName, array $arguments, array $options, string $operationToken): string
+    public function build(Node $targetNode, string $commandName, array $arguments, array $options, string $operationToken): string
     {
         return $this->compose(
+            targetNode: $targetNode,
             commandName: $commandName,
             arguments: $arguments,
             options: $options,
@@ -33,9 +50,10 @@ final readonly class LocalExecutorCommandBuilder
      * @param  array<int|string, mixed>  $arguments
      * @param  array<int|string, mixed>  $options
      */
-    public function buildAuditLine(string $commandName, array $arguments, array $options, string $operationToken): string
+    public function buildAuditLine(Node $targetNode, string $commandName, array $arguments, array $options, string $operationToken): string
     {
         return $this->compose(
+            targetNode: $targetNode,
             commandName: $commandName,
             arguments: $arguments,
             options: $options,
@@ -49,6 +67,7 @@ final readonly class LocalExecutorCommandBuilder
      * @param  array<int|string, mixed>  $options
      */
     private function compose(
+        Node $targetNode,
         string $commandName,
         array $arguments,
         array $options,
@@ -56,6 +75,7 @@ final readonly class LocalExecutorCommandBuilder
         bool $redactOperationToken,
     ): string {
         $this->ensureCommandNameIsValid($commandName);
+        $this->ensureCommandIsAllowedForTarget($commandName, $targetNode);
         $this->ensureOperationTokenIsValid($operationToken);
 
         $segments = [
@@ -79,6 +99,23 @@ final readonly class LocalExecutorCommandBuilder
         }
 
         throw LocalExecutorCommandBuilderException::invalidCommandName();
+    }
+
+    private function ensureCommandIsAllowedForTarget(string $commandName, Node $targetNode): void
+    {
+        $allowedRoles = self::ALLOWED_COMMAND_ROLES[$commandName] ?? null;
+
+        if ($allowedRoles === null) {
+            throw LocalExecutorCommandBuilderException::commandNotAllowed($commandName);
+        }
+
+        foreach ($allowedRoles as $role) {
+            if ($targetNode->hasActiveRole($role)) {
+                return;
+            }
+        }
+
+        throw LocalExecutorCommandBuilderException::commandNotAllowed($commandName);
     }
 
     private function ensureOperationTokenIsValid(string $operationToken): void

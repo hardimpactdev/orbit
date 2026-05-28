@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Exceptions\RemoteShellFailed;
 use App\Models\Node;
+use App\Models\NodeRoleAssignment;
 use App\Services\ActivityLogCorrelation;
 use App\Services\ActivityLogger;
 use App\Services\Operations\OperationTokenFactory;
@@ -32,7 +33,7 @@ describe(RemoteLocalExecutor::class, function (): void {
 
         $result = $executor->runInternal(
             node: $node,
-            commandName: 'internal:workspace-adapter',
+            commandName: 'internal:workspace-adapter:lookup',
             arguments: ['lookup', 'polyscope'],
             commandOptions: [
                 'state-path' => "/home/orbit/.polyscope/state's.db",
@@ -63,7 +64,8 @@ describe(RemoteLocalExecutor::class, function (): void {
         $compactToken = remoteLocalExecutorTokenFromScript($script);
         $token = OperationToken::parse($compactToken);
         $auditLine = (new LocalExecutorCommandBuilder)->buildAuditLine(
-            commandName: 'internal:workspace-adapter',
+            targetNode: $node,
+            commandName: 'internal:workspace-adapter:lookup',
             arguments: ['lookup', 'polyscope'],
             options: [
                 'state-path' => "/home/orbit/.polyscope/state's.db",
@@ -74,7 +76,8 @@ describe(RemoteLocalExecutor::class, function (): void {
         );
 
         expect($script)->toBe((new LocalExecutorCommandBuilder)->build(
-            commandName: 'internal:workspace-adapter',
+            targetNode: $node,
+            commandName: 'internal:workspace-adapter:lookup',
             arguments: ['lookup', 'polyscope'],
             options: [
                 'state-path' => "/home/orbit/.polyscope/state's.db",
@@ -88,14 +91,14 @@ describe(RemoteLocalExecutor::class, function (): void {
             ->and(substr_count($script, $compactToken))->toBe(1)
             ->and($token->id)->toBe($operationId)
             ->and($token->node)->toBe($node->name)
-            ->and($token->command)->toBe('internal:workspace-adapter')
+            ->and($token->command)->toBe('internal:workspace-adapter:lookup')
             ->and($token->issued_at)->toBe(1_798_105_200)
             ->and($token->expires_at)->toBe(1_798_105_320)
             ->and((new OperationTokenVerifier)->verify(
                 secret: 'gateway-secret',
                 token: $token,
                 expectedNode: $node->name,
-                expectedCommand: 'internal:workspace-adapter',
+                expectedCommand: 'internal:workspace-adapter:lookup',
                 now: 1_798_105_200,
             ))->toBeTrue();
 
@@ -116,7 +119,7 @@ describe(RemoteLocalExecutor::class, function (): void {
                 'operation_id' => $operationId,
                 'target_node_id' => $node->getKey(),
                 'target_node_name' => 'app-dev',
-                'command' => 'internal:workspace-adapter',
+                'command' => 'internal:workspace-adapter:lookup',
                 'arguments' => ['lookup', 'polyscope'],
                 'command_options' => [
                     'state-path' => "/home/orbit/.polyscope/state's.db",
@@ -134,7 +137,7 @@ describe(RemoteLocalExecutor::class, function (): void {
                 'operation_id' => $operationId,
                 'target_node_id' => $node->getKey(),
                 'target_node_name' => 'app-dev',
-                'command' => 'internal:workspace-adapter',
+                'command' => 'internal:workspace-adapter:lookup',
                 'exit_code' => 0,
                 'stdout_summary' => "{\"ok\":true}\n",
                 'stderr_summary' => '',
@@ -159,6 +162,7 @@ describe(RemoteLocalExecutor::class, function (): void {
         $compactToken = remoteLocalExecutorTokenFromScript($script);
 
         expect($script)->toBe((new LocalExecutorCommandBuilder)->build(
+            targetNode: $node,
             commandName: 'internal:executor:verify',
             arguments: [],
             options: [],
@@ -614,7 +618,7 @@ describe(RemoteLocalExecutor::class, function (): void {
         $executor = remoteLocalExecutor($transport);
 
         $executor->runInternal(
-            node: remoteLocalExecutorNode(),
+            node: remoteLocalExecutorNode(['vpn']),
             commandName: 'internal:wg-easy:state',
             arguments: [],
             commandOptions: [
@@ -737,9 +741,12 @@ function remoteLocalExecutorTokenFactory(?Closure $clock = null): OperationToken
     );
 }
 
-function remoteLocalExecutorNode(): Node
+/**
+ * @param  list<string>  $roles
+ */
+function remoteLocalExecutorNode(array $roles = ['app-dev']): Node
 {
-    return Node::factory()->create([
+    $node = Node::factory()->create([
         'name' => 'app-dev',
         'host' => 'app-dev.example.com',
         'wireguard_address' => '10.44.0.70',
@@ -750,6 +757,16 @@ function remoteLocalExecutorNode(): Node
         'host_key_pin_mode' => 'verified',
         'host_key_pinned_at' => now(),
     ]);
+
+    foreach ($roles as $role) {
+        NodeRoleAssignment::factory()->create([
+            'node_id' => $node->id,
+            'role' => $role,
+            'status' => 'active',
+        ]);
+    }
+
+    return $node;
 }
 
 function remoteLocalExecutorTokenFromScript(string $script): string

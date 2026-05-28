@@ -13,6 +13,11 @@ class LocalExecutorCommandBuilderException extends RuntimeException
         return new self('Local executor command name is invalid.');
     }
 
+    public static function commandNotAllowed(string $commandName): self
+    {
+        return new self("Local executor command [{$commandName}] is not allowed for the target node roles.");
+    }
+
     public static function invalidArgument(): self
     {
         return new self('Local executor arguments must be scalar values.');

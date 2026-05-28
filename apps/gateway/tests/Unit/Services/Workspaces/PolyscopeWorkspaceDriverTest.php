@@ -7,6 +7,7 @@ use App\Data\RemoteShell\RemoteShellResult;
 use App\Exceptions\WorkspaceCreateFailed;
 use App\Models\App;
 use App\Models\Node;
+use App\Models\NodeRoleAssignment;
 use App\Services\ActivityLogCorrelation;
 use App\Services\ActivityLogger;
 use App\Services\Operations\OperationTokenFactory;
@@ -25,11 +26,7 @@ use Tests\TestCase;
 uses(TestCase::class, RefreshDatabase::class);
 
 it('reads Polyscope config through the local executor lookup command with stdout suppressed in activity logs', function (): void {
-    $node = Node::factory()->create([
-        'name' => 'app-dev',
-        'role' => 'app',
-        'agent_ide_config' => null,
-    ]);
+    $node = polyscopeWorkspaceDriverAppDevNode();
     $app = App::factory()->create([
         'name' => 'docs',
         'node_id' => $node->id,
@@ -85,11 +82,7 @@ it('reads Polyscope config through the local executor lookup command with stdout
 
 it('does not leak Polyscope api tokens from config lookup output into workspace exceptions', function (Closure $resultFactory, array $expectedMeta): void {
     $secret = 'poly-token-secret-round-2';
-    $node = Node::factory()->create([
-        'name' => 'app-dev',
-        'role' => 'app',
-        'agent_ide_config' => null,
-    ]);
+    $node = polyscopeWorkspaceDriverAppDevNode();
     $app = App::factory()->create([
         'name' => 'docs',
         'node_id' => $node->id,
@@ -146,11 +139,7 @@ it('does not leak Polyscope api tokens from config lookup output into workspace 
 
 it('treats Polyscope config lookup error messages as untrusted remote output', function (): void {
     $secret = 'secret-token-probe-XYZ';
-    $node = Node::factory()->create([
-        'name' => 'app-dev',
-        'role' => 'app',
-        'agent_ide_config' => null,
-    ]);
+    $node = polyscopeWorkspaceDriverAppDevNode();
     $app = App::factory()->create([
         'name' => 'docs',
         'node_id' => $node->id,
@@ -214,6 +203,22 @@ function polyscopeWorkspaceDriverUnusedBranchAligner(): PolyscopeWorkspaceBranch
             new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
         )),
     );
+}
+
+function polyscopeWorkspaceDriverAppDevNode(): Node
+{
+    $node = Node::factory()->create([
+        'name' => 'app-dev',
+        'agent_ide_config' => null,
+    ]);
+
+    NodeRoleAssignment::factory()->create([
+        'node_id' => $node->id,
+        'role' => 'app-dev',
+        'status' => 'active',
+    ]);
+
+    return $node;
 }
 
 function polyscopeWorkspaceDriverExceptionBlob(WorkspaceCreateFailed $exception): string
