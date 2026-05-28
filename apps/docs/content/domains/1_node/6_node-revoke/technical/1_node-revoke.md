@@ -12,7 +12,7 @@
   `node:revoke` or `*`. Callers without that permission receive
   `authorization_failed`.
 - Configured client callers have gateway access as defined in
-[`2_node-revoke_on-client.md`](2_node-revoke_on-client.md).
+[`2_node-revoke_on-operator-node.md`](2_node-revoke_on-operator-node.md).
 - Both `consuming_node` and `serving_node` exist in gateway node configuration.
 
 **Post-input path eligibility:**
@@ -173,5 +173,5 @@ Renderer-specific test mapping lives in:
 
 Deployment-context test mapping lives in:
 
-- [`2_node-revoke_on-client.md`](2_node-revoke_on-client.md#test-mapping)
+- [`2_node-revoke_on-operator-node.md`](2_node-revoke_on-operator-node.md#test-mapping)
 - [`3_node-revoke_on-gateway-node.md`](3_node-revoke_on-gateway-node.md#test-mapping)

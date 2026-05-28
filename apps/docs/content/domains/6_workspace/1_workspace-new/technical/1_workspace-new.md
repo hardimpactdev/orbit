@@ -206,5 +206,5 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 
 Role-specific behavior and test mapping live in:
 
-- [`2_workspace-new_on-client.md`](2_workspace-new_on-client.md)
+- [`2_workspace-new_on-operator-node.md`](2_workspace-new_on-operator-node.md)
 - [`3_workspace-new_on-gateway-node.md`](3_workspace-new_on-gateway-node.md)
