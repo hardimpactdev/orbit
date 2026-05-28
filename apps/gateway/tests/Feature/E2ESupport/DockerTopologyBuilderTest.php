@@ -419,7 +419,6 @@ it('starts the build gateway scheduler before schedule doctor verification', fun
     $bootstrap = strpos($setup, 'orbit:internal:bootstrap-gateway-local gateway 10.6.0.2');
     $scheduler = strpos($setup, "docker exec --detach --workdir '/home/orbit/orbit' 'orbit-e2e-prepared-build-operator_gateway-gateway-orbit-runtime' orbit orbit-scheduler");
     $doctor = strpos($setup, 'doctor --node=gateway --family=schedule --restore --json');
-    $doctorGatewayRuntime = strpos($setup, 'gateway-orbit-runtime');
     $doctorGatewayEnv = strpos($setup, 'ORBIT_IS_GATEWAY=1');
     $doctorGatewayArtisan = strpos($setup, 'apps/gateway/artisan');
     $publicCliDoctor = strpos($setup, 'orbit doctor --node=gateway --family=schedule --restore --json');
@@ -427,7 +426,6 @@ it('starts the build gateway scheduler before schedule doctor verification', fun
     expect($bootstrap)->toBeInt()
         ->and($scheduler)->toBeInt()
         ->and($doctor)->toBeInt()
-        ->and($doctorGatewayRuntime)->toBeInt()
         ->and($doctorGatewayEnv)->toBeInt()
         ->and($doctorGatewayArtisan)->toBeInt()
         ->and($publicCliDoctor)->toBeFalse()
@@ -663,7 +661,7 @@ it('builds operator_gateway prepared images through transient docker resources',
         "docker exec --user 'orbit' 'orbit-e2e-prepared-build-operator_gateway-gateway' sh -lc *migrate*" => Process::result(),
         "docker exec --user 'orbit' 'orbit-e2e-prepared-build-operator_gateway-gateway' sh -lc *bootstrap-gateway-local*" => Process::result(),
         "docker exec --detach --workdir '/home/orbit/orbit' 'orbit-e2e-prepared-build-operator_gateway-gateway-orbit-runtime' orbit orbit-scheduler" => Process::result(),
-        "docker exec --user 'orbit' 'orbit-e2e-prepared-build-operator_gateway-gateway' sh -lc *sudo docker exec*apps/gateway/artisan*doctor*--family=schedule*" => Process::result(),
+        "docker exec --user 'orbit' 'orbit-e2e-prepared-build-operator_gateway-gateway' sh -lc *ORBIT_IS_GATEWAY=1 php apps/gateway/artisan doctor*--family=schedule*" => Process::result(),
         "docker exec 'orbit-e2e-prepared-build-operator_gateway-gateway' sh -lc *tinker*" => Process::result(),
         "docker exec 'orbit-e2e-prepared-build-operator_gateway-gateway' sh -lc *cat*" => Process::result(),
         "docker exec 'orbit-e2e-prepared-build-operator_gateway-gateway' sh -lc 'if [ -f /home/orbit/.ssh/id_ed25519 ]; then install -d -m 700 /root/.ssh && cp /home/orbit/.ssh/id_ed25519 /root/.ssh/id_ed25519 && chmod 600 /root/.ssh/id_ed25519 && if [ -f /home/orbit/.ssh/id_ed25519.pub ]; then cp /home/orbit/.ssh/id_ed25519.pub /root/.ssh/id_ed25519.pub; fi; fi'" => Process::result(),

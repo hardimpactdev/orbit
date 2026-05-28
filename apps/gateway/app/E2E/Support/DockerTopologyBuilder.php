@@ -1047,14 +1047,7 @@ PHP;
 
     private function gatewayScheduleDoctorCommand(DockerBuildInstance $gateway): string
     {
-        return sprintf(
-            'cd /home/orbit/orbit && sudo docker exec --env %s --env %s --workdir %s %s php %s doctor --node=gateway --family=schedule --restore --json',
-            escapeshellarg('ORBIT_SOURCE_PATH=/home/orbit/orbit'),
-            escapeshellarg('ORBIT_IS_GATEWAY=1'),
-            escapeshellarg('/home/orbit/orbit'),
-            escapeshellarg($this->runtimeContainerName($gateway->name())),
-            escapeshellarg('/home/orbit/orbit/apps/gateway/artisan'),
-        );
+        return 'cd /home/orbit/orbit && ORBIT_IS_GATEWAY=1 php apps/gateway/artisan doctor --node=gateway --family=schedule --restore --json';
     }
 
     /**
