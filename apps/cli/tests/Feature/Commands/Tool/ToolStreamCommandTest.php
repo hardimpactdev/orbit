@@ -2,18 +2,24 @@
 
 declare(strict_types=1);
 
-use App\Services\OrbitConfigStore;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
 
-describe('tool write commands', function (): void {
-    it('streams tool:install payloads to the gateway', function (): void {
-        fakeGatewayProgressStream(gatewayProgressFrame('complete', [
+describe('ToolStream commands', function (): void {
+    it('streams tool:install and emits only the final complete frame in json mode', function (): void {
+        $complete = [
             'exit_code' => 0,
             'data' => [
+                'footer' => "Tool 'redis' installed on app-1.",
                 'tool' => ['name' => 'redis', 'node' => 'app-1', 'state' => 'running'],
             ],
-        ]));
+        ];
+
+        fakeGatewayProgressStream(
+            gatewayProgressFrame('tree', ['title' => 'Installing Tool'])
+            .gatewayProgressFrame('step', ['key' => 'install', 'status' => 'running', 'message' => 'Installing redis'])
+            .gatewayProgressFrame('complete', $complete),
+        );
 
         [$exitCode, $output] = runCommand($this, 'tool:install', [
             'tool' => 'redis',
@@ -33,112 +39,23 @@ describe('tool write commands', function (): void {
             ]);
 
         expect($exitCode)->toBe(0)
-            ->and($decoded['event'])->toBe('complete')
-            ->and($decoded['data']['data']['tool']['state'])->toBe('running');
+            ->and($decoded)->toBe([
+                'event' => 'complete',
+                'data' => $complete,
+            ])
+            ->and(count(array_filter(explode("\n", $output))))->toBe(1)
+            ->and($output)->not->toContain('Installing redis');
     });
 
-    it('uses the local default node for tool:install when no target is supplied', function (): void {
-        $store = new OrbitConfigStore(overridePath: base_path('tests/.tmp-tool-install-config.json'));
-        @unlink($store->path());
-        $store->save(['defaults' => ['node' => 'default-app', 'profile' => null]]);
-        app()->instance(OrbitConfigStore::class, $store);
-
-        fakeGatewayProgressStream(gatewayProgressFrame('complete', [
-            'exit_code' => 0,
-            'data' => [
-                'tool' => ['name' => 'redis', 'node' => 'default-app', 'state' => 'installed'],
-            ],
-        ]));
-
-        [$exitCode, $output] = runCommand($this, 'tool:install', [
-            'tool' => 'redis',
-            '--json' => true,
-        ]);
-
-        $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
-
-        Http::assertSent(fn (Request $request): bool => $request->method() === 'POST'
-            && $request->url() === 'https://gateway.test/api/tools/redis/install'
-            && $request->hasHeader('Accept', 'text/event-stream')
-            && $request->data() === [
-                'node' => 'default-app',
-                'status' => 'installed',
-            ]);
-
-        expect($exitCode)->toBe(0)
-            ->and($decoded['event'])->toBe('complete')
-            ->and($decoded['data']['data']['tool']['node'])->toBe('default-app');
-
-        @unlink($store->path());
-    });
-
-    it('validates tool:install status before contacting the gateway', function (): void {
-        fakeGateway(fakeSuccessEnvelope());
-
-        [$exitCode, $output] = runCommand($this, 'tool:install', [
-            'tool' => 'redis',
-            '--node' => 'app-1',
-            '--status' => 'started',
-            '--json' => true,
-        ]);
-
-        $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
-
-        Http::assertNothingSent();
-
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('validation_failed')
-            ->and($decoded['error']['meta']['field'])->toBe('status')
-            ->and($decoded['error']['meta']['reason'])->toBe('unsupported_value');
-    });
-
-    it('uses --json as destructive consent for tool:remove', function (): void {
-        fakeGateway(fakeSuccessEnvelope([
-            'tool' => ['name' => 'redis', 'node' => 'app-1', 'state' => 'removed'],
-        ]));
-
-        [$exitCode, $output] = runCommand($this, 'tool:remove', [
-            'tool' => 'redis',
-            '--node' => 'app-1',
-            '--json' => true,
-        ]);
-
-        $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
-
-        Http::assertSent(fn (Request $request): bool => $request->method() === 'DELETE'
-            && $request->url() === 'https://gateway.test/api/tools/redis'
-            && $request->data() === [
-                'node' => 'app-1',
-                'destructive_consent' => true,
-                'destructive_consent_source' => 'json',
-            ]);
-
-        expect($exitCode)->toBe(0)
-            ->and($decoded['success']['data']['tool']['state'])->toBe('removed');
-    });
-
-    it('requires force before tool:remove in non-json non-interactive mode', function (): void {
-        fakeGateway(fakeSuccessEnvelope());
-
-        [$exitCode, $output] = runCommand($this, 'tool:remove', [
-            'tool' => 'redis',
-            '--node' => 'app-1',
-            '--no-interaction' => true,
-        ]);
-
-        Http::assertNothingSent();
-
-        expect($exitCode)->toBe(1)
-            ->and($output)->toContain('Use --force or --json to remove this tool.');
-    });
-
-    it('streams tool lifecycle actions to their gateway endpoints', function (string $command, string $endpoint): void {
-        fakeGatewayProgressStream(gatewayProgressFrame('complete', [
+    it('streams lifecycle action commands to their gateway endpoints', function (string $command, string $endpoint): void {
+        $complete = [
             'exit_code' => 0,
             'data' => [
                 'tool' => ['name' => 'redis', 'node' => 'app-1', 'action' => $endpoint],
             ],
-        ]));
+        ];
+
+        fakeGatewayProgressStream(gatewayProgressFrame('complete', $complete));
 
         [$exitCode, $output] = runCommand($this, $command, [
             'tool' => 'redis',
@@ -159,7 +76,7 @@ describe('tool write commands', function (): void {
 
         expect($exitCode)->toBe(0)
             ->and($decoded['event'])->toBe('complete')
-            ->and($decoded['data']['data']['tool']['action'])->toBe($endpoint);
+            ->and($decoded['data'])->toBe($complete);
     })->with([
         ['tool:start', 'start'],
         ['tool:stop', 'stop'],
@@ -168,12 +85,14 @@ describe('tool write commands', function (): void {
     ]);
 
     it('streams tool:update payloads to the single-tool gateway endpoint', function (): void {
-        fakeGatewayProgressStream(gatewayProgressFrame('complete', [
+        $complete = [
             'exit_code' => 0,
             'data' => [
                 'tool' => ['name' => 'redis', 'node' => 'app-1', 'version' => '7.2'],
             ],
-        ]));
+        ];
+
+        fakeGatewayProgressStream(gatewayProgressFrame('complete', $complete));
 
         [$exitCode, $output] = runCommand($this, 'tool:update', [
             'tool' => 'redis',
@@ -194,11 +113,11 @@ describe('tool write commands', function (): void {
 
         expect($exitCode)->toBe(0)
             ->and($decoded['event'])->toBe('complete')
-            ->and($decoded['data']['data']['tool']['version'])->toBe('7.2');
+            ->and($decoded['data'])->toBe($complete);
     });
 
     it('streams tool:update bulk payloads when the tool argument is omitted', function (): void {
-        fakeGatewayProgressStream(gatewayProgressFrame('complete', [
+        $complete = [
             'exit_code' => 0,
             'data' => [
                 'updated' => [],
@@ -207,7 +126,9 @@ describe('tool write commands', function (): void {
                 ],
                 'failed' => [],
             ],
-        ]));
+        ];
+
+        fakeGatewayProgressStream(gatewayProgressFrame('complete', $complete));
 
         [$exitCode, $output] = runCommand($this, 'tool:update', [
             '--node' => 'app-1',
@@ -223,16 +144,18 @@ describe('tool write commands', function (): void {
 
         expect($exitCode)->toBe(0)
             ->and($decoded['event'])->toBe('complete')
-            ->and($decoded['data']['data']['skipped'])->toHaveCount(1);
+            ->and($decoded['data'])->toBe($complete);
     });
 
-    it('streams tool:reconfigure password payloads to the gateway', function (): void {
-        fakeGatewayProgressStream(gatewayProgressFrame('complete', [
+    it('streams tool:reconfigure payloads to the gateway', function (): void {
+        $complete = [
             'exit_code' => 0,
             'data' => [
                 'tool' => ['name' => 'opencode-server', 'node' => 'app-1', 'action' => 'reconfigured'],
             ],
-        ]));
+        ];
+
+        fakeGatewayProgressStream(gatewayProgressFrame('complete', $complete));
 
         [$exitCode, $output] = runCommand($this, 'tool:reconfigure', [
             'tool' => 'opencode-server',
@@ -253,10 +176,70 @@ describe('tool write commands', function (): void {
 
         expect($exitCode)->toBe(0)
             ->and($decoded['event'])->toBe('complete')
-            ->and($decoded['data']['data']['tool']['action'])->toBe('reconfigured');
+            ->and($decoded['data'])->toBe($complete);
     });
 
-    it('preserves gateway error envelopes for tool write commands', function (): void {
+    it('renders gateway-authored tool progress in human mode', function (): void {
+        fakeGatewayProgressStream(
+            gatewayProgressFrame('tree', [
+                'title' => 'Starting Tool',
+                'steps' => [
+                    ['key' => 'service', 'label' => 'Start service unit'],
+                ],
+            ])
+            .gatewayProgressFrame('step', ['key' => 'service', 'status' => 'running', 'message' => 'Starting supervisor'])
+            .gatewayProgressFrame('complete', [
+                'exit_code' => 0,
+                'data' => ['footer' => "Tool 'supervisor' started."],
+            ]),
+        );
+
+        [$exitCode, $output] = runCommand($this, 'tool:start', [
+            'tool' => 'supervisor',
+            '--node' => 'app-1',
+        ]);
+
+        expect($exitCode)->toBe(0)
+            ->and($output)->toContain('Starting Tool')
+            ->and($output)->toContain('Start service unit')
+            ->and($output)->toContain('Starting supervisor')
+            ->and($output)->toContain("Tool 'supervisor' started.");
+    });
+
+    it('emits only the final tool error frame in json mode', function (): void {
+        $error = [
+            'exit_code' => 1,
+            'message' => 'Tool action failed.',
+            'data' => [
+                'code' => 'tool.action_failed',
+                'message' => 'Tool action failed.',
+                'meta' => ['tool' => 'redis', 'action' => 'restart'],
+            ],
+        ];
+
+        fakeGatewayProgressStream(
+            gatewayProgressFrame('step', ['key' => 'restart', 'status' => 'running', 'message' => 'Restarting redis'])
+            .gatewayProgressFrame('error', $error),
+        );
+
+        [$exitCode, $output] = runCommand($this, 'tool:restart', [
+            'tool' => 'redis',
+            '--node' => 'app-1',
+            '--json' => true,
+        ]);
+
+        $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(1)
+            ->and($decoded)->toBe([
+                'event' => 'error',
+                'data' => $error,
+            ])
+            ->and(count(array_filter(explode("\n", $output))))->toBe(1)
+            ->and($output)->not->toContain('Restarting redis');
+    });
+
+    it('preserves gateway error envelopes before a stream starts', function (): void {
         fakeGatewayProgressStream(json_encode(fakeErrorEnvelope('tool.unsupported_action', "Tool 'docker' does not support install.", [
             'tool' => 'docker',
             'action' => 'install',
@@ -272,6 +255,7 @@ describe('tool write commands', function (): void {
 
         expect($exitCode)->toBe(1)
             ->and($decoded['error']['code'])->toBe('tool.unsupported_action')
+            ->and($decoded['error']['message'])->toBe("Tool 'docker' does not support install.")
             ->and($decoded['error']['meta']['tool'])->toBe('docker');
     });
 });

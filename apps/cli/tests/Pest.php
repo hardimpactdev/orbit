@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Services\GatewayApiClient;
+use App\Services\GatewayStreamClient;
 use Illuminate\Console\OutputStyle;
 use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Http\Client\ConnectionException;
@@ -43,6 +44,29 @@ function fakeGateway(array $body, int $status = 200): void
     app()->forgetInstance(GatewayApiClient::class);
 
     Http::fake(['https://gateway.test/*' => Http::response($body, $status)]);
+}
+
+/**
+ * @param  array<string, mixed>  $data
+ */
+function gatewayProgressFrame(string $event, array $data): string
+{
+    return "event: {$event}\n"
+        .'data: '.json_encode($data, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES)."\n\n";
+}
+
+function fakeGatewayProgressStream(string $body, int $status = 200): void
+{
+    config()->set('orbit.gateway.url', 'https://gateway.test');
+    config()->set('orbit.gateway.timeout', 30);
+    app()->forgetInstance(GatewayApiClient::class);
+    app()->forgetInstance(GatewayStreamClient::class);
+
+    Http::fake([
+        'https://gateway.test/*' => Http::response($body, $status, [
+            'Content-Type' => 'text/event-stream',
+        ]),
+    ]);
 }
 
 /**

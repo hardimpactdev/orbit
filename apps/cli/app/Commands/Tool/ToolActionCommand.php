@@ -4,8 +4,6 @@ declare(strict_types=1);
 
 namespace App\Commands\Tool;
 
-use App\Exceptions\GatewayApiException;
-
 abstract class ToolActionCommand extends ToolGatewayCommand
 {
     abstract protected function action(): string;
@@ -24,12 +22,6 @@ abstract class ToolActionCommand extends ToolGatewayCommand
             return $payload;
         }
 
-        try {
-            $response = $this->gatewayPost('/api/tools/'.rawurlencode($tool).'/'.$this->action(), $payload);
-        } catch (GatewayApiException $exception) {
-            return $this->renderGatewayFailure($exception);
-        }
-
-        return $this->renderSuccess($response);
+        return $this->streamToolAction($tool, $this->action(), $payload);
     }
 }

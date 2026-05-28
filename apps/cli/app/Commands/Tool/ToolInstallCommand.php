@@ -4,8 +4,6 @@ declare(strict_types=1);
 
 namespace App\Commands\Tool;
 
-use App\Exceptions\GatewayApiException;
-
 final class ToolInstallCommand extends ToolGatewayCommand
 {
     private const array STATUSES = ['installed', 'running'];
@@ -42,15 +40,9 @@ final class ToolInstallCommand extends ToolGatewayCommand
             return $payload;
         }
 
-        try {
-            $response = $this->gatewayPost('/api/tools/'.rawurlencode($tool).'/install', [
-                ...$payload,
-                'status' => $status,
-            ]);
-        } catch (GatewayApiException $exception) {
-            return $this->renderGatewayFailure($exception);
-        }
-
-        return $this->renderSuccess($response);
+        return $this->streamToolAction($tool, 'install', [
+            ...$payload,
+            'status' => $status,
+        ]);
     }
 }

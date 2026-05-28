@@ -4,8 +4,6 @@ declare(strict_types=1);
 
 namespace App\Commands\Tool;
 
-use App\Exceptions\GatewayApiException;
-
 final class ToolReconfigureCommand extends ToolGatewayCommand
 {
     protected $signature = 'tool:reconfigure
@@ -31,15 +29,9 @@ final class ToolReconfigureCommand extends ToolGatewayCommand
             return $payload;
         }
 
-        try {
-            $response = $this->gatewayPost('/api/tools/'.rawurlencode($tool).'/reconfigure', [
-                ...$payload,
-                ...$this->filledQuery(['password' => $this->stringOption('password')]),
-            ]);
-        } catch (GatewayApiException $exception) {
-            return $this->renderGatewayFailure($exception);
-        }
-
-        return $this->renderSuccess($response);
+        return $this->streamToolAction($tool, 'reconfigure', [
+            ...$payload,
+            ...$this->filledQuery(['password' => $this->stringOption('password')]),
+        ]);
     }
 }

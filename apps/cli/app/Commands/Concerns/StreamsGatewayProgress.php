@@ -57,10 +57,7 @@ trait StreamsGatewayProgress
                 },
             );
         } catch (GatewayApiException $exception) {
-            return $this->renderFailure(
-                $exception->cliFailureCode(),
-                $exception->getMessage(),
-            );
+            return $this->renderGatewayFailure($exception);
         }
 
         if ($finalType !== null) {

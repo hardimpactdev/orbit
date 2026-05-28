@@ -4,8 +4,6 @@ declare(strict_types=1);
 
 namespace App\Commands\Tool;
 
-use App\Exceptions\GatewayApiException;
-
 final class ToolUpdateCommand extends ToolGatewayCommand
 {
     protected $signature = 'tool:update
@@ -49,13 +47,7 @@ final class ToolUpdateCommand extends ToolGatewayCommand
      */
     private function updateOne(string $tool, array $payload): int
     {
-        try {
-            $response = $this->gatewayPost('/api/tools/'.rawurlencode($tool).'/update', $payload);
-        } catch (GatewayApiException $exception) {
-            return $this->renderGatewayFailure($exception);
-        }
-
-        return $this->renderSuccess($response);
+        return $this->streamToolAction($tool, 'update', $payload);
     }
 
     /**
@@ -63,12 +55,6 @@ final class ToolUpdateCommand extends ToolGatewayCommand
      */
     private function updateAll(array $payload): int
     {
-        try {
-            $response = $this->gatewayPost('/api/tools/update', $payload);
-        } catch (GatewayApiException $exception) {
-            return $this->renderGatewayFailure($exception);
-        }
-
-        return $this->renderSuccess($response);
+        return $this->streamToolBulkAction('update', $payload);
     }
 }

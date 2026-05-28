@@ -5,13 +5,16 @@ declare(strict_types=1);
 namespace App\Commands\Tool;
 
 use App\Commands\Concerns\ResolvesHostContext;
+use App\Commands\Concerns\StreamsGatewayProgress;
 use App\Commands\GatewayCommand;
 use App\Exceptions\OrbitConfigStoreException;
 use App\Services\OrbitConfigStore;
+use Orbit\Core\Progress\ProgressEventType;
 
 abstract class ToolGatewayCommand extends GatewayCommand
 {
     use ResolvesHostContext;
+    use StreamsGatewayProgress;
 
     /**
      * @param  array<string, mixed>  $extraMeta
@@ -62,5 +65,29 @@ abstract class ToolGatewayCommand extends GatewayCommand
         }
 
         return $payload;
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     */
+    protected function streamToolAction(string $tool, string $action, array $payload): int
+    {
+        return $this->streamProgress(
+            '/api/tools/'.rawurlencode($tool).'/'.$action,
+            $payload,
+            fn (ProgressEventType $type, array $payload): int => $this->renderProgressTerminalFrame($type, $payload),
+        );
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     */
+    protected function streamToolBulkAction(string $action, array $payload): int
+    {
+        return $this->streamProgress(
+            '/api/tools/'.$action,
+            $payload,
+            fn (ProgressEventType $type, array $payload): int => $this->renderProgressTerminalFrame($type, $payload),
+        );
     }
 }

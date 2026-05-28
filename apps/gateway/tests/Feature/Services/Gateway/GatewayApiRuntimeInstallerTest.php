@@ -2,7 +2,6 @@
 
 declare(strict_types=1);
 
-use App\Models\Node;
 use App\Services\Gateway\GatewayApiRuntimeInstaller;
 use App\Services\Runtime\DockerCommandBuilder;
 use App\Services\Runtime\OrbitCaddyContainer;
@@ -38,9 +37,8 @@ describe('GatewayApiRuntimeInstaller', function (): void {
         mkdir($this->tempStorage.'/app/orbit', 0777, true);
         app()->useStoragePath($this->tempStorage);
 
-        Node::query()->create([
+        createTestGatewayNode([
             'name' => 'gateway-1',
-            'role' => 'gateway',
             'host' => '10.6.0.2',
             'wireguard_address' => '10.6.0.2',
             'user' => 'orbit',
