@@ -37,8 +37,8 @@ Orbit distinguishes three concepts:
   `.orbit` DNS/service names, private route artifacts, backend pools, and
   private HTTP/WebSocket/S3 routing.
 - **Node roles:** composable roles that prepare a node to serve a kind of
-  workload. The initial workload roles are `app-development`,
-  `app-production`, `database`, `agent`, `ingress`, `websocket`, and `s3`. `agent` is
+  workload. The initial workload roles are `app-dev`,
+  `app-prod`, `database`, `agent`, `ingress`, `websocket`, and `s3`. `agent` is
   exclusive and selectable only during `node:new`; `node role:add` rejects it.
   `websocket` is a private workload role for Laravel Reverb; it binds only to
   WireGuard and receives traffic through router-owned private service routes.
@@ -67,8 +67,8 @@ write that follows the standard `node → gateway → SSH-back-via-RemoteShell`
 path requires the node's self-grant to include the permissions for that write. See
 [architecture.md#self-grants-and-self-serving](../../architecture.md#self-grants-and-self-serving).
 [`workspace:setup`](../6_workspace/2_workspace-setup/workspace-setup.md) is
-the most visible example today — it works because the `app-development` and
-`app-production` self-grant baselines include the workspace permissions it
+the most visible example today — it works because the `app-dev` and
+`app-prod` self-grant baselines include the workspace permissions it
 needs.
 
 ### Compatibility matrix
@@ -77,16 +77,16 @@ Active role assignments must satisfy this matrix:
 
 | Role | Combines with | Conflicts with |
 | --- | --- | --- |
-| `gateway` | `vpn`, `router` | `app-development`, `app-production`, `database`, `agent`, `ingress`, `websocket`, `s3` |
-| `vpn` | `gateway`, `router` | `app-development`, `app-production`, `database`, `agent`, `ingress`, `websocket`, `s3` |
-| `router` | `gateway`, `vpn` | `app-development`, `app-production`, `database`, `agent`, `ingress`, `websocket`, `s3` |
-| `app-development` | `database`, `websocket`, `s3` | `gateway`, `vpn`, `router`, `app-production`, `agent`, `ingress` |
-| `app-production` | `ingress` | `gateway`, `vpn`, `router`, `app-development`, `database`, `agent`, `websocket`, `s3` |
-| `database` | `app-development`, `websocket`, `s3` | `gateway`, `vpn`, `router`, `app-production`, `agent`, `ingress` |
-| `agent` | none | `gateway`, `vpn`, `router`, `app-development`, `app-production`, `database`, `ingress`, `websocket`, `s3` |
-| `ingress` | `app-production` | `gateway`, `vpn`, `router`, `app-development`, `database`, `agent`, `websocket`, `s3` |
-| `websocket` | `app-development`, `database`, `s3` | `gateway`, `vpn`, `router`, `ingress`, `app-production`, `agent` |
-| `s3` | `app-development`, `database`, `websocket` | `gateway`, `vpn`, `router`, `ingress`, `app-production`, `agent` |
+| `gateway` | `vpn`, `router` | `app-dev`, `app-prod`, `database`, `agent`, `ingress`, `websocket`, `s3` |
+| `vpn` | `gateway`, `router` | `app-dev`, `app-prod`, `database`, `agent`, `ingress`, `websocket`, `s3` |
+| `router` | `gateway`, `vpn` | `app-dev`, `app-prod`, `database`, `agent`, `ingress`, `websocket`, `s3` |
+| `app-dev` | `database`, `websocket`, `s3` | `gateway`, `vpn`, `router`, `app-prod`, `agent`, `ingress` |
+| `app-prod` | `ingress` | `gateway`, `vpn`, `router`, `app-dev`, `database`, `agent`, `websocket`, `s3` |
+| `database` | `app-dev`, `websocket`, `s3` | `gateway`, `vpn`, `router`, `app-prod`, `agent`, `ingress` |
+| `agent` | none | `gateway`, `vpn`, `router`, `app-dev`, `app-prod`, `database`, `ingress`, `websocket`, `s3` |
+| `ingress` | `app-prod` | `gateway`, `vpn`, `router`, `app-dev`, `database`, `agent`, `websocket`, `s3` |
+| `websocket` | `app-dev`, `database`, `s3` | `gateway`, `vpn`, `router`, `ingress`, `app-prod`, `agent` |
+| `s3` | `app-dev`, `database`, `websocket` | `gateway`, `vpn`, `router`, `ingress`, `app-prod`, `agent` |
 
 In this version, `gateway`, `vpn`, and `router` are gateway-coupled
 infrastructure roles. They are stored as separate role assignments and shown
@@ -101,8 +101,8 @@ Roles materialize baseline tool intent when a role assignment converges.
 | --- | --- |
 | `vpn` | WireGuard server runtime, public endpoint settings, VPN peer defaults, and VPN-facing DNS runtime |
 | `router` | Private `orbit-caddy` router for private `.orbit` DNS/service names, private route artifacts, backend pools, and private HTTP/WebSocket/S3 routing |
-| `app-development` | Docker-first app runtime baseline, development DNS mapping, and `orbit-caddy` app/workspace routes |
-| `app-production` | Private `orbit-caddy` backend, FrankenPHP app containers, and Docker process runtime |
+| `app-dev` | Docker-first app runtime baseline, development DNS mapping, and `orbit-caddy` app/workspace routes |
+| `app-prod` | Private `orbit-caddy` backend, FrankenPHP app containers, and Docker process runtime |
 | `database` | Docker running as the substrate for managed database service tools |
 | `agent` | `orbit-runtime`, `orbit-caddy`, the shared unprivileged `agent` runtime user, and the gateway-owned agent DNS mapping for the role's `tld` |
 | `ingress` | `orbit-caddy` running as the public production HTTP ingress boundary, forwarding public routes to `router` |
@@ -222,12 +222,12 @@ These rules apply to all node commands and define the invariants the family enfo
   `node:permissions` and `--remove` require an existing grant and fail with
   `node.grant_not_found` otherwise.
 - Role-assignment settings live on the role assignment when they are
-  role-specific. `tld` is a shared node-level field that both `app-development`
+  role-specific. `tld` is a shared node-level field that both `app-dev`
   and `agent` require, so it lives on the node row and a node holds at most
   one `tld` value at a time (the `agent` default during interactive `node:new`
   is `agent`). `vpn` stores `public_endpoint`, `wireguard_cidr`,
   `wireguard_port`, and `dns_ip` as role-assignment settings.
-  `app-production` stores `ingress_node_id`; `websocket` stores
+  `app-prod` stores `ingress_node_id`; `websocket` stores
   `redis_node_id`, which points at the `database` role node whose managed Redis
   service backs Reverb scaling; `database` and `gateway` have no
   role-assignment settings. `s3` stores `data_path`, which defaults to
@@ -293,10 +293,10 @@ is role-aware:
   open for in-network traffic;
 - gateway nodes expose only the WireGuard endpoint publicly. Gateway API HTTPS
   ingress is an Orbit-network service bound to the gateway's WireGuard address;
-- nodes with `app-development` do not expose app routes publicly by baseline. Their
+- nodes with `app-dev` do not expose app routes publicly by baseline. Their
   Orbit-managed HTTPS routes are reachable through the Orbit network;
 - only nodes with active `ingress` expose public production HTTP/HTTPS;
-- `app-production` backend port `80` is private backend traffic reachable only through the Orbit/WireGuard network;
+- `app-prod` backend port `80` is private backend traffic reachable only through the Orbit/WireGuard network;
 - SSH and other node-management access stay on the Orbit network.
 
 Node bootstrap applies this baseline with rollback and reachability checks so a
@@ -495,7 +495,7 @@ Use these commands to update, remove, or configure node settings after initial p
 
 Use these commands to inspect and mutate the role assignments on an existing node.
 Role assignment settings are changed through the command that owns the setting;
-for example, app-development TLD changes route through
+for example, app-dev TLD changes route through
 [`orbit node:update [name] --tld=...`](7_node-update/node-update.md).
 
 11. [`orbit node role:list [node]`](11_node-role-list/node-role-list.md)

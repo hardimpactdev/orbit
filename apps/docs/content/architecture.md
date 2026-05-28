@@ -25,7 +25,7 @@ Internet
   -> ingress edge orbit-caddy
   -> private WireGuard route to router
   -> router private HTTP/WebSocket/S3 routing, .orbit DNS, and backend pools
-  -> private app-production backend orbit-caddy
+  -> private app-prod backend orbit-caddy
   -> FrankenPHP app container
 
 Public WebSocket:
@@ -75,7 +75,7 @@ state writer: durable writes still happen only on the gateway.
 
 ### Node roles
 
-A node carries one or more **roles** assigned by the gateway. Roles are fixed code-defined bundles: `gateway`, `vpn`, `router`, `app-development`, `app-production`, `database`, `agent`, `ingress`, `websocket`, and `s3`. The `gateway` role is the singleton authority role described above.
+A node carries one or more **roles** assigned by the gateway. Roles are fixed code-defined bundles: `gateway`, `vpn`, `router`, `app-dev`, `app-prod`, `database`, `agent`, `ingress`, `websocket`, and `s3`. The `gateway` role is the singleton authority role described above.
 
 The `vpn` role is a gateway-coupled infrastructure role in this version. It
 owns the WireGuard server runtime, public WireGuard endpoint settings, VPN
@@ -85,7 +85,7 @@ cannot manage those roles independently.
 
 The other seven are workload roles applied to nodes in the fleet.
 
-`app-development` uses a local TLD for URLs (`myapp.test`, for example); `app-production` serves real domains. Staging is a usage pattern of `app-production`, not a separate role.
+`app-dev` uses a local TLD for URLs (`myapp.test`, for example); `app-prod` serves real domains. Staging is a usage pattern of `app-prod`, not a separate role.
 
 Application roles use the Docker-first runtime baseline. PHP apps and PHP
 workspaces run in dedicated FrankenPHP containers. Orbit-defined PHP processes
@@ -113,11 +113,11 @@ enters through `ingress`, then flows to `router`, then to the S3 backend pool.
 In v1 the backend pool contains one RustFS node. Apps and VPN clients use the
 stable `s3.orbit` endpoint and never target a concrete S3 node.
 
-The `agent` role runs first-party autonomous agent tools — OpenClaw and Hermes — that operate Orbit through the gateway API on the fleet's behalf. The `agent` role is exclusive: it cannot combine with `gateway`, `vpn`, `router`, `app-development`, `app-production`, `database`, `ingress`, `websocket`, or `s3`, and it can only be selected during `node:new`. `node role:add` rejects `agent` because adding it to an existing node bypasses the isolation model the role enforces. A node carrying the `agent` role combines that workload role with explicit scoped grants so the agent can call the gateway like any other caller. Agent tool web UIs are exposed only as internal HTTPS routes under the agent role TLD (for example `https://openclaw.agent` and `https://hermes.agent`); they have no ingress baseline. Activity emitted while autonomous agent tools work is attributed to the node identity — Orbit does not claim per-tool sub-identities.
+The `agent` role runs first-party autonomous agent tools — OpenClaw and Hermes — that operate Orbit through the gateway API on the fleet's behalf. The `agent` role is exclusive: it cannot combine with `gateway`, `vpn`, `router`, `app-dev`, `app-prod`, `database`, `ingress`, `websocket`, or `s3`, and it can only be selected during `node:new`. `node role:add` rejects `agent` because adding it to an existing node bypasses the isolation model the role enforces. A node carrying the `agent` role combines that workload role with explicit scoped grants so the agent can call the gateway like any other caller. Agent tool web UIs are exposed only as internal HTTPS routes under the agent role TLD (for example `https://openclaw.agent` and `https://hermes.agent`); they have no ingress baseline. Activity emitted while autonomous agent tools work is attributed to the node identity — Orbit does not claim per-tool sub-identities.
 
 Roles compose only where the role matrix allows it. In v1, `gateway`, `vpn`,
-and `router` are coupled and combine only with each other. `app-development`
-may combine with `database`, `websocket`, and `s3`. `app-production` may
+and `router` are coupled and combine only with each other. `app-dev`
+may combine with `database`, `websocket`, and `s3`. `app-prod` may
 combine with `ingress`, but conflicts with `database`, `websocket`, and `s3`.
 `websocket` and `s3` may combine with each other on dev services nodes, and
 both conflict with public edge, production app, agent, and gateway-coupled
@@ -136,8 +136,8 @@ nodes, and events those nodes send back. The `vpn` role owns the WireGuard
 server runtime, the public endpoint settings peers use to reach it, peer
 defaults, and the VPN-facing DNS runtime. In v1 that role is gateway-coupled,
 so the active `vpn` role runs on the same node as the active `gateway` role.
-Nodes with only `app-development`, `database`, `websocket`, `s3`, or private
-`app-production` roles do not need a public face. Only nodes with an active
+Nodes with only `app-dev`, `database`, `websocket`, `s3`, or private
+`app-prod` roles do not need a public face. Only nodes with an active
 `ingress` role expose public production HTTP/HTTPS. SSH and the Orbit API stay
 reachable only over the VPN. The current VPN implementation is WireGuard; see
 [tech-stack.md](tech-stack.md).
@@ -248,7 +248,7 @@ not create stored grant rows.
 
 This grant model lets you scope access naturally:
 
-- A developer's client might have a `developer` preset to nodes with the `app-development` role and no grant at all to nodes with the `app-production` role.
+- A developer's client might have a `developer` preset to nodes with the `app-dev` role and no grant at all to nodes with the `app-prod` role.
 - A CI runner's client might have an `operator` preset only to the apps it deploys.
 - A node's self-grant gives its own local CLI the actions it needs on itself — for example, a node with the `agent` role has a self-grant that includes `tool:restart` and `tool:update` but excludes `tool:credentials`, `tool:install`, firewall writes, and node role mutation.
 
@@ -266,7 +266,7 @@ Node-side state is never written by the public local CLI. The gateway is the
 only authority, even when the gateway dispatches token-gated local executor
 work back to the same node.
 
-This is why commands like `workspace:setup` work when run from inside a workspace path on an `app-development` or `app-production` node: the node's self-grant includes the necessary workspace permissions. It is not an exception — it is the self-grant model.
+This is why commands like `workspace:setup` work when run from inside a workspace path on an `app-dev` or `app-prod` node: the node's self-grant includes the necessary workspace permissions. It is not an exception — it is the self-grant model.
 
 The one shape that cannot self-serve is a bare client (no role assignments). The gateway authorizes the call but has nowhere to dispatch node-side work, because the gateway does not open SSH connections to client-only machines.
 

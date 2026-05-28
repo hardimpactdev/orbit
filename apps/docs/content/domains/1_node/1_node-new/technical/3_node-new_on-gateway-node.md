@@ -12,15 +12,15 @@ execution.
 
 **Post-input path eligibility:**
 - For omitted `--role`, the gateway identity service can mint a WireGuard peer.
-- For `--role=app-development`, `node_new.name`, `node_new.role`,
+- For `--role=app-dev`, `node_new.name`, `node_new.role`,
   `node_new.host`, and `node_new.user` can be resolved, the target host is
   reachable over SSH as `node_new.user`, and `node_new.tld` can be resolved,
   is unique in gateway node configuration, and is not already mapped to another
   gateway development DNS target.
-- For `--role=app-development`, the gateway can use the internal DNS applier
+- For `--role=app-dev`, the gateway can use the internal DNS applier
   for the node family to converge `*.{node_new.tld}` to the node's WireGuard
   address without exposing a public resolver.
-- For `--role=app-production`, `node_new.name`, `node_new.role`,
+- For `--role=app-prod`, `node_new.name`, `node_new.role`,
   `node_new.host`, and `node_new.user` can be resolved, and the target host is
   reachable over SSH as `node_new.user`.
 - For role requests that include `database` alongside an app role, the shared
@@ -52,13 +52,13 @@ complete before side effects that the gateway owns begin.
 | --- | --- |
 | `gateway` | Converge the existing gateway node record. Missing gateway-row materialization is outside this command path. |
 | omitted `--role` | Enroll a client identity with no roles by minting a WireGuard peer and active node record. |
-| `app-development` | Provision or adopt an app-development node over SSH, then create the role assignment. |
-| `app-production` | Provision or adopt an app-production node over SSH, then create the role assignment. |
+| `app-dev` | Provision or adopt an app-dev node over SSH, then create the role assignment. |
+| `app-prod` | Provision or adopt an app-prod node over SSH, then create the role assignment. |
 | `database` | Create the base node identity plus an active database role assignment. When requested alone, no SSH provisioning path runs. |
 | `agent` | Provision or adopt an agent node over SSH, then create the role assignment with `tld`. |
 | `websocket` | Provision or adopt a private websocket node over SSH, then create the role assignment with `redis_node_id`. |
 | `s3` | Provision or adopt a private S3 node over SSH, then create the role assignment with `data_path`. |
-| repeated roles | Provision or adopt one compatible host for the requested role set, then create each role assignment. Supported initial combinations are `app-development` + `database`, `app-development` + `websocket`, `app-development` + `s3`, `database` + `websocket`, `database` + `s3`, `websocket` + `s3`, `app-development` + `database` + `websocket`, `app-development` + `database` + `s3`, `app-development` + `websocket` + `s3`, `database` + `websocket` + `s3`, `app-development` + `database` + `websocket` + `s3`, and `app-production` + `ingress`. |
+| repeated roles | Provision or adopt one compatible host for the requested role set, then create each role assignment. Supported initial combinations are `app-dev` + `database`, `app-dev` + `websocket`, `app-dev` + `s3`, `database` + `websocket`, `database` + `s3`, `websocket` + `s3`, `app-dev` + `database` + `websocket`, `app-dev` + `database` + `s3`, `app-dev` + `websocket` + `s3`, `database` + `websocket` + `s3`, `app-dev` + `database` + `websocket` + `s3`, and `app-prod` + `ingress`. |
 
 ## Gateway Authority Rules
 
@@ -126,14 +126,14 @@ minimum runtime readiness, node identity readiness, narrow event-hook readiness,
 and development TLD mapping when applicable. Managed firewall configuration and
 drift belong to the `firewall_rule` family after the node exists.
 
-For `--role=app-development`, `--role=app-production`, `--role=websocket`,
+For `--role=app-dev`, `--role=app-prod`, `--role=websocket`,
 `--role=s3`, and compatible repeated role sets that include those
 host-provisioned roles:
 
 1. Resolve `node_new.name`, `node_new.host`, and `node_new.user`.
 2. Derive the internal app environment from the requested role set:
-   - `app-development` maps to internal environment `development`;
-   - `app-production` maps to internal environment `production`.
+   - `app-dev` maps to internal environment `development`;
+   - `app-prod` maps to internal environment `production`.
 3. When the derived environment is `development`, resolve `node_new.tld`.
 4. When the role set includes `websocket`, resolve `node_new.redis_node` and
    verify that it references an active `database` role node with Redis expected

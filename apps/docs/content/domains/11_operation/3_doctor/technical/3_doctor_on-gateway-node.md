@@ -40,7 +40,7 @@ the calling peer's role.
 | active `gateway` role (default or `--self`) | `Node` |
 | client with no active role | `Node` |
 | active `database` role only | `Node`, `Tools` |
-| active `app-development` or `app-production` role | `Node`, `Apps`, `Workspaces`, `Processes`, `Proxy routes`, `Firewall`, `Tools`, `Scheduling` |
+| active `app-dev` or `app-prod` role | `Node`, `Apps`, `Workspaces`, `Processes`, `Proxy routes`, `Firewall`, `Tools`, `Scheduling` |
 
 A narrow `--family` filter intersects with the target active-role set; families
 outside the set are rejected before probes.

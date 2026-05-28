@@ -98,7 +98,7 @@ Rendered by `DnsmasqConfigBuilder::build(Collection $nodes): string`. The
 output is deterministic and contains:
 
 - One `address=/{tld}/{wireguard_address}` line per node that carries an
-  active `app-development` or `agent` role assignment and has both `tld` and
+  active `app-dev` or `agent` role assignment and has both `tld` and
   `wireguard_address` set. Nodes missing either field, or carrying no
   TLD-supporting active role, are skipped.
 - Optional `local=/{tld}/` companions per TLD.
@@ -125,7 +125,7 @@ Triggers (only on a gateway — `config('orbit.is_gateway')` must be true):
 - `node:new` for any node that carries a TLD-supporting role and has `tld` and `wireguard_address` set.
 - `node:update` when `tld` or `wireguard_address` change.
 - `node:remove` for any node.
-- `node role:add` when the added role depends on `tld` (`app-development` or `agent`).
+- `node role:add` when the added role depends on `tld` (`app-dev` or `agent`).
 - `node role:update` when the role-assignment change activates or deactivates a TLD-supporting baseline.
 - `node role:remove` when removing the last TLD-supporting role from a node.
 

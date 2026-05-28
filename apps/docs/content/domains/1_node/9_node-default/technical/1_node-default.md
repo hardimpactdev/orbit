@@ -10,7 +10,7 @@
 - The command runs from a non-gateway deployment context. Gateway hosts reject
   every sub-action before local default mutation.
 - For the `choose` or `set` sub-action: the target node resolves as a visible
-  active app-development node, either from the configured gateway or from the
+  active app-dev node, either from the configured gateway or from the
   local node registry when no gateway is configured.
 - For the `show` and `clear` sub-actions: no gateway reachability or grant
   check is required; these paths read or write local CLI configuration only.
@@ -61,7 +61,7 @@ input:
    `choose`.
    - Gateway hosts fail with `validation_failed` and
      `reason: not_supported_on_gateway`.
-   - Must resolve to a visible active app-development node.
+   - Must resolve to a visible active app-dev node.
    - Must not be a gateway, operator, or production app node.
 4. Resolve `node_default.json` from `--json`. Default `false`.
 
@@ -98,7 +98,7 @@ interactive input mode contract.
 1. Fail immediately when running on a gateway host.
 2. Query the configured gateway for visible development app nodes, or the local
    node registry when no gateway is configured.
-3. Validate that the resolved `name` matches a visible active app-development
+3. Validate that the resolved `name` matches a visible active app-dev
    node.
 4. Store the name as the local default development node.
 5. Return the stored name and the `set` action.

@@ -50,7 +50,7 @@ namespace so dnsmasq binds the wg-easy WG IP — is specified in
 
 `doctor --family=tool` verifies the DNS runtime tool's container, port, and
 config-content drift. Drift in *which DNS mappings should exist* — a new
-`app-development` or `agent` role appeared without a matching mapping line —
+`app-dev` or `agent` role appeared without a matching mapping line —
 is node-family drift, not tool drift, and is verified by
 `doctor --family=node`. The three drift kinds covered by `doctor --family=tool`
 (`tool.dns_container_missing`, `tool.dns_port_not_listening`,

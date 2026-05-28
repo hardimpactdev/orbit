@@ -14,14 +14,14 @@ and does not by itself-grant workload-family probes:
 - `gateway` target: `Node`, `Scheduling`.
 - `database` target: `Node`, `Tools`.
 - `agent` target: `Node`, `Tools`.
-- `app-development` target: `Node`, `Apps`, `Workspaces`, `Processes`, `Proxy routes`,
+- `app-dev` target: `Node`, `Apps`, `Workspaces`, `Processes`, `Proxy routes`,
   `Firewall`, `Tools`, `Scheduling`, `Databases`.
-- `app-production` target: `Node`, `Apps`, `Processes`, `Proxy routes`,
+- `app-prod` target: `Node`, `Apps`, `Processes`, `Proxy routes`,
   `Firewall`, `Tools`, `Scheduling`, `Databases`.
 
 `Scheduling` on a `gateway` target surfaces the scheduler daemon's health
 (presence, heartbeat, stuck locks) plus per-target dispatch reachability.
-`Scheduling` on an `app-development` or `app-production` target surfaces the
+`Scheduling` on an `app-dev` or `app-prod` target surfaces the
 run health of schedules targeting that node.
 
 A separate `DNS/TLD` row (operator/app targets) and `DNS` row (gateway target)

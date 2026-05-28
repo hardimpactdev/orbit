@@ -23,7 +23,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
 | `name` | `argument` | `Always.` | `Never.` | `None.` | `Firewall rule name on the target node.` |
-| `node` | `--node` | `Required when no local default node resolves the target.` | `Never.` | `local node:default when configured` | `Visible active Ubuntu node with at least one active role assignment from `gateway`, `app-development`, `app-production`, `database`, or `agent`. |
+| `node` | `--node` | `Required when no local default node resolves the target.` | `Never.` | `local node:default when configured` | `Visible active Ubuntu node with at least one active role assignment from `gateway`, `app-dev`, `app-prod`, `database`, or `agent`. |
 | `force` | `--force` | `Required in non-interactive input mode.` | `Never.` | `false` | `Explicit destructive consent.` |
 | `json` | `--json` | `Optional.` | `Never.` | `false` | `Selects the JSON renderer.` |
 
