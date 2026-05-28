@@ -32,18 +32,18 @@ This command follows the shared
 | --- | --- | --- | --- | --- | --- |
 | `name` | `[name]` | Always. | Never. | None. | Valid gateway-registry node name following the [identity slug](../../../../architecture.md#identity-names) contract. Must be unique among active node records unless the existing record is compatible and the selected path is convergence or adoption. |
 | `roles` | `--role` | Never required. | Never. | `[]`. | Repeatable roles (see role values and aliases below). |
-| `host` | `--host` | First-gateway bootstrap, gateway convergence, `app-dev`, `app-prod`, `app-development`, `app-production`, `ingress`, `websocket`, or `s3`. | Client identity with no roles, or `database`-only identity. | None. | SSH/bootstrap endpoint, never the canonical node address. Must be an IP address or dotted DNS name. |
+| `host` | `--host` | First-gateway bootstrap, gateway convergence, `app-dev`, `app-prod`, `app-dev`, `app-prod`, `ingress`, `websocket`, or `s3`. | Client identity with no roles, or `database`-only identity. | None. | SSH/bootstrap endpoint, never the canonical node address. Must be an IP address or dotted DNS name. |
 | `operator_name` | `--operator-name` | Requested role = `gateway` and no gateway is configured locally (first-gateway bootstrap). | Outside first-gateway bootstrap. | Normalized local short hostname. | Valid [identity slug](../../../../architecture.md#identity-names). Must not equal `node_new.name`. Must be unique among active node records unless the existing record is the compatible initiating client for first-gateway convergence. |
-| `tld` | `--tld` | `app-dev` or `app-development`. | Client identity, gateway bootstrap, `database`, `app-prod`, or `app-production`. | None. | Single lowercase DNS label without a leading dot. Unique among active node TLDs and gateway development DNS mappings. |
+| `tld` | `--tld` | `app-dev` or `app-dev`. | Client identity, gateway bootstrap, `database`, `app-prod`, or `app-prod`. | None. | Single lowercase DNS label without a leading dot. Unique among active node TLDs and gateway development DNS mappings. |
 | `user` | `--user` | Never required from the operator; resolved when SSH provisioning is used. | Client identity with no host provisioning. | `root`. | Bootstrap SSH user. The gateway stores the steady-state runtime user after provisioning. |
-| `ingress_node` | `--ingress` | Private `app-production` placement. | Every path other than private `app-production` placement. | None. | Must match an active node with the `ingress` role. |
+| `ingress_node` | `--ingress` | Private `app-prod` placement. | Every path other than private `app-prod` placement. | None. | Must match an active node with the `ingress` role. |
 | `redis_node` | `--redis-node` | `websocket`. | Every path that does not include `websocket`. | None. | Must match an active node with the `database` role and Redis expected or installed. |
 | `s3_data_path` | `--s3-data-path` | Never. | Every path that does not include `s3`. | `/srv/orbit/s3/data`. | Absolute host path mounted into RustFS as `/data`. |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer and non-interactive input mode. |
 
-Canonical stored role values are `app-development`, `app-production`,
+Canonical stored role values are `app-dev`, `app-prod`,
 `database`, `agent`, `ingress`, `websocket`, and `s3`. Input aliases `app-dev`
-and `app-prod` map to `app-development` and `app-production`. `gateway` is a
+and `app-prod` map to `app-dev` and `app-prod`. `gateway` is a
 bootstrap path, not a public role assignment.
 
 ## Input Resolution
@@ -52,13 +52,13 @@ bootstrap path, not a public role assignment.
 2. Resolve all `node_new.role` values from repeatable `--role`.
 3. Normalize the requested role set before side effects.
    - No `--role` values means a client identity with no assigned roles.
-   - `app-dev` maps to `app-development`; `app-prod` maps to
-     `app-production`.
+   - `app-dev` maps to `app-dev`; `app-prod` maps to
+     `app-prod`.
    - Gateway bootstrap/convergence remains the special `gateway` path.
 4. Resolve role-specific inputs.
-   - For `app-development`, resolve `node_new.host`, `node_new.tld`, and
+   - For `app-dev`, resolve `node_new.host`, `node_new.tld`, and
      `node_new.user`.
-   - For `app-production`, resolve `node_new.host`, `node_new.user`, and the
+   - For `app-prod`, resolve `node_new.host`, `node_new.user`, and the
      production placement choice.
    - For `ingress`, resolve `node_new.host` and `node_new.user`.
    - For `websocket`, resolve `node_new.host`, `node_new.user`, and
@@ -146,19 +146,19 @@ Caller-path behavior is split out into:
 - Provision host-capable identities over SSH before initial role
   assignments are created.
 - Validate conflicts before side effects where possible. For example,
-  `app-development` plus `app-production` must fail before node creation or
+  `app-dev` plus `app-prod` must fail before node creation or
   provisioning.
 - Create the node identity first, then add each requested role. Role settings
-  stay minimal: `app-development` assignments store `settings.tld`,
-  `app-production` assignments store `settings.ingress_node_id`, and
+  stay minimal: `app-dev` assignments store `settings.tld`,
+  `app-prod` assignments store `settings.ingress_node_id`, and
   `websocket` assignments store `settings.redis_node_id`. `s3` assignments
   store `settings.data_path`. `database` assignments use empty settings.
-- `app-production` placement must be explicit. The command's public and
+- `app-prod` placement must be explicit. The command's public and
   companion contracts own the exact prompt, placement choices, and failure
   shape for missing ingress.
-- `database` may be combined only with `app-development`, `websocket`, and `s3`
-  on the same provisioned host; `websocket` may be combined with `app-development`,
-  `database`, and `s3`; `s3` may be combined with `app-development`,
+- `database` may be combined only with `app-dev`, `websocket`, and `s3`
+  on the same provisioned host; `websocket` may be combined with `app-dev`,
+  `database`, and `s3`; `s3` may be combined with `app-dev`,
   `database`, and `websocket`. WebSocket assignments require
   `settings.redis_node_id` to reference an active database role node with Redis
   expected or installed. Reverb runs in a Docker runtime container managed by

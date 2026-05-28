@@ -45,7 +45,7 @@ use function Laravel\Prompts\select;
 
 $role = select(
     label: 'Node role',
-    options: ['gateway', 'app-development', 'app-production', 'database', 'agent'],
+    options: ['gateway', 'app-dev', 'app-prod', 'database', 'agent'],
     required: true,
 );
 ```

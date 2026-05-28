@@ -25,13 +25,13 @@ This command validates the role assignment, applies role-local options, and repo
   exclusive and is only selectable during `node:new`. `node role:add ...
   agent` fails with `validation_failed` and the explanation that
   `node:new --role=agent` is the only path that may create it.
-- `app-development` requires `--tld`.
+- `app-dev` requires `--tld`.
 - `websocket` requires `--redis-node`; the selected node must have an active
   `database` role and Redis expected or installed.
 - `s3` accepts optional `--s3-data-path`; it defaults to
   `/srv/orbit/s3/data`, must be absolute, and is mounted into RustFS as
   `/data`.
-- `app-production` and `database` reject unsupported role-local options.
+- `app-prod` and `database` reject unsupported role-local options.
 - Human output shows progress because convergence can be slow.
 - Configured non-gateway callers forward through the typed gateway API and need
   `role:add` on the target node.

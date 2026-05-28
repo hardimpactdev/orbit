@@ -38,17 +38,17 @@ same blocker. All path eligibility must complete before side effects begin.
 | --- | --- |
 | `gateway` | Bootstrap the first gateway and complete local client onboarding when no gateway is configured yet. When a gateway is configured, forward to the gateway for convergence or adoption. |
 | omitted `--role` | Forward a client identity request with no roles to the configured gateway over HTTPS. |
-| `app-dev` / `app-development` | Resolve canonical role inputs, then forward to the gateway over HTTPS as `roles: ['app-development']`. Requires `node_new.host`, `node_new.user`, and `node_new.tld`. |
-| `app-prod` / `app-production` | Resolve canonical role inputs and production placement, then forward to the gateway over HTTPS as either colocated `roles: ['app-production', 'ingress']` or private `roles: ['app-production']` plus `ingress_node=<node>`. Requires `node_new.host` and `node_new.user`; private placement also requires selecting an active `ingress` node. |
+| `app-dev` / `app-dev` | Resolve canonical role inputs, then forward to the gateway over HTTPS as `roles: ['app-dev']`. Requires `node_new.host`, `node_new.user`, and `node_new.tld`. |
+| `app-prod` / `app-prod` | Resolve canonical role inputs and production placement, then forward to the gateway over HTTPS as either colocated `roles: ['app-prod', 'ingress']` or private `roles: ['app-prod']` plus `ingress_node=<node>`. Requires `node_new.host` and `node_new.user`; private placement also requires selecting an active `ingress` node. |
 | `database` | Forward a canonical role request as `roles: ['database']`. No SSH/bootstrap inputs are required when requested alone. |
 | `agent` | Resolve canonical role inputs, then forward to the gateway over HTTPS as `roles: ['agent']`. Requires `node_new.host`, `node_new.user`, and `node_new.tld`; forwards any selected agent tools. |
 | `websocket` | Resolve canonical role inputs, then forward to the gateway over HTTPS as `roles: ['websocket']`. Requires `node_new.host`, `node_new.user`, and `node_new.redis_node`. |
 | `s3` | Resolve canonical role inputs, then forward to the gateway over HTTPS as `roles: ['s3']`. Requires `node_new.host` and `node_new.user`; forwards `node_new.s3_data_path` with its default when omitted. |
 | repeated roles | Forward compatible canonical role arrays with shared host/user fields and any role-specific fields already resolved. |
 
-Repeated-role examples include `roles: ['app-production', 'ingress']`,
-`roles: ['app-development', 'database']`, and
-`roles: ['app-development', 'database', 'websocket', 's3']`. Development app
+Repeated-role examples include `roles: ['app-prod', 'ingress']`,
+`roles: ['app-dev', 'database']`, and
+`roles: ['app-dev', 'database', 'websocket', 's3']`. Development app
 roles also forward `node_new.tld`; websocket roles forward
 `node_new.redis_node`; S3 roles forward `node_new.s3_data_path`.
 

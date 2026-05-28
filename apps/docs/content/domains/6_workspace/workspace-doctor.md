@@ -24,7 +24,7 @@ The workspace family owns these facts:
   ownership required for the workspace environment;
 - development workspace security: per-workspace runtime user, filesystem
   permissions, and runtime container isolation for nodes with the
-  `app-development` role, reported as `workspace.security.*` issue keys;
+  `app-dev` role, reported as `workspace.security.*` issue keys;
 - workspace-owned adoption facts: selected existing workspace paths that can be
   tied to an explicit app and workspace name during `doctor --adopt`.
 - stale workspace artifacts owned by Orbit whose identity no longer maps to an
@@ -59,7 +59,7 @@ The workspaces probe reads gateway workspace records and checks these layers:
 5. **Runtime artifacts:** workspace runtime configuration and managed
    filesystem ownership match gateway workspace configuration.
 6. **Development workspace security:** workspace runtime isolation is checked
-   only for workspaces on `app-development` nodes. Production app-role targets
+   only for workspaces on `app-dev` nodes. Production app-role targets
    do not select the workspace family.
 7. **Adoption hints:** during `doctor --adopt`, an explicitly selected existing
    workspace path may be inspected for compatible workspace facts. `composer.json`
@@ -125,7 +125,7 @@ parent apps, changes workspace names, moves a workspace to another app, edits
 setup or teardown step definitions, edits workspace-owned proxy routes,
 edits inherited runtime units, or changes node reachability.
 
-Workspace doctor is a development app-role surface. `app-production` targets
+Workspace doctor is a development app-role surface. `app-prod` targets
 reject `doctor --family=workspace` before probes with
 `family_not_in_role_scope`.
 

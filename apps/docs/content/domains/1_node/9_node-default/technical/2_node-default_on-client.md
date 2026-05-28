@@ -10,7 +10,7 @@ node access and does not require caller-role authorization.
 
 **Post-input path eligibility:**
 - For the interactive `choose` path and direct `set` sub-action: the target
-  node resolves as a visible active app-development node from the configured
+  node resolves as a visible active app-dev node from the configured
   gateway or local node registry.
 - For `show` and `clear`: no gateway reachability or grant check is required.
 
@@ -19,7 +19,7 @@ node access and does not require caller-role authorization.
 | Context | Behavior |
 | --- | --- |
 | Configured non-gateway CLI | Execute locally. `show` and `clear` use local config only. Interactive `choose` and direct `set` query the gateway for visible development app nodes. |
-| Unconfigured non-gateway CLI | Execute locally against local node registry state. `show` and `clear` use local config only. Interactive `choose` and direct `set` can use local active app-development node records. |
+| Unconfigured non-gateway CLI | Execute locally against local node registry state. `show` and `clear` use local config only. Interactive `choose` and direct `set` can use local active app-dev node records. |
 
 ## Show Sub-action
 
@@ -31,7 +31,7 @@ No gateway call is required.
 
 ## Set Sub-action
 
-1. Resolve visible active app-development nodes from the configured gateway or
+1. Resolve visible active app-dev nodes from the configured gateway or
    local node registry.
 2. Validate that the resolved target from `[name]` is a visible development app
    node.
@@ -40,7 +40,7 @@ No gateway call is required.
 
 ## Choose Path
 
-1. Resolve visible active app-development nodes from the configured gateway or
+1. Resolve visible active app-dev nodes from the configured gateway or
    local node registry.
 2. Present those nodes as interactive choices.
 3. Store the selected node locally as the default development node.
@@ -79,7 +79,7 @@ sub-action:
 Gateway connection is required to set a default node.
 ```
 
-When no configured gateway is present and no local active app-development node
+When no configured gateway is present and no local active app-dev node
 matches the request:
 
 ```text

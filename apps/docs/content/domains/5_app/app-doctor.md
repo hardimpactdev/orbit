@@ -17,7 +17,7 @@ The app family owns these facts:
 - gateway-owned app records: name, owning node, app path, document root, PHP
   version, production policy, deployment pipeline configuration, and the agent
   IDE default set at the app level (an app's environment is derived from the
-  owning node's `app-development` or `app-production` role and is not stored
+  owning node's `app-dev` or `app-prod` role and is not stored
   separately on the app record);
 - app source location: the managed app path exists on the owning node and
   the configured document root exists inside that path;
@@ -62,12 +62,12 @@ The apps probe reads gateway app records and checks these layers:
    configuration.
 6. **Runtime artifacts:** managed app runtime configuration and filesystem
    ownership match gateway app configuration and the production policy that
-   applies when the owning node carries `app-production`.
+   applies when the owning node carries `app-prod`.
 7. **Production readiness:** production apps have required production runtime
    policy, app user isolation where configured, deployment pipeline configuration,
    configured health checks, and no unsuccessful or stale latest deployment
    run.
-8. **Production runtime security:** apps on nodes with the `app-production`
+8. **Production runtime security:** apps on nodes with the `app-prod`
    role satisfy the app-owned security posture. These findings use
    `app.security.*` keys and do not depend on workspaces.
 9. **App agent IDE default:** a configured agent IDE default set at the app level must point at a supported adapter.

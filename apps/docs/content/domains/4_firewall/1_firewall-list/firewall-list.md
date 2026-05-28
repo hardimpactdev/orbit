@@ -50,7 +50,7 @@ Use `--json` for machine-readable firewall rules and the applied node filter.
 
 - The CLI caller can reach the Orbit gateway, or the command is running on the gateway.
 - The current node identity is authorized to inspect firewall policy for the selected node scope.
-- Filtered target nodes must be registered active Ubuntu nodes carrying at least one of the `gateway`, `app-development`, `app-production`, `database`, or `agent` roles.
+- Filtered target nodes must be registered active Ubuntu nodes carrying at least one of the `gateway`, `app-dev`, `app-prod`, `database`, or `agent` roles.
 
 ## Related Commands
 

@@ -53,7 +53,7 @@ the command; it is a client/local deployment-context convenience.
 
 In interactive input mode, running `node:default` without a target queries the
 configured gateway for visible development nodes, or the local node registry
-when no gateway is configured, and presents matching app-development nodes as
+when no gateway is configured, and presents matching app-dev nodes as
 choices. If the current local default is still in that choice list, it is
 preselected. Selecting a node stores it as the local default. Providing `name`
 skips the choice prompt and validates that node directly.
@@ -103,8 +103,8 @@ and payload shapes.
 
 - The local CLI has an active gateway configuration for interactive `choose`
   and direct `set` when the target must be resolved from the gateway; otherwise
-  those paths can use local active app-development node records.
-- The target node must be a visible active app-development node.
+  those paths can use local active app-dev node records.
+- The target node must be a visible active app-dev node.
 - Gateway hosts reject the command before prompts or side effects.
 
 ## Related Commands

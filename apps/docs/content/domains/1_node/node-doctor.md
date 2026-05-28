@@ -24,7 +24,7 @@ The node family owns these facts:
   permissions for home directories set during bake;
 - node update posture: managed Ubuntu server update readiness through a
   supported update driver, starting with Ubuntu `unattended-upgrades`;
-- node-related defaults: `app-development` and `agent` assignment TLD
+- node-related defaults: `app-dev` and `agent` assignment TLD
   settings, development and agent DNS mappings for those TLDs, DNS resolver
   safety, `vpn` role settings and runtime, local `node:default` preferences for `--self`,
   Orbit launcher/runtime readiness, and agent IDE defaults at the node level.
@@ -91,7 +91,7 @@ The node probe reads gateway node records and checks these layers:
    their role requires, current assignment convergence state, and no baseline
    drift.
 
-   For `app-development`, assignments have a `tld` value, the node's
+   For `app-dev`, assignments have a `tld` value, the node's
    local TLD default matches the active assignment, and the gateway maps
    `*.{tld}` to the node's WireGuard address. The development DNS resolver that
    the gateway maintains must be WireGuard-reachable and must not expose a
@@ -107,7 +107,7 @@ The node probe reads gateway node records and checks these layers:
    WireGuard server runtime and DNS runtime, and the DNS runtime served through
    the `vpn` role matches desired DNS mappings owned by the gateway.
 
-   For `app-production`, the assignment has a valid `ingress_node_id`
+   For `app-prod`, the assignment has a valid `ingress_node_id`
    setting. The role baseline owns private backend readiness: `orbit-caddy`
    bound to the node's WireGuard address, FrankenPHP app containers, and Docker
    process runtime units.
@@ -131,7 +131,7 @@ The node probe reads gateway node records and checks these layers:
 
    `database` and `gateway` assignments have no role settings in v1.
 14. **Node-related defaults:** local `node:default` preferences point at
-   active, authorized `app-development` nodes when `--self` inspects the CLI's
+   active, authorized `app-dev` nodes when `--self` inspects the CLI's
    local configuration, and agent IDE defaults at the node level point at
    supported adapters.
 
@@ -182,7 +182,7 @@ Each code below identifies a specific kind of node-family drift that `doctor --f
 | `node.role_assignment_missing` | A selected active node has no compatible active role assignment for the role implied by its registry record. |
 | `node.role_assignment_invalid` | A persisted role assignment names an unknown role or otherwise cannot be validated as a real role row. |
 | `node.role_conflict` | Active, pending, or error role assignments violate the compatibility matrix. Assignments already in `removing` are ignored. |
-| `node.role_settings_invalid` | A role assignment's typed settings cannot be hydrated or are missing required values such as the `app-development` `tld`. |
+| `node.role_settings_invalid` | A role assignment's typed settings cannot be hydrated or are missing required values such as the `app-dev` `tld`. |
 | `node.role_convergence_failed` | A role assignment is left in `error` after synchronous convergence failed. |
 | `node.role_baseline_mismatch` | Active role-owned baseline artifacts no longer match the role assignment's desired state. |
 | `node.access_grant_invalid` | A node access grant references a missing or non-active consuming or serving node. |
@@ -214,7 +214,7 @@ Each code below identifies a specific kind of node-family drift that `doctor --f
 | `node.updates_last_run_failed` | A supported update driver found recent unattended-upgrades evidence reporting a failed run. The issue object uses `key=node.updates` and this value as `code`. |
 | `node.updates_reboot_required` | A supported update driver found `/var/run/reboot-required`. The issue object uses `key=node.updates` and this value as `code`. |
 | `node.updates_unverifiable` | A supported update driver cannot inspect update posture. Unsupported targets are silent instead. The issue object uses `key=node.updates` and this value as `code`. |
-| `node.local_default_invalid` | During `doctor --self`, the local `node:default` preference points at a missing, unauthorized, or non-`app-development` node. |
+| `node.local_default_invalid` | During `doctor --self`, the local `node:default` preference points at a missing, unauthorized, or non-`app-dev` node. |
 | `node.agent_ide_default_invalid` | A node-level agent IDE default points at a missing or unsupported adapter. |
 
 ## Node Fix Map
