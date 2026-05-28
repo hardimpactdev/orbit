@@ -15,12 +15,14 @@ final class ToolCredentialsCommand extends GatewayCommand
 
     private ?string $resolvedToolNode = null;
 
+    #[\Override]
     protected $signature = 'tool:credentials
         {tool? : Tool catalog name to read credentials for}
         {--app= : Resolve target by app selector}
         {--node= : Resolve target by node}
         {--json}';
 
+    #[\Override]
     protected $description = 'Read managed tool credentials.';
 
     public function handle(): int

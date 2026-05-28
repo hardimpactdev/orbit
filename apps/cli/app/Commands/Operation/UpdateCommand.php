@@ -9,8 +9,10 @@ use App\Services\Updates\UpdateOutputRenderer;
 
 final class UpdateCommand extends LocalOnlyCommand
 {
+    #[\Override]
     protected $signature = 'update {--json : Output as JSON}';
 
+    #[\Override]
     protected $description = 'Update this Orbit checkout';
 
     public function handle(UpdateOutputRenderer $renderer): int

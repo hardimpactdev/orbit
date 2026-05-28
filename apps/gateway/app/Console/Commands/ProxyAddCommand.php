@@ -12,7 +12,6 @@ use App\Http\Gateway\GatewayApiException;
 use App\Http\Gateway\GatewayConnector;
 use App\Http\Gateway\Requests\Proxy\AddProxyRouteRequest;
 use App\Http\Gateway\Responses\Proxy\ProxyRouteMutationResponse;
-use App\Models\LocalNodeDefault;
 use App\Services\Proxy\ProxyRouteIntent;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
@@ -199,7 +198,7 @@ class ProxyAddCommand extends Command
     private function validatedInput(): array|int
     {
         $domain = $this->stringArgument('domain');
-        $node = $this->stringOption('node') ?? $this->defaultNodeName();
+        $node = $this->stringOption('node');
         $upstream = $this->stringOption('upstream');
         $redirect = $this->stringOption('redirect');
         $codeInput = $this->stringOption('code');
@@ -220,7 +219,11 @@ class ProxyAddCommand extends Command
 
         if ($node === null) {
             if (! $isInteractive) {
-                return $this->failValidation('node', 'A serving node is required.');
+                return $this->failCommand(
+                    'node_target_required',
+                    'A node target is required. Provide --node.',
+                    ['field' => 'node'],
+                );
             }
 
             try {
@@ -365,13 +368,6 @@ class ProxyAddCommand extends Command
         $this->error($message);
 
         return self::FAILURE;
-    }
-
-    private function defaultNodeName(): ?string
-    {
-        $name = LocalNodeDefault::query()->value('default_node_name');
-
-        return is_string($name) && $name !== '' ? $name : null;
     }
 
     private function stringArgument(string $key): ?string

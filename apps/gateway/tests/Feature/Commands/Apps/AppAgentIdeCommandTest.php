@@ -62,12 +62,10 @@ if (! class_exists('AppAgentIdeCommandRemoteShell')) {
 it('sets an app-level agent ide adapter from a gateway caller', function (): void {
     Node::factory()->create([
         'name' => 'gateway-1',
-        'role' => 'gateway',
     ]);
 
     $node = Node::factory()->create([
         'name' => 'app-1',
-        'role' => 'app',
         'tld' => 'test',
         'status' => 'active',
     ]);
@@ -103,7 +101,6 @@ it('sets an app-level agent ide adapter from a gateway caller', function (): voi
 it('reports converged when the app-level adapter already matches', function (): void {
     Node::factory()->create([
         'name' => 'gateway-1',
-        'role' => 'gateway',
     ]);
 
     App::factory()->create([
@@ -127,7 +124,6 @@ it('reports converged when the app-level adapter already matches', function (): 
 it('preserves adapter-specific app config when setting an app adapter', function (): void {
     Node::factory()->create([
         'name' => 'gateway-1',
-        'role' => 'gateway',
     ]);
 
     App::factory()->create([
@@ -157,7 +153,6 @@ it('preserves adapter-specific app config when setting an app adapter', function
 it('preserves adapter-specific app config when clearing to inheritance', function (): void {
     Node::factory()->create([
         'name' => 'gateway-1',
-        'role' => 'gateway',
     ]);
 
     App::factory()->create([
@@ -187,12 +182,10 @@ it('preserves adapter-specific app config when clearing to inheritance', functio
 it('clears the app override and inherits the owning node default', function (): void {
     Node::factory()->create([
         'name' => 'gateway-1',
-        'role' => 'gateway',
     ]);
 
     $node = Node::factory()->create([
         'name' => 'app-1',
-        'role' => 'app',
         'agent_ide_config' => ['adapter' => 'polyscope'],
     ]);
 
@@ -222,7 +215,6 @@ it('clears the app override and inherits the owning node default', function (): 
 it('stores none as an explicit app-level disable', function (): void {
     Node::factory()->create([
         'name' => 'gateway-1',
-        'role' => 'gateway',
     ]);
 
     App::factory()->create([
@@ -251,7 +243,6 @@ it('does not mutate local app state for non-gateway callers without gateway sett
 
     Node::factory()->create([
         'name' => 'app-local',
-        'role' => 'app',
     ]);
 
     App::factory()->create([
@@ -274,7 +265,6 @@ it('does not mutate local app state for non-gateway callers without gateway sett
 it('rejects unsupported adapters with the supported value list', function (): void {
     Node::factory()->create([
         'name' => 'gateway-1',
-        'role' => 'gateway',
     ]);
 
     App::factory()->create([
@@ -300,7 +290,6 @@ it('rejects unsupported adapters with the supported value list', function (): vo
 it('validates missing required non-interactive inputs', function (?string $app, ?string $agentIde, string $field): void {
     Node::factory()->create([
         'name' => 'gateway-1',
-        'role' => 'gateway',
     ]);
 
     $exitCode = Artisan::call('app:agent-ide', [
@@ -324,7 +313,6 @@ it('forwards configured control callers through the typed gateway request', func
 
     Node::factory()->create([
         'name' => 'control-1',
-        'role' => 'control',
     ]);
 
     LocalGatewaySettings::current()->fill([
@@ -384,7 +372,6 @@ it('queries gateway adapter choices before prompting configured control callers'
 
     Node::factory()->create([
         'name' => 'control-1',
-        'role' => 'control',
     ]);
 
     LocalGatewaySettings::current()->fill([
@@ -475,7 +462,6 @@ it('fails before adapter prompt when configured control callers cannot fetch ada
 
     Node::factory()->create([
         'name' => 'control-1',
-        'role' => 'control',
     ]);
 
     LocalGatewaySettings::current()->fill([
@@ -521,7 +507,6 @@ it('fails before adapter prompt when configured control callers cannot fetch ada
 it('prompts for missing human input and renders the progress tree', function (): void {
     Node::factory()->create([
         'name' => 'gateway-1',
-        'role' => 'gateway',
     ]);
 
     App::factory()->create([
@@ -550,12 +535,10 @@ it('prompts for missing human input and renders the progress tree', function ():
 it('renders inherited and explicit none human success states', function (string $input, string $expected): void {
     Node::factory()->create([
         'name' => 'gateway-1',
-        'role' => 'gateway',
     ]);
 
     $node = Node::factory()->create([
         'name' => 'app-1',
-        'role' => 'app',
         'agent_ide_config' => ['adapter' => 'polyscope'],
     ]);
 
@@ -576,7 +559,6 @@ it('renders inherited and explicit none human success states', function (string 
 it('renders converged human output', function (): void {
     Node::factory()->create([
         'name' => 'gateway-1',
-        'role' => 'gateway',
     ]);
 
     App::factory()->create([
@@ -592,7 +574,6 @@ it('renders converged human output', function (): void {
 it('prunes stale workspaces when switching adapters with --force', function (): void {
     Node::factory()->create([
         'name' => 'gateway-1',
-        'role' => 'gateway',
     ]);
 
     $app = App::factory()->create([
@@ -627,7 +608,6 @@ it('prunes stale workspaces when switching adapters with --force', function (): 
 it('skips workspace cleanup when no previous adapter', function (): void {
     Node::factory()->create([
         'name' => 'gateway-1',
-        'role' => 'gateway',
     ]);
 
     App::factory()->create([
@@ -650,7 +630,6 @@ it('skips workspace cleanup when no previous adapter', function (): void {
 it('prompts for workspace cleanup consent in interactive mode', function (): void {
     Node::factory()->create([
         'name' => 'gateway-1',
-        'role' => 'gateway',
     ]);
 
     $app = App::factory()->create([

@@ -18,7 +18,6 @@ function createToolInstallApiCallerNode(array $overrides = []): Node
 {
     return Node::factory()->create(array_merge([
         'name' => 'tool-install-api-caller',
-        'role' => 'control',
         'host' => TOOL_INSTALL_API_CALLER_WG_IP,
         'wireguard_address' => TOOL_INSTALL_API_CALLER_WG_IP,
     ], $overrides));
@@ -51,14 +50,12 @@ describe('ToolInstallController', function (): void {
     it('allows gateway callers to install postgres on an active database-only node via explicit node', function (): void {
         $caller = Node::factory()->create([
             'name' => 'gateway-install-api-caller',
-            'role' => 'control',
             'host' => TOOL_INSTALL_API_CALLER_WG_IP,
             'wireguard_address' => TOOL_INSTALL_API_CALLER_WG_IP,
         ]);
         assignToolInstallApiRole($caller, 'gateway');
         $node = Node::factory()->create([
             'name' => 'db-install-api-1',
-            'role' => 'control',
             'status' => 'active',
         ]);
         assignToolInstallApiRole($node, 'database');
@@ -81,7 +78,6 @@ describe('ToolInstallController', function (): void {
     it('allows database callers to install postgres on themselves with an explicit self grant', function (): void {
         $caller = createToolInstallApiCallerNode([
             'name' => 'database-self-install-api-caller',
-            'role' => 'database',
             'status' => 'active',
         ]);
         assignToolInstallApiRole($caller, 'database');
@@ -103,16 +99,14 @@ describe('ToolInstallController', function (): void {
             ->and($shell->scripts)->toHaveCount(1);
     });
 
-    it('does not treat the legacy gateway role column as gateway tool authority', function (): void {
+    it('does not treat an unassigned caller as gateway tool authority', function (): void {
         Node::factory()->create([
-            'name' => 'legacy-gateway-install-api-caller',
-            'role' => 'gateway',
+            'name' => 'plain-gateway-install-api-caller',
             'host' => TOOL_INSTALL_API_CALLER_WG_IP,
             'wireguard_address' => TOOL_INSTALL_API_CALLER_WG_IP,
         ]);
         $node = Node::factory()->create([
             'name' => 'db-install-api-1',
-            'role' => 'control',
             'status' => 'active',
         ]);
         assignToolInstallApiRole($node, 'database');
@@ -134,7 +128,6 @@ describe('ToolInstallController', function (): void {
         $caller = createToolInstallApiCallerNode();
         $node = Node::factory()->create([
             'name' => 'db-install-api-1',
-            'role' => 'control',
             'status' => 'active',
         ]);
         assignToolInstallApiRole($node, 'database', 'pending');
@@ -161,8 +154,8 @@ describe('ToolInstallController', function (): void {
 
     it('rejects invalid status before row writes or remote shell actions', function (): void {
         $caller = createToolInstallApiCallerNode();
-        $node = Node::factory()->create(['name' => 'app-install-api-1', 'role' => 'app', 'status' => 'active']);
-        assignToolInstallApiRole($node, 'app-development');
+        $node = Node::factory()->create(['name' => 'app-install-api-1', 'status' => 'active']);
+        assignToolInstallApiRole($node, 'app-dev');
         grantToolInstallApiAccess($caller, $node);
         $shell = new ToolInstallApiRecordingShell;
         app()->instance(RemoteShell::class, $shell);
@@ -184,8 +177,8 @@ describe('ToolInstallController', function (): void {
 
     it('rejects direct API install-time version intent before side effects', function (array $payload): void {
         $caller = createToolInstallApiCallerNode();
-        $node = Node::factory()->create(['name' => 'app-install-api-1', 'role' => 'app', 'status' => 'active']);
-        assignToolInstallApiRole($node, 'app-development');
+        $node = Node::factory()->create(['name' => 'app-install-api-1', 'status' => 'active']);
+        assignToolInstallApiRole($node, 'app-dev');
         grantToolInstallApiAccess($caller, $node);
         $shell = new ToolInstallApiRecordingShell;
         app()->instance(RemoteShell::class, $shell);
@@ -209,8 +202,8 @@ describe('ToolInstallController', function (): void {
 
     it('requires an explicit target selector even when exactly one app node is visible', function (): void {
         $caller = createToolInstallApiCallerNode();
-        $node = Node::factory()->create(['name' => 'app-install-api-1', 'role' => 'app', 'status' => 'active']);
-        assignToolInstallApiRole($node, 'app-development');
+        $node = Node::factory()->create(['name' => 'app-install-api-1', 'status' => 'active']);
+        assignToolInstallApiRole($node, 'app-dev');
         grantToolInstallApiAccess($caller, $node);
         $shell = new ToolInstallApiRecordingShell;
         app()->instance(RemoteShell::class, $shell);
@@ -227,8 +220,8 @@ describe('ToolInstallController', function (): void {
 
     it('rejects install when the grant only allows reading tools', function (): void {
         $caller = createToolInstallApiCallerNode();
-        $node = Node::factory()->create(['name' => 'app-install-api-1', 'role' => 'app', 'status' => 'active']);
-        assignToolInstallApiRole($node, 'app-development');
+        $node = Node::factory()->create(['name' => 'app-install-api-1', 'status' => 'active']);
+        assignToolInstallApiRole($node, 'app-dev');
         grantToolInstallApiAccess($caller, $node, ['tool:read']);
         $shell = new ToolInstallApiRecordingShell;
         app()->instance(RemoteShell::class, $shell);

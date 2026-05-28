@@ -23,13 +23,11 @@ function nodeRemoveControlContractRow(array $overrides = []): array
 {
     return array_merge([
         'name' => 'control-1',
-        'role' => 'control',
         'host' => '10.6.0.9',
         'wireguard_address' => '10.6.0.9',
         'user' => 'nckrtl',
         'orbit_path' => '/home/nckrtl/orbit',
         'status' => 'active',
-        'environment' => null,
         'platform' => 'ubuntu_24-04',
         'created_at' => now(),
         'updated_at' => now(),

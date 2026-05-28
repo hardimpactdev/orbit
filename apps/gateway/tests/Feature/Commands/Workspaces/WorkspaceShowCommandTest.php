@@ -6,6 +6,7 @@ use App\Http\Gateway\Requests\Workspaces\ShowWorkspaceRequest;
 use App\Models\App;
 use App\Models\LocalGatewaySettings;
 use App\Models\Node;
+use App\Models\NodeRoleAssignment;
 use App\Models\Workspace;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
@@ -26,18 +27,28 @@ function createWorkspaceShowLocalNode(string $role = 'gateway'): Node
 {
     config(['orbit.is_gateway' => $role === 'gateway']);
 
-    return Node::factory()->create([
+    $node = Node::factory()->create([
         'name' => "local-{$role}",
-        'role' => $role,
         'host' => '10.6.0.1',
         'wireguard_address' => '10.6.0.1',
     ]);
+
+    if ($role === 'gateway') {
+        NodeRoleAssignment::factory()->create([
+            'node_id' => $node->id,
+            'role' => 'gateway',
+            'status' => 'active',
+            'settings' => [],
+        ]);
+    }
+
+    return $node;
 }
 
 describe('workspace:show base contract', function (): void {
     it('shows workspace registry details for gateway callers', function (): void {
         createWorkspaceShowLocalNode('gateway');
-        $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'tld' => 'test']);
+        $node = Node::factory()->appDev()->create(['name' => 'app-1', 'tld' => 'test']);
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id, 'domain' => null]);
         Workspace::factory()->create(['name' => 'feature-docs', 'app_id' => $app->id]);
 
@@ -74,7 +85,7 @@ describe('workspace:show base contract', function (): void {
 
     it('prompts for a missing workspace name in interactive mode', function (): void {
         createWorkspaceShowLocalNode('gateway');
-        $node = Node::factory()->create(['role' => 'app']);
+        $node = Node::factory()->appDev()->create();
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
         Workspace::factory()->create(['name' => 'feature-docs', 'app_id' => $app->id]);
 
@@ -211,7 +222,7 @@ describe('workspace:show base contract', function (): void {
         Process::preventStrayProcesses();
 
         createWorkspaceShowLocalNode('gateway');
-        $node = Node::factory()->create(['role' => 'app']);
+        $node = Node::factory()->appDev()->create();
         $app = App::factory()->create(['node_id' => $node->id]);
         Workspace::factory()->create(['name' => 'feature-docs', 'app_id' => $app->id]);
 
@@ -227,7 +238,7 @@ describe('workspace:show base contract', function (): void {
 
     it('renders a workspace show detail tree in human mode', function (): void {
         createWorkspaceShowLocalNode('gateway');
-        $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'host' => '10.6.0.7', 'tld' => 'test']);
+        $node = Node::factory()->appDev()->create(['name' => 'app-1', 'host' => '10.6.0.7', 'tld' => 'test']);
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id, 'domain' => null]);
         Workspace::factory()->create(['name' => 'feature-docs', 'app_id' => $app->id]);
 

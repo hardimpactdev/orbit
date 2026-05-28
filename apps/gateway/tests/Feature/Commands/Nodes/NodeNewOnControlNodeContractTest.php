@@ -17,8 +17,7 @@ it('fails app requests before side effects when no gateway is configured', funct
 
     $arguments = [
         'name' => 'app-1',
-        '--role' => 'app',
-        '--environment' => 'development',
+        '--roles' => 'app-dev',
         '--host' => '192.0.2.20',
         '--tld' => 'test',
         '--json' => true,
@@ -30,8 +29,8 @@ it('fails app requests before side effects when no gateway is configured', funct
     expect($exitCode)->toBe(1)
         ->and($payload['error'])->toMatchArray([
             'code' => 'gateway_unavailable',
-            'message' => 'Gateway connection is required before creating app or operator nodes.',
-            'meta' => ['requested_role' => 'app'],
+            'message' => 'Gateway connection is required before creating workload nodes.',
+            'meta' => ['requested_role' => 'app-dev'],
         ])
         ->and(DB::table('nodes')->count())->toBe(0);
 

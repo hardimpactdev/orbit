@@ -94,7 +94,7 @@ beforeEach(function (): void {
 
     $gateway = Node::factory()->create([
         'name' => 'gateway-1',
-        'role' => 'gateway',
+
         'platform' => 'ubuntu',
         'host' => '10.6.0.2',
         'wireguard_address' => '10.6.0.2',
@@ -132,13 +132,11 @@ beforeEach(function (): void {
                 'data' => [
                     'self' => [
                         'name' => 'control-1',
-                        'role' => 'control',
                         'status' => 'active',
                         'addresses' => ['wireguard' => '10.6.0.3'],
                     ],
                     'gateway' => [
                         'name' => 'gateway-1',
-                        'role' => 'gateway',
                         'status' => 'active',
                         'addresses' => ['wireguard' => '10.6.0.2'],
                     ],
@@ -189,7 +187,7 @@ beforeEach(function (): void {
         }
 
         if (str_contains($command, 'internal:wg-easy:state')) {
-            return Process::result(output: json_encode(['ok' => true], JSON_THROW_ON_ERROR)."\n");
+            return Process::result(output: json_encode(['success' => ['data' => []]], JSON_THROW_ON_ERROR)."\n");
         }
 
         return Process::result();
@@ -215,10 +213,10 @@ it('creates a joined client identity with no hosted roles by default', function 
         ->and(NodeRoleAssignment::query()->whereRelation('node', 'name', 'client-1')->count())->toBe(0);
 });
 
-it('creates an app-development hosted role with tld settings', function (): void {
+it('creates an app-dev hosted role with tld settings', function (): void {
     $exitCode = Artisan::call('node:new', [
         'name' => 'dev-1',
-        '--role' => ['app-development'],
+        '--roles' => 'app-dev',
         '--host' => '192.0.2.20',
         '--tld' => 'test',
         '--json' => true,
@@ -229,7 +227,7 @@ it('creates an app-development hosted role with tld settings', function (): void
     expect($exitCode)->toBe(0)
         ->and($node)->not->toBeNull()
         ->and($node->roleAssignments)->toHaveCount(1)
-        ->and($node->roleAssignments->first()?->role)->toBe('app-development')
+        ->and($node->roleAssignments->first()?->role)->toBe('app-dev')
         ->and($node->roleAssignments->first()?->status)->toBe(NodeRoleStatus::Active->value)
         ->and($node->roleAssignments->first()?->settings)->toBe(['tld' => 'test'])
         ->and(WireGuardPeer::query()->where('node_id', $node->id)->exists())->toBeTrue()
@@ -249,6 +247,27 @@ it('creates an app-development hosted role with tld settings', function (): void
         ->not->toContain('clients_table')
         ->not->toContain('sqlite3')
         ->not->toContain('sudo sqlite3');
+});
+
+it('creates app-development template roles with canonical stored values', function (): void {
+    $exitCode = Artisan::call('node:new', [
+        'name' => 'dev-template-1',
+        '--template' => 'app-development',
+        '--host' => '192.0.2.25',
+        '--tld' => 'template',
+        '--json' => true,
+    ]);
+
+    $node = Node::query()
+        ->with('roleAssignments')
+        ->where('name', 'dev-template-1')
+        ->first();
+
+    expect($exitCode)->toBe(0)
+        ->and($node)->not->toBeNull()
+        ->and($node->roleAssignments->pluck('role')->sort()->values()->all())->toBe(['app-dev', 'database'])
+        ->and($node->roleAssignments->firstWhere('role', 'app-dev')?->settings)->toBe(['tld' => 'template'])
+        ->and($node->roleAssignments->firstWhere('role', 'database')?->settings)->toBe([]);
 });
 
 it('checks provisioned node WireGuard reachability from the gateway host when running in orbit-runtime', function (): void {
@@ -278,7 +297,7 @@ it('checks provisioned node WireGuard reachability from the gateway host when ru
     try {
         $exitCode = Artisan::call('node:new', [
             'name' => 'dev-runtime-1',
-            '--role' => ['app-development'],
+            '--roles' => 'app-dev',
             '--host' => '192.0.2.24',
             '--tld' => 'runtime',
             '--json' => true,
@@ -308,7 +327,7 @@ it('honors the prepared topology WireGuard address reservation during E2E provis
     try {
         $exitCode = Artisan::call('node:new', [
             'name' => 'dev-reserved-1',
-            '--role' => ['app-development'],
+            '--roles' => 'app-dev',
             '--host' => '192.0.2.44',
             '--tld' => 'reserved',
             '--json' => true,
@@ -334,7 +353,7 @@ it('honors the prepared topology WireGuard address reservation during E2E provis
 it('pins the host key before provisioning and persists the canonical steady-state user', function (): void {
     $exitCode = Artisan::call('node:new', [
         'name' => 'dev-pinned-1',
-        '--role' => ['app-development'],
+        '--roles' => 'app-dev',
         '--host' => '192.0.2.50',
         '--tld' => 'pinned',
         '--user' => 'ubuntu',
@@ -374,7 +393,7 @@ it('rolls back the provisional node row when host provisioning fails', function 
 
     $exitCode = Artisan::call('node:new', [
         'name' => 'rollback-1',
-        '--role' => ['ingress'],
+        '--roles' => 'ingress',
         '--host' => '192.0.2.51',
         '--json' => true,
     ]);
@@ -404,7 +423,7 @@ it('rejects existing gateway development dns mappings before provisioning side e
 
     $exitCode = Artisan::call('node:new', [
         'name' => 'dev-conflict',
-        '--role' => ['app-development'],
+        '--roles' => 'app-dev',
         '--host' => '192.0.2.20',
         '--tld' => 'test',
         '--json' => true,
@@ -425,11 +444,10 @@ it('rejects existing gateway development dns mappings before provisioning side e
         ->and(File::get($mappingPath))->toContain('address=/test/10.6.0.99');
 });
 
-it('adopts a compatible existing app node for canonical app-development', function (): void {
+it('adopts a compatible existing app node for canonical app-dev', function (): void {
     $node = Node::factory()->create([
         'name' => 'dev-adopt-1',
-        'role' => 'app',
-        'environment' => 'development',
+
         'tld' => 'test',
         'platform' => 'ubuntu_24-04',
         'host' => '192.0.2.30',
@@ -464,7 +482,7 @@ it('adopts a compatible existing app node for canonical app-development', functi
 
     $exitCode = Artisan::call('node:new', [
         'name' => 'dev-adopt-1',
-        '--role' => ['app-development'],
+        '--roles' => 'app-dev',
         '--host' => '192.0.2.30',
         '--tld' => 'test',
         '--user' => 'provisioner',
@@ -477,8 +495,6 @@ it('adopts a compatible existing app node for canonical app-development', functi
     expect($payload['success']['data']['result']['action'])->toBe('adopted');
     expect($payload['success']['data']['node'])->toMatchArray([
         'name' => 'dev-adopt-1',
-        'role' => 'app',
-        'environment' => 'development',
         'tld' => 'test',
         'addresses' => [
             'wireguard' => '10.6.0.9',
@@ -490,16 +506,16 @@ it('adopts a compatible existing app node for canonical app-development', functi
     expect($node->fresh()->status)->toBe('active');
     expect($node->fresh()->wireguard_address)->toBe('10.6.0.9');
     expect($node->fresh()->roleAssignments)->toHaveCount(1);
-    expect($node->fresh()->roleAssignments->first()?->role)->toBe('app-development');
+    expect($node->fresh()->roleAssignments->first()?->role)->toBe('app-dev');
     expect($node->fresh()->roleAssignments->first()?->status)->toBe(NodeRoleStatus::Active->value);
 
     Process::assertRanTimes(fn ($process): bool => str_contains($process->command, 'ssh '), 0);
 });
 
-it('rejects app-production and database hosted roles before provisioning side effects', function (): void {
+it('rejects app-prod and database hosted roles before provisioning side effects', function (): void {
     $exitCode = Artisan::call('node:new', [
         'name' => 'web-1',
-        '--role' => ['app-production', 'database'],
+        '--roles' => 'app-prod,database',
         '--host' => '192.0.2.21',
         '--json' => true,
     ]);
@@ -509,21 +525,20 @@ it('rejects app-production and database hosted roles before provisioning side ef
     expect($exitCode)->toBe(1)
         ->and($payload['error'])->toMatchArray([
             'code' => 'validation_failed',
-            'message' => 'Hosted roles app-production and database cannot be combined.',
+            'message' => 'Hosted roles app-prod and database cannot be combined.',
             'meta' => [
-                'field' => 'role',
-                'conflicts' => ['app-production', 'database'],
+                'field' => 'roles',
+                'conflicts' => ['app-prod', 'database'],
             ],
         ])
         ->and(Node::query()->where('name', 'web-1')->exists())->toBeFalse()
         ->and($this->fakeInstaller->calls)->toBe(0);
 });
 
-it('rejects adopting app-production plus database before touching the existing node', function (): void {
+it('rejects adopting app-prod plus database before touching the existing node', function (): void {
     $node = Node::factory()->create([
         'name' => 'web-adopt-1',
-        'role' => 'app',
-        'environment' => 'production',
+
         'tld' => null,
         'platform' => 'ubuntu_24-04',
         'host' => '192.0.2.31',
@@ -554,7 +569,7 @@ it('rejects adopting app-production plus database before touching the existing n
 
     $exitCode = Artisan::call('node:new', [
         'name' => 'web-adopt-1',
-        '--role' => ['app-production', 'database'],
+        '--roles' => 'app-prod,database',
         '--host' => '192.0.2.31',
         '--user' => 'provisioner',
         '--json' => true,
@@ -565,10 +580,10 @@ it('rejects adopting app-production plus database before touching the existing n
     expect($exitCode)->toBe(1);
     expect($payload['error'])->toMatchArray([
         'code' => 'validation_failed',
-        'message' => 'Hosted roles app-production and database cannot be combined.',
+        'message' => 'Hosted roles app-prod and database cannot be combined.',
         'meta' => [
-            'field' => 'role',
-            'conflicts' => ['app-production', 'database'],
+            'field' => 'roles',
+            'conflicts' => ['app-prod', 'database'],
         ],
     ]);
     expect($this->fakeInstaller->calls)->toBe(0);
@@ -582,7 +597,7 @@ it('rejects adopting app-production plus database before touching the existing n
 it('creates a database hosted role without requiring host input', function (): void {
     $exitCode = Artisan::call('node:new', [
         'name' => 'db-1',
-        '--role' => ['database'],
+        '--roles' => 'database',
         '--json' => true,
     ]);
 
@@ -601,7 +616,7 @@ it('creates a database hosted role without requiring host input', function (): v
 it('rejects host input for database-only hosted roles before side effects', function (): void {
     $exitCode = Artisan::call('node:new', [
         'name' => 'db-with-host',
-        '--role' => ['database'],
+        '--roles' => 'database',
         '--host' => '192.0.2.20',
         '--json' => true,
     ]);
@@ -611,7 +626,7 @@ it('rejects host input for database-only hosted roles before side effects', func
     expect($exitCode)->toBe(1)
         ->and($payload['error'])->toMatchArray([
             'code' => 'validation_failed',
-            'message' => 'Only app-development, app-production, ingress, agent, and gateway use host provisioning.',
+            'message' => 'Only app-dev, app-prod, ingress, agent, and gateway use host provisioning.',
             'meta' => ['field' => 'host'],
         ])
         ->and(Node::query()->where('name', 'db-with-host')->exists())->toBeFalse()
@@ -621,7 +636,7 @@ it('rejects host input for database-only hosted roles before side effects', func
 it('rejects conflicting hosted roles before side effects', function (): void {
     $exitCode = Artisan::call('node:new', [
         'name' => 'bad',
-        '--role' => ['app-development', 'app-production'],
+        '--roles' => 'app-dev,app-prod',
         '--host' => '192.0.2.22',
         '--tld' => 'test',
         '--json' => true,
@@ -632,11 +647,10 @@ it('rejects conflicting hosted roles before side effects', function (): void {
         ->and(NodeRoleAssignment::query()->whereRelation('node', 'name', 'bad')->count())->toBe(0);
 });
 
-it('rejects environment for canonical hosted-role input', function (): void {
+it('rejects retired app role input before side effects', function (): void {
     $exitCode = Artisan::call('node:new', [
-        'name' => 'canonical-env',
-        '--role' => ['database'],
-        '--environment' => 'production',
+        'name' => 'retired-app-role',
+        '--roles' => 'app',
         '--json' => true,
     ]);
 
@@ -645,13 +659,13 @@ it('rejects environment for canonical hosted-role input', function (): void {
     expect($exitCode)->toBe(1)
         ->and($payload['error'])->toMatchArray([
             'code' => 'validation_failed',
-            'message' => 'Environment is only supported for legacy app role mapping.',
-            'meta' => ['field' => 'environment'],
+            'message' => 'Node roles must be one or more of app-dev, app-prod, database, agent, ingress, websocket, or s3.',
+            'meta' => ['field' => 'roles'],
         ])
-        ->and(Node::query()->where('name', 'canonical-env')->exists())->toBeFalse();
+        ->and(Node::query()->where('name', 'retired-app-role')->exists())->toBeFalse();
 });
 
-it('forwards canonical hosted app roles without legacy environment metadata', function (): void {
+it('forwards canonical hosted app roles without environment metadata', function (): void {
     config(['orbit.is_gateway' => false]);
 
     LocalGatewaySettings::current()->fill([
@@ -667,8 +681,6 @@ it('forwards canonical hosted app roles without legacy environment metadata', fu
                     'result' => ['action' => 'created'],
                     'node' => [
                         'name' => 'canonical-dev-1',
-                        'role' => 'app',
-                        'environment' => 'development',
                         'tld' => 'test',
                         'status' => 'active',
                     ],
@@ -689,7 +701,7 @@ it('forwards canonical hosted app roles without legacy environment metadata', fu
 
     $exitCode = Artisan::call('node:new', [
         'name' => 'canonical-dev-1',
-        '--role' => ['app-development'],
+        '--roles' => 'app-dev',
         '--host' => '192.0.2.40',
         '--tld' => 'test',
         '--json' => true,
@@ -699,10 +711,8 @@ it('forwards canonical hosted app roles without legacy environment metadata', fu
 
     $mock->assertSent(fn (CreateNodeRequest $request): bool => $request->body()->all() === [
         'name' => 'canonical-dev-1',
-        'role' => 'app-development',
-        'roles' => ['app-development'],
+        'roles' => ['app-dev'],
         'host' => '192.0.2.40',
-        'environment' => null,
         'tld' => 'test',
         'user' => 'root',
     ]);
@@ -724,8 +734,6 @@ it('forwards private app production ingress names without requiring local regist
                     'result' => ['action' => 'created'],
                     'node' => [
                         'name' => 'web-1',
-                        'role' => 'app',
-                        'environment' => 'production',
                         'status' => 'active',
                     ],
                     'provisioning' => [
@@ -745,7 +753,7 @@ it('forwards private app production ingress names without requiring local regist
 
     $exitCode = Artisan::call('node:new', [
         'name' => 'web-1',
-        '--role' => ['app-production'],
+        '--roles' => 'app-prod',
         '--host' => '192.0.2.41',
         '--ingress' => 'edge-1',
         '--json' => true,
@@ -755,34 +763,32 @@ it('forwards private app production ingress names without requiring local regist
 
     $mock->assertSent(fn (CreateNodeRequest $request): bool => $request->body()->all() === [
         'name' => 'web-1',
-        'role' => 'app-production',
-        'roles' => ['app-production'],
+        'roles' => ['app-prod'],
         'host' => '192.0.2.41',
-        'environment' => null,
         'tld' => null,
         'user' => 'root',
         'ingress_node' => 'edge-1',
     ]);
 });
 
-it('maps the legacy app role to app-development', function (): void {
+it('rejects retired long app role input before side effects', function (): void {
     $exitCode = Artisan::call('node:new', [
-        'name' => 'legacy-dev-1',
-        '--role' => ['app'],
-        '--environment' => 'development',
+        'name' => 'long-app-role',
+        '--roles' => 'app-development',
         '--host' => '192.0.2.23',
         '--tld' => 'test',
         '--json' => true,
     ]);
 
-    $assignment = NodeRoleAssignment::query()
-        ->whereHas('node', fn ($query) => $query->where('name', 'legacy-dev-1'))
-        ->first();
+    $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
 
-    expect($exitCode)->toBe(0)
-        ->and($assignment)->not->toBeNull()
-        ->and($assignment->role)->toBe('app-development')
-        ->and($assignment->settings)->toBe(['tld' => 'test']);
+    expect($exitCode)->toBe(1)
+        ->and($payload['error'])->toMatchArray([
+            'code' => 'validation_failed',
+            'message' => 'Node roles must be one or more of app-dev, app-prod, database, agent, ingress, websocket, or s3.',
+            'meta' => ['field' => 'roles'],
+        ])
+        ->and(Node::query()->where('name', 'long-app-role')->exists())->toBeFalse();
 });
 
 it('creates exactly one gateway assignment during first gateway bootstrap', function (): void {
@@ -791,7 +797,7 @@ it('creates exactly one gateway assignment during first gateway bootstrap', func
 
     $exitCode = Artisan::call('node:new', [
         'name' => 'gateway-1',
-        '--role' => ['gateway'],
+        '--template' => 'gateway',
         '--host' => '192.0.2.10',
         '--operator-name' => 'operator-1',
         '--json' => true,

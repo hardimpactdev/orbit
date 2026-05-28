@@ -9,6 +9,7 @@ use App\Exceptions\GatewayApiException;
 
 final class ActivityListCommand extends GatewayCommand
 {
+    #[\Override]
     protected $signature = 'activity:list
         {--app= : Filter by app}
         {--node= : Filter by node}
@@ -17,6 +18,7 @@ final class ActivityListCommand extends GatewayCommand
         {--limit=25 : Max rows to return}
         {--json}';
 
+    #[\Override]
     protected $description = 'List gateway activity history.';
 
     public function handle(): int

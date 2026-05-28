@@ -35,7 +35,7 @@ it('updates node metadata from a operator caller through the gateway api', funct
         $metadataResult = $topology->ssh(
             'gateway',
             sprintf(
-                'cd %s && orbit tinker --execute=%s',
+                'cd %s && php apps/gateway/artisan tinker --execute=%s',
                 escapeshellarg($topology->checkout('gateway')),
                 escapeshellarg('echo \App\Models\Node::query()->where("name", "app-dev-1")->value("public_ipv4");'),
             ),

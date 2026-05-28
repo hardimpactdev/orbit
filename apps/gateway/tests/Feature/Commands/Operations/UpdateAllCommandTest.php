@@ -58,7 +58,6 @@ it('forwards control callers to gateway after local update succeeds', function (
                         [
                             'target' => 'beast',
                             'node' => 'beast',
-                            'role' => 'app',
                             'status' => 'completed',
                         ],
                     ],
@@ -193,7 +192,6 @@ it('forwards control callers to gateway and reports remote failure', function ()
                         [
                             'target' => 'beast',
                             'node' => 'beast',
-                            'role' => 'app',
                             'status' => 'failed',
                             'output' => 'Connection refused',
                         ],

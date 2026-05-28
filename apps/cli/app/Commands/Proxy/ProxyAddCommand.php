@@ -13,6 +13,7 @@ final class ProxyAddCommand extends ProxyGatewayCommand
 {
     private const array REDIRECT_CODES = [301, 302, 307, 308];
 
+    #[\Override]
     protected $signature = 'proxy:add
         {domain? : Proxy route domain}
         {--node= : Serving node}
@@ -22,6 +23,7 @@ final class ProxyAddCommand extends ProxyGatewayCommand
         {--force : Replace an existing custom route with different intent}
         {--json : Output JSON}';
 
+    #[\Override]
     protected $description = 'Create or update custom proxy route intent.';
 
     public function handle(): int

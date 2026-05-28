@@ -10,12 +10,14 @@ use Symfony\Component\Console\Output\OutputInterface;
 
 final class WorkspaceExecCommand extends WorkspaceGatewayCommand
 {
+    #[\Override]
     protected $signature = 'workspace:exec
         {workspace? : Workspace name}
         {cmd?* : Command to run inside the workspace runtime container}
         {--app= : Parent app slug to disambiguate workspace names that collide across apps}
         {--json : Output JSON}';
 
+    #[\Override]
     protected $description = 'Run a command inside a workspace FrankenPHP runtime container.';
 
     public function handle(): int

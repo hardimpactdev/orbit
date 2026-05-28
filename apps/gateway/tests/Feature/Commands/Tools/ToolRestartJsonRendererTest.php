@@ -23,10 +23,8 @@ function createToolRestartJsonLocalNode(string $role = 'gateway'): Node
 {
     return Node::factory()->create([
         'name' => "tool-restart-json-{$role}",
-        'role' => $role,
         'host' => '10.11.0.1',
-        'wireguard_address' => '10.11.0.1',
-    ]);
+        'wireguard_address' => '10.11.0.1']);
 }
 
 function configureToolRestartJsonControlGateway(): void
@@ -37,28 +35,25 @@ function configureToolRestartJsonControlGateway(): void
 
     LocalGatewaySettings::current()->fill([
         'gateway_url' => 'https://10.11.0.1',
-        'ca_pem_path' => '/dev/null',
-    ])->save();
+        'ca_pem_path' => '/dev/null'])->save();
 }
 
 describe('tool:restart JSON renderer', function (): void {
     it('selects the JSON envelope renderer and emits the canonical tool entity', function (): void {
         createToolRestartJsonLocalNode('gateway');
-        $node = createTestAppHostNode(['name' => 'app-json-restart-1', 'role' => 'app', 'status' => 'active']);
+        $node = createTestAppHostNode(['name' => 'app-json-restart-1', 'status' => 'active']);
         NodeTool::factory()->create([
             'node_id' => $node->id,
             'name' => 'caddy',
             'expected_state' => 'running',
             'expected_version' => '2.10.2',
-            'config' => ['endpoints' => [['name' => 'http', 'url' => 'https://example.test']]],
-        ]);
+            'config' => ['endpoints' => [['name' => 'http', 'url' => 'https://example.test']]]]);
         app()->instance(RemoteShell::class, new ToolRestartJsonRecordingShell);
 
         $exitCode = Artisan::call('tool:restart', [
             'tool' => 'caddy',
             '--node' => 'app-json-restart-1',
-            '--json' => true,
-        ]);
+            '--json' => true]);
         $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
 
         expect($exitCode)->toBe(0)
@@ -72,16 +67,14 @@ describe('tool:restart JSON renderer', function (): void {
                 'observed_state',
                 'version',
                 'managed',
-                'endpoints',
-            ])
+                'endpoints'])
             ->and($payload['success']['data']['tool'])->toMatchArray([
                 'name' => 'caddy',
                 'node' => 'app-json-restart-1',
                 'expected_state' => 'running',
                 'observed_state' => null,
                 'version' => '2.10.2',
-                'managed' => true,
-            ]);
+                'managed' => true]);
     });
 
     it('renders missing tool input as validation_failed', function (): void {
@@ -97,15 +90,14 @@ describe('tool:restart JSON renderer', function (): void {
 
     it('renders invalid tool names as validation_failed before side effects', function (): void {
         createToolRestartJsonLocalNode('gateway');
-        createTestAppHostNode(['name' => 'app-json-restart-1', 'role' => 'app', 'status' => 'active']);
+        createTestAppHostNode(['name' => 'app-json-restart-1', 'status' => 'active']);
         $shell = new ToolRestartJsonRecordingShell;
         app()->instance(RemoteShell::class, $shell);
 
         $exitCode = Artisan::call('tool:restart', [
             'tool' => 'not-a-tool',
             '--node' => 'app-json-restart-1',
-            '--json' => true,
-        ]);
+            '--json' => true]);
         $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
 
         expect($exitCode)->toBe(1)
@@ -113,14 +105,13 @@ describe('tool:restart JSON renderer', function (): void {
             ->and($payload['error']['meta'])->toBe([
                 'field' => 'tool',
                 'value' => 'not-a-tool',
-                'reason' => 'unknown_tool',
-            ])
+                'reason' => 'unknown_tool'])
             ->and($shell->scripts)->toBe([]);
     });
 
     it('requires a target source in non-interactive JSON mode before side effects', function (): void {
         createToolRestartJsonLocalNode('gateway');
-        $node = createTestAppHostNode(['name' => 'app-json-restart-1', 'role' => 'app', 'status' => 'active']);
+        $node = createTestAppHostNode(['name' => 'app-json-restart-1', 'status' => 'active']);
         NodeTool::factory()->create(['node_id' => $node->id, 'name' => 'caddy']);
         $shell = new ToolRestartJsonRecordingShell;
         app()->instance(RemoteShell::class, $shell);
@@ -129,8 +120,8 @@ describe('tool:restart JSON renderer', function (): void {
         $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
 
         expect($exitCode)->toBe(1)
-            ->and($payload['error']['code'])->toBe('validation_failed')
-            ->and($payload['error']['meta'])->toBe(['fields' => ['target']])
+            ->and($payload['error']['code'])->toBe('node_target_required')
+            ->and($payload['error']['meta'])->toBe(['field' => 'node'])
             ->and($shell->scripts)->toBe([]);
     });
 
@@ -138,14 +129,12 @@ describe('tool:restart JSON renderer', function (): void {
         configureToolRestartJsonControlGateway();
 
         MockClient::global([
-            RestartToolRequest::class => MockResponse::make(['error' => $error], $status),
-        ]);
+            RestartToolRequest::class => MockResponse::make(['error' => $error], $status)]);
 
         $exitCode = Artisan::call('tool:restart', [
             'tool' => 'caddy',
             '--node' => 'app-json-restart-1',
-            '--json' => true,
-        ]);
+            '--json' => true]);
         $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
 
         expect($exitCode)->toBe(1)
@@ -156,18 +145,15 @@ describe('tool:restart JSON renderer', function (): void {
         'authorization_failed' => [[
             'code' => 'authorization_failed',
             'message' => 'This node is not authorized to manage tools.',
-            'meta' => ['reason' => 'missing_permission', 'missing_permission' => 'tool:restart'],
-        ], 403],
+            'meta' => ['reason' => 'missing_permission', 'missing_permission' => 'tool:restart']], 403],
         'tool.not_found' => [[
             'code' => 'tool.not_found',
             'message' => "Tool 'caddy' was not found on node 'app-json-restart-1'.",
-            'meta' => ['tool' => 'caddy', 'node' => 'app-json-restart-1'],
-        ], 404],
+            'meta' => ['tool' => 'caddy', 'node' => 'app-json-restart-1']], 404],
         'tool.unsupported_action' => [[
             'code' => 'tool.unsupported_action',
             'message' => "Tool 'gh' does not support restart.",
-            'meta' => ['tool' => 'gh', 'action' => 'restart'],
-        ], 400],
+            'meta' => ['tool' => 'gh', 'action' => 'restart']], 400],
         'tool.remote_action_failed' => [[
             'code' => 'tool.remote_action_failed',
             'message' => "Tool 'caddy' restart failed on node 'app-json-restart-1'.",
@@ -176,22 +162,18 @@ describe('tool:restart JSON renderer', function (): void {
                 'node' => 'app-json-restart-1',
                 'action' => 'restart',
                 'exit_code' => 7,
-                'stderr' => 'docker restart orbit-caddy failed',
-            ],
-        ], 502],
-    ]);
+                'stderr' => 'docker restart orbit-caddy failed']], 502]]);
 
     it('preserves remote action exit code and stderr meta from local lifecycle failures', function (): void {
         createToolRestartJsonLocalNode('gateway');
-        $node = createTestAppHostNode(['name' => 'app-json-restart-1', 'role' => 'app', 'status' => 'active']);
+        $node = createTestAppHostNode(['name' => 'app-json-restart-1', 'status' => 'active']);
         NodeTool::factory()->create(['node_id' => $node->id, 'name' => 'caddy']);
         app()->instance(RemoteShell::class, new ToolRestartJsonRecordingShell(exitCode: 7, stderr: 'docker restart orbit-caddy failed'));
 
         $exitCode = Artisan::call('tool:restart', [
             'tool' => 'caddy',
             '--node' => 'app-json-restart-1',
-            '--json' => true,
-        ]);
+            '--json' => true]);
         $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
 
         expect($exitCode)->toBe(1)

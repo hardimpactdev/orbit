@@ -8,11 +8,13 @@ use App\Exceptions\GatewayApiException;
 
 final class CfSslEnableCommand extends CloudflareGatewayCommand
 {
+    #[\Override]
     protected $signature = 'cf-ssl:enable
         {zone? : Cloudflare zone ID or domain}
         {--mode=strict : SSL mode, strict or full}
         {--json : Output JSON}';
 
+    #[\Override]
     protected $description = 'Enable Cloudflare SSL mode for a zone through the gateway.';
 
     public function handle(): int

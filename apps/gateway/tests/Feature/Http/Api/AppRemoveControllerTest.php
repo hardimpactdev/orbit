@@ -18,7 +18,6 @@ function createAppRemoveCallerNode(array $overrides = []): Node
 {
     return Node::factory()->create(array_merge([
         'name' => 'caller',
-        'role' => 'control',
         'host' => APP_REMOVE_CALLER_WG_IP,
         'wireguard_address' => APP_REMOVE_CALLER_WG_IP,
     ], $overrides));
@@ -44,7 +43,6 @@ describe('AppRemoveController', function (): void {
         $caller = createAppRemoveCallerNode();
         $targetNode = Node::factory()->create([
             'name' => 'app-1',
-            'role' => 'app',
             'tld' => 'test',
             'status' => 'active',
         ]);
@@ -87,7 +85,6 @@ describe('AppRemoveController', function (): void {
         $caller = createAppRemoveCallerNode();
         $targetNode = Node::factory()->create([
             'name' => 'app-1',
-            'role' => 'app',
             'status' => 'active',
         ]);
         grantAppRemoveAccess($caller, $targetNode);
@@ -111,7 +108,6 @@ describe('AppRemoveController', function (): void {
         $caller = createAppRemoveCallerNode();
         $targetNode = Node::factory()->create([
             'name' => 'app-1',
-            'role' => 'app',
             'status' => 'active',
         ]);
         grantAppRemoveAccess($caller, $targetNode, ['app:read']);

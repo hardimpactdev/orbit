@@ -22,8 +22,8 @@ orbit doctor --family=workspace --key=workspace.security.fs_permissions
 
 Node-owned security policy applies to every provisioned Linux node unless a
 role contract documents a narrower exception. App production and development
-roles have different runtime surfaces: `app-production` uses `app.security.*`
-and has no workspace workflow; `app-development` keeps workspace checks and
+roles have different runtime surfaces: `app-prod` uses `app.security.*`
+and has no workspace workflow; `app-dev` keeps workspace checks and
 uses `workspace.security.*`.
 
 The current sudo model remains broad passwordless sudo for the `orbit`

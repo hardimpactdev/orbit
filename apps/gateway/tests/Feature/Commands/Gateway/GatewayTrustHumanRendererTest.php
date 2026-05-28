@@ -173,14 +173,12 @@ it('shows missing gateway prose', function (): void {
 it('shows missing gateway prose when registry gateways exist without configured settings', function (): void {
     Node::query()->create([
         'name' => 'gw1',
-        'role' => 'gateway',
         'status' => 'active',
         'host' => '10.6.0.2',
         'orbit_path' => '/home/orbit/orbit',
     ]);
     Node::query()->create([
         'name' => 'gw2',
-        'role' => 'gateway',
         'status' => 'active',
         'host' => '10.6.0.3',
         'orbit_path' => '/home/orbit/orbit',

@@ -9,8 +9,10 @@ use App\Exceptions\GatewayApiException;
 
 final class ActivityShowCommand extends GatewayCommand
 {
+    #[\Override]
     protected $signature = 'activity:show {id : Activity ID} {--json}';
 
+    #[\Override]
     protected $description = 'Show one gateway activity history entry.';
 
     public function handle(): int

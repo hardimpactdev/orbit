@@ -8,6 +8,7 @@ use App\Exceptions\GatewayApiException;
 
 final class DatabaseAttachCommand extends DatabaseGatewayCommand
 {
+    #[\Override]
     protected $signature = 'database:attach
         {connection? : Database connection slug}
         {--app= : App selector}
@@ -15,6 +16,7 @@ final class DatabaseAttachCommand extends DatabaseGatewayCommand
         {--env-prefix=DB : Environment variable prefix}
         {--json : Output JSON}';
 
+    #[\Override]
     protected $description = 'Attach a database connection to an app or workspace target.';
 
     public function handle(): int

@@ -14,12 +14,14 @@ final class ScheduleShowCommand extends GatewayCommand
     use ResolvesHostContext;
     use ResolvesScheduleSelection;
 
+    #[\Override]
     protected $signature = 'schedule:show
         {name? : Schedule name}
         {--app= : Filter by app scope}
         {--node= : Filter by node scope}
         {--json}';
 
+    #[\Override]
     protected $description = 'Show one configured schedule.';
 
     public function handle(): int

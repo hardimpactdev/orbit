@@ -12,8 +12,10 @@ final class FirewallListCommand extends GatewayCommand
 {
     use ResolvesHostContext;
 
+    #[\Override]
     protected $signature = 'firewall:list {--node= : Filter by node name} {--json}';
 
+    #[\Override]
     protected $description = 'List firewall rules tracked by gateway intent.';
 
     public function handle(): int

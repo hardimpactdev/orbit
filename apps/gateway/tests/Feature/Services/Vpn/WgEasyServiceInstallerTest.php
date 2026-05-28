@@ -7,6 +7,7 @@ use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Services\ActivityLogCorrelation;
 use App\Services\ActivityLogger;
+use App\Services\Operations\OperationRunRecorder;
 use App\Services\Operations\OperationTokenFactory;
 use App\Services\RemoteShell\LocalExecutorCommandBuilder;
 use App\Services\RemoteShell\RemoteExecutor;
@@ -32,7 +33,6 @@ beforeEach(function (): void {
 
     $this->vpnNode = Node::factory()->create([
         'name' => 'gateway-1',
-        'role' => 'gateway',
         'host' => '10.6.0.2',
         'wireguard_address' => '10.6.0.2',
         'status' => 'active',
@@ -466,7 +466,6 @@ it('only exposes whitelisted wg-easy state error codes from remote failure envel
     $transport = new WgEasyServiceInstallerStateTransport(new RemoteShellResult(
         exitCode: 1,
         stdout: json_encode([
-            'ok' => false,
             'error' => [
                 'code' => $remoteCode,
                 'message' => "remote leak {$secret}",
@@ -569,6 +568,7 @@ function wgEasyServiceInstallerExecutor(WgEasyServiceInstallerStateTransport $tr
             clock: static fn (): int => 1_798_105_200,
         ),
         activityLogger: new ActivityLogger(new ActivityLogCorrelation),
+        operationRuns: app(OperationRunRecorder::class),
     );
 }
 

@@ -46,14 +46,15 @@ Run `node:default` when you want to choose, set, or clear the development node y
 
 `node:default` reads and writes local client configuration only. It does
 not mutate gateway node configuration, grant access to the default node, or
-change the gateway endpoint configured by `gateway:add`. Gateway hosts reject
-the command; it is a client/local deployment-context convenience.
+change the gateway endpoint configured by `gateway:add`. Gateway hosts run the
+command like any other operator host: it edits the invoking OS user's local CLI
+config.
 
 ### Choose or set
 
 In interactive input mode, running `node:default` without a target queries the
 configured gateway for visible development nodes, or the local node registry
-when no gateway is configured, and presents matching app-development nodes as
+when no gateway is configured, and presents matching app-dev nodes as
 choices. If the current local default is still in that choice list, it is
 preselected. Selecting a node stores it as the local default. Providing `name`
 skips the choice prompt and validates that node directly.
@@ -103,9 +104,9 @@ and payload shapes.
 
 - The local CLI has an active gateway configuration for interactive `choose`
   and direct `set` when the target must be resolved from the gateway; otherwise
-  those paths can use local active app-development node records.
-- The target node must be a visible active app-development node.
-- Gateway hosts reject the command before prompts or side effects.
+  those paths can use local active app-dev node records.
+- The target node must be a visible active app-dev node.
+- The command writes only the invoking OS user's local Orbit config.
 
 ## Related Commands
 

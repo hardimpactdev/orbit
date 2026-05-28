@@ -43,12 +43,12 @@ describe('node role caddy baseline convergence', function (): void {
 
         expect($mountTargets)->toContain('/etc/caddy/Caddyfile', '/etc/caddy/orbit', '/etc/caddy/sites', '/etc/orbit', '/home');
     })->with([
-        'app-development' => [
+        'app-dev' => [
             NodeRoleName::AppDevelopment->value,
             ['tld' => 'test'],
             ['10.6.0.50:80:80', '10.6.0.50:443:443', '10.6.0.50:443:443/udp', '10.6.0.50:8081:8081'],
         ],
-        'app-production' => [
+        'app-prod' => [
             NodeRoleName::AppProduction->value,
             [],
             ['10.6.0.50:80:80', '10.6.0.50:443:443', '10.6.0.50:443:443/udp', '10.6.0.50:8081:8081'],
@@ -93,7 +93,7 @@ describe('node role caddy baseline convergence', function (): void {
             ->and($container['published_ports'] ?? null)->toBe(['80:80', '443:443', '443:443/udp', '10.6.0.50:8081:8081']);
     });
 
-    it('keeps the orbit-caddy private backend port off the public socket when ingress and app-production co-locate', function (): void {
+    it('keeps the orbit-caddy private backend port off the public socket when ingress and app-prod co-locate', function (): void {
         $node = todo314CaddyBaselineNode();
         $converger = app(NodeRoleBaselineConverger::class);
 

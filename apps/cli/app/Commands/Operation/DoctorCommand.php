@@ -14,6 +14,7 @@ final class DoctorCommand extends GatewayCommand
     use ResolvesHostContext;
     use StreamsGatewayProgress;
 
+    #[\Override]
     protected $signature = 'doctor
         {--app= : Limit to one app}
         {--workspace= : Limit to one workspace}
@@ -27,6 +28,7 @@ final class DoctorCommand extends GatewayCommand
         {--dry-run : Preview bulk restore or adopt actions without applying changes}
         {--json : Output JSON}';
 
+    #[\Override]
     protected $description = 'Check Orbit health and diagnose drift through the gateway.';
 
     public function handle(): int

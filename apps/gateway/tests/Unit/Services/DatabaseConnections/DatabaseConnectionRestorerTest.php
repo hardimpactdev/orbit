@@ -19,7 +19,7 @@ uses(RefreshDatabase::class);
 
 describe('DatabaseConnectionRestorer', function (): void {
     it('updates mapped env keys and preserves unrelated content', function (): void {
-        $node = Node::factory()->create(['role' => 'gateway', 'status' => 'active']);
+        $node = Node::factory()->gateway()->create(['status' => 'active']);
         $path = storage_path('framework/testing/database-restorer-app');
         File::ensureDirectoryExists($path);
         File::put($path.'/.env', <<<'ENV'
@@ -61,7 +61,7 @@ ENV);
     });
 
     it('writes remote env content through base64-safe transport', function (): void {
-        $node = Node::factory()->create(['role' => 'app', 'status' => 'active']);
+        $node = Node::factory()->appDev()->create(['status' => 'active']);
         $app = App::factory()->create(['node_id' => $node->id, 'name' => 'docs']);
         $workspace = Workspace::factory()->create([
             'app_id' => $app->id,

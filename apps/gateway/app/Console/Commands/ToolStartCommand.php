@@ -15,7 +15,6 @@ use App\Http\Gateway\Requests\Tools\StartToolRequest;
 use App\Http\Gateway\Responses\Gateway\GatewayIdentityResponse;
 use App\Http\Gateway\Responses\Tools\ToolShowResponse;
 use App\Http\Gateway\ToolActionGatewayStreamClient;
-use App\Models\LocalNodeDefault;
 use App\Models\Node;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
 use App\Services\Tools\AgentToolAuthorizer;
@@ -367,12 +366,6 @@ class ToolStartCommand extends Command
             return [$node, null];
         }
 
-        $defaultNode = LocalNodeDefault::query()->value('default_node_name');
-
-        if (is_string($defaultNode) && trim($defaultNode) !== '') {
-            return [trim($defaultNode), null];
-        }
-
         if (! $this->isGatewayCaller()) {
             try {
                 return [$this->gatewayKnownSelfNodeName(), null];
@@ -398,11 +391,7 @@ class ToolStartCommand extends Command
             }
         }
 
-        return ToolRegistryFailure::validation(
-            'target',
-            '',
-            'A node or app target is required. Provide --node, --app, configure node:default, or select a target interactively.',
-        );
+        return ToolRegistryFailure::nodeTargetRequired();
     }
 
     /**

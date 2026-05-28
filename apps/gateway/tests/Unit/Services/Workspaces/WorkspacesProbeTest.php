@@ -217,7 +217,7 @@ describe('workspace security reality', function (): void {
     });
 
     it('flags workspaces that belong to production app nodes', function (): void {
-        $app = workspaceableApp(['environment' => 'production'], role: 'app-production');
+        $app = workspaceableApp(['environment' => 'production'], role: 'app-prod');
         $workspace = workspaceFor($app, ['name' => 'feature']);
 
         $drift = (new WorkspacesProbe)->diff($workspace, new ProbeSnapshot([]));
@@ -315,8 +315,8 @@ describe('registry intent', function (): void {
 });
 
 describe('parent app eligibility', function (): void {
-    it('requires a parent app on an active app node', function (array $nodeState): void {
-        $node = Node::factory()->create($nodeState);
+    it('requires a parent app on an active app node', function (callable $createNode): void {
+        $node = $createNode();
         $app = App::factory()->for($node, 'node')->create();
         $workspace = workspaceFor($app);
 
@@ -324,8 +324,8 @@ describe('parent app eligibility', function (): void {
 
         expect(issue($drift, 'workspace.parent_app_invalid')?->kind)->toBe(DriftKind::Divergent);
     })->with([
-        'gateway parent node' => [['role' => 'gateway', 'status' => 'active']],
-        'inactive app parent node' => [['role' => 'app', 'status' => 'inactive']],
+        'gateway parent node' => [fn (): Node => Node::factory()->gateway()->create(['status' => 'active'])],
+        'inactive app parent node' => [fn (): Node => Node::factory()->appDev()->create(['status' => 'inactive'])],
     ]);
 });
 
@@ -345,7 +345,7 @@ function convergedRuntimeSnapshot(array $overrides = []): array
     ];
 }
 
-function workspaceableApp(array $overrides = [], string $role = 'app-development'): App
+function workspaceableApp(array $overrides = [], string $role = 'app-dev'): App
 {
     $node = createTestAppHostNode(role: $role);
 

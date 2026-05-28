@@ -61,7 +61,7 @@ class AppRegisterCommand extends Command
             ->where('name', $input['name'])
             ->first();
 
-        $requiredRole = $input['domain'] !== null ? 'app-production' : 'app-development';
+        $requiredRole = $input['domain'] !== null ? 'app-prod' : 'app-dev';
         $node = $this->resolveTargetNode($input['node'], $existingApp, $requiredRole);
 
         if (is_int($node)) {
@@ -366,7 +366,7 @@ class AppRegisterCommand extends Command
                 try {
                     $selectedNode = $this->promptForVisibleNode(
                         label: 'Select target app node',
-                        role: 'app',
+                        role: 'app-host',
                     );
                 } catch (PromptAborted) {
                     return $this->failValidation('node', 'Operation cancelled.');

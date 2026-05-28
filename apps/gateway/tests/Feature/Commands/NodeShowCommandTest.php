@@ -17,13 +17,11 @@ function nodeShowRow(array $overrides = []): array
 {
     return array_merge([
         'name' => 'app-1',
-        'role' => 'app',
         'host' => '10.6.0.7',
         'wireguard_address' => '10.6.0.7',
         'user' => 'nckrtl',
         'orbit_path' => '/home/nckrtl/orbit',
         'status' => 'active',
-        'environment' => 'development',
         'platform' => 'ubuntu_24-04',
         'created_at' => now(),
         'updated_at' => now(),
@@ -36,13 +34,16 @@ function setupNodeShowGatewayCaller(): void
 
     $nodeId = DB::table('nodes')->insertGetId(nodeShowRow([
         'name' => 'gateway-1',
-        'role' => 'gateway',
-        'environment' => null,
     ]));
 
-    DB::table('node_roles')->insert([
+    nodeShowAssignRole($nodeId, 'gateway');
+}
+
+function nodeShowAssignRole(int $nodeId, string $role): void
+{
+    DB::table('node_role')->insert([
         'node_id' => $nodeId,
-        'role' => 'gateway',
+        'role' => $role,
         'status' => 'active',
         'settings' => json_encode([], JSON_THROW_ON_ERROR),
         'last_error' => null,
@@ -74,7 +75,7 @@ describe('node:show base contract', function (): void {
 
         expect($exitCode)->toBe(0)
             ->and($payload['success']['data']['node']['name'])->toBe('gateway-1')
-            ->and($payload['success']['data']['node']['role'])->toBe('gateway');
+            ->and($payload['success']['data']['node']['roles'][0]['role'])->toBe('gateway');
     });
 
     it('does not mutate registry state or run processes', function (): void {

@@ -11,7 +11,6 @@ use App\Http\Gateway\Requests\Doctor\RunDoctorRequest;
 use App\Models\App;
 use App\Models\FirewallRule;
 use App\Models\LocalGatewaySettings;
-use App\Models\LocalNodeDefault;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Models\NodeTool;
@@ -51,11 +50,9 @@ function createDoctorLocalNode(string $role = 'gateway'): Node
 
     $node = Node::factory()->create([
         'name' => "local-{$role}",
-        'role' => $role,
         'host' => '10.6.0.1',
         'wireguard_address' => '10.6.0.1',
         'platform' => 'linux',
-        'environment' => $role === 'app' ? 'development' : null,
     ]);
 
     if ($role === 'gateway') {
@@ -67,10 +64,10 @@ function createDoctorLocalNode(string $role = 'gateway'): Node
         ]);
     }
 
-    if ($role === 'app') {
+    if ($role === 'app-dev') {
         NodeRoleAssignment::factory()->create([
             'node_id' => $node->id,
-            'role' => 'app-development',
+            'role' => 'app-dev',
             'status' => 'active',
             'settings' => ['tld' => 'test'],
         ]);
@@ -83,9 +80,7 @@ function createDoctorHostedAppNode(string $name = 'app-1', array $attributes = [
 {
     $node = Node::factory()->create(array_merge([
         'name' => $name,
-        'role' => 'app',
         'status' => 'active',
-        'environment' => 'development',
         'host' => '10.6.0.2',
         'wireguard_address' => '10.6.0.2',
         'platform' => 'ubuntu_24-04',
@@ -93,7 +88,7 @@ function createDoctorHostedAppNode(string $name = 'app-1', array $attributes = [
 
     NodeRoleAssignment::factory()->create([
         'node_id' => $node->id,
-        'role' => 'app-development',
+        'role' => 'app-dev',
         'status' => 'active',
         'settings' => ['tld' => 'test'],
     ]);
@@ -105,7 +100,6 @@ function createDoctorIngressNode(string $name = 'edge-1'): Node
 {
     $node = Node::factory()->create([
         'name' => $name,
-        'role' => 'control',
         'status' => 'active',
         'host' => '10.6.0.10',
         'wireguard_address' => '10.6.0.10',
@@ -126,7 +120,6 @@ function createDoctorRouterNode(string $name = 'gateway-1'): Node
 {
     $node = Node::factory()->create([
         'name' => $name,
-        'role' => 'gateway',
         'status' => 'active',
         'host' => '10.6.0.2',
         'wireguard_address' => '10.6.0.2',
@@ -147,7 +140,6 @@ function createDoctorProductionBackendNode(string $name = 'web-1'): Node
 {
     $node = Node::factory()->create([
         'name' => $name,
-        'role' => 'control',
         'status' => 'active',
         'host' => '10.6.0.21',
         'wireguard_address' => '10.6.0.21',
@@ -156,7 +148,7 @@ function createDoctorProductionBackendNode(string $name = 'web-1'): Node
 
     NodeRoleAssignment::factory()->create([
         'node_id' => $node->id,
-        'role' => 'app-production',
+        'role' => 'app-prod',
         'status' => 'active',
         'settings' => [],
     ]);
@@ -199,15 +191,14 @@ describe('doctor command contract', function (): void {
     it('filters reported drift by exact issue key', function (): void {
         createDoctorLocalNode('gateway');
         Node::factory()->create([
-            'name' => 'legacy-app',
-            'role' => 'app',
+            'name' => 'operator-node',
             'status' => 'active',
             'platform' => null,
             'wireguard_address' => null,
         ]);
 
         $exitCode = Artisan::call('doctor', [
-            '--node' => 'legacy-app',
+            '--node' => 'operator-node',
             '--family' => ['node'],
             '--key' => 'node.record_incomplete',
             '--json' => true,
@@ -355,7 +346,7 @@ describe('doctor command contract', function (): void {
     });
 
     it('forwards non-gateway callers through the typed gateway request', function (): void {
-        createDoctorLocalNode('control');
+        createDoctorLocalNode('operator');
 
         LocalGatewaySettings::current()->fill([
             'gateway_url' => 'https://10.6.0.1',
@@ -386,9 +377,8 @@ describe('doctor command contract', function (): void {
             ->and($payload['success']['data']['doctor']['healthy'])->toBeTrue();
     });
 
-    it('uses the local default node for non-gateway doctor restore requests', function (): void {
-        createDoctorLocalNode('control');
-        LocalNodeDefault::query()->create(['default_node_name' => 'beast']);
+    it('forwards explicit --node to non-gateway doctor restore requests', function (): void {
+        createDoctorLocalNode('operator');
 
         LocalGatewaySettings::current()->fill([
             'gateway_url' => 'https://10.6.0.1',
@@ -420,6 +410,7 @@ describe('doctor command contract', function (): void {
         ]);
 
         $exitCode = Artisan::call('doctor', [
+            '--node' => 'beast',
             '--family' => ['workspace'],
             '--restore' => true,
             '--json' => true,

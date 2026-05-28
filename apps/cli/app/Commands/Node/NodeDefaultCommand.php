@@ -10,11 +10,13 @@ use App\Services\OrbitConfigStore;
 
 final class NodeDefaultCommand extends LocalOnlyCommand
 {
+    #[\Override]
     protected $signature = 'node:default
         {name? : Development node to set as the local default}
         {--clear : Clear the local default}
         {--json}';
 
+    #[\Override]
     protected $description = 'Choose, show, set, or clear the local default development node.';
 
     public function handle(NodeDefaultActions $actions): int

@@ -91,7 +91,7 @@ function proxyCommandPrepareAppNode(E2ETopologyHarness $topology, string $checko
 {
     $topology->ssh(
         'gateway',
-        "cd {$checkout} && orbit tinker --execute=".escapeshellarg('$node = \App\Models\Node::query()->where("name", "app-dev-1")->firstOrFail(); $node->update(["status" => "active"]); echo "prepared";'),
+        "cd {$checkout} && php apps/gateway/artisan tinker --execute=".escapeshellarg('$node = \App\Models\Node::query()->where("name", "app-dev-1")->firstOrFail(); $node->update(["status" => "active"]); echo "prepared";'),
         timeoutSeconds: 120,
     );
 }

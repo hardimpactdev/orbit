@@ -13,6 +13,7 @@ final class ScheduleRemoveCommand extends ScheduleGatewayCommand
 {
     use ResolvesScheduleSelection;
 
+    #[\Override]
     protected $signature = 'schedule:remove
         {name? : Schedule name}
         {--app= : Filter by app scope}
@@ -20,6 +21,7 @@ final class ScheduleRemoveCommand extends ScheduleGatewayCommand
         {--force : Confirm destructive operation without prompting}
         {--json : Output JSON}';
 
+    #[\Override]
     protected $description = 'Remove a recurring schedule.';
 
     public function handle(): int

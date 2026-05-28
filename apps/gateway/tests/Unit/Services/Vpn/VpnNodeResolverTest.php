@@ -15,12 +15,10 @@ describe('VpnNodeResolver', function (): void {
     it('returns the first active vpn role node ordered by id', function (): void {
         $first = Node::factory()->create([
             'name' => 'vpn-1',
-            'role' => 'gateway',
             'status' => 'active',
         ]);
         $second = Node::factory()->create([
             'name' => 'vpn-2',
-            'role' => 'gateway',
             'status' => 'active',
         ]);
 
@@ -43,7 +41,6 @@ describe('VpnNodeResolver', function (): void {
     it('throws when no active vpn role node exists', function (): void {
         Node::factory()->create([
             'name' => 'gateway-1',
-            'role' => 'gateway',
             'status' => 'active',
         ]);
 

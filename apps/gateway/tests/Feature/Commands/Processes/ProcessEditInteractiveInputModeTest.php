@@ -25,10 +25,8 @@ function createProcessEditInteractiveLocalNode(string $role = 'gateway'): Node
 {
     $attributes = [
         'name' => "local-{$role}",
-        'role' => $role,
         'host' => '10.6.0.1',
-        'wireguard_address' => '10.6.0.1',
-    ];
+        'wireguard_address' => '10.6.0.1'];
 
     if ($role === 'gateway') {
         return createTestGatewayNode($attributes);
@@ -39,7 +37,7 @@ function createProcessEditInteractiveLocalNode(string $role = 'gateway'): Node
 
 it('prompts for app and name when both are absent', function (): void {
     createProcessEditInteractiveLocalNode('gateway');
-    $node = createTestAppHostNode(['role' => 'app', 'name' => 'app-1', 'user' => 'orbit']);
+    $node = createTestAppHostNode(['name' => 'app-1', 'user' => 'orbit']);
     $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id, 'path' => '/home/orbit/apps/docs']);
     Process::factory()->create(['app_id' => $app->id, 'name' => 'web']);
 
@@ -51,7 +49,7 @@ it('prompts for app and name when both are absent', function (): void {
 
 it('skips app prompt when --app is supplied', function (): void {
     createProcessEditInteractiveLocalNode('gateway');
-    $node = createTestAppHostNode(['role' => 'app', 'name' => 'app-1', 'user' => 'orbit']);
+    $node = createTestAppHostNode(['name' => 'app-1', 'user' => 'orbit']);
     $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id, 'path' => '/home/orbit/apps/docs']);
     Process::factory()->create(['app_id' => $app->id, 'name' => 'web']);
 
@@ -64,7 +62,7 @@ it('skips app prompt when --app is supplied', function (): void {
 
 it('does not prompt when name and app are both supplied', function (): void {
     createProcessEditInteractiveLocalNode('gateway');
-    $node = createTestAppHostNode(['role' => 'app', 'name' => 'app-1', 'user' => 'orbit']);
+    $node = createTestAppHostNode(['name' => 'app-1', 'user' => 'orbit']);
     $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id, 'path' => '/home/orbit/apps/docs']);
     Process::factory()->create(['app_id' => $app->id, 'name' => 'web']);
 
@@ -80,8 +78,7 @@ it('returns validation_failed in non-interactive mode when app is missing', func
     $exitCode = Artisan::call('process:edit', [
         'name' => 'web',
         '--command' => 'php artisan serve',
-        '--json' => true,
-    ]);
+        '--json' => true]);
     $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
 
     expect($exitCode)->toBe(1)
@@ -95,8 +92,7 @@ it('returns validation_failed in non-interactive mode when name is missing', fun
     $exitCode = Artisan::call('process:edit', [
         '--app' => 'docs',
         '--command' => 'php artisan serve',
-        '--json' => true,
-    ]);
+        '--json' => true]);
     $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
 
     expect($exitCode)->toBe(1)

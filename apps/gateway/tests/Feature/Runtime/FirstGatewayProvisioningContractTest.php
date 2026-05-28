@@ -18,16 +18,16 @@ beforeEach(function (): void {
 });
 
 describe('first-gateway provisioning contract', function (): void {
-    it('routes remote bootstrap and platform detection through the orbit launcher instead of host php artisan', function (): void {
+    it('routes remote bootstrap and platform detection through hidden internal CLI commands', function (): void {
         $installer = file_get_contents(repo_path('apps/gateway/app/Console/Commands/NodeNewCommand.php'));
 
         expect($installer)
             ->toContain("'orbit orbit:internal:bootstrap-gateway-local %s %s --identity-json=- --public-host=%s --tld=%s --metadata-json'")
             ->toContain("'orbit orbit:internal:detect-platform --update-local-node'")
+            ->not->toContain("'php apps/gateway/artisan orbit:internal:bootstrap-gateway-local")
+            ->not->toContain("'php apps/gateway/artisan orbit:internal:detect-platform")
             ->not->toContain('php artisan orbit:internal:bootstrap-gateway-local')
-            ->not->toContain('php artisan orbit:internal:detect-platform')
-            ->not->toContain("'cd %s && php artisan orbit:internal:bootstrap-gateway-local")
-            ->not->toContain("'cd %s && php artisan orbit:internal:detect-platform");
+            ->not->toContain('php artisan orbit:internal:detect-platform');
     });
 
     it('budgets first-gateway identity bootstrap for runtime image loading and container convergence', function (): void {
@@ -77,9 +77,8 @@ describe('GatewayApiRuntimeInstaller orbit-caddy convergence', function (): void
         File::put("{$certsDir}/10.6.0.2.crt", "-----BEGIN CERTIFICATE-----\ntest-leaf-cert\n-----END CERTIFICATE-----\n");
         File::put("{$certsDir}/10.6.0.2.key", 'test-leaf-key');
 
-        Node::query()->create([
+        Node::factory()->gateway()->create([
             'name' => 'gateway-1',
-            'role' => 'gateway',
             'host' => '10.6.0.2',
             'wireguard_address' => '10.6.0.2',
             'user' => 'orbit',

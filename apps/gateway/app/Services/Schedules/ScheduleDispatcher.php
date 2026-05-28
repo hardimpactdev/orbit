@@ -215,26 +215,14 @@ final readonly class ScheduleDispatcher
 
     private function gatewayNode(): ?Node
     {
-        $gatewayNode = $this->nodeRoleAssignments
+        return $this->nodeRoleAssignments
             ->activeGatewayNodeQuery()
             ->first();
-
-        if ($gatewayNode instanceof Node) {
-            return $gatewayNode;
-        }
-
-        $legacyGatewayNode = Node::query()
-            ->where('role', 'gateway')
-            ->where('status', 'active')
-            ->first();
-
-        return $legacyGatewayNode instanceof Node ? $legacyGatewayNode : null;
     }
 
     private function isGatewayNode(Node $node): bool
     {
-        return $this->nodeRoleAssignments->nodeIsGateway($node)
-            || ($node->role === 'gateway' && $node->status === 'active');
+        return $this->nodeRoleAssignments->nodeIsGateway($node);
     }
 
     private function runLocally(Schedule $schedule): RemoteShellResult

@@ -14,7 +14,6 @@ uses(RefreshDatabase::class);
 beforeEach(function (): void {
     Node::factory()->create([
         'name' => 'local-gateway',
-        'role' => 'gateway',
         'host' => '10.6.0.2',
         'wireguard_address' => '10.6.0.2',
         'status' => 'active',

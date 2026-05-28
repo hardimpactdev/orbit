@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Models\NodeRoleAssignment;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Laravel\Prompts\DataTablePrompt;
@@ -17,13 +18,11 @@ function nodeUpdateInteractiveRow(array $overrides = []): array
 {
     return array_merge([
         'name' => 'app-1',
-        'role' => 'app',
         'host' => '10.6.0.7',
         'wireguard_address' => '10.6.0.7',
         'user' => 'nckrtl',
         'orbit_path' => '/home/nckrtl/orbit',
         'status' => 'active',
-        'environment' => 'development',
         'platform' => 'ubuntu_24-04',
         'public_ipv4' => null,
         'public_ipv6' => null,
@@ -38,22 +37,38 @@ function setupNodeUpdateInteractiveGatewayCaller(): void
 
     DB::table('nodes')->insert(nodeUpdateInteractiveRow([
         'name' => 'gateway-1',
-        'role' => 'gateway',
-        'environment' => null,
     ]));
+    assignNodeUpdateInteractiveRole('gateway-1', 'gateway');
+}
+
+/**
+ * @param  array<string, mixed>  $settings
+ */
+function assignNodeUpdateInteractiveRole(string $nodeName, string $role, array $settings = []): void
+{
+    $nodeId = (int) DB::table('nodes')
+        ->where('name', $nodeName)
+        ->value('id');
+
+    NodeRoleAssignment::factory()->create([
+        'node_id' => $nodeId,
+        'role' => $role,
+        'status' => 'active',
+        'settings' => $settings,
+    ]);
 }
 
 describe('node:update interactive input mode', function (): void {
     it('prompts for missing name, field selection, and selected field value', function (): void {
         setupNodeUpdateInteractiveGatewayCaller();
         DB::table('nodes')->insert(nodeUpdateInteractiveRow());
+        assignNodeUpdateInteractiveRole('app-1', 'app-dev');
 
         DataTablePrompt::fake([Key::ENTER]);
 
         $this->artisan('node:update')
             ->expectsChoice('Which field would you like to update?', 'host', [
                 'host',
-                'environment',
                 'tld',
                 'public_ipv4',
                 'public_ipv6',
@@ -68,30 +83,30 @@ describe('node:update interactive input mode', function (): void {
     it('prompts for field selection when the name is supplied without field flags', function (): void {
         setupNodeUpdateInteractiveGatewayCaller();
         DB::table('nodes')->insert(nodeUpdateInteractiveRow());
+        assignNodeUpdateInteractiveRole('app-1', 'app-dev');
 
         $this->artisan('node:update app-1')
-            ->expectsChoice('Which field would you like to update?', 'environment', [
+            ->expectsChoice('Which field would you like to update?', 'public_ipv4', [
                 'host',
-                'environment',
                 'tld',
                 'public_ipv4',
                 'public_ipv6',
             ])
-            ->expectsChoice('Environment', 'production', ['development', 'production'])
-            ->expectsOutputToContain('Changed: environment')
+            ->expectsQuestion('Public IPv4', '203.0.113.10')
+            ->expectsOutputToContain('Changed: public_ipv4')
             ->assertSuccessful();
 
-        expect(DB::table('nodes')->where('name', 'app-1')->value('environment'))->toBe('production');
+        expect(DB::table('nodes')->where('name', 'app-1')->value('public_ipv4'))->toBe('203.0.113.10');
     });
 
     it('prompts for tld and persists the selected value', function (): void {
         setupNodeUpdateInteractiveGatewayCaller();
         DB::table('nodes')->insert(nodeUpdateInteractiveRow(['tld' => null]));
+        assignNodeUpdateInteractiveRole('app-1', 'app-dev', ['tld' => null]);
 
         $this->artisan('node:update app-1')
             ->expectsChoice('Which field would you like to update?', 'tld', [
                 'host',
-                'environment',
                 'tld',
                 'public_ipv4',
                 'public_ipv6',
@@ -106,14 +121,13 @@ describe('node:update interactive input mode', function (): void {
     it('omits tld from prompts on production app nodes', function (): void {
         setupNodeUpdateInteractiveGatewayCaller();
         DB::table('nodes')->insert(nodeUpdateInteractiveRow([
-            'environment' => 'production',
             'tld' => null,
         ]));
+        assignNodeUpdateInteractiveRole('app-1', 'app-prod');
 
         $this->artisan('node:update app-1')
             ->expectsChoice('Which field would you like to update?', 'host', [
                 'host',
-                'environment',
                 'public_ipv4',
                 'public_ipv6',
             ])

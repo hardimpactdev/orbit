@@ -11,7 +11,7 @@ availability.
 ## Usage
 
 ```bash
-orbit node:list [--role=<gateway|vpn|router|app-development|app-production|database|agent|ingress|websocket|s3>] [--doctor] [--json]
+orbit node:list [--role=<gateway|vpn|router|app-dev|app-prod|database|agent|ingress|websocket|s3>] [--doctor] [--json]
 ```
 
 Run from any node with gateway visibility. No arguments are required.
@@ -22,9 +22,9 @@ Run from any node with gateway visibility. No arguments are required.
 orbit node:list
 orbit node:list --role=vpn
 orbit node:list --role=router
-orbit node:list --role=app-production
+orbit node:list --role=app-prod
 orbit node:list --doctor
-orbit node:list --role=app-development --json
+orbit node:list --role=app-dev --json
 ```
 
 ## Arguments and options
@@ -34,7 +34,7 @@ This section defines each accepted filter and output flag for `node:list`.
 ### `--role`
 
 Filters by effective role assignment. Accepts a single role value:
-`gateway`, `vpn`, `router`, `app-development`, `app-production`, `database`,
+`gateway`, `vpn`, `router`, `app-dev`, `app-prod`, `database`,
 `agent`, `ingress`, `websocket`, or `s3`. Comma-separated input is rejected.
 
 ### `--doctor`

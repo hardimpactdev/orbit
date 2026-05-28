@@ -21,7 +21,6 @@ beforeEach(function (): void {
 it('renders the documented progress tree and completion summary', function (): void {
     Node::factory()->create([
         'name' => 'gateway-1',
-        'role' => 'gateway',
     ]);
 
     createTestAppHostNode([
@@ -49,7 +48,6 @@ it('renders the documented progress tree and completion summary', function (): v
 it('renders validation failures without a progress tree', function (): void {
     Node::factory()->create([
         'name' => 'gateway-1',
-        'role' => 'gateway',
     ]);
 
     $this->artisan('app:new Invalid --node=app-1')
@@ -61,7 +59,6 @@ it('renders validation failures without a progress tree', function (): void {
 it('renders decorated progress tree glyphs and colors', function (): void {
     Node::factory()->create([
         'name' => 'gateway-1',
-        'role' => 'gateway',
     ]);
 
     createTestAppHostNode([
@@ -95,7 +92,6 @@ it('renders decorated progress tree glyphs and colors', function (): void {
 it('renders warning retry hints in human output', function (): void {
     Node::factory()->create([
         'name' => 'gateway-1',
-        'role' => 'gateway',
     ]);
 
     createTestAppHostNode([

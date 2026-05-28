@@ -48,13 +48,10 @@ function deployCommandCreateApp(string $environment = 'production'): App
 {
     Node::factory()->create([
         'name' => 'gateway-1',
-        'role' => 'gateway',
     ]);
 
-    $node = Node::factory()->create([
+    $node = Node::factory()->appProd()->create([
         'name' => 'app-prod-1',
-        'role' => 'app',
-        'environment' => 'production',
     ]);
 
     return App::factory()->create([
@@ -245,7 +242,6 @@ it('streams deploy run progress through the gateway for control callers', functi
 
     Node::factory()->create([
         'name' => 'control-1',
-        'role' => 'control',
     ]);
 
     LocalGatewaySettings::current()->fill([
@@ -403,7 +399,6 @@ it('forwards control callers through typed gateway requests', function (): void 
 
     Node::factory()->create([
         'name' => 'control-1',
-        'role' => 'control',
     ]);
 
     LocalGatewaySettings::current()->fill([

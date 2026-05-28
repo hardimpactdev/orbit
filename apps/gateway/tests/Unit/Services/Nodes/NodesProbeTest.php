@@ -10,7 +10,6 @@ use App\Data\Doctor\ProbeSnapshot;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Enums\AdoptAction;
 use App\Enums\DriftKind;
-use App\Models\LocalNodeDefault;
 use App\Models\Node;
 use App\Models\NodeAccess;
 use App\Models\NodeRoleAssignment;
@@ -49,7 +48,7 @@ function assignNodesProbeAppHostRole(Node $node, array $settings = ['tld' => 'te
 {
     NodeRoleAssignment::factory()->create([
         'node_id' => $node->id,
-        'role' => 'app-development',
+        'role' => 'app-dev',
         'status' => 'active',
         'settings' => $settings,
     ]);
@@ -87,7 +86,6 @@ describe('record completeness', function (): void {
     it('detects incomplete records', function (): void {
         $id = DB::table('nodes')->insertGetId([
             'name' => 'incomplete',
-            'role' => '',
             'host' => '10.0.0.1',
             'orbit_path' => '/orbit',
             'status' => 'active',
@@ -107,11 +105,9 @@ describe('record completeness', function (): void {
     it('passes complete records', function (): void {
         $node = Node::create([
             'name' => 'complete',
-            'role' => 'app',
             'host' => '10.0.0.1',
             'orbit_path' => '/orbit',
             'status' => 'active',
-            'environment' => 'development',
             'platform' => 'ubuntu_24-04',
             'wireguard_address' => '10.6.0.5',
         ]);
@@ -130,11 +126,9 @@ describe('record completeness', function (): void {
 
         $node = Node::create([
             'name' => 'incomplete-prod',
-            'role' => 'app',
             'host' => '46.225.89.66',
             'orbit_path' => '/orbit',
             'status' => 'active',
-            'environment' => 'production',
             'platform' => 'ubuntu_24-04',
         ]);
         assignNodesProbeAppHostRole($node, []);
@@ -148,10 +142,9 @@ describe('record completeness', function (): void {
             ->and($remoteShell->scripts)->toBe([]);
     });
 
-    it('reports a missing role assignment for app nodes without compatible active assignments', function (): void {
+    it('does not synthesize missing role drift for unassigned nodes', function (): void {
         $node = Node::create([
             'name' => 'app-no-env',
-            'role' => 'app',
             'host' => '10.0.0.1',
             'orbit_path' => '/orbit',
             'status' => 'active',
@@ -162,13 +155,12 @@ describe('record completeness', function (): void {
         $drift = $this->probe->diff($node, new ProbeSnapshot([]));
         $missingRoleAssignment = array_filter($drift, fn (DriftEntry $e): bool => $e->key === 'node.role_assignment_missing');
 
-        expect($missingRoleAssignment)->toHaveCount(1);
+        expect($missingRoleAssignment)->toHaveCount(0);
     });
 
     it('does not require environment for non-app nodes', function (): void {
         $node = Node::create([
             'name' => 'gateway-no-env',
-            'role' => 'gateway',
             'host' => '10.0.0.1',
             'orbit_path' => '/orbit',
             'status' => 'active',
@@ -183,206 +175,13 @@ describe('record completeness', function (): void {
     });
 });
 
-describe('local default', function (): void {
-    it('passes when no default is set', function (): void {
-        $node = Node::create([
-            'name' => 'control',
-            'role' => 'control',
-            'host' => '10.0.0.1',
-            'orbit_path' => '/orbit',
-            'status' => 'active',
-            'platform' => 'macos_14',
-            'wireguard_address' => '10.6.0.2',
-        ]);
-
-        $drift = $this->probe->diff($node, new ProbeSnapshot([]));
-        $localDefault = array_filter($drift, fn (DriftEntry $e): bool => $e->key === 'node.local_default_invalid');
-
-        expect($localDefault)->toHaveCount(0);
-    });
-
-    it('detects missing default node', function (): void {
-        LocalNodeDefault::create(['default_node_name' => 'missing']);
-
-        $node = Node::create([
-            'name' => 'control',
-            'role' => 'control',
-            'host' => '10.0.0.1',
-            'orbit_path' => '/orbit',
-            'status' => 'active',
-            'platform' => 'macos_14',
-            'wireguard_address' => '10.6.0.2',
-        ]);
-
-        $drift = $this->probe->diff($node, new ProbeSnapshot([]));
-        $localDefault = array_filter($drift, fn (DriftEntry $e): bool => $e->key === 'node.local_default_invalid');
-
-        expect($localDefault)->toHaveCount(1);
-        expect($localDefault[array_key_first($localDefault)]->kind)->toBe(DriftKind::Divergent);
-    });
-
-    it('detects non-development default node', function (): void {
-        Node::create([
-            'name' => 'prod-app',
-            'role' => 'app',
-            'host' => '10.0.0.1',
-            'orbit_path' => '/orbit',
-            'status' => 'active',
-            'environment' => 'production',
-            'platform' => 'ubuntu_24-04',
-            'wireguard_address' => '10.6.0.5',
-        ]);
-
-        LocalNodeDefault::create(['default_node_name' => 'prod-app']);
-
-        $node = Node::create([
-            'name' => 'control',
-            'role' => 'control',
-            'host' => '10.0.0.1',
-            'orbit_path' => '/orbit',
-            'status' => 'active',
-            'platform' => 'macos_14',
-            'wireguard_address' => '10.6.0.2',
-        ]);
-
-        $drift = $this->probe->diff($node, new ProbeSnapshot([]));
-        $localDefault = array_filter($drift, fn (DriftEntry $e): bool => $e->key === 'node.local_default_invalid');
-
-        expect($localDefault)->toHaveCount(1);
-    });
-
-    it('detects unauthorized default node', function (): void {
-        $defaultNode = Node::create([
-            'name' => 'dev-app',
-            'role' => 'app',
-            'host' => '10.0.0.1',
-            'orbit_path' => '/orbit',
-            'status' => 'active',
-            'environment' => 'development',
-            'platform' => 'ubuntu_24-04',
-            'wireguard_address' => '10.6.0.5',
-        ]);
-        assignNodesProbeAppHostRole($defaultNode);
-
-        LocalNodeDefault::create(['default_node_name' => 'dev-app']);
-
-        $node = Node::create([
-            'name' => 'control',
-            'role' => 'control',
-            'host' => '10.0.0.1',
-            'orbit_path' => '/orbit',
-            'status' => 'active',
-            'platform' => 'macos_14',
-            'wireguard_address' => '10.6.0.2',
-        ]);
-
-        $drift = $this->probe->diff($node, new ProbeSnapshot([]));
-        $localDefault = array_filter($drift, fn (DriftEntry $e): bool => $e->key === 'node.local_default_invalid');
-
-        expect($localDefault)->toHaveCount(1);
-    });
-
-    it('passes for authorized development default', function (): void {
-        $defaultNode = Node::create([
-            'name' => 'dev-app',
-            'role' => 'app',
-            'host' => '10.0.0.1',
-            'orbit_path' => '/orbit',
-            'status' => 'active',
-            'environment' => 'development',
-            'platform' => 'ubuntu_24-04',
-            'wireguard_address' => '10.6.0.5',
-        ]);
-        assignNodesProbeAppHostRole($defaultNode);
-
-        LocalNodeDefault::create(['default_node_name' => 'dev-app']);
-
-        $node = Node::create([
-            'name' => 'control',
-            'role' => 'control',
-            'host' => '10.0.0.1',
-            'orbit_path' => '/orbit',
-            'status' => 'active',
-            'platform' => 'macos_14',
-            'wireguard_address' => '10.6.0.2',
-        ]);
-
-        NodeAccess::create([
-            'consumer_node_id' => $node->id,
-            'serving_node_id' => $defaultNode->id,
-        ]);
-
-        $drift = $this->probe->diff($node, new ProbeSnapshot([]));
-        $localDefault = array_filter($drift, fn (DriftEntry $e): bool => $e->key === 'node.local_default_invalid');
-
-        expect($localDefault)->toHaveCount(0);
-    });
-
-    it('passes for authorized app-development default without legacy app metadata', function (): void {
-        $defaultNode = Node::create([
-            'name' => 'dev-client',
-            'role' => 'control',
-            'host' => '10.0.0.5',
-            'orbit_path' => '/orbit',
-            'status' => 'active',
-            'environment' => null,
-            'platform' => 'ubuntu_24-04',
-            'wireguard_address' => '10.6.0.5',
-        ]);
-        assignNodesProbeAppHostRole($defaultNode);
-
-        LocalNodeDefault::create(['default_node_name' => 'dev-client']);
-
-        $node = Node::create([
-            'name' => 'control',
-            'role' => 'control',
-            'host' => '10.0.0.1',
-            'orbit_path' => '/orbit',
-            'status' => 'active',
-            'platform' => 'macos_14',
-            'wireguard_address' => '10.6.0.2',
-        ]);
-
-        NodeAccess::create([
-            'consumer_node_id' => $node->id,
-            'serving_node_id' => $defaultNode->id,
-        ]);
-
-        $drift = $this->probe->diff($node, new ProbeSnapshot([]));
-        $localDefault = array_filter($drift, fn (DriftEntry $e): bool => $e->key === 'node.local_default_invalid');
-
-        expect($localDefault)->toHaveCount(0);
-    });
-
-    it('skips local default check for non-control nodes', function (): void {
-        LocalNodeDefault::create(['default_node_name' => 'some-node']);
-
-        $node = Node::create([
-            'name' => 'gateway',
-            'role' => 'gateway',
-            'host' => '10.0.0.1',
-            'orbit_path' => '/orbit',
-            'status' => 'active',
-            'platform' => 'ubuntu_24-04',
-            'wireguard_address' => '10.6.0.1',
-        ]);
-
-        $drift = $this->probe->diff($node, new ProbeSnapshot([]));
-        $localDefault = array_filter($drift, fn (DriftEntry $e): bool => $e->key === 'node.local_default_invalid');
-
-        expect($localDefault)->toHaveCount(0);
-    });
-});
-
 describe('agent IDE default', function (): void {
     it('passes when no config is set', function (): void {
         $node = Node::create([
             'name' => 'test',
-            'role' => 'app',
             'host' => '10.0.0.1',
             'orbit_path' => '/orbit',
             'status' => 'active',
-            'environment' => 'development',
             'platform' => 'ubuntu_24-04',
             'wireguard_address' => '10.6.0.5',
         ]);
@@ -396,11 +195,9 @@ describe('agent IDE default', function (): void {
     it('detects unsupported adapter', function (): void {
         $node = Node::create([
             'name' => 'test',
-            'role' => 'app',
             'host' => '10.0.0.1',
             'orbit_path' => '/orbit',
             'status' => 'active',
-            'environment' => 'development',
             'platform' => 'ubuntu_24-04',
             'wireguard_address' => '10.6.0.5',
         ]);
@@ -417,11 +214,9 @@ describe('agent IDE default', function (): void {
     it('passes for supported adapter', function (): void {
         $node = Node::create([
             'name' => 'test',
-            'role' => 'app',
             'host' => '10.0.0.1',
             'orbit_path' => '/orbit',
             'status' => 'active',
-            'environment' => 'development',
             'platform' => 'ubuntu_24-04',
             'wireguard_address' => '10.6.0.5',
         ]);
@@ -439,11 +234,9 @@ describe('access grants', function (): void {
     it('passes when no grants exist', function (): void {
         $node = Node::create([
             'name' => 'test',
-            'role' => 'app',
             'host' => '10.0.0.1',
             'orbit_path' => '/orbit',
             'status' => 'active',
-            'environment' => 'development',
             'platform' => 'ubuntu_24-04',
             'wireguard_address' => '10.6.0.5',
         ]);
@@ -457,7 +250,6 @@ describe('access grants', function (): void {
     it('detects stale consuming grants', function (): void {
         $consumer = Node::create([
             'name' => 'consumer',
-            'role' => 'control',
             'host' => '10.0.0.1',
             'orbit_path' => '/orbit',
             'status' => 'active',
@@ -467,11 +259,9 @@ describe('access grants', function (): void {
 
         $serving = Node::create([
             'name' => 'serving',
-            'role' => 'app',
             'host' => '10.0.0.1',
             'orbit_path' => '/orbit',
             'status' => 'active',
-            'environment' => 'development',
             'platform' => 'ubuntu_24-04',
             'wireguard_address' => '10.6.0.5',
         ]);
@@ -492,7 +282,6 @@ describe('access grants', function (): void {
     it('detects stale serving grants', function (): void {
         $consumer = Node::create([
             'name' => 'consumer',
-            'role' => 'control',
             'host' => '10.0.0.1',
             'orbit_path' => '/orbit',
             'status' => 'active',
@@ -502,11 +291,9 @@ describe('access grants', function (): void {
 
         $serving = Node::create([
             'name' => 'serving',
-            'role' => 'app',
             'host' => '10.0.0.1',
             'orbit_path' => '/orbit',
             'status' => 'active',
-            'environment' => 'development',
             'platform' => 'ubuntu_24-04',
             'wireguard_address' => '10.6.0.5',
         ]);
@@ -529,11 +316,9 @@ describe('external service stubs', function (): void {
     it('detects missing WireGuard peer material for active non-gateway nodes', function (): void {
         $node = Node::create([
             'name' => 'test',
-            'role' => 'app',
             'host' => '10.0.0.1',
             'orbit_path' => '/orbit',
             'status' => 'active',
-            'environment' => 'development',
             'platform' => 'ubuntu_24-04',
             'wireguard_address' => '10.6.0.5',
         ]);
@@ -548,11 +333,9 @@ describe('external service stubs', function (): void {
     it('accepts matching WireGuard peer material', function (): void {
         $node = Node::create([
             'name' => 'test',
-            'role' => 'app',
             'host' => '10.0.0.1',
             'orbit_path' => '/orbit',
             'status' => 'active',
-            'environment' => 'development',
             'platform' => 'ubuntu_24-04',
             'wireguard_address' => '10.6.0.5',
         ]);
@@ -571,11 +354,9 @@ describe('external service stubs', function (): void {
     it('detects WireGuard peer address mismatches', function (): void {
         $node = Node::create([
             'name' => 'test',
-            'role' => 'app',
             'host' => '10.0.0.1',
             'orbit_path' => '/orbit',
             'status' => 'active',
-            'environment' => 'development',
             'platform' => 'ubuntu_24-04',
             'wireguard_address' => '10.6.0.5',
         ]);
@@ -595,11 +376,9 @@ describe('external service stubs', function (): void {
     it('detects WireGuard peers attached to non-active nodes as extra', function (): void {
         $node = Node::create([
             'name' => 'test',
-            'role' => 'app',
             'host' => '10.0.0.1',
             'orbit_path' => '/orbit',
             'status' => 'decommissioned',
-            'environment' => 'development',
             'platform' => 'ubuntu_24-04',
             'wireguard_address' => '10.6.0.5',
         ]);
@@ -619,11 +398,9 @@ describe('external service stubs', function (): void {
     it('returns empty for platform reality checks on remote nodes', function (): void {
         $node = Node::create([
             'name' => 'test',
-            'role' => 'app',
             'host' => '10.0.0.1',
             'orbit_path' => '/orbit',
             'status' => 'active',
-            'environment' => 'development',
             'platform' => 'ubuntu_24-04',
             'wireguard_address' => '10.6.0.5',
         ]);
@@ -647,7 +424,6 @@ describe('external service stubs', function (): void {
 
         $node = Node::create([
             'name' => 'test',
-            'role' => 'gateway',
             'host' => '10.0.0.1',
             'orbit_path' => '/orbit',
             'status' => 'active',
@@ -680,7 +456,6 @@ describe('external service stubs', function (): void {
 
         $node = Node::create([
             'name' => 'test',
-            'role' => 'gateway',
             'host' => '10.0.0.1',
             'orbit_path' => '/orbit',
             'status' => 'active',
@@ -705,11 +480,9 @@ describe('external service stubs', function (): void {
 
         $node = Node::create([
             'name' => 'test',
-            'role' => 'app',
             'host' => '10.0.0.1',
             'orbit_path' => '/orbit',
             'status' => 'active',
-            'environment' => 'development',
             'platform' => 'ubuntu_24-04',
             'wireguard_address' => '10.6.0.5',
         ]);
@@ -736,11 +509,9 @@ describe('external service stubs', function (): void {
 
         $node = Node::create([
             'name' => 'test',
-            'role' => 'app',
             'host' => '10.0.0.1',
             'orbit_path' => '/orbit',
             'status' => 'active',
-            'environment' => 'development',
             'tld' => 'test',
             'platform' => 'ubuntu_24-04',
             'wireguard_address' => '10.6.0.5',
@@ -767,7 +538,6 @@ describe('external service stubs', function (): void {
 
         $node = Node::create([
             'name' => 'gateway',
-            'role' => 'gateway',
             'host' => '10.0.0.1',
             'orbit_path' => '/orbit',
             'status' => 'active',
@@ -786,7 +556,6 @@ describe('external service stubs', function (): void {
     it('returns empty for gateway runtime checks', function (): void {
         $node = Node::create([
             'name' => 'test',
-            'role' => 'gateway',
             'host' => '10.0.0.1',
             'orbit_path' => '/orbit',
             'status' => 'active',
@@ -809,11 +578,9 @@ describe('external service stubs', function (): void {
 
         $node = Node::create([
             'name' => 'test',
-            'role' => 'app',
             'host' => '10.0.0.1',
             'orbit_path' => '/orbit',
             'status' => 'active',
-            'environment' => 'development',
             'tld' => 'test',
             'platform' => 'ubuntu_24-04',
             'wireguard_address' => '10.6.0.5',
@@ -841,11 +608,9 @@ describe('external service stubs', function (): void {
 
         $node = Node::create([
             'name' => 'test',
-            'role' => 'app',
             'host' => '10.0.0.1',
             'orbit_path' => '/orbit',
             'status' => 'active',
-            'environment' => 'development',
             'tld' => 'test',
             'platform' => 'ubuntu_24-04',
             'wireguard_address' => '10.6.0.5',
@@ -872,7 +637,6 @@ describe('external service stubs', function (): void {
 
         $node = Node::create([
             'name' => 'gateway',
-            'role' => 'gateway',
             'host' => '10.0.0.1',
             'orbit_path' => '/orbit',
             'status' => 'active',
@@ -891,16 +655,14 @@ describe('external service stubs', function (): void {
     it('detects missing development TLD for development app nodes', function (): void {
         $node = Node::create([
             'name' => 'test',
-            'role' => 'app',
             'host' => '10.0.0.1',
             'orbit_path' => '/orbit',
             'status' => 'active',
-            'environment' => 'development',
             'platform' => 'ubuntu_24-04',
             'wireguard_address' => '10.6.0.5',
         ]);
         $node->roleAssignments()->create([
-            'role' => 'app-development',
+            'role' => 'app-dev',
             'status' => 'active',
             'settings' => [],
         ]);
@@ -915,17 +677,15 @@ describe('external service stubs', function (): void {
     it('accepts configured development TLD for development app nodes', function (): void {
         $node = Node::create([
             'name' => 'test',
-            'role' => 'app',
             'host' => '10.0.0.1',
             'orbit_path' => '/orbit',
             'status' => 'active',
-            'environment' => 'development',
             'tld' => 'test',
             'platform' => 'ubuntu_24-04',
             'wireguard_address' => '10.6.0.5',
         ]);
         $node->roleAssignments()->create([
-            'role' => 'app-development',
+            'role' => 'app-dev',
             'status' => 'active',
             'settings' => ['tld' => 'test'],
         ]);
@@ -947,17 +707,15 @@ describe('external service stubs', function (): void {
     it('detects missing gateway development dns mapping for development app nodes', function (): void {
         $node = Node::create([
             'name' => 'test',
-            'role' => 'app',
             'host' => '10.0.0.1',
             'orbit_path' => '/orbit',
             'status' => 'active',
-            'environment' => 'development',
             'tld' => 'test',
             'platform' => 'ubuntu_24-04',
             'wireguard_address' => '10.6.0.5',
         ]);
         $node->roleAssignments()->create([
-            'role' => 'app-development',
+            'role' => 'app-dev',
             'status' => 'active',
             'settings' => ['tld' => 'test'],
         ]);
@@ -972,17 +730,15 @@ describe('external service stubs', function (): void {
     it('detects wrong gateway development dns mapping targets', function (): void {
         $node = Node::create([
             'name' => 'test',
-            'role' => 'app',
             'host' => '10.0.0.1',
             'orbit_path' => '/orbit',
             'status' => 'active',
-            'environment' => 'development',
             'tld' => 'test',
             'platform' => 'ubuntu_24-04',
             'wireguard_address' => '10.6.0.5',
         ]);
         $node->roleAssignments()->create([
-            'role' => 'app-development',
+            'role' => 'app-dev',
             'status' => 'active',
             'settings' => ['tld' => 'test'],
         ]);
@@ -1005,17 +761,15 @@ describe('external service stubs', function (): void {
     it('detects public gateway development dns resolver exposure', function (): void {
         $node = Node::create([
             'name' => 'test',
-            'role' => 'app',
             'host' => '10.0.0.1',
             'orbit_path' => '/orbit',
             'status' => 'active',
-            'environment' => 'development',
             'tld' => 'test',
             'platform' => 'ubuntu_24-04',
             'wireguard_address' => '10.6.0.5',
         ]);
         $node->roleAssignments()->create([
-            'role' => 'app-development',
+            'role' => 'app-dev',
             'status' => 'active',
             'settings' => ['tld' => 'test'],
         ]);
@@ -1038,11 +792,9 @@ describe('external service stubs', function (): void {
     it('does not require development TLD for production app nodes', function (): void {
         $node = Node::create([
             'name' => 'test',
-            'role' => 'app',
             'host' => '10.0.0.1',
             'orbit_path' => '/orbit',
             'status' => 'active',
-            'environment' => 'production',
             'platform' => 'ubuntu_24-04',
             'wireguard_address' => '10.6.0.5',
         ]);
@@ -1056,11 +808,9 @@ describe('external service stubs', function (): void {
     it('returns empty for CLI PHP default checks', function (): void {
         $node = Node::create([
             'name' => 'test',
-            'role' => 'app',
             'host' => '10.0.0.1',
             'orbit_path' => '/orbit',
             'status' => 'active',
-            'environment' => 'development',
             'platform' => 'ubuntu_24-04',
             'wireguard_address' => '10.6.0.5',
         ]);
@@ -1076,11 +826,9 @@ describe('reconciliation', function (): void {
     it('throws for unsupported drift keys', function (): void {
         $node = Node::create([
             'name' => 'test',
-            'role' => 'app',
             'host' => '10.0.0.1',
             'orbit_path' => '/orbit',
             'status' => 'active',
-            'environment' => 'development',
             'platform' => 'ubuntu_24-04',
             'wireguard_address' => '10.6.0.5',
         ]);
@@ -1099,11 +847,9 @@ describe('reconciliation', function (): void {
     it('does not throw for supported drift keys', function (): void {
         $node = Node::create([
             'name' => 'test',
-            'role' => 'app',
             'host' => '10.0.0.1',
             'orbit_path' => '/orbit',
             'status' => 'active',
-            'environment' => 'development',
             'platform' => 'ubuntu_24-04',
             'wireguard_address' => '10.6.0.5',
         ]);
@@ -1133,7 +879,6 @@ describe('reconciliation', function (): void {
     it('removes stale access grants on reconcile', function (): void {
         $consumer = Node::create([
             'name' => 'consumer',
-            'role' => 'control',
             'host' => '10.0.0.1',
             'orbit_path' => '/orbit',
             'status' => 'active',
@@ -1143,11 +888,9 @@ describe('reconciliation', function (): void {
 
         $serving = Node::create([
             'name' => 'serving',
-            'role' => 'app',
             'host' => '10.0.0.1',
             'orbit_path' => '/orbit',
             'status' => 'active',
-            'environment' => 'development',
             'platform' => 'ubuntu_24-04',
             'wireguard_address' => '10.6.0.5',
         ]);
@@ -1174,17 +917,15 @@ describe('reconciliation', function (): void {
     it('repairs gateway development dns mapping drift on reconcile', function (): void {
         $node = Node::create([
             'name' => 'test',
-            'role' => 'app',
             'host' => '10.0.0.1',
             'orbit_path' => '/orbit',
             'status' => 'active',
-            'environment' => 'development',
             'tld' => 'test',
             'platform' => 'ubuntu_24-04',
             'wireguard_address' => '10.6.0.5',
         ]);
         $node->roleAssignments()->create([
-            'role' => 'app-development',
+            'role' => 'app-dev',
             'status' => 'active',
             'settings' => ['tld' => 'test'],
         ]);
@@ -1203,7 +944,7 @@ describe('reconciliation', function (): void {
             kind: DriftKind::Divergent,
             summary: 'test',
             detail: [
-                'role' => 'app-development',
+                'role' => 'app-dev',
                 'tld' => 'test',
             ],
         );
@@ -1220,7 +961,6 @@ describe('adoption', function (): void {
     it('returns empty adopt snapshot when no adoptable node reality is detected', function (): void {
         $node = Node::create([
             'name' => 'test',
-            'role' => 'control',
             'host' => '10.0.0.1',
             'orbit_path' => '/orbit',
             'status' => 'active',
@@ -1246,7 +986,6 @@ describe('adoption', function (): void {
 
         $node = Node::create([
             'name' => 'test',
-            'role' => 'gateway',
             'host' => '10.0.0.1',
             'orbit_path' => '/orbit',
             'status' => 'active',
@@ -1266,11 +1005,9 @@ describe('adoption', function (): void {
     it('snapshots unambiguous WireGuard address mismatches for adopt', function (): void {
         $node = Node::create([
             'name' => 'test',
-            'role' => 'app',
             'host' => '10.0.0.1',
             'orbit_path' => '/orbit',
             'status' => 'active',
-            'environment' => 'development',
             'platform' => 'ubuntu_24-04',
             'wireguard_address' => '10.6.0.5',
         ]);
@@ -1292,11 +1029,9 @@ describe('adoption', function (): void {
     it('does not snapshot ambiguous WireGuard address mismatches for adopt', function (): void {
         $node = Node::create([
             'name' => 'test',
-            'role' => 'app',
             'host' => '10.0.0.1',
             'orbit_path' => '/orbit',
             'status' => 'active',
-            'environment' => 'development',
             'platform' => 'ubuntu_24-04',
             'wireguard_address' => '10.6.0.5',
         ]);
@@ -1319,7 +1054,6 @@ describe('adoption', function (): void {
 
         $node = Node::create([
             'name' => 'test',
-            'role' => 'control',
             'host' => '10.0.0.1',
             'orbit_path' => '/orbit',
             'status' => 'decommissioned',
@@ -1351,7 +1085,6 @@ describe('adoption', function (): void {
 
         $node = Node::create([
             'name' => 'test',
-            'role' => 'control',
             'host' => '10.0.0.1',
             'orbit_path' => '/orbit',
             'status' => 'decommissioned',
@@ -1383,11 +1116,9 @@ describe('adoption', function (): void {
 
         $node = Node::create([
             'name' => 'test',
-            'role' => 'app',
             'host' => '10.0.0.1',
             'orbit_path' => '/orbit',
             'status' => 'active',
-            'environment' => 'development',
             'platform' => 'ubuntu_24-04',
             'wireguard_address' => '10.6.0.8',
         ]);
@@ -1401,8 +1132,8 @@ describe('adoption', function (): void {
             'allowed_ips' => ['10.6.0.8/32'],
             'artifact' => [
                 'name' => 'test',
-                'role' => 'app',
-                'local_role' => 'app',
+                'role' => 'app-dev',
+                'local_role' => 'app-dev',
                 'status' => 'active',
                 'platform' => 'ubuntu_24-04',
                 'wireguard_address' => '10.6.0.8',
@@ -1412,20 +1143,19 @@ describe('adoption', function (): void {
         ]);
     });
 
-    it('snapshots app host adoption for control-role nodes with active app-host assignments', function (): void {
+    it('does not snapshot app host adoption when identity artifact role disagrees with assignments', function (): void {
         Process::preventStrayProcesses();
         Process::fake([
             'sudo wg show wg-orbit allowed-ips' => Process::result(output: "app-public-key\t10.6.0.8/32\n"),
         ]);
 
         $probe = new NodesProbe(remoteShell: new NodesProbeRecordingRemoteShell([
-            new RemoteShellResult(exitCode: 0, stdout: nodeIdentityArtifactPayload(['role' => 'control', 'local_role' => 'control']), stderr: '', durationMs: 1),
+            new RemoteShellResult(exitCode: 0, stdout: nodeIdentityArtifactPayload(['role' => 'unknown', 'local_role' => 'unknown']), stderr: '', durationMs: 1),
             new RemoteShellResult(exitCode: 0, stdout: 'supervisor OK', stderr: '', durationMs: 1),
         ]));
 
         $node = Node::create([
             'name' => 'test',
-            'role' => 'control',
             'host' => '10.0.0.1',
             'orbit_path' => '/orbit',
             'status' => 'active',
@@ -1436,28 +1166,14 @@ describe('adoption', function (): void {
 
         $snapshot = $probe->snapshotForAdopt($node);
 
-        expect($snapshot->get('node.wireguard_peer_missing'))->toMatchArray([
-            'public_key' => 'app-public-key',
-            'observed' => '10.6.0.8',
-            'allowed_ips' => ['10.6.0.8/32'],
-            'artifact' => [
-                'name' => 'test',
-                'role' => 'control',
-                'local_role' => 'control',
-                'status' => 'active',
-                'platform' => 'ubuntu_24-04',
-                'wireguard_address' => '10.6.0.8',
-                'registry_public_key' => null,
-                'interface_public_key' => 'app-public-key',
-            ],
-        ])
+        expect($snapshot->get('node.wireguard_peer_missing'))->toBeNull()
             ->and($snapshot->get('node.runtime_missing'))->toMatchArray([
                 'available' => true,
                 'exit_code' => 0,
             ]);
     });
 
-    it('does not snapshot hosted app adoption for legacy app-only nodes', function (): void {
+    it('does not snapshot hosted app adoption for unassigned nodes', function (): void {
         $remoteShell = new NodesProbeRecordingRemoteShell([
             new RemoteShellResult(exitCode: 0, stdout: 'supervisor OK', stderr: '', durationMs: 1),
         ]);
@@ -1465,11 +1181,9 @@ describe('adoption', function (): void {
 
         $node = Node::create([
             'name' => 'test',
-            'role' => 'app',
             'host' => '10.0.0.1',
             'orbit_path' => '/orbit',
             'status' => 'active',
-            'environment' => 'development',
             'platform' => 'ubuntu_24-04',
             'wireguard_address' => '10.6.0.8',
         ]);
@@ -1494,11 +1208,9 @@ describe('adoption', function (): void {
 
         $node = Node::create([
             'name' => 'test',
-            'role' => 'app',
             'host' => '10.0.0.1',
             'orbit_path' => '/orbit',
             'status' => 'active',
-            'environment' => 'development',
             'platform' => 'ubuntu_24-04',
             'wireguard_address' => '10.6.0.8',
         ]);
@@ -1517,11 +1229,9 @@ describe('adoption', function (): void {
 
         $node = Node::create([
             'name' => 'test',
-            'role' => 'app',
             'host' => '10.0.0.1',
             'orbit_path' => '/orbit',
             'status' => 'active',
-            'environment' => 'development',
             'platform' => 'ubuntu_24-04',
             'wireguard_address' => '10.6.0.5',
         ]);
@@ -1551,11 +1261,9 @@ describe('adoption', function (): void {
 
         $node = Node::create([
             'name' => 'test',
-            'role' => 'app',
             'host' => '10.0.0.1',
             'orbit_path' => '/orbit',
             'status' => 'active',
-            'environment' => 'development',
             'platform' => 'ubuntu_24-04',
             'wireguard_address' => '10.6.0.5',
         ]);
@@ -1578,11 +1286,9 @@ describe('adoption', function (): void {
     it('returns skipped results for adoptable keys', function (): void {
         $node = Node::create([
             'name' => 'test',
-            'role' => 'app',
             'host' => '10.0.0.1',
             'orbit_path' => '/orbit',
             'status' => 'active',
-            'environment' => 'development',
             'platform' => 'ubuntu_24-04',
             'wireguard_address' => '10.6.0.5',
         ]);
@@ -1616,7 +1322,6 @@ describe('adoption', function (): void {
 
         $node = Node::create([
             'name' => 'test',
-            'role' => 'gateway',
             'host' => '10.0.0.1',
             'orbit_path' => '/orbit',
             'status' => 'active',
@@ -1640,11 +1345,9 @@ describe('adoption', function (): void {
     it('adopts unambiguous WireGuard address mismatches', function (): void {
         $node = Node::create([
             'name' => 'test',
-            'role' => 'app',
             'host' => '10.0.0.1',
             'orbit_path' => '/orbit',
             'status' => 'active',
-            'environment' => 'development',
             'platform' => 'ubuntu_24-04',
             'wireguard_address' => '10.6.0.5',
         ]);
@@ -1675,7 +1378,6 @@ describe('adoption', function (): void {
 
         $node = Node::create([
             'name' => 'test',
-            'role' => 'control',
             'host' => '10.0.0.1',
             'orbit_path' => '/orbit',
             'status' => 'decommissioned',
@@ -1717,11 +1419,9 @@ describe('adoption', function (): void {
 
         $node = Node::create([
             'name' => 'test',
-            'role' => 'app',
             'host' => '10.0.0.1',
             'orbit_path' => '/orbit',
             'status' => 'active',
-            'environment' => 'development',
             'platform' => 'ubuntu_24-04',
             'wireguard_address' => '10.6.0.8',
         ]);
@@ -1746,11 +1446,9 @@ describe('adoption', function (): void {
 
         $node = Node::create([
             'name' => 'test',
-            'role' => 'app',
             'host' => '10.0.0.1',
             'orbit_path' => '/orbit',
             'status' => 'active',
-            'environment' => 'development',
             'platform' => 'ubuntu_24-04',
             'wireguard_address' => '10.6.0.5',
         ]);
@@ -1780,11 +1478,9 @@ describe('adoption', function (): void {
 
         $node = Node::create([
             'name' => 'test',
-            'role' => 'app',
             'host' => '10.0.0.1',
             'orbit_path' => '/orbit',
             'status' => 'active',
-            'environment' => 'development',
             'platform' => 'ubuntu_24-04',
             'wireguard_address' => '10.6.0.5',
         ]);
@@ -1812,11 +1508,9 @@ describe('public IP metadata exclusion', function (): void {
     it('does not detect public IP drift', function (): void {
         $node = Node::create([
             'name' => 'test',
-            'role' => 'app',
             'host' => '10.0.0.1',
             'orbit_path' => '/orbit',
             'status' => 'active',
-            'environment' => 'development',
             'platform' => 'ubuntu_24-04',
             'wireguard_address' => '10.6.0.5',
             'public_ipv4' => '1.2.3.4',
@@ -1835,7 +1529,6 @@ describe('agent role baseline', function (): void {
     it('detects missing agent DNS mapping', function (): void {
         $node = Node::create([
             'name' => 'agent-1',
-            'role' => 'control',
             'host' => '10.0.0.1',
             'orbit_path' => '/orbit',
             'status' => 'active',
@@ -1860,7 +1553,6 @@ describe('agent role baseline', function (): void {
     it('detects missing caddy baseline tool for agent nodes', function (): void {
         $node = Node::create([
             'name' => 'agent-1',
-            'role' => 'control',
             'host' => '10.0.0.1',
             'orbit_path' => '/orbit',
             'status' => 'active',
@@ -1892,7 +1584,6 @@ describe('agent role baseline', function (): void {
     it('detects missing supervisor baseline tool for agent nodes', function (): void {
         $node = Node::create([
             'name' => 'agent-1',
-            'role' => 'control',
             'host' => '10.0.0.1',
             'orbit_path' => '/orbit',
             'status' => 'active',
@@ -1930,7 +1621,6 @@ describe('agent role baseline', function (): void {
 
         $node = Node::create([
             'name' => 'agent-1',
-            'role' => 'control',
             'host' => '10.0.0.1',
             'orbit_path' => '/orbit',
             'status' => 'active',
@@ -1964,7 +1654,6 @@ describe('agent role baseline', function (): void {
     it('passes when agent DNS mapping is correct', function (): void {
         $node = Node::create([
             'name' => 'agent-1',
-            'role' => 'control',
             'host' => '10.0.0.1',
             'orbit_path' => '/orbit',
             'status' => 'active',
@@ -1999,11 +1688,9 @@ describe('access permission validity', function (): void {
     it('passes when no grants exist', function (): void {
         $node = Node::create([
             'name' => 'test',
-            'role' => 'app',
             'host' => '10.0.0.1',
             'orbit_path' => '/orbit',
             'status' => 'active',
-            'environment' => 'development',
             'platform' => 'ubuntu_24-04',
             'wireguard_address' => '10.6.0.5',
         ]);
@@ -2017,7 +1704,6 @@ describe('access permission validity', function (): void {
     it('passes normalized permissions on grants', function (): void {
         $consumer = Node::create([
             'name' => 'consumer',
-            'role' => 'control',
             'host' => '10.0.0.1',
             'orbit_path' => '/orbit',
             'status' => 'active',
@@ -2027,11 +1713,9 @@ describe('access permission validity', function (): void {
 
         $serving = Node::create([
             'name' => 'serving',
-            'role' => 'app',
             'host' => '10.0.0.1',
             'orbit_path' => '/orbit',
             'status' => 'active',
-            'environment' => 'development',
             'platform' => 'ubuntu_24-04',
             'wireguard_address' => '10.6.0.5',
         ]);
@@ -2051,7 +1735,6 @@ describe('access permission validity', function (): void {
     it('detects unknown permissions on grants', function (): void {
         $consumer = Node::create([
             'name' => 'consumer',
-            'role' => 'control',
             'host' => '10.0.0.1',
             'orbit_path' => '/orbit',
             'status' => 'active',
@@ -2061,11 +1744,9 @@ describe('access permission validity', function (): void {
 
         $serving = Node::create([
             'name' => 'serving',
-            'role' => 'app',
             'host' => '10.0.0.1',
             'orbit_path' => '/orbit',
             'status' => 'active',
-            'environment' => 'development',
             'platform' => 'ubuntu_24-04',
             'wireguard_address' => '10.6.0.5',
         ]);
@@ -2087,7 +1768,6 @@ describe('access permission validity', function (): void {
     it('detects redundant permissions on grants', function (): void {
         $consumer = Node::create([
             'name' => 'consumer',
-            'role' => 'control',
             'host' => '10.0.0.1',
             'orbit_path' => '/orbit',
             'status' => 'active',
@@ -2097,11 +1777,9 @@ describe('access permission validity', function (): void {
 
         $serving = Node::create([
             'name' => 'serving',
-            'role' => 'app',
             'host' => '10.0.0.1',
             'orbit_path' => '/orbit',
             'status' => 'active',
-            'environment' => 'development',
             'platform' => 'ubuntu_24-04',
             'wireguard_address' => '10.6.0.5',
         ]);
@@ -2128,8 +1806,8 @@ function nodeIdentityArtifactPayload(array $overrides = []): string
 {
     return json_encode(array_merge([
         'name' => 'test',
-        'role' => 'app',
-        'local_role' => 'app',
+        'role' => 'app-dev',
+        'local_role' => 'app-dev',
         'status' => 'active',
         'platform' => 'ubuntu_24-04',
         'wireguard_address' => '10.6.0.8',

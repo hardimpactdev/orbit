@@ -566,7 +566,7 @@ it('builds prepared topology templates through staged node:new snapshots', funct
         ->and($commandOutput)->toContain('provisioner')
         ->and($commandOutput)->toContain('app-prod-1')
         ->and($commandOutput)->toContain('10.201.0.13')
-        ->and($commandOutput)->toContain('--role=ingress')
+        ->and($commandOutput)->toContain('--roles=app-prod,ingress')
         ->and($commandOutput)->not->toContain('orbit:internal:bake-app-node');
 });
 
@@ -638,8 +638,7 @@ it('builds app production ingress on the prod template without development or ag
         ->and($commandOutput)->not->toContain("incus launch 'orbit-base-ubuntu-26.04' 'orbit-template-ingress-base'")
         ->and($commandOutput)->not->toContain("incus copy 'orbit-template-operator-base/clean-operator_gateway-base'")
         ->and($commandOutput)->not->toContain('edge-1')
-        ->and($commandOutput)->toContain('--role=ingress')
-        ->and($commandOutput)->toContain('--role=app-prod')
+        ->and($commandOutput)->toContain('--roles=app-prod,ingress')
         ->and($commandOutput)->not->toContain('--ingress=')
         ->and($commandOutput)->not->toContain('app-dev-1')
         ->and($commandOutput)->not->toContain('agent-1');

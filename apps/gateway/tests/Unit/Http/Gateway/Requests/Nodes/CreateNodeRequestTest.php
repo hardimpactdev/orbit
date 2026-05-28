@@ -24,13 +24,11 @@ beforeEach(function (): void {
     $settings->save();
 });
 
-it('resolves canonical hosted-role forwarding to POST /api/nodes without legacy environment', function (): void {
+it('resolves canonical hosted-role forwarding to POST /api/nodes', function (): void {
     $request = new CreateNodeRequest(
         name: 'app-1',
-        role: 'app-development',
-        roles: ['app-development'],
+        roles: ['app-dev'],
         host: '192.0.2.20',
-        environment: null,
         tld: 'test',
         user: 'provisioner',
     );
@@ -39,44 +37,38 @@ it('resolves canonical hosted-role forwarding to POST /api/nodes without legacy 
     expect($request->getMethod())->toBe(Method::POST);
     expect($request->body()->all())->toBe([
         'name' => 'app-1',
-        'role' => 'app-development',
-        'roles' => ['app-development'],
+        'roles' => ['app-dev'],
         'host' => '192.0.2.20',
-        'environment' => null,
         'tld' => 'test',
         'user' => 'provisioner',
     ]);
 });
 
-it('resolves legacy app forwarding to POST /api/nodes with legacy environment', function (): void {
+it('serializes explicit operator identity requests without a role value', function (): void {
     $request = new CreateNodeRequest(
-        name: 'app-1',
-        role: 'app',
-        roles: ['app'],
-        host: '192.0.2.20',
-        environment: 'development',
-        tld: 'test',
-        user: 'provisioner',
+        name: 'operator-1',
+        roles: [],
+        host: null,
+        tld: null,
+        user: null,
+        operator: true,
     );
 
     expect($request->body()->all())->toBe([
-        'name' => 'app-1',
-        'role' => 'app',
-        'roles' => ['app'],
-        'host' => '192.0.2.20',
-        'environment' => 'development',
-        'tld' => 'test',
-        'user' => 'provisioner',
+        'name' => 'operator-1',
+        'roles' => [],
+        'host' => null,
+        'tld' => null,
+        'user' => null,
+        'operator' => true,
     ]);
 });
 
 it('includes an expected host key fingerprint when supplied', function (): void {
     $request = new CreateNodeRequest(
         name: 'app-1',
-        role: 'app-production',
-        roles: ['app-production'],
+        roles: ['app-prod'],
         host: '192.0.2.20',
-        environment: null,
         tld: null,
         user: 'ubuntu',
         hostKeyFingerprint: 'SHA256:expected',
@@ -84,10 +76,8 @@ it('includes an expected host key fingerprint when supplied', function (): void 
 
     expect($request->body()->all())->toBe([
         'name' => 'app-1',
-        'role' => 'app-production',
-        'roles' => ['app-production'],
+        'roles' => ['app-prod'],
         'host' => '192.0.2.20',
-        'environment' => null,
         'tld' => null,
         'user' => 'ubuntu',
         'host_key_fingerprint' => 'SHA256:expected',
@@ -101,7 +91,6 @@ it('returns a NodeCreateResponse DTO with gateway data', function (): void {
                 'data' => [
                     'node' => [
                         'name' => 'app-1',
-                        'role' => 'app',
                     ],
                 ],
             ],
@@ -111,13 +100,12 @@ it('returns a NodeCreateResponse DTO with gateway data', function (): void {
     $connector = new GatewayConnector;
     $connector->withMockClient($mock);
 
-    $dto = $connector->send(new CreateNodeRequest('app-1', 'app-development', ['app-development'], '192.0.2.20', null, 'test', 'orbit'))->dto();
+    $dto = $connector->send(new CreateNodeRequest('app-1', ['app-dev'], '192.0.2.20', 'test', 'orbit'))->dto();
 
     expect($dto)->toBeInstanceOf(NodeCreateResponse::class);
     expect($dto->data)->toBe([
         'node' => [
             'name' => 'app-1',
-            'role' => 'app',
         ],
     ]);
 });

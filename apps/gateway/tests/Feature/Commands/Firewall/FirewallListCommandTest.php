@@ -23,11 +23,9 @@ function createFirewallListLocalNode(string $role = 'gateway'): Node
 {
     $attributes = [
         'name' => "local-{$role}",
-        'role' => $role,
         'host' => '10.6.0.1',
         'wireguard_address' => '10.6.0.1',
-        'platform' => 'ubuntu',
-    ];
+        'platform' => 'ubuntu'];
 
     if ($role === 'gateway') {
         return createTestGatewayNode($attributes);
@@ -39,15 +37,14 @@ function createFirewallListLocalNode(string $role = 'gateway'): Node
 describe('firewall:list command contract', function (): void {
     it('lists gateway registry intent as json with metadata', function (): void {
         createFirewallListLocalNode('gateway');
-        $node = createTestAppHostNode(['name' => 'app-1', 'role' => 'app', 'platform' => 'ubuntu']);
+        $node = createTestAppHostNode(['name' => 'app-1', 'platform' => 'ubuntu']);
 
         FirewallRule::factory()->create([
             'node_id' => $node->id,
             'name' => 'local-vite',
             'source' => '10.6.0.0/24',
             'port' => '5173',
-            'reason' => 'local development server',
-        ]);
+            'reason' => 'local development server']);
 
         $exitCode = Artisan::call('firewall:list', ['--json' => true]);
         $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
@@ -63,46 +60,41 @@ describe('firewall:list command contract', function (): void {
                 'port' => 5173,
                 'protocol' => 'tcp',
                 'reason' => 'local development server',
-                'status' => 'expected',
-            ])
+                'status' => 'expected'])
             ->and($payload['success']['meta'])->toBe([
                 'node' => null,
-                'count' => 1,
-            ]);
+                'count' => 1]);
     });
 
     it('filters by firewall target node', function (): void {
         createFirewallListLocalNode('gateway');
-        $firstNode = createTestAppHostNode(['name' => 'app-1', 'role' => 'app', 'platform' => 'ubuntu']);
-        $secondNode = createTestAppHostNode(['name' => 'app-2', 'role' => 'app', 'platform' => 'ubuntu']);
+        $firstNode = createTestAppHostNode(['name' => 'app-1', 'platform' => 'ubuntu']);
+        $secondNode = createTestAppHostNode(['name' => 'app-2', 'platform' => 'ubuntu']);
 
         FirewallRule::factory()->create(['node_id' => $firstNode->id, 'name' => 'first']);
         FirewallRule::factory()->create(['node_id' => $secondNode->id, 'name' => 'second']);
 
         $exitCode = Artisan::call('firewall:list', [
             '--json' => true,
-            '--node' => 'app-2',
-        ]);
+            '--node' => 'app-2']);
         $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
 
         expect($exitCode)->toBe(0)
             ->and(array_column($payload['success']['data']['rules'], 'name'))->toBe(['second'])
             ->and($payload['success']['meta'])->toBe([
                 'node' => 'app-2',
-                'count' => 1,
-            ]);
+                'count' => 1]);
     });
 
     it('renders human tables and empty scope states', function (): void {
         createFirewallListLocalNode('gateway');
-        $node = createTestAppHostNode(['name' => 'app-1', 'role' => 'app', 'platform' => 'ubuntu']);
+        $node = createTestAppHostNode(['name' => 'app-1', 'platform' => 'ubuntu']);
 
         FirewallRule::factory()->create([
             'node_id' => $node->id,
             'name' => 'local-vite',
             'source' => '10.6.0.0/24',
-            'port' => '5173',
-        ]);
+            'port' => '5173']);
 
         $this->artisan('firewall:list')
             ->expectsOutput('Node: app-1')
@@ -133,8 +125,7 @@ describe('firewall:list command contract', function (): void {
 
         LocalGatewaySettings::current()->fill([
             'gateway_url' => 'https://10.6.0.1',
-            'ca_pem_path' => '/dev/null',
-        ])->save();
+            'ca_pem_path' => '/dev/null'])->save();
 
         MockClient::global([
             ListFirewallRulesRequest::class => MockResponse::make([
@@ -151,22 +142,14 @@ describe('firewall:list command contract', function (): void {
                                 'port' => 5173,
                                 'protocol' => 'tcp',
                                 'reason' => 'local development server',
-                                'status' => 'expected',
-                            ],
-                        ],
-                    ],
+                                'status' => 'expected']]],
                     'meta' => [
                         'node' => 'app-1',
-                        'count' => 1,
-                    ],
-                ],
-            ], 200),
-        ]);
+                        'count' => 1]]], 200)]);
 
         $exitCode = Artisan::call('firewall:list', [
             '--json' => true,
-            '--node' => 'app-1',
-        ]);
+            '--node' => 'app-1']);
         $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
 
         expect($exitCode)->toBe(0)
@@ -181,8 +164,7 @@ describe('firewall:list command contract', function (): void {
 
         LocalGatewaySettings::current()->fill([
             'gateway_url' => 'https://10.6.0.1',
-            'ca_pem_path' => '/dev/null',
-        ])->save();
+            'ca_pem_path' => '/dev/null'])->save();
 
         MockClient::global([
             ListFirewallRulesRequest::class => MockResponse::make([
@@ -191,11 +173,7 @@ describe('firewall:list command contract', function (): void {
                     'message' => 'This node is not authorized to read the firewall rule registry.',
                     'meta' => [
                         'reason' => 'missing_permission',
-                        'missing_permission' => 'firewall_rule:read',
-                    ],
-                ],
-            ], 403),
-        ]);
+                        'missing_permission' => 'firewall_rule:read']]], 403)]);
 
         $exitCode = Artisan::call('firewall:list', ['--json' => true]);
         $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);

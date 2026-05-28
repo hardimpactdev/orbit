@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Models\Node;
 use App\Models\NodeAccess;
+use App\Models\NodeRoleAssignment;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
 
@@ -22,23 +23,32 @@ afterEach(function (): void {
 
 function createCloudflareApiCallerNode(string $role = 'gateway'): Node
 {
-    if ($role === 'gateway') {
-        return createTestGatewayNode([
-            'name' => 'cf-api-gateway',
-            'host' => CLOUDFLARE_API_CALLER_WG_IP,
-            'wireguard_address' => CLOUDFLARE_API_CALLER_WG_IP,
-            'platform' => 'ubuntu',
-        ]);
-    }
-
-    return Node::factory()->create([
+    $node = Node::factory()->create([
         'name' => "cf-api-{$role}",
-        'role' => $role,
         'host' => CLOUDFLARE_API_CALLER_WG_IP,
         'wireguard_address' => CLOUDFLARE_API_CALLER_WG_IP,
         'platform' => 'ubuntu',
         'status' => 'active',
     ]);
+
+    if ($role === 'gateway') {
+        NodeRoleAssignment::factory()->create([
+            'node_id' => $node->id,
+            'role' => 'gateway',
+            'status' => 'active',
+        ]);
+    }
+
+    if ($role === 'app-dev') {
+        NodeRoleAssignment::factory()->create([
+            'node_id' => $node->id,
+            'role' => 'app-dev',
+            'status' => 'active',
+            'settings' => ['tld' => 'test'],
+        ]);
+    }
+
+    return $node;
 }
 
 /**
@@ -108,7 +118,7 @@ it('lists Cloudflare zones for a caller with a gateway grant', function (): void
 
 it('denies callers without the required Cloudflare grant before provider requests', function (): void {
     $gateway = createTestGatewayNode(['name' => 'gateway-1']);
-    createCloudflareApiCallerNode('app');
+    createCloudflareApiCallerNode('app-dev');
 
     $response = $this->call('GET', '/api/cloudflare/zones', [], [], [], [
         'REMOTE_ADDR' => CLOUDFLARE_API_CALLER_WG_IP,

@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Http\Gateway\Requests\Activity\ShowActivityRequest;
 use App\Models\LocalGatewaySettings;
 use App\Models\Node;
+use App\Models\NodeRoleAssignment;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
 use Saloon\Http\Faking\MockClient;
@@ -18,12 +19,22 @@ afterEach(fn (): null => MockClient::destroyGlobal());
 
 function createActivityShowLocalNode(string $role = 'gateway'): Node
 {
-    return Node::factory()->create([
+    $node = Node::factory()->create([
         'name' => "local-{$role}",
-        'role' => $role,
         'host' => '10.6.0.9',
         'wireguard_address' => '10.6.0.9',
     ]);
+
+    if ($role === 'gateway') {
+        NodeRoleAssignment::factory()->create([
+            'node_id' => $node->id,
+            'role' => 'gateway',
+            'status' => 'active',
+            'settings' => [],
+        ]);
+    }
+
+    return $node;
 }
 
 function createCommandShowActivityEntry(

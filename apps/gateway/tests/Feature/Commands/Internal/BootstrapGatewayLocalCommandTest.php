@@ -153,7 +153,6 @@ describe('orbit:internal:bootstrap-gateway-local', function (): void {
 
         expect($exitCode)->toBe(0)
             ->and(Node::query()->where('name', 'gateway-1')->exists())->toBeTrue()
-            ->and(Node::query()->where('name', 'gateway-1')->value('role'))->toBe('gateway')
             ->and(NodeRoleAssignment::query()
                 ->whereHas('node', fn ($query) => $query->where('name', 'gateway-1'))
                 ->orderBy('role')
@@ -308,10 +307,9 @@ describe('orbit:internal:bootstrap-gateway-local', function (): void {
             ->and(Node::query()->where('name', 'gateway-1')->count())->toBe(1);
     });
 
-    it('keeps existing legacy control identities when creating the gateway record', function (): void {
+    it('keeps existing operator identities role-free when creating the gateway record', function (): void {
         Node::query()->create([
-            'name' => 'old-control',
-            'role' => 'control',
+            'name' => 'operator-1',
             'host' => '127.0.0.1',
             'orbit_path' => base_path(),
             'status' => 'active',
@@ -322,8 +320,12 @@ describe('orbit:internal:bootstrap-gateway-local', function (): void {
             'wireguard-address' => '10.6.0.2',
         ]);
 
-        expect(Node::query()->where('name', 'old-control')->value('role'))->toBe('control')
-            ->and(Node::query()->where('name', 'gateway-1')->value('role'))->toBe('gateway');
+        expect(Node::query()->where('name', 'operator-1')->first()?->isOperator())->toBeTrue()
+            ->and(NodeRoleAssignment::query()
+                ->whereHas('node', fn ($query) => $query->where('name', 'gateway-1'))
+                ->orderBy('role')
+                ->pluck('role')
+                ->all())->toBe(['gateway', 'router', 'vpn']);
     });
 
     it('persists wireguard peers and configures the gateway interface idempotently', function (): void {
@@ -374,7 +376,7 @@ describe('orbit:internal:bootstrap-gateway-local', function (): void {
         expect($exitCode)->toBe(0)
             ->and($gateway)->toBeInstanceOf(Node::class)
             ->and($control)->toBeInstanceOf(Node::class)
-            ->and($control->role)->toBe('control')
+            ->and($control->isOperator())->toBeTrue()
             ->and($control->wireguard_address)->toBe('10.6.0.3')
             ->and($initialGatewayGrant)->toBeInstanceOf(NodeAccess::class)
             ->and($initialGatewayGrant->permissions)->toBe(['*'])

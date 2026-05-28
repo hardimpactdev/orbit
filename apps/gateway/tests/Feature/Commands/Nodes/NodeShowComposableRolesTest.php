@@ -20,8 +20,7 @@ describe('node:show composable roles', function (): void {
 
         Node::factory()->create([
             'name' => 'local-gateway',
-            'role' => 'gateway',
-            'environment' => null,
+
             'host' => '10.6.0.1',
             'wireguard_address' => '10.6.0.1',
             'platform' => 'ubuntu_24-04',
@@ -29,11 +28,10 @@ describe('node:show composable roles', function (): void {
         ]);
     });
 
-    it('includes composable role assignments in JSON while preserving legacy fields', function (): void {
+    it('includes composable role assignments in JSON without legacy role fields', function (): void {
         $node = Node::factory()->create([
             'name' => 'host-1',
-            'role' => 'app',
-            'environment' => 'development',
+
             'host' => '10.6.0.7',
             'wireguard_address' => '10.6.0.7',
             'platform' => 'ubuntu_24-04',
@@ -42,7 +40,7 @@ describe('node:show composable roles', function (): void {
 
         $appDevelopmentRole = NodeRoleAssignment::factory()->create([
             'node_id' => $node->id,
-            'role' => 'app-development',
+            'role' => 'app-dev',
             'status' => 'active',
             'settings' => ['tld' => 'orbit.test'],
         ]);
@@ -59,11 +57,11 @@ describe('node:show composable roles', function (): void {
         $payload = json_decode($rawOutput, associative: true, flags: JSON_THROW_ON_ERROR);
 
         expect($exitCode)->toBe(0)
-            ->and($payload['success']['data']['node']['role'])->toBe('app')
-            ->and($payload['success']['data']['node']['environment'])->toBe('development')
+            ->and($payload['success']['data']['node'])->not->toHaveKey('role')
+            ->and($payload['success']['data']['node'])->not->toHaveKey('environment')
             ->and($payload['success']['data']['node']['roles'])->toBe([
                 [
-                    'role' => 'app-development',
+                    'role' => 'app-dev',
                     'status' => 'active',
                     'settings' => ['tld' => 'orbit.test'],
                     'last_error' => null,
@@ -84,8 +82,7 @@ describe('node:show composable roles', function (): void {
     it('renders composable role assignments in the human output', function (): void {
         $node = Node::factory()->create([
             'name' => 'host-1',
-            'role' => 'app',
-            'environment' => 'development',
+
             'host' => '10.6.0.7',
             'wireguard_address' => '10.6.0.7',
             'platform' => 'ubuntu_24-04',
@@ -94,7 +91,7 @@ describe('node:show composable roles', function (): void {
 
         NodeRoleAssignment::factory()->create([
             'node_id' => $node->id,
-            'role' => 'app-development',
+            'role' => 'app-dev',
             'status' => 'active',
             'settings' => ['tld' => 'orbit.test'],
         ]);
@@ -111,7 +108,7 @@ describe('node:show composable roles', function (): void {
 
         expect($exitCode)->toBe(0)
             ->and($output)->toContain('Roles')
-            ->and($output)->toContain('app-development, database (error)')
+            ->and($output)->toContain('app-dev, database (error)')
             ->and($output)->not->toMatch('/├  Role\s+app/')
             ->and($output)->not->toContain('Environment');
     });

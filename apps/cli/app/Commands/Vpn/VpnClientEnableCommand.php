@@ -8,11 +8,13 @@ use App\Exceptions\GatewayApiException;
 
 class VpnClientEnableCommand extends VpnGatewayCommand
 {
+    #[\Override]
     protected $signature = 'vpn-client:enable
         {name? : VPN client name}
         {--totp= : One-time code for the gateway VPN backend}
         {--json : Output as JSON}';
 
+    #[\Override]
     protected $description = 'Enable a non-node gateway VPN client through the gateway.';
 
     public function handle(): int

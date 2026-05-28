@@ -890,6 +890,51 @@ link_orbit() {
     sudo_run ln -sf "$TARGET_DIR/bin/orbit" "$LINK_PATH"
 }
 
+# Write the per-operator-host CLI JSON config skeleton at ~/.config/orbit/config.json
+# per decisions D8, D11, D13. The actual gateway entry is populated later by
+# gateway:add / gateway:trust / node:new --template=gateway on the operator host. The skeleton
+# only guarantees the file exists with correct ownership and permissions so the importer
+# does not race with first-CLI-run.
+#
+# The gateway-runtime self-trust store (LocalGatewaySettings in apps/gateway SQLite) is
+# written separately by the gateway-runtime container during bootstrap per decision D17.
+# These two writers are documented as the dual-writer contract; they describe overlapping
+# state from different OS-user perspectives.
+write_cli_config_skeleton() {
+    local target_home
+    local config_dir
+    local config_file
+
+    target_home="${ORBIT_CONFIG_HOME:-$HOME}"
+
+    if [ -z "$target_home" ]; then
+        # No HOME — skip silently; first CLI run will write the skeleton itself.
+        return 0
+    fi
+
+    config_dir="${target_home}/.config/orbit"
+    config_file="${config_dir}/config.json"
+
+    if [ -e "$config_file" ]; then
+        # Idempotent: never overwrite an existing config (D11 importer contract).
+        return 0
+    fi
+
+    run mkdir -p "$config_dir"
+    run chmod 0700 "$config_dir"
+
+    cat > "$config_file" <<'JSON'
+{
+    "schema_version": 1,
+    "active_gateway": null,
+    "gateways": {},
+    "defaults": {"node": null, "profile": null},
+    "meta": {"imported_from": null, "imported_at": null}
+}
+JSON
+    run chmod 0600 "$config_file"
+}
+
 verify_install() {
     if [ ! -x "$TARGET_DIR/bin/orbit" ]; then
         fail validation_failed "Orbit launcher is not executable: $TARGET_DIR/bin/orbit"
@@ -970,6 +1015,10 @@ main() {
 
     start_step "Link orbit executable"
     link_orbit
+    complete_step
+
+    start_step "Write CLI config skeleton"
+    write_cli_config_skeleton
     complete_step
 
     start_step "Verify Orbit"

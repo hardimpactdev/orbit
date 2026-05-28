@@ -192,15 +192,15 @@ final readonly class PolyscopeWorkspaceDriver implements WorkspaceSourceDriver
     {
         $envelope = $this->configLookupEnvelope($result, $app, $node);
 
-        if (($envelope['ok'] ?? null) !== true) {
+        if (! is_array($envelope['success'] ?? null)) {
             throw $this->configLookupFailure($envelope, $app, $node);
         }
 
-        if (! is_array($envelope['data'] ?? null)) {
+        if (! is_array($envelope['success']['data'] ?? null)) {
             throw $this->unparseableConfigLookup($app, $node);
         }
 
-        return $envelope['data'];
+        return $envelope['success']['data'];
     }
 
     /**
@@ -214,7 +214,7 @@ final readonly class PolyscopeWorkspaceDriver implements WorkspaceSourceDriver
             throw $this->unparseableConfigLookup($app, $node);
         }
 
-        if (! is_array($decoded) || ! array_key_exists('ok', $decoded)) {
+        if (! is_array($decoded) || ! (array_key_exists('success', $decoded) || array_key_exists('error', $decoded))) {
             throw $this->unparseableConfigLookup($app, $node);
         }
 

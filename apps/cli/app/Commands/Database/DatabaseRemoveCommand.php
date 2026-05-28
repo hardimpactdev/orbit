@@ -8,11 +8,13 @@ use App\Exceptions\GatewayApiException;
 
 final class DatabaseRemoveCommand extends DatabaseGatewayCommand
 {
+    #[\Override]
     protected $signature = 'database:remove
         {connection? : Database connection slug}
         {--force : Confirm destructive operation without prompting}
         {--json : Output JSON}';
 
+    #[\Override]
     protected $description = 'Remove a database connection through the gateway.';
 
     public function handle(): int

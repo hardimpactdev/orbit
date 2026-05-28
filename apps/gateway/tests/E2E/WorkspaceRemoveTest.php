@@ -42,7 +42,6 @@ foreach (['operator-1', 'app-dev-1'] as \$name) {
 \$app = \\App\\Models\\App::query()->create([
     'name' => 'docs',
     'node_id' => \$nodes->get('app-dev-1'),
-    'environment' => 'development',
     'path' => '/home/orbit/apps/docs',
     'document_root' => 'public',
     'php_version' => '8.5',
@@ -71,7 +70,7 @@ PHP;
 
     $topology->ssh(
         'gateway',
-        "cd {$checkout} && orbit tinker --execute=".escapeshellarg($script),
+        "cd {$checkout} && php apps/gateway/artisan tinker --execute=".escapeshellarg($script),
         timeoutSeconds: 120,
     );
 }
@@ -118,7 +117,7 @@ it('removes a workspace from a non-gateway caller through the gateway api', func
 
         $gatewayRecord = $topology->ssh(
             'gateway',
-            'cd '.escapeshellarg($topology->checkout('gateway')).' && orbit tinker --execute='.escapeshellarg("echo json_encode([
+            'cd '.escapeshellarg($topology->checkout('gateway')).' && php apps/gateway/artisan tinker --execute='.escapeshellarg("echo json_encode([
                 'workspace' => \\App\\Models\\Workspace::query()->where('name', '{$workspaceName}')->exists(),
                 'route_count' => \\App\\Models\\ProxyRoute::query()->where('domain', '{$workspaceName}.docs.test')->count(),
                 'app' => \\App\\Models\\App::query()->where('name', 'docs')->exists(),

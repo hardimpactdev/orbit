@@ -20,7 +20,7 @@ final readonly class AppProductionRoleSettings implements NodeRoleSettings
         $unknownSettings = array_diff(array_keys($settings), ['ingress_node_id']);
 
         if ($unknownSettings !== []) {
-            throw new InvalidArgumentException('The app-production role does not accept unknown settings.');
+            throw new InvalidArgumentException('The app-prod role does not accept unknown settings.');
         }
 
         $ingressNodeId = $settings['ingress_node_id'] ?? null;
@@ -30,7 +30,7 @@ final readonly class AppProductionRoleSettings implements NodeRoleSettings
         }
 
         if (! is_int($ingressNodeId) || $ingressNodeId <= 0) {
-            throw new InvalidArgumentException('The app-production role requires a positive ingress_node_id setting when provided.');
+            throw new InvalidArgumentException('The app-prod role requires a positive ingress_node_id setting when provided.');
         }
 
         return new self($ingressNodeId);

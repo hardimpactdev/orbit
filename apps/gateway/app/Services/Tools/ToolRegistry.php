@@ -110,7 +110,7 @@ final readonly class ToolRegistry
             return $targetNode;
         }
 
-        return ToolRegistryFailure::validation('target', '', 'A node or app target is required. Provide --node, --app, or configure node:default.');
+        return ToolRegistryFailure::validation('target', '', 'A node or app target is required. Provide --node or --app.');
     }
 
     private function resolveNodeFilter(?string $node, ?string $app): ?Node

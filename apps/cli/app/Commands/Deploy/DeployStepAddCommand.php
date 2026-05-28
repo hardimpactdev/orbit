@@ -10,6 +10,7 @@ final class DeployStepAddCommand extends DeployGatewayCommand
 {
     private const int DEFAULT_TIMEOUT = 600;
 
+    #[\Override]
     protected $signature = 'deploy:step-add
         {app? : Production app name or domain}
         {deploy_command? : Shell command to run}
@@ -19,6 +20,7 @@ final class DeployStepAddCommand extends DeployGatewayCommand
         {--retention= : Optional release retention metadata}
         {--json : Output JSON}';
 
+    #[\Override]
     protected $description = 'Add a deployment pipeline step for a production app.';
 
     public function handle(): int

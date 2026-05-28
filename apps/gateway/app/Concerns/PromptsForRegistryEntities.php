@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Concerns;
 
+use App\Enums\Nodes\NodeRoleName;
 use App\Exceptions\PromptAborted;
 use App\Http\Gateway\GatewayApiException;
 use App\Http\Gateway\GatewayConnector;
@@ -19,6 +20,8 @@ use App\Models\App;
 use App\Models\Node;
 use App\Models\Schedule;
 use App\Models\Workspace;
+use App\Services\Nodes\Roles\NodeRoleAssignmentPayload;
+use App\Services\Nodes\Roles\NodeRoleAssignments;
 use Illuminate\Database\Eloquent\Builder;
 use Throwable;
 
@@ -78,7 +81,7 @@ trait PromptsForRegistryEntities
 
         return (string) $this->promptDataTable(
             label: $label,
-            headers: ['Node', 'Role', 'Environment', 'Host', 'Status'],
+            headers: ['Node', 'Roles', 'Host', 'Status'],
             rows: $this->nodePromptRows($this->preferNodePromptPayload($nodes, $preferred)),
         );
     }
@@ -189,13 +192,15 @@ trait PromptsForRegistryEntities
     protected function visibleNodePromptPayloads(?string $role = null, ?string $environment = null, bool $activeOnly = true): array|GatewayApiException
     {
         if ((bool) config('orbit.is_gateway', false)) {
-            return Node::query()
-                ->when($role !== null, fn (Builder $query): Builder => $query->where('role', $role))
-                ->when($environment !== null, fn (Builder $query): Builder => $query->where('environment', $environment))
+            $query = Node::query()
+                ->with('roleAssignments')
                 ->when($activeOnly, fn (Builder $query): Builder => $query->where('status', 'active'))
-                ->orderBy('role')
-                ->orderBy('name')
-                ->get()
+                ->orderBy('name');
+
+            $this->applyNodePromptRoleFilter($query, $role, $environment);
+
+            return $query->get()
+                ->sortBy(fn (Node $node): string => $this->nodePromptRolesLabel($this->nodePromptPayload($node)).' '.$node->name)
                 ->map(fn (Node $node): array => $this->nodePromptPayload($node))
                 ->values()
                 ->all();
@@ -204,11 +209,12 @@ trait PromptsForRegistryEntities
         try {
             /** @var NodeListResponse $dto */
             $dto = app(GatewayConnector::class)
-                ->send(new ListNodesRequest(role: $role, environment: $environment))
+                ->send(new ListNodesRequest(role: $this->nodePromptGatewayRoleFilter($role, $environment)))
                 ->dto();
 
             return collect($dto->nodes)
                 ->filter(fn (array $node): bool => ! $activeOnly || ($node['status'] ?? null) === 'active')
+                ->filter(fn (array $node): bool => $this->nodePromptMatchesRoleFilter($node, $role, $environment))
                 ->values()
                 ->all();
         } catch (GatewayApiException $e) {
@@ -333,14 +339,107 @@ trait PromptsForRegistryEntities
 
             $rows[$name] = [
                 $name,
-                $this->promptString($node['role'] ?? null, '-'),
-                $this->promptString($node['environment'] ?? null, '-'),
+                $this->nodePromptRolesLabel($node),
                 $this->promptString($node['host'] ?? $node['wireguard_address'] ?? null, '-'),
                 $this->promptString($node['status'] ?? null, '-'),
             ];
         }
 
         return $rows;
+    }
+
+    /**
+     * @param  Builder<Node>  $query
+     */
+    private function applyNodePromptRoleFilter(Builder $query, ?string $role, ?string $environment): void
+    {
+        $assignments = app(NodeRoleAssignments::class);
+        $role = $this->nodePromptRoleForEnvironment($role, $environment);
+
+        if ($role === null) {
+            return;
+        }
+
+        if ($role === 'app-host') {
+            $query->whereIn('id', $assignments->activeAppHostNodeIds());
+
+            return;
+        }
+
+        $query->whereIn('id', $assignments->activeNodeIdsForRole($role));
+    }
+
+    private function nodePromptGatewayRoleFilter(?string $role, ?string $environment): ?string
+    {
+        $role = $this->nodePromptRoleForEnvironment($role, $environment);
+
+        return $role === 'app-host' ? null : $role;
+    }
+
+    private function nodePromptRoleForEnvironment(?string $role, ?string $environment): ?string
+    {
+        if ($environment === 'development') {
+            return NodeRoleName::AppDevelopment->value;
+        }
+
+        if ($environment === 'production') {
+            return NodeRoleName::AppProduction->value;
+        }
+
+        return $role;
+    }
+
+    /**
+     * @param  array<string, mixed>  $node
+     */
+    private function nodePromptMatchesRoleFilter(array $node, ?string $role, ?string $environment): bool
+    {
+        $role = $this->nodePromptRoleForEnvironment($role, $environment);
+
+        if ($role === null) {
+            return true;
+        }
+
+        $roles = $node['roles'] ?? [];
+
+        if (! is_array($roles)) {
+            return false;
+        }
+
+        if ($role === 'app-host') {
+            return collect($roles)->contains(fn (mixed $assignment): bool => is_array($assignment)
+                && in_array($assignment['role'] ?? null, [NodeRoleName::AppDevelopment->value, NodeRoleName::AppProduction->value], true)
+                && ($assignment['status'] ?? null) === 'active');
+        }
+
+        return collect($roles)->contains(fn (mixed $assignment): bool => is_array($assignment)
+            && ($assignment['role'] ?? null) === $role
+            && ($assignment['status'] ?? null) === 'active');
+    }
+
+    /**
+     * @param  array<string, mixed>  $node
+     */
+    private function nodePromptRolesLabel(array $node): string
+    {
+        $roles = $node['roles'] ?? null;
+
+        if (! is_array($roles) || $roles === []) {
+            return '-';
+        }
+
+        $labels = [];
+
+        foreach ($roles as $role) {
+            if (! is_array($role) || ! is_string($role['role'] ?? null) || $role['role'] === '') {
+                continue;
+            }
+
+            $status = is_string($role['status'] ?? null) ? $role['status'] : 'active';
+            $labels[] = $status === 'active' ? $role['role'] : "{$role['role']} ({$status})";
+        }
+
+        return $labels === [] ? '-' : implode(', ', $labels);
     }
 
     /**
@@ -449,8 +548,9 @@ trait PromptsForRegistryEntities
     {
         return [
             'name' => $node->name,
-            'role' => $node->role,
-            'environment' => $node->environment,
+            'roles' => $node->roleAssignments
+                ->map(fn ($assignment): array => NodeRoleAssignmentPayload::fromModel($assignment))
+                ->all(),
             'host' => $node->host,
             'wireguard_address' => $node->wireguard_address,
             'status' => $node->status,

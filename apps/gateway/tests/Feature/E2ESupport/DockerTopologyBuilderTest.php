@@ -371,10 +371,10 @@ it('builds Docker topology state through the host orbit launcher', function (): 
     $gatewayIp = $networkPlan->ipForRole('gateway');
     $setup = implode("\n", $commands);
     $operatorComposer = strpos($setup, "docker exec --env 'ORBIT_SOURCE_PATH=/home/orbit/orbit' --env 'COMPOSER_CACHE_DIR=/tmp/orbit-composer-cache' --env 'COMPOSER_HOME=/tmp/orbit-composer-home' --env 'COMPOSER_PROCESS_TIMEOUT=1200' --env 'COMPOSER_ALLOW_SUPERUSER=1' --workdir '/home/orbit/orbit' 'orbit-e2e-prepared-build-operator_gateway-operator-composer'");
-    $operatorMigrate = strpos($setup, "docker exec --user 'orbit' 'orbit-e2e-prepared-build-operator_gateway-operator' sh -lc 'cd /home/orbit/orbit && orbit migrate --force'");
-    $gatewayMigrate = strpos($setup, "docker exec --user 'orbit' 'orbit-e2e-prepared-build-operator_gateway-gateway' sh -lc 'cd /home/orbit/orbit && orbit migrate --force'");
+    $operatorMigrate = strpos($setup, "docker exec --user 'orbit' 'orbit-e2e-prepared-build-operator_gateway-operator' sh -lc 'cd /home/orbit/orbit && php apps/gateway/artisan migrate --force'");
+    $gatewayMigrate = strpos($setup, "docker exec --user 'orbit' 'orbit-e2e-prepared-build-operator_gateway-gateway' sh -lc 'cd /home/orbit/orbit && php apps/gateway/artisan migrate --force'");
     $gatewayRefresh = strpos($setup, "docker exec 'orbit-e2e-prepared-build-operator_gateway-gateway' tar -C '/home/orbit/orbit' -cf - . | docker exec -i 'orbit-e2e-prepared-build-operator_gateway-gateway-orbit-runtime' tar -C '/home/orbit/orbit' -xf -");
-    $gatewayBootstrap = strpos($setup, 'cd /home/orbit/orbit && orbit orbit:internal:bootstrap-gateway-local gateway 10.6.0.2');
+    $gatewayBootstrap = strpos($setup, 'cd /home/orbit/orbit && php apps/gateway/artisan orbit:internal:bootstrap-gateway-local gateway 10.6.0.2');
 
     expect($operatorComposer)->toBeInt()
         ->and($operatorMigrate)->toBeInt()
@@ -387,8 +387,8 @@ it('builds Docker topology state through the host orbit launcher', function (): 
         ->and($gatewayRefresh)->toBeLessThan($gatewayBootstrap);
 
     expect($setup)
-        ->toContain('cd /home/orbit/orbit && orbit migrate --force')
-        ->toContain('cd /home/orbit/orbit && orbit orbit:internal:bootstrap-gateway-local gateway 10.6.0.2 --skip-runtime-install --skip-wireguard-install')
+        ->toContain('cd /home/orbit/orbit && php apps/gateway/artisan migrate --force')
+        ->toContain('cd /home/orbit/orbit && php apps/gateway/artisan orbit:internal:bootstrap-gateway-local gateway 10.6.0.2 --skip-runtime-install --skip-wireguard-install')
         ->toContain('sudo -iu orbit env ORBIT_RUNTIME_CONTAINER="${ORBIT_RUNTIME_CONTAINER:-}" ORBIT_E2E_DOCKER_NETWORK="${ORBIT_E2E_DOCKER_NETWORK:-}" bash -lc')
         ->toContain('/home/orbit/orbit/apps/cli')
         ->toContain('ORBIT_GATEWAY_URL=%s')
@@ -499,7 +499,7 @@ it('commits Docker build topology images from node image-layer state instead of 
         ->build(E2ETopologyKind::OperatorGateway);
 
     $setup = implode("\n", $commands);
-    $operatorSync = strpos($setup, "docker exec --user 'orbit' 'orbit-e2e-prepared-build-operator_gateway-operator' sh -lc 'cd /home/orbit/orbit && orbit migrate --force'");
+    $operatorSync = strpos($setup, "docker exec --user 'orbit' 'orbit-e2e-prepared-build-operator_gateway-operator' sh -lc 'cd /home/orbit/orbit && php apps/gateway/artisan migrate --force'");
     $operatorCommit = strpos($setup, "docker commit --change 'CMD [\"/usr/local/bin/orbit-e2e-container\"]' --change 'LABEL org.orbit.e2e.topology-mode=dns-alias' --change 'LABEL org.orbit.e2e.kind=operator_gateway' --change 'LABEL org.orbit.e2e.role=operator'");
     $gatewaySync = strpos($setup, "docker exec 'orbit-e2e-prepared-build-operator_gateway-gateway-orbit-runtime' tar -C '/home/orbit/orbit' -cf - . | docker exec -i 'orbit-e2e-prepared-build-operator_gateway-gateway' tar -C '/home/orbit/orbit' -xf -");
     $gatewayCommit = strpos($setup, "docker commit --change 'CMD [\"/usr/local/bin/orbit-e2e-container\"]' --change 'LABEL org.orbit.e2e.topology-mode=dns-alias' --change 'LABEL org.orbit.e2e.kind=operator_gateway' --change 'LABEL org.orbit.e2e.role=gateway'");
@@ -535,7 +535,7 @@ it('does not use host PHP or host Caddy paths while building Docker gateway topo
     $setup = implode("\n", $commands);
 
     expect($setup)
-        ->toContain('orbit tinker --execute=')
+        ->toContain('php apps/gateway/artisan tinker --execute=')
         ->toContain('php -d display_errors=0 -S')
         ->not->toContain('orbit serve --host=')
         ->not->toContain('php artisan')

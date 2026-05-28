@@ -19,7 +19,7 @@ uses(RefreshDatabase::class);
 
 describe('DatabaseConnectionProbe', function (): void {
     it('reports env missing and mismatch for an app target on a local path', function (): void {
-        $node = Node::factory()->create(['name' => 'gateway-1', 'role' => 'gateway', 'status' => 'active']);
+        $node = Node::factory()->gateway()->create(['name' => 'gateway-1', 'status' => 'active']);
         $path = storage_path('framework/testing/database-probe-app');
         File::ensureDirectoryExists($path);
         File::put($path.'/.env', "APP_NAME=Docs\nDB_CONNECTION=mysql\nDB_HOST=127.0.0.1\n");
@@ -53,7 +53,7 @@ describe('DatabaseConnectionProbe', function (): void {
     });
 
     it('masks plaintext password values in mismatch details', function (): void {
-        $node = Node::factory()->create(['name' => 'gateway-1', 'role' => 'gateway', 'status' => 'active']);
+        $node = Node::factory()->gateway()->create(['name' => 'gateway-1', 'status' => 'active']);
         $path = storage_path('framework/testing/database-probe-secret-mismatch');
         File::ensureDirectoryExists($path);
         File::put($path.'/.env', "DB_CONNECTION=pgsql\nDB_HOST=db.internal\nDB_PORT=5432\nDB_DATABASE=docs\nDB_USERNAME=orbit\nDB_PASSWORD=observed-secret\n");
@@ -87,7 +87,7 @@ describe('DatabaseConnectionProbe', function (): void {
     });
 
     it('reads remote env files through remote shell for hosted workspaces', function (): void {
-        $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        $node = Node::factory()->appDev()->create(['name' => 'app-1', 'status' => 'active']);
         $app = App::factory()->create(['node_id' => $node->id, 'name' => 'docs']);
         $workspace = Workspace::factory()->create([
             'app_id' => $app->id,
@@ -122,7 +122,7 @@ describe('DatabaseConnectionProbe', function (): void {
     });
 
     it('reports one actionable extra issue per unmapped observed supported prefix', function (): void {
-        $node = Node::factory()->create(['name' => 'gateway-1', 'role' => 'gateway', 'status' => 'active']);
+        $node = Node::factory()->gateway()->create(['name' => 'gateway-1', 'status' => 'active']);
         $path = storage_path('framework/testing/database-probe-extra-app');
         File::ensureDirectoryExists($path);
         File::put($path.'/.env', <<<'ENV'
@@ -156,7 +156,7 @@ ENV);
     });
 
     it('discovers custom complete prefixes as adoptable env extras', function (): void {
-        $node = Node::factory()->create(['name' => 'gateway-1', 'role' => 'gateway', 'status' => 'active']);
+        $node = Node::factory()->gateway()->create(['name' => 'gateway-1', 'status' => 'active']);
         $path = storage_path('framework/testing/database-probe-custom-prefix');
         File::ensureDirectoryExists($path);
         File::put($path.'/.env', "REPORTING_DB_CONNECTION=pgsql\nREPORTING_DB_HOST=reporting.internal\nREPORTING_DB_PORT=5432\nREPORTING_DB_DATABASE=reporting\nREPORTING_DB_USERNAME=reporting\n");
@@ -175,7 +175,7 @@ ENV);
     });
 
     it('reports partial observed prefix groups as unverifiable instead of adoptable extras', function (): void {
-        $node = Node::factory()->create(['name' => 'gateway-1', 'role' => 'gateway', 'status' => 'active']);
+        $node = Node::factory()->gateway()->create(['name' => 'gateway-1', 'status' => 'active']);
         $path = storage_path('framework/testing/database-probe-partial-prefix');
         File::ensureDirectoryExists($path);
         File::put($path.'/.env', "REPORTING_DB_CONNECTION=pgsql\nREPORTING_DB_HOST=reporting.internal\n");
@@ -193,7 +193,7 @@ ENV);
     });
 
     it('ignores non-database Laravel connection env values', function (): void {
-        $node = Node::factory()->create(['name' => 'gateway-1', 'role' => 'gateway', 'status' => 'active']);
+        $node = Node::factory()->gateway()->create(['name' => 'gateway-1', 'status' => 'active']);
         $path = storage_path('framework/testing/database-probe-laravel-prefixes');
         File::ensureDirectoryExists($path);
         File::put($path.'/.env', "SESSION_DRIVER=database\nBROADCAST_CONNECTION=log\nQUEUE_CONNECTION=database\nCACHE_STORE=database\n");
@@ -208,7 +208,7 @@ ENV);
     });
 
     it('reports a missing target mapping when observed env matches an existing connection', function (): void {
-        $node = Node::factory()->create(['name' => 'gateway-1', 'role' => 'gateway', 'status' => 'active']);
+        $node = Node::factory()->gateway()->create(['name' => 'gateway-1', 'status' => 'active']);
         $path = storage_path('framework/testing/database-probe-target-missing');
         File::ensureDirectoryExists($path);
         File::put($path.'/.env', "DB_CONNECTION=pgsql\nDB_HOST=db.internal\nDB_PORT=5432\nDB_DATABASE=docs\nDB_USERNAME=orbit\nDB_PASSWORD=secret\n");
@@ -237,8 +237,8 @@ ENV);
     });
 
     it('requires sqlite node ownership when matching missing target mappings', function (): void {
-        $node = Node::factory()->create(['name' => 'gateway-1', 'role' => 'gateway', 'status' => 'active']);
-        $otherNode = Node::factory()->create(['name' => 'gateway-2', 'role' => 'gateway', 'status' => 'active']);
+        $node = Node::factory()->gateway()->create(['name' => 'gateway-1', 'status' => 'active']);
+        $otherNode = Node::factory()->gateway()->create(['status' => 'active']);
         $path = storage_path('framework/testing/database-probe-sqlite-node');
         File::ensureDirectoryExists($path);
         File::put($path.'/.env', "DB_CONNECTION=sqlite\nDB_DATABASE=/srv/docs/database/database.sqlite\n");
@@ -266,7 +266,7 @@ ENV);
     });
 
     it('uses remote shell for hosted nodes even when the same path exists locally', function (): void {
-        $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        $node = Node::factory()->appDev()->create(['name' => 'app-1', 'status' => 'active']);
         $path = storage_path('framework/testing/database-probe-shadowed-remote');
         File::ensureDirectoryExists($path);
         File::put($path.'/.env', "DB_CONNECTION=mysql\nDB_HOST=local-shadow\n");

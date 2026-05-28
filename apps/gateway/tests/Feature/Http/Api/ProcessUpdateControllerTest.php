@@ -20,17 +20,16 @@ beforeEach(function (): void {
 
 const PROCESS_UPDATE_CALLER_WG_IP = '10.6.0.90';
 
-function createProcessUpdateCallerNode(array $overrides = []): Node
+function createProcessUpdateCallerNode(array $overrides = [], ?string $role = null): Node
 {
     $attributes = array_merge([
         'name' => 'caller',
-        'role' => 'control',
         'host' => PROCESS_UPDATE_CALLER_WG_IP,
         'wireguard_address' => PROCESS_UPDATE_CALLER_WG_IP,
     ], $overrides);
 
-    return match ($attributes['role']) {
-        'app' => createTestAppHostNode($attributes),
+    return match ($role) {
+        'app-dev' => createTestAppHostNode($attributes),
         'gateway' => createTestGatewayNode($attributes),
         default => Node::factory()->create($attributes),
     };
@@ -51,7 +50,7 @@ function grantProcessUpdateAccess(Node $caller, Node $appNode): void
 describe('ProcessUpdateController', function (): void {
     it('updates process intent for authorized control callers', function (): void {
         $caller = createProcessUpdateCallerNode();
-        $appNode = createTestAppHostNode(['role' => 'app']);
+        $appNode = createTestAppHostNode();
         grantProcessUpdateAccess($caller, $appNode);
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
         Process::factory()->create(['app_id' => $app->id, 'name' => 'vite', 'command' => 'npm run dev']);
@@ -74,7 +73,7 @@ describe('ProcessUpdateController', function (): void {
 
     it('rejects unauthorized callers before changing intent', function (): void {
         createProcessUpdateCallerNode();
-        $appNode = createTestAppHostNode(['role' => 'app']);
+        $appNode = createTestAppHostNode();
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
         Process::factory()->create(['app_id' => $app->id, 'name' => 'vite', 'command' => 'npm run dev']);
         app()->instance(RemoteShell::class, new ProcessUpdateRemoteShell([]));
@@ -93,7 +92,7 @@ describe('ProcessUpdateController', function (): void {
     });
 
     it('denies app callers without a process edit grant before changing intent', function (): void {
-        $caller = createProcessUpdateCallerNode(['role' => 'app']);
+        $caller = createProcessUpdateCallerNode(role: 'app-dev');
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $caller->id]);
         Process::factory()->create(['app_id' => $app->id, 'name' => 'vite', 'command' => 'npm run dev']);
         app()->instance(RemoteShell::class, new ProcessUpdateRemoteShell([]));
@@ -111,7 +110,7 @@ describe('ProcessUpdateController', function (): void {
 
     it('persists and returns the runtime field when supplied', function (): void {
         $caller = createProcessUpdateCallerNode();
-        $appNode = createTestAppHostNode(['role' => 'app']);
+        $appNode = createTestAppHostNode();
         grantProcessUpdateAccess($caller, $appNode);
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
         Process::factory()->create(['app_id' => $app->id, 'name' => 'queue', 'runtime' => 'docker']);
@@ -134,7 +133,7 @@ describe('ProcessUpdateController', function (): void {
 
     it('rejects invalid runtime values with the documented validation envelope', function (): void {
         $caller = createProcessUpdateCallerNode();
-        $appNode = createTestAppHostNode(['role' => 'app']);
+        $appNode = createTestAppHostNode();
         grantProcessUpdateAccess($caller, $appNode);
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
         Process::factory()->create(['app_id' => $app->id, 'name' => 'queue', 'runtime' => 'docker']);
@@ -155,8 +154,8 @@ describe('ProcessUpdateController', function (): void {
     });
 
     it('returns validation and not found errors', function (array $payload, string $processName, int $status, string $code): void {
-        createProcessUpdateCallerNode(['role' => 'gateway']);
-        $appNode = createTestAppHostNode(['role' => 'app']);
+        createProcessUpdateCallerNode(role: 'gateway');
+        $appNode = createTestAppHostNode();
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
         Process::factory()->create(['app_id' => $app->id, 'name' => 'vite', 'command' => 'npm run dev']);
         app()->instance(RemoteShell::class, new ProcessUpdateRemoteShell([]));

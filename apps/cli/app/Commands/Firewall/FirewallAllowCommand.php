@@ -6,6 +6,7 @@ namespace App\Commands\Firewall;
 
 final class FirewallAllowCommand extends FirewallStoreCommand
 {
+    #[\Override]
     protected $signature = 'firewall:allow
         {name? : Firewall rule name}
         {--port= : Destination port or range}
@@ -17,6 +18,7 @@ final class FirewallAllowCommand extends FirewallStoreCommand
         {--reason= : Operator note}
         {--json : Output JSON}';
 
+    #[\Override]
     protected $description = 'Create or update allow firewall rule intent through the gateway.';
 
     protected function firewallAction(): string

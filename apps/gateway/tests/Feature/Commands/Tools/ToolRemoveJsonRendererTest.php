@@ -23,10 +23,8 @@ function createToolRemoveJsonLocalNode(string $role = 'gateway'): Node
 {
     return Node::factory()->create([
         'name' => "tool-remove-json-{$role}",
-        'role' => $role,
         'host' => '10.10.0.1',
-        'wireguard_address' => '10.10.0.1',
-    ]);
+        'wireguard_address' => '10.10.0.1']);
 }
 
 function configureToolRemoveJsonControlGateway(): void
@@ -37,26 +35,23 @@ function configureToolRemoveJsonControlGateway(): void
 
     LocalGatewaySettings::current()->fill([
         'gateway_url' => 'https://10.10.0.1',
-        'ca_pem_path' => '/dev/null',
-    ])->save();
+        'ca_pem_path' => '/dev/null'])->save();
 }
 
 describe('tool:remove JSON renderer', function (): void {
     it('selects the JSON envelope renderer and emits the documented tool entity', function (): void {
         createToolRemoveJsonLocalNode('gateway');
-        $node = createTestAppHostNode(['name' => 'app-json-remove-1', 'role' => 'app', 'status' => 'active']);
+        $node = createTestAppHostNode(['name' => 'app-json-remove-1', 'status' => 'active']);
         $tool = NodeTool::factory()->create([
             'node_id' => $node->id,
             'name' => 'redis',
-            'expected_state' => 'running',
-        ]);
+            'expected_state' => 'running']);
         app()->instance(RemoteShell::class, new ToolRemoveJsonRecordingShell);
 
         $exitCode = Artisan::call('tool:remove', [
             'tool' => 'redis',
             '--node' => 'app-json-remove-1',
-            '--json' => true,
-        ]);
+            '--json' => true]);
         $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
 
         expect($exitCode)->toBe(0)
@@ -65,19 +60,17 @@ describe('tool:remove JSON renderer', function (): void {
             ->and($payload['success']['meta'])->toBe([])
             ->and($payload['success']['data']['tool'])->toBe([
                 'name' => 'redis',
-                'node' => 'app-json-remove-1',
-            ])
+                'node' => 'app-json-remove-1'])
             ->and(NodeTool::find($tool->id))->toBeNull();
     });
 
     it('renders missing destructive consent as validation_failed for non-json non-interactive mode', function (): void {
         createToolRemoveJsonLocalNode('gateway');
-        $node = createTestAppHostNode(['name' => 'app-json-remove-1', 'role' => 'app', 'status' => 'active']);
+        $node = createTestAppHostNode(['name' => 'app-json-remove-1', 'status' => 'active']);
         $tool = NodeTool::factory()->create([
             'node_id' => $node->id,
             'name' => 'redis',
-            'expected_state' => 'running',
-        ]);
+            'expected_state' => 'running']);
         $shell = new ToolRemoveJsonRecordingShell;
         app()->instance(RemoteShell::class, $shell);
 
@@ -89,46 +82,42 @@ describe('tool:remove JSON renderer', function (): void {
             ->and($shell->scripts)->toBe([]);
     });
 
-    it('renders missing target as validation_failed with target fields metadata', function (): void {
+    it('renders missing target as node_target_required with node field metadata', function (): void {
         createToolRemoveJsonLocalNode('gateway');
-        $node = createTestAppHostNode(['name' => 'app-json-remove-1', 'role' => 'app', 'status' => 'active']);
+        $node = createTestAppHostNode(['name' => 'app-json-remove-1', 'status' => 'active']);
         $tool = NodeTool::factory()->create([
             'node_id' => $node->id,
             'name' => 'redis',
-            'expected_state' => 'running',
-        ]);
+            'expected_state' => 'running']);
         $shell = new ToolRemoveJsonRecordingShell;
         app()->instance(RemoteShell::class, $shell);
 
         $exitCode = Artisan::call('tool:remove', [
             'tool' => 'redis',
-            '--json' => true,
-        ]);
+            '--json' => true]);
         $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
 
         expect($exitCode)->toBe(1)
-            ->and($payload['error']['code'])->toBe('validation_failed')
-            ->and($payload['error']['meta'])->toBe(['fields' => ['target']])
+            ->and($payload['error']['code'])->toBe('node_target_required')
+            ->and($payload['error']['meta'])->toBe(['field' => 'node'])
             ->and(NodeTool::find($tool->id))->not->toBeNull()
             ->and($shell->scripts)->toBe([]);
     });
 
     it('proceeds without force because json implies destructive consent', function (): void {
         createToolRemoveJsonLocalNode('gateway');
-        $node = createTestAppHostNode(['name' => 'app-json-remove-1', 'role' => 'app', 'status' => 'active']);
+        $node = createTestAppHostNode(['name' => 'app-json-remove-1', 'status' => 'active']);
         $tool = NodeTool::factory()->create([
             'node_id' => $node->id,
             'name' => 'redis',
-            'expected_state' => 'running',
-        ]);
+            'expected_state' => 'running']);
         $shell = new ToolRemoveJsonRecordingShell;
         app()->instance(RemoteShell::class, $shell);
 
         $exitCode = Artisan::call('tool:remove', [
             'tool' => 'redis',
             '--node' => 'app-json-remove-1',
-            '--json' => true,
-        ]);
+            '--json' => true]);
 
         expect($exitCode)->toBe(0)
             ->and(NodeTool::find($tool->id))->toBeNull()
@@ -139,14 +128,12 @@ describe('tool:remove JSON renderer', function (): void {
         configureToolRemoveJsonControlGateway();
 
         MockClient::global([
-            RemoveToolRequest::class => MockResponse::make(['error' => $error], $status),
-        ]);
+            RemoveToolRequest::class => MockResponse::make(['error' => $error], $status)]);
 
         $exitCode = Artisan::call('tool:remove', [
             'tool' => 'redis',
             '--node' => 'app-json-remove-1',
-            '--json' => true,
-        ]);
+            '--json' => true]);
         $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
 
         expect($exitCode)->toBe(1)
@@ -157,24 +144,19 @@ describe('tool:remove JSON renderer', function (): void {
         'authorization_failed' => [[
             'code' => 'authorization_failed',
             'message' => 'This node is not authorized to manage tools.',
-            'meta' => ['reason' => 'missing_permission', 'missing_permission' => 'tool:remove'],
-        ], 403],
+            'meta' => ['reason' => 'missing_permission', 'missing_permission' => 'tool:remove']], 403],
         'gateway_unavailable' => [[
             'code' => 'gateway_unavailable',
             'message' => 'Gateway cannot reach the tool registry.',
-            'meta' => ['reason' => 'connect_timeout'],
-        ], 503],
+            'meta' => ['reason' => 'connect_timeout']], 503],
         'tool.not_found' => [[
             'code' => 'tool.not_found',
             'message' => "Tool 'redis' was not found on node 'app-json-remove-1'.",
-            'meta' => ['tool' => 'redis', 'node' => 'app-json-remove-1'],
-        ], 404],
+            'meta' => ['tool' => 'redis', 'node' => 'app-json-remove-1']], 404],
         'tool.remote_action_failed' => [[
             'code' => 'tool.remote_action_failed',
             'message' => "Tool 'redis' remove failed on node 'app-json-remove-1'.",
-            'meta' => ['tool' => 'redis', 'node' => 'app-json-remove-1', 'action' => 'remove'],
-        ], 502],
-    ]);
+            'meta' => ['tool' => 'redis', 'node' => 'app-json-remove-1', 'action' => 'remove']], 502]]);
 });
 
 final class ToolRemoveJsonRecordingShell implements RemoteShell

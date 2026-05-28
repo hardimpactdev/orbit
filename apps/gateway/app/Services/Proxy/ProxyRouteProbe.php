@@ -545,7 +545,7 @@ BASH;
                     summary: "Proxy route {$route->domain} is served by node {$route->node->name}, which is not an eligible active serving node.",
                     detail: [
                         'node' => $route->node->name,
-                        'role' => $route->node->role,
+                        'role' => $route->node->displayRole(),
                         'status' => $route->node->status,
                     ],
                 ),
@@ -772,7 +772,7 @@ BASH;
             $nodeId = $artifact['node_id'] ?? null;
             $node = is_int($nodeId) ? Node::query()->find($nodeId) : null;
 
-            if ($node instanceof Node && $node->status === 'active' && app(NodeRoleAssignments::class)->nodeHasActiveRole($node, 'app-production')) {
+            if ($node instanceof Node && $node->status === 'active' && app(NodeRoleAssignments::class)->nodeHasActiveRole($node, 'app-prod')) {
                 continue;
             }
 

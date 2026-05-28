@@ -49,8 +49,8 @@ use function Laravel\Prompts\table;
 table(
     headers: ['ROLES', 'NAME', 'PLATFORM', 'STATUS'],
     rows: [
-        ['app-development', 'app-1', 'ubuntu_24-04', 'active'],
-        ['app-production, database', 'app-2', 'ubuntu_24-04', 'active'],
+        ['app-dev', 'app-1', 'ubuntu_24-04', 'active'],
+        ['app-prod, database', 'app-2', 'ubuntu_24-04', 'active'],
         ['gateway', 'gateway-1', 'ubuntu_24-04', 'active'],
         ['—', 'laptop', 'macos_15-4', 'active'],
     ],

@@ -134,7 +134,7 @@ trait LogsCommandActivity
 
     private function resolveLocalNode(): ?Node
     {
-        if (! Schema::hasTable('nodes') || ! Schema::hasTable('node_roles')) {
+        if (! Schema::hasTable('nodes') || ! Schema::hasTable('node_role')) {
             return null;
         }
 

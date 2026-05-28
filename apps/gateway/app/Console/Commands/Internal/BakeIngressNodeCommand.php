@@ -45,8 +45,6 @@ class BakeIngressNodeCommand extends Command
 
         $node = $registryWriter->writeNodeIdentity(
             name: $name,
-            legacyRole: 'control',
-            environment: null,
             tld: null,
             platform: 'ubuntu',
             host: $host,

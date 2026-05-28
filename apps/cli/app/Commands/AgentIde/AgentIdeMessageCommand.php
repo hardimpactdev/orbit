@@ -12,6 +12,7 @@ final class AgentIdeMessageCommand extends GatewayCommand
 {
     use ResolvesHostContext;
 
+    #[\Override]
     protected $signature = 'agent-ide:message
         {message? : Message to send}
         {--app= : App name or hostname}
@@ -19,6 +20,7 @@ final class AgentIdeMessageCommand extends GatewayCommand
         {--stdin : Read message from stdin}
         {--json : Output JSON}';
 
+    #[\Override]
     protected $description = 'Send a message to an active Agent IDE session.';
 
     public function handle(): int

@@ -4,8 +4,6 @@ declare(strict_types=1);
 
 namespace App\E2E\Support;
 
-use App\Models\Node;
-
 final readonly class E2EPreparedTopology
 {
     public static function supportedKindsForHelp(): string
@@ -231,7 +229,6 @@ final readonly class E2EPreparedTopology
             static fn (string $name): string => var_export($name, true),
             $allowedNodeNames,
         )).']';
-        $operatorStorageRoleValue = var_export(Node::OPERATOR_STORAGE_ROLE, true);
 
         return <<<PHP
 \$allowedNodeNames = {$allowedNodeNamesValue};
@@ -240,9 +237,14 @@ if (in_array('operator-1', \$allowedNodeNames, true)) {
     \$operatorNode = \\App\\Models\\Node::query()
         ->where('name', 'operator-1')
         ->first();
+    \$assignedNodeIds = \\App\\Models\\NodeRoleAssignment::query()
+        ->where('status', 'active')
+        ->distinct()
+        ->pluck('node_id');
     \$previousOperatorNode = \\App\\Models\\Node::query()
-        ->where('role', {$operatorStorageRoleValue})
         ->where('name', '!=', 'operator-1')
+        ->when(\$assignedNodeIds->isNotEmpty(), fn (\$query) => \$query->whereNotIn('id', \$assignedNodeIds))
+        ->orderBy('id')
         ->first();
 
     if (\$operatorNode === null && \$previousOperatorNode !== null) {

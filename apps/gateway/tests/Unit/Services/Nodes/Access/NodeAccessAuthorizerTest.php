@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 use App\Models\Node;
 use App\Models\NodeAccess;
-use App\Models\NodeRoleAssignment;
 use App\Services\Nodes\Access\NodeAccessAuthorizer;
 use App\Services\Nodes\Access\NodePermissionPresets;
 use App\Services\Nodes\Access\NodePermissionRegistry;
@@ -17,44 +16,26 @@ uses(RefreshDatabase::class);
 
 function createGatewayNode(): Node
 {
-    $node = Node::factory()->create([
+    return Node::factory()->gateway()->create([
         'name' => 'gateway-1',
-        'role' => 'gateway',
         'status' => 'active',
     ]);
-
-    NodeRoleAssignment::factory()->create([
-        'node_id' => $node->id,
-        'role' => 'gateway',
-        'status' => 'active',
-    ]);
-
-    return $node;
 }
 
 function createAppNode(): Node
 {
-    $node = Node::factory()->create([
+    return Node::factory()->appDev()->create([
         'name' => 'app-1',
-        'role' => 'app',
         'status' => 'active',
         'platform' => 'ubuntu',
     ]);
-
-    NodeRoleAssignment::factory()->create([
-        'node_id' => $node->id,
-        'role' => 'app-development',
-        'status' => 'active',
-    ]);
-
-    return $node;
 }
 
 function createControlNode(): Node
 {
     return Node::factory()->create([
         'name' => 'control-1',
-        'role' => 'control',
+
         'status' => 'active',
     ]);
 }
@@ -229,17 +210,10 @@ describe('NodeAccessAuthorizer', function (): void {
     });
 
     it('allows agent-self preset permissions', function (): void {
-        $agent = Node::factory()->create([
+        $agent = Node::factory()->agent()->create([
             'name' => 'agent-1',
-            'role' => 'app',
             'status' => 'active',
             'platform' => 'ubuntu',
-        ]);
-
-        NodeRoleAssignment::factory()->create([
-            'node_id' => $agent->id,
-            'role' => 'agent',
-            'status' => 'active',
         ]);
 
         $presets = new NodePermissionPresets;
@@ -254,17 +228,10 @@ describe('NodeAccessAuthorizer', function (): void {
     });
 
     it('denies agent-self preset for credentials and firewall writes', function (): void {
-        $agent = Node::factory()->create([
+        $agent = Node::factory()->agent()->create([
             'name' => 'agent-1',
-            'role' => 'app',
             'status' => 'active',
             'platform' => 'ubuntu',
-        ]);
-
-        NodeRoleAssignment::factory()->create([
-            'node_id' => $agent->id,
-            'role' => 'agent',
-            'status' => 'active',
         ]);
 
         $presets = new NodePermissionPresets;

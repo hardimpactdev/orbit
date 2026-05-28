@@ -13,6 +13,7 @@ use App\Models\App;
 use App\Models\Node;
 use App\Models\Workspace;
 use App\Services\Apps\AppAgentIdeDefaults;
+use App\Services\Nodes\Roles\NodeRoleAssignments;
 use Illuminate\Contracts\Container\Container;
 use Illuminate\Database\Eloquent\Builder;
 use Throwable;
@@ -335,7 +336,7 @@ final readonly class WorkspaceSetupTargetResolver
     {
         $query = App::query()->with('node');
 
-        if ($callerNode instanceof Node && $callerNode->role === 'app') {
+        if ($callerNode instanceof Node && app(NodeRoleAssignments::class)->nodeHasActiveAppHostRole($callerNode)) {
             $query->where('node_id', $callerNode->id);
         }
 

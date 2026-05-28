@@ -55,10 +55,8 @@ final class DeployManagerRecordingShell implements RemoteShell
 
 function createDeployManagerTestApp(array $overrides = []): App
 {
-    $node = Node::factory()->create([
+    $node = Node::factory()->appProd()->create([
         'name' => 'app-prod-1',
-        'role' => 'app',
-        'environment' => 'production',
     ]);
 
     return App::factory()->create(array_merge([

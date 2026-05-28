@@ -17,9 +17,14 @@ uses(RefreshDatabase::class);
 
 function createAgentToolInstallLocalNode(string $role = 'gateway'): Node
 {
-    return Node::factory()->create([
+    $factory = match ($role) {
+        'gateway' => Node::factory()->gateway(),
+        'agent' => Node::factory()->agent(),
+        default => Node::factory()->operator(),
+    };
+
+    return $factory->create([
         'name' => "agent-tool-{$role}",
-        'role' => $role,
         'host' => '10.26.0.1',
         'wireguard_address' => '10.26.0.1',
     ]);
@@ -29,7 +34,6 @@ function createAgentToolInstallTargetNode(string $name, array $overrides = []): 
 {
     return Node::factory()->create(array_merge([
         'name' => $name,
-        'role' => 'control',
         'status' => 'active',
     ], $overrides));
 }
@@ -88,7 +92,7 @@ describe('tool catalog supports agent tools', function (): void {
 describe('tool:install agent tool eligibility', function (): void {
     it('installs openclaw on a node with an active agent role', function (): void {
         createAgentToolInstallLocalNode('gateway');
-        $node = createAgentToolInstallTargetNode('agent-1', ['role' => 'control', 'tld' => 'agent']);
+        $node = createAgentToolInstallTargetNode('agent-1', ['tld' => 'agent']);
         assignAgentRole($node);
         $shell = new AgentToolInstallRecordingShell;
         app()->instance(RemoteShell::class, $shell);
@@ -117,7 +121,7 @@ describe('tool:install agent tool eligibility', function (): void {
 
     it('installs hermes on a node with an active agent role', function (): void {
         createAgentToolInstallLocalNode('gateway');
-        $node = createAgentToolInstallTargetNode('agent-1', ['role' => 'control', 'tld' => 'agent']);
+        $node = createAgentToolInstallTargetNode('agent-1', ['tld' => 'agent']);
         assignAgentRole($node);
         $shell = new AgentToolInstallRecordingShell;
         app()->instance(RemoteShell::class, $shell);
@@ -146,7 +150,7 @@ describe('tool:install agent tool eligibility', function (): void {
 
     it('stores credentials encrypted on node_tools', function (): void {
         createAgentToolInstallLocalNode('gateway');
-        $node = createAgentToolInstallTargetNode('agent-1', ['role' => 'control', 'tld' => 'agent']);
+        $node = createAgentToolInstallTargetNode('agent-1', ['tld' => 'agent']);
         assignAgentRole($node);
         $shell = new AgentToolInstallRecordingShell;
         app()->instance(RemoteShell::class, $shell);
@@ -168,7 +172,7 @@ describe('tool:install agent tool eligibility', function (): void {
         $node = createAgentToolInstallTargetNode('web-1');
         NodeRoleAssignment::factory()->create([
             'node_id' => $node->id,
-            'role' => 'app-production',
+            'role' => 'app-prod',
             'status' => 'active',
         ]);
         $shell = new AgentToolInstallRecordingShell;
@@ -193,7 +197,7 @@ describe('tool:install agent tool eligibility', function (): void {
 
     it('fails when domain is already owned by a non-tool route', function (): void {
         createAgentToolInstallLocalNode('gateway');
-        $node = createAgentToolInstallTargetNode('agent-1', ['role' => 'control', 'tld' => 'agent']);
+        $node = createAgentToolInstallTargetNode('agent-1', ['tld' => 'agent']);
         assignAgentRole($node);
 
         ProxyRoute::factory()->create([
@@ -217,7 +221,7 @@ describe('tool:install agent tool eligibility', function (): void {
 
     it('fails when domain is already owned by a different tool', function (): void {
         createAgentToolInstallLocalNode('gateway');
-        $node = createAgentToolInstallTargetNode('agent-1', ['role' => 'control', 'tld' => 'agent']);
+        $node = createAgentToolInstallTargetNode('agent-1', ['tld' => 'agent']);
         assignAgentRole($node);
 
         ProxyRoute::factory()->create([
@@ -242,7 +246,7 @@ describe('tool:install agent tool eligibility', function (): void {
 
     it('converges existing tool-owned route for the same tool', function (): void {
         createAgentToolInstallLocalNode('gateway');
-        $node = createAgentToolInstallTargetNode('agent-1', ['role' => 'control', 'tld' => 'agent']);
+        $node = createAgentToolInstallTargetNode('agent-1', ['tld' => 'agent']);
         assignAgentRole($node);
 
         ProxyRoute::factory()->create([

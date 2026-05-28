@@ -29,28 +29,26 @@ execution.
 1. Resolve `node_update.name`.
 2. Validate the node exists.
 3. Validate role-conditional field eligibility.
-4. Validate `node_update.tld` when present: the target must be a node with an app role whose
-   effective environment is `development`, and no other active node may already
-   own that TLD.
+4. Validate `node_update.tld` when present: the target must carry an active
+   `app-dev` role assignment, and no other active node may already own that TLD.
 5. Compute the configuration delta (which fields actually changed).
 6. Write the updated node record.
 7. Re-apply node-owned host artifacts for changed fields.
 8. Return the result.
 
-When the target is currently a production app, `--environment=development
---tld=<tld>` is a valid single update because the effective environment is the
-supplied `development` value.
+Environment switching between `app-dev` and `app-prod` is a role-assignment
+change outside `node:update`.
 
 ## Failure Semantics
 
 - Fail before side effects when the node does not exist.
 - Fail before side effects when no supported field flags are provided in
   non-interactive input mode.
-- Fail before side effects when a field is supplied for an incompatible node
-  role (`--environment` on a non-node, or `--host`, `--public-ipv4`, or
-  `--public-ipv6` on a client).
+- Fail before side effects when a field is supplied for an incompatible target
+  (`--host`, `--public-ipv4`, or `--public-ipv6` on an operator-identity node).
 - Fail before side effects when `--tld` is supplied for a gateway target,
-  operator target, or app target whose effective environment is `production`.
+  operator-identity target, or a node without an active `app-dev` role
+  assignment.
 - Fail before side effects with `node.tld_in_use` when `--tld` matches another
   active node's stored TLD.
 - Fail before side effects when the same field flag is supplied more than
@@ -66,4 +64,4 @@ Primary test owners:
 | Path | Coverage |
 | --- | --- |
 | `apps/gateway/tests/Feature/Commands/Nodes/NodeUpdateCommandTest.php` | Gateway-local update, field validation, role-conditional field rules including `tld`, no-op success, artifact re-applying reporting, and warning payload shape for partial-success drift. |
-| `apps/gateway/tests/Feature/Commands/Nodes/NodeUpdateNonInteractiveInputModeTest.php` | Gateway-local non-interactive TLD success, production-effective app rejection, production-to-development plus TLD success, duplicate-TLD conflict, and invalid-TLD syntax. |
+| `apps/gateway/tests/Feature/Commands/Nodes/NodeUpdateNonInteractiveInputModeTest.php` | Gateway-local non-interactive `app-dev` TLD success, TLD rejection for targets without `app-dev`, duplicate-TLD conflict, and invalid-TLD syntax. |

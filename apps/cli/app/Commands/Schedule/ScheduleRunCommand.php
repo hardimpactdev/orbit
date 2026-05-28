@@ -11,12 +11,14 @@ final class ScheduleRunCommand extends ScheduleGatewayCommand
 {
     use ResolvesScheduleSelection;
 
+    #[\Override]
     protected $signature = 'schedule:run
         {name? : Schedule name}
         {--app= : Filter by app scope}
         {--node= : Filter by node scope}
         {--json : Output JSON}';
 
+    #[\Override]
     protected $description = 'Run one configured schedule immediately.';
 
     public function handle(): int

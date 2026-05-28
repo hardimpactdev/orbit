@@ -4,7 +4,7 @@
 
 **Goal:** Replace Orbit's single `nodes.role` app/control split with composable hosted node roles, while keeping the gateway special and treating CLI operation as identity plus authorization grants.
 
-**Architecture:** Store role assignments in a new `node_roles` table with per-role status and typed JSON settings. Define role behavior in code through a registry: compatibility, supported platforms, settings DTOs, eligibility checks, baseline convergence, dependency checks, and cleanup semantics. Keep grants separate from roles: a joined node can request self-scoped actions, but the gateway authorizes each action and explicit `node_access` rows are only for operating other nodes.
+**Architecture:** Store role assignments in a new `node_role` table with per-role status and typed JSON settings. Define role behavior in code through a registry: compatibility, supported platforms, settings DTOs, eligibility checks, baseline convergence, dependency checks, and cleanup semantics. Keep grants separate from roles: a joined node can request self-scoped actions, but the gateway authorizes each action and explicit `node_access` rows are only for operating other nodes.
 
 **Tech Stack:** Laravel 13, Eloquent models/migrations, Pest feature and unit tests, existing gateway API command pattern, existing node doctor family, Laravel Pint.
 
@@ -46,8 +46,8 @@
 
 ### New Files
 
-- `database/migrations/2026_05_17_000000_create_node_roles_table.php` — normalized role assignment table.
-- `app/Models/NodeRoleAssignment.php` — Eloquent model for `node_roles`.
+- `database/migrations/2026_05_17_000000_create_node_role_table.php` — normalized role assignment table.
+- `app/Models/NodeRoleAssignment.php` — Eloquent model for `node_role`.
 - `database/factories/NodeRoleAssignmentFactory.php` — factory states for role/status combinations.
 - `app/Enums/Nodes/NodeRoleName.php` — role names: `gateway`, `app-development`, `app-production`, `database`.
 - `app/Enums/Nodes/NodeRoleStatus.php` — assignment statuses.
@@ -114,7 +114,7 @@
 - `docs/domains/1_node/node-doctor.md` — role assignment, settings, status, and baseline drift contract.
 - `docs/domains/1_node/technical/node-doctor.md` — technical mirror of doctor behavior.
 - Existing node command docs under `docs/domains/1_node/**` — replace `control/app` caller-role product language where the command behavior changes.
-- `database/migrations/*nodes*` — leave existing columns in place for compatibility during v1; add follow-up migration to backfill `node_roles`.
+- `database/migrations/*nodes*` — leave existing columns in place for compatibility during v1; add follow-up migration to backfill `node_role`.
 - `app/Models/Node.php` — add relationships and helpers.
 - `database/factories/NodeFactory.php` — no longer implies app hosting by default.
 - `app/Console/Commands/NodeNewCommand.php` — split node identity creation from initial role assignment; allow repeated `--role`.
@@ -249,7 +249,7 @@ git commit -m "docs: define composable node roles"
 ## Task 2: Add Role Assignment Data Model
 
 **Files:**
-- Create: `database/migrations/2026_05_17_000000_create_node_roles_table.php`
+- Create: `database/migrations/2026_05_17_000000_create_node_role_table.php`
 - Create: `app/Models/NodeRoleAssignment.php`
 - Create: `database/factories/NodeRoleAssignmentFactory.php`
 - Modify: `app/Models/Node.php`
@@ -319,11 +319,11 @@ it('enforces one assignment per role per node', function (): void {
 php artisan test --compact tests/Feature/Commands/Nodes/NodeRoleDataModelTest.php
 ```
 
-Expected: fails because `node_roles` and `NodeRoleAssignment` do not exist.
+Expected: fails because `node_role` and `NodeRoleAssignment` do not exist.
 
 - [ ] **Step 3: Create migration**
 
-Create `database/migrations/2026_05_17_000000_create_node_roles_table.php`:
+Create `database/migrations/2026_05_17_000000_create_node_role_table.php`:
 
 ```php
 <?php
@@ -338,7 +338,7 @@ return new class extends Migration
 {
     public function up(): void
     {
-        Schema::create('node_roles', function (Blueprint $table): void {
+        Schema::create('node_role', function (Blueprint $table): void {
             $table->id();
             $table->foreignId('node_id')->constrained('nodes')->cascadeOnDelete();
             $table->string('role');
@@ -355,7 +355,7 @@ return new class extends Migration
 
     public function down(): void
     {
-        Schema::dropIfExists('node_roles');
+        Schema::dropIfExists('node_role');
     }
 };
 ```
@@ -494,7 +494,7 @@ Expected: pass.
 
 ```bash
 vendor/bin/pint --dirty --format agent
-git add database/migrations/2026_05_17_000000_create_node_roles_table.php app/Models/Node.php app/Models/NodeRoleAssignment.php database/factories/NodeRoleAssignmentFactory.php database/factories/NodeFactory.php tests/Feature/Commands/Nodes/NodeRoleDataModelTest.php
+git add database/migrations/2026_05_17_000000_create_node_role_table.php app/Models/Node.php app/Models/NodeRoleAssignment.php database/factories/NodeRoleAssignmentFactory.php database/factories/NodeFactory.php tests/Feature/Commands/Nodes/NodeRoleDataModelTest.php
 git commit -m "feat: add node role assignments"
 ```
 
@@ -938,7 +938,7 @@ git commit -m "feat: manage node role assignments"
 ## Task 5: Backfill Existing Nodes
 
 **Files:**
-- Create: `database/migrations/2026_05_17_000001_backfill_node_roles_from_legacy_nodes.php`
+- Create: `database/migrations/2026_05_17_000001_backfill_node_role_from_legacy_nodes.php`
 - Test: `tests/Feature/Commands/Nodes/NodeRoleBackfillTest.php`
 
 - [ ] **Step 1: Write failing migration test**
@@ -974,7 +974,7 @@ it('backfills legacy gateway control and app nodes to role assignments', functio
 - [ ] **Step 2: Implement migration**
 
 Backfill:
-- `role=gateway` → `node_roles.role=gateway`, `status=active`, `settings=[]`.
+- `role=gateway` → `node_role.role=gateway`, `status=active`, `settings=[]`.
 - `role=control` → no hosted role assignment.
 - `role=app, environment=development` → `app-development`, `status=active`, `settings={"tld": nodes.tld}`.
 - `role=app, environment=production` → `app-production`, `status=active`, `settings=[]`.
@@ -993,7 +993,7 @@ Expected: pass.
 
 ```bash
 vendor/bin/pint --dirty --format agent
-git add database/migrations/2026_05_17_000001_backfill_node_roles_from_legacy_nodes.php tests/Feature/Commands/Nodes/NodeRoleBackfillTest.php
+git add database/migrations/2026_05_17_000001_backfill_node_role_from_legacy_nodes.php tests/Feature/Commands/Nodes/NodeRoleBackfillTest.php
 git commit -m "feat: backfill composable node roles"
 ```
 
@@ -1512,7 +1512,7 @@ rg -n "role' => 'app'|role\" => \"app\"|where\\('role', 'app'\\)|where\\(\"role\
 
 Classify each hit:
 - caller authorization still may use authenticated legacy caller role until the API identity model is separately refactored;
-- hosted capability checks must use `node_roles`;
+- hosted capability checks must use `node_role`;
 - docs must use new role vocabulary.
 
 - [ ] **Step 2: Update tests that build app nodes**

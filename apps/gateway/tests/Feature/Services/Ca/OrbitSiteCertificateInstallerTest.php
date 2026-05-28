@@ -20,9 +20,8 @@ beforeEach(function (): void {
     app()->useStoragePath($this->tempStorage);
     Process::swap(new Factory);
 
-    Node::create([
+    Node::factory()->gateway()->create([
         'name' => 'gateway',
-        'role' => 'gateway',
         'status' => 'active',
         'host' => '10.6.0.1',
         'orbit_path' => '/home/orbit/orbit',

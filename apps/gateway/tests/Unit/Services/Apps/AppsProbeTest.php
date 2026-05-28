@@ -555,7 +555,7 @@ describe('managed runtime config reality', function (): void {
 
 describe('production security reality', function (): void {
     it('detects production app runtime container isolation drift', function (): void {
-        $node = appNode([], role: 'app-production');
+        $node = appNode([], role: 'app-prod');
         $app = App::factory()
             ->for($node, 'node')
             ->create([
@@ -586,7 +586,6 @@ describe('production security reality', function (): void {
             ->for($node, 'node')
             ->create([
                 'name' => 'docs',
-                'environment' => 'development',
             ]);
 
         $snapshot = new ProbeSnapshot([
@@ -642,8 +641,8 @@ describe('registry intent', function (): void {
 });
 
 describe('owning node eligibility', function (): void {
-    it('requires an active app node owner', function (array $nodeState): void {
-        $node = Node::factory()->create($nodeState);
+    it('requires an active app node owner', function (callable $createNode): void {
+        $node = $createNode();
         $app = App::factory()->for($node, 'node')->create();
 
         $drift = $this->probe->diff($app, new ProbeSnapshot([]));
@@ -655,8 +654,8 @@ describe('owning node eligibility', function (): void {
         expect($ownerIssues)->toHaveCount(1);
         expect($ownerIssues[0]->kind)->toBe(DriftKind::Divergent);
     })->with([
-        'gateway owner' => [['role' => 'gateway', 'status' => 'active']],
-        'inactive app owner' => [['role' => 'app', 'status' => 'inactive']],
+        'gateway owner' => [fn (): Node => Node::factory()->gateway()->create(['status' => 'active'])],
+        'inactive app owner' => [fn (): Node => Node::factory()->appDev()->create(['status' => 'inactive'])],
     ]);
 
     it('accepts active app node owners', function (): void {
@@ -814,7 +813,7 @@ function convergedRuntimeSnapshot(array $overrides = []): array
     ];
 }
 
-function appNode(array $overrides = [], string $role = 'app-development'): Node
+function appNode(array $overrides = [], string $role = 'app-dev'): Node
 {
     return createTestAppHostNode([
         ...$overrides,

@@ -11,12 +11,14 @@ final class WorkspaceSetupCommand extends WorkspaceGatewayCommand
 {
     use StreamsGatewayProgress;
 
+    #[\Override]
     protected $signature = 'workspace:setup
         {name? : Workspace name}
         {--app= : Parent app name}
         {--path= : Explicit workspace path to adopt}
         {--json : Output JSON}';
 
+    #[\Override]
     protected $description = 'Converge a workspace to a ready-to-develop-in state.';
 
     public function handle(): int

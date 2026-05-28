@@ -6,6 +6,7 @@ use App\Http\Gateway\Requests\Apps\ListAppsRequest;
 use App\Models\App;
 use App\Models\LocalGatewaySettings;
 use App\Models\Node;
+use App\Models\NodeRoleAssignment;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
@@ -21,19 +22,28 @@ afterEach(function (): void {
 
 function createAppListLocalNode(string $role = 'gateway'): Node
 {
-    return Node::factory()->create([
+    $node = Node::factory()->create([
         'name' => "local-{$role}",
-        'role' => $role,
         'host' => '10.6.0.1',
         'wireguard_address' => '10.6.0.1',
     ]);
+
+    if ($role === 'gateway') {
+        NodeRoleAssignment::factory()->create([
+            'node_id' => $node->id,
+            'role' => 'gateway',
+            'status' => 'active',
+        ]);
+    }
+
+    return $node;
 }
 
 describe('app:list base contract', function (): void {
     it('lists apps sorted by node then app name for gateway callers', function (): void {
         createAppListLocalNode('gateway');
-        $zNode = Node::factory()->create(['name' => 'z-node', 'role' => 'app']);
-        $aNode = Node::factory()->create(['name' => 'a-node', 'role' => 'app']);
+        $zNode = createTestAppHostNode(['name' => 'z-node']);
+        $aNode = createTestAppHostNode(['name' => 'a-node']);
 
         App::factory()->create(['name' => 'zebra', 'node_id' => $zNode->id]);
         App::factory()->create(['name' => 'beta', 'node_id' => $aNode->id]);
@@ -48,8 +58,8 @@ describe('app:list base contract', function (): void {
 
     it('filters by node and environment', function (): void {
         createAppListLocalNode('gateway');
-        $devNode = Node::factory()->create(['name' => 'dev-1', 'role' => 'app']);
-        $prodNode = Node::factory()->create(['name' => 'prod-1', 'role' => 'app']);
+        $devNode = createTestAppHostNode(['name' => 'dev-1']);
+        $prodNode = createTestAppHostNode(['name' => 'prod-1'], 'app-prod');
 
         App::factory()->create(['name' => 'docs', 'node_id' => $devNode->id, 'environment' => 'development']);
         App::factory()->create(['name' => 'site', 'node_id' => $prodNode->id, 'environment' => 'production']);
@@ -161,7 +171,7 @@ describe('app:list base contract', function (): void {
         Process::preventStrayProcesses();
 
         createAppListLocalNode('gateway');
-        $node = Node::factory()->create(['role' => 'app']);
+        $node = createTestAppHostNode();
         App::factory()->count(2)->create(['node_id' => $node->id]);
 
         $appCount = DB::table('apps')->count();

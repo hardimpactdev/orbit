@@ -8,6 +8,7 @@ use App\Exceptions\GatewayApiException;
 
 final class DatabaseAddCommand extends DatabaseGatewayCommand
 {
+    #[\Override]
     protected $signature = 'database:add
         {slug? : Database connection slug}
         {--driver= : Database driver}
@@ -20,6 +21,7 @@ final class DatabaseAddCommand extends DatabaseGatewayCommand
         {--password= : Database password}
         {--json : Output JSON}';
 
+    #[\Override]
     protected $description = 'Register a database connection through the gateway.';
 
     public function handle(): int

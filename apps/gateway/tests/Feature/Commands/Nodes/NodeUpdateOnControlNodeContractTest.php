@@ -23,13 +23,11 @@ function nodeUpdateControlContractRow(array $overrides = []): array
 {
     return array_merge([
         'name' => 'control-1',
-        'role' => 'control',
         'host' => '10.6.0.4',
         'wireguard_address' => '10.6.0.4',
         'user' => 'nckrtl',
         'orbit_path' => '/home/nckrtl/orbit',
         'status' => 'active',
-        'environment' => null,
         'platform' => 'ubuntu_24-04',
         'public_ipv4' => null,
         'public_ipv6' => null,
@@ -71,7 +69,6 @@ describe('node:update on operator node contract', function (): void {
             'meta' => [
                 'field' => 'tld',
                 'name' => 'gateway-1',
-                'role' => 'gateway',
             ],
         ];
 
@@ -99,7 +96,6 @@ describe('node:update on operator node contract', function (): void {
             'meta' => [
                 'field' => 'tld',
                 'name' => 'control-2',
-                'role' => 'control',
             ],
         ];
 
@@ -192,7 +188,6 @@ describe('node:update on operator node contract', function (): void {
             'meta' => [
                 'field' => 'tld',
                 'name' => 'app-1',
-                'role' => 'app',
             ],
         ]],
     ]);

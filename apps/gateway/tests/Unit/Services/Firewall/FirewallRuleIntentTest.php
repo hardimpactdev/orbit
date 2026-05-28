@@ -38,14 +38,13 @@ function createFirewallRuleIntentAppHostNode(array $attributes = []): Node
 {
     $node = Node::factory()->create([
         'name' => 'app-1',
-        'role' => 'app',
         'platform' => 'ubuntu',
         ...$attributes,
     ]);
 
     NodeRoleAssignment::factory()->create([
         'node_id' => $node->id,
-        'role' => 'app-development',
+        'role' => 'app-dev',
         'status' => 'active',
         'settings' => ['tld' => 'test'],
     ]);
@@ -57,7 +56,6 @@ function createFirewallRuleIntentRoleNode(string $role, array $attributes = []):
 {
     $node = Node::factory()->create([
         'name' => "{$role}-1",
-        'role' => 'control',
         'platform' => 'ubuntu',
         'status' => 'active',
         ...$attributes,
@@ -110,7 +108,7 @@ describe('FirewallRuleIntent', function (): void {
     })->throws(GatewayApiException::class, 'A different firewall rule already uses this name on the selected node.');
 
     it('authorizes non-gateway callers through node access grants', function (): void {
-        $caller = Node::factory()->create(['role' => 'app', 'platform' => 'ubuntu']);
+        $caller = Node::factory()->appDev()->create(['platform' => 'ubuntu']);
         $node = createFirewallRuleIntentAppHostNode();
         grantFirewallRuleIntentAccess($caller, $node);
 
@@ -120,7 +118,7 @@ describe('FirewallRuleIntent', function (): void {
     });
 
     it('denies non-gateway callers that only have firewall read permission', function (): void {
-        $caller = Node::factory()->create(['role' => 'app', 'platform' => 'ubuntu']);
+        $caller = Node::factory()->appDev()->create(['platform' => 'ubuntu']);
         $node = createFirewallRuleIntentAppHostNode();
         grantFirewallRuleIntentAccess($caller, $node, ['firewall_rule:read']);
 
@@ -197,8 +195,8 @@ describe('FirewallRuleIntent', function (): void {
     })->with([
         'gateway',
         'router',
-        'app-development',
-        'app-production',
+        'app-dev',
+        'app-prod',
         'database',
         'agent',
         'ingress',

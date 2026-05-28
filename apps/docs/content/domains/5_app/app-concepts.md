@@ -23,25 +23,25 @@ The terms below define the core identity vocabulary for the app family.
   hostname matches.
 - **Owning node:** The node slug that hosts the app's path, runtime, and
   app-derived artifacts. Apps may only run on nodes with an active
-  `app-development` or `app-production` role; a node without an active app
+  `app-dev` or `app-prod` role; a node without an active app
   role is not a valid app target.
 
 ## Environment and hosting
 
 These terms describe the two environments an app may occupy. An app's
 environment is determined by the owning node's active app role —
-`app-development` or `app-production` — not a separate field stored on the app
+`app-dev` or `app-prod` — not a separate field stored on the app
 record.
 
-- **Development app:** App whose owning node carries the `app-development`
+- **Development app:** App whose owning node carries the `app-dev`
   role. Hostname uses the development TLD. Workspaces may attach to the app for
   branch-style isolation.
-- **Production app:** App whose owning node carries the `app-production` role.
+- **Production app:** App whose owning node carries the `app-prod` role.
   Hostname is a public DNS name. Production domains are globally unique across
   the Orbit network and are activated only after DNS verification against the
   selected ingress placement. Public traffic terminates at
   `ingress`, forwards over WireGuard to `router`, and reaches the app
-  through a private `app-production` backend artifact.
+  through a private `app-prod` backend artifact.
 - **App PHP version:** Gateway-tracked configuration for the PHP version used by the
   app's FrankenPHP runtime container and app command execution. Workspaces
   inherit this value unless they store an override.
@@ -106,6 +106,6 @@ These boundaries define what the app family owns and what belongs to other famil
   configuration, schedule definitions, tool registration, or firewall policy
   beyond what derives from app configuration. Production route exposure belongs
   to `ingress`; private route selection and backend-pool targeting belong to
-  `router`; `app-production` owns the private backend runtime; `websocket`
+  `router`; `app-prod` owns the private backend runtime; `websocket`
   owns the Reverb runtime. App commands do not install host PHP, Composer,
   Caddy, or Reverb.

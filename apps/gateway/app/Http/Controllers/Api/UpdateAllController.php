@@ -347,7 +347,7 @@ final class UpdateAllController implements Loggable
                     $updatesByIndex[$index] = [
                         'target' => $worker['node']->name,
                         'node' => $worker['node']->name,
-                        'role' => $worker['node']->role,
+                        'role' => $worker['node']->displayRole(),
                         'status' => 'completed',
                     ];
                     unset($workers[$index]);
@@ -412,7 +412,7 @@ final class UpdateAllController implements Loggable
             $updatesByIndex[$index] = [
                 'target' => $node->name,
                 'node' => $node->name,
-                'role' => $node->role,
+                'role' => $node->displayRole(),
                 'status' => 'failed',
                 'output' => $output,
             ];
@@ -469,7 +469,7 @@ final class UpdateAllController implements Loggable
         $updatesByIndex[$index] = [
             'target' => $node->name,
             'node' => $node->name,
-            'role' => $node->role,
+            'role' => $node->displayRole(),
             'status' => 'failed',
             'output' => $output,
         ];
@@ -627,7 +627,7 @@ final class UpdateAllController implements Loggable
                     'index' => $index,
                     'key' => $node->name,
                     'node' => $node->name,
-                    'role' => $node->role,
+                    'role' => $node->displayRole(),
                     'output' => trim($result->errorOutput() ?: $result->output()),
                 ]);
 
@@ -640,7 +640,7 @@ final class UpdateAllController implements Loggable
             'index' => $index,
             'key' => $node->name,
             'node' => $node->name,
-            'role' => $node->role,
+            'role' => $node->displayRole(),
         ]);
     }
 
@@ -751,7 +751,7 @@ final class UpdateAllController implements Loggable
         $updatesByIndex[$index] = [
             'target' => $node->name,
             'node' => $node->name,
-            'role' => $node->role,
+            'role' => $node->displayRole(),
             'status' => 'failed',
             'output' => $output,
         ];
@@ -765,7 +765,7 @@ final class UpdateAllController implements Loggable
         return [
             'target' => $node->name,
             'node' => $node->name,
-            'role' => $node->role,
+            'role' => $node->displayRole(),
             'status' => $result->successful() ? 'completed' : 'failed',
             ...($result->successful() ? [] : ['output' => trim($result->errorOutput() ?: $result->output())]),
         ];
@@ -787,20 +787,13 @@ final class UpdateAllController implements Loggable
      */
     private function localGatewayTarget(): array
     {
-        $node = Node::query()
-            ->where(function ($query): void {
-                $query
-                    ->where('role', 'gateway')
-                    ->orWhereIn('id', app(NodeRoleAssignments::class)->activeNodeIdsForRole('gateway'));
-            })
-            ->where('status', 'active')
-            ->first();
+        $node = app(NodeRoleAssignments::class)->activeGatewayNodeQuery()->first();
 
         if ($node instanceof Node) {
             return [
                 'target' => $node->name,
                 'node' => $node->name,
-                'role' => $node->role,
+                'role' => $node->displayRole(),
             ];
         }
 

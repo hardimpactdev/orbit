@@ -23,21 +23,18 @@ function createToolReconfigureLocalNode(string $role = 'gateway'): Node
 {
     return Node::factory()->create([
         'name' => "local-{$role}",
-        'role' => $role,
         'host' => '10.6.0.1',
-        'wireguard_address' => '10.6.0.1',
-    ]);
+        'wireguard_address' => '10.6.0.1']);
 }
 
 describe('tool:reconfigure command contract', function (): void {
     it('rejects tools without a reconfigure action', function (): void {
         createToolReconfigureLocalNode('gateway');
-        $node = createTestAppHostNode(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        $node = createTestAppHostNode(['name' => 'app-1', 'status' => 'active']);
         NodeTool::factory()->create([
             'node_id' => $node->id,
             'name' => 'redis',
-            'expected_state' => 'running',
-        ]);
+            'expected_state' => 'running']);
         $shell = new ToolReconfigureRecordingShell;
         app()->instance(RemoteShell::class, $shell);
 
@@ -48,14 +45,13 @@ describe('tool:reconfigure command contract', function (): void {
             ->and($payload['error']['code'])->toBe('tool.unsupported_action')
             ->and($payload['error']['meta'])->toMatchArray([
                 'tool' => 'redis',
-                'action' => 'reconfigure',
-            ])
+                'action' => 'reconfigure'])
             ->and($shell->scripts)->toBe([]);
     });
 
     it('rejects uninstalled tools', function (): void {
         createToolReconfigureLocalNode('gateway');
-        createTestAppHostNode(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        createTestAppHostNode(['name' => 'app-1', 'status' => 'active']);
         $shell = new ToolReconfigureRecordingShell;
         app()->instance(RemoteShell::class, $shell);
 
@@ -69,13 +65,12 @@ describe('tool:reconfigure command contract', function (): void {
 
     it('reconfigures opencode-server with password and config', function (): void {
         createToolReconfigureLocalNode('gateway');
-        $node = createTestAppHostNode(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        $node = createTestAppHostNode(['name' => 'app-1', 'status' => 'active']);
         NodeTool::factory()->create([
             'node_id' => $node->id,
             'name' => 'opencode-server',
             'expected_state' => 'running',
-            'config' => ['port' => 4096, 'hostname' => '127.0.0.1'],
-        ]);
+            'config' => ['port' => 4096, 'hostname' => '127.0.0.1']]);
         $shell = new ToolReconfigureRecordingShell;
         app()->instance(RemoteShell::class, $shell);
 
@@ -86,8 +81,7 @@ describe('tool:reconfigure command contract', function (): void {
             ->and($payload['success']['data']['tool'])->toMatchArray([
                 'name' => 'opencode-server',
                 'node' => 'app-1',
-                'action' => 'reconfigured',
-            ])
+                'action' => 'reconfigured'])
             ->and($shell->scripts)->toHaveCount(1)
             ->and($shell->scripts[0])->toContain('opencode-server.service')
             ->and($shell->scripts[0])->toContain('OPENCODE_SERVER_USERNAME=')
@@ -97,12 +91,11 @@ describe('tool:reconfigure command contract', function (): void {
 
     it('reconfigures polyscope-server with unit restart', function (): void {
         createToolReconfigureLocalNode('gateway');
-        $node = createTestAppHostNode(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        $node = createTestAppHostNode(['name' => 'app-1', 'status' => 'active']);
         NodeTool::factory()->create([
             'node_id' => $node->id,
             'name' => 'polyscope-server',
-            'expected_state' => 'running',
-        ]);
+            'expected_state' => 'running']);
         $shell = new ToolReconfigureRecordingShell;
         app()->instance(RemoteShell::class, $shell);
 
@@ -113,8 +106,7 @@ describe('tool:reconfigure command contract', function (): void {
             ->and($payload['success']['data']['tool'])->toMatchArray([
                 'name' => 'polyscope-server',
                 'node' => 'app-1',
-                'action' => 'reconfigured',
-            ])
+                'action' => 'reconfigured'])
             ->and($shell->scripts)->toHaveCount(1)
             ->and($shell->scripts[0])->toContain('polyscope-server.service')
             ->and($shell->scripts[0])->toContain('systemctl --user daemon-reload')
@@ -128,8 +120,7 @@ describe('tool:reconfigure command contract', function (): void {
 
         LocalGatewaySettings::current()->fill([
             'gateway_url' => 'https://10.6.0.1',
-            'ca_pem_path' => '/dev/null',
-        ])->save();
+            'ca_pem_path' => '/dev/null'])->save();
 
         MockClient::global([
             ReconfigureToolRequest::class => MockResponse::make([
@@ -138,13 +129,8 @@ describe('tool:reconfigure command contract', function (): void {
                         'tool' => [
                             'name' => 'polyscope-server',
                             'node' => 'app-1',
-                            'action' => 'reconfigured',
-                        ],
-                    ],
-                    'meta' => [],
-                ],
-            ], 200),
-        ]);
+                            'action' => 'reconfigured']],
+                    'meta' => []]], 200)]);
 
         $exitCode = Artisan::call('tool:reconfigure', ['tool' => 'polyscope-server', '--node' => 'app-1', '--json' => true]);
         $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);

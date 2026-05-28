@@ -9,7 +9,7 @@ use App\Models\Node;
 use App\Services\RuntimeBackend\GatewayRuntimeBackendProbe;
 
 it('reports available when the orbit-runtime container exists and is running', function (): void {
-    $node = new Node(['name' => 'gateway-1', 'role' => 'gateway']);
+    $node = new Node(['name' => 'gateway-1']);
     $remoteShell = new GatewayRuntimeProbeRecordingRemoteShell(
         new RemoteShellResult(exitCode: 0, stdout: "available\ttrue\ttrue\n", stderr: '', durationMs: 1),
     );
@@ -34,7 +34,7 @@ it('reports available when the orbit-runtime container exists and is running', f
 });
 
 it('reports no_docker when Docker CLI is missing', function (): void {
-    $node = new Node(['name' => 'gateway-1', 'role' => 'gateway']);
+    $node = new Node(['name' => 'gateway-1']);
     $remoteShell = new GatewayRuntimeProbeRecordingRemoteShell(
         new RemoteShellResult(exitCode: 0, stdout: "no_docker\tfalse\tfalse\n", stderr: '', durationMs: 1),
     );
@@ -47,7 +47,7 @@ it('reports no_docker when Docker CLI is missing', function (): void {
 });
 
 it('reports daemon_unavailable when Docker daemon is unreachable', function (): void {
-    $node = new Node(['name' => 'gateway-1', 'role' => 'gateway']);
+    $node = new Node(['name' => 'gateway-1']);
     $remoteShell = new GatewayRuntimeProbeRecordingRemoteShell(
         new RemoteShellResult(exitCode: 0, stdout: "daemon_unavailable\tfalse\tfalse\n", stderr: '', durationMs: 1),
     );
@@ -60,7 +60,7 @@ it('reports daemon_unavailable when Docker daemon is unreachable', function (): 
 });
 
 it('reports available with exists=false when the container is missing', function (): void {
-    $node = new Node(['name' => 'gateway-1', 'role' => 'gateway']);
+    $node = new Node(['name' => 'gateway-1']);
     $remoteShell = new GatewayRuntimeProbeRecordingRemoteShell(
         new RemoteShellResult(exitCode: 0, stdout: "available\tfalse\tfalse\n", stderr: '', durationMs: 1),
     );
@@ -73,7 +73,7 @@ it('reports available with exists=false when the container is missing', function
 });
 
 it('reports available with running=false when the container is stopped', function (): void {
-    $node = new Node(['name' => 'gateway-1', 'role' => 'gateway']);
+    $node = new Node(['name' => 'gateway-1']);
     $remoteShell = new GatewayRuntimeProbeRecordingRemoteShell(
         new RemoteShellResult(exitCode: 0, stdout: "available\ttrue\tfalse\n", stderr: '', durationMs: 1),
     );
@@ -86,7 +86,7 @@ it('reports available with running=false when the container is stopped', functio
 });
 
 it('produces distinct drift entries per failure mode', function (): void {
-    $node = new Node(['name' => 'gateway-1', 'role' => 'gateway']);
+    $node = new Node(['name' => 'gateway-1']);
     $probe = new GatewayRuntimeBackendProbe(
         new GatewayRuntimeProbeRecordingRemoteShell(
             new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),

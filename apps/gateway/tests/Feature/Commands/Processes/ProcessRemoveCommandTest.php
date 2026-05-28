@@ -9,6 +9,7 @@ use App\Http\Gateway\Requests\Processes\RemoveProcessRequest;
 use App\Models\App;
 use App\Models\LocalGatewaySettings;
 use App\Models\Node;
+use App\Models\NodeRoleAssignment;
 use App\Models\Process;
 use App\Models\Workspace;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -26,18 +27,28 @@ afterEach(function (): void {
 
 function createProcessRemoveLocalNode(string $role = 'gateway'): Node
 {
-    return Node::factory()->create([
+    $node = Node::factory()->create([
         'name' => "local-{$role}",
-        'role' => $role,
         'host' => '10.6.0.1',
         'wireguard_address' => '10.6.0.1',
     ]);
+
+    if ($role === 'gateway') {
+        NodeRoleAssignment::factory()->create([
+            'node_id' => $node->id,
+            'role' => 'gateway',
+            'status' => 'active',
+            'settings' => [],
+        ]);
+    }
+
+    return $node;
 }
 
 describe('process:remove base contract', function (): void {
     it('removes process intent and cleans up main and workspace runtime units', function (): void {
         createProcessRemoveLocalNode('gateway');
-        $node = Node::factory()->create(['role' => 'app']);
+        $node = Node::factory()->appDev()->create();
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
         Workspace::factory()->create(['name' => 'feature-docs', 'app_id' => $app->id]);
         Process::factory()->create(['app_id' => $app->id, 'name' => 'vite', 'command' => 'npm run dev', 'runtime' => ProcessRuntime::Supervisor]);
@@ -69,7 +80,7 @@ describe('process:remove base contract', function (): void {
 
     it('dispatches docker rm for docker runtime processes', function (): void {
         createProcessRemoveLocalNode('gateway');
-        $node = Node::factory()->create(['role' => 'app']);
+        $node = Node::factory()->appDev()->create();
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
         Process::factory()->create(['app_id' => $app->id, 'name' => 'queue', 'runtime' => ProcessRuntime::Docker]);
         $remoteShell = new ProcessRemoveRemoteShell([
@@ -94,7 +105,7 @@ describe('process:remove base contract', function (): void {
 
     it('returns success with warnings when cleanup fails after intent removal', function (): void {
         createProcessRemoveLocalNode('gateway');
-        $node = Node::factory()->create(['role' => 'app']);
+        $node = Node::factory()->appDev()->create();
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
         Process::factory()->create(['app_id' => $app->id, 'name' => 'vite', 'runtime' => ProcessRuntime::Supervisor]);
         app()->instance(RemoteShell::class, new ProcessRemoveRemoteShell([
@@ -116,7 +127,7 @@ describe('process:remove base contract', function (): void {
 
     it('requires force in non-interactive json mode and preserves intent', function (): void {
         createProcessRemoveLocalNode('gateway');
-        $node = Node::factory()->create(['role' => 'app']);
+        $node = Node::factory()->appDev()->create();
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
         Process::factory()->create(['app_id' => $app->id, 'name' => 'vite', 'runtime' => ProcessRuntime::Supervisor]);
         app()->instance(RemoteShell::class, new ProcessRemoveRemoteShell([]));
@@ -136,7 +147,7 @@ describe('process:remove base contract', function (): void {
 
     it('prompts with app and process data tables when required input is missing', function (): void {
         createProcessRemoveLocalNode('gateway');
-        $node = Node::factory()->create(['role' => 'app']);
+        $node = Node::factory()->appDev()->create();
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
         Process::factory()->create(['app_id' => $app->id, 'name' => 'vite', 'runtime' => ProcessRuntime::Supervisor]);
         app()->instance(RemoteShell::class, new ProcessRemoveRemoteShell([
@@ -153,7 +164,7 @@ describe('process:remove base contract', function (): void {
 
     it('rejects validation and not found failures before cleanup', function (array $arguments, string $field, string $code): void {
         createProcessRemoveLocalNode('gateway');
-        $node = Node::factory()->create(['role' => 'app']);
+        $node = Node::factory()->appDev()->create();
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
         Process::factory()->create(['app_id' => $app->id, 'name' => 'vite', 'runtime' => ProcessRuntime::Supervisor]);
         $remoteShell = new ProcessRemoveRemoteShell([]);
@@ -226,7 +237,7 @@ describe('process:remove base contract', function (): void {
 
     it('renders human progress and success prose', function (): void {
         createProcessRemoveLocalNode('gateway');
-        $node = Node::factory()->create(['role' => 'app']);
+        $node = Node::factory()->appDev()->create();
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
         Process::factory()->create(['app_id' => $app->id, 'name' => 'vite', 'runtime' => ProcessRuntime::Supervisor]);
         app()->instance(RemoteShell::class, new ProcessRemoveRemoteShell([

@@ -19,6 +19,7 @@ use App\Services\Nodes\Roles\NodeRoleAssignments;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
+use Illuminate\Console\OutputStyle;
 use InvalidArgumentException;
 use Throwable;
 
@@ -40,7 +41,7 @@ class NodeGrantCommand extends Command
             return $this->handleGatewayLocal();
         }
 
-        if ($executionContext === 'app') {
+        if ($executionContext === 'app-host') {
             return $this->forwardAppNodeGrant();
         }
 
@@ -63,11 +64,23 @@ class NodeGrantCommand extends Command
 
             /** @var GatewayIdentityResponse $identity */
             $identity = $response->dto();
-            $role = is_string($identity->self['role'] ?? null)
-                ? $identity->self['role']
-                : 'control';
+            $roles = is_array($identity->self['roles'] ?? null) ? $identity->self['roles'] : [];
+            $roleNames = array_values(array_filter(
+                array_map(
+                    static fn (mixed $role): ?string => is_array($role) && is_string($role['role'] ?? null) ? $role['role'] : null,
+                    $roles,
+                ),
+            ));
 
-            return in_array($role, ['gateway', 'control', 'app'], true) ? $role : 'control';
+            if (in_array('gateway', $roleNames, true)) {
+                return 'gateway';
+            }
+
+            if (array_intersect($roleNames, ['app-dev', 'app-prod']) !== []) {
+                return 'app-host';
+            }
+
+            return 'control';
         } catch (Throwable) {
             return 'control';
         }
@@ -142,7 +155,7 @@ class NodeGrantCommand extends Command
 
         $permissionsFromPrompt = false;
 
-        if ($resolvedPermissions === null && ! $this->wantsJson() && $this->input->isInteractive() && stream_isatty(STDIN)) {
+        if ($resolvedPermissions === null && $this->isInteractiveInput()) {
             $resolvedPermissions = $this->promptInteractivePermissions();
             $permissionsFromPrompt = true;
         }
@@ -232,7 +245,7 @@ class NodeGrantCommand extends Command
             );
         }
 
-        if ($permissions === null && ! $this->wantsJson() && $this->input->isInteractive() && stream_isatty(STDIN)) {
+        if ($permissions === null && $this->isInteractiveInput()) {
             $permissions = $this->promptInteractivePermissions();
         }
 
@@ -483,6 +496,11 @@ class NodeGrantCommand extends Command
 
     private function isInteractiveInput(): bool
     {
-        return ! $this->wantsJson() && $this->input->isInteractive();
+        if ($this->wantsJson() || ! $this->input->isInteractive()) {
+            return false;
+        }
+
+        return (defined('STDIN') && stream_isatty(STDIN))
+            || (app()->runningUnitTests() && app()->bound(OutputStyle::class));
     }
 }

@@ -29,11 +29,9 @@ function createFirewallMutationLocalNode(string $role = 'gateway'): Node
 {
     $attributes = [
         'name' => "local-{$role}",
-        'role' => $role,
         'host' => '10.6.0.1',
         'wireguard_address' => '10.6.0.1',
-        'platform' => 'ubuntu',
-    ];
+        'platform' => 'ubuntu'];
 
     if ($role === 'gateway') {
         return createTestGatewayNode($attributes);
@@ -45,15 +43,14 @@ function createFirewallMutationLocalNode(string $role = 'gateway'): Node
 describe('firewall mutation commands', function (): void {
     it('stores allow and deny intent on gateway callers', function (string $command, string $action): void {
         createFirewallMutationLocalNode('gateway');
-        createTestAppHostNode(['name' => 'app-1', 'role' => 'app', 'platform' => 'ubuntu']);
+        createTestAppHostNode(['name' => 'app-1', 'platform' => 'ubuntu']);
 
         $exitCode = Artisan::call($command, [
             'name' => "rule-{$action}",
             '--json' => true,
             '--node' => 'app-1',
             '--port' => '5173',
-            '--from' => '10.6.0.0/24',
-        ]);
+            '--from' => '10.6.0.0/24']);
         $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
 
         expect($exitCode)->toBe(0)
@@ -63,19 +60,17 @@ describe('firewall mutation commands', function (): void {
             ->and(FirewallRule::query()->where('name', "rule-{$action}")->exists())->toBeTrue();
     })->with([
         'allow' => ['firewall:allow', 'allow'],
-        'deny' => ['firewall:deny', 'deny'],
-    ]);
+        'deny' => ['firewall:deny', 'deny']]);
 
     it('renders the raw store progress tree before the success prose', function (): void {
         createFirewallMutationLocalNode('gateway');
-        createTestAppHostNode(['name' => 'app-1', 'role' => 'app', 'platform' => 'ubuntu']);
+        createTestAppHostNode(['name' => 'app-1', 'platform' => 'ubuntu']);
 
         $exitCode = Artisan::call('firewall:allow', [
             'name' => 'local-vite',
             '--node' => 'app-1',
             '--port' => '5173',
-            '--from' => '10.6.0.0/24',
-        ]);
+            '--from' => '10.6.0.0/24']);
         $output = Artisan::output();
 
         expect($exitCode)->toBe(0);
@@ -88,15 +83,14 @@ describe('firewall mutation commands', function (): void {
 
     it('renders the decorated remove progress tree with ansi state dots', function (): void {
         createFirewallMutationLocalNode('gateway');
-        $node = createTestAppHostNode(['name' => 'app-1', 'role' => 'app', 'platform' => 'ubuntu']);
+        $node = createTestAppHostNode(['name' => 'app-1', 'platform' => 'ubuntu']);
         FirewallRule::factory()->create(['node_id' => $node->id, 'name' => 'local-vite']);
 
         $output = new BufferedOutput(decorated: true);
         $exitCode = Artisan::call('firewall:remove', [
             'name' => 'local-vite',
             '--node' => 'app-1',
-            '--force' => true,
-        ], $output);
+            '--force' => true], $output);
         $text = $output->fetch();
 
         expect($exitCode)->toBe(0);
@@ -112,24 +106,19 @@ describe('firewall mutation commands', function (): void {
         createFirewallMutationLocalNode('control');
         LocalGatewaySettings::current()->fill([
             'gateway_url' => 'https://10.6.0.1',
-            'ca_pem_path' => '/dev/null',
-        ])->save();
+            'ca_pem_path' => '/dev/null'])->save();
 
         MockClient::global([
             StoreFirewallRuleRequest::class => MockResponse::make([
                 'success' => [
                     'data' => ['rule' => ['name' => 'local-vite', 'node' => 'app-1', 'status' => 'expected']],
-                    'meta' => ['warnings' => []],
-                ],
-            ], 200),
-        ]);
+                    'meta' => ['warnings' => []]]], 200)]);
 
         $exitCode = Artisan::call('firewall:allow', [
             'name' => 'local-vite',
             '--json' => true,
             '--node' => 'app-1',
-            '--port' => '5173',
-        ]);
+            '--port' => '5173']);
         $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
 
         expect($exitCode)->toBe(0)
@@ -138,7 +127,7 @@ describe('firewall mutation commands', function (): void {
 
     it('requires destructive consent for remove and then removes intent', function (): void {
         createFirewallMutationLocalNode('gateway');
-        $node = createTestAppHostNode(['name' => 'app-1', 'role' => 'app', 'platform' => 'ubuntu']);
+        $node = createTestAppHostNode(['name' => 'app-1', 'platform' => 'ubuntu']);
         FirewallRule::factory()->create(['node_id' => $node->id, 'name' => 'local-vite']);
 
         $missingConsent = Artisan::call('firewall:remove', ['name' => 'local-vite', '--json' => true, '--node' => 'app-1']);
@@ -162,24 +151,19 @@ describe('firewall mutation commands', function (): void {
         createFirewallMutationLocalNode('control');
         LocalGatewaySettings::current()->fill([
             'gateway_url' => 'https://10.6.0.1',
-            'ca_pem_path' => '/dev/null',
-        ])->save();
+            'ca_pem_path' => '/dev/null'])->save();
 
         MockClient::global([
             RemoveFirewallRuleRequest::class => MockResponse::make([
                 'success' => [
                     'data' => ['rule' => ['name' => 'local-vite', 'node' => 'app-1', 'status' => 'removed_with_drift']],
-                    'meta' => ['warnings' => []],
-                ],
-            ], 200),
-        ]);
+                    'meta' => ['warnings' => []]]], 200)]);
 
         $exitCode = Artisan::call('firewall:remove', [
             'name' => 'local-vite',
             '--json' => true,
             '--node' => 'app-1',
-            '--force' => true,
-        ]);
+            '--force' => true]);
         $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
 
         expect($exitCode)->toBe(0)

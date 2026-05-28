@@ -34,7 +34,7 @@ Each firewall rule is defined by the following fields.
 This term defines which nodes firewall commands may target.
 
 - **Eligible firewall target:** Registered active Ubuntu managed node with role
-  `gateway`, `router`, `app-development`, `app-production`, `database`,
+  `gateway`, `router`, `app-dev`, `app-prod`, `database`,
   `agent`, or `ingress`. Clients, unsupported platforms, inactive nodes,
   and unmanaged roles are not firewall-rule targets.
 - **Database-only ingress:** A node carrying only `database` has an empty ingress baseline. Operator-managed firewall rules may still be configured on it, e.g. to allow inbound TCP from specific app-role nodes.
@@ -46,7 +46,7 @@ These terms define what firewall commands may and may not change.
 - **Bootstrap policy:** Role-baseline firewall policy applied during node
   provisioning, including Orbit/WireGuard management access and ingress
   decisions defined by the node role. Only nodes with active `ingress` expose
-  public production HTTP/HTTPS. `app-production` backend port `80` is private
+  public production HTTP/HTTPS. `app-prod` backend port `80` is private
   backend traffic and must be reachable only through the Orbit/WireGuard
   network. App and workspace runtime containers are Docker-network backends
   behind `orbit-caddy`; firewall policy targets node listeners rather than

@@ -38,7 +38,7 @@ foreach (['operator-1', 'app-dev-1'] as $name) {
 \App\Models\NodeRoleAssignment::query()->updateOrCreate(
     [
         'node_id' => $nodes->get('app-dev-1'),
-        'role' => 'app-development',
+        'role' => 'app-dev',
     ],
     [
         'status' => 'active',
@@ -51,7 +51,6 @@ foreach (['operator-1', 'app-dev-1'] as $name) {
 $app = \App\Models\App::query()->create([
     'name' => 'docs',
     'node_id' => $nodes->get('app-dev-1'),
-    'environment' => 'development',
     'path' => '/srv/docs',
     'document_root' => 'public',
 ]);
@@ -86,7 +85,7 @@ PHP;
 
     $topology->ssh(
         'gateway',
-        "cd {$checkout} && orbit tinker --execute=".escapeshellarg($script),
+        "cd {$checkout} && php apps/gateway/artisan tinker --execute=".escapeshellarg($script),
         timeoutSeconds: 120,
     );
 }
@@ -158,7 +157,7 @@ it('lists app processes from a operator caller through the gateway api', functio
         // Empty state: app with no processes — clear processes on gateway then re-list
         $topology->ssh(
             'gateway',
-            'cd '.escapeshellarg($topology->checkout('gateway')).' && orbit tinker --execute='.escapeshellarg("\\App\\Models\\Process::query()->delete(); echo 'cleared';"),
+            'cd '.escapeshellarg($topology->checkout('gateway')).' && php apps/gateway/artisan tinker --execute='.escapeshellarg("\\App\\Models\\Process::query()->delete(); echo 'cleared';"),
             timeoutSeconds: 120,
         );
 

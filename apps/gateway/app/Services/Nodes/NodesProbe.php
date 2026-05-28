@@ -13,7 +13,6 @@ use App\Enums\AdoptAction;
 use App\Enums\DriftKind;
 use App\Enums\Nodes\NodeRoleName;
 use App\Enums\Nodes\NodeRoleStatus;
-use App\Models\LocalNodeDefault;
 use App\Models\Node;
 use App\Models\NodeAccess;
 use App\Models\NodeRoleAssignment;
@@ -76,7 +75,6 @@ final readonly class NodesProbe
 
         $drift = array_merge($drift, $this->checkRoleAssignments($node));
         $drift = array_merge($drift, $this->checkRecordCompleteness($node));
-        $drift = array_merge($drift, $this->checkLocalDefault($node));
         $drift = array_merge($drift, $this->checkAgentIdeDefault($node));
         $drift = array_merge($drift, $this->checkAccessGrants($node));
         $drift = array_merge($drift, $this->checkWireguardIdentity($node));
@@ -116,9 +114,7 @@ final readonly class NodesProbe
 
     private function nodeIsMissingRequiredRecordFields(Node $node): bool
     {
-        return ! is_string($node->role)
-            || $node->role === ''
-            || ! is_string($node->status)
+        return ! is_string($node->status)
             || $node->status === ''
             || ! is_string($node->platform)
             || $node->platform === ''
@@ -138,10 +134,6 @@ final readonly class NodesProbe
 
     private function nodeRequiresHost(Node $node): bool
     {
-        if (in_array($node->role, ['gateway', 'app'], true)) {
-            return true;
-        }
-
         return $node->hasActiveRole(NodeRoleName::Gateway->value)
             || $node->hasActiveRole(NodeRoleName::AppDevelopment->value)
             || $node->hasActiveRole(NodeRoleName::AppProduction->value);
@@ -157,15 +149,6 @@ final readonly class NodesProbe
             : $node->roleAssignments()->orderBy('role')->get();
 
         $drift = [];
-
-        if ($this->missingCompatibleLegacyRoleAssignment($node, $assignments->all())) {
-            $drift[] = new DriftEntry(
-                family: $this->key(),
-                key: 'node.role_assignment_missing',
-                kind: DriftKind::Missing,
-                summary: "Node {$node->name} is missing the active role assignment implied by its legacy role fields.",
-            );
-        }
 
         $activeDefinitions = [];
         $unresolvedDefinitions = [];
@@ -257,33 +240,6 @@ final readonly class NodesProbe
         }
 
         return $drift;
-    }
-
-    /**
-     * @param  list<NodeRoleAssignment>  $assignments
-     */
-    private function missingCompatibleLegacyRoleAssignment(Node $node, array $assignments): bool
-    {
-        if ($node->status !== 'active') {
-            return false;
-        }
-
-        $expectedRoles = match ($node->role) {
-            'gateway' => [NodeRoleName::Gateway->value],
-            'app' => match ($node->environment) {
-                'development' => [NodeRoleName::AppDevelopment->value],
-                'production' => [NodeRoleName::AppProduction->value],
-                default => [NodeRoleName::AppDevelopment->value, NodeRoleName::AppProduction->value],
-            },
-            'database' => [NodeRoleName::Database->value],
-            default => [],
-        };
-
-        if ($expectedRoles === []) {
-            return false;
-        }
-
-        return array_all($assignments, fn ($assignment) => ! ($assignment->status === NodeRoleStatus::Active->value && in_array($assignment->role, $expectedRoles, true)));
     }
 
     private function assignmentSettingsAreValid(NodeRoleDefinition $definition, NodeRoleAssignment $assignment): bool
@@ -493,71 +449,10 @@ final readonly class NodesProbe
     private function developmentNodeFromAssignment(Node $node, string $tld): Node
     {
         $developmentNode = clone $node;
-        $developmentNode->role = 'app';
-        $developmentNode->environment = 'development';
         $developmentNode->status = 'active';
         $developmentNode->tld = $tld;
 
         return $developmentNode;
-    }
-
-    /**
-     * @return list<DriftEntry>
-     */
-    private function checkLocalDefault(Node $node): array
-    {
-        if ($node->role !== 'control') {
-            return [];
-        }
-
-        $settings = LocalNodeDefault::query()->first();
-        $defaultNodeName = $settings?->default_node_name;
-
-        if ($defaultNodeName === null) {
-            return [];
-        }
-
-        $defaultNode = Node::query()->where('name', $defaultNodeName)->first();
-
-        if (! $defaultNode instanceof Node) {
-            return [
-                new DriftEntry(
-                    family: $this->key(),
-                    key: 'node.local_default_invalid',
-                    kind: DriftKind::Divergent,
-                    summary: "Local default node '{$defaultNodeName}' does not exist.",
-                ),
-            ];
-        }
-
-        if (! app(NodeRoleAssignments::class)->nodeHasActiveRole($defaultNode, NodeRoleName::AppDevelopment->value)) {
-            return [
-                new DriftEntry(
-                    family: $this->key(),
-                    key: 'node.local_default_invalid',
-                    kind: DriftKind::Divergent,
-                    summary: "Local default node '{$defaultNodeName}' is not a development app node.",
-                ),
-            ];
-        }
-
-        if (
-            ! NodeAccess::query()
-                ->where('consumer_node_id', $node->id)
-                ->where('serving_node_id', $defaultNode->id)
-                ->exists()
-        ) {
-            return [
-                new DriftEntry(
-                    family: $this->key(),
-                    key: 'node.local_default_invalid',
-                    kind: DriftKind::Divergent,
-                    summary: "Local default node '{$defaultNodeName}' is not authorized for the local node.",
-                ),
-            ];
-        }
-
-        return [];
     }
 
     /**
@@ -1366,8 +1261,8 @@ final readonly class NodesProbe
     private function identityArtifactMatchesNode(Node $node, NodeIdentityArtifact $artifact, string $observedAddress): bool
     {
         return $artifact->name === $node->name
-            && $artifact->role === $node->role
-            && $artifact->localRole === $node->role
+            && $artifact->role === $node->displayRole()
+            && $artifact->localRole === $node->displayRole()
             && $artifact->status === 'active'
             && $artifact->platform === $node->platform
             && $artifact->wireguardAddress === $node->wireguard_address

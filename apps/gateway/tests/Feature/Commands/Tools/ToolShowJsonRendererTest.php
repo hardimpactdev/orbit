@@ -24,10 +24,8 @@ function createToolShowJsonLocalNode(string $role = 'gateway'): Node
 {
     return Node::factory()->create([
         'name' => "tool-show-json-{$role}",
-        'role' => $role,
         'host' => '10.8.0.1',
-        'wireguard_address' => '10.8.0.1',
-    ]);
+        'wireguard_address' => '10.8.0.1']);
 }
 
 function configureToolShowJsonControlGateway(): void
@@ -38,20 +36,18 @@ function configureToolShowJsonControlGateway(): void
 
     LocalGatewaySettings::current()->fill([
         'gateway_url' => 'https://10.8.0.1',
-        'ca_pem_path' => '/dev/null',
-    ])->save();
+        'ca_pem_path' => '/dev/null'])->save();
 }
 
 function createToolShowJsonTool(string $nodeName = 'app-json-show-1'): NodeTool
 {
-    $node = createTestAppHostNode(['name' => $nodeName, 'role' => 'app', 'status' => 'active']);
+    $node = createTestAppHostNode(['name' => $nodeName, 'status' => 'active']);
 
     return NodeTool::factory()->create([
         'name' => 'redis',
         'node_id' => $node->id,
         'expected_state' => 'running',
-        'expected_version' => '7.2',
-    ]);
+        'expected_version' => '7.2']);
 }
 
 describe('tool:show JSON renderer', function (): void {
@@ -82,8 +78,7 @@ describe('tool:show JSON renderer', function (): void {
             'tool' => 'redis',
             '--node' => 'app-json-show-1',
             '--live' => true,
-            '--json' => true,
-        ]);
+            '--json' => true]);
         $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
 
         expect($exitCode)->toBe(0)
@@ -103,8 +98,7 @@ describe('tool:show JSON renderer', function (): void {
             'tool' => 'redis',
             '--node' => 'app-json-show-1',
             '--live' => true,
-            '--json' => true,
-        ]);
+            '--json' => true]);
         $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
 
         expect($exitCode)->toBe(1)
@@ -129,19 +123,13 @@ describe('tool:show JSON renderer', function (): void {
                             'observed_version' => '7.2.4',
                             'version' => '7.2',
                             'managed' => true,
-                            'endpoints' => [],
-                        ],
-                    ],
-                ],
-            ], 200),
-        ]);
+                            'endpoints' => []]]]], 200)]);
 
         $exitCode = Artisan::call('tool:show', [
             'tool' => 'redis',
             '--node' => 'app-json-show-1',
             '--live' => true,
-            '--json' => true,
-        ]);
+            '--json' => true]);
         $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
 
         expect($exitCode)->toBe(0)
@@ -150,16 +138,14 @@ describe('tool:show JSON renderer', function (): void {
 
         $mock->assertSent(fn (ShowToolRequest $request): bool => $request->query()->all() === [
             'node' => 'app-json-show-1',
-            'live' => '1',
-        ]);
+            'live' => '1']);
     });
 
     it('preserves structured gateway errors in the JSON envelope', function (array $error, int $status): void {
         configureToolShowJsonControlGateway();
 
         MockClient::global([
-            ShowToolRequest::class => MockResponse::make(['error' => $error], $status),
-        ]);
+            ShowToolRequest::class => MockResponse::make(['error' => $error], $status)]);
 
         $exitCode = Artisan::call('tool:show', ['tool' => 'redis', '--node' => 'app-json-show-1', '--json' => true]);
         $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
@@ -172,35 +158,28 @@ describe('tool:show JSON renderer', function (): void {
         'authorization_failed' => [[
             'code' => 'authorization_failed',
             'message' => 'This node is not authorized to read the tool registry.',
-            'meta' => ['reason' => 'missing_permission', 'missing_permission' => 'tool:read'],
-        ], 403],
+            'meta' => ['reason' => 'missing_permission', 'missing_permission' => 'tool:read']], 403],
         'gateway_unavailable' => [[
             'code' => 'gateway_unavailable',
             'message' => 'Gateway cannot reach the tool registry.',
-            'meta' => ['reason' => 'connect_timeout'],
-        ], 503],
+            'meta' => ['reason' => 'connect_timeout']], 503],
         'node.not_found' => [[
             'code' => 'node.not_found',
             'message' => "Node 'app-json-show-1' was not found.",
-            'meta' => ['node' => 'app-json-show-1'],
-        ], 404],
-    ]);
+            'meta' => ['node' => 'app-json-show-1']], 404]]);
 
     it('uses live inspection when the gateway API receives live=1', function (): void {
         $caller = Node::factory()->create([
             'name' => 'caller',
-            'role' => 'control',
             'host' => '10.8.0.96',
-            'wireguard_address' => '10.8.0.96',
-        ]);
+            'wireguard_address' => '10.8.0.96']);
         $tool = createToolShowJsonTool();
 
         DB::table('node_access')->insert([
             'consumer_node_id' => $caller->id,
             'serving_node_id' => $tool->node_id,
             'created_at' => now(),
-            'updated_at' => now(),
-        ]);
+            'updated_at' => now()]);
 
         $shell = new ToolShowJsonRecordingShell(stdout: "/usr/bin/redis-server\t7.2.4\trunning\n");
         app()->instance(RemoteShell::class, $shell);

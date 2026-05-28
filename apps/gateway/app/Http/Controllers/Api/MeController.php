@@ -43,9 +43,7 @@ final readonly class MeController
     {
         return [
             'name' => $node->name,
-            'role' => $node->role,
             'status' => $node->status ?? 'active',
-            'environment' => app(NodeRoleAssignments::class)->activeAppHostEnvironment($node),
             'platform' => $node->platform ?? 'unknown',
             'roles' => $node->roleAssignments->map(fn (NodeRoleAssignment $assignment): array => [
                 'role' => $assignment->role,

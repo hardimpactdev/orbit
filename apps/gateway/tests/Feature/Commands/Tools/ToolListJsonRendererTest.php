@@ -21,10 +21,8 @@ function createToolListJsonLocalNode(string $role = 'gateway'): Node
 {
     return Node::factory()->create([
         'name' => "tool-list-json-{$role}",
-        'role' => $role,
         'host' => '10.7.0.1',
-        'wireguard_address' => '10.7.0.1',
-    ]);
+        'wireguard_address' => '10.7.0.1']);
 }
 
 function configureToolListJsonControlGateway(): void
@@ -35,14 +33,13 @@ function configureToolListJsonControlGateway(): void
 
     LocalGatewaySettings::current()->fill([
         'gateway_url' => 'https://10.7.0.1',
-        'ca_pem_path' => '/dev/null',
-    ])->save();
+        'ca_pem_path' => '/dev/null'])->save();
 }
 
 describe('tool:list JSON renderer', function (): void {
     it('selects the JSON envelope renderer and emits canonical tool entities', function (): void {
         createToolListJsonLocalNode('gateway');
-        $node = createTestAppHostNode(['name' => 'app-json-1', 'role' => 'app']);
+        $node = createTestAppHostNode(['name' => 'app-json-1']);
 
         NodeTool::factory()->create([
             'name' => 'redis',
@@ -55,11 +52,7 @@ describe('tool:list JSON renderer', function (): void {
                         'name' => 'redis',
                         'kind' => 'tcp',
                         'host' => 'redis.app-json-1.test',
-                        'port' => 6379,
-                    ],
-                ],
-            ],
-        ]);
+                        'port' => 6379]]]]);
 
         $exitCode = Artisan::call('tool:list', ['--json' => true]);
         $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
@@ -79,15 +72,13 @@ describe('tool:list JSON renderer', function (): void {
             'observed_state',
             'version',
             'managed',
-            'endpoints',
-        ])
+            'endpoints'])
             ->and($tool)->toMatchArray([
                 'name' => 'redis',
                 'node' => 'app-json-1',
                 'expected_state' => 'running',
                 'version' => '7.2',
-                'managed' => true,
-            ])
+                'managed' => true])
             // tool:list is registry-read only; observed_state is schema-stable null until a live option exists.
             ->and($tool['observed_state'])->toBeNull()
             ->and($tool['endpoints'])->toBe([
@@ -95,21 +86,18 @@ describe('tool:list JSON renderer', function (): void {
                     'name' => 'redis',
                     'kind' => 'tcp',
                     'host' => 'redis.app-json-1.test',
-                    'port' => 6379,
-                ],
-            ]);
+                    'port' => 6379]]);
     });
 
     it('omits observed liveness columns from the human registry renderer', function (): void {
         createToolListJsonLocalNode('gateway');
-        $node = createTestAppHostNode(['name' => 'app-human-1', 'role' => 'app']);
+        $node = createTestAppHostNode(['name' => 'app-human-1']);
 
         NodeTool::factory()->create([
             'name' => 'redis',
             'node_id' => $node->id,
             'expected_state' => 'running',
-            'expected_version' => '7.2',
-        ]);
+            'expected_version' => '7.2']);
 
         $exitCode = Artisan::call('tool:list');
         $output = Artisan::output();
@@ -127,8 +115,7 @@ describe('tool:list JSON renderer', function (): void {
         configureToolListJsonControlGateway();
 
         MockClient::global([
-            ListToolsRequest::class => MockResponse::make(['error' => $error], $status),
-        ]);
+            ListToolsRequest::class => MockResponse::make(['error' => $error], $status)]);
 
         $exitCode = Artisan::call('tool:list', ['--json' => true]);
         $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
@@ -142,12 +129,9 @@ describe('tool:list JSON renderer', function (): void {
         'authorization_failed' => [[
             'code' => 'authorization_failed',
             'message' => 'This node is not authorized to read the tool registry.',
-            'meta' => ['reason' => 'missing_permission', 'missing_permission' => 'tool:read'],
-        ], 403],
+            'meta' => ['reason' => 'missing_permission', 'missing_permission' => 'tool:read']], 403],
         'gateway_unavailable' => [[
             'code' => 'gateway_unavailable',
             'message' => 'Gateway cannot reach the tool registry.',
-            'meta' => ['reason' => 'connect_timeout'],
-        ], 503],
-    ]);
+            'meta' => ['reason' => 'connect_timeout']], 503]]);
 });

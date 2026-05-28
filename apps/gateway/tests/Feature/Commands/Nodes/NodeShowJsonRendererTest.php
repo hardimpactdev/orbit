@@ -21,13 +21,11 @@ function nodeShowJsonRow(array $overrides = []): array
 {
     return array_merge([
         'name' => 'app-1',
-        'role' => 'app',
         'host' => '10.6.0.7',
         'wireguard_address' => '10.6.0.7',
         'user' => 'nckrtl',
         'orbit_path' => '/home/nckrtl/orbit',
         'status' => 'active',
-        'environment' => 'development',
         'platform' => 'ubuntu_24-04',
         'agent_ide_config' => null,
         'created_at' => now(),
@@ -41,9 +39,8 @@ function setupNodeShowJsonGatewayCaller(): void
 
     DB::table('nodes')->insert(nodeShowJsonRow([
         'name' => 'local-gateway',
-        'role' => 'gateway',
-        'environment' => null,
     ]));
+    assignNodeShowJsonRole('local-gateway', 'gateway');
 }
 
 /**
@@ -144,7 +141,7 @@ describe('node:show JSON renderer contract', function (): void {
 
     it('returns success.data.node with all documented fields', function (): void {
         DB::table('nodes')->insert(nodeShowJsonRow());
-        assignNodeShowJsonRole('app-1', 'app-development', ['tld' => 'test']);
+        assignNodeShowJsonRole('app-1', 'app-dev', ['tld' => 'test']);
 
         $exitCode = Artisan::call('node:show', ['name' => 'app-1', '--json' => true]);
         $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
@@ -155,14 +152,14 @@ describe('node:show JSON renderer contract', function (): void {
 
         expect($node)->toHaveKey('name')
             ->and($node['name'])->toBe('app-1')
-            ->and($node)->toHaveKey('role')
-            ->and($node['role'])->toBe('app')
             ->and($node)->toHaveKey('status')
             ->and($node['status'])->toBe('active')
-            ->and($node)->toHaveKey('environment')
-            ->and($node['environment'])->toBe('development')
             ->and($node)->toHaveKey('platform')
             ->and($node['platform'])->toBe('ubuntu_24-04')
+            ->and($node)->toHaveKey('roles')
+            ->and($node['roles'][0]['role'])->toBe('app-dev')
+            ->and($node)->not->toHaveKey('role')
+            ->and($node)->not->toHaveKey('environment')
             ->and($node)->toHaveKey('addresses')
             ->and($node['addresses'])->toBeArray()
             ->and($node['addresses'])->toHaveKey('wireguard')
@@ -184,8 +181,6 @@ describe('node:show JSON renderer contract', function (): void {
     it('shows gateway-coupled vpn role assignments with full payload fields', function (): void {
         DB::table('nodes')->insert(nodeShowJsonRow([
             'name' => 'gateway-1',
-            'role' => 'gateway',
-            'environment' => null,
             'wireguard_address' => '10.6.0.2',
         ]));
 
@@ -214,9 +209,9 @@ describe('node:show JSON renderer contract', function (): void {
         $roles = collect($payload['success']['data']['node']['roles'])->keyBy('role');
 
         expect($exitCode)->toBe(0)
-            ->and($payload['success']['data']['node']['role'])->toBe('gateway')
+            ->and($payload['success']['data']['node'])->not->toHaveKey('role')
+            ->and($payload['success']['data']['node'])->not->toHaveKey('environment')
             ->and($roles['gateway'])->toMatchArray([
-                'role' => 'gateway',
                 'status' => 'active',
                 'settings' => [],
                 'last_error' => null,
@@ -230,7 +225,6 @@ describe('node:show JSON renderer contract', function (): void {
                     ?->toJSON(),
             )
             ->and($roles['vpn'])->toMatchArray([
-                'role' => 'vpn',
                 'status' => 'active',
                 'settings' => [
                     'public_endpoint' => 'vpn.example.test',
@@ -250,41 +244,38 @@ describe('node:show JSON renderer contract', function (): void {
             );
     });
 
-    it('derives environment from active app role assignments', function (): void {
+    it('includes active app role assignments without a derived environment field', function (): void {
         DB::table('nodes')->insert(nodeShowJsonRow([
             'name' => 'host-1',
-            'role' => 'control',
-            'environment' => null,
         ]));
-        assignNodeShowJsonRole('host-1', 'app-production');
+        assignNodeShowJsonRole('host-1', 'app-prod');
 
         $exitCode = Artisan::call('node:show', ['name' => 'host-1', '--json' => true]);
         $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
 
         expect($exitCode)->toBe(0)
-            ->and($payload['success']['data']['node']['environment'])->toBe('production');
+            ->and($payload['success']['data']['node']['roles'][0]['role'])->toBe('app-prod')
+            ->and($payload['success']['data']['node'])->not->toHaveKey('environment');
     });
 
-    it('returns environment null for non-app roles', function (): void {
+    it('returns role assignments for non-app roles without legacy role fields', function (): void {
         DB::table('nodes')->insert(nodeShowJsonRow([
             'name' => 'gateway-1',
-            'role' => 'gateway',
-            'environment' => 'should-be-ignored',
         ]));
+        assignNodeShowJsonRole('gateway-1', 'gateway');
 
         $exitCode = Artisan::call('node:show', ['name' => 'gateway-1', '--json' => true]);
         $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
 
         expect($exitCode)->toBe(0)
-            ->and($payload['success']['data']['node']['environment'])->toBeNull()
-            ->and($payload['success']['data']['node']['role'])->toBe('gateway');
+            ->and($payload['success']['data']['node']['roles'][0]['role'])->toBe('gateway')
+            ->and($payload['success']['data']['node'])->not->toHaveKey('role')
+            ->and($payload['success']['data']['node'])->not->toHaveKey('environment');
     });
 
     it('defaults platform to unknown when null', function (): void {
         DB::table('nodes')->insert(nodeShowJsonRow([
             'name' => 'gateway-1',
-            'role' => 'gateway',
-            'environment' => null,
             'platform' => null,
         ]));
 
@@ -359,17 +350,12 @@ describe('node:show JSON renderer contract', function (): void {
         DB::table('nodes')->insert([
             nodeShowJsonRow([
                 'name' => 'app-1',
-                'role' => 'app',
             ]),
             nodeShowJsonRow([
                 'name' => 'control-1',
-                'role' => 'control',
-                'environment' => null,
             ]),
             nodeShowJsonRow([
                 'name' => 'control-2',
-                'role' => 'control',
-                'environment' => null,
             ]),
         ]);
 
@@ -456,39 +442,38 @@ describe('node:show JSON renderer contract', function (): void {
             ->and($error['meta'])->toBe(['name' => 'missing-node']);
     });
 
-    it('uses correct enum values for role', function (): void {
+    it('uses correct enum values for role assignments', function (): void {
         DB::table('nodes')->insert([
             nodeShowJsonRow([
                 'name' => 'gateway-1',
-                'role' => 'gateway',
-                'environment' => null,
             ]),
             nodeShowJsonRow([
                 'name' => 'app-1',
-                'role' => 'app',
-                'environment' => 'development',
             ]),
             nodeShowJsonRow([
                 'name' => 'control-1',
-                'role' => 'control',
-                'environment' => null,
             ]),
         ]);
+        assignNodeShowJsonRole('gateway-1', 'gateway');
+        assignNodeShowJsonRole('app-1', 'app-dev');
+        assignNodeShowJsonRole('control-1', 'agent');
 
-        foreach (['gateway-1', 'app-1', 'control-1'] as $name) {
+        foreach ([
+            'gateway-1' => 'gateway',
+            'app-1' => 'app-dev',
+            'control-1' => 'agent',
+        ] as $name => $role) {
             $exitCode = Artisan::call('node:show', ['name' => $name, '--json' => true]);
             $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
 
             expect($exitCode)->toBe(0);
-            expect($payload['success']['data']['node']['role'])->toBeIn(['gateway', 'app', 'control']);
+            expect($payload['success']['data']['node']['roles'][0]['role'])->toBe($role);
         }
     });
 
     it('platform is never null', function (): void {
         DB::table('nodes')->insert(nodeShowJsonRow([
             'name' => 'gateway-1',
-            'role' => 'gateway',
-            'environment' => null,
             'platform' => null,
         ]));
 

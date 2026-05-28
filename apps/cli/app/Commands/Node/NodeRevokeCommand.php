@@ -9,12 +9,14 @@ use App\Exceptions\GatewayApiException;
 
 final class NodeRevokeCommand extends GatewayCommand
 {
+    #[\Override]
     protected $signature = 'node:revoke
         {consuming_node? : Name of the node whose access is being revoked}
         {serving_node? : Name of the node providing access}
         {--force : Confirm destructive operation without prompting}
         {--json : Output JSON}';
 
+    #[\Override]
     protected $description = 'Revoke one node\'s access to another.';
 
     public function handle(): int

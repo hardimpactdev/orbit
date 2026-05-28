@@ -18,7 +18,6 @@ use App\Services\Nodes\Roles\NodeRoleAssignments;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
-use Illuminate\Database\Eloquent\Builder;
 use Throwable;
 
 #[Signature('node:remove
@@ -286,14 +285,9 @@ class NodeRemoveCommand extends Command
 
     private function gatewayNodeExists(string $name): bool
     {
-        return Node::query()
+        return app(NodeRoleAssignments::class)
+            ->activeGatewayNodeQuery()
             ->where('name', $name)
-            ->where('status', 'active')
-            ->where(function (Builder $query): void {
-                $query
-                    ->where('role', 'gateway')
-                    ->orWhereIn('id', app(NodeRoleAssignments::class)->activeNodeIdsForRole('gateway'));
-            })
             ->exists();
     }
 

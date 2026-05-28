@@ -12,10 +12,12 @@ final class WorkspaceSetupStepListCommand extends GatewayCommand
 {
     use ResolvesHostContext;
 
+    #[\Override]
     protected $signature = 'workspace-setup-step:list
         {--app= : Parent app slug}
         {--json}';
 
+    #[\Override]
     protected $description = 'List workspace setup steps for an app.';
 
     public function handle(): int

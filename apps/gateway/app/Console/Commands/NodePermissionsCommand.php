@@ -17,6 +17,7 @@ use App\Services\Nodes\Roles\NodeRoleAssignments;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
+use Illuminate\Console\OutputStyle;
 use InvalidArgumentException;
 use Throwable;
 
@@ -46,7 +47,7 @@ class NodePermissionsCommand extends Command
 
     private function collectInteractiveInputs(NodeRoleAssignments $nodeRoleAssignments): void
     {
-        if ($this->wantsJson() || ! $this->input->isInteractive() || ! stream_isatty(STDIN)) {
+        if (! $this->isInteractiveInput()) {
             return;
         }
 
@@ -608,5 +609,15 @@ class NodePermissionsCommand extends Command
     private function wantsJson(): bool
     {
         return (bool) $this->option('json');
+    }
+
+    private function isInteractiveInput(): bool
+    {
+        if ($this->wantsJson() || ! $this->input->isInteractive()) {
+            return false;
+        }
+
+        return (defined('STDIN') && stream_isatty(STDIN))
+            || (app()->runningUnitTests() && app()->bound(OutputStyle::class));
     }
 }

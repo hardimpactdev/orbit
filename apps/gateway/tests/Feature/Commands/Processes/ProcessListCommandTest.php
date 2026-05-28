@@ -28,7 +28,6 @@ function createProcessListLocalNode(string $role = 'gateway'): Node
 {
     $attributes = [
         'name' => "local-{$role}",
-        'role' => $role,
         'host' => '10.6.0.1',
         'wireguard_address' => '10.6.0.1',
     ];
@@ -43,7 +42,7 @@ function createProcessListLocalNode(string $role = 'gateway'): Node
 describe('process:list base contract', function (): void {
     it('lists gateway-local app processes as JSON', function (): void {
         createProcessListLocalNode('gateway');
-        $node = Node::factory()->create(['role' => 'app']);
+        $node = Node::factory()->appDev()->create();
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
         Process::factory()->create([
             'app_id' => $app->id,
@@ -75,7 +74,7 @@ describe('process:list base contract', function (): void {
 
     it('lists inherited processes for a workspace context', function (): void {
         createProcessListLocalNode('gateway');
-        $node = Node::factory()->create(['role' => 'app']);
+        $node = Node::factory()->appDev()->create();
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
         Workspace::factory()->create(['name' => 'feature-docs', 'app_id' => $app->id]);
         Process::factory()->create(['app_id' => $app->id, 'name' => 'vite', 'sort_order' => 1]);
@@ -94,7 +93,7 @@ describe('process:list base contract', function (): void {
 
     it('includes the latest durable lifecycle event for the selected context', function (): void {
         createProcessListLocalNode('gateway');
-        $node = Node::factory()->create(['role' => 'app']);
+        $node = Node::factory()->appDev()->create();
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
         $process = Process::factory()->create(['app_id' => $app->id, 'name' => 'vite', 'sort_order' => 1]);
         ProcessEvent::factory()->create([
@@ -115,7 +114,7 @@ describe('process:list base contract', function (): void {
 
     it('renders human process output and empty state', function (): void {
         createProcessListLocalNode('gateway');
-        $node = Node::factory()->create(['role' => 'app']);
+        $node = Node::factory()->appDev()->create();
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
         Process::factory()->create(['app_id' => $app->id, 'name' => 'vite', 'command' => 'npm run dev', 'sort_order' => 1]);
 
@@ -216,7 +215,7 @@ describe('process:list base contract', function (): void {
 
     it('renders validation and gateway unavailable failures', function (): void {
         createProcessListLocalNode('gateway');
-        Node::factory()->create(['role' => 'app']);
+        Node::factory()->appDev()->create();
 
         $exitCode = Artisan::call('process:list', ['--json' => true]);
         $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
@@ -241,7 +240,7 @@ describe('process:list base contract', function (): void {
         ProcessFacade::preventStrayProcesses();
 
         createProcessListLocalNode('gateway');
-        $node = Node::factory()->create(['role' => 'app']);
+        $node = Node::factory()->appDev()->create();
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
         Process::factory()->count(2)->create(['app_id' => $app->id]);
 

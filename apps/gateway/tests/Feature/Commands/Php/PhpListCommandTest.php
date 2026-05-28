@@ -23,7 +23,7 @@ afterEach(function (): void {
 describe('php:list command contract', function (): void {
     it('reports supported, available image, CLI, app, and workspace runtime facts on the gateway', function (): void {
         createPhpLocalNode('gateway');
-        $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app']);
+        $node = Node::factory()->appDev()->create(['name' => 'app-1']);
         createPhpTool($node, ['versions' => ['8.5'], 'cli_version' => '8.5']);
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id, 'php_version' => '8.5']);
         Workspace::factory()->create(['name' => 'feature-docs', 'app_id' => $app->id, 'php_version' => '8.4']);
@@ -56,7 +56,7 @@ describe('php:list command contract', function (): void {
 
     it('reports workspace inheritance from the parent app', function (): void {
         createPhpLocalNode('gateway');
-        $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app']);
+        $node = Node::factory()->appDev()->create(['name' => 'app-1']);
         createPhpTool($node);
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id, 'php_version' => '8.5']);
         Workspace::factory()->create(['name' => 'feature-docs', 'app_id' => $app->id, 'php_version' => null]);
@@ -77,7 +77,7 @@ describe('php:list command contract', function (): void {
 
     it('sets live metadata only when live inspection is requested', function (): void {
         createPhpLocalNode('gateway');
-        $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app']);
+        $node = Node::factory()->appDev()->create(['name' => 'app-1']);
         createPhpTool($node);
 
         $exitCode = Artisan::call('php:list', [
@@ -133,7 +133,7 @@ describe('php:list command contract', function (): void {
         Process::preventStrayProcesses();
 
         createPhpLocalNode('gateway');
-        $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app']);
+        $node = Node::factory()->appDev()->create(['name' => 'app-1']);
         createPhpTool($node);
 
         $toolCount = NodeTool::query()->count();

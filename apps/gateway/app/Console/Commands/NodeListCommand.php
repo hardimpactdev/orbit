@@ -4,8 +4,6 @@ declare(strict_types=1);
 
 namespace App\Console\Commands;
 
-use App\Enums\Nodes\NodeRoleName;
-use App\Enums\Nodes\NodeRoleStatus;
 use App\Http\Gateway\GatewayApiException;
 use App\Http\Gateway\GatewayConnector;
 use App\Http\Gateway\Requests\Nodes\ListNodesRequest;
@@ -25,21 +23,17 @@ use Throwable;
 use function Laravel\Prompts\table;
 
 #[Signature('node:list
-    {--role= : Filter by role (gateway|vpn|router|app|app-development|app-production|database|agent|ingress|control)}
-    {--environment= : Filter by environment (development|production)}
+    {--role= : Filter by role (gateway|vpn|router|app-dev|app-prod|database|agent|ingress|websocket|s3)}
     {--doctor : Include node doctor checks and summaries}
     {--json : Output as JSON}')]
 #[Description('List nodes registered in the gateway registry')]
 class NodeListCommand extends Command
 {
-    private const array VALID_ROLES = ['gateway', 'vpn', 'router', 'app', 'app-development', 'app-production', 'database', 'agent', 'ingress', 'control'];
-
-    private const array VALID_ENVIRONMENTS = ['development', 'production'];
+    private const array VALID_ROLES = ['gateway', 'vpn', 'router', 'app-dev', 'app-prod', 'database', 'agent', 'ingress', 'websocket', 's3'];
 
     public function handle(NodesDoctorSummary $doctorSummary): int
     {
         $role = $this->option('role');
-        $environment = $this->option('environment');
         $doctor = $this->wantsDoctor();
 
         if (is_string($role) && $role !== '') {
@@ -52,20 +46,9 @@ class NodeListCommand extends Command
             }
         }
 
-        if (is_string($environment) && $environment !== '') {
-            if (! in_array($environment, self::VALID_ENVIRONMENTS, true)) {
-                return $this->failValidation(
-                    field: 'environment',
-                    value: $environment,
-                    allowed: self::VALID_ENVIRONMENTS,
-                );
-            }
-        }
-
         try {
             $result = $this->fetchNodes(
                 role: is_string($role) && $role !== '' ? $role : null,
-                environment: is_string($environment) && $environment !== '' ? $environment : null,
                 doctor: $doctor,
                 doctorSummary: $doctorSummary,
             );
@@ -99,12 +82,11 @@ class NodeListCommand extends Command
      *     meta: array<string, mixed>,
      * }|GatewayApiException
      */
-    private function fetchNodes(?string $role, ?string $environment, bool $doctor, NodesDoctorSummary $doctorSummary): array|GatewayApiException
+    private function fetchNodes(?string $role, bool $doctor, NodesDoctorSummary $doctorSummary): array|GatewayApiException
     {
         if ($this->isGatewayCaller()) {
             return $this->fetchLocalNodes(
                 role: $role,
-                environment: $environment,
                 doctor: $doctor,
                 doctorSummary: $doctorSummary,
             );
@@ -112,7 +94,7 @@ class NodeListCommand extends Command
 
         try {
             $dto = app(GatewayConnector::class)
-                ->send(new ListNodesRequest(role: $role, environment: $environment, doctor: $doctor))
+                ->send(new ListNodesRequest(role: $role, doctor: $doctor))
                 ->dto();
         } catch (GatewayApiException $e) {
             return $e;
@@ -136,9 +118,9 @@ class NodeListCommand extends Command
      *     meta: array<string, mixed>,
      * }
      */
-    private function fetchLocalNodes(?string $role, ?string $environment, bool $doctor, NodesDoctorSummary $doctorSummary): array
+    private function fetchLocalNodes(?string $role, bool $doctor, NodesDoctorSummary $doctorSummary): array
     {
-        $nodes = $this->fetchLocalNodeModels($role, $environment);
+        $nodes = $this->fetchLocalNodeModels($role);
 
         $meta = [];
 
@@ -155,21 +137,13 @@ class NodeListCommand extends Command
     /**
      * @return Collection<int, Node>
      */
-    private function fetchLocalNodeModels(?string $role, ?string $environment): Collection
+    private function fetchLocalNodeModels(?string $role): Collection
     {
         $query = Node::query()
             ->with('roleAssignments');
 
         if ($role !== null) {
             $this->applyRoleFilter($query, $role);
-        }
-
-        if ($environment !== null) {
-            $query->whereHas('roleAssignments', function (Builder $query) use ($environment): void {
-                $query
-                    ->where('role', $environment === 'development' ? NodeRoleName::AppDevelopment->value : NodeRoleName::AppProduction->value)
-                    ->where('status', NodeRoleStatus::Active->value);
-            });
         }
 
         $assignments = app(NodeRoleAssignments::class);
@@ -193,22 +167,6 @@ class NodeListCommand extends Command
     {
         $assignments = app(NodeRoleAssignments::class);
 
-        if ($role === 'app') {
-            $query->whereIn('id', $assignments->activeAppHostNodeIds());
-
-            return;
-        }
-
-        if ($role === 'control') {
-            $assignedNodeIds = $assignments->activeAssignedNodeIds();
-
-            if ($assignedNodeIds !== []) {
-                $query->whereNotIn('id', $assignedNodeIds);
-            }
-
-            return;
-        }
-
         $query->whereIn('id', $assignments->activeNodeIdsForRole($role));
     }
 
@@ -219,8 +177,6 @@ class NodeListCommand extends Command
     {
         return [
             'name' => $node->name,
-            'role' => $node->role,
-            'environment' => app(NodeRoleAssignments::class)->activeAppHostEnvironment($node),
             'platform' => $node->platform ?? 'unknown',
             'status' => $node->status,
             'roles' => $node->roleAssignments
@@ -243,12 +199,10 @@ class NodeListCommand extends Command
         }
 
         table(
-            headers: ['ROLE', 'ROLES', 'NAME', 'ENVIRONMENT', 'PLATFORM', 'STATUS'],
+            headers: ['ROLES', 'NAME', 'PLATFORM', 'STATUS'],
             rows: array_map(fn (array $node): array => [
-                $node['role'],
                 $this->humanRolesLabel($node),
                 $node['name'],
-                $node['environment'] ?? '—',
                 $node['platform'],
                 $node['status'],
             ], $nodes),

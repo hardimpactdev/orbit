@@ -119,7 +119,6 @@ function workspaceForReadinessProbe(): Workspace
 {
     $node = Node::factory()->create([
         'name' => 'app-1',
-        'role' => 'app',
         'tld' => 'test',
         'status' => 'active',
     ]);

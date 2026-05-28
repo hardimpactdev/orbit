@@ -271,5 +271,5 @@ all documented command failures exit with the standard command failure status
 
 Role-specific behavior and test mapping live in:
 
-- [`2_workspace-setup_on-client.md`](2_workspace-setup_on-client.md)
+- [`2_workspace-setup_on-operator-node.md`](2_workspace-setup_on-operator-node.md)
 - [`3_workspace-setup_on-gateway-node.md`](3_workspace-setup_on-gateway-node.md)

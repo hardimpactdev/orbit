@@ -8,7 +8,6 @@ use App\Http\Gateway\Requests\Gateway\ShowGatewayIdentityRequest;
 use App\Http\Gateway\Requests\Tools\ToolLogsRequest;
 use App\Models\App;
 use App\Models\LocalGatewaySettings;
-use App\Models\LocalNodeDefault;
 use App\Models\Node;
 use App\Models\NodeTool;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -24,9 +23,14 @@ afterEach(function (): void {
 
 function createToolLogsTargetLocalNode(string $role = 'gateway'): Node
 {
-    return Node::factory()->create([
+    $factory = match ($role) {
+        'gateway' => Node::factory()->gateway(),
+        'agent' => Node::factory()->agent(),
+        default => Node::factory()->operator(),
+    };
+
+    return $factory->create([
         'name' => "tool-logs-target-{$role}",
-        'role' => $role,
         'host' => '10.9.0.1',
         'wireguard_address' => '10.9.0.1',
     ]);
@@ -36,7 +40,6 @@ function createToolLogsTarget(string $nodeName, ?string $tld = null): Node
 {
     return createTestAppHostNode([
         'name' => $nodeName,
-        'role' => 'app',
         'status' => 'active',
         'tld' => $tld,
     ]);
@@ -155,18 +158,14 @@ describe('tool:logs target resolution', function (): void {
             ->and($payload['success']['data']['logs']['node'])->toBe('app-logs-node-1');
     });
 
-    it('uses local node default when no explicit target is supplied', function (): void {
+    it('returns node_target_required when no explicit target is supplied', function (): void {
         createToolLogsTargetLocalNode('gateway');
-        $node = createToolLogsTarget('app-logs-default-1');
-        createToolLogsManagedTool($node);
-        LocalNodeDefault::query()->create(['default_node_name' => 'app-logs-default-1']);
-        app()->instance(RemoteShell::class, new ToolLogsTargetRecordingShell(stdout: "default line\n"));
 
         $exitCode = Artisan::call('tool:logs', ['tool' => 'supervisor', '--json' => true]);
         $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($exitCode)->toBe(0)
-            ->and($payload['success']['data']['logs']['node'])->toBe('app-logs-default-1');
+        expect($exitCode)->toBe(1)
+            ->and($payload['error']['code'])->toBe('node_target_required');
     });
 
     it('uses gateway-known caller identity as self fallback when no explicit target or node default exists', function (): void {
@@ -185,7 +184,6 @@ describe('tool:logs target resolution', function (): void {
                     'data' => [
                         'self' => [
                             'name' => 'control-self',
-                            'role' => 'control',
                         ],
                     ],
                 ],
@@ -230,8 +228,7 @@ describe('tool:logs target resolution', function (): void {
         $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
 
         expect($exitCode)->toBe(1)
-            ->and($payload['error']['code'])->toBe('validation_failed')
-            ->and($payload['error']['meta'])->toBe(['fields' => ['target']])
+            ->and($payload['error']['code'])->toBe('node_target_required')
             ->and($shell->scripts)->toBe([]);
     });
 });

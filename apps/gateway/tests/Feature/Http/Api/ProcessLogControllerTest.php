@@ -14,17 +14,16 @@ uses(RefreshDatabase::class);
 
 const PROCESS_LOG_CALLER_WG_IP = '10.6.0.94';
 
-function createProcessLogCallerNode(array $overrides = []): Node
+function createProcessLogCallerNode(array $overrides = [], ?string $role = null): Node
 {
     $attributes = array_merge([
         'name' => 'caller',
-        'role' => 'control',
         'host' => PROCESS_LOG_CALLER_WG_IP,
         'wireguard_address' => PROCESS_LOG_CALLER_WG_IP,
     ], $overrides);
 
-    return match ($attributes['role']) {
-        'app' => createTestAppHostNode($attributes),
+    return match ($role) {
+        'app-dev' => createTestAppHostNode($attributes),
         'gateway' => createTestGatewayNode($attributes),
         default => Node::factory()->create($attributes),
     };
@@ -45,7 +44,7 @@ function grantProcessLogAccess(Node $caller, Node $appNode): void
 describe('ProcessLogController', function (): void {
     it('returns bounded logs for authorized control callers', function (): void {
         $caller = createProcessLogCallerNode();
-        $appNode = createTestAppHostNode(['role' => 'app']);
+        $appNode = createTestAppHostNode();
         grantProcessLogAccess($caller, $appNode);
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
         Process::factory()->create(['app_id' => $app->id, 'name' => 'vite']);
@@ -66,7 +65,7 @@ describe('ProcessLogController', function (): void {
 
     it('requires authorization before log reads', function (): void {
         createProcessLogCallerNode();
-        $appNode = createTestAppHostNode(['role' => 'app']);
+        $appNode = createTestAppHostNode();
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
         Process::factory()->create(['app_id' => $app->id, 'name' => 'vite']);
         $remoteShell = new ProcessLogApiRemoteShell([]);
@@ -85,8 +84,8 @@ describe('ProcessLogController', function (): void {
     });
 
     it('returns log read failures as gateway errors', function (): void {
-        createProcessLogCallerNode(['role' => 'gateway']);
-        $appNode = createTestAppHostNode(['role' => 'app']);
+        createProcessLogCallerNode(role: 'gateway');
+        $appNode = createTestAppHostNode();
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
         Process::factory()->create(['app_id' => $app->id, 'name' => 'vite']);
         app()->instance(RemoteShell::class, new ProcessLogApiRemoteShell([

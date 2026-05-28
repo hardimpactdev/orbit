@@ -12,8 +12,10 @@ final class CfDnsListCommand extends GatewayCommand
 {
     use ResolvesHostContext;
 
+    #[\Override]
     protected $signature = 'cf-dns:list {zone? : Cloudflare zone ID or domain} {--json}';
 
+    #[\Override]
     protected $description = 'List Cloudflare DNS records for a zone.';
 
     public function handle(): int

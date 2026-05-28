@@ -398,7 +398,7 @@ JS;
     {
         $envelope = $this->wgEasyStateEnvelope($result, $failureMessage);
 
-        if ($result->successful() && ($envelope['ok'] ?? null) === true) {
+        if ($result->successful() && is_array($envelope['success'] ?? null)) {
             return;
         }
 
@@ -416,7 +416,7 @@ JS;
             throw new WgEasyStatePreflightFailed($failureMessage);
         }
 
-        if (! is_array($decoded) || ! array_key_exists('ok', $decoded)) {
+        if (! is_array($decoded) || ! (array_key_exists('success', $decoded) || array_key_exists('error', $decoded))) {
             throw new WgEasyStatePreflightFailed($failureMessage);
         }
 

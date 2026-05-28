@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Console\Commands\Concerns;
 
-use App\Models\LocalNodeDefault;
 use App\Models\Node;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
 use App\Services\Tools\AgentToolAuthorizer;
@@ -44,19 +43,6 @@ trait AuthorizesAgentToolSelf
 
     private function resolveLocalNodeForAgentSelf(): ?Node
     {
-        $defaultName = LocalNodeDefault::query()->value('default_node_name');
-
-        if (is_string($defaultName) && trim($defaultName) !== '') {
-            $node = Node::query()
-                ->where('name', trim($defaultName))
-                ->where('status', 'active')
-                ->first();
-
-            if ($node instanceof Node) {
-                return $node;
-            }
-        }
-
         $gateway = app(NodeRoleAssignments::class)
             ->activeGatewayNodeQuery()
             ->orderBy('name')

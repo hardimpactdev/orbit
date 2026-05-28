@@ -6,7 +6,6 @@ use App\Contracts\RemoteShell;
 use App\Contracts\SiteCertificateInstaller;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Models\App;
-use App\Models\LocalNodeDefault;
 use App\Models\Node;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Laravel\Prompts\DataTablePrompt;
@@ -22,7 +21,6 @@ beforeEach(function (): void {
 it('prompts for missing name and target app node', function (): void {
     Node::factory()->create([
         'name' => 'gateway-1',
-        'role' => 'gateway',
     ]);
 
     createTestAppHostNode([
@@ -44,28 +42,21 @@ it('prompts for missing name and target app node', function (): void {
     expect(App::query()->where('name', 'docs')->exists())->toBeTrue();
 });
 
-it('preselects the local default app node when prompting for the target node', function (): void {
+it('selects the first available app node when no preferred node is set and ENTER is pressed', function (): void {
     Node::factory()->create([
         'name' => 'gateway-1',
-        'role' => 'gateway',
+    ]);
+
+    $firstNode = createTestAppHostNode([
+        'name' => 'app-1',
+        'tld' => 'test',
+        'status' => 'active',
     ]);
 
     createTestAppHostNode([
-        'name' => 'app-1',
-        'environment' => 'development',
-        'tld' => 'test',
-        'status' => 'active',
-    ]);
-
-    $defaultNode = createTestAppHostNode([
         'name' => 'app-2',
-        'environment' => 'development',
         'tld' => 'test',
         'status' => 'active',
-    ]);
-
-    LocalNodeDefault::query()->create([
-        'default_node_name' => 'app-2',
     ]);
 
     app()->instance(RemoteShell::class, new AppNewInteractiveRecordingRemoteShell);
@@ -75,16 +66,15 @@ it('preselects the local default app node when prompting for the target node', f
     $this->artisan('app:new')
         ->expectsQuestion('App name (slug)', 'docs')
         ->expectsConfirmation('Clone from a git repository?', 'no')
-        ->expectsOutputToContain("App 'docs' created successfully on node 'app-2'.")
+        ->expectsOutputToContain("App 'docs' created successfully on node 'app-1'.")
         ->assertExitCode(0);
 
-    expect(App::query()->where('name', 'docs')->value('node_id'))->toBe($defaultNode->id);
+    expect(App::query()->where('name', 'docs')->value('node_id'))->toBe($firstNode->id);
 });
 
 it('validates prompted app name availability before asking for repository input', function (): void {
     Node::factory()->create([
         'name' => 'gateway-1',
-        'role' => 'gateway',
     ]);
 
     $targetNode = createTestAppHostNode([
@@ -113,7 +103,6 @@ it('validates prompted app name availability before asking for repository input'
 it('prompts for an optional repository and canonicalizes github shorthand', function (): void {
     Node::factory()->create([
         'name' => 'gateway-1',
-        'role' => 'gateway',
     ]);
 
     createTestAppHostNode([

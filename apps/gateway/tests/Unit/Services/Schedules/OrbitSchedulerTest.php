@@ -42,7 +42,6 @@ it('aligns daemon sleeps to the next wall-clock minute', function (): void {
 function createOrbitSchedulerUnitGatewayNode(): Node
 {
     $node = Node::factory()->create([
-        'role' => 'gateway',
         'status' => 'active',
     ]);
 

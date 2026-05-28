@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Console\Commands\NodeRevokeCommand;
+use App\Models\NodeRoleAssignment;
 use Illuminate\Console\Command;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
@@ -20,13 +21,11 @@ function nodeRevokeHumanRow(array $overrides = []): array
 {
     return array_merge([
         'name' => 'app-1',
-        'role' => 'app',
         'host' => '10.6.0.7',
         'wireguard_address' => '10.6.0.7',
         'user' => 'nckrtl',
         'orbit_path' => '/home/nckrtl/orbit',
         'status' => 'active',
-        'environment' => 'development',
         'platform' => 'ubuntu_24-04',
         'created_at' => now(),
         'updated_at' => now(),
@@ -77,11 +76,19 @@ function setupNodeRevokeGatewayCallerHuman(): void
 {
     config(['orbit.is_gateway' => true]);
 
-    DB::table('nodes')->insert(nodeRevokeHumanRow([
+    $nodeId = (int) DB::table('nodes')->insertGetId(nodeRevokeHumanRow([
         'name' => 'gateway-1',
-        'role' => 'gateway',
-        'environment' => null,
     ]));
+    assignNodeRevokeHumanRole($nodeId, 'gateway');
+}
+
+function assignNodeRevokeHumanRole(int $nodeId, string $role): void
+{
+    NodeRoleAssignment::factory()->create([
+        'node_id' => $nodeId,
+        'role' => $role,
+        'status' => 'active',
+    ]);
 }
 
 describe('node:revoke human renderer contract', function (): void {
@@ -89,8 +96,6 @@ describe('node:revoke human renderer contract', function (): void {
         setupNodeRevokeGatewayCallerHuman();
         DB::table('nodes')->insert(nodeRevokeHumanRow([
             'name' => 'control-1',
-            'role' => 'control',
-            'environment' => null,
         ]));
         DB::table('nodes')->insert(nodeRevokeHumanRow());
         DB::table('node_access')->insert([
@@ -114,8 +119,6 @@ describe('node:revoke human renderer contract', function (): void {
         setupNodeRevokeGatewayCallerHuman();
         DB::table('nodes')->insert(nodeRevokeHumanRow([
             'name' => 'control-1',
-            'role' => 'control',
-            'environment' => null,
         ]));
         DB::table('nodes')->insert(nodeRevokeHumanRow());
         DB::table('node_access')->insert([
@@ -142,8 +145,6 @@ describe('node:revoke human renderer contract', function (): void {
         setupNodeRevokeGatewayCallerHuman();
         DB::table('nodes')->insert(nodeRevokeHumanRow([
             'name' => 'control-1',
-            'role' => 'control',
-            'environment' => null,
         ]));
         DB::table('nodes')->insert(nodeRevokeHumanRow());
         DB::table('node_access')->insert([
@@ -166,8 +167,6 @@ describe('node:revoke human renderer contract', function (): void {
         setupNodeRevokeGatewayCallerHuman();
         DB::table('nodes')->insert(nodeRevokeHumanRow([
             'name' => 'control-1',
-            'role' => 'control',
-            'environment' => null,
         ]));
         DB::table('nodes')->insert(nodeRevokeHumanRow());
 
@@ -187,14 +186,12 @@ describe('node:revoke human renderer contract', function (): void {
 
         $consumerId = DB::table('nodes')->insertGetId(nodeRevokeHumanRow([
             'name' => 'self-lockout-test',
-            'role' => 'gateway',
-            'environment' => null,
         ]));
         $servingId = DB::table('nodes')->insertGetId(nodeRevokeHumanRow([
             'name' => 'gateway-target',
-            'role' => 'gateway',
-            'environment' => null,
         ]));
+        assignNodeRevokeHumanRole($consumerId, 'gateway');
+        assignNodeRevokeHumanRole($servingId, 'gateway');
         DB::table('node_access')->insert([
             'consumer_node_id' => $consumerId,
             'serving_node_id' => $servingId,
@@ -231,8 +228,6 @@ describe('node:revoke human renderer contract', function (): void {
         setupNodeRevokeGatewayCallerHuman();
         DB::table('nodes')->insert(nodeRevokeHumanRow([
             'name' => 'control-1',
-            'role' => 'control',
-            'environment' => null,
         ]));
 
         $exitCode = Artisan::call('node:revoke', [
@@ -250,8 +245,6 @@ describe('node:revoke human renderer contract', function (): void {
         setupNodeRevokeGatewayCallerHuman();
         DB::table('nodes')->insert(nodeRevokeHumanRow([
             'name' => 'control-1',
-            'role' => 'control',
-            'environment' => null,
         ]));
         DB::table('nodes')->insert(nodeRevokeHumanRow());
 

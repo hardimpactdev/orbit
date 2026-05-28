@@ -49,10 +49,10 @@ These terms define the types of routes that the proxy family owns and manages.
   `router` node. It owns private route artifacts, private `.orbit` service
   hostnames, backend pools, and private HTTP/WebSocket/S3 routing before
   reverse proxying to the backend pool.
-- **Private backend artifact:** `orbit-caddy` site rendered on an `app-production`
+- **Private backend artifact:** `orbit-caddy` site rendered on an `app-prod`
   node. It listens on HTTP port `80` bound to the node's WireGuard address and
   serves the app/workspace ingress contract to a backend FrankenPHP container.
-- **Router backend pool:** Ordered list of URLs for app-production backends.
+- **Router backend pool:** Ordered list of URLs for app-prod backends.
   The router owns this pool. V1 creates one target but stores a list.
 - **WebSocket backend pool:** Ordered list of TLS websocket backend URLs, such
   as `https://ws-1.websocket.orbit:8080`, owned by `router`. V1 creates one

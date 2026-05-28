@@ -83,15 +83,6 @@ final readonly class OrbitScheduler
             return $gatewayNode;
         }
 
-        $legacyGatewayNode = Node::query()
-            ->where('role', 'gateway')
-            ->where('status', 'active')
-            ->first();
-
-        if ($legacyGatewayNode instanceof Node) {
-            return $legacyGatewayNode;
-        }
-
         throw new RuntimeException('Orbit Scheduler can only run when an active gateway node is registered.');
     }
 

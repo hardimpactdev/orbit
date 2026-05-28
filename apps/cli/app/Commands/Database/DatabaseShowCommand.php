@@ -12,10 +12,12 @@ final class DatabaseShowCommand extends GatewayCommand
 {
     use ResolvesHostContext;
 
+    #[\Override]
     protected $signature = 'database:show
         {connection? : Database connection slug}
         {--json}';
 
+    #[\Override]
     protected $description = 'Show one database connection from the registry.';
 
     public function handle(): int

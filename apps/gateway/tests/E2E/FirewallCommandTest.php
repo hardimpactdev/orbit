@@ -74,7 +74,7 @@ it('writes lists and removes firewall intent on a prepared app node', function (
 
         $topology->ssh(
             'gateway',
-            "cd {$checkout} && orbit tinker --execute=".escapeshellarg('$node = \App\Models\Node::query()->where("name", "app-dev-1")->firstOrFail(); \App\Models\FirewallRule::updateOrCreate(["node_id" => $node->id, "name" => "orbit-public-ssh-deny-v4"], ["direction" => "incoming", "action" => "deny", "source" => "any", "destination" => null, "port" => "22", "protocol" => "tcp", "reason" => "Protected public SSH deny rule.", "source_hash" => hash("sha256", "e2e-protected-public-ssh-deny-v4"), "address_family" => "v4", "interface" => "public", "owner" => "node-security", "protected" => true]); echo "protected";'),
+            "cd {$checkout} && php apps/gateway/artisan tinker --execute=".escapeshellarg('$node = \App\Models\Node::query()->where("name", "app-dev-1")->firstOrFail(); \App\Models\FirewallRule::updateOrCreate(["node_id" => $node->id, "name" => "orbit-public-ssh-deny-v4"], ["direction" => "incoming", "action" => "deny", "source" => "any", "destination" => null, "port" => "22", "protocol" => "tcp", "reason" => "Protected public SSH deny rule.", "source_hash" => hash("sha256", "e2e-protected-public-ssh-deny-v4"), "address_family" => "v4", "interface" => "public", "owner" => "node-security", "protected" => true]); echo "protected";'),
             timeoutSeconds: 120,
         );
 
@@ -124,7 +124,7 @@ it('writes lists and removes firewall intent on a prepared app node', function (
         );
         $topology->ssh(
             'gateway',
-            "cd {$checkout} && orbit tinker --execute=".escapeshellarg('\App\Models\FirewallRule::query()->where("name", "orbit-public-ssh-deny-v4")->delete(); echo "cleaned";').' >/dev/null 2>&1 || true',
+            "cd {$checkout} && php apps/gateway/artisan tinker --execute=".escapeshellarg('\App\Models\FirewallRule::query()->where("name", "orbit-public-ssh-deny-v4")->delete(); echo "cleaned";').' >/dev/null 2>&1 || true',
             timeoutSeconds: 120,
         );
         $topology->cleanup();
@@ -135,7 +135,7 @@ function firewallCommandPrepareAppNode(E2ETopologyHarness $topology, string $che
 {
     $topology->ssh(
         'gateway',
-        "cd {$checkout} && orbit tinker --execute=".escapeshellarg('$node = \App\Models\Node::query()->where("name", "app-dev-1")->firstOrFail(); $node->update(["platform" => "ubuntu", "status" => "active"]); echo "prepared";'),
+        "cd {$checkout} && php apps/gateway/artisan tinker --execute=".escapeshellarg('$node = \App\Models\Node::query()->where("name", "app-dev-1")->firstOrFail(); $node->update(["platform" => "ubuntu", "status" => "active"]); echo "prepared";'),
         timeoutSeconds: 120,
     );
 }

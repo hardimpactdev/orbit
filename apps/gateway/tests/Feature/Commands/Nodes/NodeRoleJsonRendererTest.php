@@ -14,8 +14,6 @@ describe('node role json renderer', function (): void {
         setupNodeRoleGatewayCaller();
         $node = createHostedNode([
             'name' => 'client-1',
-            'role' => 'control',
-            'environment' => null,
         ]);
 
         assignNodeRole($node, 'database');
@@ -39,13 +37,11 @@ describe('node role json renderer', function (): void {
         setupNodeRoleGatewayCaller();
         createHostedNode([
             'name' => 'client-1',
-            'role' => 'control',
-            'environment' => null,
         ]);
 
         Artisan::call('node role:add', [
             'node' => 'client-1',
-            'role' => 'app-development',
+            'role' => 'app-dev',
             '--tld' => 'test',
             '--json' => true,
         ]);
@@ -54,7 +50,7 @@ describe('node role json renderer', function (): void {
 
         expect(array_keys($payload))->toBe(['success'])
             ->and($payload)->not->toHaveKey('error')
-            ->and($payload['success']['data']['assignment']['role'])->toBe('app-development')
+            ->and($payload['success']['data']['assignment']['role'])->toBe('app-dev')
             ->and($payload['success']['data']['assignment']['settings'])->toBe(['tld' => 'test']);
     });
 
@@ -62,8 +58,6 @@ describe('node role json renderer', function (): void {
         setupNodeRoleGatewayCaller();
         $node = createHostedNode([
             'name' => 'client-1',
-            'role' => 'control',
-            'environment' => null,
         ]);
 
         assignNodeRole($node, 'database');
@@ -87,8 +81,6 @@ describe('node role json renderer', function (): void {
         setupNodeRoleGatewayCaller();
         $node = createHostedNode([
             'name' => 'client-1',
-            'role' => 'control',
-            'environment' => null,
         ]);
 
         assignNodeRole($node, 'database');
@@ -111,13 +103,11 @@ describe('node role json renderer', function (): void {
         setupNodeRoleGatewayCaller();
         createHostedNode([
             'name' => 'client-1',
-            'role' => 'control',
-            'environment' => null,
         ]);
 
         Artisan::call('node role:add', [
             'node' => 'client-1',
-            'role' => 'app-development',
+            'role' => 'app-dev',
             '--json' => true,
         ]);
 
@@ -127,6 +117,6 @@ describe('node role json renderer', function (): void {
             ->and($payload)->not->toHaveKey('success')
             ->and($payload['error']['code'])->toBe('validation_failed')
             ->and($payload['error']['meta']['field'])->toBe('tld')
-            ->and($payload['error']['message'])->toBe('The app-development role requires --tld.');
+            ->and($payload['error']['message'])->toBe('The app-dev role requires --tld.');
     });
 });

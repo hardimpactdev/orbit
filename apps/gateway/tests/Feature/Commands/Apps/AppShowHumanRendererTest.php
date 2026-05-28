@@ -11,11 +11,10 @@ uses(RefreshDatabase::class);
 
 describe('app:show human renderer contract', function (): void {
     it('renders the registry detail view', function (): void {
-        $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'host' => '10.6.0.7']);
+        $node = Node::factory()->appDev()->create(['name' => 'app-1', 'host' => '10.6.0.7']);
         App::factory()->create([
             'name' => 'docs',
             'node_id' => $node->id,
-            'environment' => 'development',
             'domain' => 'docs.test',
             'path' => '/srv/docs',
             'document_root' => 'public',

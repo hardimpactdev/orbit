@@ -15,7 +15,6 @@ use App\Http\Gateway\GatewayConnector;
 use App\Http\Gateway\Requests\Apps\CreateAppRequest;
 use App\Http\Gateway\Responses\Apps\AppCreateResponse;
 use App\Models\App;
-use App\Models\LocalNodeDefault;
 use App\Models\Node;
 use App\Models\ProxyRoute;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
@@ -63,7 +62,7 @@ class AppNewCommand extends Command
             return $this->forwardCreate($input);
         }
 
-        $requiredRole = $input['domain'] !== null ? 'app-production' : 'app-development';
+        $requiredRole = $input['domain'] !== null ? 'app-prod' : 'app-dev';
         $node = $this->resolveTargetNode($input['node'], $requiredRole);
 
         if (is_int($node)) {
@@ -437,28 +436,17 @@ class AppNewCommand extends Command
         }
 
         if (! $this->isInteractiveInput()) {
-            $default = $this->validLocalDefaultAppNodeName();
-
-            if ($default instanceof GatewayApiException) {
-                return $this->failCommand(
-                    code: $default->errorCode() ?? 'gateway_unavailable',
-                    message: $default->getMessage(),
-                    meta: $default->errorMeta(),
-                );
-            }
-
-            if ($default !== null) {
-                return $default;
-            }
-
-            return $this->failValidation('node', 'The --node option is required in non-interactive mode.');
+            return $this->failCommand(
+                code: 'node_target_required',
+                message: 'A node target is required. Provide --node.',
+                meta: ['field' => 'node'],
+            );
         }
 
         try {
             $node = $this->promptForVisibleNode(
                 label: 'Select target app node',
-                role: 'app',
-                preferred: $this->localDefaultNodeName(),
+                role: 'app-host',
             );
         } catch (PromptAborted) {
             return $this->failValidation('node', 'Operation cancelled.');
@@ -559,67 +547,6 @@ class AppNewCommand extends Command
         $this->appNameNodeIndex = $index;
 
         return $this->appNameNodeIndex;
-    }
-
-    private function validLocalDefaultAppNodeName(): string|GatewayApiException|null
-    {
-        $name = $this->localDefaultNodeName();
-
-        if ($name === null) {
-            return null;
-        }
-
-        if ((bool) config('orbit.is_gateway', false)) {
-            $node = Node::query()
-                ->where('name', $name)
-                ->where('status', 'active')
-                ->first();
-
-            if (! $node instanceof Node) {
-                return null;
-            }
-
-            return app(NodeRoleAssignments::class)->nodeHasActiveRole($node, 'app-development')
-                ? $node->name
-                : null;
-        }
-
-        $nodes = $this->visibleNodePromptPayloads(activeOnly: true);
-
-        if ($nodes instanceof GatewayApiException) {
-            return $nodes;
-        }
-
-        foreach ($nodes as $node) {
-            if (($node['name'] ?? null) === $name && $this->payloadHasActiveRole($node, 'app-development')) {
-                return $name;
-            }
-        }
-
-        return null;
-    }
-
-    private function localDefaultNodeName(): ?string
-    {
-        $name = LocalNodeDefault::query()->value('default_node_name');
-
-        return is_string($name) && $name !== '' ? $name : null;
-    }
-
-    /**
-     * @param  array<string, mixed>  $payload
-     */
-    private function payloadHasActiveRole(array $payload, string $role): bool
-    {
-        $roles = $payload['roles'] ?? null;
-
-        if (! is_array($roles)) {
-            return false;
-        }
-
-        return array_any($roles, fn ($assignment) => is_array($assignment)
-        && ($assignment['role'] ?? null) === $role
-        && ($assignment['status'] ?? null) === 'active');
     }
 
     private function failAppNameCollision(string $name, string $node): int

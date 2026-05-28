@@ -9,11 +9,13 @@ use App\Exceptions\GatewayApiException;
 
 final class NodeRemoveCommand extends GatewayCommand
 {
+    #[\Override]
     protected $signature = 'node:remove
         {name? : Name of the node to remove}
         {--force : Confirm destructive operation without prompting}
         {--json : Output JSON}';
 
+    #[\Override]
     protected $description = 'Remove a node from the registry.';
 
     public function handle(): int

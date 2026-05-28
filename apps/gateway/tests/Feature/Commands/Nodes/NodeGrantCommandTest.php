@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Http\Gateway\Requests\Nodes\GrantNodeRequest;
 use App\Models\LocalGatewaySettings;
 use App\Models\NodeRoleAssignment;
+use App\Services\Nodes\Access\NodePermissionRegistry;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
@@ -25,13 +26,11 @@ function nodeGrantRow(array $overrides = []): array
 {
     return array_merge([
         'name' => 'app-1',
-        'role' => 'app',
         'host' => '10.6.0.7',
         'wireguard_address' => '10.6.0.7',
         'user' => 'nckrtl',
         'orbit_path' => '/home/nckrtl/orbit',
         'status' => 'active',
-        'environment' => 'development',
         'platform' => 'ubuntu_24-04',
         'created_at' => now(),
         'updated_at' => now(),
@@ -44,8 +43,6 @@ function setupGrantGatewayCaller(): void
 
     DB::table('nodes')->insert(nodeGrantRow([
         'name' => 'gateway-1',
-        'role' => 'gateway',
-        'environment' => null,
     ]));
 }
 
@@ -53,8 +50,6 @@ function setupGrantControlCaller(): void
 {
     DB::table('nodes')->insert(nodeGrantRow([
         'name' => 'control-1',
-        'role' => 'control',
-        'environment' => null,
     ]));
 
     LocalGatewaySettings::current()->fill([
@@ -79,8 +74,6 @@ describe('node:grant base contract', function (): void {
         setupGrantGatewayCaller();
         DB::table('nodes')->insert(nodeGrantRow([
             'name' => 'control-1',
-            'role' => 'control',
-            'environment' => null,
         ]));
         DB::table('nodes')->insert(nodeGrantRow());
 
@@ -98,8 +91,6 @@ describe('node:grant base contract', function (): void {
         setupGrantGatewayCaller();
         DB::table('nodes')->insert(nodeGrantRow([
             'name' => 'control-1',
-            'role' => 'control',
-            'environment' => null,
         ]));
         DB::table('nodes')->insert(nodeGrantRow());
 
@@ -144,8 +135,6 @@ describe('node:grant base contract', function (): void {
         setupGrantGatewayCaller();
         DB::table('nodes')->insert(nodeGrantRow([
             'name' => 'control-1',
-            'role' => 'control',
-            'environment' => null,
         ]));
 
         $exitCode = Artisan::call('node:grant', [
@@ -165,8 +154,6 @@ describe('node:grant base contract', function (): void {
         setupGrantGatewayCaller();
         DB::table('nodes')->insert(nodeGrantRow([
             'name' => 'control-1',
-            'role' => 'control',
-            'environment' => null,
         ]));
 
         $exitCode = Artisan::call('node:grant', [
@@ -187,8 +174,6 @@ describe('node:grant base contract', function (): void {
         setupGrantGatewayCaller();
         DB::table('nodes')->insert(nodeGrantRow([
             'name' => 'control-1',
-            'role' => 'control',
-            'environment' => null,
         ]));
         DB::table('nodes')->insert(nodeGrantRow());
 
@@ -211,8 +196,6 @@ describe('node:grant base contract', function (): void {
         setupGrantGatewayCaller();
         DB::table('nodes')->insert(nodeGrantRow([
             'name' => 'control-1',
-            'role' => 'control',
-            'environment' => null,
         ]));
         DB::table('nodes')->insert(nodeGrantRow());
 
@@ -231,12 +214,34 @@ describe('node:grant base contract', function (): void {
             ->and($grant->permissions)->toBe(json_encode(['node:read', 'tool:read']));
     });
 
+    it('prompts for permissions when no permission mode is supplied', function (): void {
+        setupGrantGatewayCaller();
+        DB::table('nodes')->insert(nodeGrantRow([
+            'name' => 'control-1',
+        ]));
+        DB::table('nodes')->insert(nodeGrantRow());
+
+        $permissionChoices = collect(app(NodePermissionRegistry::class)->all())
+            ->mapWithKeys(fn (string $permission): array => [$permission => $permission])
+            ->all();
+
+        $this->artisan('node:grant', [
+            'consuming_node' => 'control-1',
+            'serving_node' => 'app-1',
+        ])
+            ->expectsChoice('Select permissions', ['node:read', 'tool:read'], $permissionChoices)
+            ->expectsOutputToContain("Granted 'control-1' access to 'app-1'")
+            ->assertSuccessful();
+
+        $grant = DB::table('node_access')->first();
+
+        expect($grant->permissions)->toBe(json_encode(['node:read', 'tool:read']));
+    });
+
     it('does not modify existing grant permissions', function (): void {
         setupGrantGatewayCaller();
         DB::table('nodes')->insert(nodeGrantRow([
             'name' => 'control-1',
-            'role' => 'control',
-            'environment' => null,
         ]));
         DB::table('nodes')->insert(nodeGrantRow());
 
@@ -265,8 +270,6 @@ describe('node:grant base contract', function (): void {
         setupGrantGatewayCaller();
         DB::table('nodes')->insert(nodeGrantRow([
             'name' => 'control-1',
-            'role' => 'control',
-            'environment' => null,
         ]));
         DB::table('nodes')->insert(nodeGrantRow());
 
@@ -288,13 +291,9 @@ describe('node:grant base contract', function (): void {
         setupGrantGatewayCaller();
         DB::table('nodes')->insert(nodeGrantRow([
             'name' => 'control-1',
-            'role' => 'control',
-            'environment' => null,
         ]));
         $gatewayId = (int) DB::table('nodes')->insertGetId(nodeGrantRow([
             'name' => 'target-gateway',
-            'role' => 'gateway',
-            'environment' => null,
         ]));
         NodeRoleAssignment::factory()->create([
             'node_id' => $gatewayId,
@@ -321,8 +320,6 @@ describe('node:grant base contract', function (): void {
 
         DB::table('nodes')->insert(nodeGrantRow([
             'name' => 'control-1',
-            'role' => 'control',
-            'environment' => null,
         ]));
         DB::table('nodes')->insert(nodeGrantRow());
 
@@ -474,8 +471,6 @@ describe('node:grant safety', function (): void {
 
         DB::table('nodes')->insert(nodeGrantRow([
             'name' => 'control-1',
-            'role' => 'control',
-            'environment' => null,
         ]));
         DB::table('nodes')->insert(nodeGrantRow());
 
@@ -491,8 +486,6 @@ describe('node:grant safety', function (): void {
         setupGrantGatewayCaller();
         DB::table('nodes')->insert(nodeGrantRow([
             'name' => 'control-1',
-            'role' => 'control',
-            'environment' => null,
         ]));
         DB::table('nodes')->insert(nodeGrantRow());
 

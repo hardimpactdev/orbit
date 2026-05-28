@@ -10,7 +10,6 @@ use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Services\Nodes\NodeAgentIdeDefaults;
 use App\Services\Nodes\Roles\NodeRoleAssignmentPayload;
-use App\Services\Nodes\Roles\NodeRoleAssignments;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
 
@@ -44,9 +43,7 @@ final class NodeShowController implements Loggable
                 'data' => [
                     'node' => [
                         'name' => $node->name,
-                        'role' => $node->role,
                         'status' => $node->status,
-                        'environment' => app(NodeRoleAssignments::class)->activeAppHostEnvironment($node),
                         'platform' => $node->platform ?? 'unknown',
                         'roles' => $node->roleAssignments
                             ->map(fn (NodeRoleAssignment $assignment): array => NodeRoleAssignmentPayload::fromModel($assignment))

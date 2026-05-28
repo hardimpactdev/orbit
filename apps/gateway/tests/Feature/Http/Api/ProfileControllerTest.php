@@ -17,7 +17,6 @@ function createProfileCallerNode(array $overrides = []): Node
 {
     return Node::factory()->create(array_merge([
         'name' => 'caller',
-        'role' => 'app',
         'host' => PROFILE_CALLER_WG_IP,
         'wireguard_address' => PROFILE_CALLER_WG_IP,
     ], $overrides));
@@ -33,7 +32,7 @@ function grantProfileAccess(Node $caller, Node $appNode): void
     ]);
 }
 
-function assignProfileAppHostRole(Node $node, string $role = 'app-development', array $settings = ['tld' => 'test']): void
+function assignProfileAppHostRole(Node $node, string $role = 'app-dev', array $settings = ['tld' => 'test']): void
 {
     NodeRoleAssignment::factory()->create([
         'node_id' => $node->id,
@@ -46,7 +45,7 @@ function assignProfileAppHostRole(Node $node, string $role = 'app-development', 
 describe('ProfileController', function (): void {
     it('profiles a visible app from the gateway origin', function (): void {
         $caller = createProfileCallerNode();
-        $node = Node::factory()->create(['name' => 'app-1', 'role' => 'control']);
+        $node = Node::factory()->create(['name' => 'app-1']);
         assignProfileAppHostRole($node);
         grantProfileAccess($caller, $node);
 
@@ -112,7 +111,7 @@ describe('ProfileController', function (): void {
 
     it('rejects hidden apps before profiling', function (): void {
         createProfileCallerNode();
-        $node = Node::factory()->create(['role' => 'app']);
+        $node = Node::factory()->appDev()->create();
 
         App::factory()->create([
             'name' => 'hidden',
@@ -130,8 +129,8 @@ describe('ProfileController', function (): void {
 
     it('resolves a visible app by absolute path', function (): void {
         $caller = createProfileCallerNode();
-        $node = Node::factory()->create(['name' => 'app-1', 'role' => 'control']);
-        assignProfileAppHostRole($node, 'app-production', []);
+        $node = Node::factory()->create(['name' => 'app-1']);
+        assignProfileAppHostRole($node, 'app-prod', []);
         grantProfileAccess($caller, $node);
         $appPath = sys_get_temp_dir().'/orbit-profile-api-path-'.bin2hex(random_bytes(4));
         mkdir($appPath.'/subdir', 0777, true);

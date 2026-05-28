@@ -28,11 +28,9 @@ function nodeListJsonRow(array $overrides = []): array
 {
     return array_merge([
         'name' => 'app-1',
-        'role' => 'app',
         'host' => '10.6.0.7',
         'orbit_path' => '/home/nckrtl/orbit',
         'status' => 'active',
-        'environment' => 'development',
         'tld' => 'test',
         'platform' => 'ubuntu_24-04',
         'wireguard_address' => '10.6.0.7',
@@ -107,11 +105,9 @@ describe('node:list JSON renderer contract', function (): void {
 
         DB::table('nodes')->insert([
             'name' => 'local-gateway',
-            'role' => 'gateway',
             'host' => '10.6.0.1',
             'orbit_path' => '/home/orbit/orbit',
             'status' => 'active',
-            'environment' => null,
             'platform' => 'ubuntu_24-04',
             'wireguard_address' => '10.6.0.1',
             'created_at' => now(),
@@ -124,8 +120,6 @@ describe('node:list JSON renderer contract', function (): void {
         DB::table('nodes')->insert([
             nodeListJsonRow([
                 'name' => 'gateway-1',
-                'role' => 'gateway',
-                'environment' => null,
             ]),
         ]);
 
@@ -143,8 +137,6 @@ describe('node:list JSON renderer contract', function (): void {
         DB::table('nodes')->insert([
             nodeListJsonRow([
                 'name' => 'app-1',
-                'role' => 'app',
-                'environment' => 'development',
             ]),
         ]);
 
@@ -161,22 +153,18 @@ describe('node:list JSON renderer contract', function (): void {
         expect($nodes)->toBeArray();
     });
 
-    it('returns per-node fields name role environment platform status', function (): void {
+    it('returns per-node fields name platform status and roles', function (): void {
         DB::table('nodes')->insert([
             nodeListJsonRow([
                 'name' => 'gateway-1',
-                'role' => 'gateway',
-                'environment' => null,
                 'platform' => 'ubuntu_24-04',
             ]),
             nodeListJsonRow([
                 'name' => 'app-1',
-                'role' => 'app',
-                'environment' => 'development',
                 'platform' => 'ubuntu_24-04',
             ]),
         ]);
-        assignNodeListJsonRole('app-1', 'app-development', ['tld' => 'test']);
+        assignNodeListJsonRole('app-1', 'app-dev', ['tld' => 'test']);
 
         $exitCode = Artisan::call('node:list', ['--json' => true]);
         $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
@@ -188,19 +176,17 @@ describe('node:list JSON renderer contract', function (): void {
 
         expect($indexed['app-1'])->toBe([
             'name' => 'app-1',
-            'role' => 'app',
-            'environment' => 'development',
             'platform' => 'ubuntu_24-04',
             'status' => 'active',
             'roles' => [
                 [
-                    'role' => 'app-development',
+                    'role' => 'app-dev',
                     'status' => 'active',
                     'settings' => ['tld' => 'test'],
                     'last_error' => null,
                     'converged_at' => NodeRoleAssignment::query()
                         ->where('node_id', DB::table('nodes')->where('name', 'app-1')->value('id'))
-                        ->where('role', 'app-development')
+                        ->where('role', 'app-dev')
                         ->first()
                         ?->converged_at
                         ?->toJSON(),
@@ -209,8 +195,6 @@ describe('node:list JSON renderer contract', function (): void {
         ])
             ->and($indexed['gateway-1'])->toBe([
                 'name' => 'gateway-1',
-                'role' => 'gateway',
-                'environment' => null,
                 'platform' => 'ubuntu_24-04',
                 'status' => 'active',
                 'roles' => [],
@@ -221,8 +205,6 @@ describe('node:list JSON renderer contract', function (): void {
         DB::table('nodes')->insert([
             nodeListJsonRow([
                 'name' => 'gateway-1',
-                'role' => 'gateway',
-                'environment' => null,
                 'wireguard_address' => '10.6.0.2',
             ]),
         ]);
@@ -256,14 +238,11 @@ describe('node:list JSON renderer contract', function (): void {
             ->and($gatewayNode)
             ->toMatchArray([
                 'name' => 'gateway-1',
-                'role' => 'gateway',
-                'environment' => null,
                 'platform' => 'ubuntu_24-04',
                 'status' => 'active',
             ]);
 
         expect($roleAssignments['gateway'])->toMatchArray([
-            'role' => 'gateway',
             'status' => 'active',
             'settings' => [],
             'last_error' => null,
@@ -277,7 +256,6 @@ describe('node:list JSON renderer contract', function (): void {
         );
 
         expect($roleAssignments['vpn'])->toMatchArray([
-            'role' => 'vpn',
             'status' => 'active',
             'settings' => [
                 'public_endpoint' => 'vpn.example.test',
@@ -320,8 +298,6 @@ describe('node:list JSON renderer contract', function (): void {
     it('defaults platform to unknown when null', function (): void {
         DB::table('nodes')->insert(nodeListJsonRow([
             'name' => 'gateway-1',
-            'role' => 'gateway',
-            'environment' => null,
             'platform' => null,
         ]));
 
@@ -329,12 +305,13 @@ describe('node:list JSON renderer contract', function (): void {
         $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
 
         $nodes = $payload['success']['data']['nodes'];
+        $indexed = array_column($nodes, null, 'name');
 
-        expect($nodes[0]['platform'])->toBe('unknown');
+        expect($indexed['gateway-1']['platform'])->toBe('unknown');
     });
 
     it('returns empty nodes array when no nodes match filters', function (): void {
-        $exitCode = Artisan::call('node:list', ['--json' => true, '--role' => 'control']);
+        $exitCode = Artisan::call('node:list', ['--json' => true, '--role' => 's3']);
         $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
 
         expect($exitCode)->toBe(0);
@@ -344,30 +321,9 @@ describe('node:list JSON renderer contract', function (): void {
         expect($nodes)->toBeArray()->and($nodes)->toHaveCount(0);
     });
 
-    it('environment is null for non-app nodes', function (): void {
-        DB::table('nodes')->insert(nodeListJsonRow([
-            'name' => 'gateway-1',
-            'role' => 'gateway',
-            'environment' => null,
-        ]));
-
-        $exitCode = Artisan::call('node:list', ['--json' => true]);
-        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
-
-        expect($exitCode)->toBe(0);
-
-        $nodes = $payload['success']['data']['nodes'];
-        $indexed = array_column($nodes, null, 'name');
-
-        expect($indexed['gateway-1'])->toHaveKey('environment')
-            ->and($indexed['gateway-1']['environment'])->toBeNull();
-    });
-
     it('platform is never null and uses unknown sentinel when undetected', function (): void {
         DB::table('nodes')->insert(nodeListJsonRow([
             'name' => 'gateway-1',
-            'role' => 'gateway',
-            'environment' => null,
             'platform' => null,
         ]));
 
@@ -383,59 +339,50 @@ describe('node:list JSON renderer contract', function (): void {
             ->and($indexed['gateway-1']['platform'])->not->toBeNull();
     });
 
-    it('derives serialized and filtered environments from active app role assignments', function (): void {
+    it('filters nodes by active role assignments', function (): void {
         DB::table('nodes')->insert([
             nodeListJsonRow([
-                'name' => 'legacy-app',
-                'role' => 'app',
-                'environment' => 'development',
+                'name' => 'roleless-node',
                 'wireguard_address' => '10.6.0.8',
             ]),
             nodeListJsonRow([
-                'name' => 'control-app',
-                'role' => 'control',
-                'environment' => null,
+                'name' => 'dev-app',
                 'wireguard_address' => '10.6.0.9',
             ]),
             nodeListJsonRow([
                 'name' => 'prod-app',
-                'role' => 'app',
-                'environment' => 'production',
                 'wireguard_address' => '10.6.0.10',
             ]),
         ]);
-        assignNodeListJsonRole('control-app', 'app-development', ['tld' => 'test']);
-        assignNodeListJsonRole('prod-app', 'app-production');
+        assignNodeListJsonRole('dev-app', 'app-dev', ['tld' => 'test']);
+        assignNodeListJsonRole('prod-app', 'app-prod');
 
-        $exitCode = Artisan::call('node:list', ['--json' => true, '--environment' => 'development']);
+        $exitCode = Artisan::call('node:list', ['--json' => true, '--role' => 'app-dev']);
         $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
 
         $nodes = $payload['success']['data']['nodes'];
 
         expect($exitCode)->toBe(0)
-            ->and(array_column($nodes, 'name'))->toBe(['control-app'])
-            ->and($nodes[0]['environment'])->toBe('development');
+            ->and(array_column($nodes, 'name'))->toBe(['dev-app'])
+            ->and($nodes[0]['roles'][0]['role'])->toBe('app-dev');
     });
 
-    it('uses correct enum values for role and status', function (): void {
+    it('uses correct enum values for role assignments and node status', function (): void {
         DB::table('nodes')->insert([
             nodeListJsonRow([
                 'name' => 'gateway-1',
-                'role' => 'gateway',
-                'environment' => null,
             ]),
             nodeListJsonRow([
                 'name' => 'app-1',
-                'role' => 'app',
-                'environment' => 'development',
             ]),
             nodeListJsonRow([
                 'name' => 'control-1',
-                'role' => 'control',
-                'environment' => null,
                 'status' => 'provisioning',
             ]),
         ]);
+        assignNodeListJsonRole('gateway-1', 'gateway');
+        assignNodeListJsonRole('app-1', 'app-dev');
+        assignNodeListJsonRole('control-1', 'agent');
 
         $exitCode = Artisan::call('node:list', ['--json' => true]);
         $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
@@ -445,9 +392,9 @@ describe('node:list JSON renderer contract', function (): void {
         $nodes = $payload['success']['data']['nodes'];
         $indexed = array_column($nodes, null, 'name');
 
-        expect($indexed['gateway-1']['role'])->toBe('gateway');
-        expect($indexed['app-1']['role'])->toBe('app');
-        expect($indexed['control-1']['role'])->toBe('control');
+        expect($indexed['gateway-1']['roles'][0]['role'])->toBe('gateway');
+        expect($indexed['app-1']['roles'][0]['role'])->toBe('app-dev');
+        expect($indexed['control-1']['roles'][0]['role'])->toBe('agent');
 
         expect($indexed['gateway-1']['status'])->toBeIn(['active', 'provisioning']);
         expect($indexed['app-1']['status'])->toBeIn(['active', 'provisioning']);
@@ -471,35 +418,19 @@ describe('node:list JSON renderer contract', function (): void {
             ->and($error['meta'])->toHaveKey('allowed');
     });
 
-    it('returns nested validation_failed error for invalid --environment', function (): void {
-        $exitCode = Artisan::call('node:list', ['--json' => true, '--environment' => 'bogus']);
-        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
-
-        expect($exitCode)->toBe(1);
-
-        expect($payload)->toHaveKey('error')
-            ->and($payload)->not->toHaveKey('success');
-
-        $error = $payload['error'];
-        expect($error['code'])->toBe('validation_failed');
-        expect($error['meta'])->toHaveKey('field')
-            ->and($error['meta']['field'])->toBe('environment');
-    });
-
     it('attaches doctor meta when --doctor is present and issues are found', function (): void {
         $node = createTestAppHostNode(nodeListJsonRow([
             'name' => 'incomplete-app',
-            'environment' => 'production',
             'tld' => null,
             'wireguard_address' => null,
-        ]), 'app-production');
+        ]), 'app-prod');
         markNodeSecurityBaselineClean($node);
         markNodeListJsonAppProductionToolsInstalled($node);
 
         $exitCode = Artisan::call('node:list', [
             '--json' => true,
             '--doctor' => true,
-            '--role' => 'app',
+            '--role' => 'app-prod',
         ]);
         $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
 
@@ -534,7 +465,7 @@ describe('node:list JSON renderer contract', function (): void {
         $exitCode = Artisan::call('node:list', [
             '--json' => true,
             '--doctor' => true,
-            '--role' => 'app',
+            '--role' => 'app-dev',
         ]);
         $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
 

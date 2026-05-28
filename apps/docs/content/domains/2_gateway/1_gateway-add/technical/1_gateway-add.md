@@ -173,5 +173,5 @@ Required split contract tests:
 
 Context-specific behavior and test mapping live in:
 
-- [`2_gateway-add_on-client.md`](2_gateway-add_on-client.md)
+- [`2_gateway-add_on-operator-node.md`](2_gateway-add_on-operator-node.md)
 - [`3_gateway-add_on-gateway-node.md`](3_gateway-add_on-gateway-node.md)

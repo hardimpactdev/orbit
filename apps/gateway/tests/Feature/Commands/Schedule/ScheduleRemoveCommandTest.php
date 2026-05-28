@@ -29,13 +29,21 @@ function createScheduleRemoveLocalNode(string $role = 'gateway', bool $withSched
 {
     $node = Node::factory()->create([
         'name' => "local-{$role}",
-        'role' => $role,
         'host' => '10.6.0.1',
         'wireguard_address' => '10.6.0.1',
     ]);
 
-    if ($role === 'gateway' && $withSchedulerHeartbeat) {
-        SchedulerState::factory()->create(['node_id' => $node->id, 'heartbeat_at' => now()]);
+    if ($role === 'gateway') {
+        NodeRoleAssignment::factory()->create([
+            'node_id' => $node->id,
+            'role' => 'gateway',
+            'status' => 'active',
+            'settings' => [],
+        ]);
+
+        if ($withSchedulerHeartbeat) {
+            SchedulerState::factory()->create(['node_id' => $node->id, 'heartbeat_at' => now()]);
+        }
     }
 
     return $node;
@@ -44,14 +52,13 @@ function createScheduleRemoveLocalNode(string $role = 'gateway', bool $withSched
 function createScheduleRemoveAppHostNode(array $attributes = []): Node
 {
     $node = Node::factory()->create([
-        'role' => 'app',
         'status' => 'active',
         ...$attributes,
     ]);
 
     NodeRoleAssignment::factory()->create([
         'node_id' => $node->id,
-        'role' => 'app-development',
+        'role' => 'app-dev',
         'status' => 'active',
         'settings' => ['tld' => 'test'],
     ]);
@@ -221,7 +228,6 @@ it('exposes schedule remove over the authenticated gateway API', function (): vo
     createScheduleRemoveLocalNode('gateway');
     $caller = Node::factory()->create([
         'name' => 'control-1',
-        'role' => 'control',
         'wireguard_address' => '10.6.0.60',
     ]);
     $node = createScheduleRemoveAppHostNode(['name' => 'app-1']);
@@ -257,7 +263,6 @@ it('exposes schedule remove over the authenticated gateway API', function (): vo
 it('requires destructive consent on the authenticated schedule remove API', function (): void {
     $caller = Node::factory()->create([
         'name' => 'control-1',
-        'role' => 'control',
         'wireguard_address' => '10.6.0.60',
     ]);
     $node = createScheduleRemoveAppHostNode(['name' => 'app-1']);

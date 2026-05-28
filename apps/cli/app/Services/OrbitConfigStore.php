@@ -43,7 +43,7 @@ use JsonException;
  * `config:cache` interaction: cached config does not see edits to this file until the next
  * command run rebuilds the provider binding. This is acceptable because the closure is lazy.
  */
-final class OrbitConfigStore
+final readonly class OrbitConfigStore
 {
     public const int CURRENT_SCHEMA_VERSION = 1;
 
@@ -56,7 +56,7 @@ final class OrbitConfigStore
     public const int FILE_MODE = 0600;
 
     public function __construct(
-        private readonly ?string $overridePath = null,
+        private ?string $overridePath = null,
     ) {}
 
     public function path(): string

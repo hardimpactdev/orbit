@@ -15,17 +15,15 @@ uses(RefreshDatabase::class);
 
 const PROCESS_LIST_CALLER_WG_IP = '10.6.0.88';
 
-function createProcessListCallerNode(array $overrides = []): Node
+function createProcessListCallerNode(array $overrides = [], ?string $role = null): Node
 {
     $attributes = array_merge([
         'name' => 'caller',
-        'role' => 'control',
         'host' => PROCESS_LIST_CALLER_WG_IP,
-        'wireguard_address' => PROCESS_LIST_CALLER_WG_IP,
-    ], $overrides);
+        'wireguard_address' => PROCESS_LIST_CALLER_WG_IP], $overrides);
 
-    return match ($attributes['role']) {
-        'app' => createTestAppHostNode($attributes),
+    return match ($role) {
+        'app-dev' => createTestAppHostNode($attributes),
         'gateway' => createTestGatewayNode($attributes),
         default => Node::factory()->create($attributes),
     };
@@ -39,14 +37,13 @@ function grantProcessListAccess(Node $caller, Node $appNode): void
         'permissions' => json_encode(['process:read'], JSON_THROW_ON_ERROR),
         'custom_permissions' => json_encode([], JSON_THROW_ON_ERROR),
         'created_at' => now(),
-        'updated_at' => now(),
-    ]);
+        'updated_at' => now()]);
 }
 
 describe('ProcessListController', function (): void {
     it('lists app processes in process order with runtime units', function (): void {
         $caller = createProcessListCallerNode();
-        $appNode = createTestAppHostNode(['name' => 'app-1', 'role' => 'app']);
+        $appNode = createTestAppHostNode(['name' => 'app-1']);
         grantProcessListAccess($caller, $appNode);
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
 
@@ -56,16 +53,14 @@ describe('ProcessListController', function (): void {
             'command' => 'php artisan queue:work',
             'restart_policy' => ProcessRestartPolicy::Always,
             'crash_notification' => ProcessCrashNotification::None,
-            'sort_order' => 20,
-        ]);
+            'sort_order' => 20]);
         Process::factory()->create([
             'app_id' => $app->id,
             'name' => 'vite',
             'command' => 'npm run dev',
             'restart_policy' => ProcessRestartPolicy::Never,
             'crash_notification' => ProcessCrashNotification::AgentIde,
-            'sort_order' => 10,
-        ]);
+            'sort_order' => 10]);
 
         $response = $this->call('GET', '/api/processes?app=docs', [], [], [], ['REMOTE_ADDR' => PROCESS_LIST_CALLER_WG_IP]);
 
@@ -78,8 +73,8 @@ describe('ProcessListController', function (): void {
     });
 
     it('uses workspace context for inherited process runtime units', function (): void {
-        createProcessListCallerNode(['role' => 'gateway']);
-        $appNode = createTestAppHostNode(['name' => 'app-1', 'role' => 'app']);
+        createProcessListCallerNode(role: 'gateway');
+        $appNode = createTestAppHostNode(['name' => 'app-1']);
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
         Workspace::factory()->create(['name' => 'feature-docs', 'app_id' => $app->id]);
         Process::factory()->create(['app_id' => $app->id, 'name' => 'vite', 'sort_order' => 1]);
@@ -93,8 +88,8 @@ describe('ProcessListController', function (): void {
 
     it('omits process intent hidden from the caller', function (): void {
         $caller = createProcessListCallerNode();
-        $visibleNode = createTestAppHostNode(['role' => 'app']);
-        $hiddenNode = createTestAppHostNode(['role' => 'app']);
+        $visibleNode = createTestAppHostNode();
+        $hiddenNode = createTestAppHostNode();
         grantProcessListAccess($caller, $visibleNode);
 
         App::factory()->create(['name' => 'visible', 'node_id' => $visibleNode->id]);
@@ -110,7 +105,7 @@ describe('ProcessListController', function (): void {
 
     it('returns authorization failure when the caller has no process visibility', function (): void {
         createProcessListCallerNode();
-        $appNode = createTestAppHostNode(['role' => 'app']);
+        $appNode = createTestAppHostNode();
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
         Process::factory()->create(['app_id' => $app->id]);
 
@@ -123,8 +118,8 @@ describe('ProcessListController', function (): void {
     });
 
     it('returns validation errors for missing and unknown contexts', function (string $query, string $field): void {
-        createProcessListCallerNode(['role' => 'gateway']);
-        createTestAppHostNode(['role' => 'app']);
+        createProcessListCallerNode(role: 'gateway');
+        createTestAppHostNode();
 
         $response = $this->call('GET', "/api/processes{$query}", [], [], [], ['REMOTE_ADDR' => PROCESS_LIST_CALLER_WG_IP]);
 
@@ -134,8 +129,7 @@ describe('ProcessListController', function (): void {
     })->with([
         'missing app' => ['', 'app'],
         'unknown app' => ['?app=missing', 'app'],
-        'unknown workspace' => ['?workspace=missing', 'workspace'],
-    ]);
+        'unknown workspace' => ['?workspace=missing', 'workspace']]);
 
     it('rejects unauthenticated requests', function (): void {
         $response = $this->getJson('/api/processes?app=docs');

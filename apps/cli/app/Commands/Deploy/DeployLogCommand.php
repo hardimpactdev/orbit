@@ -8,6 +8,7 @@ use App\Exceptions\GatewayApiException;
 
 final class DeployLogCommand extends DeployGatewayCommand
 {
+    #[\Override]
     protected $signature = 'deploy:log
         {app? : Production app name or domain}
         {run? : Deployment run id}
@@ -15,6 +16,7 @@ final class DeployLogCommand extends DeployGatewayCommand
         {--lines=500 : Lines per captured stream}
         {--json : Output JSON}';
 
+    #[\Override]
     protected $description = 'Show stored deployment output for a production app run.';
 
     public function handle(): int

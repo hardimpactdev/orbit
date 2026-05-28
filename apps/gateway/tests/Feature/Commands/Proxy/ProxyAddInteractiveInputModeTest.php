@@ -12,11 +12,9 @@ uses(RefreshDatabase::class);
 beforeEach(function (): void {
     createTestGatewayNode([
         'name' => 'local-gateway',
-        'role' => 'gateway',
         'host' => '10.6.0.1',
-        'wireguard_address' => '10.6.0.1',
-    ]);
-    createTestAppHostNode(['name' => 'app-1', 'role' => 'app']);
+        'wireguard_address' => '10.6.0.1']);
+    createTestAppHostNode(['name' => 'app-1']);
 });
 
 it('prompts for domain, node, route type, and upstream in interactive mode when all are missing', function (): void {
@@ -33,8 +31,7 @@ it('does not prompt when all required inputs are supplied', function (): void {
     $this->artisan('proxy:add', [
         'domain' => 'vite.docs.test',
         '--node' => 'app-1',
-        '--upstream' => 'http://127.0.0.1:5173',
-    ])
+        '--upstream' => 'http://127.0.0.1:5173'])
         ->doesntExpectOutput('Domain')
         ->doesntExpectOutput('Serving node')
         ->doesntExpectOutput('Route type')

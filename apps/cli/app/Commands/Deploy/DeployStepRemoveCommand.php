@@ -8,12 +8,14 @@ use App\Exceptions\GatewayApiException;
 
 final class DeployStepRemoveCommand extends DeployGatewayCommand
 {
+    #[\Override]
     protected $signature = 'deploy:step-remove
         {app? : Production app name or domain}
         {step? : Deployment step id or exact title}
         {--force : Confirm destructive operation without prompting}
         {--json : Output JSON}';
 
+    #[\Override]
     protected $description = 'Remove a deployment pipeline step from a production app.';
 
     public function handle(): int

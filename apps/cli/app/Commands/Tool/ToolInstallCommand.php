@@ -8,6 +8,7 @@ final class ToolInstallCommand extends ToolGatewayCommand
 {
     private const array STATUSES = ['installed', 'running'];
 
+    #[\Override]
     protected $signature = 'tool:install
         {tool? : Tool catalog name to install}
         {--app= : Resolve target by app selector}
@@ -15,6 +16,7 @@ final class ToolInstallCommand extends ToolGatewayCommand
         {--status=installed : Desired state after install (installed|running)}
         {--json : Output JSON}';
 
+    #[\Override]
     protected $description = 'Install a managed tool through the gateway.';
 
     public function handle(): int

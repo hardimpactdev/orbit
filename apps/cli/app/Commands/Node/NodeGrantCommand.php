@@ -9,6 +9,7 @@ use App\Exceptions\GatewayApiException;
 
 final class NodeGrantCommand extends GatewayCommand
 {
+    #[\Override]
     protected $signature = 'node:grant
         {consuming_node? : Name of the node requesting access}
         {serving_node? : Name of the node providing access}
@@ -17,6 +18,7 @@ final class NodeGrantCommand extends GatewayCommand
         {--force : Confirm gateway-admin grant without prompting}
         {--json : Output JSON}';
 
+    #[\Override]
     protected $description = 'Grant one node access to another.';
 
     public function handle(): int

@@ -118,19 +118,8 @@ final readonly class SchedulesFixer
 
     private function gatewayNode(): ?Node
     {
-        $gatewayNode = $this->nodeRoleAssignments
+        return $this->nodeRoleAssignments
             ->activeGatewayNodeQuery()
             ->first();
-
-        if ($gatewayNode instanceof Node) {
-            return $gatewayNode;
-        }
-
-        $legacyGatewayNode = Node::query()
-            ->where('role', 'gateway')
-            ->where('status', 'active')
-            ->first();
-
-        return $legacyGatewayNode instanceof Node ? $legacyGatewayNode : null;
     }
 }

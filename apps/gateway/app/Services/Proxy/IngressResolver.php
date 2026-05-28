@@ -79,10 +79,10 @@ final readonly class IngressResolver
 
     private function appProductionAssignment(Node $appNode): NodeRoleAssignment
     {
-        $assignment = $this->nodeRoleAssignments->activeAssignment($appNode, 'app-production');
+        $assignment = $this->nodeRoleAssignments->activeAssignment($appNode, 'app-prod');
 
         if (! $assignment instanceof NodeRoleAssignment) {
-            throw new DomainException("Node '{$appNode->name}' is not an active app-production node.");
+            throw new DomainException("Node '{$appNode->name}' is not an active app-prod node.");
         }
 
         return $assignment;

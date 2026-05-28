@@ -6,12 +6,15 @@ namespace App\Http\Controllers\Api;
 
 use App\Contracts\Loggable;
 use App\Enums\ActivityLogType;
+use App\Http\Authorization\RequiresPermission;
+use App\Http\Authorization\ServingNode;
 use App\Services\Activity\ActivityHistory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
 
+#[RequiresPermission('activity:read', servingNode: ServingNode::Gateway)]
 final class ActivityListController implements Loggable
 {
     private const array VALID_EFFECTS = ['read', 'write', 'destructive'];

@@ -44,7 +44,7 @@ This command follows the shared
 The rendered category set is derived from the target node's active role
 assignments. The legacy node role field remains a compatibility shadow for
 identity and output, but workload-family doctor eligibility comes from
-`node_roles`.
+`node_role`.
 
 | Target role assignment state | Categories |
 | --- | --- |
@@ -52,8 +52,8 @@ identity and output, but workload-family doctor eligibility comes from
 | active `gateway` role | `Node`, `Scheduling` |
 | active `database` role only | `Node`, `Tools` |
 | active `agent` role | `Node`, `Tools` |
-| active `app-development` role | `Node`, `Apps`, `Workspaces`, `Processes`, `Proxy routes`, `Firewall`, `Tools`, `Scheduling`, `Databases` |
-| active `app-production` role | `Node`, `Apps`, `Processes`, `Proxy routes`, `Firewall`, `Tools`, `Scheduling`, `Databases` |
+| active `app-dev` role | `Node`, `Apps`, `Workspaces`, `Processes`, `Proxy routes`, `Firewall`, `Tools`, `Scheduling`, `Databases` |
+| active `app-prod` role | `Node`, `Apps`, `Processes`, `Proxy routes`, `Firewall`, `Tools`, `Scheduling`, `Databases` |
 
 Families outside the target's role-assignment set are rejected before probes. A narrow `--family` filter intersects with that set. The renderer never shows placeholder rows for families that are not in the target's set.
 
@@ -110,7 +110,7 @@ Input-mode-specific contracts are required for resolution modes:
 Cross-peer scope-resolution and grant requirements are owned by
 [`7_doctor_scope-and-authorization.md`](7_doctor_scope-and-authorization.md).
 Peer-specific authorization remains in the on-node companion contracts:
-[`2_doctor_on-client.md`](2_doctor_on-client.md),
+[`2_doctor_on-operator-node.md`](2_doctor_on-operator-node.md),
 and [`3_doctor_on-gateway-node.md`](3_doctor_on-gateway-node.md).
 
 ### Result Classification Rules
@@ -221,7 +221,7 @@ Required contract tests:
 | Path | Coverage |
 | --- | --- |
 | `apps/gateway/tests/Feature/Commands/Operations/DoctorCommandContractTest.php` | Generic input contract, `--key`, `--dry-run`, scope resolution, mutually exclusive flags, mode selection, family-key validation, gateway authorization failures, exit-code semantics, JSON envelope, and family dispatch boundaries. |
-| `apps/gateway/tests/Feature/Commands/Operations/DoctorRoleAwareCategoriesTest.php` | Single-node scope default to `--self`, role-aware category set per target active roles, app-development/app-production workspace split, `--family` rejection for families outside the target's role-assignment set, and per-node probe scoping for app/workspace/proxy families. |
+| `apps/gateway/tests/Feature/Commands/Operations/DoctorRoleAwareCategoriesTest.php` | Single-node scope default to `--self`, role-aware category set per target active roles, app-dev/app-prod workspace split, `--family` rejection for families outside the target's role-assignment set, and per-node probe scoping for app/workspace/proxy families. |
 | `apps/gateway/tests/Feature/Http/Api/DoctorRunControllerTest.php` | Gateway API verify and fix endpoints, target node resolution from request body, caller authorization, and family dispatch over the API path. |
 | `apps/gateway/tests/Unit/Services/Doctor/DoctorReportRunnerTest.php` | Per-target probe scoping, restore-mode action suppression, action failure recording, and family dispatch through the in-process runner. |
 
@@ -230,7 +230,7 @@ Test mapping for each family lives in its family doctor contract, such as
 
 Peer-specific behavior and test mapping live in:
 
-- [`2_doctor_on-client.md`](2_doctor_on-client.md)
+- [`2_doctor_on-operator-node.md`](2_doctor_on-operator-node.md)
 - [`3_doctor_on-gateway-node.md`](3_doctor_on-gateway-node.md)
 
 ## Activity Logging

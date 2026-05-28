@@ -83,8 +83,8 @@ it('resolves gateway_ip from argument', function (): void {
         ]),
         'https://10.6.0.2/api/me' => Http::response([
             'data' => [
-                'gateway' => ['name' => 'gateway-1', 'role' => 'gateway', 'status' => 'active'],
-                'self' => ['name' => 'control-1', 'role' => 'control', 'status' => 'active', 'wg_ip' => '10.6.0.8'],
+                'gateway' => ['name' => 'gateway-1', 'roles' => [['role' => 'gateway', 'status' => 'active', 'settings' => []]], 'status' => 'active'],
+                'self' => ['name' => 'control-1', 'roles' => [], 'status' => 'active', 'wg_ip' => '10.6.0.8'],
             ],
         ]),
     ]);
@@ -100,8 +100,8 @@ it('logs gateway onboarding activity', function (): void {
         ]),
         'https://10.6.0.2/api/me' => Http::response([
             'data' => [
-                'gateway' => ['name' => 'gateway-1', 'role' => 'gateway', 'status' => 'active'],
-                'self' => ['name' => 'control-1', 'role' => 'control', 'status' => 'active', 'wg_ip' => '10.6.0.8'],
+                'gateway' => ['name' => 'gateway-1', 'roles' => [['role' => 'gateway', 'status' => 'active', 'settings' => []]], 'status' => 'active'],
+                'self' => ['name' => 'control-1', 'roles' => [], 'status' => 'active', 'wg_ip' => '10.6.0.8'],
             ],
         ]),
     ]);
@@ -146,8 +146,8 @@ it('fetches and installs gateway ca', function (): void {
         ]),
         'https://10.6.0.2/api/me' => Http::response([
             'data' => [
-                'gateway' => ['name' => 'gateway-1', 'role' => 'gateway', 'status' => 'active'],
-                'self' => ['name' => 'control-1', 'role' => 'control', 'status' => 'active', 'wg_ip' => '10.6.0.8'],
+                'gateway' => ['name' => 'gateway-1', 'roles' => [['role' => 'gateway', 'status' => 'active', 'settings' => []]], 'status' => 'active'],
+                'self' => ['name' => 'control-1', 'roles' => [], 'status' => 'active', 'wg_ip' => '10.6.0.8'],
             ],
         ]),
     ]);
@@ -165,8 +165,8 @@ it('verifies gateway api via https with trusted ca', function (): void {
         ]),
         'https://10.6.0.2/api/me' => Http::response([
             'data' => [
-                'gateway' => ['name' => 'gateway-1', 'role' => 'gateway', 'status' => 'active'],
-                'self' => ['name' => 'control-1', 'role' => 'control', 'status' => 'active', 'wg_ip' => '10.6.0.8'],
+                'gateway' => ['name' => 'gateway-1', 'roles' => [['role' => 'gateway', 'status' => 'active', 'settings' => []]], 'status' => 'active'],
+                'self' => ['name' => 'control-1', 'roles' => [], 'status' => 'active', 'wg_ip' => '10.6.0.8'],
             ],
         ]),
     ]);
@@ -182,8 +182,8 @@ it('persists local gateway settings', function (): void {
         ]),
         'https://10.6.0.2/api/me' => Http::response([
             'data' => [
-                'gateway' => ['name' => 'gateway-1', 'role' => 'gateway', 'status' => 'active'],
-                'self' => ['name' => 'control-1', 'role' => 'control', 'status' => 'active', 'wg_ip' => '10.6.0.8'],
+                'gateway' => ['name' => 'gateway-1', 'roles' => [['role' => 'gateway', 'status' => 'active', 'settings' => []]], 'status' => 'active'],
+                'self' => ['name' => 'control-1', 'roles' => [], 'status' => 'active', 'wg_ip' => '10.6.0.8'],
             ],
         ]),
     ]);
@@ -221,8 +221,8 @@ it('is idempotent when gateway is already configured', function (): void {
     Http::fake([
         'https://10.6.0.2/api/me' => Http::response([
             'data' => [
-                'gateway' => ['name' => 'gateway-1', 'role' => 'gateway', 'status' => 'active'],
-                'self' => ['name' => 'control-1', 'role' => 'control', 'status' => 'active', 'wg_ip' => '10.6.0.8'],
+                'gateway' => ['name' => 'gateway-1', 'roles' => [['role' => 'gateway', 'status' => 'active', 'settings' => []]], 'status' => 'active'],
+                'self' => ['name' => 'control-1', 'roles' => [], 'status' => 'active', 'wg_ip' => '10.6.0.8'],
             ],
         ]),
     ]);
@@ -247,8 +247,8 @@ it('re-runs onboarding when stored ca path is not a readable file', function ():
         ]),
         'https://10.6.0.2/api/me' => Http::response([
             'data' => [
-                'gateway' => ['name' => 'gateway-1', 'role' => 'gateway', 'status' => 'active'],
-                'self' => ['name' => 'control-1', 'role' => 'control', 'status' => 'active', 'wg_ip' => '10.6.0.8'],
+                'gateway' => ['name' => 'gateway-1', 'roles' => [['role' => 'gateway', 'status' => 'active', 'settings' => []]], 'status' => 'active'],
+                'self' => ['name' => 'control-1', 'roles' => [], 'status' => 'active', 'wg_ip' => '10.6.0.8'],
             ],
         ]),
     ]);
@@ -268,8 +268,8 @@ it('does not create local node registry mirror rows', function (): void {
         ]),
         'https://10.6.0.2/api/me' => Http::response([
             'data' => [
-                'gateway' => ['name' => 'gateway-1', 'role' => 'gateway', 'status' => 'active'],
-                'self' => ['name' => 'control-1', 'role' => 'control', 'status' => 'active', 'wg_ip' => '10.6.0.8'],
+                'gateway' => ['name' => 'gateway-1', 'roles' => [['role' => 'gateway', 'status' => 'active', 'settings' => []]], 'status' => 'active'],
+                'self' => ['name' => 'control-1', 'roles' => [], 'status' => 'active', 'wg_ip' => '10.6.0.8'],
             ],
         ]),
     ]);

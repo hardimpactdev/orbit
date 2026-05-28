@@ -6,6 +6,7 @@ use App\Actions\Nodes\ReenactNodeArtifacts;
 use App\Http\Gateway\Requests\Nodes\UpdateNodeRequest;
 use App\Models\LocalGatewaySettings;
 use App\Models\Node;
+use App\Models\NodeRoleAssignment;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
@@ -26,13 +27,11 @@ function nodeUpdateBaseRow(array $overrides = []): array
 {
     return array_merge([
         'name' => 'app-1',
-        'role' => 'app',
         'host' => '10.6.0.7',
         'wireguard_address' => '10.6.0.7',
         'user' => 'nckrtl',
         'orbit_path' => '/home/nckrtl/orbit',
         'status' => 'active',
-        'environment' => 'development',
         'platform' => 'ubuntu_24-04',
         'public_ipv4' => null,
         'public_ipv6' => null,
@@ -47,9 +46,25 @@ function setupGatewayCallerBase(): void
 
     DB::table('nodes')->insert(nodeUpdateBaseRow([
         'name' => 'gateway-1',
-        'role' => 'gateway',
-        'environment' => null,
     ]));
+    assignNodeUpdateCommandRole('gateway-1', 'gateway');
+}
+
+/**
+ * @param  array<string, mixed>  $settings
+ */
+function assignNodeUpdateCommandRole(string $nodeName, string $role, array $settings = []): void
+{
+    $nodeId = (int) DB::table('nodes')
+        ->where('name', $nodeName)
+        ->value('id');
+
+    NodeRoleAssignment::factory()->create([
+        'node_id' => $nodeId,
+        'role' => $role,
+        'status' => 'active',
+        'settings' => $settings,
+    ]);
 }
 
 function setupControlCallerForNodeUpdate(): void
@@ -80,6 +95,7 @@ describe('node:update base contract', function (): void {
 
     it('updates a node and returns successfully', function (): void {
         DB::table('nodes')->insert(nodeUpdateBaseRow());
+        assignNodeUpdateCommandRole('app-1', 'app-dev');
 
         $exitCode = Artisan::call('node:update', [
             'name' => 'app-1',
@@ -91,6 +107,7 @@ describe('node:update base contract', function (): void {
 
     it('returns success with empty changed array for no-op update', function (): void {
         DB::table('nodes')->insert(nodeUpdateBaseRow());
+        assignNodeUpdateCommandRole('app-1', 'app-dev');
 
         $exitCode = Artisan::call('node:update', [
             'name' => 'app-1',
@@ -107,11 +124,11 @@ describe('node:update base contract', function (): void {
 
     it('updates multiple fields and reports all in changed array', function (): void {
         DB::table('nodes')->insert(nodeUpdateBaseRow());
+        assignNodeUpdateCommandRole('app-1', 'app-dev');
 
         $exitCode = Artisan::call('node:update', [
             'name' => 'app-1',
             '--host' => '10.6.0.99',
-            '--environment' => 'production',
             '--public-ipv4' => '203.0.113.50',
             '--json' => true,
         ]);
@@ -119,26 +136,24 @@ describe('node:update base contract', function (): void {
         $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
 
         expect($exitCode)->toBe(0)
-            ->and($payload['success']['data']['changed'])->toHaveCount(3)
+            ->and($payload['success']['data']['changed'])->toHaveCount(2)
             ->and($payload['success']['data']['changed'])->toContain('host')
-            ->and($payload['success']['data']['changed'])->toContain('environment')
             ->and($payload['success']['data']['changed'])->toContain('public_ipv4');
     });
 
     it('persists changes to the database', function (): void {
         DB::table('nodes')->insert(nodeUpdateBaseRow());
+        assignNodeUpdateCommandRole('app-1', 'app-dev');
 
         Artisan::call('node:update', [
             'name' => 'app-1',
             '--host' => '10.6.0.99',
-            '--environment' => 'production',
             '--json' => true,
         ]);
 
         $node = DB::table('nodes')->where('name', 'app-1')->first();
 
-        expect($node->host)->toBe('10.6.0.99')
-            ->and($node->environment)->toBe('production');
+        expect($node->host)->toBe('10.6.0.99');
     });
 
     it('fails with node.not_found for missing target', function (): void {
@@ -190,8 +205,6 @@ describe('node:update caller role behavior', function (): void {
 
         DB::table('nodes')->insert(nodeUpdateBaseRow([
             'name' => 'control-1',
-            'role' => 'control',
-            'environment' => null,
         ]));
 
         DB::table('nodes')->insert(nodeUpdateBaseRow());
@@ -331,7 +344,7 @@ describe('node:update control forwarding', function (): void {
 
         $exitCode = Artisan::call('node:update', [
             'name' => 'app-1',
-            '--environment' => 'staging',
+            '--public-ipv4' => 'not-an-ip',
             '--json' => true,
         ]);
 
@@ -339,7 +352,7 @@ describe('node:update control forwarding', function (): void {
 
         expect($exitCode)->toBe(1)
             ->and($payload['error']['code'])->toBe('validation_failed')
-            ->and($payload['error']['meta']['field'])->toBe('environment');
+            ->and($payload['error']['meta']['field'])->toBe('public_ipv4');
 
         $mock->assertNothingSent();
     });
@@ -366,12 +379,12 @@ describe('node:update field value validation', function (): void {
             ->and($payload['error']['meta']['field'])->toBe('host');
     });
 
-    it('rejects invalid environment value', function (): void {
+    it('rejects invalid tld value before role compatibility checks', function (): void {
         DB::table('nodes')->insert(nodeUpdateBaseRow());
 
         $exitCode = Artisan::call('node:update', [
             'name' => 'app-1',
-            '--environment' => 'staging',
+            '--tld' => 'Invalid_TLD!',
             '--json' => true,
         ]);
 
@@ -379,9 +392,8 @@ describe('node:update field value validation', function (): void {
 
         expect($exitCode)->toBe(1)
             ->and($payload['error']['code'])->toBe('validation_failed')
-            ->and($payload['error']['meta']['field'])->toBe('environment')
-            ->and($payload['error']['meta']['value'])->toBe('staging')
-            ->and($payload['error']['meta']['allowed'])->toBe(['development', 'production']);
+            ->and($payload['error']['meta']['field'])->toBe('tld')
+            ->and($payload['error']['meta']['value'])->toBe('Invalid_TLD!');
     });
 
     it('rejects invalid public-ipv4 format', function (): void {
@@ -418,6 +430,7 @@ describe('node:update field value validation', function (): void {
 
     it('accepts valid ipv6 address', function (): void {
         DB::table('nodes')->insert(nodeUpdateBaseRow());
+        assignNodeUpdateCommandRole('app-1', 'app-dev');
 
         $exitCode = Artisan::call('node:update', [
             'name' => 'app-1',
@@ -433,6 +446,7 @@ describe('node:update field value validation', function (): void {
 
     it('sets tld on a development app node and reports it as changed', function (): void {
         DB::table('nodes')->insert(nodeUpdateBaseRow(['tld' => null]));
+        assignNodeUpdateCommandRole('app-1', 'app-dev', ['tld' => null]);
 
         $exitCode = Artisan::call('node:update', [
             'name' => 'app-1',
@@ -465,7 +479,8 @@ describe('node:update field value validation', function (): void {
     });
 
     it('rejects tld on a production app node', function (): void {
-        DB::table('nodes')->insert(nodeUpdateBaseRow(['environment' => 'production']));
+        DB::table('nodes')->insert(nodeUpdateBaseRow([]));
+        assignNodeUpdateCommandRole('app-1', 'app-prod');
 
         $exitCode = Artisan::call('node:update', [
             'name' => 'app-1',
@@ -482,10 +497,12 @@ describe('node:update field value validation', function (): void {
 
     it('rejects tld already assigned to another active node', function (): void {
         DB::table('nodes')->insert(nodeUpdateBaseRow(['tld' => null]));
+        assignNodeUpdateCommandRole('app-1', 'app-dev', ['tld' => null]);
         DB::table('nodes')->insert(nodeUpdateBaseRow([
             'name' => 'app-2',
             'tld' => 'test',
         ]));
+        assignNodeUpdateCommandRole('app-2', 'app-dev', ['tld' => 'test']);
 
         $exitCode = Artisan::call('node:update', [
             'name' => 'app-1',
@@ -512,6 +529,7 @@ describe('node:update safety', function (): void {
         Process::preventStrayProcesses();
 
         DB::table('nodes')->insert(nodeUpdateBaseRow());
+        assignNodeUpdateCommandRole('app-1', 'app-dev');
 
         Artisan::call('node:update', [
             'name' => 'app-1',
@@ -532,6 +550,7 @@ describe('node:update safety', function (): void {
         });
 
         DB::table('nodes')->insert(nodeUpdateBaseRow());
+        assignNodeUpdateCommandRole('app-1', 'app-dev');
 
         $exitCode = Artisan::call('node:update', [
             'name' => 'app-1',
@@ -554,6 +573,7 @@ describe('node:update safety', function (): void {
 
     it('makes only targeted registry mutations', function (): void {
         DB::table('nodes')->insert(nodeUpdateBaseRow());
+        assignNodeUpdateCommandRole('app-1', 'app-dev');
 
         $before = (array) DB::table('nodes')->where('name', 'app-1')->first();
 
@@ -566,8 +586,9 @@ describe('node:update safety', function (): void {
         $after = (array) DB::table('nodes')->where('name', 'app-1')->first();
 
         expect($after['host'])->toBe('10.6.0.99')
-            ->and($after['environment'])->toBe($before['environment'])
-            ->and($after['role'])->toBe($before['role'])
+            ->and($after['tld'])->toBe($before['tld'])
+            ->and($after['public_ipv4'])->toBe($before['public_ipv4'])
+            ->and($after['public_ipv6'])->toBe($before['public_ipv6'])
             ->and($after['status'])->toBe($before['status']);
     });
 });

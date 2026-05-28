@@ -17,7 +17,6 @@ function createProxyRouteListCallerNode(array $overrides = []): Node
 {
     return Node::factory()->create(array_merge([
         'name' => 'caller',
-        'role' => 'control',
         'host' => PROXY_ROUTE_LIST_CALLER_WG_IP,
         'wireguard_address' => PROXY_ROUTE_LIST_CALLER_WG_IP,
     ], $overrides));
@@ -39,7 +38,7 @@ function assignProxyRouteListRole(Node $node, string $role = 'gateway'): void
         'node_id' => $node->id,
         'role' => $role,
         'status' => 'active',
-        'settings' => $role === 'app-development' ? ['tld' => 'test'] : [],
+        'settings' => $role === 'app-dev' ? ['tld' => 'test'] : [],
     ]);
 }
 
@@ -74,7 +73,7 @@ describe('ProxyRouteListController', function (): void {
     });
 
     it('lets gateway callers read all route intent', function (): void {
-        $caller = createProxyRouteListCallerNode(['role' => 'gateway']);
+        $caller = createProxyRouteListCallerNode();
         assignProxyRouteListRole($caller);
 
         ProxyRoute::factory()->count(2)->create();
@@ -86,7 +85,7 @@ describe('ProxyRouteListController', function (): void {
     });
 
     it('returns validation failures for invalid filters and node scopes', function (string $query, string $field): void {
-        $caller = createProxyRouteListCallerNode(['role' => 'gateway']);
+        $caller = createProxyRouteListCallerNode();
         assignProxyRouteListRole($caller);
 
         $response = $this->call('GET', "/api/proxy-routes?{$query}", [], [], [], ['REMOTE_ADDR' => PROXY_ROUTE_LIST_CALLER_WG_IP]);
@@ -99,8 +98,8 @@ describe('ProxyRouteListController', function (): void {
         'unknown node' => ['node=missing', 'node'],
     ]);
 
-    it('does not grant route visibility to legacy gateway callers without an active gateway assignment', function (): void {
-        createProxyRouteListCallerNode(['role' => 'gateway']);
+    it('does not grant route visibility to unassigned callers', function (): void {
+        createProxyRouteListCallerNode();
 
         ProxyRoute::factory()->count(2)->create();
 
@@ -113,8 +112,8 @@ describe('ProxyRouteListController', function (): void {
     });
 
     it('returns authorization failure when the caller has no route visibility', function (): void {
-        $caller = createProxyRouteListCallerNode(['role' => 'app']);
-        assignProxyRouteListRole($caller, 'app-development');
+        $caller = createProxyRouteListCallerNode();
+        assignProxyRouteListRole($caller, 'app-dev');
 
         $response = $this->call('GET', '/api/proxy-routes', [], [], [], ['REMOTE_ADDR' => PROXY_ROUTE_LIST_CALLER_WG_IP]);
 

@@ -20,26 +20,20 @@ use Saloon\Http\Faking\MockResponse;
 uses(RefreshDatabase::class);
 
 beforeEach(function (): void {
-    DB::table('nodes')->insert([
-        [
-            'name' => 'gateway',
-            'role' => 'gateway',
-            'host' => 'gateway',
-            'orbit_path' => '/home/gateway/orbit',
-            'status' => 'active',
-            'created_at' => now(),
-            'updated_at' => now(),
-        ],
+    $gateway = Node::factory()->gateway()->create([
+        'name' => 'gateway',
+        'host' => 'gateway',
+        'orbit_path' => '/home/gateway/orbit',
+        'status' => 'active',
     ]);
 
     DB::table('apps')->insert([
         [
             'name' => 'demo',
             'domain' => 'demo.beast',
-            'node_id' => 1,
+            'node_id' => $gateway->id,
             'path' => '/home/nckrtl/apps/demo',
             'php_version' => '8.5',
-            'environment' => 'development',
             'document_root' => 'public',
             'agent_ide_config' => json_encode(['adapter' => 'opencode']),
             'created_at' => now(),

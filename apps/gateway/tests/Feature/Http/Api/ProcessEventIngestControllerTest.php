@@ -13,18 +13,17 @@ uses(RefreshDatabase::class);
 
 const PROCESS_EVENT_INGEST_APP_WG_IP = '10.6.0.95';
 
-function createProcessEventIngestNode(array $overrides = []): Node
+function createProcessEventIngestNode(array $overrides = [], string $role = 'app-dev'): Node
 {
     $attributes = array_merge([
         'name' => 'app-node',
-        'role' => 'app',
         'status' => 'active',
         'host' => PROCESS_EVENT_INGEST_APP_WG_IP,
         'wireguard_address' => PROCESS_EVENT_INGEST_APP_WG_IP,
     ], $overrides);
 
-    return match ($attributes['role']) {
-        'app' => createTestAppHostNode($attributes),
+    return match ($role) {
+        'app-dev' => createTestAppHostNode($attributes),
         'gateway' => createTestGatewayNode($attributes),
         default => Node::factory()->create($attributes),
     };
@@ -129,8 +128,8 @@ describe('ProcessEventIngestController', function (): void {
         expect(ProcessEvent::query()->where('event_id', 'evt-idempotent-1')->count())->toBe(1);
     });
 
-    it('rejects non-crashed events and non-app node identities', function (array $nodeOverrides, string $event, int $status): void {
-        createProcessEventIngestNode($nodeOverrides);
+    it('rejects non-crashed events and non-app node identities', function (array $nodeOverrides, string $role, string $event, int $status): void {
+        createProcessEventIngestNode($nodeOverrides, $role);
 
         $response = $this->call('POST', '/api/events/process', [
             'event_id' => 'evt-rejected',
@@ -143,8 +142,8 @@ describe('ProcessEventIngestController', function (): void {
 
         $response->assertStatus($status);
     })->with([
-        'started event' => [[], 'started', 422],
-        'gateway node' => [['role' => 'gateway'], 'crashed', 403],
-        'inactive app node' => [['status' => 'inactive'], 'crashed', 403],
+        'started event' => [[], 'app-dev', 'started', 422],
+        'gateway node' => [[], 'gateway', 'crashed', 403],
+        'inactive app node' => [['status' => 'inactive'], 'app-dev', 'crashed', 403],
     ]);
 });

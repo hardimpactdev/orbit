@@ -12,12 +12,14 @@ final class DatabaseDescribeCommand extends GatewayCommand
 {
     use ResolvesHostContext;
 
+    #[\Override]
     protected $signature = 'database:describe
         {target? : App, workspace, or connection slug}
         {table? : Table name}
         {--connection= : Connection slug when the target maps to multiple connections}
         {--json}';
 
+    #[\Override]
     protected $description = 'Describe a table for a registered database connection.';
 
     public function handle(): int

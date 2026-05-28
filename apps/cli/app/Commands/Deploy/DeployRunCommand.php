@@ -8,11 +8,13 @@ use Orbit\Core\Progress\ProgressEventType;
 
 final class DeployRunCommand extends DeployGatewayCommand
 {
+    #[\Override]
     protected $signature = 'deploy:run
         {app? : Production app name or domain}
         {--detach : Start and return after the run is durable}
         {--json : Output JSON}';
 
+    #[\Override]
     protected $description = 'Run the deployment pipeline for a production app.';
 
     public function handle(): int

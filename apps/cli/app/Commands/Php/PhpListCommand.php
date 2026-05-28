@@ -13,6 +13,7 @@ final class PhpListCommand extends GatewayCommand
 {
     use ResolvesHostContext;
 
+    #[\Override]
     protected $signature = 'php:list
         {--app= : App selector}
         {--workspace= : Workspace selector}
@@ -20,6 +21,7 @@ final class PhpListCommand extends GatewayCommand
         {--live : Inspect available PHP images live}
         {--json}';
 
+    #[\Override]
     protected $description = 'List PHP runtime support and selected runtime intent.';
 
     public function handle(): int

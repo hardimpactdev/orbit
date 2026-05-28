@@ -10,11 +10,13 @@ use function Laravel\Prompts\confirm;
 
 final class AppRemoveCommand extends AppGatewayCommand
 {
+    #[\Override]
     protected $signature = 'app:remove
         {app? : App name or hostname}
         {--force : Confirm destructive operation without prompting}
         {--json : Output JSON}';
 
+    #[\Override]
     protected $description = 'Remove an app and its owned artifacts.';
 
     public function handle(): int

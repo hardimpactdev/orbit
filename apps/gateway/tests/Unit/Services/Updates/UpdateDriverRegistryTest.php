@@ -72,13 +72,12 @@ describe('UpdateDriverRegistry', function (): void {
     it('builds a managed target for active Ubuntu server-role nodes', function (): void {
         $node = Node::factory()->create([
             'platform' => 'ubuntu_24-04',
-            'role' => 'control',
             'status' => Node::STATUS_ACTIVE,
         ]);
 
         NodeRoleAssignment::factory()->create([
             'node_id' => $node->id,
-            'role' => 'app-production',
+            'role' => 'app-prod',
             'status' => 'active',
         ]);
 
@@ -93,7 +92,6 @@ describe('UpdateDriverRegistry', function (): void {
     it('builds an unsupported target for macOS control nodes', function (): void {
         $node = Node::factory()->create([
             'platform' => 'macos_15',
-            'role' => 'control',
             'status' => Node::STATUS_ACTIVE,
         ]);
 

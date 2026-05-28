@@ -20,12 +20,10 @@ beforeEach(function (): void {
 
     $gateway = Node::factory()->create([
         'name' => 'gateway',
-        'role' => 'gateway',
     ]);
 
     $appNode = Node::factory()->create([
         'name' => 'app-1',
-        'role' => 'app',
         'tld' => 'test',
         'agent_ide_config' => ['adapter' => 'opencode'],
     ]);

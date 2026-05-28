@@ -13,14 +13,13 @@ uses(RefreshDatabase::class);
 require_once __DIR__.'/NodeRoleCommandTestHelpers.php';
 
 describe('node role:add', function (): void {
-    it('rejects adding database to an app-production node on gateway', function (): void {
+    it('rejects adding database to an app-prod node on gateway', function (): void {
         setupNodeRoleGatewayCaller();
         $node = createHostedNode([
             'name' => 'prod-1',
-            'environment' => 'production',
         ]);
 
-        assignNodeRole($node, 'app-production');
+        assignNodeRole($node, 'app-prod');
 
         $exitCode = Artisan::call('node role:add', [
             'node' => 'prod-1',
@@ -32,21 +31,19 @@ describe('node role:add', function (): void {
 
         expect($exitCode)->toBe(1)
             ->and($payload['error']['code'])->toBe('validation_failed')
-            ->and($payload['error']['message'])->toBe("Role 'database' conflicts with active role 'app-production'.")
+            ->and($payload['error']['message'])->toBe("Role 'database' conflicts with active role 'app-prod'.")
             ->and(NodeTool::query()->where('node_id', $node->id)->where('name', 'docker')->exists())->toBeFalse();
     });
 
-    it('adds app-development with a required tld to a joined client node', function (): void {
+    it('adds app-dev with a required tld to a joined client node', function (): void {
         setupNodeRoleGatewayCaller();
         createHostedNode([
             'name' => 'client-1',
-            'role' => 'control',
-            'environment' => null,
         ]);
 
         $exitCode = Artisan::call('node role:add', [
             'node' => 'client-1',
-            'role' => 'app-development',
+            'role' => 'app-dev',
             '--tld' => 'test',
             '--json' => true,
         ]);
@@ -69,8 +66,6 @@ describe('node role:add', function (): void {
         setupNodeRoleGatewayCaller();
         createHostedNode([
             'name' => 'client-1',
-            'role' => 'control',
-            'environment' => null,
         ]);
 
         $exitCode = Artisan::call('node role:add', [
@@ -90,7 +85,6 @@ describe('node role:add', function (): void {
         createHostedNode([
             'name' => 'gateway-vpn-1',
             'role' => 'gateway',
-            'environment' => null,
         ]);
 
         $exitCode = Artisan::call('node role:add', [
@@ -111,7 +105,6 @@ describe('node role:add', function (): void {
         createHostedNode([
             'name' => 'gateway-router-1',
             'role' => 'gateway',
-            'environment' => null,
         ]);
 
         $exitCode = Artisan::call('node role:add', [
@@ -131,8 +124,6 @@ describe('node role:add', function (): void {
         setupNodeRoleGatewayCaller();
         createHostedNode([
             'name' => 'client-1',
-            'role' => 'control',
-            'environment' => null,
         ]);
 
         $exitCode = Artisan::call('node role:add', [
@@ -148,17 +139,15 @@ describe('node role:add', function (): void {
             ->and($payload['error']['meta']['field'])->toBe('role');
     });
 
-    it('rejects app-development without tld', function (): void {
+    it('rejects app-dev without tld', function (): void {
         setupNodeRoleGatewayCaller();
         createHostedNode([
             'name' => 'client-1',
-            'role' => 'control',
-            'environment' => null,
         ]);
 
         $exitCode = Artisan::call('node role:add', [
             'node' => 'client-1',
-            'role' => 'app-development',
+            'role' => 'app-dev',
             '--json' => true,
         ]);
 
@@ -169,16 +158,15 @@ describe('node role:add', function (): void {
             ->and($payload['error']['meta']['field'])->toBe('tld');
     });
 
-    it('rejects unsupported role options for app-production', function (): void {
+    it('rejects unsupported role options for app-prod', function (): void {
         setupNodeRoleGatewayCaller();
         createHostedNode([
             'name' => 'prod-1',
-            'environment' => 'production',
         ]);
 
         $exitCode = Artisan::call('node role:add', [
             'node' => 'prod-1',
-            'role' => 'app-production',
+            'role' => 'app-prod',
             '--tld' => 'test',
             '--json' => true,
         ]);
@@ -189,16 +177,15 @@ describe('node role:add', function (): void {
             ->and($payload['error']['code'])->toBe('validation_failed');
     });
 
-    it('rejects an explicitly supplied empty tld for app-production', function (): void {
+    it('rejects an explicitly supplied empty tld for app-prod', function (): void {
         setupNodeRoleGatewayCaller();
         createHostedNode([
             'name' => 'prod-1',
-            'environment' => 'production',
         ]);
 
         $exitCode = Artisan::call('node role:add', [
             'node' => 'prod-1',
-            'role' => 'app-production',
+            'role' => 'app-prod',
             '--tld' => '',
             '--json' => true,
         ]);
@@ -230,19 +217,17 @@ describe('node role:add', function (): void {
             ->and($payload['error']['meta']['field'])->toBe('tld');
     });
 
-    it('rejects app-production when app-development is active', function (): void {
+    it('rejects app-prod when app-dev is active', function (): void {
         setupNodeRoleGatewayCaller();
         $node = createHostedNode([
             'name' => 'client-1',
-            'role' => 'control',
-            'environment' => null,
         ]);
 
-        assignNodeRole($node, 'app-development', settings: ['tld' => 'test']);
+        assignNodeRole($node, 'app-dev', settings: ['tld' => 'test']);
 
         $exitCode = Artisan::call('node role:add', [
             'node' => 'client-1',
-            'role' => 'app-production',
+            'role' => 'app-prod',
             '--json' => true,
         ]);
 
@@ -281,14 +266,14 @@ describe('node role:add', function (): void {
             'success' => [
                 'data' => [
                     'node' => 'client-1',
-                    'assignment' => nodeRoleAssignmentPayload('app-development', 'active', ['tld' => 'test'], null, now()->toJSON()),
+                    'assignment' => nodeRoleAssignmentPayload('app-dev', 'active', ['tld' => 'test'], null, now()->toJSON()),
                 ],
             ],
         ]);
 
         $exitCode = Artisan::call('node role:add', [
             'node' => 'client-1',
-            'role' => 'app-development',
+            'role' => 'app-dev',
             '--tld' => 'test',
             '--json' => true,
         ]);
@@ -296,7 +281,7 @@ describe('node role:add', function (): void {
         expect($exitCode)->toBe(0);
 
         $mock->assertSent(fn (AddNodeRoleRequest $request): bool => $request->body()->all() === [
-            'role' => 'app-development',
+            'role' => 'app-dev',
             'settings' => ['tld' => 'test'],
         ]);
     });

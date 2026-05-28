@@ -361,6 +361,6 @@ final readonly class DatabaseConnectionAdopter
 
     private function shouldUseLocalFilesystem(Node $node): bool
     {
-        return $node->role === 'gateway';
+        return $node->hasActiveRole('gateway');
     }
 }

@@ -6,6 +6,7 @@ use App\Models\App;
 use App\Models\DeployStep;
 use App\Models\Node;
 use App\Models\NodeAccess;
+use App\Models\NodeRoleAssignment;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);
@@ -20,24 +21,31 @@ function createDeployApiFixture(string $executionContext, array $permissions): a
 {
     $node = createTestAppHostNode([
         'name' => 'app-prod-1',
-        'role' => 'app',
-        'environment' => 'production',
         'host' => '10.6.0.7',
-    ], 'app-production');
+    ], 'app-prod');
 
     $app = App::factory()->create([
         'name' => 'docs',
         'node_id' => $node->id,
         'environment' => 'production',
+        'domain' => 'docs.example.com',
         'path' => '/srv/docs',
     ]);
 
     $caller = Node::factory()->create([
         'name' => "deploy-api-{$executionContext}",
-        'role' => $executionContext,
         'status' => 'active',
         'wireguard_address' => DEPLOY_API_CALLER_WG_IP,
     ]);
+
+    if ($executionContext === 'app-dev') {
+        NodeRoleAssignment::factory()->create([
+            'node_id' => $caller->id,
+            'role' => 'app-dev',
+            'status' => 'active',
+            'settings' => ['tld' => 'test'],
+        ]);
+    }
 
     NodeAccess::query()->create([
         'consumer_node_id' => $caller->id,
@@ -82,8 +90,8 @@ it('denies deployment writes without deploy step before side effects', function 
     expect(DeployStep::query()->count())->toBe(0);
 });
 
-it('allows role app callers when they hold the deployment grant', function (): void {
-    createDeployApiFixture('app', ['deploy:step']);
+it('allows app-dev role callers when they hold the deployment grant', function (): void {
+    createDeployApiFixture('app-dev', ['deploy:step']);
 
     $response = $this->call('POST', '/api/deploy/steps', [
         'app' => 'docs',

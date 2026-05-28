@@ -44,7 +44,7 @@ class NodeRemoveDnsEnactorFake extends DevelopmentDnsMappingEnactor
     {
         $this->mappingCalls++;
 
-        if ($node->role !== 'app' || $node->environment !== 'development') {
+        if (! $node->hasActiveRole('app-dev')) {
             return null;
         }
 
@@ -75,13 +75,11 @@ function nodeRemoveDnsRow(array $overrides = []): array
 {
     return array_merge([
         'name' => 'app-1',
-        'role' => 'app',
         'host' => '10.6.0.7',
         'wireguard_address' => '10.6.0.7',
         'user' => 'nckrtl',
         'orbit_path' => '/home/nckrtl/orbit',
         'status' => 'active',
-        'environment' => 'development',
         'platform' => 'ubuntu_24-04',
         'tld' => 'test',
         'created_at' => now(),
@@ -95,8 +93,6 @@ function setupNodeRemoveDnsGatewayCaller(): void
 
     $gatewayId = (int) DB::table('nodes')->insertGetId(nodeRemoveDnsRow([
         'name' => 'gateway-1',
-        'role' => 'gateway',
-        'environment' => null,
         'tld' => null,
     ]));
 
@@ -113,8 +109,6 @@ function setupNodeRemoveDnsControlCaller(): void
 
     DB::table('nodes')->insert(nodeRemoveDnsRow([
         'name' => 'control-1',
-        'role' => 'control',
-        'environment' => null,
         'tld' => null,
     ]));
 
@@ -123,6 +117,19 @@ function setupNodeRemoveDnsControlCaller(): void
         'gateway_wg_ip' => '10.6.0.2',
         'ca_pem_path' => '/tmp/fake-orbit-ca.pem',
     ])->save();
+}
+
+function assignNodeRemoveDnsRole(string $nodeName, string $role): void
+{
+    $nodeId = (int) DB::table('nodes')
+        ->where('name', $nodeName)
+        ->value('id');
+
+    NodeRoleAssignment::factory()->create([
+        'node_id' => $nodeId,
+        'role' => $role,
+        'status' => 'active',
+    ]);
 }
 
 /**
@@ -151,19 +158,15 @@ function setupNodeRemoveDnsGatewayApiCaller(): void
 {
     $callerId = (int) DB::table('nodes')->insertGetId(nodeRemoveDnsRow([
         'name' => 'control-api',
-        'role' => 'control',
         'host' => '10.6.0.99',
         'wireguard_address' => '10.6.0.99',
-        'environment' => null,
         'tld' => null,
     ]));
 
     $gatewayId = (int) DB::table('nodes')->insertGetId(nodeRemoveDnsRow([
         'name' => 'gateway-1',
-        'role' => 'gateway',
         'host' => '10.6.0.2',
         'wireguard_address' => '10.6.0.2',
-        'environment' => null,
         'tld' => null,
     ]));
 
@@ -205,6 +208,7 @@ describe('node:remove development DNS cleanup warnings', function (): void {
     it('omits DNS warnings when gateway-local development DNS cleanup succeeds', function (): void {
         setupNodeRemoveDnsGatewayCaller();
         DB::table('nodes')->insert(nodeRemoveDnsRow());
+        assignNodeRemoveDnsRole('app-1', 'app-dev');
 
         fakeNodeRemoveDnsResult([
             'status' => 'removed',
@@ -230,6 +234,7 @@ describe('node:remove development DNS cleanup warnings', function (): void {
     it('surfaces gateway-local development DNS cleanup failures as structured JSON warnings', function (): void {
         setupNodeRemoveDnsGatewayCaller();
         DB::table('nodes')->insert(nodeRemoveDnsRow());
+        assignNodeRemoveDnsRole('app-1', 'app-dev');
 
         fakeNodeRemoveDnsResult([
             'status' => 'failed',
@@ -258,6 +263,7 @@ describe('node:remove development DNS cleanup warnings', function (): void {
     it('renders development DNS cleanup drift in human output with recovery guidance', function (): void {
         setupNodeRemoveDnsGatewayCaller();
         DB::table('nodes')->insert(nodeRemoveDnsRow());
+        assignNodeRemoveDnsRole('app-1', 'app-dev');
 
         fakeNodeRemoveDnsResult([
             'status' => 'failed',
@@ -320,6 +326,7 @@ describe('node:remove development DNS cleanup warnings', function (): void {
     it('returns development DNS warnings from the gateway API removal path', function (): void {
         setupNodeRemoveDnsGatewayApiCaller();
         DB::table('nodes')->insert(nodeRemoveDnsRow());
+        assignNodeRemoveDnsRole('app-1', 'app-dev');
 
         fakeNodeRemoveDnsResult([
             'status' => 'failed',
@@ -346,6 +353,7 @@ describe('node:remove development DNS cleanup warnings', function (): void {
     it('omits development DNS warnings from the gateway API removal path when cleanup succeeds', function (): void {
         setupNodeRemoveDnsGatewayApiCaller();
         DB::table('nodes')->insert(nodeRemoveDnsRow());
+        assignNodeRemoveDnsRole('app-1', 'app-dev');
 
         fakeNodeRemoveDnsResult([
             'status' => 'removed',
@@ -403,6 +411,10 @@ describe('node:remove development DNS cleanup warnings', function (): void {
         setupNodeRemoveDnsGatewayCaller();
         DB::table('nodes')->insert(nodeRemoveDnsRow($overrides));
 
+        if ($overrides === []) {
+            assignNodeRemoveDnsRole('app-1', 'app-prod');
+        }
+
         $fake = fakeNodeRemoveDnsResult([
             'status' => 'removed',
             'changed' => true,
@@ -421,7 +433,7 @@ describe('node:remove development DNS cleanup warnings', function (): void {
             ->and($fake->mappingCalls)->toBe(1)
             ->and($fake->removeCalls)->toBe(0);
     })->with([
-        'legacy control identity' => [['role' => 'control', 'environment' => null, 'tld' => null]],
-        'production app node' => [['environment' => 'production']],
+        'role-free operator identity' => [['tld' => null]],
+        'production app node' => [[]],
     ]);
 });

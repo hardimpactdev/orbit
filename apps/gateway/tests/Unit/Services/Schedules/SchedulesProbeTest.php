@@ -28,7 +28,6 @@ function scheduleProbeIssue(array $drift, string $key): mixed
 function createSchedulesProbeGatewayNode(array $attributes = []): Node
 {
     $node = Node::factory()->create([
-        'role' => 'gateway',
         'status' => 'active',
         ...$attributes,
     ]);
@@ -78,7 +77,7 @@ describe('SchedulesProbe', function (): void {
     });
 
     it('accepts active gateway role assignments as schedule targets', function (): void {
-        $node = createSchedulesProbeGatewayNode(['role' => 'control']);
+        $node = createSchedulesProbeGatewayNode();
         $schedule = Schedule::factory()->forNode($node)->create();
         $probe = new SchedulesProbe(new RuntimeBackendProbe(new SchedulesProbeRemoteShell));
 

@@ -189,7 +189,7 @@ final readonly class SchedulesProbe
                     detail: [
                         'schedule' => $schedule->name,
                         'node' => $node->name,
-                        'role' => $node->role,
+                        'role' => $node->displayRole(),
                         'status' => $node->status,
                     ],
                 ),
@@ -401,32 +401,19 @@ final readonly class SchedulesProbe
 
     private function gatewayNode(): ?Node
     {
-        $gatewayNode = $this->nodeRoleAssignments
+        return $this->nodeRoleAssignments
             ->activeGatewayNodeQuery()
             ->first();
-
-        if ($gatewayNode instanceof Node) {
-            return $gatewayNode;
-        }
-
-        $legacyGatewayNode = Node::query()
-            ->where('role', 'gateway')
-            ->where('status', 'active')
-            ->first();
-
-        return $legacyGatewayNode instanceof Node ? $legacyGatewayNode : null;
     }
 
     private function canRunSchedules(Node $node): bool
     {
-        return $this->nodeRoleAssignments->nodeCanServeGatewayOrAppHostWorkloads($node)
-            || ($node->role === 'gateway' && $node->status === 'active');
+        return $this->nodeRoleAssignments->nodeCanServeGatewayOrAppHostWorkloads($node);
     }
 
     private function isGatewayNode(Node $node): bool
     {
-        return $this->nodeRoleAssignments->nodeIsGateway($node)
-            || ($node->role === 'gateway' && $node->status === 'active');
+        return $this->nodeRoleAssignments->nodeIsGateway($node);
     }
 
     private function runtimeInspectionScript(): string

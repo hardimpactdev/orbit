@@ -16,7 +16,6 @@ uses(RefreshDatabase::class);
 it('classifies active node peers by name and address', function (): void {
     Node::factory()->create([
         'name' => 'app-1',
-        'role' => 'app',
         'wireguard_address' => '10.6.0.8',
         'status' => 'active',
     ]);
@@ -38,7 +37,6 @@ it('classifies active node peers by name and address', function (): void {
 it('refuses to create clients with active node names', function (): void {
     Node::factory()->create([
         'name' => 'app-1',
-        'role' => 'app',
         'status' => 'active',
     ]);
 
@@ -53,7 +51,6 @@ it('refuses to create clients with active node names', function (): void {
 it('protects active node peers from write commands', function (): void {
     Node::factory()->create([
         'name' => 'app-1',
-        'role' => 'app',
         'wireguard_address' => '10.6.0.8',
         'status' => 'active',
     ]);

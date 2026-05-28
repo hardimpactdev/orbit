@@ -50,16 +50,13 @@ PHP;
 
     $topology->ssh(
         'gateway',
-        "cd {$checkout} && orbit tinker --execute=".escapeshellarg($script),
+        "cd {$checkout} && php apps/gateway/artisan tinker --execute=".escapeshellarg($script),
         timeoutSeconds: 120,
     );
 
     $gatewayCheckoutValue = var_export($topology->checkout('gateway'), true);
     $operatorScript = <<<PHP
-\$gateway = \App\Models\Node::query()
-    ->where('role', 'gateway')
-    ->orWhere('name', 'gateway-1')
-    ->first();
+\$gateway = \App\Models\Node::query()->where('name', 'gateway-1')->first();
 
 if (! \$gateway instanceof \App\Models\Node) {
     \$gateway = new \App\Models\Node(['name' => 'gateway-1']);
@@ -68,7 +65,6 @@ if (! \$gateway instanceof \App\Models\Node) {
 \$hostKey = app(\App\Services\Security\SshHostKeyPinner::class)->pin('gateway');
 
 \$gateway->forceFill([
-    'role' => 'gateway',
     'host' => 'gateway',
     'wireguard_address' => '10.6.0.2',
     'user' => 'orbit',
@@ -106,7 +102,7 @@ PHP;
 
     $topology->ssh(
         'operator',
-        'cd '.escapeshellarg($topology->checkout('operator')).' && orbit tinker --execute='.escapeshellarg($operatorScript),
+        'cd '.escapeshellarg($topology->checkout('operator')).' && php apps/gateway/artisan tinker --execute='.escapeshellarg($operatorScript),
         timeoutSeconds: 120,
     );
 
@@ -142,7 +138,7 @@ PHP;
 
     $result = $topology->ssh(
         'gateway',
-        'cd '.escapeshellarg($topology->checkout('gateway')).' && orbit tinker --execute='.escapeshellarg($script),
+        'cd '.escapeshellarg($topology->checkout('gateway')).' && php apps/gateway/artisan tinker --execute='.escapeshellarg($script),
         timeoutSeconds: 120,
     );
 

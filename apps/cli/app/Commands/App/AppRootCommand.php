@@ -8,11 +8,13 @@ use App\Exceptions\GatewayApiException;
 
 final class AppRootCommand extends AppGatewayCommand
 {
+    #[\Override]
     protected $signature = 'app:root
         {app? : App name or hostname}
         {root? : Document root relative to app path}
         {--json : Output JSON}';
 
+    #[\Override]
     protected $description = 'Change the document root for an app.';
 
     public function handle(): int

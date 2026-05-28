@@ -18,11 +18,12 @@ class FirewallRuleFactory extends Factory
     public function definition(): array
     {
         return [
-            'node_id' => Node::factory()->state([
-                'role' => 'app',
-                'platform' => 'ubuntu',
-                'status' => 'active',
-            ]),
+            'node_id' => Node::factory()
+                ->appDev()
+                ->state([
+                    'platform' => 'ubuntu',
+                    'status' => 'active',
+                ]),
             'name' => fake()->unique()->bothify('firewall-rule-####'),
             'direction' => 'incoming',
             'action' => 'allow',

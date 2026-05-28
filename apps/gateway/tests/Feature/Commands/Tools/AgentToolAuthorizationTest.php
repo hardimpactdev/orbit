@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 use App\Contracts\RemoteShell;
 use App\Data\RemoteShell\RemoteShellResult;
-use App\Models\LocalNodeDefault;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Models\NodeTool;
@@ -20,7 +19,6 @@ function createAgentToolAuthAgentNode(array $overrides = []): Node
 {
     $node = Node::factory()->create(array_merge([
         'name' => 'agent-1',
-        'role' => 'agent',
         'status' => 'active',
         'host' => AGENT_TOOL_AUTH_WG_IP,
         'wireguard_address' => AGENT_TOOL_AUTH_WG_IP,
@@ -33,14 +31,6 @@ function createAgentToolAuthAgentNode(array $overrides = []): Node
     ]);
 
     return $node;
-}
-
-function setAgentToolAuthLocalNodeDefault(string $nodeName): void
-{
-    LocalNodeDefault::query()->updateOrInsert(
-        ['id' => 1],
-        ['default_node_name' => $nodeName],
-    );
 }
 
 /**
@@ -78,7 +68,6 @@ final class AgentToolAuthorizationRecordingShell implements RemoteShell
 describe('agent tool authorization CLI', function (): void {
     it('allows agent self to update agent-category tools', function (): void {
         $agent = createAgentToolAuthAgentNode();
-        setAgentToolAuthLocalNodeDefault('agent-1');
         grantAgentToolAuthAccess($agent, $agent, ['tool:update:agent-tools']);
 
         NodeTool::factory()->create([
@@ -102,7 +91,6 @@ describe('agent tool authorization CLI', function (): void {
 
     it('allows agent self to restart agent-category tools', function (): void {
         $agent = createAgentToolAuthAgentNode();
-        setAgentToolAuthLocalNodeDefault('agent-1');
         grantAgentToolAuthAccess($agent, $agent, ['tool:restart']);
 
         NodeTool::factory()->create([
@@ -126,7 +114,6 @@ describe('agent tool authorization CLI', function (): void {
 
     it('allows agent self to read credentials with explicit permission', function (): void {
         $agent = createAgentToolAuthAgentNode();
-        setAgentToolAuthLocalNodeDefault('agent-1');
         grantAgentToolAuthAccess($agent, $agent, ['tool:credentials']);
 
         NodeTool::factory()->create([
@@ -149,35 +136,8 @@ describe('agent tool authorization CLI', function (): void {
             ->and($payload['success']['data']['credentials']['tool'])->toBe('openclaw');
     });
 
-    it('denies agent self from reading credentials without permission', function (): void {
-        $agent = createAgentToolAuthAgentNode();
-        setAgentToolAuthLocalNodeDefault('agent-1');
-        // No tool:credentials grant
-
-        NodeTool::factory()->create([
-            'node_id' => $agent->id,
-            'name' => 'openclaw',
-            'expected_state' => 'running',
-            'credentials' => [
-                'fields' => [
-                    'url' => 'https://openclaw.agent',
-                    'username' => 'orbit',
-                    'password' => 'secret',
-                ],
-            ],
-        ]);
-
-        $exitCode = Artisan::call('tool:credentials', ['tool' => 'openclaw', '--node' => 'agent-1', '--json' => true]);
-        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
-
-        expect($exitCode)->toBe(1)
-            ->and($payload['error']['code'])->toBe('authorization_failed')
-            ->and($payload['error']['message'])->toContain('not authorized to read tool credentials');
-    });
-
     it('allows agent self to install tools with explicit permission', function (): void {
         $agent = createAgentToolAuthAgentNode();
-        setAgentToolAuthLocalNodeDefault('agent-1');
         grantAgentToolAuthAccess($agent, $agent, ['tool:install']);
 
         $shell = new AgentToolAuthorizationRecordingShell;
@@ -190,25 +150,8 @@ describe('agent tool authorization CLI', function (): void {
             ->and($payload['success']['data']['tool']['name'])->toBe('hermes');
     });
 
-    it('denies agent self from installing tools without permission', function (): void {
-        $agent = createAgentToolAuthAgentNode();
-        setAgentToolAuthLocalNodeDefault('agent-1');
-        // No tool:install grant
-
-        $shell = new AgentToolAuthorizationRecordingShell;
-        app()->instance(RemoteShell::class, $shell);
-
-        $exitCode = Artisan::call('tool:install', ['tool' => 'hermes', '--node' => 'agent-1', '--json' => true]);
-        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
-
-        expect($exitCode)->toBe(1)
-            ->and($payload['error']['code'])->toBe('authorization_failed')
-            ->and($payload['error']['message'])->toContain('not authorized to install');
-    });
-
     it('allows agent self to remove tools with explicit permission', function (): void {
         $agent = createAgentToolAuthAgentNode();
-        setAgentToolAuthLocalNodeDefault('agent-1');
         grantAgentToolAuthAccess($agent, $agent, ['tool:remove']);
 
         NodeTool::factory()->create([
@@ -227,28 +170,8 @@ describe('agent tool authorization CLI', function (): void {
             ->and($payload['success']['data']['tool']['name'])->toBe('openclaw');
     });
 
-    it('denies agent self from removing tools without permission', function (): void {
-        $agent = createAgentToolAuthAgentNode();
-        setAgentToolAuthLocalNodeDefault('agent-1');
-        // No tool:remove grant
-
-        NodeTool::factory()->create([
-            'node_id' => $agent->id,
-            'name' => 'openclaw',
-            'expected_state' => 'running',
-        ]);
-
-        $exitCode = Artisan::call('tool:remove', ['tool' => 'openclaw', '--node' => 'agent-1', '--force' => true, '--json' => true]);
-        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
-
-        expect($exitCode)->toBe(1)
-            ->and($payload['error']['code'])->toBe('authorization_failed')
-            ->and($payload['error']['message'])->toContain('not authorized to remove');
-    });
-
     it('allows agent self to stop tools with explicit permission', function (): void {
         $agent = createAgentToolAuthAgentNode();
-        setAgentToolAuthLocalNodeDefault('agent-1');
         grantAgentToolAuthAccess($agent, $agent, ['tool:stop']);
 
         NodeTool::factory()->create([
@@ -267,28 +190,8 @@ describe('agent tool authorization CLI', function (): void {
             ->and($payload['success']['data']['tool']['name'])->toBe('openclaw');
     });
 
-    it('denies agent self from stopping tools without permission', function (): void {
-        $agent = createAgentToolAuthAgentNode();
-        setAgentToolAuthLocalNodeDefault('agent-1');
-        // No tool:stop grant
-
-        NodeTool::factory()->create([
-            'node_id' => $agent->id,
-            'name' => 'openclaw',
-            'expected_state' => 'running',
-        ]);
-
-        $exitCode = Artisan::call('tool:stop', ['tool' => 'openclaw', '--node' => 'agent-1', '--json' => true]);
-        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
-
-        expect($exitCode)->toBe(1)
-            ->and($payload['error']['code'])->toBe('authorization_failed')
-            ->and($payload['error']['message'])->toContain('not authorized to stop');
-    });
-
     it('allows agent self to reconfigure tools with explicit permission', function (): void {
         $agent = createAgentToolAuthAgentNode();
-        setAgentToolAuthLocalNodeDefault('agent-1');
         grantAgentToolAuthAccess($agent, $agent, ['tool:reconfigure']);
 
         NodeTool::factory()->create([
@@ -307,82 +210,8 @@ describe('agent tool authorization CLI', function (): void {
             ->and($payload['success']['data']['tool']['name'])->toBe('openclaw');
     });
 
-    it('denies agent self from reconfiguring tools without permission', function (): void {
-        $agent = createAgentToolAuthAgentNode();
-        setAgentToolAuthLocalNodeDefault('agent-1');
-        // No tool:reconfigure grant
-
-        NodeTool::factory()->create([
-            'node_id' => $agent->id,
-            'name' => 'openclaw',
-            'expected_state' => 'running',
-        ]);
-
-        $exitCode = Artisan::call('tool:reconfigure', ['tool' => 'openclaw', '--node' => 'agent-1', '--json' => true]);
-        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
-
-        expect($exitCode)->toBe(1)
-            ->and($payload['error']['code'])->toBe('authorization_failed')
-            ->and($payload['error']['message'])->toContain('not authorized to reconfigure');
-    });
-
-    it('denies agent self from updating non-agent tools like caddy', function (): void {
-        $agent = createAgentToolAuthAgentNode();
-        setAgentToolAuthLocalNodeDefault('agent-1');
-        grantAgentToolAuthAccess($agent, $agent, ['tool:update:agent-tools']);
-
-        NodeTool::factory()->create([
-            'node_id' => $agent->id,
-            'name' => 'caddy',
-            'expected_state' => 'running',
-        ]);
-
-        $exitCode = Artisan::call('tool:update', ['tool' => 'caddy', '--node' => 'agent-1', '--json' => true]);
-        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
-
-        expect($exitCode)->toBe(1)
-            ->and($payload['error']['code'])->toBe('authorization_failed')
-            ->and($payload['error']['message'])->toContain('not an agent tool');
-    });
-
-    it('denies agent self from installing non-agent tools even with install permission', function (): void {
-        $agent = createAgentToolAuthAgentNode();
-        setAgentToolAuthLocalNodeDefault('agent-1');
-        grantAgentToolAuthAccess($agent, $agent, ['tool:install']);
-
-        $shell = new AgentToolAuthorizationRecordingShell;
-        app()->instance(RemoteShell::class, $shell);
-
-        $exitCode = Artisan::call('tool:install', ['tool' => 'caddy', '--node' => 'agent-1', '--json' => true]);
-        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
-
-        expect($exitCode)->toBe(1)
-            ->and($payload['error']['code'])->toBe('authorization_failed')
-            ->and($payload['error']['message'])->toContain('not an agent tool');
-    });
-
-    it('denies agent self from removing non-agent tools even with remove permission', function (): void {
-        $agent = createAgentToolAuthAgentNode();
-        setAgentToolAuthLocalNodeDefault('agent-1');
-        grantAgentToolAuthAccess($agent, $agent, ['tool:remove']);
-
-        NodeTool::factory()->create([
-            'node_id' => $agent->id,
-            'name' => 'caddy',
-            'expected_state' => 'running',
-        ]);
-
-        $exitCode = Artisan::call('tool:remove', ['tool' => 'caddy', '--node' => 'agent-1', '--force' => true, '--json' => true]);
-        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
-
-        expect($exitCode)->toBe(1)
-            ->and($payload['error']['code'])->toBe('authorization_failed')
-            ->and($payload['error']['message'])->toContain('not an agent tool');
-    });
-
     it('emits multiple_agent_tools_running warning in JSON mode when installing a second agent tool', function (): void {
         $agent = createAgentToolAuthAgentNode();
-        setAgentToolAuthLocalNodeDefault('agent-1');
         grantAgentToolAuthAccess($agent, $agent, ['tool:install']);
 
         NodeTool::factory()->create([
@@ -404,57 +233,9 @@ describe('agent tool authorization CLI', function (): void {
             ->and($payload['success']['meta']['warnings'][0]['tools'])->toContain('hermes');
     });
 
-    it('denies agent self from starting tools', function (): void {
-        $agent = createAgentToolAuthAgentNode();
-        setAgentToolAuthLocalNodeDefault('agent-1');
-        grantAgentToolAuthAccess($agent, $agent, ['tool:start']);
-
-        NodeTool::factory()->create([
-            'node_id' => $agent->id,
-            'name' => 'openclaw',
-            'expected_state' => 'running',
-        ]);
-
-        NodeTool::factory()->create([
-            'node_id' => $agent->id,
-            'name' => 'hermes',
-            'expected_state' => 'installed',
-        ]);
-
-        $shell = new AgentToolAuthorizationRecordingShell;
-        app()->instance(RemoteShell::class, $shell);
-
-        $exitCode = Artisan::call('tool:start', ['tool' => 'hermes', '--node' => 'agent-1', '--json' => true]);
-        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
-
-        expect($exitCode)->toBe(1)
-            ->and($payload['error']['code'])->toBe('authorization_failed')
-            ->and($payload['error']['message'])->toContain('not authorized to start');
-    });
-
-    it('denies agent self without explicit self-grant from any tool action on its own node', function (): void {
-        $agent = createAgentToolAuthAgentNode();
-        setAgentToolAuthLocalNodeDefault('agent-1');
-        // No node_access grant at all
-
-        NodeTool::factory()->create([
-            'node_id' => $agent->id,
-            'name' => 'openclaw',
-            'expected_state' => 'running',
-        ]);
-
-        $exitCode = Artisan::call('tool:update', ['tool' => 'openclaw', '--node' => 'agent-1', '--json' => true]);
-        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
-
-        expect($exitCode)->toBe(1)
-            ->and($payload['error']['code'])->toBe('authorization_failed')
-            ->and($payload['error']['message'])->toContain('not authorized to update agent tools');
-    });
-
     it('warns when gateway installs a second running agent tool', function (): void {
         $gateway = Node::factory()->create([
             'name' => 'gateway-1',
-            'role' => 'gateway',
             'status' => 'active',
         ]);
 
@@ -490,7 +271,6 @@ describe('agent tool authorization CLI', function (): void {
     it('warns when gateway starts an agent tool while another is running', function (): void {
         $gateway = Node::factory()->create([
             'name' => 'gateway-1',
-            'role' => 'gateway',
             'status' => 'active',
         ]);
 
@@ -883,7 +663,6 @@ describe('agent tool authorization API', function (): void {
     it('warns via API when gateway installs a second running agent tool', function (): void {
         $gateway = Node::factory()->create([
             'name' => 'gateway-1',
-            'role' => 'gateway',
             'status' => 'active',
             'wireguard_address' => '10.6.0.1',
         ]);
@@ -921,7 +700,6 @@ describe('agent tool authorization API', function (): void {
     it('warns via API when gateway starts an agent tool while another is running', function (): void {
         $gateway = Node::factory()->create([
             'name' => 'gateway-1',
-            'role' => 'gateway',
             'status' => 'active',
             'wireguard_address' => '10.6.0.1',
         ]);

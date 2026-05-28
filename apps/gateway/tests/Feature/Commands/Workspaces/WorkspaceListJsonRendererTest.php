@@ -17,7 +17,7 @@ beforeEach(function (): void {
 
 describe('workspace:list JSON renderer contract', function (): void {
     it('selects JSON renderer with --json and returns the workspace list entity shape', function (): void {
-        $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'tld' => 'test']);
+        $node = Node::factory()->appDev()->create(['name' => 'app-1', 'tld' => 'test']);
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id, 'domain' => null]);
 
         Workspace::factory()->create([
@@ -42,7 +42,7 @@ describe('workspace:list JSON renderer contract', function (): void {
     });
 
     it('returns an empty workspaces array when no workspaces match', function (): void {
-        $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app']);
+        $node = Node::factory()->appDev()->create(['name' => 'app-1']);
         App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
 
         $exitCode = Artisan::call('workspace:list', ['--json' => true, '--app' => 'docs']);

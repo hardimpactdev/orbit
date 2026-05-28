@@ -12,7 +12,7 @@
   authorized. A grant using the `gateway-admin` preset also authorizes the
   write.
 - Non-gateway callers have configured gateway access as defined in
-  [`2_node-remove_on-client.md`](2_node-remove_on-client.md) and a covering
+  [`2_node-remove_on-operator-node.md`](2_node-remove_on-operator-node.md) and a covering
   node access grant for this operation.
 
 **Post-input path eligibility:**
@@ -198,7 +198,7 @@ Primary test owners:
 | `apps/gateway/tests/Feature/Commands/Nodes/NodeRemoveCommandTest.php` | Command contract for `node:remove` lifecycle; see detail below. |
 | `apps/gateway/tests/Feature/Commands/Nodes/NodeRemoveDevelopmentDnsWarningTest.php` | Development DNS cleanup warning contract across gateway-local, gateway API, and forwarded client rendering paths. |
 | `apps/gateway/tests/Feature/Commands/NodeAccessCommandsTest.php` | Node access integration: deletion of node, related grants, and WireGuard peer in one flow; success when peer is already absent; gateway-node rejection. |
-| `apps/gateway/tests/Feature/Commands/Nodes/NodeRemoveOnControlNodeContractTest.php` | Client-caller behavior: configured callers forward over HTTPS, unconfigured callers fail before side effects, forwarded requests require a covering grant, and no SSH-to-gateway path is used. |
+| `apps/gateway/tests/Feature/Commands/Nodes/NodeRemoveOnOperatorNodeContractTest.php` | Operator-node caller behavior: configured callers forward over HTTPS, unconfigured callers fail before side effects, forwarded requests require a covering grant, and no SSH-to-gateway path is used. |
 
 `NodeRemoveCommandTest.php` covers node removal, grant cleanup, WireGuard peer
 teardown, warning payload shape for partial detach, DNS mapping cleanup,
@@ -219,5 +219,5 @@ Renderer-specific test mapping lives in:
 
 Role-specific test mapping lives in:
 
-- [`2_node-remove_on-client.md`](2_node-remove_on-client.md#test-mapping)
+- [`2_node-remove_on-operator-node.md`](2_node-remove_on-operator-node.md#test-mapping)
 - [`3_node-remove_on-gateway-node.md`](3_node-remove_on-gateway-node.md#test-mapping)

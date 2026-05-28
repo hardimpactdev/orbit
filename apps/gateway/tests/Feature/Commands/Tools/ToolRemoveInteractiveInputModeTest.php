@@ -20,10 +20,8 @@ function createToolRemoveInteractiveLocalNode(string $role = 'gateway'): Node
 {
     return Node::factory()->create([
         'name' => "local-{$role}",
-        'role' => $role,
         'host' => '10.6.0.1',
-        'wireguard_address' => '10.6.0.1',
-    ]);
+        'wireguard_address' => '10.6.0.1']);
 }
 
 function fakeRemoveShell(): void
@@ -40,7 +38,7 @@ function fakeRemoveShell(): void
 describe('tool:remove interactive input mode', function (): void {
     it('prompts for tool name when omitted in interactive mode', function (): void {
         createToolRemoveInteractiveLocalNode('gateway');
-        $node = createTestAppHostNode(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        $node = createTestAppHostNode(['name' => 'app-1', 'status' => 'active']);
         NodeTool::factory()->create(['name' => 'redis', 'node_id' => $node->id]);
         fakeRemoveShell();
 
@@ -52,7 +50,7 @@ describe('tool:remove interactive input mode', function (): void {
 
     it('does not prompt when tool argument is supplied', function (): void {
         createToolRemoveInteractiveLocalNode('gateway');
-        $node = createTestAppHostNode(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        $node = createTestAppHostNode(['name' => 'app-1', 'status' => 'active']);
         NodeTool::factory()->create(['name' => 'redis', 'node_id' => $node->id]);
         fakeRemoveShell();
 

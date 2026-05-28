@@ -13,11 +13,11 @@ use App\Services\OrbitConfigStore;
  *
  * Each method returns a typed result array consumed by NodeDefaultCommand.
  */
-final class NodeDefaultActions
+final readonly class NodeDefaultActions
 {
     public function __construct(
-        private readonly OrbitConfigStore $configStore,
-        private readonly GatewayApiClient $gatewayClient,
+        private OrbitConfigStore $configStore,
+        private GatewayApiClient $gatewayClient,
     ) {}
 
     /**

@@ -7,6 +7,7 @@ use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Services\ActivityLogCorrelation;
 use App\Services\ActivityLogger;
+use App\Services\Operations\OperationRunRecorder;
 use App\Services\Operations\OperationTokenFactory;
 use App\Services\RemoteShell\LocalExecutorCommandBuilder;
 use App\Services\RemoteShell\RemoteExecutor;
@@ -160,6 +161,7 @@ function vpnWebUiChangePasswordLocalExecutor(VpnWebUiChangePasswordLocalExecutor
             clock: static fn (): int => 1_798_105_200,
         ),
         activityLogger: new ActivityLogger(new ActivityLogCorrelation),
+        operationRuns: app(OperationRunRecorder::class),
     );
 }
 

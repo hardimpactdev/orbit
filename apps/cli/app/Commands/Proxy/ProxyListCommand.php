@@ -12,11 +12,13 @@ final class ProxyListCommand extends GatewayCommand
 {
     use ResolvesHostContext;
 
+    #[\Override]
     protected $signature = 'proxy:list
         {--node= : Filter by serving node}
         {--filter=all : Filter routes by all, app, workspace, gateway, tool, custom, or redirect}
         {--json}';
 
+    #[\Override]
     protected $description = 'List proxy routes tracked by gateway intent.';
 
     public function handle(): int

@@ -10,11 +10,13 @@ use function Laravel\Prompts\confirm;
 
 final class ProxyRemoveCommand extends ProxyGatewayCommand
 {
+    #[\Override]
     protected $signature = 'proxy:remove
         {domain? : Existing custom proxy route domain}
         {--force : Confirm destructive operation without prompting}
         {--json : Output JSON}';
 
+    #[\Override]
     protected $description = 'Remove custom proxy route intent.';
 
     public function handle(): int

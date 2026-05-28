@@ -84,7 +84,7 @@ it('enforces grants through real gateway middleware and node access rows', funct
             topology: $topology,
             role: 'gateway',
             method: 'DELETE',
-            path: '/nodes/app-dev-1/roles/app-development',
+            path: '/nodes/app-dev-1/roles/app-dev',
             wireGuardIp: '10.6.0.2',
             payload: ['force' => true],
         );
@@ -92,7 +92,7 @@ it('enforces grants through real gateway middleware and node access rows', funct
         expect($removeRole['status'])->toBe(200)
             ->and($removeRole['body']['success']['data'])->toMatchArray([
                 'node' => 'app-dev-1',
-                'role' => 'app-development',
+                'role' => 'app-dev',
             ]);
 
         grantAuthorizationE2eApplyAppDevelopmentRole($topology);
@@ -108,7 +108,7 @@ it('enforces grants through real gateway middleware and node access rows', funct
             topology: $topology,
             role: 'gateway',
             method: 'DELETE',
-            path: '/nodes/app-dev-1/roles/app-development',
+            path: '/nodes/app-dev-1/roles/app-dev',
             wireGuardIp: '10.6.0.2',
             payload: ['force' => true],
         );
@@ -303,7 +303,7 @@ function grantAuthorizationE2eApplyAppDevelopmentRole(E2ETopologyHarness $topolo
         path: '/nodes/app-dev-1/roles',
         wireGuardIp: '10.6.0.2',
         payload: [
-            'role' => 'app-development',
+            'role' => 'app-dev',
             'settings' => ['tld' => 'test'],
         ],
         timeoutSeconds: 180,
@@ -368,7 +368,6 @@ function grantAuthorizationE2eSeedWorkspaceApp(E2ETopologyHarness $topology, str
     'name' => 'grant-docs',
 ], [
     'node_id' => \$node->id,
-    'environment' => 'development',
     'path' => {$appPathValue},
     'document_root' => 'public',
     'php_version' => '8.5',
@@ -409,7 +408,7 @@ function grantAuthorizationE2eTinker(E2ETopologyHarness $topology, string $scrip
 
     $result = $topology->ssh(
         'gateway',
-        "cd {$checkout} && orbit tinker --execute=".escapeshellarg($script),
+        "cd {$checkout} && php apps/gateway/artisan tinker --execute=".escapeshellarg($script),
         timeoutSeconds: 180,
     );
 

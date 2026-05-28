@@ -12,7 +12,6 @@ use App\Http\Gateway\GatewayConnector;
 use App\Http\Gateway\Requests\Tools\InstallToolRequest;
 use App\Http\Gateway\Responses\Tools\ToolInstallResponse;
 use App\Http\Gateway\ToolActionGatewayStreamClient;
-use App\Models\LocalNodeDefault;
 use App\Models\Node;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
 use App\Services\Tools\AgentToolAuthorizer;
@@ -265,12 +264,6 @@ class ToolInstallCommand extends Command
             return [$node, $app];
         }
 
-        $defaultNode = LocalNodeDefault::query()->value('default_node_name');
-
-        if (is_string($defaultNode) && trim($defaultNode) !== '') {
-            return [trim($defaultNode), null];
-        }
-
         if ($this->isInteractiveInput()) {
             $nodes = Node::query()
                 ->whereIn('id', app(NodeRoleAssignments::class)->activeToolHostNodeIds())
@@ -288,11 +281,7 @@ class ToolInstallCommand extends Command
             }
         }
 
-        return ToolRegistryFailure::validation(
-            'target',
-            '',
-            'A node or app target is required. Provide --node, --app, configure node:default, or select a target interactively.',
-        );
+        return ToolRegistryFailure::nodeTargetRequired();
     }
 
     /**

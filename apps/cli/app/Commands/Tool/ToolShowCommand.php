@@ -13,6 +13,7 @@ final class ToolShowCommand extends GatewayCommand
 {
     use ResolvesHostContext;
 
+    #[\Override]
     protected $signature = 'tool:show
         {tool? : Tool catalog name to inspect}
         {--app= : Resolve target by app selector}
@@ -20,6 +21,7 @@ final class ToolShowCommand extends GatewayCommand
         {--live : Request gateway live inspection}
         {--json}';
 
+    #[\Override]
     protected $description = 'Show one tool tracked by the gateway registry.';
 
     public function handle(): int

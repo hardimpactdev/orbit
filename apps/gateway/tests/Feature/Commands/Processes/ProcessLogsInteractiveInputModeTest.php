@@ -6,6 +6,7 @@ use App\Contracts\RemoteShell;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Models\App;
 use App\Models\Node;
+use App\Models\NodeRoleAssignment;
 use App\Models\Process;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
@@ -16,17 +17,27 @@ uses(RefreshDatabase::class);
 
 function createProcessLogsInteractiveLocalNode(string $role = 'gateway'): Node
 {
-    return Node::factory()->create([
+    $node = Node::factory()->create([
         'name' => "local-{$role}",
-        'role' => $role,
         'host' => '10.6.0.1',
         'wireguard_address' => '10.6.0.1',
     ]);
+
+    if ($role === 'gateway') {
+        NodeRoleAssignment::factory()->create([
+            'node_id' => $node->id,
+            'role' => 'gateway',
+            'status' => 'active',
+            'settings' => [],
+        ]);
+    }
+
+    return $node;
 }
 
 it('prompts for process name when name is absent', function (): void {
     createProcessLogsInteractiveLocalNode('gateway');
-    $node = Node::factory()->create(['role' => 'app']);
+    $node = Node::factory()->appDev()->create();
     $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
     Process::factory()->create(['app_id' => $app->id, 'name' => 'web']);
 
@@ -47,7 +58,7 @@ it('prompts for process name when name is absent', function (): void {
 
 it('does not prompt when name is supplied', function (): void {
     createProcessLogsInteractiveLocalNode('gateway');
-    $node = Node::factory()->create(['role' => 'app']);
+    $node = Node::factory()->appDev()->create();
     $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
     Process::factory()->create(['app_id' => $app->id, 'name' => 'web']);
 

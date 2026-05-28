@@ -23,16 +23,14 @@ function createToolInstallLocalNode(string $role = 'gateway'): Node
 {
     return Node::factory()->create([
         'name' => "local-{$role}",
-        'role' => $role,
         'host' => '10.6.0.1',
-        'wireguard_address' => '10.6.0.1',
-    ]);
+        'wireguard_address' => '10.6.0.1']);
 }
 
 describe('tool:install command contract', function (): void {
     it('installs a managed tool on a node', function (): void {
         createToolInstallLocalNode('gateway');
-        $node = createTestAppHostNode(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        $node = createTestAppHostNode(['name' => 'app-1', 'status' => 'active']);
         $shell = new ToolInstallRecordingShell;
         app()->instance(RemoteShell::class, $shell);
 
@@ -44,8 +42,7 @@ describe('tool:install command contract', function (): void {
             ->and($payload['success']['data']['tool'])->toMatchArray([
                 'name' => 'redis',
                 'node' => 'app-1',
-                'state' => 'installed',
-            ])
+                'state' => 'installed'])
             ->and($shell->scripts)->toHaveCount(1)
             ->and($shell->scripts[0])->toContain('docker compose')
             ->and($shell->scripts[0])->toContain('pull')
@@ -54,7 +51,7 @@ describe('tool:install command contract', function (): void {
 
     it('renders the documented human progress tree', function (): void {
         createToolInstallLocalNode('gateway');
-        createTestAppHostNode(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        createTestAppHostNode(['name' => 'app-1', 'status' => 'active']);
         app()->instance(RemoteShell::class, new ToolInstallRecordingShell);
 
         $exitCode = Artisan::call('tool:install', ['tool' => 'redis', '--node' => 'app-1']);
@@ -74,7 +71,7 @@ describe('tool:install command contract', function (): void {
 
     it('rejects tools without an install action', function (): void {
         createToolInstallLocalNode('gateway');
-        createTestAppHostNode(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        createTestAppHostNode(['name' => 'app-1', 'status' => 'active']);
         $shell = new ToolInstallRecordingShell;
         app()->instance(RemoteShell::class, $shell);
 
@@ -85,14 +82,13 @@ describe('tool:install command contract', function (): void {
             ->and($payload['error']['code'])->toBe('tool.unsupported_action')
             ->and($payload['error']['meta'])->toMatchArray([
                 'tool' => 'caddy',
-                'action' => 'install',
-            ])
+                'action' => 'install'])
             ->and($shell->scripts)->toBe([]);
     });
 
     it('rejects invalid status values', function (): void {
         createToolInstallLocalNode('gateway');
-        createTestAppHostNode(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        createTestAppHostNode(['name' => 'app-1', 'status' => 'active']);
         $shell = new ToolInstallRecordingShell;
         app()->instance(RemoteShell::class, $shell);
 
@@ -104,15 +100,14 @@ describe('tool:install command contract', function (): void {
             ->and($payload['error']['meta'])->toBe([
                 'field' => 'status',
                 'value' => 'invalid',
-                'reason' => 'unsupported_value',
-            ])
+                'reason' => 'unsupported_value'])
             ->and(NodeTool::query()->count())->toBe(0)
             ->and($shell->scripts)->toBe([]);
     });
 
     it('generates and stores credentials for credential-bearing tools', function (): void {
         createToolInstallLocalNode('gateway');
-        $node = createTestAppHostNode(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        $node = createTestAppHostNode(['name' => 'app-1', 'status' => 'active']);
         $shell = new ToolInstallCredentialRecordingShell;
         app()->instance(RemoteShell::class, $shell);
 
@@ -124,8 +119,7 @@ describe('tool:install command contract', function (): void {
             ->and($payload['success']['data']['tool'])->toMatchArray([
                 'name' => 'opencode-server',
                 'node' => 'app-1',
-                'state' => 'installed',
-            ])
+                'state' => 'installed'])
             ->and($shell->scripts)->toHaveCount(2)
             ->and($shell->scripts[0])->toContain('opencode-server.service')
             ->and($shell->scripts[1])->toContain('cat <<EOF');
@@ -136,9 +130,7 @@ describe('tool:install command contract', function (): void {
                 'Host' => '127.0.0.1',
                 'Port' => '4096',
                 'Username' => '(no auth)',
-                'Password' => '(no auth)',
-            ],
-        ]);
+                'Password' => '(no auth)']]);
     });
 
     it('forwards non-gateway callers through the typed gateway request', function (): void {
@@ -148,8 +140,7 @@ describe('tool:install command contract', function (): void {
 
         LocalGatewaySettings::current()->fill([
             'gateway_url' => 'https://10.6.0.1',
-            'ca_pem_path' => '/dev/null',
-        ])->save();
+            'ca_pem_path' => '/dev/null'])->save();
 
         MockClient::global([
             InstallToolRequest::class => MockResponse::make([
@@ -158,13 +149,8 @@ describe('tool:install command contract', function (): void {
                         'tool' => [
                             'name' => 'redis',
                             'node' => 'app-1',
-                            'state' => 'installed',
-                        ],
-                    ],
-                    'meta' => [],
-                ],
-            ], 200),
-        ]);
+                            'state' => 'installed']],
+                    'meta' => []]], 200)]);
 
         $exitCode = Artisan::call('tool:install', ['tool' => 'redis', '--node' => 'app-1', '--json' => true]);
         $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
@@ -175,7 +161,7 @@ describe('tool:install command contract', function (): void {
 
     it('requires an explicit target source in non-interactive mode', function (): void {
         createToolInstallLocalNode('gateway');
-        createTestAppHostNode(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        createTestAppHostNode(['name' => 'app-1', 'status' => 'active']);
         $shell = new ToolInstallRecordingShell;
         app()->instance(RemoteShell::class, $shell);
 
@@ -183,8 +169,8 @@ describe('tool:install command contract', function (): void {
         $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
 
         expect($exitCode)->toBe(1)
-            ->and($payload['error']['code'])->toBe('validation_failed')
-            ->and($payload['error']['meta'])->toBe(['fields' => ['target']])
+            ->and($payload['error']['code'])->toBe('node_target_required')
+            ->and($payload['error']['meta'])->toBe(['field' => 'node'])
             ->and(NodeTool::query()->count())->toBe(0)
             ->and($shell->scripts)->toBe([]);
     });
@@ -229,8 +215,7 @@ final class ToolInstallCredentialRecordingShell implements RemoteShell
                     'Host' => '127.0.0.1',
                     'Port' => '4096',
                     'Username' => '(no auth)',
-                    'Password' => '(no auth)',
-                ]),
+                    'Password' => '(no auth)']),
                 stderr: '',
                 durationMs: 1,
             );

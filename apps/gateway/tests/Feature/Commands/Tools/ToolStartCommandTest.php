@@ -8,7 +8,6 @@ use App\Http\Gateway\Requests\Gateway\ShowGatewayIdentityRequest;
 use App\Http\Gateway\Requests\Tools\StartToolRequest;
 use App\Models\App;
 use App\Models\LocalGatewaySettings;
-use App\Models\LocalNodeDefault;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Models\NodeTool;
@@ -27,21 +26,18 @@ function createToolStartLocalNode(string $role = 'gateway'): Node
 {
     return Node::factory()->create([
         'name' => "local-{$role}",
-        'role' => $role,
         'host' => '10.6.0.1',
-        'wireguard_address' => '10.6.0.1',
-    ]);
+        'wireguard_address' => '10.6.0.1']);
 }
 
 describe('tool:start command contract', function (): void {
     it('updates gateway intent and starts the managed tool on the selected node', function (): void {
         createToolStartLocalNode('gateway');
-        $node = createTestAppHostNode(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        $node = createTestAppHostNode(['name' => 'app-1', 'status' => 'active']);
         $tool = NodeTool::factory()->create([
             'node_id' => $node->id,
             'name' => 'caddy',
-            'expected_state' => 'stopped',
-        ]);
+            'expected_state' => 'stopped']);
         $shell = new ToolStartRecordingShell;
         app()->instance(RemoteShell::class, $shell);
 
@@ -53,8 +49,7 @@ describe('tool:start command contract', function (): void {
             ->and($payload['success']['data']['tool'])->toMatchArray([
                 'name' => 'caddy',
                 'node' => 'app-1',
-                'expected_state' => 'running',
-            ])
+                'expected_state' => 'running'])
             ->and($shell->scripts)->toHaveCount(1)
             ->and($shell->scripts[0])->toContain('docker start')
             ->and($shell->scripts[0])->toContain('orbit-caddy')
@@ -63,12 +58,11 @@ describe('tool:start command contract', function (): void {
 
     it('renders the documented human progress tree', function (): void {
         createToolStartLocalNode('gateway');
-        $node = createTestAppHostNode(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        $node = createTestAppHostNode(['name' => 'app-1', 'status' => 'active']);
         NodeTool::factory()->create([
             'node_id' => $node->id,
             'name' => 'caddy',
-            'expected_state' => 'stopped',
-        ]);
+            'expected_state' => 'stopped']);
         app()->instance(RemoteShell::class, new ToolStartRecordingShell);
 
         $exitCode = Artisan::call('tool:start', ['tool' => 'caddy', '--node' => 'app-1']);
@@ -88,12 +82,11 @@ describe('tool:start command contract', function (): void {
 
     it('rejects tools without a start action before changing intent', function (): void {
         createToolStartLocalNode('gateway');
-        $node = createTestAppHostNode(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        $node = createTestAppHostNode(['name' => 'app-1', 'status' => 'active']);
         $tool = NodeTool::factory()->create([
             'node_id' => $node->id,
             'name' => 'gh',
-            'expected_state' => 'installed',
-        ]);
+            'expected_state' => 'installed']);
         $shell = new ToolStartRecordingShell;
         app()->instance(RemoteShell::class, $shell);
 
@@ -104,8 +97,7 @@ describe('tool:start command contract', function (): void {
             ->and($payload['error']['code'])->toBe('tool.unsupported_action')
             ->and($payload['error']['meta'])->toMatchArray([
                 'tool' => 'gh',
-                'action' => 'start',
-            ])
+                'action' => 'start'])
             ->and($tool->refresh()->expected_state)->toBe('installed')
             ->and($shell->scripts)->toBe([]);
     });
@@ -117,8 +109,7 @@ describe('tool:start command contract', function (): void {
 
         LocalGatewaySettings::current()->fill([
             'gateway_url' => 'https://10.6.0.1',
-            'ca_pem_path' => '/dev/null',
-        ])->save();
+            'ca_pem_path' => '/dev/null'])->save();
 
         MockClient::global([
             StartToolRequest::class => MockResponse::make([
@@ -131,13 +122,8 @@ describe('tool:start command contract', function (): void {
                             'observed_state' => null,
                             'version' => null,
                             'managed' => true,
-                            'endpoints' => [],
-                        ],
-                    ],
-                    'meta' => [],
-                ],
-            ], 200),
-        ]);
+                            'endpoints' => []]],
+                    'meta' => []]], 200)]);
 
         $exitCode = Artisan::call('tool:start', ['tool' => 'caddy', '--node' => 'app-1', '--json' => true]);
         $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
@@ -191,8 +177,7 @@ describe('tool:start command contract', function (): void {
             'tool' => 'caddy',
             '--app' => 'testabc',
             '--node' => $node->name,
-            '--json' => true,
-        ]);
+            '--json' => true]);
         $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
 
         expect($exitCode)->toBe(0)
@@ -210,8 +195,7 @@ describe('tool:start command contract', function (): void {
             'tool' => 'caddy',
             '--app' => 'testabc',
             '--node' => $otherNode->name,
-            '--json' => true,
-        ]);
+            '--json' => true]);
         $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
 
         expect($exitCode)->toBe(1)
@@ -219,8 +203,7 @@ describe('tool:start command contract', function (): void {
             ->and($payload['error']['meta'])->toMatchArray([
                 'field' => 'app',
                 'value' => 'testabc',
-                'node' => $otherNode->name,
-            ])
+                'node' => $otherNode->name])
             ->and($shell->scripts)->toBe([]);
     });
 
@@ -236,27 +219,28 @@ describe('tool:start command contract', function (): void {
             ->and($payload['success']['data']['tool']['node'])->toBe($node->name);
     });
 
-    it('uses node default when no explicit target is supplied', function (): void {
+    it('requires an explicit target when no target is supplied', function (): void {
         createToolStartLocalNode('gateway');
-        $node = createToolStartTargetWithApp('app-default-node', 'testabc');
-        LocalNodeDefault::query()->create(['default_node_name' => $node->name]);
-        app()->instance(RemoteShell::class, new ToolStartRecordingShell);
+        createToolStartTargetWithApp('app-default-node', 'testabc');
+        $shell = new ToolStartRecordingShell;
+        app()->instance(RemoteShell::class, $shell);
 
         $exitCode = Artisan::call('tool:start', ['tool' => 'caddy', '--json' => true]);
         $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($exitCode)->toBe(0)
-            ->and($payload['success']['data']['tool']['node'])->toBe($node->name);
+        expect($exitCode)->toBe(1)
+            ->and($payload['error']['code'])->toBe('node_target_required')
+            ->and($payload['error']['meta'])->toBe(['field' => 'node'])
+            ->and($shell->scripts)->toBe([]);
     });
 
-    it('uses gateway-known caller identity when no explicit target or node default exists', function (): void {
+    it('uses gateway-known caller identity when no explicit target exists', function (): void {
         config(['orbit.is_gateway' => false]);
         createToolStartLocalNode('control');
 
         LocalGatewaySettings::current()->fill([
             'gateway_url' => 'https://10.6.0.1',
-            'ca_pem_path' => '/dev/null',
-        ])->save();
+            'ca_pem_path' => '/dev/null'])->save();
 
         $mock = MockClient::global([
             ShowGatewayIdentityRequest::class => MockResponse::make(toolStartGatewayIdentityEnvelope('control-self'), 200),
@@ -270,13 +254,8 @@ describe('tool:start command contract', function (): void {
                             'observed_state' => null,
                             'version' => null,
                             'managed' => true,
-                            'endpoints' => [],
-                        ],
-                    ],
-                    'meta' => [],
-                ],
-            ], 200),
-        ]);
+                            'endpoints' => []]],
+                    'meta' => []]], 200)]);
 
         $exitCode = Artisan::call('tool:start', ['tool' => 'caddy', '--json' => true]);
         $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
@@ -285,8 +264,7 @@ describe('tool:start command contract', function (): void {
             ->and($payload['success']['data']['tool']['node'])->toBe('control-self');
 
         $mock->assertSent(fn (StartToolRequest $request): bool => $request->body()->all() === [
-            'node' => 'control-self',
-        ]);
+            'node' => 'control-self']);
     });
 
     it('fails through gateway authorization when self target cannot manage the selected tool', function (): void {
@@ -295,8 +273,7 @@ describe('tool:start command contract', function (): void {
 
         LocalGatewaySettings::current()->fill([
             'gateway_url' => 'https://10.6.0.1',
-            'ca_pem_path' => '/dev/null',
-        ])->save();
+            'ca_pem_path' => '/dev/null'])->save();
 
         MockClient::global([
             ShowGatewayIdentityRequest::class => MockResponse::make(toolStartGatewayIdentityEnvelope('control-self'), 200),
@@ -304,10 +281,7 @@ describe('tool:start command contract', function (): void {
                 'error' => [
                     'code' => 'authorization_failed',
                     'message' => 'This node is not authorized to manage tools.',
-                    'meta' => ['node' => 'control-self'],
-                ],
-            ], 403),
-        ]);
+                    'meta' => ['node' => 'control-self']]], 403)]);
 
         $exitCode = Artisan::call('tool:start', ['tool' => 'caddy', '--json' => true]);
         $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
@@ -317,7 +291,7 @@ describe('tool:start command contract', function (): void {
             ->and($payload['error']['meta'])->toBe(['node' => 'control-self']);
     });
 
-    it('does not fall back to the only visible app node without an explicit source, node default, or self identity', function (): void {
+    it('does not fall back to the only visible app node without an explicit source or self identity', function (): void {
         createToolStartLocalNode('gateway');
         createToolStartTargetWithApp('app-only-visible', 'testabc');
         $shell = new ToolStartRecordingShell;
@@ -327,8 +301,8 @@ describe('tool:start command contract', function (): void {
         $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
 
         expect($exitCode)->toBe(1)
-            ->and($payload['error']['code'])->toBe('validation_failed')
-            ->and($payload['error']['meta'])->toBe(['fields' => ['target']])
+            ->and($payload['error']['code'])->toBe('node_target_required')
+            ->and($payload['error']['meta'])->toBe(['field' => 'node'])
             ->and($shell->scripts)->toBe([]);
     });
 
@@ -353,40 +327,35 @@ function createToolStartTargetWithApp(string $nodeName, string $appName, ?string
 {
     $node = Node::factory()->create([
         'name' => $nodeName,
-        'role' => 'control',
         'status' => 'active',
-        'tld' => $tld,
-    ]);
+        'tld' => $tld]);
 
     assignToolStartAppHostRole(
         $node,
-        $domain === null ? 'app-development' : 'app-production',
+        $domain === null ? 'app-dev' : 'app-prod',
         $domain === null ? ['tld' => $tld ?? 'test'] : [],
     );
 
     App::factory()->create([
         'name' => $appName,
         'domain' => $domain,
-        'node_id' => $node->id,
-    ]);
+        'node_id' => $node->id]);
 
     NodeTool::factory()->create([
         'node_id' => $node->id,
         'name' => 'caddy',
-        'expected_state' => 'installed',
-    ]);
+        'expected_state' => 'installed']);
 
     return $node;
 }
 
-function assignToolStartAppHostRole(Node $node, string $role = 'app-development', array $settings = ['tld' => 'test']): void
+function assignToolStartAppHostRole(Node $node, string $role = 'app-dev', array $settings = ['tld' => 'test']): void
 {
     NodeRoleAssignment::factory()->create([
         'node_id' => $node->id,
         'role' => $role,
         'status' => 'active',
-        'settings' => $settings,
-    ]);
+        'settings' => $settings]);
 }
 
 /**
@@ -399,17 +368,10 @@ function toolStartGatewayIdentityEnvelope(string $selfName): array
             'data' => [
                 'self' => [
                     'name' => $selfName,
-                    'role' => 'control',
-                    'status' => 'active',
-                ],
+                    'status' => 'active'],
                 'gateway' => [
                     'name' => 'gateway-1',
-                    'role' => 'gateway',
-                    'status' => 'active',
-                ],
-            ],
-        ],
-    ];
+                    'status' => 'active']]]];
 }
 
 final class ToolStartRecordingShell implements RemoteShell

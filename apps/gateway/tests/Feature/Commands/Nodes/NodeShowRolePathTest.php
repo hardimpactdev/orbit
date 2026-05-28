@@ -28,13 +28,11 @@ function nodeShowRolePathRow(array $overrides = []): array
 {
     return array_merge([
         'name' => 'app-1',
-        'role' => 'app',
         'host' => '10.6.0.7',
         'wireguard_address' => '10.6.0.7',
         'user' => 'nckrtl',
         'orbit_path' => '/home/nckrtl/orbit',
         'status' => 'active',
-        'environment' => 'development',
         'platform' => 'ubuntu_24-04',
         'created_at' => now(),
         'updated_at' => now(),
@@ -47,8 +45,6 @@ function setupNodeShowRolePathGatewayCaller(): void
 
     DB::table('nodes')->insert(nodeShowRolePathRow([
         'name' => 'local-gateway',
-        'role' => 'gateway',
-        'environment' => null,
     ]));
 }
 
@@ -83,9 +79,7 @@ describe('node:show role paths', function (): void {
                     'data' => [
                         'node' => [
                             'name' => 'gateway-1',
-                            'role' => 'gateway',
                             'status' => 'active',
-                            'environment' => null,
                             'platform' => 'ubuntu_24-04',
                             'roles' => [
                                 [
@@ -133,9 +127,7 @@ describe('node:show role paths', function (): void {
                     'data' => [
                         'node' => [
                             'name' => 'app-1',
-                            'role' => 'app',
                             'status' => 'active',
-                            'environment' => 'development',
                             'platform' => 'ubuntu_24-04',
                             'wireguard_address' => '10.6.0.7',
                             'grants' => [
@@ -213,14 +205,8 @@ describe('node:show role paths', function (): void {
             ]);
     });
 
-    it('uses the local default development app node before forwarding control caller show requests', function (): void {
+    it('requires a name before forwarding control caller show requests', function (): void {
         setupNodeShowRolePathControlCaller();
-
-        DB::table('local_node_defaults')->insert([
-            'default_node_name' => 'default-app',
-            'created_at' => now(),
-            'updated_at' => now(),
-        ]);
 
         $mock = MockClient::global([
             ShowNodeRequest::class => MockResponse::make([
@@ -228,9 +214,7 @@ describe('node:show role paths', function (): void {
                     'data' => [
                         'node' => [
                             'name' => 'default-app',
-                            'role' => 'app',
                             'status' => 'active',
-                            'environment' => 'development',
                             'platform' => 'ubuntu_24-04',
                             'wireguard_address' => '10.6.0.8',
                             'grants' => [
@@ -246,9 +230,10 @@ describe('node:show role paths', function (): void {
         $exitCode = Artisan::call('node:show', ['--json' => true]);
         $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($exitCode)->toBe(0)
-            ->and($payload['success']['data']['node']['name'])->toBe('default-app');
+        expect($exitCode)->toBe(1)
+            ->and($payload['error']['code'])->toBe('validation_failed')
+            ->and($payload['error']['meta']['field'])->toBe('name');
 
-        $mock->assertSent(fn (ShowNodeRequest $request): bool => $request->name === 'default-app');
+        $mock->assertNothingSent();
     });
 });

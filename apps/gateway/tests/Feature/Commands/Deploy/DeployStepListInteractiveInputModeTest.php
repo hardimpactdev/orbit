@@ -44,7 +44,7 @@ beforeEach(function (): void {
 
 function makeProductionAppForList(string $name = 'docs'): App
 {
-    $node = Node::factory()->create(['name' => 'list-app-node', 'role' => 'app']);
+    $node = Node::factory()->appProd()->create(['name' => 'list-app-node']);
 
     return App::factory()->create([
         'name' => $name,

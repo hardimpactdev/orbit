@@ -12,12 +12,14 @@ final class DatabaseListCommand extends GatewayCommand
 {
     use ResolvesHostContext;
 
+    #[\Override]
     protected $signature = 'database:list
         {--app= : Filter by app selector}
         {--workspace= : Filter by workspace selector}
         {--node= : Filter by node selector}
         {--json}';
 
+    #[\Override]
     protected $description = 'List database connections tracked by the registry.';
 
     public function handle(): int

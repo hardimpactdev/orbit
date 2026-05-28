@@ -26,15 +26,13 @@ describe('node role:remove', function (): void {
         setupNodeRoleGatewayCaller();
         $node = createHostedNode([
             'name' => 'client-1',
-            'role' => 'control',
-            'environment' => null,
         ]);
 
-        assignNodeRole($node, 'app-development', settings: ['tld' => 'test']);
+        assignNodeRole($node, 'app-dev', settings: ['tld' => 'test']);
 
         $exitCode = Artisan::call('node role:remove', [
             'node' => 'client-1',
-            'role' => 'app-development',
+            'role' => 'app-dev',
             '--json' => true,
         ]);
 
@@ -43,33 +41,30 @@ describe('node role:remove', function (): void {
         expect($exitCode)->toBe(1)
             ->and($payload['error']['code'])->toBe('validation_failed')
             ->and($payload['error']['meta']['field'])->toBe('force')
-            ->and($node->roleAssignments()->where('role', 'app-development')->exists())->toBeTrue();
+            ->and($node->roleAssignments()->where('role', 'app-dev')->exists())->toBeTrue();
     });
 
     it('blocks removal when dependents exist after interactive confirmation', function (): void {
         setupNodeRoleGatewayCaller();
         $node = createHostedNode([
             'name' => 'client-1',
-            'role' => 'control',
-            'environment' => null,
         ]);
 
-        assignNodeRole($node, 'app-development', settings: ['tld' => 'test']);
+        assignNodeRole($node, 'app-dev', settings: ['tld' => 'test']);
         App::factory()->create([
             'node_id' => $node->id,
-            'environment' => 'development',
         ]);
 
         /** @phpstan-ignore-next-line Pest resolves artisan() on the bound Laravel test case at runtime. */
         $this->artisan('node role:remove', [
             'node' => 'client-1',
-            'role' => 'app-development',
+            'role' => 'app-dev',
         ])
-            ->expectsConfirmation("Remove role 'app-development' from 'client-1'?", 'yes')
-            ->expectsOutputToContain("Role 'app-development' cannot be removed while dependents exist.")
+            ->expectsConfirmation("Remove role 'app-dev' from 'client-1'?", 'yes')
+            ->expectsOutputToContain("Role 'app-dev' cannot be removed while dependents exist.")
             ->assertExitCode(1);
 
-        expect($node->roleAssignments()->where('role', 'app-development')->exists())->toBeTrue();
+        expect($node->roleAssignments()->where('role', 'app-dev')->exists())->toBeTrue();
     });
 
     it('requires force when purge-data is requested', function (): void {
@@ -99,7 +94,6 @@ describe('node role:remove', function (): void {
         $node = createHostedNode([
             'name' => 'gateway-2',
             'role' => 'gateway',
-            'environment' => null,
         ]);
 
         assignNodeRole($node, 'gateway');
@@ -127,7 +121,6 @@ describe('node role:remove', function (): void {
         $node = createHostedNode([
             'name' => 'gateway-2',
             'role' => 'gateway',
-            'environment' => null,
         ]);
 
         assignNodeRole($node, 'vpn');
@@ -151,7 +144,6 @@ describe('node role:remove', function (): void {
         $node = createHostedNode([
             'name' => 'gateway-2',
             'role' => 'gateway',
-            'environment' => null,
         ]);
 
         assignNodeRole($node, 'router');
@@ -201,16 +193,14 @@ describe('node role:remove', function (): void {
             ->and(NodeTool::query()->where('node_id', $node->id)->where('name', 'postgres')->exists())->toBeFalse();
     });
 
-    it('refreshes legacy shadows so node update rejects app-only fields after removing the last app role', function (): void {
+    it('removes app-role dependents so node update rejects app-only fields after removing the last app role', function (): void {
         setupNodeRoleGatewayCaller();
         $node = createHostedNode([
             'name' => 'client-1',
-            'role' => 'app',
-            'environment' => 'development',
             'tld' => 'test',
         ]);
 
-        assignNodeRole($node, 'app-development', settings: ['tld' => 'test']);
+        assignNodeRole($node, 'app-dev', settings: ['tld' => 'test']);
         NodeAccess::query()->create([
             'consumer_node_id' => $node->id,
             'serving_node_id' => $node->id,
@@ -220,7 +210,7 @@ describe('node role:remove', function (): void {
 
         $removeExitCode = Artisan::call('node role:remove', [
             'node' => 'client-1',
-            'role' => 'app-development',
+            'role' => 'app-dev',
             '--force' => true,
             '--json' => true,
         ]);
@@ -235,8 +225,8 @@ describe('node role:remove', function (): void {
         $node->refresh();
 
         expect($removeExitCode)->toBe(0)
-            ->and($node->role)->toBe('control')
-            ->and($node->environment)->toBeNull()
+            ->and($node->isOperator())->toBeTrue()
+            ->and($node->displayRole())->toBe('operator')
             ->and($node->tld)->toBeNull()
             ->and(NodeAccess::query()
                 ->where('consumer_node_id', $node->id)
@@ -245,7 +235,7 @@ describe('node role:remove', function (): void {
             ->and($updateExitCode)->toBe(1)
             ->and($payload['error']['code'])->toBe('node.field_role_incompatible')
             ->and($payload['error']['meta']['field'])->toBe('tld')
-            ->and($payload['error']['meta']['role'])->toBe('control');
+            ->and($payload['error']['meta']['role'])->toBe('operator');
     });
 
     it('force with purge-data removes role dependents', function (): void {
@@ -365,10 +355,8 @@ describe('node role:remove', function (): void {
         setupNodeRoleGatewayCaller();
         $node = createHostedNode([
             'name' => 'client-1',
-            'role' => 'control',
-            'environment' => null,
         ]);
-        $assignment = assignNodeRole($node, 'app-development', settings: ['tld' => 'test']);
+        $assignment = assignNodeRole($node, 'app-dev', settings: ['tld' => 'test']);
 
         app()->instance(NodeRoleBaselineConverger::class, new class extends NodeRoleBaselineConverger
         {
@@ -391,7 +379,7 @@ describe('node role:remove', function (): void {
 
         $exitCode = Artisan::call('node role:remove', [
             'node' => 'client-1',
-            'role' => 'app-development',
+            'role' => 'app-dev',
             '--force' => true,
             '--json' => true,
         ]);

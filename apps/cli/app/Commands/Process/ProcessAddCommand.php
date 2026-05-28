@@ -8,6 +8,7 @@ use App\Exceptions\GatewayApiException;
 
 final class ProcessAddCommand extends ProcessGatewayCommand
 {
+    #[\Override]
     protected $signature = 'process:add
         {name? : Process name}
         {processCommand? : Command to run}
@@ -18,6 +19,7 @@ final class ProcessAddCommand extends ProcessGatewayCommand
         {--start : Start rendered runtime units after creation}
         {--json : Output JSON}';
 
+    #[\Override]
     protected $description = 'Add an app process definition.';
 
     public function handle(): int

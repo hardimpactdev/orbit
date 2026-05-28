@@ -75,7 +75,7 @@ describe('orbit caddy container', function (): void {
         ]);
     });
 
-    it('keeps the private backend port WireGuard-only when ingress is co-located with app-production', function (): void {
+    it('keeps the private backend port WireGuard-only when ingress is co-located with app-prod', function (): void {
         $container = OrbitCaddyContainer::forPublicIngress('10.6.0.50');
 
         expect($container->publishedPorts())->toBe([

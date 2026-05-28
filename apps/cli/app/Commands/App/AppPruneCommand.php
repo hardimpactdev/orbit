@@ -10,12 +10,14 @@ use function Laravel\Prompts\confirm;
 
 final class AppPruneCommand extends AppGatewayCommand
 {
+    #[\Override]
     protected $signature = 'app:prune
         {app? : App name or hostname}
         {--dry-run : Preview stale workspaces without removing}
         {--force : Confirm destructive operation without prompting}
         {--json : Output JSON}';
 
+    #[\Override]
     protected $description = 'Remove stale workspaces for an app.';
 
     public function handle(): int

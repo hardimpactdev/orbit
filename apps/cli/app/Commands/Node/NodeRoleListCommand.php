@@ -15,8 +15,10 @@ final class NodeRoleListCommand extends GatewayCommand
 {
     use ResolvesDefaultNode;
 
+    #[\Override]
     protected $name = 'node role:list';
 
+    #[\Override]
     protected $description = 'List role assignments for a node.';
 
     protected function configure(): void

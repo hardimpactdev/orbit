@@ -8,7 +8,7 @@ use App\Models\Node;
 use App\Services\RuntimeBackend\RuntimeBackendProbe;
 
 it('reports the runtime backend as available when supervisorctl responds', function (): void {
-    $node = new Node(['name' => 'app-1', 'role' => 'app']);
+    $node = new Node(['name' => 'app-1']);
     $remoteShell = new RuntimeBackendProbeRecordingRemoteShell(
         new RemoteShellResult(exitCode: 0, stdout: "4.2.5\n", stderr: '', durationMs: 1),
     );
@@ -25,7 +25,7 @@ it('reports the runtime backend as available when supervisorctl responds', funct
 });
 
 it('reports the runtime backend as unavailable when supervisorctl is missing or unreachable', function (): void {
-    $node = new Node(['name' => 'app-1', 'role' => 'app']);
+    $node = new Node(['name' => 'app-1']);
     $remoteShell = new RuntimeBackendProbeRecordingRemoteShell(
         new RemoteShellResult(exitCode: 127, stdout: '', stderr: 'missing supervisorctl', durationMs: 1),
     );

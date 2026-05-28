@@ -17,8 +17,8 @@ final class NodePermissionPresets
         return match ($name) {
             'agent-self' => $this->agentSelf(),
             'vpn-self' => $this->vpnSelf(),
-            'app-development-self' => $this->appDevelopmentSelf(),
-            'app-production-self' => $this->appProductionSelf(),
+            'app-dev-self' => $this->appDevelopmentSelf(),
+            'app-prod-self' => $this->appProductionSelf(),
             'database-self' => $this->databaseSelf(),
             'operator' => $this->operator(),
             'read-only' => $this->readOnly(),
@@ -37,8 +37,8 @@ final class NodePermissionPresets
         return [
             'agent-self',
             'vpn-self',
-            'app-development-self',
-            'app-production-self',
+            'app-dev-self',
+            'app-prod-self',
             'database-self',
             'operator',
             'read-only',
@@ -54,8 +54,8 @@ final class NodePermissionPresets
 
         return match ($roleName) {
             NodeRoleName::Vpn->value => 'vpn-self',
-            NodeRoleName::AppDevelopment->value => 'app-development-self',
-            NodeRoleName::AppProduction->value => 'app-production-self',
+            NodeRoleName::AppDevelopment->value => 'app-dev-self',
+            NodeRoleName::AppProduction->value => 'app-prod-self',
             NodeRoleName::Database->value => 'database-self',
             NodeRoleName::Agent->value => 'agent-self',
             default => null,
@@ -164,7 +164,7 @@ final class NodePermissionPresets
     }
 
     /**
-     * Preset for developer workflows on app-development nodes.
+     * Preset for developer workflows on app-dev nodes.
      *
      * @return list<string>
      */

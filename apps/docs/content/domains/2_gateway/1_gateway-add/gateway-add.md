@@ -72,7 +72,7 @@ missing or stale, use [`gateway:trust`](../2_gateway-trust/gateway-trust.md).
 provision hosts, does not mint access grants, and does not repair unrelated node
 drift.
 
-First-gateway bootstrap via `node:new --role=gateway --host=<host>
+First-gateway bootstrap via `node:new --template=gateway --host=<host>
 --operator-name=<operator-name>` already completes the onboarding for the initiating client;
 that initiating client must not run `gateway:add` afterward.
 

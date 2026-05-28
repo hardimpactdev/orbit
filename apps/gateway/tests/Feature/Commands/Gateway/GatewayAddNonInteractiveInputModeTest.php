@@ -50,7 +50,6 @@ afterEach(function (): void {
 it('selects non-interactive mode with --json flag', function (): void {
     Node::query()->create([
         'name' => 'control-1',
-        'role' => 'control',
         'status' => 'active',
         'host' => '10.6.0.8',
         'orbit_path' => '/home/orbit/orbit',
@@ -62,8 +61,7 @@ it('selects non-interactive mode with --json flag', function (): void {
         ]),
         'https://10.6.0.2/api/me' => Http::response([
             'data' => [
-                'gateway' => ['name' => 'gateway-1', 'role' => 'gateway', 'status' => 'active'],
-                'self' => ['name' => 'control-1', 'role' => 'control', 'status' => 'active', 'wg_ip' => '10.6.0.8'],
+                'self' => ['name' => 'control-1', 'roles' => [], 'status' => 'active', 'wg_ip' => '10.6.0.8'],
             ],
         ]),
     ]);
@@ -88,7 +86,6 @@ it('fails when gateway_ip is missing in non-interactive mode', function (): void
 it('derives gateway_ip in non-interactive mode when the active WireGuard network is unambiguous', function (): void {
     Node::query()->create([
         'name' => 'control-1',
-        'role' => 'control',
         'status' => 'active',
         'host' => '10.6.0.8',
         'orbit_path' => '/home/orbit/orbit',
@@ -108,8 +105,8 @@ it('derives gateway_ip in non-interactive mode when the active WireGuard network
         ]),
         'https://10.6.0.2/api/me' => Http::response([
             'data' => [
-                'gateway' => ['name' => 'gateway-1', 'role' => 'gateway', 'status' => 'active'],
-                'self' => ['name' => 'control-1', 'role' => 'control', 'status' => 'active', 'wg_ip' => '10.6.0.8'],
+                'gateway' => ['name' => 'gateway-1', 'roles' => [['role' => 'gateway', 'status' => 'active', 'settings' => []]], 'status' => 'active'],
+                'self' => ['name' => 'control-1', 'roles' => [], 'status' => 'active', 'wg_ip' => '10.6.0.8'],
             ],
         ]),
     ]);

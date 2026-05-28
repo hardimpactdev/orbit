@@ -24,7 +24,7 @@ final readonly class DoctorScopeValidator
         }
 
         if ($target instanceof Node) {
-            $targetRole = (string) ($target->role ?? '');
+            $targetRole = $target->displayRole();
             $allowed = $runner->categoriesForNode($target);
 
             foreach ($families as $family) {

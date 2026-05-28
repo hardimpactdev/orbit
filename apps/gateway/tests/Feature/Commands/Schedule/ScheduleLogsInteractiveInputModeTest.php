@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Models\App;
 use App\Models\Node;
+use App\Models\NodeRoleAssignment;
 use App\Models\Schedule;
 use App\Models\ScheduleRun;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -15,17 +16,27 @@ uses(RefreshDatabase::class);
 
 function createScheduleLogsInteractiveNode(string $role = 'gateway'): Node
 {
-    return Node::factory()->create([
+    $node = Node::factory()->create([
         'name' => "local-{$role}",
-        'role' => $role,
         'host' => '10.6.0.1',
         'wireguard_address' => '10.6.0.1',
     ]);
+
+    if ($role === 'gateway') {
+        NodeRoleAssignment::factory()->create([
+            'node_id' => $node->id,
+            'role' => 'gateway',
+            'status' => 'active',
+            'settings' => [],
+        ]);
+    }
+
+    return $node;
 }
 
 it('prompts for name in interactive mode when name is missing', function (): void {
     createScheduleLogsInteractiveNode('gateway');
-    $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app']);
+    $node = Node::factory()->appDev()->create(['name' => 'app-1']);
     $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
     Schedule::factory()->forApp($app)->create([
         'name' => 'my-schedule',
@@ -46,7 +57,7 @@ it('prompts for name in interactive mode when name is missing', function (): voi
 
 it('does not prompt when name argument is supplied in interactive mode', function (): void {
     createScheduleLogsInteractiveNode('gateway');
-    $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app']);
+    $node = Node::factory()->appDev()->create(['name' => 'app-1']);
     $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
     Schedule::factory()->forApp($app)->create([
         'name' => 'my-schedule',

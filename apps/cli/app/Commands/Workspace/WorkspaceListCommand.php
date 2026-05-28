@@ -12,11 +12,13 @@ final class WorkspaceListCommand extends GatewayCommand
 {
     use ResolvesHostContext;
 
+    #[\Override]
     protected $signature = 'workspace:list
         {--app= : Filter by parent app}
         {--node= : Filter by owning node}
         {--json}';
 
+    #[\Override]
     protected $description = 'List workspaces registered in the gateway registry.';
 
     public function handle(): int

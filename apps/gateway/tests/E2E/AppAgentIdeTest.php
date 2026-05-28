@@ -34,7 +34,7 @@ PHP;
 
     $topology->ssh(
         'gateway',
-        "cd {$checkout} && orbit tinker --execute=".escapeshellarg($script),
+        "cd {$checkout} && php apps/gateway/artisan tinker --execute=".escapeshellarg($script),
         timeoutSeconds: 120,
     );
 }
@@ -115,7 +115,7 @@ it('sets app agent IDE intent from a operator caller through the gateway api', f
 
         $gatewayRecord = $topology->ssh(
             'gateway',
-            'cd '.escapeshellarg($topology->checkout('gateway')).' && orbit tinker --execute='.escapeshellarg("echo json_encode([
+            'cd '.escapeshellarg($topology->checkout('gateway')).' && php apps/gateway/artisan tinker --execute='.escapeshellarg("echo json_encode([
                 'agent_ide_config' => \\App\\Models\\App::query()->where('name', '{$name}')->value('agent_ide_config'),
             ], JSON_THROW_ON_ERROR);"),
             timeoutSeconds: 120,

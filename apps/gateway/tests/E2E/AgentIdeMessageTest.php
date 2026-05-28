@@ -36,7 +36,6 @@ $app = \App\Models\App::query()->updateOrCreate(
     ['name' => 'docs'],
     [
         'node_id' => $node->id,
-        'environment' => 'development',
         'domain' => null,
         'path' => '/srv/docs',
         'document_root' => 'public',
@@ -79,7 +78,7 @@ PHP;
 
     $topology->ssh(
         'gateway',
-        'cd '.escapeshellarg($topology->checkout('gateway')).' && orbit tinker --execute='.escapeshellarg($script),
+        'cd '.escapeshellarg($topology->checkout('gateway')).' && php apps/gateway/artisan tinker --execute='.escapeshellarg($script),
         timeoutSeconds: 120,
     );
 }

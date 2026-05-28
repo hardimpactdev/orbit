@@ -78,16 +78,12 @@ class PinNodeHostKeysCommand extends Command
         return Node::query()
             ->whereNotNull('host')
             ->where('host', '<>', '')
-            ->where(function ($query): void {
-                $query
-                    ->where('role', 'app')
-                    ->orWhereHas('roleAssignments', function ($query): void {
-                        $query->whereIn('role', [
-                            NodeRoleName::AppDevelopment->value,
-                            NodeRoleName::AppProduction->value,
-                            NodeRoleName::Agent->value,
-                        ]);
-                    });
+            ->whereHas('roleAssignments', function ($query): void {
+                $query->whereIn('role', [
+                    NodeRoleName::AppDevelopment->value,
+                    NodeRoleName::AppProduction->value,
+                    NodeRoleName::Agent->value,
+                ]);
             })
             ->orderBy('name')
             ->get();

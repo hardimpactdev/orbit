@@ -50,7 +50,7 @@ beforeEach(function (): void {
 
 function makeProductionAppForLog(string $name = 'docs'): App
 {
-    $node = Node::factory()->create(['name' => 'log-app-node', 'role' => 'app']);
+    $node = Node::factory()->appProd()->create(['name' => 'log-app-node']);
 
     return App::factory()->create([
         'name' => $name,

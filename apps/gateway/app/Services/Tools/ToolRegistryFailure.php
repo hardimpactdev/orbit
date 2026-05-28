@@ -91,4 +91,13 @@ final readonly class ToolRegistryFailure
             meta: [],
         );
     }
+
+    public static function nodeTargetRequired(): self
+    {
+        return new self(
+            code: 'node_target_required',
+            message: 'A node target is required. Provide --node.',
+            meta: ['field' => 'node'],
+        );
+    }
 }

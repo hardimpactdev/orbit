@@ -656,7 +656,7 @@ SH;
         $user = $this->userForRole($role);
         $path = $this->orbitPathForRole($role);
 
-        E2ECommand::ssh($instance, $user, new SshKeyPair('/dev/null', '/dev/null'), "cd {$path} && orbit migrate --force", timeoutSeconds: 120);
+        E2ECommand::ssh($instance, $user, new SshKeyPair('/dev/null', '/dev/null'), "cd {$path} && php apps/gateway/artisan migrate --force", timeoutSeconds: 120);
     }
 
     private function orbitPathForRole(string $role): string
@@ -691,7 +691,7 @@ SH;
             : $networkPlan->ipForRole('gateway');
 
         E2ECommand::ssh($gateway, 'orbit', $key, sprintf(
-            'cd /home/orbit/orbit && orbit orbit:internal:bootstrap-gateway-local gateway %s --skip-runtime-install --skip-wireguard-install',
+            'cd /home/orbit/orbit && php apps/gateway/artisan orbit:internal:bootstrap-gateway-local gateway %s --skip-runtime-install --skip-wireguard-install',
             $gatewayWireGuardAddress,
         ), timeoutSeconds: 120);
         $this->refreshRuntimeSource($gateway->name(), 'gateway');
@@ -739,13 +739,13 @@ SH;
             $tasks['dev'] = implode(' && ', [
                 'cd /home/orbit/orbit',
                 sprintf(
-                    'orbit orbit:internal:bake-app-node app-dev-1 --role=app-dev --host=%s%s --wireguard-address=%s --tld=test --gateway-endpoint=%s --user=orbit',
+                    'php apps/gateway/artisan orbit:internal:bake-app-node app-dev-1 --role=app-dev --host=%s%s --wireguard-address=%s --tld=test --gateway-endpoint=%s --user=orbit',
                     $host,
                     $hostKeyHost,
                     $wireGuardAddress,
                     $gatewayEndpoint,
                 ),
-                'orbit tinker --execute='.escapeshellarg(E2EPreparedTopologyRegistry::appdevDatabaseAndRedisPhp()),
+                'php apps/gateway/artisan tinker --execute='.escapeshellarg(E2EPreparedTopologyRegistry::appdevDatabaseAndRedisPhp()),
             ]);
         }
 
@@ -754,7 +754,7 @@ SH;
             $hostKeyHost = $this->hostKeyHostOption('ingress', $networkPlan, $mode);
             $wireGuardAddress = $this->wireGuardAddressForRole('ingress', $networkPlan, $mode);
             $tasks['ingress'] = sprintf(
-                'cd /home/orbit/orbit && orbit orbit:internal:bake-ingress-node edge-1 --host=%s%s --wireguard-address=%s --gateway-endpoint=%s --user=orbit',
+                'cd /home/orbit/orbit && php apps/gateway/artisan orbit:internal:bake-ingress-node edge-1 --host=%s%s --wireguard-address=%s --gateway-endpoint=%s --user=orbit',
                 $host,
                 $hostKeyHost,
                 $wireGuardAddress,
@@ -771,7 +771,7 @@ SH;
 
             if ($prodHostsIngress) {
                 $commands[] = sprintf(
-                    'orbit orbit:internal:bake-ingress-node app-prod-1 --host=%s%s --wireguard-address=%s --gateway-endpoint=%s --user=orbit',
+                    'php apps/gateway/artisan orbit:internal:bake-ingress-node app-prod-1 --host=%s%s --wireguard-address=%s --gateway-endpoint=%s --user=orbit',
                     $host,
                     $hostKeyHost,
                     $wireGuardAddress,
@@ -787,7 +787,7 @@ SH;
             $ingress = $ingressNode !== null ? " --ingress-node={$ingressNode}" : '';
 
             $commands[] = sprintf(
-                'orbit orbit:internal:bake-app-node app-prod-1 --role=app-prod --host=%s%s --wireguard-address=%s --gateway-endpoint=%s --user=orbit%s',
+                'php apps/gateway/artisan orbit:internal:bake-app-node app-prod-1 --role=app-prod --host=%s%s --wireguard-address=%s --gateway-endpoint=%s --user=orbit%s',
                 $host,
                 $hostKeyHost,
                 $wireGuardAddress,
@@ -802,7 +802,7 @@ SH;
             $hostKeyHost = $this->hostKeyHostOption('agent', $networkPlan, $mode);
             $wireGuardAddress = $this->wireGuardAddressForRole('agent', $networkPlan, $mode);
             $tasks['agent'] = sprintf(
-                'cd /home/orbit/orbit && orbit orbit:internal:bake-agent-node agent-1 --host=%s%s --wireguard-address=%s --tld=agent --gateway-endpoint=%s --user=orbit',
+                'cd /home/orbit/orbit && php apps/gateway/artisan orbit:internal:bake-agent-node agent-1 --host=%s%s --wireguard-address=%s --tld=agent --gateway-endpoint=%s --user=orbit',
                 $host,
                 $hostKeyHost,
                 $wireGuardAddress,
@@ -887,6 +887,9 @@ SH;
         $sourcePath = $this->orbitPathForRole($role);
         $user = $this->userForRole($role);
         $gatewayUrl = 'http://'.$this->gatewayEndpoint($networkPlan, $mode);
+        $jsonConfigDir = "/home/{$user}/.config/orbit";
+        $jsonConfigPath = "{$jsonConfigDir}/config.json";
+        $jsonBody = $this->cliJsonConfigBody($gatewayUrl);
 
         return implode(' && ', [
             sprintf('cd %s', escapeshellarg("{$sourcePath}/apps/cli")),
@@ -895,9 +898,39 @@ SH;
             'mv .env.tmp .env',
             sprintf("printf 'ORBIT_GATEWAY_URL=%%s\\n' %s >> .env", escapeshellarg($gatewayUrl)),
             sprintf('chown %s:%s %s', escapeshellarg($user), escapeshellarg($user), escapeshellarg("{$sourcePath}/apps/cli/.env")),
+            // D11 + D13 dual-write: also drop the JSON config skeleton on the operator user's
+            // home so the CLI provider closure can resolve gateway URL + WireGuard self-mode
+            // without depending on apps/cli/.env. The .env write above stays during the
+            // migration window so existing tests keep working.
+            sprintf('mkdir -p %s', escapeshellarg($jsonConfigDir)),
+            sprintf('chmod 0700 %s', escapeshellarg($jsonConfigDir)),
+            sprintf('printf %s > %s', escapeshellarg($jsonBody), escapeshellarg($jsonConfigPath)),
+            sprintf('chmod 0600 %s', escapeshellarg($jsonConfigPath)),
+            sprintf('chown -R %s:%s %s', escapeshellarg($user), escapeshellarg($user), escapeshellarg($jsonConfigDir)),
             sprintf('cd %s', escapeshellarg($sourcePath)),
-            'orbit tinker --execute='.escapeshellarg($this->clientGatewaySettingsPhp($mode, $networkPlan)),
+            'php apps/gateway/artisan tinker --execute='.escapeshellarg($this->clientGatewaySettingsPhp($mode, $networkPlan)),
         ]);
+    }
+
+    private function cliJsonConfigBody(string $gatewayUrl): string
+    {
+        return json_encode([
+            'schema_version' => 1,
+            'active_gateway' => 'default',
+            'gateways' => [
+                'default' => [
+                    'url' => $gatewayUrl,
+                    'wireguard_ip' => null,
+                    'ca_pem_path' => null,
+                    'ca_sha256' => null,
+                    'ca_fingerprint' => null,
+                    'timeout' => 30,
+                    'self_mode' => 'wireguard_https',
+                ],
+            ],
+            'defaults' => ['node' => null, 'profile' => null],
+            'meta' => ['imported_from' => 'docker-e2e-topology', 'imported_at' => date(DATE_ATOM)],
+        ], JSON_THROW_ON_ERROR | JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
     }
 
     private function clientGatewaySettingsPhp(string $mode, DockerTopologyNetworkPlan $networkPlan): string

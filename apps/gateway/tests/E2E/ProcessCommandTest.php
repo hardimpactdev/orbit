@@ -126,7 +126,7 @@ it('manages process intent runtime lifecycle and bounded logs on a prepared app 
 
         $registry = $topology->ssh(
             'gateway',
-            "cd {$checkout} && orbit tinker --execute=".escapeshellarg("echo \\App\\Models\\Process::query()->where('name', '{$process}')->whereHas('app', fn (\$query) => \$query->where('name', '{$app}'))->exists() ? 'present' : 'absent';"),
+            "cd {$checkout} && php apps/gateway/artisan tinker --execute=".escapeshellarg("echo \\App\\Models\\Process::query()->where('name', '{$process}')->whereHas('app', fn (\$query) => \$query->where('name', '{$app}'))->exists() ? 'present' : 'absent';"),
             timeoutSeconds: 120,
         );
 
@@ -153,7 +153,6 @@ $node->update(['status' => 'active', 'platform' => 'ubuntu']);
     ['name' => '__APP__'],
     [
         'node_id' => $node->id,
-        'environment' => 'development',
         'path' => '__PATH__',
         'document_root' => 'public',
         'php_version' => '8.5',
@@ -172,7 +171,7 @@ PHP;
 
     $topology->ssh(
         'gateway',
-        'cd '.escapeshellarg($topology->checkout('gateway')).' && orbit tinker --execute='.escapeshellarg($script),
+        'cd '.escapeshellarg($topology->checkout('gateway')).' && php apps/gateway/artisan tinker --execute='.escapeshellarg($script),
         timeoutSeconds: 120,
     );
 }
@@ -201,7 +200,7 @@ function processCommandCleanup(E2ETopologyHarness $topology, string $app, string
 
     $topology->ssh(
         'gateway',
-        "cd {$checkout} && orbit tinker --execute=".escapeshellarg($script).' >/dev/null 2>&1 || true',
+        "cd {$checkout} && php apps/gateway/artisan tinker --execute=".escapeshellarg($script).' >/dev/null 2>&1 || true',
         timeoutSeconds: 120,
     );
 }

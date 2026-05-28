@@ -16,7 +16,6 @@ it('updates the local checkout and every active non-control remote node from the
     DB::table('nodes')->insert([
         [
             'name' => 'gateway',
-            'role' => 'gateway',
             'host' => 'gateway',
             'orbit_path' => '/home/gateway/orbit',
             'status' => 'active',
@@ -25,7 +24,6 @@ it('updates the local checkout and every active non-control remote node from the
         ],
         [
             'name' => 'mini',
-            'role' => 'control',
             'host' => 'mini',
             'orbit_path' => '/Users/nckrtl/orbit',
             'status' => 'active',
@@ -34,7 +32,6 @@ it('updates the local checkout and every active non-control remote node from the
         ],
         [
             'name' => 'beast',
-            'role' => 'app',
             'host' => 'beast',
             'orbit_path' => '/home/nckrtl/orbit',
             'status' => 'active',
@@ -43,9 +40,20 @@ it('updates the local checkout and every active non-control remote node from the
         ],
     ]);
 
-    DB::table('node_roles')->insert([
+    DB::table('node_role')->insert([
+        'node_id' => DB::table('nodes')->where('name', 'gateway')->value('id'),
+        'role' => 'gateway',
+        'status' => 'active',
+        'settings' => json_encode([], JSON_THROW_ON_ERROR),
+        'last_error' => null,
+        'converged_at' => now(),
+        'created_at' => now(),
+        'updated_at' => now(),
+    ]);
+
+    DB::table('node_role')->insert([
         'node_id' => DB::table('nodes')->where('name', 'beast')->value('id'),
-        'role' => 'app-development',
+        'role' => 'app-dev',
         'status' => 'active',
         'settings' => json_encode(['tld' => 'test'], JSON_THROW_ON_ERROR),
         'last_error' => null,
@@ -104,11 +112,10 @@ it('updates the local checkout and every active non-control remote node from the
     }
 });
 
-it('excludes legacy control identities from remote update targets', function (): void {
+it('excludes role-free operator identities from remote update targets', function (): void {
     DB::table('nodes')->insert([
         [
             'name' => 'gateway',
-            'role' => 'gateway',
             'host' => 'gateway',
             'orbit_path' => '/home/gateway/orbit',
             'status' => 'active',
@@ -117,7 +124,6 @@ it('excludes legacy control identities from remote update targets', function ():
         ],
         [
             'name' => 'mini',
-            'role' => 'control',
             'host' => 'mini',
             'orbit_path' => '/Users/nckrtl/orbit',
             'status' => 'active',

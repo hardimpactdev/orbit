@@ -9,6 +9,7 @@ use App\Exceptions\GatewayApiException;
 
 final class NodeUpdateCommand extends GatewayCommand
 {
+    #[\Override]
     protected $signature = 'node:update
         {name? : Node name to update}
         {--host= : New SSH/bootstrap endpoint}
@@ -17,6 +18,7 @@ final class NodeUpdateCommand extends GatewayCommand
         {--public-ipv6= : Public IPv6 address metadata}
         {--json : Output JSON}';
 
+    #[\Override]
     protected $description = 'Update node registry metadata and role-owned settings.';
 
     public function handle(): int

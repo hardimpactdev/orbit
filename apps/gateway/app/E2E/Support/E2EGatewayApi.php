@@ -4,8 +4,6 @@ declare(strict_types=1);
 
 namespace App\E2E\Support;
 
-use App\Models\Node;
-
 final readonly class E2EGatewayApi
 {
     public static function seedOperatorIdentity(
@@ -20,15 +18,12 @@ final readonly class E2EGatewayApi
         $gatewayIpValue = var_export($gatewayIp, true);
         $operatorWireGuardIpValue = var_export($operatorWireGuardIp, true);
         $orbitPathValue = var_export("/home/{$operatorUser}/orbit", true);
-        $operatorStorageRoleValue = var_export(Node::OPERATOR_STORAGE_ROLE, true);
 
         $php = <<<PHP
 \\App\\Models\\Node::query()->updateOrCreate(
     ['name' => 'operator-1'],
     array_merge(
         [
-            'role' => {$operatorStorageRoleValue},
-            'environment' => null,
             'tld' => null,
             'platform' => 'unknown',
             'host' => {$operatorIpValue},
@@ -45,7 +40,7 @@ PHP;
 
         E2ECommand::orbit(
             $gateway,
-            'cd /home/orbit/orbit && orbit tinker --execute='.escapeshellarg($php),
+            'cd /home/orbit/orbit && php apps/gateway/artisan tinker --execute='.escapeshellarg($php),
             'Could not seed operator identity on gateway',
         );
     }
@@ -188,7 +183,7 @@ SH;
 
         E2ECommand::orbit(
             $gateway,
-            "cd {$orbitPathArgument} && mkdir -p apps/gateway/storage/framework/cache/data apps/gateway/storage/framework/sessions apps/gateway/storage/framework/testing apps/gateway/storage/framework/views apps/gateway/storage/logs && ([ -f apps/gateway/.env ] || cp apps/gateway/.env.example apps/gateway/.env) && grep -Ev '^(ORBIT_IS_GATEWAY|ORBIT_E2E_TRUST_WIREGUARD_HEADER|VIEW_COMPILED_PATH|ORBIT_E2E_TOPOLOGY_PROVIDER)=' apps/gateway/.env > apps/gateway/.env.tmp && mv apps/gateway/.env.tmp apps/gateway/.env && printf '\\nORBIT_IS_GATEWAY=true\\nORBIT_E2E_TRUST_WIREGUARD_HEADER=true\\nVIEW_COMPILED_PATH=%s\\n' {$viewCompiledPath} >> apps/gateway/.env && {$dockerTopologyProviderEnv} && ".self::appKeyCommand().' && orbit tinker --execute='.escapeshellarg("app(\\App\\Services\\Ca\\OrbitCaService::class)->issueLeaf({$certKeyValue}, {$certSansValue}); echo 'issued';"),
+            "cd {$orbitPathArgument} && mkdir -p apps/gateway/storage/framework/cache/data apps/gateway/storage/framework/sessions apps/gateway/storage/framework/testing apps/gateway/storage/framework/views apps/gateway/storage/logs && ([ -f apps/gateway/.env ] || cp apps/gateway/.env.example apps/gateway/.env) && grep -Ev '^(ORBIT_IS_GATEWAY|ORBIT_E2E_TRUST_WIREGUARD_HEADER|VIEW_COMPILED_PATH|ORBIT_E2E_TOPOLOGY_PROVIDER)=' apps/gateway/.env > apps/gateway/.env.tmp && mv apps/gateway/.env.tmp apps/gateway/.env && printf '\\nORBIT_IS_GATEWAY=true\\nORBIT_E2E_TRUST_WIREGUARD_HEADER=true\\nVIEW_COMPILED_PATH=%s\\n' {$viewCompiledPath} >> apps/gateway/.env && {$dockerTopologyProviderEnv} && ".self::appKeyCommand().' && php apps/gateway/artisan tinker --execute='.escapeshellarg("app(\\App\\Services\\Ca\\OrbitCaService::class)->issueLeaf({$certKeyValue}, {$certSansValue}); echo 'issued';"),
             'Could not issue gateway leaf certificate',
         );
 
@@ -267,7 +262,7 @@ SH;
         $scriptPathArgument = escapeshellarg($scriptPath);
         $httpRouterPathArgument = escapeshellarg($httpRouterPath);
 
-        $certificateCommand = "mkdir -p apps/gateway/storage/framework/cache/data apps/gateway/storage/framework/sessions apps/gateway/storage/framework/testing apps/gateway/storage/framework/views apps/gateway/storage/logs && ([ -f apps/gateway/.env ] || cp apps/gateway/.env.example apps/gateway/.env) && grep -Ev '^(ORBIT_IS_GATEWAY|ORBIT_E2E_TRUST_WIREGUARD_HEADER|VIEW_COMPILED_PATH|ORBIT_E2E_TOPOLOGY_PROVIDER)=' apps/gateway/.env > apps/gateway/.env.tmp && mv apps/gateway/.env.tmp apps/gateway/.env && printf '\\nORBIT_IS_GATEWAY=true\\nORBIT_E2E_TRUST_WIREGUARD_HEADER=true\\nVIEW_COMPILED_PATH=%s\\n' {$viewCompiledPath} >> apps/gateway/.env && {$dockerTopologyProviderEnv} && ".self::appKeyCommand().' && orbit tinker --execute='.escapeshellarg("app(\\App\\Services\\Ca\\OrbitCaService::class)->issueLeaf({$certKeyValue}, {$certSansValue}); echo 'issued';");
+        $certificateCommand = "mkdir -p apps/gateway/storage/framework/cache/data apps/gateway/storage/framework/sessions apps/gateway/storage/framework/testing apps/gateway/storage/framework/views apps/gateway/storage/logs && ([ -f apps/gateway/.env ] || cp apps/gateway/.env.example apps/gateway/.env) && grep -Ev '^(ORBIT_IS_GATEWAY|ORBIT_E2E_TRUST_WIREGUARD_HEADER|VIEW_COMPILED_PATH|ORBIT_E2E_TOPOLOGY_PROVIDER)=' apps/gateway/.env > apps/gateway/.env.tmp && mv apps/gateway/.env.tmp apps/gateway/.env && printf '\\nORBIT_IS_GATEWAY=true\\nORBIT_E2E_TRUST_WIREGUARD_HEADER=true\\nVIEW_COMPILED_PATH=%s\\n' {$viewCompiledPath} >> apps/gateway/.env && {$dockerTopologyProviderEnv} && ".self::appKeyCommand().' && php apps/gateway/artisan tinker --execute='.escapeshellarg("app(\\App\\Services\\Ca\\OrbitCaService::class)->issueLeaf({$certKeyValue}, {$certSansValue}); echo 'issued';");
 
         E2ECommand::exec(
             $gateway,
@@ -323,7 +318,7 @@ SH;
         E2ECommand::exec(
             $gateway,
             sprintf(
-                'sudo docker exec --detach --env %s --workdir %s %s orbit tinker --execute=%s',
+                'sudo docker exec --detach --env %s --workdir %s %s php apps/gateway/artisan tinker --execute=%s',
                 escapeshellarg("ORBIT_SOURCE_PATH={$orbitPath}"),
                 $orbitPathArgument,
                 $runtimeContainer,
@@ -373,21 +368,34 @@ SH;
         $nameValue = var_export($name, true);
 
         $php = <<<PHP
-echo json_encode(\\App\\Models\\Node::query()->where('name', {$nameValue})->firstOrFail()->only([
+\$node = \\App\\Models\\Node::query()
+    ->with('roleAssignments')
+    ->where('name', {$nameValue})
+    ->firstOrFail();
+
+echo json_encode(\$node->only([
     'name',
-    'role',
-    'environment',
     'tld',
     'host',
     'wireguard_address',
     'gateway_endpoint',
-        'user',
-    ]), JSON_THROW_ON_ERROR);
+    'user',
+]) + [
+    'roles' => \$node->roleAssignments
+        ->where('status', \\App\\Enums\\Nodes\\NodeRoleStatus::Active->value)
+        ->sortBy('role')
+        ->values()
+        ->map(fn (\\App\\Models\\NodeRoleAssignment \$assignment): array => [
+            'role' => \$assignment->role,
+            'status' => \$assignment->status,
+        ])
+        ->all(),
+], JSON_THROW_ON_ERROR);
 PHP;
 
         $result = E2ECommand::orbit(
             $gateway,
-            'cd /home/orbit/orbit && orbit tinker --execute='.escapeshellarg($php),
+            'cd /home/orbit/orbit && php apps/gateway/artisan tinker --execute='.escapeshellarg($php),
             "Could not read gateway node {$name}",
         );
 
@@ -681,12 +689,26 @@ PHP;
             $parts = [
                 'orbit node:new',
                 escapeshellarg((string) ($input['name'] ?? '')),
-                '--role='.escapeshellarg((string) ($input['role'] ?? '')),
                 '--host='.escapeshellarg((string) ($input['host'] ?? '')),
-                '--environment='.escapeshellarg((string) ($input['environment'] ?? '')),
                 '--user='.escapeshellarg((string) ($input['user'] ?? 'root')),
                 '--json',
             ];
+
+            if (($input['template'] ?? null) !== null && $input['template'] !== '') {
+                $parts[] = '--template='.escapeshellarg((string) $input['template']);
+            }
+
+            if (($input['roles'] ?? null) !== null && $input['roles'] !== '') {
+                $roles = is_array($input['roles'])
+                    ? implode(',', array_map('strval', $input['roles']))
+                    : (string) $input['roles'];
+
+                $parts[] = '--roles='.escapeshellarg($roles);
+            }
+
+            if (($input['operator'] ?? false) === true) {
+                $parts[] = '--operator';
+            }
         
             if (($input['tld'] ?? null) !== null && $input['tld'] !== '') {
                 $parts[] = '--tld='.escapeshellarg((string) $input['tld']);
@@ -711,6 +733,16 @@ PHP;
 
         function run_node_update(string $name, array $input): array
         {
+            if (($input['environment'] ?? null) !== null && $input['environment'] !== '') {
+                return [1, json_encode([
+                    'error' => [
+                        'code' => 'validation_failed',
+                        'message' => "Field 'environment' is not supported for node:update.",
+                        'meta' => ['field' => 'environment'],
+                    ],
+                ], JSON_THROW_ON_ERROR)];
+            }
+
             $parts = [
                 'orbit node:update',
                 escapeshellarg($name),
@@ -719,7 +751,6 @@ PHP;
 
             foreach ([
                 'host' => 'host',
-                'environment' => 'environment',
                 'public_ipv4' => 'public-ipv4',
                 'public_ipv6' => 'public-ipv6',
             ] as $field => $option) {
@@ -1021,7 +1052,7 @@ PHP;
                 'data' => [
                     'self' => [
                         'name' => 'operator-1',
-                        'role' => 'operator',
+                        'roles' => [],
                         'status' => 'active',
                         'platform' => 'unknown',
                         'addresses' => [
@@ -1030,7 +1061,15 @@ PHP;
                     ],
                     'gateway' => [
                         'name' => 'gateway',
-                        'role' => 'gateway',
+                        'roles' => [
+                            [
+                                'role' => 'gateway',
+                                'status' => 'active',
+                                'settings' => [],
+                                'last_error' => null,
+                                'converged_at' => null,
+                            ],
+                        ],
                         'status' => 'active',
                         'platform' => 'unknown',
                         'addresses' => [
@@ -1128,8 +1167,21 @@ PHP;
                 }
         
                 $parts = ['orbit node:list --json'];
+
+                if (($query['environment'] ?? null) !== null && $query['environment'] !== '') {
+                    respond($connection, 422, json_encode([
+                        'error' => [
+                            'code' => 'validation_failed',
+                            'message' => 'Node environment filters are not supported. Filter by role instead.',
+                            'meta' => ['field' => 'environment'],
+                        ],
+                    ], JSON_THROW_ON_ERROR));
+                    fclose($connection);
+
+                    continue;
+                }
         
-                foreach (['role', 'environment'] as $option) {
+                foreach (['role'] as $option) {
                     $value = $query[$option] ?? null;
         
                     if (is_string($value) && $value !== '') {

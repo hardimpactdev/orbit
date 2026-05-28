@@ -74,7 +74,7 @@ trait ResolvesHostContext
                 }
             }
 
-            $parent = dirname($cwd);
+            $parent = dirname((string) $cwd);
 
             if ($parent === $cwd) {
                 break;

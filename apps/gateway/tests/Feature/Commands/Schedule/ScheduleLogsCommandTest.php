@@ -25,25 +25,34 @@ afterEach(function (): void {
 
 function createScheduleLogsLocalNode(string $role = 'gateway'): Node
 {
-    return Node::factory()->create([
+    $node = Node::factory()->create([
         'name' => "local-{$role}",
-        'role' => $role,
         'host' => '10.6.0.1',
         'wireguard_address' => '10.6.0.1',
     ]);
+
+    if ($role === 'gateway') {
+        NodeRoleAssignment::factory()->create([
+            'node_id' => $node->id,
+            'role' => 'gateway',
+            'status' => 'active',
+            'settings' => [],
+        ]);
+    }
+
+    return $node;
 }
 
 function createScheduleLogsAppHostNode(array $attributes = []): Node
 {
     $node = Node::factory()->create([
-        'role' => 'app',
         'status' => 'active',
         ...$attributes,
     ]);
 
     NodeRoleAssignment::factory()->create([
         'node_id' => $node->id,
-        'role' => 'app-development',
+        'role' => 'app-dev',
         'status' => 'active',
         'settings' => ['tld' => 'test'],
     ]);
@@ -195,7 +204,6 @@ it('exposes schedule logs over the authenticated gateway API without external pr
 
     $caller = Node::factory()->create([
         'name' => 'control-1',
-        'role' => 'control',
         'wireguard_address' => '10.6.0.80',
     ]);
     $node = createScheduleLogsAppHostNode();

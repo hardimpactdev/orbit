@@ -22,11 +22,9 @@ function apiUpdateNodeRow(array $overrides = []): array
 {
     return array_merge([
         'name' => 'app-1',
-        'role' => 'app',
         'host' => '10.6.0.7',
         'orbit_path' => '/home/nckrtl/orbit',
         'status' => 'active',
-        'environment' => 'development',
         'platform' => 'ubuntu_24-04',
         'wireguard_address' => '10.6.0.7',
         'public_ipv4' => null,
@@ -36,24 +34,26 @@ function apiUpdateNodeRow(array $overrides = []): array
     ], $overrides);
 }
 
-function createUpdateCallerNode(string $role = 'control'): int
+function createUpdateCallerNode(string $name = 'operator-caller', ?string $role = null): int
 {
-    return (int) DB::table('nodes')->insertGetId(apiUpdateNodeRow([
-        'name' => "{$role}-caller",
-        'role' => $role,
+    $nodeId = (int) DB::table('nodes')->insertGetId(apiUpdateNodeRow([
+        'name' => $name,
         'host' => UPDATE_CALLER_WG_IP,
-        'environment' => $role === 'app' ? 'development' : null,
         'wireguard_address' => UPDATE_CALLER_WG_IP,
     ]));
+
+    if ($role !== null) {
+        assignNodeUpdateRole($nodeId, $role);
+    }
+
+    return $nodeId;
 }
 
 function createUpdateGatewayNode(): int
 {
     $gatewayId = (int) DB::table('nodes')->insertGetId(apiUpdateNodeRow([
         'name' => 'gateway-1',
-        'role' => 'gateway',
         'host' => '10.6.0.2',
-        'environment' => null,
         'wireguard_address' => '10.6.0.2',
     ]));
 
@@ -69,6 +69,18 @@ function assignNodeUpdateRole(int $nodeId, string $role, string $status = 'activ
         'role' => $role,
         'status' => $status,
     ]);
+}
+
+/**
+ * @param  array<string, mixed>  $overrides
+ */
+function createApiUpdateNode(array $overrides = [], string $role = 'app-dev'): int
+{
+    $nodeId = (int) DB::table('nodes')->insertGetId(apiUpdateNodeRow($overrides));
+
+    assignNodeUpdateRole($nodeId, $role);
+
+    return $nodeId;
 }
 
 /**
@@ -126,11 +138,10 @@ describe('NodeUpdateController', function (): void {
         $callerId = createUpdateCallerNode();
         $gatewayId = createUpdateGatewayNode();
         grantUpdateGatewayAccess($callerId, $gatewayId);
-        DB::table('nodes')->insert(apiUpdateNodeRow());
+        createApiUpdateNode();
 
         $response = putUpdateNodeJson('/api/nodes/app-1', [
             'host' => '10.6.0.8',
-            'environment' => 'production',
             'public_ipv4' => '203.0.113.10',
         ], ['REMOTE_ADDR' => UPDATE_CALLER_WG_IP]);
 
@@ -139,7 +150,7 @@ describe('NodeUpdateController', function (): void {
                 'success' => [
                     'data' => [
                         'name' => 'app-1',
-                        'changed' => ['host', 'environment', 'public_ipv4'],
+                        'changed' => ['host', 'public_ipv4'],
                         'action' => 'updated',
                     ],
                 ],
@@ -148,7 +159,6 @@ describe('NodeUpdateController', function (): void {
         $node = DB::table('nodes')->where('name', 'app-1')->first();
 
         expect($node->host)->toBe('10.6.0.8')
-            ->and($node->environment)->toBe('production')
             ->and($node->public_ipv4)->toBe('203.0.113.10');
     });
 
@@ -156,11 +166,10 @@ describe('NodeUpdateController', function (): void {
         $callerId = createUpdateCallerNode();
         $gatewayId = createUpdateGatewayNode();
         grantUpdateGatewayAccess($callerId, $gatewayId);
-        $targetId = (int) DB::table('nodes')->insertGetId(apiUpdateNodeRow());
+        $targetId = createApiUpdateNode();
 
         $response = putUpdateNodeJson('/api/nodes/app-1', [
             'host' => '10.6.0.8',
-            'environment' => 'production',
             'public_ipv4' => '203.0.113.10',
         ], ['REMOTE_ADDR' => UPDATE_CALLER_WG_IP]);
 
@@ -175,12 +184,12 @@ describe('NodeUpdateController', function (): void {
         expect($entry->description)->toBe('Node app-1 updated');
         expect($entry->properties->get('type'))->toBe('write');
         expect($entry->properties->get('target_node'))->toBe('app-1');
-        expect($entry->properties->get('changed_fields'))->toBe(['host', 'environment', 'public_ipv4']);
+        expect($entry->properties->get('changed_fields'))->toBe(['host', 'public_ipv4']);
     });
 
     it('updates a node directly for a gateway caller', function (): void {
-        assignNodeUpdateRole(createUpdateCallerNode('gateway'), 'gateway');
-        DB::table('nodes')->insert(apiUpdateNodeRow());
+        createUpdateCallerNode('gateway-caller', 'gateway');
+        createApiUpdateNode();
 
         $response = putUpdateNodeJson('/api/nodes/app-1', [
             'host' => '10.6.0.8',
@@ -191,8 +200,8 @@ describe('NodeUpdateController', function (): void {
     });
 
     it('rejects callers without node update grants before mutation', function (): void {
-        createUpdateCallerNode('gateway');
-        DB::table('nodes')->insert(apiUpdateNodeRow());
+        createUpdateCallerNode();
+        createApiUpdateNode();
 
         $response = putUpdateNodeJson('/api/nodes/app-1', [
             'host' => '10.6.0.8',
@@ -211,7 +220,7 @@ describe('NodeUpdateController', function (): void {
         $callerId = createUpdateCallerNode();
         $gatewayId = createUpdateGatewayNode();
         grantUpdateGatewayAccess($callerId, $gatewayId);
-        DB::table('nodes')->insert(apiUpdateNodeRow());
+        createApiUpdateNode();
 
         $response = putUpdateNodeJson('/api/nodes/app-1', [
             'host' => '10.6.0.7',
@@ -233,7 +242,7 @@ describe('NodeUpdateController', function (): void {
         $callerId = createUpdateCallerNode();
         $gatewayId = createUpdateGatewayNode();
         grantUpdateGatewayAccess($callerId, $gatewayId);
-        DB::table('nodes')->insert(apiUpdateNodeRow());
+        createApiUpdateNode();
 
         $response = putUpdateNodeJson('/api/nodes/app-1', [
             'host' => '10.6.0.8',
@@ -249,7 +258,7 @@ describe('NodeUpdateController', function (): void {
     });
 
     it('rejects unauthenticated requests', function (): void {
-        DB::table('nodes')->insert(apiUpdateNodeRow());
+        createApiUpdateNode();
 
         $response = putUpdateNodeJson('/api/nodes/app-1', ['host' => '10.6.0.8']);
 
@@ -260,8 +269,8 @@ describe('NodeUpdateController', function (): void {
     });
 
     it('updates for app callers with explicit target node update grants', function (): void {
-        $callerId = createUpdateCallerNode('app');
-        $targetId = (int) DB::table('nodes')->insertGetId(apiUpdateNodeRow());
+        $callerId = createUpdateCallerNode('app-dev-caller', 'app-dev');
+        $targetId = createApiUpdateNode();
         grantUpdateNodeAccess($callerId, $targetId, ['node:update']);
 
         $response = putUpdateNodeJson('/api/nodes/app-1', ['host' => '10.6.0.8'], ['REMOTE_ADDR' => UPDATE_CALLER_WG_IP]);
@@ -273,8 +282,8 @@ describe('NodeUpdateController', function (): void {
     });
 
     it('rejects database callers before mutation', function (): void {
-        createUpdateCallerNode('database');
-        DB::table('nodes')->insert(apiUpdateNodeRow());
+        createUpdateCallerNode('database-caller', 'database');
+        createApiUpdateNode();
 
         $response = putUpdateNodeJson('/api/nodes/app-1', ['host' => '10.6.0.8'], ['REMOTE_ADDR' => UPDATE_CALLER_WG_IP]);
 
@@ -287,12 +296,12 @@ describe('NodeUpdateController', function (): void {
         expect(DB::table('nodes')->where('name', 'app-1')->value('host'))->toBe('10.6.0.7');
     });
 
-    it('updates for database callers with gateway admin grants even when the legacy role shadow is control', function (): void {
+    it('updates for database callers with gateway admin grants', function (): void {
         $callerId = createUpdateCallerNode();
         assignNodeUpdateRole($callerId, 'database');
         $gatewayId = createUpdateGatewayNode();
         grantUpdateGatewayAccess($callerId, $gatewayId);
-        DB::table('nodes')->insert(apiUpdateNodeRow());
+        createApiUpdateNode();
 
         $response = putUpdateNodeJson('/api/nodes/app-1', ['host' => '10.6.0.8'], ['REMOTE_ADDR' => UPDATE_CALLER_WG_IP]);
 
@@ -305,7 +314,7 @@ describe('NodeUpdateController', function (): void {
     it('rejects control callers without gateway access', function (): void {
         createUpdateCallerNode();
         createUpdateGatewayNode();
-        DB::table('nodes')->insert(apiUpdateNodeRow());
+        createApiUpdateNode();
 
         $response = putUpdateNodeJson('/api/nodes/app-1', ['host' => '10.6.0.8'], ['REMOTE_ADDR' => UPDATE_CALLER_WG_IP]);
 
@@ -320,14 +329,12 @@ describe('NodeUpdateController', function (): void {
         $callerId = createUpdateCallerNode();
         $staleGatewayId = (int) DB::table('nodes')->insertGetId(apiUpdateNodeRow([
             'name' => 'alpha-gateway',
-            'role' => 'gateway',
             'host' => '10.6.0.3',
-            'environment' => null,
             'wireguard_address' => '10.6.0.3',
         ]));
         grantUpdateGatewayAccess($callerId, $staleGatewayId);
         createUpdateGatewayNode();
-        DB::table('nodes')->insert(apiUpdateNodeRow());
+        createApiUpdateNode();
 
         $response = putUpdateNodeJson('/api/nodes/app-1', ['host' => '10.6.0.8'], ['REMOTE_ADDR' => UPDATE_CALLER_WG_IP]);
 
@@ -344,7 +351,7 @@ describe('NodeUpdateController', function (): void {
         $callerId = createUpdateCallerNode();
         $gatewayId = createUpdateGatewayNode();
         grantUpdateGatewayAccess($callerId, $gatewayId);
-        DB::table('nodes')->insert(apiUpdateNodeRow());
+        createApiUpdateNode();
 
         $response = putUpdateNodeJson('/api/nodes/app-1', [], ['REMOTE_ADDR' => UPDATE_CALLER_WG_IP]);
 
@@ -354,17 +361,17 @@ describe('NodeUpdateController', function (): void {
             ->assertJsonPath('error.meta.field', 'fields');
     });
 
-    it('returns validation error for invalid environment', function (): void {
+    it('rejects retired environment updates', function (): void {
         $callerId = createUpdateCallerNode();
         $gatewayId = createUpdateGatewayNode();
         grantUpdateGatewayAccess($callerId, $gatewayId);
-        DB::table('nodes')->insert(apiUpdateNodeRow());
+        createApiUpdateNode();
 
         $response = putUpdateNodeJson('/api/nodes/app-1', ['environment' => 'staging'], ['REMOTE_ADDR' => UPDATE_CALLER_WG_IP]);
 
         $response->assertUnprocessable()
             ->assertJsonPath('error.code', 'validation_failed')
-            ->assertJsonPath('error.message', "Invalid value for --environment: 'staging'. Allowed values: development, production.")
+            ->assertJsonPath('error.message', "Field 'environment' is not supported for node:update.")
             ->assertJsonPath('error.meta.field', 'environment');
     });
 
@@ -373,12 +380,12 @@ describe('NodeUpdateController', function (): void {
         $gatewayId = createUpdateGatewayNode();
         grantUpdateGatewayAccess($callerId, $gatewayId);
 
-        $response = putUpdateNodeJson('/api/nodes/gateway-1', ['environment' => 'production'], ['REMOTE_ADDR' => UPDATE_CALLER_WG_IP]);
+        $response = putUpdateNodeJson('/api/nodes/gateway-1', ['tld' => 'test'], ['REMOTE_ADDR' => UPDATE_CALLER_WG_IP]);
 
         $response->assertUnprocessable()
             ->assertJsonPath('error.code', 'node.field_role_incompatible')
-            ->assertJsonPath('error.message', "The field 'environment' is not valid for node 'gateway-1' (role: gateway).")
-            ->assertJsonPath('error.meta.field', 'environment')
+            ->assertJsonPath('error.message', "The field 'tld' is not valid for node 'gateway-1' (role: gateway).")
+            ->assertJsonPath('error.meta.field', 'tld')
             ->assertJsonPath('error.meta.name', 'gateway-1')
             ->assertJsonPath('error.meta.role', 'gateway');
     });
@@ -400,7 +407,7 @@ describe('NodeUpdateController', function (): void {
         $callerId = createUpdateCallerNode();
         $gatewayId = createUpdateGatewayNode();
         grantUpdateGatewayAccess($callerId, $gatewayId);
-        DB::table('nodes')->insert(apiUpdateNodeRow(['tld' => null]));
+        createApiUpdateNode(['tld' => null], 'app-dev');
 
         $response = putUpdateNodeJson('/api/nodes/app-1', ['tld' => 'test'], ['REMOTE_ADDR' => UPDATE_CALLER_WG_IP]);
 
@@ -414,7 +421,7 @@ describe('NodeUpdateController', function (): void {
         $callerId = createUpdateCallerNode();
         $gatewayId = createUpdateGatewayNode();
         grantUpdateGatewayAccess($callerId, $gatewayId);
-        DB::table('nodes')->insert(apiUpdateNodeRow());
+        createApiUpdateNode();
 
         $response = putUpdateNodeJson('/api/nodes/app-1', ['tld' => 'Invalid_TLD!'], ['REMOTE_ADDR' => UPDATE_CALLER_WG_IP]);
 
@@ -428,7 +435,7 @@ describe('NodeUpdateController', function (): void {
         $callerId = createUpdateCallerNode();
         $gatewayId = createUpdateGatewayNode();
         grantUpdateGatewayAccess($callerId, $gatewayId);
-        DB::table('nodes')->insert(apiUpdateNodeRow(['environment' => 'production']));
+        createApiUpdateNode(role: 'app-prod');
 
         $response = putUpdateNodeJson('/api/nodes/app-1', ['tld' => 'test'], ['REMOTE_ADDR' => UPDATE_CALLER_WG_IP]);
 
@@ -441,8 +448,8 @@ describe('NodeUpdateController', function (): void {
         $callerId = createUpdateCallerNode();
         $gatewayId = createUpdateGatewayNode();
         grantUpdateGatewayAccess($callerId, $gatewayId);
-        DB::table('nodes')->insert(apiUpdateNodeRow(['tld' => null]));
-        DB::table('nodes')->insert(apiUpdateNodeRow(['name' => 'app-2', 'tld' => 'test']));
+        createApiUpdateNode(['tld' => null], 'app-dev');
+        createApiUpdateNode(['name' => 'app-2', 'tld' => 'test'], 'app-dev');
 
         $response = putUpdateNodeJson('/api/nodes/app-1', ['tld' => 'test'], ['REMOTE_ADDR' => UPDATE_CALLER_WG_IP]);
 

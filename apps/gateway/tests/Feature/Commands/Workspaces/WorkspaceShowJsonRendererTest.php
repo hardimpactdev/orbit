@@ -16,7 +16,7 @@ beforeEach(function (): void {
 
 describe('workspace:show JSON renderer contract', function (): void {
     it('selects JSON renderer and returns registry-only metadata', function (): void {
-        $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'tld' => 'test']);
+        $node = Node::factory()->appDev()->create(['name' => 'app-1', 'tld' => 'test']);
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id, 'domain' => null]);
         Workspace::factory()->create(['name' => 'feature-docs', 'app_id' => $app->id]);
 

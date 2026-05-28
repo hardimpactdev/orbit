@@ -15,16 +15,14 @@ uses(RefreshDatabase::class);
 
 const WORKSPACE_LOG_CALLER_WG_IP = '10.6.0.96';
 
-function createWorkspaceLogCallerNode(array $overrides = []): Node
+function createWorkspaceLogCallerNode(array $overrides = [], ?string $role = null): Node
 {
     $attributes = array_merge([
         'name' => 'log-caller',
-        'role' => 'control',
         'host' => WORKSPACE_LOG_CALLER_WG_IP,
-        'wireguard_address' => WORKSPACE_LOG_CALLER_WG_IP,
-    ], $overrides);
+        'wireguard_address' => WORKSPACE_LOG_CALLER_WG_IP], $overrides);
 
-    if ($attributes['role'] === 'gateway') {
+    if ($role === 'gateway') {
         return createTestGatewayNode($attributes);
     }
 
@@ -39,8 +37,7 @@ function grantWorkspaceLogAccess(Node $caller, Node $appNode): void
         'permissions' => json_encode(['workspace:log'], JSON_THROW_ON_ERROR),
         'custom_permissions' => json_encode([], JSON_THROW_ON_ERROR),
         'created_at' => now(),
-        'updated_at' => now(),
-    ]);
+        'updated_at' => now()]);
 }
 
 function createVisibleWorkspaceLogRun(Node $appNode): WorkspaceRun
@@ -52,8 +49,7 @@ function createVisibleWorkspaceLogRun(Node $appNode): WorkspaceRun
         'workspace_id' => $workspace->id,
         'status' => 'failed',
         'started_at' => '2026-05-02 10:00:00',
-        'completed_at' => '2026-05-02 10:00:12',
-    ]);
+        'completed_at' => '2026-05-02 10:00:12']);
     WorkspaceRunStep::factory()->create([
         'workspace_run_id' => $run->id,
         'workspace_step_id' => $step->id,
@@ -61,8 +57,7 @@ function createVisibleWorkspaceLogRun(Node $appNode): WorkspaceRun
         'exit_code' => 1,
         'output' => 'failure output',
         'started_at' => '2026-05-02 10:00:03',
-        'completed_at' => '2026-05-02 10:00:11',
-    ]);
+        'completed_at' => '2026-05-02 10:00:11']);
 
     return $run;
 }
@@ -70,7 +65,7 @@ function createVisibleWorkspaceLogRun(Node $appNode): WorkspaceRun
 describe('WorkspaceLogController', function (): void {
     it('returns captured logs for visible workspace runs', function (): void {
         $caller = createWorkspaceLogCallerNode();
-        $node = createTestAppHostNode(['name' => 'app-1', 'role' => 'app']);
+        $node = createTestAppHostNode(['name' => 'app-1']);
         grantWorkspaceLogAccess($caller, $node);
         $run = createVisibleWorkspaceLogRun($node);
 
@@ -84,7 +79,7 @@ describe('WorkspaceLogController', function (): void {
     });
 
     it('returns validation errors for invalid run ids', function (): void {
-        createWorkspaceLogCallerNode(['role' => 'gateway']);
+        createWorkspaceLogCallerNode(role: 'gateway');
 
         $response = $this->call('GET', '/api/workspaces/runs/nope/log', [], [], [], ['REMOTE_ADDR' => WORKSPACE_LOG_CALLER_WG_IP]);
 
@@ -94,7 +89,7 @@ describe('WorkspaceLogController', function (): void {
     });
 
     it('returns run-not-found for missing runs', function (): void {
-        createWorkspaceLogCallerNode(['role' => 'gateway']);
+        createWorkspaceLogCallerNode(role: 'gateway');
 
         $response = $this->call('GET', '/api/workspaces/runs/999/log', [], [], [], ['REMOTE_ADDR' => WORKSPACE_LOG_CALLER_WG_IP]);
 
@@ -105,7 +100,7 @@ describe('WorkspaceLogController', function (): void {
 
     it('returns authorization failure when the caller has no workspace visibility', function (): void {
         createWorkspaceLogCallerNode();
-        $node = createTestAppHostNode(['role' => 'app']);
+        $node = createTestAppHostNode();
         $run = createVisibleWorkspaceLogRun($node);
 
         $response = $this->call('GET', "/api/workspaces/runs/{$run->id}/log", [], [], [], ['REMOTE_ADDR' => WORKSPACE_LOG_CALLER_WG_IP]);

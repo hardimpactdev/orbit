@@ -12,11 +12,13 @@ final class DeployHistoryCommand extends GatewayCommand
 {
     use ResolvesHostContext;
 
+    #[\Override]
     protected $signature = 'deploy:history
         {app : Production app name or domain}
         {--limit= : Number of runs to return (default 50, hard cap 500)}
         {--json}';
 
+    #[\Override]
     protected $description = 'List deployment runs for a production app.';
 
     public function handle(): int

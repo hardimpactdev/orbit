@@ -21,11 +21,9 @@ function apiShowNodeRow(array $overrides = []): array
 {
     return array_merge([
         'name' => 'app-1',
-        'role' => 'app',
         'host' => '10.6.0.7',
         'orbit_path' => '/home/nckrtl/orbit',
         'status' => 'active',
-        'environment' => 'development',
         'platform' => 'ubuntu_24-04',
         'wireguard_address' => '10.6.0.7',
         'agent_ide_config' => null,
@@ -38,7 +36,6 @@ function createShowCallerNode(): void
 {
     DB::table('nodes')->insert([
         'name' => 'caller',
-        'role' => 'control',
         'host' => SHOW_CALLER_WG_IP,
         'orbit_path' => '/home/test/orbit',
         'status' => 'active',
@@ -50,7 +47,7 @@ function createShowCallerNode(): void
 
 function assignApiShowNodeRole(string $nodeName, string $role, array $settings = []): void
 {
-    DB::table('node_roles')->insert([
+    DB::table('node_role')->insert([
         'node_id' => DB::table('nodes')->where('name', $nodeName)->value('id'),
         'role' => $role,
         'status' => 'active',
@@ -93,13 +90,11 @@ describe('NodeShowController', function (): void {
         DB::table('nodes')->insert([
             apiShowNodeRow([
                 'name' => 'app-1',
-                'role' => 'app',
-                'environment' => 'development',
                 'platform' => 'ubuntu_24-04',
                 'status' => 'active',
             ]),
         ]);
-        assignApiShowNodeRole('app-1', 'app-development', ['tld' => 'test']);
+        assignApiShowNodeRole('app-1', 'app-dev', ['tld' => 'test']);
 
         $response = getApiNodeJson('/api/nodes/app-1', ['REMOTE_ADDR' => SHOW_CALLER_WG_IP]);
 
@@ -109,13 +104,11 @@ describe('NodeShowController', function (): void {
                     'data' => [
                         'node' => [
                             'name' => 'app-1',
-                            'role' => 'app',
                             'status' => 'active',
-                            'environment' => 'development',
                             'platform' => 'ubuntu_24-04',
                             'roles' => [
                                 [
-                                    'role' => 'app-development',
+                                    'role' => 'app-dev',
                                     'status' => 'active',
                                     'settings' => ['tld' => 'test'],
                                     'last_error' => null,
@@ -142,8 +135,6 @@ describe('NodeShowController', function (): void {
         DB::table('nodes')->insert([
             apiShowNodeRow([
                 'name' => 'gateway-1',
-                'role' => 'gateway',
-                'environment' => null,
                 'host' => '10.6.0.2',
                 'wireguard_address' => '10.6.0.2',
             ]),
@@ -159,7 +150,6 @@ describe('NodeShowController', function (): void {
         $response = getApiNodeJson('/api/nodes/gateway-1', ['REMOTE_ADDR' => SHOW_CALLER_WG_IP]);
 
         $response->assertOk()
-            ->assertJsonPath('success.data.node.role', 'gateway')
             ->assertJsonPath('success.data.node.roles.1.role', 'vpn')
             ->assertJsonPath('success.data.node.roles.1.settings.public_endpoint', 'vpn.example.test')
             ->assertJsonPath('success.data.node.roles.1.settings.wireguard_cidr', '10.44.0.0/24')
@@ -172,7 +162,6 @@ describe('NodeShowController', function (): void {
         DB::table('nodes')->insert([
             apiShowNodeRow([
                 'name' => 'app-1',
-                'role' => 'app',
             ]),
         ]);
 
@@ -207,35 +196,34 @@ describe('NodeShowController', function (): void {
             ]);
     });
 
-    it('returns null environment for non-app nodes', function (): void {
+    it('does not serialize node environment fields', function (): void {
         DB::table('nodes')->insert([
             apiShowNodeRow([
                 'name' => 'gateway-1',
-                'role' => 'gateway',
-                'environment' => null,
             ]),
         ]);
+        assignApiShowNodeRole('gateway-1', 'gateway');
 
         $response = getApiNodeJson('/api/nodes/gateway-1', ['REMOTE_ADDR' => SHOW_CALLER_WG_IP]);
 
-        $response->assertOk()
-            ->assertJsonPath('success.data.node.environment', null);
+        $response->assertOk();
+
+        expect($response->json('success.data.node'))->not->toHaveKey('environment');
     });
 
-    it('derives environment from active app role assignments', function (): void {
+    it('keeps app role environment out of node serialization', function (): void {
         DB::table('nodes')->insert([
             apiShowNodeRow([
                 'name' => 'control-app',
-                'role' => 'control',
-                'environment' => null,
             ]),
         ]);
-        assignApiShowNodeRole('control-app', 'app-production');
+        assignApiShowNodeRole('control-app', 'app-prod');
 
         $response = getApiNodeJson('/api/nodes/control-app', ['REMOTE_ADDR' => SHOW_CALLER_WG_IP]);
 
-        $response->assertOk()
-            ->assertJsonPath('success.data.node.environment', 'production');
+        $response->assertOk();
+
+        expect($response->json('success.data.node'))->not->toHaveKey('environment');
     });
 
     it('defaults platform to unknown when not set', function (): void {
@@ -271,13 +259,12 @@ describe('NodeShowController', function (): void {
         DB::table('nodes')->insert([
             apiShowNodeRow([
                 'name' => 'gateway-1',
-                'role' => 'gateway',
-                'environment' => null,
                 'platform' => 'ubuntu_24-04',
                 'status' => 'active',
                 'wireguard_address' => '10.6.0.2',
             ]),
         ]);
+        assignApiShowNodeRole('gateway-1', 'gateway');
 
         $response = getApiNodeJson('/api/nodes/gateway-1', ['REMOTE_ADDR' => SHOW_CALLER_WG_IP]);
 
@@ -287,11 +274,16 @@ describe('NodeShowController', function (): void {
                     'data' => [
                         'node' => [
                             'name' => 'gateway-1',
-                            'role' => 'gateway',
                             'status' => 'active',
-                            'environment' => null,
                             'platform' => 'ubuntu_24-04',
-                            'roles' => [],
+                            'roles' => [
+                                [
+                                    'role' => 'gateway',
+                                    'status' => 'active',
+                                    'settings' => [],
+                                    'last_error' => null,
+                                ],
+                            ],
                             'addresses' => [
                                 'wireguard' => '10.6.0.2',
                             ],
@@ -327,17 +319,12 @@ describe('NodeShowController', function (): void {
         DB::table('nodes')->insert([
             apiShowNodeRow([
                 'name' => 'app-1',
-                'role' => 'app',
             ]),
             apiShowNodeRow([
                 'name' => 'control-1',
-                'role' => 'control',
-                'environment' => null,
             ]),
             apiShowNodeRow([
                 'name' => 'control-2',
-                'role' => 'control',
-                'environment' => null,
             ]),
         ]);
 
@@ -362,7 +349,6 @@ describe('NodeShowController', function (): void {
         DB::table('nodes')->insert([
             apiShowNodeRow([
                 'name' => 'existing-app',
-                'role' => 'app',
             ]),
         ]);
 

@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Models\Node;
+use App\Models\NodeRoleAssignment;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Spatie\Activitylog\Models\Activity;
 
@@ -12,12 +13,19 @@ const ACTIVITY_SHOW_CALLER_WG_IP = '10.6.0.98';
 
 function createActivityShowCallerNode(): Node
 {
-    return Node::factory()->create([
+    $node = Node::factory()->create([
         'name' => 'caller',
-        'role' => 'gateway',
         'host' => ACTIVITY_SHOW_CALLER_WG_IP,
         'wireguard_address' => ACTIVITY_SHOW_CALLER_WG_IP,
     ]);
+
+    NodeRoleAssignment::factory()->create([
+        'node_id' => $node->id,
+        'role' => 'gateway',
+        'status' => 'active',
+    ]);
+
+    return $node;
 }
 
 function createShowActivityEntry(string $type, string $effect, Node $actor, ?string $correlation = null): Activity
@@ -40,6 +48,30 @@ function createShowActivityEntry(string $type, string $effect, Node $actor, ?str
 }
 
 describe('ActivityShowController', function (): void {
+    it('requires activity read authorization on the gateway', function (): void {
+        $gateway = createTestGatewayNode([
+            'name' => 'gateway-1',
+            'host' => '10.6.0.2',
+            'wireguard_address' => '10.6.0.2',
+        ]);
+
+        Node::factory()->create([
+            'name' => 'control-1',
+            'host' => ACTIVITY_SHOW_CALLER_WG_IP,
+            'wireguard_address' => ACTIVITY_SHOW_CALLER_WG_IP,
+            'status' => 'active',
+        ]);
+
+        $activity = createShowActivityEntry('node.created', 'write', $gateway);
+
+        $response = $this->call('GET', "/api/activity/{$activity->id}", [], [], [], ['REMOTE_ADDR' => ACTIVITY_SHOW_CALLER_WG_IP]);
+
+        $response->assertForbidden()
+            ->assertJsonPath('error.code', 'authorization_failed')
+            ->assertJsonPath('error.meta.missing_permission', 'activity:read')
+            ->assertJsonPath('error.meta.serving_node', 'gateway-1');
+    });
+
     it('shows one activity with details and related entries ordered oldest first', function (): void {
         $caller = createActivityShowCallerNode();
         $correlation = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';

@@ -12,6 +12,7 @@ final class WorkspaceHistoryCommand extends GatewayCommand
 {
     use ResolvesHostContext;
 
+    #[\Override]
     protected $signature = 'workspace:history
         {name? : Workspace name}
         {--app= : Parent app slug}
@@ -20,6 +21,7 @@ final class WorkspaceHistoryCommand extends GatewayCommand
         {--until= : ISO 8601 exclusive upper started_at bound}
         {--json}';
 
+    #[\Override]
     protected $description = 'Show workspace run history.';
 
     public function handle(): int

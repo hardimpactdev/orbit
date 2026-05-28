@@ -11,7 +11,6 @@ final readonly class E2EOperatorIdentity
         $php = <<<'PHP'
 \App\Models\Node::query()
     ->where('name', 'operator-1')
-    ->where('role', \App\Models\Node::OPERATOR_STORAGE_ROLE)
     ->delete();
 PHP;
 

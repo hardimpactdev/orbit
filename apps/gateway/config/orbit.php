@@ -18,4 +18,8 @@ return [
         'api_token' => env('CLOUDFLARE_API_TOKEN'),
         'api_email' => env('CLOUDFLARE_API_EMAIL'),
     ],
+
+    'operation_runs' => [
+        'retention_days' => env('ORBIT_OPERATION_RUNS_RETENTION_DAYS', 90),
+    ],
 ];

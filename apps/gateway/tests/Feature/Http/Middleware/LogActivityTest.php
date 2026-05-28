@@ -194,15 +194,12 @@ final class FakeDoctrineController implements Loggable
 
 describe('LogActivity middleware', function (): void {
     beforeEach(function (): void {
-        Node::query()->insert([
+        Node::factory()->gateway()->create([
             'name' => 'gw',
-            'role' => 'gateway',
             'host' => '10.6.0.1',
             'orbit_path' => '/home/test/orbit',
             'status' => 'active',
             'wireguard_address' => '10.6.0.1',
-            'created_at' => now(),
-            'updated_at' => now(),
         ]);
 
         Route::middleware([WireGuardIdentity::class, LogActivity::class])
@@ -213,15 +210,12 @@ describe('LogActivity middleware', function (): void {
     });
 
     it('logs an entry with causer hydrated from the authenticated node', function (): void {
-        DB::table('nodes')->insert([
+        Node::factory()->operator()->create([
             'name' => 'caller',
-            'role' => 'control',
             'host' => LOG_TEST_WG_IP,
             'orbit_path' => '/home/test/orbit',
             'status' => 'active',
             'wireguard_address' => LOG_TEST_WG_IP,
-            'created_at' => now(),
-            'updated_at' => now(),
         ]);
 
         $this
@@ -242,15 +236,12 @@ describe('LogActivity middleware', function (): void {
     });
 
     it('resumes correlation from X-Orbit-Request-Id header', function (): void {
-        DB::table('nodes')->insert([
+        Node::factory()->operator()->create([
             'name' => 'caller',
-            'role' => 'control',
             'host' => LOG_TEST_WG_IP,
             'orbit_path' => '/home/test/orbit',
             'status' => 'active',
             'wireguard_address' => LOG_TEST_WG_IP,
-            'created_at' => now(),
-            'updated_at' => now(),
         ]);
 
         $this
@@ -264,15 +255,12 @@ describe('LogActivity middleware', function (): void {
     });
 
     it('generates a fresh batch uuid when no header is supplied', function (): void {
-        DB::table('nodes')->insert([
+        Node::factory()->operator()->create([
             'name' => 'caller',
-            'role' => 'control',
             'host' => LOG_TEST_WG_IP,
             'orbit_path' => '/home/test/orbit',
             'status' => 'active',
             'wireguard_address' => LOG_TEST_WG_IP,
-            'created_at' => now(),
-            'updated_at' => now(),
         ]);
 
         $this
@@ -285,15 +273,12 @@ describe('LogActivity middleware', function (): void {
     });
 
     it('does not log when controller does not implement Loggable', function (): void {
-        DB::table('nodes')->insert([
+        Node::factory()->operator()->create([
             'name' => 'caller',
-            'role' => 'control',
             'host' => LOG_TEST_WG_IP,
             'orbit_path' => '/home/test/orbit',
             'status' => 'active',
             'wireguard_address' => LOG_TEST_WG_IP,
-            'created_at' => now(),
-            'updated_at' => now(),
         ]);
 
         Route::middleware([WireGuardIdentity::class, LogActivity::class])
@@ -308,15 +293,12 @@ describe('LogActivity middleware', function (): void {
     });
 
     it('logs destructive effects', function (): void {
-        DB::table('nodes')->insert([
+        Node::factory()->operator()->create([
             'name' => 'caller',
-            'role' => 'control',
             'host' => LOG_TEST_WG_IP,
             'orbit_path' => '/home/test/orbit',
             'status' => 'active',
             'wireguard_address' => LOG_TEST_WG_IP,
-            'created_at' => now(),
-            'updated_at' => now(),
         ]);
 
         Route::middleware([WireGuardIdentity::class, LogActivity::class])
@@ -335,15 +317,12 @@ describe('LogActivity middleware', function (): void {
     });
 
     it('uses the doctrine Loggable method names when writing activity', function (): void {
-        DB::table('nodes')->insert([
+        Node::factory()->operator()->create([
             'name' => 'caller',
-            'role' => 'control',
             'host' => LOG_TEST_WG_IP,
             'orbit_path' => '/home/test/orbit',
             'status' => 'active',
             'wireguard_address' => LOG_TEST_WG_IP,
-            'created_at' => now(),
-            'updated_at' => now(),
         ]);
 
         $this

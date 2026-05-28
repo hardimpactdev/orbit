@@ -24,10 +24,8 @@ function createToolInstallJsonLocalNode(string $role = 'gateway'): Node
 {
     return Node::factory()->create([
         'name' => "tool-install-json-{$role}",
-        'role' => $role,
         'host' => '10.9.0.1',
-        'wireguard_address' => '10.9.0.1',
-    ]);
+        'wireguard_address' => '10.9.0.1']);
 }
 
 function configureToolInstallJsonControlGateway(): void
@@ -38,22 +36,20 @@ function configureToolInstallJsonControlGateway(): void
 
     LocalGatewaySettings::current()->fill([
         'gateway_url' => 'https://10.9.0.1',
-        'ca_pem_path' => '/dev/null',
-    ])->save();
+        'ca_pem_path' => '/dev/null'])->save();
 }
 
 describe('tool:install JSON renderer', function (): void {
     it('selects the JSON envelope renderer and emits the documented tool entity', function (): void {
         createToolInstallJsonLocalNode('gateway');
-        createTestAppHostNode(['name' => 'app-json-install-1', 'role' => 'app', 'status' => 'active']);
+        createTestAppHostNode(['name' => 'app-json-install-1', 'status' => 'active']);
         app()->instance(RemoteShell::class, new ToolInstallJsonRecordingShell);
 
         $exitCode = Artisan::call('tool:install', [
             'tool' => 'redis',
             '--node' => 'app-json-install-1',
             '--status' => 'running',
-            '--json' => true,
-        ]);
+            '--json' => true]);
         $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
 
         expect($exitCode)->toBe(0)
@@ -64,19 +60,17 @@ describe('tool:install JSON renderer', function (): void {
                 'name',
                 'node',
                 'state',
-                'version',
-            ])
+                'version'])
             ->and($payload['success']['data']['tool'])->toMatchArray([
                 'name' => 'redis',
                 'node' => 'app-json-install-1',
                 'state' => 'running',
-                'version' => null,
-            ]);
+                'version' => null]);
     });
 
     it('renders unsupported status as validation_failed before side effects', function (): void {
         createToolInstallJsonLocalNode('gateway');
-        createTestAppHostNode(['name' => 'app-json-install-1', 'role' => 'app', 'status' => 'active']);
+        createTestAppHostNode(['name' => 'app-json-install-1', 'status' => 'active']);
         $shell = new ToolInstallJsonRecordingShell;
         app()->instance(RemoteShell::class, $shell);
 
@@ -84,8 +78,7 @@ describe('tool:install JSON renderer', function (): void {
             'tool' => 'redis',
             '--node' => 'app-json-install-1',
             '--status' => 'foo',
-            '--json' => true,
-        ]);
+            '--json' => true]);
         $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
 
         expect($exitCode)->toBe(1)
@@ -93,15 +86,14 @@ describe('tool:install JSON renderer', function (): void {
             ->and($payload['error']['meta'])->toBe([
                 'field' => 'status',
                 'value' => 'foo',
-                'reason' => 'unsupported_value',
-            ])
+                'reason' => 'unsupported_value'])
             ->and(NodeTool::query()->count())->toBe(0)
             ->and($shell->scripts)->toBe([]);
     });
 
     it('rejects expected-version as an unknown option before side effects', function (): void {
         createToolInstallJsonLocalNode('gateway');
-        createTestAppHostNode(['name' => 'app-json-install-1', 'role' => 'app', 'status' => 'active']);
+        createTestAppHostNode(['name' => 'app-json-install-1', 'status' => 'active']);
         $shell = new ToolInstallJsonRecordingShell;
         app()->instance(RemoteShell::class, $shell);
 
@@ -109,8 +101,7 @@ describe('tool:install JSON renderer', function (): void {
             'tool' => 'redis',
             '--node' => 'app-json-install-1',
             '--expected-version' => '1.0.0',
-            '--json' => true,
-        ]))->toThrow(InvalidOptionException::class, 'The "--expected-version" option does not exist.');
+            '--json' => true]))->toThrow(InvalidOptionException::class, 'The "--expected-version" option does not exist.');
 
         expect(NodeTool::query()->count())->toBe(0)
             ->and($shell->scripts)->toBe([]);
@@ -118,7 +109,7 @@ describe('tool:install JSON renderer', function (): void {
 
     it('requires a target source in non-interactive JSON mode before side effects', function (): void {
         createToolInstallJsonLocalNode('gateway');
-        createTestAppHostNode(['name' => 'app-json-install-1', 'role' => 'app', 'status' => 'active']);
+        createTestAppHostNode(['name' => 'app-json-install-1', 'status' => 'active']);
         $shell = new ToolInstallJsonRecordingShell;
         app()->instance(RemoteShell::class, $shell);
 
@@ -126,8 +117,8 @@ describe('tool:install JSON renderer', function (): void {
         $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
 
         expect($exitCode)->toBe(1)
-            ->and($payload['error']['code'])->toBe('validation_failed')
-            ->and($payload['error']['meta'])->toBe(['fields' => ['target']])
+            ->and($payload['error']['code'])->toBe('node_target_required')
+            ->and($payload['error']['meta'])->toBe(['field' => 'node'])
             ->and(NodeTool::query()->count())->toBe(0)
             ->and($shell->scripts)->toBe([]);
     });
@@ -143,19 +134,13 @@ describe('tool:install JSON renderer', function (): void {
                             'name' => 'redis',
                             'node' => 'app-json-install-1',
                             'state' => 'installed',
-                            'version' => null,
-                        ],
-                    ],
-                    'meta' => [],
-                ],
-            ], 200),
-        ]);
+                            'version' => null]],
+                    'meta' => []]], 200)]);
 
         $exitCode = Artisan::call('tool:install', [
             'tool' => 'redis',
             '--node' => 'app-json-install-1',
-            '--json' => true,
-        ]);
+            '--json' => true]);
         $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
 
         expect($exitCode)->toBe(0)
@@ -163,22 +148,19 @@ describe('tool:install JSON renderer', function (): void {
 
         $mock->assertSent(fn (InstallToolRequest $request): bool => $request->body()->all() === [
             'node' => 'app-json-install-1',
-            'status' => 'installed',
-        ]);
+            'status' => 'installed']);
     });
 
     it('preserves structured gateway errors in the JSON envelope', function (array $error, int $status): void {
         configureToolInstallJsonControlGateway();
 
         MockClient::global([
-            InstallToolRequest::class => MockResponse::make(['error' => $error], $status),
-        ]);
+            InstallToolRequest::class => MockResponse::make(['error' => $error], $status)]);
 
         $exitCode = Artisan::call('tool:install', [
             'tool' => 'redis',
             '--node' => 'app-json-install-1',
-            '--json' => true,
-        ]);
+            '--json' => true]);
         $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
 
         expect($exitCode)->toBe(1)
@@ -189,29 +171,23 @@ describe('tool:install JSON renderer', function (): void {
         'tool.not_found' => [[
             'code' => 'tool.not_found',
             'message' => "Tool 'redis' was not found.",
-            'meta' => ['tool' => 'redis'],
-        ], 404],
+            'meta' => ['tool' => 'redis']], 404],
         'tool.unsupported_action' => [[
             'code' => 'tool.unsupported_action',
             'message' => "Tool 'redis' does not support install.",
-            'meta' => ['tool' => 'redis', 'action' => 'install'],
-        ], 400],
+            'meta' => ['tool' => 'redis', 'action' => 'install']], 400],
         'tool.remote_action_failed' => [[
             'code' => 'tool.remote_action_failed',
             'message' => "Tool 'redis' install failed on node 'app-json-install-1'.",
-            'meta' => ['tool' => 'redis', 'node' => 'app-json-install-1', 'action' => 'install'],
-        ], 502],
+            'meta' => ['tool' => 'redis', 'node' => 'app-json-install-1', 'action' => 'install']], 502],
         'authorization_failed' => [[
             'code' => 'authorization_failed',
             'message' => 'This node is not authorized to manage tools.',
-            'meta' => ['reason' => 'missing_permission', 'missing_permission' => 'tool:install'],
-        ], 403],
+            'meta' => ['reason' => 'missing_permission', 'missing_permission' => 'tool:install']], 403],
         'gateway_unavailable' => [[
             'code' => 'gateway_unavailable',
             'message' => 'Gateway cannot reach the tool registry.',
-            'meta' => ['reason' => 'connect_timeout'],
-        ], 503],
-    ]);
+            'meta' => ['reason' => 'connect_timeout']], 503]]);
 });
 
 final class ToolInstallJsonRecordingShell implements RemoteShell

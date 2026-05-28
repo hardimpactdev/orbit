@@ -237,7 +237,7 @@ it('starts Docker gateway API support through runtime container commands without
         && str_contains($command, '/tmp/orbit-docker-gateway-api-tls.php'));
     $tlsStart = collect($commands)->first(fn (string $command): bool => str_contains($command, 'sudo docker exec --detach')
         && str_contains($command, 'orbit-e2e-run123-gateway-orbit-runtime')
-        && str_contains($command, 'orbit tinker --execute='));
+        && str_contains($command, 'php apps/gateway/artisan tinker --execute='));
     $certificateSetup = collect($commands)->first(fn (string $command): bool => str_contains($command, 'sudo docker exec --env')
         && str_contains($command, 'orbit-e2e-run123-gateway-orbit-runtime')
         && str_contains($command, 'orbit key:generate --force --no-interaction')
@@ -248,7 +248,7 @@ it('starts Docker gateway API support through runtime container commands without
         && str_contains($command, '/root/.ssh/id_ed25519'));
 
     expect($setup)
-        ->toContain('orbit tinker --execute=')
+        ->toContain('php apps/gateway/artisan tinker --execute=')
         ->toContain('php -d display_errors=0 -S')
         ->toContain('sudo docker exec --detach')
         ->toContain("'orbit-e2e-run123-gateway-orbit-runtime'")
@@ -317,7 +317,7 @@ it('stops Docker gateway API TLS shim before restarting', function (): void {
         && str_contains($command, '/proc/[0-9]*/cmdline'));
     $tlsStart = collect($commands)->first(fn (string $command): bool => str_contains($command, 'sudo docker exec --detach')
         && str_contains($command, 'orbit-e2e-run123-gateway-orbit-runtime')
-        && str_contains($command, 'orbit tinker --execute='));
+        && str_contains($command, 'php apps/gateway/artisan tinker --execute='));
 
     expect($stop)->toBeString()
         ->toContain('/tmp/orbit-')

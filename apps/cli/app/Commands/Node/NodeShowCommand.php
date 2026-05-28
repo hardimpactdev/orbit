@@ -13,8 +13,10 @@ final class NodeShowCommand extends GatewayCommand
 {
     use ResolvesDefaultNode;
 
+    #[\Override]
     protected $signature = 'node:show {name? : Node name to inspect} {--json}';
 
+    #[\Override]
     protected $description = 'Show node details from the gateway registry.';
 
     public function handle(): int

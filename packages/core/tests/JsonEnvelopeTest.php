@@ -7,9 +7,10 @@ use Orbit\Core\Http\JsonEnvelope;
 describe(JsonEnvelope::class, function (): void {
     it('returns a success envelope with empty data and meta by default', function (): void {
         expect(JsonEnvelope::success())->toBe([
-            'ok' => true,
-            'data' => [],
-            'meta' => [],
+            'success' => [
+                'data' => [],
+                'meta' => [],
+            ],
         ]);
     });
 
@@ -17,11 +18,12 @@ describe(JsonEnvelope::class, function (): void {
         expect(JsonEnvelope::success([
             'node' => 'gateway',
         ]))->toBe([
-            'ok' => true,
-            'data' => [
-                'node' => 'gateway',
+            'success' => [
+                'data' => [
+                    'node' => 'gateway',
+                ],
+                'meta' => [],
             ],
-            'meta' => [],
         ]);
     });
 
@@ -31,24 +33,24 @@ describe(JsonEnvelope::class, function (): void {
         ], [
             'request_id' => 'req-123',
         ]))->toBe([
-            'ok' => true,
-            'data' => [
-                'node' => 'gateway',
-            ],
-            'meta' => [
-                'request_id' => 'req-123',
+            'success' => [
+                'data' => [
+                    'node' => 'gateway',
+                ],
+                'meta' => [
+                    'request_id' => 'req-123',
+                ],
             ],
         ]);
     });
 
     it('returns a failure envelope with empty meta by default', function (): void {
         expect(JsonEnvelope::failure('invalid_request', 'The request is invalid.'))->toBe([
-            'ok' => false,
             'error' => [
                 'code' => 'invalid_request',
                 'message' => 'The request is invalid.',
+                'meta' => [],
             ],
-            'meta' => [],
         ]);
     });
 
@@ -56,13 +58,12 @@ describe(JsonEnvelope::class, function (): void {
         expect(JsonEnvelope::failure('expired_token', 'The operation token expired.', [
             'request_id' => 'req-456',
         ]))->toBe([
-            'ok' => false,
             'error' => [
                 'code' => 'expired_token',
                 'message' => 'The operation token expired.',
-            ],
-            'meta' => [
-                'request_id' => 'req-456',
+                'meta' => [
+                    'request_id' => 'req-456',
+                ],
             ],
         ]);
     });
@@ -73,20 +74,17 @@ describe(JsonEnvelope::class, function (): void {
         expect(array_keys($envelope['error']))->toBe([
             'code',
             'message',
+            'meta',
         ]);
     });
 
     it('always includes stable envelope keys when values are empty', function (): void {
         expect(array_keys(JsonEnvelope::success()))->toBe([
-            'ok',
-            'data',
-            'meta',
+            'success',
         ]);
 
         expect(array_keys(JsonEnvelope::failure('unknown', 'Unknown error.')))->toBe([
-            'ok',
             'error',
-            'meta',
         ]);
     });
 });

@@ -102,7 +102,6 @@ final class NodePermissionRegistry
             // Node
             'node:*',
             'node:agent',
-            'node:default',
             'node:grant',
             'node:list',
             'node:migrate',

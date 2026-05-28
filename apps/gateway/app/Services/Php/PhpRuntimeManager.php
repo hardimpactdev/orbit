@@ -7,7 +7,6 @@ namespace App\Services\Php;
 use App\Data\Php\PhpRuntimeFailure;
 use App\Data\Php\PhpRuntimeOperation;
 use App\Models\App;
-use App\Models\LocalNodeDefault;
 use App\Models\Node;
 use App\Models\NodeTool;
 use App\Models\Workspace;
@@ -557,16 +556,6 @@ final readonly class PhpRuntimeManager
 
     private function defaultNode(): ?Node
     {
-        $defaultName = LocalNodeDefault::query()->value('default_node_name');
-
-        if (is_string($defaultName) && $defaultName !== '') {
-            $defaultNode = $this->resolveNode($defaultName);
-
-            return $defaultNode instanceof Node && $this->nodeRoleAssignments->nodeHasActiveAppHostRole($defaultNode)
-                ? $defaultNode
-                : null;
-        }
-
         $nodes = Node::query()
             ->whereIn('id', $this->nodeRoleAssignments->activeAppHostNodeIds())
             ->where('status', 'active')

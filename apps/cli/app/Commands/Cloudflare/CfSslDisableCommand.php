@@ -8,11 +8,13 @@ use App\Exceptions\GatewayApiException;
 
 final class CfSslDisableCommand extends CloudflareGatewayCommand
 {
+    #[\Override]
     protected $signature = 'cf-ssl:disable
         {zone? : Cloudflare zone ID or domain}
         {--force : Confirm destructive operation without prompting}
         {--json : Output JSON}';
 
+    #[\Override]
     protected $description = 'Disable Cloudflare SSL for a zone through the gateway.';
 
     public function handle(): int

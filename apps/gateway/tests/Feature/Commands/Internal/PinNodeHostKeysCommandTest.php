@@ -65,15 +65,13 @@ describe('orbit:internal:pin-node-host-keys', function (): void {
             'status' => NodeRoleStatus::Active->value,
         ]);
 
-        $app = Node::factory()->create([
+        $app = Node::factory()->appDev()->create([
             'name' => 'app-dev-1',
-            'role' => 'app',
             'host' => '10.6.0.4',
         ]);
 
         $gateway = Node::factory()->create([
             'name' => 'gateway',
-            'role' => 'gateway',
             'host' => '10.6.0.2',
         ]);
         $operator = Node::factory()->operator()->create([
@@ -97,9 +95,8 @@ describe('orbit:internal:pin-node-host-keys', function (): void {
     it('fails when any hosted node cannot be pinned', function (): void {
         $this->hostKeyPinner->failHosts = ['10.6.0.4'];
 
-        Node::factory()->create([
+        Node::factory()->appDev()->create([
             'name' => 'app-dev-1',
-            'role' => 'app',
             'host' => '10.6.0.4',
         ]);
 

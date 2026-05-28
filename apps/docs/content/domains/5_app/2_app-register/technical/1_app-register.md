@@ -60,8 +60,8 @@ This command follows the shared
      configuration is the architecture concept.
 5. **Validate Eligibility**:
    - Target node must have the active app role required by the requested
-     registration mode: `app-development` when `--domain` is absent,
-     `app-production` when `--domain` is supplied.
+     registration mode: `app-dev` when `--domain` is absent,
+     `app-prod` when `--domain` is supplied.
    - Provided `--path` must exist on the target node.
    - Provided `name` must not be owned by a different path or node.
    - Provided `--path` on the resolved node must not already be owned by a
@@ -180,5 +180,5 @@ registration attempts.
 
 Context-specific behavior and test mapping live in:
 
-- [`2_app-register_on-client.md`](2_app-register_on-client.md)
+- [`2_app-register_on-operator-node.md`](2_app-register_on-operator-node.md)
 - [`3_app-register_on-gateway-node.md`](3_app-register_on-gateway-node.md)

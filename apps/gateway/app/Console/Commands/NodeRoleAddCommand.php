@@ -36,7 +36,7 @@ class NodeRoleAddCommand extends Command
 
         $this->addArgument('node', InputArgument::REQUIRED, 'Name of the node');
         $this->addArgument('role', InputArgument::REQUIRED, 'Role to add');
-        $this->addOption('tld', null, InputOption::VALUE_REQUIRED, 'Development TLD for app-development');
+        $this->addOption('tld', null, InputOption::VALUE_REQUIRED, 'Development TLD for app-dev');
         $this->addOption('json', null, InputOption::VALUE_NONE, 'Output as JSON');
     }
 
@@ -133,7 +133,7 @@ class NodeRoleAddCommand extends Command
         if ($role === 'agent') {
             return [
                 'code' => 'validation_failed',
-                'message' => "The agent role cannot be added through node role commands. Use 'node:new --role=agent' instead.",
+                'message' => "The agent role cannot be added through node role commands. Use 'node:new --template=agent' instead.",
                 'meta' => ['field' => 'role', 'role' => $role],
             ];
         }
@@ -148,9 +148,9 @@ class NodeRoleAddCommand extends Command
     {
         $tld = $this->option('tld');
 
-        if ($role === 'app-development') {
+        if ($role === 'app-dev') {
             if (! is_string($tld) || trim($tld) === '') {
-                return $this->failCommand('validation_failed', 'The app-development role requires --tld.', ['field' => 'tld']);
+                return $this->failCommand('validation_failed', 'The app-dev role requires --tld.', ['field' => 'tld']);
             }
 
             return ['tld' => $tld];

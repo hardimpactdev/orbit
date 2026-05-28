@@ -2,8 +2,8 @@
 
 declare(strict_types=1);
 
+use App\Models\Node;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
 
 uses(RefreshDatabase::class);
@@ -22,16 +22,13 @@ describe('GET /api/ca/root', function (): void {
     });
 
     it('returns success envelope with root_ca PEM', function (): void {
-        DB::table('nodes')->insert([
+        Node::factory()->gateway()->create([
             'name' => 'gateway-1',
-            'role' => 'gateway',
             'host' => '10.6.0.2',
             'wireguard_address' => '10.6.0.2',
             'orbit_path' => '/home/orbit/orbit',
             'status' => 'active',
             'platform' => 'ubuntu_24-04',
-            'created_at' => now(),
-            'updated_at' => now(),
         ]);
 
         $pem = "-----BEGIN CERTIFICATE-----\nTESTPEM\n-----END CERTIFICATE-----\n";
@@ -52,16 +49,13 @@ describe('GET /api/ca/root', function (): void {
     });
 
     it('returns error envelope when CA is not bootstrapped', function (): void {
-        DB::table('nodes')->insert([
+        Node::factory()->gateway()->create([
             'name' => 'gateway-1',
-            'role' => 'gateway',
             'host' => '10.6.0.2',
             'wireguard_address' => '10.6.0.2',
             'orbit_path' => '/home/orbit/orbit',
             'status' => 'active',
             'platform' => 'ubuntu_24-04',
-            'created_at' => now(),
-            'updated_at' => now(),
         ]);
 
         $response = $this->getJson('/api/ca/root');

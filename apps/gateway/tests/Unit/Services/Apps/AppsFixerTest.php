@@ -56,7 +56,7 @@ function buildAppsFixer(RemoteShell $shell): AppsFixer
 
 function appsFixerNode(): Node
 {
-    return Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'user' => 'orbit']);
+    return createTestAppHostNode(['name' => 'app-1', 'user' => 'orbit']);
 }
 
 it('re-applies a missing FrankenPHP runtime container via the manager', function (): void {
@@ -346,11 +346,10 @@ it('rewrites the managed runtime config when handed app.runtime_config_mismatch'
 });
 
 it('repairs the production runtime user when handed app.security.system_user', function (): void {
-    $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'environment' => 'production']);
+    $node = createTestAppHostNode(['name' => 'app-1'], 'app-prod');
     $app = App::factory()->for($node, 'node')->create([
         'name' => 'docs',
         'path' => '/home/orbit/apps/docs',
-        'environment' => 'production',
         'php_version' => '8.5',
         'runtime_kind' => AppRuntimeKind::Php,
     ]);
@@ -375,11 +374,10 @@ it('repairs the production runtime user when handed app.security.system_user', f
 });
 
 it('reapplies filesystem ownership when handed app.security.fs_permissions', function (): void {
-    $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'environment' => 'production']);
+    $node = createTestAppHostNode(['name' => 'app-1'], 'app-prod');
     $app = App::factory()->for($node, 'node')->create([
         'name' => 'docs',
         'path' => '/home/orbit/apps/docs',
-        'environment' => 'production',
         'php_version' => '8.5',
         'runtime_kind' => AppRuntimeKind::Php,
     ]);

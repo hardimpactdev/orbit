@@ -8,6 +8,7 @@ use App\Exceptions\GatewayApiException;
 
 final class ProcessEditCommand extends ProcessGatewayCommand
 {
+    #[\Override]
     protected $signature = 'process:edit
         {name? : Existing process name}
         {--app= : Parent app slug}
@@ -18,6 +19,7 @@ final class ProcessEditCommand extends ProcessGatewayCommand
         {--restart : Restart affected runtime units after update}
         {--json : Output JSON}';
 
+    #[\Override]
     protected $description = 'Edit an app process definition.';
 
     public function handle(): int

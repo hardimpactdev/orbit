@@ -14,17 +14,16 @@ uses(RefreshDatabase::class);
 
 const PROCESS_DESTROY_CALLER_WG_IP = '10.6.0.91';
 
-function createProcessDestroyCallerNode(array $overrides = []): Node
+function createProcessDestroyCallerNode(array $overrides = [], ?string $role = null): Node
 {
     $attributes = array_merge([
         'name' => 'caller',
-        'role' => 'control',
         'host' => PROCESS_DESTROY_CALLER_WG_IP,
         'wireguard_address' => PROCESS_DESTROY_CALLER_WG_IP,
     ], $overrides);
 
-    return match ($attributes['role']) {
-        'app' => createTestAppHostNode($attributes),
+    return match ($role) {
+        'app-dev' => createTestAppHostNode($attributes),
         'gateway' => createTestGatewayNode($attributes),
         default => Node::factory()->create($attributes),
     };
@@ -45,7 +44,7 @@ function grantProcessDestroyAccess(Node $caller, Node $appNode): void
 describe('ProcessDestroyController', function (): void {
     it('removes process intent for authorized control callers with destructive consent', function (): void {
         $caller = createProcessDestroyCallerNode();
-        $appNode = createTestAppHostNode(['role' => 'app']);
+        $appNode = createTestAppHostNode();
         grantProcessDestroyAccess($caller, $appNode);
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
         Process::factory()->create(['app_id' => $app->id, 'name' => 'vite']);
@@ -71,7 +70,7 @@ describe('ProcessDestroyController', function (): void {
 
     it('requires authorization and destructive consent before deleting intent', function (array $payload, bool $grantAccess, int $status, string $code): void {
         $caller = createProcessDestroyCallerNode();
-        $appNode = createTestAppHostNode(['role' => 'app']);
+        $appNode = createTestAppHostNode();
         if ($grantAccess) {
             grantProcessDestroyAccess($caller, $appNode);
         }
@@ -91,7 +90,7 @@ describe('ProcessDestroyController', function (): void {
     ]);
 
     it('denies app callers without a process remove grant before deleting intent', function (): void {
-        $caller = createProcessDestroyCallerNode(['role' => 'app']);
+        $caller = createProcessDestroyCallerNode(role: 'app-dev');
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $caller->id]);
         Process::factory()->create(['app_id' => $app->id, 'name' => 'vite']);
         app()->instance(RemoteShell::class, new ProcessDestroyRemoteShell([]));
@@ -108,8 +107,8 @@ describe('ProcessDestroyController', function (): void {
     });
 
     it('returns process not found without cleanup', function (): void {
-        createProcessDestroyCallerNode(['role' => 'gateway']);
-        $appNode = createTestAppHostNode(['role' => 'app']);
+        createProcessDestroyCallerNode(role: 'gateway');
+        $appNode = createTestAppHostNode();
         App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
         app()->instance(RemoteShell::class, new ProcessDestroyRemoteShell([]));
 

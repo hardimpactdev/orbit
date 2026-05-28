@@ -12,6 +12,7 @@ use function Laravel\Prompts\text;
 
 final class DnsResolveTldCommand extends LocalOnlyCommand
 {
+    #[\Override]
     protected $signature = 'dns:resolve-tld
         {tld? : Development TLD to configure, without a leading dot}
         {target? : IP address that local wildcard hostnames under the TLD should resolve to}
@@ -19,6 +20,7 @@ final class DnsResolveTldCommand extends LocalOnlyCommand
         {--force : Confirm destructive operation without prompting}
         {--json : Output as JSON}';
 
+    #[\Override]
     protected $description = 'Configure or remove a caller-local development TLD resolver override';
 
     public function handle(ResolvesLocalDns $resolver): int

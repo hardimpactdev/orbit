@@ -29,12 +29,10 @@ function apiNodeRoleRemoveRow(array $overrides = []): array
 {
     return array_merge([
         'name' => 'app-1',
-        'role' => 'app',
         'host' => '10.6.0.7',
         'user' => 'nckrtl',
         'orbit_path' => '/home/nckrtl/orbit',
         'status' => 'active',
-        'environment' => 'development',
         'platform' => 'ubuntu',
         'wireguard_address' => '10.6.0.7',
         'created_at' => now(),
@@ -44,22 +42,37 @@ function apiNodeRoleRemoveRow(array $overrides = []): array
 
 function createNodeRoleRemoveCaller(string $role = 'control'): int
 {
-    return (int) DB::table('nodes')->insertGetId(apiNodeRoleRemoveRow([
+    $nodeId = (int) DB::table('nodes')->insertGetId(apiNodeRoleRemoveRow([
         'name' => "{$role}-caller",
-        'role' => $role,
         'host' => NODE_ROLE_REMOVE_CALLER_WG_IP,
-        'environment' => $role === 'app' ? 'development' : null,
         'wireguard_address' => NODE_ROLE_REMOVE_CALLER_WG_IP,
     ]));
+
+    if ($role === 'gateway') {
+        NodeRoleAssignment::factory()->create([
+            'node_id' => $nodeId,
+            'role' => 'gateway',
+            'status' => 'active',
+        ]);
+    }
+
+    if ($role === 'app') {
+        NodeRoleAssignment::factory()->create([
+            'node_id' => $nodeId,
+            'role' => 'app-dev',
+            'status' => 'active',
+            'settings' => ['tld' => 'caller.test'],
+        ]);
+    }
+
+    return $nodeId;
 }
 
 function createNodeRoleRemoveGateway(): int
 {
     $nodeId = (int) DB::table('nodes')->insertGetId(apiNodeRoleRemoveRow([
         'name' => 'gateway-1',
-        'role' => 'gateway',
         'host' => '10.6.0.2',
-        'environment' => null,
         'wireguard_address' => '10.6.0.2',
     ]));
 
@@ -139,7 +152,7 @@ describe('NodeRoleRemoveController', function (): void {
 
         NodeRoleAssignment::query()->create([
             'node_id' => $node->id,
-            'role' => 'app-development',
+            'role' => 'app-dev',
             'status' => 'active',
             'settings' => ['tld' => 'test'],
             'last_error' => null,
@@ -149,7 +162,6 @@ describe('NodeRoleRemoveController', function (): void {
         DB::table('apps')->insert([
             'name' => 'docs',
             'node_id' => $node->id,
-            'environment' => 'development',
             'domain' => null,
             'path' => '/home/orbit/apps/docs',
             'document_root' => 'public',
@@ -161,7 +173,7 @@ describe('NodeRoleRemoveController', function (): void {
             'updated_at' => now(),
         ]);
 
-        $response = deleteNodeRoleRemoveJson('/api/nodes/target-1/roles/app-development', [], [
+        $response = deleteNodeRoleRemoveJson('/api/nodes/target-1/roles/app-dev', [], [
             'REMOTE_ADDR' => NODE_ROLE_REMOVE_CALLER_WG_IP,
         ]);
 
@@ -184,8 +196,6 @@ describe('NodeRoleRemoveController', function (): void {
 
         $node = Node::query()->create(apiNodeRoleRemoveRow([
             'name' => 'gateway-2',
-            'role' => 'gateway',
-            'environment' => null,
             'wireguard_address' => '10.6.0.20',
         ]));
 
@@ -210,7 +220,7 @@ describe('NodeRoleRemoveController', function (): void {
         expect($node->roleAssignments()->where('role', 'gateway')->exists())->toBeTrue();
     });
 
-    it('refreshes legacy node shadows when the final app role is removed', function (): void {
+    it('clears app role state when the final app role is removed', function (): void {
         $callerId = createNodeRoleRemoveCaller();
         createNodeRoleRemoveGateway();
 
@@ -223,7 +233,7 @@ describe('NodeRoleRemoveController', function (): void {
 
         NodeRoleAssignment::factory()->create([
             'node_id' => $node->id,
-            'role' => 'app-development',
+            'role' => 'app-dev',
             'status' => 'active',
             'settings' => ['tld' => 'test'],
         ]);
@@ -234,18 +244,16 @@ describe('NodeRoleRemoveController', function (): void {
             'custom_permissions' => [],
         ]);
 
-        $response = deleteNodeRoleRemoveJson('/api/nodes/target-1/roles/app-development', [], [
+        $response = deleteNodeRoleRemoveJson('/api/nodes/target-1/roles/app-dev', [], [
             'REMOTE_ADDR' => NODE_ROLE_REMOVE_CALLER_WG_IP,
         ]);
 
         $response->assertOk()
-            ->assertJsonPath('success.data.role', 'app-development');
+            ->assertJsonPath('success.data.role', 'app-dev');
 
         $node->refresh();
 
-        expect($node->roleAssignments()->where('role', 'app-development')->exists())->toBeFalse()
-            ->and($node->role)->toBe('control')
-            ->and($node->environment)->toBeNull()
+        expect($node->roleAssignments()->where('role', 'app-dev')->exists())->toBeFalse()
             ->and($node->tld)->toBeNull()
             ->and(NodeAccess::query()
                 ->where('consumer_node_id', $node->id)
@@ -381,7 +389,7 @@ describe('NodeRoleRemoveController', function (): void {
 
         $assignment = NodeRoleAssignment::query()->create([
             'node_id' => $node->id,
-            'role' => 'app-development',
+            'role' => 'app-dev',
             'status' => 'active',
             'settings' => ['tld' => 'test'],
             'last_error' => null,
@@ -407,7 +415,7 @@ describe('NodeRoleRemoveController', function (): void {
             }
         });
 
-        $response = deleteNodeRoleRemoveJson('/api/nodes/target-1/roles/app-development', [
+        $response = deleteNodeRoleRemoveJson('/api/nodes/target-1/roles/app-dev', [
             'force' => true,
         ], [
             'REMOTE_ADDR' => NODE_ROLE_REMOVE_CALLER_WG_IP,

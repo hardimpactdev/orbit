@@ -6,11 +6,14 @@ namespace App\Http\Controllers\Api;
 
 use App\Contracts\Loggable;
 use App\Enums\ActivityLogType;
+use App\Http\Authorization\RequiresPermission;
+use App\Http\Authorization\ServingNode;
 use App\Services\Activity\ActivityHistory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
 use Spatie\Activitylog\Models\Activity;
 
+#[RequiresPermission('activity:read', servingNode: ServingNode::Gateway)]
 final class ActivityShowController implements Loggable
 {
     private ?Activity $activity = null;

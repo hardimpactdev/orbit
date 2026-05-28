@@ -12,7 +12,6 @@ use App\Http\Gateway\GatewayConnector;
 use App\Http\Gateway\Requests\Doctor\FixDoctorRequest;
 use App\Http\Gateway\Requests\Doctor\RunDoctorRequest;
 use App\Http\Gateway\Responses\Doctor\DoctorRunResponse;
-use App\Models\LocalNodeDefault;
 use App\Models\Node;
 use App\Services\Doctor\DoctorReportRunner;
 use App\Services\Doctor\DoctorScopeValidator;
@@ -369,7 +368,7 @@ class DoctorCommand extends Command implements Loggable
             return $explicitNode;
         }
 
-        return $this->shouldUseLocalDefaultNode() ? $this->localDefaultNodeName() : null;
+        return null;
     }
 
     /**
@@ -454,14 +453,7 @@ class DoctorCommand extends Command implements Loggable
 
     private function localNode(): ?Node
     {
-        return Node::query()
-            ->where('status', 'active')
-            ->where(function ($query): void {
-                $query
-                    ->where('role', 'gateway')
-                    ->orWhereIn('id', app(NodeRoleAssignments::class)->activeNodeIdsForRole('gateway'));
-            })
-            ->first();
+        return app(NodeRoleAssignments::class)->activeGatewayNodeQuery()->first();
     }
 
     private function resolveTargetNode(): ?Node
@@ -478,31 +470,7 @@ class DoctorCommand extends Command implements Loggable
             return $node instanceof Node ? $node : null;
         }
 
-        if ($this->shouldUseLocalDefaultNode()) {
-            $defaultName = $this->localDefaultNodeName();
-
-            if ($defaultName !== null) {
-                $node = Node::query()->where('name', $defaultName)->first();
-
-                return $node instanceof Node ? $node : null;
-            }
-        }
-
         return $this->localNode() ?? Node::query()->first();
-    }
-
-    private function shouldUseLocalDefaultNode(): bool
-    {
-        return ! (bool) $this->option('self')
-            && $this->stringOption('node') === null
-            && ! $this->isGatewayCaller();
-    }
-
-    private function localDefaultNodeName(): ?string
-    {
-        $name = LocalNodeDefault::query()->value('default_node_name');
-
-        return is_string($name) && $name !== '' ? $name : null;
     }
 
     private function isGatewayCaller(): bool

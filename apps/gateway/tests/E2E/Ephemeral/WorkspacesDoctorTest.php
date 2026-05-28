@@ -58,7 +58,6 @@ function workspacesDoctorSeedGatewayIntent(E2ETopologyHarness $topology, string 
 \$app = \\App\\Models\\App::query()->create([
     'name' => 'docs',
     'node_id' => \$node->id,
-    'environment' => 'development',
     'path' => '/home/orbit/apps/docs',
     'document_root' => 'public',
     'php_version' => '8.5',
@@ -77,7 +76,7 @@ PHP;
 
     $topology->ssh(
         'gateway',
-        'cd '.escapeshellarg($topology->checkout('gateway')).' && orbit tinker --execute='.escapeshellarg($script),
+        'cd '.escapeshellarg($topology->checkout('gateway')).' && php apps/gateway/artisan tinker --execute='.escapeshellarg($script),
         timeoutSeconds: 120,
     );
 }

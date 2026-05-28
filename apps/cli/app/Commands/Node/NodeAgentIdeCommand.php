@@ -9,11 +9,13 @@ use App\Exceptions\GatewayApiException;
 
 final class NodeAgentIdeCommand extends GatewayCommand
 {
+    #[\Override]
     protected $signature = 'node:agent-ide
         {name? : Node name}
         {agent_ide? : Agent IDE adapter}
         {--json : Output JSON}';
 
+    #[\Override]
     protected $description = 'Set the default agent IDE for a node.';
 
     public function handle(): int

@@ -22,10 +22,8 @@ function createProxyMutationLocalNode(string $role = 'gateway'): Node
 {
     $attributes = [
         'name' => "local-{$role}",
-        'role' => $role,
         'host' => '10.6.0.1',
-        'wireguard_address' => '10.6.0.1',
-    ];
+        'wireguard_address' => '10.6.0.1'];
 
     if ($role === 'gateway') {
         return createTestGatewayNode($attributes);
@@ -37,14 +35,13 @@ function createProxyMutationLocalNode(string $role = 'gateway'): Node
 describe('proxy add/remove commands', function (): void {
     it('adds custom proxy intent for gateway callers', function (): void {
         createProxyMutationLocalNode('gateway');
-        createTestAppHostNode(['name' => 'app-1', 'role' => 'app']);
+        createTestAppHostNode(['name' => 'app-1']);
 
         $exitCode = Artisan::call('proxy:add', [
             'domain' => 'vite.docs.test',
             '--node' => 'app-1',
             '--upstream' => 'http://127.0.0.1:5173',
-            '--json' => true,
-        ]);
+            '--json' => true]);
         $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
 
         expect($exitCode)->toBe(0)
@@ -55,7 +52,7 @@ describe('proxy add/remove commands', function (): void {
 
     it('renders proxy add human progress through the shared step tree', function (): void {
         createProxyMutationLocalNode('gateway');
-        createTestAppHostNode(['name' => 'app-1', 'role' => 'app']);
+        createTestAppHostNode(['name' => 'app-1']);
 
         $this->artisan('proxy:add vite.docs.test --node=app-1 --upstream=http://127.0.0.1:5173')
             ->expectsOutputToContain('┌  Adding Proxy Route')
@@ -68,14 +65,13 @@ describe('proxy add/remove commands', function (): void {
 
     it('removes custom proxy intent with force', function (): void {
         createProxyMutationLocalNode('gateway');
-        $node = createTestAppHostNode(['name' => 'app-1', 'role' => 'app']);
+        $node = createTestAppHostNode(['name' => 'app-1']);
         ProxyRoute::factory()->create(['node_id' => $node->id, 'domain' => 'vite.docs.test']);
 
         $exitCode = Artisan::call('proxy:remove', [
             'domain' => 'vite.docs.test',
             '--force' => true,
-            '--json' => true,
-        ]);
+            '--json' => true]);
         $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
 
         expect($exitCode)->toBe(0)
@@ -86,7 +82,7 @@ describe('proxy add/remove commands', function (): void {
 
     it('renders proxy remove human progress through the shared step tree', function (): void {
         createProxyMutationLocalNode('gateway');
-        $node = createTestAppHostNode(['name' => 'app-1', 'role' => 'app']);
+        $node = createTestAppHostNode(['name' => 'app-1']);
         ProxyRoute::factory()->create(['node_id' => $node->id, 'domain' => 'vite.docs.test']);
 
         $this->artisan('proxy:remove vite.docs.test --force')
@@ -103,8 +99,7 @@ describe('proxy add/remove commands', function (): void {
 
         $exitCode = Artisan::call('proxy:remove', [
             'domain' => 'vite.docs.test',
-            '--json' => true,
-        ]);
+            '--json' => true]);
         $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
 
         expect($exitCode)->toBe(1)
@@ -118,8 +113,7 @@ describe('proxy add/remove commands', function (): void {
 
         LocalGatewaySettings::current()->fill([
             'gateway_url' => 'https://10.6.0.1',
-            'ca_pem_path' => '/dev/null',
-        ])->save();
+            'ca_pem_path' => '/dev/null'])->save();
 
         MockClient::global([
             AddProxyRouteRequest::class => MockResponse::make([
@@ -133,12 +127,8 @@ describe('proxy add/remove commands', function (): void {
                             'target' => ['type' => 'upstream', 'value' => 'http://127.0.0.1:5173'],
                             'redirect_code' => null,
                             'tls' => ['managed_by' => 'orbit', 'trusted_by_gateway_ca' => true],
-                            'status' => 'expected',
-                        ],
-                    ],
-                    'meta' => ['action' => 'created', 'warnings' => []],
-                ],
-            ], 200),
+                            'status' => 'expected']],
+                    'meta' => ['action' => 'created', 'warnings' => []]]], 200),
             RemoveProxyRouteRequest::class => MockResponse::make([
                 'success' => [
                     'data' => [
@@ -150,26 +140,19 @@ describe('proxy add/remove commands', function (): void {
                             'target' => ['type' => 'upstream', 'value' => 'http://127.0.0.1:5173'],
                             'redirect_code' => null,
                             'tls' => ['managed_by' => 'orbit', 'trusted_by_gateway_ca' => true],
-                            'status' => 'removed_with_drift',
-                        ],
-                    ],
-                    'meta' => ['backend_removed' => false, 'tls_removed' => false, 'warnings' => []],
-                ],
-            ], 200),
-        ]);
+                            'status' => 'removed_with_drift']],
+                    'meta' => ['backend_removed' => false, 'tls_removed' => false, 'warnings' => []]]], 200)]);
 
         $addExit = Artisan::call('proxy:add', [
             'domain' => 'vite.docs.test',
             '--node' => 'app-1',
             '--upstream' => 'http://127.0.0.1:5173',
-            '--json' => true,
-        ]);
+            '--json' => true]);
 
         $removeExit = Artisan::call('proxy:remove', [
             'domain' => 'vite.docs.test',
             '--force' => true,
-            '--json' => true,
-        ]);
+            '--json' => true]);
 
         expect($addExit)->toBe(0)
             ->and($removeExit)->toBe(0);

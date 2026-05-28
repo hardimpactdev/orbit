@@ -283,7 +283,6 @@ function createOrbitSchedulerGatewayNode(array $attributes = []): Node
 {
     $node = Node::factory()->create([
         'name' => 'gateway-1',
-        'role' => 'gateway',
         'host' => '10.6.0.10',
         'wireguard_address' => '10.6.0.10',
         'status' => 'active',
@@ -302,14 +301,13 @@ function createOrbitSchedulerGatewayNode(array $attributes = []): Node
 function createOrbitSchedulerAppHostNode(array $attributes = []): Node
 {
     $node = Node::factory()->create([
-        'role' => 'app',
         'status' => 'active',
         ...$attributes,
     ]);
 
     NodeRoleAssignment::factory()->create([
         'node_id' => $node->id,
-        'role' => 'app-development',
+        'role' => 'app-dev',
         'status' => 'active',
         'settings' => ['tld' => 'test'],
     ]);

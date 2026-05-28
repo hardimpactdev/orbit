@@ -19,7 +19,6 @@ function createToolLogsControllerCaller(): Node
 {
     return Node::factory()->create([
         'name' => 'logs-controller-caller',
-        'role' => 'control',
         'host' => TOOL_LOGS_CONTROLLER_CALLER_WG_IP,
         'wireguard_address' => TOOL_LOGS_CONTROLLER_CALLER_WG_IP,
     ]);
@@ -39,7 +38,6 @@ function createToolLogsControllerTarget(string $name): Node
 {
     $node = createTestAppHostNode([
         'name' => $name,
-        'role' => 'app',
         'status' => 'active',
     ]);
 

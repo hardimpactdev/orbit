@@ -21,11 +21,9 @@ function apiNodeAgentIdeRow(array $overrides = []): array
 {
     return array_merge([
         'name' => 'app-1',
-        'role' => 'app',
         'host' => '10.6.0.7',
         'orbit_path' => '/home/nckrtl/orbit',
         'status' => 'active',
-        'environment' => 'development',
         'platform' => 'ubuntu_24-04',
         'wireguard_address' => '10.6.0.7',
         'public_ipv4' => null,
@@ -36,15 +34,21 @@ function apiNodeAgentIdeRow(array $overrides = []): array
     ], $overrides);
 }
 
-function createAgentIdeCallerNode(string $role = 'control'): int
+function createAgentIdeCallerNode(?string $role = null): int
 {
-    return (int) DB::table('nodes')->insertGetId(apiNodeAgentIdeRow([
-        'name' => "{$role}-caller",
-        'role' => $role,
+    $name = $role === null ? 'control-caller' : "{$role}-caller";
+
+    $nodeId = (int) DB::table('nodes')->insertGetId(apiNodeAgentIdeRow([
+        'name' => $name,
         'host' => AGENT_IDE_CALLER_WG_IP,
-        'environment' => $role === 'app' ? 'development' : null,
         'wireguard_address' => AGENT_IDE_CALLER_WG_IP,
     ]));
+
+    if ($role !== null) {
+        assignAgentIdeNodeRole($nodeId, $role);
+    }
+
+    return $nodeId;
 }
 
 function assignAgentIdeNodeRole(int $nodeId, string $role): void
@@ -121,7 +125,7 @@ describe('NodeAgentIdeController', function (): void {
     });
 
     it('clears a node agent IDE default with none', function (): void {
-        assignAgentIdeNodeRole(createAgentIdeCallerNode('gateway'), 'gateway');
+        createAgentIdeCallerNode('gateway');
         DB::table('nodes')->insert(apiNodeAgentIdeRow([
             'agent_ide_config' => json_encode(['adapter' => 'opencode'], JSON_THROW_ON_ERROR),
         ]));
@@ -139,7 +143,7 @@ describe('NodeAgentIdeController', function (): void {
     });
 
     it('returns converged when the requested adapter already matches', function (): void {
-        assignAgentIdeNodeRole(createAgentIdeCallerNode('gateway'), 'gateway');
+        createAgentIdeCallerNode('gateway');
         DB::table('nodes')->insert(apiNodeAgentIdeRow([
             'agent_ide_config' => json_encode(['adapter' => 'polyscope'], JSON_THROW_ON_ERROR),
         ]));
@@ -178,7 +182,7 @@ describe('NodeAgentIdeController', function (): void {
     });
 
     it('sets node agent IDE defaults for app callers with explicit grants', function (): void {
-        $callerId = createAgentIdeCallerNode('app');
+        $callerId = createAgentIdeCallerNode('app-dev');
         $targetId = (int) DB::table('nodes')->insertGetId(apiNodeAgentIdeRow());
         grantAgentIdeNodeAccess($callerId, $targetId, ['node:agent']);
 
@@ -209,7 +213,7 @@ describe('NodeAgentIdeController', function (): void {
     });
 
     it('returns validation errors for missing and unsupported adapters', function (array $data, string $code, string $message, string $field): void {
-        assignAgentIdeNodeRole(createAgentIdeCallerNode('gateway'), 'gateway');
+        createAgentIdeCallerNode('gateway');
         DB::table('nodes')->insert(apiNodeAgentIdeRow());
 
         $response = postNodeAgentIdeJson('/api/nodes/app-1/agent-ide', $data, ['REMOTE_ADDR' => AGENT_IDE_CALLER_WG_IP]);

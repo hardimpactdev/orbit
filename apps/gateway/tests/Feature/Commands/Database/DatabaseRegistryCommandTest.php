@@ -27,10 +27,8 @@ function createDatabaseRegistryLocalNode(string $role = 'gateway'): Node
 {
     return Node::factory()->create([
         'name' => "database-registry-{$role}",
-        'role' => $role,
         'host' => '10.9.0.1',
-        'wireguard_address' => '10.9.0.1',
-    ]);
+        'wireguard_address' => '10.9.0.1']);
 }
 
 function configureDatabaseRegistryGatewayCaller(): void
@@ -46,15 +44,14 @@ function configureDatabaseRegistryControlCaller(): void
 
     LocalGatewaySettings::current()->fill([
         'gateway_url' => 'https://10.9.0.1',
-        'ca_pem_path' => '/dev/null',
-    ])->save();
+        'ca_pem_path' => '/dev/null'])->save();
 }
 
 describe('database registry commands', function (): void {
     it('lists scoped local database connections in the documented json shape', function (): void {
         configureDatabaseRegistryGatewayCaller();
-        $node = createTestAppHostNode(['name' => 'db-node', 'role' => 'app']);
-        $otherNode = createTestAppHostNode(['name' => 'other-node', 'role' => 'app']);
+        $node = createTestAppHostNode(['name' => 'db-node']);
+        $otherNode = createTestAppHostNode(['name' => 'other-node']);
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
         $workspace = Workspace::factory()->create(['name' => 'feature-docs', 'app_id' => $app->id]);
 
@@ -66,15 +63,13 @@ describe('database registry commands', function (): void {
             'port' => 5432,
             'database' => 'orbit',
             'username' => 'orbit',
-            'credentials' => ['password' => 'secret'],
-        ]);
+            'credentials' => ['password' => 'secret']]);
         DatabaseConnectionTarget::factory()->for($visible, 'connection')->forApp($app)->create(['env_prefix' => 'DB']);
         DatabaseConnectionTarget::factory()->for($visible, 'connection')->forWorkspace($workspace)->create(['env_prefix' => 'ANALYTICS_DB']);
 
         DatabaseConnection::factory()->create([
             'node_id' => $otherNode->id,
-            'slug' => 'hidden-db',
-        ]);
+            'slug' => 'hidden-db']);
 
         $exitCode = Artisan::call('database:list', ['--app' => 'docs', '--json' => true]);
         $payload = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
@@ -92,21 +87,19 @@ describe('database registry commands', function (): void {
                 'database' => 'orbit',
                 'path' => null,
                 'username' => 'orbit',
-                'node' => 'db-node',
-            ])
+                'node' => 'db-node'])
             ->and($payload['success']['data']['connections'][0])->not->toHaveKey('password')
             ->and(json_encode($payload, JSON_THROW_ON_ERROR))->not->toContain('secret');
     });
 
     it('renders local database connections with the prompts table primitive', function (): void {
         configureDatabaseRegistryGatewayCaller();
-        $node = createTestAppHostNode(['name' => 'db-node', 'role' => 'app']);
+        $node = createTestAppHostNode(['name' => 'db-node']);
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
         $connection = DatabaseConnection::factory()->create([
             'node_id' => null,
             'slug' => 'primary-db',
-            'driver' => 'pgsql',
-        ]);
+            'driver' => 'pgsql']);
         DatabaseConnectionTarget::factory()->for($connection, 'connection')->forApp($app)->create(['env_prefix' => 'DB']);
 
         $exitCode = Artisan::call('database:list');
@@ -125,13 +118,12 @@ describe('database registry commands', function (): void {
 
     it('shows one local database connection without exposing passwords', function (): void {
         configureDatabaseRegistryGatewayCaller();
-        $node = createTestAppHostNode(['name' => 'db-node', 'role' => 'app']);
+        $node = createTestAppHostNode(['name' => 'db-node']);
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
         $connection = DatabaseConnection::factory()->create([
             'node_id' => $node->id,
             'slug' => 'primary-db',
-            'credentials' => ['password' => 'secret'],
-        ]);
+            'credentials' => ['password' => 'secret']]);
         DatabaseConnectionTarget::factory()->for($connection, 'connection')->forApp($app)->create(['env_prefix' => 'DB']);
 
         $exitCode = Artisan::call('database:show', ['connection' => 'primary-db', '--json' => true]);
@@ -140,22 +132,20 @@ describe('database registry commands', function (): void {
         expect($exitCode)->toBe(0)
             ->and($payload['success']['data']['connection']['slug'])->toBe('primary-db')
             ->and($payload['success']['data']['connection']['targets'])->toBe([
-                ['type' => 'app', 'name' => 'docs', 'env_prefix' => 'DB'],
-            ])
+                ['type' => 'app', 'name' => 'docs', 'env_prefix' => 'DB']])
             ->and(json_encode($payload, JSON_THROW_ON_ERROR))->not->toContain('secret');
     });
 
     it('shows one local database connection as a show detail tree in human mode', function (): void {
         configureDatabaseRegistryGatewayCaller();
-        $node = createTestAppHostNode(['name' => 'beast', 'role' => 'app']);
+        $node = createTestAppHostNode(['name' => 'beast']);
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
         $workspace = Workspace::factory()->create(['name' => 'feature-docs', 'app_id' => $app->id]);
         $connection = DatabaseConnection::factory()->create([
             'node_id' => $node->id,
             'slug' => 'primary-db',
             'driver' => 'sqlite',
-            'path' => '/srv/docs/database/database.sqlite',
-        ]);
+            'path' => '/srv/docs/database/database.sqlite']);
         DatabaseConnectionTarget::factory()->for($connection, 'connection')->forApp($app)->create(['env_prefix' => 'DB']);
         DatabaseConnectionTarget::factory()->for($connection, 'connection')->forWorkspace($workspace)->create(['env_prefix' => 'ANALYTICS_DB']);
 
@@ -173,7 +163,7 @@ describe('database registry commands', function (): void {
 
     it('creates, updates, attaches, detaches, and removes a connection locally', function (): void {
         configureDatabaseRegistryGatewayCaller();
-        $node = createTestAppHostNode(['name' => 'db-node', 'role' => 'app']);
+        $node = createTestAppHostNode(['name' => 'db-node']);
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
 
         $createExitCode = Artisan::call('database:add', [
@@ -185,8 +175,7 @@ describe('database registry commands', function (): void {
             '--username' => 'orbit',
             '--password' => 'secret',
             '--node' => 'db-node',
-            '--json' => true,
-        ]);
+            '--json' => true]);
         $createPayload = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
         $connection = DatabaseConnection::query()->where('slug', 'primary-db')->firstOrFail();
 
@@ -200,8 +189,7 @@ describe('database registry commands', function (): void {
             'connection' => 'primary-db',
             '--slug' => 'renamed-db',
             '--clear-password' => true,
-            '--json' => true,
-        ]);
+            '--json' => true]);
         $updatePayload = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
 
         expect($updateExitCode)->toBe(0)
@@ -212,21 +200,18 @@ describe('database registry commands', function (): void {
             'connection' => 'renamed-db',
             '--app' => 'docs',
             '--env-prefix' => 'DB',
-            '--json' => true,
-        ]);
+            '--json' => true]);
         $attachPayload = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
 
         expect($attachExitCode)->toBe(0)
             ->and($attachPayload['success']['data']['connection']['targets'])->toBe([
-                ['type' => 'app', 'name' => 'docs', 'env_prefix' => 'DB'],
-            ]);
+                ['type' => 'app', 'name' => 'docs', 'env_prefix' => 'DB']]);
 
         $detachExitCode = Artisan::call('database:detach', [
             'connection' => 'renamed-db',
             '--app' => 'docs',
             '--env-prefix' => 'DB',
-            '--json' => true,
-        ]);
+            '--json' => true]);
         $detachPayload = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
 
         expect($detachExitCode)->toBe(0)
@@ -235,34 +220,30 @@ describe('database registry commands', function (): void {
                 'connection' => 'renamed-db',
                 'target_type' => 'app',
                 'target' => 'docs',
-                'env_prefix' => 'DB',
-            ]);
+                'env_prefix' => 'DB']);
 
         Artisan::call('database:attach', [
             'connection' => 'renamed-db',
             '--app' => 'docs',
-            '--json' => true,
-        ]);
+            '--json' => true]);
 
         $removeExitCode = Artisan::call('database:remove', [
             'connection' => 'renamed-db',
             '--force' => true,
-            '--json' => true,
-        ]);
+            '--json' => true]);
         $removePayload = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
 
         expect($removeExitCode)->toBe(0)
             ->and($removePayload['success']['data']['result'])->toBe([
                 'action' => 'removed',
-                'connection' => 'renamed-db',
-            ])
+                'connection' => 'renamed-db'])
             ->and(DatabaseConnection::query()->where('slug', 'renamed-db')->exists())->toBeFalse()
             ->and(DatabaseConnectionTarget::query()->count())->toBe(0);
     });
 
     it('renders registry mutations as status lines in human mode', function (): void {
         configureDatabaseRegistryGatewayCaller();
-        $node = createTestAppHostNode(['name' => 'db-node', 'role' => 'app']);
+        $node = createTestAppHostNode(['name' => 'db-node']);
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
 
         $createExitCode = Artisan::call('database:add', [
@@ -273,34 +254,29 @@ describe('database registry commands', function (): void {
             '--database' => 'orbit',
             '--username' => 'orbit',
             '--password' => 'secret',
-            '--node' => 'db-node',
-        ]);
+            '--node' => 'db-node']);
         $createOutput = Artisan::output();
 
         $updateExitCode = Artisan::call('database:update', [
             'connection' => 'human-db',
-            '--slug' => 'human-renamed-db',
-        ]);
+            '--slug' => 'human-renamed-db']);
         $updateOutput = Artisan::output();
 
         $attachExitCode = Artisan::call('database:attach', [
             'connection' => 'human-renamed-db',
             '--app' => 'docs',
-            '--env-prefix' => 'DB',
-        ]);
+            '--env-prefix' => 'DB']);
         $attachOutput = Artisan::output();
 
         $detachExitCode = Artisan::call('database:detach', [
             'connection' => 'human-renamed-db',
             '--app' => 'docs',
-            '--env-prefix' => 'DB',
-        ]);
+            '--env-prefix' => 'DB']);
         $detachOutput = Artisan::output();
 
         $removeExitCode = Artisan::call('database:remove', [
             'connection' => 'human-renamed-db',
-            '--force' => true,
-        ]);
+            '--force' => true]);
         $removeOutput = Artisan::output();
 
         $combinedOutput = implode("\n", [
@@ -308,8 +284,7 @@ describe('database registry commands', function (): void {
             $updateOutput,
             $attachOutput,
             $detachOutput,
-            $removeOutput,
-        ]);
+            $removeOutput]);
 
         expect($createExitCode)->toBe(0)
             ->and($updateExitCode)->toBe(0)
@@ -331,16 +306,14 @@ describe('database registry commands', function (): void {
 
         $exitCode = Artisan::call('database:remove', [
             'connection' => 'primary-db',
-            '--json' => true,
-        ]);
+            '--json' => true]);
         $payload = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
 
         expect($exitCode)->toBe(1)
             ->and($payload['error']['code'])->toBe('validation_failed')
             ->and($payload['error']['meta'])->toBe([
                 'field' => 'force',
-                'reason' => 'destructive_consent_required',
-            ])
+                'reason' => 'destructive_consent_required'])
             ->and(DatabaseConnection::query()->where('slug', 'primary-db')->exists())->toBeTrue();
     });
 
@@ -360,12 +333,8 @@ describe('database registry commands', function (): void {
                             'path' => null,
                             'username' => 'orbit',
                             'node' => 'db-node',
-                            'targets' => [],
-                        ]],
-                    ],
-                    'meta' => ['count' => 1],
-                ],
-            ], 200),
+                            'targets' => []]]],
+                    'meta' => ['count' => 1]]], 200),
             AddDatabaseConnectionRequest::class => MockResponse::make([
                 'success' => [
                     'data' => [
@@ -378,13 +347,8 @@ describe('database registry commands', function (): void {
                             'path' => '/srv/orbit/database.sqlite',
                             'username' => null,
                             'node' => 'db-node',
-                            'targets' => [],
-                        ],
-                    ],
-                    'meta' => [],
-                ],
-            ], 200),
-        ]);
+                            'targets' => []]],
+                    'meta' => []]], 200)]);
 
         $listExitCode = Artisan::call('database:list', ['--node' => 'db-node', '--json' => true]);
         $listPayload = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
@@ -397,8 +361,7 @@ describe('database registry commands', function (): void {
             '--driver' => 'sqlite',
             '--node' => 'db-node',
             '--path' => '/srv/orbit/database.sqlite',
-            '--json' => true,
-        ]);
+            '--json' => true]);
         $addPayload = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
 
         expect($addExitCode)->toBe(0)
@@ -422,13 +385,8 @@ describe('database registry commands', function (): void {
                             'username' => 'orbit',
                             'node' => 'db-node',
                             'targets' => [
-                                ['type' => 'app', 'name' => 'docs', 'env_prefix' => 'DB'],
-                            ],
-                        ],
-                    ],
-                    'meta' => [],
-                ],
-            ], 200),
+                                ['type' => 'app', 'name' => 'docs', 'env_prefix' => 'DB']]]],
+                    'meta' => []]], 200),
             DetachDatabaseConnectionTargetRequest::class => MockResponse::make([
                 'success' => [
                     'data' => [
@@ -437,43 +395,34 @@ describe('database registry commands', function (): void {
                             'connection' => 'remote-db',
                             'target_type' => 'workspace',
                             'target' => 'feature-docs',
-                            'env_prefix' => 'ANALYTICS_DB',
-                        ],
-                    ],
-                    'meta' => [],
-                ],
-            ], 200),
-        ]);
+                            'env_prefix' => 'ANALYTICS_DB']],
+                    'meta' => []]], 200)]);
 
         $attachExitCode = Artisan::call('database:attach', [
             'connection' => 'remote-db',
             '--app' => 'docs',
-            '--json' => true,
-        ]);
+            '--json' => true]);
         $attachPayload = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
 
         $detachExitCode = Artisan::call('database:detach', [
             'connection' => 'remote-db',
             '--workspace' => 'feature-docs',
             '--env-prefix' => 'ANALYTICS_DB',
-            '--json' => true,
-        ]);
+            '--json' => true]);
         $detachPayload = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
 
         expect($attachExitCode)->toBe(0)
             ->and($attachPayload['success']['data']['connection']['targets'][0])->toBe([
                 'type' => 'app',
                 'name' => 'docs',
-                'env_prefix' => 'DB',
-            ])
+                'env_prefix' => 'DB'])
             ->and($detachExitCode)->toBe(0)
             ->and($detachPayload['success']['data']['result'])->toBe([
                 'action' => 'detached',
                 'connection' => 'remote-db',
                 'target_type' => 'workspace',
                 'target' => 'feature-docs',
-                'env_prefix' => 'ANALYTICS_DB',
-            ]);
+                'env_prefix' => 'ANALYTICS_DB']);
     });
 
     it('does not leak passwords in command validation errors', function (): void {
@@ -484,8 +433,7 @@ describe('database registry commands', function (): void {
             '--driver' => 'pgsql',
             '--host' => 'postgres.internal',
             '--password' => 'super-secret',
-            '--json' => true,
-        ]);
+            '--json' => true]);
         $output = Artisan::output();
 
         expect($exitCode)->toBe(1)
@@ -494,8 +442,8 @@ describe('database registry commands', function (): void {
 
     it('applies app and node filters together without leaking other node-owned matches', function (): void {
         configureDatabaseRegistryGatewayCaller();
-        $node = createTestAppHostNode(['name' => 'db-node', 'role' => 'app']);
-        $otherNode = createTestAppHostNode(['name' => 'other-node', 'role' => 'app']);
+        $node = createTestAppHostNode(['name' => 'db-node']);
+        $otherNode = createTestAppHostNode(['name' => 'other-node']);
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
         $otherAppOnNode = App::factory()->create(['name' => 'blog', 'node_id' => $node->id]);
 
@@ -511,8 +459,7 @@ describe('database registry commands', function (): void {
         $exitCode = Artisan::call('database:list', [
             '--app' => 'docs',
             '--node' => 'db-node',
-            '--json' => true,
-        ]);
+            '--json' => true]);
         $payload = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
 
         expect($exitCode)->toBe(0)
@@ -528,15 +475,13 @@ describe('database registry commands', function (): void {
             '--driver' => 'sqlite',
             '--node' => 'missing-node',
             '--path' => '/srv/orbit/database.sqlite',
-            '--json' => true,
-        ]);
+            '--json' => true]);
         $addPayload = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
 
         $updateExitCode = Artisan::call('database:update', [
             'connection' => 'primary-db',
             '--node' => 'missing-node',
-            '--json' => true,
-        ]);
+            '--json' => true]);
         $updatePayload = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
 
         expect($addExitCode)->toBe(1)

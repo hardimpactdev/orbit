@@ -34,7 +34,6 @@ function createAppRegisterProductionHost(array $attributes = []): Node
     $router = Node::query()->where('name', 'gateway-1')->first()
         ?? Node::factory()->create([
             'name' => 'gateway-1',
-            'role' => 'gateway',
         ]);
     $router->forceFill(['wireguard_address' => '10.6.0.2'])->save();
 
@@ -47,7 +46,7 @@ function createAppRegisterProductionHost(array $attributes = []): Node
     $node = createTestAppHostNode([
         'wireguard_address' => '10.6.0.5',
         ...$attributes,
-    ], 'app-production');
+    ], 'app-prod');
 
     NodeRoleAssignment::factory()->create([
         'node_id' => $node->id,
@@ -56,7 +55,7 @@ function createAppRegisterProductionHost(array $attributes = []): Node
     ]);
 
     $node->roleAssignments()
-        ->where('role', 'app-production')
+        ->where('role', 'app-prod')
         ->firstOrFail()
         ->forceFill(['settings' => ['ingress_node_id' => $node->id]])
         ->save();
@@ -67,7 +66,6 @@ function createAppRegisterProductionHost(array $attributes = []): Node
 it('adopts an existing app path and enacts runtime artifacts from a gateway caller', function (): void {
     Node::factory()->create([
         'name' => 'gateway-1',
-        'role' => 'gateway',
     ]);
 
     $targetNode = createTestAppHostNode([
@@ -137,7 +135,6 @@ it('adopts an existing app path and enacts runtime artifacts from a gateway call
 it('converges an already registered app without changing repository metadata', function (): void {
     Node::factory()->create([
         'name' => 'gateway-1',
-        'role' => 'gateway',
     ]);
 
     $targetNode = createTestAppHostNode([
@@ -185,12 +182,10 @@ it('converges an already registered app without changing repository metadata', f
 it('reports production domain activation as a retryable proxy warning', function (): void {
     Node::factory()->create([
         'name' => 'gateway-1',
-        'role' => 'gateway',
     ]);
 
     createAppRegisterProductionHost([
         'name' => 'app-1',
-        'environment' => 'production',
         'status' => 'active',
     ]);
 
@@ -220,7 +215,6 @@ it('reports production domain activation as a retryable proxy warning', function
 it('rejects production registration on a development-only app node before remote work', function (): void {
     Node::factory()->create([
         'name' => 'gateway-1',
-        'role' => 'gateway',
     ]);
 
     createTestAppHostNode([
@@ -248,7 +242,7 @@ it('rejects production registration on a development-only app node before remote
         ->and($payload['error']['code'])->toBe('app.ineligible_node')
         ->and($payload['error']['meta'])->toMatchArray([
             'node' => 'app-1',
-            'required_role' => 'app-production',
+            'required_role' => 'app-prod',
             'status' => 'active',
         ]);
 });
@@ -256,12 +250,10 @@ it('rejects production registration on a development-only app node before remote
 it('renders production activation warnings in human output', function (): void {
     Node::factory()->create([
         'name' => 'gateway-1',
-        'role' => 'gateway',
     ]);
 
     createAppRegisterProductionHost([
         'name' => 'app-1',
-        'environment' => 'production',
         'status' => 'active',
     ]);
 
@@ -278,7 +270,6 @@ it('renders production activation warnings in human output', function (): void {
 it('rejects unmanaged registration without a path before remote work', function (): void {
     Node::factory()->create([
         'name' => 'gateway-1',
-        'role' => 'gateway',
     ]);
 
     createTestAppHostNode([
@@ -306,7 +297,6 @@ it('rejects unmanaged registration without a path before remote work', function 
 it('rejects path collisions before registry writes', function (): void {
     Node::factory()->create([
         'name' => 'gateway-1',
-        'role' => 'gateway',
     ]);
 
     $targetNode = createTestAppHostNode([
@@ -348,7 +338,6 @@ it('forwards app-node CLI callers through the typed gateway request without loca
 
     Node::factory()->create([
         'name' => 'app-local',
-        'role' => 'app',
     ]);
 
     LocalGatewaySettings::current()->fill([
@@ -405,7 +394,6 @@ it('forwards configured control callers through the typed gateway request', func
 
     Node::factory()->create([
         'name' => 'control-1',
-        'role' => 'control',
     ]);
 
     LocalGatewaySettings::current()->fill([
@@ -462,7 +450,6 @@ it('forwards configured control callers through the typed gateway request', func
 it('renders the documented human progress tree and adopted success line', function (): void {
     Node::factory()->create([
         'name' => 'gateway-1',
-        'role' => 'gateway',
     ]);
 
     createTestAppHostNode([
@@ -496,7 +483,6 @@ it('renders the documented human progress tree and adopted success line', functi
 it('prompts for missing interactive input before adopting an app path', function (): void {
     Node::factory()->create([
         'name' => 'gateway-1',
-        'role' => 'gateway',
     ]);
 
     createTestAppHostNode([

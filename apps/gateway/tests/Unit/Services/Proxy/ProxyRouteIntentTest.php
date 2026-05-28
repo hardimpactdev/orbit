@@ -141,7 +141,7 @@ describe('ProxyRouteIntent', function (): void {
     });
 
     it('authorizes non-gateway callers by serving node grant', function (): void {
-        $caller = Node::factory()->create(['role' => 'app']);
+        $caller = Node::factory()->appDev()->create();
         $servingNode = createTestAppHostNode(['name' => 'app-1']);
         grantProxyRouteIntentAccess($caller, $servingNode);
 

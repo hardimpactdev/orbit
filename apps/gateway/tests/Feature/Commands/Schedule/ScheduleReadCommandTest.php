@@ -26,15 +26,25 @@ afterEach(function (): void {
 
 function createScheduleReadLocalNode(string $role = 'gateway'): Node
 {
-    return Node::factory()->create([
+    $node = Node::factory()->create([
         'name' => "local-{$role}",
-        'role' => $role,
         'host' => '10.6.0.1',
         'wireguard_address' => '10.6.0.1',
     ]);
+
+    if ($role === 'gateway') {
+        NodeRoleAssignment::factory()->create([
+            'node_id' => $node->id,
+            'role' => 'gateway',
+            'status' => 'active',
+            'settings' => [],
+        ]);
+    }
+
+    return $node;
 }
 
-function assignScheduleReadAppHostRole(Node $node, string $role = 'app-development', array $settings = ['tld' => 'test']): void
+function assignScheduleReadAppHostRole(Node $node, string $role = 'app-dev', array $settings = ['tld' => 'test']): void
 {
     NodeRoleAssignment::factory()->create([
         'node_id' => $node->id,
@@ -46,7 +56,7 @@ function assignScheduleReadAppHostRole(Node $node, string $role = 'app-developme
 
 it('lists gateway-local schedules as JSON with latest run history', function (): void {
     createScheduleReadLocalNode('gateway');
-    $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app']);
+    $node = Node::factory()->appDev()->create(['name' => 'app-1']);
     $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
     Schedule::factory()->forApp($app)->create([
         'name' => 'laravel-scheduler',
@@ -72,7 +82,7 @@ it('lists gateway-local schedules as JSON with latest run history', function ():
 
 it('shows a gateway-local schedule as JSON', function (): void {
     createScheduleReadLocalNode('gateway');
-    $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app']);
+    $node = Node::factory()->appDev()->create(['name' => 'app-1']);
     $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
     Schedule::factory()->forApp($app)->create([
         'name' => 'laravel-scheduler',
@@ -95,7 +105,7 @@ it('shows a gateway-local schedule as JSON', function (): void {
 
 it('renders human schedule list and show output', function (): void {
     createScheduleReadLocalNode('gateway');
-    $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app']);
+    $node = Node::factory()->appDev()->create(['name' => 'app-1']);
     $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
     Schedule::factory()->forApp($app)->create([
         'name' => 'laravel-scheduler',
@@ -148,10 +158,9 @@ it('returns a stable schedule not found error', function (): void {
 it('exposes schedule reads over the authenticated gateway API', function (): void {
     $caller = Node::factory()->create([
         'name' => 'control-1',
-        'role' => 'control',
         'wireguard_address' => '10.6.0.40',
     ]);
-    $node = Node::factory()->create(['name' => 'app-1', 'role' => 'control']);
+    $node = Node::factory()->operator()->create(['name' => 'app-1']);
     assignScheduleReadAppHostRole($node);
     DB::table('node_access')->insert([
         'consumer_node_id' => $caller->id,
@@ -184,13 +193,12 @@ it('exposes schedule reads over the authenticated gateway API', function (): voi
     expect($entries[1]->properties->get('name'))->toBe('laravel-scheduler');
 });
 
-it('hides legacy app-only schedule nodes from non-gateway schedule reads', function (): void {
+it('hides unassigned schedule nodes from non-gateway schedule reads', function (): void {
     $caller = Node::factory()->create([
         'name' => 'control-1',
-        'role' => 'control',
         'wireguard_address' => '10.6.0.42',
     ]);
-    $node = Node::factory()->create(['name' => 'legacy-app-only', 'role' => 'app']);
+    $node = Node::factory()->create(['name' => 'unassigned-app-node']);
     DB::table('node_access')->insert([
         'consumer_node_id' => $caller->id,
         'serving_node_id' => $node->id,
@@ -211,7 +219,6 @@ it('hides legacy app-only schedule nodes from non-gateway schedule reads', funct
 
 it('rejects schedule API reads from unauthorized callers', function (): void {
     Node::factory()->create([
-        'role' => 'app',
         'wireguard_address' => '10.6.0.41',
     ]);
 
@@ -287,7 +294,7 @@ it('does not mutate schedules or run external processes', function (): void {
     ProcessFacade::preventStrayProcesses();
 
     createScheduleReadLocalNode('gateway');
-    $node = Node::factory()->create(['role' => 'app']);
+    $node = Node::factory()->appDev()->create();
     $app = App::factory()->create(['node_id' => $node->id]);
     Schedule::factory()->count(2)->forApp($app)->create();
 

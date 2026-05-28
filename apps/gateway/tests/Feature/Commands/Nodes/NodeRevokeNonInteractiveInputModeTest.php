@@ -24,13 +24,11 @@ function nodeRevokeNonInteractiveRow(array $overrides = []): array
 {
     return array_merge([
         'name' => 'control-1',
-        'role' => 'control',
         'host' => '10.6.0.8',
         'wireguard_address' => '10.6.0.8',
         'user' => 'nckrtl',
         'orbit_path' => '/home/nckrtl/orbit',
         'status' => 'active',
-        'environment' => null,
         'platform' => 'ubuntu_24-04',
         'created_at' => now(),
         'updated_at' => now(),
@@ -60,14 +58,12 @@ function nodeRevokeNonInteractiveIdentityEnvelope(): array
             'data' => [
                 'self' => [
                     'name' => 'control-1',
-                    'role' => 'control',
                     'status' => 'active',
                     'platform' => 'unknown',
                     'addresses' => ['wireguard' => '10.6.0.8'],
                 ],
                 'gateway' => [
                     'name' => 'gateway-1',
-                    'role' => 'gateway',
                     'status' => 'active',
                     'platform' => 'unknown',
                     'addresses' => ['wireguard' => '10.6.0.2'],

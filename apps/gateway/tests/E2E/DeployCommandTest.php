@@ -14,7 +14,6 @@ $node = \App\Models\Node::query()->where('name', 'app-dev-1')->firstOrFail();
     ['name' => 'docs'],
     [
         'node_id' => $node->id,
-        'environment' => 'production',
         'domain' => null,
         'path' => '__PATH__',
         'document_root' => 'public',
@@ -31,7 +30,7 @@ PHP;
 
     $topology->ssh(
         'gateway',
-        'cd '.escapeshellarg($topology->checkout('gateway')).' && orbit tinker --execute='.escapeshellarg($script),
+        'cd '.escapeshellarg($topology->checkout('gateway')).' && php apps/gateway/artisan tinker --execute='.escapeshellarg($script),
         timeoutSeconds: 120,
     );
 }

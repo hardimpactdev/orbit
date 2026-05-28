@@ -23,10 +23,8 @@ function createWorkspaceExecCaller(array $overrides = []): Node
 {
     $attributes = array_merge([
         'name' => 'caller',
-        'role' => 'control',
         'host' => WORKSPACE_EXEC_CALLER_WG_IP,
-        'wireguard_address' => WORKSPACE_EXEC_CALLER_WG_IP,
-    ], $overrides);
+        'wireguard_address' => WORKSPACE_EXEC_CALLER_WG_IP], $overrides);
 
     return Node::factory()->create($attributes);
 }
@@ -42,8 +40,7 @@ function grantWorkspaceExecAccess(Node $caller, Node $appNode, array $permission
         'permissions' => json_encode($permissions, JSON_THROW_ON_ERROR),
         'custom_permissions' => json_encode([], JSON_THROW_ON_ERROR),
         'created_at' => now(),
-        'updated_at' => now(),
-    ]);
+        'updated_at' => now()]);
 }
 
 function workspaceExecControllerPreflightRunning(): RemoteShellResult
@@ -113,24 +110,21 @@ function createWorkspaceExecFixture(Node $node, array $appOverrides = [], array 
         'name' => 'docs',
         'path' => '/home/orbit/apps/docs',
         'document_root' => 'public',
-        'runtime_kind' => AppRuntimeKind::Php,
-    ], $appOverrides));
+        'runtime_kind' => AppRuntimeKind::Php], $appOverrides));
 
     return Workspace::factory()->for($app, 'app')->create(array_merge([
         'name' => 'docs-feature',
-        'path' => '/home/orbit/apps/docs/.worktrees/docs-feature',
-    ], $workspaceOverrides));
+        'path' => '/home/orbit/apps/docs/.worktrees/docs-feature'], $workspaceOverrides));
 }
 
 describe('WorkspaceExecController', function (): void {
     it('runs a command inside the workspace runtime container and returns the success envelope', function (): void {
         $caller = createWorkspaceExecCaller();
-        $node = createTestAppHostNode(['name' => 'app-1', 'role' => 'app', 'host' => '10.6.0.7']);
+        $node = createTestAppHostNode(['name' => 'app-1', 'host' => '10.6.0.7']);
         grantWorkspaceExecAccess($caller, $node, ['workspace:exec']);
         createWorkspaceExecFixture($node);
         bindWorkspaceExecControllerShell([
-            new RemoteShellResult(exitCode: 0, stdout: "PHP 8.5.0\n", stderr: '', durationMs: 1),
-        ]);
+            new RemoteShellResult(exitCode: 0, stdout: "PHP 8.5.0\n", stderr: '', durationMs: 1)]);
 
         $response = $this->call(
             'POST',
@@ -153,12 +147,11 @@ describe('WorkspaceExecController', function (): void {
 
     it('returns the underlying exit code in success.data.exit_code with HTTP 200', function (): void {
         $caller = createWorkspaceExecCaller();
-        $node = createTestAppHostNode(['name' => 'app-1', 'role' => 'app', 'host' => '10.6.0.7']);
+        $node = createTestAppHostNode(['name' => 'app-1', 'host' => '10.6.0.7']);
         grantWorkspaceExecAccess($caller, $node, ['workspace:exec']);
         createWorkspaceExecFixture($node);
         bindWorkspaceExecControllerShell([
-            new RemoteShellResult(exitCode: 9, stdout: '', stderr: "no\n", durationMs: 1),
-        ]);
+            new RemoteShellResult(exitCode: 9, stdout: '', stderr: "no\n", durationMs: 1)]);
 
         $response = $this->call(
             'POST',
@@ -177,7 +170,7 @@ describe('WorkspaceExecController', function (): void {
 
     it('returns 422 validation_failed when the command body is missing or empty', function (): void {
         $caller = createWorkspaceExecCaller();
-        $node = createTestAppHostNode(['name' => 'app-1', 'role' => 'app', 'host' => '10.6.0.7']);
+        $node = createTestAppHostNode(['name' => 'app-1', 'host' => '10.6.0.7']);
         grantWorkspaceExecAccess($caller, $node, ['workspace:exec']);
         createWorkspaceExecFixture($node);
         bindWorkspaceExecControllerShell();
@@ -217,7 +210,7 @@ describe('WorkspaceExecController', function (): void {
 
     it('returns 422 workspace.exec_unsupported_runtime when the parent app is not PHP', function (): void {
         $caller = createWorkspaceExecCaller();
-        $node = createTestAppHostNode(['name' => 'app-1', 'role' => 'app', 'host' => '10.6.0.7']);
+        $node = createTestAppHostNode(['name' => 'app-1', 'host' => '10.6.0.7']);
         grantWorkspaceExecAccess($caller, $node, ['workspace:exec']);
         createWorkspaceExecFixture($node, ['runtime_kind' => AppRuntimeKind::Static]);
         bindWorkspaceExecControllerShell();
@@ -238,7 +231,7 @@ describe('WorkspaceExecController', function (): void {
 
     it('returns 422 workspace.exec_container_not_running when preflight reports no such container', function (): void {
         $caller = createWorkspaceExecCaller();
-        $node = createTestAppHostNode(['name' => 'app-1', 'role' => 'app', 'host' => '10.6.0.7']);
+        $node = createTestAppHostNode(['name' => 'app-1', 'host' => '10.6.0.7']);
         grantWorkspaceExecAccess($caller, $node, ['workspace:exec']);
         createWorkspaceExecFixture($node);
         bindWorkspaceExecControllerPreflightShell(new RemoteShellResult(
@@ -264,7 +257,7 @@ describe('WorkspaceExecController', function (): void {
 
     it('returns 502 workspace.exec_docker_unavailable when preflight reports the docker daemon is down', function (): void {
         $caller = createWorkspaceExecCaller();
-        $node = createTestAppHostNode(['name' => 'app-1', 'role' => 'app', 'host' => '10.6.0.7']);
+        $node = createTestAppHostNode(['name' => 'app-1', 'host' => '10.6.0.7']);
         grantWorkspaceExecAccess($caller, $node, ['workspace:exec']);
         createWorkspaceExecFixture($node);
         bindWorkspaceExecControllerPreflightShell(new RemoteShellResult(
@@ -290,7 +283,7 @@ describe('WorkspaceExecController', function (): void {
 
     it('returns 502 workspace.exec_node_unreachable when preflight returns an SSH-level failure', function (): void {
         $caller = createWorkspaceExecCaller();
-        $node = createTestAppHostNode(['name' => 'app-1', 'role' => 'app', 'host' => '10.6.0.7']);
+        $node = createTestAppHostNode(['name' => 'app-1', 'host' => '10.6.0.7']);
         grantWorkspaceExecAccess($caller, $node, ['workspace:exec']);
         createWorkspaceExecFixture($node);
         bindWorkspaceExecControllerPreflightShell(new RemoteShellResult(
@@ -316,7 +309,7 @@ describe('WorkspaceExecController', function (): void {
 
     it('rejects callers without the workspace:exec permission with HTTP 403', function (): void {
         $caller = createWorkspaceExecCaller();
-        $node = createTestAppHostNode(['name' => 'app-1', 'role' => 'app', 'host' => '10.6.0.7']);
+        $node = createTestAppHostNode(['name' => 'app-1', 'host' => '10.6.0.7']);
         grantWorkspaceExecAccess($caller, $node, ['workspace:read']);
         createWorkspaceExecFixture($node);
         bindWorkspaceExecControllerShell();
@@ -338,7 +331,7 @@ describe('WorkspaceExecController', function (): void {
 
     it('returns 400 workspace.ambiguous_name when two apps host a workspace with the same name and no ?app= is supplied', function (): void {
         $caller = createWorkspaceExecCaller();
-        $node = createTestAppHostNode(['name' => 'app-1', 'role' => 'app', 'host' => '10.6.0.7']);
+        $node = createTestAppHostNode(['name' => 'app-1', 'host' => '10.6.0.7']);
         grantWorkspaceExecAccess($caller, $node, ['workspace:exec']);
         $appA = App::factory()->for($node, 'node')->create(['name' => 'docs', 'path' => '/home/orbit/apps/docs', 'runtime_kind' => AppRuntimeKind::Php]);
         $appB = App::factory()->for($node, 'node')->create(['name' => 'site', 'path' => '/home/orbit/apps/site', 'runtime_kind' => AppRuntimeKind::Php]);
@@ -361,15 +354,14 @@ describe('WorkspaceExecController', function (): void {
 
     it('disambiguates with ?app= and executes against the correct workspace', function (): void {
         $caller = createWorkspaceExecCaller();
-        $node = createTestAppHostNode(['name' => 'app-1', 'role' => 'app', 'host' => '10.6.0.7']);
+        $node = createTestAppHostNode(['name' => 'app-1', 'host' => '10.6.0.7']);
         grantWorkspaceExecAccess($caller, $node, ['workspace:exec']);
         $appA = App::factory()->for($node, 'node')->create(['name' => 'docs', 'path' => '/home/orbit/apps/docs', 'runtime_kind' => AppRuntimeKind::Php]);
         $appB = App::factory()->for($node, 'node')->create(['name' => 'site', 'path' => '/home/orbit/apps/site', 'runtime_kind' => AppRuntimeKind::Php]);
         Workspace::factory()->for($appA, 'app')->create(['name' => 'shared', 'path' => '/home/orbit/apps/docs/.worktrees/shared']);
         Workspace::factory()->for($appB, 'app')->create(['name' => 'shared', 'path' => '/home/orbit/apps/site/.worktrees/shared']);
         bindWorkspaceExecControllerShell([
-            new RemoteShellResult(exitCode: 0, stdout: "ok\n", stderr: '', durationMs: 1),
-        ]);
+            new RemoteShellResult(exitCode: 0, stdout: "ok\n", stderr: '', durationMs: 1)]);
 
         $response = $this->call(
             'POST',
@@ -389,12 +381,11 @@ describe('WorkspaceExecController', function (): void {
 
     it('resolves the workspace from host_cwd via the by-path endpoint and executes the command', function (): void {
         $caller = createWorkspaceExecCaller();
-        $node = createTestAppHostNode(['name' => 'app-1', 'role' => 'app', 'host' => '10.6.0.7']);
+        $node = createTestAppHostNode(['name' => 'app-1', 'host' => '10.6.0.7']);
         grantWorkspaceExecAccess($caller, $node, ['workspace:exec']);
         createWorkspaceExecFixture($node);
         bindWorkspaceExecControllerShell([
-            new RemoteShellResult(exitCode: 0, stdout: "PHP 8.5.0\n", stderr: '', durationMs: 1),
-        ]);
+            new RemoteShellResult(exitCode: 0, stdout: "PHP 8.5.0\n", stderr: '', durationMs: 1)]);
 
         $response = $this->call(
             'POST',
@@ -405,8 +396,7 @@ describe('WorkspaceExecController', function (): void {
             ['REMOTE_ADDR' => WORKSPACE_EXEC_CALLER_WG_IP, 'CONTENT_TYPE' => 'application/json'],
             json_encode([
                 'host_cwd' => '/home/orbit/apps/docs/.worktrees/docs-feature',
-                'command' => ['php', '-v'],
-            ], JSON_THROW_ON_ERROR),
+                'command' => ['php', '-v']], JSON_THROW_ON_ERROR),
         );
 
         $response->assertOk()
@@ -434,7 +424,7 @@ describe('WorkspaceExecController', function (): void {
 
     it('returns 422 validation_failed when the by-path endpoint cannot resolve the host_cwd to a workspace', function (): void {
         $caller = createWorkspaceExecCaller();
-        $node = createTestAppHostNode(['name' => 'app-1', 'role' => 'app', 'host' => '10.6.0.7']);
+        $node = createTestAppHostNode(['name' => 'app-1', 'host' => '10.6.0.7']);
         grantWorkspaceExecAccess($caller, $node, ['workspace:exec']);
         createWorkspaceExecFixture($node);
 
@@ -448,8 +438,7 @@ describe('WorkspaceExecController', function (): void {
             json_encode([
                 // Cwd is inside the parent app but not inside any workspace.
                 'host_cwd' => '/home/orbit/apps/docs/app/Models',
-                'command' => ['php', '-v'],
-            ], JSON_THROW_ON_ERROR),
+                'command' => ['php', '-v']], JSON_THROW_ON_ERROR),
         );
 
         // An unresolvable cwd is a malformed input, not a missing entity.

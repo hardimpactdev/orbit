@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Models\App;
 use App\Models\Node;
+use App\Models\NodeRoleAssignment;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Spatie\Activitylog\Models\Activity;
@@ -14,12 +15,19 @@ const ACTIVITY_LIST_CALLER_WG_IP = '10.6.0.99';
 
 function createActivityListCallerNode(array $overrides = []): Node
 {
-    return Node::factory()->create(array_merge([
+    $node = Node::factory()->create(array_merge([
         'name' => 'caller',
-        'role' => 'gateway',
         'host' => ACTIVITY_LIST_CALLER_WG_IP,
         'wireguard_address' => ACTIVITY_LIST_CALLER_WG_IP,
     ], $overrides));
+
+    NodeRoleAssignment::factory()->create([
+        'node_id' => $node->id,
+        'role' => 'gateway',
+        'status' => 'active',
+    ]);
+
+    return $node;
 }
 
 function createActivityEntry(
@@ -51,9 +59,31 @@ function createActivityEntry(
 }
 
 describe('ActivityListController', function (): void {
+    it('requires activity read authorization on the gateway', function (): void {
+        createTestGatewayNode([
+            'name' => 'gateway-1',
+            'host' => '10.6.0.2',
+            'wireguard_address' => '10.6.0.2',
+        ]);
+
+        Node::factory()->create([
+            'name' => 'control-1',
+            'host' => ACTIVITY_LIST_CALLER_WG_IP,
+            'wireguard_address' => ACTIVITY_LIST_CALLER_WG_IP,
+            'status' => 'active',
+        ]);
+
+        $response = $this->call('GET', '/api/activity', [], [], [], ['REMOTE_ADDR' => ACTIVITY_LIST_CALLER_WG_IP]);
+
+        $response->assertForbidden()
+            ->assertJsonPath('error.code', 'authorization_failed')
+            ->assertJsonPath('error.meta.missing_permission', 'activity:read')
+            ->assertJsonPath('error.meta.serving_node', 'gateway-1');
+    });
+
     it('lists destructive activity newest first with normalized metadata', function (): void {
         $caller = createActivityListCallerNode();
-        $appNode = Node::factory()->create(['name' => 'app-1', 'role' => 'app']);
+        $appNode = Node::factory()->appDev()->create(['name' => 'app-1']);
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
 
         createActivityEntry('node.listed', 'read', $caller);

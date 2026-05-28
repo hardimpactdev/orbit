@@ -8,6 +8,7 @@ use App\Data\RemoteShell\RemoteShellResult;
 use App\Enums\WorkspaceLifecycleStatus;
 use App\Models\App;
 use App\Models\Node;
+use App\Models\NodeRoleAssignment;
 use App\Models\Workspace;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -18,13 +19,18 @@ beforeEach(function (): void {
     DB::table('nodes')->insert([
         [
             'name' => 'gateway',
-            'role' => 'gateway',
             'host' => 'gateway',
             'orbit_path' => '/home/gateway/orbit',
             'status' => 'active',
             'created_at' => now(),
             'updated_at' => now(),
         ],
+    ]);
+
+    NodeRoleAssignment::factory()->create([
+        'node_id' => 1,
+        'role' => 'gateway',
+        'status' => 'active',
     ]);
 
     DB::table('apps')->insert([
@@ -34,7 +40,6 @@ beforeEach(function (): void {
             'node_id' => 1,
             'path' => '/home/nckrtl/apps/demo',
             'php_version' => '8.5',
-            'environment' => 'development',
             'document_root' => 'public',
             'agent_ide_config' => json_encode(['adapter' => 'opencode']),
             'created_at' => now(),

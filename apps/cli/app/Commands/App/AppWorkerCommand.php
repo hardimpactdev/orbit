@@ -8,11 +8,13 @@ use App\Exceptions\GatewayApiException;
 
 final class AppWorkerCommand extends AppGatewayCommand
 {
+    #[\Override]
     protected $signature = 'app:worker
         {action? : Action to perform (show|enable|disable)}
         {app? : App name or hostname}
         {--json : Output JSON}';
 
+    #[\Override]
     protected $description = 'Inspect or change FrankenPHP worker mode for an app.';
 
     public function handle(): int

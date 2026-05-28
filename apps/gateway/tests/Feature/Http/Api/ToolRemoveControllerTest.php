@@ -18,10 +18,8 @@ function createToolRemoveApiCallerNode(array $overrides = []): Node
 {
     return Node::factory()->create(array_merge([
         'name' => 'tool-remove-api-caller',
-        'role' => 'control',
         'host' => TOOL_REMOVE_API_CALLER_WG_IP,
-        'wireguard_address' => TOOL_REMOVE_API_CALLER_WG_IP,
-    ], $overrides));
+        'wireguard_address' => TOOL_REMOVE_API_CALLER_WG_IP], $overrides));
 }
 
 function grantToolRemoveApiAccess(Node $caller, Node $appNode): void
@@ -30,28 +28,25 @@ function grantToolRemoveApiAccess(Node $caller, Node $appNode): void
         'consumer_node_id' => $caller->id,
         'serving_node_id' => $appNode->id,
         'created_at' => now(),
-        'updated_at' => now(),
-    ]);
+        'updated_at' => now()]);
 }
 
 describe('ToolRemoveController', function (): void {
     it('records json implicit destructive consent source for a direct API removal', function (): void {
         $caller = createToolRemoveApiCallerNode();
-        $node = createTestAppHostNode(['name' => 'app-remove-api-1', 'role' => 'app', 'status' => 'active']);
+        $node = createTestAppHostNode(['name' => 'app-remove-api-1', 'status' => 'active']);
         grantToolRemoveApiAccess($caller, $node);
         $tool = NodeTool::factory()->create([
             'node_id' => $node->id,
             'name' => 'redis',
-            'expected_state' => 'running',
-        ]);
+            'expected_state' => 'running']);
         $shell = new ToolRemoveApiRecordingShell;
         app()->instance(RemoteShell::class, $shell);
 
         $response = test()->call('DELETE', '/api/tools/redis', [
             'node' => 'app-remove-api-1',
             'destructive_consent' => true,
-            'destructive_consent_source' => 'json',
-        ], [], [], ['REMOTE_ADDR' => TOOL_REMOVE_API_CALLER_WG_IP]);
+            'destructive_consent_source' => 'json'], [], [], ['REMOTE_ADDR' => TOOL_REMOVE_API_CALLER_WG_IP]);
 
         $response->assertOk()
             ->assertJsonPath('success.data.tool.name', 'redis')
@@ -70,23 +65,20 @@ describe('ToolRemoveController', function (): void {
 
     it('records explicit destructive consent source for a streamed human removal', function (): void {
         $caller = createToolRemoveApiCallerNode();
-        $node = createTestAppHostNode(['name' => 'app-remove-api-1', 'role' => 'app', 'status' => 'active']);
+        $node = createTestAppHostNode(['name' => 'app-remove-api-1', 'status' => 'active']);
         grantToolRemoveApiAccess($caller, $node);
         NodeTool::factory()->create([
             'node_id' => $node->id,
             'name' => 'redis',
-            'expected_state' => 'running',
-        ]);
+            'expected_state' => 'running']);
         app()->instance(RemoteShell::class, new ToolRemoveApiRecordingShell);
 
         $response = test()->call('DELETE', '/api/tools/redis', [
             'node' => 'app-remove-api-1',
             'destructive_consent' => true,
-            'destructive_consent_source' => 'interactive_confirm',
-        ], [], [], [
-            'HTTP_ACCEPT' => 'text/event-stream',
-            'REMOTE_ADDR' => TOOL_REMOVE_API_CALLER_WG_IP,
-        ]);
+            'destructive_consent_source' => 'interactive_confirm'], [], [], [
+                'HTTP_ACCEPT' => 'text/event-stream',
+                'REMOTE_ADDR' => TOOL_REMOVE_API_CALLER_WG_IP]);
 
         $response->assertOk();
         $response->assertHeader('Content-Type', 'text/event-stream; charset=UTF-8');
@@ -103,19 +95,17 @@ describe('ToolRemoveController', function (): void {
 
     it('rejects missing destructive consent with validation metadata before side effects', function (): void {
         $caller = createToolRemoveApiCallerNode();
-        $node = createTestAppHostNode(['name' => 'app-remove-api-1', 'role' => 'app', 'status' => 'active']);
+        $node = createTestAppHostNode(['name' => 'app-remove-api-1', 'status' => 'active']);
         grantToolRemoveApiAccess($caller, $node);
         $tool = NodeTool::factory()->create([
             'node_id' => $node->id,
             'name' => 'redis',
-            'expected_state' => 'running',
-        ]);
+            'expected_state' => 'running']);
         $shell = new ToolRemoveApiRecordingShell;
         app()->instance(RemoteShell::class, $shell);
 
         $response = test()->call('DELETE', '/api/tools/redis', [
-            'node' => 'app-remove-api-1',
-        ], [], [], ['REMOTE_ADDR' => TOOL_REMOVE_API_CALLER_WG_IP]);
+            'node' => 'app-remove-api-1'], [], [], ['REMOTE_ADDR' => TOOL_REMOVE_API_CALLER_WG_IP]);
 
         $response->assertUnprocessable()
             ->assertJsonPath('error.code', 'validation_failed')
@@ -128,20 +118,18 @@ describe('ToolRemoveController', function (): void {
 
     it('requires an explicit target selector even when exactly one app node is visible', function (): void {
         $caller = createToolRemoveApiCallerNode();
-        $node = createTestAppHostNode(['name' => 'app-remove-api-1', 'role' => 'app', 'status' => 'active']);
+        $node = createTestAppHostNode(['name' => 'app-remove-api-1', 'status' => 'active']);
         grantToolRemoveApiAccess($caller, $node);
         $tool = NodeTool::factory()->create([
             'node_id' => $node->id,
             'name' => 'redis',
-            'expected_state' => 'running',
-        ]);
+            'expected_state' => 'running']);
         $shell = new ToolRemoveApiRecordingShell;
         app()->instance(RemoteShell::class, $shell);
 
         $response = test()->call('DELETE', '/api/tools/redis', [
             'destructive_consent' => true,
-            'destructive_consent_source' => 'json',
-        ], [], [], ['REMOTE_ADDR' => TOOL_REMOVE_API_CALLER_WG_IP]);
+            'destructive_consent_source' => 'json'], [], [], ['REMOTE_ADDR' => TOOL_REMOVE_API_CALLER_WG_IP]);
 
         $response->assertUnprocessable()
             ->assertJsonPath('error.code', 'validation_failed')
@@ -152,8 +140,8 @@ describe('ToolRemoveController', function (): void {
     });
 
     it('rejects unauthenticated and unauthorized removals with documented codes', function (): void {
-        $visibleNode = createTestAppHostNode(['name' => 'visible-node', 'role' => 'app', 'status' => 'active']);
-        $hiddenNode = createTestAppHostNode(['name' => 'hidden-node', 'role' => 'app', 'status' => 'active']);
+        $visibleNode = createTestAppHostNode(['name' => 'visible-node', 'status' => 'active']);
+        $hiddenNode = createTestAppHostNode(['name' => 'hidden-node', 'status' => 'active']);
         NodeTool::factory()->create(['node_id' => $hiddenNode->id, 'name' => 'redis']);
         $caller = createToolRemoveApiCallerNode();
         grantToolRemoveApiAccess($caller, $visibleNode);
@@ -161,14 +149,12 @@ describe('ToolRemoveController', function (): void {
         $unauthenticated = test()->call('DELETE', '/api/tools/redis', [
             'node' => 'hidden-node',
             'destructive_consent' => true,
-            'destructive_consent_source' => 'json',
-        ]);
+            'destructive_consent_source' => 'json']);
 
         $unauthorized = test()->call('DELETE', '/api/tools/redis', [
             'node' => 'hidden-node',
             'destructive_consent' => true,
-            'destructive_consent_source' => 'json',
-        ], [], [], ['REMOTE_ADDR' => TOOL_REMOVE_API_CALLER_WG_IP]);
+            'destructive_consent_source' => 'json'], [], [], ['REMOTE_ADDR' => TOOL_REMOVE_API_CALLER_WG_IP]);
 
         $unauthenticated->assertForbidden()
             ->assertJsonPath('error.code', 'authorization_failed');

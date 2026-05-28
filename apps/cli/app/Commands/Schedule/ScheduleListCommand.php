@@ -12,11 +12,13 @@ final class ScheduleListCommand extends GatewayCommand
 {
     use ResolvesHostContext;
 
+    #[\Override]
     protected $signature = 'schedule:list
         {--app= : Filter by app scope}
         {--node= : Filter by node scope}
         {--json}';
 
+    #[\Override]
     protected $description = 'List configured schedules.';
 
     public function handle(): int

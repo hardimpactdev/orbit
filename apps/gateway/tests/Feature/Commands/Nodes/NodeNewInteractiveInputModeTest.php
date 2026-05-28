@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Http\Gateway\Requests\Nodes\CreateNodeRequest;
 use App\Models\LocalGatewaySettings;
+use App\Models\NodeRoleAssignment;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Saloon\Http\Faking\MockClient;
@@ -22,14 +23,11 @@ function nodeNewInteractiveRow(array $overrides = []): array
 {
     return array_merge([
         'name' => 'control-1',
-        'role' => 'control',
         'host' => '127.0.0.1',
         'wireguard_address' => '10.6.0.3',
         'user' => 'nckrtl',
-        'user' => 'nckrtl',
         'orbit_path' => '/home/nckrtl/orbit',
         'status' => 'active',
-        'environment' => null,
         'platform' => 'macos_15-4',
         'created_at' => now(),
         'updated_at' => now(),
@@ -56,10 +54,8 @@ function setupNodeNewInteractiveAppCaller(): void
 {
     DB::table('nodes')->insert(nodeNewInteractiveRow([
         'name' => 'local-app',
-        'role' => 'app',
         'host' => '10.6.0.7',
         'wireguard_address' => '10.6.0.7',
-        'environment' => 'development',
     ]));
 }
 
@@ -81,7 +77,7 @@ describe('node:new interactive input mode', function (): void {
 
         $this->artisan('node:new')
             ->expectsQuestion('Node name', 'control-2')
-            ->expectsOutputToContain('Gateway connection is required before creating app or operator nodes.')
+            ->expectsOutputToContain('Gateway connection is required before creating client identities.')
             ->assertFailed();
     });
 
@@ -95,8 +91,6 @@ describe('node:new interactive input mode', function (): void {
                     'result' => ['action' => 'enrolled'],
                     'node' => [
                         'name' => 'control-2',
-                        'role' => 'control',
-                        'environment' => null,
                         'tld' => null,
                         'status' => 'active',
                     ],
@@ -119,7 +113,7 @@ describe('node:new interactive input mode', function (): void {
 
         $this->artisan('node:new')
             ->expectsQuestion('Node name', 'control-2')
-            ->expectsOutputToContain('Enrolled operator node control-2.')
+            ->expectsOutputToContain('Enrolled client node control-2.')
             ->assertSuccessful();
     });
 
@@ -133,8 +127,6 @@ describe('node:new interactive input mode', function (): void {
                     'result' => ['action' => 'created'],
                     'node' => [
                         'name' => 'app-1',
-                        'role' => 'app',
-                        'environment' => 'development',
                         'tld' => 'test',
                         'status' => 'active',
                     ],
@@ -148,14 +140,12 @@ describe('node:new interactive input mode', function (): void {
             ],
         ]);
 
-        $this->artisan('node:new --role=app')
+        $this->artisan('node:new --roles=app-dev')
             ->expectsQuestion('Node name', 'app-1')
-            ->expectsChoice('App node environment', 'development', ['development', 'production'])
             ->expectsQuestion('Host', '192.0.2.20')
             ->expectsQuestion('Development TLD', 'test')
             ->expectsQuestion('SSH user', 'deployer')
-            ->expectsOutputToContain('The legacy app role now maps to a hosted app role.')
-            ->expectsOutputToContain('Created app node app-1.')
+            ->expectsOutputToContain('Created node app-1.')
             ->assertSuccessful();
     });
 
@@ -169,8 +159,6 @@ describe('node:new interactive input mode', function (): void {
                     'result' => ['action' => 'created'],
                     'node' => [
                         'name' => 'db-1',
-                        'role' => 'control',
-                        'environment' => null,
                         'tld' => null,
                         'status' => 'active',
                     ],
@@ -184,13 +172,13 @@ describe('node:new interactive input mode', function (): void {
             ],
         ]);
 
-        $this->artisan('node:new --role=database')
+        $this->artisan('node:new --roles=database')
             ->expectsQuestion('Node name', 'db-1')
             ->expectsOutputToContain('Created node db-1.')
             ->assertSuccessful();
     });
 
-    it('does not prompt for tld when app environment is production', function (): void {
+    it('does not prompt for tld when app-prod is selected', function (): void {
         config(['orbit.is_gateway' => false]);
 
         setupNodeNewInteractiveControlCaller();
@@ -200,8 +188,6 @@ describe('node:new interactive input mode', function (): void {
                     'result' => ['action' => 'created'],
                     'node' => [
                         'name' => 'app-1',
-                        'role' => 'app',
-                        'environment' => 'production',
                         'tld' => null,
                         'status' => 'active',
                     ],
@@ -215,11 +201,70 @@ describe('node:new interactive input mode', function (): void {
             ],
         ]);
 
-        $this->artisan('node:new app-1 --role=app')
-            ->expectsChoice('App node environment', 'production', ['development', 'production'])
+        $this->artisan('node:new --roles=app-prod')
+            ->expectsQuestion('Node name', 'app-1')
             ->expectsQuestion('Host', '192.0.2.20')
             ->expectsQuestion('SSH user', 'root')
-            ->expectsOutputToContain('Created app node app-1.')
+            ->expectsConfirmation('Serve public traffic from this node?', 'yes')
+            ->expectsOutputToContain('Created node app-1.')
+            ->assertSuccessful();
+    });
+
+    it('prompts for an active ingress node when app-prod uses separate ingress placement', function (): void {
+        config(['orbit.is_gateway' => false]);
+
+        setupNodeNewInteractiveControlCaller();
+
+        $edgeOneId = DB::table('nodes')->insertGetId(nodeNewInteractiveRow([
+            'name' => 'edge-1',
+            'host' => '10.6.0.10',
+            'wireguard_address' => '10.6.0.10',
+            'platform' => 'ubuntu_24-04',
+        ]));
+        $edgeTwoId = DB::table('nodes')->insertGetId(nodeNewInteractiveRow([
+            'name' => 'edge-2',
+            'host' => '10.6.0.11',
+            'wireguard_address' => '10.6.0.11',
+            'platform' => 'ubuntu_24-04',
+        ]));
+
+        NodeRoleAssignment::factory()->create([
+            'node_id' => $edgeOneId,
+            'role' => 'ingress',
+            'status' => 'active',
+        ]);
+        NodeRoleAssignment::factory()->create([
+            'node_id' => $edgeTwoId,
+            'role' => 'ingress',
+            'status' => 'active',
+        ]);
+
+        fakeNodeNewGateway([
+            'success' => [
+                'data' => [
+                    'result' => ['action' => 'created'],
+                    'node' => [
+                        'name' => 'app-1',
+                        'tld' => null,
+                        'status' => 'active',
+                    ],
+                    'provisioning' => [
+                        'transport' => 'ssh',
+                        'host' => '192.0.2.20',
+                        'status' => 'complete',
+                    ],
+                    'next_steps' => [],
+                ],
+            ],
+        ]);
+
+        $this->artisan('node:new --roles=app-prod')
+            ->expectsQuestion('Node name', 'app-1')
+            ->expectsQuestion('Host', '192.0.2.20')
+            ->expectsQuestion('SSH user', 'root')
+            ->expectsConfirmation('Serve public traffic from this node?', 'no')
+            ->expectsChoice('Ingress node', 'edge-2', ['edge-1', 'edge-2'])
+            ->expectsOutputToContain('Created node app-1.')
             ->assertSuccessful();
     });
 
@@ -233,8 +278,6 @@ describe('node:new interactive input mode', function (): void {
                     'result' => ['action' => 'created'],
                     'node' => [
                         'name' => 'app-1',
-                        'role' => 'app',
-                        'environment' => 'production',
                         'tld' => null,
                         'status' => 'active',
                     ],
@@ -248,7 +291,8 @@ describe('node:new interactive input mode', function (): void {
             ],
         ]);
 
-        $this->artisan('node:new app-1 --role=app --environment=production')
+        $this->artisan('node:new --roles=app-prod')
+            ->expectsQuestion('Node name', 'app-1')
             ->expectsQuestion('Host', 'incorrect-host')
             ->assertFailed();
 

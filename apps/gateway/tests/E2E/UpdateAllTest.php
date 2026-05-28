@@ -31,7 +31,6 @@ beforeEach(function (): void {
     DB::table('nodes')->insert([
         [
             'name' => 'gateway',
-            'role' => 'gateway',
             'host' => 'gateway',
             'orbit_path' => '/home/orbit/orbit',
             'status' => 'active',
@@ -40,10 +39,32 @@ beforeEach(function (): void {
         ],
         [
             'name' => 'app-node-1',
-            'role' => 'app',
             'host' => 'app-node-1',
             'orbit_path' => '/home/orbit/orbit',
             'status' => 'active',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ],
+    ]);
+
+    DB::table('node_role')->insert([
+        [
+            'node_id' => DB::table('nodes')->where('name', 'gateway')->value('id'),
+            'role' => 'gateway',
+            'status' => 'active',
+            'settings' => json_encode([], JSON_THROW_ON_ERROR),
+            'last_error' => null,
+            'converged_at' => now(),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ],
+        [
+            'node_id' => DB::table('nodes')->where('name', 'app-node-1')->value('id'),
+            'role' => 'app-dev',
+            'status' => 'active',
+            'settings' => json_encode(['tld' => 'test'], JSON_THROW_ON_ERROR),
+            'last_error' => null,
+            'converged_at' => now(),
             'created_at' => now(),
             'updated_at' => now(),
         ],
@@ -225,7 +246,7 @@ it('operator caller succeeds when gateway responds with all nodes completed', fu
                 'data' => [
                     'updates' => [
                         ['target' => 'gateway', 'node' => 'gateway', 'role' => 'gateway', 'status' => 'completed'],
-                        ['target' => 'app-node-1', 'node' => 'app-node-1', 'role' => 'app', 'status' => 'completed'],
+                        ['target' => 'app-node-1', 'node' => 'app-node-1', 'role' => 'app-dev', 'status' => 'completed'],
                     ],
                 ],
                 'meta' => [
@@ -268,7 +289,7 @@ it('operator caller reports partial failure when gateway returns failed nodes', 
                 'data' => [
                     'updates' => [
                         ['target' => 'gateway', 'node' => 'gateway', 'role' => 'gateway', 'status' => 'completed'],
-                        ['target' => 'app-node-1', 'node' => 'app-node-1', 'role' => 'app', 'status' => 'failed', 'output' => 'Connection refused'],
+                        ['target' => 'app-node-1', 'node' => 'app-node-1', 'role' => 'app-dev', 'status' => 'failed', 'output' => 'Connection refused'],
                     ],
                 ],
                 'meta' => [

@@ -31,6 +31,8 @@ use App\Services\Dns\DnsmasqReconciler;
 use App\Services\Dns\LocalResolver;
 use App\Services\Dns\OrbitDnsServiceInstaller;
 use App\Services\Doctor\DnsRuntimeProbe;
+use App\Services\Operations\OperationResultRegistry;
+use App\Services\Operations\OperationRunRecorder;
 use App\Services\Operations\OperationTokenFactory;
 use App\Services\RemoteShell\LocalExecutorCommandBuilder;
 use App\Services\RemoteShell\RemoteExecutor;
@@ -84,6 +86,7 @@ class AppServiceProvider extends ServiceProvider
         $_SERVER['PAO_DISABLE'] ??= '1';
 
         $this->app->scoped(ActivityLogCorrelation::class);
+        $this->app->singleton(OperationResultRegistry::class);
         $this->app->bind(OperationTokenFactory::class, fn ($app): OperationTokenFactory => new OperationTokenFactory(
             signer: $app->make(OperationTokenSigner::class),
             secret: $this->operationTokenSecret(),
@@ -106,6 +109,7 @@ class AppServiceProvider extends ServiceProvider
             commands: $app->make(LocalExecutorCommandBuilder::class),
             operationTokens: $app->make(OperationTokenFactory::class),
             activityLogger: $app->make(ActivityLogger::class),
+            operationRuns: $app->make(OperationRunRecorder::class),
         ));
         $this->app->bind(RemoteShellStream::class, SshRemoteShellStream::class);
         $this->app->bind(PolyscopeWorkspaceDriver::class, fn ($app): PolyscopeWorkspaceDriver => new PolyscopeWorkspaceDriver(

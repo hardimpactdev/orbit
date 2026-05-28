@@ -12,8 +12,10 @@ use function Laravel\Prompts\table;
 
 final class DnsListCommand extends LocalOnlyCommand
 {
+    #[\Override]
     protected $signature = 'dns:list {--json : Output as JSON}';
 
+    #[\Override]
     protected $description = 'List caller-local Orbit DNS resolver overrides';
 
     public function handle(ResolvesLocalDns $resolver): int

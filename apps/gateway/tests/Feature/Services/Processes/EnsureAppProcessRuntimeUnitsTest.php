@@ -44,7 +44,6 @@ function makeEnsureRuntimeUnitsAction(RemoteShell $remoteShell, SiteCertificateI
 it('renders and enacts supervisor programs for app process definitions', function (): void {
     $node = Node::factory()->create([
         'name' => 'app-1',
-        'role' => 'app',
         'tld' => 'test',
         'status' => 'active',
     ]);
@@ -97,7 +96,6 @@ it('renders and enacts supervisor programs for app process definitions', functio
 it('reports process family warnings when supervisor is unavailable after intent exists', function (): void {
     $node = Node::factory()->create([
         'name' => 'app-1',
-        'role' => 'app',
         'tld' => 'test',
         'status' => 'active',
     ]);
@@ -137,7 +135,6 @@ it('reports process family warnings when supervisor is unavailable after intent 
 it('reports process.tls_certificate_missing when the site certificate installer throws and still continues to the next workspace context', function (): void {
     $node = Node::factory()->create([
         'name' => 'app-1',
-        'role' => 'app',
         'tld' => 'test',
         'status' => 'active',
     ]);
@@ -183,7 +180,6 @@ it('reports process.tls_certificate_missing when the site certificate installer 
 it('does not probe supervisor when an app has no process definitions', function (): void {
     $node = Node::factory()->create([
         'name' => 'app-1',
-        'role' => 'app',
         'tld' => 'test',
         'status' => 'active',
     ]);
@@ -206,7 +202,6 @@ describe('runtime dispatcher', function (): void {
     it('does not install Supervisor config for a docker-runtime process and instead renders the Docker container', function (): void {
         $node = Node::factory()->create([
             'name' => 'app-1',
-            'role' => 'app',
             'tld' => 'test',
             'status' => 'active',
             'user' => 'orbit',
@@ -257,7 +252,6 @@ describe('runtime dispatcher', function (): void {
     it('still installs Supervisor config for a supervisor-runtime process on a static app', function (): void {
         $node = Node::factory()->create([
             'name' => 'app-1',
-            'role' => 'app',
             'tld' => 'test',
             'status' => 'active',
         ]);
@@ -296,7 +290,6 @@ describe('runtime dispatcher', function (): void {
     it('tears down the old runtime artifact when a process flips runtimes (docker -> supervisor)', function (): void {
         $node = Node::factory()->create([
             'name' => 'app-1',
-            'role' => 'app',
             'tld' => 'test',
             'status' => 'active',
         ]);
@@ -338,7 +331,6 @@ describe('runtime dispatcher', function (): void {
     it('tears down the old supervisor program when a process flips runtimes (supervisor -> docker)', function (): void {
         $node = Node::factory()->create([
             'name' => 'app-1',
-            'role' => 'app',
             'tld' => 'test',
             'status' => 'active',
             'user' => 'orbit',

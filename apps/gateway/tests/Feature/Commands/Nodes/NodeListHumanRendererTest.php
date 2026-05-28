@@ -28,11 +28,9 @@ function nodeListHumanRow(array $overrides = []): array
 {
     return array_merge([
         'name' => 'app-1',
-        'role' => 'app',
         'host' => '10.6.0.7',
         'orbit_path' => '/home/nckrtl/orbit',
         'status' => 'active',
-        'environment' => 'development',
         'tld' => 'test',
         'platform' => 'ubuntu_24-04',
         'wireguard_address' => '10.6.0.7',
@@ -79,11 +77,9 @@ describe('node:list human renderer contract', function (): void {
 
         DB::table('nodes')->insert([
             'name' => 'local-gateway',
-            'role' => 'gateway',
             'host' => '10.6.0.1',
             'orbit_path' => '/home/orbit/orbit',
             'status' => 'active',
-            'environment' => null,
             'platform' => 'ubuntu_24-04',
             'wireguard_address' => '10.6.0.1',
             'created_at' => now(),
@@ -96,8 +92,6 @@ describe('node:list human renderer contract', function (): void {
         DB::table('nodes')->insert([
             nodeListHumanRow([
                 'name' => 'app-1',
-                'role' => 'app',
-                'environment' => 'development',
             ]),
         ]);
 
@@ -111,17 +105,13 @@ describe('node:list human renderer contract', function (): void {
             ->and($output)->not->toContain('"error"');
     });
 
-    it('renders table with ROLE ROLES NAME ENVIRONMENT PLATFORM STATUS columns', function (): void {
+    it('renders table with ROLES NAME PLATFORM STATUS columns', function (): void {
         DB::table('nodes')->insert([
             nodeListHumanRow([
                 'name' => 'app-1',
-                'role' => 'app',
-                'environment' => 'development',
             ]),
             nodeListHumanRow([
                 'name' => 'gateway-1',
-                'role' => 'gateway',
-                'environment' => null,
             ]),
         ]);
 
@@ -130,20 +120,17 @@ describe('node:list human renderer contract', function (): void {
 
         expect($exitCode)->toBe(0);
 
-        expect($output)->toContain('ROLE')
-            ->and($output)->toContain('ROLES')
+        expect($output)->toContain('ROLES')
             ->and($output)->toContain('NAME')
-            ->and($output)->toContain('ENVIRONMENT')
             ->and($output)->toContain('PLATFORM')
-            ->and($output)->toContain('STATUS');
+            ->and($output)->toContain('STATUS')
+            ->and($output)->not->toContain('ENVIRONMENT');
     });
 
     it('does not render wg_ip or user@wg_ip format in table', function (): void {
         DB::table('nodes')->insert([
             nodeListHumanRow([
                 'name' => 'app-1',
-                'role' => 'app',
-                'environment' => 'development',
                 'wireguard_address' => '10.6.0.20',
             ]),
         ]);
@@ -159,7 +146,7 @@ describe('node:list human renderer contract', function (): void {
     });
 
     it('renders "No nodes found." when result is empty', function (): void {
-        $exitCode = Artisan::call('node:list', ['--role' => 'control']);
+        $exitCode = Artisan::call('node:list', ['--role' => 's3']);
         $output = Artisan::output();
 
         expect($exitCode)->toBe(0);
@@ -170,18 +157,12 @@ describe('node:list human renderer contract', function (): void {
         DB::table('nodes')->insert([
             nodeListHumanRow([
                 'name' => 'gateway-1',
-                'role' => 'gateway',
-                'environment' => null,
             ]),
             nodeListHumanRow([
                 'name' => 'app-1',
-                'role' => 'app',
-                'environment' => 'development',
             ]),
             nodeListHumanRow([
                 'name' => 'control-1',
-                'role' => 'control',
-                'environment' => null,
             ]),
         ]);
 
@@ -195,12 +176,10 @@ describe('node:list human renderer contract', function (): void {
             ->and($output)->toContain('control-1');
     });
 
-    it('renders environment as em-dash for non-app nodes', function (): void {
+    it('renders an em-dash when a node has no active role assignments', function (): void {
         DB::table('nodes')->insert([
             nodeListHumanRow([
                 'name' => 'gateway-1',
-                'role' => 'gateway',
-                'environment' => null,
             ]),
         ]);
 
@@ -209,7 +188,6 @@ describe('node:list human renderer contract', function (): void {
 
         expect($exitCode)->toBe(0);
 
-        // Find the line containing gateway-1 and assert it contains an em-dash for environment
         $lines = explode("\n", $output);
         $gatewayLine = null;
 
@@ -225,12 +203,10 @@ describe('node:list human renderer contract', function (): void {
         expect($gatewayLine)->toContain('—');
     });
 
-    it('renders legacy role separately from empty composable roles', function (): void {
+    it('does not render a synthetic legacy role when assignments are empty', function (): void {
         DB::table('nodes')->insert([
             nodeListHumanRow([
                 'name' => 'control-1',
-                'role' => 'control',
-                'environment' => null,
             ]),
         ]);
 
@@ -251,7 +227,6 @@ describe('node:list human renderer contract', function (): void {
         }
 
         expect($controlLine)->not->toBeNull()
-            ->and($controlLine)->toContain('control')
             ->and($controlLine)->toContain('—');
     });
 
@@ -278,7 +253,7 @@ describe('node:list human renderer contract', function (): void {
 
         $exitCode = Artisan::call('node:list', [
             '--doctor' => true,
-            '--role' => 'app',
+            '--role' => 'app-dev',
         ]);
         $output = Artisan::output();
 
@@ -290,16 +265,15 @@ describe('node:list human renderer contract', function (): void {
     it('renders doctor issue summary without failing the list command', function (): void {
         $node = createTestAppHostNode(nodeListHumanRow([
             'name' => 'incomplete-app',
-            'environment' => 'production',
             'tld' => null,
             'wireguard_address' => null,
-        ]), 'app-production');
+        ]), 'app-prod');
         markNodeSecurityBaselineClean($node);
         markNodeListHumanAppProductionToolsInstalled($node);
 
         $exitCode = Artisan::call('node:list', [
             '--doctor' => true,
-            '--role' => 'app',
+            '--role' => 'app-prod',
         ]);
         $output = Artisan::output();
 

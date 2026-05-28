@@ -8,6 +8,7 @@ use App\Models\Node;
 use App\Services\ActivityLogCorrelation;
 use App\Services\ActivityLogger;
 use App\Services\AgentIde\CoreAgentIdeWorkspacePathResolver;
+use App\Services\Operations\OperationRunRecorder;
 use App\Services\Operations\OperationTokenFactory;
 use App\Services\RemoteShell\LocalExecutorCommandBuilder;
 use App\Services\RemoteShell\RemoteExecutor;
@@ -21,7 +22,7 @@ use Tests\TestCase;
 uses(TestCase::class, RefreshDatabase::class);
 
 it('resolves OpenCode workspace paths through the local executor lookup command', function (): void {
-    $node = Node::factory()->create(['role' => 'app']);
+    $node = Node::factory()->appDev()->create();
     $app = App::factory()->create([
         'name' => 'docs',
         'node_id' => $node->id,
@@ -61,7 +62,7 @@ it('resolves OpenCode workspace paths through the local executor lookup command'
 });
 
 it('resolves Polyscope workspace paths through the local executor lookup command', function (): void {
-    $node = Node::factory()->create(['role' => 'app']);
+    $node = Node::factory()->appDev()->create();
     $app = App::factory()->create([
         'name' => 'docs',
         'node_id' => $node->id,
@@ -112,6 +113,7 @@ function coreAgentIdeWorkspacePathResolverExecutor(CoreAgentIdeWorkspacePathReso
             clock: static fn (): int => 1_798_105_200,
         ),
         activityLogger: new ActivityLogger(new ActivityLogCorrelation),
+        operationRuns: app(OperationRunRecorder::class),
     );
 }
 

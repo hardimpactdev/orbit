@@ -17,7 +17,6 @@ it('uses the active gateway role assignment as the local CLI actor', function ()
 
     $gateway = Node::factory()->create([
         'name' => 'assigned-gateway',
-        'role' => 'control',
         'status' => 'active',
         'wireguard_address' => '10.6.0.2',
     ]);

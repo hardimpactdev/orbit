@@ -7,6 +7,7 @@ use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Services\ActivityLogCorrelation;
 use App\Services\ActivityLogger;
+use App\Services\Operations\OperationRunRecorder;
 use App\Services\Operations\OperationTokenFactory;
 use App\Services\RemoteShell\LocalExecutorCommandBuilder;
 use App\Services\RemoteShell\RemoteExecutor;
@@ -90,7 +91,6 @@ it('mints client configs with the wireguard server dns address', function (): vo
 it('routes password and session secret updates through wg-easy state actions with redacted output summaries', function (): void {
     $node = Node::factory()->create([
         'name' => 'gateway-1',
-        'role' => 'gateway',
         'host' => '10.6.0.2',
         'wireguard_address' => '10.6.0.2',
         'status' => 'active',
@@ -202,7 +202,6 @@ it('does not leak backend password action values from wg-easy state failures', f
                 return new RemoteShellResult(
                     exitCode: 1,
                     stdout: json_encode([
-                        'ok' => false,
                         'error' => [
                             'code' => $remoteCode,
                             'message' => "remote leak {$newPassword} {$hash}",
@@ -333,7 +332,6 @@ it('does not expose backend wg-easy state error messages from remote failure env
     $transport = new WgEasyVpnBackendStateTransport(new RemoteShellResult(
         exitCode: 1,
         stdout: json_encode([
-            'ok' => false,
             'error' => [
                 'code' => 'database_missing',
                 'message' => "remote leak {$secret}",
@@ -367,7 +365,6 @@ it('only exposes whitelisted backend wg-easy state error codes in exception meta
     $transport = new WgEasyVpnBackendStateTransport(new RemoteShellResult(
         exitCode: 1,
         stdout: json_encode([
-            'ok' => false,
             'error' => [
                 'code' => $remoteCode,
                 'message' => 'remote state failure',
@@ -405,7 +402,6 @@ function wgEasyVpnBackendReadyForPasswordRotation(
 ): WgEasyVpnBackend {
     $node = Node::factory()->create([
         'name' => 'gateway-1',
-        'role' => 'gateway',
         'host' => '10.6.0.2',
         'wireguard_address' => '10.6.0.2',
         'status' => 'active',
@@ -503,6 +499,7 @@ function wgEasyVpnBackendExecutor(WgEasyVpnBackendStateTransport $transport): Re
             clock: static fn (): int => 1_798_105_200,
         ),
         activityLogger: new ActivityLogger(new ActivityLogCorrelation),
+        operationRuns: app(OperationRunRecorder::class),
     );
 }
 

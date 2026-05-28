@@ -8,10 +8,12 @@ use App\Exceptions\GatewayApiException;
 
 final class CfCacheRuleAddCommand extends CloudflareGatewayCommand
 {
+    #[\Override]
     protected $signature = 'cf-cache-rule:add
         {app? : Orbit app name}
         {--json : Output JSON}';
 
+    #[\Override]
     protected $description = 'Add or converge a Cloudflare cache rule for an app through the gateway.';
 
     public function handle(): int

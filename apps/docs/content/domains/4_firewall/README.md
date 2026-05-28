@@ -11,7 +11,7 @@ These rules govern what the firewall command family owns and what it may not tou
 - The firewall command family owns the `firewall:*` command prefix.
 - `firewall_rule` is a state family. The gateway is the source of truth for firewall rule configuration.
 - Firewall rules target registered active Ubuntu managed nodes with role
-  `gateway`, `router`, `app-development`, `app-production`, `database`,
+  `gateway`, `router`, `app-dev`, `app-prod`, `database`,
   `agent`, or `ingress`. `database`-only nodes have an empty public
   ingress baseline but accept operator-managed firewall rules.
 - Clients, unsupported platforms, inactive nodes, and unmanaged roles are not firewall-rule targets.
@@ -34,7 +34,7 @@ Authorization failures use `authorization_failed` with standard
 - Bootstrap policy includes Orbit/WireGuard management access and role-specific
   ingress decisions.
 - Only nodes with active `ingress` expose public production HTTP/HTTPS.
-- `app-production` backend port `80` is private backend traffic and must be
+- `app-prod` backend port `80` is private backend traffic and must be
   reachable only through the Orbit/WireGuard network.
 - App and workspace runtime containers are Docker-network backends behind
   `orbit-caddy`; firewall rules target node listeners, not individual

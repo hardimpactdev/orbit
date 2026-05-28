@@ -93,9 +93,9 @@ final readonly class DoctorReportRunner
     public function categoriesForRole(string $role): array
     {
         return match ($role) {
-            'control' => self::CONTROL_CATEGORIES,
-            'gateway' => self::GATEWAY_CATEGORIES,
-            'app', NodeRoleName::AppDevelopment->value => self::APP_CATEGORIES,
+            'operator' => self::CONTROL_CATEGORIES,
+            NodeRoleName::Gateway->value => self::GATEWAY_CATEGORIES,
+            NodeRoleName::AppDevelopment->value => self::APP_CATEGORIES,
             NodeRoleName::AppProduction->value => self::APP_PRODUCTION_CATEGORIES,
             NodeRoleName::Database->value => self::DATABASE_CATEGORIES,
             NodeRoleName::Agent->value => self::AGENT_CATEGORIES,
@@ -433,7 +433,7 @@ final readonly class DoctorReportRunner
             'scope' => [
                 'families' => $selectedFamilies,
                 'node' => $node->name,
-                'role' => $node->role,
+                'role' => $node->displayRole(),
                 'self' => false,
                 'app' => null,
                 'workspace' => null,
@@ -1776,14 +1776,7 @@ final readonly class DoctorReportRunner
         }
 
         if ($schedule->scope === 'orbit') {
-            $node = Node::query()
-                ->where('status', 'active')
-                ->where(function ($query): void {
-                    $query
-                        ->where('role', 'gateway')
-                        ->orWhereIn('id', app(NodeRoleAssignments::class)->activeNodeIdsForRole('gateway'));
-                })
-                ->first();
+            $node = $this->nodeRoleAssignments->activeGatewayNodeQuery()->first();
 
             return $node instanceof Node ? $node->name : null;
         }
@@ -1816,14 +1809,7 @@ final readonly class DoctorReportRunner
 
     private function gatewayNode(): ?Node
     {
-        $node = Node::query()
-            ->where('status', 'active')
-            ->where(function ($query): void {
-                $query
-                    ->where('role', 'gateway')
-                    ->orWhereIn('id', $this->nodeRoleAssignments->activeNodeIdsForRole(NodeRoleName::Gateway->value));
-            })
-            ->first();
+        $node = $this->nodeRoleAssignments->activeGatewayNodeQuery()->first();
 
         return $node instanceof Node ? $node : null;
     }

@@ -21,13 +21,11 @@ function nodeShowHumanRow(array $overrides = []): array
 {
     return array_merge([
         'name' => 'app-1',
-        'role' => 'app',
         'host' => '10.6.0.7',
         'wireguard_address' => '10.6.0.7',
         'user' => 'nckrtl',
         'orbit_path' => '/home/nckrtl/orbit',
         'status' => 'active',
-        'environment' => 'development',
         'platform' => 'ubuntu_24-04',
         'created_at' => now(),
         'updated_at' => now(),
@@ -40,9 +38,8 @@ function setupNodeShowHumanGatewayCaller(): void
 
     DB::table('nodes')->insert(nodeShowHumanRow([
         'name' => 'local-gateway',
-        'role' => 'gateway',
-        'environment' => null,
     ]));
+    assignNodeShowHumanRole('local-gateway', 'gateway');
 }
 
 /**
@@ -150,12 +147,13 @@ describe('node:show human renderer contract', function (): void {
 
     it('renders spacer rows between detail properties', function (): void {
         DB::table('nodes')->insert(nodeShowHumanRow());
+        assignNodeShowHumanRole('app-1', 'app-dev');
 
         $exitCode = Artisan::call('node:show', ['name' => 'app-1']);
         $output = Artisan::output();
 
         expect($exitCode)->toBe(0);
-        expect($output)->toMatch('/├  Role\s+app\n│\n├  OS/')
+        expect($output)->toMatch('/├  Role\s+app-dev\n│\n├  OS/')
             ->and($output)->toMatch('/├  Serving\s+—\n│\n└  Consuming\s+—/')
             ->and($output)->not->toMatch('/└  Consuming\s+—\n│/');
     });
@@ -173,7 +171,7 @@ describe('node:show human renderer contract', function (): void {
 
     it('renders singular role assignment without legacy role or environment in human output', function (): void {
         DB::table('nodes')->insert(nodeShowHumanRow());
-        assignNodeShowHumanRole('app-1', 'app-development', ['tld' => 'test']);
+        assignNodeShowHumanRole('app-1', 'app-dev', ['tld' => 'test']);
 
         $exitCode = Artisan::call('node:show', ['name' => 'app-1']);
         $output = Artisan::output();
@@ -181,7 +179,7 @@ describe('node:show human renderer contract', function (): void {
         expect($exitCode)->toBe(0);
         expect($output)->toContain('Node: app-1')
             ->and($output)->toContain('Role')
-            ->and($output)->toContain('app-development')
+            ->and($output)->toContain('app-dev')
             ->and($output)->not->toContain('Roles')
             ->and($output)->not->toContain('Environment')
             ->and($output)->toContain('OS')
@@ -192,11 +190,9 @@ describe('node:show human renderer contract', function (): void {
             ->and($output)->toContain('Consuming');
     });
 
-    it('omits environment line and falls back to legacy role when assignments are absent', function (): void {
+    it('omits environment line and renders roleless nodes without a synthetic role', function (): void {
         DB::table('nodes')->insert(nodeShowHumanRow([
             'name' => 'gateway-2',
-            'role' => 'gateway',
-            'environment' => null,
         ]));
 
         $exitCode = Artisan::call('node:show', ['name' => 'gateway-2']);
@@ -205,7 +201,7 @@ describe('node:show human renderer contract', function (): void {
         expect($exitCode)->toBe(0);
         expect($output)->toContain('Node: gateway-2')
             ->and($output)->toContain('Role')
-            ->and($output)->toContain('gateway')
+            ->and($output)->toContain('—')
             ->and($output)->not->toContain('Environment')
             ->and($output)->toContain('OS')
             ->and($output)->toContain('ubuntu_24-04')
@@ -229,17 +225,12 @@ describe('node:show human renderer contract', function (): void {
         DB::table('nodes')->insert([
             nodeShowHumanRow([
                 'name' => 'app-1',
-                'role' => 'app',
             ]),
             nodeShowHumanRow([
                 'name' => 'control-1',
-                'role' => 'control',
-                'environment' => null,
             ]),
             nodeShowHumanRow([
                 'name' => 'control-2',
-                'role' => 'control',
-                'environment' => null,
             ]),
         ]);
 

@@ -18,7 +18,6 @@ use RuntimeException;
 #[Signature('orbit:internal:bake-app-node
     {name : App node name}
     {--role=app-dev : App node role: app-dev or app-prod}
-    {--environment= : Deprecated legacy app-node environment: development or production}
     {--host= : App-node host address}
     {--host-key-host= : Host/IP to scan for the SSH host key when different from --host}
     {--wireguard-address= : App-node WireGuard address}
@@ -36,7 +35,6 @@ class BakeAppNodeCommand extends Command
     {
         $name = $this->stringArgument('name');
         $role = $this->stringOption('role') ?? NodeRoleName::AppDevelopment->value;
-        $environment = $this->environmentForRole($role, $this->stringOption('environment'));
         $host = $this->stringOption('host');
         $hostKeyHost = $this->stringOption('host-key-host');
         $wireguardAddress = $this->stringOption('wireguard-address');
@@ -49,11 +47,14 @@ class BakeAppNodeCommand extends Command
             throw new RuntimeException('Name, host, and wireguard-address are required.');
         }
 
+        if (! in_array($role, [NodeRoleName::AppDevelopment->value, NodeRoleName::AppProduction->value], true)) {
+            throw new RuntimeException('Only app-dev and app-prod nodes can be baked with this command.');
+        }
+
         $hostKey = app(SshHostKeyPinner::class)->pin($hostKeyHost ?? $host);
 
         $node = $registryWriter->writeAppNode(
             name: $name,
-            environment: $environment,
             tld: $tld,
             host: $host,
             wireguardAddress: $wireguardAddress,
@@ -64,19 +65,13 @@ class BakeAppNodeCommand extends Command
             hostKey: $hostKey,
         );
 
-        $this->upsertRoleAssignment($node->id, $environment, $tld, $ingressNode);
+        $this->upsertRoleAssignment($node->id, $role, $tld, $ingressNode);
 
         return self::SUCCESS;
     }
 
-    private function upsertRoleAssignment(int $nodeId, string $environment, ?string $tld, ?string $ingressNode): void
+    private function upsertRoleAssignment(int $nodeId, string $role, ?string $tld, ?string $ingressNode): void
     {
-        $role = match ($environment) {
-            'development' => NodeRoleName::AppDevelopment->value,
-            'production' => NodeRoleName::AppProduction->value,
-            default => throw new RuntimeException("Invalid app node environment [{$environment}]."),
-        };
-
         $settings = $tld !== null ? ['tld' => $tld] : [];
 
         if ($ingressNode !== null) {
@@ -105,30 +100,6 @@ class BakeAppNodeCommand extends Command
                 'converged_at' => now(),
             ],
         );
-    }
-
-    private function environmentForRole(string $role, ?string $environment): string
-    {
-        $resolved = match ($role) {
-            'app' => $environment,
-            'app-dev', NodeRoleName::AppDevelopment->value => 'development',
-            'app-prod', NodeRoleName::AppProduction->value => 'production',
-            default => throw new RuntimeException('Only app-dev and app-prod nodes can be baked with this command.'),
-        };
-
-        if ($resolved === null) {
-            throw new RuntimeException('Environment is required for legacy app node baking.');
-        }
-
-        if (! in_array($resolved, ['development', 'production'], true)) {
-            throw new RuntimeException("Invalid app node environment [{$resolved}].");
-        }
-
-        if ($environment !== null && $environment !== $resolved) {
-            throw new RuntimeException("Role [{$role}] does not match environment [{$environment}].");
-        }
-
-        return $resolved;
     }
 
     private function stringArgument(string $name): ?string

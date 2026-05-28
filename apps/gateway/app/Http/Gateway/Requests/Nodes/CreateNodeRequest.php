@@ -20,13 +20,12 @@ final class CreateNodeRequest extends GatewayRequest implements HasBody
 
     public function __construct(
         public readonly string $name,
-        public readonly string $role,
         public readonly array $roles,
         public readonly ?string $host,
-        public readonly ?string $environment,
         public readonly ?string $tld,
         public readonly ?string $user,
         public readonly ?string $hostKeyFingerprint = null,
+        public readonly bool $operator = false,
         public readonly ?string $selfGrant = null,
         public readonly ?string $selfGrantPermissions = null,
         public readonly array $grantTo = [],
@@ -37,6 +36,10 @@ final class CreateNodeRequest extends GatewayRequest implements HasBody
         public readonly ?string $grantFromPermissions = null,
         public readonly array $agentTools = [],
         public readonly ?string $ingressNode = null,
+        public readonly ?string $template = null,
+        public readonly ?string $operatorName = null,
+        public readonly ?string $redisNode = null,
+        public readonly ?string $s3DataPath = null,
     ) {}
 
     public function resolveEndpoint(): string
@@ -51,13 +54,19 @@ final class CreateNodeRequest extends GatewayRequest implements HasBody
     {
         $body = [
             'name' => $this->name,
-            'role' => $this->role,
             'roles' => $this->roles,
             'host' => $this->host,
-            'environment' => $this->environment,
             'tld' => $this->tld,
             'user' => $this->user,
         ];
+
+        if ($this->operator) {
+            $body['operator'] = true;
+        }
+
+        if ($this->template !== null) {
+            $body['template'] = $this->template;
+        }
 
         if ($this->hostKeyFingerprint !== null) {
             $body['host_key_fingerprint'] = $this->hostKeyFingerprint;
@@ -101,6 +110,18 @@ final class CreateNodeRequest extends GatewayRequest implements HasBody
 
         if ($this->ingressNode !== null) {
             $body['ingress_node'] = $this->ingressNode;
+        }
+
+        if ($this->operatorName !== null) {
+            $body['operator_name'] = $this->operatorName;
+        }
+
+        if ($this->redisNode !== null) {
+            $body['redis_node'] = $this->redisNode;
+        }
+
+        if ($this->s3DataPath !== null) {
+            $body['s3_data_path'] = $this->s3DataPath;
         }
 
         return $body;

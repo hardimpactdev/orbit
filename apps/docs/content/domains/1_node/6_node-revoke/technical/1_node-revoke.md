@@ -11,8 +11,8 @@
 - The caller holds a grant to the gateway whose permissions include
   `node:revoke` or `*`. Callers without that permission receive
   `authorization_failed`.
-- Configured client callers have gateway access as defined in
-[`2_node-revoke_on-client.md`](2_node-revoke_on-client.md).
+- Configured operator-node callers have gateway access as defined in
+[`2_node-revoke_on-operator-node.md`](2_node-revoke_on-operator-node.md).
 - Both `consuming_node` and `serving_node` exist in gateway node configuration.
 
 **Post-input path eligibility:**
@@ -159,7 +159,7 @@ Primary test owners:
 | Path | Coverage |
 | --- | --- |
 | `apps/gateway/tests/Feature/Commands/NodeAccessCommandsTest.php` | Revocation success, idempotent absence, node-not-found validation, client forwarding, authorization failure, confirmation, and `--force` behavior. |
-| `apps/gateway/tests/Feature/Commands/Nodes/NodeRevokeOnControlNodeContractTest.php` | Configured-client forwarding, no SSH fallback, `node:revoke` authorization on a gateway grant, self-lockout, destructive consent, and result rendering. |
+| `apps/gateway/tests/Feature/Commands/Nodes/NodeRevokeOnOperatorNodeContractTest.php` | Configured operator-node forwarding, no SSH fallback, `node:revoke` authorization on a gateway grant, self-lockout, destructive consent, and result rendering. |
 
 Input-mode-specific test mapping lives in:
 
@@ -173,5 +173,5 @@ Renderer-specific test mapping lives in:
 
 Deployment-context test mapping lives in:
 
-- [`2_node-revoke_on-client.md`](2_node-revoke_on-client.md#test-mapping)
+- [`2_node-revoke_on-operator-node.md`](2_node-revoke_on-operator-node.md#test-mapping)
 - [`3_node-revoke_on-gateway-node.md`](3_node-revoke_on-gateway-node.md#test-mapping)

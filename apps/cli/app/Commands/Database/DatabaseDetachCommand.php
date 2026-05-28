@@ -8,6 +8,7 @@ use App\Exceptions\GatewayApiException;
 
 final class DatabaseDetachCommand extends DatabaseGatewayCommand
 {
+    #[\Override]
     protected $signature = 'database:detach
         {connection? : Database connection slug}
         {--app= : App selector}
@@ -15,6 +16,7 @@ final class DatabaseDetachCommand extends DatabaseGatewayCommand
         {--env-prefix=DB : Environment variable prefix}
         {--json : Output JSON}';
 
+    #[\Override]
     protected $description = 'Detach a database connection from an app or workspace target.';
 
     public function handle(): int

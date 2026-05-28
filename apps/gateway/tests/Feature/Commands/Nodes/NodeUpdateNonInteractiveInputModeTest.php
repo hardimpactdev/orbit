@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Models\NodeRoleAssignment;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
@@ -16,13 +17,11 @@ function nodeUpdateNonInteractiveRow(array $overrides = []): array
 {
     return array_merge([
         'name' => 'app-1',
-        'role' => 'app',
         'host' => '10.6.0.7',
         'wireguard_address' => '10.6.0.7',
         'user' => 'nckrtl',
         'orbit_path' => '/home/nckrtl/orbit',
         'status' => 'active',
-        'environment' => 'development',
         'platform' => 'ubuntu_24-04',
         'tld' => null,
         'public_ipv4' => null,
@@ -38,9 +37,25 @@ function setupNodeUpdateNonInteractiveGatewayCaller(): void
 
     DB::table('nodes')->insert(nodeUpdateNonInteractiveRow([
         'name' => 'gateway-1',
-        'role' => 'gateway',
-        'environment' => null,
     ]));
+    assignNodeUpdateNonInteractiveRole('gateway-1', 'gateway');
+}
+
+/**
+ * @param  array<string, mixed>  $settings
+ */
+function assignNodeUpdateNonInteractiveRole(string $nodeName, string $role, array $settings = []): void
+{
+    $nodeId = (int) DB::table('nodes')
+        ->where('name', $nodeName)
+        ->value('id');
+
+    NodeRoleAssignment::factory()->create([
+        'node_id' => $nodeId,
+        'role' => $role,
+        'status' => 'active',
+        'settings' => $settings,
+    ]);
 }
 
 describe('node:update non-interactive input mode', function (): void {
@@ -99,8 +114,8 @@ describe('node:update non-interactive input mode', function (): void {
     it('rejects tld on a production app that remains production', function (): void {
         setupNodeUpdateNonInteractiveGatewayCaller();
         DB::table('nodes')->insert(nodeUpdateNonInteractiveRow([
-            'environment' => 'production',
         ]));
+        assignNodeUpdateNonInteractiveRole('app-1', 'app-prod');
 
         $exitCode = Artisan::call('node:update', [
             'name' => 'app-1',
@@ -113,13 +128,14 @@ describe('node:update non-interactive input mode', function (): void {
         expect($exitCode)->toBe(1)
             ->and($payload['error']['code'])->toBe('node.field_role_incompatible')
             ->and($payload['error']['meta']['field'])->toBe('tld')
-            ->and($payload['error']['meta']['role'])->toBe('app')
+            ->and($payload['error']['meta']['role'])->toBe('app-prod')
             ->and(DB::table('nodes')->where('name', 'app-1')->value('tld'))->toBeNull();
     });
 
     it('updates tld on a development app', function (): void {
         setupNodeUpdateNonInteractiveGatewayCaller();
         DB::table('nodes')->insert(nodeUpdateNonInteractiveRow());
+        assignNodeUpdateNonInteractiveRole('app-1', 'app-dev', ['tld' => null]);
 
         $exitCode = Artisan::call('node:update', [
             'name' => 'app-1',
@@ -134,35 +150,36 @@ describe('node:update non-interactive input mode', function (): void {
             ->and(DB::table('nodes')->where('name', 'app-1')->value('tld'))->toBe('test');
     });
 
-    it('updates production app to development and tld in the same non-interactive invocation', function (): void {
+    it('updates multiple app-dev fields in the same non-interactive invocation', function (): void {
         setupNodeUpdateNonInteractiveGatewayCaller();
         DB::table('nodes')->insert(nodeUpdateNonInteractiveRow([
-            'environment' => 'production',
         ]));
+        assignNodeUpdateNonInteractiveRole('app-1', 'app-dev', ['tld' => null]);
 
         $exitCode = Artisan::call('node:update', [
             'name' => 'app-1',
-            '--environment' => 'development',
             '--tld' => 'test',
+            '--public-ipv4' => '203.0.113.20',
             '--json' => true,
         ]);
 
         $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
 
         expect($exitCode)->toBe(0)
-            ->and($payload['success']['data']['changed'])->toBe(['environment', 'tld'])
-            ->and(DB::table('nodes')->where('name', 'app-1')->value('environment'))->toBe('development')
+            ->and($payload['success']['data']['changed'])->toBe(['tld', 'public_ipv4'])
             ->and(DB::table('nodes')->where('name', 'app-1')->value('tld'))->toBe('test');
     });
 
     it('rejects duplicate tld across active nodes', function (): void {
         setupNodeUpdateNonInteractiveGatewayCaller();
         DB::table('nodes')->insert(nodeUpdateNonInteractiveRow());
+        assignNodeUpdateNonInteractiveRole('app-1', 'app-dev', ['tld' => null]);
         DB::table('nodes')->insert(nodeUpdateNonInteractiveRow([
             'name' => 'app-2',
             'wireguard_address' => '10.6.0.8',
             'tld' => 'test',
         ]));
+        assignNodeUpdateNonInteractiveRole('app-2', 'app-dev', ['tld' => 'test']);
 
         $exitCode = Artisan::call('node:update', [
             'name' => 'app-1',

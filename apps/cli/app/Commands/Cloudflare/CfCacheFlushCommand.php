@@ -8,10 +8,12 @@ use App\Exceptions\GatewayApiException;
 
 final class CfCacheFlushCommand extends CloudflareGatewayCommand
 {
+    #[\Override]
     protected $signature = 'cf-cache:flush
         {--zone= : Cloudflare zone ID, domain, or app name}
         {--json : Output JSON}';
 
+    #[\Override]
     protected $description = 'Flush Cloudflare cache for a zone through the gateway.';
 
     public function handle(): int

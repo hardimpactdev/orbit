@@ -228,21 +228,9 @@ class SchedulePayload
 
     private function gatewayNode(): ?Node
     {
-        $gatewayNode = app(NodeRoleAssignments::class)
+        return app(NodeRoleAssignments::class)
             ->activeGatewayNodeQuery()
             ->with('schedulerState')
             ->first();
-
-        if ($gatewayNode instanceof Node) {
-            return $gatewayNode;
-        }
-
-        $legacyGatewayNode = Node::query()
-            ->with('schedulerState')
-            ->where('role', 'gateway')
-            ->where('status', 'active')
-            ->first();
-
-        return $legacyGatewayNode instanceof Node ? $legacyGatewayNode : null;
     }
 }

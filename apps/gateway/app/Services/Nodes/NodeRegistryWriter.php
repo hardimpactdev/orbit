@@ -16,8 +16,6 @@ final readonly class NodeRegistryWriter
 
     public function writeNodeIdentity(
         string $name,
-        string $legacyRole,
-        ?string $environment,
         ?string $tld,
         string $platform,
         string $host,
@@ -29,8 +27,6 @@ final readonly class NodeRegistryWriter
         ?PinnedHostKey $hostKey = null,
     ): Node {
         $attributes = [
-            'role' => $legacyRole,
-            'environment' => $environment,
             'tld' => $tld,
             'platform' => $platform,
             'host' => $host,
@@ -60,7 +56,6 @@ final readonly class NodeRegistryWriter
 
     public function writeAppNode(
         string $name,
-        string $environment,
         ?string $tld,
         string $host,
         string $wireguardAddress,
@@ -72,8 +67,6 @@ final readonly class NodeRegistryWriter
     ): Node {
         $node = $this->writeNodeIdentity(
             name: $name,
-            legacyRole: 'app',
-            environment: $environment,
             tld: $tld,
             platform: 'ubuntu',
             host: $host,

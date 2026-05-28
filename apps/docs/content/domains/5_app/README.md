@@ -61,9 +61,9 @@ gateway-to-node application and process managers live in
 
 Production app routes enter through `ingress`, are forwarded over
 WireGuard to the gateway-coupled `router`, and only then fan out to private
-`app-production` backend artifacts. App commands choose the ingress
+`app-prod` backend artifacts. App commands choose the ingress
 placement; the router owns private route selection and backend-pool targeting.
-The backend artifact terminates at `orbit-caddy` on the app-production node and
+The backend artifact terminates at `orbit-caddy` on the app-prod node and
 then reaches the app's FrankenPHP container over the node Docker network.
 
 ## App Identity Arguments
@@ -109,7 +109,7 @@ canonical app entity.
 | Field | Type | Meaning |
 | --- | --- | --- |
 | `name` | string | App identity slug. Globally unique in the gateway app registry. |
-| `node` | string | Owning node slug. The node's active role (`app-development` or `app-production`) determines the app's environment; the app entity does not carry a separate `environment` field. |
+| `node` | string | Owning node slug. The node's active role (`app-dev` or `app-prod`) determines the app's environment; the app entity does not carry a separate `environment` field. |
 | `url` | string | Primary intended URL for the app. |
 | `path` | string | Absolute app path on the owning node. |
 | `root` | string | Document root relative to `path`. |
@@ -137,7 +137,7 @@ self-grant — see [Architecture: Self-grants and
 self-serving](../../architecture.md#self-grants-and-self-serving).
 [`workspace:setup`](../6_workspace/2_workspace-setup/workspace-setup.md) is
 the most visible self-serving command in this family today; it works because
-the `app-development` and `app-production` self-grant baselines include the
+the `app-dev` and `app-prod` self-grant baselines include the
 workspace permissions it needs.
 
 ## Commands

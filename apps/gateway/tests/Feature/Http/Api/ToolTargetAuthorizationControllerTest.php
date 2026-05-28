@@ -17,10 +17,8 @@ function createToolTargetAuthCaller(): Node
 {
     return Node::factory()->create([
         'name' => 'caller',
-        'role' => 'control',
         'host' => TOOL_TARGET_AUTH_CALLER_WG_IP,
-        'wireguard_address' => TOOL_TARGET_AUTH_CALLER_WG_IP,
-    ]);
+        'wireguard_address' => TOOL_TARGET_AUTH_CALLER_WG_IP]);
 }
 
 /**
@@ -33,15 +31,14 @@ function grantToolTargetAuthAccess(Node $caller, Node $appNode, array $permissio
         'serving_node_id' => $appNode->id,
         'permissions' => json_encode($permissions),
         'created_at' => now(),
-        'updated_at' => now(),
-    ]);
+        'updated_at' => now()]);
 }
 
 describe('tool API target authorization', function (): void {
     it('rejects hidden target selectors before tool side effects', function (string $method, string $uri, array $parameters): void {
         $caller = createToolTargetAuthCaller();
-        $visibleNode = createTestAppHostNode(['name' => 'visible-node', 'role' => 'app', 'status' => 'active']);
-        $hiddenNode = createTestAppHostNode(['name' => 'hidden-node', 'role' => 'app', 'status' => 'active']);
+        $visibleNode = createTestAppHostNode(['name' => 'visible-node', 'status' => 'active']);
+        $hiddenNode = createTestAppHostNode(['name' => 'hidden-node', 'status' => 'active']);
         grantToolTargetAuthAccess($caller, $visibleNode);
 
         NodeTool::factory()->create([
@@ -51,10 +48,7 @@ describe('tool API target authorization', function (): void {
             'config' => ['compose_path' => '/opt/orbit/docker-compose.yml'],
             'credentials' => [
                 'fields' => [
-                    'password' => 'secret',
-                ],
-            ],
-        ]);
+                    'password' => 'secret']]]);
 
         $shell = new ToolTargetAuthorizationRecordingShell;
         app()->instance(RemoteShell::class, $shell);
@@ -76,13 +70,12 @@ describe('tool API target authorization', function (): void {
         'reconfigure' => ['POST', '/api/tools/polyscope-server/reconfigure', ['node' => 'hidden-node']],
         'restart' => ['POST', '/api/tools/redis/restart', ['node' => 'hidden-node']],
         'start' => ['POST', '/api/tools/redis/start', ['node' => 'hidden-node']],
-        'stop' => ['POST', '/api/tools/redis/stop', ['node' => 'hidden-node']],
-    ]);
+        'stop' => ['POST', '/api/tools/redis/stop', ['node' => 'hidden-node']]]);
 
     it('uses the only visible target when no selector is supplied', function (): void {
         $caller = createToolTargetAuthCaller();
-        $visibleNode = createTestAppHostNode(['name' => 'visible-node', 'role' => 'app', 'status' => 'active']);
-        $hiddenNode = createTestAppHostNode(['name' => 'hidden-node', 'role' => 'app', 'status' => 'active']);
+        $visibleNode = createTestAppHostNode(['name' => 'visible-node', 'status' => 'active']);
+        $hiddenNode = createTestAppHostNode(['name' => 'hidden-node', 'status' => 'active']);
         grantToolTargetAuthAccess($caller, $visibleNode);
 
         NodeTool::factory()->create([
@@ -90,19 +83,13 @@ describe('tool API target authorization', function (): void {
             'name' => 'redis',
             'credentials' => [
                 'fields' => [
-                    'password' => 'visible-secret',
-                ],
-            ],
-        ]);
+                    'password' => 'visible-secret']]]);
         NodeTool::factory()->create([
             'node_id' => $hiddenNode->id,
             'name' => 'redis',
             'credentials' => [
                 'fields' => [
-                    'password' => 'hidden-secret',
-                ],
-            ],
-        ]);
+                    'password' => 'hidden-secret']]]);
 
         $response = $this->call('GET', '/api/tools/redis/credentials', [], [], [], ['REMOTE_ADDR' => TOOL_TARGET_AUTH_CALLER_WG_IP]);
 
@@ -114,10 +101,8 @@ describe('tool API target authorization', function (): void {
     it('allows hosted callers to target their own app tool node with an explicit self grant', function (): void {
         $caller = createTestAppHostNode([
             'name' => 'caller',
-            'role' => 'app',
             'host' => TOOL_TARGET_AUTH_CALLER_WG_IP,
-            'wireguard_address' => TOOL_TARGET_AUTH_CALLER_WG_IP,
-        ]);
+            'wireguard_address' => TOOL_TARGET_AUTH_CALLER_WG_IP]);
 
         grantToolTargetAuthAccess($caller, $caller);
 
@@ -126,14 +111,10 @@ describe('tool API target authorization', function (): void {
             'name' => 'redis',
             'credentials' => [
                 'fields' => [
-                    'password' => 'self-secret',
-                ],
-            ],
-        ]);
+                    'password' => 'self-secret']]]);
 
         $response = $this->call('GET', '/api/tools/redis/credentials', [
-            'node' => 'caller',
-        ], [], [], ['REMOTE_ADDR' => TOOL_TARGET_AUTH_CALLER_WG_IP]);
+            'node' => 'caller'], [], [], ['REMOTE_ADDR' => TOOL_TARGET_AUTH_CALLER_WG_IP]);
 
         $response->assertOk()
             ->assertJsonPath('success.data.credentials.node', 'caller')
@@ -144,7 +125,7 @@ describe('tool API target authorization', function (): void {
 
     it('rejects credentials when the grant only allows reading tools', function (): void {
         $caller = createToolTargetAuthCaller();
-        $visibleNode = createTestAppHostNode(['name' => 'visible-node', 'role' => 'app', 'status' => 'active']);
+        $visibleNode = createTestAppHostNode(['name' => 'visible-node', 'status' => 'active']);
         grantToolTargetAuthAccess($caller, $visibleNode, ['tool:read']);
 
         NodeTool::factory()->create([
@@ -152,14 +133,10 @@ describe('tool API target authorization', function (): void {
             'name' => 'redis',
             'credentials' => [
                 'fields' => [
-                    'password' => 'visible-secret',
-                ],
-            ],
-        ]);
+                    'password' => 'visible-secret']]]);
 
         $response = $this->call('GET', '/api/tools/redis/credentials', [
-            'node' => 'visible-node',
-        ], [], [], ['REMOTE_ADDR' => TOOL_TARGET_AUTH_CALLER_WG_IP]);
+            'node' => 'visible-node'], [], [], ['REMOTE_ADDR' => TOOL_TARGET_AUTH_CALLER_WG_IP]);
 
         $response->assertForbidden()
             ->assertJsonPath('error.code', 'authorization_failed');
@@ -167,21 +144,19 @@ describe('tool API target authorization', function (): void {
 
     it('allows logs when the grant allows reading tools', function (): void {
         $caller = createToolTargetAuthCaller();
-        $visibleNode = createTestAppHostNode(['name' => 'visible-node', 'role' => 'app', 'status' => 'active']);
+        $visibleNode = createTestAppHostNode(['name' => 'visible-node', 'status' => 'active']);
         grantToolTargetAuthAccess($caller, $visibleNode, ['tool:read']);
 
         NodeTool::factory()->create([
             'node_id' => $visibleNode->id,
             'name' => 'redis',
-            'config' => ['compose_path' => '/opt/orbit/docker-compose.yml'],
-        ]);
+            'config' => ['compose_path' => '/opt/orbit/docker-compose.yml']]);
 
         $shell = new ToolTargetAuthorizationRecordingShell;
         app()->instance(RemoteShell::class, $shell);
 
         $response = $this->call('GET', '/api/tools/redis/logs', [
-            'node' => 'visible-node',
-        ], [], [], ['REMOTE_ADDR' => TOOL_TARGET_AUTH_CALLER_WG_IP]);
+            'node' => 'visible-node'], [], [], ['REMOTE_ADDR' => TOOL_TARGET_AUTH_CALLER_WG_IP]);
 
         $response->assertOk();
 
@@ -190,7 +165,7 @@ describe('tool API target authorization', function (): void {
 
     it('streams tool mutation progress from the canonical endpoint', function (): void {
         $caller = createToolTargetAuthCaller();
-        $visibleNode = createTestAppHostNode(['name' => 'visible-node', 'role' => 'app', 'status' => 'active']);
+        $visibleNode = createTestAppHostNode(['name' => 'visible-node', 'status' => 'active']);
         grantToolTargetAuthAccess($caller, $visibleNode);
 
         app()->instance(RemoteShell::class, new ToolTargetAuthorizationRecordingShell);
@@ -203,8 +178,7 @@ describe('tool API target authorization', function (): void {
             [],
             [
                 'HTTP_ACCEPT' => 'text/event-stream',
-                'REMOTE_ADDR' => TOOL_TARGET_AUTH_CALLER_WG_IP,
-            ],
+                'REMOTE_ADDR' => TOOL_TARGET_AUTH_CALLER_WG_IP],
         );
 
         $response->assertOk();

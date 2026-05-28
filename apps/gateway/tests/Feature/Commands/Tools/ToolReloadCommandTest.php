@@ -23,22 +23,19 @@ function createToolReloadLocalNode(string $role = 'gateway'): Node
 {
     return Node::factory()->create([
         'name' => "local-{$role}",
-        'role' => $role,
         'host' => '10.6.0.1',
-        'wireguard_address' => '10.6.0.1',
-    ]);
+        'wireguard_address' => '10.6.0.1']);
 }
 
 describe('tool:reload command contract', function (): void {
     it('reloads a managed tool without changing gateway intent', function (): void {
         createToolReloadLocalNode('gateway');
-        $node = createTestAppHostNode(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        $node = createTestAppHostNode(['name' => 'app-1', 'status' => 'active']);
         $tool = NodeTool::factory()->create([
             'node_id' => $node->id,
             'name' => 'supervisor',
             'expected_state' => 'running',
-            'expected_version' => '4.2.5',
-        ]);
+            'expected_version' => '4.2.5']);
         $shell = new ToolReloadRecordingShell;
         app()->instance(RemoteShell::class, $shell);
 
@@ -52,19 +49,17 @@ describe('tool:reload command contract', function (): void {
                 'name' => 'supervisor',
                 'node' => 'app-1',
                 'expected_state' => 'running',
-                'version' => '4.2.5',
-            ])
+                'version' => '4.2.5'])
             ->and($shell->scripts)->toBe(['sudo supervisorctl reread']);
     });
 
     it('rejects tools without a reload action before remote work', function (): void {
         createToolReloadLocalNode('gateway');
-        $node = createTestAppHostNode(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        $node = createTestAppHostNode(['name' => 'app-1', 'status' => 'active']);
         $tool = NodeTool::factory()->create([
             'node_id' => $node->id,
             'name' => 'gh',
-            'expected_state' => 'running',
-        ]);
+            'expected_state' => 'running']);
         $shell = new ToolReloadRecordingShell;
         app()->instance(RemoteShell::class, $shell);
 
@@ -75,8 +70,7 @@ describe('tool:reload command contract', function (): void {
             ->and($payload['error']['code'])->toBe('tool.unsupported_action')
             ->and($payload['error']['meta'])->toMatchArray([
                 'tool' => 'gh',
-                'action' => 'reload',
-            ])
+                'action' => 'reload'])
             ->and($tool->refresh()->expected_state)->toBe('running')
             ->and($shell->scripts)->toBe([]);
     });
@@ -90,23 +84,20 @@ describe('tool:reload command contract', function (): void {
         expect($exitCode)->toBe(1)
             ->and($payload['error']['code'])->toBe('validation_failed')
             ->and($payload['error']['meta'])->toMatchArray([
-                'field' => 'tool',
-            ]);
+                'field' => 'tool']);
     });
 
     it('prompts for a reload-capable tool when omitted in interactive mode', function (): void {
         createToolReloadLocalNode('gateway');
-        $node = createTestAppHostNode(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        $node = createTestAppHostNode(['name' => 'app-1', 'status' => 'active']);
         NodeTool::factory()->create([
             'node_id' => $node->id,
             'name' => 'supervisor',
-            'expected_state' => 'running',
-        ]);
+            'expected_state' => 'running']);
         NodeTool::factory()->create([
             'node_id' => $node->id,
             'name' => 'gh',
-            'expected_state' => 'running',
-        ]);
+            'expected_state' => 'running']);
         $shell = new ToolReloadRecordingShell;
         app()->instance(RemoteShell::class, $shell);
 
@@ -125,8 +116,7 @@ describe('tool:reload command contract', function (): void {
 
         LocalGatewaySettings::current()->fill([
             'gateway_url' => 'https://10.6.0.1',
-            'ca_pem_path' => '/dev/null',
-        ])->save();
+            'ca_pem_path' => '/dev/null'])->save();
 
         MockClient::global([
             ReloadToolRequest::class => MockResponse::make([
@@ -139,13 +129,8 @@ describe('tool:reload command contract', function (): void {
                             'observed_state' => null,
                             'version' => null,
                             'managed' => true,
-                            'endpoints' => [],
-                        ],
-                    ],
-                    'meta' => [],
-                ],
-            ], 200),
-        ]);
+                            'endpoints' => []]],
+                    'meta' => []]], 200)]);
 
         $exitCode = Artisan::call('tool:reload', ['tool' => 'supervisor', '--node' => 'app-1', '--json' => true]);
         $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);

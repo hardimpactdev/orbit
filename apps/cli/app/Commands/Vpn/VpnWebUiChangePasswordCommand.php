@@ -8,12 +8,14 @@ use App\Exceptions\GatewayApiException;
 
 final class VpnWebUiChangePasswordCommand extends VpnGatewayCommand
 {
+    #[\Override]
     protected $signature = 'vpn-web-ui:change-password
         {password? : New gateway VPN backend web UI password}
         {--force : Confirm credential rotation without prompting}
         {--totp= : One-time code for the gateway VPN backend}
         {--json : Output as JSON}';
 
+    #[\Override]
     protected $description = 'Change the gateway VPN web UI password through the gateway.';
 
     public function handle(): int

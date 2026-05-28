@@ -21,9 +21,14 @@ afterEach(function (): void {
 
 function createToolLogsJsonLocalNode(string $role = 'gateway'): Node
 {
-    return Node::factory()->create([
+    $factory = match ($role) {
+        'gateway' => Node::factory()->gateway(),
+        'agent' => Node::factory()->agent(),
+        default => Node::factory()->operator(),
+    };
+
+    return $factory->create([
         'name' => "tool-logs-json-{$role}",
-        'role' => $role,
         'host' => '10.8.0.1',
         'wireguard_address' => '10.8.0.1',
     ]);
@@ -33,7 +38,6 @@ function createToolLogsJsonManagedTool(string $nodeName = 'app-json-1', string $
 {
     $node = createTestAppHostNode([
         'name' => $nodeName,
-        'role' => 'app',
         'status' => 'active',
     ]);
 
@@ -135,8 +139,7 @@ describe('tool:logs JSON renderer', function (): void {
         $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
 
         expect($exitCode)->toBe(1)
-            ->and($payload['error']['code'])->toBe('validation_failed')
-            ->and($payload['error']['meta'])->toBe(['fields' => ['target']])
+            ->and($payload['error']['code'])->toBe('node_target_required')
             ->and($shell->scripts)->toBe([]);
     });
 

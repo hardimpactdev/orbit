@@ -24,11 +24,9 @@ function nodeListRolePathRow(array $overrides = []): array
 {
     return array_merge([
         'name' => 'app-1',
-        'role' => 'app',
         'host' => '10.6.0.7',
         'orbit_path' => '/home/nckrtl/orbit',
         'status' => 'active',
-        'environment' => 'development',
         'platform' => 'ubuntu_24-04',
         'created_at' => now(),
         'updated_at' => now(),
@@ -41,8 +39,6 @@ function setupNodeListGatewayCaller(): void
 
     DB::table('nodes')->insert(nodeListRolePathRow([
         'name' => 'local-gateway',
-        'role' => 'gateway',
-        'environment' => null,
     ]));
 }
 
@@ -78,8 +74,6 @@ describe('node:list role paths', function (): void {
                         'nodes' => [
                             [
                                 'name' => 'gateway-1',
-                                'role' => 'gateway',
-                                'environment' => null,
                                 'platform' => 'ubuntu_24-04',
                                 'status' => 'active',
                                 'roles' => [

@@ -11,28 +11,28 @@ use Tests\TestCase;
 uses(TestCase::class, RefreshDatabase::class);
 
 describe('node role assignments', function (): void {
-    it('discovers active app host nodes from composable roles instead of legacy shadows', function (): void {
-        $developmentNode = Node::factory()->create(['role' => 'control', 'status' => 'active']);
-        $productionNode = Node::factory()->create(['role' => 'control', 'status' => 'active']);
-        $legacyAppOnlyNode = Node::factory()->create(['role' => 'app', 'status' => 'active']);
-        $pendingAppNode = Node::factory()->create(['role' => 'app', 'status' => 'active']);
-        $databaseNode = Node::factory()->create(['role' => 'control', 'status' => 'active']);
-        $agentNode = Node::factory()->create(['role' => 'control', 'status' => 'active']);
+    it('discovers active app host nodes from composable roles instead of unassigned nodes', function (): void {
+        $developmentNode = Node::factory()->create(['status' => 'active']);
+        $productionNode = Node::factory()->create(['status' => 'active']);
+        $unassignedAppNode = Node::factory()->create(['status' => 'active']);
+        $pendingAppNode = Node::factory()->create(['status' => 'active']);
+        $databaseNode = Node::factory()->create(['status' => 'active']);
+        $agentNode = Node::factory()->create(['status' => 'active']);
 
         NodeRoleAssignment::factory()->create([
             'node_id' => $developmentNode->id,
-            'role' => 'app-development',
+            'role' => 'app-dev',
             'status' => 'active',
             'settings' => ['tld' => 'test'],
         ]);
         NodeRoleAssignment::factory()->create([
             'node_id' => $productionNode->id,
-            'role' => 'app-production',
+            'role' => 'app-prod',
             'status' => 'active',
         ]);
         NodeRoleAssignment::factory()->create([
             'node_id' => $pendingAppNode->id,
-            'role' => 'app-development',
+            'role' => 'app-dev',
             'status' => 'pending',
             'settings' => ['tld' => 'test'],
         ]);
@@ -61,21 +61,21 @@ describe('node role assignments', function (): void {
             ])
             ->and($assignments->nodeHasActiveAppHostRole($developmentNode))->toBeTrue()
             ->and($assignments->nodeHasActiveAppHostRole($productionNode))->toBeTrue()
-            ->and($assignments->nodeHasActiveAppHostRole($legacyAppOnlyNode))->toBeFalse()
+            ->and($assignments->nodeHasActiveAppHostRole($unassignedAppNode))->toBeFalse()
             ->and($assignments->nodeHasActiveAppHostRole($pendingAppNode))->toBeFalse()
             ->and($assignments->nodeHasActiveAppHostRole($databaseNode))->toBeFalse()
             ->and($assignments->nodeHasActiveToolHostRole($databaseNode))->toBeTrue()
             ->and($assignments->nodeHasActiveToolHostRole($agentNode))->toBeTrue()
             ->and($assignments->activeAppHostEnvironment($developmentNode))->toBe('development')
             ->and($assignments->activeAppHostEnvironment($productionNode))->toBe('production')
-            ->and($assignments->activeAppHostEnvironment($legacyAppOnlyNode))->toBeNull();
+            ->and($assignments->activeAppHostEnvironment($unassignedAppNode))->toBeNull();
     });
 
     it('only treats active nodes with active gateway assignments as gateways', function (): void {
-        $activeLegacyGateway = Node::factory()->create(['role' => 'gateway', 'status' => 'active']);
-        $inactiveLegacyGateway = Node::factory()->create(['role' => 'gateway', 'status' => 'provisioning']);
-        $activeAssignedGateway = Node::factory()->create(['role' => 'control', 'status' => 'active']);
-        $inactiveAssignedGateway = Node::factory()->create(['role' => 'control', 'status' => 'provisioning']);
+        $activeUnassignedGateway = Node::factory()->create(['status' => 'active']);
+        $inactiveUnassignedGateway = Node::factory()->create(['status' => 'provisioning']);
+        $activeAssignedGateway = Node::factory()->create(['status' => 'active']);
+        $inactiveAssignedGateway = Node::factory()->create(['status' => 'provisioning']);
 
         NodeRoleAssignment::factory()->create([
             'node_id' => $activeAssignedGateway->id,
@@ -90,17 +90,17 @@ describe('node role assignments', function (): void {
 
         $assignments = app(NodeRoleAssignments::class);
 
-        expect($assignments->nodeIsGateway($activeLegacyGateway))->toBeFalse()
-            ->and($assignments->nodeIsGateway($inactiveLegacyGateway))->toBeFalse()
+        expect($assignments->nodeIsGateway($activeUnassignedGateway))->toBeFalse()
+            ->and($assignments->nodeIsGateway($inactiveUnassignedGateway))->toBeFalse()
             ->and($assignments->nodeIsGateway($activeAssignedGateway))->toBeTrue()
             ->and($assignments->nodeIsGateway($inactiveAssignedGateway))->toBeFalse();
     });
 
     it('discovers the active vpn node from role assignments', function (): void {
-        $activeVpnNode = Node::factory()->create(['role' => 'control', 'status' => 'active']);
-        $inactiveVpnNode = Node::factory()->create(['role' => 'control', 'status' => 'provisioning']);
-        $pendingVpnNode = Node::factory()->create(['role' => 'control', 'status' => 'active']);
-        $legacyVpnNode = Node::factory()->create(['role' => 'vpn', 'status' => 'active']);
+        $activeVpnNode = Node::factory()->create(['status' => 'active']);
+        $inactiveVpnNode = Node::factory()->create(['status' => 'provisioning']);
+        $pendingVpnNode = Node::factory()->create(['status' => 'active']);
+        $unassignedVpnNode = Node::factory()->create(['status' => 'active']);
 
         NodeRoleAssignment::factory()->create([
             'node_id' => $activeVpnNode->id,
@@ -123,15 +123,15 @@ describe('node role assignments', function (): void {
         expect($assignments->nodeHasActiveVpnRole($activeVpnNode))->toBeTrue()
             ->and($assignments->nodeHasActiveVpnRole($inactiveVpnNode))->toBeTrue()
             ->and($assignments->nodeHasActiveVpnRole($pendingVpnNode))->toBeFalse()
-            ->and($assignments->nodeHasActiveVpnRole($legacyVpnNode))->toBeFalse()
+            ->and($assignments->nodeHasActiveVpnRole($unassignedVpnNode))->toBeFalse()
             ->and($assignments->activeVpnNodeQuery()->pluck('id')->all())->toBe([$activeVpnNode->id]);
     });
 
     it('labels effective roles from active assignments', function (): void {
-        $gateway = Node::factory()->create(['role' => 'control']);
-        $development = Node::factory()->create(['role' => 'control']);
-        $database = Node::factory()->create(['role' => 'control']);
-        $control = Node::factory()->create(['role' => 'gateway']);
+        $gateway = Node::factory()->create([]);
+        $development = Node::factory()->create([]);
+        $database = Node::factory()->create([]);
+        $control = Node::factory()->create([]);
 
         NodeRoleAssignment::factory()->create([
             'node_id' => $gateway->id,
@@ -140,7 +140,7 @@ describe('node role assignments', function (): void {
         ]);
         NodeRoleAssignment::factory()->create([
             'node_id' => $development->id,
-            'role' => 'app-development',
+            'role' => 'app-dev',
             'status' => 'active',
             'settings' => ['tld' => 'test'],
         ]);
@@ -153,8 +153,8 @@ describe('node role assignments', function (): void {
         $assignments = app(NodeRoleAssignments::class);
 
         expect($assignments->assignmentRoleLabel($gateway))->toBe('gateway')
-            ->and($assignments->assignmentRoleLabel($development))->toBe('app')
+            ->and($assignments->assignmentRoleLabel($development))->toBe('app-dev')
             ->and($assignments->assignmentRoleLabel($database))->toBe('database')
-            ->and($assignments->assignmentRoleLabel($control))->toBe('control');
+            ->and($assignments->assignmentRoleLabel($control))->toBe('operator');
     });
 });

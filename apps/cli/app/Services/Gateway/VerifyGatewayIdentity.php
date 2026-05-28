@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Services\Gateway;
 
-use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\Http;
 
 final class VerifyGatewayIdentity implements VerifiesGatewayIdentity
@@ -27,12 +26,6 @@ final class VerifyGatewayIdentity implements VerifiesGatewayIdentity
                 ->withOptions(['verify' => $pemPath])
                 ->acceptJson()
                 ->get("https://{$gatewayIp}/api/me");
-        } catch (ConnectionException) {
-            return [
-                'code' => 'gateway_unavailable',
-                'message' => "Gateway at {$gatewayIp} is unreachable.",
-                'meta' => ['gateway_ip' => $gatewayIp],
-            ];
         } catch (\Throwable) {
             return [
                 'code' => 'gateway_unavailable',

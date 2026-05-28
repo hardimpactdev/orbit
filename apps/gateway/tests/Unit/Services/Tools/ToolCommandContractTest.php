@@ -5,7 +5,6 @@ declare(strict_types=1);
 use App\Contracts\RemoteShell;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Models\App;
-use App\Models\LocalNodeDefault;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Models\NodeTool;
@@ -18,7 +17,7 @@ use Tests\TestCase;
 
 uses(TestCase::class, RefreshDatabase::class);
 
-function assignToolContractAppHostRole(Node $node, string $role = 'app-development', array $settings = ['tld' => 'test']): void
+function assignToolContractAppHostRole(Node $node, string $role = 'app-dev', array $settings = ['tld' => 'test']): void
 {
     NodeRoleAssignment::factory()->create([
         'node_id' => $node->id,
@@ -114,7 +113,7 @@ describe('tool command shared contract', function (): void {
     });
 
     it('preserves populated observed state as a gateway-owned live inspection overlay', function (): void {
-        $node = createTestAppHostNode(['name' => 'app-contract-live', 'role' => 'app', 'status' => 'active']);
+        $node = createTestAppHostNode(['name' => 'app-contract-live', 'status' => 'active']);
         $tool = NodeTool::factory()->create([
             'name' => 'redis',
             'node_id' => $node->id,
@@ -145,13 +144,13 @@ describe('tool command shared contract', function (): void {
     });
 
     it('filters registry lists to visible app hosts by node selector and app selector', function (): void {
-        $firstNode = Node::factory()->create(['name' => 'app-contract-a', 'role' => 'control', 'status' => 'active']);
-        $secondNode = Node::factory()->create(['name' => 'app-contract-b', 'role' => 'control', 'status' => 'active']);
-        $inactiveNode = Node::factory()->create(['name' => 'app-contract-c', 'role' => 'control', 'status' => 'inactive']);
-        $legacyAppOnlyNode = Node::factory()->create(['name' => 'app-contract-legacy', 'role' => 'app', 'status' => 'active']);
-        $gatewayNode = Node::factory()->create(['name' => 'gateway-contract', 'role' => 'gateway', 'status' => 'active']);
+        $firstNode = Node::factory()->create(['name' => 'app-contract-a', 'status' => 'active']);
+        $secondNode = Node::factory()->create(['name' => 'app-contract-b', 'status' => 'active']);
+        $inactiveNode = Node::factory()->create(['name' => 'app-contract-c', 'status' => 'inactive']);
+        $unassignedNode = Node::factory()->create(['name' => 'app-contract-unassigned', 'status' => 'active']);
+        $gatewayNode = createTestGatewayNode(['name' => 'gateway-contract']);
         assignToolContractAppHostRole($firstNode);
-        assignToolContractAppHostRole($secondNode, 'app-production', []);
+        assignToolContractAppHostRole($secondNode, 'app-prod', []);
         assignToolContractAppHostRole($inactiveNode);
 
         App::factory()->create([
@@ -164,7 +163,7 @@ describe('tool command shared contract', function (): void {
         NodeTool::factory()->create(['name' => 'a-caddy', 'node_id' => $firstNode->id]);
         NodeTool::factory()->create(['name' => 'php', 'node_id' => $secondNode->id]);
         NodeTool::factory()->create(['name' => 'hidden', 'node_id' => $inactiveNode->id]);
-        NodeTool::factory()->create(['name' => 'legacy', 'node_id' => $legacyAppOnlyNode->id]);
+        NodeTool::factory()->create(['name' => 'unassigned', 'node_id' => $unassignedNode->id]);
         NodeTool::factory()->create(['name' => 'gateway-only', 'node_id' => $gatewayNode->id]);
 
         $registry = app(ToolRegistry::class);
@@ -180,11 +179,11 @@ describe('tool command shared contract', function (): void {
     });
 
     it('returns contract failures for invalid or conflicting registry filters', function (): void {
-        $firstNode = Node::factory()->create(['name' => 'app-contract-a', 'role' => 'control', 'status' => 'active']);
-        $secondNode = Node::factory()->create(['name' => 'app-contract-b', 'role' => 'control', 'status' => 'active']);
-        $legacyAppOnlyNode = Node::factory()->create(['name' => 'app-contract-legacy', 'role' => 'app', 'status' => 'active']);
+        $firstNode = Node::factory()->create(['name' => 'app-contract-a', 'status' => 'active']);
+        $secondNode = Node::factory()->create(['name' => 'app-contract-b', 'status' => 'active']);
+        $unassignedNode = Node::factory()->create(['name' => 'app-contract-unassigned', 'status' => 'active']);
         assignToolContractAppHostRole($firstNode);
-        assignToolContractAppHostRole($secondNode, 'app-production', []);
+        assignToolContractAppHostRole($secondNode, 'app-prod', []);
 
         App::factory()->create([
             'name' => 'docs-contract',
@@ -197,16 +196,16 @@ describe('tool command shared contract', function (): void {
             ->and($registry->validateFilters(app: 'docs-contract'))->toBeNull();
 
         $invalidNode = $registry->validateFilters(node: 'missing-node');
-        $legacyAppOnlyFailure = $registry->validateFilters(node: $legacyAppOnlyNode->name);
+        $unassignedNodeFailure = $registry->validateFilters(node: $unassignedNode->name);
         $invalidApp = $registry->validateFilters(app: 'missing-app');
         $conflictingApp = $registry->validateFilters(node: $firstNode->name, app: 'docs-contract');
 
         expect($invalidNode)->toBeInstanceOf(ToolRegistryFailure::class)
             ->and($invalidNode->code)->toBe('validation_failed')
             ->and($invalidNode->meta)->toMatchArray(['field' => 'node', 'value' => 'missing-node'])
-            ->and($legacyAppOnlyFailure)->toBeInstanceOf(ToolRegistryFailure::class)
-            ->and($legacyAppOnlyFailure->code)->toBe('validation_failed')
-            ->and($legacyAppOnlyFailure->meta)->toMatchArray(['field' => 'node', 'value' => 'app-contract-legacy'])
+            ->and($unassignedNodeFailure)->toBeInstanceOf(ToolRegistryFailure::class)
+            ->and($unassignedNodeFailure->code)->toBe('validation_failed')
+            ->and($unassignedNodeFailure->meta)->toMatchArray(['field' => 'node', 'value' => 'app-contract-unassigned'])
             ->and($invalidApp)->toBeInstanceOf(ToolRegistryFailure::class)
             ->and($invalidApp->code)->toBe('validation_failed')
             ->and($invalidApp->meta)->toMatchArray(['field' => 'app', 'value' => 'missing-app'])
@@ -216,10 +215,10 @@ describe('tool command shared contract', function (): void {
     });
 
     it('resolves shared tool targets by app slug domain combined selector and matching node rules', function (): void {
-        $firstNode = Node::factory()->create(['name' => 'app-contract-a', 'role' => 'control', 'status' => 'active', 'tld' => 'dev1']);
-        $secondNode = Node::factory()->create(['name' => 'app-contract-b', 'role' => 'control', 'status' => 'active', 'tld' => 'dev2']);
+        $firstNode = Node::factory()->create(['name' => 'app-contract-a', 'status' => 'active', 'tld' => 'dev1']);
+        $secondNode = Node::factory()->create(['name' => 'app-contract-b', 'status' => 'active', 'tld' => 'dev2']);
         assignToolContractAppHostRole($firstNode, settings: ['tld' => 'dev1']);
-        assignToolContractAppHostRole($secondNode, 'app-production', []);
+        assignToolContractAppHostRole($secondNode, 'app-prod', []);
 
         App::factory()->create([
             'name' => 'docs-contract',
@@ -263,9 +262,8 @@ describe('tool command shared contract', function (): void {
     });
 
     it('keeps the shared target hierarchy explicit before registry access', function (): void {
-        $node = Node::factory()->create(['name' => 'app-contract-default', 'role' => 'control', 'status' => 'active']);
+        $node = Node::factory()->create(['name' => 'app-contract-default', 'status' => 'active']);
         assignToolContractAppHostRole($node);
-        LocalNodeDefault::query()->create(['default_node_name' => $node->name]);
         NodeTool::factory()->create(['name' => 'redis', 'node_id' => $node->id]);
 
         $registry = app(ToolRegistry::class);

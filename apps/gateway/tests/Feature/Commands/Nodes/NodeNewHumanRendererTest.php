@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Http\Gateway\Requests\Gateway\ShowGatewayIdentityRequest;
 use App\Models\LocalGatewaySettings;
 use App\Models\Node;
+use App\Models\NodeRoleAssignment;
 use App\Services\Trust\TrustStoreInstaller;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
@@ -36,9 +37,9 @@ it('renders the exact already-provisioned first-gateway convergence line', funct
         public function trustCa(string $rootCaPath, string $label, ?Closure $log = null): void {}
     });
 
-    Node::factory()->create([
+    $gateway = Node::factory()->create([
         'name' => 'gateway-1',
-        'role' => 'gateway',
+
         'host' => '203.0.113.2',
         'wireguard_address' => '10.6.0.2',
         'gateway_endpoint' => '203.0.113.2',
@@ -46,9 +47,14 @@ it('renders the exact already-provisioned first-gateway convergence line', funct
         'status' => 'active',
     ]);
 
+    NodeRoleAssignment::factory()->for($gateway)->create([
+        'role' => 'gateway',
+        'status' => 'active',
+    ]);
+
     Node::factory()->create([
         'name' => 'operator-1',
-        'role' => 'control',
+
         'host' => '127.0.0.1',
         'wireguard_address' => '10.6.0.3',
         'platform' => 'macos_15-4',
@@ -69,13 +75,11 @@ it('renders the exact already-provisioned first-gateway convergence line', funct
                 'data' => [
                     'self' => [
                         'name' => 'operator-1',
-                        'role' => 'control',
                         'status' => 'active',
                         'addresses' => ['wireguard' => '10.6.0.3'],
                     ],
                     'gateway' => [
                         'name' => 'gateway-1',
-                        'role' => 'gateway',
                         'status' => 'active',
                         'addresses' => ['wireguard' => '10.6.0.2'],
                     ],
@@ -88,7 +92,7 @@ it('renders the exact already-provisioned first-gateway convergence line', funct
 
     $exitCode = Artisan::call('node:new', [
         'name' => 'gateway-1',
-        '--role' => 'gateway',
+        '--template' => 'gateway',
         '--host' => '203.0.113.2',
         '--operator-name' => 'operator-1',
     ]);

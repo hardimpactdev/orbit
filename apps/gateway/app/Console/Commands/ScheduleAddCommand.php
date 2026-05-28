@@ -19,7 +19,6 @@ use App\Services\Nodes\Roles\NodeRoleAssignments;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
-use Illuminate\Database\Eloquent\Builder;
 use Throwable;
 
 use function Laravel\Prompts\select;
@@ -315,11 +314,7 @@ class ScheduleAddCommand extends Command
         $target = Node::query()
             ->with('schedulerState')
             ->where('name', $node)
-            ->where(function (Builder $query): void {
-                $query
-                    ->where('role', 'gateway')
-                    ->orWhereIn('id', app(NodeRoleAssignments::class)->activeGatewayOrAppHostNodeIds());
-            })
+            ->whereIn('id', app(NodeRoleAssignments::class)->activeGatewayOrAppHostNodeIds())
             ->first();
 
         return $target instanceof Node

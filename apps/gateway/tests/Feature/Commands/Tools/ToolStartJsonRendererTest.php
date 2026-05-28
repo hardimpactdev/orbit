@@ -23,10 +23,8 @@ function createToolStartJsonLocalNode(string $role = 'gateway'): Node
 {
     return Node::factory()->create([
         'name' => "tool-start-json-{$role}",
-        'role' => $role,
         'host' => '10.11.0.1',
-        'wireguard_address' => '10.11.0.1',
-    ]);
+        'wireguard_address' => '10.11.0.1']);
 }
 
 function configureToolStartJsonControlGateway(): void
@@ -37,20 +35,18 @@ function configureToolStartJsonControlGateway(): void
 
     LocalGatewaySettings::current()->fill([
         'gateway_url' => 'https://10.11.0.1',
-        'ca_pem_path' => '/dev/null',
-    ])->save();
+        'ca_pem_path' => '/dev/null'])->save();
 }
 
 function createToolStartJsonTool(string $nodeName = 'app-json-start-1', string $tool = 'caddy'): NodeTool
 {
-    $node = createTestAppHostNode(['name' => $nodeName, 'role' => 'app', 'status' => 'active']);
+    $node = createTestAppHostNode(['name' => $nodeName, 'status' => 'active']);
 
     return NodeTool::factory()->create([
         'name' => $tool,
         'node_id' => $node->id,
         'expected_state' => 'installed',
-        'expected_version' => '2.8',
-    ]);
+        'expected_version' => '2.8']);
 }
 
 describe('tool:start JSON renderer', function (): void {
@@ -62,8 +58,7 @@ describe('tool:start JSON renderer', function (): void {
         $exitCode = Artisan::call('tool:start', [
             'tool' => 'caddy',
             '--node' => 'app-json-start-1',
-            '--json' => true,
-        ]);
+            '--json' => true]);
         $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
 
         expect($exitCode)->toBe(0)
@@ -77,8 +72,7 @@ describe('tool:start JSON renderer', function (): void {
                 'observed_state',
                 'version',
                 'managed',
-                'endpoints',
-            ])
+                'endpoints'])
             ->and($payload['success']['data']['tool'])->toMatchArray([
                 'name' => 'caddy',
                 'node' => 'app-json-start-1',
@@ -86,8 +80,7 @@ describe('tool:start JSON renderer', function (): void {
                 'observed_state' => null,
                 'version' => '2.8',
                 'managed' => true,
-                'endpoints' => [],
-            ]);
+                'endpoints' => []]);
     });
 
     it('renders missing tool input as validation_failed', function (): void {
@@ -104,23 +97,21 @@ describe('tool:start JSON renderer', function (): void {
 
     it('renders invalid tool names as validation failures before side effects', function (): void {
         createToolStartJsonLocalNode('gateway');
-        createTestAppHostNode(['name' => 'app-json-start-1', 'role' => 'app', 'status' => 'active']);
+        createTestAppHostNode(['name' => 'app-json-start-1', 'status' => 'active']);
         $shell = new ToolStartJsonRecordingShell;
         app()->instance(RemoteShell::class, $shell);
 
         $exitCode = Artisan::call('tool:start', [
             'tool' => 'unknown-tool',
             '--node' => 'app-json-start-1',
-            '--json' => true,
-        ]);
+            '--json' => true]);
         $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
 
         expect($exitCode)->toBe(1)
             ->and($payload['error']['code'])->toBe('validation_failed')
             ->and($payload['error']['meta'])->toBe([
                 'field' => 'tool',
-                'value' => 'unknown-tool',
-            ])
+                'value' => 'unknown-tool'])
             ->and($shell->scripts)->toBe([]);
     });
 
@@ -134,8 +125,8 @@ describe('tool:start JSON renderer', function (): void {
         $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
 
         expect($exitCode)->toBe(1)
-            ->and($payload['error']['code'])->toBe('validation_failed')
-            ->and($payload['error']['meta'])->toBe(['fields' => ['target']])
+            ->and($payload['error']['code'])->toBe('node_target_required')
+            ->and($payload['error']['meta'])->toBe(['field' => 'node'])
             ->and($shell->scripts)->toBe([]);
     });
 
@@ -143,14 +134,12 @@ describe('tool:start JSON renderer', function (): void {
         configureToolStartJsonControlGateway();
 
         MockClient::global([
-            StartToolRequest::class => MockResponse::make(['error' => $error], $status),
-        ]);
+            StartToolRequest::class => MockResponse::make(['error' => $error], $status)]);
 
         $exitCode = Artisan::call('tool:start', [
             'tool' => 'caddy',
             '--node' => 'app-json-start-1',
-            '--json' => true,
-        ]);
+            '--json' => true]);
         $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
 
         expect($exitCode)->toBe(1)
@@ -161,18 +150,15 @@ describe('tool:start JSON renderer', function (): void {
         'authorization_failed' => [[
             'code' => 'authorization_failed',
             'message' => 'This node is not authorized to manage tools.',
-            'meta' => ['reason' => 'missing_permission', 'missing_permission' => 'tool:start'],
-        ], 403],
+            'meta' => ['reason' => 'missing_permission', 'missing_permission' => 'tool:start']], 403],
         'tool.not_found' => [[
             'code' => 'tool.not_found',
             'message' => "Tool 'caddy' was not found on node 'app-json-start-1'.",
-            'meta' => ['tool' => 'caddy', 'node' => 'app-json-start-1'],
-        ], 404],
+            'meta' => ['tool' => 'caddy', 'node' => 'app-json-start-1']], 404],
         'tool.unsupported_action' => [[
             'code' => 'tool.unsupported_action',
             'message' => "Tool 'gh' does not support start.",
-            'meta' => ['tool' => 'gh', 'action' => 'start'],
-        ], 400],
+            'meta' => ['tool' => 'gh', 'action' => 'start']], 400],
         'tool.remote_action_failed' => [[
             'code' => 'tool.remote_action_failed',
             'message' => "Tool 'caddy' start failed on node 'app-json-start-1'.",
@@ -181,10 +167,7 @@ describe('tool:start JSON renderer', function (): void {
                 'node' => 'app-json-start-1',
                 'action' => 'start',
                 'exit_code' => 7,
-                'stderr' => 'systemctl failed',
-            ],
-        ], 502],
-    ]);
+                'stderr' => 'systemctl failed']], 502]]);
 
     it('preserves remote action exit code and stderr from local failures', function (): void {
         createToolStartJsonLocalNode('gateway');
@@ -197,8 +180,7 @@ describe('tool:start JSON renderer', function (): void {
         $exitCode = Artisan::call('tool:start', [
             'tool' => 'caddy',
             '--node' => 'app-json-start-1',
-            '--json' => true,
-        ]);
+            '--json' => true]);
         $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
 
         expect($exitCode)->toBe(1)
@@ -208,8 +190,7 @@ describe('tool:start JSON renderer', function (): void {
                 'node' => 'app-json-start-1',
                 'action' => 'start',
                 'exit_code' => 7,
-                'stderr' => 'systemctl failed',
-            ]);
+                'stderr' => 'systemctl failed']);
     });
 });
 

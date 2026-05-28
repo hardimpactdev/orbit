@@ -19,9 +19,8 @@ function createWorkspaceSetupStepListHumanApp(): App
 {
     Node::factory()->create([
         'name' => 'local-gateway',
-        'role' => 'gateway',
     ]);
-    $node = Node::factory()->create(['role' => 'app']);
+    $node = Node::factory()->appDev()->create();
 
     return App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
 }

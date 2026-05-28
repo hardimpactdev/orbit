@@ -25,15 +25,25 @@ function createWorkspaceListLocalNode(string $role = 'gateway'): Node
 {
     config(['orbit.is_gateway' => $role === 'gateway']);
 
-    return Node::factory()->create([
+    $node = Node::factory()->create([
         'name' => "local-{$role}",
-        'role' => $role,
         'host' => '10.6.0.1',
         'wireguard_address' => '10.6.0.1',
     ]);
+
+    if ($role === 'gateway') {
+        NodeRoleAssignment::factory()->create([
+            'node_id' => $node->id,
+            'role' => 'gateway',
+            'status' => 'active',
+            'settings' => [],
+        ]);
+    }
+
+    return $node;
 }
 
-function assignWorkspaceListAppHostRole(Node $node, string $role = 'app-development', array $settings = ['tld' => 'test']): void
+function assignWorkspaceListAppHostRole(Node $node, string $role = 'app-dev', array $settings = ['tld' => 'test']): void
 {
     NodeRoleAssignment::factory()->create([
         'node_id' => $node->id,
@@ -46,8 +56,8 @@ function assignWorkspaceListAppHostRole(Node $node, string $role = 'app-developm
 describe('workspace:list base contract', function (): void {
     it('lists workspaces sorted by node then app then workspace for gateway callers', function (): void {
         createWorkspaceListLocalNode('gateway');
-        $zNode = Node::factory()->create(['name' => 'z-node', 'role' => 'app']);
-        $aNode = Node::factory()->create(['name' => 'a-node', 'role' => 'app']);
+        $zNode = Node::factory()->appDev()->create(['name' => 'z-node']);
+        $aNode = Node::factory()->appDev()->create(['name' => 'a-node']);
         $zApp = App::factory()->create(['name' => 'zebra', 'node_id' => $zNode->id]);
         $bApp = App::factory()->create(['name' => 'beta', 'node_id' => $aNode->id]);
         $aApp = App::factory()->create(['name' => 'alpha', 'node_id' => $aNode->id]);
@@ -66,10 +76,10 @@ describe('workspace:list base contract', function (): void {
 
     it('filters by app and node', function (): void {
         createWorkspaceListLocalNode('gateway');
-        $devNode = Node::factory()->create(['name' => 'dev-1', 'role' => 'control']);
-        $prodNode = Node::factory()->create(['name' => 'prod-1', 'role' => 'control']);
+        $devNode = Node::factory()->operator()->create(['name' => 'dev-1']);
+        $prodNode = Node::factory()->operator()->create(['name' => 'prod-1']);
         assignWorkspaceListAppHostRole($devNode);
-        assignWorkspaceListAppHostRole($prodNode, 'app-production', []);
+        assignWorkspaceListAppHostRole($prodNode, 'app-prod', []);
         $docs = App::factory()->create(['name' => 'docs', 'node_id' => $devNode->id]);
         $site = App::factory()->create(['name' => 'site', 'node_id' => $prodNode->id]);
 
@@ -88,20 +98,20 @@ describe('workspace:list base contract', function (): void {
             ->and($payload['success']['data']['workspaces'][0]['name'])->toBe('site-feature');
     });
 
-    it('rejects legacy app-only node filters without an active app host role', function (): void {
+    it('rejects unassigned node filters without an active app host role', function (): void {
         createWorkspaceListLocalNode('gateway');
-        Node::factory()->create(['name' => 'legacy-app-only', 'role' => 'app']);
+        Node::factory()->create(['name' => 'unassigned-app-node']);
 
         $exitCode = Artisan::call('workspace:list', [
             '--json' => true,
-            '--node' => 'legacy-app-only',
+            '--node' => 'unassigned-app-node',
         ]);
         $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
 
         expect($exitCode)->toBe(1)
             ->and($payload['error']['code'])->toBe('validation_failed')
             ->and($payload['error']['meta']['field'])->toBe('node')
-            ->and($payload['error']['meta']['value'])->toBe('legacy-app-only');
+            ->and($payload['error']['meta']['value'])->toBe('unassigned-app-node');
     });
 
     it('rejects invalid scalar filters before gateway calls', function (): void {
@@ -197,7 +207,7 @@ describe('workspace:list base contract', function (): void {
         Process::preventStrayProcesses();
 
         createWorkspaceListLocalNode('gateway');
-        $node = Node::factory()->create(['role' => 'app']);
+        $node = Node::factory()->appDev()->create();
         $app = App::factory()->create(['node_id' => $node->id]);
         Workspace::factory()->count(2)->create(['app_id' => $app->id]);
 

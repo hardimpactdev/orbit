@@ -17,23 +17,20 @@ function createAppListCallerNode(array $overrides = []): Node
 {
     return Node::factory()->create(array_merge([
         'name' => 'caller',
-        'role' => 'control',
         'host' => APP_LIST_CALLER_WG_IP,
         'wireguard_address' => APP_LIST_CALLER_WG_IP,
     ], $overrides));
 }
 
-function createAppListAppNode(array $overrides = [], string $role = 'app-development'): Node
+function createAppListAppNode(array $overrides = [], string $role = 'app-dev'): Node
 {
-    $node = Node::factory()->create(array_merge([
-        'role' => 'app',
-    ], $overrides));
+    $node = Node::factory()->create($overrides);
 
     NodeRoleAssignment::factory()->create([
         'node_id' => $node->id,
         'role' => $role,
         'status' => 'active',
-        'settings' => $role === 'app-development' ? ['tld' => 'test'] : [],
+        'settings' => $role === 'app-dev' ? ['tld' => 'test'] : [],
     ]);
 
     return $node;
@@ -86,7 +83,7 @@ describe('AppListController', function (): void {
     it('filters apps by owning node and environment', function (): void {
         $caller = createAppListCallerNode();
         $devNode = createAppListAppNode(['name' => 'dev-1']);
-        $prodNode = createAppListAppNode(['name' => 'prod-1'], 'app-production');
+        $prodNode = createAppListAppNode(['name' => 'prod-1'], 'app-prod');
         grantAppListAccess($caller, $devNode);
         grantAppListAccess($caller, $prodNode);
 
@@ -118,7 +115,7 @@ describe('AppListController', function (): void {
     });
 
     it('lets active gateway role assignments read all app registry records', function (): void {
-        $caller = createAppListCallerNode(['role' => 'control']);
+        $caller = createAppListCallerNode();
         assignAppListGatewayRole($caller);
         $firstNode = createAppListAppNode(['name' => 'app-1']);
         $secondNode = createAppListAppNode(['name' => 'app-2']);
@@ -132,8 +129,8 @@ describe('AppListController', function (): void {
             ->assertJsonCount(2, 'success.data.apps');
     });
 
-    it('does not treat the legacy gateway role column as gateway visibility', function (): void {
-        createAppListCallerNode(['role' => 'gateway']);
+    it('does not treat an unassigned caller as gateway visibility', function (): void {
+        createAppListCallerNode();
         $node = createAppListAppNode(['name' => 'app-1']);
         App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
 
@@ -158,7 +155,8 @@ describe('AppListController', function (): void {
     });
 
     it('returns validation error for invalid environment', function (): void {
-        createAppListCallerNode(['role' => 'gateway']);
+        $caller = createAppListCallerNode();
+        assignAppListGatewayRole($caller);
 
         $response = $this->call('GET', '/api/apps?environment=staging', [], [], [], ['REMOTE_ADDR' => APP_LIST_CALLER_WG_IP]);
 
@@ -169,14 +167,13 @@ describe('AppListController', function (): void {
     });
 
     it('returns the canonical app entity shape', function (): void {
-        $caller = createAppListCallerNode(['role' => 'control']);
+        $caller = createAppListCallerNode();
         assignAppListGatewayRole($caller);
         $node = createAppListAppNode(['name' => 'app-1', 'tld' => 'test']);
 
         $app = App::factory()->create([
             'name' => 'docs',
             'node_id' => $node->id,
-            'environment' => 'development',
             'domain' => null,
             'path' => '/srv/docs',
             'document_root' => 'public',
@@ -215,14 +212,13 @@ describe('AppListController', function (): void {
     });
 
     it('returns runtime_kind=static for static apps', function (): void {
-        $caller = createAppListCallerNode(['role' => 'control']);
+        $caller = createAppListCallerNode();
         assignAppListGatewayRole($caller);
         $node = createAppListAppNode(['name' => 'app-1', 'tld' => 'test']);
 
         App::factory()->static()->create([
             'name' => 'marketing',
             'node_id' => $node->id,
-            'environment' => 'development',
             'domain' => null,
             'path' => '/srv/marketing',
             'document_root' => 'public',

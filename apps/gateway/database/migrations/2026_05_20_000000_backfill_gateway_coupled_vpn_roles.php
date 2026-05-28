@@ -14,9 +14,9 @@ return new class extends Migration
         $timestamp = now();
         $pendingAssignments = [];
 
-        DB::table('node_roles as gateway_roles')
+        DB::table('node_role as gateway_roles')
             ->join('nodes', 'nodes.id', '=', 'gateway_roles.node_id')
-            ->leftJoin('node_roles as vpn_roles', function ($join): void {
+            ->leftJoin('node_role as vpn_roles', function ($join): void {
                 $join->on('vpn_roles.node_id', '=', 'gateway_roles.node_id')
                     ->where('vpn_roles.role', '=', NodeRoleName::Vpn->value);
             })
@@ -52,7 +52,7 @@ return new class extends Migration
                     return;
                 }
 
-                DB::table('node_roles')->insertOrIgnore($pendingAssignments);
+                DB::table('node_role')->insertOrIgnore($pendingAssignments);
 
                 $pendingAssignments = [];
             });
@@ -61,7 +61,7 @@ return new class extends Migration
             return;
         }
 
-        DB::table('node_roles')->insertOrIgnore($pendingAssignments);
+        DB::table('node_role')->insertOrIgnore($pendingAssignments);
     }
 
     public function down(): void {}

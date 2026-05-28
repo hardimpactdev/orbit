@@ -95,8 +95,8 @@ it('shows human renderer by default', function (): void {
         ]),
         'https://10.6.0.2/api/me' => Http::response([
             'data' => [
-                'gateway' => ['name' => 'gateway-1', 'role' => 'gateway', 'status' => 'active'],
-                'self' => ['name' => 'control-1', 'role' => 'control', 'status' => 'active', 'wg_ip' => '10.6.0.8'],
+                'gateway' => ['name' => 'gateway-1', 'roles' => [['role' => 'gateway', 'status' => 'active', 'settings' => []]], 'status' => 'active'],
+                'self' => ['name' => 'control-1', 'roles' => [], 'status' => 'active', 'wg_ip' => '10.6.0.8'],
             ],
         ]),
     ]);
@@ -121,8 +121,8 @@ it('renders decorated add progress tree with ansi completed rows', function (): 
         ]),
         'https://10.6.0.2/api/me' => Http::response([
             'data' => [
-                'gateway' => ['name' => 'gateway-1', 'role' => 'gateway', 'status' => 'active'],
-                'self' => ['name' => 'control-1', 'role' => 'control', 'status' => 'active', 'wg_ip' => '10.6.0.8'],
+                'gateway' => ['name' => 'gateway-1', 'roles' => [['role' => 'gateway', 'status' => 'active', 'settings' => []]], 'status' => 'active'],
+                'self' => ['name' => 'control-1', 'roles' => [], 'status' => 'active', 'wg_ip' => '10.6.0.8'],
             ],
         ]),
     ]);
@@ -162,8 +162,8 @@ it('shows converged progress tree', function (): void {
     Http::fake([
         'https://10.6.0.2/api/me' => Http::response([
             'data' => [
-                'gateway' => ['name' => 'gateway-1', 'role' => 'gateway', 'status' => 'active'],
-                'self' => ['name' => 'control-1', 'role' => 'control', 'status' => 'active', 'wg_ip' => '10.6.0.8'],
+                'gateway' => ['name' => 'gateway-1', 'roles' => [['role' => 'gateway', 'status' => 'active', 'settings' => []]], 'status' => 'active'],
+                'self' => ['name' => 'control-1', 'roles' => [], 'status' => 'active', 'wg_ip' => '10.6.0.8'],
             ],
         ]),
     ]);
@@ -225,8 +225,8 @@ it('shows unsupported platform prose', function (): void {
         ]),
         'https://10.6.0.2/api/me' => Http::response([
             'data' => [
-                'gateway' => ['name' => 'gateway-1', 'role' => 'gateway', 'status' => 'active'],
-                'self' => ['name' => 'control-1', 'role' => 'control', 'status' => 'active', 'wg_ip' => '10.6.0.8'],
+                'gateway' => ['name' => 'gateway-1', 'roles' => [['role' => 'gateway', 'status' => 'active', 'settings' => []]], 'status' => 'active'],
+                'self' => ['name' => 'control-1', 'roles' => [], 'status' => 'active', 'wg_ip' => '10.6.0.8'],
             ],
         ]),
     ]);
@@ -251,8 +251,8 @@ it('shows local config write failure prose', function (): void {
         ]),
         'https://10.6.0.2/api/me' => Http::response([
             'data' => [
-                'gateway' => ['name' => 'gateway-1', 'role' => 'gateway', 'status' => 'active'],
-                'self' => ['name' => 'control-1', 'role' => 'control', 'status' => 'active', 'wg_ip' => '10.6.0.8'],
+                'gateway' => ['name' => 'gateway-1', 'roles' => [['role' => 'gateway', 'status' => 'active', 'settings' => []]], 'status' => 'active'],
+                'self' => ['name' => 'control-1', 'roles' => [], 'status' => 'active', 'wg_ip' => '10.6.0.8'],
             ],
         ]),
     ]);
@@ -275,8 +275,8 @@ it('does not emit json envelope in human mode', function (): void {
         ]),
         'https://10.6.0.2/api/me' => Http::response([
             'data' => [
-                'gateway' => ['name' => 'gateway-1', 'role' => 'gateway', 'status' => 'active'],
-                'self' => ['name' => 'control-1', 'role' => 'control', 'status' => 'active', 'wg_ip' => '10.6.0.8'],
+                'gateway' => ['name' => 'gateway-1', 'roles' => [['role' => 'gateway', 'status' => 'active', 'settings' => []]], 'status' => 'active'],
+                'self' => ['name' => 'control-1', 'roles' => [], 'status' => 'active', 'wg_ip' => '10.6.0.8'],
             ],
         ]),
     ]);

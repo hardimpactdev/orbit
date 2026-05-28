@@ -769,10 +769,16 @@ PHP;
         ?string $tld = null,
         bool $withIngress = false,
     ): void {
+        $roles = $environment === 'development' ? 'app-dev' : 'app-prod';
+
+        if ($withIngress) {
+            $roles .= ',ingress';
+        }
+
         $parts = [
             'cd '.escapeshellarg('/home/'.$this->host->config->operatorUser.'/orbit').' && orbit node:new',
             escapeshellarg($name),
-            '--role='.($environment === 'development' ? 'app-dev' : 'app-prod'),
+            '--roles='.$roles,
             '--host='.escapeshellarg($host),
             '--user='.escapeshellarg($this->host->config->bootstrapUser),
             '--json',
@@ -780,10 +786,6 @@ PHP;
 
         if ($tld !== null) {
             $parts[] = '--tld='.escapeshellarg($tld);
-        }
-
-        if ($withIngress) {
-            $parts[] = '--role=ingress';
         }
 
         E2ECommand::ssh(
@@ -806,7 +808,7 @@ PHP;
         $parts = [
             'cd '.escapeshellarg('/home/'.$this->host->config->operatorUser.'/orbit').' && orbit node:new',
             escapeshellarg($name),
-            '--role=agent',
+            '--roles=agent',
             '--host='.escapeshellarg($host),
             '--user='.escapeshellarg($this->host->config->bootstrapUser),
             '--json',
@@ -834,7 +836,7 @@ PHP;
             'ORBIT_E2E_NODE_WIREGUARD_ADDRESS='.escapeshellarg(self::DevWireGuardIp),
             'orbit node:new',
             escapeshellarg('app-dev-1'),
-            '--role=app-dev',
+            '--roles=app-dev',
             '--host='.escapeshellarg($devHost),
             '--user='.escapeshellarg($this->host->config->bootstrapUser),
             '--tld='.escapeshellarg('test'),
@@ -845,8 +847,7 @@ PHP;
             'ORBIT_E2E_NODE_WIREGUARD_ADDRESS='.escapeshellarg(self::ProdWireGuardIp),
             'orbit node:new',
             escapeshellarg('app-prod-1'),
-            '--role=app-prod',
-            '--role=ingress',
+            '--roles=app-prod,ingress',
             '--host='.escapeshellarg($prodHost),
             '--user='.escapeshellarg($this->host->config->bootstrapUser),
             '--json',
@@ -856,7 +857,7 @@ PHP;
             'ORBIT_E2E_NODE_WIREGUARD_ADDRESS='.escapeshellarg(self::AgentWireGuardIp),
             'orbit node:new',
             escapeshellarg('agent-1'),
-            '--role=agent',
+            '--roles=agent',
             '--host='.escapeshellarg($agentHost),
             '--user='.escapeshellarg($this->host->config->bootstrapUser),
             '--json',

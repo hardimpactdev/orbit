@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Actions\Nodes\ReenactNodeArtifacts;
 use App\Models\Node;
+use App\Models\NodeRoleAssignment;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 
@@ -17,13 +18,11 @@ function nodeUpdateHumanRow(array $overrides = []): array
 {
     return array_merge([
         'name' => 'app-1',
-        'role' => 'app',
         'host' => '10.6.0.7',
         'wireguard_address' => '10.6.0.7',
         'user' => 'nckrtl',
         'orbit_path' => '/home/nckrtl/orbit',
         'status' => 'active',
-        'environment' => 'development',
         'platform' => 'ubuntu_24-04',
         'public_ipv4' => null,
         'public_ipv6' => null,
@@ -38,15 +37,32 @@ function setupGatewayCallerHuman(): void
 
     DB::table('nodes')->insert(nodeUpdateHumanRow([
         'name' => 'gateway-1',
-        'role' => 'gateway',
-        'environment' => null,
     ]));
+    assignNodeUpdateHumanRole('gateway-1', 'gateway');
+}
+
+/**
+ * @param  array<string, mixed>  $settings
+ */
+function assignNodeUpdateHumanRole(string $nodeName, string $role, array $settings = []): void
+{
+    $nodeId = (int) DB::table('nodes')
+        ->where('name', $nodeName)
+        ->value('id');
+
+    NodeRoleAssignment::factory()->create([
+        'node_id' => $nodeId,
+        'role' => $role,
+        'status' => 'active',
+        'settings' => $settings,
+    ]);
 }
 
 describe('node:update human renderer contract', function (): void {
     it('selects human renderer when --json is absent', function (): void {
         setupGatewayCallerHuman();
         DB::table('nodes')->insert(nodeUpdateHumanRow());
+        assignNodeUpdateHumanRole('app-1', 'app-dev');
 
         $this->artisan('node:update', [
             'name' => 'app-1',
@@ -60,6 +76,7 @@ describe('node:update human renderer contract', function (): void {
     it('renders progress tree with tree characters', function (): void {
         setupGatewayCallerHuman();
         DB::table('nodes')->insert(nodeUpdateHumanRow());
+        assignNodeUpdateHumanRole('app-1', 'app-dev');
 
         $this->artisan('node:update', [
             'name' => 'app-1',
@@ -76,6 +93,7 @@ describe('node:update human renderer contract', function (): void {
     it('renders drift prose when artifact re-enactment fails after intent update', function (): void {
         setupGatewayCallerHuman();
         DB::table('nodes')->insert(nodeUpdateHumanRow());
+        assignNodeUpdateHumanRole('app-1', 'app-dev');
 
         app()->instance(ReenactNodeArtifacts::class, new class extends ReenactNodeArtifacts
         {
@@ -97,6 +115,7 @@ describe('node:update human renderer contract', function (): void {
     it('renders success prose with changed fields', function (): void {
         setupGatewayCallerHuman();
         DB::table('nodes')->insert(nodeUpdateHumanRow());
+        assignNodeUpdateHumanRole('app-1', 'app-dev');
 
         $this->artisan('node:update', [
             'name' => 'app-1',
@@ -110,6 +129,7 @@ describe('node:update human renderer contract', function (): void {
     it('renders no-op prose when no fields changed', function (): void {
         setupGatewayCallerHuman();
         DB::table('nodes')->insert(nodeUpdateHumanRow());
+        assignNodeUpdateHumanRole('app-1', 'app-dev');
 
         $this->artisan('node:update', [
             'name' => 'app-1',
@@ -148,15 +168,14 @@ describe('node:update human renderer contract', function (): void {
         setupGatewayCallerHuman();
         DB::table('nodes')->insert(nodeUpdateHumanRow([
             'name' => 'target-gateway',
-            'role' => 'gateway',
-            'environment' => null,
         ]));
+        assignNodeUpdateHumanRole('target-gateway', 'gateway');
 
         $this->artisan('node:update', [
             'name' => 'target-gateway',
-            '--environment' => 'production',
+            '--tld' => 'test',
         ])
-            ->expectsOutputToContain("The field 'environment' is not valid for node 'target-gateway' (role: gateway).")
+            ->expectsOutputToContain("The field 'tld' is not valid for node 'target-gateway' (role: gateway).")
             ->assertFailed();
     });
 
@@ -165,8 +184,6 @@ describe('node:update human renderer contract', function (): void {
 
         DB::table('nodes')->insert(nodeUpdateHumanRow([
             'name' => 'control-1',
-            'role' => 'control',
-            'environment' => null,
         ]));
 
         DB::table('nodes')->insert(nodeUpdateHumanRow());

@@ -8,6 +8,7 @@ use App\Exceptions\WorkspaceCreateFailed;
 use App\Models\Node;
 use App\Services\ActivityLogCorrelation;
 use App\Services\ActivityLogger;
+use App\Services\Operations\OperationRunRecorder;
 use App\Services\Operations\OperationTokenFactory;
 use App\Services\RemoteShell\LocalExecutorCommandBuilder;
 use App\Services\RemoteShell\RemoteExecutor;
@@ -22,7 +23,7 @@ use Tests\TestCase;
 uses(TestCase::class, RefreshDatabase::class);
 
 it('aligns a Polyscope workspace branch through the app node', function (): void {
-    $node = Node::factory()->create(['name' => 'beast', 'role' => 'app']);
+    $node = Node::factory()->appDev()->create(['name' => 'beast']);
     $hostShell = new PolyscopeBranchAlignerRecordingShell(
         new RemoteShellResult(exitCode: 0, stdout: '{"branch":"cta"}', stderr: '', durationMs: 1),
     );
@@ -79,7 +80,7 @@ it('aligns a Polyscope workspace branch through the app node', function (): void
 });
 
 it('does not leak host branch rename output when a Polyscope branch cannot be aligned', function (): void {
-    $node = Node::factory()->create(['name' => 'beast', 'role' => 'app']);
+    $node = Node::factory()->appDev()->create(['name' => 'beast']);
     $secret = 'remote-host-secret';
     $hostShell = new PolyscopeBranchAlignerRecordingShell(
         new RemoteShellResult(exitCode: 1, stdout: "stdout {$secret}", stderr: "stderr {$secret}", durationMs: 1),
@@ -113,7 +114,7 @@ it('does not leak host branch rename output when a Polyscope branch cannot be al
 });
 
 it('does not leak local executor output when Polyscope adapter metadata cannot be updated', function (): void {
-    $node = Node::factory()->create(['name' => 'beast', 'role' => 'app']);
+    $node = Node::factory()->appDev()->create(['name' => 'beast']);
     $secret = 'remote-update-secret';
     $hostShell = new PolyscopeBranchAlignerRecordingShell(
         new RemoteShellResult(exitCode: 0, stdout: '{"branch":"cta"}', stderr: '', durationMs: 1),
@@ -221,6 +222,7 @@ function polyscopeBranchAlignerLocalExecutor(PolyscopeBranchAlignerLocalTranspor
             clock: static fn (): int => 1_798_105_200,
         ),
         activityLogger: new ActivityLogger(new ActivityLogCorrelation),
+        operationRuns: app(OperationRunRecorder::class),
     );
 }
 

@@ -6,6 +6,7 @@ use App\Http\Gateway\Requests\Activity\ListActivityRequest;
 use App\Models\App;
 use App\Models\LocalGatewaySettings;
 use App\Models\Node;
+use App\Models\NodeRoleAssignment;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
@@ -20,12 +21,22 @@ afterEach(fn (): null => MockClient::destroyGlobal());
 
 function createActivityListLocalNode(string $role = 'gateway'): Node
 {
-    return Node::factory()->create([
+    $node = Node::factory()->create([
         'name' => "local-{$role}",
-        'role' => $role,
         'host' => '10.6.0.1',
         'wireguard_address' => '10.6.0.1',
     ]);
+
+    if ($role === 'gateway') {
+        NodeRoleAssignment::factory()->create([
+            'node_id' => $node->id,
+            'role' => 'gateway',
+            'status' => 'active',
+            'settings' => [],
+        ]);
+    }
+
+    return $node;
 }
 
 function createCommandActivityEntry(
@@ -52,7 +63,7 @@ function createCommandActivityEntry(
 describe('activity:list command', function (): void {
     it('lists destructive activity locally for gateway callers', function (): void {
         $caller = createActivityListLocalNode('gateway');
-        $appNode = Node::factory()->create(['name' => 'app-1', 'role' => 'app']);
+        $appNode = Node::factory()->appDev()->create(['name' => 'app-1']);
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
 
         createCommandActivityEntry('node.listed', 'read', $caller);

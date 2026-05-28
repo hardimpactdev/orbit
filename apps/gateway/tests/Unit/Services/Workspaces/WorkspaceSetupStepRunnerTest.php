@@ -18,7 +18,6 @@ uses(RefreshDatabase::class);
 beforeEach(function (): void {
     DB::table('nodes')->insert([
         'name' => 'app-1',
-        'role' => 'app',
         'host' => 'app-1',
         'orbit_path' => '/home/orbit/orbit',
         'status' => 'active',

@@ -13,6 +13,7 @@ use function Laravel\Prompts\text;
 
 final class ScheduleAddCommand extends ScheduleGatewayCommand
 {
+    #[\Override]
     protected $signature = 'schedule:add
         {name? : Schedule name}
         {--command= : Command to execute}
@@ -23,6 +24,7 @@ final class ScheduleAddCommand extends ScheduleGatewayCommand
         {--timezone=UTC : IANA timezone}
         {--json : Output JSON}';
 
+    #[\Override]
     protected $description = 'Add a recurring schedule.';
 
     public function handle(): int

@@ -17,8 +17,10 @@ final class GatewayTrustCommand extends LocalOnlyCommand
 {
     private const string LABEL = 'orbit';
 
+    #[\Override]
     protected $signature = 'gateway:trust {--json}';
 
+    #[\Override]
     protected $description = 'Trust the gateway root CA in the local OS trust store.';
 
     public function handle(

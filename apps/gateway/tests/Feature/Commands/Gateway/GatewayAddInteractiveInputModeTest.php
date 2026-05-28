@@ -50,7 +50,6 @@ afterEach(function (): void {
 it('selects interactive mode in tty without --json', function (): void {
     Node::query()->create([
         'name' => 'control-1',
-        'role' => 'control',
         'status' => 'active',
         'host' => '10.6.0.8',
         'orbit_path' => '/home/orbit/orbit',
@@ -62,8 +61,7 @@ it('selects interactive mode in tty without --json', function (): void {
         ]),
         'https://10.6.0.2/api/me' => Http::response([
             'data' => [
-                'gateway' => ['name' => 'gateway-1', 'role' => 'gateway', 'status' => 'active'],
-                'self' => ['name' => 'control-1', 'role' => 'control', 'status' => 'active', 'wg_ip' => '10.6.0.8'],
+                'self' => ['name' => 'control-1', 'roles' => [], 'status' => 'active', 'wg_ip' => '10.6.0.8'],
             ],
         ]),
     ]);
@@ -75,7 +73,6 @@ it('selects interactive mode in tty without --json', function (): void {
 it('does not prompt when gateway_ip is supplied in interactive mode', function (): void {
     Node::query()->create([
         'name' => 'control-1',
-        'role' => 'control',
         'status' => 'active',
         'host' => '10.6.0.8',
         'orbit_path' => '/home/orbit/orbit',
@@ -87,8 +84,7 @@ it('does not prompt when gateway_ip is supplied in interactive mode', function (
         ]),
         'https://10.6.0.2/api/me' => Http::response([
             'data' => [
-                'gateway' => ['name' => 'gateway-1', 'role' => 'gateway', 'status' => 'active'],
-                'self' => ['name' => 'control-1', 'role' => 'control', 'status' => 'active', 'wg_ip' => '10.6.0.8'],
+                'self' => ['name' => 'control-1', 'roles' => [], 'status' => 'active', 'wg_ip' => '10.6.0.8'],
             ],
         ]),
     ]);
@@ -101,7 +97,6 @@ it('does not prompt when gateway_ip is supplied in interactive mode', function (
 it('does not prompt when gateway_ip is derived in interactive mode', function (): void {
     Node::query()->create([
         'name' => 'control-1',
-        'role' => 'control',
         'status' => 'active',
         'host' => '10.6.0.8',
         'orbit_path' => '/home/orbit/orbit',
@@ -121,8 +116,8 @@ it('does not prompt when gateway_ip is derived in interactive mode', function ()
         ]),
         'https://10.6.0.2/api/me' => Http::response([
             'data' => [
-                'gateway' => ['name' => 'gateway-1', 'role' => 'gateway', 'status' => 'active'],
-                'self' => ['name' => 'control-1', 'role' => 'control', 'status' => 'active', 'wg_ip' => '10.6.0.8'],
+                'gateway' => ['name' => 'gateway-1', 'roles' => [['role' => 'gateway', 'status' => 'active', 'settings' => []]], 'status' => 'active'],
+                'self' => ['name' => 'control-1', 'roles' => [], 'status' => 'active', 'wg_ip' => '10.6.0.8'],
             ],
         ]),
     ]);

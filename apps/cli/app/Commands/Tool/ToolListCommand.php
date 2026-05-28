@@ -12,11 +12,13 @@ final class ToolListCommand extends GatewayCommand
 {
     use ResolvesHostContext;
 
+    #[\Override]
     protected $signature = 'tool:list
         {--app= : Filter by app selector}
         {--node= : Filter by owning node}
         {--json}';
 
+    #[\Override]
     protected $description = 'List tool state tracked by the gateway registry.';
 
     public function handle(): int

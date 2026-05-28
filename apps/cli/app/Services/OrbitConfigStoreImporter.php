@@ -18,11 +18,11 @@ use PDOException;
  * `meta.imported_from` and `meta.imported_at`. Logs a one-line audit entry naming the source
  * database path. Safe to run on every CLI invocation.
  */
-final class OrbitConfigStoreImporter
+final readonly class OrbitConfigStoreImporter
 {
     public function __construct(
-        private readonly OrbitConfigStore $store,
-        private readonly string $sqlitePath,
+        private OrbitConfigStore $store,
+        private string $sqlitePath,
     ) {}
 
     /**

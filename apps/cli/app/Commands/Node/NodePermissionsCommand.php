@@ -9,6 +9,7 @@ use App\Exceptions\GatewayApiException;
 
 final class NodePermissionsCommand extends GatewayCommand
 {
+    #[\Override]
     protected $signature = 'node:permissions
         {consuming_node? : Name of the consuming node}
         {serving_node? : Name of the serving node}
@@ -18,6 +19,7 @@ final class NodePermissionsCommand extends GatewayCommand
         {--remove= : Comma-separated permissions to remove}
         {--json : Output JSON}';
 
+    #[\Override]
     protected $description = 'Manage node access permissions.';
 
     public function handle(): int

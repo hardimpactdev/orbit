@@ -20,18 +20,11 @@ beforeEach(function (): void {
 
 function createWorkerControllerCaller(array $overrides = []): Node
 {
-    $attributes = array_merge([
+    return Node::factory()->create(array_merge([
         'name' => 'caller',
-        'role' => 'control',
         'host' => APP_WORKER_CALLER_WG_IP,
         'wireguard_address' => APP_WORKER_CALLER_WG_IP,
-    ], $overrides);
-
-    if ($attributes['role'] === 'gateway') {
-        return createTestGatewayNode($attributes);
-    }
-
-    return Node::factory()->create($attributes);
+    ], $overrides));
 }
 
 /**
@@ -45,8 +38,7 @@ function grantWorkerAccess(Node $caller, Node $appNode, array $permissions): voi
         'permissions' => json_encode($permissions, JSON_THROW_ON_ERROR),
         'custom_permissions' => json_encode([], JSON_THROW_ON_ERROR),
         'created_at' => now(),
-        'updated_at' => now(),
-    ]);
+        'updated_at' => now()]);
 }
 
 /**
@@ -73,14 +65,13 @@ function bindWorkerControllerShell(array $results = []): void
 describe('AppWorkerController', function (): void {
     it('returns the worker payload for a freshly created app via show', function (): void {
         $caller = createWorkerControllerCaller();
-        $node = createTestAppHostNode(['name' => 'app-1', 'role' => 'app', 'host' => '10.6.0.7']);
+        $node = createTestAppHostNode(['name' => 'app-1', 'host' => '10.6.0.7']);
         grantWorkerAccess($caller, $node, ['app:read']);
         App::factory()->for($node, 'node')->create([
             'name' => 'docs',
             'path' => '/home/orbit/apps/docs',
             'php_version' => '8.5',
-            'runtime_kind' => AppRuntimeKind::Php,
-        ]);
+            'runtime_kind' => AppRuntimeKind::Php]);
         bindWorkerControllerShell();
 
         $response = $this->call('GET', '/api/apps/docs/worker', [], [], [], ['REMOTE_ADDR' => APP_WORKER_CALLER_WG_IP]);
@@ -93,13 +84,12 @@ describe('AppWorkerController', function (): void {
 
     it('enables worker mode and stores worker_config', function (): void {
         $caller = createWorkerControllerCaller();
-        $node = createTestAppHostNode(['name' => 'app-1', 'role' => 'app', 'host' => '10.6.0.7']);
+        $node = createTestAppHostNode(['name' => 'app-1', 'host' => '10.6.0.7']);
         grantWorkerAccess($caller, $node, ['app:worker']);
         App::factory()->for($node, 'node')->create([
             'name' => 'docs',
             'path' => '/home/orbit/apps/docs',
-            'runtime_kind' => AppRuntimeKind::Php,
-        ]);
+            'runtime_kind' => AppRuntimeKind::Php]);
         bindWorkerControllerShell();
 
         $response = $this->call('POST', '/api/apps/docs/worker/enable', [], [], [], ['REMOTE_ADDR' => APP_WORKER_CALLER_WG_IP]);
@@ -116,16 +106,14 @@ describe('AppWorkerController', function (): void {
 
     it('refuses to enable worker mode when readiness fails and leaves state unchanged', function (): void {
         $caller = createWorkerControllerCaller();
-        $node = createTestAppHostNode(['name' => 'app-1', 'role' => 'app', 'host' => '10.6.0.7']);
+        $node = createTestAppHostNode(['name' => 'app-1', 'host' => '10.6.0.7']);
         grantWorkerAccess($caller, $node, ['app:worker']);
         App::factory()->for($node, 'node')->create([
             'name' => 'docs',
             'path' => '/home/orbit/apps/docs',
-            'runtime_kind' => AppRuntimeKind::Php,
-        ]);
+            'runtime_kind' => AppRuntimeKind::Php]);
         bindWorkerControllerShell([
-            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
-        ]);
+            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1)]);
 
         $response = $this->call('POST', '/api/apps/docs/worker/enable', [], [], [], ['REMOTE_ADDR' => APP_WORKER_CALLER_WG_IP]);
 
@@ -138,15 +126,14 @@ describe('AppWorkerController', function (): void {
 
     it('disables worker mode and keeps the stored worker_config', function (): void {
         $caller = createWorkerControllerCaller();
-        $node = createTestAppHostNode(['name' => 'app-1', 'role' => 'app', 'host' => '10.6.0.7']);
+        $node = createTestAppHostNode(['name' => 'app-1', 'host' => '10.6.0.7']);
         grantWorkerAccess($caller, $node, ['app:worker']);
         App::factory()->for($node, 'node')->create([
             'name' => 'docs',
             'path' => '/home/orbit/apps/docs',
             'runtime_kind' => AppRuntimeKind::Php,
             'worker_enabled' => true,
-            'worker_config' => ['workers' => 'auto', 'max_requests' => 500],
-        ]);
+            'worker_config' => ['workers' => 'auto', 'max_requests' => 500]]);
         bindWorkerControllerShell();
 
         $response = $this->call('POST', '/api/apps/docs/worker/disable', [], [], [], ['REMOTE_ADDR' => APP_WORKER_CALLER_WG_IP]);
@@ -162,7 +149,7 @@ describe('AppWorkerController', function (): void {
 
     it('rejects worker mutations when the caller lacks the app:worker permission', function (): void {
         $caller = createWorkerControllerCaller();
-        $node = createTestAppHostNode(['name' => 'app-1', 'role' => 'app', 'host' => '10.6.0.7']);
+        $node = createTestAppHostNode(['name' => 'app-1', 'host' => '10.6.0.7']);
         grantWorkerAccess($caller, $node, ['app:read']);
         App::factory()->for($node, 'node')->create(['name' => 'docs', 'runtime_kind' => AppRuntimeKind::Php]);
         bindWorkerControllerShell();
@@ -186,7 +173,7 @@ describe('AppWorkerController', function (): void {
 
     it('resolves the worker payload by exact app name even when another app holds the same value as a domain', function (): void {
         $caller = createWorkerControllerCaller();
-        $node = createTestAppHostNode(['name' => 'app-1', 'role' => 'app', 'host' => '10.6.0.7']);
+        $node = createTestAppHostNode(['name' => 'app-1', 'host' => '10.6.0.7']);
         grantWorkerAccess($caller, $node, ['app:read']);
 
         // App "alpha" carries the colliding domain. If the controller path
@@ -195,13 +182,11 @@ describe('AppWorkerController', function (): void {
         App::factory()->for($node, 'node')->create([
             'name' => 'alpha',
             'domain' => 'docs.example.com',
-            'runtime_kind' => AppRuntimeKind::Php,
-        ]);
+            'runtime_kind' => AppRuntimeKind::Php]);
         App::factory()->for($node, 'node')->create([
             'name' => 'docs.example.com',
             'domain' => 'other.example.com',
-            'runtime_kind' => AppRuntimeKind::Php,
-        ]);
+            'runtime_kind' => AppRuntimeKind::Php]);
         bindWorkerControllerShell();
 
         $response = $this->call('GET', '/api/apps/docs.example.com/worker', [], [], [], ['REMOTE_ADDR' => APP_WORKER_CALLER_WG_IP]);

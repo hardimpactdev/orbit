@@ -16,10 +16,8 @@ function createToolShowCallerNode(array $overrides = []): Node
 {
     return Node::factory()->create(array_merge([
         'name' => 'caller',
-        'role' => 'control',
         'host' => TOOL_SHOW_CALLER_WG_IP,
-        'wireguard_address' => TOOL_SHOW_CALLER_WG_IP,
-    ], $overrides));
+        'wireguard_address' => TOOL_SHOW_CALLER_WG_IP], $overrides));
 }
 
 function grantToolShowAccess(Node $caller, Node $appNode): void
@@ -28,22 +26,20 @@ function grantToolShowAccess(Node $caller, Node $appNode): void
         'consumer_node_id' => $caller->id,
         'serving_node_id' => $appNode->id,
         'created_at' => now(),
-        'updated_at' => now(),
-    ]);
+        'updated_at' => now()]);
 }
 
 describe('ToolShowController', function (): void {
     it('returns tool registry details by tool and node', function (): void {
         $caller = createToolShowCallerNode();
-        $node = createTestAppHostNode(['name' => 'app-1', 'role' => 'app']);
+        $node = createTestAppHostNode(['name' => 'app-1']);
         grantToolShowAccess($caller, $node);
 
         NodeTool::factory()->create([
             'name' => 'redis',
             'node_id' => $node->id,
             'expected_state' => 'running',
-            'expected_version' => '7.2',
-        ]);
+            'expected_version' => '7.2']);
 
         $response = $this->call('GET', '/api/tools/redis?node=app-1', [], [], [], ['REMOTE_ADDR' => TOOL_SHOW_CALLER_WG_IP]);
 
@@ -58,7 +54,7 @@ describe('ToolShowController', function (): void {
 
     it('resolves the target node from an app selector', function (): void {
         $caller = createToolShowCallerNode();
-        $node = createTestAppHostNode(['name' => 'app-1', 'role' => 'app']);
+        $node = createTestAppHostNode(['name' => 'app-1']);
         grantToolShowAccess($caller, $node);
 
         App::factory()->create(['name' => 'docs', 'node_id' => $node->id, 'domain' => 'docs.example.com']);
@@ -73,7 +69,7 @@ describe('ToolShowController', function (): void {
 
     it('requires a selector even when exactly one app node is visible', function (): void {
         $caller = createToolShowCallerNode();
-        $node = createTestAppHostNode(['name' => 'app-1', 'role' => 'app']);
+        $node = createTestAppHostNode(['name' => 'app-1']);
         grantToolShowAccess($caller, $node);
 
         NodeTool::factory()->create(['name' => 'caddy', 'node_id' => $node->id]);
@@ -87,8 +83,8 @@ describe('ToolShowController', function (): void {
 
     it('requires a selector when more than one app node is visible', function (): void {
         $caller = createToolShowCallerNode();
-        $firstNode = createTestAppHostNode(['name' => 'app-1', 'role' => 'app']);
-        $secondNode = createTestAppHostNode(['name' => 'app-2', 'role' => 'app']);
+        $firstNode = createTestAppHostNode(['name' => 'app-1']);
+        $secondNode = createTestAppHostNode(['name' => 'app-2']);
         grantToolShowAccess($caller, $firstNode);
         grantToolShowAccess($caller, $secondNode);
 
@@ -101,7 +97,7 @@ describe('ToolShowController', function (): void {
 
     it('returns not found when the selected node has no matching tool row', function (): void {
         $caller = createToolShowCallerNode();
-        $node = createTestAppHostNode(['name' => 'app-1', 'role' => 'app']);
+        $node = createTestAppHostNode(['name' => 'app-1']);
         grantToolShowAccess($caller, $node);
 
         $response = $this->call('GET', '/api/tools/redis?node=app-1', [], [], [], ['REMOTE_ADDR' => TOOL_SHOW_CALLER_WG_IP]);
@@ -113,7 +109,7 @@ describe('ToolShowController', function (): void {
     });
 
     it('rejects unsupported tool catalog slugs', function (): void {
-        createToolShowCallerNode(['role' => 'gateway']);
+        createToolShowCallerNode([]);
 
         $response = $this->call('GET', '/api/tools/not-a-tool?node=app-1', [], [], [], ['REMOTE_ADDR' => TOOL_SHOW_CALLER_WG_IP]);
 
@@ -124,7 +120,7 @@ describe('ToolShowController', function (): void {
 
     it('rejects hidden node selectors', function (): void {
         createToolShowCallerNode();
-        Node::factory()->create(['name' => 'hidden', 'role' => 'app']);
+        Node::factory()->create(['name' => 'hidden']);
 
         $response = $this->call('GET', '/api/tools/redis?node=hidden', [], [], [], ['REMOTE_ADDR' => TOOL_SHOW_CALLER_WG_IP]);
 

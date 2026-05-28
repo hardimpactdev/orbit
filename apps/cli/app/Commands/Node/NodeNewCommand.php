@@ -18,6 +18,7 @@ final class NodeNewCommand extends BootstrapGatewayCommand
 {
     use StreamsGatewayProgress;
 
+    #[\Override]
     protected $signature = 'node:new
         {name? : Registry name for the node}
         {--template= : Node template preset}
@@ -42,6 +43,7 @@ final class NodeNewCommand extends BootstrapGatewayCommand
         {--agent-tool=* : Agent tool to install}
         {--json : Output JSON}';
 
+    #[\Override]
     protected $description = 'Create or provision a node in the Orbit fleet.';
 
     public function handle(

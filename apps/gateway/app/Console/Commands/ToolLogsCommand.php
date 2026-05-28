@@ -13,7 +13,6 @@ use App\Http\Gateway\Requests\Gateway\ShowGatewayIdentityRequest;
 use App\Http\Gateway\Requests\Tools\ToolLogsRequest;
 use App\Http\Gateway\Responses\Gateway\GatewayIdentityResponse;
 use App\Http\Gateway\Responses\Tools\ToolLogsResponse;
-use App\Models\LocalNodeDefault;
 use App\Services\Tools\ToolCatalog;
 use App\Services\Tools\ToolLogFollower;
 use App\Services\Tools\ToolLogReader;
@@ -219,12 +218,6 @@ class ToolLogsCommand extends Command
             return [$node, null];
         }
 
-        $defaultNode = LocalNodeDefault::query()->value('default_node_name');
-
-        if (is_string($defaultNode) && trim($defaultNode) !== '') {
-            return [trim($defaultNode), null];
-        }
-
         if (! $this->isGatewayCaller()) {
             try {
                 return [$this->gatewayKnownSelfNodeName(), null];
@@ -233,11 +226,7 @@ class ToolLogsCommand extends Command
             }
         }
 
-        return ToolRegistryFailure::validation(
-            'target',
-            '',
-            'A node or app target is required. Provide --node, --app, or configure node:default.',
-        );
+        return ToolRegistryFailure::nodeTargetRequired();
     }
 
     /**

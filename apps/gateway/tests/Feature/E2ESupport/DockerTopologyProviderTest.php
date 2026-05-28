@@ -119,7 +119,7 @@ it('does not use host PHP or host Caddy paths while starting Docker gateway API 
         ->and($gatewayRuntimeStart)->toBeLessThan($gatewayCertificate);
 
     expect($setup)
-        ->toContain('orbit tinker --execute=')
+        ->toContain('php apps/gateway/artisan tinker --execute=')
         ->toContain('php -d display_errors=0 -S')
         ->not->toContain('orbit serve --host=')
         ->not->toContain('php artisan')
@@ -1270,7 +1270,7 @@ it('maps parallel docker subnet peer ips back to canonical dns-alias identities'
         ->and($commands)->toContain("docker network create --subnet '{$networkPlan->subnet()}' 'orbit-e2e-run123'");
     expect(implode("\n", $commands))
         ->toContain('sudo docker exec --detach')
-        ->toContain('orbit tinker --execute=')
+        ->toContain('php apps/gateway/artisan tinker --execute=')
         ->toContain('$peerIdentityMap = array')
         ->toContain($networkPlan->ipForRole('operator'))
         ->toContain('10.6.0.3')

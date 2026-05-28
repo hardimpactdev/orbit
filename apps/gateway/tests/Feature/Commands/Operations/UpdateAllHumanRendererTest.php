@@ -25,37 +25,28 @@ afterEach(function (): void {
 });
 
 beforeEach(function (): void {
-    DB::table('nodes')->insert([
-        [
-            'name' => 'gateway',
-            'role' => 'gateway',
-            'host' => 'gateway',
-            'orbit_path' => '/home/gateway/orbit',
-            'status' => 'active',
-            'created_at' => now(),
-            'updated_at' => now(),
-        ],
-        [
-            'name' => 'beast',
-            'role' => 'app',
-            'host' => 'beast',
-            'orbit_path' => '/home/nckrtl/orbit',
-            'status' => 'active',
-            'created_at' => now(),
-            'updated_at' => now(),
-        ],
+    Node::factory()->gateway()->create([
+        'name' => 'gateway',
+        'host' => 'gateway',
+        'orbit_path' => '/home/gateway/orbit',
+        'status' => 'active',
     ]);
 
-    assignUpdateAllHumanAppHostRole('beast');
+    Node::factory()->appDev(['tld' => 'test'])->create([
+        'name' => 'beast',
+        'host' => 'beast',
+        'orbit_path' => '/home/nckrtl/orbit',
+        'status' => 'active',
+    ]);
 });
 
-function assignUpdateAllHumanAppHostRole(string $nodeName, string $role = 'app-development'): void
+function assignUpdateAllHumanAppHostRole(string $nodeName, string $role = 'app-dev'): void
 {
-    DB::table('node_roles')->insert([
+    DB::table('node_role')->insert([
         'node_id' => DB::table('nodes')->where('name', $nodeName)->value('id'),
         'role' => $role,
         'status' => 'active',
-        'settings' => json_encode($role === 'app-development' ? ['tld' => 'test'] : [], JSON_THROW_ON_ERROR),
+        'settings' => json_encode($role === 'app-dev' ? ['tld' => 'test'] : [], JSON_THROW_ON_ERROR),
         'last_error' => null,
         'converged_at' => now(),
         'created_at' => now(),
@@ -139,7 +130,6 @@ it('aligns update stages by the longest node name', function (): void {
     DB::table('nodes')->insert([
         [
             'name' => 'workspace-alpha',
-            'role' => 'app',
             'host' => 'workspace-alpha',
             'orbit_path' => '/home/nckrtl/orbit',
             'status' => 'active',
@@ -147,7 +137,7 @@ it('aligns update stages by the longest node name', function (): void {
             'updated_at' => now(),
         ],
     ]);
-    assignUpdateAllHumanAppHostRole('workspace-alpha', 'app-production');
+    assignUpdateAllHumanAppHostRole('workspace-alpha', 'app-prod');
 
     Process::fake([
         '*' => Process::result(output: '', errorOutput: '', exitCode: 0),
@@ -173,7 +163,6 @@ it('streams gateway progress for control callers', function (): void {
     DB::table('nodes')->insert([
         [
             'name' => 'NMBP',
-            'role' => 'control',
             'host' => '10.6.0.3',
             'orbit_path' => '/Users/nckrtl/orbit',
             'status' => 'active',
@@ -220,7 +209,6 @@ it('updates the control-local checkout while the gateway update is still running
     DB::table('nodes')->insert([
         [
             'name' => 'NMBP',
-            'role' => 'control',
             'host' => '10.6.0.3',
             'orbit_path' => '/Users/nckrtl/orbit',
             'status' => 'active',
@@ -344,11 +332,10 @@ it('has no json envelope in human mode', function (): void {
         ->assertSuccessful();
 });
 
-it('excludes legacy control identities from human output', function (): void {
+it('excludes role-free operator identities from human output', function (): void {
     DB::table('nodes')->insert([
         [
             'name' => 'mini',
-            'role' => 'control',
             'host' => 'mini',
             'orbit_path' => '/Users/nckrtl/orbit',
             'status' => 'active',
@@ -431,7 +418,6 @@ final class UpdateAllHumanGatewayStream implements UpdateAllGatewayStream
                     [
                         'target' => 'beast',
                         'node' => 'beast',
-                        'role' => 'app',
                         'status' => 'completed',
                     ],
                 ],
@@ -486,7 +472,6 @@ final readonly class UpdateAllHumanSlowGatewayStream implements UpdateAllGateway
                     [
                         'target' => 'beast',
                         'node' => 'beast',
-                        'role' => 'app',
                         'status' => 'completed',
                     ],
                 ],

@@ -6,6 +6,7 @@ use App\Http\Gateway\Requests\Workspaces\ShowWorkspaceHistoryRequest;
 use App\Models\App;
 use App\Models\LocalGatewaySettings;
 use App\Models\Node;
+use App\Models\NodeRoleAssignment;
 use App\Models\Workspace;
 use App\Models\WorkspaceRun;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -25,18 +26,28 @@ function createWorkspaceHistoryLocalNode(string $role = 'gateway'): Node
 {
     config(['orbit.is_gateway' => $role === 'gateway']);
 
-    return Node::factory()->create([
+    $node = Node::factory()->create([
         'name' => "local-{$role}",
-        'role' => $role,
         'host' => '10.6.0.1',
         'wireguard_address' => '10.6.0.1',
     ]);
+
+    if ($role === 'gateway') {
+        NodeRoleAssignment::factory()->create([
+            'node_id' => $node->id,
+            'role' => 'gateway',
+            'status' => 'active',
+            'settings' => [],
+        ]);
+    }
+
+    return $node;
 }
 
 describe('workspace:history base contract', function (): void {
     it('shows workspace run history for gateway callers', function (): void {
         createWorkspaceHistoryLocalNode('gateway');
-        $node = Node::factory()->create(['role' => 'app']);
+        $node = Node::factory()->appDev()->create();
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
         $workspace = Workspace::factory()->create(['name' => 'feature-docs', 'app_id' => $app->id]);
         WorkspaceRun::factory()->create([
@@ -168,7 +179,7 @@ describe('workspace:history base contract', function (): void {
         Process::preventStrayProcesses();
 
         createWorkspaceHistoryLocalNode('gateway');
-        $node = Node::factory()->create(['role' => 'app']);
+        $node = Node::factory()->appDev()->create();
         $app = App::factory()->create(['node_id' => $node->id]);
         $workspace = Workspace::factory()->create(['name' => 'feature-docs', 'app_id' => $app->id]);
         WorkspaceRun::factory()->create(['workspace_id' => $workspace->id]);

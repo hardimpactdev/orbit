@@ -14,16 +14,15 @@ uses(RefreshDatabase::class);
 
 const WORKSPACE_STEP_LIST_CALLER_WG_IP = '10.6.0.97';
 
-function createWorkspaceStepListCallerNode(array $overrides = []): Node
+function createWorkspaceStepListCallerNode(array $overrides = [], ?string $role = null): Node
 {
     $attributes = array_merge([
         'name' => 'step-list-caller',
-        'role' => 'control',
         'host' => WORKSPACE_STEP_LIST_CALLER_WG_IP,
         'wireguard_address' => WORKSPACE_STEP_LIST_CALLER_WG_IP,
     ], $overrides);
 
-    if ($attributes['role'] === 'gateway') {
+    if ($role === 'gateway') {
         return createTestGatewayNode($attributes);
     }
 
@@ -45,7 +44,7 @@ function grantWorkspaceStepListAccess(Node $caller, Node $appNode): void
 describe('WorkspaceStepListController', function (): void {
     it('returns visible setup steps sorted by order', function (): void {
         $caller = createWorkspaceStepListCallerNode();
-        $node = createTestAppHostNode(['role' => 'app']);
+        $node = createTestAppHostNode();
         grantWorkspaceStepListAccess($caller, $node);
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
         WorkspaceStep::factory()->create([
@@ -71,7 +70,7 @@ describe('WorkspaceStepListController', function (): void {
 
     it('resolves visible apps by path', function (): void {
         $caller = createWorkspaceStepListCallerNode();
-        $node = createTestAppHostNode(['role' => 'app']);
+        $node = createTestAppHostNode();
         grantWorkspaceStepListAccess($caller, $node);
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id, 'path' => '/srv/docs']);
         Workspace::factory()->create(['app_id' => $app->id, 'path' => '/srv/docs/.worktrees/feature-docs']);
@@ -84,7 +83,7 @@ describe('WorkspaceStepListController', function (): void {
     });
 
     it('returns app not found for unknown apps', function (): void {
-        createWorkspaceStepListCallerNode(['role' => 'gateway']);
+        createWorkspaceStepListCallerNode(role: 'gateway');
 
         $response = $this->call('GET', '/api/workspaces/steps/setup?app=missing', [], [], [], ['REMOTE_ADDR' => WORKSPACE_STEP_LIST_CALLER_WG_IP]);
 
@@ -95,7 +94,7 @@ describe('WorkspaceStepListController', function (): void {
 
     it('returns authorization failures for hidden apps', function (): void {
         createWorkspaceStepListCallerNode();
-        $node = createTestAppHostNode(['role' => 'app']);
+        $node = createTestAppHostNode();
         App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
 
         $response = $this->call('GET', '/api/workspaces/steps/setup?app=docs', [], [], [], ['REMOTE_ADDR' => WORKSPACE_STEP_LIST_CALLER_WG_IP]);

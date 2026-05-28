@@ -172,7 +172,7 @@ class NodeRoleAssignmentService
 
                 $transactionAssignment->delete();
 
-                $this->syncLegacyNodeFields($node);
+                $this->syncNodeTldFromRoles($node);
                 $this->roleSelfGrantMaterializer->reconcileOnRoleRemoved($node, NodeRoleName::from($role));
             });
         } catch (InvalidArgumentException $exception) {
@@ -210,7 +210,7 @@ class NodeRoleAssignmentService
                 'last_error' => null,
             ])->save();
 
-            $this->syncLegacyNodeFields($node);
+            $this->syncNodeTldFromRoles($node);
             $this->roleSelfGrantMaterializer->materializeOnRoleApplied($node, NodeRoleName::from($assignment->role));
         } catch (Throwable $throwable) {
             $assignment->forceFill([
@@ -246,48 +246,27 @@ class NodeRoleAssignmentService
         $this->converger->remove($node, $previousAssignment, purgeData: false);
     }
 
-    private function syncLegacyNodeFields(Node $node): void
+    private function syncNodeTldFromRoles(Node $node): void
     {
         $activeAssignments = $node->roleAssignments()
             ->where('status', NodeRoleStatus::Active->value)
             ->orderBy('role')
             ->get();
 
-        $role = 'control';
-        $environment = null;
         $tld = null;
 
-        $gateway = $activeAssignments->firstWhere('role', NodeRoleName::Gateway->value);
         $appDevelopment = $activeAssignments->firstWhere('role', NodeRoleName::AppDevelopment->value);
-        $appProduction = $activeAssignments->firstWhere('role', NodeRoleName::AppProduction->value);
-        $database = $activeAssignments->firstWhere('role', NodeRoleName::Database->value);
         $agent = $activeAssignments->firstWhere('role', NodeRoleName::Agent->value);
 
-        if ($gateway instanceof NodeRoleAssignment) {
-            $role = NodeRoleName::Gateway->value;
-        } elseif ($appDevelopment instanceof NodeRoleAssignment) {
-            $role = 'app';
-            $environment = 'development';
-
+        if ($appDevelopment instanceof NodeRoleAssignment) {
             $developmentTld = $appDevelopment->settings['tld'] ?? null;
             $tld = is_string($developmentTld) ? $developmentTld : null;
-        } elseif ($appProduction instanceof NodeRoleAssignment) {
-            $role = 'app';
-            $environment = 'production';
-        } elseif ($database instanceof NodeRoleAssignment) {
-            $role = NodeRoleName::Database->value;
         } elseif ($agent instanceof NodeRoleAssignment) {
-            $role = NodeRoleName::Agent->value;
-
             $agentTld = $agent->settings['tld'] ?? null;
             $tld = is_string($agentTld) ? $agentTld : null;
         }
 
-        $node->forceFill([
-            'role' => $role,
-            'environment' => $environment,
-            'tld' => $tld,
-        ])->save();
+        $node->forceFill(['tld' => $tld])->save();
 
         $node->unsetRelation('roleAssignments');
     }
@@ -324,7 +303,7 @@ class NodeRoleAssignmentService
         $ingressNodeId = $settings['ingress_node_id'] ?? null;
 
         if (! is_int($ingressNodeId) || $ingressNodeId <= 0) {
-            throw new InvalidArgumentException('The app-production role requires an active ingress node.');
+            throw new InvalidArgumentException('The app-prod role requires an active ingress node.');
         }
 
         if ($ingressNodeId === $node->id && $this->nodeHasActiveIngressAssignment($node)) {
@@ -334,7 +313,7 @@ class NodeRoleAssignmentService
         $ingressNode = Node::query()->find($ingressNodeId);
 
         if (! $ingressNode instanceof Node || ! $this->nodeCanServeIngress($ingressNode)) {
-            throw new InvalidArgumentException('The app-production role requires an active ingress node.');
+            throw new InvalidArgumentException('The app-prod role requires an active ingress node.');
         }
     }
 
@@ -370,7 +349,7 @@ class NodeRoleAssignmentService
             return;
         }
 
-        $legacyCollision = Node::query()
+        $nodeTldCollision = Node::query()
             ->where('status', 'active')
             ->where('tld', $tld)
             ->whereKeyNot($node->id)
@@ -384,7 +363,7 @@ class NodeRoleAssignmentService
             ->whereRelation('node', 'status', 'active')
             ->exists();
 
-        if (! $legacyCollision && ! $roleCollision) {
+        if (! $nodeTldCollision && ! $roleCollision) {
             return;
         }
 

@@ -12,10 +12,12 @@ final class WorkspaceTeardownStepListCommand extends GatewayCommand
 {
     use ResolvesHostContext;
 
+    #[\Override]
     protected $signature = 'workspace-teardown-step:list
         {--app= : Parent app slug}
         {--json}';
 
+    #[\Override]
     protected $description = 'List workspace teardown steps for an app.';
 
     public function handle(): int

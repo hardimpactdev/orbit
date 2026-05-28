@@ -24,7 +24,7 @@ class AppDevelopmentRoleBaseline implements RoleBaseline
         $tld = $assignment->settings['tld'] ?? null;
 
         if (! is_string($tld) || ! $this->isValidTld(trim($tld))) {
-            throw new RuntimeException('The app-development role requires a valid tld setting.');
+            throw new RuntimeException('The app-dev role requires a valid tld setting.');
         }
 
         $result = $this->developmentDnsMappingEnactor->convergeDevelopmentRole($node, $tld);
@@ -35,7 +35,7 @@ class AppDevelopmentRoleBaseline implements RoleBaseline
             return;
         }
 
-        throw new RuntimeException('The app-development role requires a WireGuard address so the development DNS mapping can be materialized.');
+        throw new RuntimeException('The app-dev role requires a WireGuard address so the development DNS mapping can be materialized.');
     }
 
     public function remove(Node $node, NodeRoleAssignment $assignment, bool $purgeData): void

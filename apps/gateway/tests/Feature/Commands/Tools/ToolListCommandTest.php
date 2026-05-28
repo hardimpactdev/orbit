@@ -24,17 +24,15 @@ function createToolListLocalNode(string $role = 'gateway'): Node
 {
     return Node::factory()->create([
         'name' => "local-{$role}",
-        'role' => $role,
         'host' => '10.6.0.1',
-        'wireguard_address' => '10.6.0.1',
-    ]);
+        'wireguard_address' => '10.6.0.1']);
 }
 
 describe('tool:list command contract', function (): void {
     it('lists local gateway tools sorted by node then tool name', function (): void {
         createToolListLocalNode('gateway');
-        $zNode = createTestAppHostNode(['name' => 'z-node', 'role' => 'app']);
-        $aNode = createTestAppHostNode(['name' => 'a-node', 'role' => 'app']);
+        $zNode = createTestAppHostNode(['name' => 'z-node']);
+        $aNode = createTestAppHostNode(['name' => 'a-node']);
 
         NodeTool::factory()->create(['name' => 'redis', 'node_id' => $zNode->id]);
         NodeTool::factory()->create(['name' => 'php', 'node_id' => $aNode->id]);
@@ -47,14 +45,13 @@ describe('tool:list command contract', function (): void {
             ->and(array_map(fn (array $tool): string => "{$tool['node']}:{$tool['name']}", $payload['success']['data']['tools']))->toBe([
                 'a-node:caddy',
                 'a-node:php',
-                'z-node:redis',
-            ]);
+                'z-node:redis']);
     });
 
     it('filters local gateway tools by node and app', function (): void {
         createToolListLocalNode('gateway');
-        $firstNode = createTestAppHostNode(['name' => 'app-1', 'role' => 'app']);
-        $secondNode = createTestAppHostNode(['name' => 'app-2', 'role' => 'app']);
+        $firstNode = createTestAppHostNode(['name' => 'app-1']);
+        $secondNode = createTestAppHostNode(['name' => 'app-2']);
 
         App::factory()->create(['name' => 'docs', 'node_id' => $secondNode->id]);
         NodeTool::factory()->create(['name' => 'redis', 'node_id' => $firstNode->id]);
@@ -63,8 +60,7 @@ describe('tool:list command contract', function (): void {
         $exitCode = Artisan::call('tool:list', [
             '--json' => true,
             '--node' => 'app-2',
-            '--app' => 'docs',
-        ]);
+            '--app' => 'docs']);
         $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
 
         expect($exitCode)->toBe(0)
@@ -79,8 +75,7 @@ describe('tool:list command contract', function (): void {
 
         LocalGatewaySettings::current()->fill([
             'gateway_url' => 'https://10.6.0.1',
-            'ca_pem_path' => '/dev/null',
-        ])->save();
+            'ca_pem_path' => '/dev/null'])->save();
 
         MockClient::global([
             ListToolsRequest::class => MockResponse::make([
@@ -94,19 +89,12 @@ describe('tool:list command contract', function (): void {
                                 'observed_state' => null,
                                 'version' => '7.2',
                                 'managed' => true,
-                                'endpoints' => [],
-                            ],
-                        ],
-                    ],
-                ],
-            ], 200),
-        ]);
+                                'endpoints' => []]]]]], 200)]);
 
         $exitCode = Artisan::call('tool:list', [
             '--json' => true,
             '--node' => 'app-1',
-            '--app' => 'docs',
-        ]);
+            '--app' => 'docs']);
         $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
 
         expect($exitCode)->toBe(0)
@@ -120,18 +108,14 @@ describe('tool:list command contract', function (): void {
 
         LocalGatewaySettings::current()->fill([
             'gateway_url' => 'https://10.6.0.1',
-            'ca_pem_path' => '/dev/null',
-        ])->save();
+            'ca_pem_path' => '/dev/null'])->save();
 
         MockClient::global([
             ListToolsRequest::class => MockResponse::make([
                 'error' => [
                     'code' => 'authorization_failed',
                     'message' => 'This node is not authorized to read the tool registry.',
-                    'meta' => ['reason' => 'missing_permission', 'missing_permission' => 'tool:read'],
-                ],
-            ], 403),
-        ]);
+                    'meta' => ['reason' => 'missing_permission', 'missing_permission' => 'tool:read']]], 403)]);
 
         $exitCode = Artisan::call('tool:list', ['--json' => true]);
         $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
@@ -146,7 +130,7 @@ describe('tool:list command contract', function (): void {
         Process::preventStrayProcesses();
 
         createToolListLocalNode('gateway');
-        $node = createTestAppHostNode(['role' => 'app']);
+        $node = createTestAppHostNode();
         NodeTool::factory()->create(['name' => 'redis', 'node_id' => $node->id]);
         NodeTool::factory()->create(['name' => 'php', 'node_id' => $node->id]);
 

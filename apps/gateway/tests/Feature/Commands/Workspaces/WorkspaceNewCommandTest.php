@@ -33,7 +33,6 @@ beforeEach(function (): void {
     DB::table('nodes')->insert([
         [
             'name' => 'gateway',
-            'role' => 'gateway',
             'host' => 'gateway',
             'orbit_path' => '/home/gateway/orbit',
             'status' => 'active',
@@ -43,7 +42,6 @@ beforeEach(function (): void {
         ],
         [
             'name' => 'app-1',
-            'role' => 'app',
             'host' => 'app-1',
             'orbit_path' => '/home/nckrtl/orbit',
             'status' => 'active',
@@ -53,7 +51,7 @@ beforeEach(function (): void {
         ],
     ]);
 
-    DB::table('node_roles')->insert([
+    DB::table('node_role')->insert([
         [
             'node_id' => DB::table('nodes')->where('name', 'gateway')->value('id'),
             'role' => 'gateway',
@@ -66,7 +64,7 @@ beforeEach(function (): void {
         ],
         [
             'node_id' => DB::table('nodes')->where('name', 'app-1')->value('id'),
-            'role' => 'app-development',
+            'role' => 'app-dev',
             'status' => 'active',
             'settings' => json_encode(['tld' => 'beast'], JSON_THROW_ON_ERROR),
             'last_error' => null,
@@ -83,7 +81,6 @@ beforeEach(function (): void {
             'node_id' => 2,
             'path' => '/home/nckrtl/apps/demo',
             'php_version' => '8.5',
-            'environment' => 'development',
             'document_root' => 'public',
             'created_at' => now(),
             'updated_at' => now(),
@@ -318,8 +315,7 @@ it('rejects production app nodes before writing workspace intent', function (): 
     $node = createTestAppHostNode([
         'name' => 'prod-1',
         'host' => 'prod-1',
-        'environment' => 'production',
-    ], role: 'app-production');
+    ], role: 'app-prod');
     App::factory()
         ->for($node, 'node')
         ->create([
@@ -327,7 +323,6 @@ it('rejects production app nodes before writing workspace intent', function (): 
             'domain' => 'prod.test',
             'path' => '/home/nckrtl/apps/prod',
             'php_version' => '8.5',
-            'environment' => 'production',
         ]);
 
     $exitCode = Artisan::call('workspace:new', [

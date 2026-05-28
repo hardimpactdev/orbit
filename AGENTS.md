@@ -24,7 +24,9 @@ provisioning, hosting workflows, and node orchestration.
   those app/package-local commands.
 - The gateway entry point is `php apps/gateway/artisan` from the repository
   root, or `php artisan` from `apps/gateway/`. The host `orbit` launcher
-  dispatches to the gateway or CLI artifact based on the node role.
+  always executes `apps/cli/orbit`. Gateway maintenance uses
+  `bin/orbit-gateway-artisan` or direct `php apps/gateway/artisan` in
+  controlled gateway contexts only.
 - The gateway database is SQLite at
   `apps/gateway/database/database.sqlite`.
 

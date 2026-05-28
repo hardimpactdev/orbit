@@ -52,8 +52,7 @@ describe('orbit:internal:bake-agent-node', function (): void {
             ->where('role', NodeRoleName::Agent->value)
             ->first();
 
-        expect($node->role)->toBe('control')
-            ->and($node->host)->toBe('10.6.0.6')
+        expect($node->host)->toBe('10.6.0.6')
             ->and($node->wireguard_address)->toBe('10.6.0.6')
             ->and($node->host_key_type)->toBe('ssh-ed25519')
             ->and($node->host_key_public)->toBe('AAAAC3NzaC1lZDI1NTE5AAAAIBakeAgentNodeHostKey')

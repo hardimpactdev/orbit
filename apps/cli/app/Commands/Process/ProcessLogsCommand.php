@@ -13,6 +13,7 @@ final class ProcessLogsCommand extends GatewayCommand
 {
     use ResolvesHostContext;
 
+    #[\Override]
     protected $signature = 'process:logs
         {name? : Process name}
         {--app= : Parent app slug}
@@ -21,6 +22,7 @@ final class ProcessLogsCommand extends GatewayCommand
         {--lines=100 : Number of historical lines}
         {--json}';
 
+    #[\Override]
     protected $description = 'Read app process runtime logs.';
 
     public function handle(): int

@@ -15,8 +15,6 @@ use Illuminate\Support\Carbon;
 /**
  * @property int $id
  * @property string $name
- * @property string $role
- * @property string|null $environment
  * @property string|null $tld
  * @property string|null $platform
  * @property string $host
@@ -47,13 +45,9 @@ class Node extends Model
 
     public const string STATUS_ACTIVE = 'active';
 
-    public const string OPERATOR_STORAGE_ROLE = 'control';
-
     #[\Override]
     protected $fillable = [
         'name',
-        'role',
-        'environment',
         'tld',
         'platform',
         'host',
@@ -154,12 +148,21 @@ class Node extends Model
 
     public function isOperator(): bool
     {
-        return $this->role === self::OPERATOR_STORAGE_ROLE;
+        return ! $this->roleAssignments()
+            ->where('status', 'active')
+            ->exists();
     }
 
     public function displayRole(): string
     {
-        return $this->isOperator() ? 'operator' : $this->role;
+        if ($this->isOperator()) {
+            return 'operator';
+        }
+
+        /** @var NodeRoleAssignment|null $primary */
+        $primary = $this->roleAssignments()->where('status', 'active')->orderBy('role')->first();
+
+        return $primary->role;
     }
 
     /**

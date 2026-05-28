@@ -699,18 +699,18 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
 
         if (isset($instances['dev'])) {
             $commands[] = sprintf(
-                'orbit orbit:internal:bake-app-node app-dev-1 --role=app-dev --host=%s%s --wireguard-address=%s --tld=test --gateway-endpoint=%s --user=orbit',
+                'php apps/gateway/artisan orbit:internal:bake-app-node app-dev-1 --role=app-dev --host=%s%s --wireguard-address=%s --tld=test --gateway-endpoint=%s --user=orbit',
                 $this->hostForRole('dev', $networkPlan, $mode),
                 $this->hostKeyHostOption('dev', $networkPlan, $mode),
                 $this->wireGuardAddressForRole('dev', $networkPlan, $mode),
                 $gatewayEndpoint,
             );
-            $commands[] = 'orbit tinker --execute='.escapeshellarg(E2EPreparedTopologyRegistry::appdevDatabaseAndRedisPhp());
+            $commands[] = 'php apps/gateway/artisan tinker --execute='.escapeshellarg(E2EPreparedTopologyRegistry::appdevDatabaseAndRedisPhp());
         }
 
         if (isset($instances['ingress'])) {
             $commands[] = sprintf(
-                'orbit orbit:internal:bake-ingress-node edge-1 --host=%s%s --wireguard-address=%s --gateway-endpoint=%s --user=orbit',
+                'php apps/gateway/artisan orbit:internal:bake-ingress-node edge-1 --host=%s%s --wireguard-address=%s --gateway-endpoint=%s --user=orbit',
                 $this->hostForRole('ingress', $networkPlan, $mode),
                 $this->hostKeyHostOption('ingress', $networkPlan, $mode),
                 $this->wireGuardAddressForRole('ingress', $networkPlan, $mode),
@@ -723,7 +723,7 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
 
             if ($prodHostsIngress) {
                 $commands[] = sprintf(
-                    'orbit orbit:internal:bake-ingress-node app-prod-1 --host=%s%s --wireguard-address=%s --gateway-endpoint=%s --user=orbit',
+                    'php apps/gateway/artisan orbit:internal:bake-ingress-node app-prod-1 --host=%s%s --wireguard-address=%s --gateway-endpoint=%s --user=orbit',
                     $this->hostForRole('prod', $networkPlan, $mode),
                     $this->hostKeyHostOption('prod', $networkPlan, $mode),
                     $this->wireGuardAddressForRole('prod', $networkPlan, $mode),
@@ -739,7 +739,7 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
             $ingress = $ingressNode !== null ? " --ingress-node={$ingressNode}" : '';
 
             $commands[] = sprintf(
-                'orbit orbit:internal:bake-app-node app-prod-1 --role=app-prod --host=%s%s --wireguard-address=%s --gateway-endpoint=%s --user=orbit%s',
+                'php apps/gateway/artisan orbit:internal:bake-app-node app-prod-1 --role=app-prod --host=%s%s --wireguard-address=%s --gateway-endpoint=%s --user=orbit%s',
                 $this->hostForRole('prod', $networkPlan, $mode),
                 $this->hostKeyHostOption('prod', $networkPlan, $mode),
                 $this->wireGuardAddressForRole('prod', $networkPlan, $mode),
@@ -750,7 +750,7 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
 
         if (isset($instances['agent'])) {
             $commands[] = sprintf(
-                'orbit orbit:internal:bake-agent-node agent-1 --host=%s%s --wireguard-address=%s --tld=agent --gateway-endpoint=%s --user=orbit',
+                'php apps/gateway/artisan orbit:internal:bake-agent-node agent-1 --host=%s%s --wireguard-address=%s --tld=agent --gateway-endpoint=%s --user=orbit',
                 $this->hostForRole('agent', $networkPlan, $mode),
                 $this->hostKeyHostOption('agent', $networkPlan, $mode),
                 $this->wireGuardAddressForRole('agent', $networkPlan, $mode),
@@ -929,7 +929,7 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
             $gateway,
             'orbit',
             $key,
-            'cd /home/orbit/orbit && orbit tinker --execute='.escapeshellarg($php),
+            'cd /home/orbit/orbit && php apps/gateway/artisan tinker --execute='.escapeshellarg($php),
             timeoutSeconds: 120,
         );
     }

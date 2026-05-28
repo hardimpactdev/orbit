@@ -57,13 +57,11 @@ function nodeRevokeInteractiveRow(array $overrides = []): array
 {
     return array_merge([
         'name' => 'app-1',
-        'role' => 'app',
         'host' => '10.6.0.7',
         'wireguard_address' => '10.6.0.7',
         'user' => 'nckrtl',
         'orbit_path' => '/home/nckrtl/orbit',
         'status' => 'active',
-        'environment' => 'development',
         'platform' => 'ubuntu_24-04',
         'created_at' => now(),
         'updated_at' => now(),
@@ -76,8 +74,6 @@ function setupNodeRevokeGatewayCallerInteractive(): void
 
     DB::table('nodes')->insert(nodeRevokeInteractiveRow([
         'name' => 'gateway-1',
-        'role' => 'gateway',
-        'environment' => null,
     ]));
 }
 
@@ -105,8 +101,6 @@ describe('node:revoke interactive input mode contract', function (): void {
         setupNodeRevokeGatewayCallerInteractive();
         DB::table('nodes')->insert(nodeRevokeInteractiveRow([
             'name' => 'control-1',
-            'role' => 'control',
-            'environment' => null,
         ]));
         DB::table('nodes')->insert(nodeRevokeInteractiveRow());
 
@@ -127,8 +121,6 @@ describe('node:revoke interactive input mode contract', function (): void {
         setupNodeRevokeGatewayCallerInteractive();
         DB::table('nodes')->insert(nodeRevokeInteractiveRow([
             'name' => 'control-1',
-            'role' => 'control',
-            'environment' => null,
         ]));
         DB::table('nodes')->insert(nodeRevokeInteractiveRow());
         DB::table('node_access')->insert([
@@ -150,8 +142,6 @@ describe('node:revoke interactive input mode contract', function (): void {
         setupNodeRevokeGatewayCallerInteractive();
         DB::table('nodes')->insert(nodeRevokeInteractiveRow([
             'name' => 'control-1',
-            'role' => 'control',
-            'environment' => null,
         ]));
         DB::table('nodes')->insert(nodeRevokeInteractiveRow());
         DB::table('node_access')->insert([
@@ -194,8 +184,6 @@ describe('node:revoke interactive input mode contract', function (): void {
         setupNodeRevokeGatewayCallerInteractive();
         DB::table('nodes')->insert(nodeRevokeInteractiveRow([
             'name' => 'control-1',
-            'role' => 'control',
-            'environment' => null,
         ]));
         DB::table('nodes')->insert(nodeRevokeInteractiveRow());
 
@@ -217,8 +205,6 @@ describe('node:revoke interactive input mode contract', function (): void {
         setupNodeRevokeGatewayCallerInteractive();
         DB::table('nodes')->insert(nodeRevokeInteractiveRow([
             'name' => 'control-1',
-            'role' => 'control',
-            'environment' => null,
         ]));
         DB::table('nodes')->insert(nodeRevokeInteractiveRow());
 
@@ -271,8 +257,6 @@ describe('node:revoke interactive input mode contract', function (): void {
         setupNodeRevokeGatewayCallerInteractive();
         DB::table('nodes')->insert(nodeRevokeInteractiveRow([
             'name' => 'control-1',
-            'role' => 'control',
-            'environment' => null,
         ]));
         DB::table('nodes')->insert(nodeRevokeInteractiveRow());
         DB::table('node_access')->insert([
@@ -296,8 +280,6 @@ describe('node:revoke interactive input mode contract', function (): void {
         setupNodeRevokeGatewayCallerInteractive();
         DB::table('nodes')->insert(nodeRevokeInteractiveRow([
             'name' => 'control-1',
-            'role' => 'control',
-            'environment' => null,
         ]));
         DB::table('nodes')->insert(nodeRevokeInteractiveRow());
         DB::table('node_access')->insert([
@@ -321,8 +303,6 @@ describe('node:revoke interactive input mode contract', function (): void {
         setupNodeRevokeGatewayCallerInteractive();
         DB::table('nodes')->insert(nodeRevokeInteractiveRow([
             'name' => 'control-1',
-            'role' => 'control',
-            'environment' => null,
         ]));
         DB::table('nodes')->insert(nodeRevokeInteractiveRow());
         DB::table('node_access')->insert([

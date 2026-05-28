@@ -6,6 +6,7 @@ namespace App\Services\Apps;
 
 use App\Models\App;
 use App\Models\Node;
+use App\Services\Nodes\Roles\NodeRoleAssignments;
 use Illuminate\Support\Str;
 
 final readonly class AppRuntimeUser
@@ -30,7 +31,7 @@ final readonly class AppRuntimeUser
         }
 
         return $app->node instanceof Node
-            && $app->node->environment === 'production';
+            && app(NodeRoleAssignments::class)->nodeHasActiveRole($app->node, 'app-prod');
     }
 
     private function safeRuntimeUser(string $name): string

@@ -13,8 +13,10 @@ use Symfony\Component\Console\Input\InputOption;
 
 final class NodeRoleAddCommand extends GatewayCommand
 {
+    #[\Override]
     protected $name = 'node role:add';
 
+    #[\Override]
     protected $description = 'Add a hosted role to a node.';
 
     protected function configure(): void

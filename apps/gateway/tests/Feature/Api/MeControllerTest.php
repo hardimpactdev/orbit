@@ -20,7 +20,6 @@ function meNodeRow(array $overrides = []): array
 {
     return array_merge([
         'name' => 'peer-1',
-        'role' => 'control',
         'host' => '10.6.0.8',
         'wireguard_address' => '10.6.0.8',
         'orbit_path' => '/Users/nckrtl/orbit',
@@ -31,14 +30,22 @@ function meNodeRow(array $overrides = []): array
     ], $overrides);
 }
 
-function assignMeGatewayRole(int $nodeId): void
+/**
+ * @param  array<string, mixed>  $settings
+ */
+function assignMeNodeRole(int $nodeId, string $role, array $settings = []): void
 {
     NodeRoleAssignment::factory()->create([
         'node_id' => $nodeId,
-        'role' => 'gateway',
+        'role' => $role,
         'status' => 'active',
-        'settings' => [],
+        'settings' => $settings,
     ]);
+}
+
+function assignMeGatewayRole(int $nodeId): void
+{
+    assignMeNodeRole($nodeId, 'gateway');
 }
 
 describe('GET /api/me', function (): void {
@@ -59,7 +66,6 @@ describe('GET /api/me', function (): void {
         DB::table('nodes')->insert(meNodeRow());
         $gatewayId = (int) DB::table('nodes')->insertGetId(meNodeRow([
             'name' => 'gateway-1',
-            'role' => 'gateway',
             'wireguard_address' => '10.6.0.2',
             'platform' => 'ubuntu_24-04',
         ]));
@@ -73,9 +79,7 @@ describe('GET /api/me', function (): void {
                     'data' => [
                         'self' => [
                             'name' => 'peer-1',
-                            'role' => 'control',
                             'status' => 'active',
-                            'environment' => null,
                             'platform' => 'macos_15-4',
                             'roles' => [],
                             'addresses' => [
@@ -84,9 +88,7 @@ describe('GET /api/me', function (): void {
                         ],
                         'gateway' => [
                             'name' => 'gateway-1',
-                            'role' => 'gateway',
                             'status' => 'active',
-                            'environment' => null,
                             'platform' => 'ubuntu_24-04',
                             'roles' => [
                                 [
@@ -107,7 +109,6 @@ describe('GET /api/me', function (): void {
     it('returns success shape for gateway-local node via wireguard ip', function (): void {
         $gatewayId = (int) DB::table('nodes')->insertGetId(meNodeRow([
             'name' => 'gateway-1',
-            'role' => 'gateway',
             'wireguard_address' => '10.6.0.2',
             'platform' => 'ubuntu_24-04',
         ]));
@@ -121,9 +122,7 @@ describe('GET /api/me', function (): void {
                     'data' => [
                         'self' => [
                             'name' => 'gateway-1',
-                            'role' => 'gateway',
                             'status' => 'active',
-                            'environment' => null,
                             'platform' => 'ubuntu_24-04',
                             'roles' => [
                                 [
@@ -138,9 +137,7 @@ describe('GET /api/me', function (): void {
                         ],
                         'gateway' => [
                             'name' => 'gateway-1',
-                            'role' => 'gateway',
                             'status' => 'active',
-                            'environment' => null,
                             'platform' => 'ubuntu_24-04',
                             'roles' => [
                                 [
@@ -164,7 +161,6 @@ describe('GET /api/me', function (): void {
         ]));
         $gatewayId = (int) DB::table('nodes')->insertGetId(meNodeRow([
             'name' => 'gateway-1',
-            'role' => 'gateway',
             'wireguard_address' => '10.6.0.2',
             'platform' => 'ubuntu_24-04',
         ]));
@@ -177,58 +173,47 @@ describe('GET /api/me', function (): void {
             ->assertJsonPath('success.data.self.status', 'active');
     });
 
-    it('derives environment from active app role assignments', function (): void {
+    it('serializes active app role assignments without node environment output', function (): void {
         $appId = (int) DB::table('nodes')->insertGetId(meNodeRow([
             'name' => 'app-1',
-            'role' => 'app',
-            'environment' => null,
             'wireguard_address' => '10.6.0.9',
         ]));
         $gatewayId = (int) DB::table('nodes')->insertGetId(meNodeRow([
             'name' => 'gateway-1',
-            'role' => 'gateway',
-            'environment' => null,
             'wireguard_address' => '10.6.0.2',
         ]));
         assignMeGatewayRole($gatewayId);
-        NodeRoleAssignment::factory()->create([
-            'node_id' => $appId,
-            'role' => 'app-development',
-            'status' => 'active',
-            'settings' => ['tld' => 'test'],
-        ]);
+        assignMeNodeRole($appId, 'app-dev', ['tld' => 'test']);
 
         $response = call('GET', '/api/me', [], [], [], ['REMOTE_ADDR' => '10.6.0.9']);
 
         $response->assertOk()
-            ->assertJsonPath('success.data.self.environment', 'development')
-            ->assertJsonPath('success.data.gateway.environment', null);
+            ->assertJsonPath('success.data.self.roles.0.role', 'app-dev')
+            ->assertJsonMissingPath('success.data.self.environment')
+            ->assertJsonMissingPath('success.data.gateway.environment');
     });
 
-    it('ignores legacy app environment without an active app role assignment', function (): void {
+    it('does not emit node environment without an active app role assignment', function (): void {
         DB::table('nodes')->insert(meNodeRow([
             'name' => 'app-1',
-            'role' => 'app',
-            'environment' => 'development',
             'wireguard_address' => '10.6.0.9',
         ]));
-        DB::table('nodes')->insert(meNodeRow([
+        $gatewayId = (int) DB::table('nodes')->insertGetId(meNodeRow([
             'name' => 'gateway-1',
-            'role' => 'gateway',
-            'environment' => null,
             'wireguard_address' => '10.6.0.2',
         ]));
+        assignMeGatewayRole($gatewayId);
 
         $response = call('GET', '/api/me', [], [], [], ['REMOTE_ADDR' => '10.6.0.9']);
 
         $response->assertOk()
-            ->assertJsonPath('success.data.self.environment', null);
+            ->assertJsonMissingPath('success.data.self.environment')
+            ->assertJsonMissingPath('success.data.gateway.environment');
     });
 
     it('serializes composable roles for self and gateway', function (): void {
         $self = Node::factory()->create([
             'name' => 'peer-1',
-            'role' => 'control',
             'host' => '10.6.0.8',
             'wireguard_address' => '10.6.0.8',
             'orbit_path' => '/Users/nckrtl/orbit',
@@ -238,7 +223,6 @@ describe('GET /api/me', function (): void {
 
         $gateway = Node::factory()->create([
             'name' => 'gateway-1',
-            'role' => 'gateway',
             'host' => '10.6.0.2',
             'wireguard_address' => '10.6.0.2',
             'orbit_path' => '/home/orbit/orbit',
@@ -286,7 +270,6 @@ describe('GET /api/me', function (): void {
 
         $gateway = Node::factory()->create([
             'name' => 'gateway-1',
-            'role' => 'control',
             'host' => '10.6.0.2',
             'wireguard_address' => '10.6.0.2',
             'orbit_path' => '/home/orbit/orbit',
@@ -312,7 +295,6 @@ describe('GET /api/me', function (): void {
         DB::table('nodes')->insert(meNodeRow());
         $gatewayId = (int) DB::table('nodes')->insertGetId(meNodeRow([
             'name' => 'gateway-1',
-            'role' => 'gateway',
             'wireguard_address' => '10.6.0.2',
         ]));
         assignMeGatewayRole($gatewayId);
@@ -327,16 +309,16 @@ describe('GET /api/me', function (): void {
     });
 
     it('authenticates scheduler clients by wireguard address instead of client headers', function (): void {
-        DB::table('nodes')->insert(meNodeRow([
+        $appId = (int) DB::table('nodes')->insertGetId(meNodeRow([
             'name' => 'app-1',
-            'role' => 'app',
             'wireguard_address' => '10.6.0.9',
         ]));
-        DB::table('nodes')->insert(meNodeRow([
+        assignMeNodeRole($appId, 'app-dev', ['tld' => 'test']);
+        $gatewayId = (int) DB::table('nodes')->insertGetId(meNodeRow([
             'name' => 'gateway-1',
-            'role' => 'gateway',
             'wireguard_address' => '10.6.0.2',
         ]));
+        assignMeGatewayRole($gatewayId);
 
         $response = call(
             'GET',
@@ -352,13 +334,13 @@ describe('GET /api/me', function (): void {
 
         $response->assertOk()
             ->assertJsonPath('success.data.self.name', 'app-1')
-            ->assertJsonPath('success.data.self.role', 'app');
+            ->assertJsonPath('success.data.self.roles.0.role', 'app-dev')
+            ->assertJsonMissingPath('success.data.self.role');
     });
 
     it('rejects spoofed scheduler client headers without a known wireguard peer', function (): void {
         DB::table('nodes')->insert(meNodeRow([
             'name' => 'gateway-1',
-            'role' => 'gateway',
             'wireguard_address' => '10.6.0.2',
         ]));
 
@@ -384,7 +366,6 @@ describe('GET /api/me', function (): void {
         DB::table('nodes')->insert(meNodeRow());
         $gatewayId = (int) DB::table('nodes')->insertGetId(meNodeRow([
             'name' => 'gateway-1',
-            'role' => 'gateway',
             'wireguard_address' => '10.6.0.2',
             'platform' => 'ubuntu_24-04',
         ]));

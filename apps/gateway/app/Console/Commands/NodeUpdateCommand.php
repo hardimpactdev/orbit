@@ -27,8 +27,7 @@ use function Laravel\Prompts\text;
 #[Signature('node:update
     {name? : Node name to update}
     {--host= : New SSH/bootstrap endpoint}
-    {--environment= : New environment (development/production)}
-    {--tld= : Development TLD for development app nodes}
+    {--tld= : Development TLD for app-dev role assignments}
     {--public-ipv4= : Public IPv4 address metadata}
     {--public-ipv6= : Public IPv6 address metadata}
     {--json : Output as JSON}')]
@@ -248,28 +247,26 @@ class NodeUpdateCommand extends Command
     private function interactiveFieldChoices(?Node $node): array
     {
         if (! $node instanceof Node) {
-            return ['host', 'environment', 'tld', 'public_ipv4', 'public_ipv6'];
+            return ['host', 'tld', 'public_ipv4', 'public_ipv6'];
         }
 
-        return match ($node->role) {
-            'app' => $node->environment === 'development'
-                ? ['host', 'environment', 'tld', 'public_ipv4', 'public_ipv6']
-                : ['host', 'environment', 'public_ipv4', 'public_ipv6'],
-            'gateway' => ['host', 'public_ipv4', 'public_ipv6'],
-            default => [],
-        };
+        if ($node->hasActiveRole('gateway')) {
+            return ['host', 'public_ipv4', 'public_ipv6'];
+        }
+
+        if ($node->hasActiveRole('app-dev')) {
+            return ['host', 'tld', 'public_ipv4', 'public_ipv6'];
+        }
+
+        if ($node->hasActiveRole('app-prod')) {
+            return ['host', 'public_ipv4', 'public_ipv6'];
+        }
+
+        return [];
     }
 
     private function promptForFieldValue(string $field): string
     {
-        if ($field === 'environment') {
-            return select(
-                label: 'Environment',
-                options: ['development', 'production'],
-                required: true,
-            );
-        }
-
         if ($field === 'tld') {
             return trim(text(
                 label: 'Development TLD',
@@ -387,7 +384,7 @@ class NodeUpdateCommand extends Command
 
     private function detectDuplicateFieldFlag(): ?string
     {
-        $flags = ['host', 'environment', 'tld', 'public-ipv4', 'public-ipv6'];
+        $flags = ['host', 'tld', 'public-ipv4', 'public-ipv6'];
 
         if (! $this->input instanceof ArgvInput) {
             return null;
@@ -424,10 +421,6 @@ class NodeUpdateCommand extends Command
             $fields['host'] = (string) $this->option('host');
         }
 
-        if ($this->option('environment') !== null) {
-            $fields['environment'] = (string) $this->option('environment');
-        }
-
         if ($this->option('tld') !== null) {
             $fields['tld'] = (string) $this->option('tld');
         }
@@ -457,18 +450,6 @@ class NodeUpdateCommand extends Command
                     'meta' => ['field' => $field],
                 ];
             }
-        }
-
-        if (isset($providedFields['environment']) && ! in_array($providedFields['environment'], ['development', 'production'], true)) {
-            return [
-                'code' => 'validation_failed',
-                'message' => "Invalid value for --environment: '{$providedFields['environment']}'. Allowed values: development, production.",
-                'meta' => [
-                    'field' => 'environment',
-                    'value' => $providedFields['environment'],
-                    'allowed' => ['development', 'production'],
-                ],
-            ];
         }
 
         if (isset($providedFields['tld']) && ! $this->isValidTld($providedFields['tld'])) {
@@ -513,29 +494,23 @@ class NodeUpdateCommand extends Command
      */
     private function detectRoleIncompatibleField(Node $node, array $providedFields): ?array
     {
-        $role = $node->role;
+        $role = $node->displayRole();
 
-        if (isset($providedFields['environment']) && $role !== 'app') {
-            return ['field' => 'environment', 'role' => $role];
-        }
-
-        if (isset($providedFields['host']) && $role === 'control') {
+        if (isset($providedFields['host']) && $node->isOperator()) {
             return ['field' => 'host', 'role' => $role];
         }
 
         if (isset($providedFields['tld'])) {
-            $effectiveEnvironment = $providedFields['environment'] ?? $node->environment;
-
-            if ($role !== 'app' || $effectiveEnvironment !== 'development') {
+            if (! $node->hasActiveRole('app-dev')) {
                 return ['field' => 'tld', 'role' => $role];
             }
         }
 
-        if (isset($providedFields['public_ipv4']) && $role === 'control') {
+        if (isset($providedFields['public_ipv4']) && $node->isOperator()) {
             return ['field' => 'public_ipv4', 'role' => $role];
         }
 
-        if (isset($providedFields['public_ipv6']) && $role === 'control') {
+        if (isset($providedFields['public_ipv6']) && $node->isOperator()) {
             return ['field' => 'public_ipv6', 'role' => $role];
         }
 
@@ -552,10 +527,6 @@ class NodeUpdateCommand extends Command
 
         if (isset($providedFields['host']) && $providedFields['host'] !== $node->host) {
             $changes['host'] = $providedFields['host'];
-        }
-
-        if (isset($providedFields['environment']) && $providedFields['environment'] !== $node->environment) {
-            $changes['environment'] = $providedFields['environment'];
         }
 
         if (isset($providedFields['tld']) && $providedFields['tld'] !== $node->tld) {

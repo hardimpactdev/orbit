@@ -14,17 +14,16 @@ uses(RefreshDatabase::class);
 
 const WORKSPACE_STEP_DELETE_CALLER_WG_IP = '10.6.0.97';
 
-function createWorkspaceStepDeleteCallerNode(array $overrides = []): Node
+function createWorkspaceStepDeleteCallerNode(array $overrides = [], ?string $role = null): Node
 {
     $attributes = array_merge([
         'name' => 'step-delete-caller',
-        'role' => 'control',
         'host' => WORKSPACE_STEP_DELETE_CALLER_WG_IP,
         'wireguard_address' => WORKSPACE_STEP_DELETE_CALLER_WG_IP,
     ], $overrides);
 
-    return match ($attributes['role']) {
-        'app' => createTestAppHostNode($attributes),
+    return match ($role) {
+        'app-dev' => createTestAppHostNode($attributes),
         'gateway' => createTestGatewayNode($attributes),
         default => Node::factory()->create($attributes),
     };
@@ -45,7 +44,7 @@ function grantWorkspaceStepDeleteAccess(Node $caller, Node $appNode): void
 describe('WorkspaceStepDeleteController', function (): void {
     it('deletes a workspace step for authorized callers and compacts order', function (): void {
         $caller = createWorkspaceStepDeleteCallerNode();
-        $node = createTestAppHostNode(['role' => 'app']);
+        $node = createTestAppHostNode();
         grantWorkspaceStepDeleteAccess($caller, $node);
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
         WorkspaceStep::factory()->create(['app_id' => $app->id, 'phase' => WorkspaceLifecyclePhase::Setup, 'sort_order' => 1]);
@@ -71,7 +70,7 @@ describe('WorkspaceStepDeleteController', function (): void {
 
     it('logs destructive activity for successful workspace step deletion', function (): void {
         $caller = createWorkspaceStepDeleteCallerNode();
-        $node = createTestAppHostNode(['role' => 'app']);
+        $node = createTestAppHostNode();
         grantWorkspaceStepDeleteAccess($caller, $node);
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
         $removed = WorkspaceStep::factory()->create(['app_id' => $app->id, 'phase' => WorkspaceLifecyclePhase::Teardown, 'sort_order' => 1]);
@@ -96,7 +95,7 @@ describe('WorkspaceStepDeleteController', function (): void {
 
     it('requires destructive consent before deleting workspace steps', function (): void {
         $caller = createWorkspaceStepDeleteCallerNode();
-        $node = createTestAppHostNode(['role' => 'app']);
+        $node = createTestAppHostNode();
         grantWorkspaceStepDeleteAccess($caller, $node);
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
         $step = WorkspaceStep::factory()->create(['app_id' => $app->id, 'phase' => WorkspaceLifecyclePhase::Setup]);
@@ -113,8 +112,8 @@ describe('WorkspaceStepDeleteController', function (): void {
     });
 
     it('rejects callers without workspace step write permission', function (): void {
-        createWorkspaceStepDeleteCallerNode(['role' => 'app']);
-        $node = createTestAppHostNode(['role' => 'app']);
+        createWorkspaceStepDeleteCallerNode(role: 'app-dev');
+        $node = createTestAppHostNode();
         App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
 
         $response = $this->call('DELETE', '/api/workspaces/steps/setup/12', ['app' => 'docs'], [], [], [
@@ -128,8 +127,8 @@ describe('WorkspaceStepDeleteController', function (): void {
     });
 
     it('returns phase-scoped step-not-found errors', function (): void {
-        createWorkspaceStepDeleteCallerNode(['role' => 'gateway']);
-        $node = createTestAppHostNode(['role' => 'app']);
+        createWorkspaceStepDeleteCallerNode(role: 'gateway');
+        $node = createTestAppHostNode();
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
         $step = WorkspaceStep::factory()->create(['app_id' => $app->id, 'phase' => WorkspaceLifecyclePhase::Teardown]);
 

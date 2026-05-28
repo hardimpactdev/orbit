@@ -469,8 +469,8 @@ describe('registry intent', function (): void {
 });
 
 describe('owner app eligibility', function (): void {
-    it('requires an owner app on an active app node', function (array $nodeState): void {
-        $node = Node::factory()->create($nodeState);
+    it('requires an owner app on an active app node', function (callable $createNode): void {
+        $node = $createNode();
         $app = App::factory()->for($node, 'node')->create();
         $process = processFor($app, ['name' => 'vite']);
 
@@ -478,8 +478,8 @@ describe('owner app eligibility', function (): void {
 
         expect(issue($drift, 'process.owner_app_invalid')?->kind)->toBe(DriftKind::Divergent);
     })->with([
-        'gateway owner node' => [['role' => 'gateway', 'status' => 'active']],
-        'inactive app owner node' => [['role' => 'app', 'status' => 'inactive']],
+        'gateway owner node' => [fn (): Node => Node::factory()->gateway()->create(['status' => 'active'])],
+        'inactive app owner node' => [fn (): Node => Node::factory()->appDev()->create(['status' => 'inactive'])],
     ]);
 });
 

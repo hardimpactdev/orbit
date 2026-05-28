@@ -12,11 +12,13 @@ final class WorkspaceShowCommand extends GatewayCommand
 {
     use ResolvesHostContext;
 
+    #[\Override]
     protected $signature = 'workspace:show
         {name? : Workspace name}
         {--app= : Parent app slug}
         {--json}';
 
+    #[\Override]
     protected $description = 'Show one workspace from the gateway registry.';
 
     public function handle(): int

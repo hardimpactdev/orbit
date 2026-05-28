@@ -14,6 +14,7 @@ final class ToolLogsCommand extends GatewayCommand
 {
     use ResolvesHostContext;
 
+    #[\Override]
     protected $signature = 'tool:logs
         {tool? : Tool catalog name to read logs for}
         {--app= : Resolve target by app selector}
@@ -22,6 +23,7 @@ final class ToolLogsCommand extends GatewayCommand
         {--lines=100 : Number of historical lines}
         {--json}';
 
+    #[\Override]
     protected $description = 'Read managed tool logs.';
 
     public function handle(): int

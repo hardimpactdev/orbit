@@ -18,13 +18,11 @@ function nodeShowCommandRow(array $overrides = []): array
 {
     return array_merge([
         'name' => 'app-1',
-        'role' => 'app',
         'host' => '10.6.0.7',
         'wireguard_address' => '10.6.0.7',
         'user' => 'nckrtl',
         'orbit_path' => '/home/nckrtl/orbit',
         'status' => 'active',
-        'environment' => 'development',
         'platform' => 'ubuntu_24-04',
         'created_at' => now(),
         'updated_at' => now(),
@@ -37,8 +35,6 @@ function setupNodeShowCommandGatewayCaller(): void
 
     $nodeId = (int) DB::table('nodes')->insertGetId(nodeShowCommandRow([
         'name' => 'gateway-1',
-        'role' => 'gateway',
-        'environment' => null,
     ]));
 
     NodeRoleAssignment::factory()->create([
@@ -52,8 +48,6 @@ function setupNodeShowCommandControlCaller(): void
 {
     DB::table('nodes')->insert(nodeShowCommandRow([
         'name' => 'control-1',
-        'role' => 'control',
-        'environment' => null,
     ]));
 }
 
@@ -61,8 +55,6 @@ function setupNodeShowCommandAppCaller(): void
 {
     DB::table('nodes')->insert(nodeShowCommandRow([
         'name' => 'app-local',
-        'role' => 'app',
-        'environment' => 'development',
     ]));
 }
 
@@ -70,8 +62,6 @@ function setupNodeShowCommandUnknownCaller(): void
 {
     DB::table('nodes')->insert(nodeShowCommandRow([
         'name' => 'weird',
-        'role' => 'bogus',
-        'environment' => null,
     ]));
 }
 
@@ -103,24 +93,19 @@ describe('node:show command contract', function (): void {
 
         expect($exitCode)->toBe(0)
             ->and($payload['success']['data']['node']['name'])->toBe('gateway-1')
-            ->and($payload['success']['data']['node']['role'])->toBe('gateway');
+            ->and($payload['success']['data']['node'])->not->toHaveKey('role')
+            ->and($payload['success']['data']['node']['roles'][0]['role'])->toBe('gateway');
     });
 
-    it('defaults to local default development app node when set and name is missing', function (): void {
+    it('ignores app nodes when resolving the gateway-local self target', function (): void {
         DB::table('nodes')->insert(nodeShowCommandRow());
-
-        DB::table('local_node_defaults')->insert([
-            'default_node_name' => 'app-1',
-            'created_at' => now(),
-            'updated_at' => now(),
-        ]);
 
         $exitCode = Artisan::call('node:show', ['--json' => true]);
 
         $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
 
         expect($exitCode)->toBe(0)
-            ->and($payload['success']['data']['node']['name'])->toBe('app-1');
+            ->and($payload['success']['data']['node']['name'])->toBe('gateway-1');
     });
 
     it('does not mutate registry state or run processes', function (): void {
@@ -192,17 +177,12 @@ describe('node:show caller role behavior', function (): void {
         DB::table('nodes')->insert([
             nodeShowCommandRow([
                 'name' => 'app-1',
-                'role' => 'app',
             ]),
             nodeShowCommandRow([
                 'name' => 'control-1',
-                'role' => 'control',
-                'environment' => null,
             ]),
             nodeShowCommandRow([
                 'name' => 'control-2',
-                'role' => 'control',
-                'environment' => null,
             ]),
         ]);
 

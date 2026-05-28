@@ -29,7 +29,6 @@ beforeEach(function (): void {
     DB::table('nodes')->insert([
         [
             'name' => 'gateway',
-            'role' => 'gateway',
             'host' => 'gateway',
             'orbit_path' => '/home/gateway/orbit',
             'status' => 'active',
@@ -39,11 +38,33 @@ beforeEach(function (): void {
         ],
         [
             'name' => 'app-1',
-            'role' => 'app',
             'host' => 'app-1',
             'orbit_path' => '/home/nckrtl/orbit',
             'status' => 'active',
             'tld' => 'beast',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ],
+    ]);
+
+    DB::table('node_role')->insert([
+        [
+            'node_id' => 1,
+            'role' => 'gateway',
+            'status' => 'active',
+            'settings' => json_encode([], JSON_THROW_ON_ERROR),
+            'last_error' => null,
+            'converged_at' => now(),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ],
+        [
+            'node_id' => 2,
+            'role' => 'app-dev',
+            'status' => 'active',
+            'settings' => json_encode(['tld' => 'beast'], JSON_THROW_ON_ERROR),
+            'last_error' => null,
+            'converged_at' => now(),
             'created_at' => now(),
             'updated_at' => now(),
         ],
@@ -56,7 +77,6 @@ beforeEach(function (): void {
             'node_id' => 2,
             'path' => '/home/nckrtl/apps/demo',
             'php_version' => '8.5',
-            'environment' => 'development',
             'document_root' => 'public',
             'created_at' => now(),
             'updated_at' => now(),

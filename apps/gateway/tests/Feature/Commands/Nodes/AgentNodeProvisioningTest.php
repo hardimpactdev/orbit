@@ -7,6 +7,7 @@ use App\Data\RemoteShell\RemoteShellResult;
 use App\Enums\Nodes\NodeRoleStatus;
 use App\Models\Node;
 use App\Models\NodeAccess;
+use App\Models\NodeRoleAssignment;
 use App\Models\NodeTool;
 use App\Models\WireGuardPeer;
 use App\Services\OrbitHostInstaller;
@@ -105,7 +106,7 @@ beforeEach(function (): void {
 
     $gateway = Node::factory()->create([
         'name' => 'gateway-1',
-        'role' => 'gateway',
+
         'platform' => 'ubuntu',
         'host' => '10.6.0.2',
         'wireguard_address' => '10.6.0.2',
@@ -120,6 +121,17 @@ beforeEach(function (): void {
         'public_key' => 'gateway-public-key',
         'private_key' => 'gateway-private-key',
         'allowed_ips' => '10.6.0.2/32',
+    ]);
+
+    NodeRoleAssignment::factory()->create([
+        'node_id' => $gateway->id,
+        'role' => 'gateway',
+        'status' => 'active',
+    ]);
+    NodeRoleAssignment::factory()->create([
+        'node_id' => $gateway->id,
+        'role' => 'vpn',
+        'status' => 'active',
     ]);
 
     Process::fake(function ($process) {
@@ -165,7 +177,7 @@ afterEach(function (): void {
 it('provisions an agent node and verifies node doctor readiness', function (): void {
     $nodeNewExitCode = Artisan::call('node:new', [
         'name' => 'agent-1',
-        '--role' => ['agent'],
+        '--roles' => 'agent',
         '--host' => '192.0.2.10',
         '--tld' => 'agent',
         '--self-grant' => 'default',

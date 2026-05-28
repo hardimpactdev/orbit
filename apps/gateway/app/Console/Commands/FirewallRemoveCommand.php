@@ -10,7 +10,6 @@ use App\Http\Gateway\GatewayApiException;
 use App\Http\Gateway\GatewayConnector;
 use App\Http\Gateway\Requests\Firewall\RemoveFirewallRuleRequest;
 use App\Http\Gateway\Responses\Firewall\FirewallRuleMutationResponse;
-use App\Models\LocalNodeDefault;
 use App\Services\Firewall\FirewallRuleIntent;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
@@ -33,14 +32,18 @@ class FirewallRemoveCommand extends Command
     public function handle(FirewallRuleIntent $intent): int
     {
         $name = $this->stringArgument('name');
-        $node = $this->stringOption('node') ?? $this->defaultNodeName();
+        $node = $this->stringOption('node');
 
         if ($name === null) {
             return $this->failValidation('name', 'The firewall rule name is required.');
         }
 
         if ($node === null) {
-            return $this->failValidation('node', 'A firewall target node is required.');
+            return $this->failCommand(
+                'node_target_required',
+                'A node target is required. Provide --node.',
+                ['field' => 'node'],
+            );
         }
 
         $consent = $this->confirmRemoval($name, $node);
@@ -227,13 +230,6 @@ class FirewallRemoveCommand extends Command
         $this->error($message);
 
         return self::FAILURE;
-    }
-
-    private function defaultNodeName(): ?string
-    {
-        $name = LocalNodeDefault::query()->value('default_node_name');
-
-        return is_string($name) && $name !== '' ? $name : null;
     }
 
     private function stringArgument(string $key): ?string

@@ -56,7 +56,7 @@ Use `--json` for the machine-readable removed or already-absent rule result.
 
 - The CLI caller can reach the Orbit gateway, or the command is running on the gateway.
 - The current node identity is authorized to manage firewall policy for the selected node.
-- The target node is a registered active Ubuntu node carrying at least one of the `gateway`, `app-development`, `app-production`, `database`, or `agent` roles.
+- The target node is a registered active Ubuntu node carrying at least one of the `gateway`, `app-dev`, `app-prod`, `database`, or `agent` roles.
 - The gateway can reach the target node through Orbit's node execution primitive.
 - This requirement is waived when the rule is already absent from gateway configuration.
 

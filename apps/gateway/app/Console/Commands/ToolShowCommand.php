@@ -11,7 +11,6 @@ use App\Http\Gateway\GatewayApiException;
 use App\Http\Gateway\GatewayConnector;
 use App\Http\Gateway\Requests\Tools\ShowToolRequest;
 use App\Http\Gateway\Responses\Tools\ToolShowResponse;
-use App\Models\LocalNodeDefault;
 use App\Services\Tools\ToolCatalog;
 use App\Services\Tools\ToolPayloadMapper;
 use App\Services\Tools\ToolRegistry;
@@ -219,17 +218,7 @@ class ToolShowCommand extends Command
             return [$node, $app];
         }
 
-        $defaultNode = LocalNodeDefault::query()->value('default_node_name');
-
-        if (is_string($defaultNode) && trim($defaultNode) !== '') {
-            return [trim($defaultNode), null];
-        }
-
-        return ToolRegistryFailure::validation(
-            field: 'target',
-            value: '',
-            message: 'A node or app target is required. Provide --node, --app, or configure node:default.',
-        );
+        return ToolRegistryFailure::nodeTargetRequired();
     }
 
     /**

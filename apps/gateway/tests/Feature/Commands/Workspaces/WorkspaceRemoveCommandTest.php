@@ -33,12 +33,10 @@ afterEach(function (): void {
 it('removes workspace intent and owned artifacts from a gateway caller', function (): void {
     Node::factory()->create([
         'name' => 'gateway-1',
-        'role' => 'gateway',
     ]);
 
     $node = Node::factory()->create([
         'name' => 'app-1',
-        'role' => 'app',
         'tld' => 'test',
         'user' => 'orbit',
     ]);
@@ -128,12 +126,10 @@ it('removes workspace intent and owned artifacts from a gateway caller', functio
 it('renders the documented human progress tree while removing a workspace', function (): void {
     Node::factory()->create([
         'name' => 'gateway-1',
-        'role' => 'gateway',
     ]);
 
     $node = Node::factory()->create([
         'name' => 'app-1',
-        'role' => 'app',
         'tld' => 'test',
         'user' => 'orbit',
     ]);
@@ -171,12 +167,10 @@ it('renders the documented human progress tree while removing a workspace', func
 it('renders decorated progress tree glyphs and colors while removing a workspace', function (): void {
     Node::factory()->create([
         'name' => 'gateway-1',
-        'role' => 'gateway',
     ]);
 
     $node = Node::factory()->create([
         'name' => 'app-1',
-        'role' => 'app',
         'tld' => 'test',
         'user' => 'orbit',
     ]);
@@ -218,7 +212,6 @@ it('renders decorated progress tree glyphs and colors while removing a workspace
 it('requires destructive consent in non-interactive mode', function (): void {
     Node::factory()->create([
         'name' => 'gateway-1',
-        'role' => 'gateway',
     ]);
 
     $workspace = Workspace::factory()->create([
@@ -244,7 +237,6 @@ it('requires destructive consent in non-interactive mode', function (): void {
 it('returns not found for already absent workspaces', function (): void {
     Node::factory()->create([
         'name' => 'gateway-1',
-        'role' => 'gateway',
     ]);
 
     app()->instance(RemoteShell::class, new WorkspaceRemoveSequencedRemoteShell([]));
@@ -265,7 +257,6 @@ it('returns not found for already absent workspaces', function (): void {
 it('preserves files when keep files is requested', function (): void {
     Node::factory()->create([
         'name' => 'gateway-1',
-        'role' => 'gateway',
     ]);
 
     $workspace = Workspace::factory()->create([
@@ -297,7 +288,6 @@ it('preserves files when keep files is requested', function (): void {
 it('reports cleanup drift as success warnings after intent removal', function (): void {
     Node::factory()->create([
         'name' => 'gateway-1',
-        'role' => 'gateway',
     ]);
 
     $workspace = Workspace::factory()->create([
@@ -328,12 +318,10 @@ it('reports cleanup drift as success warnings after intent removal', function ()
 it('continues workspace teardown after a failed step and reports the failed step warning', function (): void {
     Node::factory()->create([
         'name' => 'gateway-1',
-        'role' => 'gateway',
     ]);
 
     $node = Node::factory()->create([
         'name' => 'app-1',
-        'role' => 'app',
     ]);
     $app = App::factory()->create([
         'name' => 'docs',
@@ -393,12 +381,10 @@ it('continues workspace teardown after a failed step and reports the failed step
 it('uses the app context resolved from the current workspace directory', function (): void {
     Node::factory()->create([
         'name' => 'gateway-1',
-        'role' => 'gateway',
     ]);
 
     $node = Node::factory()->create([
         'name' => 'app-1',
-        'role' => 'app',
     ]);
     $docs = App::factory()->create([
         'name' => 'docs',
@@ -459,7 +445,6 @@ it('forwards configured non-gateway callers through the typed gateway request', 
 
     Node::factory()->create([
         'name' => 'control-1',
-        'role' => 'control',
     ]);
 
     LocalGatewaySettings::current()->fill([

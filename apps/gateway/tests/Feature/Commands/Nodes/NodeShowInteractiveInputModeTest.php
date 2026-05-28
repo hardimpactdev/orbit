@@ -57,13 +57,11 @@ function nodeShowInteractiveRow(array $overrides = []): array
 {
     return array_merge([
         'name' => 'app-1',
-        'role' => 'app',
         'host' => '10.6.0.7',
         'wireguard_address' => '10.6.0.7',
         'user' => 'nckrtl',
         'orbit_path' => '/home/nckrtl/orbit',
         'status' => 'active',
-        'environment' => 'development',
         'platform' => 'ubuntu_24-04',
         'created_at' => now(),
         'updated_at' => now(),
@@ -76,8 +74,6 @@ function setupShowInteractiveGatewayCaller(): void
 
     DB::table('nodes')->insert(nodeShowInteractiveRow([
         'name' => 'test-gateway',
-        'role' => 'gateway',
-        'environment' => null,
     ]));
 }
 
@@ -168,15 +164,9 @@ describe('node:show interactive input mode', function (): void {
         expect($payload['success'])->toHaveKey('data');
     });
 
-    it('prompts for a finite node selection instead of using the local default when name is missing', function (): void {
+    it('prompts for a finite node selection when name is missing', function (): void {
         DB::table('nodes')->insert(nodeShowInteractiveRow(['name' => 'default-app']));
         DB::table('nodes')->insert(nodeShowInteractiveRow(['name' => 'prompted-node']));
-
-        DB::table('local_node_defaults')->insert([
-            'default_node_name' => 'default-app',
-            'created_at' => now(),
-            'updated_at' => now(),
-        ]);
 
         $result = runTestableNodeShowCommand();
 
@@ -198,7 +188,6 @@ describe('node:show interactive input mode', function (): void {
 
     it('surfaces an unavailable prompted node without falling back to open input', function (): void {
         DB::table('nodes')->delete();
-        DB::table('local_node_defaults')->delete();
 
         $result = runTestableNodeShowCommand();
 
@@ -213,7 +202,6 @@ describe('node:show interactive input mode', function (): void {
         config(['orbit.is_gateway' => false]);
 
         DB::table('nodes')->delete();
-        DB::table('local_node_defaults')->delete();
 
         LocalGatewaySettings::current()->fill([
             'gateway_url' => 'https://10.6.0.1',
@@ -227,9 +215,7 @@ describe('node:show interactive input mode', function (): void {
                         'nodes' => [
                             [
                                 'name' => 'visible-app',
-                                'role' => 'app',
                                 'status' => 'active',
-                                'environment' => 'development',
                                 'platform' => 'ubuntu_24-04',
                                 'host' => '10.6.0.7',
                             ],
@@ -242,9 +228,7 @@ describe('node:show interactive input mode', function (): void {
                     'data' => [
                         'node' => [
                             'name' => 'visible-app',
-                            'role' => 'app',
                             'status' => 'active',
-                            'environment' => 'development',
                             'platform' => 'ubuntu_24-04',
                             'wireguard_address' => '10.6.0.7',
                             'addresses' => ['wireguard' => '10.6.0.7'],
@@ -267,7 +251,6 @@ describe('node:show interactive input mode', function (): void {
 
     it('does not prompt when json forces non-interactive mode', function (): void {
         DB::table('nodes')->delete();
-        DB::table('local_node_defaults')->delete();
 
         $result = runTestableNodeShowCommand(['--json' => true]);
         $payload = json_decode($result['output'], associative: true, flags: JSON_THROW_ON_ERROR);

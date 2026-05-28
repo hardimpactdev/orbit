@@ -1,32 +1,33 @@
-# Technical Contract: `node:default` Rejected On Gateway Hosts
+# Technical Contract: `node:default` On Gateway Hosts
 
 [Back to `node:default` technical contract.](1_node-default.md)
 
-This page describes how gateway hosts reject `node:default`.
+This page documents the retired gateway-host rejection path and the current
+target behavior.
 
-**Effects:** `none` (rejected before prompts or side effects).
+**Effects:** `read`, `write`.
 
 ## Behavior
 
-When `ORBIT_IS_GATEWAY` is set, every sub-action fails before prompts or local
-default mutation.
+Gateway hosts run `node:default` like any other operator host. The command edits
+the invoking OS user's local CLI configuration at
+`~/.config/orbit/config.json`; it does not read or write any gateway-side
+default-node table or `/api/nodes/default` endpoint.
 
-`node:default` exists to store a CLI-local preference for development app-role
-targeting. Gateway hosts are not the intended audience for this local config
-convenience. Gateway-local development work against nodes is outside the
-current command contract.
+The gateway runtime may still set `ORBIT_IS_GATEWAY=true` for gateway-runtime
+services and maintenance commands. That runtime flag is not a reason for the
+public `apps/cli/orbit` command to reject local default-node configuration.
 
 ## Error Contract
 
-```text
-node:default is not supported on gateway nodes.
-```
+There is no gateway-host-specific error contract. Gateway hosts use the same
+validation and gateway-unavailable failures as other operator hosts.
 
 ## Failure Semantics
 
 | Failure | Condition | Outcome |
 | --- | --- | --- |
-| Gateway host unsupported | Any sub-action is requested with `ORBIT_IS_GATEWAY` set. | Failure before prompts or side effects |
+| Gateway-host rejection | Historical behavior only. | Retired; do not implement. |
 
 ## Test Mapping
 
@@ -34,4 +35,4 @@ Primary test owners:
 
 | Path | Coverage |
 | --- | --- |
-| `apps/gateway/tests/Feature/Commands/Nodes/NodeDefaultOnControlNodeContractTest.php` | Gateway-host rejection before local default mutation. |
+| `apps/cli/tests/Feature/Commands/Node/NodeDefaultOnGatewayHostTest.php` | Gateway-host execution edits local CLI config and does not call gateway-side default-node routes. |

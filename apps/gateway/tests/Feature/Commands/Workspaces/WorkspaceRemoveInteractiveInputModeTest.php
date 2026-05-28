@@ -23,7 +23,6 @@ beforeEach(function (): void {
 it('prompts for missing workspace name in interactive mode', function (): void {
     Node::factory()->create([
         'name' => 'gateway-1',
-        'role' => 'gateway',
         'host' => '10.6.0.1',
         'orbit_path' => '/home/orbit/orbit',
         'status' => 'active',
@@ -31,7 +30,6 @@ it('prompts for missing workspace name in interactive mode', function (): void {
 
     $node = Node::factory()->create([
         'name' => 'app-1',
-        'role' => 'app',
         'host' => '10.6.0.7',
         'tld' => 'test',
         'orbit_path' => '/home/orbit/orbit',
@@ -43,7 +41,6 @@ it('prompts for missing workspace name in interactive mode', function (): void {
         'node_id' => $node->id,
         'path' => '/srv/docs',
         'document_root' => 'public',
-        'environment' => 'development',
     ]);
 
     Workspace::factory()->create([
@@ -62,7 +59,6 @@ it('prompts for missing workspace name in interactive mode', function (): void {
 it('does not prompt when workspace name is supplied', function (): void {
     Node::factory()->create([
         'name' => 'gateway-1',
-        'role' => 'gateway',
         'host' => '10.6.0.1',
         'orbit_path' => '/home/orbit/orbit',
         'status' => 'active',
@@ -70,7 +66,6 @@ it('does not prompt when workspace name is supplied', function (): void {
 
     $node = Node::factory()->create([
         'name' => 'app-1',
-        'role' => 'app',
         'host' => '10.6.0.7',
         'tld' => 'test',
         'orbit_path' => '/home/orbit/orbit',
@@ -82,7 +77,6 @@ it('does not prompt when workspace name is supplied', function (): void {
         'node_id' => $node->id,
         'path' => '/srv/docs',
         'document_root' => 'public',
-        'environment' => 'development',
     ]);
 
     Workspace::factory()->create([

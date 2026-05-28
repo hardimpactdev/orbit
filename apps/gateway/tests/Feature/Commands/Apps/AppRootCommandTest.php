@@ -30,7 +30,6 @@ afterEach(function (): void {
 it('updates app root intent and re-enacts runtime artifacts from a gateway caller', function (): void {
     Node::factory()->create([
         'name' => 'gateway-1',
-        'role' => 'gateway',
     ]);
 
     $node = createTestAppHostNode([
@@ -87,7 +86,6 @@ it('updates app root intent and re-enacts runtime artifacts from a gateway calle
 it('reports converged no-op when root intent is unchanged', function (): void {
     Node::factory()->create([
         'name' => 'gateway-1',
-        'role' => 'gateway',
     ]);
 
     $node = createTestAppHostNode([
@@ -125,7 +123,6 @@ it('reports converged no-op when root intent is unchanged', function (): void {
 it('rejects roots that resolve outside the app path', function (): void {
     Node::factory()->create([
         'name' => 'gateway-1',
-        'role' => 'gateway',
     ]);
 
     $node = createTestAppHostNode([
@@ -165,7 +162,6 @@ it('forwards app-node CLI callers through the typed gateway request without loca
 
     Node::factory()->create([
         'name' => 'app-local',
-        'role' => 'app',
     ]);
 
     LocalGatewaySettings::current()->fill([
@@ -183,7 +179,6 @@ it('forwards app-node CLI callers through the typed gateway request without loca
                     'app' => [
                         'name' => 'docs',
                         'node' => 'app-1',
-                        'environment' => 'development',
                         'url' => 'https://docs.test',
                         'path' => '/home/orbit/apps/docs',
                         'root' => 'public',
@@ -223,7 +218,6 @@ it('forwards configured control callers through the typed gateway request', func
 
     Node::factory()->create([
         'name' => 'control-1',
-        'role' => 'control',
     ]);
 
     LocalGatewaySettings::current()->fill([
@@ -241,7 +235,6 @@ it('forwards configured control callers through the typed gateway request', func
                     'app' => [
                         'name' => 'docs',
                         'node' => 'app-1',
-                        'environment' => 'development',
                         'url' => 'https://docs.test',
                         'path' => '/home/orbit/apps/docs',
                         'root' => 'web',
@@ -280,7 +273,6 @@ it('forwards configured control callers through the typed gateway request', func
 it('prompts for missing human input and renders the progress tree', function (): void {
     Node::factory()->create([
         'name' => 'gateway-1',
-        'role' => 'gateway',
     ]);
 
     $node = createTestAppHostNode([
@@ -320,7 +312,6 @@ it('prompts for missing human input and renders the progress tree', function ():
 it('renders converged human output when root intent is unchanged', function (): void {
     Node::factory()->create([
         'name' => 'gateway-1',
-        'role' => 'gateway',
     ]);
 
     $node = createTestAppHostNode([

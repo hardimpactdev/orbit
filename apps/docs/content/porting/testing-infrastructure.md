@@ -74,9 +74,10 @@ Prepared Docker topologies model the target runtime contract:
   `apps/cli/.env` on non-gateway nodes with the prepared gateway HTTP endpoint
   (`http://gateway` in DNS-alias mode, otherwise `http://10.6.0.2`) so public
   CLI commands use the client artifact instead of the legacy root app registry;
-- host launcher -> role-aware artifact (`apps/cli/orbit` on non-gateway nodes
-  or `apps/gateway/artisan` on the gateway) -> gateway `orbit-caddy` -> gateway
-  `orbit-runtime`;
+- host launcher -> `apps/cli/orbit` (every node role) -> gateway `orbit-caddy`
+  -> gateway `orbit-runtime`; gateway maintenance bypasses the public launcher
+  and uses `bin/orbit-gateway-artisan` or direct `php apps/gateway/artisan`
+  from a controlled gateway shell;
 - app and workspace PHP runtimes are FrankenPHP containers;
 - PHP app and workspace process units use Docker process runtime containers by
   default;

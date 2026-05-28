@@ -197,7 +197,7 @@ PHP;
 
     $topology->ssh(
         $role,
-        "cd {$checkout} && orbit tinker --execute=".escapeshellarg($php),
+        "cd {$checkout} && php apps/gateway/artisan tinker --execute=".escapeshellarg($php),
         timeoutSeconds: 120,
     );
 }
@@ -451,7 +451,7 @@ foreach ([{$consumerValue}, {$servingValue}] as \$name) {
 }
 
 \$servingName = {$servingValue};
-\$servingRole = str_contains(\$servingName, 'app-prod') ? 'app-production' : (str_contains(\$servingName, 'app-dev') ? 'app-development' : null);
+\$servingRole = str_contains(\$servingName, 'app-prod') ? 'app-prod' : (str_contains(\$servingName, 'app-dev') ? 'app-dev' : null);
 
 if (\$servingRole !== null) {
     \\App\\Models\\NodeRoleAssignment::query()->updateOrCreate(
@@ -483,7 +483,7 @@ PHP;
 
     $topology->ssh(
         'gateway',
-        "cd {$checkout} && orbit tinker --execute=".escapeshellarg($script),
+        "cd {$checkout} && php apps/gateway/artisan tinker --execute=".escapeshellarg($script),
         timeoutSeconds: 120,
     );
 }

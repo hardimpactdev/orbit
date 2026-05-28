@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Http\Gateway\Requests\Nodes\NodePermissionsRequest;
 use App\Models\LocalGatewaySettings;
+use App\Services\Nodes\Access\NodePermissionRegistry;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
@@ -23,13 +24,11 @@ function nodePermissionsRow(array $overrides = []): array
 {
     return array_merge([
         'name' => 'app-1',
-        'role' => 'app',
         'host' => '10.6.0.7',
         'wireguard_address' => '10.6.0.7',
         'user' => 'nckrtl',
         'orbit_path' => '/home/nckrtl/orbit',
         'status' => 'active',
-        'environment' => 'development',
         'platform' => 'ubuntu_24-04',
         'created_at' => now(),
         'updated_at' => now(),
@@ -42,8 +41,6 @@ function setupPermissionsGatewayCaller(): void
 
     DB::table('nodes')->insert(nodePermissionsRow([
         'name' => 'gateway-1',
-        'role' => 'gateway',
-        'environment' => null,
     ]));
 }
 
@@ -51,8 +48,6 @@ function setupPermissionsControlCaller(): void
 {
     DB::table('nodes')->insert(nodePermissionsRow([
         'name' => 'control-1',
-        'role' => 'control',
-        'environment' => null,
     ]));
 
     LocalGatewaySettings::current()->fill([
@@ -77,8 +72,6 @@ describe('node:permissions base contract', function (): void {
         setupPermissionsGatewayCaller();
         DB::table('nodes')->insert(nodePermissionsRow([
             'name' => 'control-1',
-            'role' => 'control',
-            'environment' => null,
         ]));
         DB::table('nodes')->insert(nodePermissionsRow());
 
@@ -108,8 +101,6 @@ describe('node:permissions base contract', function (): void {
         setupPermissionsGatewayCaller();
         DB::table('nodes')->insert(nodePermissionsRow([
             'name' => 'control-1',
-            'role' => 'control',
-            'environment' => null,
         ]));
         DB::table('nodes')->insert(nodePermissionsRow());
 
@@ -129,8 +120,6 @@ describe('node:permissions base contract', function (): void {
         setupPermissionsGatewayCaller();
         DB::table('nodes')->insert(nodePermissionsRow([
             'name' => 'control-1',
-            'role' => 'control',
-            'environment' => null,
         ]));
         DB::table('nodes')->insert(nodePermissionsRow());
 
@@ -162,8 +151,6 @@ describe('node:permissions base contract', function (): void {
         setupPermissionsGatewayCaller();
         DB::table('nodes')->insert(nodePermissionsRow([
             'name' => 'control-1',
-            'role' => 'control',
-            'environment' => null,
         ]));
         DB::table('nodes')->insert(nodePermissionsRow());
 
@@ -186,8 +173,6 @@ describe('node:permissions base contract', function (): void {
         setupPermissionsGatewayCaller();
         DB::table('nodes')->insert(nodePermissionsRow([
             'name' => 'control-1',
-            'role' => 'control',
-            'environment' => null,
         ]));
         DB::table('nodes')->insert(nodePermissionsRow());
 
@@ -215,12 +200,43 @@ describe('node:permissions base contract', function (): void {
             ->and($grant->permissions)->toBe(json_encode(['node:read', 'tool:read']));
     });
 
+    it('prompts for permissions when no mutation mode is supplied interactively', function (): void {
+        setupPermissionsGatewayCaller();
+        DB::table('nodes')->insert(nodePermissionsRow([
+            'name' => 'control-1',
+        ]));
+        DB::table('nodes')->insert(nodePermissionsRow());
+
+        $controlId = DB::table('nodes')->where('name', 'control-1')->value('id');
+        $appId = DB::table('nodes')->where('name', 'app-1')->value('id');
+
+        DB::table('node_access')->insert([
+            'consumer_node_id' => $controlId,
+            'serving_node_id' => $appId,
+            'permissions' => json_encode(['node:read']),
+        ]);
+
+        $permissionChoices = collect(app(NodePermissionRegistry::class)->all())
+            ->mapWithKeys(fn (string $permission): array => [$permission => $permission])
+            ->all();
+
+        $this->artisan('node:permissions', [
+            'consuming_node' => 'control-1',
+            'serving_node' => 'app-1',
+        ])
+            ->expectsChoice('Select permissions', ['node:read', 'tool:read'], $permissionChoices)
+            ->expectsOutputToContain("Updated permissions for 'control-1' -> 'app-1'")
+            ->assertSuccessful();
+
+        $grant = DB::table('node_access')->first();
+
+        expect($grant->permissions)->toBe(json_encode(['node:read', 'tool:read']));
+    });
+
     it('creates grant with --permissions when missing', function (): void {
         setupPermissionsGatewayCaller();
         DB::table('nodes')->insert(nodePermissionsRow([
             'name' => 'control-1',
-            'role' => 'control',
-            'environment' => null,
         ]));
         DB::table('nodes')->insert(nodePermissionsRow());
 
@@ -242,8 +258,6 @@ describe('node:permissions base contract', function (): void {
         setupPermissionsGatewayCaller();
         DB::table('nodes')->insert(nodePermissionsRow([
             'name' => 'control-1',
-            'role' => 'control',
-            'environment' => null,
         ]));
         DB::table('nodes')->insert(nodePermissionsRow());
 
@@ -275,8 +289,6 @@ describe('node:permissions base contract', function (): void {
         setupPermissionsGatewayCaller();
         DB::table('nodes')->insert(nodePermissionsRow([
             'name' => 'control-1',
-            'role' => 'control',
-            'environment' => null,
         ]));
         DB::table('nodes')->insert(nodePermissionsRow());
 
@@ -298,8 +310,6 @@ describe('node:permissions base contract', function (): void {
         setupPermissionsGatewayCaller();
         DB::table('nodes')->insert(nodePermissionsRow([
             'name' => 'control-1',
-            'role' => 'control',
-            'environment' => null,
         ]));
         DB::table('nodes')->insert(nodePermissionsRow());
 
@@ -332,8 +342,6 @@ describe('node:permissions base contract', function (): void {
         setupPermissionsGatewayCaller();
         DB::table('nodes')->insert(nodePermissionsRow([
             'name' => 'control-1',
-            'role' => 'control',
-            'environment' => null,
         ]));
         DB::table('nodes')->insert(nodePermissionsRow());
 
@@ -366,8 +374,6 @@ describe('node:permissions base contract', function (): void {
         setupPermissionsGatewayCaller();
         DB::table('nodes')->insert(nodePermissionsRow([
             'name' => 'control-1',
-            'role' => 'control',
-            'environment' => null,
         ]));
         DB::table('nodes')->insert(nodePermissionsRow());
 
@@ -388,8 +394,6 @@ describe('node:permissions base contract', function (): void {
         setupPermissionsGatewayCaller();
         DB::table('nodes')->insert(nodePermissionsRow([
             'name' => 'control-1',
-            'role' => 'control',
-            'environment' => null,
         ]));
         DB::table('nodes')->insert(nodePermissionsRow());
 
@@ -411,8 +415,6 @@ describe('node:permissions base contract', function (): void {
         setupPermissionsGatewayCaller();
         DB::table('nodes')->insert(nodePermissionsRow([
             'name' => 'control-1',
-            'role' => 'control',
-            'environment' => null,
         ]));
         DB::table('nodes')->insert(nodePermissionsRow());
 
@@ -433,8 +435,6 @@ describe('node:permissions base contract', function (): void {
         setupPermissionsGatewayCaller();
         DB::table('nodes')->insert(nodePermissionsRow([
             'name' => 'control-1',
-            'role' => 'control',
-            'environment' => null,
         ]));
         DB::table('nodes')->insert(nodePermissionsRow());
 
@@ -455,8 +455,6 @@ describe('node:permissions base contract', function (): void {
         setupPermissionsGatewayCaller();
         DB::table('nodes')->insert(nodePermissionsRow([
             'name' => 'control-1',
-            'role' => 'control',
-            'environment' => null,
         ]));
         DB::table('nodes')->insert(nodePermissionsRow());
 
@@ -478,8 +476,6 @@ describe('node:permissions base contract', function (): void {
 
         DB::table('nodes')->insert(nodePermissionsRow([
             'name' => 'control-1',
-            'role' => 'control',
-            'environment' => null,
         ]));
         DB::table('nodes')->insert(nodePermissionsRow());
 

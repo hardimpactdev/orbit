@@ -8,6 +8,7 @@ use App\Exceptions\GatewayApiException;
 
 final class WorkspaceRemoveCommand extends WorkspaceGatewayCommand
 {
+    #[\Override]
     protected $signature = 'workspace:remove
         {name? : Workspace name}
         {--app= : Parent app slug}
@@ -15,6 +16,7 @@ final class WorkspaceRemoveCommand extends WorkspaceGatewayCommand
         {--force : Confirm destructive operation without prompting}
         {--json : Output JSON}';
 
+    #[\Override]
     protected $description = 'Remove a workspace and its owned artifacts.';
 
     public function handle(): int

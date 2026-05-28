@@ -223,7 +223,7 @@ class NodeNewPayloadBuilder
         }
 
         $parsed = array_values(array_filter(
-            array_map(static fn (string $role): string => trim($role), explode(',', $roles)),
+            array_map(trim(...), explode(',', $roles)),
             static fn (string $role): bool => $role !== '',
         ));
 

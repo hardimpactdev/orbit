@@ -6,6 +6,7 @@ namespace App\Commands\Tool;
 
 final class ToolUpdateCommand extends ToolGatewayCommand
 {
+    #[\Override]
     protected $signature = 'tool:update
         {tool? : Tool catalog name to update}
         {--app= : Resolve target by app selector}
@@ -13,6 +14,7 @@ final class ToolUpdateCommand extends ToolGatewayCommand
         {--expected-version= : Expected version constraint}
         {--json : Output JSON}';
 
+    #[\Override]
     protected $description = 'Update a managed tool through the gateway.';
 
     public function handle(): int

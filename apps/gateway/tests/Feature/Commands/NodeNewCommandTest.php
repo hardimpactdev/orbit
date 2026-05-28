@@ -63,6 +63,29 @@ function fakeNodeCreateGateway(array|string $body, int $status = 200): MockClien
     ]);
 }
 
+function nodeNewAssignGatewayRole(string $name = 'gateway-1'): void
+{
+    $nodeId = DB::table('nodes')->where('name', $name)->value('id');
+
+    if (! is_int($nodeId) && ! is_numeric($nodeId)) {
+        return;
+    }
+
+    DB::table('node_role')->updateOrInsert(
+        [
+            'node_id' => (int) $nodeId,
+            'role' => 'gateway',
+        ],
+        [
+            'status' => 'active',
+            'settings' => null,
+            'last_error' => null,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ],
+    );
+}
+
 describe('node:new', function (): void {
     beforeEach(function (): void {
         $this->tempStorage = sys_get_temp_dir().'/orbit-node-new-test-'.uniqid();
@@ -267,7 +290,7 @@ describe('node:new', function (): void {
 
         $exitCode = Artisan::call('node:new', [
             'name' => 'gateway-1',
-            '--role' => 'gateway',
+            '--template' => 'gateway',
             '--host' => '192.0.2.10',
             '--user' => 'provisioner',
             '--operator-name' => 'mini',
@@ -280,8 +303,6 @@ describe('node:new', function (): void {
             ->and($payload['success']['data']['result']['action'])->toBe('created')
             ->and($payload['success']['data']['node'])->toMatchArray([
                 'name' => 'gateway-1',
-                'role' => 'gateway',
-                'environment' => null,
                 'tld' => null,
                 'platform' => 'ubuntu_24-04',
                 'addresses' => [
@@ -322,8 +343,6 @@ describe('node:new', function (): void {
             ])
             ->and($payload['success']['data']['local_operator_node'])->toMatchArray([
                 'name' => 'mini',
-                'role' => null,
-                'environment' => null,
                 'tld' => null,
                 'platform' => nodeNewExpectedLocalPlatform(),
                 'addresses' => [
@@ -356,7 +375,6 @@ describe('node:new', function (): void {
             ->first();
 
         expect($gateway)->not->toBeNull()
-            ->and($gateway->role)->toBe('gateway')
             ->and($gateway->platform)->toBe('ubuntu_24-04')
             ->and($gateway->host)->toBe('192.0.2.10')
             ->and($gateway->wireguard_address)->toBe('10.6.0.2')
@@ -372,7 +390,7 @@ describe('node:new', function (): void {
                 ->pluck('role')
                 ->all())->toBe(['gateway', 'router', 'vpn'])
             ->and($control)->not->toBeNull()
-            ->and($control->role)->toBe('control')
+            ->and(NodeRoleAssignment::query()->where('node_id', $control->id)->count())->toBe(0)
             ->and($control->platform)->toBe(nodeNewExpectedLocalPlatform())
             ->and($initialGatewayGrant)->toBeInstanceOf(NodeAccess::class)
             ->and($initialGatewayGrant->permissions)->toBe(['*'])
@@ -433,7 +451,6 @@ describe('node:new', function (): void {
             ->and($settings->ca_pem_path)->toBe($trustPath)
             ->and($settings->trusted_at)->not->toBeNull();
 
-        Process::assertRan(fn ($process): bool => str_starts_with($process->command, 'tar '));
         Process::assertRan(fn ($process): bool => str_contains($process->command, 'scp ')
             && str_contains($process->command, 'install-orbit'));
         Process::assertRan(fn ($process): bool => str_contains($process->command, 'ssh ')
@@ -485,7 +502,7 @@ describe('node:new', function (): void {
 
         Artisan::call('node:new', [
             'name' => 'gateway-1',
-            '--role' => 'gateway',
+            '--template' => 'gateway',
             '--host' => '192.0.2.10',
             '--user' => 'provisioner',
             '--operator-name' => 'mini',
@@ -510,7 +527,7 @@ describe('node:new', function (): void {
 
         Artisan::call('node:new', [
             'name' => 'gateway-1',
-            '--role' => 'gateway',
+            '--template' => 'gateway',
             '--host' => '192.0.2.10',
             '--user' => 'provisioner',
             '--operator-name' => 'mini',
@@ -528,7 +545,7 @@ describe('node:new', function (): void {
 
         $exitCode = Artisan::call('node:new', [
             'name' => 'gateway-1',
-            '--role' => 'gateway',
+            '--template' => 'gateway',
             '--host' => '192.0.2.10',
             '--user' => 'provisioner',
             '--operator-name' => 'mini',
@@ -570,7 +587,7 @@ describe('node:new', function (): void {
 
         Artisan::call('node:new', [
             'name' => 'gateway-1',
-            '--role' => 'gateway',
+            '--template' => 'gateway',
             '--host' => '192.0.2.10',
             '--user' => 'provisioner',
             '--operator-name' => 'mini',
@@ -600,7 +617,7 @@ describe('node:new', function (): void {
 
         $exitCode = Artisan::call('node:new', [
             'name' => 'gateway-platform-fail',
-            '--role' => 'gateway',
+            '--template' => 'gateway',
             '--host' => '192.0.2.15',
             '--user' => 'provisioner',
             '--operator-name' => 'mini',
@@ -633,7 +650,7 @@ describe('node:new', function (): void {
 
         $exitCode = Artisan::call('node:new', [
             'name' => 'gateway-platform-fail',
-            '--role' => 'gateway',
+            '--template' => 'gateway',
             '--host' => '192.0.2.15',
             '--user' => 'provisioner',
             '--operator-name' => 'mini',
@@ -650,7 +667,7 @@ describe('node:new', function (): void {
 
         $exitCode = Artisan::call('node:new', [
             'name' => 'gateway-1',
-            '--role' => 'gateway',
+            '--template' => 'gateway',
             '--host' => '192.0.2.10',
             '--user' => 'provisioner',
             '--operator-name' => 'mini',
@@ -682,7 +699,7 @@ describe('node:new', function (): void {
 
         $exitCode = Artisan::call('node:new', [
             'name' => 'gateway-trust-fail',
-            '--role' => 'gateway',
+            '--template' => 'gateway',
             '--host' => '192.0.2.77',
             '--user' => 'provisioner',
             '--operator-name' => 'mini',
@@ -711,7 +728,7 @@ describe('node:new', function (): void {
 
         $exitCode = Artisan::call('node:new', [
             'name' => 'gateway-invalid',
-            '--role' => 'gateway',
+            '--template' => 'gateway',
             '--host' => '192.0.2.99',
             '--user' => 'provisioner',
             '--operator-name' => 'mini',
@@ -743,7 +760,7 @@ describe('node:new', function (): void {
 
         $exitCode = Artisan::call('node:new', [
             'name' => 'gateway-malformed',
-            '--role' => 'gateway',
+            '--template' => 'gateway',
             '--host' => '192.0.2.88',
             '--user' => 'provisioner',
             '--operator-name' => 'mini',
@@ -778,9 +795,8 @@ describe('node:new', function (): void {
 
         $exitCode = Artisan::call('node:new', [
             'name' => 'app-1',
-            '--role' => 'app',
+            '--roles' => 'app-dev',
             '--host' => '192.0.2.20',
-            '--environment' => 'development',
             '--tld' => 'test',
             '--json' => true,
         ]);
@@ -791,9 +807,9 @@ describe('node:new', function (): void {
             ->and($payload)->toBe([
                 'error' => [
                     'code' => 'gateway_unavailable',
-                    'message' => 'Gateway connection is required before creating app or operator nodes.',
+                    'message' => 'Gateway connection is required before creating workload nodes.',
                     'meta' => [
-                        'requested_role' => 'app',
+                        'requested_role' => 'app-dev',
                     ],
                 ],
             ])
@@ -810,8 +826,6 @@ describe('node:new', function (): void {
 
         $gatewayId = DB::table('nodes')->insertGetId([
             'name' => 'gateway-1',
-            'role' => 'gateway',
-            'environment' => null,
             'tld' => null,
             'platform' => 'unknown',
             'host' => '10.6.0.2',
@@ -823,7 +837,7 @@ describe('node:new', function (): void {
             'updated_at' => now(),
         ]);
 
-        DB::table('node_roles')->insert([
+        DB::table('node_role')->insert([
             [
                 'node_id' => $gatewayId,
                 'role' => 'gateway',
@@ -874,7 +888,7 @@ describe('node:new', function (): void {
             }
 
             if (str_contains($command, 'internal:wg-easy:state')) {
-                return Process::result(output: json_encode(['ok' => true], JSON_THROW_ON_ERROR)."\n");
+                return Process::result(output: json_encode(['success' => ['data' => [], 'meta' => []]], JSON_THROW_ON_ERROR)."\n");
             }
 
             return Process::result();
@@ -883,7 +897,7 @@ describe('node:new', function (): void {
 
         $exitCode = Artisan::call('node:new', [
             'name' => 'app-dev-1',
-            '--role' => 'app-dev',
+            '--roles' => 'app-dev',
             '--host' => '192.0.2.20',
             '--tld' => 'test',
             '--user' => 'provisioner',
@@ -897,8 +911,6 @@ describe('node:new', function (): void {
             ->and($payload['success']['data']['result']['action'])->toBe('created')
             ->and($payload['success']['data']['node'])->toMatchArray([
                 'name' => 'app-dev-1',
-                'role' => 'app',
-                'environment' => 'development',
                 'tld' => 'test',
                 'status' => 'active',
             ])
@@ -912,14 +924,18 @@ describe('node:new', function (): void {
                 ],
             ])
             ->and($node)->not->toBeNull()
-            ->and($node->role)->toBe('app')
-            ->and($node->environment)->toBe('development')
             ->and($node->tld)->toBe('test')
             ->and($node->host)->toBe('192.0.2.20')
             ->and($node->wireguard_address)->toBe('10.6.0.3')
             ->and($node->gateway_endpoint)->toBe('10.6.0.2')
             ->and($node->user)->toBe('orbit')
             ->and($node->orbit_path)->toBe('/home/orbit/orbit');
+
+        expect(NodeRoleAssignment::query()
+            ->where('node_id', $node->id)
+            ->where('role', 'app-dev')
+            ->where('status', 'active')
+            ->exists())->toBeTrue();
 
         $peer = DB::table('wireguard_peers')->where('node_id', $node->id)->first();
 
@@ -949,8 +965,6 @@ describe('node:new', function (): void {
 
         $gatewayId = DB::table('nodes')->insertGetId([
             'name' => 'gateway-1',
-            'role' => 'gateway',
-            'environment' => null,
             'tld' => null,
             'platform' => 'unknown',
             'host' => '10.6.0.2',
@@ -962,7 +976,7 @@ describe('node:new', function (): void {
             'updated_at' => now(),
         ]);
 
-        DB::table('node_roles')->insert([
+        DB::table('node_role')->insert([
             [
                 'node_id' => $gatewayId,
                 'role' => 'gateway',
@@ -1013,7 +1027,7 @@ describe('node:new', function (): void {
             }
 
             if (str_contains($command, 'internal:wg-easy:state')) {
-                return Process::result(output: json_encode(['ok' => true], JSON_THROW_ON_ERROR)."\n");
+                return Process::result(output: json_encode(['success' => ['data' => [], 'meta' => []]], JSON_THROW_ON_ERROR)."\n");
             }
 
             return Process::result();
@@ -1022,7 +1036,7 @@ describe('node:new', function (): void {
 
         $exitCode = Artisan::call('node:new', [
             'name' => 'app-prod-1',
-            '--role' => ['app-prod', 'ingress'],
+            '--roles' => 'app-prod,ingress',
             '--host' => '192.0.2.21',
             '--user' => 'provisioner',
             '--json' => true,
@@ -1034,15 +1048,18 @@ describe('node:new', function (): void {
         expect($exitCode)->toBe(0)
             ->and($payload['success']['data']['node'])->toMatchArray([
                 'name' => 'app-prod-1',
-                'role' => 'app',
-                'environment' => 'production',
                 'tld' => null,
                 'status' => 'active',
             ])
             ->and($payload['success']['data'])->not->toHaveKey('development_tld')
             ->and($node)->not->toBeNull()
-            ->and($node->environment)->toBe('production')
             ->and($node->tld)->toBeNull();
+
+        expect(NodeRoleAssignment::query()
+            ->where('node_id', $node->id)
+            ->whereIn('role', ['app-prod', 'ingress'])
+            ->where('status', 'active')
+            ->count())->toBe(2);
     });
 
     it('reports SSH authorization failures before app node installation', function (): void {
@@ -1050,8 +1067,6 @@ describe('node:new', function (): void {
 
         DB::table('nodes')->insert([
             'name' => 'gateway-1',
-            'role' => 'gateway',
-            'environment' => null,
             'tld' => null,
             'platform' => 'unknown',
             'host' => '10.6.0.2',
@@ -1062,6 +1077,7 @@ describe('node:new', function (): void {
             'created_at' => now(),
             'updated_at' => now(),
         ]);
+        nodeNewAssignGatewayRole();
 
         Process::fake(function ($process): ProcessResult {
             if (str_starts_with((string) $process->command, 'tar ')) {
@@ -1077,9 +1093,8 @@ describe('node:new', function (): void {
 
         $exitCode = Artisan::call('node:new', [
             'name' => 'circle-k-main1',
-            '--role' => 'app',
+            '--roles' => 'app-prod,ingress',
             '--host' => '178.105.116.104',
-            '--environment' => 'production',
             '--user' => 'root',
             '--json' => true,
         ]);
@@ -1104,8 +1119,6 @@ describe('node:new', function (): void {
 
         DB::table('nodes')->insert([
             'name' => 'gateway-1',
-            'role' => 'gateway',
-            'environment' => null,
             'tld' => null,
             'platform' => 'unknown',
             'host' => '10.6.0.2',
@@ -1116,11 +1129,10 @@ describe('node:new', function (): void {
             'created_at' => now(),
             'updated_at' => now(),
         ]);
+        nodeNewAssignGatewayRole();
 
         $nodeId = DB::table('nodes')->insertGetId([
             'name' => 'app-adopt-1',
-            'role' => 'app',
-            'environment' => 'development',
             'tld' => 'test',
             'platform' => 'ubuntu_24-04',
             'host' => '192.0.2.30',
@@ -1147,9 +1159,8 @@ describe('node:new', function (): void {
 
         $exitCode = Artisan::call('node:new', [
             'name' => 'app-adopt-1',
-            '--role' => 'app',
+            '--roles' => 'app-dev',
             '--host' => '192.0.2.30',
-            '--environment' => 'development',
             '--tld' => 'test',
             '--user' => 'provisioner',
             '--json' => true,
@@ -1162,8 +1173,6 @@ describe('node:new', function (): void {
             ->and($payload['success']['data']['result']['action'])->toBe('adopted')
             ->and($payload['success']['data']['node'])->toMatchArray([
                 'name' => 'app-adopt-1',
-                'role' => 'app',
-                'environment' => 'development',
                 'tld' => 'test',
                 'platform' => 'ubuntu_24-04',
                 'addresses' => [
@@ -1191,8 +1200,6 @@ describe('node:new', function (): void {
 
         DB::table('nodes')->insert([
             'name' => 'gateway-1',
-            'role' => 'gateway',
-            'environment' => null,
             'tld' => null,
             'platform' => 'unknown',
             'host' => '10.6.0.2',
@@ -1203,11 +1210,10 @@ describe('node:new', function (): void {
             'created_at' => now(),
             'updated_at' => now(),
         ]);
+        nodeNewAssignGatewayRole();
 
         $nodeId = DB::table('nodes')->insertGetId([
             'name' => 'app-unproven-1',
-            'role' => 'app',
-            'environment' => 'development',
             'tld' => 'test',
             'platform' => 'ubuntu_24-04',
             'host' => '192.0.2.31',
@@ -1235,9 +1241,8 @@ describe('node:new', function (): void {
 
         $exitCode = Artisan::call('node:new', [
             'name' => 'app-unproven-1',
-            '--role' => 'app',
+            '--roles' => 'app-dev',
             '--host' => '192.0.2.31',
-            '--environment' => 'development',
             '--tld' => 'test',
             '--user' => 'provisioner',
             '--json' => true,
@@ -1270,8 +1275,6 @@ describe('node:new', function (): void {
 
         DB::table('nodes')->insert([
             'name' => 'gateway-1',
-            'role' => 'gateway',
-            'environment' => null,
             'tld' => null,
             'platform' => 'unknown',
             'host' => '10.6.0.2',
@@ -1282,11 +1285,10 @@ describe('node:new', function (): void {
             'created_at' => now(),
             'updated_at' => now(),
         ]);
+        nodeNewAssignGatewayRole();
 
         $nodeId = DB::table('nodes')->insertGetId([
             'name' => 'app-peer-missing-1',
-            'role' => 'app',
-            'environment' => 'development',
             'tld' => 'test',
             'platform' => 'ubuntu_24-04',
             'host' => '192.0.2.32',
@@ -1300,11 +1302,21 @@ describe('node:new', function (): void {
             'updated_at' => now(),
         ]);
 
+        DB::table('node_role')->insert([
+            'node_id' => $nodeId,
+            'role' => 'app-dev',
+            'status' => 'active',
+            'settings' => null,
+            'last_error' => null,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
         app()->instance(RemoteShell::class, new NodeNewSequencedRemoteShell([
             new RemoteShellResult(exitCode: 0, stdout: json_encode([
                 'name' => 'app-peer-missing-1',
-                'role' => 'app',
-                'local_role' => 'app',
+                'role' => 'app-dev',
+                'local_role' => 'app-dev',
                 'status' => 'active',
                 'platform' => 'ubuntu_24-04',
                 'wireguard_address' => '10.6.0.8',
@@ -1322,9 +1334,8 @@ describe('node:new', function (): void {
 
         $exitCode = Artisan::call('node:new', [
             'name' => 'app-peer-missing-1',
-            '--role' => 'app',
+            '--roles' => 'app-dev',
             '--host' => '192.0.2.32',
-            '--environment' => 'development',
             '--tld' => 'test',
             '--user' => 'provisioner',
             '--json' => true,
@@ -1337,8 +1348,6 @@ describe('node:new', function (): void {
             ->and($payload['success']['data']['result']['action'])->toBe('adopted')
             ->and($payload['success']['data']['node'])->toMatchArray([
                 'name' => 'app-peer-missing-1',
-                'role' => 'app',
-                'environment' => 'development',
                 'tld' => 'test',
                 'addresses' => [
                     'wireguard' => '10.6.0.8',
@@ -1357,8 +1366,6 @@ describe('node:new', function (): void {
 
         DB::table('nodes')->insert([
             'name' => 'gateway-1',
-            'role' => 'gateway',
-            'environment' => null,
             'tld' => null,
             'platform' => 'unknown',
             'host' => '10.6.0.2',
@@ -1369,12 +1376,13 @@ describe('node:new', function (): void {
             'created_at' => now(),
             'updated_at' => now(),
         ]);
+        nodeNewAssignGatewayRole();
 
         app()->instance(RemoteShell::class, new NodeNewSequencedRemoteShell([
             new RemoteShellResult(exitCode: 0, stdout: json_encode([
                 'name' => 'app-unknown-1',
-                'role' => 'app',
-                'local_role' => 'app',
+                'role' => 'app-dev',
+                'local_role' => 'app-dev',
                 'status' => 'active',
                 'platform' => 'ubuntu_24-04',
                 'wireguard_address' => '10.6.0.8',
@@ -1383,8 +1391,8 @@ describe('node:new', function (): void {
             ], JSON_THROW_ON_ERROR), stderr: '', durationMs: 1),
             new RemoteShellResult(exitCode: 0, stdout: json_encode([
                 'name' => 'app-unknown-1',
-                'role' => 'app',
-                'local_role' => 'app',
+                'role' => 'app-dev',
+                'local_role' => 'app-dev',
                 'status' => 'active',
                 'platform' => 'ubuntu_24-04',
                 'wireguard_address' => '10.6.0.8',
@@ -1402,9 +1410,8 @@ describe('node:new', function (): void {
 
         $exitCode = Artisan::call('node:new', [
             'name' => 'app-unknown-1',
-            '--role' => 'app',
+            '--roles' => 'app-dev',
             '--host' => '192.0.2.33',
-            '--environment' => 'development',
             '--tld' => 'test',
             '--user' => 'provisioner',
             '--json' => true,
@@ -1418,8 +1425,6 @@ describe('node:new', function (): void {
             ->and($payload['success']['data']['result']['action'])->toBe('adopted')
             ->and($payload['success']['data']['node'])->toMatchArray([
                 'name' => 'app-unknown-1',
-                'role' => 'app',
-                'environment' => 'development',
                 'tld' => 'test',
                 'platform' => 'ubuntu_24-04',
                 'addresses' => [
@@ -1444,8 +1449,6 @@ describe('node:new', function (): void {
 
         DB::table('nodes')->insert([
             'name' => 'gateway-1',
-            'role' => 'gateway',
-            'environment' => null,
             'tld' => null,
             'platform' => 'unknown',
             'host' => '10.6.0.2',
@@ -1456,15 +1459,15 @@ describe('node:new', function (): void {
             'created_at' => now(),
             'updated_at' => now(),
         ]);
+        nodeNewAssignGatewayRole();
 
         Process::fake();
         Process::preventStrayProcesses();
 
         $exitCode = Artisan::call('node:new', [
             'name' => 'app-dev-1',
-            '--role' => 'app',
+            '--roles' => 'app-dev',
             '--host' => '192.0.2.20',
-            '--environment' => 'development',
             '--json' => true,
         ]);
 
@@ -1481,8 +1484,6 @@ describe('node:new', function (): void {
     it('forwards app-node creation from a configured operator node to the gateway API', function (): void {
         DB::table('nodes')->insert([
             'name' => 'control-1',
-            'role' => 'control',
-            'environment' => null,
             'tld' => null,
             'platform' => 'unknown',
             'host' => '127.0.0.1',
@@ -1498,8 +1499,6 @@ describe('node:new', function (): void {
 
         DB::table('nodes')->insert([
             'name' => 'gateway-1',
-            'role' => 'gateway',
-            'environment' => null,
             'tld' => null,
             'platform' => 'unknown',
             'host' => '10.6.0.2',
@@ -1510,6 +1509,7 @@ describe('node:new', function (): void {
             'created_at' => now(),
             'updated_at' => now(),
         ]);
+        nodeNewAssignGatewayRole();
 
         DB::table('local_gateway_settings')->insert([
             'gateway_url' => 'https://10.6.0.2',
@@ -1527,8 +1527,6 @@ describe('node:new', function (): void {
                     'result' => ['action' => 'created'],
                     'node' => [
                         'name' => 'app-dev-1',
-                        'role' => 'app',
-                        'environment' => 'development',
                         'tld' => 'test',
                         'platform' => 'unknown',
                         'addresses' => [
@@ -1551,9 +1549,8 @@ describe('node:new', function (): void {
 
         $exitCode = Artisan::call('node:new', [
             'name' => 'app-dev-1',
-            '--role' => 'app',
+            '--roles' => 'app-dev',
             '--host' => '192.0.2.20',
-            '--environment' => 'development',
             '--tld' => 'test',
             '--user' => 'provisioner',
             '--json' => true,
@@ -1568,10 +1565,8 @@ describe('node:new', function (): void {
         $mock->assertSent(fn (CreateNodeRequest $request): bool => $request->resolveEndpoint() === '/api/nodes'
             && $request->body()->all() === [
                 'name' => 'app-dev-1',
-                'role' => 'app',
-                'roles' => ['app'],
+                'roles' => ['app-dev'],
                 'host' => '192.0.2.20',
-                'environment' => 'development',
                 'tld' => 'test',
                 'user' => 'provisioner',
             ]);
@@ -1582,8 +1577,6 @@ describe('node:new', function (): void {
     it('renders gateway_unavailable when forwarded app-node creation cannot reach the gateway API', function (): void {
         DB::table('nodes')->insert([
             'name' => 'gateway-1',
-            'role' => 'gateway',
-            'environment' => null,
             'tld' => null,
             'platform' => 'unknown',
             'host' => '10.6.0.2',
@@ -1594,15 +1587,16 @@ describe('node:new', function (): void {
             'created_at' => now(),
             'updated_at' => now(),
         ]);
+        nodeNewAssignGatewayRole();
 
         Process::fake();
         Process::preventStrayProcesses();
 
         $exitCode = Artisan::call('node:new', [
-            'name' => 'app-prod-1',
-            '--role' => 'app',
+            'name' => 'app-dev-1',
+            '--roles' => 'app-dev',
             '--host' => '192.0.2.20',
-            '--environment' => 'production',
+            '--tld' => 'test',
             '--json' => true,
         ]);
 
@@ -1611,7 +1605,7 @@ describe('node:new', function (): void {
         expect($exitCode)->toBe(1)
             ->and($payload['error']['code'])->toBe('gateway_unavailable')
             ->and($payload['error']['message'])->toBe('Gateway API request failed.')
-            ->and($payload['error']['meta']['requested_role'])->toBe('app');
+            ->and($payload['error']['meta']['requested_role'])->toBe('app-dev');
 
         Process::assertRanTimes(fn (): bool => true, 0);
     });
@@ -1633,8 +1627,6 @@ describe('node:new', function (): void {
                     'result' => ['action' => 'created'],
                     'node' => [
                         'name' => 'app-dev-1',
-                        'role' => 'app',
-                        'environment' => 'development',
                         'tld' => 'test',
                         'platform' => 'unknown',
                         'addresses' => [
@@ -1656,9 +1648,8 @@ describe('node:new', function (): void {
 
         $exitCode = Artisan::call('node:new', [
             'name' => 'app-dev-1',
-            '--role' => 'app',
+            '--roles' => 'app-dev',
             '--host' => '192.0.2.20',
-            '--environment' => 'development',
             '--tld' => 'test',
             '--user' => 'provisioner',
             '--json' => true,
@@ -1673,10 +1664,8 @@ describe('node:new', function (): void {
         $mock->assertSent(fn (CreateNodeRequest $request): bool => $request->resolveEndpoint() === '/api/nodes'
             && $request->body()->all() === [
                 'name' => 'app-dev-1',
-                'role' => 'app',
-                'roles' => ['app'],
+                'roles' => ['app-dev'],
                 'host' => '192.0.2.20',
-                'environment' => 'development',
                 'tld' => 'test',
                 'user' => 'provisioner',
             ]);
@@ -1702,7 +1691,6 @@ describe('node:new', function (): void {
                     'node' => [
                         'name' => 'agent-1',
                         'role' => 'agent',
-                        'environment' => null,
                         'tld' => 'agent',
                         'platform' => 'ubuntu',
                         'addresses' => [
@@ -1724,7 +1712,7 @@ describe('node:new', function (): void {
 
         $exitCode = Artisan::call('node:new', [
             'name' => 'agent-1',
-            '--role' => 'agent',
+            '--roles' => 'agent',
             '--host' => '192.0.2.40',
             '--json' => true,
         ]);
@@ -1738,10 +1726,8 @@ describe('node:new', function (): void {
         $mock->assertSent(fn (CreateNodeRequest $request): bool => $request->resolveEndpoint() === '/api/nodes'
             && $request->body()->all() === [
                 'name' => 'agent-1',
-                'role' => 'agent',
                 'roles' => ['agent'],
                 'host' => '192.0.2.40',
-                'environment' => null,
                 'tld' => 'agent',
                 'user' => 'root',
             ]);
@@ -1766,8 +1752,6 @@ describe('node:new', function (): void {
                     'result' => ['action' => 'adopted'],
                     'node' => [
                         'name' => 'app-adopt-1',
-                        'role' => 'app',
-                        'environment' => 'development',
                         'tld' => 'test',
                         'platform' => 'ubuntu_24-04',
                         'addresses' => [
@@ -1789,9 +1773,8 @@ describe('node:new', function (): void {
 
         $exitCode = Artisan::call('node:new', [
             'name' => 'app-adopt-1',
-            '--role' => 'app',
+            '--roles' => 'app-dev',
             '--host' => '192.0.2.30',
-            '--environment' => 'development',
             '--tld' => 'test',
             '--user' => 'provisioner',
             '--json' => true,
@@ -1807,10 +1790,8 @@ describe('node:new', function (): void {
         $mock->assertSent(fn (CreateNodeRequest $request): bool => $request->resolveEndpoint() === '/api/nodes'
             && $request->body()->all() === [
                 'name' => 'app-adopt-1',
-                'role' => 'app',
-                'roles' => ['app'],
+                'roles' => ['app-dev'],
                 'host' => '192.0.2.30',
-                'environment' => 'development',
                 'tld' => 'test',
                 'user' => 'provisioner',
             ]);
@@ -1835,8 +1816,6 @@ describe('node:new', function (): void {
                     'result' => ['action' => 'enrolled'],
                     'node' => [
                         'name' => 'operator-2',
-                        'role' => null,
-                        'environment' => null,
                         'tld' => null,
                         'platform' => 'unknown',
                         'addresses' => [
@@ -1866,7 +1845,7 @@ describe('node:new', function (): void {
 
         $exitCode = Artisan::call('node:new', [
             'name' => 'operator-2',
-            '--role' => 'operator',
+            '--operator' => true,
             '--json' => true,
         ]);
 
@@ -1880,12 +1859,11 @@ describe('node:new', function (): void {
         $mock->assertSent(fn (CreateNodeRequest $request): bool => $request->resolveEndpoint() === '/api/nodes'
             && $request->body()->all() === [
                 'name' => 'operator-2',
-                'role' => 'control',
-                'roles' => ['control'],
+                'roles' => [],
                 'host' => null,
-                'environment' => null,
                 'tld' => null,
                 'user' => null,
+                'operator' => true,
             ]);
 
         Process::assertRanTimes(fn (): bool => true, 0);
@@ -1909,7 +1887,6 @@ describe('node:new', function (): void {
                     'node' => [
                         'name' => 'gateway-1',
                         'role' => 'gateway',
-                        'environment' => null,
                         'tld' => null,
                         'platform' => 'ubuntu_24-04',
                         'addresses' => [
@@ -1933,7 +1910,7 @@ describe('node:new', function (): void {
 
         $exitCode = Artisan::call('node:new', [
             'name' => 'gateway-1',
-            '--role' => 'gateway',
+            '--template' => 'gateway',
             '--host' => '203.0.113.2',
             '--user' => 'provisioner',
             '--json' => true,
@@ -1948,12 +1925,11 @@ describe('node:new', function (): void {
         $mock->assertSent(fn (CreateNodeRequest $request): bool => $request->resolveEndpoint() === '/api/nodes'
             && $request->body()->all() === [
                 'name' => 'gateway-1',
-                'role' => 'gateway',
-                'roles' => ['gateway'],
+                'roles' => [],
                 'host' => '203.0.113.2',
-                'environment' => null,
                 'tld' => null,
                 'user' => 'provisioner',
+                'template' => 'gateway',
             ]);
 
         Process::assertRanTimes(fn (): bool => true, 0);
@@ -1964,7 +1940,6 @@ describe('node:new', function (): void {
 
         DB::table('nodes')->insert([
             'name' => 'gateway-1',
-            'role' => 'gateway',
             'host' => '10.6.0.2',
             'wireguard_address' => '10.6.0.2',
             'orbit_path' => '/home/orbit/orbit',
@@ -1972,6 +1947,7 @@ describe('node:new', function (): void {
             'created_at' => now(),
             'updated_at' => now(),
         ]);
+        nodeNewAssignGatewayRole();
 
         WireGuardPeer::query()->create([
             'node_id' => DB::table('nodes')->where('name', 'gateway-1')->value('id'),
@@ -1995,7 +1971,7 @@ describe('node:new', function (): void {
 
         $exitCode = Artisan::call('node:new', [
             'name' => 'operator-2',
-            '--role' => 'operator',
+            '--operator' => true,
             '--json' => true,
         ]);
 
@@ -2007,8 +1983,6 @@ describe('node:new', function (): void {
             ->and($payload['success']['data']['result']['action'])->toBe('enrolled')
             ->and($payload['success']['data']['node'])->toMatchArray([
                 'name' => 'operator-2',
-                'role' => null,
-                'environment' => null,
                 'tld' => null,
                 'platform' => 'unknown',
                 'addresses' => [
@@ -2029,7 +2003,7 @@ describe('node:new', function (): void {
                 'Run `orbit gateway:add` on the operator node.',
             ])
             ->and($control)->not->toBeNull()
-            ->and($control->role)->toBe('control')
+            ->and(NodeRoleAssignment::query()->where('node_id', $control->id)->count())->toBe(0)
             ->and($control->wireguard_address)->toBe('10.6.0.3');
 
         $controlPeer = WireGuardPeer::query()->where('node_id', $control->id)->first();
@@ -2049,7 +2023,6 @@ describe('node:new', function (): void {
 
         DB::table('nodes')->insert([
             'name' => 'gateway-1',
-            'role' => 'gateway',
             'host' => '203.0.113.2',
             'wireguard_address' => '10.6.0.2',
             'gateway_endpoint' => '203.0.113.2',
@@ -2059,13 +2032,14 @@ describe('node:new', function (): void {
             'created_at' => now(),
             'updated_at' => now(),
         ]);
+        nodeNewAssignGatewayRole();
 
         Process::fake();
         Process::preventStrayProcesses();
 
         $exitCode = Artisan::call('node:new', [
             'name' => 'gateway-1',
-            '--role' => 'gateway',
+            '--template' => 'gateway',
             '--host' => '203.0.113.2',
             '--json' => true,
         ]);
@@ -2081,8 +2055,6 @@ describe('node:new', function (): void {
                         ],
                         'node' => [
                             'name' => 'gateway-1',
-                            'role' => 'gateway',
-                            'environment' => null,
                             'tld' => null,
                             'platform' => 'ubuntu_24-04',
                             'addresses' => [
@@ -2107,20 +2079,20 @@ describe('node:new', function (): void {
     it('does not reprovision a gateway while gateway forwarding is unavailable', function (): void {
         DB::table('nodes')->insert([
             'name' => 'gateway-1',
-            'role' => 'gateway',
             'host' => '10.6.0.2',
             'orbit_path' => '/home/orbit/orbit',
             'status' => 'active',
             'created_at' => now(),
             'updated_at' => now(),
         ]);
+        nodeNewAssignGatewayRole();
 
         Process::fake();
         Process::preventStrayProcesses();
 
         $exitCode = Artisan::call('node:new', [
             'name' => 'gateway-2',
-            '--role' => 'gateway',
+            '--template' => 'gateway',
             '--host' => '192.0.2.11',
             '--operator-name' => 'mini',
             '--json' => true,

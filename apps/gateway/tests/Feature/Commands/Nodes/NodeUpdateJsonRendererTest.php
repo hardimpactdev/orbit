@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Actions\Nodes\ReenactNodeArtifacts;
 use App\Models\Node;
+use App\Models\NodeRoleAssignment;
 use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
@@ -21,13 +22,11 @@ function nodeUpdateJsonRow(array $overrides = []): array
 {
     return array_merge([
         'name' => 'app-1',
-        'role' => 'app',
         'host' => '10.6.0.7',
         'wireguard_address' => '10.6.0.7',
         'user' => 'nckrtl',
         'orbit_path' => '/home/nckrtl/orbit',
         'status' => 'active',
-        'environment' => 'development',
         'platform' => 'ubuntu_24-04',
         'public_ipv4' => null,
         'public_ipv6' => null,
@@ -42,15 +41,32 @@ function setupGatewayCallerJson(): void
 
     DB::table('nodes')->insert(nodeUpdateJsonRow([
         'name' => 'gateway-1',
-        'role' => 'gateway',
-        'environment' => null,
     ]));
+    assignNodeUpdateJsonRole('gateway-1', 'gateway');
+}
+
+/**
+ * @param  array<string, mixed>  $settings
+ */
+function assignNodeUpdateJsonRole(string $nodeName, string $role, array $settings = []): void
+{
+    $nodeId = (int) DB::table('nodes')
+        ->where('name', $nodeName)
+        ->value('id');
+
+    NodeRoleAssignment::factory()->create([
+        'node_id' => $nodeId,
+        'role' => $role,
+        'status' => 'active',
+        'settings' => $settings,
+    ]);
 }
 
 describe('node:update JSON renderer contract', function (): void {
     it('selects JSON renderer with --json and returns discriminated success envelope', function (): void {
         setupGatewayCallerJson();
         DB::table('nodes')->insert(nodeUpdateJsonRow());
+        assignNodeUpdateJsonRole('app-1', 'app-dev');
 
         $exitCode = Artisan::call('node:update', [
             'name' => 'app-1',
@@ -69,6 +85,7 @@ describe('node:update JSON renderer contract', function (): void {
     it('returns success data with name, changed array, and action fields', function (): void {
         setupGatewayCallerJson();
         DB::table('nodes')->insert(nodeUpdateJsonRow());
+        assignNodeUpdateJsonRole('app-1', 'app-dev');
 
         $exitCode = Artisan::call('node:update', [
             'name' => 'app-1',
@@ -92,6 +109,7 @@ describe('node:update JSON renderer contract', function (): void {
     it('returns empty changed array for no-op update', function (): void {
         setupGatewayCallerJson();
         DB::table('nodes')->insert(nodeUpdateJsonRow());
+        assignNodeUpdateJsonRole('app-1', 'app-dev');
 
         $exitCode = Artisan::call('node:update', [
             'name' => 'app-1',
@@ -108,6 +126,7 @@ describe('node:update JSON renderer contract', function (): void {
     it('returns success meta warnings when artifact re-enactment fails after update', function (): void {
         setupGatewayCallerJson();
         DB::table('nodes')->insert(nodeUpdateJsonRow());
+        assignNodeUpdateJsonRole('app-1', 'app-dev');
 
         app()->instance(ReenactNodeArtifacts::class, new class extends ReenactNodeArtifacts
         {
@@ -189,20 +208,19 @@ describe('node:update JSON renderer contract', function (): void {
         setupGatewayCallerJson();
         DB::table('nodes')->insert(nodeUpdateJsonRow([
             'name' => 'target-gateway',
-            'role' => 'gateway',
-            'environment' => null,
         ]));
+        assignNodeUpdateJsonRole('target-gateway', 'gateway');
 
         $exitCode = Artisan::call('node:update', [
             'name' => 'target-gateway',
-            '--environment' => 'production',
+            '--tld' => 'test',
             '--json' => true,
         ]);
         $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
 
         expect($exitCode)->toBe(1)
             ->and($payload['error']['code'])->toBe('node.field_role_incompatible')
-            ->and($payload['error']['meta']['field'])->toBe('environment')
+            ->and($payload['error']['meta']['field'])->toBe('tld')
             ->and($payload['error']['meta']['name'])->toBe('target-gateway')
             ->and($payload['error']['meta']['role'])->toBe('gateway');
     });
@@ -212,8 +230,6 @@ describe('node:update JSON renderer contract', function (): void {
 
         DB::table('nodes')->insert(nodeUpdateJsonRow([
             'name' => 'control-1',
-            'role' => 'control',
-            'environment' => null,
         ]));
 
         DB::table('nodes')->insert(nodeUpdateJsonRow());
@@ -265,27 +281,27 @@ describe('node:update JSON renderer contract', function (): void {
             ->and($payload['error']['meta']['field'])->toBe('host');
     });
 
-    it('returns validation_failed error for invalid environment', function (): void {
+    it('returns validation_failed error for invalid tld', function (): void {
         setupGatewayCallerJson();
         DB::table('nodes')->insert(nodeUpdateJsonRow());
 
         $exitCode = Artisan::call('node:update', [
             'name' => 'app-1',
-            '--environment' => 'staging',
+            '--tld' => 'Invalid_TLD!',
             '--json' => true,
         ]);
         $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
 
         expect($exitCode)->toBe(1)
             ->and($payload['error']['code'])->toBe('validation_failed')
-            ->and($payload['error']['meta']['field'])->toBe('environment')
-            ->and($payload['error']['meta']['value'])->toBe('staging')
-            ->and($payload['error']['meta']['allowed'])->toBe(['development', 'production']);
+            ->and($payload['error']['meta']['field'])->toBe('tld')
+            ->and($payload['error']['meta']['value'])->toBe('Invalid_TLD!');
     });
 
     it('returns validation_failed error for invalid public-ipv4', function (): void {
         setupGatewayCallerJson();
         DB::table('nodes')->insert(nodeUpdateJsonRow());
+        assignNodeUpdateJsonRole('app-1', 'app-dev');
 
         $exitCode = Artisan::call('node:update', [
             'name' => 'app-1',
@@ -302,6 +318,7 @@ describe('node:update JSON renderer contract', function (): void {
     it('returns validation_failed error for invalid public-ipv6', function (): void {
         setupGatewayCallerJson();
         DB::table('nodes')->insert(nodeUpdateJsonRow());
+        assignNodeUpdateJsonRole('app-1', 'app-dev');
 
         $exitCode = Artisan::call('node:update', [
             'name' => 'app-1',
@@ -318,6 +335,7 @@ describe('node:update JSON renderer contract', function (): void {
     it('documents success.meta.warnings[] shape even when not triggered', function (): void {
         setupGatewayCallerJson();
         DB::table('nodes')->insert(nodeUpdateJsonRow());
+        assignNodeUpdateJsonRole('app-1', 'app-dev');
 
         $exitCode = Artisan::call('node:update', [
             'name' => 'app-1',
@@ -334,6 +352,7 @@ describe('node:update JSON renderer contract', function (): void {
     it('uses correct enum values for action and error codes', function (): void {
         setupGatewayCallerJson();
         DB::table('nodes')->insert(nodeUpdateJsonRow());
+        assignNodeUpdateJsonRole('app-1', 'app-dev');
 
         $exitCode = Artisan::call('node:update', [
             'name' => 'app-1',

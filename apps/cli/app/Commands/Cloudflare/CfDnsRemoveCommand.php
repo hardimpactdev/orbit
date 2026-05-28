@@ -8,12 +8,14 @@ use App\Exceptions\GatewayApiException;
 
 final class CfDnsRemoveCommand extends CloudflareGatewayCommand
 {
+    #[\Override]
     protected $signature = 'cf-dns:remove
         {record-id? : Cloudflare DNS record ID}
         {--zone= : Cloudflare zone ID or domain}
         {--force : Confirm destructive operation without prompting}
         {--json : Output JSON}';
 
+    #[\Override]
     protected $description = 'Remove a Cloudflare address DNS record through the gateway.';
 
     public function handle(): int

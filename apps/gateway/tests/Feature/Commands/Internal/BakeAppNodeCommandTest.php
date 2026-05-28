@@ -49,8 +49,7 @@ describe('orbit:internal:bake-app-node', function (): void {
 
         $node = Node::query()->where('name', 'app-dev-1')->firstOrFail();
 
-        expect($node->role)->toBe('app')
-            ->and($node->environment)->toBe('development')
+        expect($node->getAttributes())->not->toHaveKeys(['role', 'environment'])
             ->and($node->host)->toBe('10.6.0.4')
             ->and($node->wireguard_address)->toBe('10.6.0.4')
             ->and($node->gateway_endpoint)->toBe('10.6.0.2')
@@ -106,7 +105,6 @@ describe('orbit:internal:bake-app-node', function (): void {
         $node = Node::query()->where('name', 'app-prod-1')->firstOrFail();
 
         expect(Node::query()->where('name', 'app-prod-1')->count())->toBe(1)
-            ->and($node->environment)->toBe('production')
             ->and($node->tld)->toBeNull()
             ->and(NodeRoleAssignment::query()
                 ->where('node_id', $node->id)
@@ -117,7 +115,6 @@ describe('orbit:internal:bake-app-node', function (): void {
     it('stores the selected ingress node for production placement', function (): void {
         $edge = Node::factory()->create([
             'name' => 'edge-1',
-            'role' => 'control',
             'host' => '10.6.0.7',
             'wireguard_address' => '10.6.0.7',
         ]);
@@ -151,7 +148,6 @@ describe('orbit:internal:bake-app-node', function (): void {
     it('requires the selected ingress node to have an active ingress assignment', function (): void {
         Node::factory()->create([
             'name' => 'edge-1',
-            'role' => 'control',
             'host' => '10.6.0.7',
             'wireguard_address' => '10.6.0.7',
         ]);

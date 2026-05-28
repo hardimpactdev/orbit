@@ -47,10 +47,9 @@ it('converges a gateway-owned development dns mapping from active app node inten
 
 it('does not create mappings for production app nodes', function (): void {
     $node = developmentDnsMappingNode([
-        'environment' => 'production',
         'tld' => null,
     ]);
-    assignDevelopmentDnsMappingRole($node, 'app-production');
+    assignDevelopmentDnsMappingRole($node, 'app-prod');
     $enactor = new DevelopmentDnsMappingEnactor($this->configDir);
 
     $result = $enactor->converge($node);
@@ -79,7 +78,7 @@ it('removes the derived mapping for a development app node', function (): void {
     expect(File::exists("{$this->configDir}/test.conf"))->toBeFalse();
 });
 
-it('uses the app-development role settings as the development dns tld', function (): void {
+it('uses the app-dev role settings as the development dns tld', function (): void {
     $node = developmentDnsMappingNode(['tld' => 'legacy']);
     assignDevelopmentDnsMappingRole($node, settings: ['tld' => 'assigned']);
     $enactor = new DevelopmentDnsMappingEnactor($this->configDir);
@@ -114,8 +113,6 @@ function developmentDnsMappingNode(array $overrides = []): Node
 {
     return Node::create(array_merge([
         'name' => 'app-1',
-        'role' => 'app',
-        'environment' => 'development',
         'tld' => 'test',
         'host' => '10.6.0.7',
         'wireguard_address' => '10.6.0.7',
@@ -129,12 +126,12 @@ function developmentDnsMappingNode(array $overrides = []): Node
 /**
  * @param  array<string, mixed>  $settings
  */
-function assignDevelopmentDnsMappingRole(Node $node, string $role = 'app-development', array $settings = ['tld' => 'test']): void
+function assignDevelopmentDnsMappingRole(Node $node, string $role = 'app-dev', array $settings = ['tld' => 'test']): void
 {
     NodeRoleAssignment::factory()->create([
         'node_id' => $node->id,
         'role' => $role,
         'status' => 'active',
-        'settings' => $role === 'app-development' ? $settings : [],
+        'settings' => $role === 'app-dev' ? $settings : [],
     ]);
 }

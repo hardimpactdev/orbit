@@ -12,14 +12,14 @@ uses(TestCase::class);
 uses(RefreshDatabase::class);
 
 describe('IngressResolver', function (): void {
-    it('resolves the app-production selected ingress node', function (): void {
+    it('resolves the app-prod selected ingress node', function (): void {
         $edge = Node::factory()->create(['name' => 'edge-1', 'status' => 'active']);
         NodeRoleAssignment::factory()->create(['node_id' => $edge->id, 'role' => 'ingress', 'status' => 'active']);
 
         $web = Node::factory()->create(['name' => 'web-1', 'status' => 'active']);
         NodeRoleAssignment::factory()->create([
             'node_id' => $web->id,
-            'role' => 'app-production',
+            'role' => 'app-prod',
             'status' => 'active',
             'settings' => ['ingress_node_id' => $edge->id],
         ]);
@@ -41,7 +41,7 @@ describe('IngressResolver', function (): void {
         $web = Node::factory()->create(['name' => 'web-1', 'status' => 'active']);
         NodeRoleAssignment::factory()->create([
             'node_id' => $web->id,
-            'role' => 'app-production',
+            'role' => 'app-prod',
             'status' => 'active',
             'settings' => ['ingress_node_id' => $edge->id],
         ]);
@@ -57,7 +57,7 @@ describe('IngressResolver', function (): void {
         $web = Node::factory()->create(['name' => 'web-1', 'status' => 'active']);
         NodeRoleAssignment::factory()->create([
             'node_id' => $web->id,
-            'role' => 'app-production',
+            'role' => 'app-prod',
             'status' => 'active',
             'settings' => ['ingress_node_id' => 999999],
         ]);
@@ -80,7 +80,6 @@ describe('IngressResolver', function (): void {
             'status' => 'active',
             'wireguard_address' => '10.6.0.2',
         ]);
-        NodeRoleAssignment::factory()->create(['node_id' => $gateway->id, 'role' => 'gateway', 'status' => 'active']);
         NodeRoleAssignment::factory()->create(['node_id' => $gateway->id, 'role' => 'router', 'status' => 'active']);
 
         $router = app(IngressResolver::class)->router();
@@ -95,7 +94,6 @@ describe('IngressResolver', function (): void {
             'status' => 'active',
             'wireguard_address' => null,
         ]);
-        NodeRoleAssignment::factory()->create(['node_id' => $gateway->id, 'role' => 'gateway', 'status' => 'active']);
         NodeRoleAssignment::factory()->create(['node_id' => $gateway->id, 'role' => 'router', 'status' => 'active']);
 
         app(IngressResolver::class)->routerUrl($gateway);

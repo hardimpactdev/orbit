@@ -12,10 +12,12 @@ final class DeployStepListCommand extends GatewayCommand
 {
     use ResolvesHostContext;
 
+    #[\Override]
     protected $signature = 'deploy:step-list
         {app : Production app name or domain}
         {--json}';
 
+    #[\Override]
     protected $description = 'List deployment pipeline steps for a production app.';
 
     public function handle(): int

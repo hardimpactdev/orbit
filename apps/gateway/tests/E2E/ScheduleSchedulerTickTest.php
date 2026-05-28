@@ -55,7 +55,6 @@ function scheduleSchedulerSeedGatewayIntent($topology, string $scheduleName, str
     ['name' => 'e2e-scheduler'],
     [
         'node_id' => \$node->id,
-        'environment' => 'development',
         'path' => '/home/orbit/orbit',
         'document_root' => 'public',
         'php_version' => '8.5',
@@ -85,7 +84,7 @@ PHP;
 
     $topology->ssh(
         'gateway',
-        'cd '.escapeshellarg($topology->checkout('gateway')).' && orbit tinker --execute='.escapeshellarg($php),
+        'cd '.escapeshellarg($topology->checkout('gateway')).' && php apps/gateway/artisan tinker --execute='.escapeshellarg($php),
         timeoutSeconds: 120,
     );
 }
@@ -116,7 +115,7 @@ PHP;
 
     $result = $topology->ssh(
         'gateway',
-        'cd '.escapeshellarg($topology->checkout('gateway')).' && orbit tinker --execute='.escapeshellarg($php),
+        'cd '.escapeshellarg($topology->checkout('gateway')).' && php apps/gateway/artisan tinker --execute='.escapeshellarg($php),
         timeoutSeconds: 120,
     );
 

@@ -427,7 +427,7 @@ final readonly class DatabaseConnectionProbe
 
     private function shouldUseLocalFilesystem(Node $node): bool
     {
-        return $node->role === 'gateway';
+        return $node->hasActiveRole('gateway');
     }
 
     private function isSecretKey(string $key): bool

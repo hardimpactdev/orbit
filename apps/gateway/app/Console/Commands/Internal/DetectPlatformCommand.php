@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Console\Commands\Internal;
 
-use App\Models\Node;
+use App\Services\Nodes\Roles\NodeRoleAssignments;
 use App\Services\Platform\PlatformDetector;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
@@ -30,9 +30,8 @@ class DetectPlatformCommand extends Command
         }
 
         if ($this->option('update-local-node') === true) {
-            Node::query()
-                ->where('role', 'gateway')
-                ->where('status', 'active')
+            app(NodeRoleAssignments::class)
+                ->activeGatewayNodeQuery()
                 ->update(['platform' => $platform]);
         }
 

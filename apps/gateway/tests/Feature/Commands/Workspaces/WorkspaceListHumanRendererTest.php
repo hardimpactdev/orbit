@@ -16,7 +16,7 @@ beforeEach(function (): void {
 
 describe('workspace:list human renderer contract', function (): void {
     it('renders grouped workspace tables by owning node and app', function (): void {
-        $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app']);
+        $node = Node::factory()->appDev()->create(['name' => 'app-1']);
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id, 'domain' => 'docs.test']);
 
         Workspace::factory()->create(['name' => 'feature-docs', 'app_id' => $app->id]);

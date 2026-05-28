@@ -30,7 +30,7 @@ it('reconciles dnsmasq after deleting a node on a gateway', function (): void {
 
     $node = Node::factory()->create([
         'name' => 'app-1',
-        'role' => 'app',
+
         'tld' => 'app-1.test',
         'wireguard_address' => '10.6.0.3',
     ]);
@@ -45,7 +45,7 @@ it('does not reconcile after deleting a node off-gateway', function (): void {
 
     $node = Node::factory()->create([
         'name' => 'app-1',
-        'role' => 'app',
+
         'tld' => 'app-1.test',
         'wireguard_address' => '10.6.0.3',
     ]);

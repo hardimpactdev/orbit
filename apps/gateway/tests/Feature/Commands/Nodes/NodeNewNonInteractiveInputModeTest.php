@@ -22,8 +22,7 @@ it('rejects invalid host values before side effects', function (): void {
 
     $exitCode = Artisan::call('node:new', [
         'name' => 'app-1',
-        '--role' => 'app',
-        '--environment' => 'production',
+        '--roles' => 'app-prod',
         '--host' => 'incorrect-host',
         '--json' => true,
     ]);

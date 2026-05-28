@@ -22,5 +22,5 @@ it('requires the canonical name input and treats missing role as a client-identi
     expect($missingNameExitCode)->toBe(1)
         ->and($missingNamePayload['error']['message'])->toBe('Node name is required.')
         ->and($missingRoleExitCode)->toBe(1)
-        ->and($missingRolePayload['error']['message'])->toBe('Gateway connection is required before creating app or operator nodes.');
+        ->and($missingRolePayload['error']['message'])->toBe('Gateway connection is required before creating client identities.');
 });

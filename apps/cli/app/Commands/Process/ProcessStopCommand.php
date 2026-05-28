@@ -6,12 +6,14 @@ namespace App\Commands\Process;
 
 final class ProcessStopCommand extends ProcessRuntimeActionCommand
 {
+    #[\Override]
     protected $signature = 'process:stop
         {name? : Existing process name}
         {--app= : Parent app slug}
         {--workspace= : Workspace name}
         {--json : Output JSON}';
 
+    #[\Override]
     protected $description = 'Stop app process runtime units.';
 
     protected function action(): string

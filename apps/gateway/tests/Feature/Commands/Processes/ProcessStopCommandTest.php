@@ -10,6 +10,7 @@ use App\Http\Gateway\Requests\Processes\StopProcessesRequest;
 use App\Models\App;
 use App\Models\LocalGatewaySettings;
 use App\Models\Node;
+use App\Models\NodeRoleAssignment;
 use App\Models\Process;
 use App\Models\ProcessEvent;
 use App\Models\Workspace;
@@ -26,18 +27,28 @@ afterEach(function (): void {
 
 function createProcessStopLocalNode(string $role = 'gateway'): Node
 {
-    return Node::factory()->create([
+    $node = Node::factory()->create([
         'name' => "local-{$role}",
-        'role' => $role,
         'host' => '10.6.0.1',
         'wireguard_address' => '10.6.0.1',
     ]);
+
+    if ($role === 'gateway') {
+        NodeRoleAssignment::factory()->create([
+            'node_id' => $node->id,
+            'role' => 'gateway',
+            'status' => 'active',
+            'settings' => [],
+        ]);
+    }
+
+    return $node;
 }
 
 describe('process:stop base contract', function (): void {
     it('stops a named gateway-local app process and records a durable event', function (): void {
         createProcessStopLocalNode('gateway');
-        $node = Node::factory()->create(['role' => 'app']);
+        $node = Node::factory()->appDev()->create();
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
         Process::factory()->create(['app_id' => $app->id, 'name' => 'vite', 'runtime' => ProcessRuntime::Supervisor]);
         $remoteShell = new ProcessStopRemoteShell([
@@ -61,7 +72,7 @@ describe('process:stop base contract', function (): void {
 
     it('stops all processes in process order for a workspace context', function (): void {
         createProcessStopLocalNode('gateway');
-        $node = Node::factory()->create(['role' => 'app']);
+        $node = Node::factory()->appDev()->create();
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
         Workspace::factory()->create(['name' => 'feature-docs', 'app_id' => $app->id]);
         Process::factory()->create(['app_id' => $app->id, 'name' => 'queue', 'sort_order' => 20, 'runtime' => ProcessRuntime::Supervisor]);
@@ -88,7 +99,7 @@ describe('process:stop base contract', function (): void {
 
     it('reports partial bulk failures with runtime data', function (): void {
         createProcessStopLocalNode('gateway');
-        $node = Node::factory()->create(['role' => 'app']);
+        $node = Node::factory()->appDev()->create();
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
         Process::factory()->create(['app_id' => $app->id, 'name' => 'vite', 'sort_order' => 10, 'runtime' => ProcessRuntime::Supervisor]);
         Process::factory()->create(['app_id' => $app->id, 'name' => 'queue', 'sort_order' => 20, 'runtime' => ProcessRuntime::Supervisor]);
@@ -169,7 +180,7 @@ describe('process:stop base contract', function (): void {
 
     it('renders human progress and success prose', function (): void {
         createProcessStopLocalNode('gateway');
-        $node = Node::factory()->create(['role' => 'app']);
+        $node = Node::factory()->appDev()->create();
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
         Process::factory()->create(['app_id' => $app->id, 'name' => 'vite', 'runtime' => ProcessRuntime::Supervisor]);
         app()->instance(RemoteShell::class, new ProcessStopRemoteShell([
@@ -193,7 +204,7 @@ describe('process:stop base contract', function (): void {
 describe('process:stop runtime routing', function (): void {
     it('dispatches docker stop for docker runtime processes', function (): void {
         createProcessStopLocalNode('gateway');
-        $node = Node::factory()->create(['role' => 'app']);
+        $node = Node::factory()->appDev()->create();
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id, 'runtime_kind' => AppRuntimeKind::Php]);
         Process::factory()->create(['app_id' => $app->id, 'name' => 'queue', 'runtime' => ProcessRuntime::Docker]);
         $remoteShell = new ProcessStopRemoteShell([
@@ -216,7 +227,7 @@ describe('process:stop runtime routing', function (): void {
 
     it('dispatches supervisorctl stop for supervisor runtime processes', function (): void {
         createProcessStopLocalNode('gateway');
-        $node = Node::factory()->create(['role' => 'app']);
+        $node = Node::factory()->appDev()->create();
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id, 'runtime_kind' => AppRuntimeKind::Static]);
         Process::factory()->create(['app_id' => $app->id, 'name' => 'vite', 'runtime' => ProcessRuntime::Supervisor]);
         $remoteShell = new ProcessStopRemoteShell([

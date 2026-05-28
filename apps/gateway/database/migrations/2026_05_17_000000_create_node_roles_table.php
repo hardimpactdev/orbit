@@ -10,7 +10,7 @@ return new class extends Migration
 {
     public function up(): void
     {
-        Schema::create('node_roles', function (Blueprint $table): void {
+        Schema::create('node_role', function (Blueprint $table): void {
             $table->id();
             $table->foreignId('node_id')->constrained('nodes')->cascadeOnDelete();
             $table->string('role');
@@ -27,6 +27,6 @@ return new class extends Migration
 
     public function down(): void
     {
-        Schema::dropIfExists('node_roles');
+        Schema::dropIfExists('node_role');
     }
 };

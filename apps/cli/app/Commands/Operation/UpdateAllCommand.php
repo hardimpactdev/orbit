@@ -12,8 +12,10 @@ final class UpdateAllCommand extends GatewayCommand
 {
     use StreamsGatewayProgress;
 
+    #[\Override]
     protected $signature = 'update:all {--json : Output JSON}';
 
+    #[\Override]
     protected $description = 'Update every managed Orbit installation through the gateway.';
 
     public function handle(): int

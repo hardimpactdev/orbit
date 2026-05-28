@@ -31,12 +31,11 @@ it('resolves to GET /api/nodes', function (): void {
     expect($request->getMethod())->toBe(Method::GET);
 });
 
-it('serializes role/environment/doctor as query parameters when provided', function (): void {
-    $request = new ListNodesRequest(role: 'app', environment: 'production', doctor: true);
+it('serializes role and doctor as query parameters when provided', function (): void {
+    $request = new ListNodesRequest(role: 'app-prod', doctor: true);
 
     expect($request->query()->all())->toBe([
-        'role' => 'app',
-        'environment' => 'production',
+        'role' => 'app-prod',
         'doctor' => true,
     ]);
 });
@@ -53,8 +52,8 @@ it('returns a NodeListResponse DTO with nodes and meta', function (): void {
             'success' => [
                 'data' => [
                     'nodes' => [
-                        ['name' => 'gw-1', 'role' => 'gateway'],
-                        ['name' => 'app-1', 'role' => 'app'],
+                        ['name' => 'gw-1', 'roles' => [['role' => 'gateway', 'status' => 'active']]],
+                        ['name' => 'app-1', 'roles' => [['role' => 'app-dev', 'status' => 'active']]],
                     ],
                 ],
                 'meta' => ['doctor' => ['issues' => 0]],
@@ -69,8 +68,8 @@ it('returns a NodeListResponse DTO with nodes and meta', function (): void {
 
     expect($dto)->toBeInstanceOf(NodeListResponse::class);
     expect($dto->nodes)->toBe([
-        ['name' => 'gw-1', 'role' => 'gateway'],
-        ['name' => 'app-1', 'role' => 'app'],
+        ['name' => 'gw-1', 'roles' => [['role' => 'gateway', 'status' => 'active']]],
+        ['name' => 'app-1', 'roles' => [['role' => 'app-dev', 'status' => 'active']]],
     ]);
     expect($dto->meta)->toBe(['doctor' => ['issues' => 0]]);
 });

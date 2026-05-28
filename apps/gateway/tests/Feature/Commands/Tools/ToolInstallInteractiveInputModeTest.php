@@ -19,10 +19,8 @@ function createToolInstallInteractiveLocalNode(string $role = 'gateway'): Node
 {
     return Node::factory()->create([
         'name' => "local-{$role}",
-        'role' => $role,
         'host' => '10.6.0.1',
-        'wireguard_address' => '10.6.0.1',
-    ]);
+        'wireguard_address' => '10.6.0.1']);
 }
 
 function fakeInstallShell(): void
@@ -39,7 +37,7 @@ function fakeInstallShell(): void
 describe('tool:install interactive input mode', function (): void {
     it('prompts for tool name when omitted in interactive mode', function (): void {
         createToolInstallInteractiveLocalNode('gateway');
-        createTestAppHostNode(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        createTestAppHostNode(['name' => 'app-1', 'status' => 'active']);
         fakeInstallShell();
 
         $this->artisan('tool:install --node=app-1')
@@ -49,7 +47,7 @@ describe('tool:install interactive input mode', function (): void {
 
     it('does not prompt when tool argument is supplied', function (): void {
         createToolInstallInteractiveLocalNode('gateway');
-        createTestAppHostNode(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        createTestAppHostNode(['name' => 'app-1', 'status' => 'active']);
         fakeInstallShell();
 
         $this->artisan('tool:install', ['tool' => 'redis', '--node' => 'app-1', '--json' => true])

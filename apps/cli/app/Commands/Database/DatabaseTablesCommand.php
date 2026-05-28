@@ -12,11 +12,13 @@ final class DatabaseTablesCommand extends GatewayCommand
 {
     use ResolvesHostContext;
 
+    #[\Override]
     protected $signature = 'database:tables
         {target? : App, workspace, or connection slug}
         {--connection= : Connection slug when the target maps to multiple connections}
         {--json}';
 
+    #[\Override]
     protected $description = 'List tables for a registered database connection.';
 
     public function handle(): int

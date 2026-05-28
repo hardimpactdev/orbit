@@ -8,6 +8,7 @@ use App\Exceptions\GatewayApiException;
 
 final class DatabaseQueryCommand extends DatabaseGatewayCommand
 {
+    #[\Override]
     protected $signature = 'database:query
         {target? : App, workspace, or connection slug}
         {--sql= : SQL query to execute}
@@ -19,6 +20,7 @@ final class DatabaseQueryCommand extends DatabaseGatewayCommand
         {--max-json-bytes= : Maximum JSON response size}
         {--json : Output JSON}';
 
+    #[\Override]
     protected $description = 'Run a database query through the gateway.';
 
     public function handle(): int
@@ -53,6 +55,7 @@ final class DatabaseQueryCommand extends DatabaseGatewayCommand
         return $this->renderSuccess($response);
     }
 
+    #[\Override]
     protected function wantsJson(): bool
     {
         return true;

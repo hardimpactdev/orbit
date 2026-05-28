@@ -8,11 +8,13 @@ use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Services\ActivityLogCorrelation;
 use App\Services\ActivityLogger;
+use App\Services\Operations\OperationRunRecorder;
 use App\Services\Operations\OperationTokenFactory;
 use App\Services\RemoteShell\Exceptions\LocalExecutorCommandBuilderException;
 use App\Services\RemoteShell\LocalExecutorCommandBuilder;
 use App\Services\RemoteShell\RemoteExecutor;
 use App\Services\RemoteShell\RemoteLocalExecutor;
+use App\Services\RemoteShell\RemoteLocalExecutorTransportFailed;
 use Illuminate\Contracts\Process\InvokedProcess;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -237,6 +239,7 @@ describe(RemoteLocalExecutor::class, function (): void {
                 clock: static fn (): int => throw new RuntimeException('Operation token signing secret is required.'),
             ),
             activityLogger: remoteLocalExecutorActivityLogger(),
+            operationRuns: app(OperationRunRecorder::class),
         );
 
         expect(fn (): RemoteShellResult => $executor->runInternal(
@@ -685,6 +688,160 @@ describe(RemoteLocalExecutor::class, function (): void {
         }
     });
 
+    it('records an operation_runs row that transitions queued → running → succeeded around each successful internal dispatch', function (): void {
+        $operationId = '00000000-0000-4000-8000-000000000901';
+        $transport = new RemoteLocalExecutorRecordingTransport(
+            new RemoteShellResult(exitCode: 0, stdout: "{\"ok\":true}\n", stderr: '', durationMs: 42),
+        );
+        $executor = remoteLocalExecutor($transport);
+        $node = remoteLocalExecutorNode();
+
+        $executor->runInternal(
+            node: $node,
+            commandName: 'internal:workspace-adapter:lookup',
+            transportOptions: ['metadata' => ['ORBIT_OPERATION_ID' => $operationId]],
+        );
+
+        $rows = DB::table('operation_runs')->where('operation_id', $operationId)->get();
+
+        expect($rows)->toHaveCount(1);
+
+        $row = $rows->first();
+        expect($row->status)->toBe('succeeded')
+            ->and($row->internal_command)->toBe('internal:workspace-adapter:lookup')
+            ->and($row->lane)->toBe('local')
+            ->and((int) $row->target_node_id)->toBe($node->id)
+            ->and($row->started_at)->not->toBeNull()
+            ->and($row->finished_at)->not->toBeNull()
+            ->and((int) $row->exit_code)->toBe(0)
+            ->and($row->id)->not->toBe($operationId);
+    });
+
+    it('records an operation_runs row as failed with the redacted exit code on RemoteShellFailed', function (): void {
+        $operationId = '00000000-0000-4000-8000-000000000902';
+        $transport = new RemoteLocalExecutorRecordingTransport(
+            static function (Node $node, string $script, array $options): RemoteShellResult {
+                $token = remoteLocalExecutorTokenFromScript($script);
+
+                throw new RemoteShellFailed(
+                    node: $node,
+                    script: $script,
+                    result: new RemoteShellResult(exitCode: 13, stdout: "leak --operation-token={$token}", stderr: '', durationMs: 11),
+                );
+            },
+        );
+        $executor = remoteLocalExecutor($transport);
+
+        try {
+            $executor->runInternal(
+                node: remoteLocalExecutorNode(),
+                commandName: 'internal:executor:verify',
+                transportOptions: ['metadata' => ['ORBIT_OPERATION_ID' => $operationId]],
+            );
+            test()->fail('Expected RemoteShellFailed.');
+        } catch (RemoteShellFailed) {
+            // expected
+        }
+
+        $row = DB::table('operation_runs')->where('operation_id', $operationId)->first();
+
+        expect($row)->not->toBeNull()
+            ->and($row->status)->toBe('failed')
+            ->and((int) $row->exit_code)->toBe(13)
+            ->and($row->stdout_summary)->toBe('leak --operation-token=<redacted>')
+            ->and($row->stdout_summary)->not->toContain('operation-token=eyJ');
+
+        $error = json_decode((string) $row->error, true, flags: JSON_THROW_ON_ERROR);
+        expect($error['code'])->toBe('remote_shell_failed');
+    });
+
+    it('records an operation_runs row as failed when the transport throws a generic exception', function (): void {
+        $operationId = '00000000-0000-4000-8000-000000000903';
+        $transport = new RemoteLocalExecutorRecordingTransport(
+            static function (Node $node, string $script, array $options): RemoteShellResult {
+                throw new RuntimeException('transport boom');
+            },
+        );
+        $executor = remoteLocalExecutor($transport);
+
+        try {
+            $executor->runInternal(
+                node: remoteLocalExecutorNode(),
+                commandName: 'internal:executor:verify',
+                transportOptions: ['metadata' => ['ORBIT_OPERATION_ID' => $operationId]],
+            );
+            test()->fail('Expected transport exception.');
+        } catch (RemoteLocalExecutorTransportFailed) {
+            // expected
+        }
+
+        $row = DB::table('operation_runs')->where('operation_id', $operationId)->first();
+
+        expect($row)->not->toBeNull()
+            ->and($row->status)->toBe('failed')
+            ->and($row->exit_code)->toBeNull();
+
+        $error = json_decode((string) $row->error, true, flags: JSON_THROW_ON_ERROR);
+        expect($error['code'])->toBe('transport_failed')
+            ->and($error['message'])->toContain('transport boom');
+    });
+
+    it('re-mints the same operation_id across two attempts and writes two operation_runs rows with distinct ids', function (): void {
+        $operationId = '00000000-0000-4000-8000-000000000904';
+        $transport = new RemoteLocalExecutorRecordingTransport(
+            new RemoteShellResult(exitCode: 0, stdout: '{}', stderr: '', durationMs: 1),
+        );
+        $executor = remoteLocalExecutor($transport);
+        $node = remoteLocalExecutorNode();
+
+        $executor->runInternal(
+            node: $node,
+            commandName: 'internal:executor:verify',
+            transportOptions: ['metadata' => ['ORBIT_OPERATION_ID' => $operationId]],
+        );
+        $executor->runInternal(
+            node: $node,
+            commandName: 'internal:executor:verify',
+            transportOptions: ['metadata' => ['ORBIT_OPERATION_ID' => $operationId]],
+        );
+
+        $rows = DB::table('operation_runs')->where('operation_id', $operationId)->orderBy('created_at')->get();
+
+        expect($rows)->toHaveCount(2)
+            ->and($rows[0]->id)->not->toBe($rows[1]->id)
+            ->and($rows[0]->status)->toBe('succeeded')
+            ->and($rows[1]->status)->toBe('succeeded');
+    });
+
+    it('keeps activity_log properties JSON free of raw operation_token substrings even after recording operation_runs', function (): void {
+        $operationId = '00000000-0000-4000-8000-000000000905';
+        $transport = new RemoteLocalExecutorRecordingTransport(
+            static function (Node $node, string $script, array $options): RemoteShellResult {
+                $token = remoteLocalExecutorTokenFromScript($script);
+
+                return new RemoteShellResult(
+                    exitCode: 0,
+                    stdout: "stdout --operation-token={$token}",
+                    stderr: '',
+                    durationMs: 5,
+                );
+            },
+        );
+        $executor = remoteLocalExecutor($transport);
+
+        $executor->runInternal(
+            node: remoteLocalExecutorNode(),
+            commandName: 'internal:executor:verify',
+            transportOptions: ['metadata' => ['ORBIT_OPERATION_ID' => $operationId]],
+        );
+
+        $blob = remoteLocalExecutorActivityLogBlob();
+
+        // No raw `--operation-token=<jwt-shaped>` substring (jwt header bytes "eyJ") should leak into activity rows.
+        expect($blob)->not->toContain('--operation-token=eyJ')
+            ->and($blob)->toContain('--operation-token=<redacted>');
+    });
+
     it('keeps default executor bindings while making the local executor explicitly resolvable', function (): void {
         config()->set('orbit.operation_token_secret', 'gateway-secret');
         config()->set('orbit.operation_token_ttl_seconds', 120);
@@ -718,6 +875,7 @@ function remoteLocalExecutor(RemoteLocalExecutorRecordingTransport $transport, ?
         commands: new LocalExecutorCommandBuilder,
         operationTokens: $operationTokens ?? remoteLocalExecutorTokenFactory(),
         activityLogger: remoteLocalExecutorActivityLogger(),
+        operationRuns: app(OperationRunRecorder::class),
     );
 }
 

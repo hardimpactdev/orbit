@@ -13,6 +13,7 @@ final class WorkspaceNewCommand extends WorkspaceGatewayCommand
 {
     use StreamsGatewayProgress;
 
+    #[\Override]
     protected $signature = 'workspace:new
         {name? : Workspace name}
         {--app= : Parent app name}
@@ -20,6 +21,7 @@ final class WorkspaceNewCommand extends WorkspaceGatewayCommand
         {--php-version= : PHP version override}
         {--json : Output JSON}';
 
+    #[\Override]
     protected $description = 'Create a new workspace intent.';
 
     public function handle(): int

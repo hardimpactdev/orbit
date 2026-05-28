@@ -9,10 +9,12 @@ use App\Exceptions\GatewayApiException;
 
 final class NodeListCommand extends GatewayCommand
 {
+    #[\Override]
     protected $signature = 'node:list
         {--role= : Filter by role}
         {--json}';
 
+    #[\Override]
     protected $description = 'List nodes registered in the gateway registry.';
 
     public function handle(): int

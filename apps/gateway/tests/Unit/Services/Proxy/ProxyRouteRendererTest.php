@@ -15,7 +15,7 @@ uses(RefreshDatabase::class);
 
 describe('ProxyRouteRenderer', function (): void {
     it('renders custom upstream routes as Caddy sites with Orbit TLS paths and normalizes host loopback for container reachability', function (): void {
-        $node = Node::factory()->create(['role' => 'app']);
+        $node = createTestAppHostNode();
         $route = ProxyRoute::factory()->create([
             'node_id' => $node->id,
             'domain' => 'vite.docs.test',
@@ -34,7 +34,7 @@ describe('ProxyRouteRenderer', function (): void {
     });
 
     it('normalizes localhost upstreams to the orbit-caddy host gateway hostname', function (): void {
-        $node = Node::factory()->create(['role' => 'app']);
+        $node = createTestAppHostNode();
         $route = ProxyRoute::factory()->create([
             'node_id' => $node->id,
             'domain' => 'mail.docs.test',
@@ -58,7 +58,7 @@ describe('ProxyRouteRenderer', function (): void {
     });
 
     it('renders custom redirect routes with redirect codes', function (): void {
-        $node = Node::factory()->create(['role' => 'app']);
+        $node = createTestAppHostNode();
         $route = ProxyRoute::factory()->create([
             'node_id' => $node->id,
             'domain' => 'old.docs.test',
@@ -74,7 +74,7 @@ describe('ProxyRouteRenderer', function (): void {
     });
 
     it('accepts numeric string redirect codes in the 3xx range', function (): void {
-        $node = Node::factory()->create(['role' => 'app']);
+        $node = createTestAppHostNode();
         $route = ProxyRoute::factory()->create([
             'node_id' => $node->id,
             'domain' => 'old.docs.test',
@@ -89,7 +89,7 @@ describe('ProxyRouteRenderer', function (): void {
     });
 
     it('rejects non numeric redirect codes', function (): void {
-        $node = Node::factory()->create(['role' => 'app']);
+        $node = createTestAppHostNode();
         $route = ProxyRoute::factory()->create([
             'node_id' => $node->id,
             'domain' => 'old.docs.test',
@@ -102,7 +102,7 @@ describe('ProxyRouteRenderer', function (): void {
     })->throws(RuntimeException::class, "Proxy route 'old.docs.test' has an invalid redirect code.");
 
     it('rejects redirect codes outside the 3xx range', function (): void {
-        $node = Node::factory()->create(['role' => 'app']);
+        $node = createTestAppHostNode();
         $route = ProxyRoute::factory()->create([
             'node_id' => $node->id,
             'domain' => 'old.docs.test',
@@ -455,7 +455,7 @@ CADDY);
     })->throws(RuntimeException::class, "Proxy route 'example.com' has an invalid runtime container upstream.");
 
     it('derives a FrankenPHP runtime upstream from the app identity for a legacy app route persisted with only php_socket (no runtime_upstream) and never emits php_fastcgi', function (): void {
-        $node = Node::factory()->create(['role' => 'app']);
+        $node = createTestAppHostNode();
         $app = App::factory()->for($node, 'node')->create(['name' => 'legacy-docs']);
 
         $route = ProxyRoute::factory()
@@ -489,7 +489,7 @@ CADDY);
     });
 
     it('derives a FrankenPHP runtime upstream from the app identity for a legacy private backend artifact (no runtime_upstream)', function (): void {
-        $appNode = Node::factory()->create(['role' => 'app', 'wireguard_address' => '10.6.0.21']);
+        $appNode = createTestAppHostNode(['wireguard_address' => '10.6.0.21']);
         $app = App::factory()->for($appNode, 'node')->create(['name' => 'legacy-docs']);
 
         $route = ProxyRoute::factory()
@@ -521,7 +521,7 @@ CADDY);
     });
 
     it('still renders static app routes with file_server even when the persisted config carries a legacy php_socket', function (): void {
-        $node = Node::factory()->create(['role' => 'app']);
+        $node = createTestAppHostNode();
         $app = App::factory()->for($node, 'node')->static()->create(['name' => 'legacy-marketing']);
 
         $route = ProxyRoute::factory()
@@ -549,7 +549,7 @@ CADDY);
     });
 
     it('renders workspace PHP routes as reverse_proxy to the FrankenPHP runtime container', function (): void {
-        $node = Node::factory()->create(['role' => 'app']);
+        $node = createTestAppHostNode();
         $app = App::factory()->for($node, 'node')->create([
             'name' => 'docs',
             'document_root' => 'public',
@@ -581,7 +581,7 @@ CADDY);
     });
 
     it('derives a FrankenPHP runtime upstream from the workspace identity for a legacy workspace route persisted with only php_socket', function (): void {
-        $node = Node::factory()->create(['role' => 'app']);
+        $node = createTestAppHostNode();
         $app = App::factory()->for($node, 'node')->create(['name' => 'legacy-docs']);
         $workspace = Workspace::factory()->for($app, 'app')->create(['name' => 'feature-a']);
 

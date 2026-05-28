@@ -181,14 +181,10 @@ function fakeGatewayCaRootThroughLaravelHttp(): MockClient
  * @param  array<string, mixed>  $attributes
  * @param  array<string, mixed>  $settings
  */
-function createTestAppHostNode(array $attributes = [], string $role = 'app-development', array $settings = ['tld' => 'test']): Node
+function createTestAppHostNode(array $attributes = [], string $role = 'app-dev', array $settings = ['tld' => 'test']): Node
 {
-    $environment = $role === 'app-production' ? 'production' : 'development';
-
     $node = Node::factory()->create([
-        'role' => 'app',
         'status' => 'active',
-        'environment' => $environment,
         'tld' => $settings['tld'] ?? null,
         ...$attributes,
     ]);
@@ -197,7 +193,7 @@ function createTestAppHostNode(array $attributes = [], string $role = 'app-devel
         'node_id' => $node->id,
         'role' => $role,
         'status' => 'active',
-        'settings' => $role === 'app-development' ? $settings : [],
+        'settings' => $role === 'app-dev' ? $settings : [],
     ]);
 
     return $node;
@@ -209,7 +205,6 @@ function createTestAppHostNode(array $attributes = [], string $role = 'app-devel
 function createTestGatewayNode(array $attributes = []): Node
 {
     $node = Node::factory()->create([
-        'role' => 'gateway',
         'status' => 'active',
         ...$attributes,
     ]);
@@ -262,12 +257,19 @@ function markNodeSecurityBaselineClean(Node $node): Node
 
 function createPhpLocalNode(string $role = 'gateway'): Node
 {
-    return Node::factory()->create([
+    $node = Node::factory()->create([
         'name' => "local-{$role}",
-        'role' => $role,
         'host' => '10.6.0.1',
         'wireguard_address' => '10.6.0.1',
     ]);
+
+    NodeRoleAssignment::factory()->create([
+        'node_id' => $node->id,
+        'role' => $role,
+        'status' => 'active',
+    ]);
+
+    return $node;
 }
 
 /**
@@ -295,13 +297,20 @@ function createPhpTool(Node $node, array $config = []): NodeTool
 
 function vpnLocalNode(string $role): Node
 {
-    return Node::factory()->create([
+    $node = Node::factory()->create([
         'name' => "local-{$role}",
-        'role' => $role,
         'host' => '10.6.0.2',
         'wireguard_address' => '10.6.0.2',
         'status' => 'active',
     ]);
+
+    NodeRoleAssignment::factory()->create([
+        'node_id' => $node->id,
+        'role' => $role,
+        'status' => 'active',
+    ]);
+
+    return $node;
 }
 
 function bindVpnBackend(ArrayVpnBackend $backend): void
@@ -376,7 +385,6 @@ function gatewayIdentityEnvelope(array $self = [], array $gateway = []): array
             'data' => [
                 'self' => [
                     'name' => 'control-1',
-                    'role' => 'control',
                     'status' => 'active',
                     'platform' => 'unknown',
                     'addresses' => ['wireguard' => '10.6.0.8'],
@@ -384,7 +392,7 @@ function gatewayIdentityEnvelope(array $self = [], array $gateway = []): array
                 ],
                 'gateway' => [
                     'name' => 'gateway-1',
-                    'role' => 'gateway',
+                    'roles' => [['role' => 'gateway', 'status' => 'active', 'settings' => []]],
                     'status' => 'active',
                     'platform' => 'unknown',
                     'addresses' => ['wireguard' => '10.6.0.2'],

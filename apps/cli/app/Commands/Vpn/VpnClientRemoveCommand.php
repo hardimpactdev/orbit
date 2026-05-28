@@ -8,12 +8,14 @@ use App\Exceptions\GatewayApiException;
 
 final class VpnClientRemoveCommand extends VpnGatewayCommand
 {
+    #[\Override]
     protected $signature = 'vpn-client:remove
         {name? : VPN client name}
         {--force : Confirm destructive operation without prompting}
         {--totp= : One-time code for the gateway VPN backend}
         {--json : Output as JSON}';
 
+    #[\Override]
     protected $description = 'Remove a non-node gateway VPN client through the gateway.';
 
     public function handle(): int

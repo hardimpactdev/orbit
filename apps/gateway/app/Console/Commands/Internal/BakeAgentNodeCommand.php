@@ -46,8 +46,6 @@ class BakeAgentNodeCommand extends Command
 
         $node = $registryWriter->writeNodeIdentity(
             name: $name,
-            legacyRole: 'control',
-            environment: null,
             tld: $tld,
             platform: 'ubuntu',
             host: $host,

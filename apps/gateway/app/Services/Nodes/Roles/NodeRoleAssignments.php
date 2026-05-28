@@ -92,6 +92,9 @@ class NodeRoleAssignments
         return $this->nodeHasActiveRole($node, NodeRoleName::Agent->value);
     }
 
+    /**
+     * @return Builder<Node>
+     */
     public function activeGatewayNodeQuery(): Builder
     {
         return Node::query()
@@ -99,6 +102,9 @@ class NodeRoleAssignments
             ->whereIn('id', $this->activeNodeIdsForRole(NodeRoleName::Gateway->value));
     }
 
+    /**
+     * @return Builder<Node>
+     */
     public function activeVpnNodeQuery(): Builder
     {
         return Node::query()
@@ -106,6 +112,9 @@ class NodeRoleAssignments
             ->whereIn('id', $this->activeNodeIdsForRole(NodeRoleName::Vpn->value));
     }
 
+    /**
+     * @return Builder<Node>
+     */
     public function activeRouterNodeQuery(): Builder
     {
         return Node::query()
@@ -113,6 +122,9 @@ class NodeRoleAssignments
             ->whereIn('id', $this->activeNodeIdsForRole(NodeRoleName::Router->value));
     }
 
+    /**
+     * @return Builder<Node>
+     */
     public function activeIngressNodeQuery(): Builder
     {
         return Node::query()
@@ -163,23 +175,22 @@ class NodeRoleAssignments
 
     public function assignmentRoleLabel(Node $node): string
     {
-        if ($this->nodeHasActiveGatewayRole($node)) {
-            return NodeRoleName::Gateway->value;
+        foreach ([
+            NodeRoleName::Gateway,
+            NodeRoleName::AppDevelopment,
+            NodeRoleName::AppProduction,
+            NodeRoleName::Database,
+            NodeRoleName::Agent,
+            NodeRoleName::Ingress,
+            NodeRoleName::Vpn,
+            NodeRoleName::Router,
+        ] as $role) {
+            if ($this->nodeHasActiveRole($node, $role->value)) {
+                return $role->value;
+            }
         }
 
-        if ($this->nodeHasActiveAppHostRole($node)) {
-            return 'app';
-        }
-
-        if ($this->nodeHasActiveRole($node, NodeRoleName::Database->value)) {
-            return NodeRoleName::Database->value;
-        }
-
-        if ($this->nodeHasActiveAgentRole($node)) {
-            return NodeRoleName::Agent->value;
-        }
-
-        return 'control';
+        return 'operator';
     }
 
     public function nodeCanServeGatewayOrAppHostWorkloads(Node $node): bool

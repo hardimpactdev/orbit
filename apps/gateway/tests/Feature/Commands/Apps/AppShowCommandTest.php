@@ -21,9 +21,12 @@ afterEach(function (): void {
 
 function createAppShowLocalNode(string $role = 'gateway'): Node
 {
-    return Node::factory()->create([
+    $factory = $role === 'gateway'
+        ? Node::factory()->gateway()
+        : Node::factory()->operator();
+
+    return $factory->create([
         'name' => "local-{$role}",
-        'role' => $role,
         'host' => '10.6.0.1',
         'wireguard_address' => '10.6.0.1',
     ]);
@@ -31,13 +34,12 @@ function createAppShowLocalNode(string $role = 'gateway'): Node
 
 function createShowApp(array $overrides = []): App
 {
-    $node = $overrides['node'] ?? Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'host' => '10.6.0.7', 'tld' => 'test']);
+    $node = $overrides['node'] ?? Node::factory()->appDev(['tld' => 'test'])->create(['name' => 'app-1', 'host' => '10.6.0.7', 'tld' => 'test']);
     unset($overrides['node']);
 
     return App::factory()->create(array_merge([
         'name' => 'docs',
         'node_id' => $node->id,
-        'environment' => 'development',
         'domain' => null,
         'path' => '/srv/docs',
         'document_root' => 'public',

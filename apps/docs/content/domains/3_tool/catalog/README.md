@@ -79,7 +79,7 @@ materialized by their owning role and only required on nodes carrying that role:
 
 | Tool | Owning role(s) |
 | --- | --- |
-| [`viteplus`](viteplus.md) | `app-development`, `app-production` |
+| [`viteplus`](viteplus.md) | `app-dev`, `app-prod` |
 | [`rustfs`](rustfs.md) | `s3` |
 
 ## Installable Tools

@@ -15,7 +15,7 @@ final readonly class AppDevelopmentRoleSettings implements NodeRoleSettings
         $tld = trim($tld);
 
         if (! $this->isValidTld($tld)) {
-            throw new InvalidArgumentException('The app-development role requires a valid tld setting.');
+            throw new InvalidArgumentException('The app-dev role requires a valid tld setting.');
         }
 
         $this->tld = $tld;
@@ -29,13 +29,13 @@ final readonly class AppDevelopmentRoleSettings implements NodeRoleSettings
         $unknownKeys = array_diff(array_keys($settings), ['tld']);
 
         if ($unknownKeys !== []) {
-            throw new InvalidArgumentException('The app-development role does not accept unknown settings.');
+            throw new InvalidArgumentException('The app-dev role does not accept unknown settings.');
         }
 
         $tld = $settings['tld'] ?? null;
 
         if (! is_string($tld)) {
-            throw new InvalidArgumentException('The app-development role requires a valid tld setting.');
+            throw new InvalidArgumentException('The app-dev role requires a valid tld setting.');
         }
 
         return new self($tld);

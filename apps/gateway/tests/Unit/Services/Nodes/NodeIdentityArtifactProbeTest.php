@@ -10,7 +10,6 @@ use App\Services\Nodes\NodeIdentityArtifactProbe;
 it('reads non-secret node identity facts from the selected host', function (): void {
     $node = new Node([
         'name' => 'app-1',
-        'role' => 'app',
         'orbit_path' => '/home/orbit/orbit',
     ]);
 
@@ -18,8 +17,8 @@ it('reads non-secret node identity facts from the selected host', function (): v
         exitCode: 0,
         stdout: json_encode([
             'name' => 'app-1',
-            'role' => 'app',
-            'local_role' => 'app',
+            'role' => 'app-dev',
+            'local_role' => 'app-dev',
             'status' => 'active',
             'platform' => 'ubuntu_24-04',
             'wireguard_address' => '10.6.0.8',
@@ -33,8 +32,8 @@ it('reads non-secret node identity facts from the selected host', function (): v
     $artifact = (new NodeIdentityArtifactProbe($remoteShell))->read($node);
 
     expect($artifact->name)->toBe('app-1')
-        ->and($artifact->role)->toBe('app')
-        ->and($artifact->localRole)->toBe('app')
+        ->and($artifact->role)->toBe('app-dev')
+        ->and($artifact->localRole)->toBe('app-dev')
         ->and($artifact->status)->toBe('active')
         ->and($artifact->platform)->toBe('ubuntu_24-04')
         ->and($artifact->wireguardAddress)->toBe('10.6.0.8')
@@ -50,7 +49,7 @@ it('reads non-secret node identity facts from the selected host', function (): v
 });
 
 it('throws when identity artifact reading fails', function (): void {
-    $node = new Node(['name' => 'app-1', 'role' => 'app']);
+    $node = new Node(['name' => 'app-1']);
     $remoteShell = new NodeIdentityArtifactProbeRemoteShell(new RemoteShellResult(
         exitCode: 1,
         stdout: '',
@@ -63,7 +62,7 @@ it('throws when identity artifact reading fails', function (): void {
 });
 
 it('throws when identity artifact output is invalid JSON', function (): void {
-    $node = new Node(['name' => 'app-1', 'role' => 'app']);
+    $node = new Node(['name' => 'app-1']);
     $remoteShell = new NodeIdentityArtifactProbeRemoteShell(new RemoteShellResult(
         exitCode: 0,
         stdout: 'not-json',

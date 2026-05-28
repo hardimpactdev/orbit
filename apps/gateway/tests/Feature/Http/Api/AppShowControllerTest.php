@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Models\App;
 use App\Models\Node;
+use App\Models\NodeRoleAssignment;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 
@@ -11,20 +12,23 @@ uses(RefreshDatabase::class);
 
 const APP_SHOW_CALLER_WG_IP = '10.6.0.98';
 
-function createAppShowCallerNode(array $overrides = []): Node
+function createAppShowCallerNode(array $overrides = [], ?string $role = null): Node
 {
-    $attributes = array_merge([
+    $node = Node::factory()->create(array_merge([
         'name' => 'caller',
-        'role' => 'control',
         'host' => APP_SHOW_CALLER_WG_IP,
         'wireguard_address' => APP_SHOW_CALLER_WG_IP,
-    ], $overrides);
+    ], $overrides));
 
-    if ($attributes['role'] === 'gateway') {
-        return createTestGatewayNode($attributes);
+    if ($role !== null) {
+        NodeRoleAssignment::factory()->create([
+            'node_id' => $node->id,
+            'role' => $role,
+            'status' => 'active',
+        ]);
     }
 
-    return Node::factory()->create($attributes);
+    return $node;
 }
 
 /**
@@ -38,27 +42,24 @@ function grantAppShowAccess(Node $caller, Node $appNode, array $permissions = ['
         'permissions' => json_encode($permissions, JSON_THROW_ON_ERROR),
         'custom_permissions' => json_encode([], JSON_THROW_ON_ERROR),
         'created_at' => now(),
-        'updated_at' => now(),
-    ]);
+        'updated_at' => now()]);
 }
 
 describe('AppShowController', function (): void {
     it('returns app registry details by name', function (): void {
         $caller = createAppShowCallerNode();
-        $node = createTestAppHostNode(['name' => 'app-1', 'role' => 'app', 'host' => '10.6.0.7']);
+        $node = createTestAppHostNode(['name' => 'app-1', 'host' => '10.6.0.7']);
         grantAppShowAccess($caller, $node);
 
         App::factory()->create([
             'name' => 'docs',
             'node_id' => $node->id,
-            'environment' => 'production',
             'domain' => 'docs.example.com',
             'path' => '/srv/docs',
             'document_root' => 'public',
             'repository' => 'git@github.com:orbit/docs.git',
             'php_version' => '8.5',
-            'adopted' => false,
-        ]);
+            'adopted' => false]);
 
         $response = $this->call('GET', '/api/apps/docs', [], [], [], ['REMOTE_ADDR' => APP_SHOW_CALLER_WG_IP]);
 
@@ -78,7 +79,7 @@ describe('AppShowController', function (): void {
 
     it('resolves by hostname when no app name matches', function (): void {
         $caller = createAppShowCallerNode();
-        $node = createTestAppHostNode(['role' => 'app']);
+        $node = createTestAppHostNode();
         grantAppShowAccess($caller, $node);
 
         App::factory()->create(['name' => 'docs', 'node_id' => $node->id, 'domain' => 'docs.example.com']);
@@ -91,7 +92,7 @@ describe('AppShowController', function (): void {
 
     it('prefers app name over hostname collisions', function (): void {
         $caller = createAppShowCallerNode();
-        $node = createTestAppHostNode(['role' => 'app']);
+        $node = createTestAppHostNode();
         grantAppShowAccess($caller, $node);
 
         App::factory()->create(['name' => 'docs', 'node_id' => $node->id, 'domain' => 'docs.example.com']);
@@ -105,7 +106,7 @@ describe('AppShowController', function (): void {
 
     it('rejects hidden apps when the caller lacks app:read on the owning node', function (): void {
         $caller = createAppShowCallerNode();
-        $node = createTestAppHostNode(['role' => 'app']);
+        $node = createTestAppHostNode();
         grantAppShowAccess($caller, $node, ['node:read']);
         App::factory()->create(['name' => 'hidden', 'node_id' => $node->id]);
 
@@ -119,7 +120,7 @@ describe('AppShowController', function (): void {
 
     it('authorizes hostname selectors against the owning node', function (): void {
         $caller = createAppShowCallerNode();
-        $node = createTestAppHostNode(['role' => 'app']);
+        $node = createTestAppHostNode();
         grantAppShowAccess($caller, $node, ['node:read']);
         App::factory()->create(['name' => 'hidden', 'node_id' => $node->id, 'domain' => 'hidden.example.com']);
 
@@ -142,8 +143,8 @@ describe('AppShowController', function (): void {
     });
 
     it('lets gateway callers inspect any app', function (): void {
-        createAppShowCallerNode(['role' => 'gateway']);
-        $node = createTestAppHostNode(['role' => 'app']);
+        createAppShowCallerNode(role: 'gateway');
+        $node = createTestAppHostNode();
         App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
 
         $response = $this->call('GET', '/api/apps/docs', [], [], [], ['REMOTE_ADDR' => APP_SHOW_CALLER_WG_IP]);

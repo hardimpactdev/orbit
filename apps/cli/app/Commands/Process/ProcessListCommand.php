@@ -12,11 +12,13 @@ final class ProcessListCommand extends GatewayCommand
 {
     use ResolvesHostContext;
 
+    #[\Override]
     protected $signature = 'process:list
         {--app= : Parent app slug}
         {--workspace= : Workspace name}
         {--json}';
 
+    #[\Override]
     protected $description = 'List configured app processes.';
 
     public function handle(): int

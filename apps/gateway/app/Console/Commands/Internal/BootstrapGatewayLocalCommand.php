@@ -63,8 +63,6 @@ class BootstrapGatewayLocalCommand extends Command
             $gateway = Node::query()->updateOrCreate(
                 ['name' => $name],
                 [
-                    'role' => 'gateway',
-                    'environment' => null,
                     'tld' => $gatewayTld,
                     'platform' => 'unknown',
                     'host' => $wireguardAddress,
@@ -121,8 +119,6 @@ class BootstrapGatewayLocalCommand extends Command
             $control = Node::query()->updateOrCreate(
                 ['name' => $identity['control']['name']],
                 [
-                    'role' => 'control',
-                    'environment' => null,
                     'tld' => null,
                     'platform' => 'unknown',
                     'host' => $identity['control']['wireguard_address'],

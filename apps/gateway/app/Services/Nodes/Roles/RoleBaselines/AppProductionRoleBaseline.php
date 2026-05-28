@@ -22,15 +22,15 @@ class AppProductionRoleBaseline implements RoleBaseline
     public function converge(Node $node, NodeRoleAssignment $assignment): void
     {
         if ($this->nodeRoleAssignments()->nodeIsGateway($node)) {
-            throw new RuntimeException('The app-production role cannot be assigned to a gateway node.');
+            throw new RuntimeException('The app-prod role cannot be assigned to a gateway node.');
         }
 
         if (! str_starts_with((string) $node->platform, 'ubuntu')) {
-            throw new RuntimeException('The app-production role requires an Ubuntu host.');
+            throw new RuntimeException('The app-prod role requires an Ubuntu host.');
         }
 
         if (! is_string($node->host) || trim($node->host) === '') {
-            throw new RuntimeException('The app-production role requires a reachable host record.');
+            throw new RuntimeException('The app-prod role requires a reachable host record.');
         }
 
         $this->convergeTools($node, ['caddy', 'php', 'supervisor']);

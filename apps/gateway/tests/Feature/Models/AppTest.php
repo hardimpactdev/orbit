@@ -13,13 +13,11 @@ describe('App model', function (): void {
     it('persists the canonical app registry fields', function (): void {
         $node = Node::factory()->create([
             'name' => 'app-1',
-            'role' => 'app',
         ]);
 
         $app = App::query()->create([
             'name' => 'docs',
             'node_id' => $node->id,
-            'environment' => 'production',
             'domain' => 'docs.example.com',
             'path' => '/home/orbit/apps/docs',
             'document_root' => 'public',
@@ -33,7 +31,7 @@ describe('App model', function (): void {
         expect($app->name)->toBe('docs')
             ->and($app->node)->toBeInstanceOf(Node::class)
             ->and($app->node->is($node))->toBeTrue()
-            ->and($app->environment)->toBe('production')
+            ->and($app->environment)->toBe('development')
             ->and($app->url())->toBe('https://docs.example.com')
             ->and($app->documentRootPath())->toBe('/home/orbit/apps/docs/public')
             ->and($app->repository)->toBe('git@github.com:orbit/docs.git')
@@ -44,7 +42,6 @@ describe('App model', function (): void {
     it('defaults optional registry fields for a development app', function (): void {
         $node = Node::factory()->create([
             'name' => 'dev-1',
-            'role' => 'app',
             'tld' => 'test',
         ]);
 

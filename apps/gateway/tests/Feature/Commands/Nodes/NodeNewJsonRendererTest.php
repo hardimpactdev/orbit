@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Models\Node;
+use App\Models\NodeRoleAssignment;
 use App\Models\WireGuardPeer;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
@@ -15,10 +16,15 @@ it('emits the documented operator-node enrollment next steps', function (): void
 
     $gateway = Node::factory()->create([
         'name' => 'gateway-1',
-        'role' => 'gateway',
+
         'host' => '10.6.0.2',
         'wireguard_address' => '10.6.0.2',
         'gateway_endpoint' => 'gateway.example.com',
+        'status' => 'active',
+    ]);
+
+    NodeRoleAssignment::factory()->for($gateway)->create([
+        'role' => 'gateway',
         'status' => 'active',
     ]);
 
@@ -37,7 +43,7 @@ it('emits the documented operator-node enrollment next steps', function (): void
 
     $exitCode = Artisan::call('node:new', [
         'name' => 'control-2',
-        '--role' => 'control',
+        '--operator' => true,
         '--json' => true,
     ]);
 

@@ -24,22 +24,19 @@ function createToolUpdateLocalNode(string $role = 'gateway'): Node
 {
     return Node::factory()->create([
         'name' => "local-{$role}",
-        'role' => $role,
         'host' => '10.6.0.1',
-        'wireguard_address' => '10.6.0.1',
-    ]);
+        'wireguard_address' => '10.6.0.1']);
 }
 
 describe('tool:update command contract', function (): void {
     it('updates a managed tool on a node', function (): void {
         createToolUpdateLocalNode('gateway');
-        $node = createTestAppHostNode(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        $node = createTestAppHostNode(['name' => 'app-1', 'status' => 'active']);
         NodeTool::factory()->create([
             'node_id' => $node->id,
             'name' => 'redis',
             'expected_state' => 'running',
-            'expected_version' => '6.0',
-        ]);
+            'expected_version' => '6.0']);
         $shell = new ToolUpdateRecordingShell;
         app()->instance(RemoteShell::class, $shell);
 
@@ -49,8 +46,7 @@ describe('tool:update command contract', function (): void {
         expect($exitCode)->toBe(0)
             ->and($payload['success']['data']['tool'])->toMatchArray([
                 'name' => 'redis',
-                'node' => 'app-1',
-            ])
+                'node' => 'app-1'])
             ->and($shell->scripts)->toHaveCount(1)
             ->and($shell->scripts[0])->toContain('docker compose')
             ->and($shell->scripts[0])->toContain('pull')
@@ -59,12 +55,11 @@ describe('tool:update command contract', function (): void {
 
     it('updates polyscope-server through its standalone updater', function (): void {
         createToolUpdateLocalNode('gateway');
-        $node = createTestAppHostNode(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        $node = createTestAppHostNode(['name' => 'app-1', 'status' => 'active']);
         NodeTool::factory()->create([
             'node_id' => $node->id,
             'name' => 'polyscope-server',
-            'expected_state' => 'running',
-        ]);
+            'expected_state' => 'running']);
         $shell = new ToolUpdateRecordingShell;
         app()->instance(RemoteShell::class, $shell);
 
@@ -74,8 +69,7 @@ describe('tool:update command contract', function (): void {
         expect($exitCode)->toBe(0)
             ->and($payload['success']['data']['tool'])->toMatchArray([
                 'name' => 'polyscope-server',
-                'node' => 'app-1',
-            ])
+                'node' => 'app-1'])
             ->and($shell->scripts)->toHaveCount(1)
             ->and($shell->scripts[0])->toContain('"${home}/.local/bin/polyscope-server" update')
             ->and($shell->scripts[0])->toContain('systemctl --user restart polyscope-server');
@@ -83,12 +77,11 @@ describe('tool:update command contract', function (): void {
 
     it('updates opencode-server through its native upgrade command', function (): void {
         createToolUpdateLocalNode('gateway');
-        $node = createTestAppHostNode(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        $node = createTestAppHostNode(['name' => 'app-1', 'status' => 'active']);
         NodeTool::factory()->create([
             'node_id' => $node->id,
             'name' => 'opencode-server',
-            'expected_state' => 'running',
-        ]);
+            'expected_state' => 'running']);
         $shell = new ToolUpdateRecordingShell;
         app()->instance(RemoteShell::class, $shell);
 
@@ -98,8 +91,7 @@ describe('tool:update command contract', function (): void {
         expect($exitCode)->toBe(0)
             ->and($payload['success']['data']['tool'])->toMatchArray([
                 'name' => 'opencode-server',
-                'node' => 'app-1',
-            ])
+                'node' => 'app-1'])
             ->and($shell->scripts)->toHaveCount(1)
             ->and($shell->scripts[0])->toContain('"${home}/.opencode/bin/opencode" upgrade')
             ->and($shell->scripts[0])->toContain('systemctl --user restart opencode-server')
@@ -108,12 +100,11 @@ describe('tool:update command contract', function (): void {
 
     it('rejects tools without an update action', function (): void {
         createToolUpdateLocalNode('gateway');
-        $node = createTestAppHostNode(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        $node = createTestAppHostNode(['name' => 'app-1', 'status' => 'active']);
         NodeTool::factory()->create([
             'node_id' => $node->id,
             'name' => 'docker',
-            'expected_state' => 'running',
-        ]);
+            'expected_state' => 'running']);
         $shell = new ToolUpdateRecordingShell;
         app()->instance(RemoteShell::class, $shell);
 
@@ -124,20 +115,18 @@ describe('tool:update command contract', function (): void {
             ->and($payload['error']['code'])->toBe('tool.unsupported_action')
             ->and($payload['error']['meta'])->toMatchArray([
                 'tool' => 'docker',
-                'action' => 'update',
-            ])
+                'action' => 'update'])
             ->and($shell->scripts)->toBe([]);
     });
 
     it('updates expected version when specified', function (): void {
         createToolUpdateLocalNode('gateway');
-        $node = createTestAppHostNode(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        $node = createTestAppHostNode(['name' => 'app-1', 'status' => 'active']);
         $tool = NodeTool::factory()->create([
             'node_id' => $node->id,
             'name' => 'redis',
             'expected_state' => 'running',
-            'expected_version' => '6.0',
-        ]);
+            'expected_version' => '6.0']);
         $shell = new ToolUpdateRecordingShell;
         app()->instance(RemoteShell::class, $shell);
 
@@ -151,13 +140,12 @@ describe('tool:update command contract', function (): void {
 
     it('keeps requested version intent when remote update fails', function (): void {
         createToolUpdateLocalNode('gateway');
-        $node = createTestAppHostNode(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        $node = createTestAppHostNode(['name' => 'app-1', 'status' => 'active']);
         $tool = NodeTool::factory()->create([
             'node_id' => $node->id,
             'name' => 'redis',
             'expected_state' => 'running',
-            'expected_version' => '6.0',
-        ]);
+            'expected_version' => '6.0']);
         $shell = new ToolUpdateRecordingShell(exitCode: 42, stderr: 'pull failed');
         app()->instance(RemoteShell::class, $shell);
 
@@ -176,8 +164,7 @@ describe('tool:update command contract', function (): void {
 
         LocalGatewaySettings::current()->fill([
             'gateway_url' => 'https://10.6.0.1',
-            'ca_pem_path' => '/dev/null',
-        ])->save();
+            'ca_pem_path' => '/dev/null'])->save();
 
         MockClient::global([
             UpdateToolRequest::class => MockResponse::make([
@@ -186,13 +173,8 @@ describe('tool:update command contract', function (): void {
                         'tool' => [
                             'name' => 'redis',
                             'node' => 'app-1',
-                            'version' => '7.0',
-                        ],
-                    ],
-                    'meta' => [],
-                ],
-            ], 200),
-        ]);
+                            'version' => '7.0']],
+                    'meta' => []]], 200)]);
 
         $exitCode = Artisan::call('tool:update', ['tool' => 'redis', '--node' => 'app-1', '--json' => true]);
         $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
@@ -203,18 +185,16 @@ describe('tool:update command contract', function (): void {
 
     it('bulk updates skip tools without a latest supported version', function (): void {
         createToolUpdateLocalNode('gateway');
-        $node = createTestAppHostNode(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        $node = createTestAppHostNode(['name' => 'app-1', 'status' => 'active']);
         NodeTool::factory()->create([
             'node_id' => $node->id,
             'name' => 'redis',
             'expected_state' => 'running',
-            'expected_version' => '6.0',
-        ]);
+            'expected_version' => '6.0']);
         NodeTool::factory()->create([
             'node_id' => $node->id,
             'name' => 'docker',
-            'expected_state' => 'running',
-        ]);
+            'expected_state' => 'running']);
         $shell = new ToolUpdateRecordingShell;
         app()->instance(RemoteShell::class, $shell);
 
@@ -235,8 +215,7 @@ describe('tool:update command contract', function (): void {
 
         LocalGatewaySettings::current()->fill([
             'gateway_url' => 'https://10.6.0.1',
-            'ca_pem_path' => '/dev/null',
-        ])->save();
+            'ca_pem_path' => '/dev/null'])->save();
 
         MockClient::global([
             UpdateToolsBulkRequest::class => MockResponse::make([
@@ -244,14 +223,9 @@ describe('tool:update command contract', function (): void {
                     'data' => [
                         'updated' => [],
                         'skipped' => [
-                            ['tool' => 'redis', 'node' => 'app-1', 'reason' => 'null_latest_version'],
-                        ],
-                        'failed' => [],
-                    ],
-                    'meta' => [],
-                ],
-            ], 200),
-        ]);
+                            ['tool' => 'redis', 'node' => 'app-1', 'reason' => 'null_latest_version']],
+                        'failed' => []],
+                    'meta' => []]], 200)]);
 
         $exitCode = Artisan::call('tool:update', ['--node' => 'app-1', '--json' => true]);
         $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);

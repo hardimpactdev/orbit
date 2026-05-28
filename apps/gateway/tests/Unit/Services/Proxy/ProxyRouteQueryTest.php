@@ -171,7 +171,7 @@ describe('ProxyRouteQuery', function (): void {
     });
 
     it('filters by visible serving node and rejects unknown node scope', function (): void {
-        $caller = Node::factory()->create(['role' => 'app']);
+        $caller = Node::factory()->appDev()->create();
         $visibleNode = Node::factory()->create(['name' => 'visible-node']);
         $hiddenNode = Node::factory()->create(['name' => 'hidden-node']);
         grantProxyRouteQueryAccess($caller, $visibleNode);
@@ -189,7 +189,7 @@ describe('ProxyRouteQuery', function (): void {
     })->throws(GatewayApiException::class, "Unknown node: 'hidden-node'.");
 
     it('fails authorization when app callers have no route visibility', function (): void {
-        $caller = Node::factory()->create(['role' => 'app']);
+        $caller = Node::factory()->appDev()->create();
 
         app(ProxyRouteQuery::class)->list(caller: $caller);
     })->throws(GatewayApiException::class, 'This node is not authorized to read the proxy route registry.');

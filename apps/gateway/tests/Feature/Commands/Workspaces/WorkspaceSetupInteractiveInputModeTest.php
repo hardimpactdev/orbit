@@ -23,7 +23,6 @@ beforeEach(function (): void {
 it('prompts for missing --app in interactive mode when name and app are both absent and cwd resolves the workspace', function (): void {
     Node::factory()->create([
         'name' => 'gateway-1',
-        'role' => 'gateway',
         'host' => '10.6.0.1',
         'orbit_path' => '/home/orbit/orbit',
         'status' => 'active',
@@ -31,7 +30,6 @@ it('prompts for missing --app in interactive mode when name and app are both abs
 
     $node = Node::factory()->create([
         'name' => 'app-1',
-        'role' => 'app',
         'host' => '10.6.0.7',
         'tld' => 'test',
         'orbit_path' => '/home/orbit/orbit',
@@ -43,7 +41,6 @@ it('prompts for missing --app in interactive mode when name and app are both abs
         'node_id' => $node->id,
         'path' => '/srv/docs',
         'document_root' => 'public',
-        'environment' => 'development',
     ]);
 
     $cwd = sys_get_temp_dir().'/orbit-ws-setup-'.bin2hex(random_bytes(4));
@@ -73,7 +70,6 @@ it('prompts for missing --app in interactive mode when name and app are both abs
 it('does not prompt for --app when it is supplied', function (): void {
     Node::factory()->create([
         'name' => 'gateway-1',
-        'role' => 'gateway',
         'host' => '10.6.0.1',
         'orbit_path' => '/home/orbit/orbit',
         'status' => 'active',
@@ -81,7 +77,6 @@ it('does not prompt for --app when it is supplied', function (): void {
 
     $node = Node::factory()->create([
         'name' => 'app-1',
-        'role' => 'app',
         'host' => '10.6.0.7',
         'tld' => 'test',
         'orbit_path' => '/home/orbit/orbit',
@@ -93,7 +88,6 @@ it('does not prompt for --app when it is supplied', function (): void {
         'node_id' => $node->id,
         'path' => '/srv/docs',
         'document_root' => 'public',
-        'environment' => 'development',
     ]);
 
     Workspace::factory()->create([
@@ -114,7 +108,6 @@ it('does not prompt for --app when it is supplied', function (): void {
 it('does not prompt when --json is set and fails instead', function (): void {
     Node::factory()->create([
         'name' => 'gateway-1',
-        'role' => 'gateway',
         'host' => '10.6.0.1',
         'orbit_path' => '/home/orbit/orbit',
         'status' => 'active',
@@ -122,7 +115,6 @@ it('does not prompt when --json is set and fails instead', function (): void {
 
     $node = Node::factory()->create([
         'name' => 'app-1',
-        'role' => 'app',
         'host' => '10.6.0.7',
         'tld' => 'test',
         'orbit_path' => '/home/orbit/orbit',
@@ -134,7 +126,6 @@ it('does not prompt when --json is set and fails instead', function (): void {
         'node_id' => $node->id,
         'path' => '/srv/docs',
         'document_root' => 'public',
-        'environment' => 'development',
     ]);
 
     // --app not supplied, --json set, no CWD match → resolver fails (no prompt fired)

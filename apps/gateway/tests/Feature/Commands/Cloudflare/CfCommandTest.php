@@ -6,6 +6,7 @@ use App\Http\Gateway\Requests\Cloudflare\CloudflareRequest;
 use App\Models\App;
 use App\Models\LocalGatewaySettings;
 use App\Models\Node;
+use App\Models\NodeRoleAssignment;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Artisan;
@@ -31,13 +32,23 @@ afterEach(function (): void {
 
 function createCloudflareLocalNode(string $role = 'gateway'): Node
 {
-    return Node::factory()->create([
+    $node = Node::factory()->create([
         'name' => "local-{$role}",
-        'role' => $role,
         'host' => '10.6.0.1',
         'wireguard_address' => '10.6.0.1',
         'platform' => 'ubuntu',
     ]);
+
+    if ($role === 'gateway') {
+        NodeRoleAssignment::factory()->create([
+            'node_id' => $node->id,
+            'role' => 'gateway',
+            'status' => 'active',
+            'settings' => [],
+        ]);
+    }
+
+    return $node;
 }
 
 /**
@@ -305,7 +316,7 @@ it('removes address DNS records with force', function (): void {
 
 it('flushes cache, manages cache rules, and updates SSL settings', function (): void {
     createCloudflareLocalNode();
-    $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'platform' => 'ubuntu']);
+    $node = Node::factory()->appDev()->create(['name' => 'app-1', 'platform' => 'ubuntu']);
     App::factory()->create([
         'name' => 'lindaretel',
         'node_id' => $node->id,

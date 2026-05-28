@@ -32,18 +32,16 @@ beforeEach(function (): void {
 
 const DOCTOR_RUN_CALLER_WG_IP = '10.6.0.94';
 
-function createDoctorRunCallerNode(array $overrides = []): Node
+function createDoctorRunCallerNode(array $overrides = [], string $role = 'gateway'): Node
 {
     $attributes = array_merge([
         'name' => 'caller',
-        'role' => 'gateway',
         'host' => DOCTOR_RUN_CALLER_WG_IP,
         'wireguard_address' => DOCTOR_RUN_CALLER_WG_IP,
-        'platform' => 'ubuntu',
-    ], $overrides);
+        'platform' => 'ubuntu'], $overrides);
 
-    return match ($attributes['role']) {
-        'app' => createTestAppHostNode($attributes),
+    return match ($role) {
+        'app-dev' => createTestAppHostNode($attributes),
         'gateway' => createTestGatewayNode($attributes),
         default => Node::factory()->create($attributes),
     };
@@ -54,8 +52,7 @@ describe('DoctorRunController', function (): void {
         createDoctorRunCallerNode(['platform' => 'linux']);
         $response = $this->call('POST', '/api/doctor/run', [
             'families' => ['node'],
-            'mode' => 'verify',
-        ], [], [], ['REMOTE_ADDR' => DOCTOR_RUN_CALLER_WG_IP]);
+            'mode' => 'verify'], [], [], ['REMOTE_ADDR' => DOCTOR_RUN_CALLER_WG_IP]);
 
         $response->assertOk()
             ->assertJsonPath('success.data.doctor.healthy', true)
@@ -64,14 +61,13 @@ describe('DoctorRunController', function (): void {
 
     it('accepts the proxy family scope when targeting an app node', function (): void {
         createDoctorRunCallerNode(['platform' => 'linux']);
-        createTestAppHostNode(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        createTestAppHostNode(['name' => 'app-1', 'status' => 'active']);
         app()->instance(RemoteShell::class, new DoctorRunRemoteShell(perRouteStdout: '', nodeLevelStdout: ''));
 
         $response = $this->call('POST', '/api/doctor/run', [
             'families' => ['proxy'],
             'mode' => 'verify',
-            'node' => 'app-1',
-        ], [], [], ['REMOTE_ADDR' => DOCTOR_RUN_CALLER_WG_IP]);
+            'node' => 'app-1'], [], [], ['REMOTE_ADDR' => DOCTOR_RUN_CALLER_WG_IP]);
 
         $response->assertOk()
             ->assertJsonPath('success.data.doctor.healthy', true)
@@ -81,18 +77,15 @@ describe('DoctorRunController', function (): void {
     it('filters API verify results by exact issue key', function (): void {
         createDoctorRunCallerNode(['platform' => 'linux']);
         Node::factory()->create([
-            'name' => 'legacy-app',
-            'role' => 'app',
+            'name' => 'incomplete-app',
             'status' => 'active',
             'platform' => null,
-            'wireguard_address' => null,
-        ]);
+            'wireguard_address' => null]);
 
         $response = $this->call('POST', '/api/doctor/run', [
             'families' => ['node'],
-            'node' => 'legacy-app',
-            'key' => 'node.record_incomplete',
-        ], [], [], ['REMOTE_ADDR' => DOCTOR_RUN_CALLER_WG_IP]);
+            'node' => 'incomplete-app',
+            'key' => 'node.record_incomplete'], [], [], ['REMOTE_ADDR' => DOCTOR_RUN_CALLER_WG_IP]);
 
         $response->assertOk()
             ->assertJsonPath('success.data.doctor.scope.key', 'node.record_incomplete')
@@ -108,15 +101,14 @@ describe('DoctorRunController', function (): void {
 
     it('restores firewall drift through the doctor fix endpoint', function (): void {
         createDoctorRunCallerNode();
-        $appNode = createTestAppHostNode(['name' => 'app-1', 'role' => 'app', 'status' => 'active', 'platform' => 'ubuntu']);
+        $appNode = createTestAppHostNode(['name' => 'app-1', 'status' => 'active', 'platform' => 'ubuntu']);
         FirewallRule::factory()->create(['node_id' => $appNode->id, 'name' => 'local-vite', 'source' => '10.6.0.0/24', 'port' => '5173']);
         app()->instance(RemoteShell::class, new DoctorRunRemoteShell("Status: active\n\n     To                         Action      From\n     --                         ------      ----\n"));
 
         $response = $this->call('POST', '/api/doctor/fix', [
             'mode' => 'restore',
             'families' => ['firewall_rule'],
-            'node' => 'app-1',
-        ], [], [], ['REMOTE_ADDR' => DOCTOR_RUN_CALLER_WG_IP]);
+            'node' => 'app-1'], [], [], ['REMOTE_ADDR' => DOCTOR_RUN_CALLER_WG_IP]);
 
         $response->assertOk()
             ->assertJsonPath('success.data.doctor.mode', 'restore')
@@ -126,21 +118,19 @@ describe('DoctorRunController', function (): void {
 
     it('restores proxy drift through the doctor fix endpoint', function (): void {
         createDoctorRunCallerNode();
-        $appNode = createTestAppHostNode(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        $appNode = createTestAppHostNode(['name' => 'app-1', 'status' => 'active']);
         ProxyRoute::factory()->create([
             'node_id' => $appNode->id,
             'domain' => 'vite.docs.test',
             'owner_type' => 'custom',
             'kind' => 'proxy',
-            'config' => ['target' => ['type' => 'upstream', 'value' => 'http://127.0.0.1:5173'], 'upstream' => 'http://127.0.0.1:5173'],
-        ]);
+            'config' => ['target' => ['type' => 'upstream', 'value' => 'http://127.0.0.1:5173'], 'upstream' => 'http://127.0.0.1:5173']]);
         app()->instance(RemoteShell::class, new DoctorRunRemoteShell(perRouteStdout: "0\t\t\t\t0\t0\n", nodeLevelStdout: ''));
 
         $response = $this->call('POST', '/api/doctor/fix', [
             'mode' => 'restore',
             'families' => ['proxy'],
-            'node' => 'app-1',
-        ], [], [], ['REMOTE_ADDR' => DOCTOR_RUN_CALLER_WG_IP]);
+            'node' => 'app-1'], [], [], ['REMOTE_ADDR' => DOCTOR_RUN_CALLER_WG_IP]);
 
         $response->assertOk()
             ->assertJsonPath('success.data.doctor.mode', 'restore')
@@ -150,22 +140,20 @@ describe('DoctorRunController', function (): void {
 
     it('dry-runs API restore without applying fixers', function (): void {
         createDoctorRunCallerNode();
-        $appNode = createTestAppHostNode(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        $appNode = createTestAppHostNode(['name' => 'app-1', 'status' => 'active']);
         ProxyRoute::factory()->create([
             'node_id' => $appNode->id,
             'domain' => 'vite.docs.test',
             'owner_type' => 'custom',
             'kind' => 'proxy',
-            'config' => ['target' => ['type' => 'upstream', 'value' => 'http://127.0.0.1:5173'], 'upstream' => 'http://127.0.0.1:5173'],
-        ]);
+            'config' => ['target' => ['type' => 'upstream', 'value' => 'http://127.0.0.1:5173'], 'upstream' => 'http://127.0.0.1:5173']]);
         app()->instance(RemoteShell::class, new DoctorRunRemoteShell(perRouteStdout: "0\t\t\t\t0\t0\n", nodeLevelStdout: ''));
 
         $response = $this->call('POST', '/api/doctor/fix', [
             'mode' => 'restore',
             'families' => ['proxy'],
             'node' => 'app-1',
-            'dry_run' => true,
-        ], [], [], ['REMOTE_ADDR' => DOCTOR_RUN_CALLER_WG_IP]);
+            'dry_run' => true], [], [], ['REMOTE_ADDR' => DOCTOR_RUN_CALLER_WG_IP]);
 
         $response->assertOk()
             ->assertJsonPath('success.data.doctor.dry_run', true)
@@ -175,15 +163,14 @@ describe('DoctorRunController', function (): void {
 
     it('accepts the tool family scope and returns tool drift', function (): void {
         createDoctorRunCallerNode();
-        $appNode = createTestAppHostNode(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        $appNode = createTestAppHostNode(['name' => 'app-1', 'status' => 'active']);
         NodeTool::factory()->create(['node_id' => $appNode->id, 'name' => 'redis']);
         app()->instance(RemoteShell::class, new DoctorRunRemoteShell(perRouteStdout: '', exitCode: 1));
 
         $response = $this->call('POST', '/api/doctor/run', [
             'mode' => 'verify',
             'families' => ['tool'],
-            'node' => 'app-1',
-        ], [], [], ['REMOTE_ADDR' => DOCTOR_RUN_CALLER_WG_IP]);
+            'node' => 'app-1'], [], [], ['REMOTE_ADDR' => DOCTOR_RUN_CALLER_WG_IP]);
 
         $response->assertOk()
             ->assertJsonPath('success.data.doctor.healthy', false)
@@ -192,20 +179,18 @@ describe('DoctorRunController', function (): void {
 
     it('accepts the app family scope and returns app drift', function (): void {
         createDoctorRunCallerNode();
-        $appNode = createTestAppHostNode(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        $appNode = createTestAppHostNode(['name' => 'app-1', 'status' => 'active']);
         App::factory()->create([
             'name' => 'docs',
             'node_id' => $appNode->id,
             'path' => '/home/orbit/apps/docs',
-            'document_root' => 'public',
-        ]);
+            'document_root' => 'public']);
         app()->instance(RemoteShell::class, new DoctorRunRemoteShell("docs\t0\t0\t1\t1\t0\t0\t0\t0\t0\t0\t0\t0\t0\n"));
 
         $response = $this->call('POST', '/api/doctor/run', [
             'mode' => 'verify',
             'families' => ['app'],
-            'node' => 'app-1',
-        ], [], [], ['REMOTE_ADDR' => DOCTOR_RUN_CALLER_WG_IP]);
+            'node' => 'app-1'], [], [], ['REMOTE_ADDR' => DOCTOR_RUN_CALLER_WG_IP]);
 
         $response->assertOk()
             ->assertJsonPath('success.data.doctor.healthy', false)
@@ -215,24 +200,21 @@ describe('DoctorRunController', function (): void {
 
     it('accepts the workspace family scope and returns workspace drift', function (): void {
         createDoctorRunCallerNode();
-        $appNode = createTestAppHostNode(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        $appNode = createTestAppHostNode(['name' => 'app-1', 'status' => 'active']);
         $app = App::factory()->create([
             'name' => 'docs',
             'node_id' => $appNode->id,
-            'path' => '/home/orbit/apps/docs',
-        ]);
+            'path' => '/home/orbit/apps/docs']);
         Workspace::factory()->create([
             'app_id' => $app->id,
             'name' => 'feature',
-            'path' => '/home/orbit/apps/docs/.worktrees/feature',
-        ]);
+            'path' => '/home/orbit/apps/docs/.worktrees/feature']);
         app()->instance(RemoteShell::class, new DoctorRunRemoteShell("feature\t0\t1\t0\t0\n"));
 
         $response = $this->call('POST', '/api/doctor/run', [
             'mode' => 'verify',
             'families' => ['workspace'],
-            'node' => 'app-1',
-        ], [], [], ['REMOTE_ADDR' => DOCTOR_RUN_CALLER_WG_IP]);
+            'node' => 'app-1'], [], [], ['REMOTE_ADDR' => DOCTOR_RUN_CALLER_WG_IP]);
 
         $response->assertOk()
             ->assertJsonPath('success.data.doctor.healthy', false)
@@ -242,12 +224,11 @@ describe('DoctorRunController', function (): void {
 
     it('accepts the process family scope and returns process drift', function (): void {
         createDoctorRunCallerNode();
-        $appNode = createTestAppHostNode(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        $appNode = createTestAppHostNode(['name' => 'app-1', 'status' => 'active']);
         $app = App::factory()->create([
             'name' => 'docs',
             'node_id' => $appNode->id,
-            'path' => '/home/orbit/apps/docs',
-        ]);
+            'path' => '/home/orbit/apps/docs']);
         Process::factory()->create([
             'app_id' => $app->id,
             'name' => 'queue',
@@ -255,15 +236,13 @@ describe('DoctorRunController', function (): void {
             // supervisorctl availability layer. Docker-runtime processes
             // short-circuit the live probe until ORBIT-RUNTIME-08B wires the
             // Docker container probe path.
-            'runtime' => ProcessRuntime::Supervisor,
-        ]);
+            'runtime' => ProcessRuntime::Supervisor]);
         app()->instance(RemoteShell::class, new DoctorRunRemoteShell(perRouteStdout: '', exitCode: 1));
 
         $response = $this->call('POST', '/api/doctor/run', [
             'mode' => 'verify',
             'families' => ['process'],
-            'node' => 'app-1',
-        ], [], [], ['REMOTE_ADDR' => DOCTOR_RUN_CALLER_WG_IP]);
+            'node' => 'app-1'], [], [], ['REMOTE_ADDR' => DOCTOR_RUN_CALLER_WG_IP]);
 
         $response->assertOk()
             ->assertJsonPath('success.data.doctor.healthy', false)
@@ -273,19 +252,17 @@ describe('DoctorRunController', function (): void {
 
     it('restores tool drift through the doctor fix endpoint', function (): void {
         createDoctorRunCallerNode();
-        $appNode = createTestAppHostNode(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        $appNode = createTestAppHostNode(['name' => 'app-1', 'status' => 'active']);
         NodeTool::factory()->create([
             'node_id' => $appNode->id,
             'name' => 'caddy',
-            'expected_state' => 'running',
-        ]);
+            'expected_state' => 'running']);
         app()->instance(RemoteShell::class, new DoctorRunRemoteShell("/usr/bin/caddy\t2.8.4\tstopped\n"));
 
         $response = $this->call('POST', '/api/doctor/fix', [
             'mode' => 'restore',
             'families' => ['tool'],
-            'node' => 'app-1',
-        ], [], [], ['REMOTE_ADDR' => DOCTOR_RUN_CALLER_WG_IP]);
+            'node' => 'app-1'], [], [], ['REMOTE_ADDR' => DOCTOR_RUN_CALLER_WG_IP]);
 
         $response->assertOk()
             ->assertJsonPath('success.data.doctor.mode', 'restore')
@@ -295,21 +272,19 @@ describe('DoctorRunController', function (): void {
 
     it('accepts the schedule family scope and returns schedule health', function (): void {
         createDoctorRunCallerNode();
-        $appNode = createTestAppHostNode(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        $appNode = createTestAppHostNode(['name' => 'app-1', 'status' => 'active']);
         $app = App::factory()->create(['node_id' => $appNode->id]);
         Schedule::factory()->forApp($app)->create();
         SchedulerState::factory()->create([
             'node_id' => $appNode->id,
             'heartbeat_at' => now(),
-            'registry_synced_at' => now(),
-        ]);
+            'registry_synced_at' => now()]);
         app()->instance(RemoteShell::class, new DoctorRunRemoteShell("running\n"));
 
         $response = $this->call('POST', '/api/doctor/run', [
             'mode' => 'verify',
             'families' => ['schedule'],
-            'node' => 'app-1',
-        ], [], [], ['REMOTE_ADDR' => DOCTOR_RUN_CALLER_WG_IP]);
+            'node' => 'app-1'], [], [], ['REMOTE_ADDR' => DOCTOR_RUN_CALLER_WG_IP]);
 
         $response->assertOk()
             ->assertJsonPath('success.data.doctor.healthy', true)
@@ -317,12 +292,11 @@ describe('DoctorRunController', function (): void {
     });
 
     it('requires doctor write authority for fix mode requests', function (): void {
-        createDoctorRunCallerNode(['role' => 'app']);
+        createDoctorRunCallerNode(role: 'app-dev');
 
         $response = $this->call('POST', '/api/doctor/fix', [
             'mode' => 'adopt',
-            'families' => ['firewall_rule'],
-        ], [], [], ['REMOTE_ADDR' => DOCTOR_RUN_CALLER_WG_IP]);
+            'families' => ['firewall_rule']], [], [], ['REMOTE_ADDR' => DOCTOR_RUN_CALLER_WG_IP]);
 
         $response->assertForbidden()
             ->assertJsonPath('error.code', 'authorization_failed')
@@ -331,22 +305,19 @@ describe('DoctorRunController', function (): void {
     });
 
     it('allows app-node fix mode requests with explicit doctor authority', function (): void {
-        $caller = createDoctorRunCallerNode(['role' => 'app', 'platform' => 'linux']);
+        $caller = createDoctorRunCallerNode(['platform' => 'linux'], role: 'app-dev');
         NodeAccess::query()->updateOrCreate(
             [
                 'consumer_node_id' => $caller->id,
-                'serving_node_id' => $caller->id,
-            ],
+                'serving_node_id' => $caller->id],
             [
                 'permissions' => ['doctor:adopt'],
-                'custom_permissions' => ['doctor:adopt'],
-            ],
+                'custom_permissions' => ['doctor:adopt']],
         );
 
         $response = $this->call('POST', '/api/doctor/fix', [
             'mode' => 'adopt',
-            'families' => ['node'],
-        ], [], [], ['REMOTE_ADDR' => DOCTOR_RUN_CALLER_WG_IP]);
+            'families' => ['node']], [], [], ['REMOTE_ADDR' => DOCTOR_RUN_CALLER_WG_IP]);
 
         $response->assertOk()
             ->assertJsonPath('success.data.doctor.mode', 'adopt')

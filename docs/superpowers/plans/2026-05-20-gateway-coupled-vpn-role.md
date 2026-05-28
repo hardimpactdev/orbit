@@ -817,7 +817,7 @@
   In `NodeNewCommandTest.php`, after first gateway bootstrap, assert:
 
   ```php
-  $gatewayRoles = DB::table('node_roles')
+  $gatewayRoles = DB::table('node_role')
       ->where('node_id', $gateway->id)
       ->orderBy('role')
       ->pluck('role')
@@ -929,7 +929,7 @@
   {
       public function up(): void
       {
-          $gatewayAssignments = DB::table('node_roles')
+          $gatewayAssignments = DB::table('node_role')
               ->where('role', 'gateway')
               ->get();
 
@@ -940,7 +940,7 @@
                   continue;
               }
 
-              $exists = DB::table('node_roles')
+              $exists = DB::table('node_role')
                   ->where('node_id', $node->id)
                   ->where('role', 'vpn')
                   ->exists();
@@ -949,7 +949,7 @@
                   continue;
               }
 
-              DB::table('node_roles')->insert([
+              DB::table('node_role')->insert([
                   'node_id' => $node->id,
                   'role' => 'vpn',
                   'status' => 'active',
@@ -969,7 +969,7 @@
 
       public function down(): void
       {
-          DB::table('node_roles')->where('role', 'vpn')->delete();
+          DB::table('node_role')->where('role', 'vpn')->delete();
       }
   };
   ```

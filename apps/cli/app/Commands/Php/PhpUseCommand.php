@@ -18,6 +18,7 @@ final class PhpUseCommand extends GatewayCommand
 
     private const string DEFAULT = '8.5';
 
+    #[\Override]
     protected $signature = 'php:use
         {version? : PHP version to select}
         {--app= : App selector}
@@ -27,6 +28,7 @@ final class PhpUseCommand extends GatewayCommand
         {--cli : Select node CLI PHP default}
         {--json : Output JSON}';
 
+    #[\Override]
     protected $description = 'Select PHP runtime intent for an app, workspace, or node CLI default.';
 
     public function handle(): int

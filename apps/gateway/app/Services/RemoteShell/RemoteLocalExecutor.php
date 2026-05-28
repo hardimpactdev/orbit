@@ -10,6 +10,7 @@ use App\Enums\ActivityLogType;
 use App\Exceptions\RemoteShellFailed;
 use App\Models\Node;
 use App\Services\ActivityLogger;
+use App\Services\Operations\OperationRunRecorder;
 use App\Services\Operations\OperationTokenFactory;
 use Illuminate\Contracts\Process\InvokedProcess;
 use Illuminate\Database\Eloquent\Model;
@@ -38,6 +39,7 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor
         private LocalExecutorCommandBuilder $commands,
         private OperationTokenFactory $operationTokens,
         private ActivityLogger $activityLogger,
+        private OperationRunRecorder $operationRuns,
     ) {}
 
     /**
@@ -96,17 +98,25 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor
             operationId: $operationId,
         );
 
-        $this->logDispatching(
-            node: $node,
-            commandName: $commandName,
-            arguments: $arguments,
-            commandOptions: $commandOptions,
+        $run = $this->operationRuns->queued(
             operationId: $operationId,
-            auditLine: $dispatch['auditLine'],
-            transportOptions: $transportOptions,
+            lane: 'local',
+            internalCommand: $commandName,
+            targetNodeId: $node->getKey(),
         );
+        $this->operationRuns->running($run->id);
 
         try {
+            $this->logDispatching(
+                node: $node,
+                commandName: $commandName,
+                arguments: $arguments,
+                commandOptions: $commandOptions,
+                operationId: $operationId,
+                auditLine: $dispatch['auditLine'],
+                transportOptions: $transportOptions,
+            );
+
             $result = $this->transport->run(
                 node: $node,
                 script: $dispatch['script'],
@@ -114,6 +124,17 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor
             );
         } catch (RemoteShellFailed $exception) {
             $sanitizedResult = $this->sanitizedResult($exception->result, $dispatch['operationToken']);
+
+            $this->operationRuns->failed(
+                id: $run->id,
+                exitCode: $sanitizedResult->exitCode,
+                error: [
+                    'code' => 'remote_shell_failed',
+                    'duration_ms' => $sanitizedResult->durationMs,
+                ],
+                stdoutSummary: $this->outputSummary($sanitizedResult->stdout, $dispatch['operationToken'], (bool) ($transportOptions['redact_stdout'] ?? false)),
+                stderrSummary: $this->outputSummary($sanitizedResult->stderr, $dispatch['operationToken'], (bool) ($transportOptions['redact_stderr'] ?? false)),
+            );
 
             $this->logCompleted(
                 node: $node,
@@ -143,6 +164,15 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor
                 commandOptions: $commandOptions,
             );
 
+            $this->operationRuns->failed(
+                id: $run->id,
+                error: [
+                    'code' => 'transport_failed',
+                    'class' => $throwable::class,
+                    'message' => $redactedMessage,
+                ],
+            );
+
             $this->logTransportException(
                 node: $node,
                 commandName: $commandName,
@@ -157,6 +187,13 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor
                 code: (int) $throwable->getCode(),
             );
         }
+
+        $this->operationRuns->succeeded(
+            id: $run->id,
+            exitCode: $result->exitCode,
+            stdoutSummary: $this->outputSummary($result->stdout, $dispatch['operationToken'], (bool) ($transportOptions['redact_stdout'] ?? false)),
+            stderrSummary: $this->outputSummary($result->stderr, $dispatch['operationToken'], (bool) ($transportOptions['redact_stderr'] ?? false)),
+        );
 
         $this->logCompleted(
             node: $node,

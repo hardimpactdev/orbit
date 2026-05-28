@@ -61,7 +61,7 @@ final readonly class PhpRuntimeController implements Loggable
 
     private function canAccessNode(Node $caller, ?string $node): bool
     {
-        if ($caller->role === 'gateway') {
+        if ($caller->hasActiveRole('gateway')) {
             return true;
         }
 

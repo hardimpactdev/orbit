@@ -20,13 +20,11 @@ function nodeUpdateRow(array $overrides = []): array
 {
     return array_merge([
         'name' => 'app-1',
-        'role' => 'app',
         'host' => '10.6.0.7',
         'wireguard_address' => '10.6.0.7',
         'user' => 'nckrtl',
         'orbit_path' => '/home/nckrtl/orbit',
         'status' => 'active',
-        'environment' => 'development',
         'platform' => 'ubuntu_24-04',
         'public_ipv4' => null,
         'public_ipv6' => null,
@@ -41,9 +39,29 @@ function setupGatewayCaller(): void
 
     DB::table('nodes')->insert(nodeUpdateRow([
         'name' => 'gateway-1',
-        'role' => 'gateway',
-        'environment' => null,
     ]));
+    assignNodeUpdateRowRole('gateway-1', 'gateway');
+}
+
+/**
+ * @param  array<string, mixed>  $settings
+ */
+function assignNodeUpdateRowRole(string $nodeName, string $role, array $settings = []): void
+{
+    $nodeId = (int) DB::table('nodes')
+        ->where('name', $nodeName)
+        ->value('id');
+
+    DB::table('node_role')->insert([
+        'node_id' => $nodeId,
+        'role' => $role,
+        'status' => 'active',
+        'settings' => $settings === [] ? null : json_encode($settings, JSON_THROW_ON_ERROR),
+        'last_error' => null,
+        'converged_at' => now(),
+        'created_at' => now(),
+        'updated_at' => now(),
+    ]);
 }
 
 describe('node:update base invocation', function (): void {
@@ -53,6 +71,7 @@ describe('node:update base invocation', function (): void {
 
     it('updates a node and returns successfully', function (): void {
         DB::table('nodes')->insert(nodeUpdateRow());
+        assignNodeUpdateRowRole('app-1', 'app-dev', ['tld' => 'test']);
 
         $exitCode = Artisan::call('node:update', [
             'name' => 'app-1',
@@ -64,18 +83,17 @@ describe('node:update base invocation', function (): void {
 
     it('persists changes to the database', function (): void {
         DB::table('nodes')->insert(nodeUpdateRow());
+        assignNodeUpdateRowRole('app-1', 'app-dev', ['tld' => 'test']);
 
         Artisan::call('node:update', [
             'name' => 'app-1',
             '--host' => '10.6.0.99',
-            '--environment' => 'production',
             '--json' => true,
         ]);
 
         $node = DB::table('nodes')->where('name', 'app-1')->first();
 
-        expect($node->host)->toBe('10.6.0.99')
-            ->and($node->environment)->toBe('production');
+        expect($node->host)->toBe('10.6.0.99');
     });
 });
 
@@ -86,6 +104,7 @@ describe('node:update duplicate flag detection', function (): void {
 
     it('rejects duplicate field flags via ArgvInput', function (): void {
         DB::table('nodes')->insert(nodeUpdateRow());
+        assignNodeUpdateRowRole('app-1', 'app-dev', ['tld' => 'test']);
 
         $kernel = app(Kernel::class);
         $input = new ArgvInput(['artisan', 'node:update', 'app-1', '--host=10.6.0.99', '--host=10.6.0.100', '--json']);
@@ -113,6 +132,7 @@ describe('node:update safety', function (): void {
         Process::preventStrayProcesses();
 
         DB::table('nodes')->insert(nodeUpdateRow());
+        assignNodeUpdateRowRole('app-1', 'app-dev', ['tld' => 'test']);
 
         Artisan::call('node:update', [
             'name' => 'app-1',
@@ -125,6 +145,7 @@ describe('node:update safety', function (): void {
 
     it('makes only targeted registry mutations', function (): void {
         DB::table('nodes')->insert(nodeUpdateRow());
+        assignNodeUpdateRowRole('app-1', 'app-dev', ['tld' => 'test']);
 
         $before = (array) DB::table('nodes')->where('name', 'app-1')->first();
 
@@ -137,8 +158,7 @@ describe('node:update safety', function (): void {
         $after = (array) DB::table('nodes')->where('name', 'app-1')->first();
 
         expect($after['host'])->toBe('10.6.0.99')
-            ->and($after['environment'])->toBe($before['environment'])
-            ->and($after['role'])->toBe($before['role'])
+            ->and($after)->not->toHaveKeys(['role', 'environment'])
             ->and($after['status'])->toBe($before['status']);
     });
 });

@@ -9,8 +9,8 @@ enum NodeRoleName: string
     case Gateway = 'gateway';
     case Vpn = 'vpn';
     case Router = 'router';
-    case AppDevelopment = 'app-development';
-    case AppProduction = 'app-production';
+    case AppDevelopment = 'app-dev';
+    case AppProduction = 'app-prod';
     case Database = 'database';
     case Agent = 'agent';
     case Ingress = 'ingress';

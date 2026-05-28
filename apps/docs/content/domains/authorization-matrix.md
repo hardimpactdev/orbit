@@ -123,7 +123,7 @@ authority](../architecture.md#gateway-implicit-authority).
 | `workspace:log` | `workspace:read` | app owning node | None | `authorization_failed` | Standard missing-permission meta plus workspace run |
 | `workspace:new` | `workspace:new` | app owning node | None | `authorization_failed` | Standard missing-permission meta plus app |
 | `workspace:remove` | `workspace:remove` | workspace owning node | None | `authorization_failed` | Standard missing-permission meta plus workspace |
-| `workspace:setup` | `workspace:setup` | workspace owning node | Self-grant case for app-development and app-production nodes | `authorization_failed` | Standard missing-permission meta plus workspace/app |
+| `workspace:setup` | `workspace:setup` | workspace owning node | Self-grant case for app-dev and app-prod nodes | `authorization_failed` | Standard missing-permission meta plus workspace/app |
 | `workspace:show` | `workspace:read` | workspace owning node | None | `authorization_failed` | Standard missing-permission meta plus workspace |
 | `workspace-setup-step:add` | `workspace:setup` | app owning node | None | `authorization_failed` | Standard missing-permission meta plus app |
 | `workspace-setup-step:list` | `workspace:read` | app owning node | None | `authorization_failed` | Standard missing-permission meta plus app |
@@ -145,7 +145,7 @@ with the required permission. The commands below are deliberate exceptions.
 
 These paths exist before useful grants can exist:
 
-- `node:new --role=gateway` for first-gateway bootstrap.
+- `node:new --template=gateway` for first-gateway bootstrap.
 - `gateway:add` for registering a local node connection to an existing gateway.
 
 ### Local-Only Deployment Context

@@ -71,7 +71,7 @@ This command follows the shared
 
 - `dns:resolve-tld` is not the source of truth for app-role development TLDs.
 - Development DNS mappings owned by the gateway for `*.nodes.tld` are created by
-  `node:new --role=app-dev` and repaired by
+  `node:new --template=app-development` and repaired by
   `doctor --family=node --restore`.
 - This command must not write gateway configuration, node records, app routes, proxy
   routes, Cloudflare records, or public DNS.

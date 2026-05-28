@@ -12,12 +12,10 @@ uses(RefreshDatabase::class);
 beforeEach(function (): void {
     createTestGatewayNode([
         'name' => 'local-gateway',
-        'role' => 'gateway',
         'host' => '10.6.0.1',
         'wireguard_address' => '10.6.0.1',
-        'platform' => 'ubuntu',
-    ]);
-    createTestAppHostNode(['name' => 'app-1', 'role' => 'app', 'platform' => 'ubuntu']);
+        'platform' => 'ubuntu']);
+    createTestAppHostNode(['name' => 'app-1', 'platform' => 'ubuntu']);
 });
 
 it('prompts for rule name, node, and port in interactive mode when all are missing', function (): void {

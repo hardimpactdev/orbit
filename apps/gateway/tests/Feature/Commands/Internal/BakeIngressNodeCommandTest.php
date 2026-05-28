@@ -52,8 +52,7 @@ describe('orbit:internal:bake-ingress-node', function (): void {
             ->where('role', NodeRoleName::Ingress->value)
             ->first();
 
-        expect($node->role)->toBe('control')
-            ->and($node->host)->toBe('ingress')
+        expect($node->host)->toBe('ingress')
             ->and($node->wireguard_address)->toBe('10.6.0.7')
             ->and($node->gateway_endpoint)->toBe('10.6.0.2')
             ->and($node->user)->toBe('orbit')

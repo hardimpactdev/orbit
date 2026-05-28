@@ -8,6 +8,7 @@ use App\Exceptions\GatewayApiException;
 
 final class AppRegisterCommand extends AppGatewayCommand
 {
+    #[\Override]
     protected $signature = 'app:register
         {name? : App name}
         {--node= : Target app node}
@@ -17,6 +18,7 @@ final class AppRegisterCommand extends AppGatewayCommand
         {--domain= : Production domain}
         {--json : Output JSON}';
 
+    #[\Override]
     protected $description = 'Register or re-apply Orbit management for an app.';
 
     public function handle(): int

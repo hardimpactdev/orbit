@@ -10,6 +10,7 @@ use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Services\ActivityLogCorrelation;
 use App\Services\ActivityLogger;
+use App\Services\Operations\OperationRunRecorder;
 use App\Services\Operations\OperationTokenFactory;
 use App\Services\RemoteShell\LocalExecutorCommandBuilder;
 use App\Services\RemoteShell\RemoteExecutor;
@@ -118,7 +119,6 @@ it('does not leak Polyscope api tokens from config lookup output into workspace 
         fn (): RemoteShellResult => new RemoteShellResult(
             exitCode: 1,
             stdout: json_encode([
-                'ok' => false,
                 'error' => [
                     'code' => 'adapter_database_missing',
                     'message' => 'Workspace adapter database does not exist.',
@@ -149,7 +149,6 @@ it('treats Polyscope config lookup error messages as untrusted remote output', f
     $transport = new PolyscopeWorkspaceDriverTransport(new RemoteShellResult(
         exitCode: 1,
         stdout: json_encode([
-            'ok' => false,
             'error' => [
                 'code' => 'some_code',
                 'message' => "leak: {$secret}",
@@ -192,6 +191,7 @@ function polyscopeWorkspaceDriverExecutor(PolyscopeWorkspaceDriverTransport $tra
             clock: static fn (): int => 1_798_105_200,
         ),
         activityLogger: new ActivityLogger(new ActivityLogCorrelation),
+        operationRuns: app(OperationRunRecorder::class),
     );
 }
 

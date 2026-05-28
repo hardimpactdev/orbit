@@ -10,12 +10,14 @@ use function Laravel\Prompts\confirm;
 
 final class AppAgentIdeCommand extends AppGatewayCommand
 {
+    #[\Override]
     protected $signature = 'app:agent-ide
         {app? : App name or hostname}
         {agent_ide? : Agent IDE adapter (opencode, polyscope, inherit, or none)}
         {--force : Confirm destructive workspace cleanup without prompting}
         {--json : Output JSON}';
 
+    #[\Override]
     protected $description = 'Set the default agent IDE for an app.';
 
     public function handle(): int

@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\Ca;
 
-use App\Models\Node;
+use App\Services\Nodes\Roles\NodeRoleAssignments;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Process;
 use RuntimeException;
@@ -196,16 +196,13 @@ readonly class OrbitCaService
         $caDir = $this->caDir();
 
         if (! File::exists("{$caDir}/root.crt") || ! File::exists("{$caDir}/root.key")) {
-            throw new RuntimeException('Orbit root CA is not bootstrapped; run `orbit node:new --role=gateway`.');
+            throw new RuntimeException('Orbit root CA is not bootstrapped; run `orbit node:new --template=gateway`.');
         }
     }
 
     private function isLocalNodeGateway(): bool
     {
-        return Node::query()
-            ->where('role', 'gateway')
-            ->where('status', 'active')
-            ->exists();
+        return app(NodeRoleAssignments::class)->activeGatewayNodeQuery()->exists();
     }
 
     private function caDir(): string

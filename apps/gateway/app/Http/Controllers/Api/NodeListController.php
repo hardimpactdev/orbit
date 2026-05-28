@@ -6,8 +6,6 @@ namespace App\Http\Controllers\Api;
 
 use App\Contracts\Loggable;
 use App\Enums\ActivityLogType;
-use App\Enums\Nodes\NodeRoleName;
-use App\Enums\Nodes\NodeRoleStatus;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Services\Nodes\NodesDoctorSummary;
@@ -21,15 +19,26 @@ use Illuminate\Http\Request;
 
 final readonly class NodeListController implements Loggable
 {
-    private const array VALID_ROLES = ['gateway', 'vpn', 'router', 'app', 'app-development', 'app-production', 'database', 'agent', 'ingress', 'control'];
-
-    private const array VALID_ENVIRONMENTS = ['development', 'production'];
+    private const array VALID_ROLES = ['gateway', 'vpn', 'router', 'app-dev', 'app-prod', 'database', 'agent', 'ingress', 'websocket', 's3'];
 
     public function __invoke(Request $request, NodesDoctorSummary $doctorSummary): JsonResponse
     {
         $role = $request->query('role');
         $environment = $request->query('environment');
         $doctor = (bool) filter_var($request->query('doctor', false), FILTER_VALIDATE_BOOLEAN);
+
+        if ($environment !== null) {
+            return response()->json([
+                'error' => [
+                    'code' => 'validation_failed',
+                    'message' => 'Node environment filters are not supported. Filter by role instead.',
+                    'meta' => [
+                        'field' => 'environment',
+                        'reason' => 'unsupported_field',
+                    ],
+                ],
+            ], 400);
+        }
 
         if (is_string($role) && $role !== '') {
             if (! in_array($role, self::VALID_ROLES, true)) {
@@ -47,25 +56,8 @@ final readonly class NodeListController implements Loggable
             }
         }
 
-        if (is_string($environment) && $environment !== '') {
-            if (! in_array($environment, self::VALID_ENVIRONMENTS, true)) {
-                return response()->json([
-                    'error' => [
-                        'code' => 'validation_failed',
-                        'message' => "Invalid value for environment: '{$environment}'. Allowed values: ".implode(', ', self::VALID_ENVIRONMENTS).'.',
-                        'meta' => [
-                            'field' => 'environment',
-                            'value' => $environment,
-                            'allowed' => self::VALID_ENVIRONMENTS,
-                        ],
-                    ],
-                ], 400);
-            }
-        }
-
         $nodes = $this->fetchNodeModels(
             role: is_string($role) && $role !== '' ? $role : null,
-            environment: is_string($environment) && $environment !== '' ? $environment : null,
         );
 
         $success = [
@@ -88,21 +80,13 @@ final readonly class NodeListController implements Loggable
     /**
      * @return Collection<int, Node>
      */
-    private function fetchNodeModels(?string $role, ?string $environment): Collection
+    private function fetchNodeModels(?string $role): Collection
     {
         $query = Node::query()
             ->with('roleAssignments');
 
         if ($role !== null) {
             $this->applyRoleFilter($query, $role);
-        }
-
-        if ($environment !== null) {
-            $query->whereHas('roleAssignments', function ($query) use ($environment): void {
-                $query
-                    ->where('role', $environment === 'development' ? NodeRoleName::AppDevelopment->value : NodeRoleName::AppProduction->value)
-                    ->where('status', NodeRoleStatus::Active->value);
-            });
         }
 
         $assignments = app(NodeRoleAssignments::class);
@@ -126,22 +110,6 @@ final readonly class NodeListController implements Loggable
     {
         $assignments = app(NodeRoleAssignments::class);
 
-        if ($role === 'app') {
-            $query->whereIn('id', $assignments->activeAppHostNodeIds());
-
-            return;
-        }
-
-        if ($role === 'control') {
-            $assignedNodeIds = $assignments->activeAssignedNodeIds();
-
-            if ($assignedNodeIds !== []) {
-                $query->whereNotIn('id', $assignedNodeIds);
-            }
-
-            return;
-        }
-
         $query->whereIn('id', $assignments->activeNodeIdsForRole($role));
     }
 
@@ -153,9 +121,7 @@ final readonly class NodeListController implements Loggable
     {
         return $nodes->map(fn (Node $node): array => [
             'name' => $node->name,
-            'role' => $node->role,
             'host' => $node->host,
-            'environment' => app(NodeRoleAssignments::class)->activeAppHostEnvironment($node),
             'platform' => $node->platform ?? 'unknown',
             'status' => $node->status,
             'roles' => $node->roleAssignments

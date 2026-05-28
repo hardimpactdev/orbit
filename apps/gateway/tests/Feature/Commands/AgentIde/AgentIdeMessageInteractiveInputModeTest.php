@@ -13,12 +13,10 @@ uses(RefreshDatabase::class);
 beforeEach(function (): void {
     Node::factory()->create([
         'name' => 'gateway-1',
-        'role' => 'gateway',
     ]);
 
     $node = Node::factory()->create([
         'name' => 'app-1',
-        'role' => 'app',
         'status' => 'active',
         'agent_ide_config' => ['adapter' => 'opencode'],
     ]);

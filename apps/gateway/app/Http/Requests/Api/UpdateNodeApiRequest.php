@@ -7,7 +7,6 @@ namespace App\Http\Requests\Api;
 use Illuminate\Contracts\Validation\Validator as ValidationContract;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Http\Exceptions\HttpResponseException;
-use Illuminate\Validation\Rule;
 use Illuminate\Validation\Validator;
 
 class UpdateNodeApiRequest extends FormRequest
@@ -24,17 +23,18 @@ class UpdateNodeApiRequest extends FormRequest
     {
         return [
             'host' => ['sometimes', 'string', 'filled', 'max:255'],
-            'environment' => ['sometimes', 'string', Rule::in(['development', 'production'])],
             'tld' => ['sometimes', 'string', 'filled', 'regex:/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/'],
             'public_ipv4' => ['sometimes', 'string', 'filled', 'ipv4'],
             'public_ipv6' => ['sometimes', 'string', 'filled', 'ipv6'],
+            'role' => ['prohibited'],
+            'environment' => ['prohibited'],
         ];
     }
 
     public function withValidator(Validator $validator): void
     {
         $validator->after(function (Validator $validator): void {
-            if ($this->hasAny(['host', 'environment', 'tld', 'public_ipv4', 'public_ipv6'])) {
+            if ($this->hasAny(['host', 'tld', 'public_ipv4', 'public_ipv6', 'role', 'environment'])) {
                 return;
             }
 
@@ -48,7 +48,7 @@ class UpdateNodeApiRequest extends FormRequest
     public function updateFields(): array
     {
         /** @var array<string, string> $fields */
-        $fields = $this->safe()->only(['host', 'environment', 'tld', 'public_ipv4', 'public_ipv6']);
+        $fields = $this->safe()->only(['host', 'tld', 'public_ipv4', 'public_ipv6']);
 
         return $fields;
     }
@@ -72,7 +72,7 @@ class UpdateNodeApiRequest extends FormRequest
     {
         return match ($field) {
             'fields' => 'At least one field must be provided to update a node.',
-            'environment' => "Invalid value for --environment: '{$value}'. Allowed values: development, production.",
+            'role', 'environment' => "Field '{$field}' is not supported for node:update.",
             'tld' => "Invalid value for --tld: '{$value}'. TLD must be a lowercase DNS label without a leading dot.",
             'public_ipv4' => "Invalid IPv4 address: '{$value}'.",
             'public_ipv6' => "Invalid IPv6 address: '{$value}'.",
@@ -85,14 +85,6 @@ class UpdateNodeApiRequest extends FormRequest
      */
     private function metaFor(string $field, ?string $value): array
     {
-        if ($field === 'environment') {
-            return [
-                'field' => 'environment',
-                'value' => $value,
-                'allowed' => ['development', 'production'],
-            ];
-        }
-
         if (in_array($field, ['tld', 'public_ipv4', 'public_ipv6'], true)) {
             return [
                 'field' => $field,

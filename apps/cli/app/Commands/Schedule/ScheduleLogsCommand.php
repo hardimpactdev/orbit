@@ -14,6 +14,7 @@ final class ScheduleLogsCommand extends GatewayCommand
     use ResolvesHostContext;
     use ResolvesScheduleSelection;
 
+    #[\Override]
     protected $signature = 'schedule:logs
         {name? : Schedule name}
         {--app= : Filter by app scope}
@@ -22,6 +23,7 @@ final class ScheduleLogsCommand extends GatewayCommand
         {--lines=100 : Number of stdout/stderr lines}
         {--json}';
 
+    #[\Override]
     protected $description = 'Show captured output for a schedule run.';
 
     public function handle(): int

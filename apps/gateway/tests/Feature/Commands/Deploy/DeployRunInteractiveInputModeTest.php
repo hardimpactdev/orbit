@@ -58,7 +58,7 @@ beforeEach(function (): void {
 
 function makeProductionAppForRun(string $name = 'docs'): App
 {
-    $node = Node::factory()->create(['name' => 'run-app-node', 'role' => 'app']);
+    $node = Node::factory()->appProd()->create(['name' => 'run-app-node']);
 
     $app = App::factory()->create([
         'name' => $name,

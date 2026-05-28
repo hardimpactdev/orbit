@@ -19,8 +19,10 @@ final class GatewayAddCommand extends BootstrapGatewayCommand
 {
     private const string LABEL = 'orbit';
 
+    #[\Override]
     protected $signature = 'gateway:add {gateway_ip? : The WireGuard IP of the gateway} {--json}';
 
+    #[\Override]
     protected $description = 'Trust the gateway CA and register the local node connection.';
 
     public function handle(

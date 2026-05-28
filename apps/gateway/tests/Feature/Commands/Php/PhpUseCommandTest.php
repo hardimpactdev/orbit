@@ -22,7 +22,7 @@ afterEach(function (): void {
 describe('php:use command contract', function (): void {
     it('updates app PHP runtime intent on the gateway', function (): void {
         createPhpLocalNode('gateway');
-        $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app']);
+        $node = Node::factory()->appDev()->create(['name' => 'app-1']);
         createPhpTool($node, ['versions' => ['8.5', '8.4']]);
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id, 'php_version' => '8.4']);
 
@@ -50,7 +50,7 @@ describe('php:use command contract', function (): void {
 
     it('rejects app node mismatches before using another node image inventory', function (): void {
         createPhpLocalNode('gateway');
-        $appNode = Node::factory()->create(['name' => 'app-1', 'role' => 'app']);
+        $appNode = Node::factory()->appDev()->create(['name' => 'app-1']);
         NodeTool::factory()->create([
             'node_id' => $appNode->id,
             'name' => 'php',
@@ -60,7 +60,7 @@ describe('php:use command contract', function (): void {
             ],
         ]);
 
-        $imageNode = Node::factory()->create(['name' => 'image-node', 'role' => 'app']);
+        $imageNode = Node::factory()->appDev()->create(['name' => 'image-node']);
         createPhpTool($imageNode, ['versions' => ['8.5']]);
 
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id, 'php_version' => '8.4']);
@@ -86,7 +86,7 @@ describe('php:use command contract', function (): void {
 
     it('rejects workspace node mismatches before using another node image inventory', function (): void {
         createPhpLocalNode('gateway');
-        $appNode = Node::factory()->create(['name' => 'app-1', 'role' => 'app']);
+        $appNode = Node::factory()->appDev()->create(['name' => 'app-1']);
         NodeTool::factory()->create([
             'node_id' => $appNode->id,
             'name' => 'php',
@@ -96,7 +96,7 @@ describe('php:use command contract', function (): void {
             ],
         ]);
 
-        $imageNode = Node::factory()->create(['name' => 'image-node', 'role' => 'app']);
+        $imageNode = Node::factory()->appDev()->create(['name' => 'image-node']);
         createPhpTool($imageNode, ['versions' => ['8.5']]);
 
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id, 'php_version' => '8.4']);
@@ -123,7 +123,7 @@ describe('php:use command contract', function (): void {
 
     it('renders the documented human progress tree', function (): void {
         createPhpLocalNode('gateway');
-        $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app']);
+        $node = Node::factory()->appDev()->create(['name' => 'app-1']);
         createPhpTool($node, ['versions' => ['8.5', '8.4']]);
         App::factory()->create(['name' => 'docs', 'node_id' => $node->id, 'php_version' => '8.4']);
 
@@ -145,7 +145,7 @@ describe('php:use command contract', function (): void {
 
     it('updates workspace override and can restore workspace inheritance', function (): void {
         createPhpLocalNode('gateway');
-        $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app']);
+        $node = Node::factory()->appDev()->create(['name' => 'app-1']);
         createPhpTool($node, ['versions' => ['8.5', '8.4']]);
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id, 'php_version' => '8.5']);
         $workspace = Workspace::factory()->create(['name' => 'feature-docs', 'app_id' => $app->id, 'php_version' => null]);
@@ -181,7 +181,7 @@ describe('php:use command contract', function (): void {
 
     it('updates node CLI PHP default intent in the PHP tool facts', function (): void {
         createPhpLocalNode('gateway');
-        $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app']);
+        $node = Node::factory()->appDev()->create(['name' => 'app-1']);
         $tool = createPhpTool($node, ['versions' => ['8.5', '8.4'], 'cli_version' => '8.4']);
 
         $exitCode = Artisan::call('php:use', [
@@ -205,7 +205,7 @@ describe('php:use command contract', function (): void {
 
     it('rejects CLI PHP selection for versions other than 8.5', function (): void {
         createPhpLocalNode('gateway');
-        $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app']);
+        $node = Node::factory()->appDev()->create(['name' => 'app-1']);
         $tool = createPhpTool($node, ['versions' => ['8.5', '8.4'], 'cli_version' => '8.5']);
 
         $exitCode = Artisan::call('php:use', [
@@ -227,7 +227,7 @@ describe('php:use command contract', function (): void {
 
     it('rejects unsupported and missing available image versions before side effects', function (): void {
         createPhpLocalNode('gateway');
-        $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app']);
+        $node = Node::factory()->appDev()->create(['name' => 'app-1']);
         createPhpTool($node, ['versions' => ['8.5']]);
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id, 'php_version' => '8.5']);
 

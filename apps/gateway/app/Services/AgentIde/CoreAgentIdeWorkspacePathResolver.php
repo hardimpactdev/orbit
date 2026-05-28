@@ -87,11 +87,11 @@ final readonly class CoreAgentIdeWorkspacePathResolver implements AgentIdeWorksp
             throw new RuntimeException('adapter_invalid_response');
         }
 
-        if (! is_array($decoded) || ($decoded['ok'] ?? null) !== true || ! is_array($decoded['data'] ?? null)) {
+        if (! is_array($decoded) || ! is_array($decoded['success'] ?? null) || ! is_array($decoded['success']['data'] ?? null)) {
             throw new RuntimeException('adapter_invalid_response');
         }
 
-        return $decoded['data'];
+        return $decoded['success']['data'];
     }
 
     private function failureReason(RemoteShellResult $result): string

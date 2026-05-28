@@ -10,11 +10,13 @@ use Symfony\Component\Console\Output\OutputInterface;
 
 final class AppExecCommand extends AppGatewayCommand
 {
+    #[\Override]
     protected $signature = 'app:exec
         {app? : App name or hostname}
         {cmd?* : Command to run inside the app runtime container}
         {--json : Output JSON}';
 
+    #[\Override]
     protected $description = 'Run a command inside an app FrankenPHP runtime container.';
 
     public function handle(): int

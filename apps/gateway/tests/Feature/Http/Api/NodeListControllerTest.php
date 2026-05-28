@@ -29,11 +29,9 @@ function apiNodeRow(array $overrides = []): array
 {
     return array_merge([
         'name' => 'app-1',
-        'role' => 'app',
         'host' => '10.6.0.7',
         'orbit_path' => '/home/nckrtl/orbit',
         'status' => 'active',
-        'environment' => 'development',
         'tld' => 'test',
         'platform' => 'ubuntu_24-04',
         'wireguard_address' => '10.6.0.7',
@@ -46,7 +44,6 @@ function createCallerNode(): void
 {
     DB::table('nodes')->insert([
         'name' => 'caller',
-        'role' => 'control',
         'host' => CALLER_WG_IP,
         'orbit_path' => '/home/test/orbit',
         'status' => 'active',
@@ -58,7 +55,7 @@ function createCallerNode(): void
 
 function assignApiNodeRole(string $nodeName, string $role, array $settings = []): void
 {
-    DB::table('node_roles')->insert([
+    DB::table('node_role')->insert([
         'node_id' => DB::table('nodes')->where('name', $nodeName)->value('id'),
         'role' => $role,
         'status' => 'active',
@@ -102,14 +99,14 @@ describe('NodeListController', function (): void {
 
     it('lists all active nodes sorted by effective role assignment then name', function (): void {
         DB::table('nodes')->insert([
-            apiNodeRow(['name' => 'zebra-app', 'role' => 'control']),
-            apiNodeRow(['name' => 'alpha-app', 'role' => 'app']),
-            apiNodeRow(['name' => 'database-1', 'role' => 'control', 'environment' => null]),
-            apiNodeRow(['name' => 'gateway-1', 'role' => 'control', 'environment' => null]),
-            apiNodeRow(['name' => 'control-1', 'role' => 'control', 'environment' => null]),
+            apiNodeRow(['name' => 'zebra-app']),
+            apiNodeRow(['name' => 'alpha-app']),
+            apiNodeRow(['name' => 'database-1']),
+            apiNodeRow(['name' => 'gateway-1']),
+            apiNodeRow(['name' => 'control-1']),
         ]);
-        assignApiNodeRole('zebra-app', 'app-development', ['tld' => 'test']);
-        assignApiNodeRole('alpha-app', 'app-development', ['tld' => 'test']);
+        assignApiNodeRole('zebra-app', 'app-dev', ['tld' => 'test']);
+        assignApiNodeRole('alpha-app', 'app-dev', ['tld' => 'test']);
         assignApiNodeRole('database-1', 'database');
         assignApiNodeRole('gateway-1', 'gateway');
 
@@ -118,7 +115,7 @@ describe('NodeListController', function (): void {
         $response->assertOk();
         $nodes = $response->json('success.data.nodes');
         $names = array_column($nodes, 'name');
-        expect($names)->toBe(['alpha-app', 'zebra-app', 'caller', 'control-1', 'database-1', 'gateway-1']);
+        expect($names)->toBe(['alpha-app', 'zebra-app', 'database-1', 'gateway-1', 'caller', 'control-1']);
     });
 
     it('returns only caller node when no other nodes exist', function (): void {
@@ -130,13 +127,13 @@ describe('NodeListController', function (): void {
 
     it('filters nodes by role', function (): void {
         DB::table('nodes')->insert([
-            apiNodeRow(['name' => 'app-1', 'role' => 'control']),
-            apiNodeRow(['name' => 'gateway-1', 'role' => 'gateway', 'environment' => null]),
-            apiNodeRow(['name' => 'control-1', 'role' => 'control', 'environment' => null]),
+            apiNodeRow(['name' => 'app-1']),
+            apiNodeRow(['name' => 'gateway-1']),
+            apiNodeRow(['name' => 'control-1']),
         ]);
-        assignApiNodeRole('app-1', 'app-development', ['tld' => 'test']);
+        assignApiNodeRole('app-1', 'app-dev', ['tld' => 'test']);
 
-        $response = getApiNodesJson('/api/nodes?role=app', ['REMOTE_ADDR' => CALLER_WG_IP]);
+        $response = getApiNodesJson('/api/nodes?role=app-dev', ['REMOTE_ADDR' => CALLER_WG_IP]);
 
         $response->assertOk()
             ->assertJsonCount(1, 'success.data.nodes')
@@ -145,10 +142,10 @@ describe('NodeListController', function (): void {
 
     it('filters nodes by concrete role assignments', function (): void {
         DB::table('nodes')->insert([
-            apiNodeRow(['name' => 'db-1', 'role' => 'control', 'environment' => null]),
-            apiNodeRow(['name' => 'legacy-gateway', 'role' => 'gateway', 'environment' => null]),
-            apiNodeRow(['name' => 'assigned-gateway', 'role' => 'control', 'environment' => null]),
-            apiNodeRow(['name' => 'gateway-vpn', 'role' => 'gateway', 'environment' => null]),
+            apiNodeRow(['name' => 'db-1']),
+            apiNodeRow(['name' => 'plain-node']),
+            apiNodeRow(['name' => 'assigned-gateway']),
+            apiNodeRow(['name' => 'gateway-vpn']),
         ]);
         assignApiNodeRole('db-1', 'database');
         assignApiNodeRole('assigned-gateway', 'gateway');
@@ -179,19 +176,20 @@ describe('NodeListController', function (): void {
             ->assertJsonPath('success.data.nodes.0.name', 'gateway-vpn');
     });
 
-    it('filters nodes by environment', function (): void {
+    it('rejects node environment filters', function (): void {
         DB::table('nodes')->insert([
-            apiNodeRow(['name' => 'dev-app', 'environment' => 'development']),
-            apiNodeRow(['name' => 'prod-app', 'environment' => 'production']),
+            apiNodeRow(['name' => 'dev-app']),
+            apiNodeRow(['name' => 'prod-app']),
         ]);
-        assignApiNodeRole('dev-app', 'app-development', ['tld' => 'test']);
-        assignApiNodeRole('prod-app', 'app-production');
+        assignApiNodeRole('dev-app', 'app-dev', ['tld' => 'test']);
+        assignApiNodeRole('prod-app', 'app-prod');
 
         $response = getApiNodesJson('/api/nodes?environment=production', ['REMOTE_ADDR' => CALLER_WG_IP]);
 
-        $response->assertOk()
-            ->assertJsonCount(1, 'success.data.nodes')
-            ->assertJsonPath('success.data.nodes.0.name', 'prod-app');
+        $response->assertStatus(400)
+            ->assertJsonPath('error.code', 'validation_failed')
+            ->assertJsonPath('error.meta.field', 'environment')
+            ->assertJsonPath('error.meta.reason', 'unsupported_field');
     });
 
     it('returns validation error for invalid role', function (): void {
@@ -201,11 +199,11 @@ describe('NodeListController', function (): void {
             ->assertJson([
                 'error' => [
                     'code' => 'validation_failed',
-                    'message' => "Invalid value for role: 'invalid'. Allowed values: gateway, vpn, router, app, app-development, app-production, database, agent, ingress, control.",
+                    'message' => "Invalid value for role: 'invalid'. Allowed values: gateway, vpn, router, app-dev, app-prod, database, agent, ingress, websocket, s3.",
                     'meta' => [
                         'field' => 'role',
                         'value' => 'invalid',
-                        'allowed' => ['gateway', 'vpn', 'router', 'app', 'app-development', 'app-production', 'database', 'agent', 'ingress', 'control'],
+                        'allowed' => ['gateway', 'vpn', 'router', 'app-dev', 'app-prod', 'database', 'agent', 'ingress', 'websocket', 's3'],
                     ],
                 ],
             ]);
@@ -218,32 +216,30 @@ describe('NodeListController', function (): void {
             ->assertJson([
                 'error' => [
                     'code' => 'validation_failed',
-                    'message' => "Invalid value for environment: 'invalid'. Allowed values: development, production.",
+                    'message' => 'Node environment filters are not supported. Filter by role instead.',
                     'meta' => [
                         'field' => 'environment',
-                        'value' => 'invalid',
-                        'allowed' => ['development', 'production'],
+                        'reason' => 'unsupported_field',
                     ],
                 ],
             ]);
     });
 
-    it('returns null environment for non-app nodes', function (): void {
+    it('does not serialize node environment fields', function (): void {
         DB::table('nodes')->insert([
             apiNodeRow([
                 'name' => 'gateway-1',
-                'role' => 'gateway',
-                'environment' => null,
                 'platform' => 'ubuntu_24-04',
             ]),
         ]);
+        assignApiNodeRole('gateway-1', 'gateway');
 
         $response = getApiNodesJson('/api/nodes', ['REMOTE_ADDR' => CALLER_WG_IP]);
 
         $gatewayNode = collect($response->json('success.data.nodes'))
             ->first(fn (array $node): bool => $node['name'] === 'gateway-1');
 
-        expect($gatewayNode['environment'])->toBeNull();
+        expect($gatewayNode)->not->toHaveKey('environment');
     });
 
     it('defaults platform to unknown when not set', function (): void {
@@ -266,13 +262,11 @@ describe('NodeListController', function (): void {
         DB::table('nodes')->insert([
             apiNodeRow([
                 'name' => 'app-1',
-                'role' => 'app',
-                'environment' => 'development',
                 'platform' => 'ubuntu_24-04',
                 'status' => 'active',
             ]),
         ]);
-        assignApiNodeRole('app-1', 'app-development', ['tld' => 'test']);
+        assignApiNodeRole('app-1', 'app-dev', ['tld' => 'test']);
 
         $response = getApiNodesJson('/api/nodes', ['REMOTE_ADDR' => CALLER_WG_IP]);
 
@@ -281,19 +275,17 @@ describe('NodeListController', function (): void {
 
         expect($appNode)->toBe([
             'name' => 'app-1',
-            'role' => 'app',
             'host' => '10.6.0.7',
-            'environment' => 'development',
             'platform' => 'ubuntu_24-04',
             'status' => 'active',
             'roles' => [
                 [
-                    'role' => 'app-development',
+                    'role' => 'app-dev',
                     'status' => 'active',
                     'settings' => ['tld' => 'test'],
                     'last_error' => null,
                     'converged_at' => NodeRoleAssignment::query()
-                        ->where('role', 'app-development')
+                        ->where('role', 'app-dev')
                         ->where('node_id', DB::table('nodes')->where('name', 'app-1')->value('id'))
                         ->first()
                         ?->converged_at
@@ -307,8 +299,6 @@ describe('NodeListController', function (): void {
         DB::table('nodes')->insert([
             apiNodeRow([
                 'name' => 'gateway-1',
-                'role' => 'gateway',
-                'environment' => null,
                 'host' => '10.6.0.2',
                 'wireguard_address' => '10.6.0.2',
             ]),
@@ -327,7 +317,7 @@ describe('NodeListController', function (): void {
         $gatewayNode = collect($response->json('success.data.nodes'))
             ->first(fn (array $node): bool => $node['name'] === 'gateway-1');
 
-        expect($gatewayNode['role'])->toBe('gateway')
+        expect($gatewayNode)->not->toHaveKey('role')
             ->and($gatewayNode['roles'])->toHaveCount(2)
             ->and($gatewayNode['roles'][1])->toMatchArray([
                 'role' => 'vpn',
@@ -342,26 +332,22 @@ describe('NodeListController', function (): void {
             ]);
     });
 
-    it('derives serialized environment from active app role assignments', function (): void {
+    it('keeps app role environment out of node serialization', function (): void {
         DB::table('nodes')->insert([
             apiNodeRow([
                 'name' => 'control-app',
-                'role' => 'control',
-                'environment' => null,
             ]),
             apiNodeRow([
-                'name' => 'legacy-app',
-                'role' => 'app',
-                'environment' => 'development',
+                'name' => 'plain-app',
             ]),
         ]);
-        assignApiNodeRole('control-app', 'app-development', ['tld' => 'test']);
+        assignApiNodeRole('control-app', 'app-dev', ['tld' => 'test']);
 
         $response = getApiNodesJson('/api/nodes', ['REMOTE_ADDR' => CALLER_WG_IP]);
         $nodes = collect($response->json('success.data.nodes'))->keyBy('name');
 
-        expect($nodes['control-app']['environment'])->toBe('development')
-            ->and($nodes['legacy-app']['environment'])->toBeNull();
+        expect($nodes['control-app'])->not->toHaveKey('environment')
+            ->and($nodes['plain-app'])->not->toHaveKey('environment');
     });
 
     it('rejects unauthenticated requests', function (): void {
@@ -384,10 +370,10 @@ describe('NodeListController', function (): void {
                 'wireguard_address' => null,
             ]),
         ]);
-        assignApiNodeRole('incomplete-app', 'app-development', ['tld' => 'test']);
+        assignApiNodeRole('incomplete-app', 'app-dev', ['tld' => 'test']);
         markNodeSecurityBaselineClean(Node::query()->where('name', 'incomplete-app')->firstOrFail());
 
-        $response = getApiNodesJson('/api/nodes?doctor=1&role=app', ['REMOTE_ADDR' => CALLER_WG_IP]);
+        $response = getApiNodesJson('/api/nodes?doctor=1&role=app-dev', ['REMOTE_ADDR' => CALLER_WG_IP]);
 
         $response->assertOk()
             ->assertJsonPath('success.meta.doctor.checked', 1)

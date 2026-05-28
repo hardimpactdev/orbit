@@ -8,11 +8,13 @@ use App\Exceptions\GatewayApiException;
 
 final class CfCacheRuleRemoveCommand extends CloudflareGatewayCommand
 {
+    #[\Override]
     protected $signature = 'cf-cache-rule:remove
         {app? : Orbit app name}
         {--force : Confirm destructive operation without prompting}
         {--json : Output JSON}';
 
+    #[\Override]
     protected $description = 'Remove a Cloudflare cache rule for an app through the gateway.';
 
     public function handle(): int

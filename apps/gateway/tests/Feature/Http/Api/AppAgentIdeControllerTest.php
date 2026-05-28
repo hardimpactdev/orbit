@@ -7,6 +7,7 @@ use App\Contracts\RemoteShell;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Models\App;
 use App\Models\Node;
+use App\Models\NodeRoleAssignment;
 use App\Models\Workspace;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -21,20 +22,23 @@ beforeEach(function (): void {
 
 const APP_AGENT_IDE_CALLER_WG_IP = '10.6.0.98';
 
-function createAppAgentIdeCallerNode(array $overrides = []): Node
+function createAppAgentIdeCallerNode(array $overrides = [], ?string $role = null): Node
 {
-    $attributes = array_merge([
+    $node = Node::factory()->create(array_merge([
         'name' => 'caller',
-        'role' => 'control',
         'host' => APP_AGENT_IDE_CALLER_WG_IP,
         'wireguard_address' => APP_AGENT_IDE_CALLER_WG_IP,
-    ], $overrides);
+    ], $overrides));
 
-    if ($attributes['role'] === 'gateway') {
-        return createTestGatewayNode($attributes);
+    if ($role !== null) {
+        NodeRoleAssignment::factory()->create([
+            'node_id' => $node->id,
+            'role' => $role,
+            'status' => 'active',
+        ]);
     }
 
-    return Node::factory()->create($attributes);
+    return $node;
 }
 
 /**
@@ -85,9 +89,8 @@ if (! class_exists('AppAgentIdeControllerRemoteShell')) {
 describe('AppAgentIdeController', function (): void {
     it('sets an app agent IDE default for an authorized control caller', function (): void {
         $caller = createAppAgentIdeCallerNode();
-        $appNode = Node::factory()->create([
+        $appNode = Node::factory()->appDev()->create([
             'name' => 'app-1',
-            'role' => 'app',
             'agent_ide_config' => ['adapter' => 'polyscope'],
         ]);
         grantAppAgentIdeAccess($caller, $appNode);
@@ -113,10 +116,9 @@ describe('AppAgentIdeController', function (): void {
     });
 
     it('clears an app override with inherit and reports the node effective adapter', function (): void {
-        createAppAgentIdeCallerNode(['role' => 'gateway']);
-        $appNode = Node::factory()->create([
+        createAppAgentIdeCallerNode(role: 'gateway');
+        $appNode = Node::factory()->appDev()->create([
             'name' => 'app-1',
-            'role' => 'app',
             'agent_ide_config' => ['adapter' => 'polyscope'],
         ]);
 
@@ -140,9 +142,8 @@ describe('AppAgentIdeController', function (): void {
 
     it('logs activity for a successful app agent IDE write', function (): void {
         $caller = createAppAgentIdeCallerNode();
-        $appNode = Node::factory()->create([
+        $appNode = Node::factory()->appDev()->create([
             'name' => 'app-1',
-            'role' => 'app',
         ]);
         grantAppAgentIdeAccess($caller, $appNode);
 
@@ -172,9 +173,8 @@ describe('AppAgentIdeController', function (): void {
 
     it('rejects callers without app:agent before mutation', function (): void {
         $caller = createAppAgentIdeCallerNode();
-        $appNode = Node::factory()->create([
+        $appNode = Node::factory()->appDev()->create([
             'name' => 'app-1',
-            'role' => 'app',
         ]);
         grantAppAgentIdeAccess($caller, $appNode, ['app:read']);
 
@@ -196,7 +196,7 @@ describe('AppAgentIdeController', function (): void {
     });
 
     it('returns validation errors for missing and unsupported adapters', function (array $data, string $code, string $field): void {
-        createAppAgentIdeCallerNode(['role' => 'gateway']);
+        createAppAgentIdeCallerNode(role: 'gateway');
         App::factory()->create([
             'name' => 'docs',
         ]);
@@ -212,7 +212,7 @@ describe('AppAgentIdeController', function (): void {
     ]);
 
     it('requires consent for destructive workspace cleanup without force', function (): void {
-        createAppAgentIdeCallerNode(['role' => 'gateway']);
+        createAppAgentIdeCallerNode(role: 'gateway');
         $app = App::factory()->create([
             'name' => 'docs',
             'agent_ide_config' => ['adapter' => 'opencode'],
@@ -239,7 +239,7 @@ describe('AppAgentIdeController', function (): void {
     });
 
     it('prunes stale workspaces when force is true', function (): void {
-        createAppAgentIdeCallerNode(['role' => 'gateway']);
+        createAppAgentIdeCallerNode(role: 'gateway');
         $app = App::factory()->create([
             'name' => 'docs',
             'agent_ide_config' => ['adapter' => 'opencode'],

@@ -27,7 +27,7 @@ return new class extends Migration
                     ],
                     $node->role === 'app' && $node->environment === 'development' => [
                         'node_id' => $node->id,
-                        'role' => 'app-development',
+                        'role' => 'app-dev',
                         'status' => 'active',
                         'settings' => json_encode(['tld' => $node->tld], JSON_THROW_ON_ERROR),
                         'created_at' => $timestamp,
@@ -35,7 +35,7 @@ return new class extends Migration
                     ],
                     $node->role === 'app' && $node->environment === 'production' => [
                         'node_id' => $node->id,
-                        'role' => 'app-production',
+                        'role' => 'app-prod',
                         'status' => 'active',
                         'settings' => json_encode([], JSON_THROW_ON_ERROR),
                         'created_at' => $timestamp,
@@ -54,7 +54,7 @@ return new class extends Migration
                     return;
                 }
 
-                DB::table('node_roles')->insertOrIgnore($pendingAssignments);
+                DB::table('node_role')->insertOrIgnore($pendingAssignments);
 
                 $pendingAssignments = [];
             });
@@ -63,7 +63,7 @@ return new class extends Migration
             return;
         }
 
-        DB::table('node_roles')->insertOrIgnore($pendingAssignments);
+        DB::table('node_role')->insertOrIgnore($pendingAssignments);
     }
 
     public function down(): void {}

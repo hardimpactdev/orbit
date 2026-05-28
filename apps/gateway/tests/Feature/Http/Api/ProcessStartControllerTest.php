@@ -16,17 +16,16 @@ uses(RefreshDatabase::class);
 
 const PROCESS_START_CALLER_WG_IP = '10.6.0.92';
 
-function createProcessStartCallerNode(array $overrides = []): Node
+function createProcessStartCallerNode(array $overrides = [], ?string $role = null): Node
 {
     $attributes = array_merge([
         'name' => 'caller',
-        'role' => 'control',
         'host' => PROCESS_START_CALLER_WG_IP,
         'wireguard_address' => PROCESS_START_CALLER_WG_IP,
     ], $overrides);
 
-    return match ($attributes['role']) {
-        'app' => createTestAppHostNode($attributes),
+    return match ($role) {
+        'app-dev' => createTestAppHostNode($attributes),
         'gateway' => createTestGatewayNode($attributes),
         default => Node::factory()->create($attributes),
     };
@@ -47,7 +46,7 @@ function grantProcessStartAccess(Node $caller, Node $appNode): void
 describe('ProcessStartController', function (): void {
     it('starts a process for authorized control callers and records the event', function (): void {
         $caller = createProcessStartCallerNode();
-        $appNode = createTestAppHostNode(['role' => 'app']);
+        $appNode = createTestAppHostNode();
         grantProcessStartAccess($caller, $appNode);
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
         Process::factory()->create(['app_id' => $app->id, 'name' => 'vite']);
@@ -69,7 +68,7 @@ describe('ProcessStartController', function (): void {
     });
 
     it('allows an app-node caller for its own workspace context through the gateway API', function (): void {
-        $appNode = createProcessStartCallerNode(['role' => 'app']);
+        $appNode = createProcessStartCallerNode(role: 'app-dev');
         grantProcessStartAccess($appNode, $appNode);
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
         Workspace::factory()->create(['name' => 'feature-docs', 'app_id' => $app->id]);
@@ -89,8 +88,8 @@ describe('ProcessStartController', function (): void {
     });
 
     it('returns partial runtime failure data', function (): void {
-        $caller = createProcessStartCallerNode(['role' => 'gateway']);
-        $appNode = createTestAppHostNode(['role' => 'app']);
+        $caller = createProcessStartCallerNode(role: 'gateway');
+        $appNode = createTestAppHostNode();
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
         Process::factory()->create(['app_id' => $app->id, 'name' => 'vite', 'sort_order' => 10]);
         Process::factory()->create(['app_id' => $app->id, 'name' => 'queue', 'sort_order' => 20]);
@@ -113,7 +112,7 @@ describe('ProcessStartController', function (): void {
 
     it('requires authorization before runtime side effects', function (): void {
         createProcessStartCallerNode();
-        $appNode = createTestAppHostNode(['role' => 'app']);
+        $appNode = createTestAppHostNode();
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
         Process::factory()->create(['app_id' => $app->id, 'name' => 'vite']);
         $remoteShell = new ProcessStartApiRemoteShell([]);
@@ -133,8 +132,8 @@ describe('ProcessStartController', function (): void {
     });
 
     it('denies callers without a process start grant before runtime side effects', function (): void {
-        createProcessStartCallerNode(['role' => 'weird']);
-        $appNode = createTestAppHostNode(['role' => 'app']);
+        createProcessStartCallerNode();
+        $appNode = createTestAppHostNode();
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
         Process::factory()->create(['app_id' => $app->id, 'name' => 'vite']);
         $remoteShell = new ProcessStartApiRemoteShell([]);

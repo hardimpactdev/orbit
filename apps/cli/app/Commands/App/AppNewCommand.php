@@ -8,6 +8,7 @@ use Orbit\Core\Progress\ProgressEventType;
 
 final class AppNewCommand extends AppGatewayCommand
 {
+    #[\Override]
     protected $signature = 'app:new
         {name? : App name}
         {--node= : Target app node}
@@ -17,6 +18,7 @@ final class AppNewCommand extends AppGatewayCommand
         {--domain= : Production domain}
         {--json : Output JSON}';
 
+    #[\Override]
     protected $description = 'Create a new app on an app node.';
 
     public function handle(): int

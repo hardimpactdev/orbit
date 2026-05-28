@@ -7,11 +7,16 @@
 **Effects:** `read`, `write`.
 
 **Prerequisites:**
-- The command runs from a non-gateway deployment context. Gateway hosts reject
-  every sub-action before local default mutation.
+- `node:default` is a per-operator-host local-only command. It mutates only
+  `~/.config/orbit/config.json` on the invoking machine. There is no
+  gateway-side default-node store and no gateway-side `/api/nodes/default`
+  endpoint; the default is per-operator-host, not per-gateway.
+- The previous gateway-host rejection path is retired. Gateway hosts run
+  `node:default` like any other operator host: it edits the operator user's
+  local CLI config.
 - For the `choose` or `set` sub-action: the target node resolves as a visible
-  active app-development node, either from the configured gateway or from the
-  local node registry when no gateway is configured.
+  active app-dev node, validated against the configured gateway when
+  one is reachable; the stored default remains local CLI state regardless.
 - For the `show` and `clear` sub-actions: no gateway reachability or grant
   check is required; these paths read or write local CLI configuration only.
 
@@ -59,9 +64,7 @@ input:
    - For `show` and `clear`, no node target is resolved.
 3. Validate `node_default.name` immediately when the sub-action is `set` or
    `choose`.
-   - Gateway hosts fail with `validation_failed` and
-     `reason: not_supported_on_gateway`.
-   - Must resolve to a visible active app-development node.
+   - Must resolve to a visible active app-dev node.
    - Must not be a gateway, operator, or production app node.
 4. Resolve `node_default.json` from `--json`. Default `false`.
 
@@ -74,12 +77,11 @@ input:
 
 ### Choose sub-action
 
-1. Fail immediately when running on a gateway host.
-2. Query the configured gateway for visible development app nodes, or the local
+1. Query the configured gateway for visible development app nodes, or the local
    node registry when no gateway is configured.
-3. Present the visible development app nodes as choices.
-4. Store the selected node as the local default development node.
-5. Return the stored name and the `set` action. `choose` is an interactive
+2. Present the visible development app nodes as choices.
+3. Store the selected node as the local default development node.
+4. Return the stored name and the `set` action. `choose` is an interactive
    input path, not a separate persisted result action.
 
 ### Show sub-action
@@ -88,28 +90,25 @@ input:
 2. If a default is set, return the stored name.
 3. If no default is set, return the empty-state result without failure.
 
-Gateway hosts reject the show sub-action. In supported deployment contexts, no
-gateway call or grant check is required. If no default is stored and the caller
-wants to discover a default interactively, that behavior belongs to the
+No gateway call or grant check is required. If no default is stored and the
+caller wants to discover a default interactively, that behavior belongs to the
 interactive input mode contract.
 
 ### Set sub-action
 
-1. Fail immediately when running on a gateway host.
-2. Query the configured gateway for visible development app nodes, or the local
+1. Query the configured gateway for visible development app nodes, or the local
    node registry when no gateway is configured.
-3. Validate that the resolved `name` matches a visible active app-development
+2. Validate that the resolved `name` matches a visible active app-dev
    node.
-4. Store the name as the local default development node.
-5. Return the stored name and the `set` action.
+3. Store the name as the local default development node.
+4. Return the stored name and the `set` action.
 
 ### Clear sub-action
 
 1. Remove the locally stored default development node, if any.
 2. Return the clear result, indicating whether a default was previously set.
 
-Gateway hosts reject the clear sub-action. In supported deployment contexts, no
-gateway call or grant check is required for the clear sub-action.
+No gateway call or grant check is required for the clear sub-action.
 
 ### Scope Boundaries
 
@@ -134,7 +133,6 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | Mutually exclusive input | `--clear` is combined with `name`. | Failure |
 | Node not found | `set` or `choose` sub-action and the selected node does not match a visible node. | Failure |
 | Not a development node | `set` sub-action and the selected node matches a node that is not a development node. | Failure |
-| Gateway host unsupported | Any sub-action is requested on a gateway host. | Failure |
 
 The `show` and `clear` sub-actions do not perform grant checks and do not fail
 when no default is set. The `show` sub-action reports the empty state; the
@@ -159,16 +157,10 @@ because the `show` sub-action is selected instead.
 
 ## Activity Logging
 
-The gateway API endpoints emit activity entries for successful and failed
-default-node reads and writes.
-
-| Field | Value |
-| --- | --- |
-| Type | `api:GET /nodes/default` for show, `api:PUT /nodes/default` for set, and `api:DELETE /nodes/default` for clear. |
-| Effect | `read` for show; `write` for set and clear. |
-| Subject | Target development app `Node` for set when the node is resolved; `none` for show, clear, and failures before target resolution. |
-| Properties | `action` is one of `show`, `set`, or `clear`; `default_node` is the selected/stored node name for show and set, or `null` for clear and empty show results. |
-| Description | `Default node set to <name>` for set, `Default node cleared` for clear, and derived for show. |
+`node:default` is local CLI configuration. It does not write gateway activity
+rows for show, set, choose, or clear. Gateway validation calls used by choose
+or set may have their own API request telemetry, but the default-node mutation
+itself is local state under `~/.config/orbit/config.json`.
 
 ## Test Mapping
 
@@ -176,11 +168,10 @@ Primary test owners:
 
 | Path | Coverage |
 | --- | --- |
-| `apps/gateway/tests/Feature/Commands/Nodes/NodeDefaultCommandTest.php` | Command contract (see scope below). |
-| `apps/gateway/tests/Feature/Commands/Nodes/NodeDefaultOnControlNodeContractTest.php` | Configured-client contract: show and clear local-only, choose/set without identity preflight, and gateway-host rejection. |
-| `apps/gateway/tests/Feature/Commands/Nodes/NodeDefaultNonInteractiveInputModeTest.php` | Non-interactive input contract, including exact JSON validation output for mutually exclusive `name` and `--clear`. |
-| `apps/gateway/tests/Feature/Commands/Nodes/NodeDefaultJsonRendererTest.php` | JSON envelope shape, show success with default, show empty state, set success payload, clear success payload with `was_set`, every error code, and enum values. |
-| `apps/gateway/tests/Feature/Commands/Nodes/NodeDefaultHumanRendererTest.php` | Human renderer selection, choose prompt result prose, show prose, set confirmation prose, clear confirmation prose, empty-state prose, and exact error messages. |
+| `apps/cli/tests/Feature/Commands/Node/NodeDefaultCommandTest.php` | Command contract (see scope below). |
+| `apps/cli/tests/Feature/Commands/Node/NodeDefaultNonInteractiveInputModeTest.php` | Non-interactive input contract, including exact JSON validation output for mutually exclusive `name` and `--clear`. |
+| `apps/cli/tests/Feature/Commands/Node/NodeDefaultJsonRendererTest.php` | JSON envelope shape, show success with default, show empty state, set success payload, clear success payload with `was_set`, every error code, and enum values. |
+| `apps/cli/tests/Feature/Commands/Node/NodeDefaultHumanRendererTest.php` | Human renderer selection, choose prompt result prose, show prose, set confirmation prose, clear confirmation prose, empty-state prose, and exact error messages. |
 
 `NodeDefaultCommandTest` covers:
 
@@ -191,7 +182,6 @@ Primary test owners:
 - clear with and without existing default;
 - mutually exclusive input rejection;
 - gateway-unavailable failures for choose/set;
-- gateway-host rejection;
 - local write guarantee (no gateway mutation, no grant creation).
 
 Input-mode-specific test mapping lives in:

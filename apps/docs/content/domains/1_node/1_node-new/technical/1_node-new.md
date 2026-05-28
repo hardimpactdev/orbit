@@ -15,12 +15,12 @@
   operator node to the new gateway.
 - Role-specific network, platform, topology, and authorization prerequisites
   are applied as post-input path eligibility in the role companion contracts
-  once the requested role and required fields are known.
+  once the requested role set and required fields are known.
 
 ## Signature
 
 ```bash
-orbit node:new [name] [--role=<role>]... [--host=<host>] [--operator-name=<name>] [--environment=development|production] [--tld=<tld>] [--user=<user>] [--ingress=<node>] [--redis-node=<node>] [--s3-data-path=<path>] [--json]
+orbit node:new [name] [--template=<template>] [--operator] [--roles=<roles>] [--host=<host>] [--operator-name=<name>] [--tld=<tld>] [--user=<user>] [--ingress=<node>] [--redis-node=<node>] [--s3-data-path=<path>] [--json]
 ```
 
 ## Input Contract
@@ -31,34 +31,63 @@ This command follows the shared
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
 | `name` | `[name]` | Always. | Never. | None. | Valid gateway-registry node name following the [identity slug](../../../../architecture.md#identity-names) contract. Must be unique among active node records unless the existing record is compatible and the selected path is convergence or adoption. |
-| `roles` | `--role` | Never required. | Never. | `[]`. | Repeatable roles (see role values and aliases below). |
-| `host` | `--host` | First-gateway bootstrap, gateway convergence, `app-dev`, `app-prod`, `app-development`, `app-production`, `ingress`, `websocket`, or `s3`. | Client identity with no roles, or `database`-only identity. | None. | SSH/bootstrap endpoint, never the canonical node address. Must be an IP address or dotted DNS name. |
-| `operator_name` | `--operator-name` | Requested role = `gateway` and no gateway is configured locally (first-gateway bootstrap). | Outside first-gateway bootstrap. | Normalized local short hostname. | Valid [identity slug](../../../../architecture.md#identity-names). Must not equal `node_new.name`. Must be unique among active node records unless the existing record is the compatible initiating client for first-gateway convergence. |
-| `tld` | `--tld` | `app-dev` or `app-development`. | Client identity, gateway bootstrap, `database`, `app-prod`, or `app-production`. | None. | Single lowercase DNS label without a leading dot. Unique among active node TLDs and gateway development DNS mappings. |
+| `template` | `--template` | Never required. | When `--operator` is present unless `--template=operator`, or when `--roles` is present. | None. | One of `operator`, `app-development`, `app-production`, `gateway`, `ingress`, `database`, `s3`, `websocket`, or `agent`. |
+| `operator` | `--operator` | Never required. | When `--template` is present unless `--template=operator`, or when `--roles` is present. | `false`. | Creates a client identity with the operator permission preset and no workload roles. Operator is not a node role. |
+| `roles` | `--roles` | Never required. | When `--template` or `--operator` is present. | `[]`. | Comma-separated canonical role values (see role values below). |
+| `host` | `--host` | First-gateway bootstrap, gateway convergence, `app-dev`, `app-prod`, `ingress`, `agent`, `websocket`, `s3`, and every template that provisions a host. | Client identity with no roles, `--operator`, or `database`-only identity without host provisioning. | None. | SSH/bootstrap endpoint, never the canonical node address. Must be an IP address or dotted DNS name. |
+| `operator_name` | `--operator-name` | `--template=gateway` and no gateway is configured locally (first-gateway bootstrap). | Outside first-gateway bootstrap. | Normalized local short hostname. | Valid [identity slug](../../../../architecture.md#identity-names). Must not equal `node_new.name`. Must be unique among active node records unless the existing record is the compatible initiating client for first-gateway convergence. |
+| `tld` | `--tld` | `app-dev` or `app-development` template/path. | Client identity, gateway bootstrap, `database`-only identity, or `app-prod`. | None. | Single lowercase DNS label without a leading dot. Unique among active node TLDs and gateway development DNS mappings. |
 | `user` | `--user` | Never required from the operator; resolved when SSH provisioning is used. | Client identity with no host provisioning. | `root`. | Bootstrap SSH user. The gateway stores the steady-state runtime user after provisioning. |
-| `ingress_node` | `--ingress` | Private `app-production` placement. | Every path other than private `app-production` placement. | None. | Must match an active node with the `ingress` role. |
+| `ingress_node` | `--ingress` | Private `app-prod` placement. | Every path other than private `app-prod` placement. | None. | Must match an active node with the `ingress` role. |
 | `redis_node` | `--redis-node` | `websocket`. | Every path that does not include `websocket`. | None. | Must match an active node with the `database` role and Redis expected or installed. |
 | `s3_data_path` | `--s3-data-path` | Never. | Every path that does not include `s3`. | `/srv/orbit/s3/data`. | Absolute host path mounted into RustFS as `/data`. |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer and non-interactive input mode. |
 
-Canonical stored role values are `app-development`, `app-production`,
-`database`, `agent`, `ingress`, `websocket`, and `s3`. Input aliases `app-dev`
-and `app-prod` map to `app-development` and `app-production`. `gateway` is a
-bootstrap path, not a public role assignment.
+Canonical stored role values accepted through `--roles` are `app-dev`,
+`app-prod`, `database`, `agent`, `ingress`, `websocket`, and `s3`. Role
+aliases are not accepted through `--roles`; `app-development` and
+`app-production` are template names only. `gateway`, `vpn`, and `router` are
+gateway-coupled internal assignments expanded only by `--template=gateway`,
+not public role values.
+
+## Template Expansion
+
+When `--template` is supplied, the gateway expands the template to a role set
+before role validation:
+
+| Template | Expanded roles |
+| --- | --- |
+| `operator` | (none) |
+| `app-development` | `app-dev`, `database` |
+| `app-production` | `app-prod` plus colocated `ingress` or private `app-prod` with `--ingress` |
+| `gateway` | `gateway`, `vpn`, `router` |
+| `ingress` | `ingress` |
+| `database` | `database` |
+| `s3` | `s3` (implementation pending) |
+| `websocket` | `websocket` (implementation pending) |
+| `agent` | `agent` |
+
+Templates `s3` and `websocket` fail with `template_not_implemented` until
+their implementations land.
 
 ## Input Resolution
 
 1. Resolve `node_new.name` from `[name]`. Validate it immediately.
-2. Resolve all `node_new.role` values from repeatable `--role`.
-3. Normalize the requested role set before side effects.
-   - No `--role` values means a client identity with no assigned roles.
-   - `app-dev` maps to `app-development`; `app-prod` maps to
-     `app-production`.
-   - Gateway bootstrap/convergence remains the special `gateway` path.
-4. Resolve role-specific inputs.
-   - For `app-development`, resolve `node_new.host`, `node_new.tld`, and
+2. Resolve `node_new.template` from `--template` when present.
+3. Resolve `node_new.operator` from `--operator` when present.
+4. Resolve all `node_new.roles` from comma-separated `--roles` when present.
+5. Expand templates to role sets before normalization side effects.
+6. Normalize the requested role set before side effects.
+   - `--operator` or `--template=operator` means a client identity with the
+     operator preset and no workload roles.
+   - No `--roles` values and no workload-bearing template means a client identity
+     with no assigned roles.
+   - `--roles` values must already be canonical.
+   - Gateway bootstrap/convergence is selected only by `--template=gateway`.
+7. Resolve role-specific inputs.
+   - For `app-dev`, resolve `node_new.host`, `node_new.tld`, and
      `node_new.user`.
-   - For `app-production`, resolve `node_new.host`, `node_new.user`, and the
+   - For `app-prod`, resolve `node_new.host`, `node_new.user`, and the
      production placement choice.
    - For `ingress`, resolve `node_new.host` and `node_new.user`.
    - For `websocket`, resolve `node_new.host`, `node_new.user`, and
@@ -69,7 +98,7 @@ bootstrap path, not a public role assignment.
      requires provisioning.
    - For `gateway`, resolve `node_new.host` always, plus
      `node_new.operator_name` for first-gateway bootstrap.
-5. Validate required, forbidden, and path-eligibility rules as soon as the
+8. Validate required, forbidden, and path-eligibility rules as soon as the
    fields needed for each rule are known.
    - Field-local validation runs when the field is supplied or submitted.
    - Path eligibility runs immediately when the requested path can be
@@ -80,10 +109,10 @@ bootstrap path, not a public role assignment.
      affect the blocker.
 6. Send the typed request to the gateway. The gateway authenticates the
    presented WireGuard identity and applies the grant authorization rules
-   described in [`2_node-new_on-client.md`](2_node-new_on-client.md) or
+   described in [`2_node-new_on-operator-node.md`](2_node-new_on-operator-node.md) or
    [`3_node-new_on-gateway-node.md`](3_node-new_on-gateway-node.md) before any
    gateway-owned side effects. First-gateway bootstrap is the exception
-   described in [`2_node-new_on-client.md`](2_node-new_on-client.md).
+   described in [`2_node-new_on-operator-node.md`](2_node-new_on-operator-node.md).
 7. Select the output renderer and begin the side-effect flow. Renderer-specific
    progress and payload details live in the renderer contracts.
 
@@ -100,7 +129,7 @@ Input mode behavior is split out of the canonical command contract:
 
 Caller-path behavior is split out into:
 
-- [`2_node-new_on-client.md`](2_node-new_on-client.md)
+- [`2_node-new_on-operator-node.md`](2_node-new_on-operator-node.md)
 - [`3_node-new_on-gateway-node.md`](3_node-new_on-gateway-node.md)
 
 ## Behavior Contract
@@ -108,10 +137,10 @@ Caller-path behavior is split out into:
 ### Shared Registry Rules
 
 - Check the gateway registry before creating node configuration.
-- If the requested node already exists with compatible role, host,
-  environment, and node identity, converge or confirm it.
-- If the requested node exists with incompatible role, host, environment, or
-  identity, fail before destructive changes.
+- If the requested node already exists with compatible role assignments, host,
+  role-assignment settings, and node identity, converge or confirm it.
+- If the requested node exists with incompatible role assignments, host,
+  role-assignment settings, or identity, fail before destructive changes.
 
 ### Client Identity
 
@@ -146,19 +175,19 @@ Caller-path behavior is split out into:
 - Provision host-capable identities over SSH before initial role
   assignments are created.
 - Validate conflicts before side effects where possible. For example,
-  `app-development` plus `app-production` must fail before node creation or
+  `app-dev` plus `app-prod` must fail before node creation or
   provisioning.
 - Create the node identity first, then add each requested role. Role settings
-  stay minimal: `app-development` assignments store `settings.tld`,
-  `app-production` assignments store `settings.ingress_node_id`, and
+  stay minimal: `app-dev` assignments store `settings.tld`,
+  `app-prod` assignments store `settings.ingress_node_id`, and
   `websocket` assignments store `settings.redis_node_id`. `s3` assignments
   store `settings.data_path`. `database` assignments use empty settings.
-- `app-production` placement must be explicit. The command's public and
+- `app-prod` placement must be explicit. The command's public and
   companion contracts own the exact prompt, placement choices, and failure
   shape for missing ingress.
-- `database` may be combined only with `app-development`, `websocket`, and `s3`
-  on the same provisioned host; `websocket` may be combined with `app-development`,
-  `database`, and `s3`; `s3` may be combined with `app-development`,
+- `database` may be combined only with `app-dev`, `websocket`, and `s3`
+  on the same provisioned host; `websocket` may be combined with `app-dev`,
+  `database`, and `s3`; `s3` may be combined with `app-dev`,
   `database`, and `websocket`. WebSocket assignments require
   `settings.redis_node_id` to reference an active database role node with Redis
   expected or installed. Reverb runs in a Docker runtime container managed by
@@ -235,7 +264,7 @@ Emitted through the cross-cutting Loggable contract. See
 | Type | `node.created` |
 | Effect | `write` |
 | Subject | The created, enrolled, provisioned, adopted, or converged `Node` when the node record exists; otherwise `null` for early validation or authorization failures. |
-| Properties | `name` (string\|null), `role` (`gateway`\|`app`\|`operator`\|null), `environment` (`development`\|`production`\|null), `tld` (string\|null). No secrets, no raw argv, no SSH bootstrap user. |
+| Properties | `name` (string\|null), `roles` (list<string>), `tld` (string\|null), `template` (string\|null). No secrets, no raw argv, no SSH bootstrap user. |
 | Description | `derived`, for example `"Created node app-dev-1."` |
 
 The first-gateway bootstrap path can run before a gateway API activity sink is
@@ -298,5 +327,5 @@ Renderer-specific test mapping lives in:
 
 Role-specific and E2E test mapping lives in:
 
-- [`2_node-new_on-client.md`](2_node-new_on-client.md#test-mapping)
+- [`2_node-new_on-operator-node.md`](2_node-new_on-operator-node.md#test-mapping)
 - [`3_node-new_on-gateway-node.md`](3_node-new_on-gateway-node.md#test-mapping)

@@ -59,6 +59,21 @@ fields and does not prompt.
 - When the local checkout is a gateway installation, migrations may update the gateway database schema.
 - Migrations must not create or mutate fleet configuration beyond normal schema/data migrations owned by the application version.
 
+### Privilege, Version Source, And Rollback Rules
+
+- Run every step as the current OS user. `update` must not prompt for `sudo`,
+  escalate privileges, or rewrite host ownership to make the checkout writable.
+- Treat the current Git checkout as the version source. The source step uses the
+  current branch's configured remote and upstream with fast-forward-only
+  semantics; `update` does not select arbitrary release tags, channels, or
+  versions.
+- Do not perform automatic rollback. If dependency installation or migrations
+  fail after the source pull succeeds, report the failed step and leave already
+  completed local changes in place so the operator can repair and rerun the
+  update or revert manually.
+- Do not hide partial local state behind a success result. Any failed step
+  returns failure and identifies the failed step.
+
 ### Scope Boundaries
 
 `update` must not:
@@ -93,30 +108,25 @@ fields and does not prompt.
 
 ## Activity Logging
 
-The local CLI command emits an activity entry for successful and failed local
-checkout update attempts. Activity logging is best-effort and must not change
-the documented command result.
-
-| Field | Value |
-| --- | --- |
-| Type | `update` |
-| Effect | `write` |
-| Subject | `none`; the command updates the caller-local Orbit checkout, not a gateway-owned registry entity. |
-| Properties | `scope=local`, `target=local`, `status` (`completed` or `failed`), and `failed_step` when a step fails. No process output, Git output, `orbit-runtime` Composer output, migration output, environment values, or secrets. |
-| Description | derived |
+`orbit update` is a caller-local CLI command. It does not call the gateway API
+and does not emit a gateway activity entry. Local update attempts are reflected
+only in command output and exit status.
 
 ## Test Mapping
 
-Primary existing test owners:
+Primary CLI test owners:
 
 | Path | Coverage |
 | --- | --- |
-| `apps/gateway/tests/Feature/Commands/UpdateCommandTest.php` | Bootstrap implementation coverage for local update command execution. Must be expanded to cover renderer selection, JSON output, fast-forward pull failure, `orbit-runtime` dependency failure, migration failure, and no remote side effects. |
+| `apps/cli/tests/Feature/Commands/Operation/UpdateCommandTest.php` | Local update contract: step ordering, JSON success and error envelopes, human progress tree, failure prose, and checkout-unavailable handling. |
+| `apps/cli/tests/Feature/Services/Updates/LocalCheckoutUpdaterTest.php` | Step command invocation against the resolved checkout path, fast-forward pull semantics, orbit-runtime dependency install, and migration execution. |
+| `apps/cli/tests/Feature/Services/Updates/LocalUpdateWorkflowTest.php` | Ordered workflow orchestration, checkout-unavailable detection, and failed-step metadata. |
+| `apps/cli/tests/Feature/Services/Updates/CheckoutPathResolverTest.php` | Checkout path resolution from the CLI application root. |
 
-Required split contract tests:
+Legacy gateway coverage retained for bridged and historical local-update behavior:
 
 | Path | Coverage |
 | --- | --- |
-| `apps/gateway/tests/Feature/Commands/Operations/UpdateCommandTest.php` | Local update contract: no required inputs, no prompts, local-only side-effect boundary, update step ordering, success status, and handled failure status. |
-| `apps/gateway/tests/Feature/Commands/Operations/UpdateJsonRendererTest.php` | JSON renderer selection, success envelope, error envelope, `error.code` values, and failure metadata. |
-| `apps/gateway/tests/Feature/Commands/Operations/UpdateHumanRendererTest.php` | Human renderer progress tree, success output, and failure output. |
+| `apps/gateway/tests/Feature/Commands/UpdateCommandTest.php` | Gateway bootstrap implementation for local update command execution. |
+| `apps/gateway/tests/Feature/Commands/Operations/UpdateCommandTest.php` | Gateway-local update contract, renderer selection, and failure handling. |
+| `apps/gateway/tests/E2E/UpdateTest.php` | Integrated local update behavior inside the gateway topology. |

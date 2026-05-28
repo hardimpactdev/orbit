@@ -48,8 +48,6 @@ function apiStoreNodeRow(array $overrides = []): array
 {
     return array_merge([
         'name' => 'gateway-1',
-        'role' => 'gateway',
-        'environment' => null,
         'tld' => null,
         'platform' => 'unknown',
         'host' => '10.6.0.2',
@@ -88,11 +86,10 @@ function grantStoreNodeAccess(int $consumerId, int $servingId, array $permission
 }
 
 describe('NodeStoreController', function (): void {
-    it('rejects legacy gateway callers without an active gateway assignment', function (): void {
+    it('rejects gateway-named callers without an active gateway assignment', function (): void {
         DB::table('nodes')->insert([
             apiStoreNodeRow([
-                'name' => 'legacy-gateway',
-                'role' => 'gateway',
+                'name' => 'gateway-without-role',
                 'host' => '10.6.0.2',
                 'wireguard_address' => '10.6.0.2',
             ]),
@@ -105,7 +102,7 @@ describe('NodeStoreController', function (): void {
             ->withServerVariables(['REMOTE_ADDR' => '10.6.0.2'])
             ->postJson('/api/nodes', [
                 'name' => 'app-dev-1',
-                'role' => 'app-development',
+                'roles' => ['app-dev'],
                 'host' => '192.0.2.20',
                 'tld' => 'test',
             ]);
@@ -116,13 +113,12 @@ describe('NodeStoreController', function (): void {
         Process::assertRanTimes(fn (): bool => true, 0);
     });
 
-    it('rejects database callers before provisioning when the legacy role shadow is control', function (): void {
+    it('rejects database callers before provisioning', function (): void {
         $gatewayId = (int) DB::table('nodes')->insertGetId(apiStoreNodeRow());
         assignStoreNodeRole($gatewayId, 'gateway');
 
         $callerId = (int) DB::table('nodes')->insertGetId(apiStoreNodeRow([
             'name' => 'database-caller',
-            'role' => 'control',
             'host' => '10.6.0.7',
             'wireguard_address' => '10.6.0.7',
         ]));
@@ -135,7 +131,7 @@ describe('NodeStoreController', function (): void {
             ->withServerVariables(['REMOTE_ADDR' => '10.6.0.7'])
             ->postJson('/api/nodes', [
                 'name' => 'app-dev-1',
-                'role' => 'app-development',
+                'roles' => ['app-dev'],
                 'host' => '192.0.2.20',
                 'tld' => 'test',
             ]);
@@ -153,7 +149,6 @@ describe('NodeStoreController', function (): void {
     it('allows assigned gateway callers through the gateway authority path', function (): void {
         $gatewayId = (int) DB::table('nodes')->insertGetId(apiStoreNodeRow([
             'name' => 'gateway',
-            'role' => 'gateway',
         ]));
         assignStoreNodeRole($gatewayId, 'gateway');
 
@@ -164,7 +159,7 @@ describe('NodeStoreController', function (): void {
             ->withServerVariables(['REMOTE_ADDR' => '10.6.0.2'])
             ->postJson('/api/nodes', [
                 'name' => 'gateway',
-                'role' => 'app-production',
+                'roles' => ['app-prod'],
                 'host' => '192.0.2.20',
             ]);
 
@@ -180,13 +175,11 @@ describe('NodeStoreController', function (): void {
 
         $gatewayId = (int) DB::table('nodes')->insertGetId(apiStoreNodeRow([
             'name' => 'gateway',
-            'role' => 'gateway',
         ]));
         assignStoreNodeRole($gatewayId, 'gateway');
 
         $callerId = (int) DB::table('nodes')->insertGetId(apiStoreNodeRow([
             'name' => 'control-1',
-            'role' => 'control',
             'host' => '10.6.0.3',
             'wireguard_address' => '10.6.0.3',
             'gateway_endpoint' => '10.6.0.2',
@@ -202,14 +195,13 @@ describe('NodeStoreController', function (): void {
             ->withServerVariables(['REMOTE_ADDR' => '10.6.0.3'])
             ->postJson('/api/nodes', [
                 'name' => 'gateway',
-                'role' => 'app',
+                'template' => 'gateway',
                 'host' => '192.0.2.20',
-                'environment' => 'production',
             ]);
 
         $response->assertUnprocessable()
             ->assertJsonPath('error.code', 'node.incompatible')
-            ->assertJsonPath('error.message', "Node 'gateway' already exists.");
+            ->assertJsonPath('error.message', 'Existing gateway is incompatible with the requested host or identity.');
 
         Process::assertRanTimes(fn (): bool => true, 0);
     });
@@ -220,7 +212,6 @@ describe('NodeStoreController', function (): void {
 
         $callerId = (int) DB::table('nodes')->insertGetId(apiStoreNodeRow([
             'name' => 'control-1',
-            'role' => 'control',
             'host' => '10.6.0.3',
             'wireguard_address' => '10.6.0.3',
             'gateway_endpoint' => '10.6.0.2',
@@ -236,7 +227,7 @@ describe('NodeStoreController', function (): void {
             ->withServerVariables(['REMOTE_ADDR' => '10.6.0.3'])
             ->postJson('/api/nodes', [
                 'name' => 'edge-1',
-                'role' => 'ingress',
+                'roles' => ['ingress'],
                 'ingress_node' => 'other-edge-1',
                 'host' => '192.0.2.21',
             ]);
@@ -248,13 +239,12 @@ describe('NodeStoreController', function (): void {
         Process::assertRanTimes(fn (): bool => true, 0);
     });
 
-    it('rejects ingress node for colocated app-production and ingress create-node requests', function (): void {
+    it('rejects ingress node for colocated app-prod and ingress create-node requests', function (): void {
         $gatewayId = (int) DB::table('nodes')->insertGetId(apiStoreNodeRow());
         assignStoreNodeRole($gatewayId, 'gateway');
 
         $callerId = (int) DB::table('nodes')->insertGetId(apiStoreNodeRow([
             'name' => 'control-1',
-            'role' => 'control',
             'host' => '10.6.0.3',
             'wireguard_address' => '10.6.0.3',
             'gateway_endpoint' => '10.6.0.2',
@@ -270,7 +260,7 @@ describe('NodeStoreController', function (): void {
             ->withServerVariables(['REMOTE_ADDR' => '10.6.0.3'])
             ->postJson('/api/nodes', [
                 'name' => 'web-1',
-                'roles' => ['app-production', 'ingress'],
+                'roles' => ['app-prod', 'ingress'],
                 'ingress_node' => 'edge-1',
                 'host' => '192.0.2.21',
             ]);
@@ -291,7 +281,6 @@ describe('NodeStoreController', function (): void {
 
         $callerId = (int) DB::table('nodes')->insertGetId(apiStoreNodeRow([
             'name' => 'control-1',
-            'role' => 'control',
             'host' => '10.6.0.3',
             'wireguard_address' => '10.6.0.3',
             'gateway_endpoint' => '10.6.0.2',
@@ -328,7 +317,7 @@ describe('NodeStoreController', function (): void {
             }
 
             if (str_contains($command, 'internal:wg-easy:state')) {
-                return Process::result(output: json_encode(['ok' => true], JSON_THROW_ON_ERROR)."\n");
+                return Process::result(output: json_encode(['success' => ['data' => [], 'meta' => []]], JSON_THROW_ON_ERROR)."\n");
             }
 
             return Process::result();
@@ -339,23 +328,26 @@ describe('NodeStoreController', function (): void {
             ->withServerVariables(['REMOTE_ADDR' => '10.6.0.3'])
             ->postJson('/api/nodes', [
                 'name' => 'app-dev-1',
-                'role' => 'app',
+                'roles' => ['app-dev'],
                 'host' => '192.0.2.20',
-                'environment' => 'development',
                 'tld' => 'test',
             ]);
 
         $response->assertOk()
             ->assertJsonPath('success.data.node.name', 'app-dev-1')
-            ->assertJsonPath('success.data.node.role', 'app')
             ->assertJsonPath('success.data.development_tld.gateway_dns.domain', '*.test');
 
         $node = DB::table('nodes')->where('name', 'app-dev-1')->first();
 
         expect($node)->not->toBeNull()
-            ->and($node->environment)->toBe('development')
             ->and($node->tld)->toBe('test')
             ->and($node->wireguard_address)->toBe('10.6.0.4');
+
+        expect(NodeRoleAssignment::query()
+            ->where('node_id', $node->id)
+            ->where('role', 'app-dev')
+            ->where('status', 'active')
+            ->exists())->toBeTrue();
 
         $entry = Activity::query()
             ->where('event', 'node.created')
@@ -366,8 +358,7 @@ describe('NodeStoreController', function (): void {
         expect($entry->properties->get('type'))->toBe('write');
         expect($entry->subject?->name)->toBe('app-dev-1');
         expect($entry->properties->get('name'))->toBe('app-dev-1');
-        expect($entry->properties->get('role'))->toBe('app');
-        expect($entry->properties->get('environment'))->toBe('development');
+        expect($entry->properties->get('roles'))->toBe(['app-dev']);
         expect($entry->properties->get('tld'))->toBe('test');
 
         Process::assertRan(fn ($process): bool => ! str_contains($process->command, '--role=')
@@ -382,13 +373,12 @@ describe('NodeStoreController', function (): void {
 
         DB::table('nodes')->insert(apiStoreNodeRow([
             'name' => 'app-caller',
-            'role' => 'app',
-            'environment' => 'development',
             'tld' => 'caller',
             'host' => '10.6.0.7',
             'wireguard_address' => '10.6.0.7',
             'gateway_endpoint' => '10.6.0.2',
         ]));
+        assignStoreNodeRole((int) DB::table('nodes')->where('name', 'app-caller')->value('id'), 'app-dev');
 
         Process::fake();
         Process::preventStrayProcesses();
@@ -397,9 +387,8 @@ describe('NodeStoreController', function (): void {
             ->withServerVariables(['REMOTE_ADDR' => '10.6.0.7'])
             ->postJson('/api/nodes', [
                 'name' => 'app-dev-1',
-                'role' => 'app',
+                'roles' => ['app-dev'],
                 'host' => '192.0.2.20',
-                'environment' => 'development',
                 'tld' => 'test',
             ]);
 
@@ -419,7 +408,6 @@ describe('NodeStoreController', function (): void {
 
         $callerId = (int) DB::table('nodes')->insertGetId(apiStoreNodeRow([
             'name' => 'control-1',
-            'role' => 'control',
             'host' => '10.6.0.3',
             'wireguard_address' => '10.6.0.3',
             'gateway_endpoint' => '10.6.0.2',
@@ -430,8 +418,6 @@ describe('NodeStoreController', function (): void {
 
         $nodeId = DB::table('nodes')->insertGetId(apiStoreNodeRow([
             'name' => 'app-adopt-1',
-            'role' => 'app',
-            'environment' => 'development',
             'tld' => 'test',
             'platform' => 'ubuntu_24-04',
             'host' => '192.0.2.30',
@@ -459,9 +445,8 @@ describe('NodeStoreController', function (): void {
             ->withServerVariables(['REMOTE_ADDR' => '10.6.0.3'])
             ->postJson('/api/nodes', [
                 'name' => 'app-adopt-1',
-                'role' => 'app',
+                'roles' => ['app-dev'],
                 'host' => '192.0.2.30',
-                'environment' => 'development',
                 'tld' => 'test',
             ]);
 
@@ -493,7 +478,6 @@ describe('NodeStoreController', function (): void {
 
         $callerId = (int) DB::table('nodes')->insertGetId(apiStoreNodeRow([
             'name' => 'control-1',
-            'role' => 'control',
             'host' => '10.6.0.3',
             'wireguard_address' => '10.6.0.3',
             'gateway_endpoint' => '10.6.0.2',
@@ -505,8 +489,8 @@ describe('NodeStoreController', function (): void {
         app()->instance(RemoteShell::class, new NodeStoreSequencedRemoteShell([
             new RemoteShellResult(exitCode: 0, stdout: json_encode([
                 'name' => 'app-unknown-1',
-                'role' => 'app',
-                'local_role' => 'app',
+                'role' => 'app-dev',
+                'local_role' => 'app-dev',
                 'status' => 'active',
                 'platform' => 'ubuntu_24-04',
                 'wireguard_address' => '10.6.0.8',
@@ -515,8 +499,8 @@ describe('NodeStoreController', function (): void {
             ], JSON_THROW_ON_ERROR), stderr: '', durationMs: 1),
             new RemoteShellResult(exitCode: 0, stdout: json_encode([
                 'name' => 'app-unknown-1',
-                'role' => 'app',
-                'local_role' => 'app',
+                'role' => 'app-dev',
+                'local_role' => 'app-dev',
                 'status' => 'active',
                 'platform' => 'ubuntu_24-04',
                 'wireguard_address' => '10.6.0.8',
@@ -536,9 +520,8 @@ describe('NodeStoreController', function (): void {
             ->withServerVariables(['REMOTE_ADDR' => '10.6.0.3'])
             ->postJson('/api/nodes', [
                 'name' => 'app-unknown-1',
-                'role' => 'app',
+                'roles' => ['app-dev'],
                 'host' => '192.0.2.33',
-                'environment' => 'development',
                 'tld' => 'test',
             ]);
 

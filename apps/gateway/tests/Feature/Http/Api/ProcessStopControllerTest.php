@@ -15,17 +15,16 @@ uses(RefreshDatabase::class);
 
 const PROCESS_STOP_CALLER_WG_IP = '10.6.0.93';
 
-function createProcessStopCallerNode(array $overrides = []): Node
+function createProcessStopCallerNode(array $overrides = [], ?string $role = null): Node
 {
     $attributes = array_merge([
         'name' => 'caller',
-        'role' => 'control',
         'host' => PROCESS_STOP_CALLER_WG_IP,
         'wireguard_address' => PROCESS_STOP_CALLER_WG_IP,
     ], $overrides);
 
-    return match ($attributes['role']) {
-        'app' => createTestAppHostNode($attributes),
+    return match ($role) {
+        'app-dev' => createTestAppHostNode($attributes),
         'gateway' => createTestGatewayNode($attributes),
         default => Node::factory()->create($attributes),
     };
@@ -46,7 +45,7 @@ function grantProcessStopAccess(Node $caller, Node $appNode): void
 describe('ProcessStopController', function (): void {
     it('stops a process for authorized control callers and records the event', function (): void {
         $caller = createProcessStopCallerNode();
-        $appNode = createTestAppHostNode(['role' => 'app']);
+        $appNode = createTestAppHostNode();
         grantProcessStopAccess($caller, $appNode);
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
         Process::factory()->create(['app_id' => $app->id, 'name' => 'vite']);
@@ -67,8 +66,8 @@ describe('ProcessStopController', function (): void {
     });
 
     it('returns partial runtime failure data', function (): void {
-        createProcessStopCallerNode(['role' => 'gateway']);
-        $appNode = createTestAppHostNode(['role' => 'app']);
+        createProcessStopCallerNode(role: 'gateway');
+        $appNode = createTestAppHostNode();
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
         Process::factory()->create(['app_id' => $app->id, 'name' => 'vite', 'sort_order' => 10]);
         Process::factory()->create(['app_id' => $app->id, 'name' => 'queue', 'sort_order' => 20]);
@@ -89,7 +88,7 @@ describe('ProcessStopController', function (): void {
 
     it('requires authorization before runtime side effects', function (): void {
         createProcessStopCallerNode();
-        $appNode = createTestAppHostNode(['role' => 'app']);
+        $appNode = createTestAppHostNode();
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
         Process::factory()->create(['app_id' => $app->id, 'name' => 'vite']);
         $remoteShell = new ProcessStopApiRemoteShell([]);

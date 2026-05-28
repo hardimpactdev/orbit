@@ -6,6 +6,7 @@ namespace App\Commands\Tool;
 
 final class ToolReconfigureCommand extends ToolGatewayCommand
 {
+    #[\Override]
     protected $signature = 'tool:reconfigure
         {tool? : Tool catalog name to reconfigure}
         {--app= : Resolve target by app selector}
@@ -13,6 +14,7 @@ final class ToolReconfigureCommand extends ToolGatewayCommand
         {--password= : Auth password (OpenCode Server)}
         {--json : Output JSON}';
 
+    #[\Override]
     protected $description = 'Reconfigure a managed tool through the gateway.';
 
     public function handle(): int

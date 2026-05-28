@@ -28,7 +28,6 @@ it('writes dnsmasq.conf and restarts orbit-dns when state changes', function ():
 
     Node::factory()->create([
         'name' => 'gateway',
-        'role' => 'gateway',
         'tld' => 'gateway',
         'wireguard_address' => '10.6.0.2',
     ]);
@@ -52,7 +51,6 @@ it('is a no-op when the on-disk config already matches state', function (): void
 
     Node::factory()->create([
         'name' => 'gateway',
-        'role' => 'gateway',
         'tld' => 'gateway',
         'wireguard_address' => '10.6.0.2',
     ]);
@@ -73,7 +71,6 @@ it('rewrites the conf and restarts dns when fleet state changes', function (): v
 
     Node::factory()->create([
         'name' => 'gateway',
-        'role' => 'gateway',
         'tld' => 'gateway',
         'wireguard_address' => '10.6.0.2',
     ]);
@@ -87,7 +84,6 @@ it('rewrites the conf and restarts dns when fleet state changes', function (): v
 
     Node::factory()->create([
         'name' => 'app-1',
-        'role' => 'app',
         'tld' => 'app-1.test',
         'wireguard_address' => '10.6.0.3',
     ]);
@@ -109,7 +105,6 @@ YAML);
 
     Node::factory()->create([
         'name' => 'gateway',
-        'role' => 'gateway',
         'tld' => 'gateway',
         'wireguard_address' => '10.6.0.2',
     ]);

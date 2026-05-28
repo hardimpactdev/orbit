@@ -34,7 +34,6 @@ it('attaches a database connection to an app from the operator node through the 
     ['name' => {$appNameValue}],
     [
         'node_id' => \$node->id,
-        'environment' => 'development',
         'path' => '/home/orbit/apps/{$appName}',
         'document_root' => 'public',
         'php_version' => '8.5',
@@ -54,7 +53,7 @@ PHP;
 
         $topology->ssh(
             'gateway',
-            'cd '.escapeshellarg($topology->checkout('gateway')).' && orbit tinker --execute='.escapeshellarg($seedPhp),
+            'cd '.escapeshellarg($topology->checkout('gateway')).' && php apps/gateway/artisan tinker --execute='.escapeshellarg($seedPhp),
             timeoutSeconds: 120,
         );
 
@@ -86,7 +85,7 @@ PHP;
 
         $topology->ssh(
             'gateway',
-            'cd '.escapeshellarg($topology->checkout('gateway')).' && orbit tinker --execute='.escapeshellarg($cleanupPhp),
+            'cd '.escapeshellarg($topology->checkout('gateway')).' && php apps/gateway/artisan tinker --execute='.escapeshellarg($cleanupPhp),
             timeoutSeconds: 60,
         );
 

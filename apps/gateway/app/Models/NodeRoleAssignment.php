@@ -26,7 +26,7 @@ class NodeRoleAssignment extends Model
     use HasFactory;
 
     #[\Override]
-    protected $table = 'node_roles';
+    protected $table = 'node_role';
 
     #[\Override]
     protected $fillable = [

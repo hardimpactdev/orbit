@@ -8,12 +8,14 @@ use App\Exceptions\GatewayApiException;
 
 final class FirewallRemoveCommand extends FirewallGatewayCommand
 {
+    #[\Override]
     protected $signature = 'firewall:remove
         {name? : Firewall rule name}
         {--node= : Target node}
         {--force : Confirm destructive operation without prompting}
         {--json : Output JSON}';
 
+    #[\Override]
     protected $description = 'Remove firewall rule intent through the gateway.';
 
     public function handle(): int

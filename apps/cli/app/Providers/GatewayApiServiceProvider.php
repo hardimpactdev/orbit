@@ -58,15 +58,13 @@ final class GatewayApiServiceProvider extends ServiceProvider
 
         $this->app->bind(VerifiesGatewayIdentity::class, fn (): VerifiesGatewayIdentity => new VerifyGatewayIdentity);
 
-        $this->app->bind(TrustStoreInstaller::class, function (): TrustStoreInstaller {
-            return match (strtolower(PHP_OS_FAMILY)) {
-                'darwin' => new MacOsTrustStoreInstaller,
-                'linux' => new LinuxTrustStoreInstaller,
-                default => throw new TrustStoreInstallException(
-                    'Unsupported platform for trust store operations.',
-                    TrustStoreInstallReason::UnsupportedPlatform,
-                ),
-            };
+        $this->app->bind(TrustStoreInstaller::class, fn (): TrustStoreInstaller => match (strtolower(PHP_OS_FAMILY)) {
+            'darwin' => new MacOsTrustStoreInstaller,
+            'linux' => new LinuxTrustStoreInstaller,
+            default => throw new TrustStoreInstallException(
+                'Unsupported platform for trust store operations.',
+                TrustStoreInstallReason::UnsupportedPlatform,
+            ),
         });
 
         $this->app->singleton(GatewayApiClient::class, function (): GatewayApiClient {

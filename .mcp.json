@@ -5,7 +5,11 @@
             "args": [
                 "apps/gateway/artisan",
                 "boost:mcp"
-            ]
+            ],
+            "env": {
+                "APP_ENV": "local",
+                "APP_DEBUG": "true"
+            }
         }
     }
 }

@@ -9,8 +9,10 @@ use App\Exceptions\GatewayApiException;
 
 final class AppShowCommand extends GatewayCommand
 {
+    #[\Override]
     protected $signature = 'app:show {app? : App name or hostname to inspect} {--json}';
 
+    #[\Override]
     protected $description = 'Show one app from the gateway registry.';
 
     public function handle(): int

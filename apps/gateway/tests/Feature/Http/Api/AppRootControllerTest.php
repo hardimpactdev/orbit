@@ -17,7 +17,6 @@ function createAppRootCallerNode(array $overrides = []): Node
 {
     return Node::factory()->create(array_merge([
         'name' => 'caller',
-        'role' => 'control',
         'host' => APP_ROOT_CALLER_WG_IP,
         'wireguard_address' => APP_ROOT_CALLER_WG_IP,
     ], $overrides));
@@ -42,13 +41,11 @@ describe('AppRootController', function (): void {
     it('updates app root for authorized callers', function (): void {
         Node::factory()->create([
             'name' => 'gateway-1',
-            'role' => 'gateway',
         ]);
 
         $caller = createAppRootCallerNode();
         $targetNode = Node::factory()->create([
             'name' => 'app-1',
-            'role' => 'app',
             'tld' => 'test',
             'status' => 'active',
         ]);
@@ -82,13 +79,11 @@ describe('AppRootController', function (): void {
     it('rejects root updates when the caller lacks app:root on the app node', function (): void {
         Node::factory()->create([
             'name' => 'gateway-1',
-            'role' => 'gateway',
         ]);
 
         $caller = createAppRootCallerNode();
         $targetNode = Node::factory()->create([
             'name' => 'app-1',
-            'role' => 'app',
             'status' => 'active',
         ]);
         grantAppRootAccess($caller, $targetNode, ['app:read']);

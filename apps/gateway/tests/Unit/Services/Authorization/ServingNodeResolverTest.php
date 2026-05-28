@@ -2,12 +2,10 @@
 
 declare(strict_types=1);
 
-use App\Enums\Nodes\NodeRoleName;
 use App\Http\Authorization\RequiresPermission;
 use App\Http\Authorization\ServingNode;
 use App\Models\App as OrbitApp;
 use App\Models\Node;
-use App\Models\NodeRoleAssignment;
 use App\Models\Process as OrbitProcess;
 use App\Models\Workspace;
 use App\Services\Authorization\ServingNodeResolver;
@@ -64,12 +62,7 @@ describe('RequiresPermission attribute', function (): void {
 
 describe('ServingNodeResolver', function (): void {
     it('resolves the active gateway node', function (): void {
-        $gateway = Node::factory()->create(['name' => 'gateway-1', 'role' => 'gateway']);
-        NodeRoleAssignment::factory()->create([
-            'node_id' => $gateway->id,
-            'role' => NodeRoleName::Gateway->value,
-            'status' => 'active',
-        ]);
+        $gateway = Node::factory()->gateway()->create(['name' => 'gateway-1']);
 
         $resolved = (new ServingNodeResolver)->resolve(servingNodeRequest(), ServingNode::Gateway);
 

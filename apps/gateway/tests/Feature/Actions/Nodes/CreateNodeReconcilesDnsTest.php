@@ -29,7 +29,6 @@ it('reconciles dnsmasq when writing an app node on a gateway', function (): void
 
     app(NodeRegistryWriter::class)->writeAppNode(
         name: 'app-1',
-        environment: 'development',
         tld: 'app-1.test',
         host: '10.6.0.3',
         wireguardAddress: '10.6.0.3',
@@ -46,7 +45,6 @@ it('does not reconcile when writing an app node off-gateway', function (): void 
 
     app(NodeRegistryWriter::class)->writeAppNode(
         name: 'app-1',
-        environment: 'development',
         tld: 'app-1.test',
         host: '10.6.0.3',
         wireguardAddress: '10.6.0.3',

@@ -34,7 +34,7 @@ PHP;
 
     $topology->ssh(
         'gateway',
-        "cd {$checkout} && orbit tinker --execute=".escapeshellarg($script),
+        "cd {$checkout} && php apps/gateway/artisan tinker --execute=".escapeshellarg($script),
         timeoutSeconds: 120,
     );
 }
@@ -91,7 +91,7 @@ it('removes an app from a operator caller through the gateway api', function ():
 
         $gatewayRecord = $topology->ssh(
             'gateway',
-            'cd '.escapeshellarg($topology->checkout('gateway')).' && orbit tinker --execute='.escapeshellarg("echo json_encode([
+            'cd '.escapeshellarg($topology->checkout('gateway')).' && php apps/gateway/artisan tinker --execute='.escapeshellarg("echo json_encode([
                 'app' => \\App\\Models\\App::query()->where('name', '{$name}')->exists(),
                 'routes' => \\App\\Models\\ProxyRoute::query()->where('domain', '{$name}.test')->count(),
             ], JSON_THROW_ON_ERROR);"),

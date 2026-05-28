@@ -19,8 +19,8 @@ Each term below has a precise meaning in the node command family.
   operator when its grants allow that work.
 - **Node role:** A fixed code-defined bundle attached through a role
   assignment. The ten roles are `gateway` (singleton authority), `vpn` and
-  `router` (gateway-coupled infrastructure), `app-development`,
-  `app-production`, `database`, `agent`, `ingress`, `websocket`, and `s3`.
+  `router` (gateway-coupled infrastructure), `app-dev`,
+  `app-prod`, `database`, `agent`, `ingress`, `websocket`, and `s3`.
   The latter seven are workload roles.
 - **Gateway role:** The singleton authority role. The `gateway` role owns
   durable Orbit state, the typed API, root CA material, node access policy, and
@@ -41,13 +41,15 @@ Each term below has a precise meaning in the node command family.
   coupled to the `gateway` role in v1, so bootstrap assigns it together with
   `gateway` and normal `node role:*` commands cannot manage it independently.
 - **Orbit launcher:** Host `orbit` wrapper installed in the user's path. It
-  resolves `ORBIT_REPO`, reads `${ORBIT_REPO}/apps/gateway/.env` for
-  `ORBIT_IS_GATEWAY=true`, exports `ORBIT_REPO`, `ORBIT_APP`, and
-  `ORBIT_HOST_CWD`, then dispatches to
-  `${ORBIT_REPO}/apps/gateway/artisan` on gateway nodes or
-  `${ORBIT_REPO}/apps/cli/orbit` on other nodes. The CLI artifact owns native
-  gateway-client commands and temporarily invokes the gateway Artisan command
-  surface from the same checkout for commands that have not been ported yet.
+  resolves `ORBIT_REPO`, exports `ORBIT_REPO`, `ORBIT_APP=cli`, and
+  `ORBIT_HOST_CWD`, and always executes `${ORBIT_REPO}/apps/cli/orbit` on
+  every node role — clients, workload nodes, and gateway hosts alike. The CLI
+  artifact owns public gateway-client commands, local-only commands, bootstrap
+  commands, and hidden `internal:*` executor commands. Gateway maintenance
+  (migrate, tinker, scheduler, queue, `orbit:internal:*` bake/build/install
+  commands) uses `bin/orbit-gateway-artisan` or direct
+  `php apps/gateway/artisan` from a controlled gateway shell; the public
+  `orbit` command never dispatches to gateway Artisan.
 - **Orbit runtime container:** One `orbit-runtime` container per node. On the
   gateway it is the resident gateway API and scheduler runtime. On app nodes it
   provides the Orbit PHP runtime baseline. App, workspace, and process
@@ -67,14 +69,14 @@ Each term below has a precise meaning in the node command family.
   rendered by Orbit, binds the S3 API only to the node's WireGuard address, and
   receives private and public S3 traffic through router-owned service routes.
 - **Agent role:** Exclusive workload role for first-party autonomous agent
-  workloads. Conflicts with `gateway`, `vpn`, `router`, `app-development`,
-  `app-production`, `database`, `ingress`, `websocket`, and `s3`. Selectable
+  workloads. Conflicts with `gateway`, `vpn`, `router`, `app-dev`,
+  `app-prod`, `database`, `ingress`, `websocket`, and `s3`. Selectable
   only during `node:new`.
 - **Ingress role:** Workload role that owns public production HTTP
   ingress, public Caddy route artifacts, public TLS, and public edge
   hardening. It forwards public routes to `router` and may coexist with
-  `app-production`, but conflicts with `gateway`, `vpn`, `router`,
-  `app-development`, `database`, `agent`, and `s3`.
+  `app-prod`, but conflicts with `gateway`, `vpn`, `router`,
+  `app-dev`, `database`, `agent`, and `s3`.
 - **Role assignability:** Flag on a role that decides whether it may be
   selected by `node:new`, by `node role:add`, or by both. `agent` is
   assignable through `node:new` only; gateway-coupled infrastructure roles
@@ -84,10 +86,10 @@ Each term below has a precise meaning in the node command family.
 - **Role settings:** Assignment-local configuration for a role. Role-local
   desired configuration lives on the role assignment, not on the generic node
   record.
-- **Node TLD:** Node-level setting required by the `app-development` and
+- **Node TLD:** Node-level setting required by the `app-dev` and
   `agent` roles. A node holds at most one `tld` value at a time; roles that
   depend on it read and write the same node-level field. Default `agent` when
-  selected through interactive `node:new --role=agent`. Drives the DNS mapping
+  selected through interactive `node:new --template=agent`. Drives the DNS mapping
   the gateway owns for that TLD and the agent tool internal HTTPS hostnames
   such as `openclaw.agent` and `hermes.agent`.
 - **Agent role baseline:** Code-defined desired state for a node with the
@@ -110,16 +112,16 @@ Assignments in `active`, `pending`, or `error` must satisfy this matrix:
 
 | Role | Combines with | Conflicts with |
 | --- | --- | --- |
-| `gateway` | `vpn`, `router` | `app-development`, `app-production`, `database`, `agent`, `ingress`, `websocket`, `s3` |
-| `vpn` | `gateway`, `router` | `app-development`, `app-production`, `database`, `agent`, `ingress`, `websocket`, `s3` |
-| `router` | `gateway`, `vpn` | `app-development`, `app-production`, `database`, `agent`, `ingress`, `websocket`, `s3` |
-| `app-development` | `database`, `websocket`, `s3` | `gateway`, `vpn`, `router`, `app-production`, `agent`, `ingress` |
-| `app-production` | `ingress` | `gateway`, `vpn`, `router`, `app-development`, `database`, `agent`, `websocket`, `s3` |
-| `database` | `app-development`, `websocket`, `s3` | `gateway`, `vpn`, `router`, `app-production`, `agent`, `ingress` |
-| `agent` | none | `gateway`, `vpn`, `router`, `app-development`, `app-production`, `database`, `ingress`, `websocket`, `s3` |
-| `ingress` | `app-production` | `gateway`, `vpn`, `router`, `app-development`, `database`, `agent`, `websocket`, `s3` |
-| `websocket` | `app-development`, `database`, `s3` | `gateway`, `vpn`, `router`, `ingress`, `app-production`, `agent` |
-| `s3` | `app-development`, `database`, `websocket` | `gateway`, `vpn`, `router`, `ingress`, `app-production`, `agent` |
+| `gateway` | `vpn`, `router` | `app-dev`, `app-prod`, `database`, `agent`, `ingress`, `websocket`, `s3` |
+| `vpn` | `gateway`, `router` | `app-dev`, `app-prod`, `database`, `agent`, `ingress`, `websocket`, `s3` |
+| `router` | `gateway`, `vpn` | `app-dev`, `app-prod`, `database`, `agent`, `ingress`, `websocket`, `s3` |
+| `app-dev` | `database`, `websocket`, `s3` | `gateway`, `vpn`, `router`, `app-prod`, `agent`, `ingress` |
+| `app-prod` | `ingress` | `gateway`, `vpn`, `router`, `app-dev`, `database`, `agent`, `websocket`, `s3` |
+| `database` | `app-dev`, `websocket`, `s3` | `gateway`, `vpn`, `router`, `app-prod`, `agent`, `ingress` |
+| `agent` | none | `gateway`, `vpn`, `router`, `app-dev`, `app-prod`, `database`, `ingress`, `websocket`, `s3` |
+| `ingress` | `app-prod` | `gateway`, `vpn`, `router`, `app-dev`, `database`, `agent`, `websocket`, `s3` |
+| `websocket` | `app-dev`, `database`, `s3` | `gateway`, `vpn`, `router`, `ingress`, `app-prod`, `agent` |
+| `s3` | `app-dev`, `database`, `websocket` | `gateway`, `vpn`, `router`, `ingress`, `app-prod`, `agent` |
 
 Compatibility checks treat assignments in `active`, `pending`, or `error` as
 unresolved conflicts. Assignments already in `removing` are ignored.
@@ -140,8 +142,8 @@ require, read, and write.
 | --- | --- | --- |
 | `vpn` | `public_endpoint`, `wireguard_cidr`, `wireguard_port`, `dns_ip` | — |
 | `router` | — | — |
-| `app-development` | — | `tld` |
-| `app-production` | `ingress_node_id` | — |
+| `app-dev` | — | `tld` |
+| `app-prod` | `ingress_node_id` | — |
 | `database` | — | — |
 | `gateway` | — | — |
 | `agent` | — | `tld` (default `agent` during interactive `node:new` setup) |
@@ -151,7 +153,7 @@ require, read, and write.
 
 A node can hold at most one `tld` value at a time. Roles that depend on `tld`
 read and write the same node-level field. This shared field keeps the data
-model coherent if a future version allows `app-development` and `agent` to
+model coherent if a future version allows `app-dev` and `agent` to
 coexist on one node (the v1 compatibility matrix forbids that today).
 Changing the node-level `tld` is a desired-state change and triggers
 baseline convergence
@@ -184,8 +186,8 @@ Role baselines are code-defined desired state, not editable package lists.
 | --- | --- |
 | `vpn` | WireGuard server runtime, public endpoint settings, VPN peer defaults, and VPN-facing DNS runtime |
 | `router` | Private `orbit-caddy` router for private `.orbit` DNS/service names, private route artifacts, backend pools, and private HTTP/WebSocket/S3 routing |
-| `app-development` | Docker-first app runtime baseline, development DNS mapping, and `orbit-caddy` app/workspace routes |
-| `app-production` | Private `orbit-caddy` backend, FrankenPHP app containers, and Docker process runtime |
+| `app-dev` | Docker-first app runtime baseline, development DNS mapping, and `orbit-caddy` app/workspace routes |
+| `app-prod` | Private `orbit-caddy` backend, FrankenPHP app containers, and Docker process runtime |
 | `database` | Docker running as the substrate for managed database service tools |
 | `agent` | `orbit-runtime`, `orbit-caddy`, the shared unprivileged `agent` runtime user, and the gateway-owned agent DNS mapping for the role's `tld` |
 | `ingress` | `orbit-caddy` running as the public production HTTP ingress boundary, forwarding public routes to `router` |
@@ -222,8 +224,8 @@ Each role is supported on a specific set of host platforms.
 | `vpn` | Ubuntu |
 | `router` | Ubuntu |
 | client (no role assignments) | macOS, Ubuntu |
-| `app-development` | Ubuntu |
-| `app-production` | Ubuntu |
+| `app-dev` | Ubuntu |
+| `app-prod` | Ubuntu |
 | `database` | Ubuntu |
 | `agent` | Ubuntu |
 | `ingress` | Ubuntu |
@@ -267,11 +269,15 @@ These terms describe how nodes join the fleet and prove their identity to the ga
 These terms describe how nodes communicate and how authority is enforced.
 
 - **CLI-to-gateway edge:** HTTPS over WireGuard from any node's CLI — client,
-  gateway-local, or a node with workload roles — to the gateway API. On
-  non-gateway nodes, the launcher dispatches to host PHP through
-  `apps/cli/orbit`, which calls the gateway API for native CLI commands and
-  forwards unported commands to the gateway Artisan surface. On the gateway,
-  the launcher dispatches directly to `apps/gateway/artisan`.
+  gateway-local, or a node with workload roles — to the gateway API. On every
+  node role, the launcher always enters `apps/cli/orbit`, which calls the
+  gateway API for public gateway-backed commands, mutates caller-local state
+  for local-only commands, runs bootstrap commands before a gateway API
+  exists, and routes hidden `internal:*` executor commands gated by an
+  operation token. Gateway hosts call their own API as HTTPS over the
+  gateway's own WireGuard address; there is no privileged local-loopback
+  bypass. Gateway maintenance uses `bin/orbit-gateway-artisan` or direct
+  `php apps/gateway/artisan` from a controlled gateway shell.
 - **Gateway-to-node edge:** SSH through `RemoteShell` for node-side applying
   from the gateway.
 - **Node event ingestion:** Narrow node-to-gateway callbacks for purpose-built
@@ -332,7 +338,7 @@ exists.
   product surface. It includes `database:read` but not `database:query`,
   because reading table rows is separate from reading registry or schema
   metadata.
-- **Developer preset:** Preset for developer workflows on `app-development`
+- **Developer preset:** Preset for developer workflows on `app-dev`
   nodes. Includes app, workspace, process, schedule, proxy, deploy, database,
   and tool surfaces required to drive development work.
 - **Admin preset:** Preset that grants full administrative authority over a
@@ -358,7 +364,8 @@ These terms describe how grants are created and what shape they take.
   the new node (`--grant-from`, `--grant-from-preset`,
   `--grant-from-permissions`). The selector `all` expands to every current
   eligible node only; future nodes are not added automatically.
-- **Agent tool selection:** During `node:new --role=agent`, the optional
+- **Agent tool selection:** During `node:new --template=agent` or
+  `node:new --roles=agent`, the optional
   set of agent tools selected for first install. Zero, one, or several
   agent tools may be selected; there is no default agent tool.
 - **Multi-agent-tool warning:** Warning emitted when a second running agent
@@ -371,7 +378,7 @@ These terms describe how grants are created and what shape they take.
 ## Development DNS Mapping
 
 These terms describe how the gateway maintains DNS resolution for nodes with
-the `app-development` role.
+the `app-dev` role.
 
 The `router` role is gateway-coupled in v1. It owns private `.orbit`
 DNS/service names, private route artifacts, backend pools, and private
@@ -380,16 +387,16 @@ node-family desired state, but they are not the public `dns:*` command surface.
 
 - **Development DNS mapping owned by the gateway:** Node-family gateway configuration
   and desired DNS mappings and policy owned by the gateway. They map `*.{tld}`
-  for an active `app-development` role assignment to that node's WireGuard address.
+  for an active `app-dev` role assignment to that node's WireGuard address.
   Runtime reality for that mapping is served and probed on the active
   gateway-coupled `vpn` role in v1.
 - **Agent DNS mapping owned by the gateway:** Same node-family gateway
-  configuration and resolver reality as the mapping that `app-development`
+  configuration and resolver reality as the mapping that `app-dev`
   uses, but derived from an active `agent` role assignment's `tld` setting
   (default `agent`). Routes agent tool internal HTTPS hostnames such as
   `openclaw.agent` and `hermes.agent` to the node's WireGuard address.
 - **Development DNS configuration model:** Derived from the active
-  `app-development` role assignment. A mapping exists only when that assignment
+  `app-dev` role assignment. A mapping exists only when that assignment
   is active, its `tld` setting is a single lowercase DNS label without a leading
   dot, and the node row has a non-empty WireGuard address.
   The canonical domain is `*.{tld}` and the canonical target is the
@@ -409,7 +416,7 @@ node-family desired state, but they are not the public `dns:*` command surface.
 Development DNS mappings are not a public `dns:*` command surface and do not
 create a `dns` state family. The `dns:*` commands own only the resolver overrides
 local to the caller. The node family owns the gateway mapping lifecycle because it is
-part of `app-development` role readiness.
+part of `app-dev` role readiness.
 
 ## Node Family Boundaries
 

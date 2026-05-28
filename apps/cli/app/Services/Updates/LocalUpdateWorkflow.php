@@ -4,11 +4,11 @@ declare(strict_types=1);
 
 namespace App\Services\Updates;
 
-final class LocalUpdateWorkflow
+final readonly class LocalUpdateWorkflow
 {
     public function __construct(
-        private readonly RunsLocalUpdate $updater,
-        private readonly CheckoutPathResolver $checkoutPathResolver,
+        private RunsLocalUpdate $updater,
+        private CheckoutPathResolver $checkoutPathResolver,
     ) {}
 
     /**

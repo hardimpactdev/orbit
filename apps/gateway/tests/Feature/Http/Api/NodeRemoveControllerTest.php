@@ -21,12 +21,10 @@ function apiRemoveNodeRow(array $overrides = []): array
 {
     return array_merge([
         'name' => 'app-1',
-        'role' => 'app',
         'host' => '10.6.0.7',
         'user' => 'nckrtl',
         'orbit_path' => '/home/nckrtl/orbit',
         'status' => 'active',
-        'environment' => 'development',
         'platform' => 'ubuntu_24-04',
         'wireguard_address' => '10.6.0.7',
         'created_at' => now(),
@@ -34,24 +32,28 @@ function apiRemoveNodeRow(array $overrides = []): array
     ], $overrides);
 }
 
-function createRemoveCallerNode(string $role = 'control'): int
+function createRemoveCallerNode(?string $role = null): int
 {
-    return (int) DB::table('nodes')->insertGetId(apiRemoveNodeRow([
-        'name' => "{$role}-caller",
-        'role' => $role,
+    $name = $role === null ? 'control-caller' : "{$role}-caller";
+
+    $nodeId = (int) DB::table('nodes')->insertGetId(apiRemoveNodeRow([
+        'name' => $name,
         'host' => REMOVE_CALLER_WG_IP,
-        'environment' => $role === 'app' ? 'development' : null,
         'wireguard_address' => REMOVE_CALLER_WG_IP,
     ]));
+
+    if ($role !== null) {
+        assignRemoveNodeRole($nodeId, $role);
+    }
+
+    return $nodeId;
 }
 
 function createRemoveGatewayNode(): int
 {
     $gatewayId = (int) DB::table('nodes')->insertGetId(apiRemoveNodeRow([
         'name' => 'gateway-1',
-        'role' => 'gateway',
         'host' => '10.6.0.2',
-        'environment' => null,
         'wireguard_address' => '10.6.0.2',
     ]));
 
@@ -209,7 +211,7 @@ describe('NodeRemoveController', function (): void {
     });
 
     it('removes a node directly for a gateway caller', function (): void {
-        assignRemoveNodeRole(createRemoveCallerNode('gateway'), 'gateway');
+        createRemoveCallerNode('gateway');
         DB::table('nodes')->insert(apiRemoveNodeRow());
 
         $response = deleteRemoveNodeJson('/api/nodes/app-1', [
@@ -224,7 +226,7 @@ describe('NodeRemoveController', function (): void {
     });
 
     it('rejects callers without node remove grants before mutation', function (): void {
-        createRemoveCallerNode('gateway');
+        createRemoveCallerNode();
         DB::table('nodes')->insert(apiRemoveNodeRow());
 
         $response = deleteRemoveNodeJson('/api/nodes/app-1', [
@@ -241,7 +243,7 @@ describe('NodeRemoveController', function (): void {
         expect(DB::table('nodes')->where('name', 'app-1')->exists())->toBeTrue();
     });
 
-    it('removes for database callers with gateway admin grants even when the legacy role shadow is control', function (): void {
+    it('removes for database callers with gateway admin grants', function (): void {
         $callerId = createRemoveCallerNode();
         assignRemoveNodeRole($callerId, 'database');
         $gatewayId = createRemoveGatewayNode();
@@ -266,9 +268,7 @@ describe('NodeRemoveController', function (): void {
 
         $target = Node::query()->create(apiRemoveNodeRow([
             'name' => 'gateway-shadow-stale',
-            'role' => 'control',
             'host' => '10.6.0.44',
-            'environment' => null,
             'wireguard_address' => '10.6.0.44',
         ]));
 
@@ -306,7 +306,7 @@ describe('NodeRemoveController', function (): void {
     });
 
     it('removes for app callers with explicit target node remove grants', function (): void {
-        $callerId = createRemoveCallerNode('app');
+        $callerId = createRemoveCallerNode('app-dev');
         $targetId = (int) DB::table('nodes')->insertGetId(apiRemoveNodeRow());
         grantRemoveNodeAccess($callerId, $targetId);
 

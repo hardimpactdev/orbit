@@ -12,11 +12,13 @@ final class DatabaseSchemaCommand extends GatewayCommand
 {
     use ResolvesHostContext;
 
+    #[\Override]
     protected $signature = 'database:schema
         {target? : App, workspace, or connection slug}
         {--connection= : Connection slug when the target maps to multiple connections}
         {--json}';
 
+    #[\Override]
     protected $description = 'Show schema for a registered database connection.';
 
     public function handle(): int

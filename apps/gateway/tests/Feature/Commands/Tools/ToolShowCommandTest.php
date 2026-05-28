@@ -5,7 +5,6 @@ declare(strict_types=1);
 use App\Http\Gateway\Requests\Tools\ShowToolRequest;
 use App\Models\App;
 use App\Models\LocalGatewaySettings;
-use App\Models\LocalNodeDefault;
 use App\Models\Node;
 use App\Models\NodeTool;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -25,23 +24,20 @@ function createToolShowLocalNode(string $role = 'gateway'): Node
 {
     return Node::factory()->create([
         'name' => "local-{$role}",
-        'role' => $role,
         'host' => '10.6.0.1',
-        'wireguard_address' => '10.6.0.1',
-    ]);
+        'wireguard_address' => '10.6.0.1']);
 }
 
 describe('tool:show command contract', function (): void {
     it('shows a local gateway tool by node', function (): void {
         createToolShowLocalNode('gateway');
-        $node = createTestAppHostNode(['name' => 'app-1', 'role' => 'app']);
+        $node = createTestAppHostNode(['name' => 'app-1']);
 
         NodeTool::factory()->create([
             'name' => 'redis',
             'node_id' => $node->id,
             'expected_state' => 'running',
-            'expected_version' => '7.2',
-        ]);
+            'expected_version' => '7.2']);
 
         $exitCode = Artisan::call('tool:show', ['tool' => 'redis', '--node' => 'app-1', '--json' => true]);
         $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
@@ -54,7 +50,7 @@ describe('tool:show command contract', function (): void {
 
     it('resolves the local target node from an app selector', function (): void {
         createToolShowLocalNode('gateway');
-        $node = createTestAppHostNode(['name' => 'app-1', 'role' => 'app']);
+        $node = createTestAppHostNode(['name' => 'app-1']);
 
         App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
         NodeTool::factory()->create(['name' => 'php', 'node_id' => $node->id]);
@@ -69,37 +65,36 @@ describe('tool:show command contract', function (): void {
 
     it('requires a target selector when the local gateway target is ambiguous', function (): void {
         createToolShowLocalNode('gateway');
-        createTestAppHostNode(['name' => 'app-1', 'role' => 'app']);
-        createTestAppHostNode(['name' => 'app-2', 'role' => 'app']);
+        createTestAppHostNode(['name' => 'app-1']);
+        createTestAppHostNode(['name' => 'app-2']);
 
         $exitCode = Artisan::call('tool:show', ['tool' => 'redis', '--json' => true]);
         $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
 
         expect($exitCode)->toBe(1)
-            ->and($payload['error']['code'])->toBe('validation_failed')
-            ->and($payload['error']['meta']['field'])->toBe('target');
+            ->and($payload['error']['code'])->toBe('node_target_required')
+            ->and($payload['error']['meta']['field'])->toBe('node');
     });
 
     it('requires an explicit target source in non-interactive JSON even when one app node is visible', function (): void {
         createToolShowLocalNode('gateway');
-        $node = createTestAppHostNode(['name' => 'app-1', 'role' => 'app']);
+        $node = createTestAppHostNode(['name' => 'app-1']);
         NodeTool::factory()->create(['name' => 'redis', 'node_id' => $node->id]);
 
         $exitCode = Artisan::call('tool:show', ['tool' => 'redis', '--json' => true]);
         $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
 
         expect($exitCode)->toBe(1)
-            ->and($payload['error']['code'])->toBe('validation_failed')
-            ->and($payload['error']['meta']['field'])->toBe('target');
+            ->and($payload['error']['code'])->toBe('node_target_required')
+            ->and($payload['error']['meta']['field'])->toBe('node');
     });
 
-    it('uses local node default as an explicit target source', function (): void {
+    it('uses explicit node selectors as a target source', function (): void {
         createToolShowLocalNode('gateway');
-        $node = createTestAppHostNode(['name' => 'app-default', 'role' => 'app']);
-        LocalNodeDefault::query()->create(['default_node_name' => 'app-default']);
+        $node = createTestAppHostNode(['name' => 'app-default']);
         NodeTool::factory()->create(['name' => 'redis', 'node_id' => $node->id]);
 
-        $exitCode = Artisan::call('tool:show', ['tool' => 'redis', '--json' => true]);
+        $exitCode = Artisan::call('tool:show', ['tool' => 'redis', '--node' => 'app-default', '--json' => true]);
         $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
 
         expect($exitCode)->toBe(0)
@@ -108,7 +103,7 @@ describe('tool:show command contract', function (): void {
 
     it('returns not found when the selected local node has no matching tool row', function (): void {
         createToolShowLocalNode('gateway');
-        createTestAppHostNode(['name' => 'app-1', 'role' => 'app']);
+        createTestAppHostNode(['name' => 'app-1']);
 
         $exitCode = Artisan::call('tool:show', ['tool' => 'redis', '--node' => 'app-1', '--json' => true]);
         $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
@@ -137,8 +132,7 @@ describe('tool:show command contract', function (): void {
 
         LocalGatewaySettings::current()->fill([
             'gateway_url' => 'https://10.6.0.1',
-            'ca_pem_path' => '/dev/null',
-        ])->save();
+            'ca_pem_path' => '/dev/null'])->save();
 
         MockClient::global([
             ShowToolRequest::class => MockResponse::make([
@@ -151,20 +145,14 @@ describe('tool:show command contract', function (): void {
                             'observed_state' => null,
                             'version' => '7.2',
                             'managed' => true,
-                            'endpoints' => [],
-                        ],
-                    ],
-                ],
-            ], 200),
-        ]);
+                            'endpoints' => []]]]], 200)]);
 
         $exitCode = Artisan::call('tool:show', [
             'tool' => 'redis',
             '--node' => 'app-1',
             '--app' => 'docs',
             '--live' => true,
-            '--json' => true,
-        ]);
+            '--json' => true]);
         $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
 
         expect($exitCode)->toBe(0)
@@ -178,18 +166,14 @@ describe('tool:show command contract', function (): void {
 
         LocalGatewaySettings::current()->fill([
             'gateway_url' => 'https://10.6.0.1',
-            'ca_pem_path' => '/dev/null',
-        ])->save();
+            'ca_pem_path' => '/dev/null'])->save();
 
         MockClient::global([
             ShowToolRequest::class => MockResponse::make([
                 'error' => [
                     'code' => 'tool.not_found',
                     'message' => "Tool 'redis' not found on node 'app-1'.",
-                    'meta' => ['tool' => 'redis', 'node' => 'app-1'],
-                ],
-            ], 404),
-        ]);
+                    'meta' => ['tool' => 'redis', 'node' => 'app-1']]], 404)]);
 
         $exitCode = Artisan::call('tool:show', ['tool' => 'redis', '--node' => 'app-1', '--json' => true]);
         $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
@@ -204,7 +188,7 @@ describe('tool:show command contract', function (): void {
         Process::preventStrayProcesses();
 
         createToolShowLocalNode('gateway');
-        $node = createTestAppHostNode(['name' => 'app-1', 'role' => 'app']);
+        $node = createTestAppHostNode(['name' => 'app-1']);
         NodeTool::factory()->create(['name' => 'redis', 'node_id' => $node->id]);
 
         $toolCount = DB::table('node_tools')->count();
@@ -219,14 +203,13 @@ describe('tool:show command contract', function (): void {
 
     it('renders a tool show detail tree in human mode', function (): void {
         createToolShowLocalNode('gateway');
-        $node = createTestAppHostNode(['name' => 'app-1', 'role' => 'app']);
+        $node = createTestAppHostNode(['name' => 'app-1']);
 
         NodeTool::factory()->create([
             'name' => 'redis',
             'node_id' => $node->id,
             'expected_state' => 'running',
-            'expected_version' => '7.2',
-        ]);
+            'expected_version' => '7.2']);
 
         $exitCode = Artisan::call('tool:show', ['tool' => 'redis', '--node' => 'app-1']);
         $output = Artisan::output();

@@ -27,25 +27,34 @@ afterEach(function (): void {
 
 function createScheduleRunLocalNode(string $role = 'gateway'): Node
 {
-    return Node::factory()->create([
+    $node = Node::factory()->create([
         'name' => "local-{$role}",
-        'role' => $role,
         'host' => '10.6.0.1',
         'wireguard_address' => '10.6.0.1',
     ]);
+
+    if ($role === 'gateway') {
+        NodeRoleAssignment::factory()->create([
+            'node_id' => $node->id,
+            'role' => 'gateway',
+            'status' => 'active',
+            'settings' => [],
+        ]);
+    }
+
+    return $node;
 }
 
 function createScheduleRunAppHostNode(array $attributes = []): Node
 {
     $node = Node::factory()->create([
-        'role' => 'app',
         'status' => 'active',
         ...$attributes,
     ]);
 
     NodeRoleAssignment::factory()->create([
         'node_id' => $node->id,
-        'role' => 'app-development',
+        'role' => 'app-dev',
         'status' => 'active',
         'settings' => ['tld' => 'test'],
     ]);
@@ -208,7 +217,6 @@ it('renders human progress and success prose', function (): void {
 it('exposes schedule run over the authenticated gateway API', function (): void {
     $caller = Node::factory()->create([
         'name' => 'control-1',
-        'role' => 'control',
         'wireguard_address' => '10.6.0.70',
     ]);
     $node = createScheduleRunAppHostNode(['name' => 'app-1']);

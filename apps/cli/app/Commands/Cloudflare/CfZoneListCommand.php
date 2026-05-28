@@ -9,8 +9,10 @@ use App\Exceptions\GatewayApiException;
 
 final class CfZoneListCommand extends GatewayCommand
 {
+    #[\Override]
     protected $signature = 'cf-zone:list {--json}';
 
+    #[\Override]
     protected $description = 'List Cloudflare zones visible to the gateway token.';
 
     public function handle(): int

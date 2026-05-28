@@ -32,9 +32,8 @@ describe('orbit:internal:detect-platform', function (): void {
             'cat /etc/os-release' => Process::result(output: "ID=ubuntu\nVERSION_ID=\"24.04\"\n"),
         ]);
 
-        $node = Node::query()->create([
+        $node = Node::factory()->gateway()->create([
             'name' => 'gateway-1',
-            'role' => 'gateway',
             'platform' => 'unknown',
             'host' => '10.6.0.2',
             'wireguard_address' => '10.6.0.2',

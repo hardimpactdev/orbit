@@ -640,7 +640,7 @@ class UpdateAllCommand extends Command implements Loggable
                     $updatesByIndex[$index] = [
                         'target' => $node->name,
                         'node' => $node->name,
-                        'role' => $node->role,
+                        'role' => $node->displayRole(),
                         'status' => 'failed',
                         'output' => $output,
                     ];
@@ -727,7 +727,7 @@ class UpdateAllCommand extends Command implements Loggable
             $updates[] = [
                 'target' => $node->name,
                 'node' => $node->name,
-                'role' => $node->role,
+                'role' => $node->displayRole(),
                 'status' => $result->successful() ? 'completed' : 'failed',
             ];
 
@@ -1058,7 +1058,7 @@ class UpdateAllCommand extends Command implements Loggable
                     'index' => $index,
                     'key' => $node->name,
                     'node' => $node->name,
-                    'role' => $node->role,
+                    'role' => $node->displayRole(),
                     'output' => $this->failureMessage($result->errorOutput() ?: $result->output()),
                 ]);
 
@@ -1071,7 +1071,7 @@ class UpdateAllCommand extends Command implements Loggable
             'index' => $index,
             'key' => $node->name,
             'node' => $node->name,
-            'role' => $node->role,
+            'role' => $node->displayRole(),
         ]);
     }
 
@@ -1188,7 +1188,7 @@ class UpdateAllCommand extends Command implements Loggable
         return [
             'target' => $node->name,
             'node' => $node->name,
-            'role' => $node->role,
+            'role' => $node->displayRole(),
             'status' => $result->successful() ? 'completed' : 'failed',
             ...($result->successful() ? [] : ['output' => trim($result->errorOutput() ?: $result->output())]),
         ];
@@ -1383,7 +1383,7 @@ class UpdateAllCommand extends Command implements Loggable
         $targets = [['target' => 'local', 'node' => null, 'role' => null]];
 
         foreach ($nodes as $node) {
-            $targets[] = ['target' => $node->name, 'node' => $node->name, 'role' => $node->role];
+            $targets[] = ['target' => $node->name, 'node' => $node->name, 'role' => $node->displayRole()];
         }
 
         return $targets;

@@ -14,8 +14,8 @@ describe('node permission presets', function (): void {
         expect($presets->names())->toBe([
             'agent-self',
             'vpn-self',
-            'app-development-self',
-            'app-production-self',
+            'app-dev-self',
+            'app-prod-self',
             'database-self',
             'operator',
             'read-only',
@@ -72,8 +72,8 @@ describe('node permission presets', function (): void {
 
             expect($presets->selfPresetNameForRole(NodeRoleName::Gateway))->toBeNull()
                 ->and($presets->selfPresetNameForRole(NodeRoleName::Vpn))->toBe('vpn-self')
-                ->and($presets->selfPresetNameForRole(NodeRoleName::AppDevelopment))->toBe('app-development-self')
-                ->and($presets->selfPresetNameForRole(NodeRoleName::AppProduction))->toBe('app-production-self')
+                ->and($presets->selfPresetNameForRole(NodeRoleName::AppDevelopment))->toBe('app-dev-self')
+                ->and($presets->selfPresetNameForRole(NodeRoleName::AppProduction))->toBe('app-prod-self')
                 ->and($presets->selfPresetNameForRole(NodeRoleName::Database))->toBe('database-self')
                 ->and($presets->selfPresetNameForRole(NodeRoleName::Agent))->toBe('agent-self')
                 ->and($presets->selfPresetNameForRole('unknown'))->toBeNull();
@@ -89,8 +89,8 @@ describe('node permission presets', function (): void {
         it('defines workspace setup self presets for app roles', function (): void {
             $presets = new NodePermissionPresets;
 
-            expect($presets->permissions('app-development-self'))->toBe(['workspace:setup'])
-                ->and($presets->permissions('app-production-self'))->toBe(['workspace:setup']);
+            expect($presets->permissions('app-dev-self'))->toBe(['workspace:setup'])
+                ->and($presets->permissions('app-prod-self'))->toBe(['workspace:setup']);
         });
     });
 

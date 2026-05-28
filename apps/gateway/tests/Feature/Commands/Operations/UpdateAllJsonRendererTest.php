@@ -18,36 +18,18 @@ beforeEach(function (): void {
 });
 
 beforeEach(function (): void {
-    DB::table('nodes')->insert([
-        [
-            'name' => 'gateway',
-            'role' => 'gateway',
-            'host' => 'gateway',
-            'orbit_path' => '/home/gateway/orbit',
-            'status' => 'active',
-            'created_at' => now(),
-            'updated_at' => now(),
-        ],
-        [
-            'name' => 'beast',
-            'role' => 'app',
-            'host' => 'beast',
-            'orbit_path' => '/home/nckrtl/orbit',
-            'status' => 'active',
-            'created_at' => now(),
-            'updated_at' => now(),
-        ],
+    Node::factory()->gateway()->create([
+        'name' => 'gateway',
+        'host' => 'gateway',
+        'orbit_path' => '/home/gateway/orbit',
+        'status' => 'active',
     ]);
 
-    DB::table('node_roles')->insert([
-        'node_id' => DB::table('nodes')->where('name', 'beast')->value('id'),
-        'role' => 'app-development',
+    Node::factory()->appDev(['tld' => 'test'])->create([
+        'name' => 'beast',
+        'host' => 'beast',
+        'orbit_path' => '/home/nckrtl/orbit',
         'status' => 'active',
-        'settings' => json_encode(['tld' => 'test'], JSON_THROW_ON_ERROR),
-        'last_error' => null,
-        'converged_at' => now(),
-        'created_at' => now(),
-        'updated_at' => now(),
     ]);
 });
 
@@ -90,7 +72,7 @@ it('renders success envelope shape with updates array and summary', function ():
     expect($payload['success']['data']['updates'][1])->toBe([
         'target' => 'beast',
         'node' => 'beast',
-        'role' => 'app',
+        'role' => 'app-dev',
         'status' => 'completed',
     ]);
     expect($payload['success']['meta']['summary'])->toBe([
@@ -103,16 +85,15 @@ it('renders success envelope shape with updates array and summary', function ():
 it('updates app nodes in parallel while preserving json target order', function (): void {
     DB::table('nodes')->insert([
         'name' => 'sidecar',
-        'role' => 'app',
         'host' => 'sidecar',
         'orbit_path' => '/home/nckrtl/orbit',
         'status' => 'active',
         'created_at' => now(),
         'updated_at' => now(),
     ]);
-    DB::table('node_roles')->insert([
+    DB::table('node_role')->insert([
         'node_id' => DB::table('nodes')->where('name', 'sidecar')->value('id'),
-        'role' => 'app-production',
+        'role' => 'app-prod',
         'status' => 'active',
         'settings' => json_encode([], JSON_THROW_ON_ERROR),
         'last_error' => null,
@@ -242,11 +223,10 @@ it('renders remote_update_failed with partial target results and summary', funct
     ]);
 });
 
-it('excludes legacy control identities from updates array', function (): void {
+it('excludes role-free operator identities from updates array', function (): void {
     DB::table('nodes')->insert([
         [
             'name' => 'mini',
-            'role' => 'control',
             'host' => 'mini',
             'orbit_path' => '/Users/nckrtl/orbit',
             'status' => 'active',

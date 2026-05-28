@@ -19,7 +19,6 @@ use App\Services\Nodes\Roles\NodeRoleAssignments;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
-use Illuminate\Support\Facades\DB;
 use stdClass;
 use Throwable;
 
@@ -124,12 +123,6 @@ class NodeShowCommand extends Command
             return $this->promptNodeName();
         }
 
-        $defaultRecord = DB::table('local_node_defaults')->first();
-
-        if ($defaultRecord !== null && is_string($defaultRecord->default_node_name) && $defaultRecord->default_node_name !== '') {
-            return $defaultRecord->default_node_name;
-        }
-
         $localName = $isGateway
             ? app(NodeRoleAssignments::class)->activeGatewayNodeQuery()->orderBy('name')->value('name')
             : null;
@@ -165,9 +158,7 @@ class NodeShowCommand extends Command
 
         return [
             'name' => $nodeData['name'] ?? '',
-            'role' => $nodeData['role'] ?? '',
             'status' => $nodeData['status'] ?? 'active',
-            'environment' => $nodeData['environment'] ?? null,
             'platform' => $nodeData['platform'] ?? 'unknown',
             'roles' => $this->normalizeRoles($nodeData['roles'] ?? null),
             'addresses' => [
@@ -185,9 +176,7 @@ class NodeShowCommand extends Command
     /**
      * @return array{
      *     name: string,
-     *     role: string,
      *     status: string,
-     *     environment: string|null,
      *     platform: string,
      *     roles: list<array{role: string, status: string, settings: array<string, mixed>|stdClass, last_error: string|null, converged_at: string|null}>,
      *     addresses: array{wireguard: string},
@@ -216,9 +205,7 @@ class NodeShowCommand extends Command
 
         return [
             'name' => $node->name,
-            'role' => $node->role,
             'status' => $node->status,
-            'environment' => app(NodeRoleAssignments::class)->activeAppHostEnvironment($node),
             'platform' => $node->platform ?? 'unknown',
             'roles' => $node->roleAssignments
                 ->map(fn (NodeRoleAssignment $assignment): array => NodeRoleAssignmentPayload::fromModel($assignment))
@@ -237,9 +224,7 @@ class NodeShowCommand extends Command
     /**
      * @param  array{
      *     name: string,
-     *     role: string,
      *     status: string,
-     *     environment: string|null,
      *     platform: string,
      *     roles: list<array{role: string, status: string, settings: array<string, mixed>|stdClass, last_error: string|null, converged_at: string|null}>,
      *     addresses: array{wireguard: string},
@@ -253,7 +238,7 @@ class NodeShowCommand extends Command
     private function renderHuman(array $node): void
     {
         $properties = [
-            ...$this->humanRoleProperties($node['role'], $node['roles']),
+            ...$this->humanRoleProperties($node['roles']),
             'OS' => $node['platform'],
             'Peer IP' => $node['addresses']['wireguard'],
             'Serving' => $this->humanGrantLabels($node['grants']['consuming_nodes']),
@@ -266,16 +251,16 @@ class NodeShowCommand extends Command
     /**
      * @return array{Role: string}|array{Roles: string}
      */
-    private function humanRoleProperties(string $legacyRole, mixed $roles): array
+    private function humanRoleProperties(mixed $roles): array
     {
         if (! is_array($roles) || $roles === []) {
-            return ['Role' => $legacyRole];
+            return ['Role' => '—'];
         }
 
         $labels = $this->humanRoleLabels($roles);
 
         if ($labels === []) {
-            return ['Role' => $legacyRole];
+            return ['Role' => '—'];
         }
 
         if (count($labels) === 1) {

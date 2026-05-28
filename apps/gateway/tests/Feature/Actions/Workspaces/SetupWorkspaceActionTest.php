@@ -27,7 +27,6 @@ beforeEach(function (): void {
     DB::table('nodes')->insert([
         [
             'name' => 'gateway',
-            'role' => 'gateway',
             'host' => 'gateway',
             'user' => 'gateway',
             'orbit_path' => '/home/gateway/orbit',
@@ -37,6 +36,17 @@ beforeEach(function (): void {
         ],
     ]);
 
+    DB::table('node_role')->insert([
+        'node_id' => 1,
+        'role' => 'gateway',
+        'status' => 'active',
+        'settings' => json_encode([], JSON_THROW_ON_ERROR),
+        'last_error' => null,
+        'converged_at' => now(),
+        'created_at' => now(),
+        'updated_at' => now(),
+    ]);
+
     DB::table('apps')->insert([
         [
             'name' => 'demo',
@@ -44,7 +54,6 @@ beforeEach(function (): void {
             'node_id' => 1,
             'path' => '/home/nckrtl/apps/demo',
             'php_version' => '8.5',
-            'environment' => 'development',
             'document_root' => 'public',
             'created_at' => now(),
             'updated_at' => now(),
@@ -168,22 +177,26 @@ it('registers workspace proxy routes against the FrankenPHP runtime container', 
 });
 
 it('registers production workspace routes on ingress with a private backend site', function (): void {
-    Node::factory()->create([
+    $appHost = Node::query()->whereKey(1)->firstOrFail();
+    NodeRoleAssignment::query()
+        ->where('node_id', $appHost->id)
+        ->where('role', 'gateway')
+        ->delete();
+
+    $edge = Node::factory()->create([
         'name' => 'edge-1',
-        'role' => 'app',
         'status' => 'active',
         'user' => 'orbit',
     ]);
 
     $router = Node::factory()->create([
         'name' => 'gateway-1',
-        'role' => 'gateway',
         'status' => 'active',
         'wireguard_address' => '10.6.0.2',
     ]);
 
     NodeRoleAssignment::factory()->create([
-        'node_id' => 2,
+        'node_id' => $edge->id,
         'role' => 'ingress',
         'status' => 'active',
     ]);
@@ -195,10 +208,10 @@ it('registers production workspace routes on ingress with a private backend site
     ]);
 
     NodeRoleAssignment::factory()->create([
-        'node_id' => 1,
-        'role' => 'app-production',
+        'node_id' => $appHost->id,
+        'role' => 'app-prod',
         'status' => 'active',
-        'settings' => ['ingress_node_id' => 2],
+        'settings' => ['ingress_node_id' => $edge->id],
     ]);
 
     App::query()->whereKey(1)->update([
@@ -206,7 +219,7 @@ it('registers production workspace routes on ingress with a private backend site
         'environment' => 'production',
     ]);
 
-    Node::query()->whereKey(1)->update([
+    Node::query()->whereKey($appHost->id)->update([
         'wireguard_address' => '10.6.0.21',
         'user' => 'orbit',
     ]);
@@ -229,7 +242,7 @@ it('registers production workspace routes on ingress with a private backend site
 
     $route = ProxyRoute::query()->where('workspace_id', $workspace->id)->firstOrFail();
 
-    expect($route->node_id)->toBe(2)
+    expect($route->node_id)->toBe($edge->id)
         ->and($route->config['placement'])->toBe('ingress')
         ->and($route->config['router_upstream'])->toBe([
             'node_id' => $router->id,
@@ -240,22 +253,22 @@ it('registers production workspace routes on ingress with a private backend site
         ->and($route->config['router_artifact']['source_hash'])->toHaveLength(64)
         ->and($route->config['router_backend_pool'])->toBe([
             [
-                'node_id' => 1,
+                'node_id' => $appHost->id,
                 'node' => 'gateway',
                 'url' => 'http://10.6.0.21:8081',
             ],
         ])
         ->and($route->config['backend_artifacts'][0]['bind'])->toBe('10.6.0.21')
         ->and($route->config['backend_artifacts'][0]['source_hash'])->toHaveLength(64)
-        ->and(collect($shell->runs)->contains(fn (array $run): bool => $run['node'] === 2 && str_contains($run['script'], 'sudo test -f /etc/caddy/Caddyfile')))->toBeTrue()
-        ->and(collect($shell->runs)->contains(fn (array $run): bool => $run['node'] === 2 && str_contains($run['script'], 'sudo install -d -m 0755 /etc/caddy')))->toBeTrue()
-        ->and(collect($shell->runs)->contains(fn (array $run): bool => $run['node'] === 2 && str_contains($run['script'], 'sudo tee /etc/caddy/Caddyfile >/dev/null')))->toBeTrue()
+        ->and(collect($shell->runs)->contains(fn (array $run): bool => $run['node'] === $edge->id && str_contains($run['script'], 'sudo test -f /etc/caddy/Caddyfile')))->toBeTrue()
+        ->and(collect($shell->runs)->contains(fn (array $run): bool => $run['node'] === $edge->id && str_contains($run['script'], 'sudo install -d -m 0755 /etc/caddy')))->toBeTrue()
+        ->and(collect($shell->runs)->contains(fn (array $run): bool => $run['node'] === $edge->id && str_contains($run['script'], 'sudo tee /etc/caddy/Caddyfile >/dev/null')))->toBeTrue()
         ->and(collect($shell->runs)->contains(fn (array $run): bool => $run['node'] === $router->id && str_contains($run['script'], 'sudo test -f /etc/caddy/Caddyfile')))->toBeTrue()
         ->and(collect($shell->runs)->contains(fn (array $run): bool => $run['node'] === $router->id && str_contains($run['script'], 'sudo install -d -m 0755 /etc/caddy')))->toBeTrue()
         ->and(collect($shell->runs)->contains(fn (array $run): bool => $run['node'] === $router->id && str_contains($run['script'], 'sudo tee /etc/caddy/Caddyfile >/dev/null')))->toBeTrue()
-        ->and(collect($shell->runs)->contains(fn (array $run): bool => $run['node'] === 1 && str_contains($run['script'], 'sudo test -f /etc/caddy/Caddyfile')))->toBeTrue()
-        ->and(collect($shell->runs)->contains(fn (array $run): bool => $run['node'] === 1 && str_contains($run['script'], 'sudo install -d -m 0755 /etc/caddy')))->toBeTrue()
-        ->and(collect($shell->runs)->contains(fn (array $run): bool => $run['node'] === 1 && str_contains($run['script'], 'sudo tee /etc/caddy/Caddyfile >/dev/null')))->toBeTrue()
+        ->and(collect($shell->runs)->contains(fn (array $run): bool => $run['node'] === $appHost->id && str_contains($run['script'], 'sudo test -f /etc/caddy/Caddyfile')))->toBeTrue()
+        ->and(collect($shell->runs)->contains(fn (array $run): bool => $run['node'] === $appHost->id && str_contains($run['script'], 'sudo install -d -m 0755 /etc/caddy')))->toBeTrue()
+        ->and(collect($shell->runs)->contains(fn (array $run): bool => $run['node'] === $appHost->id && str_contains($run['script'], 'sudo tee /etc/caddy/Caddyfile >/dev/null')))->toBeTrue()
         ->and(collect($shell->scripts)->contains(fn (string $script): bool => str_contains($script, '/etc/caddy/sites/feature-a.demo.example.com.caddy')))->toBeTrue()
         ->and(collect($shell->scripts)->contains(fn (string $script): bool => str_contains($script, '/etc/caddy/sites/feature-a.demo.example.com.backend.caddy')))->toBeTrue()
         ->and((function () use ($shell): bool {

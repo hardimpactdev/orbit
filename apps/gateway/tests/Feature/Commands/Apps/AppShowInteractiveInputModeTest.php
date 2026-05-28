@@ -16,7 +16,6 @@ beforeEach(function (): void {
 
     Node::factory()->create([
         'name' => 'gateway-1',
-        'role' => 'gateway',
         'host' => '10.6.0.1',
         'wireguard_address' => '10.6.0.1',
     ]);
@@ -25,7 +24,6 @@ beforeEach(function (): void {
 it('prompts for missing app in interactive mode when cwd cannot resolve it', function (): void {
     $node = Node::factory()->create([
         'name' => 'app-1',
-        'role' => 'app',
         'host' => '10.6.0.7',
         'tld' => 'test',
     ]);
@@ -35,7 +33,6 @@ it('prompts for missing app in interactive mode when cwd cannot resolve it', fun
         'node_id' => $node->id,
         'path' => '/srv/docs',
         'document_root' => 'public',
-        'environment' => 'development',
     ]);
 
     DataTablePrompt::fake([Key::ENTER]);
@@ -48,7 +45,6 @@ it('prompts for missing app in interactive mode when cwd cannot resolve it', fun
 it('does not prompt when app is supplied', function (): void {
     $node = Node::factory()->create([
         'name' => 'app-1',
-        'role' => 'app',
         'host' => '10.6.0.7',
         'tld' => 'test',
     ]);
@@ -58,7 +54,6 @@ it('does not prompt when app is supplied', function (): void {
         'node_id' => $node->id,
         'path' => '/srv/docs',
         'document_root' => 'public',
-        'environment' => 'development',
     ]);
 
     $exitCode = Artisan::call('app:show', ['app' => 'docs', '--json' => true]);

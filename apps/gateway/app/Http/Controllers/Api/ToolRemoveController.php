@@ -67,7 +67,7 @@ final class ToolRemoveController implements Loggable
         if ($this->toolTargetString($request, 'node') === null && $this->toolTargetString($request, 'app') === null) {
             return $this->errorResponse(
                 code: 'validation_failed',
-                message: 'A node or app target is required. Provide --node, --app, configure node:default, or select a target interactively.',
+                message: 'A node or app target is required. Provide --node or --app.',
                 meta: ['fields' => ['target']],
                 status: 422,
             );

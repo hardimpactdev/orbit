@@ -97,7 +97,7 @@ beforeEach(function (): void {
 
     $gateway = Node::factory()->create([
         'name' => 'gateway-1',
-        'role' => 'gateway',
+
         'platform' => 'ubuntu',
         'host' => '10.6.0.2',
         'wireguard_address' => '10.6.0.2',
@@ -163,7 +163,7 @@ beforeEach(function (): void {
         }
 
         if (str_contains($command, 'internal:wg-easy:state')) {
-            return Process::result(output: json_encode(['ok' => true], JSON_THROW_ON_ERROR)."\n");
+            return Process::result(output: json_encode(['success' => ['data' => []]], JSON_THROW_ON_ERROR)."\n");
         }
 
         return Process::result();
@@ -181,7 +181,7 @@ afterEach(function (): void {
 it('creates an agent node with default self-grant', function (): void {
     $exitCode = Artisan::call('node:new', [
         'name' => 'agent-1',
-        '--role' => ['agent'],
+        '--roles' => 'agent',
         '--host' => '192.0.2.10',
         '--tld' => 'agent',
         '--self-grant' => 'default',
@@ -221,7 +221,7 @@ it('creates an agent node with default self-grant', function (): void {
 it('creates an agent node with default self-grant when omitted', function (): void {
     $exitCode = Artisan::call('node:new', [
         'name' => 'agent-1',
-        '--role' => ['agent'],
+        '--roles' => 'agent',
         '--host' => '192.0.2.10',
         '--tld' => 'agent',
         '--json' => true,
@@ -249,7 +249,7 @@ it('creates an agent node with default self-grant when omitted', function (): vo
 it('creates an agent node with custom self-grant permissions', function (): void {
     $exitCode = Artisan::call('node:new', [
         'name' => 'agent-1',
-        '--role' => ['agent'],
+        '--roles' => 'agent',
         '--host' => '192.0.2.10',
         '--tld' => 'agent',
         '--self-grant' => 'custom',
@@ -272,21 +272,21 @@ it('creates an agent node with custom self-grant permissions', function (): void
 it('expands grant-to=all to all current eligible nodes', function (): void {
     $appNode = Node::factory()->create([
         'name' => 'app-1',
-        'role' => 'app',
+
         'status' => 'active',
         'wireguard_address' => '10.6.0.5',
     ]);
 
     $dbNode = Node::factory()->create([
         'name' => 'db-1',
-        'role' => 'control',
+
         'status' => 'active',
         'wireguard_address' => '10.6.0.6',
     ]);
 
     $exitCode = Artisan::call('node:new', [
         'name' => 'agent-1',
-        '--role' => ['agent'],
+        '--roles' => 'agent',
         '--host' => '192.0.2.10',
         '--tld' => 'agent',
         '--grant-to' => ['all'],
@@ -316,14 +316,14 @@ it('expands grant-to=all to all current eligible nodes', function (): void {
 it('expands grant-from=all to all current eligible nodes', function (): void {
     $controlNode = Node::factory()->create([
         'name' => 'control-1',
-        'role' => 'control',
+
         'status' => 'active',
         'wireguard_address' => '10.6.0.5',
     ]);
 
     $exitCode = Artisan::call('node:new', [
         'name' => 'agent-1',
-        '--role' => ['agent'],
+        '--roles' => 'agent',
         '--host' => '192.0.2.10',
         '--tld' => 'agent',
         '--grant-from' => ['all'],
@@ -346,7 +346,7 @@ it('expands grant-from=all to all current eligible nodes', function (): void {
 it('creates an agent node without a default tool', function (): void {
     $exitCode = Artisan::call('node:new', [
         'name' => 'agent-1',
-        '--role' => ['agent'],
+        '--roles' => 'agent',
         '--host' => '192.0.2.10',
         '--tld' => 'agent',
         '--json' => true,
@@ -361,7 +361,7 @@ it('creates an agent node without a default tool', function (): void {
 it('selects a single agent tool without warning', function (): void {
     $exitCode = Artisan::call('node:new', [
         'name' => 'agent-1',
-        '--role' => ['agent'],
+        '--roles' => 'agent',
         '--host' => '192.0.2.10',
         '--tld' => 'agent',
         '--agent-tool' => ['openclaw'],
@@ -378,7 +378,7 @@ it('selects a single agent tool without warning', function (): void {
 it('emits multiple-agent-tools warning when selecting multiple agent tools', function (): void {
     $exitCode = Artisan::call('node:new', [
         'name' => 'agent-1',
-        '--role' => ['agent'],
+        '--roles' => 'agent',
         '--host' => '192.0.2.10',
         '--tld' => 'agent',
         '--agent-tool' => ['openclaw', 'hermes'],
@@ -395,7 +395,7 @@ it('emits multiple-agent-tools warning when selecting multiple agent tools', fun
 it('asks human callers to confirm multiple agent tools before side effects', function (): void {
     $this->artisan('node:new', [
         'name' => 'agent-1',
-        '--role' => ['agent'],
+        '--roles' => 'agent',
         '--host' => '192.0.2.10',
         '--tld' => 'agent',
         '--user' => 'root',
@@ -412,7 +412,7 @@ it('asks human callers to confirm multiple agent tools before side effects', fun
 it('continues after human callers confirm multiple agent tools', function (): void {
     $this->artisan('node:new', [
         'name' => 'agent-1',
-        '--role' => ['agent'],
+        '--roles' => 'agent',
         '--host' => '192.0.2.10',
         '--tld' => 'agent',
         '--user' => 'root',
@@ -428,7 +428,7 @@ it('continues after human callers confirm multiple agent tools', function (): vo
 it('supports repeatable agent-tool selection', function (): void {
     $exitCode = Artisan::call('node:new', [
         'name' => 'agent-1',
-        '--role' => ['agent'],
+        '--roles' => 'agent',
         '--host' => '192.0.2.10',
         '--tld' => 'agent',
         '--agent-tool' => ['openclaw', 'hermes'],
@@ -444,7 +444,7 @@ it('supports repeatable agent-tool selection', function (): void {
 it('does not offer gateway-admin by default in grant setup', function (): void {
     $exitCode = Artisan::call('node:new', [
         'name' => 'agent-1',
-        '--role' => ['agent'],
+        '--roles' => 'agent',
         '--host' => '192.0.2.10',
         '--tld' => 'agent',
         '--grant-to' => ['gateway-1'],
@@ -461,7 +461,7 @@ it('does not offer gateway-admin by default in grant setup', function (): void {
 it('creates agent node with tld defaulting to agent', function (): void {
     $exitCode = Artisan::call('node:new', [
         'name' => 'agent-1',
-        '--role' => ['agent'],
+        '--roles' => 'agent',
         '--host' => '192.0.2.10',
         '--json' => true,
     ]);
@@ -476,7 +476,7 @@ it('creates agent node with tld defaulting to agent', function (): void {
 it('rejects invalid agent-tool names', function (): void {
     $exitCode = Artisan::call('node:new', [
         'name' => 'agent-1',
-        '--role' => ['agent'],
+        '--roles' => 'agent',
         '--host' => '192.0.2.10',
         '--tld' => 'agent',
         '--agent-tool' => ['not-a-real-tool'],
@@ -492,7 +492,7 @@ it('rejects invalid agent-tool names', function (): void {
 it('rejects non-agent tools via agent-tool option', function (): void {
     $exitCode = Artisan::call('node:new', [
         'name' => 'agent-1',
-        '--role' => ['agent'],
+        '--roles' => 'agent',
         '--host' => '192.0.2.10',
         '--tld' => 'agent',
         '--agent-tool' => ['docker'],
@@ -508,14 +508,14 @@ it('rejects non-agent tools via agent-tool option', function (): void {
 it('does not create accidental self-grant via grant-to=all', function (): void {
     Node::factory()->create([
         'name' => 'app-1',
-        'role' => 'app',
+
         'status' => 'active',
         'wireguard_address' => '10.6.0.5',
     ]);
 
     $exitCode = Artisan::call('node:new', [
         'name' => 'agent-1',
-        '--role' => ['agent'],
+        '--roles' => 'agent',
         '--host' => '192.0.2.10',
         '--tld' => 'agent',
         '--grant-to' => ['all'],
@@ -544,14 +544,14 @@ it('does not create accidental self-grant via grant-to=all', function (): void {
 it('does not create accidental self-grant via grant-from=all', function (): void {
     Node::factory()->create([
         'name' => 'control-1',
-        'role' => 'control',
+
         'status' => 'active',
         'wireguard_address' => '10.6.0.5',
     ]);
 
     $exitCode = Artisan::call('node:new', [
         'name' => 'agent-1',
-        '--role' => ['agent'],
+        '--roles' => 'agent',
         '--host' => '192.0.2.10',
         '--tld' => 'agent',
         '--grant-from' => ['all'],
@@ -580,7 +580,7 @@ it('does not create accidental self-grant via grant-from=all', function (): void
 it('fails explicitly for missing named grant-to target', function (): void {
     $exitCode = Artisan::call('node:new', [
         'name' => 'agent-1',
-        '--role' => ['agent'],
+        '--roles' => 'agent',
         '--host' => '192.0.2.10',
         '--tld' => 'agent',
         '--grant-to' => ['missing-node'],
@@ -598,7 +598,7 @@ it('fails explicitly for missing named grant-to target', function (): void {
 it('fails explicitly for missing named grant-from target', function (): void {
     $exitCode = Artisan::call('node:new', [
         'name' => 'agent-1',
-        '--role' => ['agent'],
+        '--roles' => 'agent',
         '--host' => '192.0.2.10',
         '--tld' => 'agent',
         '--grant-from' => ['missing-node'],
@@ -616,7 +616,7 @@ it('fails explicitly for missing named grant-from target', function (): void {
 it('hands off selected agent tools to tool installer', function (): void {
     Artisan::call('node:new', [
         'name' => 'agent-1',
-        '--role' => ['agent'],
+        '--roles' => 'agent',
         '--host' => '192.0.2.10',
         '--tld' => 'agent',
         '--agent-tool' => ['openclaw'],
@@ -632,7 +632,7 @@ it('hands off selected agent tools to tool installer', function (): void {
 it('hands off multiple agent tools to tool installer', function (): void {
     Artisan::call('node:new', [
         'name' => 'agent-1',
-        '--role' => ['agent'],
+        '--roles' => 'agent',
         '--host' => '192.0.2.10',
         '--tld' => 'agent',
         '--agent-tool' => ['openclaw', 'hermes'],
@@ -647,7 +647,7 @@ it('hands off multiple agent tools to tool installer', function (): void {
 it('does not install tools when agent-tool is omitted', function (): void {
     Artisan::call('node:new', [
         'name' => 'agent-1',
-        '--role' => ['agent'],
+        '--roles' => 'agent',
         '--host' => '192.0.2.10',
         '--tld' => 'agent',
         '--json' => true,
@@ -672,7 +672,6 @@ it('forwards agent setup inputs from operator node to gateway', function (): voi
                     'result' => ['action' => 'created'],
                     'node' => [
                         'name' => 'agent-1',
-                        'role' => 'app',
                         'status' => 'active',
                     ],
                     'provisioning' => [
@@ -692,7 +691,7 @@ it('forwards agent setup inputs from operator node to gateway', function (): voi
 
     $exitCode = Artisan::call('node:new', [
         'name' => 'agent-1',
-        '--role' => ['agent'],
+        '--roles' => 'agent',
         '--host' => '192.0.2.10',
         '--tld' => 'agent',
         '--self-grant' => 'default',
@@ -708,10 +707,8 @@ it('forwards agent setup inputs from operator node to gateway', function (): voi
 
     $mock->assertSent(fn (CreateNodeRequest $request): bool => $request->body()->all() === [
         'name' => 'agent-1',
-        'role' => 'agent',
         'roles' => ['agent'],
         'host' => '192.0.2.10',
-        'environment' => null,
         'tld' => 'agent',
         'user' => 'root',
         'self_grant' => 'default',
@@ -726,7 +723,7 @@ it('forwards agent setup inputs from operator node to gateway', function (): voi
 it('leaves no node when invalid agent tool is provided', function (): void {
     $exitCode = Artisan::call('node:new', [
         'name' => 'agent-1',
-        '--role' => ['agent'],
+        '--roles' => 'agent',
         '--host' => '192.0.2.10',
         '--tld' => 'agent',
         '--agent-tool' => ['not-a-real-tool'],
@@ -744,7 +741,7 @@ it('leaves no node when invalid agent tool is provided', function (): void {
 it('leaves no node when non-agent tool is provided via agent-tool', function (): void {
     $exitCode = Artisan::call('node:new', [
         'name' => 'agent-1',
-        '--role' => ['agent'],
+        '--roles' => 'agent',
         '--host' => '192.0.2.10',
         '--tld' => 'agent',
         '--agent-tool' => ['docker'],
@@ -762,7 +759,7 @@ it('leaves no node when non-agent tool is provided via agent-tool', function ():
 it('leaves no node when grant target is missing', function (): void {
     $exitCode = Artisan::call('node:new', [
         'name' => 'agent-1',
-        '--role' => ['agent'],
+        '--roles' => 'agent',
         '--host' => '192.0.2.10',
         '--tld' => 'agent',
         '--grant-to' => ['missing-node'],
@@ -780,7 +777,7 @@ it('leaves no node when grant target is missing', function (): void {
 it('leaves no node when gateway-admin preset is requested', function (): void {
     $exitCode = Artisan::call('node:new', [
         'name' => 'agent-1',
-        '--role' => ['agent'],
+        '--roles' => 'agent',
         '--host' => '192.0.2.10',
         '--tld' => 'agent',
         '--grant-to' => ['gateway-1'],
@@ -798,9 +795,8 @@ it('leaves no node when gateway-admin preset is requested', function (): void {
 it('fails before side effects when agent-tool is used without agent role', function (): void {
     $exitCode = Artisan::call('node:new', [
         'name' => 'app-1',
-        '--role' => ['app'],
+        '--roles' => 'app-prod',
         '--host' => '192.0.2.10',
-        '--environment' => 'production',
         '--agent-tool' => ['openclaw'],
         '--json' => true,
     ]);
@@ -818,7 +814,7 @@ it('fails before side effects when agent-tool is used without agent role', funct
 it('fails orphan --grant-to-preset without --grant-to before side effects', function (): void {
     $exitCode = Artisan::call('node:new', [
         'name' => 'agent-1',
-        '--role' => ['agent'],
+        '--roles' => 'agent',
         '--host' => '192.0.2.10',
         '--tld' => 'agent',
         '--grant-to-preset' => 'operator',
@@ -837,7 +833,7 @@ it('fails orphan --grant-to-preset without --grant-to before side effects', func
 it('fails orphan --grant-from-permissions without --grant-from before side effects', function (): void {
     $exitCode = Artisan::call('node:new', [
         'name' => 'agent-1',
-        '--role' => ['agent'],
+        '--roles' => 'agent',
         '--host' => '192.0.2.10',
         '--tld' => 'agent',
         '--grant-from-permissions' => 'node:read',
@@ -856,7 +852,7 @@ it('fails orphan --grant-from-permissions without --grant-from before side effec
 it('fails --self-grant-permissions without --self-grant=custom before side effects', function (): void {
     $exitCode = Artisan::call('node:new', [
         'name' => 'agent-1',
-        '--role' => ['agent'],
+        '--roles' => 'agent',
         '--host' => '192.0.2.10',
         '--tld' => 'agent',
         '--self-grant-permissions' => 'node:read',
@@ -888,7 +884,6 @@ it('preserves gateway success.meta.warnings through control-node forwarding', fu
                     'result' => ['action' => 'created'],
                     'node' => [
                         'name' => 'agent-1',
-                        'role' => 'agent',
                         'status' => 'active',
                     ],
                 ],
@@ -910,7 +905,7 @@ it('preserves gateway success.meta.warnings through control-node forwarding', fu
 
     $exitCode = Artisan::call('node:new', [
         'name' => 'agent-1',
-        '--role' => ['agent'],
+        '--roles' => 'agent',
         '--host' => '192.0.2.10',
         '--tld' => 'agent',
         '--agent-tool' => ['openclaw', 'hermes'],

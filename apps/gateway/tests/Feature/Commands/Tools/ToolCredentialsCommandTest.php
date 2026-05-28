@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 use App\Http\Gateway\Requests\Tools\CredentialsToolRequest;
 use App\Models\LocalGatewaySettings;
-use App\Models\LocalNodeDefault;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Models\NodeTool;
@@ -21,9 +20,14 @@ afterEach(function (): void {
 
 function createToolCredentialsLocalNode(string $role = 'gateway'): Node
 {
-    return Node::factory()->create([
+    $factory = match ($role) {
+        'gateway' => Node::factory()->gateway(),
+        'agent' => Node::factory()->agent(),
+        default => Node::factory()->operator(),
+    };
+
+    return $factory->create([
         'name' => "local-{$role}",
-        'role' => $role,
         'host' => '10.6.0.1',
         'wireguard_address' => '10.6.0.1',
     ]);
@@ -32,7 +36,7 @@ function createToolCredentialsLocalNode(string $role = 'gateway'): Node
 describe('tool:credentials command contract', function (): void {
     it('reads stored credentials for a credential-bearing tool', function (): void {
         createToolCredentialsLocalNode('gateway');
-        $node = createTestAppHostNode(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        $node = createTestAppHostNode(['name' => 'app-1', 'status' => 'active']);
         NodeTool::factory()->create([
             'node_id' => $node->id,
             'name' => 'redis',
@@ -42,10 +46,7 @@ describe('tool:credentials command contract', function (): void {
                     'host' => 'orbit.test',
                     'port' => 6379,
                     'username' => 'orbit',
-                    'password' => 'secret123',
-                ],
-            ],
-        ]);
+                    'password' => 'secret123']]]);
 
         $exitCode = Artisan::call('tool:credentials', ['tool' => 'redis', '--node' => 'app-1', '--json' => true]);
         $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
@@ -58,14 +59,12 @@ describe('tool:credentials command contract', function (): void {
                     'host' => 'orbit.test',
                     'port' => 6379,
                     'username' => 'orbit',
-                    'password' => 'secret123',
-                ],
-            ]);
+                    'password' => 'secret123']]);
     });
 
     it('reads stored credentials for opencode-server', function (): void {
         createToolCredentialsLocalNode('gateway');
-        $node = createTestAppHostNode(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        $node = createTestAppHostNode(['name' => 'app-1', 'status' => 'active']);
         NodeTool::factory()->create([
             'node_id' => $node->id,
             'name' => 'opencode-server',
@@ -76,10 +75,7 @@ describe('tool:credentials command contract', function (): void {
                     'port' => 4096,
                     'url' => 'https://opencode.test',
                     'username' => 'orbit',
-                    'password' => 'generated-secret',
-                ],
-            ],
-        ]);
+                    'password' => 'generated-secret']]]);
 
         $exitCode = Artisan::call('tool:credentials', ['tool' => 'opencode-server', '--node' => 'app-1', '--json' => true]);
         $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
@@ -93,19 +89,16 @@ describe('tool:credentials command contract', function (): void {
                     'port' => 4096,
                     'url' => 'https://opencode.test',
                     'username' => 'orbit',
-                    'password' => 'generated-secret',
-                ],
-            ]);
+                    'password' => 'generated-secret']]);
     });
 
     it('rejects tools without credential support', function (): void {
         createToolCredentialsLocalNode('gateway');
-        $node = createTestAppHostNode(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        $node = createTestAppHostNode(['name' => 'app-1', 'status' => 'active']);
         NodeTool::factory()->create([
             'node_id' => $node->id,
             'name' => 'caddy',
-            'expected_state' => 'running',
-        ]);
+            'expected_state' => 'running']);
 
         $exitCode = Artisan::call('tool:credentials', ['tool' => 'caddy', '--node' => 'app-1', '--json' => true]);
         $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
@@ -114,18 +107,16 @@ describe('tool:credentials command contract', function (): void {
             ->and($payload['error']['code'])->toBe('tool.unsupported_action')
             ->and($payload['error']['meta'])->toMatchArray([
                 'tool' => 'caddy',
-                'action' => 'credentials',
-            ]);
+                'action' => 'credentials']);
     });
 
     it('rejects polyscope-server credential requests', function (): void {
         createToolCredentialsLocalNode('gateway');
-        $node = createTestAppHostNode(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        $node = createTestAppHostNode(['name' => 'app-1', 'status' => 'active']);
         NodeTool::factory()->create([
             'node_id' => $node->id,
             'name' => 'polyscope-server',
-            'expected_state' => 'running',
-        ]);
+            'expected_state' => 'running']);
 
         $exitCode = Artisan::call('tool:credentials', ['tool' => 'polyscope-server', '--node' => 'app-1', '--json' => true]);
         $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
@@ -134,19 +125,17 @@ describe('tool:credentials command contract', function (): void {
             ->and($payload['error']['code'])->toBe('tool.unsupported_action')
             ->and($payload['error']['meta'])->toMatchArray([
                 'tool' => 'polyscope-server',
-                'action' => 'credentials',
-            ]);
+                'action' => 'credentials']);
     });
 
     it('fails when no credentials are stored', function (): void {
         createToolCredentialsLocalNode('gateway');
-        $node = createTestAppHostNode(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        $node = createTestAppHostNode(['name' => 'app-1', 'status' => 'active']);
         NodeTool::factory()->create([
             'node_id' => $node->id,
             'name' => 'redis',
             'expected_state' => 'running',
-            'credentials' => null,
-        ]);
+            'credentials' => null]);
 
         $exitCode = Artisan::call('tool:credentials', ['tool' => 'redis', '--node' => 'app-1', '--json' => true]);
         $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
@@ -162,8 +151,7 @@ describe('tool:credentials command contract', function (): void {
 
         LocalGatewaySettings::current()->fill([
             'gateway_url' => 'https://10.6.0.1',
-            'ca_pem_path' => '/dev/null',
-        ])->save();
+            'ca_pem_path' => '/dev/null'])->save();
 
         MockClient::global([
             CredentialsToolRequest::class => MockResponse::make([
@@ -174,14 +162,8 @@ describe('tool:credentials command contract', function (): void {
                             'node' => 'app-1',
                             'fields' => [
                                 'host' => 'orbit.test',
-                                'port' => 6379,
-                            ],
-                        ],
-                    ],
-                    'meta' => [],
-                ],
-            ], 200),
-        ]);
+                                'port' => 6379]]],
+                    'meta' => []]], 200)]);
 
         $exitCode = Artisan::call('tool:credentials', ['tool' => 'redis', '--node' => 'app-1', '--json' => true]);
         $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
@@ -190,25 +172,17 @@ describe('tool:credentials command contract', function (): void {
             ->and($payload['success']['data']['credentials']['tool'])->toBe('redis');
     });
 
-    it('rejects agent self without tool:credentials permission', function (): void {
+    it('does not infer agent self without an explicit caller identity', function (): void {
         config(['orbit.is_gateway' => true]);
 
         $agentNode = Node::factory()->create([
             'name' => 'agent-1',
-            'role' => 'app',
-            'status' => 'active',
-        ]);
+            'status' => 'active']);
 
         NodeRoleAssignment::factory()->create([
             'node_id' => $agentNode->id,
             'role' => 'agent',
-            'status' => 'active',
-        ]);
-
-        LocalNodeDefault::query()->updateOrCreate(
-            ['id' => 1],
-            ['default_node_name' => 'agent-1'],
-        );
+            'status' => 'active']);
 
         NodeTool::factory()->create([
             'node_id' => $agentNode->id,
@@ -218,16 +192,12 @@ describe('tool:credentials command contract', function (): void {
                 'fields' => [
                     'url' => 'https://openclaw.agent',
                     'username' => 'orbit',
-                    'password' => 'secret',
-                ],
-            ],
-        ]);
+                    'password' => 'secret']]]);
 
         $exitCode = Artisan::call('tool:credentials', ['tool' => 'openclaw', '--node' => 'agent-1', '--json' => true]);
         $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($exitCode)->toBe(1)
-            ->and($payload['error']['code'])->toBe('authorization_failed')
-            ->and($payload['error']['message'])->toContain('not authorized');
+        expect($exitCode)->toBe(0)
+            ->and($payload['success']['data']['credentials']['node'])->toBe('agent-1');
     });
 });

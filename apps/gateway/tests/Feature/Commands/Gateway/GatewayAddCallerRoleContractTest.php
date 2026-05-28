@@ -51,7 +51,6 @@ afterEach(function (): void {
 it('allows control caller', function (): void {
     Node::query()->create([
         'name' => 'control-1',
-        'role' => 'control',
         'status' => 'active',
         'host' => '10.6.0.8',
         'orbit_path' => '/home/orbit/orbit',
@@ -63,8 +62,7 @@ it('allows control caller', function (): void {
         ]),
         'https://10.6.0.2/api/me' => Http::response([
             'data' => [
-                'gateway' => ['name' => 'gateway-1', 'role' => 'gateway', 'status' => 'active'],
-                'self' => ['name' => 'control-1', 'role' => 'control', 'status' => 'active', 'wg_ip' => '10.6.0.8'],
+                'self' => ['name' => 'control-1', 'roles' => [], 'status' => 'active', 'wg_ip' => '10.6.0.8'],
             ],
         ]),
     ]);
@@ -73,15 +71,15 @@ it('allows control caller', function (): void {
         ->assertSuccessful();
 });
 
-it('accepts gateway identity payloads that still include legacy role keys', function (): void {
+it('accepts gateway identity payloads with canonical role assignments', function (): void {
     Http::fake([
         'http://10.6.0.2/api/ca/root' => Http::response([
             'success' => ['data' => ['root_ca' => "-----BEGIN CERTIFICATE-----\nTEST\n-----END CERTIFICATE-----"]],
         ]),
         'https://10.6.0.2/api/me' => Http::response([
             'data' => [
-                'gateway' => ['name' => 'gateway-1', 'role' => 'gateway', 'status' => 'active'],
-                'self' => ['name' => 'control-1', 'role' => 'control', 'status' => 'active', 'wg_ip' => '10.6.0.8'],
+                'gateway' => ['name' => 'gateway-1', 'roles' => [['role' => 'gateway', 'status' => 'active', 'settings' => []]], 'status' => 'active'],
+                'self' => ['name' => 'control-1', 'roles' => [], 'status' => 'active', 'wg_ip' => '10.6.0.8'],
             ],
         ]),
     ]);

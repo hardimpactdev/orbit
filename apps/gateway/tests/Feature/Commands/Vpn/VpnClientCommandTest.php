@@ -133,7 +133,6 @@ it('protects active node peers from vpn-client writes', function (): void {
     ]);
     Node::factory()->create([
         'name' => 'app-1',
-        'role' => 'app',
         'wireguard_address' => '10.6.0.8',
         'status' => 'active',
     ]);
@@ -203,7 +202,6 @@ it('forwards control callers to the gateway through orbit runtime executor', fun
     vpnLocalNode('control');
     $vpnNode = Node::factory()->create([
         'name' => 'vpn-1',
-        'role' => 'gateway',
         'host' => 'vpn-1.example.com',
         'user' => 'orbit',
         'orbit_path' => '/home/orbit/orbit',
@@ -263,7 +261,6 @@ it('forwards escaped arguments through an absolute orbit runtime artisan path', 
     vpnLocalNode('control');
     $vpnNode = Node::factory()->create([
         'name' => 'vpn-1',
-        'role' => 'gateway',
         'host' => 'vpn-1.example.com',
         'user' => 'orbit',
         'orbit_path' => '/home/orbit/orbit',
@@ -320,7 +317,6 @@ it('fails when the active vpn role node cannot run forwarded commands over ssh',
     vpnLocalNode('control');
     $vpnNode = Node::factory()->create([
         'name' => 'vpn-1',
-        'role' => 'gateway',
         'host' => 'vpn-1.example.com',
         'user' => 'orbit',
         'orbit_path' => '/home/orbit/orbit',

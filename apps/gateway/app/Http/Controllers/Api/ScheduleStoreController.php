@@ -14,7 +14,6 @@ use App\Models\Node;
 use App\Models\Schedule;
 use App\Services\Nodes\Access\NodeAccessAuthorizer;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
-use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -141,11 +140,7 @@ final readonly class ScheduleStoreController implements Loggable
         $target = Node::query()
             ->with('schedulerState')
             ->where('name', $node)
-            ->where(function (Builder $query): void {
-                $query
-                    ->where('role', 'gateway')
-                    ->orWhereIn('id', app(NodeRoleAssignments::class)->activeGatewayOrAppHostNodeIds());
-            })
+            ->whereIn('id', app(NodeRoleAssignments::class)->activeGatewayOrAppHostNodeIds())
             ->first();
 
         return $target instanceof Node

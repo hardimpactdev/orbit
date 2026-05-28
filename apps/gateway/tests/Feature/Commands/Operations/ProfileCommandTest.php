@@ -30,7 +30,6 @@ afterEach(function (): void {
 it('profiles an app target resolved from gateway state as baseline json', function (): void {
     $gateway = Node::factory()->create([
         'name' => 'gateway',
-        'role' => 'gateway',
     ]);
 
     App::factory()->create([
@@ -98,7 +97,6 @@ it('profiles an app target resolved from gateway state as baseline json', functi
 it('logs profile activity', function (): void {
     $gateway = Node::factory()->create([
         'name' => 'gateway',
-        'role' => 'gateway',
     ]);
 
     App::factory()->create([
@@ -158,7 +156,6 @@ it('logs profile activity', function (): void {
 it('infers an app target from the gateway caller current working directory', function (): void {
     $gateway = Node::factory()->create([
         'name' => 'gateway',
-        'role' => 'gateway',
     ]);
 
     $appPath = sys_get_temp_dir().'/orbit-profile-cwd-'.bin2hex(random_bytes(4));
@@ -224,7 +221,6 @@ it('resolves a control caller target through the gateway before profiling', func
 
     Node::factory()->create([
         'name' => 'control-1',
-        'role' => 'control',
     ]);
 
     LocalGatewaySettings::current()->fill([
@@ -294,10 +290,9 @@ it('resolves a control caller target through the gateway before profiling', func
 it('prompts for an app when an interactive gateway caller omits the target outside an app path', function (): void {
     $gateway = Node::factory()->create([
         'name' => 'gateway',
-        'role' => 'gateway',
     ]);
-    $firstNode = Node::factory()->create(['name' => 'app-dev-1', 'role' => 'app']);
-    $secondNode = Node::factory()->create(['name' => 'app-dev-2', 'role' => 'app']);
+    $firstNode = Node::factory()->appDev(['tld' => 'test'])->create(['name' => 'app-dev-1']);
+    $secondNode = Node::factory()->appDev(['tld' => 'test'])->create(['name' => 'app-dev-2']);
 
     App::factory()->create([
         'name' => 'docs',
@@ -365,7 +360,6 @@ it('falls back to gateway-origin profiling for control callers when caller-origi
 
     Node::factory()->create([
         'name' => 'control-1',
-        'role' => 'control',
     ]);
 
     LocalGatewaySettings::current()->fill([
@@ -464,7 +458,6 @@ it('falls back to gateway-origin profiling for control callers when caller-origi
 it('treats a completed non-2xx response as a successful profile result', function (): void {
     $gateway = Node::factory()->create([
         'name' => 'gateway',
-        'role' => 'gateway',
     ]);
 
     App::factory()->create([
@@ -531,7 +524,6 @@ it('fails validation when target and app are combined', function (): void {
 it('infers a workspace target from the gateway caller cwd inside a workspace path', function (): void {
     $gateway = Node::factory()->create([
         'name' => 'gateway',
-        'role' => 'gateway',
     ]);
 
     $app = App::factory()->create([
@@ -596,7 +588,6 @@ it('infers a workspace target from the gateway caller cwd inside a workspace pat
 it('falls back to app target when cwd is inside app but not inside any workspace', function (): void {
     $gateway = Node::factory()->create([
         'name' => 'gateway',
-        'role' => 'gateway',
     ]);
 
     App::factory()->create([

@@ -6,11 +6,11 @@ namespace App\Services\Updates;
 
 use Symfony\Component\Console\Output\OutputInterface;
 
-final class UpdateOutputRenderer
+final readonly class UpdateOutputRenderer
 {
     public function __construct(
-        private readonly LocalUpdateWorkflow $workflow,
-        private readonly UpdateHumanProgressRenderer $progress,
+        private LocalUpdateWorkflow $workflow,
+        private UpdateHumanProgressRenderer $progress,
     ) {}
 
     public function render(OutputInterface $output, bool $wantsJson): int

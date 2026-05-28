@@ -13,6 +13,7 @@ use App\Http\Gateway\Requests\Processes\AddProcessRequest;
 use App\Models\App;
 use App\Models\LocalGatewaySettings;
 use App\Models\Node;
+use App\Models\NodeRoleAssignment;
 use App\Models\Process;
 use App\Models\Workspace;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -35,18 +36,28 @@ afterEach(function (): void {
 
 function createProcessAddLocalNode(string $role = 'gateway'): Node
 {
-    return Node::factory()->create([
+    $node = Node::factory()->create([
         'name' => "local-{$role}",
-        'role' => $role,
         'host' => '10.6.0.1',
         'wireguard_address' => '10.6.0.1',
     ]);
+
+    if ($role === 'gateway') {
+        NodeRoleAssignment::factory()->create([
+            'node_id' => $node->id,
+            'role' => 'gateway',
+            'status' => 'active',
+            'settings' => [],
+        ]);
+    }
+
+    return $node;
 }
 
 describe('process:add base contract', function (): void {
     it('creates process intent and renders main and workspace runtime units', function (): void {
         createProcessAddLocalNode('gateway');
-        $node = Node::factory()->create(['role' => 'app', 'name' => 'app-1', 'user' => 'orbit']);
+        $node = Node::factory()->appDev()->create(['name' => 'app-1', 'user' => 'orbit']);
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id, 'path' => '/home/orbit/apps/docs']);
         Workspace::factory()->create(['name' => 'feature-docs', 'app_id' => $app->id, 'path' => '/home/orbit/apps/docs/.worktrees/feature-docs']);
 
@@ -95,7 +106,7 @@ describe('process:add base contract', function (): void {
 
     it('appends sort order and applies defaults', function (): void {
         createProcessAddLocalNode('gateway');
-        $node = Node::factory()->create(['role' => 'app']);
+        $node = Node::factory()->appDev()->create();
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
         Process::factory()->create(['app_id' => $app->id, 'name' => 'queue', 'sort_order' => 7]);
 
@@ -121,7 +132,7 @@ describe('process:add base contract', function (): void {
 
     it('starts rendered runtime units via supervisor when the process runtime is supervisor', function (): void {
         createProcessAddLocalNode('gateway');
-        $node = Node::factory()->create(['role' => 'app']);
+        $node = Node::factory()->appDev()->create();
         App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
 
         $remoteShell = new ProcessAddRemoteShell([
@@ -147,7 +158,7 @@ describe('process:add base contract', function (): void {
 
     it('reports process.runtime_unit_start_failed when --start cannot start the docker container', function (): void {
         createProcessAddLocalNode('gateway');
-        $node = Node::factory()->create(['role' => 'app']);
+        $node = Node::factory()->appDev()->create();
         App::factory()->create(['name' => 'docs', 'node_id' => $node->id, 'path' => '/home/orbit/apps/docs', 'php_version' => '8.5']);
 
         // Sequence: supervisor cleanup, docker network inspect (present),
@@ -185,7 +196,7 @@ describe('process:add base contract', function (): void {
 
     it('starts rendered runtime units via docker when the process runtime is docker', function (): void {
         createProcessAddLocalNode('gateway');
-        $node = Node::factory()->create(['role' => 'app']);
+        $node = Node::factory()->appDev()->create();
         App::factory()->create(['name' => 'docs', 'node_id' => $node->id, 'path' => '/home/orbit/apps/docs', 'php_version' => '8.5']);
 
         $remoteShell = new ProcessAddRemoteShell([
@@ -219,7 +230,7 @@ describe('process:add base contract', function (): void {
 
     it('returns success with warnings when runtime enactment fails after intent write', function (): void {
         createProcessAddLocalNode('gateway');
-        $node = Node::factory()->create(['role' => 'app']);
+        $node = Node::factory()->appDev()->create();
         App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
 
         app()->instance(RemoteShell::class, new ProcessAddRemoteShell([
@@ -243,7 +254,7 @@ describe('process:add base contract', function (): void {
 
     it('rejects invalid input and duplicate names before writing new intent', function (array $arguments, string $field, string $code): void {
         createProcessAddLocalNode('gateway');
-        $node = Node::factory()->create(['role' => 'app']);
+        $node = Node::factory()->appDev()->create();
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
         Process::factory()->create(['app_id' => $app->id, 'name' => 'queue']);
         app()->instance(RemoteShell::class, new ProcessAddRemoteShell([]));
@@ -327,7 +338,7 @@ describe('process:add base contract', function (): void {
 
     it('renders human progress and success prose', function (): void {
         createProcessAddLocalNode('gateway');
-        $node = Node::factory()->create(['role' => 'app']);
+        $node = Node::factory()->appDev()->create();
         App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
 
         app()->instance(RemoteShell::class, new ProcessAddRemoteShell([
@@ -353,7 +364,7 @@ describe('process:add base contract', function (): void {
 
     it('renders a decorated process add progress tree', function (): void {
         createProcessAddLocalNode('gateway');
-        $node = Node::factory()->create(['role' => 'app']);
+        $node = Node::factory()->appDev()->create();
         App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
 
         app()->instance(RemoteShell::class, new ProcessAddRemoteShell([
@@ -384,7 +395,7 @@ describe('process:add base contract', function (): void {
 describe('process:add runtime selection', function (): void {
     it('defaults new PHP-app processes to runtime=docker', function (): void {
         createProcessAddLocalNode('gateway');
-        $node = Node::factory()->create(['role' => 'app']);
+        $node = Node::factory()->appDev()->create();
         App::factory()->create(['name' => 'docs', 'node_id' => $node->id, 'runtime_kind' => AppRuntimeKind::Php]);
 
         app()->instance(RemoteShell::class, new ProcessAddRemoteShell([
@@ -408,7 +419,7 @@ describe('process:add runtime selection', function (): void {
 
     it('defaults new static-app processes to runtime=supervisor unless overridden', function (): void {
         createProcessAddLocalNode('gateway');
-        $node = Node::factory()->create(['role' => 'app']);
+        $node = Node::factory()->appDev()->create();
         App::factory()->create(['name' => 'marketing', 'node_id' => $node->id, 'runtime_kind' => AppRuntimeKind::Static]);
 
         app()->instance(RemoteShell::class, new ProcessAddRemoteShell([
@@ -429,7 +440,7 @@ describe('process:add runtime selection', function (): void {
 
     it('accepts an explicit runtime=supervisor override on a PHP app', function (): void {
         createProcessAddLocalNode('gateway');
-        $node = Node::factory()->create(['role' => 'app']);
+        $node = Node::factory()->appDev()->create();
         App::factory()->create(['name' => 'docs', 'node_id' => $node->id, 'runtime_kind' => AppRuntimeKind::Php]);
 
         app()->instance(RemoteShell::class, new ProcessAddRemoteShell([
@@ -454,7 +465,7 @@ describe('process:add runtime selection', function (): void {
 
     it('rejects an invalid runtime value before any side effects', function (): void {
         createProcessAddLocalNode('gateway');
-        $node = Node::factory()->create(['role' => 'app']);
+        $node = Node::factory()->appDev()->create();
         App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
 
         $remoteShell = new ProcessAddRemoteShell([]);

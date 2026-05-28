@@ -12,7 +12,7 @@
   authorized. A grant using the `gateway-admin` preset also authorizes the
   write.
 - Non-gateway callers have configured gateway access as defined in
-  [`2_node-update_on-client.md`](2_node-update_on-client.md) and a covering
+  [`2_node-update_on-operator-node.md`](2_node-update_on-operator-node.md) and a covering
   node access grant for this operation.
 
 **Post-input path eligibility:**
@@ -24,7 +24,7 @@
 ## Signature
 
 ```bash
-orbit node:update [name] [--host=<host>] [--environment=<development|production>] [--tld=<tld>] [--public-ipv4=<address>] [--public-ipv6=<address>] [--json]
+orbit node:update [name] [--host=<host>] [--tld=<tld>] [--public-ipv4=<address>] [--public-ipv6=<address>] [--json]
 ```
 
 ## Input Contract
@@ -35,11 +35,10 @@ This command follows the shared
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
 | `name` | `[name]` | Always. | Never. | None. | Must match an existing active node record. |
-| `host` | `--host` | Optional. | Target node role = `operator`. | None. | SSH/bootstrap endpoint, never the canonical node address. Updating this does not change the gateway endpoint used in WireGuard peer configs. |
-| `environment` | `--environment` | Optional. | Target node role ≠ `app`. | None. | One of `development`, `production`. |
-| `tld` | `--tld` | Optional. | Target node role ≠ `app`, or target effective environment ≠ `development`. | None. | Single lowercase DNS label without a leading dot. Unique among active node TLDs. Effective environment is supplied `--environment` when present, otherwise the node's current environment. |
-| `public_ipv4` | `--public-ipv4` | Optional. | Target node role = `operator`. | None. | Operator-supplied public IPv4 metadata. |
-| `public_ipv6` | `--public-ipv6` | Optional. | Target node role = `operator`. | None. | Operator-supplied public IPv6 metadata. |
+| `host` | `--host` | Optional. | Target is an operator-identity node with no host metadata. | None. | SSH/bootstrap endpoint, never the canonical node address. Updating this does not change the gateway endpoint used in WireGuard peer configs. |
+| `tld` | `--tld` | Optional. | Target does not carry an active `app-dev` role assignment. | None. | Single lowercase DNS label without a leading dot. Unique among active node TLDs. |
+| `public_ipv4` | `--public-ipv4` | Optional. | Target is an operator-identity node. | None. | Operator-supplied public IPv4 metadata. |
+| `public_ipv6` | `--public-ipv6` | Optional. | Target is an operator-identity node. | None. | Operator-supplied public IPv6 metadata. |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer and non-interactive input mode according to the shared invocation model in [`docs/domains/README.md`](../../../README.md#invocation-model). |
 
 Each field flag may be supplied at most once per invocation. Supplying the same
@@ -54,31 +53,29 @@ metadata is valid only for gateway and nodes. Concretely:
 
 | Field | Valid target roles | Forbidden when |
 | --- | --- | --- |
-| `--host` | `gateway`, `app` | Target node role = `operator`. |
-| `--environment` | `app` | Target node role ≠ `app`. |
-| `--tld` | `app` with effective environment `development` | Target node role = `gateway`, target node role = `operator`, or app target effective environment = `production`. |
-| `--public-ipv4` | `gateway`, `app` | Target node role = `operator`. |
-| `--public-ipv6` | `gateway`, `app` | Target node role = `operator`. |
+| `--host` | `gateway`, workload-role-bearing nodes | Operator-identity target with no host metadata. |
+| `--tld` | nodes with an active `app-dev` role assignment | Gateway targets, operator-identity targets, and nodes without `app-dev`. |
+| `--public-ipv4` | `gateway`, workload-role-bearing nodes | Operator-identity targets. |
+| `--public-ipv6` | `gateway`, workload-role-bearing nodes | Operator-identity targets. |
 
 Clients are CLI callers reached through WireGuard. They have no SSH
 bootstrap endpoint and no ingress, so `--host`, `--public-ipv4`, and
-`--public-ipv6` are all forbidden on operator targets. Public IPv4 and IPv6
-metadata is supported on `gateway` and `app` target nodes; the gateway
+`--public-ipv6` are forbidden on operator-identity targets. Public IPv4 and IPv6
+metadata is supported on `gateway` and workload-role-bearing nodes; the gateway
 endpoint used in WireGuard peer configs lives on a separate field and is not
 updated by `--public-ipv4` or `--public-ipv6`.
 
-`node:update --tld` updates development TLD metadata for nodes only. The
-effective environment is the supplied `--environment` value when present,
-otherwise the node's current stored environment. A production app can receive
-`--tld` only in the same update that changes it to
-`--environment=development`; any update that leaves or makes the effective
-environment `production` fails with `node.field_role_incompatible`,
-`meta.field=tld`, and the target role in metadata. Gateway and operator targets
-fail with the same error code and metadata shape.
+`node:update --tld` updates development TLD metadata for nodes carrying an
+active `app-dev` role assignment only. Switching between `app-dev` and
+`app-prod` is a role-assignment change outside `node:update`; use
+[`node role:remove`](../14_node-role-remove/node-role-remove.md) and
+[`node role:add`](../12_node-role-add/node-role-add.md). Gateway and
+operator-identity targets fail with `node.field_role_incompatible`,
+`meta.field=tld`, and the target role in metadata.
 
 `node:update --host` also does not update the gateway endpoint used in
 WireGuard peer configs that have already been issued. During first-gateway
-`node:new --role=gateway --host=<host>`, no peer configs exist yet, so the
+`node:new --template=gateway --host=<host>`, no peer configs exist yet, so the
 bootstrap host seeds the initial gateway endpoint. After bootstrap, gateway
 endpoint rotation needs a separate identity/network contract and is outside
 `node:update`.
@@ -96,20 +93,15 @@ gateway-owned side effects.
    - Must match an existing active node record.
 3. Resolve field flags.
    - Resolve `node_update.host` from `--host` when present.
-   - Resolve `node_update.environment` from `--environment` when present.
    - Resolve `node_update.tld` from `--tld` when present.
    - Resolve `node_update.public_ipv4` from `--public-ipv4` when present.
    - Resolve `node_update.public_ipv6` from `--public-ipv6` when present.
 4. Validate role-conditional field eligibility.
-   - If `--environment` is present and the target node role is not `app`, fail
-     before side effects with `node.field_role_incompatible`.
    - If `--host`, `--public-ipv4`, or `--public-ipv6` is present and the target
-     node role is `operator`, fail before side effects with
+     is an operator-identity node, fail before side effects with
      `node.field_role_incompatible`.
-   - If `--tld` is present and the target node role is not `app`, fail before
-     side effects with `node.field_role_incompatible` and `meta.field=tld`.
-   - If `--tld` is present and the app target's effective environment is not
-     `development`, fail before side effects with
+   - If `--tld` is present and the target does not carry an active `app-dev`
+     role assignment, fail before side effects with
      `node.field_role_incompatible` and `meta.field=tld`.
    - If the same field flag is supplied more than once in a single invocation,
      fail before side effects with `validation_failed` and `meta.field` set to
@@ -219,11 +211,11 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | No field provided | Non-interactive mode and no supported field flags are provided. | Failure |
 | Duplicate field flag | The same field flag is supplied more than once in a single invocation. | Failure |
 | Node not found | No active node record matches `name`. | Failure |
-| Field role-incompatible | A field is supplied for a node role or effective environment that does not support it. | Failure |
+| Field role-incompatible | A field is supplied for a target role assignment that does not support it. | Failure |
 | TLD already in use | `--tld` matches another active node's stored TLD. | Failure |
 
-Examples: `--environment` for a non-node, host/public-IP fields for an operator
-node, or `--tld` for gateway, operator, or production-effective app targets.
+Examples: host/public-IP fields for an operator-identity node, or `--tld` for
+gateway, operator-identity, or non-`app-dev` targets.
 
 Artifact applying failure after a successful configuration write is **not** a
 command failure. It returns a top-level `success` with a structured warning
@@ -259,8 +251,8 @@ Primary test owners:
 | Path | Coverage |
 | --- | --- |
 | `apps/gateway/tests/Feature/Commands/Nodes/NodeUpdateCommandTest.php` | Command contract: updating fields, role-conditional validation, TLD success/failure paths, no-op success with empty `changed`, node-not-found failure, client forwarding, artifact re-applying reporting, and warning payload for partial-success drift. |
-| `apps/gateway/tests/Feature/Commands/Nodes/NodeUpdateOnControlNodeContractTest.php` | Client-caller behavior: forwarding over HTTPS through WireGuard, forwarded `tld` payloads, gateway-preserved TLD role rejection for non-app targets, structured errors, unconfigured caller failures, grant authorization failures, and no SSH-to-gateway path. |
-| `apps/gateway/tests/Feature/Commands/Nodes/NodeUpdateNonInteractiveInputModeTest.php` | Non-interactive input mode: missing required input, `--json` no-prompt behavior, TLD role and effective-environment rejection, production-to-development plus `--tld` success, duplicate TLD conflict, and invalid TLD syntax. |
+| `apps/gateway/tests/Feature/Commands/Nodes/NodeUpdateOnOperatorNodeContractTest.php` | Operator-node caller behavior: forwarding over HTTPS through WireGuard, forwarded `tld` payloads, gateway-preserved TLD role rejection for targets without `app-dev`, structured errors, unconfigured caller failures, grant authorization failures, and no SSH-to-gateway path. |
+| `apps/gateway/tests/Feature/Commands/Nodes/NodeUpdateNonInteractiveInputModeTest.php` | Non-interactive input mode: missing required input, `--json` no-prompt behavior, TLD rejection for targets without `app-dev`, `app-dev` TLD success, duplicate TLD conflict, and invalid TLD syntax. |
 
 Input-mode-specific test mapping lives in:
 
@@ -274,5 +266,5 @@ Renderer-specific test mapping lives in:
 
 Role-specific and E2E test mapping lives in:
 
-- [`2_node-update_on-client.md`](2_node-update_on-client.md#test-mapping)
+- [`2_node-update_on-operator-node.md`](2_node-update_on-operator-node.md#test-mapping)
 - [`3_node-update_on-gateway-node.md`](3_node-update_on-gateway-node.md#test-mapping)

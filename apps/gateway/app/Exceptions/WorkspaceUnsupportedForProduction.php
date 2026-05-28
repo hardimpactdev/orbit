@@ -14,7 +14,7 @@ final class WorkspaceUnsupportedForProduction extends RuntimeException
     public function __construct(
         public readonly array $meta = [],
     ) {
-        parent::__construct('Workspaces are only available for app-development roles.');
+        parent::__construct('Workspaces are only available for app-dev roles.');
     }
 
     public function errorCode(): string

@@ -26,11 +26,9 @@ function nodeListRow(array $overrides = []): array
 {
     return array_merge([
         'name' => 'app-1',
-        'role' => 'app',
         'host' => '10.6.0.7',
         'orbit_path' => '/home/nckrtl/orbit',
         'status' => 'active',
-        'environment' => 'development',
         'platform' => 'ubuntu_24-04',
         'wireguard_address' => '10.6.0.7',
         'created_at' => now(),
@@ -62,14 +60,14 @@ describe('node:list base contract', function (): void {
 
     it('sorts nodes by effective role assignment then name', function (): void {
         DB::table('nodes')->insert([
-            nodeListRow(['name' => 'zebra-app', 'role' => 'control']),
-            nodeListRow(['name' => 'alpha-app', 'role' => 'app']),
-            nodeListRow(['name' => 'database-1', 'role' => 'control', 'environment' => null]),
-            nodeListRow(['name' => 'gateway-1', 'role' => 'control', 'environment' => null]),
-            nodeListRow(['name' => 'control-1', 'role' => 'control', 'environment' => null]),
+            nodeListRow(['name' => 'zebra-app']),
+            nodeListRow(['name' => 'alpha-app']),
+            nodeListRow(['name' => 'database-1']),
+            nodeListRow(['name' => 'gateway-1']),
+            nodeListRow(['name' => 'control-1']),
         ]);
-        assignNodeListRole('zebra-app', 'app-development', ['tld' => 'test']);
-        assignNodeListRole('alpha-app', 'app-development', ['tld' => 'test']);
+        assignNodeListRole('zebra-app', 'app-dev', ['tld' => 'test']);
+        assignNodeListRole('alpha-app', 'app-dev', ['tld' => 'test']);
         assignNodeListRole('database-1', 'database');
         assignNodeListRole('gateway-1', 'gateway');
 
@@ -82,9 +80,9 @@ describe('node:list base contract', function (): void {
         expect($names)->toBe([
             'alpha-app',
             'zebra-app',
-            'control-1',
             'database-1',
             'gateway-1',
+            'control-1',
         ]);
     });
 });
@@ -96,38 +94,26 @@ describe('node:list filters', function (): void {
         DB::table('nodes')->insert([
             nodeListRow([
                 'name' => 'gateway-1',
-                'role' => 'control',
-                'environment' => null,
             ]),
             nodeListRow([
                 'name' => 'dev-app',
-                'role' => 'control',
-                'environment' => 'development',
             ]),
             nodeListRow([
                 'name' => 'prod-app',
-                'role' => 'control',
-                'environment' => 'production',
             ]),
             nodeListRow([
                 'name' => 'db-1',
-                'role' => 'control',
-                'environment' => null,
             ]),
             nodeListRow([
                 'name' => 'control-1',
-                'role' => 'control',
-                'environment' => null,
             ]),
             nodeListRow([
                 'name' => 'gateway-vpn-1',
-                'role' => 'gateway',
-                'environment' => null,
             ]),
         ]);
         assignNodeListRole('gateway-1', 'gateway');
-        assignNodeListRole('dev-app', 'app-development', ['tld' => 'test']);
-        assignNodeListRole('prod-app', 'app-production');
+        assignNodeListRole('dev-app', 'app-dev', ['tld' => 'test']);
+        assignNodeListRole('prod-app', 'app-prod');
         assignNodeListRole('db-1', 'database');
         assignNodeListRole('gateway-vpn-1', 'gateway');
         assignNodeListRole('gateway-vpn-1', 'vpn', [
@@ -158,17 +144,14 @@ describe('node:list filters', function (): void {
             ->and($nodes[0]['name'])->toBe('gateway-vpn-1');
     });
 
-    it('filters by --role app', function (): void {
-        $exitCode = Artisan::call('node:list', ['--json' => true, '--role' => 'app']);
+    it('filters by --role app-dev', function (): void {
+        $exitCode = Artisan::call('node:list', ['--json' => true, '--role' => 'app-dev']);
         $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
 
         $nodes = $payload['success']['data']['nodes'];
 
-        expect($nodes)->toHaveCount(2);
-
-        $names = array_column($nodes, 'name');
-        expect($names)->toContain('dev-app')
-            ->and($names)->toContain('prod-app');
+        expect($nodes)->toHaveCount(1)
+            ->and($nodes[0]['name'])->toBe('dev-app');
     });
 
     it('filters by concrete app and database roles', function (string $role, string $node): void {
@@ -181,57 +164,13 @@ describe('node:list filters', function (): void {
             ->and($nodes)->toHaveCount(1)
             ->and($nodes[0]['name'])->toBe($node);
     })->with([
-        ['app-development', 'dev-app'],
-        ['app-production', 'prod-app'],
+        ['app-dev', 'dev-app'],
+        ['app-prod', 'prod-app'],
         ['database', 'db-1'],
     ]);
 
-    it('filters by --role control', function (): void {
-        $exitCode = Artisan::call('node:list', ['--json' => true, '--role' => 'control']);
-        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
-
-        $nodes = $payload['success']['data']['nodes'];
-
-        expect($nodes)->toHaveCount(1)
-            ->and($nodes[0]['name'])->toBe('control-1');
-    });
-
-    it('filters by --environment development', function (): void {
-        $exitCode = Artisan::call('node:list', ['--json' => true, '--environment' => 'development']);
-        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
-
-        $nodes = $payload['success']['data']['nodes'];
-
-        expect($nodes)->toHaveCount(1)
-            ->and($nodes[0]['name'])->toBe('dev-app');
-    });
-
-    it('filters by --environment production', function (): void {
-        $exitCode = Artisan::call('node:list', ['--json' => true, '--environment' => 'production']);
-        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
-
-        $nodes = $payload['success']['data']['nodes'];
-
-        expect($nodes)->toHaveCount(1)
-            ->and($nodes[0]['name'])->toBe('prod-app');
-    });
-
-    it('combines --role and --environment with AND semantics', function (): void {
-        $exitCode = Artisan::call('node:list', [
-            '--json' => true,
-            '--role' => 'app',
-            '--environment' => 'development',
-        ]);
-        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
-
-        $nodes = $payload['success']['data']['nodes'];
-
-        expect($nodes)->toHaveCount(1)
-            ->and($nodes[0]['name'])->toBe('dev-app');
-    });
-
     it('returns empty result when filter matches nothing', function (): void {
-        $exitCode = Artisan::call('node:list', ['--json' => true, '--role' => 'control', '--environment' => 'development']);
+        $exitCode = Artisan::call('node:list', ['--json' => true, '--role' => 's3']);
         $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
 
         $nodes = $payload['success']['data']['nodes'];
@@ -251,34 +190,17 @@ describe('node:list validation', function (): void {
             ->and($payload['error']['code'])->toBe('validation_failed')
             ->and($payload['error']['meta']['field'])->toBe('role')
             ->and($payload['error']['meta']['value'])->toBe('bogus')
-            ->and($payload['error']['meta']['allowed'])->toBe(['gateway', 'vpn', 'router', 'app', 'app-development', 'app-production', 'database', 'agent', 'ingress', 'control']);
+            ->and($payload['error']['meta']['allowed'])->toBe(['gateway', 'vpn', 'router', 'app-dev', 'app-prod', 'database', 'agent', 'ingress', 'websocket', 's3']);
     });
 
     it('rejects invalid --role with human error message', function (): void {
         $this->artisan('node:list', ['--role' => 'bogus'])
-            ->expectsOutputToContain("Invalid value for --role: 'bogus'. Allowed values: gateway, vpn, router, app, app-development, app-production, database, agent, ingress, control.")
-            ->assertFailed();
-    });
-
-    it('rejects invalid --environment with validation_failed JSON envelope', function (): void {
-        $exitCode = Artisan::call('node:list', ['--json' => true, '--environment' => 'bogus']);
-        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
-
-        expect($exitCode)->toBe(1)
-            ->and($payload)->toHaveKey('error')
-            ->and($payload)->not->toHaveKey('success')
-            ->and($payload['error']['code'])->toBe('validation_failed')
-            ->and($payload['error']['meta']['field'])->toBe('environment');
-    });
-
-    it('rejects invalid --environment with human error message', function (): void {
-        $this->artisan('node:list', ['--environment' => 'bogus'])
-            ->expectsOutputToContain("Invalid value for --environment: 'bogus'. Allowed values: development, production.")
+            ->expectsOutputToContain("Invalid value for --role: 'bogus'. Allowed values: gateway, vpn, router, app-dev, app-prod, database, agent, ingress, websocket, s3.")
             ->assertFailed();
     });
 
     it('rejects comma-separated --role with validation_failed', function (): void {
-        $exitCode = Artisan::call('node:list', ['--json' => true, '--role' => 'app,control']);
+        $exitCode = Artisan::call('node:list', ['--json' => true, '--role' => 'app-dev,app-prod']);
         $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
 
         expect($exitCode)->toBe(1)
@@ -287,15 +209,15 @@ describe('node:list validation', function (): void {
             ->and($payload['error']['code'])->toBe('validation_failed');
     });
 
-    it('rejects comma-separated --environment with validation_failed', function (): void {
-        $exitCode = Artisan::call('node:list', ['--json' => true, '--environment' => 'development,production']);
+    it('rejects retired aggregate --role values with validation_failed', function (string $role): void {
+        $exitCode = Artisan::call('node:list', ['--json' => true, '--role' => $role]);
         $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
 
         expect($exitCode)->toBe(1)
             ->and($payload)->toHaveKey('error')
             ->and($payload)->not->toHaveKey('success')
             ->and($payload['error']['code'])->toBe('validation_failed');
-    });
+    })->with(['app', 'control']);
 });
 
 describe('node:list read-only guarantee', function (): void {
@@ -305,8 +227,8 @@ describe('node:list read-only guarantee', function (): void {
 
     it('makes no DB writes during base list', function (): void {
         DB::table('nodes')->insert([
-            nodeListRow(['name' => 'gateway-1', 'role' => 'gateway', 'environment' => null]),
-            nodeListRow(['name' => 'app-1', 'role' => 'app']),
+            nodeListRow(['name' => 'gateway-1']),
+            nodeListRow(['name' => 'app-1']),
         ]);
 
         $countBefore = DB::table('nodes')->count();
@@ -321,7 +243,7 @@ describe('node:list read-only guarantee', function (): void {
         Process::preventStrayProcesses();
 
         DB::table('nodes')->insert([
-            nodeListRow(['name' => 'gateway-1', 'role' => 'gateway', 'environment' => null]),
+            nodeListRow(['name' => 'gateway-1']),
             nodeListRow(['name' => 'app-1']),
         ]);
 
@@ -335,11 +257,9 @@ describe('node:list control-caller forwarding', function (): void {
     beforeEach(function (): void {
         DB::table('nodes')->insert([
             'name' => 'local-control',
-            'role' => 'control',
             'host' => '10.6.0.2',
             'orbit_path' => '/home/nckrtl/orbit',
             'status' => 'active',
-            'environment' => null,
             'platform' => 'ubuntu_24-04',
             'wireguard_address' => '10.6.0.2',
             'created_at' => now(),
@@ -362,15 +282,11 @@ describe('node:list control-caller forwarding', function (): void {
                         'nodes' => [
                             [
                                 'name' => 'gateway-1',
-                                'role' => 'gateway',
-                                'environment' => null,
                                 'platform' => 'ubuntu_24-04',
                                 'status' => 'active',
                             ],
                             [
                                 'name' => 'app-1',
-                                'role' => 'app',
-                                'environment' => 'development',
                                 'platform' => 'ubuntu_24-04',
                                 'status' => 'active',
                             ],
@@ -395,15 +311,13 @@ describe('node:list control-caller forwarding', function (): void {
             ListNodesRequest::class => function ($pendingRequest) {
                 $request = $pendingRequest->getRequest();
 
-                if ($request instanceof ListNodesRequest && $request->role === 'app') {
+                if ($request instanceof ListNodesRequest && $request->role === 'app-dev') {
                     return MockResponse::make([
                         'success' => [
                             'data' => [
                                 'nodes' => [
                                     [
                                         'name' => 'app-1',
-                                        'role' => 'app',
-                                        'environment' => 'development',
                                         'platform' => 'ubuntu_24-04',
                                         'status' => 'active',
                                     ],
@@ -419,7 +333,7 @@ describe('node:list control-caller forwarding', function (): void {
             },
         ]);
 
-        $exitCode = Artisan::call('node:list', ['--json' => true, '--role' => 'app']);
+        $exitCode = Artisan::call('node:list', ['--json' => true, '--role' => 'app-dev']);
         $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
 
         expect($exitCode)->toBe(0)
@@ -441,8 +355,6 @@ describe('node:list control-caller forwarding', function (): void {
                                 'nodes' => [
                                     [
                                         'name' => 'gateway-1',
-                                        'role' => 'gateway',
-                                        'environment' => null,
                                         'platform' => 'ubuntu_24-04',
                                         'status' => 'active',
                                     ],

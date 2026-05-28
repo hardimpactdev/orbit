@@ -64,12 +64,10 @@ final class FakeAgentIdeMessageAdapter implements AgentIdeMessageAdapter
 it('delivers a JSON message to an explicit app target on the gateway', function (): void {
     Node::factory()->create([
         'name' => 'gateway-1',
-        'role' => 'gateway',
     ]);
 
     $node = Node::factory()->create([
         'name' => 'app-1',
-        'role' => 'app',
         'status' => 'active',
         'agent_ide_config' => ['adapter' => 'polyscope'],
     ]);
@@ -128,12 +126,10 @@ it('delivers a JSON message to an explicit app target on the gateway', function 
 it('delivers through the core OpenCode HTTP transport when no test adapter is bound', function (): void {
     Node::factory()->create([
         'name' => 'gateway-1',
-        'role' => 'gateway',
     ]);
 
     $node = Node::factory()->create([
         'name' => 'app-1',
-        'role' => 'app',
         'status' => 'active',
         'agent_ide_config' => ['adapter' => 'opencode'],
     ]);
@@ -195,12 +191,10 @@ it('delivers through the core OpenCode HTTP transport when no test adapter is bo
 it('renders the human progress tree for an app target', function (): void {
     Node::factory()->create([
         'name' => 'gateway-1',
-        'role' => 'gateway',
     ]);
 
     $node = Node::factory()->create([
         'name' => 'app-1',
-        'role' => 'app',
     ]);
 
     App::factory()->create([
@@ -232,12 +226,10 @@ it('renders the human progress tree for an app target', function (): void {
 it('delivers a stdin message to an explicit app target', function (): void {
     Node::factory()->create([
         'name' => 'gateway-1',
-        'role' => 'gateway',
     ]);
 
     $node = Node::factory()->create([
         'name' => 'app-1',
-        'role' => 'app',
         'status' => 'active',
     ]);
 
@@ -271,7 +263,6 @@ it('delivers a stdin message to an explicit app target', function (): void {
 it('fails when stdin is combined with a positional message', function (): void {
     Node::factory()->create([
         'name' => 'gateway-1',
-        'role' => 'gateway',
     ]);
 
     $command = app(AgentIdeMessageCommand::class);
@@ -304,12 +295,10 @@ it('fails when stdin is combined with a positional message', function (): void {
 it('delivers a JSON message to an explicit workspace target on the gateway', function (): void {
     Node::factory()->create([
         'name' => 'gateway-1',
-        'role' => 'gateway',
     ]);
 
     $node = Node::factory()->create([
         'name' => 'app-1',
-        'role' => 'app',
         'status' => 'active',
         'agent_ide_config' => ['adapter' => 'polyscope'],
     ]);
@@ -356,12 +345,10 @@ it('delivers a JSON message to an explicit workspace target on the gateway', fun
 it('renders the human progress tree for a workspace target', function (): void {
     Node::factory()->create([
         'name' => 'gateway-1',
-        'role' => 'gateway',
     ]);
 
     $node = Node::factory()->create([
         'name' => 'app-1',
-        'role' => 'app',
     ]);
     $app = App::factory()->create([
         'name' => 'docs',
@@ -394,7 +381,6 @@ it('renders the human progress tree for a workspace target', function (): void {
 it('fails when the target workspace has no effective adapter', function (): void {
     Node::factory()->create([
         'name' => 'gateway-1',
-        'role' => 'gateway',
     ]);
 
     $app = App::factory()->create([
@@ -436,12 +422,10 @@ it('fails when the target workspace has no effective adapter', function (): void
 it('infers a workspace target from the current directory on gateway callers', function (): void {
     Node::factory()->create([
         'name' => 'gateway-1',
-        'role' => 'gateway',
     ]);
 
     $node = Node::factory()->create([
         'name' => 'app-1',
-        'role' => 'app',
     ]);
     $app = App::factory()->create([
         'name' => 'docs',
@@ -493,12 +477,10 @@ it('infers a workspace target from the current directory on gateway callers', fu
 it('infers an app target from the current directory on gateway callers', function (): void {
     Node::factory()->create([
         'name' => 'gateway-1',
-        'role' => 'gateway',
     ]);
 
     $node = Node::factory()->create([
         'name' => 'app-1',
-        'role' => 'app',
     ]);
 
     $appPath = sys_get_temp_dir().'/orbit-agent-ide-app-cwd-'.bin2hex(random_bytes(4));
@@ -544,7 +526,6 @@ it('infers an app target from the current directory on gateway callers', functio
 it('fails when the target app has no effective adapter', function (): void {
     Node::factory()->create([
         'name' => 'gateway-1',
-        'role' => 'gateway',
     ]);
 
     App::factory()->create([
@@ -580,7 +561,6 @@ it('fails when the target app has no effective adapter', function (): void {
 it('fails when the adapter cannot find an active session', function (): void {
     Node::factory()->create([
         'name' => 'gateway-1',
-        'role' => 'gateway',
     ]);
 
     App::factory()->create([
@@ -618,7 +598,6 @@ it('fails when the adapter cannot find an active session', function (): void {
 it('renders adapter delivery diagnostics under error data for gateway callers', function (): void {
     Node::factory()->create([
         'name' => 'gateway-1',
-        'role' => 'gateway',
     ]);
 
     App::factory()->create([
@@ -661,12 +640,10 @@ it('renders adapter delivery diagnostics under error data for gateway callers', 
 it('does not mutate app node or process state while messaging', function (): void {
     Node::factory()->create([
         'name' => 'gateway-1',
-        'role' => 'gateway',
     ]);
 
     $node = Node::factory()->create([
         'name' => 'app-1',
-        'role' => 'app',
         'status' => 'active',
         'agent_ide_config' => ['adapter' => 'polyscope'],
     ]);
@@ -698,7 +675,6 @@ it('fails for non-gateway callers without configured gateway settings', function
 
     Node::factory()->create([
         'name' => 'control-1',
-        'role' => 'control',
     ]);
 
     App::factory()->create([
@@ -733,7 +709,6 @@ it('forwards configured control callers through the typed gateway request', func
 
     Node::factory()->create([
         'name' => 'control-1',
-        'role' => 'control',
     ]);
 
     LocalGatewaySettings::current()->fill([
@@ -791,7 +766,6 @@ it('forwards configured app callers through the typed gateway request', function
 
     Node::factory()->create([
         'name' => 'app-1',
-        'role' => 'app',
     ]);
 
     LocalGatewaySettings::current()->fill([
@@ -849,7 +823,6 @@ it('forwards configured workspace targets through the typed gateway request', fu
 
     Node::factory()->create([
         'name' => 'control-1',
-        'role' => 'control',
     ]);
 
     LocalGatewaySettings::current()->fill([
@@ -908,7 +881,6 @@ it('preserves forwarded adapter delivery diagnostics under error data', function
 
     Node::factory()->create([
         'name' => 'control-1',
-        'role' => 'control',
     ]);
 
     LocalGatewaySettings::current()->fill([
@@ -954,7 +926,6 @@ it('forwards current working directory context through the typed gateway request
 
     Node::factory()->create([
         'name' => 'control-1',
-        'role' => 'control',
     ]);
 
     LocalGatewaySettings::current()->fill([

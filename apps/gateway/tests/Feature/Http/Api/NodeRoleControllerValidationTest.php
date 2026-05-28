@@ -18,12 +18,10 @@ function apiNodeRoleRow(array $overrides = []): array
 {
     return array_merge([
         'name' => 'app-1',
-        'role' => 'app',
         'host' => '10.6.0.7',
         'user' => 'nckrtl',
         'orbit_path' => '/home/nckrtl/orbit',
         'status' => 'active',
-        'environment' => 'development',
         'platform' => 'ubuntu_24-04',
         'wireguard_address' => '10.6.0.7',
         'created_at' => now(),
@@ -33,22 +31,28 @@ function apiNodeRoleRow(array $overrides = []): array
 
 function createNodeRoleApiCaller(string $role = 'control'): int
 {
-    return (int) DB::table('nodes')->insertGetId(apiNodeRoleRow([
+    $nodeId = (int) DB::table('nodes')->insertGetId(apiNodeRoleRow([
         'name' => "{$role}-caller",
-        'role' => $role,
         'host' => NODE_ROLE_API_CALLER_WG_IP,
-        'environment' => $role === 'app' ? 'development' : null,
         'wireguard_address' => NODE_ROLE_API_CALLER_WG_IP,
     ]));
+
+    if ($role === 'gateway') {
+        assignNodeRoleApiRole($nodeId, 'gateway');
+    }
+
+    if ($role === 'app') {
+        assignNodeRoleApiRole($nodeId, 'app-dev', ['tld' => 'caller.test']);
+    }
+
+    return $nodeId;
 }
 
 function createNodeRoleApiGateway(): int
 {
     $nodeId = (int) DB::table('nodes')->insertGetId(apiNodeRoleRow([
         'name' => 'gateway-1',
-        'role' => 'gateway',
         'host' => '10.6.0.2',
-        'environment' => null,
         'wireguard_address' => '10.6.0.2',
     ]));
 
@@ -77,7 +81,7 @@ function grantNodeRoleApiAccess(int $callerId, int $servingNodeId, array $permis
  */
 function assignNodeRoleApiRole(int $nodeId, string $role, array $settings = []): void
 {
-    DB::table('node_roles')->insert([
+    DB::table('node_role')->insert([
         'node_id' => $nodeId,
         'role' => $role,
         'status' => 'active',
@@ -168,7 +172,7 @@ describe('node role api validation envelopes', function (): void {
 
     it('returns the orbit error envelope for non-string ingress node on add', function (): void {
         $response = postNodeRoleApiJson('/api/nodes/target-1/roles', [
-            'role' => 'app-production',
+            'role' => 'app-prod',
             'ingress_node' => ['edge-1'],
         ], ['REMOTE_ADDR' => NODE_ROLE_API_CALLER_WG_IP]);
 
@@ -179,7 +183,7 @@ describe('node role api validation envelopes', function (): void {
             ->assertJsonMissingPath('success');
     });
 
-    it('rejects ingress node for non-app-production add requests', function (): void {
+    it('rejects ingress node for non-app-prod add requests', function (): void {
         $response = postNodeRoleApiJson('/api/nodes/target-1/roles', [
             'role' => 'ingress',
             'ingress_node' => 'edge-1',
@@ -193,7 +197,7 @@ describe('node role api validation envelopes', function (): void {
             ->assertJsonMissingPath('success');
     });
 
-    it('rejects ingress node for app-production when the target node already has ingress', function (): void {
+    it('rejects ingress node for app-prod when the target node already has ingress', function (): void {
         $targetId = (int) DB::table('nodes')
             ->where('name', 'target-1')
             ->value('id');
@@ -201,27 +205,27 @@ describe('node role api validation envelopes', function (): void {
         assignNodeRoleApiRole($targetId, 'ingress');
 
         $response = postNodeRoleApiJson('/api/nodes/target-1/roles', [
-            'role' => 'app-production',
+            'role' => 'app-prod',
             'ingress_node' => 'edge-1',
         ], ['REMOTE_ADDR' => NODE_ROLE_API_CALLER_WG_IP]);
 
         $response->assertUnprocessable()
             ->assertJsonPath('error.code', 'validation_failed')
             ->assertJsonPath('error.meta.field', 'ingress_node')
-            ->assertJsonPath('error.meta.role', 'app-production')
-            ->assertJsonPath('error.message', 'The app-production role does not accept ingress_node when the target node already hosts ingress.')
+            ->assertJsonPath('error.meta.role', 'app-prod')
+            ->assertJsonPath('error.message', 'The app-prod role does not accept ingress_node when the target node already hosts ingress.')
             ->assertJsonMissingPath('success');
     });
 
-    it('rejects path-like app-development tld settings on add', function (): void {
+    it('rejects path-like app-dev tld settings on add', function (): void {
         $response = postNodeRoleApiJson('/api/nodes/target-1/roles', [
-            'role' => 'app-development',
+            'role' => 'app-dev',
             'settings' => ['tld' => '../../orbit'],
         ], ['REMOTE_ADDR' => NODE_ROLE_API_CALLER_WG_IP]);
 
         $response->assertUnprocessable()
             ->assertJsonPath('error.code', 'validation_failed')
-            ->assertJsonPath('error.message', 'The app-development role requires a valid tld setting.')
+            ->assertJsonPath('error.message', 'The app-dev role requires a valid tld setting.')
             ->assertJsonMissingPath('success');
     });
 
@@ -243,7 +247,7 @@ describe('node role api validation envelopes', function (): void {
             ->assertJsonPath('error.meta.role', 'database')
             ->assertJsonMissingPath('success');
 
-        expect(DB::table('node_roles')->where('node_id', $targetId)->where('role', 'database')->count())->toBe(1);
+        expect(DB::table('node_role')->where('node_id', $targetId)->where('role', 'database')->count())->toBe(1);
     });
 
     it('rejects adding gateway when the target already has a composable role', function (): void {
@@ -265,8 +269,8 @@ describe('node role api validation envelopes', function (): void {
             ->assertJsonPath('error.meta.role', 'gateway')
             ->assertJsonMissingPath('success');
 
-        expect(DB::table('node_roles')->where('node_id', $targetId)->where('role', 'gateway')->exists())->toBeFalse()
-            ->and(DB::table('node_roles')->where('node_id', $targetId)->where('role', 'database')->count())->toBe(1);
+        expect(DB::table('node_role')->where('node_id', $targetId)->where('role', 'gateway')->exists())->toBeFalse()
+            ->and(DB::table('node_role')->where('node_id', $targetId)->where('role', 'database')->count())->toBe(1);
     });
 
     it('returns the orbit error envelope for invalid force on remove', function (): void {

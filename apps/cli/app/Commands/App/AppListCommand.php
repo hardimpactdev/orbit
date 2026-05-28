@@ -9,11 +9,13 @@ use App\Exceptions\GatewayApiException;
 
 final class AppListCommand extends GatewayCommand
 {
+    #[\Override]
     protected $signature = 'app:list
         {--node= : Filter by owning node}
         {--environment= : Filter by environment (development|production)}
         {--json}';
 
+    #[\Override]
     protected $description = 'List apps registered in the gateway registry.';
 
     public function handle(): int

@@ -25,9 +25,9 @@ use App\Http\Controllers\Api\DoctorRunController;
 use App\Http\Controllers\Api\FirewallRuleDestroyController;
 use App\Http\Controllers\Api\FirewallRuleListController;
 use App\Http\Controllers\Api\FirewallRuleStoreController;
+use App\Http\Controllers\Api\GatewayStatusController;
 use App\Http\Controllers\Api\MeController;
 use App\Http\Controllers\Api\NodeAgentIdeController;
-use App\Http\Controllers\Api\NodeDefaultController;
 use App\Http\Controllers\Api\NodeGrantController;
 use App\Http\Controllers\Api\NodeListController;
 use App\Http\Controllers\Api\NodePermissionsController;
@@ -99,6 +99,7 @@ use App\Http\Middleware\WireGuardIdentity;
 use Illuminate\Support\Facades\Route;
 
 Route::middleware(CorrelationHeader::class)->group(function (): void {
+    Route::get('/status', GatewayStatusController::class)->name('api.status');
     Route::get('/ca/root', CaRootController::class);
 
     Route::middleware([WireGuardIdentity::class, RequireGrantPermission::class, LogActivity::class])->group(function (): void {
@@ -209,9 +210,6 @@ Route::middleware(CorrelationHeader::class)->group(function (): void {
         Route::post('/vpn/web-ui/password', VpnWebUiChangePasswordController::class);
         Route::get('/nodes', NodeListController::class);
         Route::post('/nodes', NodeStoreController::class);
-        Route::get('/nodes/default', [NodeDefaultController::class, 'show']);
-        Route::put('/nodes/default', [NodeDefaultController::class, 'set']);
-        Route::delete('/nodes/default', [NodeDefaultController::class, 'clear']);
         Route::post('/nodes/grant', NodeGrantController::class);
         Route::post('/nodes/permissions', NodePermissionsController::class);
         Route::post('/nodes/revoke', NodeRevokeController::class);

@@ -10,12 +10,14 @@ use function Laravel\Prompts\confirm;
 
 final class ProcessRemoveCommand extends ProcessGatewayCommand
 {
+    #[\Override]
     protected $signature = 'process:remove
         {name? : Existing process name}
         {--app= : Parent app slug}
         {--force : Confirm destructive operation without prompting}
         {--json : Output JSON}';
 
+    #[\Override]
     protected $description = 'Remove an app process definition.';
 
     public function handle(): int

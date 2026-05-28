@@ -105,8 +105,8 @@ it('selects json renderer with --json flag', function (): void {
         ]),
         'https://10.6.0.2/api/me' => Http::response([
             'data' => [
-                'gateway' => ['name' => 'gateway-1', 'role' => 'gateway', 'status' => 'active', 'platform' => 'ubuntu_24-04'],
-                'self' => ['name' => 'control-1', 'role' => 'control', 'status' => 'active', 'platform' => 'macos_15-4', 'wg_ip' => '10.6.0.8'],
+                'gateway' => ['name' => 'gateway-1', 'roles' => [['role' => 'gateway', 'status' => 'active', 'settings' => []]], 'status' => 'active', 'platform' => 'ubuntu_24-04'],
+                'self' => ['name' => 'control-1', 'roles' => [], 'status' => 'active', 'platform' => 'macos_15-4', 'wg_ip' => '10.6.0.8'],
             ],
         ]),
     ]);
@@ -124,8 +124,8 @@ it('emits added success envelope', function (): void {
         ]),
         'https://10.6.0.2/api/me' => Http::response([
             'data' => [
-                'gateway' => ['name' => 'gateway-1', 'role' => 'gateway', 'status' => 'active', 'platform' => 'ubuntu_24-04'],
-                'self' => ['name' => 'control-1', 'role' => 'control', 'status' => 'active', 'platform' => 'macos_15-4', 'wg_ip' => '10.6.0.8'],
+                'gateway' => ['name' => 'gateway-1', 'roles' => [['role' => 'gateway', 'status' => 'active', 'settings' => []]], 'status' => 'active', 'platform' => 'ubuntu_24-04'],
+                'self' => ['name' => 'control-1', 'roles' => [], 'status' => 'active', 'platform' => 'macos_15-4', 'wg_ip' => '10.6.0.8'],
             ],
         ]),
     ]);
@@ -156,8 +156,8 @@ it('accepts the gateway api success data envelope for identity verification', fu
         'https://10.6.0.2/api/me' => Http::response([
             'success' => [
                 'data' => [
-                    'gateway' => ['name' => 'gateway-1', 'role' => 'gateway', 'status' => 'active', 'platform' => 'ubuntu_24-04'],
-                    'self' => ['name' => 'control-1', 'role' => 'control', 'status' => 'active', 'platform' => 'macos_15-4', 'addresses' => ['wireguard' => '10.6.0.8']],
+                    'gateway' => ['name' => 'gateway-1', 'roles' => [['role' => 'gateway', 'status' => 'active', 'settings' => []]], 'status' => 'active', 'platform' => 'ubuntu_24-04'],
+                    'self' => ['name' => 'control-1', 'roles' => [], 'status' => 'active', 'platform' => 'macos_15-4', 'addresses' => ['wireguard' => '10.6.0.8']],
                 ],
             ],
         ]),
@@ -196,8 +196,8 @@ it('emits converged success envelope', function (): void {
     Http::fake([
         'https://10.6.0.2/api/me' => Http::response([
             'data' => [
-                'gateway' => ['name' => 'gateway-1', 'role' => 'gateway', 'status' => 'active', 'platform' => 'ubuntu_24-04'],
-                'self' => ['name' => 'control-1', 'role' => 'control', 'status' => 'active', 'platform' => 'macos_15-4', 'wg_ip' => '10.6.0.8'],
+                'gateway' => ['name' => 'gateway-1', 'roles' => [['role' => 'gateway', 'status' => 'active', 'settings' => []]], 'status' => 'active', 'platform' => 'ubuntu_24-04'],
+                'self' => ['name' => 'control-1', 'roles' => [], 'status' => 'active', 'platform' => 'macos_15-4', 'wg_ip' => '10.6.0.8'],
             ],
         ]),
     ]);
@@ -277,8 +277,8 @@ it('emits node.unsupported_platform for unsupported platform', function (): void
         ]),
         'https://10.6.0.2/api/me' => Http::response([
             'data' => [
-                'gateway' => ['name' => 'gateway-1', 'role' => 'gateway', 'status' => 'active'],
-                'self' => ['name' => 'control-1', 'role' => 'control', 'status' => 'active', 'wg_ip' => '10.6.0.8'],
+                'gateway' => ['name' => 'gateway-1', 'roles' => [['role' => 'gateway', 'status' => 'active', 'settings' => []]], 'status' => 'active'],
+                'self' => ['name' => 'control-1', 'roles' => [], 'status' => 'active', 'wg_ip' => '10.6.0.8'],
             ],
         ]),
     ]);
@@ -308,8 +308,8 @@ it('emits node.local_config_write_failed for metadata write failure', function (
         ]),
         'https://10.6.0.2/api/me' => Http::response([
             'data' => [
-                'gateway' => ['name' => 'gateway-1', 'role' => 'gateway', 'status' => 'active'],
-                'self' => ['name' => 'control-1', 'role' => 'control', 'status' => 'active', 'wg_ip' => '10.6.0.8'],
+                'gateway' => ['name' => 'gateway-1', 'roles' => [['role' => 'gateway', 'status' => 'active', 'settings' => []]], 'status' => 'active'],
+                'self' => ['name' => 'control-1', 'roles' => [], 'status' => 'active', 'wg_ip' => '10.6.0.8'],
             ],
         ]),
     ]);

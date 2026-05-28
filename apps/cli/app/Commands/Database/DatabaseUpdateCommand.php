@@ -8,6 +8,7 @@ use App\Exceptions\GatewayApiException;
 
 final class DatabaseUpdateCommand extends DatabaseGatewayCommand
 {
+    #[\Override]
     protected $signature = 'database:update
         {connection? : Database connection slug}
         {--slug= : New database connection slug}
@@ -22,6 +23,7 @@ final class DatabaseUpdateCommand extends DatabaseGatewayCommand
         {--clear-password : Clear the stored password}
         {--json : Output JSON}';
 
+    #[\Override]
     protected $description = 'Update a database connection through the gateway.';
 
     public function handle(): int

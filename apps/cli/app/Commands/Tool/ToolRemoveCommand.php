@@ -8,6 +8,7 @@ use App\Exceptions\GatewayApiException;
 
 final class ToolRemoveCommand extends ToolGatewayCommand
 {
+    #[\Override]
     protected $signature = 'tool:remove
         {tool? : Tool catalog name to remove}
         {--app= : Resolve target by app selector}
@@ -15,6 +16,7 @@ final class ToolRemoveCommand extends ToolGatewayCommand
         {--force : Confirm destructive removal}
         {--json : Output JSON}';
 
+    #[\Override]
     protected $description = 'Remove a managed tool through the gateway.';
 
     public function handle(): int

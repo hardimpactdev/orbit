@@ -7,7 +7,6 @@ use App\Data\RemoteShell\RemoteShellResult;
 use App\Http\Gateway\Requests\Tools\RemoveToolRequest;
 use App\Http\Gateway\Requests\Tools\ToolActionStreamRequest;
 use App\Models\LocalGatewaySettings;
-use App\Models\LocalNodeDefault;
 use App\Models\Node;
 use App\Models\NodeTool;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -25,21 +24,18 @@ function createToolRemoveLocalNode(string $role = 'gateway'): Node
 {
     return Node::factory()->create([
         'name' => "local-{$role}",
-        'role' => $role,
         'host' => '10.6.0.1',
-        'wireguard_address' => '10.6.0.1',
-    ]);
+        'wireguard_address' => '10.6.0.1']);
 }
 
 describe('tool:remove command contract', function (): void {
     it('removes a managed tool after interactive confirmation without force', function (): void {
         createToolRemoveLocalNode('gateway');
-        $node = createTestAppHostNode(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        $node = createTestAppHostNode(['name' => 'app-1', 'status' => 'active']);
         $tool = NodeTool::factory()->create([
             'node_id' => $node->id,
             'name' => 'redis',
-            'expected_state' => 'running',
-        ]);
+            'expected_state' => 'running']);
         $shell = new ToolRemoveRecordingShell;
         app()->instance(RemoteShell::class, $shell);
 
@@ -53,12 +49,11 @@ describe('tool:remove command contract', function (): void {
 
     it('cancels interactive removal when confirmation is declined', function (): void {
         createToolRemoveLocalNode('gateway');
-        $node = createTestAppHostNode(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        $node = createTestAppHostNode(['name' => 'app-1', 'status' => 'active']);
         $tool = NodeTool::factory()->create([
             'node_id' => $node->id,
             'name' => 'redis',
-            'expected_state' => 'running',
-        ]);
+            'expected_state' => 'running']);
         $shell = new ToolRemoveRecordingShell;
         app()->instance(RemoteShell::class, $shell);
 
@@ -73,12 +68,11 @@ describe('tool:remove command contract', function (): void {
 
     it('bypasses interactive confirmation when force is supplied', function (): void {
         createToolRemoveLocalNode('gateway');
-        $node = createTestAppHostNode(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        $node = createTestAppHostNode(['name' => 'app-1', 'status' => 'active']);
         $tool = NodeTool::factory()->create([
             'node_id' => $node->id,
             'name' => 'redis',
-            'expected_state' => 'running',
-        ]);
+            'expected_state' => 'running']);
         $shell = new ToolRemoveRecordingShell;
         app()->instance(RemoteShell::class, $shell);
 
@@ -92,13 +86,12 @@ describe('tool:remove command contract', function (): void {
 
     it('removes a managed tool with destructive consent', function (): void {
         createToolRemoveLocalNode('gateway');
-        $node = createTestAppHostNode(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        $node = createTestAppHostNode(['name' => 'app-1', 'status' => 'active']);
         $tool = NodeTool::factory()->create([
             'node_id' => $node->id,
             'name' => 'redis',
             'expected_state' => 'running',
-            'credentials' => ['password' => 'secret'],
-        ]);
+            'credentials' => ['password' => 'secret']]);
         $shell = new ToolRemoveRecordingShell;
         app()->instance(RemoteShell::class, $shell);
 
@@ -109,8 +102,7 @@ describe('tool:remove command contract', function (): void {
             ->and(NodeTool::find($tool->id))->toBeNull()
             ->and($payload['success']['data']['tool'])->toMatchArray([
                 'name' => 'redis',
-                'node' => 'app-1',
-            ])
+                'node' => 'app-1'])
             ->and($shell->scripts)->toHaveCount(1)
             ->and($shell->scripts[0])->toContain('docker compose')
             ->and($shell->scripts[0])->toContain('stop')
@@ -119,12 +111,11 @@ describe('tool:remove command contract', function (): void {
 
     it('treats json as destructive consent without force after ordinary validation passes', function (): void {
         createToolRemoveLocalNode('gateway');
-        $node = createTestAppHostNode(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        $node = createTestAppHostNode(['name' => 'app-1', 'status' => 'active']);
         $tool = NodeTool::factory()->create([
             'node_id' => $node->id,
             'name' => 'redis',
-            'expected_state' => 'running',
-        ]);
+            'expected_state' => 'running']);
         $shell = new ToolRemoveRecordingShell;
         app()->instance(RemoteShell::class, $shell);
 
@@ -134,20 +125,18 @@ describe('tool:remove command contract', function (): void {
         expect($exitCode)->toBe(0)
             ->and($payload['success']['data']['tool'])->toMatchArray([
                 'name' => 'redis',
-                'node' => 'app-1',
-            ])
+                'node' => 'app-1'])
             ->and(NodeTool::find($tool->id))->toBeNull()
             ->and($shell->scripts)->toHaveCount(1);
     });
 
     it('enforces ordinary validation before json destructive consent side effects', function (): void {
         createToolRemoveLocalNode('gateway');
-        $node = createTestAppHostNode(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        $node = createTestAppHostNode(['name' => 'app-1', 'status' => 'active']);
         $tool = NodeTool::factory()->create([
             'node_id' => $node->id,
             'name' => 'redis',
-            'expected_state' => 'running',
-        ]);
+            'expected_state' => 'running']);
         $shell = new ToolRemoveRecordingShell;
         app()->instance(RemoteShell::class, $shell);
 
@@ -163,12 +152,11 @@ describe('tool:remove command contract', function (): void {
 
     it('requires force for non-json non-interactive removal before side effects', function (): void {
         createToolRemoveLocalNode('gateway');
-        $node = createTestAppHostNode(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        $node = createTestAppHostNode(['name' => 'app-1', 'status' => 'active']);
         $tool = NodeTool::factory()->create([
             'node_id' => $node->id,
             'name' => 'redis',
-            'expected_state' => 'running',
-        ]);
+            'expected_state' => 'running']);
         $shell = new ToolRemoveRecordingShell;
         app()->instance(RemoteShell::class, $shell);
 
@@ -182,12 +170,11 @@ describe('tool:remove command contract', function (): void {
 
     it('rejects tools without a remove action before changing intent', function (): void {
         createToolRemoveLocalNode('gateway');
-        $node = createTestAppHostNode(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        $node = createTestAppHostNode(['name' => 'app-1', 'status' => 'active']);
         $tool = NodeTool::factory()->create([
             'node_id' => $node->id,
             'name' => 'caddy',
-            'expected_state' => 'running',
-        ]);
+            'expected_state' => 'running']);
         $shell = new ToolRemoveRecordingShell;
         app()->instance(RemoteShell::class, $shell);
 
@@ -198,21 +185,19 @@ describe('tool:remove command contract', function (): void {
             ->and($payload['error']['code'])->toBe('tool.unsupported_action')
             ->and($payload['error']['meta'])->toMatchArray([
                 'tool' => 'caddy',
-                'action' => 'remove',
-            ])
+                'action' => 'remove'])
             ->and(NodeTool::find($tool->id))->not->toBeNull()
             ->and($shell->scripts)->toBe([]);
     });
 
     it('keeps retry material when remote cleanup fails', function (): void {
         createToolRemoveLocalNode('gateway');
-        $node = createTestAppHostNode(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        $node = createTestAppHostNode(['name' => 'app-1', 'status' => 'active']);
         $tool = NodeTool::factory()->create([
             'node_id' => $node->id,
             'name' => 'redis',
             'expected_state' => 'running',
-            'credentials' => ['fields' => ['password' => 'secret']],
-        ]);
+            'credentials' => ['fields' => ['password' => 'secret']]]);
         $shell = new ToolRemoveRecordingShell(exitCode: 42, stderr: 'compose failed');
         app()->instance(RemoteShell::class, $shell);
 
@@ -228,12 +213,11 @@ describe('tool:remove command contract', function (): void {
 
     it('requires an explicit target source instead of falling back to the only visible app node', function (): void {
         createToolRemoveLocalNode('gateway');
-        $node = createTestAppHostNode(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        $node = createTestAppHostNode(['name' => 'app-1', 'status' => 'active']);
         $tool = NodeTool::factory()->create([
             'node_id' => $node->id,
             'name' => 'redis',
-            'expected_state' => 'running',
-        ]);
+            'expected_state' => 'running']);
         $shell = new ToolRemoveRecordingShell;
         app()->instance(RemoteShell::class, $shell);
 
@@ -241,25 +225,23 @@ describe('tool:remove command contract', function (): void {
         $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
 
         expect($exitCode)->toBe(1)
-            ->and($payload['error']['code'])->toBe('validation_failed')
-            ->and($payload['error']['meta'])->toBe(['fields' => ['target']])
+            ->and($payload['error']['code'])->toBe('node_target_required')
+            ->and($payload['error']['meta'])->toBe(['field' => 'node'])
             ->and(NodeTool::find($tool->id))->not->toBeNull()
             ->and($shell->scripts)->toBe([]);
     });
 
-    it('uses local node default as an explicit target source', function (): void {
+    it('uses explicit node selectors as a target source', function (): void {
         createToolRemoveLocalNode('gateway');
-        $node = createTestAppHostNode(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        $node = createTestAppHostNode(['name' => 'app-1', 'status' => 'active']);
         $tool = NodeTool::factory()->create([
             'node_id' => $node->id,
             'name' => 'redis',
-            'expected_state' => 'running',
-        ]);
-        LocalNodeDefault::query()->create(['default_node_name' => 'app-1']);
+            'expected_state' => 'running']);
         $shell = new ToolRemoveRecordingShell;
         app()->instance(RemoteShell::class, $shell);
 
-        $exitCode = Artisan::call('tool:remove', ['tool' => 'redis', '--json' => true]);
+        $exitCode = Artisan::call('tool:remove', ['tool' => 'redis', '--node' => 'app-1', '--json' => true]);
         $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
 
         expect($exitCode)->toBe(0)
@@ -275,8 +257,7 @@ describe('tool:remove command contract', function (): void {
 
         LocalGatewaySettings::current()->fill([
             'gateway_url' => 'https://10.6.0.1',
-            'ca_pem_path' => '/dev/null',
-        ])->save();
+            'ca_pem_path' => '/dev/null'])->save();
 
         $mock = MockClient::global([
             RemoveToolRequest::class => MockResponse::make([
@@ -284,13 +265,8 @@ describe('tool:remove command contract', function (): void {
                     'data' => [
                         'tool' => [
                             'name' => 'redis',
-                            'node' => 'app-1',
-                        ],
-                    ],
-                    'meta' => [],
-                ],
-            ], 200),
-        ]);
+                            'node' => 'app-1']],
+                    'meta' => []]], 200)]);
 
         $exitCode = Artisan::call('tool:remove', ['tool' => 'redis', '--node' => 'app-1', '--json' => true]);
         $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
@@ -301,8 +277,7 @@ describe('tool:remove command contract', function (): void {
         $mock->assertSent(fn (RemoveToolRequest $request): bool => $request->body()->all() === [
             'node' => 'app-1',
             'destructive_consent' => true,
-            'destructive_consent_source' => 'json',
-        ]);
+            'destructive_consent_source' => 'json']);
     });
 
     it('preserves structured gateway errors in the JSON envelope', function (array $error, int $status): void {
@@ -312,12 +287,10 @@ describe('tool:remove command contract', function (): void {
 
         LocalGatewaySettings::current()->fill([
             'gateway_url' => 'https://10.6.0.1',
-            'ca_pem_path' => '/dev/null',
-        ])->save();
+            'ca_pem_path' => '/dev/null'])->save();
 
         MockClient::global([
-            RemoveToolRequest::class => MockResponse::make(['error' => $error], $status),
-        ]);
+            RemoveToolRequest::class => MockResponse::make(['error' => $error], $status)]);
 
         $exitCode = Artisan::call('tool:remove', ['tool' => 'redis', '--node' => 'app-1', '--json' => true]);
         $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
@@ -330,36 +303,29 @@ describe('tool:remove command contract', function (): void {
         'authorization_failed' => [[
             'code' => 'authorization_failed',
             'message' => 'This node is not authorized to manage tools.',
-            'meta' => ['reason' => 'missing_permission', 'missing_permission' => 'tool:remove'],
-        ], 403],
+            'meta' => ['reason' => 'missing_permission', 'missing_permission' => 'tool:remove']], 403],
         'gateway_unavailable' => [[
             'code' => 'gateway_unavailable',
             'message' => 'Gateway cannot reach the tool registry.',
-            'meta' => ['reason' => 'connect_timeout'],
-        ], 503],
+            'meta' => ['reason' => 'connect_timeout']], 503],
         'tool.not_found' => [[
             'code' => 'tool.not_found',
             'message' => "Tool 'redis' was not found on node 'app-1'.",
-            'meta' => ['tool' => 'redis', 'node' => 'app-1'],
-        ], 404],
+            'meta' => ['tool' => 'redis', 'node' => 'app-1']], 404],
         'tool.remote_action_failed' => [[
             'code' => 'tool.remote_action_failed',
             'message' => "Tool 'redis' remove failed on node 'app-1'.",
-            'meta' => ['tool' => 'redis', 'node' => 'app-1', 'action' => 'remove'],
-        ], 502],
-    ]);
+            'meta' => ['tool' => 'redis', 'node' => 'app-1', 'action' => 'remove']], 502]]);
 
     it('sends explicit consent source for streamed gateway removals', function (): void {
         $request = new ToolActionStreamRequest('remove', 'redis', [
             'node' => 'app-1',
-            'destructive_consent_source' => 'force',
-        ]);
+            'destructive_consent_source' => 'force']);
 
         expect($request->body()->all())->toBe([
             'node' => 'app-1',
             'destructive_consent_source' => 'force',
-            'destructive_consent' => true,
-        ]);
+            'destructive_consent' => true]);
     });
 });
 

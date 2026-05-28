@@ -17,7 +17,7 @@ function preparedIngressProductionRoute(E2ETopologyHarness $topology, string $do
 
     $route = $topology->ssh(
         'gateway',
-        'cd '.$checkout.' && orbit tinker --execute='.escapeshellarg(<<<PHP
+        'cd '.$checkout.' && php apps/gateway/artisan tinker --execute='.escapeshellarg(<<<PHP
 echo json_encode(app(\\App\\Services\\Proxy\\ProxyRouteQuery::class)
     ->toRouteEntity(\\App\\Models\\ProxyRoute::query()->where('domain', {$domainValue})->firstOrFail()), JSON_THROW_ON_ERROR);
 PHP),

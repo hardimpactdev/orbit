@@ -16,13 +16,11 @@ describe('node role:list', function (): void {
         setupNodeRoleGatewayCaller();
         $node = createHostedNode([
             'name' => 'client-1',
-            'role' => 'control',
-            'environment' => null,
         ]);
 
         NodeRoleAssignment::query()->create([
             'node_id' => $node->id,
-            'role' => 'app-development',
+            'role' => 'app-dev',
             'status' => 'error',
             'settings' => ['tld' => 'test'],
             'last_error' => 'DNS mapping failed.',
@@ -44,7 +42,7 @@ describe('node role:list', function (): void {
                     'data' => [
                         'node' => 'client-1',
                         'roles' => [
-                            nodeRoleAssignmentPayload('app-development', 'error', ['tld' => 'test'], 'DNS mapping failed.', null),
+                            nodeRoleAssignmentPayload('app-dev', 'error', ['tld' => 'test'], 'DNS mapping failed.', null),
                             nodeRoleAssignmentPayload('database', 'active', [], null, NodeRoleAssignment::query()->where('node_id', $node->id)->where('role', 'database')->value('converged_at')?->toJSON()),
                         ],
                     ],
@@ -57,7 +55,6 @@ describe('node role:list', function (): void {
         $node = createHostedNode([
             'name' => 'gateway-vpn-1',
             'role' => 'gateway',
-            'environment' => null,
         ]);
 
         assignNodeRole($node, 'gateway');
@@ -103,11 +100,9 @@ describe('node role:list', function (): void {
         setupNodeRoleGatewayCaller();
         $node = createHostedNode([
             'name' => 'client-1',
-            'role' => 'control',
-            'environment' => null,
         ]);
 
-        assignNodeRole($node, 'app-development', settings: ['tld' => 'test']);
+        assignNodeRole($node, 'app-dev', settings: ['tld' => 'test']);
 
         $exitCode = Artisan::call('node role:list', [
             'node' => 'client-1',
@@ -119,7 +114,7 @@ describe('node role:list', function (): void {
             ->and($output)->toContain('ROLE')
             ->and($output)->toContain('STATUS')
             ->and($output)->toContain('SETTINGS')
-            ->and($output)->toContain('app-development')
+            ->and($output)->toContain('app-dev')
             ->and($output)->toContain('test');
     });
 

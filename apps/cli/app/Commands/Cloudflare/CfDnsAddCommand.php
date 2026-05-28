@@ -8,6 +8,7 @@ use App\Exceptions\GatewayApiException;
 
 final class CfDnsAddCommand extends CloudflareGatewayCommand
 {
+    #[\Override]
     protected $signature = 'cf-dns:add
         {name? : DNS record name}
         {content? : IP address for the record}
@@ -16,6 +17,7 @@ final class CfDnsAddCommand extends CloudflareGatewayCommand
         {--proxied : Enable Cloudflare proxy}
         {--json : Output JSON}';
 
+    #[\Override]
     protected $description = 'Add a Cloudflare address DNS record through the gateway.';
 
     public function handle(): int

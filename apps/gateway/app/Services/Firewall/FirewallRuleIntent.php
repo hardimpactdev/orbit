@@ -12,7 +12,6 @@ use App\Models\FirewallRule;
 use App\Models\Node;
 use App\Services\Nodes\Access\NodeAccessAuthorizer;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
-use Illuminate\Database\Eloquent\Builder;
 
 class FirewallRuleIntent
 {
@@ -180,11 +179,7 @@ class FirewallRuleIntent
             ->where('name', $nodeName)
             ->where('status', 'active')
             ->where('platform', 'ubuntu')
-            ->where(function (Builder $query): void {
-                $query
-                    ->where('role', 'gateway')
-                    ->orWhereIn('id', app(NodeRoleAssignments::class)->activeNodeIdsForRoles($this->eligibleTargetRoles()));
-            })
+            ->whereIn('id', app(NodeRoleAssignments::class)->activeNodeIdsForRoles($this->eligibleTargetRoles()))
             ->first();
 
         if (! $node instanceof Node) {

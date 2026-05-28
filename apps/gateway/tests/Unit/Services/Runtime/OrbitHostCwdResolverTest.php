@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 use App\Enums\Apps\AppRuntimeKind;
 use App\Models\App;
-use App\Models\Node;
 use App\Models\Workspace;
 use App\Services\Runtime\OrbitHostCwdResolver;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -15,7 +14,7 @@ uses(RefreshDatabase::class);
 
 function appAtPath(string $name, string $path): App
 {
-    $node = Node::factory()->create(['name' => "app-{$name}", 'role' => 'app', 'tld' => 'test']);
+    $node = createTestAppHostNode(['name' => "app-{$name}", 'tld' => 'test']);
 
     return App::factory()->for($node, 'node')->create([
         'name' => $name,

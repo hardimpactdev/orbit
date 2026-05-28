@@ -17,13 +17,11 @@ function nodeAccessCommandRow(array $overrides = []): array
 {
     return array_merge([
         'name' => 'app-1',
-        'role' => 'app',
         'host' => '10.6.0.7',
         'wireguard_address' => '10.6.0.7',
         'user' => 'nckrtl',
         'orbit_path' => '/home/nckrtl/orbit',
         'status' => 'active',
-        'environment' => 'development',
         'platform' => 'ubuntu_24-04',
         'created_at' => now(),
         'updated_at' => now(),
@@ -36,15 +34,11 @@ function setupNodeAccessGrantNodes(): array
 
     $gatewayId = (int) DB::table('nodes')->insertGetId(nodeAccessCommandRow([
         'name' => 'gateway-1',
-        'role' => 'gateway',
-        'environment' => null,
     ]));
     assignNodeAccessCommandRole($gatewayId, 'gateway');
 
     $consumerId = (int) DB::table('nodes')->insertGetId(nodeAccessCommandRow([
         'name' => 'control-1',
-        'role' => 'control',
-        'environment' => null,
         'wireguard_address' => '10.6.0.11',
     ]));
 
@@ -71,16 +65,12 @@ function setupNodeAccessRevokeNodes(): array
 
     $gatewayId = (int) DB::table('nodes')->insertGetId(nodeAccessCommandRow([
         'name' => 'gateway-1',
-        'role' => 'gateway',
-        'environment' => null,
         'wireguard_address' => '10.6.0.2',
     ]));
     assignNodeAccessCommandRole($gatewayId, 'gateway');
 
     $consumerId = (int) DB::table('nodes')->insertGetId(nodeAccessCommandRow([
         'name' => 'control-1',
-        'role' => 'control',
-        'environment' => null,
         'wireguard_address' => '10.6.0.8',
     ]));
 
@@ -157,15 +147,11 @@ describe('node access grant integration', function (): void {
 
         $gatewayId = (int) DB::table('nodes')->insertGetId(nodeAccessCommandRow([
             'name' => 'gateway-1',
-            'role' => 'gateway',
-            'environment' => null,
         ]));
         assignNodeAccessCommandRole($gatewayId, 'gateway');
 
         DB::table('nodes')->insert(nodeAccessCommandRow([
             'name' => 'control-1',
-            'role' => 'control',
-            'environment' => null,
         ]));
 
         $exitCode = Artisan::call('node:grant', [

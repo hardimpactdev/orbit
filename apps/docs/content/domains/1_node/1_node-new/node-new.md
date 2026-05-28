@@ -17,52 +17,69 @@ initiating client and stores the local gateway configuration.
 Run this command to register a new node and provision it when required.
 
 ```bash
-orbit node:new [name] [--role=<role>]... [--host=<host>] [--operator-name=<name>] [--tld=<tld>] [--user=<user>] [--ingress=<node>] [--redis-node=<node>] [--s3-data-path=<path>] [--self-grant=<mode>] [--agent-tool=<tool>]... [--grant-to=<node|all>] [--grant-to-preset=<preset>] [--grant-to-permissions=<list>] [--grant-from=<node|all>] [--grant-from-preset=<preset>] [--grant-from-permissions=<list>] [--json]
+orbit node:new [name] [--template=<template>] [--operator] [--roles=<roles>] [--host=<host>] [--operator-name=<name>] [--tld=<tld>] [--user=<user>] [--ingress=<node>] [--redis-node=<node>] [--s3-data-path=<path>] [--self-grant=<mode>] [--agent-tool=<tool>]... [--grant-to=<node|all>] [--grant-to-preset=<preset>] [--grant-to-permissions=<list>] [--grant-from=<node|all>] [--grant-from-preset=<preset>] [--grant-from-permissions=<list>] [--json]
 orbit node:new
 ```
 
 The CLI calls the gateway; the gateway authenticates the presented WireGuard
-peer identity and authorizes the request based on the caller's gateway-known
-role. First-gateway bootstrap is the exception, because no gateway exists yet
-to authenticate against.
+peer identity and authorizes the request against the scoped permission set on
+the caller's grant to the gateway (`node:new` permission, or the `gateway-admin`
+preset). First-gateway bootstrap is the one no-gateway path; the bootstrap flow
+materializes the initial gateway-admin grant from the initiating
+operator-identity client to the new gateway.
 
 ## Examples
 
 ```bash
 orbit node:new client-1
-orbit node:new dev-1 --role=app-dev --host=app-1.ssh.example.com --tld=test
-orbit node:new edge-1 --role=ingress --host=203.0.113.20
-orbit node:new web-1 --role=app-prod --role=ingress --host=203.0.113.21
-orbit node:new web-2 --role=app-prod --ingress=edge-1 --host=203.0.113.22
-orbit node:new realtime-1 --role=websocket --host=203.0.113.30 --redis-node=db-1
-orbit node:new storage-1 --role=s3 --host=203.0.113.31 --s3-data-path=/srv/orbit/s3/data
-orbit node:new gateway-1 --role=gateway --host=203.0.113.2 --operator-name=operator-1
-orbit node:new agent-1 --role=agent --host=192.0.2.10 --tld=agent --self-grant=default
-orbit node:new agent-1 --role=agent --host=192.0.2.10 --agent-tool=openclaw --agent-tool=hermes
-orbit node:new agent-1 --role=agent --host=192.0.2.10 --grant-to=all --grant-to-preset=operator
+orbit node:new operator-1 --operator
+orbit node:new dev-1 --template=app-development --host=app-1.ssh.example.com --tld=test
+orbit node:new dev-1 --roles=app-dev --host=app-1.ssh.example.com --tld=test
+orbit node:new edge-1 --template=ingress --host=203.0.113.20
+orbit node:new web-1 --template=app-production --host=203.0.113.21
+orbit node:new web-2 --roles=app-prod --ingress=edge-1 --host=203.0.113.22
+orbit node:new realtime-1 --template=websocket --host=203.0.113.30 --redis-node=db-1
+orbit node:new storage-1 --template=s3 --host=203.0.113.31 --s3-data-path=/srv/orbit/s3/data
+orbit node:new gateway-1 --template=gateway --host=203.0.113.2 --operator-name=operator-1
+orbit node:new agent-1 --template=agent --host=192.0.2.10 --tld=agent --self-grant=default
+orbit node:new agent-1 --roles=agent --host=192.0.2.10 --agent-tool=openclaw --agent-tool=hermes
+orbit node:new agent-1 --roles=agent --host=192.0.2.10 --grant-to=all --grant-to-preset=operator
 ```
 
 ## Arguments and options
 
 - `name`: unique node slug in the gateway registry, unless the command is
   converging or adopting a compatible existing node.
-- `--role`: repeatable initial role assignment. Supported roles:
-  `app-dev`, `app-prod`, `app-development`, `app-production`, `database`,
-  `agent`, `ingress`, `websocket`, and `s3`. `app-dev` maps to `app-development`;
-  `app-prod` maps to `app-production`. No assigned role means a client identity.
-  `gateway` remains an internal
-  bootstrap path. `agent` is exclusive and may only be selected during
-  `node:new`; combining it with another role fails before side effects.
-- `--host`: required for gateway bootstrap and for any initial role that
-  provisions a host. This is the SSH/bootstrap endpoint and never the canonical
-  node address.
+- `--template`: named provisioning template that expands to a role composition
+  before validation. Supported templates: `operator`, `app-development`,
+  `app-production`, `gateway`, `ingress`, `database`, `s3`, `websocket`,
+  and `agent`. Mutually exclusive with `--roles` and with `--operator` except
+  for `--template=operator`.
+- `--operator`: create a client identity with the operator permission preset and
+  no workload role assignments. Operator is not a node role; use this flag
+  instead of a role value. Mutually exclusive with `--roles` and with
+  workload-bearing `--template` values other than `operator`.
+- `--roles`: comma-separated initial role assignments for programmatic callers
+  that need an explicit composition instead of a template. Supported role
+  values are `app-dev`, `app-prod`, `database`, `agent`, `ingress`,
+  `websocket`, and `s3`. Role aliases are not accepted; `app-development`
+  and `app-production` are template names only. No assigned role means a
+  client identity. `gateway`, `vpn`, and `router` are not accepted through
+  `--roles`; use `--template=gateway`. `agent` is exclusive and may only be
+  selected during `node:new`; combining it with another role fails before side
+  effects.
+- `--host`: required for gateway bootstrap and for every path that provisions a
+  workload role (`app-dev`, `app-prod`, `ingress`, `agent`, `websocket`, `s3`,
+  and gateway bootstrap/convergence). Forbidden for bare client identities,
+  `--operator`, and `database`-only identities that do not provision a host.
+  This is the SSH/bootstrap endpoint and never the canonical node address.
 - `--operator-name`: initiating client name for first-gateway bootstrap
-  (a client with no configured gateway running `--role=gateway`).
-  Defaults to the normalized local short hostname. Forbidden outside
-  first-gateway bootstrap.
-- `--tld`: required for `app-development`. Used by `agent` as the agent
-  TLD (default `agent`). Must be a single lowercase DNS label without a
-  leading dot.
+  (a client with no configured gateway running gateway bootstrap via
+  `--template=gateway`). Defaults to the normalized local short hostname.
+  Forbidden outside first-gateway bootstrap.
+- `--tld`: required for the `app-development` template and for `app-dev`.
+  Used by `agent` as the agent TLD (default `agent`). Must be a single
+  lowercase DNS label without a leading dot.
 - `--user`: Bootstrap SSH user for provisioning. Defaults to `root`, but
   users from cloud images, such as `ubuntu`, remain valid. This value is only
   used for the first SSH path that creates or verifies Orbit's managed user.
@@ -70,19 +87,19 @@ orbit node:new agent-1 --role=agent --host=192.0.2.10 --grant-to=all --grant-to-
   through that gateway-managed user; root SSH login and password login are
   disabled.
 - `--ingress`: existing active `ingress` node to use when
-  creating a private `app-production` backend node that does not serve public
+  creating a private `app-prod` backend node that does not serve public
   traffic itself.
 - `--redis-node`: existing active `database` node whose Redis service backs a
-  requested `websocket` role. Required when `--role=websocket` is selected.
+  requested `websocket` role. Required when `--roles` includes `websocket`.
 - `--s3-data-path`: host path mounted into the RustFS container as `/data`.
-  Optional when `--role=s3` is selected; defaults to `/srv/orbit/s3/data`.
+  Optional when `--roles` includes `s3`; defaults to `/srv/orbit/s3/data`.
   Must be an absolute path.
 - `--self-grant`: `default` to apply the role-union self-preset, `custom`
   to drive the self-grant interactively, or omitted to fall back to the
   documented default for non-interactive runs (`default`).
 - `--agent-tool`: repeatable. Names an agent tool slug to install during
-  provisioning when `--role=agent`. Forbidden when the node has no `agent`
-  role. Zero, one, or many may be supplied; no default agent tool is
+  provisioning when `--roles` includes `agent`. Forbidden when the node has no
+  `agent` role. Zero, one, or many may be supplied; no default agent tool is
   installed when this flag is omitted.
 - `--grant-to`: node selector (a specific node name or `all`) for grants
   from the new node to other nodes. `all` expands to all current eligible
@@ -96,110 +113,108 @@ orbit node:new agent-1 --role=agent --host=192.0.2.10 --grant-to=all --grant-to-
   set for the `--grant-from` direction. Mutually exclusive.
 - `--json`: Output JSON.
 
-## Workload Roles
+## Templates At A Glance
+
+| Template | Roles | Optional add-ons | Requires `--host` | Status |
+| --- | --- | --- | --- | --- |
+| `operator` | (none; client identity with operator preset) | — | no | live |
+| `app-development` | `app-dev` + `database` | `s3`, `websocket` | yes | live |
+| `app-production` | `app-prod` + `ingress` (colocated) or `app-prod` alone (requires `--ingress=<node>`) | — | yes | live |
+| `gateway` | `gateway` + `vpn` + `router` | — | yes | live |
+| `ingress` | `ingress` | — | yes | live |
+| `database` | `database` | `s3`, `websocket` | yes | live |
+| `s3` | `s3` | — | yes | implementation pending |
+| `websocket` | `websocket` | — | yes | implementation pending |
+| `agent` | `agent` | agent tools via `--agent-tool=` | yes | live |
+
+> **Status:** Templates `s3` and `websocket` are documented so the CLI surface
+> stays stable, but current behavior fails before side effects with
+> `template_not_implemented` or `role_not_implemented` until the S3 and
+> WebSocket implementations land.
+
+## Templates
 
 **Client identity**
 
-Creates a client identity with no role assignments by default. The
-`--role=operator` option uses this client identity shape for an operator
-node: a node that operates one or more nodes through the gateway by grant.
+Creates a client identity with no role assignments by default. Use
+`--operator` (or `--template=operator`) for a client identity that receives the
+operator permission preset. Operator is not a node role.
 
-**`app-dev` / `app-development`**
+**`app-development` template**
 
-Provisions a host-capable node identity and creates an active role
-assignment with settings that include `tld`.
+Expands to `app-dev` + `database` and may optionally add `s3` and `websocket`
+on the same host.
 
 Requires `--host` and non-empty `--tld`.
 
-**`app-prod` / `app-production`**
+**`app-production` template**
 
-Provisions a host-capable node identity and creates an active role assignment
-whose settings point at the selected ingress node.
+Expands to `app-prod` plus either colocated `ingress` or a private `app-prod`
+backend that requires `--ingress=<node>`.
 
 Requires `--host`.
 
-Interactive `node:new --role=app-prod` asks:
+Interactive `node:new --template=app-production` asks:
 
 ```text
 Serve public traffic from this node? [yes]
 ```
 
-Answering `yes` creates a colocated production node with both
-`app-production` and `ingress`. Answering `no` creates a private backend
-node and requires an existing active `ingress` node.
+Answering `yes` creates a colocated production node with both `app-prod` and
+`ingress`. Answering `no` creates a private backend node and requires an
+existing active `ingress` node.
 
-**`database`**
+**`database` template**
 
-Creates an active role assignment for database responsibilities. It may
-be combined with `app-development`, `websocket`, and `s3` on the same
-provisioned host.
+Creates an active `database` role assignment. It may combine with `app-dev`,
+`websocket`, and `s3` on the same provisioned host.
 
-**`websocket`**
+Requires `--host` when the template provisions a host.
 
-Provisions a private realtime node and creates an active role assignment whose
-settings point at the selected Redis node. The role runs Laravel Reverb in a
-Docker runtime container managed by Orbit, binds only to the node's WireGuard
-address, and receives traffic through router-owned private service routes.
+**`websocket` template**
 
-Requires `--host` and `--redis-node`. `--redis-node` must name an active
-`database` role node with Redis expected or installed. The websocket role uses
-that Redis service but does not install or own Redis.
+Provisions a private realtime node and creates an active `websocket` role
+assignment whose settings point at the selected Redis node.
 
-**`s3`**
+Requires `--host` and `--redis-node`. Implementation pending.
 
-Provisions a private object-storage node and creates an active role assignment
-whose settings include the RustFS data path. The role runs RustFS in a Docker
-runtime container rendered by Orbit, binds the S3 API only to the node's
-WireGuard address, and receives traffic through router-owned private service
-routes. Public S3 hosts, when published, enter through `ingress` and then
-forward to `router`; ingress must not route directly to S3 nodes.
+**`s3` template**
 
-Requires `--host`. `--s3-data-path` is optional and defaults to
-`/srv/orbit/s3/data`. The path must be absolute, is mounted into the RustFS
-container as `/data`, and is role-owned persistent data. Removing the role
-without `--purge-data` must not delete it.
+Provisions a private object-storage node and creates an active `s3` role
+assignment whose settings include the RustFS data path.
 
-`app-development` and `app-production` are mutually exclusive. In v1,
-`gateway`, `vpn`, and `router` are gateway-coupled and conflict with
-`app-development`, `app-production`, `database`, `agent`, `ingress`, and
-`websocket`, and `s3`.
-The `agent` role conflicts with `gateway`, `vpn`, `router`,
-`app-development`, `app-production`, `database`, `ingress`, `websocket`, and
-`s3`. `ingress` may combine only with `app-production`. `websocket` and `s3`
-may combine with `app-development`, `database`, and each other.
-`gateway`, `vpn`, and `router` are not command-assignable through the
-public role flow.
+Requires `--host`. Implementation pending.
 
-**`agent`**
+**`agent` template**
 
-Provisions an isolated agent host. The `agent` role assignment carries a
-`tld` setting (default `agent`) and applies a baseline of `orbit-runtime`,
-`orbit-caddy`, WireGuard/node identity material, and the shared
-unprivileged `agent` runtime user. Supervisor is only used for explicit
-residual runtime units where a tool or process contract configures it.
+Provisions an isolated agent host with the exclusive `agent` role assignment.
 
-Requires `--host`. `--tld` is optional; the default is `agent`. The TLD
-must be unique across active TLD-backed role assignments.
+Requires `--host`. `--tld` is optional; the default is `agent`.
 
-`--agent-tool=<tool>` may be repeated to select agent tools to install
-during provisioning. Supported agent tools are `openclaw` and `hermes`.
-Selecting more than one agent tool emits the same multiple-agent-tool
-warning that `tool:install` uses: interactive callers confirm before
-proceeding, machine-readable callers receive a structured
-`tool.multiple_agent_tools_running` warning and the command proceeds. No
-agent tool is installed when `--agent-tool` is omitted.
+**Explicit `--roles` composition**
 
-`agent` cannot be added through `node role:add`. Combining `--role=agent`
-with `--role=app-development`, `--role=app-production`, `--role=database`,
-or `--role=gateway` fails before side effects.
+Use `--roles=<csv>` for advanced or generated compositions that should not use
+a template. Every workload role in the explicit selection that provisions a
+host requires `--host`. `--roles` is mutually exclusive with `--template` and
+`--operator`.
+
+**Role composition rules**
+
+`app-dev` and `app-prod` are mutually exclusive. In v1, `gateway`, `vpn`, and
+`router` are gateway-coupled and conflict with `app-dev`, `app-prod`,
+`database`, `agent`, `ingress`, `websocket`, and `s3`. The `agent` role
+conflicts with every other workload role. `ingress` may combine only with
+`app-prod`. `websocket` and `s3` may combine with `app-dev`, `database`, and
+each other. `gateway`, `vpn`, and `router` are not command-assignable through
+the public role flow.
 
 **Gateway bootstrap**
 
 Bootstraps or adopts the gateway node that owns fleet configuration, WireGuard
-identity, gateway APIs, and node access policy.
+identity, gateway APIs, and node access policy. Use `--template=gateway`.
 
 When a client with no configured gateway bootstraps the first gateway,
-`node:new --role=gateway` also handles initiating-client onboarding:
+gateway bootstrap also handles initiating-client onboarding:
 
 - mints and installs the initiating client's WireGuard identity named by `--operator-name`;
 - trusts the gateway CA and stores the local gateway endpoint;
@@ -245,6 +260,28 @@ reprovisioning and reports the already-provisioned status. If the gateway is
 compatible but drifted or incomplete, `node:new` reports the drift and points to
 `doctor --family=node --restore`. Destructive gateway reset is outside `node:new`
 and requires a future explicit reset contract.
+
+## Explicit role composition
+
+When no `--template` or `--operator` is supplied, `--roles=<csv>` remains
+available for explicit programmatic compositions. Canonical stored role values
+are `app-dev`, `app-prod`, `database`, `agent`, `ingress`, `websocket`, and
+`s3`. The sections below describe agent-tool and grant behavior that applies
+regardless of whether a template or explicit role list was used.
+
+**`agent` role details**
+
+`--agent-tool=<tool>` may be repeated to select agent tools to install
+during provisioning. Supported agent tools are `openclaw` and `hermes`.
+Selecting more than one agent tool emits the same multiple-agent-tool
+warning that `tool:install` uses: interactive callers confirm before
+proceeding, machine-readable callers receive a structured
+`tool.multiple_agent_tools_running` warning and the command proceeds. No
+agent tool is installed when `--agent-tool` is omitted.
+
+`agent` cannot be added through `node role:add`. Combining `--roles=agent`
+with `app-dev`, `app-prod`, `database`, or gateway
+bootstrap roles fails before side effects.
 
 ## What Happens
 
@@ -308,13 +345,13 @@ It does not configure tools, user apps, workspaces, processes, schedules,
 firewall rules, or user proxy routes. Those are managed by their own commands
 and by `doctor --family=<family> --restore` or `doctor --family=<family> --adopt`.
 
-For `--role=app-prod` / `--role=app-production`, non-interactive input must choose placement
+For `--template=app-production` or `--roles` that includes `app-prod`, non-interactive input must choose placement
 explicitly:
 
-- `--role=app-prod --role=ingress` serves public traffic from the
-  same node.
-- `--role=app-prod --ingress=<node>` creates a private backend
-  app-production node that uses an existing active ingress node.
+- `--template=app-production` with colocated ingress, or
+  `--roles=app-prod,ingress`, serves public traffic from the same node.
+- `--roles=app-prod --ingress=<node>` creates a private backend `app-prod`
+  node that uses an existing active ingress node.
 
 ## Output
 
@@ -323,9 +360,9 @@ or enrolls the node, writes gateway state, and verifies readiness.
 
 Add `--json` when you need a machine-readable payload. The JSON output gives
 you the command result action, node name, role, lifecycle status,
-platform-version identifier, environment when applicable, development TLD when
-applicable, provisioning status, explicit node addresses, and any returned
-WireGuard configuration for client enrollment.
+platform-version identifier, development TLD when applicable, provisioning
+status, explicit node addresses, and any returned WireGuard configuration for
+client enrollment.
 
 Read the addresses carefully: the JSON distinguishes the SSH/bootstrap
 endpoint from the Orbit WireGuard address, the gateway endpoint used in

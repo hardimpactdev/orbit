@@ -34,7 +34,6 @@ foreach (['operator-1', 'app-dev-1'] as $name) {
 $app = \App\Models\App::query()->create([
     'name' => 'docs',
     'node_id' => $nodes->get('app-dev-1'),
-    'environment' => 'development',
     'path' => '/home/orbit/apps/docs',
     'document_root' => 'public',
     'php_version' => '8.4',
@@ -68,7 +67,7 @@ PHP;
 
     $topology->ssh(
         'gateway',
-        "cd {$checkout} && orbit tinker --execute=".escapeshellarg($script),
+        "cd {$checkout} && php apps/gateway/artisan tinker --execute=".escapeshellarg($script),
         timeoutSeconds: 120,
     );
 
@@ -99,7 +98,7 @@ PHP;
 
     $result = $topology->ssh(
         'gateway',
-        'cd '.escapeshellarg($topology->checkout('gateway')).' && orbit tinker --execute='.escapeshellarg($script),
+        'cd '.escapeshellarg($topology->checkout('gateway')).' && php apps/gateway/artisan tinker --execute='.escapeshellarg($script),
         timeoutSeconds: 120,
     );
 

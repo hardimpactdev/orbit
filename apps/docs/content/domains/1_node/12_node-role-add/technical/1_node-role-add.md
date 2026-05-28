@@ -26,7 +26,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | --- | --- | --- | --- | --- | --- |
 | `node` | `[node]` | Always. | Never. | None. | Must match an active node record. |
 | `role` | `[role]` | Always. | Never. | None. | `gateway`, `vpn`, `router`, and `agent` are rejected. |
-| `tld` | `--tld` | Required for `app-development`. | Forbidden for roles that do not support it. | None. | Must be a single lowercase DNS label without a leading dot. |
+| `tld` | `--tld` | Required for `app-dev`. | Forbidden for roles that do not support it. | None. | Must be a single lowercase DNS label without a leading dot. |
 | `redis_node` | `--redis-node` | Required for `websocket`. | Forbidden for roles that do not support it. | None. | Must match an active node with the `database` role and Redis expected or installed. |
 | `s3_data_path` | `--s3-data-path` | Never. | Forbidden for roles that do not support it. | `/srv/orbit/s3/data` for `s3`. | Absolute host path mounted into RustFS as `/data`. |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer and forces non-interactive input mode. |
@@ -41,15 +41,15 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
   gateway-coupled infrastructure roles in v1 and cannot be added
   independently through `node role:add`.
 - `agent` role is rejected before side effects with `validation_failed`. The
-  failure message points the caller to `node:new --role=agent`, the only
+  failure message points the caller to `node:new --template=agent`, the preferred
   path that may create an agent role assignment.
-- `app-development` requires `--tld`.
+- `app-dev` requires `--tld`.
 - `websocket` requires `--redis-node`. The resolved node must have an active
   `database` role and Redis expected or installed.
 - `s3` accepts optional `--s3-data-path`. The resolved path defaults to
   `/srv/orbit/s3/data`, must be absolute, is stored as `settings.data_path`,
   and is mounted into RustFS as `/data`.
-- `app-production`, `database`, and other roles reject role-local options they
+- `app-prod`, `database`, and other roles reject role-local options they
   do not support.
 - Role conflicts are validated by `NodeRoleAssignmentService`.
 

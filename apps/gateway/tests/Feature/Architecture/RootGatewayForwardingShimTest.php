@@ -50,11 +50,16 @@ it('routes root composer scripts through app-aware helpers', function (): void {
         ->and($composer)->not->toHaveKeys(['autoload', 'autoload-dev']);
 });
 
-it('keeps public orbit launcher pointed at the gateway app only', function (): void {
+it('keeps public orbit launcher pointed at the cli app only', function (): void {
     $launcher = file_get_contents(repo_path('bin/orbit')) ?: '';
 
     expect($launcher)
-        ->toContain('${ORBIT_REPO}/apps/gateway/artisan')
+        ->toContain('${ORBIT_REPO}/apps/cli/orbit')
         ->toContain('${ORBIT_REPO}/apps/gateway/.env')
-        ->not->toContain('${ORBIT_REPO}/artisan');
+        ->toContain('exec "${ORBIT_REPO}/apps/cli/orbit" "$@"')
+        ->toContain('ORBIT_APP="cli"')
+        ->not->toContain('${ORBIT_REPO}/apps/gateway/artisan')
+        ->not->toContain('${ORBIT_REPO}/artisan')
+        ->not->toContain('ORBIT_APP="gateway"')
+        ->not->toContain('gateway_flag');
 });

@@ -17,13 +17,11 @@ function nodeShowNonInteractiveRow(array $overrides = []): array
 {
     return array_merge([
         'name' => 'app-1',
-        'role' => 'app',
         'host' => '10.6.0.7',
         'wireguard_address' => '10.6.0.7',
         'user' => 'nckrtl',
         'orbit_path' => '/home/nckrtl/orbit',
         'status' => 'active',
-        'environment' => 'development',
         'platform' => 'ubuntu_24-04',
         'created_at' => now(),
         'updated_at' => now(),
@@ -36,8 +34,6 @@ function setupShowNonInteractiveGatewayCaller(): void
 
     $nodeId = (int) DB::table('nodes')->insertGetId(nodeShowNonInteractiveRow([
         'name' => 'test-gateway',
-        'role' => 'gateway',
-        'environment' => null,
     ]));
 
     NodeRoleAssignment::factory()->create([
@@ -99,14 +95,8 @@ describe('node:show non-interactive input mode', function (): void {
         expect($result['payload']['success'])->toHaveKey('data');
     });
 
-    it('resolves local default node when set and name is missing', function (): void {
+    it('resolves the active gateway node when name is missing', function (): void {
         DB::table('nodes')->insert(nodeShowNonInteractiveRow(['name' => 'default-app']));
-
-        DB::table('local_node_defaults')->insert([
-            'default_node_name' => 'default-app',
-            'created_at' => now(),
-            'updated_at' => now(),
-        ]);
 
         $result = callShowNonInteractiveJsonCommand('node:show');
 
@@ -115,10 +105,11 @@ describe('node:show non-interactive input mode', function (): void {
         expect($result['payload'])->toHaveKey('success');
         expect($result['payload']['success'])->toBeArray();
         expect($result['payload']['success'])->toHaveKey('data');
+        expect($result['payload']['success']['data']['node']['name'])->toBe('test-gateway');
     });
 
     it('resolves calling node when no default is set and name is missing', function (): void {
-        DB::table('nodes')->insert(nodeShowNonInteractiveRow(['name' => 'other-gateway', 'role' => 'gateway']));
+        DB::table('nodes')->insert(nodeShowNonInteractiveRow(['name' => 'other-gateway']));
 
         $result = callShowNonInteractiveJsonCommand('node:show');
 
@@ -128,7 +119,6 @@ describe('node:show non-interactive input mode', function (): void {
 
     it('fails with validation_failed when name is missing and no default can be resolved', function (): void {
         DB::table('nodes')->delete();
-        DB::table('local_node_defaults')->delete();
 
         $result = callShowNonInteractiveJsonCommand('node:show');
 

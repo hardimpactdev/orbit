@@ -1,3 +1,7 @@
 [mcp_servers.laravel-boost]
 command = "php"
 args = ["apps/gateway/artisan", "boost:mcp"]
+
+[mcp_servers.laravel-boost.env]
+APP_ENV = "local"
+APP_DEBUG = "true"

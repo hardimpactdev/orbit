@@ -23,10 +23,8 @@ function createExecControllerCaller(array $overrides = []): Node
 {
     $attributes = array_merge([
         'name' => 'caller',
-        'role' => 'control',
         'host' => APP_EXEC_CALLER_WG_IP,
-        'wireguard_address' => APP_EXEC_CALLER_WG_IP,
-    ], $overrides);
+        'wireguard_address' => APP_EXEC_CALLER_WG_IP], $overrides);
 
     return Node::factory()->create($attributes);
 }
@@ -42,8 +40,7 @@ function grantAppExecAccess(Node $caller, Node $appNode, array $permissions): vo
         'permissions' => json_encode($permissions, JSON_THROW_ON_ERROR),
         'custom_permissions' => json_encode([], JSON_THROW_ON_ERROR),
         'created_at' => now(),
-        'updated_at' => now(),
-    ]);
+        'updated_at' => now()]);
 }
 
 function appExecControllerPreflightRunning(): RemoteShellResult
@@ -114,16 +111,14 @@ function bindAppExecControllerPreflightShell(RemoteShellResult $preflight): void
 describe('AppExecController', function (): void {
     it('runs a command inside the app runtime container and returns the success envelope', function (): void {
         $caller = createExecControllerCaller();
-        $node = createTestAppHostNode(['name' => 'app-1', 'role' => 'app', 'host' => '10.6.0.7']);
+        $node = createTestAppHostNode(['name' => 'app-1', 'host' => '10.6.0.7']);
         grantAppExecAccess($caller, $node, ['app:exec']);
         App::factory()->for($node, 'node')->create([
             'name' => 'docs',
             'path' => '/home/orbit/apps/docs',
-            'runtime_kind' => AppRuntimeKind::Php,
-        ]);
+            'runtime_kind' => AppRuntimeKind::Php]);
         bindAppExecControllerShell([
-            new RemoteShellResult(exitCode: 0, stdout: "PHP 8.5.0\n", stderr: '', durationMs: 1),
-        ]);
+            new RemoteShellResult(exitCode: 0, stdout: "PHP 8.5.0\n", stderr: '', durationMs: 1)]);
 
         $response = $this->call(
             'POST',
@@ -145,16 +140,14 @@ describe('AppExecController', function (): void {
 
     it('returns the underlying exit code in success.data.exit_code with HTTP 200', function (): void {
         $caller = createExecControllerCaller();
-        $node = createTestAppHostNode(['name' => 'app-1', 'role' => 'app', 'host' => '10.6.0.7']);
+        $node = createTestAppHostNode(['name' => 'app-1', 'host' => '10.6.0.7']);
         grantAppExecAccess($caller, $node, ['app:exec']);
         App::factory()->for($node, 'node')->create([
             'name' => 'docs',
             'path' => '/home/orbit/apps/docs',
-            'runtime_kind' => AppRuntimeKind::Php,
-        ]);
+            'runtime_kind' => AppRuntimeKind::Php]);
         bindAppExecControllerShell([
-            new RemoteShellResult(exitCode: 7, stdout: '', stderr: "fail\n", durationMs: 1),
-        ]);
+            new RemoteShellResult(exitCode: 7, stdout: '', stderr: "fail\n", durationMs: 1)]);
 
         $response = $this->call(
             'POST',
@@ -173,13 +166,12 @@ describe('AppExecController', function (): void {
 
     it('returns 422 validation_failed when the command body is missing or empty', function (): void {
         $caller = createExecControllerCaller();
-        $node = createTestAppHostNode(['name' => 'app-1', 'role' => 'app', 'host' => '10.6.0.7']);
+        $node = createTestAppHostNode(['name' => 'app-1', 'host' => '10.6.0.7']);
         grantAppExecAccess($caller, $node, ['app:exec']);
         App::factory()->for($node, 'node')->create([
             'name' => 'docs',
             'path' => '/home/orbit/apps/docs',
-            'runtime_kind' => AppRuntimeKind::Php,
-        ]);
+            'runtime_kind' => AppRuntimeKind::Php]);
         bindAppExecControllerShell();
 
         $response = $this->call(
@@ -217,13 +209,12 @@ describe('AppExecController', function (): void {
 
     it('returns 422 app.exec_unsupported_runtime for a static app', function (): void {
         $caller = createExecControllerCaller();
-        $node = createTestAppHostNode(['name' => 'app-1', 'role' => 'app', 'host' => '10.6.0.7']);
+        $node = createTestAppHostNode(['name' => 'app-1', 'host' => '10.6.0.7']);
         grantAppExecAccess($caller, $node, ['app:exec']);
         App::factory()->for($node, 'node')->create([
             'name' => 'docs',
             'path' => '/home/orbit/apps/docs',
-            'runtime_kind' => AppRuntimeKind::Static,
-        ]);
+            'runtime_kind' => AppRuntimeKind::Static]);
         bindAppExecControllerShell();
 
         $response = $this->call(
@@ -242,13 +233,12 @@ describe('AppExecController', function (): void {
 
     it('returns 422 app.exec_container_not_running when preflight reports no such container', function (): void {
         $caller = createExecControllerCaller();
-        $node = createTestAppHostNode(['name' => 'app-1', 'role' => 'app', 'host' => '10.6.0.7']);
+        $node = createTestAppHostNode(['name' => 'app-1', 'host' => '10.6.0.7']);
         grantAppExecAccess($caller, $node, ['app:exec']);
         App::factory()->for($node, 'node')->create([
             'name' => 'docs',
             'path' => '/home/orbit/apps/docs',
-            'runtime_kind' => AppRuntimeKind::Php,
-        ]);
+            'runtime_kind' => AppRuntimeKind::Php]);
         bindAppExecControllerPreflightShell(new RemoteShellResult(
             exitCode: 1,
             stdout: '',
@@ -272,13 +262,12 @@ describe('AppExecController', function (): void {
 
     it('returns 502 app.exec_docker_unavailable when preflight reports the docker daemon is down', function (): void {
         $caller = createExecControllerCaller();
-        $node = createTestAppHostNode(['name' => 'app-1', 'role' => 'app', 'host' => '10.6.0.7']);
+        $node = createTestAppHostNode(['name' => 'app-1', 'host' => '10.6.0.7']);
         grantAppExecAccess($caller, $node, ['app:exec']);
         App::factory()->for($node, 'node')->create([
             'name' => 'docs',
             'path' => '/home/orbit/apps/docs',
-            'runtime_kind' => AppRuntimeKind::Php,
-        ]);
+            'runtime_kind' => AppRuntimeKind::Php]);
         bindAppExecControllerPreflightShell(new RemoteShellResult(
             exitCode: 1,
             stdout: '',
@@ -302,13 +291,12 @@ describe('AppExecController', function (): void {
 
     it('returns 502 app.exec_node_unreachable when preflight returns an SSH-level failure', function (): void {
         $caller = createExecControllerCaller();
-        $node = createTestAppHostNode(['name' => 'app-1', 'role' => 'app', 'host' => '10.6.0.7']);
+        $node = createTestAppHostNode(['name' => 'app-1', 'host' => '10.6.0.7']);
         grantAppExecAccess($caller, $node, ['app:exec']);
         App::factory()->for($node, 'node')->create([
             'name' => 'docs',
             'path' => '/home/orbit/apps/docs',
-            'runtime_kind' => AppRuntimeKind::Php,
-        ]);
+            'runtime_kind' => AppRuntimeKind::Php]);
         bindAppExecControllerPreflightShell(new RemoteShellResult(
             exitCode: 255,
             stdout: '',
@@ -332,13 +320,12 @@ describe('AppExecController', function (): void {
 
     it('rejects callers without the app:exec permission with HTTP 403', function (): void {
         $caller = createExecControllerCaller();
-        $node = createTestAppHostNode(['name' => 'app-1', 'role' => 'app', 'host' => '10.6.0.7']);
+        $node = createTestAppHostNode(['name' => 'app-1', 'host' => '10.6.0.7']);
         grantAppExecAccess($caller, $node, ['app:read']);
         App::factory()->for($node, 'node')->create([
             'name' => 'docs',
             'path' => '/home/orbit/apps/docs',
-            'runtime_kind' => AppRuntimeKind::Php,
-        ]);
+            'runtime_kind' => AppRuntimeKind::Php]);
         bindAppExecControllerShell();
 
         $response = $this->call(
@@ -358,16 +345,14 @@ describe('AppExecController', function (): void {
 
     it('resolves the app from host_cwd via the by-path endpoint and executes the command', function (): void {
         $caller = createExecControllerCaller();
-        $node = createTestAppHostNode(['name' => 'app-1', 'role' => 'app', 'host' => '10.6.0.7']);
+        $node = createTestAppHostNode(['name' => 'app-1', 'host' => '10.6.0.7']);
         grantAppExecAccess($caller, $node, ['app:exec']);
         App::factory()->for($node, 'node')->create([
             'name' => 'docs',
             'path' => '/home/orbit/apps/docs',
-            'runtime_kind' => AppRuntimeKind::Php,
-        ]);
+            'runtime_kind' => AppRuntimeKind::Php]);
         bindAppExecControllerShell([
-            new RemoteShellResult(exitCode: 0, stdout: "PHP 8.5.0\n", stderr: '', durationMs: 1),
-        ]);
+            new RemoteShellResult(exitCode: 0, stdout: "PHP 8.5.0\n", stderr: '', durationMs: 1)]);
 
         $response = $this->call(
             'POST',
@@ -378,8 +363,7 @@ describe('AppExecController', function (): void {
             ['REMOTE_ADDR' => APP_EXEC_CALLER_WG_IP, 'CONTENT_TYPE' => 'application/json'],
             json_encode([
                 'host_cwd' => '/home/orbit/apps/docs/public',
-                'command' => ['php', '-v'],
-            ], JSON_THROW_ON_ERROR),
+                'command' => ['php', '-v']], JSON_THROW_ON_ERROR),
         );
 
         $response->assertOk()
@@ -407,13 +391,12 @@ describe('AppExecController', function (): void {
 
     it('returns 422 validation_failed when the by-path endpoint cannot resolve the host_cwd to any app', function (): void {
         $caller = createExecControllerCaller();
-        $node = createTestAppHostNode(['name' => 'app-1', 'role' => 'app', 'host' => '10.6.0.7']);
+        $node = createTestAppHostNode(['name' => 'app-1', 'host' => '10.6.0.7']);
         grantAppExecAccess($caller, $node, ['app:exec']);
         App::factory()->for($node, 'node')->create([
             'name' => 'docs',
             'path' => '/home/orbit/apps/docs',
-            'runtime_kind' => AppRuntimeKind::Php,
-        ]);
+            'runtime_kind' => AppRuntimeKind::Php]);
 
         $response = $this->call(
             'POST',
@@ -424,8 +407,7 @@ describe('AppExecController', function (): void {
             ['REMOTE_ADDR' => APP_EXEC_CALLER_WG_IP, 'CONTENT_TYPE' => 'application/json'],
             json_encode([
                 'host_cwd' => '/tmp/somewhere-else',
-                'command' => ['php', '-v'],
-            ], JSON_THROW_ON_ERROR),
+                'command' => ['php', '-v']], JSON_THROW_ON_ERROR),
         );
 
         // An unresolvable cwd is a malformed input, not a missing entity.
@@ -438,17 +420,15 @@ describe('AppExecController', function (): void {
 
     it('refuses to fall through to the parent app when host_cwd resolves into a workspace tree', function (): void {
         $caller = createExecControllerCaller();
-        $node = createTestAppHostNode(['name' => 'app-1', 'role' => 'app', 'host' => '10.6.0.7']);
+        $node = createTestAppHostNode(['name' => 'app-1', 'host' => '10.6.0.7']);
         grantAppExecAccess($caller, $node, ['app:exec', 'workspace:exec']);
         $app = App::factory()->for($node, 'node')->create([
             'name' => 'docs',
             'path' => '/home/orbit/apps/docs',
-            'runtime_kind' => AppRuntimeKind::Php,
-        ]);
+            'runtime_kind' => AppRuntimeKind::Php]);
         Workspace::factory()->for($app, 'app')->create([
             'name' => 'docs-feature',
-            'path' => '/home/orbit/apps/docs/.worktrees/docs-feature',
-        ]);
+            'path' => '/home/orbit/apps/docs/.worktrees/docs-feature']);
 
         $response = $this->call(
             'POST',
@@ -459,8 +439,7 @@ describe('AppExecController', function (): void {
             ['REMOTE_ADDR' => APP_EXEC_CALLER_WG_IP, 'CONTENT_TYPE' => 'application/json'],
             json_encode([
                 'host_cwd' => '/home/orbit/apps/docs/.worktrees/docs-feature/src',
-                'command' => ['php', '-v'],
-            ], JSON_THROW_ON_ERROR),
+                'command' => ['php', '-v']], JSON_THROW_ON_ERROR),
         );
 
         // Mirror the gateway-mode CLI: workspace-only cwd matches do not

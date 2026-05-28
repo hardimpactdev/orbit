@@ -29,11 +29,9 @@ it('removes the stale local operator identity over the operator node transport',
             'orbit',
             $key,
             m::on(fn (string $command): bool => str_contains($command, 'php apps/gateway/artisan tinker --execute=')
-                && ! str_contains($command, 'orbit tinker')
+                && ! str_contains($command, 'php artisan tinker')
                 && ! str_contains($command, 'php artisan')
                 && str_contains($command, 'operator-1')
-                && str_contains($command, 'role')
-                && str_contains($command, 'operator')
                 && str_contains($command, 'delete()')),
             60,
         )
