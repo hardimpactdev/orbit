@@ -234,8 +234,9 @@ describe('compatibility bridge command parsing', function (): void {
             ->toBe(['tool:logs', 'supervisor', '--node=app-1', '--follow']);
     });
 
-    it('continues to bridge tool write and lifecycle commands outside this slice', function (string $command): void {
-        expect(isUnportedPublicCommand($command))->toBeTrue();
+    it('does not bridge ported tool write and lifecycle commands by default', function (string $command): void {
+        expect(isUnportedPublicCommand($command))->toBeFalse()
+            ->and(gatewayArtisanArgumentsFromArgv(['orbit', $command, '--json']))->toBeNull();
     })->with([
         'tool:install',
         'tool:reconfigure',

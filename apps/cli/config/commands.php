@@ -67,9 +67,17 @@ use App\Commands\Schedule\ScheduleRemoveCommand;
 use App\Commands\Schedule\ScheduleRunCommand;
 use App\Commands\Schedule\ScheduleShowCommand;
 use App\Commands\Tool\ToolCredentialsCommand;
+use App\Commands\Tool\ToolInstallCommand;
 use App\Commands\Tool\ToolListCommand;
 use App\Commands\Tool\ToolLogsCommand;
+use App\Commands\Tool\ToolReconfigureCommand;
+use App\Commands\Tool\ToolReloadCommand;
+use App\Commands\Tool\ToolRemoveCommand;
+use App\Commands\Tool\ToolRestartCommand;
 use App\Commands\Tool\ToolShowCommand;
+use App\Commands\Tool\ToolStartCommand;
+use App\Commands\Tool\ToolStopCommand;
+use App\Commands\Tool\ToolUpdateCommand;
 use App\Commands\Workspace\WorkspaceExecCommand;
 use App\Commands\Workspace\WorkspaceHistoryCommand;
 use App\Commands\Workspace\WorkspaceListCommand;
@@ -167,9 +175,17 @@ return [
         ScheduleRunCommand::class,
         ScheduleShowCommand::class,
         ToolCredentialsCommand::class,
+        ToolInstallCommand::class,
         ToolListCommand::class,
         ToolLogsCommand::class,
+        ToolReconfigureCommand::class,
+        ToolReloadCommand::class,
+        ToolRemoveCommand::class,
+        ToolRestartCommand::class,
         ToolShowCommand::class,
+        ToolStartCommand::class,
+        ToolStopCommand::class,
+        ToolUpdateCommand::class,
         UpdateCommand::class,
         WorkspaceExecCommand::class,
         WorkspaceHistoryCommand::class,
