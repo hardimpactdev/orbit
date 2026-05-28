@@ -206,5 +206,5 @@ Renderer-specific test mapping lives in:
 
 Deployment-context-specific test mapping lives in:
 
-- [`2_node-default_on-client.md`](2_node-default_on-client.md#test-mapping)
+- [`2_node-default_on-operator-node.md`](2_node-default_on-operator-node.md#test-mapping)
 - [`3_node-default_on-gateway-node.md`](3_node-default_on-gateway-node.md#test-mapping)

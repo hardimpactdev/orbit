@@ -110,7 +110,7 @@ Input-mode-specific contracts are required for resolution modes:
 Cross-peer scope-resolution and grant requirements are owned by
 [`7_doctor_scope-and-authorization.md`](7_doctor_scope-and-authorization.md).
 Peer-specific authorization remains in the on-node companion contracts:
-[`2_doctor_on-client.md`](2_doctor_on-client.md),
+[`2_doctor_on-operator-node.md`](2_doctor_on-operator-node.md),
 and [`3_doctor_on-gateway-node.md`](3_doctor_on-gateway-node.md).
 
 ### Result Classification Rules
@@ -230,7 +230,7 @@ Test mapping for each family lives in its family doctor contract, such as
 
 Peer-specific behavior and test mapping live in:
 
-- [`2_doctor_on-client.md`](2_doctor_on-client.md)
+- [`2_doctor_on-operator-node.md`](2_doctor_on-operator-node.md)
 - [`3_doctor_on-gateway-node.md`](3_doctor_on-gateway-node.md)
 
 ## Activity Logging

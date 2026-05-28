@@ -80,10 +80,10 @@ bootstrap path, not a public role assignment.
      affect the blocker.
 6. Send the typed request to the gateway. The gateway authenticates the
    presented WireGuard identity and applies the grant authorization rules
-   described in [`2_node-new_on-client.md`](2_node-new_on-client.md) or
+   described in [`2_node-new_on-operator-node.md`](2_node-new_on-operator-node.md) or
    [`3_node-new_on-gateway-node.md`](3_node-new_on-gateway-node.md) before any
    gateway-owned side effects. First-gateway bootstrap is the exception
-   described in [`2_node-new_on-client.md`](2_node-new_on-client.md).
+   described in [`2_node-new_on-operator-node.md`](2_node-new_on-operator-node.md).
 7. Select the output renderer and begin the side-effect flow. Renderer-specific
    progress and payload details live in the renderer contracts.
 
@@ -100,7 +100,7 @@ Input mode behavior is split out of the canonical command contract:
 
 Caller-path behavior is split out into:
 
-- [`2_node-new_on-client.md`](2_node-new_on-client.md)
+- [`2_node-new_on-operator-node.md`](2_node-new_on-operator-node.md)
 - [`3_node-new_on-gateway-node.md`](3_node-new_on-gateway-node.md)
 
 ## Behavior Contract
@@ -298,5 +298,5 @@ Renderer-specific test mapping lives in:
 
 Role-specific and E2E test mapping lives in:
 
-- [`2_node-new_on-client.md`](2_node-new_on-client.md#test-mapping)
+- [`2_node-new_on-operator-node.md`](2_node-new_on-operator-node.md#test-mapping)
 - [`3_node-new_on-gateway-node.md`](3_node-new_on-gateway-node.md#test-mapping)

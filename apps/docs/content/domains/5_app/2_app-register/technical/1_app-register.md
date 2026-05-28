@@ -180,5 +180,5 @@ registration attempts.
 
 Context-specific behavior and test mapping live in:
 
-- [`2_app-register_on-client.md`](2_app-register_on-client.md)
+- [`2_app-register_on-operator-node.md`](2_app-register_on-operator-node.md)
 - [`3_app-register_on-gateway-node.md`](3_app-register_on-gateway-node.md)

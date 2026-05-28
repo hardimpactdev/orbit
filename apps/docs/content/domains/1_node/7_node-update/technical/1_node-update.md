@@ -12,7 +12,7 @@
   authorized. A grant using the `gateway-admin` preset also authorizes the
   write.
 - Non-gateway callers have configured gateway access as defined in
-  [`2_node-update_on-client.md`](2_node-update_on-client.md) and a covering
+  [`2_node-update_on-operator-node.md`](2_node-update_on-operator-node.md) and a covering
   node access grant for this operation.
 
 **Post-input path eligibility:**
@@ -274,5 +274,5 @@ Renderer-specific test mapping lives in:
 
 Role-specific and E2E test mapping lives in:
 
-- [`2_node-update_on-client.md`](2_node-update_on-client.md#test-mapping)
+- [`2_node-update_on-operator-node.md`](2_node-update_on-operator-node.md#test-mapping)
 - [`3_node-update_on-gateway-node.md`](3_node-update_on-gateway-node.md#test-mapping)

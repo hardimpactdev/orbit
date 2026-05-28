@@ -12,7 +12,7 @@
   `node:grant` or `*`. Callers without that permission receive
   `authorization_failed`.
 - Configured client callers have gateway access as defined in
-  [`2_node-grant_on-client.md`](2_node-grant_on-client.md).
+  [`2_node-grant_on-operator-node.md`](2_node-grant_on-operator-node.md).
 
 **Post-input path eligibility:**
 - Both `consuming_node` and `serving_node` resolve to existing active node
@@ -178,5 +178,5 @@ Renderer-specific test mapping lives in:
 
 Deployment-context test mapping lives in:
 
-- [`2_node-grant_on-client.md`](2_node-grant_on-client.md#test-mapping)
+- [`2_node-grant_on-operator-node.md`](2_node-grant_on-operator-node.md#test-mapping)
 - [`3_node-grant_on-gateway-node.md`](3_node-grant_on-gateway-node.md#test-mapping)
