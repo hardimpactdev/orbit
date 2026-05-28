@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Commands\App;
 
-use App\Exceptions\GatewayApiException;
+use Orbit\Core\Progress\ProgressEventType;
 
 final class AppNewCommand extends AppGatewayCommand
 {
@@ -32,19 +32,17 @@ final class AppNewCommand extends AppGatewayCommand
             return $this->failValidation('node', 'The --node option is required.');
         }
 
-        try {
-            $response = $this->gatewayPost('/api/apps', [
+        return $this->streamProgress(
+            '/api/apps',
+            [
                 'name' => $name,
                 'node' => $node,
                 'repository' => $this->stringOption('repo'),
                 'root' => $this->stringOption('root') ?? 'public',
                 'php_version' => $this->stringOption('php-version') ?? '8.5',
                 'domain' => $this->stringOption('domain'),
-            ]);
-        } catch (GatewayApiException $exception) {
-            return $this->renderGatewayFailure($exception);
-        }
-
-        return $this->renderSuccess($response);
+            ],
+            fn (ProgressEventType $type, array $payload): int => $this->renderProgressTerminalFrame($type, $payload),
+        );
     }
 }

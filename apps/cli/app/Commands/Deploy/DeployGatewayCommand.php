@@ -5,11 +5,13 @@ declare(strict_types=1);
 namespace App\Commands\Deploy;
 
 use App\Commands\Concerns\ResolvesHostContext;
+use App\Commands\Concerns\StreamsGatewayProgress;
 use App\Commands\GatewayCommand;
 
 abstract class DeployGatewayCommand extends GatewayCommand
 {
     use ResolvesHostContext;
+    use StreamsGatewayProgress;
 
     /**
      * @param  array<string, mixed>  $extraMeta

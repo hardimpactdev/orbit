@@ -9,16 +9,26 @@ use App\Enums\ActivityLogType;
 use App\Http\Authorization\RequiresPermission;
 use App\Http\Authorization\ServingNode;
 use App\Models\Node;
+use App\Models\OperationRun;
+use App\Services\Operations\OperationRunRecorder;
+use App\Support\Streaming\ProgressEventStreamEmitter;
+use App\Support\Streaming\ProgressEventStreamResponseFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Str;
+use Symfony\Component\HttpFoundation\StreamedResponse;
+use Throwable;
 
 #[RequiresPermission('node:new', servingNode: ServingNode::Gateway)]
 final readonly class NodeStoreController implements Loggable
 {
-    public function __invoke(Request $request): JsonResponse
-    {
+    public function __invoke(
+        Request $request,
+        ProgressEventStreamResponseFactory $streams,
+        OperationRunRecorder $operationRuns,
+    ): JsonResponse|StreamedResponse {
         /** @var mixed $resolvedUser */
         $resolvedUser = $request->user();
         $caller = $resolvedUser instanceof Node ? $resolvedUser : null;
@@ -27,16 +37,115 @@ final readonly class NodeStoreController implements Loggable
             return $this->forbidden();
         }
 
+        $arguments = $this->nodeNewArguments($request);
+
+        if ($this->wantsEventStream($request)) {
+            return $this->stream($request, $streams, $operationRuns, $caller, $arguments);
+        }
+
+        $exitCode = $this->callNodeNewInGatewayContext($arguments);
+
+        /** @var array<string, mixed> $payload */
+        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        return response()->json($payload, $exitCode === 0 ? 200 : 422);
+    }
+
+    /**
+     * @param  array<string, mixed>  $arguments
+     */
+    private function stream(
+        Request $request,
+        ProgressEventStreamResponseFactory $streams,
+        OperationRunRecorder $operationRuns,
+        Node $caller,
+        array $arguments,
+    ): StreamedResponse {
+        $operationRun = $operationRuns->queued(
+            operationId: (string) Str::uuid(),
+            lane: 'gateway',
+            internalCommand: 'node:new',
+            operationType: 'node:new',
+            callerNodeId: $caller->id,
+        );
+
+        return $streams->make(function (ProgressEventStreamEmitter $events) use ($operationRuns, $operationRun, $arguments, $request): void {
+            $events->tree('Creating Node', [
+                ['key' => 'operation', 'label' => 'Record operation state'],
+                ['key' => 'node', 'label' => 'Run node creation'],
+            ]);
+
+            $operationRun = $operationRuns->running($operationRun->id);
+            $events->stepEvent('operation', 'done', "Operation {$operationRun->id} running");
+            $events->stepEvent('node', 'running', 'Running node:new');
+
+            try {
+                $exitCode = $this->callNodeNewInGatewayContext($arguments);
+
+                /** @var array<string, mixed> $payload */
+                $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+                if ($exitCode === 0) {
+                    $operationRun = $operationRuns->succeeded($operationRun->id, 0, $payload);
+                    $events->stepEvent('node', 'done', 'Node created');
+                    $events->complete(0, [
+                        'footer' => $this->nodeCreatedFooter($payload, $request),
+                        'operation_run' => $this->operationRunPayload($operationRun),
+                        'result' => $payload,
+                    ]);
+
+                    return;
+                }
+
+                $error = $this->errorFramePayload($payload, 'node.creation_failed', 'Node creation failed.');
+                $operationRun = $operationRuns->failed($operationRun->id, $exitCode, $error);
+                $events->stepEvent('node', 'fail', $error['message']);
+                $events->error($error['message'], 1, [
+                    ...$error,
+                    'operation_run' => $this->operationRunPayload($operationRun),
+                ]);
+
+                return;
+            } catch (Throwable $exception) {
+                $error = [
+                    'code' => 'node.creation_failed',
+                    'message' => $exception->getMessage() !== '' ? $exception->getMessage() : 'Node creation failed.',
+                    'meta' => [],
+                ];
+                $operationRun = $operationRuns->failed($operationRun->id, 1, $error);
+                $events->stepEvent('node', 'fail', $error['message']);
+                $events->error($error['message'], 1, [
+                    ...$error,
+                    'operation_run' => $this->operationRunPayload($operationRun),
+                ]);
+            }
+        });
+    }
+
+    private function wantsEventStream(Request $request): bool
+    {
+        return in_array('text/event-stream', $request->getAcceptableContentTypes(), true);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function nodeNewArguments(Request $request): array
+    {
         $arguments = [
             'name' => $this->optionalString($request, 'name'),
             '--json' => true,
         ];
 
-        $this->addRoleOption($arguments, $request);
+        $this->addTemplateOption($arguments, $request);
+        $this->addRolesOption($arguments, $request);
+        $this->addOperatorOption($arguments, $request);
         $this->addStringOption($arguments, '--host', $request, 'host');
         $this->addStringOption($arguments, '--ingress', $request, 'ingress_node');
-        $this->addStringOption($arguments, '--environment', $request, 'environment');
         $this->addStringOption($arguments, '--tld', $request, 'tld');
+        $this->addStringOption($arguments, '--operator-name', $request, 'operator_name');
+        $this->addStringOption($arguments, '--redis-node', $request, 'redis_node');
+        $this->addStringOption($arguments, '--s3-data-path', $request, 's3_data_path');
         $this->addStringOption($arguments, '--user', $request, 'user');
         $this->addStringOption($arguments, '--host-key-fingerprint', $request, 'host_key_fingerprint');
         $this->addStringOption($arguments, '--self-grant', $request, 'self_grant');
@@ -49,12 +158,50 @@ final readonly class NodeStoreController implements Loggable
         $this->addStringOption($arguments, '--grant-from-permissions', $request, 'grant_from_permissions');
         $this->addArrayOption($arguments, '--agent-tool', $request, 'agent_tools');
 
-        $exitCode = $this->callNodeNewInGatewayContext($arguments);
+        return $arguments;
+    }
 
-        /** @var array<string, mixed> $payload */
-        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+    /**
+     * @param  array<string, mixed>  $payload
+     * @return array{code: string, message: string, meta: array<string, mixed>, data?: array<string, mixed>}
+     */
+    private function errorFramePayload(array $payload, string $fallbackCode, string $fallbackMessage): array
+    {
+        $error = $payload['error'] ?? [];
+        $error = is_array($error) ? $error : [];
 
-        return response()->json($payload, $exitCode === 0 ? 200 : 422);
+        return array_filter([
+            'code' => is_string($error['code'] ?? null) ? $error['code'] : $fallbackCode,
+            'message' => is_string($error['message'] ?? null) ? $error['message'] : $fallbackMessage,
+            'meta' => is_array($error['meta'] ?? null) ? $error['meta'] : [],
+            'data' => is_array($error['data'] ?? null) ? $error['data'] : null,
+        ], fn (mixed $value): bool => $value !== null);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function operationRunPayload(OperationRun $operationRun): array
+    {
+        return [
+            'id' => $operationRun->id,
+            'operation_id' => $operationRun->operation_id,
+            'type' => $operationRun->operation_type,
+            'status' => $operationRun->status->value,
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     */
+    private function nodeCreatedFooter(array $payload, Request $request): string
+    {
+        $node = $payload['success']['data']['node'] ?? null;
+        $name = is_array($node) && is_string($node['name'] ?? null)
+            ? $node['name']
+            : $this->optionalString($request, 'name');
+
+        return $name !== null ? "Node '{$name}' created." : 'Node created.';
     }
 
     /**
@@ -119,7 +266,15 @@ final readonly class NodeStoreController implements Loggable
     /**
      * @param  array<string, mixed>  $arguments
      */
-    private function addRoleOption(array &$arguments, Request $request): void
+    private function addTemplateOption(array &$arguments, Request $request): void
+    {
+        $this->addStringOption($arguments, '--template', $request, 'template');
+    }
+
+    /**
+     * @param  array<string, mixed>  $arguments
+     */
+    private function addRolesOption(array &$arguments, Request $request): void
     {
         $roles = $request->input('roles');
 
@@ -127,16 +282,18 @@ final readonly class NodeStoreController implements Loggable
             $resolvedRoles = array_values(array_filter($roles, fn ($role): bool => is_string($role) && $role !== ''));
 
             if ($resolvedRoles !== []) {
-                $arguments['--role'] = $resolvedRoles;
-
-                return;
+                $arguments['--roles'] = implode(',', $resolvedRoles);
             }
         }
+    }
 
-        $role = $this->optionalString($request, 'role');
-
-        if ($role !== null) {
-            $arguments['--role'] = [$role];
+    /**
+     * @param  array<string, mixed>  $arguments
+     */
+    private function addOperatorOption(array &$arguments, Request $request): void
+    {
+        if ($request->boolean('operator')) {
+            $arguments['--operator'] = true;
         }
     }
 
@@ -190,10 +347,12 @@ final readonly class NodeStoreController implements Loggable
     {
         return [
             'name' => $this->requestString('name'),
-            'role' => $this->requestString('role'),
+            'template' => $this->requestString('template'),
+            'operator' => request()->boolean('operator'),
             'roles' => request('roles'),
-            'environment' => $this->requestString('environment'),
             'tld' => $this->requestString('tld'),
+            'redis_node' => $this->requestString('redis_node'),
+            's3_data_path' => $this->requestString('s3_data_path'),
         ];
     }
 

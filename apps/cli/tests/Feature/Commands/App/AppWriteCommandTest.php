@@ -21,10 +21,15 @@ function fakeGatewaySequence(): ResponseSequence
 
 describe('app write commands', function (): void {
     it('posts app:new payloads to the gateway apps endpoint', function (): void {
-        fakeGateway(fakeSuccessEnvelope([
-            'result' => ['action' => 'created'],
-            'app' => ['name' => 'docs', 'node' => 'app-1'],
-        ]));
+        $complete = [
+            'exit_code' => 0,
+            'data' => [
+                'result' => ['action' => 'created'],
+                'app' => ['name' => 'docs', 'node' => 'app-1'],
+            ],
+        ];
+
+        fakeGatewayProgressStream(gatewayProgressFrame('complete', $complete));
 
         [$exitCode, $output] = runCommand($this, 'app:new', [
             'name' => 'docs',
@@ -40,6 +45,7 @@ describe('app write commands', function (): void {
 
         Http::assertSent(fn (Request $request): bool => $request->method() === 'POST'
             && $request->url() === 'https://gateway.test/api/apps'
+            && $request->hasHeader('Accept', 'text/event-stream')
             && $request->data() === [
                 'name' => 'docs',
                 'node' => 'app-1',
@@ -50,7 +56,10 @@ describe('app write commands', function (): void {
             ]);
 
         expect($exitCode)->toBe(0)
-            ->and($decoded['success']['data']['result']['action'])->toBe('created');
+            ->and($decoded)->toBe([
+                'event' => 'complete',
+                'data' => $complete,
+            ]);
     });
 
     it('posts app:register payloads to the gateway register endpoint', function (): void {

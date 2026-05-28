@@ -138,11 +138,13 @@ describe('compatibility bridge command parsing', function (): void {
             ->and(gatewayArtisanArgumentsFromArgv(['orbit', 'update', '--json']))->toBeNull();
     });
 
-    it('continues to bridge streamed update commands outside this slice', function (): void {
-        expect(isUnportedPublicCommand('update:all'))->toBeTrue()
-            ->and(gatewayArtisanArgumentsFromArgv(['orbit', 'update:all', '--json']))
-            ->toBe(['update:all', '--json']);
-    });
+    it('does not bridge ported streamed operation commands', function (string $command): void {
+        expect(isUnportedPublicCommand($command))->toBeFalse()
+            ->and(gatewayArtisanArgumentsFromArgv(['orbit', $command, '--json']))->toBeNull();
+    })->with([
+        'doctor',
+        'update:all',
+    ]);
 
     it('does not bridge ported node:default command', function (): void {
         expect(isUnportedPublicCommand('node:default'))->toBeFalse()

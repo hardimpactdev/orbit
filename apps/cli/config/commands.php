@@ -67,6 +67,8 @@ use App\Commands\Node\NodeRoleListCommand;
 use App\Commands\Node\NodeRoleRemoveCommand;
 use App\Commands\Node\NodeShowCommand;
 use App\Commands\Node\NodeUpdateCommand;
+use App\Commands\Operation\DoctorCommand;
+use App\Commands\Operation\UpdateAllCommand;
 use App\Commands\Operation\UpdateCommand;
 use App\Commands\Php\PhpListCommand;
 use App\Commands\Php\PhpUseCommand;
@@ -203,6 +205,8 @@ return [
         NodeRoleRemoveCommand::class,
         NodeShowCommand::class,
         NodeUpdateCommand::class,
+        DoctorCommand::class,
+        UpdateAllCommand::class,
         PhpListCommand::class,
         PhpUseCommand::class,
         ProcessAddCommand::class,

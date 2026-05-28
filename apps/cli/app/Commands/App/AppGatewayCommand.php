@@ -5,11 +5,13 @@ declare(strict_types=1);
 namespace App\Commands\App;
 
 use App\Commands\Concerns\ResolvesHostContext;
+use App\Commands\Concerns\StreamsGatewayProgress;
 use App\Commands\GatewayCommand;
 
 abstract class AppGatewayCommand extends GatewayCommand
 {
     use ResolvesHostContext;
+    use StreamsGatewayProgress;
 
     protected function failValidation(string $field, string $message): int
     {

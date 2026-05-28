@@ -12,9 +12,12 @@ use App\Services\Doctor\DoctorScopeValidator;
 use App\Services\Doctor\DoctorValidationFailure;
 use App\Services\Nodes\Access\AuthorizationResult;
 use App\Services\Nodes\Access\NodeAccessAuthorizer;
+use App\Support\Streaming\ProgressEventStreamEmitter;
+use App\Support\Streaming\ProgressEventStreamResponseFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 final class DoctorFixController implements Loggable
 {
@@ -29,7 +32,8 @@ final class DoctorFixController implements Loggable
         DoctorReportRunner $runner,
         DoctorScopeValidator $validator,
         NodeAccessAuthorizer $authorizer,
-    ): JsonResponse {
+        ProgressEventStreamResponseFactory $streams,
+    ): JsonResponse|StreamedResponse {
         /** @var mixed $caller */
         $caller = $request->user();
 
@@ -94,6 +98,10 @@ final class DoctorFixController implements Loggable
 
         $issues = $this->issues($request);
 
+        if ($this->wantsEventStream($request)) {
+            return $this->stream($streams, $runner, $target, $mode, $families, $issues, $key, $dryRun);
+        }
+
         $doctor = $issues === null || $dryRun
             ? $runner->run($target, mode: $mode, families: $families, key: $key, dryRun: $dryRun)
             : $this->applySelectedIssues($runner, $target, $mode, $families, $issues, $key);
@@ -105,6 +113,61 @@ final class DoctorFixController implements Loggable
                 ],
             ],
         ]);
+    }
+
+    /**
+     * @param  list<string>  $families
+     * @param  list<array<string, mixed>>|null  $issues
+     */
+    private function stream(
+        ProgressEventStreamResponseFactory $streams,
+        DoctorReportRunner $runner,
+        Node $target,
+        string $mode,
+        array $families,
+        ?array $issues,
+        ?string $key,
+        bool $dryRun,
+    ): StreamedResponse {
+        return $streams->make(function (ProgressEventStreamEmitter $events) use ($runner, $target, $mode, $families, $issues, $key, $dryRun): void {
+            $renderedFamilies = $families === [] ? $runner->categoriesForNode($target) : $families;
+            $events->tree('Running Doctor', array_map(
+                fn (string $family): array => [
+                    'key' => $family,
+                    'label' => "{$mode} {$family}",
+                ],
+                $renderedFamilies,
+            ));
+
+            foreach ($renderedFamilies as $family) {
+                $events->stepEvent($family, 'running', "{$mode} {$family}");
+            }
+
+            $doctor = $issues === null || $dryRun
+                ? $runner->run($target, mode: $mode, families: $families, key: $key, dryRun: $dryRun)
+                : $this->applySelectedIssues($runner, $target, $mode, $families, $issues, $key);
+
+            foreach ($renderedFamilies as $family) {
+                $events->stepEvent($family, 'done', "{$family} {$mode} complete");
+            }
+
+            if (($doctor['healthy'] ?? false) === true || $dryRun) {
+                $events->complete(0, [
+                    'footer' => 'Doctor completed.',
+                    'doctor' => $doctor,
+                ]);
+
+                return;
+            }
+
+            $events->error('Doctor detected drift.', 1, [
+                'code' => 'drift_detected',
+                'message' => 'Doctor detected drift.',
+                'meta' => [],
+                'data' => ['doctor' => $doctor],
+                'footer' => 'Doctor detected drift.',
+            ]);
+        });
     }
 
     /**
@@ -180,6 +243,11 @@ final class DoctorFixController implements Loggable
         $mode = $request->input('mode');
 
         return is_string($mode) && in_array($mode, ['restore', 'adopt'], true) ? $mode : null;
+    }
+
+    private function wantsEventStream(Request $request): bool
+    {
+        return in_array('text/event-stream', $request->getAcceptableContentTypes(), true);
     }
 
     private function key(Request $request): ?string

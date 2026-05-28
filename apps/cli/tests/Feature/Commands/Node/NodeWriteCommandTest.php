@@ -11,10 +11,15 @@ use Orbit\Core\Http\JsonEnvelope;
 
 describe('node write commands', function (): void {
     it('posts node:new payloads to the typed gateway API', function (): void {
-        fakeGateway(fakeSuccessEnvelope([
-            'node' => ['name' => 'app-1'],
-            'action' => 'created',
-        ]));
+        $complete = [
+            'exit_code' => 0,
+            'data' => fakeSuccessEnvelope([
+                'node' => ['name' => 'app-1'],
+                'action' => 'created',
+            ]),
+        ];
+
+        fakeGatewayProgressStream(gatewayProgressFrame('complete', $complete));
 
         [$exitCode, $output] = runCommand($this, 'node:new', [
             'name' => 'app-1',
@@ -30,6 +35,7 @@ describe('node write commands', function (): void {
 
         Http::assertSent(fn (Request $request): bool => $request->method() === 'POST'
             && str_contains($request->url(), '/api/nodes')
+            && $request->hasHeader('Accept', 'text/event-stream')
             && $request['name'] === 'app-1'
             && $request['roles'] === ['app-dev', 'database']
             && $request['host'] === '192.0.2.20'
@@ -40,7 +46,8 @@ describe('node write commands', function (): void {
             && ! isset($request['operator']));
 
         expect($exitCode)->toBe(0)
-            ->and($decoded['success']['data']['node']['name'])->toBe('app-1');
+            ->and($decoded['event'])->toBe('complete')
+            ->and($decoded['data'])->toBe($complete);
     });
 
     it('runs the bootstrap path for first gateway node creation when no gateway is configured', function (): void {

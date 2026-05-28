@@ -1,0 +1,125 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Commands\Operation;
+
+use App\Commands\Concerns\ResolvesHostContext;
+use App\Commands\Concerns\StreamsGatewayProgress;
+use App\Commands\GatewayCommand;
+use Orbit\Core\Progress\ProgressEventType;
+
+final class DoctorCommand extends GatewayCommand
+{
+    use ResolvesHostContext;
+    use StreamsGatewayProgress;
+
+    protected $signature = 'doctor
+        {--app= : Limit to one app}
+        {--workspace= : Limit to one workspace}
+        {--node= : Target node name}
+        {--self : Limit to the calling node identity}
+        {--family=* : Scope to one or more state families}
+        {--key= : Limit reported drift to one exact doctor issue key}
+        {--fix : Enter resolution mode}
+        {--restore : Bulk restore gateway configuration to nodes}
+        {--adopt : Bulk adopt node reality into gateway configuration}
+        {--dry-run : Preview bulk restore or adopt actions without applying changes}
+        {--json : Output JSON}';
+
+    protected $description = 'Check Orbit health and diagnose drift through the gateway.';
+
+    public function handle(): int
+    {
+        $mode = $this->mode();
+
+        if (is_int($mode)) {
+            return $mode;
+        }
+
+        if ($mode === 'interactive') {
+            return $this->renderFailure(
+                'validation_failed',
+                'Interactive doctor resolution is not available through the CLI gateway stream yet. Use --restore or --adopt.',
+                ['field' => 'fix'],
+            );
+        }
+
+        if ((bool) $this->option('dry-run') && ! in_array($mode, ['restore', 'adopt'], true)) {
+            return $this->renderFailure(
+                'validation_failed',
+                '--dry-run requires --restore or --adopt.',
+                ['fields' => ['dry-run']],
+            );
+        }
+
+        if ((bool) $this->option('self') && $this->stringOption('node') !== null) {
+            return $this->renderFailure(
+                'validation_failed',
+                '--self and --node are mutually exclusive.',
+                ['fields' => ['self', 'node']],
+            );
+        }
+
+        return $this->streamProgress(
+            $mode === 'verify' ? '/api/doctor/run' : '/api/doctor/fix',
+            $this->payload($mode),
+            fn (ProgressEventType $type, array $payload): int => $this->renderProgressTerminalFrame($type, $payload),
+        );
+    }
+
+    private function mode(): string|int
+    {
+        $flags = array_values(array_filter([
+            (bool) $this->option('fix') ? 'fix' : null,
+            (bool) $this->option('restore') ? 'restore' : null,
+            (bool) $this->option('adopt') ? 'adopt' : null,
+        ]));
+
+        if (count($flags) > 1) {
+            return $this->renderFailure(
+                'validation_failed',
+                '--fix, --restore, and --adopt are mutually exclusive.',
+                ['fields' => $flags],
+            );
+        }
+
+        return match ($flags[0] ?? null) {
+            'fix' => 'interactive',
+            'restore' => 'restore',
+            'adopt' => 'adopt',
+            default => 'verify',
+        };
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function payload(string $mode): array
+    {
+        return $this->filledQuery([
+            'mode' => $mode,
+            'families' => $this->families(),
+            'key' => $this->stringOption('key'),
+            'node' => $this->stringOption('node'),
+            'self' => (bool) $this->option('self') ? true : null,
+            'app' => $this->stringOption('app'),
+            'workspace' => $this->stringOption('workspace'),
+            'dry_run' => (bool) $this->option('dry-run') ? true : null,
+        ]);
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function families(): array
+    {
+        $families = $this->option('family');
+
+        if (! is_array($families)) {
+            return [];
+        }
+
+        return array_values(array_filter($families, fn (mixed $family): bool => is_string($family) && $family !== ''));
+    }
+}

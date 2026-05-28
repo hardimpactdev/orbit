@@ -50,6 +50,7 @@ describe('command list visibility', function (): void {
         $visible = visibleCommandNames($list);
 
         expect($visible)->toBe([
+            'doctor',
             'update',
             'activity:list',
             'activity:show',
@@ -143,6 +144,7 @@ describe('command list visibility', function (): void {
             'tool:start',
             'tool:stop',
             'tool:update',
+            'update:all',
             'vpn-client:disable',
             'vpn-client:enable',
             'vpn-client:list',
@@ -213,6 +215,7 @@ describe('command list visibility', function (): void {
         'deploy:step-add',
         'deploy:step-list',
         'deploy:step-remove',
+        'doctor',
         'firewall:allow',
         'firewall:deny',
         'firewall:list',
@@ -264,6 +267,7 @@ describe('command list visibility', function (): void {
         'tool:start',
         'tool:stop',
         'tool:update',
+        'update:all',
         'vpn-client:disable',
         'vpn-client:enable',
         'vpn-client:list',

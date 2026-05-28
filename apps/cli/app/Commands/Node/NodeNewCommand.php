@@ -5,16 +5,19 @@ declare(strict_types=1);
 namespace App\Commands\Node;
 
 use App\Commands\BootstrapGatewayCommand;
+use App\Commands\Concerns\StreamsGatewayProgress;
 use App\Exceptions\GatewayApiException;
 use App\Exceptions\OrbitConfigStoreException;
-use App\Services\GatewayApiClient;
 use App\Services\Node\NodeGatewayBootstrapper;
 use App\Services\Node\NodeNewPayloadBuilder;
 use App\Services\Node\NodeWriteInputException;
 use App\Services\OrbitConfigStore;
+use Orbit\Core\Progress\ProgressEventType;
 
 final class NodeNewCommand extends BootstrapGatewayCommand
 {
+    use StreamsGatewayProgress;
+
     protected $signature = 'node:new
         {name? : Registry name for the node}
         {--template= : Node template preset}
@@ -44,7 +47,6 @@ final class NodeNewCommand extends BootstrapGatewayCommand
     public function handle(
         NodeNewPayloadBuilder $payloadBuilder,
         NodeGatewayBootstrapper $bootstrapper,
-        GatewayApiClient $gateway,
         OrbitConfigStore $configStore,
     ): int {
         try {
@@ -85,13 +87,11 @@ final class NodeNewCommand extends BootstrapGatewayCommand
             return $result['exit_code'] === self::SUCCESS ? self::SUCCESS : self::FAILURE;
         }
 
-        try {
-            $response = $gateway->post('/api/nodes', $payload);
-        } catch (GatewayApiException $exception) {
-            return $this->renderGatewayFailure($exception);
-        }
-
-        return $this->renderSuccess($response);
+        return $this->streamProgress(
+            '/api/nodes',
+            $payload,
+            fn (ProgressEventType $type, array $payload): int => $this->renderProgressTerminalFrame($type, $payload),
+        );
     }
 
     private function renderGatewayFailure(GatewayApiException $exception): int

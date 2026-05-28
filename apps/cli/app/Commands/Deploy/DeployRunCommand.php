@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Commands\Deploy;
 
-use App\Exceptions\GatewayApiException;
+use Orbit\Core\Progress\ProgressEventType;
 
 final class DeployRunCommand extends DeployGatewayCommand
 {
@@ -23,15 +23,13 @@ final class DeployRunCommand extends DeployGatewayCommand
             return $app;
         }
 
-        try {
-            $response = $this->gatewayPost('/api/deploy/run', [
+        return $this->streamProgress(
+            '/api/deploy/run',
+            [
                 'app' => $app,
                 'detach' => $this->option('detach') === true,
-            ]);
-        } catch (GatewayApiException $exception) {
-            return $this->renderGatewayFailure($exception);
-        }
-
-        return $this->renderSuccess($response);
+            ],
+            fn (ProgressEventType $type, array $payload): int => $this->renderProgressTerminalFrame($type, $payload),
+        );
     }
 }

@@ -12,13 +12,20 @@ use App\Http\Authorization\RequiresPermission;
 use App\Http\Authorization\ServingNode;
 use App\Models\App;
 use App\Models\Node;
+use App\Models\OperationRun;
 use App\Models\ProxyRoute;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
+use App\Services\Operations\OperationRunRecorder;
 use App\Services\Php\PhpRuntimeCatalog;
 use App\Support\GitRepositoryReference;
+use App\Support\Streaming\ProgressEventStreamEmitter;
+use App\Support\Streaming\ProgressEventStreamResponseFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Str;
+use Symfony\Component\HttpFoundation\StreamedResponse;
+use Throwable;
 
 #[RequiresPermission('app:new', servingNode: ServingNode::Target)]
 final class AppStoreController implements Loggable
@@ -29,15 +36,20 @@ final class AppStoreController implements Loggable
         private readonly NodeRoleAssignments $nodeRoleAssignments,
     ) {}
 
-    public function __invoke(Request $request, CreateAppSourceOnNode $createAppSourceOnNode, EnactAppRuntime $enactAppRuntime): JsonResponse
-    {
+    public function __invoke(
+        Request $request,
+        CreateAppSourceOnNode $createAppSourceOnNode,
+        EnactAppRuntime $enactAppRuntime,
+        ProgressEventStreamResponseFactory $streams,
+        OperationRunRecorder $operationRuns,
+    ): JsonResponse|StreamedResponse {
         $input = $this->validatedInput($request);
 
         if ($input instanceof JsonResponse) {
             return $input;
         }
 
-        $requiredRole = $input['domain'] !== null ? 'app-production' : 'app-development';
+        $requiredRole = $input['domain'] !== null ? 'app-prod' : 'app-dev';
         $node = $this->resolveTargetNode($input['node'], $requiredRole);
 
         if ($node instanceof JsonResponse) {
@@ -64,6 +76,10 @@ final class AppStoreController implements Loggable
                 'owner_type' => $existingRoute->owner_type,
                 'kind' => $existingRoute->kind,
             ], 409);
+        }
+
+        if ($this->wantsEventStream($request)) {
+            return $this->stream($request, $streams, $operationRuns, $createAppSourceOnNode, $enactAppRuntime, $input, $node);
         }
 
         $source = $createAppSourceOnNode->handle($node, $input['name'], $input['repository'], $input['domain']);
@@ -100,6 +116,125 @@ final class AppStoreController implements Loggable
                 'meta' => ['warnings' => $warnings],
             ],
         ]);
+    }
+
+    /**
+     * @param  array{name: string, node: string, repository: ?string, root: string, php_version: string, domain: ?string}  $input
+     */
+    private function stream(
+        Request $request,
+        ProgressEventStreamResponseFactory $streams,
+        OperationRunRecorder $operationRuns,
+        CreateAppSourceOnNode $createAppSourceOnNode,
+        EnactAppRuntime $enactAppRuntime,
+        array $input,
+        Node $node,
+    ): StreamedResponse {
+        /** @var mixed $caller */
+        $caller = $request->user();
+        $callerNodeId = $caller instanceof Node ? $caller->id : null;
+        $operationRun = $operationRuns->queued(
+            operationId: (string) Str::uuid(),
+            lane: 'gateway',
+            internalCommand: 'app:new',
+            operationType: 'app:new',
+            callerNodeId: $callerNodeId,
+            targetNodeId: $node->id,
+        );
+
+        return $streams->make(function (ProgressEventStreamEmitter $events) use ($operationRuns, $operationRun, $createAppSourceOnNode, $enactAppRuntime, $input, $node): void {
+            $events->tree('Creating App', [
+                ['key' => 'operation', 'label' => 'Record operation state'],
+                ['key' => 'source', 'label' => 'Create app source'],
+                ['key' => 'registry', 'label' => 'Write app registry'],
+                ['key' => 'runtime', 'label' => 'Apply app runtime'],
+            ]);
+
+            $operationRun = $operationRuns->running($operationRun->id);
+            $events->stepEvent('operation', 'done', "Operation {$operationRun->id} running");
+            $events->stepEvent('source', 'running', "Creating source for {$input['name']}");
+
+            try {
+                $source = $createAppSourceOnNode->handle($node, $input['name'], $input['repository'], $input['domain']);
+
+                if (! $source['result']->successful()) {
+                    $error = [
+                        'code' => 'app.source_creation_failed',
+                        'message' => "Source creation for app '{$input['name']}' failed on node '{$node->name}'.",
+                        'meta' => [
+                            'reason' => trim($source['result']->output()) ?: 'source creation failed',
+                            ...($input['repository'] !== null ? ['transport' => GitRepositoryReference::transport($input['repository'])] : []),
+                        ],
+                    ];
+
+                    $operationRun = $operationRuns->failed($operationRun->id, 1, $error);
+                    $events->stepEvent('source', 'fail', $error['message']);
+                    $events->error($error['message'], 1, [
+                        ...$error,
+                        'operation_run' => $this->operationRunPayload($operationRun),
+                    ]);
+
+                    return;
+                }
+
+                $events->stepEvent('source', 'done', 'App source ready');
+                $events->stepEvent('registry', 'running', "Registering {$input['name']}");
+
+                $app = App::query()->create([
+                    'name' => $input['name'],
+                    'node_id' => $node->id,
+                    'environment' => $input['domain'] !== null ? 'production' : 'development',
+                    'domain' => $input['domain'],
+                    'path' => $source['path'],
+                    'document_root' => $input['root'],
+                    'repository' => $input['repository'],
+                    'php_version' => $input['php_version'],
+                    'adopted' => false,
+                ]);
+
+                $app->setRelation('node', $node);
+                $this->activitySubject = $app;
+                $events->stepEvent('registry', 'done', 'App registered');
+                $events->stepEvent('runtime', 'running', "Applying runtime for {$app->name}");
+
+                $warnings = $enactAppRuntime->handle($app);
+                $events->stepEvent('runtime', 'done', 'App runtime applied');
+
+                $data = [
+                    'footer' => "App '{$app->name}' created.",
+                    'operation_run' => $this->operationRunPayload($operationRuns->succeeded($operationRun->id, 0, [
+                        'result' => ['action' => 'created'],
+                        'app' => $this->appPayload($app),
+                        'warnings' => $warnings,
+                    ])),
+                    'result' => ['action' => 'created'],
+                    'app' => $this->appPayload($app),
+                    'warnings' => $warnings,
+                ];
+
+                $events->complete(0, $data);
+            } catch (Throwable $exception) {
+                $error = [
+                    'code' => 'app.creation_failed',
+                    'message' => $exception->getMessage() !== '' ? $exception->getMessage() : 'App creation failed.',
+                    'meta' => [
+                        'app' => $input['name'],
+                        'node' => $node->name,
+                    ],
+                ];
+                $operationRun = $operationRuns->failed($operationRun->id, 1, $error);
+                $events->stepEvent('runtime', 'fail', $error['message']);
+                $events->error($error['message'], 1, [
+                    ...$error,
+                    'operation_run' => $this->operationRunPayload($operationRun),
+                ]);
+            }
+        });
+    }
+
+    private function wantsEventStream(Request $request): bool
+    {
+        return in_array('text/event-stream', $request->getAcceptableContentTypes(), true);
     }
 
     /**
@@ -223,6 +358,19 @@ final class AppStoreController implements Loggable
     private function validationFailed(string $field, string $message): JsonResponse
     {
         return $this->error('validation_failed', $message, ['field' => $field], 400);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function operationRunPayload(OperationRun $operationRun): array
+    {
+        return [
+            'id' => $operationRun->id,
+            'operation_id' => $operationRun->operation_id,
+            'type' => $operationRun->operation_type,
+            'status' => $operationRun->status->value,
+        ];
     }
 
     /**

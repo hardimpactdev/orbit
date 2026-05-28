@@ -141,16 +141,18 @@ describe('deploy write commands', function (): void {
     });
 
     it('posts deploy:run payloads to the gateway', function (): void {
-        fakeGateway(fakeSuccessEnvelope([
-            'run' => [
-                'id' => 43,
-                'app' => 'docs',
-                'status' => 'running',
+        $complete = [
+            'exit_code' => 0,
+            'data' => [
+                'run' => [
+                    'id' => 43,
+                    'app' => 'docs',
+                    'status' => 'running',
+                ],
             ],
-        ], [
-            'action' => 'started',
-            'detached' => true,
-        ]));
+        ];
+
+        fakeGatewayProgressStream(gatewayProgressFrame('complete', $complete));
 
         [$exitCode, $output] = runCommand($this, 'deploy:run', [
             'app' => 'docs',
@@ -163,6 +165,7 @@ describe('deploy write commands', function (): void {
         Http::assertSent(function (Request $request): bool {
             return $request->method() === 'POST'
                 && str_contains($request->url(), '/api/deploy/run')
+                && $request->hasHeader('Accept', 'text/event-stream')
                 && $request->data() === [
                     'app' => 'docs',
                     'detach' => true,
@@ -170,8 +173,10 @@ describe('deploy write commands', function (): void {
         });
 
         expect($exitCode)->toBe(0)
-            ->and($decoded['success']['data']['run']['id'])->toBe(43)
-            ->and($decoded['success']['meta']['detached'])->toBeTrue();
+            ->and($decoded)->toBe([
+                'event' => 'complete',
+                'data' => $complete,
+            ]);
     });
 
     it('rejects deploy:run without an app before contacting the gateway', function (): void {
@@ -191,9 +196,9 @@ describe('deploy write commands', function (): void {
     });
 
     it('passes through gateway errors from deploy writes', function (): void {
-        fakeGateway(fakeErrorEnvelope('authorization_failed', 'Missing deploy permission.', [
+        fakeGatewayProgressStream(json_encode(fakeErrorEnvelope('authorization_failed', 'Missing deploy permission.', [
             'missing_permission' => 'deploy:run',
-        ]), 403);
+        ]), JSON_THROW_ON_ERROR), 403);
 
         [$exitCode, $output] = runCommand($this, 'deploy:run', [
             'app' => 'docs',
