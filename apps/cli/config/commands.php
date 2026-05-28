@@ -36,7 +36,10 @@ use App\Commands\Database\DatabaseShowCommand;
 use App\Commands\Database\DatabaseTablesCommand;
 use App\Commands\Database\DatabaseUpdateCommand;
 use App\Commands\Deploy\DeployHistoryCommand;
+use App\Commands\Deploy\DeployRunCommand;
+use App\Commands\Deploy\DeployStepAddCommand;
 use App\Commands\Deploy\DeployStepListCommand;
+use App\Commands\Deploy\DeployStepRemoveCommand;
 use App\Commands\Dns\DnsListCommand;
 use App\Commands\Dns\DnsResolveTldCommand;
 use App\Commands\Firewall\FirewallAllowCommand;
@@ -174,7 +177,10 @@ return [
         DnsListCommand::class,
         DnsResolveTldCommand::class,
         DeployHistoryCommand::class,
+        DeployRunCommand::class,
+        DeployStepAddCommand::class,
         DeployStepListCommand::class,
+        DeployStepRemoveCommand::class,
         FirewallAllowCommand::class,
         FirewallDenyCommand::class,
         FirewallListCommand::class,

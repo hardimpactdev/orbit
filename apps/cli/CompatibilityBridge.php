@@ -20,9 +20,6 @@ declare(strict_types=1);
 const ORBIT_COMPATIBILITY_BRIDGE_ALLOW_LIST = [
     // deploy
     'deploy:log',
-    'deploy:run',
-    'deploy:step-add',
-    'deploy:step-remove',
     // doctor
     'doctor',
     // operation

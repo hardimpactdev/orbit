@@ -284,21 +284,21 @@ describe('compatibility bridge command parsing', function (): void {
         'database:describe',
     ]);
 
-    it('does not bridge ported deploy read commands', function (string $command): void {
+    it('does not bridge ported deploy commands', function (string $command): void {
         expect(isUnportedPublicCommand($command))->toBeFalse()
             ->and(gatewayArtisanArgumentsFromArgv(['orbit', $command, '--json']))->toBeNull();
     })->with([
         'deploy:history',
+        'deploy:run',
+        'deploy:step-add',
         'deploy:step-list',
+        'deploy:step-remove',
     ]);
 
-    it('continues to bridge deploy write and log commands outside this slice', function (string $command): void {
+    it('continues to bridge deploy log commands outside this slice', function (string $command): void {
         expect(isUnportedPublicCommand($command))->toBeTrue();
     })->with([
         'deploy:log',
-        'deploy:run',
-        'deploy:step-add',
-        'deploy:step-remove',
     ]);
 });
 
