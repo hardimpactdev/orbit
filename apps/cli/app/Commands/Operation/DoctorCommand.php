@@ -7,7 +7,10 @@ namespace App\Commands\Operation;
 use App\Commands\Concerns\ResolvesHostContext;
 use App\Commands\Concerns\StreamsGatewayProgress;
 use App\Commands\GatewayCommand;
+use App\Services\Doctor\DoctorTerminalFrameExtractor;
+use App\Services\Doctor\InteractiveDoctorIssueSelector;
 use Orbit\Core\Progress\ProgressEventType;
+use Throwable;
 
 final class DoctorCommand extends GatewayCommand
 {
@@ -39,14 +42,6 @@ final class DoctorCommand extends GatewayCommand
             return $mode;
         }
 
-        if ($mode === 'interactive') {
-            return $this->renderFailure(
-                'validation_failed',
-                'Interactive doctor resolution is not available through the CLI gateway stream yet. Use --restore or --adopt.',
-                ['field' => 'fix'],
-            );
-        }
-
         if ((bool) $this->option('dry-run') && ! in_array($mode, ['restore', 'adopt'], true)) {
             return $this->renderFailure(
                 'validation_failed',
@@ -61,6 +56,26 @@ final class DoctorCommand extends GatewayCommand
                 '--self and --node are mutually exclusive.',
                 ['fields' => ['self', 'node']],
             );
+        }
+
+        if ($mode === 'interactive') {
+            if ($this->wantsJson()) {
+                return $this->renderFailure(
+                    'validation_failed',
+                    'doctor --fix cannot run with --json because it requires interactive prompts.',
+                    ['field' => 'fix'],
+                );
+            }
+
+            if (! $this->input->isInteractive()) {
+                return $this->renderFailure(
+                    'validation_failed',
+                    'doctor --fix requires an interactive terminal.',
+                    ['field' => 'fix'],
+                );
+            }
+
+            return $this->runInteractiveDoctor();
         }
 
         return $this->streamProgress(
@@ -92,6 +107,73 @@ final class DoctorCommand extends GatewayCommand
             'adopt' => 'adopt',
             default => 'verify',
         };
+    }
+
+    private function runInteractiveDoctor(): int
+    {
+        $frames = app(DoctorTerminalFrameExtractor::class);
+        $selector = app(InteractiveDoctorIssueSelector::class);
+        $probeFrame = $this->captureProgressTerminalFrame('/api/doctor/run', $this->payload('verify'));
+
+        if (is_int($probeFrame)) {
+            return $probeFrame;
+        }
+
+        $probe = $frames->doctor($probeFrame);
+
+        if ($probe === null || $selector->issues($probe) === []) {
+            return $this->renderProgressTerminalFrame($probeFrame['type'], $probeFrame['payload']);
+        }
+
+        try {
+            $selected = $selector->select(
+                probe: $probe,
+                ask: fn (string $question, array $choices, string $default): string => (string) $this->choice($question, $choices, $default),
+                write: function (string $line): void {
+                    $this->line($line);
+                },
+            );
+        } catch (Throwable) {
+            return $this->renderFailure(
+                'validation_failed',
+                'Operation cancelled.',
+                ['field' => 'fix'],
+            );
+        }
+
+        $finalFrame = null;
+
+        foreach (['restore', 'adopt'] as $resolutionMode) {
+            $issues = $selected[$resolutionMode];
+
+            if ($issues === []) {
+                continue;
+            }
+
+            $fixFrame = $this->captureProgressTerminalFrame(
+                '/api/doctor/fix',
+                [
+                    ...$this->payload($resolutionMode),
+                    'issues' => $issues,
+                ],
+            );
+
+            if (is_int($fixFrame)) {
+                return $fixFrame;
+            }
+
+            if ($fixFrame['type'] === ProgressEventType::Error && $frames->doctor($fixFrame) === null) {
+                return $this->renderProgressTerminalFrame($fixFrame['type'], $fixFrame['payload']);
+            }
+
+            $finalFrame = $fixFrame;
+        }
+
+        if ($finalFrame !== null) {
+            return $this->renderProgressTerminalFrame($finalFrame['type'], $finalFrame['payload']);
+        }
+
+        return $this->renderProgressTerminalFrame($probeFrame['type'], $probeFrame['payload']);
     }
 
     /**

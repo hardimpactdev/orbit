@@ -71,6 +71,60 @@ trait StreamsGatewayProgress
     }
 
     /**
+     * Stream progress events and return the terminal frame without rendering it.
+     *
+     * This is used by commands that need to inspect a gateway-authored terminal
+     * payload before deciding their next adapter step, such as interactive
+     * doctor resolution.
+     *
+     * @param  array<string, mixed>  $payload
+     * @return array{type: ProgressEventType, payload: array<string, mixed>}|int
+     */
+    protected function captureProgressTerminalFrame(string $path, array $payload): array|int
+    {
+        $client = app(GatewayStreamClient::class);
+        $wantsJson = $this->wantsJson();
+
+        $finalType = null;
+        $finalPayload = [];
+
+        try {
+            $client->streamEvents(
+                path: $path,
+                payload: $payload,
+                onEvent: function (ProgressEventType $type, array $eventPayload) use ($wantsJson, &$finalType, &$finalPayload): void {
+                    if ($type === ProgressEventType::Complete || $type === ProgressEventType::Error) {
+                        $finalType = $type;
+                        $finalPayload = $eventPayload;
+
+                        return;
+                    }
+
+                    if ($wantsJson) {
+                        return;
+                    }
+
+                    $this->renderProgressFrame($type, $eventPayload);
+                },
+            );
+        } catch (GatewayApiException $exception) {
+            return $this->renderGatewayFailure($exception);
+        }
+
+        if ($finalType instanceof ProgressEventType) {
+            return [
+                'type' => $finalType,
+                'payload' => $finalPayload,
+            ];
+        }
+
+        return $this->renderFailure(
+            'gateway_unavailable',
+            'Gateway progress stream closed without a terminal frame.',
+        );
+    }
+
+    /**
      * @param  array<string, mixed>  $payload
      */
     protected function renderProgressTerminalFrame(ProgressEventType $type, array $payload): int
