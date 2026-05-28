@@ -18,14 +18,6 @@ declare(strict_types=1);
  *   - unknown commands
  */
 const ORBIT_COMPATIBILITY_BRIDGE_ALLOW_LIST = [
-    // cloudflare
-    'cf-cache-rule:add',
-    'cf-cache-rule:remove',
-    'cf-cache:flush',
-    'cf-dns:add',
-    'cf-dns:remove',
-    'cf-ssl:disable',
-    'cf-ssl:enable',
     // database
     'database:add',
     'database:attach',

@@ -97,16 +97,19 @@ describe('compatibility bridge command parsing', function (): void {
         'cf-zone:list',
     ]);
 
-    it('continues to bridge Cloudflare write commands outside this slice', function (string $command): void {
-        expect(isUnportedPublicCommand($command))->toBeTrue();
+    it('does not bridge ported Cloudflare commands', function (string $command): void {
+        expect(isUnportedPublicCommand($command))->toBeFalse()
+            ->and(gatewayArtisanArgumentsFromArgv(['orbit', $command, '--json']))->toBeNull();
     })->with([
         'cf-cache-rule:add',
         'cf-cache-rule:remove',
         'cf-cache:flush',
         'cf-dns:add',
+        'cf-dns:list',
         'cf-dns:remove',
         'cf-ssl:disable',
         'cf-ssl:enable',
+        'cf-zone:list',
     ]);
 
     it('does not bridge ported firewall read commands', function (): void {

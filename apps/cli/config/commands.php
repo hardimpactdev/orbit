@@ -15,7 +15,14 @@ use App\Commands\App\AppRemoveCommand;
 use App\Commands\App\AppRootCommand;
 use App\Commands\App\AppShowCommand;
 use App\Commands\App\AppWorkerCommand;
+use App\Commands\Cloudflare\CfCacheFlushCommand;
+use App\Commands\Cloudflare\CfCacheRuleAddCommand;
+use App\Commands\Cloudflare\CfCacheRuleRemoveCommand;
+use App\Commands\Cloudflare\CfDnsAddCommand;
 use App\Commands\Cloudflare\CfDnsListCommand;
+use App\Commands\Cloudflare\CfDnsRemoveCommand;
+use App\Commands\Cloudflare\CfSslDisableCommand;
+use App\Commands\Cloudflare\CfSslEnableCommand;
 use App\Commands\Cloudflare\CfZoneListCommand;
 use App\Commands\Database\DatabaseDescribeCommand;
 use App\Commands\Database\DatabaseListCommand;
@@ -131,7 +138,14 @@ return [
         AppRootCommand::class,
         AppShowCommand::class,
         AppWorkerCommand::class,
+        CfCacheFlushCommand::class,
+        CfCacheRuleAddCommand::class,
+        CfCacheRuleRemoveCommand::class,
+        CfDnsAddCommand::class,
         CfDnsListCommand::class,
+        CfDnsRemoveCommand::class,
+        CfSslDisableCommand::class,
+        CfSslEnableCommand::class,
         CfZoneListCommand::class,
         DatabaseDescribeCommand::class,
         DatabaseListCommand::class,
