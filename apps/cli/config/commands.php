@@ -69,6 +69,7 @@ use App\Commands\Node\NodeRoleRemoveCommand;
 use App\Commands\Node\NodeShowCommand;
 use App\Commands\Node\NodeUpdateCommand;
 use App\Commands\Operation\DoctorCommand;
+use App\Commands\Operation\ProfileCommand;
 use App\Commands\Operation\UpdateAllCommand;
 use App\Commands\Operation\UpdateCommand;
 use App\Commands\Php\PhpListCommand;
@@ -208,6 +209,7 @@ return [
         NodeShowCommand::class,
         NodeUpdateCommand::class,
         DoctorCommand::class,
+        ProfileCommand::class,
         UpdateAllCommand::class,
         PhpListCommand::class,
         PhpUseCommand::class,

@@ -136,7 +136,7 @@ describe('install-orbit always-cli launcher contract', function (): void {
             ->toContain("dirname(__DIR__, 2).'/apps/gateway/artisan'")
             ->toContain('passthruCommand(PHP_BINARY')
             ->toContain('isUnportedPublicCommand')
-            ->toContain("'profile'")
+            ->not->toContain("'profile'")
             ->not->toContain("'app:new'")
             ->not->toContain("'dns:list'");
     });

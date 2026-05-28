@@ -51,6 +51,7 @@ describe('command list visibility', function (): void {
 
         expect($visible)->toBe([
             'doctor',
+            'profile',
             'update',
             'activity:list',
             'activity:show',
@@ -217,6 +218,7 @@ describe('command list visibility', function (): void {
         'deploy:step-list',
         'deploy:step-remove',
         'doctor',
+        'profile',
         'firewall:allow',
         'firewall:deny',
         'firewall:list',

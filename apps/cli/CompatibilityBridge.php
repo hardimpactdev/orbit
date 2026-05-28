@@ -18,9 +18,6 @@ declare(strict_types=1);
  *   - unknown commands
  */
 const ORBIT_COMPATIBILITY_BRIDGE_ALLOW_LIST = [
-    // process
-    // profile
-    'profile',
 ];
 
 const ORBIT_COMPATIBILITY_BRIDGE_FORBIDDEN_PREFIXES = [

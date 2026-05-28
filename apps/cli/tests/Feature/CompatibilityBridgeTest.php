@@ -143,6 +143,7 @@ describe('compatibility bridge command parsing', function (): void {
             ->and(gatewayArtisanArgumentsFromArgv(['orbit', $command, '--json']))->toBeNull();
     })->with([
         'doctor',
+        'profile',
         'update:all',
     ]);
 
