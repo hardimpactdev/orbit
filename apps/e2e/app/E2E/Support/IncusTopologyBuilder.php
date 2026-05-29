@@ -1432,23 +1432,27 @@ PHP;
     /**
      * Overlay the current checkout bundle onto an already-provisioned VM.
      *
-     * Pushes the staged source archive into the instance via incus file push and
-     * runs install-orbit with --skip-prerequisites and --source-archive to
-     * extract the new source over the existing installation at ~/orbit, then
-     * runs composer install in each sub-app to pick up dependency changes.
-     * Composer cache is forwarded when present in the bundle.
+     * Pushes the staged source archive via incus file push, extracts it over
+     * the existing orbit installation, then runs composer install in each
+     * sub-app to pick up dependency changes. Composer cache is forwarded when
+     * present in the bundle.
+     *
+     * This does not call install-orbit because the VM is already provisioned;
+     * we only need to refresh the source tree and vendor directories.
      */
     private function applyBundleOverlay(IncusInstance $instance, string $role, SshKeyPair $key): void
     {
         $bundleDir = (string) $this->remoteBundleDir;
-        $guestBundleDir = '/var/tmp/orbit-e2e-bundle-overlay';
+        // The bundle dir on the host ends in 'orbit-e2e-bundle'; incus file push
+        // preserves the last path component, so /var/tmp/orbit-e2e-bundle is
+        // created inside the guest.
+        $guestBundleDir = '/var/tmp/'.basename($bundleDir);
+        $sourceArchive = "{$guestBundleDir}/orbit-source.tar.gz";
 
-        // Clear and push bundle into the guest.
-        $clearResult = $instance->exec("rm -rf {$guestBundleDir}", timeoutSeconds: 30);
-        if (! $clearResult->successful()) {
-            throw new RuntimeException("Could not clear overlay bundle directory on [{$instance->name()}]: {$clearResult->errorOutput()}");
-        }
+        // Clear any stale overlay bundle from a previous failed run.
+        $instance->exec('rm -rf '.escapeshellarg($guestBundleDir), timeoutSeconds: 30);
 
+        // Push bundle into the guest.
         $pushResult = $this->host->run(sprintf(
             'incus file push -r -p %s %s/var/tmp/',
             escapeshellarg(rtrim($bundleDir, '/')),
@@ -1459,50 +1463,63 @@ PHP;
             throw new RuntimeException("Could not push overlay bundle into [{$instance->name()}]: {$pushResult->errorOutput()}");
         }
 
-        $sourceArchive = "{$guestBundleDir}/orbit-source.tar.gz";
-        $installerPath = "{$guestBundleDir}/install-orbit";
+        // Determine the orbit install path for this role.
+        $orbitHome = '/home/'.$this->host->config->operatorUser;
+        $orbitPath = "{$orbitHome}/orbit";
 
+        // Extract source archive directly over the existing orbit checkout.
+        $extractScript = sprintf(
+            'mkdir -p %s && tar --no-same-owner -xzf %s -C %s',
+            escapeshellarg($orbitPath),
+            escapeshellarg($sourceArchive),
+            escapeshellarg($orbitPath),
+        );
+
+        $extractResult = $instance->exec(
+            'sudo -iu orbit bash -lc '.escapeshellarg($extractScript),
+            timeoutSeconds: 300,
+        );
+
+        if (! $extractResult->successful()) {
+            throw new RuntimeException("Could not extract source archive on [{$instance->name()}] role={$role}: {$extractResult->errorOutput()}");
+        }
+
+        // Run composer install in sub-apps to pick up dependency changes.
         $hasComposerCache = $this->host->run(
             'test -d '.escapeshellarg("{$bundleDir}/composer-cache"),
             timeoutSeconds: 5,
         )->successful();
 
-        $composerCacheArg = $hasComposerCache
-            ? " --composer-cache={$guestBundleDir}/composer-cache"
+        $composerCacheEnv = $hasComposerCache
+            ? "COMPOSER_CACHE_DIR={$guestBundleDir}/composer-cache "
             : '';
 
-        // Run install-orbit to update the source checkout, skipping OS/runtime prerequisites.
-        $updateScript = sprintf(
-            'chmod +x %s && %s --skip-prerequisites --source-archive=%s%s',
-            escapeshellarg($installerPath),
-            escapeshellarg($installerPath),
-            escapeshellarg($sourceArchive),
-            $composerCacheArg,
+        // Write the composer install script to a temp file and execute it.
+        // Using a script file avoids multi-line quoting issues across the
+        // incus exec → sh -lc → bash -lc invocation stack.
+        $scriptPath = '/tmp/orbit-e2e-selected-rebake-composer.sh';
+        $scriptContent = "#!/bin/bash\nset -euo pipefail\n"
+            ."cd {$orbitPath}\n"
+            ."if command -v composer >/dev/null 2>&1; then\n"
+            ."  for app in apps/gateway apps/cli apps/e2e packages/core apps/docs; do\n"
+            ."    if [ -f \"\$app/composer.json\" ]; then\n"
+            ."      {$composerCacheEnv}composer --working-dir=\"\$app\" install --no-interaction --no-progress --prefer-dist --optimize-autoloader 2>&1 || true\n"
+            ."    fi\n"
+            ."  done\n"
+            ."fi\n";
+
+        // Write the script into the guest via incus exec (sh -lc handles the heredoc).
+        $writeResult = $instance->exec(
+            "cat > {$scriptPath} <<'SCRIPT'\n{$scriptContent}SCRIPT\nchmod +x {$scriptPath}\nchown orbit:orbit {$scriptPath}",
+            timeoutSeconds: 30,
         );
 
-        $updateResult = $instance->exec(
-            "sudo -iu orbit bash -lc {$updateScript}",
-            timeoutSeconds: 600,
-        );
-
-        if (! $updateResult->successful()) {
-            throw new RuntimeException("Could not apply bundle overlay on [{$instance->name()}] role={$role}: {$updateResult->errorOutput()}");
+        if (! $writeResult->successful()) {
+            throw new RuntimeException("Could not write composer install script on [{$instance->name()}]: {$writeResult->errorOutput()}");
         }
 
-        // Run composer install in each sub-app to pick up any dependency changes.
-        $composerInstallScript = <<<'BASH'
-cd /home/orbit/orbit
-if command -v composer >/dev/null 2>&1; then
-    for app in apps/gateway apps/cli apps/e2e packages/core apps/docs; do
-        if [ -f "$app/composer.json" ]; then
-            composer --working-dir="$app" install --no-interaction --no-progress --prefer-dist --optimize-autoloader 2>&1 || true
-        fi
-    done
-fi
-BASH;
-
         $composerResult = $instance->exec(
-            'sudo -iu orbit bash -lc '.escapeshellarg($composerInstallScript),
+            'sudo -iu orbit bash -lc '.escapeshellarg("bash {$scriptPath}"),
             timeoutSeconds: 600,
         );
 
@@ -1510,8 +1527,8 @@ BASH;
             throw new RuntimeException("Composer install failed on [{$instance->name()}] role={$role}: {$composerResult->errorOutput()}");
         }
 
-        // Cleanup overlay bundle.
-        $instance->exec("rm -rf {$guestBundleDir}", timeoutSeconds: 30);
+        // Cleanup overlay bundle from guest.
+        $instance->exec('rm -rf '.escapeshellarg($guestBundleDir), timeoutSeconds: 30);
     }
 
     private function launchBase(string $target): void

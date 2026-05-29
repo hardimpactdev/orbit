@@ -397,9 +397,9 @@ it('applies bundle overlay to selected VMs via incus exec and incus file push', 
     // Must push the bundle into the guest
     expect($allCommands)->toContain('incus file push');
 
-    // Must run install-orbit with --skip-prerequisites and --source-archive
-    $installOccurrences = array_filter($sshCommands, fn (string $cmd) => str_contains($cmd, 'install-orbit') && str_contains($cmd, 'skip-prerequisites') && str_contains($cmd, 'source-archive'));
-    expect($installOccurrences)->not->toBeEmpty();
+    // Must extract the source archive directly (no install-orbit, no docker dependency)
+    $extractOccurrences = array_filter($sshCommands, fn (string $cmd) => str_contains($cmd, 'tar') && str_contains($cmd, 'orbit-source.tar.gz'));
+    expect($extractOccurrences)->not->toBeEmpty();
 
     // Must run composer install
     $composerInstallOccurrences = array_filter($sshCommands, fn (string $cmd) => str_contains($cmd, 'composer') && str_contains($cmd, 'install'));
