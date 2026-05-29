@@ -1,7 +1,7 @@
 {
     "$schema": "https://getcomposer.org/schema.json",
     "name": "hardimpactdev/orbit-e2e",
-    "description": "External Orbit end-to-end harness.",
+    "description": "External Orbit end-to-end harness (Laravel 13 application).",
     "keywords": [
         "e2e",
         "orbit",
@@ -10,18 +10,29 @@
     "license": "MIT",
     "type": "project",
     "require": {
-        "php": "^8.5"
+        "php": "^8.5",
+        "laravel/framework": "^13.8",
+        "laravel/tinker": "^3.0"
     },
     "require-dev": {
+        "fakerphp/faker": "^1.23",
         "laravel/pint": "^1.29",
+        "mockery/mockery": "^1.6",
+        "nunomaduro/collision": "^8.6",
         "pestphp/pest": "^4.6",
+        "pestphp/pest-plugin-laravel": "^4.0",
         "phpstan/phpstan": "^2.1",
         "rector/rector": "^2.3"
     },
     "autoload": {
         "psr-4": {
-            "App\\": "app/"
-        }
+            "App\\": "app/",
+            "Database\\Factories\\": "database/factories/",
+            "Database\\Seeders\\": "database/seeders/"
+        },
+        "files": [
+            "app/Support/repository.php"
+        ]
     },
     "autoload-dev": {
         "psr-4": {
@@ -29,16 +40,29 @@
         }
     },
     "scripts": {
+        "post-autoload-dump": [
+            "Illuminate\\Foundation\\ComposerScripts::postAutoloadDump",
+            "@php artisan package:discover --ansi"
+        ],
         "analyse": "vendor/bin/phpstan analyse --memory-limit=512M",
         "e2e:dev-topology": "php bin/e2e-dev-topology @additional_args",
         "e2e:dev-topology:release": "php bin/e2e-dev-topology-release @additional_args",
         "format": "vendor/bin/pint",
         "rector": "vendor/bin/rector process",
-        "test": "vendor/bin/pest --compact"
+        "test": [
+            "@php artisan config:clear --ansi",
+            "vendor/bin/pest --compact"
+        ]
+    },
+    "extra": {
+        "laravel": {
+            "dont-discover": []
+        }
     },
     "config": {
         "allow-plugins": {
             "pestphp/pest-plugin": true,
+            "php-http/discovery": true,
             "rector/rector": true
         },
         "optimize-autoloader": true,

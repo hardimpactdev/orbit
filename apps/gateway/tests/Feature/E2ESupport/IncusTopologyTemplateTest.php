@@ -620,7 +620,7 @@ it('clones only requested Incus roles from the prepared full snapshot', function
 });
 
 it('prepared Incus acquisition retargets selected snapshot roles without dynamic base provisioning', function (): void {
-    $source = file_get_contents(app_path('E2E/Support/IncusTopologyProvider.php'));
+    $source = file_get_contents(repo_path('apps/e2e/app/E2E/Support/IncusTopologyProvider.php'));
 
     expect($source)
         ->toContain('prepareInstances($instances, $this->config, $sshKeyPair, $timer, $options, $kind)')
@@ -652,7 +652,7 @@ it('prepared Incus acquisition retargets selected snapshot roles without dynamic
 });
 
 it('does not use synthetic provider-interface routes for prepared gateway clones', function (): void {
-    $source = file_get_contents(app_path('E2E/Support/IncusTopologyProvider.php'));
+    $source = file_get_contents(repo_path('apps/e2e/app/E2E/Support/IncusTopologyProvider.php'));
 
     expect($source)->not->toContain('ip addr add')
         ->and($source)->not->toContain('ip route replace')

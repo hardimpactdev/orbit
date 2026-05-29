@@ -62,7 +62,9 @@ it('keeps the gateway runner pointed at extracted support during the migration',
 });
 
 it('classifies the former gateway support layer for the next extraction batches', function (): void {
-    $extractedStandalone = [
+    // Standalone primitives extracted by #551, plus the topology/provider
+    // harness extracted into the apps/e2e Laravel application by #552.
+    $extractedToE2e = [
         'DockerTopologyNetworkPlan',
         'E2EConfig',
         'E2EImage',
@@ -78,9 +80,6 @@ it('classifies the former gateway support layer for the next extraction batches'
         'E2ETopologyUnavailable',
         'ProviderAvailability',
         'SshKeyPair',
-    ];
-
-    $gatewayIntegratedUntilRewritten = [
         'DockerHost',
         'DockerInstance',
         'DockerTopologyBuilder',
@@ -89,14 +88,10 @@ it('classifies the former gateway support layer for the next extraction batches'
         'E2ECurrentCheckout',
         'E2EGatewayApi',
         'E2EInstance',
-        'E2ENetwork',
-        'E2ENodeProbe',
         'E2EOperatorIdentity',
         'E2EPreparedTopologyRegistry',
         'E2EProvider',
-        'E2EReachability',
         'E2ERun',
-        'E2ETopologyCache',
         'E2ETopologyFactory',
         'E2ETopologyHarness',
         'E2ETopologyLease',
@@ -106,20 +101,29 @@ it('classifies the former gateway support layer for the next extraction batches'
         'E2EWgEasyGateway',
         'E2EWireGuardMesh',
         'IncusHost',
-        'IncusHostPool',
         'IncusInstance',
-        'IncusProvider',
-        'IncusTopologyBuilder',
         'IncusTopologyProvider',
-        'IncusTopologyTemplate',
         'IncusWarmTopologyPool',
+        'IncusHostPool',
+        'IncusTopologyBuilder',
+        'IncusTopologyTemplate',
+    ];
+
+    // Network/reachability and provider-pool helpers still owned by the gateway
+    // harness; they move in the later app/node/infra extraction batches.
+    $stillInGatewayForLaterBatches = [
+        'E2ENetwork',
+        'E2ENodeProbe',
+        'E2EReachability',
+        'E2ETopologyCache',
+        'IncusProvider',
         'ProviderPool',
         'ProviderSelection',
     ];
 
     $allFormerGatewaySupportClasses = [
-        ...$extractedStandalone,
-        ...$gatewayIntegratedUntilRewritten,
+        ...$extractedToE2e,
+        ...$stillInGatewayForLaterBatches,
     ];
 
     expect($allFormerGatewaySupportClasses)
@@ -127,12 +131,12 @@ it('classifies the former gateway support layer for the next extraction batches'
         ->and(array_unique($allFormerGatewaySupportClasses))
         ->toHaveCount(49);
 
-    foreach ($extractedStandalone as $class) {
+    foreach ($extractedToE2e as $class) {
         expect(repo_path("apps/e2e/app/E2E/Support/{$class}.php"))->toBeFile()
             ->and(repo_path("apps/gateway/app/E2E/Support/{$class}.php"))->not->toBeFile();
     }
 
-    foreach ($gatewayIntegratedUntilRewritten as $class) {
+    foreach ($stillInGatewayForLaterBatches as $class) {
         expect(repo_path("apps/gateway/app/E2E/Support/{$class}.php"))->toBeFile()
             ->and(repo_path("apps/e2e/app/E2E/Support/{$class}.php"))->not->toBeFile();
     }

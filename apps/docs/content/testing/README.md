@@ -10,19 +10,28 @@ public entry points are the root Composer scripts (`composer test:e2e` and its
 provider variants); operators and CI do not need to know where the harness
 lives.
 
-The current harness host is `apps/gateway/tests/E2E`, because the harness boots
-the gateway Laravel app for control-plane state and topology machinery. That host
-is transitional. Extracting the full harness into a dedicated `apps/e2e`
-application is a pre-S3 requirement: S3/RustFS E2E coverage starts in `apps/e2e`,
-not in the gateway harness.
+The harness is migrating out of `apps/gateway/tests/E2E` into a dedicated
+`apps/e2e` application. The topology/provider contract suite and its support
+layer now live in `apps/e2e`; the remaining app/node/resource/infra E2E suites
+move in later pre-S3 batches. Completing this extraction is a pre-S3
+requirement: S3/RustFS E2E coverage starts in `apps/e2e`, not in the gateway
+harness. During the migration the gateway runner keeps working through a
+temporary Composer PSR-4 bridge that resolves `App\E2E\Support\*` from
+`apps/e2e`.
 
-`apps/e2e` is an external black-box/gray-box runner. It prepares Docker/Incus
-topologies, drives `apps/cli/orbit` and the gateway HTTP API, and inspects
-externally observable results — CLI output, API responses, files, containers,
-routes, services, and node state. It must not instantiate gateway services,
-Eloquent models, controllers, jobs, or internal actions as the test subject.
-Gateway product behavior stays in `apps/gateway` and is not moved into
-`packages/core` as a convenience dump for the E2E app.
+`apps/e2e` is a stock Laravel 13 application that hosts the external Orbit
+runner. It is a full Laravel app so the topology/provider harness can use the
+framework (the `Process`, filesystem, and related facades, paths, and helpers)
+rather than re-implementing them. "External" describes how it drives the system
+under test, not the absence of a framework: it prepares Docker/Incus topologies,
+drives `apps/cli/orbit` and the gateway HTTP API, and inspects externally
+observable results — CLI output, API responses, files, containers, routes,
+services, and node state. It must not import the gateway application's own
+namespaces (`apps/gateway`'s services, Eloquent models, controllers, jobs, or
+internal actions) as the test subject. Gateway product behavior stays in
+`apps/gateway` and is not moved into `packages/core` as a convenience dump for
+the E2E app; small pure values the harness needs (for example container image
+identities) are mirrored locally in `apps/e2e` and kept in sync.
 
 During the migration, immediate E2E support helpers live under `apps/e2e`
 internal support namespaces. Do not create `packages/e2e-support` or move

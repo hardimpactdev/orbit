@@ -14,8 +14,8 @@ afterEach(function (): void {
 });
 
 it('waits for operator host-key scan reachability before checkout pinning runs', function (): void {
-    $providerSource = file_get_contents(repo_path('apps/gateway/app/E2E/Support/IncusTopologyProvider.php'));
-    $checkoutSource = file_get_contents(repo_path('apps/gateway/app/E2E/Support/E2ECurrentCheckout.php'));
+    $providerSource = file_get_contents(repo_path('apps/e2e/app/E2E/Support/IncusTopologyProvider.php'));
+    $checkoutSource = file_get_contents(repo_path('apps/e2e/app/E2E/Support/E2ECurrentCheckout.php'));
 
     expect($providerSource)->toContain('waitForOperatorHostKeyScan')
         ->and($providerSource)->toContain('ssh-keyscan -T 5 -t ed25519,ecdsa,rsa')
@@ -73,8 +73,8 @@ it('seeds the gateway runtime ssh key into prepared incus downstream clones', fu
 });
 
 it('keeps incus retarget scripts on node_role assignments instead of legacy node columns', function (): void {
-    $providerSource = file_get_contents(repo_path('apps/gateway/app/E2E/Support/IncusTopologyProvider.php'));
-    $builderSource = file_get_contents(repo_path('apps/gateway/app/E2E/Support/IncusTopologyBuilder.php'));
+    $providerSource = file_get_contents(repo_path('apps/e2e/app/E2E/Support/IncusTopologyProvider.php'));
+    $builderSource = file_get_contents(repo_path('apps/e2e/app/E2E/Support/IncusTopologyBuilder.php'));
 
     foreach ([$providerSource, $builderSource] as $source) {
         expect($source)->not->toContain("'environment' => null")

@@ -498,7 +498,7 @@ it('runs the topology contract against the Docker full topology by default', fun
 
     expect($composer['scripts']['test:e2e:topology-contract'])->toBe([
         'Composer\\Config::disableProcessTimeout',
-        'set -a; [ ! -f .env.e2e ] || . ./.env.e2e; set +a; ORBIT_E2E=1 ORBIT_E2E_TOPOLOGY_PROVIDER=docker bin/orbit-gateway-artisan test --testsuite=E2E --group=e2e-topology-contract-operator_gateway_app-dev_app-prod_agent_websocket --fail-on-empty-test-suite @additional_args',
+        'set -a; [ ! -f .env.e2e ] || . ./.env.e2e; set +a; cd apps/e2e && ORBIT_E2E=1 ORBIT_E2E_TOPOLOGY_PROVIDER=docker vendor/bin/pest --group=e2e-topology-contract-operator_gateway_app-dev_app-prod_agent_websocket @additional_args',
     ])->and($composer['scripts'])
         ->not->toHaveKey('test:e2e:topology-contract:operator')
         ->not->toHaveKey('test:e2e:topology-contract:operator-gateway')

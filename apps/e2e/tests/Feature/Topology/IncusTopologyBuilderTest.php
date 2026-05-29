@@ -13,6 +13,10 @@ use Illuminate\Support\Facades\Process;
 pest()->group('e2e-provision', 'e2e-provision-superset');
 
 it('builds the reusable superset topology from the base image', function (): void {
+    if (getenv('ORBIT_E2E') !== '1') {
+        $this->markTestSkipped('Set ORBIT_E2E=1 to run the Incus provisioning superset build.');
+    }
+
     $config = E2EConfig::fromEnvironment();
 
     if (! in_array('incus', $config->providerNames, true)) {
