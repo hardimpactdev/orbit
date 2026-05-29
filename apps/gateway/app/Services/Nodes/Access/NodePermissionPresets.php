@@ -249,6 +249,7 @@ final class NodePermissionPresets
             'agent-ide:message',
 
             // App
+            'app:credentials',
             'app:read',
             'app:write',
             'app:register',

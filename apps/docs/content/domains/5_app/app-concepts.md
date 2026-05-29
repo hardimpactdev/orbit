@@ -70,7 +70,9 @@ record.
 - **Reverb app credentials:** Reverb application id, key, and secret material
   for one app, owned by an app WebSocket binding. These credentials are not
   shared across apps; rotating or disabling one binding must not invalidate
-  unrelated app bindings.
+  unrelated app bindings. Reading them requires the explicit
+  `app:credentials` permission on the app's owning node; `app:read` and
+  `app:write` do not imply credential access.
 - **App agent IDE adapter:** Optional gateway-owned override of the owning
   node's default agent IDE adapter for app and workspace workflows. Set,
   cleared, and shown through `app:agent-ide`.

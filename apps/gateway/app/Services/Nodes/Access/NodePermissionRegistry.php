@@ -29,6 +29,7 @@ final class NodePermissionRegistry
 
             // App
             'app:*',
+            'app:credentials',
             'app:list',
             'app:show',
             'app:read',
