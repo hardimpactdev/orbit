@@ -5,7 +5,7 @@ Source for Solo todo #543 / ORBIT-PRE-S3-02. This note inventories the currently
 ## Scope
 
 - Inventory source: `Artisan::all()` in `apps/gateway`, filtered to `App\Console\Commands\*` command classes. Abstract base classes, traits, and support classes are not invokable and are omitted.
-- Invokable command rows covered: 22 total, including 12 gateway-owned runtime/E2E rows, 9 internal `App\Console\Commands\Internal\*` rows kept explicit for the allowed `orbit:internal:*` category, and `orbit:internal:node-register`.
+- Invokable command rows covered: 11 total, including 1 gateway-owned runtime row (orbit-scheduler), 9 internal `App\Console\Commands\Internal\*` rows kept explicit for the allowed `orbit:internal:*` category, and `orbit:internal:node-register`. E2E runner commands (e2e:*) were extracted to apps/e2e in #9H and are no longer registered in gateway Artisan.
 - Gateway command visibility is final for public product commands: gateway Artisan no longer registers CLI-owned public product commands. #542 removed the app, node, DNS/local, gateway-local, PHP, update, profile, and doctor command family after CLI coverage and API extraction. #546 removed the database, workspace, process, and schedule command families after extracting `workspace:exec` behind the gateway API. #548 removed the tool, proxy, firewall, Cloudflare, VPN, deploy, activity, and agent-ide command families after #544 recorded CLI owner coverage.
 - Product authority after #540: public operator commands are owned by `apps/cli/orbit`; gateway Artisan is for gateway maintenance, `orbit:internal:*`, E2E runner wrappers, `orbit-scheduler`, and intentional docs/librarian/dev commands.
 - Do not move gateway business logic to `packages/core` as part of command removal.
@@ -31,17 +31,6 @@ rg -n "Artisan::call\(|\$this->call\(" apps/gateway/app/Http apps/gateway/app/Se
 
 | command name | gateway command class | CLI owner | gateway internal call sites | classification | removal todo | required tests |
 | --- | --- | --- | --- | --- | --- | --- |
-| `e2e:ensure-artifacts` | `App\Console\Commands\E2EEnsureArtifactsCommand` | `gateway-owned` | none in required app call-site sweep | `keep` | #550-#558 extract E2E harness before retiring wrapper | gateway E2E support tests until apps/e2e extraction |
-| `e2e:preflight` | `App\Console\Commands\E2EPreflightCommand` | `gateway-owned` | none in required app call-site sweep | `keep` | #550-#558 extract E2E harness before retiring wrapper | gateway E2E support tests until apps/e2e extraction |
-| `e2e:prepare-base-image` | `App\Console\Commands\E2EPrepareBaseImageCommand` | `gateway-owned` | none in required app call-site sweep | `keep` | #550-#558 extract E2E harness before retiring wrapper | gateway E2E support tests until apps/e2e extraction |
-| `e2e:prepare-docker-hosts` | `App\Console\Commands\E2EPrepareDockerHostsCommand` | `gateway-owned` | none in required app call-site sweep | `keep` | #550-#558 extract E2E harness before retiring wrapper | gateway E2E support tests until apps/e2e extraction |
-| `e2e:prepare-docker-runtime` | `App\Console\Commands\E2EPrepareDockerRuntimeCommand` | `gateway-owned` | none in required app call-site sweep | `keep` | #550-#558 extract E2E harness before retiring wrapper | gateway E2E support tests until apps/e2e extraction |
-| `e2e:prepare-docker-topology` | `App\Console\Commands\E2EPrepareDockerTopologyCommand` | `gateway-owned` | none in required app call-site sweep | `keep` | #550-#558 extract E2E harness before retiring wrapper | gateway E2E support tests until apps/e2e extraction |
-| `e2e:prepare-topology` | `App\Console\Commands\E2EPrepareTopologyCommand` | `gateway-owned` | none in required app call-site sweep | `keep` | #550-#558 extract E2E harness before retiring wrapper | gateway E2E support tests until apps/e2e extraction |
-| `e2e:prepare-warm-topology` | `App\Console\Commands\E2EPrepareWarmTopologyCommand` | `gateway-owned` | none in required app call-site sweep | `keep` | #550-#558 extract E2E harness before retiring wrapper | gateway E2E support tests until apps/e2e extraction |
-| `e2e:reap-docker` | `App\Console\Commands\E2EReapDockerCommand` | `gateway-owned` | none in required app call-site sweep | `keep` | #550-#558 extract E2E harness before retiring wrapper | gateway E2E support tests until apps/e2e extraction |
-| `e2e:reap-incus` | `App\Console\Commands\E2EReapIncusCommand` | `gateway-owned` | none in required app call-site sweep | `keep` | #550-#558 extract E2E harness before retiring wrapper | gateway E2E support tests until apps/e2e extraction |
-| `e2e:test` | `App\Console\Commands\E2ETestCommand` | `gateway-owned` | none in required app call-site sweep | `keep` | #550-#558 extract E2E harness before retiring wrapper | gateway E2E support tests until apps/e2e extraction |
 | `orbit-scheduler` | `App\Console\Commands\OrbitSchedulerCommand` | `gateway-owned` | none in required app call-site sweep | `keep` | none; gateway-owned runtime/internal command | apps/gateway/tests/Feature/Commands/Schedule/OrbitSchedulerCommandTest.php |
 | `orbit:internal:bake-agent-node` | `App\Console\Commands\Internal\BakeAgentNodeCommand` | `gateway-owned` | none in required app call-site sweep | `keep` | none; gateway-owned runtime/internal command | apps/gateway/tests/Feature/Commands/Internal or E2E support coverage |
 | `orbit:internal:bake-app-node` | `App\Console\Commands\Internal\BakeAppNodeCommand` | `gateway-owned` | none in required app call-site sweep | `keep` | none; gateway-owned runtime/internal command | apps/gateway/tests/Feature/Commands/Internal or E2E support coverage |
@@ -74,5 +63,5 @@ No non-internal command support classes remain under `apps/gateway/app/Console/C
   consent. ORBIT-PRE-S3-08 (#548) removed the corresponding gateway public
   command classes/tests.
 - #545/#541/#544 should update this note when CLI parity changes a row from `port-cli-coverage-first` to `delete`.
-- #542/#546/#548 removed rows only after the corresponding gateway command class was no longer registered/invokable and `CommandListVisibilityTest.php` flipped the transitional assertion to the final not-registered helper.
-- The `e2e:*` rows stay `keep` only until the `apps/e2e` extraction retires gateway runner wrappers.
+- #542/#546/#548/#9H removed rows only after the corresponding gateway command class was no longer registered/invokable and `CommandListVisibilityTest.php` flipped the transitional assertion to the final not-registered helper.
+- The `e2e:*` commands were extracted to `apps/e2e` by #9H (this port) and are no longer registered in gateway Artisan. Their inventory rows have been removed from this file.

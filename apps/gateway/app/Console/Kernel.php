@@ -28,7 +28,6 @@ class Kernel extends BaseKernel
     private const array GATEWAY_VISIBLE_COMMAND_PREFIXES = [
         'cache:',
         'db:',
-        'e2e:',
         'librarian:',
         'make:',
         'migrate:',

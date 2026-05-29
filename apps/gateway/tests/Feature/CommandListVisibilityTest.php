@@ -53,7 +53,6 @@ function gatewayAllowedArtisanCommandName(string $name): bool
 
     return array_any(
         [
-            'e2e:',
             'orbit:internal:',
         ],
         fn (string $prefix): bool => str_starts_with($name, $prefix),
@@ -318,8 +317,6 @@ it('shows gateway runtime and maintenance commands in the command list', functio
         'tinker',
         'docs',
         'librarian:lint',
-        'e2e:test',
-        'e2e:preflight',
         'orbit-scheduler',
         'orbit:internal:bake-app-node',
         'orbit:internal:bootstrap-gateway-local',
