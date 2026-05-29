@@ -260,8 +260,31 @@ describe('agent-ide:message', function (): void {
 
         expect($exitCode)->toBe(0)
             ->and($output)->toContain('┌ Sending Agent IDE message to docs')
+            ->and($output)->toContain('● Resolved target')
+            ->and($output)->toContain('● Resolved effective adapter')
+            ->and($output)->toContain('● Found active session')
+            ->and($output)->toContain('● Delivered message')
             ->and($output)->toContain('└ Sent Agent IDE message to docs through opencode')
             ->and($output)->toContain('Sent message to docs through opencode.')
+            ->and($output)->not->toContain('"success"');
+    });
+
+    it('renders the human success summary for workspace delivery', function (): void {
+        fakeGateway(agentIdeMessageSuccess(adapter: 'polyscope', workspace: 'feature-docs'));
+
+        [$exitCode, $output] = runCommand($this, 'agent-ide:message', [
+            'message' => 'Ship the docs',
+            '--workspace' => 'feature-docs',
+        ]);
+
+        expect($exitCode)->toBe(0)
+            ->and($output)->toContain('┌ Sending Agent IDE message to docs/feature-docs')
+            ->and($output)->toContain('● Resolved target')
+            ->and($output)->toContain('● Resolved effective adapter')
+            ->and($output)->toContain('● Found active session')
+            ->and($output)->toContain('● Delivered message')
+            ->and($output)->toContain('└ Sent Agent IDE message to docs/feature-docs through polyscope')
+            ->and($output)->toContain('Sent message to docs/feature-docs through polyscope.')
             ->and($output)->not->toContain('"success"');
     });
 

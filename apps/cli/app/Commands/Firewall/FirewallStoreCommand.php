@@ -27,6 +27,13 @@ abstract class FirewallStoreCommand extends FirewallGatewayCommand
         $port = $this->stringOption('port');
 
         if ($port === null) {
+            if (! $this->wantsJson() && $this->input->isInteractive()) {
+                $answer = $this->ask('Port');
+                $port = is_string($answer) && trim($answer) !== '' ? trim($answer) : null;
+            }
+        }
+
+        if ($port === null) {
             return $this->failValidation('port', 'The firewall rule port is required.');
         }
 

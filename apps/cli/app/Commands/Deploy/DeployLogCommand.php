@@ -27,7 +27,7 @@ final class DeployLogCommand extends DeployGatewayCommand
             return $app;
         }
 
-        $run = $this->positiveIntArgument('run');
+        $run = $this->positiveIntArgument('run', 'Run');
 
         if ($run === null) {
             return $this->failValidation('run', 'A positive run id is required.');
@@ -61,9 +61,17 @@ final class DeployLogCommand extends DeployGatewayCommand
         return self::SUCCESS;
     }
 
-    private function positiveIntArgument(string $key): ?int
+    private function positiveIntArgument(string $key, string $label): ?int
     {
         $value = $this->stringArgument($key);
+
+        if ($value === null && ! $this->wantsJson() && $this->input->isInteractive()) {
+            $answer = $this->ask($label);
+
+            if (is_string($answer) && trim($answer) !== '') {
+                $value = trim($answer);
+            }
+        }
 
         if ($value === null || ! ctype_digit($value) || (int) $value < 1) {
             return null;

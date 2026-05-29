@@ -141,6 +141,26 @@ describe('vpn commands', function (): void {
         'disable' => ['vpn-client:disable', 'disable', false, 'disabled'],
     ]);
 
+    it('prompts for a missing vpn client name before toggling in interactive mode', function (): void {
+        fakeGateway(fakeSuccessEnvelope([
+            'client' => [
+                'name' => 'laptop',
+                'enabled' => true,
+                'action' => 'enabled',
+                'already_enabled' => false,
+            ],
+        ]));
+
+        $this->artisan('vpn-client:enable')
+            ->expectsQuestion('VPN client name', 'laptop')
+            ->expectsOutputToContain('client')
+            ->assertSuccessful();
+
+        Http::assertSent(fn (Request $request): bool => $request->method() === 'POST'
+            && $request->url() === 'https://gateway.test/api/vpn/clients/laptop/enable'
+            && $request->data() === []);
+    });
+
     it('removes vpn clients only with force', function (): void {
         fakeGateway(fakeSuccessEnvelope([
             'client' => [
@@ -190,6 +210,24 @@ describe('vpn commands', function (): void {
             ->and($decoded['success']['data']['client']['action'])->toBe('removed');
     });
 
+    it('prompts for vpn client name before removing in interactive mode', function (): void {
+        fakeGateway(fakeSuccessEnvelope([
+            'client' => [
+                'name' => 'laptop',
+                'action' => 'removed',
+            ],
+        ]));
+
+        $this->artisan('vpn-client:remove', ['--force' => true])
+            ->expectsQuestion('VPN client name', 'laptop')
+            ->expectsOutputToContain('removed')
+            ->assertSuccessful();
+
+        Http::assertSent(fn (Request $request): bool => $request->method() === 'DELETE'
+            && $request->url() === 'https://gateway.test/api/vpn/clients/laptop'
+            && $request->data() === ['force' => true]);
+    });
+
     it('rotates the vpn web ui password through the gateway without printing the secret', function (): void {
         fakeGateway(fakeSuccessEnvelope([
             'vpn' => [
@@ -218,6 +256,28 @@ describe('vpn commands', function (): void {
         expect($exitCode)->toBe(0)
             ->and($decoded['success']['data']['vpn']['password_changed'])->toBeTrue()
             ->and($output)->not->toContain('new-secret-password');
+    });
+
+    it('prompts for vpn web ui password and destructive confirmation in interactive mode', function (): void {
+        fakeGateway(fakeSuccessEnvelope([
+            'vpn' => [
+                'password_changed' => true,
+                'sessions_invalidated' => true,
+            ],
+        ]));
+
+        $this->artisan('vpn-web-ui:change-password')
+            ->expectsQuestion('New VPN web UI password', 'new-secret-password')
+            ->expectsConfirmation('Use --force to rotate the VPN web UI password.', 'yes')
+            ->expectsOutputToContain('password_changed')
+            ->assertSuccessful();
+
+        Http::assertSent(fn (Request $request): bool => $request->method() === 'POST'
+            && $request->url() === 'https://gateway.test/api/vpn/web-ui/password'
+            && $request->data() === [
+                'password' => 'new-secret-password',
+                'force' => true,
+            ]);
     });
 
     it('validates vpn web ui password input before contacting the gateway', function (): void {

@@ -7,6 +7,38 @@ use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
 
 describe('tool write commands', function (): void {
+    beforeEach(function (): void {
+        $store = new OrbitConfigStore(overridePath: base_path('tests/.tmp-tool-write-config.json'));
+        @unlink($store->path());
+        app()->instance(OrbitConfigStore::class, $store);
+    });
+
+    afterEach(function (): void {
+        @unlink(base_path('tests/.tmp-tool-write-config.json'));
+    });
+
+    it('prompts for tool and target before installing in interactive mode', function (): void {
+        fakeGatewayProgressStream(gatewayProgressFrame('complete', [
+            'exit_code' => 0,
+            'data' => [
+                'tool' => ['name' => 'redis', 'node' => 'app-1', 'state' => 'installed'],
+            ],
+        ]));
+
+        $this->artisan('tool:install')
+            ->expectsQuestion('Tool name', 'redis')
+            ->expectsQuestion('Target node', 'app-1')
+            ->expectsOutputToContain('redis')
+            ->assertSuccessful();
+
+        Http::assertSent(fn (Request $request): bool => $request->method() === 'POST'
+            && $request->url() === 'https://gateway.test/api/tools/redis/install'
+            && $request->data() === [
+                'node' => 'app-1',
+                'status' => 'installed',
+            ]);
+    });
+
     it('streams tool:install payloads to the gateway', function (): void {
         fakeGatewayProgressStream(gatewayProgressFrame('complete', [
             'exit_code' => 0,
@@ -115,6 +147,28 @@ describe('tool write commands', function (): void {
 
         expect($exitCode)->toBe(0)
             ->and($decoded['success']['data']['tool']['state'])->toBe('removed');
+    });
+
+    it('prompts before removing a tool in interactive mode', function (): void {
+        fakeGateway(fakeSuccessEnvelope([
+            'tool' => ['name' => 'redis', 'node' => 'app-1', 'state' => 'removed'],
+        ]));
+
+        $this->artisan('tool:remove', [
+            'tool' => 'redis',
+            '--node' => 'app-1',
+        ])
+            ->expectsConfirmation("Remove tool 'redis'?", 'yes')
+            ->expectsOutputToContain('removed')
+            ->assertSuccessful();
+
+        Http::assertSent(fn (Request $request): bool => $request->method() === 'DELETE'
+            && $request->url() === 'https://gateway.test/api/tools/redis'
+            && $request->data() === [
+                'node' => 'app-1',
+                'destructive_consent' => true,
+                'destructive_consent_source' => 'interactive_confirm',
+            ]);
     });
 
     it('requires force before tool:remove in non-json non-interactive mode', function (): void {
