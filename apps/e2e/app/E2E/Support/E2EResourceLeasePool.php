@@ -341,6 +341,12 @@ final readonly class E2EResourceLeasePool
             return false;
         }
 
+        $payload = $this->readLeasePayload($path);
+
+        if (is_array($payload) && ($payload['retained'] ?? false) === true) {
+            return false;
+        }
+
         if ($this->reclaimDeadProcessLeasePath($path)) {
             return true;
         }

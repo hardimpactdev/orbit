@@ -81,6 +81,14 @@
             "set -a; [ ! -f .env.e2e ] || . ./.env.e2e; set +a; ORBIT_E2E=1 bin/orbit-gateway-artisan test --testsuite=E2E --group=e2e-provision --fail-on-empty-test-suite @additional_args"
         ],
         "e2e:preflight": "set -a; [ ! -f .env.e2e ] || . ./.env.e2e; set +a; bin/orbit-gateway-artisan e2e:preflight @additional_args",
+        "e2e:dev-topology": [
+            "Composer\\Config::disableProcessTimeout",
+            "set -a; [ ! -f .env.e2e ] || . ./.env.e2e; set +a; composer --working-dir=apps/e2e e2e:dev-topology -- @additional_args"
+        ],
+        "e2e:dev-topology:release": [
+            "Composer\\Config::disableProcessTimeout",
+            "set -a; [ ! -f .env.e2e ] || . ./.env.e2e; set +a; composer --working-dir=apps/e2e e2e:dev-topology:release -- @additional_args"
+        ],
         "e2e:reap-incus": "set -a; [ ! -f .env.e2e ] || . ./.env.e2e; set +a; bin/orbit-gateway-artisan e2e:reap-incus @additional_args",
         "e2e:reap-docker": "set -a; [ ! -f .env.e2e ] || . ./.env.e2e; set +a; bin/orbit-gateway-artisan e2e:reap-docker @additional_args",
         "e2e:prepare-docker-runtime": [
