@@ -6,6 +6,7 @@ use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Models\NodeTool;
 use App\Models\ProxyRoute;
+use App\Services\Proxy\ProxyRouteRenderer;
 use App\Services\S3\S3RouteRegistrar;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -209,3 +210,277 @@ it('removes the public host route when owner_type is tool and owner_name is rust
 
     expect(ProxyRoute::query()->where('domain', 's3.example.com')->exists())->toBeFalse();
 })->group('service');
+
+// ---------------------------------------------------------------------------
+// Public-host ingress route tests
+// ---------------------------------------------------------------------------
+
+it('registers an ingress-placement route on the ingress node targeting the router', function (): void {
+    $router = Node::factory()->create(['name' => 'gateway-1', 'wireguard_address' => '10.6.0.1']);
+    s3AssignRole($router, 'router');
+
+    $edge = Node::factory()->create(['name' => 'edge-1', 'wireguard_address' => '10.6.0.10']);
+    s3AssignRole($edge, 'ingress');
+
+    $storage = Node::factory()->create(['name' => 'storage-1', 'wireguard_address' => '10.6.0.44']);
+    s3AssignRole($storage, 's3');
+    $tool = NodeTool::factory()->create([
+        'node_id' => $storage->id,
+        'name' => 'rustfs',
+        'config' => [
+            'backend_host' => 'storage-1.s3.orbit',
+            'public_hosts' => ['s3.example.com'],
+        ],
+    ]);
+
+    app(S3RouteRegistrar::class)->syncPublicHosts($tool);
+
+    $route = ProxyRoute::query()->where('domain', 's3.example.com')->firstOrFail();
+
+    expect($route)
+        ->node_id->toBe($edge->id)
+        ->owner_type->toBe('tool')
+        ->kind->toBe('proxy')
+        ->and($route->config['placement'])->toBe('ingress')
+        ->and($route->config['router_upstream']['node_id'])->toBe($router->id)
+        ->and($route->config['router_upstream']['node'])->toBe('gateway-1')
+        ->and($route->config['router_upstream']['url'])->toBe('http://10.6.0.1:80')
+        ->and($route->config['target'])->toBe(['type' => 'upstream', 'value' => 'https://s3.orbit']);
+})->group('public');
+
+it('public ingress route preserves Host and forwarded-proto via router_upstream config', function (): void {
+    $router = Node::factory()->create(['name' => 'gateway-1', 'wireguard_address' => '10.6.0.1']);
+    s3AssignRole($router, 'router');
+
+    $edge = Node::factory()->create(['name' => 'edge-1', 'wireguard_address' => '10.6.0.10']);
+    s3AssignRole($edge, 'ingress');
+
+    $storage = Node::factory()->create(['name' => 'storage-1', 'wireguard_address' => '10.6.0.44']);
+    s3AssignRole($storage, 's3');
+    $tool = NodeTool::factory()->create([
+        'node_id' => $storage->id,
+        'name' => 'rustfs',
+        'config' => [
+            'backend_host' => 'storage-1.s3.orbit',
+            'public_hosts' => ['s3.example.com'],
+        ],
+    ]);
+
+    app(S3RouteRegistrar::class)->syncPublicHosts($tool);
+
+    $route = ProxyRoute::query()->where('domain', 's3.example.com')->firstOrFail();
+    $config = $route->config;
+
+    // placement=ingress triggers ProxyRouteRenderer::renderIngress which emits
+    // `header_up Host {host}` and `header_up X-Forwarded-Proto {scheme}`.
+    expect($config['placement'])->toBe('ingress')
+        ->and($config['router_upstream'])->toBeArray()
+        ->and($config['router_upstream']['url'])->toStartWith('http://');
+
+    // Confirm the renderer actually produces a Caddy block with the expected
+    // host-preservation directives.
+    $renderer = app(ProxyRouteRenderer::class);
+    $rendered = $renderer->render($route);
+
+    expect($rendered)
+        ->toContain('header_up Host {host}')
+        ->toContain('header_up X-Forwarded-Proto {scheme}')
+        ->toContain('reverse_proxy http://10.6.0.1:80');
+})->group('public');
+
+it('creates separate ingress routes for each public host on the same rustfs tool', function (): void {
+    $router = Node::factory()->create(['name' => 'gateway-1', 'wireguard_address' => '10.6.0.1']);
+    s3AssignRole($router, 'router');
+
+    $edge = Node::factory()->create(['name' => 'edge-1', 'wireguard_address' => '10.6.0.10']);
+    s3AssignRole($edge, 'ingress');
+
+    $storage = Node::factory()->create(['name' => 'storage-1', 'wireguard_address' => '10.6.0.44']);
+    s3AssignRole($storage, 's3');
+    $tool = NodeTool::factory()->create([
+        'node_id' => $storage->id,
+        'name' => 'rustfs',
+        'config' => [
+            'backend_host' => 'storage-1.s3.orbit',
+            'public_hosts' => ['s3.example.com', 'files.example.com'],
+        ],
+    ]);
+
+    app(S3RouteRegistrar::class)->syncPublicHosts($tool);
+
+    expect(ProxyRoute::query()->where('owner_type', 'tool')->count())->toBe(2);
+
+    foreach (['s3.example.com', 'files.example.com'] as $host) {
+        $route = ProxyRoute::query()->where('domain', $host)->firstOrFail();
+        expect($route->node_id)->toBe($edge->id)
+            ->and($route->config['placement'])->toBe('ingress')
+            ->and($route->config['tls']['cert_path'])->toBe("/etc/orbit/certs/{$host}.crt")
+            ->and($route->config['tls']['key_path'])->toBe("/etc/orbit/certs/{$host}.key");
+    }
+})->group('public');
+
+it('public host route does not target the concrete s3 storage node', function (): void {
+    $router = Node::factory()->create(['name' => 'gateway-1', 'wireguard_address' => '10.6.0.1']);
+    s3AssignRole($router, 'router');
+
+    $edge = Node::factory()->create(['name' => 'edge-1', 'wireguard_address' => '10.6.0.10']);
+    s3AssignRole($edge, 'ingress');
+
+    $storage = Node::factory()->create(['name' => 'storage-1', 'wireguard_address' => '10.6.0.44']);
+    s3AssignRole($storage, 's3');
+    $tool = NodeTool::factory()->create([
+        'node_id' => $storage->id,
+        'name' => 'rustfs',
+        'config' => [
+            'backend_host' => 'storage-1.s3.orbit',
+            'public_hosts' => ['s3.example.com'],
+        ],
+    ]);
+
+    app(S3RouteRegistrar::class)->syncPublicHosts($tool);
+
+    $route = ProxyRoute::query()->where('domain', 's3.example.com')->firstOrFail();
+
+    // The route must NOT target the storage node's WireGuard address or backend host.
+    $targetValue = $route->config['target']['value'];
+    $routerUrl = $route->config['router_upstream']['url'];
+
+    expect($targetValue)->toBe('https://s3.orbit')
+        ->and($targetValue)->not->toContain('10.6.0.44')
+        ->and($targetValue)->not->toContain('storage-1.s3.orbit')
+        ->and($routerUrl)->toContain('10.6.0.1')
+        ->and($routerUrl)->not->toContain('10.6.0.44');
+})->group('public');
+
+it('re-syncing a public host is idempotent and does not create duplicate routes', function (): void {
+    $router = Node::factory()->create(['name' => 'gateway-1', 'wireguard_address' => '10.6.0.1']);
+    s3AssignRole($router, 'router');
+
+    $edge = Node::factory()->create(['name' => 'edge-1', 'wireguard_address' => '10.6.0.10']);
+    s3AssignRole($edge, 'ingress');
+
+    $storage = Node::factory()->create(['name' => 'storage-1', 'wireguard_address' => '10.6.0.44']);
+    s3AssignRole($storage, 's3');
+    $tool = NodeTool::factory()->create([
+        'node_id' => $storage->id,
+        'name' => 'rustfs',
+        'config' => [
+            'backend_host' => 'storage-1.s3.orbit',
+            'public_hosts' => ['s3.example.com'],
+        ],
+    ]);
+
+    app(S3RouteRegistrar::class)->syncPublicHosts($tool);
+    app(S3RouteRegistrar::class)->syncPublicHosts($tool);
+
+    expect(ProxyRoute::query()->where('domain', 's3.example.com')->count())->toBe(1);
+})->group('public');
+
+it('removePublicHost removes only the rustfs s3 owned route and leaves unrelated routes intact', function (): void {
+    $edge = Node::factory()->create(['name' => 'edge-1', 'wireguard_address' => '10.6.0.10']);
+    s3AssignRole($edge, 'ingress');
+
+    $storage = Node::factory()->create(['name' => 'storage-1', 'wireguard_address' => '10.6.0.44']);
+    s3AssignRole($storage, 's3');
+    $tool = NodeTool::factory()->create([
+        'node_id' => $storage->id,
+        'name' => 'rustfs',
+        'config' => ['backend_host' => 'storage-1.s3.orbit', 'public_hosts' => ['s3.example.com']],
+    ]);
+
+    // The route owned by this rustfs S3 publication.
+    ProxyRoute::factory()->create([
+        'domain' => 's3.example.com',
+        'node_id' => $edge->id,
+        'owner_type' => 'tool',
+        'kind' => 'proxy',
+        'config' => [
+            'placement' => 'ingress',
+            'owner_name' => 'rustfs',
+            'protocol' => 's3',
+            'target' => ['type' => 'upstream', 'value' => 'https://s3.orbit'],
+        ],
+    ]);
+
+    // An unrelated custom route sharing the same node — must not be touched.
+    ProxyRoute::factory()->create([
+        'domain' => 'other.example.com',
+        'node_id' => $edge->id,
+        'owner_type' => 'custom',
+        'kind' => 'proxy',
+        'config' => ['target' => 'https://somewhere-else.example.com'],
+    ]);
+
+    app(S3RouteRegistrar::class)->removePublicHost($tool, 's3.example.com');
+
+    expect(ProxyRoute::query()->where('domain', 's3.example.com')->exists())->toBeFalse()
+        ->and(ProxyRoute::query()->where('domain', 'other.example.com')->exists())->toBeTrue();
+})->group('public');
+
+it('removePublicHost does not remove a non-s3 tool route at the same domain', function (): void {
+    $edge = Node::factory()->create(['name' => 'edge-1', 'wireguard_address' => '10.6.0.10']);
+    s3AssignRole($edge, 'ingress');
+
+    $storage = Node::factory()->create(['name' => 'storage-1', 'wireguard_address' => '10.6.0.44']);
+    s3AssignRole($storage, 's3');
+    $tool = NodeTool::factory()->create([
+        'node_id' => $storage->id,
+        'name' => 'rustfs',
+        'config' => ['backend_host' => 'storage-1.s3.orbit', 'public_hosts' => []],
+    ]);
+
+    // A tool route at the same domain but for a different protocol.
+    ProxyRoute::factory()->create([
+        'domain' => 's3.example.com',
+        'node_id' => $edge->id,
+        'owner_type' => 'tool',
+        'kind' => 'proxy',
+        'config' => ['owner_name' => 'rustfs', 'protocol' => 'websocket', 'target' => 'https://other.orbit'],
+    ]);
+
+    app(S3RouteRegistrar::class)->removePublicHost($tool, 's3.example.com');
+
+    // The non-s3 tool route must survive.
+    expect(ProxyRoute::query()->where('domain', 's3.example.com')->exists())->toBeTrue();
+})->group('public');
+
+it('fails clearly when the router node has no WireGuard address', function (): void {
+    $router = Node::factory()->create(['name' => 'gateway-1', 'wireguard_address' => null]);
+    s3AssignRole($router, 'router');
+
+    $edge = Node::factory()->create(['name' => 'edge-1', 'wireguard_address' => '10.6.0.10']);
+    s3AssignRole($edge, 'ingress');
+
+    $storage = Node::factory()->create(['name' => 'storage-1', 'wireguard_address' => '10.6.0.44']);
+    s3AssignRole($storage, 's3');
+    $tool = NodeTool::factory()->create([
+        'node_id' => $storage->id,
+        'name' => 'rustfs',
+        'config' => [
+            'backend_host' => 'storage-1.s3.orbit',
+            'public_hosts' => ['s3.example.com'],
+        ],
+    ]);
+
+    app(S3RouteRegistrar::class)->syncPublicHosts($tool);
+})->throws(RuntimeException::class, 'requires a WireGuard address for S3 public host ingress')
+    ->group('public');
+
+it('fails clearly when there is no active ingress node for a public host', function (): void {
+    $router = Node::factory()->create(['name' => 'gateway-1', 'wireguard_address' => '10.6.0.1']);
+    s3AssignRole($router, 'router');
+
+    $storage = Node::factory()->create(['name' => 'storage-1', 'wireguard_address' => '10.6.0.44']);
+    s3AssignRole($storage, 's3');
+    $tool = NodeTool::factory()->create([
+        'node_id' => $storage->id,
+        'name' => 'rustfs',
+        'config' => [
+            'backend_host' => 'storage-1.s3.orbit',
+            'public_hosts' => ['s3.example.com'],
+        ],
+    ]);
+
+    app(S3RouteRegistrar::class)->syncPublicHosts($tool);
+})->throws(RuntimeException::class, 'The S3 public host route requires an active ingress node.')
+    ->group('public');

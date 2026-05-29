@@ -64,7 +64,8 @@ final readonly class S3RouteRegistrar
     /**
      * Register or update ingress routes for all public hosts listed on the
      * given rustfs tool row. Each public host gets a separate ingress route
-     * that forwards to the stable https://s3.orbit service endpoint.
+     * on the ingress node that forwards to router, which relays S3 traffic to
+     * the stable https://s3.orbit service endpoint.
      */
     public function syncPublicHosts(NodeTool $rustfs): void
     {
@@ -75,15 +76,17 @@ final readonly class S3RouteRegistrar
         }
 
         $ingress = $this->ingressNode();
+        $router = $this->routerNode();
 
         foreach ($publicHosts as $host) {
-            $this->syncPublicHost($ingress, $rustfs, $host);
+            $this->syncPublicHost($ingress, $router, $rustfs, $host);
         }
     }
 
     /**
      * Remove the ingress route for a single public host when it is owned by
-     * the rustfs tool.
+     * the rustfs tool. Ownership is confirmed by owner_type, owner_name, and
+     * the protocol discriminator so unrelated tool routes are never removed.
      */
     public function removePublicHost(NodeTool $rustfs, string $host): void
     {
@@ -91,6 +94,7 @@ final readonly class S3RouteRegistrar
             ->where('domain', $host)
             ->where('owner_type', 'tool')
             ->whereJsonContains('config->owner_name', 'rustfs')
+            ->whereJsonContains('config->protocol', 's3')
             ->delete();
     }
 
@@ -198,9 +202,9 @@ final readonly class S3RouteRegistrar
         return $backendHost;
     }
 
-    private function syncPublicHost(Node $ingress, NodeTool $rustfs, string $host): void
+    private function syncPublicHost(Node $ingress, Node $router, NodeTool $rustfs, string $host): void
     {
-        $config = $this->publicRouteConfig();
+        $config = $this->publicRouteConfig($router, $host);
 
         $sourceHash = $this->proxyRouteRenderer->sourceHash(new ProxyRoute([
             'node_id' => $ingress->id,
@@ -225,16 +229,39 @@ final readonly class S3RouteRegistrar
     }
 
     /**
+     * Build the ingress route config for a single public S3 host.
+     *
+     * The route sits on the ingress node and uses placement=ingress so the
+     * proxy renderer emits a Caddy site that reverse-proxies to the router
+     * node, preserving the request Host header and X-Forwarded-Proto. The
+     * router then relays the traffic onward to the stable s3.orbit endpoint.
+     *
      * @return array<string, mixed>
      */
-    private function publicRouteConfig(): array
+    private function publicRouteConfig(Node $router, string $host): array
     {
+        $routerAddress = is_string($router->wireguard_address) ? trim($router->wireguard_address) : '';
+
+        if ($routerAddress === '') {
+            throw new RuntimeException("Router node '{$router->name}' requires a WireGuard address for S3 public host ingress.");
+        }
+
         return [
+            'placement' => 'ingress',
             'owner_name' => 'rustfs',
             'protocol' => 's3',
             'target' => [
                 'type' => 'upstream',
                 'value' => self::ServiceEndpoint,
+            ],
+            'router_upstream' => [
+                'node_id' => $router->id,
+                'node' => $router->name,
+                'url' => "http://{$routerAddress}:80",
+            ],
+            'tls' => [
+                'cert_path' => "/etc/orbit/certs/{$host}.crt",
+                'key_path' => "/etc/orbit/certs/{$host}.key",
             ],
         ];
     }
