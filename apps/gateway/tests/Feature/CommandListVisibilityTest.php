@@ -205,6 +205,17 @@ it('classifies every invokable non-allowed gateway command in the inventory', fu
     ];
 
     $registeredCommands = collect(gatewayApplicationCommands());
+    $registeredCommandNames = $registeredCommands
+        ->pluck('name')
+        ->sort()
+        ->values()
+        ->all();
+    $inventoryCommandNames = collect(array_keys($inventoryRows))
+        ->sort()
+        ->values()
+        ->all();
+
+    expect($inventoryCommandNames)->toBe($registeredCommandNames);
 
     $unclassified = $registeredCommands
         ->reject(fn (array $command): bool => gatewayAllowedArtisanCommandName($command['name']))
