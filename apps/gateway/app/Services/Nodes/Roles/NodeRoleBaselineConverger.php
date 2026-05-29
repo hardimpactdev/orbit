@@ -16,6 +16,7 @@ use App\Services\Nodes\Roles\RoleBaselines\IngressRoleBaseline;
 use App\Services\Nodes\Roles\RoleBaselines\RoleBaseline;
 use App\Services\Nodes\Roles\RoleBaselines\RouterRoleBaseline;
 use App\Services\Nodes\Roles\RoleBaselines\VpnRoleBaseline;
+use App\Services\Nodes\Roles\RoleBaselines\WebSocketRoleBaseline;
 use InvalidArgumentException;
 
 class NodeRoleBaselineConverger
@@ -29,6 +30,7 @@ class NodeRoleBaselineConverger
         private readonly ?RouterRoleBaseline $routerRoleBaseline = null,
         private readonly ?IngressRoleBaseline $ingressRoleBaseline = null,
         private readonly ?VpnRoleBaseline $vpnRoleBaseline = null,
+        private readonly ?WebSocketRoleBaseline $webSocketRoleBaseline = null,
     ) {}
 
     public function converge(Node $node, NodeRoleAssignment $assignment): void
@@ -52,6 +54,7 @@ class NodeRoleBaselineConverger
             NodeRoleName::Database->value => $this->databaseRoleBaseline,
             NodeRoleName::Agent->value => $this->agentRoleBaseline,
             NodeRoleName::Ingress->value => $this->ingressRoleBaseline(),
+            NodeRoleName::WebSocket->value => $this->webSocketRoleBaseline(),
             default => throw new InvalidArgumentException("Unsupported node role baseline [{$role}]."),
         };
     }
@@ -69,5 +72,10 @@ class NodeRoleBaselineConverger
     protected function vpnRoleBaseline(): VpnRoleBaseline
     {
         return $this->vpnRoleBaseline ?? app(VpnRoleBaseline::class);
+    }
+
+    protected function webSocketRoleBaseline(): WebSocketRoleBaseline
+    {
+        return $this->webSocketRoleBaseline ?? app(WebSocketRoleBaseline::class);
     }
 }

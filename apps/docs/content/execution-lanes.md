@@ -297,6 +297,7 @@ inherit the lane of the production code they exercise.
 | `apps/gateway/app/Services/Apps/AppsProbe.php:81,316,456` | `RemoteHostExecutor` | Uses POSIX/Docker host probes for app paths, runtime configs, and runtime containers. |
 | `apps/gateway/app/Services/Apps/AppWorkerReadiness.php:63` | `RemoteHostExecutor` | Checks app worker/readiness artifacts on the host/runtime boundary. |
 | `apps/gateway/app/Services/Ca/OrbitSiteCertificateInstaller.php:30` | `RemoteHostExecutor` | Writes leaf cert/key files into host-managed certificate paths. |
+| `apps/gateway/app/Services/WebSockets/WebSocketCertificateInstaller.php:30` | `RemoteHostExecutor` | Writes WebSocket backend cert/key files into host-managed certificate paths. |
 | `apps/gateway/app/Services/DatabaseConnections/DatabaseConnectionAdopter.php:108` | `RemoteHostExecutor` | Reads app/workspace `.env` files from host paths for adoption. |
 | `apps/gateway/app/Services/DatabaseConnections/DatabaseConnectionExecutor.php:84` | `RemoteOrbitRuntimeExecutor` | Runs local SQLite query work through Orbit code/PDO on the owning node. |
 | `apps/gateway/app/Services/DatabaseConnections/DatabaseConnectionProbe.php:106,213` | `RemoteHostExecutor` | Reads app/workspace `.env` files from host paths for drift probes. |
@@ -320,6 +321,7 @@ inherit the lane of the production code they exercise.
 | `apps/gateway/app/Services/RemoteShell/RemoteShellPool.php:59,91` | `RemoteHostExecutor` | Executes queued SSH jobs; current producer is schedule dispatch and inherits host-lane dispatch rules. |
 | `apps/gateway/app/Services/RuntimeBackend/GatewayRuntimeBackendProbe.php:35` | `RemoteHostExecutor` | Probes the host Docker state for `orbit-runtime`. |
 | `apps/gateway/app/Services/RuntimeBackend/RuntimeBackendProbe.php:19` | `RemoteHostExecutor` | Probes explicit Supervisor residual availability. |
+| `apps/gateway/app/Services/WebSockets/WebSocketRuntimeContainerManager.php:148` | `RemoteHostExecutor` | Creates, inspects, removes, and starts WebSocket Reverb runtime containers through Docker. |
 | `apps/gateway/app/Services/Schedules/ScheduleDispatcher.php:76,90` | `RemoteHostExecutor` | Dispatches generic schedule jobs through the host SSH pool; schedule definitions that execute Orbit PHP must render runtime-lane commands before enqueue. |
 | `apps/gateway/app/Services/Schedules/SchedulesFixer.php:56` | `RemoteHostExecutor` | Repairs scheduler host/runtime artifacts on the gateway node. |
 | `apps/gateway/app/Services/Schedules/SchedulesProbe.php:43,90` | `RemoteHostExecutor` | Probes gateway runtime container/scheduler and target host reachability. |
