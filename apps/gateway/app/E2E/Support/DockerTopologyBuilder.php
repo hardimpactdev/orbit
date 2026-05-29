@@ -203,9 +203,9 @@ final readonly class DockerTopologyBuilder
             E2ETopologyKind::OperatorGatewayAgent => ['operator', 'gateway', 'agent'],
             E2ETopologyKind::OperatorGatewayAppdevAppprodAgent => ['operator', 'gateway', 'dev', 'prod', 'agent'],
             E2ETopologyKind::OperatorGatewayAppprodIngress => ['operator', 'gateway', 'prod'],
-            E2ETopologyKind::OperatorGatewayAppdevWebsocket => ['operator', 'gateway', 'dev', 'websocket'],
-            E2ETopologyKind::OperatorGatewayAppdevAppprodWebsocket => ['operator', 'gateway', 'dev', 'prod', 'websocket'],
-            E2ETopologyKind::OperatorGatewayAppdevAppprodAgentWebsocket => ['operator', 'gateway', 'dev', 'prod', 'agent', 'websocket'],
+            E2ETopologyKind::OperatorGatewayAppdevWebsocket => ['operator', 'gateway', 'dev'],
+            E2ETopologyKind::OperatorGatewayAppdevAppprodWebsocket => ['operator', 'gateway', 'dev', 'prod'],
+            E2ETopologyKind::OperatorGatewayAppdevAppprodAgentWebsocket => ['operator', 'gateway', 'dev', 'prod', 'agent'],
         };
     }
 
@@ -274,20 +274,16 @@ final readonly class DockerTopologyBuilder
         $networkAlias = $mode === 'dns-alias'
             ? ' --network-alias '.escapeshellarg($role)
             : '';
-        $webSocketBackendAlias = $mode === 'dns-alias' && $role === 'websocket'
-            ? ' --network-alias '.escapeshellarg('ws-1.websocket.orbit')
-            : '';
         $runtimeContainerEnv = self::roleUsesRuntimeSibling($role)
             ? ' --env '.escapeshellarg("ORBIT_RUNTIME_CONTAINER={$this->runtimeContainerName($container)}")
             : '';
 
         return sprintf(
-            'docker run -d --cap-add NET_ADMIN --cap-add NET_BIND_SERVICE %s --name %s --network %s%s%s --ip %s --volume %s --mount %s --mount %s --mount %s --env %s --env %s%s %s',
+            'docker run -d --cap-add NET_ADMIN --cap-add NET_BIND_SERVICE %s --name %s --network %s%s --ip %s --volume %s --mount %s --mount %s --mount %s --env %s --env %s%s %s',
             $this->dockerSocketGroupAddOption(),
             escapeshellarg($container),
             escapeshellarg($network),
             $networkAlias,
-            $webSocketBackendAlias,
             escapeshellarg($ip),
             escapeshellarg('/var/run/docker.sock:/var/run/docker.sock'),
             escapeshellarg($this->nodeVolumeMount($container, 'etc-caddy', '/etc/caddy')),
@@ -993,12 +989,12 @@ SH;
             );
         }
 
-        if (isset($containers['websocket'])) {
-            $host = $this->hostForRole('websocket', $networkPlan, $mode);
-            $hostKeyHost = $this->hostKeyHostOption('websocket', $networkPlan, $mode);
-            $wireGuardAddress = $this->wireGuardAddressForRole('websocket', $networkPlan, $mode);
+        if (self::websocketTopologyKind($kind) && isset($containers['dev'])) {
+            $host = $this->hostForRole('dev', $networkPlan, $mode);
+            $hostKeyHost = $this->hostKeyHostOption('dev', $networkPlan, $mode);
+            $wireGuardAddress = $this->wireGuardAddressForRole('dev', $networkPlan, $mode);
             $afterSuccessfulTasks['websocket'] = sprintf(
-                'cd /home/orbit/orbit && php apps/gateway/artisan orbit:internal:bake-websocket-node ws-1 --host=%s%s --wireguard-address=%s --gateway-endpoint=%s --user=orbit --redis-node=app-dev-1',
+                'cd /home/orbit/orbit && php apps/gateway/artisan orbit:internal:bake-websocket-node app-dev-1 --host=%s%s --wireguard-address=%s --gateway-endpoint=%s --user=orbit --redis-node=app-dev-1',
                 $host,
                 $hostKeyHost,
                 $wireGuardAddress,
@@ -1453,10 +1449,6 @@ SH;
             array_unshift($names, $this->composerHelperContainerName($nodeContainer));
         }
 
-        if ($role === 'websocket') {
-            array_unshift($names, "{$nodeContainer}-orbit-websocket-ws-1");
-        }
-
         return $names;
     }
 
@@ -1492,7 +1484,7 @@ SH;
      */
     private function managedSshRoles(): array
     {
-        return ['dev', 'prod', 'ingress', 'websocket'];
+        return ['dev', 'prod', 'ingress'];
     }
 
     /**

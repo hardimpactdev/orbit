@@ -239,23 +239,30 @@ function expectPreparedProdIngressTopology(E2ETopologyLease $topology, E2EConfig
 
 function expectPreparedFullWebSocketTopology(E2ETopologyLease $topology, E2EConfig $config): void
 {
-    expectPreparedProdTopology($topology, $config);
+    expectPreparedGatewayTopology($topology, $config);
 
     $agent = $topology->agent();
-    $websocket = $topology->instance('websocket');
+    $dev = $topology->devApp();
+    $prod = $topology->prodApp();
     $gateway = $topology->gateway();
     $key = $topology->sshKeyPair();
 
-    if ($agent === null || $websocket === null || $gateway === null) {
-        throw new RuntimeException('Prepared full websocket topology did not return gateway, agent, and websocket handles.');
+    if ($agent === null || $dev === null || $prod === null || $gateway === null) {
+        throw new RuntimeException('Prepared full websocket topology did not return gateway, dev, prod, and agent handles.');
     }
 
+    expectPreparedOrbitCli($dev, 'orbit', $key);
+    expectPreparedOrbitCli($prod, 'orbit', $key);
     expectPreparedOrbitCli($agent, 'orbit', $key);
-    expectPreparedOrbitCli($websocket, 'orbit', $key);
+    expect($topology->instance('websocket'))->toBeNull();
 
     $agentNode = E2EGatewayApi::getNode($gateway, 'agent-1');
-    $websocketNode = E2EGatewayApi::getNode($gateway, 'ws-1');
+    $websocketNode = E2EGatewayApi::getNode($gateway, 'app-dev-1');
+    $prodNode = E2EGatewayApi::getNode($gateway, 'app-prod-1');
     $state = readPreparedFullWebSocketState($gateway);
+
+    expectPreparedDevDatabaseAndRedis($topology);
+    expectPreparedAppNode($prodNode, 'app-prod', null, expectedPreparedGatewayEndpoint());
 
     expect($agentNode['tld'])->toBe('agent')
         ->and($agentNode['gateway_endpoint'])->toBe(expectedPreparedGatewayEndpoint())
@@ -263,15 +270,18 @@ function expectPreparedFullWebSocketTopology(E2ETopologyLease $topology, E2EConf
         ->and($agentNode['wireguard_address'])->toBe('10.6.0.6')
         ->and(array_column($agentNode['roles'], 'role'))->toContain('agent');
 
-    expect($websocketNode['tld'])->toBeNull()
-        ->and($websocketNode['gateway_endpoint'])->toBe(expectedPreparedGatewayEndpoint())
+    expect($websocketNode['gateway_endpoint'])->toBe(expectedPreparedGatewayEndpoint())
         ->and($websocketNode['user'])->toBe('orbit')
-        ->and($websocketNode['wireguard_address'])->toBe('10.6.0.8')
+        ->and($websocketNode['wireguard_address'])->toBe('10.6.0.4')
+        ->and(array_column($websocketNode['roles'], 'role'))->toContain('app-dev')
+        ->and(array_column($websocketNode['roles'], 'role'))->toContain('database')
         ->and(array_column($websocketNode['roles'], 'role'))->toContain('websocket');
 
-    expect($state['websocket_roles'])->toBe(['websocket'])
+    expect($state['app_dev_roles'])->toContain('app-dev')
+        ->and($state['app_dev_roles'])->toContain('database')
+        ->and($state['app_dev_roles'])->toContain('websocket')
         ->and($state['websocket_redis_node'])->toBe('app-dev-1')
-        ->and($state['node_names'])->toBe(['agent-1', 'app-dev-1', 'app-prod-1', 'gateway', 'operator-1', 'ws-1']);
+        ->and($state['node_names'])->toBe(['agent-1', 'app-dev-1', 'app-prod-1', 'gateway', 'operator-1']);
 }
 
 function expectPreparedOrbitCli(E2EInstance $instance, string $user, SshKeyPair $key): void
@@ -409,12 +419,12 @@ PHP;
 }
 
 /**
- * @return array{websocket_roles: list<string>, websocket_redis_node: string|null, node_names: list<string>}
+ * @return array{app_dev_roles: list<string>, websocket_redis_node: string|null, node_names: list<string>}
  */
 function readPreparedFullWebSocketState(E2EInstance $gateway): array
 {
     $php = <<<'PHP'
-$node = \App\Models\Node::query()->where('name', 'ws-1')->firstOrFail();
+$node = \App\Models\Node::query()->where('name', 'app-dev-1')->firstOrFail();
 $assignments = $node->roleAssignments()
     ->where('status', \App\Enums\Nodes\NodeRoleStatus::Active->value)
     ->orderBy('role')
@@ -430,7 +440,7 @@ if ($redisNodeId !== null) {
 }
 
 echo json_encode([
-    'websocket_roles' => $assignments->pluck('role')->values()->all(),
+    'app_dev_roles' => $assignments->pluck('role')->values()->all(),
     'websocket_redis_node' => $redisNodeName,
     'node_names' => \App\Models\Node::query()->orderBy('name')->pluck('name')->values()->all(),
 ], JSON_THROW_ON_ERROR);
@@ -442,7 +452,7 @@ PHP;
         'Could not read prepared websocket state',
     );
 
-    /** @var array{websocket_roles: list<string>, websocket_redis_node: string|null, node_names: list<string>} $state */
+    /** @var array{app_dev_roles: list<string>, websocket_redis_node: string|null, node_names: list<string>} $state */
     $state = json_decode(trim($result->output()), associative: true, flags: JSON_THROW_ON_ERROR);
 
     return $state;

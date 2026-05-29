@@ -113,9 +113,10 @@ Custom, redirect, and tool routes are separate route kinds. They may share TLS, 
   serves the app/workspace ingress contract to a backend FrankenPHP container.
 - **Router backend pool:** Ordered list of URLs for app-prod backends.
   The router owns this pool. V1 creates one target but stores a list.
-- **WebSocket backend pool:** Ordered list of TLS websocket backend URLs, such
-  as `https://ws-1.websocket.orbit:8080`, owned by `router`. V1 creates one
-  target but stores a list.
+- **WebSocket backend pool:** Ordered list of TLS websocket backend URLs using
+  WireGuard IP targets such as `https://10.6.0.4:8080`, owned by `router`. V1
+  supports one active backend and fails clearly if more than one websocket
+  backend is active.
 - **S3 backend pool:** Ordered list of RustFS backend URLs, such as
   `http://storage-1.s3.orbit:9000`, owned by `router`. V1 creates one target
   but stores a list.

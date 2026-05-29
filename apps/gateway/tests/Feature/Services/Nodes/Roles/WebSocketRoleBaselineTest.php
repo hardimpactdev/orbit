@@ -46,20 +46,20 @@ it('converges websocket backend TLS material and runtime container through the r
     $scripts = implode("\n---\n", $this->webSocketBaselineShell->scripts);
 
     expect($this->webSocketBaselineIssued->getArrayCopy())->toBe([
-        ['host' => 'ws-1.websocket.orbit', 'additional_sans' => ['10.6.0.44']],
+        ['host' => '10.6.0.44', 'additional_sans' => ['10.6.0.44']],
     ])
         ->and($scripts)->toContain("sudo install -d -m 0755 '/etc/orbit/certs'")
         ->and($scripts)->toContain('release_dir="${runtime_root}/releases/')
         ->and($scripts)->toContain('sudo install -d -m 0755 "$release_dir"')
         ->and($scripts)->toContain("'orbit-runtime:current' 'composer' 'install'")
         ->and($scripts)->toContain("docker network inspect 'orbit-network'")
-        ->and($scripts)->toContain("docker container inspect --format '{{json .}}' 'orbit-websocket-ws-1'")
-        ->and($scripts)->toContain("docker run -d --pull 'never' --name 'orbit-websocket-ws-1'")
+        ->and($scripts)->toContain("docker container inspect --format '{{json .}}' 'orbit-websocket-app-dev-1'")
+        ->and($scripts)->toContain("docker run -d --pull 'never' --name 'orbit-websocket-app-dev-1'")
         ->and($scripts)->toContain("--label 'orbit.container.kind=websocket-runtime'")
-        ->and($scripts)->toContain("--network-alias 'ws-1.websocket.orbit'")
+        ->and($scripts)->not->toContain('.websocket.orbit')
         ->and($scripts)->toContain("--env 'REVERB_SERVER_HOST=10.6.0.44'")
         ->and($scripts)->toContain("--env 'REDIS_HOST=10.6.0.3'")
-        ->and($scripts)->toContain('php artisan reverb:start --host=10.6.0.44 --port=8080 --hostname=ws-1.websocket.orbit')
+        ->and($scripts)->toContain('php artisan reverb:start --host=10.6.0.44 --port=8080 --hostname=10.6.0.44')
         ->and($scripts)->not->toContain('REVERB_SERVER_HOST=0.0.0.0');
 });
 
@@ -84,7 +84,7 @@ it('starts an existing matching websocket runtime container when it is stopped',
 
     app(NodeRoleBaselineConverger::class)->converge($node, $assignment);
 
-    expect($this->webSocketBaselineShell->scripts)->toContain("docker start 'orbit-websocket-ws-1'");
+    expect($this->webSocketBaselineShell->scripts)->toContain("docker start 'orbit-websocket-app-dev-1'");
 });
 
 it('removes websocket runtime containers through the role converger', function (): void {
@@ -104,7 +104,7 @@ it('removes websocket runtime containers through the role converger', function (
 
     app(NodeRoleBaselineConverger::class)->remove($node, $assignment, purgeData: false);
 
-    expect($this->webSocketBaselineShell->scripts)->toContain("docker rm -f 'orbit-websocket-ws-1'");
+    expect($this->webSocketBaselineShell->scripts)->toContain("docker rm -f 'orbit-websocket-app-dev-1'");
 });
 
 it('rejects websocket convergence on gateway nodes', function (): void {
@@ -140,9 +140,9 @@ it('rejects websocket convergence without a reachable host record', function ():
 function webSocketBaselineNode(array $overrides = []): Node
 {
     return Node::factory()->create(array_merge([
-        'name' => 'ws-1',
+        'name' => 'app-dev-1',
         'platform' => 'ubuntu',
-        'host' => 'ws-1.example.com',
+        'host' => 'app-dev-1.example.com',
         'wireguard_address' => '10.6.0.44',
         'status' => Node::STATUS_ACTIVE,
     ], $overrides));

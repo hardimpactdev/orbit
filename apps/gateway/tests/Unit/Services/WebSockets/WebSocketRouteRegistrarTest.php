@@ -30,8 +30,8 @@ function websocketRouteRegistrarAppWithIngress(): array
         'wireguard_address' => '10.6.0.2',
     ]);
     Node::factory()->withActiveRole('websocket')->create([
-        'name' => 'ws-1',
-        'wireguard_address' => '10.6.0.44',
+        'name' => 'app-dev-1',
+        'wireguard_address' => '10.6.0.4',
     ]);
     $appNode = Node::factory()->appProd()->create([
         'name' => 'app-prod-1',
@@ -55,22 +55,18 @@ beforeEach(function (): void {
     app()->instance(SiteCertificateInstaller::class, new SiteCertificateInstallerFake);
 });
 
-it('syncs the service route on the active router with websocket backends', function (): void {
+it('syncs the service route on the active router with the websocket backend', function (): void {
     $router = Node::factory()->router()->create([
         'name' => 'router-1',
         'wireguard_address' => '10.6.0.2',
     ]);
     $firstBackend = Node::factory()->withActiveRole('websocket')->create([
-        'name' => 'ws-1',
+        'name' => 'app-dev-1',
         'wireguard_address' => '10.6.0.44',
-    ]);
-    $secondBackend = Node::factory()->withActiveRole('websocket')->create([
-        'name' => 'ws-2',
-        'wireguard_address' => '10.6.0.45',
     ]);
 
     Node::factory()->withActiveRole('websocket')->create([
-        'name' => 'ws-inactive',
+        'name' => 'websocket-inactive',
         'status' => 'inactive',
         'wireguard_address' => '10.6.0.46',
     ]);
@@ -93,13 +89,8 @@ it('syncs the service route on the active router with websocket backends', funct
             'router_backend_pool' => [
                 [
                     'node_id' => $firstBackend->id,
-                    'node' => 'ws-1',
+                    'node' => 'app-dev-1',
                     'url' => 'https://10.6.0.44:8080',
-                ],
-                [
-                    'node_id' => $secondBackend->id,
-                    'node' => 'ws-2',
-                    'url' => 'https://10.6.0.45:8080',
                 ],
             ],
             'router_backend_tls' => [
@@ -109,21 +100,12 @@ it('syncs the service route on the active router with websocket backends', funct
             'upstreams' => [
                 [
                     'node_id' => $firstBackend->id,
-                    'node' => 'ws-1',
+                    'node' => 'app-dev-1',
                     'scheme' => 'https',
                     'host' => '10.6.0.44',
-                    'backend_name' => 'ws-1.websocket.orbit',
+                    'backend_name' => '10.6.0.44',
                     'port' => 8080,
                     'url' => 'https://10.6.0.44:8080',
-                ],
-                [
-                    'node_id' => $secondBackend->id,
-                    'node' => 'ws-2',
-                    'scheme' => 'https',
-                    'host' => '10.6.0.45',
-                    'backend_name' => 'ws-2.websocket.orbit',
-                    'port' => 8080,
-                    'url' => 'https://10.6.0.45:8080',
                 ],
             ],
             'tls' => [
@@ -137,6 +119,23 @@ it('syncs the service route on the active router with websocket backends', funct
         ->and(ProxyRoute::query()->where('domain', 'websocket.orbit')->count())->toBe(1);
 });
 
+it('fails clearly when more than one websocket backend is active', function (): void {
+    Node::factory()->router()->create([
+        'name' => 'router-1',
+        'wireguard_address' => '10.6.0.2',
+    ]);
+    Node::factory()->withActiveRole('websocket')->create([
+        'name' => 'app-dev-1',
+        'wireguard_address' => '10.6.0.44',
+    ]);
+    Node::factory()->withActiveRole('websocket')->create([
+        'name' => 'websocket-dedicated-1',
+        'wireguard_address' => '10.6.0.45',
+    ]);
+
+    app(WebSocketRouteRegistrar::class)->syncServiceRoute();
+})->throws(RuntimeException::class, 'The websocket service route supports one active websocket backend.');
+
 it('updates the service route when websocket backends change', function (): void {
     Node::factory()->router()->create([
         'name' => 'router-1',
@@ -148,7 +147,7 @@ it('updates the service route when websocket backends change', function (): void
         'wireguard_address' => '10.6.0.40',
     ]);
     $activeBackend = Node::factory()->withActiveRole('websocket')->create([
-        'name' => 'ws-new',
+        'name' => 'app-dev-1',
         'wireguard_address' => '10.6.0.41',
     ]);
 
@@ -166,7 +165,7 @@ it('updates the service route when websocket backends change', function (): void
         ->and($route->config['router_backend_pool'])->toBe([
             [
                 'node_id' => $activeBackend->id,
-                'node' => 'ws-new',
+                'node' => 'app-dev-1',
                 'url' => 'https://10.6.0.41:8080',
             ],
         ])
@@ -175,7 +174,7 @@ it('updates the service route when websocket backends change', function (): void
 
 it('requires an active router node before syncing the service route', function (): void {
     Node::factory()->withActiveRole('websocket')->create([
-        'name' => 'ws-1',
+        'name' => 'app-dev-1',
         'wireguard_address' => '10.6.0.44',
     ]);
 
@@ -189,7 +188,7 @@ it('requires at least one active websocket backend before syncing the service ro
     ]);
 
     app(WebSocketRouteRegistrar::class)->syncServiceRoute();
-})->throws(RuntimeException::class, 'The websocket service route requires at least one active websocket node.');
+})->throws(RuntimeException::class, 'The websocket service route requires at least one active websocket backend.');
 
 it('requires websocket backends to have a WireGuard address', function (): void {
     Node::factory()->router()->create([
@@ -197,7 +196,7 @@ it('requires websocket backends to have a WireGuard address', function (): void 
         'wireguard_address' => '10.6.0.2',
     ]);
     Node::factory()->withActiveRole('websocket')->create([
-        'name' => 'ws-1',
+        'name' => 'app-dev-1',
         'wireguard_address' => '',
     ]);
 
@@ -241,9 +240,9 @@ it('syncs public websocket hosts as ingress routes that target router and websoc
             ],
             'router_backend_pool' => [
                 [
-                    'node_id' => Node::query()->where('name', 'ws-1')->value('id'),
-                    'node' => 'ws-1',
-                    'url' => 'https://10.6.0.44:8080',
+                    'node_id' => Node::query()->where('name', 'app-dev-1')->value('id'),
+                    'node' => 'app-dev-1',
+                    'url' => 'https://10.6.0.4:8080',
                 ],
             ],
             'router_backend_tls' => [

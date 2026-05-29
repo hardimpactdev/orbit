@@ -79,17 +79,17 @@ it('uses the managed target node namespace for Docker E2E Caddy and websocket co
             OrbitContainerNames::forNodeScope('orbit-e2e-run123-prod'),
         );
         $websocket = new WebSocketRuntimeContainer(
-            name: 'orbit-e2e-run123-websocket-orbit-websocket-ws-1',
+            name: 'orbit-e2e-run123-dev-orbit-websocket-app-dev-1',
             image: 'orbit-runtime:current',
             network: 'orbit-e2e-run123',
             restartPolicy: 'unless-stopped',
-            backendName: 'ws-1.websocket.orbit',
+            backendName: '10.6.0.4',
             redisNodeId: 1,
             workingDirectory: '/app',
-            command: 'php artisan reverb:start --host=10.6.0.8 --port=8080 --hostname=ws-1.websocket.orbit',
+            command: 'php artisan reverb:start --host=10.6.0.4 --port=8080 --hostname=10.6.0.4',
             environment: [],
             mounts: [],
-            networkAliases: ['ws-1.websocket.orbit'],
+            networkAliases: [],
         );
 
         $builder = new DockerCommandBuilder;
@@ -99,7 +99,7 @@ it('uses the managed target node namespace for Docker E2E Caddy and websocket co
             ->not->toContain('container:orbit-e2e-run123-gateway')
             ->not->toContain('--network-alias')
             ->and($builder->runDetached($websocket))
-            ->toContain('--network '.escapeshellarg('container:orbit-e2e-run123-websocket'))
+            ->toContain('--network '.escapeshellarg('container:orbit-e2e-run123-dev'))
             ->not->toContain('container:orbit-e2e-run123-gateway')
             ->not->toContain('--network-alias');
     } finally {

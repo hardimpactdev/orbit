@@ -166,15 +166,24 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
             E2ETopologyKind::OperatorGatewayAgent => ['operator', 'gateway', 'agent'],
             E2ETopologyKind::OperatorGatewayAppdevAppprodAgent => ['operator', 'gateway', 'dev', 'prod', 'agent'],
             E2ETopologyKind::OperatorGatewayAppprodIngress => ['operator', 'gateway', 'prod', 'ingress'],
-            E2ETopologyKind::OperatorGatewayAppdevWebsocket => ['operator', 'gateway', 'dev', 'websocket'],
-            E2ETopologyKind::OperatorGatewayAppdevAppprodWebsocket => ['operator', 'gateway', 'dev', 'prod', 'websocket'],
-            E2ETopologyKind::OperatorGatewayAppdevAppprodAgentWebsocket => ['operator', 'gateway', 'dev', 'prod', 'agent', 'websocket'],
+            E2ETopologyKind::OperatorGatewayAppdevWebsocket => ['operator', 'gateway', 'dev'],
+            E2ETopologyKind::OperatorGatewayAppdevAppprodWebsocket => ['operator', 'gateway', 'dev', 'prod'],
+            E2ETopologyKind::OperatorGatewayAppdevAppprodAgentWebsocket => ['operator', 'gateway', 'dev', 'prod', 'agent'],
         };
     }
 
     public static function containerCountFor(E2ETopologyKind $kind): int
     {
         return self::containerCountForRoles(E2EPreparedTopology::runtimeRolesFor($kind, self::rolesForKind($kind)));
+    }
+
+    private static function websocketTopologyKind(E2ETopologyKind $kind): bool
+    {
+        return in_array($kind, [
+            E2ETopologyKind::OperatorGatewayAppdevWebsocket,
+            E2ETopologyKind::OperatorGatewayAppdevAppprodWebsocket,
+            E2ETopologyKind::OperatorGatewayAppdevAppprodAgentWebsocket,
+        ], true);
     }
 
     public static function maxContainerCountForAnyTopology(): int
@@ -512,19 +521,15 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
         $networkAlias = $topologyMode === 'dns-alias'
             ? ' --network-alias '.escapeshellarg($role)
             : '';
-        $webSocketBackendAlias = $topologyMode === 'dns-alias' && $role === 'websocket'
-            ? ' --network-alias '.escapeshellarg('ws-1.websocket.orbit')
-            : '';
         $runtimeContainerEnv = $this->startsRuntimeSibling($role)
             ? ' --env '.escapeshellarg("ORBIT_RUNTIME_CONTAINER={$this->runtimeContainerName($name)}")
             : '';
 
         return sprintf(
-            'docker run -d --name %s --network %s%s%s --ip %s --cap-add NET_ADMIN --cap-add NET_BIND_SERVICE %s --volume %s --mount %s --mount %s --mount %s --mount %s --env %s --env %s%s %s',
+            'docker run -d --name %s --network %s%s --ip %s --cap-add NET_ADMIN --cap-add NET_BIND_SERVICE %s --volume %s --mount %s --mount %s --mount %s --mount %s --env %s --env %s%s %s',
             escapeshellarg($name),
             escapeshellarg($network),
             $networkAlias,
-            $webSocketBackendAlias,
             escapeshellarg($ip),
             $this->dockerSocketGroupAddOption(),
             escapeshellarg('/var/run/docker.sock:/var/run/docker.sock'),
@@ -890,12 +895,12 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
             );
         }
 
-        if (isset($instances['websocket'])) {
+        if (self::websocketTopologyKind($kind) && isset($instances['dev'])) {
             $commands[] = sprintf(
-                'php apps/gateway/artisan orbit:internal:bake-websocket-node ws-1 --host=%s%s --wireguard-address=%s --gateway-endpoint=%s --user=orbit --redis-node=app-dev-1',
-                $this->hostForRole('websocket', $networkPlan, $mode),
-                $this->hostKeyHostOption('websocket', $networkPlan, $mode),
-                $this->wireGuardAddressForRole('websocket', $networkPlan, $mode),
+                'php apps/gateway/artisan orbit:internal:bake-websocket-node app-dev-1 --host=%s%s --wireguard-address=%s --gateway-endpoint=%s --user=orbit --redis-node=app-dev-1',
+                $this->hostForRole('dev', $networkPlan, $mode),
+                $this->hostKeyHostOption('dev', $networkPlan, $mode),
+                $this->wireGuardAddressForRole('dev', $networkPlan, $mode),
                 $gatewayEndpoint,
             );
         }
@@ -1127,10 +1132,6 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
             array_unshift($names, $this->runtimeContainerName($nodeContainer));
         }
 
-        if ($role === 'websocket') {
-            array_unshift($names, "{$nodeContainer}-orbit-websocket-ws-1");
-        }
-
         return $names;
     }
 
@@ -1194,7 +1195,7 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
      */
     private static function rolesNeedPhpRuntimeImage(array $roles): bool
     {
-        return array_intersect($roles, ['dev', 'prod', 'ingress', 'websocket']) !== [];
+        return array_intersect($roles, ['dev', 'prod', 'ingress']) !== [];
     }
 
     private function orbitPathForRole(string $role): string

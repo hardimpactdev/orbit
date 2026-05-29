@@ -21,8 +21,6 @@ class IncusTopologyBuilder
 
     private const string AgentWireGuardIp = '10.6.0.6';
 
-    private const string WebSocketWireGuardIp = '10.6.0.8';
-
     private readonly E2EPhaseTimer $timer;
 
     public function __construct(
@@ -631,17 +629,14 @@ class IncusTopologyBuilder
         $dev = $this->launchBaseRole('dev', $key, $kind);
         $prod = $this->launchBaseRole('prod', $key, $kind);
         $agent = $this->launchBaseRole('agent', $key, $kind);
-        $websocket = $this->launchBaseRole('websocket', $key, $kind);
 
         $devIp = $this->timer->measure('dev.ipv4', fn (): string => $dev->waitForIpv4());
         $prodIp = $this->timer->measure('prod.ipv4', fn (): string => $prod->waitForIpv4());
         $agentIp = $this->timer->measure('agent.ipv4', fn (): string => $agent->waitForIpv4());
-        $websocketIp = $this->timer->measure('websocket.ipv4', fn (): string => $websocket->waitForIpv4());
 
         $instances['dev'] = $dev;
         $instances['prod'] = $prod;
         $instances['agent'] = $agent;
-        $instances['websocket'] = $websocket;
 
         $this->timer->measure('prepared-websocket.downstream.bake', fn () => $this->runPreparedDownstreamBakeInParallel(
             $instances['gateway'],
@@ -654,7 +649,7 @@ class IncusTopologyBuilder
         $this->timer->measure('prepared-websocket.e2e-deps', fn () => $this->installE2EBaseDependencies($instances));
         $this->timer->measure('prepared-websocket.websocket.bake', fn () => $this->runPreparedWebSocketBake(
             $instances['gateway'],
-            $websocketIp,
+            $devIp,
         ));
         $this->timer->measure('prepared-websocket.real-wireguard', fn () => $this->installRealWireGuard($instances));
 
@@ -966,13 +961,13 @@ BASH;
         );
     }
 
-    private function runPreparedWebSocketBake(IncusInstance $gateway, string $websocketHost): void
+    private function runPreparedWebSocketBake(IncusInstance $gateway, string $devHost): void
     {
         $command = implode(' ', [
             'cd /home/orbit/orbit && php apps/gateway/artisan orbit:internal:bake-websocket-node',
-            escapeshellarg('ws-1'),
-            '--host='.escapeshellarg($websocketHost),
-            '--wireguard-address='.escapeshellarg(self::WebSocketWireGuardIp),
+            escapeshellarg('app-dev-1'),
+            '--host='.escapeshellarg($devHost),
+            '--wireguard-address='.escapeshellarg(self::DevWireGuardIp),
             '--gateway-endpoint='.escapeshellarg(self::GatewayWireGuardIp),
             '--user='.escapeshellarg($this->host->config->bootstrapUser),
             '--redis-node='.escapeshellarg('app-dev-1'),

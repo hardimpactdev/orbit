@@ -13,8 +13,8 @@ use Tests\TestCase;
 uses(TestCase::class);
 uses(RefreshDatabase::class);
 
-it('installs the dedicated Reverb runtime source through a Docker-first script', function (): void {
-    $node = Node::factory()->create(['name' => 'ws-1']);
+it('installs the WebSocket Reverb runtime source through a Docker-first script', function (): void {
+    $node = Node::factory()->create(['name' => 'app-dev-1']);
     $shell = new WebSocketRuntimeSourceInstallerTestShell;
 
     (new WebSocketRuntimeSourceInstaller($shell))->install($node);

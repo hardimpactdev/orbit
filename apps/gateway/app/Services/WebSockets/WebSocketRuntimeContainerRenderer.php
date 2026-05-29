@@ -24,8 +24,8 @@ class WebSocketRuntimeContainerRenderer
         string $sourcePath = WebSocketRuntimeContainer::SourceHostPath,
         string $image = WebSocketRuntimeSourceInstaller::DependencyInstallerImage,
     ): WebSocketRuntimeContainer {
-        $backendName = $this->backendName->forNode($node);
         $wireGuardAddress = $this->wireGuardAddress($node);
+        $backendName = $this->backendName->forNode($node);
         $redisAddress = $this->redisAddress($settings);
 
         return new WebSocketRuntimeContainer(
@@ -52,7 +52,6 @@ class WebSocketRuntimeContainerRenderer
             ],
             networkAliases: [
                 $this->containerName($node),
-                $backendName,
             ],
         );
     }

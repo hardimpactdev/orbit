@@ -565,9 +565,9 @@ it('defines downstream small topology role matrices for current roles', function
         ->and(DockerTopologyBuilder::rolesFor(E2ETopologyKind::OperatorGatewayAppdevAppprod))->toBe(['operator', 'gateway', 'dev', 'prod'])
         ->and(DockerTopologyBuilder::rolesFor(E2ETopologyKind::OperatorGatewayAppdevAppprodAgent))->toBe(['operator', 'gateway', 'dev', 'prod', 'agent'])
         ->and(DockerTopologyBuilder::rolesFor(E2ETopologyKind::OperatorGatewayAppprodIngress))->toBe(['operator', 'gateway', 'prod'])
-        ->and(DockerTopologyBuilder::rolesFor(E2ETopologyKind::OperatorGatewayAppdevWebsocket))->toBe(['operator', 'gateway', 'dev', 'websocket'])
-        ->and(DockerTopologyBuilder::rolesFor(E2ETopologyKind::OperatorGatewayAppdevAppprodWebsocket))->toBe(['operator', 'gateway', 'dev', 'prod', 'websocket'])
-        ->and(DockerTopologyBuilder::rolesFor(E2ETopologyKind::OperatorGatewayAppdevAppprodAgentWebsocket))->toBe(['operator', 'gateway', 'dev', 'prod', 'agent', 'websocket']);
+        ->and(DockerTopologyBuilder::rolesFor(E2ETopologyKind::OperatorGatewayAppdevWebsocket))->toBe(['operator', 'gateway', 'dev'])
+        ->and(DockerTopologyBuilder::rolesFor(E2ETopologyKind::OperatorGatewayAppdevAppprodWebsocket))->toBe(['operator', 'gateway', 'dev', 'prod'])
+        ->and(DockerTopologyBuilder::rolesFor(E2ETopologyKind::OperatorGatewayAppdevAppprodAgentWebsocket))->toBe(['operator', 'gateway', 'dev', 'prod', 'agent']);
 });
 
 it('does not accept bare client aliases for downstream small topology fixtures', function (): void {
@@ -651,7 +651,7 @@ it('provisions Docker downstream role source images in parallel after the gatewa
         && (str_contains($process->command, 'bake-app-node') || str_contains($process->command, 'bake-agent-node')));
 });
 
-it('bakes Docker websocket source images after app development Redis is registered', function (): void {
+it('bakes the Docker websocket role onto app-dev after app development Redis is registered', function (): void {
     $commands = [];
 
     Process::fake(function ($process) use (&$commands) {
@@ -673,10 +673,10 @@ it('bakes Docker websocket source images after app development Redis is register
 
     expect($scriptWrite)
         ->toBeString()
-        ->toContain('orbit:internal:bake-websocket-node ws-1')
-        ->toContain('--host=websocket')
+        ->toContain('orbit:internal:bake-websocket-node app-dev-1')
+        ->toContain('--host=dev')
         ->toContain('--host-key-host=')
-        ->toContain('--wireguard-address=10.6.0.8')
+        ->toContain('--wireguard-address=10.6.0.4')
         ->toContain('--gateway-endpoint=gateway')
         ->toContain('--redis-node=app-dev-1')
         ->toContain('PID_NODE_NEW_WEBSOCKET=$!')
@@ -684,7 +684,7 @@ it('bakes Docker websocket source images after app development Redis is register
         ->toContain('/tmp/orbit-e2e-docker-node-new-websocket.log');
 
     expect(strpos($scriptWrite, 'wait "$PID_NODE_NEW_DEV"'))
-        ->toBeLessThan(strpos($scriptWrite, 'orbit:internal:bake-websocket-node ws-1'));
+        ->toBeLessThan(strpos($scriptWrite, 'orbit:internal:bake-websocket-node app-dev-1'));
 
     expect($scriptWrite)->not->toContain('--environment=');
 });

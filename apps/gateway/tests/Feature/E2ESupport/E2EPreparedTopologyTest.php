@@ -47,9 +47,7 @@ it('maps Docker topology requests to composable role image sources', function ()
         ->and(DockerTopologyBuilder::imageNameFor(E2ETopologyKind::OperatorGatewayAgent, 'agent'))
         ->toBe('orbit-e2e:agent_base')
         ->and(DockerTopologyBuilder::imageNameFor(E2ETopologyKind::OperatorGatewayAppprodIngress, 'prod'))
-        ->toBe('orbit-e2e:app-prod_base')
-        ->and(DockerTopologyBuilder::imageNameFor(E2ETopologyKind::OperatorGatewayAppdevWebsocket, 'websocket'))
-        ->toBe('orbit-e2e:websocket_base');
+        ->toBe('orbit-e2e:app-prod_base');
 });
 
 it('sources Incus downstream roles from the prepared full snapshot', function (): void {
@@ -103,22 +101,18 @@ it('does not retain a split ingress node when app production ingress boots only 
         ->not->toContain('edge-1');
 });
 
-it('includes websocket workload nodes in gateway registry pruning', function (): void {
+it('keeps websocket topology registry pruning on the app-dev node', function (): void {
     expect(E2EPreparedTopology::gatewayNodeNamesForRoles(['operator', 'gateway', 'dev', 'websocket']))
-        ->toBe(['gateway', 'operator-1', 'app-dev-1', 'ws-1']);
+        ->toBe(['gateway', 'operator-1', 'app-dev-1']);
 });
 
 it('normalizes prepared artifact role selections', function (): void {
-    expect(E2EPreparedTopology::parseArtifactRoles('operator, gateway, dev, prod, agent, websocket'))
-        ->toBe(['operator', 'gateway', 'app-dev', 'app-prod', 'agent', 'websocket'])
-        ->and(E2EPreparedTopology::parseArtifactRoles('operator,app-dev,app-prod,agent,websocket,operator'))
-        ->toBe(['operator', 'app-dev', 'app-prod', 'agent', 'websocket'])
+    expect(E2EPreparedTopology::parseArtifactRoles('operator, gateway, dev, prod, agent'))
+        ->toBe(['operator', 'gateway', 'app-dev', 'app-prod', 'agent'])
+        ->and(E2EPreparedTopology::parseArtifactRoles('operator,app-dev,app-prod,agent,operator'))
+        ->toBe(['operator', 'app-dev', 'app-prod', 'agent'])
         ->and(E2EPreparedTopology::dockerRoleForArtifactRole('app-dev'))
         ->toBe('dev')
-        ->and(E2EPreparedTopology::dockerRoleForArtifactRole('websocket'))
-        ->toBe('websocket')
-        ->and(E2EPreparedTopology::incusRoleForArtifactRole('websocket'))
-        ->toBe('websocket')
         ->and(E2EPreparedTopology::incusRoleForArtifactRole('operator'))
         ->toBe('operator');
 });

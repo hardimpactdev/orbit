@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Console\Commands\Internal;
 
+use App\Data\Security\PinnedHostKey;
 use App\Enums\Nodes\NodeRoleName;
 use App\Enums\Nodes\NodeRoleStatus;
 use App\Models\Node;
@@ -18,15 +19,15 @@ use Illuminate\Console\Command;
 use RuntimeException;
 
 #[Signature('orbit:internal:bake-websocket-node
-    {name : WebSocket node name}
-    {--host= : WebSocket node host address}
+    {name : Node name receiving the WebSocket role}
+    {--host= : Node host address}
     {--host-key-host= : Host/IP to scan for the SSH host key when different from --host}
-    {--wireguard-address= : WebSocket node WireGuard address}
+    {--wireguard-address= : Node WireGuard address}
     {--gateway-endpoint= : Gateway endpoint address}
     {--user=orbit : Runtime user}
     {--redis-node= : Existing database node name for Redis}
     {--converge-runtime : Converge the WebSocket Reverb runtime baseline after registry bake}')]
-#[Description('Bake a websocket-node registry row for prepared E2E topology images')]
+#[Description('Bake websocket role registry state for prepared E2E topology images')]
 class BakeWebSocketNodeCommand extends Command
 {
     #[\Override]
@@ -49,15 +50,13 @@ class BakeWebSocketNodeCommand extends Command
         $redisNode = $this->activeRedisNode($redisNodeName);
         $hostKey = app(SshHostKeyPinner::class)->pin($hostKeyHost ?? $host);
 
-        $node = $registryWriter->writeNodeIdentity(
+        $node = $this->writeWebSocketRoleNode(
+            registryWriter: $registryWriter,
             name: $name,
-            tld: null,
-            platform: 'ubuntu',
             host: $host,
             wireguardAddress: $wireguardAddress,
             gatewayEndpoint: $gatewayEndpoint,
             user: $user,
-            orbitPath: "/home/{$user}/orbit",
             hostKey: $hostKey,
         );
 
@@ -106,6 +105,51 @@ class BakeWebSocketNodeCommand extends Command
         }
 
         return $node;
+    }
+
+    private function writeWebSocketRoleNode(
+        NodeRegistryWriter $registryWriter,
+        string $name,
+        string $host,
+        string $wireguardAddress,
+        ?string $gatewayEndpoint,
+        string $user,
+        PinnedHostKey $hostKey,
+    ): Node {
+        $existing = Node::query()
+            ->where('name', $name)
+            ->first();
+
+        if (! $existing instanceof Node) {
+            return $registryWriter->writeNodeIdentity(
+                name: $name,
+                tld: null,
+                platform: 'ubuntu',
+                host: $host,
+                wireguardAddress: $wireguardAddress,
+                gatewayEndpoint: $gatewayEndpoint,
+                user: $user,
+                orbitPath: "/home/{$user}/orbit",
+                hostKey: $hostKey,
+            );
+        }
+
+        $existing->forceFill([
+            'platform' => 'ubuntu',
+            'host' => $host,
+            'wireguard_address' => $wireguardAddress,
+            'gateway_endpoint' => $gatewayEndpoint,
+            'user' => $user,
+            'orbit_path' => "/home/{$user}/orbit",
+            'status' => Node::STATUS_ACTIVE,
+            'host_key_type' => $hostKey->type,
+            'host_key_fingerprint' => $hostKey->fingerprint,
+            'host_key_public' => $hostKey->publicKey,
+            'host_key_pin_mode' => $hostKey->pinMode,
+            'host_key_pinned_at' => now(),
+        ])->save();
+
+        return $existing->refresh();
     }
 
     private function convergeRuntime(NodeRoleBaselineConverger $converger, Node $node, NodeRoleAssignment $assignment): void

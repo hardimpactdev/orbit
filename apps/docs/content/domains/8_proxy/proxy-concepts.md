@@ -54,10 +54,11 @@ These terms define the types of routes that the proxy family owns and manages.
   serves the app/workspace ingress contract to a backend FrankenPHP container.
 - **Router backend pool:** Ordered list of URLs for app-prod backends.
   The router owns this pool. V1 creates one target but stores a list.
-- **WebSocket backend pool:** Ordered list of TLS websocket backend URLs, such
-  as `https://ws-1.websocket.orbit:8080`, owned by `router`. V1 creates one
-  active backend but stores a pool shape so later multi-node Reverb scaling does
-  not change app or browser configuration.
+- **WebSocket backend pool:** Ordered list of TLS websocket backend URLs using
+  WireGuard IP targets such as `https://10.6.0.4:8080`, owned by `router`. V1
+  supports one active backend and fails clearly if more than one websocket
+  backend is active. The pool shape remains so later multi-node Reverb scaling
+  does not change app or browser configuration.
 - **S3 backend pool:** Ordered list of RustFS backend URLs, such as
   `http://storage-1.s3.orbit:9000`, owned by `router`. V1 creates one active
   backend but stores a pool shape so later S3 scaling does not change app or

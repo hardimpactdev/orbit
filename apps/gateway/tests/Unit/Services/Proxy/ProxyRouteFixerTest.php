@@ -182,7 +182,7 @@ describe('ProxyRouteFixer', function (): void {
                 'router_backend_pool' => [
                     [
                         'node_id' => 42,
-                        'node' => 'ws-1',
+                        'node' => 'app-dev-1',
                         'url' => 'https://10.6.0.44:8080',
                     ],
                 ],

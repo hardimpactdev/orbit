@@ -29,8 +29,8 @@ function websocketRuntimeRenderer(): WebSocketRuntimeContainerRenderer
 function websocketRuntimeNode(array $overrides = []): Node
 {
     return Node::factory()->create(array_merge([
-        'name' => 'ws-1',
-        'host' => 'ws-1.example.com',
+        'name' => 'app-dev-1',
+        'host' => 'app-dev-1.example.com',
         'wireguard_address' => '10.6.0.44',
     ], $overrides));
 }
@@ -57,10 +57,10 @@ function websocketRuntimeSettings(?Node $redisNode = null): WebSocketRoleSetting
     return new WebSocketRoleSettings(redisNodeId: ($redisNode ?? websocketRuntimeRedisNode())->id);
 }
 
-it('renders the stable backend name from the websocket node name', function (): void {
-    $node = websocketRuntimeNode(['name' => 'ws-1']);
+it('uses the websocket node WireGuard address as the backend identity', function (): void {
+    $node = websocketRuntimeNode(['wireguard_address' => '10.6.0.44']);
 
-    expect((new WebSocketBackendName)->forNode($node))->toBe('ws-1.websocket.orbit');
+    expect((new WebSocketBackendName)->forNode($node))->toBe('10.6.0.44');
 });
 
 it('renders Reverb env with a private WireGuard bind and Redis service config', function (): void {
@@ -79,12 +79,13 @@ it('renders Reverb env with a private WireGuard bind and Redis service config', 
         ->toContain('REVERB_PORT=443')
         ->toContain('REVERB_SCHEME=https')
         ->toContain('REVERB_SCALING_ENABLED=true')
-        ->toContain('REVERB_TLS_CERT=/etc/orbit/certs/ws-1.websocket.orbit.crt')
-        ->toContain('REVERB_TLS_KEY=/etc/orbit/certs/ws-1.websocket.orbit.key')
+        ->toContain('REVERB_TLS_CERT=/etc/orbit/certs/10.6.0.44.crt')
+        ->toContain('REVERB_TLS_KEY=/etc/orbit/certs/10.6.0.44.key')
         ->toContain('REDIS_HOST=10.6.0.3')
         ->toContain('REDIS_PORT=6379')
         ->not->toContain('REVERB_SERVER_HOST=0.0.0.0')
-        ->not->toContain('ws-1.example.com');
+        ->not->toContain('app-dev-1.example.com')
+        ->not->toContain('.websocket.orbit');
 });
 
 it('renders a deterministic WebSocket runtime container', function (): void {
@@ -95,17 +96,16 @@ it('renders a deterministic WebSocket runtime container', function (): void {
     $container = websocketRuntimeRenderer()->render($node, websocketRuntimeSettings($redisNode));
 
     expect($container)->toBeInstanceOf(WebSocketRuntimeContainer::class)
-        ->and($container->name())->toBe('orbit-websocket-ws-1')
+        ->and($container->name())->toBe('orbit-websocket-app-dev-1')
         ->and($container->image())->toBe('orbit-runtime:current')
         ->and($container->network())->toBe('orbit-network')
         ->and($container->restartPolicy())->toBe('unless-stopped')
-        ->and($container->backendName())->toBe('ws-1.websocket.orbit')
+        ->and($container->backendName())->toBe('10.6.0.44')
         ->and($container->redisNodeId())->toBe($redisNode->id)
         ->and($container->workingDirectory())->toBe('/app')
-        ->and($container->command())->toBe('php artisan reverb:start --host=10.6.0.44 --port=8080 --hostname=ws-1.websocket.orbit')
+        ->and($container->command())->toBe('php artisan reverb:start --host=10.6.0.44 --port=8080 --hostname=10.6.0.44')
         ->and($container->networkAliases())->toBe([
-            'orbit-websocket-ws-1',
-            'ws-1.websocket.orbit',
+            'orbit-websocket-app-dev-1',
         ])
         ->and($container->mounts())->toContain([
             'source' => '/opt/orbit/websocket/current',
@@ -120,8 +120,8 @@ it('renders a deterministic WebSocket runtime container', function (): void {
         ->and($container->environment())->toMatchArray([
             'REVERB_SERVER_HOST' => '10.6.0.44',
             'REVERB_HOST' => 'websocket.orbit',
-            'REVERB_TLS_CERT' => '/etc/orbit/certs/ws-1.websocket.orbit.crt',
-            'REVERB_TLS_KEY' => '/etc/orbit/certs/ws-1.websocket.orbit.key',
+            'REVERB_TLS_CERT' => '/etc/orbit/certs/10.6.0.44.crt',
+            'REVERB_TLS_KEY' => '/etc/orbit/certs/10.6.0.44.key',
             'REDIS_HOST' => '10.6.0.3',
         ]);
 });
@@ -135,14 +135,14 @@ it('scopes the runtime container to the websocket node inside Docker E2E', funct
 
     try {
         $node = websocketRuntimeNode([
-            'name' => 'ws-1',
-            'host' => 'websocket',
+            'name' => 'app-dev-1',
+            'host' => 'dev',
         ]);
 
         $container = websocketRuntimeRenderer()->render($node, websocketRuntimeSettings());
 
-        expect($container->name())->toBe('orbit-e2e-run-123-websocket-orbit-websocket-ws-1')
-            ->and($container->networkAliases())->toContain('orbit-e2e-run-123-websocket-orbit-websocket-ws-1')
+        expect($container->name())->toBe('orbit-e2e-run-123-dev-orbit-websocket-app-dev-1')
+            ->and($container->networkAliases())->toContain('orbit-e2e-run-123-dev-orbit-websocket-app-dev-1')
             ->and($container->network())->toBe('orbit-e2e-run-123');
     } finally {
         if ($previousNetwork === false) {
@@ -168,7 +168,7 @@ it('exposes labels with the spec hash and websocket backend identity', function 
     expect($container->labels())->toMatchArray([
         'orbit.managed' => 'true',
         'orbit.container.kind' => 'websocket-runtime',
-        'orbit.websocket.backend' => 'ws-1.websocket.orbit',
+        'orbit.websocket.backend' => '10.6.0.44',
     ])
         ->and($container->labels()[WebSocketRuntimeContainer::SpecHashLabel] ?? null)->toBe($container->specHash());
 });
@@ -182,9 +182,9 @@ it('renders docker run with the private Reverb bind environment and shell comman
     $command = (new DockerCommandBuilder)->runDetached($container);
 
     expect($command)->toContain("--env 'REVERB_SERVER_HOST=10.6.0.44'")
-        ->and($command)->toContain("--network-alias 'ws-1.websocket.orbit'")
         ->and($command)->toContain("--entrypoint 'sh'")
-        ->and($command)->toContain("'-lc' 'php artisan reverb:start --host=10.6.0.44 --port=8080 --hostname=ws-1.websocket.orbit'")
+        ->and($command)->toContain("'-lc' 'php artisan reverb:start --host=10.6.0.44 --port=8080 --hostname=10.6.0.44'")
+        ->and($command)->not->toContain('.websocket.orbit')
         ->and($command)->not->toContain('0.0.0.0');
 });
 

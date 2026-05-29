@@ -42,10 +42,10 @@ composer e2e:prepare-docker-topology -- --force operator_gateway_app-dev_app-pro
 
 Prepare the composable Docker role image set once. The Docker preparation flow
 builds `operator_gateway` first, then provisions the downstream app-dev,
-app-prod, agent, and websocket roles from the full role source. Feature tests
-request the smallest active topology they need; the Docker provider composes
-that topology from the canonical operator, gateway, app-dev, app-prod, agent,
-and websocket images.
+app-prod, and agent roles from the full role source. Feature tests request the
+smallest active topology they need; websocket-capable topologies add the
+websocket role to the app-dev node instead of starting a separate websocket
+image.
 
 The canonical reusable role images are:
 
@@ -54,7 +54,6 @@ The canonical reusable role images are:
 - `orbit-e2e:app-dev_base`
 - `orbit-e2e:app-prod_base`
 - `orbit-e2e:agent_base`
-- `orbit-e2e:websocket_base`
 
 Set `ORBIT_E2E_TOPOLOGY_ARTIFACT_NAMESPACE=<slug>` only when a branch needs a
 role-specific image override. The Docker provider first tries
