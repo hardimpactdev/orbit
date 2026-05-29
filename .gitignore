@@ -24,6 +24,10 @@
 /apps/cli/build/
 /apps/cli/vendor
 /apps/docs/build/
+/apps/e2e/.phpunit.cache
+/apps/e2e/.phpunit.result.cache
+/apps/e2e/build/
+/apps/e2e/vendor
 /apps/gateway/.env
 /apps/gateway/.env.*
 !/apps/gateway/.env.example

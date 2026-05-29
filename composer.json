@@ -19,6 +19,7 @@
             "cd apps/gateway && composer install",
             "cd apps/docs && composer install",
             "cd apps/cli && composer install",
+            "cd apps/e2e && composer install",
             "cd apps/gateway && npm install --ignore-scripts && npm run build",
             "cd apps/docs && npm install --ignore-scripts && npm run build"
         ],
@@ -39,7 +40,8 @@
             "bin/orbit-gateway-pest --exclude-group=e2e --exclude-group=slow --parallel --compact",
             "bin/orbit-cli-pest --compact",
             "bin/orbit-docs-pest --compact",
-            "cd packages/core && vendor/bin/pest --compact"
+            "cd packages/core && vendor/bin/pest --compact",
+            "cd apps/e2e && vendor/bin/pest --compact"
         ],
         "test:slow": [
             "Composer\\Config::disableProcessTimeout",
@@ -47,11 +49,16 @@
             "bin/orbit-gateway-pest --exclude-group=e2e --parallel --compact",
             "bin/orbit-cli-pest --compact",
             "bin/orbit-docs-pest --compact",
-            "cd packages/core && vendor/bin/pest --compact"
+            "cd packages/core && vendor/bin/pest --compact",
+            "cd apps/e2e && vendor/bin/pest --compact"
         ],
         "test:e2e": [
             "Composer\\Config::disableProcessTimeout",
             "set -a; [ ! -f .env.e2e ] || . ./.env.e2e; set +a; bin/orbit-gateway-artisan e2e:test @additional_args"
+        ],
+        "test:e2e:next": [
+            "Composer\\Config::disableProcessTimeout",
+            "cd apps/e2e && vendor/bin/pest --compact @additional_args"
         ],
         "test:e2e:docker": [
             "Composer\\Config::disableProcessTimeout",
@@ -108,19 +115,22 @@
             "bin/orbit-gateway-vendor-bin phpstan analyse --memory-limit=512M",
             "cd apps/cli && vendor/bin/phpstan analyse --memory-limit=512M",
             "cd apps/docs && vendor/bin/phpstan analyse --memory-limit=512M",
-            "cd packages/core && vendor/bin/phpstan analyse --memory-limit=512M"
+            "cd packages/core && vendor/bin/phpstan analyse --memory-limit=512M",
+            "cd apps/e2e && vendor/bin/phpstan analyse --memory-limit=512M"
         ],
         "format": [
             "bin/orbit-gateway-vendor-bin pint",
             "cd apps/cli && vendor/bin/pint",
             "cd apps/docs && vendor/bin/pint",
-            "cd packages/core && vendor/bin/pint"
+            "cd packages/core && vendor/bin/pint",
+            "cd apps/e2e && vendor/bin/pint"
         ],
         "rector": [
             "bin/orbit-gateway-vendor-bin rector process",
             "cd apps/cli && vendor/bin/rector process",
             "cd apps/docs && vendor/bin/rector process",
-            "cd packages/core && vendor/bin/rector process"
+            "cd packages/core && vendor/bin/rector process",
+            "cd apps/e2e && vendor/bin/rector process"
         ],
         "quality-check": [
             "Composer\\Config::disableProcessTimeout",
