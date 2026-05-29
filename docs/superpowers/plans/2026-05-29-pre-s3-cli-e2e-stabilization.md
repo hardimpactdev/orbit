@@ -452,6 +452,7 @@ Solo item: `#558`
 - Modify: root `composer.json`
 - Move or adapt as needed: retained lease/manifest support from the current gateway E2E harness
 - Keep: gateway product services, models, controllers, jobs, and gateway-owned internals
+- Reference: `docs/superpowers/plans/2026-05-29-layered-e2e-live-topology-workflow.md`
 
 - [ ] Implement retained prepared-topology acquisition/release through the `apps/e2e` runner or its internal support namespace.
 - [ ] Do not add `apps/gateway/app/Console/Commands/E2EDevTopology*` or any new gateway-owned E2E runner commands.
@@ -655,6 +656,7 @@ Solo item: `#557`
 - Modify as needed: `apps/docs/content/testing/e2e/**`
 - Create: `docs/superpowers/notes/future-apps-e2e-migration-2026-05-29.md`
 - Update: S3/RustFS Solo item bodies that mention old gateway E2E paths
+- Reference: `docs/superpowers/plans/2026-05-29-layered-e2e-live-topology-workflow.md`
 
 - [ ] Write the migration note with the final state:
   - root `composer test:e2e` remains the public entry point;
