@@ -15,6 +15,7 @@ use App\Http\Controllers\Api\AppRemoveController;
 use App\Http\Controllers\Api\AppRootController;
 use App\Http\Controllers\Api\AppShowController;
 use App\Http\Controllers\Api\AppStoreController;
+use App\Http\Controllers\Api\AppWebSocketController;
 use App\Http\Controllers\Api\AppWorkerController;
 use App\Http\Controllers\Api\CaRootController;
 use App\Http\Controllers\Api\CloudflareController;
@@ -182,6 +183,7 @@ Route::middleware(CorrelationHeader::class)->group(function (): void {
         Route::post('/apps/{app}/root', AppRootController::class);
         Route::post('/apps/exec/by-path', [AppExecController::class, 'byPath']);
         Route::post('/apps/{app}/exec', AppExecController::class);
+        Route::post('/apps/{app}/websocket/enable', [AppWebSocketController::class, 'enable']);
         Route::get('/apps/{app}/worker', [AppWorkerController::class, 'show']);
         Route::post('/apps/{app}/worker/enable', [AppWorkerController::class, 'enable']);
         Route::post('/apps/{app}/worker/disable', [AppWorkerController::class, 'disable']);
