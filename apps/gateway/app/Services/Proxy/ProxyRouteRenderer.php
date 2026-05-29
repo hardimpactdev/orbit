@@ -26,6 +26,10 @@ final readonly class ProxyRouteRenderer
             return $this->renderIngress($route);
         }
 
+        if ($route->owner_type === 'websocket') {
+            return $this->renderRouterRoute($route);
+        }
+
         return match ($route->kind) {
             'app', 'workspace' => $this->renderPhpFastCgi($route),
             'proxy' => $this->renderProxy($route),

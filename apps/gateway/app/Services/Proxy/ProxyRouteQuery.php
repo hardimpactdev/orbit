@@ -19,6 +19,7 @@ class ProxyRouteQuery
         'app',
         'workspace',
         'gateway',
+        'websocket',
         'tool',
         'custom',
         'redirect',
@@ -223,6 +224,7 @@ class ProxyRouteQuery
         return match ($route->owner_type) {
             'app' => $route->app?->name,
             'workspace' => $route->workspace?->name,
+            'websocket' => 'websocket',
             'gateway', 'tool' => $this->stringConfig($config, ['owner_name', 'tool']),
             default => null,
         };
@@ -238,6 +240,7 @@ class ProxyRouteQuery
             'app' => 'app',
             'workspace' => 'workspace',
             'gateway' => 'gateway',
+            'websocket' => 'websocket',
             'tool' => 'tool',
             default => 'upstream',
         };
@@ -255,6 +258,7 @@ class ProxyRouteQuery
         return match ($route->owner_type) {
             'app' => $route->app?->name,
             'workspace' => $route->workspace?->name,
+            'websocket' => $route->domain,
             'gateway', 'tool' => $this->stringConfig($config, ['target.value', 'target', 'upstream']),
             default => $this->stringConfig($config, ['upstream', 'target.value', 'target']),
         };

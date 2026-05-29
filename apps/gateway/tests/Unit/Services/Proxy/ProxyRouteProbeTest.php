@@ -95,6 +95,26 @@ describe('proxy registry probe foundation', function (): void {
         expect($drift)->toBe([]);
     });
 
+    it('passes websocket service routes on active router role assignments', function (): void {
+        $node = Node::factory()->router()->create(['status' => 'active']);
+        $route = ProxyRoute::factory()->create([
+            'node_id' => $node->id,
+            'domain' => 'websocket.orbit',
+            'owner_type' => 'websocket',
+            'kind' => 'proxy',
+            'config' => [
+                'protocol' => 'websocket',
+                'router_backend_pool' => [
+                    ['node_id' => 42, 'node' => 'ws-1', 'url' => 'https://ws-1.websocket.orbit:8080'],
+                ],
+            ],
+        ]);
+
+        $drift = (new ProxyRouteProbe)->diff($route, new ProbeSnapshot([]));
+
+        expect($drift)->toBe([]);
+    });
+
     it('detects incomplete route records', function (): void {
         $node = createTestAppHostNode();
         $id = DB::table('proxy_routes')->insertGetId([

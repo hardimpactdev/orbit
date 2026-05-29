@@ -17,7 +17,7 @@ use App\Services\Runtime\OrbitContainerNames;
 
 final readonly class ProxyRouteProbe
 {
-    private const array OwnerTypes = ['app', 'workspace', 'gateway', 'tool', 'custom'];
+    private const array OwnerTypes = ['app', 'workspace', 'gateway', 'websocket', 'tool', 'custom'];
 
     private const array Kinds = ['app', 'workspace', 'internal', 'proxy', 'redirect'];
 
@@ -561,6 +561,10 @@ BASH;
             return app(NodeRoleAssignments::class)->nodeCanServeIngress($node);
         }
 
+        if ($route->owner_type === 'websocket') {
+            return app(NodeRoleAssignments::class)->nodeCanServeRouter($node);
+        }
+
         return app(NodeRoleAssignments::class)->nodeCanServeGatewayOrAppHostWorkloads($node);
     }
 
@@ -940,6 +944,10 @@ BASH;
         }
 
         if ($route->kind === 'proxy') {
+            if ($route->owner_type === 'websocket') {
+                return $this->hasRouterBackendPool($config);
+            }
+
             $target = $config['target']['value'] ?? $config['upstream'] ?? $config['target'] ?? null;
 
             return is_string($target) && $target !== '';
@@ -954,6 +962,25 @@ BASH;
         }
 
         return true;
+    }
+
+    /**
+     * @param  array<string, mixed>  $config
+     */
+    private function hasRouterBackendPool(array $config): bool
+    {
+        $pool = $config['router_backend_pool'] ?? null;
+
+        if (! is_array($pool) || $pool === []) {
+            return false;
+        }
+
+        return array_all(
+            $pool,
+            fn (mixed $backend): bool => is_array($backend)
+                && is_string($backend['url'] ?? null)
+                && $backend['url'] !== '',
+        );
     }
 
     private function usesIngressPlacement(ProxyRoute $route): bool

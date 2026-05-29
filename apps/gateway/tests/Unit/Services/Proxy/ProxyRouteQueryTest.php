@@ -128,6 +128,43 @@ describe('ProxyRouteQuery', function (): void {
             ->and($route['router']['backend_pool'][0])->not->toHaveKey('node_id');
     });
 
+    it('normalizes websocket service routes and filters them by owner', function (): void {
+        $router = Node::factory()->router()->create(['name' => 'router-1']);
+
+        ProxyRoute::factory()->create([
+            'node_id' => $router->id,
+            'domain' => 'websocket.orbit',
+            'owner_type' => 'websocket',
+            'kind' => 'proxy',
+            'config' => [
+                'protocol' => 'websocket',
+                'router_backend_pool' => [
+                    ['node_id' => 42, 'node' => 'ws-1', 'url' => 'https://ws-1.websocket.orbit:8080'],
+                ],
+                'tls' => [
+                    'managed_by' => 'internal',
+                    'trusted_by_gateway_ca' => true,
+                ],
+            ],
+        ]);
+
+        $result = app(ProxyRouteQuery::class)->list(filter: 'websocket');
+
+        expect($result['meta'])->toBe([
+            'filter' => 'websocket',
+            'node' => null,
+            'count' => 1,
+        ])
+            ->and($result['routes'][0])->toMatchArray([
+                'domain' => 'websocket.orbit',
+                'kind' => 'proxy',
+                'owner' => ['type' => 'websocket', 'name' => 'websocket'],
+                'node' => 'router-1',
+                'target' => ['type' => 'websocket', 'value' => 'websocket.orbit'],
+                'tls' => ['managed_by' => 'internal', 'trusted_by_gateway_ca' => true],
+            ]);
+    });
+
     it('applies route filters after visibility is resolved', function (): void {
         $node = Node::factory()->create(['name' => 'app-1']);
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);

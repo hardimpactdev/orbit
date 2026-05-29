@@ -132,7 +132,7 @@ describe('proxy:list', function (): void {
         expect($exitCode)->toBe(1)
             ->and($payload['error']['code'])->toBe('validation_failed')
             ->and($payload['error']['meta']['field'])->toBe('filter')
-            ->and($payload['error']['meta']['allowed'])->toBe(['all', 'app', 'workspace', 'gateway', 'tool', 'custom', 'redirect']);
+            ->and($payload['error']['meta']['allowed'])->toBe(['all', 'app', 'workspace', 'gateway', 'websocket', 'tool', 'custom', 'redirect']);
     });
 
     it('forwards non-gateway callers through the typed gateway request', function (): void {
