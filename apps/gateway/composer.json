@@ -47,6 +47,7 @@
     ],
     "autoload": {
         "psr-4": {
+            "App\\E2E\\Support\\": "../e2e/app/E2E/Support/",
             "App\\": "app/",
             "Database\\Factories\\": "database/factories/",
             "Database\\Seeders\\": "database/seeders/"

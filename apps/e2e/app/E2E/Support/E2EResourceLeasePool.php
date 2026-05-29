@@ -17,7 +17,7 @@ final readonly class E2EResourceLeasePool
     public static function fromEnvironment(?int $waitSeconds = null, ?int $staleSeconds = null): self
     {
         return new self(
-            directory: self::envString('ORBIT_E2E_LEASE_DIRECTORY', self::defaultDirectoryFor(base_path())),
+            directory: self::envString('ORBIT_E2E_LEASE_DIRECTORY', self::defaultDirectoryFor(self::currentBasePath())),
             waitSeconds: $waitSeconds ?? self::envInt('ORBIT_E2E_SLOT_WAIT_SECONDS', 900),
             staleSeconds: $staleSeconds ?? self::envInt('ORBIT_E2E_SLOT_STALE_SECONDS', 7200),
         );
@@ -593,5 +593,14 @@ final readonly class E2EResourceLeasePool
         }
 
         return (int) $value;
+    }
+
+    private static function currentBasePath(): string
+    {
+        if (function_exists('base_path')) {
+            return base_path();
+        }
+
+        return getcwd() ?: __DIR__;
     }
 }
