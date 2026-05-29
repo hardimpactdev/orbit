@@ -11,12 +11,15 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 uses(RefreshDatabase::class);
 
 /**
- * Regression tests ensuring tool:credentials rustfs and s3:credentials agree on the
- * region value — both must surface 'orbit', and the stored credential field written
- * by S3ServiceConfigurator must also be 'orbit'.
+ * Regression tests ensuring `tool:credentials rustfs` and `s3:credentials` agree on the
+ * region value — both must surface 'orbit', and the stored credential field written by
+ * S3ServiceConfigurator must also be 'orbit'.
  *
- * S3ServiceConfig::Region is the canonical constant and S3ServiceConfigurator::writeCredentials
- * must use it. These tests enforce the alignment.
+ * Both surfaces read the same service-level credentials from the `rustfs` NodeTool row,
+ * so the field values agree by construction. The `s3` role is a tool-host role (the
+ * `rustfs` tool's credentials, logs, and lifecycle are visible through the tool command
+ * family on the s3 node), so both commands resolve the same pure-s3 node. S3ServiceConfig::Region
+ * is the canonical constant S3ServiceConfigurator::writeCredentials must use.
  */
 const S3_REGION_AGREE_CALLER_WG_IP = '10.6.1.101';
 
@@ -47,17 +50,12 @@ function regionAgreementStorageNode(): Node
         'status' => 'active',
     ]);
 
-    // s3 role for s3:credentials
+    // Pure s3 role — the only valid topology for an S3 serving node (s3 conflicts
+    // with the agent/app tool-host roles). The s3 role is itself a tool host, so the
+    // rustfs tool is reachable through the tool command family on this node.
     NodeRoleAssignment::factory()->create([
         'node_id' => $node->id,
         'role' => 's3',
-        'status' => 'active',
-    ]);
-
-    // agent role so the node is visible in tool host queries (tool:credentials)
-    NodeRoleAssignment::factory()->create([
-        'node_id' => $node->id,
-        'role' => 'agent',
         'status' => 'active',
     ]);
 
@@ -106,7 +104,7 @@ function regionAgreementRustfsTool(Node $storage): NodeTool
 }
 
 describe('S3 region agreement between tool:credentials and s3:credentials', function (): void {
-    it('tool:credentials rustfs surfaces region=orbit from stored fields', function (): void {
+    it('tool:credentials rustfs surfaces region=orbit on a pure-s3 node', function (): void {
         regionAgreementCallerNode(); // gateway role — bypasses tool:credentials auth
         $storage = regionAgreementStorageNode();
         regionAgreementRustfsTool($storage);
