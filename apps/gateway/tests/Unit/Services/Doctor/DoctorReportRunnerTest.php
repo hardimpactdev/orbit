@@ -1396,16 +1396,15 @@ describe('DoctorReportRunner', function (): void {
 // ---------------------------------------------------------------------------
 
 describe('DoctorReportRunner s3 role categories', function (): void {
-    it('resolves s3 role to node and tool categories only (no proxy)', function (): void {
+    it('resolves s3 role to node, tool, and proxy categories', function (): void {
         $runner = app(DoctorReportRunner::class);
 
         $categories = $runner->categoriesForRole('s3');
 
-        expect($categories)->toBe(['node', 'tool'])
-            ->and($categories)->not->toContain('proxy');
+        expect($categories)->toBe(['node', 'tool', 'proxy']);
     });
 
-    it('resolves s3 node to node and tool categories when it has an active s3 role', function (): void {
+    it('resolves s3 node to node, tool, and proxy categories when it has an active s3 role', function (): void {
         $node = Node::factory()->create([
             'name' => 's3-node-cat',
             'status' => 'active',
@@ -1426,7 +1425,7 @@ describe('DoctorReportRunner s3 role categories', function (): void {
 
         expect($categories)->toContain('node')
             ->and($categories)->toContain('tool')
-            ->and($categories)->not->toContain('proxy');
+            ->and($categories)->toContain('proxy');
     });
 
     it('dispatches tool.rustfs.row_missing when an s3 node has no rustfs tool row', function (): void {

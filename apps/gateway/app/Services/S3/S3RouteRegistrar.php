@@ -33,6 +33,34 @@ final readonly class S3RouteRegistrar
      */
     public function syncServiceRoute(): ProxyRoute
     {
+        $intent = $this->serviceRouteIntent();
+
+        $route = ProxyRoute::query()->updateOrCreate(
+            ['domain' => self::ServiceDomain],
+            [
+                'node_id' => $intent->node_id,
+                'app_id' => $intent->app_id,
+                'workspace_id' => $intent->workspace_id,
+                'owner_type' => $intent->owner_type,
+                'kind' => $intent->kind,
+                'config' => $intent->config,
+                'source_hash' => $intent->source_hash,
+            ],
+        );
+
+        return $route->refresh();
+    }
+
+    /**
+     * Build the expected s3.orbit ProxyRoute without persisting it.
+     *
+     * Returns an unsaved ProxyRoute model carrying the canonical field values
+     * (node_id, domain, owner_type, kind, config, source_hash, app_id=null,
+     * workspace_id=null) that the S3 proxy doctor probe uses for intent
+     * comparison.
+     */
+    public function serviceRouteIntent(): ProxyRoute
+    {
         $router = $this->routerNode();
         $rustfsTools = $this->activeRustfsTools();
         $config = $this->serviceRouteConfig($rustfsTools);
@@ -45,20 +73,16 @@ final readonly class S3RouteRegistrar
             'config' => $config,
         ]));
 
-        $route = ProxyRoute::query()->updateOrCreate(
-            ['domain' => self::ServiceDomain],
-            [
-                'node_id' => $router->id,
-                'app_id' => null,
-                'workspace_id' => null,
-                'owner_type' => 'tool',
-                'kind' => 'proxy',
-                'config' => $config,
-                'source_hash' => $sourceHash,
-            ],
-        );
-
-        return $route->refresh();
+        return new ProxyRoute([
+            'node_id' => $router->id,
+            'domain' => self::ServiceDomain,
+            'app_id' => null,
+            'workspace_id' => null,
+            'owner_type' => 'tool',
+            'kind' => 'proxy',
+            'config' => $config,
+            'source_hash' => $sourceHash,
+        ]);
     }
 
     /**
@@ -81,6 +105,62 @@ final readonly class S3RouteRegistrar
         foreach ($publicHosts as $host) {
             $this->syncPublicHost($ingress, $router, $rustfs, $host);
         }
+    }
+
+    /**
+     * Build the expected ingress ProxyRoute models for all public hosts listed
+     * on the given rustfs tool row, without persisting them.
+     *
+     * Returns an unsaved ProxyRoute per host, carrying the canonical field
+     * values (node_id, domain, owner_type, kind, config, source_hash,
+     * app_id=null, workspace_id=null) that the S3 proxy doctor probe uses for
+     * intent comparison.
+     *
+     * @return list<ProxyRoute>
+     */
+    public function publicRouteIntents(NodeTool $rustfs): array
+    {
+        $publicHosts = $this->readPublicHosts($rustfs);
+
+        if ($publicHosts === []) {
+            return [];
+        }
+
+        $ingress = $this->ingressNode();
+        $router = $this->routerNode();
+
+        return array_map(
+            fn (string $host): ProxyRoute => $this->publicRouteIntent($ingress, $router, $host),
+            $publicHosts,
+        );
+    }
+
+    /**
+     * Build the expected ingress ProxyRoute model for a single public S3 host
+     * without persisting it.
+     */
+    public function publicRouteIntent(Node $ingress, Node $router, string $host): ProxyRoute
+    {
+        $config = $this->publicRouteConfig($router, $host);
+
+        $sourceHash = $this->proxyRouteRenderer->sourceHash(new ProxyRoute([
+            'node_id' => $ingress->id,
+            'domain' => $host,
+            'owner_type' => 'tool',
+            'kind' => 'proxy',
+            'config' => $config,
+        ]));
+
+        return new ProxyRoute([
+            'node_id' => $ingress->id,
+            'domain' => $host,
+            'app_id' => null,
+            'workspace_id' => null,
+            'owner_type' => 'tool',
+            'kind' => 'proxy',
+            'config' => $config,
+            'source_hash' => $sourceHash,
+        ]);
     }
 
     /**
@@ -204,26 +284,18 @@ final readonly class S3RouteRegistrar
 
     private function syncPublicHost(Node $ingress, Node $router, NodeTool $rustfs, string $host): void
     {
-        $config = $this->publicRouteConfig($router, $host);
-
-        $sourceHash = $this->proxyRouteRenderer->sourceHash(new ProxyRoute([
-            'node_id' => $ingress->id,
-            'domain' => $host,
-            'owner_type' => 'tool',
-            'kind' => 'proxy',
-            'config' => $config,
-        ]));
+        $intent = $this->publicRouteIntent($ingress, $router, $host);
 
         ProxyRoute::query()->updateOrCreate(
             ['domain' => $host],
             [
-                'node_id' => $ingress->id,
-                'app_id' => null,
-                'workspace_id' => null,
-                'owner_type' => 'tool',
-                'kind' => 'proxy',
-                'config' => $config,
-                'source_hash' => $sourceHash,
+                'node_id' => $intent->node_id,
+                'app_id' => $intent->app_id,
+                'workspace_id' => $intent->workspace_id,
+                'owner_type' => $intent->owner_type,
+                'kind' => $intent->kind,
+                'config' => $intent->config,
+                'source_hash' => $intent->source_hash,
             ],
         );
     }
