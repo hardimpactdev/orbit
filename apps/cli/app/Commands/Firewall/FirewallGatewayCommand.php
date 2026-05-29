@@ -26,6 +26,14 @@ abstract class FirewallGatewayCommand extends GatewayCommand
         $value = $this->stringArgument($name);
 
         if ($value === null) {
+            if (! $this->wantsJson() && $this->input->isInteractive()) {
+                $answer = $this->ask($name === 'name' ? 'Rule name' : str($name)->replace('_', ' ')->title()->toString());
+
+                if (is_string($answer) && trim($answer) !== '') {
+                    return trim($answer);
+                }
+            }
+
             return $this->failValidation($name, $message);
         }
 
@@ -47,6 +55,14 @@ abstract class FirewallGatewayCommand extends GatewayCommand
         }
 
         if ($node === null) {
+            if (! $this->wantsJson() && $this->input->isInteractive()) {
+                $answer = $this->ask('Target node');
+
+                if (is_string($answer) && trim($answer) !== '') {
+                    return trim($answer);
+                }
+            }
+
             return $this->renderFailure(
                 'node_target_required',
                 'A node target is required. Provide --node or set a local default with `orbit node:default`.',

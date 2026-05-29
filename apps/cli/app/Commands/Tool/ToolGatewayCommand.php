@@ -29,6 +29,14 @@ abstract class ToolGatewayCommand extends GatewayCommand
         $tool = $this->stringArgument('tool');
 
         if ($tool === null) {
+            if (! $this->wantsJson() && $this->input->isInteractive()) {
+                $answer = $this->ask('Tool name');
+
+                if (is_string($answer) && trim($answer) !== '') {
+                    return trim($answer);
+                }
+            }
+
             return $this->failValidation('tool', $message);
         }
 
@@ -57,6 +65,14 @@ abstract class ToolGatewayCommand extends GatewayCommand
         ]);
 
         if ($requireTarget && $payload === []) {
+            if (! $this->wantsJson() && $this->input->isInteractive()) {
+                $answer = $this->ask('Target node');
+
+                if (is_string($answer) && trim($answer) !== '') {
+                    return ['node' => trim($answer)];
+                }
+            }
+
             return $this->renderFailure(
                 'validation_failed',
                 'A node or app target is required.',

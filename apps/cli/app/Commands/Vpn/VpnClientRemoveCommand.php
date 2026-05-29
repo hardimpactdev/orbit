@@ -20,7 +20,7 @@ final class VpnClientRemoveCommand extends VpnGatewayCommand
 
     public function handle(): int
     {
-        $name = $this->requiredArgument('name', 'name', 'VPN client name is required.');
+        $name = $this->promptForArgument('name', 'name', 'VPN client name', 'VPN client name is required.');
 
         if (is_int($name)) {
             return $name;
