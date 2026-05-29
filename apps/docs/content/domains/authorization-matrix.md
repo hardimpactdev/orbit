@@ -24,6 +24,7 @@ authority](../architecture.md#gateway-implicit-authority).
 | `app:root` | `app:root` | app owning node | None | `authorization_failed` | Standard missing-permission meta plus `app` |
 | `app:show` | `app:read` | app owning node | None | `authorization_failed` | Standard missing-permission meta plus `app` |
 | `app:websocket credentials` | `app:credentials` | app owning node | Explicit credential-read permission; not implied by `app:read` or `app:write` | `authorization_failed` | Standard missing-permission meta plus `app` |
+| `app:websocket disable` | `app:write` | app owning node | None | `authorization_failed` | Standard missing-permission meta plus `app` |
 | `app:websocket enable` | `app:write` | app owning node | None | `authorization_failed` | Standard missing-permission meta plus `app` |
 | `cf-cache:flush` | `cf:cache:flush` | gateway | None | `authorization_failed` | Standard missing-permission meta |
 | `cf-cache-rule:add` | `cf:cache:rule:add` | gateway | None | `authorization_failed` | Standard missing-permission meta plus `app` when app-scoped |

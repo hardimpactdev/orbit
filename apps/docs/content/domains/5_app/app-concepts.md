@@ -66,7 +66,9 @@ record.
 - **App WebSocket binding:** Gateway-owned app configuration that enables one
   app to use the fleet websocket service. It owns per-app Reverb credentials,
   allowed origins, public WebSocket hosts, and the app's private
-  `websocket.orbit` publishing configuration.
+  `websocket.orbit` publishing configuration. Disabling an app WebSocket
+  binding clears active public route intent without deleting the app's Reverb
+  credential record.
 - **Reverb app credentials:** Reverb application id, key, and secret material
   for one app, owned by an app WebSocket binding. These credentials are not
   shared across apps; rotating or disabling one binding must not invalidate
