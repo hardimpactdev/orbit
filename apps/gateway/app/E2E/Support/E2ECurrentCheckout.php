@@ -422,11 +422,18 @@ final class E2ECurrentCheckout
 
     private static function installComposerDependenciesCommand(string $vendorSourcePath): string
     {
-        return self::reusePreparedVendorWithLocalAutoloadCommand(
-            appPath: 'apps/gateway',
-            vendorSourcePath: $vendorSourcePath,
-            fallbackClause: "elif command -v composer >/dev/null 2>&1; then cd apps/gateway && composer install --no-interaction --prefer-dist --optimize-autoloader; else echo 'Gateway Composer dependencies are not installed and prepared vendor dependencies could not be reused.' >&2; exit 127",
-        );
+        return implode(' && ', [
+            self::reusePreparedVendorWithLocalAutoloadCommand(
+                appPath: 'apps/gateway',
+                vendorSourcePath: $vendorSourcePath,
+                fallbackClause: "elif command -v composer >/dev/null 2>&1; then cd apps/gateway && composer install --no-interaction --prefer-dist --optimize-autoloader; else echo 'Gateway Composer dependencies are not installed and prepared vendor dependencies could not be reused.' >&2; exit 127",
+            ),
+            self::reusePreparedVendorWithLocalAutoloadCommand(
+                appPath: 'apps/cli',
+                vendorSourcePath: $vendorSourcePath,
+                fallbackClause: "elif command -v composer >/dev/null 2>&1; then cd apps/cli && composer install --no-interaction --prefer-dist --optimize-autoloader; else echo 'CLI Composer dependencies are not installed and prepared vendor dependencies could not be reused.' >&2; exit 127",
+            ),
+        ]);
     }
 
     private static function reusePreparedVendorWithLocalAutoloadCommand(

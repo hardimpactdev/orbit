@@ -108,9 +108,18 @@ it('reuses prepared vendor packages while rebuilding checkout local autoload fil
         ->and($commandOutput)->toContain("cp -a '/home/orbit/orbit/apps/gateway/vendor/composer' apps/gateway/vendor/composer")
         ->and($commandOutput)->toContain("cp '/home/orbit/orbit/apps/gateway/vendor/autoload.php' apps/gateway/vendor/autoload.php")
         ->and($commandOutput)->toContain('cd apps/gateway && composer dump-autoload --no-interaction --optimize')
+        ->and($commandOutput)->toContain("cmp -s '/home/orbit/orbit/apps/cli/composer.lock' apps/cli/composer.lock")
+        ->and($commandOutput)->toContain("[ -d '/home/orbit/orbit/apps/cli/vendor/composer' ]")
+        ->and($commandOutput)->toContain('rm -rf apps/cli/vendor')
+        ->and($commandOutput)->toContain("find '/home/orbit/orbit/apps/cli/vendor' -mindepth 1 -maxdepth 1 ! -name composer ! -name autoload.php -exec ln -s {} apps/cli/vendor/ \\;")
+        ->and($commandOutput)->toContain("cp -a '/home/orbit/orbit/apps/cli/vendor/composer' apps/cli/vendor/composer")
+        ->and($commandOutput)->toContain("cp '/home/orbit/orbit/apps/cli/vendor/autoload.php' apps/cli/vendor/autoload.php")
+        ->and($commandOutput)->toContain('cd apps/cli && composer dump-autoload --no-interaction --optimize')
         ->and($commandOutput)->not->toContain("ln -s '/home/orbit/orbit/vendor' vendor")
         ->and($commandOutput)->toContain('elif command -v composer >/dev/null 2>&1; then cd apps/gateway && composer install --no-interaction --prefer-dist --optimize-autoloader')
-        ->and($commandOutput)->toContain('Gateway Composer dependencies are not installed and prepared vendor dependencies could not be reused.');
+        ->and($commandOutput)->toContain('Gateway Composer dependencies are not installed and prepared vendor dependencies could not be reused.')
+        ->and($commandOutput)->toContain('elif command -v composer >/dev/null 2>&1; then cd apps/cli && composer install --no-interaction --prefer-dist --optimize-autoloader')
+        ->and($commandOutput)->toContain('CLI Composer dependencies are not installed and prepared vendor dependencies could not be reused.');
 });
 
 it('can seed the current checkout from prepared topology state', function (): void {
