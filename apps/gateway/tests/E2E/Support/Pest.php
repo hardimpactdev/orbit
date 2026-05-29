@@ -163,11 +163,11 @@ function e2eGatewayWireGuardIp(E2ETopologyHarness $topology): string
 
 function e2eConfigureCurrentCheckoutGatewaySettingsIfAvailable(E2ETopologyHarness $topology): void
 {
-    if (! array_key_exists('operator', $topology->checkouts())) {
-        return;
+    foreach (['operator', 'gateway'] as $role) {
+        if (array_key_exists($role, $topology->checkouts())) {
+            e2eConfigureCurrentCheckoutGatewaySettings($topology, $role);
+        }
     }
-
-    e2eConfigureCurrentCheckoutGatewaySettings($topology);
 }
 
 function e2eConfigureCurrentCheckoutGatewaySettings(E2ETopologyHarness $topology, string $role = 'operator'): void
@@ -368,7 +368,7 @@ function e2eRoleUsesDockerRuntime(E2ETopologyHarness $topology, string $role): b
 function e2eRoleUsesDockerHostLauncher(E2ETopologyHarness $topology, string $role): bool
 {
     return e2eRoleUsesDockerTopologyNode($topology, $role)
-        && in_array($role, ['operator', 'dev', 'prod', 'agent', 'ingress'], true);
+        && in_array($role, ['operator', 'gateway', 'dev', 'prod', 'agent', 'ingress'], true);
 }
 
 function e2eRuntimeContainerName(E2ETopologyHarness $topology, string $role): string

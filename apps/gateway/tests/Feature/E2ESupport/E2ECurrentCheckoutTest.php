@@ -539,7 +539,7 @@ it('bootstraps gateway app state for Docker host launcher checkout nodes without
         ->not->toContain('composer install');
 });
 
-it('uses the host launcher for Docker operator and app checkouts while the gateway uses the runtime wrapper', function (): void {
+it('uses the host launcher for Docker operator gateway and app-node checkouts', function (): void {
     $commands = [];
 
     Process::fake(function ($process) use (&$commands) {
@@ -590,14 +590,18 @@ it('uses the host launcher for Docker operator and app checkouts while the gatew
         ->toContain('composer --working-dir=apps/cli dump-autoload --no-interaction --optimize')
         ->not->toContain('orbit-e2e-run123-operator-orbit-runtime')
         ->and($gatewayInstallCommands)
-        ->toContain('orbit-e2e-run123-gateway-orbit-runtime')
+        ->toContain('php apps/gateway/artisan key:generate')
         ->toContain('ORBIT_OPERATION_TOKEN_SECRET=%s')
         ->toContain('ORBIT_EXECUTOR_SECRET=%s')
         ->toContain('orbit-e2e-current-checkout-operation-token-secret')
-        ->toContain('key:generate')
-        ->toContain('migrate --force')
+        ->toContain('php apps/gateway/artisan migrate --force')
+        ->toContain('php apps/gateway/artisan orbit:internal:pin-node-host-keys --json')
+        ->toContain('/home/orbit/orbit/apps/gateway/vendor/autoload.php')
+        ->toContain('rm -rf apps/gateway/vendor')
+        ->toContain('/home/orbit/orbit/apps/cli/vendor')
         ->toContain('composer --working-dir=apps/gateway dump-autoload --no-interaction --optimize')
         ->toContain('composer --working-dir=apps/cli dump-autoload --no-interaction --optimize')
+        ->not->toContain('orbit-e2e-run123-gateway-orbit-runtime')
         ->and($devInstallCommands)
         ->toContain('php apps/gateway/artisan key:generate')
         ->toContain('ORBIT_OPERATION_TOKEN_SECRET=%s')
@@ -614,7 +618,7 @@ it('uses the host launcher for Docker operator and app checkouts while the gatew
         ->not->toContain('orbit-e2e-run123-dev-orbit-runtime');
 });
 
-it('refreshes Docker gateway checkout host keys through the runtime container', function (): void {
+it('refreshes Docker gateway checkout host keys through explicit host Artisan', function (): void {
     $commands = [];
 
     Process::fake(function ($process) use (&$commands) {
@@ -652,10 +656,12 @@ it('refreshes Docker gateway checkout host keys through the runtime container', 
     );
 
     expect($gatewayInstallCommands)
-        ->toContain('sudo docker exec --env')
-        ->toContain('orbit-e2e-run123-gateway-orbit-runtime')
+        ->toContain('php apps/gateway/artisan key:generate')
+        ->toContain('php apps/gateway/artisan migrate --force')
         ->toContain('orbit:internal:pin-node-host-keys --json')
-        ->toContain('/home/orbit/orbit-current/apps/gateway/artisan')
+        ->toContain('php apps/gateway/artisan orbit:internal:pin-node-host-keys --json')
+        ->not->toContain('sudo docker exec --env')
+        ->not->toContain('orbit-e2e-run123-gateway-orbit-runtime')
         ->not->toContain('orbit orbit:internal:pin-node-host-keys --json')
         ->not->toContain('php artisan orbit:internal:pin-node-host-keys --json')
         ->toContain('composer --working-dir=apps/gateway dump-autoload --no-interaction --optimize')
