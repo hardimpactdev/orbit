@@ -434,7 +434,10 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
                 'name' => $name,
                 'container_names' => $this->managedContainerNames($name, $role),
                 'volume_names' => $this->managedVolumeNames($name),
-                'node_command' => $this->startContainerCommand($name, $network, $role, $ip, $image, $topologyMode),
+                'node_command' => implode(' && ', array_filter([
+                    $this->startContainerCommand($name, $network, $role, $ip, $image, $topologyMode),
+                    $this->canonicalWireGuardAddressCommand($name, $role, $topologyMode),
+                ])),
                 'runtime_command' => $this->startsRuntimeSibling($role)
                     ? $this->startRuntimeContainerCommand($name, $network, $role)
                     : null,
@@ -509,20 +512,28 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
         $networkAlias = $topologyMode === 'dns-alias'
             ? ' --network-alias '.escapeshellarg($role)
             : '';
+        $webSocketBackendAlias = $topologyMode === 'dns-alias' && $role === 'websocket'
+            ? ' --network-alias '.escapeshellarg('ws-1.websocket.orbit')
+            : '';
         $runtimeContainerEnv = $this->startsRuntimeSibling($role)
             ? ' --env '.escapeshellarg("ORBIT_RUNTIME_CONTAINER={$this->runtimeContainerName($name)}")
             : '';
 
         return sprintf(
-            'docker run -d --name %s --network %s%s --ip %s --cap-add NET_ADMIN --cap-add NET_BIND_SERVICE %s --volume %s --mount %s --env %s%s %s',
+            'docker run -d --name %s --network %s%s%s --ip %s --cap-add NET_ADMIN --cap-add NET_BIND_SERVICE %s --volume %s --mount %s --mount %s --mount %s --mount %s --env %s --env %s%s %s',
             escapeshellarg($name),
             escapeshellarg($network),
             $networkAlias,
+            $webSocketBackendAlias,
             escapeshellarg($ip),
             $this->dockerSocketGroupAddOption(),
             escapeshellarg('/var/run/docker.sock:/var/run/docker.sock'),
             escapeshellarg($this->homeVolumeMount($name, 'orbit')),
+            escapeshellarg($this->nodeVolumeMount($name, 'etc-caddy', '/etc/caddy')),
+            escapeshellarg($this->nodeVolumeMount($name, 'etc-orbit', '/etc/orbit')),
+            escapeshellarg($this->nodeVolumeMount($name, 'opt-orbit', '/opt/orbit')),
             escapeshellarg("ORBIT_E2E_DOCKER_NETWORK={$network}"),
+            escapeshellarg("ORBIT_NODE_CONTAINER={$name}"),
             $runtimeContainerEnv,
             escapeshellarg($image),
         );
@@ -531,6 +542,25 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
     private function dockerSocketGroupAddOption(): string
     {
         return '--group-add "$(stat -c %g /var/run/docker.sock 2>/dev/null || stat -f %g /var/run/docker.sock)"';
+    }
+
+    private function canonicalWireGuardAddressCommand(string $name, string $role, string $topologyMode): ?string
+    {
+        if ($topologyMode !== 'dns-alias') {
+            return null;
+        }
+
+        $address = $this->canonicalWireGuardAddressForRole($role).'/24';
+
+        return sprintf(
+            'docker exec %s sh -lc %s',
+            escapeshellarg($name),
+            escapeshellarg(sprintf(
+                'ip -o addr show dev eth0 | grep -Fqw %s || ip addr add %s dev eth0',
+                escapeshellarg($address),
+                escapeshellarg($address),
+            )),
+        );
     }
 
     private function startRuntimeContainerCommand(string $nodeContainer, string $network, string $role): string
@@ -560,28 +590,96 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
      */
     private function seedRuntimeContainerNameShim(array $instances): void
     {
-        $gateway = $instances['gateway'] ?? null;
+        foreach ($instances as $instance) {
+            $runtimeContainer = $this->runtimeContainerName($instance->name());
+            $nodeContainer = $instance->name();
 
-        if ($gateway === null) {
-            return;
-        }
-
-        $runtimeContainer = escapeshellarg($this->runtimeContainerName($gateway->name()));
-
-        E2ECommand::exec(
-            $gateway,
-            str_replace('__RUNTIME_CONTAINER__', $runtimeContainer, <<<'SH_WRAP'
+            E2ECommand::exec(
+                $instance,
+                str_replace([
+                    '__RUNTIME_CONTAINER__',
+                    '__NODE_CONTAINER__',
+                    '__RUNTIME_IMAGE__',
+                ], [
+                    $runtimeContainer,
+                    $nodeContainer,
+                    self::runtimeSiblingImage(),
+                ], <<<'SH_WRAP'
+            if [ -x /usr/bin/docker ] && ! grep -q ORBIT_E2E_RUNTIME_DOCKER_SHIM /usr/bin/docker 2>/dev/null; then
+                mv /usr/bin/docker /usr/bin/docker.real
+            fi
             cat > /usr/local/bin/docker <<'BASH'
             #!/usr/bin/env bash
             # ORBIT_E2E_RUNTIME_DOCKER_SHIM
             set -eu
 
-            runtime_container=__RUNTIME_CONTAINER__
+            real_docker="/usr/bin/docker.real"
+            runtime_container="${ORBIT_RUNTIME_CONTAINER:-__RUNTIME_CONTAINER__}"
+            node_container="${ORBIT_NODE_CONTAINER:-__NODE_CONTAINER__}"
+            runtime_image="${ORBIT_RUNTIME_IMAGE:-__RUNTIME_IMAGE__}"
             source_path="$(sed -n "s/^checkout='\(.*\)'$/\1/p" /usr/local/bin/orbit 2>/dev/null | head -n 1 || true)"
 
             if [ -z "${source_path}" ]; then
                 source_path="/home/orbit/orbit"
             fi
+
+            volume_mountpoint() {
+                "${real_docker}" volume inspect "$1" --format '{{ .Mountpoint }}' 2>/dev/null || true
+            }
+
+            rewrite_path() {
+                local path="$1"
+                local etc_caddy
+                local etc_orbit
+                local opt_orbit
+
+                etc_caddy="$(volume_mountpoint "${node_container}-etc-caddy")"
+                etc_orbit="$(volume_mountpoint "${node_container}-etc-orbit")"
+                opt_orbit="$(volume_mountpoint "${node_container}-opt-orbit")"
+
+                case "${path}" in
+                    /etc/caddy)
+                        printf '%s' "${etc_caddy}"
+                        ;;
+                    /etc/caddy/*)
+                        printf '%s%s' "${etc_caddy}" "${path#/etc/caddy}"
+                        ;;
+                    /etc/orbit)
+                        printf '%s' "${etc_orbit}"
+                        ;;
+                    /etc/orbit/*)
+                        printf '%s%s' "${etc_orbit}" "${path#/etc/orbit}"
+                        ;;
+                    /opt/orbit)
+                        printf '%s' "${opt_orbit}"
+                        ;;
+                    /opt/orbit/*)
+                        printf '%s%s' "${opt_orbit}" "${path#/opt/orbit}"
+                        ;;
+                    *)
+                        printf '%s' "${path}"
+                        ;;
+                esac
+            }
+
+            rewrite_mount() {
+                local argument="$1"
+                local remainder
+                local source
+                local rest
+
+                case "${argument}" in
+                    type=bind,source=*)
+                        remainder="${argument#type=bind,source=}"
+                        source="${remainder%%,target=*}"
+                        rest="${remainder#"${source}"}"
+                        printf 'type=bind,source=%s%s' "$(rewrite_path "${source}")" "${rest}"
+                        ;;
+                    *)
+                        printf '%s' "${argument}"
+                        ;;
+                esac
+            }
 
             args=()
 
@@ -590,11 +688,17 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
                     orbit-runtime)
                         args+=("${runtime_container}")
                         ;;
+                    orbit-runtime:current)
+                        args+=("${runtime_image}")
+                        ;;
                     /opt/orbit)
                         args+=("${source_path}")
                         ;;
                     /opt/orbit/*)
                         args+=("${source_path}${argument#/opt/orbit}")
+                        ;;
+                    type=bind,source=*)
+                        args+=("$(rewrite_mount "${argument}")")
                         ;;
                     *)
                         args+=("${argument}")
@@ -602,13 +706,15 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
                 esac
             done
 
-            exec /usr/bin/docker "${args[@]}"
+            exec "${real_docker}" "${args[@]}"
             BASH
             chmod 0755 /usr/local/bin/docker
+            cp /usr/local/bin/docker /usr/bin/docker
             SH_WRAP),
-            'Could not install Docker runtime container name shim in Docker gateway container',
-            timeoutSeconds: 60,
-        );
+                "Could not install Docker runtime container name shim in Docker container {$instance->name()}",
+                timeoutSeconds: 60,
+            );
+        }
     }
 
     /**
@@ -1021,6 +1127,10 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
             array_unshift($names, $this->runtimeContainerName($nodeContainer));
         }
 
+        if ($role === 'websocket') {
+            array_unshift($names, "{$nodeContainer}-orbit-websocket-ws-1");
+        }
+
         return $names;
     }
 
@@ -1031,12 +1141,20 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
     {
         return [
             $this->homeVolumeName($nodeContainer, 'orbit'),
+            "{$nodeContainer}-etc-caddy",
+            "{$nodeContainer}-etc-orbit",
+            "{$nodeContainer}-opt-orbit",
         ];
     }
 
     private function homeVolumeMount(string $nodeContainer, string $user): string
     {
         return "type=volume,src={$this->homeVolumeName($nodeContainer, $user)},dst=/home/{$user}";
+    }
+
+    private function nodeVolumeMount(string $nodeContainer, string $suffix, string $target): string
+    {
+        return "type=volume,src={$nodeContainer}-{$suffix},dst={$target}";
     }
 
     private function homeVolumeName(string $nodeContainer, string $user): string

@@ -224,8 +224,18 @@ CADDY);
                     [
                         'node_id' => 42,
                         'node' => 'ws-1',
-                        'url' => 'https://ws-1.websocket.orbit:8080',
+                        'url' => 'https://10.6.0.44:8080',
                     ],
+                ],
+                'router_backend_tls' => [
+                    'trusted_by_gateway_ca' => true,
+                    'ca_path' => '/etc/orbit/ca/root.crt',
+                ],
+                'tls' => [
+                    'managed_by' => 'internal',
+                    'trusted_by_gateway_ca' => true,
+                    'cert_path' => '/etc/orbit/certs/websocket.orbit.crt',
+                    'key_path' => '/etc/orbit/certs/websocket.orbit.key',
                 ],
             ],
         ]);
@@ -233,14 +243,18 @@ CADDY);
         $content = (new ProxyRouteRenderer)->renderRouterRoute($route);
 
         expect($content)->toBe(<<<'CADDY'
-http://websocket.orbit {
-    reverse_proxy https://ws-1.websocket.orbit:8080 {
+websocket.orbit {
+    tls /etc/orbit/certs/websocket.orbit.crt /etc/orbit/certs/websocket.orbit.key
+    reverse_proxy https://10.6.0.44:8080 {
         lb_policy first
         flush_interval -1
         stream_close_delay 5m
         header_up Host {host}
         header_up X-Forwarded-Host {host}
         header_up X-Forwarded-Proto {http.request.header.X-Forwarded-Proto}
+        transport http {
+            tls_trust_pool file /etc/orbit/ca/root.crt
+        }
     }
 }
 
@@ -271,10 +285,14 @@ CADDY)
                 ],
                 'router_backend_pool' => [
                     [
-                        'node_id' => $router->id,
-                        'node' => 'gateway-1',
-                        'url' => 'https://websocket.orbit',
+                        'node_id' => 42,
+                        'node' => 'ws-1',
+                        'url' => 'https://10.6.0.44:8080',
                     ],
+                ],
+                'router_backend_tls' => [
+                    'trusted_by_gateway_ca' => true,
+                    'ca_path' => '/etc/orbit/ca/root.crt',
                 ],
                 'tls' => [
                     'cert_path' => '/home/orbit/.config/orbit/certs/ws.docs.test.crt',
@@ -302,13 +320,16 @@ CADDY);
 
         expect($renderer->renderRouterRoute($route))->toBe(<<<'CADDY'
 http://ws.docs.test {
-    reverse_proxy https://websocket.orbit {
+    reverse_proxy https://10.6.0.44:8080 {
         lb_policy first
         flush_interval -1
         stream_close_delay 5m
         header_up Host {host}
         header_up X-Forwarded-Host {host}
         header_up X-Forwarded-Proto {http.request.header.X-Forwarded-Proto}
+        transport http {
+            tls_trust_pool file /etc/orbit/ca/root.crt
+        }
     }
 }
 

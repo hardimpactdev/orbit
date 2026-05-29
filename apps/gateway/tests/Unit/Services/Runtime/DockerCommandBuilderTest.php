@@ -6,6 +6,7 @@ use App\Services\Runtime\DockerCommandBuilder;
 use App\Services\Runtime\OrbitCaddyContainer;
 use App\Services\Runtime\OrbitContainerNames;
 use App\Services\Runtime\OrbitRuntimeContainerRenderer;
+use App\Services\WebSockets\WebSocketRuntimeContainer;
 use Tests\TestCase;
 
 uses(TestCase::class);
@@ -63,6 +64,57 @@ it('emits route-artifact mounts, port publishing, and extra hosts for orbit-cadd
         ->toContain('--mount '.escapeshellarg('type=bind,source=/etc/caddy/sites,target=/etc/caddy/sites,readonly'))
         ->toContain('--mount '.escapeshellarg('type=bind,source=/etc/orbit,target=/etc/orbit,readonly'))
         ->toContain('--mount '.escapeshellarg('type=bind,source=/home,target=/home,readonly'));
+});
+
+it('uses the managed target node namespace for Docker E2E Caddy and websocket containers', function (): void {
+    $previousNetwork = getenv('ORBIT_E2E_DOCKER_NETWORK');
+    $previousNodeContainer = getenv('ORBIT_NODE_CONTAINER');
+
+    putenv('ORBIT_E2E_DOCKER_NETWORK=orbit-e2e-run123');
+    putenv('ORBIT_NODE_CONTAINER=orbit-e2e-run123-gateway');
+
+    try {
+        $caddy = OrbitCaddyContainer::forPublicIngress(
+            '10.6.0.5',
+            OrbitContainerNames::forNodeScope('orbit-e2e-run123-prod'),
+        );
+        $websocket = new WebSocketRuntimeContainer(
+            name: 'orbit-e2e-run123-websocket-orbit-websocket-ws-1',
+            image: 'orbit-runtime:current',
+            network: 'orbit-e2e-run123',
+            restartPolicy: 'unless-stopped',
+            backendName: 'ws-1.websocket.orbit',
+            redisNodeId: 1,
+            workingDirectory: '/app',
+            command: 'php artisan reverb:start --host=10.6.0.8 --port=8080 --hostname=ws-1.websocket.orbit',
+            environment: [],
+            mounts: [],
+            networkAliases: ['ws-1.websocket.orbit'],
+        );
+
+        $builder = new DockerCommandBuilder;
+
+        expect($builder->runDetached($caddy))
+            ->toContain('--network '.escapeshellarg('container:orbit-e2e-run123-prod'))
+            ->not->toContain('container:orbit-e2e-run123-gateway')
+            ->not->toContain('--network-alias')
+            ->and($builder->runDetached($websocket))
+            ->toContain('--network '.escapeshellarg('container:orbit-e2e-run123-websocket'))
+            ->not->toContain('container:orbit-e2e-run123-gateway')
+            ->not->toContain('--network-alias');
+    } finally {
+        if ($previousNetwork === false) {
+            putenv('ORBIT_E2E_DOCKER_NETWORK');
+        } else {
+            putenv("ORBIT_E2E_DOCKER_NETWORK={$previousNetwork}");
+        }
+
+        if ($previousNodeContainer === false) {
+            putenv('ORBIT_NODE_CONTAINER');
+        } else {
+            putenv("ORBIT_NODE_CONTAINER={$previousNodeContainer}");
+        }
+    }
 });
 
 it('escapes docker lifecycle command arguments', function (): void {

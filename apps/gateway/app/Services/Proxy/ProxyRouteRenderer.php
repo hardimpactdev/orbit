@@ -125,15 +125,18 @@ CADDY;
         $upstreams = implode(' ', $backendLines);
         $encode = $this->isWebSocketProtocol($route) ? '' : "    encode gzip\n\n";
         $streaming = $this->webSocketStreamingDirectives($route);
+        $siteAddress = $this->routerSiteAddress($route);
+        $siteTls = $this->routerSiteTlsDirective($route);
+        $backendTransport = $this->routerBackendTransportDirectives($route);
 
         return <<<CADDY
-http://{$route->domain} {
-{$encode}    reverse_proxy {$upstreams} {
+{$siteAddress} {
+{$siteTls}{$encode}    reverse_proxy {$upstreams} {
         lb_policy first
 {$streaming}        header_up Host {host}
         header_up X-Forwarded-Host {host}
         header_up X-Forwarded-Proto {http.request.header.X-Forwarded-Proto}
-    }
+{$backendTransport}    }
 }
 
 CADDY;
@@ -358,6 +361,56 @@ CADDY;
         $paths = $this->tlsPaths($route);
 
         return "tls {$paths['cert']} {$paths['key']}";
+    }
+
+    private function routerSiteAddress(ProxyRoute $route): string
+    {
+        if ($this->routerRouteUsesTls($route)) {
+            return $route->domain;
+        }
+
+        return "http://{$route->domain}";
+    }
+
+    private function routerSiteTlsDirective(ProxyRoute $route): string
+    {
+        if (! $this->routerRouteUsesTls($route)) {
+            return '';
+        }
+
+        return '    '.$this->tlsDirective($route)."\n";
+    }
+
+    private function routerRouteUsesTls(ProxyRoute $route): bool
+    {
+        $config = is_array($route->config) ? $route->config : [];
+        $tls = $config['tls'] ?? null;
+
+        return is_array($tls)
+            && ($tls['trusted_by_gateway_ca'] ?? null) === true
+            && (array_key_exists('cert_path', $tls) || array_key_exists('key_path', $tls));
+    }
+
+    private function routerBackendTransportDirectives(ProxyRoute $route): string
+    {
+        $config = is_array($route->config) ? $route->config : [];
+        $backendTls = $config['router_backend_tls'] ?? null;
+
+        if (! is_array($backendTls) || ($backendTls['trusted_by_gateway_ca'] ?? null) !== true) {
+            return '';
+        }
+
+        $caPath = $this->validatedAbsolutePath(
+            $route,
+            is_string($backendTls['ca_path'] ?? null) && $backendTls['ca_path'] !== ''
+                ? $backendTls['ca_path']
+                : '/etc/orbit/ca/root.crt',
+            'has an invalid router backend CA path.',
+        );
+
+        return "        transport http {\n"
+            ."            tls_trust_pool file {$caPath}\n"
+            ."        }\n";
     }
 
     /**

@@ -59,12 +59,20 @@ final readonly class DockerTopologyBuilder
                 $containers[$role] = new DockerBuildInstance($container, $network);
 
                 $this->mustRun($this->runCommand($container, $network, $role, $this->containerIpForRole($role, $networkPlan), $mode), "Could not start {$container}");
-                $this->syncCurrentCheckout($container, $role);
+
+                $canonicalAddressCommand = $this->canonicalWireGuardAddressCommand($container, $role, $mode);
+
+                if ($canonicalAddressCommand !== null) {
+                    $this->mustRun($canonicalAddressCommand, "Could not seed canonical WireGuard address for {$container}");
+                }
+
                 if (self::roleUsesRuntimeSibling($role)) {
                     $this->mustRun($this->runtimeRunCommand($container, $network, $role, $composerCacheVolume), "Could not start {$this->runtimeContainerName($container)}");
                 } else {
                     $this->mustRun($this->composerHelperRunCommand($container, $role, $composerCacheVolume), "Could not start {$this->composerHelperContainerName($container)}");
                 }
+                $this->seedRuntimeContainerNameShim($container);
+                $this->syncCurrentCheckout($container, $role);
 
                 $dependencyKey = $this->runtimeDependencyKey();
                 $dependencySource = $runtimeDependencySources[$dependencyKey] ?? null;
@@ -137,9 +145,15 @@ final readonly class DockerTopologyBuilder
             return $manifest;
         } finally {
             foreach (array_keys($containers) as $role) {
+                $container = "{$network}-{$role}";
+
                 $this->run(sprintf(
                     'docker rm -f %s >/dev/null 2>&1 || true',
-                    implode(' ', array_map(escapeshellarg(...), $this->managedContainerNames("{$network}-{$role}", $role))),
+                    implode(' ', array_map(escapeshellarg(...), $this->managedContainerNames($container, $role))),
+                ), timeoutSeconds: 120);
+                $this->run(sprintf(
+                    'docker volume rm -f %s >/dev/null 2>&1 || true',
+                    implode(' ', array_map(escapeshellarg(...), $this->managedVolumeNames($container))),
                 ), timeoutSeconds: 120);
             }
 
@@ -260,21 +274,48 @@ final readonly class DockerTopologyBuilder
         $networkAlias = $mode === 'dns-alias'
             ? ' --network-alias '.escapeshellarg($role)
             : '';
+        $webSocketBackendAlias = $mode === 'dns-alias' && $role === 'websocket'
+            ? ' --network-alias '.escapeshellarg('ws-1.websocket.orbit')
+            : '';
         $runtimeContainerEnv = self::roleUsesRuntimeSibling($role)
             ? ' --env '.escapeshellarg("ORBIT_RUNTIME_CONTAINER={$this->runtimeContainerName($container)}")
             : '';
 
         return sprintf(
-            'docker run -d --cap-add NET_ADMIN --cap-add NET_BIND_SERVICE %s --name %s --network %s%s --ip %s --volume %s --env %s%s %s',
+            'docker run -d --cap-add NET_ADMIN --cap-add NET_BIND_SERVICE %s --name %s --network %s%s%s --ip %s --volume %s --mount %s --mount %s --mount %s --env %s --env %s%s %s',
             $this->dockerSocketGroupAddOption(),
             escapeshellarg($container),
             escapeshellarg($network),
             $networkAlias,
+            $webSocketBackendAlias,
             escapeshellarg($ip),
             escapeshellarg('/var/run/docker.sock:/var/run/docker.sock'),
+            escapeshellarg($this->nodeVolumeMount($container, 'etc-caddy', '/etc/caddy')),
+            escapeshellarg($this->nodeVolumeMount($container, 'etc-orbit', '/etc/orbit')),
+            escapeshellarg($this->nodeVolumeMount($container, 'opt-orbit', '/opt/orbit')),
             escapeshellarg("ORBIT_E2E_DOCKER_NETWORK={$network}"),
+            escapeshellarg("ORBIT_NODE_CONTAINER={$container}"),
             $runtimeContainerEnv,
             escapeshellarg(self::runtimeImage()),
+        );
+    }
+
+    private function canonicalWireGuardAddressCommand(string $container, string $role, string $mode): ?string
+    {
+        if ($mode !== 'dns-alias') {
+            return null;
+        }
+
+        $address = $this->canonicalWireGuardAddressForRole($role).'/24';
+
+        return sprintf(
+            'docker exec %s sh -lc %s',
+            escapeshellarg($container),
+            escapeshellarg(sprintf(
+                'ip -o addr show dev eth0 | grep -Fqw %s || ip addr add %s dev eth0',
+                escapeshellarg($address),
+                escapeshellarg($address),
+            )),
         );
     }
 
@@ -327,6 +368,133 @@ final readonly class DockerTopologyBuilder
             escapeshellarg("ORBIT_SOURCE_PATH={$orbitPath}"),
             escapeshellarg($orbitPath),
             escapeshellarg(self::composerHelperImage()),
+        );
+    }
+
+    private function seedRuntimeContainerNameShim(string $nodeContainer): void
+    {
+        $this->mustRun(
+            sprintf(
+                'docker exec %s sh -lc %s',
+                escapeshellarg($nodeContainer),
+                escapeshellarg(str_replace([
+                    '__RUNTIME_CONTAINER__',
+                    '__NODE_CONTAINER__',
+                    '__RUNTIME_IMAGE__',
+                ], [
+                    $this->runtimeContainerName($nodeContainer),
+                    $nodeContainer,
+                    DockerTopologyProvider::runtimeSiblingImage(),
+                ], <<<'SH'
+if [ -x /usr/bin/docker ] && ! grep -q ORBIT_E2E_RUNTIME_DOCKER_SHIM /usr/bin/docker 2>/dev/null; then
+    mv /usr/bin/docker /usr/bin/docker.real
+fi
+cat > /usr/local/bin/docker <<'BASH'
+#!/usr/bin/env bash
+# ORBIT_E2E_RUNTIME_DOCKER_SHIM
+set -eu
+
+real_docker="/usr/bin/docker.real"
+runtime_container="${ORBIT_RUNTIME_CONTAINER:-__RUNTIME_CONTAINER__}"
+node_container="${ORBIT_NODE_CONTAINER:-__NODE_CONTAINER__}"
+runtime_image="${ORBIT_RUNTIME_IMAGE:-__RUNTIME_IMAGE__}"
+source_path="$(sed -n "s/^checkout='\(.*\)'$/\1/p" /usr/local/bin/orbit 2>/dev/null | head -n 1 || true)"
+
+if [ -z "${source_path}" ]; then
+    source_path="/home/orbit/orbit"
+fi
+
+volume_mountpoint() {
+    "${real_docker}" volume inspect "$1" --format '{{ .Mountpoint }}' 2>/dev/null || true
+}
+
+rewrite_path() {
+    local path="$1"
+    local etc_caddy
+    local etc_orbit
+    local opt_orbit
+
+    etc_caddy="$(volume_mountpoint "${node_container}-etc-caddy")"
+    etc_orbit="$(volume_mountpoint "${node_container}-etc-orbit")"
+    opt_orbit="$(volume_mountpoint "${node_container}-opt-orbit")"
+
+    case "${path}" in
+        /etc/caddy)
+            printf '%s' "${etc_caddy}"
+            ;;
+        /etc/caddy/*)
+            printf '%s%s' "${etc_caddy}" "${path#/etc/caddy}"
+            ;;
+        /etc/orbit)
+            printf '%s' "${etc_orbit}"
+            ;;
+        /etc/orbit/*)
+            printf '%s%s' "${etc_orbit}" "${path#/etc/orbit}"
+            ;;
+        /opt/orbit)
+            printf '%s' "${opt_orbit}"
+            ;;
+        /opt/orbit/*)
+            printf '%s%s' "${opt_orbit}" "${path#/opt/orbit}"
+            ;;
+        *)
+            printf '%s' "${path}"
+            ;;
+    esac
+}
+
+rewrite_mount() {
+    local argument="$1"
+    local remainder
+    local source
+    local rest
+
+    case "${argument}" in
+        type=bind,source=*)
+            remainder="${argument#type=bind,source=}"
+            source="${remainder%%,target=*}"
+            rest="${remainder#"${source}"}"
+            printf 'type=bind,source=%s%s' "$(rewrite_path "${source}")" "${rest}"
+            ;;
+        *)
+            printf '%s' "${argument}"
+            ;;
+    esac
+}
+
+args=()
+
+for argument in "$@"; do
+    case "${argument}" in
+        orbit-runtime)
+            args+=("${runtime_container}")
+            ;;
+        orbit-runtime:current)
+            args+=("${runtime_image}")
+            ;;
+        /opt/orbit)
+            args+=("${source_path}")
+            ;;
+        /opt/orbit/*)
+            args+=("${source_path}${argument#/opt/orbit}")
+            ;;
+        type=bind,source=*)
+            args+=("$(rewrite_mount "${argument}")")
+            ;;
+        *)
+            args+=("${argument}")
+            ;;
+    esac
+done
+
+exec "${real_docker}" "${args[@]}"
+BASH
+chmod 0755 /usr/local/bin/docker
+cp /usr/local/bin/docker /usr/bin/docker
+SH)),
+            ),
+            "Could not install Docker runtime container name shim in Docker build container {$nodeContainer}",
+            timeoutSeconds: 60,
         );
     }
 
@@ -1285,12 +1453,33 @@ SH;
             array_unshift($names, $this->composerHelperContainerName($nodeContainer));
         }
 
+        if ($role === 'websocket') {
+            array_unshift($names, "{$nodeContainer}-orbit-websocket-ws-1");
+        }
+
         return $names;
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function managedVolumeNames(string $nodeContainer): array
+    {
+        return [
+            "{$nodeContainer}-etc-caddy",
+            "{$nodeContainer}-etc-orbit",
+            "{$nodeContainer}-opt-orbit",
+        ];
     }
 
     private function runtimeContainerName(string $nodeContainer): string
     {
         return "{$nodeContainer}-orbit-runtime";
+    }
+
+    private function nodeVolumeMount(string $nodeContainer, string $suffix, string $target): string
+    {
+        return "type=volume,src={$nodeContainer}-{$suffix},dst={$target}";
     }
 
     private function composerHelperContainerName(string $nodeContainer): string

@@ -9,6 +9,7 @@ use App\Enums\Nodes\NodeRoleName;
 use App\Enums\Nodes\NodeRoleStatus;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
+use App\Models\NodeTool;
 use App\Services\Ca\OrbitCaService;
 use App\Services\Nodes\Roles\NodeRoleBaselineConverger;
 use App\Services\WebSockets\WebSocketRuntimeContainer;
@@ -38,14 +39,14 @@ afterEach(function (): void {
 
 it('converges websocket backend TLS material and runtime container through the role converger', function (): void {
     $node = webSocketBaselineNode();
-    $assignment = webSocketBaselineAssignment($node);
+    $assignment = webSocketBaselineAssignment($node, redisNode: webSocketBaselineRedisNode());
 
     app(NodeRoleBaselineConverger::class)->converge($node, $assignment);
 
     $scripts = implode("\n---\n", $this->webSocketBaselineShell->scripts);
 
     expect($this->webSocketBaselineIssued->getArrayCopy())->toBe([
-        ['host' => 'ws-1.websocket.orbit', 'additional_sans' => []],
+        ['host' => 'ws-1.websocket.orbit', 'additional_sans' => ['10.6.0.44']],
     ])
         ->and($scripts)->toContain("sudo install -d -m 0755 '/etc/orbit/certs'")
         ->and($scripts)->toContain('release_dir="${runtime_root}/releases/')
@@ -57,14 +58,14 @@ it('converges websocket backend TLS material and runtime container through the r
         ->and($scripts)->toContain("--label 'orbit.container.kind=websocket-runtime'")
         ->and($scripts)->toContain("--network-alias 'ws-1.websocket.orbit'")
         ->and($scripts)->toContain("--env 'REVERB_SERVER_HOST=10.6.0.44'")
-        ->and($scripts)->toContain("--env 'REDIS_HOST=redis.orbit'")
+        ->and($scripts)->toContain("--env 'REDIS_HOST=10.6.0.3'")
         ->and($scripts)->toContain('php artisan reverb:start --host=10.6.0.44 --port=8080 --hostname=ws-1.websocket.orbit')
         ->and($scripts)->not->toContain('REVERB_SERVER_HOST=0.0.0.0');
 });
 
 it('starts an existing matching websocket runtime container when it is stopped', function (): void {
     $node = webSocketBaselineNode();
-    $assignment = webSocketBaselineAssignment($node);
+    $assignment = webSocketBaselineAssignment($node, redisNode: webSocketBaselineRedisNode());
     $container = app(WebSocketRuntimeContainerRenderer::class)->render(
         $node,
         WebSocketRoleSettings::fromArray($assignment->settings),
@@ -88,7 +89,7 @@ it('starts an existing matching websocket runtime container when it is stopped',
 
 it('removes websocket runtime containers through the role converger', function (): void {
     $node = webSocketBaselineNode();
-    $assignment = webSocketBaselineAssignment($node, NodeRoleStatus::Active);
+    $assignment = webSocketBaselineAssignment($node, NodeRoleStatus::Active, webSocketBaselineRedisNode());
 
     $this->webSocketBaselineShell->containerInspection = [
         'Config' => [
@@ -147,12 +148,31 @@ function webSocketBaselineNode(array $overrides = []): Node
     ], $overrides));
 }
 
-function webSocketBaselineAssignment(Node $node, NodeRoleStatus $status = NodeRoleStatus::Pending): NodeRoleAssignment
+function webSocketBaselineRedisNode(array $overrides = []): Node
+{
+    $node = Node::factory()->database()->create(array_merge([
+        'name' => 'redis-1',
+        'platform' => 'ubuntu',
+        'host' => 'redis-1.example.com',
+        'wireguard_address' => '10.6.0.3',
+        'status' => Node::STATUS_ACTIVE,
+    ], $overrides));
+
+    NodeTool::factory()->create([
+        'node_id' => $node->id,
+        'name' => 'redis',
+        'expected_state' => 'running',
+    ]);
+
+    return $node;
+}
+
+function webSocketBaselineAssignment(Node $node, NodeRoleStatus $status = NodeRoleStatus::Pending, ?Node $redisNode = null): NodeRoleAssignment
 {
     return NodeRoleAssignment::factory()->for($node)->create([
         'role' => NodeRoleName::WebSocket->value,
         'status' => $status->value,
-        'settings' => ['redis_node_id' => 12],
+        'settings' => ['redis_node_id' => ($redisNode ?? webSocketBaselineRedisNode())->id],
     ]);
 }
 

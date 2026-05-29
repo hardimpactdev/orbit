@@ -27,6 +27,9 @@ it('defines the Docker topology host PHP 8.5 CLI baseline without ad hoc helper 
         ->toContain('php8.5-curl')
         ->toContain('php8.5-sqlite3')
         ->toContain('php8.5-xml')
+        ->toContain('iproute2')
+        ->toContain('redis-server')
+        ->toContain('redis-server --daemonize yes --bind 0.0.0.0 --protected-mode no')
         ->toContain('update-alternatives --set php /usr/bin/php8.5')
         ->toContain('php --version')
         ->toContain('PHP 8.5.')
@@ -69,7 +72,13 @@ it('starts Docker build topology client nodes with the host Docker socket and no
     expect($setup)
         ->toContain('--group-add "$(stat -c %g /var/run/docker.sock 2>/dev/null || stat -f %g /var/run/docker.sock)"')
         ->toContain("--volume '/var/run/docker.sock:/var/run/docker.sock'")
+        ->toContain("--mount 'type=volume,src=orbit-e2e-prepared-build-operator-operator-etc-caddy,dst=/etc/caddy'")
+        ->toContain("--mount 'type=volume,src=orbit-e2e-prepared-build-operator-operator-etc-orbit,dst=/etc/orbit'")
+        ->toContain("--mount 'type=volume,src=orbit-e2e-prepared-build-operator-operator-opt-orbit,dst=/opt/orbit'")
         ->toContain("--env 'ORBIT_E2E_DOCKER_NETWORK=orbit-e2e-prepared-build-operator'")
+        ->toContain("--env 'ORBIT_NODE_CONTAINER=orbit-e2e-prepared-build-operator-operator'")
+        ->toContain('ip addr add')
+        ->toContain('10.6.0.3/24')
         ->toContain("--mount 'type=volume,src=orbit-e2e-composer-cache-")
         ->toContain('dst=/tmp/orbit-composer-cache')
         ->toContain("docker run -d --name 'orbit-e2e-prepared-build-operator-operator-composer'")
@@ -394,7 +403,7 @@ it('builds Docker topology state through the host orbit launcher', function (): 
         ->toContain('ORBIT_GATEWAY_URL=%s')
         ->toContain('http://gateway')
         ->toContain('LocalGatewaySettings::current()')
-        ->not->toContain('operator-orbit-runtime')
+        ->not->toContain("docker run -d --restart unless-stopped --name 'orbit-e2e-prepared-build-operator_gateway-operator-orbit-runtime'")
         ->not->toContain('cd /home/orbit/orbit && orbit gateway:add')
         ->not->toContain('php artisan migrate --force');
 });
@@ -690,6 +699,8 @@ it('builds operator_gateway prepared images through transient docker resources',
         "docker run -d --name 'orbit-e2e-prepared-build-operator_gateway-operator-composer' *" => Process::result(output: "composer-id\n"),
         "docker run -d --cap-add NET_ADMIN --cap-add NET_BIND_SERVICE --group-add * --name 'orbit-e2e-prepared-build-operator_gateway-gateway' *" => Process::result(output: "gateway-id\n"),
         "docker run -d --restart unless-stopped --name 'orbit-e2e-prepared-build-operator_gateway-gateway-orbit-runtime' *" => Process::result(output: "runtime-id\n"),
+        'docker exec *ip addr add*' => Process::result(),
+        'docker exec *ORBIT_E2E_RUNTIME_DOCKER_SHIM*' => Process::result(),
         'docker exec *rm -rf*install -d*' => Process::result(),
         'COPYFILE_DISABLE=1 tar *' => Process::result(),
         'docker exec -i *tar --warning=no-unknown-keyword*orbit-current-*' => Process::result(),
@@ -745,6 +756,7 @@ it('seeds gateway to app node ssh access for remote shell feature tests', functi
         "docker image inspect 'composer:2' >/dev/null" => Process::result(),
         "docker network create --subnet * 'orbit-e2e-prepared-build-operator_gateway_app-dev'" => Process::result(),
         'docker run -d *' => Process::result(output: "container-id\n"),
+        'docker exec *ip addr add*' => Process::result(),
         'docker exec *rm -rf*install -d*' => Process::result(),
         'COPYFILE_DISABLE=1 tar *' => Process::result(),
         'docker exec -i *tar --warning=no-unknown-keyword*orbit-current-*' => Process::result(),
@@ -830,6 +842,7 @@ it('bakes dns alias topology registry data into stable role images', function ()
         "docker image inspect 'composer:2' >/dev/null" => Process::result(),
         "docker network create --subnet * 'orbit-e2e-prepared-build-operator_gateway_app-dev_app-prod_agent'" => Process::result(),
         'docker run -d *' => Process::result(output: "container-id\n"),
+        'docker exec *ip addr add*' => Process::result(),
         'docker exec *rm -rf*install -d*' => Process::result(),
         'COPYFILE_DISABLE=1 tar *' => Process::result(),
         'docker exec -i *tar --warning=no-unknown-keyword*orbit-current-*' => Process::result(),
@@ -902,6 +915,7 @@ it('bakes app production ingress docker topology registry data without dev or ag
         "docker image inspect 'composer:2' >/dev/null" => Process::result(),
         "docker network create --subnet * 'orbit-e2e-prepared-build-operator_gateway_app-prod_ingress'" => Process::result(),
         'docker run -d *' => Process::result(output: "container-id\n"),
+        'docker exec *ip addr add*' => Process::result(),
         'docker exec *rm -rf*install -d*' => Process::result(),
         'COPYFILE_DISABLE=1 tar *' => Process::result(),
         'docker exec -i *tar --warning=no-unknown-keyword*orbit-current-*' => Process::result(),

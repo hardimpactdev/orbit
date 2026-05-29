@@ -8,6 +8,7 @@ use App\Contracts\RemoteShell;
 use App\Models\Node;
 use Illuminate\Support\Facades\File;
 use InvalidArgumentException;
+use PharData;
 use RecursiveDirectoryIterator;
 use RecursiveIteratorIterator;
 use RuntimeException;
@@ -32,20 +33,20 @@ class WebSocketRuntimeSourceInstaller
 
     public function install(Node $node): void
     {
-        $this->remoteShell->run($node, $this->installScript(), [
+        $files = $this->sourceFiles();
+        $sourceHash = $this->sourceHash($files);
+
+        $this->remoteShell->run($node, $this->installScript($sourceHash), [
             'throw' => true,
+            'input' => base64_encode($this->sourceArchive($files)),
             'metadata' => [
-                'lane' => 'remote-host',
-                'operation' => 'websocket-runtime-source-install',
+                'ORBIT_OPERATION_ID' => 'websocket-runtime-source-install',
             ],
         ]);
     }
 
-    private function installScript(): string
+    private function installScript(string $sourceHash): string
     {
-        $files = $this->sourceFiles();
-        $sourceHash = $this->sourceHash($files);
-
         return sprintf(
             <<<'SH'
 set -e
@@ -55,6 +56,13 @@ shared_dir="${runtime_root}/shared"
 shared_env="${shared_dir}/.env"
 apps_config=%s
 expected_hash=%s
+source_archive="$(mktemp)"
+cleanup() {
+    rm -f "$source_archive"
+}
+trap cleanup EXIT
+
+cat > "$source_archive"
 
 sudo install -d -m 0755 "$runtime_root" "${runtime_root}/releases" "$shared_dir" "$(dirname "$apps_config")"
 
@@ -68,8 +76,10 @@ current_hash="$(sudo cat "${release_dir}/.orbit-runtime-source-hash" 2>/dev/null
 if [ "$current_hash" != "$expected_hash" ]; then
     sudo rm -rf "$release_dir"
     sudo install -d -m 0755 "$release_dir"
-%s
-%s
+    base64 -d "$source_archive" | sudo tar -xf - -C "$release_dir"
+    sudo find "$release_dir" -type d -exec chmod 0755 {} +
+    sudo find "$release_dir" -type f -exec chmod 0644 {} +
+    sudo chmod 0755 "${release_dir}/artisan"
 fi
 
 if ! sudo test -f "$shared_env"; then
@@ -88,14 +98,12 @@ if ! sudo test -f "${release_dir}/vendor/autoload.php"; then
 fi
 
 printf '%%s\n' "$expected_hash" | sudo tee "${release_dir}/.orbit-runtime-source-hash" >/dev/null
-sudo ln -sfn "$release_dir" %s
+sudo ln -sfn "releases/${expected_hash}" %s
 SH,
             escapeshellarg(self::RuntimeRoot),
             $sourceHash,
             escapeshellarg(self::AppsConfigPath),
             escapeshellarg($sourceHash),
-            $this->directoryInstallScript($files),
-            $this->fileInstallScript($files),
             escapeshellarg(self::DependencyInstallerImage),
             escapeshellarg(WebSocketRuntimeContainer::SourceHostPath),
         );
@@ -193,45 +201,35 @@ SH,
     /**
      * @param  list<array{path: string, contents: string, executable: bool}>  $files
      */
-    private function directoryInstallScript(array $files): string
+    private function sourceArchive(array $files): string
     {
-        $directories = ['bootstrap/cache', 'storage/framework/cache/data', 'storage/framework/sessions', 'storage/framework/views', 'storage/logs'];
+        $basePath = tempnam(sys_get_temp_dir(), 'orbit-websocket-source-');
 
-        foreach ($files as $file) {
-            $directory = dirname($file['path']);
-
-            if ($directory !== '.') {
-                $directories[] = $directory;
-            }
+        if ($basePath === false) {
+            throw new RuntimeException('Could not create a temporary WebSocket runtime source archive path.');
         }
 
-        $directories = array_values(array_unique($directories));
-        sort($directories);
+        $tarPath = "{$basePath}.tar";
+        @unlink($basePath);
 
-        return implode("\n", array_map(
-            fn (string $directory): string => sprintf('    sudo install -d -m 0755 "${release_dir}/%s"', $directory),
-            $directories,
-        ));
-    }
+        try {
+            $archive = new PharData($tarPath);
 
-    /**
-     * @param  list<array{path: string, contents: string, executable: bool}>  $files
-     */
-    private function fileInstallScript(array $files): string
-    {
-        return implode("\n", array_map(function (array $file): string {
-            $mode = $file['executable'] ? '0755' : '0644';
+            foreach ($files as $file) {
+                $archive->addFromString($file['path'], $file['contents']);
+            }
 
-            return sprintf(
-                <<<'SH'
-    printf %%s %s | base64 -d | sudo tee "${release_dir}/%s" >/dev/null
-    sudo chmod %s "${release_dir}/%s"
-SH,
-                escapeshellarg(base64_encode($file['contents'])),
-                $file['path'],
-                $mode,
-                $file['path'],
-            );
-        }, $files));
+            $contents = file_get_contents($tarPath);
+
+            if ($contents === false) {
+                throw new RuntimeException('Could not read the WebSocket runtime source archive.');
+            }
+
+            return $contents;
+        } finally {
+            if (is_file($tarPath)) {
+                @unlink($tarPath);
+            }
+        }
     }
 }

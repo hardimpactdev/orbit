@@ -15,6 +15,7 @@ final readonly class WebSocketBindingService
 {
     public function __construct(
         private WebSocketRouteRegistrar $routes,
+        private WebSocketRuntimeAppConfigSyncer $runtimeAppConfigSyncer,
     ) {}
 
     /**
@@ -22,7 +23,7 @@ final readonly class WebSocketBindingService
      */
     public function enable(App $app, array $publicHosts): AppWebSocketBinding
     {
-        return DB::transaction(function () use ($app, $publicHosts): AppWebSocketBinding {
+        $binding = DB::transaction(function () use ($app, $publicHosts): AppWebSocketBinding {
             $this->routes->syncServiceRoute();
 
             $binding = $this->existingBinding($app);
@@ -50,6 +51,10 @@ final readonly class WebSocketBindingService
 
             return $binding->refresh();
         });
+
+        $this->runtimeAppConfigSyncer->sync();
+
+        return $binding->refresh();
     }
 
     public function credentials(App $app): WebSocketCredentials
@@ -61,7 +66,7 @@ final readonly class WebSocketBindingService
 
     public function disable(App $app): AppWebSocketBinding
     {
-        return DB::transaction(function () use ($app): AppWebSocketBinding {
+        $binding = DB::transaction(function () use ($app): AppWebSocketBinding {
             $binding = $this->binding($app);
 
             $binding->fill([
@@ -75,6 +80,10 @@ final readonly class WebSocketBindingService
 
             return $binding->refresh();
         });
+
+        $this->runtimeAppConfigSyncer->sync();
+
+        return $binding->refresh();
     }
 
     private function existingBinding(App $app): ?AppWebSocketBinding

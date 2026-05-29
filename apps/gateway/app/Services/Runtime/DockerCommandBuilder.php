@@ -79,10 +79,10 @@ class DockerCommandBuilder
             '--restart',
             $this->quote($container->restartPolicy()),
             '--network',
-            $this->quote($container->network()),
+            $this->quote($this->networkFor($container)),
         ];
 
-        if ($container instanceof OrbitCaddyContainer) {
+        if ($container instanceof OrbitCaddyContainer && ! $this->usesE2eNodeNetwork($container)) {
             foreach ($container->publishedPorts() as $port) {
                 $parts[] = '--publish';
                 $parts[] = $this->quote($port);
@@ -101,9 +101,11 @@ class DockerCommandBuilder
             $parts[] = $this->quote('sh');
         }
 
-        foreach ($container->networkAliases() as $alias) {
-            $parts[] = '--network-alias';
-            $parts[] = $this->quote($alias);
+        if (! $this->usesE2eNodeNetwork($container)) {
+            foreach ($container->networkAliases() as $alias) {
+                $parts[] = '--network-alias';
+                $parts[] = $this->quote($alias);
+            }
         }
 
         foreach ($container->labels() as $key => $value) {
@@ -134,6 +136,58 @@ class DockerCommandBuilder
         }
 
         return implode(' ', $parts);
+    }
+
+    private function networkFor(OrbitRuntimeContainer|OrbitCaddyContainer|AppRuntimeContainer|WorkspaceRuntimeContainer|ProcessDockerContainer|WebSocketRuntimeContainer $container): string
+    {
+        $nodeContainer = $this->e2eNodeContainerFor($container);
+
+        if ($nodeContainer !== null) {
+            return 'container:'.$nodeContainer;
+        }
+
+        return $container->network();
+    }
+
+    private function usesE2eNodeNetwork(OrbitRuntimeContainer|OrbitCaddyContainer|AppRuntimeContainer|WorkspaceRuntimeContainer|ProcessDockerContainer|WebSocketRuntimeContainer $container): bool
+    {
+        return ($container instanceof OrbitCaddyContainer || $container instanceof WebSocketRuntimeContainer)
+            && $this->e2eNodeContainerFor($container) !== null;
+    }
+
+    private function e2eNodeContainerFor(OrbitRuntimeContainer|OrbitCaddyContainer|AppRuntimeContainer|WorkspaceRuntimeContainer|ProcessDockerContainer|WebSocketRuntimeContainer $container): ?string
+    {
+        if ($this->e2eDockerNetwork() === null) {
+            return null;
+        }
+
+        if ($container instanceof OrbitCaddyContainer && str_ends_with($container->name(), '-orbit-caddy')) {
+            return substr($container->name(), 0, -strlen('-orbit-caddy')) ?: null;
+        }
+
+        if ($container instanceof WebSocketRuntimeContainer) {
+            $position = strpos($container->name(), '-orbit-websocket-');
+
+            if ($position !== false) {
+                return substr($container->name(), 0, $position) ?: null;
+            }
+        }
+
+        return $this->e2eNodeContainer();
+    }
+
+    private function e2eDockerNetwork(): ?string
+    {
+        $network = getenv('ORBIT_E2E_DOCKER_NETWORK');
+
+        return is_string($network) && trim($network) !== '' ? trim($network) : null;
+    }
+
+    private function e2eNodeContainer(): ?string
+    {
+        $nodeContainer = getenv('ORBIT_NODE_CONTAINER');
+
+        return is_string($nodeContainer) && trim($nodeContainer) !== '' ? trim($nodeContainer) : null;
     }
 
     /**
