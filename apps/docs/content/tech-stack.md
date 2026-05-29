@@ -276,7 +276,10 @@ Focused S3 E2E coverage is pending the S3 role runtime. When that role lands,
 coverage must use the prepared Docker/Incus topology lane, keep RustFS on the
 Docker-first runtime substrate, and must not add role-local Docker Compose,
 host Caddy, host PHP, PHP-FPM, or host Supervisor to make object-storage
-assertions pass.
+assertions pass. S3 E2E starts in the dedicated `apps/e2e` runner, not in the
+gateway test harness, and drives object storage through external CLI/API
+boundaries rather than gateway service or model instantiation. See
+[Testing](testing/README.md).
 
 ### Process manager
 

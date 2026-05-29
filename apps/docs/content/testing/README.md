@@ -3,6 +3,27 @@
 This directory is the authoritative lane map for Orbit verification. Read it
 before adding, changing, debugging, or running E2E tests.
 
+## Ownership
+
+E2E is root-owned monorepo verification, not a gateway product surface. The only
+public entry points are the root Composer scripts (`composer test:e2e` and its
+provider variants); operators and CI do not need to know where the harness
+lives.
+
+The current harness host is `apps/gateway/tests/E2E`, because the harness boots
+the gateway Laravel app for control-plane state and topology machinery. That host
+is transitional. Extracting the full harness into a dedicated `apps/e2e`
+application is a pre-S3 requirement: S3/RustFS E2E coverage starts in `apps/e2e`,
+not in the gateway harness.
+
+`apps/e2e` is an external black-box/gray-box runner. It prepares Docker/Incus
+topologies, drives `apps/cli/orbit` and the gateway HTTP API, and inspects
+externally observable results — CLI output, API responses, files, containers,
+routes, services, and node state. It must not instantiate gateway services,
+Eloquent models, controllers, jobs, or internal actions as the test subject.
+Gateway product behavior stays in `apps/gateway` and is not moved into
+`packages/core` as a convenience dump for the E2E app.
+
 ## Verification model
 
 Orbit has three supported test lanes:
@@ -23,6 +44,28 @@ primary verification paths. Standing live infrastructure is diagnostic only.
 Prepared topology images provide Orbit-capable hosts, including the host PHP CLI
 needed by the CLI/local-executor artifact. The current checkout is synced into
 hosts during topology preparation or test setup.
+
+## Development lane invariant
+
+These rules order the lanes above into a development workflow:
+
+- Source-checkout E2E (the Docker/Incus prepared-topology lanes that overlay the
+  current checkout) is the normal feature feedback loop.
+- Retained prepared topologies are for manual diagnosis and debugging only. They
+  use the same prepared-topology substrate, are not standing live infrastructure,
+  and must be explicitly released or reaped after use.
+- Findings from a retained topology are codified back into ordinary
+  prepared-topology Pest E2E tests; the durable assertion lives in Pest, not in a
+  kept-alive topology.
+- Binary acceptance is a separate release-candidate lane that runs after
+  source-checkout E2E has passed. It proves the built CLI artifact and does not
+  replace the source-checkout feature loop.
+- Provisioning proves installer and `node:new` provisioning behavior, not the
+  inner development loop.
+
+Any retained-topology command surface is delivered later as part of the
+`apps/e2e` extraction chain. It is not added as new public gateway Artisan
+surface; public operator commands remain owned by `apps/cli/orbit`.
 
 ## Lane map
 
