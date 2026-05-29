@@ -134,6 +134,7 @@ describe('NodeRevokeController', function (): void {
                         'action' => 'revoked',
                         'already_absent' => false,
                         'self_lockout' => false,
+                        'was_gateway_admin' => false,
                     ],
                 ],
             ]);
@@ -199,7 +200,8 @@ describe('NodeRevokeController', function (): void {
 
         $response->assertOk()
             ->assertJsonPath('success.data.action', 'revoked')
-            ->assertJsonPath('success.data.already_absent', false);
+            ->assertJsonPath('success.data.already_absent', false)
+            ->assertJsonPath('success.data.was_gateway_admin', false);
 
         expect(DB::table('node_access')
             ->where('consumer_node_id', $consumingId)
@@ -332,7 +334,8 @@ describe('NodeRevokeController', function (): void {
         $response->assertOk()
             ->assertJsonPath('success.data.action', 'revoked')
             ->assertJsonPath('success.data.already_absent', true)
-            ->assertJsonPath('success.data.self_lockout', false);
+            ->assertJsonPath('success.data.self_lockout', false)
+            ->assertJsonPath('success.data.was_gateway_admin', false);
     });
 
     it('reports self lockout when a control caller revokes its own gateway access', function (): void {
@@ -351,12 +354,40 @@ describe('NodeRevokeController', function (): void {
             ->assertJsonPath('success.data.serving_node', 'gateway-1')
             ->assertJsonPath('success.data.action', 'revoked')
             ->assertJsonPath('success.data.already_absent', false)
-            ->assertJsonPath('success.data.self_lockout', true);
+            ->assertJsonPath('success.data.self_lockout', true)
+            ->assertJsonPath('success.data.was_gateway_admin', false);
 
         expect(DB::table('node_access')
             ->where('consumer_node_id', $callerId)
             ->where('serving_node_id', $gatewayId)
             ->exists())->toBeFalse();
+    });
+
+    it('reports when the revoked grant was a gateway admin grant', function (): void {
+        $callerId = createRevokeCallerNode();
+        $gatewayId = createRevokeGatewayNode();
+        grantRevokeAccess($callerId, $gatewayId);
+        $consumingId = (int) DB::table('nodes')->insertGetId(apiRevokeNodeRow([
+            'name' => 'control-1',
+            'wireguard_address' => '10.6.0.11',
+        ]));
+        $servingId = (int) DB::table('nodes')->insertGetId(apiRevokeNodeRow([
+            'name' => 'app-1',
+            'wireguard_address' => '10.6.0.12',
+        ]));
+        grantRevokeAccess($consumingId, $servingId, ['*']);
+
+        $response = postNodeRevokeJson([
+            'consuming_node' => 'control-1',
+            'serving_node' => 'app-1',
+            'force' => true,
+        ], ['REMOTE_ADDR' => REVOKE_CALLER_WG_IP]);
+
+        $response->assertOk()
+            ->assertJsonPath('success.data.action', 'revoked')
+            ->assertJsonPath('success.data.already_absent', false)
+            ->assertJsonPath('success.data.self_lockout', false)
+            ->assertJsonPath('success.data.was_gateway_admin', true);
     });
 
     it('rejects unauthenticated requests', function (): void {

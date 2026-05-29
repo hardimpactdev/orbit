@@ -62,6 +62,35 @@ describe('install-orbit always-cli launcher contract', function (): void {
             ->and($capture['args'])->toBe('[internal:wg-easy:state][--json]');
     });
 
+    it('preserves a wrapper supplied node identity for internal commands when the checkout env only has the verifier secret', function (): void {
+        $capture = orbitLauncherProbe(
+            isGateway: false,
+            arguments: ['internal:database-query-local', '--json'],
+            parentEnv: ['ORBIT_NODE_IDENTITY' => 'app-dev-1'],
+            includeNodeIdentity: false,
+        );
+
+        expect($capture['target'])->toBe($capture['repo'].'/apps/cli/orbit')
+            ->and($capture['ORBIT_APP'])->toBe('cli')
+            ->and($capture['ORBIT_EXECUTOR_SECRET'])->toBe('executor-secret')
+            ->and($capture['ORBIT_NODE_IDENTITY'])->toBe('app-dev-1')
+            ->and($capture['ORBIT_OPERATION_TOKEN_SECRET'])->toBe('');
+    });
+
+    it('prefers a wrapper supplied node identity for internal commands over checkout env identity', function (): void {
+        $capture = orbitLauncherProbe(
+            isGateway: false,
+            arguments: ['internal:database-query-local', '--json'],
+            parentEnv: ['ORBIT_NODE_IDENTITY' => 'app-dev-1'],
+        );
+
+        expect($capture['target'])->toBe($capture['repo'].'/apps/cli/orbit')
+            ->and($capture['ORBIT_APP'])->toBe('cli')
+            ->and($capture['ORBIT_EXECUTOR_SECRET'])->toBe('executor-secret')
+            ->and($capture['ORBIT_NODE_IDENTITY'])->toBe('app-dev-1')
+            ->and($capture['ORBIT_OPERATION_TOKEN_SECRET'])->toBe('');
+    });
+
     it('dispatches the workspace-adapter:update internal command through the cli artifact on gateway hosts', function (): void {
         $capture = orbitLauncherProbe(isGateway: true, arguments: ['internal:workspace-adapter:update', '--json']);
 
@@ -155,7 +184,7 @@ describe('install-orbit always-cli launcher contract', function (): void {
  * @param  array<string, string>  $parentEnv
  * @return array<string, string>
  */
-function orbitLauncherProbe(?bool $isGateway, array $arguments, array $parentEnv = []): array
+function orbitLauncherProbe(?bool $isGateway, array $arguments, array $parentEnv = [], bool $includeNodeIdentity = true): array
 {
     $root = sys_get_temp_dir().'/orbit-launcher-contract-'.bin2hex(random_bytes(4));
 
@@ -170,7 +199,7 @@ function orbitLauncherProbe(?bool $isGateway, array $arguments, array $parentEnv
         File::ensureDirectoryExists($hostCwd);
 
         if ($isGateway !== null) {
-            orbitLauncherWriteGatewayEnvironment($repo, $isGateway);
+            orbitLauncherWriteGatewayEnvironment($repo, $isGateway, includeNodeIdentity: $includeNodeIdentity);
         }
 
         $env = [
@@ -226,17 +255,23 @@ function orbitLauncherPrepareFakeCheckout(string $repo, string $fakeBin): void
     orbitLauncherWriteExecutable("{$fakeBin}/php", orbitLauncherFakePhpScript());
 }
 
-function orbitLauncherWriteGatewayEnvironment(string $repo, bool $isGateway): void
+function orbitLauncherWriteGatewayEnvironment(string $repo, bool $isGateway, bool $includeNodeIdentity = true): void
 {
     $value = $isGateway ? 'true' : 'false';
 
-    File::put("{$repo}/apps/gateway/.env", implode(PHP_EOL, [
+    $lines = [
         "ORBIT_IS_GATEWAY={$value}",
         'ORBIT_EXECUTOR_SECRET=executor-secret',
         'ORBIT_OPERATION_TOKEN_SECRET=mint-secret-must-not-leak',
-        'ORBIT_NODE_IDENTITY=gateway-1',
-        '',
-    ]));
+    ];
+
+    if ($includeNodeIdentity) {
+        $lines[] = 'ORBIT_NODE_IDENTITY=gateway-1';
+    }
+
+    $lines[] = '';
+
+    File::put("{$repo}/apps/gateway/.env", implode(PHP_EOL, $lines));
 }
 
 function orbitLauncherWriteExecutable(string $path, string $contents): void

@@ -70,16 +70,37 @@ describe('workspace:show', function (): void {
 
     it('renders human output containing workspace fields', function (): void {
         fakeGateway(fakeSuccessEnvelope([
-            'workspace' => ['name' => 'feature-docs', 'app' => 'docs'],
+            'workspace' => [
+                'name' => 'feature-docs',
+                'app' => 'docs',
+                'branch' => 'feature/docs',
+                'path' => '/srv/docs/.worktrees/feature-docs',
+                'url' => 'https://feature-docs.docs.test',
+                'node' => ['name' => 'app-dev-1', 'host' => '192.0.2.10'],
+                'agent_ide' => ['adapter' => 'opencode'],
+                'runtime_expectations' => [
+                    'php_version' => '8.5',
+                    'php_version_inherited_from' => 'app',
+                    'runtime_container' => 'orbit-docs-feature-docs',
+                    'hostname' => 'feature-docs.docs.test',
+                ],
+                'inherited_processes' => [['name' => 'vite']],
+                'route' => ['host' => 'feature-docs.docs.test', 'kind' => 'workspace', 'owner' => 'workspace'],
+                'latest_setup_run' => null,
+            ],
         ]));
 
         [$exitCode, $output] = runCommand($this, 'workspace:show', ['name' => 'feature-docs']);
 
         expect($exitCode)->toBe(0)
-            ->and($output)->toContain('workspace');
+            ->and($output)->toContain('Workspace: feature-docs')
+            ->and($output)->toContain('App')
+            ->and($output)->toContain('docs')
+            ->and($output)->toContain('Processes')
+            ->and($output)->toContain('vite');
     });
 
-    it('surfaces gateway_unavailable on gateway HTTP errors', function (): void {
+    it('surfaces gateway error envelopes without replacing the error code', function (): void {
         fakeGateway(fakeErrorEnvelope('workspace.not_found', 'Workspace not found.'), 404);
 
         [$exitCode, $output] = runCommand($this, 'workspace:show', [
@@ -90,7 +111,7 @@ describe('workspace:show', function (): void {
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
         expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('gateway_unavailable');
+            ->and($decoded['error']['code'])->toBe('workspace.not_found');
     });
 
     it('surfaces wireguard-specific gateway failures', function (): void {

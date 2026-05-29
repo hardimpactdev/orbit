@@ -55,10 +55,16 @@ final class NodeRevokeController implements Loggable
 
         $this->activitySubject = $serving;
 
-        $deleted = NodeAccess::query()
+        $grant = NodeAccess::query()
             ->where('consumer_node_id', $consumer->id)
             ->where('serving_node_id', $serving->id)
-            ->delete() > 0;
+            ->first();
+
+        $wasGatewayAdmin = $grant instanceof NodeAccess
+            && in_array('*', $grant->permissions ?? ['*'], true);
+
+        $deleted = $grant instanceof NodeAccess
+            && $grant->delete();
 
         $this->activitySelfLockout = ! $callerIsGateway
             && $caller->id === $consumer->id
@@ -72,6 +78,7 @@ final class NodeRevokeController implements Loggable
                     'action' => 'revoked',
                     'already_absent' => ! $deleted,
                     'self_lockout' => $this->activitySelfLockout,
+                    'was_gateway_admin' => $wasGatewayAdmin,
                 ],
             ],
         ]);

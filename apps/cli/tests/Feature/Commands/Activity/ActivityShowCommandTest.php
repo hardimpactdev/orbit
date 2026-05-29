@@ -21,25 +21,58 @@ describe('activity:show', function (): void {
 
     it('renders human output containing activity id', function (): void {
         fakeGateway(fakeSuccessEnvelope([
-            'activity' => ['id' => 42, 'effect' => 'write', 'command' => 'app:new'],
+            'activity' => [
+                'id' => 42,
+                'occurred_at' => '2026-05-02T08:30:00+00:00',
+                'type' => 'workspace.created',
+                'effect' => 'write',
+                'command' => 'app:new',
+            ],
             'related' => [],
         ]));
 
         [$exitCode, $output] = runCommand($this, 'activity:show', ['id' => '42']);
 
         expect($exitCode)->toBe(0)
-            ->and($output)->toContain('"id":42');
+            ->and($output)->toContain('Activity: 42')
+            ->and($output)->toContain('Type')
+            ->and($output)->toContain('workspace.created')
+            ->and($output)->toContain('Effect')
+            ->and($output)->toContain('write');
     });
 
-    it('surfaces the error code on a gateway 500', function (): void {
-        fakeGateway(fakeErrorEnvelope('not_found', 'Not found.'), 500);
+    it('returns validation_failed when id is missing', function (): void {
+        [$exitCode, $output] = runCommand($this, 'activity:show', ['--json' => true]);
+
+        $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(1)
+            ->and($decoded['error']['code'])->toBe('validation_failed')
+            ->and($decoded['error']['meta']['field'])->toBe('id')
+            ->and($decoded['error']['meta']['reason'])->toBe('missing');
+    });
+
+    it('returns validation_failed when id is invalid', function (): void {
+        [$exitCode, $output] = runCommand($this, 'activity:show', ['id' => 'nope', '--json' => true]);
+
+        $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(1)
+            ->and($decoded['error']['code'])->toBe('validation_failed')
+            ->and($decoded['error']['meta']['field'])->toBe('id')
+            ->and($decoded['error']['meta']['reason'])->toBe('invalid');
+    });
+
+    it('surfaces gateway error envelopes without replacing the error code', function (): void {
+        fakeGateway(fakeErrorEnvelope('activity_not_found', 'Activity 42 was not found or is not visible.', ['id' => 42]), 404);
 
         [$exitCode, $output] = runCommand($this, 'activity:show', ['id' => '42', '--json' => true]);
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
         expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('gateway_unavailable');
+            ->and($decoded['error']['code'])->toBe('activity_not_found')
+            ->and($decoded['error']['meta']['id'])->toBe(42);
     });
 
     it('surfaces gateway_unavailable when the gateway is unreachable', function (): void {

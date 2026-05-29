@@ -83,7 +83,9 @@ export_local_executor_environment() {
 
     node_identity="$(env_value "ORBIT_NODE_IDENTITY")"
 
-    if [ -n "$node_identity" ]; then
+    if [ -n "${ORBIT_NODE_IDENTITY:-}" ]; then
+        export ORBIT_NODE_IDENTITY
+    elif [ -n "$node_identity" ]; then
         export ORBIT_NODE_IDENTITY="$node_identity"
     else
         unset ORBIT_NODE_IDENTITY

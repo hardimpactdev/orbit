@@ -113,4 +113,19 @@ describe('node:show', function (): void {
         expect($exitCode)->toBe(1)
             ->and($decoded['error']['code'])->toBe('gateway_unreachable_wireguard');
     });
+
+    it('surfaces gateway error envelopes without replacing the error code', function (): void {
+        fakeGateway(fakeErrorEnvelope('node.not_found', "Node 'app-1' not found.", ['name' => 'app-1']), 404);
+
+        [$exitCode, $output] = runCommand($this, 'node:show', [
+            'name' => 'app-1',
+            '--json' => true,
+        ]);
+
+        $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(1)
+            ->and($decoded['error']['code'])->toBe('node.not_found')
+            ->and($decoded['error']['meta']['name'])->toBe('app-1');
+    });
 });

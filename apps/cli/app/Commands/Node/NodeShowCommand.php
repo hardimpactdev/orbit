@@ -38,7 +38,7 @@ final class NodeShowCommand extends GatewayCommand
         try {
             $response = $this->gatewayGet("/api/nodes/{$name}");
         } catch (GatewayApiException $exception) {
-            return $this->renderFailure($exception->cliFailureCode(), $exception->getMessage());
+            return $this->renderGatewayFailure($exception);
         }
 
         if ($this->wantsJson()) {
