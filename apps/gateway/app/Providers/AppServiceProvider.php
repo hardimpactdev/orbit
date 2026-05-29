@@ -69,6 +69,7 @@ use App\Tools\PolyscopeServerTool;
 use App\Tools\PostgresTool;
 use App\Tools\RedisTool;
 use App\Tools\ReverbTool;
+use App\Tools\RustfsTool;
 use App\Tools\SupervisorTool;
 use App\Tools\VitePlusTool;
 use Illuminate\Support\ServiceProvider;
@@ -135,6 +136,7 @@ class AppServiceProvider extends ServiceProvider
             $app->make(RedisTool::class),
             $app->make(MailpitTool::class),
             $app->make(ReverbTool::class),
+            $app->make(RustfsTool::class),
             $app->make(PolyscopeServerTool::class),
             $app->make(OpenCodeServerTool::class),
             $app->make(OpenClawTool::class),
