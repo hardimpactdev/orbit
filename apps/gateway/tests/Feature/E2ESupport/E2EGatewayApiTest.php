@@ -150,18 +150,16 @@ it('proxies gateway api routes to Laravel before legacy command shims', function
     $method->setAccessible(true);
 
     $script = $method->invoke(null, '/home/orbit/orbit-current', '10.6.0.2', '10.6.0.2', '10.6.0.2');
-    $toolLogStreamPosition = strpos($script, "preg_match('#^GET /api/tools/([^ ?]+)/logs/stream#', \$requestLine");
     $apiProxyPosition = strpos($script, "preg_match('#^(GET|POST|PUT|PATCH|DELETE) /api/#', \$requestLine) === 1");
     $legacyNodeListPosition = strpos($script, "str_starts_with(\$requestLine, 'GET /api/nodes ')");
 
     expect($script)
         ->toContain('proxy_to_laravel($connection, $requestLine, $headers, $body);')
-        ->toContain('env ORBIT_IS_GATEWAY=1 php apps/gateway/artisan tool:logs')
+        ->not->toContain('php apps/gateway/artisan tool:logs')
+        ->not->toContain('stream_tool_logs')
         ->toContain('sudo -iu orbit bash -lc')
-        ->and($toolLogStreamPosition)->toBeInt()
         ->and($apiProxyPosition)->toBeInt()
         ->and($legacyNodeListPosition)->toBeInt()
-        ->and($toolLogStreamPosition)->toBeLessThan($apiProxyPosition)
         ->and($apiProxyPosition)->toBeLessThan($legacyNodeListPosition);
 });
 
@@ -174,7 +172,6 @@ it('runs Docker gateway api shim commands directly inside orbit runtime', functi
 
     expect($script)
         ->toContain("exec(\$script.' 2>&1'")
-        ->toContain("\$process = popen(\$script.' 2>&1'")
         ->toContain("\$GLOBALS['httpUpstream'] = \$httpUpstream;")
         ->toContain("\$GLOBALS['wireguardIdentity'] = \$wireguardIdentity;")
         ->not->toContain('sudo -iu orbit bash -lc');
