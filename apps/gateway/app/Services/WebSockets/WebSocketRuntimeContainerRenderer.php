@@ -82,6 +82,7 @@ class WebSocketRuntimeContainerRenderer
             'APP_DEBUG' => 'false',
             'APP_ENV' => 'production',
             'BROADCAST_CONNECTION' => 'reverb',
+            'ORBIT_WEBSOCKET_APPS_CONFIG' => WebSocketRuntimeSourceInstaller::AppsConfigPath,
             'REDIS_HOST' => 'redis.orbit',
             'REDIS_PORT' => '6379',
             'REVERB_HOST' => 'websocket.orbit',

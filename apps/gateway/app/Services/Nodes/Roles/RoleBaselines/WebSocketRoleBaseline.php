@@ -12,6 +12,7 @@ use App\Services\WebSockets\WebSocketCertificateInstaller;
 use App\Services\WebSockets\WebSocketRuntimeContainer;
 use App\Services\WebSockets\WebSocketRuntimeContainerManager;
 use App\Services\WebSockets\WebSocketRuntimeContainerRenderer;
+use App\Services\WebSockets\WebSocketRuntimeSourceInstaller;
 use RuntimeException;
 
 class WebSocketRoleBaseline implements RoleBaseline
@@ -20,6 +21,7 @@ class WebSocketRoleBaseline implements RoleBaseline
         private readonly WebSocketRuntimeContainerRenderer $runtimeRenderer,
         private readonly WebSocketRuntimeContainerManager $runtimeManager,
         private readonly WebSocketCertificateInstaller $certificateInstaller,
+        private readonly WebSocketRuntimeSourceInstaller $sourceInstaller,
         private readonly ?NodeRoleAssignments $nodeRoleAssignments = null,
     ) {}
 
@@ -40,6 +42,7 @@ class WebSocketRoleBaseline implements RoleBaseline
         $container = $this->runtimeContainerFor($node, $assignment);
 
         $this->certificateInstaller->ensureFor($node);
+        $this->sourceInstaller->install($node);
         $this->runtimeManager->apply($node, $container);
     }
 

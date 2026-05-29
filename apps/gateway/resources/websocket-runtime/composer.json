@@ -1,0 +1,21 @@
+{
+    "name": "hardimpactdev/orbit-websocket-runtime",
+    "description": "Dedicated Laravel Reverb runtime source for Orbit websocket role nodes.",
+    "type": "project",
+    "license": "proprietary",
+    "require": {
+        "php": "^8.5",
+        "laravel/framework": "13.7.0",
+        "laravel/reverb": "^1.10"
+    },
+    "autoload": {
+        "psr-4": {
+            "App\\": "app/"
+        }
+    },
+    "config": {
+        "sort-packages": true
+    },
+    "minimum-stability": "stable",
+    "prefer-stable": true
+}
