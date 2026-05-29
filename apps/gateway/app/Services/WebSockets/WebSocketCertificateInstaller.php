@@ -8,6 +8,7 @@ use App\Contracts\RemoteShell;
 use App\Models\Node;
 use App\Services\Ca\OrbitCaService;
 use Illuminate\Support\Facades\File;
+use RuntimeException;
 
 class WebSocketCertificateInstaller
 {
@@ -31,7 +32,8 @@ class WebSocketCertificateInstaller
     public function ensureFor(Node $node): array
     {
         $backendName = $this->backendName->forNode($node);
-        $local = $this->ca->issueLeaf($backendName);
+        $wireGuardAddress = $this->wireGuardAddress($node);
+        $local = $this->ca->issueLeaf($backendName, [$wireGuardAddress]);
         $remote = $this->pathsForBackend($backendName);
 
         $this->remoteShell->run($node, $this->installScript(
@@ -42,8 +44,7 @@ class WebSocketCertificateInstaller
         ), [
             'throw' => true,
             'metadata' => [
-                'lane' => 'remote-host',
-                'operation' => 'websocket-certificate-install',
+                'ORBIT_OPERATION_ID' => 'websocket-certificate-install',
             ],
         ]);
 
@@ -67,6 +68,17 @@ class WebSocketCertificateInstaller
             'cert' => self::CertificateDirectory."/{$backendName}.crt",
             'key' => self::CertificateDirectory."/{$backendName}.key",
         ];
+    }
+
+    private function wireGuardAddress(Node $node): string
+    {
+        $wireGuardAddress = trim((string) $node->wireguard_address);
+
+        if ($wireGuardAddress === '') {
+            throw new RuntimeException('The websocket backend requires a WireGuard address.');
+        }
+
+        return $wireGuardAddress;
     }
 
     private function installScript(string $certPath, string $cert, string $keyPath, string $key): string

@@ -45,14 +45,13 @@ it('installs backend TLS material into the host Orbit cert directory', function 
         'key' => '/etc/orbit/certs/ws-1.websocket.orbit.key',
     ])
         ->and($issued->getArrayCopy())->toBe([
-            ['host' => 'ws-1.websocket.orbit', 'additional_sans' => []],
+            ['host' => 'ws-1.websocket.orbit', 'additional_sans' => ['10.6.0.44']],
         ])
         ->and($shell->nodes[0]->is($node))->toBeTrue()
         ->and($shell->options[0])->toMatchArray([
             'throw' => true,
             'metadata' => [
-                'lane' => 'remote-host',
-                'operation' => 'websocket-certificate-install',
+                'ORBIT_OPERATION_ID' => 'websocket-certificate-install',
             ],
         ])
         ->and($script)->toContain("sudo install -d -m 0755 '/etc/orbit/certs'")
@@ -61,6 +60,19 @@ it('installs backend TLS material into the host Orbit cert directory', function 
         ->and($script)->not->toContain('.config/orbit/certs')
         ->and($script)->not->toContain('php artisan')
         ->and($script)->not->toContain('docker exec');
+});
+
+it('requires a WireGuard address before installing backend TLS material', function (): void {
+    $node = Node::factory()->create([
+        'name' => 'ws-1',
+        'wireguard_address' => '',
+    ]);
+
+    expect(fn () => (new WebSocketCertificateInstaller(
+        new WebSocketCertificateInstallerTestCa(new ArrayObject),
+        new WebSocketCertificateInstallerTestShell,
+        new WebSocketBackendName,
+    ))->ensureFor($node))->toThrow(RuntimeException::class, 'The websocket backend requires a WireGuard address.');
 });
 
 it('resolves expected backend certificate paths without installing material', function (): void {

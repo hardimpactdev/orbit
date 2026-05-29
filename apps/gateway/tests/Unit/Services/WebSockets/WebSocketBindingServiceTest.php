@@ -9,7 +9,9 @@ use App\Models\Node;
 use App\Models\ProxyRoute;
 use App\Services\WebSockets\WebSocketBindingService;
 use App\Services\WebSockets\WebSocketCredentials;
+use App\Services\WebSockets\WebSocketRuntimeAppConfigSyncer;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Mockery\MockInterface;
 use Tests\Fakes\SiteCertificateInstallerFake;
 use Tests\TestCase;
 
@@ -60,6 +62,9 @@ function websocketBindingServiceRouteBackends(): void
 
 beforeEach(function (): void {
     app()->instance(SiteCertificateInstaller::class, new SiteCertificateInstallerFake);
+    $this->mock(WebSocketRuntimeAppConfigSyncer::class, function (MockInterface $mock): void {
+        $mock->shouldReceive('sync')->zeroOrMoreTimes();
+    });
 });
 
 it('enables an app websocket binding with generated credentials and synced routes', function (): void {

@@ -29,6 +29,10 @@ function websocketRouteRegistrarAppWithIngress(): array
         'name' => 'router-1',
         'wireguard_address' => '10.6.0.2',
     ]);
+    Node::factory()->withActiveRole('websocket')->create([
+        'name' => 'ws-1',
+        'wireguard_address' => '10.6.0.44',
+    ]);
     $appNode = Node::factory()->appProd()->create([
         'name' => 'app-prod-1',
         'wireguard_address' => '10.6.0.21',
@@ -90,35 +94,43 @@ it('syncs the service route on the active router with websocket backends', funct
                 [
                     'node_id' => $firstBackend->id,
                     'node' => 'ws-1',
-                    'url' => 'https://ws-1.websocket.orbit:8080',
+                    'url' => 'https://10.6.0.44:8080',
                 ],
                 [
                     'node_id' => $secondBackend->id,
                     'node' => 'ws-2',
-                    'url' => 'https://ws-2.websocket.orbit:8080',
+                    'url' => 'https://10.6.0.45:8080',
                 ],
+            ],
+            'router_backend_tls' => [
+                'trusted_by_gateway_ca' => true,
+                'ca_path' => '/etc/orbit/ca/root.crt',
             ],
             'upstreams' => [
                 [
                     'node_id' => $firstBackend->id,
                     'node' => 'ws-1',
                     'scheme' => 'https',
-                    'host' => 'ws-1.websocket.orbit',
+                    'host' => '10.6.0.44',
+                    'backend_name' => 'ws-1.websocket.orbit',
                     'port' => 8080,
-                    'url' => 'https://ws-1.websocket.orbit:8080',
+                    'url' => 'https://10.6.0.44:8080',
                 ],
                 [
                     'node_id' => $secondBackend->id,
                     'node' => 'ws-2',
                     'scheme' => 'https',
-                    'host' => 'ws-2.websocket.orbit',
+                    'host' => '10.6.0.45',
+                    'backend_name' => 'ws-2.websocket.orbit',
                     'port' => 8080,
-                    'url' => 'https://ws-2.websocket.orbit:8080',
+                    'url' => 'https://10.6.0.45:8080',
                 ],
             ],
             'tls' => [
                 'managed_by' => 'internal',
                 'trusted_by_gateway_ca' => true,
+                'cert_path' => '/etc/orbit/certs/websocket.orbit.crt',
+                'key_path' => '/etc/orbit/certs/websocket.orbit.key',
             ],
         ])
         ->and($route->source_hash)->toBe(app(ProxyRouteRenderer::class)->sourceHash($route))
@@ -155,7 +167,7 @@ it('updates the service route when websocket backends change', function (): void
             [
                 'node_id' => $activeBackend->id,
                 'node' => 'ws-new',
-                'url' => 'https://ws-new.websocket.orbit:8080',
+                'url' => 'https://10.6.0.41:8080',
             ],
         ])
         ->and(ProxyRoute::query()->where('domain', 'websocket.orbit')->count())->toBe(1);
@@ -178,6 +190,19 @@ it('requires at least one active websocket backend before syncing the service ro
 
     app(WebSocketRouteRegistrar::class)->syncServiceRoute();
 })->throws(RuntimeException::class, 'The websocket service route requires at least one active websocket node.');
+
+it('requires websocket backends to have a WireGuard address', function (): void {
+    Node::factory()->router()->create([
+        'name' => 'router-1',
+        'wireguard_address' => '10.6.0.2',
+    ]);
+    Node::factory()->withActiveRole('websocket')->create([
+        'name' => 'ws-1',
+        'wireguard_address' => '',
+    ]);
+
+    app(WebSocketRouteRegistrar::class)->syncServiceRoute();
+})->throws(RuntimeException::class, 'The websocket backend requires a WireGuard address.');
 
 it('syncs public websocket hosts as ingress routes that target router and websocket.orbit', function (): void {
     [$app, $ingress, $router] = websocketRouteRegistrarAppWithIngress();
@@ -216,14 +241,18 @@ it('syncs public websocket hosts as ingress routes that target router and websoc
             ],
             'router_backend_pool' => [
                 [
-                    'node_id' => $router->id,
-                    'node' => 'router-1',
-                    'url' => 'https://websocket.orbit',
+                    'node_id' => Node::query()->where('name', 'ws-1')->value('id'),
+                    'node' => 'ws-1',
+                    'url' => 'https://10.6.0.44:8080',
                 ],
             ],
+            'router_backend_tls' => [
+                'trusted_by_gateway_ca' => true,
+                'ca_path' => '/etc/orbit/ca/root.crt',
+            ],
             'tls' => [
-                'cert_path' => '/home/orbit/.config/orbit/certs/ws.example.com.crt',
-                'key_path' => '/home/orbit/.config/orbit/certs/ws.example.com.key',
+                'cert_path' => '/etc/orbit/certs/ws.example.com.crt',
+                'key_path' => '/etc/orbit/certs/ws.example.com.key',
             ],
         ])
         ->and($route->source_hash)->toBe(app(ProxyRouteRenderer::class)->sourceHash($route))

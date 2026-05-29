@@ -155,6 +155,72 @@ describe('ProxyRouteFixer', function (): void {
             ->and($route->refresh()->config['router_artifact']['source_hash'])->toBe(hash('sha256', $caddySite));
     });
 
+    it('installs the gateway CA trust pool and reloads the managed caddy container for websocket routes', function (): void {
+        $router = Node::factory()->router()->create([
+            'name' => 'gateway-1',
+            'wireguard_address' => '10.6.0.2',
+        ]);
+        NodeTool::factory()->create([
+            'node_id' => $router->id,
+            'name' => 'caddy',
+            'expected_state' => 'running',
+            'config' => ['container' => ['name' => 'orbit-e2e-gateway-orbit-caddy']],
+        ]);
+        $route = ProxyRoute::factory()->create([
+            'node_id' => $router->id,
+            'domain' => 'websocket.orbit',
+            'owner_type' => 'websocket',
+            'kind' => 'proxy',
+            'source_hash' => str_repeat('0', 64),
+            'config' => [
+                'protocol' => 'websocket',
+                'router_upstream' => [
+                    'node_id' => $router->id,
+                    'node' => 'gateway-1',
+                    'url' => 'http://10.6.0.2:80',
+                ],
+                'router_backend_pool' => [
+                    [
+                        'node_id' => 42,
+                        'node' => 'ws-1',
+                        'url' => 'https://10.6.0.44:8080',
+                    ],
+                ],
+                'router_backend_tls' => [
+                    'trusted_by_gateway_ca' => true,
+                    'ca_path' => '/etc/orbit/ca/root.crt',
+                ],
+                'tls' => [
+                    'trusted_by_gateway_ca' => true,
+                    'cert_path' => '/etc/orbit/certs/websocket.orbit.crt',
+                    'key_path' => '/etc/orbit/certs/websocket.orbit.key',
+                ],
+            ],
+        ]);
+        $shell = new ProxyFixerRecordingRemoteShell;
+
+        $action = (new ProxyRouteFixer($shell, new ProxyRouteRenderer, new ProxyFixerFakeCa, new SiteCertificateInstallerFake))->fix($route, new DriftEntry(
+            family: 'proxy',
+            key: 'proxy.route_missing',
+            kind: DriftKind::Missing,
+            summary: 'missing',
+        ));
+        $caddySite = base64_decode((string) str($shell->scripts[1])->match("/printf %s\\s+'([^']+)'/")->toString(), true);
+
+        expect($action['status'])->toBe('completed')
+            ->and($shell->nodes[0]->is($router))->toBeTrue()
+            ->and($shell->scripts[0])->toContain('/etc/orbit/ca')
+            ->and($shell->scripts[0])->toContain('/etc/orbit/ca/root.crt')
+            ->and(base64_decode((string) str($shell->scripts[0])->match("/printf %s\\s+'([^']+)'/")->toString(), true))->toBe('fake-root-ca')
+            ->and($shell->nodes[1]->is($router))->toBeTrue()
+            ->and($shell->scripts[1])->toContain('/etc/caddy/sites/websocket.orbit.caddy')
+            ->and($shell->scripts[1])->toContain(CaddyTool::reloadCommand('orbit-e2e-gateway-orbit-caddy'))
+            ->and($caddySite)->toContain('tls /etc/orbit/certs/websocket.orbit.crt /etc/orbit/certs/websocket.orbit.key')
+            ->and($caddySite)->toContain('reverse_proxy https://10.6.0.44:8080')
+            ->and($caddySite)->toContain('tls_trust_pool file /etc/orbit/ca/root.crt')
+            ->and($route->refresh()->source_hash)->toBe(hash('sha256', $caddySite));
+    });
+
     it('re-applies private backend artifacts and names the backend side', function (): void {
         $edge = Node::factory()->create(['name' => 'edge-1']);
         $backend = Node::factory()->create(['name' => 'web-1']);
@@ -579,6 +645,11 @@ describe('ProxyRouteFixer', function (): void {
 
 final readonly class ProxyFixerFakeCa extends OrbitCaService
 {
+    public function rootCert(): string
+    {
+        return 'fake-root-ca';
+    }
+
     /** @return array{cert: string, key: string} */
     public function issueLeaf(string $host, array $additionalSans = []): array
     {

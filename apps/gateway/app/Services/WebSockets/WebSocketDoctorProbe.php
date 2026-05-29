@@ -371,8 +371,7 @@ SH,
             return $this->remoteShell->run($node, $script, [
                 'throw' => false,
                 'metadata' => [
-                    'lane' => 'remote-host',
-                    'operation' => $operation,
+                    'ORBIT_OPERATION_ID' => $operation,
                 ],
             ]);
         } catch (Throwable $exception) {

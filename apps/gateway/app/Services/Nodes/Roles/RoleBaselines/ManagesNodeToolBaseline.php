@@ -10,6 +10,7 @@ use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Models\NodeTool;
 use App\Services\Runtime\OrbitCaddyContainer;
+use App\Services\Runtime\OrbitContainerNames;
 use App\Services\Tools\ToolCatalog;
 
 trait ManagesNodeToolBaseline
@@ -92,16 +93,17 @@ trait ManagesNodeToolBaseline
         $wireGuardAddress = is_string($node->wireguard_address)
             ? trim($node->wireguard_address)
             : '';
+        $names = OrbitContainerNames::forNodeScope($this->containerScopeForNode($node));
 
         if ($this->nodeHasIngressRole($node)) {
-            return OrbitCaddyContainer::forPublicIngress($wireGuardAddress !== '' ? $wireGuardAddress : null);
+            return OrbitCaddyContainer::forPublicIngress($wireGuardAddress !== '' ? $wireGuardAddress : null, $names);
         }
 
         if ($wireGuardAddress === '') {
-            return OrbitCaddyContainer::default();
+            return OrbitCaddyContainer::default($names);
         }
 
-        return OrbitCaddyContainer::forPrivateNode($wireGuardAddress);
+        return OrbitCaddyContainer::forPrivateNode($wireGuardAddress, $names);
     }
 
     private function nodeHasIngressRole(Node $node): bool
@@ -114,5 +116,16 @@ trait ManagesNodeToolBaseline
                 NodeRoleStatus::Active->value,
             ])
             ->exists();
+    }
+
+    private function containerScopeForNode(Node $node): string
+    {
+        $host = is_string($node->host) ? trim($node->host) : '';
+
+        if ($host !== '' && filter_var($host, FILTER_VALIDATE_IP) === false) {
+            return $host;
+        }
+
+        return $node->name;
     }
 }

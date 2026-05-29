@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Services\WebSockets;
 
-use App\Contracts\SiteCertificateInstaller;
 use App\Enums\Nodes\NodeRoleName;
 use App\Models\App;
 use App\Models\AppWebSocketBinding;
@@ -27,7 +26,6 @@ class WebSocketRouteRegistrar
     public function __construct(
         private readonly NodeRoleAssignments $nodeRoleAssignments,
         private readonly IngressResolver $ingressResolver,
-        private readonly SiteCertificateInstaller $siteCertificateInstaller,
         private readonly ProxyRouteRenderer $proxyRouteRenderer,
         private readonly WebSocketBackendName $backendName,
     ) {}
@@ -219,7 +217,8 @@ class WebSocketRouteRegistrar
      */
     private function publicRouteConfig(App $app, Node $ingress, Node $router, string $host): array
     {
-        $certificatePaths = $this->siteCertificateInstaller->expectedPathsFor($ingress, $host);
+        $certificatePaths = $this->certificatePaths($host);
+        $webSocketUpstreams = array_map($this->upstream(...), $this->webSocketBackends());
         $config = [
             'placement' => 'ingress',
             'ingress_node_id' => $ingress->id,
@@ -235,12 +234,9 @@ class WebSocketRouteRegistrar
                 'url' => $this->ingressResolver->routerUrl($router),
             ],
             'router_backend_pool' => [
-                [
-                    'node_id' => $router->id,
-                    'node' => $router->name,
-                    'url' => self::PublicServiceTarget,
-                ],
+                ...$this->backendPool($webSocketUpstreams),
             ],
+            'router_backend_tls' => $this->trustedBackendTls(),
             'tls' => [
                 'cert_path' => $certificatePaths['cert'],
                 'key_path' => $certificatePaths['key'],
@@ -324,6 +320,7 @@ class WebSocketRouteRegistrar
     private function serviceRouteConfig(Node $router, array $backends): array
     {
         $upstreams = array_map($this->upstream(...), $backends);
+        $certificatePaths = $this->certificatePaths(self::ServiceDomain);
 
         return [
             'protocol' => 'websocket',
@@ -332,19 +329,53 @@ class WebSocketRouteRegistrar
                 'node' => $router->name,
                 'url' => $this->routerUrl($router),
             ],
-            'router_backend_pool' => array_map(
-                fn (array $upstream): array => [
-                    'node_id' => $upstream['node_id'],
-                    'node' => $upstream['node'],
-                    'url' => $upstream['url'],
-                ],
-                $upstreams,
-            ),
+            'router_backend_pool' => $this->backendPool($upstreams),
+            'router_backend_tls' => $this->trustedBackendTls(),
             'upstreams' => $upstreams,
             'tls' => [
                 'managed_by' => 'internal',
                 'trusted_by_gateway_ca' => true,
+                'cert_path' => $certificatePaths['cert'],
+                'key_path' => $certificatePaths['key'],
             ],
+        ];
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $upstreams
+     * @return list<array{node_id: int, node: string, url: string}>
+     */
+    private function backendPool(array $upstreams): array
+    {
+        return array_map(
+            fn (array $upstream): array => [
+                'node_id' => $upstream['node_id'],
+                'node' => $upstream['node'],
+                'url' => $upstream['url'],
+            ],
+            $upstreams,
+        );
+    }
+
+    /**
+     * @return array{trusted_by_gateway_ca: true, ca_path: string}
+     */
+    private function trustedBackendTls(): array
+    {
+        return [
+            'trusted_by_gateway_ca' => true,
+            'ca_path' => '/etc/orbit/ca/root.crt',
+        ];
+    }
+
+    /**
+     * @return array{cert: string, key: string}
+     */
+    private function certificatePaths(string $host): array
+    {
+        return [
+            'cert' => "/etc/orbit/certs/{$host}.crt",
+            'key' => "/etc/orbit/certs/{$host}.key",
         ];
     }
 
@@ -354,22 +385,36 @@ class WebSocketRouteRegistrar
      *     node: string,
      *     scheme: string,
      *     host: string,
+     *     backend_name: string,
      *     port: int,
      *     url: string,
      * }
      */
     private function upstream(Node $node): array
     {
-        $host = $this->backendName->forNode($node);
+        $backendName = $this->backendName->forNode($node);
+        $host = $this->requiredWireGuardAddress($node);
 
         return [
             'node_id' => $node->id,
             'node' => $node->name,
             'scheme' => 'https',
             'host' => $host,
+            'backend_name' => $backendName,
             'port' => self::BackendPort,
             'url' => "https://{$host}:".self::BackendPort,
         ];
+    }
+
+    private function requiredWireGuardAddress(Node $node): string
+    {
+        $wireGuardAddress = $this->wireGuardAddress($node);
+
+        if ($wireGuardAddress === '') {
+            throw new RuntimeException('The websocket backend requires a WireGuard address.');
+        }
+
+        return $wireGuardAddress;
     }
 
     private function routerUrl(Node $router): string

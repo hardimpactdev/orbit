@@ -19,6 +19,7 @@ it('defines the orbit runtime image dependency and command contract', function (
         ->toContain('curl')
         ->toContain('intl')
         ->toContain('mbstring')
+        ->toContain('pcntl')
         ->toContain('pdo_sqlite')
         ->toContain('zip')
         ->toContain('git')

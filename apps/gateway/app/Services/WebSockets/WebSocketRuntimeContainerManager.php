@@ -155,8 +155,7 @@ final readonly class WebSocketRuntimeContainerManager
     {
         return $this->remoteShell->run($node, $script, [
             'metadata' => [
-                'lane' => 'remote-host',
-                'operation' => $operation,
+                'ORBIT_OPERATION_ID' => $operation,
             ],
         ]);
     }

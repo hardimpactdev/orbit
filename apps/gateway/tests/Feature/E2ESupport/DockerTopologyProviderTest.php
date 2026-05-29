@@ -85,6 +85,8 @@ it('starts Docker client topology nodes without a runtime sibling container', fu
         ->toContain("--volume '/var/run/docker.sock:/var/run/docker.sock'")
         ->toContain("--mount 'type=volume,src=orbit-e2e-run123-operator-home-orbit,dst=/home/orbit'")
         ->toContain("--env 'ORBIT_E2E_DOCKER_NETWORK=orbit-e2e-run123'")
+        ->toContain('ip addr add')
+        ->toContain('10.6.0.3/24')
         ->not->toContain('ORBIT_RUNTIME_CONTAINER=orbit-e2e-run123-operator-orbit-runtime')
         ->not->toContain("docker run -d --restart unless-stopped --name 'orbit-e2e-run123-operator-orbit-runtime'")
         ->not->toContain('/home/operator');
@@ -995,19 +997,25 @@ it('maps gateway local orbit-runtime docker commands to the per-run runtime cont
     });
 
     $shimCommand = collect($commands)
-        ->first(fn (string $command): bool => str_contains($command, 'ORBIT_E2E_RUNTIME_DOCKER_SHIM'));
+        ->first(fn (string $command): bool => str_contains($command, 'ORBIT_E2E_RUNTIME_DOCKER_SHIM')
+            && str_contains($command, 'orbit-e2e-run123-gateway-orbit-runtime'));
 
     expect($shimCommand)
         ->toBeString()
         ->toContain('# ORBIT_E2E_RUNTIME_DOCKER_SHIM')
         ->toContain('runtime_container=')
+        ->toContain('node_container=')
         ->toContain('orbit-e2e-run123-gateway-orbit-runtime')
+        ->toContain('orbit-e2e-run123-gateway')
+        ->toContain('${node_container}-etc-orbit')
+        ->toContain('/usr/bin/docker.real')
+        ->toContain('rewrite_mount')
         ->toContain('/usr/local/bin/orbit')
         ->toContain('source_path="/home/orbit/orbit"')
         ->not->toContain('/proc/1/environ')
         ->toContain('orbit-runtime)')
         ->toContain('/opt/orbit/*)')
-        ->toContain('exec /usr/bin/docker "${args[@]}"');
+        ->toContain('exec "${real_docker}" "${args[@]}"');
 });
 
 it('uses the parallel worker token to create a non-overlapping docker network', function (): void {

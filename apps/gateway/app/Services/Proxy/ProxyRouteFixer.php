@@ -76,7 +76,12 @@ final readonly class ProxyRouteFixer
 
         $content = $this->renderer->render($route);
         $this->ensureSiteCertificateForOwnedPhpRoute($route);
-        $this->remoteShell->run($route->node, $this->installScript($route->domain, $content), ['throw' => true]);
+
+        if ($route->owner_type === 'websocket') {
+            $this->ensureRouterTrustPool($route->node, $route);
+        }
+
+        $this->remoteShell->run($route->node, $this->installScript($route->node, $route->domain, $content), ['throw' => true]);
 
         $route->forceFill([
             'source_hash' => hash('sha256', $content),
@@ -110,7 +115,8 @@ final readonly class ProxyRouteFixer
         }
 
         $content = $this->renderer->renderRouterRoute($route);
-        $this->remoteShell->run($routerNode, $this->installScript($route->domain, $content), ['throw' => true]);
+        $this->ensureRouterTrustPool($routerNode, $route);
+        $this->remoteShell->run($routerNode, $this->installScript($routerNode, $route->domain, $content), ['throw' => true]);
 
         $this->updateRouterArtifactHash($route, hash('sha256', $content));
 
@@ -148,7 +154,7 @@ final readonly class ProxyRouteFixer
         }
 
         $content = $this->renderer->renderPrivateBackend($route, $artifact);
-        $this->remoteShell->run($backendNode, $this->installScript($route->domain, $content, backend: true), ['throw' => true]);
+        $this->remoteShell->run($backendNode, $this->installScript($backendNode, $route->domain, $content, backend: true), ['throw' => true]);
 
         $this->updateBackendArtifactHash($route, $nodeId, hash('sha256', $content));
 
@@ -174,13 +180,16 @@ final readonly class ProxyRouteFixer
         }
 
         $leaf = $this->ca->issueLeaf($route->domain);
+        $paths = $this->tlsPaths($route);
 
         $this->remoteShell->run(
             $route->node,
             $this->tlsInstallScript(
-                $route->domain,
+                $paths['cert'],
+                $paths['key'],
                 (string) file_get_contents($leaf['cert']),
                 (string) file_get_contents($leaf['key']),
+                $this->caddyReloadCommand($route->node),
             ),
             ['throw' => true],
         );
@@ -197,7 +206,7 @@ final readonly class ProxyRouteFixer
         return true;
     }
 
-    private function installScript(string $domain, string $content, bool $backend = false): string
+    private function installScript(Node $node, string $domain, string $content, bool $backend = false): string
     {
         $suffix = $backend ? '.backend' : '';
         $sitePath = "/etc/caddy/sites/{$domain}{$suffix}.caddy";
@@ -210,7 +219,40 @@ printf %%s %s | base64 -d | sudo tee %s >/dev/null
 SH,
             escapeshellarg(base64_encode($content)),
             escapeshellarg($sitePath),
-            CaddyTool::reloadCommand(),
+            $this->caddyReloadCommand($node),
+        );
+    }
+
+    private function ensureRouterTrustPool(Node $node, ProxyRoute $route): void
+    {
+        $config = is_array($route->config) ? $route->config : [];
+        $backendTls = $config['router_backend_tls'] ?? null;
+
+        if (! is_array($backendTls) || ($backendTls['trusted_by_gateway_ca'] ?? null) !== true) {
+            return;
+        }
+
+        $caPath = is_string($backendTls['ca_path'] ?? null) && $backendTls['ca_path'] !== ''
+            ? $backendTls['ca_path']
+            : '/etc/orbit/ca/root.crt';
+
+        $this->remoteShell->run($node, $this->trustPoolInstallScript($route, $caPath), ['throw' => true]);
+    }
+
+    private function trustPoolInstallScript(ProxyRoute $route, string $caPath): string
+    {
+        $caPath = $this->validatedAbsolutePath($route, $caPath, 'has an invalid router backend CA path.');
+
+        return sprintf(
+            <<<'SH'
+sudo install -d -m 0755 %s
+printf %%s %s | base64 -d | sudo tee %s >/dev/null
+sudo chmod 0644 %s
+SH,
+            escapeshellarg(dirname($caPath)),
+            escapeshellarg(base64_encode($this->ca->rootCert())),
+            escapeshellarg($caPath),
+            escapeshellarg($caPath),
         );
     }
 
@@ -306,27 +348,50 @@ SH,
         return is_array($artifact) ? $artifact : [];
     }
 
-    private function tlsInstallScript(string $domain, string $cert, string $key): string
+    /**
+     * @return array{cert: string, key: string}
+     */
+    private function tlsPaths(ProxyRoute $route): array
     {
-        $certPath = "/etc/orbit/certs/{$domain}.crt";
-        $keyPath = "/etc/orbit/certs/{$domain}.key";
+        $config = is_array($route->config) ? $route->config : [];
+        $tls = is_array($config['tls'] ?? null) ? $config['tls'] : [];
+        $cert = $tls['cert_path'] ?? null;
+        $key = $tls['key_path'] ?? null;
 
+        return [
+            'cert' => $this->validatedAbsolutePath(
+                $route,
+                is_string($cert) && $cert !== '' ? $cert : "/etc/orbit/certs/{$route->domain}.crt",
+                'has an invalid TLS cert path.',
+            ),
+            'key' => $this->validatedAbsolutePath(
+                $route,
+                is_string($key) && $key !== '' ? $key : "/etc/orbit/certs/{$route->domain}.key",
+                'has an invalid TLS key path.',
+            ),
+        ];
+    }
+
+    private function tlsInstallScript(string $certPath, string $keyPath, string $cert, string $key, string $reloadCommand): string
+    {
         return sprintf(
             <<<'SH'
-sudo install -d -m 0755 /etc/orbit/certs
+sudo install -d -m 0755 %s %s
 printf %%s %s | base64 -d | sudo tee %s >/dev/null
 printf %%s %s | base64 -d | sudo tee %s >/dev/null
 sudo chmod 0644 %s
 sudo chmod 0600 %s
 %s
 SH,
+            escapeshellarg(dirname($certPath)),
+            escapeshellarg(dirname($keyPath)),
             escapeshellarg(base64_encode($cert)),
             escapeshellarg($certPath),
             escapeshellarg(base64_encode($key)),
             escapeshellarg($keyPath),
             escapeshellarg($certPath),
             escapeshellarg($keyPath),
-            CaddyTool::reloadCommand(),
+            $reloadCommand,
         );
     }
 
@@ -341,7 +406,7 @@ SH,
      */
     public function fixCaddyContainer(Node $node, DriftEntry $entry): ?array
     {
-        $caddyName = (new OrbitContainerNames)->caddy();
+        $caddyName = $this->caddyContainerName($node);
 
         if ($entry->key === 'proxy.caddy_container_down') {
             $script = 'docker start '.escapeshellarg($caddyName);
@@ -450,7 +515,7 @@ SH,
             escapeshellarg($sitePath),
             escapeshellarg($certPath),
             escapeshellarg($keyPath),
-            CaddyTool::reloadCommand(),
+            $this->caddyReloadCommand($node),
         );
 
         $this->remoteShell->run($node, $script, ['throw' => true]);
@@ -464,5 +529,31 @@ SH,
             'status' => 'completed',
             'summary' => "Removed extra proxy route {$domain} from node.",
         ];
+    }
+
+    private function caddyReloadCommand(Node $node): string
+    {
+        return CaddyTool::reloadCommand($this->caddyContainerName($node));
+    }
+
+    private function caddyContainerName(Node $node): string
+    {
+        $spec = $this->managedCaddyContainerSpec($node);
+        $name = $spec['name'] ?? null;
+
+        if (is_string($name) && $name !== '') {
+            return $name;
+        }
+
+        return (new OrbitContainerNames)->caddy();
+    }
+
+    private function validatedAbsolutePath(ProxyRoute $route, string $value, string $suffix): string
+    {
+        if (preg_match('/[\x00-\x1F\x7F\s]/', $value) === 1 || ! str_starts_with($value, '/')) {
+            throw new \RuntimeException("Proxy route '{$route->domain}' {$suffix}");
+        }
+
+        return $value;
     }
 }

@@ -15,16 +15,18 @@ class WebSocketRuntimeContainerRenderer
     public function __construct(
         private readonly OrbitContainerNames $names,
         private readonly WebSocketBackendName $backendName,
+        private readonly WebSocketRedisResolver $redisResolver,
     ) {}
 
     public function render(
         Node $node,
         WebSocketRoleSettings $settings,
         string $sourcePath = WebSocketRuntimeContainer::SourceHostPath,
-        string $image = 'dunglas/frankenphp:1-php8.5-bookworm',
+        string $image = WebSocketRuntimeSourceInstaller::DependencyInstallerImage,
     ): WebSocketRuntimeContainer {
         $backendName = $this->backendName->forNode($node);
         $wireGuardAddress = $this->wireGuardAddress($node);
+        $redisAddress = $this->redisAddress($settings);
 
         return new WebSocketRuntimeContainer(
             name: $this->containerName($node),
@@ -35,12 +37,17 @@ class WebSocketRuntimeContainerRenderer
             redisNodeId: $settings->redisNodeId,
             workingDirectory: WebSocketRuntimeContainer::SourceTarget,
             command: $this->command($wireGuardAddress, $backendName),
-            environment: $this->environment($wireGuardAddress),
+            environment: $this->environment($wireGuardAddress, $backendName, $redisAddress),
             mounts: [
                 [
                     'source' => $this->normalizeSourcePath($sourcePath),
                     'target' => WebSocketRuntimeContainer::SourceTarget,
                     'read_only' => false,
+                ],
+                [
+                    'source' => '/etc/orbit',
+                    'target' => '/etc/orbit',
+                    'read_only' => true,
                 ],
             ],
             networkAliases: [
@@ -70,20 +77,22 @@ class WebSocketRuntimeContainerRenderer
             throw new InvalidArgumentException('The websocket runtime container requires a node name.');
         }
 
-        return "orbit-websocket-{$name}";
+        return OrbitContainerNames::forNodeScope($this->containerScopeForNode($node))
+            ->e2eScopedName("orbit-websocket-{$name}");
     }
 
     /**
      * @return array<string, string>
      */
-    private function environment(string $wireGuardAddress): array
+    private function environment(string $wireGuardAddress, string $backendName, string $redisAddress): array
     {
         return [
             'APP_DEBUG' => 'false',
             'APP_ENV' => 'production',
             'BROADCAST_CONNECTION' => 'reverb',
+            'CACHE_STORE' => 'array',
             'ORBIT_WEBSOCKET_APPS_CONFIG' => WebSocketRuntimeSourceInstaller::AppsConfigPath,
-            'REDIS_HOST' => 'redis.orbit',
+            'REDIS_HOST' => $redisAddress,
             'REDIS_PORT' => '6379',
             'REVERB_HOST' => 'websocket.orbit',
             'REVERB_PORT' => '443',
@@ -91,6 +100,8 @@ class WebSocketRuntimeContainerRenderer
             'REVERB_SCHEME' => 'https',
             'REVERB_SERVER_HOST' => $wireGuardAddress,
             'REVERB_SERVER_PORT' => '8080',
+            'REVERB_TLS_CERT' => "/etc/orbit/certs/{$backendName}.crt",
+            'REVERB_TLS_KEY' => "/etc/orbit/certs/{$backendName}.key",
         ];
     }
 
@@ -110,6 +121,23 @@ class WebSocketRuntimeContainerRenderer
         return $wireGuardAddress;
     }
 
+    private function redisAddress(WebSocketRoleSettings $settings): string
+    {
+        $redisNode = $this->redisResolver->usableRedisNode($settings->redisNodeId);
+
+        if (! $redisNode instanceof Node) {
+            throw new RuntimeException('The websocket role requires an active Redis node before runtime config can be rendered.');
+        }
+
+        $wireGuardAddress = trim((string) $redisNode->wireguard_address);
+
+        if ($wireGuardAddress === '') {
+            throw new RuntimeException('The websocket role requires the Redis node to have a WireGuard address.');
+        }
+
+        return $wireGuardAddress;
+    }
+
     private function normalizeSourcePath(string $sourcePath): string
     {
         $sourcePath = trim($sourcePath);
@@ -123,5 +151,16 @@ class WebSocketRuntimeContainerRenderer
         }
 
         return rtrim($sourcePath, '/');
+    }
+
+    private function containerScopeForNode(Node $node): string
+    {
+        $host = trim((string) $node->host);
+
+        if ($host !== '' && filter_var($host, FILTER_VALIDATE_IP) === false) {
+            return $host;
+        }
+
+        return trim($node->name);
     }
 }

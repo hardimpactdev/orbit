@@ -4,6 +4,10 @@ declare(strict_types=1);
 
 $appsConfigPath = env('ORBIT_WEBSOCKET_APPS_CONFIG', '/etc/orbit/websocket/apps.php');
 $apps = is_file($appsConfigPath) ? require $appsConfigPath : [];
+$tlsOptions = array_filter([
+    'local_cert' => env('REVERB_TLS_CERT'),
+    'local_pk' => env('REVERB_TLS_KEY'),
+], fn (mixed $value): bool => is_string($value) && $value !== '');
 
 return [
     'default' => env('REVERB_SERVER', 'reverb'),
@@ -15,7 +19,7 @@ return [
             'path' => env('REVERB_SERVER_PATH', ''),
             'hostname' => env('REVERB_HOST'),
             'options' => [
-                'tls' => [],
+                'tls' => $tlsOptions,
             ],
             'max_request_size' => env('REVERB_MAX_REQUEST_SIZE', 10_000),
             'scaling' => [

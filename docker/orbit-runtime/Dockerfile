@@ -20,7 +20,7 @@ RUN apt-get update \
         tini \
         unzip \
         zip \
-    && docker-php-ext-install bcmath curl intl mbstring pdo_sqlite zip \
+    && docker-php-ext-install bcmath curl intl mbstring pcntl pdo_sqlite zip \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=composer:2 /usr/bin/composer /usr/bin/composer

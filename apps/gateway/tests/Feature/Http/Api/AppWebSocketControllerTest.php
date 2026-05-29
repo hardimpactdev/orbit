@@ -9,8 +9,10 @@ use App\Models\Node;
 use App\Models\NodeAccess;
 use App\Models\ProxyRoute;
 use App\Services\WebSockets\WebSocketBindingService;
+use App\Services\WebSockets\WebSocketRuntimeAppConfigSyncer;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Testing\TestResponse;
+use Mockery\MockInterface;
 use Tests\Fakes\SiteCertificateInstallerFake;
 
 uses(RefreshDatabase::class);
@@ -19,6 +21,9 @@ const APP_WEBSOCKET_CALLER_WG_IP = '10.6.0.92';
 
 beforeEach(function (): void {
     app()->instance(SiteCertificateInstaller::class, new SiteCertificateInstallerFake);
+    $this->mock(WebSocketRuntimeAppConfigSyncer::class, function (MockInterface $mock): void {
+        $mock->shouldReceive('sync')->zeroOrMoreTimes();
+    });
 });
 
 function createAppWebSocketCallerNode(array $overrides = [], ?string $role = null): Node
