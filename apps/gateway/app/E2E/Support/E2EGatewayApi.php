@@ -533,9 +533,6 @@ PHP;
         $runOrbitCommand = $dockerRuntime
             ? "exec(\$script.' 2>&1', \$output, \$exitCode);"
             : "exec('sudo -iu orbit bash -lc '.escapeshellarg(\$script).' 2>&1', \$output, \$exitCode);";
-        $streamOrbitCommand = $dockerRuntime
-            ? "\$process = popen(\$script.' 2>&1', 'r');"
-            : "\$process = popen('sudo -iu orbit bash -lc '.escapeshellarg(\$script).' 2>&1', 'r');";
 
         $script = "<?php\n\n\$orbitPath = ".var_export($orbitPath, true).";\n\$wireguardIdentity = ".var_export($wireguardIdentity, true).";\n\$bindAddress = ".var_export($bindAddress, true).";\n\$certKey = ".var_export($certKey, true).";\n\$httpUpstream = ".var_export($httpUpstream, true).";\n\$peerIdentityMap = ".var_export($peerIdentityMap, true).";\n\$GLOBALS['orbitPath'] = \$orbitPath;\n\$GLOBALS['wireguardIdentity'] = \$wireguardIdentity;\n\$GLOBALS['httpUpstream'] = \$httpUpstream;\n\$GLOBALS['peerIdentityMap'] = \$peerIdentityMap;\n\n".<<<'PHP_WRAP'
         
@@ -713,56 +710,6 @@ PHP;
             return [$exitCode, implode("\n", $output)];
         }
 
-        function stream_orbit_command($connection, string $command): void
-        {
-            global $orbitPath;
-
-            $script = 'cd '.escapeshellarg($orbitPath).' && mkdir -p apps/gateway/storage/framework/cache/data apps/gateway/storage/framework/sessions apps/gateway/storage/framework/testing apps/gateway/storage/framework/views apps/gateway/storage/logs && VIEW_COMPILED_PATH='.escapeshellarg($orbitPath.'/apps/gateway/storage/framework/views').' '.$command;
-            __STREAM_ORBIT_COMMAND__
-
-            fwrite($connection, "HTTP/1.1 200 OK\r\nContent-Type: text/plain; charset=UTF-8\r\nConnection: close\r\n\r\n");
-
-            if ($process === false) {
-                fwrite($connection, "Could not open gateway stream.\n");
-
-                return;
-            }
-
-            while (! feof($process)) {
-                $chunk = fread($process, 8192);
-
-                if ($chunk === false || $chunk === '') {
-                    usleep(50_000);
-
-                    continue;
-                }
-
-                fwrite($connection, $chunk);
-            }
-
-            pclose($process);
-        }
-
-        function stream_tool_logs($connection, string $tool, array $query): void
-        {
-            $parts = [
-                'timeout 6s env ORBIT_IS_GATEWAY=1 php apps/gateway/artisan tool:logs',
-                escapeshellarg($tool),
-                '--follow',
-                '--lines='.escapeshellarg((string) max(1, (int) ($query['lines'] ?? 100))),
-            ];
-
-            foreach (['node', 'app'] as $option) {
-                $value = $query[$option] ?? null;
-
-                if (is_string($value) && $value !== '') {
-                    $parts[] = "--{$option}=".escapeshellarg($value);
-                }
-            }
-
-            stream_orbit_command($connection, implode(' ', $parts).' || true');
-        }
-        
         function run_node_new(array $input): array
         {
             $parts = [
@@ -1202,21 +1149,6 @@ PHP;
                 respond($connection, 200, $identityPayload);
                 fclose($connection);
         
-                continue;
-            }
-
-            if (preg_match('#^GET /api/tools/([^ ?]+)/logs/stream#', $requestLine, $matches) === 1) {
-                $path = explode(' ', $requestLine)[1] ?? '/api/tools/'.$matches[1].'/logs/stream';
-                $queryString = parse_url($path, PHP_URL_QUERY);
-                $query = [];
-
-                if (is_string($queryString)) {
-                    parse_str($queryString, $query);
-                }
-
-                stream_tool_logs($connection, urldecode($matches[1]), $query);
-                fclose($connection);
-
                 continue;
             }
 
@@ -1759,8 +1691,8 @@ PHP;
         PHP_WRAP;
 
         return str_replace(
-            ['__RUN_ORBIT_COMMAND__', '__STREAM_ORBIT_COMMAND__'],
-            [$runOrbitCommand, $streamOrbitCommand],
+            ['__RUN_ORBIT_COMMAND__'],
+            [$runOrbitCommand],
             $script,
         );
     }

@@ -207,6 +207,58 @@ function gatewayRemovedResourceCommandNamesWithoutFrameworkCollisions(): array
     ]));
 }
 
+/**
+ * @return list<string>
+ */
+function gatewayRemovedInfraToolCommandNames(): array
+{
+    return [
+        'activity:list',
+        'activity:show',
+        'agent-ide:message',
+        'cf-cache-rule:add',
+        'cf-cache-rule:remove',
+        'cf-cache:flush',
+        'cf-dns:add',
+        'cf-dns:list',
+        'cf-dns:remove',
+        'cf-ssl:disable',
+        'cf-ssl:enable',
+        'cf-zone:list',
+        'deploy:history',
+        'deploy:log',
+        'deploy:run',
+        'deploy:step-add',
+        'deploy:step-list',
+        'deploy:step-remove',
+        'firewall:allow',
+        'firewall:deny',
+        'firewall:list',
+        'firewall:remove',
+        'proxy:add',
+        'proxy:list',
+        'proxy:remove',
+        'tool:credentials',
+        'tool:install',
+        'tool:list',
+        'tool:logs',
+        'tool:reconfigure',
+        'tool:reload',
+        'tool:remove',
+        'tool:restart',
+        'tool:show',
+        'tool:start',
+        'tool:stop',
+        'tool:update',
+        'vpn-client:disable',
+        'vpn-client:enable',
+        'vpn-client:list',
+        'vpn-client:new',
+        'vpn-client:remove',
+        'vpn-web-ui:change-password',
+    ];
+}
+
 function expectGatewayCommandToBeRemoved(string $commandName): void
 {
     $process = new Process([PHP_BINARY, 'artisan', 'help', $commandName], base_path());
@@ -324,13 +376,12 @@ it('classifies every invokable non-allowed gateway command in the inventory', fu
         }
     }
 
-    expect(array_keys($inventoryRows))->toContain(
-        'activity:list',
-        'tool:list',
-        'orbit:internal:node-register',
-    );
+    expect(array_keys($inventoryRows))->toContain('orbit:internal:node-register');
 
-    expect(array_keys($inventoryRows))->not->toContain(...gatewayRemovedResourceCommandNames());
+    expect(array_keys($inventoryRows))->not->toContain(
+        ...gatewayRemovedResourceCommandNames(),
+        ...gatewayRemovedInfraToolCommandNames(),
+    );
 });
 
 it('keeps hidden framework commands directly invocable', function (): void {
@@ -360,6 +411,18 @@ it('removes resource public product commands from gateway Artisan', function ():
     expect($registeredCommandNames)->not->toContain(...gatewayRemovedResourceCommandNames());
 
     foreach (gatewayRemovedResourceCommandNamesWithoutFrameworkCollisions() as $commandName) {
+        expectGatewayCommandToBeRemoved($commandName);
+    }
+});
+
+it('removes infra and tool public product commands from gateway Artisan', function (): void {
+    $registeredCommandNames = collect(gatewayApplicationCommands())
+        ->pluck('name')
+        ->all();
+
+    expect($registeredCommandNames)->not->toContain(...gatewayRemovedInfraToolCommandNames());
+
+    foreach (gatewayRemovedInfraToolCommandNames() as $commandName) {
         expectGatewayCommandToBeRemoved($commandName);
     }
 });

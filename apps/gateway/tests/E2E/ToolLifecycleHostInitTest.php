@@ -184,7 +184,7 @@ function toolLifecycleRunGatewayCommand(E2ETopologyHarness $topology, string $co
     return $topology->ssh(
         'gateway',
         sprintf(
-            'cd %s && php apps/gateway/artisan %s',
+            'cd %s && orbit %s',
             escapeshellarg($topology->checkout('gateway')),
             $command,
         ),
@@ -225,7 +225,7 @@ function toolLifecycleAssertFollowLogs(E2ETopologyHarness $topology): void
             escapeshellarg($topology->checkout('gateway')),
             escapeshellarg(<<<'BASH'
 rm -f /tmp/orbit-tool-follow.log
-timeout 8s php apps/gateway/artisan tool:logs supervisor --node=app-dev-1 --lines=1 --follow > /tmp/orbit-tool-follow.log 2>&1 || true
+timeout 8s orbit tool:logs supervisor --node=app-dev-1 --lines=1 --follow > /tmp/orbit-tool-follow.log 2>&1 || true
 test -s /tmp/orbit-tool-follow.log
 grep -m 1 supervisor /tmp/orbit-tool-follow.log || { cat /tmp/orbit-tool-follow.log >&2; exit 1; }
 BASH),
@@ -245,7 +245,7 @@ BASH),
             escapeshellarg($topology->checkout('operator')),
             escapeshellarg(<<<'BASH'
 rm -f /tmp/orbit-tool-follow-forwarded.log
-timeout 8s php apps/gateway/artisan tool:logs supervisor --node=app-dev-1 --lines=1 --follow > /tmp/orbit-tool-follow-forwarded.log 2>&1 || true
+timeout 8s orbit tool:logs supervisor --node=app-dev-1 --lines=1 --follow > /tmp/orbit-tool-follow-forwarded.log 2>&1 || true
 test -s /tmp/orbit-tool-follow-forwarded.log
 grep -m 1 supervisor /tmp/orbit-tool-follow-forwarded.log || { cat /tmp/orbit-tool-follow-forwarded.log >&2; exit 1; }
 BASH),
