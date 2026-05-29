@@ -6,17 +6,22 @@ namespace App\Services\WebSockets;
 
 use App\Models\Node;
 use InvalidArgumentException;
+use RuntimeException;
 
 class WebSocketBackendName
 {
     public function forNode(Node $node): string
     {
-        $name = trim($node->name);
+        $wireGuardAddress = trim((string) $node->wireguard_address);
 
-        if ($name === '') {
-            throw new InvalidArgumentException('The websocket backend name requires a node name.');
+        if ($wireGuardAddress === '') {
+            throw new RuntimeException('The websocket backend requires a WireGuard address.');
         }
 
-        return "{$name}.websocket.orbit";
+        if (filter_var($wireGuardAddress, FILTER_VALIDATE_IP) === false) {
+            throw new InvalidArgumentException('The websocket backend identity requires a valid WireGuard IP address.');
+        }
+
+        return $wireGuardAddress;
     }
 }

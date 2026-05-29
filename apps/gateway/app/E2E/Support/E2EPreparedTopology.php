@@ -71,7 +71,7 @@ final readonly class E2EPreparedTopology
      */
     public static function artifactRoles(): array
     {
-        return ['operator', 'gateway', 'app-dev', 'app-prod', 'agent', 'websocket'];
+        return ['operator', 'gateway', 'app-dev', 'app-prod', 'agent'];
     }
 
     /**
@@ -160,7 +160,6 @@ final readonly class E2EPreparedTopology
             'app-dev', 'appdev', 'dev' => 'app-dev',
             'app-prod', 'appprod', 'prod' => 'app-prod',
             'agent' => 'agent',
-            'websocket' => 'websocket',
             default => null,
         };
     }
@@ -228,7 +227,7 @@ final readonly class E2EPreparedTopology
                 'prod' => 'app-prod-1',
                 'agent' => 'agent-1',
                 'ingress' => 'edge-1',
-                'websocket' => 'ws-1',
+                'websocket' => 'app-dev-1',
                 default => null,
             };
 

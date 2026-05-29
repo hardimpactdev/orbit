@@ -822,7 +822,7 @@ it('seeds gateway registry rows for composed docker app roles at acquire time', 
         ->toContain('--ingress-node=app-prod-1');
 });
 
-it('launches and registers a dedicated websocket node for docker prepared topologies', function (): void {
+it('registers websocket on the app-dev node for docker prepared topologies', function (): void {
     $commands = [];
 
     Process::fake(function ($process) use (&$commands) {
@@ -843,8 +843,7 @@ it('launches and registers a dedicated websocket node for docker prepared topolo
             || $command === "docker image inspect 'orbit-e2e:operator_base' >/dev/null"
             || $command === "docker image inspect 'orbit-e2e:gateway_base' >/dev/null"
             || $command === "docker image inspect 'orbit-e2e:app-dev_base' >/dev/null"
-            || $command === "docker image inspect 'orbit-e2e:websocket_base' >/dev/null"
-            || $command === "docker ps --format '{{.Names}}' --filter 'name=orbit-e2e-'"
+                || $command === "docker ps --format '{{.Names}}' --filter 'name=orbit-e2e-'"
             || str_starts_with($command, 'docker network create ')
             || str_starts_with($command, 'docker exec ')
         ) {
@@ -871,12 +870,11 @@ it('launches and registers a dedicated websocket node for docker prepared topolo
         );
 
         expect($lease->devApp()?->name())->toBe('orbit-e2e-run123-dev')
-            ->and($lease->instance('websocket')?->name())->toBe('orbit-e2e-run123-websocket')
+            ->and($lease->instance('websocket'))->toBeNull()
             ->and($lease->instanceNames())->toBe([
                 'orbit-e2e-run123-operator',
                 'orbit-e2e-run123-gateway',
                 'orbit-e2e-run123-dev',
-                'orbit-e2e-run123-websocket',
             ]);
 
         $lease->cleanup();
@@ -885,12 +883,10 @@ it('launches and registers a dedicated websocket node for docker prepared topolo
     $setup = implode("\n", $commands);
 
     expect($setup)
-        ->toContain("docker image inspect 'orbit-e2e:websocket_base' >/dev/null")
-        ->toContain("docker run -d --name 'orbit-e2e-run123-websocket'")
         ->toContain('orbit:internal:bake-app-node app-dev-1 --role=app-dev')
-        ->toContain('orbit:internal:bake-websocket-node ws-1')
-        ->toContain('--host=websocket')
-        ->toContain('--wireguard-address=10.6.0.8')
+        ->toContain('orbit:internal:bake-websocket-node app-dev-1')
+        ->toContain('--host=dev')
+        ->toContain('--wireguard-address=10.6.0.4')
         ->toContain('--redis-node=app-dev-1')
         ->toContain('/home/orbit/.ssh/authorized_keys')
         ->not->toContain('--environment=');

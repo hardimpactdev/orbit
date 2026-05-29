@@ -307,7 +307,11 @@ class WebSocketRouteRegistrar
             ->all();
 
         if ($nodes === []) {
-            throw new RuntimeException('The websocket service route requires at least one active websocket node.');
+            throw new RuntimeException('The websocket service route requires at least one active websocket backend.');
+        }
+
+        if (count($nodes) > 1) {
+            throw new RuntimeException('The websocket service route supports one active websocket backend.');
         }
 
         return $nodes;

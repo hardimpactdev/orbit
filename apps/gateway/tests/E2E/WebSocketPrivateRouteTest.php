@@ -14,7 +14,7 @@ it('routes the private websocket service to a websocket-role backend through the
             ->and($topology->lease()->agent())->toBeNull()
             ->and($topology->lease()->devApp())->not->toBeNull()
             ->and($topology->lease()->gateway())->not->toBeNull()
-            ->and($topology->lease()->instance('websocket'))->not->toBeNull();
+            ->and($topology->lease()->instance('websocket'))->toBeNull();
 
         $snapshot = websocketPrivateRouteSnapshot($topology);
         $route = $snapshot['route'];
@@ -57,43 +57,42 @@ it('routes the private websocket service to a websocket-role backend through the
             ])
             ->and($backendPool)->toHaveCount(1)
             ->and($backendPool[0]['node_id'])->toBeInt()
-            ->and($backendPool[0]['node'])->toBe('ws-1')
-            ->and($backendPool[0]['url'])->toBe('https://10.6.0.8:8080')
+            ->and($backendPool[0]['node'])->toBe('app-dev-1')
+            ->and($backendPool[0]['url'])->toBe('https://10.6.0.4:8080')
             ->and($config['upstreams'][0]['node_id'])->toBeInt()
-            ->and($config['upstreams'][0]['node'])->toBe('ws-1')
+            ->and($config['upstreams'][0]['node'])->toBe('app-dev-1')
             ->and($config['upstreams'][0]['scheme'])->toBe('https')
-            ->and($config['upstreams'][0]['host'])->toBe('10.6.0.8')
-            ->and($config['upstreams'][0]['backend_name'])->toBe('ws-1.websocket.orbit')
+            ->and($config['upstreams'][0]['host'])->toBe('10.6.0.4')
+            ->and($config['upstreams'][0]['backend_name'])->toBe('10.6.0.4')
             ->and($config['upstreams'][0]['port'])->toBe(8080)
-            ->and($config['upstreams'][0]['url'])->toBe('https://10.6.0.8:8080')
-            ->and($backendNodes)->toBe(['ws-1'])
-            ->and($backendNodes)->not->toContain('app-dev-1')
+            ->and($config['upstreams'][0]['url'])->toBe('https://10.6.0.4:8080')
+            ->and($backendNodes)->toBe(['app-dev-1'])
             ->and($backendUrls)->not->toContain('https://app-dev-1.websocket.orbit:8080');
 
         expect($renderedRouterRoute)
             ->toContain('websocket.orbit {')
             ->toContain('tls /etc/orbit/certs/websocket.orbit.crt /etc/orbit/certs/websocket.orbit.key')
-            ->toContain('reverse_proxy https://10.6.0.8:8080 {')
+            ->toContain('reverse_proxy https://10.6.0.4:8080 {')
             ->toContain('tls_trust_pool file /etc/orbit/ca/root.crt')
             ->toContain('lb_policy first')
             ->toContain('stream_close_delay 5m')
             ->toContain('flush_interval -1')
-            ->not->toContain('app-dev-1');
+            ->not->toContain('.websocket.orbit:8080');
 
-        expect($runtime['name'])->toContain('websocket-orbit-websocket-ws-1')
-            ->and($runtime['backend_name'])->toBe('ws-1.websocket.orbit')
-            ->and($runtime['command'])->toBe('php '.'artisan reverb:start --host=10.6.0.8 --port=8080 --hostname=ws-1.websocket.orbit')
+        expect($runtime['name'])->toContain('dev-orbit-websocket-app-dev-1')
+            ->and($runtime['backend_name'])->toBe('10.6.0.4')
+            ->and($runtime['command'])->toBe('php '.'artisan reverb:start --host=10.6.0.4 --port=8080 --hostname=10.6.0.4')
             ->and($runtime['network_aliases'])->toContain($runtime['name'])
-            ->and($runtime['network_aliases'])->toContain('ws-1.websocket.orbit')
+            ->and(implode(' ', $runtime['network_aliases']))->not->toContain('.websocket.orbit')
             ->and($runtime['environment'])->toMatchArray([
                 'BROADCAST_CONNECTION' => 'reverb',
                 'ORBIT_WEBSOCKET_APPS_CONFIG' => '/etc/orbit/websocket/apps.php',
                 'REDIS_HOST' => '10.6.0.4',
                 'REVERB_HOST' => 'websocket.orbit',
-                'REVERB_SERVER_HOST' => '10.6.0.8',
+                'REVERB_SERVER_HOST' => '10.6.0.4',
                 'REVERB_SERVER_PORT' => '8080',
-                'REVERB_TLS_CERT' => '/etc/orbit/certs/ws-1.websocket.orbit.crt',
-                'REVERB_TLS_KEY' => '/etc/orbit/certs/ws-1.websocket.orbit.key',
+                'REVERB_TLS_CERT' => '/etc/orbit/certs/10.6.0.4.crt',
+                'REVERB_TLS_KEY' => '/etc/orbit/certs/10.6.0.4.key',
             ]);
     } finally {
         $topology->cleanup();
@@ -133,8 +132,8 @@ $route = app(\App\Services\WebSockets\WebSocketRouteRegistrar::class)
     ->syncServiceRoute()
     ->load('node');
 $renderer = app(\App\Services\Proxy\ProxyRouteRenderer::class);
-$websocketNode = \App\Models\Node::query()
-    ->where('name', 'ws-1')
+	$websocketNode = \App\Models\Node::query()
+	    ->where('name', 'app-dev-1')
     ->firstOrFail();
 $assignment = $websocketNode->roleAssignments()
     ->where('role', \App\Enums\Nodes\NodeRoleName::WebSocket->value)

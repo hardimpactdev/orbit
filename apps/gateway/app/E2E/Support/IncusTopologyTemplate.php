@@ -19,9 +19,9 @@ final readonly class IncusTopologyTemplate
             E2ETopologyKind::OperatorGatewayAgent => ['operator', 'gateway', 'agent'],
             E2ETopologyKind::OperatorGatewayAppdevAppprodAgent => ['operator', 'gateway', 'dev', 'prod', 'agent'],
             E2ETopologyKind::OperatorGatewayAppprodIngress => ['operator', 'gateway', 'prod', 'ingress'],
-            E2ETopologyKind::OperatorGatewayAppdevWebsocket => ['operator', 'gateway', 'dev', 'websocket'],
-            E2ETopologyKind::OperatorGatewayAppdevAppprodWebsocket => ['operator', 'gateway', 'dev', 'prod', 'websocket'],
-            E2ETopologyKind::OperatorGatewayAppdevAppprodAgentWebsocket => ['operator', 'gateway', 'dev', 'prod', 'agent', 'websocket'],
+            E2ETopologyKind::OperatorGatewayAppdevWebsocket => ['operator', 'gateway', 'dev'],
+            E2ETopologyKind::OperatorGatewayAppdevAppprodWebsocket => ['operator', 'gateway', 'dev', 'prod'],
+            E2ETopologyKind::OperatorGatewayAppdevAppprodAgentWebsocket => ['operator', 'gateway', 'dev', 'prod', 'agent'],
         };
 
         if (E2EPreparedTopology::prodHostsIngressRole($kind)) {

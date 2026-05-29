@@ -55,8 +55,8 @@ function websocketBindingServiceRouteBackends(): void
     ]);
 
     Node::factory()->withActiveRole('websocket')->create([
-        'name' => 'ws-1',
-        'wireguard_address' => '10.6.0.44',
+        'name' => 'app-dev-1',
+        'wireguard_address' => '10.6.0.4',
     ]);
 }
 
@@ -180,7 +180,7 @@ it('does not persist bindings when websocket route prerequisites fail', function
     $app = websocketBindingServiceApp(domain: 'docs.test');
 
     expect(fn () => app(WebSocketBindingService::class)->enable($app, []))
-        ->toThrow(RuntimeException::class, 'The websocket service route requires at least one active websocket node.');
+        ->toThrow(RuntimeException::class, 'The websocket service route requires at least one active websocket backend.');
 
     expect(AppWebSocketBinding::query()->count())->toBe(0);
 });

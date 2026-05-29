@@ -221,10 +221,11 @@ unless the same node also carries `ingress`.
 ### WebSocket runtime
 
 The `websocket` role runs Laravel Reverb for fleet realtime traffic. Reverb
-runs in a Docker runtime container managed by Orbit on the websocket node; it is
-not a host Supervisor program and does not use host PHP as a fallback. The
-container binds only to the node's WireGuard address with a stable backend name
-such as `ws-1.websocket.orbit`.
+runs in a Docker runtime container managed by Orbit on the node that carries the
+websocket role; it is not a host Supervisor program and does not use host PHP as
+a fallback. The container binds only to that node's WireGuard address, and the
+router targets the backend as `https://<wireguard-ip>:8080`. Backend certificates
+and runtime identity use the backend WireGuard IP, not per-node websocket DNS.
 
 The `router` role owns `websocket.orbit`, the websocket backend pool, and
 private router-to-websocket TLS verification. Apps publish to
@@ -235,12 +236,15 @@ forwards those WebSocket routes to `router`, never directly to websocket nodes.
 The websocket role requires Redis-backed scaling configuration from day one.
 Its `redis_node_id` setting points at a node with the `database` role and a
 managed Redis service. The websocket role consumes Redis; it does not install
-or own Redis.
+or own Redis. The default prepared E2E topology colocates `websocket`,
+`app-dev`, and `database` on `app-dev-1`, so the websocket Redis dependency
+points back to that same node. Dedicated websocket nodes remain valid when they
+are reachable over WireGuard and point their Redis dependency at a database-role
+node.
 
-Focused WebSocket E2E coverage is pending the websocket role runtime. When that
-role lands, coverage must use the prepared Docker/Incus topology lane and keep
-Reverb and Redis on the Docker substrate. It must not add host PHP, host Caddy,
-PHP-FPM, or host Supervisor to make realtime assertions pass.
+Current product support is one active websocket backend. Route internals keep a
+backend-pool-shaped configuration for future scaling, but multiple active
+websocket backends fail clearly instead of silently fanning out.
 
 ### S3 runtime
 

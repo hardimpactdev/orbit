@@ -796,6 +796,7 @@ PHP;
             'prod' => self::requiredRole($topology->prodApp(), $role, $users['prod'] ?? 'orbit'),
             'agent' => self::requiredRole($topology->agent(), $role, $users['agent'] ?? 'orbit'),
             'ingress' => self::requiredRole($topology->ingress(), $role, $users[$role] ?? 'orbit'),
+            'websocket' => self::requiredRole($topology->devApp(), $role, $users[$role] ?? 'orbit'),
             default => self::requiredRole($topology->instance($role), $role, $users[$role] ?? 'orbit'),
         };
     }
@@ -809,14 +810,14 @@ PHP;
             'prod' => 'app-prod-1',
             'agent' => 'agent-1',
             'ingress' => 'edge-1',
-            'websocket' => 'ws-1',
+            'websocket' => 'app-dev-1',
             default => null,
         };
     }
 
     private static function topologyRoleUsesHostLauncher(string $role): bool
     {
-        return in_array($role, ['operator', 'gateway', 'dev', 'prod', 'agent', 'ingress'], true);
+        return in_array($role, ['operator', 'gateway', 'dev', 'prod', 'agent', 'ingress', 'websocket'], true);
     }
 
     /**

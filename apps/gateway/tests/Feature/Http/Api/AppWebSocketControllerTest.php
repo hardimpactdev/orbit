@@ -64,8 +64,8 @@ function createAppWebSocketRoutePrerequisites(bool $withRouter = true, bool $wit
 
     if ($withWebSocket) {
         Node::factory()->withActiveRole('websocket')->create([
-            'name' => 'ws-1',
-            'wireguard_address' => '10.6.0.44',
+            'name' => 'app-dev-1',
+            'wireguard_address' => '10.6.0.4',
         ]);
     }
 }

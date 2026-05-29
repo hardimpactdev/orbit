@@ -47,9 +47,9 @@ it('scopes Docker runtime names by E2E network and node scope', function (): voi
 
         expect($names->network())->toBe('orbit-e2e-run-123')
             ->and($names->caddy())->toBe('orbit-e2e-run-123-prod-orbit-caddy')
-            ->and($names->e2eScopedName('orbit-websocket-ws-1'))->toBe('orbit-e2e-run-123-prod-orbit-websocket-ws-1')
-            ->and(OrbitContainerNames::forNodeScope('websocket')->caddy())->toBe('orbit-e2e-run-123-websocket-orbit-caddy')
-            ->and(OrbitContainerNames::forNodeScope('websocket')->e2eScopedName('orbit-websocket-ws-1'))->toBe('orbit-e2e-run-123-websocket-orbit-websocket-ws-1');
+            ->and($names->e2eScopedName('orbit-websocket-app-dev-1'))->toBe('orbit-e2e-run-123-prod-orbit-websocket-app-dev-1')
+            ->and(OrbitContainerNames::forNodeScope('dev')->caddy())->toBe('orbit-e2e-run-123-dev-orbit-caddy')
+            ->and(OrbitContainerNames::forNodeScope('dev')->e2eScopedName('orbit-websocket-app-dev-1'))->toBe('orbit-e2e-run-123-dev-orbit-websocket-app-dev-1');
     } finally {
         if ($previousNetwork === false) {
             putenv('ORBIT_E2E_DOCKER_NETWORK');

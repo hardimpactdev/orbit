@@ -43,28 +43,30 @@ describe('orbit:internal:bake-websocket-node', function (): void {
         app()->instance(SshHostKeyPinner::class, $this->hostKeyPinner);
     });
 
-    it('writes a websocket node row with Redis role settings', function (): void {
+    it('adds the websocket role to an existing app-dev Redis node', function (): void {
         $redis = createBakeWebSocketRedisNode();
 
         $this->artisan('orbit:internal:bake-websocket-node', [
-            'name' => 'ws-1',
-            '--host' => 'websocket',
-            '--host-key-host' => '10.6.0.8',
-            '--wireguard-address' => '10.6.0.8',
+            'name' => 'app-dev-1',
+            '--host' => 'dev',
+            '--host-key-host' => '10.6.0.4',
+            '--wireguard-address' => '10.6.0.4',
             '--gateway-endpoint' => 'gateway',
             '--user' => 'orbit',
             '--redis-node' => 'app-dev-1',
         ])->assertSuccessful();
 
-        $node = Node::query()->where('name', 'ws-1')->firstOrFail();
+        $node = Node::query()->where('name', 'app-dev-1')->firstOrFail();
         $assignment = NodeRoleAssignment::query()
             ->where('node_id', $node->id)
             ->where('role', NodeRoleName::WebSocket->value)
             ->first();
 
         expect($node->getAttributes())->not->toHaveKeys(['role', 'environment'])
-            ->and($node->host)->toBe('websocket')
-            ->and($node->wireguard_address)->toBe('10.6.0.8')
+            ->and($node->id)->toBe($redis->id)
+            ->and($node->tld)->toBe('test')
+            ->and($node->host)->toBe('dev')
+            ->and($node->wireguard_address)->toBe('10.6.0.4')
             ->and($node->gateway_endpoint)->toBe('gateway')
             ->and($node->user)->toBe('orbit')
             ->and($node->orbit_path)->toBe('/home/orbit/orbit')
@@ -75,7 +77,7 @@ describe('orbit:internal:bake-websocket-node', function (): void {
             ->and($node->host_key_pin_mode)->toBe('tofu')
             ->and($node->host_key_pinned_at)->not->toBeNull()
             ->and($this->hostKeyPinner->calls)->toBe([
-                ['host' => '10.6.0.8', 'expected' => null],
+                ['host' => '10.6.0.4', 'expected' => null],
             ])
             ->and($assignment)->not->toBeNull()
             ->and($assignment?->status)->toBe(NodeRoleStatus::Active->value)
@@ -91,7 +93,7 @@ describe('orbit:internal:bake-websocket-node', function (): void {
         ]);
 
         expect(fn () => $this->artisan('orbit:internal:bake-websocket-node', [
-            'name' => 'ws-1',
+            'name' => 'websocket-dedicated-1',
             '--host' => '10.6.0.8',
             '--wireguard-address' => '10.6.0.8',
             '--gateway-endpoint' => '10.6.0.2',
@@ -106,16 +108,16 @@ describe('orbit:internal:bake-websocket-node', function (): void {
         $converger->shouldReceive('converge')
             ->once()
             ->with(
-                m::on(fn (Node $node): bool => $node->name === 'ws-1'),
+                m::on(fn (Node $node): bool => $node->name === 'app-dev-1'),
                 m::on(fn (NodeRoleAssignment $assignment): bool => $assignment->role === NodeRoleName::WebSocket->value
-                    && $assignment->settings === ['redis_node_id' => $redis->id]),
+                && $assignment->settings === ['redis_node_id' => $redis->id]),
             );
         app()->instance(NodeRoleBaselineConverger::class, $converger);
 
         $this->artisan('orbit:internal:bake-websocket-node', [
-            'name' => 'ws-1',
-            '--host' => '10.6.0.8',
-            '--wireguard-address' => '10.6.0.8',
+            'name' => 'app-dev-1',
+            '--host' => '10.6.0.4',
+            '--wireguard-address' => '10.6.0.4',
             '--gateway-endpoint' => '10.6.0.2',
             '--user' => 'orbit',
             '--redis-node' => 'app-dev-1',
@@ -126,9 +128,14 @@ describe('orbit:internal:bake-websocket-node', function (): void {
 
 function createBakeWebSocketRedisNode(): Node
 {
-    $node = Node::factory()->database()->create([
+    $node = Node::factory()->appDev(['tld' => 'test'])->create([
         'name' => 'app-dev-1',
         'status' => Node::STATUS_ACTIVE,
+    ]);
+
+    NodeRoleAssignment::factory()->for($node)->create([
+        'role' => NodeRoleName::Database->value,
+        'status' => NodeRoleStatus::Active->value,
     ]);
 
     NodeTool::factory()->for($node)->create([

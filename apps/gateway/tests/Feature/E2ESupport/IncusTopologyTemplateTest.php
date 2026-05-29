@@ -86,9 +86,9 @@ it('maps each topology kind to expected roles', function (): void {
         ->and(IncusTopologyTemplate::rolesFor(E2ETopologyKind::OperatorGatewayAgent))->toBe(['operator', 'gateway', 'agent'])
         ->and(IncusTopologyTemplate::rolesFor(E2ETopologyKind::OperatorGatewayAppdevAppprodAgent))->toBe(['operator', 'gateway', 'dev', 'prod', 'agent'])
         ->and(IncusTopologyTemplate::rolesFor($ingressKind))->toBe(['operator', 'gateway', 'prod'])
-        ->and(IncusTopologyTemplate::rolesFor(E2ETopologyKind::OperatorGatewayAppdevWebsocket))->toBe(['operator', 'gateway', 'dev', 'websocket'])
-        ->and(IncusTopologyTemplate::rolesFor(E2ETopologyKind::OperatorGatewayAppdevAppprodWebsocket))->toBe(['operator', 'gateway', 'dev', 'prod', 'websocket'])
-        ->and(IncusTopologyTemplate::rolesFor(E2ETopologyKind::OperatorGatewayAppdevAppprodAgentWebsocket))->toBe(['operator', 'gateway', 'dev', 'prod', 'agent', 'websocket']);
+        ->and(IncusTopologyTemplate::rolesFor(E2ETopologyKind::OperatorGatewayAppdevWebsocket))->toBe(['operator', 'gateway', 'dev'])
+        ->and(IncusTopologyTemplate::rolesFor(E2ETopologyKind::OperatorGatewayAppdevAppprodWebsocket))->toBe(['operator', 'gateway', 'dev', 'prod'])
+        ->and(IncusTopologyTemplate::rolesFor(E2ETopologyKind::OperatorGatewayAppdevAppprodAgentWebsocket))->toBe(['operator', 'gateway', 'dev', 'prod', 'agent']);
 });
 
 it('generates correct template and clone names', function (): void {
@@ -100,8 +100,6 @@ it('generates correct template and clone names', function (): void {
         ->toBe('orbit-template-gateway-base')
         ->and(IncusTopologyTemplate::templateName(E2ETopologyKind::OperatorGatewayAppprodIngress, 'prod'))
         ->toBe('orbit-template-app-prod-base')
-        ->and(IncusTopologyTemplate::templateName(E2ETopologyKind::OperatorGatewayAppdevWebsocket, 'websocket'))
-        ->toBe('orbit-template-websocket-base')
         ->and(IncusTopologyTemplate::snapshotName(E2ETopologyKind::OperatorGateway))
         ->toBe('clean-operator_gateway-base')
         ->and(IncusTopologyTemplate::snapshotName(E2ETopologyKind::OperatorGatewayAppdevAppprodAgentWebsocket))
@@ -639,16 +637,14 @@ it('prepared Incus acquisition retargets selected snapshot roles without dynamic
         ->toContain('E2EPreparedTopology::prodHostsIngressRole($kind)')
         ->toContain('orbit:internal:bake-app-node app-prod-1 --role=app-prod')
         ->toContain('orbit:internal:bake-agent-node agent-1')
-        ->toContain('orbit:internal:bake-websocket-node ws-1')
+        ->toContain('orbit:internal:bake-websocket-node app-dev-1')
         ->toContain("private const string DevWireGuardIp = '10.6.0.4'")
         ->toContain("private const string ProdWireGuardIp = '10.6.0.5'")
         ->toContain("private const string AgentWireGuardIp = '10.6.0.6'")
-        ->toContain("private const string WebSocketWireGuardIp = '10.6.0.8'")
         ->toContain('escapeshellarg(self::DevWireGuardIp)')
         ->toContain('escapeshellarg(self::ProdWireGuardIp)')
         ->toContain('escapeshellarg(self::AgentWireGuardIp)')
-        ->toContain('escapeshellarg(self::WebSocketWireGuardIp)')
-        ->toContain("foreach (['dev', 'prod', 'agent', 'ingress', 'websocket'] as \$role)")
+        ->toContain("foreach (['dev', 'prod', 'agent', 'ingress'] as \$role)")
         ->not->toContain('cd /home/orbit/orbit && php artisan')
         ->not->toContain('prepared.node-new')
         ->not->toContain('launchPreparedBaseRole')

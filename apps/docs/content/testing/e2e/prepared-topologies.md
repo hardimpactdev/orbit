@@ -91,14 +91,12 @@ not booted.
 Required prepared sources for feature lanes:
 
 - Docker role images for the composable gateway-backed set: operator and
-  gateway from `operator_gateway`; app-dev, app-prod, agent, and websocket from
-  `operator_gateway_app-dev_app-prod_agent_websocket`. App-dev carries database
-  and Redis registry state by default, app-prod carries the ingress role, and
-  websocket carries the Reverb runtime baseline with Redis linked to app-dev.
-  Canonical base role images are `orbit-e2e:operator_base`,
+  gateway from `operator_gateway`; app-dev, app-prod, and agent from
+  `operator_gateway_app-dev_app-prod_agent_websocket`. App-dev carries database,
+  Redis, and the websocket role registry state by default; app-prod carries the
+  ingress role. Canonical base role images are `orbit-e2e:operator_base`,
   `orbit-e2e:gateway_base`, `orbit-e2e:app-dev_base`,
-  `orbit-e2e:app-prod_base`, `orbit-e2e:agent_base`, and
-  `orbit-e2e:websocket_base`.
+  `orbit-e2e:app-prod_base`, and `orbit-e2e:agent_base`.
 - Docker runner support images: `orbit-runtime:<namespace>-current`,
   `caddy:2-alpine`, and every FrankenPHP image supported by
   `PhpRuntimeCatalog` for app/workspace topologies.
@@ -209,9 +207,9 @@ Each topology kind adds the handles and seeded state that tests can rely on.
 | `operator_gateway_app-dev_app-prod` | Adds a production app clone named `app-prod-1`. Production app runtime assertions use FrankenPHP app containers and Docker process runtime units behind the private `orbit-caddy` backend listener. |
 | `operator_gateway_agent` | Adds one agent clone named `agent-1` and skips development and production app clones. |
 | `operator_gateway_app-prod_ingress` | Uses one production app clone that also carries the ingress role. Public production HTTP assertions preserve the path `ingress -> router -> backend`. |
-| `operator_gateway_app-dev_websocket` | Adds a dedicated websocket node named `ws-1`; app-dev provides the Redis registry state used by the websocket role. |
-| `operator_gateway_app-dev_app-prod_websocket` | Adds a dedicated websocket node and a production app clone that carries ingress for public app WebSocket assertions. |
-| `operator_gateway_app-dev_app-prod_agent_websocket` | Adds all current workload nodes: dev, prod, agent, and websocket. Use as the full websocket-capable artifact source. |
+| `operator_gateway_app-dev_websocket` | Adds the websocket role to `app-dev-1`, alongside `app-dev` and `database`; Redis for websocket points to the same app-dev node. |
+| `operator_gateway_app-dev_app-prod_websocket` | Adds a production app clone that carries ingress for public app WebSocket assertions while keeping websocket on `app-dev-1`. |
+| `operator_gateway_app-dev_app-prod_agent_websocket` | Adds dev, prod, and agent workload nodes, with websocket colocated on `app-dev-1`. Use as the full websocket-capable artifact source. |
 
 ## Hosted service expectations
 

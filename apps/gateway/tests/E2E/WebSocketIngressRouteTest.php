@@ -21,7 +21,7 @@ it('delivers public websocket events through ingress and router to websocket-rol
             ->and($topology->lease()->devApp())->not->toBeNull()
             ->and($topology->lease()->prodApp())->not->toBeNull()
             ->and($topology->lease()->gateway())->not->toBeNull()
-            ->and($topology->lease()->instance('websocket'))->not->toBeNull();
+            ->and($topology->lease()->instance('websocket'))->toBeNull();
 
         E2EGatewayApi::stop($topology->instance('gateway'));
 
@@ -38,7 +38,9 @@ it('delivers public websocket events through ingress and router to websocket-rol
             ->and($snapshot['schema']['nodes_environment_column'])->toBeFalse()
             ->and($snapshot['nodes']['app_prod_roles'])->toContain('app-prod')
             ->and($snapshot['nodes']['app_prod_roles'])->toContain('ingress')
-            ->and($snapshot['nodes']['websocket_roles'])->toBe(['websocket'])
+            ->and($snapshot['nodes']['app_dev_roles'])->toContain('app-dev')
+            ->and($snapshot['nodes']['app_dev_roles'])->toContain('database')
+            ->and($snapshot['nodes']['app_dev_roles'])->toContain('websocket')
             ->and($snapshot['binding'])->toMatchArray([
                 'enabled' => true,
                 'public_hosts' => [$publicHost],
@@ -64,8 +66,8 @@ it('delivers public websocket events through ingress and router to websocket-rol
             ->and($publicConfig['router_upstream']['url'])->toBe('http://10.6.0.2:80')
             ->and($publicBackendPool)->toHaveCount(1)
             ->and($publicBackendPool[0]['node_id'])->toBeInt()
-            ->and($publicBackendPool[0]['node'])->toBe('ws-1')
-            ->and($publicBackendPool[0]['url'])->toBe('https://10.6.0.8:8080')
+            ->and($publicBackendPool[0]['node'])->toBe('app-dev-1')
+            ->and($publicBackendPool[0]['url'])->toBe('https://10.6.0.4:8080')
             ->and($publicConfig['router_backend_tls'])->toBe([
                 'trusted_by_gateway_ca' => true,
                 'ca_path' => '/etc/orbit/ca/root.crt',
@@ -93,13 +95,12 @@ it('delivers public websocket events through ingress and router to websocket-rol
             ])
             ->and($serviceBackendPool)->toHaveCount(1)
             ->and($serviceBackendPool[0]['node_id'])->toBeInt()
-            ->and($serviceBackendPool[0]['node'])->toBe('ws-1')
-            ->and($serviceBackendPool[0]['url'])->toBe('https://10.6.0.8:8080')
-            ->and($serviceConfig['upstreams'][0]['host'])->toBe('10.6.0.8')
-            ->and($serviceConfig['upstreams'][0]['backend_name'])->toBe('ws-1.websocket.orbit')
+            ->and($serviceBackendPool[0]['node'])->toBe('app-dev-1')
+            ->and($serviceBackendPool[0]['url'])->toBe('https://10.6.0.4:8080')
+            ->and($serviceConfig['upstreams'][0]['host'])->toBe('10.6.0.4')
+            ->and($serviceConfig['upstreams'][0]['backend_name'])->toBe('10.6.0.4')
             ->and($serviceConfig['upstreams'][0]['port'])->toBe(8080)
-            ->and($serviceBackendNodes)->toBe(['ws-1'])
-            ->and($serviceBackendNodes)->not->toContain('app-dev-1')
+            ->and($serviceBackendNodes)->toBe(['app-dev-1'])
             ->and($serviceBackendNodes)->not->toContain('app-prod-1');
 
         expect($snapshot['rendered_ingress_route'])
@@ -107,25 +108,24 @@ it('delivers public websocket events through ingress and router to websocket-rol
             ->toContain('reverse_proxy http://10.6.0.2:80 {')
             ->toContain('stream_close_delay 5m')
             ->toContain('flush_interval -1')
-            ->not->toContain('ws-1.websocket.orbit')
-            ->not->toContain('app-dev-1');
+            ->not->toContain('.websocket.orbit:8080');
 
         expect($snapshot['rendered_public_router_route'])
             ->toContain("http://{$publicHost} {")
-            ->toContain('reverse_proxy https://10.6.0.8:8080 {')
+            ->toContain('reverse_proxy https://10.6.0.4:8080 {')
             ->toContain('tls_trust_pool file /etc/orbit/ca/root.crt')
             ->toContain('stream_close_delay 5m')
             ->toContain('flush_interval -1')
-            ->not->toContain('app-dev-1');
+            ->not->toContain('.websocket.orbit:8080');
 
         expect($snapshot['rendered_service_router_route'])
             ->toContain('websocket.orbit {')
             ->toContain('tls /etc/orbit/certs/websocket.orbit.crt /etc/orbit/certs/websocket.orbit.key')
-            ->toContain('reverse_proxy https://10.6.0.8:8080 {')
+            ->toContain('reverse_proxy https://10.6.0.4:8080 {')
             ->toContain('tls_trust_pool file /etc/orbit/ca/root.crt')
             ->toContain('stream_close_delay 5m')
             ->toContain('flush_interval -1')
-            ->not->toContain('app-dev-1')
+            ->not->toContain('.websocket.orbit:8080')
             ->not->toContain('app-prod-1');
 
         $delivery = websocketIngressEventDelivery(
@@ -162,8 +162,8 @@ $publicHost = __PUBLIC_HOST__;
 $prodNode = \App\Models\Node::query()
     ->where('name', 'app-prod-1')
     ->firstOrFail();
-$websocketNode = \App\Models\Node::query()
-    ->where('name', 'ws-1')
+	$websocketNode = \App\Models\Node::query()
+	    ->where('name', 'app-dev-1')
     ->firstOrFail();
 
 \App\Models\ProxyRoute::query()
@@ -305,7 +305,7 @@ echo json_encode([
             ->pluck('role')
             ->values()
             ->all(),
-        'websocket_roles' => $websocketNode->roleAssignments()
+	        'app_dev_roles' => $websocketNode->roleAssignments()
             ->where('status', \App\Enums\Nodes\NodeRoleStatus::Active->value)
             ->orderBy('role')
             ->pluck('role')
@@ -437,7 +437,7 @@ function e2e_fail(string $message): never
     e2e_debug_command('prod addresses', 'docker exec '.escapeshellarg($prodNodeContainer).' sh -lc '.escapeshellarg('ip -br addr'));
     e2e_debug_command('gateway addresses', 'docker exec '.escapeshellarg($gatewayNodeContainer).' sh -lc '.escapeshellarg('ip -br addr'));
     e2e_debug_command('prod to gateway public route', 'docker exec '.escapeshellarg($prodNodeContainer).' sh -lc '.escapeshellarg('curl -sv --max-time 5 http://10.6.0.2/ -H '.escapeshellarg("Host: {$publicHost}")));
-    e2e_debug_command('gateway websocket dns', 'docker exec '.escapeshellarg($gatewayNodeContainer).' sh -lc '.escapeshellarg('getent hosts ws-1.websocket.orbit || true'));
+	    e2e_debug_command('gateway websocket service dns', 'docker exec '.escapeshellarg($gatewayNodeContainer).' sh -lc '.escapeshellarg('getent hosts websocket.orbit || true'));
     e2e_debug_command('websocket runtime app config', 'docker exec '.escapeshellarg($runtimeContainer).' sh -lc '.escapeshellarg('cat /etc/orbit/websocket/apps.php 2>/dev/null || true'));
     e2e_debug_command('websocket runtime laravel log', 'docker exec '.escapeshellarg($runtimeContainer).' sh -lc '.escapeshellarg('cat storage/logs/laravel.log 2>/dev/null || true'));
     exit(1);

@@ -20,8 +20,6 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
 
     private const string IngressWireGuardIp = '10.6.0.7';
 
-    private const string WebSocketWireGuardIp = '10.6.0.8';
-
     public function __construct(
         private E2EConfig $config,
     ) {}
@@ -34,6 +32,15 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
     public function capabilities(): E2ETopologyCapabilities
     {
         return E2ETopologyCapabilities::vm();
+    }
+
+    private static function websocketTopologyKind(E2ETopologyKind $kind): bool
+    {
+        return in_array($kind, [
+            E2ETopologyKind::OperatorGatewayAppdevWebsocket,
+            E2ETopologyKind::OperatorGatewayAppdevAppprodWebsocket,
+            E2ETopologyKind::OperatorGatewayAppdevAppprodAgentWebsocket,
+        ], true);
     }
 
     public function availability(E2ETopologyKind $kind): ProviderAvailability
@@ -782,11 +789,11 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
             ), timeoutSeconds: 120);
         }
 
-        if (isset($instances['websocket'])) {
+        if (self::websocketTopologyKind($kind) && isset($instances['dev'])) {
             E2ECommand::ssh($gateway, 'orbit', $sshKeyPair, sprintf(
-                'cd /home/orbit/orbit && php apps/gateway/artisan orbit:internal:bake-websocket-node ws-1 --host=%s --wireguard-address=%s --gateway-endpoint=%s --user=orbit --redis-node=app-dev-1 --converge-runtime',
-                escapeshellarg(self::WebSocketWireGuardIp),
-                escapeshellarg(self::WebSocketWireGuardIp),
+                'cd /home/orbit/orbit && php apps/gateway/artisan orbit:internal:bake-websocket-node app-dev-1 --host=%s --wireguard-address=%s --gateway-endpoint=%s --user=orbit --redis-node=app-dev-1 --converge-runtime',
+                escapeshellarg(self::DevWireGuardIp),
+                escapeshellarg(self::DevWireGuardIp),
                 escapeshellarg(self::GatewayWireGuardIp),
             ), timeoutSeconds: 900);
         }
@@ -983,7 +990,7 @@ PHP;
             return;
         }
 
-        foreach (['dev', 'prod', 'agent', 'ingress', 'websocket'] as $role) {
+        foreach (['dev', 'prod', 'agent', 'ingress'] as $role) {
             if (! isset($instances[$role])) {
                 continue;
             }
@@ -1061,7 +1068,6 @@ PHP;
             'prod' => self::ProdWireGuardIp,
             'agent' => self::AgentWireGuardIp,
             'ingress' => self::IngressWireGuardIp,
-            'websocket' => self::WebSocketWireGuardIp,
             default => throw new \RuntimeException("Unknown topology role [{$role}]."),
         };
     }

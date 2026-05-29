@@ -139,7 +139,7 @@ describe('ProxyRouteQuery', function (): void {
             'config' => [
                 'protocol' => 'websocket',
                 'router_backend_pool' => [
-                    ['node_id' => 42, 'node' => 'ws-1', 'url' => 'https://ws-1.websocket.orbit:8080'],
+                    ['node_id' => 42, 'node' => 'app-dev-1', 'url' => 'https://10.6.0.44:8080'],
                 ],
                 'tls' => [
                     'managed_by' => 'internal',
