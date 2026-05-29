@@ -28,7 +28,7 @@ final class AppShowCommand extends GatewayCommand
         try {
             $response = $this->gatewayGet("/api/apps/{$app}");
         } catch (GatewayApiException $exception) {
-            return $this->renderFailure($exception->cliFailureCode(), $exception->getMessage());
+            return $this->renderGatewayFailure($exception);
         }
 
         return $this->renderSuccess($response);

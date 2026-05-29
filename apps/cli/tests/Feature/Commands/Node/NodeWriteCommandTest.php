@@ -50,6 +50,30 @@ describe('node write commands', function (): void {
             ->and($decoded['data'])->toBe($complete);
     });
 
+    it('normalizes comma-separated node:new roles for programmatic callers', function (): void {
+        fakeGatewayProgressStream(gatewayProgressFrame('complete', [
+            'exit_code' => 0,
+            'data' => fakeSuccessEnvelope([
+                'node' => ['name' => 'app-1'],
+                'action' => 'created',
+            ]),
+        ]));
+
+        [$exitCode] = runCommand($this, 'node:new', [
+            'name' => 'app-1',
+            '--roles' => 'app-dev, database',
+            '--host' => '192.0.2.20',
+            '--json' => true,
+        ]);
+
+        Http::assertSent(fn (Request $request): bool => $request->method() === 'POST'
+            && str_contains($request->url(), '/api/nodes')
+            && $request['roles'] === ['app-dev', 'database']
+            && ! isset($request['template']));
+
+        expect($exitCode)->toBe(0);
+    });
+
     it('runs the bootstrap path for first gateway node creation when no gateway is configured', function (): void {
         config()->set('orbit.gateway.url', null);
         app()->forgetInstance(GatewayApiClient::class);
@@ -176,6 +200,26 @@ describe('node write commands', function (): void {
             ->and($decoded['success']['data']['action'])->toBe('updated');
     });
 
+    it('validates node:update required input before gateway IO', function (array $params, string $field): void {
+        Http::fake();
+
+        [$exitCode, $output] = runCommand($this, 'node:update', [
+            ...$params,
+            '--json' => true,
+        ]);
+
+        $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+
+        Http::assertNothingSent();
+
+        expect($exitCode)->toBe(1)
+            ->and($decoded['error']['code'])->toBe('validation_failed')
+            ->and($decoded['error']['meta']['field'])->toBe($field);
+    })->with([
+        'missing name' => [[], 'name'],
+        'missing update fields' => [['name' => 'app-1'], 'fields'],
+    ]);
+
     it('requires --force before node:remove sends destructive gateway requests', function (): void {
         Http::fake();
 
@@ -191,6 +235,20 @@ describe('node write commands', function (): void {
         expect($exitCode)->toBe(1)
             ->and($decoded['error']['code'])->toBe('validation_failed')
             ->and($decoded['error']['meta']['field'])->toBe('force');
+    });
+
+    it('validates node:remove names before gateway IO', function (): void {
+        Http::fake();
+
+        [$exitCode, $output] = runCommand($this, 'node:remove', ['--json' => true]);
+
+        $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+
+        Http::assertNothingSent();
+
+        expect($exitCode)->toBe(1)
+            ->and($decoded['error']['code'])->toBe('validation_failed')
+            ->and($decoded['error']['meta']['field'])->toBe('name');
     });
 
     it('deletes nodes through the typed gateway API when force is supplied', function (): void {
@@ -239,6 +297,26 @@ describe('node write commands', function (): void {
 
         expect($exitCode)->toBe(0);
     });
+
+    it('validates node:grant required inputs before gateway IO', function (array $params, string $field): void {
+        Http::fake();
+
+        [$exitCode, $output] = runCommand($this, 'node:grant', [
+            ...$params,
+            '--json' => true,
+        ]);
+
+        $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+
+        Http::assertNothingSent();
+
+        expect($exitCode)->toBe(1)
+            ->and($decoded['error']['code'])->toBe('validation_failed')
+            ->and($decoded['error']['meta']['field'])->toBe($field);
+    })->with([
+        'missing consuming node' => [[], 'consuming_node'],
+        'missing serving node' => [['consuming_node' => 'agent-1'], 'serving_node'],
+    ]);
 
     it('requires --force before node:revoke sends destructive gateway requests', function (): void {
         Http::fake();

@@ -13,7 +13,7 @@
 ## Signature
 
 ```bash
-orbit app:list [--node=<name>] [--environment=<development|production>] [--json]
+orbit app:list [--node=<name>] [--json]
 ```
 
 ## Input Contract
@@ -27,11 +27,10 @@ options are optional.
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
 | `node` | `--node` | Optional. | Never. | None. | App-role name in the gateway registry. Single value only. |
-| `environment` | `--environment` | Optional. | Never. | None. | One of `development`, `production`. Single value only. |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer and non-interactive input mode. |
 
-`--node` and `--environment` are scalar filters. Multi-value semantics are not
-part of the initial contract.
+`--node` is a scalar filter. Multi-value semantics are not part of the initial
+contract.
 
 ## Visibility Behavior
 
@@ -49,9 +48,7 @@ authenticated identity is authorized to see.
 ## Input Resolution
 
 1. Resolve `app_list.node` from `--node` when present. Validate immediately.
-2. Resolve `app_list.environment` from `--environment` when present. Validate
-   immediately.
-3. Select the output renderer and query the gateway for visible app registry
+2. Select the output renderer and query the gateway for visible app registry
    configuration.
 
 ## Behavior Contract
@@ -61,8 +58,6 @@ authenticated identity is authorized to see.
 1. **Query gateway registry.** Read visible app registry configuration scoped to the
    current consuming node's access policy. No host probing is performed.
 2. **Apply filters.** If `--node` is present, include only apps on that node.
-   If `--environment` is present, include only apps with that environment.
-   Filters combine with AND semantics.
 3. **Sort results.** Apps are sorted by owning node name (ascending,
    case-insensitive) and then by app name (ascending, case-insensitive). Every
    output renderer uses this single ordering.
@@ -90,7 +85,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 
 | Failure | Condition | Outcome |
 | --- | --- | --- |
-| Invalid filter value | `--node` or `--environment` contains an unsupported value. | Failure |
+| Invalid filter value | `--node` contains an unsupported value. | Failure |
 
 ## Doctor Relationship
 
@@ -119,8 +114,8 @@ Primary test owners:
 
 | Path | Coverage |
 | --- | --- |
-| `apps/gateway/tests/Feature/Commands/Apps/AppListCommandTest.php` | Command contract: listing all visible apps with nested workspaces, node filtering, environment filtering, combined filters, gateway-unavailable failure, invalid filter validation, authorization failure, and read-only guarantee. |
-| `apps/gateway/tests/E2E/Read/AppListTest.php` | Real read-only `app:list --json` against registered apps. |
+| `apps/cli/tests/Feature/Commands/App/AppListCommandTest.php` | CLI command contract: JSON envelope, node filter forwarding, retired environment filter guard, human output, gateway-unavailable failure, and WireGuard-specific failure mapping. |
+| `apps/gateway/tests/E2E/Read/AppListTest.php` | Real read-only `app:list --json` against registered apps until the E2E harness moves to `apps/e2e`. |
 
 Renderer-specific test mapping lives in:
 
