@@ -420,6 +420,7 @@ describe('doctor role-aware categories', function (): void {
         createRoleAwareLocalNode('gateway', 'local-gateway');
         createRoleAwareRouterNode('router-1');
         $ingress = createRoleAwareIngressNode('edge-1');
+        createRoleAwareWebSocketNode('ws-1');
         $appNode = createRoleAwareProductionAppHostNode('app-prod-1');
         $appNode->roleAssignments()
             ->where('role', 'app-prod')
@@ -450,6 +451,7 @@ describe('doctor role-aware categories', function (): void {
         createRoleAwareLocalNode('gateway', 'local-gateway');
         $router = createRoleAwareRouterNode('router-1');
         $ingress = createRoleAwareIngressNode('edge-1');
+        createRoleAwareWebSocketNode('ws-1');
         $appNode = createRoleAwareProductionAppHostNode('app-prod-1');
         $appNode->roleAssignments()
             ->where('role', 'app-prod')

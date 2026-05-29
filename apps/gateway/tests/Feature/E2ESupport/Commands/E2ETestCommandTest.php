@@ -265,11 +265,11 @@ it('rejects invalid docker test runner entries', function (): void {
 
 it('rejects docker host-specific container caps below that host slot capacity', function (): void {
     withE2EEnvironment(['ORBIT_E2E_PARALLEL_PROCESSES'], [
-        'ORBIT_E2E_DOCKER_TEST_RUNNERS' => 'beast:4:20,sidecar1:4:4',
+        'ORBIT_E2E_DOCKER_TEST_RUNNERS' => 'beast:4:24,sidecar1:4:4',
         'ORBIT_E2E_PARALLEL_PROCESSES' => '8',
     ], function (): void {
         $this->artisan('e2e:test --dry-run --json --lanes=docker')
-            ->expectsOutputToContain('Docker host [sidecar1] needs a container cap of at least 20')
+            ->expectsOutputToContain('Docker host [sidecar1] needs a container cap of at least 24')
             ->assertFailed();
     });
 });
@@ -288,9 +288,9 @@ it('caps docker workers to the largest selected topology capacity', function ():
         $lane = $payload['success']['data']['lanes'][0];
 
         expect($exitCode)->toBe(0)
-            ->and($lane['environment']['ORBIT_E2E_DOCKER_TEST_RUNNERS'])->toBe('sidecar1:2:10,sidecar2:2:10')
-            ->and($lane['environment']['ORBIT_E2E_PARALLEL_PROCESSES'])->toBe('4')
-            ->and($lane['command'])->toContain('--processes=4');
+            ->and($lane['environment']['ORBIT_E2E_DOCKER_TEST_RUNNERS'])->toBe('sidecar1:1:10,sidecar2:1:10')
+            ->and($lane['environment']['ORBIT_E2E_PARALLEL_PROCESSES'])->toBe('2')
+            ->and($lane['command'])->toContain('--processes=2');
     });
 });
 
@@ -308,9 +308,9 @@ it('caps docker workers per host container capacity', function (): void {
         $lane = $payload['success']['data']['lanes'][0];
 
         expect($exitCode)->toBe(0)
-            ->and($lane['environment']['ORBIT_E2E_DOCKER_TEST_RUNNERS'])->toBe('beast:4:20,sidecar1:2:10')
-            ->and($lane['environment']['ORBIT_E2E_PARALLEL_PROCESSES'])->toBe('6')
-            ->and($lane['command'])->toContain('--processes=6');
+            ->and($lane['environment']['ORBIT_E2E_DOCKER_TEST_RUNNERS'])->toBe('beast:3:20,sidecar1:1:10')
+            ->and($lane['environment']['ORBIT_E2E_PARALLEL_PROCESSES'])->toBe('4')
+            ->and($lane['command'])->toContain('--processes=4');
     });
 });
 
@@ -529,7 +529,7 @@ it('suggests the runtime artifact command when docker support images are missing
         && in_array('test', $process->command, true), 0);
 });
 
-it('keeps eight docker canary workers when the sidecars allow twenty containers', function (): void {
+it('caps docker canary workers when selected topology capacity exceeds sidecar capacity', function (): void {
     withE2EEnvironment(['ORBIT_E2E_PARALLEL_PROCESSES'], [
         'ORBIT_E2E_DOCKER_TEST_RUNNERS' => 'sidecar1:4:20,sidecar2:4:20',
         'ORBIT_E2E_PARALLEL_PROCESSES' => '8',
@@ -544,9 +544,9 @@ it('keeps eight docker canary workers when the sidecars allow twenty containers'
         $lane = $payload['success']['data']['lanes'][0];
 
         expect($exitCode)->toBe(0)
-            ->and($lane['environment']['ORBIT_E2E_DOCKER_TEST_RUNNERS'])->toBe('sidecar1:4:20,sidecar2:4:20')
-            ->and($lane['environment']['ORBIT_E2E_PARALLEL_PROCESSES'])->toBe('8')
-            ->and($lane['command'])->toContain('--processes=8');
+            ->and($lane['environment']['ORBIT_E2E_DOCKER_TEST_RUNNERS'])->toBe('sidecar1:3:20,sidecar2:3:20')
+            ->and($lane['environment']['ORBIT_E2E_PARALLEL_PROCESSES'])->toBe('6')
+            ->and($lane['command'])->toContain('--processes=6');
     });
 });
 

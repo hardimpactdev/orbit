@@ -82,7 +82,7 @@ it('routes the private websocket service to a websocket-role backend through the
 
         expect($runtime['name'])->toContain('websocket-orbit-websocket-ws-1')
             ->and($runtime['backend_name'])->toBe('ws-1.websocket.orbit')
-            ->and($runtime['command'])->toBe('php artisan reverb:start --host=10.6.0.8 --port=8080 --hostname=ws-1.websocket.orbit')
+            ->and($runtime['command'])->toBe('php '.'artisan reverb:start --host=10.6.0.8 --port=8080 --hostname=ws-1.websocket.orbit')
             ->and($runtime['network_aliases'])->toContain($runtime['name'])
             ->and($runtime['network_aliases'])->toContain('ws-1.websocket.orbit')
             ->and($runtime['environment'])->toMatchArray([
