@@ -29,7 +29,7 @@ final class ProcessListCommand extends GatewayCommand
                 'workspace' => $this->stringOption('workspace'),
             ]));
         } catch (GatewayApiException $exception) {
-            return $this->renderFailure($exception->cliFailureCode(), $exception->getMessage());
+            return $this->renderGatewayFailure($exception);
         }
 
         return $this->renderSuccess($response);

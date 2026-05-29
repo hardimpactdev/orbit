@@ -155,6 +155,68 @@ describe('workspace write commands', function (): void {
             ->and($decoded['success']['data']['action'])->toBe('removed');
     });
 
+    it('prompts for workspace:remove name and confirmation in interactive mode', function (): void {
+        fakeGateway(fakeSuccessEnvelope([
+            'name' => 'feature-docs',
+            'app' => 'docs',
+            'action' => 'removed',
+        ]));
+
+        $this->artisan('workspace:remove', ['--app' => 'docs'])
+            ->expectsQuestion('Workspace name', 'feature-docs')
+            ->expectsConfirmation("Remove workspace 'feature-docs'?", 'yes')
+            ->expectsOutputToContain('removed')
+            ->assertSuccessful();
+
+        Http::assertSent(function (Request $request): bool {
+            $url = urldecode($request->url());
+
+            return $request->method() === 'DELETE'
+                && $url === 'https://gateway.test/api/workspaces/feature-docs?app=docs'
+                && $request->data() === [
+                    'keep_files' => false,
+                    'destructive_consent' => true,
+                    'destructive_consent_source' => 'force',
+                ];
+        });
+    });
+
+    it('validates workspace:setup paths before opening a gateway stream', function (): void {
+        Http::fake();
+
+        [$exitCode, $output] = runCommand($this, 'workspace:setup', [
+            'name' => 'feature-docs',
+            '--app' => 'docs',
+            '--path' => 'relative/path',
+            '--json' => true,
+        ]);
+
+        $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+
+        Http::assertNothingSent();
+
+        expect($exitCode)->toBe(1)
+            ->and($decoded['error']['code'])->toBe('validation_failed')
+            ->and($decoded['error']['meta']['field'])->toBe('path');
+    });
+
+    it('validates workspace:exec command input before contacting the gateway', function (): void {
+        Http::fake();
+
+        [$commandExitCode, $commandOutput] = runCommand($this, 'workspace:exec', [
+            'workspace' => 'feature-docs',
+            '--json' => true,
+        ]);
+
+        $commandDecoded = json_decode($commandOutput, associative: true, flags: JSON_THROW_ON_ERROR);
+
+        Http::assertNothingSent();
+
+        expect($commandExitCode)->toBe(1)
+            ->and($commandDecoded['error']['code'])->toBe('validation_failed')
+            ->and($commandDecoded['error']['meta']['field'])->toBe('command');
+    });
+
     it('forwards workspace:exec to the explicit workspace endpoint and passes through stdout', function (): void {
         fakeGateway(fakeSuccessEnvelope([
             'workspace' => 'feature-docs',
@@ -182,6 +244,62 @@ describe('workspace write commands', function (): void {
 
         expect($exitCode)->toBe(0)
             ->and($output)->toContain('PHP 8.5');
+    });
+
+    it('preserves workspace:exec child process results in json mode', function (): void {
+        fakeGateway(fakeSuccessEnvelope([
+            'workspace' => 'feature-docs',
+            'app' => 'docs',
+            'container' => 'orbit-ws-docs-feature-docs',
+            'command' => ['composer', 'test'],
+            'exit_code' => 2,
+            'stdout' => "stdout\n",
+            'stderr' => "stderr\n",
+        ]));
+
+        [$exitCode, $output] = runCommand($this, 'workspace:exec', [
+            'workspace' => 'feature-docs',
+            'cmd' => ['composer', 'test'],
+            '--app' => 'docs',
+            '--json' => true,
+        ]);
+
+        $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(0)
+            ->and($decoded['success']['data']['exit_code'])->toBe(2)
+            ->and($decoded['success']['data']['stdout'])->toBe("stdout\n")
+            ->and($decoded['success']['data']['stderr'])->toBe("stderr\n");
+    });
+
+    it('passes through workspace:exec gateway error data', function (): void {
+        fakeGateway([
+            'error' => [
+                'code' => 'workspace.command_failed',
+                'message' => 'Workspace command failed.',
+                'meta' => ['workspace' => 'feature-docs'],
+                'data' => [
+                    'exit_code' => 2,
+                    'stdout' => "stdout\n",
+                    'stderr' => "stderr\n",
+                ],
+            ],
+        ], 422);
+
+        [$exitCode, $output] = runCommand($this, 'workspace:exec', [
+            'workspace' => 'feature-docs',
+            'cmd' => ['composer', 'test'],
+            '--app' => 'docs',
+            '--json' => true,
+        ]);
+
+        $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(1)
+            ->and($decoded['error']['code'])->toBe('workspace.command_failed')
+            ->and($decoded['error']['meta']['workspace'])->toBe('feature-docs')
+            ->and($decoded['error']['data']['exit_code'])->toBe(2)
+            ->and($decoded['error']['data']['stderr'])->toBe("stderr\n");
     });
 
     it('forwards workspace:exec by host cwd when no workspace selector is supplied', function (): void {

@@ -93,6 +93,51 @@ describe('workspace step mutation commands', function (): void {
             ->and($decoded['error']['code'])->toBe('workspace.invalid_position');
     });
 
+    it('validates workspace step add inputs before contacting the gateway', function (array $params, string $field): void {
+        Http::fake();
+
+        [$exitCode, $output] = runCommand($this, 'workspace-setup-step:add', [
+            ...$params,
+            '--app' => 'docs',
+            '--json' => true,
+        ]);
+
+        $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+
+        Http::assertNothingSent();
+
+        expect($exitCode)->toBe(1)
+            ->and($decoded['error']['code'])->toBe('validation_failed')
+            ->and($decoded['error']['meta']['field'])->toBe($field);
+    })->with([
+        'command' => [[], 'command'],
+        'timeout' => [['--command' => 'composer install', '--timeout' => '0'], 'timeout'],
+        'before' => [['--command' => 'composer install', '--before' => 'zero'], 'before'],
+        'after' => [['--command' => 'composer install', '--after' => '-1'], 'after'],
+    ]);
+
+    it('validates workspace step removal input before contacting the gateway', function (string $command, array $params): void {
+        Http::fake();
+
+        [$exitCode, $output] = runCommand($this, $command, [
+            ...$params,
+            '--app' => 'docs',
+            '--force' => true,
+            '--json' => true,
+        ]);
+
+        $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+
+        Http::assertNothingSent();
+
+        expect($exitCode)->toBe(1)
+            ->and($decoded['error']['code'])->toBe('validation_failed')
+            ->and($decoded['error']['meta']['field'])->toBe('step');
+    })->with([
+        'setup missing step' => ['workspace-setup-step:remove', []],
+        'teardown invalid step' => ['workspace-teardown-step:remove', ['--step' => 'zero']],
+    ]);
+
     it('requires force before removing a workspace step non-interactively', function (): void {
         fakeGateway(fakeSuccessEnvelope());
 
@@ -132,6 +177,36 @@ describe('workspace step mutation commands', function (): void {
 
             return $request->method() === 'DELETE'
                 && $url === 'https://gateway.test/api/workspaces/steps/setup/12?app=docs'
+                && $request->data() === [
+                    'destructive_consent' => true,
+                    'destructive_consent_source' => 'force',
+                ];
+        });
+
+        expect($exitCode)->toBe(0);
+    });
+
+    it('deletes workspace teardown steps with destructive consent when forced', function (): void {
+        fakeGateway(fakeSuccessEnvelope([
+            'result' => ['action' => 'removed'],
+            'step' => ['id' => 14, 'app' => 'docs', 'phase' => 'teardown'],
+        ], [
+            'remaining_step_count' => 0,
+            'new_step_count' => 0,
+        ]));
+
+        [$exitCode] = runCommand($this, 'workspace-teardown-step:remove', [
+            '--step' => '14',
+            '--app' => 'docs',
+            '--force' => true,
+            '--json' => true,
+        ]);
+
+        Http::assertSent(function (Request $request): bool {
+            $url = urldecode($request->url());
+
+            return $request->method() === 'DELETE'
+                && $url === 'https://gateway.test/api/workspaces/steps/teardown/14?app=docs'
                 && $request->data() === [
                     'destructive_consent' => true,
                     'destructive_consent_source' => 'force',

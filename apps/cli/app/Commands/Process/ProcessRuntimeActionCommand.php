@@ -12,10 +12,17 @@ abstract class ProcessRuntimeActionCommand extends ProcessGatewayCommand
 
     public function handle(): int
     {
+        $app = $this->appContext();
+        $workspace = $this->stringOption('workspace');
+
+        if ($app === null && $workspace === null) {
+            return $this->failValidation('app', 'An app context is required.');
+        }
+
         try {
             $response = $this->gatewayPost("/api/processes/{$this->action()}", $this->filledQuery([
-                'app' => $this->appContext(),
-                'workspace' => $this->stringOption('workspace'),
+                'app' => $app,
+                'workspace' => $workspace,
                 'name' => $this->stringArgument('name'),
             ]));
         } catch (GatewayApiException $exception) {

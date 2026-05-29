@@ -62,6 +62,30 @@ describe('process write commands', function (): void {
             ->and($decoded['error']['meta']['field'])->toBe('name');
     });
 
+    it('validates process:add option enums before contacting the gateway', function (array $params, string $field): void {
+        Http::fake();
+
+        [$exitCode, $output] = runCommand($this, 'process:add', [
+            'name' => 'vite',
+            'processCommand' => 'npm run dev',
+            '--app' => 'docs',
+            ...$params,
+            '--json' => true,
+        ]);
+
+        $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+
+        Http::assertNothingSent();
+
+        expect($exitCode)->toBe(1)
+            ->and($decoded['error']['code'])->toBe('validation_failed')
+            ->and($decoded['error']['meta']['field'])->toBe($field);
+    })->with([
+        'restart policy' => [['--restart-policy' => 'sometimes'], 'restart_policy'],
+        'crash notification' => [['--crash-notification' => 'email'], 'crash_notification'],
+        'runtime' => [['--runtime' => 'systemd'], 'runtime'],
+    ]);
+
     it('patches process:edit payloads to the gateway', function (): void {
         fakeGateway(fakeSuccessEnvelope([
             'process' => ['name' => 'vite', 'app' => 'docs', 'restart_policy' => 'on_failure'],
@@ -238,5 +262,56 @@ describe('process write commands', function (): void {
         ['process:start', 'start'],
         ['process:stop', 'stop'],
         ['process:restart', 'restart'],
+    ]);
+
+    it('posts process runtime actions with a workspace-only context', function (): void {
+        fakeGateway(fakeSuccessEnvelope([
+            'runtimes' => [
+                [
+                    'process' => 'vite',
+                    'workspace' => 'feature-docs',
+                    'status' => 'ok',
+                ],
+            ],
+        ]));
+
+        [$exitCode, $output] = runCommand($this, 'process:start', [
+            'name' => 'vite',
+            '--workspace' => 'feature-docs',
+            '--json' => true,
+        ]);
+
+        $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+
+        Http::assertSent(fn (Request $request): bool => $request->method() === 'POST'
+            && $request->url() === 'https://gateway.test/api/processes/start'
+            && $request->data() === [
+                'workspace' => 'feature-docs',
+                'name' => 'vite',
+            ]);
+
+        expect($exitCode)->toBe(0)
+            ->and($decoded['success']['data']['runtimes'][0]['workspace'])->toBe('feature-docs');
+    });
+
+    it('requires an app or workspace context before process runtime actions contact the gateway', function (string $command): void {
+        Http::fake();
+
+        [$exitCode, $output] = runCommand($this, $command, [
+            'name' => 'vite',
+            '--json' => true,
+        ]);
+
+        $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+
+        Http::assertNothingSent();
+
+        expect($exitCode)->toBe(1)
+            ->and($decoded['error']['code'])->toBe('validation_failed')
+            ->and($decoded['error']['meta']['field'])->toBe('app');
+    })->with([
+        'start' => 'process:start',
+        'stop' => 'process:stop',
+        'restart' => 'process:restart',
     ]);
 });

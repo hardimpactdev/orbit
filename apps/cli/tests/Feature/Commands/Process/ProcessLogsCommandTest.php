@@ -65,6 +65,57 @@ describe('process:logs', function (): void {
             ->and($output)->toContain('plain line');
     });
 
+    it('streams followed logs as text and requests the gateway stream endpoint', function (): void {
+        config()->set('orbit.gateway.url', 'https://gateway.test');
+        config()->set('orbit.gateway.timeout', 30);
+
+        Http::fake([
+            'https://gateway.test/*' => Http::response("one\ntwo\n", 200, [
+                'Content-Type' => 'text/plain',
+            ]),
+        ]);
+
+        [$exitCode, $output] = runCommand($this, 'process:logs', [
+            'name' => 'vite',
+            '--app' => 'docs',
+            '--follow' => true,
+            '--lines' => 5,
+        ]);
+
+        Http::assertSent(function (Request $request): bool {
+            $url = urldecode($request->url());
+
+            return $request->method() === 'GET'
+                && str_contains($url, '/api/processes/vite/log')
+                && str_contains($url, 'app=docs')
+                && str_contains($url, 'lines=5')
+                && str_contains($url, 'follow=1')
+                && $request->hasHeader('Accept', 'text/plain');
+        });
+
+        expect($exitCode)->toBe(0)
+            ->and($output)->toBe("one\ntwo");
+    });
+
+    it('rejects json output for followed logs before opening a gateway stream', function (): void {
+        Http::fake();
+
+        [$exitCode, $output] = runCommand($this, 'process:logs', [
+            'name' => 'vite',
+            '--app' => 'docs',
+            '--follow' => true,
+            '--json' => true,
+        ]);
+
+        $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+
+        Http::assertNothingSent();
+
+        expect($exitCode)->toBe(1)
+            ->and($decoded['error']['code'])->toBe('validation_failed')
+            ->and($decoded['error']['meta']['field'])->toBe('json');
+    });
+
     it('fails validation before opening the gateway request when name is missing', function (): void {
         Http::fake();
 
