@@ -19,6 +19,8 @@ use Tests\TestCase;
 
 uses(TestCase::class)->in('Feature');
 
+require_once __DIR__.'/E2E/Support/Pest.php';
+
 /*
 |--------------------------------------------------------------------------
 | Harness helpers

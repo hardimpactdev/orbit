@@ -93,6 +93,10 @@ it('satisfies the prepared full websocket topology contract', function (): void 
 
 function requirePreparedTopologyOrSkip(E2ETopologyKind $kind): E2ETopologyLease
 {
+    if (getenv('ORBIT_E2E') !== '1') {
+        test()->markTestSkipped('Set ORBIT_E2E=1 to run prepared-topology contract tests against a provider.');
+    }
+
     try {
         return E2ETopologyFactory::fromEnvironment()->withGatewayApi()->require($kind);
     } catch (E2ETopologyUnavailable $exception) {
