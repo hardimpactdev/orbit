@@ -5,8 +5,10 @@ declare(strict_types=1);
 namespace App\Commands\S3;
 
 use App\Commands\Concerns\ResolvesHostContext;
+use App\Commands\Concerns\StreamsGatewayProgress;
 use App\Commands\GatewayCommand;
 use App\Exceptions\GatewayApiException;
+use Orbit\Core\Progress\ProgressEventType;
 
 use function Laravel\Prompts\table;
 use function Laravel\Prompts\text;
@@ -14,6 +16,7 @@ use function Laravel\Prompts\text;
 final class S3PublishCommand extends GatewayCommand
 {
     use ResolvesHostContext;
+    use StreamsGatewayProgress;
 
     #[\Override]
     protected $signature = 's3:publish
@@ -47,13 +50,11 @@ final class S3PublishCommand extends GatewayCommand
             'node' => $node,
         ]);
 
-        try {
-            $response = $this->gatewayPost('/api/s3/public-hosts', $payload);
-        } catch (GatewayApiException $exception) {
-            return $this->renderGatewayFailure($exception);
-        }
-
-        return $this->renderSuccess($response);
+        return $this->streamProgress(
+            '/api/s3/public-hosts',
+            $payload,
+            fn (ProgressEventType $type, array $frame): int => $this->renderProgressTerminalFrame($type, $frame),
+        );
     }
 
     private function resolveHost(): ?string

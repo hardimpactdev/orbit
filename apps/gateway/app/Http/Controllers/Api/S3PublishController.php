@@ -9,9 +9,12 @@ use App\Enums\ActivityLogType;
 use App\Models\Node;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
 use App\Services\S3\S3PublishAction;
+use App\Support\Streaming\ProgressEventStreamEmitter;
+use App\Support\Streaming\ProgressEventStreamResponseFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 final class S3PublishController implements Loggable
 {
@@ -25,7 +28,8 @@ final class S3PublishController implements Loggable
         Request $request,
         S3PublishAction $publishAction,
         NodeRoleAssignments $nodeRoleAssignments,
-    ): JsonResponse {
+        ProgressEventStreamResponseFactory $streams,
+    ): JsonResponse|StreamedResponse {
         /** @var mixed $caller */
         $caller = $request->user();
 
@@ -39,27 +43,49 @@ final class S3PublishController implements Loggable
             return $input;
         }
 
-        $result = $publishAction->publish($caller, $input['node'], $input['host']);
-
-        if (isset($result['error'])) {
-            $error = $result['error'];
-            $status = is_int($error['status'] ?? null) ? $error['status'] : 422;
-            $meta = is_array($error['meta'] ?? null) ? $error['meta'] : [];
-
-            return response()->json([
-                'error' => [
-                    'code' => $error['code'],
-                    'message' => $error['message'],
-                    'meta' => $meta === [] ? (object) [] : $meta,
-                ],
-            ], $status);
-        }
-
         $this->activitySubject = $caller;
         $this->activityHost = $input['host'];
         $this->activityNode = $input['node'];
 
-        return response()->json($result);
+        return $streams->make(function (ProgressEventStreamEmitter $emitter) use ($publishAction, $caller, $input): void {
+            $emitter->tree('Publishing S3 Host', [
+                ['key' => 'resolve_node', 'label' => 'Resolve S3 node'],
+                ['key' => 'check_router_ingress', 'label' => 'Check router and ingress'],
+                ['key' => 'ensure_credentials', 'label' => 'Ensure RustFS credentials'],
+                ['key' => 'ensure_private_route', 'label' => 'Ensure private s3.orbit route'],
+                ['key' => 'ensure_backend_pool', 'label' => 'Ensure S3 backend pool'],
+                ['key' => 'publish_ingress', 'label' => 'Publish ingress host'],
+                ['key' => 'verify_intent', 'label' => 'Verify route intent'],
+            ]);
+
+            $result = $publishAction->publishWithProgress($caller, $input['node'], $input['host'], $emitter);
+
+            if (isset($result['error'])) {
+                $error = $result['error'];
+                $code = is_string($error['code'] ?? null) ? $error['code'] : 's3.publish_failed';
+                $message = is_string($error['message'] ?? null) ? $error['message'] : 'S3 publish failed.';
+                $meta = is_array($error['meta'] ?? null) ? $error['meta'] : [];
+
+                $emitter->error($message, 1, [
+                    'code' => $code,
+                    'message' => $message,
+                    'meta' => $meta,
+                ]);
+
+                return;
+            }
+
+            $success = $result['success'] ?? [];
+            $s3Data = is_array($success['data'] ?? null) ? $success['data'] : [];
+            $meta = is_array($success['meta'] ?? null) ? $success['meta'] : [];
+
+            // Emit the payload so the CLI SSE frame data matches the documented
+            // success shape: s3 + meta at the top level of the complete frame payload.
+            $emitter->complete(0, [
+                's3' => $s3Data['s3'] ?? (object) [],
+                'meta' => $meta,
+            ]);
+        });
     }
 
     /**

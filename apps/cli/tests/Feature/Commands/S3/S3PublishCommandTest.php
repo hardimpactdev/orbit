@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Services\GatewayApiClient;
+use App\Services\GatewayStreamClient;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
 
@@ -12,10 +13,16 @@ describe('S3Publish CLI command', function (): void {
     // Non-interactive: request payloads
     // -----------------------------------------------------------------------
 
-    it('posts the correct payload to the gateway', function (): void {
-        fakeGateway(fakeS3PublishSuccessEnvelope());
+    it('posts the correct payload to the streaming gateway endpoint', function (): void {
+        fakeGatewayProgressStream(
+            gatewayProgressFrame('tree', [
+                'title' => 'Publishing S3 Host',
+                'steps' => [['key' => 'resolve_node', 'label' => 'Resolve S3 node']],
+            ])
+            .gatewayProgressFrame('complete', s3PublishCompleteFrame()),
+        );
 
-        [$exitCode, $output] = runCommand($this, 's3:publish', [
+        [$exitCode] = runCommand($this, 's3:publish', [
             'host' => 's3.example.com',
             '--node' => 'storage-1',
             '--json' => true,
@@ -23,21 +30,26 @@ describe('S3Publish CLI command', function (): void {
 
         Http::assertSent(fn (Request $request): bool => $request->method() === 'POST'
             && $request->url() === 'https://gateway.test/api/s3/public-hosts'
+            && $request->hasHeader('Accept', 'text/event-stream')
             && $request->data() === ['host' => 's3.example.com', 'node' => 'storage-1']);
 
         expect($exitCode)->toBe(0);
     });
 
     it('sends only the host when node auto-resolves from a single s3 node', function (): void {
-        // First call: node list. Second call: publish.
         Http::fake([
             'https://gateway.test/api/nodes*' => Http::response(fakeNodeListEnvelope(['storage-1']), 200),
-            'https://gateway.test/api/s3/public-hosts' => Http::response(fakeS3PublishSuccessEnvelope(), 200),
+            'https://gateway.test/api/s3/public-hosts' => Http::response(
+                gatewayProgressFrame('complete', s3PublishCompleteFrame()),
+                200,
+                ['Content-Type' => 'text/event-stream'],
+            ),
         ]);
 
         config()->set('orbit.gateway.url', 'https://gateway.test');
         config()->set('orbit.gateway.timeout', 30);
         app()->forgetInstance(GatewayApiClient::class);
+        app()->forgetInstance(GatewayStreamClient::class);
 
         [$exitCode] = runCommand($this, 's3:publish', [
             'host' => 's3.example.com',
@@ -78,12 +90,17 @@ describe('S3Publish CLI command', function (): void {
                 fakeNodeListEnvelope(['storage-1', 'storage-2']),
                 200,
             ),
-            'https://gateway.test/api/s3/public-hosts' => Http::response(fakeS3PublishSuccessEnvelope(), 200),
+            'https://gateway.test/api/s3/public-hosts' => Http::response(
+                gatewayProgressFrame('complete', s3PublishCompleteFrame()),
+                200,
+                ['Content-Type' => 'text/event-stream'],
+            ),
         ]);
 
         config()->set('orbit.gateway.url', 'https://gateway.test');
         config()->set('orbit.gateway.timeout', 30);
         app()->forgetInstance(GatewayApiClient::class);
+        app()->forgetInstance(GatewayStreamClient::class);
 
         [$exitCode, $output] = runCommand($this, 's3:publish', [
             'host' => 's3.example.com',
@@ -107,6 +124,7 @@ describe('S3Publish CLI command', function (): void {
         config()->set('orbit.gateway.url', 'https://gateway.test');
         config()->set('orbit.gateway.timeout', 30);
         app()->forgetInstance(GatewayApiClient::class);
+        app()->forgetInstance(GatewayStreamClient::class);
 
         [$exitCode, $output] = runCommand($this, 's3:publish', [
             'host' => 's3.example.com',
@@ -122,11 +140,18 @@ describe('S3Publish CLI command', function (): void {
     });
 
     // -----------------------------------------------------------------------
-    // JSON output
+    // JSON output — final frame
     // -----------------------------------------------------------------------
 
-    it('renders the success envelope as JSON with --json', function (): void {
-        fakeGateway(fakeS3PublishSuccessEnvelope('s3.example.com', 'storage-1'));
+    it('emits only the final complete frame in --json mode', function (): void {
+        fakeGatewayProgressStream(
+            gatewayProgressFrame('tree', [
+                'title' => 'Publishing S3 Host',
+                'steps' => [['key' => 'resolve_node', 'label' => 'Resolve S3 node']],
+            ])
+            .gatewayProgressFrame('step', ['key' => 'resolve_node', 'status' => 'running'])
+            .gatewayProgressFrame('complete', s3PublishCompleteFrame('s3.example.com', 'storage-1')),
+        );
 
         [$exitCode, $output] = runCommand($this, 's3:publish', [
             'host' => 's3.example.com',
@@ -137,18 +162,46 @@ describe('S3Publish CLI command', function (): void {
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
         expect($exitCode)->toBe(0)
-            ->and($decoded['success']['data']['s3']['node'])->toBe('storage-1')
-            ->and($decoded['success']['data']['s3']['private_endpoint'])->toBe('https://s3.orbit')
-            ->and($decoded['success']['meta']['host'])->toBe('s3.example.com')
-            ->and($decoded['success']['meta']['action'])->toBe('published')
-            ->and($decoded['success']['meta']['already_published'])->toBeFalse();
+            ->and($decoded['event'])->toBe('complete')
+            ->and(count(array_filter(explode("\n", $output))))->toBe(1)
+            ->and($output)->not->toContain('Publishing S3 Host')
+            ->and($output)->not->toContain('Resolve S3 node');
+    });
+
+    it('renders the success envelope fields in --json mode', function (): void {
+        fakeGatewayProgressStream(
+            gatewayProgressFrame('complete', s3PublishCompleteFrame('s3.example.com', 'storage-1')),
+        );
+
+        [$exitCode, $output] = runCommand($this, 's3:publish', [
+            'host' => 's3.example.com',
+            '--node' => 'storage-1',
+            '--json' => true,
+        ]);
+
+        // CLI JSON output: {"event":"complete","data":{"exit_code":0,"data":{"s3":{...},"meta":{...}}}}
+        $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(0)
+            ->and($decoded['data']['data']['s3']['node'])->toBe('storage-1')
+            ->and($decoded['data']['data']['s3']['private_endpoint'])->toBe('https://s3.orbit')
+            ->and($decoded['data']['data']['meta']['host'])->toBe('s3.example.com')
+            ->and($decoded['data']['data']['meta']['action'])->toBe('published')
+            ->and($decoded['data']['data']['meta']['already_published'])->toBeFalse();
     });
 
     it('preserves gateway error envelopes through --json', function (): void {
-        fakeGateway(fakeErrorEnvelope('validation_failed', 'An active router role is required for S3 routing.', [
-            'field' => 'router',
-            'required_role' => 'router',
-        ]), 422);
+        fakeGatewayProgressStream(
+            gatewayProgressFrame('error', [
+                'exit_code' => 1,
+                'message' => 'An active router role is required for S3 routing.',
+                'data' => [
+                    'code' => 'validation_failed',
+                    'message' => 'An active router role is required for S3 routing.',
+                    'meta' => ['field' => 'router', 'required_role' => 'router'],
+                ],
+            ]),
+        );
 
         [$exitCode, $output] = runCommand($this, 's3:publish', [
             'host' => 's3.example.com',
@@ -159,16 +212,21 @@ describe('S3Publish CLI command', function (): void {
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
         expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('validation_failed')
-            ->and($decoded['error']['meta']['field'])->toBe('router')
-            ->and($decoded['error']['meta']['required_role'])->toBe('router');
+            ->and($decoded['event'])->toBe('error');
     });
 
     it('preserves proxy.domain_conflict error code through --json', function (): void {
-        fakeGateway(fakeErrorEnvelope('proxy.domain_conflict', "The host 's3.example.com' is owned by a non-S3 proxy route.", [
-            'field' => 'host',
-            'owner_type' => 'app',
-        ]), 409);
+        fakeGatewayProgressStream(
+            gatewayProgressFrame('error', [
+                'exit_code' => 1,
+                'message' => "The host 's3.example.com' is owned by a non-S3 proxy route.",
+                'data' => [
+                    'code' => 'proxy.domain_conflict',
+                    'message' => "The host 's3.example.com' is owned by a non-S3 proxy route.",
+                    'meta' => ['field' => 'host', 'owner_type' => 'app'],
+                ],
+            ]),
+        );
 
         [$exitCode, $output] = runCommand($this, 's3:publish', [
             'host' => 's3.example.com',
@@ -176,14 +234,22 @@ describe('S3Publish CLI command', function (): void {
             '--json' => true,
         ]);
 
-        $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
-
         expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('proxy.domain_conflict');
+            ->and($output)->toContain('proxy.domain_conflict');
     });
 
     it('preserves s3.publish_failed error code through --json', function (): void {
-        fakeGateway(fakeErrorEnvelope('s3.publish_failed', 'Route apply failed.', []), 500);
+        fakeGatewayProgressStream(
+            gatewayProgressFrame('error', [
+                'exit_code' => 1,
+                'message' => 'Route apply failed.',
+                'data' => [
+                    'code' => 's3.publish_failed',
+                    'message' => 'Route apply failed.',
+                    'meta' => [],
+                ],
+            ]),
+        );
 
         [$exitCode, $output] = runCommand($this, 's3:publish', [
             'host' => 's3.example.com',
@@ -191,18 +257,51 @@ describe('S3Publish CLI command', function (): void {
             '--json' => true,
         ]);
 
-        $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
-
         expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('s3.publish_failed');
+            ->and($output)->toContain('s3.publish_failed');
     });
 
     // -----------------------------------------------------------------------
     // Human output
     // -----------------------------------------------------------------------
 
-    it('outputs human-readable success summary without --json', function (): void {
-        fakeGateway(fakeS3PublishSuccessEnvelope('s3.example.com', 'storage-1'));
+    it('renders the progress tree in human mode', function (): void {
+        fakeGatewayProgressStream(
+            gatewayProgressFrame('tree', [
+                'title' => 'Publishing S3 Host',
+                'steps' => [
+                    ['key' => 'resolve_node', 'label' => 'Resolve S3 node'],
+                    ['key' => 'check_router_ingress', 'label' => 'Check router and ingress'],
+                    ['key' => 'ensure_credentials', 'label' => 'Ensure RustFS credentials'],
+                    ['key' => 'ensure_private_route', 'label' => 'Ensure private s3.orbit route'],
+                    ['key' => 'ensure_backend_pool', 'label' => 'Ensure S3 backend pool'],
+                    ['key' => 'publish_ingress', 'label' => 'Publish ingress host'],
+                    ['key' => 'verify_intent', 'label' => 'Verify route intent'],
+                ],
+            ])
+            .gatewayProgressFrame('complete', s3PublishCompleteFrame()),
+        );
+
+        [$exitCode, $output] = runCommand($this, 's3:publish', [
+            'host' => 's3.example.com',
+            '--node' => 'storage-1',
+        ]);
+
+        expect($exitCode)->toBe(0)
+            ->and($output)->toContain('Publishing S3 Host')
+            ->and($output)->toContain('Resolve S3 node')
+            ->and($output)->toContain('Check router and ingress')
+            ->and($output)->toContain('Ensure RustFS credentials')
+            ->and($output)->toContain('Ensure private s3.orbit route')
+            ->and($output)->toContain('Ensure S3 backend pool')
+            ->and($output)->toContain('Publish ingress host')
+            ->and($output)->toContain('Verify route intent');
+    });
+
+    it('outputs human-readable success without --json', function (): void {
+        fakeGatewayProgressStream(
+            gatewayProgressFrame('complete', s3PublishCompleteFrame('s3.example.com', 'storage-1')),
+        );
 
         $this->artisan('s3:publish', [
             'host' => 's3.example.com',
@@ -215,7 +314,18 @@ describe('S3Publish CLI command', function (): void {
     // -----------------------------------------------------------------------
 
     it('prompts for the host when the host argument is omitted in interactive mode', function (): void {
-        fakeGateway(fakeS3PublishSuccessEnvelope('prompted.example.com', 'storage-1'));
+        Http::fake([
+            'https://gateway.test/api/s3/public-hosts' => Http::response(
+                gatewayProgressFrame('complete', s3PublishCompleteFrame('prompted.example.com', 'storage-1')),
+                200,
+                ['Content-Type' => 'text/event-stream'],
+            ),
+        ]);
+
+        config()->set('orbit.gateway.url', 'https://gateway.test');
+        config()->set('orbit.gateway.timeout', 30);
+        app()->forgetInstance(GatewayApiClient::class);
+        app()->forgetInstance(GatewayStreamClient::class);
 
         $this->artisan('s3:publish', ['--node' => 'storage-1'])
             ->expectsQuestion('Public hostname (e.g. s3.example.com)', 'prompted.example.com')
@@ -247,22 +357,26 @@ function fakeNodeListEnvelope(array $nodeNames): array
 }
 
 /**
+ * Build the complete frame payload as the gateway emitter sends it.
+ *
+ * The emitter->complete(0, $payload) produces {"exit_code":0,"data":$payload}.
+ * The gateway sends: ['s3' => {...}, 'meta' => {...}] as the payload.
+ *
  * @return array<string, mixed>
  */
-function fakeS3PublishSuccessEnvelope(string $host = 's3.example.com', string $node = 'storage-1'): array
+function s3PublishCompleteFrame(string $host = 's3.example.com', string $node = 'storage-1'): array
 {
     return [
-        'success' => [
-            'data' => [
-                's3' => [
+        'exit_code' => 0,
+        'data' => [
+            's3' => [
+                'node' => $node,
+                'private_endpoint' => 'https://s3.orbit',
+                'public_endpoints' => ["https://{$host}"],
+                'backend_pool' => ["http://{$node}.s3.orbit:9000"],
+                'credentials_ref' => [
+                    'tool' => 'rustfs',
                     'node' => $node,
-                    'private_endpoint' => 'https://s3.orbit',
-                    'public_endpoints' => ["https://{$host}"],
-                    'backend_pool' => ["http://{$node}.s3.orbit:9000"],
-                    'credentials_ref' => [
-                        'tool' => 'rustfs',
-                        'node' => $node,
-                    ],
                 ],
             ],
             'meta' => [

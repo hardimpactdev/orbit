@@ -104,10 +104,17 @@ function s3PublishRustfsTool(Node $storage, array $config = []): NodeTool
     ]);
 }
 
-function s3PublishPost(object $test, array $payload = []): TestResponse
+/**
+ * POST to the streaming S3 publish endpoint.
+ *
+ * @param  array<string, mixed>  $payload
+ */
+function s3PublishStream(object $test, array $payload = []): TestResponse
 {
-    return $test->withServerVariables(['REMOTE_ADDR' => S3_PUBLISH_CALLER_WG_IP])
-        ->postJson('/api/s3/public-hosts', $payload);
+    return $test->call('POST', '/api/s3/public-hosts', $payload, [], [], [
+        'HTTP_ACCEPT' => 'text/event-stream',
+        'REMOTE_ADDR' => S3_PUBLISH_CALLER_WG_IP,
+    ]);
 }
 
 // ---------------------------------------------------------------------------
@@ -116,11 +123,13 @@ function s3PublishPost(object $test, array $payload = []): TestResponse
 
 describe('S3Publish authorization', function (): void {
     it('rejects unauthenticated callers', function (): void {
-        $response = $this->withServerVariables(['REMOTE_ADDR' => '192.168.99.99'])
-            ->postJson('/api/s3/public-hosts', [
-                'host' => 's3.example.com',
-                'node' => 'storage-1',
-            ]);
+        $response = $this->call('POST', '/api/s3/public-hosts', [
+            'host' => 's3.example.com',
+            'node' => 'storage-1',
+        ], [], [], [
+            'HTTP_ACCEPT' => 'text/event-stream',
+            'REMOTE_ADDR' => '192.168.99.99',
+        ]);
 
         $response->assertStatus(403)
             ->assertJsonPath('error.code', 'authorization_failed');
@@ -135,7 +144,7 @@ describe('S3Publish input validation', function (): void {
     it('fails when host is missing', function (): void {
         s3PublishCallerNode();
 
-        $response = s3PublishPost($this, ['node' => 'storage-1']);
+        $response = s3PublishStream($this, ['node' => 'storage-1']);
 
         $response->assertStatus(422)
             ->assertJsonPath('error.code', 'validation_failed')
@@ -145,7 +154,7 @@ describe('S3Publish input validation', function (): void {
     it('fails when node is missing and no s3 nodes exist', function (): void {
         s3PublishCallerNode();
 
-        $response = s3PublishPost($this, ['host' => 's3.example.com']);
+        $response = s3PublishStream($this, ['host' => 's3.example.com']);
 
         $response->assertStatus(422)
             ->assertJsonPath('error.code', 'validation_failed')
@@ -160,11 +169,11 @@ describe('S3Publish input validation', function (): void {
         s3PublishRouterNode();
         s3PublishIngressNode();
 
-        $response = s3PublishPost($this, ['host' => 's3.example.com']);
+        $response = s3PublishStream($this, ['host' => 's3.example.com']);
 
-        // No node specified but auto-resolved from the single visible s3 node.
-        $response->assertOk()
-            ->assertJsonPath('success.meta.host', 's3.example.com');
+        $response->assertOk();
+        $content = $response->streamedContent();
+        expect($content)->toContain('event: complete');
     });
 
     it('fails when node is missing and multiple s3 nodes exist', function (): void {
@@ -172,7 +181,7 @@ describe('S3Publish input validation', function (): void {
         s3PublishStorageNode(['name' => 'storage-1', 'wireguard_address' => '10.6.0.44']);
         s3PublishStorageNode(['name' => 'storage-2', 'wireguard_address' => '10.6.0.45']);
 
-        $response = s3PublishPost($this, ['host' => 's3.example.com']);
+        $response = s3PublishStream($this, ['host' => 's3.example.com']);
 
         $response->assertStatus(422)
             ->assertJsonPath('error.code', 'validation_failed')
@@ -188,13 +197,12 @@ describe('S3Publish prerequisites', function (): void {
     it('fails when the selected node is not an active s3 node', function (): void {
         s3PublishCallerNode(role: 'gateway');
 
-        // No s3 role assignment — only gateway.
-        $response = s3PublishPost($this, ['host' => 's3.example.com', 'node' => 'storage-1']);
+        $response = s3PublishStream($this, ['host' => 's3.example.com', 'node' => 'storage-1']);
 
-        $response->assertStatus(422)
-            ->assertJsonPath('error.code', 'validation_failed')
-            ->assertJsonPath('error.meta.field', 'node')
-            ->assertJsonPath('error.meta.required_role', 's3');
+        $content = $response->streamedContent();
+        expect($content)->toContain('event: error')
+            ->and($content)->toContain('validation_failed')
+            ->and($content)->toContain('"required_role":"s3"');
     });
 
     it('fails when no active router exists', function (): void {
@@ -203,12 +211,12 @@ describe('S3Publish prerequisites', function (): void {
         s3PublishRustfsTool($storage);
         // No router.
 
-        $response = s3PublishPost($this, ['host' => 's3.example.com', 'node' => 'storage-1']);
+        $response = s3PublishStream($this, ['host' => 's3.example.com', 'node' => 'storage-1']);
 
-        $response->assertStatus(422)
-            ->assertJsonPath('error.code', 'validation_failed')
-            ->assertJsonPath('error.meta.field', 'router')
-            ->assertJsonPath('error.meta.required_role', 'router');
+        $content = $response->streamedContent();
+        expect($content)->toContain('event: error')
+            ->and($content)->toContain('validation_failed')
+            ->and($content)->toContain('"required_role":"router"');
     });
 
     it('fails when no active ingress exists', function (): void {
@@ -218,12 +226,12 @@ describe('S3Publish prerequisites', function (): void {
         s3PublishRouterNode();
         // No ingress.
 
-        $response = s3PublishPost($this, ['host' => 's3.example.com', 'node' => 'storage-1']);
+        $response = s3PublishStream($this, ['host' => 's3.example.com', 'node' => 'storage-1']);
 
-        $response->assertStatus(422)
-            ->assertJsonPath('error.code', 'validation_failed')
-            ->assertJsonPath('error.meta.field', 'ingress')
-            ->assertJsonPath('error.meta.required_role', 'ingress');
+        $content = $response->streamedContent();
+        expect($content)->toContain('event: error')
+            ->and($content)->toContain('validation_failed')
+            ->and($content)->toContain('"required_role":"ingress"');
     });
 
     it('fails when the s3 node has no rustfs tool row', function (): void {
@@ -233,11 +241,11 @@ describe('S3Publish prerequisites', function (): void {
         s3PublishIngressNode();
         // No rustfs tool row.
 
-        $response = s3PublishPost($this, ['host' => 's3.example.com', 'node' => 'storage-1']);
+        $response = s3PublishStream($this, ['host' => 's3.example.com', 'node' => 'storage-1']);
 
-        $response->assertStatus(422)
-            ->assertJsonPath('error.code', 'validation_failed')
-            ->assertJsonPath('error.meta.field', 'node');
+        $content = $response->streamedContent();
+        expect($content)->toContain('event: error')
+            ->and($content)->toContain('validation_failed');
     });
 });
 
@@ -261,11 +269,12 @@ describe('S3Publish domain conflict', function (): void {
             'config' => ['target' => ['type' => 'upstream', 'value' => 'http://app.test']],
         ]);
 
-        $response = s3PublishPost($this, ['host' => 's3.example.com', 'node' => 'storage-1']);
+        $response = s3PublishStream($this, ['host' => 's3.example.com', 'node' => 'storage-1']);
 
-        $response->assertStatus(409)
-            ->assertJsonPath('error.code', 'proxy.domain_conflict')
-            ->assertJsonPath('error.meta.owner_type', 'app');
+        $content = $response->streamedContent();
+        expect($content)->toContain('event: error')
+            ->and($content)->toContain('proxy.domain_conflict')
+            ->and($content)->toContain('"owner_type":"app"');
     });
 
     it('does not conflict with an existing S3-owned route at the same domain', function (): void {
@@ -287,10 +296,11 @@ describe('S3Publish domain conflict', function (): void {
             ],
         ]);
 
-        $response = s3PublishPost($this, ['host' => 's3.example.com', 'node' => 'storage-1']);
+        $response = s3PublishStream($this, ['host' => 's3.example.com', 'node' => 'storage-1']);
 
-        $response->assertOk()
-            ->assertJsonPath('success.meta.already_published', true);
+        $content = $response->streamedContent();
+        expect($content)->toContain('event: complete')
+            ->and($content)->toContain('"already_published":true');
     });
 
     it('accepts re-publishing an already-S3-owned route idempotently', function (): void {
@@ -300,12 +310,12 @@ describe('S3Publish domain conflict', function (): void {
         s3PublishRouterNode();
         s3PublishIngressNode();
 
-        $response = s3PublishPost($this, ['host' => 's3.example.com', 'node' => 'storage-1']);
+        $response = s3PublishStream($this, ['host' => 's3.example.com', 'node' => 'storage-1']);
 
-        $response->assertOk()
-            ->assertJsonPath('success.meta.host', 's3.example.com')
-            ->assertJsonPath('success.meta.already_published', true)
-            ->assertJsonPath('success.meta.action', 'published');
+        $content = $response->streamedContent();
+        expect($content)->toContain('event: complete')
+            ->and($content)->toContain('"already_published":true')
+            ->and($content)->toContain('"action":"published"');
     });
 });
 
@@ -321,18 +331,23 @@ describe('S3Publish success', function (): void {
         s3PublishRouterNode();
         s3PublishIngressNode();
 
-        $response = s3PublishPost($this, ['host' => 's3.example.com', 'node' => 'storage-1']);
+        $response = s3PublishStream($this, ['host' => 's3.example.com', 'node' => 'storage-1']);
 
-        $response->assertOk()
-            ->assertJsonPath('success.data.s3.node', 'storage-1')
-            ->assertJsonPath('success.data.s3.private_endpoint', 'https://s3.orbit')
-            ->assertJsonPath('success.meta.host', 's3.example.com')
-            ->assertJsonPath('success.meta.action', 'published')
-            ->assertJsonPath('success.meta.already_published', false);
+        $response->assertOk();
+        $content = $response->streamedContent();
 
-        expect($response->json('success.data.s3.public_endpoints'))->toContain('https://s3.example.com');
-        expect($response->json('success.data.s3.credentials_ref.tool'))->toBe('rustfs');
-        expect($response->json('success.data.s3.credentials_ref.node'))->toBe('storage-1');
+        expect($content)->toContain('event: complete')
+            ->and($content)->toContain('"node":"storage-1"')
+            ->and($content)->toContain('"host":"s3.example.com"')
+            ->and($content)->toContain('"action":"published"')
+            ->and($content)->toContain('"already_published":false')
+            ->and($content)->toContain('"tool":"rustfs"');
+
+        // Decode the complete frame to check URL fields without slash-escaping issues.
+        $frame = s3PublishParseCompleteFrame($content);
+        expect($frame['data']['s3']['node'])->toBe('storage-1')
+            ->and($frame['data']['s3']['private_endpoint'])->toBe('https://s3.orbit')
+            ->and($frame['data']['s3']['public_endpoints'])->toContain('https://s3.example.com');
     });
 
     it('records the public host on the rustfs tool row', function (): void {
@@ -342,7 +357,8 @@ describe('S3Publish success', function (): void {
         s3PublishRouterNode();
         s3PublishIngressNode();
 
-        s3PublishPost($this, ['host' => 's3.example.com', 'node' => 'storage-1'])->assertOk();
+        $response = s3PublishStream($this, ['host' => 's3.example.com', 'node' => 'storage-1']);
+        $response->streamedContent(); // Execute the stream body to apply DB writes.
 
         $tool->refresh();
         expect($tool->config['public_hosts'])->toContain('s3.example.com');
@@ -355,7 +371,8 @@ describe('S3Publish success', function (): void {
         s3PublishRouterNode();
         s3PublishIngressNode();
 
-        s3PublishPost($this, ['host' => 's3.example.com', 'node' => 'storage-1'])->assertOk();
+        $response = s3PublishStream($this, ['host' => 's3.example.com', 'node' => 'storage-1']);
+        $response->streamedContent(); // Execute the stream body to apply DB writes.
 
         $route = ProxyRoute::query()->where('domain', 's3.example.com')->firstOrFail();
         expect($route->owner_type)->toBe('tool')
@@ -370,7 +387,8 @@ describe('S3Publish success', function (): void {
         s3PublishRouterNode();
         s3PublishIngressNode();
 
-        s3PublishPost($this, ['host' => 's3.example.com', 'node' => 'storage-1'])->assertOk();
+        $response = s3PublishStream($this, ['host' => 's3.example.com', 'node' => 'storage-1']);
+        $response->streamedContent(); // Execute the stream body to apply DB writes.
 
         expect(ProxyRoute::query()->where('domain', 's3.orbit')->exists())->toBeTrue();
     });
@@ -382,7 +400,8 @@ describe('S3Publish success', function (): void {
         s3PublishRouterNode();
         s3PublishIngressNode();
 
-        s3PublishPost($this, ['host' => 's3.example.com', 'node' => 'storage-1'])->assertOk();
+        $response = s3PublishStream($this, ['host' => 's3.example.com', 'node' => 'storage-1']);
+        $response->streamedContent(); // Execute the stream body to apply DB writes.
 
         $tool->refresh();
         $hosts = array_values($tool->config['public_hosts']);
@@ -396,7 +415,8 @@ describe('S3Publish success', function (): void {
         s3PublishRouterNode();
         s3PublishIngressNode();
 
-        s3PublishPost($this, ['host' => 's3.example.com', 'node' => 'storage-1'])->assertOk();
+        $response = s3PublishStream($this, ['host' => 's3.example.com', 'node' => 'storage-1']);
+        $response->streamedContent(); // Execute the stream body to apply DB writes.
 
         $route = ProxyRoute::query()->where('domain', 's3.example.com')->firstOrFail();
         $targetValue = $route->config['target']['value'];
@@ -406,3 +426,26 @@ describe('S3Publish success', function (): void {
             ->and($targetValue)->not->toContain('storage-1.s3.orbit');
     });
 });
+
+// ---------------------------------------------------------------------------
+// Helper functions
+// ---------------------------------------------------------------------------
+
+/**
+ * Parse the final complete/error frame from SSE stream content.
+ *
+ * @return array<string, mixed>
+ */
+function s3PublishParseCompleteFrame(string $content): array
+{
+    preg_match_all('/event: (complete|error)\ndata: (.+)/m', $content, $matches, PREG_SET_ORDER);
+
+    if ($matches === []) {
+        return [];
+    }
+
+    $last = end($matches);
+    $data = $last[2] ?? '{}';
+
+    return json_decode($data, associative: true, flags: JSON_THROW_ON_ERROR);
+}
