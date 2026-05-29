@@ -170,6 +170,14 @@ and scheduler still run in `orbit-runtime` on the gateway, but the public
 `bin/orbit-gateway-artisan` or direct `php apps/gateway/artisan` from a
 controlled gateway shell.
 
+Public operator commands are owned by the `apps/cli` application. Gateway
+Artisan is for gateway maintenance and internal automation only — database
+migrations, the scheduler and queue runtime, `orbit:internal:*` provisioning
+helpers, and the E2E/provisioning harness — and is not a public Orbit command
+target. There is no compatibility fallback that keeps a public command
+invokable through gateway Artisan after it moves to `apps/cli`; the gateway
+command class is removed rather than kept as a hidden alias.
+
 CLI calls reach the gateway over HTTPS via the WireGuard tunnel. Gateway hosts
 calling their own API also use HTTPS over the gateway's own WireGuard address,
 with the gateway's CA PEM trusted from `~/.config/orbit/gateways/<name>/`.

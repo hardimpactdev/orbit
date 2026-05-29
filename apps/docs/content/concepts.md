@@ -68,6 +68,8 @@ owning family concept document.
 - **Gateway API** — typed HTTPS API served on the gateway WireGuard address. See [Tech Stack: Gateway API](tech-stack.md#gateway-api).
 - **Agent IDE adapter** — Orbit's integration point for an agent IDE (PolyScope, OpenCode, or similar), configured per node with an optional per-app override. See [Architecture: Agent IDE Integration](architecture.md#agent-ide-integration).
 - **Command contract** — user-visible command behavior, input, output, and failure contract. See [Architecture: Command And API Model](architecture.md#command-and-api-model) and [Command Contracts](domains/README.md).
+- **Public command ownership** — public operator commands are owned by the `apps/cli` application; gateway Artisan is gateway maintenance and internal automation only and is not a public Orbit command target, with no compatibility fallback for moved public commands. See [Architecture: CLI](architecture.md#cli).
+- **E2E verification ownership** — E2E is root-owned monorepo verification run through root Composer scripts; the current harness host is `apps/gateway/tests/E2E`, and full extraction into a dedicated external `apps/e2e` black-box/gray-box runner is a pre-S3 requirement. See [Testing](testing/README.md).
 - **Database connection restore** — doctor direction that writes gateway-owned database connection values into a selected app or workspace `.env` while preserving unrelated keys. See [Database Doctor](domains/18_database/database-doctor.md).
 - **Database connection adopt** — doctor direction that reads supported database env prefixes from a selected app or workspace `.env` and records them into gateway state. See [Database Doctor](domains/18_database/database-doctor.md).
 
