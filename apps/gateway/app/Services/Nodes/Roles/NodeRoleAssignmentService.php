@@ -8,6 +8,7 @@ use App\Enums\Nodes\NodeRoleName;
 use App\Enums\Nodes\NodeRoleStatus;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
+use App\Services\WebSockets\WebSocketRedisResolver;
 use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
 use Throwable;
@@ -20,6 +21,7 @@ class NodeRoleAssignmentService
         private readonly NodeRoleBaselineConverger $converger,
         private readonly NodeRoleDependencyInspector $dependencyInspector,
         private readonly RoleSelfGrantMaterializer $roleSelfGrantMaterializer,
+        private readonly WebSocketRedisResolver $webSocketRedisResolver,
     ) {}
 
     /**
@@ -69,6 +71,7 @@ class NodeRoleAssignmentService
         $this->guardAgainstConflicts($node, $definition);
 
         $settingsData = $definition->settingsFromArray($settings)->toArray();
+        $this->guardWebSocketRedisNode($role, $settingsData);
         $this->guardAppProductionIngressNode($node, $role, $settingsData);
         $this->guardUniqueDevelopmentTld($node, $role, $settingsData);
 
@@ -106,6 +109,7 @@ class NodeRoleAssignmentService
         $this->guardAgainstConflicts($node, $definition);
 
         $settingsData = $definition->settingsFromArray($settings)->toArray();
+        $this->guardWebSocketRedisNode($role, $settingsData);
         $this->guardAppProductionIngressNode($node, $role, $settingsData);
         $this->guardUniqueDevelopmentTld($node, $role, $settingsData);
 
@@ -289,6 +293,24 @@ class NodeRoleAssignmentService
         }
 
         throw new InvalidArgumentException("Role '{$definition->name}' conflicts with {$conflict->status} role '{$conflict->role}'.");
+    }
+
+    /**
+     * @param  array<string, mixed>  $settings
+     */
+    private function guardWebSocketRedisNode(string $role, array $settings): void
+    {
+        if ($role !== NodeRoleName::WebSocket->value) {
+            return;
+        }
+
+        $redisNodeId = $settings['redis_node_id'] ?? null;
+
+        if (is_int($redisNodeId) && $this->webSocketRedisResolver->usableRedisNode($redisNodeId) instanceof Node) {
+            return;
+        }
+
+        throw new InvalidArgumentException('The websocket role requires redis_node_id to reference an active database node with Redis installed.');
     }
 
     /**

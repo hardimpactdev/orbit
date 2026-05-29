@@ -468,6 +468,134 @@ describe('node role assignment service', function (): void {
             ->and($assignment->fresh()->last_error)->toBeNull();
     });
 
+    it('rejects websocket assignment when redis node is not an active database node with redis installed', function (callable $createRedisNode): void {
+        $node = Node::factory()->create([
+            'platform' => 'ubuntu',
+            'status' => 'active',
+        ]);
+        $redisNode = $createRedisNode();
+
+        expect(fn () => app(NodeRoleAssignmentService::class)->add($node, 'websocket', [
+            'redis_node_id' => $redisNode->id,
+        ]))->toThrow(InvalidArgumentException::class, 'The websocket role requires redis_node_id to reference an active database node with Redis installed.');
+
+        expect($node->roleAssignments()->where('role', 'websocket')->exists())->toBeFalse();
+    })->with([
+        'non-database node with redis' => fn (): Node => tap(Node::factory()->create([
+            'platform' => 'ubuntu',
+            'status' => 'active',
+        ]), function (Node $node): void {
+            NodeTool::factory()->create([
+                'node_id' => $node->id,
+                'name' => 'redis',
+                'expected_state' => 'running',
+            ]);
+        }),
+        'inactive database node with redis' => fn (): Node => tap(Node::factory()->database()->create([
+            'platform' => 'ubuntu',
+            'status' => 'provisioning',
+        ]), function (Node $node): void {
+            NodeTool::factory()->create([
+                'node_id' => $node->id,
+                'name' => 'redis',
+                'expected_state' => 'running',
+            ]);
+        }),
+        'database node without redis' => fn (): Node => Node::factory()->database()->create([
+            'platform' => 'ubuntu',
+            'status' => 'active',
+        ]),
+        'database node with stopped redis' => fn (): Node => tap(Node::factory()->database()->create([
+            'platform' => 'ubuntu',
+            'status' => 'active',
+        ]), function (Node $node): void {
+            NodeTool::factory()->create([
+                'node_id' => $node->id,
+                'name' => 'redis',
+                'expected_state' => 'stopped',
+            ]);
+        }),
+    ]);
+
+    it('allows websocket assignment when redis node is an active database node with redis installed', function (string $redisState): void {
+        app()->instance(NodeRoleBaselineConverger::class, new class extends NodeRoleBaselineConverger
+        {
+            public function __construct() {}
+
+            public function converge(Node $node, NodeRoleAssignment $assignment): void {}
+        });
+
+        $databaseNode = Node::factory()->database()->create([
+            'platform' => 'ubuntu',
+            'status' => 'active',
+        ]);
+        NodeTool::factory()->create([
+            'node_id' => $databaseNode->id,
+            'name' => 'redis',
+            'expected_state' => $redisState,
+        ]);
+        $node = Node::factory()->create([
+            'platform' => 'ubuntu',
+            'status' => 'active',
+        ]);
+
+        $assignment = app(NodeRoleAssignmentService::class)->add($node, 'websocket', [
+            'redis_node_id' => $databaseNode->id,
+        ]);
+
+        expect($assignment->status)->toBe(NodeRoleStatus::Active->value)
+            ->and($assignment->settings)->toBe(['redis_node_id' => $databaseNode->id]);
+    })->with([
+        'installed',
+        'running',
+    ]);
+
+    it('rejects websocket updates with an invalid redis node and preserves the existing assignment', function (): void {
+        app()->instance(NodeRoleBaselineConverger::class, new class extends NodeRoleBaselineConverger
+        {
+            public function __construct() {}
+
+            public function converge(Node $node, NodeRoleAssignment $assignment): void {}
+        });
+
+        $validRedisNode = Node::factory()->database()->create([
+            'platform' => 'ubuntu',
+            'status' => 'active',
+        ]);
+        NodeTool::factory()->create([
+            'node_id' => $validRedisNode->id,
+            'name' => 'redis',
+            'expected_state' => 'running',
+        ]);
+        $invalidRedisNode = Node::factory()->create([
+            'platform' => 'ubuntu',
+            'status' => 'active',
+        ]);
+        NodeTool::factory()->create([
+            'node_id' => $invalidRedisNode->id,
+            'name' => 'redis',
+            'expected_state' => 'running',
+        ]);
+        $node = Node::factory()->create([
+            'platform' => 'ubuntu',
+            'status' => 'active',
+        ]);
+        $assignment = NodeRoleAssignment::factory()->create([
+            'node_id' => $node->id,
+            'role' => 'websocket',
+            'status' => NodeRoleStatus::Active->value,
+            'settings' => ['redis_node_id' => $validRedisNode->id],
+        ]);
+
+        expect(fn () => app(NodeRoleAssignmentService::class)->update($node, 'websocket', [
+            'redis_node_id' => $invalidRedisNode->id,
+        ]))->toThrow(InvalidArgumentException::class, 'The websocket role requires redis_node_id to reference an active database node with Redis installed.');
+
+        expect($assignment->fresh()->settings)->toBe(['redis_node_id' => $validRedisNode->id])
+            ->and($assignment->fresh()->status)->toBe(NodeRoleStatus::Active->value)
+            ->and($assignment->fresh()->last_error)->toBeNull();
+    });
+
     it('rejects pending and error role conflicts', function (string $status): void {
         $node = Node::factory()->create([
             'platform' => 'ubuntu',
