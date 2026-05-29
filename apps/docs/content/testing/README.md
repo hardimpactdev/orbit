@@ -10,14 +10,21 @@ public entry points are the root Composer scripts (`composer test:e2e` and its
 provider variants); operators and CI do not need to know where the harness
 lives.
 
-The harness is migrating out of `apps/gateway/tests/E2E` into a dedicated
-`apps/e2e` application. The topology/provider contract suite and its support
-layer now live in `apps/e2e`; the remaining app/node/resource/infra E2E suites
-move in later pre-S3 batches. Completing this extraction is a pre-S3
-requirement: S3/RustFS E2E coverage starts in `apps/e2e`, not in the gateway
-harness. During the migration the gateway runner keeps working through a
-temporary Composer PSR-4 bridge that resolves `App\E2E\Support\*` from
-`apps/e2e`.
+E2E is implemented by the dedicated `apps/e2e` application. The harness, the
+prepared-topology/provider support layer, the externally-driven E2E test suites,
+and the runner itself (`e2e:test` plus the `e2e:prepare-*`, `e2e:reap-*`,
+`e2e:preflight`, and `e2e:ensure-artifacts` commands) all live in `apps/e2e`.
+The root Composer E2E scripts run through `apps/e2e` (via `bin/orbit-e2e-artisan`
+and `apps/e2e` Pest); there is no gateway-owned E2E runner. New S3/RustFS E2E
+coverage is added under `apps/e2e`, never under `apps/gateway/tests/E2E`.
+
+A small set of gateway-internal unit tests intentionally remains in
+`apps/gateway/tests/Feature/E2ESupport` (they assert gateway-resolved behavior of
+the shared support classes through a temporary Composer PSR-4 bridge that maps
+`App\E2E\Support\*` to `apps/e2e`) along with the gateway `update`/`update:all`
+unit tests. See
+`docs/superpowers/notes/future-apps-e2e-migration-2026-05-29.md` for the full
+split and rationale.
 
 `apps/e2e` is a stock Laravel 13 application that hosts the external Orbit
 runner. It is a full Laravel app so the topology/provider harness can use the

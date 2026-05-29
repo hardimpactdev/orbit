@@ -106,4 +106,4 @@ requests.
 | --- | --- |
 | `apps/gateway/tests/Feature/Commands/S3/S3PublishCommandTest.php` | Input validation, active s3/router/ingress prerequisites, authorization, idempotent publication, proxy route ownership, and apply failure handoff. |
 | `apps/gateway/tests/Unit/Services/S3/S3RouteRegistrarTest.php` | In-memory route convergence for public S3 hosts, `s3.orbit`, backend pools, and ingress-to-router placement. |
-| `apps/gateway/tests/E2E/S3IngressRouteTest.php` | Planned public S3 routing coverage once the S3 role runtime exists. |
+| `apps/e2e/tests/Feature/Commands/S3IngressRouteTest.php` | Planned public S3 routing coverage once the S3 role runtime exists. |
