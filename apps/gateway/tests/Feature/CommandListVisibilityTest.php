@@ -110,15 +110,51 @@ function gatewayCommandInventoryRows(): array
 /**
  * @return array<string, string>
  */
-function gatewayTransitionalProductAdapterCommands(): array
+function gatewayExtractFirstProductAdapterCommands(): array
 {
     return [
-        'app:exec' => 'AppExecController',
-        'app:register' => 'AppRegisterController',
-        'app:root' => 'AppRootController',
-        'app:worker' => 'AppWorkerController',
-        'node:new' => 'NodeStoreController',
         'workspace:exec' => 'WorkspaceExecController',
+    ];
+}
+
+/**
+ * @return list<string>
+ */
+function gatewayRemovedAppNodeLocalCommandNames(): array
+{
+    return [
+        'app:agent-ide',
+        'app:exec',
+        'app:list',
+        'app:new',
+        'app:prune',
+        'app:register',
+        'app:remove',
+        'app:root',
+        'app:show',
+        'app:worker',
+        'dns:list',
+        'dns:resolve-tld',
+        'doctor',
+        'gateway:add',
+        'gateway:trust',
+        'node role:add',
+        'node role:list',
+        'node role:remove',
+        'node:agent-ide',
+        'node:grant',
+        'node:list',
+        'node:new',
+        'node:permissions',
+        'node:remove',
+        'node:revoke',
+        'node:show',
+        'node:update',
+        'php:list',
+        'php:use',
+        'profile',
+        'update',
+        'update:all',
     ];
 }
 
@@ -240,15 +276,15 @@ it('classifies every invokable non-allowed gateway command in the inventory', fu
     }
 
     expect(array_keys($inventoryRows))->toContain(
-        'app:list',
-        'node:new',
+        'activity:list',
         'database:list',
         'workspace:new',
         'tool:list',
-        'doctor',
+        'workspace:exec',
+        'orbit:internal:node-register',
     );
 
-    foreach (array_keys(gatewayTransitionalProductAdapterCommands()) as $commandName) {
+    foreach (array_keys(gatewayExtractFirstProductAdapterCommands()) as $commandName) {
         expect($inventoryRows[$commandName]['classification'])->toBe('internalize-extract-first');
     }
 });
@@ -260,8 +296,8 @@ it('keeps hidden framework commands directly invocable', function (): void {
     expect($process->isSuccessful())->toBeTrue();
 });
 
-it('keeps transitional hidden product adapter commands directly invocable for live gateway API call sites', function (): void {
-    foreach (gatewayTransitionalProductAdapterCommands() as $commandName => $callSite) {
+it('keeps remaining transitional product adapter commands directly invocable for live gateway API call sites', function (): void {
+    foreach (gatewayExtractFirstProductAdapterCommands() as $commandName => $callSite) {
         $process = new Process([PHP_BINARY, 'artisan', 'help', $commandName], base_path());
         $process->mustRun();
 
@@ -270,8 +306,16 @@ it('keeps transitional hidden product adapter commands directly invocable for li
     }
 });
 
-it('documents the final-state assertion path for removed gateway product commands', function (): void {
-    expectGatewayCommandToBeRemoved('orbit:removed-product-command-fixture');
+it('removes app, node, and local public product commands from gateway Artisan', function (): void {
+    $registeredCommandNames = collect(gatewayApplicationCommands())
+        ->pluck('name')
+        ->all();
+
+    expect($registeredCommandNames)->not->toContain(...gatewayRemovedAppNodeLocalCommandNames());
+
+    foreach (gatewayRemovedAppNodeLocalCommandNames() as $commandName) {
+        expectGatewayCommandToBeRemoved($commandName);
+    }
 });
 
 it('uses the Orbit CLI name independent of local environment drift', function (): void {

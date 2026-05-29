@@ -10,13 +10,13 @@ use App\Http\Authorization\RequiresPermission;
 use App\Http\Authorization\ServingNode;
 use App\Models\Node;
 use App\Models\OperationRun;
+use App\Services\Nodes\GatewayNodeCreator;
 use App\Services\Operations\OperationRunRecorder;
 use App\Support\Streaming\ProgressEventStreamEmitter;
 use App\Support\Streaming\ProgressEventStreamResponseFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Str;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 use Throwable;
@@ -28,6 +28,7 @@ final readonly class NodeStoreController implements Loggable
         Request $request,
         ProgressEventStreamResponseFactory $streams,
         OperationRunRecorder $operationRuns,
+        GatewayNodeCreator $nodes,
     ): JsonResponse|StreamedResponse {
         /** @var mixed $resolvedUser */
         $resolvedUser = $request->user();
@@ -40,15 +41,12 @@ final readonly class NodeStoreController implements Loggable
         $arguments = $this->nodeNewArguments($request);
 
         if ($this->wantsEventStream($request)) {
-            return $this->stream($request, $streams, $operationRuns, $caller, $arguments);
+            return $this->stream($request, $streams, $operationRuns, $nodes, $caller, $arguments);
         }
 
-        $exitCode = $this->callNodeNewInGatewayContext($arguments);
+        $result = $nodes->create($arguments);
 
-        /** @var array<string, mixed> $payload */
-        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
-
-        return response()->json($payload, $exitCode === 0 ? 200 : 422);
+        return response()->json($result->payload, $result->successful() ? 200 : 422);
     }
 
     /**
@@ -58,6 +56,7 @@ final readonly class NodeStoreController implements Loggable
         Request $request,
         ProgressEventStreamResponseFactory $streams,
         OperationRunRecorder $operationRuns,
+        GatewayNodeCreator $nodes,
         Node $caller,
         array $arguments,
     ): StreamedResponse {
@@ -69,7 +68,7 @@ final readonly class NodeStoreController implements Loggable
             callerNodeId: $caller->id,
         );
 
-        return $streams->make(function (ProgressEventStreamEmitter $events) use ($operationRuns, $operationRun, $arguments, $request): void {
+        return $streams->make(function (ProgressEventStreamEmitter $events) use ($operationRuns, $operationRun, $nodes, $arguments, $request): void {
             $events->tree('Creating Node', [
                 ['key' => 'operation', 'label' => 'Record operation state'],
                 ['key' => 'node', 'label' => 'Run node creation'],
@@ -80,12 +79,10 @@ final readonly class NodeStoreController implements Loggable
             $events->stepEvent('node', 'running', 'Running node:new');
 
             try {
-                $exitCode = $this->callNodeNewInGatewayContext($arguments);
+                $result = $nodes->create($arguments);
+                $payload = $result->payload;
 
-                /** @var array<string, mixed> $payload */
-                $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
-
-                if ($exitCode === 0) {
+                if ($result->successful()) {
                     $operationRun = $operationRuns->succeeded($operationRun->id, 0, $payload);
                     $events->stepEvent('node', 'done', 'Node created');
                     $events->complete(0, [
@@ -98,7 +95,7 @@ final readonly class NodeStoreController implements Loggable
                 }
 
                 $error = $this->errorFramePayload($payload, 'node.creation_failed', 'Node creation failed.');
-                $operationRun = $operationRuns->failed($operationRun->id, $exitCode, $error);
+                $operationRun = $operationRuns->failed($operationRun->id, $result->exitCode, $error);
                 $events->stepEvent('node', 'fail', $error['message']);
                 $events->error($error['message'], 1, [
                     ...$error,
@@ -202,22 +199,6 @@ final readonly class NodeStoreController implements Loggable
             : $this->optionalString($request, 'name');
 
         return $name !== null ? "Node '{$name}' created." : 'Node created.';
-    }
-
-    /**
-     * @param  array<string, mixed>  $arguments
-     */
-    private function callNodeNewInGatewayContext(array $arguments): int
-    {
-        $previousGatewayContext = config('orbit.is_gateway');
-
-        try {
-            config(['orbit.is_gateway' => true]);
-
-            return Artisan::call('node:new', $arguments);
-        } finally {
-            config(['orbit.is_gateway' => $previousGatewayContext]);
-        }
     }
 
     private function forbidden(): JsonResponse

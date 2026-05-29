@@ -9,11 +9,11 @@ use App\Enums\ActivityLogType;
 use App\Http\Authorization\RequiresPermission;
 use App\Http\Authorization\ServingNode;
 use App\Models\App;
+use App\Services\Apps\AppExecutor;
 use App\Services\Runtime\OrbitHostCwdResolver;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Artisan;
 
 #[RequiresPermission('app:exec', servingNode: ServingNode::AppOwning)]
 final class AppExecController implements Loggable
@@ -66,7 +66,7 @@ final class AppExecController implements Loggable
 
         if ($context->workspace !== null) {
             // The cwd lives inside a workspace tree. app:exec must not
-            // silently fall through to the parent app — mirror the
+            // silently fall through to the parent app - mirror the
             // gateway-mode CLI which treats workspace-only matches as
             // "no app match".
             return response()->json([
@@ -90,18 +90,15 @@ final class AppExecController implements Loggable
 
     private function dispatch(string $selector): JsonResponse
     {
-        $exitCode = Artisan::call('app:exec', [
+        $result = app(AppExecutor::class)->execute([
             'app' => $selector,
             'cmd' => $this->currentCommand,
             '--json' => true,
         ]);
 
-        /** @var array<string, mixed> $payload */
-        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+        $status = $result->status(fn (array $payload): int => $this->errorStatus($payload));
 
-        $status = $exitCode === 0 ? 200 : $this->errorStatus($payload);
-
-        return response()->json($payload, $status);
+        return response()->json($result->payload, $status);
     }
 
     /**
@@ -149,7 +146,7 @@ final class AppExecController implements Loggable
             'app.exec_node_unreachable',
             'app.exec_docker_unavailable' => 502,
             // Note: app.exec_command_not_executable (126) and
-            // app.exec_command_not_found (127) fall through to 422 below —
+            // app.exec_command_not_found (127) fall through to 422 below -
             // they are caller-input faults (bad command), not infra.
             null => 500,
             default => 422,

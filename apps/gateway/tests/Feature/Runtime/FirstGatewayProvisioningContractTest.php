@@ -19,9 +19,9 @@ beforeEach(function (): void {
 
 describe('first-gateway provisioning contract', function (): void {
     it('routes remote bootstrap and platform detection through hidden internal CLI commands', function (): void {
-        $installer = file_get_contents(repo_path('apps/gateway/app/Console/Commands/NodeNewCommand.php'));
+        $nodeCreator = file_get_contents(repo_path('apps/gateway/app/Services/Nodes/GatewayNodeCreator.php'));
 
-        expect($installer)
+        expect($nodeCreator)
             ->toContain("'orbit orbit:internal:bootstrap-gateway-local %s %s --identity-json=- --public-host=%s --tld=%s --metadata-json'")
             ->toContain("'orbit orbit:internal:detect-platform --update-local-node'")
             ->not->toContain("'php apps/gateway/artisan orbit:internal:bootstrap-gateway-local")
@@ -31,11 +31,11 @@ describe('first-gateway provisioning contract', function (): void {
     });
 
     it('budgets first-gateway identity bootstrap for runtime image loading and container convergence', function (): void {
-        $nodeNew = file_get_contents(repo_path('apps/gateway/app/Console/Commands/NodeNewCommand.php'));
+        $nodeCreator = file_get_contents(repo_path('apps/gateway/app/Services/Nodes/GatewayNodeCreator.php'));
 
-        expect($nodeNew)
+        expect($nodeCreator)
             ->toContain('private const int FIRST_GATEWAY_BOOTSTRAP_TIMEOUT_SECONDS = 600')
-            ->and(preg_match('/Process::timeout\(self::FIRST_GATEWAY_BOOTSTRAP_TIMEOUT_SECONDS\)\s*->input\(\$identityJson\)\s*->run/s', $nodeNew))->toBe(1);
+            ->and(preg_match('/Process::timeout\(self::FIRST_GATEWAY_BOOTSTRAP_TIMEOUT_SECONDS\)\s*->input\(\$identityJson\)\s*->run/s', $nodeCreator))->toBe(1);
     });
 
     it('starts orbit-runtime with ORBIT_IS_GATEWAY=1 when install-orbit is invoked with --gateway', function (): void {
@@ -51,13 +51,13 @@ describe('first-gateway provisioning contract', function (): void {
 
     it('passes --gateway from OrbitHostInstaller to install-orbit when bootstrapping a first gateway', function (): void {
         $installer = file_get_contents(repo_path('apps/gateway/app/Services/OrbitHostInstaller.php'));
-        $nodeNew = file_get_contents(repo_path('apps/gateway/app/Console/Commands/NodeNewCommand.php'));
+        $nodeCreator = file_get_contents(repo_path('apps/gateway/app/Services/Nodes/GatewayNodeCreator.php'));
 
         expect($installer)
             ->toContain('bool $asGateway = false')
             ->toContain("\$asGateway ? ' --gateway' : ''");
 
-        expect($nodeNew)
+        expect($nodeCreator)
             ->toContain('$installer->install($host, $sshUser, $runtimeUser, asGateway: true)');
     });
 });

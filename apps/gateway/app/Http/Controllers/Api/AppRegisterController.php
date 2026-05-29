@@ -10,13 +10,13 @@ use App\Http\Authorization\RequiresPermission;
 use App\Http\Authorization\ServingNode;
 use App\Models\App;
 use App\Models\Node;
+use App\Services\Apps\AppRegistrar;
 use App\Services\Nodes\Access\AuthorizationResult;
 use App\Services\Nodes\Access\NodeAccessAuthorizer;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Artisan;
 
 #[RequiresPermission('app:register', servingNode: ServingNode::Target)]
 final class AppRegisterController implements Loggable
@@ -58,17 +58,14 @@ final class AppRegisterController implements Loggable
         $this->addStringOption($arguments, '--php-version', $request, 'php_version');
         $this->addStringOption($arguments, '--domain', $request, 'domain');
 
-        $exitCode = Artisan::call('app:register', $arguments);
-
-        /** @var array<string, mixed> $payload */
-        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+        $result = app(AppRegistrar::class)->register($arguments);
 
         $name = $this->optionalString($request, 'name');
         $this->activitySubject = $name === null
             ? null
             : App::query()->where('name', $name)->first();
 
-        return response()->json($payload, $exitCode === 0 ? 200 : 422);
+        return response()->json($result->payload, $result->successful() ? 200 : 422);
     }
 
     private function targetNode(Request $request): ?Node

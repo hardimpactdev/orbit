@@ -9,10 +9,10 @@ use App\Enums\ActivityLogType;
 use App\Http\Authorization\RequiresPermission;
 use App\Http\Authorization\ServingNode;
 use App\Models\App;
+use App\Services\Apps\AppRootUpdater;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Artisan;
 
 #[RequiresPermission('app:root', servingNode: ServingNode::AppOwning)]
 final class AppRootController implements Loggable
@@ -35,17 +35,15 @@ final class AppRootController implements Loggable
             return $this->error('validation_failed', 'Root is required.', ['field' => 'root'], 422);
         }
 
-        $exitCode = Artisan::call('app:root', [
+        $result = app(AppRootUpdater::class)->update([
             'app' => $app,
             'root' => $root,
             '--json' => true,
         ]);
 
-        /** @var array<string, mixed> $payload */
-        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
         $this->activitySubject = App::query()->where('name', $targetApp->name)->first();
 
-        return response()->json($payload, $exitCode === 0 ? 200 : 422);
+        return response()->json($result->payload, $result->successful() ? 200 : 422);
     }
 
     private function resolveApp(string $selector): ?App
