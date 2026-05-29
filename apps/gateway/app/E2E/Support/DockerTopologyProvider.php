@@ -166,6 +166,9 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
             E2ETopologyKind::OperatorGatewayAgent => ['operator', 'gateway', 'agent'],
             E2ETopologyKind::OperatorGatewayAppdevAppprodAgent => ['operator', 'gateway', 'dev', 'prod', 'agent'],
             E2ETopologyKind::OperatorGatewayAppprodIngress => ['operator', 'gateway', 'prod', 'ingress'],
+            E2ETopologyKind::OperatorGatewayAppdevWebsocket => ['operator', 'gateway', 'dev', 'websocket'],
+            E2ETopologyKind::OperatorGatewayAppdevAppprodWebsocket => ['operator', 'gateway', 'dev', 'prod', 'websocket'],
+            E2ETopologyKind::OperatorGatewayAppdevAppprodAgentWebsocket => ['operator', 'gateway', 'dev', 'prod', 'agent', 'websocket'],
         };
     }
 
@@ -619,7 +622,7 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
             return;
         }
 
-        $targets = array_intersect_key($instances, array_flip(['dev', 'prod', 'agent', 'ingress']));
+        $targets = array_intersect_key($instances, array_flip(['dev', 'prod', 'agent', 'ingress', 'websocket']));
 
         if ($targets === []) {
             return;
@@ -781,6 +784,16 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
             );
         }
 
+        if (isset($instances['websocket'])) {
+            $commands[] = sprintf(
+                'php apps/gateway/artisan orbit:internal:bake-websocket-node ws-1 --host=%s%s --wireguard-address=%s --gateway-endpoint=%s --user=orbit --redis-node=app-dev-1',
+                $this->hostForRole('websocket', $networkPlan, $mode),
+                $this->hostKeyHostOption('websocket', $networkPlan, $mode),
+                $this->wireGuardAddressForRole('websocket', $networkPlan, $mode),
+                $gatewayEndpoint,
+            );
+        }
+
         return $commands;
     }
 
@@ -858,6 +871,7 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
             'prod' => '10.6.0.5',
             'agent' => '10.6.0.6',
             'ingress' => '10.6.0.7',
+            'websocket' => '10.6.0.8',
             default => throw new \RuntimeException("Unknown Docker topology role {$role}."),
         };
     }
@@ -1062,7 +1076,7 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
      */
     private static function rolesNeedPhpRuntimeImage(array $roles): bool
     {
-        return array_intersect($roles, ['dev', 'prod', 'ingress']) !== [];
+        return array_intersect($roles, ['dev', 'prod', 'ingress', 'websocket']) !== [];
     }
 
     private function orbitPathForRole(string $role): string

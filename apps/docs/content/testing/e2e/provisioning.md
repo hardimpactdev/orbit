@@ -7,7 +7,7 @@ installation, cloud-init, or host-level daemon behavior.
 ```bash
 composer e2e:preflight
 composer e2e:prepare-base-image -- --force
-composer e2e:prepare-topology -- --force operator_gateway_app-dev_app-prod_agent
+composer e2e:prepare-topology -- --force operator_gateway_app-dev_app-prod_agent_websocket
 composer test:e2e:provision
 ```
 
@@ -21,7 +21,8 @@ The provision gate has one supported shape:
 2. Install Orbit from the current source bundle on the operator.
 3. Provision the gateway through the real gateway path.
 4. Run `node:new` for app-dev, app-prod, and agent in parallel.
-5. Snapshot the resulting role templates for prepared Incus feature tests.
+5. Bake websocket against app-dev Redis and converge its Reverb runtime.
+6. Snapshot the resulting role templates for prepared Incus feature tests.
 
 Command contracts use `e2e-feature` or in-memory Pest coverage when prepared
 topology state is enough to prove the behavior.
@@ -39,19 +40,22 @@ default). It builds one reusable base image plus prepared source snapshots:
    topology roles.
 2. Prepared source templates `orbit-template-operator-base`,
    `orbit-template-gateway-base`, `orbit-template-app-dev-base`,
-   `orbit-template-app-prod-base`, and `orbit-template-agent-base`. Build
-   them with
-   `composer e2e:prepare-topology -- --force operator_gateway_app-dev_app-prod_agent`.
+   `orbit-template-app-prod-base`, `orbit-template-agent-base`, and
+   `orbit-template-websocket-base`. Build them with
+   `composer e2e:prepare-topology -- --force operator_gateway_app-dev_app-prod_agent_websocket`.
 
 During topology preparation, Orbit tars the current checkout, ships it plus
 `bin/install-orbit` and `bin/e2e-provision-node` to the host, installs Orbit on
 the operator template from the base image, then provisions the gateway through
 real `node:new`. After the gateway is seeded, app-dev, app-prod, and agent are
-provisioned in parallel before the five-role source snapshot is taken. Feature
-tests clone only their requested roles from that full prepared source.
+provisioned in parallel; app-dev then seeds database and Redis registry state,
+and the websocket role is baked with its Reverb runtime baseline before the
+full source snapshot is taken. Feature tests clone only their requested roles
+from that full prepared source.
 
 App-dev carries database and Redis state by default. App-prod carries the
-ingress role by default.
+ingress role by default. Websocket carries the Reverb runtime baseline and uses
+app-dev Redis.
 
 The shared prepared Incus artifact set is `base`: role templates are named
 `orbit-template-<role>-base`, and source snapshots are named

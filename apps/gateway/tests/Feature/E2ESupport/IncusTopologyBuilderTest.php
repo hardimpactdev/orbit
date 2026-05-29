@@ -322,6 +322,91 @@ it('builds full prepared roles from the gateway base with parallel downstream ba
     });
 });
 
+it('builds full prepared roles with a dedicated websocket node', function (): void {
+    withE2ETopologyEnvironment([], function (): void {
+        $config = incusTopologyBuilderConfig();
+        $commands = [];
+
+        Process::fake([
+            'wg genkey' => Process::result(output: "private-key\n"),
+            'wg pubkey' => Process::result(output: "public-key\n"),
+        ]);
+
+        $host = m::mock(IncusHost::class, [$config])->makePartial();
+        $host->shouldReceive('imageExists')->with($config->baseImage)->andReturn(true);
+        $host->shouldReceive('instanceExists')->andReturn(false);
+        $host->shouldReceive('waitForCloudInit')->times(6);
+        $host->shouldReceive('provisionInstance')->with('orbit-template-operator-base', 'operator', '/tmp/orbit-e2e-bundle-test', 'operator')->once()->andReturn(incusTopologyBuilderProcessResult());
+        $host->shouldReceive('provisionInstance')->with('orbit-template-gateway-base', 'gateway', '/tmp/orbit-e2e-bundle-test')->once()->andReturn(incusTopologyBuilderProcessResult());
+        $host->shouldReceive('stopInstance')->times(9)->andReturn(incusTopologyBuilderProcessResult());
+        $host->shouldReceive('snapshotInstance')->times(9)->andReturn(incusTopologyBuilderProcessResult());
+        $host->shouldReceive('run')->andReturnUsing(function (string $command, ?int $timeoutSeconds = null) use (&$commands): ProcessResult {
+            $commands[] = $command;
+
+            if (str_contains($command, 'docker exec wg-easy wg show wg0 public-key')) {
+                return incusTopologyBuilderProcessResult("wg-easy-public-key\n");
+            }
+
+            if (str_starts_with($command, 'mktemp -d ')) {
+                return incusTopologyBuilderProcessResult("/tmp/orbit-topology-builder-test\n");
+            }
+
+            if (str_contains($command, 'orbit-template-websocket-base')) {
+                return incusTopologyBuilderProcessResult("10.201.0.15\n");
+            }
+
+            if (str_contains($command, 'orbit-template-agent-base')) {
+                return incusTopologyBuilderProcessResult("10.201.0.14\n");
+            }
+
+            if (str_contains($command, 'orbit-template-app-prod-base')) {
+                return incusTopologyBuilderProcessResult("10.201.0.13\n");
+            }
+
+            if (str_contains($command, 'orbit-template-app-dev-base')) {
+                return incusTopologyBuilderProcessResult("10.201.0.12\n");
+            }
+
+            if (str_contains($command, 'orbit-template-gateway-base')) {
+                return incusTopologyBuilderProcessResult("10.201.0.11\n");
+            }
+
+            if (str_contains($command, 'orbit-template-operator-base')) {
+                return incusTopologyBuilderProcessResult("10.201.0.10\n");
+            }
+
+            return incusTopologyBuilderProcessResult();
+        });
+
+        $builder = new IncusTopologyBuilder($host);
+        $builder->useBundle('/tmp/orbit-e2e-bundle-test');
+
+        $manifest = $builder->build(E2ETopologyKind::OperatorGatewayAppdevAppprodAgentWebsocket);
+        $commandOutput = implode("\n", $commands);
+
+        expect($manifest)->toHaveCount(6)
+            ->and($manifest)->sequence(
+                fn ($template) => $template->role->toBe('operator')->snapshot->toBe('clean-operator_gateway_app-dev_app-prod_agent_websocket-base'),
+                fn ($template) => $template->role->toBe('gateway')->snapshot->toBe('clean-operator_gateway_app-dev_app-prod_agent_websocket-base'),
+                fn ($template) => $template->role->toBe('dev')->snapshot->toBe('clean-operator_gateway_app-dev_app-prod_agent_websocket-base'),
+                fn ($template) => $template->role->toBe('prod')->snapshot->toBe('clean-operator_gateway_app-dev_app-prod_agent_websocket-base'),
+                fn ($template) => $template->role->toBe('agent')->snapshot->toBe('clean-operator_gateway_app-dev_app-prod_agent_websocket-base'),
+                fn ($template) => $template->role->toBe('websocket')->snapshot->toBe('clean-operator_gateway_app-dev_app-prod_agent_websocket-base'),
+            )
+            ->and($commandOutput)->toContain("incus launch 'orbit-base-ubuntu-26.04' 'orbit-template-websocket-base'")
+            ->and($commandOutput)->toContain('php apps/gateway/artisan orbit:internal:bake-websocket-node')
+            ->and($commandOutput)->toContain('ws-1')
+            ->and($commandOutput)->toContain('10.201.0.15')
+            ->and($commandOutput)->toContain('--wireguard-address=')
+            ->and($commandOutput)->toContain('10.6.0.8')
+            ->and($commandOutput)->toContain('--redis-node=')
+            ->and($commandOutput)->toContain('app-dev-1')
+            ->and($commandOutput)->toContain('--converge-runtime')
+            ->and($commandOutput)->not->toContain('--environment=')
+            ->and($commandOutput)->not->toContain('node.role');
+    });
+});
+
 it('rebuilds app production ingress through the prepared prod template', function (): void {
     $config = E2EConfig::fromEnvironment();
     $deleted = [];

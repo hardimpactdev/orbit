@@ -5,12 +5,12 @@ topology that covers the behavior under test.
 
 For Incus, topology names describe the roles that should be booted for a test.
 They do not mean each kind has a separate Incus source build. Incus uses the
-prepared five-role source and starts only the listed nodes.
+prepared full role source and starts only the listed nodes.
 
 For Docker, topology names also describe the active roles requested by a test.
 Docker prepares composable role images: operator and gateway from
-`operator_gateway`, then app-dev, app-prod, and agent from
-`operator_gateway_app-dev_app-prod_agent`.
+`operator_gateway`, then app-dev, app-prod, agent, and websocket from
+`operator_gateway_app-dev_app-prod_agent_websocket`.
 
 ## Topology kinds
 
@@ -24,6 +24,9 @@ Use this table to choose the smallest active node set for a feature test.
 | `operator_gateway_app-dev_app-prod` | operator + gateway + dev + 1 prod app | Full app topology. Use for production-app flows or full-stack verification. |
 | `operator_gateway_agent` | operator + gateway + 1 agent | Use for agent-node assertions that do not need app-dev or app-prod nodes. |
 | `operator_gateway_app-prod_ingress` | operator + gateway + 1 prod app carrying ingress | Use for public production ingress and private app-prod backend flows that do not need dev or agent nodes. |
+| `operator_gateway_app-dev_websocket` | operator + gateway + dev + 1 websocket node | Use for private websocket runtime and publishing flows that only need a development app Redis provider. |
+| `operator_gateway_app-dev_app-prod_websocket` | operator + gateway + dev + prod + 1 websocket node | Use for public app WebSocket flows through app-prod's colocated ingress. |
+| `operator_gateway_app-dev_app-prod_agent_websocket` | operator + gateway + dev + prod + agent + 1 websocket node | Full websocket-capable source topology. Use for artifact preparation or cross-role assertions that need every current workload role. |
 
 ## Feature checkout overlay
 
@@ -74,32 +77,37 @@ Tests request the smallest topology kind that covers the behavior under test.
 The Docker provider starts only the requested roles from the canonical
 composable role images, prunes gateway registry rows for roles that were not
 requested, and primes the gateway API for active container addresses. Operator
-and gateway come from `operator_gateway`; app-dev, app-prod, and agent come from
-`operator_gateway_app-dev_app-prod_agent`.
+and gateway come from `operator_gateway`; app-dev, app-prod, agent, and
+websocket come from `operator_gateway_app-dev_app-prod_agent_websocket`.
 
 The Incus provider clones only selected roles from the prepared
-`operator_gateway_app-dev_app-prod_agent` snapshots, starts those VMs, retargets
-WireGuard, and prunes stale gateway registry rows for roles that were not
-booted.
+`operator_gateway_app-dev_app-prod_agent` or
+`operator_gateway_app-dev_app-prod_agent_websocket` snapshots, starts those VMs,
+retargets WireGuard, and prunes stale gateway registry rows for roles that were
+not booted.
 
 ## Prepared sources
 
 Required prepared sources for feature lanes:
 
 - Docker role images for the composable gateway-backed set: operator and
-  gateway from `operator_gateway`; app-dev, app-prod, and agent from
-  `operator_gateway_app-dev_app-prod_agent`. App-dev carries database and Redis
-  registry state by default, and app-prod carries the ingress role. Canonical
-  base role images are `orbit-e2e:operator_base`, `orbit-e2e:gateway_base`,
-  `orbit-e2e:app-dev_base`, `orbit-e2e:app-prod_base`, and
-  `orbit-e2e:agent_base`.
+  gateway from `operator_gateway`; app-dev, app-prod, agent, and websocket from
+  `operator_gateway_app-dev_app-prod_agent_websocket`. App-dev carries database
+  and Redis registry state by default, app-prod carries the ingress role, and
+  websocket carries the Reverb runtime baseline with Redis linked to app-dev.
+  Canonical base role images are `orbit-e2e:operator_base`,
+  `orbit-e2e:gateway_base`, `orbit-e2e:app-dev_base`,
+  `orbit-e2e:app-prod_base`, `orbit-e2e:agent_base`, and
+  `orbit-e2e:websocket_base`.
 - Docker runner support images: `orbit-runtime:<namespace>-current`,
   `caddy:2-alpine`, and every FrankenPHP image supported by
   `PhpRuntimeCatalog` for app/workspace topologies.
 - Docker build-host helpers: `orbit-e2e-topology-runtime:<namespace>-current`
   and `composer:2`, used only to prepare the canonical role images.
-- `operator_gateway_app-dev_app-prod_agent` Incus role snapshots for selective
-  VM boot, including operator-only and operator-gateway tests.
+- `operator_gateway_app-dev_app-prod_agent` and
+  `operator_gateway_app-dev_app-prod_agent_websocket` Incus role snapshots for
+  selective VM boot, including operator-only, operator-gateway, and websocket
+  tests.
 
 `composer test:e2e`, `composer test:e2e:docker`, and
 `composer test:e2e:incus` do not prepare artifacts. They fail before Pest
@@ -138,6 +146,10 @@ Prepare the canonical Docker role image set once for the host pool:
 composer e2e:prepare-docker-hosts -- --force operator_gateway_app-dev_app-prod_agent
 
 composer e2e:prepare-topology -- --force operator_gateway_app-dev_app-prod_agent
+
+composer e2e:prepare-docker-hosts -- --force operator_gateway_app-dev_app-prod_agent_websocket
+
+composer e2e:prepare-topology -- --force operator_gateway_app-dev_app-prod_agent_websocket
 ```
 
 Docker and Incus preparation both use Composer caches during provisioning.
@@ -157,11 +169,11 @@ role independently by trying `orbit-e2e:<role>_<slug>` first, then
 `<namespace>-current`.
 
 Custom artifact preparation must declare intent. Docker accepts
-`--roles=operator,gateway,app-dev,app-prod,agent` to build only selected role
-images, or `--all-roles` for an explicit full namespaced role set. Incus
-acquisition has the same per-role fallback, but forced targeted Incus rebakes
-are blocked until the builder can refresh only selected VM templates without
-mutating the rest of the artifact set.
+`--roles=operator,gateway,app-dev,app-prod,agent,websocket` to build only
+selected role images, or `--all-roles` for an explicit full namespaced role set.
+Incus acquisition has the same per-role fallback, but forced targeted Incus
+rebakes are blocked until the builder can refresh only selected VM templates
+without mutating the rest of the artifact set.
 
 ## Contract
 
@@ -197,6 +209,9 @@ Each topology kind adds the handles and seeded state that tests can rely on.
 | `operator_gateway_app-dev_app-prod` | Adds a production app clone named `app-prod-1`. Production app runtime assertions use FrankenPHP app containers and Docker process runtime units behind the private `orbit-caddy` backend listener. |
 | `operator_gateway_agent` | Adds one agent clone named `agent-1` and skips development and production app clones. |
 | `operator_gateway_app-prod_ingress` | Uses one production app clone that also carries the ingress role. Public production HTTP assertions preserve the path `ingress -> router -> backend`. |
+| `operator_gateway_app-dev_websocket` | Adds a dedicated websocket node named `ws-1`; app-dev provides the Redis registry state used by the websocket role. |
+| `operator_gateway_app-dev_app-prod_websocket` | Adds a dedicated websocket node and a production app clone that carries ingress for public app WebSocket assertions. |
+| `operator_gateway_app-dev_app-prod_agent_websocket` | Adds all current workload nodes: dev, prod, agent, and websocket. Use as the full websocket-capable artifact source. |
 
 ## Hosted service expectations
 

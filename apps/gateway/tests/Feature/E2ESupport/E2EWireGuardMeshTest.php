@@ -144,6 +144,31 @@ it('can include an ingress peer with a stable WireGuard address', function (): v
         ]);
 });
 
+it('can include a websocket peer with a stable WireGuard address', function (): void {
+    $mesh = E2EWireGuardMesh::standard(
+        gatewayProviderIp: '10.231.0.11',
+        wgEasyPublicKey: 'wg-easy-public',
+        gatewayHostPrivateKey: 'gateway-host-private',
+        gatewayHostPublicKey: 'gateway-host-public',
+        operatorPrivateKey: 'operator-private',
+        operatorPublicKey: 'operator-public',
+        websocketPrivateKey: 'websocket-private',
+        websocketPublicKey: 'websocket-public',
+    );
+
+    $peers = $mesh->wgEasyPeers();
+
+    expect($mesh->addressFor('websocket'))->toBe('10.6.0.8')
+        ->and($mesh->peerConfig('websocket'))->toContain('Address = 10.6.0.8/24')
+        ->and($peers)->toHaveCount(3)
+        ->and($peers[2])->toMatchArray([
+            'name' => 'websocket',
+            'private_key' => 'websocket-private',
+            'public_key' => 'websocket-public',
+            'address' => '10.6.0.8',
+        ]);
+});
+
 it('installs and restarts wg-orbit for a role', function (): void {
     $commands = [];
     $instance = m::mock(E2EInstance::class);

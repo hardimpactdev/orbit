@@ -132,7 +132,7 @@ Every listed template should show `pool: orbit-e2e`. If templates show
 prepared topology before trusting Incus feature-lane timings:
 
 ```bash
-composer e2e:prepare-topology -- --force operator_gateway_app-dev_app-prod_agent
+composer e2e:prepare-topology -- --force operator_gateway_app-dev_app-prod_agent_websocket
 ```
 
 Branch-specific Incus artifacts use the same role suffix model as Docker:

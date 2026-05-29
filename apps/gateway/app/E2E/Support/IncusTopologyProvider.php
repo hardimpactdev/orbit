@@ -20,6 +20,8 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
 
     private const string IngressWireGuardIp = '10.6.0.7';
 
+    private const string WebSocketWireGuardIp = '10.6.0.8';
+
     public function __construct(
         private E2EConfig $config,
     ) {}
@@ -653,7 +655,7 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
         $mesh = $this->meshFor($instances, $gatewayProviderIp);
         $wgEasy->configurePeers($gateway, $mesh->wgEasyPeers());
 
-        foreach (['gateway', 'operator', 'dev', 'prod', 'agent', 'ingress'] as $role) {
+        foreach (['gateway', 'operator', 'dev', 'prod', 'agent', 'ingress', 'websocket'] as $role) {
             if (! isset($instances[$role])) {
                 continue;
             }
@@ -667,6 +669,7 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
             isset($instances['prod']) ? 'prod' : null,
             isset($instances['agent']) ? 'agent' : null,
             isset($instances['ingress']) ? 'ingress' : null,
+            isset($instances['websocket']) ? 'websocket' : null,
         ])));
     }
 
@@ -682,6 +685,7 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
         $prod = isset($instances['prod']) ? $generator->generateKeyPair() : null;
         $agent = isset($instances['agent']) ? $generator->generateKeyPair() : null;
         $ingress = isset($instances['ingress']) ? $generator->generateKeyPair() : null;
+        $websocket = isset($instances['websocket']) ? $generator->generateKeyPair() : null;
         $wgEasyPublicKey = trim($instances['gateway']->exec('docker exec wg-easy wg show wg0 public-key')->output());
 
         return E2EWireGuardMesh::standard(
@@ -699,6 +703,8 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
             agentPublicKey: $agent['public_key'] ?? null,
             ingressPrivateKey: $ingress['private_key'] ?? null,
             ingressPublicKey: $ingress['public_key'] ?? null,
+            websocketPrivateKey: $websocket['private_key'] ?? null,
+            websocketPublicKey: $websocket['public_key'] ?? null,
         );
     }
 
@@ -774,6 +780,15 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
                 escapeshellarg(self::AgentWireGuardIp),
                 escapeshellarg(self::GatewayWireGuardIp),
             ), timeoutSeconds: 120);
+        }
+
+        if (isset($instances['websocket'])) {
+            E2ECommand::ssh($gateway, 'orbit', $sshKeyPair, sprintf(
+                'cd /home/orbit/orbit && php apps/gateway/artisan orbit:internal:bake-websocket-node ws-1 --host=%s --wireguard-address=%s --gateway-endpoint=%s --user=orbit --redis-node=app-dev-1 --converge-runtime',
+                escapeshellarg(self::WebSocketWireGuardIp),
+                escapeshellarg(self::WebSocketWireGuardIp),
+                escapeshellarg(self::GatewayWireGuardIp),
+            ), timeoutSeconds: 900);
         }
 
         $this->prunePreparedGatewayRegistry($instances, $sshKeyPair);
@@ -903,7 +918,7 @@ PHP;
             return;
         }
 
-        $targets = array_intersect_key($instances, array_flip(['dev', 'prod', 'agent', 'ingress']));
+        $targets = array_intersect_key($instances, array_flip(['dev', 'prod', 'agent', 'ingress', 'websocket']));
 
         if ($targets === []) {
             return;
@@ -968,7 +983,7 @@ PHP;
             return;
         }
 
-        foreach (['dev', 'prod', 'agent', 'ingress'] as $role) {
+        foreach (['dev', 'prod', 'agent', 'ingress', 'websocket'] as $role) {
             if (! isset($instances[$role])) {
                 continue;
             }
@@ -1046,6 +1061,7 @@ PHP;
             'prod' => self::ProdWireGuardIp,
             'agent' => self::AgentWireGuardIp,
             'ingress' => self::IngressWireGuardIp,
+            'websocket' => self::WebSocketWireGuardIp,
             default => throw new \RuntimeException("Unknown topology role [{$role}]."),
         };
     }

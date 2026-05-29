@@ -100,8 +100,9 @@ The ephemeral E2E suite is split into two explicit Pest group lanes:
   supply the required prepared topology.
 - `e2e-provision` builds the reusable Incus superset from the supported base
   image. It launches a fresh base VM, installs Orbit on the operator, provisions
-  the gateway, runs `node:new` for app-dev, app-prod, and agent in parallel, and
-  snapshots the prepared role templates. Run it with
+  the gateway, runs `node:new` for app-dev, app-prod, and agent in parallel,
+  bakes websocket against app-dev Redis, and snapshots the prepared role
+  templates. Run it with
   `composer test:e2e:provision`.
 
 Each prepared topology has its own contract group:
@@ -114,11 +115,15 @@ Each prepared topology has its own contract group:
 | `operator_gateway_app-dev_app-prod` | `e2e-topology-contract-operator_gateway_app-dev_app-prod` | `e2e-feature-operator_gateway_app-dev_app-prod` |
 | `operator_gateway_agent` | `e2e-topology-contract-operator_gateway_agent` | `e2e-feature-operator_gateway_agent` |
 | `operator_gateway_app-prod_ingress` | `e2e-topology-contract-operator_gateway_app-prod_ingress` | `e2e-feature-operator_gateway_app-prod_ingress` |
+| `operator_gateway_app-dev_websocket` | `e2e-topology-contract-operator_gateway_app-dev_websocket` | `e2e-feature-operator_gateway_app-dev_websocket` |
+| `operator_gateway_app-dev_app-prod_websocket` | `e2e-topology-contract-operator_gateway_app-dev_app-prod_websocket` | `e2e-feature-operator_gateway_app-dev_app-prod_websocket` |
+| `operator_gateway_app-dev_app-prod_agent_websocket` | `e2e-topology-contract-operator_gateway_app-dev_app-prod_agent_websocket` | `e2e-feature-operator_gateway_app-dev_app-prod_agent_websocket` |
 
 `composer test:e2e:topology-contract` proves the Docker
-`operator_gateway_app-dev_app-prod` topology contract. It is a quick topology
-health check, while `composer test:e2e` excludes topology-contract tests and
-runs feature assertions only.
+`operator_gateway_app-dev_app-prod_agent_websocket` topology contract. It is a
+quick topology health check that boots every current prepared workload role,
+while `composer test:e2e` excludes topology-contract tests and runs feature
+assertions only.
 
 The provision gate is intentionally on demand because it runs real
 installer/provisioning paths and is much slower than prepared-topology feature

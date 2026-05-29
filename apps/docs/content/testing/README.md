@@ -12,8 +12,8 @@ Orbit has three supported test lanes:
 2. Feature E2E backed by Docker for prepared-topology command, registry, gateway
    API, and CA trust coverage.
 3. The Incus provisioning gate for the reusable superset topology: fresh base
-   VM, Orbit install, gateway provisioning, and parallel `node:new` for
-   app-dev, app-prod, and agent.
+   VM, Orbit install, gateway provisioning, parallel `node:new` for app-dev,
+   app-prod, and agent, then websocket runtime baking against app-dev Redis.
 
 Standing live infrastructure is not a test lane. Do not use persistent gateway,
 operator, or app nodes as verification targets.

@@ -18,7 +18,8 @@ it('keeps non-run docker topology networks outside the orbit WireGuard subnet', 
             ->and($plan->ipForRole('dev'))->toBe('10.90.224.4')
             ->and($plan->ipForRole('prod'))->toBe('10.90.224.5')
             ->and($plan->ipForRole('agent'))->toBe('10.90.224.6')
-            ->and($plan->ipForRole('ingress'))->toBe('10.90.224.7');
+            ->and($plan->ipForRole('ingress'))->toBe('10.90.224.7')
+            ->and($plan->ipForRole('websocket'))->toBe('10.90.224.8');
     } finally {
         restoreTestToken($previous);
     }
@@ -36,7 +37,8 @@ it('allocates a run-scoped docker subnet outside parallel workers', function ():
             ->and($plan->ipForRole('operator'))->toBe('10.90.166.3')
             ->and($plan->ipForRole('operator'))->toBe('10.90.166.3')
             ->and($plan->ipForRole('dev'))->toBe('10.90.166.4')
-            ->and($plan->ipForRole('prod'))->toBe('10.90.166.5');
+            ->and($plan->ipForRole('prod'))->toBe('10.90.166.5')
+            ->and($plan->ipForRole('websocket'))->toBe('10.90.166.8');
     } finally {
         restoreTestToken($previous);
     }
@@ -54,7 +56,8 @@ it('allocates a distinct docker subnet for each parallel worker token', function
             ->and($plan->ipForRole('operator'))->toBe('10.90.226.3')
             ->and($plan->ipForRole('operator'))->toBe('10.90.226.3')
             ->and($plan->ipForRole('dev'))->toBe('10.90.226.4')
-            ->and($plan->ipForRole('prod'))->toBe('10.90.226.5');
+            ->and($plan->ipForRole('prod'))->toBe('10.90.226.5')
+            ->and($plan->ipForRole('websocket'))->toBe('10.90.226.8');
     } finally {
         restoreTestToken($previous);
     }
@@ -72,7 +75,8 @@ it('allocates a run-scoped docker subnet for parallel topology leases', function
             ->and($plan->ipForRole('operator'))->toBe('10.90.26.3')
             ->and($plan->ipForRole('operator'))->toBe('10.90.26.3')
             ->and($plan->ipForRole('dev'))->toBe('10.90.26.4')
-            ->and($plan->ipForRole('prod'))->toBe('10.90.26.5');
+            ->and($plan->ipForRole('prod'))->toBe('10.90.26.5')
+            ->and($plan->ipForRole('websocket'))->toBe('10.90.26.8');
     } finally {
         restoreTestToken($previous);
     }

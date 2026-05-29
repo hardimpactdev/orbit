@@ -555,7 +555,10 @@ it('defines downstream small topology role matrices for current roles', function
         ->and(DockerTopologyBuilder::rolesFor(E2ETopologyKind::OperatorGatewayAgent))->toBe(['operator', 'gateway', 'agent'])
         ->and(DockerTopologyBuilder::rolesFor(E2ETopologyKind::OperatorGatewayAppdevAppprod))->toBe(['operator', 'gateway', 'dev', 'prod'])
         ->and(DockerTopologyBuilder::rolesFor(E2ETopologyKind::OperatorGatewayAppdevAppprodAgent))->toBe(['operator', 'gateway', 'dev', 'prod', 'agent'])
-        ->and(DockerTopologyBuilder::rolesFor(E2ETopologyKind::OperatorGatewayAppprodIngress))->toBe(['operator', 'gateway', 'prod']);
+        ->and(DockerTopologyBuilder::rolesFor(E2ETopologyKind::OperatorGatewayAppprodIngress))->toBe(['operator', 'gateway', 'prod'])
+        ->and(DockerTopologyBuilder::rolesFor(E2ETopologyKind::OperatorGatewayAppdevWebsocket))->toBe(['operator', 'gateway', 'dev', 'websocket'])
+        ->and(DockerTopologyBuilder::rolesFor(E2ETopologyKind::OperatorGatewayAppdevAppprodWebsocket))->toBe(['operator', 'gateway', 'dev', 'prod', 'websocket'])
+        ->and(DockerTopologyBuilder::rolesFor(E2ETopologyKind::OperatorGatewayAppdevAppprodAgentWebsocket))->toBe(['operator', 'gateway', 'dev', 'prod', 'agent', 'websocket']);
 });
 
 it('does not accept bare client aliases for downstream small topology fixtures', function (): void {
@@ -637,6 +640,44 @@ it('provisions Docker downstream role source images in parallel after the gatewa
     Process::assertNotRan(fn ($process): bool => is_string($process->command)
         && str_contains($process->command, "docker exec --user 'orbit'")
         && (str_contains($process->command, 'bake-app-node') || str_contains($process->command, 'bake-agent-node')));
+});
+
+it('bakes Docker websocket source images after app development Redis is registered', function (): void {
+    $commands = [];
+
+    Process::fake(function ($process) use (&$commands) {
+        $commands[] = $process->command;
+
+        if (str_contains($process->command, 'ssh-keygen -t ed25519') || str_contains($process->command, 'id_ed25519.pub')) {
+            return Process::result(output: "ssh-ed25519 AAAATEST orbit-e2e-gateway\n");
+        }
+
+        return Process::result(output: str_starts_with($process->command, 'docker run -d ') ? "container-id\n" : '');
+    });
+
+    (new DockerTopologyBuilder(E2EConfig::fromEnvironment()))
+        ->build(E2ETopologyKind::OperatorGatewayAppdevAppprodAgentWebsocket);
+
+    $scriptWrite = collect($commands)
+        ->first(fn (string $command): bool => str_contains($command, 'cat >')
+            && str_contains($command, 'orbit-e2e-docker-downstream.sh'));
+
+    expect($scriptWrite)
+        ->toBeString()
+        ->toContain('orbit:internal:bake-websocket-node ws-1')
+        ->toContain('--host=websocket')
+        ->toContain('--host-key-host=')
+        ->toContain('--wireguard-address=10.6.0.8')
+        ->toContain('--gateway-endpoint=gateway')
+        ->toContain('--redis-node=app-dev-1')
+        ->toContain('PID_NODE_NEW_WEBSOCKET=$!')
+        ->toContain('wait "$PID_NODE_NEW_WEBSOCKET"')
+        ->toContain('/tmp/orbit-e2e-docker-node-new-websocket.log');
+
+    expect(strpos($scriptWrite, 'wait "$PID_NODE_NEW_DEV"'))
+        ->toBeLessThan(strpos($scriptWrite, 'orbit:internal:bake-websocket-node ws-1'));
+
+    expect($scriptWrite)->not->toContain('--environment=');
 });
 
 it('builds operator_gateway prepared images through transient docker resources', function (): void {
