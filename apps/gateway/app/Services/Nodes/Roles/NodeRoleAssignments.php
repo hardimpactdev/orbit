@@ -34,6 +34,7 @@ class NodeRoleAssignments
             ...$this->appHostRoles(),
             NodeRoleName::Database->value,
             NodeRoleName::Agent->value,
+            NodeRoleName::S3->value,
         ];
     }
 

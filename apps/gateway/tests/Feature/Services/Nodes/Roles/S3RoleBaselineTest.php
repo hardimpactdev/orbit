@@ -101,7 +101,7 @@ it('writes credentials to the rustfs NodeTool row on first converge', function (
     expect($fields)->toBeArray()
         ->and($fields['access_key_id'])->toBeString()->not->toBeEmpty()
         ->and($fields['secret_access_key'])->toBeString()->not->toBeEmpty()
-        ->and($fields['region'])->toBe('us-east-1')
+        ->and($fields['region'])->toBe('orbit')
         ->and($fields['endpoint'])->toBe('https://s3.orbit');
 });
 

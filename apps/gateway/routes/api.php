@@ -55,6 +55,7 @@ use App\Http\Controllers\Api\ProfileController;
 use App\Http\Controllers\Api\ProxyRouteDestroyController;
 use App\Http\Controllers\Api\ProxyRouteListController;
 use App\Http\Controllers\Api\ProxyRouteStoreController;
+use App\Http\Controllers\Api\S3CredentialsController;
 use App\Http\Controllers\Api\S3PublishController;
 use App\Http\Controllers\Api\S3UnpublishController;
 use App\Http\Controllers\Api\ScheduleDestroyController;
@@ -157,6 +158,7 @@ Route::middleware(CorrelationHeader::class)->group(function (): void {
         Route::get('/proxy-routes', ProxyRouteListController::class);
         Route::post('/proxy-routes', ProxyRouteStoreController::class);
         Route::delete('/proxy-routes/{domain}', ProxyRouteDestroyController::class);
+        Route::get('/s3/credentials', S3CredentialsController::class);
         Route::post('/s3/public-hosts', S3PublishController::class);
         Route::delete('/s3/public-hosts/{host}', S3UnpublishController::class);
         Route::get('/schedules', ScheduleListController::class);
