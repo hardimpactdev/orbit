@@ -107,6 +107,13 @@ describe('node permission presets', function (): void {
                 ->and($permissions)->toContain('tool:restart');
         });
 
+        it('excludes explicit credential permissions', function (): void {
+            $permissions = (new NodePermissionPresets)->permissions('operator');
+
+            expect($permissions)->not->toContain('app:credentials')
+                ->and($permissions)->not->toContain('tool:credentials');
+        });
+
         it('excludes firewall writes', function (): void {
             $permissions = (new NodePermissionPresets)->permissions('operator');
 
@@ -152,6 +159,13 @@ describe('node permission presets', function (): void {
                 ->and($permissions)->toContain('doctor:verify')
                 ->and($permissions)->toContain('firewall_rule:read');
         });
+
+        it('excludes explicit credential permissions', function (): void {
+            $permissions = (new NodePermissionPresets)->permissions('read-only');
+
+            expect($permissions)->not->toContain('app:credentials')
+                ->and($permissions)->not->toContain('tool:credentials');
+        });
     });
 
     describe('developer preset', function (): void {
@@ -160,6 +174,7 @@ describe('node permission presets', function (): void {
 
             expect($permissions)->toContain('app:read')
                 ->and($permissions)->toContain('app:write')
+                ->and($permissions)->not->toContain('app:credentials')
                 ->and($permissions)->toContain('workspace:read')
                 ->and($permissions)->toContain('workspace:write');
         });
@@ -209,6 +224,12 @@ describe('node permission presets', function (): void {
     });
 
     describe('admin preset', function (): void {
+        it('includes explicit app credential authority', function (): void {
+            $permissions = (new NodePermissionPresets)->permissions('admin');
+
+            expect($permissions)->toContain('app:credentials');
+        });
+
         it('includes full tool authority', function (): void {
             $permissions = (new NodePermissionPresets)->permissions('admin');
 

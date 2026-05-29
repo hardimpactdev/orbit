@@ -28,6 +28,7 @@ describe('node permission registry', function (): void {
 
         expect($registry->isKnown('tool:read'))->toBeTrue()
             ->and($registry->isKnown('node:read'))->toBeTrue()
+            ->and($registry->isKnown('app:credentials'))->toBeTrue()
             ->and($registry->isKnown('agent-ide:message'))->toBeTrue()
             ->and($registry->isKnown('database:read'))->toBeTrue()
             ->and($registry->isKnown('database:query:write'))->toBeTrue()
@@ -78,6 +79,10 @@ describe('node permission registry', function (): void {
 
         expect($registry->allows(['tool:read'], 'tool:logs'))->toBeTrue()
             ->and($registry->allows(['tool:read'], 'tool:credentials'))->toBeFalse()
+            ->and($registry->allows(['app:read'], 'app:credentials'))->toBeFalse()
+            ->and($registry->allows(['app:write'], 'app:credentials'))->toBeFalse()
+            ->and($registry->allows(['app:credentials'], 'app:credentials'))->toBeTrue()
+            ->and($registry->allows(['app:*'], 'app:credentials'))->toBeTrue()
             ->and($registry->allows(['tool:update'], 'tool:update:agent-tools'))->toBeTrue()
             ->and($registry->allows(['tool:update:agent-tools'], 'tool:update'))->toBeFalse()
             ->and($registry->allows(['database:read'], 'database:tables'))->toBeTrue()
@@ -90,6 +95,7 @@ describe('node permission registry', function (): void {
 
     it('returns empty implied list for permissions without implications', function (): void {
         expect((new NodePermissionRegistry)->impliedBy('tool:credentials'))->toBe([])
+            ->and((new NodePermissionRegistry)->impliedBy('app:credentials'))->toBe([])
             ->and((new NodePermissionRegistry)->impliedBy('doctor:verify'))->toBe([]);
     });
 

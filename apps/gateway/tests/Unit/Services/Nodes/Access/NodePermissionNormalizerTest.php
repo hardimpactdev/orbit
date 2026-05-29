@@ -30,6 +30,12 @@ describe('node permission normalizer', function (): void {
         expect($result->permissions)->toBe(['tool:credentials', 'tool:read']);
     });
 
+    it('does not remove app credentials under app read or write permissions', function (): void {
+        $result = $this->normalizer->normalize(['app:read', 'app:write', 'app:credentials']);
+
+        expect($result->permissions)->toBe(['app:credentials', 'app:read', 'app:write']);
+    });
+
     it('handles tool:update implying tool:update:agent-tools', function (): void {
         $result = $this->normalizer->normalize(['tool:update', 'tool:update:agent-tools']);
 

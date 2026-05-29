@@ -8,6 +8,7 @@ use App\Models\AppWebSocketBinding;
 use App\Models\Node;
 use App\Models\NodeAccess;
 use App\Models\ProxyRoute;
+use App\Services\WebSockets\WebSocketBindingService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Testing\TestResponse;
 use Tests\Fakes\SiteCertificateInstallerFake;
@@ -111,6 +112,21 @@ function postAppWebSocketEnableJson(string $uri, array $data): TestResponse
     );
 }
 
+function getAppWebSocketCredentialsJson(string $uri): TestResponse
+{
+    return test()->call(
+        'GET',
+        $uri,
+        [],
+        [],
+        [],
+        [
+            'HTTP_ACCEPT' => 'application/json',
+            'REMOTE_ADDR' => APP_WEBSOCKET_CALLER_WG_IP,
+        ],
+    );
+}
+
 describe('AppWebSocketController', function (): void {
     it('enables app websocket bindings for authorized callers', function (): void {
         $caller = createAppWebSocketCallerNode();
@@ -210,6 +226,66 @@ describe('AppWebSocketController', function (): void {
         $response = postAppWebSocketEnableJson('/api/apps/missing/websocket/enable', [
             'public_hosts' => [],
         ]);
+
+        $response->assertNotFound()
+            ->assertJsonPath('error.code', 'app.not_found')
+            ->assertJsonPath('error.meta.app', 'missing');
+    });
+
+    it('returns app websocket credentials for authorized callers', function (): void {
+        $caller = createAppWebSocketCallerNode();
+        createAppWebSocketRoutePrerequisites();
+        $app = createAppWebSocketApp();
+        grantAppWebSocketAccess($caller, $app->node, ['app:credentials']);
+
+        $binding = app(WebSocketBindingService::class)->enable($app, ['ws.docs.test']);
+
+        $response = getAppWebSocketCredentialsJson('/api/apps/docs/websocket/credentials');
+
+        $response->assertOk()
+            ->assertJsonPath('success.data.credentials.app', 'docs')
+            ->assertJsonPath('success.data.credentials.internal_host', 'websocket.orbit')
+            ->assertJsonPath('success.data.credentials.public_hosts', ['ws.docs.test'])
+            ->assertJsonPath('success.data.credentials.allowed_origins', ['https://docs.test'])
+            ->assertJsonPath('success.data.credentials.reverb_app_id', 'docs')
+            ->assertJsonPath('success.data.credentials.reverb_app_key', $binding->reverb_app_key)
+            ->assertJsonPath('success.data.credentials.reverb_app_secret', $binding->reverb_app_secret);
+    });
+
+    it('requires the explicit app credentials permission for credential reads', function (): void {
+        $caller = createAppWebSocketCallerNode();
+        createAppWebSocketRoutePrerequisites();
+        $app = createAppWebSocketApp();
+        grantAppWebSocketAccess($caller, $app->node, ['app:write']);
+
+        app(WebSocketBindingService::class)->enable($app, ['ws.docs.test']);
+
+        $response = getAppWebSocketCredentialsJson('/api/apps/docs/websocket/credentials');
+
+        $response->assertForbidden()
+            ->assertJsonPath('error.code', 'authorization_failed')
+            ->assertJsonPath('error.meta.missing_permission', 'app:credentials')
+            ->assertJsonPath('error.meta.serving_node', 'app-1');
+    });
+
+    it('fails when credentials are requested before the app has an enabled binding', function (): void {
+        $caller = createAppWebSocketCallerNode();
+        createAppWebSocketRoutePrerequisites();
+        $app = createAppWebSocketApp();
+        grantAppWebSocketAccess($caller, $app->node, ['app:credentials']);
+
+        $response = getAppWebSocketCredentialsJson('/api/apps/docs/websocket/credentials');
+
+        $response->assertUnprocessable()
+            ->assertJsonPath('error.code', 'websocket.binding_missing')
+            ->assertJsonPath('error.meta.app', 'docs');
+    });
+
+    it('returns app not found for unknown credential app selectors', function (): void {
+        createAppWebSocketCallerNode(role: 'gateway');
+        createAppWebSocketRoutePrerequisites();
+
+        $response = getAppWebSocketCredentialsJson('/api/apps/missing/websocket/credentials');
 
         $response->assertNotFound()
             ->assertJsonPath('error.code', 'app.not_found')
