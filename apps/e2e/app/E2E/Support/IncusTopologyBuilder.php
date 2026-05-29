@@ -1258,6 +1258,262 @@ PHP;
         );
     }
 
+    /**
+     * Rebuild selected role templates from the matching base source snapshots.
+     *
+     * For each selected role, this method copies the base template (with its
+     * base snapshot) into the slug-namespaced template name, starts the VM,
+     * overlays the current checkout bundle onto the existing installation, then
+     * stops the VM and takes a fresh `clean-<source-kind>-<slug>` snapshot.
+     *
+     * Unselected roles are left absent so feature acquisition falls back to the
+     * matching `base` artifacts for those roles.
+     *
+     * @param  list<string>  $selectedRoles  Incus role names (e.g. operator, gateway, dev, prod, agent)
+     * @return list<array{role: string, name: string, snapshot: string}>
+     */
+    public function buildSelectedRoles(E2ETopologyKind $sourceKind, array $selectedRoles, bool $replaceExisting = false): array
+    {
+        if ($this->remoteBundleDir === null) {
+            throw new RuntimeException(
+                'No provisioning bundle has been staged. Call useBundle() before buildSelectedRoles().'
+            );
+        }
+
+        $this->validateGatewayConsistency($selectedRoles);
+
+        $workDirectory = $this->timer->measure('workdir', fn (): string => $this->createWorkDirectory());
+
+        try {
+            $key = $this->timer->measure('ssh-key', fn (): SshKeyPair => $this->createSshKeyPair($workDirectory));
+
+            return $this->buildSelectedRoleTemplates($sourceKind, $selectedRoles, $key, $replaceExisting);
+        } finally {
+            $this->timer->measure('workdir.cleanup', fn () => $this->host->run('rm -rf '.escapeshellarg((string) $workDirectory)));
+        }
+    }
+
+    /**
+     * Validate that gateway + operator are selected together if either is included.
+     *
+     * Gateway and operator share CA trust, WireGuard mesh keys, and gateway API
+     * credentials baked into the operator template. Rebuilding one without the
+     * other produces an incoherent artifact set because the CA fingerprint or
+     * WireGuard peer keys in the new template will not match the ones in the old
+     * base template for the counterpart role.
+     *
+     * @param  list<string>  $selectedRoles
+     */
+    private function validateGatewayConsistency(array $selectedRoles): void
+    {
+        $hasGateway = in_array('gateway', $selectedRoles, true);
+        $hasOperator = in_array('operator', $selectedRoles, true);
+
+        if ($hasGateway && ! $hasOperator) {
+            throw new RuntimeException(
+                "Selected roles include 'gateway' but not 'operator'. Gateway and operator share CA trust and WireGuard contracts; both must be rebuilt together for a coherent artifact set. Add 'operator' to --roles."
+            );
+        }
+
+        if ($hasOperator && ! $hasGateway) {
+            throw new RuntimeException(
+                "Selected roles include 'operator' but not 'gateway'. Gateway and operator share CA trust and WireGuard contracts; both must be rebuilt together for a coherent artifact set. Add 'gateway' to --roles."
+            );
+        }
+    }
+
+    /**
+     * @param  list<string>  $selectedRoles
+     * @return list<array{role: string, name: string, snapshot: string}>
+     */
+    private function buildSelectedRoleTemplates(
+        E2ETopologyKind $sourceKind,
+        array $selectedRoles,
+        SshKeyPair $key,
+        bool $replaceExisting,
+    ): array {
+        $baseSnapshotName = IncusTopologyTemplate::baseSnapshotName($sourceKind);
+        $slugSnapshotName = IncusTopologyTemplate::snapshotName($sourceKind);
+        $manifest = [];
+
+        // Pre-flight: validate base templates exist and delete any stale slug templates.
+        foreach ($selectedRoles as $role) {
+            $baseTemplateName = IncusTopologyTemplate::baseTemplateName($sourceKind, $role);
+            $slugTemplateName = IncusTopologyTemplate::templateName($sourceKind, $role);
+
+            if (! $this->host->instanceExists($baseTemplateName)) {
+                throw new RuntimeException(
+                    "Base template [{$baseTemplateName}] not found. Prepare the base artifact set first with composer e2e:prepare-topology."
+                );
+            }
+
+            if (! $this->host->snapshotExists($baseTemplateName, $baseSnapshotName)) {
+                throw new RuntimeException(
+                    "Base snapshot [{$baseTemplateName}/{$baseSnapshotName}] not found. Prepare the base artifact set first."
+                );
+            }
+
+            if ($this->host->instanceExists($slugTemplateName)) {
+                if (! $replaceExisting) {
+                    throw new RuntimeException(
+                        "Template [{$slugTemplateName}] already exists. Pass --force to replace it."
+                    );
+                }
+
+                $deleteResult = $this->host->deleteInstance($slugTemplateName);
+                if (! $deleteResult->successful()) {
+                    throw new RuntimeException("Could not delete existing template [{$slugTemplateName}]: {$deleteResult->errorOutput()}");
+                }
+            }
+        }
+
+        // Copy base template/snapshot for each selected role into the slug namespace.
+        $copyLines = [];
+        $waitLines = [];
+        foreach (array_values($selectedRoles) as $index => $role) {
+            $baseTemplateName = IncusTopologyTemplate::baseTemplateName($sourceKind, $role);
+            $slugTemplateName = IncusTopologyTemplate::templateName($sourceKind, $role);
+            $pid = 'PID_COPY_'.($index + 1);
+            $storageArg = $this->host->storagePoolArgument();
+            $storageArg = $storageArg !== '' ? " {$storageArg}" : '';
+            $copyLines[] = sprintf(
+                'incus copy %s/%s %s%s & %s=$!',
+                escapeshellarg($baseTemplateName),
+                escapeshellarg($baseSnapshotName),
+                escapeshellarg($slugTemplateName),
+                $storageArg,
+                $pid,
+            );
+            $waitLines[] = "wait \${$pid}";
+        }
+
+        $copyScript = implode("\n", [...$copyLines, ...$waitLines]);
+        $copyResult = $this->timer->measure('copy.base-templates', fn () => $this->host->run($copyScript, timeoutSeconds: 600));
+        if (! $copyResult->successful()) {
+            throw new RuntimeException("Could not copy base templates: {$copyResult->errorOutput()}");
+        }
+
+        // Start each selected VM, overlay the bundle source, then stop and snapshot.
+        foreach ($selectedRoles as $role) {
+            $slugTemplateName = IncusTopologyTemplate::templateName($sourceKind, $role);
+
+            $startResult = $this->timer->measure("selected.start.{$role}", fn () => $this->host->startInstance($slugTemplateName));
+            if (! $startResult->successful()) {
+                throw new RuntimeException("Could not start [{$slugTemplateName}]: {$startResult->errorOutput()}");
+            }
+
+            $instance = new IncusInstance($this->host, $slugTemplateName);
+            $this->timer->measure("selected.agent-ready.{$role}", fn () => $instance->waitForAgent());
+
+            $this->timer->measure("selected.bundle-overlay.{$role}", fn () => $this->applyBundleOverlay($instance, $role, $key));
+
+            $this->timer->measure("selected.clear-known-hosts.{$role}", fn () => $this->clearKnownHosts($instance));
+
+            $stopResult = $this->timer->measure("selected.stop.{$role}", fn () => $this->host->stopInstance($slugTemplateName));
+            if (! $stopResult->successful()) {
+                throw new RuntimeException("Could not stop [{$slugTemplateName}]: {$stopResult->errorOutput()}");
+            }
+
+            $snapResult = $this->timer->measure("selected.snapshot.{$role}", fn () => $this->host->snapshotInstance($slugTemplateName, $slugSnapshotName));
+            if (! $snapResult->successful()) {
+                throw new RuntimeException("Could not snapshot [{$slugTemplateName}/{$slugSnapshotName}]: {$snapResult->errorOutput()}");
+            }
+
+            $manifest[] = [
+                'role' => $role,
+                'name' => $slugTemplateName,
+                'snapshot' => $slugSnapshotName,
+            ];
+        }
+
+        return $manifest;
+    }
+
+    /**
+     * Overlay the current checkout bundle onto an already-provisioned VM.
+     *
+     * Pushes the staged source archive into the instance via incus file push and
+     * runs install-orbit with --skip-prerequisites and --source-archive to
+     * extract the new source over the existing installation at ~/orbit, then
+     * runs composer install in each sub-app to pick up dependency changes.
+     * Composer cache is forwarded when present in the bundle.
+     */
+    private function applyBundleOverlay(IncusInstance $instance, string $role, SshKeyPair $key): void
+    {
+        $bundleDir = (string) $this->remoteBundleDir;
+        $guestBundleDir = '/var/tmp/orbit-e2e-bundle-overlay';
+
+        // Clear and push bundle into the guest.
+        $clearResult = $instance->exec("rm -rf {$guestBundleDir}", timeoutSeconds: 30);
+        if (! $clearResult->successful()) {
+            throw new RuntimeException("Could not clear overlay bundle directory on [{$instance->name()}]: {$clearResult->errorOutput()}");
+        }
+
+        $pushResult = $this->host->run(sprintf(
+            'incus file push -r -p %s %s/var/tmp/',
+            escapeshellarg(rtrim($bundleDir, '/')),
+            escapeshellarg($instance->name()),
+        ), timeoutSeconds: 300);
+
+        if (! $pushResult->successful()) {
+            throw new RuntimeException("Could not push overlay bundle into [{$instance->name()}]: {$pushResult->errorOutput()}");
+        }
+
+        $sourceArchive = "{$guestBundleDir}/orbit-source.tar.gz";
+        $installerPath = "{$guestBundleDir}/install-orbit";
+
+        $hasComposerCache = $this->host->run(
+            'test -d '.escapeshellarg("{$bundleDir}/composer-cache"),
+            timeoutSeconds: 5,
+        )->successful();
+
+        $composerCacheArg = $hasComposerCache
+            ? " --composer-cache={$guestBundleDir}/composer-cache"
+            : '';
+
+        // Run install-orbit to update the source checkout, skipping OS/runtime prerequisites.
+        $updateScript = sprintf(
+            'chmod +x %s && %s --skip-prerequisites --source-archive=%s%s',
+            escapeshellarg($installerPath),
+            escapeshellarg($installerPath),
+            escapeshellarg($sourceArchive),
+            $composerCacheArg,
+        );
+
+        $updateResult = $instance->exec(
+            "sudo -iu orbit bash -lc {$updateScript}",
+            timeoutSeconds: 600,
+        );
+
+        if (! $updateResult->successful()) {
+            throw new RuntimeException("Could not apply bundle overlay on [{$instance->name()}] role={$role}: {$updateResult->errorOutput()}");
+        }
+
+        // Run composer install in each sub-app to pick up any dependency changes.
+        $composerInstallScript = <<<'BASH'
+cd /home/orbit/orbit
+if command -v composer >/dev/null 2>&1; then
+    for app in apps/gateway apps/cli apps/e2e packages/core apps/docs; do
+        if [ -f "$app/composer.json" ]; then
+            composer --working-dir="$app" install --no-interaction --no-progress --prefer-dist --optimize-autoloader 2>&1 || true
+        fi
+    done
+fi
+BASH;
+
+        $composerResult = $instance->exec(
+            'sudo -iu orbit bash -lc '.escapeshellarg($composerInstallScript),
+            timeoutSeconds: 600,
+        );
+
+        if (! $composerResult->successful()) {
+            throw new RuntimeException("Composer install failed on [{$instance->name()}] role={$role}: {$composerResult->errorOutput()}");
+        }
+
+        // Cleanup overlay bundle.
+        $instance->exec("rm -rf {$guestBundleDir}", timeoutSeconds: 30);
+    }
+
     private function launchBase(string $target): void
     {
         $sourceImageAlias = $this->host->config->baseImage;

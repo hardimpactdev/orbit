@@ -128,10 +128,6 @@ class E2EPrepareTopologyCommand extends Command
             return self::SUCCESS;
         }
 
-        if ($artifactRoles !== null) {
-            return $this->failCommand('Targeted Incus role artifact preparation is not implemented yet. Use --all-roles for an explicit full artifact-set rebuild, or leave ORBIT_E2E_TOPOLOGY_ARTIFACT_NAMESPACE empty to rebuild the shared base set.');
-        }
-
         $hostPool = IncusHostPool::fromEnvironment($config);
         $host = $hostPool->first();
 
@@ -153,7 +149,17 @@ class E2EPrepareTopologyCommand extends Command
 
             $builder->useBundle($remoteBundle);
 
-            $manifest = $timer->measure('builder.build', fn (): array => $builder->build($buildKind, replaceExisting: true));
+            if ($artifactRoles !== null) {
+                $incusRoles = array_map(
+                    E2EPreparedTopology::incusRoleForArtifactRole(...),
+                    $sourceRoles,
+                );
+                $incusRoles = array_values(array_unique($incusRoles));
+
+                $manifest = $timer->measure('builder.build', fn (): array => $builder->buildSelectedRoles($buildKind, $incusRoles, replaceExisting: true));
+            } else {
+                $manifest = $timer->measure('builder.build', fn (): array => $builder->build($buildKind, replaceExisting: true));
+            }
         } catch (RuntimeException $exception) {
             return $this->failCommand($exception->getMessage());
         } finally {
@@ -403,7 +409,8 @@ class E2EPrepareTopologyCommand extends Command
 
         return array_values(array_filter(
             $roles,
-            fn (string $role): bool => in_array(E2EPreparedTopology::artifactRoleForIncusRole($role), $artifactRoles, true),
+            fn (string $role): bool => in_array(E2EPreparedTopology::artifactRoleForIncusRole($role), $artifactRoles, true)
+                || array_any($artifactRoles, fn ($artifactRole) => E2EPreparedTopology::incusRoleForArtifactRole($artifactRole) === $role),
         ));
     }
 

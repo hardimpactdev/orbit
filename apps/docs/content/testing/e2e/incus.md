@@ -140,12 +140,20 @@ Branch-specific Incus artifacts use the same role suffix model as Docker:
 branch role artifacts fall back to the matching `base` template and snapshot, so
 a branch override does not need to rebuild every role.
 
-Incus acquisition already resolves branch/base artifacts per role. Forced Incus
-preparation currently supports the shared `base` rebuild and explicit full
-namespaced rebuilds with `--all-roles`. Targeted `--roles=<role>` rebakes are
-guarded until the builder can refresh only the selected VMs from the base source
-snapshot.
+Incus acquisition resolves branch/base artifacts per role. Forced Incus
+preparation supports the shared `base` rebuild, explicit full namespaced
+rebuilds with `--all-roles`, and targeted selected-role rebakes with `--roles`.
 A custom namespace without `--roles` or `--all-roles` is rejected.
+
+For a targeted `--roles` rebake, the builder copies each selected role from its
+base source snapshot into the slug namespace, starts the VM, overlays the
+current checkout bundle, stops the VM, and takes a fresh
+`clean-<source-topology>-<slug>` snapshot. Unselected roles remain absent in the
+slug namespace and fall back to the matching `base` artifacts during acquisition.
+
+Gateway consistency is enforced: `gateway` and `operator` must always be
+selected together because they share CA trust and WireGuard contracts. Selecting
+one without the other is rejected with a clear error.
 
 Use the artifact ensure command to inspect targeted Incus role templates before
 rebuilding:
