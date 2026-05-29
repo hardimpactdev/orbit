@@ -13,6 +13,7 @@ use App\Models\DatabaseConnection;
 use App\Models\DatabaseConnectionTarget;
 use App\Models\FirewallRule;
 use App\Models\Node;
+use App\Models\NodeRoleAssignment;
 use App\Models\NodeTool;
 use App\Models\Process;
 use App\Models\ProxyRoute;
@@ -37,6 +38,7 @@ use App\Services\Schedules\SchedulesFixer;
 use App\Services\Schedules\SchedulesProbe;
 use App\Services\Tools\ToolsFixer;
 use App\Services\Tools\ToolsProbe;
+use App\Services\WebSockets\WebSocketDoctorProbe;
 use App\Services\Workspaces\WorkspacesProbe;
 use Illuminate\Database\Eloquent\Collection;
 
@@ -58,6 +60,8 @@ final readonly class DoctorReportRunner
 
     private const array INGRESS_CATEGORIES = ['node', 'proxy', 'firewall_rule', 'tool'];
 
+    private const array WEBSOCKET_CATEGORIES = ['node', 'tool'];
+
     public function __construct(
         private NodesProbe $nodesProbe,
         private AppsProbe $appsProbe,
@@ -77,6 +81,7 @@ final readonly class DoctorReportRunner
         private SchedulesProbe $schedulesProbe,
         private SchedulesFixer $schedulesFixer,
         private NodeRoleAssignments $nodeRoleAssignments,
+        private WebSocketDoctorProbe $webSocketDoctorProbe,
     ) {}
 
     /**
@@ -100,6 +105,7 @@ final readonly class DoctorReportRunner
             NodeRoleName::Database->value => self::DATABASE_CATEGORIES,
             NodeRoleName::Agent->value => self::AGENT_CATEGORIES,
             NodeRoleName::Ingress->value => self::INGRESS_CATEGORIES,
+            NodeRoleName::WebSocket->value => self::WEBSOCKET_CATEGORIES,
             default => [],
         };
     }
@@ -131,6 +137,10 @@ final readonly class DoctorReportRunner
 
         if ($this->nodeRoleAssignments->nodeHasActiveRole($node, NodeRoleName::Ingress->value)) {
             return self::INGRESS_CATEGORIES;
+        }
+
+        if ($this->nodeRoleAssignments->nodeHasActiveRole($node, NodeRoleName::WebSocket->value)) {
+            return self::WEBSOCKET_CATEGORIES;
         }
 
         return self::CONTROL_CATEGORIES;
@@ -189,6 +199,14 @@ final readonly class DoctorReportRunner
                     $this->nodesProbe->diff($node, $snapshot, $key),
                 ),
             ];
+
+            $webSocketAssignment = $this->activeWebSocketAssignment($node);
+
+            if ($webSocketAssignment instanceof NodeRoleAssignment) {
+                foreach ($this->webSocketDoctorProbe->nodeDrift($node, $webSocketAssignment) as $entry) {
+                    $issues[] = $this->nodeScopedIssuePayload($entry, $node);
+                }
+            }
         }
 
         if (in_array('app', $selectedFamilies, true)) {
@@ -395,6 +413,14 @@ final readonly class DoctorReportRunner
                     $issues[] = $this->toolIssuePayload($entry, $tool);
                 }
             }
+
+            $webSocketAssignment = $this->activeWebSocketAssignment($node);
+
+            if ($webSocketAssignment instanceof NodeRoleAssignment) {
+                foreach ($this->webSocketDoctorProbe->toolDrift($node, $webSocketAssignment) as $entry) {
+                    $issues[] = $this->nodeScopedIssuePayload($entry, $node);
+                }
+            }
         }
 
         if (in_array('schedule', $selectedFamilies, true)) {
@@ -576,6 +602,25 @@ final readonly class DoctorReportRunner
     /**
      * @return array<string, mixed>
      */
+    private function nodeScopedIssuePayload(DriftEntry $entry, Node $node): array
+    {
+        $detail = $entry->detail ?? [];
+        $code = is_string($detail['code'] ?? null) ? $detail['code'] : $entry->key;
+
+        return $this->annotateIssue([
+            'family' => $entry->family,
+            'node' => $node->name,
+            'key' => $entry->key,
+            'code' => $code,
+            'kind' => $entry->kind->value,
+            'summary' => $entry->summary,
+            'detail' => $detail,
+        ]);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
     private function proxyIssuePayload(DriftEntry $entry, ProxyRoute $route): array
     {
         return $this->annotateIssue([
@@ -671,6 +716,11 @@ final readonly class DoctorReportRunner
     private function canServeGatewayOrAppHost(Node $node): bool
     {
         return $this->nodeRoleAssignments->nodeCanServeGatewayOrAppHostWorkloads($node);
+    }
+
+    private function activeWebSocketAssignment(Node $node): ?NodeRoleAssignment
+    {
+        return $this->nodeRoleAssignments->activeAssignment($node, NodeRoleName::WebSocket->value);
     }
 
     /**
