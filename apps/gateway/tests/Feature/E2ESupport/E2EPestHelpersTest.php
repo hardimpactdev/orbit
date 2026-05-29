@@ -43,21 +43,31 @@ it('keeps pest helpers scoped to prepared topology acquisition', function (): vo
 
 it('builds provider aware current checkout orbit wrappers', function (): void {
     $docker = e2eOrbitWrapperScript('/home/orbit/orbit-current', dockerRuntime: true, executorNodeIdentity: 'app-dev-1', hostLauncher: true);
-    $incus = e2eOrbitWrapperScript('/home/orbit/orbit-current', dockerRuntime: false);
+    $dockerRuntime = e2eOrbitWrapperScript('/home/orbit/orbit-current', dockerRuntime: true);
+    $incusHostLauncher = e2eOrbitWrapperScript('/home/orbit/orbit-current', dockerRuntime: false, executorNodeIdentity: 'gateway', hostLauncher: true);
+    $incusGatewayArtisan = e2eOrbitWrapperScript('/home/orbit/orbit-current', dockerRuntime: false);
 
     expect($docker)
-        ->toContain('sudo docker exec')
-        ->toContain("if [[ '1' == '1' ]]")
         ->toContain('ORBIT_REPO="${checkout}"')
         ->toContain('ORBIT_NODE_IDENTITY="${ORBIT_NODE_IDENTITY:-app-dev-1}"')
         ->toContain('exec "${checkout}/bin/orbit" "$@"')
+        ->not->toContain('sudo docker exec')
+        ->not->toContain('apps/gateway/artisan')
+        ->and($dockerRuntime)
+        ->toContain('sudo docker exec')
         ->toContain('ORBIT_SOURCE_PATH=/home/orbit/orbit-current')
         ->toContain('ORBIT_IS_GATEWAY=${ORBIT_IS_GATEWAY}')
         ->toContain('runtime_workdir="${ORBIT_HOST_CWD:-$PWD}"')
         ->toContain('--workdir "${runtime_workdir}"')
         ->not->toContain('exec php')
         ->toContain("php '/home/orbit/orbit-current/apps/gateway/artisan' \"\$@\"")
-        ->and($incus)
+        ->and($incusHostLauncher)
+        ->toContain('ORBIT_REPO="${checkout}"')
+        ->toContain('ORBIT_NODE_IDENTITY="${ORBIT_NODE_IDENTITY:-gateway}"')
+        ->toContain('exec "${checkout}/bin/orbit" "$@"')
+        ->not->toContain('apps/gateway/artisan')
+        ->not->toContain('sudo docker exec')
+        ->and($incusGatewayArtisan)
         ->toContain("exec php '/home/orbit/orbit-current/apps/gateway/artisan'")
         ->not->toContain('sudo docker exec');
 });
@@ -684,6 +694,56 @@ it('seeds docker operator current-checkout gateway settings through the cli env 
             ->and($dockerCommands[1])->toContain('http://gateway/api/ca/root')
             ->and($dockerCommands[1])->toContain('ca_sha256')
             ->and($dockerCommands[1])->toContain('ca_pem_path');
+    } finally {
+        $previous === false
+            ? putenv('ORBIT_E2E_TOPOLOGY_PROVIDER')
+            : putenv("ORBIT_E2E_TOPOLOGY_PROVIDER={$previous}");
+    }
+});
+
+it('seeds docker gateway current-checkout gateway settings through the cli env and root settings', function (): void {
+    $previous = getenv('ORBIT_E2E_TOPOLOGY_PROVIDER');
+    putenv('ORBIT_E2E_TOPOLOGY_PROVIDER=docker');
+
+    $dockerCommands = [];
+    Process::fake(function ($process) use (&$dockerCommands): ProcessResult {
+        $dockerCommands[] = (string) $process->command;
+
+        return Process::result();
+    });
+    Process::preventStrayProcesses();
+
+    $commands = [];
+    $key = new SshKeyPair('/tmp/id_ed25519', '/tmp/id_ed25519.pub');
+    $harness = new E2ETopologyHarness(new E2ETopologyLease(
+        kind: E2ETopologyKind::OperatorGateway,
+        operator: e2ePestFakeInstance($commands, 'operator'),
+        gateway: new DockerInstance(new DockerHost(E2EConfig::fromEnvironment()), 'orbit-e2e-run-gateway', 'orbit-e2e-run'),
+        dev: null,
+        prod: null,
+        sshKeyPair: $key,
+        rebuild: fn () => throw new RuntimeException('not expected'),
+        gatewayApiIp: '10.61.0.2',
+    ));
+    $harness->setCheckouts(['gateway' => '/home/orbit/orbit-current']);
+
+    try {
+        e2eConfigureCurrentCheckoutGatewaySettingsIfAvailable($harness);
+
+        expect($dockerCommands)->toHaveCount(2)
+            ->and($dockerCommands[0])->toContain("docker exec --user 'orbit' 'orbit-e2e-run-gateway' sh -lc")
+            ->and($dockerCommands[0])->toContain('/home/orbit/orbit-current/apps/cli')
+            ->and($dockerCommands[0])->toContain('ORBIT_GATEWAY_URL')
+            ->and($dockerCommands[0])->toContain('ORBIT_GATEWAY_IDENTITY')
+            ->and($dockerCommands[0])->toContain('http://gateway')
+            ->and($dockerCommands[0])->not->toContain('php apps/gateway/artisan tinker --execute')
+            ->and($dockerCommands[1])->toContain("docker exec --user 'orbit' 'orbit-e2e-run-gateway' sh -lc")
+            ->and($dockerCommands[1])->toContain('/home/orbit/orbit-current')
+            ->and($dockerCommands[1])->toContain('php apps/gateway/artisan tinker --execute')
+            ->and($dockerCommands[1])->toContain('LocalGatewaySettings::current()')
+            ->and($dockerCommands[1])->toContain('https://gateway')
+            ->and($dockerCommands[1])->toContain('http://gateway/api/ca/root')
+            ->and($commands)->toBe([]);
     } finally {
         $previous === false
             ? putenv('ORBIT_E2E_TOPOLOGY_PROVIDER')

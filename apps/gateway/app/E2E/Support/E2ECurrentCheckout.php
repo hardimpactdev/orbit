@@ -45,8 +45,8 @@ final class E2ECurrentCheckout
             $executorNodeIdentity = self::topologyRoleNodeIdentity($role);
             $hostLauncher = self::topologyRoleUsesHostLauncher($role);
             $refreshGatewayHostKeys = $role === 'gateway'
-                ? function (string $remotePath) use ($instance, $user, $topology, $timer): void {
-                    self::refreshGatewayHostKeys($instance, $user, $topology->sshKeyPair(), $remotePath, $timer);
+                ? function (string $remotePath) use ($instance, $user, $topology, $timer, $hostLauncher): void {
+                    self::refreshGatewayHostKeys($instance, $user, $topology->sshKeyPair(), $remotePath, $timer, $hostLauncher);
                 }
             : null;
             $refreshLocalGatewaySettings = $role !== 'gateway' && $topology->gateway() !== null && ! self::usesDockerRuntime($instance)
@@ -120,22 +120,28 @@ final class E2ECurrentCheckout
 
     public static function orbitWrapperScript(string $checkout, bool $dockerRuntime, ?string $executorNodeIdentity = null, bool $hostLauncher = false): string
     {
-        if ($dockerRuntime) {
+        if ($hostLauncher) {
             $executorIdentityExport = $executorNodeIdentity === null
                 ? ':'
                 : 'export ORBIT_NODE_IDENTITY="${ORBIT_NODE_IDENTITY:-'.self::escapeDoubleQuotedShellValue($executorNodeIdentity).'}"';
-            $hostLauncherFlag = $hostLauncher ? '1' : '0';
 
             return implode("\n", [
                 '#!/usr/bin/env bash',
                 'set -euo pipefail',
                 'checkout='.escapeshellarg($checkout),
-                "if [[ '{$hostLauncherFlag}' == '1' ]]; then",
-                '    export ORBIT_REPO="${checkout}"',
-                '    export ORBIT_HOST_CWD="${ORBIT_HOST_CWD:-$PWD}"',
-                "    {$executorIdentityExport}",
-                '    exec "${checkout}/bin/orbit" "$@"',
-                'fi',
+                'export ORBIT_REPO="${checkout}"',
+                'export ORBIT_HOST_CWD="${ORBIT_HOST_CWD:-$PWD}"',
+                $executorIdentityExport,
+                'exec "${checkout}/bin/orbit" "$@"',
+                '',
+            ]);
+        }
+
+        if ($dockerRuntime) {
+            return implode("\n", [
+                '#!/usr/bin/env bash',
+                'set -euo pipefail',
+                'checkout='.escapeshellarg($checkout),
                 'runtime_container="${ORBIT_RUNTIME_CONTAINER:-orbit-runtime}"',
                 'runtime_workdir="${ORBIT_HOST_CWD:-$PWD}"',
                 'env_args=(',
@@ -631,7 +637,7 @@ PHP;
         return 'cd '.escapeshellarg($remotePath).' && php apps/gateway/artisan tinker --execute='.escapeshellarg($php);
     }
 
-    private static function refreshGatewayHostKeys(E2EInstance $instance, string $user, SshKeyPair $keyPair, string $remotePath, ?E2EPhaseTimer $timer): void
+    private static function refreshGatewayHostKeys(E2EInstance $instance, string $user, SshKeyPair $keyPair, string $remotePath, ?E2EPhaseTimer $timer, bool $hostLauncher = false): void
     {
         self::runTimed(
             $timer,
@@ -642,8 +648,8 @@ PHP;
                 $keyPair,
                 self::hostKeyRefreshCommand(
                     $remotePath,
-                    self::usesDockerRuntime($instance),
-                    self::usesDockerRuntime($instance) ? self::dockerRuntimeContainerName($instance) : null,
+                    self::usesDockerRuntime($instance) && ! $hostLauncher,
+                    self::usesDockerRuntime($instance) && ! $hostLauncher ? self::dockerRuntimeContainerName($instance) : null,
                 ),
                 timeoutSeconds: 120,
             ),
@@ -805,7 +811,7 @@ PHP;
 
     private static function topologyRoleUsesHostLauncher(string $role): bool
     {
-        return in_array($role, ['operator', 'dev', 'prod', 'agent', 'ingress'], true);
+        return in_array($role, ['operator', 'gateway', 'dev', 'prod', 'agent', 'ingress'], true);
     }
 
     /**
