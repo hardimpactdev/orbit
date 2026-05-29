@@ -262,7 +262,7 @@ class E2ETestCommand extends Command
         if ($hasExplicitTestPath) {
             $testFiles = $this->explicitTestFiles($passThroughArguments, 'docker');
         } else {
-            $testPath = 'tests/E2E/.docker-feature-tests/'.$this->dockerTestRunDirectory();
+            $testPath = 'tests/Feature/Commands/.docker-feature-tests/'.$this->dockerTestRunDirectory();
             $testFiles = $this->dockerTestFiles();
             $command[] = $testPath;
         }
@@ -344,7 +344,7 @@ class E2ETestCommand extends Command
         if ($hasExplicitTestPath) {
             $testFiles = $this->explicitTestFiles($passThroughArguments, 'incus');
         } else {
-            $testPath = 'tests/E2E/.incus-feature-tests/'.$this->incusTestRunDirectory();
+            $testPath = 'tests/Feature/Commands/.incus-feature-tests/'.$this->incusTestRunDirectory();
             $testFiles = $this->incusTestFiles();
         }
 
@@ -612,7 +612,7 @@ class E2ETestCommand extends Command
      */
     private function incusTestFiles(): array
     {
-        $directory = repo_path('apps/gateway/tests/E2E');
+        $directory = repo_path('apps/e2e/tests/Feature/Commands');
 
         if (! is_dir($directory)) {
             return [];
@@ -746,7 +746,7 @@ class E2ETestCommand extends Command
 
         $relative = str_replace(DIRECTORY_SEPARATOR, '/', substr($realPath, strlen($basePath) + 1));
 
-        if (! str_starts_with($relative, 'tests/E2E/')
+        if (! str_starts_with($relative, 'tests/Feature/Commands/')
             || str_contains($relative, '/.docker-feature-tests/')
             || str_contains($relative, '/.incus-feature-tests/')
             || ! str_ends_with($relative, 'Test.php')
@@ -762,7 +762,7 @@ class E2ETestCommand extends Command
      */
     private function dockerTestFiles(): array
     {
-        $directory = repo_path('apps/gateway/tests/E2E');
+        $directory = repo_path('apps/e2e/tests/Feature/Commands');
 
         if (! is_dir($directory)) {
             return [];
@@ -952,8 +952,8 @@ class E2ETestCommand extends Command
 
     private function normalizePassThroughArgument(string $argument): string
     {
-        if ($argument === 'apps/gateway/tests/E2E' || str_starts_with($argument, 'apps/gateway/tests/E2E/')) {
-            return substr($argument, strlen('apps/gateway/'));
+        if ($argument === 'apps/e2e/tests/Feature/Commands' || str_starts_with($argument, 'apps/e2e/tests/Feature/Commands/')) {
+            return substr($argument, strlen('apps/e2e/'));
         }
 
         return $argument;
@@ -1661,7 +1661,7 @@ class E2ETestCommand extends Command
                 throw new \RuntimeException("Could not create E2E test suite directory [{$directory}].");
             }
 
-            $supportDirectory = repo_path('apps/gateway/tests/E2E/Support');
+            $supportDirectory = repo_path('apps/e2e/tests/Feature/Commands/Support');
 
             if (is_dir($supportDirectory)) {
                 $generatedSupportDirectory = $directory.'/Support';

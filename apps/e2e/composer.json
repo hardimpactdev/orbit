@@ -37,7 +37,10 @@
     "autoload-dev": {
         "psr-4": {
             "Tests\\": "tests/"
-        }
+        },
+        "files": [
+            "tests/Helpers/E2EEnvironment.php"
+        ]
     },
     "scripts": {
         "post-autoload-dump": [
