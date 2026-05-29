@@ -107,10 +107,51 @@ describe('proxy registry probe foundation', function (): void {
                 'router_backend_pool' => [
                     ['node_id' => 42, 'node' => 'ws-1', 'url' => 'https://ws-1.websocket.orbit:8080'],
                 ],
+                'tls' => [
+                    'managed_by' => 'internal',
+                    'trusted_by_gateway_ca' => true,
+                ],
             ],
         ]);
 
         $drift = (new ProxyRouteProbe)->diff($route, new ProbeSnapshot([]));
+
+        expect($drift)->toBe([]);
+    });
+
+    it('passes observed websocket service route artifacts rendered with long lived upgrade settings', function (): void {
+        $node = Node::factory()->router()->create(['status' => 'active']);
+        $route = ProxyRoute::factory()->create([
+            'node_id' => $node->id,
+            'domain' => 'websocket.orbit',
+            'owner_type' => 'websocket',
+            'kind' => 'proxy',
+            'config' => [
+                'protocol' => 'websocket',
+                'router_upstream' => [
+                    'node_id' => $node->id,
+                    'node' => 'router-1',
+                    'url' => 'http://10.6.0.2:80',
+                ],
+                'router_backend_pool' => [
+                    ['node_id' => 42, 'node' => 'ws-1', 'url' => 'https://ws-1.websocket.orbit:8080'],
+                ],
+                'tls' => [
+                    'managed_by' => 'internal',
+                    'trusted_by_gateway_ca' => true,
+                ],
+            ],
+        ]);
+        $route->forceFill(['source_hash' => (new ProxyRouteRenderer)->sourceHash($route)])->save();
+
+        $drift = (new ProxyRouteProbe)->diff($route, new ProbeSnapshot([
+            'websocket.orbit' => [
+                'route_exists' => true,
+                'route_hash' => $route->source_hash,
+                'cert_exists' => true,
+                'key_exists' => true,
+            ],
+        ]));
 
         expect($drift)->toBe([]);
     });
@@ -141,6 +182,73 @@ describe('proxy registry probe foundation', function (): void {
         ]);
 
         $drift = (new ProxyRouteProbe)->diff($route, new ProbeSnapshot([]));
+
+        expect($drift)->toBe([]);
+    });
+
+    it('passes observed app websocket public and router artifacts rendered with long lived upgrade settings', function (): void {
+        $edge = Node::factory()->ingress()->create(['status' => 'active']);
+        $router = Node::factory()->router()->create(['status' => 'active', 'name' => 'router-1']);
+        $appNode = Node::factory()->appProd()->create(['status' => 'active']);
+        $app = App::factory()->create(['node_id' => $appNode->id]);
+        $renderer = new ProxyRouteRenderer;
+        $config = [
+            'placement' => 'ingress',
+            'protocol' => 'websocket',
+            'target' => ['type' => 'websocket', 'value' => 'https://websocket.orbit'],
+            'router_upstream' => [
+                'node_id' => $router->id,
+                'node' => 'router-1',
+                'url' => 'http://10.6.0.2:80',
+            ],
+            'router_backend_pool' => [
+                ['node_id' => $router->id, 'node' => 'router-1', 'url' => 'https://websocket.orbit'],
+            ],
+            'tls' => [
+                'cert_path' => '/home/orbit/.config/orbit/certs/ws.docs.test.crt',
+                'key_path' => '/home/orbit/.config/orbit/certs/ws.docs.test.key',
+            ],
+        ];
+        $routerRoute = new ProxyRoute([
+            'node_id' => $router->id,
+            'app_id' => $app->id,
+            'domain' => 'ws.docs.test',
+            'owner_type' => 'app-websocket',
+            'kind' => 'proxy',
+            'config' => $config,
+        ]);
+        $config['router_artifact'] = [
+            'node_id' => $router->id,
+            'node' => 'router-1',
+            'source_hash' => hash('sha256', $renderer->renderRouterRoute($routerRoute)),
+        ];
+        $route = ProxyRoute::factory()->create([
+            'node_id' => $edge->id,
+            'app_id' => $app->id,
+            'domain' => 'ws.docs.test',
+            'owner_type' => 'app-websocket',
+            'kind' => 'proxy',
+            'config' => $config,
+        ]);
+        $route->forceFill(['source_hash' => $renderer->sourceHash($route)])->save();
+
+        $drift = (new ProxyRouteProbe)->diff($route, new ProbeSnapshot([
+            'ws.docs.test' => [
+                'public' => [
+                    'route_exists' => true,
+                    'route_hash' => $route->source_hash,
+                    'cert_path' => '/home/orbit/.config/orbit/certs/ws.docs.test.crt',
+                    'key_path' => '/home/orbit/.config/orbit/certs/ws.docs.test.key',
+                    'cert_exists' => true,
+                    'key_exists' => true,
+                ],
+                'router' => [
+                    'route_exists' => true,
+                    'route_hash' => $config['router_artifact']['source_hash'],
+                ],
+                'backends' => [],
+            ],
+        ]));
 
         expect($drift)->toBe([]);
     });

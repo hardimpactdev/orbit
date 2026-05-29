@@ -11,6 +11,8 @@ use RuntimeException;
 
 final readonly class ProxyRouteRenderer
 {
+    private const string WebSocketStreamCloseDelay = '5m';
+
     /**
      * Container hostname Caddy resolves to the Docker host gateway so custom
      * proxy routes that historically targeted host loopback (127.0.0.1 /
@@ -48,6 +50,8 @@ final readonly class ProxyRouteRenderer
         $config = is_array($route->config) ? $route->config : [];
         $routerUpstream = $config['router_upstream'] ?? null;
         $tls = $this->tlsDirective($route);
+        $encode = $this->isWebSocketProtocol($route) ? "\n" : "    encode gzip\n\n";
+        $streaming = $this->webSocketStreamingDirectives($route);
 
         if (! is_array($routerUpstream)) {
             throw new RuntimeException("Proxy route '{$route->domain}' is missing a router upstream.");
@@ -64,10 +68,8 @@ final readonly class ProxyRouteRenderer
         return <<<CADDY
 {$route->domain} {
     {$tls}
-    encode gzip
-
-    reverse_proxy {$routerUrl} {
-        header_up Host {host}
+{$encode}    reverse_proxy {$routerUrl} {
+{$streaming}        header_up Host {host}
         header_up X-Forwarded-Host {host}
         header_up X-Forwarded-Proto {scheme}
     }
@@ -121,14 +123,14 @@ CADDY;
             ->all();
 
         $upstreams = implode(' ', $backendLines);
+        $encode = $this->isWebSocketProtocol($route) ? '' : "    encode gzip\n\n";
+        $streaming = $this->webSocketStreamingDirectives($route);
 
         return <<<CADDY
 http://{$route->domain} {
-    encode gzip
-
-    reverse_proxy {$upstreams} {
+{$encode}    reverse_proxy {$upstreams} {
         lb_policy first
-        header_up Host {host}
+{$streaming}        header_up Host {host}
         header_up X-Forwarded-Host {host}
         header_up X-Forwarded-Proto {http.request.header.X-Forwarded-Proto}
     }
@@ -386,6 +388,22 @@ CADDY;
         $config = is_array($route->config) ? $route->config : [];
 
         return ($config['placement'] ?? null) === 'ingress';
+    }
+
+    private function isWebSocketProtocol(ProxyRoute $route): bool
+    {
+        $config = is_array($route->config) ? $route->config : [];
+
+        return ($config['protocol'] ?? null) === 'websocket';
+    }
+
+    private function webSocketStreamingDirectives(ProxyRoute $route): string
+    {
+        if (! $this->isWebSocketProtocol($route)) {
+            return '';
+        }
+
+        return "        flush_interval -1\n        stream_close_delay ".self::WebSocketStreamCloseDelay."\n";
     }
 
     private function redirectCode(ProxyRoute $route, mixed $value): int

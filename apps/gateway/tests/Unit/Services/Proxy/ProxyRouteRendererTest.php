@@ -206,6 +206,115 @@ http://example.com {
 CADDY);
     });
 
+    it('renders websocket service router routes with long lived upgrade settings', function (): void {
+        $router = Node::factory()->router()->create(['name' => 'gateway-1']);
+        $route = ProxyRoute::factory()->create([
+            'node_id' => $router->id,
+            'domain' => 'websocket.orbit',
+            'owner_type' => 'websocket',
+            'kind' => 'proxy',
+            'config' => [
+                'protocol' => 'websocket',
+                'router_upstream' => [
+                    'node_id' => $router->id,
+                    'node' => 'gateway-1',
+                    'url' => 'http://10.6.0.2:80',
+                ],
+                'router_backend_pool' => [
+                    [
+                        'node_id' => 42,
+                        'node' => 'ws-1',
+                        'url' => 'https://ws-1.websocket.orbit:8080',
+                    ],
+                ],
+            ],
+        ]);
+
+        $content = (new ProxyRouteRenderer)->renderRouterRoute($route);
+
+        expect($content)->toBe(<<<'CADDY'
+http://websocket.orbit {
+    reverse_proxy https://ws-1.websocket.orbit:8080 {
+        lb_policy first
+        flush_interval -1
+        stream_close_delay 5m
+        header_up Host {host}
+        header_up X-Forwarded-Host {host}
+        header_up X-Forwarded-Proto {http.request.header.X-Forwarded-Proto}
+    }
+}
+
+CADDY)
+            ->and($content)->not->toContain('encode gzip')
+            ->and($content)->not->toContain('request_buffers')
+            ->and($content)->not->toContain('response_buffers');
+    });
+
+    it('renders app websocket public ingress and router routes with long lived upgrade settings', function (): void {
+        $ingress = Node::factory()->ingress()->create(['name' => 'edge-1']);
+        $router = Node::factory()->router()->create(['name' => 'gateway-1']);
+        $app = App::factory()->create(['name' => 'docs']);
+        $route = ProxyRoute::factory()->create([
+            'node_id' => $ingress->id,
+            'app_id' => $app->id,
+            'domain' => 'ws.docs.test',
+            'owner_type' => 'app-websocket',
+            'kind' => 'proxy',
+            'config' => [
+                'placement' => 'ingress',
+                'protocol' => 'websocket',
+                'target' => ['type' => 'websocket', 'value' => 'https://websocket.orbit'],
+                'router_upstream' => [
+                    'node_id' => $router->id,
+                    'node' => 'gateway-1',
+                    'url' => 'http://10.6.0.2:80',
+                ],
+                'router_backend_pool' => [
+                    [
+                        'node_id' => $router->id,
+                        'node' => 'gateway-1',
+                        'url' => 'https://websocket.orbit',
+                    ],
+                ],
+                'tls' => [
+                    'cert_path' => '/home/orbit/.config/orbit/certs/ws.docs.test.crt',
+                    'key_path' => '/home/orbit/.config/orbit/certs/ws.docs.test.key',
+                ],
+            ],
+        ]);
+
+        $renderer = new ProxyRouteRenderer;
+
+        expect($renderer->renderIngress($route))->toBe(<<<'CADDY'
+ws.docs.test {
+    tls /home/orbit/.config/orbit/certs/ws.docs.test.crt /home/orbit/.config/orbit/certs/ws.docs.test.key
+
+    reverse_proxy http://10.6.0.2:80 {
+        flush_interval -1
+        stream_close_delay 5m
+        header_up Host {host}
+        header_up X-Forwarded-Host {host}
+        header_up X-Forwarded-Proto {scheme}
+    }
+}
+
+CADDY);
+
+        expect($renderer->renderRouterRoute($route))->toBe(<<<'CADDY'
+http://ws.docs.test {
+    reverse_proxy https://websocket.orbit {
+        lb_policy first
+        flush_interval -1
+        stream_close_delay 5m
+        header_up Host {host}
+        header_up X-Forwarded-Host {host}
+        header_up X-Forwarded-Proto {http.request.header.X-Forwarded-Proto}
+    }
+}
+
+CADDY);
+    });
+
     it('rejects router routes whose upstream host is not a valid IP address', function (): void {
         $router = Node::factory()->create(['name' => 'gateway-1']);
         $route = ProxyRoute::factory()->create([
