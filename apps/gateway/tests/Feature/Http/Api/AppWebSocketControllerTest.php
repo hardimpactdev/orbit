@@ -127,6 +127,21 @@ function getAppWebSocketCredentialsJson(string $uri): TestResponse
     );
 }
 
+function postAppWebSocketDisableJson(string $uri): TestResponse
+{
+    return test()->call(
+        'POST',
+        $uri,
+        [],
+        [],
+        [],
+        [
+            'HTTP_ACCEPT' => 'application/json',
+            'REMOTE_ADDR' => APP_WEBSOCKET_CALLER_WG_IP,
+        ],
+    );
+}
+
 describe('AppWebSocketController', function (): void {
     it('enables app websocket bindings for authorized callers', function (): void {
         $caller = createAppWebSocketCallerNode();
@@ -286,6 +301,80 @@ describe('AppWebSocketController', function (): void {
         createAppWebSocketRoutePrerequisites();
 
         $response = getAppWebSocketCredentialsJson('/api/apps/missing/websocket/credentials');
+
+        $response->assertNotFound()
+            ->assertJsonPath('error.code', 'app.not_found')
+            ->assertJsonPath('error.meta.app', 'missing');
+    });
+
+    it('disables app websocket bindings for authorized callers', function (): void {
+        $caller = createAppWebSocketCallerNode();
+        createAppWebSocketRoutePrerequisites();
+        $app = createAppWebSocketApp();
+        grantAppWebSocketAccess($caller, $app->node);
+
+        $binding = app(WebSocketBindingService::class)->enable($app, ['ws.docs.test']);
+        $reverbAppKey = $binding->reverb_app_key;
+        $reverbAppSecret = $binding->reverb_app_secret;
+
+        expect(ProxyRoute::query()->where('domain', 'ws.docs.test')->where('owner_type', 'app-websocket')->exists())->toBeTrue();
+
+        $response = postAppWebSocketDisableJson('/api/apps/docs/websocket/disable');
+
+        $response->assertOk()
+            ->assertJsonPath('success.data.binding.app', 'docs')
+            ->assertJsonPath('success.data.binding.internal_host', 'websocket.orbit')
+            ->assertJsonPath('success.data.binding.public_hosts', [])
+            ->assertJsonPath('success.data.binding.allowed_origins', ['https://docs.test'])
+            ->assertJsonMissingPath('success.data.binding.reverb_app_secret')
+            ->assertJsonMissingPath('success.data.binding.reverb_app_key');
+
+        $disabled = $binding->refresh();
+
+        expect($disabled->enabled)->toBeFalse()
+            ->and($disabled->public_hosts)->toBe([])
+            ->and($disabled->reverb_app_key)->toBe($reverbAppKey)
+            ->and($disabled->reverb_app_secret)->toBe($reverbAppSecret)
+            ->and(ProxyRoute::query()->where('domain', 'ws.docs.test')->exists())->toBeFalse();
+    });
+
+    it('rejects websocket disable callers without app write permission before mutation', function (): void {
+        $caller = createAppWebSocketCallerNode();
+        createAppWebSocketRoutePrerequisites();
+        $app = createAppWebSocketApp();
+        grantAppWebSocketAccess($caller, $app->node, ['app:credentials']);
+
+        $binding = app(WebSocketBindingService::class)->enable($app, ['ws.docs.test']);
+
+        $response = postAppWebSocketDisableJson('/api/apps/docs/websocket/disable');
+
+        $response->assertForbidden()
+            ->assertJsonPath('error.code', 'authorization_failed')
+            ->assertJsonPath('error.meta.missing_permission', 'app:write')
+            ->assertJsonPath('error.meta.serving_node', 'app-1');
+
+        expect($binding->refresh()->enabled)->toBeTrue()
+            ->and(ProxyRoute::query()->where('domain', 'ws.docs.test')->where('owner_type', 'app-websocket')->exists())->toBeTrue();
+    });
+
+    it('fails when websocket disable is requested before the app has a binding', function (): void {
+        $caller = createAppWebSocketCallerNode();
+        createAppWebSocketRoutePrerequisites();
+        $app = createAppWebSocketApp();
+        grantAppWebSocketAccess($caller, $app->node);
+
+        $response = postAppWebSocketDisableJson('/api/apps/docs/websocket/disable');
+
+        $response->assertUnprocessable()
+            ->assertJsonPath('error.code', 'websocket.binding_missing')
+            ->assertJsonPath('error.meta.app', 'docs');
+    });
+
+    it('returns app not found for unknown disable app selectors', function (): void {
+        createAppWebSocketCallerNode(role: 'gateway');
+        createAppWebSocketRoutePrerequisites();
+
+        $response = postAppWebSocketDisableJson('/api/apps/missing/websocket/disable');
 
         $response->assertNotFound()
             ->assertJsonPath('error.code', 'app.not_found')

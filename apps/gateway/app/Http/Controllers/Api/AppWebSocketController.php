@@ -29,6 +29,8 @@ final class AppWebSocketController implements Loggable
 
     private string $activityType = 'api:GET /apps/{app}/websocket/credentials';
 
+    private string $activityAction = 'credentials';
+
     /**
      * @var list<string>
      */
@@ -40,6 +42,7 @@ final class AppWebSocketController implements Loggable
         $this->activityTargetName = $app;
         $this->activityEffect = ActivityLogType::Write;
         $this->activityType = 'api:POST /apps/{app}/websocket/enable';
+        $this->activityAction = 'enable';
 
         $targetApp = $this->resolveApp($app);
 
@@ -88,6 +91,7 @@ final class AppWebSocketController implements Loggable
         $this->activityTargetName = $app;
         $this->activityEffect = ActivityLogType::Read;
         $this->activityType = 'api:GET /apps/{app}/websocket/credentials';
+        $this->activityAction = 'credentials';
 
         $targetApp = $this->resolveApp($app);
 
@@ -117,6 +121,48 @@ final class AppWebSocketController implements Loggable
             'success' => [
                 'data' => [
                     'credentials' => $credentials->toArray(),
+                ],
+            ],
+        ]);
+    }
+
+    #[RequiresPermission('app:write', servingNode: ServingNode::AppOwning)]
+    public function disable(string $app, WebSocketBindingService $service): JsonResponse
+    {
+        $this->activityTargetName = $app;
+        $this->activityEffect = ActivityLogType::Write;
+        $this->activityType = 'api:POST /apps/{app}/websocket/disable';
+        $this->activityAction = 'disable';
+
+        $targetApp = $this->resolveApp($app);
+
+        if (! $targetApp instanceof App) {
+            return $this->error(
+                code: 'app.not_found',
+                message: "App '{$app}' not found.",
+                meta: ['app' => $app],
+                status: 404,
+            );
+        }
+
+        try {
+            $binding = $service->disable($targetApp);
+        } catch (RuntimeException $exception) {
+            return $this->error(
+                code: 'websocket.binding_missing',
+                message: $exception->getMessage(),
+                meta: ['app' => $targetApp->name],
+                status: 422,
+            );
+        }
+
+        $this->activitySubject = $targetApp->refresh();
+        $this->activityPublicHosts = $this->stringList($binding->public_hosts);
+
+        return response()->json([
+            'success' => [
+                'data' => [
+                    'binding' => $this->bindingPayload($binding),
                 ],
             ],
         ]);
@@ -202,6 +248,7 @@ final class AppWebSocketController implements Loggable
     public function properties(): array
     {
         return [
+            'action' => $this->activityAction,
             'target_app' => $this->activityTargetName ?? (string) request()->route('app'),
             'public_hosts' => $this->activityPublicHosts,
         ];
@@ -215,10 +262,10 @@ final class AppWebSocketController implements Loggable
             return null;
         }
 
-        if ($this->activityEffect === ActivityLogType::Write) {
-            return "App {$target} websocket enabled";
-        }
-
-        return "App {$target} websocket credentials viewed";
+        return match ($this->activityAction) {
+            'enable' => "App {$target} websocket enabled",
+            'disable' => "App {$target} websocket disabled",
+            default => "App {$target} websocket credentials viewed",
+        };
     }
 }

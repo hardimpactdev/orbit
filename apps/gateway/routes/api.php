@@ -184,6 +184,7 @@ Route::middleware(CorrelationHeader::class)->group(function (): void {
         Route::post('/apps/exec/by-path', [AppExecController::class, 'byPath']);
         Route::post('/apps/{app}/exec', AppExecController::class);
         Route::post('/apps/{app}/websocket/enable', [AppWebSocketController::class, 'enable']);
+        Route::post('/apps/{app}/websocket/disable', [AppWebSocketController::class, 'disable']);
         Route::get('/apps/{app}/websocket/credentials', [AppWebSocketController::class, 'credentials']);
         Route::get('/apps/{app}/worker', [AppWorkerController::class, 'show']);
         Route::post('/apps/{app}/worker/enable', [AppWorkerController::class, 'enable']);
