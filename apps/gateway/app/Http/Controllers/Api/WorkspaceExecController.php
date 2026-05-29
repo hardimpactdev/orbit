@@ -4,10 +4,12 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Api;
 
+use App\Actions\Workspaces\RunWorkspaceCommand;
 use App\Contracts\Loggable;
 use App\Enums\ActivityLogType;
 use App\Http\Authorization\RequiresPermission;
 use App\Http\Authorization\ServingNode;
+use App\Http\Gateway\GatewayApiException;
 use App\Models\Workspace;
 use App\Services\Runtime\OrbitHostCwdResolver;
 use Illuminate\Database\Eloquent\Builder;
@@ -15,7 +17,6 @@ use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Artisan;
 
 #[RequiresPermission('workspace:exec', servingNode: ServingNode::WorkspaceOwning)]
 final class WorkspaceExecController implements Loggable
@@ -25,7 +26,7 @@ final class WorkspaceExecController implements Loggable
     /** @var list<string> */
     private array $currentCommand = [];
 
-    public function __invoke(string $name, Request $request): JsonResponse
+    public function __invoke(string $name, Request $request, RunWorkspaceCommand $runWorkspaceCommand): JsonResponse
     {
         $this->currentCommand = $this->normalizedCommand($request);
 
@@ -49,10 +50,10 @@ final class WorkspaceExecController implements Loggable
         $workspace = $matches->firstOrFail();
         $this->activitySubject = $workspace;
 
-        return $this->dispatch($workspace);
+        return $this->dispatch($workspace, $runWorkspaceCommand);
     }
 
-    public function byPath(Request $request, OrbitHostCwdResolver $cwdResolver): JsonResponse
+    public function byPath(Request $request, OrbitHostCwdResolver $cwdResolver, RunWorkspaceCommand $runWorkspaceCommand): JsonResponse
     {
         $this->currentCommand = $this->normalizedCommand($request);
 
@@ -80,24 +81,22 @@ final class WorkspaceExecController implements Loggable
         $workspace->loadMissing('app.node');
         $this->activitySubject = $workspace;
 
-        return $this->dispatch($workspace);
+        return $this->dispatch($workspace, $runWorkspaceCommand);
     }
 
-    private function dispatch(Workspace $workspace): JsonResponse
+    private function dispatch(Workspace $workspace, RunWorkspaceCommand $runWorkspaceCommand): JsonResponse
     {
-        $exitCode = Artisan::call('workspace:exec', [
-            'workspace' => $workspace->name,
-            '--app' => $workspace->app?->name,
-            'cmd' => $this->currentCommand,
-            '--json' => true,
+        try {
+            $data = $runWorkspaceCommand->handle($workspace, $this->currentCommand);
+        } catch (GatewayApiException $e) {
+            return $this->error($e->errorCode() ?? 'workspace.exec_failed', $e->getMessage(), $e->errorMeta(), $this->errorStatus($e));
+        }
+
+        return response()->json([
+            'success' => [
+                'data' => $data,
+            ],
         ]);
-
-        /** @var array<string, mixed> $payload */
-        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
-
-        $status = $exitCode === 0 ? 200 : $this->errorStatus($payload);
-
-        return response()->json($payload, $status);
     }
 
     /**
@@ -164,16 +163,9 @@ final class WorkspaceExecController implements Loggable
         ], $status);
     }
 
-    /**
-     * @param  array<string, mixed>  $payload
-     */
-    private function errorStatus(array $payload): int
+    private function errorStatus(GatewayApiException $exception): int
     {
-        $code = is_array($payload['error'] ?? null) && is_string($payload['error']['code'] ?? null)
-            ? $payload['error']['code']
-            : null;
-
-        return match ($code) {
+        return match ($exception->errorCode()) {
             'workspace.not_found' => 404,
             'workspace.ambiguous_name' => 400,
             'workspace.exec_node_unreachable',
