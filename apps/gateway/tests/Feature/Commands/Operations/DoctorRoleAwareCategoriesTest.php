@@ -7,6 +7,7 @@ use App\Data\RemoteShell\RemoteShellResult;
 use App\Models\App;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
+use App\Models\NodeTool;
 use App\Models\ProxyRoute;
 use App\Models\SchedulerState;
 use App\Models\Workspace;
@@ -113,6 +114,53 @@ function createRoleAwareIngressNode(string $name): Node
     return $node;
 }
 
+function createRoleAwareDatabaseNodeWithRedis(string $name): Node
+{
+    $node = Node::factory()->create([
+        'name' => $name,
+        'status' => 'active',
+        'host' => '10.6.0.50',
+        'wireguard_address' => '10.6.0.50',
+        'platform' => 'ubuntu',
+    ]);
+
+    NodeRoleAssignment::factory()->create([
+        'node_id' => $node->id,
+        'role' => 'database',
+        'status' => 'active',
+        'settings' => [],
+    ]);
+
+    NodeTool::factory()->create([
+        'node_id' => $node->id,
+        'name' => 'redis',
+        'expected_state' => 'running',
+    ]);
+
+    return $node;
+}
+
+function createRoleAwareWebSocketNode(string $name = 'ws-1'): Node
+{
+    $redis = createRoleAwareDatabaseNodeWithRedis('redis-1');
+    $node = Node::factory()->create([
+        'name' => $name,
+        'status' => 'active',
+        'host' => '10.6.0.44',
+        'wireguard_address' => '10.6.0.44',
+        'platform' => 'ubuntu',
+    ]);
+
+    NodeRoleAssignment::factory()->create([
+        'node_id' => $node->id,
+        'role' => 'websocket',
+        'status' => 'active',
+        'settings' => ['redis_node_id' => $redis->id],
+    ]);
+
+    return $node;
+}
+
 /**
  * @param  array<string, mixed>  $payload
  * @return array<string, mixed>
@@ -175,6 +223,12 @@ describe('doctor role-aware categories', function (): void {
         expect($runner->categoriesForRole('ingress'))->toBe(['node', 'proxy', 'firewall_rule', 'tool']);
     });
 
+    it('exposes node and tool families for websocket target roles', function (): void {
+        $runner = app(DoctorReportRunner::class);
+
+        expect($runner->categoriesForRole('websocket'))->toBe(['node', 'tool']);
+    });
+
     it('derives hosted category sets from active role assignments only', function (): void {
         $runner = app(DoctorReportRunner::class);
         $appHost = createRoleAwareAppHostNode('app-host');
@@ -216,6 +270,13 @@ describe('doctor role-aware categories', function (): void {
         expect($runner->categoriesForNode($ingressNode))->toBe(['node', 'proxy', 'firewall_rule', 'tool']);
     });
 
+    it('derives websocket targets as node and tool categories', function (): void {
+        $runner = app(DoctorReportRunner::class);
+        $webSocketNode = createRoleAwareWebSocketNode('ws-1');
+
+        expect($runner->categoriesForNode($webSocketNode))->toBe(['node', 'tool']);
+    });
+
     it('runs node and schedule families for a local gateway target', function (): void {
         createRoleAwareLocalNode('gateway', 'local-gateway');
         app()->instance(RemoteShell::class, new RoleAwareDoctorRemoteShell);
@@ -224,6 +285,62 @@ describe('doctor role-aware categories', function (): void {
         $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
 
         expect(roleAwareDoctorScope($payload)['families'])->toBe(['node', 'schedule']);
+    });
+
+    it('reports websocket bind and backend certificate drift in the node family', function (): void {
+        createRoleAwareLocalNode('gateway', 'local-gateway');
+        createRoleAwareWebSocketNode('ws-1');
+        app()->instance(RemoteShell::class, new RoleAwareDoctorRemoteShell(
+            webSocketRuntimeStdout: "exists=1\nrunning=true\nenv_host=0.0.0.0\ncmd_host=0.0.0.0\n",
+            webSocketBackendCertStdout: "cert_exists=0\nkey_exists=1\ncert_matches=\n",
+        ));
+
+        $exitCode = Artisan::call('doctor', ['--node' => 'ws-1', '--family' => ['node'], '--json' => true]);
+        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(1);
+
+        $keys = array_column($payload['error']['data']['doctor']['issues'], 'key');
+
+        expect($keys)
+            ->toContain('node.websocket.bind_public_interface')
+            ->toContain('node.websocket.backend_cert_missing');
+    });
+
+    it('reports a stopped websocket Reverb runtime in the tool family', function (): void {
+        createRoleAwareLocalNode('gateway', 'local-gateway');
+        createRoleAwareWebSocketNode('ws-1');
+        app()->instance(RemoteShell::class, new RoleAwareDoctorRemoteShell(
+            webSocketRuntimeStdout: "exists=1\nrunning=false\nenv_host=10.6.0.44\ncmd_host=10.6.0.44\n",
+        ));
+
+        $exitCode = Artisan::call('doctor', ['--node' => 'ws-1', '--family' => ['tool'], '--json' => true]);
+        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(1);
+
+        $keys = array_column($payload['error']['data']['doctor']['issues'], 'key');
+
+        expect($keys)->toContain('tool.websocket.reverb_unavailable');
+    });
+
+    it('reports unreachable websocket Redis in the tool family', function (): void {
+        createRoleAwareLocalNode('gateway', 'local-gateway');
+        createRoleAwareWebSocketNode('ws-1');
+        app()->instance(RemoteShell::class, new RoleAwareDoctorRemoteShell(
+            webSocketRuntimeStdout: "exists=1\nrunning=true\nenv_host=10.6.0.44\ncmd_host=10.6.0.44\n",
+            webSocketRedisExitCode: 1,
+            webSocketRedisStderr: 'connection refused',
+        ));
+
+        $exitCode = Artisan::call('doctor', ['--node' => 'ws-1', '--family' => ['tool'], '--json' => true]);
+        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(1);
+
+        $keys = array_column($payload['error']['data']['doctor']['issues'], 'key');
+
+        expect($keys)->toContain('tool.websocket.redis_unavailable');
     });
 
     it('rejects a family outside the target role category set before probes', function (): void {
@@ -536,6 +653,10 @@ final class RoleAwareDoctorRemoteShell implements RemoteShell
         private readonly string $nodeLevelStdout = '',
         private readonly int $exitCode = 0,
         private readonly string $caddyContainerStdout = "available\ttrue\ttrue\n",
+        private readonly string $webSocketRuntimeStdout = "exists=1\nrunning=true\nenv_host=10.6.0.44\ncmd_host=10.6.0.44\n",
+        private readonly string $webSocketBackendCertStdout = "cert_exists=1\nkey_exists=1\ncert_matches=1\n",
+        private readonly int $webSocketRedisExitCode = 0,
+        private readonly string $webSocketRedisStderr = '',
     ) {}
 
     /**
@@ -558,6 +679,18 @@ final class RoleAwareDoctorRemoteShell implements RemoteShell
 
         if (str_contains($script, 'orbit-proxy-doctor:caddy-container-probe')) {
             return new RemoteShellResult(exitCode: 0, stdout: $this->caddyContainerStdout, stderr: '', durationMs: 1);
+        }
+
+        if (str_contains($script, 'orbit-websocket-doctor:runtime-probe')) {
+            return new RemoteShellResult(exitCode: 0, stdout: $this->webSocketRuntimeStdout, stderr: '', durationMs: 1);
+        }
+
+        if (str_contains($script, 'orbit-websocket-doctor:backend-cert-probe')) {
+            return new RemoteShellResult(exitCode: 0, stdout: $this->webSocketBackendCertStdout, stderr: '', durationMs: 1);
+        }
+
+        if (str_contains($script, 'orbit-websocket-doctor:redis-probe')) {
+            return new RemoteShellResult(exitCode: $this->webSocketRedisExitCode, stdout: '', stderr: $this->webSocketRedisStderr, durationMs: 1);
         }
 
         $isNodeLevel = str_contains($script, '/etc/caddy/sites/*.caddy');
