@@ -28,7 +28,7 @@ trait StreamsGatewayProgress
      * @param  array<string, mixed>  $payload
      * @param  callable(ProgressEventType, array<string, mixed>): int  $onFinalFrame
      */
-    protected function streamProgress(string $path, array $payload, callable $onFinalFrame): int
+    protected function streamProgress(string $path, array $payload, callable $onFinalFrame, string $method = 'post'): int
     {
         $client = app(GatewayStreamClient::class);
         $wantsJson = $this->wantsJson();
@@ -55,6 +55,7 @@ trait StreamsGatewayProgress
 
                     $this->renderProgressFrame($type, $eventPayload);
                 },
+                method: $method,
             );
         } catch (GatewayApiException $exception) {
             return $this->renderGatewayFailure($exception);
