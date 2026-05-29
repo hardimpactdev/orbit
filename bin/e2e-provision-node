@@ -2,7 +2,7 @@
 
 set -Eeuo pipefail
 
-ROLE=""
+NODE_KIND=""
 SOURCE_ARCHIVE=""
 INSTALLER=""
 COMPOSER_CACHE=""
@@ -18,14 +18,15 @@ LOG_FILE="${ORBIT_E2E_PROVISION_LOG:-}"
 
 usage() {
     cat <<'HELP'
-usage: bin/e2e-provision-node --role=operator|gateway|app --source-archive=PATH [options]
+usage: bin/e2e-provision-node --node-kind=operator|gateway|app --source-archive=PATH [options]
 
-Provision an Orbit role VM cloned from the supported E2E base image by pushing
+Provision an Orbit topology VM cloned from the supported E2E base image by pushing
 a source archive into place via bin/install-orbit. Designed to run inside the
 VM after the bundle has been pushed.
 
 Required:
-  --role=operator|gateway|app  Topology role being installed.
+  --node-kind=operator|gateway|app
+                               Topology node kind being installed.
   --source-archive=PATH        Tarball of the Orbit checkout to install.
 
 Optional:
@@ -137,8 +138,8 @@ fail_step() {
 parse_args() {
     while [ "$#" -gt 0 ]; do
         case "$1" in
-            --role=*)
-                ROLE="${1#*=}"
+            --node-kind=*)
+                NODE_KIND="${1#*=}"
                 ;;
             --source-archive=*)
                 SOURCE_ARCHIVE="${1#*=}"
@@ -184,14 +185,14 @@ parse_args() {
 }
 
 validate_args() {
-    case "$ROLE" in
-        operator|control|gateway|app)
+    case "$NODE_KIND" in
+        operator|gateway|app)
             ;;
         "")
-            fail validation_failed "--role is required"
+            fail validation_failed "--node-kind is required"
             ;;
         *)
-            fail validation_failed "--role must be: operator, gateway, or app"
+            fail validation_failed "--node-kind must be: operator, gateway, or app"
             ;;
     esac
 
@@ -227,9 +228,9 @@ validate_args() {
     [ -n "$OPERATOR_USER" ] || fail validation_failed "--operator-user must not be empty"
 }
 
-target_user_for_role() {
-    case "$ROLE" in
-        operator|control)
+target_user_for_node_kind() {
+    case "$NODE_KIND" in
+        operator)
             printf '%s' "$OPERATOR_USER"
             ;;
         gateway|app)
@@ -240,7 +241,7 @@ target_user_for_role() {
 
 ensure_target_user() {
     local user
-    user="$(target_user_for_role)"
+    user="$(target_user_for_node_kind)"
 
     if id -u "$user" >/dev/null 2>&1; then
         return
@@ -262,7 +263,7 @@ restore_composer_cache() {
     [ -n "$COMPOSER_CACHE" ] || return 0
     [ -d "$COMPOSER_CACHE" ] || return 0
 
-    user="$(target_user_for_role)"
+    user="$(target_user_for_node_kind)"
     target="/home/${user}/.composer/cache"
 
     sudo_run install -d -m 0755 -o "$user" -g "$user" "/home/${user}/.composer"
@@ -291,7 +292,7 @@ install_e2e_dependencies() {
     fi
 }
 
-install_role() {
+install_orbit_for_node_kind() {
     local user
     local home_dir
     local target_dir
@@ -309,7 +310,7 @@ install_role() {
     local frankenphp_image_args=()
     local wg_easy_image_args=()
 
-    user="$(target_user_for_role)"
+    user="$(target_user_for_node_kind)"
     home_dir="/home/${user}"
     target_dir="${home_dir}/orbit"
     guest_stage_dir="/var/tmp/orbit-e2e-install"
@@ -345,7 +346,7 @@ install_role() {
         frankenphp_image_args=(--frankenphp-image-archive="$staged_frankenphp_image_archive")
     fi
 
-    if [ "$ROLE" = "gateway" ] && [ -n "$WG_EASY_IMAGE_ARCHIVE" ]; then
+    if [ "$NODE_KIND" = "gateway" ] && [ -n "$WG_EASY_IMAGE_ARCHIVE" ]; then
         staged_wg_easy_image_archive="${guest_stage_dir}/wg-easy-15.tar"
         sudo_run install -m 0644 -o "$user" -g "$user" "$WG_EASY_IMAGE_ARCHIVE" "$staged_wg_easy_image_archive"
         wg_easy_image_args=(--wg-easy-image-archive="$staged_wg_easy_image_archive")
@@ -377,7 +378,7 @@ main() {
     ensure_log_file
     trap 'fail_step "$?"' ERR
 
-    printf '  ┌ Orbit E2E provision (%s)\n' "$ROLE"
+    printf '  ┌ Orbit E2E provision (%s)\n' "$NODE_KIND"
     printf '  │\n'
     printf '  └  Log: %s\n\n' "$LOG_FILE"
 
@@ -395,15 +396,15 @@ main() {
         complete_step
     fi
 
-    start_step "Install Orbit (${ROLE})"
-    install_role
+    start_step "Install Orbit (${NODE_KIND})"
+    install_orbit_for_node_kind
     complete_step
 
     start_step "Cleanup provisioner bundle"
     cleanup_bundle
     complete_step
 
-    printf '\n  └  Provisioned %s at /home/%s/orbit\n' "$ROLE" "$(target_user_for_role)"
+    printf '\n  └  Provisioned %s at /home/%s/orbit\n' "$NODE_KIND" "$(target_user_for_node_kind)"
 }
 
 main "$@"

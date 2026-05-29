@@ -372,6 +372,7 @@ it('passes staged Docker image archives to the in-guest provisioner when present
         ->toContain("test -f '/tmp/orbit-e2e-stage-test/orbit-e2e-bundle/frankenphp-1-php8.5-bookworm.tar'")
         ->toContain("test -f '/tmp/orbit-e2e-stage-test/orbit-e2e-bundle/wg-easy-15.tar'")
         ->toContain("incus file push -r -p '/tmp/orbit-e2e-stage-test/orbit-e2e-bundle' 'orbit-e2e-run-gateway/var/tmp/'")
+        ->toContain('--node-kind=')
         ->toContain('--runtime-image-archive=/var/tmp/orbit-e2e-bundle/orbit-runtime-current.tar')
         ->toContain('--caddy-image-archive=/var/tmp/orbit-e2e-bundle/caddy-2-alpine.tar')
         ->toContain('--dnsmasq-image-archive=/var/tmp/orbit-e2e-bundle/dnsmasq-latest.tar')

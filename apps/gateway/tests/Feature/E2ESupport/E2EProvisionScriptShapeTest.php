@@ -42,14 +42,14 @@ it('prints help with --help', function (): void {
 
     expect($result->successful())->toBeTrue();
     expect($result->output())->toContain('usage: bin/e2e-provision-node');
-    expect($result->output())->toContain('--role=operator|gateway|app');
+    expect($result->output())->toContain('--node-kind=operator|gateway|app');
     expect($result->output())->toContain('--source-archive=PATH');
     expect($result->output())->toContain('--runtime-image-archive=PATH');
     expect($result->output())->toContain('--caddy-image-archive=PATH');
     expect($result->output())->toContain('--dnsmasq-image-archive=PATH');
     expect($result->output())->toContain('--frankenphp-image-archive=PATH');
     expect($result->output())->toContain('--wg-easy-image-archive=PATH');
-    expect($result->output())->toContain('Topology role being installed');
+    expect($result->output())->toContain('Topology node kind being installed');
     expect($result->output())->not->toContain('blank VM');
 });
 
@@ -57,7 +57,7 @@ it('runs install-orbit without role semantics', function (): void {
     $provisioner = file_get_contents(provisionScript());
     $installer = file_get_contents(installerScript());
 
-    expect($provisioner)->not->toContain('"--role=${ROLE}"')
+    expect($provisioner)->not->toContain('"--role=')
         ->and($provisioner)->not->toContain('--skip-prerequisites')
         ->and($provisioner)->toContain('COMPOSER_HOME=')
         ->and($installer)->toContain('ORBIT_INSTALL_SKIP_PREREQUISITES')
@@ -109,29 +109,42 @@ it('copies staged Docker image archives into user readable guest var tmp files b
         ->toContain('sudo_run rm -rf /var/tmp/orbit-e2e-install');
 });
 
-it('fails when --role is missing', function (): void {
+it('fails when --node-kind is missing', function (): void {
     $result = Process::run([provisionScript()]);
 
     expect($result->successful())->toBeFalse();
-    expect($result->errorOutput())->toContain('--role is required');
+    expect($result->errorOutput())->toContain('--node-kind is required');
 });
 
-it('fails when --role is invalid', function (): void {
-    $result = Process::run([provisionScript(), '--role=invalid', '--source-archive=/tmp/missing']);
+it('fails when --node-kind is invalid', function (): void {
+    $result = Process::run([provisionScript(), '--node-kind=invalid', '--source-archive=/tmp/missing']);
 
     expect($result->successful())->toBeFalse();
-    expect($result->errorOutput())->toContain('--role must be: operator, gateway, or app');
+    expect($result->errorOutput())->toContain('--node-kind must be: operator, gateway, or app');
+});
+
+it('rejects retired role-shaped provisioner input', function (): void {
+    $roleFlag = '--role=operator';
+    $controlKindFlag = '--node-kind=control';
+
+    $roleResult = Process::run([provisionScript(), $roleFlag, '--source-archive=/tmp/missing']);
+    $controlResult = Process::run([provisionScript(), $controlKindFlag, '--source-archive=/tmp/missing']);
+
+    expect($roleResult->successful())->toBeFalse()
+        ->and($roleResult->errorOutput())->toContain("unknown option: {$roleFlag}")
+        ->and($controlResult->successful())->toBeFalse()
+        ->and($controlResult->errorOutput())->toContain('--node-kind must be: operator, gateway, or app');
 });
 
 it('fails when --source-archive is missing', function (): void {
-    $result = Process::run([provisionScript(), '--role=operator']);
+    $result = Process::run([provisionScript(), '--node-kind=operator']);
 
     expect($result->successful())->toBeFalse();
     expect($result->errorOutput())->toContain('--source-archive is required');
 });
 
 it('fails when source archive does not exist', function (): void {
-    $result = Process::run([provisionScript(), '--role=operator', '--source-archive=/tmp/orbit-does-not-exist.tar.gz']);
+    $result = Process::run([provisionScript(), '--node-kind=operator', '--source-archive=/tmp/orbit-does-not-exist.tar.gz']);
 
     expect($result->successful())->toBeFalse();
     expect($result->errorOutput())->toContain('source archive not found');
@@ -143,7 +156,7 @@ it('fails when caddy image archive does not exist', function (): void {
     try {
         $result = Process::run([
             provisionScript(),
-            '--role=operator',
+            '--node-kind=operator',
             "--source-archive={$source}",
             '--caddy-image-archive=/tmp/orbit-caddy-does-not-exist.tar',
         ]);
@@ -161,7 +174,7 @@ it('fails when runtime image archive does not exist', function (): void {
     try {
         $result = Process::run([
             provisionScript(),
-            '--role=operator',
+            '--node-kind=operator',
             "--source-archive={$source}",
             '--runtime-image-archive=/tmp/orbit-runtime-does-not-exist.tar',
         ]);
@@ -179,7 +192,7 @@ it('fails when dnsmasq image archive does not exist', function (): void {
     try {
         $result = Process::run([
             provisionScript(),
-            '--role=operator',
+            '--node-kind=operator',
             "--source-archive={$source}",
             '--dnsmasq-image-archive=/tmp/orbit-dnsmasq-does-not-exist.tar',
         ]);
@@ -197,7 +210,7 @@ it('fails when frankenphp image archive does not exist', function (): void {
     try {
         $result = Process::run([
             provisionScript(),
-            '--role=operator',
+            '--node-kind=operator',
             "--source-archive={$source}",
             '--frankenphp-image-archive=/tmp/orbit-frankenphp-does-not-exist.tar',
         ]);
@@ -215,7 +228,7 @@ it('fails when wg-easy image archive does not exist', function (): void {
     try {
         $result = Process::run([
             provisionScript(),
-            '--role=gateway',
+            '--node-kind=gateway',
             "--source-archive={$source}",
             '--wg-easy-image-archive=/tmp/orbit-wg-easy-does-not-exist.tar',
         ]);
@@ -228,7 +241,7 @@ it('fails when wg-easy image archive does not exist', function (): void {
 });
 
 it('fails for unknown options', function (): void {
-    $result = Process::run([provisionScript(), '--role=operator', '--source-archive=/tmp/x', '--mystery=1']);
+    $result = Process::run([provisionScript(), '--node-kind=operator', '--source-archive=/tmp/x', '--mystery=1']);
 
     expect($result->successful())->toBeFalse();
     expect($result->errorOutput())->toContain('unknown option: --mystery=1');

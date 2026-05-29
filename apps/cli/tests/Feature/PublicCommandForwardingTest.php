@@ -10,7 +10,7 @@ use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
 use Orbit\Core\Http\JsonEnvelope;
 
-describe('public command forwarding', function (): void {
+describe('gateway API-backed public commands', function (): void {
     it('calls the gateway API and renders the gateway status response', function (): void {
         configureGatewayStatusCommand();
 

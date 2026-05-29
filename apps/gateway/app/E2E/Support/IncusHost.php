@@ -138,17 +138,17 @@ class IncusHost
 
     /**
      * Push a remote bundle into an Incus instance and install the requested
-     * topology role inside it.
+     * topology node kind inside it.
      */
     public function provisionInstance(
         string $instanceName,
-        string $role,
+        string $nodeKind,
         string $remoteBundleDir,
         ?string $operatorUser = null,
         ?int $timeoutSeconds = null,
     ): ProcessResult {
-        if (! in_array($role, ['operator', 'gateway', 'app'], true)) {
-            throw new RuntimeException("Incus topology provisioning role must be operator, gateway, or app; got [{$role}].");
+        if (! in_array($nodeKind, ['operator', 'gateway', 'app'], true)) {
+            throw new RuntimeException("Incus topology provisioning node kind must be operator, gateway, or app; got [{$nodeKind}].");
         }
 
         $guestBundleDirectory = self::GuestBundleDirectory;
@@ -223,7 +223,7 @@ class IncusHost
             ? " --frankenphp-image-archive={$guestBundleDirectory}/".self::DefaultFrankenPhpImageArchive
             : '';
 
-        $hasWgEasyImageArchive = $role === 'gateway'
+        $hasWgEasyImageArchive = $nodeKind === 'gateway'
             && $this->run(
                 'test -f '.escapeshellarg("{$remoteBundleDir}/".self::DefaultWgEasyImageArchive),
                 timeoutSeconds: 5,
@@ -235,9 +235,9 @@ class IncusHost
 
         $script = sprintf(
             'chmod +x %1$s/e2e-provision-node %1$s/install-orbit %1$s/_e2e-deps.sh && '
-            .'%1$s/e2e-provision-node --role=%2$s --source-archive=%1$s/orbit-source.tar.gz --installer=%1$s/install-orbit%3$s%4$s%5$s%6$s%7$s%8$s%9$s',
+            .'%1$s/e2e-provision-node --node-kind=%2$s --source-archive=%1$s/orbit-source.tar.gz --installer=%1$s/install-orbit%3$s%4$s%5$s%6$s%7$s%8$s%9$s',
             $guestBundleDirectory,
-            escapeshellarg($role),
+            escapeshellarg($nodeKind),
             $operatorUserArg,
             $composerCacheArg,
             $runtimeImageArchiveArg,
@@ -256,7 +256,7 @@ class IncusHost
         $result = $this->run($command, timeoutSeconds: $timeoutSeconds ?? max(900, $this->config->timeoutSeconds));
 
         if (! $result->successful()) {
-            throw new RuntimeException("Provisioner failed on [{$instanceName}] (role={$role}): {$result->errorOutput()}");
+            throw new RuntimeException("Provisioner failed on [{$instanceName}] (node_kind={$nodeKind}): {$result->errorOutput()}");
         }
 
         $removeProvisioningBundle = $this->run(sprintf(
