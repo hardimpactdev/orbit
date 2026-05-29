@@ -154,7 +154,7 @@ final readonly class S3ServiceConfigurator
             'fields' => [
                 'access_key_id' => $serviceConfig->accessKeyId,
                 'secret_access_key' => $serviceConfig->secretAccessKey,
-                'region' => 'us-east-1',
+                'region' => S3ServiceConfig::Region,
                 'endpoint' => S3ServiceConfig::ServiceEndpoint,
                 'bucket_style' => 'path',
             ],

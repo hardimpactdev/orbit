@@ -1,0 +1,201 @@
+<?php
+
+declare(strict_types=1);
+
+use App\Models\Node;
+use App\Models\NodeRoleAssignment;
+use App\Models\NodeTool;
+use App\Services\S3\S3ServiceConfigurator;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+
+uses(RefreshDatabase::class);
+
+/**
+ * Regression tests ensuring tool:credentials rustfs and s3:credentials agree on the
+ * region value — both must surface 'orbit', and the stored credential field written
+ * by S3ServiceConfigurator must also be 'orbit'.
+ *
+ * S3ServiceConfig::Region is the canonical constant and S3ServiceConfigurator::writeCredentials
+ * must use it. These tests enforce the alignment.
+ */
+const S3_REGION_AGREE_CALLER_WG_IP = '10.6.1.101';
+
+function regionAgreementCallerNode(): Node
+{
+    $node = Node::factory()->create([
+        'name' => 'region-caller',
+        'host' => S3_REGION_AGREE_CALLER_WG_IP,
+        'wireguard_address' => S3_REGION_AGREE_CALLER_WG_IP,
+        'status' => 'active',
+    ]);
+
+    NodeRoleAssignment::factory()->create([
+        'node_id' => $node->id,
+        'role' => 'gateway',
+        'status' => 'active',
+    ]);
+
+    return $node;
+}
+
+function regionAgreementStorageNode(): Node
+{
+    $node = Node::factory()->create([
+        'name' => 'storage-1',
+        'host' => '10.6.0.44',
+        'wireguard_address' => '10.6.0.44',
+        'status' => 'active',
+    ]);
+
+    // s3 role for s3:credentials
+    NodeRoleAssignment::factory()->create([
+        'node_id' => $node->id,
+        'role' => 's3',
+        'status' => 'active',
+    ]);
+
+    // agent role so the node is visible in tool host queries (tool:credentials)
+    NodeRoleAssignment::factory()->create([
+        'node_id' => $node->id,
+        'role' => 'agent',
+        'status' => 'active',
+    ]);
+
+    return $node;
+}
+
+function regionAgreementRouterNode(): Node
+{
+    $node = Node::factory()->create([
+        'name' => 'router-1',
+        'host' => '10.6.0.1',
+        'wireguard_address' => '10.6.0.1',
+        'status' => 'active',
+    ]);
+
+    NodeRoleAssignment::factory()->create([
+        'node_id' => $node->id,
+        'role' => 'router',
+        'status' => 'active',
+    ]);
+
+    return $node;
+}
+
+/**
+ * Seed a rustfs tool row with an 'orbit' region in fields — as S3ServiceConfigurator
+ * now writes it.
+ */
+function regionAgreementRustfsTool(Node $storage): NodeTool
+{
+    return NodeTool::factory()->create([
+        'node_id' => $storage->id,
+        'name' => 'rustfs',
+        'expected_state' => 'running',
+        'config' => ['backend_host' => 'storage-1.s3.orbit', 'public_hosts' => []],
+        'credentials' => [
+            'fields' => [
+                'access_key_id' => 'REGIONTESTACCESSKEYID',
+                'secret_access_key' => 'region-test-secret-access-key',
+                'region' => 'orbit',
+                'endpoint' => 'https://s3.orbit',
+                'bucket_style' => 'path',
+            ],
+        ],
+    ]);
+}
+
+describe('S3 region agreement between tool:credentials and s3:credentials', function (): void {
+    it('tool:credentials rustfs surfaces region=orbit from stored fields', function (): void {
+        regionAgreementCallerNode(); // gateway role — bypasses tool:credentials auth
+        $storage = regionAgreementStorageNode();
+        regionAgreementRustfsTool($storage);
+
+        $response = $this->call(
+            'GET',
+            '/api/tools/rustfs/credentials?node=storage-1',
+            [],
+            [],
+            [],
+            ['REMOTE_ADDR' => S3_REGION_AGREE_CALLER_WG_IP],
+        );
+
+        $response->assertOk()
+            ->assertJsonPath('success.data.credentials.fields.region', 'orbit');
+    });
+
+    it('s3:credentials surfaces region=orbit from stored fields', function (): void {
+        regionAgreementCallerNode();
+        $storage = regionAgreementStorageNode();
+        regionAgreementRouterNode();
+        regionAgreementRustfsTool($storage);
+
+        $response = $this->call(
+            'GET',
+            '/api/s3/credentials?node=storage-1',
+            [],
+            [],
+            [],
+            ['REMOTE_ADDR' => S3_REGION_AGREE_CALLER_WG_IP],
+        );
+
+        $response->assertOk()
+            ->assertJsonPath('success.data.credentials.region', 'orbit');
+    });
+
+    it('tool:credentials and s3:credentials both return the same region value', function (): void {
+        regionAgreementCallerNode();
+        $storage = regionAgreementStorageNode();
+        regionAgreementRouterNode();
+        regionAgreementRustfsTool($storage);
+
+        $toolResponse = $this->call(
+            'GET',
+            '/api/tools/rustfs/credentials?node=storage-1',
+            [],
+            [],
+            [],
+            ['REMOTE_ADDR' => S3_REGION_AGREE_CALLER_WG_IP],
+        );
+
+        $s3Response = $this->call(
+            'GET',
+            '/api/s3/credentials?node=storage-1',
+            [],
+            [],
+            [],
+            ['REMOTE_ADDR' => S3_REGION_AGREE_CALLER_WG_IP],
+        );
+
+        $toolRegion = $toolResponse->json('success.data.credentials.fields.region');
+        $s3Region = $s3Response->json('success.data.credentials.region');
+
+        expect($toolRegion)->toBe('orbit')
+            ->and($s3Region)->toBe('orbit')
+            ->and($toolRegion)->toBe($s3Region);
+    });
+
+    it('S3ServiceConfigurator writes region=orbit to the stored credentials fields', function (): void {
+        $node = Node::factory()->create([
+            'name' => 'region-storage',
+            'wireguard_address' => '10.6.0.88',
+            'status' => 'active',
+        ]);
+
+        $assignment = NodeRoleAssignment::factory()->create([
+            'node_id' => $node->id,
+            'role' => 's3',
+            'status' => 'active',
+            'settings' => ['data_path' => '/srv/orbit/s3/data'],
+        ]);
+
+        app(S3ServiceConfigurator::class)->configure($node, $assignment);
+
+        $rustfsTool = NodeTool::query()
+            ->where('node_id', $node->id)
+            ->where('name', 'rustfs')
+            ->firstOrFail();
+
+        expect($rustfsTool->credentials['fields']['region'])->toBe('orbit');
+    });
+});

@@ -10,6 +10,8 @@ final readonly class S3ServiceConfig
 
     public const string ServiceHost = 's3.orbit';
 
+    public const string Region = 'orbit';
+
     /**
      * @param  list<string>  $publicHosts  Public HTTPS hostnames published on ingress (e.g. ['s3.example.com']).
      */
