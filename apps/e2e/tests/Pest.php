@@ -25,17 +25,6 @@ uses(TestCase::class)->in('Feature');
 |--------------------------------------------------------------------------
 */
 
-function repo_path(string $path = ''): string
-{
-    $root = dirname(__DIR__, 3);
-
-    if ($path === '') {
-        return $root;
-    }
-
-    return $root.'/'.ltrim($path, '/');
-}
-
 function make_temp_directory(string $prefix): string
 {
     $path = sys_get_temp_dir().'/orbit-e2e-'.$prefix.'-'.bin2hex(random_bytes(4));
