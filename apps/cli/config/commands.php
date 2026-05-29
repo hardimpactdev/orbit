@@ -88,6 +88,7 @@ use App\Commands\Process\ProcessStopCommand;
 use App\Commands\Proxy\ProxyAddCommand;
 use App\Commands\Proxy\ProxyListCommand;
 use App\Commands\Proxy\ProxyRemoveCommand;
+use App\Commands\S3\S3PublishCommand;
 use App\Commands\Schedule\ScheduleAddCommand;
 use App\Commands\Schedule\ScheduleListCommand;
 use App\Commands\Schedule\ScheduleLogsCommand;
@@ -230,6 +231,7 @@ return [
         ProxyAddCommand::class,
         ProxyListCommand::class,
         ProxyRemoveCommand::class,
+        S3PublishCommand::class,
         ScheduleAddCommand::class,
         ScheduleListCommand::class,
         ScheduleLogsCommand::class,
