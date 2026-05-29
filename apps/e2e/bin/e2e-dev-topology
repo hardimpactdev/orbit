@@ -1,0 +1,11 @@
+<?php
+
+declare(strict_types=1);
+
+use App\E2E\Commands\E2EDevTopologyCommand;
+
+require __DIR__.'/../vendor/autoload.php';
+
+$repoRoot = dirname(__DIR__, 2);
+
+exit((new E2EDevTopologyCommand($repoRoot))->run($argv));
