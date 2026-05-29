@@ -77,7 +77,7 @@ it('keeps root composer as an orchestrator without gateway autoloads', function 
 it('keeps quality tool configs local to each app and package', function (): void {
     $repoRoot = gatewayRelocationRepoRoot();
 
-    foreach (['apps/gateway', 'apps/cli', 'apps/docs', 'packages/core'] as $projectPath) {
+    foreach (['apps/gateway', 'apps/cli', 'apps/docs', 'apps/e2e', 'packages/core'] as $projectPath) {
         expect("{$repoRoot}/{$projectPath}/pint.json")->toBeFile()
             ->and("{$repoRoot}/{$projectPath}/phpstan.neon")->toBeFile()
             ->and("{$repoRoot}/{$projectPath}/rector.php")->toBeFile();

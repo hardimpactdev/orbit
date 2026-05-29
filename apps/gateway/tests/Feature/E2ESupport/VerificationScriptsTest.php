@@ -91,15 +91,19 @@ it('keeps the aggregate quality gate complete', function (): void {
         ->toContain('cd apps/cli && vendor/bin/phpstan analyse')
         ->toContain('cd apps/docs && vendor/bin/phpstan analyse')
         ->toContain('cd packages/core && vendor/bin/phpstan analyse')
+        ->toContain('cd apps/e2e && vendor/bin/phpstan analyse')
         ->toContain('cd apps/cli && vendor/bin/rector process')
         ->toContain('cd apps/docs && vendor/bin/rector process')
         ->toContain('cd packages/core && vendor/bin/rector process')
+        ->toContain('cd apps/e2e && vendor/bin/rector process')
         ->toContain('cd apps/cli && vendor/bin/pint')
         ->toContain('cd apps/docs && vendor/bin/pint')
         ->toContain('cd packages/core && vendor/bin/pint')
+        ->toContain('cd apps/e2e && vendor/bin/pint')
         ->toContain('bin/orbit-cli-pest')
         ->toContain('bin/orbit-docs-pest')
         ->toContain('cd packages/core && vendor/bin/pest')
+        ->toContain('cd apps/e2e && vendor/bin/pest')
         ->toContain('bin/orbit-gateway-pest')
         ->toContain('--exclude-group=e2e')
         ->toContain('--exclude-group=slow')
@@ -121,6 +125,7 @@ it('runs default ephemeral e2e through prepared topology lanes', function (): vo
             fn ($script) => $script->toContain('bin/orbit-cli-pest --compact'),
             fn ($script) => $script->toContain('bin/orbit-docs-pest --compact'),
             fn ($script) => $script->toContain('cd packages/core && vendor/bin/pest --compact'),
+            fn ($script) => $script->toContain('cd apps/e2e && vendor/bin/pest --compact'),
         );
 
     $e2eScript = 'set -a; [ ! -f .env.e2e ] || . ./.env.e2e; set +a; bin/orbit-gateway-artisan e2e:test @additional_args';
@@ -145,6 +150,9 @@ it('runs default ephemeral e2e through prepared topology lanes', function (): vo
     expect($composer['scripts']['test:e2e:provision'])->toBe([
         'Composer\\Config::disableProcessTimeout',
         'set -a; [ ! -f .env.e2e ] || . ./.env.e2e; set +a; ORBIT_E2E=1 bin/orbit-gateway-artisan test --testsuite=E2E --group=e2e-provision --fail-on-empty-test-suite @additional_args',
+    ])->and($composer['scripts']['test:e2e:next'])->toBe([
+        'Composer\\Config::disableProcessTimeout',
+        'cd apps/e2e && vendor/bin/pest --compact @additional_args',
     ])->and($composer['scripts'])->not->toHaveKey('test:e2e:provisioning')
         ->and($composer['scripts'])->not->toHaveKey('test:e2e:features')
         ->and($composer['scripts'])->not->toHaveKey('test:e2e:features:docker');

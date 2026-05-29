@@ -24,6 +24,11 @@ Eloquent models, controllers, jobs, or internal actions as the test subject.
 Gateway product behavior stays in `apps/gateway` and is not moved into
 `packages/core` as a convenience dump for the E2E app.
 
+During the migration, immediate E2E support helpers live under `apps/e2e`
+internal support namespaces. Do not create `packages/e2e-support` or move
+helpers to `packages/core` unless a separate architecture task approves that
+location later.
+
 ## Verification model
 
 Orbit has three supported test lanes:
