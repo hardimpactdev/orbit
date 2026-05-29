@@ -26,12 +26,12 @@ final class NodeCreationRoleResolver
         NodeRoleName::Database->value,
         NodeRoleName::Agent->value,
         NodeRoleName::Ingress->value,
-        'websocket',
+        NodeRoleName::WebSocket->value,
         's3',
     ];
 
     private const array IMPLEMENTATION_PENDING_ROLES = [
-        'websocket',
+        NodeRoleName::WebSocket->value,
         's3',
     ];
 

@@ -14,4 +14,5 @@ enum NodeRoleName: string
     case Database = 'database';
     case Agent = 'agent';
     case Ingress = 'ingress';
+    case WebSocket = 'websocket';
 }

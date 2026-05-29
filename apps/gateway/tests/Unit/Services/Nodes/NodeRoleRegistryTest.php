@@ -8,6 +8,7 @@ use App\Data\Nodes\RoleSettings\AppProductionRoleSettings;
 use App\Data\Nodes\RoleSettings\DatabaseRoleSettings;
 use App\Data\Nodes\RoleSettings\EmptyRoleSettings;
 use App\Data\Nodes\RoleSettings\VpnRoleSettings;
+use App\Data\Nodes\RoleSettings\WebSocketRoleSettings;
 use App\Enums\Nodes\NodeRoleName;
 use App\Enums\Nodes\NodeRoleStatus;
 use App\Services\Nodes\Roles\NodeRoleRegistry;
@@ -22,6 +23,7 @@ describe('node role registry', function (): void {
             'database',
             'agent',
             'ingress',
+            'websocket',
         ]);
 
         expect($registry->definition('vpn')->conflictsWith)->toBe([
@@ -30,6 +32,7 @@ describe('node role registry', function (): void {
             'database',
             'agent',
             'ingress',
+            'websocket',
         ]);
 
         expect($registry->definition('router')->conflictsWith)->toBe([
@@ -38,6 +41,7 @@ describe('node role registry', function (): void {
             'database',
             'agent',
             'ingress',
+            'websocket',
         ]);
 
         expect($registry->definition('app-dev')->conflictsWith)->toBe([
@@ -56,6 +60,7 @@ describe('node role registry', function (): void {
             'app-dev',
             'database',
             'agent',
+            'websocket',
         ]);
 
         expect($registry->definition('database')->conflictsWith)->toBe([
@@ -75,6 +80,7 @@ describe('node role registry', function (): void {
             'app-prod',
             'database',
             'ingress',
+            'websocket',
         ]);
 
         expect($registry->definition('ingress')->conflictsWith)->toBe([
@@ -84,7 +90,22 @@ describe('node role registry', function (): void {
             'app-dev',
             'database',
             'agent',
+            'websocket',
         ]);
+
+        expect($registry->definition('websocket')->conflictsWith)->toBe([
+            'gateway',
+            'vpn',
+            'router',
+            'app-prod',
+            'agent',
+            'ingress',
+        ]);
+
+        expect($registry->definition('websocket')->conflictsWith)
+            ->not->toContain('app-dev')
+            ->not->toContain('database')
+            ->not->toContain('s3');
     });
 
     it('defines supported platforms and assignability for the initial roles', function (): void {
@@ -111,6 +132,9 @@ describe('node role registry', function (): void {
             ->and($registry->definition('ingress')->supportedPlatforms)->toBe(['ubuntu'])
             ->and($registry->definition('ingress')->assignableByRoleCommand)->toBeTrue()
             ->and($registry->definition('ingress')->assignableByNodeNew)->toBeTrue()
+            ->and($registry->definition('websocket')->supportedPlatforms)->toBe(['ubuntu'])
+            ->and($registry->definition('websocket')->assignableByRoleCommand)->toBeTrue()
+            ->and($registry->definition('websocket')->assignableByNodeNew)->toBeTrue()
             ->and($registry->definition('vpn')->supportedPlatforms)->toBe(['ubuntu'])
             ->and($registry->definition('vpn')->assignableByRoleCommand)->toBeFalse()
             ->and($registry->definition('vpn')->assignableByNodeNew)->toBeFalse();
@@ -195,6 +219,17 @@ describe('node role registry', function (): void {
                 'wireguard_port' => 51821,
                 'dns_ip' => '10.44.0.1',
             ]);
+    });
+
+    it('hydrates websocket settings dtos', function (): void {
+        $settings = (new NodeRoleRegistry)
+            ->definition('websocket')
+            ->settingsFromArray(['redis_node_id' => 12]);
+
+        expect($settings)
+            ->toBeInstanceOf(WebSocketRoleSettings::class)
+            ->and($settings->toArray())
+            ->toBe(['redis_node_id' => 12]);
     });
 
     it('hydrates empty settings dtos for roles without settings', function (string $role, string $class): void {
@@ -329,6 +364,7 @@ describe('node role registry', function (): void {
             'database',
             'agent',
             'ingress',
+            'websocket',
         ]);
     });
 
