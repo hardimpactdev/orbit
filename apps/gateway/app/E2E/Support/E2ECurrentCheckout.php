@@ -253,6 +253,7 @@ final class E2ECurrentCheckout
         $dockerRuntimeContainer = $dockerTopology ? self::dockerRuntimeContainerName($instance) : null;
         $runBootstrapInDockerRuntime = $dockerTopology && ! $hostLauncher;
         $requiresGatewayApplication = ! ($dockerTopology && $hostLauncher);
+        $vendorRuntimeContainer = $runBootstrapInDockerRuntime ? $dockerRuntimeContainer : null;
 
         self::runInstallPhase(
             $timer,
@@ -267,7 +268,7 @@ final class E2ECurrentCheckout
         self::runInstallPhase(
             $timer,
             'checkout.vendor',
-            fn (): string => self::vendorInstallCommand($remotePath, $vendorSourcePath, $dockerTopology, $dockerRuntimeContainer, $requiresGatewayApplication),
+            fn (): string => self::vendorInstallCommand($remotePath, $vendorSourcePath, $dockerTopology, $vendorRuntimeContainer, $requiresGatewayApplication),
             $instance,
             $user,
             $keyPair,
@@ -352,19 +353,23 @@ final class E2ECurrentCheckout
 
     private static function reuseRuntimeDependenciesCommand(string $vendorSourcePath, string $remotePath, ?string $dockerRuntimeContainer = null, bool $requiresGatewayApplication = true): string
     {
-        $sourceVendor = escapeshellarg("{$vendorSourcePath}/apps/gateway/vendor");
-        $sourceAutoload = escapeshellarg("{$vendorSourcePath}/apps/gateway/vendor/autoload.php");
-        $sourceCliVendor = escapeshellarg("{$vendorSourcePath}/apps/cli/vendor");
+        $gatewayFallback = $requiresGatewayApplication
+            ? self::runtimeComposerInstallCommand($remotePath, $dockerRuntimeContainer)
+            : "echo 'Prepared gateway vendor dependencies are required for Docker host-launcher checkout.' >&2; exit 127";
         $sourceCliEnv = escapeshellarg("{$vendorSourcePath}/apps/cli/.env");
-        $commands = [];
 
-        if ($requiresGatewayApplication) {
-            $commands[] = "if [ -f {$sourceAutoload} ] && [ -d {$sourceVendor} ]; then rm -rf apps/gateway/vendor && ln -s {$sourceVendor} apps/gateway/vendor; else ".self::runtimeComposerInstallCommand($remotePath, $dockerRuntimeContainer).'; fi';
-        } else {
-            $commands[] = "if [ -f {$sourceAutoload} ] && [ -d {$sourceVendor} ]; then rm -rf apps/gateway/vendor && ln -s {$sourceVendor} apps/gateway/vendor; else echo 'Prepared gateway vendor dependencies are required for Docker host-launcher checkout.' >&2; exit 127; fi";
-        }
-
-        $commands[] = "if [ -d {$sourceCliVendor} ]; then rm -rf apps/cli/vendor && ln -s {$sourceCliVendor} apps/cli/vendor; fi";
+        $commands = [
+            self::reusePreparedVendorWithLocalAutoloadCommand(
+                appPath: 'apps/gateway',
+                vendorSourcePath: $vendorSourcePath,
+                fallbackClause: "else {$gatewayFallback}",
+            ),
+            self::reusePreparedVendorWithLocalAutoloadCommand(
+                appPath: 'apps/cli',
+                vendorSourcePath: $vendorSourcePath,
+                fallbackClause: "else echo 'Prepared CLI vendor dependencies are required for Docker current checkout.' >&2; exit 127",
+            ),
+        ];
         $commands[] = "if [ -f {$sourceCliEnv} ]; then cp {$sourceCliEnv} apps/cli/.env; fi";
 
         return implode(' && ', $commands);
@@ -413,20 +418,41 @@ final class E2ECurrentCheckout
 
     private static function installComposerDependenciesCommand(string $vendorSourcePath): string
     {
-        $sourceLock = escapeshellarg("{$vendorSourcePath}/apps/gateway/composer.lock");
-        $sourceAutoload = escapeshellarg("{$vendorSourcePath}/apps/gateway/vendor/autoload.php");
-        $sourceComposer = escapeshellarg("{$vendorSourcePath}/apps/gateway/vendor/composer");
-        $sourceVendor = escapeshellarg("{$vendorSourcePath}/apps/gateway/vendor");
+        return self::reusePreparedVendorWithLocalAutoloadCommand(
+            appPath: 'apps/gateway',
+            vendorSourcePath: $vendorSourcePath,
+            fallbackClause: "elif command -v composer >/dev/null 2>&1; then cd apps/gateway && composer install --no-interaction --prefer-dist --optimize-autoloader; else echo 'Gateway Composer dependencies are not installed and prepared vendor dependencies could not be reused.' >&2; exit 127",
+        );
+    }
+
+    private static function reusePreparedVendorWithLocalAutoloadCommand(
+        string $appPath,
+        string $vendorSourcePath,
+        string $fallbackClause,
+    ): string {
+        $sourceLock = escapeshellarg("{$vendorSourcePath}/{$appPath}/composer.lock");
+        $sourceAutoload = escapeshellarg("{$vendorSourcePath}/{$appPath}/vendor/autoload.php");
+        $sourceComposer = escapeshellarg("{$vendorSourcePath}/{$appPath}/vendor/composer");
+        $sourceVendor = escapeshellarg("{$vendorSourcePath}/{$appPath}/vendor");
+        $appVendor = "{$appPath}/vendor";
+
         $reuseVendor = implode(' && ', [
-            'rm -rf apps/gateway/vendor',
-            'mkdir -p apps/gateway/vendor',
-            "find {$sourceVendor} -mindepth 1 -maxdepth 1 ! -name composer ! -name autoload.php -exec ln -s {} apps/gateway/vendor/ \\;",
-            "cp -a {$sourceComposer} apps/gateway/vendor/composer",
-            "cp {$sourceAutoload} apps/gateway/vendor/autoload.php",
-            'if command -v composer >/dev/null 2>&1; then cd apps/gateway && composer dump-autoload --no-interaction --optimize; fi',
+            "rm -rf {$appVendor}",
+            "mkdir -p {$appVendor}",
+            "find {$sourceVendor} -mindepth 1 -maxdepth 1 ! -name composer ! -name autoload.php -exec ln -s {} {$appPath}/vendor/ \\;",
+            "cp -a {$sourceComposer} {$appPath}/vendor/composer",
+            "cp {$sourceAutoload} {$appPath}/vendor/autoload.php",
+            self::composerDumpAutoloadCommand($appPath),
         ]);
 
-        return "if [ -f {$sourceAutoload} ] && [ -d {$sourceComposer} ] && [ -f {$sourceLock} ] && cmp -s {$sourceLock} apps/gateway/composer.lock; then {$reuseVendor}; elif command -v composer >/dev/null 2>&1; then cd apps/gateway && composer install --no-interaction --prefer-dist --optimize-autoloader; else echo 'Gateway Composer dependencies are not installed and prepared vendor dependencies could not be reused.' >&2; exit 127; fi";
+        return "if [ -f {$sourceAutoload} ] && [ -d {$sourceComposer} ] && [ -f {$sourceLock} ] && cmp -s {$sourceLock} {$appPath}/composer.lock; then {$reuseVendor}; {$fallbackClause}; fi";
+    }
+
+    private static function composerDumpAutoloadCommand(string $appPath): string
+    {
+        $localCommand = "cd {$appPath} && composer dump-autoload --no-interaction --optimize";
+
+        return "if command -v composer >/dev/null 2>&1; then {$localCommand}; fi";
     }
 
     private static function prepareRuntimeStateCommand(?string $seedFrom, bool $dockerTopology = false, ?string $remotePath = null, ?string $dockerRuntimeContainer = null, ?bool $runArtisanInDockerRuntime = null): string
@@ -646,7 +672,7 @@ PHP;
             "cd {$quotedBasePath}",
             "find . -mindepth 1 -maxdepth 1 ! -name .env -exec sh -c 'target=\$1; shift; for path do dest=\"\$target/\$(basename \"\$path\")\"; rm -rf \"\$dest\"; cp -al \"\$path\" \"\$target\"/ 2>/dev/null || { rm -rf \"\$dest\"; cp -a --reflink=always \"\$path\" \"\$target\"/ 2>/dev/null; } || { rm -rf \"\$dest\"; cp -a \"\$path\" \"\$target\"/; }; done' sh {$quotedRemotePath} {} +",
             "rm -rf {$quotedRemotePath}/apps/gateway/vendor {$quotedRemotePath}/apps/gateway/storage {$quotedRemotePath}/apps/gateway/.env",
-            self::cloneCachedVendorCommand($basePath, $remotePath),
+            "cd {$quotedRemotePath} && ".self::cloneCachedVendorCommand($basePath, $remotePath),
             "if [ -f {$quotedBasePath}/apps/gateway/.env ]; then cp {$quotedBasePath}/apps/gateway/.env {$quotedRemotePath}/apps/gateway/.env; fi",
             "mkdir -p {$quotedRemotePath}/apps/gateway/database",
             "if [ -f {$quotedBasePath}/apps/gateway/database/database.sqlite ]; then rm -f {$quotedRemotePath}/apps/gateway/database/database.sqlite {$quotedRemotePath}/apps/gateway/database/database.sqlite-* && cp {$quotedBasePath}/apps/gateway/database/database.sqlite {$quotedRemotePath}/apps/gateway/database/database.sqlite; else touch {$quotedRemotePath}/apps/gateway/database/database.sqlite; fi",
@@ -656,12 +682,18 @@ PHP;
 
     private static function cloneCachedVendorCommand(string $basePath, string $remotePath): string
     {
-        $baseVendor = escapeshellarg("{$basePath}/apps/gateway/vendor");
-        $remoteVendor = escapeshellarg("{$remotePath}/apps/gateway/vendor");
-        $baseCliVendor = escapeshellarg("{$basePath}/apps/cli/vendor");
-        $remoteCliVendor = escapeshellarg("{$remotePath}/apps/cli/vendor");
-
-        return "if [ -d {$baseVendor} ]; then ln -s {$baseVendor} {$remoteVendor}; fi && if [ -d {$baseCliVendor} ]; then rm -rf {$remoteCliVendor} && ln -s {$baseCliVendor} {$remoteCliVendor}; fi";
+        return implode(' && ', [
+            self::reusePreparedVendorWithLocalAutoloadCommand(
+                appPath: 'apps/gateway',
+                vendorSourcePath: $basePath,
+                fallbackClause: "else echo 'Cached gateway vendor dependencies are required for checkout cache clones.' >&2; exit 127",
+            ),
+            self::reusePreparedVendorWithLocalAutoloadCommand(
+                appPath: 'apps/cli',
+                vendorSourcePath: $basePath,
+                fallbackClause: "else echo 'Cached CLI vendor dependencies are required for checkout cache clones.' >&2; exit 127",
+            ),
+        ]);
     }
 
     private static function cloneCachedStorageCommand(string $basePath, string $remotePath): string

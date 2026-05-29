@@ -66,13 +66,38 @@ describe('node:show', function (): void {
 
     it('renders human output containing node fields', function (): void {
         fakeGateway(fakeSuccessEnvelope([
-            'node' => ['name' => 'gateway-1', 'role' => 'gateway'],
+            'node' => [
+                'name' => 'gateway-1',
+                'status' => 'active',
+                'platform' => 'ubuntu',
+                'roles' => [
+                    ['role' => 'gateway', 'status' => 'active', 'settings' => [], 'last_error' => null, 'converged_at' => null],
+                ],
+                'addresses' => ['wireguard' => '10.6.0.2'],
+                'grants' => [
+                    'consuming_nodes' => [
+                        ['name' => 'operator-1', 'permissions' => ['*']],
+                    ],
+                    'serving_nodes' => [],
+                ],
+            ],
         ]));
 
         [$exitCode, $output] = runCommand($this, 'node:show', ['name' => 'gateway-1']);
 
         expect($exitCode)->toBe(0)
-            ->and($output)->toContain('node');
+            ->and($output)->toContain('Node: gateway-1')
+            ->and($output)->toContain('Role')
+            ->and($output)->toContain('gateway')
+            ->and($output)->toContain('OS')
+            ->and($output)->toContain('ubuntu')
+            ->and($output)->toContain('Peer IP')
+            ->and($output)->toContain('10.6.0.2')
+            ->and($output)->toContain('Serving')
+            ->and($output)->toContain('operator-1: *')
+            ->and($output)->toContain('Consuming')
+            ->and($output)->toContain('—')
+            ->and($output)->not->toContain('node: {');
     });
 
     it('surfaces wireguard-specific gateway failures', function (): void {
