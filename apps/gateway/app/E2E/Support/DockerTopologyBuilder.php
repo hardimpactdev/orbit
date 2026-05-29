@@ -385,113 +385,113 @@ final readonly class DockerTopologyBuilder
                     $this->runtimeContainerName($nodeContainer),
                     $nodeContainer,
                     DockerTopologyProvider::runtimeSiblingImage(),
-                ], <<<'SH'
-if [ -x /usr/bin/docker ] && ! grep -q ORBIT_E2E_RUNTIME_DOCKER_SHIM /usr/bin/docker 2>/dev/null; then
-    mv /usr/bin/docker /usr/bin/docker.real
-fi
-cat > /usr/local/bin/docker <<'BASH'
-#!/usr/bin/env bash
-# ORBIT_E2E_RUNTIME_DOCKER_SHIM
-set -eu
+                ], <<<'SH_WRAP'
+                if [ -x /usr/bin/docker ] && ! grep -q ORBIT_E2E_RUNTIME_DOCKER_SHIM /usr/bin/docker 2>/dev/null; then
+                    mv /usr/bin/docker /usr/bin/docker.real
+                fi
+                cat > /usr/local/bin/docker <<'BASH'
+                #!/usr/bin/env bash
+                # ORBIT_E2E_RUNTIME_DOCKER_SHIM
+                set -eu
 
-real_docker="/usr/bin/docker.real"
-runtime_container="${ORBIT_RUNTIME_CONTAINER:-__RUNTIME_CONTAINER__}"
-node_container="${ORBIT_NODE_CONTAINER:-__NODE_CONTAINER__}"
-runtime_image="${ORBIT_RUNTIME_IMAGE:-__RUNTIME_IMAGE__}"
-source_path="$(sed -n "s/^checkout='\(.*\)'$/\1/p" /usr/local/bin/orbit 2>/dev/null | head -n 1 || true)"
+                real_docker="/usr/bin/docker.real"
+                runtime_container="${ORBIT_RUNTIME_CONTAINER:-__RUNTIME_CONTAINER__}"
+                node_container="${ORBIT_NODE_CONTAINER:-__NODE_CONTAINER__}"
+                runtime_image="${ORBIT_RUNTIME_IMAGE:-__RUNTIME_IMAGE__}"
+                source_path="$(sed -n "s/^checkout='\(.*\)'$/\1/p" /usr/local/bin/orbit 2>/dev/null | head -n 1 || true)"
 
-if [ -z "${source_path}" ]; then
-    source_path="/home/orbit/orbit"
-fi
+                if [ -z "${source_path}" ]; then
+                    source_path="/home/orbit/orbit"
+                fi
 
-volume_mountpoint() {
-    "${real_docker}" volume inspect "$1" --format '{{ .Mountpoint }}' 2>/dev/null || true
-}
+                volume_mountpoint() {
+                    "${real_docker}" volume inspect "$1" --format '{{ .Mountpoint }}' 2>/dev/null || true
+                }
 
-rewrite_path() {
-    local path="$1"
-    local etc_caddy
-    local etc_orbit
-    local opt_orbit
+                rewrite_path() {
+                    local path="$1"
+                    local etc_caddy
+                    local etc_orbit
+                    local opt_orbit
 
-    etc_caddy="$(volume_mountpoint "${node_container}-etc-caddy")"
-    etc_orbit="$(volume_mountpoint "${node_container}-etc-orbit")"
-    opt_orbit="$(volume_mountpoint "${node_container}-opt-orbit")"
+                    etc_caddy="$(volume_mountpoint "${node_container}-etc-caddy")"
+                    etc_orbit="$(volume_mountpoint "${node_container}-etc-orbit")"
+                    opt_orbit="$(volume_mountpoint "${node_container}-opt-orbit")"
 
-    case "${path}" in
-        /etc/caddy)
-            printf '%s' "${etc_caddy}"
-            ;;
-        /etc/caddy/*)
-            printf '%s%s' "${etc_caddy}" "${path#/etc/caddy}"
-            ;;
-        /etc/orbit)
-            printf '%s' "${etc_orbit}"
-            ;;
-        /etc/orbit/*)
-            printf '%s%s' "${etc_orbit}" "${path#/etc/orbit}"
-            ;;
-        /opt/orbit)
-            printf '%s' "${opt_orbit}"
-            ;;
-        /opt/orbit/*)
-            printf '%s%s' "${opt_orbit}" "${path#/opt/orbit}"
-            ;;
-        *)
-            printf '%s' "${path}"
-            ;;
-    esac
-}
+                    case "${path}" in
+                        /etc/caddy)
+                            printf '%s' "${etc_caddy}"
+                            ;;
+                        /etc/caddy/*)
+                            printf '%s%s' "${etc_caddy}" "${path#/etc/caddy}"
+                            ;;
+                        /etc/orbit)
+                            printf '%s' "${etc_orbit}"
+                            ;;
+                        /etc/orbit/*)
+                            printf '%s%s' "${etc_orbit}" "${path#/etc/orbit}"
+                            ;;
+                        /opt/orbit)
+                            printf '%s' "${opt_orbit}"
+                            ;;
+                        /opt/orbit/*)
+                            printf '%s%s' "${opt_orbit}" "${path#/opt/orbit}"
+                            ;;
+                        *)
+                            printf '%s' "${path}"
+                            ;;
+                    esac
+                }
 
-rewrite_mount() {
-    local argument="$1"
-    local remainder
-    local source
-    local rest
+                rewrite_mount() {
+                    local argument="$1"
+                    local remainder
+                    local source
+                    local rest
 
-    case "${argument}" in
-        type=bind,source=*)
-            remainder="${argument#type=bind,source=}"
-            source="${remainder%%,target=*}"
-            rest="${remainder#"${source}"}"
-            printf 'type=bind,source=%s%s' "$(rewrite_path "${source}")" "${rest}"
-            ;;
-        *)
-            printf '%s' "${argument}"
-            ;;
-    esac
-}
+                    case "${argument}" in
+                        type=bind,source=*)
+                            remainder="${argument#type=bind,source=}"
+                            source="${remainder%%,target=*}"
+                            rest="${remainder#"${source}"}"
+                            printf 'type=bind,source=%s%s' "$(rewrite_path "${source}")" "${rest}"
+                            ;;
+                        *)
+                            printf '%s' "${argument}"
+                            ;;
+                    esac
+                }
 
-args=()
+                args=()
 
-for argument in "$@"; do
-    case "${argument}" in
-        orbit-runtime)
-            args+=("${runtime_container}")
-            ;;
-        orbit-runtime:current)
-            args+=("${runtime_image}")
-            ;;
-        /opt/orbit)
-            args+=("${source_path}")
-            ;;
-        /opt/orbit/*)
-            args+=("${source_path}${argument#/opt/orbit}")
-            ;;
-        type=bind,source=*)
-            args+=("$(rewrite_mount "${argument}")")
-            ;;
-        *)
-            args+=("${argument}")
-            ;;
-    esac
-done
+                for argument in "$@"; do
+                    case "${argument}" in
+                        orbit-runtime)
+                            args+=("${runtime_container}")
+                            ;;
+                        orbit-runtime:current)
+                            args+=("${runtime_image}")
+                            ;;
+                        /opt/orbit)
+                            args+=("${source_path}")
+                            ;;
+                        /opt/orbit/*)
+                            args+=("${source_path}${argument#/opt/orbit}")
+                            ;;
+                        type=bind,source=*)
+                            args+=("$(rewrite_mount "${argument}")")
+                            ;;
+                        *)
+                            args+=("${argument}")
+                            ;;
+                    esac
+                done
 
-exec "${real_docker}" "${args[@]}"
-BASH
-chmod 0755 /usr/local/bin/docker
-cp /usr/local/bin/docker /usr/bin/docker
-SH)),
+                exec "${real_docker}" "${args[@]}"
+                BASH
+                chmod 0755 /usr/local/bin/docker
+                cp /usr/local/bin/docker /usr/bin/docker
+                SH_WRAP)),
             ),
             "Could not install Docker runtime container name shim in Docker build container {$nodeContainer}",
             timeoutSeconds: 60,
