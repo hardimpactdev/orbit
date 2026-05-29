@@ -14,6 +14,7 @@ use App\Commands\App\AppRegisterCommand;
 use App\Commands\App\AppRemoveCommand;
 use App\Commands\App\AppRootCommand;
 use App\Commands\App\AppShowCommand;
+use App\Commands\App\AppWebSocketEnableCommand;
 use App\Commands\App\AppWorkerCommand;
 use App\Commands\Cloudflare\CfCacheFlushCommand;
 use App\Commands\Cloudflare\CfCacheRuleAddCommand;
@@ -159,6 +160,7 @@ return [
         AppRemoveCommand::class,
         AppRootCommand::class,
         AppShowCommand::class,
+        AppWebSocketEnableCommand::class,
         AppWorkerCommand::class,
         CfCacheFlushCommand::class,
         CfCacheRuleAddCommand::class,
