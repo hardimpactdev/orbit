@@ -30,9 +30,9 @@ final readonly class GatewayStreamClient
     ) {}
 
     /**
-     * Stream progress events from the gateway. POSTs $payload to $path with
-     * Accept: text/event-stream, reads SSE frames, and calls
-     * $onEvent($type, $payload) for each decoded frame.
+     * Stream progress events from the gateway. Sends $payload to $path with
+     * Accept: text/event-stream using the specified HTTP method, reads SSE
+     * frames, and calls $onEvent($type, $payload) for each decoded frame.
      *
      * Returns 0 on a `complete` frame, non-zero on `error`. Throws
      * GatewayApiException when the stream closes before either terminal frame.
@@ -40,16 +40,22 @@ final readonly class GatewayStreamClient
      * @param  array<string, mixed>  $payload
      * @param  callable(ProgressEventType, array<string, mixed>): void  $onEvent
      */
-    public function streamEvents(string $path, array $payload, callable $onEvent): int
+    public function streamEvents(string $path, array $payload, callable $onEvent, string $method = 'post'): int
     {
         $baseUrl = $this->normalizedBaseUrl();
         try {
-            $response = Http::baseUrl($baseUrl)
+            $pending = Http::baseUrl($baseUrl)
                 ->withHeaders(['Accept' => 'text/event-stream'])
                 ->asJson()
                 ->timeout($this->timeout)
-                ->withOptions(['stream' => true])
-                ->post('/'.ltrim($path, '/'), $payload);
+                ->withOptions(['stream' => true]);
+
+            $normalizedPath = '/'.ltrim($path, '/');
+
+            $response = match (strtolower($method)) {
+                'delete' => $pending->delete($normalizedPath, $payload),
+                default => $pending->post($normalizedPath, $payload),
+            };
         } catch (ConnectionException $exception) {
             throw $this->classifyNetworkError($exception);
         }

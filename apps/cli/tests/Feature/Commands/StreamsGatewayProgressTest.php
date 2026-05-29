@@ -50,7 +50,7 @@ function fakeStreamClient(array $frames): void
          * @param  array<string, mixed>  $payload
          * @param  callable(ProgressEventType, array<string, mixed>): void  $onEvent
          */
-        public function streamEvents(string $path, array $payload, callable $onEvent): int
+        public function streamEvents(string $path, array $payload, callable $onEvent, string $method = 'post'): int
         {
             foreach ($this->frames as $frame) {
                 $onEvent($frame['type'], $frame['payload']);
