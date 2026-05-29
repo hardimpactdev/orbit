@@ -7,6 +7,7 @@ use App\Data\Nodes\RoleSettings\AppDevelopmentRoleSettings;
 use App\Data\Nodes\RoleSettings\AppProductionRoleSettings;
 use App\Data\Nodes\RoleSettings\DatabaseRoleSettings;
 use App\Data\Nodes\RoleSettings\EmptyRoleSettings;
+use App\Data\Nodes\RoleSettings\S3RoleSettings;
 use App\Data\Nodes\RoleSettings\VpnRoleSettings;
 use App\Data\Nodes\RoleSettings\WebSocketRoleSettings;
 use App\Enums\Nodes\NodeRoleName;
@@ -24,6 +25,7 @@ describe('node role registry', function (): void {
             'agent',
             'ingress',
             'websocket',
+            's3',
         ]);
 
         expect($registry->definition('vpn')->conflictsWith)->toBe([
@@ -33,6 +35,7 @@ describe('node role registry', function (): void {
             'agent',
             'ingress',
             'websocket',
+            's3',
         ]);
 
         expect($registry->definition('router')->conflictsWith)->toBe([
@@ -42,6 +45,7 @@ describe('node role registry', function (): void {
             'agent',
             'ingress',
             'websocket',
+            's3',
         ]);
 
         expect($registry->definition('app-dev')->conflictsWith)->toBe([
@@ -61,6 +65,7 @@ describe('node role registry', function (): void {
             'database',
             'agent',
             'websocket',
+            's3',
         ]);
 
         expect($registry->definition('database')->conflictsWith)->toBe([
@@ -81,6 +86,7 @@ describe('node role registry', function (): void {
             'database',
             'ingress',
             'websocket',
+            's3',
         ]);
 
         expect($registry->definition('ingress')->conflictsWith)->toBe([
@@ -91,6 +97,7 @@ describe('node role registry', function (): void {
             'database',
             'agent',
             'websocket',
+            's3',
         ]);
 
         expect($registry->definition('websocket')->conflictsWith)->toBe([
@@ -106,6 +113,20 @@ describe('node role registry', function (): void {
             ->not->toContain('app-dev')
             ->not->toContain('database')
             ->not->toContain('s3');
+
+        expect($registry->definition('s3')->conflictsWith)->toBe([
+            'gateway',
+            'vpn',
+            'router',
+            'app-prod',
+            'agent',
+            'ingress',
+        ]);
+
+        expect($registry->definition('s3')->conflictsWith)
+            ->not->toContain('app-dev')
+            ->not->toContain('database')
+            ->not->toContain('websocket');
     });
 
     it('defines supported platforms and assignability for the initial roles', function (): void {
@@ -137,7 +158,10 @@ describe('node role registry', function (): void {
             ->and($registry->definition('websocket')->assignableByNodeNew)->toBeTrue()
             ->and($registry->definition('vpn')->supportedPlatforms)->toBe(['ubuntu'])
             ->and($registry->definition('vpn')->assignableByRoleCommand)->toBeFalse()
-            ->and($registry->definition('vpn')->assignableByNodeNew)->toBeFalse();
+            ->and($registry->definition('vpn')->assignableByNodeNew)->toBeFalse()
+            ->and($registry->definition('s3')->supportedPlatforms)->toBe(['ubuntu'])
+            ->and($registry->definition('s3')->assignableByRoleCommand)->toBeTrue()
+            ->and($registry->definition('s3')->assignableByNodeNew)->toBeTrue();
     });
 
     it('hydrates role-specific settings dtos', function (): void {
@@ -160,6 +184,17 @@ describe('node role registry', function (): void {
             ->toBeInstanceOf(AppDevelopmentRoleSettings::class)
             ->and($settings->toArray())
             ->toBe(['tld' => 'test']);
+    });
+
+    it('hydrates s3 settings dtos with default data path', function (): void {
+        $settings = (new NodeRoleRegistry)
+            ->definition('s3')
+            ->settingsFromArray([]);
+
+        expect($settings)
+            ->toBeInstanceOf(S3RoleSettings::class)
+            ->and($settings->toArray())
+            ->toBe(['data_path' => '/srv/orbit/s3/data']);
     });
 
     it('hydrates agent settings dtos with default tld', function (): void {
@@ -365,6 +400,7 @@ describe('node role registry', function (): void {
             'agent',
             'ingress',
             'websocket',
+            's3',
         ]);
     });
 
