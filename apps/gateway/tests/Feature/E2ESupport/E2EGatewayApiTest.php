@@ -144,19 +144,25 @@ it('seeds operator identity with a gateway admin grant', function (): void {
         ->not->toContain("'environment' =>");
 });
 
-it('runs gateway api shim commands as the orbit runtime user', function (): void {
+it('proxies gateway api routes to Laravel before legacy command shims', function (): void {
     $reflection = new ReflectionClass(E2EGatewayApi::class);
     $method = $reflection->getMethod('tlsServerScript');
     $method->setAccessible(true);
 
     $script = $method->invoke(null, '/home/orbit/orbit-current', '10.6.0.2', '10.6.0.2', '10.6.0.2');
+    $toolLogStreamPosition = strpos($script, "preg_match('#^GET /api/tools/([^ ?]+)/logs/stream#', \$requestLine");
+    $apiProxyPosition = strpos($script, "preg_match('#^(GET|POST|PUT|PATCH|DELETE) /api/#', \$requestLine) === 1");
+    $legacyNodeListPosition = strpos($script, "str_starts_with(\$requestLine, 'GET /api/nodes ')");
 
     expect($script)
+        ->toContain('proxy_to_laravel($connection, $requestLine, $headers, $body);')
+        ->toContain('env ORBIT_IS_GATEWAY=1 php apps/gateway/artisan tool:logs')
         ->toContain('sudo -iu orbit bash -lc')
-        ->toContain('mkdir -p apps/gateway/storage/framework/cache/data apps/gateway/storage/framework/sessions apps/gateway/storage/framework/testing apps/gateway/storage/framework/views apps/gateway/storage/logs')
-        ->toContain('VIEW_COMPILED_PATH=\'.escapeshellarg($orbitPath.\'/apps/gateway/storage/framework/views\').\' \'.$command;')
-        ->toContain('orbit node:new')
-        ->not->toContain('php artisan');
+        ->and($toolLogStreamPosition)->toBeInt()
+        ->and($apiProxyPosition)->toBeInt()
+        ->and($legacyNodeListPosition)->toBeInt()
+        ->and($toolLogStreamPosition)->toBeLessThan($apiProxyPosition)
+        ->and($apiProxyPosition)->toBeLessThan($legacyNodeListPosition);
 });
 
 it('runs Docker gateway api shim commands directly inside orbit runtime', function (): void {
@@ -191,13 +197,16 @@ it('uses local http upstream for wildcard or empty gateway api binds', function 
     'empty bind' => '',
 ]);
 
-it('forwards node grant permissions through the gateway api shim', function (): void {
+it('proxies node grant requests through Laravel api controllers', function (): void {
     $script = gatewayTlsServerScript();
+    $apiProxyPosition = strpos($script, "preg_match('#^(GET|POST|PUT|PATCH|DELETE) /api/#', \$requestLine) === 1");
+    $legacyNodeGrantPosition = strpos($script, "str_starts_with(\$requestLine, 'POST /api/nodes/grant ')");
 
     expect($script)
-        ->toContain("\$parts[] = '--preset='.escapeshellarg((string) \$preset);")
-        ->toContain("\$parts[] = '--permissions='.escapeshellarg((string) \$permissions);")
-        ->toContain("\$parts[] = '--force';");
+        ->toContain('proxy_to_laravel($connection, $requestLine, $headers, $body);')
+        ->and($apiProxyPosition)->toBeInt()
+        ->and($legacyNodeGrantPosition)->toBeInt()
+        ->and($apiProxyPosition)->toBeLessThan($legacyNodeGrantPosition);
 });
 
 it('prepares runtime environment before issuing gateway api certificates', function (): void {

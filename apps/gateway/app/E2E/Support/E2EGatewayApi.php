@@ -746,7 +746,7 @@ PHP;
         function stream_tool_logs($connection, string $tool, array $query): void
         {
             $parts = [
-                'timeout 6s orbit tool:logs',
+                'timeout 6s env ORBIT_IS_GATEWAY=1 php apps/gateway/artisan tool:logs',
                 escapeshellarg($tool),
                 '--follow',
                 '--lines='.escapeshellarg((string) max(1, (int) ($query['lines'] ?? 100))),
@@ -1205,6 +1205,29 @@ PHP;
                 continue;
             }
 
+            if (preg_match('#^GET /api/tools/([^ ?]+)/logs/stream#', $requestLine, $matches) === 1) {
+                $path = explode(' ', $requestLine)[1] ?? '/api/tools/'.$matches[1].'/logs/stream';
+                $queryString = parse_url($path, PHP_URL_QUERY);
+                $query = [];
+
+                if (is_string($queryString)) {
+                    parse_str($queryString, $query);
+                }
+
+                stream_tool_logs($connection, urldecode($matches[1]), $query);
+                fclose($connection);
+
+                continue;
+            }
+
+            if (preg_match('#^(GET|POST|PUT|PATCH|DELETE) /api/#', $requestLine) === 1) {
+                $body = read_request_body($connection, $headers);
+                proxy_to_laravel($connection, $requestLine, $headers, $body);
+                fclose($connection);
+
+                continue;
+            }
+
             if (str_starts_with($requestLine, 'GET /api/activity ') || str_starts_with($requestLine, 'GET /api/activity?')) {
                 $path = explode(' ', $requestLine)[1] ?? '/api/activity';
                 $queryString = parse_url($path, PHP_URL_QUERY);
@@ -1216,21 +1239,6 @@ PHP;
 
                 [$exitCode, $output] = run_activity_list($query);
                 respond($connection, $exitCode === 0 ? 200 : 422, $output);
-                fclose($connection);
-
-                continue;
-            }
-
-            if (preg_match('#^GET /api/tools/([^ ?]+)/logs/stream#', $requestLine, $matches) === 1) {
-                $path = explode(' ', $requestLine)[1] ?? '/api/tools/'.$matches[1].'/logs/stream';
-                $queryString = parse_url($path, PHP_URL_QUERY);
-                $query = [];
-
-                if (is_string($queryString)) {
-                    parse_str($queryString, $query);
-                }
-
-                stream_tool_logs($connection, urldecode($matches[1]), $query);
                 fclose($connection);
 
                 continue;
