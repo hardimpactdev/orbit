@@ -14,6 +14,15 @@ final readonly class ProxyRouteRenderer
     private const string WebSocketStreamCloseDelay = '5m';
 
     /**
+     * S3 PUT/multipart uploads can be arbitrarily large. Caddy must stream
+     * request bodies through without buffering them, and must flush response
+     * bytes immediately. flush_interval -1 disables Caddy's response buffering.
+     * Caddy does not buffer request bodies by default, so no request_buffers
+     * directive is needed; omitting it is the correct upload-safe convention.
+     */
+    private const string S3UploadSafeFlushInterval = '-1';
+
+    /**
      * Container hostname Caddy resolves to the Docker host gateway so custom
      * proxy routes that historically targeted host loopback (127.0.0.1 /
      * localhost) keep reaching the host backend after orbit-caddy moved into
@@ -50,8 +59,8 @@ final readonly class ProxyRouteRenderer
         $config = is_array($route->config) ? $route->config : [];
         $routerUpstream = $config['router_upstream'] ?? null;
         $tls = $this->tlsDirective($route);
-        $encode = $this->isWebSocketProtocol($route) ? "\n" : "    encode gzip\n\n";
-        $streaming = $this->webSocketStreamingDirectives($route);
+        $encode = ($this->isWebSocketProtocol($route) || $this->isS3Protocol($route)) ? "\n" : "    encode gzip\n\n";
+        $streaming = $this->uploadSafeStreamingDirectives($route);
 
         if (! is_array($routerUpstream)) {
             throw new RuntimeException("Proxy route '{$route->domain}' is missing a router upstream.");
@@ -123,8 +132,8 @@ CADDY;
             ->all();
 
         $upstreams = implode(' ', $backendLines);
-        $encode = $this->isWebSocketProtocol($route) ? '' : "    encode gzip\n\n";
-        $streaming = $this->webSocketStreamingDirectives($route);
+        $encode = ($this->isWebSocketProtocol($route) || $this->isS3Protocol($route)) ? '' : "    encode gzip\n\n";
+        $streaming = $this->uploadSafeStreamingDirectives($route);
         $siteAddress = $this->routerSiteAddress($route);
         $siteTls = $this->routerSiteTlsDirective($route);
         $backendTransport = $this->routerBackendTransportDirectives($route);
@@ -238,6 +247,21 @@ CADDY;
         $upstream = self::normalizeHostLoopback($upstream);
 
         $tls = $this->tlsDirective($route);
+
+        if ($this->isS3Protocol($route)) {
+            return <<<CADDY
+{$route->domain} {
+    {$tls}
+    reverse_proxy {$upstream} {
+        flush_interval -1
+        header_up Host {host}
+        header_up X-Forwarded-Host {host}
+        header_up X-Forwarded-Proto {scheme}
+    }
+}
+
+CADDY;
+        }
 
         return <<<CADDY
 {$route->domain} {
@@ -450,13 +474,36 @@ CADDY;
         return ($config['protocol'] ?? null) === 'websocket';
     }
 
-    private function webSocketStreamingDirectives(ProxyRoute $route): string
+    private function isS3Protocol(ProxyRoute $route): bool
     {
-        if (! $this->isWebSocketProtocol($route)) {
-            return '';
+        $config = is_array($route->config) ? $route->config : [];
+
+        return ($config['protocol'] ?? null) === 's3';
+    }
+
+    /**
+     * Returns upload-safe or upgrade-safe streaming directives for the
+     * reverse_proxy block based on the route protocol.
+     *
+     * WebSocket routes receive flush_interval -1 and a stream_close_delay so
+     * long-lived upgrade connections drain gracefully.
+     *
+     * S3 routes receive flush_interval -1 only: this disables Caddy's response
+     * buffering so large downloads stream immediately. Caddy does not buffer
+     * request bodies by default, so PUT/multipart uploads also stream through
+     * without a separate directive.
+     */
+    private function uploadSafeStreamingDirectives(ProxyRoute $route): string
+    {
+        if ($this->isWebSocketProtocol($route)) {
+            return "        flush_interval -1\n        stream_close_delay ".self::WebSocketStreamCloseDelay."\n";
         }
 
-        return "        flush_interval -1\n        stream_close_delay ".self::WebSocketStreamCloseDelay."\n";
+        if ($this->isS3Protocol($route)) {
+            return '        flush_interval '.self::S3UploadSafeFlushInterval."\n";
+        }
+
+        return '';
     }
 
     private function redirectCode(ProxyRoute $route, mixed $value): int
