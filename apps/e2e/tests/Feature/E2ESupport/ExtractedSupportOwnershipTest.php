@@ -107,15 +107,15 @@ it('classifies the former gateway support layer for the next extraction batches'
         'IncusHostPool',
         'IncusTopologyBuilder',
         'IncusTopologyTemplate',
+        'E2ETopologyCache',
     ];
 
     // Network/reachability and provider-pool helpers still owned by the gateway
-    // harness; they move in the later app/node/infra extraction batches.
+    // harness; they move in the later infra extraction batches.
     $stillInGatewayForLaterBatches = [
         'E2ENetwork',
         'E2ENodeProbe',
         'E2EReachability',
-        'E2ETopologyCache',
         'IncusProvider',
         'ProviderPool',
         'ProviderSelection',
