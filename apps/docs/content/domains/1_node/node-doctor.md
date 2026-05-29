@@ -201,6 +201,7 @@ Each code below identifies a specific kind of node-family drift that `doctor --f
 | `node.vpn_runtime_missing` | The active gateway-coupled `vpn` assignment is missing WireGuard server or VPN-facing DNS runtime artifacts. |
 | `node.vpn_dns_mapping_mismatch` | The DNS runtime served through the `vpn` role does not match gateway-owned desired DNS mappings. |
 | `node.s3_data_path_invalid` | An active `s3` role assignment has a missing, relative, or otherwise invalid `data_path` setting. |
+| `node.s3.wireguard_missing` | An active `s3` role node has a missing or empty WireGuard address. RustFS requires a WireGuard address to bind its API endpoint. |
 | `node.node_identity_artifact_missing` | A node is missing bootstrap identity material required to prove its node record. |
 | `node.bootstrap_network_policy_mismatch` | A gateway or node's role bootstrap network policy is missing, unsafe, or inconsistent with its role assignments. |
 | `node.security.host_key.<node>` | A managed Linux node has no pinned host key, a mismatched host key, or host-key metadata that cannot be verified. First pin is adoptable only with explicit operator consent. |

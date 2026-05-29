@@ -1391,6 +1391,109 @@ describe('DoctorReportRunner', function (): void {
     });
 });
 
+// ---------------------------------------------------------------------------
+// S3 role: category mapping + s3 probe dispatch
+// ---------------------------------------------------------------------------
+
+describe('DoctorReportRunner s3 role categories', function (): void {
+    it('resolves s3 role to node and tool categories only (no proxy)', function (): void {
+        $runner = app(DoctorReportRunner::class);
+
+        $categories = $runner->categoriesForRole('s3');
+
+        expect($categories)->toBe(['node', 'tool'])
+            ->and($categories)->not->toContain('proxy');
+    });
+
+    it('resolves s3 node to node and tool categories when it has an active s3 role', function (): void {
+        $node = Node::factory()->create([
+            'name' => 's3-node-cat',
+            'status' => 'active',
+            'platform' => 'ubuntu_24-04',
+            'wireguard_address' => '10.6.0.30',
+        ]);
+        NodeRoleAssignment::factory()->create([
+            'node_id' => $node->id,
+            'role' => 's3',
+            'status' => 'active',
+            'settings' => ['data_path' => '/srv/orbit/s3/data'],
+        ]);
+        app()->instance(RemoteShell::class, new DoctorReportRunnerRemoteShell([]));
+
+        $runner = app(DoctorReportRunner::class);
+
+        $categories = $runner->categoriesForNode($node);
+
+        expect($categories)->toContain('node')
+            ->and($categories)->toContain('tool')
+            ->and($categories)->not->toContain('proxy');
+    });
+
+    it('dispatches tool.rustfs.row_missing when an s3 node has no rustfs tool row', function (): void {
+        $node = Node::factory()->create([
+            'name' => 's3-disp-1',
+            'status' => 'active',
+            'platform' => 'ubuntu_24-04',
+            'wireguard_address' => '10.6.0.31',
+        ]);
+        NodeRoleAssignment::factory()->create([
+            'node_id' => $node->id,
+            'role' => 's3',
+            'status' => 'active',
+            'settings' => ['data_path' => '/srv/orbit/s3/data'],
+        ]);
+        // No rustfs NodeTool row
+        app()->instance(RemoteShell::class, new DoctorReportRunnerRemoteShell([]));
+
+        $report = app(DoctorReportRunner::class)->probe($node, families: ['tool']);
+
+        $keys = collect($report['issues'])->pluck('key')->all();
+        expect($keys)->toContain('tool.rustfs.row_missing');
+    });
+
+    it('dispatches node.s3.wireguard_missing when an s3 node has no wireguard address', function (): void {
+        $node = Node::factory()->create([
+            'name' => 's3-disp-wg',
+            'status' => 'active',
+            'platform' => 'ubuntu_24-04',
+            'wireguard_address' => null,
+        ]);
+        NodeRoleAssignment::factory()->create([
+            'node_id' => $node->id,
+            'role' => 's3',
+            'status' => 'active',
+            'settings' => ['data_path' => '/srv/orbit/s3/data'],
+        ]);
+        app()->instance(RemoteShell::class, new DoctorReportRunnerRemoteShell([]));
+
+        $report = app(DoctorReportRunner::class)->probe($node, families: ['node']);
+
+        $keys = collect($report['issues'])->pluck('key')->all();
+        expect($keys)->toContain('node.s3.wireguard_missing');
+    });
+
+    it('dispatches node.s3_data_path_invalid when an s3 node has a relative data_path setting', function (): void {
+        $node = Node::factory()->create([
+            'name' => 's3-disp-dp',
+            'status' => 'active',
+            'platform' => 'ubuntu_24-04',
+            'wireguard_address' => '10.6.0.32',
+        ]);
+        NodeRoleAssignment::factory()->create([
+            'node_id' => $node->id,
+            'role' => 's3',
+            'status' => 'active',
+            'settings' => ['data_path' => 'relative/invalid/path'],
+        ]);
+        app()->instance(RemoteShell::class, new DoctorReportRunnerRemoteShell([]));
+
+        $report = app(DoctorReportRunner::class)->probe($node, families: ['node']);
+
+        $keys = collect($report['issues'])->pluck('key')->all();
+        expect($keys)->toContain('node.s3_data_path_invalid');
+    });
+});
+
 final class DoctorReportRunnerRemoteShell implements RemoteShell
 {
     /**

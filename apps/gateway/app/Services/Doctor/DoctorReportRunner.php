@@ -34,6 +34,7 @@ use App\Services\Processes\ProcessesProbe;
 use App\Services\Proxy\ProxyRouteAdopter;
 use App\Services\Proxy\ProxyRouteFixer;
 use App\Services\Proxy\ProxyRouteProbe;
+use App\Services\S3\S3DoctorProbe;
 use App\Services\Schedules\SchedulesFixer;
 use App\Services\Schedules\SchedulesProbe;
 use App\Services\Tools\ToolsFixer;
@@ -65,6 +66,8 @@ final readonly class DoctorReportRunner
 
     private const array WEBSOCKET_CATEGORIES = ['node', 'tool'];
 
+    private const array S3_CATEGORIES = ['node', 'tool'];
+
     public function __construct(
         private NodesProbe $nodesProbe,
         private AppsProbe $appsProbe,
@@ -86,6 +89,7 @@ final readonly class DoctorReportRunner
         private NodeRoleAssignments $nodeRoleAssignments,
         private WebSocketDoctorProbe $webSocketDoctorProbe,
         private WebSocketProxyDoctorProbe $webSocketProxyDoctorProbe,
+        private S3DoctorProbe $s3DoctorProbe,
     ) {}
 
     /**
@@ -111,6 +115,7 @@ final readonly class DoctorReportRunner
             NodeRoleName::Ingress->value => self::INGRESS_CATEGORIES,
             NodeRoleName::Router->value => self::ROUTER_CATEGORIES,
             NodeRoleName::WebSocket->value => self::WEBSOCKET_CATEGORIES,
+            NodeRoleName::S3->value => self::S3_CATEGORIES,
             default => [],
         };
     }
@@ -150,6 +155,10 @@ final readonly class DoctorReportRunner
 
         if ($this->nodeRoleAssignments->nodeHasActiveRole($node, NodeRoleName::WebSocket->value)) {
             return self::WEBSOCKET_CATEGORIES;
+        }
+
+        if ($this->nodeRoleAssignments->nodeHasActiveRole($node, NodeRoleName::S3->value)) {
+            return self::S3_CATEGORIES;
         }
 
         return self::CONTROL_CATEGORIES;
@@ -213,6 +222,14 @@ final readonly class DoctorReportRunner
 
             if ($webSocketAssignment instanceof NodeRoleAssignment) {
                 foreach ($this->webSocketDoctorProbe->nodeDrift($node, $webSocketAssignment) as $entry) {
+                    $issues[] = $this->nodeScopedIssuePayload($entry, $node);
+                }
+            }
+
+            $s3Assignment = $this->activeS3Assignment($node);
+
+            if ($s3Assignment instanceof NodeRoleAssignment) {
+                foreach ($this->s3DoctorProbe->nodeDrift($node, $s3Assignment) as $entry) {
                     $issues[] = $this->nodeScopedIssuePayload($entry, $node);
                 }
             }
@@ -431,6 +448,14 @@ final readonly class DoctorReportRunner
 
             if ($webSocketAssignment instanceof NodeRoleAssignment) {
                 foreach ($this->webSocketDoctorProbe->toolDrift($node, $webSocketAssignment) as $entry) {
+                    $issues[] = $this->nodeScopedIssuePayload($entry, $node);
+                }
+            }
+
+            $s3Assignment = $this->activeS3Assignment($node);
+
+            if ($s3Assignment instanceof NodeRoleAssignment) {
+                foreach ($this->s3DoctorProbe->toolDrift($node, $s3Assignment) as $entry) {
                     $issues[] = $this->nodeScopedIssuePayload($entry, $node);
                 }
             }
@@ -734,6 +759,11 @@ final readonly class DoctorReportRunner
     private function activeWebSocketAssignment(Node $node): ?NodeRoleAssignment
     {
         return $this->nodeRoleAssignments->activeAssignment($node, NodeRoleName::WebSocket->value);
+    }
+
+    private function activeS3Assignment(Node $node): ?NodeRoleAssignment
+    {
+        return $this->nodeRoleAssignments->activeAssignment($node, NodeRoleName::S3->value);
     }
 
     /**
