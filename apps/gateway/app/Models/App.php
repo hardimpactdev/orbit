@@ -12,6 +12,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Support\Str;
 
 /**
@@ -38,6 +39,7 @@ use Illuminate\Support\Str;
  * @property-read Collection<int, DatabaseConnectionTarget> $databaseConnectionTargets
  * @property-read Collection<int, Process> $processes
  * @property-read Collection<int, Schedule> $schedules
+ * @property-read AppWebSocketBinding|null $webSocketBinding
  * @property-read Collection<int, Workspace> $workspaces
  */
 class App extends Model
@@ -155,6 +157,14 @@ class App extends Model
             foreignPivotKey: 'app_id',
             relatedPivotKey: 'database_connection_id',
         )->withPivot('env_prefix')->withTimestamps();
+    }
+
+    /**
+     * @return HasOne<AppWebSocketBinding, $this>
+     */
+    public function webSocketBinding(): HasOne
+    {
+        return $this->hasOne(AppWebSocketBinding::class);
     }
 
     public function url(): string
