@@ -4,21 +4,30 @@ declare(strict_types=1);
 
 namespace App\Services\WebSockets;
 
+use App\Contracts\SiteCertificateInstaller;
 use App\Enums\Nodes\NodeRoleName;
+use App\Models\App;
+use App\Models\AppWebSocketBinding;
 use App\Models\Node;
 use App\Models\ProxyRoute;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
+use App\Services\Proxy\IngressResolver;
 use App\Services\Proxy\ProxyRouteRenderer;
+use Illuminate\Support\Facades\DB;
 use RuntimeException;
 
 class WebSocketRouteRegistrar
 {
     public const string ServiceDomain = 'websocket.orbit';
 
+    public const string PublicServiceTarget = 'https://websocket.orbit';
+
     private const int BackendPort = 8080;
 
     public function __construct(
         private readonly NodeRoleAssignments $nodeRoleAssignments,
+        private readonly IngressResolver $ingressResolver,
+        private readonly SiteCertificateInstaller $siteCertificateInstaller,
         private readonly ProxyRouteRenderer $proxyRouteRenderer,
         private readonly WebSocketBackendName $backendName,
     ) {}
@@ -42,6 +51,170 @@ class WebSocketRouteRegistrar
         );
 
         return $route->refresh();
+    }
+
+    public function syncPublicHosts(AppWebSocketBinding $binding): void
+    {
+        $binding->loadMissing('app.node');
+
+        if (! $binding->app instanceof App || ! $binding->app->node instanceof Node) {
+            throw new RuntimeException('A websocket public route requires an app with an owning node.');
+        }
+
+        $app = $binding->app;
+        $hosts = $this->publicHosts($binding);
+
+        if (! $binding->enabled || $hosts === []) {
+            $this->deletePublicRoutes($app);
+
+            return;
+        }
+
+        $ingress = $this->ingressResolver->forAppNode($app->node);
+        $router = $this->ingressResolver->router();
+
+        DB::transaction(function () use ($app, $hosts, $ingress, $router): void {
+            $this->deleteStalePublicRoutes($app, $hosts);
+
+            foreach ($hosts as $host) {
+                $this->syncPublicHost($app, $ingress, $router, $host);
+            }
+        });
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function publicHosts(AppWebSocketBinding $binding): array
+    {
+        $hosts = [];
+
+        foreach ($binding->public_hosts as $host) {
+            $host = trim($host);
+
+            if ($host === '' || in_array($host, $hosts, true)) {
+                continue;
+            }
+
+            $hosts[] = $host;
+        }
+
+        return $hosts;
+    }
+
+    private function deletePublicRoutes(App $app): void
+    {
+        ProxyRoute::query()
+            ->where('app_id', $app->id)
+            ->where('owner_type', 'app-websocket')
+            ->delete();
+    }
+
+    /**
+     * @param  list<string>  $hosts
+     */
+    private function deleteStalePublicRoutes(App $app, array $hosts): void
+    {
+        ProxyRoute::query()
+            ->where('app_id', $app->id)
+            ->where('owner_type', 'app-websocket')
+            ->whereNotIn('domain', $hosts)
+            ->delete();
+    }
+
+    private function syncPublicHost(App $app, Node $ingress, Node $router, string $host): void
+    {
+        $existingRoute = ProxyRoute::query()
+            ->where('domain', $host)
+            ->first();
+
+        if (
+            $existingRoute instanceof ProxyRoute
+            && ($existingRoute->owner_type !== 'app-websocket' || $existingRoute->app_id !== $app->id)
+        ) {
+            throw new RuntimeException("WebSocket public host '{$host}' conflicts with an existing proxy route.");
+        }
+
+        $config = $this->publicRouteConfig($app, $ingress, $router, $host);
+
+        ProxyRoute::query()->updateOrCreate(
+            ['domain' => $host],
+            [
+                'node_id' => $ingress->id,
+                'app_id' => $app->id,
+                'workspace_id' => null,
+                'owner_type' => 'app-websocket',
+                'kind' => 'proxy',
+                'config' => $config,
+                'source_hash' => $this->publicSourceHash($app, $ingress, $host, $config),
+            ],
+        );
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function publicRouteConfig(App $app, Node $ingress, Node $router, string $host): array
+    {
+        $certificatePaths = $this->siteCertificateInstaller->expectedPathsFor($ingress, $host);
+        $config = [
+            'placement' => 'ingress',
+            'ingress_node_id' => $ingress->id,
+            'protocol' => 'websocket',
+            'target' => [
+                'type' => 'websocket',
+                'value' => self::PublicServiceTarget,
+            ],
+            'upstream' => self::PublicServiceTarget,
+            'router_upstream' => [
+                'node_id' => $router->id,
+                'node' => $router->name,
+                'url' => $this->ingressResolver->routerUrl($router),
+            ],
+            'router_backend_pool' => [
+                [
+                    'node_id' => $router->id,
+                    'node' => $router->name,
+                    'url' => self::PublicServiceTarget,
+                ],
+            ],
+            'tls' => [
+                'cert_path' => $certificatePaths['cert'],
+                'key_path' => $certificatePaths['key'],
+            ],
+        ];
+
+        $routerContent = $this->proxyRouteRenderer->renderRouterRoute(new ProxyRoute([
+            'node_id' => $router->id,
+            'domain' => $host,
+            'app_id' => $app->id,
+            'owner_type' => 'app-websocket',
+            'kind' => 'proxy',
+            'config' => $config,
+        ]));
+
+        $config['router_artifact'] = [
+            'node_id' => $router->id,
+            'node' => $router->name,
+            'source_hash' => hash('sha256', $routerContent),
+        ];
+
+        return $config;
+    }
+
+    /**
+     * @param  array<string, mixed>  $config
+     */
+    private function publicSourceHash(App $app, Node $ingress, string $host, array $config): string
+    {
+        return $this->proxyRouteRenderer->sourceHash(new ProxyRoute([
+            'node_id' => $ingress->id,
+            'domain' => $host,
+            'app_id' => $app->id,
+            'owner_type' => 'app-websocket',
+            'kind' => 'proxy',
+            'config' => $config,
+        ]));
     }
 
     private function routerNode(): Node

@@ -17,7 +17,7 @@ use App\Services\Runtime\OrbitContainerNames;
 
 final readonly class ProxyRouteProbe
 {
-    private const array OwnerTypes = ['app', 'workspace', 'gateway', 'websocket', 'tool', 'custom'];
+    private const array OwnerTypes = ['app', 'app-websocket', 'workspace', 'gateway', 'websocket', 'tool', 'custom'];
 
     private const array Kinds = ['app', 'workspace', 'internal', 'proxy', 'redirect'];
 
@@ -509,6 +509,10 @@ BASH;
 
         if ($route->owner_type === 'app' && ! $route->app instanceof App) {
             return [$this->ownerInvalid($route, 'app')];
+        }
+
+        if ($route->owner_type === 'app-websocket' && ! $route->app instanceof App) {
+            return [$this->ownerInvalid($route, 'app-websocket')];
         }
 
         if ($route->owner_type === 'workspace' && ! $route->workspace instanceof Workspace) {

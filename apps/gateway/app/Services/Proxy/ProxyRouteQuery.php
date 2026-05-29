@@ -17,6 +17,7 @@ class ProxyRouteQuery
     public const array AllowedFilters = [
         'all',
         'app',
+        'app-websocket',
         'workspace',
         'gateway',
         'websocket',
@@ -179,9 +180,6 @@ class ProxyRouteQuery
     /**
      * @return array<string, mixed>
      */
-    /**
-     * @return array<string, mixed>
-     */
     public function toRouteEntity(ProxyRoute $route, ?string $status = null): array
     {
         $route->loadMissing(['node', 'app', 'workspace']);
@@ -223,6 +221,7 @@ class ProxyRouteQuery
     {
         return match ($route->owner_type) {
             'app' => $route->app?->name,
+            'app-websocket' => $route->app?->name,
             'workspace' => $route->workspace?->name,
             'websocket' => 'websocket',
             'gateway', 'tool' => $this->stringConfig($config, ['owner_name', 'tool']),
@@ -238,6 +237,7 @@ class ProxyRouteQuery
 
         return match ($route->owner_type) {
             'app' => 'app',
+            'app-websocket' => 'websocket',
             'workspace' => 'workspace',
             'gateway' => 'gateway',
             'websocket' => 'websocket',
@@ -257,6 +257,7 @@ class ProxyRouteQuery
 
         return match ($route->owner_type) {
             'app' => $route->app?->name,
+            'app-websocket' => $this->stringConfig($config, ['target.value', 'target', 'upstream']),
             'workspace' => $route->workspace?->name,
             'websocket' => $route->domain,
             'gateway', 'tool' => $this->stringConfig($config, ['target.value', 'target', 'upstream']),

@@ -18,7 +18,7 @@ use function Laravel\Prompts\table;
 
 #[Signature('proxy:list
     {--node= : Filter by serving node}
-    {--filter=all : Filter routes by all, app, workspace, gateway, websocket, tool, custom, or redirect}
+    {--filter=all : Filter routes by all, app, app-websocket, workspace, gateway, websocket, tool, custom, or redirect}
     {--json : Output JSON}')]
 #[Description('List proxy routes tracked by gateway intent')]
 class ProxyListCommand extends Command

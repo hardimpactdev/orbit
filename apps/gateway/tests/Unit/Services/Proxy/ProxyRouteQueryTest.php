@@ -165,6 +165,59 @@ describe('ProxyRouteQuery', function (): void {
             ]);
     });
 
+    it('normalizes app websocket public routes and filters them by owner', function (): void {
+        $edge = Node::factory()->ingress()->create(['name' => 'edge-1']);
+        $router = Node::factory()->router()->create(['name' => 'router-1']);
+        $appNode = Node::factory()->appProd()->create(['name' => 'app-1']);
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
+
+        ProxyRoute::factory()->create([
+            'node_id' => $edge->id,
+            'app_id' => $app->id,
+            'domain' => 'ws.docs.test',
+            'owner_type' => 'app-websocket',
+            'kind' => 'proxy',
+            'config' => [
+                'placement' => 'ingress',
+                'target' => [
+                    'type' => 'websocket',
+                    'value' => 'https://websocket.orbit',
+                ],
+                'router_upstream' => [
+                    'node_id' => $router->id,
+                    'node' => 'router-1',
+                    'url' => 'http://10.6.0.2:80',
+                ],
+                'router_backend_pool' => [
+                    ['node_id' => $router->id, 'node' => 'router-1', 'url' => 'https://websocket.orbit'],
+                ],
+            ],
+        ]);
+
+        $result = app(ProxyRouteQuery::class)->list(filter: 'app-websocket');
+
+        expect($result['meta'])->toBe([
+            'filter' => 'app-websocket',
+            'node' => null,
+            'count' => 1,
+        ])
+            ->and($result['routes'][0])->toMatchArray([
+                'domain' => 'ws.docs.test',
+                'kind' => 'proxy',
+                'owner' => ['type' => 'app-websocket', 'name' => 'docs'],
+                'node' => 'edge-1',
+                'target' => ['type' => 'websocket', 'value' => 'https://websocket.orbit'],
+                'placement' => 'ingress',
+                'router' => [
+                    'node' => 'router-1',
+                    'url' => 'http://10.6.0.2:80',
+                    'backend_pool' => [
+                        ['node' => 'router-1', 'url' => 'https://websocket.orbit'],
+                    ],
+                ],
+            ]);
+    });
+
     it('applies route filters after visibility is resolved', function (): void {
         $node = Node::factory()->create(['name' => 'app-1']);
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);

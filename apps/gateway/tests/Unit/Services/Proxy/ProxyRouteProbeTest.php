@@ -115,6 +115,36 @@ describe('proxy registry probe foundation', function (): void {
         expect($drift)->toBe([]);
     });
 
+    it('passes app websocket public routes on active ingress role assignments', function (): void {
+        $edge = Node::factory()->ingress()->create(['status' => 'active']);
+        $router = Node::factory()->router()->create(['status' => 'active', 'name' => 'router-1']);
+        $appNode = Node::factory()->appProd()->create(['status' => 'active']);
+        $app = App::factory()->create(['node_id' => $appNode->id]);
+        $route = ProxyRoute::factory()->create([
+            'node_id' => $edge->id,
+            'app_id' => $app->id,
+            'domain' => 'ws.docs.test',
+            'owner_type' => 'app-websocket',
+            'kind' => 'proxy',
+            'config' => [
+                'placement' => 'ingress',
+                'target' => ['type' => 'websocket', 'value' => 'https://websocket.orbit'],
+                'router_artifact' => [
+                    'node_id' => $router->id,
+                    'node' => 'router-1',
+                    'source_hash' => str_repeat('a', 64),
+                ],
+                'router_backend_pool' => [
+                    ['node_id' => $router->id, 'node' => 'router-1', 'url' => 'https://websocket.orbit'],
+                ],
+            ],
+        ]);
+
+        $drift = (new ProxyRouteProbe)->diff($route, new ProbeSnapshot([]));
+
+        expect($drift)->toBe([]);
+    });
+
     it('detects incomplete route records', function (): void {
         $node = createTestAppHostNode();
         $id = DB::table('proxy_routes')->insertGetId([
