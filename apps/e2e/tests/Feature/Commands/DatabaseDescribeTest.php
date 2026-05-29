@@ -6,20 +6,20 @@ use App\E2E\Support\E2EConfig;
 use App\E2E\Support\E2EGatewayApi;
 use App\E2E\Support\E2ETopologyKind;
 
-require_once __DIR__.'/Support/SqliteDatabaseFixture.php';
+require_once __DIR__.'/../../E2E/Support/SqliteDatabaseFixture.php';
 
-it('shows the schema for a database connection from the operator node through the gateway api', function (): void {
+it('describes a table for a database connection from the operator node through the gateway api', function (): void {
     $config = E2EConfig::fromEnvironment();
     $topology = e2eTopology(E2ETopologyKind::OperatorGatewayAppdev, withGatewayApi: true);
 
-    $slug = 'e2e-db-schema-'.strtolower(bin2hex(random_bytes(3)));
+    $slug = 'e2e-db-desc-'.strtolower(bin2hex(random_bytes(3)));
     $dbPath = "/home/orbit/{$slug}.sqlite";
 
     try {
         $topology->withCurrentCheckout(roles: ['operator', 'gateway', 'dev']);
         $gatewayApiIp = $topology->lease()->gatewayApiIp();
 
-        e2eRestartGatewayApi($topology, 'database-schema');
+        e2eRestartGatewayApi($topology, 'database-describe');
         E2EGatewayApi::waitForGatewayApi(
             $topology->instance('operator'),
             $config->operatorUser,
@@ -29,7 +29,7 @@ it('shows the schema for a database connection from the operator node through th
         e2eGrantNodeAccess($topology);
 
         e2eCreateSqliteDatabaseFixture($topology, 'dev', $dbPath, [
-            'CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT);',
+            'CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT NOT NULL);',
         ]);
 
         // Register the connection on the gateway pointing at the dev node
@@ -57,7 +57,7 @@ PHP;
         $result = $topology->ssh(
             'operator',
             sprintf(
-                'cd %s && orbit database:schema %s --json',
+                'cd %s && orbit database:describe %s users --json',
                 escapeshellarg($topology->checkout('operator')),
                 escapeshellarg($slug),
             ),
@@ -65,10 +65,11 @@ PHP;
         );
 
         $payload = json_decode(trim($result->output()), associative: true, flags: JSON_THROW_ON_ERROR);
+        $rows = $payload['success']['data']['rows'] ?? [];
 
         expect($result->successful())->toBeTrue()
-            ->and($payload)->toHaveKey('success')
-            ->and($payload['success']['meta']['connection'])->toBe($slug);
+            ->and($rows)->toBeArray()
+            ->and(array_column($rows, 'name'))->toContain('name');
     } finally {
         $slugValue = var_export($slug, true);
         $cleanupPhp = "\\App\\Models\\DatabaseConnection::query()->where('slug', {$slugValue})->delete(); echo 'cleaned';";
