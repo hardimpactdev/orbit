@@ -6,7 +6,7 @@ use App\E2E\Support\E2EConfig;
 use App\E2E\Support\E2EGatewayApi;
 use App\E2E\Support\E2ETopologyKind;
 
-require_once __DIR__.'/Support/SqliteDatabaseFixture.php';
+require_once __DIR__.'/../../E2E/Support/SqliteDatabaseFixture.php';
 
 it('keeps database E2E SQLite fixture setup off the host sqlite3 binary', function (): void {
     $sources = [

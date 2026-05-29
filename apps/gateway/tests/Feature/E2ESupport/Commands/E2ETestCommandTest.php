@@ -881,7 +881,7 @@ it('copies e2e support files into generated docker test suites', function (): vo
             ],
             'test_path' => $testPath,
             'test_files' => [
-                'tests/E2E/DatabaseDescribeTest.php',
+                'tests/E2E/NodeListAgentTopologyTest.php',
             ],
         ],
     ];
@@ -889,7 +889,7 @@ it('copies e2e support files into generated docker test suites', function (): vo
     try {
         invokeE2ETestCommandMethod($command, 'preparePlanArtifacts', [&$plans]);
 
-        expect(is_file(base_path($testPath.'/Docker000DatabaseDescribeTest.php')))->toBeTrue()
+        expect(is_file(base_path($testPath.'/Docker000NodeListAgentTopologyTest.php')))->toBeTrue()
             ->and(is_file(base_path($testPath.'/Support/SqliteDatabaseFixture.php')))->toBeTrue();
     } finally {
         invokeE2ETestCommandMethod($command, 'cleanupPlanArtifacts', [$plans]);
