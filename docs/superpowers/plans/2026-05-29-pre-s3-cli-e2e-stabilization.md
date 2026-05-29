@@ -18,7 +18,7 @@ Required lane order:
 
 1. WebSocket adjustments and final WebSocket verification.
 2. Gateway/CLI cleanup so public commands live only in `apps/cli`.
-3. Full E2E extraction into `apps/e2e`.
+3. Full E2E extraction into `apps/e2e`, including retained topology diagnosis owned by the E2E runner.
 4. Final pre-S3 verification gate.
 
 Current findings:
@@ -34,6 +34,8 @@ Pre-S3 decision:
 - Do not move gateway business logic into `packages/core` just to support future `apps/e2e`.
 - Do not keep compatibility fallbacks for old gateway public commands, old node role columns, role aliases, or environment fields.
 - Do not target new S3 E2E coverage at the gateway harness. S3 E2E starts in `apps/e2e`.
+- Do not make binary E2E the default development loop. Source-checkout E2E remains the normal feature feedback path; retained prepared topologies are manual diagnosis tools that must be released or reaped; binary acceptance is later release-candidate work after source E2E passes.
+- Do not add retained topology commands as new gateway-owned runner surface. Retained topology acquisition/release belongs to `apps/e2e` once the E2E harness owns external E2E execution.
 
 ## Complexity
 
@@ -53,7 +55,7 @@ Risk: High, because deleting gateway command classes can break hidden E2E/provis
 | 6 | `#546` ORBIT-PRE-S3-06 | Extract then remove gateway resource public commands/tests |
 | 7 | `#544` ORBIT-PRE-S3-07 | Port infra/tool command coverage to CLI |
 | 8 | `#548` ORBIT-PRE-S3-08 | Extract then remove gateway infra/tool public commands/tests |
-| 9 | `#550`-`#557` ORBIT-PRE-S3-09A-H | Move the E2E harness into `apps/e2e` in batches |
+| 9 | `#550`-`#558` ORBIT-PRE-S3-09A-I | Move the E2E harness into `apps/e2e` in batches |
 | 10 | `#549` ORBIT-PRE-S3-09 | Aggregate `apps/e2e` extraction gate |
 | 11 | `#547` ORBIT-PRE-S3-10 | Final command/E2E stabilization gate |
 
@@ -65,7 +67,7 @@ Expected dependency graph:
   -> #541 -> #546
   -> #544 -> #548
 
-#542 + #546 + #548 -> #550 -> #551 -> #552 -> #555 -> #556 -> #553 -> #554 -> #557 -> #549 -> #547 -> #539 -> #536 -> S3/RustFS
+#542 + #546 + #548 -> #550 -> #551 -> #558 -> #552 -> #555 -> #556 -> #553 -> #554 -> #557 -> #549 -> #547 -> #539 -> #536 -> S3/RustFS
 ```
 
 Each implementation item should land as its own commit before the next item starts. If an item discovers broader drift, update the inventory and create a follow-up Solo item instead of expanding the item indefinitely.
@@ -423,7 +425,7 @@ Solo item: `#551`
   - keep in gateway because they are gateway product behavior, not E2E harness support.
 - [ ] Move the topology/process support subset into `apps/e2e` support namespaces.
 - [ ] Do not move gateway product behavior to `packages/core` or use `packages/core` as a convenience dump for the E2E app.
-- [ ] Keep the old gateway E2E runner working until root scripts are flipped in Task 9G.
+- [ ] Keep the old gateway E2E runner working until root scripts are flipped in Task 9H.
 - [ ] Run:
 
 ```bash
@@ -440,7 +442,47 @@ git add apps/e2e apps/gateway
 git commit -m "refactor: extract e2e support utilities"
 ```
 
-## Task 9C: Move Topology And Provider E2E Tests
+## Task 9C: Add Retained Apps/E2E Dev Topology Workflow
+
+Solo item: `#558`
+
+**Files:**
+
+- Modify: `apps/e2e/**`
+- Modify: root `composer.json`
+- Move or adapt as needed: retained lease/manifest support from the current gateway E2E harness
+- Keep: gateway product services, models, controllers, jobs, and gateway-owned internals
+
+- [ ] Implement retained prepared-topology acquisition/release through the `apps/e2e` runner or its internal support namespace.
+- [ ] Do not add `apps/gateway/app/Console/Commands/E2EDevTopology*` or any new gateway-owned E2E runner commands.
+- [ ] Preserve the layered E2E lane contract:
+  - source-checkout E2E remains the normal feature feedback loop and uses current-checkout overlay;
+  - retained prepared topologies are for manual diagnosis/debugging and hold Docker/Incus capacity until explicitly released or reaped;
+  - manual retained-topology findings are codified back into ordinary prepared-topology Pest E2E tests;
+  - binary acceptance is later release-candidate work after source E2E passes;
+  - provisioning proves installer/node provisioning behavior, not the inner development loop.
+- [ ] Add retained lease/manifest support in the extracted E2E harness if it is not already present.
+- [ ] Add hidden/root Composer dev-topology entry points through `apps/e2e` only, for example `composer e2e:dev-topology` and `composer e2e:dev-topology:release`, if those names remain appropriate after inspecting root Composer conventions.
+- [ ] Verify dry-run acquire output has a stable JSON/human contract including provider/kind, checkout roles, shell command shape, and release command shape.
+- [ ] Verify release removes the manifest and releases retained lease metadata.
+- [ ] Run:
+
+```bash
+composer test:e2e:next
+```
+
+Expected: PASS.
+
+- [ ] Run focused `apps/e2e` tests for retained lease, manifest, dev-topology acquire, and dev-topology release behavior.
+
+- [ ] Commit:
+
+```bash
+git add apps/e2e composer.json
+git commit -m "test: add retained e2e dev topology workflow"
+```
+
+## Task 9D: Move Topology And Provider E2E Tests
 
 Solo item: `#552`
 
@@ -469,7 +511,7 @@ git add apps/e2e apps/gateway
 git commit -m "test: move topology e2e tests"
 ```
 
-## Task 9D: Move App, Node, Gateway, And Local E2E Tests
+## Task 9E: Move App, Node, Gateway, And Local E2E Tests
 
 Solo item: `#555`
 
@@ -500,7 +542,7 @@ git add apps/e2e apps/gateway
 git commit -m "test: move app node gateway e2e tests"
 ```
 
-## Task 9E: Move Resource Command E2E Tests
+## Task 9F: Move Resource Command E2E Tests
 
 Solo item: `#556`
 
@@ -529,7 +571,7 @@ git add apps/e2e apps/gateway
 git commit -m "test: move resource e2e tests"
 ```
 
-## Task 9F: Move Infra, Tool, And WebSocket E2E Tests
+## Task 9G: Move Infra, Tool, And WebSocket E2E Tests
 
 Solo item: `#553`
 
@@ -563,7 +605,7 @@ git add apps/e2e apps/gateway
 git commit -m "test: move infra websocket e2e tests"
 ```
 
-## Task 9G: Flip Root E2E Scripts To Apps/E2E
+## Task 9H: Flip Root E2E Scripts To Apps/E2E
 
 Solo item: `#554`
 
@@ -603,7 +645,7 @@ git add apps/e2e apps/gateway composer.json
 git commit -m "refactor: route e2e scripts through e2e app"
 ```
 
-## Task 9H: Document Apps/E2E Split And Repoint S3 Todos
+## Task 9I: Document Apps/E2E Split And Repoint S3 Todos
 
 Solo item: `#557`
 
@@ -620,6 +662,7 @@ Solo item: `#557`
   - gateway tests keep only gateway internals, API, services, models, jobs, and internal command coverage;
   - `packages/core` is not a dumping ground for gateway/E2E convenience;
   - S3 E2E must be added under `apps/e2e`.
+- [ ] Document the layered workflow contract: source-checkout E2E is the normal feature loop; retained prepared topologies are manual diagnosis tools that must be released or reaped; manual findings become Pest E2E tests; binary acceptance runs later as release-candidate work after source E2E passes; provisioning proves installer/node provisioning behavior.
 - [ ] Repoint S3/RustFS todos that reference old gateway E2E paths. At minimum inspect and update `#351`, `#352`, `#423`, and `#424`.
 - [ ] Keep all S3/RustFS implementation todos blocked by `#536`.
 - [ ] Run:
@@ -638,13 +681,13 @@ git add apps/docs/content/testing docs/superpowers/notes/future-apps-e2e-migrati
 git commit -m "docs: document dedicated e2e app"
 ```
 
-## Task 9I: Aggregate Apps/E2E Extraction Gate
+## Task 9J: Aggregate Apps/E2E Extraction Gate
 
 Solo item: `#549`
 
 **Files:**
 
-- Inspect: Solo items `#550` through `#557`
+- Inspect: Solo items `#550` through `#558`
 - Inspect: root `composer.json`
 - Inspect: `apps/e2e/**`
 - Inspect: `apps/gateway/tests/**`
@@ -652,6 +695,7 @@ Solo item: `#549`
 
 - [ ] Confirm `#550` scaffolded `apps/e2e`.
 - [ ] Confirm `#551` extracted E2E support utilities without moving gateway product behavior to `packages/core`.
+- [ ] Confirm `#558` added retained topology diagnosis support through the `apps/e2e` runner without adding gateway-owned runner commands.
 - [ ] Confirm `#552`, `#555`, `#556`, and `#553` moved or rewrote all external E2E tests into `apps/e2e`.
 - [ ] Confirm `#554` flipped root E2E Composer scripts to `apps/e2e`.
 - [ ] Confirm `#557` documented the final split and repointed S3/RustFS E2E todos.
@@ -672,13 +716,14 @@ Solo item: `#547`
 **Files:**
 
 - Inspect: final diff across `apps/docs`, `apps/gateway`, `apps/cli`, `packages/core`, root Composer scripts
-- Inspect: Solo items `#540` through `#557`
+- Inspect: Solo items `#540` through `#558`
 - Update: Solo items `#539` and `#536`
 
-- [ ] Confirm `#540`, `#543`, `#545`, `#542`, `#541`, `#546`, `#544`, `#548`, `#550`, `#551`, `#552`, `#555`, `#556`, `#553`, `#554`, `#557`, and `#549` are closed with verification evidence.
+- [ ] Confirm `#540`, `#543`, `#545`, `#542`, `#541`, `#546`, `#544`, `#548`, `#550`, `#551`, `#558`, `#552`, `#555`, `#556`, `#553`, `#554`, `#557`, and `#549` are closed with verification evidence.
 - [ ] Confirm gateway no longer registers retired public command names that now live in `apps/cli`.
 - [ ] Confirm CLI command ownership tests cover the public command families removed from gateway.
 - [ ] Confirm `composer test:e2e` now runs through `apps/e2e`, not the gateway test harness.
+- [ ] Confirm retained topology diagnosis is owned by `apps/e2e`, and binary acceptance remains a later release-candidate lane after source-checkout E2E passes.
 - [ ] Confirm S3/RustFS remains blocked by `#536`, and `#536` remains blocked by `#539`.
 - [ ] Run:
 
