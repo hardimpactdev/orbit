@@ -6,6 +6,7 @@ namespace App\Services\Runtime;
 
 use App\Services\Apps\AppRuntimeContainer;
 use App\Services\Processes\ProcessDockerContainer;
+use App\Services\WebSockets\WebSocketRuntimeContainer;
 use App\Services\Workspaces\WorkspaceRuntimeContainer;
 
 class DockerCommandBuilder
@@ -52,7 +53,7 @@ class DockerCommandBuilder
         return 'docker restart '.$this->quote($name);
     }
 
-    public function runDetached(OrbitRuntimeContainer|OrbitCaddyContainer|AppRuntimeContainer|WorkspaceRuntimeContainer|ProcessDockerContainer $container): string
+    public function runDetached(OrbitRuntimeContainer|OrbitCaddyContainer|AppRuntimeContainer|WorkspaceRuntimeContainer|ProcessDockerContainer|WebSocketRuntimeContainer $container): string
     {
         return $this->buildRunOrCreate('docker run -d', $container);
     }
@@ -67,7 +68,7 @@ class DockerCommandBuilder
         return $this->buildRunOrCreate('docker create', $container);
     }
 
-    private function buildRunOrCreate(string $prefix, OrbitRuntimeContainer|OrbitCaddyContainer|AppRuntimeContainer|WorkspaceRuntimeContainer|ProcessDockerContainer $container): string
+    private function buildRunOrCreate(string $prefix, OrbitRuntimeContainer|OrbitCaddyContainer|AppRuntimeContainer|WorkspaceRuntimeContainer|ProcessDockerContainer|WebSocketRuntimeContainer $container): string
     {
         $parts = [
             $prefix,
@@ -93,7 +94,7 @@ class DockerCommandBuilder
             }
         }
 
-        if ($container instanceof ProcessDockerContainer) {
+        if ($container instanceof ProcessDockerContainer || $container instanceof WebSocketRuntimeContainer) {
             $parts[] = '--workdir';
             $parts[] = $this->quote($container->workingDirectory());
             $parts[] = '--entrypoint';
@@ -122,12 +123,12 @@ class DockerCommandBuilder
 
         $parts[] = $this->quote($container->image());
 
-        if ($container instanceof ProcessDockerContainer) {
-            // Process command is stored as a single shell string (e.g. "php
-            // artisan queue:work --tries=3"). Run it through `sh -lc <cmd>`
-            // so the in-container shell parses tokens, redirections, and
-            // shell operators instead of Docker exec-ing a literal binary
-            // named after the whole string.
+        if ($container instanceof ProcessDockerContainer || $container instanceof WebSocketRuntimeContainer) {
+            // Runtime process commands are stored as single shell strings
+            // (e.g. "php artisan queue:work --tries=3"). Run them through
+            // `sh -lc <cmd>` so the in-container shell parses tokens,
+            // redirections, and shell operators instead of Docker exec-ing a
+            // literal binary named after the whole string.
             $parts[] = $this->quote('-lc');
             $parts[] = $this->quote($container->command());
         }
