@@ -847,13 +847,22 @@ it('can install the current checkout on selected topology roles', function (): v
     ]);
 
     expect(implode("\n", $operatorCommands))->toContain("cp '/home/orbit/orbit/apps/gateway/.env' apps/gateway/.env");
+    expect(implode("\n", $operatorCommands))->toContain('LocalGatewaySettings::current()');
+    expect(implode("\n", $operatorCommands))->toContain('https://10.6.0.2');
     expect(implode("\n", $gatewayCommands))->toContain("cp '/home/orbit/orbit/apps/gateway/.env' apps/gateway/.env");
     expect(implode("\n", $gatewayCommands))->toContain('php apps/gateway/artisan orbit:internal:pin-node-host-keys --json');
+    expect(implode("\n", $gatewayCommands))->not->toContain('checkout.gateway-settings');
     expect(implode("\n", $devCommands))->toContain("cp '/home/orbit/orbit/apps/gateway/.env' apps/gateway/.env");
+    expect(implode("\n", $devCommands))->toContain('LocalGatewaySettings::current()');
+    expect(implode("\n", $devCommands))->toContain('https://10.6.0.2');
     expect(implode("\n", $devCommands))->not->toContain('php apps/gateway/artisan orbit:internal:pin-node-host-keys --json');
     expect(implode("\n", $prodCommands))->toContain("cp '/home/orbit/orbit/apps/gateway/.env' apps/gateway/.env");
+    expect(implode("\n", $prodCommands))->toContain('LocalGatewaySettings::current()');
+    expect(implode("\n", $prodCommands))->toContain('https://10.6.0.2');
     expect(implode("\n", $prodCommands))->not->toContain('php apps/gateway/artisan orbit:internal:pin-node-host-keys --json');
     expect(implode("\n", $agentCommands))->toContain("cp '/home/orbit/orbit/apps/gateway/.env' apps/gateway/.env");
+    expect(implode("\n", $agentCommands))->toContain('LocalGatewaySettings::current()');
+    expect(implode("\n", $agentCommands))->toContain('https://10.6.0.2');
     expect(implode("\n", $agentCommands))->not->toContain('php apps/gateway/artisan orbit:internal:pin-node-host-keys --json');
 });
 

@@ -73,6 +73,7 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
 
             $timer->measure('docker.seedRuntimeNameShim', fn () => $this->seedRuntimeContainerNameShim($instances));
             $timer->measure('docker.seedSshAccess', fn () => $this->seedRemoteShellSshAccess($instances));
+            $timer->measure('docker.seedOperatorIdentity', fn () => $this->seedOperatorIdentity($instances, $networkPlan, $topologyMode));
             $timer->measure('docker.seedGatewayRegistry', fn () => $this->seedGatewayRegistry($kind, $instances, $networkPlan, $topologyMode));
             $timer->measure('docker.prune', fn () => $this->prunePreparedGatewayRegistry($instances));
             $timer->measure('docker.primeGatewayApi', fn () => $this->primeGatewayApi($runId, $instances, $networkPlan));
@@ -88,6 +89,7 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
 
             $cycleTimer->measure('reset.seedRuntimeNameShim', fn () => $this->seedRuntimeContainerNameShim($newInstances));
             $cycleTimer->measure('reset.seedSshAccess', fn () => $this->seedRemoteShellSshAccess($newInstances));
+            $cycleTimer->measure('reset.seedOperatorIdentity', fn () => $this->seedOperatorIdentity($newInstances, $networkPlan, $topologyMode));
             $cycleTimer->measure('reset.seedGatewayRegistry', fn () => $this->seedGatewayRegistry($kind, $newInstances, $networkPlan, $topologyMode));
             $cycleTimer->measure('reset.prune', fn () => $this->prunePreparedGatewayRegistry($newInstances));
             $cycleTimer->measure('reset.primeGatewayApi', fn () => $this->primeGatewayApi($runId, $newInstances, $networkPlan));
@@ -659,6 +661,27 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
             ),
             "Could not authorize gateway SSH key in Docker {$role} container",
             timeoutSeconds: 60,
+        );
+    }
+
+    /**
+     * @param  array<string, DockerInstance>  $instances
+     */
+    private function seedOperatorIdentity(array $instances, DockerTopologyNetworkPlan $networkPlan, string $mode): void
+    {
+        $operator = $instances['operator'] ?? null;
+        $gateway = $instances['gateway'] ?? null;
+
+        if ($operator === null || $gateway === null) {
+            return;
+        }
+
+        E2EGatewayApi::seedOperatorIdentity(
+            $gateway,
+            $this->hostForRole('operator', $networkPlan, $mode),
+            'orbit',
+            $this->gatewayEndpoint($networkPlan, $mode),
+            $this->wireGuardAddressForRole('operator', $networkPlan, $mode),
         );
     }
 

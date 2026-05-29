@@ -333,16 +333,42 @@ describe('NodeShowController', function (): void {
         $control2Id = DB::table('nodes')->where('name', 'control-2')->value('id');
 
         DB::table('node_access')->insert([
-            ['consumer_node_id' => $control1Id, 'serving_node_id' => $app1Id, 'created_at' => now(), 'updated_at' => now()],
-            ['consumer_node_id' => $control2Id, 'serving_node_id' => $app1Id, 'created_at' => now(), 'updated_at' => now()],
-            ['consumer_node_id' => $app1Id, 'serving_node_id' => $control1Id, 'created_at' => now(), 'updated_at' => now()],
+            [
+                'consumer_node_id' => $control1Id,
+                'serving_node_id' => $app1Id,
+                'permissions' => json_encode(['node:read'], JSON_THROW_ON_ERROR),
+                'custom_permissions' => json_encode([], JSON_THROW_ON_ERROR),
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+            [
+                'consumer_node_id' => $control2Id,
+                'serving_node_id' => $app1Id,
+                'permissions' => json_encode(['tool:read'], JSON_THROW_ON_ERROR),
+                'custom_permissions' => json_encode([], JSON_THROW_ON_ERROR),
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+            [
+                'consumer_node_id' => $app1Id,
+                'serving_node_id' => $control1Id,
+                'permissions' => json_encode(['app:read'], JSON_THROW_ON_ERROR),
+                'custom_permissions' => json_encode([], JSON_THROW_ON_ERROR),
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
         ]);
 
         $response = getApiNodeJson('/api/nodes/app-1', ['REMOTE_ADDR' => SHOW_CALLER_WG_IP]);
 
         $response->assertOk()
-            ->assertJsonPath('success.data.node.grants.consuming_nodes', ['control-1', 'control-2'])
-            ->assertJsonPath('success.data.node.grants.serving_nodes', ['control-1']);
+            ->assertJsonPath('success.data.node.grants.consuming_nodes', [
+                ['name' => 'control-1', 'permissions' => ['node:read']],
+                ['name' => 'control-2', 'permissions' => ['tool:read']],
+            ])
+            ->assertJsonPath('success.data.node.grants.serving_nodes', [
+                ['name' => 'control-1', 'permissions' => ['app:read']],
+            ]);
     });
 
     it('rejects unauthenticated requests', function (): void {

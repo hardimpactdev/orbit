@@ -407,4 +407,26 @@ describe('GET /api/me', function (): void {
         $response->assertForbidden()
             ->assertJsonPath('error.code', 'authorization_failed');
     });
+
+    it('canonicalizes docker e2e raw subnet peers only when the docker provider shim is enabled', function (): void {
+        config([
+            'orbit.e2e_topology_provider' => 'docker',
+            'orbit.e2e_trust_wireguard_header' => true,
+        ]);
+
+        DB::table('nodes')->insert(meNodeRow([
+            'wireguard_address' => '10.6.0.3',
+        ]));
+        $gatewayId = (int) DB::table('nodes')->insertGetId(meNodeRow([
+            'name' => 'gateway-1',
+            'wireguard_address' => '10.6.0.2',
+        ]));
+        assignMeGatewayRole($gatewayId);
+
+        $response = call('GET', '/api/me', [], [], [], ['REMOTE_ADDR' => '10.61.0.3']);
+
+        $response->assertOk()
+            ->assertJsonPath('success.data.self.name', 'peer-1')
+            ->assertJsonPath('success.data.self.addresses.wireguard', '10.6.0.3');
+    });
 });

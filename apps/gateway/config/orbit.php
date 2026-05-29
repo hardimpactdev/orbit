@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 return [
     'is_gateway' => env('ORBIT_IS_GATEWAY', false),
+    'e2e_topology_provider' => env('ORBIT_E2E_TOPOLOGY_PROVIDER'),
     'e2e_trust_wireguard_header' => env('ORBIT_E2E_TRUST_WIREGUARD_HEADER', false),
     'trust_wireguard_proxy_header' => env('ORBIT_TRUST_WIREGUARD_PROXY_HEADER', false),
     'forward_install_image_archives' => env('ORBIT_FORWARD_INSTALL_IMAGE_ARCHIVES', false),

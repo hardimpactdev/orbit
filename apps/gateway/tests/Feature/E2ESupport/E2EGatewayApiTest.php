@@ -91,6 +91,59 @@ it('installs provisioning SSH keys for gateway API runtime users', function (): 
     }
 });
 
+it('seeds operator identity with a gateway admin grant', function (): void {
+    $instance = new class implements E2EInstance
+    {
+        /** @var list<string> */
+        public array $commands = [];
+
+        public function name(): string
+        {
+            return 'gateway';
+        }
+
+        public function exec(string $command, ?int $timeoutSeconds = null): ProcessResult
+        {
+            $this->commands[] = $command;
+
+            return Process::result();
+        }
+
+        public function ssh(string $user, SshKeyPair $keyPair, string $command, ?int $timeoutSeconds = null): ProcessResult
+        {
+            return Process::result();
+        }
+
+        public function authorizeSsh(string $user, SshKeyPair $keyPair): void {}
+
+        public function copyFileToInstance(string $sourcePath, string $targetPath): void {}
+
+        public function waitForAgent(): void {}
+
+        public function waitForIpv4(): string
+        {
+            return '10.6.0.2';
+        }
+
+        public function waitForSsh(string $user, SshKeyPair $keyPair): void {}
+
+        public function delete(): void {}
+    };
+
+    E2EGatewayApi::seedOperatorIdentity($instance, '10.6.0.3', 'orbit');
+
+    $script = gatewayDecodedTinkerPayload(implode("\n", $instance->commands));
+
+    expect($script)
+        ->toContain('NodeAccess::query()->updateOrCreate')
+        ->toContain('activeGatewayNodeQuery()')
+        ->toContain('permissions')
+        ->toContain('custom_permissions')
+        ->toContain('*')
+        ->not->toContain("'role' =>")
+        ->not->toContain("'environment' =>");
+});
+
 it('runs gateway api shim commands as the orbit runtime user', function (): void {
     $reflection = new ReflectionClass(E2EGatewayApi::class);
     $method = $reflection->getMethod('tlsServerScript');
@@ -482,6 +535,18 @@ it('maps run-scoped docker peer ips to canonical wireguard identities in the gat
         ->and(gatewayCanonicalPeerIp(gatewayTlsServerScript(), '10.31.0.4'))->toBe('10.6.0.4');
 });
 
+it('adds canonical e2e identity headers in the gateway http router', function (): void {
+    $script = gatewayHttpRouterScript(peerIdentityMap: [
+        '10.61.42.3' => '10.6.0.3',
+    ]);
+
+    expect(gatewayHttpRouterPeerIdentity($script, '10.61.42.3'))->toBe('10.6.0.3')
+        ->and(gatewayHttpRouterPeerIdentity($script, '::ffff:10.24.0.4'))->toBe('10.6.0.4')
+        ->and(gatewayHttpRouterPeerIdentity($script, '127.0.0.1', '10.6.0.5'))->toBe('10.6.0.5')
+        ->and($script)->toContain("! isset(\$_SERVER['HTTP_X_ORBIT_E2E_WIREGUARD_IP'])")
+        ->and($script)->toContain("\$_SERVER['HTTP_X_ORBIT_E2E_WIREGUARD_IP'] = \$identity;");
+});
+
 it('maps ipv4-mapped docker peer ips to canonical wireguard identities in the gateway tls proxy', function (): void {
     $script = gatewayTlsServerScript(peerIdentityMap: [
         '10.61.42.3' => '10.6.0.3',
@@ -554,6 +619,80 @@ function gatewayCanonicalPeerIp(string $script, string $peerIp): string
     } finally {
         @unlink($file);
     }
+}
+
+/**
+ * @param  array<string, string>  $peerIdentityMap
+ */
+function gatewayHttpRouterScript(array $peerIdentityMap = []): string
+{
+    $reflection = new ReflectionClass(E2EGatewayApi::class);
+    $method = $reflection->getMethod('httpRouterScript');
+    $method->setAccessible(true);
+
+    return $method->invoke(null, '/home/orbit/orbit-current', $peerIdentityMap);
+}
+
+function gatewayHttpRouterPeerIdentity(string $script, string $peerIp, ?string $existingIdentity = null): string
+{
+    $prefix = strstr($script, '$publicPath =', before_needle: true);
+
+    if (! is_string($prefix)) {
+        throw new RuntimeException('Generated gateway HTTP router script is missing the public path bootstrap.');
+    }
+
+    $body = preg_replace('/^<\?php\s*/', '', $prefix);
+
+    if (! is_string($body)) {
+        throw new RuntimeException('Could not prepare generated gateway HTTP router script.');
+    }
+
+    $file = tempnam(sys_get_temp_dir(), 'orbit-gateway-http-router-');
+
+    if (! is_string($file)) {
+        throw new RuntimeException('Could not create temporary PHP script.');
+    }
+
+    $server = [
+        'REMOTE_ADDR' => $peerIp,
+    ];
+
+    if ($existingIdentity !== null) {
+        $server['HTTP_X_ORBIT_E2E_WIREGUARD_IP'] = $existingIdentity;
+    }
+
+    file_put_contents($file, "<?php\n\$_SERVER = ".var_export($server, true).";\n{$body}\necho \$_SERVER['HTTP_X_ORBIT_E2E_WIREGUARD_IP'] ?? '';\n");
+
+    try {
+        $output = [];
+        $exitCode = 0;
+        exec(PHP_BINARY.' '.escapeshellarg($file), $output, $exitCode);
+
+        if ($exitCode !== 0) {
+            throw new RuntimeException('Generated gateway HTTP router script failed.');
+        }
+
+        return trim(implode("\n", $output));
+    } finally {
+        @unlink($file);
+    }
+}
+
+function gatewayDecodedTinkerPayload(string $command): string
+{
+    preg_match('/base64_decode\\([^A-Za-z0-9+\\/=]*(?<payload>[A-Za-z0-9+\\/=]{20,})/', $command, $matches);
+
+    if (! is_string($matches['payload'] ?? null)) {
+        throw new RuntimeException('Could not find generated tinker payload.');
+    }
+
+    $decoded = base64_decode($matches['payload'], strict: true);
+
+    if (! is_string($decoded)) {
+        throw new RuntimeException('Could not decode generated tinker payload.');
+    }
+
+    return $decoded;
 }
 
 function gatewayStopScriptMatchesCommand(string $command): bool

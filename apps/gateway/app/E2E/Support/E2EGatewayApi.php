@@ -20,7 +20,7 @@ final readonly class E2EGatewayApi
         $orbitPathValue = var_export("/home/{$operatorUser}/orbit", true);
 
         $php = <<<PHP
-\\App\\Models\\Node::query()->updateOrCreate(
+\$operator = \\App\\Models\\Node::query()->updateOrCreate(
     ['name' => 'operator-1'],
     array_merge(
         [
@@ -36,11 +36,26 @@ final readonly class E2EGatewayApi
         \\Illuminate\\Support\\Facades\\Schema::hasColumn('nodes', 'ssh_user') ? ['ssh_user' => {$operatorUserValue}] : [],
     ),
 );
+
+\$gateway = app(\\App\\Services\\Nodes\\Roles\\NodeRoleAssignments::class)
+    ->activeGatewayNodeQuery()
+    ->firstOrFail();
+
+\\App\\Models\\NodeAccess::query()->updateOrCreate(
+    [
+        'consumer_node_id' => \$operator->id,
+        'serving_node_id' => \$gateway->id,
+    ],
+    [
+        'permissions' => ['*'],
+        'custom_permissions' => [],
+    ],
+);
 PHP;
 
         E2ECommand::orbit(
             $gateway,
-            'cd /home/orbit/orbit && php apps/gateway/artisan tinker --execute='.escapeshellarg($php),
+            'cd /home/orbit/orbit && '.self::tinkerEvalCommand($php),
             'Could not seed operator identity on gateway',
         );
     }
@@ -198,7 +213,7 @@ SH;
 
         E2ECommand::exec(
             $gateway,
-            "cat > {$httpRouterPath} <<'PHP'\n".self::httpRouterScript($orbitPath)."\nPHP",
+            "cat > {$httpRouterPath} <<'PHP'\n".self::httpRouterScript($orbitPath, $peerIdentityMap)."\nPHP",
             'Could not write gateway HTTP test router',
         );
 
@@ -296,7 +311,7 @@ SH;
                 'sudo docker exec --workdir %s %s sh -lc %s',
                 $orbitPathArgument,
                 $runtimeContainer,
-                escapeshellarg("cat > {$httpRouterPathArgument} <<'PHP'\n".self::httpRouterScript($orbitPath)."\nPHP"),
+                escapeshellarg("cat > {$httpRouterPathArgument} <<'PHP'\n".self::httpRouterScript($orbitPath, $peerIdentityMap)."\nPHP"),
             ),
             'Could not write gateway HTTP test router in runtime container',
         );
@@ -395,11 +410,18 @@ PHP;
 
         $result = E2ECommand::orbit(
             $gateway,
-            'cd /home/orbit/orbit && php apps/gateway/artisan tinker --execute='.escapeshellarg($php),
+            'cd /home/orbit/orbit && '.self::tinkerEvalCommand($php),
             "Could not read gateway node {$name}",
         );
 
         return json_decode(trim($result->output()), associative: true, flags: JSON_THROW_ON_ERROR);
+    }
+
+    private static function tinkerEvalCommand(string $php): string
+    {
+        $encoded = base64_encode($php);
+
+        return 'php apps/gateway/artisan tinker --execute='.escapeshellarg("eval(base64_decode('{$encoded}'));");
     }
 
     private static function prepareRootRemoteShellIdentity(E2EInstance $gateway): void
@@ -431,9 +453,66 @@ PHP;
         return 'if [ -f /home/orbit/.ssh/id_ed25519 ]; then install -d -m 700 /root/.ssh && cp /home/orbit/.ssh/id_ed25519 /root/.ssh/id_ed25519 && chmod 600 /root/.ssh/id_ed25519 && if [ -f /home/orbit/.ssh/id_ed25519.pub ]; then cp /home/orbit/.ssh/id_ed25519.pub /root/.ssh/id_ed25519.pub; fi; fi';
     }
 
-    private static function httpRouterScript(string $orbitPath): string
+    /**
+     * @param  array<string, string>  $peerIdentityMap
+     */
+    private static function httpRouterScript(string $orbitPath, array $peerIdentityMap = []): string
     {
-        return "<?php\n\n\$orbitPath = ".var_export($orbitPath, true).";\n\n".<<<'PHP_WRAP'
+        return "<?php\n\n\$orbitPath = ".var_export($orbitPath, true).";\n\$peerIdentityMap = ".var_export($peerIdentityMap, true).";\n\n".<<<'PHP_WRAP'
+        function http_router_normalize_peer_ip(string $peerIp): string
+        {
+            $peerIp = trim($peerIp, '[]');
+
+            return str_starts_with(strtolower($peerIp), '::ffff:')
+                ? substr($peerIp, 7)
+                : $peerIp;
+        }
+
+        function http_router_peer_identity(): ?string
+        {
+            global $peerIdentityMap;
+
+            $peerIp = $_SERVER['REMOTE_ADDR'] ?? null;
+
+            if (! is_string($peerIp) || $peerIp === '') {
+                return null;
+            }
+
+            $peerIp = http_router_normalize_peer_ip($peerIp);
+
+            if (filter_var($peerIp, FILTER_VALIDATE_IP) === false) {
+                return null;
+            }
+
+            if (is_string($peerIdentityMap[$peerIp] ?? null)) {
+                return $peerIdentityMap[$peerIp];
+            }
+
+            if (preg_match('/^10\.\d+\.0\.(?<host>\d+)$/', $peerIp, $matches) === 1) {
+                return match ((int) $matches['host']) {
+                    2 => '10.6.0.2',
+                    3 => '10.6.0.3',
+                    4 => '10.6.0.4',
+                    5 => '10.6.0.5',
+                    6 => '10.6.0.6',
+                    7 => '10.6.0.7',
+                    8 => '10.6.0.8',
+                    9 => '10.6.0.9',
+                    default => $peerIp,
+                };
+            }
+
+            return $peerIp;
+        }
+
+        if (! isset($_SERVER['HTTP_X_ORBIT_E2E_WIREGUARD_IP'])) {
+            $identity = http_router_peer_identity();
+
+            if ($identity !== null) {
+                $_SERVER['HTTP_X_ORBIT_E2E_WIREGUARD_IP'] = $identity;
+            }
+        }
+
         $publicPath = $orbitPath.'/apps/gateway/public';
         $uri = urldecode(parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH) ?: '');
 

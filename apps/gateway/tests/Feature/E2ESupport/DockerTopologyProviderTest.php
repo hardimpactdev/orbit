@@ -1271,6 +1271,7 @@ it('maps parallel docker subnet peer ips back to canonical dns-alias identities'
     expect(implode("\n", $commands))
         ->toContain('sudo docker exec --detach')
         ->toContain('php apps/gateway/artisan tinker --execute=')
+        ->toContain('base64_decode')
         ->toContain('$peerIdentityMap = array')
         ->toContain($networkPlan->ipForRole('operator'))
         ->toContain('10.6.0.3')

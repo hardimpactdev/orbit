@@ -933,17 +933,15 @@ BASH;
 \$gateway = \\App\\Models\\Node::query()->updateOrCreate(
     ['name' => 'gateway'],
     [
-        'role' => 'gateway',
-        'environment' => null,
         'tld' => null,
         'platform' => 'unknown',
         'host' => {$gatewayIpValue},
         'wireguard_address' => {$gatewayIpValue},
         'gateway_endpoint' => null,
-                'user' => 'orbit',
+        'user' => 'orbit',
         'orbit_path' => '/home/orbit/orbit',
         'status' => 'active',
-            ],
+    ],
 );
 
 \\App\\Models\\NodeRoleAssignment::query()->updateOrCreate(

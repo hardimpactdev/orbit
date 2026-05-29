@@ -20,7 +20,7 @@ final class NodeShowController implements Loggable
     public function __invoke(string $name): JsonResponse
     {
         $node = Node::query()
-            ->with('roleAssignments')
+            ->with(['roleAssignments', 'consumingNodes', 'servingNodes'])
             ->whereRaw('LOWER(name) = ?', [mb_strtolower($name)])
             ->first();
 
@@ -53,8 +53,8 @@ final class NodeShowController implements Loggable
                         ],
                         'agent_ide' => NodeAgentIdeDefaults::payloadFor($node),
                         'grants' => [
-                            'consuming_nodes' => $node->consumingNodes()->pluck('name')->all(),
-                            'serving_nodes' => $node->servingNodes()->pluck('name')->all(),
+                            'consuming_nodes' => $this->grantNodes($node->consumingNodes),
+                            'serving_nodes' => $this->grantNodes($node->servingNodes),
                         ],
                     ],
                 ],
@@ -100,6 +100,48 @@ final class NodeShowController implements Loggable
     public function activityLogProperties(): array
     {
         return $this->properties();
+    }
+
+    /**
+     * @param  iterable<int, Node>  $nodes
+     * @return list<array{name: string, permissions: list<string>}>
+     */
+    private function grantNodes(iterable $nodes): array
+    {
+        $grants = [];
+
+        foreach ($nodes as $node) {
+            $grants[] = [
+                'name' => $node->name,
+                'permissions' => $this->decodePermissions($node->pivot->permissions ?? null),
+            ];
+        }
+
+        return $grants;
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function decodePermissions(mixed $permissions): array
+    {
+        if ($permissions === null) {
+            return ['*'];
+        }
+
+        if (is_array($permissions)) {
+            return array_values(array_filter($permissions, is_string(...)));
+        }
+
+        if (is_string($permissions)) {
+            $decoded = json_decode($permissions, associative: true);
+
+            return is_array($decoded)
+                ? array_values(array_filter($decoded, is_string(...)))
+                : ['*'];
+        }
+
+        return ['*'];
     }
 
     public function description(): ?string

@@ -46,6 +46,17 @@ final class E2ECurrentCheckout
                     self::refreshGatewayHostKeys($instance, $user, $topology->sshKeyPair(), $remotePath, $timer);
                 }
             : null;
+            $refreshLocalGatewaySettings = $role !== 'gateway' && $topology->gateway() !== null && ! self::usesDockerRuntime($instance)
+                ? function (string $remotePath) use ($instance, $user, $topology, $timer): void {
+                    self::refreshLocalGatewaySettings($instance, $user, $topology->sshKeyPair(), $remotePath, $topology->gatewayApiIp(), $timer);
+                }
+            : null;
+            $afterInstall = ($refreshGatewayHostKeys !== null || $refreshLocalGatewaySettings !== null)
+                ? function (string $remotePath) use ($refreshGatewayHostKeys, $refreshLocalGatewaySettings): void {
+                    $refreshGatewayHostKeys?->__invoke($remotePath);
+                    $refreshLocalGatewaySettings?->__invoke($remotePath);
+                }
+            : null;
 
             $paths[$role] = self::install(
                 $instance,
@@ -54,7 +65,7 @@ final class E2ECurrentCheckout
                 seedFrom: $seedFrom,
                 timer: $timer,
                 afterBaseInstall: $refreshGatewayHostKeys,
-                afterInstall: $refreshGatewayHostKeys,
+                afterInstall: $afterInstall,
                 executorNodeIdentity: $executorNodeIdentity,
                 hostLauncher: $hostLauncher,
             );
@@ -533,6 +544,38 @@ if (\Illuminate\Support\Facades\Schema::hasTable('local_gateway_settings')) {
 PHP;
 
         return self::artisanCommand('tinker --execute='.escapeshellarg($php), $runArtisanInDockerRuntime, $remotePath, $dockerRuntimeContainer);
+    }
+
+    private static function refreshLocalGatewaySettings(E2EInstance $instance, string $user, SshKeyPair $keyPair, string $remotePath, string $gatewayApiIp, ?E2EPhaseTimer $timer): void
+    {
+        self::runTimed(
+            $timer,
+            'checkout.gateway-settings',
+            fn () => E2ECommand::ssh(
+                $instance,
+                $user,
+                $keyPair,
+                self::localGatewaySettingsCommand($remotePath, $gatewayApiIp),
+                timeoutSeconds: 120,
+            ),
+        );
+    }
+
+    private static function localGatewaySettingsCommand(string $remotePath, string $gatewayApiIp): string
+    {
+        $gatewayUrlValue = var_export("https://{$gatewayApiIp}", true);
+        $gatewayApiIpValue = var_export($gatewayApiIp, true);
+
+        $php = <<<PHP
+if (\\Illuminate\\Support\\Facades\\Schema::hasTable('local_gateway_settings')) {
+    \$settings = \\App\\Models\\LocalGatewaySettings::current();
+    \$settings->gateway_url = {$gatewayUrlValue};
+    \$settings->gateway_wg_ip = {$gatewayApiIpValue};
+    \$settings->save();
+}
+PHP;
+
+        return 'cd '.escapeshellarg($remotePath).' && php apps/gateway/artisan tinker --execute='.escapeshellarg($php);
     }
 
     private static function refreshGatewayHostKeys(E2EInstance $instance, string $user, SshKeyPair $keyPair, string $remotePath, ?E2EPhaseTimer $timer): void

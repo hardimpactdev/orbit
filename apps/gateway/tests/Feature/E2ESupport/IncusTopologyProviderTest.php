@@ -2,6 +2,17 @@
 
 declare(strict_types=1);
 
+use App\E2E\Support\E2EConfig;
+use App\E2E\Support\IncusHost;
+use App\E2E\Support\IncusInstance;
+use App\E2E\Support\IncusTopologyProvider;
+use Illuminate\Contracts\Process\ProcessResult;
+use Mockery as m;
+
+afterEach(function (): void {
+    m::close();
+});
+
 it('waits for operator host-key scan reachability before checkout pinning runs', function (): void {
     $providerSource = file_get_contents(repo_path('apps/gateway/app/E2E/Support/IncusTopologyProvider.php'));
     $checkoutSource = file_get_contents(repo_path('apps/gateway/app/E2E/Support/E2ECurrentCheckout.php'));
@@ -11,3 +22,98 @@ it('waits for operator host-key scan reachability before checkout pinning runs',
         ->and($providerSource)->toContain('$this->waitForOperatorHostKeyScan($operator, $config, $wireGuardIp);')
         ->and($checkoutSource)->toContain("self::artisanCommand('orbit:internal:pin-node-host-keys --json'");
 });
+
+it('seeds the gateway runtime ssh key into prepared incus downstream clones', function (): void {
+    $commands = [];
+    $host = new class(incusTopologyProviderTestConfig(), $commands) extends IncusHost
+    {
+        /**
+         * @param  array<int, string>  $commands
+         */
+        public function __construct(E2EConfig $config, private array &$commands)
+        {
+            parent::__construct($config);
+        }
+
+        #[Override]
+        public function run(string $command, ?int $timeoutSeconds = null): ProcessResult
+        {
+            $this->commands[] = $command;
+
+            if (str_contains($command, 'ssh-keygen -y -f ~/.ssh/id_ed25519')) {
+                return incusTopologyProviderTestProcessResult("ssh-ed25519 gateway-key orbit-e2e-gateway\n");
+            }
+
+            return incusTopologyProviderTestProcessResult();
+        }
+    };
+
+    $provider = new IncusTopologyProvider(incusTopologyProviderTestConfig());
+    $method = new ReflectionMethod($provider, 'seedGatewaySshAccess');
+    $method->setAccessible(true);
+
+    $method->invoke($provider, [
+        'operator' => new IncusInstance($host, 'operator', commandTransport: true),
+        'gateway' => new IncusInstance($host, 'gateway', commandTransport: true),
+        'dev' => new IncusInstance($host, 'dev', commandTransport: true),
+        'prod' => new IncusInstance($host, 'prod', commandTransport: true),
+        'agent' => new IncusInstance($host, 'agent', commandTransport: true),
+    ]);
+
+    $joined = implode("\n", $commands);
+
+    expect($joined)->toContain('cat ~/.ssh/id_ed25519.pub')
+        ->and($joined)->toContain('ssh-keygen -y -f ~/.ssh/id_ed25519 > ~/.ssh/id_ed25519.pub')
+        ->and($joined)->toContain("incus exec 'dev' -- sh -lc")
+        ->and($joined)->toContain("incus exec 'prod' -- sh -lc")
+        ->and($joined)->toContain("incus exec 'agent' -- sh -lc")
+        ->and($joined)->toContain('ssh-ed25519 gateway-key orbit-e2e-gateway')
+        ->and($joined)->toContain('/home/orbit/.ssh/authorized_keys')
+        ->and($joined)->not->toContain("incus exec 'operator' -- sh -lc");
+});
+
+it('keeps incus retarget scripts on node_role assignments instead of legacy node columns', function (): void {
+    $providerSource = file_get_contents(repo_path('apps/gateway/app/E2E/Support/IncusTopologyProvider.php'));
+    $builderSource = file_get_contents(repo_path('apps/gateway/app/E2E/Support/IncusTopologyBuilder.php'));
+
+    foreach ([$providerSource, $builderSource] as $source) {
+        expect($source)->not->toContain("'environment' => null")
+            ->and($source)->not->toContain("'role' => 'gateway',\n        'environment' => null")
+            ->and($source)->toContain('\\\\App\\\\Models\\\\NodeRoleAssignment::query()->updateOrCreate');
+    }
+});
+
+function incusTopologyProviderTestConfig(): E2EConfig
+{
+    return new E2EConfig(
+        providerNames: ['incus'],
+        topologyProviderNames: ['incus'],
+        host: 'beast',
+        sourceImage: '',
+        baseImage: '',
+        bootstrapUser: 'provisioner',
+        operatorUser: 'operator',
+        instancePrefix: 'orbit-e2e',
+        timeoutSeconds: 60,
+        cpus: '2',
+        memory: '2GiB',
+        topologyCpus: '1',
+        topologyMemory: '2GiB',
+        topologyRootSize: '16GiB',
+        topologyStateSize: '4GiB',
+        incusStoragePool: '',
+        dockerHosts: ['local'],
+        keep: false,
+        incusHostVmCaps: ['beast' => 4],
+    );
+}
+
+function incusTopologyProviderTestProcessResult(string $output = '', int $exitCode = 0, string $errorOutput = ''): ProcessResult
+{
+    $result = m::mock(ProcessResult::class);
+    $result->shouldReceive('successful')->andReturn($exitCode === 0);
+    $result->shouldReceive('output')->andReturn($output);
+    $result->shouldReceive('errorOutput')->andReturn($errorOutput);
+
+    return $result;
+}

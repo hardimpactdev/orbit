@@ -65,6 +65,22 @@ final readonly class WireGuardIdentity
             }
         }
 
-        return $request->ip();
+        $peerAddress = (string) $request->ip();
+
+        if ((bool) config('orbit.e2e_trust_wireguard_header', false)
+            && config('orbit.e2e_topology_provider') === 'docker') {
+            return $this->dockerTopologyPeerAddress($peerAddress) ?? $peerAddress;
+        }
+
+        return $peerAddress;
+    }
+
+    private function dockerTopologyPeerAddress(string $peerAddress): ?string
+    {
+        if (preg_match('/^10\.\d+\.0\.(?<host>[2-9])$/', $peerAddress, $matches) !== 1) {
+            return null;
+        }
+
+        return "10.6.0.{$matches['host']}";
     }
 }

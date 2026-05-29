@@ -486,6 +486,7 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
         $timer->measure('known-hosts', fn () => $this->clearKnownHosts($instances));
         $timer->measure('wireguard', fn () => $this->retargetRealWireGuard($instances));
         $timer->measure('retarget', fn () => $this->retargetTopology($instances, $config, $sshKeyPair, $kind));
+        $timer->measure('gateway-ssh-access', fn () => $this->seedGatewaySshAccess($instances));
         $timer->measure('network-ready', fn () => $this->waitForPeerRoutes($instances, $config));
 
         if ($options->startGatewayApi && isset($instances['gateway'])) {
@@ -575,6 +576,7 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
 
             $cycleTimer->measure('reset.wireguard', fn () => $this->retargetRealWireGuard($instances));
             $cycleTimer->measure('reset.retarget', fn () => $this->retargetTopology($instances, $this->config, $sshKeyPair, $kind));
+            $cycleTimer->measure('reset.gateway-ssh-access', fn () => $this->seedGatewaySshAccess($instances));
             $cycleTimer->measure('reset.network-ready', fn () => $this->waitForPeerRoutes($instances, $this->config));
 
             if ($startGatewayApi && isset($instances['gateway'])) {
@@ -806,20 +808,23 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
         $gatewayIpValue = var_export(self::GatewayWireGuardIp, true);
 
         $php = <<<PHP
-\\App\\Models\\Node::query()->updateOrCreate(
+\$gateway = \\App\\Models\\Node::query()->updateOrCreate(
     ['name' => 'gateway'],
     [
-        'role' => 'gateway',
-        'environment' => null,
         'tld' => null,
         'platform' => 'unknown',
         'host' => {$gatewayIpValue},
         'wireguard_address' => {$gatewayIpValue},
         'gateway_endpoint' => null,
-                'user' => 'orbit',
+        'user' => 'orbit',
         'orbit_path' => '/home/orbit/orbit',
         'status' => 'active',
-            ],
+    ],
+);
+
+\\App\\Models\\NodeRoleAssignment::query()->updateOrCreate(
+    ['node_id' => \$gateway->id, 'role' => 'gateway'],
+    ['status' => 'active', 'settings' => [], 'last_error' => null, 'converged_at' => now()],
 );
 
 \$settings = \\App\\Models\\LocalGatewaySettings::current();
@@ -885,6 +890,70 @@ PHP;
     private function additionalInstancesFrom(array $instances): array
     {
         return array_diff_key($instances, array_flip(['operator', 'gateway', 'dev', 'prod', 'agent', 'ingress']));
+    }
+
+    /**
+     * @param  array<string, IncusInstance>  $instances
+     */
+    private function seedGatewaySshAccess(array $instances): void
+    {
+        $gateway = $instances['gateway'] ?? null;
+
+        if ($gateway === null) {
+            return;
+        }
+
+        $targets = array_intersect_key($instances, array_flip(['dev', 'prod', 'agent', 'ingress']));
+
+        if ($targets === []) {
+            return;
+        }
+
+        $publicKey = $this->gatewayPublicKey($gateway);
+        $authorized = [];
+
+        foreach ($targets as $role => $instance) {
+            $instanceName = $instance->name();
+
+            if (isset($authorized[$instanceName])) {
+                continue;
+            }
+
+            $authorized[$instanceName] = true;
+            $this->authorizeGatewaySshKey($instance, $publicKey, $role);
+        }
+    }
+
+    private function gatewayPublicKey(IncusInstance $gateway): string
+    {
+        $result = E2ECommand::ssh(
+            $gateway,
+            'orbit',
+            new SshKeyPair('/dev/null', '/dev/null'),
+            'install -d -m 700 ~/.ssh && if ! test -f ~/.ssh/id_ed25519; then ssh-keygen -t ed25519 -N "" -f ~/.ssh/id_ed25519 -C orbit-e2e-gateway >/dev/null; fi && chmod 600 ~/.ssh/id_ed25519 && if ! test -f ~/.ssh/id_ed25519.pub; then ssh-keygen -y -f ~/.ssh/id_ed25519 > ~/.ssh/id_ed25519.pub; fi && cat ~/.ssh/id_ed25519.pub',
+            timeoutSeconds: 60,
+        );
+
+        $publicKey = trim($result->output());
+
+        if ($publicKey === '') {
+            throw new \RuntimeException('Could not create Incus gateway SSH key for RemoteShell E2E access.');
+        }
+
+        return $publicKey;
+    }
+
+    private function authorizeGatewaySshKey(IncusInstance $instance, string $publicKey, string $role): void
+    {
+        E2ECommand::exec(
+            $instance,
+            sprintf(
+                'install -d -m 700 -o orbit -g orbit /home/orbit/.ssh && touch /home/orbit/.ssh/authorized_keys && chown orbit:orbit /home/orbit/.ssh/authorized_keys && chmod 600 /home/orbit/.ssh/authorized_keys && grep -qxF %1$s /home/orbit/.ssh/authorized_keys || printf "%%s\n" %1$s >> /home/orbit/.ssh/authorized_keys',
+                escapeshellarg($publicKey),
+            ),
+            "Could not authorize gateway SSH key in Incus {$role} instance",
+            timeoutSeconds: 60,
+        );
     }
 
     /**
