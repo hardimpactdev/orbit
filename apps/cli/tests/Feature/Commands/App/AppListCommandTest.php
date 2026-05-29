@@ -2,20 +2,20 @@
 
 declare(strict_types=1);
 
+use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
 
 describe('app:list', function (): void {
-    it('returns a canonical success envelope in JSON mode and forwards filters', function (): void {
+    it('returns a canonical success envelope in JSON mode and forwards supported filters', function (): void {
         fakeGateway(fakeSuccessEnvelope([
             'apps' => [
-                ['name' => 'orbit-docs', 'node' => 'app-1', 'environment' => 'development'],
+                ['name' => 'orbit-docs', 'node' => 'app-1'],
             ],
         ]));
 
         [$exitCode, $output] = runCommand($this, 'app:list', [
             '--node' => 'app-1',
-            '--environment' => 'development',
             '--json' => true,
         ]);
 
@@ -24,10 +24,16 @@ describe('app:list', function (): void {
         Http::assertSent(fn (Request $request): bool => $request->method() === 'GET'
             && str_contains($request->url(), '/api/apps')
             && str_contains($request->url(), 'node=app-1')
-            && str_contains($request->url(), 'environment=development'));
+            && ! str_contains($request->url(), 'environment='));
 
         expect($exitCode)->toBe(0)
             ->and($decoded['success']['data']['apps'][0]['name'])->toBe('orbit-docs');
+    });
+
+    it('does not expose the retired environment filter', function (): void {
+        $command = app(Kernel::class)->all()['app:list'];
+
+        expect($command->getDefinition()->hasOption('environment'))->toBeFalse();
     });
 
     it('renders human output containing app fields', function (): void {
@@ -44,7 +50,7 @@ describe('app:list', function (): void {
     });
 
     it('surfaces gateway_unavailable on gateway HTTP errors', function (): void {
-        fakeGateway(fakeErrorEnvelope('internal_error', 'Server failure.'), 500);
+        fakeGateway(['message' => 'Bad gateway'], 502);
 
         [$exitCode, $output] = runCommand($this, 'app:list', ['--json' => true]);
 
@@ -52,6 +58,20 @@ describe('app:list', function (): void {
 
         expect($exitCode)->toBe(1)
             ->and($decoded['error']['code'])->toBe('gateway_unavailable');
+    });
+
+    it('preserves structured gateway authorization failures', function (): void {
+        fakeGateway(fakeErrorEnvelope('authorization_failed', 'Missing app read permission.', [
+            'missing_permission' => 'app:read',
+        ]), 403);
+
+        [$exitCode, $output] = runCommand($this, 'app:list', ['--json' => true]);
+
+        $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(1)
+            ->and($decoded['error']['code'])->toBe('authorization_failed')
+            ->and($decoded['error']['meta']['missing_permission'])->toBe('app:read');
     });
 
     it('surfaces wireguard-specific gateway failures', function (): void {

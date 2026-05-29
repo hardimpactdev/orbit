@@ -48,8 +48,10 @@ describe('app:show', function (): void {
             ->and($output)->toContain('app');
     });
 
-    it('surfaces gateway_unavailable on gateway HTTP errors', function (): void {
-        fakeGateway(fakeErrorEnvelope('app.not_found', 'App not found.'), 404);
+    it('preserves structured gateway errors', function (): void {
+        fakeGateway(fakeErrorEnvelope('app.not_found', 'App not found.', [
+            'app' => 'missing-app',
+        ]), 404);
 
         [$exitCode, $output] = runCommand($this, 'app:show', [
             'app' => 'missing-app',
@@ -59,7 +61,8 @@ describe('app:show', function (): void {
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
         expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('gateway_unavailable');
+            ->and($decoded['error']['code'])->toBe('app.not_found')
+            ->and($decoded['error']['meta']['app'])->toBe('missing-app');
     });
 
     it('surfaces wireguard-specific gateway failures', function (): void {

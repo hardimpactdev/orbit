@@ -20,6 +20,23 @@ function fakeGatewaySequence(): ResponseSequence
 }
 
 describe('app write commands', function (): void {
+    it('validates required app:new inputs before gateway IO', function (): void {
+        Http::fake();
+
+        [$exitCode, $output] = runCommand($this, 'app:new', [
+            'name' => 'docs',
+            '--json' => true,
+        ]);
+
+        $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+
+        Http::assertNothingSent();
+
+        expect($exitCode)->toBe(1)
+            ->and($decoded['error']['code'])->toBe('validation_failed')
+            ->and($decoded['error']['meta']['field'])->toBe('node');
+    });
+
     it('posts app:new payloads to the gateway apps endpoint', function (): void {
         $complete = [
             'exit_code' => 0,
@@ -93,6 +110,20 @@ describe('app write commands', function (): void {
 
         expect($exitCode)->toBe(0)
             ->and($decoded['success']['data']['result']['action'])->toBe('adopted');
+    });
+
+    it('validates required app:register inputs before gateway IO', function (): void {
+        Http::fake();
+
+        [$exitCode, $output] = runCommand($this, 'app:register', ['--json' => true]);
+
+        $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+
+        Http::assertNothingSent();
+
+        expect($exitCode)->toBe(1)
+            ->and($decoded['error']['code'])->toBe('validation_failed')
+            ->and($decoded['error']['meta']['field'])->toBe('name');
     });
 
     it('requires force before removing an app non-interactively', function (): void {
@@ -226,6 +257,43 @@ describe('app write commands', function (): void {
             ->and($decoded['success']['data']['result']['changed'])->toBeTrue();
     });
 
+    it('validates required app:root inputs before gateway IO', function (): void {
+        Http::fake();
+
+        [$exitCode, $output] = runCommand($this, 'app:root', [
+            'app' => 'docs',
+            '--json' => true,
+        ]);
+
+        $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+
+        Http::assertNothingSent();
+
+        expect($exitCode)->toBe(1)
+            ->and($decoded['error']['code'])->toBe('validation_failed')
+            ->and($decoded['error']['meta']['field'])->toBe('root');
+    });
+
+    it('validates required app:agent-ide inputs before gateway IO', function (array $params, string $field): void {
+        Http::fake();
+
+        [$exitCode, $output] = runCommand($this, 'app:agent-ide', [
+            ...$params,
+            '--json' => true,
+        ]);
+
+        $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+
+        Http::assertNothingSent();
+
+        expect($exitCode)->toBe(1)
+            ->and($decoded['error']['code'])->toBe('validation_failed')
+            ->and($decoded['error']['meta']['field'])->toBe($field);
+    })->with([
+        'missing app' => [[], 'app'],
+        'missing adapter' => [['app' => 'docs'], 'agent_ide'],
+    ]);
+
     it('prompts before app:agent-ide resubmits destructive cleanup consent', function (): void {
         $sequence = fakeGatewaySequence();
         $sequence
@@ -334,6 +402,29 @@ describe('app write commands', function (): void {
 
         expect($exitCode)->toBe(0)
             ->and($output)->toContain('PHP 8.5');
+    });
+
+    it('returns the app:exec process exit code in json mode', function (): void {
+        fakeGateway(fakeSuccessEnvelope([
+            'app' => 'docs',
+            'container' => 'orbit-app-docs',
+            'command' => ['php', 'artisan', 'test'],
+            'exit_code' => 7,
+            'stdout' => '',
+            'stderr' => 'Tests failed',
+        ]));
+
+        [$exitCode, $output] = runCommand($this, 'app:exec', [
+            'app' => 'docs',
+            'cmd' => ['php', 'artisan', 'test'],
+            '--json' => true,
+        ]);
+
+        $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(7)
+            ->and($decoded['success']['data']['exit_code'])->toBe(7)
+            ->and($decoded['success']['data']['stderr'])->toBe('Tests failed');
     });
 
     it('forwards app:exec by host cwd when no app selector is supplied', function (): void {

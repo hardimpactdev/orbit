@@ -12,7 +12,6 @@ final class AppListCommand extends GatewayCommand
     #[\Override]
     protected $signature = 'app:list
         {--node= : Filter by owning node}
-        {--environment= : Filter by environment (development|production)}
         {--json}';
 
     #[\Override]
@@ -23,10 +22,9 @@ final class AppListCommand extends GatewayCommand
         try {
             $response = $this->gatewayGet('/api/apps', array_filter([
                 'node' => $this->option('node'),
-                'environment' => $this->option('environment'),
             ], fn (mixed $v): bool => $v !== null));
         } catch (GatewayApiException $exception) {
-            return $this->renderFailure($exception->cliFailureCode(), $exception->getMessage());
+            return $this->renderGatewayFailure($exception);
         }
 
         return $this->renderSuccess($response);

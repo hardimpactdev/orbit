@@ -43,7 +43,7 @@ describe('node:list', function (): void {
     });
 
     it('surfaces gateway_unavailable on gateway HTTP errors', function (): void {
-        fakeGateway(fakeErrorEnvelope('internal_error', 'Server failure.'), 500);
+        fakeGateway(['message' => 'Bad gateway'], 502);
 
         [$exitCode, $output] = runCommand($this, 'node:list', ['--json' => true]);
 
@@ -51,6 +51,25 @@ describe('node:list', function (): void {
 
         expect($exitCode)->toBe(1)
             ->and($decoded['error']['code'])->toBe('gateway_unavailable');
+    });
+
+    it('preserves structured gateway validation failures for retired filters', function (): void {
+        fakeGateway(fakeErrorEnvelope('validation_failed', "Invalid value for --role: 'app'.", [
+            'field' => 'role',
+            'value' => 'app',
+        ]), 422);
+
+        [$exitCode, $output] = runCommand($this, 'node:list', [
+            '--role' => 'app',
+            '--json' => true,
+        ]);
+
+        $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(1)
+            ->and($decoded['error']['code'])->toBe('validation_failed')
+            ->and($decoded['error']['meta']['field'])->toBe('role')
+            ->and($decoded['error']['meta']['value'])->toBe('app');
     });
 
     it('surfaces wireguard-specific gateway failures', function (): void {

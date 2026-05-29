@@ -79,14 +79,17 @@ final class AppExecCommand extends AppGatewayCommand
      */
     private function emitExecResponse(array $response): int
     {
+        $data = $this->successData($response);
+        $exitCode = is_int($data['exit_code'] ?? null) ? $data['exit_code'] : self::SUCCESS;
+
         if ($this->wantsJson()) {
-            return $this->renderSuccess($response);
+            $this->renderSuccess($response);
+
+            return $exitCode;
         }
 
-        $data = $this->successData($response);
         $stdout = is_string($data['stdout'] ?? null) ? $data['stdout'] : '';
         $stderr = is_string($data['stderr'] ?? null) ? $data['stderr'] : '';
-        $exitCode = is_int($data['exit_code'] ?? null) ? $data['exit_code'] : self::SUCCESS;
 
         $this->writePassthrough($stdout, $stderr);
 

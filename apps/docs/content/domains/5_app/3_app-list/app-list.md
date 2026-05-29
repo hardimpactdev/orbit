@@ -5,8 +5,8 @@
 List apps registered on the gateway.
 
 `app:list` provides a high-level summary of application configuration, showing which
-apps are assigned to which nodes and their configured environments. For live
-app health and runtime verification, use
+apps are assigned to which nodes and which workspaces they own. For live app
+health and runtime verification, use
 [`doctor --family=app`](../app-doctor.md).
 There is intentionally no `app:list --doctor` flag; app list output stays a
 fast registry read.
@@ -14,7 +14,7 @@ fast registry read.
 ## Usage
 
 ```bash
-orbit app:list [--node=<name>] [--environment=<development|production>] [--json]
+orbit app:list [--node=<name>] [--json]
 ```
 
 ## Examples
@@ -22,28 +22,27 @@ orbit app:list [--node=<name>] [--environment=<development|production>] [--json]
 ```bash
 orbit app:list
 orbit app:list --node=app-1
-orbit app:list --environment=production
 orbit app:list --json
 ```
 
 ## Arguments and options
 
 - `--node`: filter by owning node name.
-- `--environment`: filter by environment (`development` or `production`).
 - `--json`: Output JSON.
 
 ## What Happens
 
-Run `app:list` to read the app registry from the gateway and filter it by node or environment.
+Run `app:list` to read the app registry from the gateway and optionally filter
+it by owning node.
 
 `app:list` reads the app registry from the gateway and applies the requested
 filters:
 
 1. Connects to the gateway API.
 2. Reads app registry configuration scoped to what the caller is authorized to see.
-3. Filters by node or environment when options are supplied.
-4. Returns a list of apps with their names, nodes, environments, primary URLs,
-   and any registered workspaces.
+3. Filters by node when `--node` is supplied.
+4. Returns a list of apps with their names, nodes, primary URLs, and any
+   registered workspaces.
 
 `app:list` does not:
 - SSH into nodes.

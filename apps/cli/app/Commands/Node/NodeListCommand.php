@@ -24,7 +24,7 @@ final class NodeListCommand extends GatewayCommand
                 'role' => $this->option('role'),
             ], fn (mixed $v): bool => $v !== null));
         } catch (GatewayApiException $exception) {
-            return $this->renderFailure($exception->cliFailureCode(), $exception->getMessage());
+            return $this->renderGatewayFailure($exception);
         }
 
         return $this->renderSuccess($response);
