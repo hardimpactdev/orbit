@@ -2,6 +2,17 @@
 
 declare(strict_types=1);
 
+use App\Console\Commands\E2EEnsureArtifactsCommand;
+use App\Console\Commands\E2EPreflightCommand;
+use App\Console\Commands\E2EPrepareBaseImageCommand;
+use App\Console\Commands\E2EPrepareDockerHostsCommand;
+use App\Console\Commands\E2EPrepareDockerRuntimeCommand;
+use App\Console\Commands\E2EPrepareDockerTopologyCommand;
+use App\Console\Commands\E2EPrepareTopologyCommand;
+use App\Console\Commands\E2EPrepareWarmTopologyCommand;
+use App\Console\Commands\E2EReapDockerCommand;
+use App\Console\Commands\E2EReapIncusCommand;
+use App\Console\Commands\E2ETestCommand;
 use App\E2E\Support\DockerTopologyNetworkPlan;
 use App\E2E\Support\E2EConfig;
 use App\E2E\Support\E2EImage;
@@ -17,6 +28,44 @@ use App\E2E\Support\E2ETopologyKind;
 use App\E2E\Support\E2ETopologyUnavailable;
 use App\E2E\Support\ProviderAvailability;
 use App\E2E\Support\SshKeyPair;
+
+it('registers the e2e runner artisan commands', function (): void {
+    $commands = [
+        E2EPreflightCommand::class,
+        E2EPrepareBaseImageCommand::class,
+        E2EPrepareTopologyCommand::class,
+        E2EPrepareWarmTopologyCommand::class,
+        E2EPrepareDockerRuntimeCommand::class,
+        E2EPrepareDockerTopologyCommand::class,
+        E2EPrepareDockerHostsCommand::class,
+        E2EEnsureArtifactsCommand::class,
+        E2EReapDockerCommand::class,
+        E2EReapIncusCommand::class,
+        E2ETestCommand::class,
+    ];
+
+    foreach ($commands as $class) {
+        expect(class_exists($class))->toBeTrue("{$class} does not exist");
+
+        $command = app($class);
+        expect($command->isHidden())->toBeTrue("{$class} should be hidden");
+    }
+
+    $jsonCommands = [
+        E2EPreflightCommand::class,
+        E2EPrepareBaseImageCommand::class,
+        E2EPrepareTopologyCommand::class,
+        E2EPrepareWarmTopologyCommand::class,
+        E2EPrepareDockerTopologyCommand::class,
+        E2EReapDockerCommand::class,
+        E2EReapIncusCommand::class,
+    ];
+
+    foreach ($jsonCommands as $class) {
+        $command = app($class);
+        expect($command->getDefinition()->hasOption('json'))->toBeTrue("{$class} should accept --json");
+    }
+});
 
 it('owns extracted standalone support primitives outside the gateway app', function (): void {
     $classes = [

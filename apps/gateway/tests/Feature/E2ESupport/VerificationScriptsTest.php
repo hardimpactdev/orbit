@@ -2,15 +2,6 @@
 
 declare(strict_types=1);
 
-use App\Console\Commands\E2EPreflightCommand;
-use App\Console\Commands\E2EPrepareBaseImageCommand;
-use App\Console\Commands\E2EPrepareDockerRuntimeCommand;
-use App\Console\Commands\E2EPrepareDockerTopologyCommand;
-use App\Console\Commands\E2EPrepareTopologyCommand;
-use App\Console\Commands\E2EPrepareWarmTopologyCommand;
-use App\Console\Commands\E2EReapDockerCommand;
-use App\Console\Commands\E2EReapIncusCommand;
-use App\Console\Commands\E2ETestCommand;
 use App\E2E\Support\E2ECurrentCheckout;
 use Symfony\Component\Process\Process;
 
@@ -128,10 +119,10 @@ it('runs default ephemeral e2e through prepared topology lanes', function (): vo
             fn ($script) => $script->toContain('cd apps/e2e && vendor/bin/pest --compact'),
         );
 
-    $e2eScript = 'set -a; [ ! -f .env.e2e ] || . ./.env.e2e; set +a; bin/orbit-gateway-artisan e2e:test @additional_args';
-    $dockerE2eScript = 'set -a; [ ! -f .env.e2e ] || . ./.env.e2e; set +a; ORBIT_E2E_LANES=docker bin/orbit-gateway-artisan e2e:test @additional_args';
-    $dockerCanaryE2eScript = 'set -a; [ ! -f .env.e2e ] || . ./.env.e2e; set +a; ORBIT_E2E_LANES=docker bin/orbit-gateway-artisan e2e:test --canary @additional_args';
-    $incusE2eScript = 'set -a; [ ! -f .env.e2e ] || . ./.env.e2e; set +a; ORBIT_E2E_LANES=incus bin/orbit-gateway-artisan e2e:test @additional_args';
+    $e2eScript = 'set -a; [ ! -f .env.e2e ] || . ./.env.e2e; set +a; bin/orbit-e2e-artisan e2e:test @additional_args';
+    $dockerE2eScript = 'set -a; [ ! -f .env.e2e ] || . ./.env.e2e; set +a; ORBIT_E2E_LANES=docker bin/orbit-e2e-artisan e2e:test @additional_args';
+    $dockerCanaryE2eScript = 'set -a; [ ! -f .env.e2e ] || . ./.env.e2e; set +a; ORBIT_E2E_LANES=docker bin/orbit-e2e-artisan e2e:test --canary @additional_args';
+    $incusE2eScript = 'set -a; [ ! -f .env.e2e ] || . ./.env.e2e; set +a; ORBIT_E2E_LANES=incus bin/orbit-e2e-artisan e2e:test @additional_args';
 
     expect($composer['scripts']['test:e2e'])->toBe([
         'Composer\\Config::disableProcessTimeout',
@@ -149,7 +140,7 @@ it('runs default ephemeral e2e through prepared topology lanes', function (): vo
 
     expect($composer['scripts']['test:e2e:provision'])->toBe([
         'Composer\\Config::disableProcessTimeout',
-        'set -a; [ ! -f .env.e2e ] || . ./.env.e2e; set +a; ORBIT_E2E=1 bin/orbit-gateway-artisan test --testsuite=E2E --group=e2e-provision --fail-on-empty-test-suite @additional_args',
+        'set -a; [ ! -f .env.e2e ] || . ./.env.e2e; set +a; cd apps/e2e && ORBIT_E2E=1 vendor/bin/pest --group=e2e-provision --fail-on-empty-test-suite @additional_args',
     ])->and($composer['scripts']['test:e2e:next'])->toBe([
         'Composer\\Config::disableProcessTimeout',
         'cd apps/e2e && vendor/bin/pest --compact @additional_args',
@@ -253,30 +244,30 @@ it('exposes e2e preflight, preparation, and cleanup helpers', function (): void 
 
     $e2eEnvPrefix = 'set -a; [ ! -f .env.e2e ] || . ./.env.e2e; set +a;';
 
-    expect($composer['scripts']['e2e:preflight'])->toBe("{$e2eEnvPrefix} bin/orbit-gateway-artisan e2e:preflight @additional_args")
+    expect($composer['scripts']['e2e:preflight'])->toBe("{$e2eEnvPrefix} bin/orbit-e2e-artisan e2e:preflight @additional_args")
         ->and($composer['scripts']['e2e:prepare-docker-runtime'])->toBe([
             'Composer\\Config::disableProcessTimeout',
-            "{$e2eEnvPrefix} bin/orbit-gateway-artisan e2e:prepare-docker-runtime @additional_args",
+            "{$e2eEnvPrefix} bin/orbit-e2e-artisan e2e:prepare-docker-runtime @additional_args",
         ])->and($composer['scripts']['e2e:prepare-docker-topology'])->toBe([
             'Composer\\Config::disableProcessTimeout',
-            "{$e2eEnvPrefix} bin/orbit-gateway-artisan e2e:prepare-docker-topology @additional_args",
+            "{$e2eEnvPrefix} bin/orbit-e2e-artisan e2e:prepare-docker-topology @additional_args",
         ])->and($composer['scripts']['e2e:prepare-docker-hosts'])->toBe([
             'Composer\\Config::disableProcessTimeout',
-            "{$e2eEnvPrefix} bin/orbit-gateway-artisan e2e:prepare-docker-hosts @additional_args",
+            "{$e2eEnvPrefix} bin/orbit-e2e-artisan e2e:prepare-docker-hosts @additional_args",
         ])->and($composer['scripts']['e2e:ensure-artifacts'])->toBe([
             'Composer\\Config::disableProcessTimeout',
-            "{$e2eEnvPrefix} bin/orbit-gateway-artisan e2e:ensure-artifacts @additional_args",
+            "{$e2eEnvPrefix} bin/orbit-e2e-artisan e2e:ensure-artifacts @additional_args",
         ])->and($composer['scripts']['e2e:prepare-base-image'])->toBe([
             'Composer\\Config::disableProcessTimeout',
-            "{$e2eEnvPrefix} bin/orbit-gateway-artisan e2e:prepare-base-image @additional_args",
+            "{$e2eEnvPrefix} bin/orbit-e2e-artisan e2e:prepare-base-image @additional_args",
         ])->and($composer['scripts']['e2e:prepare-topology'])->toBe([
             'Composer\\Config::disableProcessTimeout',
-            "{$e2eEnvPrefix} bin/orbit-gateway-artisan e2e:prepare-topology @additional_args",
+            "{$e2eEnvPrefix} bin/orbit-e2e-artisan e2e:prepare-topology @additional_args",
         ])->and($composer['scripts']['e2e:prepare-warm-topology'])->toBe([
             'Composer\\Config::disableProcessTimeout',
-            "{$e2eEnvPrefix} bin/orbit-gateway-artisan e2e:prepare-warm-topology @additional_args",
-        ])->and($composer['scripts']['e2e:reap-incus'])->toBe("{$e2eEnvPrefix} bin/orbit-gateway-artisan e2e:reap-incus @additional_args")
-        ->and($composer['scripts']['e2e:reap-docker'])->toBe("{$e2eEnvPrefix} bin/orbit-gateway-artisan e2e:reap-docker @additional_args");
+            "{$e2eEnvPrefix} bin/orbit-e2e-artisan e2e:prepare-warm-topology @additional_args",
+        ])->and($composer['scripts']['e2e:reap-incus'])->toBe("{$e2eEnvPrefix} bin/orbit-e2e-artisan e2e:reap-incus @additional_args")
+        ->and($composer['scripts']['e2e:reap-docker'])->toBe("{$e2eEnvPrefix} bin/orbit-e2e-artisan e2e:reap-docker @additional_args");
 });
 
 it('keeps reusable e2e harness code out of the Tests namespace for app commands', function (): void {
@@ -346,42 +337,6 @@ it('keeps the docker topology host image free of host Composer dependencies', fu
     expect($dockerfile)
         ->not->toContain('COPY --from=composer')
         ->not->toContain('composer install');
-});
-
-it('registers the e2e artisan commands', function (): void {
-    $commands = [
-        E2EPreflightCommand::class,
-        E2EPrepareBaseImageCommand::class,
-        E2EPrepareTopologyCommand::class,
-        E2EPrepareWarmTopologyCommand::class,
-        E2EPrepareDockerRuntimeCommand::class,
-        E2EPrepareDockerTopologyCommand::class,
-        E2EReapDockerCommand::class,
-        E2EReapIncusCommand::class,
-        E2ETestCommand::class,
-    ];
-
-    foreach ($commands as $class) {
-        expect(class_exists($class))->toBeTrue("{$class} does not exist");
-
-        $command = app($class);
-        expect($command->isHidden())->toBeTrue("{$class} should be hidden");
-    }
-
-    $jsonCommands = [
-        E2EPreflightCommand::class,
-        E2EPrepareBaseImageCommand::class,
-        E2EPrepareTopologyCommand::class,
-        E2EPrepareWarmTopologyCommand::class,
-        E2EPrepareDockerTopologyCommand::class,
-        E2EReapDockerCommand::class,
-        E2EReapIncusCommand::class,
-    ];
-
-    foreach ($jsonCommands as $class) {
-        $command = app($class);
-        expect($command->getDefinition()->hasOption('json'))->toBeTrue("{$class} should accept --json");
-    }
 });
 
 it('installs Docker via docker.com and host PHP through the Ubuntu PPA package path', function (): void {

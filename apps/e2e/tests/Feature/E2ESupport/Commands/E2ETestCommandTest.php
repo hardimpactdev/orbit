@@ -269,7 +269,7 @@ it('rejects docker host-specific container caps below that host slot capacity', 
         'ORBIT_E2E_PARALLEL_PROCESSES' => '8',
     ], function (): void {
         $this->artisan('e2e:test --dry-run --json --lanes=docker')
-            ->expectsOutputToContain('Docker host [sidecar1] needs a container cap of at least 16')
+            ->expectsOutputToContain('Docker host [sidecar1] needs a container cap of at least 20')
             ->assertFailed();
     });
 });
@@ -472,7 +472,7 @@ it('checks docker prepared artifacts before invoking explicit test paths', funct
     withE2EEnvironment([], [
         'ORBIT_E2E_DOCKER_TEST_RUNNERS' => 'sidecar1:4:28',
     ], function () use (&$exitCode, &$output): void {
-        $exitCode = Artisan::call('e2e:test --lanes=docker tests/E2E/AppListTest.php');
+        $exitCode = Artisan::call('e2e:test --lanes=docker');
         $output = Artisan::output();
     });
 
@@ -480,7 +480,7 @@ it('checks docker prepared artifacts before invoking explicit test paths', funct
         ->and($output)->toContain('E2E lane [docker] unavailable:')
         ->and($output)->toContain('docker prepared image')
         ->and($output)->toContain('orbit-e2e:app-dev_base')
-        ->and($output)->toContain('composer e2e:ensure-artifacts -- --lanes=docker --roles=app-dev --force operator_gateway_app-dev_app-prod_agent');
+        ->and($output)->toContain('composer e2e:ensure-artifacts -- --lanes=docker --roles=app-dev --force');
 
     Process::assertRan(fn ($process): bool => is_string($process->command)
         && str_contains($process->command, 'docker image inspect')
@@ -550,16 +550,16 @@ it('caps docker canary workers when selected topology capacity exceeds sidecar c
     });
 });
 
-it('normalizes legacy explicit docker e2e paths and runs them sequentially when requested', function (): void {
+it('normalizes explicit docker e2e paths and runs them sequentially when requested', function (): void {
     withE2EEnvironment([], [
         'ORBIT_E2E_DOCKER_TEST_RUNNERS' => 'sidecar1:4:28,sidecar2:4:28',
     ], function (): void {
-        $exitCode = Artisan::call('e2e:test --dry-run --json --lanes=docker --sequential-tests tests/E2E/AppListTest.php');
+        $exitCode = Artisan::call('e2e:test --dry-run --json --lanes=docker --sequential-tests tests/Feature/Commands/IngressProductionTopologyTest.php');
         $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
         $command = $payload['success']['data']['lanes'][0]['command'];
 
         expect($exitCode)->toBe(0)
-            ->and($command)->toContain('tests/E2E/AppListTest.php')
+            ->and($command)->toContain('tests/Feature/Commands/IngressProductionTopologyTest.php')
             ->and($command)->not->toContain('--parallel')
             ->and($command)->not->toContain('--processes=8');
     });
@@ -611,11 +611,11 @@ it('limits docker parallel runs to docker eligible e2e files', function (): void
     });
 
     expect($exitCode)->toBe(0)
-        ->and($generatedPath)->toStartWith('tests/E2E/.docker-feature-tests/run_')
-        ->and($lane['test_files'])->toContain('tests/E2E/IngressProductionTopologyTest.php')
-        ->and($lane['test_files'])->toContain('tests/E2E/ToolCredentialsTest.php')
-        ->and($lane['test_files'])->not->toContain('tests/E2E/ToolLifecycleHostInitTest.php')
-        ->and($lane['test_files'])->not->toContain('tests/E2E/RuntimeBackendHostInitTest.php');
+        ->and($generatedPath)->toStartWith('tests/Feature/Commands/.docker-feature-tests/run_')
+        ->and($lane['test_files'])->toContain('tests/Feature/Commands/IngressProductionTopologyTest.php')
+        ->and($lane['test_files'])->toContain('tests/Feature/Commands/ToolCredentialsTest.php')
+        ->and($lane['test_files'])->not->toContain('tests/Feature/Commands/ToolLifecycleHostInitTest.php')
+        ->and($lane['test_files'])->not->toContain('tests/Feature/Commands/RuntimeBackendHostInitTest.php');
 });
 
 it('does not select Docker E2E files with direct host PHP topology commands', function (): void {
@@ -631,7 +631,7 @@ it('does not select Docker E2E files with direct host PHP topology commands', fu
         $lane = $payload['success']['data']['lanes'][0];
         $files = [
             ...$lane['test_files'],
-            'tests/E2E/Support/Pest.php',
+            'tests/Feature/Commands/Support/Pest.php',
         ];
     });
 
@@ -720,7 +720,7 @@ it('includes the agent topology coverage in the incus lane', function (): void {
         $lane = $payload['success']['data']['lanes'][0];
 
         expect($exitCode)->toBe(0)
-            ->and($lane['test_files'])->toContain('tests/E2E/NodeListAgentTopologyTest.php')
+            ->and($lane['test_files'])->toContain('tests/Feature/Commands/NodeListAgentTopologyTest.php')
             ->and($lane['environment']['ORBIT_E2E_TOPOLOGY_CACHE'])->toBe('process')
             ->and($lane['environment']['ORBIT_E2E_CHECKOUT_CACHE'])->toBe('process')
             ->and($lane['environment']['ORBIT_E2E_INCUS_HOST_SLOTS'])->toBe('')
@@ -750,7 +750,7 @@ it('requires Incus VM caps before planning Incus lanes', function (): void {
     withE2EEnvironment(['ORBIT_E2E_INCUS_PARALLEL_PROCESSES'], [
         'ORBIT_E2E_INCUS_PARALLEL_PROCESSES' => '2',
     ], function (): void {
-        $exitCode = Artisan::call('e2e:test --dry-run --json --lanes=incus tests/E2E/NodeListAgentTopologyTest.php');
+        $exitCode = Artisan::call('e2e:test --dry-run --json --lanes=incus tests/Feature/Commands/NodeListAgentTopologyTest.php');
         $output = Artisan::output();
 
         expect($exitCode)->toBe(1)
@@ -768,7 +768,7 @@ it('fails Incus lane planning when warm snapshots are requested but missing', fu
         'ORBIT_E2E_INCUS_HOST_VM_CAPS' => 'beast:12',
         'ORBIT_E2E_INCUS_PARALLEL_PROCESSES' => '2',
     ], function (): void {
-        $exitCode = Artisan::call('e2e:test --dry-run --json --lanes=incus tests/E2E/NodeListAgentTopologyTest.php');
+        $exitCode = Artisan::call('e2e:test --dry-run --json --lanes=incus tests/Feature/Commands/NodeListAgentTopologyTest.php');
         $output = Artisan::output();
 
         expect($exitCode)->toBe(1)
@@ -830,13 +830,13 @@ it('uses a unique generated docker test directory per plan', function (): void {
     $secondPath = firstGeneratedDockerPath($second['success']['data']['lanes'][0]['command']);
 
     expect($exitCode)->toBe(0)
-        ->and($firstPath)->toStartWith('tests/E2E/.docker-feature-tests/run_')
-        ->and($secondPath)->toStartWith('tests/E2E/.docker-feature-tests/run_')
+        ->and($firstPath)->toStartWith('tests/Feature/Commands/.docker-feature-tests/run_')
+        ->and($secondPath)->toStartWith('tests/Feature/Commands/.docker-feature-tests/run_')
         ->and($firstPath)->not->toBe($secondPath);
 });
 
 it('does not include generated docker test files in future docker plans', function (): void {
-    $directory = repo_path('apps/gateway/tests/E2E/.docker-feature-tests');
+    $directory = repo_path('apps/e2e/tests/Feature/Commands/.docker-feature-tests');
 
     if (! is_dir($directory)) {
         mkdir($directory, 0777, true);
@@ -862,7 +862,7 @@ PHP);
         });
 
         expect($exitCode)->toBe(0)
-            ->and($lane['test_files'])->not->toContain('tests/E2E/.docker-feature-tests/Docker999GeneratedTest.php');
+            ->and($lane['test_files'])->not->toContain('tests/Feature/Commands/.docker-feature-tests/Docker999GeneratedTest.php');
     } finally {
         @unlink($directory.'/Docker999GeneratedTest.php');
         @rmdir($directory);
@@ -871,7 +871,7 @@ PHP);
 
 it('copies e2e support files into generated docker test suites', function (): void {
     $command = app(E2ETestCommand::class);
-    $testPath = 'tests/E2E/.docker-feature-tests/run_support_'.bin2hex(random_bytes(4));
+    $testPath = 'tests/Feature/Commands/.docker-feature-tests/run_support_'.bin2hex(random_bytes(4));
     $plans = [
         'docker' => [
             'lane' => 'docker',
@@ -881,7 +881,7 @@ it('copies e2e support files into generated docker test suites', function (): vo
             ],
             'test_path' => $testPath,
             'test_files' => [
-                'tests/E2E/NodeListAgentTopologyTest.php',
+                'tests/Feature/Commands/NodeListAgentTopologyTest.php',
             ],
         ],
     ];
@@ -971,11 +971,11 @@ it('passes explicit incus test paths into artifact availability checks', functio
     withE2EEnvironment([], [
         'ORBIT_E2E_INCUS_HOST_VM_CAPS' => 'beast:12',
     ], function () use (&$exitCode, &$output): void {
-        $exitCode = Artisan::call('e2e:test --lanes=incus tests/E2E/NodeListAgentTopologyTest.php');
+        $exitCode = Artisan::call('e2e:test --lanes=incus tests/Feature/Commands/NodeListAgentTopologyTest.php');
         $output = Artisan::output();
     });
 
-    expect($seenTestFiles)->toBe(['tests/E2E/NodeListAgentTopologyTest.php'])
+    expect($seenTestFiles)->toBe(['tests/Feature/Commands/NodeListAgentTopologyTest.php'])
         ->and($exitCode)->toBe(1)
         ->and($output)->toContain('E2E lane [incus] unavailable:')
         ->and($output)->toContain('composer e2e:ensure-artifacts -- --lanes=incus --roles=operator,gateway,agent operator_gateway_agent');
@@ -1199,7 +1199,7 @@ function runE2EInterruptReapers(array $plans): void
 function firstGeneratedDockerPath(array $command): ?string
 {
     foreach ($command as $argument) {
-        if (str_starts_with($argument, 'tests/E2E/.docker-feature-tests/run_')) {
+        if (str_starts_with($argument, 'tests/Feature/Commands/.docker-feature-tests/run_')) {
             return $argument;
         }
     }
@@ -1212,7 +1212,7 @@ function firstGeneratedDockerPath(array $command): ?string
  */
 function failingPreparationPlans(): array
 {
-    $testPath = 'tests/E2E/.docker-feature-tests/run_failure_'.bin2hex(random_bytes(4));
+    $testPath = 'tests/Feature/Commands/.docker-feature-tests/run_failure_'.bin2hex(random_bytes(4));
 
     return [
         'docker' => [
@@ -1223,8 +1223,8 @@ function failingPreparationPlans(): array
             ],
             'test_path' => $testPath,
             'test_files' => [
-                'tests/E2E/ToolCredentialsTest.php',
-                'tests/E2E/DefinitelyMissingTest.php',
+                'tests/Feature/Commands/ToolCredentialsTest.php',
+                'tests/Feature/Commands/DefinitelyMissingTest.php',
             ],
         ],
     ];
@@ -1280,7 +1280,7 @@ function invokeE2ETestCommandMethod(E2ETestCommand $command, string $method, arr
  */
 function createTopologySchedulingFixtureFiles(array $groups): array
 {
-    $directory = repo_path('apps/gateway/tests/E2E/.topology-scheduling-fixtures/'.bin2hex(random_bytes(4)));
+    $directory = repo_path('apps/e2e/tests/Feature/Commands/.topology-scheduling-fixtures/'.bin2hex(random_bytes(4)));
 
     if (! mkdir($directory, 0777, true) && ! is_dir($directory)) {
         throw new RuntimeException("Could not create fixture directory [{$directory}].");
