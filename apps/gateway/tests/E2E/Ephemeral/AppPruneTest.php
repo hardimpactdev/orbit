@@ -27,6 +27,8 @@ foreach (['operator-1', 'app-dev-1'] as $name) {
     'consumer_node_id' => $nodes->get('operator-1'),
     'serving_node_id' => $nodes->get('app-dev-1'),
 ], [
+    'permissions' => json_encode(['app:new', 'app:agent', 'app:prune'], JSON_THROW_ON_ERROR),
+    'custom_permissions' => json_encode([], JSON_THROW_ON_ERROR),
     'created_at' => now(),
     'updated_at' => now(),
 ]);
@@ -48,7 +50,7 @@ it('dry-run --json returns planned stale workspace set without mutation', functi
     $path = "/home/orbit/apps/{$name}";
 
     try {
-        $topology->withCurrentCheckout(roles: ['operator', 'gateway']);
+        $topology->withCurrentCheckout(roles: ['operator', 'gateway', 'dev']);
         $gatewayApiIp = $topology->lease()->gatewayApiIp();
 
         e2eRestartGatewayApi($topology, 'app-prune');
@@ -73,7 +75,8 @@ it('dry-run --json returns planned stale workspace set without mutation', functi
         );
 
         $createPayload = json_decode(trim($create->output()), associative: true, flags: JSON_THROW_ON_ERROR);
-        expect($createPayload['success']['data']['result']['action'])->toBe('created');
+        $createData = e2eJsonCommandResultData($createPayload);
+        expect($createData['result']['action'])->toBe('created');
 
         // Set opencode adapter so the app has a configured agent IDE.
         $topology->ssh(
@@ -116,7 +119,7 @@ it('--force --json prunes stale workspaces and reports pruned list', function ()
     $path = "/home/orbit/apps/{$name}";
 
     try {
-        $topology->withCurrentCheckout(roles: ['operator', 'gateway']);
+        $topology->withCurrentCheckout(roles: ['operator', 'gateway', 'dev']);
         $gatewayApiIp = $topology->lease()->gatewayApiIp();
 
         e2eRestartGatewayApi($topology, 'app-prune-force');
@@ -140,7 +143,8 @@ it('--force --json prunes stale workspaces and reports pruned list', function ()
         );
 
         $createPayload = json_decode(trim($create->output()), associative: true, flags: JSON_THROW_ON_ERROR);
-        expect($createPayload['success']['data']['result']['action'])->toBe('created');
+        $createData = e2eJsonCommandResultData($createPayload);
+        expect($createData['result']['action'])->toBe('created');
 
         $topology->ssh(
             'operator',

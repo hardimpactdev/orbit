@@ -13,7 +13,7 @@ it('lists Orbit-managed resolver overrides on a Linux operator node', function (
     try {
         $topology->ssh(
             'operator',
-            "cd {$topology->checkout('operator')} && mkdir -p apps/gateway/storage/app/orbit/dnsmasq.d && printf 'address=/.test/10.6.0.7\n' > apps/gateway/storage/app/orbit/dnsmasq.d/test.conf",
+            "cd {$topology->checkout('operator')} && mkdir -p apps/cli/storage/app/orbit/dnsmasq.d && printf 'address=/.test/10.6.0.7\n' > apps/cli/storage/app/orbit/dnsmasq.d/test.conf",
         );
 
         $result = $topology->ssh('operator', "cd {$topology->checkout('operator')} && orbit dns:list --json");

@@ -82,7 +82,7 @@ it('creates and sets up a workspace from a non-gateway caller through the gatewa
     $workspacePath = "/home/orbit/apps/docs/.worktrees/{$workspaceName}";
 
     try {
-        $topology->withCurrentCheckout(roles: ['operator', 'gateway']);
+        $topology->withCurrentCheckout(roles: ['operator', 'gateway', 'dev']);
         $gatewayApiIp = $topology->lease()->gatewayApiIp();
 
         e2eRestartGatewayApi($topology, 'workspace-new');
@@ -101,13 +101,14 @@ it('creates and sets up a workspace from a non-gateway caller through the gatewa
         );
 
         $payload = json_decode(trim($result->output()), associative: true, flags: JSON_THROW_ON_ERROR);
+        $data = e2eJsonCommandResultData($payload);
 
-        expect($payload['success']['data']['result'])->toBe(['action' => 'created'])
-            ->and($payload['success']['data']['workspace']['name'])->toBe($workspaceName)
-            ->and($payload['success']['data']['workspace']['app'])->toBe('docs')
-            ->and($payload['success']['data']['workspace']['path'])->toBe($workspacePath)
-            ->and($payload['success']['data']['workspace']['lifecycle_status'])->toBe('active')
-            ->and($payload['success']['meta']['base'])->toBe('main');
+        expect($data['result'])->toBe(['action' => 'created'])
+            ->and($data['workspace']['name'])->toBe($workspaceName)
+            ->and($data['workspace']['app'])->toBe('docs')
+            ->and($data['workspace']['path'])->toBe($workspacePath)
+            ->and($data['workspace']['lifecycle_status'])->toBe('active')
+            ->and($data['meta']['base'])->toBe('main');
 
         $topology->ssh('dev', 'test -e '.escapeshellarg("{$workspacePath}/.git"), timeoutSeconds: 60);
 

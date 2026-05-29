@@ -25,6 +25,8 @@ foreach (['operator-1', 'app-dev-1'] as $name) {
     'consumer_node_id' => $nodes->get('operator-1'),
     'serving_node_id' => $nodes->get('app-dev-1'),
 ], [
+    'permissions' => json_encode(['app:new', 'app:remove'], JSON_THROW_ON_ERROR),
+    'custom_permissions' => json_encode([], JSON_THROW_ON_ERROR),
     'created_at' => now(),
     'updated_at' => now(),
 ]);
@@ -46,7 +48,7 @@ it('removes an app from a operator caller through the gateway api', function ():
     $path = "/home/orbit/apps/{$name}";
 
     try {
-        $topology->withCurrentCheckout(roles: ['operator', 'gateway']);
+        $topology->withCurrentCheckout(roles: ['operator', 'gateway', 'dev']);
         $gatewayApiIp = $topology->lease()->gatewayApiIp();
 
         e2eRestartGatewayApi($topology, 'app-remove');
@@ -65,8 +67,9 @@ it('removes an app from a operator caller through the gateway api', function ():
         );
 
         $createPayload = json_decode(trim($create->output()), associative: true, flags: JSON_THROW_ON_ERROR);
+        $createData = e2eJsonCommandResultData($createPayload);
 
-        expect($createPayload['success']['data']['result']['action'])->toBe('created');
+        expect($createData['result']['action'])->toBe('created');
 
         $result = $topology->ssh(
             'operator',

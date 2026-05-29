@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+use App\E2E\Support\E2EConfig;
+use App\E2E\Support\E2EGatewayApi;
 use App\E2E\Support\E2ETopologyHarness;
 use App\E2E\Support\E2ETopologyKind;
 
@@ -146,14 +148,18 @@ PHP;
 }
 
 it('administers VPN clients through gateway execution and operator SSH forwarding', function (): void {
+    $config = E2EConfig::fromEnvironment();
     $topology = e2eTopology(E2ETopologyKind::OperatorGateway)
         ->withCurrentCheckout(roles: ['operator', 'gateway']);
-    $backendPath = '/tmp/orbit-vpn-'.strtolower(bin2hex(random_bytes(3))).'.json';
+    $backendPath = $topology->checkout('gateway').'/apps/gateway/storage/app/orbit-vpn-'.strtolower(bin2hex(random_bytes(3))).'.json';
     $gatewayCheckout = escapeshellarg($topology->checkout('gateway'));
     $operatorCheckout = escapeshellarg($topology->checkout('operator'));
 
     try {
         vpnCommandPrepareFakeBackend($topology, $backendPath);
+
+        e2eRestartGatewayApi($topology, 'vpn-command');
+        E2EGatewayApi::waitForGatewayApi($topology->instance('operator'), $config->operatorUser, $topology->lease()->sshKeyPair(), gatewayIp: $topology->lease()->gatewayApiIp());
 
         $gatewayList = $topology->ssh(
             'gateway',
@@ -245,7 +251,7 @@ it('administers VPN clients through gateway execution and operator SSH forwardin
                 'total' => 1,
             ])
             ->and($state['activity'])->toContain([
-                'event' => 'vpn-client:remove',
+                'event' => 'api:DELETE /api/vpn/clients/tablet',
                 'effect' => 'destructive',
                 'total' => 1,
             ]);

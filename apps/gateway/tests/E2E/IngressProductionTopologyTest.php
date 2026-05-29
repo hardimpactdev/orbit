@@ -64,7 +64,7 @@ it('serves a production app through a prepared ingress topology', function (): v
 
         $colocatedIngress = $topology->lease()->ingress()?->name() === $topology->lease()->prodApp()?->name();
 
-        $topology->withCurrentCheckout(roles: ['operator', 'gateway']);
+        $topology->withCurrentCheckout(roles: ['operator', 'gateway', 'prod', 'ingress']);
         $gatewayApiIp = $topology->lease()->gatewayApiIp();
 
         e2eRestartGatewayApi($topology, 'ingress-production');
@@ -85,7 +85,8 @@ it('serves a production app through a prepared ingress topology', function (): v
         );
 
         $payload = json_decode(trim($result->output()), associative: true, flags: JSON_THROW_ON_ERROR);
-        $app = $payload['success']['data']['app'] ?? null;
+        $data = e2eJsonCommandResultData($payload);
+        $app = $data['app'] ?? null;
         $route = preparedIngressProductionRoute($topology, $domain);
         $backendPort = $colocatedIngress ? 8081 : 80;
 

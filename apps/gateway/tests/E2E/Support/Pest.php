@@ -109,6 +109,49 @@ function e2eGatewayApiUrl(E2ETopologyHarness $topology): string
     return 'https://'.$topology->lease()->gatewayApiIp();
 }
 
+/**
+ * @param  array<string, mixed>  $payload
+ * @return array<string, mixed>
+ */
+function e2eJsonCommandData(array $payload): array
+{
+    $successData = $payload['success']['data'] ?? null;
+
+    if (is_array($successData)) {
+        return $successData;
+    }
+
+    if (($payload['event'] ?? null) !== 'complete') {
+        return [];
+    }
+
+    $frame = $payload['data'] ?? null;
+
+    if (! is_array($frame)) {
+        return [];
+    }
+
+    $data = $frame['data'] ?? null;
+
+    return is_array($data) ? $data : [];
+}
+
+/**
+ * @param  array<string, mixed>  $payload
+ * @return array<string, mixed>
+ */
+function e2eJsonCommandResultData(array $payload): array
+{
+    $data = e2eJsonCommandData($payload);
+    $result = $data['result'] ?? null;
+
+    if (is_array($result) && (array_key_exists('workspace', $result) || array_key_exists('meta', $result))) {
+        return $result;
+    }
+
+    return $data;
+}
+
 function e2eGatewayWireGuardIp(E2ETopologyHarness $topology): string
 {
     if (e2eUsesDockerDnsAliasTopology()) {

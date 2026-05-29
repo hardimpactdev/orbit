@@ -82,7 +82,7 @@ it('sets up an existing workspace path from a non-gateway caller through the gat
     $workspacePath = "/home/orbit/apps/docs/.worktrees/{$workspaceName}";
 
     try {
-        $topology->withCurrentCheckout(roles: ['operator', 'gateway']);
+        $topology->withCurrentCheckout(roles: ['operator', 'gateway', 'dev']);
         $gatewayApiIp = $topology->lease()->gatewayApiIp();
 
         e2eRestartGatewayApi($topology, 'workspace-setup');
@@ -103,11 +103,12 @@ it('sets up an existing workspace path from a non-gateway caller through the gat
         );
 
         $payload = json_decode(trim($result->output()), associative: true, flags: JSON_THROW_ON_ERROR);
+        $data = e2eJsonCommandResultData($payload);
 
-        expect($payload['success']['data']['workspace'])->toBe($workspaceName)
-            ->and($payload['success']['data']['app'])->toBe('docs')
-            ->and($payload['success']['data']['action'])->toBe('adopted')
-            ->and($payload['success']['data']['setup_steps']['status'])->toBe('skipped');
+        expect($data['workspace'])->toBe($workspaceName)
+            ->and($data['app'])->toBe('docs')
+            ->and($data['action'])->toBe('adopted')
+            ->and($data['setup_steps']['status'])->toBe('skipped');
 
         $gatewayRecord = $topology->ssh(
             'gateway',
@@ -432,11 +433,13 @@ SH,
         'dev',
         sprintf(
             <<<'SH'
-cd %1$s/apps/cli
-touch .env
-grep -Ev '^(ORBIT_EXECUTOR_SECRET|ORBIT_NODE_IDENTITY)=' .env > .env.tmp || true
-mv .env.tmp .env
-printf 'ORBIT_EXECUTOR_SECRET=%2$s\nORBIT_NODE_IDENTITY=app-dev-1\n' >> .env
+cd %1$s
+for env_file in apps/gateway/.env apps/cli/.env; do
+    touch "$env_file"
+    grep -Ev '^(ORBIT_EXECUTOR_SECRET|ORBIT_NODE_IDENTITY)=' "$env_file" > "$env_file.tmp" || true
+    mv "$env_file.tmp" "$env_file"
+    printf 'ORBIT_EXECUTOR_SECRET=%2$s\nORBIT_NODE_IDENTITY=app-dev-1\n' >> "$env_file"
+done
 SH,
             escapeshellarg($topology->checkout('dev')),
             $secret,

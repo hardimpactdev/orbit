@@ -55,7 +55,7 @@ it('builds the reusable superset topology from the base image', function (): voi
 
     $archive = "{$bundleDir}/orbit-source.tar.gz";
     Process::timeout(300)->run(sprintf(
-        'COPYFILE_DISABLE=1 tar --exclude=./.git --exclude=./vendor --exclude=./apps/gateway/vendor --exclude=./node_modules -czf %s -C %s .',
+        'COPYFILE_DISABLE=1 tar --exclude=./.git --exclude=./vendor --exclude=./apps/gateway/vendor --exclude=./apps/gateway/database/*.sqlite --exclude=./apps/gateway/database/*.sqlite-* --exclude=./apps/gateway/bootstrap/cache/*.php --exclude=./node_modules -czf %s -C %s .',
         escapeshellarg($archive),
         escapeshellarg(repo_path()),
     ))->throw();

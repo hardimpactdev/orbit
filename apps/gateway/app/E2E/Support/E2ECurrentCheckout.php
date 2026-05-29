@@ -382,7 +382,7 @@ final class E2ECurrentCheckout
     private static function runtimeComposerInstallCommand(string $remotePath, ?string $dockerRuntimeContainer): string
     {
         if ($dockerRuntimeContainer === null) {
-            return 'cd apps/gateway && composer install --no-interaction --prefer-dist --optimize-autoloader';
+            return 'composer --working-dir=apps/gateway install --no-interaction --prefer-dist --optimize-autoloader';
         }
 
         $environment = [
@@ -426,12 +426,12 @@ final class E2ECurrentCheckout
             self::reusePreparedVendorWithLocalAutoloadCommand(
                 appPath: 'apps/gateway',
                 vendorSourcePath: $vendorSourcePath,
-                fallbackClause: "elif command -v composer >/dev/null 2>&1; then cd apps/gateway && composer install --no-interaction --prefer-dist --optimize-autoloader; else echo 'Gateway Composer dependencies are not installed and prepared vendor dependencies could not be reused.' >&2; exit 127",
+                fallbackClause: "elif command -v composer >/dev/null 2>&1; then composer --working-dir=apps/gateway install --no-interaction --prefer-dist --optimize-autoloader; else echo 'Gateway Composer dependencies are not installed and prepared vendor dependencies could not be reused.' >&2; exit 127",
             ),
             self::reusePreparedVendorWithLocalAutoloadCommand(
                 appPath: 'apps/cli',
                 vendorSourcePath: $vendorSourcePath,
-                fallbackClause: "elif command -v composer >/dev/null 2>&1; then cd apps/cli && composer install --no-interaction --prefer-dist --optimize-autoloader; else echo 'CLI Composer dependencies are not installed and prepared vendor dependencies could not be reused.' >&2; exit 127",
+                fallbackClause: "elif command -v composer >/dev/null 2>&1; then composer --working-dir=apps/cli install --no-interaction --prefer-dist --optimize-autoloader; else echo 'CLI Composer dependencies are not installed and prepared vendor dependencies could not be reused.' >&2; exit 127",
             ),
         ]);
     }
@@ -461,7 +461,7 @@ final class E2ECurrentCheckout
 
     private static function composerDumpAutoloadCommand(string $appPath): string
     {
-        $localCommand = "cd {$appPath} && composer dump-autoload --no-interaction --optimize";
+        $localCommand = "composer --working-dir={$appPath} dump-autoload --no-interaction --optimize";
 
         return "if command -v composer >/dev/null 2>&1; then {$localCommand}; fi";
     }

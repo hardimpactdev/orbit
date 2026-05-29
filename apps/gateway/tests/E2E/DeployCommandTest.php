@@ -18,6 +18,7 @@ $node = \App\Models\Node::query()->where('name', 'app-dev-1')->firstOrFail();
         'path' => '__PATH__',
         'document_root' => 'public',
         'repository' => null,
+        'environment' => 'production',
         'php_version' => '8.5',
         'adopted' => true,
     ],
@@ -37,7 +38,7 @@ PHP;
 
 it('manages and runs a production app deployment pipeline', function (): void {
     $topology = e2eTopology(E2ETopologyKind::OperatorGatewayAppdev)
-        ->withCurrentCheckout(roles: ['gateway']);
+        ->withCurrentCheckout(roles: ['gateway', 'dev']);
     $path = '/tmp/orbit-deploy-e2e-'.strtolower(bin2hex(random_bytes(3)));
 
     try {
@@ -72,8 +73,9 @@ it('manages and runs a production app deployment pipeline', function (): void {
             timeoutSeconds: 180,
         );
         $runPayload = json_decode(trim($run->output()), associative: true, flags: JSON_THROW_ON_ERROR);
-        $runId = $runPayload['success']['data']['run']['id'];
-        $runStepId = $runPayload['success']['data']['run']['steps'][0]['id'];
+        $runData = e2eJsonCommandResultData($runPayload);
+        $runId = $runData['run']['id'];
+        $runStepId = $runData['run']['steps'][0]['id'];
 
         $history = $topology->ssh(
             'gateway',
@@ -112,8 +114,8 @@ it('manages and runs a production app deployment pipeline', function (): void {
             'timeout_seconds' => 120,
         ])
             ->and($listPayload['success']['data']['steps'])->toHaveCount(1)
-            ->and($runPayload['success']['data']['run']['status'])->toBe('completed')
-            ->and($runPayload['success']['data']['output']['stdout'])->toBe('deployed')
+            ->and($runData['run']['status'])->toBe('completed')
+            ->and($runData['output']['stdout'])->toBe('deployed')
             ->and($historyPayload['success']['data']['runs'][0]['id'])->toBe($runId)
             ->and($logPayload['success']['data']['steps'][0]['output']['stdout'])->toBe('deployed')
             ->and($removePayload['success']['meta']['history_preserved'])->toBeTrue();

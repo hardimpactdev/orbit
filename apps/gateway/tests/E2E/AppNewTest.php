@@ -25,6 +25,8 @@ foreach (['operator-1', 'app-dev-1'] as $name) {
     'consumer_node_id' => $nodes->get('operator-1'),
     'serving_node_id' => $nodes->get('app-dev-1'),
 ], [
+    'permissions' => json_encode(['app:new'], JSON_THROW_ON_ERROR),
+    'custom_permissions' => json_encode([], JSON_THROW_ON_ERROR),
     'created_at' => now(),
     'updated_at' => now(),
 ]);
@@ -45,7 +47,7 @@ it('creates a real app source directory from a operator caller through the gatew
     $name = 'e2e-app-'.strtolower(bin2hex(random_bytes(3)));
 
     try {
-        $topology->withCurrentCheckout(roles: ['operator', 'gateway']);
+        $topology->withCurrentCheckout(roles: ['operator', 'gateway', 'dev']);
         $gatewayApiIp = $topology->lease()->gatewayApiIp();
 
         e2eRestartGatewayApi($topology, 'app-new');
@@ -64,9 +66,10 @@ it('creates a real app source directory from a operator caller through the gatew
         );
 
         $payload = json_decode(trim($result->output()), associative: true, flags: JSON_THROW_ON_ERROR);
-        $app = $payload['success']['data']['app'] ?? null;
+        $data = e2eJsonCommandResultData($payload);
+        $app = $data['app'] ?? null;
         expect($app)->toBeArray()
-            ->and($payload['success']['data']['result']['action'])->toBe('created')
+            ->and($data['result']['action'])->toBe('created')
             ->and($app['name'])->toBe($name)
             ->and($app['node'])->toBe('app-dev-1')
             ->and($app['path'])->toBe("/home/orbit/apps/{$name}");

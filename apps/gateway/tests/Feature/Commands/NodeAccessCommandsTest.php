@@ -199,6 +199,7 @@ describe('node access revoke integration', function (): void {
                         'action' => 'revoked',
                         'already_absent' => false,
                         'self_lockout' => false,
+                        'was_gateway_admin' => true,
                     ],
                 ],
             ]);
@@ -258,6 +259,7 @@ describe('node access revoke integration', function (): void {
                         'action' => 'revoked',
                         'already_absent' => false,
                         'self_lockout' => true,
+                        'was_gateway_admin' => true,
                     ],
                 ],
             ]);
