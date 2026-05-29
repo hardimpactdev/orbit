@@ -561,6 +561,8 @@ BASH;
 
     private function canServeProxyRoutes(ProxyRoute $route, Node $node): bool
     {
+        // Ingress-placed routes (public S3 host routes, public WebSocket routes, etc.)
+        // are served on the ingress node — checked first before any owner_type branch.
         if ($this->usesIngressPlacement($route)) {
             return app(NodeRoleAssignments::class)->nodeCanServeIngress($node);
         }
@@ -569,7 +571,33 @@ BASH;
             return app(NodeRoleAssignments::class)->nodeCanServeRouter($node);
         }
 
+        // The private s3.orbit service route (owner_type='tool', protocol='s3',
+        // owner_name='rustfs', not ingress-placed) lives on the router node.
+        // Without this branch it would fall through to nodeCanServeGatewayOrAppHostWorkloads
+        // and produce a false proxy.node_invalid on a healthy router-only node.
+        if ($this->isS3ServiceRoute($route)) {
+            return app(NodeRoleAssignments::class)->nodeCanServeRouter($node);
+        }
+
         return app(NodeRoleAssignments::class)->nodeCanServeGatewayOrAppHostWorkloads($node);
+    }
+
+    /**
+     * Returns true when the route is the private S3 service route owned by the
+     * rustfs tool (owner_type='tool', protocol='s3', owner_name='rustfs') and
+     * is NOT ingress-placed. S3 public host routes have placement='ingress' and
+     * are therefore handled by the usesIngressPlacement() branch above.
+     */
+    private function isS3ServiceRoute(ProxyRoute $route): bool
+    {
+        if ($route->owner_type !== 'tool') {
+            return false;
+        }
+
+        $config = is_array($route->config) ? $route->config : [];
+
+        return ($config['protocol'] ?? null) === 's3'
+            && ($config['owner_name'] ?? null) === 'rustfs';
     }
 
     /**

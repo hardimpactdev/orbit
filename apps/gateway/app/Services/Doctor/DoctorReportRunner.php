@@ -35,6 +35,7 @@ use App\Services\Proxy\ProxyRouteAdopter;
 use App\Services\Proxy\ProxyRouteFixer;
 use App\Services\Proxy\ProxyRouteProbe;
 use App\Services\S3\S3DoctorProbe;
+use App\Services\S3\S3ProxyDoctorProbe;
 use App\Services\Schedules\SchedulesFixer;
 use App\Services\Schedules\SchedulesProbe;
 use App\Services\Tools\ToolsFixer;
@@ -66,7 +67,7 @@ final readonly class DoctorReportRunner
 
     private const array WEBSOCKET_CATEGORIES = ['node', 'tool'];
 
-    private const array S3_CATEGORIES = ['node', 'tool'];
+    private const array S3_CATEGORIES = ['node', 'tool', 'proxy'];
 
     public function __construct(
         private NodesProbe $nodesProbe,
@@ -90,6 +91,7 @@ final readonly class DoctorReportRunner
         private WebSocketDoctorProbe $webSocketDoctorProbe,
         private WebSocketProxyDoctorProbe $webSocketProxyDoctorProbe,
         private S3DoctorProbe $s3DoctorProbe,
+        private S3ProxyDoctorProbe $s3ProxyDoctorProbe,
     ) {}
 
     /**
@@ -375,6 +377,10 @@ final readonly class DoctorReportRunner
             }
 
             foreach ($this->webSocketProxyDoctorProbe->drift($node) as $entry) {
+                $issues[] = $this->nodeScopedIssuePayload($entry, $node);
+            }
+
+            foreach ($this->s3ProxyDoctorProbe->drift($node) as $entry) {
                 $issues[] = $this->nodeScopedIssuePayload($entry, $node);
             }
 
@@ -1238,6 +1244,10 @@ final readonly class DoctorReportRunner
             return $this->handleWebSocketProxyAction($mode, $node, $this->driftEntryFromIssue($issue));
         }
 
+        if (in_array($key, [S3ProxyDoctorProbe::RouterRouteKey, S3ProxyDoctorProbe::RouterBackendKey, S3ProxyDoctorProbe::PublicRouteKey], true)) {
+            return $this->handleS3ProxyAction($mode, $node, $this->driftEntryFromIssue($issue));
+        }
+
         $domain = is_string($detail['domain'] ?? null) ? $detail['domain'] : null;
 
         if ($domain === null) {
@@ -1293,6 +1303,33 @@ final readonly class DoctorReportRunner
 
         try {
             return $this->webSocketProxyDoctorProbe->restore($node, $entry);
+        } catch (\Throwable $e) {
+            return [
+                'family' => $entry->family,
+                'node' => $node->name,
+                'code' => $entry->key,
+                'key' => $entry->key,
+                'mode' => $mode,
+                'status' => 'failed',
+                'summary' => "Failed to fix {$entry->key}.",
+                'details' => [
+                    'error' => $e->getMessage(),
+                ],
+            ];
+        }
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    private function handleS3ProxyAction(string $mode, Node $node, DriftEntry $entry): ?array
+    {
+        if ($mode === 'verify') {
+            return null;
+        }
+
+        try {
+            return $this->s3ProxyDoctorProbe->restore($node, $entry);
         } catch (\Throwable $e) {
             return [
                 'family' => $entry->family,
@@ -1467,6 +1504,9 @@ final readonly class DoctorReportRunner
             'proxy.caddy_container_down',
             WebSocketProxyDoctorProbe::RouterRouteKey,
             WebSocketProxyDoctorProbe::PublicRouteKey,
+            S3ProxyDoctorProbe::RouterRouteKey,
+            S3ProxyDoctorProbe::RouterBackendKey,
+            S3ProxyDoctorProbe::PublicRouteKey,
             'workspace.security.system_user',
             'workspace.security.fs_permissions',
             'app.runtime_container_missing',

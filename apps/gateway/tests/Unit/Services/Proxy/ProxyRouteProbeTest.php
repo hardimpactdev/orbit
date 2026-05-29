@@ -1259,6 +1259,94 @@ final class ProxyProbeRecordingRemoteShell implements RemoteShell
     }
 }
 
+// ---------------------------------------------------------------------------
+// S3 service route eligibility fix (ProxyRouteProbe::canServeProxyRoutes)
+// ---------------------------------------------------------------------------
+
+describe('s3 service route node eligibility in ProxyRouteProbe', function (): void {
+    it('s3 healthy s3.orbit service route on a router-only node does NOT produce proxy.node_invalid', function (): void {
+        $node = Node::factory()->create(['name' => 'router-only', 'status' => 'active']);
+        assignProxyProbeRole($node, 'router');
+
+        $route = ProxyRoute::factory()->create([
+            'node_id' => $node->id,
+            'domain' => 's3.orbit',
+            'owner_type' => 'tool',
+            'kind' => 'proxy',
+            'config' => [
+                'owner_name' => 'rustfs',
+                'protocol' => 's3',
+                'target' => ['type' => 'upstream', 'value' => 'http://storage-1.s3.orbit:9000'],
+                'upstreams' => [
+                    ['scheme' => 'http', 'host' => 'storage-1.s3.orbit', 'port' => 9000],
+                ],
+            ],
+        ]);
+
+        $drift = (new ProxyRouteProbe)->diff($route, new ProbeSnapshot([]));
+
+        expect(proxyProbeIssue($drift, 'proxy.node_invalid'))->toBeNull();
+    });
+
+    it('s3 public host ingress route on an ingress node still resolves via ingress eligibility (no false proxy.node_invalid)', function (): void {
+        $node = Node::factory()->create(['name' => 'ingress-only', 'status' => 'active']);
+        assignProxyProbeRole($node, 'ingress');
+
+        $routerNode = Node::factory()->create(['name' => 'router-only', 'wireguard_address' => '10.6.0.1', 'status' => 'active']);
+        assignProxyProbeRole($routerNode, 'router');
+
+        $route = ProxyRoute::factory()->create([
+            'node_id' => $node->id,
+            'domain' => 's3.example.com',
+            'owner_type' => 'tool',
+            'kind' => 'proxy',
+            'config' => [
+                'placement' => 'ingress',
+                'owner_name' => 'rustfs',
+                'protocol' => 's3',
+                'target' => ['type' => 'upstream', 'value' => 'https://s3.orbit'],
+                'router_upstream' => [
+                    'node_id' => $routerNode->id,
+                    'node' => 'router-only',
+                    'url' => 'http://10.6.0.1:80',
+                ],
+                'tls' => [
+                    'cert_path' => '/etc/orbit/certs/s3.example.com.crt',
+                    'key_path' => '/etc/orbit/certs/s3.example.com.key',
+                ],
+            ],
+        ]);
+
+        $drift = (new ProxyRouteProbe)->diff($route, new ProbeSnapshot([]));
+
+        expect(proxyProbeIssue($drift, 'proxy.node_invalid'))->toBeNull();
+    });
+
+    it('s3 s3.orbit service route on a non-router node DOES produce proxy.node_invalid', function (): void {
+        $node = Node::factory()->create(['name' => 'ingress-only', 'status' => 'active']);
+        assignProxyProbeRole($node, 'ingress');
+
+        $route = ProxyRoute::factory()->create([
+            'node_id' => $node->id,
+            'domain' => 's3.orbit',
+            'owner_type' => 'tool',
+            'kind' => 'proxy',
+            'config' => [
+                'owner_name' => 'rustfs',
+                'protocol' => 's3',
+                'target' => ['type' => 'upstream', 'value' => 'http://storage-1.s3.orbit:9000'],
+                'upstreams' => [
+                    ['scheme' => 'http', 'host' => 'storage-1.s3.orbit', 'port' => 9000],
+                ],
+            ],
+        ]);
+
+        $drift = (new ProxyRouteProbe)->diff($route, new ProbeSnapshot([]));
+
+        expect(proxyProbeIssue($drift, 'proxy.node_invalid'))->not->toBeNull();
+    });
+});
+
 final class ProxyProbeCaddyContainerShell implements RemoteShell
 {
     /** @var list<Node> */
