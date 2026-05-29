@@ -20,10 +20,15 @@ it('uses operator topology names and accepted input aliases', function (): void 
         ->and(E2ETopologyKind::OperatorGatewayAppdev->value)->toBe('operator_gateway_app-dev')
         ->and(E2ETopologyKind::OperatorGatewayAppdevAppprod->value)->toBe('operator_gateway_app-dev_app-prod')
         ->and(E2ETopologyKind::OperatorGatewayAgent->value)->toBe('operator_gateway_agent')
+        ->and(E2ETopologyKind::OperatorGatewayAppdevWebsocket->value)->toBe('operator_gateway_app-dev_websocket')
+        ->and(E2ETopologyKind::OperatorGatewayAppdevAppprodWebsocket->value)->toBe('operator_gateway_app-dev_app-prod_websocket')
+        ->and(E2ETopologyKind::OperatorGatewayAppdevAppprodAgentWebsocket->value)->toBe('operator_gateway_app-dev_app-prod_agent_websocket')
         ->and(E2ETopologyKind::tryFromInput('operator-gateway-dev'))->toBe(E2ETopologyKind::OperatorGatewayAppdev)
         ->and(E2ETopologyKind::tryFromInput('operator-gateway-dev-prod'))->toBe(E2ETopologyKind::OperatorGatewayAppdevAppprod)
         ->and(E2ETopologyKind::tryFromInput('operator-gateway-agent'))->toBe(E2ETopologyKind::OperatorGatewayAgent)
+        ->and(E2ETopologyKind::tryFromInput('operator-gateway-dev-websocket'))->toBe(E2ETopologyKind::OperatorGatewayAppdevWebsocket)
         ->and(E2ETopologyKind::OperatorGatewayAppdev->featureGroup())->toBe('e2e-feature-operator_gateway_app-dev')
+        ->and(E2ETopologyKind::OperatorGatewayAppdevAppprodAgentWebsocket->featureGroup())->toBe('e2e-feature-operator_gateway_app-dev_app-prod_agent_websocket')
         ->and(E2ETopologyKind::OperatorGatewayAppdev->deprecatedFeatureGroups())->toContain('e2e-feature-operator-gateway-dev');
 });
 

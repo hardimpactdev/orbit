@@ -22,9 +22,17 @@ it('has correct enum string values', function (): void {
         ->and(E2ETopologyKind::OperatorGatewayAppdevAppprod->value)->toBe('operator_gateway_app-dev_app-prod')
         ->and(E2ETopologyKind::OperatorGatewayAgent->value)->toBe('operator_gateway_agent')
         ->and(E2ETopologyKind::tryFromInput('operator_gateway_app-prod_ingress')?->value)->toBe('operator_gateway_app-prod_ingress')
+        ->and(E2ETopologyKind::tryFromInput('operator_gateway_app-dev_websocket')?->value)->toBe('operator_gateway_app-dev_websocket')
+        ->and(E2ETopologyKind::tryFromInput('operator_gateway_app-dev_app-prod_websocket')?->value)->toBe('operator_gateway_app-dev_app-prod_websocket')
+        ->and(E2ETopologyKind::tryFromInput('operator_gateway_app-dev_app-prod_agent_websocket')?->value)->toBe('operator_gateway_app-dev_app-prod_agent_websocket')
         ->and(E2ETopologyKind::Operator)->toBe(E2ETopologyKind::Operator)
         ->and(E2ETopologyKind::tryFromInput('operator-gateway-agent'))->toBe(E2ETopologyKind::OperatorGatewayAgent)
-        ->and(E2ETopologyKind::tryFromInput('operator-gateway-dev-prod'))->toBe(E2ETopologyKind::OperatorGatewayAppdevAppprod);
+        ->and(E2ETopologyKind::tryFromInput('operator-gateway-dev-prod'))->toBe(E2ETopologyKind::OperatorGatewayAppdevAppprod)
+        ->and(E2ETopologyKind::tryFromInput('operator-gateway-dev-websocket'))->toBe(E2ETopologyKind::OperatorGatewayAppdevWebsocket)
+        ->and(E2ETopologyKind::tryFromInput('operator-gateway-appdev-websocket'))->toBe(E2ETopologyKind::OperatorGatewayAppdevWebsocket)
+        ->and(E2ETopologyKind::tryFromInput('operator-gateway-dev-prod-websocket'))->toBe(E2ETopologyKind::OperatorGatewayAppdevAppprodWebsocket)
+        ->and(E2ETopologyKind::tryFromInput('operator-gateway-appdev-appprod-websocket'))->toBe(E2ETopologyKind::OperatorGatewayAppdevAppprodWebsocket)
+        ->and(E2ETopologyKind::tryFromInput('operator-gateway-appdev-appprod-agent-websocket'))->toBe(E2ETopologyKind::OperatorGatewayAppdevAppprodAgentWebsocket);
 });
 
 it('resolves requested topology kinds exactly', function (): void {
@@ -38,6 +46,9 @@ it('resolves requested topology kinds exactly', function (): void {
             ->and($factory->resolveKind(E2ETopologyKind::OperatorGatewayAppdev))->toBe(E2ETopologyKind::OperatorGatewayAppdev)
             ->and($factory->resolveKind(E2ETopologyKind::OperatorGatewayAppdevAppprod))->toBe(E2ETopologyKind::OperatorGatewayAppdevAppprod)
             ->and($factory->resolveKind(E2ETopologyKind::OperatorGatewayAgent))->toBe(E2ETopologyKind::OperatorGatewayAgent)
+            ->and($factory->resolveKind(E2ETopologyKind::OperatorGatewayAppdevWebsocket))->toBe(E2ETopologyKind::OperatorGatewayAppdevWebsocket)
+            ->and($factory->resolveKind(E2ETopologyKind::OperatorGatewayAppdevAppprodWebsocket))->toBe(E2ETopologyKind::OperatorGatewayAppdevAppprodWebsocket)
+            ->and($factory->resolveKind(E2ETopologyKind::OperatorGatewayAppdevAppprodAgentWebsocket))->toBe(E2ETopologyKind::OperatorGatewayAppdevAppprodAgentWebsocket)
             ->and($factory->resolveKind($ingressKind))->toBe($ingressKind);
     });
 });

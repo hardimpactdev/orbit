@@ -820,6 +820,80 @@ it('seeds gateway registry rows for composed docker app roles at acquire time', 
         ->toContain('--ingress-node=app-prod-1');
 });
 
+it('launches and registers a dedicated websocket node for docker prepared topologies', function (): void {
+    $commands = [];
+
+    Process::fake(function ($process) use (&$commands) {
+        $command = (string) $process->command;
+        $commands[] = $command;
+
+        if (str_contains($command, 'cat ~/.ssh/id_ed25519.pub')) {
+            return Process::result(output: "ssh-ed25519 AAAATEST orbit-e2e-gateway\n");
+        }
+
+        if ($command === 'command -v docker >/dev/null'
+            || $command === 'docker info >/dev/null'
+            || $command === "docker image inspect 'orbit-runtime:prepared-current' >/dev/null"
+            || $command === "docker image inspect 'caddy:2-alpine' >/dev/null"
+            || $command === "docker image inspect 'dunglas/frankenphp:1-php8.5-bookworm' >/dev/null"
+            || $command === "docker image inspect 'dunglas/frankenphp:1-php8.4-bookworm' >/dev/null"
+            || $command === "docker image inspect 'dunglas/frankenphp:1-php8.3-bookworm' >/dev/null"
+            || $command === "docker image inspect 'orbit-e2e:operator_base' >/dev/null"
+            || $command === "docker image inspect 'orbit-e2e:gateway_base' >/dev/null"
+            || $command === "docker image inspect 'orbit-e2e:app-dev_base' >/dev/null"
+            || $command === "docker image inspect 'orbit-e2e:websocket_base' >/dev/null"
+            || $command === "docker ps --format '{{.Names}}' --filter 'name=orbit-e2e-'"
+            || str_starts_with($command, 'docker network create ')
+            || str_starts_with($command, 'docker exec ')
+        ) {
+            return Process::result();
+        }
+
+        if (str_starts_with($command, 'docker run -d ')) {
+            return Process::result(output: "container-id\n");
+        }
+
+        return Process::result(exitCode: 1, errorOutput: $command);
+    });
+
+    withE2EEnvironment([], [
+        'ORBIT_E2E_DOCKER_TEST_RUNNERS' => 'local:1:8',
+    ], function (): void {
+        $provider = new DockerTopologyProvider(E2EConfig::fromEnvironment());
+
+        $lease = $provider->acquire(
+            E2ETopologyKind::OperatorGatewayAppdevWebsocket,
+            'run123',
+            new E2EPhaseTimer,
+            new E2ETopologyAcquisitionOptions,
+        );
+
+        expect($lease->devApp()?->name())->toBe('orbit-e2e-run123-dev')
+            ->and($lease->instance('websocket')?->name())->toBe('orbit-e2e-run123-websocket')
+            ->and($lease->instanceNames())->toBe([
+                'orbit-e2e-run123-operator',
+                'orbit-e2e-run123-gateway',
+                'orbit-e2e-run123-dev',
+                'orbit-e2e-run123-websocket',
+            ]);
+
+        $lease->cleanup();
+    });
+
+    $setup = implode("\n", $commands);
+
+    expect($setup)
+        ->toContain("docker image inspect 'orbit-e2e:websocket_base' >/dev/null")
+        ->toContain("docker run -d --name 'orbit-e2e-run123-websocket'")
+        ->toContain('orbit:internal:bake-app-node app-dev-1 --role=app-dev')
+        ->toContain('orbit:internal:bake-websocket-node ws-1')
+        ->toContain('--host=websocket')
+        ->toContain('--wireguard-address=10.6.0.8')
+        ->toContain('--redis-node=app-dev-1')
+        ->toContain('/home/orbit/.ssh/authorized_keys')
+        ->not->toContain('--environment=');
+});
+
 it('authorizes the active docker gateway ssh key into composed app role containers', function (): void {
     $commands = [];
 

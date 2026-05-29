@@ -80,6 +80,17 @@ it('satisfies the prepared operator-gateway-prod-ingress topology contract', fun
     }
 })->group('e2e-topology-contract-operator_gateway_app-prod_ingress');
 
+it('satisfies the prepared full websocket topology contract', function (): void {
+    $config = E2EConfig::fromEnvironment();
+    $topology = requirePreparedTopologyOrSkip(E2ETopologyKind::OperatorGatewayAppdevAppprodAgentWebsocket);
+
+    try {
+        expectPreparedFullWebSocketTopology($topology, $config);
+    } finally {
+        $topology->cleanup();
+    }
+})->group('e2e-topology-contract-operator_gateway_app-dev_app-prod_agent_websocket');
+
 function requirePreparedTopologyOrSkip(E2ETopologyKind $kind): E2ETopologyLease
 {
     try {
@@ -226,6 +237,43 @@ function expectPreparedProdIngressTopology(E2ETopologyLease $topology, E2EConfig
         ->and($state['node_names'])->toBe(['app-prod-1', 'gateway', 'operator-1']);
 }
 
+function expectPreparedFullWebSocketTopology(E2ETopologyLease $topology, E2EConfig $config): void
+{
+    expectPreparedProdTopology($topology, $config);
+
+    $agent = $topology->agent();
+    $websocket = $topology->instance('websocket');
+    $gateway = $topology->gateway();
+    $key = $topology->sshKeyPair();
+
+    if ($agent === null || $websocket === null || $gateway === null) {
+        throw new RuntimeException('Prepared full websocket topology did not return gateway, agent, and websocket handles.');
+    }
+
+    expectPreparedOrbitCli($agent, 'orbit', $key);
+    expectPreparedOrbitCli($websocket, 'orbit', $key);
+
+    $agentNode = E2EGatewayApi::getNode($gateway, 'agent-1');
+    $websocketNode = E2EGatewayApi::getNode($gateway, 'ws-1');
+    $state = readPreparedFullWebSocketState($gateway);
+
+    expect($agentNode['tld'])->toBe('agent')
+        ->and($agentNode['gateway_endpoint'])->toBe(expectedPreparedGatewayEndpoint())
+        ->and($agentNode['user'])->toBe('orbit')
+        ->and($agentNode['wireguard_address'])->toBe('10.6.0.6')
+        ->and(array_column($agentNode['roles'], 'role'))->toContain('agent');
+
+    expect($websocketNode['tld'])->toBeNull()
+        ->and($websocketNode['gateway_endpoint'])->toBe(expectedPreparedGatewayEndpoint())
+        ->and($websocketNode['user'])->toBe('orbit')
+        ->and($websocketNode['wireguard_address'])->toBe('10.6.0.8')
+        ->and(array_column($websocketNode['roles'], 'role'))->toContain('websocket');
+
+    expect($state['websocket_roles'])->toBe(['websocket'])
+        ->and($state['websocket_redis_node'])->toBe('app-dev-1')
+        ->and($state['node_names'])->toBe(['agent-1', 'app-dev-1', 'app-prod-1', 'gateway', 'operator-1', 'ws-1']);
+}
+
 function expectPreparedOrbitCli(E2EInstance $instance, string $user, SshKeyPair $key): void
 {
     $orbitPath = "/home/{$user}/orbit";
@@ -360,6 +408,46 @@ PHP;
     return $state;
 }
 
+/**
+ * @return array{websocket_roles: list<string>, websocket_redis_node: string|null, node_names: list<string>}
+ */
+function readPreparedFullWebSocketState(E2EInstance $gateway): array
+{
+    $php = <<<'PHP'
+$node = \App\Models\Node::query()->where('name', 'ws-1')->firstOrFail();
+$assignments = $node->roleAssignments()
+    ->where('status', \App\Enums\Nodes\NodeRoleStatus::Active->value)
+    ->orderBy('role')
+    ->get(['role', 'settings']);
+
+$websocket = $assignments->firstWhere('role', \App\Enums\Nodes\NodeRoleName::WebSocket->value);
+$websocketSettings = $websocket === null ? [] : ($websocket->settings ?? []);
+$redisNodeId = $websocketSettings['redis_node_id'] ?? null;
+$redisNodeName = null;
+
+if ($redisNodeId !== null) {
+    $redisNodeName = \App\Models\Node::query()->whereKey($redisNodeId)->value('name');
+}
+
+echo json_encode([
+    'websocket_roles' => $assignments->pluck('role')->values()->all(),
+    'websocket_redis_node' => $redisNodeName,
+    'node_names' => \App\Models\Node::query()->orderBy('name')->pluck('name')->values()->all(),
+], JSON_THROW_ON_ERROR);
+PHP;
+
+    $result = E2ECommand::orbit(
+        $gateway,
+        preparedOrbitTinkerCommand('/home/orbit/orbit', $php),
+        'Could not read prepared websocket state',
+    );
+
+    /** @var array{websocket_roles: list<string>, websocket_redis_node: string|null, node_names: list<string>} $state */
+    $state = json_decode(trim($result->output()), associative: true, flags: JSON_THROW_ON_ERROR);
+
+    return $state;
+}
+
 function expectPreparedGatewayCertificateKeysReadable(E2EInstance $gateway, SshKeyPair $key): void
 {
     E2ECommand::ssh(
@@ -406,7 +494,7 @@ PHP;
 
     $result = E2ECommand::orbit(
         $gateway,
-        'cd /home/orbit/orbit && php apps/gateway/artisan tinker --execute='.escapeshellarg($php),
+        preparedOrbitTinkerCommand('/home/orbit/orbit', $php),
         'Could not read prepared local gateway node',
     );
 

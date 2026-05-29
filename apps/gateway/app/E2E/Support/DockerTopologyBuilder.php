@@ -189,6 +189,9 @@ final readonly class DockerTopologyBuilder
             E2ETopologyKind::OperatorGatewayAgent => ['operator', 'gateway', 'agent'],
             E2ETopologyKind::OperatorGatewayAppdevAppprodAgent => ['operator', 'gateway', 'dev', 'prod', 'agent'],
             E2ETopologyKind::OperatorGatewayAppprodIngress => ['operator', 'gateway', 'prod'],
+            E2ETopologyKind::OperatorGatewayAppdevWebsocket => ['operator', 'gateway', 'dev', 'websocket'],
+            E2ETopologyKind::OperatorGatewayAppdevAppprodWebsocket => ['operator', 'gateway', 'dev', 'prod', 'websocket'],
+            E2ETopologyKind::OperatorGatewayAppdevAppprodAgentWebsocket => ['operator', 'gateway', 'dev', 'prod', 'agent', 'websocket'],
         };
     }
 
@@ -221,9 +224,20 @@ final readonly class DockerTopologyBuilder
         return match ($role) {
             'operator' => E2ETopologyKind::OperatorGateway,
             'gateway' => E2ETopologyKind::OperatorGateway,
-            'dev', 'prod', 'agent' => E2ETopologyKind::OperatorGatewayAppdevAppprodAgent,
+            'dev', 'prod', 'agent', 'websocket' => self::websocketTopologyKind($kind)
+                ? E2ETopologyKind::OperatorGatewayAppdevAppprodAgentWebsocket
+                : E2ETopologyKind::OperatorGatewayAppdevAppprodAgent,
             default => $kind,
         };
+    }
+
+    private static function websocketTopologyKind(E2ETopologyKind $kind): bool
+    {
+        return in_array($kind, [
+            E2ETopologyKind::OperatorGatewayAppdevWebsocket,
+            E2ETopologyKind::OperatorGatewayAppdevAppprodWebsocket,
+            E2ETopologyKind::OperatorGatewayAppdevAppprodAgentWebsocket,
+        ], true);
     }
 
     private static function shouldCommitRole(E2ETopologyKind $kind, string $role): bool
@@ -731,6 +745,7 @@ SH;
     private function seedDownstreamRoles(DockerBuildInstance $gateway, array $containers, E2ETopologyKind $kind, string $mode, DockerTopologyNetworkPlan $networkPlan, string $gatewayEndpoint): void
     {
         $tasks = [];
+        $afterSuccessfulTasks = [];
 
         if (isset($containers['dev'])) {
             $host = $this->hostForRole('dev', $networkPlan, $mode);
@@ -810,11 +825,24 @@ SH;
             );
         }
 
-        if ($tasks === []) {
+        if (isset($containers['websocket'])) {
+            $host = $this->hostForRole('websocket', $networkPlan, $mode);
+            $hostKeyHost = $this->hostKeyHostOption('websocket', $networkPlan, $mode);
+            $wireGuardAddress = $this->wireGuardAddressForRole('websocket', $networkPlan, $mode);
+            $afterSuccessfulTasks['websocket'] = sprintf(
+                'cd /home/orbit/orbit && php apps/gateway/artisan orbit:internal:bake-websocket-node ws-1 --host=%s%s --wireguard-address=%s --gateway-endpoint=%s --user=orbit --redis-node=app-dev-1',
+                $host,
+                $hostKeyHost,
+                $wireGuardAddress,
+                $gatewayEndpoint,
+            );
+        }
+
+        if ($tasks === [] && $afterSuccessfulTasks === []) {
             return;
         }
 
-        $script = $this->parallelDownstreamProvisioningScript($tasks);
+        $script = $this->parallelDownstreamProvisioningScript($tasks, $afterSuccessfulTasks);
         $scriptPath = '/tmp/orbit-e2e-docker-downstream.sh';
         $scriptPathArgument = escapeshellarg($scriptPath);
 
@@ -836,7 +864,7 @@ SH;
     /**
      * @param  array<string, string>  $tasks
      */
-    private function parallelDownstreamProvisioningScript(array $tasks): string
+    private function parallelDownstreamProvisioningScript(array $tasks, array $afterSuccessfulTasks = []): string
     {
         $lines = [
             'set -euo pipefail;',
@@ -853,6 +881,15 @@ SH;
 
         foreach ($pids as $role => [$pid, $log]) {
             $lines[] = "wait \"\${$pid}\" || { CODE=\$?; echo \"Docker downstream {$role} provisioning failed\" >&2; cat {$log} >&2 || true; if [ \"\$STATUS\" -eq 0 ]; then STATUS=\$CODE; fi; };";
+        }
+
+        $lines[] = 'if [ "$STATUS" -ne 0 ]; then exit "$STATUS"; fi;';
+
+        foreach ($afterSuccessfulTasks as $role => $command) {
+            $pid = 'PID_NODE_NEW_'.strtoupper(str_replace('-', '_', $role));
+            $log = "/tmp/orbit-e2e-docker-node-new-{$role}.log";
+            $lines[] = "({$command}) > {$log} 2>&1 & {$pid}=\$!;";
+            $lines[] = "wait \"\${$pid}\" || { CODE=\$?; echo \"Docker downstream {$role} provisioning failed\" >&2; cat {$log} >&2 || true; exit \"\$CODE\"; };";
         }
 
         $lines[] = 'exit "$STATUS";';
@@ -1197,6 +1234,7 @@ SH;
             'prod' => '10.6.0.5',
             'agent' => '10.6.0.6',
             'ingress' => '10.6.0.7',
+            'websocket' => '10.6.0.8',
             default => throw new RuntimeException("Unknown Docker topology role {$role}."),
         };
     }
@@ -1265,7 +1303,7 @@ SH;
      */
     private function managedSshRoles(): array
     {
-        return ['dev', 'prod', 'ingress'];
+        return ['dev', 'prod', 'ingress', 'websocket'];
     }
 
     /**

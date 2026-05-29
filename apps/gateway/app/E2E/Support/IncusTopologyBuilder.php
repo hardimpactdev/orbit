@@ -21,6 +21,8 @@ class IncusTopologyBuilder
 
     private const string AgentWireGuardIp = '10.6.0.6';
 
+    private const string WebSocketWireGuardIp = '10.6.0.8';
+
     private readonly E2EPhaseTimer $timer;
 
     public function __construct(
@@ -58,7 +60,9 @@ class IncusTopologyBuilder
             $key = $this->timer->measure('ssh-key', fn (): SshKeyPair => $this->createSshKeyPair($workDirectory));
             $manifests = $this->buildStages($plan['target'], $key, $plan['reusableBase']);
 
-            return $manifests[$kind->value];
+            return $manifests[$kind->value]
+                ?? $manifests[E2EPreparedTopology::incusSourceKindFor($kind)->value]
+                ?? throw new RuntimeException("Prepared topology manifest [{$kind->value}] was not built.");
         } finally {
             $this->timer->measure('workdir.cleanup', fn () => $this->host->run('rm -rf '.escapeshellarg((string) $workDirectory)));
         }
@@ -112,7 +116,8 @@ class IncusTopologyBuilder
 
     private function resolveReusableBaseStage(E2ETopologyKind $kind): ?E2ETopologyKind
     {
-        if ($kind === E2ETopologyKind::OperatorGatewayAppdevAppprodAgent) {
+        if ($kind === E2ETopologyKind::OperatorGatewayAppdevAppprodAgent
+            || $kind === E2ETopologyKind::OperatorGatewayAppdevAppprodAgentWebsocket) {
             return null;
         }
 
@@ -217,6 +222,9 @@ class IncusTopologyBuilder
                 E2ETopologyKind::OperatorGatewayAgent => $this->buildAgentOnlyStage($key),
                 E2ETopologyKind::OperatorGatewayAppdevAppprodAgent => $this->buildPreparedFullStage($key),
                 E2ETopologyKind::OperatorGatewayAppprodIngress => $this->buildIngressProductionStage($key),
+                E2ETopologyKind::OperatorGatewayAppdevAppprodAgentWebsocket => $this->buildPreparedFullWebSocketStage($key),
+                E2ETopologyKind::OperatorGatewayAppdevWebsocket,
+                E2ETopologyKind::OperatorGatewayAppdevAppprodWebsocket => throw new RuntimeException("Build websocket topology source [{$stage->value}] through [".E2ETopologyKind::OperatorGatewayAppdevAppprodAgentWebsocket->value.'].'),
             };
 
             $manifests[$stage->value] = $this->finalizeInstances($stage, $instances);
@@ -311,6 +319,16 @@ class IncusTopologyBuilder
             ];
         }
 
+        if ($target === E2ETopologyKind::OperatorGatewayAppdevWebsocket
+            || $target === E2ETopologyKind::OperatorGatewayAppdevAppprodWebsocket
+            || $target === E2ETopologyKind::OperatorGatewayAppdevAppprodAgentWebsocket) {
+            return [
+                E2ETopologyKind::Operator,
+                E2ETopologyKind::OperatorGateway,
+                E2ETopologyKind::OperatorGatewayAppdevAppprodAgentWebsocket,
+            ];
+        }
+
         if ($target === E2ETopologyKind::OperatorGatewayAgent) {
             return [
                 E2ETopologyKind::Operator,
@@ -341,6 +359,7 @@ class IncusTopologyBuilder
             E2ETopologyKind::OperatorGatewayAppdev,
             E2ETopologyKind::OperatorGatewayAppdevAppprod,
             E2ETopologyKind::OperatorGatewayAppdevAppprodAgent,
+            E2ETopologyKind::OperatorGatewayAppdevAppprodAgentWebsocket,
         ];
     }
 
@@ -591,6 +610,53 @@ class IncusTopologyBuilder
         $this->timer->measure('prepared.e2e-deps', fn () => $this->installE2EBaseDependencies($instances));
         $this->timer->measure('dev.database-redis-seed', fn () => $this->seedAppdevDatabaseAndRedis($instances['gateway']));
         $this->timer->measure('prepared.real-wireguard', fn () => $this->installRealWireGuard($instances));
+
+        return $instances;
+    }
+
+    /**
+     * @return array<string, IncusInstance>
+     */
+    private function buildPreparedFullWebSocketStage(SshKeyPair $key): array
+    {
+        $instances = $this->startTemplateRoles(['operator', 'gateway'], $key);
+
+        $this->timer->measure('prepared-websocket.real-wireguard.retarget', fn () => $this->installRealWireGuard($instances));
+        $this->timer->measure('prepared-websocket.gateway.api.start', fn () => E2EGatewayApi::start($instances['gateway'], 'template-prepared-full-websocket'));
+        $this->timer->measure('prepared-websocket.gateway.api.ready', fn () => E2EGatewayApi::waitForGatewayApi($instances['operator'], $this->host->config->operatorUser, $key));
+        $this->timer->measure('prepared-websocket.gateway.wg-easy.ready', fn () => $this->waitForGatewayWireGuard($instances['gateway']));
+        $this->timer->measure('prepared-websocket.gateway.provisioning-ssh-key', fn () => E2EGatewayApi::installProvisioningSshKey($instances['gateway'], $key));
+
+        $kind = E2ETopologyKind::OperatorGatewayAppdevAppprodAgentWebsocket;
+        $dev = $this->launchBaseRole('dev', $key, $kind);
+        $prod = $this->launchBaseRole('prod', $key, $kind);
+        $agent = $this->launchBaseRole('agent', $key, $kind);
+        $websocket = $this->launchBaseRole('websocket', $key, $kind);
+
+        $devIp = $this->timer->measure('dev.ipv4', fn (): string => $dev->waitForIpv4());
+        $prodIp = $this->timer->measure('prod.ipv4', fn (): string => $prod->waitForIpv4());
+        $agentIp = $this->timer->measure('agent.ipv4', fn (): string => $agent->waitForIpv4());
+        $websocketIp = $this->timer->measure('websocket.ipv4', fn (): string => $websocket->waitForIpv4());
+
+        $instances['dev'] = $dev;
+        $instances['prod'] = $prod;
+        $instances['agent'] = $agent;
+        $instances['websocket'] = $websocket;
+
+        $this->timer->measure('prepared-websocket.downstream.bake', fn () => $this->runPreparedDownstreamBakeInParallel(
+            $instances['gateway'],
+            $devIp,
+            $prodIp,
+            $agentIp,
+        ));
+        $this->timer->measure('prepared-websocket.gateway.api.ready-after-downstream-bake', fn () => E2EGatewayApi::waitForGatewayApi($instances['operator'], $this->host->config->operatorUser, $key));
+        $this->timer->measure('prepared-websocket.dev.database-redis-seed', fn () => $this->seedAppdevDatabaseAndRedis($instances['gateway']));
+        $this->timer->measure('prepared-websocket.e2e-deps', fn () => $this->installE2EBaseDependencies($instances));
+        $this->timer->measure('prepared-websocket.websocket.bake', fn () => $this->runPreparedWebSocketBake(
+            $instances['gateway'],
+            $websocketIp,
+        ));
+        $this->timer->measure('prepared-websocket.real-wireguard', fn () => $this->installRealWireGuard($instances));
 
         return $instances;
     }
@@ -900,6 +966,27 @@ BASH;
         );
     }
 
+    private function runPreparedWebSocketBake(IncusInstance $gateway, string $websocketHost): void
+    {
+        $command = implode(' ', [
+            'cd /home/orbit/orbit && php apps/gateway/artisan orbit:internal:bake-websocket-node',
+            escapeshellarg('ws-1'),
+            '--host='.escapeshellarg($websocketHost),
+            '--wireguard-address='.escapeshellarg(self::WebSocketWireGuardIp),
+            '--gateway-endpoint='.escapeshellarg(self::GatewayWireGuardIp),
+            '--user='.escapeshellarg($this->host->config->bootstrapUser),
+            '--redis-node='.escapeshellarg('app-dev-1'),
+            '--converge-runtime',
+        ]);
+
+        E2ECommand::orbit(
+            $gateway,
+            $command,
+            'Could not bake prepared websocket node',
+            timeoutSeconds: 900,
+        );
+    }
+
     private function waitForGatewayWireGuard(IncusInstance $gateway): void
     {
         E2ECommand::exec(
@@ -1064,7 +1151,7 @@ PHP;
         $mesh = $this->meshFor($instances, $gatewayProviderIp);
         $wgEasy->configurePeers($gateway, $mesh->wgEasyPeers());
 
-        foreach (['gateway', 'operator', 'dev', 'prod', 'agent', 'ingress'] as $role) {
+        foreach (['gateway', 'operator', 'dev', 'prod', 'agent', 'ingress', 'websocket'] as $role) {
             if (! isset($instances[$role])) {
                 continue;
             }
@@ -1078,6 +1165,7 @@ PHP;
             isset($instances['prod']) ? 'prod' : null,
             isset($instances['agent']) ? 'agent' : null,
             isset($instances['ingress']) ? 'ingress' : null,
+            isset($instances['websocket']) ? 'websocket' : null,
         ])));
     }
 
@@ -1093,6 +1181,7 @@ PHP;
         $prod = isset($instances['prod']) ? $generator->generateKeyPair() : null;
         $agent = isset($instances['agent']) ? $generator->generateKeyPair() : null;
         $ingress = isset($instances['ingress']) ? $generator->generateKeyPair() : null;
+        $websocket = isset($instances['websocket']) ? $generator->generateKeyPair() : null;
         $wgEasyPublicKey = trim($instances['gateway']->exec('docker exec wg-easy wg show wg0 public-key')->output());
 
         return E2EWireGuardMesh::standard(
@@ -1110,6 +1199,8 @@ PHP;
             agentPublicKey: $agent['public_key'] ?? null,
             ingressPrivateKey: $ingress['private_key'] ?? null,
             ingressPublicKey: $ingress['public_key'] ?? null,
+            websocketPrivateKey: $websocket['private_key'] ?? null,
+            websocketPublicKey: $websocket['public_key'] ?? null,
         );
     }
 

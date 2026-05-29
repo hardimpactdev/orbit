@@ -20,12 +20,12 @@ use InvalidArgumentException;
 use Throwable;
 
 #[Signature('e2e:prepare-docker-hosts
-    {kind : Topology kind to prepare (operator|operator_gateway|operator_gateway_app-dev|operator_gateway_app-dev_app-prod|operator_gateway_agent|operator_gateway_app-dev_app-prod_agent|operator_gateway_app-prod_ingress)}
+    {kind : Topology kind to prepare (operator|operator_gateway|operator_gateway_app-dev|operator_gateway_app-dev_app-prod|operator_gateway_agent|operator_gateway_app-dev_app-prod_agent|operator_gateway_app-prod_ingress|operator_gateway_app-dev_websocket|operator_gateway_app-dev_app-prod_websocket|operator_gateway_app-dev_app-prod_agent_websocket)}
     {--force : Ensure Docker runtime and topology images exist on the build host and sync them to runners}
     {--rebuild : Rebuild selected Docker artifacts even when they already exist}
     {--runtime-only : Prepare only the Docker runtime image}
     {--topology-only : Prepare only the Docker prepared topology images}
-    {--roles= : Comma-separated prepared artifact roles to build (operator,gateway,app-dev,app-prod,agent)}
+    {--roles= : Comma-separated prepared artifact roles to build (operator,gateway,app-dev,app-prod,agent,websocket)}
     {--all-roles : Explicitly build every prepared artifact role when a custom namespace is set}
     {--json : Output as JSON}')]
 #[Description('Prepare Docker E2E images across all configured Docker hosts')]

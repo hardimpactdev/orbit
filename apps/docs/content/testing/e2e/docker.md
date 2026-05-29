@@ -15,12 +15,12 @@ workers start and include a scoped `composer e2e:ensure-artifacts` command.
 Use the ensure command for targeted refreshes:
 
 ```bash
-composer e2e:ensure-artifacts -- --lanes=docker --runtime --force operator_gateway_app-dev_app-prod_agent
+composer e2e:ensure-artifacts -- --lanes=docker --runtime --force operator_gateway_app-dev_app-prod_agent_websocket
 
 ORBIT_E2E_TOPOLOGY_ARTIFACT_NAMESPACE=agent-isolation \
-composer e2e:ensure-artifacts -- --lanes=docker --roles=agent --force operator_gateway_app-dev_app-prod_agent
+composer e2e:ensure-artifacts -- --lanes=docker --roles=agent --force operator_gateway_app-dev_app-prod_agent_websocket
 
-composer e2e:ensure-artifacts -- --lanes=docker --roles=operator,gateway --rebuild --force operator_gateway_app-dev_app-prod_agent
+composer e2e:ensure-artifacts -- --lanes=docker --roles=operator,gateway --rebuild --force operator_gateway_app-dev_app-prod_agent_websocket
 ```
 
 On a fresh host pool, after Dockerfile or system dependency changes, or when the
@@ -37,15 +37,15 @@ For single-host local debugging, the lower-level equivalents are:
 
 ```bash
 composer e2e:prepare-docker-runtime -- --force
-composer e2e:prepare-docker-topology -- --force operator_gateway_app-dev_app-prod_agent
+composer e2e:prepare-docker-topology -- --force operator_gateway_app-dev_app-prod_agent_websocket
 ```
 
 Prepare the composable Docker role image set once. The Docker preparation flow
 builds `operator_gateway` first, then provisions the downstream app-dev,
-app-prod, and agent roles from the full role source. Feature tests request
-the smallest active topology they need; the Docker provider composes that
-topology from the canonical operator, gateway, app-dev, app-prod, and agent
-images.
+app-prod, agent, and websocket roles from the full role source. Feature tests
+request the smallest active topology they need; the Docker provider composes
+that topology from the canonical operator, gateway, app-dev, app-prod, agent,
+and websocket images.
 
 The canonical reusable role images are:
 
@@ -54,6 +54,7 @@ The canonical reusable role images are:
 - `orbit-e2e:app-dev_base`
 - `orbit-e2e:app-prod_base`
 - `orbit-e2e:agent_base`
+- `orbit-e2e:websocket_base`
 
 Set `ORBIT_E2E_TOPOLOGY_ARTIFACT_NAMESPACE=<slug>` only when a branch needs a
 role-specific image override. The Docker provider first tries
@@ -67,7 +68,7 @@ roles keep falling back to `base`:
 
 ```bash
 ORBIT_E2E_TOPOLOGY_ARTIFACT_NAMESPACE=agent-isolation \
-composer e2e:ensure-artifacts -- --lanes=docker --roles=agent --force operator_gateway_app-dev_app-prod_agent
+composer e2e:ensure-artifacts -- --lanes=docker --roles=agent --force operator_gateway_app-dev_app-prod_agent_websocket
 ```
 
 Use `--all-roles` only when the branch intentionally needs a full namespaced
@@ -76,7 +77,7 @@ refreshed from the current checkout. A custom namespace without `--roles` or
 `--all-roles` is rejected so a worktree cannot accidentally rebuild every Docker
 role.
 
-Runner hosts need the five canonical role images plus the runtime support
+Runner hosts need the six canonical role images plus the runtime support
 images used by gateway-backed topologies: `orbit-runtime`, `orbit-caddy`, and
 the FrankenPHP images listed by `PhpRuntimeCatalog`. `orbit-e2e-topology-runtime`
 and `composer:2` are build-host helpers for preparing those images; they are not

@@ -773,6 +773,10 @@ PHP;
             $roles[] = 'ingress';
         }
 
+        if ($topology->instance('websocket') !== null) {
+            $roles[] = 'websocket';
+        }
+
         return $roles;
     }
 
@@ -792,7 +796,7 @@ PHP;
             'prod' => self::requiredRole($topology->prodApp(), $role, $users['prod'] ?? 'orbit'),
             'agent' => self::requiredRole($topology->agent(), $role, $users['agent'] ?? 'orbit'),
             'ingress' => self::requiredRole($topology->ingress(), $role, $users[$role] ?? 'orbit'),
-            default => throw new RuntimeException("Unknown topology role [{$role}]."),
+            default => self::requiredRole($topology->instance($role), $role, $users[$role] ?? 'orbit'),
         };
     }
 
@@ -805,6 +809,7 @@ PHP;
             'prod' => 'app-prod-1',
             'agent' => 'agent-1',
             'ingress' => 'edge-1',
+            'websocket' => 'ws-1',
             default => null,
         };
     }

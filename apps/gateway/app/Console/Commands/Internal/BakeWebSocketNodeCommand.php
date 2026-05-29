@@ -1,0 +1,145 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Console\Commands\Internal;
+
+use App\Enums\Nodes\NodeRoleName;
+use App\Enums\Nodes\NodeRoleStatus;
+use App\Models\Node;
+use App\Models\NodeRoleAssignment;
+use App\Models\NodeTool;
+use App\Services\Nodes\NodeRegistryWriter;
+use App\Services\Nodes\Roles\NodeRoleBaselineConverger;
+use App\Services\Security\SshHostKeyPinner;
+use Illuminate\Console\Attributes\Description;
+use Illuminate\Console\Attributes\Signature;
+use Illuminate\Console\Command;
+use RuntimeException;
+
+#[Signature('orbit:internal:bake-websocket-node
+    {name : WebSocket node name}
+    {--host= : WebSocket node host address}
+    {--host-key-host= : Host/IP to scan for the SSH host key when different from --host}
+    {--wireguard-address= : WebSocket node WireGuard address}
+    {--gateway-endpoint= : Gateway endpoint address}
+    {--user=orbit : Runtime user}
+    {--redis-node= : Existing database node name for Redis}
+    {--converge-runtime : Converge the WebSocket Reverb runtime baseline after registry bake}')]
+#[Description('Bake a websocket-node registry row for prepared E2E topology images')]
+class BakeWebSocketNodeCommand extends Command
+{
+    #[\Override]
+    protected $hidden = true;
+
+    public function handle(NodeRegistryWriter $registryWriter, NodeRoleBaselineConverger $converger): int
+    {
+        $name = $this->stringArgument('name');
+        $host = $this->stringOption('host');
+        $hostKeyHost = $this->stringOption('host-key-host');
+        $wireguardAddress = $this->stringOption('wireguard-address');
+        $gatewayEndpoint = $this->stringOption('gateway-endpoint');
+        $user = $this->stringOption('user') ?? 'orbit';
+        $redisNodeName = $this->stringOption('redis-node');
+
+        if ($name === null || $host === null || $wireguardAddress === null || $redisNodeName === null) {
+            throw new RuntimeException('Name, host, wireguard-address, and redis-node are required.');
+        }
+
+        $redisNode = $this->activeRedisNode($redisNodeName);
+        $hostKey = app(SshHostKeyPinner::class)->pin($hostKeyHost ?? $host);
+
+        $node = $registryWriter->writeNodeIdentity(
+            name: $name,
+            tld: null,
+            platform: 'ubuntu',
+            host: $host,
+            wireguardAddress: $wireguardAddress,
+            gatewayEndpoint: $gatewayEndpoint,
+            user: $user,
+            orbitPath: "/home/{$user}/orbit",
+            hostKey: $hostKey,
+        );
+
+        $assignment = NodeRoleAssignment::query()->updateOrCreate(
+            [
+                'node_id' => $node->id,
+                'role' => NodeRoleName::WebSocket->value,
+            ],
+            [
+                'status' => NodeRoleStatus::Active->value,
+                'settings' => ['redis_node_id' => $redisNode->id],
+                'last_error' => null,
+                'converged_at' => now(),
+            ],
+        );
+
+        if ($this->option('converge-runtime') === true) {
+            $this->convergeRuntime($converger, $node, $assignment);
+        }
+
+        return self::SUCCESS;
+    }
+
+    private function activeRedisNode(string $name): Node
+    {
+        $node = Node::query()
+            ->where('name', $name)
+            ->where('status', Node::STATUS_ACTIVE)
+            ->whereHas('roleAssignments', fn ($query) => $query
+                ->where('role', NodeRoleName::Database->value)
+                ->where('status', NodeRoleStatus::Active->value))
+            ->first();
+
+        if (! $node instanceof Node) {
+            throw new RuntimeException("Active Redis node [{$name}] was not found.");
+        }
+
+        $hasRedis = NodeTool::query()
+            ->where('node_id', $node->id)
+            ->where('name', 'redis')
+            ->whereIn('expected_state', ['installed', 'running'])
+            ->exists();
+
+        if (! $hasRedis) {
+            throw new RuntimeException("Active Redis node [{$name}] was not found.");
+        }
+
+        return $node;
+    }
+
+    private function convergeRuntime(NodeRoleBaselineConverger $converger, Node $node, NodeRoleAssignment $assignment): void
+    {
+        try {
+            $converger->converge($node, $assignment);
+
+            $assignment->forceFill([
+                'status' => NodeRoleStatus::Active->value,
+                'last_error' => null,
+                'converged_at' => now(),
+            ])->save();
+        } catch (\Throwable $exception) {
+            $assignment->forceFill([
+                'status' => NodeRoleStatus::Error->value,
+                'last_error' => $exception->getMessage(),
+                'converged_at' => null,
+            ])->save();
+
+            throw $exception;
+        }
+    }
+
+    private function stringArgument(string $name): ?string
+    {
+        $value = $this->argument($name);
+
+        return is_string($value) && $value !== '' ? $value : null;
+    }
+
+    private function stringOption(string $name): ?string
+    {
+        $value = $this->option($name);
+
+        return is_string($value) && $value !== '' ? $value : null;
+    }
+}

@@ -16,7 +16,10 @@ it('maps Incus topology requests to the prepared full source artifact', function
         ->and(E2EPreparedTopology::sourceKindFor(E2ETopologyKind::OperatorGatewayAppdevAppprod))->toBe(E2ETopologyKind::OperatorGatewayAppdevAppprodAgent)
         ->and(E2EPreparedTopology::sourceKindFor(E2ETopologyKind::OperatorGatewayAgent))->toBe(E2ETopologyKind::OperatorGatewayAppdevAppprodAgent)
         ->and(E2EPreparedTopology::sourceKindFor(E2ETopologyKind::OperatorGatewayAppdevAppprodAgent))->toBe(E2ETopologyKind::OperatorGatewayAppdevAppprodAgent)
-        ->and(E2EPreparedTopology::sourceKindFor(E2ETopologyKind::OperatorGatewayAppprodIngress))->toBe(E2ETopologyKind::OperatorGatewayAppdevAppprodAgent);
+        ->and(E2EPreparedTopology::sourceKindFor(E2ETopologyKind::OperatorGatewayAppprodIngress))->toBe(E2ETopologyKind::OperatorGatewayAppdevAppprodAgent)
+        ->and(E2EPreparedTopology::sourceKindFor(E2ETopologyKind::OperatorGatewayAppdevWebsocket))->toBe(E2ETopologyKind::OperatorGatewayAppdevAppprodAgentWebsocket)
+        ->and(E2EPreparedTopology::sourceKindFor(E2ETopologyKind::OperatorGatewayAppdevAppprodWebsocket))->toBe(E2ETopologyKind::OperatorGatewayAppdevAppprodAgentWebsocket)
+        ->and(E2EPreparedTopology::sourceKindFor(E2ETopologyKind::OperatorGatewayAppdevAppprodAgentWebsocket))->toBe(E2ETopologyKind::OperatorGatewayAppdevAppprodAgentWebsocket);
 });
 
 it('maps Docker topology requests to composable role image sources', function (): void {
@@ -26,6 +29,12 @@ it('maps Docker topology requests to composable role image sources', function ()
         ->toBe([E2ETopologyKind::OperatorGateway, E2ETopologyKind::OperatorGatewayAppdevAppprodAgent])
         ->and(E2EPreparedTopology::dockerArtifactSourceKindsFor(E2ETopologyKind::OperatorGatewayAppprodIngress))
         ->toBe([E2ETopologyKind::OperatorGateway, E2ETopologyKind::OperatorGatewayAppdevAppprodAgent])
+        ->and(E2EPreparedTopology::dockerArtifactSourceKindsFor(E2ETopologyKind::OperatorGatewayAppdevWebsocket))
+        ->toBe([E2ETopologyKind::OperatorGateway, E2ETopologyKind::OperatorGatewayAppdevAppprodAgentWebsocket])
+        ->and(E2EPreparedTopology::dockerArtifactSourceKindsFor(E2ETopologyKind::OperatorGatewayAppdevAppprodWebsocket))
+        ->toBe([E2ETopologyKind::OperatorGateway, E2ETopologyKind::OperatorGatewayAppdevAppprodAgentWebsocket])
+        ->and(E2EPreparedTopology::dockerArtifactSourceKindsFor(E2ETopologyKind::OperatorGatewayAppdevAppprodAgentWebsocket))
+        ->toBe([E2ETopologyKind::OperatorGateway, E2ETopologyKind::OperatorGatewayAppdevAppprodAgentWebsocket])
         ->and(E2EPreparedTopology::dockerArtifactSourceKindsFor(E2ETopologyKind::OperatorGateway))
         ->toBe([E2ETopologyKind::OperatorGateway])
         ->and(E2EPreparedTopology::dockerArtifactSourceKindsFor(E2ETopologyKind::Operator))
@@ -38,7 +47,9 @@ it('maps Docker topology requests to composable role image sources', function ()
         ->and(DockerTopologyBuilder::imageNameFor(E2ETopologyKind::OperatorGatewayAgent, 'agent'))
         ->toBe('orbit-e2e:agent_base')
         ->and(DockerTopologyBuilder::imageNameFor(E2ETopologyKind::OperatorGatewayAppprodIngress, 'prod'))
-        ->toBe('orbit-e2e:app-prod_base');
+        ->toBe('orbit-e2e:app-prod_base')
+        ->and(DockerTopologyBuilder::imageNameFor(E2ETopologyKind::OperatorGatewayAppdevWebsocket, 'websocket'))
+        ->toBe('orbit-e2e:websocket_base');
 });
 
 it('sources Incus downstream roles from the prepared full snapshot', function (): void {
@@ -51,7 +62,13 @@ it('sources Incus downstream roles from the prepared full snapshot', function ()
         ->and(E2EPreparedTopology::incusSourceKindFor(E2ETopologyKind::OperatorGatewayAgent))
         ->toBe(E2ETopologyKind::OperatorGatewayAppdevAppprodAgent)
         ->and(E2EPreparedTopology::incusSourceKindFor(E2ETopologyKind::OperatorGatewayAppprodIngress))
-        ->toBe(E2ETopologyKind::OperatorGatewayAppdevAppprodAgent);
+        ->toBe(E2ETopologyKind::OperatorGatewayAppdevAppprodAgent)
+        ->and(E2EPreparedTopology::incusSourceKindFor(E2ETopologyKind::OperatorGatewayAppdevWebsocket))
+        ->toBe(E2ETopologyKind::OperatorGatewayAppdevAppprodAgentWebsocket)
+        ->and(E2EPreparedTopology::incusSourceKindFor(E2ETopologyKind::OperatorGatewayAppdevAppprodWebsocket))
+        ->toBe(E2ETopologyKind::OperatorGatewayAppdevAppprodAgentWebsocket)
+        ->and(E2EPreparedTopology::incusSourceKindFor(E2ETopologyKind::OperatorGatewayAppdevAppprodAgentWebsocket))
+        ->toBe(E2ETopologyKind::OperatorGatewayAppdevAppprodAgentWebsocket);
 });
 
 it('collapses app production ingress onto the prod role', function (): void {
@@ -61,7 +78,10 @@ it('collapses app production ingress onto the prod role', function (): void {
     ))->toBe(['operator', 'gateway', 'prod'])
         ->and(E2EPreparedTopology::prodHostsIngressRole(E2ETopologyKind::OperatorGatewayAppprodIngress))->toBeTrue()
         ->and(E2EPreparedTopology::prodHostsIngressRole(E2ETopologyKind::OperatorGatewayAppdevAppprod))->toBeTrue()
-        ->and(E2EPreparedTopology::prodHostsIngressRole(E2ETopologyKind::OperatorGatewayAppdevAppprodAgent))->toBeTrue();
+        ->and(E2EPreparedTopology::prodHostsIngressRole(E2ETopologyKind::OperatorGatewayAppdevAppprodAgent))->toBeTrue()
+        ->and(E2EPreparedTopology::prodHostsIngressRole(E2ETopologyKind::OperatorGatewayAppdevWebsocket))->toBeFalse()
+        ->and(E2EPreparedTopology::prodHostsIngressRole(E2ETopologyKind::OperatorGatewayAppdevAppprodWebsocket))->toBeTrue()
+        ->and(E2EPreparedTopology::prodHostsIngressRole(E2ETopologyKind::OperatorGatewayAppdevAppprodAgentWebsocket))->toBeTrue();
 });
 
 it('builds a gateway registry prune script that removes stale topology rows', function (): void {
@@ -83,13 +103,22 @@ it('does not retain a split ingress node when app production ingress boots only 
         ->not->toContain('edge-1');
 });
 
+it('includes websocket workload nodes in gateway registry pruning', function (): void {
+    expect(E2EPreparedTopology::gatewayNodeNamesForRoles(['operator', 'gateway', 'dev', 'websocket']))
+        ->toBe(['gateway', 'operator-1', 'app-dev-1', 'ws-1']);
+});
+
 it('normalizes prepared artifact role selections', function (): void {
-    expect(E2EPreparedTopology::parseArtifactRoles('operator, gateway, dev, prod, agent'))
-        ->toBe(['operator', 'gateway', 'app-dev', 'app-prod', 'agent'])
-        ->and(E2EPreparedTopology::parseArtifactRoles('operator,app-dev,app-prod,agent,operator'))
-        ->toBe(['operator', 'app-dev', 'app-prod', 'agent'])
+    expect(E2EPreparedTopology::parseArtifactRoles('operator, gateway, dev, prod, agent, websocket'))
+        ->toBe(['operator', 'gateway', 'app-dev', 'app-prod', 'agent', 'websocket'])
+        ->and(E2EPreparedTopology::parseArtifactRoles('operator,app-dev,app-prod,agent,websocket,operator'))
+        ->toBe(['operator', 'app-dev', 'app-prod', 'agent', 'websocket'])
         ->and(E2EPreparedTopology::dockerRoleForArtifactRole('app-dev'))
         ->toBe('dev')
+        ->and(E2EPreparedTopology::dockerRoleForArtifactRole('websocket'))
+        ->toBe('websocket')
+        ->and(E2EPreparedTopology::incusRoleForArtifactRole('websocket'))
+        ->toBe('websocket')
         ->and(E2EPreparedTopology::incusRoleForArtifactRole('operator'))
         ->toBe('operator');
 });
