@@ -54,15 +54,18 @@ describe('process:list', function (): void {
             ->and($output)->toContain('processes');
     });
 
-    it('surfaces gateway_unavailable on gateway HTTP errors', function (): void {
-        fakeGateway(fakeErrorEnvelope('validation_failed', 'An app context is required.'), 422);
+    it('passes through gateway error envelopes from HTTP failures', function (): void {
+        fakeGateway(fakeErrorEnvelope('validation_failed', 'An app context is required.', [
+            'field' => 'app',
+        ]), 422);
 
         [$exitCode, $output] = runCommand($this, 'process:list', ['--json' => true]);
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
         expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('gateway_unavailable');
+            ->and($decoded['error']['code'])->toBe('validation_failed')
+            ->and($decoded['error']['meta']['field'])->toBe('app');
     });
 
     it('surfaces wireguard-specific gateway failures', function (): void {

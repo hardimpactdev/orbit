@@ -171,6 +171,48 @@ describe('database write commands', function (): void {
             ->and($decoded['error']['meta']['field'])->toBe('scope');
     });
 
+    it('validates required database write inputs before contacting the gateway', function (string $command, array $params, string $field): void {
+        Http::fake();
+
+        [$exitCode, $output] = runCommand($this, $command, [
+            ...$params,
+            '--json' => true,
+        ]);
+
+        $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+
+        Http::assertNothingSent();
+
+        expect($exitCode)->toBe(1)
+            ->and($decoded['error']['code'])->toBe('validation_failed')
+            ->and($decoded['error']['meta']['field'])->toBe($field);
+    })->with([
+        'add slug' => ['database:add', ['--driver' => 'pgsql'], 'slug'],
+        'attach connection' => ['database:attach', ['--app' => 'docs'], 'connection'],
+        'attach target scope' => ['database:attach', ['connection' => 'primary-db'], 'scope'],
+        'detach target scope' => ['database:detach', ['connection' => 'primary-db'], 'scope'],
+        'query target' => ['database:query', ['--sql' => 'select 1'], 'target'],
+    ]);
+
+    it('does not leak database passwords in validation failures', function (): void {
+        Http::fake();
+
+        [$exitCode, $output] = runCommand($this, 'database:add', [
+            '--driver' => 'pgsql',
+            '--password' => 'super-secret',
+            '--json' => true,
+        ]);
+
+        $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+
+        Http::assertNothingSent();
+
+        expect($exitCode)->toBe(1)
+            ->and($decoded['error']['code'])->toBe('validation_failed')
+            ->and($decoded['error']['meta']['field'])->toBe('slug')
+            ->and($output)->not->toContain('super-secret');
+    });
+
     it('requires force for database:remove before contacting the gateway', function (): void {
         Http::fake();
 
@@ -212,6 +254,24 @@ describe('database write commands', function (): void {
         });
 
         expect($exitCode)->toBe(0);
+    });
+
+    it('prompts before removing a database connection without force in interactive mode', function (): void {
+        fakeGateway(fakeSuccessEnvelope([
+            'result' => [
+                'action' => 'removed',
+                'connection' => 'primary-db',
+            ],
+        ]));
+
+        $this->artisan('database:remove', ['connection' => 'primary-db'])
+            ->expectsConfirmation('Remove database connection and all target mappings?', 'yes')
+            ->expectsOutputToContain('removed')
+            ->assertSuccessful();
+
+        Http::assertSent(fn (Request $request): bool => $request->method() === 'DELETE'
+            && str_contains($request->url(), '/api/database-connections/primary-db')
+            && $request->data() === ['force' => true]);
     });
 
     it('posts database:query payloads and emits strict JSON without requiring --json', function (): void {

@@ -109,6 +109,62 @@ describe('schedule write commands', function (): void {
             ->and($sourceDecoded['error']['meta']['fields'])->toBe(['command', 'script']);
     });
 
+    it('validates schedule:add required fields before contacting the gateway', function (array $params, string $code, string $field): void {
+        Http::fake();
+
+        [$exitCode, $output] = runCommand($this, 'schedule:add', [
+            ...$params,
+            '--json' => true,
+        ]);
+
+        $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+
+        Http::assertNothingSent();
+
+        expect($exitCode)->toBe(1)
+            ->and($decoded['error']['code'])->toBe($code)
+            ->and($decoded['error']['meta']['field'])->toBe($field);
+    })->with([
+        'name' => [
+            [
+                '--app' => 'docs',
+                '--command' => 'date',
+                '--interval' => 'daily at 09:00',
+            ],
+            'validation_failed',
+            'name',
+        ],
+        'execution source' => [
+            [
+                'name' => 'nightly',
+                '--app' => 'docs',
+                '--interval' => 'daily at 09:00',
+            ],
+            'validation_failed',
+            'execution_source',
+        ],
+        'interval' => [
+            [
+                'name' => 'nightly',
+                '--app' => 'docs',
+                '--command' => 'date',
+            ],
+            'schedule.interval_invalid',
+            'interval',
+        ],
+        'timezone' => [
+            [
+                'name' => 'nightly',
+                '--app' => 'docs',
+                '--command' => 'date',
+                '--interval' => 'daily at 09:00',
+                '--timezone' => 'Moon/Base',
+            ],
+            'validation_failed',
+            'timezone',
+        ],
+    ]);
+
     it('preserves gateway error envelopes for schedule:add', function (): void {
         fakeGateway(fakeErrorEnvelope('schedule.name_collision', "Schedule 'nightly' already exists.", [
             'name' => 'nightly',
