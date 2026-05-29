@@ -46,8 +46,10 @@
 /apps/gateway/storage/*.key
 /apps/gateway/storage/pail
 /apps/gateway/vendor
-/apps/gateway/tests/E2E/.docker-feature-tests/
-/apps/gateway/tests/E2E/.incus-feature-tests/
+/apps/e2e/tests/Feature/Commands/.docker-feature-tests/
+/apps/e2e/tests/Feature/Commands/.incus-feature-tests/
+/apps/e2e/tests/Feature/Commands/.topology-scheduling-fixtures/
+/apps/gateway/tests/E2E/.topology-scheduling-fixtures/
 /packages/core/.phpunit.cache
 /packages/core/.phpunit.result.cache
 /packages/core/build/
