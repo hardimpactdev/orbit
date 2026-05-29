@@ -108,16 +108,6 @@ function gatewayCommandInventoryRows(): array
 }
 
 /**
- * @return array<string, string>
- */
-function gatewayExtractFirstProductAdapterCommands(): array
-{
-    return [
-        'workspace:exec' => 'WorkspaceExecController',
-    ];
-}
-
-/**
  * @return list<string>
  */
 function gatewayRemovedAppNodeLocalCommandNames(): array
@@ -156,6 +146,65 @@ function gatewayRemovedAppNodeLocalCommandNames(): array
         'update',
         'update:all',
     ];
+}
+
+/**
+ * @return list<string>
+ */
+function gatewayRemovedResourceCommandNames(): array
+{
+    return [
+        'database:add',
+        'database:attach',
+        'database:describe',
+        'database:detach',
+        'database:list',
+        'database:query',
+        'database:remove',
+        'database:schema',
+        'database:show',
+        'database:tables',
+        'database:update',
+        'process:add',
+        'process:edit',
+        'process:list',
+        'process:logs',
+        'process:remove',
+        'process:restart',
+        'process:start',
+        'process:stop',
+        'schedule:add',
+        'schedule:list',
+        'schedule:logs',
+        'schedule:remove',
+        'schedule:run',
+        'schedule:show',
+        'workspace-setup-step:add',
+        'workspace-setup-step:list',
+        'workspace-setup-step:remove',
+        'workspace-teardown-step:add',
+        'workspace-teardown-step:list',
+        'workspace-teardown-step:remove',
+        'workspace:exec',
+        'workspace:history',
+        'workspace:list',
+        'workspace:log',
+        'workspace:new',
+        'workspace:remove',
+        'workspace:setup',
+        'workspace:show',
+    ];
+}
+
+/**
+ * @return list<string>
+ */
+function gatewayRemovedResourceCommandNamesWithoutFrameworkCollisions(): array
+{
+    return array_values(array_diff(gatewayRemovedResourceCommandNames(), [
+        'schedule:list',
+        'schedule:run',
+    ]));
 }
 
 function expectGatewayCommandToBeRemoved(string $commandName): void
@@ -277,16 +326,11 @@ it('classifies every invokable non-allowed gateway command in the inventory', fu
 
     expect(array_keys($inventoryRows))->toContain(
         'activity:list',
-        'database:list',
-        'workspace:new',
         'tool:list',
-        'workspace:exec',
         'orbit:internal:node-register',
     );
 
-    foreach (array_keys(gatewayExtractFirstProductAdapterCommands()) as $commandName) {
-        expect($inventoryRows[$commandName]['classification'])->toBe('internalize-extract-first');
-    }
+    expect(array_keys($inventoryRows))->not->toContain(...gatewayRemovedResourceCommandNames());
 });
 
 it('keeps hidden framework commands directly invocable', function (): void {
@@ -294,16 +338,6 @@ it('keeps hidden framework commands directly invocable', function (): void {
     $process->mustRun();
 
     expect($process->isSuccessful())->toBeTrue();
-});
-
-it('keeps remaining transitional product adapter commands directly invocable for live gateway API call sites', function (): void {
-    foreach (gatewayExtractFirstProductAdapterCommands() as $commandName => $callSite) {
-        $process = new Process([PHP_BINARY, 'artisan', 'help', $commandName], base_path());
-        $process->mustRun();
-
-        expect($process->getOutput(), "{$commandName} is still required by {$callSite} until extraction lands")
-            ->toContain($commandName);
-    }
 });
 
 it('removes app, node, and local public product commands from gateway Artisan', function (): void {
@@ -314,6 +348,18 @@ it('removes app, node, and local public product commands from gateway Artisan', 
     expect($registeredCommandNames)->not->toContain(...gatewayRemovedAppNodeLocalCommandNames());
 
     foreach (gatewayRemovedAppNodeLocalCommandNames() as $commandName) {
+        expectGatewayCommandToBeRemoved($commandName);
+    }
+});
+
+it('removes resource public product commands from gateway Artisan', function (): void {
+    $registeredCommandNames = collect(gatewayApplicationCommands())
+        ->pluck('name')
+        ->all();
+
+    expect($registeredCommandNames)->not->toContain(...gatewayRemovedResourceCommandNames());
+
+    foreach (gatewayRemovedResourceCommandNamesWithoutFrameworkCollisions() as $commandName) {
         expectGatewayCommandToBeRemoved($commandName);
     }
 });

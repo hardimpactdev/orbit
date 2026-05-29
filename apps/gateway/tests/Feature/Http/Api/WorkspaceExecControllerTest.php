@@ -255,6 +255,33 @@ describe('WorkspaceExecController', function (): void {
             ->assertJsonPath('error.code', 'workspace.exec_container_not_running');
     });
 
+    it('returns 422 workspace.exec_container_not_running when preflight reports the container is stopped', function (): void {
+        $caller = createWorkspaceExecCaller();
+        $node = createTestAppHostNode(['name' => 'app-1', 'host' => '10.6.0.7']);
+        grantWorkspaceExecAccess($caller, $node, ['workspace:exec']);
+        createWorkspaceExecFixture($node);
+        bindWorkspaceExecControllerPreflightShell(new RemoteShellResult(
+            exitCode: 0,
+            stdout: "false\n",
+            stderr: '',
+            durationMs: 1,
+        ));
+
+        $response = $this->call(
+            'POST',
+            '/api/workspaces/docs-feature/exec',
+            [],
+            [],
+            [],
+            ['REMOTE_ADDR' => WORKSPACE_EXEC_CALLER_WG_IP, 'CONTENT_TYPE' => 'application/json'],
+            json_encode(['command' => ['php', '-v']], JSON_THROW_ON_ERROR),
+        );
+
+        $response->assertStatus(422)
+            ->assertJsonPath('error.code', 'workspace.exec_container_not_running')
+            ->assertJsonPath('error.meta.state', 'false');
+    });
+
     it('returns 502 workspace.exec_docker_unavailable when preflight reports the docker daemon is down', function (): void {
         $caller = createWorkspaceExecCaller();
         $node = createTestAppHostNode(['name' => 'app-1', 'host' => '10.6.0.7']);
@@ -305,6 +332,83 @@ describe('WorkspaceExecController', function (): void {
 
         $response->assertStatus(502)
             ->assertJsonPath('error.code', 'workspace.exec_node_unreachable');
+    });
+
+    it('keeps child failures as success data when docker-looking stderr is not a wrapper exit', function (): void {
+        $caller = createWorkspaceExecCaller();
+        $node = createTestAppHostNode(['name' => 'app-1', 'host' => '10.6.0.7']);
+        grantWorkspaceExecAccess($caller, $node, ['workspace:exec']);
+        createWorkspaceExecFixture($node);
+        bindWorkspaceExecControllerShell([
+            new RemoteShellResult(
+                exitCode: 9,
+                stdout: '',
+                stderr: "Cannot connect to the Docker daemon from inside child\n",
+                durationMs: 1,
+            ),
+        ]);
+
+        $response = $this->call(
+            'POST',
+            '/api/workspaces/docs-feature/exec',
+            [],
+            [],
+            [],
+            ['REMOTE_ADDR' => WORKSPACE_EXEC_CALLER_WG_IP, 'CONTENT_TYPE' => 'application/json'],
+            json_encode(['command' => ['php', 'artisan', 'test']], JSON_THROW_ON_ERROR),
+        );
+
+        $response->assertOk()
+            ->assertJsonPath('success.data.exit_code', 9)
+            ->assertJsonPath('success.data.stderr', "Cannot connect to the Docker daemon from inside child\n");
+    });
+
+    it('returns 422 workspace.exec_command_not_executable when docker exec returns exit code 126', function (): void {
+        $caller = createWorkspaceExecCaller();
+        $node = createTestAppHostNode(['name' => 'app-1', 'host' => '10.6.0.7']);
+        grantWorkspaceExecAccess($caller, $node, ['workspace:exec']);
+        createWorkspaceExecFixture($node);
+        bindWorkspaceExecControllerShell([
+            new RemoteShellResult(exitCode: 126, stdout: '', stderr: "permission denied\n", durationMs: 1),
+        ]);
+
+        $response = $this->call(
+            'POST',
+            '/api/workspaces/docs-feature/exec',
+            [],
+            [],
+            [],
+            ['REMOTE_ADDR' => WORKSPACE_EXEC_CALLER_WG_IP, 'CONTENT_TYPE' => 'application/json'],
+            json_encode(['command' => ['./artisan']], JSON_THROW_ON_ERROR),
+        );
+
+        $response->assertStatus(422)
+            ->assertJsonPath('error.code', 'workspace.exec_command_not_executable')
+            ->assertJsonPath('error.meta.exit_code', 126);
+    });
+
+    it('returns 422 workspace.exec_command_not_found when docker exec returns exit code 127', function (): void {
+        $caller = createWorkspaceExecCaller();
+        $node = createTestAppHostNode(['name' => 'app-1', 'host' => '10.6.0.7']);
+        grantWorkspaceExecAccess($caller, $node, ['workspace:exec']);
+        createWorkspaceExecFixture($node);
+        bindWorkspaceExecControllerShell([
+            new RemoteShellResult(exitCode: 127, stdout: '', stderr: "not found\n", durationMs: 1),
+        ]);
+
+        $response = $this->call(
+            'POST',
+            '/api/workspaces/docs-feature/exec',
+            [],
+            [],
+            [],
+            ['REMOTE_ADDR' => WORKSPACE_EXEC_CALLER_WG_IP, 'CONTENT_TYPE' => 'application/json'],
+            json_encode(['command' => ['missing-bin']], JSON_THROW_ON_ERROR),
+        );
+
+        $response->assertStatus(422)
+            ->assertJsonPath('error.code', 'workspace.exec_command_not_found')
+            ->assertJsonPath('error.meta.exit_code', 127);
     });
 
     it('rejects callers without the workspace:exec permission with HTTP 403', function (): void {
