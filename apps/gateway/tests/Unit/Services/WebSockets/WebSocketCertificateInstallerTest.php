@@ -49,11 +49,11 @@ it('installs backend TLS material into the host Orbit cert directory', function 
         ])
         ->and($shell->nodes[0]->is($node))->toBeTrue()
         ->and($shell->options[0])->toMatchArray([
-        'throw' => true,
-        'metadata' => [
-            'ORBIT_OPERATION_ID' => 'websocket-certificate-install',
-        ],
-    ])
+            'throw' => true,
+            'metadata' => [
+                'ORBIT_OPERATION_ID' => 'websocket-certificate-install',
+            ],
+        ])
         ->and($script)->toContain("sudo install -d -m 0755 '/etc/orbit/certs'")
         ->and($script)->toContain("sudo chmod 0644 '/etc/orbit/certs/10.6.0.44.crt'")
         ->and($script)->toContain("sudo chmod 0600 '/etc/orbit/certs/10.6.0.44.key'")

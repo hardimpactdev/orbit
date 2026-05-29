@@ -9,9 +9,9 @@ use App\Enums\ActivityLogType;
 use App\Http\Authorization\RequiresPermission;
 use App\Http\Authorization\ServingNode;
 use App\Models\App;
+use App\Services\Apps\AppWorkerService;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
-use Illuminate\Support\Facades\Artisan;
 
 final class AppWorkerController implements Loggable
 {
@@ -20,56 +20,85 @@ final class AppWorkerController implements Loggable
     private string $currentAction = 'show';
 
     #[RequiresPermission('app:read', servingNode: ServingNode::AppOwning)]
-    public function show(string $app): JsonResponse
+    public function show(string $app, AppWorkerService $service): JsonResponse
     {
-        return $this->dispatch('show', $app);
+        return $this->dispatch('show', $app, $service);
     }
 
     #[RequiresPermission('app:worker', servingNode: ServingNode::AppOwning)]
-    public function enable(string $app): JsonResponse
+    public function enable(string $app, AppWorkerService $service): JsonResponse
     {
-        return $this->dispatch('enable', $app);
+        return $this->dispatch('enable', $app, $service);
     }
 
     #[RequiresPermission('app:worker', servingNode: ServingNode::AppOwning)]
-    public function disable(string $app): JsonResponse
+    public function disable(string $app, AppWorkerService $service): JsonResponse
     {
-        return $this->dispatch('disable', $app);
+        return $this->dispatch('disable', $app, $service);
     }
 
-    private function dispatch(string $action, string $app): JsonResponse
+    private function dispatch(string $action, string $app, AppWorkerService $service): JsonResponse
     {
         $this->currentAction = $action;
-        $this->activitySubject = $this->resolveApp($app);
+        $targetApp = $this->resolveApp($app);
+        $this->activitySubject = $targetApp;
 
-        $exitCode = Artisan::call('app:worker', [
-            'action' => $action,
-            'app' => $app,
-            '--json' => true,
-        ]);
+        if (! $targetApp instanceof App) {
+            return response()->json([
+                'error' => [
+                    'code' => 'app.not_found',
+                    'message' => "App '{$app}' not found.",
+                    'meta' => ['app' => $app],
+                ],
+            ], 404);
+        }
 
-        /** @var array<string, mixed> $payload */
-        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+        if ($action === 'show') {
+            return $this->success($this->workerPayload($targetApp));
+        }
 
-        $status = $exitCode === 0 ? 200 : $this->errorStatus($payload);
+        if ($action === 'enable') {
+            $result = $service->enable($targetApp);
 
-        return response()->json($payload, $status);
+            if (! $result['ready']) {
+                $readiness = $result['readiness'];
+
+                return response()->json([
+                    'error' => [
+                        'code' => $readiness->code ?? 'app.worker_readiness_failed',
+                        'message' => $readiness->message ?? "App '{$targetApp->name}' is not ready for worker mode.",
+                        'meta' => array_merge([
+                            'app' => $targetApp->name,
+                            'missing' => $readiness->missing,
+                        ], $readiness->meta),
+                    ],
+                ], 422);
+            }
+
+            return $this->success(array_merge(
+                $this->workerPayload($result['app']),
+                ['changed' => $result['changed']],
+            ));
+        }
+
+        $result = $service->disable($targetApp);
+
+        return $this->success(array_merge(
+            $this->workerPayload($result['app']),
+            ['changed' => $result['changed']],
+        ));
     }
 
     /**
-     * @param  array<string, mixed>  $payload
+     * @param  array<string, mixed>  $data
      */
-    private function errorStatus(array $payload): int
+    private function success(array $data): JsonResponse
     {
-        $code = is_array($payload['error'] ?? null) && is_string($payload['error']['code'] ?? null)
-            ? $payload['error']['code']
-            : null;
-
-        return match ($code) {
-            'app.not_found' => 404,
-            null => 500,
-            default => 422,
-        };
+        return response()->json([
+            'success' => [
+                'data' => $data,
+            ],
+        ]);
     }
 
     private function resolveApp(string $selector): ?App
@@ -87,6 +116,18 @@ final class AppWorkerController implements Loggable
         return $baseQuery
             ->where('domain', $selector)
             ->first();
+    }
+
+    /**
+     * @return array{app: string, worker_enabled: bool, worker_config: array<string, mixed>|null}
+     */
+    private function workerPayload(App $app): array
+    {
+        return [
+            'app' => $app->name,
+            'worker_enabled' => $app->worker_enabled,
+            'worker_config' => is_array($app->worker_config) ? $app->worker_config : null,
+        ];
     }
 
     public function effect(): ActivityLogType
