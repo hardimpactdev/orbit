@@ -994,6 +994,130 @@ describe('orbit-caddy container readiness', function (): void {
     });
 });
 
+describe('s3 upload-safe proxy route probe', function (): void {
+    it('passes s3 service route when the observed file hash matches the upload-safe rendered source hash', function (): void {
+        $node = createTestAppHostNode();
+        $renderer = new ProxyRouteRenderer;
+        $config = [
+            'owner_name' => 'rustfs',
+            'protocol' => 's3',
+            'target' => ['type' => 'upstream', 'value' => 'http://storage-1.s3.orbit:9000'],
+            'upstreams' => [
+                ['scheme' => 'http', 'host' => 'storage-1.s3.orbit', 'port' => 9000],
+            ],
+        ];
+        $route = ProxyRoute::factory()->create([
+            'node_id' => $node->id,
+            'domain' => 's3.orbit',
+            'owner_type' => 'tool',
+            'kind' => 'proxy',
+            'config' => $config,
+        ]);
+        $uploadSafeHash = $renderer->sourceHash($route);
+        $route->forceFill(['source_hash' => $uploadSafeHash])->save();
+
+        $snapshot = new ProbeSnapshot([
+            's3.orbit' => [
+                'route_exists' => true,
+                'route_hash' => $uploadSafeHash,
+                'cert_exists' => true,
+                'key_exists' => true,
+            ],
+        ]);
+
+        $drift = (new ProxyRouteProbe)->diff($route, $snapshot);
+
+        expect(proxyProbeIssue($drift, 'proxy.route_missing'))->toBeNull()
+            ->and(proxyProbeIssue($drift, 'proxy.route_mismatch'))->toBeNull();
+    });
+
+    it('detects drift when the s3 service route on disk lacks upload-safe streaming directives', function (): void {
+        $node = createTestAppHostNode();
+        $renderer = new ProxyRouteRenderer;
+        $config = [
+            'owner_name' => 'rustfs',
+            'protocol' => 's3',
+            'target' => ['type' => 'upstream', 'value' => 'http://storage-1.s3.orbit:9000'],
+            'upstreams' => [
+                ['scheme' => 'http', 'host' => 'storage-1.s3.orbit', 'port' => 9000],
+            ],
+        ];
+        $route = ProxyRoute::factory()->create([
+            'node_id' => $node->id,
+            'domain' => 's3.orbit',
+            'owner_type' => 'tool',
+            'kind' => 'proxy',
+            'config' => $config,
+        ]);
+        $uploadSafeHash = $renderer->sourceHash($route);
+        $route->forceFill(['source_hash' => $uploadSafeHash])->save();
+
+        // The node still has the old route without upload-safe streaming.
+        $oldHashWithoutStreaming = str_repeat('0', 64);
+        $snapshot = new ProbeSnapshot([
+            's3.orbit' => [
+                'route_exists' => true,
+                'route_hash' => $oldHashWithoutStreaming,
+                'cert_exists' => true,
+                'key_exists' => true,
+            ],
+        ]);
+
+        $drift = (new ProxyRouteProbe)->diff($route, $snapshot);
+
+        expect(proxyProbeIssue($drift, 'proxy.route_mismatch')?->kind)->toBe(DriftKind::Divergent)
+            ->and(proxyProbeIssue($drift, 'proxy.route_mismatch')?->detail['expected_hash'] ?? null)->toBe($uploadSafeHash)
+            ->and(proxyProbeIssue($drift, 'proxy.route_mismatch')?->detail['observed_hash'] ?? null)->toBe($oldHashWithoutStreaming);
+    });
+
+    it('passes observed s3 ingress route artifact rendered with upload-safe streaming settings', function (): void {
+        $edge = Node::factory()->ingress()->create(['status' => 'active']);
+        $renderer = new ProxyRouteRenderer;
+        $config = [
+            'placement' => 'ingress',
+            'owner_name' => 'rustfs',
+            'protocol' => 's3',
+            'target' => ['type' => 'upstream', 'value' => 'https://s3.orbit'],
+            'router_upstream' => [
+                'node_id' => 12,
+                'node' => 'gateway-1',
+                'url' => 'http://10.6.0.1:80',
+            ],
+            'tls' => [
+                'cert_path' => '/etc/orbit/certs/s3.example.com.crt',
+                'key_path' => '/etc/orbit/certs/s3.example.com.key',
+            ],
+        ];
+        $route = ProxyRoute::factory()->create([
+            'node_id' => $edge->id,
+            'domain' => 's3.example.com',
+            'owner_type' => 'tool',
+            'kind' => 'proxy',
+            'config' => $config,
+        ]);
+        $uploadSafeHash = $renderer->sourceHash($route);
+        $route->forceFill(['source_hash' => $uploadSafeHash])->save();
+
+        $drift = (new ProxyRouteProbe)->diff($route, new ProbeSnapshot([
+            's3.example.com' => [
+                'public' => [
+                    'route_exists' => true,
+                    'route_hash' => $uploadSafeHash,
+                    'cert_path' => '/etc/orbit/certs/s3.example.com.crt',
+                    'key_path' => '/etc/orbit/certs/s3.example.com.key',
+                    'cert_exists' => true,
+                    'key_exists' => true,
+                ],
+                'router' => [],
+                'backends' => [],
+            ],
+        ]));
+
+        expect(proxyProbeIssue($drift, 'proxy.public_route_missing'))->toBeNull()
+            ->and(proxyProbeIssue($drift, 'proxy.public_route_mismatch'))->toBeNull();
+    });
+});
+
 describe('legacy php_fastcgi route convergence after Docker-first runtime backfill', function (): void {
     it('reports proxy.route_mismatch when an observed legacy php_fastcgi Caddyfile hash differs from the post-backfill Docker-first reverse_proxy source_hash', function (): void {
         // Simulates the post-migration state: the backfill recomputed

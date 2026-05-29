@@ -828,3 +828,116 @@ CADDY);
             ->and($content)->not->toContain('reverse_proxy');
     });
 });
+
+describe('s3 upload-safe proxy rendering', function (): void {
+    it('renders the private s3.orbit service route with upload-safe streaming and preserves Host and X-Forwarded-Proto headers', function (): void {
+        $router = Node::factory()->create(['name' => 'gateway-1']);
+        $route = ProxyRoute::factory()->create([
+            'node_id' => $router->id,
+            'domain' => 's3.orbit',
+            'owner_type' => 'tool',
+            'kind' => 'proxy',
+            'config' => [
+                'owner_name' => 'rustfs',
+                'protocol' => 's3',
+                'target' => [
+                    'type' => 'upstream',
+                    'value' => 'http://storage-1.s3.orbit:9000',
+                ],
+                'upstreams' => [
+                    ['scheme' => 'http', 'host' => 'storage-1.s3.orbit', 'port' => 9000],
+                ],
+            ],
+        ]);
+
+        $content = (new ProxyRouteRenderer)->render($route);
+
+        expect($content)->toBe(<<<'CADDY'
+s3.orbit {
+    tls /etc/orbit/certs/s3.orbit.crt /etc/orbit/certs/s3.orbit.key
+    reverse_proxy http://storage-1.s3.orbit:9000 {
+        flush_interval -1
+        header_up Host {host}
+        header_up X-Forwarded-Host {host}
+        header_up X-Forwarded-Proto {scheme}
+    }
+}
+
+CADDY)
+            ->and($content)->not->toContain('encode gzip')
+            ->and($content)->not->toContain('request_buffers')
+            ->and($content)->not->toContain('stream_close_delay');
+    });
+
+    it('renders the public s3 ingress route with upload-safe streaming and preserves Host and X-Forwarded-Proto headers', function (): void {
+        $ingress = Node::factory()->ingress()->create(['name' => 'edge-1']);
+        $route = ProxyRoute::factory()->create([
+            'node_id' => $ingress->id,
+            'domain' => 's3.example.com',
+            'owner_type' => 'tool',
+            'kind' => 'proxy',
+            'config' => [
+                'placement' => 'ingress',
+                'owner_name' => 'rustfs',
+                'protocol' => 's3',
+                'target' => [
+                    'type' => 'upstream',
+                    'value' => 'https://s3.orbit',
+                ],
+                'router_upstream' => [
+                    'node_id' => 12,
+                    'node' => 'gateway-1',
+                    'url' => 'http://10.6.0.1:80',
+                ],
+                'tls' => [
+                    'cert_path' => '/etc/orbit/certs/s3.example.com.crt',
+                    'key_path' => '/etc/orbit/certs/s3.example.com.key',
+                ],
+            ],
+        ]);
+
+        $content = (new ProxyRouteRenderer)->renderIngress($route);
+
+        expect($content)->toBe(<<<'CADDY'
+s3.example.com {
+    tls /etc/orbit/certs/s3.example.com.crt /etc/orbit/certs/s3.example.com.key
+
+    reverse_proxy http://10.6.0.1:80 {
+        flush_interval -1
+        header_up Host {host}
+        header_up X-Forwarded-Host {host}
+        header_up X-Forwarded-Proto {scheme}
+    }
+}
+
+CADDY)
+            ->and($content)->not->toContain('encode gzip')
+            ->and($content)->not->toContain('request_buffers')
+            ->and($content)->not->toContain('stream_close_delay');
+    });
+
+    it('s3 service route source hash is stable and reflects upload-safe streaming directives', function (): void {
+        $router = Node::factory()->create(['name' => 'gateway-1']);
+        $route = ProxyRoute::factory()->create([
+            'node_id' => $router->id,
+            'domain' => 's3.orbit',
+            'owner_type' => 'tool',
+            'kind' => 'proxy',
+            'config' => [
+                'owner_name' => 'rustfs',
+                'protocol' => 's3',
+                'target' => ['type' => 'upstream', 'value' => 'http://storage-1.s3.orbit:9000'],
+                'upstreams' => [
+                    ['scheme' => 'http', 'host' => 'storage-1.s3.orbit', 'port' => 9000],
+                ],
+            ],
+        ]);
+
+        $renderer = new ProxyRouteRenderer;
+        $content = $renderer->render($route);
+        $hash = $renderer->sourceHash($route);
+
+        expect($hash)->toBe(hash('sha256', $content))
+            ->and($content)->toContain('flush_interval -1');
+    });
+});
