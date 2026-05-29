@@ -265,11 +265,11 @@ it('rejects invalid docker test runner entries', function (): void {
 
 it('rejects docker host-specific container caps below that host slot capacity', function (): void {
     withE2EEnvironment(['ORBIT_E2E_PARALLEL_PROCESSES'], [
-        'ORBIT_E2E_DOCKER_TEST_RUNNERS' => 'beast:4:24,sidecar1:4:4',
+        'ORBIT_E2E_DOCKER_TEST_RUNNERS' => 'beast:4:24,sidecar1:4:2',
         'ORBIT_E2E_PARALLEL_PROCESSES' => '8',
     ], function (): void {
         $this->artisan('e2e:test --dry-run --json --lanes=docker')
-            ->expectsOutputToContain('Docker host [sidecar1] needs a container cap of at least 20')
+            ->expectsOutputToContain('Docker host [sidecar1] needs a container cap of at least 16')
             ->assertFailed();
     });
 });
