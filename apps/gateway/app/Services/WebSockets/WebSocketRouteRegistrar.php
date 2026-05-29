@@ -34,23 +34,39 @@ class WebSocketRouteRegistrar
 
     public function syncServiceRoute(): ProxyRoute
     {
-        $router = $this->routerNode();
-        $config = $this->serviceRouteConfig($router, $this->webSocketBackends());
+        $intent = $this->serviceRouteIntent();
 
         $route = ProxyRoute::query()->updateOrCreate(
             ['domain' => self::ServiceDomain],
             [
-                'node_id' => $router->id,
-                'app_id' => null,
-                'workspace_id' => null,
-                'owner_type' => 'websocket',
-                'kind' => 'proxy',
-                'config' => $config,
-                'source_hash' => $this->sourceHash($router, $config),
+                'node_id' => $intent->node_id,
+                'app_id' => $intent->app_id,
+                'workspace_id' => $intent->workspace_id,
+                'owner_type' => $intent->owner_type,
+                'kind' => $intent->kind,
+                'config' => $intent->config,
+                'source_hash' => $intent->source_hash,
             ],
         );
 
         return $route->refresh();
+    }
+
+    public function serviceRouteIntent(): ProxyRoute
+    {
+        $router = $this->routerNode();
+        $config = $this->serviceRouteConfig($router, $this->webSocketBackends());
+
+        return new ProxyRoute([
+            'node_id' => $router->id,
+            'domain' => self::ServiceDomain,
+            'app_id' => null,
+            'workspace_id' => null,
+            'owner_type' => 'websocket',
+            'kind' => 'proxy',
+            'config' => $config,
+            'source_hash' => $this->sourceHash($router, $config),
+        ]);
     }
 
     public function syncPublicHosts(AppWebSocketBinding $binding): void
@@ -135,20 +151,67 @@ class WebSocketRouteRegistrar
             throw new RuntimeException("WebSocket public host '{$host}' conflicts with an existing proxy route.");
         }
 
-        $config = $this->publicRouteConfig($app, $ingress, $router, $host);
+        $intent = $this->publicRouteIntent($app, $ingress, $router, $host);
 
         ProxyRoute::query()->updateOrCreate(
             ['domain' => $host],
             [
-                'node_id' => $ingress->id,
-                'app_id' => $app->id,
-                'workspace_id' => null,
-                'owner_type' => 'app-websocket',
-                'kind' => 'proxy',
-                'config' => $config,
-                'source_hash' => $this->publicSourceHash($app, $ingress, $host, $config),
+                'node_id' => $intent->node_id,
+                'app_id' => $intent->app_id,
+                'workspace_id' => $intent->workspace_id,
+                'owner_type' => $intent->owner_type,
+                'kind' => $intent->kind,
+                'config' => $intent->config,
+                'source_hash' => $intent->source_hash,
             ],
         );
+    }
+
+    /**
+     * @return list<ProxyRoute>
+     */
+    public function publicRouteIntents(AppWebSocketBinding $binding): array
+    {
+        $binding->loadMissing('app.node');
+
+        if (! $binding->app instanceof App || ! $binding->app->node instanceof Node) {
+            throw new RuntimeException('A websocket public route requires an app with an owning node.');
+        }
+
+        if (! $binding->enabled) {
+            return [];
+        }
+
+        $hosts = $this->publicHosts($binding);
+
+        if ($hosts === []) {
+            return [];
+        }
+
+        $app = $binding->app;
+        $ingress = $this->ingressResolver->forAppNode($app->node);
+        $router = $this->ingressResolver->router();
+
+        return array_map(
+            fn (string $host): ProxyRoute => $this->publicRouteIntent($app, $ingress, $router, $host),
+            $hosts,
+        );
+    }
+
+    private function publicRouteIntent(App $app, Node $ingress, Node $router, string $host): ProxyRoute
+    {
+        $config = $this->publicRouteConfig($app, $ingress, $router, $host);
+
+        return new ProxyRoute([
+            'node_id' => $ingress->id,
+            'domain' => $host,
+            'app_id' => $app->id,
+            'workspace_id' => null,
+            'owner_type' => 'app-websocket',
+            'kind' => 'proxy',
+            'config' => $config,
+            'source_hash' => $this->publicSourceHash($app, $ingress, $host, $config),
+        ]);
     }
 
     /**
