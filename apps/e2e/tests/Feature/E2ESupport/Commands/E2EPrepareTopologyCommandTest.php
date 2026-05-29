@@ -221,8 +221,22 @@ it('plans only selected branch Incus role templates', function (): void {
     Process::assertNothingRan();
 });
 
-it('fails clearly before mutation when targeted Incus role preparation is forced', function (): void {
-    Process::fake();
+it('accepts targeted Incus role preparation when forced with a custom namespace', function (): void {
+    fakeBundleProcessing();
+
+    $manifest = [
+        ['role' => 'agent', 'name' => 'orbit-template-agent-agent-isolation', 'snapshot' => 'clean-operator_gateway_app-dev_app-prod_agent-agent-isolation'],
+    ];
+
+    $builder = m::mock(IncusTopologyBuilder::class);
+    $builder->shouldReceive('useBundle')->once();
+    $builder->shouldReceive('buildSelectedRoles')
+        ->with(E2ETopologyKind::OperatorGatewayAppdevAppprodAgent, ['agent'], true)
+        ->andReturn($manifest);
+
+    $command = app(E2EPrepareTopologyCommand::class);
+    $command->setBuilderFactory(fn () => $builder);
+    $this->app->instance(E2EPrepareTopologyCommand::class, $command);
 
     withE2ETopologyEnvironment([
         'ORBIT_E2E_TOPOLOGY_ARTIFACT_NAMESPACE' => 'Agent isolation',
@@ -232,11 +246,9 @@ it('fails clearly before mutation when targeted Incus role preparation is forced
             '--force' => true,
             '--roles' => 'agent',
         ])
-            ->expectsOutputToContain('Targeted Incus role artifact preparation is not implemented yet')
-            ->assertFailed();
+            ->doesntExpectOutputToContain('not implemented')
+            ->assertSuccessful();
     });
-
-    Process::assertNothingRan();
 });
 
 it('rejects invalid kind', function (): void {

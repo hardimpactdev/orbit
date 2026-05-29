@@ -66,8 +66,11 @@ independently by trying `orbit-template-<role>-<slug>` with
 `clean-<source-topology>-<slug>` first, then falling back to the matching
 `base` template and snapshot for that role.
 Custom namespace preparation without `--roles` or `--all-roles` is rejected.
-Forced targeted Incus `--roles` rebakes are guarded until the builder can refresh
-only selected role templates from the base source snapshot.
+Targeted `--roles` rebakes copy each selected role from its base source snapshot
+into the slug namespace, overlay the current checkout bundle, and retake the
+`clean-<source-topology>-<slug>` snapshot. Unselected roles remain absent and
+fall back to `base` during acquisition. Gateway and operator must be selected
+together because they share CA trust and WireGuard contracts.
 
 ## Source bundle and archives
 
