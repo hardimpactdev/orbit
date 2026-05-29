@@ -80,6 +80,8 @@ Each code below identifies a specific proxy-family drift condition that the prob
 | `proxy.caddy_container_down` | The `orbit-caddy` container exists on the serving node but is not running. Mounted route artifacts are not served. |
 | `proxy.route_missing` | Gateway configuration expects a managed backend route, but the route is absent from node reality. |
 | `proxy.route_mismatch` | A managed backend route exists but differs from gateway configuration. |
+| `proxy.websocket.router_route_missing` | Gateway WebSocket route intent expects the private router-owned `websocket.orbit` route row, but it is missing or differs from the canonical WebSocket service route. |
+| `proxy.websocket.public_route_missing` | An enabled app WebSocket binding expects a public ingress route, but the route row is missing or differs from the canonical app-websocket public route. |
 | `proxy.tls_missing` | Gateway configuration expects Orbit-managed TLS material, but it is absent from node reality. |
 | `proxy.tls_mismatch` | Managed TLS material exists but does not match the expected route policy. |
 | `proxy.route_extra` | An Orbit-owned backend route has no matching gateway proxy route row, or an explicitly selected observed backend route has no matching gateway proxy route row during adoption scope. |
@@ -94,6 +96,8 @@ Use `doctor --restore` to trigger the repair action listed for each code.
 | `proxy.caddy_container_down` | Start the existing `orbit-caddy` container so mounted route artifacts are served again. |
 | `proxy.route_missing` | Recreate the backend route from gateway configuration when the node is reachable and eligible. |
 | `proxy.route_mismatch` | Replace the backend route with the gateway-configured route when the route can be identified safely. |
+| `proxy.websocket.router_route_missing` | Re-sync the private `websocket.orbit` service route from gateway WebSocket route intent. |
+| `proxy.websocket.public_route_missing` | Re-sync public app-websocket ingress routes from the owning app WebSocket binding. |
 | `proxy.tls_missing` | Recreate Orbit-managed TLS material for the selected route when prerequisites are available. |
 | `proxy.tls_mismatch` | Replace or relink Orbit-managed TLS material to match gateway configuration. Repair must converge to gateway-issued route leaf certificates when the node serves Caddy-local or intermediate-CA-issued material outside Orbit policy. |
 | `proxy.route_extra` | Remove the extra backend route only when it carries Orbit ownership metadata or can otherwise be tied safely to an absent gateway route. |

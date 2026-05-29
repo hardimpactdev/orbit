@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Contracts\RemoteShell;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Models\App;
+use App\Models\AppWebSocketBinding;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Models\NodeTool;
@@ -112,6 +113,17 @@ function createRoleAwareIngressNode(string $name): Node
     ]);
 
     return $node;
+}
+
+function createRoleAwareRouterNode(string $name): Node
+{
+    return Node::factory()->router()->create([
+        'name' => $name,
+        'status' => 'active',
+        'host' => '10.6.0.2',
+        'wireguard_address' => '10.6.0.2',
+        'platform' => 'ubuntu',
+    ]);
 }
 
 function createRoleAwareDatabaseNodeWithRedis(string $name): Node
@@ -223,6 +235,12 @@ describe('doctor role-aware categories', function (): void {
         expect($runner->categoriesForRole('ingress'))->toBe(['node', 'proxy', 'firewall_rule', 'tool']);
     });
 
+    it('exposes node and proxy families for router target roles', function (): void {
+        $runner = app(DoctorReportRunner::class);
+
+        expect($runner->categoriesForRole('router'))->toBe(['node', 'proxy']);
+    });
+
     it('exposes node and tool families for websocket target roles', function (): void {
         $runner = app(DoctorReportRunner::class);
 
@@ -268,6 +286,13 @@ describe('doctor role-aware categories', function (): void {
         $ingressNode = createRoleAwareIngressNode('edge-1');
 
         expect($runner->categoriesForNode($ingressNode))->toBe(['node', 'proxy', 'firewall_rule', 'tool']);
+    });
+
+    it('derives router targets as node and proxy categories', function (): void {
+        $runner = app(DoctorReportRunner::class);
+        $routerNode = createRoleAwareRouterNode('router-1');
+
+        expect($runner->categoriesForNode($routerNode))->toBe(['node', 'proxy']);
     });
 
     it('derives websocket targets as node and tool categories', function (): void {
@@ -341,6 +366,126 @@ describe('doctor role-aware categories', function (): void {
         $keys = array_column($payload['error']['data']['doctor']['issues'], 'key');
 
         expect($keys)->toContain('tool.websocket.redis_unavailable');
+    });
+
+    it('reports a missing websocket service route in the router proxy family', function (): void {
+        createRoleAwareLocalNode('gateway', 'local-gateway');
+        createRoleAwareRouterNode('router-1');
+        createRoleAwareWebSocketNode('ws-1');
+        app()->instance(RemoteShell::class, new RoleAwareDoctorRemoteShell);
+
+        $exitCode = Artisan::call('doctor', ['--node' => 'router-1', '--family' => ['proxy'], '--json' => true]);
+        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(1);
+
+        $keys = array_column($payload['error']['data']['doctor']['issues'], 'key');
+
+        expect($keys)->toContain('proxy.websocket.router_route_missing');
+    });
+
+    it('reports an incorrect websocket service route in the router proxy family', function (): void {
+        createRoleAwareLocalNode('gateway', 'local-gateway');
+        $router = createRoleAwareRouterNode('router-1');
+        createRoleAwareWebSocketNode('ws-1');
+        ProxyRoute::factory()->create([
+            'node_id' => $router->id,
+            'domain' => 'websocket.orbit',
+            'owner_type' => 'websocket',
+            'kind' => 'proxy',
+            'source_hash' => 'stale-websocket-service-route',
+            'config' => [
+                'protocol' => 'websocket',
+                'router_backend_pool' => [
+                    ['node_id' => 999, 'node' => 'stale-ws', 'url' => 'https://stale-ws.websocket.orbit:8080'],
+                ],
+            ],
+        ]);
+        app()->instance(RemoteShell::class, new RoleAwareDoctorRemoteShell);
+
+        $exitCode = Artisan::call('doctor', ['--node' => 'router-1', '--family' => ['proxy'], '--json' => true]);
+        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(1);
+
+        $issue = collect($payload['error']['data']['doctor']['issues'])
+            ->firstWhere('key', 'proxy.websocket.router_route_missing');
+
+        expect($issue)->not->toBeNull()
+            ->and($issue['kind'])->toBe('divergent')
+            ->and($issue['detail']['reason'])->toBe('config_mismatch');
+    });
+
+    it('reports a missing websocket public route in the ingress proxy family', function (): void {
+        createRoleAwareLocalNode('gateway', 'local-gateway');
+        createRoleAwareRouterNode('router-1');
+        $ingress = createRoleAwareIngressNode('edge-1');
+        $appNode = createRoleAwareProductionAppHostNode('app-prod-1');
+        $appNode->roleAssignments()
+            ->where('role', 'app-prod')
+            ->update(['settings' => ['ingress_node_id' => $ingress->id]]);
+        $app = App::factory()->create([
+            'name' => 'docs',
+            'node_id' => $appNode->id,
+            'domain' => 'docs.example.com',
+        ]);
+        AppWebSocketBinding::factory()->create([
+            'app_id' => $app->id,
+            'enabled' => true,
+            'public_hosts' => ['ws.example.com'],
+        ]);
+        app()->instance(RemoteShell::class, new RoleAwareDoctorRemoteShell);
+
+        $exitCode = Artisan::call('doctor', ['--node' => 'edge-1', '--family' => ['proxy'], '--json' => true]);
+        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(1);
+
+        $keys = array_column($payload['error']['data']['doctor']['issues'], 'key');
+
+        expect($keys)->toContain('proxy.websocket.public_route_missing');
+    });
+
+    it('reports an incorrect websocket public route in the ingress proxy family', function (): void {
+        createRoleAwareLocalNode('gateway', 'local-gateway');
+        $router = createRoleAwareRouterNode('router-1');
+        $ingress = createRoleAwareIngressNode('edge-1');
+        $appNode = createRoleAwareProductionAppHostNode('app-prod-1');
+        $appNode->roleAssignments()
+            ->where('role', 'app-prod')
+            ->update(['settings' => ['ingress_node_id' => $ingress->id]]);
+        $app = App::factory()->create([
+            'name' => 'docs',
+            'node_id' => $appNode->id,
+            'domain' => 'docs.example.com',
+        ]);
+        AppWebSocketBinding::factory()->create([
+            'app_id' => $app->id,
+            'enabled' => true,
+            'public_hosts' => ['ws.example.com'],
+        ]);
+        ProxyRoute::factory()->create([
+            'node_id' => $router->id,
+            'domain' => 'ws.example.com',
+            'app_id' => $app->id,
+            'owner_type' => 'app-websocket',
+            'kind' => 'proxy',
+            'source_hash' => 'stale-websocket-public-route',
+            'config' => ['target' => ['type' => 'websocket', 'value' => 'https://websocket.orbit']],
+        ]);
+        app()->instance(RemoteShell::class, new RoleAwareDoctorRemoteShell);
+
+        $exitCode = Artisan::call('doctor', ['--node' => 'edge-1', '--family' => ['proxy'], '--json' => true]);
+        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(1);
+
+        $issue = collect($payload['error']['data']['doctor']['issues'])
+            ->firstWhere('key', 'proxy.websocket.public_route_missing');
+
+        expect($issue)->not->toBeNull()
+            ->and($issue['kind'])->toBe('divergent')
+            ->and($issue['detail']['reason'])->toBe('node_mismatch');
     });
 
     it('rejects a family outside the target role category set before probes', function (): void {

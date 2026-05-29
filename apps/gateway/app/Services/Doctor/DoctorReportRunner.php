@@ -39,6 +39,7 @@ use App\Services\Schedules\SchedulesProbe;
 use App\Services\Tools\ToolsFixer;
 use App\Services\Tools\ToolsProbe;
 use App\Services\WebSockets\WebSocketDoctorProbe;
+use App\Services\WebSockets\WebSocketProxyDoctorProbe;
 use App\Services\Workspaces\WorkspacesProbe;
 use Illuminate\Database\Eloquent\Collection;
 
@@ -59,6 +60,8 @@ final readonly class DoctorReportRunner
     private const array AGENT_CATEGORIES = ['node', 'tool'];
 
     private const array INGRESS_CATEGORIES = ['node', 'proxy', 'firewall_rule', 'tool'];
+
+    private const array ROUTER_CATEGORIES = ['node', 'proxy'];
 
     private const array WEBSOCKET_CATEGORIES = ['node', 'tool'];
 
@@ -82,6 +85,7 @@ final readonly class DoctorReportRunner
         private SchedulesFixer $schedulesFixer,
         private NodeRoleAssignments $nodeRoleAssignments,
         private WebSocketDoctorProbe $webSocketDoctorProbe,
+        private WebSocketProxyDoctorProbe $webSocketProxyDoctorProbe,
     ) {}
 
     /**
@@ -105,6 +109,7 @@ final readonly class DoctorReportRunner
             NodeRoleName::Database->value => self::DATABASE_CATEGORIES,
             NodeRoleName::Agent->value => self::AGENT_CATEGORIES,
             NodeRoleName::Ingress->value => self::INGRESS_CATEGORIES,
+            NodeRoleName::Router->value => self::ROUTER_CATEGORIES,
             NodeRoleName::WebSocket->value => self::WEBSOCKET_CATEGORIES,
             default => [],
         };
@@ -137,6 +142,10 @@ final readonly class DoctorReportRunner
 
         if ($this->nodeRoleAssignments->nodeHasActiveRole($node, NodeRoleName::Ingress->value)) {
             return self::INGRESS_CATEGORIES;
+        }
+
+        if ($this->nodeRoleAssignments->nodeHasActiveRole($node, NodeRoleName::Router->value)) {
+            return self::ROUTER_CATEGORIES;
         }
 
         if ($this->nodeRoleAssignments->nodeHasActiveRole($node, NodeRoleName::WebSocket->value)) {
@@ -346,6 +355,10 @@ final readonly class DoctorReportRunner
                 foreach ($this->proxyRouteProbe->diff($route, $snapshot) as $entry) {
                     $issues[] = $this->proxyIssuePayload($entry, $route);
                 }
+            }
+
+            foreach ($this->webSocketProxyDoctorProbe->drift($node) as $entry) {
+                $issues[] = $this->nodeScopedIssuePayload($entry, $node);
             }
 
             if ($node->status === 'active' && $this->nodeRoleAssignments->nodeHostsOrbitCaddy($node)) {
@@ -1191,6 +1204,10 @@ final readonly class DoctorReportRunner
             return $this->handleProxyCaddyContainerAction($mode, $node, $this->driftEntryFromIssue($issue));
         }
 
+        if (in_array($key, [WebSocketProxyDoctorProbe::RouterRouteKey, WebSocketProxyDoctorProbe::PublicRouteKey], true)) {
+            return $this->handleWebSocketProxyAction($mode, $node, $this->driftEntryFromIssue($issue));
+        }
+
         $domain = is_string($detail['domain'] ?? null) ? $detail['domain'] : null;
 
         if ($domain === null) {
@@ -1219,6 +1236,33 @@ final readonly class DoctorReportRunner
 
         try {
             return $this->proxyRouteFixer->fixCaddyContainer($node, $entry);
+        } catch (\Throwable $e) {
+            return [
+                'family' => $entry->family,
+                'node' => $node->name,
+                'code' => $entry->key,
+                'key' => $entry->key,
+                'mode' => $mode,
+                'status' => 'failed',
+                'summary' => "Failed to fix {$entry->key}.",
+                'details' => [
+                    'error' => $e->getMessage(),
+                ],
+            ];
+        }
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    private function handleWebSocketProxyAction(string $mode, Node $node, DriftEntry $entry): ?array
+    {
+        if ($mode === 'verify') {
+            return null;
+        }
+
+        try {
+            return $this->webSocketProxyDoctorProbe->restore($node, $entry);
         } catch (\Throwable $e) {
             return [
                 'family' => $entry->family,
@@ -1391,6 +1435,8 @@ final readonly class DoctorReportRunner
             'proxy.tls_mismatch',
             'proxy.caddy_container_missing',
             'proxy.caddy_container_down',
+            WebSocketProxyDoctorProbe::RouterRouteKey,
+            WebSocketProxyDoctorProbe::PublicRouteKey,
             'workspace.security.system_user',
             'workspace.security.fs_permissions',
             'app.runtime_container_missing',
