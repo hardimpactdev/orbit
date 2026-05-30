@@ -634,7 +634,41 @@ if (\\Illuminate\\Support\\Facades\\Schema::hasTable('local_gateway_settings')) 
 }
 PHP;
 
-        return 'cd '.escapeshellarg($remotePath).' && php apps/gateway/artisan tinker --execute='.escapeshellarg($php);
+        // The gateway-app LocalGatewaySettings write above only configures the
+        // gateway application's store. The `orbit` CLI (which the feature tests
+        // invoke as the role user) reads its gateway endpoint from its own
+        // ~/.config/orbit/config.json instead, so it must be written per-run too
+        // — otherwise CLI calls fail with "Gateway URL is not configured." This
+        // mirrors the docker lane's configureClientCliGateways.
+        $cliConfig = self::cliGatewayConfigBody($gatewayApiIp);
+        $writeCliConfig = 'mkdir -p "$HOME/.config/orbit" && chmod 0700 "$HOME/.config/orbit"'
+            .' && printf %s '.escapeshellarg($cliConfig).' > "$HOME/.config/orbit/config.json"'
+            .' && chmod 0600 "$HOME/.config/orbit/config.json"';
+
+        return 'cd '.escapeshellarg($remotePath)
+            .' && php apps/gateway/artisan tinker --execute='.escapeshellarg($php)
+            .' && '.$writeCliConfig;
+    }
+
+    private static function cliGatewayConfigBody(string $gatewayApiIp): string
+    {
+        return json_encode([
+            'schema_version' => 1,
+            'active_gateway' => 'default',
+            'gateways' => [
+                'default' => [
+                    'url' => "https://{$gatewayApiIp}",
+                    'wireguard_ip' => $gatewayApiIp,
+                    'ca_pem_path' => null,
+                    'ca_sha256' => null,
+                    'ca_fingerprint' => null,
+                    'timeout' => 30,
+                    'self_mode' => 'wireguard_https',
+                ],
+            ],
+            'defaults' => ['node' => null, 'profile' => null],
+            'meta' => ['imported_from' => 'incus-e2e-checkout'],
+        ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
     }
 
     private static function refreshGatewayHostKeys(E2EInstance $instance, string $user, SshKeyPair $keyPair, string $remotePath, ?E2EPhaseTimer $timer, bool $hostLauncher = false): void
