@@ -14,6 +14,7 @@ it('repairs managed tool configuration drift from gateway intent', function (): 
     $configContent = "port 6379\nbind 127.0.0.1\n";
 
     try {
+        e2eRestartGatewayApi($topology, 'tools-doctor-fix');
         toolsDoctorFixPrepareDevNode($topology, $configPath);
         toolsDoctorFixSeedGatewayIntent($topology, $configPath, $configContent);
 
@@ -25,12 +26,12 @@ it('repairs managed tool configuration drift from gateway intent', function (): 
             ),
             timeoutSeconds: 180,
         );
-        $payload = json_decode(trim($result->output()), associative: true, flags: JSON_THROW_ON_ERROR);
+        $data = e2eJsonCommandData(e2eJsonCommandPayload($result->output()));
 
         expect($result->successful())->toBeTrue()
-            ->and($payload['success']['data']['doctor']['healthy'])->toBeTrue()
-            ->and($payload['success']['data']['doctor']['summary']['fixed'])->toBe(1)
-            ->and($payload['success']['data']['doctor']['actions'][0])->toMatchArray([
+            ->and($data['doctor']['healthy'])->toBeTrue()
+            ->and($data['doctor']['summary']['fixed'])->toBe(1)
+            ->and($data['doctor']['actions'][0])->toMatchArray([
                 'family' => 'tool',
                 'node' => 'app-dev-1',
                 'key' => 'tool.config_missing',

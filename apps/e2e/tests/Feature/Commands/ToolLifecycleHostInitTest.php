@@ -17,10 +17,10 @@ it('manages a system service tool lifecycle on an app node from the gateway', fu
 
         toolLifecycleSeedGatewayIntent($topology, 'stopped');
         $start = toolLifecycleRunGatewayCommand($topology, 'tool:start supervisor --node=app-dev-1 --json');
-        $startPayload = toolLifecycleJson($start->output());
+        $startData = e2eJsonCommandData(e2eJsonCommandPayload($start->output()));
 
         expect($start->successful())->toBeTrue()
-            ->and($startPayload['success']['data']['tool'])->toMatchArray([
+            ->and($startData['tool'])->toMatchArray([
                 'name' => 'supervisor',
                 'node' => 'app-dev-1',
                 'expected_state' => 'running',
@@ -29,10 +29,10 @@ it('manages a system service tool lifecycle on an app node from the gateway', fu
 
         toolLifecycleSeedGatewayIntent($topology, 'running');
         $reload = toolLifecycleRunGatewayCommand($topology, 'tool:reload supervisor --node=app-dev-1 --json');
-        $reloadPayload = toolLifecycleJson($reload->output());
+        $reloadData = e2eJsonCommandData(e2eJsonCommandPayload($reload->output()));
 
         expect($reload->successful())->toBeTrue()
-            ->and($reloadPayload['success']['data']['tool'])->toMatchArray([
+            ->and($reloadData['tool'])->toMatchArray([
                 'name' => 'supervisor',
                 'node' => 'app-dev-1',
                 'expected_state' => 'running',
@@ -42,11 +42,11 @@ it('manages a system service tool lifecycle on an app node from the gateway', fu
         toolLifecycleSeedGatewayIntent($topology, 'running');
         $before = $topology->ssh('dev', 'systemctl show supervisor.service --property=ActiveEnterTimestampMonotonic --value', timeoutSeconds: 60);
         $restart = toolLifecycleRunGatewayCommand($topology, 'tool:restart supervisor --node=app-dev-1 --json');
-        $restartPayload = toolLifecycleJson($restart->output());
+        $restartData = e2eJsonCommandData(e2eJsonCommandPayload($restart->output()));
         $after = $topology->ssh('dev', 'systemctl show supervisor.service --property=ActiveEnterTimestampMonotonic --value', timeoutSeconds: 60);
 
         expect($restart->successful())->toBeTrue()
-            ->and($restartPayload['success']['data']['tool'])->toMatchArray([
+            ->and($restartData['tool'])->toMatchArray([
                 'name' => 'supervisor',
                 'node' => 'app-dev-1',
                 'expected_state' => 'running',
@@ -58,24 +58,24 @@ it('manages a system service tool lifecycle on an app node from the gateway', fu
         $topology->ssh('dev', 'sudo systemctl restart supervisor', timeoutSeconds: 60);
 
         $logs = toolLifecycleRunGatewayCommand($topology, 'tool:logs supervisor --node=app-dev-1 --lines=20 --json');
-        $logsPayload = toolLifecycleJson($logs->output());
+        $logsData = e2eJsonCommandData(e2eJsonCommandPayload($logs->output()));
 
         expect($logs->successful())->toBeTrue()
-            ->and($logsPayload['success']['data']['logs'])->toMatchArray([
+            ->and($logsData['logs'])->toMatchArray([
                 'tool' => 'supervisor',
                 'node' => 'app-dev-1',
             ])
-            ->and($logsPayload['success']['data']['logs']['lines'])->not->toBeEmpty()
-            ->and(implode("\n", array_column($logsPayload['success']['data']['logs']['lines'], 'message')))->toContain('supervisor');
+            ->and($logsData['logs']['lines'])->not->toBeEmpty()
+            ->and(implode("\n", array_column($logsData['logs']['lines'], 'message')))->toContain('supervisor');
 
         toolLifecycleAssertFollowLogs($topology);
 
         toolLifecycleSeedGatewayIntent($topology, 'running');
         $stop = toolLifecycleRunGatewayCommand($topology, 'tool:stop supervisor --node=app-dev-1 --json');
-        $stopPayload = toolLifecycleJson($stop->output());
+        $stopData = e2eJsonCommandData(e2eJsonCommandPayload($stop->output()));
 
         expect($stop->successful())->toBeTrue()
-            ->and($stopPayload['success']['data']['tool'])->toMatchArray([
+            ->and($stopData['tool'])->toMatchArray([
                 'name' => 'supervisor',
                 'node' => 'app-dev-1',
                 'expected_state' => 'installed',
@@ -190,14 +190,6 @@ function toolLifecycleRunGatewayCommand(E2ETopologyHarness $topology, string $co
         ),
         timeoutSeconds: 180,
     );
-}
-
-/**
- * @return array<string, mixed>
- */
-function toolLifecycleJson(string $output): array
-{
-    return json_decode(trim($output), associative: true, flags: JSON_THROW_ON_ERROR);
 }
 
 function toolLifecycleExpectSupervisorState(E2ETopologyHarness $topology, string $state, bool $allowFailure = false): void

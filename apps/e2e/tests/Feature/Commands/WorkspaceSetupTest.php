@@ -157,9 +157,9 @@ it('resolves an opencode worktree by adapter ownership when a stale registered p
             ),
             timeoutSeconds: 180,
         );
-        $installPayload = json_decode(trim($install->output()), associative: true, flags: JSON_THROW_ON_ERROR);
+        $installData = e2eJsonCommandData(e2eJsonCommandPayload($install->output()));
 
-        expect($installPayload['success']['data']['tool'])->toMatchArray([
+        expect($installData['tool'])->toMatchArray([
             'name' => 'opencode-server',
             'node' => 'app-dev-1',
             'state' => 'running',

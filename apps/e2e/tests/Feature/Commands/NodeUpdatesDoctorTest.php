@@ -22,10 +22,11 @@ it('reports missing unattended-upgrades posture on an Incus app node from the ga
 
         $result = nodeUpdatesDoctorRun($topology, allowFailure: true);
         $payload = nodeUpdatesDoctorPayload($result->output());
+        $error = e2eJsonCommandError($payload);
         $issue = nodeUpdatesDoctorIssue($payload, 'node.updates_config_missing');
 
         expect($result->successful())->toBeFalse($result->output().$result->errorOutput())
-            ->and($payload['error']['code'])->toBe('drift_detected')
+            ->and($error['code'])->toBe('drift_detected')
             ->and($issue)->toMatchArray([
                 'family' => 'node',
                 'node' => 'app-dev-1',
@@ -56,10 +57,11 @@ it('reports reboot-required update posture without attempting an automatic reboo
 
         $result = nodeUpdatesDoctorRun($topology, allowFailure: true);
         $payload = nodeUpdatesDoctorPayload($result->output());
+        $error = e2eJsonCommandError($payload);
         $issue = nodeUpdatesDoctorIssue($payload, 'node.updates_reboot_required');
 
         expect($result->successful())->toBeFalse($result->output().$result->errorOutput())
-            ->and($payload['error']['code'])->toBe('drift_detected')
+            ->and($error['code'])->toBe('drift_detected')
             ->and($issue)->toMatchArray([
                 'family' => 'node',
                 'node' => 'app-dev-1',
@@ -144,7 +146,7 @@ function nodeUpdatesDoctorRun(E2ETopologyHarness $topology, bool $allowFailure =
  */
 function nodeUpdatesDoctorPayload(string $output): array
 {
-    return json_decode(trim($output), associative: true, flags: JSON_THROW_ON_ERROR);
+    return e2eJsonCommandPayload($output);
 }
 
 /**
@@ -153,7 +155,14 @@ function nodeUpdatesDoctorPayload(string $output): array
  */
 function nodeUpdatesDoctorIssue(array $payload, string $code): array
 {
-    $issues = $payload['error']['data']['doctor']['issues'] ?? $payload['success']['data']['doctor']['issues'] ?? [];
+    $error = e2eJsonCommandError($payload);
+    $data = $error !== []
+        ? ($error['data'] ?? [])
+        : e2eJsonCommandData($payload);
+
+    $issues = is_array($data)
+        ? ($data['doctor']['issues'] ?? [])
+        : [];
     $issue = collect($issues)->firstWhere('code', $code);
 
     if (is_array($issue)) {

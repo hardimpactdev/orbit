@@ -10,6 +10,7 @@ it('updates a docker-managed tool on an app node through the gateway', function 
         ->withCurrentCheckout(roles: ['gateway']);
 
     try {
+        e2eRestartGatewayApi($topology, 'tool-update');
         toolUpdatePrepareComposeFile($topology);
         toolUpdateSeedGatewayIntent($topology);
 
@@ -21,10 +22,10 @@ it('updates a docker-managed tool on an app node through the gateway', function 
             ),
             timeoutSeconds: 180,
         );
-        $payload = json_decode(trim($result->output()), associative: true, flags: JSON_THROW_ON_ERROR);
+        $data = e2eJsonCommandData(e2eJsonCommandPayload($result->output()));
 
         expect($result->successful())->toBeTrue()
-            ->and($payload['success']['data']['tool'])->toMatchArray([
+            ->and($data['tool'])->toMatchArray([
                 'name' => 'redis',
                 'node' => 'app-dev-1',
                 'version' => '7.2',
