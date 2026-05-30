@@ -29,7 +29,7 @@ it('lists the agent node from a operator caller against the agent-extended topol
         $result = $topology->ssh(
             'operator',
             sprintf(
-                'cd %s && php apps/gateway/artisan node:list --role=agent --json',
+                'cd %s && orbit node:list --role=agent --json',
                 escapeshellarg($topology->checkout('operator')),
             ),
             timeoutSeconds: 120,
