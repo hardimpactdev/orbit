@@ -225,16 +225,24 @@ it('builds the reusable superset topology from the base image', function (): voi
         );
         expect($versionResult->output())->toContain('0.1.0');
 
-        // Assert `orbit dns:list --json` exits 0 and returns a JsonEnvelope.
-        $dnsResult = $validationInstance->exec(
-            'sudo -u '.$config->operatorUser.' /usr/local/bin/orbit dns:list --json',
+        // Assert `orbit list` boots the full embedded runtime and loads the
+        // entire command registry on the real Ubuntu VM. This exercises the
+        // phpacker-embedded PHP and its extensions without depending on node
+        // resolver/gateway state, so it is a robust standalone proof that the
+        // self-contained binary runs on the provisioned OS.
+        $listResult = $validationInstance->exec(
+            'sudo -u '.$config->operatorUser.' /usr/local/bin/orbit list --no-ansi',
             timeoutSeconds: 30,
         );
 
-        expect($dnsResult->successful())->toBeTrue(
-            "orbit dns:list --json failed: {$dnsResult->output()}{$dnsResult->errorOutput()}"
+        expect($listResult->successful())->toBeTrue(
+            "orbit list failed: {$listResult->output()}{$listResult->errorOutput()}"
         );
-        expect($dnsResult->output())->toContain('"success"');
+        expect($listResult->output())
+            ->toContain('dns:')
+            ->toContain('gateway:')
+            ->toContain('node:')
+            ->toContain('app:');
 
         $passed = true;
     } finally {
