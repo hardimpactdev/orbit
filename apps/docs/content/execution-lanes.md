@@ -14,8 +14,8 @@ Before that baseline exists, bootstrap may use host shell commands to install
 Docker, prepare the `orbit` user, clone Orbit source, and create the first
 runtime containers. After the baseline exists, gateway Laravel/artisan/PDO work
 must not rely on host PHP, host Composer, host Python, host SQLite, or host
-database client binaries. Host PHP is allowed only for the source-checkout
-CLI/local-executor artifact; it is not an app/workspace runtime fallback.
+database client binaries. The CLI/local-executor artifact runs in the binary's
+embedded PHP; host PHP is not an app/workspace runtime fallback.
 
 ## Lanes
 
@@ -29,9 +29,10 @@ RemoteOrbitRuntimeExecutor:
   work that belongs to the gateway runtime container.
 
 RemoteLocalExecutor:
-  SSH then invoke the host-installed apps/cli internal executor command.
+  SSH then invoke the Orbit CLI binary's internal executor command.
   It is for packaged node-local helper logic that needs host file access
-  and PHP/PDO without relying on ad hoc python3/sqlite3 snippets.
+  and PHP/PDO (via the binary's embedded PHP) without relying on ad hoc
+  python3/sqlite3 snippets.
 ```
 
 ### RemoteHostExecutor
@@ -100,18 +101,18 @@ Forbidden work:
 
 ### RemoteLocalExecutor
 
-`RemoteLocalExecutor` SSHs to the node and invokes the host-installed
-`apps/cli` internal executor command. It is for packaged node-local helper
-logic that needs host file access and PHP/PDO without relying on ad hoc
-`python3` or `sqlite3` snippets.
+`RemoteLocalExecutor` SSHs to the node and invokes the installed Orbit CLI
+binary's internal executor command. It is for packaged node-local helper
+logic that needs host file access and PHP/PDO (using the binary's embedded
+PHP) without relying on ad hoc `python3` or `sqlite3` snippets.
 
 The gateway primitive composes `/usr/local/bin/orbit internal:* ...` commands
 with `LocalExecutorCommandBuilder`, mints a short-lived gateway operation token,
 and dispatches that host command through the SSH transport. It never wraps local
 executor work in `docker exec orbit-runtime`; the host `orbit` launcher always
-selects `apps/cli/orbit` on every node role. `RemoteLocalExecutor` cannot
-invoke public commands; operation tokens are checked once at internal-command
-entry before any side effects.
+enters the installed Orbit CLI binary on every node role. `RemoteLocalExecutor`
+cannot invoke public commands; operation tokens are checked once at
+internal-command entry before any side effects.
 
 #### Result-boundary redaction patterns
 
@@ -221,8 +222,8 @@ Use these rules for every new or migrated gateway-to-node execution path.
   through `RemoteOrbitRuntimeExecutor`.
 - Packaged node-local helper logic that needs host file access and PHP/PDO MUST
   go through `RemoteLocalExecutor`.
-- Host-shell PHP is forbidden as a steady-state implementation detail outside
-  the host-installed CLI/local-executor artifact.
+- Host-shell PHP is forbidden as a steady-state implementation detail; the
+  CLI/local-executor artifact uses the binary's embedded PHP, not host PHP.
 - `RemoteShell` is transport, not a workload classification. New call sites
   must choose `RemoteHostExecutor`, `RemoteOrbitRuntimeExecutor`, or
   `RemoteLocalExecutor` explicitly.

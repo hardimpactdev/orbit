@@ -83,8 +83,8 @@ facts from another node.
 ### Node CLI Selection
 
 - Writes the node CLI PHP default in gateway tool facts.
-- Accepts only PHP 8.5, matching Orbit's host CLI/local-executor and
-  `orbit-runtime` baseline.
+- Accepts only PHP 8.5, matching the Orbit CLI binary's embedded PHP version
+  and the `orbit-runtime` baseline.
 - Does not limit app or workspace FrankenPHP runtime versions.
 
 ### Scope Boundaries

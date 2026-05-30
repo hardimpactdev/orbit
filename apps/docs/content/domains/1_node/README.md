@@ -55,10 +55,10 @@ assignments. Supported platforms are tracked in
 [`node-concepts.md#role-platform-support`](node-concepts.md#role-platform-support).
 
 Nodes may run the Orbit CLI as a stateless gateway client through the host
-`orbit` launcher, which always executes `apps/cli/orbit` regardless of node
-role. The CLI artifact owns public gateway-backed commands (which call the
-gateway typed API over the VPN), local-only commands (which mutate
-caller-local state such as `~/.config/orbit/config.json`), bootstrap
+`orbit` launcher, which always executes the installed Orbit CLI binary
+regardless of node role. The CLI binary owns public gateway-backed commands
+(which call the gateway typed API over the VPN), local-only commands (which
+mutate caller-local state such as `~/.config/orbit/config.json`), bootstrap
 commands (which run before a gateway API exists), and hidden `internal:*`
 executor commands gated by operation tokens. Gateway maintenance uses
 `bin/orbit-gateway-artisan` or direct `php apps/gateway/artisan` from a
@@ -259,10 +259,11 @@ These rules apply to all node commands and define the invariants the family enfo
   nodes.
 
 The node host contract is Docker-first. Managed nodes require Git, Docker
-Engine and CLI, the Orbit checkout, host PHP 8.5 CLI for the CLI/local-executor
-artifact, the host `orbit` launcher, `orbit-runtime`, WireGuard/SSH identity
-material, and role-specific non-PHP host tools such as VitePlus on app nodes.
-Host Composer, host Caddy, and host PHP-FPM are not prerequisites or fallbacks.
+Engine and CLI, the prebuilt Orbit CLI binary (embedded PHP 8.5 +
+`pdo_sqlite`/`openssl`/`curl`/`mbstring`/`tokenizer`/`ctype`/`filter`/`fileinfo`/`json`/`phar`),
+the host `orbit` launcher, `orbit-runtime`, WireGuard/SSH identity material,
+and role-specific non-PHP host tools such as VitePlus on app nodes. Host
+Composer, host Caddy, and host PHP-FPM are not prerequisites or fallbacks.
 
 ## Transport Model
 
@@ -410,10 +411,10 @@ being requested.
 
 Gateway, node, and client identities are minted or adopted during
 [`orbit node:new [name]`](1_node-new/node-new.md). Preparing a client
-starts with local CLI installation: clone Orbit, ensure Docker, host PHP CLI,
-and the local `orbit-runtime` container are available, and link the host
-`bin/orbit` launcher as `orbit`; the project README owns those installation
-steps.
+starts with local CLI installation: download the Orbit CLI binary, ensure
+Docker and the local `orbit-runtime` container are available, and link the
+host `bin/orbit` launcher as `orbit`; the project README owns those
+installation steps.
 
 First-gateway bootstrap is a complete onboarding flow for the initiating
 client. When a client with no configured gateway runs

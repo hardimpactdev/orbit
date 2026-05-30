@@ -84,10 +84,9 @@ This section defines the message delivery model.
   session for a resolved app or workspace context. Accepted delivery means the
   adapter accepted the message; it does not mean the requested work completed.
 - **Agent IDE launcher context:** Host `orbit` launcher context exported to the
-  dispatched CLI artifact at `apps/cli/orbit` (every node role) as
-  `ORBIT_HOST_CWD`. Agent IDE commands may use it to resolve app/workspace
-  defaults, but authorization still comes from the gateway's WireGuard peer
-  and grant model.
+  installed Orbit CLI binary (every node role) as `ORBIT_HOST_CWD`. Agent IDE
+  commands may use it to resolve app/workspace defaults, but authorization
+  still comes from the gateway's WireGuard peer and grant model.
 
 ## Boundaries
 
