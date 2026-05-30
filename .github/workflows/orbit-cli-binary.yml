@@ -35,7 +35,15 @@ jobs:
         run: composer install --working-dir=apps/cli --no-interaction --prefer-dist --optimize-autoloader
 
       - name: Build PHAR
+        env:
+          COMPOSER_MIRROR_PATH_REPOS: '1'
         run: |
+          # Box's internal `composer dump-autoload` recreates the orbit-core
+          # path-repo symlink, which drops Orbit\Core\* from the bundled PHAR.
+          # Copy the real package over the symlink and mirror path repos so the
+          # PHAR (and the binaries built from it) carry orbit-core.
+          rm -rf apps/cli/vendor/hardimpactdev/orbit-core
+          cp -r packages/core apps/cli/vendor/hardimpactdev/orbit-core
           cd apps/cli
           php orbit app:build orbit.phar \
             --build-version=${{ steps.version.outputs.value }} \

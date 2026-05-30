@@ -28,6 +28,17 @@ declare(strict_types=1);
  */
 pest()->group('e2e-binary');
 
+/*
+ * The built native binary only exists after the binary lane builds it
+ * (`composer test:e2e:binary`). When it is absent — the default Pest suite and
+ * `composer quality-check` on a fresh checkout — skip rather than fail.
+ */
+beforeEach(function (): void {
+    if (! file_exists(orbitBinaryPath())) {
+        test()->markTestSkipped('orbit binary not built; run `composer test:e2e:binary`.');
+    }
+});
+
 /**
  * Resolve the path to the built host-arch native binary.
  *
