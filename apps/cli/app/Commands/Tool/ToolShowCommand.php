@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Commands\Tool;
 
+use App\Commands\Concerns\RendersShowDetails;
 use App\Commands\Concerns\ResolvesHostContext;
 use App\Commands\GatewayCommand;
 use App\Exceptions\GatewayApiException;
@@ -11,6 +12,7 @@ use App\Exceptions\OrbitConfigStoreException;
 
 final class ToolShowCommand extends GatewayCommand
 {
+    use RendersShowDetails;
     use ResolvesHostContext;
 
     #[\Override]
@@ -44,6 +46,74 @@ final class ToolShowCommand extends GatewayCommand
             return $this->renderGatewayFailure($exception);
         }
 
-        return $this->renderSuccess($response);
+        if ($this->wantsJson()) {
+            return $this->renderSuccess($response);
+        }
+
+        $tool = $this->toolFromGatewayResponse($response);
+
+        if ($tool === null) {
+            return $this->renderFailure('gateway_unavailable', 'Gateway response missing required tool data.');
+        }
+
+        $this->renderTool($tool);
+
+        return self::SUCCESS;
+    }
+
+    /**
+     * @param  array<string, mixed>  $response
+     * @return array<string, mixed>|null
+     */
+    private function toolFromGatewayResponse(array $response): ?array
+    {
+        $tool = $response['success']['data']['tool'] ?? null;
+
+        return is_array($tool) ? $tool : null;
+    }
+
+    /**
+     * @param  array<string, mixed>  $tool
+     */
+    private function renderTool(array $tool): void
+    {
+        $properties = [
+            'Node' => $tool['node'] ?? null,
+            'Expected' => $tool['expected_state'] ?? $tool['state'] ?? null,
+            'Version' => $tool['version'] ?? null,
+            'Managed' => $tool['managed'] ?? null,
+            'Endpoints' => $this->endpointLabels($tool['endpoints'] ?? []),
+        ];
+
+        if (($tool['observed_state'] ?? null) !== null) {
+            $properties['Observed'] = $tool['observed_state'];
+        }
+
+        $this->renderShowDetails('Tool: '.(string) ($tool['name'] ?? ''), $properties);
+    }
+
+    private function endpointLabels(mixed $endpoints): ?string
+    {
+        if (! is_array($endpoints) || $endpoints === []) {
+            return null;
+        }
+
+        $labels = [];
+
+        foreach ($endpoints as $endpoint) {
+            if (! is_array($endpoint)) {
+                continue;
+            }
+
+            $name = is_string($endpoint['name'] ?? null) ? $endpoint['name'] : 'endpoint';
+            $host = is_string($endpoint['host'] ?? null) ? $endpoint['host'] : null;
+            $port = is_scalar($endpoint['port'] ?? null) ? (string) $endpoint['port'] : null;
+
+            $labels[] = $host !== null && $port !== null
+                ? "{$name} ({$host}:{$port})"
+                : $name;
+        }
+
+        return $labels === [] ? null : implode(', ', $labels);
     }
 }
