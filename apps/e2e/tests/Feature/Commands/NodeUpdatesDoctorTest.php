@@ -131,7 +131,7 @@ function nodeUpdatesDoctorRun(E2ETopologyHarness $topology, bool $allowFailure =
     return $topology->ssh(
         'gateway',
         sprintf(
-            'cd %s && php apps/gateway/artisan doctor --node=app-dev-1 --family=node --key=node.updates --json',
+            'cd %s && orbit doctor --node=app-dev-1 --family=node --key=node.updates --json',
             escapeshellarg($topology->checkout('gateway')),
         ),
         timeoutSeconds: 240,
