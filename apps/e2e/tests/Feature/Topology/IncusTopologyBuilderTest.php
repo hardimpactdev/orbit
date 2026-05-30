@@ -6,8 +6,10 @@ use App\E2E\Support\E2EConfig;
 use App\E2E\Support\E2ETopologyArtifactNamespace;
 use App\E2E\Support\E2ETopologyKind;
 use App\E2E\Support\IncusHostPool;
+use App\E2E\Support\IncusInstance;
 use App\E2E\Support\IncusTopologyBuilder;
 use App\E2E\Support\IncusTopologyTemplate;
+use App\E2E\Support\OrbitCliBinaryBundle;
 use Illuminate\Support\Facades\Process;
 
 pest()->group('e2e-provision', 'e2e-provision-superset');
@@ -81,8 +83,13 @@ it('builds the reusable superset topology from the base image', function (): voi
         ))->throw();
     }
 
+    // Build and bundle the linux x64 orbit binary so the VM does not need
+    // gh/GH_TOKEN for the CLI binary download step during provision.
+    (new OrbitCliBinaryBundle)->buildLinuxBinaryInto($bundleDir);
+
     $remoteBundle = $host->pushBundle($bundleDir);
     $passed = false;
+    $validationInstanceName = null;
 
     try {
         $builder = new IncusTopologyBuilder($host);
@@ -98,8 +105,68 @@ it('builds the reusable superset topology from the base image', function (): voi
                 ->and($host->snapshotExists($templateName, $snapshotName))->toBeTrue();
         }
 
+        // --- Binary validation ---
+        // Clone the operator template into a disposable validation instance,
+        // start it, and confirm the installed orbit binary works.
+        $operatorTemplateName = IncusTopologyTemplate::templateName($kind, 'operator');
+        $validationInstanceName = 'orbit-validate-binary-'.bin2hex(random_bytes(4));
+
+        $copyResult = $host->copyInstance(
+            "{$operatorTemplateName}/{$snapshotName}",
+            $validationInstanceName,
+        );
+
+        if (! $copyResult->successful()) {
+            throw new RuntimeException(
+                "Could not clone operator template for binary validation: {$copyResult->errorOutput()}"
+            );
+        }
+
+        $startResult = $host->startInstance($validationInstanceName);
+
+        if (! $startResult->successful()) {
+            throw new RuntimeException(
+                "Could not start validation instance {$validationInstanceName}: {$startResult->errorOutput()}"
+            );
+        }
+
+        $validationInstance = new IncusInstance($host, $validationInstanceName);
+        $validationInstance->waitForAgent();
+
+        // Assert `orbit --version` responds with Orbit version info.
+        $versionResult = $validationInstance->exec('/usr/local/bin/orbit --version', timeoutSeconds: 30);
+
+        expect($versionResult->successful())->toBeTrue(
+            "orbit --version failed: {$versionResult->output()}{$versionResult->errorOutput()}"
+        );
+        expect($versionResult->output())->toContain('0.1.0');
+
+        // Assert `orbit list` boots the full embedded runtime and loads the
+        // entire command registry on the real Ubuntu VM. This exercises the
+        // phpacker-embedded PHP and its extensions without depending on node
+        // resolver/gateway state, so it is a robust standalone proof that the
+        // self-contained binary runs on the provisioned OS.
+        $listResult = $validationInstance->exec(
+            'sudo -u '.$config->operatorUser.' /usr/local/bin/orbit list --no-ansi',
+            timeoutSeconds: 30,
+        );
+
+        expect($listResult->successful())->toBeTrue(
+            "orbit list failed: {$listResult->output()}{$listResult->errorOutput()}"
+        );
+        expect($listResult->output())
+            ->toContain('dns:')
+            ->toContain('gateway:')
+            ->toContain('node:')
+            ->toContain('app:');
+
         $passed = true;
     } finally {
+        // Clean up the disposable validation instance regardless of pass/fail.
+        if ($validationInstanceName !== null && $host->instanceExists($validationInstanceName)) {
+            $host->run(sprintf('incus delete --force %s', escapeshellarg($validationInstanceName)));
+        }
+
         $dangling = [];
 
         foreach ($templateNames as $templateName) {

@@ -16,6 +16,7 @@ final readonly class GatewayLogStreamClient
     public function __construct(
         private ?string $baseUrl,
         private int $timeout,
+        private ?string $caPemPath = null,
     ) {}
 
     /**
@@ -30,7 +31,7 @@ final readonly class GatewayLogStreamClient
             $response = Http::baseUrl($baseUrl)
                 ->withHeaders(['Accept' => 'text/plain'])
                 ->timeout($this->timeout)
-                ->withOptions(['stream' => true])
+                ->withOptions($this->streamOptions())
                 ->get('/'.ltrim($path, '/'), $query);
         } catch (ConnectionException $exception) {
             throw $this->classifyNetworkError($exception);
@@ -70,6 +71,24 @@ final readonly class GatewayLogStreamClient
         }
 
         return rtrim($baseUrl, '/');
+    }
+
+    /**
+     * Build the HTTP client options for the streaming request. The stream option is always set;
+     * when a gateway CA PEM exists on disk, verify is added so the gateway's private CA is
+     * trusted (mirroring VerifyGatewayIdentity). Without a CA path, default verification is kept.
+     *
+     * @return array<string, mixed>
+     */
+    private function streamOptions(): array
+    {
+        $options = ['stream' => true];
+
+        if (is_string($this->caPemPath) && $this->caPemPath !== '' && is_file($this->caPemPath)) {
+            $options['verify'] = $this->caPemPath;
+        }
+
+        return $options;
     }
 
     private function classifyNetworkError(ConnectionException $exception): GatewayApiException

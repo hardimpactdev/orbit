@@ -10,6 +10,7 @@ it('reads managed tool credentials from gateway intent', function (): void {
         ->withCurrentCheckout(roles: ['gateway']);
 
     try {
+        e2eRestartGatewayApi($topology, 'tool-credentials-redis');
         toolCredentialsSeedGatewayIntent($topology);
 
         $result = $topology->ssh(
@@ -43,6 +44,7 @@ it('reads opencode-server credentials from gateway intent', function (): void {
         ->withCurrentCheckout(roles: ['gateway']);
 
     try {
+        e2eRestartGatewayApi($topology, 'tool-credentials-opencode');
         toolCredentialsSeedOpencodeServerGatewayIntent($topology);
 
         $result = $topology->ssh(

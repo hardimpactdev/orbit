@@ -73,6 +73,7 @@ final class GatewayApiServiceProvider extends ServiceProvider
             return new GatewayApiClient(
                 baseUrl: $config['base_url'],
                 timeout: $config['timeout'],
+                caPemPath: $config['ca_pem_path'],
             );
         });
 
@@ -82,6 +83,7 @@ final class GatewayApiServiceProvider extends ServiceProvider
             return new GatewayStreamClient(
                 baseUrl: $config['base_url'],
                 timeout: $config['timeout'],
+                caPemPath: $config['ca_pem_path'],
             );
         });
 
@@ -91,12 +93,13 @@ final class GatewayApiServiceProvider extends ServiceProvider
             return new GatewayLogStreamClient(
                 baseUrl: $config['base_url'],
                 timeout: $config['timeout'],
+                caPemPath: $config['ca_pem_path'],
             );
         });
     }
 
     /**
-     * @return array{base_url: string|null, timeout: int}
+     * @return array{base_url: string|null, timeout: int, ca_pem_path: string|null, self_mode: string|null}
      */
     private function gatewayConnectionConfig(): array
     {
@@ -108,9 +111,16 @@ final class GatewayApiServiceProvider extends ServiceProvider
         $envTimeout = config('orbit.gateway.timeout');
         $jsonTimeout = is_array($jsonGateway) ? ($jsonGateway['timeout'] ?? null) : null;
 
+        $envCaPemPath = $this->nullableString(config('orbit.gateway.ca_pem_path'));
+        $jsonCaPemPath = is_array($jsonGateway) ? $this->nullableString($jsonGateway['ca_pem_path'] ?? null) : null;
+
+        $jsonSelfMode = is_array($jsonGateway) ? $this->nullableString($jsonGateway['self_mode'] ?? null) : null;
+
         return [
             'base_url' => $envUrl ?? $jsonUrl,
             'timeout' => $this->positiveInteger($envTimeout ?? $jsonTimeout, OrbitConfigStore::DEFAULT_TIMEOUT_SECONDS),
+            'ca_pem_path' => $envCaPemPath ?? $jsonCaPemPath,
+            'self_mode' => $jsonSelfMode ?? OrbitConfigStore::DEFAULT_SELF_MODE,
         ];
     }
 

@@ -89,6 +89,7 @@ it('sends a workspace message through the managed OpenCode transport', function 
     $port = random_int(48100, 48999);
 
     try {
+        e2eRestartGatewayApi($topology, 'agent-ide-message');
         agentIdeMessageStartFakeOpenCode($topology, $port);
         agentIdeMessageSeedGatewayIntent($topology, $port);
 

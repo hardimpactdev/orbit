@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Services\Processes\ProcessDockerContainer;
 use App\Services\Runtime\DockerCommandBuilder;
 use App\Services\Runtime\OrbitCaddyContainer;
 use App\Services\Runtime\OrbitContainerNames;
@@ -101,6 +102,47 @@ it('uses the managed target node namespace for Docker E2E Caddy and websocket co
             ->and($builder->runDetached($websocket))
             ->toContain('--network '.escapeshellarg('container:orbit-e2e-run123-dev'))
             ->not->toContain('container:orbit-e2e-run123-gateway')
+            ->not->toContain('--network-alias');
+    } finally {
+        if ($previousNetwork === false) {
+            putenv('ORBIT_E2E_DOCKER_NETWORK');
+        } else {
+            putenv("ORBIT_E2E_DOCKER_NETWORK={$previousNetwork}");
+        }
+
+        if ($previousNodeContainer === false) {
+            putenv('ORBIT_NODE_CONTAINER');
+        } else {
+            putenv("ORBIT_NODE_CONTAINER={$previousNodeContainer}");
+        }
+    }
+});
+
+it('uses the managed target node namespace without aliases for Docker E2E process containers', function (): void {
+    $previousNetwork = getenv('ORBIT_E2E_DOCKER_NETWORK');
+    $previousNodeContainer = getenv('ORBIT_NODE_CONTAINER');
+
+    putenv('ORBIT_E2E_DOCKER_NETWORK=orbit-e2e-run123');
+    putenv('ORBIT_NODE_CONTAINER=orbit-e2e-run123-dev');
+
+    try {
+        $process = new ProcessDockerContainer(
+            name: 'orbit_docs_main_queue',
+            image: 'dunglas/frankenphp:1-php8.5-bookworm',
+            network: 'orbit-network',
+            restartPolicy: 'no',
+            appSlug: 'docs',
+            workspaceSlug: null,
+            processSlug: 'queue',
+            workingDirectory: '/app',
+            command: 'php artisan queue:work',
+            environment: [],
+            mounts: [],
+            networkAliases: ['orbit_docs_main_queue'],
+        );
+
+        expect((new DockerCommandBuilder)->createIdle($process))
+            ->toContain('--network '.escapeshellarg('container:orbit-e2e-run123-dev'))
             ->not->toContain('--network-alias');
     } finally {
         if ($previousNetwork === false) {

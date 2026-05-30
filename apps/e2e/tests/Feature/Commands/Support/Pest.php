@@ -114,30 +114,101 @@ function e2eGatewayApiUrl(E2ETopologyHarness $topology): string
 }
 
 /**
+ * @return array<string, mixed>
+ */
+function e2eJsonCommandPayload(string $output): array
+{
+    /** @var array<string, mixed> $payload */
+    $payload = json_decode(trim($output), associative: true, flags: JSON_THROW_ON_ERROR);
+
+    return $payload;
+}
+
+/**
+ * @param  array<string, mixed>  $payload
+ * @return array{
+ *     event: 'complete'|'error'|'unknown',
+ *     exit_code: int|null,
+ *     data: array<string, mixed>,
+ *     meta: array<string, mixed>,
+ *     error: array<string, mixed>|null
+ * }
+ */
+function e2eJsonCommandTerminalResult(array $payload): array
+{
+    $success = $payload['success'] ?? null;
+
+    if (is_array($success)) {
+        $successData = $success['data'] ?? null;
+        $successMeta = $success['meta'] ?? null;
+
+        return [
+            'event' => 'complete',
+            'exit_code' => 0,
+            'data' => is_array($successData) ? $successData : [],
+            'meta' => is_array($successMeta) ? $successMeta : [],
+            'error' => null,
+        ];
+    }
+
+    $error = $payload['error'] ?? null;
+
+    if (is_array($error)) {
+        $errorData = $error['data'] ?? null;
+        $errorMeta = $error['meta'] ?? null;
+
+        return [
+            'event' => 'error',
+            'exit_code' => 1,
+            'data' => is_array($errorData) ? $errorData : [],
+            'meta' => is_array($errorMeta) ? $errorMeta : [],
+            'error' => $error,
+        ];
+    }
+
+    $event = $payload['event'] ?? null;
+
+    if ($event === 'complete' || $event === 'error') {
+        $frame = $payload['data'] ?? null;
+
+        if (! is_array($frame)) {
+            return [
+                'event' => $event,
+                'exit_code' => null,
+                'data' => [],
+                'meta' => [],
+                'error' => null,
+            ];
+        }
+
+        $exitCode = $frame['exit_code'] ?? null;
+        $data = $frame['data'] ?? null;
+
+        return [
+            'event' => $event,
+            'exit_code' => is_int($exitCode) ? $exitCode : null,
+            'data' => is_array($data) ? $data : [],
+            'meta' => [],
+            'error' => null,
+        ];
+    }
+
+    return [
+        'event' => 'unknown',
+        'exit_code' => null,
+        'data' => [],
+        'meta' => [],
+        'error' => null,
+    ];
+}
+
+/**
  * @param  array<string, mixed>  $payload
  * @return array<string, mixed>
  */
 function e2eJsonCommandData(array $payload): array
 {
-    $successData = $payload['success']['data'] ?? null;
-
-    if (is_array($successData)) {
-        return $successData;
-    }
-
-    if (($payload['event'] ?? null) !== 'complete') {
-        return [];
-    }
-
-    $frame = $payload['data'] ?? null;
-
-    if (! is_array($frame)) {
-        return [];
-    }
-
-    $data = $frame['data'] ?? null;
-
-    return is_array($data) ? $data : [];
+    return e2eJsonCommandTerminalResult($payload)['data'];
 }
 
 /**

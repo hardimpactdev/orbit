@@ -24,6 +24,7 @@ final readonly class GatewayApiClient
     public function __construct(
         private ?string $baseUrl,
         private int $timeout,
+        private ?string $caPemPath = null,
     ) {}
 
     /**
@@ -94,10 +95,29 @@ final readonly class GatewayApiClient
     {
         $baseUrl = $this->normalizedBaseUrl();
 
-        return Http::baseUrl($baseUrl)
+        $request = Http::baseUrl($baseUrl)
             ->acceptJson()
             ->asJson()
             ->timeout($this->timeout);
+
+        if ($this->shouldVerifyAgainstGatewayCa()) {
+            $request = $request->withOptions(['verify' => $this->caPemPath]);
+        }
+
+        return $request;
+    }
+
+    /**
+     * Verify the gateway TLS certificate against the locally configured gateway CA when it is
+     * present on disk. This mirrors VerifyGatewayIdentity so the self-contained binary's bundled
+     * CA store does not have to recognize the gateway's private CA. When no CA PEM path is
+     * configured, the default HTTP client verification behavior is left unchanged.
+     */
+    private function shouldVerifyAgainstGatewayCa(): bool
+    {
+        return is_string($this->caPemPath)
+            && $this->caPemPath !== ''
+            && is_file($this->caPemPath);
     }
 
     private function normalizedBaseUrl(): string

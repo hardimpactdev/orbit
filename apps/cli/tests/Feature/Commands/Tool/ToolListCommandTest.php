@@ -41,15 +41,25 @@ describe('tool:list', function (): void {
     it('renders human output containing tool fields', function (): void {
         fakeGateway(fakeSuccessEnvelope([
             'tools' => [
-                ['name' => 'redis', 'node' => 'app-1'],
+                [
+                    'name' => 'redis',
+                    'node' => 'app-1',
+                    'expected_state' => 'running',
+                    'observed_state' => null,
+                    'version' => '7.2',
+                    'managed' => true,
+                    'endpoints' => [],
+                ],
             ],
         ]));
 
         [$exitCode, $output] = runCommand($this, 'tool:list', ['--node' => 'app-1']);
 
         expect($exitCode)->toBe(0)
-            ->and($output)->toContain('tools')
-            ->and($output)->toContain('redis');
+            ->and($output)->toContain('Node: app-1')
+            ->and($output)->toContain('redis')
+            ->and($output)->toContain('running')
+            ->and($output)->toContain('7.2');
     });
 
     it('passes through gateway error codes from HTTP failures', function (): void {

@@ -49,7 +49,12 @@ final class E2ECurrentCheckout
                     self::refreshGatewayHostKeys($instance, $user, $topology->sshKeyPair(), $remotePath, $timer, $hostLauncher);
                 }
             : null;
-            $refreshLocalGatewaySettings = $role !== 'gateway' && $topology->gateway() !== null && ! self::usesDockerRuntime($instance)
+            // Configure the orbit CLI gateway endpoint on every node that has a
+            // gateway, INCLUDING the gateway node itself: gateway-role feature
+            // tests run `orbit` against the gateway API as a self-call to the
+            // gateway's own WireGuard IP (routed locally), so the gateway's CLI
+            // needs the same ~/.config/orbit gateway entry + CA trust as clients.
+            $refreshLocalGatewaySettings = $topology->gateway() !== null && ! self::usesDockerRuntime($instance)
                 ? function (string $remotePath) use ($instance, $user, $topology, $timer): void {
                     self::refreshLocalGatewaySettings($instance, $user, $topology->sshKeyPair(), $remotePath, $topology->gatewayApiIp(), $timer);
                 }
@@ -634,7 +639,26 @@ if (\\Illuminate\\Support\\Facades\\Schema::hasTable('local_gateway_settings')) 
 }
 PHP;
 
-        return 'cd '.escapeshellarg($remotePath).' && php apps/gateway/artisan tinker --execute='.escapeshellarg($php);
+        // The gateway-app LocalGatewaySettings write above only configures the
+        // gateway application's store. The `orbit` CLI (which the feature tests
+        // invoke as the role user) needs its own ~/.config/orbit gateway entry
+        // AND the gateway root CA recorded as ca_pem_path so its HTTPS calls
+        // verify — otherwise CLI calls fail with "Gateway URL is not configured"
+        // (no config) or cURL error 60 (CA not trusted). `orbit gateway:add`
+        // fetches the CA over http bootstrap, installs trust, verifies node
+        // identity, and persists the CLI gateway config (url + ca_pem_path) in
+        // one step. The WireGuard route to the gateway can take a moment to come
+        // up after the topology starts, so retry until it reports success.
+        // Best-effort: a node that never reaches the gateway fails its own
+        // assertions later with a clear gateway_unavailable error.
+        $gatewayIpArg = escapeshellarg($gatewayApiIp);
+        $gatewayAddWithRetry = 'i=0; while [ "$i" -lt 8 ]; do '
+            .'orbit gateway:add '.$gatewayIpArg.' --json 2>&1 | grep -q \'"success"\' && break; '
+            .'i=$((i+1)); sleep 3; done; true';
+
+        return 'cd '.escapeshellarg($remotePath)
+            .' && php apps/gateway/artisan tinker --execute='.escapeshellarg($php)
+            .' && ('.$gatewayAddWithRetry.')';
     }
 
     private static function refreshGatewayHostKeys(E2EInstance $instance, string $user, SshKeyPair $keyPair, string $remotePath, ?E2EPhaseTimer $timer, bool $hostLauncher = false): void

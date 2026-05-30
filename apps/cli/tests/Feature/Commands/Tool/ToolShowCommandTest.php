@@ -66,6 +66,33 @@ describe('tool:show', function (): void {
         expect($exitCode)->toBe(0);
     });
 
+    it('renders human output as a tool detail view', function (): void {
+        fakeGateway(fakeSuccessEnvelope([
+            'tool' => [
+                'name' => 'redis',
+                'node' => 'app-1',
+                'expected_state' => 'running',
+                'observed_state' => null,
+                'version' => '7.2',
+                'managed' => true,
+                'endpoints' => [],
+            ],
+        ]));
+
+        [$exitCode, $output] = runCommand($this, 'tool:show', [
+            'tool' => 'redis',
+            '--node' => 'app-1',
+        ]);
+
+        expect($exitCode)->toBe(0)
+            ->and($output)->toContain('Tool: redis')
+            ->and($output)->toContain('Node')
+            ->and($output)->toContain('app-1')
+            ->and($output)->toContain('Expected')
+            ->and($output)->toContain('running')
+            ->and($output)->not->toContain('Observed');
+    });
+
     it('uses the local default node when no target option is provided', function (): void {
         $store = new OrbitConfigStore(overridePath: base_path('tests/.tmp-tool-show-config.json'));
         @unlink($store->path());

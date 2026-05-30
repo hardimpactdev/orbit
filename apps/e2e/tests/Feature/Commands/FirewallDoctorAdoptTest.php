@@ -41,6 +41,8 @@ it('adopts observed UFW rules into the gateway registry', function (): void {
             timeoutSeconds: 120,
         );
 
+        e2eRestartGatewayApi($topology, 'firewall-doctor-adopt');
+
         $result = $topology->ssh(
             'gateway',
             sprintf(
@@ -50,11 +52,11 @@ it('adopts observed UFW rules into the gateway registry', function (): void {
             timeoutSeconds: 180,
         );
 
-        $payload = json_decode(trim($result->output()), associative: true, flags: JSON_THROW_ON_ERROR);
+        $data = e2eJsonCommandData(e2eJsonCommandPayload($result->output()));
 
         expect($result->successful())->toBeTrue()
-            ->and($payload['success']['data']['doctor']['mode'])->toBe('adopt')
-            ->and($payload['success']['data']['doctor']['summary']['adopted'] ?? 0)->toBeGreaterThanOrEqual(1);
+            ->and($data['doctor']['mode'])->toBe('adopt')
+            ->and($data['doctor']['summary']['adopted'] ?? 0)->toBeGreaterThanOrEqual(1);
 
         $verifyResult = $topology->ssh(
             'gateway',

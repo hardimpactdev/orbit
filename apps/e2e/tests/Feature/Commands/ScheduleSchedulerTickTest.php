@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\E2E\Support\E2EConfig;
 use App\E2E\Support\E2EGatewayApi;
 use App\E2E\Support\E2ETopologyKind;
+use Illuminate\Contracts\Process\ProcessResult;
 
 it('dispatches app-node schedules from the gateway scheduler tick', function (): void {
     $config = E2EConfig::fromEnvironment();
@@ -21,14 +22,7 @@ it('dispatches app-node schedules from the gateway scheduler tick', function ():
 
         scheduleSchedulerSeedGatewayIntent($topology, $scheduleName, $scheduleKey);
 
-        $tick = $topology->ssh(
-            'gateway',
-            sprintf(
-                'cd %s && orbit orbit-scheduler --once',
-                escapeshellarg($topology->checkout('gateway')),
-            ),
-            timeoutSeconds: 180,
-        );
+        $tick = scheduleSchedulerRunGatewayTick($topology);
 
         expect($tick->successful())->toBeTrue();
         expect($tick->output())->toContain('due=1 executed=1');
@@ -82,11 +76,29 @@ function scheduleSchedulerSeedGatewayIntent($topology, string $scheduleName, str
 echo 'seeded';
 PHP;
 
-    $topology->ssh(
-        'gateway',
-        'cd '.escapeshellarg($topology->checkout('gateway')).' && php apps/gateway/artisan tinker --execute='.escapeshellarg($php),
-        timeoutSeconds: 120,
-    );
+    scheduleSchedulerGatewayArtisan($topology, 'tinker --execute='.escapeshellarg($php), timeoutSeconds: 120);
+}
+
+function scheduleSchedulerRunGatewayTick($topology): ProcessResult
+{
+    return scheduleSchedulerGatewayArtisan($topology, 'orbit-scheduler --once', timeoutSeconds: 180);
+}
+
+function scheduleSchedulerGatewayArtisan($topology, string $arguments, int $timeoutSeconds): ProcessResult
+{
+    return scheduleSchedulerGatewayCommand($topology, 'php apps/gateway/artisan '.$arguments, timeoutSeconds: $timeoutSeconds);
+}
+
+function scheduleSchedulerGatewayCommand($topology, string $command, int $timeoutSeconds): ProcessResult
+{
+    $checkout = $topology->checkout('gateway');
+    $command = sprintf('cd %s && %s', escapeshellarg($checkout), $command);
+
+    if (e2eRoleUsesDockerRuntime($topology, 'gateway')) {
+        return e2eRunInRoleRuntime($topology, 'gateway', $command, timeoutSeconds: $timeoutSeconds);
+    }
+
+    return $topology->ssh('gateway', $command, timeoutSeconds: $timeoutSeconds);
 }
 
 /**
@@ -113,11 +125,7 @@ echo json_encode([
 ], JSON_THROW_ON_ERROR);
 PHP;
 
-    $result = $topology->ssh(
-        'gateway',
-        'cd '.escapeshellarg($topology->checkout('gateway')).' && php apps/gateway/artisan tinker --execute='.escapeshellarg($php),
-        timeoutSeconds: 120,
-    );
+    $result = scheduleSchedulerGatewayArtisan($topology, 'tinker --execute='.escapeshellarg($php), timeoutSeconds: 120);
 
     /** @var array{run_count: int, latest_status: string|null, latest_stdout: string|null, gateway_heartbeat: bool} $state */
     $state = json_decode(trim($result->output()), associative: true, flags: JSON_THROW_ON_ERROR);

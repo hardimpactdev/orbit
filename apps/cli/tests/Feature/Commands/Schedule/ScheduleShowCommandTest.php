@@ -6,6 +6,8 @@ use App\Commands\Schedule\ScheduleShowCommand;
 use App\Services\GatewayApiClient;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
+use Laravel\Prompts\Key;
+use Laravel\Prompts\Prompt;
 use Symfony\Component\Console\Tester\CommandTester;
 
 describe('schedule:show', function (): void {
@@ -44,15 +46,26 @@ describe('schedule:show', function (): void {
         fakeGateway(fakeSuccessEnvelope([
             'schedule' => [
                 'name' => 'laravel-scheduler',
+                'scope' => 'app',
+                'target' => ['type' => 'app', 'name' => 'docs', 'node' => 'app-1'],
+                'interval' => 'daily',
                 'timezone' => 'Europe/Amsterdam',
+                'execution' => ['type' => 'command', 'value' => 'php artisan schedule:run'],
+                'enabled' => true,
+                'status' => 'expected',
+                'last_run' => null,
             ],
         ]));
 
         [$exitCode, $output] = runCommand($this, 'schedule:show', ['name' => 'laravel-scheduler']);
 
         expect($exitCode)->toBe(0)
-            ->and($output)->toContain('schedule')
-            ->and($output)->toContain('laravel-scheduler');
+            ->and($output)->toContain('Schedule: laravel-scheduler')
+            ->and($output)->toContain('Target')
+            ->and($output)->toContain('docs')
+            ->and($output)->toContain('Execution')
+            ->and($output)->toContain('command: php artisan schedule:run')
+            ->and($output)->not->toContain('schedule: {');
     });
 
     it('prompts for a visible schedule when interactive name input is omitted', function (): void {
@@ -92,7 +105,7 @@ describe('schedule:show', function (): void {
         $command = app(ScheduleShowCommand::class);
         $command->setLaravel(app());
         $tester = new CommandTester($command);
-        $tester->setInputs(['laravel-scheduler']);
+        Prompt::fake([Key::ENTER]);
 
         $exitCode = $tester->execute([]);
 

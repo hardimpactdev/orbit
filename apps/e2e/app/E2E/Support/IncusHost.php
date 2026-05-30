@@ -18,6 +18,8 @@ class IncusHost
 
     private const string DefaultWgEasyImageArchive = 'wg-easy-15.tar';
 
+    private const string DefaultOrbitBinaryFilename = 'orbit-binary';
+
     public function __construct(
         public readonly E2EConfig $config,
     ) {}
@@ -233,9 +235,18 @@ class IncusHost
             ? " --wg-easy-image-archive={$guestBundleDirectory}/".self::DefaultWgEasyImageArchive
             : '';
 
+        $hasOrbitBinary = $this->run(
+            'test -f '.escapeshellarg("{$remoteBundleDir}/".self::DefaultOrbitBinaryFilename),
+            timeoutSeconds: 5,
+        )->successful();
+
+        $orbitBinaryArg = $hasOrbitBinary
+            ? " --binary={$guestBundleDirectory}/".self::DefaultOrbitBinaryFilename
+            : '';
+
         $script = sprintf(
             'chmod +x %1$s/e2e-provision-node %1$s/install-orbit %1$s/_e2e-deps.sh && '
-            .'%1$s/e2e-provision-node --node-kind=%2$s --source-archive=%1$s/orbit-source.tar.gz --installer=%1$s/install-orbit%3$s%4$s%5$s%6$s%7$s%8$s%9$s',
+            .'%1$s/e2e-provision-node --node-kind=%2$s --source-archive=%1$s/orbit-source.tar.gz --installer=%1$s/install-orbit%3$s%4$s%5$s%6$s%7$s%8$s%9$s%10$s',
             $guestBundleDirectory,
             escapeshellarg($nodeKind),
             $operatorUserArg,
@@ -245,6 +256,7 @@ class IncusHost
             $dnsmasqImageArchiveArg,
             $frankenPhpImageArchiveArg,
             $wgEasyImageArchiveArg,
+            $orbitBinaryArg,
         );
 
         $command = sprintf(

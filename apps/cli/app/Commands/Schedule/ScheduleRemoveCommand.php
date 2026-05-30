@@ -32,7 +32,7 @@ final class ScheduleRemoveCommand extends ScheduleGatewayCommand
             return $scopeValidation;
         }
 
-        $name = $this->resolveScheduleName('Which schedule do you want to remove?');
+        $name = $this->resolveScheduleName();
 
         if (is_int($name)) {
             return $name;

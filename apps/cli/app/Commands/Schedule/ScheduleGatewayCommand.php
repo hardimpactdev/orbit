@@ -4,11 +4,13 @@ declare(strict_types=1);
 
 namespace App\Commands\Schedule;
 
+use App\Commands\Concerns\PromptsForGatewayRegistryEntities;
 use App\Commands\Concerns\ResolvesHostContext;
 use App\Commands\GatewayCommand;
 
 abstract class ScheduleGatewayCommand extends GatewayCommand
 {
+    use PromptsForGatewayRegistryEntities;
     use ResolvesHostContext;
 
     /**

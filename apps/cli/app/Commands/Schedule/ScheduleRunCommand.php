@@ -29,7 +29,7 @@ final class ScheduleRunCommand extends ScheduleGatewayCommand
             return $scopeValidation;
         }
 
-        $name = $this->resolveScheduleName('Which schedule do you want to run?');
+        $name = $this->resolveScheduleName();
 
         if (is_int($name)) {
             return $name;

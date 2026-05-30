@@ -13,6 +13,7 @@ use App\E2E\Support\IncusHost;
 use App\E2E\Support\IncusHostPool;
 use App\E2E\Support\IncusTopologyBuilder;
 use App\E2E\Support\IncusTopologyTemplate;
+use App\E2E\Support\OrbitCliBinaryBundle;
 use Closure;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
@@ -239,6 +240,14 @@ class E2EPrepareTopologyCommand extends Command
             if (! $copy->successful()) {
                 throw new RuntimeException("Could not copy composer cache: {$copy->errorOutput()}");
             }
+        }
+
+        // Build and bundle the linux x64 orbit binary so the VM does not need
+        // gh/GH_TOKEN for the CLI binary download step during provision. This is
+        // a heavy real app:build + phpacker step; skip it under unit tests,
+        // which fake Process and only assert command/host selection behavior.
+        if (! app()->runningUnitTests()) {
+            (new OrbitCliBinaryBundle)->buildLinuxBinaryInto($bundleDir);
         }
 
         return $bundleDir;

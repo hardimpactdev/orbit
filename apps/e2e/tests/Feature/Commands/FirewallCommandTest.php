@@ -13,6 +13,7 @@ it('writes lists and removes firewall intent on a prepared app node', function (
     $denyRule = "{$rule}-deny";
 
     try {
+        e2eRestartGatewayApi($topology, 'firewall-command');
         firewallCommandPrepareAppNode($topology, $checkout);
 
         $allow = $topology->ssh(

@@ -10,6 +10,7 @@ it('shows a registered tool from gateway intent as JSON', function (): void {
         ->withCurrentCheckout(roles: ['gateway']);
 
     try {
+        e2eRestartGatewayApi($topology, 'tool-show-json');
         toolShowSeedGatewayIntent($topology);
 
         $result = $topology->ssh(
@@ -40,6 +41,7 @@ it('shows a registered tool from gateway intent as human output', function (): v
         ->withCurrentCheckout(roles: ['gateway']);
 
     try {
+        e2eRestartGatewayApi($topology, 'tool-show-human');
         toolShowSeedGatewayIntent($topology);
 
         $result = $topology->ssh(
@@ -113,6 +115,7 @@ it('includes live key in JSON output when --live flag is passed', function (): v
         ->withCurrentCheckout(roles: ['gateway']);
 
     try {
+        e2eRestartGatewayApi($topology, 'tool-show-live');
         toolShowSeedGatewayIntent($topology);
 
         $result = $topology->ssh(

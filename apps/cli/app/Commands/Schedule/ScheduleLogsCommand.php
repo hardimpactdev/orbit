@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Commands\Schedule;
 
+use App\Commands\Concerns\PromptsForGatewayRegistryEntities;
 use App\Commands\Concerns\ResolvesHostContext;
 use App\Commands\GatewayCommand;
 use App\Commands\Schedule\Concerns\ResolvesScheduleSelection;
@@ -11,6 +12,7 @@ use App\Exceptions\GatewayApiException;
 
 final class ScheduleLogsCommand extends GatewayCommand
 {
+    use PromptsForGatewayRegistryEntities;
     use ResolvesHostContext;
     use ResolvesScheduleSelection;
 
@@ -32,7 +34,7 @@ final class ScheduleLogsCommand extends GatewayCommand
             return $this->renderFailure('validation_failed', 'The schedule filters are mutually exclusive.', ['fields' => ['app', 'node']]);
         }
 
-        $name = $this->resolveScheduleName('Which schedule do you want to read logs for?');
+        $name = $this->resolveScheduleName();
 
         if (is_int($name)) {
             return $name;

@@ -155,6 +155,87 @@ describe('GatewayApiClient', function (): void {
         expect($result)->toBe(['success' => ['data' => [], 'meta' => []]])
             ->and($timeout)->toBe(12);
     });
+
+    it('resolves the gateway CA PEM path from the provider binding and verifies against it', function (): void {
+        $pemPath = tempnam(sys_get_temp_dir(), 'orbit-ca-').'.pem';
+        file_put_contents($pemPath, "-----BEGIN CERTIFICATE-----\nfake\n-----END CERTIFICATE-----\n");
+
+        config()->set('orbit.gateway.url', 'https://gateway.test');
+        config()->set('orbit.gateway.timeout', 30);
+        config()->set('orbit.gateway.ca_pem_path', $pemPath);
+        app()->forgetInstance(GatewayApiClient::class);
+
+        $verify = null;
+
+        Http::fake(function (Request $request, array $options) use (&$verify) {
+            $verify = $options['verify'] ?? null;
+
+            return Http::response(['success' => ['data' => [], 'meta' => []]], 200);
+        });
+
+        try {
+            app(GatewayApiClient::class)->get('/api/me');
+        } finally {
+            @unlink($pemPath);
+        }
+
+        expect($verify)->toBe($pemPath);
+    });
+
+    it('verifies TLS against the configured gateway CA when a PEM file exists', function (): void {
+        $pemPath = tempnam(sys_get_temp_dir(), 'orbit-ca-').'.pem';
+        file_put_contents($pemPath, "-----BEGIN CERTIFICATE-----\nfake\n-----END CERTIFICATE-----\n");
+
+        $verify = false;
+
+        Http::fake(function (Request $request, array $options) use (&$verify) {
+            $verify = $options['verify'] ?? null;
+
+            return Http::response(['ok' => true], 200);
+        });
+
+        try {
+            new GatewayApiClient('https://gateway.test', 30, $pemPath)
+                ->get('/api/me');
+        } finally {
+            @unlink($pemPath);
+        }
+
+        expect($verify)->toBe($pemPath);
+    });
+
+    it('leaves the default verify behavior when no CA PEM path is configured', function (): void {
+        $verify = null;
+
+        Http::fake(function (Request $request, array $options) use (&$verify) {
+            $verify = $options['verify'] ?? null;
+
+            return Http::response(['ok' => true], 200);
+        });
+
+        new GatewayApiClient('https://gateway.test', 30)
+            ->get('/api/me');
+
+        // The default Guzzle behavior leaves verify as a boolean (true), never a CA path string.
+        expect($verify)->not->toBeString();
+    });
+
+    it('leaves the default verify behavior when the CA PEM path points at a missing file', function (): void {
+        $missingPath = sys_get_temp_dir().'/orbit-missing-'.bin2hex(random_bytes(6)).'.pem';
+
+        $verify = null;
+
+        Http::fake(function (Request $request, array $options) use (&$verify) {
+            $verify = $options['verify'] ?? null;
+
+            return Http::response(['ok' => true], 200);
+        });
+
+        new GatewayApiClient('https://gateway.test', 30, $missingPath)
+            ->get('/api/me');
+
+        expect($verify)->not->toBeString();
+    });
 });
 
 function captureGatewayException(callable $callback): ?GatewayApiException
