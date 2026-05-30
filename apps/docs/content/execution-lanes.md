@@ -275,7 +275,7 @@ inherit the lane of the production code they exercise.
 | `apps/gateway/app/Console/Commands/NodeNewCommand.php:2123` | `RemoteHostExecutor` | Passes host shell to node security baseline installers during provisioning. |
 | `apps/gateway/app/Console/Commands/VpnCommandSupport.php:87` | `RemoteOrbitRuntimeExecutor` | Forwards `php artisan vpn-*` work to the active VPN role node; forwarded gateway Laravel/artisan work must run inside `orbit-runtime`. |
 | `apps/gateway/app/Console/Commands/WorkspaceExecCommand.php:143,158` | `RemoteHostExecutor` | Inspects and executes inside a workspace runtime container through Docker. |
-| `apps/gateway/app/Http/Controllers/Api/UpdateAllController.php:272,405` (`pulling_source`) | `RemoteHostExecutor` | Resolves `RemoteShell` and starts the `git pull --ff-only` stage for host source checkout. |
+| `apps/gateway/app/Http/Controllers/Api/UpdateAllController.php:272,405` (`pulling_source`) | `RemoteHostExecutor` | Resolves `RemoteShell` and starts the binary download-and-relink stage on the remote host. |
 | `apps/gateway/app/Http/Controllers/Api/UpdateAllController.php:272,405` (`installing_dependencies`) | `RemoteOrbitRuntimeExecutor` | Resolves `RemoteShell` and starts the `docker exec orbit-runtime composer --working-dir=apps/gateway install --no-interaction` stage for gateway app dependencies. |
 | `apps/gateway/app/Http/Controllers/Api/UpdateAllController.php:272,405` (`running_migrations`) | `RemoteOrbitRuntimeExecutor` | Resolves `RemoteShell` and starts the `docker exec orbit-runtime php apps/gateway/artisan migrate --force` stage for gateway migrations. |
 | `apps/gateway/app/Actions/Apps/CreateAppSourceOnNode.php:30` | `RemoteHostExecutor` | Creates/checks source directories and git material on the host. |

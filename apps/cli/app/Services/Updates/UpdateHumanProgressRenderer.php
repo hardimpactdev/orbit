@@ -9,7 +9,7 @@ use Symfony\Component\Console\Output\OutputInterface;
 final class UpdateHumanProgressRenderer
 {
     private const array STEP_LABELS = [
-        'pull_source' => 'Pull source',
+        'pull_source' => 'Download binary',
         'install_dependencies' => 'Install dependencies',
         'run_migrations' => 'Run migrations',
     ];

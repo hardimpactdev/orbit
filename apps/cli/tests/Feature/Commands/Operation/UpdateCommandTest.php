@@ -87,7 +87,7 @@ describe('update', function (): void {
 
         expect($exitCode)->toBe(0)
             ->and($output)->toContain('Updating Orbit')
-            ->and($output)->toContain('Pull source')
+            ->and($output)->toContain('Download binary')
             ->and($output)->toContain('Install dependencies')
             ->and($output)->toContain('Run migrations')
             ->and($output)->toContain('Updated local Orbit checkout.')
@@ -112,21 +112,28 @@ describe('update', function (): void {
             ->and($decoded['error']['data'])->toBe(['output' => 'orbit-runtime container unavailable']);
     });
 
-    it('renders local_checkout_unavailable with the checkout path when git cannot access the checkout', function (): void {
-        $this->updater->results['pull_source'] = [
-            'successful' => false,
-            'exit_code' => 128,
-            'output' => 'fatal: not a git repository',
-        ];
+    it('renders local_checkout_unavailable with the install path when the binary download fails', function (): void {
+        $previous = getenv('ORBIT_INSTALL_PATH');
+        putenv('ORBIT_INSTALL_PATH=/tmp/orbit-update-cmd-test');
 
-        [$exitCode, $output] = runCommand($this, 'update', ['--json' => true]);
+        try {
+            $this->updater->results['pull_source'] = [
+                'successful' => false,
+                'exit_code' => 6,
+                'output' => 'curl: (6) Could not resolve host',
+            ];
 
-        $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+            [$exitCode, $output] = runCommand($this, 'update', ['--json' => true]);
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('local_checkout_unavailable')
-            ->and($decoded['error']['message'])->toBe('Local Orbit checkout cannot be updated.')
-            ->and($decoded['error']['meta']['path'])->toBe(dirname(base_path(), 2));
+            $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+
+            expect($exitCode)->toBe(1)
+                ->and($decoded['error']['code'])->toBe('local_checkout_unavailable')
+                ->and($decoded['error']['message'])->toBe('Local Orbit checkout cannot be updated.')
+                ->and($decoded['error']['meta']['path'])->toBe('/tmp/orbit-update-cmd-test');
+        } finally {
+            $previous === false ? putenv('ORBIT_INSTALL_PATH') : putenv("ORBIT_INSTALL_PATH={$previous}");
+        }
     });
 
     it('renders failure prose and captured output in human mode', function (): void {

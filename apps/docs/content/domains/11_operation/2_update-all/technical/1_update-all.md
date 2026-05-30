@@ -48,7 +48,7 @@ execution details live in the renderer contracts.
 
 ### Fleet Selection Rules
 
-- Include the caller's local Orbit checkout.
+- Include the caller's local Orbit installation.
 - Include active non-local managed Orbit installations from gateway node
   configuration when the gateway has both an Orbit installation path and enough
   `RemoteShell` transport metadata to reach the node.
@@ -56,31 +56,33 @@ execution details live in the renderer contracts.
   workstations update locally through
   [`orbit update`](../../1_update/update.md) on each workstation.
 - Exclude inactive, removed, unknown, or caller-local node records from the
-  gateway-selected installation list. The local checkout is updated once through
-  the local target.
+  gateway-selected installation list. The local installation is updated once
+  through the local target.
 - Apply gateway-owned authorization before updating any installation.
 
 The expected target shape per calling context:
 
 | Calling context | Local target | Gateway target | App-role targets | Other client targets |
 | --- | --- | --- | --- | --- |
-| Non-gateway caller with gateway-admin authority | The caller-local checkout. | Yes, when the gateway is an active node distinct from the caller. | Yes, every active node selected by the rules above. | Never. |
-| Gateway caller | The gateway checkout (via the local target). | N/A — the gateway is the local target. | Yes, every active node selected by the rules above. | Never. |
+| Non-gateway caller with gateway-admin authority | The caller-local installation. | Yes, when the gateway is an active node distinct from the caller. | Yes, every active node selected by the rules above. | Never. |
+| Gateway caller | The gateway installation (via the local target). | N/A — the gateway is the local target. | Yes, every active node selected by the rules above. | Never. |
 
 ### Per-Installation Update Rules
 
-- Update each selected installation with the same local checkout update sequence
-  documented by [`update`](../../1_update/technical/1_update.md).
+- Update each selected installation with the same local update sequence
+  documented by [`update`](../../1_update/technical/1_update.md): download the
+  CLI binary, relink the host launcher, install gateway dependencies inside
+  `orbit-runtime`, and run gateway migrations.
 - Remote update execution is gateway-owned node execution through `RemoteShell`.
   Clients do not SSH directly to the gateway, nodes, or other operator
   workstations as part of the command contract. The gateway does not SSH to
   operator workstations as part of the command contract.
-- Update the caller-local checkout and gateway-local checkout as independent
+- Update the caller-local installation and gateway installation as independent
   selected targets when both are selected.
-- After the gateway-local update succeeds, selected remote app-role
+- After the gateway installation update succeeds, selected remote app-role
   installations are updated in parallel, up to four targets at a time. Each
-  individual target still runs `Pulling source`, `Installing dependencies`, and
-  `Running migrations` in that order.
+  individual target still runs `Downloading binary`, `Installing dependencies`,
+  and `Running migrations` in that order.
 - Continue updating remaining installations after a target fails.
 - Preserve every target result for the selected output renderer in selected
   target order, regardless of the order in which parallel workers finish.
@@ -90,8 +92,8 @@ The expected target shape per calling context:
 - If every selected installation updates successfully, report a full fleet
   success. If one or more installations fail after side effects begin, report
   both successful and failed target results.
-- When the caller-local checkout fails, do not start app-role execution.
-- When update of the gateway checkout fails, do not start app-role execution.
+- When the caller-local installation update fails, do not start app-role execution.
+- When the gateway installation update fails, do not start app-role execution.
   When a node with an app role fails, do not hide successful app-role updates and do not
   cancel unrelated in-flight app-role updates.
 

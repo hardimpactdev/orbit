@@ -69,19 +69,26 @@ describe('LocalUpdateWorkflow', function (): void {
             ]);
     });
 
-    it('returns checkout unavailable when git cannot access the checkout', function (): void {
-        $updater = new LocalUpdateWorkflowFakeUpdater;
-        $updater->results['pull_source'] = [
-            'successful' => false,
-            'exit_code' => 128,
-            'output' => 'fatal: not a git repository',
-        ];
+    it('returns checkout unavailable when the binary download fails', function (): void {
+        $previous = getenv('ORBIT_INSTALL_PATH');
+        putenv('ORBIT_INSTALL_PATH=/tmp/orbit-test-install');
 
-        $result = (new LocalUpdateWorkflow($updater, new CheckoutPathResolver))->run();
+        try {
+            $updater = new LocalUpdateWorkflowFakeUpdater;
+            $updater->results['pull_source'] = [
+                'successful' => false,
+                'exit_code' => 6,
+                'output' => 'curl: (6) Could not resolve host',
+            ];
 
-        expect($result->status)->toBe(LocalUpdateResult::STATUS_CHECKOUT_UNAVAILABLE)
-            ->and($result->checkoutPath)->toBe(dirname(base_path(), 2))
-            ->and($updater->calls)->toBe(['pull_source']);
+            $result = (new LocalUpdateWorkflow($updater, new CheckoutPathResolver))->run();
+
+            expect($result->status)->toBe(LocalUpdateResult::STATUS_CHECKOUT_UNAVAILABLE)
+                ->and($result->checkoutPath)->toBe('/tmp/orbit-test-install')
+                ->and($updater->calls)->toBe(['pull_source']);
+        } finally {
+            $previous === false ? putenv('ORBIT_INSTALL_PATH') : putenv("ORBIT_INSTALL_PATH={$previous}");
+        }
     });
 
     it('returns failed with step metadata when a later step fails', function (): void {
