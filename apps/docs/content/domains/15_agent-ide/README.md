@@ -46,8 +46,9 @@ These rules define the Agent IDE command domain and its authorization model.
   Locally gathered context (current app, workspace, paths) can help resolve
   defaults, but it is not authorization.
 - On managed hosts, Agent IDE tools and users invoke the host `orbit` launcher.
-  The launcher always executes `apps/cli/orbit` and passes `ORBIT_HOST_CWD` so
-  cwd-derived defaults survive without granting local mutation authority.
+  The launcher always executes the installed Orbit CLI binary and passes
+  `ORBIT_HOST_CWD` so cwd-derived defaults survive without granting local
+  mutation authority.
 - `agent-ide:message` requires `agent-ide:message` on the resolved app or
   workspace's owning node. Authorization failures use `authorization_failed`
   with standard `missing_permission` metadata.

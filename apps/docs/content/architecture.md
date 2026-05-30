@@ -54,9 +54,9 @@ One hub, one path: there is exactly one place to answer "what should exist?", an
 A client is where you drive Orbit from, usually your Mac or Ubuntu workstation.
 It runs the host `orbit` launcher, presents a WireGuard identity, and
 communicates with the gateway to handle operations. The launcher executes the
-CLI/local-executor artifact from the source checkout and passes local context
-such as `ORBIT_HOST_CWD`. Clients do not write fleet state directly; they call
-the gateway and let the gateway do the work.
+installed Orbit CLI binary and passes local context such as `ORBIT_HOST_CWD`.
+Clients do not write fleet state directly; they call the gateway and let the
+gateway do the work.
 
 ### Gateway node
 
@@ -162,7 +162,7 @@ records.
 ### CLI
 
 The CLI is the product surface for humans, AI agents, and CI. The host
-`orbit` executable always enters the CLI artifact at `apps/cli/orbit` on every
+`orbit` executable always enters the installed Orbit CLI binary on every
 node role — clients, workload nodes, and gateway hosts alike. The gateway API
 and scheduler still run in `orbit-runtime` on the gateway, but the public
 `orbit` command never dispatches to gateway Artisan. Gateway maintenance

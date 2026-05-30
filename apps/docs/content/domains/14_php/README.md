@@ -37,8 +37,8 @@ These rules define what PHP runtime commands own and how they operate.
   runtimes for app or workspace containers.
 - The app and workspace families own applying the selected PHP image to their
   runtime containers.
-- Node CLI PHP selection is only supported for PHP 8.5. This covers Orbit's
-  host CLI/local-executor baseline and does not limit app or workspace
+- Node CLI PHP selection is only supported for PHP 8.5. This matches the
+  Orbit CLI binary's embedded PHP version and does not limit app or workspace
   FrankenPHP runtime versions.
 - App PHP version is gateway-tracked app configuration.
 - Workspace PHP version is gateway-tracked workspace configuration. A workspace

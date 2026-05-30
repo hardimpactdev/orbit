@@ -41,13 +41,12 @@ Each term below has a precise meaning in the node command family.
   coupled to the `gateway` role in v1, so bootstrap assigns it together with
   `gateway` and normal `node role:*` commands cannot manage it independently.
 - **Orbit launcher:** Host `orbit` wrapper installed in the user's path. It
-  resolves `ORBIT_REPO`, exports `ORBIT_REPO`, `ORBIT_APP=cli`, and
-  `ORBIT_HOST_CWD`, and always executes `${ORBIT_REPO}/apps/cli/orbit` on
-  every node role — clients, workload nodes, and gateway hosts alike. The CLI
-  artifact owns public gateway-client commands, local-only commands, bootstrap
-  commands, and hidden `internal:*` executor commands. Gateway maintenance
-  (migrate, tinker, scheduler, queue, `orbit:internal:*` bake/build/install
-  commands) uses `bin/orbit-gateway-artisan` or direct
+  resolves and exports `ORBIT_HOST_CWD`, and always executes the installed
+  Orbit CLI binary on every node role — clients, workload nodes, and gateway
+  hosts alike. The CLI binary owns public gateway-client commands, local-only
+  commands, bootstrap commands, and hidden `internal:*` executor commands.
+  Gateway maintenance (migrate, tinker, scheduler, queue, `orbit:internal:*`
+  bake/build/install commands) uses `bin/orbit-gateway-artisan` or direct
   `php apps/gateway/artisan` from a controlled gateway shell; the public
   `orbit` command never dispatches to gateway Artisan.
 - **Orbit runtime container:** One `orbit-runtime` container per node. On the
@@ -239,12 +238,12 @@ Registry-only commands use stored gateway metadata and do not perform live
 platform checks; platform drift belongs to `doctor --family=node`.
 
 All managed Ubuntu nodes have the same Docker-first host prerequisite baseline.
-They require Git, Docker Engine and CLI, the Orbit checkout, host PHP 8.5 CLI
-for the CLI/local-executor artifact with `pdo_sqlite`, `openssl`, `curl`,
-`mbstring`, and `json`, the host `orbit` launcher, `orbit-runtime`,
-WireGuard/SSH identity material, and any role-specific non-PHP host tools such
-as VitePlus on app nodes. Host Composer, host Caddy, and host PHP-FPM are not
-role prerequisites and are not runtime fallbacks.
+They require Git, Docker, the prebuilt Orbit CLI binary (embedded PHP 8.5 +
+`pdo_sqlite`/`openssl`/`curl`/`mbstring`/`tokenizer`/`ctype`/`filter`/`fileinfo`/`json`/`phar`),
+the host `orbit` launcher, `orbit-runtime`, WireGuard/SSH identity material,
+and any role-specific non-PHP host tools such as VitePlus on app nodes. Host
+Composer, host Caddy, and host PHP-FPM are not role prerequisites and are not
+runtime fallbacks.
 
 ## Identity and onboarding
 
@@ -270,11 +269,11 @@ These terms describe how nodes communicate and how authority is enforced.
 
 - **CLI-to-gateway edge:** HTTPS over WireGuard from any node's CLI — client,
   gateway-local, or a node with workload roles — to the gateway API. On every
-  node role, the launcher always enters `apps/cli/orbit`, which calls the
-  gateway API for public gateway-backed commands, mutates caller-local state
-  for local-only commands, runs bootstrap commands before a gateway API
-  exists, and routes hidden `internal:*` executor commands gated by an
-  operation token. Gateway hosts call their own API as HTTPS over the
+  node role, the launcher always enters the installed Orbit CLI binary, which
+  calls the gateway API for public gateway-backed commands, mutates
+  caller-local state for local-only commands, runs bootstrap commands before
+  a gateway API exists, and routes hidden `internal:*` executor commands gated
+  by an operation token. Gateway hosts call their own API as HTTPS over the
   gateway's own WireGuard address; there is no privileged local-loopback
   bypass. Gateway maintenance uses `bin/orbit-gateway-artisan` or direct
   `php apps/gateway/artisan` from a controlled gateway shell.
