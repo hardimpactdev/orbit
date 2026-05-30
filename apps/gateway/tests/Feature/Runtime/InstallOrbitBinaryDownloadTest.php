@@ -34,19 +34,19 @@ describe('install-orbit prebuilt CLI binary download contract', function (): voi
             ->toContain('orbit-linux-x64');
     });
 
-    it('downloads the prebuilt CLI binary via curl and makes it executable', function (): void {
+    it('downloads the prebuilt CLI binary via authenticated gh release download and makes it executable', function (): void {
         expect($this->installer)
             ->toContain('download_cli_binary')
-            ->toContain('releases/latest/download')
-            ->toContain('curl -fsSL')
+            ->toContain('gh release download')
+            ->toContain('hardimpactdev/orbit')
             ->toContain('orbit-binary')
             ->toContain('chmod 0755');
     });
 
-    it('honors ORBIT_BINARY_URL to point at a local artifact or mirror instead of the GitHub release', function (): void {
+    it('honors ORBIT_BINARY_URL to skip gh and fetch via curl instead (local file:// artifacts or mirrors)', function (): void {
         expect($this->installer)
             ->toContain('ORBIT_BINARY_URL')
-            ->toContain('ORBIT_BINARY_BASE_URL');
+            ->toContain('curl -fsSL');
     });
 
     it('links the downloaded binary at the host orbit path and confirms it runs via --version', function (): void {

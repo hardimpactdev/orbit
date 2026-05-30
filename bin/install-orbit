@@ -23,18 +23,20 @@ CURRENT_STEP=""
 # The installer downloads the prebuilt binary for the host OS/arch and links
 # it as the host `orbit` command — no host PHP is required to run the CLI.
 #
-# Release-asset URL pattern (GitHub Releases):
-#   https://github.com/hardimpactdev/orbit/releases/latest/download/orbit-<os>-<arch>
+# Default download: authenticated `gh release download` from the private GitHub
+# repository. `gh` is a host prerequisite and automatically picks up
+# GH_TOKEN / GITHUB_TOKEN from the environment (or the host `gh auth` login).
 #
 # Supported asset names:
 #   orbit-macos-arm64   (macOS Apple Silicon)
 #   orbit-linux-x64     (Ubuntu x86_64)
 #
-# Override with ORBIT_BINARY_URL to point at a local artifact, mirror, or
-# specific release tag:
+# Override with ORBIT_BINARY_URL to skip gh and fetch via curl instead
+# (local file:// artifacts, public mirrors, or CI-cached URLs):
 #   ORBIT_BINARY_URL=file:///path/to/orbit-linux-x64 bin/install-orbit
 #   ORBIT_BINARY_URL=https://example.com/orbit-linux-x64 bin/install-orbit
-ORBIT_BINARY_BASE_URL="${ORBIT_BINARY_BASE_URL:-https://github.com/hardimpactdev/orbit/releases/latest/download}"
+ORBIT_BINARY_REPO="${ORBIT_BINARY_REPO:-hardimpactdev/orbit}"
+ORBIT_RELEASE_TAG="${ORBIT_RELEASE_TAG:-}"
 ORBIT_BINARY_URL="${ORBIT_BINARY_URL:-}"
 
 usage() {
@@ -43,11 +45,14 @@ usage: bin/install-orbit [options]
 
 Install the Orbit CLI and its Docker-first runtime prerequisites on the
 current host. The installer downloads and links the prebuilt Orbit CLI binary
-(with embedded PHP 8.5), sets up the Orbit source checkout for the gateway,
-prepares the orbit-runtime, orbit-caddy, and default FrankenPHP runtime
-images, runs migrations inside a disposable orbit-runtime container, and
-starts the long-running orbit-runtime container. No host PHP, no host
-Composer, no host Caddy, and no host PHP-FPM is installed.
+(with embedded PHP 8.5) via authenticated `gh release download` (gh is a host
+prerequisite; GH_TOKEN / GITHUB_TOKEN are picked up automatically), sets up
+the Orbit source checkout for the gateway, prepares the orbit-runtime,
+orbit-caddy, and default FrankenPHP runtime images, runs migrations inside a
+disposable orbit-runtime container, and starts the long-running orbit-runtime
+container. No host PHP, no host Composer, no host Caddy, and no host PHP-FPM
+is installed. Set ORBIT_BINARY_URL to override the download with a direct curl
+(e.g. a local file:// artifact or public mirror).
 
 Options:
   --path=PATH                  Orbit checkout path. Defaults to "$HOME/orbit".
@@ -842,28 +847,34 @@ detect_cli_binary_asset() {
 }
 
 # Download the prebuilt Orbit CLI binary for this host OS/arch and place it
-# at $TARGET_DIR/bin/orbit-binary. Honors ORBIT_BINARY_URL when set so that
-# E2E smoke tests and mirrors can point at a local artifact without hitting
-# GitHub releases.
+# at $TARGET_DIR/bin/orbit-binary. When ORBIT_BINARY_URL is set, curl is used
+# directly (for local file:// artifacts, CI mirrors, etc.). Otherwise the
+# binary is fetched via authenticated `gh release download` so the private
+# GitHub repository can be accessed using GH_TOKEN / GITHUB_TOKEN or the
+# host `gh auth` login without any extra token wiring in this script.
 download_cli_binary() {
-    local binary_url
     local binary_dest
 
     detect_cli_binary_asset
-
-    if [ -n "$ORBIT_BINARY_URL" ]; then
-        binary_url="$ORBIT_BINARY_URL"
-    else
-        binary_url="${ORBIT_BINARY_BASE_URL}/${ORBIT_CLI_OS_ARCH}"
-    fi
 
     binary_dest="$TARGET_DIR/bin/orbit-binary"
 
     run mkdir -p "$TARGET_DIR/bin"
 
-    printf 'orbit-install: downloading Orbit CLI binary from %s\n' "$binary_url"
+    if [ -n "$ORBIT_BINARY_URL" ]; then
+        printf 'orbit-install: downloading Orbit CLI binary from %s\n' "$ORBIT_BINARY_URL"
+        run curl -fsSL --retry 3 --retry-delay 2 -o "$binary_dest" "$ORBIT_BINARY_URL"
+    else
+        require_command gh
 
-    run curl -fsSL --retry 3 --retry-delay 2 -o "$binary_dest" "$binary_url"
+        if [ -n "$ORBIT_RELEASE_TAG" ]; then
+            printf 'orbit-install: downloading %s from %s release %s via gh\n' "$ORBIT_CLI_OS_ARCH" "$ORBIT_BINARY_REPO" "$ORBIT_RELEASE_TAG"
+            run gh release download "$ORBIT_RELEASE_TAG" --repo "$ORBIT_BINARY_REPO" --pattern "$ORBIT_CLI_OS_ARCH" --output "$binary_dest" --clobber
+        else
+            printf 'orbit-install: downloading %s from %s release latest via gh\n' "$ORBIT_CLI_OS_ARCH" "$ORBIT_BINARY_REPO"
+            run gh release download --repo "$ORBIT_BINARY_REPO" --pattern "$ORBIT_CLI_OS_ARCH" --output "$binary_dest" --clobber
+        fi
+    fi
 
     if [ ! -s "$binary_dest" ]; then
         fail validation_failed "downloaded Orbit CLI binary is empty: $binary_dest"
