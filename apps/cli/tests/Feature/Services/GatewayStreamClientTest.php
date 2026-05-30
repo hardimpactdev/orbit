@@ -202,4 +202,46 @@ describe('GatewayStreamClient', function (): void {
             && $request->hasHeader('Accept', 'text/event-stream')
             && isset($request->data()['key']));
     });
+
+    it('verifies TLS against the configured gateway CA when a PEM file exists', function (): void {
+        $body = buildSseStream([['event' => 'complete', 'data' => ['ok' => true]]]);
+        $pemPath = tempnam(sys_get_temp_dir(), 'orbit-ca-').'.pem';
+        file_put_contents($pemPath, "-----BEGIN CERTIFICATE-----\nfake\n-----END CERTIFICATE-----\n");
+
+        $options = [];
+
+        Http::fake(function (Request $request, array $opts) use (&$options, $body) {
+            $options = $opts;
+
+            return Http::response($body, 200, ['Content-Type' => 'text/event-stream']);
+        });
+
+        try {
+            (new GatewayStreamClient('https://gateway.test', 30, $pemPath))
+                ->streamEvents('/api/stream', [], fn () => null);
+        } finally {
+            @unlink($pemPath);
+        }
+
+        expect($options['verify'] ?? null)->toBe($pemPath)
+            ->and($options['stream'] ?? null)->toBeTrue();
+    });
+
+    it('leaves the default verify behavior when no CA PEM path is configured', function (): void {
+        $body = buildSseStream([['event' => 'complete', 'data' => ['ok' => true]]]);
+
+        $verify = null;
+
+        Http::fake(function (Request $request, array $opts) use (&$verify, $body) {
+            $verify = $opts['verify'] ?? null;
+
+            return Http::response($body, 200, ['Content-Type' => 'text/event-stream']);
+        });
+
+        (new GatewayStreamClient('https://gateway.test', 30))
+            ->streamEvents('/api/stream', [], fn () => null);
+
+        // Stream option stays, but verify is never overridden to a CA path string.
+        expect($verify)->not->toBeString();
+    });
 });
