@@ -60,6 +60,13 @@
             "Composer\\Config::disableProcessTimeout",
             "cd apps/e2e && vendor/bin/pest --compact @additional_args"
         ],
+        "test:e2e:binary": [
+            "Composer\\Config::disableProcessTimeout",
+            "rm -rf apps/cli/vendor/hardimpactdev/orbit-core && cp -r packages/core apps/cli/vendor/hardimpactdev/orbit-core",
+            "cd apps/cli && COMPOSER_MIRROR_PATH_REPOS=1 php orbit app:build orbit.phar --build-version=0.1.0 --no-interaction --timeout=0",
+            "cd apps/cli && vendor/bin/phpacker build mac arm --src=./builds/orbit.phar --php=8.5 --no-interaction",
+            "ORBIT_E2E_BINARY_PATH=$(pwd)/apps/cli/builds/dist/mac/mac-arm; export ORBIT_E2E_BINARY_PATH; cd apps/e2e && vendor/bin/pest --group=e2e-binary --compact @additional_args"
+        ],
         "test:e2e:docker": [
             "Composer\\Config::disableProcessTimeout",
             "set -a; [ ! -f .env.e2e ] || . ./.env.e2e; set +a; ORBIT_E2E_LANES=docker bin/orbit-e2e-artisan e2e:test @additional_args"
