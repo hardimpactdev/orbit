@@ -69,6 +69,7 @@ it('manages a system service tool lifecycle on an app node from the gateway', fu
             ->and(implode("\n", array_column($logsData['logs']['lines'], 'message')))->toContain('supervisor');
 
         toolLifecycleAssertFollowLogs($topology);
+        toolLifecyclePrepareGatewayApi($topology);
 
         toolLifecycleSeedGatewayIntent($topology, 'running');
         $stop = toolLifecycleRunGatewayCommand($topology, 'tool:stop supervisor --node=app-dev-1 --json');
@@ -201,50 +202,133 @@ function toolLifecycleExpectSupervisorState(E2ETopologyHarness $topology, string
 
 function toolLifecycleAssertFollowLogs(E2ETopologyHarness $topology): void
 {
-    $topology->ssh('dev', 'logger -t supervisor "supervisor follow local e2e"', timeoutSeconds: 30);
-    $seededLocal = $topology->ssh(
+    toolLifecycleAssertFollowLogStream(
+        topology: $topology,
+        role: 'operator',
+        checkout: $topology->checkout('operator'),
+        logPath: '/tmp/orbit-tool-follow-forwarded.log',
+        pidPath: '/tmp/orbit-tool-follow-forwarded.pid',
+        message: 'supervisor follow forwarded e2e',
+    );
+}
+
+function toolLifecycleAssertFollowLogStream(
+    E2ETopologyHarness $topology,
+    string $role,
+    string $checkout,
+    string $logPath,
+    string $pidPath,
+    string $message,
+): void {
+    toolLifecycleStartFollowLogs($topology, $role, $checkout, $logPath, $pidPath);
+
+    try {
+        toolLifecycleStartJournalEmitter($topology, $message);
+        toolLifecycleWaitForDevJournal($topology, $message);
+        toolLifecycleWaitForFollowLog($topology, $role, $logPath, $message);
+    } finally {
+        toolLifecycleStopFollowLogs($topology, $role, $pidPath);
+    }
+}
+
+function toolLifecycleStartFollowLogs(E2ETopologyHarness $topology, string $role, string $checkout, string $logPath, string $pidPath): void
+{
+    $topology->ssh(
+        $role,
+        sprintf(
+            'cd %s && rm -f %s %s && (nohup orbit tool:logs supervisor --node=app-dev-1 --lines=20 --follow > %s 2>&1 < /dev/null & echo $! > %s)',
+            escapeshellarg($checkout),
+            escapeshellarg($logPath),
+            escapeshellarg($pidPath),
+            escapeshellarg($logPath),
+            escapeshellarg($pidPath),
+        ),
+        timeoutSeconds: 30,
+    );
+
+    $topology->ssh(
+        $role,
+        sprintf(
+            'timeout 5s bash -lc %s && sleep 1',
+            escapeshellarg(sprintf(
+                'until test -f %s && kill -0 "$(cat %s)" 2>/dev/null; do sleep 0.2; done',
+                escapeshellarg($pidPath),
+                escapeshellarg($pidPath),
+            )),
+        ),
+        timeoutSeconds: 10,
+    );
+}
+
+function toolLifecycleStartJournalEmitter(E2ETopologyHarness $topology, string $message): void
+{
+    $topology->ssh(
         'dev',
-        'sudo journalctl _SYSTEMD_UNIT=supervisor.service + SYSLOG_IDENTIFIER=supervisor -n 3 --no-pager --output=short-iso',
-        timeoutSeconds: 30,
-    );
-
-    expect($seededLocal->output())->toContain('supervisor follow local e2e');
-
-    $follow = $topology->ssh(
-        'gateway',
         sprintf(
-            'cd %s && timeout 20s bash -lc %s',
-            escapeshellarg($topology->checkout('gateway')),
-            escapeshellarg(<<<'BASH'
-rm -f /tmp/orbit-tool-follow.log
-timeout 8s orbit tool:logs supervisor --node=app-dev-1 --lines=1 --follow > /tmp/orbit-tool-follow.log 2>&1 || true
-test -s /tmp/orbit-tool-follow.log
-grep -m 1 supervisor /tmp/orbit-tool-follow.log || { cat /tmp/orbit-tool-follow.log >&2; exit 1; }
-BASH),
+            'nohup bash -lc %s >/tmp/orbit-tool-follow-emitter.log 2>&1 < /dev/null &',
+            escapeshellarg(sprintf(
+                'for i in $(seq 1 20); do logger -t supervisor %s; sleep 0.5; done',
+                escapeshellarg($message),
+            )),
         ),
         timeoutSeconds: 30,
     );
+}
 
-    expect($follow->successful())->toBeTrue()
-        ->and(trim($follow->output()))->not->toBe('');
-
-    $topology->ssh('dev', 'logger -t supervisor "supervisor follow forwarded e2e"', timeoutSeconds: 30);
-
-    $forwardedFollow = $topology->ssh(
-        'operator',
+function toolLifecycleWaitForDevJournal(E2ETopologyHarness $topology, string $message): void
+{
+    $result = $topology->ssh(
+        'dev',
         sprintf(
-            'cd %s && timeout 20s bash -lc %s',
-            escapeshellarg($topology->checkout('operator')),
-            escapeshellarg(<<<'BASH'
-rm -f /tmp/orbit-tool-follow-forwarded.log
-timeout 8s orbit tool:logs supervisor --node=app-dev-1 --lines=1 --follow > /tmp/orbit-tool-follow-forwarded.log 2>&1 || true
-test -s /tmp/orbit-tool-follow-forwarded.log
-grep -m 1 supervisor /tmp/orbit-tool-follow-forwarded.log || { cat /tmp/orbit-tool-follow-forwarded.log >&2; exit 1; }
-BASH),
+            'timeout 10s bash -lc %s',
+            escapeshellarg(sprintf(
+                'until sudo journalctl _SYSTEMD_UNIT=supervisor.service + SYSLOG_IDENTIFIER=supervisor -n 20 --no-pager --output=short-iso | grep -m 1 %s; do sleep 0.25; done',
+                escapeshellarg($message),
+            )),
         ),
-        timeoutSeconds: 30,
+        timeoutSeconds: 15,
     );
 
-    expect($forwardedFollow->successful())->toBeTrue()
-        ->and(trim($forwardedFollow->output()))->not->toBe('');
+    expect($result->output())->toContain($message);
+}
+
+function toolLifecycleWaitForFollowLog(E2ETopologyHarness $topology, string $role, string $logPath, string $message): void
+{
+    $result = $topology->ssh(
+        $role,
+        sprintf(
+            'timeout 20s bash -lc %s || { cat %s >&2 || true; exit 1; }',
+            escapeshellarg(sprintf(
+                'until test -s %s && grep -m 1 %s %s; do sleep 0.25; done',
+                escapeshellarg($logPath),
+                escapeshellarg($message),
+                escapeshellarg($logPath),
+            )),
+            escapeshellarg($logPath),
+        ),
+        timeoutSeconds: 25,
+        allowFailure: true,
+    );
+    $output = $result->output().$result->errorOutput();
+
+    if (! $result->successful()) {
+        throw new RuntimeException("Follow log did not contain [{$message}]. Output:\n{$output}");
+    }
+
+    expect($output)->toContain($message);
+}
+
+function toolLifecycleStopFollowLogs(E2ETopologyHarness $topology, string $role, string $pidPath): void
+{
+    $topology->ssh(
+        $role,
+        sprintf(
+            'if test -f %s; then kill "$(cat %s)" >/dev/null 2>&1 || true; rm -f %s; fi',
+            escapeshellarg($pidPath),
+            escapeshellarg($pidPath),
+            escapeshellarg($pidPath),
+        ),
+        timeoutSeconds: 10,
+        allowFailure: true,
+    );
 }
