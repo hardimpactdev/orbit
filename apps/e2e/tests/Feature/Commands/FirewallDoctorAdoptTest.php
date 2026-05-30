@@ -44,7 +44,7 @@ it('adopts observed UFW rules into the gateway registry', function (): void {
         $result = $topology->ssh(
             'gateway',
             sprintf(
-                'cd %s && php apps/gateway/artisan doctor --node=app-dev-1 --family=firewall_rule --adopt --json',
+                'cd %s && orbit doctor --node=app-dev-1 --family=firewall_rule --adopt --json',
                 escapeshellarg($gatewayCheckout),
             ),
             timeoutSeconds: 180,
