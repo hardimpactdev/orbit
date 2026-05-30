@@ -4,16 +4,20 @@ declare(strict_types=1);
 
 namespace App\Commands\Node;
 
+use App\Commands\Concerns\PromptsForGatewayRegistryEntities;
 use App\Commands\Concerns\RendersShowDetails;
 use App\Commands\Concerns\ResolvesDefaultNode;
+use App\Commands\Concerns\ResolvesHostContext;
 use App\Commands\GatewayCommand;
 use App\Exceptions\GatewayApiException;
 use App\Exceptions\OrbitConfigStoreException;
 
 final class NodeShowCommand extends GatewayCommand
 {
+    use PromptsForGatewayRegistryEntities;
     use RendersShowDetails;
     use ResolvesDefaultNode;
+    use ResolvesHostContext;
 
     #[\Override]
     protected $signature = 'node:show {name? : Node name to inspect} {--json}';
@@ -23,14 +27,10 @@ final class NodeShowCommand extends GatewayCommand
 
     public function handle(): int
     {
-        try {
-            $node = $this->nodeArgumentOrDefault('name');
-        } catch (OrbitConfigStoreException $exception) {
-            return $this->renderFailure($exception->orbitCode, $exception->getMessage());
-        }
+        $node = $this->resolveNodeName();
 
-        if ($node === null) {
-            return $this->renderFailure('validation_failed', 'The name argument is required.', ['field' => 'name']);
+        if (is_int($node)) {
+            return $node;
         }
 
         $name = rawurlencode($node);
@@ -54,6 +54,31 @@ final class NodeShowCommand extends GatewayCommand
         $this->renderNode($node);
 
         return self::SUCCESS;
+    }
+
+    private function resolveNodeName(): string|int
+    {
+        $name = $this->stringArgument('name');
+
+        if ($name !== null) {
+            return $name;
+        }
+
+        if ($this->canPromptForRegistrySelection()) {
+            return $this->promptForVisibleNode();
+        }
+
+        try {
+            $node = $this->nodeArgumentOrDefault('name');
+        } catch (OrbitConfigStoreException $exception) {
+            return $this->renderFailure($exception->orbitCode, $exception->getMessage());
+        }
+
+        if ($node === null) {
+            return $this->renderFailure('validation_failed', 'The name argument is required.', ['field' => 'name']);
+        }
+
+        return $node;
     }
 
     /**

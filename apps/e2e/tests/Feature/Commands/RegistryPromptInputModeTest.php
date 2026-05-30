@@ -2,7 +2,6 @@
 
 declare(strict_types=1);
 
-use App\E2E\Support\DockerInstance;
 use App\E2E\Support\E2ETopologyHarness;
 use App\E2E\Support\E2ETopologyKind;
 
@@ -140,18 +139,7 @@ function registryPromptE2ECapture(E2ETopologyHarness $topology, string $commandA
 
 function registryPromptE2ECommand(E2ETopologyHarness $topology, string $checkout, string $commandArguments): string
 {
-    if ($topology->instance('gateway') instanceof DockerInstance) {
-        return sprintf(
-            'sudo docker exec --interactive --tty --env %s --env %s --env %s --workdir /tmp %s orbit %s',
-            escapeshellarg("ORBIT_SOURCE_PATH={$checkout}"),
-            escapeshellarg('ORBIT_HOST_CWD=/tmp'),
-            escapeshellarg('ORBIT_IS_GATEWAY=1'),
-            escapeshellarg(e2eRuntimeContainerName($topology, 'gateway')),
-            $commandArguments,
-        );
-    }
-
-    return sprintf('cd /tmp && ORBIT_HOST_CWD=/tmp ORBIT_IS_GATEWAY=1 php %s %s', escapeshellarg("{$checkout}/apps/gateway/artisan"), $commandArguments);
+    return sprintf('cd /tmp && ORBIT_HOST_CWD=/tmp ORBIT_IS_GATEWAY=1 %s %s', escapeshellarg("{$checkout}/bin/orbit"), $commandArguments);
 }
 
 it('renders finite registry prompts as data tables in a real terminal session', function (): void {
@@ -160,6 +148,7 @@ it('renders finite registry prompts as data tables in a real terminal session', 
     try {
         $topology->withCurrentCheckout(roles: ['gateway']);
 
+        e2eRestartGatewayApi($topology, 'registry-prompt-input-mode');
         registryPromptE2ESeed($topology);
 
         $appPrompt = registryPromptE2ECapture($topology, 'app:show', 'app');

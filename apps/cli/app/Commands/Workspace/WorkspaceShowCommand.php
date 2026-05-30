@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Commands\Workspace;
 
+use App\Commands\Concerns\PromptsForGatewayRegistryEntities;
 use App\Commands\Concerns\RendersShowDetails;
 use App\Commands\Concerns\ResolvesHostContext;
 use App\Commands\GatewayCommand;
@@ -11,6 +12,7 @@ use App\Exceptions\GatewayApiException;
 
 final class WorkspaceShowCommand extends GatewayCommand
 {
+    use PromptsForGatewayRegistryEntities;
     use RendersShowDetails;
     use ResolvesHostContext;
 
@@ -38,6 +40,10 @@ final class WorkspaceShowCommand extends GatewayCommand
                 'app' => $this->stringOption('app'),
             ]));
         } catch (GatewayApiException $exception) {
+            if ($this->canPromptForRegistrySelection() && $exception->gatewayErrorCode() === 'workspace.ambiguous_name') {
+                return $this->showPromptedWorkspace($name);
+            }
+
             return $this->renderGatewayFailure($exception);
         }
 
@@ -49,6 +55,10 @@ final class WorkspaceShowCommand extends GatewayCommand
         $hostCwd = $this->hostCwd();
 
         if ($hostCwd === null) {
+            if ($this->canPromptForRegistrySelection()) {
+                return $this->showPromptedWorkspace();
+            }
+
             return $this->renderFailure('validation_failed', 'Workspace name is required.', ['field' => 'name']);
         }
 
@@ -56,6 +66,32 @@ final class WorkspaceShowCommand extends GatewayCommand
             $response = $this->gatewayGet('/api/workspaces/resolve-by-path', $this->filledQuery([
                 'app' => $this->stringOption('app'),
                 'path' => $hostCwd,
+            ]));
+        } catch (GatewayApiException $exception) {
+            if ($this->canPromptForRegistrySelection() && $exception->gatewayErrorCode() === 'workspace.not_found') {
+                return $this->showPromptedWorkspace();
+            }
+
+            return $this->renderGatewayFailure($exception);
+        }
+
+        return $this->renderWorkspaceResponse($response);
+    }
+
+    private function showPromptedWorkspace(?string $name = null): int
+    {
+        $workspace = $this->promptForVisibleWorkspace(
+            app: $this->stringOption('app'),
+            name: $name,
+        );
+
+        if (is_int($workspace)) {
+            return $workspace;
+        }
+
+        try {
+            $response = $this->gatewayGet('/api/workspaces/'.rawurlencode($workspace['name']), $this->filledQuery([
+                'app' => $workspace['app'] ?? $this->stringOption('app'),
             ]));
         } catch (GatewayApiException $exception) {
             return $this->renderGatewayFailure($exception);
