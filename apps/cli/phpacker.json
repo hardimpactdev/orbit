@@ -1,0 +1,6 @@
+{
+    "src": "./builds/orbit.phar",
+    "dest": "./builds/dist",
+    "php": 8.5,
+    "repository": "phpacker/php-bin"
+}
