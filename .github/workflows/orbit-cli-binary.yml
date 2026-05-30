@@ -1,0 +1,73 @@
+name: Orbit CLI Binary
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    name: Build CLI Binaries
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: "8.5"
+          extensions: pdo_sqlite, sqlite3, curl, openssl, mbstring, tokenizer, ctype, filter, fileinfo, phar
+          tools: composer
+
+      - name: Read app version
+        id: version
+        run: |
+          VERSION=$(php -r "
+            \$config = require 'apps/cli/config/app.php';
+            echo \$config['version'];
+          ")
+          echo "value=${VERSION}" >> "$GITHUB_OUTPUT"
+
+      - name: Install CLI dependencies
+        run: composer install --working-dir=apps/cli --no-interaction --prefer-dist --optimize-autoloader
+
+      - name: Build PHAR
+        run: |
+          cd apps/cli
+          php orbit app:build orbit.phar \
+            --build-version=${{ steps.version.outputs.value }} \
+            --no-interaction \
+            --timeout=0
+
+      - name: Bundle macOS arm64 binary
+        run: |
+          cd apps/cli
+          vendor/bin/phpacker build mac arm \
+            --src=./builds/orbit.phar \
+            --php=8.5 \
+            --no-interaction
+
+      - name: Bundle Ubuntu x86_64 binary
+        run: |
+          cd apps/cli
+          vendor/bin/phpacker build linux x64 \
+            --src=./builds/orbit.phar \
+            --php=8.5 \
+            --no-interaction
+
+      - name: Upload macOS arm64 binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: orbit-macos-arm64
+          path: apps/cli/builds/dist/mac/mac-arm
+          if-no-files-found: error
+
+      - name: Upload Ubuntu x86_64 binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: orbit-linux-x64
+          path: apps/cli/builds/dist/linux/linux-x64
+          if-no-files-found: error
