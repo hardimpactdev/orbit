@@ -31,7 +31,7 @@ runner. It is a full Laravel app so the topology/provider harness can use the
 framework (the `Process`, filesystem, and related facades, paths, and helpers)
 rather than re-implementing them. "External" describes how it drives the system
 under test, not the absence of a framework: it prepares Docker/Incus topologies,
-drives `apps/cli/orbit` and the gateway HTTP API, and inspects externally
+drives the Orbit CLI binary and the gateway HTTP API, and inspects externally
 observable results — CLI output, API responses, files, containers, routes,
 services, and node state. It must not import the gateway application's own
 namespaces (`apps/gateway`'s services, Eloquent models, controllers, jobs, or
@@ -62,9 +62,9 @@ operator, or app nodes as verification targets.
 
 For the MONO local-executor migration, prepared Docker and Incus E2E are the
 primary verification paths. Standing live infrastructure is diagnostic only.
-Prepared topology images provide Orbit-capable hosts, including the host PHP CLI
-needed by the CLI/local-executor artifact. The current checkout is synced into
-hosts during topology preparation or test setup.
+Prepared topology images provide Orbit-capable hosts with the installed Orbit CLI
+binary. The current checkout is synced into hosts during topology preparation or
+test setup.
 
 ## Development lane invariant
 
@@ -86,7 +86,7 @@ These rules order the lanes above into a development workflow:
 
 Any retained-topology command surface is delivered later as part of the
 `apps/e2e` extraction chain. It is not added as new public gateway Artisan
-surface; public operator commands remain owned by `apps/cli/orbit`.
+surface; public operator commands remain owned by the Orbit CLI binary.
 
 ## Lane map
 

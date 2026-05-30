@@ -32,8 +32,8 @@ Use this table to choose the smallest active node set for a feature test.
 
 Prepared topology images and templates are branch-agnostic topology baselines.
 They prove OS, users, SSH, Docker, `orbit-runtime`, `orbit-caddy`, service
-containers, trust, routes, host PHP CLI for the CLI/local-executor artifact, and
-baseline Orbit installation state.
+containers, trust, routes, the installed Orbit CLI binary, and baseline Orbit
+installation state.
 
 Feature assertions must run the checkout under test inside the disposable clone.
 For worktree-based development, the worker's current worktree is the source of
@@ -187,7 +187,7 @@ Common requirements for every prepared topology:
 - SSH is authorized for the users needed by the topology handles;
 - `orbit --version` works for the steady-state Orbit user on each managed node;
 - Docker Engine/CLI is available to the host launcher and runtime managers;
-- host PHP CLI and PDO SQLite are available for the CLI/local-executor artifact;
+- the installed Orbit CLI binary is available on each managed node;
 - host Composer, host Caddy, PHP-FPM, and host Supervisor for PHP app processes
   are absent from Docker-first topology images;
 - Orbit runtime containers use sibling containers through the host Docker socket;
