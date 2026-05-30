@@ -19,16 +19,35 @@ VERBOSE=0
 LOG_FILE="${ORBIT_INSTALL_LOG:-}"
 CURRENT_STEP=""
 
+# The Orbit CLI is a self-contained native binary with embedded PHP 8.5.
+# The installer downloads the prebuilt binary for the host OS/arch and links
+# it as the host `orbit` command — no host PHP is required to run the CLI.
+#
+# Release-asset URL pattern (GitHub Releases):
+#   https://github.com/hardimpactdev/orbit/releases/latest/download/orbit-<os>-<arch>
+#
+# Supported asset names:
+#   orbit-macos-arm64   (macOS Apple Silicon)
+#   orbit-linux-x64     (Ubuntu x86_64)
+#
+# Override with ORBIT_BINARY_URL to point at a local artifact, mirror, or
+# specific release tag:
+#   ORBIT_BINARY_URL=file:///path/to/orbit-linux-x64 bin/install-orbit
+#   ORBIT_BINARY_URL=https://example.com/orbit-linux-x64 bin/install-orbit
+ORBIT_BINARY_BASE_URL="${ORBIT_BINARY_BASE_URL:-https://github.com/hardimpactdev/orbit/releases/latest/download}"
+ORBIT_BINARY_URL="${ORBIT_BINARY_URL:-}"
+
 usage() {
     cat <<'HELP'
 usage: bin/install-orbit [options]
 
 Install the Orbit CLI and its Docker-first runtime prerequisites on the
-current host. The installer prepares host PHP CLI for the CLI/local-executor
-artifact, Docker, the Orbit source checkout, the orbit-runtime, orbit-caddy,
-and default FrankenPHP runtime images, runs migrations inside a disposable
-orbit-runtime container, and starts the long-running orbit-runtime container.
-No host Composer, host Caddy, or host PHP-FPM is installed.
+current host. The installer downloads and links the prebuilt Orbit CLI binary
+(with embedded PHP 8.5), sets up the Orbit source checkout for the gateway,
+prepares the orbit-runtime, orbit-caddy, and default FrankenPHP runtime
+images, runs migrations inside a disposable orbit-runtime container, and
+starts the long-running orbit-runtime container. No host PHP, no host
+Composer, no host Caddy, and no host PHP-FPM is installed.
 
 Options:
   --path=PATH                  Orbit checkout path. Defaults to "$HOME/orbit".
@@ -159,7 +178,7 @@ render_plan() {
     printf '  │\n'
     printf '  ○  Align orbit checkout ownership\n'
     printf '  │\n'
-    printf '  ○  Link orbit executable\n'
+    printf '  ○  Download and link Orbit CLI binary\n'
     printf '  │\n'
     printf '  ○  Verify Orbit\n'
     printf '  │\n'
@@ -286,80 +305,6 @@ wait_for_cloud_init() {
     sudo_run cloud-init status --wait || true
 }
 
-host_php_is_ready() {
-    local version
-
-    command -v php >/dev/null 2>&1 || return 1
-
-    version="$(php --version 2>/dev/null | head -n 1 || true)"
-
-    [[ "$version" == PHP\ 8.5.* ]] || return 1
-
-    php -r 'foreach (["pdo_sqlite", "openssl", "curl", "mbstring", "json"] as $extension) { if (! extension_loaded($extension)) { exit(1); } }' >/dev/null 2>&1
-}
-
-verify_host_php_baseline() {
-    local version
-
-    require_command php
-
-    version="$(php --version 2>/dev/null | head -n 1 || true)"
-
-    if [[ "$version" != PHP\ 8.5.* ]]; then
-        fail validation_failed "host php must resolve to PHP 8.5.x after prerequisite installation; got: ${version:-missing}"
-    fi
-
-    if ! php -r 'foreach (["pdo_sqlite", "openssl", "curl", "mbstring", "json"] as $extension) { if (! extension_loaded($extension)) { fwrite(STDERR, $extension.PHP_EOL); exit(1); } }' >/dev/null 2>&1; then
-        fail validation_failed "host php is missing one of the required extensions: pdo_sqlite, openssl, curl, mbstring, json"
-    fi
-}
-
-ubuntu_requires_ondrej_php_ppa() {
-    local version_id
-
-    version_id="$(. /etc/os-release && printf '%s' "$VERSION_ID")"
-
-    case "$version_id" in
-        22.04|24.04)
-            return 0
-            ;;
-        *)
-            return 1
-            ;;
-    esac
-}
-
-install_host_php_ubuntu() {
-    if host_php_is_ready; then
-        printf 'orbit-install: host PHP 8.5 CLI baseline already present\n'
-        return
-    fi
-
-    printf 'orbit-install: installing host PHP 8.5 CLI baseline\n'
-
-    sudo_run env DEBIAN_FRONTEND=noninteractive apt-get install -y software-properties-common
-
-    if ubuntu_requires_ondrej_php_ppa; then
-        sudo_run add-apt-repository ppa:ondrej/php -y
-        sudo_run apt-get update
-    else
-        printf 'orbit-install: using Ubuntu package repositories for PHP 8.5 CLI baseline\n'
-    fi
-
-    sudo_run env DEBIAN_FRONTEND=noninteractive apt-get install -y \
-        php8.5-cli \
-        php8.5-mbstring \
-        php8.5-curl \
-        php8.5-sqlite3 \
-        php8.5-xml
-
-    if [ -x /usr/bin/php8.5 ]; then
-        sudo_run update-alternatives --set php /usr/bin/php8.5
-    fi
-
-    verify_host_php_baseline
-}
-
 install_ubuntu_prerequisites() {
     wait_for_cloud_init
 
@@ -375,7 +320,6 @@ install_ubuntu_prerequisites() {
         wireguard \
         wireguard-tools
 
-    install_host_php_ubuntu
     install_docker_engine_ubuntu
 }
 
@@ -452,34 +396,10 @@ brew_formula_installed() {
     brew --prefix "$1" >/dev/null 2>&1
 }
 
-install_host_php_macos() {
-    if host_php_is_ready; then
-        printf 'orbit-install: host PHP 8.5 CLI baseline already present\n'
-        return
-    fi
-
-    printf 'orbit-install: installing host PHP 8.5 CLI baseline\n'
-
-    if brew_formula_installed php@8.5; then
-        printf 'orbit-install: Homebrew php@8.5 already installed; linking host php\n'
-    elif brew search --formula php@8.5 2>/dev/null | grep -qx php@8.5; then
-        run brew install php@8.5
-    else
-        run brew install php
-    fi
-
-    if brew_formula_installed php@8.5; then
-        run brew link --overwrite --force php@8.5
-    fi
-
-    verify_host_php_baseline
-}
-
 install_macos_prerequisites() {
     require_command brew
 
     run brew update
-    install_host_php_macos
     run brew install git
     require_command docker
 }
@@ -667,28 +587,42 @@ read_env_var() {
 write_env_var() {
     local key="$1"
     local value="$2"
+    local env_file="$TARGET_DIR/apps/gateway/.env"
+    local tmp_file
 
     ensure_log_file
 
-    printf '%s' "$value" | php -r '
-$path = $argv[1];
-$key = $argv[2];
-$value = stream_get_contents(STDIN);
-$contents = file_exists($path) ? file_get_contents($path) : "";
-$line = "{$key}={$value}";
+    # Pure-shell .env writer — no host PHP required. The CLI binary embeds its
+    # own PHP; this installer must not depend on host PHP being present.
+    {
+        if [ -f "$env_file" ]; then
+            # Replace an existing KEY=... line or append a new one.
+            tmp_file="${env_file}.tmp.$$"
 
-if (preg_match("/^".preg_quote($key, "/")."=/m", $contents) === 1) {
-    $contents = preg_replace("/^".preg_quote($key, "/")."=.*$/m", $line, $contents);
-} else {
-    $contents = rtrim($contents).PHP_EOL.$line.PHP_EOL;
-}
+            if grep -q "^${key}=" "$env_file" 2>/dev/null; then
+                grep -v "^${key}=" "$env_file" > "$tmp_file"
+            else
+                cp "$env_file" "$tmp_file"
+            fi
 
-file_put_contents($path, $contents);
-' "$TARGET_DIR/apps/gateway/.env" "$key" >>"$LOG_FILE" 2>&1
+            printf '%s=%s\n' "$key" "$value" >> "$tmp_file"
+            mv "$tmp_file" "$env_file"
+        else
+            printf '%s=%s\n' "$key" "$value" >> "$env_file"
+        fi
+    } >>"$LOG_FILE" 2>&1
 }
 
 generate_operation_token_secret() {
-    php -r 'echo base64_encode(random_bytes(32));'
+    # Generate a 32-byte random secret encoded as base64. Uses openssl when
+    # available (present on both macOS and Ubuntu without host PHP).
+    if command -v openssl >/dev/null 2>&1; then
+        openssl rand -base64 32
+        return
+    fi
+
+    # Fallback: read from /dev/urandom and base64-encode.
+    head -c 32 /dev/urandom | base64
 }
 
 ensure_operation_token_secret() {
@@ -759,13 +693,6 @@ bootstrap_runtime() {
         --pull never \
         -v "$TARGET_DIR":/opt/orbit \
         --workdir /opt/orbit/apps/gateway \
-        orbit-runtime:current \
-        composer install --no-dev --no-interaction --prefer-dist --optimize-autoloader
-
-    run docker_cli run --rm \
-        --pull never \
-        -v "$TARGET_DIR":/opt/orbit \
-        --workdir /opt/orbit/apps/cli \
         orbit-runtime:current \
         composer install --no-dev --no-interaction --prefer-dist --optimize-autoloader
 
@@ -877,17 +804,84 @@ run_migrations_in_container() {
         php /opt/orbit/apps/gateway/artisan migrate --force --no-interaction
 }
 
+# Detect the host OS and architecture and set ORBIT_CLI_OS_ARCH to the
+# matching prebuilt binary asset name:
+#   orbit-macos-arm64   (macOS Apple Silicon / arm64)
+#   orbit-linux-x64     (Ubuntu Linux x86_64)
+detect_cli_binary_asset() {
+    local os arch
+
+    os="$(uname -s)"
+    arch="$(uname -m)"
+
+    case "$os" in
+        Darwin)
+            case "$arch" in
+                arm64)
+                    ORBIT_CLI_OS_ARCH="orbit-macos-arm64"
+                    ;;
+                *)
+                    fail node.unsupported_platform "unsupported macOS architecture for Orbit CLI binary: $arch (only arm64 is supported)"
+                    ;;
+            esac
+            ;;
+        Linux)
+            case "$arch" in
+                x86_64)
+                    ORBIT_CLI_OS_ARCH="orbit-linux-x64"
+                    ;;
+                *)
+                    fail node.unsupported_platform "unsupported Linux architecture for Orbit CLI binary: $arch (only x86_64 is supported)"
+                    ;;
+            esac
+            ;;
+        *)
+            fail node.unsupported_platform "unsupported operating system for Orbit CLI binary: $os"
+            ;;
+    esac
+}
+
+# Download the prebuilt Orbit CLI binary for this host OS/arch and place it
+# at $TARGET_DIR/bin/orbit-binary. Honors ORBIT_BINARY_URL when set so that
+# E2E smoke tests and mirrors can point at a local artifact without hitting
+# GitHub releases.
+download_cli_binary() {
+    local binary_url
+    local binary_dest
+
+    detect_cli_binary_asset
+
+    if [ -n "$ORBIT_BINARY_URL" ]; then
+        binary_url="$ORBIT_BINARY_URL"
+    else
+        binary_url="${ORBIT_BINARY_BASE_URL}/${ORBIT_CLI_OS_ARCH}"
+    fi
+
+    binary_dest="$TARGET_DIR/bin/orbit-binary"
+
+    run mkdir -p "$TARGET_DIR/bin"
+
+    printf 'orbit-install: downloading Orbit CLI binary from %s\n' "$binary_url"
+
+    run curl -fsSL --retry 3 --retry-delay 2 -o "$binary_dest" "$binary_url"
+
+    if [ ! -s "$binary_dest" ]; then
+        fail validation_failed "downloaded Orbit CLI binary is empty: $binary_dest"
+    fi
+
+    run chmod 0755 "$binary_dest"
+}
+
 link_orbit() {
     if [ -e "$LINK_PATH" ] && [ ! -L "$LINK_PATH" ]; then
         fail validation_failed "$LINK_PATH exists and is not a symlink"
     fi
 
-    if [ ! -f "$TARGET_DIR/bin/orbit" ]; then
-        fail validation_failed "Orbit launcher missing: $TARGET_DIR/bin/orbit"
+    if [ ! -f "$TARGET_DIR/bin/orbit-binary" ]; then
+        fail validation_failed "Orbit CLI binary missing: $TARGET_DIR/bin/orbit-binary"
     fi
 
-    run chmod 0755 "$TARGET_DIR/bin/orbit"
-    sudo_run ln -sf "$TARGET_DIR/bin/orbit" "$LINK_PATH"
+    sudo_run ln -sf "$TARGET_DIR/bin/orbit-binary" "$LINK_PATH"
 }
 
 # Write the per-operator-host CLI JSON config skeleton at ~/.config/orbit/config.json
@@ -936,8 +930,14 @@ JSON
 }
 
 verify_install() {
-    if [ ! -x "$TARGET_DIR/bin/orbit" ]; then
-        fail validation_failed "Orbit launcher is not executable: $TARGET_DIR/bin/orbit"
+    if [ ! -x "$TARGET_DIR/bin/orbit-binary" ]; then
+        fail validation_failed "Orbit CLI binary is not executable: $TARGET_DIR/bin/orbit-binary"
+    fi
+
+    # Confirm the linked binary runs. The binary embeds its own PHP so no
+    # host PHP is required for this check.
+    if ! "$LINK_PATH" --version >/dev/null 2>&1; then
+        fail validation_failed "Orbit CLI binary did not respond to --version: $LINK_PATH"
     fi
 
     local running
@@ -1013,7 +1013,8 @@ main() {
     finalize_target_ownership
     complete_step
 
-    start_step "Link orbit executable"
+    start_step "Download and link Orbit CLI binary"
+    download_cli_binary
     link_orbit
     complete_step
 
