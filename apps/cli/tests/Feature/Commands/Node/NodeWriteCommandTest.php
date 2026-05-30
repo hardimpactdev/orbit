@@ -7,6 +7,7 @@ use App\Services\Node\NodeGatewayBootstrapper;
 use App\Services\OrbitConfigStore;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Process;
 use Orbit\Core\Http\JsonEnvelope;
 
 describe('node write commands', function (): void {
@@ -125,6 +126,88 @@ describe('node write commands', function (): void {
             ->and($bootstrapper->arguments)->toContain('--template=gateway')
             ->and($bootstrapper->arguments)->toContain('--host=192.0.2.10')
             ->and($bootstrapper->arguments)->toContain('--json');
+
+        @unlink($store->path());
+    });
+
+    it('returns the gateway_bootstrap_unavailable envelope when orbit-runtime is not available', function (): void {
+        config()->set('orbit.gateway.url', null);
+        app()->forgetInstance(GatewayApiClient::class);
+        $store = new OrbitConfigStore(overridePath: base_path('tests/.tmp-node-new-unavailable-config.json'));
+        @unlink($store->path());
+        app()->instance(OrbitConfigStore::class, $store);
+
+        Process::fake([
+            '*' => Process::result(exitCode: 1),
+        ]);
+
+        Http::fake();
+
+        [$exitCode, $output] = runCommand($this, 'node:new', [
+            'name' => 'gateway-1',
+            '--template' => 'gateway',
+            '--host' => '192.0.2.10',
+            '--json' => true,
+        ]);
+
+        $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+
+        Http::assertNothingSent();
+
+        expect($exitCode)->toBe(1)
+            ->and($decoded['error']['code'])->toBe('gateway_bootstrap_unavailable')
+            ->and($decoded['error']['meta']['container'])->toBe('orbit-runtime');
+
+        Process::assertRan(fn ($process): bool => $process->command === [
+            'docker', 'exec', 'orbit-runtime', 'test', '-f', 'apps/gateway/artisan',
+        ]);
+
+        @unlink($store->path());
+    });
+
+    it('routes the gateway bootstrap through docker exec orbit-runtime when the runtime is available', function (): void {
+        config()->set('orbit.gateway.url', null);
+        app()->forgetInstance(GatewayApiClient::class);
+        $store = new OrbitConfigStore(overridePath: base_path('tests/.tmp-node-new-docker-exec-config.json'));
+        @unlink($store->path());
+        app()->instance(OrbitConfigStore::class, $store);
+
+        $successOutput = json_encode(JsonEnvelope::success([
+            'node' => ['name' => 'gateway-1'],
+            'action' => 'bootstrapped',
+        ]), JSON_THROW_ON_ERROR);
+
+        Process::fake([
+            '*' => Process::result(output: $successOutput, exitCode: 0),
+        ]);
+
+        Http::fake();
+
+        [$exitCode, $output] = runCommand($this, 'node:new', [
+            'name' => 'gateway-1',
+            '--template' => 'gateway',
+            '--host' => '192.0.2.10',
+            '--json' => true,
+        ]);
+
+        Http::assertNothingSent();
+
+        expect($exitCode)->toBe(0);
+
+        Process::assertRan(fn ($process): bool => $process->command === [
+            'docker', 'exec', 'orbit-runtime', 'test', '-f', 'apps/gateway/artisan',
+        ]);
+
+        Process::assertRan(fn ($process): bool => is_array($process->command)
+            && $process->command[0] === 'docker'
+            && $process->command[1] === 'exec'
+            && $process->command[2] === 'orbit-runtime'
+            && $process->command[3] === 'php'
+            && $process->command[4] === 'apps/gateway/artisan'
+            && in_array('node:new', $process->command, strict: true)
+            && in_array('gateway-1', $process->command, strict: true)
+            && in_array('--template=gateway', $process->command, strict: true)
+            && in_array('--host=192.0.2.10', $process->command, strict: true));
 
         @unlink($store->path());
     });
