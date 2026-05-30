@@ -1,0 +1,18 @@
+{
+    "main": "orbit",
+    "output": "orbit.phar",
+    "directories": [
+        "app",
+        "bootstrap",
+        "config",
+        "vendor"
+    ],
+    "files": [
+        "NativeCommandNormalizer.php",
+        "composer.json"
+    ],
+    "compactors": [
+        "KevinGH\\Box\\Compactor\\Php"
+    ],
+    "check-requirements": false
+}

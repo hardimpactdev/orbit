@@ -22,6 +22,7 @@
 /apps/cli/.phpunit.cache
 /apps/cli/.phpunit.result.cache
 /apps/cli/build/
+/apps/cli/builds/
 /apps/cli/vendor
 /apps/docs/build/
 /apps/e2e/.phpunit.cache
