@@ -41,6 +41,8 @@ it('adopts observed UFW rules into the gateway registry', function (): void {
             timeoutSeconds: 120,
         );
 
+        e2eRestartGatewayApi($topology, 'firewall-doctor-adopt');
+
         $result = $topology->ssh(
             'gateway',
             sprintf(
