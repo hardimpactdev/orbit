@@ -2,12 +2,12 @@
 
 [Back to Operation commands.](../README.md)
 
-Update the local Orbit checkout and every managed Orbit installation selected
+Update the local Orbit installation and every managed Orbit installation selected
 for a fleet update.
 
-This is the fleet update command. It is useful after new Orbit code lands and
-the operator needs all Orbit-capable nodes to run the same checkout version.
-It updates Orbit installations only; it does not deploy apps or repair drift.
+This is the fleet update command. It is useful after a new Orbit release lands
+and the operator needs all Orbit-capable nodes to run the same version. It
+updates Orbit installations only; it does not deploy apps or repair drift.
 
 ## Usage
 
@@ -31,18 +31,21 @@ orbit update:all --json
 `update:all` performs a gateway-authorized fleet update:
 
 1. Ask the gateway to authorize gateway-admin authority (`*` on the active gateway node). The gateway identifies the calling peer over WireGuard and applies authorization; the CLI does not classify itself.
-2. Update the caller-local checkout and gateway-local checkout.
-3. After the gateway-local checkout succeeds, the gateway updates selected
+2. Update the caller-local installation and the gateway installation using the
+   same three-step sequence as [`orbit update`](../1_update/update.md): download
+   the CLI binary, relink the host `orbit` launcher, install gateway dependencies
+   inside `orbit-runtime`, and run gateway migrations.
+3. After the gateway installation succeeds, the gateway updates selected
    remote app-role installations in parallel, up to four targets at a time. The
    gateway is the only node that opens SSH connections to nodes; the CLI
    never SSHes to other nodes itself.
 4. Report every per-installation result, including partial failures.
 
-`update:all` updates the local checkout, the gateway, and active nodes.
+`update:all` updates the local installation, the gateway, and active nodes.
 **Clients other than the caller are never remote update targets.** Each
 client is an operator workstation and updates through `orbit update` on
 that machine. When the gateway is the calling peer, the command therefore
-updates the gateway checkout and selected nodes only.
+updates the gateway installation and selected nodes only.
 
 The command does not create nodes, deploy apps, change app runtime artifacts, or
 repair unrelated family drift. Run doctor after the update when the operator
@@ -65,15 +68,15 @@ the exact shape.
 - The gateway authorizes the calling WireGuard peer with gateway-admin authority
   (`*` on the active gateway node).
 - The gateway can reach every selected node through its node execution path (SSH via `RemoteShell`).
-- Each selected installation has a writable Orbit checkout, a Git remote, a host
-  Orbit launcher, and Docker/`orbit-runtime` availability for dependency
-  installation and migrations.
+- Each selected installation has a writable Orbit install root, a reachable
+  release source for the CLI binary, a host `orbit` launcher, and
+  Docker/`orbit-runtime` availability for dependency installation and migrations.
 
 ## Related Commands
 
 Use these commands before or after running `orbit update:all`.
 
-- [`update`](../1_update/update.md) - update only the local Orbit checkout
+- [`update`](../1_update/update.md) - update only the local Orbit installation
 - `doctor` - verify drift after updates once the doctor command contract is
   converted
 

@@ -7,7 +7,8 @@ namespace App\Services\Updates;
 interface RunsLocalUpdate
 {
     /**
-     * Pull the configured Git remote with fast-forward-only semantics.
+     * Download the prebuilt CLI binary for this host OS/arch and relink the
+     * host `orbit` launcher. Verifies the updated binary with `--version`.
      *
      * @return array{successful: bool, exit_code: int, output: string}
      */

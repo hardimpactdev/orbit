@@ -34,7 +34,7 @@ final readonly class LocalUpdateWorkflow
             }
 
             if (! $result['successful']) {
-                if ($key === 'pull_source' && $result['exit_code'] === 128) {
+                if ($key === 'pull_source') {
                     return new LocalUpdateResult(
                         status: LocalUpdateResult::STATUS_CHECKOUT_UNAVAILABLE,
                         stepResults: $stepResults,
