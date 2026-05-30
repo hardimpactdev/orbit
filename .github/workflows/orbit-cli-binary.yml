@@ -25,10 +25,10 @@ jobs:
       - name: Read app version
         id: version
         run: |
-          VERSION=$(php -r "
-            \$config = require 'apps/cli/config/app.php';
-            echo \$config['version'];
-          ")
+          # config/app.php calls env() (a Laravel helper) on other keys, so it
+          # cannot be require()'d from a bare `php -r`. The version is a literal;
+          # extract it directly.
+          VERSION=$(sed -n "s/.*'version' => '\([^']*\)'.*/\1/p" apps/cli/config/app.php | head -n 1)
           echo "value=${VERSION}" >> "$GITHUB_OUTPUT"
 
       - name: Install CLI dependencies
