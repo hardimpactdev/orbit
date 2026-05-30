@@ -143,6 +143,123 @@ it('flows public s3 ingress through router to rustfs backend and includes public
     }
 })->group('e2e-feature', 'e2e-feature-operator_gateway_app-dev_app-prod');
 
+it('proves RustFS binds only to the WireGuard interface and is not exposed on the public-interface', function (): void {
+    $config = E2EConfig::fromEnvironment();
+    $topology = e2eTopology(E2ETopologyKind::OperatorGatewayAppdevAppprod, withGatewayApi: true);
+
+    try {
+        expect($topology->lease()->devApp())->not->toBeNull()
+            ->and($topology->lease()->gateway())->not->toBeNull();
+
+        $topology->withCurrentCheckout(roles: ['operator', 'gateway']);
+        $gatewayApiIp = $topology->lease()->gatewayApiIp();
+
+        e2eRestartGatewayApi($topology, 's3-public-interface-bind');
+        E2EGatewayApi::waitForGatewayApi(
+            $topology->instance('operator'),
+            $config->operatorUser,
+            $topology->lease()->sshKeyPair(),
+            gatewayIp: $gatewayApiIp,
+        );
+        e2eGrantNodeAccess($topology);
+
+        $snapshot = s3RuntimeContainerBindSnapshot($topology);
+
+        $wgAddress = $snapshot['wireguard_address'];
+        $host = $snapshot['host'];
+        $publishedPorts = $snapshot['published_ports'];
+        $rustfsAddress = $snapshot['rustfs_address'];
+
+        // The WireGuard address must be present and non-empty.
+        expect($wgAddress)->not->toBeEmpty();
+
+        // The port is published ONLY on the WireGuard IP — not on 0.0.0.0.
+        expect($publishedPorts)->toBe(["{$wgAddress}:9000:9000"]);
+
+        // RustFS binds only to the WireGuard IP.
+        expect($rustfsAddress)->toBe("{$wgAddress}:9000");
+
+        // Neither published_ports nor rustfs_address may expose 0.0.0.0.
+        expect(implode(',', $publishedPorts))->not->toContain('0.0.0.0')
+            ->and($rustfsAddress)->not->toContain('0.0.0.0');
+
+        // Every published-ports entry starts with the WireGuard IP.
+        foreach ($publishedPorts as $entry) {
+            expect($entry)->toStartWith("{$wgAddress}:");
+        }
+
+        // When the public host differs from the WireGuard address, neither
+        // published_ports nor rustfs_address may reference the public interface.
+        if ($host !== $wgAddress) {
+            expect(implode(',', $publishedPorts))->not->toContain($host)
+                ->and($rustfsAddress)->not->toContain($host);
+        }
+    } finally {
+        $topology->cleanup();
+    }
+})->group('e2e-feature', 'e2e-feature-operator_gateway_app-dev_app-prod');
+
+/**
+ * Seed the gateway database with an active s3 role on app-dev-1 and render the
+ * RustFS runtime container, returning a snapshot of the bind posture.
+ *
+ * @return array{
+ *     wireguard_address: string,
+ *     host: string,
+ *     published_ports: list<string>,
+ *     rustfs_address: string|null,
+ * }
+ */
+function s3RuntimeContainerBindSnapshot(E2ETopologyHarness $topology): array
+{
+    $php = <<<'PHP'
+$node = \App\Models\Node::query()->where('name', 'app-dev-1')->firstOrFail();
+
+\App\Models\NodeRoleAssignment::query()->updateOrCreate(
+    [
+        'node_id' => $node->id,
+        'role' => 's3',
+    ],
+    [
+        'status' => 'active',
+        'settings' => ['data_path' => '/srv/orbit/s3/data'],
+        'last_error' => null,
+        'converged_at' => now(),
+    ],
+);
+
+$assignment = $node->roleAssignments()
+    ->where('role', 's3')
+    ->where('status', 'active')
+    ->firstOrFail();
+
+$settings = \App\Data\Nodes\RoleSettings\S3RoleSettings::fromArray(
+    is_array($assignment->settings) ? $assignment->settings : []
+);
+
+$container = app(\App\Services\S3\S3RuntimeContainerRenderer::class)->render($node, $settings);
+
+echo json_encode([
+    'wireguard_address' => $node->wireguard_address,
+    'host' => $node->host,
+    'published_ports' => $container->publishedPorts(),
+    'rustfs_address' => $container->environment()['RUSTFS_ADDRESS'] ?? null,
+], JSON_THROW_ON_ERROR);
+PHP;
+
+    $result = $topology->ssh(
+        'gateway',
+        sprintf(
+            'cd %s && php apps/gateway/artisan tinker --execute=%s',
+            escapeshellarg($topology->checkout('gateway')),
+            escapeshellarg("eval(base64_decode('".base64_encode($php)."'));"),
+        ),
+        timeoutSeconds: 120,
+    );
+
+    return json_decode(trim($result->output()), associative: true, flags: JSON_THROW_ON_ERROR);
+}
+
 /**
  * Seed the gateway database with an active s3 role on app-dev-1 and a rustfs
  * tool row, sync the private s3.orbit service route, and return a snapshot of
