@@ -637,15 +637,23 @@ PHP;
         // The gateway-app LocalGatewaySettings write above only configures the
         // gateway application's store. The `orbit` CLI (which the feature tests
         // invoke as the role user) needs its own ~/.config/orbit gateway entry
-        // AND the gateway root CA trusted in the local OS store — otherwise CLI
-        // calls fail with "Gateway URL is not configured" (no config) or
-        // cURL error 60 (CA not trusted). `orbit gateway:add` fetches the CA,
-        // installs it into the OS trust store, verifies node identity, and
-        // persists the CLI gateway config in one step, mirroring how the docker
-        // lane prepares each client node.
+        // AND the gateway root CA recorded as ca_pem_path so its HTTPS calls
+        // verify — otherwise CLI calls fail with "Gateway URL is not configured"
+        // (no config) or cURL error 60 (CA not trusted). `orbit gateway:add`
+        // fetches the CA over http bootstrap, installs trust, verifies node
+        // identity, and persists the CLI gateway config (url + ca_pem_path) in
+        // one step. The WireGuard route to the gateway can take a moment to come
+        // up after the topology starts, so retry until it reports success.
+        // Best-effort: a node that never reaches the gateway fails its own
+        // assertions later with a clear gateway_unavailable error.
+        $gatewayIpArg = escapeshellarg($gatewayApiIp);
+        $gatewayAddWithRetry = 'i=0; while [ "$i" -lt 8 ]; do '
+            .'orbit gateway:add '.$gatewayIpArg.' --json 2>&1 | grep -q \'"success"\' && break; '
+            .'i=$((i+1)); sleep 3; done; true';
+
         return 'cd '.escapeshellarg($remotePath)
             .' && php apps/gateway/artisan tinker --execute='.escapeshellarg($php)
-            .' && orbit gateway:add '.escapeshellarg($gatewayApiIp).' --json';
+            .' && ('.$gatewayAddWithRetry.')';
     }
 
     private static function refreshGatewayHostKeys(E2EInstance $instance, string $user, SshKeyPair $keyPair, string $remotePath, ?E2EPhaseTimer $timer, bool $hostLauncher = false): void
