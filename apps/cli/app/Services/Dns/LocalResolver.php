@@ -46,7 +46,13 @@ class LocalResolver implements ResolvesLocalDns
 
     public function configDir(): string
     {
-        return storage_path('app/orbit/dnsmasq.d');
+        $home = getenv('HOME');
+
+        if (! is_string($home) || $home === '') {
+            throw new \RuntimeException('HOME environment variable is not set.');
+        }
+
+        return rtrim($home, '/').'/.config/orbit/dnsmasq.d';
     }
 
     public function isDnsmasqInstalled(): bool
