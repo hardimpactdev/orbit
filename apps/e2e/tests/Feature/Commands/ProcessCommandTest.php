@@ -15,6 +15,7 @@ it('manages process intent runtime lifecycle and bounded logs on a prepared app 
     $runtimeUnit = "orbit_{$app}_main_{$process}";
 
     try {
+        e2eRestartGatewayApi($topology, 'process-command');
         processCommandSeedApp($topology, $app, $appPath);
 
         $add = $topology->ssh(
@@ -23,6 +24,10 @@ it('manages process intent runtime lifecycle and bounded logs on a prepared app 
             timeoutSeconds: 180,
         );
         $addPayload = processCommandPayload($add->output());
+
+        if (($addPayload['success']['meta']['warnings'] ?? []) !== []) {
+            throw new RuntimeException(processCommandDockerDiagnostics($topology, $runtimeUnit, $appPath, $add->output().$add->errorOutput()));
+        }
 
         expect($add->successful())->toBeTrue()
             ->and($addPayload['success']['data']['process'])->toMatchArray([

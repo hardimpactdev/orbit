@@ -151,7 +151,7 @@ class DockerCommandBuilder
 
     private function usesE2eNodeNetwork(OrbitRuntimeContainer|OrbitCaddyContainer|AppRuntimeContainer|WorkspaceRuntimeContainer|ProcessDockerContainer|WebSocketRuntimeContainer $container): bool
     {
-        return ($container instanceof OrbitCaddyContainer || $container instanceof WebSocketRuntimeContainer)
+        return ($container instanceof OrbitCaddyContainer || $container instanceof ProcessDockerContainer || $container instanceof WebSocketRuntimeContainer)
             && $this->e2eNodeContainerFor($container) !== null;
     }
 
