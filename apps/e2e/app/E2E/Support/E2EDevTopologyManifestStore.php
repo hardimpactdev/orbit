@@ -14,7 +14,7 @@ final readonly class E2EDevTopologyManifestStore
 
     public static function fromRepositoryRoot(string $repoRoot): self
     {
-        return new self(rtrim($repoRoot, '/').'/apps/e2e/storage/dev-topologies');
+        return new self(rtrim($repoRoot, '/').'/apps/e2e/var/dev-topology');
     }
 
     public static function fromEnvironment(string $repoRoot): self

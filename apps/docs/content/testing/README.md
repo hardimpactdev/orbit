@@ -72,9 +72,12 @@ These rules order the lanes above into a development workflow:
 
 - Source-checkout E2E (the Docker/Incus prepared-topology lanes that overlay the
   current checkout) is the normal feature feedback loop.
-- Retained prepared topologies are for manual diagnosis and debugging only. They
-  use the same prepared-topology substrate, are not standing live infrastructure,
-  and must be explicitly released or reaped after use.
+- Retained prepared topologies are for manual diagnosis, debugging, and
+  performance testing only. They use the same prepared-topology substrate, are
+  not standing live infrastructure, and must be explicitly released or reaped
+  after use. Acquire one with `composer e2e:dev-topology` (Incus only) and reap
+  it with `composer e2e:dev-topology:release`; see
+  `docs/testing/e2e/prepared-topologies.md#retained-dev-topologies`.
 - Findings from a retained topology are codified back into ordinary
   prepared-topology Pest E2E tests; the durable assertion lives in Pest, not in a
   kept-alive topology.
@@ -84,9 +87,10 @@ These rules order the lanes above into a development workflow:
 - Provisioning proves installer and `node:new` provisioning behavior, not the
   inner development loop.
 
-Any retained-topology command surface is delivered later as part of the
-`apps/e2e` extraction chain. It is not added as new public gateway Artisan
-surface; public operator commands remain owned by the Orbit CLI binary.
+The retained-topology command surface lives in `apps/e2e`
+(`composer e2e:dev-topology` and `composer e2e:dev-topology:release`). It is not
+added as new public gateway Artisan surface; public operator commands remain
+owned by the Orbit CLI binary.
 
 ## Lane map
 

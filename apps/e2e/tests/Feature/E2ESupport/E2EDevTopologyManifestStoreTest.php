@@ -58,13 +58,13 @@ it('writes reads lists and removes retained topology manifests', function (): vo
         ->and($store->list())->toBe([]);
 });
 
-it('defaults manifest storage to the apps e2e storage path', function (): void {
+it('defaults manifest storage to the apps e2e var path', function (): void {
     $repoRoot = make_temp_directory('repo');
 
     try {
         $store = E2EDevTopologyManifestStore::fromRepositoryRoot($repoRoot);
 
-        expect($store->directory())->toBe("{$repoRoot}/apps/e2e/storage/dev-topologies");
+        expect($store->directory())->toBe("{$repoRoot}/apps/e2e/var/dev-topology");
     } finally {
         remove_directory($repoRoot);
     }

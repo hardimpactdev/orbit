@@ -2,61 +2,176 @@
 
 declare(strict_types=1);
 
+use App\Console\Commands\E2EDevTopologyReleaseCommand;
+use App\E2E\Support\E2EConfig;
 use App\E2E\Support\E2EDevTopologyManifestStore;
-use App\E2E\Support\E2EResourceLeasePool;
+use App\E2E\Support\IncusHost;
+use Illuminate\Contracts\Process\ProcessResult;
+use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\Process;
+use Mockery as m;
 
 beforeEach(function (): void {
+    Process::preventStrayProcesses();
     $this->manifestDirectory = make_temp_directory('release-manifests');
-    $this->leaseDirectory = make_temp_directory('release-leases');
+    putenv("ORBIT_E2E_DEV_TOPOLOGY_MANIFEST_DIRECTORY={$this->manifestDirectory}");
 });
 
 afterEach(function (): void {
+    putenv('ORBIT_E2E_DEV_TOPOLOGY_MANIFEST_DIRECTORY');
     remove_directory($this->manifestDirectory);
-    remove_directory($this->leaseDirectory);
+    m::close();
 });
 
-it('removes manifests and releases retained lease metadata', function (): void {
-    $store = new E2EDevTopologyManifestStore($this->manifestDirectory);
-    $pool = new E2EResourceLeasePool($this->leaseDirectory, waitSeconds: 0, staleSeconds: 3600);
-    $retainedLease = $pool->acquire('docker', ['sidecar1' => 1])->retain('release-test');
-    $cleanupMarker = "{$this->manifestDirectory}/cleanup-marker.txt";
-    $cleanupCommand = PHP_BINARY.' -r '.escapeshellarg("file_put_contents('{$cleanupMarker}', 'released');");
-
-    $store->write([
-        'id' => 'retained-one',
-        'provider' => 'docker',
-        'host' => 'sidecar1',
-        'kind' => 'operator_gateway_app-dev',
-        'created_at' => '2026-05-29T10:00:00+00:00',
-        'checkout_roles' => ['operator', 'gateway', 'app-dev'],
-        'checkouts' => [],
-        'instances' => [],
-        'cleanup_commands' => [$cleanupCommand],
-        'leases' => [$retainedLease->metadata()],
-        'release_command' => 'composer e2e:dev-topology:release -- retained-one',
-    ]);
-
-    $result = run_e2e_script(
-        [PHP_BINARY, 'bin/e2e-dev-topology-release', 'retained-one', '--json'],
-        env: ['ORBIT_E2E_DEV_TOPOLOGY_MANIFEST_DIRECTORY' => $this->manifestDirectory],
+function devReleaseConfig(string $host = 'beast'): E2EConfig
+{
+    return new E2EConfig(
+        providerNames: ['incus'],
+        topologyProviderNames: ['incus'],
+        host: $host,
+        sourceImage: 'images:ubuntu/26.04/cloud',
+        baseImage: 'orbit-base-ubuntu-26.04',
+        bootstrapUser: 'provisioner',
+        operatorUser: 'orbit',
+        instancePrefix: 'orbit-e2e',
+        timeoutSeconds: 600,
+        cpus: '2',
+        memory: '2GiB',
+        topologyCpus: '1',
+        topologyMemory: '2GiB',
+        topologyRootSize: '16GiB',
+        topologyStateSize: '4GiB',
+        incusStoragePool: '',
+        dockerHosts: ['local'],
+        keep: false,
     );
+}
 
-    expect($result['exit_code'])->toBe(0, $result['stderr'])
-        ->and($store->read('retained-one'))->toBeNull()
-        ->and($cleanupMarker)->toBeFile()
-        ->and($retainedLease->path())->not->toBeFile();
+function recordingIncusHost(E2EConfig $config, ArrayObject $log): IncusHost
+{
+    return new class($config, $log) extends IncusHost
+    {
+        public function __construct(E2EConfig $config, private readonly ArrayObject $log)
+        {
+            parent::__construct($config);
+        }
 
-    $payload = json_decode($result['stdout'], true, flags: JSON_THROW_ON_ERROR);
+        #[Override]
+        public function deleteInstancesIfPresent(array $names): ProcessResult
+        {
+            $this->log['deleted'] = [...$this->log['deleted'], array_values($names)];
 
-    expect($payload)->toMatchArray([
-        'success' => [
-            'released' => [
-                'id' => 'retained-one',
-                'cleanup_commands' => 1,
-                'leases' => 1,
-            ],
+            return Process::result(output: '');
+        }
+
+        #[Override]
+        public function run(string $command, ?int $timeoutSeconds = null): ProcessResult
+        {
+            $this->log['runs'] = [...$this->log['runs'], $command];
+
+            return Process::result(output: '');
+        }
+    };
+}
+
+function writeRetainedManifest(string $directory, string $id, string $host = 'beast'): void
+{
+    (new E2EDevTopologyManifestStore($directory))->write([
+        'id' => $id,
+        'kind' => 'operator_gateway_app-dev',
+        'provider' => 'incus',
+        'host' => $host,
+        'run_id' => $id,
+        'ssh_key_path' => "/tmp/orbit-e2e-topology-{$id}/id_ed25519",
+        'gateway_ip' => '10.6.0.2',
+        'instances' => [
+            'operator' => "orbit-e2e-{$id}-operator",
+            'gateway' => "orbit-e2e-{$id}-gateway",
+            'dev' => "orbit-e2e-{$id}-dev",
         ],
+        'checkouts' => [
+            'operator' => '/home/orbit/orbit-current',
+        ],
+        'created_at' => '2026-05-30T10:00:00+00:00',
     ]);
+}
+
+function releaseCommandWith(ArrayObject $log): E2EDevTopologyReleaseCommand
+{
+    $command = app(E2EDevTopologyReleaseCommand::class);
+    $command->hostFactoryUsing(fn (string $host): IncusHost => recordingIncusHost(devReleaseConfig($host), $log));
+    app()->instance(E2EDevTopologyReleaseCommand::class, $command);
+
+    return $command;
+}
+
+it('reaps the recorded instances and removes the manifest and ssh key', function (): void {
+    writeRetainedManifest($this->manifestDirectory, 'dev-abc123');
+
+    $log = new ArrayObject(['deleted' => [], 'runs' => []]);
+    releaseCommandWith($log);
+
+    $this->artisan('e2e:dev-topology:release', ['id' => 'dev-abc123', '--json' => true])
+        ->assertSuccessful();
+
+    expect($log['deleted'])->toBe([[
+        'orbit-e2e-dev-abc123-operator',
+        'orbit-e2e-dev-abc123-gateway',
+        'orbit-e2e-dev-abc123-dev',
+    ]])
+        // The dedicated per-run ssh key directory is removed on the host.
+        ->and($log['runs'])->toContain("rm -rf '/tmp/orbit-e2e-topology-dev-abc123'")
+        ->and((new E2EDevTopologyManifestStore($this->manifestDirectory))->read('dev-abc123'))->toBeNull();
+});
+
+it('returns the reaped instances in the json payload', function (): void {
+    writeRetainedManifest($this->manifestDirectory, 'dev-abc123');
+
+    $log = new ArrayObject(['deleted' => [], 'runs' => []]);
+    releaseCommandWith($log);
+
+    $exitCode = Artisan::call('e2e:dev-topology:release', ['id' => 'dev-abc123', '--json' => true]);
+
+    expect($exitCode)->toBe(0);
+
+    $payload = json_decode(trim(Artisan::output()), true, flags: JSON_THROW_ON_ERROR);
+
+    expect($payload['success']['released'])->toBe([[
+        'id' => 'dev-abc123',
+        'reaped' => [
+            'orbit-e2e-dev-abc123-operator',
+            'orbit-e2e-dev-abc123-gateway',
+            'orbit-e2e-dev-abc123-dev',
+        ],
+        'dry_run' => false,
+    ]]);
+});
+
+it('releases every recorded topology with --all', function (): void {
+    writeRetainedManifest($this->manifestDirectory, 'dev-aaa111');
+    writeRetainedManifest($this->manifestDirectory, 'dev-bbb222');
+
+    $log = new ArrayObject(['deleted' => [], 'runs' => []]);
+    releaseCommandWith($log);
+
+    $this->artisan('e2e:dev-topology:release', ['--all' => true, '--json' => true])
+        ->assertSuccessful();
+
+    $store = new E2EDevTopologyManifestStore($this->manifestDirectory);
+
+    expect($log['deleted'])->toHaveCount(2)
+        ->and($store->list())->toBe([]);
+});
+
+it('treats releasing the dry-run placeholder as a no-op success', function (): void {
+    $log = new ArrayObject(['deleted' => [], 'runs' => []]);
+    releaseCommandWith($log);
+
+    $this->artisan('e2e:dev-topology:release', ['id' => 'dry-run', '--json' => true])
+        ->expectsOutputToContain('"id":"dry-run"')
+        ->assertSuccessful();
+
+    expect($log['deleted'])->toBe([]);
 });
 
 it('fails clearly when a retained topology manifest is missing', function (): void {
@@ -75,4 +190,13 @@ it('fails clearly when a retained topology manifest is missing', function (): vo
             'message' => 'Retained E2E topology [missing-topology] was not found.',
         ],
     ]);
+});
+
+it('requires an id when --all is not passed', function (): void {
+    $log = new ArrayObject(['deleted' => [], 'runs' => []]);
+    releaseCommandWith($log);
+
+    $this->artisan('e2e:dev-topology:release', ['--json' => true])
+        ->expectsOutputToContain('A retained E2E topology id is required')
+        ->assertExitCode(1);
 });

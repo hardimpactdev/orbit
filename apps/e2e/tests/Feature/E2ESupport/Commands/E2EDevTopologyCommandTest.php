@@ -2,6 +2,70 @@
 
 declare(strict_types=1);
 
+use App\Console\Commands\E2EDevTopologyCommand;
+use App\E2E\Support\E2EDevTopologyManifestStore;
+use App\E2E\Support\E2ETopologyKind;
+use Illuminate\Support\Facades\Artisan;
+
+beforeEach(function (): void {
+    $this->manifestDirectory = make_temp_directory('dev-topology-manifests');
+    putenv("ORBIT_E2E_DEV_TOPOLOGY_MANIFEST_DIRECTORY={$this->manifestDirectory}");
+});
+
+afterEach(function (): void {
+    putenv('ORBIT_E2E_DEV_TOPOLOGY_MANIFEST_DIRECTORY');
+    remove_directory($this->manifestDirectory);
+});
+
+/**
+ * Build a prepared-topology result the way acquireAndOverlay would return it,
+ * without provisioning anything on a provider.
+ *
+ * @param  array<string, string>  $instances
+ * @param  array<string, string>  $checkouts
+ * @return array{host: string, run_id: string, ssh_key_path: string, gateway_ip: string, instances: array<string, string>, checkouts: array<string, string>}
+ */
+function fakePreparedTopology(
+    string $runId = 'dev-abc123',
+    string $host = 'beast',
+    array $instances = [],
+    array $checkouts = [],
+): array {
+    $instances = $instances === []
+        ? [
+            'operator' => "orbit-e2e-{$runId}-operator",
+            'gateway' => "orbit-e2e-{$runId}-gateway",
+            'dev' => "orbit-e2e-{$runId}-dev",
+        ]
+        : $instances;
+
+    $checkouts = $checkouts === []
+        ? [
+            'operator' => '/home/orbit/orbit-current',
+            'gateway' => '/home/orbit/orbit-current',
+            'dev' => '/home/orbit/orbit-current',
+        ]
+        : $checkouts;
+
+    return [
+        'host' => $host,
+        'run_id' => $runId,
+        'ssh_key_path' => "/tmp/orbit-e2e-topology-{$runId}/id_ed25519",
+        'gateway_ip' => '10.6.0.2',
+        'instances' => $instances,
+        'checkouts' => $checkouts,
+    ];
+}
+
+function devTopologyCommandWith(callable $prepare): E2EDevTopologyCommand
+{
+    $command = app(E2EDevTopologyCommand::class);
+    $command->prepareUsing(Closure::fromCallable($prepare));
+    app()->instance(E2EDevTopologyCommand::class, $command);
+
+    return $command;
+}
+
 it('renders a stable dry-run json contract without acquiring providers', function (): void {
     $result = run_e2e_script([
         PHP_BINARY,
@@ -41,6 +105,25 @@ it('renders human dry-run output with the release command shape', function (): v
         ->and($result['stdout'])->not->toContain('binary acceptance replaces');
 });
 
+it('honors explicit checkout-roles in the dry-run plan', function (): void {
+    $result = run_e2e_script([
+        PHP_BINARY,
+        'bin/e2e-dev-topology',
+        '--dry-run',
+        '--json',
+        '--kind=operator_gateway_app-dev_app-prod',
+        '--provider=incus',
+        '--checkout-roles=operator,gateway',
+    ]);
+
+    expect($result['exit_code'])->toBe(0, $result['stderr']);
+
+    $payload = json_decode($result['stdout'], true, flags: JSON_THROW_ON_ERROR);
+
+    expect($payload['success']['dev_topology']['checkout_roles'])->toBe(['operator', 'gateway'])
+        ->and($payload['success']['dev_topology']['shell_command'])->toContain('--checkout-roles=operator,gateway');
+});
+
 it('rejects unsupported topology kinds with a stable json error', function (): void {
     $result = run_e2e_script([
         PHP_BINARY,
@@ -62,6 +145,16 @@ it('rejects unsupported topology kinds with a stable json error', function (): v
     ]);
 });
 
+it('rejects retained docker topologies with a clear message', function (): void {
+    $this->artisan('e2e:dev-topology', [
+        '--provider' => 'docker',
+        '--kind' => 'operator_gateway_app-dev',
+        '--json' => true,
+    ])
+        ->expectsOutputToContain('Retained docker topologies are not yet supported.')
+        ->assertExitCode(1);
+});
+
 it('routes composer dev topology scripts through apps e2e only', function (): void {
     $rootComposer = json_decode((string) file_get_contents(repo_path('composer.json')), true, flags: JSON_THROW_ON_ERROR);
     $e2eComposer = json_decode((string) file_get_contents(repo_path('apps/e2e/composer.json')), true, flags: JSON_THROW_ON_ERROR);
@@ -77,4 +170,99 @@ it('routes composer dev topology scripts through apps e2e only', function (): vo
         ->and($e2eRelease)->toContain('php bin/e2e-dev-topology-release')
         ->and($rootAcquire.$rootRelease.$e2eAcquire.$e2eRelease)->not->toContain('orbit-gateway-artisan')
         ->and($rootAcquire.$rootRelease.$e2eAcquire.$e2eRelease)->not->toContain('apps/gateway/artisan');
+});
+
+it('persists a retained topology manifest and prints the release command', function (): void {
+    devTopologyCommandWith(fn (E2ETopologyKind $kind, array $roles): array => fakePreparedTopology());
+
+    $this->artisan('e2e:dev-topology', [
+        '--provider' => 'incus',
+        '--kind' => 'operator_gateway_app-dev',
+    ])
+        ->expectsOutputToContain('Retained topology [dev-abc123] acquired.')
+        ->expectsOutputToContain('composer e2e:dev-topology:release -- dev-abc123')
+        ->assertSuccessful();
+
+    $store = new E2EDevTopologyManifestStore($this->manifestDirectory);
+    $manifest = $store->read('dev-abc123');
+
+    expect($manifest)->not->toBeNull()
+        ->and($manifest['id'])->toBe('dev-abc123')
+        ->and($manifest['kind'])->toBe('operator_gateway_app-dev')
+        ->and($manifest['provider'])->toBe('incus')
+        ->and($manifest['host'])->toBe('beast')
+        ->and($manifest['run_id'])->toBe('dev-abc123')
+        ->and($manifest['gateway_ip'])->toBe('10.6.0.2')
+        ->and($manifest['ssh_key_path'])->toBe('/tmp/orbit-e2e-topology-dev-abc123/id_ed25519')
+        ->and($manifest['instances'])->toMatchArray([
+            'operator' => 'orbit-e2e-dev-abc123-operator',
+            'gateway' => 'orbit-e2e-dev-abc123-gateway',
+            'dev' => 'orbit-e2e-dev-abc123-dev',
+        ])
+        ->and($manifest['checkouts'])->toHaveKey('operator')
+        ->and($manifest['created_at'])->toBeString();
+});
+
+it('overlays app-dev and app-prod onto the canonical dev and prod roles', function (): void {
+    $captured = [];
+
+    devTopologyCommandWith(function (E2ETopologyKind $kind, array $roles) use (&$captured): array {
+        $captured = $roles;
+
+        return fakePreparedTopology();
+    });
+
+    $this->artisan('e2e:dev-topology', [
+        '--provider' => 'incus',
+        '--kind' => 'operator_gateway_app-dev_app-prod',
+    ])->assertSuccessful();
+
+    expect($captured)->toBe(['operator', 'gateway', 'dev', 'prod']);
+});
+
+it('renders ssh and performance handles for app roles in json output', function (): void {
+    devTopologyCommandWith(fn (E2ETopologyKind $kind, array $roles): array => fakePreparedTopology());
+
+    $exitCode = Artisan::call('e2e:dev-topology', [
+        '--provider' => 'incus',
+        '--kind' => 'operator_gateway_app-dev',
+        '--json' => true,
+    ]);
+
+    expect($exitCode)->toBe(0);
+
+    $output = trim(Artisan::output());
+    $payload = json_decode($output, true, flags: JSON_THROW_ON_ERROR);
+    $devTopology = $payload['success']['dev_topology'];
+
+    expect($devTopology['release_command'])->toBe('composer e2e:dev-topology:release -- dev-abc123')
+        ->and($devTopology['handles'])->toBeArray();
+
+    $byRole = collect($devTopology['handles'])->keyBy('role');
+
+    expect($byRole['operator']['ssh_example'])->toContain('incus exec orbit-e2e-dev-abc123-operator')
+        ->and($byRole['operator']['ssh_example'])->toContain('orbit node:list --json')
+        // app-dev is a FrankenPHP workload: surface its WireGuard endpoint and a
+        // curl response-time example for manual performance measurement.
+        ->and($byRole['dev']['endpoint'])->toContain('10.6.0.4')
+        ->and($byRole['dev']['curl_example'])->toContain('time_total')
+        ->and($byRole['dev']['curl_example'])->toContain('app:list');
+});
+
+it('renders ssh and performance handles in human output', function (): void {
+    devTopologyCommandWith(fn (E2ETopologyKind $kind, array $roles): array => fakePreparedTopology());
+
+    $exitCode = Artisan::call('e2e:dev-topology', [
+        '--provider' => 'incus',
+        '--kind' => 'operator_gateway_app-dev',
+    ]);
+
+    expect($exitCode)->toBe(0);
+
+    $output = Artisan::output();
+
+    expect($output)->toContain('[operator] orbit-e2e-dev-abc123-operator')
+        ->and($output)->toContain('[dev] orbit-e2e-dev-abc123-dev')
+        ->and($output)->toContain('Gateway API: http://10.6.0.2')
+        ->and($output)->toContain('Release: composer e2e:dev-topology:release -- dev-abc123');
 });

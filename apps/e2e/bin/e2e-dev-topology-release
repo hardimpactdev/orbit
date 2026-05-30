@@ -2,10 +2,24 @@
 
 declare(strict_types=1);
 
-use App\E2E\Commands\E2EDevTopologyReleaseCommand;
+use Illuminate\Foundation\Application;
+use Symfony\Component\Console\Input\ArgvInput;
+
+define('LARAVEL_START', microtime(true));
 
 require __DIR__.'/../vendor/autoload.php';
 
-$repoRoot = dirname(__DIR__, 2);
+/** @var Application $app */
+$app = require_once __DIR__.'/../bootstrap/app.php';
 
-exit((new E2EDevTopologyReleaseCommand($repoRoot))->run($argv));
+// Forward the launcher arguments to the real artisan command so it can resolve
+// E2EConfig, the manifest store, and the Incus host reaper.
+$arguments = array_slice($argv, 1);
+
+$status = $app->handleCommand(new ArgvInput([
+    'artisan',
+    'e2e:dev-topology:release',
+    ...$arguments,
+]));
+
+exit($status);
