@@ -13,6 +13,7 @@ it('reports missing unattended-upgrades posture on an Incus app node from the ga
 
     try {
         nodeUpdatesDoctorPrepareGatewayRecord($topology);
+        e2eRestartGatewayApi($topology, 'node-updates-doctor-missing');
 
         $topology->ssh(
             'dev',
@@ -48,6 +49,7 @@ it('reports reboot-required update posture without attempting an automatic reboo
     try {
         nodeUpdatesDoctorPrepareGatewayRecord($topology);
         nodeUpdatesDoctorRestoreExpectedAptConfig($topology);
+        e2eRestartGatewayApi($topology, 'node-updates-doctor-reboot');
 
         $topology->ssh(
             'dev',
