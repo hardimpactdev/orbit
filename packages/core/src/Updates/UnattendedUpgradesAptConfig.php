@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace App\Services\Updates;
+namespace Orbit\Core\Updates;
 
 final class UnattendedUpgradesAptConfig
 {

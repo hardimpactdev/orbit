@@ -6,7 +6,7 @@ namespace App\Services\Security;
 
 use App\Contracts\RemoteShell;
 use App\Models\Node;
-use App\Services\Updates\UnattendedUpgradesAptConfig;
+use Orbit\Core\Updates\UnattendedUpgradesAptConfig;
 
 final class UnattendedUpgradesInstaller implements SecurityInstaller
 {

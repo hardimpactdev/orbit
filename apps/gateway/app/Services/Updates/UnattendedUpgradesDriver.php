@@ -8,6 +8,7 @@ use App\Contracts\RemoteShell;
 use App\Enums\DriftKind;
 use App\Services\Security\UnattendedUpgradesInstaller;
 use JsonException;
+use Orbit\Core\Updates\UnattendedUpgradesAptConfig;
 use Throwable;
 
 final readonly class UnattendedUpgradesDriver implements UpdateDriver

@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "b23fc1bcd1096240a83317cff9d18a40",
+    "content-hash": "2313573060f8faef4f50e8cfc9847e50",
     "packages": [
         {
             "name": "brick/math",
@@ -1053,6 +1053,69 @@
                 }
             ],
             "time": "2026-05-23T22:00:21+00:00"
+        },
+        {
+            "name": "hardimpactdev/orbit-core",
+            "version": "dev-main",
+            "dist": {
+                "type": "path",
+                "url": "../../packages/core",
+                "reference": "5d3ae1282954a8021542bc02b5bc5a3a80daf130"
+            },
+            "require": {
+                "illuminate/support": "^12.0 || ^13.0",
+                "php": "^8.5"
+            },
+            "require-dev": {
+                "laravel/pint": "^1.29",
+                "pestphp/pest": "^4.6",
+                "phpstan/phpstan": "^2.1",
+                "rector/rector": "^2.3"
+            },
+            "type": "library",
+            "extra": {
+                "laravel": {
+                    "providers": [
+                        "Orbit\\Core\\OrbitCoreServiceProvider"
+                    ]
+                }
+            },
+            "autoload": {
+                "psr-4": {
+                    "Orbit\\Core\\": "src/"
+                }
+            },
+            "autoload-dev": {
+                "psr-4": {
+                    "Orbit\\Core\\Tests\\": "tests/"
+                }
+            },
+            "scripts": {
+                "analyse": [
+                    "vendor/bin/phpstan analyse --memory-limit=512M"
+                ],
+                "format": [
+                    "vendor/bin/pint"
+                ],
+                "rector": [
+                    "vendor/bin/rector process"
+                ],
+                "test": [
+                    "vendor/bin/pest --compact"
+                ]
+            },
+            "license": [
+                "MIT"
+            ],
+            "description": "Shared Orbit core contracts and helpers.",
+            "keywords": [
+                "laravel",
+                "orbit"
+            ],
+            "transport-options": {
+                "symlink": true,
+                "relative": true
+            }
         },
         {
             "name": "laravel/framework",
@@ -9398,7 +9461,9 @@
     ],
     "aliases": [],
     "minimum-stability": "stable",
-    "stability-flags": {},
+    "stability-flags": {
+        "hardimpactdev/orbit-core": 20
+    },
     "prefer-stable": true,
     "prefer-lowest": false,
     "platform": {

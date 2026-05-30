@@ -9,8 +9,18 @@
     ],
     "license": "MIT",
     "type": "project",
+    "repositories": [
+        {
+            "type": "path",
+            "url": "../../packages/core",
+            "options": {
+                "symlink": true
+            }
+        }
+    ],
     "require": {
         "php": "^8.5",
+        "hardimpactdev/orbit-core": "dev-main",
         "laravel/framework": "^13.8",
         "laravel/tinker": "^3.0"
     },

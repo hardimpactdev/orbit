@@ -3,7 +3,7 @@
 declare(strict_types=1);
 
 use App\Services\Security\UnattendedUpgradesInstaller;
-use App\Services\Updates\UnattendedUpgradesAptConfig;
+use Orbit\Core\Updates\UnattendedUpgradesAptConfig;
 
 it('renders the shared unattended-upgrades apt configuration', function (): void {
     $config = new UnattendedUpgradesAptConfig;

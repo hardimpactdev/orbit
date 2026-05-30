@@ -820,6 +820,52 @@ PHP;
             'cd '.escapeshellarg('/home/'.$this->host->config->operatorUser.'/orbit').' && php apps/gateway/artisan tinker --execute='.escapeshellarg($php),
             timeoutSeconds: 60,
         );
+
+        $this->writeOperatorCliConfig($operator, $key);
+    }
+
+    private function writeOperatorCliConfig(IncusInstance $operator, SshKeyPair $key): void
+    {
+        $operatorUser = $this->host->config->operatorUser;
+        $configDir = '/home/'.$operatorUser.'/.config/orbit';
+        $configPath = $configDir.'/config.json';
+        $jsonBody = $this->cliJsonConfigBody('https://'.self::GatewayWireGuardIp);
+
+        $command = implode(' && ', [
+            sprintf('mkdir -p %s', escapeshellarg($configDir)),
+            sprintf('chmod 0700 %s', escapeshellarg($configDir)),
+            sprintf('printf %%s %s > %s', escapeshellarg($jsonBody), escapeshellarg($configPath)),
+            sprintf('chmod 0600 %s', escapeshellarg($configPath)),
+        ]);
+
+        E2ECommand::ssh(
+            $operator,
+            $operatorUser,
+            $key,
+            $command,
+            timeoutSeconds: 60,
+        );
+    }
+
+    private function cliJsonConfigBody(string $gatewayUrl): string
+    {
+        return json_encode([
+            'schema_version' => 1,
+            'active_gateway' => 'default',
+            'gateways' => [
+                'default' => [
+                    'url' => $gatewayUrl,
+                    'wireguard_ip' => self::GatewayWireGuardIp,
+                    'ca_pem_path' => null,
+                    'ca_sha256' => null,
+                    'ca_fingerprint' => null,
+                    'timeout' => 30,
+                    'self_mode' => 'wireguard_https',
+                ],
+            ],
+            'defaults' => ['node' => null, 'profile' => null],
+            'meta' => ['imported_from' => 'incus-e2e-topology', 'imported_at' => date(DATE_ATOM)],
+        ], JSON_THROW_ON_ERROR | JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
     }
 
     private function runAppNodeNew(

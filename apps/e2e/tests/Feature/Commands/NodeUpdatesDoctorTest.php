@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 use App\E2E\Support\E2ETopologyHarness;
 use App\E2E\Support\E2ETopologyKind;
-use App\Services\Updates\UnattendedUpgradesAptConfig;
 use Illuminate\Contracts\Process\ProcessResult;
+use Orbit\Core\Updates\UnattendedUpgradesAptConfig;
 
 it('reports missing unattended-upgrades posture on an Incus app node from the gateway', function (): void {
     $topology = e2eTopology(E2ETopologyKind::OperatorGatewayAppdev)
