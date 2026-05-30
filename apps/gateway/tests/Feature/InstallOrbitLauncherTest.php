@@ -6,11 +6,11 @@ use Illuminate\Support\Facades\File;
 use Symfony\Component\Process\Process;
 
 describe('install-orbit always-cli launcher contract', function (): void {
-    it('keeps the installed host command pointed at the checkout launcher wrapper', function (): void {
+    it('keeps the installed host command pointed at the downloaded Orbit CLI binary', function (): void {
         $installer = File::get(repo_path('bin/install-orbit'));
 
         expect($installer)
-            ->toContain('ln -sf "$TARGET_DIR/bin/orbit" "$LINK_PATH"')
+            ->toContain('ln -sf "$TARGET_DIR/bin/orbit-binary" "$LINK_PATH"')
             ->not->toContain('ln -sf "$TARGET_DIR/apps/cli/orbit" "$LINK_PATH"')
             ->not->toContain('ln -sf "$TARGET_DIR/artisan" "$LINK_PATH"');
     });

@@ -102,12 +102,12 @@ describe('install-orbit Docker-first runtime contract', function (): void {
             ->toContain('write_env_var "ORBIT_FORWARD_INSTALL_IMAGE_ARCHIVES" "1"');
     });
 
-    it('runs gateway and CLI composer install plus key generation inside orbit-runtime, not on the host or repo root', function (): void {
+    it('runs gateway composer install plus key generation inside orbit-runtime without a CLI source step', function (): void {
         expect($this->installer)
             ->toContain('docker_cli run --rm')
             ->toContain('orbit-runtime:current')
             ->toContain('--workdir /opt/orbit/apps/gateway')
-            ->toContain('--workdir /opt/orbit/apps/cli')
+            ->not->toContain('--workdir /opt/orbit/apps/cli')
             ->toContain('composer install --no-dev --no-interaction --prefer-dist --optimize-autoloader')
             ->toContain('php artisan key:generate --force --no-interaction')
             ->not->toContain('php /opt/orbit/artisan')
@@ -143,7 +143,8 @@ describe('install-orbit Docker-first runtime contract', function (): void {
             ->toContain('ensure_operation_token_secret')
             ->toContain('ORBIT_OPERATION_TOKEN_SECRET')
             ->toContain('ORBIT_EXECUTOR_SECRET')
-            ->toContain('base64_encode(random_bytes(32))');
+            ->toContain('generate_operation_token_secret')
+            ->toContain('openssl rand -base64 32');
     });
 
     it('persists a supplied node identity for the CLI local executor when provisioning a known node', function (): void {
@@ -384,10 +385,11 @@ BASH);
             ->and($migrationStep)->toBeLessThan($startRuntimeStep);
     });
 
-    it('preserves the host launcher symlink convention from the host launcher install contract', function (): void {
+    it('links the downloaded Orbit CLI binary as the host orbit command', function (): void {
         expect($this->installer)
-            ->toContain('ln -sf "$TARGET_DIR/bin/orbit" "$LINK_PATH"')
-            ->not->toContain('ln -sf "$TARGET_DIR/artisan" "$LINK_PATH"');
+            ->toContain('ln -sf "$TARGET_DIR/bin/orbit-binary" "$LINK_PATH"')
+            ->not->toContain('ln -sf "$TARGET_DIR/artisan" "$LINK_PATH"')
+            ->not->toContain('ln -sf "$TARGET_DIR/apps/cli/orbit" "$LINK_PATH"');
     });
 
     it('fails early if Docker is not reachable so the runtime path cannot silently fall back to host PHP', function (): void {
