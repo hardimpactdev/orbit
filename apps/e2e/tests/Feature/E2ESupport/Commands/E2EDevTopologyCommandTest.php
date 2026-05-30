@@ -242,11 +242,15 @@ it('renders ssh and performance handles for app roles in json output', function 
 
     expect($byRole['operator']['ssh_example'])->toContain('incus exec orbit-e2e-dev-abc123-operator')
         ->and($byRole['operator']['ssh_example'])->toContain('orbit node:list --json')
-        // app-dev is a FrankenPHP workload: surface its WireGuard endpoint and a
-        // curl response-time example for manual performance measurement.
+        // The gateway carries an immediate control-plane latency probe (CA
+        // bootstrap over http, no auth) for "how fast is the setup responding".
+        ->and($byRole['gateway']['perf_example'])->toContain('time_total')
+        ->and($byRole['gateway']['perf_example'])->toContain('/api/ca/root')
+        // app-dev is a FrankenPHP workload: surface its WireGuard endpoint and
+        // honest guidance that an app must be deployed before it serves traffic.
         ->and($byRole['dev']['endpoint'])->toContain('10.6.0.4')
-        ->and($byRole['dev']['curl_example'])->toContain('time_total')
-        ->and($byRole['dev']['curl_example'])->toContain('app:list');
+        ->and($byRole['dev']['note'])->toContain('orbit app:new')
+        ->and($byRole['dev']['note'])->toContain('time_total');
 });
 
 it('renders ssh and performance handles in human output', function (): void {

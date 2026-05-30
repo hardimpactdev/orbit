@@ -303,8 +303,12 @@ class E2EDevTopologyCommand extends Command
                 $this->line("  endpoint: {$handle['endpoint']}");
             }
 
-            if (isset($handle['curl_example'])) {
-                $this->line("  curl: {$handle['curl_example']}");
+            if (isset($handle['perf_example'])) {
+                $this->line("  perf: {$handle['perf_example']}");
+            }
+
+            if (isset($handle['note'])) {
+                $this->line("  note: {$handle['note']}");
             }
         }
 
@@ -345,20 +349,27 @@ class E2EDevTopologyCommand extends Command
                 ),
             ];
 
+            if ($role === 'gateway') {
+                // Immediate control-plane latency probe: the gateway serves the CA
+                // bootstrap over plain http with no auth, so it is a clean
+                // round-trip signal for how fast the gateway responds. Works with
+                // no app deployed.
+                $handle['perf_example'] = sprintf(
+                    'ssh %s incus exec %s -- bash -lc %s',
+                    $host,
+                    $instance,
+                    escapeshellarg("curl -sS -o /dev/null -w 'gateway /api/ca/root: %{time_total}s\\n' http://{$manifest['gateway_ip']}/api/ca/root"),
+                );
+            }
+
             if (isset(self::AppRoleLabels[$role])) {
                 $wireGuardIp = self::RoleWireGuardIps[$role];
-                // The FrankenPHP app node is reachable over the topology WireGuard
-                // mesh from any node that has the gateway settings (the gateway or
-                // operator node). List its apps with `orbit app:list`, then curl the
-                // node's WireGuard IP to measure response times.
-                $handle['endpoint'] = "http://{$wireGuardIp} ({$wireGuardIp} is the {$role} node's WireGuard address)";
-                $handle['curl_example'] = sprintf(
-                    'ssh %s incus exec %s -- sudo -u %s bash -lc %s',
-                    $host,
-                    $manifest['instances']['gateway'] ?? $instance,
-                    'orbit',
-                    escapeshellarg("orbit app:list --json && curl -sS -o /dev/null -w '%{time_total}s\\n' http://{$wireGuardIp}"),
-                );
+                // The FrankenPHP app runtime is installed on this node, but a fresh
+                // topology serves no apps yet — nothing answers on the node until
+                // one is deployed, and app traffic is served by the gateway router
+                // (Caddy) at the app domain, not the node port directly.
+                $handle['endpoint'] = "{$wireGuardIp} ({$role} node WireGuard address; FrankenPHP app runtime — no app served until you deploy one)";
+                $handle['note'] = 'Deploy an app from the operator (orbit app:new <name>), then `orbit app:show <name> --json` shows its domain; curl that domain through the gateway router with -w "%{time_total}s" to measure response time.';
             }
 
             $handles[] = $handle;
