@@ -386,6 +386,7 @@ class E2EPrepareDockerHostsCommand extends Command
 
         $result = Process::timeout(3600)
             ->env($this->environmentFor($buildHost))
+            ->path(repo_path())
             ->run($step['command']);
 
         $entry = [

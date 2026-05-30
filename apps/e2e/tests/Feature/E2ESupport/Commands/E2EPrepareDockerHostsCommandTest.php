@@ -205,6 +205,7 @@ it('builds docker images once on the build host and distributes them to runner h
         $runs[] = [
             'command' => $process->command,
             'environment' => $process->environment,
+            'path' => $process->path ?? null,
         ];
 
         if (str_starts_with($process->command, 'docker image inspect ')) {
@@ -249,12 +250,14 @@ it('builds docker images once on the build host and distributes them to runner h
             'ORBIT_E2E_DOCKER_COMPOSER_CACHE_READ_ONLY' => '1',
         ])
         ->and($buildRuns[0]['command'])->toContain('composer e2e:prepare-docker-runtime -- --force')
+        ->and($buildRuns[0]['path'])->toBe(repo_path())
         ->and($buildRuns[1]['environment'])->toMatchArray([
             'DOCKER_HOST' => 'ssh://beast',
             'ORBIT_E2E_DOCKER_COMPOSER_CACHE' => '/home/build/.cache/composer',
             'ORBIT_E2E_DOCKER_COMPOSER_CACHE_READ_ONLY' => '1',
         ])
         ->and($buildRuns[1]['command'])->toContain('composer e2e:prepare-docker-topology -- --force')
+        ->and($buildRuns[1]['path'])->toBe(repo_path())
         ->and($distributions)->toHaveCount(1)
         ->and($distributions[0]['hosts'])->toBe(['sidecar1', 'sidecar2'])
         ->and($distributions[0]['images'])->toHaveCount(10)
