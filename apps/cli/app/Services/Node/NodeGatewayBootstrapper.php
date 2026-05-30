@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\Node;
 
-use Symfony\Component\Process\Process;
+use Illuminate\Support\Facades\Process;
 
 class NodeGatewayBootstrapper
 {
@@ -14,44 +14,39 @@ class NodeGatewayBootstrapper
      */
     public function run(array $arguments): array
     {
-        $artisan = $this->gatewayArtisanPath();
-
-        if (! is_file($artisan)) {
+        if (! $this->gatewayRuntimeAvailable()) {
             return [
                 'exit_code' => 1,
                 'output' => json_encode([
                     'error' => [
                         'code' => 'gateway_bootstrap_unavailable',
                         'message' => 'Gateway artisan entry point is not available.',
-                        'meta' => ['path' => $artisan],
+                        'meta' => ['container' => 'orbit-runtime'],
                     ],
                 ], JSON_THROW_ON_ERROR),
             ];
         }
 
-        $process = new Process([PHP_BINARY, $artisan, ...$arguments], $this->repositoryRoot());
-        $process->setTimeout(null);
-        $process->run();
+        $result = Process::forever()->run(
+            ['docker', 'exec', 'orbit-runtime', 'php', 'apps/gateway/artisan', ...$arguments],
+        );
 
-        $output = trim($process->getOutput());
+        $output = trim($result->output());
 
         if ($output === '') {
-            $output = trim($process->getErrorOutput());
+            $output = trim($result->errorOutput());
         }
 
         return [
-            'exit_code' => $process->getExitCode() ?? 1,
+            'exit_code' => $result->exitCode() ?? 1,
             'output' => $output,
         ];
     }
 
-    private function gatewayArtisanPath(): string
+    private function gatewayRuntimeAvailable(): bool
     {
-        return $this->repositoryRoot().'/apps/gateway/artisan';
-    }
-
-    private function repositoryRoot(): string
-    {
-        return dirname(base_path(), 2);
+        return Process::run(
+            ['docker', 'exec', 'orbit-runtime', 'test', '-f', 'apps/gateway/artisan'],
+        )->successful();
     }
 }
