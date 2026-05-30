@@ -10,6 +10,7 @@ it('reconfigures a managed tool on a node', function (): void {
         ->withCurrentCheckout(roles: ['gateway']);
 
     try {
+        e2eRestartGatewayApi($topology, 'tool-reconfigure');
         toolReconfigureSeedGatewayIntent($topology);
 
         $result = $topology->ssh(
@@ -21,9 +22,10 @@ it('reconfigures a managed tool on a node', function (): void {
             timeoutSeconds: 180,
         );
         $payload = json_decode(trim($result->output()), associative: true, flags: JSON_THROW_ON_ERROR);
+        $data = e2eJsonCommandData($payload);
 
         expect($result->successful())->toBeTrue()
-            ->and($payload['success']['data']['tool'])->toMatchArray([
+            ->and($data['tool'])->toMatchArray([
                 'name' => 'polyscope-server',
                 'node' => 'app-dev-1',
                 'action' => 'reconfigured',

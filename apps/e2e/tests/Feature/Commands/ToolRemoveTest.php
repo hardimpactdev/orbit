@@ -10,6 +10,7 @@ it('removes a docker-managed tool from an app node through the gateway', functio
         ->withCurrentCheckout(roles: ['gateway']);
 
     try {
+        e2eRestartGatewayApi($topology, 'tool-remove');
         toolRemovePrepareComposeFile($topology);
         toolRemoveSeedGatewayIntent($topology);
 

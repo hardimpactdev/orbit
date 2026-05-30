@@ -14,6 +14,7 @@ it('reports workspace source drift from gateway intent', function (): void {
     $workspacePath = "/home/orbit/apps/docs/.worktrees/{$workspaceName}";
 
     try {
+        e2eRestartGatewayApi($topology, 'workspaces-doctor');
         workspacesDoctorSeedGatewayIntent($topology, $workspaceName, $workspacePath);
         $topology->ssh('dev', 'sudo rm -rf '.escapeshellarg($workspacePath), timeoutSeconds: 60);
 
@@ -27,10 +28,11 @@ it('reports workspace source drift from gateway intent', function (): void {
             180,
         );
         $payload = json_decode(trim($result->output()), associative: true, flags: JSON_THROW_ON_ERROR);
+        $error = e2eJsonCommandError($payload);
 
         expect($result->successful())->toBeFalse()
-            ->and($payload['error']['code'])->toBe('drift_detected')
-            ->and($payload['error']['data']['doctor']['issues'][0])->toMatchArray([
+            ->and($error['code'])->toBe('drift_detected')
+            ->and($error['data']['doctor']['issues'][0])->toMatchArray([
                 'family' => 'workspace',
                 'node' => 'app-dev-1',
                 'key' => 'workspace.path_missing',

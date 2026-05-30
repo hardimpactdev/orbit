@@ -144,6 +144,33 @@ function e2eJsonCommandData(array $payload): array
  * @param  array<string, mixed>  $payload
  * @return array<string, mixed>
  */
+function e2eJsonCommandError(array $payload): array
+{
+    $error = $payload['error'] ?? null;
+
+    if (is_array($error)) {
+        return $error;
+    }
+
+    if (($payload['event'] ?? null) !== 'error') {
+        return [];
+    }
+
+    $frame = $payload['data'] ?? null;
+
+    if (! is_array($frame)) {
+        return [];
+    }
+
+    $data = $frame['data'] ?? null;
+
+    return is_array($data) ? $data : [];
+}
+
+/**
+ * @param  array<string, mixed>  $payload
+ * @return array<string, mixed>
+ */
 function e2eJsonCommandResultData(array $payload): array
 {
     $data = e2eJsonCommandData($payload);

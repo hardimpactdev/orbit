@@ -10,6 +10,7 @@ it('lists registered tools from gateway intent as JSON', function (): void {
         ->withCurrentCheckout(roles: ['gateway']);
 
     try {
+        e2eRestartGatewayApi($topology, 'tool-list-json');
         toolListSeedGatewayIntent($topology);
 
         $result = $topology->ssh(
@@ -36,6 +37,7 @@ it('lists registered tools from gateway intent as human output', function (): vo
         ->withCurrentCheckout(roles: ['gateway']);
 
     try {
+        e2eRestartGatewayApi($topology, 'tool-list-human');
         toolListSeedGatewayIntent($topology);
 
         $result = $topology->ssh(
@@ -60,6 +62,7 @@ it('filters tool list by node', function (): void {
         ->withCurrentCheckout(roles: ['gateway']);
 
     try {
+        e2eRestartGatewayApi($topology, 'tool-list-node');
         toolListSeedGatewayIntent($topology);
 
         $result = $topology->ssh(
@@ -86,6 +89,7 @@ it('filters tool list by app', function (): void {
         ->withCurrentCheckout(roles: ['gateway']);
 
     try {
+        e2eRestartGatewayApi($topology, 'tool-list-app');
         toolListSeedGatewayIntentWithApp($topology);
 
         $result = $topology->ssh(

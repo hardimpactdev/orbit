@@ -42,6 +42,7 @@ it('manages and runs a production app deployment pipeline', function (): void {
     $path = '/tmp/orbit-deploy-e2e-'.strtolower(bin2hex(random_bytes(3)));
 
     try {
+        e2eRestartGatewayApi($topology, 'deploy-command');
         $topology->ssh('dev', 'mkdir -p '.escapeshellarg($path), timeoutSeconds: 60);
         deployCommandSeedProductionApp($topology, $path);
 

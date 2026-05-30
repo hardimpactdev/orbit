@@ -110,6 +110,7 @@ it('reads and changes PHP runtime intent without installing runtimes', function 
 
     try {
         $topology->withCurrentCheckout(roles: ['gateway']);
+        e2eRestartGatewayApi($topology, 'php-runtime-commands');
         phpRuntimeCommandsSeed($topology);
 
         $list = $topology->ssh(
