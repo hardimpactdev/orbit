@@ -11,6 +11,7 @@ CADDY_IMAGE_ARCHIVE=""
 DNSMASQ_IMAGE_ARCHIVE=""
 FRANKENPHP_IMAGE_ARCHIVE=""
 WG_EASY_IMAGE_ARCHIVE=""
+BINARY=""
 OPERATOR_USER="${ORBIT_E2E_OPERATOR_USER:-${ORBIT_E2E_CONTROL_USER:-orbit}}"
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" >/dev/null && pwd)"
 CURRENT_STEP=""
@@ -54,6 +55,11 @@ Optional:
                                ghcr.io/wg-easy/wg-easy:15. If given,
                                forwarded to install-orbit for gateway VPN
                                bootstrap.
+  --binary=PATH                Prebuilt orbit binary for the VM architecture
+                               (linux x64). If given, staged into the guest
+                               and forwarded to install-orbit via
+                               ORBIT_BINARY_URL=file://<staged-path> so no
+                               gh/token is required on the VM.
   --operator-user=NAME         Operator steady-state user. Defaults to
                                $ORBIT_E2E_OPERATOR_USER, then
                                $ORBIT_E2E_CONTROL_USER, then "orbit".
@@ -165,6 +171,9 @@ parse_args() {
             --wg-easy-image-archive=*)
                 WG_EASY_IMAGE_ARCHIVE="${1#*=}"
                 ;;
+            --binary=*)
+                BINARY="${1#*=}"
+                ;;
             --operator-user=*)
                 OPERATOR_USER="${1#*=}"
                 ;;
@@ -223,6 +232,10 @@ validate_args() {
 
     if [ -n "$WG_EASY_IMAGE_ARCHIVE" ] && [ ! -f "$WG_EASY_IMAGE_ARCHIVE" ]; then
         fail validation_failed "wg-easy image archive not found: $WG_EASY_IMAGE_ARCHIVE"
+    fi
+
+    if [ -n "$BINARY" ] && [ ! -f "$BINARY" ]; then
+        fail validation_failed "binary not found: $BINARY"
     fi
 
     [ -n "$OPERATOR_USER" ] || fail validation_failed "--operator-user must not be empty"
@@ -304,11 +317,13 @@ install_orbit_for_node_kind() {
     local staged_dnsmasq_image_archive=""
     local staged_frankenphp_image_archive=""
     local staged_wg_easy_image_archive=""
+    local staged_binary=""
     local runtime_image_args=()
     local caddy_image_args=()
     local dnsmasq_image_args=()
     local frankenphp_image_args=()
     local wg_easy_image_args=()
+    local binary_env=()
 
     user="$(target_user_for_node_kind)"
     home_dir="/home/${user}"
@@ -352,10 +367,17 @@ install_orbit_for_node_kind() {
         wg_easy_image_args=(--wg-easy-image-archive="$staged_wg_easy_image_archive")
     fi
 
+    if [ -n "$BINARY" ]; then
+        staged_binary="${guest_stage_dir}/orbit-binary"
+        sudo_run install -m 0755 -o "$user" -g "$user" "$BINARY" "$staged_binary"
+        binary_env=("ORBIT_BINARY_URL=file://${staged_binary}")
+    fi
+
     sudo_run runuser -u "$user" -- env \
         "HOME=${home_dir}" \
         "COMPOSER_HOME=${home_dir}/.composer" \
         PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
+        "${binary_env[@]}" \
         "$staged_installer" \
         "--path=${target_dir}" \
         "--source-archive=${staged_source_archive}" \
