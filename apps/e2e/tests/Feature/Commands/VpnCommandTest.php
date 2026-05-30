@@ -246,7 +246,7 @@ it('administers VPN clients through gateway execution and operator SSH forwardin
                 'sessions_invalidated' => true,
             ])
             ->and($state['activity'])->toContain([
-                'event' => 'vpn-client:list',
+                'event' => 'api:GET /api/vpn/clients',
                 'effect' => 'read',
                 'total' => 1,
             ])
