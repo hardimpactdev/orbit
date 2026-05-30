@@ -49,7 +49,12 @@ final class E2ECurrentCheckout
                     self::refreshGatewayHostKeys($instance, $user, $topology->sshKeyPair(), $remotePath, $timer, $hostLauncher);
                 }
             : null;
-            $refreshLocalGatewaySettings = $role !== 'gateway' && $topology->gateway() !== null && ! self::usesDockerRuntime($instance)
+            // Configure the orbit CLI gateway endpoint on every node that has a
+            // gateway, INCLUDING the gateway node itself: gateway-role feature
+            // tests run `orbit` against the gateway API as a self-call to the
+            // gateway's own WireGuard IP (routed locally), so the gateway's CLI
+            // needs the same ~/.config/orbit gateway entry + CA trust as clients.
+            $refreshLocalGatewaySettings = $topology->gateway() !== null && ! self::usesDockerRuntime($instance)
                 ? function (string $remotePath) use ($instance, $user, $topology, $timer): void {
                     self::refreshLocalGatewaySettings($instance, $user, $topology->sshKeyPair(), $remotePath, $topology->gatewayApiIp(), $timer);
                 }
