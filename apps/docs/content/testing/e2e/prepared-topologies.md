@@ -66,27 +66,28 @@ that runs on those nodes.
 
 ## Retained dev topologies
 
-`composer e2e:dev-topology` acquires a prepared topology, overlays the current
-checkout, and retains it (it is not reaped) so a human can do manual diagnosis
-and performance testing against an isolated Incus topology — never against a live
-production topology. It reuses the same prepared-topology substrate, run id, and
-checkout overlay as the source-checkout E2E lane; it only differs in that the
-clone is kept until you release it.
+`composer e2e:incus -- --start` acquires a prepared topology, overlays the
+current checkout, and retains it (it is not reaped) so a human can do manual
+diagnosis and performance testing against an isolated Incus topology — never
+against a live production topology. It reuses the same prepared-topology
+substrate, run id, and checkout overlay as the source-checkout E2E lane; it only
+differs in that the clone is kept until you release it.
 
 ```bash
 # Acquire a retained Incus topology with the current checkout overlaid.
-composer e2e:dev-topology -- --provider=incus --kind=operator_gateway_app-dev_app-prod
+composer e2e:incus -- --start --topology=operator_gateway_app-dev_app-prod
 
 # Acquire only the operator + gateway checkout overlay.
-composer e2e:dev-topology -- --provider=incus --kind=operator_gateway_app-dev \
+composer e2e:incus -- --start --topology=operator_gateway_app-dev \
   --checkout-roles=operator,gateway
 
 # Preview the acquisition plan without provisioning anything.
-composer e2e:dev-topology -- --dry-run --provider=incus \
-  --kind=operator_gateway_app-dev_app-prod_agent
+composer e2e:incus -- --start --dry-run \
+  --topology=operator_gateway_app-dev_app-prod_agent
 ```
 
-Acquisition requires `--provider=incus` and a configured Incus host
+Composer requires the separator before command options; keep the `--` between
+`e2e:incus` and `--start`/`--stop`. Acquisition requires a configured Incus host
 (`ORBIT_E2E_HOST` or `ORBIT_E2E_INCUS_HOSTS`). Retained Docker topologies are not
 supported. The cloned instances use a distinct, identifiable dev run id
 (`orbit-e2e-dev-<hex>-<role>`) so they never collide with ephemeral test clones
@@ -100,14 +101,15 @@ per-role handle: the instance name plus a ready-to-run SSH example, e.g.
   ssh: ssh beast incus exec orbit-e2e-dev-1a2b3c-operator -- sudo -u orbit bash -lc 'cd /home/orbit/orbit-current && orbit node:list --json'
 [dev] orbit-e2e-dev-1a2b3c-dev
   ssh: ssh beast incus exec orbit-e2e-dev-1a2b3c-dev -- sudo -u orbit bash -lc 'cd /home/orbit/orbit-current && orbit node:list --json'
-  endpoint: http://10.6.0.4 (10.6.0.4 is the dev node's WireGuard address)
-  curl: ssh beast incus exec orbit-e2e-dev-1a2b3c-gateway -- sudo -u orbit bash -lc 'orbit app:list --json && curl -sS -o /dev/null -w "%{time_total}s\n" http://10.6.0.4'
+  endpoint: 10.6.0.4 (dev node WireGuard address; FrankenPHP app runtime — no app served until you deploy one)
+  note: Deploy an app from the operator, then curl the app domain through the gateway router with -w "%{time_total}s".
 ```
 
-For the `app-dev` and `app-prod` roles, the handle also surfaces the FrankenPHP
-app node's WireGuard address (dev `10.6.0.4`, prod `10.6.0.5`) and a `curl`
-example that lists the node's apps and measures response time, so the human can
-measure performance from any node that carries the gateway settings.
+For the gateway role, the handle includes an immediate `/api/ca/root` latency
+probe. For the `app-dev` and `app-prod` roles, the handle surfaces the
+FrankenPHP app node's WireGuard address (dev `10.6.0.4`, prod `10.6.0.5`) and
+reminds the human that a fresh retained topology does not serve app traffic until
+an app is deployed.
 
 Retained state is recorded under `apps/e2e/var/dev-topology/<id>.json` (gitignored)
 with the id, kind, provider, host, run id, ssh key path, gateway IP, per-role
@@ -119,15 +121,19 @@ deletes the state file:
 
 ```bash
 # Release a specific retained topology.
-composer e2e:dev-topology:release -- dev-1a2b3c
+composer e2e:incus -- --stop --id=dev-1a2b3c
 
 # Release every recorded retained topology.
-composer e2e:dev-topology:release -- --all
+composer e2e:incus -- --stop --all
 ```
 
 Retained topologies are manual diagnosis and performance-testing tools only.
 Durable behavior assertions still live in prepared-topology Pest E2E tests, not in
 a kept-alive topology.
+
+Legacy `composer e2e:dev-topology` and `composer e2e:dev-topology:release`
+aliases still exist for compatibility, but new documentation and command output
+use `composer e2e:incus`.
 
 ## Cache behavior
 

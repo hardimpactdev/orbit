@@ -273,7 +273,7 @@ class E2EDevTopologyCommand extends Command
     private function renderAcquired(array $manifest, bool $json): int
     {
         $handles = $this->buildHandles($manifest);
-        $releaseCommand = "composer e2e:dev-topology:release -- {$manifest['id']}";
+        $releaseCommand = "composer e2e:incus -- --stop --id={$manifest['id']}";
 
         if ($json) {
             $this->line(json_encode([
@@ -399,7 +399,7 @@ class E2EDevTopologyCommand extends Command
             'kind' => $kind->value,
             'checkout_roles' => $displayRoles,
             'shell_command' => $shellCommand,
-            'release_command' => 'composer e2e:dev-topology:release -- dry-run',
+            'release_command' => 'composer e2e:incus -- --stop --id=dry-run',
         ];
 
         if ($json) {
@@ -424,7 +424,9 @@ class E2EDevTopologyCommand extends Command
      */
     private function shellCommand(E2ETopologyKind $kind, string $provider, array $displayRoles): string
     {
-        $command = "composer e2e:dev-topology -- --kind={$kind->value} --provider={$provider}";
+        $command = $provider === 'incus'
+            ? "composer e2e:incus -- --start --topology={$kind->value}"
+            : "composer e2e:dev-topology -- --kind={$kind->value} --provider={$provider}";
 
         if ($displayRoles !== $this->displayCheckoutRolesForKind($kind)) {
             $command .= ' --checkout-roles='.implode(',', $displayRoles);

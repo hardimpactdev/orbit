@@ -75,8 +75,10 @@ These rules order the lanes above into a development workflow:
 - Retained prepared topologies are for manual diagnosis, debugging, and
   performance testing only. They use the same prepared-topology substrate, are
   not standing live infrastructure, and must be explicitly released or reaped
-  after use. Acquire one with `composer e2e:dev-topology` (Incus only) and reap
-  it with `composer e2e:dev-topology:release`; see
+  after use. Acquire one with
+  `composer e2e:incus -- --start --topology=<kind>` and reap it with
+  `composer e2e:incus -- --stop --id=<id>` or
+  `composer e2e:incus -- --stop --all`; see
   `docs/testing/e2e/prepared-topologies.md#retained-dev-topologies`.
 - Findings from a retained topology are codified back into ordinary
   prepared-topology Pest E2E tests; the durable assertion lives in Pest, not in a
@@ -88,9 +90,10 @@ These rules order the lanes above into a development workflow:
   inner development loop.
 
 The retained-topology command surface lives in `apps/e2e`
-(`composer e2e:dev-topology` and `composer e2e:dev-topology:release`). It is not
-added as new public gateway Artisan surface; public operator commands remain
-owned by the Orbit CLI binary.
+(`composer e2e:incus`). Legacy `composer e2e:dev-topology` and
+`composer e2e:dev-topology:release` aliases remain available for compatibility.
+It is not added as new public gateway Artisan surface; public operator commands
+remain owned by the Orbit CLI binary.
 
 ## Lane map
 

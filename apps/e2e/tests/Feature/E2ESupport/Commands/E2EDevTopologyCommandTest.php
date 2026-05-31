@@ -85,7 +85,7 @@ it('renders a stable dry-run json contract without acquiring providers', functio
         ->and($payload['success']['dev_topology']['provider'])->toBe('docker')
         ->and($payload['success']['dev_topology']['kind'])->toBe('operator_gateway_app-dev')
         ->and($payload['success']['dev_topology']['checkout_roles'])->toBe(['operator', 'gateway', 'app-dev'])
-        ->and($payload['success']['dev_topology']['release_command'])->toBe('composer e2e:dev-topology:release -- dry-run')
+        ->and($payload['success']['dev_topology']['release_command'])->toBe('composer e2e:incus -- --stop --id=dry-run')
         ->and($payload['success']['dev_topology']['shell_command'])->toContain('composer e2e:dev-topology -- --kind=operator_gateway_app-dev --provider=docker');
 });
 
@@ -101,7 +101,7 @@ it('renders human dry-run output with the release command shape', function (): v
     expect($result['exit_code'])->toBe(0, $result['stderr'])
         ->and($result['stdout'])->toContain('Retained topology dry run')
         ->and($result['stdout'])->toContain('Source-checkout E2E remains the normal feature loop')
-        ->and($result['stdout'])->toContain('composer e2e:dev-topology:release -- dry-run')
+        ->and($result['stdout'])->toContain('composer e2e:incus -- --stop --id=dry-run')
         ->and($result['stdout'])->not->toContain('binary acceptance replaces');
 });
 
@@ -180,7 +180,7 @@ it('persists a retained topology manifest and prints the release command', funct
         '--kind' => 'operator_gateway_app-dev',
     ])
         ->expectsOutputToContain('Retained topology [dev-abc123] acquired.')
-        ->expectsOutputToContain('composer e2e:dev-topology:release -- dev-abc123')
+        ->expectsOutputToContain('composer e2e:incus -- --stop --id=dev-abc123')
         ->assertSuccessful();
 
     $store = new E2EDevTopologyManifestStore($this->manifestDirectory);
@@ -235,7 +235,7 @@ it('renders ssh and performance handles for app roles in json output', function 
     $payload = json_decode($output, true, flags: JSON_THROW_ON_ERROR);
     $devTopology = $payload['success']['dev_topology'];
 
-    expect($devTopology['release_command'])->toBe('composer e2e:dev-topology:release -- dev-abc123')
+    expect($devTopology['release_command'])->toBe('composer e2e:incus -- --stop --id=dev-abc123')
         ->and($devTopology['handles'])->toBeArray();
 
     $byRole = collect($devTopology['handles'])->keyBy('role');
@@ -268,5 +268,5 @@ it('renders ssh and performance handles in human output', function (): void {
     expect($output)->toContain('[operator] orbit-e2e-dev-abc123-operator')
         ->and($output)->toContain('[dev] orbit-e2e-dev-abc123-dev')
         ->and($output)->toContain('Gateway API: http://10.6.0.2')
-        ->and($output)->toContain('Release: composer e2e:dev-topology:release -- dev-abc123');
+        ->and($output)->toContain('Release: composer e2e:incus -- --stop --id=dev-abc123');
 });

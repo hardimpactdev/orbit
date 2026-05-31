@@ -59,6 +59,7 @@
         ],
         "analyse": "vendor/bin/phpstan analyse --memory-limit=512M",
         "e2e:dev-topology": "php bin/e2e-dev-topology @additional_args",
+        "e2e:incus": "php bin/e2e-incus @additional_args",
         "e2e:dev-topology:release": "php bin/e2e-dev-topology-release @additional_args",
         "format": "vendor/bin/pint",
         "rector": "vendor/bin/rector process",
