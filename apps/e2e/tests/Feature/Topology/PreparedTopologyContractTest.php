@@ -80,6 +80,17 @@ it('satisfies the prepared operator-gateway-prod-ingress topology contract', fun
     }
 })->group('e2e-topology-contract-operator_gateway_app-prod_ingress');
 
+it('satisfies the prepared operator-gateway-dev-prod-dedicated-ingress topology contract', function (): void {
+    $config = E2EConfig::fromEnvironment();
+    $topology = requirePreparedTopologyOrSkip(E2ETopologyKind::OperatorGatewayAppdevAppprodIngress);
+
+    try {
+        expectPreparedDedicatedIngressTopology($topology, $config);
+    } finally {
+        $topology->cleanup();
+    }
+})->group('e2e-topology-contract-operator_gateway_app-dev_app-prod_ingress');
+
 it('satisfies the prepared full websocket topology contract', function (): void {
     $config = E2EConfig::fromEnvironment();
     $topology = requirePreparedTopologyOrSkip(E2ETopologyKind::OperatorGatewayAppdevAppprodAgentWebsocket);
@@ -239,6 +250,33 @@ function expectPreparedProdIngressTopology(E2ETopologyLease $topology, E2EConfig
         ->and($state['roles'])->toContain('ingress')
         ->and($state['app_production_ingress_node'])->toBe('app-prod-1')
         ->and($state['node_names'])->toBe(['app-prod-1', 'gateway', 'operator-1']);
+}
+
+function expectPreparedDedicatedIngressTopology(E2ETopologyLease $topology, E2EConfig $config): void
+{
+    expectPreparedProdTopology($topology, $config);
+
+    $prod = $topology->prodApp();
+    $ingress = $topology->ingress();
+    $gateway = $topology->gateway();
+    $key = $topology->sshKeyPair();
+
+    if ($prod === null || $ingress === null || $gateway === null) {
+        throw new RuntimeException('Prepared operator-gateway-dev-prod-ingress topology did not return gateway, prod, and ingress handles.');
+    }
+
+    expect($ingress->name())->not->toBe($prod->name());
+    expectPreparedOrbitCli($ingress, 'orbit', $key);
+
+    $ingressNode = E2EGatewayApi::getNode($gateway, 'edge-1');
+    $state = readPreparedProdIngressState($gateway);
+
+    expect($ingressNode['wireguard_address'])->toBe('10.6.0.7')
+        ->and(array_column($ingressNode['roles'], 'role'))->toContain('ingress')
+        ->and($state['roles'])->toContain('app-prod')
+        ->and($state['roles'])->not->toContain('ingress')
+        ->and($state['app_production_ingress_node'])->toBe('edge-1')
+        ->and($state['node_names'])->toBe(['app-dev-1', 'app-prod-1', 'edge-1', 'gateway', 'operator-1']);
 }
 
 function expectPreparedFullWebSocketTopology(E2ETopologyLease $topology, E2EConfig $config): void

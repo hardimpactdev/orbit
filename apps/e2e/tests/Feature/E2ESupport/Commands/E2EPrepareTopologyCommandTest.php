@@ -173,6 +173,17 @@ it('supports operator_gateway_app-prod_ingress kind', function (): void {
         ->assertSuccessful();
 });
 
+it('supports operator_gateway_app-dev_app-prod_ingress kind with a dedicated ingress template', function (): void {
+    $this->artisan('e2e:prepare-topology', ['kind' => 'operator_gateway_app-dev_app-prod_ingress'])
+        ->expectsOutputToContain('requested roles: operator, gateway, dev, prod, ingress')
+        ->expectsOutputToContain('planned: orbit-template-operator-base (snapshot: clean-operator_gateway_app-dev_app-prod_ingress-base)')
+        ->expectsOutputToContain('planned: orbit-template-gateway-base (snapshot: clean-operator_gateway_app-dev_app-prod_ingress-base)')
+        ->expectsOutputToContain('planned: orbit-template-app-dev-base (snapshot: clean-operator_gateway_app-dev_app-prod_ingress-base)')
+        ->expectsOutputToContain('planned: orbit-template-app-prod-base (snapshot: clean-operator_gateway_app-dev_app-prod_ingress-base)')
+        ->expectsOutputToContain('planned: orbit-template-ingress-base (snapshot: clean-operator_gateway_app-dev_app-prod_ingress-base)')
+        ->assertSuccessful();
+});
+
 it('documents Incus topology templates in a separate namespace', function (): void {
     withE2ETopologyEnvironment([], function (): void {
         $this->artisan('e2e:prepare-topology', ['kind' => 'operator_gateway_app-dev_app-prod_agent'])
@@ -337,17 +348,19 @@ it('outputs json for each supported kind', function (string $kindValue): void {
     ['operator_gateway_agent'],
     ['operator_gateway_app-dev_app-prod_agent'],
     ['operator_gateway_app-prod_ingress'],
+    ['operator_gateway_app-dev_app-prod_ingress'],
     ['operator'],
     ['operator-gateway'],
     ['operator-gateway-dev'],
     ['operator-gateway-dev-prod'],
+    ['operator-gateway-dev-prod-ingress'],
 ]);
 
 it('outputs json error for invalid kind', function (): void {
     $expected = json_encode([
         'error' => [
             'code' => 'validation_failed',
-            'message' => 'Invalid topology kind [invalid]. Supported: operator, operator_gateway, operator_gateway_app-dev, operator_gateway_app-dev_app-prod, operator_gateway_agent, operator_gateway_app-dev_app-prod_agent, operator_gateway_app-prod_ingress, operator_gateway_app-dev_websocket, operator_gateway_app-dev_app-prod_websocket, and operator_gateway_app-dev_app-prod_agent_websocket.',
+            'message' => 'Invalid topology kind [invalid]. Supported: operator, operator_gateway, operator_gateway_app-dev, operator_gateway_app-dev_app-prod, operator_gateway_app-dev_app-prod_ingress, operator_gateway_agent, operator_gateway_app-dev_app-prod_agent, operator_gateway_app-prod_ingress, operator_gateway_app-dev_websocket, operator_gateway_app-dev_app-prod_websocket, and operator_gateway_app-dev_app-prod_agent_websocket.',
         ],
     ], JSON_THROW_ON_ERROR);
 

@@ -495,7 +495,7 @@ it('restores a reusable base stage before continuing a force rebuild', function 
     expect(fn () => $builder->build(E2ETopologyKind::OperatorGateway, replaceExisting: true))
         ->toThrow(RuntimeException::class, 'Could not start orbit-template-operator-base: start failed')
         ->and($deletedSnapshots)->toContain('orbit-template-operator-base:clean-operator_gateway-base')
-        ->and($deletedSnapshots)->toContain('orbit-template-operator-base:clean-operator_gateway_app-dev_app-prod_agent-base');
+        ->and($deletedSnapshots)->not->toContain('orbit-template-operator-base:clean-operator_gateway_app-dev_app-prod_agent-base');
 });
 
 it('records phase timings while building topology templates', function (): void {

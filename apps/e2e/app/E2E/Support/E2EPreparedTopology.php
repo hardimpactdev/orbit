@@ -8,7 +8,7 @@ final readonly class E2EPreparedTopology
 {
     public static function supportedKindsForHelp(): string
     {
-        return 'operator, operator_gateway, operator_gateway_app-dev, operator_gateway_app-dev_app-prod, operator_gateway_agent, operator_gateway_app-dev_app-prod_agent, operator_gateway_app-prod_ingress, operator_gateway_app-dev_websocket, operator_gateway_app-dev_app-prod_websocket, and operator_gateway_app-dev_app-prod_agent_websocket';
+        return 'operator, operator_gateway, operator_gateway_app-dev, operator_gateway_app-dev_app-prod, operator_gateway_app-dev_app-prod_ingress, operator_gateway_agent, operator_gateway_app-dev_app-prod_agent, operator_gateway_app-prod_ingress, operator_gateway_app-dev_websocket, operator_gateway_app-dev_app-prod_websocket, and operator_gateway_app-dev_app-prod_agent_websocket';
     }
 
     /**
@@ -26,6 +26,14 @@ final readonly class E2EPreparedTopology
     {
         if ($kind === E2ETopologyKind::Operator || $kind === E2ETopologyKind::OperatorGateway) {
             return [E2ETopologyKind::OperatorGateway];
+        }
+
+        if ($kind === E2ETopologyKind::OperatorGatewayAppdevAppprodIngress) {
+            return [
+                E2ETopologyKind::OperatorGateway,
+                E2ETopologyKind::OperatorGatewayAppdevAppprodAgent,
+                $kind,
+            ];
         }
 
         if (self::usesOperatorGatewayBase($kind)) {
@@ -47,6 +55,10 @@ final readonly class E2EPreparedTopology
 
     public static function incusSourceKindFor(E2ETopologyKind $kind): E2ETopologyKind
     {
+        if ($kind === E2ETopologyKind::OperatorGatewayAppdevAppprodIngress) {
+            return $kind;
+        }
+
         if ($kind === E2ETopologyKind::Operator || self::usesOperatorGatewayBase($kind)) {
             return self::websocketTopologyKind($kind)
                 ? E2ETopologyKind::OperatorGatewayAppdevAppprodAgentWebsocket
@@ -71,7 +83,7 @@ final readonly class E2EPreparedTopology
      */
     public static function artifactRoles(): array
     {
-        return ['operator', 'gateway', 'app-dev', 'app-prod', 'agent', 'websocket'];
+        return ['operator', 'gateway', 'app-dev', 'app-prod', 'ingress', 'agent', 'websocket'];
     }
 
     /**
@@ -160,6 +172,7 @@ final readonly class E2EPreparedTopology
             'gateway' => 'gateway',
             'app-dev', 'appdev', 'dev' => 'app-dev',
             'app-prod', 'appprod', 'prod' => 'app-prod',
+            'ingress', 'edge' => 'ingress',
             'agent' => 'agent',
             'websocket' => 'websocket',
             default => null,
@@ -172,6 +185,7 @@ final readonly class E2EPreparedTopology
             E2ETopologyKind::OperatorGateway->value,
             E2ETopologyKind::OperatorGatewayAppdev->value,
             E2ETopologyKind::OperatorGatewayAppdevAppprod->value,
+            E2ETopologyKind::OperatorGatewayAppdevAppprodIngress->value,
             E2ETopologyKind::OperatorGatewayAgent->value,
             E2ETopologyKind::OperatorGatewayAppdevAppprodAgent->value,
             E2ETopologyKind::OperatorGatewayAppprodIngress->value,

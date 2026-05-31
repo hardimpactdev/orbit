@@ -86,6 +86,11 @@ class BakeAppNodeCommand extends Command
                     ->where('status', NodeRoleStatus::Active->value))
                 ->value('id')
                 ?? throw new RuntimeException("Active ingress node [{$ingressNode}] was not found.");
+
+            NodeRoleAssignment::query()
+                ->where('node_id', $nodeId)
+                ->where('role', NodeRoleName::Ingress->value)
+                ->delete();
         }
 
         NodeRoleAssignment::query()->updateOrCreate(

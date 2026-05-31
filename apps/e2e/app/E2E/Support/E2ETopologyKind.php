@@ -12,6 +12,7 @@ enum E2ETopologyKind: string
     case OperatorGatewayAppdevAppprod = 'operator_gateway_app-dev_app-prod';
     case OperatorGatewayAgent = 'operator_gateway_agent';
     case OperatorGatewayAppdevAppprodAgent = 'operator_gateway_app-dev_app-prod_agent';
+    case OperatorGatewayAppdevAppprodIngress = 'operator_gateway_app-dev_app-prod_ingress';
     case OperatorGatewayAppprodIngress = 'operator_gateway_app-prod_ingress';
     case OperatorGatewayAppdevWebsocket = 'operator_gateway_app-dev_websocket';
     case OperatorGatewayAppdevAppprodWebsocket = 'operator_gateway_app-dev_app-prod_websocket';
@@ -23,8 +24,10 @@ enum E2ETopologyKind: string
             'operator-gateway' => self::OperatorGateway,
             'operator-gateway-dev' => self::OperatorGatewayAppdev,
             'operator-gateway-dev-prod' => self::OperatorGatewayAppdevAppprod,
+            'operator-gateway-dev-prod-ingress' => self::OperatorGatewayAppdevAppprodIngress,
             'operator-gateway-app-dev' => self::OperatorGatewayAppdev,
             'operator-gateway-app-dev-app-prod' => self::OperatorGatewayAppdevAppprod,
+            'operator-gateway-app-dev-app-prod-ingress' => self::OperatorGatewayAppdevAppprodIngress,
             'operator-gateway-agent' => self::OperatorGatewayAgent,
             'operator-gateway-app-dev-app-prod-agent' => self::OperatorGatewayAppdevAppprodAgent,
             'operator-gateway-app-prod-ingress' => self::OperatorGatewayAppprodIngress,
@@ -33,6 +36,7 @@ enum E2ETopologyKind: string
             'operator-gateway-app-dev-app-prod-agent-websocket' => self::OperatorGatewayAppdevAppprodAgentWebsocket,
             'operator-gateway-appdev' => self::OperatorGatewayAppdev,
             'operator-gateway-appdev-appprod' => self::OperatorGatewayAppdevAppprod,
+            'operator-gateway-appdev-appprod-ingress' => self::OperatorGatewayAppdevAppprodIngress,
             'operator-gateway-appdev-appprod-agent' => self::OperatorGatewayAppdevAppprodAgent,
             'operator-gateway-appprod-ingress' => self::OperatorGatewayAppprodIngress,
             'operator-gateway-appdev-websocket' => self::OperatorGatewayAppdevWebsocket,
@@ -54,6 +58,7 @@ enum E2ETopologyKind: string
             self::OperatorGateway => ['operator-gateway'],
             self::OperatorGatewayAppdev => ['operator-gateway-app-dev', 'operator-gateway-appdev', 'operator-gateway-dev'],
             self::OperatorGatewayAppdevAppprod => ['operator-gateway-app-dev-app-prod', 'operator-gateway-appdev-appprod', 'operator-gateway-dev-prod'],
+            self::OperatorGatewayAppdevAppprodIngress => ['operator-gateway-app-dev-app-prod-ingress', 'operator-gateway-appdev-appprod-ingress', 'operator-gateway-dev-prod-ingress'],
             self::OperatorGatewayAgent => ['operator-gateway-agent'],
             self::OperatorGatewayAppdevAppprodAgent => ['operator-gateway-app-dev-app-prod-agent', 'operator-gateway-appdev-appprod-agent'],
             self::OperatorGatewayAppprodIngress => ['operator-gateway-app-prod-ingress', 'operator-gateway-appprod-ingress'],

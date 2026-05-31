@@ -17,7 +17,7 @@ use Illuminate\Console\Command;
 use RuntimeException;
 
 #[Signature('e2e:prepare-warm-topology
-    {kind=operator_gateway_app-dev_app-prod_agent : Topology kind to warm (operator|operator_gateway|operator_gateway_app-dev|operator_gateway_app-dev_app-prod|operator_gateway_agent|operator_gateway_app-dev_app-prod_agent|operator_gateway_app-prod_ingress|operator_gateway_app-dev_websocket|operator_gateway_app-dev_app-prod_websocket|operator_gateway_app-dev_app-prod_agent_websocket)}
+    {kind=operator_gateway_app-dev_app-prod_agent : Topology kind to warm (operator|operator_gateway|operator_gateway_app-dev|operator_gateway_app-dev_app-prod|operator_gateway_app-dev_app-prod_ingress|operator_gateway_agent|operator_gateway_app-dev_app-prod_agent|operator_gateway_app-prod_ingress|operator_gateway_app-dev_websocket|operator_gateway_app-dev_app-prod_websocket|operator_gateway_app-dev_app-prod_agent_websocket)}
     {--force : Create stateful warm snapshots}
     {--rebuild : Rebuild selected warm snapshot slots even when they already exist}
     {--slots= : Warm snapshot slots to prepare on the Incus host}

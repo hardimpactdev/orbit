@@ -113,6 +113,7 @@ Each prepared topology has its own contract group:
 | `operator_gateway` | `e2e-topology-contract-operator_gateway` | `e2e-feature-operator_gateway` |
 | `operator_gateway_app-dev` | `e2e-topology-contract-operator_gateway_app-dev` | `e2e-feature-operator_gateway_app-dev` |
 | `operator_gateway_app-dev_app-prod` | `e2e-topology-contract-operator_gateway_app-dev_app-prod` | `e2e-feature-operator_gateway_app-dev_app-prod` |
+| `operator_gateway_app-dev_app-prod_ingress` | `e2e-topology-contract-operator_gateway_app-dev_app-prod_ingress` | `e2e-feature-operator_gateway_app-dev_app-prod_ingress` |
 | `operator_gateway_agent` | `e2e-topology-contract-operator_gateway_agent` | `e2e-feature-operator_gateway_agent` |
 | `operator_gateway_app-prod_ingress` | `e2e-topology-contract-operator_gateway_app-prod_ingress` | `e2e-feature-operator_gateway_app-prod_ingress` |
 | `operator_gateway_app-dev_websocket` | `e2e-topology-contract-operator_gateway_app-dev_websocket` | `e2e-feature-operator_gateway_app-dev_websocket` |

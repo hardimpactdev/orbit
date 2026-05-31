@@ -28,10 +28,10 @@ it('accepts websocket as a canonical artifact role', function (): void {
     expect($roles)->toBe(['websocket']);
 });
 
-it('accepts all canonical artifact roles including websocket', function (): void {
-    $roles = E2EPreparedTopology::parseArtifactRoles('operator,gateway,app-dev,app-prod,agent,websocket');
+it('accepts all canonical artifact roles including ingress and websocket', function (): void {
+    $roles = E2EPreparedTopology::parseArtifactRoles('operator,gateway,app-dev,app-prod,ingress,agent,websocket');
 
-    expect($roles)->toBe(['operator', 'gateway', 'app-dev', 'app-prod', 'agent', 'websocket']);
+    expect($roles)->toBe(['operator', 'gateway', 'app-dev', 'app-prod', 'ingress', 'agent', 'websocket']);
 });
 
 it('rejects unknown artifact roles', function (): void {

@@ -4,13 +4,14 @@ The `e2e-feature` lane uses prepared topology clones. Choose the smallest
 topology that covers the behavior under test.
 
 For Incus, topology names describe the roles that should be booted for a test.
-They do not mean each kind has a separate Incus source build. Incus uses the
-prepared full role source and starts only the listed nodes.
+Most kinds reuse the prepared full role source and start only the listed nodes.
+The dedicated-ingress kind has its own source snapshot because it includes an
+extra ingress VM.
 
 For Docker, topology names also describe the active roles requested by a test.
 Docker prepares composable role images: operator and gateway from
-`operator_gateway`, then app-dev, app-prod, agent, and websocket from
-`operator_gateway_app-dev_app-prod_agent_websocket`.
+`operator_gateway`, then app-dev, app-prod, agent, ingress, and websocket from
+their owning source topologies.
 
 ## Topology kinds
 
@@ -22,6 +23,7 @@ Use this table to choose the smallest active node set for a feature test.
 | `operator_gateway` | operator + 1 gateway | Use for gateway trust, onboarding, or node-registry flows. |
 | `operator_gateway_app-dev` | operator + gateway + 1 dev app | Use for app or workspace commands that need a development app node. |
 | `operator_gateway_app-dev_app-prod` | operator + gateway + dev + 1 prod app | Full app topology. Use for production-app flows or full-stack verification. |
+| `operator_gateway_app-dev_app-prod_ingress` | operator + gateway + dev + prod + 1 ingress node | Full app topology with ingress on a dedicated edge node instead of app-prod. |
 | `operator_gateway_agent` | operator + gateway + 1 agent | Use for agent-node assertions that do not need app-dev or app-prod nodes. |
 | `operator_gateway_app-prod_ingress` | operator + gateway + 1 prod app carrying ingress | Use for public production ingress and private app-prod backend flows that do not need dev or agent nodes. |
 | `operator_gateway_app-dev_websocket` | operator + gateway + dev + 1 websocket node | Use for private websocket runtime and publishing flows that only need a development app Redis provider. |
@@ -148,12 +150,14 @@ Tests request the smallest topology kind that covers the behavior under test.
 The Docker provider starts only the requested roles from the canonical
 composable role images, prunes gateway registry rows for roles that were not
 requested, and primes the gateway API for active container addresses. Operator
-and gateway come from `operator_gateway`; app-dev, app-prod, agent, and
-websocket come from `operator_gateway_app-dev_app-prod_agent_websocket`.
+and gateway come from `operator_gateway`; app-dev, app-prod, agent, ingress,
+and websocket come from their owning source topologies.
 
 The Incus provider clones only selected roles from the prepared
 `operator_gateway_app-dev_app-prod_agent` or
-`operator_gateway_app-dev_app-prod_agent_websocket` snapshots, starts those VMs,
+`operator_gateway_app-dev_app-prod_agent_websocket` snapshots for ordinary
+current-role and websocket topologies. The dedicated-ingress topology clones
+from `operator_gateway_app-dev_app-prod_ingress`. Incus starts those VMs,
 retargets WireGuard, and prunes stale gateway registry rows for roles that were
 not booted.
 
@@ -163,11 +167,13 @@ Required prepared sources for feature lanes:
 
 - Docker role images for the composable gateway-backed set: operator and
   gateway from `operator_gateway`; app-dev, app-prod, and agent from
-  `operator_gateway_app-dev_app-prod_agent_websocket`. App-dev carries database,
-  Redis, and the websocket role registry state by default; app-prod carries the
-  ingress role. Canonical base role images are `orbit-e2e:operator_base`,
-  `orbit-e2e:gateway_base`, `orbit-e2e:app-dev_base`,
-  `orbit-e2e:app-prod_base`, and `orbit-e2e:agent_base`.
+  `operator_gateway_app-dev_app-prod_agent_websocket`; dedicated ingress from
+  `operator_gateway_app-dev_app-prod_ingress`. App-dev carries database, Redis,
+  and the websocket role registry state by default; app-prod carries the ingress
+  role unless the dedicated-ingress topology is requested. Canonical base role
+  images are `orbit-e2e:operator_base`, `orbit-e2e:gateway_base`,
+  `orbit-e2e:app-dev_base`, `orbit-e2e:app-prod_base`,
+  `orbit-e2e:ingress_base`, and `orbit-e2e:agent_base`.
 - Docker runner support images: `orbit-runtime:<namespace>-current`,
   `caddy:2-alpine`, and every FrankenPHP image supported by
   `PhpRuntimeCatalog` for app/workspace topologies.
@@ -177,6 +183,8 @@ Required prepared sources for feature lanes:
   `operator_gateway_app-dev_app-prod_agent_websocket` Incus role snapshots for
   selective VM boot, including operator-only, operator-gateway, and websocket
   tests.
+- `operator_gateway_app-dev_app-prod_ingress` Incus role snapshots for tests
+  that need app-dev, app-prod, and a dedicated ingress VM.
 
 `composer test:e2e`, `composer test:e2e:docker`, and
 `composer test:e2e:incus` do not prepare artifacts. They fail before Pest
@@ -238,7 +246,7 @@ role independently by trying `orbit-e2e:<role>_<slug>` first, then
 `<namespace>-current`.
 
 Custom artifact preparation must declare intent. Docker accepts
-`--roles=operator,gateway,app-dev,app-prod,agent,websocket` to build only
+`--roles=operator,gateway,app-dev,app-prod,ingress,agent,websocket` to build only
 selected role images, or `--all-roles` for an explicit full namespaced role set.
 Incus acquisition has the same per-role fallback, but forced targeted Incus
 rebakes are blocked until the builder can refresh only selected VM templates
@@ -276,6 +284,7 @@ Each topology kind adds the handles and seeded state that tests can rely on.
 | `operator_gateway` | Adds one gateway clone through the `gateway` handle. The operator can reach the gateway API, stores gateway settings, and trusts the gateway CA. |
 | `operator_gateway_app-dev` | Adds a development app clone named `app-dev-1`. Development TLD state exists for `test` and points at the development app's WireGuard address. |
 | `operator_gateway_app-dev_app-prod` | Adds a production app clone named `app-prod-1`. Production app runtime assertions use FrankenPHP app containers and Docker process runtime units behind the private `orbit-caddy` backend listener. |
+| `operator_gateway_app-dev_app-prod_ingress` | Adds a dedicated ingress clone named `edge-1`; app-prod remains `app-prod-1` and points its production ingress setting at `edge-1`. |
 | `operator_gateway_agent` | Adds one agent clone named `agent-1` and skips development and production app clones. |
 | `operator_gateway_app-prod_ingress` | Uses one production app clone that also carries the ingress role. Public production HTTP assertions preserve the path `ingress -> router -> backend`. |
 | `operator_gateway_app-dev_websocket` | Adds the websocket role to `app-dev-1`, alongside `app-dev` and `database`; Redis for websocket points to the same app-dev node. |
@@ -288,6 +297,8 @@ Prepared E2E topologies keep hosted service assertions on the owning app node:
 
 - app-dev carries database and Redis registry state by default;
 - app-prod carries the ingress role by default;
+- `operator_gateway_app-dev_app-prod_ingress` moves ingress from app-prod to
+  `edge-1`;
 - hosted service assertions must not add host PHP, host Composer, host Caddy,
   PHP-FPM, or host Supervisor to make those services pass.
 

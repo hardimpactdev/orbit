@@ -230,7 +230,7 @@ class E2EDevTopologyCommand extends Command
         }
 
         try {
-            (new IncusHost($config->forHost($host)))->deleteInstancesIfPresent($names);
+            new IncusHost($config->forHost($host))->deleteInstancesIfPresent($names);
         } catch (Throwable) {
             // Surface the original overlay failure rather than the cleanup error.
         }
@@ -491,6 +491,10 @@ class E2EDevTopologyCommand extends Command
 
         if (str_contains($kind->value, 'app-prod')) {
             $roles[] = 'app-prod';
+        }
+
+        if (str_contains($kind->value, 'ingress')) {
+            $roles[] = 'ingress';
         }
 
         if (str_contains($kind->value, 'agent')) {

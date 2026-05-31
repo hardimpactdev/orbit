@@ -16,7 +16,7 @@ use InvalidArgumentException;
 #[Signature('e2e:ensure-artifacts
     {kind=operator_gateway_app-dev_app-prod_agent : Topology kind to inspect or prepare}
     {--lanes= : Comma-separated lanes to inspect. Defaults to docker,incus}
-    {--roles= : Comma-separated prepared artifact roles to prepare (operator,gateway,app-dev,app-prod,agent,websocket)}
+    {--roles= : Comma-separated prepared artifact roles to prepare (operator,gateway,app-dev,app-prod,ingress,agent,websocket)}
     {--all-roles : Explicitly prepare every topology role}
     {--runtime : Include Docker runtime/support images}
     {--force : Run supported artifact preparation commands}

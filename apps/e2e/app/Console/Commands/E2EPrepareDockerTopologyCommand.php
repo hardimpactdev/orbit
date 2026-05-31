@@ -17,9 +17,9 @@ use InvalidArgumentException;
 use RuntimeException;
 
 #[Signature('e2e:prepare-docker-topology
-    {kind : Topology kind to prepare (operator|operator_gateway|operator_gateway_app-dev|operator_gateway_app-dev_app-prod|operator_gateway_agent|operator_gateway_app-dev_app-prod_agent|operator_gateway_app-prod_ingress|operator_gateway_app-dev_websocket|operator_gateway_app-dev_app-prod_websocket|operator_gateway_app-dev_app-prod_agent_websocket)}
+    {kind : Topology kind to prepare (operator|operator_gateway|operator_gateway_app-dev|operator_gateway_app-dev_app-prod|operator_gateway_app-dev_app-prod_ingress|operator_gateway_agent|operator_gateway_app-dev_app-prod_agent|operator_gateway_app-prod_ingress|operator_gateway_app-dev_websocket|operator_gateway_app-dev_app-prod_websocket|operator_gateway_app-dev_app-prod_agent_websocket)}
     {--force : Build the Docker prepared per-role images}
-    {--roles= : Comma-separated prepared artifact roles to build (operator,gateway,app-dev,app-prod,agent,websocket)}
+    {--roles= : Comma-separated prepared artifact roles to build (operator,gateway,app-dev,app-prod,ingress,agent,websocket)}
     {--all-roles : Explicitly build every prepared artifact role when a custom namespace is set}
     {--json : Output as JSON}')]
 #[Description('Prepare per-role Docker images used by the Docker prepared topology provider')]

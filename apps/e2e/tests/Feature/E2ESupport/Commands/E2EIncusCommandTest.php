@@ -171,6 +171,27 @@ it('renders dry-run json with the friendly start and stop command shapes', funct
         ->and($devTopology['release_command'])->toBe('composer e2e:incus -- --stop --id=dry-run');
 });
 
+it('renders dry-run json for a dedicated ingress Incus topology', function (): void {
+    $result = run_e2e_script([
+        PHP_BINARY,
+        'bin/e2e-incus',
+        '--start',
+        '--dry-run',
+        '--json',
+        '--topology=operator_gateway_app-dev_app-prod_ingress',
+    ]);
+
+    expect($result['exit_code'])->toBe(0, $result['stderr']);
+
+    $payload = json_decode($result['stdout'], true, flags: JSON_THROW_ON_ERROR);
+    $devTopology = $payload['success']['dev_topology'];
+
+    expect($devTopology['kind'])->toBe('operator_gateway_app-dev_app-prod_ingress')
+        ->and($devTopology['checkout_roles'])->toBe(['operator', 'gateway', 'app-dev', 'app-prod', 'ingress'])
+        ->and($devTopology['shell_command'])->toBe('composer e2e:incus -- --start --topology=operator_gateway_app-dev_app-prod_ingress')
+        ->and($devTopology['release_command'])->toBe('composer e2e:incus -- --stop --id=dry-run');
+});
+
 it('stops a retained Incus topology by id', function (): void {
     writeIncusRetainedManifest($this->manifestDirectory, 'dev-abc123');
 

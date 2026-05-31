@@ -21,6 +21,8 @@ class IncusTopologyBuilder
 
     private const string AgentWireGuardIp = '10.6.0.6';
 
+    private const string IngressWireGuardIp = '10.6.0.7';
+
     private readonly E2EPhaseTimer $timer;
 
     public function __construct(
@@ -197,7 +199,7 @@ class IncusTopologyBuilder
         $startIndex = 0;
 
         if ($reusableBase !== null && ! $this->usesCopiedReusableBase($target, $reusableBase)) {
-            $this->deleteSnapshotsAfterReusableBase($reusableBase);
+            $this->deleteSnapshotsAfterReusableBase($target, $reusableBase);
             $this->restoreReusableBaseStage($reusableBase);
         }
 
@@ -219,6 +221,7 @@ class IncusTopologyBuilder
                 E2ETopologyKind::OperatorGatewayAppdevAppprod => $this->buildProductionAppStage($key),
                 E2ETopologyKind::OperatorGatewayAgent => $this->buildAgentOnlyStage($key),
                 E2ETopologyKind::OperatorGatewayAppdevAppprodAgent => $this->buildPreparedFullStage($key),
+                E2ETopologyKind::OperatorGatewayAppdevAppprodIngress => $this->buildPreparedDedicatedIngressStage($key),
                 E2ETopologyKind::OperatorGatewayAppprodIngress => $this->buildIngressProductionStage($key),
                 E2ETopologyKind::OperatorGatewayAppdevAppprodAgentWebsocket => $this->buildPreparedFullWebSocketStage($key),
                 E2ETopologyKind::OperatorGatewayAppdevWebsocket,
@@ -256,19 +259,12 @@ class IncusTopologyBuilder
         }
     }
 
-    private function deleteSnapshotsAfterReusableBase(E2ETopologyKind $reusableBase): void
+    private function deleteSnapshotsAfterReusableBase(E2ETopologyKind $target, E2ETopologyKind $reusableBase): void
     {
         $baseRoles = IncusTopologyTemplate::rolesFor($reusableBase);
-        $stages = E2ETopologyKind::cases();
-        $baseIndex = array_search($reusableBase, $stages, true);
-
-        if ($baseIndex === false) {
-            throw new RuntimeException("Reusable base [{$reusableBase->value}] has no ordered stage.");
-        }
-
         $deleted = [];
 
-        foreach (array_slice($stages, $baseIndex + 1) as $stage) {
+        foreach ($this->stagesAfter($target, $reusableBase) as $stage) {
             $snapshot = IncusTopologyTemplate::snapshotName($stage);
 
             foreach (IncusTopologyTemplate::rolesFor($stage) as $role) {
@@ -317,6 +313,15 @@ class IncusTopologyBuilder
             ];
         }
 
+        if ($target === E2ETopologyKind::OperatorGatewayAppdevAppprodIngress) {
+            return [
+                E2ETopologyKind::Operator,
+                E2ETopologyKind::OperatorGateway,
+                E2ETopologyKind::OperatorGatewayAppdevAppprodAgent,
+                E2ETopologyKind::OperatorGatewayAppdevAppprodIngress,
+            ];
+        }
+
         if ($target === E2ETopologyKind::OperatorGatewayAppdevWebsocket
             || $target === E2ETopologyKind::OperatorGatewayAppdevAppprodWebsocket
             || $target === E2ETopologyKind::OperatorGatewayAppdevAppprodAgentWebsocket) {
@@ -357,6 +362,7 @@ class IncusTopologyBuilder
             E2ETopologyKind::OperatorGatewayAppdev,
             E2ETopologyKind::OperatorGatewayAppdevAppprod,
             E2ETopologyKind::OperatorGatewayAppdevAppprodAgent,
+            E2ETopologyKind::OperatorGatewayAppdevAppprodIngress,
             E2ETopologyKind::OperatorGatewayAppdevAppprodAgentWebsocket,
         ];
     }
@@ -608,6 +614,41 @@ class IncusTopologyBuilder
         $this->timer->measure('prepared.e2e-deps', fn () => $this->installE2EBaseDependencies($instances));
         $this->timer->measure('dev.database-redis-seed', fn () => $this->seedAppdevDatabaseAndRedis($instances['gateway']));
         $this->timer->measure('prepared.real-wireguard', fn () => $this->installRealWireGuard($instances));
+
+        return $instances;
+    }
+
+    /**
+     * @return array<string, IncusInstance>
+     */
+    private function buildPreparedDedicatedIngressStage(SshKeyPair $key): array
+    {
+        $kind = E2ETopologyKind::OperatorGatewayAppdevAppprodIngress;
+        $instances = $this->startTemplateRoles(['operator', 'gateway', 'dev', 'prod'], $key, $kind);
+
+        $this->timer->measure('prepared-ingress.real-wireguard.retarget', fn () => $this->installRealWireGuard($instances));
+        $this->timer->measure('prepared-ingress.gateway.api.start', fn () => E2EGatewayApi::start($instances['gateway'], 'template-prepared-dedicated-ingress'));
+        $this->timer->measure('prepared-ingress.gateway.api.ready', fn () => E2EGatewayApi::waitForGatewayApi($instances['operator'], $this->host->config->operatorUser, $key));
+        $this->timer->measure('prepared-ingress.gateway.wg-easy.ready', fn () => $this->waitForGatewayWireGuard($instances['gateway']));
+        $this->timer->measure('prepared-ingress.gateway.provisioning-ssh-key', fn () => E2EGatewayApi::installProvisioningSshKey($instances['gateway'], $key));
+
+        $ingress = $this->launchBaseRole('ingress', $key, $kind);
+        $devIp = $this->timer->measure('dev.ipv4', fn (): string => $instances['dev']->waitForIpv4());
+        $prodIp = $this->timer->measure('prod.ipv4', fn (): string => $instances['prod']->waitForIpv4());
+        $ingressIp = $this->timer->measure('ingress.ipv4', fn (): string => $ingress->waitForIpv4());
+
+        $instances['ingress'] = $ingress;
+
+        $this->timer->measure('prepared-ingress.downstream.bake', fn () => $this->runPreparedDedicatedIngressBakeInParallel(
+            $instances['gateway'],
+            $devIp,
+            $prodIp,
+            $ingressIp,
+        ));
+        $this->timer->measure('prepared-ingress.gateway.api.ready-after-downstream-bake', fn () => E2EGatewayApi::waitForGatewayApi($instances['operator'], $this->host->config->operatorUser, $key));
+        $this->timer->measure('prepared-ingress.dev.database-redis-seed', fn () => $this->seedAppdevDatabaseAndRedis($instances['gateway']));
+        $this->timer->measure('prepared-ingress.e2e-deps', fn () => $this->installE2EBaseDependencies($instances));
+        $this->timer->measure('prepared-ingress.real-wireguard', fn () => $this->installRealWireGuard($instances));
 
         return $instances;
     }
@@ -1003,6 +1044,72 @@ BASH;
             $gateway,
             $scriptPathArgument,
             'Could not bake prepared downstream nodes in parallel',
+            timeoutSeconds: 900,
+        );
+    }
+
+    private function runPreparedDedicatedIngressBakeInParallel(
+        IncusInstance $gateway,
+        string $devHost,
+        string $prodHost,
+        string $ingressHost,
+    ): void {
+        $devCommand = implode(' ', [
+            'php apps/gateway/artisan orbit:internal:bake-app-node',
+            escapeshellarg('app-dev-1'),
+            '--role=app-dev',
+            '--host='.escapeshellarg($devHost),
+            '--wireguard-address='.escapeshellarg(self::DevWireGuardIp),
+            '--gateway-endpoint='.escapeshellarg(self::GatewayWireGuardIp),
+            '--user='.escapeshellarg($this->host->config->bootstrapUser),
+            '--tld='.escapeshellarg('test'),
+        ]);
+        $ingressCommand = implode(' ', [
+            'php apps/gateway/artisan orbit:internal:bake-ingress-node',
+            escapeshellarg('edge-1'),
+            '--host='.escapeshellarg($ingressHost),
+            '--wireguard-address='.escapeshellarg(self::IngressWireGuardIp),
+            '--gateway-endpoint='.escapeshellarg(self::GatewayWireGuardIp),
+            '--user='.escapeshellarg($this->host->config->bootstrapUser),
+        ]);
+        $prodCommand = implode(' ', [
+            'php apps/gateway/artisan orbit:internal:bake-app-node',
+            escapeshellarg('app-prod-1'),
+            '--role=app-prod',
+            '--host='.escapeshellarg($prodHost),
+            '--wireguard-address='.escapeshellarg(self::ProdWireGuardIp),
+            '--gateway-endpoint='.escapeshellarg(self::GatewayWireGuardIp),
+            '--user='.escapeshellarg($this->host->config->bootstrapUser),
+            '--ingress-node='.escapeshellarg('edge-1'),
+        ]);
+        $script = <<<BASH
+set -euo pipefail;
+cd /home/orbit/orbit;
+({$devCommand}) > /tmp/orbit-e2e-bake-dev.log 2>&1 & PID_BAKE_DEV=\$!;
+({$ingressCommand}) > /tmp/orbit-e2e-bake-ingress.log 2>&1 & PID_BAKE_INGRESS=\$!;
+
+STATUS=0;
+wait "\$PID_BAKE_DEV" || { CODE=\$?; echo "bake app-dev failed" >&2; cat /tmp/orbit-e2e-bake-dev.log >&2 || true; if [ "\$STATUS" -eq 0 ]; then STATUS=\$CODE; fi; };
+wait "\$PID_BAKE_INGRESS" || { CODE=\$?; echo "bake ingress failed" >&2; cat /tmp/orbit-e2e-bake-ingress.log >&2 || true; if [ "\$STATUS" -eq 0 ]; then STATUS=\$CODE; fi; };
+if [ "\$STATUS" -ne 0 ]; then exit "\$STATUS"; fi;
+
+({$prodCommand}) > /tmp/orbit-e2e-bake-prod.log 2>&1 & PID_BAKE_PROD=\$!;
+wait "\$PID_BAKE_PROD" || { CODE=\$?; echo "bake app-prod failed" >&2; cat /tmp/orbit-e2e-bake-prod.log >&2 || true; if [ "\$STATUS" -eq 0 ]; then STATUS=\$CODE; fi; };
+exit "\$STATUS";
+BASH;
+        $scriptPath = '/tmp/orbit-e2e-prepared-dedicated-ingress-bake.sh';
+        $scriptPathArgument = escapeshellarg($scriptPath);
+
+        E2ECommand::exec(
+            $gateway,
+            "cat > {$scriptPathArgument} <<'BASH'\n{$script}\nBASH\nchmod 755 {$scriptPathArgument}\nchown orbit:orbit {$scriptPathArgument}",
+            'Could not write prepared dedicated ingress bake script',
+            timeoutSeconds: 30,
+        );
+        E2ECommand::orbit(
+            $gateway,
+            $scriptPathArgument,
+            'Could not bake prepared dedicated ingress nodes in parallel',
             timeoutSeconds: 900,
         );
     }

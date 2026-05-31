@@ -16,6 +16,7 @@ it('maps Incus topology requests to the prepared full source artifact', function
         ->and(E2EPreparedTopology::sourceKindFor(E2ETopologyKind::OperatorGatewayAppdevAppprod))->toBe(E2ETopologyKind::OperatorGatewayAppdevAppprodAgent)
         ->and(E2EPreparedTopology::sourceKindFor(E2ETopologyKind::OperatorGatewayAgent))->toBe(E2ETopologyKind::OperatorGatewayAppdevAppprodAgent)
         ->and(E2EPreparedTopology::sourceKindFor(E2ETopologyKind::OperatorGatewayAppdevAppprodAgent))->toBe(E2ETopologyKind::OperatorGatewayAppdevAppprodAgent)
+        ->and(E2EPreparedTopology::sourceKindFor(E2ETopologyKind::OperatorGatewayAppdevAppprodIngress))->toBe(E2ETopologyKind::OperatorGatewayAppdevAppprodIngress)
         ->and(E2EPreparedTopology::sourceKindFor(E2ETopologyKind::OperatorGatewayAppprodIngress))->toBe(E2ETopologyKind::OperatorGatewayAppdevAppprodAgent)
         ->and(E2EPreparedTopology::sourceKindFor(E2ETopologyKind::OperatorGatewayAppdevWebsocket))->toBe(E2ETopologyKind::OperatorGatewayAppdevAppprodAgentWebsocket)
         ->and(E2EPreparedTopology::sourceKindFor(E2ETopologyKind::OperatorGatewayAppdevAppprodWebsocket))->toBe(E2ETopologyKind::OperatorGatewayAppdevAppprodAgentWebsocket)
@@ -29,6 +30,8 @@ it('maps Docker topology requests to composable role image sources', function ()
         ->toBe([E2ETopologyKind::OperatorGateway, E2ETopologyKind::OperatorGatewayAppdevAppprodAgent])
         ->and(E2EPreparedTopology::dockerArtifactSourceKindsFor(E2ETopologyKind::OperatorGatewayAppprodIngress))
         ->toBe([E2ETopologyKind::OperatorGateway, E2ETopologyKind::OperatorGatewayAppdevAppprodAgent])
+        ->and(E2EPreparedTopology::dockerArtifactSourceKindsFor(E2ETopologyKind::OperatorGatewayAppdevAppprodIngress))
+        ->toBe([E2ETopologyKind::OperatorGateway, E2ETopologyKind::OperatorGatewayAppdevAppprodAgent, E2ETopologyKind::OperatorGatewayAppdevAppprodIngress])
         ->and(E2EPreparedTopology::dockerArtifactSourceKindsFor(E2ETopologyKind::OperatorGatewayAppdevWebsocket))
         ->toBe([E2ETopologyKind::OperatorGateway, E2ETopologyKind::OperatorGatewayAppdevAppprodAgentWebsocket])
         ->and(E2EPreparedTopology::dockerArtifactSourceKindsFor(E2ETopologyKind::OperatorGatewayAppdevAppprodWebsocket))
@@ -61,6 +64,8 @@ it('sources Incus downstream roles from the prepared full snapshot', function ()
         ->toBe(E2ETopologyKind::OperatorGatewayAppdevAppprodAgent)
         ->and(E2EPreparedTopology::incusSourceKindFor(E2ETopologyKind::OperatorGatewayAppprodIngress))
         ->toBe(E2ETopologyKind::OperatorGatewayAppdevAppprodAgent)
+        ->and(E2EPreparedTopology::incusSourceKindFor(E2ETopologyKind::OperatorGatewayAppdevAppprodIngress))
+        ->toBe(E2ETopologyKind::OperatorGatewayAppdevAppprodIngress)
         ->and(E2EPreparedTopology::incusSourceKindFor(E2ETopologyKind::OperatorGatewayAppdevWebsocket))
         ->toBe(E2ETopologyKind::OperatorGatewayAppdevAppprodAgentWebsocket)
         ->and(E2EPreparedTopology::incusSourceKindFor(E2ETopologyKind::OperatorGatewayAppdevAppprodWebsocket))
@@ -75,6 +80,7 @@ it('collapses app production ingress onto the prod role', function (): void {
         ['operator', 'gateway', 'prod', 'ingress'],
     ))->toBe(['operator', 'gateway', 'prod'])
         ->and(E2EPreparedTopology::prodHostsIngressRole(E2ETopologyKind::OperatorGatewayAppprodIngress))->toBeTrue()
+        ->and(E2EPreparedTopology::prodHostsIngressRole(E2ETopologyKind::OperatorGatewayAppdevAppprodIngress))->toBeFalse()
         ->and(E2EPreparedTopology::prodHostsIngressRole(E2ETopologyKind::OperatorGatewayAppdevAppprod))->toBeTrue()
         ->and(E2EPreparedTopology::prodHostsIngressRole(E2ETopologyKind::OperatorGatewayAppdevAppprodAgent))->toBeTrue()
         ->and(E2EPreparedTopology::prodHostsIngressRole(E2ETopologyKind::OperatorGatewayAppdevWebsocket))->toBeFalse()
@@ -107,19 +113,21 @@ it('keeps websocket topology registry pruning on the app-dev node', function ():
 });
 
 it('normalizes prepared artifact role selections', function (): void {
-    expect(E2EPreparedTopology::parseArtifactRoles('operator, gateway, dev, prod, agent'))
-        ->toBe(['operator', 'gateway', 'app-dev', 'app-prod', 'agent'])
-        ->and(E2EPreparedTopology::parseArtifactRoles('operator,app-dev,app-prod,agent,operator'))
-        ->toBe(['operator', 'app-dev', 'app-prod', 'agent'])
+    expect(E2EPreparedTopology::parseArtifactRoles('operator, gateway, dev, prod, ingress, agent'))
+        ->toBe(['operator', 'gateway', 'app-dev', 'app-prod', 'ingress', 'agent'])
+        ->and(E2EPreparedTopology::parseArtifactRoles('operator,app-dev,app-prod,ingress,agent,operator'))
+        ->toBe(['operator', 'app-dev', 'app-prod', 'ingress', 'agent'])
         ->and(E2EPreparedTopology::dockerRoleForArtifactRole('app-dev'))
         ->toBe('dev')
+        ->and(E2EPreparedTopology::incusRoleForArtifactRole('ingress'))
+        ->toBe('ingress')
         ->and(E2EPreparedTopology::incusRoleForArtifactRole('operator'))
         ->toBe('operator');
 });
 
 it('rejects unknown prepared artifact roles', function (): void {
-    expect(fn () => E2EPreparedTopology::parseArtifactRoles('operator,ingress'))
-        ->toThrow(InvalidArgumentException::class, 'Unsupported prepared artifact role [ingress].');
+    expect(fn () => E2EPreparedTopology::parseArtifactRoles('operator,edge-cache'))
+        ->toThrow(InvalidArgumentException::class, 'Unsupported prepared artifact role [edge-cache].');
 });
 
 it('uses a separate topology artifact namespace by default', function (): void {
