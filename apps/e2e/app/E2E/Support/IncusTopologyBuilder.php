@@ -626,6 +626,7 @@ class IncusTopologyBuilder
         $kind = E2ETopologyKind::OperatorGatewayAppdevAppprodIngress;
         $instances = $this->startTemplateRoles(['operator', 'gateway', 'dev', 'prod'], $key, $kind);
 
+        $this->timer->measure('prepared-ingress.gateway.bundle-overlay', fn () => $this->applyBundleOverlay($instances['gateway'], 'gateway', $key));
         $this->timer->measure('prepared-ingress.real-wireguard.retarget', fn () => $this->installRealWireGuard($instances));
         $this->timer->measure('prepared-ingress.gateway.api.start', fn () => E2EGatewayApi::start($instances['gateway'], 'template-prepared-dedicated-ingress'));
         $this->timer->measure('prepared-ingress.gateway.api.ready', fn () => E2EGatewayApi::waitForGatewayApi($instances['operator'], $this->host->config->operatorUser, $key));
