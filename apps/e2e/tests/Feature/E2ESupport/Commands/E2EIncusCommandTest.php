@@ -13,7 +13,6 @@ use App\E2E\Support\LiveIncusLocalMachine;
 use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Contracts\Process\ProcessResult;
 use Illuminate\Support\Facades\Process;
-use Orbit\Core\Http\JsonEnvelope;
 use Symfony\Component\Console\Output\BufferedOutput;
 
 beforeEach(function (): void {
@@ -136,32 +135,36 @@ function recordingIncusLiveHost(E2EConfig $config, ArrayObject $log): IncusHost
                 'data' => [
                     'exit_code' => 0,
                     'data' => [
-                        'result' => JsonEnvelope::success([
-                            'node' => [
-                                'name' => 'mac-dev-abc123',
-                                'addresses' => [
-                                    'wireguard' => '10.6.0.8',
+                        'result' => [
+                            'success' => [
+                                'data' => [
+                                    'node' => [
+                                        'name' => 'mac-dev-abc123',
+                                        'addresses' => [
+                                            'wireguard' => '10.6.0.8',
+                                        ],
+                                    ],
+                                    'wireguard' => [
+                                        'config' => <<<'WG'
+                                            [Interface]
+                                            PrivateKey = test-private-key
+                                            Address = 10.6.0.8/32
+
+                                            [Peer]
+                                            PublicKey = test-public-key
+                                            AllowedIPs = 10.6.0.0/24
+                                            Endpoint = 10.6.0.2:51820
+                                            PersistentKeepalive = 25
+                                            WG,
+                                    ],
+                                    'next_steps' => [
+                                        'Install the WireGuard configuration on the operator node.',
+                                        'Join the Orbit WireGuard network.',
+                                        'Run `orbit gateway:add` on the operator node.',
+                                    ],
                                 ],
                             ],
-                            'wireguard' => [
-                                'config' => <<<'WG'
-                                    [Interface]
-                                    PrivateKey = test-private-key
-                                    Address = 10.6.0.8/32
-
-                                    [Peer]
-                                    PublicKey = test-public-key
-                                    AllowedIPs = 10.6.0.0/24
-                                    Endpoint = 10.6.0.2:51820
-                                    PersistentKeepalive = 25
-                                    WG,
-                            ],
-                            'next_steps' => [
-                                'Install the WireGuard configuration on the operator node.',
-                                'Join the Orbit WireGuard network.',
-                                'Run `orbit gateway:add` on the operator node.',
-                            ],
-                        ]),
+                        ],
                     ],
                 ],
             ], JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR)."\n");
