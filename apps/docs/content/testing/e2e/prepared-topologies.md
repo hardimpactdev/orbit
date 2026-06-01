@@ -83,17 +83,27 @@ composer e2e:incus -- --start --topology=operator_gateway_app-dev_app-prod
 composer e2e:incus -- --start --topology=operator_gateway_app-dev \
   --checkout-roles=operator,gateway
 
+# Acquire a retained topology, mint a Mac operator identity, and print the
+# WireGuard config plus the local `orbit gateway:add` follow-up.
+composer e2e:incus -- --live \
+  --topology=operator_gateway_app-dev_app-prod_ingress
+
 # Preview the acquisition plan without provisioning anything.
 composer e2e:incus -- --start --dry-run \
   --topology=operator_gateway_app-dev_app-prod_agent
 ```
 
 Composer requires the separator before command options; keep the `--` between
-`e2e:incus` and `--start`/`--stop`. Acquisition requires a configured Incus host
-(`ORBIT_E2E_HOST` or `ORBIT_E2E_INCUS_HOSTS`). Retained Docker topologies are not
-supported. The cloned instances use a distinct, identifiable dev run id
+`e2e:incus` and `--start`, `--live`, or `--stop`. Acquisition requires a
+configured Incus host (`ORBIT_E2E_HOST` or `ORBIT_E2E_INCUS_HOSTS`). Retained
+Docker topologies are not supported. The cloned instances use a distinct,
+identifiable dev run id
 (`orbit-e2e-dev-<hex>-<role>`) so they never collide with ephemeral test clones
 and stay easy to reap.
+
+Root Composer E2E scripts source the repository-level `.env.e2e` before entering
+`apps/e2e`; that file is not copied or converted into `apps/e2e/.env`. Direct
+`apps/e2e` command runs may use the shell environment or `apps/e2e/.env`.
 
 The command prints, in human or `--json` form, an `id`, the gateway API IP, and a
 per-role handle: the instance name plus a ready-to-run SSH example, e.g.
@@ -116,6 +126,32 @@ an app is deployed.
 Retained state is recorded under `apps/e2e/var/dev-topology/<id>.json` (gitignored)
 with the id, kind, provider, host, run id, ssh key path, gateway IP, per-role
 instance names, per-role checkout paths, and creation timestamp.
+
+`composer e2e:incus -- --live --topology=<topology>` builds on the same retained
+topology acquisition, then runs `orbit node:new mac-<id> --operator --json` from
+the retained operator VM. That mints an additional operator WireGuard identity
+for the local machine. The command rewrites the returned WireGuard `Endpoint`
+line to `ORBIT_E2E_LIVE_WIREGUARD_ENDPOINT` (or `--wireguard-endpoint=<host:port>`)
+and writes the config to
+`apps/e2e/var/dev-topology/<id>-mac-<id>.conf`.
+
+For a trusted LAN where the Incus host is reachable as `192.168.1.150`, set:
+
+```bash
+ORBIT_E2E_LIVE_WIREGUARD_ENDPOINT=192.168.1.150:51820
+```
+
+The live command prints the WireGuard config and follow-up commands:
+
+```bash
+orbit gateway:add 10.6.0.2 --name=incus-<id>
+orbit gateway:use incus-<id>
+orbit node:list --json
+```
+
+Use `--operator-name=<name>` when the minted local operator identity should not
+default to `mac-<id>`. Use `--gateway-name=<name>` when the local gateway entry
+should not default to `incus-<id>`.
 
 Release a retained topology when you are done. Releasing reaps the recorded
 instances on the host, removes the dedicated per-run SSH key directory, and

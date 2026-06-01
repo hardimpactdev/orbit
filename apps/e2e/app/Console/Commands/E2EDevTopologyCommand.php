@@ -125,16 +125,38 @@ class E2EDevTopologyCommand extends Command
      */
     private function acquireIncus(E2ETopologyKind $kind, array $displayRoles, bool $json): int
     {
-        $config = E2EConfig::fromEnvironment();
-        $overlayRoles = $this->overlayCheckoutRoles($kind, $displayRoles);
-
         try {
-            $prepared = $this->prepareUsing !== null
-                ? ($this->prepareUsing)($kind, $overlayRoles)
-                : $this->acquireAndOverlay($config, $kind, $overlayRoles);
+            $manifest = $this->acquireRetainedIncusTopology($kind, $displayRoles);
         } catch (Throwable $exception) {
             return $this->renderError('acquisition_failed', $exception->getMessage(), $json);
         }
+
+        return $this->renderAcquired($manifest, $json);
+    }
+
+    /**
+     * @param  list<string>  $displayRoles
+     * @return array{
+     *     id: string,
+     *     kind: string,
+     *     provider: string,
+     *     host: string,
+     *     run_id: string,
+     *     ssh_key_path: string,
+     *     gateway_ip: string,
+     *     instances: array<string, string>,
+     *     checkouts: array<string, string>,
+     *     created_at: string
+     * }
+     */
+    public function acquireRetainedIncusTopology(E2ETopologyKind $kind, array $displayRoles): array
+    {
+        $config = E2EConfig::fromEnvironment();
+        $overlayRoles = $this->overlayCheckoutRoles($kind, $displayRoles);
+
+        $prepared = $this->prepareUsing !== null
+            ? ($this->prepareUsing)($kind, $overlayRoles)
+            : $this->acquireAndOverlay($config, $kind, $overlayRoles);
 
         $manifest = [
             'id' => $prepared['run_id'],
@@ -151,7 +173,7 @@ class E2EDevTopologyCommand extends Command
 
         E2EDevTopologyManifestStore::fromEnvironment(repo_path())->write($manifest);
 
-        return $this->renderAcquired($manifest, $json);
+        return $manifest;
     }
 
     /**
@@ -443,7 +465,17 @@ class E2EDevTopologyCommand extends Command
      */
     private function displayCheckoutRoles(E2ETopologyKind $kind): array
     {
-        $requested = $this->requestedCheckoutRoles();
+        $value = $this->option('checkout-roles');
+
+        return $this->displayCheckoutRolesForInput($kind, is_string($value) ? $value : null);
+    }
+
+    /**
+     * @return list<string>
+     */
+    public function displayCheckoutRolesForInput(E2ETopologyKind $kind, ?string $checkoutRoles): array
+    {
+        $requested = $this->requestedCheckoutRoles($checkoutRoles);
 
         return $requested === []
             ? $this->displayCheckoutRolesForKind($kind)
@@ -453,11 +485,9 @@ class E2EDevTopologyCommand extends Command
     /**
      * @return list<string>
      */
-    private function requestedCheckoutRoles(): array
+    private function requestedCheckoutRoles(?string $value): array
     {
-        $value = $this->option('checkout-roles');
-
-        if (! is_string($value) || trim($value) === '') {
+        if ($value === null || trim($value) === '') {
             return [];
         }
 

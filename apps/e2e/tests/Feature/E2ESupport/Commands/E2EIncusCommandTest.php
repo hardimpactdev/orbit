@@ -4,12 +4,16 @@ declare(strict_types=1);
 
 use App\Console\Commands\E2EDevTopologyCommand;
 use App\Console\Commands\E2EDevTopologyReleaseCommand;
+use App\Console\Commands\E2EIncusCommand;
 use App\E2E\Support\E2EConfig;
 use App\E2E\Support\E2EDevTopologyManifestStore;
 use App\E2E\Support\E2ETopologyKind;
 use App\E2E\Support\IncusHost;
+use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Contracts\Process\ProcessResult;
 use Illuminate\Support\Facades\Process;
+use Orbit\Core\Http\JsonEnvelope;
+use Symfony\Component\Console\Output\BufferedOutput;
 
 beforeEach(function (): void {
     Process::preventStrayProcesses();
@@ -19,6 +23,8 @@ beforeEach(function (): void {
 
 afterEach(function (): void {
     putenv('ORBIT_E2E_DEV_TOPOLOGY_MANIFEST_DIRECTORY');
+    putenv('ORBIT_E2E_LIVE_WIREGUARD_ENDPOINT');
+    putenv('ORBIT_E2E_LIVE_WG_ENDPOINT');
     remove_directory($this->manifestDirectory);
 });
 
@@ -110,6 +116,65 @@ function incusReleaseCommandWith(ArrayObject $log): void
     app()->instance(E2EDevTopologyReleaseCommand::class, $command);
 }
 
+function recordingIncusLiveHost(E2EConfig $config, ArrayObject $log): IncusHost
+{
+    return new class($config, $log) extends IncusHost
+    {
+        public function __construct(E2EConfig $config, private readonly ArrayObject $log)
+        {
+            parent::__construct($config);
+        }
+
+        #[Override]
+        public function run(string $command, ?int $timeoutSeconds = null): ProcessResult
+        {
+            $this->log['runs'] = [...$this->log['runs'], $command];
+
+            return Process::result(output: json_encode([
+                'event' => 'complete',
+                'data' => [
+                    'exit_code' => 0,
+                    'data' => [
+                        'result' => JsonEnvelope::success([
+                            'node' => [
+                                'name' => 'mac-dev-abc123',
+                                'addresses' => [
+                                    'wireguard' => '10.6.0.8',
+                                ],
+                            ],
+                            'wireguard' => [
+                                'config' => <<<'WG'
+                                    [Interface]
+                                    PrivateKey = test-private-key
+                                    Address = 10.6.0.8/32
+
+                                    [Peer]
+                                    PublicKey = test-public-key
+                                    AllowedIPs = 10.6.0.0/24
+                                    Endpoint = 10.6.0.2:51820
+                                    PersistentKeepalive = 25
+                                    WG,
+                            ],
+                            'next_steps' => [
+                                'Install the WireGuard configuration on the operator node.',
+                                'Join the Orbit WireGuard network.',
+                                'Run `orbit gateway:add` on the operator node.',
+                            ],
+                        ]),
+                    ],
+                ],
+            ], JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR)."\n");
+        }
+    };
+}
+
+function incusLiveCommandWith(ArrayObject $log): void
+{
+    $command = app(E2EIncusCommand::class);
+    $command->hostFactoryUsing(fn (string $host): IncusHost => recordingIncusLiveHost(incusReleaseConfig($host), $log));
+    app()->instance(E2EIncusCommand::class, $command);
+}
+
 function writeIncusRetainedManifest(string $directory, string $id): void
 {
     (new E2EDevTopologyManifestStore($directory))->write([
@@ -192,6 +257,85 @@ it('renders dry-run json for a dedicated ingress Incus topology', function (): v
         ->and($devTopology['release_command'])->toBe('composer e2e:incus -- --stop --id=dry-run');
 });
 
+it('creates a live accessible Incus topology and prints local onboarding instructions', function (): void {
+    putenv('ORBIT_E2E_LIVE_WIREGUARD_ENDPOINT=192.168.1.150:51820');
+
+    incusDevTopologyCommandWith(fn (E2ETopologyKind $kind, array $roles): array => fakeIncusPreparedTopology());
+
+    $log = new ArrayObject(['runs' => []]);
+    incusLiveCommandWith($log);
+
+    $output = new BufferedOutput;
+    $exitCode = app(Kernel::class)->call('e2e:incus', [
+        '--live' => true,
+        '--topology' => 'operator_gateway_app-dev_app-prod_ingress',
+        '--json' => true,
+    ], $output);
+
+    $payload = json_decode(trim($output->fetch()), true, flags: JSON_THROW_ON_ERROR);
+    $liveTopology = $payload['success']['live_topology'];
+
+    $wireGuardConfigPath = "{$this->manifestDirectory}/dev-abc123-mac-dev-abc123.conf";
+    $manifest = (new E2EDevTopologyManifestStore($this->manifestDirectory))->read('dev-abc123');
+
+    expect($exitCode)->toBe(0)
+        ->and($liveTopology['id'])->toBe('dev-abc123')
+        ->and($liveTopology['kind'])->toBe('operator_gateway_app-dev_app-prod_ingress')
+        ->and($liveTopology['wireguard_endpoint'])->toBe('192.168.1.150:51820')
+        ->and($liveTopology['operator_node'])->toBe('mac-dev-abc123')
+        ->and($liveTopology['gateway_add_command'])->toBe('orbit gateway:add 10.6.0.2 --name=incus-dev-abc123')
+        ->and($liveTopology['gateway_use_command'])->toBe('orbit gateway:use incus-dev-abc123')
+        ->and($liveTopology['release_command'])->toBe('composer e2e:incus -- --stop --id=dev-abc123')
+        ->and($liveTopology['next_steps'])->toContain('Import and activate the WireGuard configuration on this Mac.')
+        ->and($wireGuardConfigPath)->toBeFile()
+        ->and($manifest['kind'])->toBe('operator_gateway_app-dev_app-prod_ingress')
+        ->and(file_get_contents($wireGuardConfigPath))->toContain('Endpoint = 192.168.1.150:51820')
+        ->and(file_get_contents($wireGuardConfigPath))->not->toContain('Endpoint = 10.6.0.2:51820')
+        ->and($log['runs'][0])->toContain("incus exec 'orbit-e2e-dev-abc123-operator'")
+        ->and($log['runs'][0])->toContain('orbit node:new mac-dev-abc123 --operator --json');
+});
+
+it('prints the live WireGuard config and follow-up gateway commands in human mode', function (): void {
+    putenv('ORBIT_E2E_LIVE_WIREGUARD_ENDPOINT=192.168.1.150:51820');
+
+    incusDevTopologyCommandWith(fn (E2ETopologyKind $kind, array $roles): array => fakeIncusPreparedTopology());
+
+    $log = new ArrayObject(['runs' => []]);
+    incusLiveCommandWith($log);
+
+    $this->artisan('e2e:incus', [
+        '--live' => true,
+        '--topology' => 'operator_gateway_app-dev',
+    ])
+        ->expectsOutputToContain('Live Incus topology [dev-abc123] is ready.')
+        ->expectsOutputToContain('WireGuard config')
+        ->expectsOutputToContain('Endpoint = 192.168.1.150:51820')
+        ->expectsOutputToContain('orbit gateway:add 10.6.0.2 --name=incus-dev-abc123')
+        ->expectsOutputToContain('Release: composer e2e:incus -- --stop --id=dev-abc123')
+        ->assertSuccessful();
+});
+
+it('rejects live mode without a configured WireGuard endpoint', function (): void {
+    $this->artisan('e2e:incus', [
+        '--live' => true,
+        '--json' => true,
+    ])
+        ->expectsOutputToContain('Set ORBIT_E2E_LIVE_WIREGUARD_ENDPOINT')
+        ->assertExitCode(1);
+});
+
+it('rejects dry-run live mode because no operator identity can be minted', function (): void {
+    putenv('ORBIT_E2E_LIVE_WIREGUARD_ENDPOINT=192.168.1.150:51820');
+
+    $this->artisan('e2e:incus', [
+        '--live' => true,
+        '--dry-run' => true,
+        '--json' => true,
+    ])
+        ->expectsOutputToContain('--live cannot be combined with --dry-run')
+        ->assertExitCode(1);
+});
+
 it('stops a retained Incus topology by id', function (): void {
     writeIncusRetainedManifest($this->manifestDirectory, 'dev-abc123');
 
@@ -235,7 +379,7 @@ it('rejects ambiguous start and stop mode selection', function (): void {
         '--stop' => true,
         '--json' => true,
     ])
-        ->expectsOutputToContain('Choose exactly one Incus topology action: --start or --stop.')
+        ->expectsOutputToContain('Choose exactly one Incus topology action: --start, --stop, or --live.')
         ->assertExitCode(1);
 });
 

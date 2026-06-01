@@ -20,6 +20,7 @@ ORBIT_E2E_INCUS_HOSTS=beast
 ORBIT_E2E_INCUS_HOST_SLOTS=beast:1
 ORBIT_E2E_INCUS_HOST_VM_CAPS=beast:16
 ORBIT_E2E_INCUS_PARALLEL_PROCESSES=4
+ORBIT_E2E_LIVE_WIREGUARD_ENDPOINT=192.168.1.150:51820 # composer e2e:incus -- --live client endpoint
 ORBIT_E2E_INCUS_WARM_SNAPSHOTS=0
 ORBIT_E2E_INCUS_WARM_SNAPSHOT_SLOTS=1
 ORBIT_E2E_EXCLUSIVE_HOSTS=beast
@@ -84,6 +85,15 @@ lease namespaces in the same shared lease directory. Docker feature tests read
 By default those namespaces do not block each other. Add a host to
 `ORBIT_E2E_EXCLUSIVE_HOSTS` when the same machine appears in more than one
 backend pool and the backend families must not overlap.
+
+## Live Incus endpoint
+
+`ORBIT_E2E_LIVE_WIREGUARD_ENDPOINT` is only used by
+`composer e2e:incus -- --live`. It is the endpoint written into the local
+WireGuard client config that the command prints after minting an operator
+identity. Root Composer E2E scripts source the repository-level `.env.e2e`; that
+file is not converted into `apps/e2e/.env`. When running the `apps/e2e` command
+directly, either export the variable in the shell or put it in `apps/e2e/.env`.
 
 ## Artifact namespace
 
