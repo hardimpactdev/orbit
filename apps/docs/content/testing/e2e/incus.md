@@ -15,6 +15,20 @@ rebuild topology images and do not run provisioning:
 composer test:e2e:incus
 ```
 
+Retained/live Incus development topologies acquired with
+`composer e2e:incus -- --start` or `composer e2e:incus -- --live` are
+source-mounted at `/home/orbit/orbit` instead of unpacking a checkout archive.
+Those flows add an Incus `orbit-source` disk before boot, point
+`/usr/local/bin/orbit` at `/home/orbit/orbit/apps/cli/orbit`, and keep mutable
+gateway/runtime state under `/home/orbit/.config/orbit`. Ordinary
+`composer test:e2e:incus` prepared acquisitions still use prepared artifacts
+and do not mount the local checkout.
+
+When `ORBIT_E2E_INCUS_WARM_SNAPSHOTS=1` is enabled, ordinary prepared feature
+acquisitions may still restore warm snapshots. Source-mounted retained/live
+acquisitions bypass the warm pool and take a fresh source-mounted clone so the
+local checkout mount is always present for that run.
+
 When Incus is unavailable or the required prepared topology is missing, the
 selected lane fails before Pest workers start and includes a scoped
 `composer e2e:ensure-artifacts` command for the missing role set. Use

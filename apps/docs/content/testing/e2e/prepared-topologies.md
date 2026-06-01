@@ -70,18 +70,18 @@ that runs on those nodes.
 
 ## Retained dev topologies
 
-`composer e2e:incus -- --start` acquires a prepared topology, overlays the
-current checkout, and retains it (it is not reaped) so a human can do manual
-diagnosis and performance testing against an isolated Incus topology — never
-against a live production topology. It reuses the same prepared-topology
-substrate, run id, and checkout overlay as the source-checkout E2E lane; it only
+`composer e2e:incus -- --start` acquires a prepared topology, mounts the
+current checkout at `/home/orbit/orbit`, and retains it (it is not reaped) so a
+human can do manual diagnosis and performance testing against an isolated Incus
+topology — never against a live production topology. It reuses the same
+prepared-topology substrate and run id as the source-checkout E2E lane; it only
 differs in that the clone is kept until you release it.
 
 ```bash
-# Acquire a retained Incus topology with the current checkout overlaid.
+# Acquire a retained Incus topology with the current checkout source-mounted.
 composer e2e:incus -- --start --topology=operator_gateway_app-dev_app-prod
 
-# Acquire only the operator + gateway checkout overlay.
+# Acquire only the operator + gateway source-mounted checkout.
 composer e2e:incus -- --start --topology=operator_gateway_app-dev \
   --checkout-roles=operator,gateway
 
@@ -116,9 +116,13 @@ per-role handle: the instance name plus a ready-to-run SSH example, e.g.
 
 ```text
 [operator] orbit-e2e-dev-1a2b3c-operator
-  ssh: ssh beast incus exec orbit-e2e-dev-1a2b3c-operator -- sudo -u orbit bash -lc 'cd /home/orbit/orbit-current && orbit node:list --json'
+  ssh: ssh beast incus exec orbit-e2e-dev-1a2b3c-operator -- sudo -u orbit bash -lc 'cd /home/orbit/orbit && orbit node:list --json'
+  source-mounted checkout: /home/orbit/orbit
+  launcher: /home/orbit/orbit/apps/cli/orbit
 [dev] orbit-e2e-dev-1a2b3c-dev
-  ssh: ssh beast incus exec orbit-e2e-dev-1a2b3c-dev -- sudo -u orbit bash -lc 'cd /home/orbit/orbit-current && orbit node:list --json'
+  ssh: ssh beast incus exec orbit-e2e-dev-1a2b3c-dev -- sudo -u orbit bash -lc 'cd /home/orbit/orbit && orbit node:list --json'
+  source-mounted checkout: /home/orbit/orbit
+  launcher: /home/orbit/orbit/apps/cli/orbit
   endpoint: 10.6.0.4 (dev node WireGuard address; FrankenPHP app runtime — no app served until you deploy one)
   note: Deploy an app from the operator, then curl the app domain through the gateway router with -w "%{time_total}s".
 ```
@@ -141,9 +145,9 @@ line to `ORBIT_E2E_LIVE_WIREGUARD_ENDPOINT` (or `--wireguard-endpoint=<host:port
 and writes a local `wg-quick` config under `apps/e2e/var/dev-topology/`.
 
 By default, live mode then starts that `wg-quick` tunnel, runs the current
-checkout's `bin/orbit gateway:add <gateway-ip> --name=incus-<id>` on the local
-machine, and verifies the gateway API through the tunnel. `gateway:add` stores
-the named gateway and makes it the active local gateway.
+checkout's `apps/cli/orbit gateway:add <gateway-ip> --name=incus-<id>` on the
+local machine, and verifies the gateway API through the tunnel. `gateway:add`
+stores the named gateway and makes it the active local gateway.
 
 Use `--manual` when you want only the retained topology plus generated config.
 Manual mode prints the `wg-quick up` and `orbit gateway:add` commands without

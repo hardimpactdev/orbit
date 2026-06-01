@@ -11,6 +11,7 @@ use App\E2E\Support\E2EPhaseTimer;
 use App\E2E\Support\E2ETopologyHarness;
 use App\E2E\Support\E2ETopologyKind;
 use App\E2E\Support\E2ETopologyLease;
+use App\E2E\Support\SourceMountedCheckoutInstance;
 use App\E2E\Support\SshKeyPair;
 use Illuminate\Contracts\Process\ProcessResult;
 use Illuminate\Support\Facades\File;
@@ -50,6 +51,66 @@ function currentCheckoutFakeInstance(array &$commands, string $name = 'fake-oper
         public function name(): string
         {
             return $this->name;
+        }
+
+        public function exec(string $command, ?int $timeoutSeconds = null): ProcessResult
+        {
+            $this->commands[] = $command;
+            $this->timeouts[] = $timeoutSeconds;
+
+            return currentCheckoutProcessResult();
+        }
+
+        public function ssh(string $user, SshKeyPair $keyPair, string $command, ?int $timeoutSeconds = null): ProcessResult
+        {
+            $this->commands[] = $command;
+            $this->timeouts[] = $timeoutSeconds;
+
+            return currentCheckoutProcessResult();
+        }
+
+        public function authorizeSsh(string $user, SshKeyPair $keyPair): void {}
+
+        public function copyFileToInstance(string $sourcePath, string $targetPath): void
+        {
+            $this->commands[] = "copy {$sourcePath} {$targetPath}";
+        }
+
+        public function waitForAgent(): void {}
+
+        public function waitForIpv4(): string
+        {
+            return '10.201.0.10';
+        }
+
+        public function waitForSsh(string $user, SshKeyPair $keyPair): void {}
+
+        public function delete(): void {}
+    };
+}
+
+function currentCheckoutFakeSourceMountedInstance(array &$commands, string $name = 'fake-operator', ?array &$timeouts = null): E2EInstance
+{
+    return new class($commands, $name, $timeouts) implements E2EInstance, SourceMountedCheckoutInstance
+    {
+        /**
+         * @param  array<int, string>  $commands
+         * @param  array<int, int|null>|null  $timeouts
+         */
+        public function __construct(
+            private array &$commands,
+            private readonly string $name,
+            private ?array &$timeouts = null,
+        ) {}
+
+        public function name(): string
+        {
+            return $this->name;
+        }
+
+        public function sourceMountedCheckoutPath(): ?string
+        {
+            return '/home/orbit/orbit';
         }
 
         public function exec(string $command, ?int $timeoutSeconds = null): ProcessResult
@@ -132,6 +193,103 @@ it('skips cli env copies when docker host-launcher vendor reuse points at the mo
         ->toContain('apps/gateway/vendor/autoload.php')
         ->toContain('apps/cli/vendor/autoload.php')
         ->not->toContain("cp '/home/orbit/orbit/apps/cli/.env' apps/cli/.env");
+});
+
+it('uses the mounted Incus checkout without archiving or composer-installing into source', function (): void {
+    $commands = [];
+    $instance = currentCheckoutFakeSourceMountedInstance($commands);
+    $key = new SshKeyPair('/tmp/id_ed25519', '/tmp/id_ed25519.pub');
+
+    E2ECurrentCheckout::install($instance, 'orbit', $key, hostLauncher: true);
+
+    $commandOutput = implode("\n", $commands);
+
+    expect($commandOutput)
+        ->toContain("mkdir -p '/home/orbit/orbit'")
+        ->toContain("[ ! -f 'apps/gateway/vendor/autoload.php' ]")
+        ->toContain("[ ! -f 'apps/cli/vendor/autoload.php' ]")
+        ->toContain("install -d -m 0700 -o orbit -g orbit '/home/orbit/.config/orbit' '/home/orbit/.config/orbit/gateway'")
+        ->toContain("ln -sfn '/home/orbit/orbit/apps/cli/orbit' '/usr/local/bin/orbit'")
+        ->not->toContain('/tmp/orbit-current.tar.gz')
+        ->not->toContain('tar --warning=no-unknown-keyword -xzf')
+        ->not->toContain('composer --working-dir=apps/gateway install')
+        ->not->toContain('composer --working-dir=apps/cli install')
+        ->not->toContain('composer --working-dir=apps/gateway dump-autoload')
+        ->not->toContain('composer --working-dir=apps/cli dump-autoload');
+});
+
+it('refreshes source-mounted Incus gateway settings through the mounted CLI', function (): void {
+    $operatorCommands = [];
+    $gatewayCommands = [];
+    $devCommands = [];
+    $key = new SshKeyPair('/tmp/id_ed25519', '/tmp/id_ed25519.pub');
+    $topology = new E2ETopologyLease(
+        kind: E2ETopologyKind::OperatorGatewayAppdev,
+        operator: currentCheckoutFakeSourceMountedInstance($operatorCommands, 'operator'),
+        gateway: currentCheckoutFakeSourceMountedInstance($gatewayCommands, 'gateway'),
+        dev: currentCheckoutFakeSourceMountedInstance($devCommands, 'dev'),
+        prod: null,
+        sshKeyPair: $key,
+        rebuild: fn () => throw new RuntimeException('not expected'),
+    );
+
+    E2ECurrentCheckout::installOnTopology($topology, roles: ['operator', 'gateway', 'dev']);
+
+    expect(implode("\n", $operatorCommands))
+        ->toContain("'/home/orbit/orbit/apps/cli/orbit' gateway:add '10.6.0.2' --json")
+        ->not->toContain('orbit gateway:add')
+        ->and(implode("\n", $gatewayCommands))
+        ->toContain("'/home/orbit/orbit/apps/cli/orbit' gateway:add '10.6.0.2' --json")
+        ->not->toContain('orbit gateway:add')
+        ->and(implode("\n", $devCommands))
+        ->toContain("'/home/orbit/orbit/apps/cli/orbit' gateway:add '10.6.0.2' --json")
+        ->not->toContain('orbit gateway:add');
+});
+
+it('writes source-mounted gateway state under the node config root instead of the mounted source tree', function (): void {
+    $method = new ReflectionMethod(E2ECurrentCheckout::class, 'runtimeStateCommand');
+    $method->setAccessible(true);
+
+    $command = $method->invoke(
+        null,
+        '/home/orbit/orbit',
+        '/home/orbit/orbit',
+        false,
+        null,
+        false,
+        'token-secret',
+        true,
+    );
+
+    expect($command)
+        ->toContain('/home/orbit/.config/orbit/gateway/.env')
+        ->toContain('/home/orbit/.config/orbit/gateway/database/database.sqlite')
+        ->toContain('/home/orbit/.config/orbit/gateway/storage/app/orbit')
+        ->not->toContain("cp '/home/orbit/orbit/apps/gateway/.env' apps/gateway/.env")
+        ->not->toContain('apps/gateway/database/database.sqlite')
+        ->not->toContain('apps/gateway/storage/app');
+});
+
+it('does not infer source-mounted gateway state from the checkout path alone', function (): void {
+    $method = new ReflectionMethod(E2ECurrentCheckout::class, 'runtimeStateCommand');
+    $method->setAccessible(true);
+
+    $command = $method->invoke(
+        null,
+        '/home/orbit/orbit',
+        null,
+        false,
+        null,
+        false,
+        'token-secret',
+        false,
+    );
+
+    expect($command)
+        ->toContain('apps/gateway/.env')
+        ->toContain('apps/gateway/database/database.sqlite')
+        ->not->toContain('/home/orbit/.config/orbit/gateway/.env')
+        ->not->toContain('ORBIT_CONFIG_ROOT=');
 });
 
 it('can seed the current checkout from prepared topology state', function (): void {

@@ -104,6 +104,36 @@ it('uses incus snapshot restore and supports stateful restore', function (): voi
         ->and($commands[1])->toContain("incus snapshot restore 'orbit-e2e-run-operator' 'lease-warm' --stateful");
 });
 
+it('validates an explicit remote source path before using it for Incus mounts', function (): void {
+    $commands = [];
+    $host = recordingIncusHost(incusHostTestConfig(host: 'beast'), $commands);
+
+    withE2EConfigEnvironment([
+        'ORBIT_E2E_INCUS_SOURCE_PATH' => '/srv/orbit-source',
+    ], function () use ($host, &$commands): void {
+        expect($host->sourcePath())->toBe('/srv/orbit-source');
+    });
+
+    expect($commands)->toContain("test -d '/srv/orbit-source' && test -f '/srv/orbit-source/apps/cli/orbit'");
+});
+
+it('fails clearly when an explicit Incus source path is not visible on the host', function (): void {
+    $host = new class(incusHostTestConfig(host: 'beast')) extends IncusHost
+    {
+        public function run(string $command, ?int $timeoutSeconds = null): ProcessResult
+        {
+            return incusHostTestProcessResult('missing source', 1);
+        }
+    };
+
+    withE2EConfigEnvironment([
+        'ORBIT_E2E_INCUS_SOURCE_PATH' => '/missing/orbit-source',
+    ], function () use ($host): void {
+        expect(fn () => $host->sourcePath())
+            ->toThrow(RuntimeException::class, 'Configured Incus source path [/missing/orbit-source] is not visible on host [beast]');
+    });
+});
+
 it('uses reusable stateful snapshots for warm topology reset points', function (): void {
     $commands = [];
     $host = recordingIncusHost(incusHostTestConfig(), $commands);

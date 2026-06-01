@@ -98,12 +98,12 @@ final readonly class IncusTopologyTemplate
     /**
      * @return array<string, IncusInstance>
      */
-    public static function clone(IncusHost $host, E2ETopologyKind $kind, string $runId, ?E2EPhaseTimer $timer = null, bool $stateful = false): array
+    public static function clone(IncusHost $host, E2ETopologyKind $kind, string $runId, ?E2EPhaseTimer $timer = null, bool $stateful = false, bool $sourceMounted = false): array
     {
         $timer ??= new E2EPhaseTimer;
         $roles = self::rolesFor($kind);
 
-        $script = self::buildBatchScript($host, $kind, $runId, $roles, stateful: $stateful);
+        $script = self::buildBatchScript($host, $kind, $runId, $roles, stateful: $stateful, sourceMounted: $sourceMounted);
 
         $result = $timer->measure('batch.copy-start', fn () => $host->run($script));
 
@@ -116,7 +116,7 @@ final readonly class IncusTopologyTemplate
         $instances = [];
         foreach ($roles as $role) {
             $clone = self::cloneName($runId, $role);
-            $instance = new IncusInstance($host, $clone, commandTransport: true);
+            $instance = new IncusInstance($host, $clone, commandTransport: true, sourceMountedCheckout: $sourceMounted);
             $timer->measure("agent-ready.{$role}", fn () => $instance->waitForAgent());
             $timer->measure("network-identity.{$role}", fn () => $instance->refreshNetworkIdentity());
             $instances[$role] = $instance;
@@ -128,7 +128,7 @@ final readonly class IncusTopologyTemplate
     /**
      * @param  list<string>  $roles
      */
-    public static function buildBatchScript(IncusHost $host, E2ETopologyKind $kind, string $runId, array $roles, ?bool $stateful = null): string
+    public static function buildBatchScript(IncusHost $host, E2ETopologyKind $kind, string $runId, array $roles, ?bool $stateful = null, bool $sourceMounted = false): string
     {
         $cpus = escapeshellarg($host->config->topologyCpus);
         $memory = escapeshellarg($host->config->topologyMemory);
@@ -143,9 +143,17 @@ final readonly class IncusTopologyTemplate
         $identityLines = [];
         $rootSizeLines = [];
         $statefulLines = [];
+        $sourceMountLines = [];
         $startLines = [];
         $waitStartLines = [];
         $stateful ??= getenv('ORBIT_E2E_TOPOLOGY_RESET') === 'stateful-restore';
+        $sourcePath = $sourceMounted ? $host->sourcePath() : null;
+
+        if ($sourceMounted && $sourcePath === null) {
+            throw new \RuntimeException(
+                "source-mounted Incus topologies require ORBIT_E2E_INCUS_SOURCE_PATH for remote Incus hosts [{$host->config->host}]"
+            );
+        }
 
         $index = 0;
         foreach ($roles as $role) {
@@ -166,6 +174,13 @@ final readonly class IncusTopologyTemplate
                 $statefulLines[] = "incus config set {$clone} migration.stateful=true";
             }
 
+            if ($sourceMounted) {
+                $sourceMountLines = [
+                    ...$sourceMountLines,
+                    ...self::sourceMountCommands($sourcePath, $clone),
+                ];
+            }
+
             $startLines[] = "incus start {$clone} & PID_START_{$index}=\$!";
             $waitStartLines[] = "wait \$PID_START_{$index}";
         }
@@ -177,9 +192,28 @@ final readonly class IncusTopologyTemplate
             ...$identityLines,
             ...$rootSizeLines,
             ...$statefulLines,
+            ...$sourceMountLines,
             ...$startLines,
             ...$waitStartLines,
         ]);
+    }
+
+    /**
+     * @return list<string>
+     */
+    private static function sourceMountCommands(string $sourcePath, string $clone): array
+    {
+        $source = escapeshellarg($sourcePath);
+
+        return [
+            "if incus config device get {$clone} orbit-source path >/dev/null 2>&1; then",
+            "  incus config device set {$clone} orbit-source source={$source}",
+            "  incus config device set {$clone} orbit-source path='/home/orbit/orbit'",
+            "  incus config device set {$clone} orbit-source shift=true",
+            'else',
+            "  incus config device add {$clone} orbit-source disk source={$source} path='/home/orbit/orbit' shift=true",
+            'fi',
+        ];
     }
 
     private static function cloneMacAddress(string $runId, string $role): string

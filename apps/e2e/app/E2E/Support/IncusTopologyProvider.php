@@ -86,7 +86,7 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
 
     public function acquire(E2ETopologyKind $kind, string $runId, E2EPhaseTimer $timer, E2ETopologyAcquisitionOptions $options): E2ETopologyLease
     {
-        if (IncusWarmTopologyPool::enabled()) {
+        if ($this->shouldAcquireWarmSnapshots($options)) {
             return $this->acquireWarm($kind, $timer, $options);
         }
 
@@ -103,7 +103,7 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
         }
 
         try {
-            $instances = IncusTopologyTemplate::clone($host, $kind, $runId, $timer);
+            $instances = IncusTopologyTemplate::clone($host, $kind, $runId, $timer, sourceMounted: $options->sourceMountedCheckout);
 
             $sshKeyPair = $this->createSshKeyPair($host, $runId);
             $primaryUsers = $this->prepareInstances($instances, $this->config, $sshKeyPair, $timer, $options, $kind);
@@ -123,7 +123,7 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
         }
 
         $rebuild = function (E2EPhaseTimer $cycleTimer) use ($host, $kind, $runId, $sshKeyPair, $options): array {
-            $newInstances = IncusTopologyTemplate::clone($host, $kind, $runId, $cycleTimer);
+            $newInstances = IncusTopologyTemplate::clone($host, $kind, $runId, $cycleTimer, sourceMounted: $options->sourceMountedCheckout);
             $newPrimaryUsers = $this->prepareInstances($newInstances, $this->config, $sshKeyPair, $cycleTimer, $options, $kind);
             $leaseInstances = $this->leaseInstancesFor($kind, $newInstances);
 
@@ -234,6 +234,15 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
         }
 
         return $manifest;
+    }
+
+    private function shouldAcquireWarmSnapshots(E2ETopologyAcquisitionOptions $options): bool
+    {
+        if (! IncusWarmTopologyPool::enabled()) {
+            return false;
+        }
+
+        return ! $options->sourceMountedCheckout;
     }
 
     private function acquireWarm(E2ETopologyKind $kind, E2EPhaseTimer $timer, E2ETopologyAcquisitionOptions $options): E2ETopologyLease

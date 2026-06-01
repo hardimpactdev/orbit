@@ -335,10 +335,49 @@ class IncusHost
         );
     }
 
+    public function sourcePath(): ?string
+    {
+        $suffix = strtoupper((string) preg_replace('/[^A-Za-z0-9]+/', '_', $this->config->host));
+        $hostSpecificPath = getenv("ORBIT_E2E_INCUS_SOURCE_PATH_{$suffix}");
+
+        if (is_string($hostSpecificPath) && trim($hostSpecificPath) !== '') {
+            return $this->validatedSourcePath(trim($hostSpecificPath));
+        }
+
+        $sourcePath = getenv('ORBIT_E2E_INCUS_SOURCE_PATH');
+
+        if (is_string($sourcePath) && trim($sourcePath) !== '') {
+            return $this->validatedSourcePath(trim($sourcePath));
+        }
+
+        if (! $this->isLocalHost($this->config->host)) {
+            return null;
+        }
+
+        return $this->validatedSourcePath(repo_path());
+    }
+
     private function isLocalHost(string $host): bool
     {
         return in_array(strtolower($host), ['', 'localhost', '127.0.0.1', '::1'], true)
             || strtolower($host) === strtolower((string) gethostname());
+    }
+
+    private function validatedSourcePath(string $path): string
+    {
+        $result = $this->run(sprintf(
+            'test -d %s && test -f %s',
+            escapeshellarg($path),
+            escapeshellarg("{$path}/apps/cli/orbit"),
+        ), timeoutSeconds: 30);
+
+        if (! $result->successful()) {
+            throw new RuntimeException(
+                "Configured Incus source path [{$path}] is not visible on host [{$this->config->host}] or does not contain apps/cli/orbit."
+            );
+        }
+
+        return $path;
     }
 
     public function commandExists(string $command): bool

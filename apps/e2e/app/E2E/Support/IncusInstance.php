@@ -7,7 +7,7 @@ namespace App\E2E\Support;
 use Illuminate\Contracts\Process\ProcessResult;
 use Illuminate\Support\Facades\Process;
 
-final class IncusInstance implements E2EInstance
+final class IncusInstance implements E2EInstance, SourceMountedCheckoutInstance
 {
     private ?string $ipv4 = null;
 
@@ -15,6 +15,7 @@ final class IncusInstance implements E2EInstance
         private readonly IncusHost $host,
         private readonly string $name,
         private readonly bool $commandTransport = false,
+        private readonly bool $sourceMountedCheckout = false,
     ) {}
 
     public function name(): string
@@ -225,6 +226,11 @@ final class IncusInstance implements E2EInstance
             'incus delete --force %s >/dev/null 2>&1 || true',
             escapeshellarg($this->name),
         ), timeoutSeconds: 120);
+    }
+
+    public function sourceMountedCheckoutPath(): ?string
+    {
+        return $this->sourceMountedCheckout ? '/home/orbit/orbit' : null;
     }
 
     public function stop(): void
