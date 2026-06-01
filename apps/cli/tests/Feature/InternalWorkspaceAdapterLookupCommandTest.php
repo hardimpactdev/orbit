@@ -11,6 +11,9 @@ use Symfony\Component\Process\Process;
 describe('internal workspace adapter lookup command', function (): void {
     beforeEach(function (): void {
         configureWorkspaceAdapterOperationTokenGuard();
+        fakeGateway(fakeSuccessEnvelope([
+            'allowed' => true,
+        ]));
 
         $this->workspaceAdapterTemp = sys_get_temp_dir().'/orbit-cli-workspace-adapter-'.bin2hex(random_bytes(8));
         mkdir($this->workspaceAdapterTemp, recursive: true);
@@ -44,6 +47,10 @@ describe('internal workspace adapter lookup command', function (): void {
     });
 
     it('rejects an invalid operation token before opening adapter databases', function (): void {
+        config()->set('orbit.gateway.url', null);
+        app()->forgetInstance('App\Services\GatewayApiClient');
+        app()->forgetInstance('App\Services\Executor\OperationTokenGuard');
+
         [$exitCode, $output] = runWorkspaceAdapterLookupCommand($this, [
             '--adapter' => 'polyscope',
             '--app-path' => '/srv/docs',
@@ -204,8 +211,8 @@ describe('internal workspace adapter lookup command', function (): void {
 
 function configureWorkspaceAdapterOperationTokenGuard(): void
 {
-    config()->set('orbit.executor.shared_secret', 'gateway-secret');
-    config()->set('orbit.executor.node_identity', 'app-dev');
+    config()->set('orbit.executor.shared_secret', null);
+    config()->set('orbit.executor.node_identity', null);
 
     app()->forgetInstance('App\Services\Executor\OperationTokenGuard');
 }

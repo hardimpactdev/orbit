@@ -31,8 +31,8 @@ class TestRedactionCommand extends InternalExecutorCommand
 
 function configureRedactionTestGuard(): void
 {
-    config()->set('orbit.executor.shared_secret', 'redaction-secret');
-    config()->set('orbit.executor.node_identity', 'redaction-node');
+    config()->set('orbit.executor.shared_secret', null);
+    config()->set('orbit.executor.node_identity', null);
     app()->forgetInstance('App\Services\Executor\OperationTokenGuard');
 }
 
@@ -73,6 +73,9 @@ function runRedactionCommand(object $test, array $resultData): array
 describe('InternalExecutorCommand redaction', function (): void {
     beforeEach(function (): void {
         configureRedactionTestGuard();
+        fakeGateway(fakeSuccessEnvelope([
+            'allowed' => true,
+        ]));
     });
 
     it('blocks result containing key "operation_token"', function (): void {

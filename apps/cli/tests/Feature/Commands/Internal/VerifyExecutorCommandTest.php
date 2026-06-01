@@ -5,12 +5,15 @@ declare(strict_types=1);
 use App\Commands\Internal\InternalExecutorCommand;
 use App\Commands\Internal\VerifyExecutorCommand;
 use App\Services\Executor\OperationTokenGuard;
+use App\Services\GatewayApiClient;
+use Illuminate\Http\Client\Request;
+use Illuminate\Support\Facades\Http;
 use Orbit\Core\Http\JsonEnvelope;
 use Orbit\Core\Security\OperationTokenSigner;
 
 beforeEach(function (): void {
-    config()->set('orbit.executor.shared_secret', 'verify-executor-test-secret');
-    config()->set('orbit.executor.node_identity', 'verify-executor-test-node');
+    config()->set('orbit.executor.shared_secret', null);
+    config()->set('orbit.executor.node_identity', null);
     app()->forgetInstance(OperationTokenGuard::class);
 });
 
@@ -49,6 +52,10 @@ describe('ORBIT-CLI-ARCH-01 — VerifyExecutorCommand pillars', function (): voi
     });
 
     it('rejects an invalid operation token with code invalid_token via the OperationTokenGuard service (action/service delegation)', function (): void {
+        fakeGateway(fakeSuccessEnvelope([
+            'allowed' => false,
+        ]));
+
         [$exitCode, $output] = runCommand($this, 'internal:executor:verify', [
             '--operation-token' => 'not-a-real-token',
             '--json' => true,
@@ -60,21 +67,60 @@ describe('ORBIT-CLI-ARCH-01 — VerifyExecutorCommand pillars', function (): voi
             ->and($decoded)->toBe(JsonEnvelope::failure('invalid_token', 'Operation token is invalid.'));
     });
 
-    it('rejects a token signed for a different command name (guard.verify enforces command-name binding)', function (): void {
-        $wrongCommandToken = signVerifyExecutorToken(command: 'internal:wg-easy:state');
+    it('posts the expected verification payload to the gateway endpoint', function (): void {
+        fakeGateway(fakeSuccessEnvelope([
+            'allowed' => true,
+        ]));
+
+        $token = signVerifyExecutorToken(id: 'op-verify-payload');
 
         [$exitCode, $output] = runCommand($this, 'internal:executor:verify', [
-            '--operation-token' => $wrongCommandToken,
+            '--operation-token' => $token,
             '--json' => true,
         ]);
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('invalid_token');
+        expect($exitCode)->toBe(0)
+            ->and($decoded['success']['data']['operation_id'])->toBe('op-verify-payload');
+
+        Http::assertSent(function (Request $request) use ($token): bool {
+            return $request->method() === 'POST'
+                && $request->url() === 'https://gateway.test/api/internal-executor/token/verify'
+                && $request['operation_token'] === $token
+                && $request['command'] === 'internal:executor:verify';
+        });
+    });
+
+    it('uses the current gateway client when the guard singleton was resolved before config changed', function (): void {
+        config()->set('orbit.gateway.url', 'https://stale-gateway.test');
+        config()->set('orbit.gateway.timeout', 30);
+        app()->forgetInstance(GatewayApiClient::class);
+        app(OperationTokenGuard::class);
+
+        fakeGateway(fakeSuccessEnvelope([
+            'allowed' => true,
+        ]));
+
+        [$exitCode, $output] = runCommand($this, 'internal:executor:verify', [
+            '--operation-token' => signVerifyExecutorToken(id: 'op-verify-fresh-client'),
+            '--json' => true,
+        ]);
+
+        $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(0)
+            ->and($decoded['success']['data']['operation_id'])->toBe('op-verify-fresh-client');
+
+        Http::assertSent(fn (Request $request): bool => $request->url() === 'https://gateway.test/api/internal-executor/token/verify');
+        Http::assertNotSent(fn (Request $request): bool => $request->url() === 'https://stale-gateway.test/api/internal-executor/token/verify');
     });
 
     it('returns a typed result with operation_id, node, and command keys after the guard accepts the token (typed result serialization)', function (): void {
+        fakeGateway(fakeSuccessEnvelope([
+            'allowed' => true,
+        ]));
+
         [$exitCode, $output] = runCommand($this, 'internal:executor:verify', [
             '--operation-token' => signVerifyExecutorToken(id: 'op-verify-42', node: 'verify-executor-test-node'),
             '--json' => true,
@@ -89,6 +135,39 @@ describe('ORBIT-CLI-ARCH-01 — VerifyExecutorCommand pillars', function (): voi
                 'node' => 'verify-executor-test-node',
                 'command' => 'internal:executor:verify',
             ]);
+    });
+
+    it('maps malformed gateway verification responses to invalid_token without leaking details', function (): void {
+        fakeGateway(fakeSuccessEnvelope([
+            'unexpected' => true,
+        ]));
+
+        [$exitCode, $output] = runCommand($this, 'internal:executor:verify', [
+            '--operation-token' => signVerifyExecutorToken(),
+            '--json' => true,
+        ]);
+
+        $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(1)
+            ->and($decoded)->toBe(JsonEnvelope::failure('invalid_token', 'Operation token is invalid.'))
+            ->and($output)->not->toContain('unexpected')
+            ->and($output)->not->toContain('gateway');
+    });
+
+    it('maps gateway verification transport failures to invalid_token without leaking details', function (): void {
+        fakeGatewayDown('connection refused');
+
+        [$exitCode, $output] = runCommand($this, 'internal:executor:verify', [
+            '--operation-token' => signVerifyExecutorToken(),
+            '--json' => true,
+        ]);
+
+        $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(1)
+            ->and($decoded)->toBe(JsonEnvelope::failure('invalid_token', 'Operation token is invalid.'))
+            ->and($output)->not->toContain('connection refused');
     });
 
     it('refuses to emit a result that would contain a forbidden secret key (result-boundary scan inherited from base)', function (): void {

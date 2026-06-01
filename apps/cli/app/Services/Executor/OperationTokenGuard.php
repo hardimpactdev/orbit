@@ -5,41 +5,54 @@ declare(strict_types=1);
 namespace App\Services\Executor;
 
 use App\Exceptions\OperationTokenGuardException;
-use Orbit\Core\Security\OperationToken;
-use Orbit\Core\Security\OperationTokenVerifier;
+use App\Services\GatewayApiClient;
+use Closure;
 use Throwable;
 
 final readonly class OperationTokenGuard
 {
     public function __construct(
-        private ?string $secret,
-        private ?string $expectedNode,
-        private OperationTokenVerifier $verifier,
+        /** @var Closure(): GatewayApiClient */
+        private Closure $resolveGateway,
     ) {}
 
-    public function verify(string $compactToken, string $expectedCommand): OperationToken
+    public function verify(string $compactToken, string $expectedCommand): void
     {
-        if ($this->secret === null || $this->expectedNode === null || $expectedCommand === '') {
+        if ($expectedCommand === '') {
             throw new OperationTokenGuardException;
         }
 
         try {
-            $token = OperationToken::parse($compactToken);
+            $response = ($this->resolveGateway)()->post('/api/internal-executor/token/verify', [
+                'operation_token' => $compactToken,
+                'command' => $expectedCommand,
+            ]);
         } catch (Throwable) {
             throw new OperationTokenGuardException;
         }
 
-        $isValid = $this->verifier->verify(
-            secret: $this->secret,
-            token: $token,
-            expectedNode: $this->expectedNode,
-            expectedCommand: $expectedCommand,
-        );
-
-        if (! $isValid) {
+        if (! $this->isAllowedResponse($response)) {
             throw new OperationTokenGuardException;
         }
+    }
 
-        return $token;
+    /**
+     * @param  array<string, mixed>  $response
+     */
+    private function isAllowedResponse(array $response): bool
+    {
+        $success = $response['success'] ?? null;
+
+        if (! is_array($success)) {
+            return false;
+        }
+
+        $data = $success['data'] ?? null;
+
+        if (! is_array($data)) {
+            return false;
+        }
+
+        return ($data['allowed'] ?? null) === true;
     }
 }

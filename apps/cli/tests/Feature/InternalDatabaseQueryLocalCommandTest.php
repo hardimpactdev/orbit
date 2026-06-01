@@ -11,6 +11,9 @@ use Symfony\Component\Console\Output\BufferedOutput;
 describe('internal database query local command', function (): void {
     beforeEach(function (): void {
         configureDatabaseQueryLocalOperationTokenGuard();
+        fakeGateway(fakeSuccessEnvelope([
+            'allowed' => true,
+        ]));
     });
 
     it('rejects a missing operation token before reading stdin', function (): void {
@@ -24,6 +27,10 @@ describe('internal database query local command', function (): void {
     });
 
     it('rejects an invalid operation token before reading stdin', function (): void {
+        config()->set('orbit.gateway.url', null);
+        app()->forgetInstance('App\Services\GatewayApiClient');
+        app()->forgetInstance('App\Services\Executor\OperationTokenGuard');
+
         [$exitCode, $output] = runInternalDatabaseQueryLocalCommand([
             '--operation-token' => 'not-a-token',
             '--json' => true,
@@ -141,8 +148,8 @@ describe('internal database query local command', function (): void {
 
 function configureDatabaseQueryLocalOperationTokenGuard(): void
 {
-    config()->set('orbit.executor.shared_secret', 'gateway-secret');
-    config()->set('orbit.executor.node_identity', 'app-dev');
+    config()->set('orbit.executor.shared_secret', null);
+    config()->set('orbit.executor.node_identity', null);
 
     app()->forgetInstance('App\Services\Executor\OperationTokenGuard');
 }
