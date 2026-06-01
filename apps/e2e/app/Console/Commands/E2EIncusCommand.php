@@ -8,10 +8,13 @@ use App\E2E\Support\E2EConfig;
 use App\E2E\Support\E2EDevTopologyManifestStore;
 use App\E2E\Support\E2ETopologyKind;
 use App\E2E\Support\IncusHost;
+use App\E2E\Support\LiveIncusLocalMachine;
+use App\E2E\Support\LiveIncusStepTree;
 use Closure;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
+use Illuminate\Contracts\Process\ProcessResult;
 use RuntimeException;
 use Throwable;
 
@@ -26,6 +29,7 @@ use Throwable;
     {--operator-name= : Operator identity name to mint for --live (defaults to mac-<id>)}
     {--gateway-name= : Local gateway entry name for --live follow-up commands (defaults to incus-<id>)}
     {--wireguard-endpoint= : Public or LAN WireGuard endpoint to write into the --live config}
+    {--manual : Generate the live WireGuard config and instructions without starting wg-quick or adding the local gateway}
     {--dry-run : Render the acquisition plan without provisioning a topology}
     {--json : Output as JSON}')]
 #[Description('Start, expose, or stop retained Incus topologies for manual diagnosis')]
@@ -38,6 +42,9 @@ class E2EIncusCommand extends Command
     /** @var (Closure(string): IncusHost)|null */
     private ?Closure $hostFactory = null;
 
+    /** @var (Closure(): LiveIncusLocalMachine)|null */
+    private ?Closure $localMachineFactory = null;
+
     /**
      * Override the Incus host factory for command tests.
      *
@@ -46,6 +53,16 @@ class E2EIncusCommand extends Command
     public function hostFactoryUsing(Closure $factory): void
     {
         $this->hostFactory = $factory;
+    }
+
+    /**
+     * Override the local machine adapter for command tests.
+     *
+     * @param  Closure(): LiveIncusLocalMachine  $factory
+     */
+    public function localMachineUsing(Closure $factory): void
+    {
+        $this->localMachineFactory = $factory;
     }
 
     public function handle(): int
@@ -90,8 +107,20 @@ class E2EIncusCommand extends Command
 
     private function stop(): int
     {
+        $json = (bool) $this->option('json');
+
+        try {
+            $store = E2EDevTopologyManifestStore::fromEnvironment(repo_path());
+
+            foreach ($this->manifestsForStop($store) as $manifest) {
+                $this->stopLocalTunnelIfRecorded($manifest);
+            }
+        } catch (Throwable $exception) {
+            return $this->renderLiveException($exception, $json);
+        }
+
         $parameters = [
-            '--json' => (bool) $this->option('json'),
+            '--json' => $json,
             '--all' => (bool) $this->option('all'),
         ];
 
@@ -107,6 +136,7 @@ class E2EIncusCommand extends Command
     private function live(): int
     {
         $json = (bool) $this->option('json');
+        $manual = (bool) $this->option('manual');
 
         if ((bool) $this->option('dry-run')) {
             return $this->renderError('validation_failed', '--live cannot be combined with --dry-run because no topology or operator identity would be created.', $json);
@@ -129,6 +159,26 @@ class E2EIncusCommand extends Command
             return $this->renderError('validation_failed', "Unsupported E2E topology kind [{$kindInput}].", $json);
         }
 
+        if (! $manual && ! $this->localMachine()->hasWireGuardTools()) {
+            return $this->renderError(
+                'local_wireguard_unavailable',
+                'Install wg and wg-quick before running live Incus local setup, or pass --manual.',
+                $json,
+            );
+        }
+
+        if (! $json) {
+            (new LiveIncusStepTree)->renderInitial($this->output, 'Preparing live Incus topology', [
+                'Validate live endpoint',
+                'Acquire topology',
+                'Mint local operator identity',
+                'Write WireGuard config',
+                'Start local tunnel',
+                'Add local gateway',
+                'Verify gateway API',
+            ]);
+        }
+
         try {
             $devTopology = app(E2EDevTopologyCommand::class);
             $displayRoles = $devTopology->displayCheckoutRolesForInput($kind, $this->stringOption('checkout-roles'));
@@ -137,10 +187,15 @@ class E2EIncusCommand extends Command
             $gatewayName = $this->nodeName($this->stringOption('gateway-name') ?? "incus-{$manifest['id']}");
             $enrollment = $this->mintOperatorIdentity($manifest, $operatorName);
             $wireGuardConfig = $this->rewriteWireGuardEndpoint($this->wireGuardConfig($enrollment), $endpoint);
-            $wireGuardConfigPath = $this->writeWireGuardConfig($manifest['id'], $operatorName, $wireGuardConfig);
-            $payload = $this->livePayload($manifest, $operatorName, $gatewayName, $endpoint, $wireGuardConfig, $wireGuardConfigPath, $enrollment);
+            $wireGuardInterface = $this->wireGuardInterfaceName($manifest['id']);
+            $wireGuardConfigPath = $this->writeWireGuardConfig($wireGuardInterface, $wireGuardConfig);
+            $localSetup = $manual
+                ? $this->manualLocalSetup()
+                : $this->startLocalSetup($wireGuardInterface, $wireGuardConfigPath, $manifest['gateway_ip'], $gatewayName);
+            $payload = $this->livePayload($manifest, $operatorName, $gatewayName, $endpoint, $wireGuardInterface, $wireGuardConfig, $wireGuardConfigPath, $localSetup, $enrollment);
+            $this->writeLiveManifest($manifest, $payload, $operatorName, $gatewayName);
         } catch (Throwable $exception) {
-            return $this->renderError('live_setup_failed', $exception->getMessage(), $json);
+            return $this->renderLiveException($exception, $json);
         }
 
         return $this->renderLive($payload, $json);
@@ -194,6 +249,15 @@ class E2EIncusCommand extends Command
         }
 
         return new IncusHost(E2EConfig::fromEnvironment()->forHost($host));
+    }
+
+    private function localMachine(): LiveIncusLocalMachine
+    {
+        if ($this->localMachineFactory !== null) {
+            return ($this->localMachineFactory)();
+        }
+
+        return new LiveIncusLocalMachine;
     }
 
     /**
@@ -323,7 +387,7 @@ class E2EIncusCommand extends Command
         return $rewritten;
     }
 
-    private function writeWireGuardConfig(string $topologyId, string $operatorName, string $config): string
+    private function writeWireGuardConfig(string $interface, string $config): string
     {
         $store = E2EDevTopologyManifestStore::fromEnvironment(repo_path());
         $directory = $store->directory();
@@ -332,12 +396,14 @@ class E2EIncusCommand extends Command
             mkdir($directory, 0777, true);
         }
 
-        $path = $directory.'/'.$this->fileName("{$topologyId}-{$operatorName}.conf");
+        $path = $directory.'/'.$this->fileName($interface).'.conf';
         $written = file_put_contents($path, $config);
 
         if ($written === false) {
             throw new RuntimeException("Could not write WireGuard config to [{$path}].");
         }
+
+        chmod($path, 0600);
 
         return $path;
     }
@@ -352,8 +418,10 @@ class E2EIncusCommand extends Command
         string $operatorName,
         string $gatewayName,
         string $endpoint,
+        string $wireGuardInterface,
         string $wireGuardConfig,
         string $wireGuardConfigPath,
+        array $localSetup,
         array $enrollment,
     ): array {
         $gatewayAddCommand = "orbit gateway:add {$manifest['gateway_ip']} --name={$gatewayName}";
@@ -367,14 +435,30 @@ class E2EIncusCommand extends Command
             'wireguard_endpoint' => $endpoint,
             'wireguard_config_path' => $wireGuardConfigPath,
             'wireguard_config' => $wireGuardConfig,
+            'wireguard' => [
+                'endpoint' => $endpoint,
+                'interface' => $wireGuardInterface,
+                'real_interface' => $localSetup['real_interface'],
+                'config_path' => $wireGuardConfigPath,
+                'started' => $localSetup['started'],
+                'gateway_added' => $localSetup['gateway_added'],
+                'verified' => $localSetup['verified'],
+            ],
             'gateway_name' => $gatewayName,
             'gateway_add_command' => $gatewayAddCommand,
             'gateway_use_command' => $gatewayUseCommand,
             'release_command' => $releaseCommand,
+            'commands' => [
+                'stop' => $releaseCommand,
+                'gateway_check' => 'orbit node:list --json',
+            ],
             'next_steps' => [
-                'Import and activate the WireGuard configuration on this Mac.',
-                "Run `{$gatewayAddCommand}`.",
-                "Run `{$gatewayUseCommand}` if another gateway is active.",
+                $localSetup['started'] === true
+                    ? "WireGuard tunnel [{$wireGuardInterface}] is active."
+                    : "Run `wg-quick up {$wireGuardConfigPath}`.",
+                $localSetup['gateway_added'] === true
+                    ? "Local gateway [{$gatewayName}] is active."
+                    : "Run `{$gatewayAddCommand}`.",
                 'Verify access with `orbit gateway:list` or `orbit node:list --json`.',
                 "Release the topology with `{$releaseCommand}` when you are done.",
             ],
@@ -392,6 +476,126 @@ class E2EIncusCommand extends Command
     }
 
     /**
+     * @return array{
+     *     mode: string,
+     *     started: bool,
+     *     gateway_added: bool,
+     *     real_interface: string|null,
+     *     verified: bool
+     * }
+     */
+    private function startLocalSetup(string $interface, string $configPath, string $gatewayIp, string $gatewayName): array
+    {
+        $machine = $this->localMachine();
+
+        if (! $machine->hasWireGuardTools()) {
+            throw new RuntimeException('local_wireguard_unavailable: Install wg and wg-quick before running live Incus local setup, or pass --manual.');
+        }
+
+        $startedByCommand = false;
+        $realInterface = $machine->realWireGuardInterface($interface);
+
+        if ($realInterface === null) {
+            $start = $machine->startWireGuard($configPath);
+
+            if (! $start->successful()) {
+                throw new RuntimeException('local_wireguard_failed: '.$this->processError($start));
+            }
+
+            $startedByCommand = true;
+            $realInterface = $machine->realWireGuardInterface($interface);
+        }
+
+        $interfaces = $machine->wireGuardInterfaces();
+
+        if ($realInterface === null || ! in_array($realInterface, $interfaces, true)) {
+            $this->stopStartedWireGuardAfterFailure($machine, $startedByCommand, $configPath);
+
+            throw new RuntimeException('local_wireguard_failed: wg-quick started but the tunnel was not visible through wg show interfaces.');
+        }
+
+        $gateway = $machine->addGateway($gatewayIp, $gatewayName);
+
+        if (! $gateway->successful()) {
+            $this->stopStartedWireGuardAfterFailure($machine, $startedByCommand, $configPath);
+
+            throw new RuntimeException('local_gateway_failed: '.$this->processError($gateway));
+        }
+
+        $verify = $machine->verifyGateway($gatewayIp);
+
+        if (! $verify->successful()) {
+            $this->stopStartedWireGuardAfterFailure($machine, $startedByCommand, $configPath);
+
+            throw new RuntimeException('gateway_unreachable: '.$this->processError($verify));
+        }
+
+        return [
+            'mode' => 'wg-quick',
+            'started' => true,
+            'gateway_added' => true,
+            'real_interface' => $realInterface,
+            'verified' => true,
+        ];
+    }
+
+    /**
+     * @return array{
+     *     mode: string,
+     *     started: bool,
+     *     gateway_added: bool,
+     *     real_interface: string|null,
+     *     verified: bool
+     * }
+     */
+    private function manualLocalSetup(): array
+    {
+        return [
+            'mode' => 'manual',
+            'started' => false,
+            'gateway_added' => false,
+            'real_interface' => null,
+            'verified' => false,
+        ];
+    }
+
+    private function stopStartedWireGuardAfterFailure(LiveIncusLocalMachine $machine, bool $startedByCommand, string $configPath): void
+    {
+        if (! $startedByCommand) {
+            return;
+        }
+
+        $machine->stopWireGuard($configPath);
+    }
+
+    private function processError(ProcessResult $result): string
+    {
+        $output = trim($result->errorOutput() ?: $result->output());
+
+        return $output !== '' ? $output : 'Command failed without output.';
+    }
+
+    /**
+     * @param  array<string, mixed>  $manifest
+     * @param  array<string, mixed>  $payload
+     */
+    private function writeLiveManifest(array $manifest, array $payload, string $operatorName, string $gatewayName): void
+    {
+        (E2EDevTopologyManifestStore::fromEnvironment(repo_path()))->write([
+            ...$manifest,
+            'live' => [
+                'operator_node' => $operatorName,
+                'wireguard' => $payload['wireguard'],
+                'gateway' => [
+                    'name' => $gatewayName,
+                    'ip' => $manifest['gateway_ip'],
+                    'added' => $payload['wireguard']['gateway_added'],
+                ],
+            ],
+        ]);
+    }
+
+    /**
      * @param  array<string, mixed>  $payload
      */
     private function renderLive(array $payload, bool $json): int
@@ -406,7 +610,7 @@ class E2EIncusCommand extends Command
             return self::SUCCESS;
         }
 
-        $this->line("Live Incus topology [{$payload['id']}] is ready.");
+        (new LiveIncusStepTree)->renderComplete($this->output, "Live Incus topology [{$payload['id']}] is ready.");
         $this->line("Kind: {$payload['kind']}");
         $this->line("Provider: {$payload['provider']} (host {$payload['host']})");
         $this->line("Gateway API: http://{$payload['gateway_ip']}");
@@ -417,7 +621,15 @@ class E2EIncusCommand extends Command
         }
 
         $this->line("WireGuard endpoint: {$payload['wireguard_endpoint']}");
+        $this->line("WireGuard interface: {$payload['wireguard']['interface']}");
+
+        if (is_string($payload['wireguard']['real_interface'] ?? null)) {
+            $this->line("WireGuard real interface: {$payload['wireguard']['real_interface']}");
+        }
+
         $this->line("WireGuard config path: {$payload['wireguard_config_path']}");
+        $this->line("Local gateway: {$payload['gateway_name']}");
+        $this->line("Gateway check: {$payload['commands']['gateway_check']}");
         $this->line('');
         $this->line('WireGuard config');
         $this->line('---');
@@ -483,9 +695,87 @@ class E2EIncusCommand extends Command
         return $name;
     }
 
+    private function wireGuardInterfaceName(string $topologyId): string
+    {
+        $suffix = preg_replace('/^dev-/', '', strtolower($topologyId)) ?? $topologyId;
+        $suffix = preg_replace('/[^a-z0-9]/', '', $suffix) ?? $suffix;
+        $suffix = substr($suffix, 0, 10);
+
+        if ($suffix === '') {
+            throw new RuntimeException('Live Incus topology id must contain at least one letter or number for the WireGuard interface name.');
+        }
+
+        return "oe2e{$suffix}";
+    }
+
     private function fileName(string $value): string
     {
         return preg_replace('/[^A-Za-z0-9_.-]/', '_', $value) ?? $value;
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    private function manifestsForStop(E2EDevTopologyManifestStore $store): array
+    {
+        if ((bool) $this->option('all')) {
+            return $store->list();
+        }
+
+        $id = $this->stringOption('id');
+
+        if ($id === null || $id === 'dry-run') {
+            return [];
+        }
+
+        $manifest = $store->read($id);
+
+        return $manifest === null ? [] : [$manifest];
+    }
+
+    /**
+     * @param  array<string, mixed>  $manifest
+     */
+    private function stopLocalTunnelIfRecorded(array $manifest): void
+    {
+        $wireGuard = $manifest['live']['wireguard'] ?? null;
+
+        if (! is_array($wireGuard) || ($wireGuard['started'] ?? false) !== true) {
+            return;
+        }
+
+        $interface = $wireGuard['interface'] ?? null;
+        $configPath = $wireGuard['config_path'] ?? null;
+
+        if (! is_string($interface) || ! is_string($configPath)) {
+            return;
+        }
+
+        $machine = $this->localMachine();
+        $realInterface = $machine->realWireGuardInterface($interface);
+
+        if ($realInterface === null || ! in_array($realInterface, $machine->wireGuardInterfaces(), true)) {
+            return;
+        }
+
+        $result = $machine->stopWireGuard($configPath);
+
+        if (! $result->successful()) {
+            throw new RuntimeException('local_wireguard_failed: '.$this->processError($result));
+        }
+    }
+
+    private function renderLiveException(Throwable $exception, bool $json): int
+    {
+        $message = $exception->getMessage();
+
+        foreach (['local_wireguard_unavailable', 'local_wireguard_failed', 'local_gateway_failed', 'gateway_unreachable'] as $code) {
+            if (str_starts_with($message, "{$code}:")) {
+                return $this->renderError($code, trim(substr($message, strlen($code) + 1)), $json);
+            }
+        }
+
+        return $this->renderError('live_setup_failed', $message, $json);
     }
 
     private function renderError(string $code, string $message, bool $json): int

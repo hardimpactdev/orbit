@@ -90,10 +90,19 @@ backend pool and the backend families must not overlap.
 
 `ORBIT_E2E_LIVE_WIREGUARD_ENDPOINT` is only used by
 `composer e2e:incus -- --live`. It is the endpoint written into the local
-WireGuard client config that the command prints after minting an operator
-identity. Root Composer E2E scripts source the repository-level `.env.e2e`; that
-file is not converted into `apps/e2e/.env`. When running the `apps/e2e` command
-directly, either export the variable in the shell or put it in `apps/e2e/.env`.
+WireGuard client config after minting an operator identity. The live command
+uses that config to start a disposable local `wg-quick` tunnel unless `--manual`
+is passed.
+
+For a trusted LAN Incus host reachable at `192.168.1.150`, set:
+
+```bash
+ORBIT_E2E_LIVE_WIREGUARD_ENDPOINT=192.168.1.150:51820
+```
+
+Root Composer E2E scripts source the repository-level `.env.e2e`; that file is
+not converted into `apps/e2e/.env`. When running the `apps/e2e` command directly,
+either export the variable in the shell or put it in `apps/e2e/.env`.
 
 ## Artifact namespace
 

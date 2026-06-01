@@ -106,7 +106,7 @@ function incusLiveCommandWithLocalMachine(ArrayObject $remoteLog, object $localM
 Run:
 
 ```bash
-composer --working-dir=apps/e2e test -- tests/Feature/E2ESupport/Commands/E2EIncusCommandTest.php --filter='live accessible'
+cd apps/e2e && vendor/bin/pest --compact tests/Feature/E2ESupport/Commands/E2EIncusCommandTest.php --filter='live accessible'
 ```
 
 Expected: FAIL because `E2EIncusCommand::localMachineUsing()` does not exist.
@@ -217,7 +217,7 @@ private function localMachine(): object
 Run:
 
 ```bash
-composer --working-dir=apps/e2e test -- tests/Feature/E2ESupport/Commands/E2EIncusCommandTest.php --filter='live accessible'
+cd apps/e2e && vendor/bin/pest --compact tests/Feature/E2ESupport/Commands/E2EIncusCommandTest.php --filter='live accessible'
 ```
 
 Expected: PASS when the fake is wired into the live flow, or FAIL for the missing local setup assertions until Task 2 is complete.
@@ -260,7 +260,7 @@ expect($manifest['live']['wireguard']['interface'])->toBe('oe2eabc123')
 Run:
 
 ```bash
-composer --working-dir=apps/e2e test -- tests/Feature/E2ESupport/Commands/E2EIncusCommandTest.php --filter='live accessible'
+cd apps/e2e && vendor/bin/pest --compact tests/Feature/E2ESupport/Commands/E2EIncusCommandTest.php --filter='live accessible'
 ```
 
 Expected: FAIL because live setup still only writes and prints the config.
@@ -435,7 +435,7 @@ After payload creation, persist:
 Run:
 
 ```bash
-composer --working-dir=apps/e2e test -- tests/Feature/E2ESupport/Commands/E2EIncusCommandTest.php --filter='live accessible'
+cd apps/e2e && vendor/bin/pest --compact tests/Feature/E2ESupport/Commands/E2EIncusCommandTest.php --filter='live accessible'
 ```
 
 Expected: PASS.
@@ -529,7 +529,7 @@ Use it in the `catch` block:
 Run:
 
 ```bash
-composer --working-dir=apps/e2e test -- tests/Feature/E2ESupport/Commands/E2EIncusCommandTest.php --filter='manual mode|wg quick tooling'
+cd apps/e2e && vendor/bin/pest --compact tests/Feature/E2ESupport/Commands/E2EIncusCommandTest.php --filter='manual mode|wg quick tooling'
 ```
 
 Expected: PASS.
@@ -589,7 +589,7 @@ it('stops a recorded live wg quick tunnel before releasing the topology', functi
 Run:
 
 ```bash
-composer --working-dir=apps/e2e test -- tests/Feature/E2ESupport/Commands/E2EIncusCommandTest.php --filter='stops a recorded live'
+cd apps/e2e && vendor/bin/pest --compact tests/Feature/E2ESupport/Commands/E2EIncusCommandTest.php --filter='stops a recorded live'
 ```
 
 Expected: FAIL because stop only delegates to `e2e:dev-topology:release`.
@@ -663,7 +663,7 @@ Wrap local cleanup errors in `stop()` with `renderLiveException()`.
 Run:
 
 ```bash
-composer --working-dir=apps/e2e test -- tests/Feature/E2ESupport/Commands/E2EIncusCommandTest.php --filter='stops a retained|stops every retained|stops a recorded live'
+cd apps/e2e && vendor/bin/pest --compact tests/Feature/E2ESupport/Commands/E2EIncusCommandTest.php --filter='stops a retained|stops every retained|stops a recorded live'
 ```
 
 Expected: PASS.
@@ -764,7 +764,7 @@ Keep the renderer simple for this pass; the product labels are the contract unde
 Run:
 
 ```bash
-composer --working-dir=apps/e2e test -- tests/Feature/E2ESupport/Commands/E2EIncusCommandTest.php --filter='prints the live WireGuard config'
+cd apps/e2e && vendor/bin/pest --compact tests/Feature/E2ESupport/Commands/E2EIncusCommandTest.php --filter='prints the live WireGuard config'
 ```
 
 Expected: PASS.
@@ -838,7 +838,7 @@ Expected: PASS.
 Run:
 
 ```bash
-composer --working-dir=apps/e2e test -- tests/Feature/E2ESupport/Commands/E2EIncusCommandTest.php
+cd apps/e2e && vendor/bin/pest --compact tests/Feature/E2ESupport/Commands/E2EIncusCommandTest.php
 ```
 
 Expected: PASS.
