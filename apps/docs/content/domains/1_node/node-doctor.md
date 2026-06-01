@@ -99,8 +99,13 @@ The node probe reads gateway node records and checks these layers:
 
    For `agent`, assignments have a `tld` value, the gateway maps `*.{tld}` to
    the node's WireGuard address through the same DNS configuration model, and
-   the node baseline includes `orbit-runtime`, `orbit-caddy`, and the shared
-   unprivileged `agent` runtime user.
+   the node baseline includes `orbit-caddy`, the shared unprivileged `agent`
+   runtime user, and any role-specific runtime containers the agent workload
+   needs. The gateway runs `orbit-runtime` for the API and scheduler.
+   Workload and agent nodes run the public Orbit CLI as gateway clients and
+   run workloads in role-specific runtime containers. Any remaining
+   workload-node `orbit-runtime` usage is compatibility scope outside the
+   source-mounted live topology contract.
 
    For `vpn`, assignments have valid `public_endpoint`, `wireguard_cidr`,
    `wireguard_port`, and `dns_ip` settings. The node baseline includes the

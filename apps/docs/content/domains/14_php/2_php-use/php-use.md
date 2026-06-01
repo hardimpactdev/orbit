@@ -26,7 +26,9 @@ orbit php:use 8.5 --app=docs --json
 - `--inherit`: Clear a workspace override so the workspace inherits the parent
   app PHP version.
 - `--cli`: Select the node CLI PHP default. Only PHP 8.5 is supported,
-  matching the Orbit CLI binary's embedded PHP version.
+  matching the production native Orbit CLI binary artifact's embedded PHP
+  version. Source-mounted Docker/Incus development and E2E nodes invoke
+  `<source>/apps/cli/orbit`.
 - `--node=<node>`: For app and workspace targets, this may only confirm the
   owning node. A node that does not own the resolved app or workspace fails
   validation with the stable `target_mismatch` reason before any gateway

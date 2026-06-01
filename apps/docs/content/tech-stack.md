@@ -63,7 +63,7 @@ The sections below walk through each layer of the stack in the same order as the
 | Scheduler | Gateway scheduler loop inside `orbit-runtime` |
 | Process logs | Docker stdout/stderr logs for Docker process runtime units; Supervisor logs only for explicit `supervisor` runtime units |
 | Service containers | Docker for Orbit runtime containers and backing services |
-| Host prerequisites | Git, Docker, the prebuilt Orbit CLI binary (embedded PHP 8.5 + `pdo_sqlite`/`openssl`/`curl`/`mbstring`/`tokenizer`/`ctype`/`filter`/`fileinfo`/`json`/`phar`), Orbit launcher, WireGuard/SSH identity, and the GitHub CLI (`gh`) — required fleet-wide for authenticated public and private repository operations during cloning and deployment; VitePlus on app nodes |
+| Host prerequisites | Git, Docker, the Orbit launcher or equivalent node-local Orbit CLI entry point, WireGuard/SSH identity, and the GitHub CLI (`gh`) — required fleet-wide for authenticated public and private repository operations during cloning and deployment; VitePlus on app nodes. Production installs still use the prebuilt native CLI binary artifact (embedded PHP 8.5 + `pdo_sqlite`/`openssl`/`curl`/`mbstring`/`tokenizer`/`ctype`/`filter`/`fileinfo`/`json`/`phar`); source-mounted Docker and Incus development/E2E topologies point `/usr/local/bin/orbit` directly at `<source>/apps/cli/orbit`. |
 | Production HTTP ingress | `orbit-caddy` on `ingress` nodes terminating public HTTPS and forwarding to `router` over WireGuard |
 | Private production routing | `orbit-caddy` on the gateway-coupled `router` role selecting private HTTP/WebSocket/S3 routes, `.orbit` service names, and backend pools |
 | Production app backend | `orbit-caddy` on `app-prod` nodes bound to the node's WireGuard address and forwarding to FrankenPHP app containers over the node Docker network |
@@ -83,10 +83,12 @@ Laravel is Orbit's application framework, while command behavior remains documen
 
 Orbit's gateway application is Laravel 13 and runs inside `orbit-runtime`. On
 the gateway, `orbit-runtime` serves the typed HTTPS API behind `orbit-caddy`
-and runs the gateway-local Orbit Scheduler. The host `orbit` executable
-always launches the installed Orbit CLI binary on every node role — clients,
-workload nodes, and gateway hosts. Gateway maintenance (migrate, tinker,
-scheduler, queue, `orbit:internal:*` bake/build/install commands) uses
+and runs the gateway-local Orbit Scheduler. The gateway runs `orbit-runtime`
+for the API and scheduler. Workload nodes run the public Orbit CLI as a
+gateway client and run workloads in role-specific runtime containers. Any
+remaining workload-node `orbit-runtime` usage is a compatibility concern, not
+the source-mounted live topology contract. Gateway maintenance (migrate,
+tinker, scheduler, queue, `orbit:internal:*` bake/build/install commands) uses
 `bin/orbit-gateway-artisan` or direct `php apps/gateway/artisan` from a
 controlled gateway shell; the public `orbit` command never dispatches to
 gateway Artisan. Public commands gather local input, call the gateway over
@@ -97,11 +99,13 @@ The Orbit CLI is a self-contained native binary with PHP 8.5 embedded,
 built per OS/arch and downloaded by the installer. The binary embeds PHP 8.5
 and the extensions the CLI requires (`pdo_sqlite`, `openssl`, `curl`,
 `mbstring`, `tokenizer`, `ctype`, `filter`, `fileinfo`, `json`, `phar`);
-no host PHP is required to run it. The gateway application still runs from
-source mounted into `orbit-runtime`; the installer prepares `orbit-runtime`
-and links the host `orbit` launcher to the downloaded CLI binary. Host PHP
-is not an app/workspace runtime fallback and must not replace FrankenPHP
-app/workspace containers.
+no host PHP is required to run it. Production installs still use that native
+CLI binary artifact. Source-mounted Docker and Incus topologies are
+development and E2E lanes; there, `/usr/local/bin/orbit` points directly at
+`<source>/apps/cli/orbit`, the gateway application runs from the mounted
+checkout, and node-local mutable Orbit state lives under `~/.config/orbit`.
+Host PHP is not an app/workspace runtime fallback and must not replace
+FrankenPHP app/workspace containers.
 
 ## Storage
 
@@ -146,11 +150,15 @@ See [Architecture: Trust And Transport](architecture.md#trust-and-transport) for
 
 Gateway-to-node work is split into `RemoteHostExecutor` for host substrate
 work, `RemoteOrbitRuntimeExecutor` for gateway Laravel/artisan/PDO work inside
-`orbit-runtime`, and `RemoteLocalExecutor` for token-gated packaged node-local
-helper logic that needs host file access plus PHP/PDO. `RemoteLocalExecutor`
-invokes the installed Orbit CLI binary's internal command surface; the binary's
-embedded PHP provides the PHP/PDO runtime. Host PHP is not an app/workspace
-runtime fallback and must not replace FrankenPHP containers. See
+gateway `orbit-runtime`, and `RemoteLocalExecutor` for token-gated packaged
+node-local helper logic that needs host file access plus PHP/PDO.
+`RemoteLocalExecutor` invokes the node-local Orbit CLI entry point; on
+source-mounted nodes `/usr/local/bin/orbit` points directly at
+`<source>/apps/cli/orbit`, while production installs still use the native CLI
+binary artifact. Internal executor commands verify operation tokens through the
+gateway API, and nodes do not store executor token signing material. Host PHP
+is not an app/workspace runtime fallback and must not replace FrankenPHP
+containers. See
 [Runtime Execution Lanes](execution-lanes.md).
 
 VPN-role runtime administration is the one runtime exception to the normal
@@ -200,19 +208,22 @@ Installer and doctor repair code must be additive: ensure required imports and m
 ### PHP runtime
 
 PHP app execution runs in FrankenPHP containers. The gateway runtime runs in
-`orbit-runtime`; the CLI/local-executor artifact runs in the binary's embedded
-PHP 8.5 (`pdo_sqlite`, `openssl`, `curl`, `mbstring`, `tokenizer`, `ctype`,
-`filter`, `fileinfo`, `json`, `phar`). Apps and workspaces run in dedicated
-long-lived app/workspace containers when their runtime kind is PHP. Static or
-non-PHP apps do not get a FrankenPHP container.
+`orbit-runtime`; production installs run the CLI/local-executor artifact in the
+native CLI binary's embedded PHP 8.5 (`pdo_sqlite`, `openssl`, `curl`,
+`mbstring`, `tokenizer`, `ctype`, `filter`, `fileinfo`, `json`, `phar`).
+Source-mounted Docker/Incus development and E2E nodes invoke
+`<source>/apps/cli/orbit`. Apps and workspaces run in dedicated long-lived
+app/workspace containers when their runtime kind is PHP. Static or non-PHP
+apps do not get a FrankenPHP container.
 
 Each PHP workspace gets its own FrankenPHP container so workspaces are isolated
 from one another. Production PHP apps get a dedicated container as well. The
 PHP version for an app or workspace is gateway-tracked configuration; changing
 it recreates the affected runtime container from the selected PHP image on the
-owning node through `RemoteShell`. The CLI/local-executor artifact runs in the
-binary's embedded PHP; host PHP and PHP-FPM are not app/workspace runtime
-fallbacks.
+owning node through `RemoteShell`. In production installs the CLI/local-
+executor artifact runs in the native CLI binary's embedded PHP; source-mounted
+Docker/Incus development and E2E nodes invoke `<source>/apps/cli/orbit`. Host
+PHP and PHP-FPM are not app/workspace runtime fallbacks.
 
 Production public HTTP traffic enters the fleet through an active
 `ingress` role. `app-prod` nodes are production runtime backends:
@@ -326,7 +337,7 @@ Docker is the baseline substrate for Orbit runtime containers and backing servic
 
 ### Agent runtime
 
-Nodes with the `agent` role run first-party autonomous agent tools — OpenClaw and Hermes — that operate Orbit through the gateway API. The agent role baseline converges `orbit-runtime`, `orbit-caddy`, the WireGuard/node identity and trust material every other Orbit node uses, and a single unprivileged shared `agent` runtime user. Agent tools never run as the privileged `orbit` maintenance user. The `agent` role requires a node-level `tld` setting (default `agent` when chosen during interactive `node:new`); `tld` is a shared node-level field that the `app-dev` role also requires, so a node holds at most one `tld` value at a time. The gateway maps `*.{tld}` to the node's WireGuard address through the same gateway-owned development DNS mapping pattern that `app-dev` uses. Stable private `.orbit` service names are router-owned and distinct from these development/agent TLD mappings.
+Nodes with the `agent` role run first-party autonomous agent tools — OpenClaw and Hermes — that operate Orbit through the gateway API. The agent role baseline converges `orbit-caddy`, the WireGuard/node identity and trust material every other Orbit node uses, a single unprivileged shared `agent` runtime user, and whatever role-specific runtime containers the agent workloads need. Any remaining workload-node `orbit-runtime` usage is a compatibility concern outside the source-mounted live topology contract. Agent tools never run as the privileged `orbit` maintenance user. The `agent` role requires a node-level `tld` setting (default `agent` when chosen during interactive `node:new`); `tld` is a shared node-level field that the `app-dev` role also requires, so a node holds at most one `tld` value at a time. The gateway maps `*.{tld}` to the node's WireGuard address through the same gateway-owned development DNS mapping pattern that `app-dev` uses. Stable private `.orbit` service names are router-owned and distinct from these development/agent TLD mappings.
 
 Each agent tool is an ordinary entry in the `tool` catalog with category `agent`; there is no separate `agent_tool` state family. Tools are installed through `orbit tool:install`, run through the runtime backend declared by the tool definition, and configured through gateway-tracked tool state. Tool web UIs are exposed by default through tool-owned internal HTTPS proxy routes under the agent TLD (for example `https://openclaw.agent` and `https://hermes.agent`). Tool credentials and web UI tokens are returned only by `tool:credentials` and only when the caller has the explicit `tool:credentials` permission; the agent self-grant does not include that permission. Multiple agent tools may be installed and run on the same node, but Orbit warns at install or start time because node-level activity attribution is weaker when more than one is active. See [Architecture: Node roles](architecture.md#node-roles).
 
@@ -349,7 +360,10 @@ Other DNS/CDN providers can be added as extension points without changing core O
 
 ### Installation
 
-The gateway application runs from source mounted into `orbit-runtime`. The Orbit CLI is a prebuilt native binary downloaded by the installer.
+The gateway application runs from source mounted into `orbit-runtime` on the
+gateway. The Orbit CLI is a prebuilt native binary downloaded by the installer
+for production installs. Source-mounted Docker and Incus topologies are the
+development and E2E lanes.
 
 Client setup is local:
 
@@ -357,7 +371,23 @@ Client setup is local:
 curl -fsSL https://raw.githubusercontent.com/hardimpactdev/orbit/main/bin/install-orbit | bash
 ```
 
-The installer prepares the host before Orbit can run. It installs or verifies Git, Docker Engine and CLI, the prebuilt Orbit CLI binary (embedded PHP 8.5 + `pdo_sqlite`/`openssl`/`curl`/`mbstring`/`tokenizer`/`ctype`/`filter`/`fileinfo`/`json`/`phar`) downloaded and linked as the host `orbit` launcher target, operation-token executor configuration, the long-running `orbit-runtime` container with the gateway application source mounted into it, the default FrankenPHP app/workspace runtime image, the `orbit-caddy` container where the node role needs HTTP routing, and WireGuard/SSH identity material. It creates the local SQLite database where appropriate, runs migrations inside a disposable `orbit-runtime` container before starting the long-running runtime, and links `orbit` into the local executable path. Human output is a quiet step tree by default; pass `--verbose` only when the underlying package or shell command output is needed for debugging.
+The installer prepares the host before Orbit can run. In production installs it
+installs or verifies Git, Docker Engine and CLI, the prebuilt Orbit CLI binary
+(embedded PHP 8.5 + `pdo_sqlite`/`openssl`/`curl`/`mbstring`/`tokenizer`/`ctype`/`filter`/`fileinfo`/`json`/`phar`) downloaded and linked as the host `orbit`
+launcher target, the long-running gateway `orbit-runtime` container where
+applicable, the default FrankenPHP app/workspace runtime image, the
+`orbit-caddy` container where the node role needs HTTP routing, and
+WireGuard/SSH identity material. In source-mounted Docker and Incus topologies,
+`/usr/local/bin/orbit` points directly at `<source>/apps/cli/orbit`, the
+current checkout is mounted into the topology, and mutable node-local Orbit
+state lives under `~/.config/orbit`. Internal executor commands verify
+operation tokens through the gateway API, and nodes do not store executor token
+signing material. The installer creates the local SQLite database where
+appropriate, runs migrations inside a disposable `orbit-runtime` container
+before starting the long-running runtime, and links `orbit` into the local
+executable path. Human output is a quiet step tree by default; pass `--verbose`
+only when the underlying package or shell command output is needed for
+debugging.
 
 The installer does not create a client identity for the gateway to trust. That identity is minted later — by `node:new --template=gateway` when bootstrapping the first gateway, or by a later node enrollment flow before the client machine runs `gateway:add`.
 
@@ -383,9 +413,12 @@ set `ORBIT_IS_GATEWAY=true` in `apps/gateway/.env` so gateway-maintenance
 commands and runtime services can select gateway-only behavior. That flag is not
 used by the installed public `orbit` launcher and it is not an API
 authorization bypass. Public CLI calls, including calls made on the gateway host
-itself, enter the Orbit CLI binary and call the gateway API over the configured
-WireGuard/orbit-caddy HTTPS endpoint. The gateway finds its own node row through
-the singleton active `gateway` role assignment in its local registry.
+itself, enter the node-local Orbit CLI entry point and call the gateway API
+over the configured WireGuard/orbit-caddy HTTPS endpoint. Production installs
+still use the native CLI binary artifact; source-mounted Docker and Incus
+development/E2E topologies point `/usr/local/bin/orbit` directly at
+`<source>/apps/cli/orbit`. The gateway finds its own node row through the
+singleton active `gateway` role assignment in its local registry.
 
 Non-gateway machines hold only gateway rows in their local `nodes` table — the gateways they know how to reach. Initially empty (fresh install), populated by `gateway:add`. There is no self-row on non-gateway machines.
 

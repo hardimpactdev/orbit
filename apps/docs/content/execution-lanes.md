@@ -7,15 +7,20 @@ workload must belong to one of three execution lanes.
 ## Scope
 
 A Docker-first-managed node is a node that has the Orbit Docker baseline:
-`orbit-runtime` for Orbit PHP, `orbit-caddy` for proxying when needed, and
-workload containers for apps, workspaces, processes, and backing services.
+gateway `orbit-runtime` for Orbit API/scheduler work where applicable,
+`orbit-caddy` for proxying when needed, and workload containers for apps,
+workspaces, processes, and backing services. Source-mounted Docker and Incus
+topologies are development and E2E lanes. Production installs still use the
+native CLI binary artifact.
 
 Before that baseline exists, bootstrap may use host shell commands to install
 Docker, prepare the `orbit` user, clone Orbit source, and create the first
 runtime containers. After the baseline exists, gateway Laravel/artisan/PDO work
 must not rely on host PHP, host Composer, host Python, host SQLite, or host
 database client binaries. The CLI/local-executor artifact runs in the binary's
-embedded PHP; host PHP is not an app/workspace runtime fallback.
+embedded PHP in production installs. Source-mounted Docker/Incus development
+and E2E nodes invoke `<source>/apps/cli/orbit`. Host PHP is not an
+app/workspace runtime fallback.
 
 ## Lanes
 
@@ -29,10 +34,13 @@ RemoteOrbitRuntimeExecutor:
   work that belongs to the gateway runtime container.
 
 RemoteLocalExecutor:
-  SSH then invoke the Orbit CLI binary's internal executor command.
+  SSH then invoke the node-local Orbit CLI entry point's internal executor
+  command.
   It is for packaged node-local helper logic that needs host file access
-  and PHP/PDO (via the binary's embedded PHP) without relying on ad hoc
-  python3/sqlite3 snippets.
+  and PHP/PDO without relying on ad hoc python3/sqlite3 snippets.
+  Production installs still use the native CLI binary artifact; source-mounted
+  Docker/Incus development/E2E topologies point /usr/local/bin/orbit directly
+  at <source>/apps/cli/orbit.
 ```
 
 ### RemoteHostExecutor
@@ -101,18 +109,20 @@ Forbidden work:
 
 ### RemoteLocalExecutor
 
-`RemoteLocalExecutor` SSHs to the node and invokes the installed Orbit CLI
-binary's internal executor command. It is for packaged node-local helper
-logic that needs host file access and PHP/PDO (using the binary's embedded
-PHP) without relying on ad hoc `python3` or `sqlite3` snippets.
+`RemoteLocalExecutor` SSHs to the node and invokes the node-local Orbit CLI
+entry point's internal executor command. It is for packaged node-local helper
+logic that needs host file access and PHP/PDO without relying on ad hoc
+`python3` or `sqlite3` snippets. In source-mounted nodes, `/usr/local/bin/orbit`
+points directly at `<source>/apps/cli/orbit`, and mutable node-local Orbit
+state lives under `~/.config/orbit`.
 
 The gateway primitive composes `/usr/local/bin/orbit internal:* ...` commands
 with `LocalExecutorCommandBuilder`, mints a short-lived gateway operation token,
 and dispatches that host command through the SSH transport. It never wraps local
-executor work in `docker exec orbit-runtime`; the host `orbit` launcher always
-enters the installed Orbit CLI binary on every node role. `RemoteLocalExecutor`
-cannot invoke public commands; operation tokens are checked once at
-internal-command entry before any side effects.
+executor work in `docker exec orbit-runtime`. `RemoteLocalExecutor` cannot
+invoke public commands; internal executor commands verify operation tokens
+through the gateway API before any side effects, and nodes do not store
+executor token signing material.
 
 #### Result-boundary redaction patterns
 
@@ -223,7 +233,9 @@ Use these rules for every new or migrated gateway-to-node execution path.
 - Packaged node-local helper logic that needs host file access and PHP/PDO MUST
   go through `RemoteLocalExecutor`.
 - Host-shell PHP is forbidden as a steady-state implementation detail; the
-  CLI/local-executor artifact uses the binary's embedded PHP, not host PHP.
+  CLI/local-executor artifact uses the native CLI binary's embedded PHP in
+  production installs, while source-mounted Docker/Incus development and E2E
+  nodes invoke `<source>/apps/cli/orbit`; host PHP remains forbidden.
 - `RemoteShell` is transport, not a workload classification. New call sites
   must choose `RemoteHostExecutor`, `RemoteOrbitRuntimeExecutor`, or
   `RemoteLocalExecutor` explicitly.
@@ -275,7 +287,7 @@ inherit the lane of the production code they exercise.
 | `apps/gateway/app/Console/Commands/NodeNewCommand.php:2123` | `RemoteHostExecutor` | Passes host shell to node security baseline installers during provisioning. |
 | `apps/gateway/app/Console/Commands/VpnCommandSupport.php:87` | `RemoteOrbitRuntimeExecutor` | Forwards `php artisan vpn-*` work to the active VPN role node; forwarded gateway Laravel/artisan work must run inside `orbit-runtime`. |
 | `apps/gateway/app/Console/Commands/WorkspaceExecCommand.php:143,158` | `RemoteHostExecutor` | Inspects and executes inside a workspace runtime container through Docker. |
-| `apps/gateway/app/Http/Controllers/Api/UpdateAllController.php:272,405` (`pulling_source`) | `RemoteHostExecutor` | Resolves `RemoteShell` and starts the binary download-and-relink stage on the remote host. |
+| `apps/gateway/app/Http/Controllers/Api/UpdateAllController.php:272,405` (`pulling_source`) | `RemoteHostExecutor` | Resolves `RemoteShell` and starts the local entry-point update stage on the remote host: production/artifact targets may download and relink the binary, while source-mounted targets keep `/usr/local/bin/orbit` pointed at `<source>/apps/cli/orbit` and update by changing the mounted source. |
 | `apps/gateway/app/Http/Controllers/Api/UpdateAllController.php:272,405` (`installing_dependencies`) | `RemoteOrbitRuntimeExecutor` | Resolves `RemoteShell` and starts the `docker exec orbit-runtime composer --working-dir=apps/gateway install --no-interaction` stage for gateway app dependencies. |
 | `apps/gateway/app/Http/Controllers/Api/UpdateAllController.php:272,405` (`running_migrations`) | `RemoteOrbitRuntimeExecutor` | Resolves `RemoteShell` and starts the `docker exec orbit-runtime php apps/gateway/artisan migrate --force` stage for gateway migrations. |
 | `apps/gateway/app/Actions/Apps/CreateAppSourceOnNode.php:30` | `RemoteHostExecutor` | Creates/checks source directories and git material on the host. |

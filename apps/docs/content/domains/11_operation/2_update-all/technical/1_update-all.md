@@ -69,10 +69,16 @@ The expected target shape per calling context:
 
 ### Per-Installation Update Rules
 
-- Update each selected installation with the same local update sequence
-  documented by [`update`](../../1_update/technical/1_update.md): download the
-  CLI binary, relink the host launcher, install gateway dependencies inside
-  `orbit-runtime`, and run gateway migrations.
+- Update each selected installation with the same role-aware local update
+  sequence documented by [`update`](../../1_update/technical/1_update.md):
+  production installs update the native CLI binary artifact, while
+  source-mounted Docker/Incus development and E2E topology nodes keep
+  `/usr/local/bin/orbit` pointed at `<source>/apps/cli/orbit` and update by
+  changing the mounted source. Gateway nodes may run the production
+  binary/runtime update path. Workload/app-role nodes are gateway clients with
+  role-specific runtime containers; any remaining workload-node
+  `orbit-runtime` usage is compatibility scope outside the source-mounted live
+  topology contract.
 - Remote update execution is gateway-owned node execution through `RemoteShell`.
   Clients do not SSH directly to the gateway, nodes, or other operator
   workstations as part of the command contract. The gateway does not SSH to
@@ -80,9 +86,15 @@ The expected target shape per calling context:
 - Update the caller-local installation and gateway installation as independent
   selected targets when both are selected.
 - After the gateway installation update succeeds, selected remote app-role
-  installations are updated in parallel, up to four targets at a time. Each
-  individual target still runs `Downloading binary`, `Installing dependencies`,
-  and `Running migrations` in that order.
+  installations are updated in parallel, up to four targets at a time.
+  Production artifact targets run the binary-update path. Source-mounted
+  Docker/Incus development and E2E topology targets keep
+  `/usr/local/bin/orbit` pointed at `<source>/apps/cli/orbit` and update
+  through the mounted source. Remote app/workload nodes are gateway clients
+  with role-specific runtime containers; any remaining workload-node
+  `orbit-runtime` usage is compatibility scope outside the source-mounted live
+  topology contract. Gateway runtime dependency/migration steps apply only to
+  gateway-context targets.
 - Continue updating remaining installations after a target fails.
 - Preserve every target result for the selected output renderer in selected
   target order, regardless of the order in which parallel workers finish.
