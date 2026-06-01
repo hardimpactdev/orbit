@@ -34,6 +34,7 @@ use App\Services\Doctor\DnsRuntimeProbe;
 use App\Services\Operations\OperationResultRegistry;
 use App\Services\Operations\OperationRunRecorder;
 use App\Services\Operations\OperationTokenFactory;
+use App\Services\Operations\OperationTokenIntrospector;
 use App\Services\RemoteShell\LocalExecutorCommandBuilder;
 use App\Services\RemoteShell\RemoteExecutor;
 use App\Services\RemoteShell\RemoteHostExecutor;
@@ -75,6 +76,7 @@ use App\Tools\SupervisorTool;
 use App\Tools\VitePlusTool;
 use Illuminate\Support\ServiceProvider;
 use Orbit\Core\Security\OperationTokenSigner;
+use Orbit\Core\Security\OperationTokenVerifier;
 use RuntimeException;
 
 class AppServiceProvider extends ServiceProvider
@@ -93,6 +95,10 @@ class AppServiceProvider extends ServiceProvider
             signer: $app->make(OperationTokenSigner::class),
             secret: $this->operationTokenSecret(),
             ttlSeconds: $this->operationTokenTtlSeconds(),
+        ));
+        $this->app->bind(OperationTokenIntrospector::class, fn ($app): OperationTokenIntrospector => new OperationTokenIntrospector(
+            verifier: $app->make(OperationTokenVerifier::class),
+            secret: $this->operationTokenSecret(),
         ));
         $this->app->singleton(GatewayConnector::class);
         $this->app->singleton(LocalResolver::class);
