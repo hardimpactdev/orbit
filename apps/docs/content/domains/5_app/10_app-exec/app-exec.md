@@ -33,7 +33,8 @@ orbit app:exec docs --json -- php -v
 ```
 
 Omit `[app]` when your working directory is inside an app source path; the
-launcher passes `ORBIT_HOST_CWD` and `app:exec` resolves the app from it:
+source CLI entrypoint initializes `ORBIT_HOST_CWD` when absent and
+`app:exec` resolves the app from it:
 
 ```bash
 cd /home/orbit/apps/docs

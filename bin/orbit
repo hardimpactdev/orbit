@@ -2,8 +2,6 @@
 
 set -Eeuo pipefail
 
-PRODUCTION_ORBIT_REPO="/home/orbit/orbit"
-
 resolve_launcher_path() {
     local source
     local directory
@@ -30,110 +28,8 @@ resolve_default_repo() {
     cd "${launcher_directory}/.." >/dev/null 2>&1 && pwd
 }
 
-env_value() {
-    local key="$1"
-    local env_file="${ORBIT_REPO}/apps/gateway/.env"
-
-    if [ ! -f "$env_file" ]; then
-        return
-    fi
-
-    grep -E "^${key}=" "$env_file" | tail -n 1 | cut -d= -f2- || true
-}
-
-command_name() {
-    local argument
-
-    for argument in "$@"; do
-        if [ "$argument" = "--" ]; then
-            return
-        fi
-
-        if [ -z "$argument" ] || [[ "$argument" == -* ]]; then
-            continue
-        fi
-
-        printf '%s\n' "$argument"
-        return
-    done
-}
-
-is_local_executor_command() {
-    case "$1" in
-        internal:executor:verify|internal:wg-easy:state|internal:database-query-local|internal:workspace-adapter:lookup|internal:workspace-adapter:update)
-            return 0
-            ;;
-        *)
-            return 1
-            ;;
-    esac
-}
-
-export_local_executor_environment() {
-    local executor_secret
-    local node_identity
-
-    executor_secret="$(env_value "ORBIT_EXECUTOR_SECRET")"
-
-    if [ -n "$executor_secret" ]; then
-        export ORBIT_EXECUTOR_SECRET="$executor_secret"
-    else
-        unset ORBIT_EXECUTOR_SECRET
-    fi
-
-    node_identity="$(env_value "ORBIT_NODE_IDENTITY")"
-
-    if [ -n "${ORBIT_NODE_IDENTITY:-}" ]; then
-        export ORBIT_NODE_IDENTITY
-    elif [ -n "$node_identity" ]; then
-        export ORBIT_NODE_IDENTITY="$node_identity"
-    else
-        unset ORBIT_NODE_IDENTITY
-    fi
-
-    unset ORBIT_OPERATION_TOKEN_SECRET
-}
-
-clear_local_executor_environment() {
-    unset ORBIT_EXECUTOR_SECRET
-    unset ORBIT_OPERATION_TOKEN_SECRET
-    unset ORBIT_NODE_IDENTITY
-}
-
-resolve_host_cwd() {
-    local host_cwd
-    local public_cwd
-
-    host_cwd="${PWD}"
-
-    if [[ "$host_cwd" == /private/* && "$ORBIT_REPO" != /private/* ]]; then
-        public_cwd="/${host_cwd#/private/}"
-
-        if [ -d "$public_cwd" ]; then
-            host_cwd="$public_cwd"
-        fi
-    fi
-
-    printf '%s\n' "$host_cwd"
-}
-
-ORBIT_REPO="${ORBIT_REPO:-$(resolve_default_repo)}"
-
-if [ -z "$ORBIT_REPO" ]; then
-    ORBIT_REPO="$PRODUCTION_ORBIT_REPO"
-fi
-
-export ORBIT_REPO
-export ORBIT_HOST_CWD="$(resolve_host_cwd)"
-
-ORBIT_COMMAND="$(command_name "$@")"
-
-if [ -n "$ORBIT_COMMAND" ] && is_local_executor_command "$ORBIT_COMMAND"; then
-    export_local_executor_environment
-else
-    clear_local_executor_environment
-fi
+repo_root="$(resolve_default_repo)"
 
 export ORBIT_APP="cli"
 
-exec "${ORBIT_REPO}/apps/cli/orbit" "$@"
+exec "${repo_root}/apps/cli/orbit" "$@"

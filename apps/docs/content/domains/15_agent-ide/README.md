@@ -48,8 +48,9 @@ These rules define the Agent IDE command domain and its authorization model.
 - On managed hosts, Agent IDE tools and users invoke the host `orbit` launcher.
   Production installs still use the native CLI binary artifact; source-mounted
   Docker and Incus development/E2E topologies point `/usr/local/bin/orbit`
-  directly at `<source>/apps/cli/orbit`. The launcher passes `ORBIT_HOST_CWD`
-  so cwd-derived defaults survive without granting local mutation authority.
+  directly at `<source>/apps/cli/orbit`. The source CLI entrypoint initializes
+  `ORBIT_HOST_CWD` when absent and preserves supplied values so cwd-derived
+  defaults survive without granting local mutation authority.
 - `agent-ide:message` requires `agent-ide:message` on the resolved app or
   workspace's owning node. Authorization failures use `authorization_failed`
   with standard `missing_permission` metadata.

@@ -83,13 +83,15 @@ This section defines the message delivery model.
 - **Agent IDE message:** Best-effort communication sent to the active Agent IDE
   session for a resolved app or workspace context. Accepted delivery means the
   adapter accepted the message; it does not mean the requested work completed.
-- **Agent IDE launcher context:** Host `orbit` launcher context exported to the
-  node-local Orbit CLI entry point as `ORBIT_HOST_CWD`. Production installs
-  still use the native CLI binary artifact; source-mounted Docker and Incus
-  development/E2E topologies point `/usr/local/bin/orbit` directly at
-  `<source>/apps/cli/orbit`. Agent IDE commands may use it to resolve
-  app/workspace defaults, but authorization still comes from the gateway's
-  WireGuard peer and grant model.
+- **Agent IDE launcher context:** Working-directory context held in
+  `ORBIT_HOST_CWD`. The node-local `apps/cli/orbit` entry point preserves a
+  supplied value or initializes it from `getcwd()` when absent, while the host
+  `orbit` launcher only resolves the repo root and execs the entry point.
+  Production installs still use the native CLI binary artifact; source-mounted
+  Docker and Incus development/E2E topologies point `/usr/local/bin/orbit`
+  directly at `<source>/apps/cli/orbit`. Agent IDE commands may use it to
+  resolve app/workspace defaults, but authorization still comes from the
+  gateway's WireGuard peer and grant model.
 
 ## Boundaries
 

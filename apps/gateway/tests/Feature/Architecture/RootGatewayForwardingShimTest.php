@@ -54,12 +54,18 @@ it('keeps public orbit launcher pointed at the cli app only', function (): void 
     $launcher = file_get_contents(repo_path('bin/orbit')) ?: '';
 
     expect($launcher)
-        ->toContain('${ORBIT_REPO}/apps/cli/orbit')
-        ->toContain('${ORBIT_REPO}/apps/gateway/.env')
-        ->toContain('exec "${ORBIT_REPO}/apps/cli/orbit" "$@"')
+        ->toContain('resolve_default_repo')
+        ->toContain('repo_root="$(resolve_default_repo)"')
+        ->toContain('exec "${repo_root}/apps/cli/orbit" "$@"')
         ->toContain('ORBIT_APP="cli"')
-        ->not->toContain('${ORBIT_REPO}/apps/gateway/artisan')
-        ->not->toContain('${ORBIT_REPO}/artisan')
+        ->not->toContain('apps/gateway/.env')
+        ->not->toContain('ORBIT_REPO')
+        ->not->toContain('ORBIT_EXECUTOR_SECRET')
+        ->not->toContain('ORBIT_OPERATION_TOKEN_SECRET')
+        ->not->toContain('ORBIT_NODE_IDENTITY')
+        ->not->toContain('is_local_executor_command')
+        ->not->toContain('${repo_root}/apps/gateway/artisan')
+        ->not->toContain('${repo_root}/artisan')
         ->not->toContain('ORBIT_APP="gateway"')
         ->not->toContain('gateway_flag');
 });

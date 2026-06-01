@@ -31,8 +31,8 @@ orbit workspace:exec docs-feature --json -- php artisan tinker
 ```
 
 Omit `[workspace]` when your working directory is inside a workspace source
-path; the launcher passes `ORBIT_HOST_CWD` and `workspace:exec` resolves the
-workspace from it:
+path; the source CLI entrypoint initializes `ORBIT_HOST_CWD` when absent and
+`workspace:exec` resolves the workspace from it:
 
 ```bash
 cd /home/orbit/apps/docs/.worktrees/docs-feature

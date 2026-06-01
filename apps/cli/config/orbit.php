@@ -24,7 +24,7 @@ return [
     ],
 
     'executor' => [
-        'shared_secret' => env('ORBIT_EXECUTOR_SECRET'),
-        'node_identity' => env('ORBIT_NODE_IDENTITY'),
+        'shared_secret' => null,
+        'node_identity' => null,
     ],
 ];

@@ -41,10 +41,12 @@ Each term below has a precise meaning in the node command family.
   coupled to the `gateway` role in v1, so bootstrap assigns it together with
   `gateway` and normal `node role:*` commands cannot manage it independently.
 - **Orbit launcher:** Host `orbit` wrapper installed in the user's path. It
-  resolves and exports `ORBIT_HOST_CWD`. Production installs still use the
-  native Orbit CLI binary artifact. Source-mounted Docker and Incus topologies
-  are development and E2E lanes; there, `/usr/local/bin/orbit` points directly
-  at `<source>/apps/cli/orbit`, and mutable node-local Orbit state lives under
+  only resolves the repo root and execs the CLI source entrypoint.
+  Production installs still use the native Orbit CLI binary artifact.
+  Source-mounted Docker and Incus topologies are development and E2E lanes;
+  there, `/usr/local/bin/orbit` points directly at `<source>/apps/cli/orbit`,
+  the source entrypoint initializes `ORBIT_HOST_CWD` when absent and preserves
+  supplied values, and mutable node-local Orbit state lives under
   `~/.config/orbit`. The CLI entry point owns public gateway-client commands,
   local-only commands, bootstrap commands, and hidden `internal:*` executor
   commands. Gateway maintenance (migrate, tinker, scheduler, queue,
