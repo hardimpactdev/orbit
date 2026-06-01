@@ -37,6 +37,11 @@ final readonly class DockerHost
         return ['DOCKER_HOST' => "ssh://{$this->host}"];
     }
 
+    public function isLocal(): bool
+    {
+        return $this->host === 'local';
+    }
+
     public function mustRun(string $command, string $errorContext, ?int $timeoutSeconds = null): ProcessResult
     {
         $result = $this->run($command, $timeoutSeconds);

@@ -113,6 +113,13 @@ CLI SSH transport, SSH multiplexing, or Docker context/env state. Do not switch
 the E2E provider to `ssh host docker ...`; the supported remote Docker transport
 is `DOCKER_HOST=ssh://<host>`.
 
+Source-mounted Docker topologies require the Docker daemon to see the checkout
+path. The local daemon uses the current worktree path automatically. Remote
+Docker runners must mount or synchronize the same checkout on the Docker host
+and set `ORBIT_E2E_DOCKER_SOURCE_PATH=/host/visible/orbit`, or the host-specific
+`ORBIT_E2E_DOCKER_SOURCE_PATH_<HOST>=/host/visible/orbit`. Remote runners
+without a configured source path are treated as unavailable.
+
 ## Host pool
 
 The recommended local topology is to run Docker containers on `sidecar1` and

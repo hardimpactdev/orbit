@@ -16,6 +16,10 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
 
     private const int GatewayRuntimeContainers = 1;
 
+    private const string OrbitPath = '/home/orbit/orbit';
+
+    private const string OrbitConfigRoot = '/home/orbit/.config/orbit';
+
     public function __construct(
         private E2EConfig $config,
     ) {}
@@ -240,6 +244,12 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
                 continue;
             }
 
+            if ($this->sourcePathForHost($host) === null) {
+                $failures[] = "{$hostName}: source-mounted Docker topologies require ORBIT_E2E_DOCKER_SOURCE_PATH for remote Docker hosts";
+
+                continue;
+            }
+
             $imageNames = [];
 
             if (self::rolesNeedRuntimeSibling($roles) && ! $this->hasRuntimeSiblingImage($host)) {
@@ -445,11 +455,11 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
                 'container_names' => $this->managedContainerNames($name, $role),
                 'volume_names' => $this->managedVolumeNames($name),
                 'node_command' => implode(' && ', array_filter([
-                    $this->startContainerCommand($name, $network, $role, $ip, $image, $topologyMode),
+                    $this->startContainerCommand($host, $name, $network, $role, $ip, $image, $topologyMode),
                     $this->canonicalWireGuardAddressCommand($name, $role, $topologyMode),
                 ])),
                 'runtime_command' => $this->startsRuntimeSibling($role)
-                    ? $this->startRuntimeContainerCommand($name, $network, $role)
+                    ? $this->startRuntimeContainerCommand($host, $name, $network, $role)
                     : null,
             ];
             $tasks[$role]['command'] = implode(' && ', array_filter([
@@ -517,7 +527,7 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
         return is_string($value) && in_array(strtolower($value), ['1', 'true', 'yes'], true);
     }
 
-    private function startContainerCommand(string $name, string $network, string $role, string $ip, string $image, string $topologyMode): string
+    private function startContainerCommand(DockerHost $host, string $name, string $network, string $role, string $ip, string $image, string $topologyMode): string
     {
         $networkAlias = $topologyMode === 'dns-alias'
             ? ' --network-alias '.escapeshellarg($role)
@@ -525,9 +535,11 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
         $runtimeContainerEnv = $this->startsRuntimeSibling($role)
             ? ' --env '.escapeshellarg("ORBIT_RUNTIME_CONTAINER={$this->runtimeContainerName($name)}")
             : '';
+        $sourcePath = $this->sourcePathForHost($host)
+            ?? throw new \RuntimeException("Source-mounted Docker topology source path is not configured for {$host->host}.");
 
         return sprintf(
-            'docker run -d --name %s --network %s%s --ip %s --cap-add NET_ADMIN --cap-add NET_BIND_SERVICE %s --volume %s --mount %s --mount %s --mount %s --mount %s --env %s --env %s%s %s',
+            'docker run -d --name %s --network %s%s --ip %s --cap-add NET_ADMIN --cap-add NET_BIND_SERVICE %s --volume %s --mount %s --mount %s --mount %s --mount %s --mount %s --env %s --env %s --env %s%s %s',
             escapeshellarg($name),
             escapeshellarg($network),
             $networkAlias,
@@ -535,11 +547,13 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
             $this->dockerSocketGroupAddOption(),
             escapeshellarg('/var/run/docker.sock:/var/run/docker.sock'),
             escapeshellarg($this->homeVolumeMount($name, 'orbit')),
+            escapeshellarg($this->sourceBindMount($sourcePath)),
             escapeshellarg($this->nodeVolumeMount($name, 'etc-caddy', '/etc/caddy')),
             escapeshellarg($this->nodeVolumeMount($name, 'etc-orbit', '/etc/orbit')),
             escapeshellarg($this->nodeVolumeMount($name, 'opt-orbit', '/opt/orbit')),
             escapeshellarg("ORBIT_E2E_DOCKER_NETWORK={$network}"),
             escapeshellarg("ORBIT_NODE_CONTAINER={$name}"),
+            escapeshellarg('ORBIT_CONFIG_ROOT='.self::OrbitConfigRoot),
             $runtimeContainerEnv,
             escapeshellarg($image),
         );
@@ -569,22 +583,26 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
         );
     }
 
-    private function startRuntimeContainerCommand(string $nodeContainer, string $network, string $role): string
+    private function startRuntimeContainerCommand(DockerHost $host, string $nodeContainer, string $network, string $role): string
     {
         $orbitPath = $this->orbitPathForRole($role);
         $gatewayEnv = $role === 'gateway'
             ? ' --env '.escapeshellarg('ORBIT_IS_GATEWAY=1')
             : '';
+        $sourcePath = $this->sourcePathForHost($host)
+            ?? throw new \RuntimeException("Source-mounted Docker topology source path is not configured for {$host->host}.");
 
         return sprintf(
-            'docker run -d --restart unless-stopped --name %s --network %s --volume %s --mount %s --env %s --env %s --env %s%s --workdir %s %s',
+            'docker run -d --restart unless-stopped --name %s --network %s --volume %s --mount %s --mount %s --env %s --env %s --env %s --env %s%s --workdir %s %s',
             escapeshellarg($this->runtimeContainerName($nodeContainer)),
             escapeshellarg("container:{$nodeContainer}"),
             escapeshellarg('/var/run/docker.sock:/var/run/docker.sock'),
             escapeshellarg($this->homeVolumeMount($nodeContainer, 'orbit')),
+            escapeshellarg($this->sourceBindMount($sourcePath)),
             escapeshellarg("ORBIT_E2E_DOCKER_NETWORK={$network}"),
             escapeshellarg("ORBIT_NODE_CONTAINER={$nodeContainer}"),
             escapeshellarg("ORBIT_SOURCE_PATH={$orbitPath}"),
+            escapeshellarg('ORBIT_CONFIG_ROOT='.self::OrbitConfigRoot),
             $gatewayEnv,
             escapeshellarg($orbitPath),
             escapeshellarg(self::runtimeSiblingImage()),
@@ -606,10 +624,12 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
                     '__RUNTIME_CONTAINER__',
                     '__NODE_CONTAINER__',
                     '__RUNTIME_IMAGE__',
+                    '__ORBIT_PATH__',
                 ], [
                     $runtimeContainer,
                     $nodeContainer,
                     self::runtimeSiblingImage(),
+                    self::OrbitPath,
                 ], <<<'SH_WRAP'
             if [ -x /usr/bin/docker ] && ! grep -q ORBIT_E2E_RUNTIME_DOCKER_SHIM /usr/bin/docker 2>/dev/null; then
                 mv /usr/bin/docker /usr/bin/docker.real
@@ -623,11 +643,7 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
             runtime_container="${ORBIT_RUNTIME_CONTAINER:-__RUNTIME_CONTAINER__}"
             node_container="${ORBIT_NODE_CONTAINER:-__NODE_CONTAINER__}"
             runtime_image="${ORBIT_RUNTIME_IMAGE:-__RUNTIME_IMAGE__}"
-            source_path="$(sed -n "s/^checkout='\(.*\)'$/\1/p" /usr/local/bin/orbit 2>/dev/null | head -n 1 || true)"
-
-            if [ -z "${source_path}" ]; then
-                source_path="/home/orbit/orbit"
-            fi
+            source_path="${ORBIT_SOURCE_PATH:-__ORBIT_PATH__}"
 
             volume_mountpoint() {
                 "${real_docker}" volume inspect "$1" --format '{{ .Mountpoint }}' 2>/dev/null || true
@@ -670,21 +686,28 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
 
             rewrite_mount() {
                 local argument="$1"
+                local prefix
                 local remainder
                 local source
                 local rest
 
                 case "${argument}" in
                     type=bind,source=*)
-                        remainder="${argument#type=bind,source=}"
-                        source="${remainder%%,target=*}"
-                        rest="${remainder#"${source}"}"
-                        printf 'type=bind,source=%s%s' "$(rewrite_path "${source}")" "${rest}"
+                        prefix="type=bind,source="
+                        ;;
+                    type=bind,src=*)
+                        prefix="type=bind,src="
                         ;;
                     *)
                         printf '%s' "${argument}"
+                        return
                         ;;
                 esac
+
+                remainder="${argument#"${prefix}"}"
+                source="${remainder%%,*}"
+                rest="${remainder#"${source}"}"
+                printf '%s%s%s' "${prefix}" "$(rewrite_path "${source}")" "${rest}"
             }
 
             args=()
@@ -703,7 +726,7 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
                     /opt/orbit/*)
                         args+=("${source_path}${argument#/opt/orbit}")
                         ;;
-                    type=bind,source=*)
+                    type=bind,source=*|type=bind,src=*)
                         args+=("$(rewrite_mount "${argument}")")
                         ;;
                     *)
@@ -1154,6 +1177,33 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
         return "type=volume,src={$this->homeVolumeName($nodeContainer, $user)},dst=/home/{$user}";
     }
 
+    private function sourcePathForHost(DockerHost $host): ?string
+    {
+        $hostSpecificPath = getenv('ORBIT_E2E_DOCKER_SOURCE_PATH_'.self::sourcePathEnvironmentSuffix($host->host));
+
+        if (is_string($hostSpecificPath) && trim($hostSpecificPath) !== '') {
+            return trim($hostSpecificPath);
+        }
+
+        $sourcePath = getenv('ORBIT_E2E_DOCKER_SOURCE_PATH');
+
+        if (is_string($sourcePath) && trim($sourcePath) !== '') {
+            return trim($sourcePath);
+        }
+
+        return $host->isLocal() ? repo_path() : null;
+    }
+
+    private static function sourcePathEnvironmentSuffix(string $host): string
+    {
+        return strtoupper((string) preg_replace('/[^A-Za-z0-9]+/', '_', $host));
+    }
+
+    private function sourceBindMount(string $sourcePath): string
+    {
+        return 'type=bind,src='.$sourcePath.',dst='.self::OrbitPath;
+    }
+
     private function nodeVolumeMount(string $nodeContainer, string $suffix, string $target): string
     {
         return "type=volume,src={$nodeContainer}-{$suffix},dst={$target}";
@@ -1201,7 +1251,7 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
 
     private function orbitPathForRole(string $role): string
     {
-        return '/home/orbit/orbit';
+        return self::OrbitPath;
     }
 
     private function topologyMode(): string

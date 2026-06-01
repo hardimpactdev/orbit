@@ -122,6 +122,18 @@ it('reuses prepared vendor packages while rebuilding checkout local autoload fil
         ->and($commandOutput)->toContain('CLI Composer dependencies are not installed and prepared vendor dependencies could not be reused.');
 });
 
+it('skips cli env copies when docker host-launcher vendor reuse points at the mounted checkout', function (): void {
+    $method = new ReflectionMethod(E2ECurrentCheckout::class, 'reuseRuntimeDependenciesCommand');
+    $method->setAccessible(true);
+
+    $command = $method->invoke(null, '/home/orbit/orbit', '/home/orbit/orbit', null, false);
+
+    expect($command)
+        ->toContain('apps/gateway/vendor/autoload.php')
+        ->toContain('apps/cli/vendor/autoload.php')
+        ->not->toContain("cp '/home/orbit/orbit/apps/cli/.env' apps/cli/.env");
+});
+
 it('can seed the current checkout from prepared topology state', function (): void {
     Process::fake([
         'COPYFILE_DISABLE=1 tar *' => Process::result(),
@@ -425,6 +437,34 @@ it('marks Docker topology checkout env files with the Docker provider', function
         ->toContain('ORBIT_E2E_TOPOLOGY_PROVIDER=docker');
 });
 
+it('keeps Docker seeded gateway state in the node local config root', function (): void {
+    $commands = [];
+    Process::fake(function ($process) use (&$commands) {
+        $commands[] = (string) $process->command;
+
+        return Process::result();
+    });
+
+    $instance = new DockerInstance(new DockerHost(E2EConfig::fromEnvironment()), 'orbit-e2e-run123-operator', 'orbit-e2e-run123');
+    $key = new SshKeyPair('/tmp/id_ed25519', '/tmp/id_ed25519.pub');
+
+    E2ECurrentCheckout::install($instance, 'orbit', $key, seedFrom: '/srv/prepared/orbit');
+
+    $nodeInstallCommands = implode("\n", array_values(array_filter(
+        $commands,
+        fn (string $command): bool => str_starts_with($command, "docker exec --user 'orbit' 'orbit-e2e-run123-operator'"),
+    )));
+
+    expect($nodeInstallCommands)
+        ->toContain('/home/orbit/.config/orbit/gateway/.env')
+        ->toContain('/home/orbit/.config/orbit/gateway/database/database.sqlite')
+        ->toContain('/home/orbit/.config/orbit/gateway/storage/app/orbit')
+        ->not->toContain('/srv/prepared/.config/orbit')
+        ->not->toContain("cp '/srv/prepared/orbit/apps/gateway/.env' apps/gateway/.env")
+        ->not->toContain('rm -f apps/gateway/database/database.sqlite apps/gateway/database/database.sqlite-*')
+        ->not->toContain('rm -rf apps/gateway/storage/app');
+});
+
 it('regenerates empty app keys while preparing remote checkout env files', function (): void {
     Process::fake([
         'COPYFILE_DISABLE=1 tar *' => Process::result(),
@@ -471,8 +511,8 @@ it('installs the current checkout on Docker topology nodes through the runtime c
         ->toContain('orbit-e2e-run123-operator-orbit-runtime')
         ->toContain('key:generate --force --no-interaction --ansi')
         ->toContain('/home/orbit/orbit-current/apps/gateway/artisan')
-        ->toContain('apps/gateway/.env')
-        ->toContain('apps/gateway/storage/framework/views')
+        ->toContain('/home/orbit/.config/orbit/gateway/.env')
+        ->toContain('/home/orbit/.config/orbit/gateway/storage')
         ->toContain('migrate --force --ansi')
         ->toContain('/home/orbit/orbit/apps/cli/vendor')
         ->toContain('rm -rf apps/cli/vendor')
@@ -520,23 +560,33 @@ it('bootstraps gateway app state for Docker host launcher checkout nodes without
         $commands,
         fn (string $command): bool => str_starts_with($command, "docker exec --user 'orbit' 'orbit-e2e-run123-dev'"),
     )));
+    $allCommands = implode("\n", $commands);
 
     expect($nodeInstallCommands)
-        ->toContain('/home/orbit/orbit/apps/gateway/vendor/autoload.php')
-        ->toContain('/home/orbit/orbit/apps/gateway/vendor')
-        ->toContain('rm -rf apps/gateway/vendor')
+        ->toContain('apps/gateway/vendor/autoload.php')
+        ->toContain('Gateway Composer dependencies must already exist in the mounted source tree')
         ->toContain('php apps/gateway/artisan key:generate --force --no-interaction --ansi')
         ->toContain('php apps/gateway/artisan migrate --force --ansi')
         ->toContain('php apps/gateway/artisan tinker --execute')
         ->toContain('LocalGatewaySettings::current()')
-        ->toContain('/home/orbit/orbit/apps/cli/vendor')
-        ->toContain('rm -rf apps/cli/vendor')
-        ->toContain('composer --working-dir=apps/gateway dump-autoload --no-interaction --optimize')
-        ->toContain('composer --working-dir=apps/cli dump-autoload --no-interaction --optimize')
-        ->toContain('apps/cli/.env')
+        ->toContain('/home/orbit/.config/orbit/gateway/.env')
+        ->toContain('apps/cli/vendor/autoload.php')
+        ->toContain('CLI Composer dependencies must already exist in the mounted source tree')
+        ->not->toContain('rm -rf apps/gateway/vendor')
+        ->not->toContain('rm -rf apps/cli/vendor')
+        ->not->toContain('composer --working-dir=apps/gateway dump-autoload --no-interaction --optimize')
+        ->not->toContain('composer --working-dir=apps/cli dump-autoload --no-interaction --optimize')
+        ->not->toContain('ln -sfn /home/orbit/.config/orbit/gateway/storage apps/gateway/storage')
+        ->not->toContain('ln -sfn /home/orbit/.config/orbit/gateway/.env apps/gateway/.env')
+        ->not->toContain('ln -sfn /home/orbit/.config/orbit/gateway/database/database.sqlite apps/gateway/database/database.sqlite')
+        ->not->toContain('apps/cli/.env')
+        ->not->toContain("cp '/home/orbit/orbit/apps/cli/.env' apps/cli/.env")
         ->not->toContain('orbit-e2e-run123-dev-orbit-runtime')
         ->not->toContain('sudo docker exec --env')
-        ->not->toContain('composer install');
+        ->not->toContain('composer install')
+        ->and($allCommands)->not->toContain('tar --warning=no-unknown-keyword -xzf /tmp/orbit-current.tar.gz -C')
+        ->and($allCommands)->toContain('/home/orbit/orbit/apps/cli/orbit')
+        ->and($allCommands)->toContain('/usr/local/bin/orbit');
 });
 
 it('uses the host launcher for Docker operator gateway and app-node checkouts', function (): void {
@@ -560,7 +610,7 @@ it('uses the host launcher for Docker operator gateway and app-node checkouts', 
         rebuild: fn () => throw new RuntimeException('not expected'),
     );
 
-    E2ECurrentCheckout::installOnTopology($topology, roles: ['operator', 'gateway', 'dev']);
+    $paths = E2ECurrentCheckout::installOnTopology($topology, roles: ['operator', 'gateway', 'dev']);
 
     $operatorInstallCommands = implode("\n", array_values(array_filter(
         $commands,
@@ -583,11 +633,16 @@ it('uses the host launcher for Docker operator gateway and app-node checkouts', 
         ->toContain('php apps/gateway/artisan migrate --force')
         ->toContain('php apps/gateway/artisan tinker --execute')
         ->toContain('LocalGatewaySettings::current()')
-        ->toContain('/home/orbit/orbit/apps/gateway/vendor/autoload.php')
-        ->toContain('rm -rf apps/gateway/vendor')
-        ->toContain('/home/orbit/orbit/apps/cli/vendor')
-        ->toContain('composer --working-dir=apps/gateway dump-autoload --no-interaction --optimize')
-        ->toContain('composer --working-dir=apps/cli dump-autoload --no-interaction --optimize')
+        ->toContain('/home/orbit/.config/orbit/gateway/.env')
+        ->toContain('apps/gateway/vendor/autoload.php')
+        ->toContain('apps/cli/vendor/autoload.php')
+        ->toContain('Gateway Composer dependencies must already exist in the mounted source tree')
+        ->toContain('CLI Composer dependencies must already exist in the mounted source tree')
+        ->not->toContain('rm -rf apps/gateway/vendor')
+        ->not->toContain('rm -rf apps/cli/vendor')
+        ->not->toContain('composer --working-dir=apps/gateway dump-autoload --no-interaction --optimize')
+        ->not->toContain('composer --working-dir=apps/cli dump-autoload --no-interaction --optimize')
+        ->not->toContain("cp '/home/orbit/orbit/apps/cli/.env' apps/cli/.env")
         ->not->toContain('ORBIT_EXECUTOR_SECRET=%s')
         ->not->toContain('orbit-e2e-run123-operator-orbit-runtime')
         ->and($gatewayInstallCommands)
@@ -597,11 +652,16 @@ it('uses the host launcher for Docker operator gateway and app-node checkouts', 
         ->toContain('ORBIT_OPERATION_TOKEN_SECRET|ORBIT_EXECUTOR_SECRET')
         ->toContain('php apps/gateway/artisan migrate --force')
         ->toContain('php apps/gateway/artisan orbit:internal:pin-node-host-keys --json')
-        ->toContain('/home/orbit/orbit/apps/gateway/vendor/autoload.php')
-        ->toContain('rm -rf apps/gateway/vendor')
-        ->toContain('/home/orbit/orbit/apps/cli/vendor')
-        ->toContain('composer --working-dir=apps/gateway dump-autoload --no-interaction --optimize')
-        ->toContain('composer --working-dir=apps/cli dump-autoload --no-interaction --optimize')
+        ->toContain('/home/orbit/.config/orbit/gateway/.env')
+        ->toContain('apps/gateway/vendor/autoload.php')
+        ->toContain('apps/cli/vendor/autoload.php')
+        ->toContain('Gateway Composer dependencies must already exist in the mounted source tree')
+        ->toContain('CLI Composer dependencies must already exist in the mounted source tree')
+        ->not->toContain('rm -rf apps/gateway/vendor')
+        ->not->toContain('rm -rf apps/cli/vendor')
+        ->not->toContain('composer --working-dir=apps/gateway dump-autoload --no-interaction --optimize')
+        ->not->toContain('composer --working-dir=apps/cli dump-autoload --no-interaction --optimize')
+        ->not->toContain("cp '/home/orbit/orbit/apps/cli/.env' apps/cli/.env")
         ->not->toContain('ORBIT_EXECUTOR_SECRET=%s')
         ->not->toContain('orbit-e2e-run123-gateway-orbit-runtime')
         ->and($devInstallCommands)
@@ -612,13 +672,23 @@ it('uses the host launcher for Docker operator gateway and app-node checkouts', 
         ->toContain('php apps/gateway/artisan migrate --force')
         ->toContain('php apps/gateway/artisan tinker --execute')
         ->toContain('LocalGatewaySettings::current()')
-        ->toContain('/home/orbit/orbit/apps/gateway/vendor/autoload.php')
-        ->toContain('rm -rf apps/gateway/vendor')
-        ->toContain('/home/orbit/orbit/apps/cli/vendor')
-        ->toContain('composer --working-dir=apps/gateway dump-autoload --no-interaction --optimize')
-        ->toContain('composer --working-dir=apps/cli dump-autoload --no-interaction --optimize')
+        ->toContain('/home/orbit/.config/orbit/gateway/.env')
+        ->toContain('apps/gateway/vendor/autoload.php')
+        ->toContain('apps/cli/vendor/autoload.php')
+        ->toContain('Gateway Composer dependencies must already exist in the mounted source tree')
+        ->toContain('CLI Composer dependencies must already exist in the mounted source tree')
+        ->not->toContain('rm -rf apps/gateway/vendor')
+        ->not->toContain('rm -rf apps/cli/vendor')
+        ->not->toContain('composer --working-dir=apps/gateway dump-autoload --no-interaction --optimize')
+        ->not->toContain('composer --working-dir=apps/cli dump-autoload --no-interaction --optimize')
+        ->not->toContain("cp '/home/orbit/orbit/apps/cli/.env' apps/cli/.env")
         ->not->toContain('ORBIT_EXECUTOR_SECRET=%s')
         ->not->toContain('orbit-e2e-run123-dev-orbit-runtime');
+    expect($paths)->toBe([
+        'operator' => '/home/orbit/orbit',
+        'gateway' => '/home/orbit/orbit',
+        'dev' => '/home/orbit/orbit',
+    ]);
 });
 
 it('refreshes Docker gateway checkout host keys through explicit host Artisan', function (): void {
@@ -648,10 +718,10 @@ it('refreshes Docker gateway checkout host keys through explicit host Artisan', 
         $commands,
         fn (string $command): bool => str_starts_with($command, "docker exec --user 'orbit' 'orbit-e2e-run123-gateway'"),
     )));
-    $wrapperCopyCommandIndex = array_find_key(
+    $wrapperSymlinkCommandIndex = array_find_key(
         $commands,
-        fn (string $command): bool => str_starts_with($command, 'docker cp ')
-            && str_contains($command, "'orbit-e2e-run123-gateway:/usr/local/bin/orbit'"),
+        fn (string $command): bool => str_contains($command, '/home/orbit/orbit/apps/cli/orbit')
+            && str_contains($command, '/usr/local/bin/orbit'),
     );
     $hostKeyRefreshCommandIndex = array_find_key(
         $commands,
@@ -667,11 +737,13 @@ it('refreshes Docker gateway checkout host keys through explicit host Artisan', 
         ->not->toContain('orbit-e2e-run123-gateway-orbit-runtime')
         ->not->toContain('orbit orbit:internal:pin-node-host-keys --json')
         ->not->toContain('php artisan orbit:internal:pin-node-host-keys --json')
-        ->toContain('composer --working-dir=apps/gateway dump-autoload --no-interaction --optimize')
-        ->toContain('composer --working-dir=apps/cli dump-autoload --no-interaction --optimize')
-        ->and($wrapperCopyCommandIndex)->toBeInt()
+        ->toContain('Gateway Composer dependencies must already exist in the mounted source tree')
+        ->toContain('CLI Composer dependencies must already exist in the mounted source tree')
+        ->not->toContain('composer --working-dir=apps/gateway dump-autoload --no-interaction --optimize')
+        ->not->toContain('composer --working-dir=apps/cli dump-autoload --no-interaction --optimize')
+        ->and($wrapperSymlinkCommandIndex)->toBeInt()
         ->and($hostKeyRefreshCommandIndex)->toBeInt()
-        ->and($wrapperCopyCommandIndex)->toBeLessThan($hostKeyRefreshCommandIndex);
+        ->and($wrapperSymlinkCommandIndex)->toBeLessThan($hostKeyRefreshCommandIndex);
 });
 
 it('shares one 600 second timeout budget across split install phases', function (): void {

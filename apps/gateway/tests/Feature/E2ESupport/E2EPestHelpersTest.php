@@ -617,21 +617,21 @@ it('seeds docker app current-checkout gateway settings through the cli env and r
         rebuild: fn () => throw new RuntimeException('not expected'),
         gatewayApiIp: '10.61.0.2',
     ));
-    $harness->setCheckouts(['dev' => '/home/orbit/orbit-current']);
+    $harness->setCheckouts(['dev' => '/home/orbit/orbit']);
 
     try {
         e2eConfigureCurrentCheckoutGatewaySettings($harness, 'dev');
 
         expect($dockerCommands)->toHaveCount(2)
             ->and($dockerCommands[0])->toContain("docker exec --user 'orbit' 'orbit-e2e-run-dev' sh -lc")
-            ->and($dockerCommands[0])->toContain('/home/orbit/orbit-current/apps/cli')
+            ->and($dockerCommands[0])->toContain('/home/orbit/orbit/apps/cli')
             ->and($dockerCommands[0])->toContain('ORBIT_GATEWAY_URL')
             ->and($dockerCommands[0])->toContain('ORBIT_GATEWAY_IDENTITY')
             ->and($dockerCommands[0])->toContain('http://gateway')
             ->and($dockerCommands[0])->not->toContain('php apps/gateway/artisan tinker --execute')
             ->and($dockerCommands[0])->not->toContain('LocalGatewaySettings::current()')
             ->and($dockerCommands[1])->toContain("docker exec --user 'orbit' 'orbit-e2e-run-dev' sh -lc")
-            ->and($dockerCommands[1])->toContain('/home/orbit/orbit-current')
+            ->and($dockerCommands[1])->toContain('/home/orbit/orbit')
             ->and($dockerCommands[1])->toContain('php apps/gateway/artisan tinker --execute')
             ->and($dockerCommands[1])->toContain('LocalGatewaySettings::current()')
             ->and($dockerCommands[1])->toContain('https://gateway')
@@ -670,24 +670,24 @@ it('seeds docker operator current-checkout gateway settings through the cli env 
         gatewayApiIp: '10.61.0.2',
     ));
     $harness->setCheckouts([
-        'operator' => '/home/orbit/orbit-current',
-        'gateway' => '/home/orbit/orbit-current',
+        'operator' => '/home/orbit/orbit',
+        'gateway' => '/home/orbit/orbit',
     ]);
 
     try {
         e2eConfigureCurrentCheckoutGatewaySettings($harness, 'operator');
 
         expect($dockerCommands)->toHaveCount(2)
-            ->and($commands)->not->toContain("ssh:orbit:cat '/home/orbit/orbit-current/storage/app/orbit/ca/root.crt'")
+            ->and($commands)->not->toContain("ssh:orbit:cat '/home/orbit/orbit/storage/app/orbit/ca/root.crt'")
             ->and($dockerCommands[0])->toContain("docker exec --user 'orbit' 'orbit-e2e-run-operator' sh -lc")
-            ->and($dockerCommands[0])->toContain('/home/orbit/orbit-current/apps/cli')
+            ->and($dockerCommands[0])->toContain('/home/orbit/orbit/apps/cli')
             ->and($dockerCommands[0])->toContain('ORBIT_GATEWAY_URL')
             ->and($dockerCommands[0])->toContain('ORBIT_GATEWAY_IDENTITY')
             ->and($dockerCommands[0])->toContain('http://gateway')
             ->and($dockerCommands[0])->not->toContain('php apps/gateway/artisan tinker --execute')
             ->and($dockerCommands[0])->not->toContain('LocalGatewaySettings::current()')
             ->and($dockerCommands[1])->toContain("docker exec --user 'orbit' 'orbit-e2e-run-operator' sh -lc")
-            ->and($dockerCommands[1])->toContain('/home/orbit/orbit-current')
+            ->and($dockerCommands[1])->toContain('/home/orbit/orbit')
             ->and($dockerCommands[1])->toContain('php apps/gateway/artisan tinker --execute')
             ->and($dockerCommands[1])->toContain('LocalGatewaySettings::current()')
             ->and($dockerCommands[1])->toContain('https://gateway')
@@ -725,20 +725,20 @@ it('seeds docker gateway current-checkout gateway settings through the cli env a
         rebuild: fn () => throw new RuntimeException('not expected'),
         gatewayApiIp: '10.61.0.2',
     ));
-    $harness->setCheckouts(['gateway' => '/home/orbit/orbit-current']);
+    $harness->setCheckouts(['gateway' => '/home/orbit/orbit']);
 
     try {
         e2eConfigureCurrentCheckoutGatewaySettingsIfAvailable($harness);
 
         expect($dockerCommands)->toHaveCount(2)
             ->and($dockerCommands[0])->toContain("docker exec --user 'orbit' 'orbit-e2e-run-gateway' sh -lc")
-            ->and($dockerCommands[0])->toContain('/home/orbit/orbit-current/apps/cli')
+            ->and($dockerCommands[0])->toContain('/home/orbit/orbit/apps/cli')
             ->and($dockerCommands[0])->toContain('ORBIT_GATEWAY_URL')
             ->and($dockerCommands[0])->toContain('ORBIT_GATEWAY_IDENTITY')
             ->and($dockerCommands[0])->toContain('http://gateway')
             ->and($dockerCommands[0])->not->toContain('php apps/gateway/artisan tinker --execute')
             ->and($dockerCommands[1])->toContain("docker exec --user 'orbit' 'orbit-e2e-run-gateway' sh -lc")
-            ->and($dockerCommands[1])->toContain('/home/orbit/orbit-current')
+            ->and($dockerCommands[1])->toContain('/home/orbit/orbit')
             ->and($dockerCommands[1])->toContain('php apps/gateway/artisan tinker --execute')
             ->and($dockerCommands[1])->toContain('LocalGatewaySettings::current()')
             ->and($dockerCommands[1])->toContain('https://gateway')

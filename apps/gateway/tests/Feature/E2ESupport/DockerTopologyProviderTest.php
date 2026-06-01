@@ -17,6 +17,8 @@ use Illuminate\Support\Facades\Process;
 
 beforeEach(function (): void {
     putenv('ORBIT_E2E_DOCKER_TEST_RUNNERS=local:8:64,beast:8:64,sidecar1:8:64,sidecar2:8:64');
+    putenv('ORBIT_E2E_DOCKER_SOURCE_PATH');
+    putenv('ORBIT_E2E_DOCKER_SOURCE_PATH_BEAST');
     $this->dockerLeaseDirectory = storage_path('framework/e2e/test-leases-'.bin2hex(random_bytes(4)));
     putenv("ORBIT_E2E_LEASE_DIRECTORY={$this->dockerLeaseDirectory}");
     putenv('ORBIT_E2E_SLOT_WAIT_SECONDS=0');
@@ -25,6 +27,8 @@ beforeEach(function (): void {
 afterEach(function (): void {
     exec('rm -rf '.escapeshellarg($this->dockerLeaseDirectory));
     putenv('ORBIT_E2E_DOCKER_TEST_RUNNERS');
+    putenv('ORBIT_E2E_DOCKER_SOURCE_PATH');
+    putenv('ORBIT_E2E_DOCKER_SOURCE_PATH_BEAST');
     putenv('ORBIT_E2E_LEASE_DIRECTORY');
     putenv('ORBIT_E2E_SLOT_WAIT_SECONDS');
 });
@@ -84,7 +88,9 @@ it('starts Docker client topology nodes without a runtime sibling container', fu
         ->toContain('--group-add "$(stat -c %g /var/run/docker.sock 2>/dev/null || stat -f %g /var/run/docker.sock)"')
         ->toContain("--volume '/var/run/docker.sock:/var/run/docker.sock'")
         ->toContain("--mount 'type=volume,src=orbit-e2e-run123-operator-home-orbit,dst=/home/orbit'")
+        ->toContain("--mount 'type=bind,src=/Users/nckrtl/orbit/.worktrees/source-mounted-live-topologies,dst=/home/orbit/orbit'")
         ->toContain("--env 'ORBIT_E2E_DOCKER_NETWORK=orbit-e2e-run123'")
+        ->toContain("--env 'ORBIT_CONFIG_ROOT=/home/orbit/.config/orbit'")
         ->toContain('ip addr add')
         ->toContain('10.6.0.3/24')
         ->not->toContain('ORBIT_RUNTIME_CONTAINER=orbit-e2e-run123-operator-orbit-runtime')
@@ -325,6 +331,7 @@ it('selects the first docker test runner with image availability', function (): 
 
     withE2EConfigEnvironment([
         'ORBIT_E2E_DOCKER_TEST_RUNNERS' => 'beast:1:2,local:1:2',
+        'ORBIT_E2E_DOCKER_SOURCE_PATH' => '/srv/orbit-source',
     ], function (): void {
         $provider = new DockerTopologyProvider(E2EConfig::fromEnvironment());
 
@@ -332,6 +339,27 @@ it('selects the first docker test runner with image availability', function (): 
 
         expect($availability->available)->toBeTrue()
             ->and($availability->message)->toContain('local');
+    });
+});
+
+it('marks remote docker runners unavailable without a host visible source path', function (): void {
+    Process::fake(function ($process) {
+        if ($process->command === 'command -v docker >/dev/null'
+            || $process->command === 'docker info >/dev/null') {
+            return Process::result();
+        }
+
+        return Process::result(exitCode: 1, errorOutput: $process->command);
+    });
+
+    withE2EConfigEnvironment([
+        'ORBIT_E2E_DOCKER_TEST_RUNNERS' => 'beast:1:64',
+    ], function (): void {
+        $provider = new DockerTopologyProvider(E2EConfig::fromEnvironment());
+        $availability = $provider->availability(E2ETopologyKind::Operator);
+
+        expect($availability->available)->toBeFalse()
+            ->and($availability->message)->toContain('beast: source-mounted Docker topologies require ORBIT_E2E_DOCKER_SOURCE_PATH');
     });
 });
 
@@ -368,6 +396,7 @@ it('selects the next docker test runner when the first runner is missing images'
 
     withE2EConfigEnvironment([
         'ORBIT_E2E_DOCKER_TEST_RUNNERS' => 'sidecar1:1:1,beast:1:3',
+        'ORBIT_E2E_DOCKER_SOURCE_PATH' => '/srv/orbit-source',
     ], function (): void {
         $provider = new DockerTopologyProvider(E2EConfig::fromEnvironment());
 
@@ -391,6 +420,7 @@ it('allows slow remote docker metadata probes during host selection', function (
 
     withE2EConfigEnvironment([
         'ORBIT_E2E_DOCKER_TEST_RUNNERS' => 'beast:1:64',
+        'ORBIT_E2E_DOCKER_SOURCE_PATH' => '/srv/orbit-source',
         'ORBIT_E2E_TIMEOUT_SECONDS' => '600',
     ], function () use (&$probeTimeouts): void {
         $provider = new DockerTopologyProvider(E2EConfig::fromEnvironment());
@@ -399,6 +429,44 @@ it('allows slow remote docker metadata probes during host selection', function (
             ->and($probeTimeouts['docker info >/dev/null'])->toBe(120)
             ->and($probeTimeouts["docker image inspect 'orbit-e2e:operator_base' >/dev/null"])->toBe(120);
     });
+});
+
+it('uses the configured remote docker source path for source bind mounts', function (): void {
+    $commands = [];
+
+    Process::fake(function ($process) use (&$commands) {
+        $commands[] = $process->command;
+
+        if ($process->command === 'command -v docker >/dev/null'
+            || $process->command === 'docker info >/dev/null'
+            || str_starts_with($process->command, 'docker image inspect ')
+            || $process->command === "docker ps --format '{{.Names}}' --filter 'name=orbit-e2e-'"
+            || str_starts_with($process->command, 'docker network create ')
+            || str_starts_with($process->command, 'docker exec ')) {
+            return Process::result();
+        }
+
+        if (str_starts_with($process->command, 'docker run -d ')) {
+            return Process::result(output: "container-id\n");
+        }
+
+        return Process::result(exitCode: 1, errorOutput: $process->command);
+    });
+
+    withE2EConfigEnvironment([
+        'ORBIT_E2E_DOCKER_TEST_RUNNERS' => 'beast:1:64',
+        'ORBIT_E2E_DOCKER_SOURCE_PATH' => '/srv/global-orbit-source',
+        'ORBIT_E2E_DOCKER_SOURCE_PATH_BEAST' => '/srv/orbit-source',
+    ], function (): void {
+        $provider = new DockerTopologyProvider(E2EConfig::fromEnvironment());
+
+        $lease = $provider->acquire(E2ETopologyKind::Operator, 'run123', new E2EPhaseTimer, new E2ETopologyAcquisitionOptions);
+
+        $lease->cleanup();
+    });
+
+    expect(implode("\n", $commands))
+        ->toContain("--mount 'type=bind,src=/srv/orbit-source,dst=/home/orbit/orbit'");
 });
 
 it('counts running docker containers with the configured e2e instance prefix', function (): void {
@@ -487,6 +555,7 @@ it('does not fail availability on transient docker capacity when host slots are 
 
     withE2EConfigEnvironment([
         'ORBIT_E2E_DOCKER_TEST_RUNNERS' => 'sidecar1:1:1',
+        'ORBIT_E2E_DOCKER_SOURCE_PATH' => '/srv/orbit-source',
     ], function () use (&$probedCapacity): void {
         $provider = new DockerTopologyProvider(E2EConfig::fromEnvironment());
         $availability = $provider->availability(E2ETopologyKind::OperatorGateway);
@@ -1006,8 +1075,8 @@ it('maps gateway local orbit-runtime docker commands to the per-run runtime cont
         ->toContain('${node_container}-etc-orbit')
         ->toContain('/usr/bin/docker.real')
         ->toContain('rewrite_mount')
-        ->toContain('/usr/local/bin/orbit')
-        ->toContain('source_path="/home/orbit/orbit"')
+        ->toContain('type=bind,source=*|type=bind,src=*)')
+        ->toContain('source_path="${ORBIT_SOURCE_PATH:-/home/orbit/orbit}"')
         ->not->toContain('/proc/1/environ')
         ->toContain('orbit-runtime)')
         ->toContain('/opt/orbit/*)')
@@ -1101,6 +1170,7 @@ it('leases docker host slots independently from the parallel worker token', func
     try {
         withE2EConfigEnvironment([
             'ORBIT_E2E_DOCKER_TEST_RUNNERS' => 'sidecar1:2:64,sidecar2:2:64,beast:3:64',
+            'ORBIT_E2E_DOCKER_SOURCE_PATH' => '/srv/orbit-source',
             'ORBIT_E2E_LEASE_DIRECTORY' => $leaseDirectory,
         ], function () use (&$networkHost): void {
             $provider = new DockerTopologyProvider(E2EConfig::fromEnvironment());
@@ -1140,6 +1210,7 @@ it('releases docker host slots during topology cleanup', function (): void {
     try {
         withE2EConfigEnvironment([
             'ORBIT_E2E_DOCKER_TEST_RUNNERS' => 'sidecar1:1:64',
+            'ORBIT_E2E_DOCKER_SOURCE_PATH' => '/srv/orbit-source',
             'ORBIT_E2E_LEASE_DIRECTORY' => $leaseDirectory,
             'ORBIT_E2E_SLOT_WAIT_SECONDS' => '0',
         ], function () use ($leaseDirectory): void {
