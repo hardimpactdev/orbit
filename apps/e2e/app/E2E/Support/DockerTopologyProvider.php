@@ -77,6 +77,8 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
 
             $timer->measure('docker.seedRuntimeNameShim', fn () => $this->seedRuntimeContainerNameShim($instances));
             $timer->measure('docker.seedSshAccess', fn () => $this->seedRemoteShellSshAccess($instances));
+            $timer->measure('docker.prepareGatewayState', fn () => $this->prepareGatewayState($instances, $networkPlan, $topologyMode));
+            $timer->measure('docker.startGatewayScheduler', fn () => $this->startGatewayScheduler($host, $instances));
             $timer->measure('docker.seedOperatorIdentity', fn () => $this->seedOperatorIdentity($instances, $networkPlan, $topologyMode));
             $timer->measure('docker.seedGatewayRegistry', fn () => $this->seedGatewayRegistry($kind, $instances, $networkPlan, $topologyMode));
             $timer->measure('docker.prune', fn () => $this->prunePreparedGatewayRegistry($instances));
@@ -93,6 +95,8 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
 
             $cycleTimer->measure('reset.seedRuntimeNameShim', fn () => $this->seedRuntimeContainerNameShim($newInstances));
             $cycleTimer->measure('reset.seedSshAccess', fn () => $this->seedRemoteShellSshAccess($newInstances));
+            $cycleTimer->measure('reset.prepareGatewayState', fn () => $this->prepareGatewayState($newInstances, $networkPlan, $topologyMode));
+            $cycleTimer->measure('reset.startGatewayScheduler', fn () => $this->startGatewayScheduler($host, $newInstances));
             $cycleTimer->measure('reset.seedOperatorIdentity', fn () => $this->seedOperatorIdentity($newInstances, $networkPlan, $topologyMode));
             $cycleTimer->measure('reset.seedGatewayRegistry', fn () => $this->seedGatewayRegistry($kind, $newInstances, $networkPlan, $topologyMode));
             $cycleTimer->measure('reset.prune', fn () => $this->prunePreparedGatewayRegistry($newInstances));
@@ -593,7 +597,7 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
             ?? throw new \RuntimeException("Source-mounted Docker topology source path is not configured for {$host->host}.");
 
         return sprintf(
-            'docker run -d --restart unless-stopped --name %s --network %s --volume %s --mount %s --mount %s --env %s --env %s --env %s --env %s%s --workdir %s %s',
+            'docker run -d --restart unless-stopped --name %s --network %s --volume %s --mount %s --mount %s --env %s --env %s --env %s --env %s%s --workdir %s %s tail -f /dev/null',
             escapeshellarg($this->runtimeContainerName($nodeContainer)),
             escapeshellarg("container:{$nodeContainer}"),
             escapeshellarg('/var/run/docker.sock:/var/run/docker.sock'),
@@ -798,6 +802,47 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
                 escapeshellarg($publicKey),
             ),
             "Could not authorize gateway SSH key in Docker {$role} container",
+            timeoutSeconds: 60,
+        );
+    }
+
+    /**
+     * @param  array<string, DockerInstance>  $instances
+     */
+    private function prepareGatewayState(array $instances, DockerTopologyNetworkPlan $networkPlan, string $mode): void
+    {
+        $gateway = $instances['gateway'] ?? null;
+
+        if ($gateway === null) {
+            return;
+        }
+
+        E2EGatewayApi::prepareDockerGatewayState(
+            $gateway,
+            self::OrbitPath,
+            $this->wireGuardAddressForRole('gateway', $networkPlan, $mode),
+            self::OrbitConfigRoot.'/gateway/storage/framework/views',
+        );
+    }
+
+    /**
+     * @param  array<string, DockerInstance>  $instances
+     */
+    private function startGatewayScheduler(DockerHost $host, array $instances): void
+    {
+        $gateway = $instances['gateway'] ?? null;
+
+        if ($gateway === null) {
+            return;
+        }
+
+        $host->mustRun(
+            sprintf(
+                'docker exec --detach --workdir %s %s orbit orbit-scheduler',
+                escapeshellarg(self::OrbitPath),
+                escapeshellarg($this->runtimeContainerName($gateway->name())),
+            ),
+            'Could not start Docker gateway scheduler',
             timeoutSeconds: 60,
         );
     }

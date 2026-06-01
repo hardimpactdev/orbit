@@ -400,7 +400,7 @@ it('builds Docker topology state through the host orbit launcher', function (): 
     expect($setup)
         ->toContain('cd /home/orbit/orbit && php apps/gateway/artisan migrate --force')
         ->toContain('cd /home/orbit/orbit && php apps/gateway/artisan orbit:internal:bootstrap-gateway-local gateway 10.6.0.2 --skip-runtime-install --skip-wireguard-install')
-        ->toContain('sudo -iu orbit env ORBIT_RUNTIME_CONTAINER="${ORBIT_RUNTIME_CONTAINER:-}" ORBIT_E2E_DOCKER_NETWORK="${ORBIT_E2E_DOCKER_NETWORK:-}" bash -lc')
+        ->toContain('sudo -iu orbit env ORBIT_RUNTIME_CONTAINER="${ORBIT_RUNTIME_CONTAINER:-}" ORBIT_E2E_DOCKER_NETWORK="${ORBIT_E2E_DOCKER_NETWORK:-}" ORBIT_CONFIG_ROOT="${ORBIT_CONFIG_ROOT:-/home/orbit/.config/orbit}" bash -lc')
         ->toContain('/home/orbit/orbit/apps/cli')
         ->toContain('type=bind,source=*|type=bind,src=*)')
         ->toContain('/home/orbit/.config/orbit/gateway/.env')
