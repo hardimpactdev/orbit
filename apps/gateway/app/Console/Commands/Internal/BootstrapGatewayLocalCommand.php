@@ -346,6 +346,21 @@ class BootstrapGatewayLocalCommand extends Command
         putenv("{$key}={$value}");
     }
 
+    private function removeEnvVar(string $key): void
+    {
+        $path = app()->environmentFilePath();
+
+        if (File::exists($path)) {
+            $contents = File::get($path);
+            $contents = (string) preg_replace('/^'.preg_quote($key, '/').'=.*$\n?/m', '', $contents);
+
+            File::put($path, rtrim($contents)."\n");
+        }
+
+        unset($_ENV[$key], $_SERVER[$key]);
+        putenv($key);
+    }
+
     private function stringOption(string $name): ?string
     {
         $value = $this->option($name);
@@ -356,12 +371,12 @@ class BootstrapGatewayLocalCommand extends Command
     private function ensureOperationTokenSecret(): string
     {
         $secret = $this->readEnvVar('ORBIT_OPERATION_TOKEN_SECRET')
-            ?? $this->readEnvVar('ORBIT_EXECUTOR_SECRET')
             ?? base64_encode(random_bytes(32));
 
+        $this->removeEnvVar('ORBIT_EXECUTOR_SECRET');
         $this->writeEnvVar('ORBIT_OPERATION_TOKEN_SECRET', $secret);
-        $this->writeEnvVar('ORBIT_EXECUTOR_SECRET', $secret);
         config(['orbit.operation_token_secret' => $secret]);
+        config(['orbit.executor_secret' => null]);
 
         return $secret;
     }

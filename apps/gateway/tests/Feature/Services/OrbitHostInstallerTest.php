@@ -60,7 +60,7 @@ it('runs the pre-wireguard node security baseline over pinned ssh during provisi
     Process::assertNotRan(fn ($process): bool => str_contains((string) $process->command, 'ufw deny in on "$PUBLIC_IFACE"'));
 });
 
-it('stages operation token executor configuration through a temporary remote env file without exposing the secret in ssh argv', function (): void {
+it('stages operation token configuration through a temporary remote env file without exposing the secret in ssh argv', function (): void {
     config()->set('orbit.operation_token_secret', 'shared-operation-secret');
 
     $node = Node::factory()->create([
@@ -92,6 +92,7 @@ it('stages operation token executor configuration through a temporary remote env
         && str_contains((string) $process->command, '--source-archive='));
 
     Process::assertNotRan(fn ($process): bool => str_contains((string) $process->command, 'shared-operation-secret'));
+    Process::assertNotRan(fn ($process): bool => str_contains((string) $process->command, 'ORBIT_EXECUTOR_SECRET'));
 });
 
 it('forwards local runtime image archives to install-orbit when enabled for archive-seeded provisioning', function (): void {

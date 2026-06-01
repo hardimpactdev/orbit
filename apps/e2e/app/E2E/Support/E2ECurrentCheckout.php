@@ -513,7 +513,7 @@ final class E2ECurrentCheckout
         return implode(' && ', [
             "grep -Ev '^(ORBIT_OPERATION_TOKEN_SECRET|ORBIT_EXECUTOR_SECRET)=' apps/gateway/.env > apps/gateway/.env.tmp || true",
             'mv apps/gateway/.env.tmp apps/gateway/.env',
-            "printf 'ORBIT_OPERATION_TOKEN_SECRET=%s\\nORBIT_EXECUTOR_SECRET=%s\\n' {$secret} {$secret} >> apps/gateway/.env",
+            "printf 'ORBIT_OPERATION_TOKEN_SECRET=%s\\n' {$secret} >> apps/gateway/.env",
         ]);
     }
 

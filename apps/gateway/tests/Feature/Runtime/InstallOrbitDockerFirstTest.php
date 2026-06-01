@@ -142,13 +142,15 @@ describe('install-orbit Docker-first runtime contract', function (): void {
             ->and($cacheClear)->toBeLessThan($composerInstall);
     });
 
-    it('creates operation token secrets for the gateway app and CLI local executor during bootstrap', function (): void {
+    it('creates an operation token secret for the gateway app during bootstrap', function (): void {
         expect($this->installer)
             ->toContain('ensure_operation_token_secret')
             ->toContain('ORBIT_OPERATION_TOKEN_SECRET')
-            ->toContain('ORBIT_EXECUTOR_SECRET')
             ->toContain('generate_operation_token_secret')
-            ->toContain('openssl rand -base64 32');
+            ->toContain('openssl rand -base64 32')
+            ->toContain('remove_env_var "ORBIT_EXECUTOR_SECRET"')
+            ->not->toContain('export ORBIT_EXECUTOR_SECRET')
+            ->not->toContain('write_env_var "ORBIT_EXECUTOR_SECRET"');
     });
 
     it('persists a supplied node identity for the CLI local executor when provisioning a known node', function (): void {

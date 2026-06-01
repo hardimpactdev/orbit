@@ -623,6 +623,22 @@ write_env_var() {
     } >>"$LOG_FILE" 2>&1
 }
 
+remove_env_var() {
+    local key="$1"
+    local env_file="$GATEWAY_ENV_FILE"
+    local tmp_file
+
+    [ -f "$env_file" ] || return 0
+
+    ensure_log_file
+
+    {
+        tmp_file="${env_file}.tmp.$$"
+        grep -Ev "^${key}=" "$env_file" > "$tmp_file" || true
+        mv "$tmp_file" "$env_file"
+    } >>"$LOG_FILE" 2>&1
+}
+
 generate_operation_token_secret() {
     # Generate a 32-byte random secret encoded as base64. Uses openssl when
     # available (present on both macOS and Ubuntu without host PHP).
@@ -645,18 +661,13 @@ ensure_operation_token_secret() {
     fi
 
     if [ -z "$secret" ]; then
-        secret="$(read_env_var "ORBIT_EXECUTOR_SECRET" || true)"
-    fi
-
-    if [ -z "$secret" ]; then
         secret="$(generate_operation_token_secret)"
     fi
 
+    remove_env_var "ORBIT_EXECUTOR_SECRET"
     write_env_var "ORBIT_OPERATION_TOKEN_SECRET" "$secret"
-    write_env_var "ORBIT_EXECUTOR_SECRET" "$secret"
 
     export ORBIT_OPERATION_TOKEN_SECRET="$secret"
-    export ORBIT_EXECUTOR_SECRET="$secret"
 }
 
 ensure_node_identity() {

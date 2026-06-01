@@ -226,7 +226,7 @@ describe('orbit:internal:bootstrap-gateway-local', function (): void {
         expect($env)->toContain('WG_EASY_PASSWORD=');
     });
 
-    it('persists gateway local executor identity and operation token configuration', function (): void {
+    it('persists gateway local identity and operation token configuration', function (): void {
         Artisan::call('orbit:internal:bootstrap-gateway-local', [
             'name' => 'gateway-1',
             'wireguard-address' => '10.6.0.2',
@@ -238,7 +238,32 @@ describe('orbit:internal:bootstrap-gateway-local', function (): void {
             ->toContain('ORBIT_IS_GATEWAY=true')
             ->toContain('ORBIT_NODE_IDENTITY=gateway-1')
             ->toContain('ORBIT_OPERATION_TOKEN_SECRET=')
-            ->toContain('ORBIT_EXECUTOR_SECRET=');
+            ->not->toContain('ORBIT_EXECUTOR_SECRET=');
+    });
+
+    it('removes a stale executor secret from the gateway env on re-bootstrap', function (): void {
+        File::put(app()->environmentFilePath(), implode("\n", [
+            'APP_NAME=Orbit',
+            'ORBIT_EXECUTOR_SECRET=stale-secret',
+            'ORBIT_OPERATION_TOKEN_SECRET=existing-operation-secret',
+            '',
+        ]));
+        config(['orbit.executor_secret' => 'stale-secret']);
+        putenv('ORBIT_EXECUTOR_SECRET=stale-secret');
+        $_ENV['ORBIT_EXECUTOR_SECRET'] = 'stale-secret';
+
+        Artisan::call('orbit:internal:bootstrap-gateway-local', [
+            'name' => 'gateway-1',
+            'wireguard-address' => '10.6.0.2',
+        ]);
+
+        $env = File::get(app()->environmentFilePath());
+
+        expect($env)
+            ->toContain('ORBIT_OPERATION_TOKEN_SECRET=existing-operation-secret')
+            ->not->toContain('ORBIT_EXECUTOR_SECRET=')
+            ->and(env('ORBIT_EXECUTOR_SECRET'))->toBeNull()
+            ->and(config('orbit.executor_secret'))->toBeNull();
     });
 
     it('reuses an existing wg-easy admin password on re-bootstrap', function (): void {
