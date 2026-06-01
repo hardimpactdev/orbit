@@ -262,8 +262,11 @@ The node host contract is Docker-first. Managed nodes require Git, Docker
 Engine and CLI, the prebuilt Orbit CLI binary (embedded PHP 8.5 +
 `pdo_sqlite`/`openssl`/`curl`/`mbstring`/`tokenizer`/`ctype`/`filter`/`fileinfo`/`json`/`phar`),
 the host `orbit` launcher, `orbit-runtime`, WireGuard/SSH identity material,
-and role-specific non-PHP host tools such as VitePlus on app nodes. Host
-Composer, host Caddy, and host PHP-FPM are not prerequisites or fallbacks.
+and role-specific host tools such as VitePlus on app nodes. `app-dev` and
+`app-prod` nodes additionally carry a host PHP toolchain (host PHP 8.4 and 8.5,
+Composer, and the Laravel installer) for `app:exec` and deployment. Host Caddy
+(the `orbit-caddy` container) and host PHP-FPM remain non-prerequisites and
+non-fallbacks.
 
 ## Transport Model
 

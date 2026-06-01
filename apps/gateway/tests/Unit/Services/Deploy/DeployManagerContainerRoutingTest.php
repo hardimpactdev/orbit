@@ -23,25 +23,12 @@ final class DeployManagerRecordingShell implements RemoteShell
 
     public array $results = [];
 
-    public bool $containerRunning = true;
-
     public function run(Node $node, string $script, array $options = []): RemoteShellResult
     {
         $this->runs[] = compact('node', 'script', 'options');
 
         if ($this->results !== []) {
             return array_shift($this->results);
-        }
-
-        // Auto-detect container preflight and return configured state so
-        // tests do not need to manually seed every preflight result.
-        if (str_starts_with($script, 'docker container inspect --format')) {
-            return new RemoteShellResult(
-                exitCode: $this->containerRunning ? 0 : 1,
-                stdout: $this->containerRunning ? "true\n" : "false\n",
-                stderr: '',
-                durationMs: 25,
-            );
         }
 
         return new RemoteShellResult(
@@ -64,6 +51,7 @@ function createDeployManagerTestApp(array $overrides = []): App
         'node_id' => $node->id,
         'environment' => 'production',
         'path' => '/srv/docs',
+        'php_version' => '8.5',
         'runtime_kind' => AppRuntimeKind::Php,
     ], $overrides));
 }
@@ -79,7 +67,7 @@ function createDeployManagerTestStep(App $app, string $command, string $title = 
     ]);
 }
 
-it('routes php commands through the app container for php apps', function (): void {
+it('routes php commands through the host php toolchain for php apps', function (): void {
     $app = createDeployManagerTestApp();
     createDeployManagerTestStep($app, 'php artisan migrate --force');
 
@@ -90,15 +78,16 @@ it('routes php commands through the app container for php apps', function (): vo
     $manager = app(DeployManager::class);
     $manager->run('docs');
 
-    // preflight (routeCommand) + step + preflight (warmup) + composer optimize + artisan optimize
-    expect($shell->runs)->toHaveCount(5)
-        ->and($shell->runs[1]['script'])->toContain("'docker'")
-        ->and($shell->runs[1]['script'])->toContain("'exec'")
-        ->and($shell->runs[1]['script'])->toContain("'orbit-app-docs'")
-        ->and($shell->runs[1]['script'])->toContain("'php artisan migrate --force'");
+    // user step + composer install warmup + php artisan optimize warmup
+    expect($shell->runs)->toHaveCount(3)
+        ->and($shell->runs[0]['script'])->toContain("'sudo'")
+        ->and($shell->runs[0]['script'])->toContain("'bash'")
+        ->and($shell->runs[0]['script'])->toContain("'-lc'")
+        ->and($shell->runs[0]['script'])->toContain('/opt/orbit/php/')
+        ->and($shell->runs[0]['script'])->toContain('php artisan migrate --force');
 });
 
-it('routes composer commands through the app container for php apps', function (): void {
+it('routes composer commands through the host php toolchain for php apps', function (): void {
     $app = createDeployManagerTestApp();
     createDeployManagerTestStep($app, 'composer install --no-interaction');
 
@@ -109,13 +98,12 @@ it('routes composer commands through the app container for php apps', function (
     $manager = app(DeployManager::class);
     $manager->run('docs');
 
-    expect($shell->runs[1]['script'])->toContain("'docker'")
-        ->and($shell->runs[1]['script'])->toContain("'exec'")
-        ->and($shell->runs[1]['script'])->toContain("'orbit-app-docs'")
-        ->and($shell->runs[1]['script'])->toContain("'composer install --no-interaction'");
+    expect($shell->runs[0]['script'])->toContain("'sudo'")
+        ->and($shell->runs[0]['script'])->toContain('/opt/orbit/php/')
+        ->and($shell->runs[0]['script'])->toContain('composer install --no-interaction');
 });
 
-it('routes artisan commands through the app container for php apps', function (): void {
+it('routes artisan commands through the host php toolchain for php apps', function (): void {
     $app = createDeployManagerTestApp();
     createDeployManagerTestStep($app, 'php artisan optimize');
 
@@ -126,10 +114,9 @@ it('routes artisan commands through the app container for php apps', function ()
     $manager = app(DeployManager::class);
     $manager->run('docs');
 
-    expect($shell->runs[1]['script'])->toContain("'docker'")
-        ->and($shell->runs[1]['script'])->toContain("'exec'")
-        ->and($shell->runs[1]['script'])->toContain("'orbit-app-docs'")
-        ->and($shell->runs[1]['script'])->toContain("'php artisan optimize'");
+    expect($shell->runs[0]['script'])->toContain("'sudo'")
+        ->and($shell->runs[0]['script'])->toContain('/opt/orbit/php/')
+        ->and($shell->runs[0]['script'])->toContain('php artisan optimize');
 });
 
 it('runs non-php commands on the host for php apps', function (): void {
@@ -161,7 +148,7 @@ it('runs all commands on the host for static apps', function (): void {
         ->and($shell->runs[0]['script'])->toBe('php artisan migrate --force');
 });
 
-it('transforms host paths to container paths when routing through container', function (): void {
+it('does not transform host paths to container paths when routing through host', function (): void {
     $app = createDeployManagerTestApp();
     createDeployManagerTestStep($app, 'cd "{{ app_path }}" && php artisan migrate');
 
@@ -172,15 +159,13 @@ it('transforms host paths to container paths when routing through container', fu
     $manager = app(DeployManager::class);
     $manager->run('docs');
 
-    $script = $shell->runs[1]['script'];
-    expect($script)->toContain("'docker'")
-        ->and($script)->toContain("'exec'")
-        ->and($script)->toContain("'cd \"/app\" && php artisan migrate'")
-        ->and($script)->toContain("'bash'")
-        ->and($script)->toContain("'-lc'");
+    $script = $shell->runs[0]['script'];
+    expect($script)->toContain("'sudo'")
+        ->and($script)->toContain("'-lc'")
+        ->and($script)->not->toContain("'/app'");
 });
 
-it('passes deploy environment variables to the container', function (): void {
+it('passes deploy environment variables to the host command', function (): void {
     $app = createDeployManagerTestApp();
     createDeployManagerTestStep($app, 'php artisan migrate');
 
@@ -191,12 +176,11 @@ it('passes deploy environment variables to the container', function (): void {
     $manager = app(DeployManager::class);
     $manager->run('docs');
 
-    $script = $shell->runs[1]['script'];
-    expect($script)->toContain("'-e'")
-        ->and($script)->toContain('ORBIT_DEPLOY_APP_NAME');
+    $script = $shell->runs[0]['script'];
+    expect($script)->toContain('ORBIT_DEPLOY_APP_NAME');
 });
 
-it('sets container workdir to app source mount', function (): void {
+it('sets the working directory to the app source path for host commands', function (): void {
     $app = createDeployManagerTestApp();
     createDeployManagerTestStep($app, 'php artisan migrate');
 
@@ -207,11 +191,11 @@ it('sets container workdir to app source mount', function (): void {
     $manager = app(DeployManager::class);
     $manager->run('docs');
 
-    expect($shell->runs[1]['script'])->toContain("'--workdir'");
-    expect($shell->runs[1]['script'])->toContain("'/app'");
+    expect($shell->runs[0]['script'])->toContain("'sudo'")
+        ->and($shell->runs[0]['script'])->toContain('/srv/docs');
 });
 
-it('does not route php-fpm systemctl commands through container', function (): void {
+it('does not route php-fpm systemctl commands through host php toolchain', function (): void {
     $app = createDeployManagerTestApp();
     createDeployManagerTestStep($app, 'sudo systemctl reload php8.5-fpm');
 
@@ -225,7 +209,7 @@ it('does not route php-fpm systemctl commands through container', function (): v
         ->and($shell->runs[0]['script'])->toBe('sudo systemctl reload php8.5-fpm');
 });
 
-it('runs built-in warmup steps after user steps for php apps', function (): void {
+it('runs built-in warmup steps on the host after user steps for php apps', function (): void {
     $app = createDeployManagerTestApp();
     createDeployManagerTestStep($app, 'git pull origin main');
 
@@ -236,11 +220,12 @@ it('runs built-in warmup steps after user steps for php apps', function (): void
     $manager = app(DeployManager::class);
     $manager->run('docs');
 
-    expect($shell->runs)->toHaveCount(4)
-        ->and($shell->runs[2]['script'])->toContain('composer install --no-dev --optimize-autoloader')
-        ->and($shell->runs[3]['script'])->toContain('php artisan optimize')
-        ->and($shell->runs[2]['script'])->toContain("'docker'")
-        ->and($shell->runs[3]['script'])->toContain("'docker'");
+    // user step (git) + composer install warmup + php artisan optimize warmup
+    expect($shell->runs)->toHaveCount(3)
+        ->and($shell->runs[1]['script'])->toContain('composer install --no-dev --optimize-autoloader')
+        ->and($shell->runs[2]['script'])->toContain('php artisan optimize')
+        ->and($shell->runs[1]['script'])->toContain("'sudo'")
+        ->and($shell->runs[2]['script'])->toContain("'sudo'");
 });
 
 it('skips warmup steps when a user step fails', function (): void {
@@ -290,12 +275,12 @@ it('runs http warmup when deploy_warmup_paths is configured', function (): void 
     $manager = app(DeployManager::class);
     $manager->run('docs');
 
-    // Preflight + user step + composer optimize + artisan optimize + 2 HTTP warmups
-    expect($shell->runs)->toHaveCount(6)
+    // user step + composer optimize + artisan optimize + 2 HTTP warmups
+    expect($shell->runs)->toHaveCount(5)
+        ->and($shell->runs[3]['script'])->toContain('curl')
+        ->and($shell->runs[3]['script'])->toContain('/api/health')
         ->and($shell->runs[4]['script'])->toContain('curl')
-        ->and($shell->runs[4]['script'])->toContain('/api/health')
-        ->and($shell->runs[5]['script'])->toContain('curl')
-        ->and($shell->runs[5]['script'])->toContain('/');
+        ->and($shell->runs[4]['script'])->toContain('/');
 });
 
 it('skips http warmup when deploy_warmup_paths is empty', function (): void {
@@ -309,12 +294,12 @@ it('skips http warmup when deploy_warmup_paths is empty', function (): void {
     $manager = app(DeployManager::class);
     $manager->run('docs');
 
-    // Preflight + user step + composer optimize + artisan optimize, no HTTP warmups
-    expect($shell->runs)->toHaveCount(4);
+    // user step + composer optimize + artisan optimize, no HTTP warmups
+    expect($shell->runs)->toHaveCount(3);
 });
 
-it('passes env vars as separate docker exec argv tokens', function (): void {
-    $app = createDeployManagerTestApp();
+it('uses version-matched php path in host commands', function (): void {
+    $app = createDeployManagerTestApp(['php_version' => '8.4']);
     createDeployManagerTestStep($app, 'php artisan migrate');
 
     $shell = new DeployManagerRecordingShell;
@@ -323,48 +308,10 @@ it('passes env vars as separate docker exec argv tokens', function (): void {
     $manager = app(DeployManager::class);
     $manager->run('docs');
 
-    $script = $shell->runs[1]['script'];
+    $script = $shell->runs[0]['script'];
 
-    // Reconstruct argv by shell-splitting the rendered command line
-    $argv = preg_split('/\s+(?=(?:[^\'"]*[\'"][^\'"]*[\'"])*[^\'"]*$)/', $script);
-
-    expect($argv)->toContain("'-e'")
-        ->and($argv)->toContain("'ORBIT_DEPLOY_APP_NAME=docs'")
-        ->and($script)->not->toMatch("/'-e '.*ORBIT_DEPLOY/");
-});
-
-it('falls back to host execution when php runtime container is not running', function (): void {
-    $app = createDeployManagerTestApp();
-    createDeployManagerTestStep($app, 'php artisan migrate --force');
-
-    $shell = new DeployManagerRecordingShell;
-    $shell->containerRunning = false;
-    app()->instance(RemoteShell::class, $shell);
-
-    $manager = app(DeployManager::class);
-    $manager->run('docs');
-
-    // Preflight (routeCommand) + user step (host) + preflight (warmup skip)
-    expect($shell->runs)->toHaveCount(3)
-        ->and($shell->runs[1]['script'])->toBe('php artisan migrate --force')
-        ->and($shell->runs[1]['script'])->not->toContain('docker exec');
-});
-
-it('falls back to host execution when php runtime container is missing for user step', function (): void {
-    $app = createDeployManagerTestApp();
-    createDeployManagerTestStep($app, 'php artisan migrate --force');
-
-    $shell = new DeployManagerRecordingShell;
-    $shell->containerRunning = false;
-    app()->instance(RemoteShell::class, $shell);
-
-    $manager = app(DeployManager::class);
-    $manager->run('docs');
-
-    // Preflight (routeCommand) + user step (host) + preflight (warmup skip)
-    expect($shell->runs)->toHaveCount(3)
-        ->and($shell->runs[1]['script'])->toBe('php artisan migrate --force')
-        ->and($shell->runs[1]['script'])->not->toContain('docker exec');
+    expect($script)->toContain('/opt/orbit/php/')
+        ->and($script)->toContain("'8.4'");
 });
 
 it('marks run failed when built-in warmup step fails', function (): void {
@@ -373,10 +320,8 @@ it('marks run failed when built-in warmup step fails', function (): void {
 
     $shell = new DeployManagerRecordingShell;
     $shell->results = [
-        // User step succeeds (no preflight needed since git is not a PHP tool)
+        // User step succeeds
         new RemoteShellResult(exitCode: 0, stdout: "ok\n", stderr: '', durationMs: 25),
-        // runWarmupSteps preflight: container is running
-        new RemoteShellResult(exitCode: 0, stdout: "true\n", stderr: '', durationMs: 25),
         // composer install succeeds
         new RemoteShellResult(exitCode: 0, stdout: "composer ok\n", stderr: '', durationMs: 25),
         // php artisan optimize fails

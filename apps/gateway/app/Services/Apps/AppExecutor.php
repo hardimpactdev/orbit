@@ -12,7 +12,6 @@ use App\Http\Gateway\GatewayConnector;
 use App\Http\Gateway\Requests\Apps\AppExecRequest;
 use App\Http\Gateway\Responses\Apps\AppExecResponse;
 use App\Models\App;
-use App\Models\Node;
 use App\Services\Runtime\OrbitHostCwdResolver;
 use App\Services\Support\GatewayActionResult;
 use Throwable;
@@ -116,50 +115,34 @@ final class AppExecutor
             );
         }
 
-        $container = "orbit-app-{$app->name}";
         $node = $app->node;
 
         if ($node === null) {
             return $this->failCommand(
-                code: 'app.exec_container_not_running',
-                message: "App '{$app->name}' has no owning node; cannot resolve runtime container.",
-                meta: [
-                    'app' => $app->name,
-                    'container' => $container,
-                ],
+                code: 'app.exec_source_missing',
+                message: "App '{$app->name}' has no owning node; cannot run command on host.",
+                meta: ['app' => $app->name],
             );
         }
 
-        $preflight = $remoteShell->run(
-            $node,
-            'docker container inspect --format '.escapeshellarg('{{.State.Running}}').' '.escapeshellarg($container),
-        );
+        $sourcePath = rtrim((string) $app->path, '/');
 
-        $failure = $this->classifyPreflightFailure($preflight, $app->name, $container, $node);
-
-        if ($failure !== null) {
+        if ($sourcePath === '') {
             return $this->failCommand(
-                code: $failure['code'],
-                message: $failure['message'],
-                meta: $failure['meta'],
+                code: 'app.exec_source_missing',
+                message: "App '{$app->name}' has no source path configured.",
+                meta: ['app' => $app->name],
             );
         }
 
-        $result = $remoteShell->run($node, $this->dockerExecScript($container, $command));
+        $phpVersion = $app->php_version;
+        $runtimeUser = app(AppRuntimeUser::class)->forApp($app);
 
-        $execFailure = $this->classifyExecFailure($result, $app->name, $container, $node);
-
-        if ($execFailure !== null) {
-            return $this->failCommand(
-                code: $execFailure['code'],
-                message: $execFailure['message'],
-                meta: $execFailure['meta'],
-            );
-        }
+        $result = $remoteShell->run($node, $this->hostExecScript($sourcePath, $phpVersion, $runtimeUser, $command));
 
         return $this->emitSuccess([
             'app' => $app->name,
-            'container' => $container,
+            'php_version' => $phpVersion,
             'command' => $command,
             'exit_code' => $result->exitCode,
             'stdout' => $result->stdout,
@@ -192,163 +175,21 @@ final class AppExecutor
     }
 
     /**
+     * Build a host-side exec script that runs the given command from the app
+     * source path with the version-matched PHP binary first on PATH.
+     *
+     * Shape:
+     *   sudo -u <runtimeUser> -H bash -lc 'cd <sourcePath> && PATH=/opt/orbit/php/<ver>/bin:$PATH <cmd> ...'
+     *
      * @param  list<string>  $command
      */
-    private function dockerExecScript(string $container, array $command): string
+    private function hostExecScript(string $sourcePath, string $phpVersion, string $runtimeUser, array $command): string
     {
-        $parts = ['docker', 'exec', $container, ...$command];
+        $inner = 'cd '.escapeshellarg($sourcePath)
+            .' && PATH=/opt/orbit/php/'.escapeshellarg($phpVersion).'/bin:$PATH '
+            .implode(' ', array_map(escapeshellarg(...), $command));
 
-        return implode(' ', array_map(escapeshellarg(...), $parts));
-    }
-
-    /**
-     * @return array{code: string, message: string, meta: array<string, mixed>}|null
-     */
-    private function classifyPreflightFailure(RemoteShellResult $result, string $app, string $container, Node $node): ?array
-    {
-        if ($result->successful() && trim($result->stdout) === 'true') {
-            return null;
-        }
-
-        $haystack = $result->stderr.' '.$result->stdout;
-
-        if ($result->successful()) {
-            return [
-                'code' => 'app.exec_container_not_running',
-                'message' => "App '{$app}' runtime container is not running on node '{$node->name}'.",
-                'meta' => [
-                    'app' => $app,
-                    'container' => $container,
-                    'node' => $node->name,
-                    'state' => trim($result->stdout),
-                ],
-            ];
-        }
-
-        if ($this->looksLikeDockerDaemonDown($haystack)) {
-            return [
-                'code' => 'app.exec_docker_unavailable',
-                'message' => "Docker daemon is unavailable on node '{$node->name}'.",
-                'meta' => [
-                    'app' => $app,
-                    'node' => $node->name,
-                    'stderr' => trim($result->stderr),
-                ],
-            ];
-        }
-
-        if ($this->looksLikeContainerMissing($haystack)) {
-            return [
-                'code' => 'app.exec_container_not_running',
-                'message' => "App '{$app}' runtime container is not running on node '{$node->name}'.",
-                'meta' => [
-                    'app' => $app,
-                    'container' => $container,
-                    'node' => $node->name,
-                ],
-            ];
-        }
-
-        return [
-            'code' => 'app.exec_node_unreachable',
-            'message' => "Cannot reach node '{$node->name}' to run app:exec.",
-            'meta' => [
-                'app' => $app,
-                'node' => $node->name,
-                'exit_code' => $result->exitCode,
-                'stderr' => trim($result->stderr),
-            ],
-        ];
-    }
-
-    /**
-     * Classify a `docker exec` result. Docker reserves a small block of
-     * exit codes for wrapper-side failures:
-     *
-     * - `125`: docker daemon itself failed before the child ran (container
-     *   vanished, daemon went down, image gone).
-     * - `126`: the exec target was located inside the container but is
-     *   not executable (permission denied, wrong architecture, etc).
-     * - `127`: the exec target was not found inside the container.
-     *
-     * Any other non-zero exit is the child command's own exit code and
-     * must NOT be classified as infra failure — stderr signatures inside
-     * the child's output are not authoritative.
-     *
-     * @return array{code: string, message: string, meta: array<string, mixed>}|null
-     */
-    private function classifyExecFailure(RemoteShellResult $result, string $app, string $container, Node $node): ?array
-    {
-        if (! in_array($result->exitCode, [125, 126, 127], true)) {
-            return null;
-        }
-
-        $haystack = $result->stderr.' '.$result->stdout;
-
-        if ($result->exitCode === 126) {
-            return [
-                'code' => 'app.exec_command_not_executable',
-                'message' => "Command is not executable inside app '{$app}' runtime container on node '{$node->name}'.",
-                'meta' => [
-                    'app' => $app,
-                    'container' => $container,
-                    'node' => $node->name,
-                    'exit_code' => $result->exitCode,
-                    'stderr' => trim($result->stderr),
-                ],
-            ];
-        }
-
-        if ($result->exitCode === 127) {
-            return [
-                'code' => 'app.exec_command_not_found',
-                'message' => "Command not found inside app '{$app}' runtime container on node '{$node->name}'.",
-                'meta' => [
-                    'app' => $app,
-                    'container' => $container,
-                    'node' => $node->name,
-                    'exit_code' => $result->exitCode,
-                    'stderr' => trim($result->stderr),
-                ],
-            ];
-        }
-
-        // exitCode === 125: docker wrapper failure — disambiguate via stderr.
-        if ($this->looksLikeContainerMissing($haystack)) {
-            return [
-                'code' => 'app.exec_container_not_running',
-                'message' => "App '{$app}' runtime container is not running on node '{$node->name}'.",
-                'meta' => [
-                    'app' => $app,
-                    'container' => $container,
-                    'node' => $node->name,
-                ],
-            ];
-        }
-
-        if ($this->looksLikeDockerDaemonDown($haystack)) {
-            return [
-                'code' => 'app.exec_docker_unavailable',
-                'message' => "Docker daemon is unavailable on node '{$node->name}'.",
-                'meta' => [
-                    'app' => $app,
-                    'node' => $node->name,
-                    'stderr' => trim($result->stderr),
-                ],
-            ];
-        }
-
-        return null;
-    }
-
-    private function looksLikeDockerDaemonDown(string $haystack): bool
-    {
-        return preg_match('/Cannot connect to the Docker daemon|docker daemon (?:is not running|running)/i', $haystack) === 1;
-    }
-
-    private function looksLikeContainerMissing(string $haystack): bool
-    {
-        return preg_match('/No such container|No such object|is not running/i', $haystack) === 1;
+        return implode(' ', array_map(escapeshellarg(...), ['sudo', '-u', $runtimeUser, '-H', 'bash', '-lc', $inner]));
     }
 
     /**

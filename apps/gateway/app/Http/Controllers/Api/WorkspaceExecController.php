@@ -168,12 +168,6 @@ final class WorkspaceExecController implements Loggable
         return match ($exception->errorCode()) {
             'workspace.not_found' => 404,
             'workspace.ambiguous_name' => 400,
-            'workspace.exec_node_unreachable',
-            'workspace.exec_docker_unavailable' => 502,
-            // Note: workspace.exec_command_not_executable (126) and
-            // workspace.exec_command_not_found (127) fall through to 422
-            // below — they are caller-input faults (bad command), not
-            // infra.
             null => 500,
             default => 422,
         };

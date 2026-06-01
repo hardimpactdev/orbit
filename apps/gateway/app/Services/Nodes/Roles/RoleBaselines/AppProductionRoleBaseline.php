@@ -34,11 +34,14 @@ class AppProductionRoleBaseline implements RoleBaseline
         }
 
         $this->convergeTools($node, ['caddy', 'php', 'supervisor']);
+        $this->convergeTool($node, 'php-cli', 'installed');
+        $this->convergeTool($node, 'composer', 'installed');
+        $this->convergeTool($node, 'laravel-installer', 'installed');
     }
 
     public function remove(Node $node, NodeRoleAssignment $assignment, bool $purgeData): void
     {
-        $this->removeTools($node, ['caddy', 'php', 'supervisor']);
+        $this->removeTools($node, ['caddy', 'php', 'supervisor', 'php-cli', 'composer', 'laravel-installer']);
     }
 
     protected function toolCatalog(): ToolCatalog

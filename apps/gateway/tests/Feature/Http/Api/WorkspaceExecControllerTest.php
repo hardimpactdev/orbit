@@ -43,24 +43,14 @@ function grantWorkspaceExecAccess(Node $caller, Node $appNode, array $permission
         'updated_at' => now()]);
 }
 
-function workspaceExecControllerPreflightRunning(): RemoteShellResult
-{
-    return new RemoteShellResult(exitCode: 0, stdout: "true\n", stderr: '', durationMs: 1);
-}
-
 /**
+ * Bind a remote shell that returns the given scripted results in order.
+ *
  * @param  list<RemoteShellResult>  $results
  */
 function bindWorkspaceExecControllerShell(array $results = []): void
 {
-    $scripted = [];
-
-    foreach ($results as $result) {
-        $scripted[] = workspaceExecControllerPreflightRunning();
-        $scripted[] = $result;
-    }
-
-    app()->instance(RemoteShell::class, new class($scripted) implements RemoteShell
+    app()->instance(RemoteShell::class, new class($results) implements RemoteShell
     {
         public function __construct(public array $results) {}
 
@@ -72,31 +62,9 @@ function bindWorkspaceExecControllerShell(array $results = []): void
                 return $next;
             }
 
-            if (str_contains($script, 'docker container inspect')) {
-                return workspaceExecControllerPreflightRunning();
-            }
-
             return new RemoteShellResult(
                 exitCode: 0,
                 stdout: 'PHP 8.5.0',
-                stderr: '',
-                durationMs: 1,
-            );
-        }
-    });
-}
-
-function bindWorkspaceExecControllerPreflightShell(RemoteShellResult $preflight): void
-{
-    app()->instance(RemoteShell::class, new class([$preflight]) implements RemoteShell
-    {
-        public function __construct(public array $results) {}
-
-        public function run(Node $node, string $script, array $options = []): RemoteShellResult
-        {
-            return array_shift($this->results) ?? new RemoteShellResult(
-                exitCode: 0,
-                stdout: "true\n",
                 stderr: '',
                 durationMs: 1,
             );
@@ -110,6 +78,7 @@ function createWorkspaceExecFixture(Node $node, array $appOverrides = [], array 
         'name' => 'docs',
         'path' => '/home/orbit/apps/docs',
         'document_root' => 'public',
+        'php_version' => '8.5',
         'runtime_kind' => AppRuntimeKind::Php], $appOverrides));
 
     return Workspace::factory()->for($app, 'app')->create(array_merge([
@@ -118,7 +87,7 @@ function createWorkspaceExecFixture(Node $node, array $appOverrides = [], array 
 }
 
 describe('WorkspaceExecController', function (): void {
-    it('runs a command inside the workspace runtime container and returns the success envelope', function (): void {
+    it('runs a command on the workspace host and returns the success envelope', function (): void {
         $caller = createWorkspaceExecCaller();
         $node = createTestAppHostNode(['name' => 'app-1', 'host' => '10.6.0.7']);
         grantWorkspaceExecAccess($caller, $node, ['workspace:exec']);
@@ -139,7 +108,7 @@ describe('WorkspaceExecController', function (): void {
         $response->assertOk()
             ->assertJsonPath('success.data.workspace', 'docs-feature')
             ->assertJsonPath('success.data.app', 'docs')
-            ->assertJsonPath('success.data.container', 'orbit-ws-docs-docs-feature')
+            ->assertJsonPath('success.data.php_version', '8.5')
             ->assertJsonPath('success.data.command', ['php', '-v'])
             ->assertJsonPath('success.data.exit_code', 0)
             ->assertJsonPath('success.data.stdout', "PHP 8.5.0\n");
@@ -229,188 +198,6 @@ describe('WorkspaceExecController', function (): void {
             ->assertJsonPath('error.code', 'workspace.exec_unsupported_runtime');
     });
 
-    it('returns 422 workspace.exec_container_not_running when preflight reports no such container', function (): void {
-        $caller = createWorkspaceExecCaller();
-        $node = createTestAppHostNode(['name' => 'app-1', 'host' => '10.6.0.7']);
-        grantWorkspaceExecAccess($caller, $node, ['workspace:exec']);
-        createWorkspaceExecFixture($node);
-        bindWorkspaceExecControllerPreflightShell(new RemoteShellResult(
-            exitCode: 1,
-            stdout: '',
-            stderr: 'Error response from daemon: No such container: orbit-ws-docs-docs-feature',
-            durationMs: 1,
-        ));
-
-        $response = $this->call(
-            'POST',
-            '/api/workspaces/docs-feature/exec',
-            [],
-            [],
-            [],
-            ['REMOTE_ADDR' => WORKSPACE_EXEC_CALLER_WG_IP, 'CONTENT_TYPE' => 'application/json'],
-            json_encode(['command' => ['php', '-v']], JSON_THROW_ON_ERROR),
-        );
-
-        $response->assertStatus(422)
-            ->assertJsonPath('error.code', 'workspace.exec_container_not_running');
-    });
-
-    it('returns 422 workspace.exec_container_not_running when preflight reports the container is stopped', function (): void {
-        $caller = createWorkspaceExecCaller();
-        $node = createTestAppHostNode(['name' => 'app-1', 'host' => '10.6.0.7']);
-        grantWorkspaceExecAccess($caller, $node, ['workspace:exec']);
-        createWorkspaceExecFixture($node);
-        bindWorkspaceExecControllerPreflightShell(new RemoteShellResult(
-            exitCode: 0,
-            stdout: "false\n",
-            stderr: '',
-            durationMs: 1,
-        ));
-
-        $response = $this->call(
-            'POST',
-            '/api/workspaces/docs-feature/exec',
-            [],
-            [],
-            [],
-            ['REMOTE_ADDR' => WORKSPACE_EXEC_CALLER_WG_IP, 'CONTENT_TYPE' => 'application/json'],
-            json_encode(['command' => ['php', '-v']], JSON_THROW_ON_ERROR),
-        );
-
-        $response->assertStatus(422)
-            ->assertJsonPath('error.code', 'workspace.exec_container_not_running')
-            ->assertJsonPath('error.meta.state', 'false');
-    });
-
-    it('returns 502 workspace.exec_docker_unavailable when preflight reports the docker daemon is down', function (): void {
-        $caller = createWorkspaceExecCaller();
-        $node = createTestAppHostNode(['name' => 'app-1', 'host' => '10.6.0.7']);
-        grantWorkspaceExecAccess($caller, $node, ['workspace:exec']);
-        createWorkspaceExecFixture($node);
-        bindWorkspaceExecControllerPreflightShell(new RemoteShellResult(
-            exitCode: 1,
-            stdout: '',
-            stderr: "Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?\n",
-            durationMs: 1,
-        ));
-
-        $response = $this->call(
-            'POST',
-            '/api/workspaces/docs-feature/exec',
-            [],
-            [],
-            [],
-            ['REMOTE_ADDR' => WORKSPACE_EXEC_CALLER_WG_IP, 'CONTENT_TYPE' => 'application/json'],
-            json_encode(['command' => ['php', '-v']], JSON_THROW_ON_ERROR),
-        );
-
-        $response->assertStatus(502)
-            ->assertJsonPath('error.code', 'workspace.exec_docker_unavailable');
-    });
-
-    it('returns 502 workspace.exec_node_unreachable when preflight returns an SSH-level failure', function (): void {
-        $caller = createWorkspaceExecCaller();
-        $node = createTestAppHostNode(['name' => 'app-1', 'host' => '10.6.0.7']);
-        grantWorkspaceExecAccess($caller, $node, ['workspace:exec']);
-        createWorkspaceExecFixture($node);
-        bindWorkspaceExecControllerPreflightShell(new RemoteShellResult(
-            exitCode: 255,
-            stdout: '',
-            stderr: "ssh: connect to host 10.6.0.7 port 22: Connection refused\n",
-            durationMs: 1,
-        ));
-
-        $response = $this->call(
-            'POST',
-            '/api/workspaces/docs-feature/exec',
-            [],
-            [],
-            [],
-            ['REMOTE_ADDR' => WORKSPACE_EXEC_CALLER_WG_IP, 'CONTENT_TYPE' => 'application/json'],
-            json_encode(['command' => ['php', '-v']], JSON_THROW_ON_ERROR),
-        );
-
-        $response->assertStatus(502)
-            ->assertJsonPath('error.code', 'workspace.exec_node_unreachable');
-    });
-
-    it('keeps child failures as success data when docker-looking stderr is not a wrapper exit', function (): void {
-        $caller = createWorkspaceExecCaller();
-        $node = createTestAppHostNode(['name' => 'app-1', 'host' => '10.6.0.7']);
-        grantWorkspaceExecAccess($caller, $node, ['workspace:exec']);
-        createWorkspaceExecFixture($node);
-        bindWorkspaceExecControllerShell([
-            new RemoteShellResult(
-                exitCode: 9,
-                stdout: '',
-                stderr: "Cannot connect to the Docker daemon from inside child\n",
-                durationMs: 1,
-            ),
-        ]);
-
-        $response = $this->call(
-            'POST',
-            '/api/workspaces/docs-feature/exec',
-            [],
-            [],
-            [],
-            ['REMOTE_ADDR' => WORKSPACE_EXEC_CALLER_WG_IP, 'CONTENT_TYPE' => 'application/json'],
-            json_encode(['command' => ['php', 'artisan', 'test']], JSON_THROW_ON_ERROR),
-        );
-
-        $response->assertOk()
-            ->assertJsonPath('success.data.exit_code', 9)
-            ->assertJsonPath('success.data.stderr', "Cannot connect to the Docker daemon from inside child\n");
-    });
-
-    it('returns 422 workspace.exec_command_not_executable when docker exec returns exit code 126', function (): void {
-        $caller = createWorkspaceExecCaller();
-        $node = createTestAppHostNode(['name' => 'app-1', 'host' => '10.6.0.7']);
-        grantWorkspaceExecAccess($caller, $node, ['workspace:exec']);
-        createWorkspaceExecFixture($node);
-        bindWorkspaceExecControllerShell([
-            new RemoteShellResult(exitCode: 126, stdout: '', stderr: "permission denied\n", durationMs: 1),
-        ]);
-
-        $response = $this->call(
-            'POST',
-            '/api/workspaces/docs-feature/exec',
-            [],
-            [],
-            [],
-            ['REMOTE_ADDR' => WORKSPACE_EXEC_CALLER_WG_IP, 'CONTENT_TYPE' => 'application/json'],
-            json_encode(['command' => ['./artisan']], JSON_THROW_ON_ERROR),
-        );
-
-        $response->assertStatus(422)
-            ->assertJsonPath('error.code', 'workspace.exec_command_not_executable')
-            ->assertJsonPath('error.meta.exit_code', 126);
-    });
-
-    it('returns 422 workspace.exec_command_not_found when docker exec returns exit code 127', function (): void {
-        $caller = createWorkspaceExecCaller();
-        $node = createTestAppHostNode(['name' => 'app-1', 'host' => '10.6.0.7']);
-        grantWorkspaceExecAccess($caller, $node, ['workspace:exec']);
-        createWorkspaceExecFixture($node);
-        bindWorkspaceExecControllerShell([
-            new RemoteShellResult(exitCode: 127, stdout: '', stderr: "not found\n", durationMs: 1),
-        ]);
-
-        $response = $this->call(
-            'POST',
-            '/api/workspaces/docs-feature/exec',
-            [],
-            [],
-            [],
-            ['REMOTE_ADDR' => WORKSPACE_EXEC_CALLER_WG_IP, 'CONTENT_TYPE' => 'application/json'],
-            json_encode(['command' => ['missing-bin']], JSON_THROW_ON_ERROR),
-        );
-
-        $response->assertStatus(422)
-            ->assertJsonPath('error.code', 'workspace.exec_command_not_found')
-            ->assertJsonPath('error.meta.exit_code', 127);
-    });
-
     it('rejects callers without the workspace:exec permission with HTTP 403', function (): void {
         $caller = createWorkspaceExecCaller();
         $node = createTestAppHostNode(['name' => 'app-1', 'host' => '10.6.0.7']);
@@ -479,8 +266,7 @@ describe('WorkspaceExecController', function (): void {
 
         $response->assertOk()
             ->assertJsonPath('success.data.workspace', 'shared')
-            ->assertJsonPath('success.data.app', 'site')
-            ->assertJsonPath('success.data.container', 'orbit-ws-site-shared');
+            ->assertJsonPath('success.data.app', 'site');
     });
 
     it('resolves the workspace from host_cwd via the by-path endpoint and executes the command', function (): void {
@@ -549,5 +335,43 @@ describe('WorkspaceExecController', function (): void {
         $response->assertStatus(422)
             ->assertJsonPath('error.code', 'validation_failed')
             ->assertJsonPath('error.meta.field', 'host_cwd');
+    });
+
+    it('uses the version-matched host php path when running the command', function (): void {
+        $caller = createWorkspaceExecCaller();
+        $node = createTestAppHostNode(['name' => 'app-1', 'host' => '10.6.0.7']);
+        grantWorkspaceExecAccess($caller, $node, ['workspace:exec']);
+
+        $capturedScript = null;
+        app()->instance(RemoteShell::class, new class($capturedScript) implements RemoteShell
+        {
+            public ?string $capturedScript = null;
+
+            public function run(Node $node, string $script, array $options = []): RemoteShellResult
+            {
+                $this->capturedScript = $script;
+
+                return new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1);
+            }
+        });
+
+        createWorkspaceExecFixture($node, ['php_version' => '8.3']);
+
+        $shell = app(RemoteShell::class);
+
+        $this->call(
+            'POST',
+            '/api/workspaces/docs-feature/exec',
+            [],
+            [],
+            [],
+            ['REMOTE_ADDR' => WORKSPACE_EXEC_CALLER_WG_IP, 'CONTENT_TYPE' => 'application/json'],
+            json_encode(['command' => ['php', '-v']], JSON_THROW_ON_ERROR),
+        );
+
+        expect($shell->capturedScript)
+            ->toContain('/opt/orbit/php/')
+            ->toContain("'8.3'")
+            ->toContain("'sudo'");
     });
 });

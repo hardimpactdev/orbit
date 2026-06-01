@@ -59,6 +59,7 @@ use App\Tools\DnsTool;
 use App\Tools\DockerTool;
 use App\Tools\GhTool;
 use App\Tools\HermesTool;
+use App\Tools\LaravelInstallerTool;
 use App\Tools\MailpitTool;
 use App\Tools\MysqlTool;
 use App\Tools\OpenClawTool;
@@ -141,6 +142,7 @@ class AppServiceProvider extends ServiceProvider
             $app->make(OpenCodeServerTool::class),
             $app->make(OpenClawTool::class),
             $app->make(HermesTool::class),
+            $app->make(LaravelInstallerTool::class),
         ]));
         $this->app->singleton(UpdateDriverRegistry::class, fn ($app): UpdateDriverRegistry => new UpdateDriverRegistry([
             $app->make(UnattendedUpgradesDriver::class),

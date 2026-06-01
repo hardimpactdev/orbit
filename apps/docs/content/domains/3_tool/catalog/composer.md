@@ -10,15 +10,22 @@ These fields describe the Composer tool's identity, backend, and support model i
 | --- | --- |
 | Slug | `composer` |
 | Label | Composer |
-| Backend | runtime container capability |
-| Support model | Provided inside `orbit-runtime` and app/workspace PHP images |
+| Backend | host binary (`/usr/local/bin/composer`) |
+| Support model | Installable and updatable by Orbit on app-dev/app-prod nodes |
 | Category | `runtime` |
 
 ## Capabilities
 
-`composer` supports `tool:update` for container image capability metadata. It
-does not support host lifecycle commands, reload, logs, credentials, or
-removal.
+`composer` supports `tool:install`, `tool:update`, and safe doctor adopt.
+
+`tool:install composer` installs the Composer phar to `/usr/local/bin/composer`
+using the default `php` binary (provided by `php-cli`). The official integrity
+check from `https://composer.github.io/installer.sig` is performed before
+running the installer. The script fails loudly if the SHA-384 hash of the
+downloaded installer does not match the published signature.
+
+`tool:update composer` runs `composer self-update` to upgrade the installed
+phar to the latest stable release.
 
 ## Credentials
 
@@ -26,12 +33,14 @@ removal.
 
 ## Orbit Notes
 
-Composer is a runtime-container dependency for PHP project setup, app
-execution, workspace execution, and Orbit dependency installation inside
-`orbit-runtime`. Project dependency commands remain app, workspace, or
-deployment concerns, not tool-family state.
+Composer is installed as a host binary on app-dev and app-prod nodes and is
+used by `app:exec`, `app:deploy`, and related commands to manage PHP project
+dependencies directly on the host. It is also a prerequisite for the
+`laravel-installer` tool.
 
 ## Doctor Relationship
 
-`doctor --family=tool` may report missing Composer capability in managed
-runtime images. It must not adopt host Composer as an Orbit command fallback.
+`doctor --family=tool` probes the `composer` binary on the host. When the
+binary is absent on an app-dev or app-prod node it emits
+`tool.capability_missing` and the fixer runs `tool:install composer` to
+restore the host Composer installation.

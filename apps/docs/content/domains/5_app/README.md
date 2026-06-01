@@ -34,9 +34,10 @@ These rules govern all app family commands.
   app configuration. Changing `php_version` recreates the app runtime container
   from the selected PHP image; it does not install host PHP or render host
   FPM pools.
-- App command execution that needs PHP, Composer, or Artisan runs inside the
-  app runtime container through explicit app execution surfaces such as
-  `app:exec`. Host PHP and host Composer are not fallbacks.
+- App command execution that needs PHP, Composer, or Artisan runs on the app
+  node's host PHP toolchain (matched to the app's PHP version) through explicit
+  app execution surfaces such as `app:exec`, against the app source the
+  FrankenPHP container serves.
 - Worker mode is an opt-in app runtime setting. It is disabled by default and
   `app:worker enable` must validate app readiness before changing gateway
   configuration.

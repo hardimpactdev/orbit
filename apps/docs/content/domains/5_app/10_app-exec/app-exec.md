@@ -2,11 +2,14 @@
 
 [Back to App commands.](../README.md)
 
-Run a command inside an app's FrankenPHP runtime container.
+Run a PHP, Composer, or Artisan command for an app using its node's host PHP
+toolchain.
 
 `app:exec` is the explicit execution surface for PHP, Composer, and Artisan
-commands. Orbit no longer routes those tools through host PHP or host
-Composer; they always run inside the selected app's runtime container.
+commands. Orbit runs them with the app node's host PHP toolchain
+(`php8.4`/`php8.5`, matched to the app's PHP version) from the app's source
+path. The app's FrankenPHP container serves that source; `app:exec` does not
+run the command inside the container.
 
 ## Usage
 
@@ -42,8 +45,8 @@ orbit app:exec -- php artisan tinker
 - `app`: app name or app hostname. Optional; auto-resolved from
   `ORBIT_HOST_CWD` when the working directory is inside a known app source
   path. Required when cwd resolution does not find an app.
-- `command`: words after `--` form the command to run inside the container.
-  Required. There is no default.
+- `command`: words after `--` form the command to run on the app node's host
+  PHP toolchain. Required. There is no default.
 - `--json`: output JSON.
 
 ## What Happens
@@ -67,10 +70,11 @@ available the command fails with `validation_failed`.
 
 `app:exec` does not:
 
-- Run on host PHP or host Composer. Apps with `runtime_kind != php` do not
-  have a runtime container and cannot be the target of `app:exec`.
-- Restart or recreate the runtime container. The container must already be
-  running. Use [`doctor --family=app`](../app-doctor.md) to repair drift.
+- Run inside the app's container. Commands run on the app node's host PHP
+  toolchain against the app source. Apps with `runtime_kind != php` have no
+  PHP toolchain target and cannot be the subject of `app:exec`.
+- Manage the app's runtime container, proxy routes, or processes. Use
+  [`doctor --family=app`](../app-doctor.md) to repair runtime drift.
 - Bypass authorization. The caller must hold `app:exec` on the app's owning
   node.
 
@@ -85,8 +89,8 @@ the exact payload shape, success and error codes, and field meanings.
 ## Requirements
 
 - The CLI caller can reach the Orbit gateway.
-- The app's owning node is reachable so the gateway can exec into the
-  container.
+- The app's owning node is reachable so the gateway can run the command on its
+  host PHP toolchain.
 - The current node identity is authorized to run `app:exec` on the app's
   owning node.
 

@@ -143,11 +143,6 @@ final class AppExecController implements Loggable
 
         return match ($code) {
             'app.not_found' => 404,
-            'app.exec_node_unreachable',
-            'app.exec_docker_unavailable' => 502,
-            // Note: app.exec_command_not_executable (126) and
-            // app.exec_command_not_found (127) fall through to 422 below -
-            // they are caller-input faults (bad command), not infra.
             null => 500,
             default => 422,
         };

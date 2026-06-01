@@ -5,12 +5,12 @@ declare(strict_types=1);
 namespace App\Actions\Workspaces;
 
 use App\Contracts\RemoteShell;
-use App\Data\RemoteShell\RemoteShellResult;
 use App\Enums\Apps\AppRuntimeKind;
 use App\Http\Gateway\GatewayApiException;
 use App\Models\App;
 use App\Models\Node;
 use App\Models\Workspace;
+use App\Services\Apps\AppRuntimeUser;
 
 final readonly class RunWorkspaceCommand
 {
@@ -23,7 +23,7 @@ final readonly class RunWorkspaceCommand
      * @return array{
      *     workspace: string,
      *     app: string,
-     *     container: string,
+     *     php_version: string,
      *     command: list<string>,
      *     exit_code: int,
      *     stdout: string,
@@ -41,8 +41,8 @@ final readonly class RunWorkspaceCommand
 
         if (! $app instanceof App) {
             $this->fail(
-                'workspace.exec_container_not_running',
-                "Workspace '{$workspace->name}' has no parent app; cannot resolve runtime container.",
+                'workspace.exec_source_missing',
+                "Workspace '{$workspace->name}' has no parent app; cannot run command on host.",
                 ['workspace' => $workspace->name],
             );
         }
@@ -59,44 +59,38 @@ final readonly class RunWorkspaceCommand
             );
         }
 
-        $container = "orbit-ws-{$app->name}-{$workspace->name}";
         $node = $app->node;
 
         if (! $node instanceof Node) {
             $this->fail(
-                'workspace.exec_container_not_running',
-                "Workspace '{$workspace->name}' parent app has no owning node; cannot resolve runtime container.",
+                'workspace.exec_source_missing',
+                "Workspace '{$workspace->name}' parent app has no owning node; cannot run command on host.",
                 [
                     'workspace' => $workspace->name,
                     'app' => $app->name,
-                    'container' => $container,
                 ],
             );
         }
 
-        $preflight = $this->remoteShell->run(
-            $node,
-            'docker container inspect --format '.escapeshellarg('{{.State.Running}}').' '.escapeshellarg($container),
-        );
+        $sourcePath = rtrim((string) $workspace->path, '/');
 
-        $failure = $this->classifyPreflightFailure($preflight, $workspace->name, $app->name, $container, $node);
-
-        if ($failure !== null) {
-            $this->fail($failure['code'], $failure['message'], $failure['meta']);
+        if ($sourcePath === '') {
+            $this->fail(
+                'workspace.exec_source_missing',
+                "Workspace '{$workspace->name}' has no source path configured.",
+                ['workspace' => $workspace->name, 'app' => $app->name],
+            );
         }
 
-        $result = $this->remoteShell->run($node, $this->dockerExecScript($container, $command));
+        $phpVersion = $workspace->effectivePhpVersion() ?? $app->php_version;
+        $runtimeUser = app(AppRuntimeUser::class)->forApp($app);
 
-        $execFailure = $this->classifyExecFailure($result, $workspace->name, $app->name, $container, $node);
-
-        if ($execFailure !== null) {
-            $this->fail($execFailure['code'], $execFailure['message'], $execFailure['meta']);
-        }
+        $result = $this->remoteShell->run($node, $this->hostExecScript($sourcePath, $phpVersion, $runtimeUser, $command));
 
         return [
             'workspace' => $workspace->name,
             'app' => $app->name,
-            'container' => $container,
+            'php_version' => $phpVersion,
             'command' => $command,
             'exit_code' => $result->exitCode,
             'stdout' => $result->stdout,
@@ -105,154 +99,21 @@ final readonly class RunWorkspaceCommand
     }
 
     /**
+     * Build a host-side exec script that runs the given command from the
+     * workspace source path with the version-matched PHP binary first on PATH.
+     *
+     * Shape:
+     *   sudo -u <runtimeUser> -H bash -lc 'cd <sourcePath> && PATH=/opt/orbit/php/<ver>/bin:$PATH <cmd> ...'
+     *
      * @param  list<string>  $command
      */
-    private function dockerExecScript(string $container, array $command): string
+    private function hostExecScript(string $sourcePath, string $phpVersion, string $runtimeUser, array $command): string
     {
-        $parts = ['docker', 'exec', $container, ...$command];
+        $inner = 'cd '.escapeshellarg($sourcePath)
+            .' && PATH=/opt/orbit/php/'.escapeshellarg($phpVersion).'/bin:$PATH '
+            .implode(' ', array_map(escapeshellarg(...), $command));
 
-        return implode(' ', array_map(escapeshellarg(...), $parts));
-    }
-
-    /**
-     * @return array{code: string, message: string, meta: array<string, mixed>}|null
-     */
-    private function classifyPreflightFailure(RemoteShellResult $result, string $workspace, string $app, string $container, Node $node): ?array
-    {
-        if ($result->successful() && trim($result->stdout) === 'true') {
-            return null;
-        }
-
-        $haystack = $result->stderr.' '.$result->stdout;
-
-        if ($result->successful()) {
-            return [
-                'code' => 'workspace.exec_container_not_running',
-                'message' => "Workspace '{$workspace}' runtime container is not running on node '{$node->name}'.",
-                'meta' => [
-                    'workspace' => $workspace,
-                    'app' => $app,
-                    'container' => $container,
-                    'node' => $node->name,
-                    'state' => trim($result->stdout),
-                ],
-            ];
-        }
-
-        if ($this->looksLikeDockerDaemonDown($haystack)) {
-            return [
-                'code' => 'workspace.exec_docker_unavailable',
-                'message' => "Docker daemon is unavailable on node '{$node->name}'.",
-                'meta' => [
-                    'workspace' => $workspace,
-                    'node' => $node->name,
-                    'stderr' => trim($result->stderr),
-                ],
-            ];
-        }
-
-        if ($this->looksLikeContainerMissing($haystack)) {
-            return [
-                'code' => 'workspace.exec_container_not_running',
-                'message' => "Workspace '{$workspace}' runtime container is not running on node '{$node->name}'.",
-                'meta' => [
-                    'workspace' => $workspace,
-                    'app' => $app,
-                    'container' => $container,
-                    'node' => $node->name,
-                ],
-            ];
-        }
-
-        return [
-            'code' => 'workspace.exec_node_unreachable',
-            'message' => "Cannot reach node '{$node->name}' to run workspace:exec.",
-            'meta' => [
-                'workspace' => $workspace,
-                'node' => $node->name,
-                'exit_code' => $result->exitCode,
-                'stderr' => trim($result->stderr),
-            ],
-        ];
-    }
-
-    /**
-     * @return array{code: string, message: string, meta: array<string, mixed>}|null
-     */
-    private function classifyExecFailure(RemoteShellResult $result, string $workspace, string $app, string $container, Node $node): ?array
-    {
-        if (! in_array($result->exitCode, [125, 126, 127], true)) {
-            return null;
-        }
-
-        $haystack = $result->stderr.' '.$result->stdout;
-
-        if ($result->exitCode === 126) {
-            return [
-                'code' => 'workspace.exec_command_not_executable',
-                'message' => "Command is not executable inside workspace '{$workspace}' runtime container on node '{$node->name}'.",
-                'meta' => [
-                    'workspace' => $workspace,
-                    'app' => $app,
-                    'container' => $container,
-                    'node' => $node->name,
-                    'exit_code' => $result->exitCode,
-                    'stderr' => trim($result->stderr),
-                ],
-            ];
-        }
-
-        if ($result->exitCode === 127) {
-            return [
-                'code' => 'workspace.exec_command_not_found',
-                'message' => "Command not found inside workspace '{$workspace}' runtime container on node '{$node->name}'.",
-                'meta' => [
-                    'workspace' => $workspace,
-                    'app' => $app,
-                    'container' => $container,
-                    'node' => $node->name,
-                    'exit_code' => $result->exitCode,
-                    'stderr' => trim($result->stderr),
-                ],
-            ];
-        }
-
-        if ($this->looksLikeContainerMissing($haystack)) {
-            return [
-                'code' => 'workspace.exec_container_not_running',
-                'message' => "Workspace '{$workspace}' runtime container is not running on node '{$node->name}'.",
-                'meta' => [
-                    'workspace' => $workspace,
-                    'app' => $app,
-                    'container' => $container,
-                    'node' => $node->name,
-                ],
-            ];
-        }
-
-        if ($this->looksLikeDockerDaemonDown($haystack)) {
-            return [
-                'code' => 'workspace.exec_docker_unavailable',
-                'message' => "Docker daemon is unavailable on node '{$node->name}'.",
-                'meta' => [
-                    'workspace' => $workspace,
-                    'node' => $node->name,
-                    'stderr' => trim($result->stderr),
-                ],
-            ];
-        }
-
-        return null;
-    }
-
-    private function looksLikeDockerDaemonDown(string $haystack): bool
-    {
-        return preg_match('/Cannot connect to the Docker daemon|docker daemon (?:is not running|running)/i', $haystack) === 1;
-    }
-
-    private function looksLikeContainerMissing(string $haystack): bool
-    {
-        return preg_match('/No such container|No such object|is not running/i', $haystack) === 1;
+        return implode(' ', array_map(escapeshellarg(...), ['sudo', '-u', $runtimeUser, '-H', 'bash', '-lc', $inner]));
     }
 
     /**

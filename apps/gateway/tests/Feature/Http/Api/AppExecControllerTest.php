@@ -43,28 +43,14 @@ function grantAppExecAccess(Node $caller, Node $appNode, array $permissions): vo
         'updated_at' => now()]);
 }
 
-function appExecControllerPreflightRunning(): RemoteShellResult
-{
-    return new RemoteShellResult(exitCode: 0, stdout: "true\n", stderr: '', durationMs: 1);
-}
-
 /**
- * @param  list<RemoteShellResult>  $results  Sequence of exec-call results.
- *                                            A preflight "running" result is
- *                                            prepended before every exec
- *                                            call so tests script only the
- *                                            docker exec outcome.
+ * Bind a remote shell that returns the given scripted results in order.
+ *
+ * @param  list<RemoteShellResult>  $results
  */
 function bindAppExecControllerShell(array $results = []): void
 {
-    $scripted = [];
-
-    foreach ($results as $result) {
-        $scripted[] = appExecControllerPreflightRunning();
-        $scripted[] = $result;
-    }
-
-    app()->instance(RemoteShell::class, new class($scripted) implements RemoteShell
+    app()->instance(RemoteShell::class, new class($results) implements RemoteShell
     {
         public function __construct(public array $results) {}
 
@@ -74,10 +60,6 @@ function bindAppExecControllerShell(array $results = []): void
 
             if ($next instanceof RemoteShellResult) {
                 return $next;
-            }
-
-            if (str_contains($script, 'docker container inspect')) {
-                return appExecControllerPreflightRunning();
             }
 
             return new RemoteShellResult(
@@ -90,32 +72,15 @@ function bindAppExecControllerShell(array $results = []): void
     });
 }
 
-function bindAppExecControllerPreflightShell(RemoteShellResult $preflight): void
-{
-    app()->instance(RemoteShell::class, new class([$preflight]) implements RemoteShell
-    {
-        public function __construct(public array $results) {}
-
-        public function run(Node $node, string $script, array $options = []): RemoteShellResult
-        {
-            return array_shift($this->results) ?? new RemoteShellResult(
-                exitCode: 0,
-                stdout: "true\n",
-                stderr: '',
-                durationMs: 1,
-            );
-        }
-    });
-}
-
 describe('AppExecController', function (): void {
-    it('runs a command inside the app runtime container and returns the success envelope', function (): void {
+    it('runs a command on the app host and returns the success envelope', function (): void {
         $caller = createExecControllerCaller();
         $node = createTestAppHostNode(['name' => 'app-1', 'host' => '10.6.0.7']);
         grantAppExecAccess($caller, $node, ['app:exec']);
         App::factory()->for($node, 'node')->create([
             'name' => 'docs',
             'path' => '/home/orbit/apps/docs',
+            'php_version' => '8.5',
             'runtime_kind' => AppRuntimeKind::Php]);
         bindAppExecControllerShell([
             new RemoteShellResult(exitCode: 0, stdout: "PHP 8.5.0\n", stderr: '', durationMs: 1)]);
@@ -132,7 +97,7 @@ describe('AppExecController', function (): void {
 
         $response->assertOk()
             ->assertJsonPath('success.data.app', 'docs')
-            ->assertJsonPath('success.data.container', 'orbit-app-docs')
+            ->assertJsonPath('success.data.php_version', '8.5')
             ->assertJsonPath('success.data.command', ['php', '-v'])
             ->assertJsonPath('success.data.exit_code', 0)
             ->assertJsonPath('success.data.stdout', "PHP 8.5.0\n");
@@ -231,93 +196,6 @@ describe('AppExecController', function (): void {
             ->assertJsonPath('error.code', 'app.exec_unsupported_runtime');
     });
 
-    it('returns 422 app.exec_container_not_running when preflight reports no such container', function (): void {
-        $caller = createExecControllerCaller();
-        $node = createTestAppHostNode(['name' => 'app-1', 'host' => '10.6.0.7']);
-        grantAppExecAccess($caller, $node, ['app:exec']);
-        App::factory()->for($node, 'node')->create([
-            'name' => 'docs',
-            'path' => '/home/orbit/apps/docs',
-            'runtime_kind' => AppRuntimeKind::Php]);
-        bindAppExecControllerPreflightShell(new RemoteShellResult(
-            exitCode: 1,
-            stdout: '',
-            stderr: 'Error response from daemon: No such container: orbit-app-docs',
-            durationMs: 1,
-        ));
-
-        $response = $this->call(
-            'POST',
-            '/api/apps/docs/exec',
-            [],
-            [],
-            [],
-            ['REMOTE_ADDR' => APP_EXEC_CALLER_WG_IP, 'CONTENT_TYPE' => 'application/json'],
-            json_encode(['command' => ['php', '-v']], JSON_THROW_ON_ERROR),
-        );
-
-        $response->assertStatus(422)
-            ->assertJsonPath('error.code', 'app.exec_container_not_running');
-    });
-
-    it('returns 502 app.exec_docker_unavailable when preflight reports the docker daemon is down', function (): void {
-        $caller = createExecControllerCaller();
-        $node = createTestAppHostNode(['name' => 'app-1', 'host' => '10.6.0.7']);
-        grantAppExecAccess($caller, $node, ['app:exec']);
-        App::factory()->for($node, 'node')->create([
-            'name' => 'docs',
-            'path' => '/home/orbit/apps/docs',
-            'runtime_kind' => AppRuntimeKind::Php]);
-        bindAppExecControllerPreflightShell(new RemoteShellResult(
-            exitCode: 1,
-            stdout: '',
-            stderr: "Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?\n",
-            durationMs: 1,
-        ));
-
-        $response = $this->call(
-            'POST',
-            '/api/apps/docs/exec',
-            [],
-            [],
-            [],
-            ['REMOTE_ADDR' => APP_EXEC_CALLER_WG_IP, 'CONTENT_TYPE' => 'application/json'],
-            json_encode(['command' => ['php', '-v']], JSON_THROW_ON_ERROR),
-        );
-
-        $response->assertStatus(502)
-            ->assertJsonPath('error.code', 'app.exec_docker_unavailable');
-    });
-
-    it('returns 502 app.exec_node_unreachable when preflight returns an SSH-level failure', function (): void {
-        $caller = createExecControllerCaller();
-        $node = createTestAppHostNode(['name' => 'app-1', 'host' => '10.6.0.7']);
-        grantAppExecAccess($caller, $node, ['app:exec']);
-        App::factory()->for($node, 'node')->create([
-            'name' => 'docs',
-            'path' => '/home/orbit/apps/docs',
-            'runtime_kind' => AppRuntimeKind::Php]);
-        bindAppExecControllerPreflightShell(new RemoteShellResult(
-            exitCode: 255,
-            stdout: '',
-            stderr: "ssh: connect to host 10.6.0.7 port 22: Connection refused\n",
-            durationMs: 1,
-        ));
-
-        $response = $this->call(
-            'POST',
-            '/api/apps/docs/exec',
-            [],
-            [],
-            [],
-            ['REMOTE_ADDR' => APP_EXEC_CALLER_WG_IP, 'CONTENT_TYPE' => 'application/json'],
-            json_encode(['command' => ['php', '-v']], JSON_THROW_ON_ERROR),
-        );
-
-        $response->assertStatus(502)
-            ->assertJsonPath('error.code', 'app.exec_node_unreachable');
-    });
-
     it('rejects callers without the app:exec permission with HTTP 403', function (): void {
         $caller = createExecControllerCaller();
         $node = createTestAppHostNode(['name' => 'app-1', 'host' => '10.6.0.7']);
@@ -350,6 +228,7 @@ describe('AppExecController', function (): void {
         App::factory()->for($node, 'node')->create([
             'name' => 'docs',
             'path' => '/home/orbit/apps/docs',
+            'php_version' => '8.5',
             'runtime_kind' => AppRuntimeKind::Php]);
         bindAppExecControllerShell([
             new RemoteShellResult(exitCode: 0, stdout: "PHP 8.5.0\n", stderr: '', durationMs: 1)]);
@@ -368,7 +247,7 @@ describe('AppExecController', function (): void {
 
         $response->assertOk()
             ->assertJsonPath('success.data.app', 'docs')
-            ->assertJsonPath('success.data.container', 'orbit-app-docs');
+            ->assertJsonPath('success.data.php_version', '8.5');
     });
 
     it('returns 422 validation_failed when the by-path endpoint receives no host_cwd', function (): void {
@@ -449,5 +328,47 @@ describe('AppExecController', function (): void {
             ->assertJsonPath('error.code', 'validation_failed')
             ->assertJsonPath('error.meta.workspace', 'docs-feature')
             ->assertJsonPath('error.meta.app', 'docs');
+    });
+
+    it('uses the version-matched host php path when running the command', function (): void {
+        $caller = createExecControllerCaller();
+        $node = createTestAppHostNode(['name' => 'app-1', 'host' => '10.6.0.7']);
+        grantAppExecAccess($caller, $node, ['app:exec']);
+
+        $capturedScript = null;
+        app()->instance(RemoteShell::class, new class($capturedScript) implements RemoteShell
+        {
+            public ?string $capturedScript = null;
+
+            public function run(Node $node, string $script, array $options = []): RemoteShellResult
+            {
+                $this->capturedScript = $script;
+
+                return new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1);
+            }
+        });
+
+        App::factory()->for($node, 'node')->create([
+            'name' => 'docs',
+            'path' => '/home/orbit/apps/docs',
+            'php_version' => '8.4',
+            'runtime_kind' => AppRuntimeKind::Php]);
+
+        $shell = app(RemoteShell::class);
+
+        $this->call(
+            'POST',
+            '/api/apps/docs/exec',
+            [],
+            [],
+            [],
+            ['REMOTE_ADDR' => APP_EXEC_CALLER_WG_IP, 'CONTENT_TYPE' => 'application/json'],
+            json_encode(['command' => ['php', '-v']], JSON_THROW_ON_ERROR),
+        );
+
+        expect($shell->capturedScript)
+            ->toContain('/opt/orbit/php/')
+            ->toContain("'8.4'")
+            ->toContain("'sudo'");
     });
 });

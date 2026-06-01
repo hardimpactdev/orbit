@@ -241,9 +241,15 @@ All managed Ubuntu nodes have the same Docker-first host prerequisite baseline.
 They require Git, Docker, the prebuilt Orbit CLI binary (embedded PHP 8.5 +
 `pdo_sqlite`/`openssl`/`curl`/`mbstring`/`tokenizer`/`ctype`/`filter`/`fileinfo`/`json`/`phar`),
 the host `orbit` launcher, `orbit-runtime`, WireGuard/SSH identity material,
-and any role-specific non-PHP host tools such as VitePlus on app nodes. Host
-Composer, host Caddy, and host PHP-FPM are not role prerequisites and are not
-runtime fallbacks.
+and any role-specific host tools such as VitePlus on app nodes. `app-dev` and
+`app-prod` nodes additionally carry a host PHP command-line toolchain — host PHP
+8.4 and 8.5, Composer, and the Laravel installer — installed and repaired as
+node tools, because `app:exec`, app setup, and deployment run Composer and
+Artisan on the host (matched to the app's PHP version) against the app source
+the FrankenPHP container serves. This host PHP toolchain is distinct from the
+Orbit CLI binary's embedded PHP, which only runs the CLI itself. Host Caddy and
+host PHP-FPM remain non-prerequisites and non-fallbacks: Caddy runs only as the
+`orbit-caddy` container, and PHP-FPM is never used.
 
 ## Identity and onboarding
 

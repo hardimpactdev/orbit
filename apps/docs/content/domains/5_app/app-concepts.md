@@ -79,8 +79,9 @@ record.
   node's default agent IDE adapter for app and workspace workflows. Set,
   cleared, and shown through `app:agent-ide`.
 - **App exec:** Explicit execution surface for PHP, Composer, or Artisan
-  commands inside the app's FrankenPHP runtime container. Owned by
-  `app:exec`. Host PHP and host Composer are not fallbacks.
+  commands, run on the app node's host PHP toolchain (matched to the app's PHP
+  version) against the app source. Owned by `app:exec`. The commands run on the
+  host, not inside the app's FrankenPHP container.
 
 ## Lifecycle
 
@@ -111,5 +112,7 @@ These boundaries define what the app family owns and what belongs to other famil
   beyond what derives from app configuration. Production route exposure belongs
   to `ingress`; private route selection and backend-pool targeting belong to
   `router`; `app-prod` owns the private backend runtime; `websocket`
-  owns the Reverb runtime. App commands do not install host PHP, Composer,
-  Caddy, or Reverb.
+  owns the Reverb runtime. App commands do not install or own host Caddy or
+  Reverb, nor the host PHP toolchain — the `app-dev`/`app-prod` node role
+  provisions the host PHP toolchain (PHP, Composer, Laravel installer) that
+  `app:exec` and deploy use.

@@ -265,11 +265,10 @@ final readonly class DeployManager
     }
 
     /**
-     * Route a deploy step command through the app container when the app is
-     * a PHP app and the command uses PHP, Composer, or Artisan.
+     * Route a deploy step command through the host PHP toolchain when the app
+     * is a PHP app and the command uses PHP, Composer, or Artisan.
      *
-     * If the app's FrankenPHP container is not running, falls back to host
-     * execution so legacy or adopted apps do not crash on first deploy.
+     * Non-PHP commands and non-PHP apps run on the host as-is.
      *
      * @param  array<string, mixed>  $context
      */
@@ -283,11 +282,7 @@ final readonly class DeployManager
             return $command;
         }
 
-        if (! $this->isContainerRunning($app)) {
-            return $command;
-        }
-
-        return $this->wrapForContainer($app, $command, $context);
+        return $this->wrapForHost($app, $command, $context);
     }
 
     /**
@@ -324,76 +319,41 @@ final readonly class DeployManager
     }
 
     /**
-     * Check whether the app's FrankenPHP runtime container is running on its
-     * owning node. Returns false when the container does not exist or is not
-     * in the running state.
-     */
-    private function isContainerRunning(App $app): bool
-    {
-        $node = $app->node;
-
-        if ($node === null) {
-            return false;
-        }
-
-        $preflight = $this->remoteShell->run(
-            $node,
-            'docker container inspect --format '.escapeshellarg('{{.State.Running}}').' '.escapeshellarg($this->containerName($app)),
-        );
-
-        return $preflight->successful() && trim($preflight->stdout) === 'true';
-    }
-
-    private function containerName(App $app): string
-    {
-        return "orbit-app-{$app->name}";
-    }
-
-    /**
+     * Wrap a PHP/Composer/Artisan command for host-side execution with the
+     * version-matched PHP toolchain, running as the app runtime user.
+     *
+     * Shape:
+     *   sudo -u <runtimeUser> -H bash -lc 'cd <appPath> && PATH=/opt/orbit/php/<ver>/bin:$PATH <command>'
+     *
+     * Environment variables are passed inline before the command inside the
+     * inner shell string so they are visible to the child process.
+     *
      * @param  array<string, mixed>  $context
      */
-    private function wrapForContainer(App $app, string $command, array $context): string
+    private function wrapForHost(App $app, string $command, array $context): string
     {
-        $containerName = $this->containerName($app);
-        $appPath = rtrim($app->path, '/');
-        $containerCommand = $this->replaceHostPathsWithContainerPaths($command, $appPath);
+        $appPath = rtrim((string) $app->path, '/');
+        $phpVersion = $app->php_version;
+        $runtimeUser = $app->node?->user ?: 'orbit';
 
-        $dockerParts = [
-            'docker',
-            'exec',
-            '--workdir',
-            '/app',
-        ];
+        $envPrefix = '';
 
         foreach ($this->environment($context) as $key => $value) {
-            $dockerParts[] = '-e';
-            $dockerParts[] = "{$key}={$value}";
+            $envPrefix .= escapeshellarg("{$key}={$value}").' ';
         }
 
-        $dockerParts[] = $containerName;
-        $dockerParts[] = 'bash';
-        $dockerParts[] = '-lc';
-        $dockerParts[] = $containerCommand;
+        $inner = 'cd '.escapeshellarg($appPath)
+            .' && PATH=/opt/orbit/php/'.escapeshellarg($phpVersion).'/bin:$PATH '
+            .$envPrefix
+            .$command;
 
-        return implode(' ', array_map(escapeshellarg(...), $dockerParts));
+        return implode(' ', array_map(escapeshellarg(...), ['sudo', '-u', $runtimeUser, '-H', 'bash', '-lc', $inner]));
     }
 
     /**
-     * Replace host app paths with their container mount path so commands
-     * rendered with {{ app_path }} and derived paths work inside the
-     * FrankenPHP container.
-     */
-    private function replaceHostPathsWithContainerPaths(string $command, string $appPath): string
-    {
-        $escapedPath = preg_quote($appPath, '/');
-
-        return preg_replace("/{$escapedPath}(?![a-zA-Z0-9_-])/", '/app', $command) ?? $command;
-    }
-
-    /**
-     * Run built-in production warmup steps for PHP apps when the app's
-     * FrankenPHP container is available. Returns captured output when warmups
-     * run, or null when skipped.
+     * Run built-in production warmup steps for PHP apps on the host using the
+     * version-matched PHP toolchain. Returns captured output when warmups run,
+     * or null when skipped.
      *
      * Warmup failures are caught and surfaced as deploy.warmup_failed so the
      * run status is updated to failed rather than left stuck at running.
@@ -413,13 +373,6 @@ final readonly class DeployManager
             return null;
         }
 
-        if (! $this->isContainerRunning($app)) {
-            $progress?->stepStart('warmup-skipped');
-            $progress?->stepDone('warmup-skipped', 'container not running');
-
-            return null;
-        }
-
         $warmupCommands = [
             'composer install --no-dev --optimize-autoloader --no-interaction',
             'php artisan optimize',
@@ -429,7 +382,7 @@ final readonly class DeployManager
         $stderr = '';
 
         foreach ($warmupCommands as $warmupCommand) {
-            $routedCommand = $this->wrapForContainer($app, $warmupCommand, $context);
+            $routedCommand = $this->wrapForHost($app, $warmupCommand, $context);
 
             $result = $this->remoteShell->run($node, $routedCommand, [
                 'cwd' => $app->path,
@@ -448,7 +401,6 @@ final readonly class DeployManager
                     errorMeta: [
                         'app' => $app->name,
                         'warmup_command' => $warmupCommand,
-                        'container' => $this->containerName($app),
                     ],
                     errorData: [
                         'stdout' => $stdout,
@@ -464,8 +416,11 @@ final readonly class DeployManager
     }
 
     /**
-     * Send HTTP warmup requests to the app container when warmup paths
-     * are configured on the app.
+     * Send HTTP warmup requests to the app when warmup paths are configured.
+     *
+     * Requests are sent via docker exec into the FrankenPHP container that
+     * still serves the app's HTTP traffic. The PHP toolchain migration does
+     * not affect the serving container.
      *
      * @param  array<string, mixed>  $context
      */
@@ -483,7 +438,7 @@ final readonly class DeployManager
             return;
         }
 
-        $containerName = $this->containerName($app);
+        $containerName = "orbit-app-{$app->name}";
 
         foreach ($warmupPaths as $path) {
             $command = sprintf(

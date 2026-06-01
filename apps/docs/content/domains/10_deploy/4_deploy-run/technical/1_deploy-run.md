@@ -51,10 +51,9 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
   `database_path`, `app_user`, `app_name`, `domain`, and `repository`, plus
   nested app and node metadata for placeholder resolution.
 - Executes each configured step on the app's owning node through the gateway.
-- Routes steps that invoke `php`, `composer`, or `artisan` through the app's
-  FrankenPHP runtime container when the app uses `runtime_kind=php`. Host
-  paths referenced in step commands are translated to the container mount path
-  (`/app`) before execution.
+- Runs steps that invoke `php`, `composer`, or `artisan` on the host PHP
+  toolchain matched to the app's PHP version (`php8.4`/`php8.5`) when the app
+  uses `runtime_kind=php`, from the app source path on the host node.
 - Executes non-PHP steps and static app steps from the app source path on the
   host node.
 - Renders `{{ key }}` placeholders against the deployment run context before
@@ -75,10 +74,11 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
   for every executed step, so deploy logs show the script that actually
   executed for that run.
 - Stops at the first failed step and does not execute later steps.
-- After all configured steps complete successfully for a PHP app with a running
-  FrankenPHP container, runs built-in production warmup:
-  `composer install --no-dev --optimize-autoloader --no-interaction` and
-  `php artisan optimize` inside the app container.
+- After all configured steps complete successfully for a PHP app, runs built-in
+  production warmup on the host PHP toolchain (matched to the app's PHP
+  version): `composer install --no-dev --optimize-autoloader --no-interaction`
+  and `php artisan optimize`, against the app source the FrankenPHP container
+  serves.
 - When the app defines `deploy_warmup_paths`, sends HTTP warmup requests to
   those paths on the app container before the deployment is marked complete.
 - Updates the run status and the app's latest deployment status to
