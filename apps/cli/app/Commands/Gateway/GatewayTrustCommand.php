@@ -38,6 +38,7 @@ final class GatewayTrustCommand extends LocalOnlyCommand
         /** @var array{url: string, ip: string} $gateway */
         $gatewayUrl = $gateway['url'];
         $gatewayIp = $gateway['ip'];
+        $gatewayName = $configStore->activeGatewayName() ?? OrbitConfigStore::DEFAULT_GATEWAY_NAME;
 
         try {
             $caResult = $fetch->handle($gatewayIp);
@@ -64,7 +65,7 @@ final class GatewayTrustCommand extends LocalOnlyCommand
             );
         }
 
-        $pemPath = $this->persistPem($caResult->pem, $configStore);
+        $pemPath = $this->persistPem($gatewayName, $caResult->pem, $configStore);
 
         if ($pemPath === null) {
             return $this->renderFailure(
@@ -209,10 +210,10 @@ final class GatewayTrustCommand extends LocalOnlyCommand
         return is_string($trustedAt) ? $trustedAt : now()->toIso8601String();
     }
 
-    private function persistPem(string $pem, OrbitConfigStore $configStore): ?string
+    private function persistPem(string $gatewayName, string $pem, OrbitConfigStore $configStore): ?string
     {
         $configDir = dirname($configStore->path());
-        $pemDir = $configDir.'/gateways/default';
+        $pemDir = "{$configDir}/gateways/{$gatewayName}";
 
         if (! is_dir($pemDir)) {
             if (! @mkdir($pemDir, 0700, true) && ! is_dir($pemDir)) {

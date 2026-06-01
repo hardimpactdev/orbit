@@ -21,7 +21,7 @@
 ## Signature
 
 ```bash
-orbit gateway:add [gateway_ip] [--json]
+orbit gateway:add [gateway_ip] [--name=<name>] [--json]
 ```
 
 ## Input Contract
@@ -32,15 +32,19 @@ This command follows the shared
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
 | `gateway_ip` | `[gateway_ip]` | Never; derived from network or fails. | Never. | Derived from active WireGuard network when unambiguous. | Valid IPv4 gateway WireGuard API address in Orbit's `10.6.0.0/16` range. |
+| `name` | `--name` | Never. | Never. | `default`. | Local gateway name slug: lowercase letters, digits, `.`, `_`, or `-`; starts with a lowercase letter or digit. |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer and non-interactive input mode. |
 
 ## Input Resolution
 
 1. Resolve `gateway_add.gateway_ip` from `[gateway_ip]`. Derive from the active
    WireGuard network when omitted.
-2. Validate `gateway_add.gateway_ip` immediately.
+2. Resolve `gateway_add.name` from `--name`, defaulting to `default`.
+3. Validate inputs immediately.
    - Must be a valid Orbit WireGuard IPv4 address in `10.6.0.0/16`.
    - Must be reachable as a gateway API endpoint.
+   - Gateway names must be filesystem-safe local slugs and must not contain
+     path separators.
 
 ## Input Mode Contracts
 
@@ -90,8 +94,14 @@ certificate lifecycle belongs to the route-owning domain and its doctor family.
 
 ### Local Configuration Rules
 
-- Persist the gateway WireGuard IP as the local default gateway endpoint.
-- Store the gateway trust material locally.
+- Persist the gateway WireGuard IP under the selected local gateway name.
+- Store the gateway trust material locally under
+  `~/.config/orbit/gateways/<name>/`.
+- Set `active_gateway` to the selected name after successful onboarding.
+- Preserve other configured gateway entries when adding or refreshing a named
+  gateway.
+- `default` remains the implicit name for legacy `gateway:add [gateway_ip]`
+  calls that omit `--name`.
 - The clean repo has no separate `LocalNodeContext` cache to invalidate. If one
   is introduced later, invalidate it at this persistence boundary.
 
@@ -107,6 +117,7 @@ certificate lifecycle belongs to the route-owning domain and its doctor family.
 - Act as a broad repair or reset command. After local onboarding exists,
   standalone CA trust repair belongs to `gateway:trust`, and broader node drift
   belongs to `doctor --family=node --restore`.
+- Delete or mutate other named gateway entries.
 
 It also must not issue, upload, renew, or clean up app, workspace, proxy,
 gateway, or tool route leaf certificates.

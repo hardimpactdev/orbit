@@ -136,6 +136,57 @@ describe(OrbitConfigStore::class, function (): void {
             ->and($entry['url'])->toBe('https://10.6.0.1');
     });
 
+    it('returns active gateway name and sorted gateway entries', function (): void {
+        @unlink($this->tempPath);
+
+        $store = new OrbitConfigStore(overridePath: $this->tempPath);
+        $store->save([
+            'active_gateway' => 'zulu',
+            'gateways' => [
+                'zulu' => ['url' => 'https://10.6.0.3'],
+                'alpha' => ['url' => 'https://10.6.0.2'],
+            ],
+        ]);
+
+        expect($store->activeGatewayName())->toBe('zulu')
+            ->and(array_keys($store->gatewayEntries()))->toBe(['alpha', 'zulu'])
+            ->and($store->gatewayEntry('alpha')['url'])->toBe('https://10.6.0.2');
+    });
+
+    it('switches active gateway when the entry exists', function (): void {
+        @unlink($this->tempPath);
+
+        $store = new OrbitConfigStore(overridePath: $this->tempPath);
+        $store->save([
+            'active_gateway' => 'default',
+            'gateways' => [
+                'default' => ['url' => 'https://10.6.0.2'],
+                'incus-dev' => ['url' => 'https://10.6.0.12'],
+            ],
+        ]);
+
+        expect($store->setActiveGateway('incus-dev'))->toBeTrue()
+            ->and($store->activeGatewayName())->toBe('incus-dev')
+            ->and($store->activeGateway()['url'])->toBe('https://10.6.0.12');
+    });
+
+    it('rejects invalid and unknown gateway names', function (): void {
+        @unlink($this->tempPath);
+
+        $store = new OrbitConfigStore(overridePath: $this->tempPath);
+        $store->save([
+            'active_gateway' => 'default',
+            'gateways' => [
+                'default' => ['url' => 'https://10.6.0.2'],
+            ],
+        ]);
+
+        expect(OrbitConfigStore::isValidGatewayName('incus-dev'))->toBeTrue()
+            ->and(OrbitConfigStore::isValidGatewayName('../prod'))->toBeFalse()
+            ->and($store->setActiveGateway('missing'))->toBeFalse()
+            ->and($store->gatewayEntry('../prod'))->toBeNull();
+    });
+
     it('returns null from activeGateway() when active_gateway is missing', function (): void {
         @unlink($this->tempPath);
 

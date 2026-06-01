@@ -13,13 +13,14 @@ gateway to query.
 ## Usage
 
 ```bash
-orbit gateway:add [gateway_ip] [--json]
+orbit gateway:add [gateway_ip] [--name=<name>] [--json]
 ```
 
 ## Examples
 
 ```bash
 orbit gateway:add 10.6.0.2
+orbit gateway:add 10.6.0.2 --name=incus-dev
 orbit gateway:add 10.6.0.2 --json
 ```
 
@@ -27,6 +28,8 @@ orbit gateway:add 10.6.0.2 --json
 
 - `gateway_ip`: optional gateway WireGuard API address. When omitted, Orbit
   derives it from the active Orbit WireGuard network.
+- `--name`: local gateway entry name. Defaults to `default`. Names are local
+  slugs such as `default`, `staging`, or `incus-dev`.
 - `--json`: Output JSON.
 
 ## What Happens
@@ -51,9 +54,15 @@ The command:
 6. Verifies the local WireGuard identity against gateway-owned node identity and
    access policy. That identity must already have been minted on the gateway.
 7. Stores local gateway API configuration, gateway WireGuard IP, and trust
-   material.
-8. Makes the stored gateway the default endpoint used by subsequent Orbit
+   material under the selected local gateway name.
+8. Makes the stored gateway the active endpoint used by subsequent Orbit
    commands.
+
+`gateway:add` can store multiple local gateway entries. Each entry has its own
+name and trust material path. Only one entry is active at a time. Use
+[`gateway:list`](../3_gateway-list/gateway-list.md) to inspect configured
+gateways and [`gateway:use`](../4_gateway-use/gateway-use.md) to switch the
+active gateway without re-running onboarding.
 
 The trusted gateway root CA is the same root that Orbit-managed app,
 workspace, proxy, gateway, and future tool route certificates chain to.
@@ -102,6 +111,10 @@ Use these commands before or after `gateway:add` to complete node enrollment and
   including first-gateway bootstrap
 - [`gateway:trust`](../2_gateway-trust/gateway-trust.md) — repair local
   gateway CA trust after onboarding
+- [`gateway:list`](../3_gateway-list/gateway-list.md) — list configured local
+  gateway entries
+- [`gateway:use`](../4_gateway-use/gateway-use.md) — switch the active local
+  gateway
 - [`node:list`](../../1_node/3_node-list/node-list.md) — list registered nodes
 - [`node:show`](../../1_node/4_node-show/node-show.md) — show node details
 - [`doctor --family=node`](../../1_node/node-doctor.md) — verify node drift

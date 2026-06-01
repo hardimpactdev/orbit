@@ -47,6 +47,8 @@ final readonly class OrbitConfigStore
 {
     public const int CURRENT_SCHEMA_VERSION = 1;
 
+    public const string DEFAULT_GATEWAY_NAME = 'default';
+
     public const string DEFAULT_SELF_MODE = 'wireguard_https';
 
     public const int DEFAULT_TIMEOUT_SECONDS = 30;
@@ -198,6 +200,17 @@ final readonly class OrbitConfigStore
      */
     public function activeGateway(): ?array
     {
+        $name = $this->activeGatewayName();
+
+        if ($name === null) {
+            return null;
+        }
+
+        return $this->gatewayEntry($name);
+    }
+
+    public function activeGatewayName(): ?string
+    {
         $config = $this->read();
         $name = $config['active_gateway'] ?? null;
 
@@ -205,16 +218,73 @@ final readonly class OrbitConfigStore
             return null;
         }
 
+        return $name;
+    }
+
+    /**
+     * @return array<string, array<string, mixed>>
+     */
+    public function gatewayEntries(): array
+    {
+        $config = $this->read();
         $gateways = $config['gateways'] ?? null;
 
-        if (! is_array($gateways) || ! isset($gateways[$name]) || ! is_array($gateways[$name])) {
+        if (! is_array($gateways)) {
+            return [];
+        }
+
+        $entries = [];
+
+        foreach ($gateways as $name => $entry) {
+            if (! is_string($name) || ! is_array($entry)) {
+                continue;
+            }
+
+            /** @var array<string, mixed> $entry */
+            $entries[$name] = $entry;
+        }
+
+        ksort($entries);
+
+        return $entries;
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    public function gatewayEntry(string $name): ?array
+    {
+        if (! self::isValidGatewayName($name)) {
             return null;
         }
 
-        /** @var array<string, mixed> $entry */
-        $entry = $gateways[$name];
+        $entries = $this->gatewayEntries();
 
-        return $entry;
+        return $entries[$name] ?? null;
+    }
+
+    public function setActiveGateway(string $name): bool
+    {
+        if (! self::isValidGatewayName($name)) {
+            return false;
+        }
+
+        $config = $this->read();
+        $gateways = $config['gateways'] ?? null;
+
+        if (! is_array($gateways) || ! isset($gateways[$name]) || ! is_array($gateways[$name])) {
+            return false;
+        }
+
+        $config['active_gateway'] = $name;
+        $this->save($config);
+
+        return true;
+    }
+
+    public static function isValidGatewayName(string $name): bool
+    {
+        return preg_match('/^[a-z0-9][a-z0-9._-]{0,62}$/', $name) === 1;
     }
 
     public function defaultNode(): ?string

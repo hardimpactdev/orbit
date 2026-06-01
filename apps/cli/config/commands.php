@@ -51,7 +51,9 @@ use App\Commands\Firewall\FirewallDenyCommand;
 use App\Commands\Firewall\FirewallListCommand;
 use App\Commands\Firewall\FirewallRemoveCommand;
 use App\Commands\Gateway\GatewayAddCommand;
+use App\Commands\Gateway\GatewayListCommand;
 use App\Commands\Gateway\GatewayTrustCommand;
+use App\Commands\Gateway\GatewayUseCommand;
 use App\Commands\GatewayStatusCommand;
 use App\Commands\Internal\DatabaseQueryLocalCommand;
 use App\Commands\Internal\VerifyExecutorCommand;
@@ -202,7 +204,9 @@ return [
         FirewallListCommand::class,
         FirewallRemoveCommand::class,
         GatewayAddCommand::class,
+        GatewayListCommand::class,
         GatewayTrustCommand::class,
+        GatewayUseCommand::class,
         GatewayStatusCommand::class,
         NodeAgentIdeCommand::class,
         NodeDefaultCommand::class,

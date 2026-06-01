@@ -15,10 +15,13 @@ These terms define the gateway command domain and its relationship to other fami
   configured gateway, trust the gateway API certificate chain, and verify the
   caller against gateway-owned node identity and access policy when onboarding
   requires it.
-- **Configured gateway endpoint:** The default gateway URL or
-  WireGuard API address stored locally by the caller and used by subsequent Orbit commands. First-gateway
-  bootstrap or `gateway:add` establishes it; `gateway:trust` reads it but does
-  not replace it.
+- **Configured gateway endpoint:** A gateway URL or WireGuard API address
+  stored locally by the caller. First-gateway bootstrap or `gateway:add`
+  establishes a named entry; `gateway:use` selects the active entry used by
+  subsequent Orbit commands.
+- **Active gateway:** The one named local gateway entry selected by
+  `active_gateway`. Gateway-backed CLI commands use this entry unless
+  environment overrides are set.
 - **Gateway WireGuard API address:** Orbit network address for the gateway's
   typed HTTPS API. `gateway:add` may accept it explicitly or derive it from the
   active Orbit WireGuard network when that is unambiguous.
@@ -26,7 +29,7 @@ These terms define the gateway command domain and its relationship to other fami
   typed HTTPS API behind gateway `orbit-caddy` on the Orbit network.
 - **Local gateway configuration:** Caller-local settings that store the
   configured gateway endpoint, gateway WireGuard IP, trust material path or
-  fingerprint, and related gateway-client metadata.
+  fingerprint, the active gateway name, and related gateway-client metadata.
 
 ## Trust Model
 
@@ -64,7 +67,7 @@ These terms describe the two flows that establish or repair the local gateway re
   fetches trust material, installs or refreshes local trust, verifies the
   gateway API and local identity, and stores local gateway configuration.
 - **Gateway trust repair:** `gateway:trust` flow that refreshes caller-local
-  gateway CA trust for an already configured gateway endpoint. It does not
+  gateway CA trust for the active configured gateway endpoint. It does not
   select a new gateway, verify `/api/me`, or onboard an client identity.
 - **Gateway API verification:** Trusted HTTPS request to `/api/me` that proves
   the configured gateway is reachable and the caller's WireGuard identity is

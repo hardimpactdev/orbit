@@ -20,7 +20,10 @@ final class GatewayAddCommand extends BootstrapGatewayCommand
     private const string LABEL = 'orbit';
 
     #[\Override]
-    protected $signature = 'gateway:add {gateway_ip? : The WireGuard IP of the gateway} {--json}';
+    protected $signature = 'gateway:add
+        {gateway_ip? : The WireGuard IP of the gateway}
+        {--name=default : Local gateway entry name}
+        {--json}';
 
     #[\Override]
     protected $description = 'Trust the gateway CA and register the local node connection.';
@@ -33,6 +36,15 @@ final class GatewayAddCommand extends BootstrapGatewayCommand
         TrustStoreInstaller $installer,
     ): int {
         $gatewayIp = $this->resolveGatewayIp($resolver);
+        $gatewayName = $this->resolveGatewayName();
+
+        if ($gatewayName === null) {
+            return $this->renderFailure(
+                'validation_failed',
+                'Gateway name must be a local slug.',
+                ['field' => 'name', 'reason' => 'invalid_name'],
+            );
+        }
 
         if ($gatewayIp === null || $gatewayIp === '') {
             return $this->renderFailure(
@@ -50,8 +62,8 @@ final class GatewayAddCommand extends BootstrapGatewayCommand
             );
         }
 
-        if ($this->isConverged($gatewayIp, $installer, $configStore)) {
-            return $this->handleConverged($gatewayIp, $verifyIdentity, $configStore);
+        if ($this->isConverged($gatewayName, $gatewayIp, $installer, $configStore)) {
+            return $this->handleConverged($gatewayName, $gatewayIp, $verifyIdentity, $configStore);
         }
 
         try {
@@ -79,7 +91,7 @@ final class GatewayAddCommand extends BootstrapGatewayCommand
             );
         }
 
-        $pemPath = $this->persistPem($caResult->pem, $configStore);
+        $pemPath = $this->persistPem($gatewayName, $caResult->pem, $configStore);
 
         if ($pemPath === null) {
             return $this->renderFailure(
@@ -115,18 +127,25 @@ final class GatewayAddCommand extends BootstrapGatewayCommand
         }
 
         /** @var array{gateway_name: string, gateway_ip: string, gateway_status: string, gateway_platform: string, local_node_name: string, local_node_status: string, local_node_platform: string, local_node_wg_ip: string} $verifyResult */
-        $this->persistGatewayConfig($gatewayIp, $caResult->sha256, $pemPath, $configStore);
+        if (! $this->persistGatewayConfig($gatewayName, $gatewayIp, $caResult->sha256, $pemPath, $configStore)) {
+            return $this->renderFailure(
+                'node.local_config_write_failed',
+                'Failed to store local gateway configuration.',
+                ['gateway_ip' => $gatewayIp, 'gateway_name' => $gatewayName],
+            );
+        }
 
-        return $this->renderSuccess($this->buildSuccessData($verifyResult, 'added', $gatewayIp));
+        return $this->renderSuccess($this->buildSuccessData($verifyResult, 'added', $gatewayIp, $gatewayName));
     }
 
     private function handleConverged(
+        string $gatewayName,
         string $gatewayIp,
         VerifiesGatewayIdentity $verifyIdentity,
         OrbitConfigStore $configStore,
     ): int {
-        $active = $configStore->activeGateway();
-        $pemPath = is_array($active) ? (string) ($active['ca_pem_path'] ?? '') : '';
+        $entry = $configStore->gatewayEntry($gatewayName);
+        $pemPath = is_array($entry) ? (string) ($entry['ca_pem_path'] ?? '') : '';
 
         if ($pemPath === '' || ! is_file($pemPath)) {
             return $this->renderFailure(
@@ -144,7 +163,15 @@ final class GatewayAddCommand extends BootstrapGatewayCommand
         }
 
         /** @var array{gateway_name: string, gateway_ip: string, gateway_status: string, gateway_platform: string, local_node_name: string, local_node_status: string, local_node_platform: string, local_node_wg_ip: string} $verifyResult */
-        return $this->renderSuccess($this->buildSuccessData($verifyResult, 'converged', $gatewayIp));
+        if (! $configStore->setActiveGateway($gatewayName)) {
+            return $this->renderFailure(
+                'node.local_config_write_failed',
+                'Failed to store local gateway configuration.',
+                ['gateway_ip' => $gatewayIp, 'gateway_name' => $gatewayName],
+            );
+        }
+
+        return $this->renderSuccess($this->buildSuccessData($verifyResult, 'converged', $gatewayIp, $gatewayName));
     }
 
     private function resolveGatewayIp(ResolvesGatewayAddress $resolver): ?string
@@ -158,6 +185,19 @@ final class GatewayAddCommand extends BootstrapGatewayCommand
         return $resolver->resolve();
     }
 
+    private function resolveGatewayName(): ?string
+    {
+        $name = $this->option('name');
+
+        if (! is_string($name) || trim($name) === '') {
+            $name = OrbitConfigStore::DEFAULT_GATEWAY_NAME;
+        }
+
+        $name = trim($name);
+
+        return OrbitConfigStore::isValidGatewayName($name) ? $name : null;
+    }
+
     private function isValidWireGuardIp(string $ip): bool
     {
         if (filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) === false) {
@@ -167,9 +207,13 @@ final class GatewayAddCommand extends BootstrapGatewayCommand
         return str_starts_with($ip, '10.6.');
     }
 
-    private function isConverged(string $gatewayIp, TrustStoreInstaller $installer, OrbitConfigStore $configStore): bool
-    {
-        $active = $configStore->activeGateway();
+    private function isConverged(
+        string $gatewayName,
+        string $gatewayIp,
+        TrustStoreInstaller $installer,
+        OrbitConfigStore $configStore,
+    ): bool {
+        $active = $configStore->gatewayEntry($gatewayName);
 
         if (! is_array($active)) {
             return false;
@@ -201,10 +245,10 @@ final class GatewayAddCommand extends BootstrapGatewayCommand
         return $installer->isCaTrusted($pemPath, self::LABEL);
     }
 
-    private function persistPem(string $pem, OrbitConfigStore $configStore): ?string
+    private function persistPem(string $gatewayName, string $pem, OrbitConfigStore $configStore): ?string
     {
         $configDir = dirname($configStore->path());
-        $pemDir = $configDir.'/gateways/default';
+        $pemDir = "{$configDir}/gateways/{$gatewayName}";
 
         if (! is_dir($pemDir)) {
             if (! @mkdir($pemDir, 0700, true) && ! is_dir($pemDir)) {
@@ -224,15 +268,20 @@ final class GatewayAddCommand extends BootstrapGatewayCommand
     }
 
     private function persistGatewayConfig(
+        string $gatewayName,
         string $gatewayIp,
         string $caSha256,
         string $pemPath,
         OrbitConfigStore $configStore,
-    ): void {
+    ): bool {
         try {
             $config = $configStore->read();
-            $config['active_gateway'] = 'default';
-            $config['gateways']['default'] = [
+            if (! isset($config['gateways']) || ! is_array($config['gateways'])) {
+                $config['gateways'] = [];
+            }
+
+            $config['active_gateway'] = $gatewayName;
+            $config['gateways'][$gatewayName] = [
                 'url' => "https://{$gatewayIp}",
                 'wireguard_ip' => $gatewayIp,
                 'ca_pem_path' => $pemPath,
@@ -242,8 +291,10 @@ final class GatewayAddCommand extends BootstrapGatewayCommand
                 'self_mode' => OrbitConfigStore::DEFAULT_SELF_MODE,
             ];
             $configStore->save($config);
+
+            return true;
         } catch (\Throwable) {
-            // Best-effort; store already partially committed
+            return false;
         }
     }
 
@@ -251,11 +302,15 @@ final class GatewayAddCommand extends BootstrapGatewayCommand
      * @param  array{gateway_name: string, gateway_ip: string, gateway_status: string, gateway_platform: string, local_node_name: string, local_node_status: string, local_node_platform: string, local_node_wg_ip: string}  $verifyResult
      * @return array<string, mixed>
      */
-    private function buildSuccessData(array $verifyResult, string $action, string $gatewayIp): array
+    private function buildSuccessData(array $verifyResult, string $action, string $gatewayIp, string $gatewayName): array
     {
         return [
             'result' => [
                 'action' => $action,
+            ],
+            'local_gateway' => [
+                'name' => $gatewayName,
+                'active' => true,
             ],
             'gateway' => [
                 'name' => $verifyResult['gateway_name'],

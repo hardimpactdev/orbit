@@ -149,12 +149,22 @@ function setupAddFakes(bool $converged = false): array
 
 function cleanupAdd(string $tempDir): void
 {
-    foreach (glob($tempDir.'/gateways/default/*') ?: [] as $f) {
-        @unlink($f);
+    $paths = glob($tempDir.'/{,.}[!.,!..]*', GLOB_BRACE) ?: [];
+
+    foreach (array_reverse($paths) as $path) {
+        if (is_dir($path)) {
+            foreach (glob($path.'/*') ?: [] as $child) {
+                @unlink($child);
+            }
+
+            @rmdir($path);
+
+            continue;
+        }
+
+        @unlink($path);
     }
-    @rmdir($tempDir.'/gateways/default');
-    @rmdir($tempDir.'/gateways');
-    @unlink($tempDir.'/config.json');
+
     @rmdir($tempDir);
 }
 
@@ -268,6 +278,57 @@ describe('gateway:add', function (): void {
             ->and($decoded['success']['data']['local_node']['name'])->toBe('client-1')
             ->and($decoded['success']['data']['local_onboarding']['gateway_trust'])->toBe('trusted')
             ->and($decoded['success']['data']['local_onboarding']['gateway_config'])->toBe('stored');
+
+        cleanupAdd($tempDir);
+    });
+
+    it('stores a named gateway without overwriting the existing default entry', function (): void {
+        [$store, , , , , $tempDir] = setupAddFakes();
+        $config = $store->emptySkeleton();
+        $config['active_gateway'] = 'default';
+        $config['gateways']['default'] = [
+            'url' => 'https://10.6.0.9',
+            'wireguard_ip' => '10.6.0.9',
+            'ca_pem_path' => $tempDir.'/gateways/default/ca.pem',
+            'ca_sha256' => 'default-sha',
+            'ca_fingerprint' => 'sha256:default-sha',
+            'timeout' => OrbitConfigStore::DEFAULT_TIMEOUT_SECONDS,
+            'self_mode' => OrbitConfigStore::DEFAULT_SELF_MODE,
+        ];
+        $store->save($config);
+
+        [$exitCode, $output] = runCommand($this, 'gateway:add', [
+            'gateway_ip' => '10.6.0.2',
+            '--name' => 'incus-dev',
+            '--json' => true,
+        ]);
+        $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+        $config = $store->read();
+
+        expect($exitCode)->toBe(0)
+            ->and($decoded['success']['data']['result']['action'])->toBe('added')
+            ->and($config['active_gateway'])->toBe('incus-dev')
+            ->and($config['gateways']['default']['wireguard_ip'])->toBe('10.6.0.9')
+            ->and($config['gateways']['incus-dev']['wireguard_ip'])->toBe('10.6.0.2')
+            ->and($config['gateways']['incus-dev']['ca_pem_path'])->toContain('/gateways/incus-dev/ca.pem');
+
+        cleanupAdd($tempDir);
+    });
+
+    it('returns validation_failed for an invalid gateway name', function (): void {
+        [, , , , , $tempDir] = setupAddFakes();
+
+        [$exitCode, $output] = runCommand($this, 'gateway:add', [
+            'gateway_ip' => '10.6.0.2',
+            '--name' => '../prod',
+            '--json' => true,
+        ]);
+        $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(1)
+            ->and($decoded['error']['code'])->toBe('validation_failed')
+            ->and($decoded['error']['meta']['field'])->toBe('name')
+            ->and($decoded['error']['meta']['reason'])->toBe('invalid_name');
 
         cleanupAdd($tempDir);
     });

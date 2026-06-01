@@ -80,9 +80,13 @@ These rules apply to all gateway commands and define the invariants the family e
 
 ## Commands
 
-These are the two gateway-family commands available to operator-node callers.
+These are the gateway-family commands available to operator-node callers.
 
 1. Existing gateway onboarding:
    [`orbit gateway:add [gateway_ip]`](1_gateway-add/gateway-add.md)
 2. Local gateway CA trust repair:
    [`orbit gateway:trust`](2_gateway-trust/gateway-trust.md)
+3. Local gateway selection list:
+   [`orbit gateway:list`](3_gateway-list/gateway-list.md)
+4. Active gateway selection:
+   [`orbit gateway:use <name>`](4_gateway-use/gateway-use.md)

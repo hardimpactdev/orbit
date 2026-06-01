@@ -108,12 +108,21 @@ function setupTrustFakes(bool $withGateway = true, bool $alreadyTrusted = false)
 
 function cleanupTrust(string $tempDir): void
 {
-    foreach (glob($tempDir.'/gateways/default/*') ?: [] as $f) {
-        @unlink($f);
+    $iterator = new RecursiveIteratorIterator(
+        new RecursiveDirectoryIterator($tempDir, FilesystemIterator::SKIP_DOTS),
+        RecursiveIteratorIterator::CHILD_FIRST,
+    );
+
+    foreach ($iterator as $path) {
+        if ($path->isDir()) {
+            @rmdir($path->getPathname());
+
+            continue;
+        }
+
+        @unlink($path->getPathname());
     }
-    @rmdir($tempDir.'/gateways/default');
-    @rmdir($tempDir.'/gateways');
-    @unlink($tempDir.'/config.json');
+
     @rmdir($tempDir);
 }
 
@@ -180,6 +189,31 @@ describe('gateway:trust', function (): void {
             ->and($decoded['success']['data']['gateway_trust']['trusted'])->toBeTrue()
             ->and($decoded['success']['data']['gateway_trust']['gateway_url'])->toBe('https://10.6.0.2')
             ->and($decoded['success']['data']['gateway_trust']['ca_sha256'])->toBe($fakeSha256);
+
+        cleanupTrust($tempDir);
+    });
+
+    it('repairs trust material under the active named gateway entry', function (): void {
+        [$store, , , $tempDir] = setupTrustFakes();
+        mkdir($tempDir.'/gateways/incus-dev', 0700, true);
+        $config = $store->read();
+        $config['active_gateway'] = 'incus-dev';
+        $config['gateways']['incus-dev'] = [
+            'url' => 'https://10.6.0.12',
+            'wireguard_ip' => '10.6.0.12',
+            'ca_pem_path' => $tempDir.'/gateways/incus-dev/ca.pem',
+            'ca_sha256' => null,
+            'trusted_at' => null,
+        ];
+        $store->save($config);
+
+        [$exitCode] = runCommand($this, 'gateway:trust', ['--json' => true]);
+        $config = $store->read();
+
+        expect($exitCode)->toBe(0)
+            ->and($config['active_gateway'])->toBe('incus-dev')
+            ->and($config['gateways']['incus-dev']['ca_pem_path'])->toContain('/gateways/incus-dev/ca.pem')
+            ->and($config['gateways']['default']['ca_pem_path'])->toContain('/gateways/default/ca.pem');
 
         cleanupTrust($tempDir);
     });
