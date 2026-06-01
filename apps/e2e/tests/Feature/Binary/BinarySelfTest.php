@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+use App\E2E\Support\OrbitCliBinaryBundle;
+
 /**
  * Binary self-test lane (4a — build + binary self-test, no topology).
  *
@@ -28,16 +30,12 @@ declare(strict_types=1);
  */
 pest()->group('e2e-binary');
 
-/*
- * The built native binary only exists after the binary lane builds it
- * (`composer test:e2e:binary`). When it is absent — the default Pest suite and
- * `composer quality-check` on a fresh checkout — skip rather than fail.
- */
-beforeEach(function (): void {
+function requireOrbitBinaryBuilt(): void
+{
     if (! file_exists(orbitBinaryPath())) {
         test()->markTestSkipped('orbit binary not built; run `composer test:e2e:binary`.');
     }
-});
+}
 
 /**
  * Resolve the path to the built host-arch native binary.
@@ -166,13 +164,31 @@ function makeSandboxHome(): string
 // ─── Self-tests ────────────────────────────────────────────────────────────────
 
 it('binary exists and is executable', function (): void {
+    requireOrbitBinaryBuilt();
+
     $path = orbitBinaryPath();
 
     expect($path)->toBeFile()
         ->and(is_executable($path))->toBeTrue('Binary at '.$path.' is not executable');
 });
 
+it('keeps the native binary artifact path separate from the source CLI entrypoint', function (): void {
+    $bundleDir = make_temp_directory('binary-bundle-contract');
+
+    try {
+        expect(OrbitCliBinaryBundle::bundledBinaryPath($bundleDir))
+            ->toContain('orbit-binary')
+            ->not->toContain('apps/cli/orbit')
+            ->and(orbitBinaryPath())
+            ->not->toContain('apps/cli/orbit');
+    } finally {
+        remove_directory($bundleDir);
+    }
+});
+
 it('--version prints the expected version', function (): void {
+    requireOrbitBinaryBuilt();
+
     // Parse the version from apps/cli/config/app.php without executing it (env() is not
     // available outside the Laravel boot context, so require would throw).
     $configSource = file_get_contents(repo_path('apps/cli/config/app.php')) ?: '';
@@ -197,6 +213,8 @@ it('--version prints the expected version', function (): void {
 });
 
 it('list exits 0 and shows command groups', function (): void {
+    requireOrbitBinaryBuilt();
+
     $sandboxHome = makeSandboxHome();
 
     try {
@@ -213,6 +231,8 @@ it('list exits 0 and shows command groups', function (): void {
 });
 
 it('gateway command --help loads without missing-extension errors', function (): void {
+    requireOrbitBinaryBuilt();
+
     // Proves that openssl/curl-dependent service providers (GatewayApiServiceProvider,
     // OperationTokenGuardServiceProvider) boot without any "extension not found" error.
     // gateway:status depends on curl+openssl; loading its --help exercises the providers.
@@ -233,6 +253,8 @@ it('gateway command --help loads without missing-extension errors', function ():
 });
 
 it('pdo_sqlite: internal:database-query-local executes SELECT 1 on a temp SQLite file', function (): void {
+    requireOrbitBinaryBuilt();
+
     // Proves the embedded runtime has pdo_sqlite compiled in.
     // The command opens a new SQLite file at a temp path and returns a result row.
     // A missing pdo_sqlite driver would produce a PDOException before the token check,
@@ -279,6 +301,8 @@ it('pdo_sqlite: internal:database-query-local executes SELECT 1 on a temp SQLite
 });
 
 it('proc_open: dns:resolve-tld produces valid JSON output (proc_open is unrestricted)', function (): void {
+    requireOrbitBinaryBuilt();
+
     // dns:resolve-tld calls LocalResolver::isDnsmasqInstalled() which runs
     // `which dnsmasq` via Symfony\Process (proc_open). If proc_open is disabled or
     // restricted, the binary crashes with a PHP fatal error before emitting any output.
@@ -311,6 +335,8 @@ it('proc_open: dns:resolve-tld produces valid JSON output (proc_open is unrestri
 });
 
 it('LocalResolver reads config from $HOME/.config/orbit/dnsmasq.d not from phar:// storage', function (): void {
+    requireOrbitBinaryBuilt();
+
     // Places a dnsmasq.d override file inside a sandboxed HOME, then runs dns:list --json.
     // Asserting the listing returns the override proves LocalResolver::configDir() resolves
     // to $HOME/.config/orbit/dnsmasq.d and not to phar:// (or any other path inside the

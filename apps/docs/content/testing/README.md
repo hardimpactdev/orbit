@@ -73,8 +73,9 @@ gateway API so nodes do not carry executor token signing material.
 
 These rules order the lanes above into a development workflow:
 
-- Source-checkout E2E (the Docker/Incus prepared-topology lanes that overlay the
-  current checkout) is the normal feature feedback loop.
+- Source-mounted Docker feature tests and retained/live Incus topologies are the
+  normal feature feedback loops. Docker is the fast feature lane; Incus is the
+  closest disposable real-topology lane.
 - Retained prepared topologies are for manual diagnosis, debugging, and
   performance testing only. They use the same prepared-topology substrate, are
   not standing live infrastructure, and must be explicitly released or reaped
@@ -86,9 +87,10 @@ These rules order the lanes above into a development workflow:
 - Findings from a retained topology are codified back into ordinary
   prepared-topology Pest E2E tests; the durable assertion lives in Pest, not in a
   kept-alive topology.
-- Binary acceptance is a separate release-candidate lane that runs after
-  source-checkout E2E has passed. It proves the built native CLI artifact and
-  does not replace the source-checkout feature loop.
+- Binary/runtime artifact verification is a separate release-candidate lane that
+  runs after source-mounted lanes pass. It builds the native CLI binary and
+  Docker runtime image, catches packaging and installer regressions, and does
+  not replace the source-mounted feature loop.
 - Provisioning proves installer and `node:new` provisioning behavior, not the
   inner development loop.
 
