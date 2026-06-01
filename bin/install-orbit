@@ -3,6 +3,11 @@
 set -Eeuo pipefail
 
 TARGET_DIR="${ORBIT_INSTALL_PATH:-$HOME/orbit}"
+CONFIG_ROOT="${ORBIT_CONFIG_ROOT:-$HOME/.config/orbit}"
+GATEWAY_STATE_DIR="$CONFIG_ROOT/gateway"
+GATEWAY_ENV_FILE="$GATEWAY_STATE_DIR/.env"
+GATEWAY_DATABASE_DIR="$GATEWAY_STATE_DIR/database"
+GATEWAY_STORAGE_DIR="$GATEWAY_STATE_DIR/storage"
 REPO_URL="${ORBIT_REPO_URL:-https://github.com/hardimpactdev/orbit.git}"
 BRANCH="${ORBIT_BRANCH:-main}"
 SOURCE_ARCHIVE=""
@@ -578,9 +583,9 @@ read_env_var() {
     local key="$1"
     local value
 
-    [ -f "$TARGET_DIR/apps/gateway/.env" ] || return 1
+    [ -f "$GATEWAY_ENV_FILE" ] || return 1
 
-    value="$(grep -E "^${key}=" "$TARGET_DIR/apps/gateway/.env" | tail -n 1 | cut -d= -f2- || true)"
+    value="$(grep -E "^${key}=" "$GATEWAY_ENV_FILE" | tail -n 1 | cut -d= -f2- || true)"
 
     if [ -z "$value" ]; then
         return 1
@@ -592,7 +597,7 @@ read_env_var() {
 write_env_var() {
     local key="$1"
     local value="$2"
-    local env_file="$TARGET_DIR/apps/gateway/.env"
+    local env_file="$GATEWAY_ENV_FILE"
     local tmp_file
 
     ensure_log_file
@@ -679,14 +684,14 @@ clear_laravel_bootstrap_cache() {
 bootstrap_runtime() {
     require_docker
 
-    if [ ! -f "$TARGET_DIR/apps/gateway/.env" ]; then
-        run cp "$TARGET_DIR/apps/gateway/.env.example" "$TARGET_DIR/apps/gateway/.env"
+    run mkdir -p "$GATEWAY_STATE_DIR" "$GATEWAY_DATABASE_DIR" "$GATEWAY_STORAGE_DIR"
+
+    if [ ! -f "$GATEWAY_ENV_FILE" ]; then
+        run cp "$TARGET_DIR/apps/gateway/.env.example" "$GATEWAY_ENV_FILE"
     fi
 
-    run mkdir -p "$TARGET_DIR/apps/gateway/database"
-
-    if [ ! -f "$TARGET_DIR/apps/gateway/database/database.sqlite" ]; then
-        run touch "$TARGET_DIR/apps/gateway/database/database.sqlite"
+    if [ ! -f "$GATEWAY_DATABASE_DIR/database.sqlite" ]; then
+        run touch "$GATEWAY_DATABASE_DIR/database.sqlite"
     fi
 
     ensure_operation_token_secret
@@ -696,17 +701,21 @@ bootstrap_runtime() {
 
     run docker_cli run --rm \
         --pull never \
+        --env "ORBIT_CONFIG_ROOT=$CONFIG_ROOT" \
         -v "$TARGET_DIR":/opt/orbit \
+        --mount "type=bind,source=$CONFIG_ROOT,target=$CONFIG_ROOT" \
         --workdir /opt/orbit/apps/gateway \
         orbit-runtime:current \
         composer install --no-dev --no-interaction --prefer-dist --optimize-autoloader
 
     run docker_cli run --rm \
         --pull never \
+        --env "ORBIT_CONFIG_ROOT=$CONFIG_ROOT" \
         -v "$TARGET_DIR":/opt/orbit \
+        --mount "type=bind,source=$CONFIG_ROOT,target=$CONFIG_ROOT" \
         --workdir /opt/orbit/apps/gateway \
         orbit-runtime:current \
-        bash -lc "grep -q '^APP_KEY=base64:' .env || php artisan key:generate --force --no-interaction"
+        bash -lc "grep -q '^APP_KEY=base64:' \"\$ORBIT_CONFIG_ROOT/gateway/.env\" || php artisan key:generate --force --no-interaction"
 }
 
 container_env_contains() {
@@ -718,6 +727,56 @@ container_env_contains() {
     env_output="$(docker_cli container inspect --format '{{range .Config.Env}}{{println .}}{{end}}' orbit-runtime 2>/dev/null || true)"
 
     grep -qxF -- "$needle" <<<"$env_output"
+}
+
+container_mount_contains() {
+    local expected_source="$1"
+    local expected_destination="$2"
+    local mount_output
+    local normalized_expected_source
+    local normalized_expected_destination
+    local actual_source
+    local actual_destination
+
+    mount_output="$(docker_cli container inspect --format '{{range .Mounts}}{{println .Source}}{{println .Destination}}{{end}}' orbit-runtime 2>/dev/null || true)"
+
+    normalized_expected_source="$(canonicalize_bind_source_path "$expected_source")"
+    normalized_expected_destination="$(normalize_bind_mount_path "$expected_destination")"
+
+    while IFS=$'\t' read -r actual_source actual_destination; do
+        if [ "$(normalize_bind_mount_path "$actual_destination")" = "$normalized_expected_destination" ] && [ "$(canonicalize_bind_source_path "$actual_source")" = "$normalized_expected_source" ]; then
+            return 0
+        fi
+    done < <(paste -d$'\t' - - <<<"$mount_output")
+
+    return 1
+}
+
+normalize_bind_mount_path() {
+    local path="$1"
+
+    if [ "$path" = "/" ]; then
+        printf '/\n'
+        return
+    fi
+
+    printf '%s\n' "${path%/}"
+}
+
+canonicalize_bind_source_path() {
+    local path="$1"
+    local normalized_path
+
+    normalized_path="$(normalize_bind_mount_path "$path")"
+
+    if [ -e "$normalized_path" ]; then
+        (
+            cd "$normalized_path" 2>/dev/null && pwd -P
+        ) || printf '%s\n' "$normalized_path"
+        return
+    fi
+
+    printf '%s\n' "$normalized_path"
 }
 
 prepare_orbit_caddy_host_paths() {
@@ -767,6 +826,16 @@ start_runtime_container() {
             needs_recreate=1
         fi
 
+        if [ "$needs_recreate" = "0" ] && ! container_env_contains "ORBIT_CONFIG_ROOT=$CONFIG_ROOT"; then
+            printf 'orbit-install: existing orbit-runtime container is missing ORBIT_CONFIG_ROOT=%s; recreating so config-root-aware operations work\n' "$CONFIG_ROOT" >&2
+            needs_recreate=1
+        fi
+
+        if [ "$needs_recreate" = "0" ] && ! container_mount_contains "$CONFIG_ROOT" "$CONFIG_ROOT"; then
+            printf 'orbit-install: existing orbit-runtime container is missing config-root bind mount %s:%s; recreating so config-root state is mounted\n' "$CONFIG_ROOT" "$CONFIG_ROOT" >&2
+            needs_recreate=1
+        fi
+
         if [ "$needs_recreate" = "1" ]; then
             run docker_cli rm -f orbit-runtime
         else
@@ -789,10 +858,12 @@ start_runtime_container() {
         --network-alias orbit-runtime \
         --label "orbit.managed=true" \
         --label "orbit.container.kind=runtime" \
+        --env "ORBIT_CONFIG_ROOT=$CONFIG_ROOT" \
         --env "ORBIT_SOURCE_PATH=/opt/orbit" \
         --env "ORBIT_HOST_PATH=$TARGET_DIR" \
         "${gateway_env[@]}" \
         --mount "type=bind,source=$TARGET_DIR,target=/opt/orbit" \
+        --mount "type=bind,source=$CONFIG_ROOT,target=$CONFIG_ROOT" \
         --mount "type=bind,source=/var/run/docker.sock,target=/var/run/docker.sock" \
         --mount "type=bind,source=/etc/caddy,target=/etc/caddy" \
         --mount "type=bind,source=/etc/orbit,target=/etc/orbit" \
@@ -804,9 +875,11 @@ run_migrations_in_container() {
 
     run docker_cli run --rm \
         --pull never \
+        --env "ORBIT_CONFIG_ROOT=$CONFIG_ROOT" \
         -v "$TARGET_DIR":/opt/orbit \
+        --mount "type=bind,source=$CONFIG_ROOT,target=$CONFIG_ROOT" \
         orbit-runtime:current \
-        php /opt/orbit/apps/gateway/artisan migrate --force --no-interaction
+        php /opt/orbit/apps/gateway/artisan migrate --force --no-interaction --path=/opt/orbit/apps/gateway/database/migrations --realpath
 }
 
 # Detect the host OS and architecture and set ORBIT_CLI_OS_ARCH to the

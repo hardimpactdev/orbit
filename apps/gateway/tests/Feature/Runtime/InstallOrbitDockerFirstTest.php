@@ -107,6 +107,7 @@ describe('install-orbit Docker-first runtime contract', function (): void {
             ->toContain('docker_cli run --rm')
             ->toContain('orbit-runtime:current')
             ->toContain('--workdir /opt/orbit/apps/gateway')
+            ->toContain('grep -q \'^APP_KEY=base64:\' \"\$ORBIT_CONFIG_ROOT/gateway/.env\"')
             ->not->toContain('--workdir /opt/orbit/apps/cli')
             ->toContain('composer install --no-dev --no-interaction --prefer-dist --optimize-autoloader')
             ->toContain('php artisan key:generate --force --no-interaction')
@@ -116,11 +117,14 @@ describe('install-orbit Docker-first runtime contract', function (): void {
             ->not->toContain('cd $target && php artisan');
     });
 
-    it('stores gateway Laravel env files under the relocated gateway app', function (): void {
+    it('stores gateway mutable state under the Orbit config root', function (): void {
         expect($this->installer)
-            ->toContain('"$TARGET_DIR/apps/gateway/.env"')
+            ->toContain('GATEWAY_ENV_FILE="$GATEWAY_STATE_DIR/.env"')
             ->toContain('"$TARGET_DIR/apps/gateway/.env.example"')
+            ->toContain('--env "ORBIT_CONFIG_ROOT=$CONFIG_ROOT"')
+            ->toContain('--mount "type=bind,source=$CONFIG_ROOT,target=$CONFIG_ROOT"')
             ->toContain('[ ! -f "$TARGET_DIR/apps/gateway/artisan" ]')
+            ->not->toContain('$TARGET_DIR/apps/gateway/database/database.sqlite')
             ->not->toContain('"$TARGET_DIR/.env"')
             ->not->toContain('"$TARGET_DIR/.env.example"')
             ->not->toContain('[ ! -f "$TARGET_DIR/artisan" ]');
@@ -377,7 +381,8 @@ BASH);
             ->toContain('docker_cli run --rm')
             ->toContain('-v "$TARGET_DIR":/opt/orbit')
             ->toContain('orbit-runtime:current')
-            ->toContain('php /opt/orbit/apps/gateway/artisan migrate --force --no-interaction')
+            ->toContain('php /opt/orbit/apps/gateway/artisan migrate --force --no-interaction --path=/opt/orbit/apps/gateway/database/migrations --realpath')
+            ->not->toContain('php /opt/orbit/apps/gateway/artisan migrate --force --no-interaction"')
             ->not->toContain('php /opt/orbit/artisan migrate --force --no-interaction')
             ->not->toContain('docker_cli exec \\')
             ->and($migrationStep)->not->toBeFalse()

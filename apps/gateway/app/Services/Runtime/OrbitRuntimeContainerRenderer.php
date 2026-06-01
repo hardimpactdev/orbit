@@ -17,14 +17,15 @@ class OrbitRuntimeContainerRenderer
      */
     public function render(
         string $orbitCheckoutPath,
-        ?string $gatewayDatabasePath = null,
+        ?string $gatewayConfigRoot = null,
         string $image = 'orbit-runtime:current',
         array $environment = [],
     ): OrbitRuntimeContainer {
         $resolvedEnvironment = $this->stringEnvironment($environment);
         $resolvedEnvironment['ORBIT_SOURCE_PATH'] = OrbitRuntimeContainer::SourcePath;
 
-        if ($gatewayDatabasePath !== null) {
+        if ($gatewayConfigRoot !== null) {
+            $resolvedEnvironment['ORBIT_CONFIG_ROOT'] = $this->normalizePath($gatewayConfigRoot, 'gatewayConfigRoot');
             $resolvedEnvironment['ORBIT_IS_GATEWAY'] = '1';
             $resolvedEnvironment['ORBIT_TRUST_WIREGUARD_PROXY_HEADER'] = '1';
         }
@@ -42,10 +43,12 @@ class OrbitRuntimeContainerRenderer
             ],
         ];
 
-        if ($gatewayDatabasePath !== null) {
+        if ($gatewayConfigRoot !== null) {
+            $resolvedGatewayConfigRoot = $this->normalizePath($gatewayConfigRoot, 'gatewayConfigRoot');
+
             $mounts[] = [
-                'source' => $this->normalizePath($gatewayDatabasePath, 'gatewayDatabasePath'),
-                'target' => OrbitRuntimeContainer::SourcePath.'/apps/gateway/database/database.sqlite',
+                'source' => $resolvedGatewayConfigRoot,
+                'target' => $resolvedGatewayConfigRoot,
                 'read_only' => false,
             ];
         }

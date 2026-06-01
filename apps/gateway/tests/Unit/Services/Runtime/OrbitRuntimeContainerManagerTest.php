@@ -20,7 +20,7 @@ function runtimeContainerForManagerTest(): OrbitRuntimeContainer
 {
     return (new OrbitRuntimeContainerRenderer(new OrbitContainerNames))->render(
         orbitCheckoutPath: '/home/orbit/orbit',
-        gatewayDatabasePath: '/home/orbit/orbit/apps/gateway/database/database.sqlite',
+        gatewayConfigRoot: '/home/orbit/.config/orbit',
     );
 }
 

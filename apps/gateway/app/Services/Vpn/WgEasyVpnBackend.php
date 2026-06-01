@@ -458,7 +458,7 @@ JS;
 
     private function updateEnvironmentPassword(string $password): void
     {
-        $envPath = base_path('.env');
+        $envPath = app()->environmentFilePath();
 
         if (! file_exists($envPath)) {
             return;

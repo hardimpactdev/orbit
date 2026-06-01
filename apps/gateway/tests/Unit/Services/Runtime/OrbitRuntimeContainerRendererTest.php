@@ -44,18 +44,24 @@ it('renders the Orbit runtime container with deterministic network, env, restart
         ]);
 });
 
-it('renders the gateway database bind mount and gateway env when a gateway database path is supplied', function (): void {
+it('renders the gateway config root bind mount and gateway env when a gateway config root is supplied', function (): void {
     $container = (new OrbitRuntimeContainerRenderer(new OrbitContainerNames))->render(
         orbitCheckoutPath: '/home/orbit/orbit',
-        gatewayDatabasePath: '/home/orbit/orbit/apps/gateway/database/database.sqlite',
+        gatewayConfigRoot: '/home/orbit/.config/orbit',
     );
 
     expect($container->environment())->toMatchArray([
+        'ORBIT_CONFIG_ROOT' => '/home/orbit/.config/orbit',
         'ORBIT_IS_GATEWAY' => '1',
         'ORBIT_SOURCE_PATH' => OrbitRuntimeContainer::SourcePath,
         'ORBIT_TRUST_WIREGUARD_PROXY_HEADER' => '1',
     ])
         ->and($container->mounts())->toContain([
+            'source' => '/home/orbit/.config/orbit',
+            'target' => '/home/orbit/.config/orbit',
+            'read_only' => false,
+        ])
+        ->and($container->mounts())->not->toContain([
             'source' => '/home/orbit/orbit/apps/gateway/database/database.sqlite',
             'target' => OrbitRuntimeContainer::SourcePath.'/apps/gateway/database/database.sqlite',
             'read_only' => false,

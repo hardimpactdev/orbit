@@ -193,7 +193,7 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
-        //
+        $this->loadMigrationsFrom(base_path('database/migrations'));
     }
 
     private function orbitConfigPath(): string

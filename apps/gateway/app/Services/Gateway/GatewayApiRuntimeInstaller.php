@@ -100,14 +100,30 @@ class GatewayApiRuntimeInstaller
     private function ensureOrbitRuntimeContainer(string $orbitPath): void
     {
         $resolvedPath = $orbitPath !== '' ? $orbitPath : repo_path();
-        $databasePath = $resolvedPath.'/apps/gateway/database/database.sqlite';
 
         $container = $this->runtimeRenderer->render(
             orbitCheckoutPath: $resolvedPath,
-            gatewayDatabasePath: $databasePath,
+            gatewayConfigRoot: $this->resolveConfigRoot(),
         );
 
         $this->runtimeManager->apply($container);
+    }
+
+    private function resolveConfigRoot(): string
+    {
+        $configRoot = getenv('ORBIT_CONFIG_ROOT');
+
+        if (! is_string($configRoot) || trim($configRoot) === '') {
+            $home = getenv('HOME');
+
+            if (! is_string($home) || trim($home) === '') {
+                $home = '/home/orbit';
+            }
+
+            $configRoot = rtrim($home, '/').'/.config/orbit';
+        }
+
+        return rtrim($configRoot, '/');
     }
 
     /**

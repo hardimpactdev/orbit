@@ -228,7 +228,7 @@ Gateway bootstrap also installs the runtime substrate for the gateway-coupled
 
 - `wg-easy` (the active `vpn` role WireGuard server runtime) is installed under
   `~/.config/orbit/wg-easy/`. The admin password is generated and persisted as
-  `WG_EASY_PASSWORD` in `apps/gateway/.env` so that wg-easy v15 can run
+  `WG_EASY_PASSWORD` in `ORBIT_CONFIG_ROOT/gateway/.env` (default `~/.config/orbit/gateway/.env`) so that wg-easy v15 can run
   unattended setup.
 - `wg-easy` owns UDP `51820`. The gateway host's `wg-orbit` interface is
   configured as a peer/client of `wg-easy`, not as a second WireGuard server.
