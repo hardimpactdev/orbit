@@ -574,7 +574,7 @@ final class E2ECurrentCheckout
             $runtimeDirectories,
             self::dockerTopologyProviderEnvCommand($dockerTopology),
             self::operationTokenSecretEnvCommand($operationTokenSecret),
-            self::appKeyCommand(runArtisanInDockerRuntime: $runArtisanInDockerRuntime ?? false, remotePath: $remotePath, dockerRuntimeContainer: $dockerRuntimeContainer),
+            self::appKeyCommand(runArtisanInDockerRuntime: $runArtisanInDockerRuntime, remotePath: $remotePath, dockerRuntimeContainer: $dockerRuntimeContainer),
         ]);
     }
 

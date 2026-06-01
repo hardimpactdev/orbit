@@ -336,6 +336,7 @@ it('filters unavailable docker runners before starting Pest workers', function (
 
     withE2EEnvironment([], [
         'ORBIT_E2E_DOCKER_TEST_RUNNERS' => 'sidecar1:4:28,macbook:4:28',
+        'ORBIT_E2E_DOCKER_SOURCE_PATH_SIDECAR1' => '/srv/orbit/source',
     ], function (): void {
         $this->artisan('e2e:test --lanes=docker')
             ->expectsOutputToContain('E2E Docker runner [macbook] ignored: docker daemon is not reachable')
@@ -428,6 +429,7 @@ it('fails when a required docker prepared image is missing before invoking pest'
 
     withE2EEnvironment([], [
         'ORBIT_E2E_DOCKER_TEST_RUNNERS' => 'sidecar1:4:28',
+        'ORBIT_E2E_DOCKER_SOURCE_PATH_SIDECAR1' => '/srv/orbit/source',
     ], function () use (&$exitCode, &$output): void {
         $exitCode = Artisan::call('e2e:test', ['--lanes' => 'docker']);
         $output = Artisan::output();
@@ -471,6 +473,7 @@ it('checks docker prepared artifacts before invoking explicit test paths', funct
 
     withE2EEnvironment([], [
         'ORBIT_E2E_DOCKER_TEST_RUNNERS' => 'sidecar1:4:28',
+        'ORBIT_E2E_DOCKER_SOURCE_PATH_SIDECAR1' => '/srv/orbit/source',
     ], function () use (&$exitCode, &$output): void {
         $exitCode = Artisan::call('e2e:test --lanes=docker');
         $output = Artisan::output();
@@ -516,6 +519,7 @@ it('suggests the runtime artifact command when docker support images are missing
 
     withE2EEnvironment([], [
         'ORBIT_E2E_DOCKER_TEST_RUNNERS' => 'sidecar1:4:28',
+        'ORBIT_E2E_DOCKER_SOURCE_PATH_SIDECAR1' => '/srv/orbit/source',
     ], function () use (&$exitCode, &$output): void {
         $exitCode = Artisan::call('e2e:test', ['--lanes' => 'docker']);
         $output = Artisan::output();

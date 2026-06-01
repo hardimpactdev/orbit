@@ -59,7 +59,8 @@ class BootstrapGatewayLocalCommand extends Command
             throw new RuntimeException('Name and wireguard-address are required.');
         }
 
-        $enrollment = DB::transaction(function () use ($name, $wireguardAddress, $identity, $gatewayTld, $publicHost, $hostKey): ?array {
+        /** @var array{gateway_name: string, gateway_public_key: string, gateway_private_key: string, gateway_pre_shared_key: string|null, gateway_wireguard_address: string|null, operator_name: string, operator_public_key: string, operator_private_key: string, operator_pre_shared_key: string|null, operator_wireguard_address: string|null}|null $enrollment */
+        $enrollment = DB::transaction(function () use ($name, $wireguardAddress, $identity, $gatewayTld, $publicHost, $hostKey) {
             $gateway = Node::query()->updateOrCreate(
                 ['name' => $name],
                 [

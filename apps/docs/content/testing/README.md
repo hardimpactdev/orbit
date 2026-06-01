@@ -62,20 +62,21 @@ operator, or app nodes as verification targets.
 
 For the MONO local-executor migration, prepared Docker and Incus E2E are the
 primary verification paths. Standing live infrastructure is diagnostic only.
-Source-mounted Docker and Incus topologies are the development and E2E lanes.
-Production installs remain a separate native CLI binary artifact lane. In
-source-mounted nodes, `/usr/local/bin/orbit` points directly at
-`<source>/apps/cli/orbit`, mutable node-local Orbit state lives under
-`~/.config/orbit`, and executor operation tokens are verified through the
-gateway API so nodes do not carry executor token signing material.
+Source-mounted Docker feature tests and retained/live Incus development
+topologies are the source-mounted feedback loops. Production installs remain a
+separate native CLI binary artifact lane. In source-mounted nodes,
+`/usr/local/bin/orbit` points directly at `<source>/apps/cli/orbit`, mutable
+node-local Orbit state lives under `~/.config/orbit`, and executor operation
+tokens are verified through the gateway API so nodes do not carry executor
+token signing material.
 
 ## Development lane invariant
 
 These rules order the lanes above into a development workflow:
 
-- Source-mounted Docker feature tests and retained/live Incus topologies are the
-  normal feature feedback loops. Docker is the fast feature lane; Incus is the
-  closest disposable real-topology lane.
+- Source-mounted Docker feature tests are the fast feature loop. Retained/live
+  source-mounted Incus development topologies are the closest disposable
+  real-topology loop.
 - Retained prepared topologies are for manual diagnosis, debugging, and
   performance testing only. They use the same prepared-topology substrate, are
   not standing live infrastructure, and must be explicitly released or reaped
