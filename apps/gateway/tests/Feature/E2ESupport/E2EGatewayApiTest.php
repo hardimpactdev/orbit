@@ -132,7 +132,7 @@ it('seeds operator identity with a gateway admin grant', function (): void {
 
     E2EGatewayApi::seedOperatorIdentity($instance, '10.6.0.3', 'orbit');
 
-    $seedCommand = collect($instance->commands)->first(fn (string $command): bool => str_contains($command, 'orbit-gateway:current')
+    $seedCommand = collect($instance->commands)->first(fn (string $command): bool => str_contains($command, 'orbit-gateway:prepared-current')
         && str_contains($command, 'artisan tinker --execute='));
 
     expect($seedCommand)->toBeString()
@@ -142,7 +142,7 @@ it('seeds operator identity with a gateway admin grant', function (): void {
         ->toContain('DB_DATABASE=/home/orbit/.config/orbit/gateway.sqlite')
         ->toContain('SESSION_DRIVER=file')
         ->toContain('type=bind,source=/home/orbit/.config/orbit,target=/home/orbit/.config/orbit')
-        ->toContain('orbit-gateway:current')
+        ->toContain('orbit-gateway:prepared-current')
         ->toContain('artisan tinker --execute=')
         ->toContain('chown -R orbit:orbit')
         ->toContain('/home/orbit/.config/orbit')
@@ -267,7 +267,7 @@ it('starts Incus gateway API support from orbit-gateway containers without host 
     E2EGatewayApi::start($instance, 'runtime-env', '/home/orbit/orbit-current', '10.6.0.2');
 
     $setup = implode("\n", $instance->commands);
-    $certificateCommand = collect($instance->commands)->first(fn (string $command): bool => str_contains($command, 'orbit-gateway:current')
+    $certificateCommand = collect($instance->commands)->first(fn (string $command): bool => str_contains($command, 'orbit-gateway:prepared-current')
         && str_contains($command, 'artisan tinker --execute='));
     $httpStart = collect($instance->commands)->first(fn (string $command): bool => str_contains($command, '--name')
         && str_contains($command, 'orbit-gateway-e2e-runtime-env-http')
@@ -280,7 +280,7 @@ it('starts Incus gateway API support from orbit-gateway containers without host 
         ->toContain('docker run --rm --pull never')
         ->toContain('docker run --rm --detach')
         ->toContain('--network host')
-        ->toContain('orbit-gateway:current')
+        ->toContain('orbit-gateway:prepared-current')
         ->toContain('/home/orbit/.config/orbit')
         ->toContain('/usr/local/bin/orbit:/usr/local/bin/orbit-cli')
         ->toContain('/home/orbit/.ssh:/home/orbit/.ssh')
@@ -367,7 +367,7 @@ it('reads Incus gateway nodes through orbit-gateway image commands', function ()
 
     expect($command)
         ->toContain('docker run --rm --pull never')
-        ->toContain('orbit-gateway:current')
+        ->toContain('orbit-gateway:prepared-current')
         ->toContain('artisan tinker --execute=')
         ->toContain('DB_DATABASE=/home/orbit/.config/orbit/gateway.sqlite')
         ->not->toContain('cd /home/orbit/orbit')

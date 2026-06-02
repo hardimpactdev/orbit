@@ -8,8 +8,6 @@ final readonly class E2EGatewayApi
 {
     private const string OrbitConfigRoot = '/home/orbit/.config/orbit';
 
-    private const string GatewayImage = 'orbit-gateway:current';
-
     private const string GatewayContainerOrbitPath = '/srv/orbit';
 
     private const string HostOrbitCliPath = '/usr/local/bin/orbit';
@@ -2008,10 +2006,15 @@ PHP;
             $arguments[] = '-v '.escapeshellarg('/root/.ssh:/root/.ssh:ro');
         }
 
-        $arguments[] = self::GatewayImage;
+        $arguments[] = escapeshellarg(self::gatewayImage());
         $arguments[] = 'sh -lc '.escapeshellarg($script);
 
         return 'docker rm -f '.escapeshellarg($container).' >/dev/null 2>&1 || true && '.implode(' ', $arguments);
+    }
+
+    private static function gatewayImage(): string
+    {
+        return DockerTopologyProvider::gatewayImage();
     }
 
     private static function dockerTopologyProviderEnvCommand(bool $dockerTopology): string
