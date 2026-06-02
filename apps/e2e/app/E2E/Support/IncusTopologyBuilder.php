@@ -689,6 +689,7 @@ class IncusTopologyBuilder
         $this->timer->measure('prepared-websocket.gateway.api.ready-after-downstream-bake', fn () => E2EGatewayApi::waitForGatewayApi($instances['operator'], $this->host->config->operatorUser, $key));
         $this->timer->measure('prepared-websocket.dev.database-redis-seed', fn () => $this->seedAppdevDatabaseAndRedis($instances['gateway']));
         $this->timer->measure('prepared-websocket.e2e-deps', fn () => $this->installE2EBaseDependencies($instances));
+        $this->timer->measure('prepared-websocket.dev.runtime-prerequisites', fn () => $this->installPreparedWebSocketRuntimePrerequisites($dev));
         $this->timer->measure('prepared-websocket.websocket.bake', fn () => $this->runPreparedWebSocketBake(
             $instances['gateway'],
             $devIp,
@@ -769,6 +770,68 @@ if command -v systemctl >/dev/null 2>&1; then
     sudo systemctl enable --now supervisor.service || true
 fi
 BASH;
+
+        return 'bash -lc '.escapeshellarg($script);
+    }
+
+    private function installPreparedWebSocketRuntimePrerequisites(IncusInstance $instance): void
+    {
+        $bundleDir = $this->remoteBundleDir;
+
+        if ($bundleDir === null) {
+            throw new RuntimeException('No provisioning bundle has been staged.');
+        }
+
+        $guestArchive = '/var/tmp/'.E2EArtifactProdManifest::GatewayImageArchive;
+        $hostArchive = "{$bundleDir}/".E2EArtifactProdManifest::GatewayImageArchive;
+
+        $push = $this->host->run(sprintf(
+            'incus file push %s %s',
+            escapeshellarg($hostArchive),
+            escapeshellarg("{$instance->name()}{$guestArchive}"),
+        ), timeoutSeconds: 300);
+
+        if (! $push->successful()) {
+            throw new RuntimeException("Could not push gateway image archive into [{$instance->name()}]: {$push->errorOutput()}");
+        }
+
+        E2ECommand::exec(
+            $instance,
+            $this->preparedWebSocketRuntimePrerequisitesCommand($guestArchive, DockerTopologyProvider::gatewayImage()),
+            "Could not install prepared websocket runtime prerequisites on {$instance->name()}",
+            timeoutSeconds: 900,
+        );
+    }
+
+    private function preparedWebSocketRuntimePrerequisitesCommand(string $gatewayImageArchive, string $preparedGatewayImage): string
+    {
+        $script = sprintf(
+            <<<'BASH'
+set -euo pipefail
+
+if ! command -v docker >/dev/null 2>&1; then
+    sudo apt-get -o DPkg::Lock::Timeout=300 update -qq
+    sudo DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=300 install -y -qq docker.io
+fi
+
+if command -v systemctl >/dev/null 2>&1; then
+    sudo systemctl enable --now docker || sudo systemctl start docker || true
+fi
+
+if getent group docker >/dev/null 2>&1; then
+    sudo usermod -aG docker "$(id -un)"
+fi
+
+sudo docker load -i %s
+if sudo docker image inspect %s >/dev/null 2>&1; then
+    sudo docker tag %s 'orbit-gateway:current'
+fi
+sudo docker image inspect 'orbit-gateway:current' >/dev/null
+BASH,
+            escapeshellarg($gatewayImageArchive),
+            escapeshellarg($preparedGatewayImage),
+            escapeshellarg($preparedGatewayImage),
+        );
 
         return 'bash -lc '.escapeshellarg($script);
     }

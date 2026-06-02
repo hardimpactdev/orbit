@@ -409,6 +409,7 @@ it('builds full prepared websocket roles on the app-dev node', function (): void
         $commandOutput = implode("\n", $commands);
         $phaseNames = array_column($timer->events(), 'name');
         $realWireGuardPhase = array_search('prepared-websocket.real-wireguard', $phaseNames, true);
+        $runtimePrerequisitesPhase = array_search('prepared-websocket.dev.runtime-prerequisites', $phaseNames, true);
         $websocketBakePhase = array_search('prepared-websocket.websocket.bake', $phaseNames, true);
 
         expect($manifest)->toHaveCount(5)
@@ -429,12 +430,21 @@ it('builds full prepared websocket roles on the app-dev node', function (): void
             ->and($commandOutput)->toContain('10.6.0.4')
             ->and($commandOutput)->toContain('--redis-node=')
             ->and($commandOutput)->toContain('app-dev-1')
+            ->and($commandOutput)->toContain('incus file push')
+            ->and($commandOutput)->toContain('orbit-gateway-current.tar')
+            ->and($commandOutput)->toContain('docker.io')
+            ->and($commandOutput)->toContain('docker load -i')
+            ->and($commandOutput)->toContain('docker tag')
+            ->and($commandOutput)->toContain('orbit-gateway:prepared-current')
+            ->and($commandOutput)->toContain('orbit-gateway:current')
             ->and($commandOutput)->toContain('--converge-runtime')
             ->and($commandOutput)->not->toContain('--environment=')
             ->and($commandOutput)->not->toContain('node.role')
             ->and($realWireGuardPhase)->toBeInt()
+            ->and($runtimePrerequisitesPhase)->toBeInt()
             ->and($websocketBakePhase)->toBeInt()
-            ->and($realWireGuardPhase)->toBeLessThan($websocketBakePhase);
+            ->and($realWireGuardPhase)->toBeLessThan($runtimePrerequisitesPhase)
+            ->and($runtimePrerequisitesPhase)->toBeLessThan($websocketBakePhase);
     });
 });
 

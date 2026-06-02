@@ -48,6 +48,10 @@ it('converges websocket backend TLS material and runtime container through the r
     expect($this->webSocketBaselineIssued->getArrayCopy())->toBe([
         ['host' => '10.6.0.44', 'additional_sans' => ['10.6.0.44']],
     ])
+        ->and(NodeTool::query()
+            ->where('node_id', $node->id)
+            ->where('name', 'docker')
+            ->value('expected_state'))->toBe('running')
         ->and($scripts)->toContain("sudo install -d -m 0755 '/etc/orbit/certs'")
         ->and($scripts)->toContain('release_dir="${runtime_root}/releases/')
         ->and($scripts)->toContain('sudo install -d -m 0755 "$release_dir"')

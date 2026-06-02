@@ -8,6 +8,7 @@ use App\Data\Nodes\RoleSettings\WebSocketRoleSettings;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
+use App\Services\Tools\ToolCatalog;
 use App\Services\WebSockets\WebSocketCertificateInstaller;
 use App\Services\WebSockets\WebSocketRuntimeContainer;
 use App\Services\WebSockets\WebSocketRuntimeContainerManager;
@@ -17,12 +18,15 @@ use RuntimeException;
 
 class WebSocketRoleBaseline implements RoleBaseline
 {
+    use ManagesNodeToolBaseline;
+
     public function __construct(
         private readonly WebSocketRuntimeContainerRenderer $runtimeRenderer,
         private readonly WebSocketRuntimeContainerManager $runtimeManager,
         private readonly WebSocketCertificateInstaller $certificateInstaller,
         private readonly WebSocketRuntimeSourceInstaller $sourceInstaller,
         private readonly ?NodeRoleAssignments $nodeRoleAssignments = null,
+        private readonly ?ToolCatalog $toolCatalog = null,
     ) {}
 
     public function converge(Node $node, NodeRoleAssignment $assignment): void
@@ -41,6 +45,7 @@ class WebSocketRoleBaseline implements RoleBaseline
 
         $container = $this->runtimeContainerFor($node, $assignment);
 
+        $this->convergeTools($node, ['docker']);
         $this->certificateInstaller->ensureFor($node);
         $this->sourceInstaller->install($node);
         $this->runtimeManager->apply($node, $container);
@@ -67,5 +72,10 @@ class WebSocketRoleBaseline implements RoleBaseline
     private function nodeRoleAssignments(): NodeRoleAssignments
     {
         return $this->nodeRoleAssignments ?? app(NodeRoleAssignments::class);
+    }
+
+    protected function toolCatalog(): ToolCatalog
+    {
+        return $this->toolCatalog ?? app(ToolCatalog::class);
     }
 }
