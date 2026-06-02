@@ -401,11 +401,15 @@ it('builds full prepared websocket roles on the app-dev node', function (): void
             return incusTopologyBuilderProcessResult();
         });
 
-        $builder = new IncusTopologyBuilder($host);
+        $timer = new E2EPhaseTimer;
+        $builder = new IncusTopologyBuilder($host, $timer);
         $builder->useBundle('/tmp/orbit-e2e-bundle-test');
 
         $manifest = $builder->build(E2ETopologyKind::OperatorGatewayAppdevAppprodAgentWebsocket);
         $commandOutput = implode("\n", $commands);
+        $phaseNames = array_column($timer->events(), 'name');
+        $realWireGuardPhase = array_search('prepared-websocket.real-wireguard', $phaseNames, true);
+        $websocketBakePhase = array_search('prepared-websocket.websocket.bake', $phaseNames, true);
 
         expect($manifest)->toHaveCount(5)
             ->and($manifest)->sequence(
@@ -427,7 +431,10 @@ it('builds full prepared websocket roles on the app-dev node', function (): void
             ->and($commandOutput)->toContain('app-dev-1')
             ->and($commandOutput)->toContain('--converge-runtime')
             ->and($commandOutput)->not->toContain('--environment=')
-            ->and($commandOutput)->not->toContain('node.role');
+            ->and($commandOutput)->not->toContain('node.role')
+            ->and($realWireGuardPhase)->toBeInt()
+            ->and($websocketBakePhase)->toBeInt()
+            ->and($realWireGuardPhase)->toBeLessThan($websocketBakePhase);
     });
 });
 

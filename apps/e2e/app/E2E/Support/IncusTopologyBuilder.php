@@ -685,6 +685,7 @@ class IncusTopologyBuilder
             $prodIp,
             $agentIp,
         ));
+        $this->timer->measure('prepared-websocket.real-wireguard', fn () => $this->installRealWireGuard($instances));
         $this->timer->measure('prepared-websocket.gateway.api.ready-after-downstream-bake', fn () => E2EGatewayApi::waitForGatewayApi($instances['operator'], $this->host->config->operatorUser, $key));
         $this->timer->measure('prepared-websocket.dev.database-redis-seed', fn () => $this->seedAppdevDatabaseAndRedis($instances['gateway']));
         $this->timer->measure('prepared-websocket.e2e-deps', fn () => $this->installE2EBaseDependencies($instances));
@@ -692,7 +693,6 @@ class IncusTopologyBuilder
             $instances['gateway'],
             $devIp,
         ));
-        $this->timer->measure('prepared-websocket.real-wireguard', fn () => $this->installRealWireGuard($instances));
 
         return $instances;
     }
