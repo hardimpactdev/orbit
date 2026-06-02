@@ -36,6 +36,9 @@ describe('GatewayApiRuntimeInstaller', function (): void {
         $this->tempStorage = sys_get_temp_dir().'/orbit-gateway-api-runtime-test-'.uniqid();
         mkdir($this->tempStorage.'/app/orbit', 0777, true);
         app()->useStoragePath($this->tempStorage);
+        $this->tempConfigRoot = "{$this->tempStorage}/config";
+        File::ensureDirectoryExists($this->tempConfigRoot);
+        config()->set('orbit.paths.config_root', $this->tempConfigRoot);
         $this->databasePath = $this->tempStorage.'/gateway-test.sqlite';
 
         touch($this->databasePath);
@@ -81,8 +84,8 @@ describe('GatewayApiRuntimeInstaller', function (): void {
     it('issues a leaf certificate and routes the gateway API through orbit-caddy to orbit-runtime', function (): void {
         $writtenGlobalCaddyfile = null;
         $writtenGatewayApiCaddyfile = null;
-        $caDir = storage_path('app/orbit/ca');
-        $certsDir = storage_path('app/orbit/certs');
+        $caDir = $this->tempConfigRoot.'/ca';
+        $certsDir = $this->tempConfigRoot.'/certs';
 
         File::ensureDirectoryExists($caDir);
         File::ensureDirectoryExists($certsDir);
@@ -140,8 +143,8 @@ describe('GatewayApiRuntimeInstaller', function (): void {
 
     it('preserves real-time streaming through the containerized gateway api with flush_interval disabled', function (): void {
         $writtenGatewayApiCaddyfile = null;
-        $caDir = storage_path('app/orbit/ca');
-        $certsDir = storage_path('app/orbit/certs');
+        $caDir = $this->tempConfigRoot.'/ca';
+        $certsDir = $this->tempConfigRoot.'/certs';
 
         File::ensureDirectoryExists($caDir);
         File::ensureDirectoryExists($certsDir);
@@ -175,8 +178,8 @@ describe('GatewayApiRuntimeInstaller', function (): void {
     });
 
     it('ensures the orbit-runtime container before writing the gateway API Caddy config', function (): void {
-        $caDir = storage_path('app/orbit/ca');
-        $certsDir = storage_path('app/orbit/certs');
+        $caDir = $this->tempConfigRoot.'/ca';
+        $certsDir = $this->tempConfigRoot.'/certs';
 
         File::ensureDirectoryExists($caDir);
         File::ensureDirectoryExists($certsDir);
@@ -235,8 +238,8 @@ describe('GatewayApiRuntimeInstaller', function (): void {
     });
 
     it('reloads the orbit-caddy container and never installs or restarts host PHP-FPM or host Caddy', function (): void {
-        $caDir = storage_path('app/orbit/ca');
-        $certsDir = storage_path('app/orbit/certs');
+        $caDir = $this->tempConfigRoot.'/ca';
+        $certsDir = $this->tempConfigRoot.'/certs';
 
         File::ensureDirectoryExists($caDir);
         File::ensureDirectoryExists($certsDir);
@@ -283,8 +286,8 @@ describe('GatewayApiRuntimeInstaller', function (): void {
         mkdir($tempContainerRoot, 0777, true);
         app()->useStoragePath($tempContainerRoot);
 
-        $caDir = storage_path('app/orbit/ca');
-        $certsDir = storage_path('app/orbit/certs');
+        $caDir = $this->tempConfigRoot.'/ca';
+        $certsDir = $this->tempConfigRoot.'/certs';
         File::ensureDirectoryExists($caDir);
         File::ensureDirectoryExists($certsDir);
         File::put("{$caDir}/root.key", 'test-root-key');
@@ -337,8 +340,8 @@ describe('GatewayApiRuntimeInstaller', function (): void {
         $writtenGlobalCaddyfile = null;
         $writtenGatewayApiCaddyfile = null;
 
-        $caDir = storage_path('app/orbit/ca');
-        $certsDir = storage_path('app/orbit/certs');
+        $caDir = $this->tempConfigRoot.'/ca';
+        $certsDir = $this->tempConfigRoot.'/certs';
 
         File::ensureDirectoryExists($caDir);
         File::ensureDirectoryExists($certsDir);

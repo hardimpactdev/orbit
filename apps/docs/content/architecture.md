@@ -234,16 +234,16 @@ token. In source-mounted nodes, node-local mutable Orbit state lives under
 `~/.config/orbit`.
 
 Gateway operation tokens are minted by the gateway-side operation token
-factory, using `ORBIT_OPERATION_TOKEN_SECRET` and the configured
+factory, using the gateway Laravel `APP_KEY` and the configured
 `ORBIT_OPERATION_TOKEN_TTL_SECONDS` value. The default TTL is 120 seconds. Each
 token carries the operation id, target node, internal command name, issued
 timestamp, expiry timestamp, and signature. Internal executor commands verify
-operation tokens through the gateway API before side effects. Missing signing
-secret configuration prevents minting; token minting is stateless and uses the
+operation tokens through the gateway API before side effects. Missing `APP_KEY`
+configuration prevents minting; token minting is stateless and uses the
 existing operation id rather than creating operation persistence itself. Nodes
-do not store executor token signing material. Known node provisioning also
-persists `ORBIT_NODE_IDENTITY` so internal executor commands can verify the
-token target.
+do not store executor token signing material or target-node identity env values;
+the gateway derives the node from the authenticated WireGuard API request when
+verifying the token target.
 
 ### Authentication and authorization
 

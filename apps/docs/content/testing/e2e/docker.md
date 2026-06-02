@@ -79,8 +79,9 @@ role.
 Runner hosts need the six canonical role images plus the runtime support
 images used by gateway-backed topologies: `orbit-runtime`, `orbit-caddy`, and
 the FrankenPHP images listed by `PhpRuntimeCatalog`. `orbit-e2e-topology-runtime`
-and `composer:2` are build-host helpers for preparing those images; they are not
-separate topology roles.
+is a build-host helper for preparing those images. Remote source-mounted live
+runs may use `composer:2` transiently on the runner to hydrate the synced
+gateway and CLI vendor directories, but it is not a topology role image.
 
 ## Host transport
 
@@ -113,12 +114,19 @@ CLI SSH transport, SSH multiplexing, or Docker context/env state. Do not switch
 the E2E provider to `ssh host docker ...`; the supported remote Docker transport
 is `DOCKER_HOST=ssh://<host>`.
 
-Source-mounted Docker topologies require the Docker daemon to see the checkout
-path. The local daemon uses the current worktree path automatically. Remote
-Docker runners must mount or synchronize the same checkout on the Docker host
-and set `ORBIT_E2E_DOCKER_SOURCE_PATH=/host/visible/orbit`, or the host-specific
-`ORBIT_E2E_DOCKER_SOURCE_PATH_<HOST>=/host/visible/orbit`. Remote runners
-without a configured source path are treated as unavailable.
+Source-mounted Docker topologies mount the initiating worktree at
+`/home/orbit/orbit`. The local daemon uses the current worktree path directly.
+Remote Docker runners rsync the current worktree to a stable host path before
+acquisition, then bind-mount that synced path. The generated remote path is
+`/tmp/orbit-e2e-sources/<worktree>-<hash>`; override it with
+`ORBIT_E2E_DOCKER_SOURCE_PATH=/host/visible/orbit` or the host-specific
+`ORBIT_E2E_DOCKER_SOURCE_PATH_<HOST>=/host/visible/orbit` only when a host needs
+a fixed path.
+
+The source sync excludes dependency directories, build output, env files,
+SQLite files, and gateway runtime state. After rsync, the runner hydrates
+`apps/gateway/vendor` and `apps/cli/vendor` on the remote path from the synced
+lockfiles. Vendor is refreshed only when the lock marker changes.
 
 ## Host pool
 

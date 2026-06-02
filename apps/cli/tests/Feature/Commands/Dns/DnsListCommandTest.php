@@ -143,18 +143,6 @@ describe('dns:list', function (): void {
     });
 
     describe('failure cases', function (): void {
-        it('returns validation_failed with not_supported_on_gateway when is_gateway is true', function (): void {
-            config()->set('orbit.is_gateway', true);
-
-            [$exitCode, $output] = runCommand($this, 'dns:list', ['--json' => true]);
-
-            $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
-
-            expect($exitCode)->toBe(1)
-                ->and($decoded['error']['code'])->toBe('validation_failed')
-                ->and($decoded['error']['meta']['reason'])->toBe('not_supported_on_gateway');
-        });
-
         it('returns node.unsupported_platform when resolver is not supported', function (): void {
             $this->resolver->supportedValue = false;
             $this->resolver->platformValue = 'unsupported';

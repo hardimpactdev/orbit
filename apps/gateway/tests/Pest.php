@@ -48,8 +48,6 @@ ParallelRunner::resolveApplicationUsing(function (): Application {
 
 pest()->extend(TestCase::class)
     ->beforeEach(function (): void {
-        config(['orbit.is_gateway' => true]);
-
         if (orbitIsDnsCommandTest($this)) {
             $storagePath = orbitDnsTestStoragePath();
 

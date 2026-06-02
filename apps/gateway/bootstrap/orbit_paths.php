@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 return (static function (): array {
+    $gatewayRoot = dirname(__DIR__);
     $configRoot = getenv('ORBIT_CONFIG_ROOT');
 
     if (! is_string($configRoot) || trim($configRoot) === '') {
@@ -16,13 +17,12 @@ return (static function (): array {
     }
 
     $configRoot = rtrim($configRoot, '/');
-    $orbitGatewayRoot = $configRoot.'/gateway';
 
     return [
         'config_root' => $configRoot,
-        'gateway_root' => $orbitGatewayRoot,
-        'env_path' => $orbitGatewayRoot.'/.env',
-        'database_path' => $orbitGatewayRoot.'/database',
-        'storage_path' => $orbitGatewayRoot.'/storage',
+        'env_path' => $configRoot.'/.env',
+        'database_file' => $configRoot.'/gateway.sqlite',
+        'database_path' => $gatewayRoot.'/database',
+        'storage_path' => $gatewayRoot.'/storage',
     ];
 })();

@@ -82,8 +82,7 @@ PHP;
             $commands[] = self::dockerGatewayEnvironmentCommand($viewCompiledPath);
         }
 
-        $commands[] = self::dockerGatewayOperationTokenSecretCommand();
-        $commands[] = self::appKeyCommand(self::gatewayStatePath('gateway/.env'));
+        $commands[] = self::appKeyCommand(self::gatewayStatePath('.env'));
         $commands[] = 'php apps/gateway/artisan migrate --force --no-interaction --ansi';
 
         if ($gatewayWireGuardAddress !== null) {
@@ -100,6 +99,16 @@ PHP;
             implode(' && ', $commands),
             timeoutSeconds: 180,
         );
+    }
+
+    public static function sourceMountedGatewayStateCommand(): string
+    {
+        return implode(' && ', [
+            'export ORBIT_CONFIG_ROOT='.escapeshellarg(self::OrbitConfigRoot),
+            self::dockerGatewayStateBootstrapCommand(),
+            self::appKeyCommand(self::gatewayStatePath('.env')),
+            'php apps/gateway/artisan migrate --force --no-interaction --ansi',
+        ]);
     }
 
     public static function installRootSshKey(E2EInstance $gateway, SshKeyPair $key): void
@@ -237,10 +246,11 @@ SH;
         $certSansValue = var_export(array_values($certSans), true);
         $viewCompiledPath = escapeshellarg("{$orbitPath}/apps/gateway/storage/framework/views");
         $dockerTopologyProviderEnv = self::dockerTopologyProviderEnvCommand(dockerTopology: false);
+        $gatewayEnv = escapeshellarg(self::gatewayStatePath('.env'));
 
         E2ECommand::orbit(
             $gateway,
-            "cd {$orbitPathArgument} && mkdir -p apps/gateway/storage/framework/cache/data apps/gateway/storage/framework/sessions apps/gateway/storage/framework/testing apps/gateway/storage/framework/views apps/gateway/storage/logs && ([ -f apps/gateway/.env ] || cp apps/gateway/.env.example apps/gateway/.env) && grep -Ev '^(ORBIT_IS_GATEWAY|ORBIT_E2E_TRUST_WIREGUARD_HEADER|VIEW_COMPILED_PATH|ORBIT_E2E_TOPOLOGY_PROVIDER)=' apps/gateway/.env > apps/gateway/.env.tmp && mv apps/gateway/.env.tmp apps/gateway/.env && printf '\\nORBIT_IS_GATEWAY=true\\nORBIT_E2E_TRUST_WIREGUARD_HEADER=true\\nVIEW_COMPILED_PATH=%s\\n' {$viewCompiledPath} >> apps/gateway/.env && {$dockerTopologyProviderEnv} && ".self::appKeyCommand().' && php apps/gateway/artisan tinker --execute='.escapeshellarg("app(\\App\\Services\\Ca\\OrbitCaService::class)->issueLeaf({$certKeyValue}, {$certSansValue}); echo 'issued';"),
+            "cd {$orbitPathArgument} && export ORBIT_CONFIG_ROOT=".escapeshellarg(self::OrbitConfigRoot).' && '.self::dockerGatewayStateBootstrapCommand()." && grep -Ev '^(ORBIT_E2E_TRUST_WIREGUARD_HEADER|VIEW_COMPILED_PATH|ORBIT_E2E_TOPOLOGY_PROVIDER)=' {$gatewayEnv} > {$gatewayEnv}.tmp && mv {$gatewayEnv}.tmp {$gatewayEnv} && printf '\\nORBIT_E2E_TRUST_WIREGUARD_HEADER=true\\nVIEW_COMPILED_PATH=%s\\n' {$viewCompiledPath} >> {$gatewayEnv} && {$dockerTopologyProviderEnv} && ".self::appKeyCommand(self::gatewayStatePath('.env')).' && php apps/gateway/artisan tinker --execute='.escapeshellarg("app(\\App\\Services\\Ca\\OrbitCaService::class)->issueLeaf({$certKeyValue}, {$certSansValue}); echo 'issued';"),
             'Could not issue gateway leaf certificate',
         );
 
@@ -269,7 +279,7 @@ SH;
 
         E2ECommand::exec(
             $gateway,
-            "cd {$orbitPathArgument} && nohup env VIEW_COMPILED_PATH={$viewCompiledPath} php -d display_errors=0 -S {$bindAddress}:80 -t apps/gateway/public {$httpRouterPath} > /tmp/orbit-gateway-http.log 2>&1 &",
+            "cd {$orbitPathArgument} && nohup env ORBIT_CONFIG_ROOT=".escapeshellarg(self::OrbitConfigRoot)." VIEW_COMPILED_PATH={$viewCompiledPath} php -d display_errors=0 -S {$bindAddress}:80 -t apps/gateway/public {$httpRouterPath} > /tmp/orbit-gateway-http.log 2>&1 &",
             'Could not start gateway HTTP API',
         );
 
@@ -311,7 +321,7 @@ SH;
         $orbitPathArgument = escapeshellarg($orbitPath);
         $certKeyValue = var_export($certKey, true);
         $certSansValue = var_export(array_values($certSans), true);
-        $viewCompiledPath = self::gatewayStatePath('gateway/storage/framework/views');
+        $viewCompiledPath = "{$orbitPath}/apps/gateway/storage/framework/views";
         $runtimeContainer = escapeshellarg(self::runtimeContainerName($gateway));
         $scriptPath = "/tmp/orbit-{$label}-tls.php";
         $httpRouterPath = "/tmp/orbit-{$label}-http-router.php";
@@ -322,7 +332,7 @@ SH;
 
         $certificateCommand = implode(' && ', [
             self::dockerGatewayStateReadyCommand(),
-            self::appKeyCommand(self::gatewayStatePath('gateway/.env')),
+            self::appKeyCommand(self::gatewayStatePath('.env')),
             'php apps/gateway/artisan tinker --execute='.escapeshellarg("app(\\App\\Services\\Ca\\OrbitCaService::class)->issueLeaf({$certKeyValue}, {$certSansValue}); echo 'issued';"),
         ]);
 
@@ -581,18 +591,18 @@ PHP;
     {
         $httpUpstream = self::httpUpstreamForBindAddress($bindAddress);
         $certDirectory = $dockerRuntime
-            ? self::gatewayStatePath('gateway/storage/app/orbit/certs')
-            : "{$orbitPath}/apps/gateway/storage/app/orbit/certs";
+            ? self::gatewayStatePath('certs')
+            : self::gatewayStatePath('certs');
         $runOrbitCommand = $dockerRuntime
             ? "exec(\$script.' 2>&1', \$output, \$exitCode);"
             : "exec('sudo -iu orbit bash -lc '.escapeshellarg(\$script).' 2>&1', \$output, \$exitCode);";
         $runOrbitScript = $dockerRuntime
-            ? '$configRoot = '.var_export(self::OrbitConfigRoot, true).";\n            \$viewCompiledPath = ".var_export(self::gatewayStatePath('gateway/storage/framework/views'), true).";\n            \$stateDirectories = ".var_export([
-                self::gatewayStatePath('gateway/storage/framework/cache/data'),
-                self::gatewayStatePath('gateway/storage/framework/sessions'),
-                self::gatewayStatePath('gateway/storage/framework/testing'),
-                self::gatewayStatePath('gateway/storage/framework/views'),
-                self::gatewayStatePath('gateway/storage/logs'),
+            ? '$configRoot = '.var_export(self::OrbitConfigRoot, true).";\n            \$viewCompiledPath = \$orbitPath.'/apps/gateway/storage/framework/views';\n            \$stateDirectories = ".var_export([
+                'apps/gateway/storage/framework/cache/data',
+                'apps/gateway/storage/framework/sessions',
+                'apps/gateway/storage/framework/testing',
+                'apps/gateway/storage/framework/views',
+                'apps/gateway/storage/logs',
             ], true).";\n            \$script = 'cd '.escapeshellarg(\$orbitPath).' && export ORBIT_CONFIG_ROOT='.escapeshellarg(\$configRoot).' && mkdir -p '.implode(' ', array_map('escapeshellarg', \$stateDirectories)).' && VIEW_COMPILED_PATH='.escapeshellarg(\$viewCompiledPath).' '.\$command;"
             : "\$script = 'cd '.escapeshellarg(\$orbitPath).' && mkdir -p apps/gateway/storage/framework/cache/data apps/gateway/storage/framework/sessions apps/gateway/storage/framework/testing apps/gateway/storage/framework/views apps/gateway/storage/logs && VIEW_COMPILED_PATH='.escapeshellarg(\$orbitPath.'/apps/gateway/storage/framework/views').' '.\$command;";
 
@@ -1775,25 +1785,23 @@ PHP;
 
     private static function dockerGatewayStateBootstrapCommand(): string
     {
-        $gatewayRoot = escapeshellarg(self::gatewayStatePath('gateway'));
-        $gatewayEnv = escapeshellarg(self::gatewayStatePath('gateway/.env'));
-        $gatewayDatabase = escapeshellarg(self::gatewayStatePath('gateway/database/database.sqlite'));
-        $gatewayStorageRoot = escapeshellarg(self::gatewayStatePath('gateway/storage'));
-        $gatewayStorageApp = escapeshellarg(self::gatewayStatePath('gateway/storage/app'));
-        $gatewayStorageOrbit = escapeshellarg(self::gatewayStatePath('gateway/storage/app/orbit'));
+        $gatewayEnv = escapeshellarg(self::gatewayStatePath('.env'));
+        $gatewayDatabase = escapeshellarg(self::gatewayStatePath('gateway.sqlite'));
 
         return implode(' && ', [
-            "mkdir -p {$gatewayRoot}/database {$gatewayStorageRoot}/framework/cache/data {$gatewayStorageRoot}/framework/sessions {$gatewayStorageRoot}/framework/testing {$gatewayStorageRoot}/framework/views {$gatewayStorageRoot}/logs {$gatewayStorageApp}",
+            'mkdir -p '.escapeshellarg(self::OrbitConfigRoot).' apps/gateway/storage/framework/cache/data apps/gateway/storage/framework/sessions apps/gateway/storage/framework/testing apps/gateway/storage/framework/views apps/gateway/storage/logs',
             "if [ ! -f {$gatewayEnv} ]; then cp apps/gateway/.env.example {$gatewayEnv}; fi",
+            "grep -Ev '^(DB_DATABASE|SESSION_DRIVER)=' {$gatewayEnv} > {$gatewayEnv}.tmp || true",
+            "mv {$gatewayEnv}.tmp {$gatewayEnv}",
+            "printf '\\nDB_DATABASE=%s\\nSESSION_DRIVER=file\\n' {$gatewayDatabase} >> {$gatewayEnv}",
             "touch {$gatewayDatabase}",
-            "mkdir -p {$gatewayStorageOrbit}",
         ]);
     }
 
     private static function dockerGatewayStateReadyCommand(): string
     {
-        $gatewayEnv = escapeshellarg(self::gatewayStatePath('gateway/.env'));
-        $gatewayDatabase = escapeshellarg(self::gatewayStatePath('gateway/database/database.sqlite'));
+        $gatewayEnv = escapeshellarg(self::gatewayStatePath('.env'));
+        $gatewayDatabase = escapeshellarg(self::gatewayStatePath('gateway.sqlite'));
 
         return implode(' && ', [
             self::dockerGatewayStateBootstrapCommand(),
@@ -1804,28 +1812,14 @@ PHP;
 
     private static function dockerGatewayEnvironmentCommand(string $viewCompiledPath): string
     {
-        $gatewayEnv = escapeshellarg(self::gatewayStatePath('gateway/.env'));
-        $gatewayEnvTmp = escapeshellarg(self::gatewayStatePath('gateway/.env.tmp'));
+        $gatewayEnv = escapeshellarg(self::gatewayStatePath('.env'));
+        $gatewayEnvTmp = escapeshellarg(self::gatewayStatePath('.env.tmp'));
         $viewCompiledPathArgument = escapeshellarg($viewCompiledPath);
 
         return implode(' && ', [
-            "grep -Ev '^(ORBIT_IS_GATEWAY|ORBIT_E2E_TRUST_WIREGUARD_HEADER|VIEW_COMPILED_PATH|ORBIT_E2E_TOPOLOGY_PROVIDER)=' {$gatewayEnv} > {$gatewayEnvTmp} || true",
+            "grep -Ev '^(ORBIT_E2E_TRUST_WIREGUARD_HEADER|VIEW_COMPILED_PATH|ORBIT_E2E_TOPOLOGY_PROVIDER)=' {$gatewayEnv} > {$gatewayEnvTmp} || true",
             "mv {$gatewayEnvTmp} {$gatewayEnv}",
-            "printf '\\nORBIT_IS_GATEWAY=true\\nORBIT_E2E_TRUST_WIREGUARD_HEADER=true\\nVIEW_COMPILED_PATH=%s\\nORBIT_E2E_TOPOLOGY_PROVIDER=docker\\n' {$viewCompiledPathArgument} >> {$gatewayEnv}",
-        ]);
-    }
-
-    private static function dockerGatewayOperationTokenSecretCommand(): string
-    {
-        $gatewayEnv = escapeshellarg(self::gatewayStatePath('gateway/.env'));
-        $gatewayEnvTmp = escapeshellarg(self::gatewayStatePath('gateway/.env.tmp'));
-
-        return implode(' && ', [
-            "operation_token_secret=\"$(grep -E '^ORBIT_OPERATION_TOKEN_SECRET=.+' {$gatewayEnv} | tail -n 1 | cut -d= -f2-)\"",
-            "grep -Ev '^(ORBIT_OPERATION_TOKEN_SECRET|ORBIT_EXECUTOR_SECRET)=' {$gatewayEnv} > {$gatewayEnvTmp} || true",
-            "mv {$gatewayEnvTmp} {$gatewayEnv}",
-            'if [ -z "${operation_token_secret}" ]; then operation_token_secret="$(head -c 32 /dev/urandom | base64)"; fi',
-            "printf 'ORBIT_OPERATION_TOKEN_SECRET=%s\\n' \"\${operation_token_secret}\" >> {$gatewayEnv}",
+            "printf '\\nORBIT_E2E_TRUST_WIREGUARD_HEADER=true\\nVIEW_COMPILED_PATH=%s\\nORBIT_E2E_TOPOLOGY_PROVIDER=docker\\n' {$viewCompiledPathArgument} >> {$gatewayEnv}",
         ]);
     }
 
@@ -1845,12 +1839,14 @@ PHP;
             return ':';
         }
 
-        return "printf '%s\\n' 'ORBIT_E2E_TOPOLOGY_PROVIDER=docker' >> apps/gateway/.env";
+        $gatewayEnv = escapeshellarg(self::gatewayStatePath('.env'));
+
+        return "printf '%s\\n' 'ORBIT_E2E_TOPOLOGY_PROVIDER=docker' >> {$gatewayEnv}";
     }
 
     private static function appKeyCommand(?string $envPath = null): string
     {
-        $envPath = $envPath === null ? 'apps/gateway/.env' : escapeshellarg($envPath);
+        $envPath = escapeshellarg($envPath ?? self::gatewayStatePath('.env'));
 
         return implode(' && ', [
             "(grep -q '^APP_KEY=' {$envPath} || printf '%s\\n' 'APP_KEY=' >> {$envPath})",

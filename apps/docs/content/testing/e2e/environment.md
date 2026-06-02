@@ -15,12 +15,12 @@ ORBIT_E2E_TOPOLOGY_PROVIDER=docker    # Prepared topology provider for direct ar
 ORBIT_E2E_TOPOLOGY_PROVIDERS=docker   # Ordered prepared topology provider pool
 ORBIT_E2E_GATEWAY_API=1               # Start gateway API/10.6 routes for tests that need it
 ORBIT_E2E_DOCKER_TEST_RUNNERS=sidecar1:4:28,sidecar2:4:28
-ORBIT_E2E_DOCKER_SOURCE_PATH=              # Host-visible checkout path for remote Docker runners
-ORBIT_E2E_DOCKER_SOURCE_PATH_SIDECAR1=     # Optional per-host override
+ORBIT_E2E_DOCKER_SOURCE_PATH=              # Optional remote Docker source-sync target override
+ORBIT_E2E_DOCKER_SOURCE_PATH_SIDECAR1=     # Optional per-host Docker source-sync target override
 ORBIT_E2E_DOCKER_IMAGE_BUILD_HOSTS=beast
 ORBIT_E2E_INCUS_HOSTS=beast
-ORBIT_E2E_INCUS_SOURCE_PATH=               # Host-visible checkout path for remote Incus retained/live source mounts
-ORBIT_E2E_INCUS_SOURCE_PATH_BEAST=         # Optional per-host override
+ORBIT_E2E_INCUS_SOURCE_PATH=               # Optional remote Incus source-sync target override
+ORBIT_E2E_INCUS_SOURCE_PATH_BEAST=         # Optional per-host Incus source-sync target override
 ORBIT_E2E_INCUS_HOST_SLOTS=beast:1
 ORBIT_E2E_INCUS_HOST_VM_CAPS=beast:16
 ORBIT_E2E_INCUS_PARALLEL_PROCESSES=4
@@ -108,10 +108,12 @@ Root Composer E2E scripts source the repository-level `.env.e2e`; that file is
 not converted into `apps/e2e/.env`. When running the `apps/e2e` command directly,
 either export the variable in the shell or put it in `apps/e2e/.env`.
 
-Retained/live Incus acquisitions also source-mount the current checkout at
-`/home/orbit/orbit`. When the Incus host is remote, set
-`ORBIT_E2E_INCUS_SOURCE_PATH` to the checkout path as seen from that host, or
-use `ORBIT_E2E_INCUS_SOURCE_PATH_<HOST>` for a host-specific override.
+Retained/live Incus acquisitions also source-mount the initiating worktree at
+`/home/orbit/orbit`. Remote Incus hosts rsync the current worktree to
+`/tmp/orbit-e2e-sources/<worktree>-<hash>` before acquisition and then mount that
+synced path. Set `ORBIT_E2E_INCUS_SOURCE_PATH` only when a host needs a fixed
+target path, or use `ORBIT_E2E_INCUS_SOURCE_PATH_<HOST>` for a host-specific
+override.
 
 ## Artifact namespace
 

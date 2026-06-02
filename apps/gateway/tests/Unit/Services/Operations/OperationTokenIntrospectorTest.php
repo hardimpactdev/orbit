@@ -130,14 +130,14 @@ describe(OperationTokenIntrospector::class, function (): void {
         ]);
     });
 
-    it('resolves from operation token config through the container', function (): void {
-        config()->set('orbit.operation_token_secret', 'gateway-secret');
+    it('resolves from the app key config through the container', function (): void {
+        config()->set('app.key', 'gateway-app-key');
         config()->set('orbit.operation_token_ttl_seconds', 120);
 
         app()->forgetInstance(OperationTokenIntrospector::class);
 
         $token = operationTokenIntrospectorTestSigner()->sign(
-            secret: 'gateway-secret',
+            secret: 'gateway-app-key',
             id: 'operation-123',
             node: 'app-dev',
             command: 'internal:executor:verify',
@@ -156,8 +156,8 @@ describe(OperationTokenIntrospector::class, function (): void {
         ]);
     });
 
-    it('throws when the configured operation token secret is missing', function (): void {
-        config()->set('orbit.operation_token_secret', null);
+    it('throws when the configured app key is missing', function (): void {
+        config()->set('app.key', null);
         config()->set('orbit.operation_token_ttl_seconds', 120);
 
         app()->forgetInstance(OperationTokenIntrospector::class);

@@ -71,7 +71,6 @@ BASH);
             ['bash', repo_path('docker/orbit-runtime/entrypoint.sh')],
             null,
             [
-                'ORBIT_IS_GATEWAY' => '1',
                 'ORBIT_SOURCE_PATH' => $source,
                 'ORBIT_SCHEDULER_SLEEP_SECONDS' => '7',
                 'PATH' => $bin.':'.getenv('PATH'),
@@ -232,15 +231,6 @@ it('skips schedules that are not due', function (): void {
         ->and($result->executedSchedules)->toBe(0)
         ->and($remoteShell->scripts)->toBe([])
         ->and(ScheduleRun::query()->count())->toBe(0);
-});
-
-it('refuses to run the scheduler daemon away from the gateway', function (): void {
-    config(['orbit.is_gateway' => false]);
-    createOrbitSchedulerAppHostNode(['name' => 'app-1']);
-
-    $this->artisan('orbit-scheduler --once')
-        ->expectsOutputToContain('Orbit Scheduler can only run on the gateway.')
-        ->assertFailed();
 });
 
 it('records remote dispatch failures as failed gateway history', function (): void {

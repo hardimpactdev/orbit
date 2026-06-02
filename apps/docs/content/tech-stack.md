@@ -53,7 +53,7 @@ The sections below walk through each layer of the stack in the same order as the
 |---|---|
 | Application | Laravel 13 application mounted into `orbit-runtime` |
 | Runtime language | PHP 8.5 inside Orbit-managed containers |
-| Persistent state | SQLite at `~/.config/orbit/gateway/database/database.sqlite`, mounted into `orbit-runtime` on the gateway |
+| Persistent state | Gateway SQLite at `~/.config/orbit/gateway.sqlite`, mounted into `orbit-runtime` on the gateway |
 | Gateway API | `orbit-caddy` to `orbit-runtime` over the node Docker network; exposed only over WireGuard |
 | Gateway to node | SSH through `RemoteShell`, classified by execution lane |
 | Proxy | Dockerized Caddy in one `orbit-caddy` container per node |
@@ -111,7 +111,7 @@ FrankenPHP app/workspace containers.
 
 ### Persistent state
 
-The gateway holds Orbit's durable source of truth: a single SQLite database at `ORBIT_CONFIG_ROOT/gateway/database/database.sqlite` (default `~/.config/orbit/gateway/database/database.sqlite`). Every state family writes here. Non-gateway nodes have a local SQLite present because Orbit ships a single codebase that boots the same migrations on every machine, but they hold only minimal local state — none of the durable state families live there. The gateway is authoritative for every configuration row, registry record, and history entry.
+The gateway holds Orbit's durable source of truth: a single SQLite database at `ORBIT_CONFIG_ROOT/gateway.sqlite` (default `~/.config/orbit/gateway.sqlite`). Every state family writes here. Non-gateway nodes do not use the gateway SQLite store. The gateway is authoritative for every configuration row, registry record, and history entry.
 
 See [Architecture: State Model](architecture.md#state-model) and [Architecture: State Families](architecture.md#state-families) for the conceptual model. A few implementation notes:
 
@@ -408,11 +408,9 @@ The Orbit CLI binary targets macOS arm64 and Ubuntu x86_64. The `gateway`, `vpn`
 
 The CLI is always a thin gateway client. It has no client-side role awareness. On any machine, the CLI gathers local context (current app, workspace, paths), calls the gateway over the VPN, and renders the result. The gateway authenticates the WireGuard peer, derives grants from its own node records, and decides what to do. When work needs to run on a node (file writes, service control, log access), the gateway opens an SSH connection back to that node via `RemoteShell` — even if the CLI that initiated the work is on that same node.
 
-One machine in the network carries the gateway runtime. The gateway runtime may
-set `ORBIT_IS_GATEWAY=true` in `ORBIT_CONFIG_ROOT/gateway/.env` (default `~/.config/orbit/gateway/.env`) so gateway-maintenance
-commands and runtime services can select gateway-only behavior. That flag is not
-used by the installed public `orbit` launcher and it is not an API
-authorization bypass. Public CLI calls, including calls made on the gateway host
+One machine in the network carries the gateway runtime. Gateway code runs only
+in that runtime and assumes it is the gateway; it does not require a role flag
+in the environment. Public CLI calls, including calls made on the gateway host
 itself, enter the node-local Orbit CLI entry point and call the gateway API
 over the configured WireGuard/orbit-caddy HTTPS endpoint. Production installs
 still use the native CLI binary artifact; source-mounted Docker and Incus

@@ -3,9 +3,11 @@
 declare(strict_types=1);
 
 use App\E2E\Support\E2EConfig;
+use App\E2E\Support\E2ETopologyKind;
 use App\E2E\Support\IncusHost;
 use App\E2E\Support\IncusInstance;
 use App\E2E\Support\IncusTopologyProvider;
+use App\E2E\Support\SshKeyPair;
 use Illuminate\Contracts\Process\ProcessResult;
 use Mockery as m;
 
@@ -81,6 +83,59 @@ it('keeps incus retarget scripts on node_role assignments instead of legacy node
             ->and($source)->not->toContain("'role' => 'gateway',\n        'environment' => null")
             ->and($source)->toContain('\\\\App\\\\Models\\\\NodeRoleAssignment::query()->updateOrCreate');
     }
+});
+
+it('prepares gateway state before source-mounted incus retarget bootstrap', function (): void {
+    $commands = [];
+    $host = new class(incusTopologyProviderTestConfig(), $commands) extends IncusHost
+    {
+        /**
+         * @param  array<int, string>  $commands
+         */
+        public function __construct(E2EConfig $config, private array &$commands)
+        {
+            parent::__construct($config);
+        }
+
+        #[Override]
+        public function run(string $command, ?int $timeoutSeconds = null): ProcessResult
+        {
+            $this->commands[] = $command;
+
+            if (str_contains($command, 'incus query')) {
+                return incusTopologyProviderTestProcessResult('{"network":{"eth0":{"addresses":[{"family":"inet","scope":"global","address":"10.231.7.84"}]}}}');
+            }
+
+            return incusTopologyProviderTestProcessResult();
+        }
+    };
+
+    $provider = new IncusTopologyProvider(incusTopologyProviderTestConfig());
+    $method = new ReflectionMethod($provider, 'retargetTopology');
+    $method->setAccessible(true);
+
+    $method->invoke($provider, [
+        'operator' => new IncusInstance($host, 'operator', commandTransport: true, sourceMountedCheckout: true),
+        'gateway' => new IncusInstance($host, 'gateway', commandTransport: true, sourceMountedCheckout: true),
+    ], incusTopologyProviderTestConfig(), new SshKeyPair('/tmp/id_ed25519', '/tmp/id_ed25519.pub'), E2ETopologyKind::OperatorGateway, true);
+
+    $commandOutput = implode("\n", $commands);
+    $stateBootstrap = strpos($commandOutput, '/home/orbit/.config/orbit/gateway.sqlite');
+    $migration = strpos($commandOutput, 'php apps/gateway/artisan migrate --force --no-interaction --ansi');
+    $gatewayBootstrap = strpos($commandOutput, 'php apps/gateway/artisan orbit:internal:bootstrap-gateway-local gateway');
+
+    expect($stateBootstrap)->toBeInt()
+        ->and($migration)->toBeInt()
+        ->and($gatewayBootstrap)->toBeInt()
+        ->and($stateBootstrap)->toBeLessThan($gatewayBootstrap)
+        ->and($migration)->toBeLessThan($gatewayBootstrap)
+        ->and($commandOutput)->toContain('ORBIT_CONFIG_ROOT')
+        ->and($commandOutput)->toContain('/home/orbit/.config/orbit/gateway.sqlite')
+        ->and($commandOutput)->toContain('/home/operator/.config/orbit/config.json')
+        ->and($commandOutput)->toContain('"active_gateway":"default"')
+        ->and($commandOutput)->not->toContain('LocalGatewaySettings::current')
+        ->and($commandOutput)->not->toContain('/home/operator/orbit/apps/cli')
+        ->not->toContain('/home/orbit/orbit/apps/gateway/database/database.sqlite');
 });
 
 function incusTopologyProviderTestConfig(): E2EConfig

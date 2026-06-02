@@ -207,12 +207,23 @@ readonly class OrbitCaService
 
     private function caDir(): string
     {
-        return storage_path('app/orbit/ca');
+        return $this->configRoot().'/ca';
     }
 
     private function certsDir(): string
     {
-        return storage_path('app/orbit/certs');
+        return $this->configRoot().'/certs';
+    }
+
+    private function configRoot(): string
+    {
+        $configRoot = config('orbit.paths.config_root');
+
+        if (! is_string($configRoot) || trim($configRoot) === '') {
+            throw new RuntimeException('Orbit config root is not configured.');
+        }
+
+        return rtrim($configRoot, '/');
     }
 
     private function filenameFor(string $host): string

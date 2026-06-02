@@ -335,26 +335,9 @@ class IncusHost
         );
     }
 
-    public function sourcePath(): ?string
+    public function sourcePath(): string
     {
-        $suffix = strtoupper((string) preg_replace('/[^A-Za-z0-9]+/', '_', $this->config->host));
-        $hostSpecificPath = getenv("ORBIT_E2E_INCUS_SOURCE_PATH_{$suffix}");
-
-        if (is_string($hostSpecificPath) && trim($hostSpecificPath) !== '') {
-            return $this->validatedSourcePath(trim($hostSpecificPath));
-        }
-
-        $sourcePath = getenv('ORBIT_E2E_INCUS_SOURCE_PATH');
-
-        if (is_string($sourcePath) && trim($sourcePath) !== '') {
-            return $this->validatedSourcePath(trim($sourcePath));
-        }
-
-        if (! $this->isLocalHost($this->config->host)) {
-            return null;
-        }
-
-        return $this->validatedSourcePath(repo_path());
+        return $this->validatedSourcePath((new SourceMountedCheckoutSyncer)->sourcePath($this->config->host, 'incus'));
     }
 
     private function isLocalHost(string $host): bool

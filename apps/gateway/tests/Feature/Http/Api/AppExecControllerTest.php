@@ -15,9 +15,7 @@ uses(RefreshDatabase::class);
 
 const APP_EXEC_CALLER_WG_IP = '10.6.0.99';
 
-beforeEach(function (): void {
-    config(['orbit.is_gateway' => true]);
-});
+beforeEach(function (): void {});
 
 function createExecControllerCaller(array $overrides = []): Node
 {

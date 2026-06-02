@@ -211,9 +211,6 @@ describe('internal workspace adapter lookup command', function (): void {
 
 function configureWorkspaceAdapterOperationTokenGuard(): void
 {
-    config()->set('orbit.executor.shared_secret', null);
-    config()->set('orbit.executor.node_identity', null);
-
     app()->forgetInstance('App\Services\Executor\OperationTokenGuard');
 }
 

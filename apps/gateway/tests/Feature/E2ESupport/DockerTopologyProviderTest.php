@@ -347,10 +347,12 @@ it('selects the first docker test runner with image availability', function (): 
     });
 });
 
-it('marks remote docker runners unavailable without a host visible source path', function (): void {
+it('keeps remote docker runners available without a preconfigured source path', function (): void {
     Process::fake(function ($process) {
         if ($process->command === 'command -v docker >/dev/null'
-            || $process->command === 'docker info >/dev/null') {
+            || $process->command === 'docker info >/dev/null'
+            || str_starts_with($process->command, 'docker image inspect ')
+            || str_starts_with($process->command, 'docker ps ')) {
             return Process::result();
         }
 
@@ -363,8 +365,8 @@ it('marks remote docker runners unavailable without a host visible source path',
         $provider = new DockerTopologyProvider(E2EConfig::fromEnvironment());
         $availability = $provider->availability(E2ETopologyKind::Operator);
 
-        expect($availability->available)->toBeFalse()
-            ->and($availability->message)->toContain('beast: source-mounted Docker topologies require ORBIT_E2E_DOCKER_SOURCE_PATH');
+        expect($availability->available)->toBeTrue()
+            ->and($availability->message)->toContain('beast');
     });
 });
 
@@ -447,7 +449,9 @@ it('uses the configured remote docker source path for source bind mounts', funct
             || str_starts_with($process->command, 'docker image inspect ')
             || $process->command === "docker ps --format '{{.Names}}' --filter 'name=orbit-e2e-'"
             || str_starts_with($process->command, 'docker network create ')
-            || str_starts_with($process->command, 'docker exec ')) {
+            || str_starts_with($process->command, 'docker exec ')
+            || str_starts_with($process->command, 'ssh -o BatchMode=yes -o ConnectTimeout=10 ')
+            || str_starts_with($process->command, 'rsync -az --delete ')) {
             return Process::result();
         }
 
@@ -640,7 +644,7 @@ it('prepares source mounted gateway state before seeding docker gateway records'
     );
     $stateBootstrap = array_find_key(
         $commands,
-        fn (string $command): bool => str_contains($command, '/home/orbit/.config/orbit/gateway/database/database.sqlite'),
+        fn (string $command): bool => str_contains($command, '/home/orbit/.config/orbit/gateway.sqlite'),
     );
     $stateMigrate = array_find_key(
         $commands,
@@ -669,20 +673,16 @@ it('prepares source mounted gateway state before seeding docker gateway records'
         ->and($stateMigrate)->toBeLessThan($seedOperatorIdentity);
 
     $stateCommand = $commands[$stateBootstrap];
-    $secretSeed = strpos($stateCommand, 'ORBIT_OPERATION_TOKEN_SECRET=%s');
     $appKey = strpos($stateCommand, 'php apps/gateway/artisan key:generate --force --no-interaction');
     $migrate = strpos($stateCommand, 'php apps/gateway/artisan migrate --force --no-interaction --ansi');
 
-    expect($secretSeed)->toBeInt()
-        ->and($appKey)->toBeInt()
+    expect($appKey)->toBeInt()
         ->and($migrate)->toBeInt()
-        ->and($secretSeed)->toBeLessThan($appKey)
         ->and($appKey)->toBeLessThan($migrate);
 
     expect($setup)
         ->toContain('ORBIT_CONFIG_ROOT=/home/orbit/.config/orbit')
-        ->toContain('ORBIT_OPERATION_TOKEN_SECRET|ORBIT_EXECUTOR_SECRET')
-        ->toContain('/home/orbit/.config/orbit/gateway/database/database.sqlite')
+        ->toContain('/home/orbit/.config/orbit/gateway.sqlite')
         ->not->toContain('apps/gateway/database/database.sqlite');
 
     $lease->cleanup();
@@ -1251,6 +1251,11 @@ it('leases docker host slots independently from the parallel worker token', func
             return Process::result();
         }
 
+        if (str_starts_with($process->command, 'ssh -o BatchMode=yes -o ConnectTimeout=10 ')
+            || str_starts_with($process->command, 'rsync -az --delete ')) {
+            return Process::result();
+        }
+
         return Process::result(exitCode: 1, errorOutput: $process->command);
     });
 
@@ -1295,6 +1300,8 @@ it('releases docker host slots during topology cleanup', function (): void {
         '*docker exec*' => Process::result(),
         '*docker rm -f*' => Process::result(),
         '*docker network rm*' => Process::result(),
+        '*ssh -o BatchMode=yes -o ConnectTimeout=10*' => Process::result(),
+        '*rsync -az --delete*' => Process::result(),
     ]);
 
     try {
@@ -1472,7 +1479,7 @@ it('uses dns aliases and primes the gateway api in Docker topology runs', functi
 
     Process::assertRan(fn ($process): bool => is_string($process->command)
         && str_contains($process->command, 'bootstrap-gateway-local')
-        && str_contains($process->command, '/home/orbit/.config/orbit/gateway/database/database.sqlite'));
+        && str_contains($process->command, '/home/orbit/.config/orbit/gateway.sqlite'));
     Process::assertRan(fn ($process): bool => is_string($process->command)
         && str_contains($process->command, 'issueLeaf')
         && str_contains($process->command, 'gateway')

@@ -167,18 +167,6 @@ describe('dns:resolve-tld', function (): void {
                 ->and($decoded['error']['code'])->toBe('destructive_consent_required');
         });
 
-        it('returns validation_failed with not_supported_on_gateway when is_gateway is true', function (): void {
-            config()->set('orbit.is_gateway', true);
-
-            [$exitCode, $output] = runCommand($this, 'dns:resolve-tld', ['tld' => 'test', 'target' => '10.6.0.1', '--json' => true]);
-
-            $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
-
-            expect($exitCode)->toBe(1)
-                ->and($decoded['error']['code'])->toBe('validation_failed')
-                ->and($decoded['error']['meta']['reason'])->toBe('not_supported_on_gateway');
-        });
-
         it('returns node.unsupported_platform when resolver does not support mutation', function (): void {
             $this->resolver->mutationSupportedValue = false;
             $this->resolver->platformValue = 'linux';

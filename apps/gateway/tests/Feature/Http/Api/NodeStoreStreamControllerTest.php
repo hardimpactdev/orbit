@@ -76,8 +76,6 @@ function grantNodeStoreStreamAccess(int $consumerId, int $servingId): void
 }
 
 it('streams node creation from an operation_run source', function (): void {
-    config(['orbit.operation_token_secret' => 'node-store-stream-controller-test-secret']);
-
     $gatewayId = (int) DB::table('nodes')->insertGetId(nodeStoreStreamRow());
     assignNodeStoreStreamRole($gatewayId, 'gateway');
     assignNodeStoreStreamRole($gatewayId, 'vpn');

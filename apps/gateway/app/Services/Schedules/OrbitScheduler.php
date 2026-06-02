@@ -71,10 +71,6 @@ final readonly class OrbitScheduler
 
     private function gatewayNode(): Node
     {
-        if (! (bool) config('orbit.is_gateway', false)) {
-            throw new RuntimeException('Orbit Scheduler can only run on the gateway.');
-        }
-
         $gatewayNode = $this->nodeRoleAssignments
             ->activeGatewayNodeQuery()
             ->first();

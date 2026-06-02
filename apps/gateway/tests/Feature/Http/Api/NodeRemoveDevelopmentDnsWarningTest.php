@@ -116,7 +116,6 @@ function fakeNodeRemoveDnsResult(array $result): NodeRemoveDnsEnactorFake
 
 function setupNodeRemoveDnsGatewayApiCaller(): void
 {
-    config(['orbit.is_gateway' => true]);
 
     $callerId = (int) DB::table('nodes')->insertGetId(nodeRemoveDnsRow([
         'name' => 'control-api',

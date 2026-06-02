@@ -4,10 +4,8 @@ set -Eeuo pipefail
 
 TARGET_DIR="${ORBIT_INSTALL_PATH:-$HOME/orbit}"
 CONFIG_ROOT="${ORBIT_CONFIG_ROOT:-$HOME/.config/orbit}"
-GATEWAY_STATE_DIR="$CONFIG_ROOT/gateway"
-GATEWAY_ENV_FILE="$GATEWAY_STATE_DIR/.env"
-GATEWAY_DATABASE_DIR="$GATEWAY_STATE_DIR/database"
-GATEWAY_STORAGE_DIR="$GATEWAY_STATE_DIR/storage"
+GATEWAY_ENV_FILE="$CONFIG_ROOT/.env"
+GATEWAY_DATABASE_FILE="$CONFIG_ROOT/gateway.sqlite"
 REPO_URL="${ORBIT_REPO_URL:-https://github.com/hardimpactdev/orbit.git}"
 BRANCH="${ORBIT_BRANCH:-main}"
 SOURCE_ARCHIVE=""
@@ -19,7 +17,7 @@ WG_EASY_IMAGE_ARCHIVE="${ORBIT_WG_EASY_IMAGE_ARCHIVE:-}"
 LINK_PATH="${ORBIT_BIN_PATH:-/usr/local/bin/orbit}"
 USE_SUDO=1
 SKIP_PREREQUISITES="${ORBIT_INSTALL_SKIP_PREREQUISITES:-0}"
-GATEWAY_MODE="${ORBIT_INSTALL_GATEWAY:-0}"
+TRUST_WIREGUARD_PROXY_HEADER=0
 VERBOSE=0
 LOG_FILE="${ORBIT_INSTALL_LOG:-}"
 CURRENT_STEP=""
@@ -82,11 +80,9 @@ Options:
   --skip-prerequisites         Skip Docker / package prerequisite installation.
                                Intended for prepared E2E images that already
                                contain runtime packages.
-  --gateway                    Start orbit-runtime with ORBIT_IS_GATEWAY=1 so
-                               the gateway API HTTP listener is brought up
-                               alongside the scheduler and trusts the
-                               orbit-caddy-owned WireGuard peer header. Pass
-                               on first-gateway provisioning.
+  --gateway                    Start orbit-runtime with gateway proxy trust
+                               for the orbit-caddy-owned WireGuard peer header.
+                               Pass on first-gateway provisioning.
   --no-sudo                    Run package and symlink commands without sudo.
   --verbose                    Stream underlying command output.
   -h, --help                   Show this help text.
@@ -261,7 +257,7 @@ parse_args() {
                 SKIP_PREREQUISITES=1
                 ;;
             --gateway)
-                GATEWAY_MODE=1
+                TRUST_WIREGUARD_PROXY_HEADER=1
                 ;;
             --no-sudo)
                 USE_SUDO=0
@@ -579,21 +575,6 @@ ensure_wg_easy_image() {
     fail validation_failed "wg-easy image archive did not load ghcr.io/wg-easy/wg-easy:15: $WG_EASY_IMAGE_ARCHIVE"
 }
 
-read_env_var() {
-    local key="$1"
-    local value
-
-    [ -f "$GATEWAY_ENV_FILE" ] || return 1
-
-    value="$(grep -E "^${key}=" "$GATEWAY_ENV_FILE" | tail -n 1 | cut -d= -f2- || true)"
-
-    if [ -z "$value" ]; then
-        return 1
-    fi
-
-    printf '%s\n' "$value"
-}
-
 write_env_var() {
     local key="$1"
     local value="$2"
@@ -623,61 +604,6 @@ write_env_var() {
     } >>"$LOG_FILE" 2>&1
 }
 
-remove_env_var() {
-    local key="$1"
-    local env_file="$GATEWAY_ENV_FILE"
-    local tmp_file
-
-    [ -f "$env_file" ] || return 0
-
-    ensure_log_file
-
-    {
-        tmp_file="${env_file}.tmp.$$"
-        grep -Ev "^${key}=" "$env_file" > "$tmp_file" || true
-        mv "$tmp_file" "$env_file"
-    } >>"$LOG_FILE" 2>&1
-}
-
-generate_operation_token_secret() {
-    # Generate a 32-byte random secret encoded as base64. Uses openssl when
-    # available (present on both macOS and Ubuntu without host PHP).
-    if command -v openssl >/dev/null 2>&1; then
-        openssl rand -base64 32
-        return
-    fi
-
-    # Fallback: read from /dev/urandom and base64-encode.
-    head -c 32 /dev/urandom | base64
-}
-
-ensure_operation_token_secret() {
-    local secret
-
-    secret="${ORBIT_OPERATION_TOKEN_SECRET:-}"
-
-    if [ -z "$secret" ]; then
-        secret="$(read_env_var "ORBIT_OPERATION_TOKEN_SECRET" || true)"
-    fi
-
-    if [ -z "$secret" ]; then
-        secret="$(generate_operation_token_secret)"
-    fi
-
-    remove_env_var "ORBIT_EXECUTOR_SECRET"
-    write_env_var "ORBIT_OPERATION_TOKEN_SECRET" "$secret"
-
-    export ORBIT_OPERATION_TOKEN_SECRET="$secret"
-}
-
-ensure_node_identity() {
-    if [ -z "${ORBIT_NODE_IDENTITY:-}" ]; then
-        return
-    fi
-
-    write_env_var "ORBIT_NODE_IDENTITY" "$ORBIT_NODE_IDENTITY"
-}
-
 ensure_forward_install_image_archives_flag() {
     if [ -z "$RUNTIME_IMAGE_ARCHIVE" ] && [ -z "$CADDY_IMAGE_ARCHIVE" ] && [ -z "$DNSMASQ_IMAGE_ARCHIVE" ] && [ -z "$FRANKENPHP_IMAGE_ARCHIVE" ]; then
         return
@@ -695,18 +621,19 @@ clear_laravel_bootstrap_cache() {
 bootstrap_runtime() {
     require_docker
 
-    run mkdir -p "$GATEWAY_STATE_DIR" "$GATEWAY_DATABASE_DIR" "$GATEWAY_STORAGE_DIR"
+    run mkdir -p "$CONFIG_ROOT"
 
     if [ ! -f "$GATEWAY_ENV_FILE" ]; then
         run cp "$TARGET_DIR/apps/gateway/.env.example" "$GATEWAY_ENV_FILE"
     fi
 
-    if [ ! -f "$GATEWAY_DATABASE_DIR/database.sqlite" ]; then
-        run touch "$GATEWAY_DATABASE_DIR/database.sqlite"
+    write_env_var "DB_DATABASE" "$GATEWAY_DATABASE_FILE"
+    write_env_var "SESSION_DRIVER" "file"
+
+    if [ ! -f "$GATEWAY_DATABASE_FILE" ]; then
+        run touch "$GATEWAY_DATABASE_FILE"
     fi
 
-    ensure_operation_token_secret
-    ensure_node_identity
     ensure_forward_install_image_archives_flag
     clear_laravel_bootstrap_cache
 
@@ -722,11 +649,12 @@ bootstrap_runtime() {
     run docker_cli run --rm \
         --pull never \
         --env "ORBIT_CONFIG_ROOT=$CONFIG_ROOT" \
+        --env "GATEWAY_ENV_FILE=$GATEWAY_ENV_FILE" \
         -v "$TARGET_DIR":/opt/orbit \
         --mount "type=bind,source=$CONFIG_ROOT,target=$CONFIG_ROOT" \
         --workdir /opt/orbit/apps/gateway \
         orbit-runtime:current \
-        bash -lc "grep -q '^APP_KEY=base64:' \"\$ORBIT_CONFIG_ROOT/gateway/.env\" || php artisan key:generate --force --no-interaction"
+        bash -lc "grep -q '^APP_KEY=base64:' \"\$GATEWAY_ENV_FILE\" || php artisan key:generate --force --no-interaction"
 }
 
 container_env_contains() {
@@ -814,21 +742,16 @@ start_runtime_container() {
             orbit-network
     fi
 
-    local gateway_env=()
-    if [ "$GATEWAY_MODE" = "1" ]; then
-        gateway_env=(--env "ORBIT_IS_GATEWAY=1" --env "ORBIT_TRUST_WIREGUARD_PROXY_HEADER=1")
+    local gateway_proxy_env=()
+    if [ "$TRUST_WIREGUARD_PROXY_HEADER" = "1" ]; then
+        gateway_proxy_env=(--env "ORBIT_TRUST_WIREGUARD_PROXY_HEADER=1")
     fi
 
     if docker_cli container inspect orbit-runtime >/dev/null 2>&1; then
         local needs_recreate=0
 
-        if [ "$GATEWAY_MODE" = "1" ] && ! container_env_contains "ORBIT_IS_GATEWAY=1"; then
-            printf 'orbit-install: existing orbit-runtime container is missing ORBIT_IS_GATEWAY=1; recreating to enable the gateway API listener\n' >&2
-            needs_recreate=1
-        fi
-
-        if [ "$GATEWAY_MODE" = "1" ] && [ "$needs_recreate" = "0" ] && ! container_env_contains "ORBIT_TRUST_WIREGUARD_PROXY_HEADER=1"; then
-            printf 'orbit-install: existing orbit-runtime container is missing ORBIT_TRUST_WIREGUARD_PROXY_HEADER=1; recreating to enable gateway proxy identity\n' >&2
+        if [ "$TRUST_WIREGUARD_PROXY_HEADER" = "1" ] && [ "$needs_recreate" = "0" ] && ! container_env_contains "ORBIT_TRUST_WIREGUARD_PROXY_HEADER=1"; then
+            printf 'orbit-install: existing orbit-runtime container is missing ORBIT_TRUST_WIREGUARD_PROXY_HEADER=1; recreating to enable WireGuard proxy trust\n' >&2
             needs_recreate=1
         fi
 
@@ -872,7 +795,7 @@ start_runtime_container() {
         --env "ORBIT_CONFIG_ROOT=$CONFIG_ROOT" \
         --env "ORBIT_SOURCE_PATH=/opt/orbit" \
         --env "ORBIT_HOST_PATH=$TARGET_DIR" \
-        "${gateway_env[@]}" \
+        "${gateway_proxy_env[@]}" \
         --mount "type=bind,source=$TARGET_DIR,target=/opt/orbit" \
         --mount "type=bind,source=$CONFIG_ROOT,target=$CONFIG_ROOT" \
         --mount "type=bind,source=/var/run/docker.sock,target=/var/run/docker.sock" \

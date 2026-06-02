@@ -248,6 +248,7 @@ function waitForBinaryFakeGatewayServer(SymfonyProcess $server, string $gatewayU
     $timeoutAt = microtime(true) + 5;
     $context = stream_context_create([
         'http' => [
+            'ignore_errors' => true,
             'timeout' => 0.2,
         ],
     ]);

@@ -100,10 +100,6 @@ final readonly class LogActivity
             return null;
         }
 
-        if (! (bool) config('orbit.is_gateway', false)) {
-            return null;
-        }
-
         $node = app(NodeRoleAssignments::class)
             ->activeGatewayNodeQuery()
             ->orderBy('name')

@@ -38,10 +38,6 @@ exit($status);
 
 function setEntrypointEnvironment(): void
 {
-    clearEntrypointEnvironmentValue('ORBIT_EXECUTOR_SECRET');
-    clearEntrypointEnvironmentValue('ORBIT_OPERATION_TOKEN_SECRET');
-    clearEntrypointEnvironmentValue('ORBIT_NODE_IDENTITY');
-
     setEntrypointEnvironmentValue('ORBIT_APP', 'cli');
 
     $hostCwd = getenv('ORBIT_HOST_CWD');
@@ -66,10 +62,4 @@ function setEntrypointEnvironmentValue(string $key, string $value): void
     putenv("{$key}={$value}");
     $_ENV[$key] = $value;
     $_SERVER[$key] = $value;
-}
-
-function clearEntrypointEnvironmentValue(string $key): void
-{
-    putenv($key);
-    unset($_ENV[$key], $_SERVER[$key]);
 }

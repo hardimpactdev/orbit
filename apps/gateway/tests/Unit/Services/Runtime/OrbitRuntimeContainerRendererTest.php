@@ -38,13 +38,13 @@ it('renders the Orbit runtime container with deterministic network, env, restart
             'read_only' => false,
         ])
         ->and($container->mounts())->not->toContain([
-            'source' => '/Users/nckrtl/Orbit Repo/apps/gateway/database/database.sqlite',
-            'target' => OrbitRuntimeContainer::SourcePath.'/apps/gateway/database/database.sqlite',
+            'source' => '/Users/nckrtl/.config/orbit/gateway.sqlite',
+            'target' => '/home/orbit/.config/orbit/gateway.sqlite',
             'read_only' => false,
         ]);
 });
 
-it('renders the gateway config root bind mount and gateway env when a gateway config root is supplied', function (): void {
+it('renders the gateway config root bind mount without gateway self identity env', function (): void {
     $container = (new OrbitRuntimeContainerRenderer(new OrbitContainerNames))->render(
         orbitCheckoutPath: '/home/orbit/orbit',
         gatewayConfigRoot: '/home/orbit/.config/orbit',
@@ -52,7 +52,6 @@ it('renders the gateway config root bind mount and gateway env when a gateway co
 
     expect($container->environment())->toMatchArray([
         'ORBIT_CONFIG_ROOT' => '/home/orbit/.config/orbit',
-        'ORBIT_IS_GATEWAY' => '1',
         'ORBIT_SOURCE_PATH' => OrbitRuntimeContainer::SourcePath,
         'ORBIT_TRUST_WIREGUARD_PROXY_HEADER' => '1',
     ])
@@ -62,8 +61,8 @@ it('renders the gateway config root bind mount and gateway env when a gateway co
             'read_only' => false,
         ])
         ->and($container->mounts())->not->toContain([
-            'source' => '/home/orbit/orbit/apps/gateway/database/database.sqlite',
-            'target' => OrbitRuntimeContainer::SourcePath.'/apps/gateway/database/database.sqlite',
+            'source' => '/home/orbit/.config/orbit/gateway.sqlite',
+            'target' => '/home/orbit/.config/orbit/gateway.sqlite',
             'read_only' => false,
         ]);
 });

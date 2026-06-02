@@ -412,7 +412,6 @@ describe('external service stubs', function (): void {
     });
 
     it('detects local platform record mismatches', function (): void {
-        config(['orbit.is_gateway' => true]);
 
         $probe = new NodesProbe(new class extends PlatformDetector
         {
@@ -444,7 +443,6 @@ describe('external service stubs', function (): void {
     });
 
     it('detects unsupported local platform detection', function (): void {
-        config(['orbit.is_gateway' => true]);
 
         $probe = new NodesProbe(new class extends PlatformDetector
         {
@@ -974,7 +972,6 @@ describe('adoption', function (): void {
     });
 
     it('snapshots local platform record mismatches for adopt', function (): void {
-        config(['orbit.is_gateway' => true]);
 
         $probe = new NodesProbe(new class extends PlatformDetector
         {
@@ -1310,7 +1307,6 @@ describe('adoption', function (): void {
     });
 
     it('adopts local platform record mismatches', function (): void {
-        config(['orbit.is_gateway' => true]);
 
         $probe = new NodesProbe(new class extends PlatformDetector
         {

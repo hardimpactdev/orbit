@@ -228,8 +228,7 @@ it('syncs the current checkout into each Docker topology node before installing 
         ->toContain('/usr/local/bin/orbit')
         ->toContain('/home/orbit/orbit/apps/cli')
         ->toContain('/home/orbit/orbit/apps/cli')
-        ->toContain('ORBIT_IS_GATEWAY=true')
-        ->toContain('/home/orbit/.config/orbit/gateway/.env')
+        ->toContain('/home/orbit/.config/orbit/.env')
         ->toContain('composer install --no-dev --no-interaction --prefer-dist --optimize-autoloader');
 
     $operatorSync = array_search(collect($commands)->first(fn (string $command): bool => str_contains($command, "docker exec -i 'orbit-e2e-prepared-build-operator_gateway_app-dev_app-prod_agent-operator'")
@@ -403,20 +402,20 @@ it('builds Docker topology state through the host orbit launcher', function (): 
         ->toContain('sudo -iu orbit env ORBIT_RUNTIME_CONTAINER="${ORBIT_RUNTIME_CONTAINER:-}" ORBIT_E2E_DOCKER_NETWORK="${ORBIT_E2E_DOCKER_NETWORK:-}" ORBIT_CONFIG_ROOT="${ORBIT_CONFIG_ROOT:-/home/orbit/.config/orbit}" bash -lc')
         ->toContain('/home/orbit/orbit/apps/cli')
         ->toContain('type=bind,source=*|type=bind,src=*)')
-        ->toContain('/home/orbit/.config/orbit/gateway/.env')
-        ->toContain('/home/orbit/.config/orbit/gateway/database/database.sqlite')
-        ->toContain('/home/orbit/.config/orbit/gateway/storage/app/orbit')
+        ->toContain('/home/orbit/.config/orbit/.env')
+        ->toContain('/home/orbit/.config/orbit/gateway.sqlite')
+        ->toContain('/home/orbit/.config/orbit')
         ->toContain('ORBIT_GATEWAY_URL=%s')
         ->toContain('http://gateway')
         ->toContain('LocalGatewaySettings::current()')
         ->not->toContain("docker run -d --restart unless-stopped --name 'orbit-e2e-prepared-build-operator_gateway-operator-orbit-runtime'")
         ->not->toContain('cd /home/orbit/orbit && orbit gateway:add')
         ->not->toContain('rm -rf apps/gateway/storage')
-        ->not->toContain('ln -sfn /home/orbit/.config/orbit/gateway/storage apps/gateway/storage')
+        ->not->toContain('ln -sfn /home/orbit/.config/orbit apps/gateway/storage')
         ->not->toContain('rm -f apps/gateway/.env')
-        ->not->toContain('ln -sfn /home/orbit/.config/orbit/gateway/.env apps/gateway/.env')
+        ->not->toContain('ln -sfn /home/orbit/.config/orbit/.env apps/gateway/.env')
         ->not->toContain('rm -f apps/gateway/database/database.sqlite')
-        ->not->toContain('ln -sfn /home/orbit/.config/orbit/gateway/database/database.sqlite apps/gateway/database/database.sqlite')
+        ->not->toContain('ln -sfn /home/orbit/.config/orbit/gateway.sqlite apps/gateway/database/database.sqlite')
         ->not->toContain('php artisan migrate --force');
 });
 
@@ -470,7 +469,6 @@ it('keeps the build gateway runtime marked without starting services before migr
         ->first(fn (string $command): bool => str_contains($command, "docker run -d --restart unless-stopped --name 'orbit-e2e-prepared-build-operator_gateway-gateway-orbit-runtime'"));
 
     expect($gatewayRuntimeStart)->toBeString()
-        ->and($gatewayRuntimeStart)->toContain('ORBIT_IS_GATEWAY=1')
         ->and($gatewayRuntimeStart)->toContain('ORBIT_CONFIG_ROOT=/home/orbit/.config/orbit')
         ->and($gatewayRuntimeStart)->toContain("'orbit-runtime:prepared-current' tail -f /dev/null");
 });
@@ -494,7 +492,7 @@ it('normalizes persisted gateway orbit state ownership before committing prepare
     $persist = collect($commands)->first(fn (string $command): bool => str_contains($command, "docker exec -i 'orbit-e2e-prepared-build-operator_gateway-gateway' tar -C '/home/orbit/orbit' -xf -"));
     $ownership = collect($commands)->first(fn (string $command): bool => str_contains($command, "docker exec 'orbit-e2e-prepared-build-operator_gateway-gateway'")
         && str_contains($command, 'chown -R orbit:orbit')
-        && str_contains($command, '/home/orbit/.config/orbit/gateway/storage/app/orbit'));
+        && str_contains($command, '/home/orbit/.config/orbit'));
     $commit = collect($commands)->first(fn (string $command): bool => str_contains($command, 'docker commit')
         && str_contains($command, "'orbit-e2e-prepared-build-operator_gateway-gateway'")
         && str_contains($command, 'gateway_base'));

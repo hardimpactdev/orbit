@@ -104,7 +104,7 @@ final readonly class RemoteHostExecutor implements RemoteExecutor
 
     private function command(Node $node, string $script): string
     {
-        if ((bool) config('orbit.is_gateway', false) && $this->roleAssignments->nodeIsGateway($node) && ! $this->runningInsideOrbitRuntime()) {
+        if ($this->roleAssignments->nodeIsGateway($node) && ! $this->runningInsideOrbitRuntime()) {
             return 'bash -c '.escapeshellarg($script);
         }
 

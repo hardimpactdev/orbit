@@ -235,6 +235,9 @@ Required prepared sources for feature lanes:
   `PhpRuntimeCatalog` for app/workspace topologies.
 - Docker build-host helpers: `orbit-e2e-topology-runtime:<namespace>-current`
   and `composer:2`, used only to prepare the canonical role images.
+- Source-mounted live Docker topologies are not prepared sources; their remote
+  sync step may pull and run `composer:2` on a runner host to hydrate synced
+  gateway and CLI dependencies.
 - `operator_gateway_app-dev_app-prod_agent` and
   `operator_gateway_app-dev_app-prod_agent_websocket` Incus role snapshots for
   selective VM boot, including operator-only, operator-gateway, and websocket

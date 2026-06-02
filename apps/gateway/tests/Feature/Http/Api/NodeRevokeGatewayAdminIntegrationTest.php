@@ -38,7 +38,6 @@ function assignNodeAccessCommandRole(int $nodeId, string $role, string $status =
 
 function setupNodeAccessRevokeNodes(): array
 {
-    config(['orbit.is_gateway' => true]);
 
     $gatewayId = (int) DB::table('nodes')->insertGetId(nodeAccessCommandRow([
         'name' => 'gateway-1',

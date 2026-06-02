@@ -20,14 +20,6 @@ final class DnsListCommand extends LocalOnlyCommand
 
     public function handle(ResolvesLocalDns $resolver): int
     {
-        if ((bool) config('orbit.is_gateway', false)) {
-            return $this->renderFailure(
-                'validation_failed',
-                'This command is not supported on gateway nodes.',
-                ['reason' => 'not_supported_on_gateway'],
-            );
-        }
-
         if (! $resolver->isSupported()) {
             return $this->renderFailure(
                 'node.unsupported_platform',

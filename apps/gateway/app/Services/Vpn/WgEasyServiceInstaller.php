@@ -426,7 +426,7 @@ YAML;
         array $transportOptions = [],
         array $successfulErrorCodes = [],
     ): void {
-        if (! $this->hasOperationTokenSecret()) {
+        if (! $this->hasOperationTokenSigningKey()) {
             return;
         }
 
@@ -528,9 +528,9 @@ YAML;
         return is_string($value) && trim($value) !== '' ? trim($value) : null;
     }
 
-    private function hasOperationTokenSecret(): bool
+    private function hasOperationTokenSigningKey(): bool
     {
-        $secret = config('orbit.operation_token_secret');
+        $secret = config('app.key');
 
         return is_string($secret) && trim($secret) !== '';
     }

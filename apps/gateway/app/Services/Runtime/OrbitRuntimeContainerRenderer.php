@@ -26,7 +26,6 @@ class OrbitRuntimeContainerRenderer
 
         if ($gatewayConfigRoot !== null) {
             $resolvedEnvironment['ORBIT_CONFIG_ROOT'] = $this->normalizePath($gatewayConfigRoot, 'gatewayConfigRoot');
-            $resolvedEnvironment['ORBIT_IS_GATEWAY'] = '1';
             $resolvedEnvironment['ORBIT_TRUST_WIREGUARD_PROXY_HEADER'] = '1';
         }
 

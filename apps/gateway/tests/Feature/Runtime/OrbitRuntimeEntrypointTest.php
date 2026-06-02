@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 use Symfony\Component\Process\Process;
 
-it('starts the gateway API HTTP server on port 8080 before running the scheduler when ORBIT_IS_GATEWAY is set', function (): void {
+it('starts the gateway API HTTP server on port 8080 before running the scheduler', function (): void {
     $root = sys_get_temp_dir().'/orbit-runtime-gateway-server-'.bin2hex(random_bytes(6));
     $source = "{$root}/source";
     $bin = "{$root}/bin";
@@ -52,7 +52,6 @@ BASH);
             null,
             [
                 'ORBIT_SOURCE_PATH' => $source,
-                'ORBIT_IS_GATEWAY' => '1',
                 'PATH' => $bin.':/usr/bin:/bin',
                 'PHP_CAPTURE' => $capture,
             ],
@@ -69,38 +68,6 @@ BASH);
             ->toContain('--port=8080')
             ->toContain('--no-reload')
             ->toContain('orbit-scheduler');
-    } finally {
-        (new Process(['rm', '-rf', $root]))->run();
-    }
-});
-
-it('does not start the gateway HTTP server when ORBIT_IS_GATEWAY is not set', function (): void {
-    $root = sys_get_temp_dir().'/orbit-runtime-non-gateway-'.bin2hex(random_bytes(6));
-    $bin = "{$root}/bin";
-
-    mkdir($bin, recursive: true);
-
-    file_put_contents("{$bin}/php", <<<'BASH'
-#!/usr/bin/env bash
-printf 'should not run for non-gateway sleep\n' >&2
-exit 99
-BASH);
-    chmod("{$bin}/php", 0755);
-
-    $entrypoint = repo_path('docker/orbit-runtime/entrypoint.sh');
-
-    try {
-        $process = new Process(
-            ['bash', $entrypoint, 'true'],
-            null,
-            [
-                'PATH' => $bin.':/usr/bin:/bin',
-            ],
-        );
-
-        $process->run();
-
-        expect($process->getExitCode())->toBe(0);
     } finally {
         (new Process(['rm', '-rf', $root]))->run();
     }
@@ -161,7 +128,6 @@ BASH);
             null,
             [
                 'ORBIT_SOURCE_PATH' => $source,
-                'ORBIT_IS_GATEWAY' => '1',
                 'PATH' => $bin.':/usr/bin:/bin',
                 'PHP_CAPTURE' => $capture,
             ],

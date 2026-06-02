@@ -27,7 +27,7 @@ class OrbitHostInstaller
         $this->pinnedNode = $node;
     }
 
-    public function install(string $host, string $sshUser, string $runtimeUser = 'orbit', bool $asGateway = false): OrbitHostInstallResult
+    public function install(string $host, string $sshUser, string $runtimeUser = 'orbit'): OrbitHostInstallResult
     {
         $remotePrefix = self::PreferredTempDirectory.'/orbit-install-'.Str::lower(Str::random(8));
         $localArchive = $this->buildSourceArchive();
@@ -119,8 +119,7 @@ class OrbitHostInstaller
             }
 
             $remoteHome = $runtimeUser === 'root' ? '/root' : "/home/{$runtimeUser}";
-            $installerFlags = $asGateway ? ' --gateway' : '';
-            $installerFlags .= $this->imageArchiveInstallerFlags($remoteImageArchives);
+            $installerFlags = $this->imageArchiveInstallerFlags($remoteImageArchives);
             $cleanupPaths = array_merge(
                 [$remoteInstaller, $remoteArchive, $remoteEnvironment],
                 array_values($remoteImageArchives),
@@ -345,15 +344,8 @@ SCRIPT,
     private function buildExecutorEnvironmentFile(?Node $node): string
     {
         $path = $this->localTempPath('orbit-install-env-'.Str::lower(Str::random(8)).'.env');
-        $lines = [
-            $this->shellEnvironmentLine('ORBIT_OPERATION_TOKEN_SECRET', $this->operationTokenSecret()),
-        ];
 
-        if ($node instanceof Node) {
-            $lines[] = $this->shellEnvironmentLine('ORBIT_NODE_IDENTITY', (string) $node->name);
-        }
-
-        file_put_contents($path, implode('', $lines));
+        file_put_contents($path, '');
         chmod($path, 0600);
 
         return $path;
@@ -368,22 +360,6 @@ SCRIPT,
         }
 
         return rtrim($directory, '/').'/'.$fileName;
-    }
-
-    private function operationTokenSecret(): string
-    {
-        $secret = config('orbit.operation_token_secret');
-
-        if (is_string($secret) && trim($secret) !== '') {
-            return $secret;
-        }
-
-        return base64_encode(random_bytes(32));
-    }
-
-    private function shellEnvironmentLine(string $key, string $value): string
-    {
-        return "{$key}=".escapeshellarg($value)."\n";
     }
 
     private function installSecurityBaseline(string $host, string $runtimeUser): ?OrbitHostInstallResult

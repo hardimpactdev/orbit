@@ -100,25 +100,13 @@ describe('install-orbit always-cli launcher contract', function (): void {
 
         expect($launcher)
             ->not->toContain('apps/gateway/.env')
-            ->not->toContain('ORBIT_EXECUTOR_SECRET')
-            ->not->toContain('ORBIT_OPERATION_TOKEN_SECRET')
-            ->not->toContain('ORBIT_NODE_IDENTITY')
             ->not->toContain('is_local_executor_command');
     });
 
-    it('removes executor shared-secret env config from the CLI config file', function (): void {
+    it('keeps the CLI config gateway focused', function (): void {
         $config = require repo_path('apps/cli/config/orbit.php');
 
-        expect($config['executor'])->toBe([
-            'shared_secret' => null,
-            'node_identity' => null,
-        ]);
-
-        $configContents = File::get(repo_path('apps/cli/config/orbit.php'));
-
-        expect($configContents)
-            ->not->toContain('ORBIT_EXECUTOR_SECRET')
-            ->not->toContain('ORBIT_NODE_IDENTITY');
+        expect(array_keys($config))->toBe(['gateway']);
     });
 });
 
@@ -189,9 +177,6 @@ set -Eeuo pipefail
 {
     printf 'target=%s\n' "$0"
     printf 'ORBIT_APP=%s\n' "${ORBIT_APP:-}"
-    printf 'ORBIT_EXECUTOR_SECRET=%s\n' "${ORBIT_EXECUTOR_SECRET:-}"
-    printf 'ORBIT_OPERATION_TOKEN_SECRET=%s\n' "${ORBIT_OPERATION_TOKEN_SECRET:-}"
-    printf 'ORBIT_NODE_IDENTITY=%s\n' "${ORBIT_NODE_IDENTITY:-}"
     printf 'args='
     for arg in "$@"; do
         printf '[%s]' "$arg"

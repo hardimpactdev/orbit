@@ -28,7 +28,6 @@ it('verifies Docker runtime backend and scheduler liveness', function (): void {
             ->and($inspection->output())
             ->toContain('true')
             ->toContain('unless-stopped')
-            ->toContain('ORBIT_IS_GATEWAY=1')
             ->and($legacySupervisorProgram->successful())->toBeTrue()
             ->and(trim($legacySupervisorProgram->output()))->toBe('absent')
             ->and($schedulerTick->successful())->toBeTrue()

@@ -38,23 +38,6 @@ describe('CLI source entrypoint', function (): void {
             ->and($capture['SERVER_ORBIT_HOST_CWD'])->toBe('  /tmp/orbit-custom-cwd  ');
     });
 
-    it('clears inherited executor secrets and node identity before Laravel boots', function (): void {
-        $capture = cliEntrypointProbe([
-            'ORBIT_EXECUTOR_SECRET' => 'stale-parent-secret',
-            'ORBIT_OPERATION_TOKEN_SECRET' => 'stale-mint-secret',
-            'ORBIT_NODE_IDENTITY' => 'stale-node',
-        ]);
-
-        expect($capture['ORBIT_EXECUTOR_SECRET'])->toBe('')
-            ->and($capture['ORBIT_OPERATION_TOKEN_SECRET'])->toBe('')
-            ->and($capture['ORBIT_NODE_IDENTITY'])->toBe('')
-            ->and($capture['ENV_ORBIT_EXECUTOR_SECRET'])->toBe('')
-            ->and($capture['ENV_ORBIT_OPERATION_TOKEN_SECRET'])->toBe('')
-            ->and($capture['ENV_ORBIT_NODE_IDENTITY'])->toBe('')
-            ->and($capture['SERVER_ORBIT_EXECUTOR_SECRET'])->toBe('')
-            ->and($capture['SERVER_ORBIT_OPERATION_TOKEN_SECRET'])->toBe('')
-            ->and($capture['SERVER_ORBIT_NODE_IDENTITY'])->toBe('');
-    });
 });
 
 /**
@@ -166,17 +149,8 @@ return new class ('{$capturePath}') {
                 file_put_contents(\$this->capturePath, json_encode([
                     'ORBIT_APP' => getenv('ORBIT_APP') ?: '',
                     'ORBIT_HOST_CWD' => getenv('ORBIT_HOST_CWD') ?: '',
-                    'ORBIT_EXECUTOR_SECRET' => getenv('ORBIT_EXECUTOR_SECRET') ?: '',
-                    'ORBIT_OPERATION_TOKEN_SECRET' => getenv('ORBIT_OPERATION_TOKEN_SECRET') ?: '',
-                    'ORBIT_NODE_IDENTITY' => getenv('ORBIT_NODE_IDENTITY') ?: '',
                     'ENV_ORBIT_HOST_CWD' => \$_ENV['ORBIT_HOST_CWD'] ?? '',
-                    'ENV_ORBIT_EXECUTOR_SECRET' => \$_ENV['ORBIT_EXECUTOR_SECRET'] ?? '',
-                    'ENV_ORBIT_OPERATION_TOKEN_SECRET' => \$_ENV['ORBIT_OPERATION_TOKEN_SECRET'] ?? '',
-                    'ENV_ORBIT_NODE_IDENTITY' => \$_ENV['ORBIT_NODE_IDENTITY'] ?? '',
                     'SERVER_ORBIT_HOST_CWD' => \$_SERVER['ORBIT_HOST_CWD'] ?? '',
-                    'SERVER_ORBIT_EXECUTOR_SECRET' => \$_SERVER['ORBIT_EXECUTOR_SECRET'] ?? '',
-                    'SERVER_ORBIT_OPERATION_TOKEN_SECRET' => \$_SERVER['ORBIT_OPERATION_TOKEN_SECRET'] ?? '',
-                    'SERVER_ORBIT_NODE_IDENTITY' => \$_SERVER['ORBIT_NODE_IDENTITY'] ?? '',
                     'PWD' => getcwd() ?: '',
                     'args' => implode('', array_map(
                         static fn (string \$argument): string => '['.\$argument.']',

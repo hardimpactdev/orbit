@@ -339,12 +339,9 @@ final readonly class DockerTopologyBuilder
     private function runtimeRunCommand(string $nodeContainer, string $network, string $role, string $composerCacheVolume): string
     {
         $orbitPath = $this->orbitPathForRole($role);
-        $gatewayEnv = $role === 'gateway'
-            ? ' --env '.escapeshellarg('ORBIT_IS_GATEWAY=1')
-            : '';
 
         return sprintf(
-            'docker run -d --restart unless-stopped --name %s --network %s --volume %s --mount %s --env %s --env %s --env %s --env %s%s --workdir %s %s tail -f /dev/null',
+            'docker run -d --restart unless-stopped --name %s --network %s --volume %s --mount %s --env %s --env %s --env %s --env %s --workdir %s %s tail -f /dev/null',
             escapeshellarg($this->runtimeContainerName($nodeContainer)),
             escapeshellarg("container:{$nodeContainer}"),
             escapeshellarg('/var/run/docker.sock:/var/run/docker.sock'),
@@ -353,7 +350,6 @@ final readonly class DockerTopologyBuilder
             escapeshellarg("ORBIT_NODE_CONTAINER={$nodeContainer}"),
             escapeshellarg("ORBIT_SOURCE_PATH={$orbitPath}"),
             escapeshellarg('ORBIT_CONFIG_ROOT='.self::OrbitConfigRoot),
-            $gatewayEnv,
             escapeshellarg($orbitPath),
             escapeshellarg(DockerTopologyProvider::runtimeSiblingImage()),
         );
@@ -629,7 +625,7 @@ final readonly class DockerTopologyBuilder
             return;
         }
 
-        $orbitStatePath = self::gatewayConfigPath('storage/app/orbit');
+        $orbitStatePath = self::gatewayConfigPath();
 
         $this->mustRun(
             sprintf(
@@ -722,14 +718,11 @@ final readonly class DockerTopologyBuilder
 
         $sourcePath = escapeshellarg($this->orbitPathForRole($role));
         $gatewayEnvPath = escapeshellarg(self::gatewayConfigPath('.env'));
-        $gatewayStorageRoot = escapeshellarg(self::gatewayConfigPath('storage'));
-        $gatewayStorageApp = escapeshellarg(self::gatewayConfigPath('storage/app'));
-        $gatewayStorageOrbit = escapeshellarg(self::gatewayConfigPath('storage/app/orbit'));
-        $gatewayDatabase = escapeshellarg(self::gatewayConfigPath('database/database.sqlite'));
+        $gatewayDatabase = escapeshellarg(self::gatewayConfigPath('gateway.sqlite'));
 
         return <<<SH
 cd {$sourcePath}
-mkdir -p $(dirname {$gatewayEnvPath}) $(dirname {$gatewayDatabase}) {$gatewayStorageRoot}/framework/cache/data {$gatewayStorageRoot}/framework/sessions {$gatewayStorageRoot}/framework/testing {$gatewayStorageRoot}/framework/views {$gatewayStorageRoot}/logs {$gatewayStorageApp}
+mkdir -p $(dirname {$gatewayEnvPath}) apps/gateway/storage/framework/cache/data apps/gateway/storage/framework/sessions apps/gateway/storage/framework/testing apps/gateway/storage/framework/views apps/gateway/storage/logs
 if [ ! -f {$gatewayEnvPath} ]; then
     if [ -f apps/gateway/.env.example ]; then
         cp apps/gateway/.env.example {$gatewayEnvPath}
@@ -737,11 +730,10 @@ if [ ! -f {$gatewayEnvPath} ]; then
         touch {$gatewayEnvPath}
     fi
 fi
-touch {$gatewayDatabase}
-mkdir -p {$gatewayStorageOrbit}
-grep -Ev '^ORBIT_IS_GATEWAY=' {$gatewayEnvPath} > {$gatewayEnvPath}.tmp || true
+grep -Ev '^(DB_DATABASE|SESSION_DRIVER)=' {$gatewayEnvPath} > {$gatewayEnvPath}.tmp || true
 mv {$gatewayEnvPath}.tmp {$gatewayEnvPath}
-printf '%s\\n' 'ORBIT_IS_GATEWAY=true' >> {$gatewayEnvPath}
+printf '\\nDB_DATABASE=%s\\nSESSION_DRIVER=file\\n' {$gatewayDatabase} >> {$gatewayEnvPath}
+touch {$gatewayDatabase}
 SH;
     }
 
@@ -863,7 +855,7 @@ SH;
 
     private static function gatewayConfigPath(string $suffix = ''): string
     {
-        $basePath = self::OrbitConfigRoot.'/gateway';
+        $basePath = self::OrbitConfigRoot;
 
         return $suffix === ''
             ? $basePath
@@ -1188,7 +1180,7 @@ if (\\Illuminate\\Support\\Facades\\Schema::hasTable('local_gateway_settings')) 
     if (is_string(\$rootCa)
         && str_contains(\$rootCa, '-----BEGIN CERTIFICATE-----')
         && str_contains(\$rootCa, '-----END CERTIFICATE-----')) {
-        \$caPemPath = storage_path('app/orbit/gateway-ca/orbit.crt');
+        \$caPemPath = rtrim((string) config('orbit.paths.config_root'), '/').'/gateway-ca/orbit.crt';
         \\Illuminate\\Support\\Facades\\File::ensureDirectoryExists(dirname(\$caPemPath));
         \\Illuminate\\Support\\Facades\\File::put(\$caPemPath, \$rootCa);
         \$caSha256 = hash('sha256', \$rootCa);

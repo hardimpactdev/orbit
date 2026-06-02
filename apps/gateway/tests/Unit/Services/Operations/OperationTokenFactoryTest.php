@@ -116,8 +116,8 @@ describe(OperationTokenFactory::class, function (): void {
         'blank' => '   ',
     ]);
 
-    it('throws when the configured operation token secret is missing', function (): void {
-        config()->set('orbit.operation_token_secret', null);
+    it('throws when the configured app key is missing', function (): void {
+        config()->set('app.key', null);
         config()->set('orbit.operation_token_ttl_seconds', 120);
 
         app()->forgetInstance(OperationTokenFactory::class);
@@ -126,8 +126,8 @@ describe(OperationTokenFactory::class, function (): void {
             ->toThrow(RuntimeException::class);
     });
 
-    it('resolves from operation token config through the container', function (): void {
-        config()->set('orbit.operation_token_secret', 'gateway-secret');
+    it('resolves from the app key config through the container', function (): void {
+        config()->set('app.key', 'gateway-app-key');
         config()->set('orbit.operation_token_ttl_seconds', '30');
 
         app()->forgetInstance(OperationTokenFactory::class);
@@ -141,7 +141,7 @@ describe(OperationTokenFactory::class, function (): void {
 
         expect($token->expires_at - $token->issued_at)->toBe(30)
             ->and(operationTokenFactoryTestVerifier()->verify(
-                secret: 'gateway-secret',
+                secret: 'gateway-app-key',
                 token: $token,
                 expectedNode: 'app-dev',
                 expectedCommand: 'internal:executor:verify',

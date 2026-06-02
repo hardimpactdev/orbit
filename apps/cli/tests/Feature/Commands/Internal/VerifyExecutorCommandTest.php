@@ -12,8 +12,6 @@ use Orbit\Core\Http\JsonEnvelope;
 use Orbit\Core\Security\OperationTokenSigner;
 
 beforeEach(function (): void {
-    config()->set('orbit.executor.shared_secret', null);
-    config()->set('orbit.executor.node_identity', null);
     app()->forgetInstance(OperationTokenGuard::class);
 });
 

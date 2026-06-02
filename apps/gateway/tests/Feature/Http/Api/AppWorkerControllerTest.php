@@ -14,9 +14,7 @@ uses(RefreshDatabase::class);
 
 const APP_WORKER_CALLER_WG_IP = '10.6.0.99';
 
-beforeEach(function (): void {
-    config(['orbit.is_gateway' => true]);
-});
+beforeEach(function (): void {});
 
 function createWorkerControllerCaller(array $overrides = []): Node
 {

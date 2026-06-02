@@ -13,12 +13,26 @@ uses(RefreshDatabase::class);
 
 function orbitCaServiceTestSeedRootFiles(string $rootCrt = "-----BEGIN CERTIFICATE-----\ntest-root-cert\n-----END CERTIFICATE-----\n", string $rootKey = 'test-root-key'): void
 {
-    $caDir = storage_path('app/orbit/ca');
+    $caDir = orbitCaServiceTestCaDir();
 
     File::ensureDirectoryExists($caDir);
     File::put("{$caDir}/root.crt", $rootCrt);
     File::put("{$caDir}/root.key", $rootKey);
     chmod("{$caDir}/root.key", 0600);
+}
+
+function orbitCaServiceTestConfigRoot(): string
+{
+    $configRoot = config('orbit.paths.config_root');
+
+    expect($configRoot)->toBeString();
+
+    return rtrim($configRoot, '/');
+}
+
+function orbitCaServiceTestCaDir(): string
+{
+    return orbitCaServiceTestConfigRoot().'/ca';
 }
 
 function orbitCaServiceTestSeedValidRootFixture(): void
@@ -66,8 +80,10 @@ function orbitCaServiceTestCreateGatewayNode(): Node
 describe('OrbitCaService', function () {
     beforeEach(function () {
         $this->tempStorage = sys_get_temp_dir().'/orbit-ca-test-'.uniqid();
-        mkdir($this->tempStorage.'/app/orbit', 0777, true);
         app()->useStoragePath($this->tempStorage);
+        $this->tempConfigRoot = "{$this->tempStorage}/config";
+        File::ensureDirectoryExists($this->tempConfigRoot);
+        config(['orbit.paths.config_root' => $this->tempConfigRoot]);
         Process::swap(new Factory);
     });
 
@@ -82,7 +98,7 @@ describe('OrbitCaService', function () {
             orbitCaServiceTestCreateGatewayNode();
 
             $service = new OrbitCaService;
-            $caDir = storage_path('app/orbit/ca');
+            $caDir = orbitCaServiceTestCaDir();
 
             orbitCaServiceTestSeedRootFiles();
 
@@ -97,7 +113,7 @@ describe('OrbitCaService', function () {
             orbitCaServiceTestCreateGatewayNode();
 
             $service = new OrbitCaService;
-            $caDir = storage_path('app/orbit/ca');
+            $caDir = orbitCaServiceTestCaDir();
 
             $service->ensureRootCa();
 
@@ -114,7 +130,7 @@ describe('OrbitCaService', function () {
             orbitCaServiceTestCreateGatewayNode();
 
             $service = new OrbitCaService;
-            $caDir = storage_path('app/orbit/ca');
+            $caDir = orbitCaServiceTestCaDir();
 
             File::ensureDirectoryExists($caDir);
             File::put("{$caDir}/root.crt", "-----BEGIN CERTIFICATE-----\ntest-root-cert\n-----END CERTIFICATE-----\n");
@@ -150,7 +166,7 @@ describe('OrbitCaService', function () {
 
         it('issues a runtime-private leaf cert for a DNS host and returns correct paths', function () {
             $service = new OrbitCaService;
-            $dataPath = storage_path('app/orbit');
+            $dataPath = orbitCaServiceTestConfigRoot();
 
             $paths = $service->issueLeaf('demo.beast');
 
@@ -169,7 +185,7 @@ describe('OrbitCaService', function () {
 
         it('is idempotent: calling twice within freshness window returns same serial', function () {
             $service = new OrbitCaService;
-            $dataPath = storage_path('app/orbit');
+            $dataPath = orbitCaServiceTestConfigRoot();
 
             $paths1 = $service->issueLeaf('demo.beast');
             $paths2 = $service->issueLeaf('demo.beast');
@@ -257,7 +273,7 @@ describe('OrbitCaService', function () {
         it('returns PEM content of root.crt', function () {
             orbitCaServiceTestCreateGatewayNode();
 
-            $caDir = storage_path('app/orbit/ca');
+            $caDir = orbitCaServiceTestCaDir();
             $service = new OrbitCaService;
             orbitCaServiceTestSeedRootFiles();
 

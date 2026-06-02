@@ -443,7 +443,11 @@ FORMAT;
             return 'running';
         }
 
-        if (! str_contains($output, 'env=ORBIT_IS_GATEWAY=1') && ! str_contains($output, 'env=ORBIT_IS_GATEWAY=true')) {
+        if (str_contains($output, 'running=false')) {
+            return 'stopped';
+        }
+
+        if (! str_contains($output, 'running=true')) {
             return 'missing';
         }
 

@@ -98,7 +98,7 @@ final class NodeUpdateController implements Loggable
             $node->update($changes);
         }
 
-        if ($changes !== [] && config('orbit.is_gateway') === true && $this->touchesDnsFields(array_keys($changes))) {
+        if ($changes !== [] && $this->touchesDnsFields(array_keys($changes))) {
             app(DnsmasqReconciler::class)->reconcile();
         }
 

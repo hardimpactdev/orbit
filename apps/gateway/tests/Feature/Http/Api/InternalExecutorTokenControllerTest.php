@@ -15,7 +15,7 @@ const INTERNAL_EXECUTOR_TOKEN_CALLER_WG_IP = '10.6.0.50';
 describe('InternalExecutorTokenController', function (): void {
     beforeEach(function (): void {
         config()->set('orbit.trust_wireguard_proxy_header', true);
-        config()->set('orbit.operation_token_secret', 'gateway-secret');
+        config()->set('app.key', 'gateway-app-key');
         config()->set('orbit.operation_token_ttl_seconds', 120);
 
         app()->forgetInstance(OperationTokenFactory::class);

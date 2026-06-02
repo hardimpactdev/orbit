@@ -8,12 +8,8 @@ use App\Actions\Apps\EnactAppRuntime;
 use App\Concerns\PromptsForRegistryEntities;
 use App\Exceptions\PromptAborted;
 use App\Http\Gateway\GatewayApiException;
-use App\Http\Gateway\GatewayConnector;
-use App\Http\Gateway\Requests\Apps\UpdateAppRootRequest;
-use App\Http\Gateway\Responses\Apps\AppRootUpdateResponse;
 use App\Models\App;
 use App\Services\Support\GatewayActionResult;
-use Throwable;
 
 use function Laravel\Prompts\text;
 
@@ -37,23 +33,14 @@ final class AppRootUpdater
     {
         $this->arguments = $arguments;
         $this->output = null;
-        $previousGatewayContext = config('orbit.is_gateway');
 
-        try {
-            config(['orbit.is_gateway' => true]);
+        $exitCode = $this->handle(app(EnactAppRuntime::class));
 
-            $exitCode = $this->handle(app(EnactAppRuntime::class));
-
-            return GatewayActionResult::fromJsonOutput($exitCode, $this->output);
-        } finally {
-            config(['orbit.is_gateway' => $previousGatewayContext]);
-        }
+        return GatewayActionResult::fromJsonOutput($exitCode, $this->output);
     }
 
     private function handle(EnactAppRuntime $enactAppRuntime): int
     {
-        $executionContext = (bool) config('orbit.is_gateway', false) ? 'gateway' : 'control';
-
         $selector = $this->stringArgument('app');
         $root = $this->stringArgument('root');
 
@@ -79,10 +66,6 @@ final class AppRootUpdater
 
         if ($root === null) {
             return $this->failValidation('root', 'Root is required.');
-        }
-
-        if ($executionContext === 'control') {
-            return $this->forwardUpdate($selector, $root);
         }
 
         $app = $this->resolveApp($selector);
@@ -140,35 +123,6 @@ final class AppRootUpdater
         $app->setRelation('node', $app->node);
 
         return $changed;
-    }
-
-    private function forwardUpdate(string $selector, string $root): int
-    {
-        try {
-            /** @var AppRootUpdateResponse $dto */
-            $dto = app(GatewayConnector::class)
-                ->send(new UpdateAppRootRequest(app: $selector, root: $root))
-                ->dto();
-        } catch (GatewayApiException $e) {
-            return $this->failCommand(
-                code: $e->errorCode() ?? 'gateway_unavailable',
-                message: $e->getMessage() !== ''
-                    ? $e->getMessage()
-                    : 'Gateway connection is required to update app roots.',
-                meta: $e->errorMeta(),
-            );
-        } catch (Throwable) {
-            return $this->failCommand(
-                code: 'gateway_unavailable',
-                message: 'Gateway connection is required to update app roots.',
-                meta: [],
-            );
-        }
-
-        $app = $dto->data['app'] ?? [];
-        $nodeName = is_array($app) && is_string($app['node'] ?? null) ? $app['node'] : '';
-
-        return $this->successPayload($dto->data, $dto->warnings, $nodeName, $dto->artifactsReenacted);
     }
 
     private function resolveApp(string $selector): ?App

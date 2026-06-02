@@ -205,9 +205,6 @@ describe('internal executor verification command', function (): void {
 
 function configureOperationTokenGuard(): void
 {
-    config()->set('orbit.executor.shared_secret', null);
-    config()->set('orbit.executor.node_identity', null);
-
     app()->forgetInstance('App\Services\Executor\OperationTokenGuard');
 }
 

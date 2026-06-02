@@ -843,7 +843,7 @@ describe(RemoteLocalExecutor::class, function (): void {
     });
 
     it('keeps default executor bindings while making the local executor explicitly resolvable', function (): void {
-        config()->set('orbit.operation_token_secret', 'gateway-secret');
+        config()->set('app.key', 'gateway-app-key');
         config()->set('orbit.operation_token_ttl_seconds', 120);
 
         app()->forgetInstance(RemoteLocalExecutor::class);
@@ -853,7 +853,7 @@ describe(RemoteLocalExecutor::class, function (): void {
     });
 
     it('surfaces missing operation token configuration during explicit resolution', function (): void {
-        config()->set('orbit.operation_token_secret', null);
+        config()->set('app.key', null);
         config()->set('orbit.operation_token_ttl_seconds', 120);
 
         app()->forgetInstance(RemoteLocalExecutor::class);
@@ -861,9 +861,9 @@ describe(RemoteLocalExecutor::class, function (): void {
 
         try {
             expect(fn (): RemoteLocalExecutor => app(RemoteLocalExecutor::class))
-                ->toThrow(RuntimeException::class, 'Operation token signing secret is not configured.');
+                ->toThrow(RuntimeException::class, 'Application key is not configured for operation token signing.');
         } finally {
-            config()->set('orbit.operation_token_secret', 'gateway-secret');
+            config()->set('app.key', 'gateway-app-key');
         }
     });
 });

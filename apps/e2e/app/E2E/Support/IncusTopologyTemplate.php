@@ -149,12 +149,6 @@ final readonly class IncusTopologyTemplate
         $stateful ??= getenv('ORBIT_E2E_TOPOLOGY_RESET') === 'stateful-restore';
         $sourcePath = $sourceMounted ? $host->sourcePath() : null;
 
-        if ($sourceMounted && $sourcePath === null) {
-            throw new \RuntimeException(
-                "source-mounted Incus topologies require ORBIT_E2E_INCUS_SOURCE_PATH for remote Incus hosts [{$host->config->host}]"
-            );
-        }
-
         $index = 0;
         foreach ($roles as $role) {
             $index++;

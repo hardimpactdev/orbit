@@ -176,8 +176,6 @@ class BootstrapGatewayLocalCommand extends Command
             ];
         });
 
-        $this->markGatewayEnvironment($name);
-
         $caService->ensureRootCa();
         $wireguardServerPublicKey = null;
 
@@ -347,47 +345,11 @@ class BootstrapGatewayLocalCommand extends Command
         putenv("{$key}={$value}");
     }
 
-    private function removeEnvVar(string $key): void
-    {
-        $path = app()->environmentFilePath();
-
-        if (File::exists($path)) {
-            $contents = File::get($path);
-            $contents = (string) preg_replace('/^'.preg_quote($key, '/').'=.*$\n?/m', '', $contents);
-
-            File::put($path, rtrim($contents)."\n");
-        }
-
-        unset($_ENV[$key], $_SERVER[$key]);
-        putenv($key);
-    }
-
     private function stringOption(string $name): ?string
     {
         $value = $this->option($name);
 
         return is_string($value) && $value !== '' ? $value : null;
-    }
-
-    private function ensureOperationTokenSecret(): string
-    {
-        $secret = $this->readEnvVar('ORBIT_OPERATION_TOKEN_SECRET')
-            ?? base64_encode(random_bytes(32));
-
-        $this->removeEnvVar('ORBIT_EXECUTOR_SECRET');
-        $this->writeEnvVar('ORBIT_OPERATION_TOKEN_SECRET', $secret);
-        config(['orbit.operation_token_secret' => $secret]);
-        config(['orbit.executor_secret' => null]);
-
-        return $secret;
-    }
-
-    private function markGatewayEnvironment(string $name): void
-    {
-        $this->ensureOperationTokenSecret();
-        $this->writeEnvVar('ORBIT_IS_GATEWAY', 'true');
-        $this->writeEnvVar('ORBIT_NODE_IDENTITY', $name);
-        config(['orbit.is_gateway' => true]);
     }
 
     private function stringArgument(string $name): ?string

@@ -28,10 +28,8 @@ packaged install/update/runtime contract.
 - VM/node-local mutable Orbit state lives under `~/.config/orbit`, not inside
   the mounted source tree.
 - Internal executor commands still require `--operation-token`, but the
-  node-local CLI verifies the token through the gateway API instead of using a
-  node-local shared signing secret.
-- `ORBIT_EXECUTOR_SECRET` is removed from the target architecture.
-- `ORBIT_OPERATION_TOKEN_SECRET` remains gateway-owned minting material.
+  node-local CLI verifies the token through the gateway API.
+- Gateway operation tokens are signed with the gateway Laravel `APP_KEY`.
 
 ## Current Conflicts
 
@@ -41,15 +39,12 @@ changes:
 - the docs describe the installed public `orbit` command as the native CLI
   binary everywhere;
 - the docs describe one `orbit-runtime` container per node;
-- `bin/install-orbit` creates `apps/gateway/.env` and
+- `bin/install-orbit` created `apps/gateway/.env` and
   `apps/gateway/database/database.sqlite` inside the checkout;
-- Laravel gateway bootstrap pins `database_path()` to `apps/gateway/database`;
+- Laravel gateway bootstrap pinned the SQLite file to `apps/gateway/database`;
 - gateway CA material currently defaults to Laravel storage under
   `apps/gateway/storage/app/orbit`;
-- the current source launcher reads executor material from
-  `apps/gateway/.env`;
-- internal executor token validation currently uses local HMAC verification
-  with `ORBIT_EXECUTOR_SECRET`.
+- the current source launcher still carries gateway-local assumptions.
 
 Those conflicts must be resolved before source-mounted topology mode becomes
 the default development lane.
@@ -71,8 +66,8 @@ For live/source-mounted topologies, this root owns at least:
 - gateway SQLite database;
 - gateway CA root and issued certificates;
 - generated trust and local gateway material;
-- cache, session, view, log, and framework runtime files that would otherwise
-  dirty the source tree;
+- Laravel framework cache, session, view, and log files remain app-local under
+  `apps/gateway/storage`;
 - node-local CLI config and gateway trust.
 
 Production does not need to use a `.env` file under `~/.config/orbit` if its
@@ -133,7 +128,8 @@ client material:
 
 - configured gateway URL;
 - gateway CA trust;
-- node identity required to authenticate the API request.
+- gateway client material required to authenticate the API request over
+  WireGuard.
 
 This makes the gateway the single authority for operation-token validity and
 removes the current shared-secret duplication between gateway and nodes.
@@ -203,8 +199,7 @@ Focused in-memory tests should cover:
 - `apps/cli/orbit` deriving app context without `ORBIT_REPO`;
 - fallback to `getcwd()` when `ORBIT_HOST_CWD` is absent;
 - gateway state-root path resolution;
-- internal executor commands rejecting missing/denied gateway introspection;
-- internal executor commands no longer requiring `ORBIT_EXECUTOR_SECRET`.
+- internal executor commands rejecting missing/denied gateway introspection.
 
 Docker E2E should cover:
 

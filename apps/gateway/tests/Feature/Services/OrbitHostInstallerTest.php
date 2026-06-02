@@ -60,8 +60,8 @@ it('runs the pre-wireguard node security baseline over pinned ssh during provisi
     Process::assertNotRan(fn ($process): bool => str_contains((string) $process->command, 'ufw deny in on "$PUBLIC_IFACE"'));
 });
 
-it('stages operation token configuration through a temporary remote env file without exposing the secret in ssh argv', function (): void {
-    config()->set('orbit.operation_token_secret', 'shared-operation-secret');
+it('stages node identity through a temporary remote env file without operation token signing material', function (): void {
+    config()->set('app.key', 'shared-app-key');
 
     $node = Node::factory()->create([
         'name' => 'app-dev-1',
@@ -91,8 +91,7 @@ it('stages operation token configuration through a temporary remote env file wit
     Process::assertRan(fn ($process): bool => str_contains((string) $process->command, 'set -a; . ')
         && str_contains((string) $process->command, '--source-archive='));
 
-    Process::assertNotRan(fn ($process): bool => str_contains((string) $process->command, 'shared-operation-secret'));
-    Process::assertNotRan(fn ($process): bool => str_contains((string) $process->command, 'ORBIT_EXECUTOR_SECRET'));
+    Process::assertNotRan(fn ($process): bool => str_contains((string) $process->command, 'shared-app-key'));
 });
 
 it('forwards local runtime image archives to install-orbit when enabled for archive-seeded provisioning', function (): void {
@@ -100,7 +99,7 @@ it('forwards local runtime image archives to install-orbit when enabled for arch
 
     Process::fake(fn () => Process::result());
 
-    $result = app(OrbitHostInstaller::class)->install('192.0.2.20', 'root', 'orbit', asGateway: true);
+    $result = app(OrbitHostInstaller::class)->install('192.0.2.20', 'root', 'orbit');
 
     expect($result->successful)->toBeTrue();
 
@@ -136,7 +135,7 @@ it('forwards local runtime image archives to install-orbit when enabled for arch
         && str_contains((string) $process->command, '--dnsmasq-image-archive=')
         && str_contains((string) $process->command, '--frankenphp-image-archive=')
         && str_contains((string) $process->command, '--wg-easy-image-archive=')
-        && str_contains((string) $process->command, '--gateway'));
+        && ! str_contains((string) $process->command, '--gateway'));
 });
 
 it('stages installer transfer artifacts under var tmp instead of the small tmpfs', function (): void {

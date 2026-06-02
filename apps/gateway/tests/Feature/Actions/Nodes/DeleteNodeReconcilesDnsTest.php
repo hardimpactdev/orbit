@@ -25,9 +25,7 @@ beforeEach(function (): void {
     app()->instance(DnsmasqReconciler::class, $this->reconciler);
 });
 
-it('reconciles dnsmasq after deleting a node on a gateway', function (): void {
-    config(['orbit.is_gateway' => true]);
-
+it('reconciles dnsmasq after deleting a node', function (): void {
     $node = Node::factory()->create([
         'name' => 'app-1',
 
@@ -38,19 +36,4 @@ it('reconciles dnsmasq after deleting a node on a gateway', function (): void {
     app(RemoveNode::class)->handle($node, removedSelf: false);
 
     expect($this->reconciler->reconciles)->toBe(1);
-});
-
-it('does not reconcile after deleting a node off-gateway', function (): void {
-    config(['orbit.is_gateway' => false]);
-
-    $node = Node::factory()->create([
-        'name' => 'app-1',
-
-        'tld' => 'app-1.test',
-        'wireguard_address' => '10.6.0.3',
-    ]);
-
-    app(RemoveNode::class)->handle($node, removedSelf: false);
-
-    expect($this->reconciler->reconciles)->toBe(0);
 });
