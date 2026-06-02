@@ -54,6 +54,8 @@ final readonly class E2ECommand
             '--env '.escapeshellarg("DB_DATABASE={$configRoot}/gateway.sqlite"),
             '--env '.escapeshellarg('SESSION_DRIVER=file'),
             '--mount '.escapeshellarg("type=bind,source={$configRoot},target={$configRoot}"),
+            '-v '.escapeshellarg('/root/.ssh:/root/.ssh:ro'),
+            '-v '.escapeshellarg('/home/orbit/.ssh:/home/orbit/.ssh:ro'),
             escapeshellarg($gatewayImage),
             'artisan',
             $arguments,

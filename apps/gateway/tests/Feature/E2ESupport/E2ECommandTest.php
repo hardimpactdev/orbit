@@ -59,6 +59,8 @@ it('runs gateway artisan through the prepared gateway image by default', functio
         expect($command)
             ->toContain('docker run --rm --pull never')
             ->toContain("'orbit-gateway:prepared-current'")
+            ->toContain('/root/.ssh:/root/.ssh:ro')
+            ->toContain('/home/orbit/.ssh:/home/orbit/.ssh:ro')
             ->not->toContain('orbit-gateway:current')
             ->toContain('artisan route:list');
     });
