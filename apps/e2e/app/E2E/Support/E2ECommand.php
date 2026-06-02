@@ -45,6 +45,7 @@ final readonly class E2ECommand
     public static function gatewayArtisanCommand(string $arguments): string
     {
         $configRoot = self::GatewayConfigRoot;
+        $gatewayImage = DockerTopologyProvider::gatewayImage();
 
         $docker = implode(' ', [
             'docker run --rm --pull never',
@@ -53,7 +54,7 @@ final readonly class E2ECommand
             '--env '.escapeshellarg("DB_DATABASE={$configRoot}/gateway.sqlite"),
             '--env '.escapeshellarg('SESSION_DRIVER=file'),
             '--mount '.escapeshellarg("type=bind,source={$configRoot},target={$configRoot}"),
-            'orbit-gateway:current',
+            escapeshellarg($gatewayImage),
             'artisan',
             $arguments,
         ]);

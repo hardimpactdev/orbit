@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\E2E\Support\E2ECommand;
 use App\E2E\Support\E2EInstance;
+use App\E2E\Support\E2ETopologyArtifactNamespace;
 use App\E2E\Support\SshKeyPair;
 use Illuminate\Contracts\Process\ProcessResult;
 use Mockery as m;
@@ -49,4 +50,29 @@ it('returns the process result when an ssh command succeeds', function (): void 
         new SshKeyPair('/tmp/id', '/tmp/id.pub'),
         'orbit node:list',
     ))->toBe($result);
+});
+
+it('runs gateway artisan through the prepared gateway image by default', function (): void {
+    withE2ETopologyEnvironment([], function (): void {
+        $command = E2ECommand::gatewayArtisanCommand('route:list');
+
+        expect($command)
+            ->toContain('docker run --rm --pull never')
+            ->toContain("'orbit-gateway:prepared-current'")
+            ->not->toContain('orbit-gateway:current')
+            ->toContain('artisan route:list');
+    });
+});
+
+it('runs gateway artisan through the namespaced gateway image for isolated artifacts', function (): void {
+    withE2ETopologyEnvironment([
+        E2ETopologyArtifactNamespace::EnvironmentVariable => 'Provision Serving',
+    ], function (): void {
+        $command = E2ECommand::gatewayArtisanCommand('route:list');
+
+        expect($command)
+            ->toContain("'orbit-gateway:provision-serving-current'")
+            ->not->toContain("'orbit-gateway:prepared-current'")
+            ->toContain('artisan route:list');
+    });
 });
