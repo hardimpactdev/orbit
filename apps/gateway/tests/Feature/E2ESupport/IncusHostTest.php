@@ -363,6 +363,61 @@ it('stages local Docker image archives in the pushed provisioning bundle when av
         ->and($commandOutput)->toContain("'{$remoteStage}/orbit-e2e-bundle/wg-easy-15.tar'");
 });
 
+it('materializes a namespaced gateway image archive from the prepared fallback image', function (): void {
+    withE2ETopologyEnvironment([
+        'ORBIT_E2E_TOPOLOGY_ARTIFACT_NAMESPACE' => 'Provision Serving',
+    ], function (): void {
+        $localBundle = sys_get_temp_dir().'/orbit-incus-local-bundle-'.bin2hex(random_bytes(4));
+        $remoteStage = sys_get_temp_dir().'/orbit-incus-remote-stage-'.bin2hex(random_bytes(4));
+        mkdir($localBundle, 0755, true);
+        file_put_contents("{$localBundle}/orbit-source.tar.gz", 'source');
+
+        $commands = [];
+        $host = new class(incusHostTestConfig(host: 'localhost'), $commands, $remoteStage) extends IncusHost
+        {
+            /** @var list<string> */
+            private array $commands;
+
+            /**
+             * @param  list<string>  $commands
+             */
+            public function __construct(E2EConfig $config, array &$commands, private string $remoteStage)
+            {
+                parent::__construct($config);
+                $this->commands = &$commands;
+            }
+
+            public function run(string $command, ?int $timeoutSeconds = null): ProcessResult
+            {
+                $this->commands[] = $command;
+
+                if (str_contains($command, 'mktemp -d')) {
+                    mkdir($this->remoteStage, 0755, true);
+
+                    return incusHostTestProcessResult($this->remoteStage."\n");
+                }
+
+                return incusHostTestProcessResult();
+            }
+        };
+
+        try {
+            $host->pushBundle($localBundle);
+        } finally {
+            (new Symfony\Component\Process\Process(['rm', '-rf', $localBundle, $remoteStage]))->run();
+        }
+
+        $commandOutput = implode("\n", $commands);
+
+        expect($commandOutput)
+            ->toContain("docker image inspect 'orbit-gateway:provision-serving-current'")
+            ->toContain("docker image inspect 'orbit-gateway:prepared-current'")
+            ->toContain("docker tag 'orbit-gateway:prepared-current' 'orbit-gateway:provision-serving-current'")
+            ->toContain("docker save 'orbit-gateway:provision-serving-current'")
+            ->toContain("'{$remoteStage}/orbit-e2e-bundle/orbit-gateway-current.tar'");
+    });
+});
+
 it('passes staged Docker image archives to the in-guest provisioner when present', function (): void {
     $commands = [];
     $host = new class(incusHostTestConfig(), $commands) extends IncusHost

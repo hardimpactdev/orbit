@@ -84,7 +84,7 @@ class IncusHost
                 throw new RuntimeException("Could not copy bundle locally into {$bundleDir}: {$copy->errorOutput()}");
             }
 
-            $this->stageDockerImageArchive($this->defaultGatewayImage(), self::DefaultOrbitGatewayImageArchive, $bundleDir);
+            $this->stageGatewayImageArchive($bundleDir);
             $this->stageDockerImageArchive('caddy:2-alpine', 'caddy-2-alpine.tar', $bundleDir, pullIfMissing: true);
             $this->stageDockerImageArchive('4km3/dnsmasq:latest', 'dnsmasq-latest.tar', $bundleDir, pullIfMissing: true);
             $this->stageDockerImageArchive($this->defaultFrankenPhpImage(), self::DefaultFrankenPhpImageArchive, $bundleDir, pullIfMissing: true);
@@ -104,7 +104,7 @@ class IncusHost
             throw new RuntimeException("Could not scp bundle to {$this->config->host}:{$bundleDir}: {$scp->errorOutput()}");
         }
 
-        $this->stageDockerImageArchive($this->defaultGatewayImage(), self::DefaultOrbitGatewayImageArchive, $bundleDir);
+        $this->stageGatewayImageArchive($bundleDir);
         $this->stageDockerImageArchive('caddy:2-alpine', 'caddy-2-alpine.tar', $bundleDir, pullIfMissing: true);
         $this->stageDockerImageArchive('4km3/dnsmasq:latest', 'dnsmasq-latest.tar', $bundleDir, pullIfMissing: true);
         $this->stageDockerImageArchive($this->defaultFrankenPhpImage(), self::DefaultFrankenPhpImageArchive, $bundleDir, pullIfMissing: true);
@@ -123,16 +123,34 @@ class IncusHost
         return DockerTopologyProvider::gatewayImage();
     }
 
-    private function stageDockerImageArchive(string $image, string $fileName, string $bundleDir, bool $pullIfMissing = false): void
+    private function stageGatewayImageArchive(string $bundleDir): void
+    {
+        $this->stageDockerImageArchive(
+            $this->defaultGatewayImage(),
+            self::DefaultOrbitGatewayImageArchive,
+            $bundleDir,
+            fallbackImage: 'orbit-gateway:prepared-current',
+        );
+    }
+
+    private function stageDockerImageArchive(string $image, string $fileName, string $bundleDir, bool $pullIfMissing = false, ?string $fallbackImage = null): void
     {
         $archive = "{$bundleDir}/{$fileName}";
         $quotedImage = escapeshellarg($image);
+        $fallbackCommand = '';
+
+        if ($fallbackImage !== null && $fallbackImage !== $image) {
+            $quotedFallbackImage = escapeshellarg($fallbackImage);
+            $fallbackCommand = "if ! docker image inspect {$quotedImage} >/dev/null 2>&1 && docker image inspect {$quotedFallbackImage} >/dev/null 2>&1; then docker tag {$quotedFallbackImage} {$quotedImage}; fi; ";
+        }
+
         $pullCommand = $pullIfMissing
             ? "if ! docker image inspect {$quotedImage} >/dev/null 2>&1; then docker pull {$quotedImage}; fi; "
             : '';
 
         $result = $this->run(sprintf(
-            'if command -v docker >/dev/null 2>&1; then %s if docker image inspect %s >/dev/null 2>&1; then docker save %s -o %s; chmod 0644 %s; fi; fi',
+            'if command -v docker >/dev/null 2>&1; then %s%s if docker image inspect %s >/dev/null 2>&1; then docker save %s -o %s; chmod 0644 %s; fi; fi',
+            $fallbackCommand,
             $pullCommand,
             $quotedImage,
             $quotedImage,
