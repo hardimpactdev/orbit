@@ -797,17 +797,22 @@ BASH;
 
         E2ECommand::exec(
             $instance,
-            $this->preparedWebSocketRuntimePrerequisitesCommand($guestArchive, DockerTopologyProvider::gatewayImage()),
+            $this->preparedWebSocketRuntimePrerequisitesCommand(
+                $guestArchive,
+                DockerTopologyProvider::gatewayImage(),
+                $this->host->config->bootstrapUser,
+            ),
             "Could not install prepared websocket runtime prerequisites on {$instance->name()}",
             timeoutSeconds: 900,
         );
     }
 
-    private function preparedWebSocketRuntimePrerequisitesCommand(string $gatewayImageArchive, string $preparedGatewayImage): string
+    private function preparedWebSocketRuntimePrerequisitesCommand(string $gatewayImageArchive, string $preparedGatewayImage, string $bootstrapUser): string
     {
         $script = sprintf(
             <<<'BASH'
 set -euo pipefail
+bootstrap_user=%s
 
 if ! command -v docker >/dev/null 2>&1; then
     sudo apt-get -o DPkg::Lock::Timeout=300 update -qq
@@ -820,6 +825,9 @@ fi
 
 if getent group docker >/dev/null 2>&1; then
     sudo usermod -aG docker "$(id -un)"
+    if getent passwd "$bootstrap_user" >/dev/null 2>&1; then
+        sudo usermod -aG docker "$bootstrap_user"
+    fi
 fi
 
 sudo docker load -i %s
@@ -827,7 +835,11 @@ if sudo docker image inspect %s >/dev/null 2>&1; then
     sudo docker tag %s 'orbit-gateway:current'
 fi
 sudo docker image inspect 'orbit-gateway:current' >/dev/null
+if getent passwd "$bootstrap_user" >/dev/null 2>&1; then
+    sudo -u "$bootstrap_user" docker image inspect 'orbit-gateway:current' >/dev/null
+fi
 BASH,
+            escapeshellarg($bootstrapUser),
             escapeshellarg($gatewayImageArchive),
             escapeshellarg($preparedGatewayImage),
             escapeshellarg($preparedGatewayImage),
