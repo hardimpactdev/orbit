@@ -9,7 +9,7 @@ final class E2ETopologyCache
     /** @var array<string, E2ETopologyLease> */
     private static array $leases = [];
 
-    /** @var (\Closure(E2ETopologyKind, array<string, string>|null): E2ETopologyLease)|null */
+    /** @var (\Closure(E2ETopologyKind, array<string, string>|null, bool, bool): E2ETopologyLease)|null */
     private static ?\Closure $resolver = null;
 
     private static bool $shutdownRegistered = false;
@@ -25,7 +25,7 @@ final class E2ETopologyCache
     /**
      * @param  array<string, string>|null  $sshUsers
      */
-    public static function acquire(E2ETopologyKind $kind, ?array $sshUsers = null, bool $withGatewayApi = false): E2ETopologyHarness
+    public static function acquire(E2ETopologyKind $kind, ?array $sshUsers = null, bool $withGatewayApi = false, bool $sourceMountedCheckout = false): E2ETopologyHarness
     {
         self::registerShutdown();
 
@@ -39,14 +39,18 @@ final class E2ETopologyCache
             $factory = $factory->withGatewayApi();
         }
 
+        if ($sourceMountedCheckout) {
+            $factory = $factory->withSourceMountedCheckout();
+        }
+
         $resolvedKind = $factory->resolveKind($kind);
-        $key = self::key($resolvedKind, $sshUsers, $withGatewayApi);
+        $key = self::key($resolvedKind, $sshUsers, $withGatewayApi, $sourceMountedCheckout);
 
         if (! isset(self::$leases[$key])) {
             self::evictUntilRoomFor($key);
 
             self::$leases[$key] = self::$resolver !== null
-                ? (self::$resolver)($kind, $sshUsers)
+                ? (self::$resolver)($kind, $sshUsers, $withGatewayApi, $sourceMountedCheckout)
                 : $factory->require($kind);
         }
 
@@ -95,12 +99,14 @@ final class E2ETopologyCache
     /**
      * @param  array<string, string>|null  $sshUsers
      */
-    private static function key(E2ETopologyKind $kind, ?array $sshUsers, bool $withGatewayApi): string
+    private static function key(E2ETopologyKind $kind, ?array $sshUsers, bool $withGatewayApi, bool $sourceMountedCheckout): string
     {
         $sshUsers ??= [];
         ksort($sshUsers);
 
-        return $kind->value.':'.($withGatewayApi ? 'gateway-api' : 'no-gateway-api').':'.sha1(json_encode($sshUsers, JSON_THROW_ON_ERROR));
+        $sourceMode = $sourceMountedCheckout ? 'source-mounted' : 'prepared';
+
+        return $kind->value.':'.($withGatewayApi ? 'gateway-api' : 'no-gateway-api').":{$sourceMode}:".sha1(json_encode($sshUsers, JSON_THROW_ON_ERROR));
     }
 
     private static function evictUntilRoomFor(string $key): void

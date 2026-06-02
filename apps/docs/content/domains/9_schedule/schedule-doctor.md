@@ -11,7 +11,7 @@ The schedule family doctor implements the
 The schedule family owns these facts:
 
 - gateway-owned schedule rows: scope, target, interval, timezone, execution source, enabled state, and scheduler metadata;
-- the gateway scheduler daemon inside the gateway `orbit-runtime` container;
+- the `orbit-scheduler` Swarm service using the Orbit gateway image;
 - Orbit Scheduler liveness, heartbeat freshness, and schedule lock health (all gateway-side);
 - SSH reachability from the gateway to each schedule's target node so dispatches can succeed;
 - drift between gateway schedule configuration and observed run history.
@@ -27,10 +27,10 @@ The schedule probe reads gateway schedule configuration and checks these layers:
 
 **Gateway scheduler layers** (verified once per doctor run, not per schedule):
 
-3. **Scheduler runtime availability:** the gateway `orbit-runtime` container is
-   available and can run the scheduler daemon.
+3. **Scheduler runtime availability:** the gateway Swarm services and gateway
+   image are available and can run the scheduler daemon.
 4. **Orbit Scheduler presence:** the scheduler daemon configuration exists in
-   the gateway runtime container.
+   the gateway container.
 5. **Orbit Scheduler liveness:** the scheduler daemon is in a running state.
 6. **Heartbeat freshness:** the most recent scheduler heartbeat is within the configured threshold.
 7. **Schedule lock health:** no schedule lock in `schedule_locks` exceeds the configured stale-lock threshold.
@@ -50,8 +50,8 @@ The table below lists every issue code the schedule probe may emit and the condi
 | --- | --- |
 | `schedule.record_incomplete` | A selected gateway schedule lacks scope, target, interval, timezone, execution source, or enabled state. |
 | `schedule.target_invalid` | The schedule points at a missing, unauthorized, inactive, unsupported, or role-incompatible target. |
-| `schedule.runtime_backend_unavailable` | The gateway `orbit-runtime` container cannot run the scheduler daemon. |
-| `schedule.scheduler_missing` | The gateway runtime has no scheduler daemon configuration. |
+| `schedule.runtime_backend_unavailable` | The gateway Swarm runtime or gateway image cannot run the scheduler daemon. |
+| `schedule.scheduler_missing` | The gateway service has no scheduler daemon configuration. |
 | `schedule.scheduler_stopped` | The scheduler daemon is configured but not running. |
 | `schedule.heartbeat_stale` | The most recent scheduler heartbeat is older than the configured threshold. |
 | `schedule.lock_stuck` | A row in `schedule_locks` exceeds the configured stale-lock threshold. |
@@ -64,10 +64,10 @@ The table below lists what `doctor --restore` does for each issue code.
 
 | Code | `doctor --restore` behavior |
 | --- | --- |
-| `schedule.runtime_backend_unavailable` | No `doctor --restore` action. Gateway runtime recovery belongs to node operations. |
-| `schedule.scheduler_missing` | Re-render and load the scheduler daemon configuration in the gateway runtime. |
-| `schedule.scheduler_stopped` | Start the scheduler daemon in the gateway runtime. |
-| `schedule.heartbeat_stale` | No `doctor --restore` action. Stale heartbeat is a runtime symptom; restart the scheduler daemon or investigate the gateway runtime. |
+| `schedule.runtime_backend_unavailable` | No `doctor --restore` action. Gateway service recovery belongs to node operations. |
+| `schedule.scheduler_missing` | Re-render and load the scheduler daemon configuration in the gateway service. |
+| `schedule.scheduler_stopped` | Start the scheduler daemon in the gateway service. |
+| `schedule.heartbeat_stale` | No `doctor --restore` action. Stale heartbeat is a runtime symptom; restart the scheduler daemon or investigate the gateway service. |
 | `schedule.lock_stuck` | Release the stale lock row in `schedule_locks` and record the affected run as `failed`. |
 
 `doctor --restore` does not handle `schedule.record_incomplete`,

@@ -33,7 +33,7 @@ set -e
 
 COMPOSER_HOME="/home/orbit/.config/composer"
 
-# Install the Laravel installer globally as the orbit runtime user
+# Install the Laravel installer globally as the orbit system user
 sudo -u orbit -H bash -lc "COMPOSER_HOME=${COMPOSER_HOME} composer global require laravel/installer --no-interaction --no-progress"
 
 # Symlink the laravel binary into /usr/local/bin so it is on PATH system-wide

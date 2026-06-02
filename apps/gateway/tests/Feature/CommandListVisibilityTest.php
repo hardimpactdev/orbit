@@ -303,7 +303,7 @@ it('hides CLI-owned public product commands from the gateway command list', func
     );
 });
 
-it('shows gateway runtime and maintenance commands in the command list', function (): void {
+it('shows gateway service and maintenance commands in the command list', function (): void {
     $visible = gatewayVisibleCommandNames(gatewayCommandList());
 
     expect($visible)->toContain(

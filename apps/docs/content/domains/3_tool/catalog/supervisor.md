@@ -34,7 +34,7 @@ baseline and is not a host PHP fallback.
 Supervisor is an explicit residual process runtime for supported non-PHP
 host-side units. Docker process runtime is the default for PHP app and
 workspace process units. The Orbit Scheduler runs inside gateway
-`orbit-runtime`, not as a host Supervisor program.
+`orbit-scheduler`, not as a host Supervisor program.
 
 The tool family owns Supervisor's installation status, the `supervisord`
 daemon's reachability, and lifecycle drift only where explicit Supervisor
@@ -55,5 +55,5 @@ the Supervisor installation or restart the `supervisord` daemon.
 
 The `process` family owns Supervisor program drift for residual runtime units
 that Orbit manages. The `schedule` family owns Orbit Scheduler liveness and
-heartbeat drift in `orbit-runtime`. The `tool` family does not duplicate those
+heartbeat drift in `orbit-scheduler`. The `tool` family does not duplicate those
 checks.

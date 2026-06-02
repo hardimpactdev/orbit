@@ -1,0 +1,230 @@
+#!/usr/bin/env php
+<?php
+
+declare(strict_types=1);
+
+$options = getopt('', [
+    'version:',
+    'gateway-image:',
+    'gateway-digest::',
+    'repository::',
+    'source::',
+    'output::',
+    'cli-artifact:',
+    'role-image:',
+]);
+
+try {
+    $version = normalize_version(required_string($options, 'version'));
+    $repository = optional_string($options, 'repository', 'hardimpactdev/orbit');
+    $source = optional_string($options, 'source', 'github-release');
+    $gatewayImage = gateway_image(
+        image: required_string($options, 'gateway-image'),
+        digest: optional_string($options, 'gateway-digest', ''),
+    );
+    $cliArtifacts = cli_artifacts(repeated_values($options, 'cli-artifact'), $repository, $version);
+    $roleImages = role_images(repeated_values($options, 'role-image'));
+
+    $manifest = [
+        'schema_version' => 1,
+        'version' => $version,
+        'source' => $source,
+        'images' => [
+            'gateway' => $gatewayImage,
+        ],
+        'cli_artifacts' => $cliArtifacts,
+        'role_images' => $roleImages,
+    ];
+
+    $json = json_encode($manifest, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
+
+    if (! is_string($json)) {
+        fail('Failed to encode release manifest JSON.');
+    }
+
+    $json .= "\n";
+    $output = optional_string($options, 'output', '');
+
+    if ($output !== '') {
+        file_put_contents($output, $json);
+    } else {
+        echo $json;
+    }
+} catch (Throwable $exception) {
+    fail($exception->getMessage());
+}
+
+/**
+ * @param  array<string, mixed>  $options
+ */
+function required_string(array $options, string $key): string
+{
+    $value = $options[$key] ?? null;
+
+    if (is_array($value)) {
+        $value = end($value);
+    }
+
+    if (! is_string($value) || trim($value) === '') {
+        fail("Missing required --{$key} option.");
+    }
+
+    return trim($value);
+}
+
+/**
+ * @param  array<string, mixed>  $options
+ */
+function optional_string(array $options, string $key, string $default): string
+{
+    $value = $options[$key] ?? null;
+
+    if (is_array($value)) {
+        $value = end($value);
+    }
+
+    if (! is_string($value) || trim($value) === '') {
+        return $default;
+    }
+
+    return trim($value);
+}
+
+/**
+ * @param  array<string, mixed>  $options
+ * @return list<string>
+ */
+function repeated_values(array $options, string $key): array
+{
+    $value = $options[$key] ?? [];
+
+    if (is_string($value)) {
+        return [$value];
+    }
+
+    if (! is_array($value)) {
+        return [];
+    }
+
+    return array_values(array_filter($value, is_string(...)));
+}
+
+function normalize_version(string $version): string
+{
+    $version = ltrim(trim($version), 'v');
+
+    if ($version === '') {
+        fail('Release manifest version cannot be empty.');
+    }
+
+    return $version;
+}
+
+function gateway_image(string $image, string $digest): string
+{
+    $image = trim($image);
+
+    if ($image === '') {
+        fail('Release manifest gateway image cannot be empty.');
+    }
+
+    if (str_contains($image, '@sha256:')) {
+        assert_digest(substr($image, strpos($image, '@') + 1), 'gateway image digest');
+
+        return $image;
+    }
+
+    if ($digest === '') {
+        fail('Release manifest gateway digest is required when --gateway-image is not already digest pinned.');
+    }
+
+    if (! str_starts_with($digest, 'sha256:')) {
+        $digest = "sha256:{$digest}";
+    }
+
+    assert_digest($digest, 'gateway digest');
+
+    return "{$image}@{$digest}";
+}
+
+function assert_digest(string $digest, string $label): void
+{
+    if (preg_match('/^sha256:[a-f0-9]{64}$/', $digest) !== 1) {
+        fail("Release manifest {$label} must be a sha256 digest.");
+    }
+}
+
+/**
+ * @param  list<string>  $values
+ * @return array<string, array{url: string, sha256: string}>
+ */
+function cli_artifacts(array $values, string $repository, string $version): array
+{
+    if ($values === []) {
+        fail('At least one --cli-artifact option is required.');
+    }
+
+    $artifacts = [];
+    $tag = "v{$version}";
+
+    foreach ($values as $value) {
+        [$platform, $asset, $path] = array_pad(explode('=', $value, 3), 3, null);
+
+        if (! is_string($platform) || trim($platform) === '' || ! is_string($asset) || trim($asset) === '' || ! is_string($path) || trim($path) === '') {
+            fail('CLI artifacts must use platform=asset-name=path format.');
+        }
+
+        if (! is_file($path)) {
+            fail("CLI artifact file not found: {$path}");
+        }
+
+        $sha256 = hash_file('sha256', $path);
+
+        if (! is_string($sha256)) {
+            fail("Failed to hash CLI artifact: {$path}");
+        }
+
+        $artifacts[trim($platform)] = [
+            'url' => "https://github.com/{$repository}/releases/download/{$tag}/".trim($asset),
+            'sha256' => $sha256,
+        ];
+    }
+
+    ksort($artifacts);
+
+    return $artifacts;
+}
+
+/**
+ * @param  list<string>  $values
+ * @return array<string, string>
+ */
+function role_images(array $values): array
+{
+    if ($values === []) {
+        fail('At least one --role-image option is required.');
+    }
+
+    $images = [];
+
+    foreach ($values as $value) {
+        [$role, $image] = array_pad(explode('=', $value, 2), 2, null);
+
+        if (! is_string($role) || trim($role) === '' || ! is_string($image) || trim($image) === '') {
+            fail('Role images must use role=image format.');
+        }
+
+        $images[trim($role)] = trim($image);
+    }
+
+    ksort($images);
+
+    return $images;
+}
+
+function fail(string $message): never
+{
+    fwrite(STDERR, rtrim($message)."\n");
+
+    exit(1);
+}

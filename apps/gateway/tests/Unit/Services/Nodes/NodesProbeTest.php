@@ -551,7 +551,7 @@ describe('external service stubs', function (): void {
         expect($remoteShell->scripts[0])->toContain('"runtime_user"');
     });
 
-    it('returns empty for gateway runtime checks', function (): void {
+    it('returns empty for gateway service checks', function (): void {
         $node = Node::create([
             'name' => 'test',
             'host' => '10.0.0.1',

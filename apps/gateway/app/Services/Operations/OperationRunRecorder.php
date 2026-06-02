@@ -4,8 +4,11 @@ declare(strict_types=1);
 
 namespace App\Services\Operations;
 
+use App\Models\OperationEvent;
 use App\Models\OperationRun;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Orbit\Core\Enums\OperationStatus;
 use RuntimeException;
@@ -22,6 +25,10 @@ use RuntimeException;
 final readonly class OperationRunRecorder
 {
     private const array VALID_LANES = ['host', 'runtime', 'local', 'gateway'];
+
+    public function __construct(
+        private ResultBoundaryRedactionPolicy $redaction,
+    ) {}
 
     /**
      * @param  array<string, mixed>|null  $result
@@ -142,6 +149,109 @@ final readonly class OperationRunRecorder
             stdoutSummary: null,
             stderrSummary: null,
         );
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     * @param  array<string, mixed>  $metadata
+     */
+    public function appendEvent(string $operationRunId, string $eventType, array $payload, array $metadata = []): OperationEvent
+    {
+        $eventType = trim($eventType);
+
+        if ($eventType === '') {
+            throw new RuntimeException('Operation event type cannot be empty.');
+        }
+
+        $this->redaction->assertSafe([
+            'payload' => $payload,
+            'metadata' => $metadata,
+        ], 'progress');
+
+        return DB::transaction(function () use ($operationRunId, $eventType, $payload, $metadata): OperationEvent {
+            $this->findOrFail($operationRunId);
+
+            $sequence = (int) OperationEvent::query()
+                ->where('operation_run_id', $operationRunId)
+                ->lockForUpdate()
+                ->max('sequence') + 1;
+
+            return OperationEvent::query()->create([
+                'operation_run_id' => $operationRunId,
+                'sequence' => $sequence,
+                'event_type' => $eventType,
+                'payload' => $payload,
+                'metadata' => $metadata === [] ? null : $metadata,
+            ]);
+        });
+    }
+
+    /**
+     * @param  list<array{key: string, label: string, doneLabel?: string}>  $steps
+     * @param  array<string, mixed>  $metadata
+     */
+    public function appendTree(string $operationRunId, string $title, array $steps, array $metadata = []): OperationEvent
+    {
+        return $this->appendEvent($operationRunId, 'tree', [
+            'title' => $title,
+            'steps' => $steps,
+        ], $metadata);
+    }
+
+    /**
+     * @param  array<string, mixed>  $metadata
+     */
+    public function appendStep(string $operationRunId, string $key, string $status, ?string $message = null, array $metadata = []): OperationEvent
+    {
+        $payload = [
+            'key' => $key,
+            'status' => $status,
+        ];
+
+        if ($message !== null) {
+            $payload['message'] = $message;
+        }
+
+        return $this->appendEvent($operationRunId, 'step', $payload, $metadata);
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     * @param  array<string, mixed>  $metadata
+     */
+    public function appendComplete(string $operationRunId, int $exitCode, array $data = [], array $metadata = []): OperationEvent
+    {
+        return $this->appendEvent($operationRunId, 'complete', [
+            'exit_code' => $exitCode,
+            'data' => $data,
+        ], $metadata);
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     * @param  array<string, mixed>  $metadata
+     */
+    public function appendError(string $operationRunId, string $message, int $exitCode = 1, array $data = [], array $metadata = []): OperationEvent
+    {
+        return $this->appendEvent($operationRunId, 'error', [
+            'exit_code' => $exitCode,
+            'message' => $message,
+            'data' => $data,
+        ], $metadata);
+    }
+
+    /**
+     * @return Collection<int, OperationEvent>
+     */
+    public function eventsAfter(string $operationRunId, ?int $lastEventId = null): Collection
+    {
+        $this->findOrFail($operationRunId);
+
+        return OperationEvent::query()
+            ->where('operation_run_id', $operationRunId)
+            ->when($lastEventId !== null, fn ($query) => $query->where('id', '>', $lastEventId))
+            ->orderBy('id')
+            ->get();
     }
 
     /**

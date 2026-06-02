@@ -143,7 +143,7 @@ exact match for, or a parent of, the host cwd. If multiple app paths
 match (one app nested under another), the longest matching path wins so
 the most specific app is selected.
 
-The CLI does not mount every app path into `orbit-runtime`, and it does
+The CLI does not mount every app path into `orbit-gateway`, and it does
 not query local SQLite for gateway-owned app or workspace state when
 running in operator mode. Only the gateway-local CLI invocation reads
 gateway state directly because it IS the gateway.

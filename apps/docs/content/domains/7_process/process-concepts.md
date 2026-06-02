@@ -66,7 +66,7 @@ These terms define per-process behavioral rules that apply to every derived runt
 These terms define the durable lifecycle records that process commands produce and consume.
 
 - **Process event:** Durable lifecycle history record. `started` and `stopped`
-  events are recorded by successful gateway runtime lifecycle actions.
+  events are recorded by successful gateway service lifecycle actions.
   `crashed` events are recorded when the runtime hook on the node reports an
   exit.
 - **Crash event:** A process event emitted by the runtime hooks that Orbit

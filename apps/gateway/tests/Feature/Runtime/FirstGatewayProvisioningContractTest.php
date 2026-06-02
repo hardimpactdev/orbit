@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 use App\Models\Node;
 use App\Services\Gateway\CaddyGlobalConfig;
-use App\Services\Gateway\GatewayApiRuntimeInstaller;
+use App\Services\Gateway\GatewayApiContainerInstaller;
 use App\Services\Runtime\OrbitCaddyContainer;
 use App\Tools\CaddyTool;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -18,7 +18,7 @@ beforeEach(function (): void {
 });
 
 describe('gateway-local provisioning contract', function (): void {
-    it('keeps gateway convergence local to the gateway runtime', function (): void {
+    it('keeps gateway convergence local to the gateway service', function (): void {
         $nodeCreator = file_get_contents(repo_path('apps/gateway/app/Services/Nodes/GatewayNodeCreator.php'));
 
         expect($nodeCreator)
@@ -48,19 +48,20 @@ describe('gateway-local provisioning contract', function (): void {
             ->not->toContain("\$asGateway ? ' --gateway' : ''");
     });
 
-    it('starts orbit-runtime with proxy trust from the explicit gateway install flag only', function (): void {
+    it('does not expose the retired gateway-mode install flag', function (): void {
         $script = file_get_contents(repo_path('bin/install-orbit'));
 
         expect($script)
-            ->toContain('--gateway')
-            ->toContain('ORBIT_TRUST_WIREGUARD_PROXY_HEADER=1')
-            ->toContain('TRUST_WIREGUARD_PROXY_HEADER=1')
-            ->toContain('ORBIT_HOST_PATH=$TARGET_DIR')
+            ->not->toContain('ORBIT_TRUST_WIREGUARD_PROXY_HEADER=1')
+            ->not->toContain('TRUST_WIREGUARD_PROXY_HEADER=1')
+            ->not->toContain('ORBIT_HOST_PATH=$TARGET_DIR')
             ->not->toContain('ORBIT_INSTALL_GATEWAY');
+
+        expect((bool) preg_match('/(^|\s)--gateway(\s|$)/', $script))->toBeFalse();
     });
 });
 
-describe('GatewayApiRuntimeInstaller orbit-caddy convergence', function (): void {
+describe('GatewayApiContainerInstaller orbit-caddy convergence', function (): void {
     beforeEach(function (): void {
         $this->tempStorage = sys_get_temp_dir().'/orbit-gateway-caddy-converge-'.uniqid();
         mkdir($this->tempStorage.'/app/orbit', 0777, true);
@@ -114,7 +115,7 @@ describe('GatewayApiRuntimeInstaller orbit-caddy convergence', function (): void
         });
         Process::preventStrayProcesses();
 
-        app(GatewayApiRuntimeInstaller::class)->install('10.6.0.2');
+        app(GatewayApiContainerInstaller::class)->install('10.6.0.2');
 
         expect($shellScripts)->not->toBeEmpty();
 
@@ -155,7 +156,7 @@ describe('GatewayApiRuntimeInstaller orbit-caddy convergence', function (): void
         });
         Process::preventStrayProcesses();
 
-        app(GatewayApiRuntimeInstaller::class)->install('10.6.0.2');
+        app(GatewayApiContainerInstaller::class)->install('10.6.0.2');
 
         $convergeScript = $shellScripts[0] ?? '';
         $expected = OrbitCaddyContainer::forPrivateNode('10.6.0.2')->publishedPorts();
@@ -200,7 +201,7 @@ describe('GatewayApiRuntimeInstaller orbit-caddy convergence', function (): void
         Process::preventStrayProcesses();
 
         try {
-            app(GatewayApiRuntimeInstaller::class)->install('10.6.0.2');
+            app(GatewayApiContainerInstaller::class)->install('10.6.0.2');
         } finally {
             File::deleteDirectory($containerConfigRoot);
         }
@@ -224,7 +225,7 @@ describe('GatewayApiRuntimeInstaller orbit-caddy convergence', function (): void
 
         expect($reachable($caddyCertPath))->toBeTrue('gateway API cert must live under an orbit-caddy bind mount target')
             ->and($reachable($caddyKeyPath))->toBeTrue('gateway API key must live under an orbit-caddy bind mount target')
-            ->and($reachable('/opt/orbit/storage/app/orbit/certs/10.6.0.2.crt'))->toBeFalse('runtime-private /opt/orbit paths must NOT be rendered into orbit-caddy config');
+            ->and($reachable('/opt/orbit/storage/app/orbit/certs/10.6.0.2.crt'))->toBeFalse('gateway-container-private /opt/orbit paths must NOT be rendered into orbit-caddy config');
 
         expect($writtenGatewayApiCaddyfile)->not->toBeNull();
         preg_match('#^\s+tls\s+(\S+)\s+(\S+)\s*$#m', $writtenGatewayApiCaddyfile, $matches);
@@ -240,18 +241,24 @@ describe('GatewayApiRuntimeInstaller orbit-caddy convergence', function (): void
     });
 
     it('writes the gateway API Caddyfile through the host bind mount that orbit-caddy reads', function (): void {
-        $installer = file_get_contents(repo_path('bin/install-orbit'));
+        Process::fake(function ($process) {
+            if (str_contains($process->command, 'docker container inspect')) {
+                return Process::result(exitCode: 1);
+            }
 
-        expect($installer)
-            ->toContain('prepare_orbit_caddy_host_paths')
-            ->toContain('install -d -m 0755')
-            ->toContain('/etc/caddy')
-            ->toContain('/etc/caddy/orbit')
-            ->toContain('/etc/caddy/sites')
-            ->toContain('/etc/orbit')
-            ->toContain('/etc/orbit/certs')
-            ->toContain('--mount "type=bind,source=/etc/caddy,target=/etc/caddy"')
-            ->toContain('--mount "type=bind,source=/etc/orbit,target=/etc/orbit"');
+            if (str_contains($process->command, 'docker network inspect')) {
+                return Process::result(exitCode: 1);
+            }
+
+            return Process::result();
+        });
+        Process::preventStrayProcesses();
+
+        app(GatewayApiContainerInstaller::class)->install('10.6.0.2');
+
+        Process::assertRan('sudo install -d -m 0755 /etc/caddy /etc/caddy/orbit /etc/caddy/sites');
+        Process::assertRan('sudo install -d -m 0755 /etc/orbit/certs');
+        Process::assertRan('sudo tee /etc/caddy/orbit/orbit-api.caddy > /dev/null');
 
         $orbitCaddyMounts = collect(OrbitCaddyContainer::default()->mounts())
             ->pluck('target')
@@ -263,8 +270,8 @@ describe('GatewayApiRuntimeInstaller orbit-caddy convergence', function (): void
         expect($orbitCaddyMounts)->toContain('/etc/caddy/orbit', '/etc/caddy/sites', '/etc/orbit', '/home');
     });
 
-    it('ships sudo inside orbit-runtime so the gateway installer scripts can sudo install-d and sudo tee through bind-mounted host paths', function (): void {
-        $dockerfile = file_get_contents(repo_path('docker/orbit-runtime/Dockerfile'));
+    it('ships sudo inside orbit-gateway so gateway installer scripts can sudo install-d and sudo tee through bind-mounted host paths', function (): void {
+        $dockerfile = file_get_contents(repo_path('docker/orbit-gateway/Dockerfile'));
 
         expect($dockerfile)
             ->toContain('sudo');
@@ -304,7 +311,7 @@ CADDY;
         });
         Process::preventStrayProcesses();
 
-        app(GatewayApiRuntimeInstaller::class)->install('10.6.0.2');
+        app(GatewayApiContainerInstaller::class)->install('10.6.0.2');
 
         expect($writtenGlobalCaddyfile)
             ->toContain('admin localhost:2019')

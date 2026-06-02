@@ -33,7 +33,7 @@ Use this table to choose the smallest active node set for a feature test.
 ## Feature checkout overlay
 
 Prepared topology images and templates are branch-agnostic topology baselines.
-They prove OS, users, SSH, Docker, `orbit-runtime`, `orbit-caddy`, service
+They prove OS, users, SSH, Docker, `orbit-gateway`, `orbit-scheduler`, `orbit-caddy`, service
 containers, trust, routes, and baseline Orbit installation state. Production
 artifact lanes still use the native CLI binary artifact. Source-mounted Docker
 and Incus development/E2E topologies point `/usr/local/bin/orbit` directly at
@@ -230,7 +230,7 @@ Required prepared sources for feature lanes:
   images are `orbit-e2e:operator_base`, `orbit-e2e:gateway_base`,
   `orbit-e2e:app-dev_base`, `orbit-e2e:app-prod_base`,
   `orbit-e2e:ingress_base`, and `orbit-e2e:agent_base`.
-- Docker runner support images: `orbit-runtime:<namespace>-current`,
+- Docker runner support images: `orbit-gateway:<namespace>-current`,
   `caddy:2-alpine`, and every FrankenPHP image supported by
   `PhpRuntimeCatalog` for app/workspace topologies.
 - Docker build-host helpers: `orbit-e2e-topology-runtime:<namespace>-current`

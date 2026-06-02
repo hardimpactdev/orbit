@@ -57,15 +57,15 @@ BASH;
 
     public function updateScript(array $config = []): string
     {
-        return 'sudo composer self-update 2>/dev/null';
+        return 'sudo /usr/local/bin/composer self-update 2>/dev/null';
     }
 
     #[\Override]
     public function probeMetadata(): array
     {
         return [
-            'binary' => 'composer',
-            'version_command' => 'composer --version',
+            'binary' => '/usr/local/bin/composer',
+            'version_command' => '/usr/local/bin/composer --version',
             'update_command' => $this->updateScript(),
         ];
     }

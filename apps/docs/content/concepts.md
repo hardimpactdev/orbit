@@ -40,10 +40,11 @@ owning family concept document.
 - **S3 public host** — operator-published HTTPS hostname such as `s3.example.com` that `ingress` forwards to `router` for S3 traffic. See [S3 Concepts](domains/19_s3/s3-concepts.md).
 - **S3 service credentials** — service-level RustFS access key and secret material stored on the `rustfs` tool row. See [S3 Concepts](domains/19_s3/s3-concepts.md).
 - **Orbit launcher** — host `orbit` entry point. Production installs still use the native CLI binary artifact; source-mounted Docker and Incus development/E2E topologies point `/usr/local/bin/orbit` directly at `<source>/apps/cli/orbit`. Mutable node-local Orbit state lives under `~/.config/orbit`. See [Node Concepts](domains/1_node/node-concepts.md).
-- **Orbit runtime container** — the gateway runtime container for the API and scheduler. Workload nodes run the public Orbit CLI as a gateway client and run workloads in role-specific runtime containers; any remaining workload-node `orbit-runtime` usage is compatibility scope, not the source-mounted live topology contract. See [Node Concepts](domains/1_node/node-concepts.md).
-- **Execution lane** — gateway-to-node workload classification for Docker-first-managed nodes. Host substrate work uses `RemoteHostExecutor`; gateway Laravel/artisan/PDO work uses `RemoteOrbitRuntimeExecutor` inside `orbit-runtime`; packaged node-local helper logic uses `RemoteLocalExecutor`. See [Runtime Execution Lanes](execution-lanes.md).
+- **Orbit gateway image** — first-party `ghcr.io/hardimpactdev/orbit-gateway:<version>` FrankenPHP image that bundles the gateway application code and is used by both gateway Swarm services. See [Node Concepts](domains/1_node/node-concepts.md).
+- **Orbit gateway service** — Swarm-managed `orbit-gateway` service that serves the typed gateway API and mounts `ORBIT_CONFIG_ROOT` for mutable gateway state. See [Node Concepts](domains/1_node/node-concepts.md).
+- **Execution lane** — gateway-to-node workload classification for Docker-first-managed nodes. Host substrate work uses `RemoteHostExecutor`; gateway container work uses the gateway service or one-shot runner; packaged node-local helper logic uses `RemoteLocalExecutor`. See [Runtime Execution Lanes](execution-lanes.md).
 - **RemoteHostExecutor** — execution lane for host bootstrap, Docker, WireGuard, Caddy, security, filesystem, git, and container-control work. See [Runtime Execution Lanes](execution-lanes.md).
-- **RemoteOrbitRuntimeExecutor** — execution lane for gateway Laravel/artisan/PDO work on a node through `docker exec orbit-runtime`. See [Runtime Execution Lanes](execution-lanes.md).
+- **RemoteGatewayRuntimeExecutor** — execution lane for gateway Laravel/artisan/PDO work that must run inside the gateway container boundary. See [Runtime Execution Lanes](execution-lanes.md).
 - **RemoteLocalExecutor** — execution lane where the gateway SSHs to a node and invokes the node-local Orbit CLI entry point's internal executor command for packaged node-local helper logic that needs host file access and PHP/PDO. Internal executor commands verify operation tokens through the gateway API, and nodes do not store executor token signing material. See [Runtime Execution Lanes](execution-lanes.md).
 - **Local executor** — hidden internal CLI command surface used by `RemoteLocalExecutor`; it validates a gateway-issued operation token before reading or mutating node-local state and is not a normal user command surface. See [Architecture: Trust And Transport](architecture.md#trust-and-transport).
 - **Operation token** — gateway-issued token attached to a recorded operation and validated by local executor commands before side effects. See [Architecture: Trust And Transport](architecture.md#trust-and-transport).
@@ -60,7 +61,7 @@ owning family concept document.
 - **VPN-role runtime administration** — VPN command-domain exception where `vpn-client:*` and `vpn-web-ui:*` commands are authorized by the gateway and execute against the active `vpn` role runtime. See [VPN Concepts](domains/13_vpn/vpn-concepts.md).
 - **Process manager** — the runtime backend that runs Orbit process units. PHP app processes use Docker process runtime units by default; Supervisor is explicit residual scope. See [Tech Stack: Process Manager](tech-stack.md#process-manager).
 - **Runtime unit** — derived runnable unit for a process definition in a specific app/workspace context. See [Process Concepts](domains/7_process/process-concepts.md).
-- **Orbit Scheduler** — the resident schedule executor loop that runs inside gateway `orbit-runtime`. It owns schedule evaluation, dispatch (locally for gateway-target schedules, through `RemoteShell` for every other target), overlap policy, run history, and heartbeat. See [Schedule Concepts](domains/9_schedule/schedule-concepts.md).
+- **Orbit Scheduler** — the resident schedule executor loop that runs as the `orbit-scheduler` Swarm service using the Orbit gateway image. It owns schedule evaluation, dispatch (locally for gateway-target schedules, through `RemoteShell` for every other target), overlap policy, run history, and heartbeat. See [Schedule Concepts](domains/9_schedule/schedule-concepts.md).
 - **Host init** — the host's own service manager. In the Docker-first runtime, its steady-state Orbit responsibility is keeping Docker alive.
 - **RemoteShell** — gateway-to-node transport primitive; workload classification belongs to the execution lanes, not the transport itself. See [Runtime Execution Lanes](execution-lanes.md) and [Tech Stack: Gateway To Node](tech-stack.md#gateway-to-node).
 - **Security section** — cross-family doctor issue-code section for security-owned state. Security is not a state family; findings live under owning families such as `node.security.*`, `app.security.*`, and `workspace.security.*`. See [Architecture: State Families](architecture.md#state-families).
@@ -106,7 +107,8 @@ Source: [Node Concepts](domains/1_node/node-concepts.md).
 - **Router role**
 - **Gateway-coupled infrastructure role**
 - **Orbit launcher**
-- **Orbit runtime container**
+- **Orbit gateway image**
+- **Orbit gateway service**
 - **Orbit Caddy container**
 - **WebSocket role**
 - **S3 role**

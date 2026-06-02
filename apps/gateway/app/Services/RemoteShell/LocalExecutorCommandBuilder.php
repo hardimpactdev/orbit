@@ -80,7 +80,7 @@ final readonly class LocalExecutorCommandBuilder
         $this->ensureOperationTokenIsValid($operationToken);
 
         $segments = [
-            self::ORBIT_BINARY,
+            $this->orbitBinarySegment(),
             $commandName,
             ...$this->argumentSegments($arguments),
             ...$this->optionSegments($options),
@@ -89,6 +89,22 @@ final readonly class LocalExecutorCommandBuilder
         ];
 
         return implode(' ', $segments);
+    }
+
+    private function orbitBinarySegment(): string
+    {
+        $configuredBinary = config('orbit.local_executor_binary');
+        $binary = is_string($configuredBinary) && trim($configuredBinary) !== ''
+            ? trim($configuredBinary)
+            : self::ORBIT_BINARY;
+
+        $this->ensureNoNullByte($binary, 'orbit binary');
+
+        if ($binary === self::ORBIT_BINARY) {
+            return self::ORBIT_BINARY;
+        }
+
+        return escapeshellarg($binary);
     }
 
     private function ensureCommandNameIsValid(string $commandName): void

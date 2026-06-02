@@ -54,8 +54,8 @@ it('turns stream exceptions into error events and restores the null reporter', f
     Log::shouldHaveReceived('error')->once();
 });
 
-it('flushes output buffers under fpm-fcgi and cli-server sapi', function (): void {
-    $response = (new ProgressEventStreamResponseFactory('cli-server'))->make(function (): void {
+it('flushes output buffers under fpm-fcgi, cli-server, and frankenphp sapi', function (string $sapi): void {
+    $response = (new ProgressEventStreamResponseFactory($sapi))->make(function (): void {
         $reporter = app(ProgressReporter::class);
 
         expect($reporter)->toBeInstanceOf(SseProgressReporter::class);
@@ -81,7 +81,7 @@ it('flushes output buffers under fpm-fcgi and cli-server sapi', function (): voi
 
     expect($flushedOutput)->toContain('event: tree')
         ->and($flushedOutput)->toContain('"status":"done"');
-});
+})->with(['fpm-fcgi', 'cli-server', 'frankenphp']);
 
 it('skips buffer flush under cli sapi', function (): void {
     $response = (new ProgressEventStreamResponseFactory('cli'))->make(function (): void {

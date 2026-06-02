@@ -104,7 +104,7 @@ final readonly class RemoteHostExecutor implements RemoteExecutor
 
     private function command(Node $node, string $script): string
     {
-        if ($this->roleAssignments->nodeIsGateway($node) && ! $this->runningInsideOrbitRuntime()) {
+        if ($this->roleAssignments->nodeIsGateway($node) && ! $this->runningInsideOrbitGateway()) {
             return 'bash -c '.escapeshellarg($script);
         }
 
@@ -119,7 +119,7 @@ final readonly class RemoteHostExecutor implements RemoteExecutor
         );
     }
 
-    private function runningInsideOrbitRuntime(): bool
+    private function runningInsideOrbitGateway(): bool
     {
         $hostPath = getenv('ORBIT_HOST_PATH');
 

@@ -15,14 +15,14 @@ interface RunsLocalUpdate
     public function pullSource(): array;
 
     /**
-     * Install Composer dependencies inside orbit-runtime.
+     * Install Composer dependencies inside orbit-gateway.
      *
      * @return array{successful: bool, exit_code: int, output: string}
      */
     public function installDependencies(): array;
 
     /**
-     * Run Orbit database migrations inside orbit-runtime.
+     * Run Orbit database migrations inside orbit-gateway.
      *
      * @return array{successful: bool, exit_code: int, output: string}
      */

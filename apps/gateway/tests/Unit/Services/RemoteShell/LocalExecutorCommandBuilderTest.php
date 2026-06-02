@@ -24,6 +24,20 @@ describe(LocalExecutorCommandBuilder::class, function (): void {
         expect($command)->toBe("/usr/local/bin/orbit internal:executor:verify --operation-token='token-abc' --json");
     });
 
+    it('uses the configured local executor binary path when provided', function (): void {
+        config()->set('orbit.local_executor_binary', '/usr/local/bin/orbit-cli');
+
+        $command = localExecutorCommandBuilder()->build(
+            targetNode: localExecutorTargetNode(['vpn']),
+            commandName: 'internal:wg-easy:state',
+            arguments: ['state:list-users'],
+            options: [],
+            operationToken: 'token-abc',
+        );
+
+        expect($command)->toBe(escapeshellarg('/usr/local/bin/orbit-cli')." internal:wg-easy:state 'state:list-users' --operation-token='token-abc' --json");
+    });
+
     it('appends escaped positional arguments after the command name', function (): void {
         $command = localExecutorCommandBuilder()->build(
             targetNode: localExecutorTargetNode(['app-dev']),
@@ -277,6 +291,17 @@ describe(LocalExecutorCommandBuilder::class, function (): void {
             options: [],
             operationToken: "token\0abc",
         )],
+        'configured orbit binary' => [function (LocalExecutorCommandBuilder $builder): string {
+            config()->set('orbit.local_executor_binary', "/usr/local/bin/orbit\0cli");
+
+            return $builder->build(
+                targetNode: localExecutorTargetNode(['gateway']),
+                commandName: 'internal:executor:verify',
+                arguments: [],
+                options: [],
+                operationToken: 'token-abc',
+            );
+        }],
     ]);
 });
 

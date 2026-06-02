@@ -231,19 +231,19 @@ it('returns tri-state outcomes for managed workspace runtime config file removal
     [$workspace, $node] = workspaceAndNodeForManagerTest();
 
     $absentShell = new WorkspaceRuntimeRecordingShell(
-        new RemoteShellResult(exitCode: 0, stdout: "orbit-runtime-config-probe:absent\n", stderr: '', durationMs: 1),
+        new RemoteShellResult(exitCode: 0, stdout: "orbit-container-config-probe:absent\n", stderr: '', durationMs: 1),
     );
     $absentOutcome = (new WorkspaceRuntimeContainerManager($absentShell, new DockerCommandBuilder))->removeRuntimeConfigFile($node, 'demo', 'feature-a');
 
     $removedShell = new WorkspaceRuntimeRecordingShell(
-        new RemoteShellResult(exitCode: 0, stdout: "orbit-runtime-config-probe:present\n", stderr: '', durationMs: 1),
+        new RemoteShellResult(exitCode: 0, stdout: "orbit-container-config-probe:present\n", stderr: '', durationMs: 1),
         new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
-        new RemoteShellResult(exitCode: 0, stdout: "orbit-runtime-config-probe:absent\n", stderr: '', durationMs: 1),
+        new RemoteShellResult(exitCode: 0, stdout: "orbit-container-config-probe:absent\n", stderr: '', durationMs: 1),
     );
     $removedOutcome = (new WorkspaceRuntimeContainerManager($removedShell, new DockerCommandBuilder))->removeRuntimeConfigFile($node, 'demo', 'feature-a');
 
     $failedShell = new WorkspaceRuntimeRecordingShell(
-        new RemoteShellResult(exitCode: 0, stdout: "orbit-runtime-config-probe:present\n", stderr: '', durationMs: 1),
+        new RemoteShellResult(exitCode: 0, stdout: "orbit-container-config-probe:present\n", stderr: '', durationMs: 1),
         new RemoteShellResult(exitCode: 1, stdout: '', stderr: 'permission denied', durationMs: 1),
     );
     $failedOutcome = (new WorkspaceRuntimeContainerManager($failedShell, new DockerCommandBuilder))->removeRuntimeConfigFile($node, 'demo', 'feature-a');

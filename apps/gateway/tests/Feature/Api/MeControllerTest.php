@@ -360,7 +360,7 @@ describe('GET /api/me', function (): void {
             ->assertJsonPath('error.code', 'authorization_failed');
     });
 
-    it('trusts the orbit-caddy supplied wireguard peer header only when gateway runtime proxy headers are enabled', function (): void {
+    it('trusts the orbit-caddy supplied wireguard peer header only when gateway container proxy headers are enabled', function (): void {
         config(['orbit.trust_wireguard_proxy_header' => true]);
 
         DB::table('nodes')->insert(meNodeRow());
@@ -387,7 +387,7 @@ describe('GET /api/me', function (): void {
             ->assertJsonPath('success.data.self.name', 'peer-1');
     });
 
-    it('rejects the orbit-caddy wireguard peer header when gateway runtime proxy headers are disabled', function (): void {
+    it('rejects the orbit-caddy wireguard peer header when gateway container proxy headers are disabled', function (): void {
         config(['orbit.trust_wireguard_proxy_header' => false]);
 
         DB::table('nodes')->insert(meNodeRow());

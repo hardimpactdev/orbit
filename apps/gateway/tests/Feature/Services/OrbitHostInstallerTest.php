@@ -10,7 +10,7 @@ use Illuminate\Support\Facades\Process;
 
 uses(RefreshDatabase::class);
 
-it('copies bootstrap authorized keys to the runtime user before installing orbit', function (): void {
+it('copies bootstrap authorized keys to the target orbit user before installing orbit', function (): void {
     Process::fake(fn () => Process::result());
 
     app(OrbitHostInstaller::class)->install('192.0.2.10', 'root', 'orbit');
@@ -94,7 +94,7 @@ it('stages node identity through a temporary remote env file without operation t
     Process::assertNotRan(fn ($process): bool => str_contains((string) $process->command, 'shared-app-key'));
 });
 
-it('forwards local runtime image archives to install-orbit when enabled for archive-seeded provisioning', function (): void {
+it('forwards local gateway and dependency image archives to install-orbit when enabled for archive-seeded provisioning', function (): void {
     config()->set('orbit.forward_install_image_archives', true);
 
     Process::fake(fn () => Process::result());
@@ -104,11 +104,11 @@ it('forwards local runtime image archives to install-orbit when enabled for arch
     expect($result->successful)->toBeTrue();
 
     Process::assertRan(fn ($process): bool => str_contains((string) $process->command, 'docker image inspect')
-        && str_contains((string) $process->command, "'orbit-runtime:current'"));
+        && str_contains((string) $process->command, "'orbit-gateway:current'"));
 
     Process::assertRan(fn ($process): bool => str_contains((string) $process->command, 'docker save')
-        && str_contains((string) $process->command, "'orbit-runtime:current'")
-        && str_contains((string) $process->command, '/var/tmp/orbit-runtime-current-'));
+        && str_contains((string) $process->command, "'orbit-gateway:current'")
+        && str_contains((string) $process->command, '/var/tmp/orbit-gateway-current-'));
 
     Process::assertRan(fn ($process): bool => str_contains((string) $process->command, 'docker save')
         && str_contains((string) $process->command, "'caddy:2-alpine'")
@@ -127,15 +127,44 @@ it('forwards local runtime image archives to install-orbit when enabled for arch
         && str_contains((string) $process->command, '/var/tmp/wg-easy-15-'));
 
     Process::assertRan(fn ($process): bool => str_contains((string) $process->command, 'scp')
-        && str_contains((string) $process->command, '/var/tmp/orbit-runtime-current-')
+        && str_contains((string) $process->command, '/var/tmp/orbit-gateway-current-')
         && str_contains((string) $process->command, "'root'@'192.0.2.20'"));
 
-    Process::assertRan(fn ($process): bool => str_contains((string) $process->command, '--runtime-image-archive=')
+    Process::assertRan(fn ($process): bool => str_contains((string) $process->command, '--gateway-image=orbit-gateway:current')
+        && str_contains((string) $process->command, '--gateway-image-archive=')
         && str_contains((string) $process->command, '--caddy-image-archive=')
         && str_contains((string) $process->command, '--dnsmasq-image-archive=')
         && str_contains((string) $process->command, '--frankenphp-image-archive=')
         && str_contains((string) $process->command, '--wg-easy-image-archive=')
-        && ! str_contains((string) $process->command, '--gateway'));
+        && ! preg_match('/(^|\s)--gateway(\s|$)/', (string) $process->command));
+});
+
+it('forwards a configured local cli binary so workload installs do not require gh', function (): void {
+    $binary = tempnam(sys_get_temp_dir(), 'orbit-binary-');
+
+    file_put_contents($binary, '#!/bin/sh');
+    chmod($binary, 0755);
+
+    config()->set('orbit.forward_install_binary', $binary);
+
+    Process::fake(fn () => Process::result());
+
+    try {
+        $result = app(OrbitHostInstaller::class)->install('192.0.2.22', 'root', 'orbit');
+    } finally {
+        @unlink($binary);
+    }
+
+    expect($result->successful)->toBeTrue();
+
+    Process::assertRan(fn ($process): bool => str_contains((string) $process->command, 'scp')
+        && str_contains((string) $process->command, $binary)
+        && str_contains((string) $process->command, '-orbit-binary')
+        && str_contains((string) $process->command, "'root'@'192.0.2.22'"));
+
+    Process::assertRan(fn ($process): bool => str_contains((string) $process->command, 'set -a; . ')
+        && str_contains((string) $process->command, '-orbit-binary')
+        && str_contains((string) $process->command, 'rm -f'));
 });
 
 it('stages installer transfer artifacts under var tmp instead of the small tmpfs', function (): void {

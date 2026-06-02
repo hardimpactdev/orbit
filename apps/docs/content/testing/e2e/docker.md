@@ -76,12 +76,12 @@ refreshed from the current checkout. A custom namespace without `--roles` or
 `--all-roles` is rejected so a worktree cannot accidentally rebuild every Docker
 role.
 
-Runner hosts need the six canonical role images plus the runtime support
-images used by gateway-backed topologies: `orbit-runtime`, `orbit-caddy`, and
-the FrankenPHP images listed by `PhpRuntimeCatalog`. `orbit-e2e-topology-runtime`
-is a build-host helper for preparing those images. Remote source-mounted live
-runs may use `composer:2` transiently on the runner to hydrate the synced
-gateway and CLI vendor directories, but it is not a topology role image.
+Runner hosts need the canonical role images plus the runtime support images
+used by gateway-backed topologies: `orbit-gateway`, `orbit-caddy`, and the
+FrankenPHP images listed by `PhpRuntimeCatalog`. `orbit-e2e-topology-runtime`
+is a build-host helper for preparing those images. Remote source-dev live runs
+may use `composer:2` transiently on the runner to hydrate the synced gateway
+and CLI vendor directories, but it is not a topology role image.
 
 ## Host transport
 
@@ -124,7 +124,7 @@ acquisition, then bind-mount that synced path. The generated remote path is
 a fixed path.
 
 The source sync excludes dependency directories, build output, env files,
-SQLite files, and gateway runtime state. After rsync, the runner hydrates
+SQLite files, and gateway service state. After rsync, the runner hydrates
 `apps/gateway/vendor` and `apps/cli/vendor` on the remote path from the synced
 lockfiles. Vendor is refreshed only when the lock marker changes.
 
@@ -184,7 +184,7 @@ capabilities so the provider pool refuses Docker.
 The Docker topology build context intentionally includes the local `vendor/`
 directory. Client prepared topology dependencies are installed or reused through
 transient `composer:2` helper containers and then persisted into the node image.
-Gateway source is synchronized to the gateway `orbit-runtime` sibling.
+Gateway source-dev code is synchronized to the gateway container sibling.
 
 Docker provisioning uses a Composer cache during image preparation. By default
 the cache is a lockfile-keyed Docker volume; set
@@ -194,8 +194,8 @@ be mutated by the helper containers.
 
 Docker is a valid lane for `process:*`, `schedule:*`, and `workspace:*` runtime
 assertions because the Docker topologies that include a gateway provide
-`orbit-runtime`, `orbit-caddy`, FrankenPHP app/workspace containers, Docker
-process runtime containers, and the gateway scheduler inside `orbit-runtime`.
+`orbit-gateway`, `orbit-scheduler`, `orbit-caddy`, FrankenPHP app/workspace
+containers, and Docker process runtime containers.
 
 ## Debugging selected tests
 

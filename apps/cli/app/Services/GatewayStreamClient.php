@@ -48,7 +48,8 @@ final readonly class GatewayStreamClient
             $pending = Http::baseUrl($baseUrl)
                 ->withHeaders(['Accept' => 'text/event-stream'])
                 ->asJson()
-                ->timeout($this->timeout)
+                ->connectTimeout($this->timeout)
+                ->timeout(0)
                 ->withOptions($this->streamOptions());
 
             $normalizedPath = '/'.ltrim($path, '/');

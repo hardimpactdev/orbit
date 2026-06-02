@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\E2E\Support\E2ECommand;
 use App\E2E\Support\E2EConfig;
+use App\E2E\Support\E2EGatewayApi;
 use App\E2E\Support\E2ETopologyArtifactNamespace;
 use App\E2E\Support\E2ETopologyKind;
 use App\E2E\Support\IncusHostPool;
@@ -127,7 +128,7 @@ it('provisions a real app-dev node and serves an app end-to-end', function (): v
         // buildDevelopmentAppStage provisions operator+gateway then runs
         // `orbit node:new --roles=app-dev` on the operator. The real
         // OrbitHostInstaller path runs inside the Incus dev VM: Docker, the
-        // orbit runtime, FrankenPHP, and the host toolchain intent rows are
+        // orbit gateway, FrankenPHP, and the host toolchain intent rows are
         // all set up. After build() the templates are stopped and snapshotted.
         $manifest = $builder->build($kind);
 
@@ -220,13 +221,14 @@ SH,
             timeoutSeconds: 75,
         );
 
-        // Wait for the gateway's supervisor-managed orbit HTTP API to be
-        // accepting connections on the WireGuard address. The gateway template
-        // was built with supervisor enabled so the API comes up automatically
-        // on restart; we wait for the HTTP status endpoint to respond.
+        // Restart the image-backed gateway API shim after the template boot.
+        // build() stops templates before snapshotting, so the test server is
+        // not expected to survive the restart.
+        E2EGatewayApi::restart($instances['gateway'], 'provision-serving');
+
         E2ECommand::exec(
             $instances['gateway'],
-            'deadline=$((SECONDS+90)); until curl -fsS --max-time 5 http://10.6.0.2/api/status >/dev/null 2>&1; do if [ "$SECONDS" -ge "$deadline" ]; then sudo supervisorctl status >&2 || true; exit 1; fi; sleep 3; done',
+            'deadline=$((SECONDS+90)); until curl -fsS --max-time 5 http://10.6.0.2/api/status >/dev/null 2>&1; do if [ "$SECONDS" -ge "$deadline" ]; then docker ps >&2 || true; exit 1; fi; sleep 3; done',
             'Gateway HTTP API did not become ready on 10.6.0.2',
             timeoutSeconds: 120,
         );
@@ -287,7 +289,7 @@ SH,
         $indexPhp = "<?php\nhttp_response_code(200);\necho 'orbit-e2e-serving-ok';\n";
         $composerJson = json_encode([
             'name' => "orbit-e2e/{$appName}",
-            'require' => [],
+            'require' => (object) [],
             'config' => ['optimize-autoloader' => false],
         ], JSON_THROW_ON_ERROR | JSON_PRETTY_PRINT);
 
@@ -317,7 +319,7 @@ SH,
                 'sudo -u %s bash -lc %s',
                 escapeshellarg($operatorUser),
                 escapeshellarg(sprintf(
-                    'cd /home/%s/orbit && orbit app:exec %s -- composer install --no-interaction --no-progress --json',
+                    'cd /home/%s/orbit && orbit app:exec %s --json -- composer install --no-interaction --no-progress',
                     $operatorUser,
                     escapeshellarg($appName),
                 )),
@@ -337,12 +339,13 @@ SH,
         //
         // After app:new the gateway wrote a Caddy site config to the dev node
         // (/etc/caddy/sites/<name>.test.caddy) and reloaded orbit-caddy. The
-        // orbit-caddy container on the private dev node binds HTTP port 80 to
-        // the WireGuard address (10.6.0.4). The gateway is already on the
-        // WireGuard mesh, so curl from the gateway is the simplest path.
+        // orbit-caddy container on the private dev node binds HTTPS port 443
+        // to the WireGuard address (10.6.0.4). The gateway already has the
+        // Orbit root CA and is on the WireGuard mesh, so curl from the gateway
+        // is the simplest production-like path.
         $curlResult = $instances['gateway']->exec(
             sprintf(
-                'curl -fsSL --connect-timeout 10 --max-time 30 --resolve %s:80:%s http://%s/',
+                'curl -fsSL --connect-timeout 10 --max-time 30 --cacert /home/orbit/.config/orbit/ca/root.crt --resolve %s:443:%s https://%s/',
                 escapeshellarg("{$appName}.test"),
                 escapeshellarg($devWireGuardIp),
                 escapeshellarg("{$appName}.test"),

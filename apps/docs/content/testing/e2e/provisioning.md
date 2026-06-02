@@ -78,7 +78,7 @@ Source code lives in the per-run bundle, not in the base image. Forced topology
 preparation rebuilds the canonical full prepared source from the base image.
 Rebuild the base image only when the base image shape changes.
 
-The provisioning bundle stages host-local `orbit-runtime:current`,
+The provisioning bundle stages host-local `orbit-gateway:current`,
 `caddy:2-alpine`, `4km3/dnsmasq:latest`, and
 `dunglas/frankenphp:1-php8.5-bookworm` Docker image archives when those images
 exist on the Incus host. `bin/install-orbit` loads those archives before

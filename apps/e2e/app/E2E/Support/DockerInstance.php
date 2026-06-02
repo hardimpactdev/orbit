@@ -6,7 +6,7 @@ namespace App\E2E\Support;
 
 use Illuminate\Contracts\Process\ProcessResult;
 
-final class DockerInstance implements E2EInstance
+final class DockerInstance implements E2EInstance, SourceMountedCheckoutInstance
 {
     private ?string $ipv4 = null;
 
@@ -14,11 +14,17 @@ final class DockerInstance implements E2EInstance
         private readonly DockerHost $host,
         private readonly string $name,
         private readonly ?string $networkName = null,
+        private readonly ?string $sourceMountedCheckoutPath = null,
     ) {}
 
     public function name(): string
     {
         return $this->name;
+    }
+
+    public function sourceMountedCheckoutPath(): ?string
+    {
+        return $this->sourceMountedCheckoutPath;
     }
 
     public function exec(string $command, ?int $timeoutSeconds = null): ProcessResult
@@ -111,7 +117,7 @@ final class DockerInstance implements E2EInstance
         $this->host->run(sprintf(
             'docker rm -f %s >/dev/null 2>&1 || true',
             implode(' ', array_map(escapeshellarg(...), [
-                "{$this->name}-orbit-runtime",
+                "{$this->name}-orbit-gateway",
                 "{$this->name}-orbit-caddy",
                 $this->name,
             ])),

@@ -20,6 +20,8 @@ class IncusHost
 
     private const string DefaultOrbitBinaryFilename = 'orbit-binary';
 
+    private const string DefaultOrbitGatewayImageArchive = E2EArtifactProdManifest::GatewayImageArchive;
+
     public function __construct(
         public readonly E2EConfig $config,
     ) {}
@@ -82,7 +84,7 @@ class IncusHost
                 throw new RuntimeException("Could not copy bundle locally into {$bundleDir}: {$copy->errorOutput()}");
             }
 
-            $this->stageDockerImageArchive('orbit-runtime:current', 'orbit-runtime-current.tar', $bundleDir);
+            $this->stageDockerImageArchive($this->defaultGatewayImage(), self::DefaultOrbitGatewayImageArchive, $bundleDir);
             $this->stageDockerImageArchive('caddy:2-alpine', 'caddy-2-alpine.tar', $bundleDir, pullIfMissing: true);
             $this->stageDockerImageArchive('4km3/dnsmasq:latest', 'dnsmasq-latest.tar', $bundleDir, pullIfMissing: true);
             $this->stageDockerImageArchive($this->defaultFrankenPhpImage(), self::DefaultFrankenPhpImageArchive, $bundleDir, pullIfMissing: true);
@@ -102,7 +104,7 @@ class IncusHost
             throw new RuntimeException("Could not scp bundle to {$this->config->host}:{$bundleDir}: {$scp->errorOutput()}");
         }
 
-        $this->stageDockerImageArchive('orbit-runtime:current', 'orbit-runtime-current.tar', $bundleDir);
+        $this->stageDockerImageArchive($this->defaultGatewayImage(), self::DefaultOrbitGatewayImageArchive, $bundleDir);
         $this->stageDockerImageArchive('caddy:2-alpine', 'caddy-2-alpine.tar', $bundleDir, pullIfMissing: true);
         $this->stageDockerImageArchive('4km3/dnsmasq:latest', 'dnsmasq-latest.tar', $bundleDir, pullIfMissing: true);
         $this->stageDockerImageArchive($this->defaultFrankenPhpImage(), self::DefaultFrankenPhpImageArchive, $bundleDir, pullIfMissing: true);
@@ -114,6 +116,11 @@ class IncusHost
     private function defaultFrankenPhpImage(): string
     {
         return (new PhpRuntimeCatalog)->imageFor(PhpRuntimeCatalog::DEFAULT);
+    }
+
+    private function defaultGatewayImage(): string
+    {
+        return DockerTopologyProvider::gatewayImage();
     }
 
     private function stageDockerImageArchive(string $image, string $fileName, string $bundleDir, bool $pullIfMissing = false): void
@@ -189,13 +196,14 @@ class IncusHost
             ? " --composer-cache={$guestBundleDirectory}/composer-cache"
             : '';
 
-        $hasRuntimeImageArchive = $this->run(
-            'test -f '.escapeshellarg("{$remoteBundleDir}/orbit-runtime-current.tar"),
-            timeoutSeconds: 5,
-        )->successful();
+        $hasGatewayImageArchive = $nodeKind === 'gateway'
+            && $this->run(
+                'test -f '.escapeshellarg("{$remoteBundleDir}/".self::DefaultOrbitGatewayImageArchive),
+                timeoutSeconds: 5,
+            )->successful();
 
-        $runtimeImageArchiveArg = $hasRuntimeImageArchive
-            ? " --runtime-image-archive={$guestBundleDirectory}/orbit-runtime-current.tar"
+        $gatewayImageArchiveArg = $hasGatewayImageArchive
+            ? " --gateway-image={$this->defaultGatewayImage()} --gateway-image-archive={$guestBundleDirectory}/".self::DefaultOrbitGatewayImageArchive
             : '';
 
         $hasCaddyImageArchive = $this->run(
@@ -246,17 +254,16 @@ class IncusHost
 
         $script = sprintf(
             'chmod +x %1$s/e2e-provision-node %1$s/install-orbit %1$s/_e2e-deps.sh && '
-            .'%1$s/e2e-provision-node --node-kind=%2$s --source-archive=%1$s/orbit-source.tar.gz --installer=%1$s/install-orbit%3$s%4$s%5$s%6$s%7$s%8$s%9$s%10$s',
+            .'%1$s/e2e-provision-node --node-kind=%2$s --source-archive=%1$s/orbit-source.tar.gz --installer=%1$s/install-orbit%3$s%4$s%5$s%6$s%7$s%8$s%9$s',
             $guestBundleDirectory,
             escapeshellarg($nodeKind),
             $operatorUserArg,
             $composerCacheArg,
-            $runtimeImageArchiveArg,
+            $gatewayImageArchiveArg,
             $caddyImageArchiveArg,
             $dnsmasqImageArchiveArg,
             $frankenPhpImageArchiveArg,
-            $wgEasyImageArchiveArg,
-            $orbitBinaryArg,
+            $wgEasyImageArchiveArg.$orbitBinaryArg,
         );
 
         $command = sprintf(

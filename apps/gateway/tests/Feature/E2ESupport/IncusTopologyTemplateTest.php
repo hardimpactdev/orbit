@@ -697,7 +697,7 @@ it('prepared Incus acquisition retargets selected snapshot roles without dynamic
     expect($source)
         ->toContain('prepareInstances($instances, $this->config, $sshKeyPair, $timer, $options, $kind)')
         ->toContain('retargetTopology($instances, $config, $sshKeyPair, $kind, $options->sourceMountedCheckout)')
-        ->toContain('--public-host=%s --skip-runtime-install')
+        ->toContain('--public-host=%s --skip-gateway-service-install')
         ->toContain('php apps/gateway/artisan orbit:internal:bootstrap-gateway-local')
         ->toContain('php apps/gateway/artisan orbit:internal:bake-app-node app-dev-1 --role=app-dev')
         ->toContain('php apps/gateway/artisan tinker --execute=')

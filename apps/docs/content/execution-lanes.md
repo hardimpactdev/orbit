@@ -7,11 +7,11 @@ workload must belong to one of three execution lanes.
 ## Scope
 
 A Docker-first-managed node is a node that has the Orbit Docker baseline:
-gateway `orbit-runtime` for Orbit API/scheduler work where applicable,
+`orbit-gateway` and `orbit-scheduler` Swarm services on gateway nodes,
 `orbit-caddy` for proxying when needed, and workload containers for apps,
-workspaces, processes, and backing services. Source-mounted Docker and Incus
-topologies are development and E2E lanes. Production installs still use the
-native CLI binary artifact.
+workspaces, processes, and backing services. Source-dev Docker and Incus
+topologies are development and E2E lanes. Artifact-prod installs use the native
+CLI binary artifact and production images.
 
 Before that baseline exists, bootstrap may use host shell commands to install
 Docker, prepare the `orbit` user, clone Orbit source, and create the first
@@ -29,18 +29,18 @@ RemoteHostExecutor:
   SSH host substrate, bootstrap, Docker/container control, host git,
   system packages, WireGuard host mutation, Caddy artifacts.
 
-RemoteOrbitRuntimeExecutor:
-  SSH then docker exec into orbit-runtime for gateway Laravel/artisan/PDO
-  work that belongs to the gateway runtime container.
+RemoteGatewayRuntimeExecutor:
+  SSH then execute inside the orbit-gateway container boundary for gateway
+  Laravel/artisan/PDO work.
 
 RemoteLocalExecutor:
   SSH then invoke the node-local Orbit CLI entry point's internal executor
   command.
   It is for packaged node-local helper logic that needs host file access
   and PHP/PDO without relying on ad hoc python3/sqlite3 snippets.
-  Production installs still use the native CLI binary artifact; source-mounted
-  Docker/Incus development/E2E topologies point /usr/local/bin/orbit directly
-  at <source>/apps/cli/orbit.
+  Production installs still use the native CLI binary artifact; source-dev
+  Docker/Incus topologies point /usr/local/bin/orbit directly at
+  <source>/apps/cli/orbit.
 ```
 
 ### RemoteHostExecutor
@@ -78,31 +78,33 @@ Forbidden work:
 If work in the host lane currently needs PHP/Python/SQLite only to inspect host
 files, it must be rewritten in POSIX shell or another host-substrate primitive.
 If it needs gateway Laravel/artisan/PDO work, it belongs in
-`RemoteOrbitRuntimeExecutor`. If it needs packaged node-local helper logic with
+`RemoteGatewayRuntimeExecutor`. If it needs packaged node-local helper logic with
 host file access and PHP/PDO, it belongs in `RemoteLocalExecutor`.
 
-### RemoteOrbitRuntimeExecutor
+### RemoteGatewayRuntimeExecutor
 
-`RemoteOrbitRuntimeExecutor` SSHs to the node and then enters the node's
-`orbit-runtime` container, normally with `docker exec` or `docker exec -i`.
-It is the lane for gateway Laravel/artisan/PDO work that belongs to the gateway
-runtime container on Docker-first-managed nodes.
+`RemoteGatewayRuntimeExecutor` SSHs to the gateway node and then enters the
+`orbit-gateway` container boundary, or runs the equivalent one-shot gateway
+image command when the operation is replacing the gateway service itself. It is
+the lane for gateway Laravel/artisan/PDO work that belongs to the gateway
+runtime container on Docker-first-managed gateway nodes.
 
 Required work:
 
 - Orbit `php artisan ...` commands executed on a node.
 - Gateway Laravel boot, Eloquent/PDO access, and database query helpers for
   gateway-owned runtime state.
-- Composer operations for Orbit itself.
+- Composer operations for source-dev Orbit checkouts when explicitly in that
+  lane.
 - VPN command forwarding when the forwarded command is an Orbit Artisan command
-  that belongs to the gateway runtime container.
+  that belongs to the gateway container.
 
 Forbidden work:
 
 - Host bootstrap, Docker installation, WireGuard host mutation, Caddy host
   artifact writes, UFW/sysctl/SSH hardening, and file ownership repair.
 - App/workspace PHP execution. App and workspace PHP commands run inside their
-  own app/workspace containers; they are not Orbit runtime work unless they
+  own app/workspace containers; they are not gateway service work unless they
   boot Orbit itself.
 - Packaged node-local helper logic that needs host file access and PHP/PDO.
   That belongs in `RemoteLocalExecutor`.
@@ -119,7 +121,7 @@ state lives under `~/.config/orbit`.
 The gateway primitive composes `/usr/local/bin/orbit internal:* ...` commands
 with `LocalExecutorCommandBuilder`, mints a short-lived gateway operation token,
 and dispatches that host command through the SSH transport. It never wraps local
-executor work in `docker exec orbit-runtime`. `RemoteLocalExecutor` cannot
+executor work in gateway container execution. `RemoteLocalExecutor` cannot
 invoke public commands; internal executor commands verify operation tokens
 through the gateway API before any side effects, and nodes do not store
 executor token signing material.
@@ -157,7 +159,7 @@ Required work:
 Forbidden work:
 
 - Public command execution or direct user-invoked state mutation.
-- Gateway Laravel/artisan/PDO work that belongs in `orbit-runtime`.
+- Gateway Laravel/artisan/PDO work that belongs in `orbit-gateway`.
 - Host substrate mutation such as Docker installation, WireGuard host mutation,
   Caddy artifact writes, package installation, or SSH hardening.
 - App/workspace runtime PHP execution, which belongs in app/workspace
@@ -228,21 +230,22 @@ structured local-executor input as JSON or as a free-form shell script.
 
 Use these rules for every new or migrated gateway-to-node execution path.
 
-- On Docker-first-managed nodes, gateway Laravel/artisan/PDO work MUST go
-  through `RemoteOrbitRuntimeExecutor`.
+- On Docker-first-managed gateway nodes, gateway Laravel/artisan/PDO work MUST
+  go through `RemoteGatewayRuntimeExecutor` or the equivalent durable one-shot
+  runner when the gateway service is being replaced.
 - Packaged node-local helper logic that needs host file access and PHP/PDO MUST
   go through `RemoteLocalExecutor`.
 - Host-shell PHP is forbidden as a steady-state implementation detail; the
   CLI/local-executor artifact uses the native CLI binary's embedded PHP in
-  production installs, while source-mounted Docker/Incus development and E2E
+  production installs, while source-dev Docker/Incus development and E2E
   nodes invoke `<source>/apps/cli/orbit`; host PHP remains forbidden.
 - `RemoteShell` is transport, not a workload classification. New call sites
-  must choose `RemoteHostExecutor`, `RemoteOrbitRuntimeExecutor`, or
+  must choose `RemoteHostExecutor`, `RemoteGatewayRuntimeExecutor`, or
   `RemoteLocalExecutor` explicitly.
 - A host-lane command may control containers, including `docker exec`, but it
   must not execute Orbit PHP on the host.
 - A runtime-lane command may read/write Orbit state through Laravel/PDO inside
-  `orbit-runtime`, but it must not mutate host substrate directly.
+  `orbit-gateway`, but it must not mutate host substrate directly.
 - A local-executor command may read/write node-local helper state with PHP/PDO,
   but it must validate the gateway-issued operation token before side effects
   and must not become a public authority path.
@@ -252,7 +255,7 @@ Use these rules for every new or migrated gateway-to-node execution path.
 ## Orbit Caddy Isolation
 
 `orbit-caddy` stays a separate fleet proxy container based on `caddy:2-alpine`.
-It must not be folded into `orbit-runtime`. Caddy route files, include
+It must not be folded into `orbit-gateway`. Caddy route files, include
 boundaries, certificates, reloads, and container repair remain
 `RemoteHostExecutor` work because they control the host proxy substrate.
 
@@ -285,11 +288,11 @@ inherit the lane of the production code they exercise.
 | `apps/gateway/app/Console/Commands/AppExecCommand.php:110,125` | `RemoteHostExecutor` | Inspects and executes inside an app runtime container through Docker. |
 | `apps/gateway/app/Console/Commands/AppRegisterCommand.php:90` | `RemoteHostExecutor` | Probes a host app path before gateway registration. |
 | `apps/gateway/app/Console/Commands/NodeNewCommand.php:2123` | `RemoteHostExecutor` | Passes host shell to node security baseline installers during provisioning. |
-| `apps/gateway/app/Console/Commands/VpnCommandSupport.php:87` | `RemoteOrbitRuntimeExecutor` | Forwards `php artisan vpn-*` work to the active VPN role node; forwarded gateway Laravel/artisan work must run inside `orbit-runtime`. |
+| `apps/gateway/app/Console/Commands/VpnCommandSupport.php:87` | `RemoteGatewayRuntimeExecutor` | Forwards `php artisan vpn-*` work to the active VPN role node; forwarded gateway Laravel/artisan work must run inside the gateway container boundary. |
 | `apps/gateway/app/Console/Commands/WorkspaceExecCommand.php:143,158` | `RemoteHostExecutor` | Inspects and executes inside a workspace runtime container through Docker. |
 | `apps/gateway/app/Http/Controllers/Api/UpdateAllController.php:272,405` (`pulling_source`) | `RemoteHostExecutor` | Resolves `RemoteShell` and starts the local entry-point update stage on the remote host: production/artifact targets may download and relink the binary, while source-mounted targets keep `/usr/local/bin/orbit` pointed at `<source>/apps/cli/orbit` and update by changing the mounted source. |
-| `apps/gateway/app/Http/Controllers/Api/UpdateAllController.php:272,405` (`installing_dependencies`) | `RemoteOrbitRuntimeExecutor` | Resolves `RemoteShell` and starts the `docker exec orbit-runtime composer --working-dir=apps/gateway install --no-interaction` stage for gateway app dependencies. |
-| `apps/gateway/app/Http/Controllers/Api/UpdateAllController.php:272,405` (`running_migrations`) | `RemoteOrbitRuntimeExecutor` | Resolves `RemoteShell` and starts the `docker exec orbit-runtime php apps/gateway/artisan migrate --force` stage for gateway migrations. |
+| `apps/gateway/app/Http/Controllers/Api/UpdateAllController.php:272,405` (`installing_dependencies`) | `RemoteGatewayRuntimeExecutor` | Legacy source-dev gateway dependency stage; production artifact updates replace this with immutable image acquisition and the one-shot runner. |
+| `apps/gateway/app/Http/Controllers/Api/UpdateAllController.php:272,405` (`running_migrations`) | `RemoteGatewayRuntimeExecutor` | Legacy source-dev gateway migration stage; production artifact updates run migrations through the target gateway image. |
 | `apps/gateway/app/Actions/Apps/CreateAppSourceOnNode.php:30` | `RemoteHostExecutor` | Creates/checks source directories and git material on the host. |
 | `apps/gateway/app/Actions/Apps/EnsureAppProcessRuntimeUnits.php:105,130` | `RemoteHostExecutor` | Repairs Supervisor residual units and Docker process runtime artifacts. |
 | `apps/gateway/app/Actions/Apps/EnsureAppProxyRoute.php:70,105,134,244,256` | `RemoteHostExecutor` | Writes and reads Caddy route artifacts on serving, router, and backend hosts. |
@@ -311,34 +314,34 @@ inherit the lane of the production code they exercise.
 | `apps/gateway/app/Services/Apps/AppWorkerReadiness.php:63` | `RemoteHostExecutor` | Checks app worker/readiness artifacts on the host/runtime boundary. |
 | `apps/gateway/app/Services/Ca/OrbitSiteCertificateInstaller.php:30` | `RemoteHostExecutor` | Writes leaf cert/key files into host-managed certificate paths. |
 | `apps/gateway/app/Services/WebSockets/WebSocketCertificateInstaller.php:30` | `RemoteHostExecutor` | Writes WebSocket backend cert/key files into host-managed certificate paths. |
-| `apps/gateway/app/Services/WebSockets/WebSocketRuntimeSourceInstaller.php` | `RemoteHostExecutor` | Syncs the dedicated Laravel Reverb runtime source to `/opt/orbit/websocket/current` and runs dependency installation inside `orbit-runtime:current` through Docker. |
+| `apps/gateway/app/Services/WebSockets/WebSocketRuntimeSourceInstaller.php` | `RemoteHostExecutor` | Syncs the dedicated Laravel Reverb runtime source to `/opt/orbit/websocket/current` and runs dependency installation inside an Orbit-managed PHP tooling container through Docker. |
 | `apps/gateway/app/Services/DatabaseConnections/DatabaseConnectionAdopter.php:108` | `RemoteHostExecutor` | Reads app/workspace `.env` files from host paths for adoption. |
-| `apps/gateway/app/Services/DatabaseConnections/DatabaseConnectionExecutor.php:84` | `RemoteOrbitRuntimeExecutor` | Runs local SQLite query work through Orbit code/PDO on the owning node. |
+| `apps/gateway/app/Services/DatabaseConnections/DatabaseConnectionExecutor.php:84` | `RemoteGatewayRuntimeExecutor` | Runs local SQLite query work through Orbit code/PDO on the owning node. |
 | `apps/gateway/app/Services/DatabaseConnections/DatabaseConnectionProbe.php:106,213` | `RemoteHostExecutor` | Reads app/workspace `.env` files from host paths for drift probes. |
 | `apps/gateway/app/Services/DatabaseConnections/DatabaseConnectionRestorer.php:45,79` | `RemoteHostExecutor` | Writes and reads app/workspace `.env` files on host paths. |
 | `apps/gateway/app/Services/Deploy/DeployManager.php:159,339,434,495` | `RemoteHostExecutor` | Dispatches deploy steps and app-container warmups; Docker-first PHP/Composer/Artisan deploy commands must run in app containers, not host PHP. |
 | `apps/gateway/app/Services/Firewall/FirewallRuleFixer.php:32,36,37,57,58` | `RemoteHostExecutor` | Applies UFW host firewall rules and reloads UFW. |
 | `apps/gateway/app/Services/Firewall/FirewallRuleProbe.php:52` | `RemoteHostExecutor` | Reads UFW host firewall state. |
 | `apps/gateway/app/Services/Nodes/NodeIdentityArtifactProbe.php:21,58` | `RemoteHostExecutor` | Reads the WireGuard interface public key with host `wg`; that host interface probe is substrate work. |
-| `apps/gateway/app/Services/Nodes/NodeIdentityArtifactProbe.php:21,60` | `RemoteOrbitRuntimeExecutor` | Boots Laravel and queries Orbit state to map WireGuard identity; that PHP/PDO portion must run inside `orbit-runtime`. |
+| `apps/gateway/app/Services/Nodes/NodeIdentityArtifactProbe.php:21,60` | `RemoteGatewayRuntimeExecutor` | Boots Laravel and queries Orbit state to map WireGuard identity; that PHP/PDO portion must run inside the gateway container boundary. |
 | `apps/gateway/app/Services/Nodes/NodesProbe.php:467,862` | `RemoteHostExecutor` | Checks host user and SSH reachability. |
 | `apps/gateway/app/Services/Nodes/NodeSecurityPostureProbe.php:110,206` | `RemoteHostExecutor` | Checks host security posture; current host PHP helper must be rewritten as host-substrate shell. |
 | `apps/gateway/app/Services/Nodes/Roles/RoleBaselines/AgentRoleBaseline.php:71,73,74` | `RemoteHostExecutor` | Creates and locks the host `agent` user. |
 | `apps/gateway/app/Services/OrbitUpdater.php:70,72,111` (`pullRemoteSource`) | `RemoteHostExecutor` | Runs `git pull --ff-only` in the host source checkout. |
-| `apps/gateway/app/Services/OrbitUpdater.php:75,77,111` (`installRemoteDependencies`) | `RemoteOrbitRuntimeExecutor` | Runs `docker exec orbit-runtime composer --working-dir=apps/gateway install --no-interaction` for gateway app dependencies. |
-| `apps/gateway/app/Services/OrbitUpdater.php:80,82,111` (`runRemoteMigrations`) | `RemoteOrbitRuntimeExecutor` | Runs `docker exec orbit-runtime php apps/gateway/artisan migrate --force` for gateway migrations. |
+| `apps/gateway/app/Services/OrbitUpdater.php:75,77,111` (`installRemoteDependencies`) | `RemoteGatewayRuntimeExecutor` | Legacy source-dev gateway dependency path; production artifact updates use immutable image acquisition and the durable runner. |
+| `apps/gateway/app/Services/OrbitUpdater.php:80,82,111` (`runRemoteMigrations`) | `RemoteGatewayRuntimeExecutor` | Legacy source-dev gateway migration path; production artifact updates run migrations through the target gateway image. |
 | `apps/gateway/app/Services/Processes/ProcessDockerRuntimeManager.php:174` | `RemoteHostExecutor` | Creates and controls Docker process runtime units. |
 | `apps/gateway/app/Services/Processes/ProcessesProbe.php:66,127,230` | `RemoteHostExecutor` | Probes Docker process containers and explicit Supervisor residual artifacts; current host PHP helper at `:230` must be rewritten as host-substrate shell. |
 | `apps/gateway/app/Services/Proxy/ProxyRouteFixer.php:79,113,151,178,349,386,456` | `RemoteHostExecutor` | Writes, removes, reloads, and repairs `orbit-caddy` route artifacts. |
 | `apps/gateway/app/Services/Proxy/ProxyRouteProbe.php:120,166,236,336` | `RemoteHostExecutor` | Probes `orbit-caddy` route files, container state, and proxy reachability. |
 | `apps/gateway/app/Services/RemoteShell/RemoteSecretFile.php:25,49` | `RemoteHostExecutor` | Stages and removes temporary secret files on the host. |
 | `apps/gateway/app/Services/RemoteShell/RemoteShellPool.php:59,91` | `RemoteHostExecutor` | Executes queued SSH jobs; current producer is schedule dispatch and inherits host-lane dispatch rules. |
-| `apps/gateway/app/Services/RuntimeBackend/GatewayRuntimeBackendProbe.php:35` | `RemoteHostExecutor` | Probes the host Docker state for `orbit-runtime`. |
+| `apps/gateway/app/Services/RuntimeBackend/GatewayRuntimeBackendProbe.php:35` | `RemoteHostExecutor` | Probes the host Docker/Swarm state for `orbit-gateway` and `orbit-scheduler`. |
 | `apps/gateway/app/Services/RuntimeBackend/RuntimeBackendProbe.php:19` | `RemoteHostExecutor` | Probes explicit Supervisor residual availability. |
 | `apps/gateway/app/Services/WebSockets/WebSocketRuntimeContainerManager.php:148` | `RemoteHostExecutor` | Creates, inspects, removes, and starts WebSocket Reverb runtime containers through Docker. |
 | `apps/gateway/app/Services/Schedules/ScheduleDispatcher.php:76,90` | `RemoteHostExecutor` | Dispatches generic schedule jobs through the host SSH pool; schedule definitions that execute Orbit PHP must render runtime-lane commands before enqueue. |
 | `apps/gateway/app/Services/Schedules/SchedulesFixer.php:56` | `RemoteHostExecutor` | Repairs scheduler host/runtime artifacts on the gateway node. |
-| `apps/gateway/app/Services/Schedules/SchedulesProbe.php:43,90` | `RemoteHostExecutor` | Probes gateway runtime container/scheduler and target host reachability. |
+| `apps/gateway/app/Services/Schedules/SchedulesProbe.php:43,90` | `RemoteHostExecutor` | Probes gateway container/scheduler and target host reachability. |
 | `apps/gateway/app/Services/Security/HomeDirectoryLockdownInstaller.php:14` | `RemoteHostExecutor` | Mutates host home directory permissions and ownership. |
 | `apps/gateway/app/Services/Security/PublicSshDenyInstaller.php:17` | `RemoteHostExecutor` | Installs UFW host rules for SSH exposure. |
 | `apps/gateway/app/Services/Security/SshdHardenedInstaller.php:14` | `RemoteHostExecutor` | Writes SSH daemon host config and reloads SSH. |
@@ -373,7 +376,7 @@ or `RemoteShell` infrastructure hits from the inventory.
 |---|---|---|
 | `apps/gateway/app/Providers/AppServiceProvider.php:83` | `RemoteHostExecutor` | Current container binding from `RemoteShell` to `SshRemoteShell`; runtime-lane Orbit PHP must not keep using this binding as host PHP. |
 | `apps/gateway/app/Providers/AppServiceProvider.php:84` | `RemoteHostExecutor` | Current container binding from `RemoteShellStream` to `SshRemoteShellStream` for host/tool log streams. |
-| `apps/gateway/app/Services/RemoteShell/SshRemoteShell.php:31,82` | `RemoteHostExecutor` | SSH transport implementation for host-lane `run`/`start`; future runtime executor may reuse SSH but must add `docker exec orbit-runtime`. |
+| `apps/gateway/app/Services/RemoteShell/SshRemoteShell.php:31,82` | `RemoteHostExecutor` | SSH transport implementation for host-lane `run`/`start`; runtime executor may reuse SSH but must add gateway container execution. |
 | `apps/gateway/app/Services/RemoteShell/SshRemoteShellStream.php:30` | `RemoteHostExecutor` | SSH streaming transport for host/tool log streams. |
 | `apps/gateway/tests/Feature/Services/SshRemoteShellTest.php:32,64,85,105,137,168,204,224,246,263` | `RemoteHostExecutor` | Direct transport tests for `SshRemoteShell`; no product PHP workload. |
 | `apps/gateway/tests/Unit/Services/RemoteShell/WithMetadataTransportTest.php:34,45,65` | `RemoteHostExecutor` | Direct transport metadata tests for `SshRemoteShell`; no product PHP workload. |

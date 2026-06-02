@@ -13,6 +13,8 @@ use App\Services\Gateway\VerifiesGatewayIdentity;
 use App\Services\Gateway\VerifyGatewayIdentity;
 use App\Services\GatewayApiClient;
 use App\Services\GatewayLogStreamClient;
+use App\Services\GatewayOperationEventStreamClient;
+use App\Services\GatewayOperationFollower;
 use App\Services\GatewayStreamClient;
 use App\Services\OrbitConfigStore;
 use App\Services\Trust\LinuxTrustStoreInstaller;
@@ -87,6 +89,23 @@ final class GatewayApiServiceProvider extends ServiceProvider
             );
         });
 
+        $this->app->singleton(GatewayOperationEventStreamClient::class, function (): GatewayOperationEventStreamClient {
+            $config = $this->gatewayConnectionConfig();
+
+            return new GatewayOperationEventStreamClient(
+                baseUrl: $config['base_url'],
+                timeout: $config['timeout'],
+                caPemPath: $config['ca_pem_path'],
+            );
+        });
+
+        $this->app->bind(GatewayOperationFollower::class, fn (): GatewayOperationFollower => new GatewayOperationFollower(
+            events: $this->app->make(GatewayOperationEventStreamClient::class),
+            reconnectSleepMs: $this->positiveInteger(config('orbit.gateway.operation_follow_reconnect_sleep_ms'), 500),
+            maxEmptyReplays: $this->nonNegativeInteger(config('orbit.gateway.operation_follow_max_empty_replays'), 0),
+            maxTransientFailures: $this->nonNegativeInteger(config('orbit.gateway.operation_follow_max_transient_failures'), 120),
+        ));
+
         $this->app->singleton(GatewayLogStreamClient::class, function (): GatewayLogStreamClient {
             $config = $this->gatewayConnectionConfig();
 
@@ -156,5 +175,16 @@ final class GatewayApiServiceProvider extends ServiceProvider
         $value = (int) $value;
 
         return $value > 0 ? $value : $default;
+    }
+
+    private function nonNegativeInteger(mixed $value, int $default): int
+    {
+        if (! is_numeric($value)) {
+            return $default;
+        }
+
+        $value = (int) $value;
+
+        return $value >= 0 ? $value : $default;
     }
 }

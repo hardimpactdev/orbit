@@ -84,8 +84,8 @@ facts from another node.
 
 - Writes the node CLI PHP default in gateway tool facts.
 - Accepts only PHP 8.5, matching the production native Orbit CLI binary
-  artifact's embedded PHP version and the gateway `orbit-runtime` baseline.
-  Source-mounted Docker/Incus development and E2E nodes invoke
+  artifact's embedded PHP version and the `orbit-gateway` image baseline.
+  Source-dev Docker/Incus development and E2E nodes invoke
   `<source>/apps/cli/orbit`.
 - Does not limit app or workspace FrankenPHP runtime versions.
 

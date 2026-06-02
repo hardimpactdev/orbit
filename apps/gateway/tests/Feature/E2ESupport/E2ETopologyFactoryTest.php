@@ -137,6 +137,27 @@ it('stores requested SSH users immutably', function (): void {
         ->toBeNull();
 });
 
+it('stores source mounted checkout acquisition options immutably', function (): void {
+    $factory = E2ETopologyFactory::fromEnvironment()
+        ->withSshUsers(['operator' => 'operator'])
+        ->withGatewayApi();
+
+    $sourceDevFactory = $factory->withSourceMountedCheckout();
+
+    $optionsMethod = new ReflectionMethod($sourceDevFactory, 'acquisitionOptions');
+    $optionsMethod->setAccessible(true);
+    $options = $optionsMethod->invoke($sourceDevFactory);
+
+    expect($sourceDevFactory)->not->toBe($factory)
+        ->and((new ReflectionClass($sourceDevFactory))->getProperty('sourceMountedCheckout')->getValue($sourceDevFactory))
+        ->toBeTrue()
+        ->and((new ReflectionClass($factory))->getProperty('sourceMountedCheckout')->getValue($factory))
+        ->toBeFalse()
+        ->and($options->sshUsers)->toBe(['operator' => 'operator'])
+        ->and($options->startGatewayApi)->toBeTrue()
+        ->and($options->sourceMountedCheckout)->toBeTrue();
+});
+
 it('cleans up all instances', function (): void {
     $operator = m::mock(E2EInstance::class);
     $gateway = m::mock(E2EInstance::class);

@@ -508,7 +508,7 @@ PHP;
             snapshot: $snapshot,
             field: 'environment_matches',
             key: 'process.runtime_environment_mismatch',
-            summary: fn (string $name): string => "Process runtime unit {$name} environment differs from gateway runtime intent.",
+            summary: fn (string $name): string => "Process runtime unit {$name} environment differs from gateway process intent.",
         );
     }
 

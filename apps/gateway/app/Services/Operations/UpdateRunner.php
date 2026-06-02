@@ -1,0 +1,243 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Services\Operations;
+
+use App\Models\OperationRun;
+use App\Models\OperationUpdatePlan;
+use RuntimeException;
+use Throwable;
+
+final readonly class UpdateRunner
+{
+    private const string FleetResourceKey = 'update-all';
+
+    private const string GatewayResourceKey = 'orbit-gateway';
+
+    private const string SchedulerResourceKey = 'orbit-scheduler';
+
+    public function __construct(
+        private OperationRunRecorder $operationRuns,
+        private OperationUpdatePlanStore $updatePlans,
+        private UpdateLeaseManager $leases,
+        private UpdateRunnerPipeline $pipeline,
+    ) {}
+
+    public function start(string $operationRunId): OperationUpdatePlan
+    {
+        [$operationRun, $plan] = $this->loadRunnableContext($operationRunId);
+
+        $this->markStarted($operationRun, $plan);
+
+        return $plan;
+    }
+
+    public function run(string $operationRunId): OperationUpdatePlan
+    {
+        [$operationRun, $plan] = $this->loadRunnableContext($operationRunId);
+
+        try {
+            $this->leases->withLease(
+                resourceType: 'fleet',
+                resourceKey: self::FleetResourceKey,
+                operationRun: $operationRun,
+                ownerToken: $this->ownerToken($operationRun, 'fleet', self::FleetResourceKey),
+                ttlSeconds: $this->leaseTtlSeconds(),
+                callback: function () use ($operationRun, $plan): void {
+                    $this->markStarted($operationRun, $plan);
+                    $this->operationRuns->appendStep($operationRun->id, 'lease.fleet', 'done', 'Fleet update lease acquired');
+                    $this->runPhase(
+                        $operationRun,
+                        'gateway',
+                        'Updating gateway services',
+                        'Gateway services updated',
+                        function () use ($operationRun, $plan): null {
+                            $this->updateGateway($operationRun, $plan);
+
+                            return null;
+                        },
+                    );
+                    $this->runPhase(
+                        $operationRun,
+                        'workload-nodes',
+                        'Updating workload nodes',
+                        'Workload nodes updated',
+                        function () use ($operationRun, $plan): null {
+                            $this->pipeline->updateWorkloads($operationRun, $plan);
+
+                            return null;
+                        },
+                    );
+                    $this->runPhase(
+                        $operationRun,
+                        'verification',
+                        'Verifying fleet update',
+                        'Fleet update verified',
+                        function () use ($operationRun, $plan): null {
+                            $this->pipeline->verifyFleet($operationRun, $plan);
+
+                            return null;
+                        },
+                    );
+                },
+            );
+        } catch (Throwable $exception) {
+            $this->markFailed($operationRun, $exception);
+
+            throw $exception;
+        }
+
+        $this->markSucceeded($operationRun, $plan);
+
+        return $plan;
+    }
+
+    private function updateGateway(OperationRun $operationRun, OperationUpdatePlan $plan): void
+    {
+        $this->leases->withLease(
+            resourceType: 'gateway',
+            resourceKey: self::GatewayResourceKey,
+            operationRun: $operationRun,
+            ownerToken: $this->ownerToken($operationRun, 'gateway', self::GatewayResourceKey),
+            ttlSeconds: $this->leaseTtlSeconds(),
+            callback: function () use ($operationRun, $plan): void {
+                $this->leases->withLease(
+                    resourceType: 'scheduler',
+                    resourceKey: self::SchedulerResourceKey,
+                    operationRun: $operationRun,
+                    ownerToken: $this->ownerToken($operationRun, 'scheduler', self::SchedulerResourceKey),
+                    ttlSeconds: $this->leaseTtlSeconds(),
+                    callback: function () use ($operationRun, $plan): null {
+                        $this->operationRuns->appendStep($operationRun->id, 'lease.gateway', 'done', 'Gateway and scheduler update leases acquired');
+
+                        return $this->updateGatewayWithSchedulerLease($operationRun, $plan);
+                    },
+                );
+            },
+        );
+    }
+
+    private function updateGatewayWithSchedulerLease(OperationRun $operationRun, OperationUpdatePlan $plan): null
+    {
+        $this->pipeline->updateGateway($operationRun, $plan);
+
+        return null;
+    }
+
+    private function runPhase(OperationRun $operationRun, string $key, string $runningMessage, string $doneMessage, callable $callback): null
+    {
+        $this->operationRuns->appendStep($operationRun->id, $key, 'running', $runningMessage);
+
+        try {
+            $callback();
+        } catch (Throwable $exception) {
+            $this->operationRuns->appendStep($operationRun->id, $key, 'fail', $this->phaseFailureMessage($exception));
+
+            throw $exception;
+        }
+
+        $this->operationRuns->appendStep($operationRun->id, $key, 'done', $doneMessage);
+
+        return null;
+    }
+
+    private function markStarted(OperationRun $operationRun, OperationUpdatePlan $plan): void
+    {
+        $this->operationRuns->running($operationRun->id);
+        $this->operationRuns->appendStep($operationRun->id, 'runner', 'running', 'Update runner started', [
+            'target_version' => $plan->target_version,
+            'gateway_image' => $plan->gateway_image,
+            'manifest_source' => $plan->manifest_source,
+            'manifest_version' => $plan->manifest_version,
+        ]);
+    }
+
+    private function markSucceeded(OperationRun $operationRun, OperationUpdatePlan $plan): void
+    {
+        $result = [
+            'status' => 'succeeded',
+            'target_version' => $plan->target_version,
+            'manifest_version' => $plan->manifest_version,
+        ];
+
+        $this->operationRuns->appendComplete($operationRun->id, 0, $result);
+        $this->operationRuns->succeeded($operationRun->id, result: $result);
+    }
+
+    private function markFailed(OperationRun $operationRun, Throwable $exception): void
+    {
+        $code = $exception instanceof FleetUpdateVerificationFailed
+            ? $exception->failureCode
+            : 'update_runner_failed';
+        $message = $exception instanceof FleetUpdateVerificationFailed
+            ? $exception->publicMessage
+            : 'Update runner failed.';
+
+        $this->operationRuns->appendError($operationRun->id, $message, 1, [
+            'code' => $code,
+        ]);
+        $this->operationRuns->failed($operationRun->id, error: [
+            'code' => $code,
+            'message' => $message,
+        ]);
+    }
+
+    private function phaseFailureMessage(Throwable $exception): string
+    {
+        if ($exception instanceof FleetUpdateVerificationFailed) {
+            return $exception->publicMessage;
+        }
+
+        $message = trim($exception->getMessage());
+
+        return $message !== '' ? $message : 'Update phase failed.';
+    }
+
+    /**
+     * @return array{0: OperationRun, 1: OperationUpdatePlan}
+     */
+    private function loadRunnableContext(string $operationRunId): array
+    {
+        $operationRunId = trim($operationRunId);
+
+        if ($operationRunId === '') {
+            throw new RuntimeException('Update runner operation_run_id cannot be empty.');
+        }
+
+        $operationRun = OperationRun::query()->find($operationRunId);
+
+        if (! $operationRun instanceof OperationRun) {
+            throw new RuntimeException("Operation run [{$operationRunId}] was not found.");
+        }
+
+        if ($operationRun->status->isTerminal()) {
+            throw new RuntimeException("Operation run [{$operationRunId}] is already terminal.");
+        }
+
+        $plan = $this->updatePlans->forOperationRun($operationRunId);
+
+        if (! $plan instanceof OperationUpdatePlan) {
+            throw new RuntimeException("Operation update plan for run [{$operationRunId}] was not found.");
+        }
+
+        return [$operationRun, $plan];
+    }
+
+    private function ownerToken(OperationRun $operationRun, string $resourceType, string $resourceKey): string
+    {
+        return hash('sha256', implode(':', [
+            'update-runner',
+            $operationRun->id,
+            $resourceType,
+            $resourceKey,
+        ]));
+    }
+
+    private function leaseTtlSeconds(): int
+    {
+        $ttlSeconds = (int) config('orbit.updates.lease_ttl_seconds', 300);
+
+        return max(1, $ttlSeconds);
+    }
+}

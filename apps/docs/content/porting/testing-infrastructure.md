@@ -76,7 +76,7 @@ Prepared Docker topologies model the target runtime contract:
   config from that path, with process `env` overlaid on top; it does not read a
   source-tree `.env`;
 - host `orbit` command -> node-local Orbit CLI entry point (every node role) ->
-  gateway `orbit-caddy` -> gateway `orbit-runtime`; gateway maintenance
+  gateway HTTPS exposure -> `orbit-gateway`; gateway maintenance
   bypasses the public launcher and uses `bin/orbit-gateway-artisan` or direct
   `php apps/gateway/artisan` from a controlled gateway shell;
 - app and workspace PHP runtimes are FrankenPHP containers;

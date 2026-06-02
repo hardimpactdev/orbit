@@ -44,7 +44,8 @@ it('prints help with --help', function (): void {
     expect($result->output())->toContain('usage: bin/e2e-provision-node');
     expect($result->output())->toContain('--node-kind=operator|gateway|app');
     expect($result->output())->toContain('--source-archive=PATH');
-    expect($result->output())->toContain('--runtime-image-archive=PATH');
+    expect($result->output())->toContain('--gateway-image=IMAGE');
+    expect($result->output())->toContain('--gateway-image-archive=PATH');
     expect($result->output())->toContain('--caddy-image-archive=PATH');
     expect($result->output())->toContain('--dnsmasq-image-archive=PATH');
     expect($result->output())->toContain('--frankenphp-image-archive=PATH');
@@ -91,8 +92,8 @@ it('copies staged Docker image archives into user readable guest var tmp files b
         ->toContain('sudo_run install -d -m 0755 -o "$user" -g "$user" "$guest_stage_dir"')
         ->toContain('staged_source_archive="${guest_stage_dir}/orbit-source.tar.gz"')
         ->toContain('staged_installer="${guest_stage_dir}/install-orbit"')
-        ->toContain('sudo_run install -m 0644 -o "$user" -g "$user" "$RUNTIME_IMAGE_ARCHIVE" "$staged_runtime_image_archive"')
-        ->toContain('runtime_image_args=(--runtime-image-archive="$staged_runtime_image_archive")')
+        ->toContain('sudo_run install -m 0644 -o "$user" -g "$user" "$GATEWAY_IMAGE_ARCHIVE" "$staged_gateway_image_archive"')
+        ->toContain('gateway_image_args=(--gateway-image="$GATEWAY_IMAGE" --gateway-image-archive="$staged_gateway_image_archive")')
         ->toContain('sudo_run install -m 0644 -o "$user" -g "$user" "$CADDY_IMAGE_ARCHIVE" "$staged_caddy_image_archive"')
         ->toContain('caddy_image_args=(--caddy-image-archive="$staged_caddy_image_archive")')
         ->toContain('sudo_run install -m 0644 -o "$user" -g "$user" "$DNSMASQ_IMAGE_ARCHIVE" "$staged_dnsmasq_image_archive"')
@@ -101,12 +102,48 @@ it('copies staged Docker image archives into user readable guest var tmp files b
         ->toContain('frankenphp_image_args=(--frankenphp-image-archive="$staged_frankenphp_image_archive")')
         ->toContain('sudo_run install -m 0644 -o "$user" -g "$user" "$WG_EASY_IMAGE_ARCHIVE" "$staged_wg_easy_image_archive"')
         ->toContain('wg_easy_image_args=(--wg-easy-image-archive="$staged_wg_easy_image_archive")')
-        ->toContain('${guest_stage_dir}/orbit-runtime-current.tar')
+        ->toContain('${guest_stage_dir}/orbit-gateway-current.tar')
         ->toContain('${guest_stage_dir}/caddy-2-alpine.tar')
         ->toContain('${guest_stage_dir}/dnsmasq-latest.tar')
         ->toContain('${guest_stage_dir}/frankenphp-1-php8.5-bookworm.tar')
         ->toContain('${guest_stage_dir}/wg-easy-15.tar')
         ->toContain('sudo_run rm -rf /var/tmp/orbit-e2e-install');
+});
+
+it('fails when gateway image archive does not exist', function (): void {
+    $source = tempnam(sys_get_temp_dir(), 'orbit-provision-source-');
+
+    try {
+        $result = Process::run([
+            provisionScript(),
+            '--node-kind=gateway',
+            "--source-archive={$source}",
+            '--gateway-image-archive=/tmp/orbit-gateway-does-not-exist.tar',
+        ]);
+
+        expect($result->successful())->toBeFalse();
+        expect($result->errorOutput())->toContain('gateway image archive not found');
+    } finally {
+        @unlink($source);
+    }
+});
+
+it('fails when --gateway-image is empty', function (): void {
+    $source = tempnam(sys_get_temp_dir(), 'orbit-provision-source-');
+
+    try {
+        $result = Process::run([
+            provisionScript(),
+            '--node-kind=gateway',
+            "--source-archive={$source}",
+            '--gateway-image=',
+        ]);
+
+        expect($result->successful())->toBeFalse();
+        expect($result->errorOutput())->toContain('--gateway-image must not be empty');
+    } finally {
+        @unlink($source);
+    }
 });
 
 it('fails when --node-kind is missing', function (): void {
@@ -168,19 +205,20 @@ it('fails when caddy image archive does not exist', function (): void {
     }
 });
 
-it('fails when runtime image archive does not exist', function (): void {
+it('rejects the retired runtime image archive option', function (): void {
     $source = tempnam(sys_get_temp_dir(), 'orbit-provision-source-');
+    $retiredOption = '--runtime'.'-image-archive=/tmp/orbit-gateway-does-not-exist.tar';
 
     try {
         $result = Process::run([
             provisionScript(),
             '--node-kind=operator',
             "--source-archive={$source}",
-            '--runtime-image-archive=/tmp/orbit-runtime-does-not-exist.tar',
+            $retiredOption,
         ]);
 
         expect($result->successful())->toBeFalse();
-        expect($result->errorOutput())->toContain('runtime image archive not found');
+        expect($result->errorOutput())->toContain("unknown option: {$retiredOption}");
     } finally {
         @unlink($source);
     }

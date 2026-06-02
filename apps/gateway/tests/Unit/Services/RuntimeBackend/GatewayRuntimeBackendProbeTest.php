@@ -8,7 +8,7 @@ use App\Data\RemoteShell\RemoteShellResult;
 use App\Models\Node;
 use App\Services\RuntimeBackend\GatewayRuntimeBackendProbe;
 
-it('reports available when the orbit-runtime container exists and is running', function (): void {
+it('reports available when the orbit-gateway container exists and is running', function (): void {
     $node = new Node(['name' => 'gateway-1']);
     $remoteShell = new GatewayRuntimeProbeRecordingRemoteShell(
         new RemoteShellResult(exitCode: 0, stdout: "available\ttrue\ttrue\n", stderr: '', durationMs: 1),
@@ -25,8 +25,8 @@ it('reports available when the orbit-runtime container exists and is running', f
         ->and($remoteShell->options[0]['timeout'])->toBe(15);
 
     expect($remoteShell->scripts[0])
-        ->toContain('orbit-gateway-runtime-probe:container-inspect')
-        ->toContain("container='orbit-runtime'")
+        ->toContain('orbit-gateway-container-probe:container-inspect')
+        ->toContain("container='orbit-gateway'")
         ->toContain('docker container inspect')
         ->toContain('docker info')
         ->toContain('printf')
@@ -94,7 +94,7 @@ it('produces distinct drift entries per failure mode', function (): void {
     );
 
     $noDocker = $probe->diff($node, new ProbeSnapshot([
-        'orbit-runtime' => ['runtime_status' => 'no_docker', 'container_exists' => false, 'container_running' => false],
+        'orbit-gateway' => ['runtime_status' => 'no_docker', 'container_exists' => false, 'container_running' => false],
     ]));
 
     expect($noDocker)->toHaveCount(1)
@@ -102,7 +102,7 @@ it('produces distinct drift entries per failure mode', function (): void {
         ->and($noDocker[0]->kind->value)->toBe('divergent');
 
     $missing = $probe->diff($node, new ProbeSnapshot([
-        'orbit-runtime' => ['runtime_status' => 'available', 'container_exists' => false, 'container_running' => false],
+        'orbit-gateway' => ['runtime_status' => 'available', 'container_exists' => false, 'container_running' => false],
     ]));
 
     expect($missing)->toHaveCount(1)
@@ -110,7 +110,7 @@ it('produces distinct drift entries per failure mode', function (): void {
         ->and($missing[0]->kind->value)->toBe('missing');
 
     $stopped = $probe->diff($node, new ProbeSnapshot([
-        'orbit-runtime' => ['runtime_status' => 'available', 'container_exists' => true, 'container_running' => false],
+        'orbit-gateway' => ['runtime_status' => 'available', 'container_exists' => true, 'container_running' => false],
     ]));
 
     expect($stopped)->toHaveCount(1)

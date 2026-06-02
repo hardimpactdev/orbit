@@ -40,8 +40,8 @@ These terms describe how schedules run and how their history is captured.
   configuration is `expected`, `disabled`, or in another configuration state.
   This is distinct from live scheduler verification, which belongs to
   `doctor --family=schedule`.
-- **Orbit Scheduler:** Resident `orbit-scheduler` Artisan-command daemon inside
-  the gateway `orbit-runtime` container.
+- **Orbit Scheduler:** Resident `orbit-scheduler` Swarm service using the
+  Orbit gateway image.
   - Owns schedule evaluation, due-run dispatch, lock claim, and overlap policy for every schedule across the fleet.
   - Dispatches to non-gateway targets through `RemoteShell` (SSH). The scheduled command runs on the target, but the gateway orchestrates and tracks every result.
   - Records run history and writes its own heartbeat directly to the gateway database.

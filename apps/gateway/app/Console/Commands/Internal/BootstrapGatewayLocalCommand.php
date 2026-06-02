@@ -6,6 +6,7 @@ namespace App\Console\Commands\Internal;
 
 use App\Data\Nodes\RoleSettings\VpnRoleSettings;
 use App\Data\Security\PinnedHostKey;
+use App\Enums\Gateway\GatewayExposureMode;
 use App\Enums\Nodes\NodeRoleName;
 use App\Enums\Nodes\NodeRoleStatus;
 use App\Models\Node;
@@ -14,7 +15,8 @@ use App\Models\NodeRoleAssignment;
 use App\Models\WireGuardPeer;
 use App\Services\Ca\OrbitCaService;
 use App\Services\Dns\OrbitDnsServiceInstaller;
-use App\Services\Gateway\GatewayApiRuntimeInstaller;
+use App\Services\Gateway\GatewayImageReference;
+use App\Services\Gateway\GatewaySwarmInstaller;
 use App\Services\Security\SshHostKeyPinner;
 use App\Services\Vpn\WgEasyServiceInstaller;
 use App\Services\WireGuard\WireGuardInterfaceInstaller;
@@ -34,7 +36,7 @@ use RuntimeException;
     {--public-host= : Public IPv4 or DNS name that external WG peers connect to (required to provision wg-easy/orbit-dns)}
     {--tld=gateway : TLD assigned to the gateway node; used to resolve <gateway-name>.<tld> over WG-served DNS}
     {--metadata-json : Output bootstrap metadata JSON instead of only the root CA PEM}
-    {--skip-runtime-install : Skip orbit-caddy gateway API site write, wg-easy, and orbit-dns installation for container-only E2E topology preparation}
+    {--skip-gateway-service-install : Skip orbit-caddy gateway API site write, wg-easy, and orbit-dns installation for container-only E2E topology preparation}
     {--skip-wireguard-install : Skip gateway WireGuard interface installation for Docker E2E topology preparation}')]
 #[Description('Bootstrap gateway-local identity and root CA on the gateway host')]
 class BootstrapGatewayLocalCommand extends Command
@@ -42,7 +44,7 @@ class BootstrapGatewayLocalCommand extends Command
     public function handle(
         OrbitCaService $caService,
         WireGuardInterfaceInstaller $wireGuard,
-        GatewayApiRuntimeInstaller $gatewayApiRuntimeInstaller,
+        GatewaySwarmInstaller $gatewaySwarmInstaller,
         WgEasyServiceInstaller $wgEasyServiceInstaller,
         OrbitDnsServiceInstaller $orbitDnsServiceInstaller,
     ): int {
@@ -179,7 +181,7 @@ class BootstrapGatewayLocalCommand extends Command
         $caService->ensureRootCa();
         $wireguardServerPublicKey = null;
 
-        if (! (bool) $this->option('skip-runtime-install')) {
+        if (! (bool) $this->option('skip-gateway-service-install')) {
             if ($publicHost !== null) {
                 $password = $this->ensureWgEasyPassword();
                 $username = (string) config('services.wg_easy.username', 'orbit');
@@ -228,8 +230,16 @@ class BootstrapGatewayLocalCommand extends Command
                 ));
         }
 
-        if (! (bool) $this->option('skip-runtime-install')) {
-            $gatewayApiRuntimeInstaller->install($wireguardAddress);
+        if (! (bool) $this->option('skip-gateway-service-install')) {
+            $gatewaySwarmInstaller->install(
+                wireguardAddress: $wireguardAddress,
+                image: $this->gatewayImage(),
+                exposureMode: $this->gatewayExposureMode(),
+                configRoot: (string) config('orbit.paths.config_root'),
+                wireguardCidr: '10.6.0.0/24',
+                wireguardInterface: 'wg-orbit',
+                imageArchive: $this->gatewayImageArchive(),
+            );
 
             if ($publicHost !== null) {
                 $orbitDnsServiceInstaller->install();
@@ -248,6 +258,35 @@ class BootstrapGatewayLocalCommand extends Command
         $this->line($caService->rootCert());
 
         return self::SUCCESS;
+    }
+
+    private function gatewayImage(): GatewayImageReference
+    {
+        $image = config('orbit.updates.gateway_image');
+
+        if (! is_string($image) || trim($image) === '') {
+            $image = 'orbit-gateway:current';
+        }
+
+        return GatewayImageReference::fromString($image);
+    }
+
+    private function gatewayImageArchive(): ?string
+    {
+        $archive = config('orbit.updates.gateway_image_archive');
+
+        if (! is_string($archive) || trim($archive) === '') {
+            return null;
+        }
+
+        return trim($archive);
+    }
+
+    private function gatewayExposureMode(): GatewayExposureMode
+    {
+        $mode = config('orbit.gateway.exposure_mode', GatewayExposureMode::RouterColocated->value);
+
+        return GatewayExposureMode::parse((string) $mode);
     }
 
     private function ensureWgEasyPassword(): string

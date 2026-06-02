@@ -4,66 +4,52 @@ declare(strict_types=1);
 
 namespace App\Services\Schedules;
 
-use App\Models\Node;
-use App\Services\Runtime\OrbitContainerNames;
+use App\Services\Gateway\GatewaySwarmStackRenderer;
 
-final readonly class OrbitSchedulerProgramRenderer
+final class OrbitSchedulerProgramRenderer
 {
-    public function __construct(
-        private OrbitContainerNames $containerNames = new OrbitContainerNames,
-    ) {}
+    private const string Stack = 'orbit';
 
-    public function render(Node $node, ?int $sleepSeconds = null): string
+    public function render(?int $sleepSeconds = null): string
     {
-        return $this->definition($node, $sleepSeconds)['command'];
+        return $this->definition($sleepSeconds)['command'];
     }
 
-    public function installScript(Node $node, ?int $sleepSeconds = null): string
+    public function installScript(?int $sleepSeconds = null): string
     {
-        $definition = $this->definition($node, $sleepSeconds);
-        $container = $definition['container'];
-        $command = $definition['command'];
+        $definition = $this->definition($sleepSeconds);
+        $stackService = $definition['stack_service'];
 
         return implode("\n", [
             'set -e',
-            'sudo docker inspect '.escapeshellarg($container).' >/dev/null',
-            'sudo docker restart '.escapeshellarg($container).' >/dev/null',
-            'sleep 1',
-            "if ! sudo docker exec {$this->escapedContainer()} sh -lc ".escapeshellarg($this->schedulerRunningScript()).'; then',
-            "    sudo docker exec --detach {$this->escapedContainer()} sh -lc ".escapeshellarg("exec {$command}").' >/dev/null',
-            'fi',
+            'sudo docker service inspect '.escapeshellarg($stackService).' >/dev/null',
+            'sudo docker service scale '.escapeshellarg("{$stackService}=1").' >/dev/null',
         ]);
     }
 
     /**
      * @return array{
-     *     container: string,
+     *     service: string,
+     *     stack_service: string,
      *     command: string,
-     *     restart_policy: string
+     *     replicas: int,
+     *     update_order: string
      * }
      */
-    public function definition(Node $node, ?int $sleepSeconds = null): array
+    public function definition(?int $sleepSeconds = null): array
     {
-        $command = 'orbit orbit-scheduler';
+        $command = 'php artisan orbit-scheduler';
 
         if ($sleepSeconds !== null) {
             $command .= " --sleep-seconds={$sleepSeconds}";
         }
 
         return [
-            'container' => $this->containerNames->runtime(),
+            'service' => GatewaySwarmStackRenderer::SchedulerService,
+            'stack_service' => self::Stack.'_'.GatewaySwarmStackRenderer::SchedulerService,
             'command' => $command,
-            'restart_policy' => 'unless-stopped',
+            'replicas' => 1,
+            'update_order' => 'stop-first',
         ];
-    }
-
-    private function escapedContainer(): string
-    {
-        return escapeshellarg($this->containerNames->runtime());
-    }
-
-    private function schedulerRunningScript(): string
-    {
-        return "ps -eo args | grep -F 'artisan orbit-scheduler' | grep -v grep >/dev/null";
     }
 }

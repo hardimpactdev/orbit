@@ -106,12 +106,13 @@ Roles materialize baseline tool intent when a role assignment converges.
 
 | Role | Baseline intent |
 | --- | --- |
+| `gateway` | Swarm-managed `orbit-gateway` API service, `orbit-scheduler` service, gateway config root, SQLite database, and Orbit CA/certificate material |
 | `vpn` | WireGuard server runtime, public endpoint settings, VPN peer defaults, and VPN-facing DNS runtime |
 | `router` | Private `orbit-caddy` router for private `.orbit` DNS/service names, private route artifacts, backend pools, and private HTTP/WebSocket/S3 routing |
 | `app-dev` | Docker-first app runtime baseline, development DNS mapping, and `orbit-caddy` app/workspace routes |
 | `app-prod` | Private `orbit-caddy` backend, FrankenPHP app containers, and Docker process runtime |
 | `database` | Docker running as the substrate for managed database service tools |
-| `agent` | `orbit-caddy`, the shared unprivileged `agent` runtime user, the gateway-owned agent DNS mapping for the role's `tld`, and any role-specific runtime containers the agent workload needs; any remaining workload-node `orbit-runtime` usage is compatibility scope outside the source-mounted live topology contract |
+| `agent` | `orbit-caddy`, the shared unprivileged `agent` runtime user, the gateway-owned agent DNS mapping for the role's `tld`, and any role-specific runtime containers the agent workload needs |
 | `ingress` | `orbit-caddy` running as the public production HTTP ingress boundary, forwarding public routes to `router` |
 | `websocket` | Laravel Reverb in a Docker runtime container managed by Orbit, private TLS backend binding on WireGuard, backend certificate material, and Redis-backed scaling configuration |
 | `s3` | RustFS in a Docker runtime container rendered by Orbit, private S3 API binding on WireGuard, service-level credentials on the `rustfs` tool row, backend pool registration, and role-owned data path |
@@ -252,29 +253,26 @@ These rules apply to all node commands and define the invariants the family enfo
   the command contract.
 - Local node defaults do not grant access. The gateway still authenticates the
   caller and authorizes the requested operation through node access policy.
-- For gateway nodes, node readiness includes the gateway runtime service needed
-  to serve the Orbit API through `orbit-caddy` and `orbit-runtime`. Runtime
-  container provisioning commands specific to the process manager are not a
-  public node command surface.
+- For gateway nodes, node readiness includes the `orbit-gateway` service,
+  `orbit-scheduler` service, gateway config root, and the selected gateway
+  exposure mode. Runtime container provisioning commands specific to the
+  process manager are not a public node command surface.
 - `orbit doctor --family=node` verifies role, platform, WireGuard, SSH, and
-  reachability expectations, including gateway runtime readiness for gateway
+  reachability expectations, including gateway service readiness for gateway
   nodes.
 
-The node host contract is Docker-first. Managed nodes require Git, Docker
-Engine and CLI, the host `orbit` launcher or equivalent node-local Orbit CLI
-entry point, WireGuard/SSH identity material, and role-specific host tools
-such as VitePlus on app nodes. Production installs still use the prebuilt
-Orbit CLI binary (embedded PHP 8.5 +
-`pdo_sqlite`/`openssl`/`curl`/`mbstring`/`tokenizer`/`ctype`/`filter`/`fileinfo`/`json`/`phar`),
-and gateway nodes still run `orbit-runtime` for the API and scheduler.
-Source-mounted Docker and Incus topologies are development and E2E lanes; in
-those lanes `/usr/local/bin/orbit` points directly at `<source>/apps/cli/orbit`
-and mutable node-local Orbit state lives under `~/.config/orbit`. Any
-remaining workload-node `orbit-runtime` usage is a compatibility concern
-outside the source-mounted live topology contract. `app-dev` and
-`app-prod` nodes additionally carry a host PHP toolchain (host PHP 8.4 and 8.5,
-Composer, and the Laravel installer) for `app:exec` and deployment. Host Caddy
-(the `orbit-caddy` container) and host PHP-FPM remain non-prerequisites and
+The node host contract is Docker-first. Production artifact installs use the
+prebuilt Orbit CLI binary (embedded PHP 8.5 +
+`pdo_sqlite`/`openssl`/`curl`/`mbstring`/`tokenizer`/`ctype`/`filter`/`fileinfo`/`json`/`phar`). A production gateway-only node requires Docker
+Engine/CLI, initialized Docker Swarm, the gateway config root, WireGuard/SSH
+identity material, and the native Orbit CLI binary. It does not require host
+PHP, host Composer, Git, or an Orbit source checkout. Source-mounted Docker and
+Incus topologies are development and E2E lanes; in those lanes
+`/usr/local/bin/orbit` points directly at `<source>/apps/cli/orbit` and mutable
+node-local Orbit state lives under `~/.config/orbit`. `app-dev` and `app-prod`
+nodes additionally carry a host PHP toolchain (host PHP 8.4 and 8.5, Composer,
+and the Laravel installer) for `app:exec` and deployment. Host Caddy (the
+`orbit-caddy` container) and host PHP-FPM remain non-prerequisites and
 non-fallbacks.
 
 ## Transport Model
@@ -337,7 +335,7 @@ The node domain owns:
 - gateway configuration and consuming-node identity;
 - node reachability from the gateway;
 - consuming-to-serving node grants;
-- gateway runtime readiness;
+- gateway service readiness;
 - node lifecycle checks and removal safety.
 
 The node domain does not own:
@@ -427,9 +425,9 @@ starts with local CLI installation. Production installs download the native
 Orbit CLI binary artifact and link the host `bin/orbit` launcher as `orbit`.
 Source-mounted Docker and Incus topologies are development and E2E lanes; in
 those lanes `/usr/local/bin/orbit` points directly at `<source>/apps/cli/orbit`.
-Gateway `orbit-runtime` remains a gateway concern for the API and scheduler,
-not a blanket client prerequisite. The project README owns those installation
-steps.
+The `orbit-gateway` and `orbit-scheduler` Swarm services remain gateway-role
+concerns, not blanket client prerequisites. The project README owns those
+installation steps.
 
 First-gateway bootstrap is a complete onboarding flow for the initiating
 client. When a client with no configured gateway runs

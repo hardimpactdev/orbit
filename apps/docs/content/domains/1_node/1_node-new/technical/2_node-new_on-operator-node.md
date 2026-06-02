@@ -60,7 +60,7 @@ When no gateway is configured and `--template=gateway` is requested:
    `node_new.operator_name`.
 2. Resolve `node_new.user` with the documented default or supplied value.
 3. Connect to the target host over SSH.
-4. Install the gateway runtime.
+4. Install the gateway service.
 5. Initialize gateway state.
 6. Register the gateway node as `node_new.name`.
 7. Mint an active client identity named `node_new.operator_name` for the

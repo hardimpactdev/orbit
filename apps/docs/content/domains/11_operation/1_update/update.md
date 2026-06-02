@@ -5,12 +5,12 @@
 Update the local Orbit installation on the machine where the command is invoked.
 
 This command is the local update path. In production artifact installs it
-updates the native Orbit CLI binary and runs gateway runtime/dependency/
-migration steps when the local installation is a gateway-context install. In
-source-mounted Docker and Incus development/E2E topologies it keeps
+updates the native Orbit CLI binary. In source-dev Docker and Incus
+development/E2E topologies it keeps
 `/usr/local/bin/orbit` pointed at `<source>/apps/cli/orbit` and updates by
-changing the mounted source. It does not update other nodes and does not repair
-fleet drift.
+changing the mounted source. It does not update the gateway service, other
+nodes, or repair fleet drift. Gateway service replacement belongs to
+[`orbit update:all`](../2_update-all/update-all.md).
 
 ## Usage
 
@@ -42,14 +42,11 @@ orbit update --json
    (updated binary artifact in production, mounted source entry point in
    source-mounted lanes).
 3. Verify the resolved local Orbit entry point responds to `--version`.
-4. Install gateway Composer dependencies inside gateway `orbit-runtime`.
-5. Run Orbit database migrations for the gateway inside gateway `orbit-runtime`.
-6. Report the local update result.
+4. Report the local update result.
 
-The command affects only the current Orbit installation. On a gateway host,
-local migrations may change the gateway database schema as part of the normal
-Laravel migration path, but `update` does not create or modify fleet
-configuration.
+The command affects only the current Orbit CLI installation. On a gateway host,
+it updates the host CLI binary or source-dev CLI entrypoint; it does not replace
+`orbit-gateway`, run gateway migrations, or mutate fleet configuration.
 
 Use [`update:all`](../2_update-all/update-all.md) when the operator needs to
 roll out the same Orbit update across the fleet.
@@ -59,8 +56,7 @@ roll out the same Orbit update across the fleet.
 Run `orbit update` to see live progress and a final success or failure result.
 
 Human output reports whether the local installation updated successfully. A
-failed step remains visible with captured download, `orbit-runtime` Composer,
-or migration output.
+failed step remains visible with captured download or verification output.
 
 Use `--json` for the machine-readable local update result and any failure
 metadata.
@@ -72,8 +68,6 @@ metadata.
   Releases by default, or the `ORBIT_BINARY_URL` override for offline and E2E
   artifact scenarios) plus permission to write the binary and update the host
   launcher link.
-- Gateway runtime update steps require Docker and gateway `orbit-runtime` for
-  dependency installation and migrations.
 - Source-mounted Docker/Incus development and E2E lanes require access to the
   mounted checkout and keep `/usr/local/bin/orbit` pointed at
   `<source>/apps/cli/orbit`.

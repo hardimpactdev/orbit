@@ -21,7 +21,6 @@ use Illuminate\Contracts\Process\ProcessResult;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Process\FakeInvokedProcess;
 use Illuminate\Support\Facades\Process;
-use Symfony\Component\Process\Process as SymfonyProcess;
 
 uses(RefreshDatabase::class);
 
@@ -33,81 +32,27 @@ it('runs one scheduler daemon tick on demand', function (): void {
         ->assertSuccessful();
 });
 
-it('starts the scheduler as the gateway orbit-runtime default process alongside the gateway HTTP server', function (): void {
-    $root = sys_get_temp_dir().'/orbit-scheduler-runtime-'.bin2hex(random_bytes(6));
-    $source = "{$root}/source";
-    $bin = "{$root}/bin";
-    $capture = "{$root}/capture";
-    $sleepCapture = "{$root}/sleep-capture";
+it('starts the scheduler through the gateway image scheduler entrypoint', function (): void {
+    $entrypoint = file_get_contents(repo_path('docker/orbit-gateway/entrypoint.sh'));
 
-    mkdir("{$source}/apps/gateway", recursive: true);
-    mkdir($bin, recursive: true);
-
-    file_put_contents("{$source}/apps/gateway/artisan", "<?php\n");
-    file_put_contents("{$bin}/php", <<<'BASH'
-#!/usr/bin/env bash
-printf 'argv=%s\n' "$*" >> "$PHP_CAPTURE"
-
-for arg do
-    case "$arg" in
-        serve)
-            exit 0
-            ;;
-    esac
-done
-
-exit 42
-BASH);
-    file_put_contents("{$bin}/sleep", <<<'BASH'
-#!/usr/bin/env bash
-printf 'sleep argv=%s\n' "$*" > "$SLEEP_CAPTURE"
-exit 0
-BASH);
-    chmod("{$bin}/php", 0755);
-    chmod("{$bin}/sleep", 0755);
-
-    try {
-        $process = new SymfonyProcess(
-            ['bash', repo_path('docker/orbit-runtime/entrypoint.sh')],
-            null,
-            [
-                'ORBIT_SOURCE_PATH' => $source,
-                'ORBIT_SCHEDULER_SLEEP_SECONDS' => '7',
-                'PATH' => $bin.':'.getenv('PATH'),
-                'PHP_CAPTURE' => $capture,
-                'SLEEP_CAPTURE' => $sleepCapture,
-            ],
-        );
-
-        $process->run();
-
-        expect($process->getExitCode())
-            ->toBe(42, $process->getOutput().$process->getErrorOutput())
-            ->and(file_get_contents($capture))
-            ->toContain("argv={$source}/apps/gateway/artisan orbit-scheduler --sleep-seconds=7")
-            ->toContain('serve')
-            ->toContain('--port=8080')
-            ->and(file_exists($sleepCapture))->toBeFalse();
-    } finally {
-        (new SymfonyProcess(['rm', '-rf', $root]))->run();
-    }
+    expect($entrypoint)
+        ->toContain('scheduler)')
+        ->toContain('run_artisan orbit-scheduler "$@"')
+        ->not->toContain('php "$artisan" serve')
+        ->not->toContain('PHP_CLI_SERVER_WORKERS');
 });
 
-it('renders scheduler repair through orbit-runtime instead of host supervisor', function (): void {
-    $node = new Node([
-        'name' => 'gateway-1',
-        'user' => 'orbit',
-        'orbit_path' => '/home/orbit/orbit',
-    ]);
-
-    $script = (new OrbitSchedulerProgramRenderer)->installScript($node);
+it('renders scheduler repair through the gateway Swarm scheduler service instead of host supervisor', function (): void {
+    $script = (new OrbitSchedulerProgramRenderer)->installScript();
 
     expect($script)
-        ->toContain('docker restart')
-        ->toContain('orbit-runtime')
+        ->toContain("docker service inspect 'orbit_orbit-scheduler'")
+        ->toContain("docker service scale 'orbit_orbit-scheduler=1'")
+        ->toContain('orbit-scheduler')
+        ->not->toContain('orbit'.'-runtime')
         ->not->toContain('supervisor')
         ->not->toContain('/etc/supervisor')
-        ->not->toContain('php artisan orbit-scheduler');
+        ->not->toContain('docker restart');
 });
 
 it('dispatches due app schedules from the gateway and records run history centrally', function (): void {

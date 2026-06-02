@@ -20,7 +20,7 @@ use Throwable;
  *
  * Execution lane: RemoteHostExecutor (SSH host substrate + Docker inspection).
  * See apps/docs/content/execution-lanes.md — all remote work here targets the
- * host substrate via `docker inspect` / container env probing. No orbit-runtime
+ * host substrate via `docker inspect` / container env probing. No gateway-container
  * exec, no host sqlite3/python3/php artisan forwarding.
  *
  * Node family owns:

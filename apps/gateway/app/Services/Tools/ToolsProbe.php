@@ -66,7 +66,9 @@ $service = (string) ($payload['service'] ?? '');
 $container = (string) ($payload['container'] ?? '');
 $configPath = (string) ($payload['config_path'] ?? '');
 $secretPath = (string) ($payload['secret_path'] ?? '');
-$path = trim((string) shell_exec('command -v '.escapeshellarg($binary).' 2>/dev/null'));
+$path = str_contains($binary, '/')
+    ? (is_executable($binary) ? $binary : '')
+    : trim((string) shell_exec('command -v '.escapeshellarg($binary).' 2>/dev/null'));
 
 if ($path === '') {
     exit(1);

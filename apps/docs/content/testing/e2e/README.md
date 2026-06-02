@@ -57,7 +57,7 @@ test.
 
 Use Docker for feature tests whose correctness depends on gateway API, CA trust,
 registry state, command forwarding, current-checkout command behavior, the Docker
-process runtime backend, the Orbit Scheduler in `orbit-runtime`, or
+process runtime backend, the `orbit-scheduler` service, or
 Orbit-managed process and schedule lifecycle. This is the default for
 prepared-topology `e2e-feature` tests.
 
@@ -79,7 +79,7 @@ Use these examples when a feature could fit more than one lane.
 | CLI validation, JSON envelopes, renderers, DTOs, authorization branches | In-memory Pest | Deterministic contract behavior; fake external boundaries. |
 | Gateway API forwarding, CA trust, registry reads/writes, Saloon paths | Docker feature | Prepared topology is enough; fast and parallelizable. |
 | Docker-backed tool intent and compose command generation | Docker feature | The command contract is gateway intent plus generated Docker command. |
-| Runtime backend, process lifecycle, scheduler tick/heartbeat | Docker feature | Docker topologies run `orbit-runtime`, runtime containers, and the scheduler. |
+| Runtime backend, process lifecycle, scheduler tick/heartbeat | Docker feature | Docker topologies run `orbit-gateway`, runtime containers, and `orbit-scheduler`. |
 | Host-init service control and journal behavior | Incus VM-feature | Requires real systemd and host init semantics. |
 | OS package installs, trust-store mutation, sudo, real SSH daemon behavior | Incus VM-feature | Depends on VM and OS behavior Docker does not model. |
 | Base image, installer, superset topology preparation, `node:new`, WireGuard routing | Incus provision | Builds the reusable Incus superset and proves production-style provisioning. |
@@ -129,6 +129,25 @@ assertions only.
 The provision gate is intentionally on demand because it runs real
 installer/provisioning paths and is much slower than prepared-topology feature
 tests. It is one superset test.
+
+## Source-Dev And Artifact-Prod
+
+Orbit keeps development ergonomics and production artifact validation in
+separate topology lanes:
+
+- `source-dev` topologies copy or bind-mount the current worktree and may point
+  `/usr/local/bin/orbit` directly at `<source>/apps/cli/orbit`. They are for
+  fast iteration against live topology behavior and do not prove production
+  artifacts.
+- `artifact-prod` topologies use built CLI binaries, digest-pinned
+  `orbit-gateway` images, release manifest snapshots, and production image
+  acquisition. They validate that production artifacts work without an Orbit
+  source checkout on gateway-only hosts.
+
+Host PHP is required in production only on nodes with `app-dev` or `app-prod`
+roles, where app-source workflows use Composer and Artisan against app code.
+Gateway-only, router-only, vpn-only, database-only, websocket-only, S3-only, and
+operator-only production nodes do not require host PHP or Composer.
 
 Verification uses prepared topology lanes or the provisioning gate. Persistent
 gateway, operator, and app nodes are diagnostic targets only.

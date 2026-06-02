@@ -67,11 +67,13 @@ describe('ComposerTool', function (): void {
         expect($tool->installScript())->toContain('set -e');
     });
 
-    it('probeMetadata identifies the composer binary', function (): void {
+    it('probeMetadata identifies the Orbit-managed composer binary', function (): void {
         $tool = new ComposerTool;
         $metadata = $tool->probeMetadata();
 
-        expect($metadata['binary'])->toBe('composer');
+        expect($metadata['binary'])->toBe('/usr/local/bin/composer')
+            ->and($metadata['version_command'])->toBe('/usr/local/bin/composer --version')
+            ->and($metadata['update_command'])->toBe('sudo /usr/local/bin/composer self-update 2>/dev/null');
     });
 
     it('is resolvable by slug from the tool catalog', function (): void {

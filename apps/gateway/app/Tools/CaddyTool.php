@@ -55,7 +55,7 @@ final class CaddyTool extends BaseTool
             sprintf(
                 '    printf %%s\\\\n %s >&2',
                 escapeshellarg(sprintf(
-                    'orbit-caddy: local Docker image %s is missing; run "bin/orbit-gateway-artisan orbit:internal:build-runtime-images" or "docker pull %s" before reconciling the orbit-caddy container.',
+                    'orbit-caddy: local Docker image %s is missing; run "bin/orbit-gateway-artisan orbit:internal:build-gateway-images" or "docker pull %s" before reconciling the orbit-caddy container.',
                     $container->image(),
                     $container->image(),
                 )),

@@ -133,7 +133,7 @@ Gateway-owned internal routes are proxy inventory, but their product purpose is 
 
 Long-lived gateway streams, such as progress or log streams, must not consume
 the same execution lane as short command/API requests. The gateway
-`orbit-caddy` container forwards API traffic to the gateway `orbit-runtime`
+`orbit-caddy` container forwards API traffic to the gateway `orbit-gateway`
 container, and the product contract is that streaming traffic cannot starve
 ordinary gateway API execution.
 

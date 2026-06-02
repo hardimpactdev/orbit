@@ -227,6 +227,25 @@ describe('GatewayStreamClient', function (): void {
             ->and($options['stream'] ?? null)->toBeTrue();
     });
 
+    it('does not apply the gateway connect timeout as a whole-stream deadline', function (): void {
+        $body = buildSseStream([['event' => 'complete', 'data' => ['ok' => true]]]);
+
+        $options = [];
+
+        Http::fake(function (Request $request, array $opts) use (&$options, $body) {
+            $options = $opts;
+
+            return Http::response($body, 200, ['Content-Type' => 'text/event-stream']);
+        });
+
+        (new GatewayStreamClient('https://gateway.test', 30))
+            ->streamEvents('/api/stream', [], fn () => null);
+
+        expect($options['stream'] ?? null)->toBeTrue()
+            ->and($options['connect_timeout'] ?? null)->toBe(30)
+            ->and($options['timeout'] ?? null)->toBe(0);
+    });
+
     it('leaves the default verify behavior when no CA PEM path is configured', function (): void {
         $body = buildSseStream([['event' => 'complete', 'data' => ['ok' => true]]]);
 

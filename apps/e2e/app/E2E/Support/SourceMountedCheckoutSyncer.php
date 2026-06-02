@@ -57,7 +57,7 @@ final readonly class SourceMountedCheckoutSyncer
             return repo_path();
         }
 
-        return self::DefaultRemoteRoot.'/'.$this->worktreeSlug();
+        return self::DefaultRemoteRoot.'/'.$this->worktreeSlug($provider);
     }
 
     /**
@@ -111,14 +111,27 @@ final readonly class SourceMountedCheckoutSyncer
         return str_starts_with($pattern, './') ? substr($pattern, 2) : $pattern;
     }
 
-    private function worktreeSlug(): string
+    private function worktreeSlug(string $provider): string
     {
         $base = basename(repo_path());
         $slug = strtolower((string) preg_replace('/[^A-Za-z0-9._-]+/', '-', $base));
         $slug = trim($slug, '-._');
         $slug = $slug !== '' ? $slug : 'orbit';
+        $providerSlug = self::pathSlug($provider, 'provider');
+        $workerToken = getenv('TEST_TOKEN');
+        $workerSlug = is_string($workerToken) && trim($workerToken) !== ''
+            ? '-worker-'.self::pathSlug($workerToken, 'test')
+            : '';
 
-        return "{$slug}-".substr(sha1(repo_path()), 0, 12);
+        return "{$slug}-{$providerSlug}{$workerSlug}-".substr(sha1(repo_path()), 0, 12);
+    }
+
+    private static function pathSlug(string $value, string $fallback): string
+    {
+        $slug = strtolower((string) preg_replace('/[^A-Za-z0-9._-]+/', '-', $value));
+        $slug = trim($slug, '-._');
+
+        return $slug !== '' ? $slug : $fallback;
     }
 
     private function prepareTargetAndAcquireLock(string $host, string $targetPath): void

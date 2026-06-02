@@ -36,8 +36,8 @@ it('emits heartbeat comments', function (): void {
     expect($output)->toBe(": heartbeat\n\n");
 });
 
-it('flushes output under fpm-fcgi and cli-server sapi', function (): void {
-    $emitter = new ProgressEventStreamEmitter('cli-server');
+it('flushes output under fpm-fcgi, cli-server, and frankenphp sapi', function (string $sapi): void {
+    $emitter = new ProgressEventStreamEmitter($sapi);
     $flushedOutput = '';
 
     ob_start(function (string $chunk) use (&$flushedOutput): string {
@@ -54,7 +54,7 @@ it('flushes output under fpm-fcgi and cli-server sapi', function (): void {
 
     expect($flushedOutput)->toContain("event: tree\n")
         ->and($flushedOutput)->toContain('"title":"Test"');
-});
+})->with(['fpm-fcgi', 'cli-server', 'frankenphp']);
 
 it('skips flush under cli sapi', function (): void {
     $emitter = new ProgressEventStreamEmitter('cli');

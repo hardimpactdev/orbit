@@ -12,8 +12,6 @@
   Releases by default, or the `ORBIT_BINARY_URL` override for offline and E2E
   artifact scenarios) plus permission to write the binary and update the host
   launcher link.
-- Gateway runtime update steps require Docker and gateway `orbit-runtime` for
-  dependency installation and migrations.
 - Source-mounted Docker/Incus development and E2E lanes require access to the
   mounted checkout and keep `/usr/local/bin/orbit` pointed at
   `<source>/apps/cli/orbit`.
@@ -39,7 +37,7 @@ options are optional.
 ## Input Resolution
 
 1. Select the output renderer.
-2. Validate the install root and runtime prerequisites.
+2. Validate the install root and local update prerequisites.
 3. Start the local update sequence.
 
 No input-mode-specific contracts are required. The command has no required
@@ -74,26 +72,15 @@ fields and does not prompt.
   `/usr/local/bin/orbit -> <source>/apps/cli/orbit` entry point. A failed
   verify step returns failure and identifies the failed step.
 
-### Gateway-Source Update Rules
+### Gateway-Service Boundary
 
-- Install Composer dependencies inside gateway `orbit-runtime` after the local
-  entry-point update succeeds when the local installation includes the gateway
-  runtime path.
-- Run Orbit migrations inside gateway `orbit-runtime` after dependencies are
-  installed when the local installation includes the gateway runtime path.
-- The gateway continues to run from source mounted into `orbit-runtime`; these
-  gateway-source steps are separate from and subsequent to the local CLI
-  entry-point update.
-
-### Local Migration Rules
-
-- Apply migrations inside gateway `orbit-runtime` with non-interactive
-  production-safe semantics when the local installation includes the gateway
-  runtime path.
-- When the local installation is a gateway installation, migrations may update
-  the gateway database schema.
-- Migrations must not create or mutate fleet configuration beyond normal
-  schema/data migrations owned by the application version.
+- `orbit update` does not replace `orbit-gateway`, update
+  `orbit-scheduler`, run gateway migrations, or install gateway Composer
+  dependencies.
+- Gateway service replacement and migrations belong to the durable
+  [`orbit update:all`](../../2_update-all/technical/1_update-all.md) runner.
+- Source-dev shells may run gateway maintenance commands explicitly, but that
+  is not part of this public local update command contract.
 
 ### Privilege, Version Source, And Rollback Rules
 
@@ -132,9 +119,6 @@ fields and does not prompt.
 | Binary unavailable | A production artifact download fails or the production release source is unreachable. | Failure |
 | Unsupported platform | The host OS/arch is not a supported binary target. | Failure |
 | Verify failed | The resolved local Orbit entry point does not respond to `--version`. | Failure |
-| Runtime unavailable | A required gateway runtime update step cannot find or execute Docker or gateway `orbit-runtime`. | Failure |
-| Dependency install failed | Gateway Composer dependency installation inside gateway `orbit-runtime` fails. | Failure |
-| Migration failed | Gateway Orbit migrations inside gateway `orbit-runtime` fail. | Failure |
 
 ## Doctor Relationship
 

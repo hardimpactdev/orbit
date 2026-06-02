@@ -26,33 +26,44 @@ gateway node identity, WireGuard identity, gateway CA mismatch checks, and node
 drift repair. Gateway commands may repair caller-local gateway trust, but they
 do not create a gateway doctor family.
 
-The gateway API runtime is the gateway `orbit-runtime` container, exposed on
- the Orbit network through the gateway `orbit-caddy` container. Gateway bootstrap
- ensures `orbit-runtime` is created and running before `orbit-caddy` is
- configured to route HTTPS gateway traffic to it. Gateway commands verify and
- trust that API; they do not install host PHP, host Caddy, or PHP-FPM gateway
- fallbacks, and the gateway API path does not render PHP-FPM sockets or
- `php_fastcgi` upstream configuration.
+The gateway API runtime is the Swarm-managed `orbit-gateway` service. It uses
+the `ghcr.io/hardimpactdev/orbit-gateway:<version>` FrankenPHP image, mounts
+`ORBIT_CONFIG_ROOT` for mutable gateway state, and serves the typed HTTPS API.
+Gateway bootstrap ensures Docker Swarm, `orbit-network`, the gateway config
+root, certificates, `orbit-gateway`, and `orbit-scheduler` are converged.
+Gateway commands verify and trust that API; they do not install host PHP, host
+Caddy, Composer, source checkouts, or PHP-FPM gateway fallbacks, and the gateway
+API path does not render PHP-FPM sockets or `php_fastcgi` upstream
+configuration.
+
+Gateway exposure has two modes:
+
+- `router-colocated`: router-owned `orbit-caddy` owns host `tcp/80`, `tcp/443`,
+  and `udp/443`, routes gateway traffic to `orbit-gateway` over the attachable
+  overlay `orbit-network`, and `orbit-gateway` binds no host ports.
+- `gateway-direct`: `orbit-gateway` publishes gateway HTTPS directly. The leaf
+  certificate chains to the Orbit root CA, and firewall rules restrict access
+  to the Orbit/WireGuard path.
 
  ## Streaming under Docker runtime
 
  The containerized gateway API preserves the existing progress/SSE streaming
  contract with three mechanisms:
 
- 1. **Caddy `flush_interval -1`**: The gateway API Caddy block disables
-    response buffering on the `reverse_proxy` to `orbit-runtime`, so SSE frames
-    are forwarded immediately.
+ 1. **Proxy no-buffering in router-colocated mode**: The router-owned gateway
+    API Caddy block disables response buffering on the `reverse_proxy` to
+    `orbit-gateway`, so SSE frames are forwarded immediately.
  2. **No compression on gateway API**: The gateway API Caddy block omits
     `encode zstd gzip` to prevent compression middleware from buffering small
     SSE frames or heartbeats.
  3. **SAPI-conditional flush in PHP**: Streaming controllers and the progress
-    factory flush output buffers only under `fpm-fcgi` and `cli-server` SAPI.
-    This covers the Docker runtime (`php artisan serve` runs under
-    `cli-server`) while avoiding double-flush under FrankenPHP or other SAPIs.
- 4. **Multi-process dev server**: The gateway HTTP server inside
-    `orbit-runtime` sets `PHP_CLI_SERVER_WORKERS=4` (configurable via
-     environment) so that long-lived SSE streams do not starve ordinary API
-     requests. The PHP built-in server is single-process by default.
+    factory flush output buffers under `fpm-fcgi`, `cli-server`, and the
+    FrankenPHP request SAPI (`frankenphp`) so durable operation progress is
+    observable while the gateway service is being replaced.
+ 4. **Gateway service concurrency**: The `orbit-gateway` FrankenPHP service
+    must handle long-lived SSE streams without starving ordinary API requests.
+    Source-development servers keep their multi-worker safeguards when they use
+    the PHP built-in server.
 
  The product invariant from the proxy domain applies: streaming traffic cannot
  starve ordinary gateway API execution.

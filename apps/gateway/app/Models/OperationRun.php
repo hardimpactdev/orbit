@@ -4,9 +4,12 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Support\Carbon;
 use Orbit\Core\Enums\OperationStatus;
 
@@ -30,6 +33,9 @@ use Orbit\Core\Enums\OperationStatus;
  * @property string|null $stderr_summary
  * @property-read Node|null $callerNode
  * @property-read Node|null $targetNode
+ * @property-read Collection<int, OperationEvent> $events
+ * @property-read Collection<int, UpdateLease> $updateLeases
+ * @property-read OperationUpdatePlan|null $updatePlan
  */
 class OperationRun extends Model
 {
@@ -83,5 +89,29 @@ class OperationRun extends Model
     public function targetNode(): BelongsTo
     {
         return $this->belongsTo(Node::class, 'target_node_id');
+    }
+
+    /**
+     * @return HasMany<OperationEvent, $this>
+     */
+    public function events(): HasMany
+    {
+        return $this->hasMany(OperationEvent::class)->orderBy('sequence');
+    }
+
+    /**
+     * @return HasMany<UpdateLease, $this>
+     */
+    public function updateLeases(): HasMany
+    {
+        return $this->hasMany(UpdateLease::class);
+    }
+
+    /**
+     * @return HasOne<OperationUpdatePlan, $this>
+     */
+    public function updatePlan(): HasOne
+    {
+        return $this->hasOne(OperationUpdatePlan::class);
     }
 }

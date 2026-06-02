@@ -41,13 +41,13 @@ final readonly class DockerTopologyBuilder
             sprintf('docker image inspect %s >/dev/null', escapeshellarg(self::runtimeImage())),
             'Docker topology runtime image is missing',
         );
-        if (array_any($roles, self::roleUsesRuntimeSibling(...))) {
+        if (array_any($roles, self::roleUsesGatewaySibling(...))) {
             $this->mustRun(
-                sprintf('docker image inspect %s >/dev/null', escapeshellarg(DockerTopologyProvider::runtimeSiblingImage())),
-                'Docker Orbit runtime image is missing',
+                sprintf('docker image inspect %s >/dev/null', escapeshellarg(DockerTopologyProvider::gatewaySiblingImage())),
+                'Docker orbit-gateway sibling image is missing',
             );
         }
-        if (array_any($roles, fn (string $role): bool => ! self::roleUsesRuntimeSibling($role))) {
+        if (array_any($roles, fn (string $role): bool => ! self::roleUsesGatewaySibling($role))) {
             $this->mustRun(
                 sprintf('docker image inspect %s >/dev/null', escapeshellarg(self::composerHelperImage())),
                 'Docker Composer helper image is missing',
@@ -70,12 +70,12 @@ final readonly class DockerTopologyBuilder
                     $this->mustRun($canonicalAddressCommand, "Could not seed canonical WireGuard address for {$container}");
                 }
 
-                if (self::roleUsesRuntimeSibling($role)) {
-                    $this->mustRun($this->runtimeRunCommand($container, $network, $role, $composerCacheVolume), "Could not start {$this->runtimeContainerName($container)}");
+                if (self::roleUsesGatewaySibling($role)) {
+                    $this->mustRun($this->gatewayRunCommand($container, $network, $role, $composerCacheVolume), "Could not start {$this->gatewayContainerName($container)}");
                 } else {
                     $this->mustRun($this->composerHelperRunCommand($container, $role, $composerCacheVolume), "Could not start {$this->composerHelperContainerName($container)}");
                 }
-                $this->seedRuntimeContainerNameShim($container);
+                $this->seedGatewayContainerNameShim($container);
                 $this->syncCurrentCheckout($container, $role);
 
                 $dependencyKey = $this->runtimeDependencyKey();
@@ -90,7 +90,7 @@ final readonly class DockerTopologyBuilder
                 $this->persistRoleSource($container, $role);
                 $this->migrate($containers[$role], $role);
                 if ($role === 'gateway') {
-                    $this->refreshRuntimeSource($container, $role);
+                    $this->refreshGatewaySiblingSource($container, $role);
                 }
             }
 
@@ -121,7 +121,7 @@ final readonly class DockerTopologyBuilder
                 }
 
                 $this->persistRoleSource($container, $role);
-                $this->normalizePersistedRuntimeStateOwnership($container, $role);
+                $this->normalizePersistedGatewayStateOwnership($container, $role);
 
                 $this->mustRun(
                     sprintf(
@@ -264,7 +264,7 @@ final readonly class DockerTopologyBuilder
         return self::ownsImage($kind, $role);
     }
 
-    private static function roleUsesRuntimeSibling(string $role): bool
+    private static function roleUsesGatewaySibling(string $role): bool
     {
         return $role === 'gateway';
     }
@@ -279,8 +279,8 @@ final readonly class DockerTopologyBuilder
         $networkAlias = $mode === 'dns-alias'
             ? ' --network-alias '.escapeshellarg($role)
             : '';
-        $runtimeContainerEnv = self::roleUsesRuntimeSibling($role)
-            ? ' --env '.escapeshellarg("ORBIT_RUNTIME_CONTAINER={$this->runtimeContainerName($container)}")
+        $gatewayContainerEnv = self::roleUsesGatewaySibling($role)
+            ? ' --env '.escapeshellarg("ORBIT_GATEWAY_CONTAINER={$this->gatewayContainerName($container)}")
             : '';
 
         return sprintf(
@@ -297,7 +297,7 @@ final readonly class DockerTopologyBuilder
             escapeshellarg("ORBIT_E2E_DOCKER_NETWORK={$network}"),
             escapeshellarg("ORBIT_NODE_CONTAINER={$container}"),
             escapeshellarg('ORBIT_CONFIG_ROOT='.self::OrbitConfigRoot),
-            $runtimeContainerEnv,
+            $gatewayContainerEnv,
             escapeshellarg(self::runtimeImage()),
         );
     }
@@ -336,22 +336,23 @@ final readonly class DockerTopologyBuilder
         return self::ComposerHelperImage;
     }
 
-    private function runtimeRunCommand(string $nodeContainer, string $network, string $role, string $composerCacheVolume): string
+    private function gatewayRunCommand(string $nodeContainer, string $network, string $role, string $composerCacheVolume): string
     {
         $orbitPath = $this->orbitPathForRole($role);
 
         return sprintf(
-            'docker run -d --restart unless-stopped --name %s --network %s --volume %s --mount %s --env %s --env %s --env %s --env %s --workdir %s %s tail -f /dev/null',
-            escapeshellarg($this->runtimeContainerName($nodeContainer)),
+            'docker run -d --restart unless-stopped --name %s --network %s --volume %s --mount %s --env %s --env %s --env %s --env %s --env %s --workdir %s %s tail -f /dev/null',
+            escapeshellarg($this->gatewayContainerName($nodeContainer)),
             escapeshellarg("container:{$nodeContainer}"),
             escapeshellarg('/var/run/docker.sock:/var/run/docker.sock'),
             escapeshellarg($this->composerCacheMount($composerCacheVolume)),
             escapeshellarg("ORBIT_E2E_DOCKER_NETWORK={$network}"),
             escapeshellarg("ORBIT_NODE_CONTAINER={$nodeContainer}"),
             escapeshellarg("ORBIT_SOURCE_PATH={$orbitPath}"),
+            escapeshellarg("ORBIT_GATEWAY_APP_ROOT={$orbitPath}/apps/gateway"),
             escapeshellarg('ORBIT_CONFIG_ROOT='.self::OrbitConfigRoot),
             escapeshellarg($orbitPath),
-            escapeshellarg(DockerTopologyProvider::runtimeSiblingImage()),
+            escapeshellarg(DockerTopologyProvider::gatewaySiblingImage()),
         );
     }
 
@@ -370,35 +371,39 @@ final readonly class DockerTopologyBuilder
         );
     }
 
-    private function seedRuntimeContainerNameShim(string $nodeContainer): void
+    private function seedGatewayContainerNameShim(string $nodeContainer): void
     {
         $this->mustRun(
             sprintf(
                 'docker exec %s sh -lc %s',
                 escapeshellarg($nodeContainer),
                 escapeshellarg(str_replace([
-                    '__RUNTIME_CONTAINER__',
+                    '__GATEWAY_CONTAINER__',
                     '__NODE_CONTAINER__',
-                    '__RUNTIME_IMAGE__',
+                    '__GATEWAY_IMAGE__',
                     '__ORBIT_PATH__',
                 ], [
-                    $this->runtimeContainerName($nodeContainer),
+                    $this->gatewayContainerName($nodeContainer),
                     $nodeContainer,
-                    DockerTopologyProvider::runtimeSiblingImage(),
+                    DockerTopologyProvider::gatewaySiblingImage(),
                     self::OrbitPath,
                 ], <<<'SH_WRAP'
-                if [ -x /usr/bin/docker ] && ! grep -q ORBIT_E2E_RUNTIME_DOCKER_SHIM /usr/bin/docker 2>/dev/null; then
-                    mv /usr/bin/docker /usr/bin/docker.real
+                if [ -x /usr/bin/docker ] && ! grep -q ORBIT_E2E_GATEWAY_DOCKER_SHIM /usr/bin/docker 2>/dev/null; then
+                    if grep -q ORBIT_E2E_RUNTIME_DOCKER_SHIM /usr/bin/docker 2>/dev/null; then
+                        :
+                    elif [ ! -x /usr/bin/docker.real ]; then
+                        mv /usr/bin/docker /usr/bin/docker.real
+                    fi
                 fi
                 cat > /usr/local/bin/docker <<'BASH'
                 #!/usr/bin/env bash
-                # ORBIT_E2E_RUNTIME_DOCKER_SHIM
+                # ORBIT_E2E_GATEWAY_DOCKER_SHIM
                 set -eu
 
                 real_docker="/usr/bin/docker.real"
-                runtime_container="${ORBIT_RUNTIME_CONTAINER:-__RUNTIME_CONTAINER__}"
+                gateway_container="${ORBIT_GATEWAY_CONTAINER:-__GATEWAY_CONTAINER__}"
                 node_container="${ORBIT_NODE_CONTAINER:-__NODE_CONTAINER__}"
-                runtime_image="${ORBIT_RUNTIME_IMAGE:-__RUNTIME_IMAGE__}"
+                gateway_image="${ORBIT_GATEWAY_IMAGE:-__GATEWAY_IMAGE__}"
                 source_path="${ORBIT_SOURCE_PATH:-__ORBIT_PATH__}"
 
                 volume_mountpoint() {
@@ -470,11 +475,11 @@ final readonly class DockerTopologyBuilder
 
                 for argument in "$@"; do
                     case "${argument}" in
-                        orbit-runtime)
-                            args+=("${runtime_container}")
+                        orbit-gateway)
+                            args+=("${gateway_container}")
                             ;;
-                        orbit-runtime:current)
-                            args+=("${runtime_image}")
+                        orbit-gateway:current)
+                            args+=("${gateway_image}")
                             ;;
                         /opt/orbit)
                             args+=("${source_path}")
@@ -497,7 +502,7 @@ final readonly class DockerTopologyBuilder
                 cp /usr/local/bin/docker /usr/bin/docker
                 SH_WRAP)),
             ),
-            "Could not install Docker runtime container name shim in Docker build container {$nodeContainer}",
+            "Could not install Docker gateway container name shim in Docker build container {$nodeContainer}",
             timeoutSeconds: 60,
         );
     }
@@ -603,23 +608,23 @@ final readonly class DockerTopologyBuilder
 
     private function dependencyContainerName(string $nodeContainer, string $role): string
     {
-        return self::roleUsesRuntimeSibling($role)
-            ? $this->runtimeContainerName($nodeContainer)
+        return self::roleUsesGatewaySibling($role)
+            ? $this->gatewayContainerName($nodeContainer)
             : $this->composerHelperContainerName($nodeContainer);
     }
 
-    private function refreshRuntimeSource(string $nodeContainer, string $role): void
+    private function refreshGatewaySiblingSource(string $nodeContainer, string $role): void
     {
         $sourcePath = $this->orbitPathForRole($role);
 
         $this->mustRun(
-            $this->copyPathContentsBetweenContainersCommand($nodeContainer, $this->runtimeContainerName($nodeContainer), $sourcePath),
-            "Could not refresh {$sourcePath} in {$this->runtimeContainerName($nodeContainer)}",
+            $this->copyPathContentsBetweenContainersCommand($nodeContainer, $this->gatewayContainerName($nodeContainer), $sourcePath),
+            "Could not refresh {$sourcePath} in {$this->gatewayContainerName($nodeContainer)}",
             timeoutSeconds: 300,
         );
     }
 
-    private function normalizePersistedRuntimeStateOwnership(string $nodeContainer, string $role): void
+    private function normalizePersistedGatewayStateOwnership(string $nodeContainer, string $role): void
     {
         if ($role !== 'gateway') {
             return;
@@ -632,12 +637,13 @@ final readonly class DockerTopologyBuilder
                 'docker exec %s sh -lc %s',
                 escapeshellarg($nodeContainer),
                 escapeshellarg(sprintf(
-                    'if [ -d %s ]; then chown -R orbit:orbit %s; fi',
+                    'install -d -m 775 -o orbit -g orbit %s && chown -R orbit:orbit %s && chmod -R u+rwX,g+rwX %s',
+                    escapeshellarg($orbitStatePath),
                     escapeshellarg($orbitStatePath),
                     escapeshellarg($orbitStatePath),
                 )),
             ),
-            "Could not normalize persisted Orbit runtime state ownership in {$nodeContainer}",
+            "Could not normalize persisted Orbit gateway state ownership in {$nodeContainer}",
             timeoutSeconds: 60,
         );
     }
@@ -844,8 +850,17 @@ SH;
     {
         $user = $this->userForRole($role);
         $path = $this->orbitPathForRole($role);
+        $gatewayDatabase = self::gatewayConfigPath('gateway.sqlite');
 
-        E2ECommand::ssh($instance, $user, new SshKeyPair('/dev/null', '/dev/null'), "cd {$path} && php apps/gateway/artisan migrate --force", timeoutSeconds: 120);
+        $this->normalizePersistedGatewayStateOwnership($instance->name(), $role);
+
+        E2ECommand::ssh(
+            $instance,
+            $user,
+            new SshKeyPair('/dev/null', '/dev/null'),
+            "cd {$path} && ORBIT_CONFIG_ROOT=".escapeshellarg(self::OrbitConfigRoot).' DB_CONNECTION=sqlite DB_DATABASE='.escapeshellarg($gatewayDatabase).' SESSION_DRIVER=file php apps/gateway/artisan migrate --force --no-interaction --ansi',
+            timeoutSeconds: 120,
+        );
     }
 
     private function orbitPathForRole(string $role): string
@@ -889,14 +904,14 @@ SH;
             : $networkPlan->ipForRole('gateway');
 
         E2ECommand::ssh($gateway, 'orbit', $key, sprintf(
-            'cd /home/orbit/orbit && php apps/gateway/artisan orbit:internal:bootstrap-gateway-local gateway %s --skip-runtime-install --skip-wireguard-install',
+            'cd /home/orbit/orbit && php apps/gateway/artisan orbit:internal:bootstrap-gateway-local gateway %s --skip-gateway-service-install --skip-wireguard-install',
             $gatewayWireGuardAddress,
         ), timeoutSeconds: 120);
-        $this->refreshRuntimeSource($gateway->name(), 'gateway');
+        $this->refreshGatewaySiblingSource($gateway->name(), 'gateway');
         $this->startGatewayScheduler($gateway);
-        $this->refreshRuntimeSource($gateway->name(), 'gateway');
+        $this->refreshGatewaySiblingSource($gateway->name(), 'gateway');
         E2EGatewayApi::seedOperatorIdentity($gateway, $operatorHost, 'orbit', $gatewayEndpoint, $operatorWireGuardAddress);
-        $this->refreshRuntimeSource($gateway->name(), 'gateway');
+        $this->refreshGatewaySiblingSource($gateway->name(), 'gateway');
         if ($mode === 'dns-alias') {
             E2EGatewayApi::start(
                 $gateway,
@@ -1042,7 +1057,7 @@ SH;
             'Could not prepare Docker downstream role images in parallel',
             timeoutSeconds: 900,
         );
-        $this->refreshRuntimeSource($gateway->name(), 'gateway');
+        $this->refreshGatewaySiblingSource($gateway->name(), 'gateway');
     }
 
     /**
@@ -1125,7 +1140,7 @@ SH;
             sprintf('chmod 0600 %s', escapeshellarg($jsonConfigPath)),
             sprintf('chown -R %s:%s %s', escapeshellarg($user), escapeshellarg($user), escapeshellarg($jsonConfigDir)),
             sprintf('cd %s', escapeshellarg($sourcePath)),
-            'php apps/gateway/artisan tinker --execute='.escapeshellarg($this->clientGatewaySettingsPhp($mode, $networkPlan)),
+            'ORBIT_CONFIG_ROOT='.escapeshellarg(self::OrbitConfigRoot).' DB_CONNECTION=sqlite DB_DATABASE='.escapeshellarg(self::gatewayConfigPath('gateway.sqlite')).' SESSION_DRIVER=file php apps/gateway/artisan tinker --execute='.escapeshellarg($this->clientGatewaySettingsPhp($mode, $networkPlan)),
         ]);
     }
 
@@ -1227,7 +1242,7 @@ PHP;
             sprintf(
                 'docker exec --detach --workdir %s %s orbit orbit-scheduler',
                 escapeshellarg('/home/orbit/orbit'),
-                escapeshellarg($this->runtimeContainerName($gateway->name())),
+                escapeshellarg($this->gatewayContainerName($gateway->name())),
             ),
             'Could not start Docker build gateway scheduler',
             timeoutSeconds: 60,
@@ -1256,20 +1271,30 @@ PHP;
                 return;
             }
 
-            // The schedule runtime-backend probe inspects the gateway runtime container,
-            // which is not introspectable from the gateway runtime in the nested-container
-            // Docker E2E topology (OrbitContainerNames::runtime() cannot resolve the
-            // sibling runtime container name there). The scheduler itself is started
+            // The schedule runtime-backend probe inspects the gateway container,
+            // which is not introspectable from inside that container in the nested-container
+            // Docker E2E topology (OrbitContainerNames::gateway() cannot resolve the
+            // sibling gateway container name there). The scheduler itself is started
             // separately during baking. Once the doctor has demonstrably reached and been
             // authorized by the gateway API (a drift_detected response, not a transport
             // error), tolerate this single known-incompatible finding. Real connection or
-            // authorization failures (gateway_unavailable, authorization_failed) produce
-            // no drift_detected payload and keep retrying until the deadline.
+            // authorization failures normally produce no drift_detected payload and keep
+            // retrying until the deadline. The gateway self-call in the Docker build topology
+            // can appear as an ungrantable Docker bridge peer even after operator API
+            // authorization has been proven, so that specific self-call failure is also
+            // tolerated below.
             $lastOutput = $last->output().$last->errorOutput();
 
             if (str_contains($lastOutput, '"code":"drift_detected"')
                 && str_contains($lastOutput, 'schedule.runtime_backend_unavailable')) {
-                fwrite(STDERR, "[e2e] gateway schedule doctor: tolerating schedule.runtime_backend_unavailable (runtime container not introspectable in Docker E2E topology).\n");
+                fwrite(STDERR, "[e2e] gateway schedule doctor: tolerating schedule.runtime_backend_unavailable (gateway container not introspectable in Docker E2E topology).\n");
+
+                return;
+            }
+
+            if (str_contains($lastOutput, '"code":"authorization_failed"')
+                && str_contains($lastOutput, 'Peer identity unknown.')) {
+                fwrite(STDERR, "[e2e] gateway schedule doctor: tolerating self-call authorization failure in Docker build topology.\n");
 
                 return;
             }
@@ -1381,7 +1406,11 @@ SH;
      */
     private function canonicalPeerIdentityMap(array $containers, DockerTopologyNetworkPlan $networkPlan): array
     {
-        $map = [];
+        $gatewayIdentity = $this->canonicalWireGuardAddressForRole('gateway');
+        $map = [
+            '127.0.0.1' => $gatewayIdentity,
+            '::1' => $gatewayIdentity,
+        ];
 
         foreach (array_keys($containers) as $role) {
             $map[$networkPlan->ipForRole($role)] = $this->canonicalWireGuardAddressForRole($role);
@@ -1477,8 +1506,8 @@ SH;
             $nodeContainer,
         ];
 
-        if (self::roleUsesRuntimeSibling($role)) {
-            array_unshift($names, $this->runtimeContainerName($nodeContainer));
+        if (self::roleUsesGatewaySibling($role)) {
+            array_unshift($names, $this->gatewayContainerName($nodeContainer));
         } else {
             array_unshift($names, $this->composerHelperContainerName($nodeContainer));
         }
@@ -1498,9 +1527,9 @@ SH;
         ];
     }
 
-    private function runtimeContainerName(string $nodeContainer): string
+    private function gatewayContainerName(string $nodeContainer): string
     {
-        return "{$nodeContainer}-orbit-runtime";
+        return "{$nodeContainer}-orbit-gateway";
     }
 
     private function nodeVolumeMount(string $nodeContainer, string $suffix, string $target): string
@@ -1621,7 +1650,7 @@ final readonly class DockerBuildInstance implements E2EInstance
         $this->run(sprintf(
             'docker rm -f %s >/dev/null 2>&1 || true',
             implode(' ', array_map(escapeshellarg(...), [
-                "{$this->name}-orbit-runtime",
+                "{$this->name}-orbit-gateway",
                 "{$this->name}-orbit-caddy",
                 $this->name,
             ])),

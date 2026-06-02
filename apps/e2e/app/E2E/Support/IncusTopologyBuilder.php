@@ -517,7 +517,6 @@ class IncusTopologyBuilder
             'development',
             'test',
         ));
-        $this->timer->measure('dev.database-redis-seed', fn () => $this->seedAppdevDatabaseAndRedis($instances['gateway']));
         $this->timer->measure('dev.real-wireguard', fn () => $this->installRealWireGuard($instances));
 
         return $instances;
@@ -776,19 +775,11 @@ BASH;
 
     private function seedAppdevDatabaseAndRedis(IncusInstance $gateway): void
     {
-        $scriptPath = '/tmp/orbit-e2e-appdev-database-redis.php';
-        $scriptPathArgument = escapeshellarg($scriptPath);
-        $php = "<?php\n\n".E2EPreparedTopologyRegistry::appdevDatabaseAndRedisPhp();
+        $encoded = base64_encode(E2EPreparedTopologyRegistry::appdevDatabaseAndRedisPhp());
 
-        E2ECommand::exec(
+        E2ECommand::gatewayArtisan(
             $gateway,
-            "cat > {$scriptPathArgument} <<'PHP'\n{$php}\nPHP\nchmod 644 {$scriptPathArgument}\nchown orbit:orbit {$scriptPathArgument}",
-            'Could not write app-dev database and Redis registry seed script',
-            timeoutSeconds: 30,
-        );
-        E2ECommand::orbit(
-            $gateway,
-            'cd /home/orbit/orbit && php apps/gateway/artisan tinker --execute='.escapeshellarg('require '.var_export($scriptPath, true).';'),
+            'tinker --execute='.escapeshellarg("eval(base64_decode('{$encoded}'));"),
             'Could not seed app-dev database and Redis registry state',
             timeoutSeconds: 120,
         );
@@ -847,31 +838,33 @@ BASH;
     {
         $gatewayUrl = var_export('https://'.self::GatewayWireGuardIp, true);
         $gatewayIp = var_export(self::GatewayWireGuardIp, true);
+        $database = var_export($this->operatorGatewayDatabasePath(), true);
 
         $php = <<<PHP
-\$settings = \\App\\Models\\LocalGatewaySettings::current();
-\$settings->gateway_url = {$gatewayUrl};
-\$settings->gateway_wg_ip = {$gatewayIp};
-\$settings->save();
+\$pdo = new PDO('sqlite:'.{$database});
+\$pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+\$pdo->exec('PRAGMA busy_timeout = 5000');
+\$now = gmdate('Y-m-d H:i:s');
+\$id = \$pdo->query('SELECT id FROM local_gateway_settings ORDER BY id LIMIT 1')->fetchColumn();
+
+if (\$id === false) {
+    \$statement = \$pdo->prepare('INSERT INTO local_gateway_settings (gateway_url, gateway_wg_ip, created_at, updated_at) VALUES (:gateway_url, :gateway_wg_ip, :now, :now)');
+    \$statement->execute(['gateway_url' => {$gatewayUrl}, 'gateway_wg_ip' => {$gatewayIp}, 'now' => \$now]);
+} else {
+    \$statement = \$pdo->prepare('UPDATE local_gateway_settings SET gateway_url = :gateway_url, gateway_wg_ip = :gateway_wg_ip, updated_at = :now WHERE id = :id');
+    \$statement->execute(['gateway_url' => {$gatewayUrl}, 'gateway_wg_ip' => {$gatewayIp}, 'now' => \$now, 'id' => \$id]);
+}
 PHP;
 
-        E2ECommand::ssh(
-            $operator,
-            $this->host->config->operatorUser,
-            $key,
-            'cd '.escapeshellarg('/home/'.$this->host->config->operatorUser.'/orbit').' && php apps/gateway/artisan tinker --execute='.escapeshellarg($php),
-            timeoutSeconds: 60,
-        );
-
-        $this->writeOperatorCliConfig($operator, $key);
+        $this->runOperatorPhp($operator, $key, $php);
     }
 
-    private function writeOperatorCliConfig(IncusInstance $operator, SshKeyPair $key): void
+    private function writeOperatorCliConfig(IncusInstance $operator, SshKeyPair $key, string $gatewayUrl = 'https://10.6.0.2', ?string $caPemPath = null, ?string $caSha256 = null): void
     {
         $operatorUser = $this->host->config->operatorUser;
         $configDir = '/home/'.$operatorUser.'/.config/orbit';
         $configPath = $configDir.'/config.json';
-        $jsonBody = $this->cliJsonConfigBody('https://'.self::GatewayWireGuardIp);
+        $jsonBody = $this->cliJsonConfigBody($gatewayUrl, $caPemPath, $caSha256);
 
         $command = implode(' && ', [
             sprintf('mkdir -p %s', escapeshellarg($configDir)),
@@ -889,7 +882,7 @@ PHP;
         );
     }
 
-    private function cliJsonConfigBody(string $gatewayUrl): string
+    private function cliJsonConfigBody(string $gatewayUrl, ?string $caPemPath = null, ?string $caSha256 = null): string
     {
         return json_encode([
             'schema_version' => 1,
@@ -898,8 +891,8 @@ PHP;
                 'default' => [
                     'url' => $gatewayUrl,
                     'wireguard_ip' => self::GatewayWireGuardIp,
-                    'ca_pem_path' => null,
-                    'ca_sha256' => null,
+                    'ca_pem_path' => $caPemPath,
+                    'ca_sha256' => $caSha256,
                     'ca_fingerprint' => null,
                     'timeout' => 30,
                     'self_mode' => 'wireguard_https',
@@ -981,8 +974,8 @@ PHP;
         string $prodHost,
         string $agentHost,
     ): void {
-        $devCommand = implode(' ', [
-            'php apps/gateway/artisan orbit:internal:bake-app-node',
+        $devCommand = E2ECommand::gatewayArtisanCommand(implode(' ', [
+            'orbit:internal:bake-app-node',
             escapeshellarg('app-dev-1'),
             '--role=app-dev',
             '--host='.escapeshellarg($devHost),
@@ -990,17 +983,17 @@ PHP;
             '--gateway-endpoint='.escapeshellarg(self::GatewayWireGuardIp),
             '--user='.escapeshellarg($this->host->config->bootstrapUser),
             '--tld='.escapeshellarg('test'),
-        ]);
-        $prodIngressCommand = implode(' ', [
-            'php apps/gateway/artisan orbit:internal:bake-ingress-node',
+        ]));
+        $prodIngressCommand = E2ECommand::gatewayArtisanCommand(implode(' ', [
+            'orbit:internal:bake-ingress-node',
             escapeshellarg('app-prod-1'),
             '--host='.escapeshellarg($prodHost),
             '--wireguard-address='.escapeshellarg(self::ProdWireGuardIp),
             '--gateway-endpoint='.escapeshellarg(self::GatewayWireGuardIp),
             '--user='.escapeshellarg($this->host->config->bootstrapUser),
-        ]);
-        $prodAppCommand = implode(' ', [
-            'php apps/gateway/artisan orbit:internal:bake-app-node',
+        ]));
+        $prodAppCommand = E2ECommand::gatewayArtisanCommand(implode(' ', [
+            'orbit:internal:bake-app-node',
             escapeshellarg('app-prod-1'),
             '--role=app-prod',
             '--host='.escapeshellarg($prodHost),
@@ -1008,17 +1001,17 @@ PHP;
             '--gateway-endpoint='.escapeshellarg(self::GatewayWireGuardIp),
             '--user='.escapeshellarg($this->host->config->bootstrapUser),
             '--ingress-node='.escapeshellarg('app-prod-1'),
-        ]);
+        ]));
         $prodCommand = "{$prodIngressCommand} && {$prodAppCommand}";
-        $agentCommand = implode(' ', [
-            'php apps/gateway/artisan orbit:internal:bake-agent-node',
+        $agentCommand = E2ECommand::gatewayArtisanCommand(implode(' ', [
+            'orbit:internal:bake-agent-node',
             escapeshellarg('agent-1'),
             '--host='.escapeshellarg($agentHost),
             '--wireguard-address='.escapeshellarg(self::AgentWireGuardIp),
             '--gateway-endpoint='.escapeshellarg(self::GatewayWireGuardIp),
             '--user='.escapeshellarg($this->host->config->bootstrapUser),
             '--tld='.escapeshellarg('agent'),
-        ]);
+        ]));
         $script = <<<BASH
 set -euo pipefail;
 cd /home/orbit/orbit;
@@ -1041,7 +1034,7 @@ BASH;
             'Could not write prepared downstream bake script',
             timeoutSeconds: 30,
         );
-        E2ECommand::orbit(
+        E2ECommand::exec(
             $gateway,
             $scriptPathArgument,
             'Could not bake prepared downstream nodes in parallel',
@@ -1055,8 +1048,8 @@ BASH;
         string $prodHost,
         string $ingressHost,
     ): void {
-        $devCommand = implode(' ', [
-            'php apps/gateway/artisan orbit:internal:bake-app-node',
+        $devCommand = E2ECommand::gatewayArtisanCommand(implode(' ', [
+            'orbit:internal:bake-app-node',
             escapeshellarg('app-dev-1'),
             '--role=app-dev',
             '--host='.escapeshellarg($devHost),
@@ -1064,17 +1057,17 @@ BASH;
             '--gateway-endpoint='.escapeshellarg(self::GatewayWireGuardIp),
             '--user='.escapeshellarg($this->host->config->bootstrapUser),
             '--tld='.escapeshellarg('test'),
-        ]);
-        $ingressCommand = implode(' ', [
-            'php apps/gateway/artisan orbit:internal:bake-ingress-node',
+        ]));
+        $ingressCommand = E2ECommand::gatewayArtisanCommand(implode(' ', [
+            'orbit:internal:bake-ingress-node',
             escapeshellarg('edge-1'),
             '--host='.escapeshellarg($ingressHost),
             '--wireguard-address='.escapeshellarg(self::IngressWireGuardIp),
             '--gateway-endpoint='.escapeshellarg(self::GatewayWireGuardIp),
             '--user='.escapeshellarg($this->host->config->bootstrapUser),
-        ]);
-        $prodCommand = implode(' ', [
-            'php apps/gateway/artisan orbit:internal:bake-app-node',
+        ]));
+        $prodCommand = E2ECommand::gatewayArtisanCommand(implode(' ', [
+            'orbit:internal:bake-app-node',
             escapeshellarg('app-prod-1'),
             '--role=app-prod',
             '--host='.escapeshellarg($prodHost),
@@ -1082,7 +1075,7 @@ BASH;
             '--gateway-endpoint='.escapeshellarg(self::GatewayWireGuardIp),
             '--user='.escapeshellarg($this->host->config->bootstrapUser),
             '--ingress-node='.escapeshellarg('edge-1'),
-        ]);
+        ]));
         $script = <<<BASH
 set -euo pipefail;
 cd /home/orbit/orbit;
@@ -1107,7 +1100,7 @@ BASH;
             'Could not write prepared dedicated ingress bake script',
             timeoutSeconds: 30,
         );
-        E2ECommand::orbit(
+        E2ECommand::exec(
             $gateway,
             $scriptPathArgument,
             'Could not bake prepared dedicated ingress nodes in parallel',
@@ -1117,8 +1110,8 @@ BASH;
 
     private function runPreparedWebSocketBake(IncusInstance $gateway, string $devHost): void
     {
-        $command = implode(' ', [
-            'cd /home/orbit/orbit && php apps/gateway/artisan orbit:internal:bake-websocket-node',
+        $command = E2ECommand::gatewayArtisanCommand(implode(' ', [
+            'orbit:internal:bake-websocket-node',
             escapeshellarg('app-dev-1'),
             '--host='.escapeshellarg($devHost),
             '--wireguard-address='.escapeshellarg(self::DevWireGuardIp),
@@ -1126,9 +1119,9 @@ BASH;
             '--user='.escapeshellarg($this->host->config->bootstrapUser),
             '--redis-node='.escapeshellarg('app-dev-1'),
             '--converge-runtime',
-        ]);
+        ]));
 
-        E2ECommand::orbit(
+        E2ECommand::exec(
             $gateway,
             $command,
             'Could not bake prepared websocket node',
@@ -1148,10 +1141,10 @@ BASH;
 
     private function bootstrapGatewayLocal(IncusInstance $gateway, string $publicHost): void
     {
-        E2ECommand::orbit(
+        E2ECommand::gatewayArtisan(
             $gateway,
             sprintf(
-                'cd /home/orbit/orbit && php apps/gateway/artisan orbit:internal:bootstrap-gateway-local gateway %s --public-host=%s --skip-runtime-install',
+                'orbit:internal:bootstrap-gateway-local gateway %s --public-host=%s --skip-gateway-service-install',
                 escapeshellarg(self::GatewayWireGuardIp),
                 escapeshellarg($publicHost),
             ),
@@ -1164,57 +1157,79 @@ BASH;
     {
         $gatewayIpValue = var_export(self::GatewayWireGuardIp, true);
         $gatewayPublicEndpointValue = var_export($gatewayPublicEndpoint, true);
+        $database = var_export($this->operatorGatewayDatabasePath(), true);
 
         $php = <<<PHP
-\$gateway = \\App\\Models\\Node::query()->updateOrCreate(
-    ['name' => 'gateway'],
-    [
-        'tld' => null,
-        'platform' => 'unknown',
-        'host' => {$gatewayIpValue},
-        'wireguard_address' => {$gatewayIpValue},
-        'gateway_endpoint' => null,
-        'user' => 'orbit',
-        'orbit_path' => '/home/orbit/orbit',
-        'status' => 'active',
-    ],
-);
+\$pdo = new PDO('sqlite:'.{$database});
+\$pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+\$pdo->exec('PRAGMA busy_timeout = 5000');
+\$now = gmdate('Y-m-d H:i:s');
 
-\\App\\Models\\NodeRoleAssignment::query()->updateOrCreate(
-    ['node_id' => \$gateway->id, 'role' => 'gateway'],
-    ['status' => 'active', 'settings' => [], 'last_error' => null, 'converged_at' => now()],
-);
+\$statement = \$pdo->prepare(<<<'SQL'
+INSERT INTO nodes (name, tld, platform, host, wireguard_address, gateway_endpoint, user, orbit_path, status, created_at, updated_at)
+VALUES (:name, NULL, :platform, :host, :wireguard_address, NULL, :user, :orbit_path, :status, :now, :now)
+ON CONFLICT(name) DO UPDATE SET
+    tld = excluded.tld,
+    platform = excluded.platform,
+    host = excluded.host,
+    wireguard_address = excluded.wireguard_address,
+    gateway_endpoint = excluded.gateway_endpoint,
+    user = excluded.user,
+    orbit_path = excluded.orbit_path,
+    status = excluded.status,
+    updated_at = excluded.updated_at
+SQL);
+\$statement->execute([
+    'name' => 'gateway',
+    'platform' => 'unknown',
+    'host' => {$gatewayIpValue},
+    'wireguard_address' => {$gatewayIpValue},
+    'user' => 'orbit',
+    'orbit_path' => '/home/orbit/orbit',
+    'status' => 'active',
+    'now' => \$now,
+]);
 
-\\App\\Models\\NodeRoleAssignment::query()->updateOrCreate(
-    ['node_id' => \$gateway->id, 'role' => 'vpn'],
-    [
-        'status' => 'active',
-        'settings' => [
-            'public_endpoint' => {$gatewayPublicEndpointValue},
-            'wireguard_cidr' => '10.6.0.0/24',
-            'wireguard_port' => 51820,
-            'dns_ip' => '10.6.0.1',
-        ],
-        'last_error' => null,
-        'converged_at' => now(),
-    ],
-);
+\$gatewayId = (int) \$pdo->query("SELECT id FROM nodes WHERE name = 'gateway'")->fetchColumn();
+\$roleStatement = \$pdo->prepare(<<<'SQL'
+INSERT INTO node_role (node_id, role, status, settings, last_error, converged_at, created_at, updated_at)
+VALUES (:node_id, :role, :status, :settings, NULL, :now, :now, :now)
+ON CONFLICT(node_id, role) DO UPDATE SET
+    status = excluded.status,
+    settings = excluded.settings,
+    last_error = excluded.last_error,
+    converged_at = excluded.converged_at,
+    updated_at = excluded.updated_at
+SQL);
+\$roleStatement->execute([
+    'node_id' => \$gatewayId,
+    'role' => 'gateway',
+    'status' => 'active',
+    'settings' => json_encode([], JSON_THROW_ON_ERROR),
+    'now' => \$now,
+]);
+\$roleStatement->execute([
+    'node_id' => \$gatewayId,
+    'role' => 'vpn',
+    'status' => 'active',
+    'settings' => json_encode([
+        'public_endpoint' => {$gatewayPublicEndpointValue},
+        'wireguard_cidr' => '10.6.0.0/24',
+        'wireguard_port' => 51820,
+        'dns_ip' => '10.6.0.1',
+    ], JSON_THROW_ON_ERROR),
+    'now' => \$now,
+]);
 PHP;
 
-        E2ECommand::ssh(
-            $operator,
-            $this->host->config->operatorUser,
-            $key,
-            'cd '.escapeshellarg('/home/'.$this->host->config->operatorUser.'/orbit').' && php apps/gateway/artisan tinker --execute='.escapeshellarg($php),
-            timeoutSeconds: 120,
-        );
+        $this->runOperatorPhp($operator, $key, $php, timeoutSeconds: 120);
     }
 
     private function trustGatewayCaOnOperator(IncusInstance $operator, IncusInstance $gateway, SshKeyPair $key): void
     {
-        $rootCa = E2ECommand::orbit(
+        $rootCa = E2ECommand::gatewayArtisan(
             $gateway,
-            'cd /home/orbit/orbit && php apps/gateway/artisan tinker --execute='.escapeshellarg('echo app(\App\Services\Ca\OrbitCaService::class)->rootCert();'),
+            'tinker --execute='.escapeshellarg('echo app(\App\Services\Ca\OrbitCaService::class)->rootCert();'),
             'Could not read gateway root CA',
             timeoutSeconds: 60,
         )->output();
@@ -1222,30 +1237,52 @@ PHP;
         $rootCaValue = var_export($rootCa, true);
         $gatewayUrlValue = var_export('https://'.self::GatewayWireGuardIp, true);
         $gatewayIpValue = var_export(self::GatewayWireGuardIp, true);
+        $database = var_export($this->operatorGatewayDatabasePath(), true);
+        $pemPathValue = var_export('/home/'.$this->host->config->operatorUser.'/.config/orbit/gateway-ca/orbit.crt', true);
 
         $php = <<<PHP
+\$pdo = new PDO('sqlite:'.{$database});
+\$pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+\$pdo->exec('PRAGMA busy_timeout = 5000');
+\$now = gmdate('Y-m-d H:i:s');
 \$rootCa = {$rootCaValue};
-\$pemPath = rtrim((string) config('orbit.paths.config_root'), '/').'/gateway-ca/orbit.crt';
-\\Illuminate\\Support\\Facades\\File::ensureDirectoryExists(dirname(\$pemPath));
-\\Illuminate\\Support\\Facades\\File::put(\$pemPath, \$rootCa);
+\$pemPath = {$pemPathValue};
 
-\$settings = \\App\\Models\\LocalGatewaySettings::current();
-\$settings->fill([
-    'gateway_url' => {$gatewayUrlValue},
-    'gateway_wg_ip' => {$gatewayIpValue},
-    'ca_sha256' => hash('sha256', \$rootCa),
-    'ca_pem_path' => \$pemPath,
-    'trusted_at' => now(),
-]);
-\$settings->save();
+if (! is_dir(dirname(\$pemPath))) {
+    mkdir(dirname(\$pemPath), 0700, true);
+}
+
+file_put_contents(\$pemPath, \$rootCa);
+chmod(\$pemPath, 0600);
+
+\$id = \$pdo->query('SELECT id FROM local_gateway_settings ORDER BY id LIMIT 1')->fetchColumn();
+
+if (\$id === false) {
+    \$statement = \$pdo->prepare('INSERT INTO local_gateway_settings (gateway_url, gateway_wg_ip, ca_sha256, ca_pem_path, trusted_at, created_at, updated_at) VALUES (:gateway_url, :gateway_wg_ip, :ca_sha256, :ca_pem_path, :trusted_at, :now, :now)');
+    \$statement->execute(['gateway_url' => {$gatewayUrlValue}, 'gateway_wg_ip' => {$gatewayIpValue}, 'ca_sha256' => hash('sha256', \$rootCa), 'ca_pem_path' => \$pemPath, 'trusted_at' => \$now, 'now' => \$now]);
+} else {
+    \$statement = \$pdo->prepare('UPDATE local_gateway_settings SET gateway_url = :gateway_url, gateway_wg_ip = :gateway_wg_ip, ca_sha256 = :ca_sha256, ca_pem_path = :ca_pem_path, trusted_at = :trusted_at, updated_at = :now WHERE id = :id');
+    \$statement->execute(['gateway_url' => {$gatewayUrlValue}, 'gateway_wg_ip' => {$gatewayIpValue}, 'ca_sha256' => hash('sha256', \$rootCa), 'ca_pem_path' => \$pemPath, 'trusted_at' => \$now, 'now' => \$now, 'id' => \$id]);
+}
 PHP;
 
+        $this->writeOperatorCliConfig($operator, $key, 'https://'.self::GatewayWireGuardIp, '/home/'.$this->host->config->operatorUser.'/.config/orbit/gateway-ca/orbit.crt', hash('sha256', $rootCa));
+        $this->runOperatorPhp($operator, $key, $php, timeoutSeconds: 120);
+    }
+
+    private function operatorGatewayDatabasePath(): string
+    {
+        return '/home/'.$this->host->config->operatorUser.'/.config/orbit/gateway.sqlite';
+    }
+
+    private function runOperatorPhp(IncusInstance $operator, SshKeyPair $key, string $php, int $timeoutSeconds = 60): void
+    {
         E2ECommand::ssh(
             $operator,
             $this->host->config->operatorUser,
             $key,
-            'cd '.escapeshellarg('/home/'.$this->host->config->operatorUser.'/orbit').' && php apps/gateway/artisan tinker --execute='.escapeshellarg($php),
-            timeoutSeconds: 120,
+            'php -r '.escapeshellarg($php),
+            timeoutSeconds: $timeoutSeconds,
         );
     }
 

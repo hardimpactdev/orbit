@@ -1,0 +1,74 @@
+name: Orbit Gateway Image
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: hardimpactdev/orbit-gateway
+
+jobs:
+  build:
+    name: Build Gateway Image
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Read gateway version
+        id: version
+        run: |
+          VERSION=$(sed -n "s/.*'version' => '\([^']*\)'.*/\1/p" apps/gateway/config/app.php | head -n 1)
+          echo "value=${VERSION}" >> "$GITHUB_OUTPUT"
+
+      - name: Log in to GHCR
+        if: github.event_name != 'pull_request'
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login "$REGISTRY" -u "${{ github.actor }}" --password-stdin
+
+      - name: Build gateway image
+        id: build
+        env:
+          VERSION: ${{ steps.version.outputs.value }}
+        run: |
+          set -euo pipefail
+
+          metadata_file="$RUNNER_TEMP/orbit-gateway-image-metadata.json"
+          image="${REGISTRY}/${IMAGE_NAME}"
+          short_sha="${GITHUB_SHA::12}"
+          output_mode="--load"
+
+          if [ "${{ github.event_name }}" != "pull_request" ]; then
+            output_mode="--push"
+          fi
+
+          docker buildx build \
+            --file docker/orbit-gateway/Dockerfile \
+            --tag "${image}:${VERSION}" \
+            --tag "${image}:sha-${short_sha}" \
+            --metadata-file "$metadata_file" \
+            "$output_mode" \
+            .
+
+          digest="$(jq -r '."containerimage.digest" // empty' "$metadata_file")"
+
+          echo "digest=${digest}" >> "$GITHUB_OUTPUT"
+          echo "metadata=${metadata_file}" >> "$GITHUB_OUTPUT"
+
+      - name: Upload image metadata
+        uses: actions/upload-artifact@v4
+        with:
+          name: orbit-gateway-image-metadata
+          path: ${{ steps.build.outputs.metadata }}
+          if-no-files-found: error

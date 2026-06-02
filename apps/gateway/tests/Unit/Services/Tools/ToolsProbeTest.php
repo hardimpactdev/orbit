@@ -131,6 +131,25 @@ describe('ToolsProbe', function (): void {
         expect($probe->diff($tool, $snapshot))->toBe([]);
     });
 
+    it('checks absolute binary metadata as an executable path instead of a PATH lookup', function (): void {
+        $node = createToolsProbeAppHostNode();
+        $tool = NodeTool::factory()->create(['node_id' => $node->id, 'name' => 'php-cli']);
+        $shell = new RecordingToolsProbeRemoteShell(
+            exitCode: 1,
+            stdout: '',
+        );
+        $probe = new ToolsProbe($shell);
+
+        $probe->introspect($tool);
+
+        $input = json_decode($shell->input, associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($input['binary'])->toBe('/opt/orbit/php/8.5/bin/php')
+            ->and($shell->script)->toContain('str_contains($binary')
+            ->and($shell->script)->toContain('is_executable($binary)')
+            ->and($shell->script)->toContain('command -v');
+    });
+
     it('frankenphp probes approved Docker image inventory for the PHP tool instead of host PHP', function (): void {
         $node = createToolsProbeAppHostNode();
         $tool = NodeTool::factory()->create(['node_id' => $node->id, 'name' => 'php']);

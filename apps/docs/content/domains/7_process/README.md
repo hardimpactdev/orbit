@@ -63,7 +63,7 @@ These rules describe the durable history that records process state transitions.
 - Process lifecycle events are durable history, not process-unit configuration.
   Orbit records `started`, `stopped`, and `crashed` events for SSE consumers,
   CLI streams, and automation.
-- `started` and `stopped` events are recorded by successful gateway runtime lifecycle actions.
+- `started` and `stopped` events are recorded by successful gateway service lifecycle actions.
 - `crashed` events are recorded when the runtime hook on the node reports an exit.
 
 ### Read commands

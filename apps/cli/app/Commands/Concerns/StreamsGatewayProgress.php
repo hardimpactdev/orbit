@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Commands\Concerns;
 
 use App\Exceptions\GatewayApiException;
+use App\Services\GatewayOperationFollower;
 use App\Services\GatewayStreamClient;
 use Orbit\Core\Progress\ProgressEventType;
 
@@ -69,6 +70,39 @@ trait StreamsGatewayProgress
             'gateway_unavailable',
             'Gateway progress stream closed without a terminal frame.',
         );
+    }
+
+    /**
+     * Follow a durable operation event journal and render it with the same
+     * progress frame semantics used by streaming gateway commands.
+     *
+     * @param  callable(ProgressEventType, array<string, mixed>): int  $onFinalFrame
+     */
+    protected function followOperationProgress(string $eventsUrl, callable $onFinalFrame): int
+    {
+        $follower = app(GatewayOperationFollower::class);
+        $wantsJson = $this->wantsJson();
+
+        try {
+            $terminal = $follower->follow(
+                $eventsUrl,
+                function (ProgressEventType $type, array $eventPayload) use ($wantsJson): void {
+                    if ($type === ProgressEventType::Complete || $type === ProgressEventType::Error) {
+                        return;
+                    }
+
+                    if ($wantsJson) {
+                        return;
+                    }
+
+                    $this->renderProgressFrame($type, $eventPayload);
+                },
+            );
+        } catch (GatewayApiException $exception) {
+            return $this->renderGatewayFailure($exception);
+        }
+
+        return $onFinalFrame($terminal['type'], $terminal['payload']);
     }
 
     /**

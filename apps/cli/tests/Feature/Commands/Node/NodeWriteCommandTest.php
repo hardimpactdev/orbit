@@ -130,7 +130,7 @@ describe('node write commands', function (): void {
         @unlink($store->path());
     });
 
-    it('returns the gateway_bootstrap_unavailable envelope when orbit-runtime is not available', function (): void {
+    it('returns the gateway_bootstrap_unavailable envelope when orbit-gateway is not available', function (): void {
         config()->set('orbit.gateway.url', null);
         app()->forgetInstance(GatewayApiClient::class);
         $store = new OrbitConfigStore(overridePath: base_path('tests/.tmp-node-new-unavailable-config.json'));
@@ -156,16 +156,16 @@ describe('node write commands', function (): void {
 
         expect($exitCode)->toBe(1)
             ->and($decoded['error']['code'])->toBe('gateway_bootstrap_unavailable')
-            ->and($decoded['error']['meta']['container'])->toBe('orbit-runtime');
+            ->and($decoded['error']['meta']['container'])->toBe('orbit-gateway');
 
         Process::assertRan(fn ($process): bool => $process->command === [
-            'docker', 'exec', 'orbit-runtime', 'test', '-f', 'apps/gateway/artisan',
+            'docker', 'exec', 'orbit-gateway', 'test', '-f', 'apps/gateway/artisan',
         ]);
 
         @unlink($store->path());
     });
 
-    it('routes the gateway bootstrap through docker exec orbit-runtime when the runtime is available', function (): void {
+    it('routes the gateway bootstrap through docker exec orbit-gateway when the runtime is available', function (): void {
         config()->set('orbit.gateway.url', null);
         app()->forgetInstance(GatewayApiClient::class);
         $store = new OrbitConfigStore(overridePath: base_path('tests/.tmp-node-new-docker-exec-config.json'));
@@ -195,13 +195,13 @@ describe('node write commands', function (): void {
         expect($exitCode)->toBe(0);
 
         Process::assertRan(fn ($process): bool => $process->command === [
-            'docker', 'exec', 'orbit-runtime', 'test', '-f', 'apps/gateway/artisan',
+            'docker', 'exec', 'orbit-gateway', 'test', '-f', 'apps/gateway/artisan',
         ]);
 
         Process::assertRan(fn ($process): bool => is_array($process->command)
             && $process->command[0] === 'docker'
             && $process->command[1] === 'exec'
-            && $process->command[2] === 'orbit-runtime'
+            && $process->command[2] === 'orbit-gateway'
             && $process->command[3] === 'php'
             && $process->command[4] === 'apps/gateway/artisan'
             && in_array('node:new', $process->command, strict: true)

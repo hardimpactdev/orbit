@@ -811,7 +811,7 @@ SH;
     {
         $command = sprintf('ping -c 1 -W 2 %s', escapeshellarg($wireguardAddress));
 
-        if ($this->runningInsideOrbitRuntime()) {
+        if ($this->runningInsideOrbitGateway()) {
             $gateway = app(NodeRoleAssignments::class)
                 ->activeGatewayNodeQuery()
                 ->orderBy('id')
@@ -840,7 +840,7 @@ SH;
         );
     }
 
-    private function runningInsideOrbitRuntime(): bool
+    private function runningInsideOrbitGateway(): bool
     {
         $hostPath = getenv('ORBIT_HOST_PATH');
 
@@ -1664,7 +1664,7 @@ RUNTIME_USER=%s
 sudo install -d -m 0755 /etc/ssh/sshd_config.d
 sudo tee /etc/ssh/sshd_config.d/99-orbit-hardening.conf > /dev/null <<EOF
 # Managed by Orbit.
-# Provisioned nodes accept operator SSH only through the orbit runtime user.
+# Provisioned nodes accept operator SSH only through the orbit system user.
 PermitRootLogin no
 PasswordAuthentication no
 KbdInteractiveAuthentication no

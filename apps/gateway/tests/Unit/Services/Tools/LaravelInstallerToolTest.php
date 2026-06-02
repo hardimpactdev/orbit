@@ -36,7 +36,7 @@ describe('LaravelInstallerTool', function (): void {
         expect($tool->installScript())->toContain('/usr/local/bin/laravel');
     });
 
-    it('installScript runs as the orbit runtime user', function (): void {
+    it('installScript runs as the orbit system user', function (): void {
         $tool = new LaravelInstallerTool;
 
         expect($tool->installScript())->toContain('sudo -u orbit');

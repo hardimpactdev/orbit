@@ -20,7 +20,7 @@ use Illuminate\Contracts\Process\ProcessResult;
  *
  * @param  array<string, string>|null  $sshUsers
  */
-function e2eTopology(E2ETopologyKind $kind, ?array $sshUsers = null, bool $withGatewayApi = false): E2ETopologyHarness
+function e2eTopology(E2ETopologyKind $kind, ?array $sshUsers = null, bool $withGatewayApi = false, bool $sourceMountedCheckout = false): E2ETopologyHarness
 {
     if (getenv('ORBIT_E2E') !== '1') {
         test()->markTestSkipped('Set ORBIT_E2E=1 to run prepared-topology feature tests against a provider.');
@@ -30,7 +30,7 @@ function e2eTopology(E2ETopologyKind $kind, ?array $sshUsers = null, bool $withG
     $withGatewayApi = $withGatewayApi || e2eGatewayApiByDefault();
 
     if (E2ETopologyCache::enabled()) {
-        return E2ETopologyCache::acquire($kind, $sshUsers, $withGatewayApi);
+        return E2ETopologyCache::acquire($kind, $sshUsers, $withGatewayApi, $sourceMountedCheckout);
     }
 
     $factory = E2ETopologyFactory::fromEnvironment()
@@ -38,6 +38,10 @@ function e2eTopology(E2ETopologyKind $kind, ?array $sshUsers = null, bool $withG
 
     if ($withGatewayApi) {
         $factory = $factory->withGatewayApi();
+    }
+
+    if ($sourceMountedCheckout) {
+        $factory = $factory->withSourceMountedCheckout();
     }
 
     try {
@@ -327,10 +331,11 @@ function e2eConfigureCurrentCheckoutCliGatewaySettings(E2ETopologyHarness $topol
 
     $command = implode(' && ', [
         "cd {$checkout}",
-        'touch .env',
-        "grep -Ev '^(ORBIT_GATEWAY_URL|ORBIT_GATEWAY_IDENTITY)=' .env > .env.tmp || true",
-        'mv .env.tmp .env',
-        sprintf("printf 'ORBIT_GATEWAY_URL=%%s\\n' %s >> .env", escapeshellarg($gatewayUrl)),
+        'tmp="$(mktemp)"',
+        '[ ! -f .env ] || grep -Ev \'^(ORBIT_GATEWAY_URL|ORBIT_GATEWAY_IDENTITY)=\' .env > "$tmp" || true',
+        sprintf('printf \'ORBIT_GATEWAY_URL=%%s\\n\' %s >> "$tmp"', escapeshellarg($gatewayUrl)),
+        'sudo install -m 0664 -o "$(id -un)" -g "$(id -gn)" "$tmp" .env',
+        'rm -f "$tmp"',
     ]);
 
     $topology->ssh($role, $command, timeoutSeconds: 120);
@@ -396,7 +401,10 @@ function e2eDockerDnsAliasPeerIdentityMap(E2ETopologyHarness $topology): array
         'ingress' => $lease->ingress(),
     ];
 
-    $map = [];
+    $map = [
+        '127.0.0.1' => $canonical['gateway'],
+        '::1' => $canonical['gateway'],
+    ];
     $mappedInstances = [];
 
     foreach ($instances as $role => $instance) {
@@ -448,7 +456,7 @@ function e2eRoleUsesDockerHostLauncher(E2ETopologyHarness $topology, string $rol
 
 function e2eRuntimeContainerName(E2ETopologyHarness $topology, string $role): string
 {
-    return $topology->instance($role)->name().'-orbit-runtime';
+    return $topology->instance($role)->name().'-orbit-gateway';
 }
 
 function e2eDockerRuntimeExecCommand(string $runtimeContainer, string $command): string

@@ -399,7 +399,7 @@ it('does not install host Supervisor because runtime processes live inside Docke
 
     expect($script)
         ->not->toContain('supervisor')
-        ->toContain('orbit-runtime:current');
+        ->toContain('orbit-gateway:current');
 });
 
 it('installs the SSH client as a operator-node provisioning prerequisite', function (): void {
@@ -414,15 +414,17 @@ it('does not install host PHP SQLite packages because the CLI binary embeds pdo_
     expect(preg_match_all('/^\s+sqlite3\s+\\\\$/m', $script))->toBe(0)
         ->and($script)->not->toContain('php8.4-sqlite3')
         ->and($script)->not->toContain('php8.5-sqlite3')
-        ->and($script)->toContain('orbit-runtime:current');
+        ->and($script)->toContain('orbit-gateway:current');
 });
 
-it('aligns orbit checkout ownership with the home parent so non-root users can write', function (): void {
+it('aligns orbit checkout and config root ownership so non-root users can write after container bootstrap', function (): void {
     $script = file_get_contents(repo_path('bin/install-orbit'));
 
     expect($script)
         ->toContain('finalize_target_ownership')
+        ->toContain('finalize_config_root_ownership')
         ->toContain('--no-same-owner')
+        ->toContain('sudo_run chown -R "$owner:$group" "$CONFIG_ROOT"')
         ->toContain('chown -R');
 });
 

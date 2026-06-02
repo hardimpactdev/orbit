@@ -54,15 +54,22 @@ Each term below has a precise meaning in the node command family.
   `bin/orbit-gateway-artisan` or direct `php apps/gateway/artisan` from a
   controlled gateway shell; the public `orbit` command never dispatches to
   gateway Artisan.
-- **Orbit runtime container:** The gateway runs `orbit-runtime` for the API
-  and scheduler. Workload nodes run the public Orbit CLI as a gateway client
-  and run workloads in role-specific runtime containers. Any remaining
-  workload-node `orbit-runtime` usage is a compatibility concern, not the
-  source-mounted live topology contract.
+- **Orbit gateway image:** First-party
+  `ghcr.io/hardimpactdev/orbit-gateway:<version>` FrankenPHP image that bundles
+  the gateway application code. Production update plans pin this image by
+  digest from the GitHub Release manifest.
+- **Orbit gateway service:** Swarm-managed `orbit-gateway` service that serves
+  the typed API and mounts `ORBIT_CONFIG_ROOT` for `.env`, `gateway.sqlite`,
+  and Orbit CA/certificate material. The separate `orbit-scheduler` Swarm
+  service uses the same image for schedule execution. Workload nodes run the
+  public Orbit CLI as gateway clients and run workloads in role-specific
+  runtime containers.
 - **Orbit Caddy container:** Standalone `orbit-caddy` fleet proxy container.
   Nodes have at most one. It owns Orbit HTTP routing on that node, including
-  gateway API, app/workspace, tool, ingress, router, and private backend routes
-  when those capabilities apply.
+  app/workspace, tool, ingress, router, and private backend routes when those
+  capabilities apply. In `router-colocated` gateway exposure mode, router-owned
+  `orbit-caddy` also fronts the gateway API; in `gateway-direct` mode the
+  gateway service publishes gateway HTTPS directly.
 - **WebSocket role:** Private workload role for Orbit-managed realtime
   infrastructure. A websocket node runs Laravel Reverb in a Docker runtime
   container managed by Orbit, binds only to its WireGuard address, receives
@@ -99,9 +106,7 @@ Each term below has a precise meaning in the node command family.
 - **Agent role baseline:** Code-defined desired state for a node with the
   `agent` role: `orbit-caddy`, WireGuard/node identity and trust material, the
   shared unprivileged `agent` runtime user, and any role-specific runtime
-  containers the agent workload needs. Any remaining workload-node
-  `orbit-runtime` usage is compatibility scope, not the source-mounted live
-  topology contract.
+  containers the agent workload needs.
 - **Agent runtime user:** Shared unprivileged Linux user that owns agent
   tool runtimes on a node with the `agent` role. Agent tools never run as the
   privileged `orbit` maintenance user.
@@ -191,6 +196,7 @@ Role baselines are code-defined desired state, not editable package lists.
 
 | Role | Baseline intent |
 | --- | --- |
+| `gateway` | Swarm-managed `orbit-gateway` API service, `orbit-scheduler` service, gateway config root, SQLite database, and Orbit CA/certificate material |
 | `vpn` | WireGuard server runtime, public endpoint settings, VPN peer defaults, and VPN-facing DNS runtime |
 | `router` | Private `orbit-caddy` router for private `.orbit` DNS/service names, private route artifacts, backend pools, and private HTTP/WebSocket/S3 routing |
 | `app-dev` | Docker-first app runtime baseline, development DNS mapping, and `orbit-caddy` app/workspace routes |
@@ -245,19 +251,22 @@ active workload roles before side effects.
 Registry-only commands use stored gateway metadata and do not perform live
 platform checks; platform drift belongs to `doctor --family=node`.
 
-All managed Ubuntu nodes have the same Docker-first host prerequisite baseline.
-They require Git, Docker, the Orbit CLI entry point, WireGuard/SSH identity
-material, and any role-specific host tools such as VitePlus on app nodes.
-Production installs still use the prebuilt Orbit CLI binary (embedded PHP 8.5
-+ `pdo_sqlite`/`openssl`/`curl`/`mbstring`/`tokenizer`/`ctype`/`filter`/`fileinfo`/`json`/`phar`). Source-mounted Docker and Incus topologies are
-development and E2E lanes; in those lanes `/usr/local/bin/orbit` points
-directly at `<source>/apps/cli/orbit` and mutable node-local Orbit state lives
-under `~/.config/orbit`. The gateway role also carries `orbit-runtime` for the
-API and scheduler. `app-dev` and
-`app-prod` nodes additionally carry a host PHP command-line toolchain — host PHP
-8.4 and 8.5, Composer, and the Laravel installer — installed and repaired as
-node tools, because `app:exec`, app setup, and deployment run Composer and
-Artisan on the host (matched to the app's PHP version) against the app source
+Managed Ubuntu nodes use a Docker-first prerequisite baseline. Production
+artifact installs use the prebuilt Orbit CLI binary (embedded PHP 8.5 +
+`pdo_sqlite`/`openssl`/`curl`/`mbstring`/`tokenizer`/`ctype`/`filter`/`fileinfo`/`json`/`phar`). A production gateway-only node requires Docker
+Engine/CLI, initialized Docker Swarm, the gateway config root, WireGuard/SSH
+identity material, and the native Orbit CLI binary. It does not require host
+PHP, host Composer, Git, or an Orbit source checkout. Source-mounted Docker and
+Incus topologies are development and E2E lanes; in those lanes
+`/usr/local/bin/orbit` points directly at `<source>/apps/cli/orbit` and mutable
+node-local Orbit state lives under `~/.config/orbit`.
+
+Host PHP and Composer are production prerequisites only on nodes with
+`app-dev` or `app-prod` roles. Those app-role nodes additionally carry a host
+PHP command-line toolchain — host PHP 8.4 and 8.5, Composer, and the Laravel
+installer — installed and repaired as node tools, because `app:exec`, app
+setup, and deployment run Composer and Artisan on the host (matched to the
+app's PHP version) against the app source
 the FrankenPHP container serves. This host PHP toolchain is distinct from the
 Orbit CLI binary's embedded PHP, which only runs the CLI itself. Host Caddy and
 host PHP-FPM remain non-prerequisites and non-fallbacks: Caddy runs only as the
@@ -305,7 +314,7 @@ These terms describe how nodes communicate and how authority is enforced.
 - **Node event ingestion:** Narrow node-to-gateway callbacks for purpose-built
   lifecycle events, not node-side control-plane authority.
 - **Node reality:** Observed role assignments, assignment status, platform,
-  WireGuard, SSH, reachability, and gateway runtime readiness for a node.
+  WireGuard, SSH, reachability, and gateway service readiness for a node.
 - **VPN role settings:** Assignment-local `vpn` settings: `public_endpoint`,
   `wireguard_cidr`, `wireguard_port`, and `dns_ip`.
 
@@ -446,7 +455,7 @@ The node family owns:
 
 - fleet membership, node roles, role assignments, and supported platforms;
 - gateway configuration, node identity, node reachability from the gateway,
-  and gateway runtime readiness;
+  and gateway service readiness;
 - the node access grant edge and the scoped permissions stored on each grant,
   plus the permission registry, presets, and normalization;
 - the development and agent DNS mappings the gateway maintains;

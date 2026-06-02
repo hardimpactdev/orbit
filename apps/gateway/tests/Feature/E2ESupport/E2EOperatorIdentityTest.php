@@ -28,11 +28,14 @@ it('removes the stale local operator identity over the operator node transport',
         ->with(
             'orbit',
             $key,
-            m::on(fn (string $command): bool => str_contains($command, 'php apps/gateway/artisan tinker --execute=')
+            m::on(fn (string $command): bool => str_contains($command, 'php -r ')
+                && str_contains($command, '/home/orbit/.config/orbit/gateway.sqlite')
+                && str_contains($command, 'new PDO')
                 && ! str_contains($command, 'php artisan tinker')
                 && ! str_contains($command, 'php artisan')
+                && ! str_contains($command, 'apps/gateway/artisan')
                 && str_contains($command, 'operator-1')
-                && str_contains($command, 'delete()')),
+                && str_contains($command, 'DELETE FROM nodes WHERE name = :name')),
             60,
         )
         ->andReturn($result);

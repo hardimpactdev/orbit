@@ -19,7 +19,7 @@ final class OrbitHostCwdResolver
      * resolver returns `null` instead of guessing.
      *
      * `$hostCwd` defaults to `getenv('ORBIT_HOST_CWD')` so callers running
-     * inside `orbit-runtime` can resolve the launcher-supplied host cwd
+     * inside `orbit-gateway` can resolve the launcher-supplied host cwd
      * without threading it through their own argument lists.
      */
     public function resolve(?string $hostCwd = null): ?OrbitHostCwdContext
@@ -67,7 +67,7 @@ final class OrbitHostCwdResolver
     /**
      * Normalize a host working directory lexically (no filesystem access).
      *
-     * The host cwd lives on the caller's machine, not inside `orbit-runtime`,
+     * The host cwd lives on the caller's machine, not inside `orbit-gateway`,
      * so realpath() is not an option — the gateway may not be able to stat
      * the path at all. Collapse `.` and `..` segments against the path
      * itself, then check the result is still absolute. Paths that escape

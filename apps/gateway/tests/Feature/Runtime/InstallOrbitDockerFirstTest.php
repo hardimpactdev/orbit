@@ -5,7 +5,7 @@ declare(strict_types=1);
 use Illuminate\Support\Facades\File;
 use Symfony\Component\Process\Process;
 
-describe('install-orbit Docker-first runtime contract', function (): void {
+describe('install-orbit Docker-first gateway contract', function (): void {
     beforeEach(function (): void {
         $this->installer = File::get(repo_path('bin/install-orbit'));
     });
@@ -27,7 +27,7 @@ describe('install-orbit Docker-first runtime contract', function (): void {
             ->not->toContain('sudo systemctl enable caddy');
     });
 
-    it('installs Docker engine prerequisites on Ubuntu before invoking the runtime container', function (): void {
+    it('installs Docker engine prerequisites on Ubuntu before invoking the gateway container', function (): void {
         expect($this->installer)
             ->toContain('install_docker_engine_ubuntu')
             ->toContain('docker-ce')
@@ -38,42 +38,63 @@ describe('install-orbit Docker-first runtime contract', function (): void {
             ->toContain('systemctl enable --now docker');
     });
 
-    it('builds orbit-runtime from the checked-out source and pulls official runtime dependency images', function (): void {
+    it('waits for Ubuntu apt and dpkg locks while installing host prerequisites', function (): void {
+        expect($this->installer)
+            ->toContain('APT_LOCK_TIMEOUT_SECONDS="${ORBIT_APT_LOCK_TIMEOUT_SECONDS:-300}"')
+            ->toContain('apt_get_update()')
+            ->toContain('apt_get_install()')
+            ->toContain('DPkg::Lock::Timeout=${APT_LOCK_TIMEOUT_SECONDS}')
+            ->not->toContain('sudo_run apt-get update')
+            ->not->toContain('sudo_run env DEBIAN_FRONTEND=noninteractive apt-get install -y');
+    });
+
+    it('builds orbit-gateway from source while pulling official gateway dependency images', function (): void {
         expect($this->installer)
             ->toContain('docker_cli build')
-            ->toContain('docker/orbit-runtime/Dockerfile')
-            ->toContain('-t "orbit-runtime:current"')
+            ->toContain('docker/orbit-gateway/Dockerfile')
+            ->toContain('-t "$GATEWAY_IMAGE"')
             ->toContain('docker_cli pull "caddy:2-alpine"')
             ->toContain('docker_cli pull "dunglas/frankenphp:1-php8.5-bookworm"')
             ->toContain('ghcr.io/wg-easy/wg-easy:15')
+            ->not->toContain('docker/orbit'.'-runtime/Dockerfile')
+            ->not->toContain('-t "orbit'.'-runtime:current"')
             ->not->toContain('docker/orbit-caddy/Dockerfile')
             ->not->toContain('-t "orbit-caddy:current"');
     });
 
-    it('can load runtime dependency images from staged archives before falling back to Docker Hub', function (): void {
+    it('can load gateway dependency images from staged archives before falling back to Docker Hub', function (): void {
         expect($this->installer)
-            ->toContain('RUNTIME_IMAGE_ARCHIVE="${ORBIT_RUNTIME_IMAGE_ARCHIVE:-}"')
+            ->toContain('GATEWAY_IMAGE="${ORBIT_GATEWAY_IMAGE:-orbit-gateway:current}"')
+            ->toContain('GATEWAY_IMAGE_ARCHIVE="${ORBIT_GATEWAY_IMAGE_ARCHIVE:-}"')
             ->toContain('CADDY_IMAGE_ARCHIVE="${ORBIT_CADDY_IMAGE_ARCHIVE:-}"')
             ->toContain('DNSMASQ_IMAGE_ARCHIVE="${ORBIT_DNSMASQ_IMAGE_ARCHIVE:-}"')
             ->toContain('FRANKENPHP_IMAGE_ARCHIVE="${ORBIT_FRANKENPHP_IMAGE_ARCHIVE:-}"')
             ->toContain('WG_EASY_IMAGE_ARCHIVE="${ORBIT_WG_EASY_IMAGE_ARCHIVE:-}"')
-            ->toContain('--runtime-image-archive=PATH')
+            ->toContain('--gateway-image=IMAGE')
+            ->toContain('--gateway-image-archive=PATH')
             ->toContain('--caddy-image-archive=PATH')
             ->toContain('--dnsmasq-image-archive=PATH')
             ->toContain('--frankenphp-image-archive=PATH')
             ->toContain('--wg-easy-image-archive=PATH')
-            ->toContain('docker_cli load -i "$RUNTIME_IMAGE_ARCHIVE"')
+            ->toContain('docker_cli load -i "$GATEWAY_IMAGE_ARCHIVE"')
             ->toContain('docker_cli load -i "$CADDY_IMAGE_ARCHIVE"')
             ->toContain('docker_cli load -i "$DNSMASQ_IMAGE_ARCHIVE"')
             ->toContain('docker_cli load -i "$FRANKENPHP_IMAGE_ARCHIVE"')
             ->toContain('docker_cli load -i "$WG_EASY_IMAGE_ARCHIVE"')
-            ->toContain('docker_cli image inspect "orbit-runtime:current"')
+            ->toContain('docker_cli image inspect "$GATEWAY_IMAGE"')
             ->toContain('docker_cli image inspect "4km3/dnsmasq:latest"')
             ->toContain('docker_cli image inspect "caddy:2-alpine"')
             ->toContain('docker_cli image inspect "dunglas/frankenphp:1-php8.5-bookworm"')
             ->toContain('docker_cli image inspect "ghcr.io/wg-easy/wg-easy:15"')
             ->toContain('docker_cli pull "caddy:2-alpine"')
             ->toContain('docker_cli pull "dunglas/frankenphp:1-php8.5-bookworm"');
+    });
+
+    it('can pull a digest-pinned gateway image when no local archive is staged', function (): void {
+        expect($this->installer)
+            ->toContain('pull_remote_gateway_image')
+            ->toContain('docker_cli pull "$GATEWAY_IMAGE"')
+            ->toContain('*@sha256:*|ghcr.io/*');
     });
 
     it('fails early when a supplied wg-easy image archive is missing', function (): void {
@@ -96,23 +117,22 @@ describe('install-orbit Docker-first runtime contract', function (): void {
         }
     });
 
-    it('marks archive-seeded installs so node:new can forward local runtime images during E2E provisioning', function (): void {
+    it('marks archive-seeded installs so node:new can forward local gateway and dependency images during E2E provisioning', function (): void {
         expect($this->installer)
             ->toContain('ORBIT_FORWARD_INSTALL_IMAGE_ARCHIVES')
-            ->toContain('write_env_var "ORBIT_FORWARD_INSTALL_IMAGE_ARCHIVES" "1"');
+            ->toContain('write_env_var "ORBIT_FORWARD_INSTALL_IMAGE_ARCHIVES" "1"')
+            ->toContain('GATEWAY_IMAGE_ARCHIVE');
     });
 
-    it('runs gateway composer install plus key generation inside orbit-runtime without a CLI source step', function (): void {
+    it('bootstraps gateway state inside orbit-gateway without a CLI source step', function (): void {
         expect($this->installer)
             ->toContain('docker_cli run --rm')
-            ->toContain('orbit-runtime:current')
-            ->toContain('--workdir /opt/orbit/apps/gateway')
-            ->toContain('grep -q \'^APP_KEY=base64:\' \"\$GATEWAY_ENV_FILE\"')
+            ->toContain('"$GATEWAY_IMAGE"')
+            ->toContain('artisan --version')
             ->not->toContain('--workdir /opt/orbit/apps/cli')
-            ->toContain('composer install --no-dev --no-interaction --prefer-dist --optimize-autoloader')
-            ->toContain('php artisan key:generate --force --no-interaction')
+            ->not->toContain('composer install --no-dev --no-interaction --prefer-dist --optimize-autoloader')
+            ->not->toContain('php artisan key:generate --force --no-interaction')
             ->not->toContain('php /opt/orbit/artisan')
-            ->not->toContain('composer install --no-dev --no-interaction --prefer-dist --optimize-autoloader"')
             ->not->toContain('cd $target && composer install')
             ->not->toContain('cd $target && php artisan');
     });
@@ -133,22 +153,25 @@ describe('install-orbit Docker-first runtime contract', function (): void {
             ->not->toContain('[ ! -f "$TARGET_DIR/artisan" ]');
     });
 
-    it('clears stale Laravel bootstrap cache files before no-dev runtime composer install', function (): void {
+    it('clears stale Laravel bootstrap cache files before gateway image bootstrap', function (): void {
         $cacheClear = strpos($this->installer, "\n    clear_laravel_bootstrap_cache\n");
-        $composerInstall = strpos($this->installer, 'composer install --no-dev --no-interaction --prefer-dist --optimize-autoloader');
+        $gatewayBootstrap = strpos($this->installer, 'artisan --version');
 
         expect($this->installer)
             ->toContain('clear_laravel_bootstrap_cache()')
             ->toContain('"$TARGET_DIR/apps/gateway/bootstrap/cache"/*.php')
             ->and($cacheClear)->not->toBeFalse()
-            ->and($composerInstall)->not->toBeFalse()
-            ->and($cacheClear)->toBeLessThan($composerInstall);
+            ->and($gatewayBootstrap)->not->toBeFalse()
+            ->and($cacheClear)->toBeLessThan($gatewayBootstrap);
     });
 
     it('uses the gateway app key for operation token signing during bootstrap', function (): void {
         expect($this->installer)
-            ->toContain('APP_KEY=base64:')
-            ->toContain('php artisan key:generate --force --no-interaction');
+            ->toContain('ensure_gateway_app_key')
+            ->toContain('generated_key="base64:$(head -c 32 /dev/urandom | base64 | tr -d')
+            ->toContain('write_env_var "APP_KEY" "$generated_key"')
+            ->toContain('artisan --version')
+            ->not->toContain('php artisan key:generate --force --no-interaction');
     });
 
     it('uses config-root state during runtime bootstrap', function (): void {
@@ -158,39 +181,17 @@ describe('install-orbit Docker-first runtime contract', function (): void {
             ->toContain('GATEWAY_DATABASE_FILE="$CONFIG_ROOT/gateway.sqlite"');
     });
 
-    it('starts the orbit-runtime container with the documented Docker-first shape', function (): void {
+    it('does not start the retired gateway container during install', function (): void {
         expect($this->installer)
-            ->toContain('docker_cli network create')
-            ->toContain('orbit-network')
-            ->toContain('docker_cli run -d')
-            ->toContain('--pull never')
-            ->toContain('--name orbit-runtime')
-            ->toContain('--restart unless-stopped')
-            ->toContain('--network orbit-network')
-            ->toContain('--network-alias orbit-runtime')
-            ->toContain('orbit.container.kind=runtime')
-            ->not->toContain('gateway_env=(')
-            ->toContain('ORBIT_TRUST_WIREGUARD_PROXY_HEADER=1')
-            ->toContain('target=/opt/orbit')
-            ->toContain('/var/run/docker.sock');
+            ->not->toContain('docker_cli run -d')
+            ->not->toContain('--name orbit'.'-runtime')
+            ->not->toContain('ORBIT_TRUST_WIREGUARD_PROXY_HEADER=1')
+            ->not->toContain('target=/opt/orbit');
     });
 
-    it('prepares /etc/caddy and /etc/orbit on the host and bind-mounts them into orbit-runtime so gateway bootstrap writes land where orbit-caddy reads', function (): void {
+    it('grants the orbit user docker group membership and uses sudo for install-time docker invocations so a fresh orbit user does not need the docker socket up front', function (): void {
         expect($this->installer)
-            ->toContain('prepare_orbit_caddy_host_paths')
-            ->toContain('install -d -m 0755')
-            ->toContain('/etc/caddy')
-            ->toContain('/etc/caddy/orbit')
-            ->toContain('/etc/caddy/sites')
-            ->toContain('/etc/orbit')
-            ->toContain('/etc/orbit/certs')
-            ->toContain('--mount "type=bind,source=/etc/caddy,target=/etc/caddy"')
-            ->toContain('--mount "type=bind,source=/etc/orbit,target=/etc/orbit"');
-    });
-
-    it('grants the runtime user docker group membership and uses sudo for install-time docker invocations so a fresh runtime user does not need the docker socket up front', function (): void {
-        expect($this->installer)
-            ->toContain('grant_runtime_user_docker_access')
+            ->toContain('grant_orbit_user_docker_access')
             ->toContain('usermod -aG docker')
             ->toContain('docker_cli()')
             ->toContain('sudo -n docker')
@@ -198,14 +199,13 @@ describe('install-orbit Docker-first runtime contract', function (): void {
             ->toContain('docker_cli build')
             ->toContain('docker_cli pull')
             ->toContain('docker_cli run')
-            ->toContain('docker_cli container inspect')
-            ->toContain('docker_cli network');
+            ->toContain('docker_cli image inspect');
 
         // Walk every line of bin/install-orbit looking for a literal
         // `docker ` invocation that is not routed through docker_cli. The
         // helper itself, plus comments/docs, are exempt — but every
         // install-time docker call must go through the helper so the fresh
-        // runtime user does not hit a permission-denied socket before the
+        // orbit user does not hit a permission-denied socket before the
         // docker group is picked up.
         $offenders = [];
         $insideDockerCliFn = false;
@@ -252,10 +252,10 @@ describe('install-orbit Docker-first runtime contract', function (): void {
             }
         }
 
-        expect($offenders)->toBe([], 'install-orbit must route every Docker invocation through docker_cli so the fresh runtime user does not hit a permission-denied socket before the docker group is picked up.');
+        expect($offenders)->toBe([], 'install-orbit must route every Docker invocation through docker_cli so the fresh orbit user does not hit a permission-denied socket before the docker group is picked up.');
     });
 
-    it('runs Docker-touching install steps in a way that survives an unprivileged runtime user (sudo-wrapped) on a fresh host', function (): void {
+    it('runs Docker-touching install steps in a way that survives an unprivileged orbit user (sudo-wrapped) on a fresh host', function (): void {
         $root = sys_get_temp_dir().'/orbit-install-orbit-docker-access-'.bin2hex(random_bytes(4));
         $bin = "{$root}/bin";
         $callLog = "{$root}/docker-calls.log";
@@ -266,13 +266,15 @@ describe('install-orbit Docker-first runtime contract', function (): void {
         mkdir($bin, recursive: true);
         mkdir($stateDir, recursive: true);
         mkdir($targetDir, recursive: true);
+        mkdir("{$targetDir}/apps/gateway", recursive: true);
+        file_put_contents("{$targetDir}/apps/gateway/.env.example", "APP_NAME=Orbit\nAPP_KEY=\n");
         file_put_contents("{$stateDir}/exists", '0');
         file_put_contents("{$stateDir}/running", 'false');
         file_put_contents("{$stateDir}/env", '');
 
         // The fake `docker` rejects every call that is not invoked through
         // sudo. If install-orbit reverts to plain `docker info` / `docker
-        // build` while the runtime user lacks docker group membership, this
+        // build` while the orbit user lacks docker group membership, this
         // assertion catches it as a permission-denied probe.
         file_put_contents("{$bin}/docker", <<<'BASH'
 #!/usr/bin/env bash
@@ -343,12 +345,13 @@ BASH);
         chmod("{$bin}/install", 0755);
 
         $command = sprintf(
-            'export PATH=%s:$PATH; export DOCKER_CALL_LOG=%s; export DOCKER_STATE_DIR=%s; export ORBIT_INSTALL_LOG=%s; export ORBIT_INSTALL_PATH=%s; export ORBIT_INSTALL_DOCKER_FORCE_SUDO=1; source %s; TRUST_WIREGUARD_PROXY_HEADER=1; require_docker; build_runtime_images; start_runtime_container; echo "OK"',
+            'export PATH=%s:$PATH; export DOCKER_CALL_LOG=%s; export DOCKER_STATE_DIR=%s; export ORBIT_INSTALL_LOG=%s; export ORBIT_INSTALL_PATH=%s; export ORBIT_CONFIG_ROOT=%s; export ORBIT_INSTALL_DOCKER_FORCE_SUDO=1; source %s; require_docker; build_gateway_images; bootstrap_gateway_state; run_migrations_in_gateway_image; echo "OK"',
             escapeshellarg($bin),
             escapeshellarg($callLog),
             escapeshellarg($stateDir),
             escapeshellarg($logFile),
             escapeshellarg($targetDir),
+            escapeshellarg("{$stateDir}/config"),
             escapeshellarg(repo_path('bin/install-orbit')),
         );
 
@@ -363,33 +366,33 @@ BASH);
 
         try {
             expect($process->getExitCode())
-                ->toBe(0, "install-orbit must succeed when the runtime user lacks the docker group; stderr was:\n{$stderr}\nstdout was:\n{$stdout}");
+                ->toBe(0, "install-orbit must succeed when the orbit user lacks the docker group; stderr was:\n{$stderr}\nstdout was:\n{$stdout}");
 
             expect($calls)->not->toBeEmpty();
 
-            $dockerRunCalls = array_filter($calls, fn (string $line): bool => str_starts_with($line, 'docker run -d') && str_contains($line, '--name orbit-runtime'));
+            $dockerRunCalls = array_filter($calls, fn (string $line): bool => str_starts_with($line, 'docker run --rm') && str_contains($line, 'orbit-gateway:current'));
 
-            expect($dockerRunCalls)->not->toBeEmpty('expected install-orbit to start orbit-runtime through sudo-wrapped docker run');
+            expect($dockerRunCalls)->not->toBeEmpty('expected install-orbit to run orbit-gateway through sudo-wrapped docker run');
         } finally {
             File::deleteDirectory($root);
         }
     });
 
-    it('runs migrations in a disposable orbit-runtime container before starting the long-running runtime', function (): void {
-        $migrationStep = strpos($this->installer, 'start_step "Run migrations inside orbit-runtime"');
-        $startRuntimeStep = strpos($this->installer, 'start_step "Start orbit-runtime container"');
+    it('runs migrations in a disposable orbit-gateway container without starting a long-running gateway service', function (): void {
+        $bootstrapStep = strpos($this->installer, 'start_step "Bootstrap gateway state in the container"');
+        $migrationStep = strpos($this->installer, 'start_step "Run migrations inside orbit-gateway"');
 
         expect($this->installer)
             ->toContain('docker_cli run --rm')
-            ->toContain('-v "$TARGET_DIR":/opt/orbit')
-            ->toContain('orbit-runtime:current')
-            ->toContain('php /opt/orbit/apps/gateway/artisan migrate --force --no-interaction --path=/opt/orbit/apps/gateway/database/migrations --realpath')
-            ->not->toContain('php /opt/orbit/apps/gateway/artisan migrate --force --no-interaction"')
+            ->toContain('"$GATEWAY_IMAGE"')
+            ->toContain('migrate --no-interaction --path=/srv/orbit/apps/gateway/database/migrations --realpath')
+            ->not->toContain('-v "$TARGET_DIR":/opt/orbit')
+            ->not->toContain('orbit'.'-runtime:current')
             ->not->toContain('php /opt/orbit/artisan migrate --force --no-interaction')
             ->not->toContain('docker_cli exec \\')
+            ->and($bootstrapStep)->not->toBeFalse()
             ->and($migrationStep)->not->toBeFalse()
-            ->and($startRuntimeStep)->not->toBeFalse()
-            ->and($migrationStep)->toBeLessThan($startRuntimeStep);
+            ->and($bootstrapStep)->toBeLessThan($migrationStep);
     });
 
     it('links the downloaded Orbit CLI binary as the host orbit command', function (): void {
@@ -399,7 +402,7 @@ BASH);
             ->not->toContain('ln -sf "$TARGET_DIR/apps/cli/orbit" "$LINK_PATH"');
     });
 
-    it('fails early if Docker is not reachable so the runtime path cannot silently fall back to host PHP', function (): void {
+    it('fails early if Docker is not reachable so the gateway path cannot silently fall back to host PHP', function (): void {
         expect($this->installer)
             ->toContain('require_docker')
             ->toContain('Docker daemon is not reachable');

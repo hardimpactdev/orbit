@@ -84,6 +84,20 @@ describe('AppProductionRoleBaseline host toolchain', function (): void {
             ->and($tool->expected_state)->toBe('installed');
     });
 
+    it('does not converge the legacy php runtime tool row', function (): void {
+        $node = appProdBaselineNode();
+        $assignment = appProdBaselineAssignment($node);
+
+        $baseline = new AppProductionRoleBaseline;
+
+        $baseline->converge($node, $assignment);
+
+        expect(NodeTool::query()
+            ->where('node_id', $node->id)
+            ->where('name', 'php')
+            ->exists())->toBeFalse();
+    });
+
     it('removes host toolchain rows on role removal', function (): void {
         $node = appProdBaselineNode();
         $assignment = appProdBaselineAssignment($node);

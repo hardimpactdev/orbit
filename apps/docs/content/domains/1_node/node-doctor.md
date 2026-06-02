@@ -16,7 +16,7 @@ The node family owns these facts:
   that the gateway manages on the node;
 - node connectivity: gateway API reachability for CLI callers and
   gateway-owned SSH reachability for nodes;
-- node bootstrap artifacts: gateway runtime readiness, node minimum Orbit
+- node bootstrap artifacts: gateway service readiness, node minimum Orbit
   runtime, gateway-client endpoint and trust artifacts on the node, node identity
   artifacts, role bootstrap network policy, and WireGuard peers managed by the gateway;
 - node-owned security baseline: host-key pinning metadata, canonical
@@ -64,8 +64,8 @@ The node probe reads gateway node records and checks these layers:
    machines are verified through identity and gateway API reachability, not SSH.
 7. **SSH reachability:** the gateway can SSH to nodes. Clients are
    not SSH targets for node doctor checks.
-8. **Gateway runtime readiness:** the gateway node exposes the Orbit API and
-   the gateway runtime required by CLI callers.
+8. **Gateway service readiness:** the gateway node exposes the Orbit API and
+   the gateway service required by CLI callers.
 9. **Node-side bootstrap readiness:** nodes have the minimum Orbit runtime
    and node identity artifacts needed for the gateway to apply other state
    families over SSH.
@@ -101,11 +101,9 @@ The node probe reads gateway node records and checks these layers:
    the node's WireGuard address through the same DNS configuration model, and
    the node baseline includes `orbit-caddy`, the shared unprivileged `agent`
    runtime user, and any role-specific runtime containers the agent workload
-   needs. The gateway runs `orbit-runtime` for the API and scheduler.
-   Workload and agent nodes run the public Orbit CLI as gateway clients and
-   run workloads in role-specific runtime containers. Any remaining
-   workload-node `orbit-runtime` usage is compatibility scope outside the
-   source-mounted live topology contract.
+   needs. The gateway runs `orbit-gateway` for the API and `orbit-scheduler`
+   for schedule execution. Workload and agent nodes run the public Orbit CLI as
+   gateway clients and run workloads in role-specific runtime containers.
 
    For `vpn`, assignments have valid `public_endpoint`, `wireguard_cidr`,
    `wireguard_port`, and `dns_ip` settings. The node baseline includes the
@@ -201,7 +199,7 @@ Each code below identifies a specific kind of node-family drift that `doctor --f
 | `node.platform_unsupported` | A gateway or node reports an unsupported platform-version identifier. |
 | `node.platform_record_mismatch` | Live platform detection differs from the node record's platform-version identifier. |
 | `node.ssh_unreachable` | The gateway cannot SSH to a node. |
-| `node.gateway_runtime_unready` | The gateway node does not expose the Orbit API or required gateway runtime. |
+| `node.gateway_runtime_unready` | The gateway node does not expose the Orbit API or required gateway service. |
 | `node.runtime_missing` | A node lacks the minimum Orbit runtime required for gateway applying. |
 | `node.vpn_runtime_missing` | The active gateway-coupled `vpn` assignment is missing WireGuard server or VPN-facing DNS runtime artifacts. |
 | `node.vpn_dns_mapping_mismatch` | The DNS runtime served through the `vpn` role does not match gateway-owned desired DNS mappings. |
@@ -229,7 +227,7 @@ This table describes what `doctor --restore --family=node` does for each resolva
 
 | Code | `doctor --restore --family=node` behavior |
 | --- | --- |
-| `node.gateway_api_unreachable` | Restart or restore gateway runtime only when running on the gateway node; otherwise leave the issue for gateway-side repair. |
+| `node.gateway_api_unreachable` | Restart or restore gateway service only when running on the gateway node; otherwise leave the issue for gateway-side repair. |
 | `node.gateway_ca_mismatch` | Restore local gateway trust from gateway-owned trust material when the caller is authorized to receive it. |
 | `node.wireguard_peer_missing` | Reserved for gateway-managed peer recreation; private key material is not read from nodes. Compatible live peer attachment belongs to `doctor --family=node --adopt`. |
 | `node.wireguard_peer_extra` | Remove stale gateway-managed peer material when no active node record owns the peer. |
@@ -238,7 +236,7 @@ This table describes what `doctor --restore --family=node` does for each resolva
 | `node.access_permission_invalid` | Re-normalize the stored permission set on the grant when it can be reduced to a valid set without changing intent; otherwise leave the drift visible for explicit operator action through `node:permissions`. |
 | `node.role_convergence_failed` | Retry synchronous convergence for error role assignments on the selected node and leave an assignment in `error` again if the retry fails. |
 | `node.role_baseline_mismatch` | Re-apply the baseline artifacts for the selected active role assignments, including role-owned derived artifacts such as development DNS mappings. |
-| `node.gateway_runtime_unready` | Restart or reinstall the gateway runtime artifacts required by Orbit API readiness. |
+| `node.gateway_runtime_unready` | Restart or reinstall the gateway service artifacts required by Orbit API readiness. |
 | `node.runtime_missing` | Rerun the node bootstrap step that installs the minimum Orbit runtime. |
 | `node.vpn_runtime_missing` | Re-apply the active `vpn` role baseline for WireGuard server and VPN-facing DNS runtime artifacts. |
 | `node.vpn_dns_mapping_mismatch` | Rewrite the DNS runtime served through the active `vpn` role so it matches gateway-owned desired DNS mappings. |
@@ -360,7 +358,7 @@ Required test files:
 assignment compatibility and status, access grant integrity, WireGuard
 identity, and presented caller identity resolving to a unique active node
 record. It also covers platform reality, SSH reachability, public IP metadata
-exclusion from probe/restore/adopt behavior, gateway runtime readiness,
+exclusion from probe/restore/adopt behavior, gateway service readiness,
 node bootstrap readiness, node security posture, and development TLD mapping readiness. The
 probe additionally covers `node.local_default_invalid`,
 `node.cli_php_default_mismatch`, and `node.agent_ide_default_invalid`.

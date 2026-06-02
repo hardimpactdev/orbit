@@ -2,7 +2,6 @@
 
 declare(strict_types=1);
 
-use App\Services\Updates\CheckoutPathResolver;
 use App\Services\Updates\LocalUpdateResult;
 use App\Services\Updates\LocalUpdateWorkflow;
 use App\Services\Updates\RunsLocalUpdate;
@@ -51,25 +50,21 @@ final class LocalUpdateWorkflowFakeUpdater implements RunsLocalUpdate
 }
 
 describe('LocalUpdateWorkflow', function (): void {
-    it('runs local update steps in order and returns a completed result', function (): void {
+    it('runs the local binary update step and returns a completed result', function (): void {
         $updater = new LocalUpdateWorkflowFakeUpdater;
 
-        $result = (new LocalUpdateWorkflow($updater, new CheckoutPathResolver))->run();
+        $result = (new LocalUpdateWorkflow($updater))->run();
 
         expect($result->status)->toBe(LocalUpdateResult::STATUS_COMPLETED)
             ->and($result->stepResults)->toBe([
                 'pull_source' => 'completed',
-                'install_dependencies' => 'completed',
-                'run_migrations' => 'completed',
             ])
             ->and($updater->calls)->toBe([
                 'pull_source',
-                'install_dependencies',
-                'run_migrations',
             ]);
     });
 
-    it('returns checkout unavailable when the binary download fails', function (): void {
+    it('returns failed step metadata when the binary update fails', function (): void {
         $previous = getenv('ORBIT_INSTALL_PATH');
         putenv('ORBIT_INSTALL_PATH=/tmp/orbit-test-install');
 
@@ -81,32 +76,32 @@ describe('LocalUpdateWorkflow', function (): void {
                 'output' => 'curl: (6) Could not resolve host',
             ];
 
-            $result = (new LocalUpdateWorkflow($updater, new CheckoutPathResolver))->run();
+            $result = (new LocalUpdateWorkflow($updater))->run();
 
-            expect($result->status)->toBe(LocalUpdateResult::STATUS_CHECKOUT_UNAVAILABLE)
-                ->and($result->checkoutPath)->toBe('/tmp/orbit-test-install')
+            expect($result->status)->toBe(LocalUpdateResult::STATUS_FAILED)
+                ->and($result->failedStep)->toBe('pull_source')
+                ->and($result->output)->toBe('curl: (6) Could not resolve host')
                 ->and($updater->calls)->toBe(['pull_source']);
         } finally {
             $previous === false ? putenv('ORBIT_INSTALL_PATH') : putenv("ORBIT_INSTALL_PATH={$previous}");
         }
     });
 
-    it('returns failed with step metadata when a later step fails', function (): void {
+    it('does not run gateway dependency or migration steps during local update', function (): void {
         $updater = new LocalUpdateWorkflowFakeUpdater;
         $updater->results['install_dependencies'] = [
             'successful' => false,
             'exit_code' => 1,
-            'output' => 'orbit-runtime container unavailable',
+            'output' => 'orbit-gateway container unavailable',
         ];
 
-        $result = (new LocalUpdateWorkflow($updater, new CheckoutPathResolver))->run();
+        $result = (new LocalUpdateWorkflow($updater))->run();
 
-        expect($result->status)->toBe(LocalUpdateResult::STATUS_FAILED)
-            ->and($result->failedStep)->toBe('install_dependencies')
-            ->and($result->output)->toBe('orbit-runtime container unavailable')
+        expect($result->status)->toBe(LocalUpdateResult::STATUS_COMPLETED)
+            ->and($result->failedStep)->toBeNull()
+            ->and($result->output)->toBe('')
             ->and($updater->calls)->toBe([
                 'pull_source',
-                'install_dependencies',
             ]);
     });
 });

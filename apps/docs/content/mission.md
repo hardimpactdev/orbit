@@ -32,4 +32,4 @@ To understand how Orbit is designed — gateway, node roles, state families, the
 
 Orbit is open source: no fee for the tool itself, no third party between you and your servers, fully sovereign. The trade-off is infrastructure ownership. Orbit is built around a gateway node and one or more workload nodes, so you pay for and operate that infrastructure. In exchange, you can develop from a low-powered machine over the network, see the app you're building on any device on the fleet, and treat dev, staging, and production as one system.
 
-To see the current implementation choices that make that architecture real — Laravel, WireGuard, Docker, `orbit-runtime`, `orbit-caddy`, FrankenPHP app containers, and the gateway API runtime — read [Tech Stack](tech-stack.md).
+To see the current implementation choices that make that architecture real — Laravel, WireGuard, Docker, `orbit-gateway`, `orbit-scheduler`, `orbit-caddy`, FrankenPHP app containers, and the gateway API runtime — read [Tech Stack](tech-stack.md).

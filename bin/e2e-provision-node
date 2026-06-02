@@ -6,7 +6,8 @@ NODE_KIND=""
 SOURCE_ARCHIVE=""
 INSTALLER=""
 COMPOSER_CACHE=""
-RUNTIME_IMAGE_ARCHIVE=""
+GATEWAY_IMAGE="${ORBIT_GATEWAY_IMAGE:-orbit-gateway:current}"
+GATEWAY_IMAGE_ARCHIVE="${ORBIT_GATEWAY_IMAGE_ARCHIVE:-}"
 CADDY_IMAGE_ARCHIVE=""
 DNSMASQ_IMAGE_ARCHIVE=""
 FRANKENPHP_IMAGE_ARCHIVE=""
@@ -36,10 +37,12 @@ Optional:
   --composer-cache=PATH        Local composer cache directory. If given and
                                non-empty, copied into the role's composer cache
                                before install-orbit runs.
-  --runtime-image-archive=PATH Local Docker image archive for
-                               orbit-runtime:current. If given, forwarded to
-                               install-orbit so fresh VMs do not need to
-                               rebuild the runtime image from Docker Hub.
+  --gateway-image=IMAGE        Gateway image reference loaded or pulled by
+                               install-orbit on gateway nodes. Defaults to
+                               orbit-gateway:current.
+  --gateway-image-archive=PATH Local Docker image archive for the gateway
+                               image. If given on a gateway node, forwarded to
+                               install-orbit with --gateway-image.
   --caddy-image-archive=PATH   Local Docker image archive for caddy:2-alpine.
                                If given, forwarded to install-orbit so fresh
                                VMs do not need to pull Caddy from Docker Hub.
@@ -156,8 +159,11 @@ parse_args() {
             --composer-cache=*)
                 COMPOSER_CACHE="${1#*=}"
                 ;;
-            --runtime-image-archive=*)
-                RUNTIME_IMAGE_ARCHIVE="${1#*=}"
+            --gateway-image=*)
+                GATEWAY_IMAGE="${1#*=}"
+                ;;
+            --gateway-image-archive=*)
+                GATEWAY_IMAGE_ARCHIVE="${1#*=}"
                 ;;
             --caddy-image-archive=*)
                 CADDY_IMAGE_ARCHIVE="${1#*=}"
@@ -214,8 +220,10 @@ validate_args() {
 
     [ -x "$INSTALLER" ] || fail validation_failed "installer not executable: $INSTALLER"
 
-    if [ -n "$RUNTIME_IMAGE_ARCHIVE" ] && [ ! -f "$RUNTIME_IMAGE_ARCHIVE" ]; then
-        fail validation_failed "runtime image archive not found: $RUNTIME_IMAGE_ARCHIVE"
+    [ -n "$GATEWAY_IMAGE" ] || fail validation_failed "--gateway-image must not be empty"
+
+    if [ -n "$GATEWAY_IMAGE_ARCHIVE" ] && [ ! -f "$GATEWAY_IMAGE_ARCHIVE" ]; then
+        fail validation_failed "gateway image archive not found: $GATEWAY_IMAGE_ARCHIVE"
     fi
 
     if [ -n "$CADDY_IMAGE_ARCHIVE" ] && [ ! -f "$CADDY_IMAGE_ARCHIVE" ]; then
@@ -312,13 +320,13 @@ install_orbit_for_node_kind() {
     local guest_stage_dir
     local staged_source_archive
     local staged_installer
-    local staged_runtime_image_archive=""
+    local staged_gateway_image_archive=""
     local staged_caddy_image_archive=""
     local staged_dnsmasq_image_archive=""
     local staged_frankenphp_image_archive=""
     local staged_wg_easy_image_archive=""
     local staged_binary=""
-    local runtime_image_args=()
+    local gateway_image_args=()
     local caddy_image_args=()
     local dnsmasq_image_args=()
     local frankenphp_image_args=()
@@ -337,10 +345,10 @@ install_orbit_for_node_kind() {
     sudo_run install -m 0644 -o "$user" -g "$user" "$SOURCE_ARCHIVE" "$staged_source_archive"
     sudo_run install -m 0755 -o "$user" -g "$user" "$INSTALLER" "$staged_installer"
 
-    if [ -n "$RUNTIME_IMAGE_ARCHIVE" ]; then
-        staged_runtime_image_archive="${guest_stage_dir}/orbit-runtime-current.tar"
-        sudo_run install -m 0644 -o "$user" -g "$user" "$RUNTIME_IMAGE_ARCHIVE" "$staged_runtime_image_archive"
-        runtime_image_args=(--runtime-image-archive="$staged_runtime_image_archive")
+    if [ "$NODE_KIND" = "gateway" ] && [ -n "$GATEWAY_IMAGE_ARCHIVE" ]; then
+        staged_gateway_image_archive="${guest_stage_dir}/orbit-gateway-current.tar"
+        sudo_run install -m 0644 -o "$user" -g "$user" "$GATEWAY_IMAGE_ARCHIVE" "$staged_gateway_image_archive"
+        gateway_image_args=(--gateway-image="$GATEWAY_IMAGE" --gateway-image-archive="$staged_gateway_image_archive")
     fi
 
     if [ -n "$CADDY_IMAGE_ARCHIVE" ]; then
@@ -382,7 +390,7 @@ install_orbit_for_node_kind() {
         "--path=${target_dir}" \
         "--source-archive=${staged_source_archive}" \
         --bin=/usr/local/bin/orbit \
-        "${runtime_image_args[@]}" \
+        "${gateway_image_args[@]}" \
         "${caddy_image_args[@]}" \
         "${dnsmasq_image_args[@]}" \
         "${frankenphp_image_args[@]}" \

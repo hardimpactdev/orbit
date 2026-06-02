@@ -12,11 +12,11 @@ use Illuminate\Support\Facades\Process;
  * 1. Download the prebuilt CLI binary for this host OS/arch and relink the
  *    host `orbit` launcher — mirrors `bin/install-orbit`'s
  *    `detect_cli_binary_asset` + `download_cli_binary` + `link_orbit`.
- * 2. Install gateway Composer dependencies inside `orbit-runtime`.
- * 3. Run gateway Orbit migrations inside `orbit-runtime`.
+ * 2. Install gateway Composer dependencies inside `orbit-gateway`.
+ * 3. Run gateway Orbit migrations inside `orbit-gateway`.
  *
  * Steps 2 and 3 operate on the gateway source checkout mounted inside
- * `orbit-runtime` at `/opt/orbit`. The gateway still runs from source; only
+ * `orbit-gateway` at `/opt/orbit`. The gateway still runs from source; only
  * the CLI self-update changes from a source pull to a binary download-and-relink.
  *
  * Honors `ORBIT_BINARY_URL` to point at a local artifact, mirror, or specific
@@ -125,7 +125,7 @@ class LocalCheckoutUpdater implements RunsLocalUpdate
     {
         $result = Process::path($this->checkoutPathResolver->resolve())
             ->timeout(120)
-            ->run(['docker', 'exec', 'orbit-runtime', 'composer', '--working-dir=apps/gateway', 'install', '--no-interaction']);
+            ->run(['docker', 'exec', 'orbit-gateway', 'composer', '--working-dir=apps/gateway', 'install', '--no-interaction']);
 
         return [
             'successful' => $result->successful(),
@@ -141,7 +141,7 @@ class LocalCheckoutUpdater implements RunsLocalUpdate
     {
         $result = Process::path($this->checkoutPathResolver->resolve())
             ->timeout(60)
-            ->run(['docker', 'exec', 'orbit-runtime', 'php', 'apps/gateway/artisan', 'migrate', '--force']);
+            ->run(['docker', 'exec', 'orbit-gateway', 'php', 'apps/gateway/artisan', 'migrate', '--force']);
 
         return [
             'successful' => $result->successful(),

@@ -30,7 +30,8 @@ class AppDevelopmentRoleBaseline implements RoleBaseline
         $result = $this->developmentDnsMappingEnactor->convergeDevelopmentRole($node, $tld);
 
         if (($result['status'] ?? null) !== 'not_applicable') {
-            $this->convergeTools($node, ['caddy', 'php']);
+            $this->removeTools($node, ['php']);
+            $this->convergeTool($node, 'caddy');
             $this->convergeTool($node, 'php-cli', 'installed');
             $this->convergeTool($node, 'composer', 'installed');
             $this->convergeTool($node, 'laravel-installer', 'installed');

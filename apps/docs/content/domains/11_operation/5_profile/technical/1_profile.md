@@ -143,7 +143,7 @@ before Orbit can apply this command contract.
 - `doctor --family=app` owns app runtime health and app configuration drift.
 - `doctor --family=proxy` owns route and proxy artifact drift, including proxy
   timing marker support required for enriched profile output.
-- `doctor --family=node` owns node reachability and gateway runtime readiness.
+- `doctor --family=node` owns node reachability and gateway service readiness.
 - `profile` failures may point to the owning doctor family, but the command
   must not report app, proxy, or node health as converged.
 

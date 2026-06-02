@@ -54,18 +54,12 @@ final class PhpCliTool extends BaseTool
         return $this->buildScript('update');
     }
 
-    /**
-     * Probes the default `php` binary and its version.
-     * Per-version (8.3/8.4/8.5) presence probing is a known follow-up; doctor verifies the default `php` only for now.
-     *
-     * {@inheritDoc}
-     */
     #[\Override]
     public function probeMetadata(): array
     {
         return [
-            'binary' => 'php',
-            'version_command' => 'php -r "echo PHP_VERSION;"',
+            'binary' => self::INSTALL_ROOT.'/8.5/bin/php',
+            'version_command' => self::INSTALL_ROOT.'/8.5/bin/php -r "echo PHP_VERSION;"',
         ];
     }
 

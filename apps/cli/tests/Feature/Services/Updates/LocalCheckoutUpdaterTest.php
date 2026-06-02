@@ -109,7 +109,7 @@ describe('LocalCheckoutUpdater', function (): void {
             ->and($result['output'])->toBe('Segmentation fault');
     });
 
-    it('installs dependencies inside orbit-runtime', function (): void {
+    it('installs dependencies inside orbit-gateway', function (): void {
         Process::fake(['*' => Process::result(output: 'Installing dependencies', exitCode: 0)]);
         Process::preventStrayProcesses();
 
@@ -124,7 +124,7 @@ describe('LocalCheckoutUpdater', function (): void {
             && $process->command === [
                 'docker',
                 'exec',
-                'orbit-runtime',
+                'orbit-gateway',
                 'composer',
                 '--working-dir=apps/gateway',
                 'install',
@@ -132,7 +132,7 @@ describe('LocalCheckoutUpdater', function (): void {
             ]);
     });
 
-    it('runs local migrations inside orbit-runtime with force', function (): void {
+    it('runs local migrations inside orbit-gateway with force', function (): void {
         Process::fake(['*' => Process::result(output: 'Migrated', exitCode: 0)]);
         Process::preventStrayProcesses();
 
@@ -147,7 +147,7 @@ describe('LocalCheckoutUpdater', function (): void {
             && $process->command === [
                 'docker',
                 'exec',
-                'orbit-runtime',
+                'orbit-gateway',
                 'php',
                 'apps/gateway/artisan',
                 'migrate',
@@ -181,8 +181,8 @@ describe('LocalCheckoutUpdater', function (): void {
         // Offline proof: ORBIT_BINARY_URL=file:// points at a local artifact.
         // This test verifies the three-step contract end-to-end:
         //   1. pullSource          — download binary + chmod + relink + verify
-        //   2. installDependencies — docker exec orbit-runtime composer install
-        //   3. runMigrations       — docker exec orbit-runtime php artisan migrate
+        //   2. installDependencies — docker exec orbit-gateway composer install
+        //   3. runMigrations       — docker exec orbit-gateway php artisan migrate
         Process::fake(['*' => Process::result(output: 'orbit 1.2.3', exitCode: 0)]);
         Process::preventStrayProcesses();
 

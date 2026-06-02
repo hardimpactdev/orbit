@@ -4,20 +4,23 @@ declare(strict_types=1);
 
 namespace App\Services\Schedules;
 
-use App\Contracts\RemoteShell;
 use App\Data\Doctor\DriftEntry;
 use App\Models\Node;
 use App\Models\Schedule;
 use App\Models\ScheduleLock;
 use App\Models\ScheduleRun;
+use App\Services\Gateway\GatewaySwarmManager;
+use App\Services\Gateway\GatewaySwarmStackRenderer;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
+use RuntimeException;
 
 final readonly class SchedulesFixer
 {
+    private const string Stack = 'orbit';
+
     public function __construct(
-        private RemoteShell $remoteShell,
         private NodeRoleAssignments $nodeRoleAssignments = new NodeRoleAssignments,
-        private OrbitSchedulerProgramRenderer $renderer = new OrbitSchedulerProgramRenderer,
+        private GatewaySwarmManager $swarm = new GatewaySwarmManager,
     ) {}
 
     /**
@@ -43,19 +46,24 @@ final readonly class SchedulesFixer
             return $this->action($gatewayNode, $entry, $schedule);
         }
 
-        $script = match ($entry->key) {
-            'schedule.scheduler_missing' => $this->renderer->installScript($gatewayNode),
-            'schedule.scheduler_stopped' => $this->renderer->installScript($gatewayNode),
-            default => null,
-        };
-
-        if ($script === null) {
+        if (! in_array($entry->key, ['schedule.scheduler_missing', 'schedule.scheduler_stopped'], true)) {
             return null;
         }
 
-        $this->remoteShell->run($gatewayNode, $script, ['throw' => true]);
+        $this->restoreGatewayScheduler();
 
         return $this->action($gatewayNode, $entry, $schedule);
+    }
+
+    private function restoreGatewayScheduler(): void
+    {
+        $service = $this->schedulerStackService();
+
+        if ($this->swarm->serviceImage($service) === null) {
+            throw new RuntimeException("Gateway scheduler Swarm service [{$service}] is missing.");
+        }
+
+        $this->swarm->scaleService($service, 1);
     }
 
     private function releaseStuckLock(Node $gatewayNode, DriftEntry $entry, ?Schedule $schedule): void
@@ -121,5 +129,10 @@ final readonly class SchedulesFixer
         return $this->nodeRoleAssignments
             ->activeGatewayNodeQuery()
             ->first();
+    }
+
+    private function schedulerStackService(): string
+    {
+        return self::Stack.'_'.GatewaySwarmStackRenderer::SchedulerService;
     }
 }

@@ -25,7 +25,7 @@ it('waits for operator host-key scan reachability before checkout pinning runs',
         ->and($checkoutSource)->toContain("self::artisanCommand('orbit:internal:pin-node-host-keys --json'");
 });
 
-it('seeds the gateway runtime ssh key into prepared incus downstream clones', function (): void {
+it('seeds the gateway ssh key into prepared incus downstream clones', function (): void {
     $commands = [];
     $host = new class(incusTopologyProviderTestConfig(), $commands) extends IncusHost
     {
@@ -78,11 +78,14 @@ it('keeps incus retarget scripts on node_role assignments instead of legacy node
     $providerSource = file_get_contents(repo_path('apps/e2e/app/E2E/Support/IncusTopologyProvider.php'));
     $builderSource = file_get_contents(repo_path('apps/e2e/app/E2E/Support/IncusTopologyBuilder.php'));
 
-    foreach ([$providerSource, $builderSource] as $source) {
-        expect($source)->not->toContain("'environment' => null")
-            ->and($source)->not->toContain("'role' => 'gateway',\n        'environment' => null")
-            ->and($source)->toContain('\\\\App\\\\Models\\\\NodeRoleAssignment::query()->updateOrCreate');
-    }
+    expect($providerSource)->not->toContain("'environment' => null")
+        ->and($providerSource)->not->toContain("'role' => 'gateway',\n        'environment' => null")
+        ->and($providerSource)->toContain('\\\\App\\\\Models\\\\NodeRoleAssignment::query()->updateOrCreate');
+
+    expect($builderSource)->not->toContain("'environment' => null")
+        ->and($builderSource)->not->toContain("'role' => 'gateway',\n        'environment' => null")
+        ->and($builderSource)->toContain('INSERT INTO node_role')
+        ->and($builderSource)->toContain('ON CONFLICT(node_id, role) DO UPDATE SET');
 });
 
 it('prepares gateway state before source-mounted incus retarget bootstrap', function (): void {

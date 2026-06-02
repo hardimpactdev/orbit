@@ -21,14 +21,14 @@ class NodeGatewayBootstrapper
                     'error' => [
                         'code' => 'gateway_bootstrap_unavailable',
                         'message' => 'Gateway artisan entry point is not available.',
-                        'meta' => ['container' => 'orbit-runtime'],
+                        'meta' => ['container' => 'orbit-gateway'],
                     ],
                 ], JSON_THROW_ON_ERROR),
             ];
         }
 
         $result = Process::forever()->run(
-            ['docker', 'exec', 'orbit-runtime', 'php', 'apps/gateway/artisan', ...$arguments],
+            ['docker', 'exec', 'orbit-gateway', 'php', 'apps/gateway/artisan', ...$arguments],
         );
 
         $output = trim($result->output());
@@ -46,7 +46,7 @@ class NodeGatewayBootstrapper
     private function gatewayRuntimeAvailable(): bool
     {
         return Process::run(
-            ['docker', 'exec', 'orbit-runtime', 'test', '-f', 'apps/gateway/artisan'],
+            ['docker', 'exec', 'orbit-gateway', 'test', '-f', 'apps/gateway/artisan'],
         )->successful();
     }
 }

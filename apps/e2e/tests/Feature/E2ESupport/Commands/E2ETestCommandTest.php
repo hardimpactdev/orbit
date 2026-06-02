@@ -618,6 +618,7 @@ it('limits docker parallel runs to docker eligible e2e files', function (): void
         ->and($generatedPath)->toStartWith('tests/Feature/Commands/.docker-feature-tests/run_')
         ->and($lane['test_files'])->toContain('tests/Feature/Commands/IngressProductionTopologyTest.php')
         ->and($lane['test_files'])->toContain('tests/Feature/Commands/ToolCredentialsTest.php')
+        ->and($lane['test_files'])->toContain('tests/Feature/Commands/UpdateAllDurableOperationTest.php')
         ->and($lane['test_files'])->not->toContain('tests/Feature/Commands/ToolLifecycleHostInitTest.php')
         ->and($lane['test_files'])->not->toContain('tests/Feature/Commands/RuntimeBackendHostInitTest.php');
 });

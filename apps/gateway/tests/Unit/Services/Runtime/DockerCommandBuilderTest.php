@@ -6,17 +6,17 @@ use App\Services\Processes\ProcessDockerContainer;
 use App\Services\Runtime\DockerCommandBuilder;
 use App\Services\Runtime\OrbitCaddyContainer;
 use App\Services\Runtime\OrbitContainerNames;
-use App\Services\Runtime\OrbitRuntimeContainerRenderer;
+use App\Services\Runtime\OrbitGatewayContainerRenderer;
 use App\Services\WebSockets\WebSocketRuntimeContainer;
 use Tests\TestCase;
 
 uses(TestCase::class);
 
 it('builds escaped docker run commands for rendered runtime containers', function (): void {
-    $container = (new OrbitRuntimeContainerRenderer(new OrbitContainerNames))->render(
+    $container = (new OrbitGatewayContainerRenderer(new OrbitContainerNames))->render(
         orbitCheckoutPath: "/Users/nckrtl/Orbit Repo/it's fine",
         gatewayConfigRoot: "/Users/nckrtl/.config/orbit/it's fine",
-        image: "orbit-runtime:sha'abc",
+        image: "orbit-gateway:sha'abc",
         environment: [
             'APP_NAME' => "Orbit's runtime",
         ],
@@ -26,21 +26,21 @@ it('builds escaped docker run commands for rendered runtime containers', functio
 
     expect($command)->toStartWith('docker run -d ')
         ->toContain('--pull '.escapeshellarg('never'))
-        ->toContain('--name '.escapeshellarg('orbit-runtime'))
+        ->toContain('--name '.escapeshellarg('orbit-gateway'))
         ->toContain('--restart '.escapeshellarg('unless-stopped'))
         ->toContain('--network '.escapeshellarg('orbit-network'))
-        ->toContain('--network-alias '.escapeshellarg('orbit-runtime'))
+        ->toContain('--network-alias '.escapeshellarg('orbit-gateway'))
         ->toContain('--env '.escapeshellarg("APP_NAME=Orbit's runtime"))
         ->toContain('--env '.escapeshellarg("ORBIT_CONFIG_ROOT=/Users/nckrtl/.config/orbit/it's fine"))
         ->toContain('--env '.escapeshellarg('ORBIT_SOURCE_PATH=/opt/orbit'))
         ->toContain('--mount '.escapeshellarg("type=bind,source=/Users/nckrtl/Orbit Repo/it's fine,target=/opt/orbit"))
         ->toContain('--mount '.escapeshellarg("type=bind,source=/Users/nckrtl/.config/orbit/it's fine,target=/Users/nckrtl/.config/orbit/it's fine"))
         ->toContain('--mount '.escapeshellarg('type=bind,source=/var/run/docker.sock,target=/var/run/docker.sock'))
-        ->toEndWith(' '.escapeshellarg("orbit-runtime:sha'abc"));
+        ->toEndWith(' '.escapeshellarg("orbit-gateway:sha'abc"));
 });
 
 it('quotes docker mount fields containing csv separators and quotes', function (): void {
-    $container = (new OrbitRuntimeContainerRenderer(new OrbitContainerNames))->render(
+    $container = (new OrbitGatewayContainerRenderer(new OrbitContainerNames))->render(
         orbitCheckoutPath: '/Users/nckrtl/Orbit, "Repo"',
         gatewayConfigRoot: '/Users/nckrtl/.config/Orbit, "Root"',
     );
@@ -82,7 +82,7 @@ it('uses the managed target node namespace for Docker E2E Caddy and websocket co
         );
         $websocket = new WebSocketRuntimeContainer(
             name: 'orbit-e2e-run123-dev-orbit-websocket-app-dev-1',
-            image: 'orbit-runtime:current',
+            image: 'orbit-gateway:current',
             network: 'orbit-e2e-run123',
             restartPolicy: 'unless-stopped',
             backendName: '10.6.0.4',
@@ -162,7 +162,7 @@ it('uses the managed target node namespace without aliases for Docker E2E proces
 
 it('escapes docker lifecycle command arguments', function (): void {
     $builder = new DockerCommandBuilder;
-    $unsafeName = "orbit runtime'; rm -rf /";
+    $unsafeName = "orbit gateway'; rm -rf /";
 
     expect($builder->containerInspect($unsafeName))
         ->toBe('docker container inspect --format '.escapeshellarg('{{json .}}').' '.escapeshellarg($unsafeName))

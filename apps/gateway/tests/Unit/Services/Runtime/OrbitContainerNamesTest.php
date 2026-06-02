@@ -7,30 +7,30 @@ use Tests\TestCase;
 
 uses(TestCase::class);
 
-it('uses deterministic names for Orbit-owned runtime containers and network', function (): void {
+it('uses deterministic names for Orbit-owned gateway containers and network', function (): void {
     $names = new OrbitContainerNames;
 
-    expect($names->runtime())->toBe('orbit-runtime')
+    expect($names->gateway())->toBe('orbit-gateway')
         ->and($names->caddy())->toBe('orbit-caddy')
         ->and($names->network())->toBe('orbit-network');
 });
 
-it('allows the runtime container name to be provided by the topology launcher', function (): void {
-    $previous = getenv('ORBIT_RUNTIME_CONTAINER');
+it('allows the gateway container name to be provided by the topology launcher', function (): void {
+    $previous = getenv('ORBIT_GATEWAY_CONTAINER');
 
-    putenv('ORBIT_RUNTIME_CONTAINER=orbit-e2e-run-gateway-orbit-runtime');
+    putenv('ORBIT_GATEWAY_CONTAINER=orbit-e2e-run-gateway-orbit-gateway');
 
     try {
         $names = new OrbitContainerNames;
 
-        expect($names->runtime())->toBe('orbit-e2e-run-gateway-orbit-runtime')
+        expect($names->gateway())->toBe('orbit-e2e-run-gateway-orbit-gateway')
             ->and($names->caddy())->toBe('orbit-caddy')
             ->and($names->network())->toBe('orbit-network');
     } finally {
         if ($previous === false) {
-            putenv('ORBIT_RUNTIME_CONTAINER');
+            putenv('ORBIT_GATEWAY_CONTAINER');
         } else {
-            putenv("ORBIT_RUNTIME_CONTAINER={$previous}");
+            putenv("ORBIT_GATEWAY_CONTAINER={$previous}");
         }
     }
 });

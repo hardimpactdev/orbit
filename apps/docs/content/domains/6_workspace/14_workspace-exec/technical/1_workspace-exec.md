@@ -153,7 +153,7 @@ match wins over parent-app match so a working directory under
 `apps/docs/.worktrees/docs-feature` resolves to workspace `docs-feature`
 even when app `docs` would also match its source path.
 
-The CLI does not mount every workspace path into `orbit-runtime`, and it
+The CLI does not mount every workspace path into `orbit-gateway`, and it
 does not query local SQLite for gateway-owned workspace or app state when
 running in operator mode. Only the gateway-local CLI invocation reads
 gateway state directly because it IS the gateway.

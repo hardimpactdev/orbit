@@ -233,23 +233,25 @@ describe('node role assignment service', function (): void {
 
         $tools = NodeTool::query()
             ->where('node_id', $node->id)
-            ->whereIn('name', ['caddy', 'php'])
+            ->whereIn('name', ['caddy', 'composer', 'laravel-installer', 'php', 'php-cli'])
             ->orderBy('name')
             ->get();
 
         expect($tools->pluck('name')->all())
-            ->toBe(['caddy', 'php'])
+            ->toBe(['caddy', 'composer', 'laravel-installer', 'php-cli'])
             ->and($tools->mapWithKeys(fn (NodeTool $tool): array => [$tool->name => $tool->expected_state])->all())
             ->toBe([
                 'caddy' => 'running',
-                'php' => 'running',
+                'composer' => 'installed',
+                'laravel-installer' => 'installed',
+                'php-cli' => 'installed',
             ]);
 
         app(NodeRoleAssignmentService::class)->remove($node->refresh(), 'app-dev', force: true);
 
         expect(NodeTool::query()
             ->where('node_id', $node->id)
-            ->whereIn('name', ['caddy', 'php'])
+            ->whereIn('name', ['caddy', 'composer', 'laravel-installer', 'php-cli'])
             ->exists())->toBeFalse();
     });
 
@@ -278,16 +280,18 @@ describe('node role assignment service', function (): void {
 
         $tools = NodeTool::query()
             ->where('node_id', $node->id)
-            ->whereIn('name', ['caddy', 'php', 'supervisor'])
+            ->whereIn('name', ['caddy', 'composer', 'laravel-installer', 'php', 'php-cli', 'supervisor'])
             ->orderBy('name')
             ->get();
 
         expect($tools->pluck('name')->all())
-            ->toBe(['caddy', 'php', 'supervisor'])
+            ->toBe(['caddy', 'composer', 'laravel-installer', 'php-cli', 'supervisor'])
             ->and($tools->mapWithKeys(fn (NodeTool $tool): array => [$tool->name => $tool->expected_state])->all())
             ->toBe([
                 'caddy' => 'running',
-                'php' => 'running',
+                'composer' => 'installed',
+                'laravel-installer' => 'installed',
+                'php-cli' => 'installed',
                 'supervisor' => 'running',
             ]);
     });

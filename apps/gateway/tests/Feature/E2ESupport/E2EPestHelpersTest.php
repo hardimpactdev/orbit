@@ -93,7 +93,7 @@ it('runs provider aware runtime commands through Docker runtime siblings', funct
 
     Process::assertRan(fn ($process): bool => is_string($process->command)
         && str_contains($process->command, "docker exec 'orbit-e2e-run-gateway' sh -lc")
-        && str_contains($process->command, 'orbit-e2e-run-gateway-orbit-runtime')
+        && str_contains($process->command, 'orbit-e2e-run-gateway-orbit-gateway')
         && str_contains($process->command, 'php -S 127.0.0.1:48123'));
 });
 
@@ -249,6 +249,40 @@ it('can share cached topologies across helper calls in one process', function ()
         }
 
     }
+});
+
+it('keeps source-mounted and prepared topology cache entries separate', function (): void {
+    $created = 0;
+    $deleted = 0;
+    $sourceMountedModes = [];
+
+    E2ETopologyCache::fakeResolver(function (E2ETopologyKind $kind, ?array $sshUsers, bool $withGatewayApi, bool $sourceMountedCheckout) use (&$created, &$deleted, &$sourceMountedModes): E2ETopologyLease {
+        $created++;
+        $sourceMountedModes[] = $sourceMountedCheckout;
+
+        return new E2ETopologyLease(
+            kind: $kind,
+            operator: e2ePestDeletableFakeInstance($deleted, $sourceMountedCheckout ? 'source-dev-operator' : 'prepared-operator'),
+            gateway: null,
+            dev: null,
+            prod: null,
+            sshKeyPair: new SshKeyPair('/tmp/id_ed25519', '/tmp/id_ed25519.pub'),
+            rebuild: fn () => throw new RuntimeException('not expected'),
+        );
+    });
+
+    $prepared = E2ETopologyCache::acquire(E2ETopologyKind::Operator);
+    $sourceDev = E2ETopologyCache::acquire(E2ETopologyKind::Operator, sourceMountedCheckout: true);
+    $sourceDevAgain = E2ETopologyCache::acquire(E2ETopologyKind::Operator, sourceMountedCheckout: true);
+
+    expect($prepared->lease())->not->toBe($sourceDev->lease())
+        ->and($sourceDev->lease())->toBe($sourceDevAgain->lease())
+        ->and($created)->toBe(2)
+        ->and($sourceMountedModes)->toBe([false, true]);
+
+    E2ETopologyCache::cleanup();
+
+    expect($deleted)->toBe(2);
 });
 
 it('evicts cached topologies when the process cache limit is reached', function (): void {
@@ -459,6 +493,8 @@ it('does not remap a colocated ingress instance away from its node identity', fu
     ));
 
     expect(e2eDockerDnsAliasPeerIdentityMap($harness))
+        ->toHaveKey('127.0.0.1', '10.6.0.2')
+        ->toHaveKey('::1', '10.6.0.2')
         ->toHaveKey('10.61.0.5', '10.6.0.5')
         ->not->toContain('10.6.0.7');
 });
@@ -622,9 +658,12 @@ it('seeds docker app current-checkout gateway settings through the cli env and r
         expect($dockerCommands)->toHaveCount(2)
             ->and($dockerCommands[0])->toContain("docker exec --user 'orbit' 'orbit-e2e-run-dev' sh -lc")
             ->and($dockerCommands[0])->toContain('/home/orbit/orbit/apps/cli')
+            ->and($dockerCommands[0])->toContain('tmp="$(mktemp)"')
+            ->and($dockerCommands[0])->toContain('sudo install -m 0664')
             ->and($dockerCommands[0])->toContain('ORBIT_GATEWAY_URL')
             ->and($dockerCommands[0])->toContain('ORBIT_GATEWAY_IDENTITY')
             ->and($dockerCommands[0])->toContain('http://gateway')
+            ->and($dockerCommands[0])->not->toContain('.env.tmp')
             ->and($dockerCommands[0])->not->toContain('php apps/gateway/artisan tinker --execute')
             ->and($dockerCommands[0])->not->toContain('LocalGatewaySettings::current()')
             ->and($dockerCommands[1])->toContain("docker exec --user 'orbit' 'orbit-e2e-run-dev' sh -lc")
@@ -678,9 +717,12 @@ it('seeds docker operator current-checkout gateway settings through the cli env 
             ->and($commands)->not->toContain("ssh:orbit:cat '/home/orbit/orbit/storage/app/orbit/ca/root.crt'")
             ->and($dockerCommands[0])->toContain("docker exec --user 'orbit' 'orbit-e2e-run-operator' sh -lc")
             ->and($dockerCommands[0])->toContain('/home/orbit/orbit/apps/cli')
+            ->and($dockerCommands[0])->toContain('tmp="$(mktemp)"')
+            ->and($dockerCommands[0])->toContain('sudo install -m 0664')
             ->and($dockerCommands[0])->toContain('ORBIT_GATEWAY_URL')
             ->and($dockerCommands[0])->toContain('ORBIT_GATEWAY_IDENTITY')
             ->and($dockerCommands[0])->toContain('http://gateway')
+            ->and($dockerCommands[0])->not->toContain('.env.tmp')
             ->and($dockerCommands[0])->not->toContain('php apps/gateway/artisan tinker --execute')
             ->and($dockerCommands[0])->not->toContain('LocalGatewaySettings::current()')
             ->and($dockerCommands[1])->toContain("docker exec --user 'orbit' 'orbit-e2e-run-operator' sh -lc")
@@ -730,9 +772,12 @@ it('seeds docker gateway current-checkout gateway settings through the cli env a
         expect($dockerCommands)->toHaveCount(2)
             ->and($dockerCommands[0])->toContain("docker exec --user 'orbit' 'orbit-e2e-run-gateway' sh -lc")
             ->and($dockerCommands[0])->toContain('/home/orbit/orbit/apps/cli')
+            ->and($dockerCommands[0])->toContain('tmp="$(mktemp)"')
+            ->and($dockerCommands[0])->toContain('sudo install -m 0664')
             ->and($dockerCommands[0])->toContain('ORBIT_GATEWAY_URL')
             ->and($dockerCommands[0])->toContain('ORBIT_GATEWAY_IDENTITY')
             ->and($dockerCommands[0])->toContain('http://gateway')
+            ->and($dockerCommands[0])->not->toContain('.env.tmp')
             ->and($dockerCommands[0])->not->toContain('php apps/gateway/artisan tinker --execute')
             ->and($dockerCommands[1])->toContain("docker exec --user 'orbit' 'orbit-e2e-run-gateway' sh -lc")
             ->and($dockerCommands[1])->toContain('/home/orbit/orbit')

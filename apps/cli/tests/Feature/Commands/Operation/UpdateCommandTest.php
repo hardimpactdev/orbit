@@ -66,19 +66,15 @@ describe('update', function (): void {
             ->and($decoded['success']['data']['update']['status'])->toBe('completed')
             ->and($decoded['success']['data']['update']['steps'])->toBe([
                 ['name' => 'pull_source', 'status' => 'completed'],
-                ['name' => 'install_dependencies', 'status' => 'completed'],
-                ['name' => 'run_migrations', 'status' => 'completed'],
             ]);
     });
 
-    it('runs local update steps in order', function (): void {
+    it('runs only the local binary update step', function (): void {
         [$exitCode] = runCommand($this, 'update', ['--json' => true]);
 
         expect($exitCode)->toBe(0)
             ->and($this->updater->calls)->toBe([
                 'pull_source',
-                'install_dependencies',
-                'run_migrations',
             ]);
     });
 
@@ -88,17 +84,15 @@ describe('update', function (): void {
         expect($exitCode)->toBe(0)
             ->and($output)->toContain('Updating Orbit')
             ->and($output)->toContain('Download binary')
-            ->and($output)->toContain('Install dependencies')
-            ->and($output)->toContain('Run migrations')
             ->and($output)->toContain('Updated local Orbit checkout.')
             ->and($output)->not->toContain('"success"');
     });
 
-    it('renders local_update_failed with failed step metadata and captured output', function (): void {
-        $this->updater->results['install_dependencies'] = [
+    it('renders local_update_failed with binary update output', function (): void {
+        $this->updater->results['pull_source'] = [
             'successful' => false,
             'exit_code' => 1,
-            'output' => 'orbit-runtime container unavailable',
+            'output' => 'binary download failed',
         ];
 
         [$exitCode, $output] = runCommand($this, 'update', ['--json' => true]);
@@ -108,11 +102,11 @@ describe('update', function (): void {
         expect($exitCode)->toBe(1)
             ->and($decoded['error']['code'])->toBe('local_update_failed')
             ->and($decoded['error']['message'])->toBe('Failed to update local Orbit checkout.')
-            ->and($decoded['error']['meta'])->toBe(['failed_step' => 'install_dependencies'])
-            ->and($decoded['error']['data'])->toBe(['output' => 'orbit-runtime container unavailable']);
+            ->and($decoded['error']['meta'])->toBe(['failed_step' => 'pull_source'])
+            ->and($decoded['error']['data'])->toBe(['output' => 'binary download failed']);
     });
 
-    it('renders local_checkout_unavailable with the install path when the binary download fails', function (): void {
+    it('keeps the install path out of binary download failures', function (): void {
         $previous = getenv('ORBIT_INSTALL_PATH');
         putenv('ORBIT_INSTALL_PATH=/tmp/orbit-update-cmd-test');
 
@@ -128,26 +122,27 @@ describe('update', function (): void {
             $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
             expect($exitCode)->toBe(1)
-                ->and($decoded['error']['code'])->toBe('local_checkout_unavailable')
-                ->and($decoded['error']['message'])->toBe('Local Orbit checkout cannot be updated.')
-                ->and($decoded['error']['meta']['path'])->toBe('/tmp/orbit-update-cmd-test');
+                ->and($decoded['error']['code'])->toBe('local_update_failed')
+                ->and($decoded['error']['message'])->toBe('Failed to update local Orbit checkout.')
+                ->and($decoded['error']['meta'])->toBe(['failed_step' => 'pull_source'])
+                ->and($decoded['error']['data'])->toBe(['output' => 'curl: (6) Could not resolve host']);
         } finally {
             $previous === false ? putenv('ORBIT_INSTALL_PATH') : putenv("ORBIT_INSTALL_PATH={$previous}");
         }
     });
 
     it('renders failure prose and captured output in human mode', function (): void {
-        $this->updater->results['run_migrations'] = [
+        $this->updater->results['pull_source'] = [
             'successful' => false,
             'exit_code' => 1,
-            'output' => 'SQLSTATE migration failed',
+            'output' => 'binary verify failed',
         ];
 
         [$exitCode, $output] = runCommand($this, 'update');
 
         expect($exitCode)->toBe(1)
             ->and($output)->toContain('Failed to update local Orbit checkout.')
-            ->and($output)->toContain('SQLSTATE migration failed')
+            ->and($output)->toContain('binary verify failed')
             ->and($output)->not->toContain('"error"');
     });
 });

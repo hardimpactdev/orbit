@@ -16,8 +16,10 @@ use App\Models\Workspace;
 use App\Services\Doctor\DoctorReportRunner;
 use App\Services\Nodes\DevelopmentDnsMappingEnactor;
 use App\Services\Nodes\DevelopmentDnsMappingProbe;
+use App\Services\Runtime\OrbitCaddyContainer;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\File;
+use Illuminate\Support\Facades\Process;
 use Tests\TestCase;
 
 uses(TestCase::class);
@@ -127,6 +129,16 @@ function doctorRunnerUpdateProbeResult(array $overrides = []): RemoteShellResult
         stderr: '',
         durationMs: 1,
     );
+}
+
+function fakeDoctorRunnerSchedulerSwarmService(string $replicas = '1/1'): void
+{
+    Process::preventStrayProcesses();
+    Process::fake([
+        "docker service inspect --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' 'orbit_orbit-scheduler'" => Process::result(output: "ghcr.io/hardimpactdev/orbit-gateway:1.2.3@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n"),
+        "docker service ls --filter 'name=orbit_orbit-scheduler' --format '{{.Replicas}}'" => Process::result(output: "{$replicas}\n"),
+        "docker service scale 'orbit_orbit-scheduler=1'" => Process::result(),
+    ]);
 }
 
 describe('DoctorReportRunner app family extra container detection', function (): void {
@@ -258,9 +270,9 @@ describe('DoctorReportRunner app family extra container detection', function ():
         $shell = new DoctorReportRunnerRemoteShell([
             new RemoteShellResult(exitCode: 0, stdout: "orbit-container-scan:absent\n", stderr: '', durationMs: 1),
             new RemoteShellResult(exitCode: 0, stdout: "orbit-config-dir:present\n/etc/orbit/apps/orphan-docs.ini\n", stderr: '', durationMs: 1),
-            new RemoteShellResult(exitCode: 0, stdout: "orbit-runtime-config-probe:present\n", stderr: '', durationMs: 1),
+            new RemoteShellResult(exitCode: 0, stdout: "orbit-container-config-probe:present\n", stderr: '', durationMs: 1),
             new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
-            new RemoteShellResult(exitCode: 0, stdout: "orbit-runtime-config-probe:absent\n", stderr: '', durationMs: 1),
+            new RemoteShellResult(exitCode: 0, stdout: "orbit-container-config-probe:absent\n", stderr: '', durationMs: 1),
         ]);
         app()->instance(RemoteShell::class, $shell);
 
@@ -287,7 +299,7 @@ describe('DoctorReportRunner app family extra container detection', function ():
         $shell = new DoctorReportRunnerRemoteShell([
             new RemoteShellResult(exitCode: 0, stdout: "orbit-container-scan:absent\n", stderr: '', durationMs: 1),
             new RemoteShellResult(exitCode: 0, stdout: "orbit-config-dir:present\n/etc/orbit/apps/orphan-docs.ini\n", stderr: '', durationMs: 1),
-            new RemoteShellResult(exitCode: 0, stdout: "orbit-runtime-config-probe:error\n", stderr: 'sudo: no tty present', durationMs: 1),
+            new RemoteShellResult(exitCode: 0, stdout: "orbit-container-config-probe:error\n", stderr: 'sudo: no tty present', durationMs: 1),
         ]);
         app()->instance(RemoteShell::class, $shell);
 
@@ -866,11 +878,9 @@ describe('DoctorReportRunner', function (): void {
 
     it('suppresses resolved issues when a supported restore completes', function (): void {
         $gateway = Node::factory()->gateway()->create(['name' => 'gateway-1', 'status' => 'active']);
-        $shell = new DoctorReportRunnerRemoteShell([
-            new RemoteShellResult(exitCode: 0, stdout: "running=true\nrestart_policy=unless-stopped\nscheduler_running=false\n", stderr: '', durationMs: 1),
-            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
-        ]);
+        $shell = new DoctorReportRunnerRemoteShell([]);
         app()->instance(RemoteShell::class, $shell);
+        fakeDoctorRunnerSchedulerSwarmService(replicas: '0/1');
 
         $report = app(DoctorReportRunner::class)->run($gateway, mode: 'restore', families: ['schedule']);
 
@@ -889,9 +899,11 @@ describe('DoctorReportRunner', function (): void {
                 'mode' => 'restore',
                 'status' => 'completed',
             ])
-            ->and($shell->scripts[1])->toContain("sudo docker restart 'orbit-runtime' >/dev/null")
-            ->and($shell->scripts[1])->toContain("sudo docker exec --detach 'orbit-runtime' sh -lc 'exec orbit orbit-scheduler'")
-            ->and($shell->scripts[1])->not->toContain('supervisor');
+            ->and($shell->scripts)->toBe([]);
+
+        Process::assertRan("docker service inspect --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' 'orbit_orbit-scheduler'");
+        Process::assertRan("docker service ls --filter 'name=orbit_orbit-scheduler' --format '{{.Replicas}}'");
+        Process::assertRan("docker service scale 'orbit_orbit-scheduler=1'");
     });
 
     it('installs missing tools through restore mode family dispatch', function (): void {
@@ -921,6 +933,43 @@ describe('DoctorReportRunner', function (): void {
                 'status' => 'completed',
             ])
             ->and($shell->scripts[1])->toContain("docker compose -f '/opt/orbit/docker-compose.yml' pull 'redis'");
+    });
+
+    it('restores missing orbit-caddy containers through restore mode family dispatch', function (): void {
+        $gateway = Node::factory()->gateway()->create(['name' => 'gateway-1', 'status' => 'active']);
+        $node = createDoctorRunnerAppHostNode();
+        $container = OrbitCaddyContainer::forPrivateNode('10.6.0.50');
+        NodeTool::factory()->create([
+            'node_id' => $node->id,
+            'name' => 'caddy',
+            'config' => ['container' => $container->spec()],
+        ]);
+        $shell = new DoctorReportRunnerRemoteShell([
+            new RemoteShellResult(exitCode: 0, stdout: "/usr/bin/docker\tDocker version 27.0.0\tmissing\t\t\t\t\t0\tmissing\t\n", stderr: '', durationMs: 1),
+            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+            new RemoteShellResult(exitCode: 0, stdout: "/usr/bin/docker\tDocker version 27.0.0\trunning\t\t\t\t\t1\trunning\t{$container->specHash()}\n", stderr: '', durationMs: 1),
+        ]);
+        app()->instance(RemoteShell::class, $shell);
+
+        $report = app(DoctorReportRunner::class)->run($node, mode: 'restore', families: ['tool']);
+
+        expect($report['healthy'])->toBeTrue()
+            ->and($report['summary'])->toMatchArray([
+                'issues' => 0,
+                'fixed' => 1,
+                'skipped' => 0,
+            ])
+            ->and($report['issues'])->toBe([])
+            ->and($report['actions'][0])->toMatchArray([
+                'family' => 'tool',
+                'node' => 'app-1',
+                'key' => 'tool.container_missing',
+                'mode' => 'restore',
+                'status' => 'completed',
+            ])
+            ->and($shell->scripts[1])->toContain('docker container inspect')
+            ->and($shell->scripts[1])->toContain('10.6.0.50:80:80')
+            ->and($shell->scripts[1])->toContain('orbit.caddy.spec_hash');
     });
 
     it('suppresses resolved tool version issues when a safe update restore completes', function (): void {
@@ -956,12 +1005,16 @@ describe('DoctorReportRunner', function (): void {
             ->and($shell->scripts[1])->toContain('composer self-update');
     });
 
-    it('keeps the issue visible and records a failed action when a restore throws', function (): void {
+    it('keeps the issue visible and records a failed action when Swarm scheduler restore fails', function (): void {
         $gateway = Node::factory()->gateway()->create(['name' => 'gateway-1', 'status' => 'active']);
-        app()->instance(RemoteShell::class, new DoctorReportRunnerRemoteShell([
-            new RemoteShellResult(exitCode: 0, stdout: "running=true\nrestart_policy=unless-stopped\nscheduler_running=false\n", stderr: '', durationMs: 1),
-            new RuntimeException('docker restart failed'),
-        ]));
+        $shell = new DoctorReportRunnerRemoteShell([]);
+        app()->instance(RemoteShell::class, $shell);
+        Process::preventStrayProcesses();
+        Process::fake([
+            "docker service inspect --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' 'orbit_orbit-scheduler'" => Process::result(output: "ghcr.io/hardimpactdev/orbit-gateway:1.2.3@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n"),
+            "docker service ls --filter 'name=orbit_orbit-scheduler' --format '{{.Replicas}}'" => Process::result(output: "0/1\n"),
+            "docker service scale 'orbit_orbit-scheduler=1'" => Process::result(exitCode: 1, errorOutput: "scheduler scale failed\n"),
+        ]);
 
         $report = app(DoctorReportRunner::class)->run($gateway, mode: 'restore', families: ['schedule']);
 
@@ -983,10 +1036,9 @@ describe('DoctorReportRunner', function (): void {
                 'key' => 'schedule.scheduler_stopped',
                 'mode' => 'restore',
                 'status' => 'failed',
-                'details' => [
-                    'error' => 'docker restart failed',
-                ],
-            ]);
+            ])
+            ->and($report['actions'][0]['details']['error'])->toContain('scheduler scale failed')
+            ->and($shell->scripts)->toBe([]);
     });
 
     it('restores supported node role drift through node family dispatch', function (): void {

@@ -53,7 +53,7 @@ class DockerCommandBuilder
         return 'docker restart '.$this->quote($name);
     }
 
-    public function runDetached(OrbitRuntimeContainer|OrbitCaddyContainer|AppRuntimeContainer|WorkspaceRuntimeContainer|ProcessDockerContainer|WebSocketRuntimeContainer $container): string
+    public function runDetached(OrbitGatewayContainer|OrbitCaddyContainer|AppRuntimeContainer|WorkspaceRuntimeContainer|ProcessDockerContainer|WebSocketRuntimeContainer $container): string
     {
         return $this->buildRunOrCreate('docker run -d', $container);
     }
@@ -68,7 +68,7 @@ class DockerCommandBuilder
         return $this->buildRunOrCreate('docker create', $container);
     }
 
-    private function buildRunOrCreate(string $prefix, OrbitRuntimeContainer|OrbitCaddyContainer|AppRuntimeContainer|WorkspaceRuntimeContainer|ProcessDockerContainer|WebSocketRuntimeContainer $container): string
+    private function buildRunOrCreate(string $prefix, OrbitGatewayContainer|OrbitCaddyContainer|AppRuntimeContainer|WorkspaceRuntimeContainer|ProcessDockerContainer|WebSocketRuntimeContainer $container): string
     {
         $parts = [
             $prefix,
@@ -138,7 +138,7 @@ class DockerCommandBuilder
         return implode(' ', $parts);
     }
 
-    private function networkFor(OrbitRuntimeContainer|OrbitCaddyContainer|AppRuntimeContainer|WorkspaceRuntimeContainer|ProcessDockerContainer|WebSocketRuntimeContainer $container): string
+    private function networkFor(OrbitGatewayContainer|OrbitCaddyContainer|AppRuntimeContainer|WorkspaceRuntimeContainer|ProcessDockerContainer|WebSocketRuntimeContainer $container): string
     {
         $nodeContainer = $this->e2eNodeContainerFor($container);
 
@@ -149,13 +149,13 @@ class DockerCommandBuilder
         return $container->network();
     }
 
-    private function usesE2eNodeNetwork(OrbitRuntimeContainer|OrbitCaddyContainer|AppRuntimeContainer|WorkspaceRuntimeContainer|ProcessDockerContainer|WebSocketRuntimeContainer $container): bool
+    private function usesE2eNodeNetwork(OrbitGatewayContainer|OrbitCaddyContainer|AppRuntimeContainer|WorkspaceRuntimeContainer|ProcessDockerContainer|WebSocketRuntimeContainer $container): bool
     {
         return ($container instanceof OrbitCaddyContainer || $container instanceof ProcessDockerContainer || $container instanceof WebSocketRuntimeContainer)
             && $this->e2eNodeContainerFor($container) !== null;
     }
 
-    private function e2eNodeContainerFor(OrbitRuntimeContainer|OrbitCaddyContainer|AppRuntimeContainer|WorkspaceRuntimeContainer|ProcessDockerContainer|WebSocketRuntimeContainer $container): ?string
+    private function e2eNodeContainerFor(OrbitGatewayContainer|OrbitCaddyContainer|AppRuntimeContainer|WorkspaceRuntimeContainer|ProcessDockerContainer|WebSocketRuntimeContainer $container): ?string
     {
         if ($this->e2eDockerNetwork() === null) {
             return null;

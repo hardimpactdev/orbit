@@ -67,7 +67,7 @@ it('runs nodes with an assigned gateway role through bash without ssh', function
     Process::assertRan(fn (PendingProcess $process): bool => $process->command === "bash -c 'pwd'");
 });
 
-it('runs gateway host work over ssh when dispatched from orbit-runtime', function (): void {
+it('runs gateway host work over ssh when dispatched from orbit-gateway', function (): void {
     Process::preventStrayProcesses();
     Process::fake([
         '*' => Process::result(output: "ok\n"),

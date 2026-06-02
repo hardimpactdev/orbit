@@ -341,10 +341,10 @@ it('stages local Docker image archives in the pushed provisioning bundle when av
 
     expect($remoteBundle)->toBe("{$remoteStage}/orbit-e2e-bundle")
         ->and($commands)->toContain('mktemp -d /tmp/orbit-e2e-stage-XXXXXX')
-        ->and($commandOutput)->toContain("docker image inspect 'orbit-runtime:current'")
-        ->and($commandOutput)->not->toContain("docker pull 'orbit-runtime:current'")
-        ->and($commandOutput)->toContain("docker save 'orbit-runtime:current'")
-        ->and($commandOutput)->toContain("'{$remoteStage}/orbit-e2e-bundle/orbit-runtime-current.tar'")
+        ->and($commandOutput)->toContain("docker image inspect 'orbit-gateway:prepared-current'")
+        ->and($commandOutput)->not->toContain("docker pull 'orbit-gateway:prepared-current'")
+        ->and($commandOutput)->toContain("docker save 'orbit-gateway:prepared-current'")
+        ->and($commandOutput)->toContain("'{$remoteStage}/orbit-e2e-bundle/orbit-gateway-current.tar'")
         ->and($commandOutput)->toContain("docker image inspect 'caddy:2-alpine'")
         ->and($commandOutput)->toContain("docker pull 'caddy:2-alpine'")
         ->and($commandOutput)->toContain("docker save 'caddy:2-alpine'")
@@ -396,14 +396,15 @@ it('passes staged Docker image archives to the in-guest provisioner when present
     $commandOutput = implode("\n", $commands);
 
     expect($commandOutput)
-        ->toContain("test -f '/tmp/orbit-e2e-stage-test/orbit-e2e-bundle/orbit-runtime-current.tar'")
+        ->toContain("test -f '/tmp/orbit-e2e-stage-test/orbit-e2e-bundle/orbit-gateway-current.tar'")
         ->toContain("test -f '/tmp/orbit-e2e-stage-test/orbit-e2e-bundle/caddy-2-alpine.tar'")
         ->toContain("test -f '/tmp/orbit-e2e-stage-test/orbit-e2e-bundle/dnsmasq-latest.tar'")
         ->toContain("test -f '/tmp/orbit-e2e-stage-test/orbit-e2e-bundle/frankenphp-1-php8.5-bookworm.tar'")
         ->toContain("test -f '/tmp/orbit-e2e-stage-test/orbit-e2e-bundle/wg-easy-15.tar'")
         ->toContain("incus file push -r -p '/tmp/orbit-e2e-stage-test/orbit-e2e-bundle' 'orbit-e2e-run-gateway/var/tmp/'")
         ->toContain('--node-kind=')
-        ->toContain('--runtime-image-archive=/var/tmp/orbit-e2e-bundle/orbit-runtime-current.tar')
+        ->toContain('--gateway-image=orbit-gateway:prepared-current')
+        ->toContain('--gateway-image-archive=/var/tmp/orbit-e2e-bundle/orbit-gateway-current.tar')
         ->toContain('--caddy-image-archive=/var/tmp/orbit-e2e-bundle/caddy-2-alpine.tar')
         ->toContain('--dnsmasq-image-archive=/var/tmp/orbit-e2e-bundle/dnsmasq-latest.tar')
         ->toContain('--frankenphp-image-archive=/var/tmp/orbit-e2e-bundle/frankenphp-1-php8.5-bookworm.tar')
@@ -477,8 +478,9 @@ it('does not pass the wg-easy image archive to non-gateway in-guest provisioning
     $commandOutput = implode("\n", $commands);
 
     expect($commandOutput)
-        ->toContain('--runtime-image-archive=/var/tmp/orbit-e2e-bundle/orbit-runtime-current.tar')
         ->toContain('--frankenphp-image-archive=/var/tmp/orbit-e2e-bundle/frankenphp-1-php8.5-bookworm.tar')
+        ->not->toContain('orbit-gateway-current.tar')
+        ->not->toContain('--gateway-image-archive=')
         ->not->toContain('wg-easy-15.tar')
         ->not->toContain('--wg-easy-image-archive=');
 });

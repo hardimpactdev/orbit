@@ -2,38 +2,35 @@
 
 declare(strict_types=1);
 
-use App\Models\Node;
+use App\Services\Gateway\GatewaySwarmStackRenderer;
 use App\Services\Schedules\OrbitSchedulerProgramRenderer;
 
-it('builds the orbit scheduler runtime definition for the gateway container', function (): void {
-    $node = new Node([
-        'name' => 'gateway-1',
-        'user' => 'deploy',
-        'orbit_path' => '/srv/orbit',
-    ]);
+it('builds the orbit scheduler Swarm definition without requiring a node context', function (): void {
+    $parameters = collect((new ReflectionMethod(OrbitSchedulerProgramRenderer::class, 'definition'))->getParameters())
+        ->map(fn ($parameter): string => $parameter->getName())
+        ->all();
 
-    $definition = (new OrbitSchedulerProgramRenderer)->definition($node, sleepSeconds: 60);
+    expect($parameters)->toBe(['sleepSeconds']);
+
+    $definition = (new OrbitSchedulerProgramRenderer)->definition(sleepSeconds: 60);
 
     expect($definition)->toBe([
-        'container' => 'orbit-runtime',
-        'command' => 'orbit orbit-scheduler --sleep-seconds=60',
-        'restart_policy' => 'unless-stopped',
+        'service' => GatewaySwarmStackRenderer::SchedulerService,
+        'stack_service' => 'orbit_orbit-scheduler',
+        'command' => 'php artisan orbit-scheduler --sleep-seconds=60',
+        'replicas' => 1,
+        'update_order' => 'stop-first',
     ]);
 });
 
-it('renders restart scripts for the orbit-runtime scheduler path', function (): void {
-    $node = new Node([
-        'user' => null,
-        'orbit_path' => '/home/orbit/orbit',
-    ]);
-
-    $script = (new OrbitSchedulerProgramRenderer)->installScript($node, sleepSeconds: 60);
+it('renders recovery scripts for the orbit-scheduler Swarm service', function (): void {
+    $script = (new OrbitSchedulerProgramRenderer)->installScript(sleepSeconds: 60);
 
     expect($script)
-        ->toContain("sudo docker inspect 'orbit-runtime' >/dev/null")
-        ->toContain("sudo docker restart 'orbit-runtime' >/dev/null")
-        ->toContain("sudo docker exec --detach 'orbit-runtime' sh -lc 'exec orbit orbit-scheduler --sleep-seconds=60' >/dev/null")
+        ->toContain("sudo docker service inspect 'orbit_orbit-scheduler' >/dev/null")
+        ->toContain("sudo docker service scale 'orbit_orbit-scheduler=1' >/dev/null")
+        ->toContain('orbit-scheduler')
+        ->not->toContain('orbit'.'-runtime')
         ->not->toContain('supervisor')
-        ->not->toContain('/etc/supervisor')
-        ->not->toContain('php artisan orbit-scheduler');
+        ->not->toContain('/etc/supervisor');
 });

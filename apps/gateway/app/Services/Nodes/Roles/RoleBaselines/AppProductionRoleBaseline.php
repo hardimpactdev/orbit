@@ -33,7 +33,8 @@ class AppProductionRoleBaseline implements RoleBaseline
             throw new RuntimeException('The app-prod role requires a reachable host record.');
         }
 
-        $this->convergeTools($node, ['caddy', 'php', 'supervisor']);
+        $this->removeTools($node, ['php']);
+        $this->convergeTools($node, ['caddy', 'supervisor']);
         $this->convergeTool($node, 'php-cli', 'installed');
         $this->convergeTool($node, 'composer', 'installed');
         $this->convergeTool($node, 'laravel-installer', 'installed');

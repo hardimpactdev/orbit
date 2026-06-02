@@ -90,11 +90,12 @@ describe('PhpCliTool', function (): void {
         expect($tool->updateScript())->not->toContain('--only-upgrade');
     });
 
-    it('probeMetadata identifies the php binary', function (): void {
+    it('probeMetadata identifies the Orbit-managed php binary', function (): void {
         $tool = new PhpCliTool;
         $metadata = $tool->probeMetadata();
 
-        expect($metadata['binary'])->toBe('php');
+        expect($metadata['binary'])->toBe('/opt/orbit/php/8.5/bin/php')
+            ->and($metadata['version_command'])->toBe('/opt/orbit/php/8.5/bin/php -r "echo PHP_VERSION;"');
     });
 
     it('is resolvable by slug from the tool catalog', function (): void {

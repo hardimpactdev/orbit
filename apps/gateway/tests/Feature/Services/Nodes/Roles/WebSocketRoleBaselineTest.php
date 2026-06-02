@@ -51,7 +51,7 @@ it('converges websocket backend TLS material and runtime container through the r
         ->and($scripts)->toContain("sudo install -d -m 0755 '/etc/orbit/certs'")
         ->and($scripts)->toContain('release_dir="${runtime_root}/releases/')
         ->and($scripts)->toContain('sudo install -d -m 0755 "$release_dir"')
-        ->and($scripts)->toContain("'orbit-runtime:current' 'composer' 'install'")
+        ->and($scripts)->toContain("'orbit-gateway:current' 'composer' 'install'")
         ->and($scripts)->toContain("docker network inspect 'orbit-network'")
         ->and($scripts)->toContain("docker container inspect --format '{{json .}}' 'orbit-websocket-app-dev-1'")
         ->and($scripts)->toContain("docker run -d --pull 'never' --name 'orbit-websocket-app-dev-1'")

@@ -2,8 +2,8 @@
 
 [Back to Operation commands.](../README.md)
 
-Update the local Orbit installation and every managed Orbit installation selected
-for a fleet update.
+Update the local Orbit CLI, the gateway/scheduler services, and every managed
+Orbit installation selected for a fleet update.
 
 This is the fleet update command. It is useful after a new Orbit release lands
 and the operator needs all Orbit-capable nodes to run the same version. It
@@ -28,26 +28,28 @@ orbit update:all --json
 
 ## What Happens
 
-`update:all` performs a gateway-authorized fleet update:
+`update:all` performs a gateway-authorized durable fleet update:
 
 1. Ask the gateway to authorize gateway-admin authority (`*` on the active gateway node). The gateway identifies the calling peer over WireGuard and applies authorization; the CLI does not classify itself.
-2. Update the caller-local installation and the gateway installation using the
-   same role-aware sequence as [`orbit update`](../1_update/update.md):
-   production installs update the native CLI binary artifact, while
-   source-mounted Docker/Incus development and E2E lanes keep
-   `/usr/local/bin/orbit` pointed at `<source>/apps/cli/orbit` and update by
-   changing the mounted source. Gateway dependencies and migrations run inside
-   gateway `orbit-runtime`.
-3. After the gateway installation succeeds, the gateway updates selected
-   remote app/workload-role installations in parallel, up to four targets at a
-   time. Source-mounted topology nodes update through the mounted source and
-   keep the CLI symlink pointed at `<source>/apps/cli/orbit`. Workload/app-role
-   nodes are gateway clients with role-specific runtime containers; any
-   remaining workload-node `orbit-runtime` usage is compatibility scope
-   outside the source-mounted live topology contract. The gateway is the only
-   node that opens SSH connections to nodes; the CLI never SSHes to other
-   nodes itself.
-4. Report every per-installation result, including partial failures.
+2. Update the caller-local CLI installation using [`orbit update`](../1_update/update.md).
+   Production installs update the native CLI binary artifact; source-dev
+   topologies keep `/usr/local/bin/orbit` pointed at `<source>/apps/cli/orbit`.
+3. Start a gateway operation. The gateway creates an operation row, an ordered
+   event journal, and an immutable update plan keyed by `operation_run_id`.
+   That plan captures the target version, digest-pinned
+   `ghcr.io/hardimpactdev/orbit-gateway` image, GitHub Release asset manifest
+   snapshot, CLI artifact URLs/hashes, and required role image metadata.
+4. The gateway launches a one-shot runner from the target `orbit-gateway` image.
+   The runner acquires expiring leases, replaces `orbit-gateway`, updates
+   `orbit-scheduler`, runs migrations through the target image, then fans out
+   to selected workload nodes.
+5. The CLI follows the operation event journal over Server-Sent Events. If the
+   gateway service is replaced mid-stream, the CLI reconnects with
+   `Last-Event-ID` and replays only events it has not rendered.
+6. The runner performs final verification: gateway health, scheduler health,
+   CLI execution on selected nodes, and required role image availability.
+7. Report every per-installation result and the terminal operation status,
+   including partial failures.
 
 `update:all` updates the local installation, the gateway, and active nodes.
 **Clients other than the caller are never remote update targets.** Each
@@ -55,16 +57,19 @@ client is an operator workstation and updates through `orbit update` on
 that machine. When the gateway is the calling peer, the command therefore
 updates the gateway installation and selected nodes only.
 
-The command does not create nodes, deploy apps, change app runtime artifacts, or
-repair unrelated family drift. Run doctor after the update when the operator
+The command does not create nodes, deploy apps, change app runtime artifacts
+except required Orbit-managed role image updates named in the release manifest,
+or repair unrelated family drift. Run doctor after the update when the operator
 needs convergence verification.
 
 ## Output
 
 Run `orbit update:all` to see per-node progress and a final summary of updated and failed nodes.
 
-Human output shows per-node progress and a final summary. Rows for selected
-targets whose update has not started yet show `Waiting`.
+Human output shows durable operation progress and a final summary. Rows for
+selected targets whose update has not started yet show `Waiting`. Progress is
+rendered from the gateway operation event journal, so reconnecting during
+gateway replacement does not lose already-recorded state.
 
 Use `--json` for machine-readable output. See the
 [JSON renderer contract](technical/6.2_update-all_output-render_json.md) for
@@ -76,13 +81,18 @@ the exact shape.
 - The gateway authorizes the calling WireGuard peer with gateway-admin authority
   (`*` on the active gateway node).
 - The gateway can reach every selected node through its node execution path (SSH via `RemoteShell`).
-- Each selected installation has a writable Orbit install root and a host
-  `orbit` launcher or equivalent node-local Orbit CLI entry point.
+- The gateway can persist operation rows, event journal rows, immutable update
+  plans, and expiring update leases.
+- The gateway can launch a one-shot runner from the target `orbit-gateway`
+  image with the Docker socket and gateway config root mounted.
+- Each selected workload installation has a writable Orbit install root and a
+  host `orbit` launcher or equivalent node-local Orbit CLI entry point.
 - Production artifact update targets require a reachable release source for the
   CLI binary plus permission to write the binary and update the launcher link.
-- Gateway runtime update targets require Docker and gateway `orbit-runtime` for
-  dependency installation and migrations.
-- Source-mounted Docker/Incus development and E2E topology targets require
+- Gateway update targets require Docker Engine/CLI, Docker Swarm, the
+  digest-pinned `orbit-gateway` image or `ORBIT_GATEWAY_IMAGE_ARCHIVE`, the
+  gateway config root, and Orbit CA/certificate material.
+- Source-dev Docker/Incus development and E2E topology targets require
   access to the mounted checkout and keep `/usr/local/bin/orbit` pointed at
   `<source>/apps/cli/orbit`.
 

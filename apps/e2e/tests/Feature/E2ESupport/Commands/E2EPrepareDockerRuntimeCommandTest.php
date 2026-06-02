@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Process;
 
 beforeEach(function (): void {
@@ -13,7 +14,8 @@ it('documents docker runtime image preparation without force', function (): void
 
     $this->artisan('e2e:prepare-docker-runtime')
         ->expectsOutputToContain('orbit-e2e-topology-runtime:prepared-current')
-        ->expectsOutputToContain('orbit-runtime:prepared-current')
+        ->expectsOutputToContain('orbit-gateway:prepared-current')
+        ->expectsOutputToContain('Orbit CLI binary artifact')
         ->expectsOutputToContain('caddy:2-alpine')
         ->expectsOutputToContain('dunglas/frankenphp:1-php8.5-bookworm')
         ->expectsOutputToContain('dunglas/frankenphp:1-php8.4-bookworm')
@@ -25,7 +27,7 @@ it('documents docker runtime image preparation without force', function (): void
     Process::assertNothingRan();
 });
 
-it('builds the orbit runtime images and pulls the official Caddy image when forced', function (): void {
+it('builds the topology and gateway images and pulls the official Caddy image when forced', function (): void {
     $commands = [];
 
     Process::fake(function ($process) use (&$commands) {
@@ -36,7 +38,8 @@ it('builds the orbit runtime images and pulls the official Caddy image when forc
 
     $this->artisan('e2e:prepare-docker-runtime', ['--force' => true])
         ->expectsOutputToContain('Built orbit-e2e-topology-runtime:prepared-current.')
-        ->expectsOutputToContain('Built orbit-runtime:prepared-current.')
+        ->expectsOutputToContain('Built orbit-gateway:prepared-current.')
+        ->expectsOutputToContain('Prepared Orbit CLI binary artifact')
         ->expectsOutputToContain('Pulled caddy:2-alpine.')
         ->expectsOutputToContain('Pulled dunglas/frankenphp:1-php8.5-bookworm.')
         ->expectsOutputToContain('Pulled dunglas/frankenphp:1-php8.4-bookworm.')
@@ -52,9 +55,14 @@ it('builds the orbit runtime images and pulls the official Caddy image when forc
 
     Process::assertRan(fn ($process): bool => is_string($process->command)
         && str_contains($process->command, 'docker build')
-        && str_contains($process->command, 'docker/orbit-runtime/Dockerfile')
-        && str_contains($process->command, 'orbit-runtime:prepared-current')
+        && str_contains($process->command, 'docker/orbit-gateway/Dockerfile')
+        && str_contains($process->command, 'orbit-gateway:prepared-current')
         && str_contains($process->command, repo_path()));
+
+    $retiredRuntimeContext = 'docker/orbit'.'-runtime';
+
+    Process::assertNotRan(fn ($process): bool => is_string($process->command)
+        && str_contains($process->command, $retiredRuntimeContext));
 
     Process::assertRan(fn ($process): bool => is_string($process->command)
         && str_contains($process->command, 'docker pull')
@@ -80,13 +88,62 @@ it('builds the orbit runtime images and pulls the official Caddy image when forc
         && str_contains($process->command, 'docker build')
         && str_contains($process->command, 'caddy:2-alpine'));
 
-    $runtimeBuildCommand = collect($commands)->first(fn (string $command): bool => str_contains($command, 'docker/orbit-runtime/Dockerfile'));
+    $gatewayBuildCommand = collect($commands)->first(fn (string $command): bool => str_contains($command, 'docker/orbit-gateway/Dockerfile'));
 
-    expect($runtimeBuildCommand)
-        ->toContain('orbit-runtime:prepared-current')
+    expect($gatewayBuildCommand)
+        ->toContain('orbit-gateway:prepared-current')
         ->not->toContain('apps/cli/orbit')
         ->and(implode("\n", $commands))
+        ->not->toContain('orbit'.'-runtime')
         ->not->toContain('apps/cli/orbit');
+});
+
+it('records the production artifact manifest with gateway image and cli hash metadata', function (): void {
+    $binary = repo_path('apps/cli/builds/e2e-artifact-prod/orbit-binary');
+
+    if (! is_dir(dirname($binary))) {
+        mkdir(dirname($binary), 0755, true);
+    }
+
+    file_put_contents($binary, 'fake-linux-binary');
+    chmod($binary, 0755);
+
+    Process::fake(function ($process) {
+        if (str_contains((string) $process->command, 'docker image inspect')
+            && str_contains((string) $process->command, 'orbit-gateway:prepared-current')) {
+            return Process::result(output: 'sha256:'.str_repeat('a', 64)."\n");
+        }
+
+        if (str_contains((string) $process->command, 'git rev-parse')) {
+            return Process::result(output: "abc1234\n");
+        }
+
+        return Process::result();
+    });
+
+    $this->withoutMockingConsoleOutput();
+
+    $exitCode = Artisan::call('e2e:prepare-docker-runtime', [
+        '--force' => true,
+        '--json' => true,
+    ]);
+
+    $output = Artisan::output();
+
+    expect($exitCode)->toBe(0);
+
+    $payload = json_decode($output, true, flags: JSON_THROW_ON_ERROR);
+
+    expect($payload['success']['data']['artifacts'])->toMatchArray([
+        'version' => 'abc1234',
+        'gateway_image' => 'orbit-gateway:prepared-current',
+        'gateway_image_id' => 'sha256:'.str_repeat('a', 64),
+        'gateway_image_archive' => 'orbit-gateway-current.tar',
+        'cli_binary' => $binary,
+        'cli_binary_sha256' => hash_file('sha256', $binary),
+    ]);
+
+    @unlink($binary);
 });
 
 it('keeps the Caddy image local so docker run --pull never can start the container on a fresh node', function (): void {
@@ -129,8 +186,8 @@ it('keeps the Docker topology runtime image source-less without a baked orbit la
         ->not->toContain('sudo docker network connect')
         ->not->toContain('--env "ORBIT_HOST_CWD=$PWD"')
         ->not->toContain('--env "ORBIT_SOURCE_PATH=$PWD"')
-        ->not->toContain('--env "ORBIT_RUNTIME_CONTAINER=$runtime_container"')
-        ->not->toContain('${ORBIT_RUNTIME_CONTAINER:-orbit-runtime}')
+        ->not->toContain('--env "ORBIT_'.'RUNTIME_CONTAINER=$runtime_container"')
+        ->not->toContain('${ORBIT_'.'RUNTIME_CONTAINER:-orbit'.'-runtime}')
         ->not->toContain('exec php "$PWD/artisan" "$@"')
         ->not->toContain('exec php "$HOME/orbit/artisan" "$@"');
 });

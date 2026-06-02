@@ -41,6 +41,7 @@ use App\Http\Controllers\Api\NodeRoleRemoveController;
 use App\Http\Controllers\Api\NodeShowController;
 use App\Http\Controllers\Api\NodeStoreController;
 use App\Http\Controllers\Api\NodeUpdateController;
+use App\Http\Controllers\Api\OperationEventStreamController;
 use App\Http\Controllers\Api\PhpRuntimeController;
 use App\Http\Controllers\Api\PhpUseController;
 use App\Http\Controllers\Api\ProcessDestroyController;
@@ -80,6 +81,7 @@ use App\Http\Controllers\Api\ToolStopController;
 use App\Http\Controllers\Api\ToolUpdateBulkController;
 use App\Http\Controllers\Api\ToolUpdateController;
 use App\Http\Controllers\Api\UpdateAllController;
+use App\Http\Controllers\Api\UpdateAllStartController;
 use App\Http\Controllers\Api\VpnClientCreateController;
 use App\Http\Controllers\Api\VpnClientDisableController;
 use App\Http\Controllers\Api\VpnClientEnableController;
@@ -106,6 +108,11 @@ use Illuminate\Support\Facades\Route;
 Route::middleware(CorrelationHeader::class)->group(function (): void {
     Route::get('/status', GatewayStatusController::class)->name('api.status');
     Route::get('/ca/root', CaRootController::class);
+
+    Route::middleware([WireGuardIdentity::class, RequireGrantPermission::class])->group(function (): void {
+        Route::get('/operations/{operationRun}/events', OperationEventStreamController::class)
+            ->name('api.operations.events');
+    });
 
     Route::middleware([WireGuardIdentity::class, RequireGrantPermission::class, LogActivity::class])->group(function (): void {
         Route::get('/activity', ActivityListController::class);
@@ -213,6 +220,7 @@ Route::middleware(CorrelationHeader::class)->group(function (): void {
         Route::post('/tools/{tool}/start', ToolStartController::class);
         Route::post('/tools/{tool}/stop', ToolStopController::class);
         Route::get('/tools/{tool}', ToolShowController::class);
+        Route::post('/update/all/start', UpdateAllStartController::class)->name('api.update.all.start');
         Route::post('/update/all', UpdateAllController::class);
         Route::get('/vpn/clients', VpnClientListController::class);
         Route::post('/vpn/clients', VpnClientCreateController::class);

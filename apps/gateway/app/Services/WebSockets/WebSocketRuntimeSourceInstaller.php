@@ -20,7 +20,7 @@ class WebSocketRuntimeSourceInstaller
 
     public const AppsConfigPath = '/etc/orbit/websocket/apps.php';
 
-    public const DependencyInstallerImage = 'orbit-runtime:current';
+    public const DependencyInstallerImage = 'orbit-gateway:current';
 
     private readonly string $sourcePath;
 
@@ -71,7 +71,7 @@ if ! sudo test -f "$apps_config"; then
     sudo chmod 0644 "$apps_config"
 fi
 
-current_hash="$(sudo cat "${release_dir}/.orbit-runtime-source-hash" 2>/dev/null || true)"
+current_hash="$(sudo cat "${release_dir}/.orbit-websocket-source-hash" 2>/dev/null || true)"
 
 if [ "$current_hash" != "$expected_hash" ]; then
     sudo rm -rf "$release_dir"
@@ -97,7 +97,7 @@ if ! sudo test -f "${release_dir}/vendor/autoload.php"; then
     docker run --rm --pull 'never' --mount "type=bind,source=${release_dir},target=/app" --workdir '/app' %s 'composer' 'install' '--no-dev' '--no-interaction' '--prefer-dist' '--optimize-autoloader' '--no-progress'
 fi
 
-printf '%%s\n' "$expected_hash" | sudo tee "${release_dir}/.orbit-runtime-source-hash" >/dev/null
+printf '%%s\n' "$expected_hash" | sudo tee "${release_dir}/.orbit-websocket-source-hash" >/dev/null
 sudo ln -sfn "releases/${expected_hash}" %s
 SH,
             escapeshellarg(self::RuntimeRoot),

@@ -12,8 +12,9 @@ use App\Models\Schedule;
 use App\Models\ScheduleLock;
 use App\Models\SchedulerState;
 use App\Models\ScheduleRun;
+use App\Services\Gateway\GatewaySwarmManager;
+use App\Services\Gateway\GatewaySwarmStackRenderer;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
-use App\Services\Runtime\OrbitContainerNames;
 use App\Services\RuntimeBackend\RuntimeBackendProbe;
 use Carbon\CarbonInterface;
 use Throwable;
@@ -22,10 +23,12 @@ final readonly class SchedulesProbe
 {
     private const int FreshnessMinutes = 10;
 
+    private const string Stack = 'orbit';
+
     public function __construct(
         private RuntimeBackendProbe $runtimeBackendProbe,
         private NodeRoleAssignments $nodeRoleAssignments = new NodeRoleAssignments,
-        private OrbitContainerNames $containerNames = new OrbitContainerNames,
+        private GatewaySwarmManager $swarm = new GatewaySwarmManager,
     ) {}
 
     public function key(): string
@@ -40,22 +43,23 @@ final readonly class SchedulesProbe
 
     public function introspectGateway(Node $gatewayNode): ProbeSnapshot
     {
-        $runtime = $this->runtimeBackendProbe->remoteShell()->run(
-            $gatewayNode,
-            $this->runtimeInspectionScript(),
-            ['timeout' => 15, 'throw' => false],
-        );
+        $schedulerService = $this->schedulerStackService();
+        $schedulerImage = $this->swarm->serviceImage($schedulerService);
+        $schedulerReplicas = $this->swarm->serviceReplicas($schedulerService);
         $schedulerState = SchedulerState::query()->where('node_id', $gatewayNode->id)->first();
-        $runtimeOutput = trim($runtime->output());
-        $runtimeAvailable = $runtime->successful();
+        $runtimeAvailable = $schedulerImage !== null && $schedulerReplicas !== null;
         $schedulerStatus = $runtimeAvailable
-            ? $this->schedulerStatusFromRuntimeInspection($runtimeOutput)
+            ? $this->schedulerStatusFromReplicas($schedulerReplicas)
             : null;
 
         return new ProbeSnapshot([
             'gateway' => [
                 'runtime_available' => $runtimeAvailable,
-                'runtime_output' => $runtimeOutput,
+                'runtime_output' => $this->runtimeOutput($schedulerService, $schedulerImage, $schedulerReplicas),
+                'scheduler_service' => $schedulerService,
+                'scheduler_image' => $schedulerImage,
+                'scheduler_desired_image' => $this->desiredSchedulerImage(),
+                'scheduler_replicas' => $schedulerReplicas,
                 'scheduler_status' => $schedulerStatus,
                 'heartbeat_at' => $schedulerState?->heartbeat_at?->toISOString(),
             ],
@@ -416,42 +420,47 @@ final readonly class SchedulesProbe
         return $this->nodeRoleAssignments->nodeIsGateway($node);
     }
 
-    private function runtimeInspectionScript(): string
+    private function schedulerStackService(): string
     {
-        $container = escapeshellarg($this->containerNames->runtime());
-        $format = <<<'FORMAT'
-running={{.State.Running}}
-restart_policy={{.HostConfig.RestartPolicy.Name}}
-{{range .Config.Env}}env={{.}}
-{{end}}
-FORMAT;
-
-        return implode("\n", [
-            'set -e',
-            'sudo docker inspect --format '.escapeshellarg($format).' '.$container.' 2>/dev/null',
-            "if sudo docker exec {$container} sh -lc ".escapeshellarg("ps -eo args | grep -F 'artisan orbit-scheduler' | grep -v grep >/dev/null").'; then',
-            "    printf 'scheduler_running=true\n'",
-            'else',
-            "    printf 'scheduler_running=false\n'",
-            'fi',
-        ]);
+        return self::Stack.'_'.GatewaySwarmStackRenderer::SchedulerService;
     }
 
-    private function schedulerStatusFromRuntimeInspection(string $output): string
+    private function schedulerStatusFromReplicas(string $replicas): string
     {
-        if (str_contains($output, 'scheduler_running=true')) {
-            return 'running';
-        }
-
-        if (str_contains($output, 'running=false')) {
+        if (! preg_match('/^(?<running>\d+)\/(?<desired>\d+)$/', trim($replicas), $matches)) {
             return 'stopped';
         }
 
-        if (! str_contains($output, 'running=true')) {
+        $running = (int) $matches['running'];
+        $desired = (int) $matches['desired'];
+
+        if ($desired === 0) {
             return 'missing';
         }
 
+        if ($running === $desired) {
+            return 'running';
+        }
+
         return 'stopped';
+    }
+
+    private function desiredSchedulerImage(): ?string
+    {
+        $image = config('orbit.updates.gateway_image');
+
+        return is_string($image) && trim($image) !== ''
+            ? trim($image)
+            : null;
+    }
+
+    private function runtimeOutput(string $schedulerService, ?string $schedulerImage, ?string $schedulerReplicas): string
+    {
+        return collect([
+            "scheduler_service={$schedulerService}",
+            $schedulerImage === null ? null : "scheduler_image={$schedulerImage}",
+            $schedulerReplicas === null ? null : "scheduler_replicas={$schedulerReplicas}",
+        ])->filter()->implode("\n");
     }
 
     private function dateValue(mixed $value): ?CarbonInterface

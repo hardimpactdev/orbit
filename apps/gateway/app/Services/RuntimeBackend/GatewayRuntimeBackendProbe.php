@@ -16,7 +16,7 @@ use App\Services\Runtime\OrbitContainerNames;
 /**
  * Gateway-only runtime backend probe.
  *
- * Inspects the gateway `orbit-runtime` container state over SSH. This probe
+ * Inspects the gateway `orbit-gateway` container state over SSH. This probe
  * is scoped to gateway nodes only; app-host nodes continue to use the legacy
  * {@see RuntimeBackendProbe} (supervisorctl-based) until a matching app-host
  * baseline + role-aware probe rewiring lands in a later todo.
@@ -51,14 +51,14 @@ final readonly class GatewayRuntimeBackendProbe
     }
 
     /**
-     * Compare the observed orbit-runtime container state against the
+     * Compare the observed orbit-gateway container state against the
      * expectation that it must exist and be running.
      *
      * @return list<DriftEntry>
      */
     public function diff(Node $node, ProbeSnapshot $snapshot): array
     {
-        $runtimeName = $this->containerNames->runtime();
+        $runtimeName = $this->containerNames->gateway();
         $observed = $snapshot->get($runtimeName);
 
         if (! is_array($observed)) {
@@ -76,8 +76,8 @@ final readonly class GatewayRuntimeBackendProbe
                     key: 'node.docker_runtime_unavailable',
                     kind: DriftKind::Divergent,
                     summary: $runtimeStatus === 'no_docker'
-                        ? "Docker CLI is not installed on {$node->name}; orbit-runtime cannot be probed."
-                        : "Docker daemon is unreachable on {$node->name}; orbit-runtime cannot be probed.",
+                        ? "Docker CLI is not installed on {$node->name}; orbit-gateway cannot be probed."
+                        : "Docker daemon is unreachable on {$node->name}; orbit-gateway cannot be probed.",
                     detail: [
                         'container' => $runtimeName,
                         'node' => $node->name,
@@ -93,7 +93,7 @@ final readonly class GatewayRuntimeBackendProbe
                     family: 'node',
                     key: 'node.runtime_container_missing',
                     kind: DriftKind::Missing,
-                    summary: "Gateway runtime container {$runtimeName} is missing on {$node->name}.",
+                    summary: "Gateway container {$runtimeName} is missing on {$node->name}.",
                     detail: [
                         'container' => $runtimeName,
                         'node' => $node->name,
@@ -108,7 +108,7 @@ final readonly class GatewayRuntimeBackendProbe
                     family: 'node',
                     key: 'node.runtime_container_stopped',
                     kind: DriftKind::Divergent,
-                    summary: "Gateway runtime container {$runtimeName} is not running on {$node->name}.",
+                    summary: "Gateway container {$runtimeName} is not running on {$node->name}.",
                     detail: [
                         'container' => $runtimeName,
                         'node' => $node->name,
@@ -122,11 +122,11 @@ final readonly class GatewayRuntimeBackendProbe
 
     private function script(): string
     {
-        $runtimeName = escapeshellarg($this->containerNames->runtime());
+        $runtimeName = escapeshellarg($this->containerNames->gateway());
 
         return sprintf(
             <<<'BASH'
-# orbit-gateway-runtime-probe:container-inspect
+# orbit-gateway-container-probe:container-inspect
 container=%s
 runtime="available"
 exists="false"

@@ -3,13 +3,15 @@
 declare(strict_types=1);
 
 use App\Data\Security\PinnedHostKey;
+use App\Enums\Gateway\GatewayExposureMode;
 use App\Models\Node;
 use App\Models\NodeAccess;
 use App\Models\NodeRoleAssignment;
 use App\Models\WireGuardPeer;
 use App\Services\Ca\OrbitCaService;
 use App\Services\Dns\OrbitDnsServiceInstaller;
-use App\Services\Gateway\GatewayApiRuntimeInstaller;
+use App\Services\Gateway\GatewayImageReference;
+use App\Services\Gateway\GatewaySwarmInstaller;
 use App\Services\Security\SshHostKeyPinner;
 use App\Services\Vpn\WgEasyServiceInstaller;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -43,14 +45,50 @@ describe('orbit:internal:bootstrap-gateway-local', function (): void {
             }
         });
 
-        $this->gatewayApiRuntimeInstaller = new class extends GatewayApiRuntimeInstaller
+        $this->gatewaySwarmInstaller = new class extends GatewaySwarmInstaller
+        {
+            /**
+             * @var list<array{
+             *     wireguardAddress: string,
+             *     image: string,
+             *     exposureMode: string,
+             *     configRoot: string|null,
+             *     wireguardCidr: string,
+             *     wireguardInterface: string,
+             *     imageArchive: string|null
+             * }>
+             */
+            public array $installs = [];
+
+            public function __construct() {}
+
+            public function install(
+                string $wireguardAddress,
+                GatewayImageReference $image,
+                GatewayExposureMode $exposureMode,
+                ?string $configRoot = null,
+                string $wireguardCidr = '10.6.0.0/24',
+                string $wireguardInterface = 'wg-orbit',
+                ?string $imageArchive = null,
+            ): void {
+                $this->installs[] = [
+                    'wireguardAddress' => $wireguardAddress,
+                    'image' => $image->canonical(),
+                    'exposureMode' => $exposureMode->value,
+                    'configRoot' => $configRoot,
+                    'wireguardCidr' => $wireguardCidr,
+                    'wireguardInterface' => $wireguardInterface,
+                    'imageArchive' => $imageArchive,
+                ];
+            }
+        };
+
+        $this->legacyGatewayApiContainerInstaller = new class
         {
             /** @var list<string> */
             public array $addresses = [];
 
-            public function __construct() {}
-
-            public function install(string $wireguardAddress, string $phpVersion = '8.5', string $orbitPath = ''): void
+            public function install(string $wireguardAddress): void
             {
                 $this->addresses[] = $wireguardAddress;
             }
@@ -126,7 +164,7 @@ describe('orbit:internal:bootstrap-gateway-local', function (): void {
             }
         };
 
-        app()->instance(GatewayApiRuntimeInstaller::class, $this->gatewayApiRuntimeInstaller);
+        app()->instance(GatewaySwarmInstaller::class, $this->gatewaySwarmInstaller);
         app()->instance(WgEasyServiceInstaller::class, $this->wgEasyServiceInstaller);
         app()->instance(OrbitDnsServiceInstaller::class, $this->orbitDnsServiceInstaller);
         app()->instance(SshHostKeyPinner::class, $this->hostKeyPinner);
@@ -174,19 +212,29 @@ describe('orbit:internal:bootstrap-gateway-local', function (): void {
                 ])
             ->and($output)->toContain('-----BEGIN CERTIFICATE-----')
             ->and($output)->toContain('-----END CERTIFICATE-----')
-            ->and($this->gatewayApiRuntimeInstaller->addresses)->toBe(['10.6.0.2']);
+            ->and($this->gatewaySwarmInstaller->installs)->toMatchArray([
+                [
+                    'wireguardAddress' => '10.6.0.2',
+                    'image' => 'orbit-gateway:current',
+                    'exposureMode' => 'router-colocated',
+                    'configRoot' => (string) config('orbit.paths.config_root'),
+                    'wireguardCidr' => '10.6.0.0/24',
+                    'wireguardInterface' => 'wg-orbit',
+                    'imageArchive' => null,
+                ],
+            ]);
     });
 
-    it('can skip gateway runtime installation for container topology preparation', function (): void {
+    it('can skip gateway service installation for container topology preparation', function (): void {
         $exitCode = Artisan::call('orbit:internal:bootstrap-gateway-local', [
             'name' => 'gateway-1',
             'wireguard-address' => '10.6.0.2',
-            '--skip-runtime-install' => true,
+            '--skip-gateway-service-install' => true,
         ]);
 
         expect($exitCode)->toBe(0)
             ->and(Node::query()->where('name', 'gateway-1')->exists())->toBeTrue()
-            ->and($this->gatewayApiRuntimeInstaller->addresses)->toBe([])
+            ->and($this->gatewaySwarmInstaller->installs)->toBe([])
             ->and($this->wgEasyServiceInstaller->invocations)->toBe([])
             ->and($this->orbitDnsServiceInstaller->installs)->toBe(0);
     });
@@ -198,19 +246,42 @@ describe('orbit:internal:bootstrap-gateway-local', function (): void {
             ->and($installer)->not->toContain('ln -sf "$TARGET_DIR/artisan" "$LINK_PATH"');
     });
 
-    it('installs wg-easy before orbit-dns after the gateway API runtime', function (): void {
+    it('installs wg-easy before orbit-dns after the gateway API service', function (): void {
         Artisan::call('orbit:internal:bootstrap-gateway-local', [
             'name' => 'gateway-1',
             'wireguard-address' => '10.6.0.2',
             '--public-host' => '203.0.113.10',
         ]);
 
-        expect($this->gatewayApiRuntimeInstaller->addresses)->toBe(['10.6.0.2'])
+        expect($this->gatewaySwarmInstaller->installs)->toHaveCount(1)
             ->and($this->wgEasyServiceInstaller->invocations)->toHaveCount(1)
             ->and($this->wgEasyServiceInstaller->invocations[0]['publicHost'])->toBe('203.0.113.10')
             ->and($this->wgEasyServiceInstaller->invocations[0]['username'])->toBe('orbit')
             ->and($this->wgEasyServiceInstaller->invocations[0]['password'])->not->toBe('')
             ->and($this->orbitDnsServiceInstaller->installs)->toBe(1);
+    });
+
+    it('passes configured gateway image and archive to the Swarm installer', function (): void {
+        config()->set('orbit.updates.gateway_image', 'ghcr.io/hardimpactdev/orbit-gateway:1.2.3@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa');
+        config()->set('orbit.updates.gateway_image_archive', '/var/tmp/orbit-gateway-current.tar');
+
+        Artisan::call('orbit:internal:bootstrap-gateway-local', [
+            'name' => 'gateway-1',
+            'wireguard-address' => '10.6.0.2',
+            '--public-host' => '203.0.113.10',
+        ]);
+
+        expect($this->gatewaySwarmInstaller->installs)->toMatchArray([
+            [
+                'wireguardAddress' => '10.6.0.2',
+                'image' => 'ghcr.io/hardimpactdev/orbit-gateway:1.2.3@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+                'exposureMode' => 'router-colocated',
+                'configRoot' => (string) config('orbit.paths.config_root'),
+                'wireguardCidr' => '10.6.0.0/24',
+                'wireguardInterface' => 'wg-orbit',
+                'imageArchive' => '/var/tmp/orbit-gateway-current.tar',
+            ],
+        ]);
     });
 
     it('persists the wg-easy admin password in the gateway env', function (): void {

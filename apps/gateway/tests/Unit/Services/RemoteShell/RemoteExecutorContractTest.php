@@ -8,7 +8,7 @@ use App\Data\RemoteShell\RemoteShellResult;
 use App\Models\Node;
 use App\Services\RemoteShell\RemoteExecutor;
 use App\Services\RemoteShell\RemoteHostExecutor;
-use App\Services\RemoteShell\RemoteOrbitRuntimeExecutor;
+use App\Services\RemoteShell\RemoteOrbitGatewayExecutor;
 use Illuminate\Contracts\Process\InvokedProcess;
 use Tests\TestCase;
 
@@ -35,7 +35,7 @@ it('defaults RemoteExecutor resolution to the host executor while keeping runtim
     app()->forgetInstance(StartsRemoteShellProcesses::class);
 
     expect(app(RemoteExecutor::class))->toBeInstanceOf(RemoteHostExecutor::class)
-        ->and(app(RemoteOrbitRuntimeExecutor::class))->toBeInstanceOf(RemoteOrbitRuntimeExecutor::class)
+        ->and(app(RemoteOrbitGatewayExecutor::class))->toBeInstanceOf(RemoteOrbitGatewayExecutor::class)
         ->and(app(RemoteShell::class))->toBeInstanceOf(RemoteHostExecutor::class)
         ->and(app(StartsRemoteShellProcesses::class))->toBeInstanceOf(RemoteHostExecutor::class);
 });

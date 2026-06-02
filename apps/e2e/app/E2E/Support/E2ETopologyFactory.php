@@ -13,6 +13,7 @@ final readonly class E2ETopologyFactory
         private ?array $sshUsers = null,
         private ?E2ETopologyCapabilities $capabilityRequirements = null,
         private bool $startGatewayApi = false,
+        private bool $sourceMountedCheckout = false,
     ) {}
 
     public static function fromEnvironment(): self
@@ -26,6 +27,7 @@ final readonly class E2ETopologyFactory
             sshUsers: $this->sshUsers,
             capabilityRequirements: $required,
             startGatewayApi: $this->startGatewayApi,
+            sourceMountedCheckout: $this->sourceMountedCheckout,
         );
     }
 
@@ -38,6 +40,7 @@ final readonly class E2ETopologyFactory
             sshUsers: $sshUsers,
             capabilityRequirements: $this->capabilityRequirements,
             startGatewayApi: $this->startGatewayApi,
+            sourceMountedCheckout: $this->sourceMountedCheckout,
         );
     }
 
@@ -47,6 +50,17 @@ final readonly class E2ETopologyFactory
             sshUsers: $this->sshUsers,
             capabilityRequirements: $this->capabilityRequirements,
             startGatewayApi: true,
+            sourceMountedCheckout: $this->sourceMountedCheckout,
+        );
+    }
+
+    public function withSourceMountedCheckout(): self
+    {
+        return new self(
+            sshUsers: $this->sshUsers,
+            capabilityRequirements: $this->capabilityRequirements,
+            startGatewayApi: $this->startGatewayApi,
+            sourceMountedCheckout: true,
         );
     }
 
@@ -67,10 +81,7 @@ final readonly class E2ETopologyFactory
                 $resolved,
                 E2ERun::id(),
                 $timer,
-                new E2ETopologyAcquisitionOptions(
-                    sshUsers: $this->sshUsers,
-                    startGatewayApi: $this->startGatewayApi,
-                ),
+                $this->acquisitionOptions(),
             );
         } finally {
             $timer->flush('acquire');
@@ -80,5 +91,14 @@ final readonly class E2ETopologyFactory
     public function resolveKind(E2ETopologyKind $kind): E2ETopologyKind
     {
         return $kind;
+    }
+
+    private function acquisitionOptions(): E2ETopologyAcquisitionOptions
+    {
+        return new E2ETopologyAcquisitionOptions(
+            sshUsers: $this->sshUsers,
+            startGatewayApi: $this->startGatewayApi,
+            sourceMountedCheckout: $this->sourceMountedCheckout,
+        );
     }
 }

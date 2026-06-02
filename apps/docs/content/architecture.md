@@ -13,8 +13,8 @@ Client
   -> host orbit launcher
   -> CLI/local-executor artifact
   -> HTTPS over WireGuard
-  -> gateway orbit-caddy
-  -> gateway orbit-runtime
+  -> gateway HTTPS exposure
+  -> orbit-gateway
   -> RemoteShell over WireGuard
   -> node execution lane
 
@@ -72,14 +72,28 @@ The gateway is the central store of everything Orbit knows: apps, nodes, workspa
 
 The gateway exposes the typed API that the CLI talks to. It holds SSH access to other nodes and applies changes on them over that SSH connection. Because the gateway owns the fleet configuration, a drifted node can be restored from it, and a new node can be provisioned from the same configuration that built the previous one.
 
-The gateway API runs in the gateway's `orbit-runtime` container and is exposed
-inside the Orbit network by the gateway's `orbit-caddy` container. The gateway
-runs `orbit-runtime` for the API and scheduler. Workload nodes run the public
-Orbit CLI as a gateway client and run workloads in role-specific runtime
-containers. Any remaining workload-node `orbit-runtime` usage is a
-compatibility concern, not the source-mounted live topology contract. Moving
-the API into Docker does not make the launcher or a local runtime container a
-state writer: durable writes still happen only on the gateway.
+The gateway API runs in the Swarm-managed `orbit-gateway` service, using the
+first-party `ghcr.io/hardimpactdev/orbit-gateway:<version>` FrankenPHP image.
+The image bundles the gateway application code and reads mutable state from the
+gateway config root: `ORBIT_CONFIG_ROOT` for `.env`, `gateway.sqlite`, and
+Orbit CA/certificate material. The gateway scheduler runs as a separate
+one-replica `orbit-scheduler` Swarm service using the same image.
+
+Gateway HTTPS exposure has two modes:
+
+- `router-colocated`: when the gateway node also carries the `router` role,
+  router-owned `orbit-caddy` owns host `tcp/80`, `tcp/443`, and `udp/443`.
+  `orbit-gateway` binds no host ports; router Caddy reaches it through the
+  attachable overlay `orbit-network` by the `orbit-gateway` service alias.
+- `gateway-direct`: when the router role lives elsewhere, `orbit-gateway`
+  publishes gateway HTTPS directly on the gateway host. The gateway leaf
+  certificate still chains to the Orbit root CA, and Docker-aware firewall
+  rules restrict access to the Orbit/WireGuard path.
+
+Workload nodes run the public Orbit CLI as a gateway client and run workloads
+in role-specific runtime containers. Moving the API into Docker does not make
+the launcher or any local runtime container a state writer: durable writes still
+happen only on the gateway.
 
 ### Node roles
 
@@ -98,11 +112,10 @@ The other seven are workload roles applied to nodes in the fleet.
 Application roles use the Docker-first runtime baseline. PHP apps and PHP
 workspaces run in dedicated FrankenPHP containers. Orbit-defined PHP processes
 run as Docker process runtime units by default. Host PHP and PHP-FPM are not
-app or workspace runtime fallbacks. Gateway Laravel/artisan/PDO work on
-Docker-first-managed nodes must enter `orbit-runtime` through the runtime
-execution lane; packaged node-local helpers that need host file access and
-PHP/PDO use the token-gated local executor lane. See
-[Runtime Execution Lanes](execution-lanes.md).
+app or workspace runtime fallbacks. Gateway Laravel/artisan/PDO work runs
+inside the gateway container or the durable update runner. Packaged node-local
+helpers that need host file access and PHP/PDO use the token-gated local
+executor lane. See [Runtime Execution Lanes](execution-lanes.md).
 
 The `websocket` role is a private workload role for Orbit-managed realtime
 infrastructure. A websocket node runs Laravel Reverb in a Docker runtime
@@ -167,17 +180,25 @@ The `dns:*` command family does not edit gateway-owned development DNS or
 router-owned private `.orbit` service names; the tool family does not own DNS
 records.
 
+`wg-easy` and `orbit-dns` are a coupled VPN substrate: `orbit-dns` runs in the
+wg-easy network namespace so VPN clients can resolve node TLDs and private
+Orbit names. The gateway Swarm update does not split them. A follow-up VPN/DNS
+Swarm plan must move `wg-easy` and `orbit-dns` together, or keep both on the
+same non-Swarm substrate until that coupled move is implemented.
+
 ### CLI
 
 The CLI is the product surface for humans, AI agents, and CI. Production
-installs still use the native CLI binary artifact. Source-mounted Docker and
-Incus topologies are development and E2E lanes; in those lanes,
-`/usr/local/bin/orbit` points directly at `<source>/apps/cli/orbit`. The
-gateway API and scheduler still run in `orbit-runtime` on the gateway, but the
-public `orbit` command never dispatches to gateway Artisan. Gateway maintenance
-(migrate, tinker, scheduler, queue, internal bake/build/install commands) uses
+installs use the native CLI binary artifact. Source-mounted Docker and Incus
+topologies are development and E2E lanes; in those lanes, `/usr/local/bin/orbit`
+points directly at `<source>/apps/cli/orbit`. The gateway API runs in the
+Swarm-managed `orbit-gateway` service and the scheduler runs in the
+`orbit-scheduler` service, but the public `orbit` command never dispatches to
+gateway Artisan. Gateway maintenance (migrate, tinker, scheduler, queue,
+internal bake/build/install commands) uses the gateway container entrypoint or
+durable one-shot runner in production; source-development shells may use
 `bin/orbit-gateway-artisan` or direct `php apps/gateway/artisan` from a
-controlled gateway shell.
+controlled checkout.
 
 Public operator commands are owned by the `apps/cli` application. Gateway
 Artisan is for gateway maintenance and internal automation only — database

@@ -229,9 +229,9 @@ it('removes an orphan managed runtime config file when handed an app slug withou
     $node = appsFixerNode();
 
     $shell = new AppsFixerRecordingRemoteShell(
-        new RemoteShellResult(exitCode: 0, stdout: "orbit-runtime-config-probe:present\n", stderr: '', durationMs: 1),
+        new RemoteShellResult(exitCode: 0, stdout: "orbit-container-config-probe:present\n", stderr: '', durationMs: 1),
         new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
-        new RemoteShellResult(exitCode: 0, stdout: "orbit-runtime-config-probe:absent\n", stderr: '', durationMs: 1),
+        new RemoteShellResult(exitCode: 0, stdout: "orbit-container-config-probe:absent\n", stderr: '', durationMs: 1),
     );
 
     $result = buildAppsFixer($shell)->removeRuntimeConfigExtra($node, 'orphan-docs');
@@ -247,7 +247,7 @@ it('reports already_absent without throwing when the orphan runtime config is al
     $node = appsFixerNode();
 
     $shell = new AppsFixerRecordingRemoteShell(
-        new RemoteShellResult(exitCode: 0, stdout: "orbit-runtime-config-probe:absent\n", stderr: '', durationMs: 1),
+        new RemoteShellResult(exitCode: 0, stdout: "orbit-container-config-probe:absent\n", stderr: '', durationMs: 1),
     );
 
     $result = buildAppsFixer($shell)->removeRuntimeConfigExtra($node, 'orphan-docs');
@@ -259,7 +259,7 @@ it('throws when the orphan runtime config cannot be removed so doctor records th
     $node = appsFixerNode();
 
     $shell = new AppsFixerRecordingRemoteShell(
-        new RemoteShellResult(exitCode: 0, stdout: "orbit-runtime-config-probe:present\n", stderr: '', durationMs: 1),
+        new RemoteShellResult(exitCode: 0, stdout: "orbit-container-config-probe:present\n", stderr: '', durationMs: 1),
         new RemoteShellResult(exitCode: 1, stdout: '', stderr: 'permission denied', durationMs: 1),
     );
 
@@ -271,7 +271,7 @@ it('throws from removeRuntimeConfigExtra when the sudo probe fails for an unknow
     $node = appsFixerNode();
 
     $shell = new AppsFixerRecordingRemoteShell(
-        new RemoteShellResult(exitCode: 0, stdout: "orbit-runtime-config-probe:error\n", stderr: 'sudo: no tty present', durationMs: 1),
+        new RemoteShellResult(exitCode: 0, stdout: "orbit-container-config-probe:error\n", stderr: 'sudo: no tty present', durationMs: 1),
     );
 
     expect(fn () => buildAppsFixer($shell)->removeRuntimeConfigExtra($node, 'orphan-docs'))

@@ -220,11 +220,11 @@ final readonly class AppRuntimeContainerManager
 err="$(sudo test -e %1$s 2>&1)"
 ec=$?
 if [ "$ec" = "0" ]; then
-    printf 'orbit-runtime-config-probe:present\n'
+    printf 'orbit-container-config-probe:present\n'
 elif [ "$ec" = "1" ] && [ -z "$err" ]; then
-    printf 'orbit-runtime-config-probe:absent\n'
+    printf 'orbit-container-config-probe:absent\n'
 else
-    printf 'orbit-runtime-config-probe:error\n'
+    printf 'orbit-container-config-probe:error\n'
 fi
 SH,
             escapeshellarg($path),
@@ -236,11 +236,11 @@ SH,
             return 'error';
         }
 
-        if (str_contains($result->stdout, 'orbit-runtime-config-probe:present')) {
+        if (str_contains($result->stdout, 'orbit-container-config-probe:present')) {
             return 'present';
         }
 
-        if (str_contains($result->stdout, 'orbit-runtime-config-probe:absent')) {
+        if (str_contains($result->stdout, 'orbit-container-config-probe:absent')) {
             return 'absent';
         }
 

@@ -13,7 +13,7 @@ describe(ExecutionLane::class, function (): void {
                 ExecutionLane::cases(),
             ))->toBe([
                 'Host',
-                'OrbitRuntime',
+                'OrbitGateway',
                 'LocalExecutor',
             ])
             ->and(array_map(
@@ -21,7 +21,7 @@ describe(ExecutionLane::class, function (): void {
                 ExecutionLane::cases(),
             ))->toBe([
                 'host',
-                'orbit-runtime',
+                'orbit-gateway',
                 'local-executor',
             ]);
     });
@@ -29,9 +29,9 @@ describe(ExecutionLane::class, function (): void {
     it('serializes lanes to their wire values', function (): void {
         expect(json_encode([
             ExecutionLane::Host,
-            ExecutionLane::OrbitRuntime,
+            ExecutionLane::OrbitGateway,
             ExecutionLane::LocalExecutor,
-        ], JSON_THROW_ON_ERROR))->toBe('["host","orbit-runtime","local-executor"]')
+        ], JSON_THROW_ON_ERROR))->toBe('["host","orbit-gateway","local-executor"]')
             ->and(ExecutionLane::from('local-executor'))->toBe(ExecutionLane::LocalExecutor);
     });
 });

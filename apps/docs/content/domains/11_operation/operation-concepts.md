@@ -17,13 +17,23 @@ Product families remain the owners of configuration, reality, issue codes, and r
 
 These terms describe the update workflow and its components.
 
-- **Local update:** `update` sequence that changes only the current Orbit installation. Production installs update the native CLI binary artifact and relink the host launcher; source-mounted Docker/Incus development and E2E lanes keep `/usr/local/bin/orbit` pointed at `<source>/apps/cli/orbit` and update by changing the mounted source. Gateway dependency installation and Orbit migrations run inside gateway `orbit-runtime`.
-- **Fleet update:** `update:all` sequence that updates the caller-local installation and selected active non-local managed Orbit installations.
+- **Local update:** `update` sequence that changes only the current Orbit CLI installation. Production installs update the native CLI binary artifact and relink the host launcher; source-dev Docker/Incus lanes keep `/usr/local/bin/orbit` pointed at `<source>/apps/cli/orbit` and update by changing the mounted source.
+- **Fleet update:** `update:all` sequence that updates the caller-local CLI installation, replaces the gateway/scheduler services through a durable gateway-owned operation, and updates selected active non-local managed Orbit installations.
+- **Operation event journal:** Durable ordered event log for a gateway-owned operation. Followers replay it from the beginning or from `Last-Event-ID`.
+- **Immutable update plan:** Persisted update plan keyed by `operation_run_id`; it captures target version, digest-pinned gateway image, release manifest source/version/snapshot, CLI artifact URLs and hashes, and required role image metadata.
+- **Update lease:** Expiring lease row for mutually exclusive update work, such as `fleet:update-all`, `gateway`, `scheduler`, or an individual node update.
 - **Update target:** One selected Orbit installation in an update workflow.
 - **Update step:** Ordered local installation update action: native CLI artifact update or source-mounted checkout refresh, launcher verification, containerized dependency installation, or migration execution.
 - **Target result:** Per-update-target outcome preserved for renderers.
 
-Fleet update runs through gateway-owned authority, with remote execution via `RemoteShell` — see [tech-stack.md#gateway-to-node](../../tech-stack.md#gateway-to-node). Clients are never remote update targets. A target succeeds only when all required update steps succeed; target results include both successful and failed targets when a fleet update partially fails.
+Fleet update runs through gateway-owned authority. The CLI updates itself first,
+starts a gateway operation, then follows its event journal over SSE. The
+gateway persists the immutable update plan, starts a one-shot runner from the
+target `orbit-gateway` image, and the runner owns gateway replacement,
+scheduled service recovery, workload fan-out, and final verification. Clients
+are never remote update targets. A target succeeds only when all required
+update steps succeed; target results include both successful and failed targets
+when a fleet update partially fails.
 
 ## Doctor
 

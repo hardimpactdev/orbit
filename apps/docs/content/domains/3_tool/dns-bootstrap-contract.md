@@ -38,9 +38,10 @@ The gateway bootstrap runs in this order:
 
 1. WireGuard kernel + interface install.
 2. Root CA materialized.
-3. Gateway `orbit-runtime` container created and started.
-4. Gateway `orbit-caddy` container created, started, and configured to route
-   HTTPS gateway traffic to `orbit-runtime` over the Docker network.
+3. Gateway `orbit-gateway` and `orbit-scheduler` Swarm services created and started.
+4. Router-owned `orbit-caddy` container created, started, and configured to
+   route HTTPS gateway traffic to `orbit-gateway` over `orbit-network` when
+   router and gateway are colocated.
 5. **`wg-easy` container started.**
 6. **`orbit-dns` container started inside wg-easy's network namespace,
    with the initial `dnsmasq.conf` rendered from current fleet state.**

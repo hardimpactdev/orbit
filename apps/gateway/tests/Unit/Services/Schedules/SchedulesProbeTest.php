@@ -15,14 +15,31 @@ use App\Models\ScheduleRun;
 use App\Services\RuntimeBackend\RuntimeBackendProbe;
 use App\Services\Schedules\SchedulesProbe;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Process;
 use Tests\TestCase;
 
 uses(TestCase::class);
 uses(RefreshDatabase::class);
 
+beforeEach(function (): void {
+    Process::preventStrayProcesses();
+});
+
 function scheduleProbeIssue(array $drift, string $key): mixed
 {
     return collect($drift)->first(fn ($entry): bool => $entry->key === $key);
+}
+
+function fakeSchedulerSwarmService(?string $image = null, ?string $replicas = null): void
+{
+    Process::fake([
+        "docker service inspect --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' 'orbit_orbit-scheduler'" => $image === null
+            ? Process::result(exitCode: 1, errorOutput: "no such service: orbit_orbit-scheduler\n")
+            : Process::result(output: "{$image}\n"),
+        "docker service ls --filter 'name=orbit_orbit-scheduler' --format '{{.Replicas}}'" => $replicas === null
+            ? Process::result(exitCode: 1, errorOutput: "no such service: orbit_orbit-scheduler\n")
+            : Process::result(output: "{$replicas}\n"),
+    ]);
 }
 
 function createSchedulesProbeGatewayNode(array $attributes = []): Node
@@ -86,49 +103,79 @@ describe('SchedulesProbe', function (): void {
         expect(scheduleProbeIssue($drift, 'schedule.target_invalid'))->toBeNull();
     });
 
-    it('detects unavailable gateway scheduler runtime backend', function (): void {
+    it('detects unavailable gateway scheduler Swarm service', function (): void {
         $gateway = createSchedulesProbeGatewayNode(['name' => 'gateway-1']);
-        $probe = new SchedulesProbe(new RuntimeBackendProbe(new SchedulesProbeQueuedRemoteShell([
-            new RemoteShellResult(exitCode: 1, stdout: '', stderr: 'orbit-runtime missing', durationMs: 1),
-        ])));
+        $shell = new SchedulesProbeRemoteShell(stdout: "running=true\nrestart_policy=unless-stopped\nscheduler_running=true\n");
+        $probe = new SchedulesProbe(new RuntimeBackendProbe($shell));
+        fakeSchedulerSwarmService();
 
-        $drift = $probe->diffGateway($gateway, $probe->introspectGateway($gateway));
+        $snapshot = $probe->introspectGateway($gateway);
+        $drift = $probe->diffGateway($gateway, $snapshot);
 
-        expect(scheduleProbeIssue($drift, 'schedule.runtime_backend_unavailable')?->kind)->toBe(DriftKind::Missing)
+        expect($shell->scripts)->toBe([])
+            ->and(scheduleProbeIssue($drift, 'schedule.runtime_backend_unavailable')?->kind)->toBe(DriftKind::Missing)
             ->and(scheduleProbeIssue($drift, 'schedule.scheduler_missing'))->toBeNull();
+
+        Process::assertRan("docker service inspect --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' 'orbit_orbit-scheduler'");
     });
 
-    it('detects missing scheduler configuration in the gateway runtime container', function (): void {
+    it('detects missing scheduler configuration in the gateway Swarm service', function (): void {
         $gateway = createSchedulesProbeGatewayNode();
-        $probe = new SchedulesProbe(new RuntimeBackendProbe(new SchedulesProbeQueuedRemoteShell([
-            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
-        ])));
+        $shell = new SchedulesProbeRemoteShell(stdout: "running=true\nrestart_policy=unless-stopped\nscheduler_running=true\n");
+        $probe = new SchedulesProbe(new RuntimeBackendProbe($shell));
+        fakeSchedulerSwarmService(
+            image: 'ghcr.io/hardimpactdev/orbit-gateway:1.2.3@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+            replicas: '0/0',
+        );
 
-        $drift = $probe->diffGateway($gateway, $probe->introspectGateway($gateway));
+        $snapshot = $probe->introspectGateway($gateway);
+        $drift = $probe->diffGateway($gateway, $snapshot);
 
-        expect(scheduleProbeIssue($drift, 'schedule.scheduler_missing')?->kind)->toBe(DriftKind::Missing);
+        expect($shell->scripts)->toBe([])
+            ->and(scheduleProbeIssue($drift, 'schedule.scheduler_missing')?->kind)->toBe(DriftKind::Missing)
+            ->and($snapshot->get('gateway'))->toMatchArray([
+                'scheduler_service' => 'orbit_orbit-scheduler',
+                'scheduler_status' => 'missing',
+            ]);
     });
 
-    it('detects stopped scheduler runtime container on the gateway', function (): void {
+    it('detects stopped scheduler Swarm service replicas on the gateway', function (): void {
         $gateway = createSchedulesProbeGatewayNode();
-        $probe = new SchedulesProbe(new RuntimeBackendProbe(new SchedulesProbeQueuedRemoteShell([
-            new RemoteShellResult(exitCode: 0, stdout: "running=false\nrestart_policy=unless-stopped\nscheduler_running=false\n", stderr: '', durationMs: 1),
-        ])));
+        $shell = new SchedulesProbeRemoteShell(stdout: "running=true\nrestart_policy=unless-stopped\nscheduler_running=true\n");
+        $probe = new SchedulesProbe(new RuntimeBackendProbe($shell));
+        fakeSchedulerSwarmService(
+            image: 'ghcr.io/hardimpactdev/orbit-gateway:1.2.3@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+            replicas: '0/1',
+        );
 
-        $drift = $probe->diffGateway($gateway, $probe->introspectGateway($gateway));
+        $snapshot = $probe->introspectGateway($gateway);
+        $drift = $probe->diffGateway($gateway, $snapshot);
 
-        expect(scheduleProbeIssue($drift, 'schedule.scheduler_stopped')?->kind)->toBe(DriftKind::Divergent);
+        expect($shell->scripts)->toBe([])
+            ->and(scheduleProbeIssue($drift, 'schedule.scheduler_stopped')?->kind)->toBe(DriftKind::Divergent)
+            ->and(scheduleProbeIssue($drift, 'schedule.scheduler_stopped')?->detail)->toHaveKey('observed_status', 'stopped');
     });
 
-    it('detects an absent scheduler process inside a live gateway runtime container', function (): void {
+    it('reads running scheduler state from the Swarm service instead of a runtime-container process', function (): void {
         $gateway = createSchedulesProbeGatewayNode();
-        $probe = new SchedulesProbe(new RuntimeBackendProbe(new SchedulesProbeQueuedRemoteShell([
-            new RemoteShellResult(exitCode: 0, stdout: "running=true\nrestart_policy=unless-stopped\nscheduler_running=false\n", stderr: '', durationMs: 1),
-        ])));
+        $shell = new SchedulesProbeRemoteShell(stdout: "running=true\nrestart_policy=unless-stopped\nscheduler_running=false\n");
+        $probe = new SchedulesProbe(new RuntimeBackendProbe($shell));
+        fakeSchedulerSwarmService(
+            image: 'ghcr.io/hardimpactdev/orbit-gateway:1.2.3@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+            replicas: '1/1',
+        );
 
-        $drift = $probe->diffGateway($gateway, $probe->introspectGateway($gateway));
+        $snapshot = $probe->introspectGateway($gateway);
+        $drift = $probe->diffGateway($gateway, $snapshot);
 
-        expect(scheduleProbeIssue($drift, 'schedule.scheduler_stopped')?->kind)->toBe(DriftKind::Divergent);
+        expect($shell->scripts)->toBe([])
+            ->and(scheduleProbeIssue($drift, 'schedule.scheduler_missing'))->toBeNull()
+            ->and(scheduleProbeIssue($drift, 'schedule.scheduler_stopped'))->toBeNull()
+            ->and($snapshot->get('gateway'))->toMatchArray([
+                'scheduler_service' => 'orbit_orbit-scheduler',
+                'scheduler_image' => 'ghcr.io/hardimpactdev/orbit-gateway:1.2.3@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+                'scheduler_status' => 'running',
+            ]);
     });
 
     it('detects stale gateway heartbeat', function (): void {
@@ -138,13 +185,18 @@ describe('SchedulesProbe', function (): void {
             'heartbeat_at' => now()->subMinutes(20),
             'registry_synced_at' => now()->subMinutes(20),
         ]);
-        $probe = new SchedulesProbe(new RuntimeBackendProbe(new SchedulesProbeQueuedRemoteShell([
-            new RemoteShellResult(exitCode: 0, stdout: "running=true\nrestart_policy=unless-stopped\nscheduler_running=true\n", stderr: '', durationMs: 1),
-        ])));
+        $shell = new SchedulesProbeRemoteShell(stdout: "running=true\nrestart_policy=unless-stopped\nscheduler_running=true\n");
+        $probe = new SchedulesProbe(new RuntimeBackendProbe($shell));
+        fakeSchedulerSwarmService(
+            image: 'ghcr.io/hardimpactdev/orbit-gateway:1.2.3@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+            replicas: '1/1',
+        );
 
-        $drift = $probe->diffGateway($gateway, $probe->introspectGateway($gateway));
+        $snapshot = $probe->introspectGateway($gateway);
+        $drift = $probe->diffGateway($gateway, $snapshot);
 
-        expect(scheduleProbeIssue($drift, 'schedule.heartbeat_stale')?->kind)->toBe(DriftKind::Divergent);
+        expect($shell->scripts)->toBe([])
+            ->and(scheduleProbeIssue($drift, 'schedule.heartbeat_stale')?->kind)->toBe(DriftKind::Divergent);
     });
 
     it('detects stuck gateway schedule locks', function (): void {
@@ -160,13 +212,18 @@ describe('SchedulesProbe', function (): void {
             'locked_at' => now()->subMinutes(30),
             'expires_at' => now()->subMinutes(20),
         ]);
-        $probe = new SchedulesProbe(new RuntimeBackendProbe(new SchedulesProbeQueuedRemoteShell([
-            new RemoteShellResult(exitCode: 0, stdout: "running=true\nrestart_policy=unless-stopped\nscheduler_running=true\n", stderr: '', durationMs: 1),
-        ])));
+        $shell = new SchedulesProbeRemoteShell(stdout: "running=true\nrestart_policy=unless-stopped\nscheduler_running=true\n");
+        $probe = new SchedulesProbe(new RuntimeBackendProbe($shell));
+        fakeSchedulerSwarmService(
+            image: 'ghcr.io/hardimpactdev/orbit-gateway:1.2.3@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+            replicas: '1/1',
+        );
 
-        $drift = $probe->diffGateway($gateway, $probe->introspectGateway($gateway));
+        $snapshot = $probe->introspectGateway($gateway);
+        $drift = $probe->diffGateway($gateway, $snapshot);
 
-        expect(scheduleProbeIssue($drift, 'schedule.lock_stuck')?->kind)->toBe(DriftKind::Divergent);
+        expect($shell->scripts)->toBe([])
+            ->and(scheduleProbeIssue($drift, 'schedule.lock_stuck')?->kind)->toBe(DriftKind::Divergent);
     });
 
     it('detects unreachable schedule targets from the gateway', function (): void {
@@ -200,8 +257,13 @@ describe('SchedulesProbe', function (): void {
     });
 });
 
-final readonly class SchedulesProbeRemoteShell implements RemoteShell
+final class SchedulesProbeRemoteShell implements RemoteShell
 {
+    /**
+     * @var list<string>
+     */
+    public array $scripts = [];
+
     public function __construct(
         private int $exitCode = 0,
         private string $stdout = "running\n",
@@ -213,6 +275,8 @@ final readonly class SchedulesProbeRemoteShell implements RemoteShell
      */
     public function run(Node $node, string $script, array $options = []): RemoteShellResult
     {
+        $this->scripts[] = $script;
+
         return new RemoteShellResult(exitCode: $this->exitCode, stdout: $this->stdout, stderr: $this->stderr, durationMs: 1);
     }
 }

@@ -1,0 +1,10 @@
+{
+    frankenphp
+    auto_https off
+}
+
+:8080 {
+    root * /srv/orbit/apps/gateway/public
+    encode zstd gzip
+    php_server
+}

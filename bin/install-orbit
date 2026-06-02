@@ -9,7 +9,8 @@ GATEWAY_DATABASE_FILE="$CONFIG_ROOT/gateway.sqlite"
 REPO_URL="${ORBIT_REPO_URL:-https://github.com/hardimpactdev/orbit.git}"
 BRANCH="${ORBIT_BRANCH:-main}"
 SOURCE_ARCHIVE=""
-RUNTIME_IMAGE_ARCHIVE="${ORBIT_RUNTIME_IMAGE_ARCHIVE:-}"
+GATEWAY_IMAGE="${ORBIT_GATEWAY_IMAGE:-orbit-gateway:current}"
+GATEWAY_IMAGE_ARCHIVE="${ORBIT_GATEWAY_IMAGE_ARCHIVE:-}"
 CADDY_IMAGE_ARCHIVE="${ORBIT_CADDY_IMAGE_ARCHIVE:-}"
 DNSMASQ_IMAGE_ARCHIVE="${ORBIT_DNSMASQ_IMAGE_ARCHIVE:-}"
 FRANKENPHP_IMAGE_ARCHIVE="${ORBIT_FRANKENPHP_IMAGE_ARCHIVE:-}"
@@ -17,7 +18,7 @@ WG_EASY_IMAGE_ARCHIVE="${ORBIT_WG_EASY_IMAGE_ARCHIVE:-}"
 LINK_PATH="${ORBIT_BIN_PATH:-/usr/local/bin/orbit}"
 USE_SUDO=1
 SKIP_PREREQUISITES="${ORBIT_INSTALL_SKIP_PREREQUISITES:-0}"
-TRUST_WIREGUARD_PROXY_HEADER=0
+APT_LOCK_TIMEOUT_SECONDS="${ORBIT_APT_LOCK_TIMEOUT_SECONDS:-300}"
 VERBOSE=0
 LOG_FILE="${ORBIT_INSTALL_LOG:-}"
 CURRENT_STEP=""
@@ -46,15 +47,16 @@ usage() {
     cat <<'HELP'
 usage: bin/install-orbit [options]
 
-Install the Orbit CLI and its Docker-first runtime prerequisites on the
+Install the Orbit CLI and its Docker-first gateway prerequisites on the
 current host. The installer downloads and links the prebuilt Orbit CLI binary
 (with embedded PHP 8.5) via authenticated `gh release download` (gh is a host
 prerequisite; GH_TOKEN / GITHUB_TOKEN are picked up automatically), sets up
-the Orbit source checkout for the gateway, prepares the orbit-runtime,
-orbit-caddy, and default FrankenPHP runtime images, runs migrations inside a
-disposable orbit-runtime container, and starts the long-running orbit-runtime
-container. No host PHP, no host Composer, no host Caddy, and no host PHP-FPM
-is installed. Set ORBIT_BINARY_URL to override the download with a direct curl
+the Orbit source checkout when requested, prepares the orbit-gateway image and
+gateway dependency images, and runs gateway migrations inside a disposable
+orbit-gateway container. Long-running gateway API and scheduler services are
+converged separately by the gateway Swarm bootstrap path. No host PHP, no host
+Composer, no host Caddy, and no host PHP-FPM is installed. Set ORBIT_BINARY_URL
+to override the download with a direct curl
 (e.g. a local file:// artifact or public mirror).
 
 Options:
@@ -62,8 +64,10 @@ Options:
   --repo=URL                   Git repository to clone when no source archive is provided.
   --branch=NAME                Git branch to clone or update. Defaults to "main".
   --source-archive=PATH        Extract this Orbit source tarball instead of cloning.
-  --runtime-image-archive=PATH Load orbit-runtime:current from this Docker
-                               image archive before building from source.
+  --gateway-image=IMAGE        Gateway image reference to load, pull, or build.
+                               Defaults to orbit-gateway:current.
+  --gateway-image-archive=PATH Load the configured gateway image from this
+                               Docker image archive before pulling/building.
   --caddy-image-archive=PATH   Load caddy:2-alpine from this Docker image
                                archive before falling back to Docker Hub.
   --dnsmasq-image-archive=PATH Load 4km3/dnsmasq:latest from this Docker
@@ -73,16 +77,13 @@ Options:
                                this Docker image archive before falling back
                                to Docker Hub.
   --wg-easy-image-archive=PATH Load ghcr.io/wg-easy/wg-easy:15 from this Docker
-                               image archive before the gateway VPN runtime
+                               image archive before the gateway VPN service
                                starts.
   --bin=PATH                   Symlink path for the orbit executable.
                                Defaults to "/usr/local/bin/orbit".
   --skip-prerequisites         Skip Docker / package prerequisite installation.
                                Intended for prepared E2E images that already
-                               contain runtime packages.
-  --gateway                    Start orbit-runtime with gateway proxy trust
-                               for the orbit-caddy-owned WireGuard peer header.
-                               Pass on first-gateway provisioning.
+                               contain gateway packages.
   --no-sudo                    Run package and symlink commands without sudo.
   --verbose                    Stream underlying command output.
   -h, --help                   Show this help text.
@@ -146,6 +147,14 @@ sudo_shell() {
     run bash -lc "$1"
 }
 
+apt_get_update() {
+    sudo_run apt-get -o "DPkg::Lock::Timeout=${APT_LOCK_TIMEOUT_SECONDS}" update
+}
+
+apt_get_install() {
+    sudo_run env DEBIAN_FRONTEND=noninteractive apt-get -o "DPkg::Lock::Timeout=${APT_LOCK_TIMEOUT_SECONDS}" install -y "$@"
+}
+
 require_command() {
     command -v "$1" >/dev/null 2>&1 || fail validation_failed "required command missing: $1"
 }
@@ -174,15 +183,13 @@ render_plan() {
     printf '  │\n'
     printf '  ○  Install Orbit source\n'
     printf '  │\n'
-    printf '  ○  Prepare runtime Docker images\n'
+    printf '  ○  Prepare gateway Docker images\n'
     printf '  │\n'
-    printf '  ○  Bootstrap Orbit runtime in the container\n'
+    printf '  ○  Bootstrap gateway state in the container\n'
     printf '  │\n'
-    printf '  ○  Run migrations inside orbit-runtime\n'
+    printf '  ○  Run migrations inside orbit-gateway\n'
     printf '  │\n'
-    printf '  ○  Start orbit-runtime container\n'
-    printf '  │\n'
-    printf '  ○  Align orbit checkout ownership\n'
+    printf '  ○  Align Orbit host ownership\n'
     printf '  │\n'
     printf '  ○  Download and link Orbit CLI binary\n'
     printf '  │\n'
@@ -235,8 +242,11 @@ parse_args() {
             --source-archive=*)
                 SOURCE_ARCHIVE="${1#*=}"
                 ;;
-            --runtime-image-archive=*)
-                RUNTIME_IMAGE_ARCHIVE="${1#*=}"
+            --gateway-image=*)
+                GATEWAY_IMAGE="${1#*=}"
+                ;;
+            --gateway-image-archive=*)
+                GATEWAY_IMAGE_ARCHIVE="${1#*=}"
                 ;;
             --caddy-image-archive=*)
                 CADDY_IMAGE_ARCHIVE="${1#*=}"
@@ -255,9 +265,6 @@ parse_args() {
                 ;;
             --skip-prerequisites)
                 SKIP_PREREQUISITES=1
-                ;;
-            --gateway)
-                TRUST_WIREGUARD_PROXY_HEADER=1
                 ;;
             --no-sudo)
                 USE_SUDO=0
@@ -282,8 +289,10 @@ validate_args() {
     [ -n "$TARGET_DIR" ] || fail validation_failed "--path is required"
     [ -n "$LINK_PATH" ] || fail validation_failed "--bin is required"
 
-    if [ -n "$RUNTIME_IMAGE_ARCHIVE" ] && [ ! -f "$RUNTIME_IMAGE_ARCHIVE" ]; then
-        fail validation_failed "runtime image archive not found: $RUNTIME_IMAGE_ARCHIVE"
+    [ -n "$GATEWAY_IMAGE" ] || fail validation_failed "--gateway-image is required"
+
+    if [ -n "$GATEWAY_IMAGE_ARCHIVE" ] && [ ! -f "$GATEWAY_IMAGE_ARCHIVE" ]; then
+        fail validation_failed "gateway image archive not found: $GATEWAY_IMAGE_ARCHIVE"
     fi
 
     if [ -n "$CADDY_IMAGE_ARCHIVE" ] && [ ! -f "$CADDY_IMAGE_ARCHIVE" ]; then
@@ -314,8 +323,8 @@ wait_for_cloud_init() {
 install_ubuntu_prerequisites() {
     wait_for_cloud_init
 
-    sudo_run apt-get update
-    sudo_run env DEBIAN_FRONTEND=noninteractive apt-get install -y \
+    apt_get_update
+    apt_get_install \
         ca-certificates \
         curl \
         git \
@@ -344,8 +353,8 @@ install_docker_engine_ubuntu() {
         sudo_shell "curl -fsSL --retry 3 --retry-delay 2 https://download.docker.com/linux/ubuntu/gpg -o /tmp/docker.gpg.armor && gpg --batch --yes --dearmor -o ${keyring} /tmp/docker.gpg.armor && rm -f /tmp/docker.gpg.armor"
         sudo_run chmod 0644 "${keyring}"
         sudo_shell "printf 'deb [arch=%s signed-by=%s] https://download.docker.com/linux/ubuntu %s stable\n' \"\$(dpkg --print-architecture)\" \"${keyring}\" \"${codename}\" > /etc/apt/sources.list.d/docker.list"
-        sudo_run apt-get update
-        sudo_run env DEBIAN_FRONTEND=noninteractive apt-get install -y \
+        apt_get_update
+        apt_get_install \
             docker-ce \
             docker-ce-cli \
             containerd.io \
@@ -354,10 +363,10 @@ install_docker_engine_ubuntu() {
         sudo_run systemctl enable --now docker
     fi
 
-    grant_runtime_user_docker_access
+    grant_orbit_user_docker_access
 }
 
-grant_runtime_user_docker_access() {
+grant_orbit_user_docker_access() {
     # Add the user that runs Orbit commands to the docker group so steady-state
     # use of `orbit` does not need sudo. The current shell will not gain the
     # new group membership in this session — install-orbit therefore continues
@@ -385,7 +394,7 @@ grant_runtime_user_docker_access() {
 }
 
 # Wrapper around `docker` that picks the right access path for install-time
-# use. The runtime user is added to the docker group above, but that
+# use. The orbit user is added to the docker group above, but that
 # membership is not visible until the next login, so we transparently sudo
 # during install. After install, the host launcher (`bin/orbit`) runs as the
 # user's interactive session and uses the docker group directly.
@@ -472,35 +481,46 @@ install_source() {
     run git clone --branch "$BRANCH" "$REPO_URL" "$TARGET_DIR"
 }
 
-build_runtime_images() {
+build_gateway_images() {
     require_docker
 
-    ensure_runtime_image
+    ensure_gateway_image
     ensure_caddy_image
     ensure_dnsmasq_image
     ensure_frankenphp_image
     ensure_wg_easy_image
 }
 
-ensure_runtime_image() {
-    if docker_cli image inspect "orbit-runtime:current" >/dev/null 2>&1; then
+ensure_gateway_image() {
+    if docker_cli image inspect "$GATEWAY_IMAGE" >/dev/null 2>&1; then
         return
     fi
 
-    if [ -n "$RUNTIME_IMAGE_ARCHIVE" ]; then
-        run docker_cli load -i "$RUNTIME_IMAGE_ARCHIVE"
+    if [ -n "$GATEWAY_IMAGE_ARCHIVE" ]; then
+        run docker_cli load -i "$GATEWAY_IMAGE_ARCHIVE"
 
-        if docker_cli image inspect "orbit-runtime:current" >/dev/null 2>&1; then
+        if docker_cli image inspect "$GATEWAY_IMAGE" >/dev/null 2>&1; then
             return
         fi
 
-        fail validation_failed "runtime image archive did not load orbit-runtime:current: $RUNTIME_IMAGE_ARCHIVE"
+        fail validation_failed "gateway image archive did not load $GATEWAY_IMAGE: $GATEWAY_IMAGE_ARCHIVE"
     fi
 
-    run docker_cli build \
-        -f "$TARGET_DIR/docker/orbit-runtime/Dockerfile" \
-        -t "orbit-runtime:current" \
-        "$TARGET_DIR"
+    case "$GATEWAY_IMAGE" in
+        *@sha256:*|ghcr.io/*)
+            pull_remote_gateway_image
+            ;;
+        *)
+            run docker_cli build \
+                -f "$TARGET_DIR/docker/orbit-gateway/Dockerfile" \
+                -t "$GATEWAY_IMAGE" \
+                "$TARGET_DIR"
+            ;;
+    esac
+}
+
+pull_remote_gateway_image() {
+    run docker_cli pull "$GATEWAY_IMAGE"
 }
 
 ensure_caddy_image() {
@@ -604,8 +624,22 @@ write_env_var() {
     } >>"$LOG_FILE" 2>&1
 }
 
+ensure_gateway_app_key() {
+    local current_app_key
+    local generated_key
+
+    current_app_key="$(grep '^APP_KEY=' "$GATEWAY_ENV_FILE" 2>/dev/null | tail -n 1 | cut -d= -f2- || true)"
+
+    if [ -n "$current_app_key" ]; then
+        return
+    fi
+
+    generated_key="base64:$(head -c 32 /dev/urandom | base64 | tr -d '\n')"
+    write_env_var "APP_KEY" "$generated_key"
+}
+
 ensure_forward_install_image_archives_flag() {
-    if [ -z "$RUNTIME_IMAGE_ARCHIVE" ] && [ -z "$CADDY_IMAGE_ARCHIVE" ] && [ -z "$DNSMASQ_IMAGE_ARCHIVE" ] && [ -z "$FRANKENPHP_IMAGE_ARCHIVE" ]; then
+    if [ -z "$GATEWAY_IMAGE_ARCHIVE" ] && [ -z "$CADDY_IMAGE_ARCHIVE" ] && [ -z "$DNSMASQ_IMAGE_ARCHIVE" ] && [ -z "$FRANKENPHP_IMAGE_ARCHIVE" ]; then
         return
     fi
 
@@ -618,15 +652,16 @@ clear_laravel_bootstrap_cache() {
         "$TARGET_DIR/apps/gateway/bootstrap/cache"/*.php
 }
 
-bootstrap_runtime() {
+bootstrap_gateway_state() {
     require_docker
 
-    run mkdir -p "$CONFIG_ROOT"
+    run mkdir -p "$CONFIG_ROOT" "$CONFIG_ROOT/certs"
 
     if [ ! -f "$GATEWAY_ENV_FILE" ]; then
         run cp "$TARGET_DIR/apps/gateway/.env.example" "$GATEWAY_ENV_FILE"
     fi
 
+    ensure_gateway_app_key
     write_env_var "DB_DATABASE" "$GATEWAY_DATABASE_FILE"
     write_env_var "SESSION_DRIVER" "file"
 
@@ -640,180 +675,21 @@ bootstrap_runtime() {
     run docker_cli run --rm \
         --pull never \
         --env "ORBIT_CONFIG_ROOT=$CONFIG_ROOT" \
-        -v "$TARGET_DIR":/opt/orbit \
-        --mount "type=bind,source=$CONFIG_ROOT,target=$CONFIG_ROOT" \
-        --workdir /opt/orbit/apps/gateway \
-        orbit-runtime:current \
-        composer install --no-dev --no-interaction --prefer-dist --optimize-autoloader
-
-    run docker_cli run --rm \
-        --pull never \
-        --env "ORBIT_CONFIG_ROOT=$CONFIG_ROOT" \
         --env "GATEWAY_ENV_FILE=$GATEWAY_ENV_FILE" \
-        -v "$TARGET_DIR":/opt/orbit \
         --mount "type=bind,source=$CONFIG_ROOT,target=$CONFIG_ROOT" \
-        --workdir /opt/orbit/apps/gateway \
-        orbit-runtime:current \
-        bash -lc "grep -q '^APP_KEY=base64:' \"\$GATEWAY_ENV_FILE\" || php artisan key:generate --force --no-interaction"
+        "$GATEWAY_IMAGE" \
+        artisan --version
 }
 
-container_env_contains() {
-    local needle="$1"
-    local env_output
-
-    # Capture docker output before piping into grep so pipefail does not
-    # turn a SIGPIPE-on-early-grep-match into a false negative.
-    env_output="$(docker_cli container inspect --format '{{range .Config.Env}}{{println .}}{{end}}' orbit-runtime 2>/dev/null || true)"
-
-    grep -qxF -- "$needle" <<<"$env_output"
-}
-
-container_mount_contains() {
-    local expected_source="$1"
-    local expected_destination="$2"
-    local mount_output
-    local normalized_expected_source
-    local normalized_expected_destination
-    local actual_source
-    local actual_destination
-
-    mount_output="$(docker_cli container inspect --format '{{range .Mounts}}{{println .Source}}{{println .Destination}}{{end}}' orbit-runtime 2>/dev/null || true)"
-
-    normalized_expected_source="$(canonicalize_bind_source_path "$expected_source")"
-    normalized_expected_destination="$(normalize_bind_mount_path "$expected_destination")"
-
-    while IFS=$'\t' read -r actual_source actual_destination; do
-        if [ "$(normalize_bind_mount_path "$actual_destination")" = "$normalized_expected_destination" ] && [ "$(canonicalize_bind_source_path "$actual_source")" = "$normalized_expected_source" ]; then
-            return 0
-        fi
-    done < <(paste -d$'\t' - - <<<"$mount_output")
-
-    return 1
-}
-
-normalize_bind_mount_path() {
-    local path="$1"
-
-    if [ "$path" = "/" ]; then
-        printf '/\n'
-        return
-    fi
-
-    printf '%s\n' "${path%/}"
-}
-
-canonicalize_bind_source_path() {
-    local path="$1"
-    local normalized_path
-
-    normalized_path="$(normalize_bind_mount_path "$path")"
-
-    if [ -e "$normalized_path" ]; then
-        (
-            cd "$normalized_path" 2>/dev/null && pwd -P
-        ) || printf '%s\n' "$normalized_path"
-        return
-    fi
-
-    printf '%s\n' "$normalized_path"
-}
-
-prepare_orbit_caddy_host_paths() {
-    # orbit-runtime mounts /etc/caddy and /etc/orbit (rw) so the gateway
-    # bootstrap inside the container can mutate the same host paths that
-    # orbit-caddy reads. Docker `--mount type=bind` requires the source to
-    # exist, so prepare it on the host first.
-    sudo_run install -d -m 0755 \
-        /etc/caddy \
-        /etc/caddy/orbit \
-        /etc/caddy/sites \
-        /etc/orbit \
-        /etc/orbit/certs
-}
-
-start_runtime_container() {
-    require_docker
-    prepare_orbit_caddy_host_paths
-
-    if ! docker_cli network inspect orbit-network >/dev/null 2>&1; then
-        run docker_cli network create \
-            --label "orbit.managed=true" \
-            --label "orbit.network.kind=runtime" \
-            orbit-network
-    fi
-
-    local gateway_proxy_env=()
-    if [ "$TRUST_WIREGUARD_PROXY_HEADER" = "1" ]; then
-        gateway_proxy_env=(--env "ORBIT_TRUST_WIREGUARD_PROXY_HEADER=1")
-    fi
-
-    if docker_cli container inspect orbit-runtime >/dev/null 2>&1; then
-        local needs_recreate=0
-
-        if [ "$TRUST_WIREGUARD_PROXY_HEADER" = "1" ] && [ "$needs_recreate" = "0" ] && ! container_env_contains "ORBIT_TRUST_WIREGUARD_PROXY_HEADER=1"; then
-            printf 'orbit-install: existing orbit-runtime container is missing ORBIT_TRUST_WIREGUARD_PROXY_HEADER=1; recreating to enable WireGuard proxy trust\n' >&2
-            needs_recreate=1
-        fi
-
-        if [ "$needs_recreate" = "0" ] && ! container_env_contains "ORBIT_HOST_PATH=$TARGET_DIR"; then
-            printf 'orbit-install: existing orbit-runtime container is missing ORBIT_HOST_PATH=%s; recreating so host-path-aware operations work\n' "$TARGET_DIR" >&2
-            needs_recreate=1
-        fi
-
-        if [ "$needs_recreate" = "0" ] && ! container_env_contains "ORBIT_CONFIG_ROOT=$CONFIG_ROOT"; then
-            printf 'orbit-install: existing orbit-runtime container is missing ORBIT_CONFIG_ROOT=%s; recreating so config-root-aware operations work\n' "$CONFIG_ROOT" >&2
-            needs_recreate=1
-        fi
-
-        if [ "$needs_recreate" = "0" ] && ! container_mount_contains "$CONFIG_ROOT" "$CONFIG_ROOT"; then
-            printf 'orbit-install: existing orbit-runtime container is missing config-root bind mount %s:%s; recreating so config-root state is mounted\n' "$CONFIG_ROOT" "$CONFIG_ROOT" >&2
-            needs_recreate=1
-        fi
-
-        if [ "$needs_recreate" = "1" ]; then
-            run docker_cli rm -f orbit-runtime
-        else
-            local running
-            running="$(docker_cli container inspect --format '{{.State.Running}}' orbit-runtime 2>/dev/null || true)"
-
-            if [ "$running" != "true" ]; then
-                run docker_cli start orbit-runtime
-            fi
-
-            return
-        fi
-    fi
-
-    run docker_cli run -d \
-        --pull never \
-        --name orbit-runtime \
-        --restart unless-stopped \
-        --network orbit-network \
-        --network-alias orbit-runtime \
-        --label "orbit.managed=true" \
-        --label "orbit.container.kind=runtime" \
-        --env "ORBIT_CONFIG_ROOT=$CONFIG_ROOT" \
-        --env "ORBIT_SOURCE_PATH=/opt/orbit" \
-        --env "ORBIT_HOST_PATH=$TARGET_DIR" \
-        "${gateway_proxy_env[@]}" \
-        --mount "type=bind,source=$TARGET_DIR,target=/opt/orbit" \
-        --mount "type=bind,source=$CONFIG_ROOT,target=$CONFIG_ROOT" \
-        --mount "type=bind,source=/var/run/docker.sock,target=/var/run/docker.sock" \
-        --mount "type=bind,source=/etc/caddy,target=/etc/caddy" \
-        --mount "type=bind,source=/etc/orbit,target=/etc/orbit" \
-        orbit-runtime:current
-}
-
-run_migrations_in_container() {
+run_migrations_in_gateway_image() {
     require_docker
 
     run docker_cli run --rm \
         --pull never \
         --env "ORBIT_CONFIG_ROOT=$CONFIG_ROOT" \
-        -v "$TARGET_DIR":/opt/orbit \
         --mount "type=bind,source=$CONFIG_ROOT,target=$CONFIG_ROOT" \
-        orbit-runtime:current \
-        php /opt/orbit/apps/gateway/artisan migrate --force --no-interaction --path=/opt/orbit/apps/gateway/database/migrations --realpath
+        "$GATEWAY_IMAGE" \
+        migrate --no-interaction --path=/srv/orbit/apps/gateway/database/migrations --realpath
 }
 
 # Detect the host OS and architecture and set ORBIT_CLI_OS_ARCH to the
@@ -908,14 +784,18 @@ link_orbit() {
 # only guarantees the file exists with correct ownership and permissions so the importer
 # does not race with first-CLI-run.
 #
-# The gateway-runtime self-trust store (LocalGatewaySettings in apps/gateway SQLite) is
-# written separately by the gateway-runtime container during bootstrap per decision D17.
+# The gateway container self-trust store (LocalGatewaySettings in apps/gateway SQLite) is
+# written separately by the gateway container during bootstrap per decision D17.
 # These two writers are documented as the dual-writer contract; they describe overlapping
 # state from different OS-user perspectives.
 write_cli_config_skeleton() {
     local target_home
+    local config_parent
     local config_dir
     local config_file
+    local tmp_file
+    local owner
+    local group
 
     target_home="${ORBIT_CONFIG_HOME:-$HOME}"
 
@@ -924,18 +804,26 @@ write_cli_config_skeleton() {
         return 0
     fi
 
+    owner="$(id -un)"
+    group="$(id -gn)"
+    config_parent="${target_home}/.config"
     config_dir="${target_home}/.config/orbit"
     config_file="${config_dir}/config.json"
 
+    sudo_run install -d -m 0755 -o "$owner" -g "$group" "$config_parent"
+    sudo_run install -d -m 0700 -o "$owner" -g "$group" "$config_dir"
+
     if [ -e "$config_file" ]; then
         # Idempotent: never overwrite an existing config (D11 importer contract).
+        sudo_run chown "$owner:$group" "$config_file"
+        sudo_run chmod 0600 "$config_file"
+
         return 0
     fi
 
-    run mkdir -p "$config_dir"
-    run chmod 0700 "$config_dir"
+    tmp_file="$(mktemp "${TMPDIR:-/tmp}/orbit-cli-config.XXXXXX")"
 
-    cat > "$config_file" <<'JSON'
+    cat > "$tmp_file" <<'JSON'
 {
     "schema_version": 1,
     "active_gateway": null,
@@ -944,7 +832,8 @@ write_cli_config_skeleton() {
     "meta": {"imported_from": null, "imported_at": null}
 }
 JSON
-    run chmod 0600 "$config_file"
+    sudo_run install -m 0600 -o "$owner" -g "$group" "$tmp_file" "$config_file"
+    run rm -f "$tmp_file"
 }
 
 verify_install() {
@@ -958,11 +847,8 @@ verify_install() {
         fail validation_failed "Orbit CLI binary did not respond to --version: $LINK_PATH"
     fi
 
-    local running
-    running="$(docker_cli container inspect --format '{{.State.Running}}' orbit-runtime 2>/dev/null || true)"
-
-    if [ "$running" != "true" ]; then
-        fail validation_failed "orbit-runtime container is not running after install"
+    if ! docker_cli image inspect "$GATEWAY_IMAGE" >/dev/null 2>&1; then
+        fail validation_failed "gateway image is not available after install: $GATEWAY_IMAGE"
     fi
 }
 
@@ -991,6 +877,21 @@ finalize_target_ownership() {
     sudo_run chown -R "$parent_owner" "$TARGET_DIR"
 }
 
+finalize_config_root_ownership() {
+    local owner
+    local group
+
+    if [ ! -d "$CONFIG_ROOT" ]; then
+        return
+    fi
+
+    owner="$(id -un)"
+    group="$(id -gn)"
+
+    sudo_run chown -R "$owner:$group" "$CONFIG_ROOT"
+    sudo_run chmod 0700 "$CONFIG_ROOT"
+}
+
 main() {
     parse_args "$@"
 
@@ -1011,24 +912,21 @@ main() {
     install_source
     complete_step
 
-    start_step "Prepare runtime Docker images"
-    build_runtime_images
+    start_step "Prepare gateway Docker images"
+    build_gateway_images
     complete_step
 
-    start_step "Bootstrap Orbit runtime in the container"
-    bootstrap_runtime
+    start_step "Bootstrap gateway state in the container"
+    bootstrap_gateway_state
     complete_step
 
-    start_step "Run migrations inside orbit-runtime"
-    run_migrations_in_container
+    start_step "Run migrations inside orbit-gateway"
+    run_migrations_in_gateway_image
     complete_step
 
-    start_step "Start orbit-runtime container"
-    start_runtime_container
-    complete_step
-
-    start_step "Align orbit checkout ownership"
+    start_step "Align Orbit host ownership"
     finalize_target_ownership
+    finalize_config_root_ownership
     complete_step
 
     start_step "Download and link Orbit CLI binary"

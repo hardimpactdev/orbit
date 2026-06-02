@@ -152,7 +152,7 @@ final class E2ECurrentCheckout
                 '#!/usr/bin/env bash',
                 'set -euo pipefail',
                 'checkout='.escapeshellarg($checkout),
-                'runtime_container="${ORBIT_RUNTIME_CONTAINER:-orbit-runtime}"',
+                'runtime_container="${ORBIT_GATEWAY_CONTAINER:-orbit-gateway}"',
                 'runtime_workdir="${ORBIT_HOST_CWD:-$PWD}"',
                 'env_args=(',
                 '    --env "ORBIT_HOST_CWD=${runtime_workdir}"',
@@ -807,7 +807,7 @@ PHP;
 
     private static function dockerRuntimeContainerName(E2EInstance $instance): string
     {
-        return $instance->name().'-orbit-runtime';
+        return $instance->name().'-orbit-gateway';
     }
 
     private static function cloneCachedCheckoutCommand(string $basePath, string $remotePath): string

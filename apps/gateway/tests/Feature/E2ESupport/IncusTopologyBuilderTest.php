@@ -149,6 +149,31 @@ it('does not delete unsuffixed Incus templates when replacing prepared topology 
     });
 });
 
+it('does not erase trusted gateway CA config when switching the operator to the WireGuard URL', function (): void {
+    $source = file_get_contents(repo_path('apps/e2e/app/E2E/Support/IncusTopologyBuilder.php'));
+
+    expect($source)->toBeString();
+
+    preg_match('/private function useWireGuardGatewayUrl\(.*?private function writeOperatorCliConfig/s', (string) $source, $matches);
+
+    expect($matches[0] ?? '')
+        ->toContain('local_gateway_settings')
+        ->toContain('gateway_url')
+        ->not->toContain('writeOperatorCliConfig($operator, $key)');
+});
+
+it('does not seed database and redis fixture state in the plain app-dev provisioning stage', function (): void {
+    $source = file_get_contents(repo_path('apps/e2e/app/E2E/Support/IncusTopologyBuilder.php'));
+
+    expect($source)->toBeString();
+
+    preg_match('/private function buildDevelopmentAppStage\(.*?private function buildProductionAppStage/s', (string) $source, $matches);
+
+    expect($matches[0] ?? '')
+        ->toContain('dev.node-new')
+        ->not->toContain('seedAppdevDatabaseAndRedis');
+});
+
 it('rebuilds prerequisites when no complete reusable base exists', function (): void {
     $config = E2EConfig::fromEnvironment();
     $deleted = [];
@@ -303,12 +328,14 @@ it('builds full prepared roles from the gateway base with parallel downstream ba
             ->and($commandOutput)->toContain('PID_BAKE_AGENT=$!')
             ->and($commandOutput)->toContain('set -euo pipefail;')
             ->and($commandOutput)->toContain('PID_BAKE_DEV=$!;')
-            ->and($commandOutput)->toContain("incus exec 'orbit-template-gateway-base' -- sh -lc 'sudo -iu orbit")
-            ->and($commandOutput)->toContain('php apps/gateway/artisan tinker --execute=')
+            ->and($commandOutput)->toContain("incus exec 'orbit-template-gateway-base' -- sh -lc")
+            ->and($commandOutput)->toContain('orbit-gateway:current')
+            ->and($commandOutput)->toContain('artisan tinker --execute=')
             ->and($commandOutput)->not->toContain('cd /home/orbit/orbit && php artisan')
-            ->and($commandOutput)->toContain('php apps/gateway/artisan orbit:internal:bake-app-node')
-            ->and($commandOutput)->toContain('php apps/gateway/artisan orbit:internal:bake-ingress-node')
-            ->and($commandOutput)->toContain('php apps/gateway/artisan orbit:internal:bake-agent-node')
+            ->and($commandOutput)->not->toContain('cd /home/orbit/orbit && php apps/gateway/artisan orbit:internal:bake')
+            ->and($commandOutput)->toContain('artisan orbit:internal:bake-app-node')
+            ->and($commandOutput)->toContain('artisan orbit:internal:bake-ingress-node')
+            ->and($commandOutput)->toContain('artisan orbit:internal:bake-agent-node')
             ->and($commandOutput)->toContain('app-dev-1')
             ->and($commandOutput)->toContain('app-prod-1')
             ->and($commandOutput)->toContain('agent-1')
@@ -389,7 +416,9 @@ it('builds full prepared websocket roles on the app-dev node', function (): void
                 fn ($template) => $template->role->toBe('agent')->snapshot->toBe('clean-operator_gateway_app-dev_app-prod_agent_websocket-base'),
             )
             ->and($commandOutput)->not->toContain("incus launch 'orbit-base-ubuntu-26.04' 'orbit-template-websocket-base'")
-            ->and($commandOutput)->toContain('php apps/gateway/artisan orbit:internal:bake-websocket-node')
+            ->and($commandOutput)->toContain('orbit-gateway:current')
+            ->and($commandOutput)->toContain('artisan orbit:internal:bake-websocket-node')
+            ->and($commandOutput)->not->toContain('cd /home/orbit/orbit && php apps/gateway/artisan orbit:internal:bake-websocket-node')
             ->and($commandOutput)->toContain('app-dev-1')
             ->and($commandOutput)->toContain('10.201.0.12')
             ->and($commandOutput)->toContain('--wireguard-address=')
@@ -650,8 +679,10 @@ it('builds prepared topology templates through staged internal gateway baking', 
         ->and($commandOutput)->toContain('ca_pem_path')
         ->and($commandOutput)->toContain('/etc/wireguard/wg-orbit.conf')
         ->and($commandOutput)->not->toContain('ListenPort = 51820')
-        ->and($commandOutput)->toContain('php apps/gateway/artisan orbit:internal:bootstrap-gateway-local gateway')
-        ->and($commandOutput)->toContain('php apps/gateway/artisan tinker --execute=')
+        ->and($commandOutput)->toContain('orbit-gateway:current')
+        ->and($commandOutput)->toContain('artisan orbit:internal:bootstrap-gateway-local gateway')
+        ->and($commandOutput)->toContain('artisan tinker --execute=')
+        ->and($commandOutput)->not->toContain('/tmp/orbit-e2e-appdev-database-redis.php')
         ->and($commandOutput)->not->toContain('cd /home/orbit/orbit && php artisan')
         ->and($commandOutput)->toContain('app-dev-1')
         ->and($commandOutput)->toContain('10.201.0.12')
@@ -659,9 +690,10 @@ it('builds prepared topology templates through staged internal gateway baking', 
         ->and($commandOutput)->toContain('provisioner')
         ->and($commandOutput)->toContain('app-prod-1')
         ->and($commandOutput)->toContain('10.201.0.13')
-        ->and($commandOutput)->toContain('php apps/gateway/artisan orbit:internal:bake-app-node')
-        ->and($commandOutput)->toContain('php apps/gateway/artisan orbit:internal:bake-ingress-node')
-        ->and($commandOutput)->toContain('php apps/gateway/artisan orbit:internal:bake-agent-node')
+        ->and($commandOutput)->not->toContain('cd /home/orbit/orbit && php apps/gateway/artisan orbit:internal:bake')
+        ->and($commandOutput)->toContain('artisan orbit:internal:bake-app-node')
+        ->and($commandOutput)->toContain('artisan orbit:internal:bake-ingress-node')
+        ->and($commandOutput)->toContain('artisan orbit:internal:bake-agent-node')
         ->and($commandOutput)->toContain('--role=app-dev')
         ->and($commandOutput)->toContain('--role=app-prod')
         ->and($commandOutput)->toContain('--ingress-node=')

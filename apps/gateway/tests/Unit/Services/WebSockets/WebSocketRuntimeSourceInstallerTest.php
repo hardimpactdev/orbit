@@ -31,7 +31,7 @@ it('installs the WebSocket Reverb runtime source through a Docker-first script',
         ->and($script)->toContain('release_dir="${runtime_root}/releases/')
         ->and($script)->toContain('sudo install -d -m 0755 "$release_dir"')
         ->and($script)->toContain('sudo ln -sfn "releases/${expected_hash}" \''.WebSocketRuntimeContainer::SourceHostPath."'")
-        ->and($script)->toContain("'orbit-runtime:current'")
+        ->and($script)->toContain("'orbit-gateway:current'")
         ->and($script)->toContain("'composer' 'install' '--no-dev' '--no-interaction' '--prefer-dist' '--optimize-autoloader' '--no-progress'")
         ->and($script)->toContain('vendor/autoload.php')
         ->and($script)->toContain('app_key="base64:$(head -c 32 /dev/urandom | base64')

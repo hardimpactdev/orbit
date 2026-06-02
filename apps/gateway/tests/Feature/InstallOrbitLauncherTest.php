@@ -21,9 +21,22 @@ describe('install-orbit always-cli launcher contract', function (): void {
         expect($installer)
             ->toContain('write_cli_config_skeleton')
             ->toContain('.config/orbit/config.json')
-            ->toContain('chmod 0700')
-            ->toContain('chmod 0600')
+            ->toContain('-m 0700')
+            ->toContain('-m 0600')
             ->toContain('"schema_version": 1');
+    });
+
+    it('writes the CLI config skeleton through sudo install so container-owned config roots are repaired', function (): void {
+        $installer = File::get(repo_path('bin/install-orbit'));
+
+        expect($installer)
+            ->toContain('owner="$(id -un)"')
+            ->toContain('group="$(id -gn)"')
+            ->toContain('sudo_run install -d -m 0755 -o "$owner" -g "$group" "$config_parent"')
+            ->toContain('sudo_run install -d -m 0700 -o "$owner" -g "$group" "$config_dir"')
+            ->toContain('tmp_file="$(mktemp "${TMPDIR:-/tmp}/orbit-cli-config.XXXXXX")"')
+            ->toContain('sudo_run install -m 0600 -o "$owner" -g "$group" "$tmp_file" "$config_file"')
+            ->not->toContain('cat > "$config_file"');
     });
 
     it('dispatches public commands through the source CLI entrypoint', function (): void {

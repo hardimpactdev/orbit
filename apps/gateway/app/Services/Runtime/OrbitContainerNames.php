@@ -15,15 +15,15 @@ class OrbitContainerNames
         return new self($nodeScope);
     }
 
-    public function runtime(): string
+    public function gateway(): string
     {
-        $container = getenv('ORBIT_RUNTIME_CONTAINER');
+        $container = getenv('ORBIT_GATEWAY_CONTAINER');
 
         if (is_string($container) && $container !== '') {
             return $container;
         }
 
-        return 'orbit-runtime';
+        return 'orbit-gateway';
     }
 
     public function caddy(): string

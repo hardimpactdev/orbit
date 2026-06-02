@@ -165,7 +165,7 @@ describe('tool catalog definitions', function (): void {
             ->and($imageCheckLineIndex)->toBeLessThan($dockerRunLineIndex)
             ->and($script)
             ->toContain('orbit-caddy: local Docker image caddy:2-alpine is missing')
-            ->toContain('orbit:internal:build-runtime-images')
+            ->toContain('orbit:internal:build-gateway-images')
             ->toContain('docker pull caddy:2-alpine')
             ->toContain('exit 69');
     });

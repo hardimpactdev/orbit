@@ -67,8 +67,20 @@ final readonly class ProgressEventStreamEmitter
     /**
      * @param  array<string, mixed>  $payload
      */
-    private function emit(string $event, array $payload): void
+    public function event(string $event, array $payload, ?int $id = null): void
     {
+        $this->emit($event, $payload, $id);
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     */
+    private function emit(string $event, array $payload, ?int $id = null): void
+    {
+        if ($id !== null) {
+            echo "id: {$id}\n";
+        }
+
         echo "event: {$event}\n";
         echo 'data: '.json_encode($payload, JSON_THROW_ON_ERROR)."\n\n";
         $this->flush();
@@ -76,7 +88,7 @@ final readonly class ProgressEventStreamEmitter
 
     private function flush(): void
     {
-        if ($this->sapi !== 'fpm-fcgi' && $this->sapi !== 'cli-server') {
+        if (! in_array($this->sapi, ['fpm-fcgi', 'cli-server', 'frankenphp'], true)) {
             return;
         }
 

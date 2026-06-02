@@ -21,7 +21,7 @@ The proxy family owns these facts:
 - adoption facts for explicitly selected observed routes that can safely become
   custom proxy configuration.
 
-App health belongs to `app`, workspace health belongs to `workspace`, gateway runtime readiness belongs to `node`, and tool runtime readiness belongs to `tool`. The proxy family verifies ingress artifacts, not the health of the service behind the route.
+App health belongs to `app`, workspace health belongs to `workspace`, gateway service readiness belongs to `node`, and tool runtime readiness belongs to `tool`. The proxy family verifies ingress artifacts, not the health of the service behind the route.
 
 `orbit-caddy` is the Docker container that mounts and serves proxy route artifacts. Proxy doctor probes its container readiness on each serving node because routes cannot be served when the container is missing or stopped. Container spec drift, image version drift, and tool lifecycle policy remain owned by the [`tool` family](../3_tool/catalog/caddy.md).
 

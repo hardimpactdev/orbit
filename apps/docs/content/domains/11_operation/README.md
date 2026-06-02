@@ -26,10 +26,11 @@ These rules constrain all commands in the operation domain.
   point. Production/artifact installs update and relink the native CLI binary
   artifact. Source-mounted Docker/Incus development and E2E topologies keep
   `/usr/local/bin/orbit` pointed at `<source>/apps/cli/orbit` and update by
-  changing the mounted source. Gateway dependency and migration steps run in
-  gateway `orbit-runtime`; host PHP and host Composer are not supported update
-  fallbacks, and those gateway runtime steps do not apply universally to
-  app/workload nodes.
+  changing the mounted source. Gateway service replacement is a durable
+  `update:all` operation that uses a digest-pinned `orbit-gateway` image and
+  one-shot runner. Host PHP and host Composer are not supported gateway update
+  fallbacks; production host PHP/Composer is required only on app-role nodes
+  where app-source workflows need it.
 - Updates do not replace doctor.
 - For drift or runtime readiness questions after an update, run the doctor family that owns the changed artifact.
 - `doctor` owns cross-family verification and resolution. Verify mode is read-only. `--fix` enables interactive resolution; `--restore` and `--adopt` force a single direction non-interactively.

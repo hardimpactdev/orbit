@@ -7,6 +7,6 @@ namespace Orbit\Core\Enums;
 enum ExecutionLane: string
 {
     case Host = 'host';
-    case OrbitRuntime = 'orbit-runtime';
+    case OrbitGateway = 'orbit-gateway';
     case LocalExecutor = 'local-executor';
 }

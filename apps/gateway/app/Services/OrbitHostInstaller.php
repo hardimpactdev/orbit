@@ -31,7 +31,9 @@ class OrbitHostInstaller
     {
         $remotePrefix = self::PreferredTempDirectory.'/orbit-install-'.Str::lower(Str::random(8));
         $localArchive = $this->buildSourceArchive();
-        $localEnvironment = $this->buildExecutorEnvironmentFile($this->pinnedNode);
+        $localBinary = $this->forwardedBinaryPath();
+        $remoteBinary = $localBinary !== null ? "{$remotePrefix}-orbit-binary" : null;
+        $localEnvironment = $this->buildExecutorEnvironmentFile($this->pinnedNode, $remoteBinary);
         $localImageArchives = $this->buildForwardedImageArchives();
         $remoteArchive = "{$remotePrefix}.tar.gz";
         $remoteInstaller = "{$remotePrefix}.sh";
@@ -81,6 +83,18 @@ class OrbitHostInstaller
                 );
             }
 
+            if ($localBinary !== null && $remoteBinary !== null) {
+                $binaryUpload = $this->scp($localBinary, $executionUser, $host, $remoteBinary);
+
+                if (! $binaryUpload->successful()) {
+                    return new OrbitHostInstallResult(
+                        successful: false,
+                        output: $binaryUpload->output(),
+                        errorOutput: $binaryUpload->errorOutput(),
+                    );
+                }
+            }
+
             foreach ($localImageArchives as $key => $localImageArchive) {
                 $imageUpload = $this->scp($localImageArchive, $executionUser, $host, $remoteImageArchives[$key]);
 
@@ -96,6 +110,7 @@ class OrbitHostInstaller
             if (! $this->pinnedNode instanceof Node && $sshUser !== $runtimeUser) {
                 $chownPaths = array_merge(
                     [$remoteInstaller, $remoteArchive, $remoteEnvironment],
+                    $remoteBinary !== null ? [$remoteBinary] : [],
                     array_values($remoteImageArchives),
                 );
                 $chown = Process::timeout(30)->run($this->ssh(
@@ -122,6 +137,7 @@ class OrbitHostInstaller
             $installerFlags = $this->imageArchiveInstallerFlags($remoteImageArchives);
             $cleanupPaths = array_merge(
                 [$remoteInstaller, $remoteArchive, $remoteEnvironment],
+                $remoteBinary !== null ? [$remoteBinary] : [],
                 array_values($remoteImageArchives),
             );
             $installCommand = sprintf(
@@ -175,7 +191,7 @@ class OrbitHostInstaller
     }
 
     /**
-     * @return array{runtime?: string, caddy?: string, dnsmasq?: string, frankenphp?: string, wg_easy?: string}
+     * @return array{gateway?: string, caddy?: string, dnsmasq?: string, frankenphp?: string, wg_easy?: string}
      */
     private function buildForwardedImageArchives(): array
     {
@@ -187,7 +203,7 @@ class OrbitHostInstaller
         $archives = [];
 
         foreach ([
-            'runtime' => ['image' => 'orbit-runtime:current', 'name' => 'orbit-runtime-current'],
+            'gateway' => ['image' => 'orbit-gateway:current', 'name' => 'orbit-gateway-current'],
             'caddy' => ['image' => 'caddy:2-alpine', 'name' => 'caddy-2-alpine'],
             'dnsmasq' => ['image' => '4km3/dnsmasq:latest', 'name' => 'dnsmasq-latest'],
             'frankenphp' => ['image' => $phpRuntimeCatalog->imageFor(PhpRuntimeCatalog::DEFAULT), 'name' => 'frankenphp-1-php8.5-bookworm'],
@@ -222,8 +238,8 @@ class OrbitHostInstaller
     }
 
     /**
-     * @param  array{runtime?: string, caddy?: string, dnsmasq?: string, frankenphp?: string, wg_easy?: string}  $localImageArchives
-     * @return array{runtime?: string, caddy?: string, dnsmasq?: string, frankenphp?: string, wg_easy?: string}
+     * @param  array{gateway?: string, caddy?: string, dnsmasq?: string, frankenphp?: string, wg_easy?: string}  $localImageArchives
+     * @return array{gateway?: string, caddy?: string, dnsmasq?: string, frankenphp?: string, wg_easy?: string}
      */
     private function remoteImageArchives(string $remotePrefix, array $localImageArchives): array
     {
@@ -231,7 +247,7 @@ class OrbitHostInstaller
 
         foreach (array_keys($localImageArchives) as $key) {
             $remoteImageArchives[$key] = match ($key) {
-                'runtime' => "{$remotePrefix}-orbit-runtime-current.tar",
+                'gateway' => "{$remotePrefix}-orbit-gateway-current.tar",
                 'caddy' => "{$remotePrefix}-caddy-2-alpine.tar",
                 'dnsmasq' => "{$remotePrefix}-dnsmasq-latest.tar",
                 'frankenphp' => "{$remotePrefix}-frankenphp-1-php8.5-bookworm.tar",
@@ -243,14 +259,14 @@ class OrbitHostInstaller
     }
 
     /**
-     * @param  array{runtime?: string, caddy?: string, dnsmasq?: string, frankenphp?: string, wg_easy?: string}  $remoteImageArchives
+     * @param  array{gateway?: string, caddy?: string, dnsmasq?: string, frankenphp?: string, wg_easy?: string}  $remoteImageArchives
      */
     private function imageArchiveInstallerFlags(array $remoteImageArchives): string
     {
         $flags = '';
 
-        if (isset($remoteImageArchives['runtime'])) {
-            $flags .= ' --runtime-image-archive='.escapeshellarg($remoteImageArchives['runtime']);
+        if (isset($remoteImageArchives['gateway'])) {
+            $flags .= ' --gateway-image=orbit-gateway:current --gateway-image-archive='.escapeshellarg($remoteImageArchives['gateway']);
         }
 
         if (isset($remoteImageArchives['caddy'])) {
@@ -341,12 +357,35 @@ SCRIPT,
         return $archive;
     }
 
-    private function buildExecutorEnvironmentFile(?Node $node): string
+    private function buildExecutorEnvironmentFile(?Node $node, ?string $remoteBinary): string
     {
         $path = $this->localTempPath('orbit-install-env-'.Str::lower(Str::random(8)).'.env');
 
-        file_put_contents($path, '');
+        $contents = '';
+
+        if ($remoteBinary !== null) {
+            $contents .= 'ORBIT_BINARY_URL='.escapeshellarg("file://{$remoteBinary}")."\n";
+        }
+
+        file_put_contents($path, $contents);
         chmod($path, 0600);
+
+        return $path;
+    }
+
+    private function forwardedBinaryPath(): ?string
+    {
+        $path = config('orbit.forward_install_binary');
+
+        if (! is_string($path) || trim($path) === '') {
+            return null;
+        }
+
+        $path = trim($path);
+
+        if (! is_file($path)) {
+            return null;
+        }
 
         return $path;
     }

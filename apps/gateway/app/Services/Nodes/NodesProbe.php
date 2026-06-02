@@ -941,7 +941,7 @@ final readonly class NodesProbe
         match ($entry->key) {
             'node.wireguard_peer_missing' => $this->reconcileWireguardPeerMissing($node),
             'node.wireguard_address_mismatch' => $this->reconcileWireguardAddressMismatch($node),
-            'node.gateway_runtime_unready' => $this->reconcileGatewayRuntime($node),
+            'node.gateway_runtime_unready' => $this->reconcileGatewayService($node),
             'node.runtime_missing' => $this->reconcileAppRuntime($node),
             'node.access_grant_invalid' => $this->reconcileAccessGrants($node),
             'node.role_convergence_failed' => $this->reconcileRoleConvergenceFailures($node, $entry),
@@ -1023,9 +1023,9 @@ final readonly class NodesProbe
         // WireGuard peer reconciliation requires gateway-managed peer material
     }
 
-    private function reconcileGatewayRuntime(Node $node): void
+    private function reconcileGatewayService(Node $node): void
     {
-        // Gateway runtime reconciliation is gateway-side only
+        // Gateway service reconciliation is gateway-side only
     }
 
     private function reconcileAppRuntime(Node $node): void

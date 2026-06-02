@@ -187,12 +187,12 @@ it('linux x64 binary boots on the real container and --version reports the expec
     }
 })->group('e2e-feature', 'e2e-feature-operator_gateway', 'e2e-binary-acceptance');
 
-it('NodeGatewayBootstrapper routes through docker exec when orbit-runtime is absent and returns the gateway_bootstrap_unavailable envelope', function (): void {
-    // The gateway container in the prepared topology does not have orbit-runtime
+it('NodeGatewayBootstrapper routes through docker exec when orbit-gateway is absent and returns the gateway_bootstrap_unavailable envelope', function (): void {
+    // The gateway container in the prepared topology does not have orbit-gateway
     // running. Calling node:new --template=gateway with no configured gateway
     // triggers NodeGatewayBootstrapper::run() which first calls
-    // gatewayRuntimeAvailable() (docker exec orbit-runtime test -f ...).
-    // With orbit-runtime absent the check fails and the method returns the
+    // gatewayRuntimeAvailable() (docker exec orbit-gateway test -f ...).
+    // With orbit-gateway absent the check fails and the method returns the
     // gateway_bootstrap_unavailable JSON envelope without reaching host PHP or
     // a source-tree artisan. This proves the binary-only docker-exec path works.
     $topology = e2eTopology(E2ETopologyKind::OperatorGateway);
@@ -202,8 +202,8 @@ it('NodeGatewayBootstrapper routes through docker exec when orbit-runtime is abs
 
         // Run node:new --template=gateway with no gateway configured. This hits
         // the bootstrapper path (line 82 of NodeNewCommand: template === 'gateway'
-        // && !hasConfiguredGateway). The bootstrapper checks orbit-runtime via
-        // `docker exec orbit-runtime test -f apps/gateway/artisan`; with the
+        // && !hasConfiguredGateway). The bootstrapper checks orbit-gateway via
+        // `docker exec orbit-gateway test -f apps/gateway/artisan`; with the
         // container absent it falls through to the unavailable envelope.
         $result = runBinaryOnContainer(
             $topology,
@@ -227,7 +227,7 @@ it('NodeGatewayBootstrapper routes through docker exec when orbit-runtime is abs
             "Binary output is not valid JSON. Output:\n{$stdout}\nstderr: {$result['stderr']}",
         );
 
-        // Either the gateway_bootstrap_unavailable envelope (orbit-runtime absent)
+        // Either the gateway_bootstrap_unavailable envelope (orbit-gateway absent)
         // OR a gateway connectivity error (if the topology has something on that port).
         // Both prove the binary executed and reached the NodeGatewayBootstrapper path.
         $errorCode = $decoded['error']['code'] ?? null;
@@ -236,7 +236,7 @@ it('NodeGatewayBootstrapper routes through docker exec when orbit-runtime is abs
             "Expected an error envelope but got:\n{$stdout}",
         );
 
-        // The canonical path: orbit-runtime is not running → unavailable envelope.
+        // The canonical path: orbit-gateway is not running → unavailable envelope.
         // An alternative: gateway_not_configured when there is no gateway URL set at all
         // and the command fails before reaching the bootstrapper (acceptable — proves
         // the binary ran and returned structured JSON).

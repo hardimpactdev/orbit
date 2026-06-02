@@ -261,7 +261,7 @@ it('builds docker images once on the build host and distributes them to runner h
         ->and($distributions)->toHaveCount(1)
         ->and($distributions[0]['hosts'])->toBe(['sidecar1', 'sidecar2'])
         ->and($distributions[0]['images'])->toHaveCount(10)
-        ->and($distributions[0]['images'][0])->toBe(['role' => 'orbit-runtime', 'image' => 'orbit-runtime:prepared-current'])
+        ->and($distributions[0]['images'][0])->toBe(['role' => 'orbit-gateway', 'image' => 'orbit-gateway:prepared-current'])
         ->and($distributions[0]['images'][1])->toBe(['role' => 'orbit-caddy', 'image' => 'caddy:2-alpine'])
         ->and($distributions[0]['images'][2])->toBe(['role' => 'frankenphp-runtime', 'image' => 'dunglas/frankenphp:1-php8.5-bookworm'])
         ->and($distributions[0]['images'][3])->toBe(['role' => 'frankenphp-runtime', 'image' => 'dunglas/frankenphp:1-php8.4-bookworm'])
@@ -324,7 +324,7 @@ it('distributes docker images from the prepared artifact namespace', function ()
         ->and($buildRuns[1]['environment'])->toMatchArray([
             'DOCKER_HOST' => 'ssh://beast',
         ])
-        ->and($distributions[0]['images'][0])->toBe(['role' => 'orbit-runtime', 'image' => 'orbit-runtime:prepared-current'])
+        ->and($distributions[0]['images'][0])->toBe(['role' => 'orbit-gateway', 'image' => 'orbit-gateway:prepared-current'])
         ->and($distributions[0]['images'][1])->toBe(['role' => 'orbit-caddy', 'image' => 'caddy:2-alpine'])
         ->and($distributions[0]['images'][2])->toBe(['role' => 'frankenphp-runtime', 'image' => 'dunglas/frankenphp:1-php8.5-bookworm'])
         ->and($distributions[0]['images'][3])->toBe(['role' => 'frankenphp-runtime', 'image' => 'dunglas/frankenphp:1-php8.4-bookworm'])

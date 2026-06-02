@@ -671,7 +671,7 @@ it('installs the current checkout on Docker topology nodes through the runtime c
 
     expect($nodeInstallCommands)
         ->toContain('sudo docker exec --env')
-        ->toContain('orbit-e2e-run123-operator-orbit-runtime')
+        ->toContain('orbit-e2e-run123-operator-orbit-gateway')
         ->toContain('key:generate --force --no-interaction --ansi')
         ->toContain('/home/orbit/orbit-current/apps/gateway/artisan')
         ->toContain('/home/orbit/.config/orbit/.env')
@@ -744,7 +744,7 @@ it('bootstraps gateway app state for Docker host launcher checkout nodes without
         ->not->toContain('ln -sfn /home/orbit/.config/orbit/gateway.sqlite apps/gateway/database/database.sqlite')
         ->not->toContain('apps/cli/.env')
         ->not->toContain("cp '/home/orbit/orbit/apps/cli/.env' apps/cli/.env")
-        ->not->toContain('orbit-e2e-run123-dev-orbit-runtime')
+        ->not->toContain('orbit-e2e-run123-dev-orbit-gateway')
         ->not->toContain('sudo docker exec --env')
         ->not->toContain('composer install')
         ->and($allCommands)->not->toContain('tar --warning=no-unknown-keyword -xzf /tmp/orbit-current.tar.gz -C')
@@ -803,7 +803,7 @@ it('uses the host launcher for Docker operator gateway and app-node checkouts', 
         ->not->toContain('composer --working-dir=apps/gateway dump-autoload --no-interaction --optimize')
         ->not->toContain('composer --working-dir=apps/cli dump-autoload --no-interaction --optimize')
         ->not->toContain("cp '/home/orbit/orbit/apps/cli/.env' apps/cli/.env")
-        ->not->toContain('orbit-e2e-run123-operator-orbit-runtime')
+        ->not->toContain('orbit-e2e-run123-operator-orbit-gateway')
         ->and($gatewayInstallCommands)
         ->toContain('php apps/gateway/artisan key:generate')
         ->toContain('php apps/gateway/artisan migrate --force')
@@ -818,7 +818,7 @@ it('uses the host launcher for Docker operator gateway and app-node checkouts', 
         ->not->toContain('composer --working-dir=apps/gateway dump-autoload --no-interaction --optimize')
         ->not->toContain('composer --working-dir=apps/cli dump-autoload --no-interaction --optimize')
         ->not->toContain("cp '/home/orbit/orbit/apps/cli/.env' apps/cli/.env")
-        ->not->toContain('orbit-e2e-run123-gateway-orbit-runtime')
+        ->not->toContain('orbit-e2e-run123-gateway-orbit-gateway')
         ->and($devInstallCommands)
         ->toContain('php apps/gateway/artisan key:generate')
         ->toContain('php apps/gateway/artisan migrate --force')
@@ -834,7 +834,7 @@ it('uses the host launcher for Docker operator gateway and app-node checkouts', 
         ->not->toContain('composer --working-dir=apps/gateway dump-autoload --no-interaction --optimize')
         ->not->toContain('composer --working-dir=apps/cli dump-autoload --no-interaction --optimize')
         ->not->toContain("cp '/home/orbit/orbit/apps/cli/.env' apps/cli/.env")
-        ->not->toContain('orbit-e2e-run123-dev-orbit-runtime');
+        ->not->toContain('orbit-e2e-run123-dev-orbit-gateway');
     expect($paths)->toBe([
         'operator' => '/home/orbit/orbit',
         'gateway' => '/home/orbit/orbit',
@@ -885,7 +885,7 @@ it('refreshes Docker gateway checkout host keys through explicit host Artisan', 
         ->toContain('orbit:internal:pin-node-host-keys --json')
         ->toContain('php apps/gateway/artisan orbit:internal:pin-node-host-keys --json')
         ->not->toContain('sudo docker exec --env')
-        ->not->toContain('orbit-e2e-run123-gateway-orbit-runtime')
+        ->not->toContain('orbit-e2e-run123-gateway-orbit-gateway')
         ->not->toContain('orbit orbit:internal:pin-node-host-keys --json')
         ->not->toContain('php artisan orbit:internal:pin-node-host-keys --json')
         ->toContain('Gateway Composer dependencies must already exist in the mounted source tree')

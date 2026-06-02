@@ -751,7 +751,7 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
         }
 
         $bootstrapCommand = sprintf(
-            'php apps/gateway/artisan orbit:internal:bootstrap-gateway-local gateway %s --public-host=%s --skip-runtime-install',
+            'php apps/gateway/artisan orbit:internal:bootstrap-gateway-local gateway %s --public-host=%s --skip-gateway-service-install',
             escapeshellarg(self::GatewayWireGuardIp),
             escapeshellarg($gateway->waitForIpv4()),
         );

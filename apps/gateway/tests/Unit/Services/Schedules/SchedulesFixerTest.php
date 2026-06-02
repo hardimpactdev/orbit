@@ -14,10 +14,15 @@ use App\Models\ScheduleLock;
 use App\Models\ScheduleRun;
 use App\Services\Schedules\SchedulesFixer;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Process;
 use Tests\TestCase;
 
 uses(TestCase::class);
 uses(RefreshDatabase::class);
+
+beforeEach(function (): void {
+    Process::preventStrayProcesses();
+});
 
 function createSchedulesFixerGatewayNode(): Node
 {
@@ -33,11 +38,15 @@ function createSchedulesFixerGatewayNode(): Node
 }
 
 describe('SchedulesFixer', function (): void {
-    it('restarts the gateway orbit-runtime container when scheduler configuration is missing', function (): void {
+    it('scales the gateway orbit-scheduler Swarm service when scheduler configuration is missing', function (): void {
         $gateway = createSchedulesFixerGatewayNode();
         $shell = new SchedulesFixerRemoteShell;
+        Process::fake([
+            "docker service inspect --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' 'orbit_orbit-scheduler'" => Process::result(output: "ghcr.io/hardimpactdev/orbit-gateway:1.2.3@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n"),
+            "docker service scale 'orbit_orbit-scheduler=1'" => Process::result(),
+        ]);
 
-        $action = (new SchedulesFixer($shell))->fixGateway($gateway, new DriftEntry(
+        $action = (new SchedulesFixer)->fixGateway($gateway, new DriftEntry(
             family: 'schedule',
             key: 'schedule.scheduler_missing',
             kind: DriftKind::Missing,
@@ -50,16 +59,22 @@ describe('SchedulesFixer', function (): void {
             'key' => 'schedule.scheduler_missing',
             'mode' => 'fix',
             'status' => 'completed',
-        ])->and($shell->scripts[0])->toContain("sudo docker restart 'orbit-runtime' >/dev/null")
-            ->and($shell->scripts[0])->toContain("sudo docker exec --detach 'orbit-runtime' sh -lc 'exec orbit orbit-scheduler'")
-            ->and($shell->scripts[0])->not->toContain('supervisor');
+        ])->and($shell->scripts)->toBe([]);
+
+        Process::assertRan("docker service inspect --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' 'orbit_orbit-scheduler'");
+        Process::assertRan("docker service scale 'orbit_orbit-scheduler=1'");
+        Process::assertNotRan(fn ($process): bool => str_contains((string) $process->command, 'orbit'.'-runtime'));
     });
 
-    it('restarts the gateway orbit-runtime container when scheduler is stopped', function (): void {
+    it('scales the gateway orbit-scheduler Swarm service when scheduler is stopped', function (): void {
         $gateway = createSchedulesFixerGatewayNode();
         $shell = new SchedulesFixerRemoteShell;
+        Process::fake([
+            "docker service inspect --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' 'orbit_orbit-scheduler'" => Process::result(output: "ghcr.io/hardimpactdev/orbit-gateway:1.2.3@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n"),
+            "docker service scale 'orbit_orbit-scheduler=1'" => Process::result(),
+        ]);
 
-        $action = (new SchedulesFixer($shell))->fixGateway($gateway, new DriftEntry(
+        $action = (new SchedulesFixer)->fixGateway($gateway, new DriftEntry(
             family: 'schedule',
             key: 'schedule.scheduler_stopped',
             kind: DriftKind::Divergent,
@@ -72,9 +87,11 @@ describe('SchedulesFixer', function (): void {
             'key' => 'schedule.scheduler_stopped',
             'mode' => 'fix',
             'status' => 'completed',
-        ])->and($shell->scripts[0])->toContain("sudo docker restart 'orbit-runtime' >/dev/null")
-            ->and($shell->scripts[0])->toContain("sudo docker exec --detach 'orbit-runtime' sh -lc 'exec orbit orbit-scheduler'")
-            ->and($shell->scripts[0])->not->toContain('supervisor');
+        ])->and($shell->scripts)->toBe([]);
+
+        Process::assertRan("docker service inspect --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' 'orbit_orbit-scheduler'");
+        Process::assertRan("docker service scale 'orbit_orbit-scheduler=1'");
+        Process::assertNotRan(fn ($process): bool => str_contains((string) $process->command, 'orbit'.'-runtime'));
     });
 
     it('releases stale gateway schedule locks and marks running history failed', function (): void {
@@ -97,7 +114,7 @@ describe('SchedulesFixer', function (): void {
         ]);
         $shell = new SchedulesFixerRemoteShell;
 
-        $action = (new SchedulesFixer($shell))->fixGateway($gateway, new DriftEntry(
+        $action = (new SchedulesFixer)->fixGateway($gateway, new DriftEntry(
             family: 'schedule',
             key: 'schedule.lock_stuck',
             kind: DriftKind::Divergent,

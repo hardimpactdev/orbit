@@ -10,8 +10,6 @@ final class UpdateHumanProgressRenderer
 {
     private const array STEP_LABELS = [
         'pull_source' => 'Download binary',
-        'install_dependencies' => 'Install dependencies',
-        'run_migrations' => 'Run migrations',
     ];
 
     public function begin(OutputInterface $output): void

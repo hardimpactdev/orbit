@@ -59,8 +59,8 @@ These terms define each target scope that a PHP command can read or write.
 - **Effective workspace PHP version:** Version a workspace actually uses after
   applying workspace override or parent-app inheritance.
 - **Runtime PHP binary:** The `php` binary inside an app, workspace, or gateway
-  runtime container — the web *serving* runtime (and, in `orbit-runtime`, the
-  gateway's own runtime). App and workspace setup, `app:exec`/`workspace:exec`,
+  runtime container — the web *serving* runtime and, in `orbit-gateway`, the
+  gateway's own runtime. App and workspace setup, `app:exec`/`workspace:exec`,
   and deploy commands instead run on the app node's host PHP toolchain, matched
   to the app's PHP version.
 

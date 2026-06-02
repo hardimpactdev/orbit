@@ -1523,6 +1523,8 @@ final readonly class DoctorReportRunner
             'firewall_rule.rule_missing',
             'firewall_rule.rule_mismatch',
             'tool.capability_missing',
+            'tool.container_missing',
+            'tool.container_spec_mismatch',
             'tool.lifecycle_state_mismatch',
             'tool.version_mismatch',
             'tool.config_missing',

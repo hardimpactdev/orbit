@@ -240,19 +240,19 @@ it('returns tri-state outcomes for managed runtime config file removal', functio
     [$_, $node] = appAndNodeForManagerTest();
 
     $absentShell = new AppRuntimeRecordingShell(
-        new RemoteShellResult(exitCode: 0, stdout: "orbit-runtime-config-probe:absent\n", stderr: '', durationMs: 1),
+        new RemoteShellResult(exitCode: 0, stdout: "orbit-container-config-probe:absent\n", stderr: '', durationMs: 1),
     );
     $absentOutcome = (new AppRuntimeContainerManager($absentShell, new DockerCommandBuilder))->removeRuntimeConfigFile($node, 'docs');
 
     $removedShell = new AppRuntimeRecordingShell(
-        new RemoteShellResult(exitCode: 0, stdout: "orbit-runtime-config-probe:present\n", stderr: '', durationMs: 1),
+        new RemoteShellResult(exitCode: 0, stdout: "orbit-container-config-probe:present\n", stderr: '', durationMs: 1),
         new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
-        new RemoteShellResult(exitCode: 0, stdout: "orbit-runtime-config-probe:absent\n", stderr: '', durationMs: 1),
+        new RemoteShellResult(exitCode: 0, stdout: "orbit-container-config-probe:absent\n", stderr: '', durationMs: 1),
     );
     $removedOutcome = (new AppRuntimeContainerManager($removedShell, new DockerCommandBuilder))->removeRuntimeConfigFile($node, 'docs');
 
     $failedShell = new AppRuntimeRecordingShell(
-        new RemoteShellResult(exitCode: 0, stdout: "orbit-runtime-config-probe:present\n", stderr: '', durationMs: 1),
+        new RemoteShellResult(exitCode: 0, stdout: "orbit-container-config-probe:present\n", stderr: '', durationMs: 1),
         new RemoteShellResult(exitCode: 1, stdout: '', stderr: 'permission denied', durationMs: 1),
     );
     $failedOutcome = (new AppRuntimeContainerManager($failedShell, new DockerCommandBuilder))->removeRuntimeConfigFile($node, 'docs');
@@ -260,7 +260,7 @@ it('returns tri-state outcomes for managed runtime config file removal', functio
     expect($absentOutcome)->toBe(AppRuntimeArtifactRemovalOutcome::AlreadyAbsent)
         ->and($absentShell->calls)->toHaveCount(1)
         ->and($absentShell->calls[0]['script'])->toContain("sudo test -e '/etc/orbit/apps/docs.ini'")
-        ->and($absentShell->calls[0]['script'])->toContain('orbit-runtime-config-probe:absent')
+        ->and($absentShell->calls[0]['script'])->toContain('orbit-container-config-probe:absent')
         ->and($removedOutcome)->toBe(AppRuntimeArtifactRemovalOutcome::Removed)
         ->and($removedShell->calls[1]['script'])->toContain("sudo rm -f '/etc/orbit/apps/docs.ini'")
         ->and($failedOutcome)->toBe(AppRuntimeArtifactRemovalOutcome::FailedRemaining);
@@ -302,7 +302,7 @@ it('returns FailedRemaining when the sudo runtime config probe fails for an unkn
     [$_, $node] = appAndNodeForManagerTest();
 
     $shell = new AppRuntimeRecordingShell(
-        new RemoteShellResult(exitCode: 0, stdout: "orbit-runtime-config-probe:error\n", stderr: 'sudo: a terminal is required to read the password', durationMs: 1),
+        new RemoteShellResult(exitCode: 0, stdout: "orbit-container-config-probe:error\n", stderr: 'sudo: a terminal is required to read the password', durationMs: 1),
     );
 
     $outcome = (new AppRuntimeContainerManager($shell, new DockerCommandBuilder))->removeRuntimeConfigFile($node, 'docs');
@@ -328,9 +328,9 @@ it('returns FailedRemaining when post-removal probe cannot confirm the runtime c
     [$_, $node] = appAndNodeForManagerTest();
 
     $shell = new AppRuntimeRecordingShell(
-        new RemoteShellResult(exitCode: 0, stdout: "orbit-runtime-config-probe:present\n", stderr: '', durationMs: 1),
+        new RemoteShellResult(exitCode: 0, stdout: "orbit-container-config-probe:present\n", stderr: '', durationMs: 1),
         new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
-        new RemoteShellResult(exitCode: 0, stdout: "orbit-runtime-config-probe:error\n", stderr: '', durationMs: 1),
+        new RemoteShellResult(exitCode: 0, stdout: "orbit-container-config-probe:error\n", stderr: '', durationMs: 1),
     );
 
     $outcome = (new AppRuntimeContainerManager($shell, new DockerCommandBuilder))->removeRuntimeConfigFile($node, 'docs');

@@ -8,7 +8,6 @@ final readonly class LocalUpdateWorkflow
 {
     public function __construct(
         private RunsLocalUpdate $updater,
-        private CheckoutPathResolver $checkoutPathResolver,
     ) {}
 
     /**
@@ -18,8 +17,6 @@ final readonly class LocalUpdateWorkflow
     {
         $steps = [
             'pull_source' => $this->updater->pullSource(...),
-            'install_dependencies' => $this->updater->installDependencies(...),
-            'run_migrations' => $this->updater->runMigrations(...),
         ];
 
         $stepResults = [];
@@ -34,14 +31,6 @@ final readonly class LocalUpdateWorkflow
             }
 
             if (! $result['successful']) {
-                if ($key === 'pull_source') {
-                    return new LocalUpdateResult(
-                        status: LocalUpdateResult::STATUS_CHECKOUT_UNAVAILABLE,
-                        stepResults: $stepResults,
-                        checkoutPath: $this->checkoutPathResolver->resolve(),
-                    );
-                }
-
                 return new LocalUpdateResult(
                     status: LocalUpdateResult::STATUS_FAILED,
                     stepResults: $stepResults,
