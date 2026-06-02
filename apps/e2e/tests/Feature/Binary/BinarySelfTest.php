@@ -2,6 +2,10 @@
 
 declare(strict_types=1);
 
+use App\E2E\Support\OrbitCliBinaryBundle;
+use Illuminate\Support\Facades\Process;
+use Symfony\Component\Process\Process as SymfonyProcess;
+
 /**
  * Binary self-test lane (4a — build + binary self-test, no topology).
  *
@@ -28,16 +32,12 @@ declare(strict_types=1);
  */
 pest()->group('e2e-binary');
 
-/*
- * The built native binary only exists after the binary lane builds it
- * (`composer test:e2e:binary`). When it is absent — the default Pest suite and
- * `composer quality-check` on a fresh checkout — skip rather than fail.
- */
-beforeEach(function (): void {
+function requireOrbitBinaryBuilt(): void
+{
     if (! file_exists(orbitBinaryPath())) {
         test()->markTestSkipped('orbit binary not built; run `composer test:e2e:binary`.');
     }
-});
+}
 
 /**
  * Resolve the path to the built host-arch native binary.
@@ -112,48 +112,6 @@ function runOrbitBinary(array $arguments, array $env = [], ?string $stdin = null
 }
 
 /**
- * Generate a valid OperationToken compact string.
- *
- * Mirrors the signing logic from Orbit\Core\Security\OperationTokenSigner so the
- * e2e harness can produce tokens without importing the orbit-core package.
- *
- * @param  array{secret: string, node: string, command: string, ttl_seconds?: int}  $params
- */
-function generateOperationToken(array $params): string
-{
-    $secret = $params['secret'];
-    $node = $params['node'];
-    $command = $params['command'];
-    $ttl = $params['ttl_seconds'] ?? 300;
-    $issuedAt = time();
-    $expiresAt = $issuedAt + $ttl;
-    $id = bin2hex(random_bytes(8));
-
-    $encode = static fn (string $v): string => rtrim(strtr(base64_encode($v), '+/', '-_'), '=');
-    $lengthPrefixed = static fn (string $v): string => pack('N', strlen($v)).$v;
-
-    $canonicalPayload = $lengthPrefixed($id)
-        .$lengthPrefixed($node)
-        .$lengthPrefixed($command)
-        .$lengthPrefixed((string) $issuedAt)
-        .$lengthPrefixed((string) $expiresAt);
-
-    $signature = rtrim(
-        strtr(base64_encode(hash_hmac('sha256', $canonicalPayload, $secret, true)), '+/', '-_'),
-        '=',
-    );
-
-    return implode('.', [
-        $encode($id),
-        $encode($node),
-        $encode($command),
-        $encode((string) $issuedAt),
-        $encode((string) $expiresAt),
-        $signature,
-    ]);
-}
-
-/**
  * Create a temporary sandbox HOME directory for binary invocations that read HOME.
  *
  * Returns the path. Callers are responsible for cleanup via remove_directory().
@@ -163,16 +121,240 @@ function makeSandboxHome(): string
     return make_temp_directory('binary-home');
 }
 
+/**
+ * @template TReturn
+ *
+ * @param  callable(string): TReturn  $callback
+ * @return TReturn
+ */
+function withBinaryFakeGatewayVerificationServer(callable $callback): mixed
+{
+    $directory = sys_get_temp_dir().'/orbit-e2e-binary-gateway-'.bin2hex(random_bytes(8));
+    mkdir($directory, recursive: true);
+
+    $routerPath = "{$directory}/router.php";
+    file_put_contents($routerPath, <<<'PHP'
+<?php
+
+$path = parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH);
+$payload = json_decode(file_get_contents('php://input') ?: '{}', true);
+
+http_response_code(200);
+header('Content-Type: application/json');
+
+if ($_SERVER['REQUEST_METHOD'] !== 'POST'
+    || $path !== '/api/internal-executor/token/verify'
+    || ! is_array($payload)
+    || ($payload['command'] ?? null) !== 'internal:database-query-local'
+) {
+    http_response_code(404);
+
+    echo json_encode([
+        'error' => [
+            'code' => 'unexpected_gateway_request',
+            'message' => 'Unexpected gateway verification request.',
+            'details' => [
+                'method' => $_SERVER['REQUEST_METHOD'] ?? null,
+                'path' => $path,
+                'payload' => $payload,
+            ],
+        ],
+    ], JSON_THROW_ON_ERROR);
+
+    return;
+}
+
+echo json_encode([
+    'success' => [
+        'data' => [
+            'allowed' => true,
+        ],
+        'meta' => [],
+    ],
+], JSON_THROW_ON_ERROR);
+PHP);
+
+    $server = null;
+
+    try {
+        [$server, $gatewayUrl] = startBinaryFakeGatewayVerificationServer($routerPath, $directory);
+
+        return $callback($gatewayUrl);
+    } finally {
+        if ($server instanceof SymfonyProcess) {
+            $server->stop(0);
+        }
+
+        if (is_file($routerPath)) {
+            unlink($routerPath);
+        }
+
+        if (is_dir($directory)) {
+            rmdir($directory);
+        }
+    }
+}
+
+/**
+ * @return array{SymfonyProcess, string}
+ */
+function startBinaryFakeGatewayVerificationServer(string $routerPath, string $directory): array
+{
+    $lastError = null;
+
+    for ($attempt = 1; $attempt <= 5; $attempt++) {
+        $port = reserveBinaryFakeGatewayLocalPort();
+        $gatewayUrl = "http://127.0.0.1:{$port}";
+        $server = new SymfonyProcess([PHP_BINARY, '-S', "127.0.0.1:{$port}", $routerPath], $directory);
+        $server->start();
+
+        try {
+            waitForBinaryFakeGatewayServer($server, $gatewayUrl);
+
+            return [$server, $gatewayUrl];
+        } catch (RuntimeException $exception) {
+            $lastError = $exception;
+            $server->stop(0);
+            usleep(10_000);
+        }
+    }
+
+    throw new RuntimeException(
+        'Unable to start fake gateway verification server after retrying available localhost ports.',
+        previous: $lastError,
+    );
+}
+
+function reserveBinaryFakeGatewayLocalPort(): int
+{
+    $socket = @stream_socket_server('tcp://127.0.0.1:0', $errno, $errorMessage);
+
+    if ($socket === false) {
+        throw new RuntimeException("Unable to reserve a local port: {$errorMessage} ({$errno}).");
+    }
+
+    $address = stream_socket_get_name($socket, false);
+    fclose($socket);
+
+    if (! is_string($address) || preg_match('/:(\d+)$/', $address, $matches) !== 1) {
+        throw new RuntimeException('Unable to determine the reserved local port.');
+    }
+
+    return (int) $matches[1];
+}
+
+function waitForBinaryFakeGatewayServer(SymfonyProcess $server, string $gatewayUrl): void
+{
+    $timeoutAt = microtime(true) + 5;
+    $context = stream_context_create([
+        'http' => [
+            'ignore_errors' => true,
+            'timeout' => 0.2,
+        ],
+    ]);
+
+    while (microtime(true) < $timeoutAt) {
+        if (! $server->isRunning()) {
+            throw new RuntimeException(
+                "Fake gateway verification server exited before becoming reachable.\n\n".binaryFakeGatewayServerOutput($server),
+            );
+        }
+
+        $response = @file_get_contents($gatewayUrl, false, $context);
+
+        if ($response !== false) {
+            return;
+        }
+
+        usleep(10_000);
+    }
+
+    throw new RuntimeException(
+        "Timed out waiting for fake gateway verification server at {$gatewayUrl}.\n\n".binaryFakeGatewayServerOutput($server),
+    );
+}
+
+function binaryFakeGatewayServerOutput(SymfonyProcess $server): string
+{
+    return trim($server->getOutput().$server->getErrorOutput());
+}
+
 // ─── Self-tests ────────────────────────────────────────────────────────────────
 
 it('binary exists and is executable', function (): void {
+    requireOrbitBinaryBuilt();
+
     $path = orbitBinaryPath();
 
     expect($path)->toBeFile()
         ->and(is_executable($path))->toBeTrue('Binary at '.$path.' is not executable');
 });
 
+it('keeps the native binary artifact path separate from the source CLI entrypoint', function (): void {
+    $bundleDir = make_temp_directory('binary-bundle-contract');
+
+    try {
+        expect(OrbitCliBinaryBundle::bundledBinaryPath($bundleDir))
+            ->toContain('orbit-binary')
+            ->not->toContain('apps/cli/orbit')
+            ->and(orbitBinaryPath())
+            ->not->toContain('apps/cli/orbit');
+    } finally {
+        remove_directory($bundleDir);
+    }
+});
+
+it('stages the linux binary into the bundled binary path', function (): void {
+    $bundleDir = make_temp_directory('binary-bundle-stage');
+    $linuxDistDir = repo_path('apps/cli/builds/dist/linux');
+    $binarySource = "{$linuxDistDir}/linux-x64";
+    $createdBinarySource = false;
+
+    if (! is_file($binarySource)) {
+        if (! is_dir($linuxDistDir)) {
+            mkdir($linuxDistDir, 0777, recursive: true);
+        }
+
+        file_put_contents($binarySource, 'fake-linux-binary-'.bin2hex(random_bytes(8)));
+        chmod($binarySource, 0755);
+        $createdBinarySource = true;
+    }
+
+    $sourceHash = hash_file('sha256', $binarySource);
+
+    Process::fake(function ($process) {
+        if (is_string($process->command) && str_starts_with($process->command, 'file ')) {
+            return Process::result(output: 'ELF 64-bit LSB executable, x86-64');
+        }
+
+        return Process::result();
+    });
+    Process::preventStrayProcesses();
+
+    try {
+        (new OrbitCliBinaryBundle)->buildLinuxBinaryInto($bundleDir);
+
+        $bundleBinary = OrbitCliBinaryBundle::bundledBinaryPath($bundleDir);
+
+        expect($bundleBinary)
+            ->toBeFile()
+            ->not->toContain('apps/cli/orbit')
+            ->and(hash_file('sha256', $bundleBinary))->toBe($sourceHash)
+            ->and(substr(sprintf('%o', fileperms($bundleBinary)), -3))->toBe('755');
+    } finally {
+        remove_directory($bundleDir);
+
+        if ($createdBinarySource) {
+            @unlink($binarySource);
+            @rmdir($linuxDistDir);
+            @rmdir(dirname($linuxDistDir));
+        }
+    }
+});
+
 it('--version prints the expected version', function (): void {
+    requireOrbitBinaryBuilt();
+
     // Parse the version from apps/cli/config/app.php without executing it (env() is not
     // available outside the Laravel boot context, so require would throw).
     $configSource = file_get_contents(repo_path('apps/cli/config/app.php')) ?: '';
@@ -197,6 +379,8 @@ it('--version prints the expected version', function (): void {
 });
 
 it('list exits 0 and shows command groups', function (): void {
+    requireOrbitBinaryBuilt();
+
     $sandboxHome = makeSandboxHome();
 
     try {
@@ -213,6 +397,8 @@ it('list exits 0 and shows command groups', function (): void {
 });
 
 it('gateway command --help loads without missing-extension errors', function (): void {
+    requireOrbitBinaryBuilt();
+
     // Proves that openssl/curl-dependent service providers (GatewayApiServiceProvider,
     // OperationTokenGuardServiceProvider) boot without any "extension not found" error.
     // gateway:status depends on curl+openssl; loading its --help exercises the providers.
@@ -233,37 +419,31 @@ it('gateway command --help loads without missing-extension errors', function ():
 });
 
 it('pdo_sqlite: internal:database-query-local executes SELECT 1 on a temp SQLite file', function (): void {
+    requireOrbitBinaryBuilt();
+
     // Proves the embedded runtime has pdo_sqlite compiled in.
     // The command opens a new SQLite file at a temp path and returns a result row.
     // A missing pdo_sqlite driver would produce a PDOException before the token check,
     // but here the token check happens first; a successful query proves pdo_sqlite works.
     $sandboxHome = makeSandboxHome();
     $tmpDb = $sandboxHome.'/test.sqlite';
-    $secret = 'e2e-binary-self-test-secret-'.bin2hex(random_bytes(4));
-    $node = 'e2e-binary-test-node';
-    $command = 'internal:database-query-local';
+    $token = 'e2e-binary-self-test-token-'.bin2hex(random_bytes(8));
 
     try {
-        $token = generateOperationToken([
-            'secret' => $secret,
-            'node' => $node,
-            'command' => $command,
-            'ttl_seconds' => 300,
-        ]);
-
         $payload = json_encode([
             'connection' => ['driver' => 'sqlite', 'path' => $tmpDb],
             'sql' => 'SELECT 1 AS val',
         ], JSON_THROW_ON_ERROR);
 
-        $result = runOrbitBinary(
-            ['internal:database-query-local', '--operation-token='.$token, '--json'],
-            env: [
-                'HOME' => $sandboxHome,
-                'ORBIT_EXECUTOR_SECRET' => $secret,
-                'ORBIT_NODE_IDENTITY' => $node,
-            ],
-            stdin: $payload,
+        $result = withBinaryFakeGatewayVerificationServer(
+            fn (string $gatewayUrl): array => runOrbitBinary(
+                ['internal:database-query-local', '--operation-token='.$token, '--json'],
+                env: [
+                    'HOME' => $sandboxHome,
+                    'ORBIT_GATEWAY_URL' => $gatewayUrl,
+                ],
+                stdin: $payload,
+            ),
         );
 
         expect($result['exit_code'])->toBe(0, 'database-query-local exited '.$result['exit_code'].': '.$result['stdout'].$result['stderr']);
@@ -279,6 +459,8 @@ it('pdo_sqlite: internal:database-query-local executes SELECT 1 on a temp SQLite
 });
 
 it('proc_open: dns:resolve-tld produces valid JSON output (proc_open is unrestricted)', function (): void {
+    requireOrbitBinaryBuilt();
+
     // dns:resolve-tld calls LocalResolver::isDnsmasqInstalled() which runs
     // `which dnsmasq` via Symfony\Process (proc_open). If proc_open is disabled or
     // restricted, the binary crashes with a PHP fatal error before emitting any output.
@@ -311,6 +493,8 @@ it('proc_open: dns:resolve-tld produces valid JSON output (proc_open is unrestri
 });
 
 it('LocalResolver reads config from $HOME/.config/orbit/dnsmasq.d not from phar:// storage', function (): void {
+    requireOrbitBinaryBuilt();
+
     // Places a dnsmasq.d override file inside a sandboxed HOME, then runs dns:list --json.
     // Asserting the listing returns the override proves LocalResolver::configDir() resolves
     // to $HOME/.config/orbit/dnsmasq.d and not to phar:// (or any other path inside the

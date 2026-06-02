@@ -359,6 +359,25 @@ it('fails warm prepared topology availability when warm snapshots are missing', 
     });
 });
 
+it('bypasses warm snapshot acquisition for source-mounted retained Incus requests', function (): void {
+    withE2EEnvironment([
+        'ORBIT_E2E_INCUS_HOSTS',
+    ], [
+        'ORBIT_E2E_INCUS_WARM_SNAPSHOTS' => '1',
+        'ORBIT_E2E_INCUS_HOSTS' => 'sidecar1',
+        'ORBIT_E2E_INCUS_HOST_VM_CAPS' => 'sidecar1:4',
+    ], function (): void {
+        $provider = new IncusTopologyProvider(E2EConfig::fromEnvironment());
+        $method = new ReflectionMethod($provider, 'shouldAcquireWarmSnapshots');
+        $method->setAccessible(true);
+
+        expect($method->invoke($provider, new E2ETopologyAcquisitionOptions(
+            sourceMountedCheckout: true,
+        )))->toBeFalse()
+            ->and($method->invoke($provider, new E2ETopologyAcquisitionOptions))->toBeTrue();
+    });
+});
+
 it('plans stable warm topology slot names per topology and artifact set', function (): void {
     withE2ETopologyEnvironment([
         'ORBIT_E2E_TOPOLOGY_ARTIFACT_NAMESPACE' => 'Agent branch',
@@ -564,6 +583,54 @@ it('adds an explicit storage pool to topology clone copies when configured', fun
         ->and($script)->toContain("incus copy 'orbit-template-gateway-base/clean-operator_gateway_app-dev_app-prod_agent-base' 'orbit-e2e-runZ-gateway' --storage 'orbit-e2e' &");
 });
 
+it('adds a source mount before start for source-mounted Incus retained topologies', function (): void {
+    $config = makeIncusTopologyTemplateTestConfig();
+    $host = m::mock(IncusHost::class, [$config])->makePartial();
+    mockIncusTopologyCurrentSnapshots($host, 2);
+    $host->shouldReceive('run')
+        ->once()
+        ->withArgs(fn (string $command, int $timeoutSeconds): bool => $timeoutSeconds === 30
+            && $command === "test -d '/srv/orbit-source' && test -f '/srv/orbit-source/apps/cli/orbit'")
+        ->andReturn(successfulProcessResult());
+
+    withE2EConfigEnvironment([
+        'ORBIT_E2E_INCUS_SOURCE_PATH' => '/srv/orbit-source',
+    ], function () use ($host): void {
+        $script = IncusTopologyTemplate::buildBatchScript(
+            $host,
+            E2ETopologyKind::OperatorGateway,
+            'runSource',
+            IncusTopologyTemplate::rolesFor(E2ETopologyKind::OperatorGateway),
+            sourceMounted: true,
+        );
+
+        expect($script)
+            ->toContain("if incus config device get 'orbit-e2e-runSource-operator' orbit-source path >/dev/null 2>&1; then")
+            ->toContain("  incus config device add 'orbit-e2e-runSource-operator' orbit-source disk source='/srv/orbit-source' path='/home/orbit/orbit' shift=true")
+            ->toContain("  incus config device add 'orbit-e2e-runSource-gateway' orbit-source disk source='/srv/orbit-source' path='/home/orbit/orbit' shift=true")
+            ->toContain("incus config device set 'orbit-e2e-runSource-operator' orbit-source source='/srv/orbit-source'")
+            ->toContain("incus config device set 'orbit-e2e-runSource-operator' orbit-source path='/home/orbit/orbit'")
+            ->toContain("incus config device set 'orbit-e2e-runSource-operator' orbit-source shift=true")
+            ->not->toContain('shift=true || true')
+            ->and(strpos($script, "orbit-source disk source='/srv/orbit-source'"))->toBeLessThan(strpos($script, "incus start 'orbit-e2e-runSource-operator'"));
+    });
+});
+
+it('does not add a source mount for ordinary prepared Incus acquisitions', function (): void {
+    $config = makeIncusTopologyTemplateTestConfig();
+    $host = m::mock(IncusHost::class, [$config])->makePartial();
+    mockIncusTopologyCurrentSnapshots($host, 2);
+
+    $script = IncusTopologyTemplate::buildBatchScript(
+        $host,
+        E2ETopologyKind::OperatorGateway,
+        'runPrepared',
+        IncusTopologyTemplate::rolesFor(E2ETopologyKind::OperatorGateway),
+    );
+
+    expect($script)->not->toContain('orbit-source');
+});
+
 it('requires the requested Incus roles in the prepared full snapshot', function (): void {
     withE2ETopologyEnvironment([], function (): void {
         $config = makeIncusTopologyTemplateTestConfig(baseImage: 'orbit-base-ubuntu-26.04');
@@ -629,12 +696,14 @@ it('prepared Incus acquisition retargets selected snapshot roles without dynamic
 
     expect($source)
         ->toContain('prepareInstances($instances, $this->config, $sshKeyPair, $timer, $options, $kind)')
-        ->toContain('retargetTopology($instances, $config, $sshKeyPair, $kind)')
+        ->toContain('retargetTopology($instances, $config, $sshKeyPair, $kind, $options->sourceMountedCheckout)')
         ->toContain('--public-host=%s --skip-runtime-install')
         ->toContain('php apps/gateway/artisan orbit:internal:bootstrap-gateway-local')
         ->toContain('php apps/gateway/artisan orbit:internal:bake-app-node app-dev-1 --role=app-dev')
         ->toContain('php apps/gateway/artisan tinker --execute=')
         ->toContain('/orbit/apps/cli')
+        ->toContain('/.config/orbit')
+        ->toContain('config.json')
         ->toContain('ORBIT_GATEWAY_URL=%%s')
         ->toContain('orbit:internal:bake-app-node app-dev-1 --role=app-dev')
         ->toContain('seedAppdevDatabaseAndRedis($gateway')

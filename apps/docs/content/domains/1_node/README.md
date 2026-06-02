@@ -55,8 +55,10 @@ assignments. Supported platforms are tracked in
 [`node-concepts.md#role-platform-support`](node-concepts.md#role-platform-support).
 
 Nodes may run the Orbit CLI as a stateless gateway client through the host
-`orbit` launcher, which always executes the installed Orbit CLI binary
-regardless of node role. The CLI binary owns public gateway-backed commands
+`orbit` launcher. Production installs still use the native CLI binary artifact;
+source-mounted Docker and Incus development/E2E topologies point
+`/usr/local/bin/orbit` directly at `<source>/apps/cli/orbit`. The CLI entry
+point owns public gateway-backed commands
 (which call the gateway typed API over the VPN), local-only commands (which
 mutate caller-local state such as `~/.config/orbit/config.json`), bootstrap
 commands (which run before a gateway API exists), and hidden `internal:*`
@@ -109,7 +111,7 @@ Roles materialize baseline tool intent when a role assignment converges.
 | `app-dev` | Docker-first app runtime baseline, development DNS mapping, and `orbit-caddy` app/workspace routes |
 | `app-prod` | Private `orbit-caddy` backend, FrankenPHP app containers, and Docker process runtime |
 | `database` | Docker running as the substrate for managed database service tools |
-| `agent` | `orbit-runtime`, `orbit-caddy`, the shared unprivileged `agent` runtime user, and the gateway-owned agent DNS mapping for the role's `tld` |
+| `agent` | `orbit-caddy`, the shared unprivileged `agent` runtime user, the gateway-owned agent DNS mapping for the role's `tld`, and any role-specific runtime containers the agent workload needs; any remaining workload-node `orbit-runtime` usage is compatibility scope outside the source-mounted live topology contract |
 | `ingress` | `orbit-caddy` running as the public production HTTP ingress boundary, forwarding public routes to `router` |
 | `websocket` | Laravel Reverb in a Docker runtime container managed by Orbit, private TLS backend binding on WireGuard, backend certificate material, and Redis-backed scaling configuration |
 | `s3` | RustFS in a Docker runtime container rendered by Orbit, private S3 API binding on WireGuard, service-level credentials on the `rustfs` tool row, backend pool registration, and role-owned data path |
@@ -259,10 +261,17 @@ These rules apply to all node commands and define the invariants the family enfo
   nodes.
 
 The node host contract is Docker-first. Managed nodes require Git, Docker
-Engine and CLI, the prebuilt Orbit CLI binary (embedded PHP 8.5 +
+Engine and CLI, the host `orbit` launcher or equivalent node-local Orbit CLI
+entry point, WireGuard/SSH identity material, and role-specific host tools
+such as VitePlus on app nodes. Production installs still use the prebuilt
+Orbit CLI binary (embedded PHP 8.5 +
 `pdo_sqlite`/`openssl`/`curl`/`mbstring`/`tokenizer`/`ctype`/`filter`/`fileinfo`/`json`/`phar`),
-the host `orbit` launcher, `orbit-runtime`, WireGuard/SSH identity material,
-and role-specific host tools such as VitePlus on app nodes. `app-dev` and
+and gateway nodes still run `orbit-runtime` for the API and scheduler.
+Source-mounted Docker and Incus topologies are development and E2E lanes; in
+those lanes `/usr/local/bin/orbit` points directly at `<source>/apps/cli/orbit`
+and mutable node-local Orbit state lives under `~/.config/orbit`. Any
+remaining workload-node `orbit-runtime` usage is a compatibility concern
+outside the source-mounted live topology contract. `app-dev` and
 `app-prod` nodes additionally carry a host PHP toolchain (host PHP 8.4 and 8.5,
 Composer, and the Laravel installer) for `app:exec` and deployment. Host Caddy
 (the `orbit-caddy` container) and host PHP-FPM remain non-prerequisites and
@@ -414,10 +423,13 @@ being requested.
 
 Gateway, node, and client identities are minted or adopted during
 [`orbit node:new [name]`](1_node-new/node-new.md). Preparing a client
-starts with local CLI installation: download the Orbit CLI binary, ensure
-Docker and the local `orbit-runtime` container are available, and link the
-host `bin/orbit` launcher as `orbit`; the project README owns those
-installation steps.
+starts with local CLI installation. Production installs download the native
+Orbit CLI binary artifact and link the host `bin/orbit` launcher as `orbit`.
+Source-mounted Docker and Incus topologies are development and E2E lanes; in
+those lanes `/usr/local/bin/orbit` points directly at `<source>/apps/cli/orbit`.
+Gateway `orbit-runtime` remains a gateway concern for the API and scheduler,
+not a blanket client prerequisite. The project README owns those installation
+steps.
 
 First-gateway bootstrap is a complete onboarding flow for the initiating
 client. When a client with no configured gateway runs

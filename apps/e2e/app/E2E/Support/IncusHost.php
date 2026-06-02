@@ -335,10 +335,32 @@ class IncusHost
         );
     }
 
+    public function sourcePath(): string
+    {
+        return $this->validatedSourcePath((new SourceMountedCheckoutSyncer)->sourcePath($this->config->host, 'incus'));
+    }
+
     private function isLocalHost(string $host): bool
     {
         return in_array(strtolower($host), ['', 'localhost', '127.0.0.1', '::1'], true)
             || strtolower($host) === strtolower((string) gethostname());
+    }
+
+    private function validatedSourcePath(string $path): string
+    {
+        $result = $this->run(sprintf(
+            'test -d %s && test -f %s',
+            escapeshellarg($path),
+            escapeshellarg("{$path}/apps/cli/orbit"),
+        ), timeoutSeconds: 30);
+
+        if (! $result->successful()) {
+            throw new RuntimeException(
+                "Configured Incus source path [{$path}] is not visible on host [{$this->config->host}] or does not contain apps/cli/orbit."
+            );
+        }
+
+        return $path;
     }
 
     public function commandExists(string $command): bool

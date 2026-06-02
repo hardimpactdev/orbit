@@ -6,16 +6,10 @@ namespace App\Services\Nodes;
 
 use App\Contracts\RemoteShell;
 use App\Data\Nodes\NodeIdentityArtifact;
-use App\Data\Nodes\RoleSettings\VpnRoleSettings;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Enums\AdoptAction;
 use App\Enums\Nodes\NodeRoleName;
 use App\Enums\Nodes\NodeRoleStatus;
-use App\Http\Gateway\GatewayApiException;
-use App\Http\Gateway\GatewayConnector;
-use App\Http\Gateway\Requests\Gateway\ShowGatewayIdentityRequest;
-use App\Http\Gateway\Requests\Nodes\CreateNodeRequest;
-use App\Http\Gateway\Responses\Nodes\NodeCreateResponse;
 use App\Models\LocalGatewaySettings;
 use App\Models\Node;
 use App\Models\NodeAccess;
@@ -27,7 +21,6 @@ use App\Services\Nodes\Roles\NodeRoleAssignments;
 use App\Services\Nodes\Roles\NodeRoleAssignmentService;
 use App\Services\Nodes\Roles\RoleSelfGrantMaterializer;
 use App\Services\OrbitHostInstaller;
-use App\Services\Platform\PlatformDetector;
 use App\Services\RemoteShell\Exceptions\HostKeyMismatch;
 use App\Services\RemoteShell\Exceptions\HostKeyPinningFailed;
 use App\Services\RemoteShell\SshCommandBuilder;
@@ -39,11 +32,7 @@ use App\Services\Support\GatewayActionResult;
 use App\Services\Tools\ToolCatalog;
 use App\Services\Tools\ToolInstaller;
 use App\Services\Tools\ToolRegistryFailure;
-use App\Services\Trust\TrustStoreInstaller;
-use App\Services\Trust\TrustStoreInstallException;
-use App\Services\Trust\TrustStoreInstallReason;
 use App\Services\Vpn\WgEasyServiceInstaller;
-use App\Services\WireGuard\WireGuardInterfaceInstaller;
 use App\Services\WireGuard\WireGuardKeyGenerator;
 use App\Services\WireGuard\WireGuardPeerRealityProbe;
 use Illuminate\Database\Eloquent\Builder;
@@ -52,7 +41,6 @@ use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Process;
 use Illuminate\Support\Facades\Schema;
 use InvalidArgumentException;
-use JsonException;
 use RuntimeException;
 use Throwable;
 
@@ -63,10 +51,6 @@ use function Laravel\Prompts\text;
 final class GatewayNodeCreator
 {
     private const string DEFAULT_RUNTIME_USER = 'orbit';
-
-    private const int FIRST_GATEWAY_BOOTSTRAP_TIMEOUT_SECONDS = 600;
-
-    private const string TRUST_LABEL = 'orbit';
 
     private const int SUCCESS = 0;
 
@@ -84,25 +68,16 @@ final class GatewayNodeCreator
     {
         $this->arguments = $arguments;
         $this->output = null;
-        $previousGatewayContext = config('orbit.is_gateway');
 
-        try {
-            config(['orbit.is_gateway' => true]);
+        $exitCode = $this->handle(
+            app(OrbitHostInstaller::class),
+            app(NodeRegistryWriter::class),
+            app(NodeRoleAssignmentService::class),
+            app(WireGuardKeyGenerator::class),
+            app(NodesProbe::class),
+        );
 
-            $exitCode = $this->handle(
-                app(OrbitHostInstaller::class),
-                app(NodeRegistryWriter::class),
-                app(NodeRoleAssignmentService::class),
-                app(WireGuardKeyGenerator::class),
-                app(PlatformDetector::class),
-                app(WireGuardInterfaceInstaller::class),
-                app(NodesProbe::class),
-            );
-
-            return GatewayActionResult::fromJsonOutput($exitCode, $this->output);
-        } finally {
-            config(['orbit.is_gateway' => $previousGatewayContext]);
-        }
+        return GatewayActionResult::fromJsonOutput($exitCode, $this->output);
     }
 
     private function handle(
@@ -110,12 +85,8 @@ final class GatewayNodeCreator
         NodeRegistryWriter $registryWriter,
         NodeRoleAssignmentService $nodeRoleAssignmentService,
         WireGuardKeyGenerator $wireGuardKeyGenerator,
-        PlatformDetector $platformDetector,
-        WireGuardInterfaceInstaller $wireGuardInterfaceInstaller,
         NodesProbe $nodesProbe,
     ): int {
-        $executionContext = (bool) config('orbit.is_gateway', false) ? 'gateway' : 'control';
-
         $name = $this->resolveName();
 
         try {
@@ -163,7 +134,7 @@ final class GatewayNodeCreator
 
             $placement = $this->resolveIngressPlacement(
                 $requestedRoles->hosted,
-                validateLocalIngressRegistry: $executionContext === 'gateway',
+                validateLocalIngressRegistry: true,
             );
 
             if (is_int($placement)) {
@@ -176,10 +147,6 @@ final class GatewayNodeCreator
                     message: 'Gateway connection is required before creating workload nodes.',
                     meta: ['requested_role' => $requestedRoles->requestedRoleMeta],
                 );
-            }
-
-            if ($executionContext === 'control') {
-                return $this->forwardHostedRoleNodeCreation($name, $placement['roles'], $inputs, $placement['ingress_node_name']);
             }
 
             if ($this->containsAppHostingRole($placement['roles'])) {
@@ -213,14 +180,6 @@ final class GatewayNodeCreator
             );
         }
 
-        if (($requestedRoles->clientIdentity || $requestedRoles->operator) && $executionContext === 'control' && ! $gatewayConfigured) {
-            return $this->failCommand(
-                code: 'gateway_unavailable',
-                message: 'Gateway connection is required before creating client identities.',
-                meta: ['requested_role' => $requestedRoles->requestedRoleMeta],
-            );
-        }
-
         if ($requestedRoles->clientIdentity || $requestedRoles->operator) {
             $forbiddenInput = $this->forbiddenClientIdentityInput();
 
@@ -228,239 +187,18 @@ final class GatewayNodeCreator
                 return $this->validationFailed($forbiddenInput, 'Client identities do not use workload or SSH/bootstrap-only input.');
             }
 
-            if ($executionContext === 'control') {
-                return $this->forwardClientNodeEnrollment($name, $requestedRoles->operator);
-            }
-
             return $this->enrollClientNode($wireGuardKeyGenerator, $name, $requestedRoles->operator);
         }
 
-        if ($requestedRoles->gateway && ($gatewayConfigured || $executionContext === 'gateway')) {
-            if (
-                $executionContext === 'control'
-                && $gatewayConfigured
-                && $this->gatewayQuery()->where('name', $name)->exists()
-            ) {
-                return $this->convergeFirstGateway($name);
-            }
-
-            if ($executionContext === 'control' && $this->gatewayApiConfigured()) {
-                return $this->forwardGatewayConvergence($name);
-            }
-
-            if ($executionContext === 'gateway') {
-                return $this->convergeGatewayLocally($name);
-            }
-
-            return $this->failCommand(
-                code: 'gateway_unavailable',
-                message: 'Gateway forwarding is required before gateway convergence can run.',
-                meta: ['requested_role' => 'gateway'],
-            );
+        if ($requestedRoles->gateway) {
+            return $this->convergeGatewayLocally($name);
         }
 
-        if (! $requestedRoles->gateway) {
-            return $this->failCommand(
-                code: 'gateway_unavailable',
-                message: 'Gateway connection is required before creating nodes.',
-                meta: ['requested_role' => $requestedRoles->requestedRoleMeta],
-            );
-        }
-
-        return $this->bootstrapFirstGateway($installer, $wireGuardKeyGenerator, $platformDetector, $wireGuardInterfaceInstaller, $name);
-    }
-
-    private function convergeFirstGateway(string $name): int
-    {
-        $host = $this->resolveHost('gateway');
-
-        if ($host === null) {
-            return $this->validationFailed('host', 'Host is required for gateway nodes.');
-        }
-
-        if (! $this->isValidHost($host)) {
-            return $this->validationFailed('host', 'Host must be a valid IP address or dotted DNS name.');
-        }
-
-        $controlName = $this->resolveOperatorName($name);
-
-        if ($controlName === null || ! $this->isValidNodeName($controlName)) {
-            return $this->validationFailed('operator_name', 'Operator node name must be a valid node name.');
-        }
-
-        if ($controlName === $name) {
-            return $this->validationFailed('operator_name', 'Operator node name must be different from gateway node name.');
-        }
-
-        $gateway = $this->gatewayQuery()
-            ->where('name', $name)
-            ->first();
-
-        if (! $gateway instanceof Node || $gateway->host !== $host) {
-            return $this->failCommand(
-                code: 'node.incompatible',
-                message: "Gateway node '{$name}' is not compatible with this bootstrap request.",
-                meta: ['name' => $name, 'host' => $host],
-            );
-        }
-
-        $control = Node::query()
-            ->where('name', $controlName)
-            ->where('status', 'active')
-            ->whereDoesntHave('roleAssignments', fn (Builder $query): Builder => $query->where('status', NodeRoleStatus::Active->value))
-            ->first();
-
-        if (! $control instanceof Node) {
-            return $this->failCommand(
-                code: 'node.provisioning_incomplete',
-                message: "Local operator node '{$controlName}' is not fully onboarded.",
-                meta: [
-                    'host' => $host,
-                    'step' => 'local_operator_identity',
-                    'error' => 'Local operator node record is missing or inactive.',
-                ],
-            );
-        }
-
-        $settings = LocalGatewaySettings::current();
-
-        if (! is_string($settings->ca_pem_path) || $settings->ca_pem_path === '' || ! File::exists($settings->ca_pem_path)) {
-            return $this->failCommand(
-                code: 'node.provisioning_incomplete',
-                message: 'Gateway CA trust material is missing locally.',
-                meta: [
-                    'host' => $host,
-                    'step' => 'gateway_ca_trust',
-                    'error' => 'Local gateway CA PEM file is missing.',
-                ],
-            );
-        }
-
-        $caCert = File::get($settings->ca_pem_path);
-        $caSha256 = is_string($settings->ca_sha256) && $settings->ca_sha256 !== ''
-            ? $settings->ca_sha256
-            : hash('sha256', $caCert);
-
-        $trustStatus = $this->ensureGatewayCaTrusted(
-            host: $host,
-            trustPath: $settings->ca_pem_path,
-            caSha256: $caSha256,
+        return $this->failCommand(
+            code: 'gateway_unavailable',
+            message: 'Gateway connection is required before creating nodes.',
+            meta: ['requested_role' => $requestedRoles->requestedRoleMeta],
         );
-
-        if (is_int($trustStatus)) {
-            return $trustStatus;
-        }
-
-        $settings->fill([
-            'gateway_url' => $this->gatewayUrl($host),
-            'gateway_wg_ip' => $gateway->wireguard_address,
-            'ca_sha256' => $caSha256,
-            'ca_pem_path' => $settings->ca_pem_path,
-            'trusted_at' => $settings->trusted_at ?? now(),
-        ])->save();
-
-        if (! $this->wantsJson()) {
-            $this->line('○ Verify gateway API');
-        }
-
-        $apiVerification = $this->verifyGatewayApi((string) $gateway->wireguard_address, $settings->ca_pem_path);
-
-        if (array_key_exists('code', $apiVerification)) {
-            return $this->failCommand(
-                code: $apiVerification['code'],
-                message: $apiVerification['message'],
-                meta: $apiVerification['meta'],
-            );
-        }
-
-        $payload = $this->firstGatewayPayload(
-            action: 'converged',
-            provisioningTransport: 'none',
-            provisioningStatus: 'already_provisioned',
-            name: $name,
-            host: $host,
-            gatewayAddress: (string) $gateway->wireguard_address,
-            controlName: $controlName,
-            controlAddress: (string) $control->wireguard_address,
-            gatewayPlatform: $gateway->platform ?? 'unknown',
-            controlPlatform: $control->platform ?? 'unknown',
-            onboarding: [
-                'wireguard' => 'already_installed',
-                'gateway_trust' => $trustStatus,
-                'gateway_config' => 'already_stored',
-                'gateway_api' => 'verified',
-            ],
-            gatewayTrust: [
-                'gateway_url' => $this->gatewayUrl($host),
-                'trusted' => true,
-                'status' => $trustStatus,
-                'ca_sha256' => $caSha256,
-                'ca_pem_path' => $settings->ca_pem_path,
-            ],
-        );
-
-        if ($this->wantsJson()) {
-            return $this->jsonSuccess($payload);
-        }
-
-        $this->info('Gateway is already provisioned.');
-
-        return self::SUCCESS;
-    }
-
-    /**
-     * @param  array{host: string, tld: ?string, sshUser: ?string, hostKeyFingerprint: ?string}  $inputs
-     */
-    private function forwardHostedRoleNodeCreation(string $name, array $roles, array $inputs, ?string $ingressNodeName): int
-    {
-        try {
-            /** @var NodeCreateResponse $dto */
-            $dto = app(GatewayConnector::class)
-                ->send(new CreateNodeRequest(
-                    name: $name,
-                    roles: $roles,
-                    host: $inputs['host'],
-                    tld: $inputs['tld'],
-                    user: $inputs['sshUser'],
-                    hostKeyFingerprint: $inputs['hostKeyFingerprint'],
-                    selfGrant: $this->stringOption('self-grant'),
-                    selfGrantPermissions: $this->stringOption('self-grant-permissions'),
-                    grantTo: $this->arrayOption('grant-to'),
-                    grantToPreset: $this->stringOption('grant-to-preset'),
-                    grantToPermissions: $this->stringOption('grant-to-permissions'),
-                    grantFrom: $this->arrayOption('grant-from'),
-                    grantFromPreset: $this->stringOption('grant-from-preset'),
-                    grantFromPermissions: $this->stringOption('grant-from-permissions'),
-                    agentTools: $this->arrayOption('agent-tool'),
-                    ingressNode: $ingressNodeName,
-                ))
-                ->dto();
-        } catch (GatewayApiException $exception) {
-            return $this->failCommand(
-                code: $exception->errorCode() ?? 'gateway_unavailable',
-                message: $exception->getMessage() !== ''
-                    ? $exception->getMessage()
-                    : 'Gateway API request failed.',
-                meta: $exception->errorMeta(),
-            );
-        } catch (Throwable $exception) {
-            return $this->failCommand(
-                code: 'gateway_unavailable',
-                message: 'Gateway API request failed.',
-                meta: [
-                    'requested_role' => $this->firstRole($roles),
-                    'error' => $exception->getMessage(),
-                ],
-            );
-        }
-
-        if ($this->wantsJson()) {
-            return $this->jsonSuccess($dto->data, $dto->meta);
-        }
-
-        $this->info("Created node {$name}.");
-
-        return self::SUCCESS;
     }
 
     /**
@@ -521,7 +259,7 @@ final class GatewayNodeCreator
         $platform = 'ubuntu';
         $host = $requiresHostProvisioning ? $inputs['host'] : '';
         $user = $requiresHostProvisioning ? $runtimeUser : self::DEFAULT_RUNTIME_USER;
-        $orbitPath = $requiresHostProvisioning ? "/home/{$runtimeUser}/orbit" : "/home/{$runtimeUser}/orbit";
+        $orbitPath = "/home/{$runtimeUser}/orbit";
         $node = null;
 
         if ($requiresHostProvisioning) {
@@ -645,11 +383,13 @@ final class GatewayNodeCreator
 
             $assignment = $roleAssignmentService->addDuringCreation($node, $role, $settings);
 
-            if ($assignment->status === NodeRoleStatus::Error->value) {
-                $failedAssignment = $assignment;
-
-                break;
+            if ($assignment->status !== NodeRoleStatus::Error->value) {
+                continue;
             }
+
+            $failedAssignment = $assignment;
+
+            break;
         }
 
         if ($failedAssignment instanceof NodeRoleAssignment) {
@@ -1135,58 +875,6 @@ SH;
         return null;
     }
 
-    private function forwardGatewayConvergence(string $name): int
-    {
-        $host = $this->resolveHost('gateway');
-
-        if ($host === null) {
-            return $this->validationFailed('host', 'Host is required for gateway nodes.');
-        }
-
-        if (! $this->isValidHost($host)) {
-            return $this->validationFailed('host', 'Host must be a valid IP address or dotted DNS name.');
-        }
-
-        try {
-            /** @var NodeCreateResponse $dto */
-            $dto = app(GatewayConnector::class)
-                ->send(new CreateNodeRequest(
-                    name: $name,
-                    roles: [],
-                    host: $host,
-                    tld: null,
-                    user: $this->resolveSshUser(),
-                    template: 'gateway',
-                ))
-                ->dto();
-        } catch (GatewayApiException $exception) {
-            return $this->failCommand(
-                code: $exception->errorCode() ?? 'gateway_unavailable',
-                message: $exception->getMessage() !== ''
-                    ? $exception->getMessage()
-                    : 'Gateway API request failed.',
-                meta: $exception->errorMeta(),
-            );
-        } catch (Throwable $exception) {
-            return $this->failCommand(
-                code: 'gateway_unavailable',
-                message: 'Gateway API request failed.',
-                meta: [
-                    'requested_role' => 'gateway',
-                    'error' => $exception->getMessage(),
-                ],
-            );
-        }
-
-        if ($this->wantsJson()) {
-            return $this->jsonSuccess($dto->data, $dto->meta);
-        }
-
-        $this->info('Gateway is already provisioned.');
-
-        return self::SUCCESS;
-    }
-
     private function convergeGatewayLocally(string $name): int
     {
         $host = $this->resolveHost('gateway');
@@ -1253,49 +941,6 @@ SH;
             ],
             'next_steps' => [],
         ];
-    }
-
-    private function forwardClientNodeEnrollment(string $name, bool $operator): int
-    {
-        try {
-            /** @var NodeCreateResponse $dto */
-            $dto = app(GatewayConnector::class)
-                ->send(new CreateNodeRequest(
-                    name: $name,
-                    roles: [],
-                    host: null,
-                    tld: null,
-                    user: null,
-                    operator: $operator,
-                ))
-                ->dto();
-        } catch (GatewayApiException $exception) {
-            return $this->failCommand(
-                code: $exception->errorCode() ?? 'gateway_unavailable',
-                message: $exception->getMessage() !== ''
-                    ? $exception->getMessage()
-                    : 'Gateway API request failed.',
-                meta: $exception->errorMeta(),
-            );
-        } catch (Throwable $exception) {
-            return $this->failCommand(
-                code: 'gateway_unavailable',
-                message: 'Gateway API request failed.',
-                meta: [
-                    'requested_role' => $operator ? 'operator' : 'client',
-                    'error' => $exception->getMessage(),
-                ],
-            );
-        }
-
-        if ($this->wantsJson()) {
-            return $this->jsonSuccess($dto->data);
-        }
-
-        $type = $operator ? 'operator' : 'client';
-        $this->info("Enrolled {$type} node {$name}.");
-
-        return self::SUCCESS;
     }
 
     private function enrollClientNode(WireGuardKeyGenerator $wireGuardKeyGenerator, string $name, bool $operator): int
@@ -2010,45 +1655,6 @@ SH;
         );
     }
 
-    private function authorizeRuntimeSshUserOnHost(string $host, string $sshUser, string $runtimeUser): ?int
-    {
-        $publicKey = $this->gatewaySshPublicKey();
-
-        if (is_int($publicKey)) {
-            return $publicKey;
-        }
-
-        $home = $runtimeUser === 'root' ? '/root' : "/home/{$runtimeUser}";
-        $authorizedKeys = "{$home}/.ssh/authorized_keys";
-        $script = sprintf(
-            'sudo install -d -m 700 -o %1$s -g %1$s %2$s && sudo touch %3$s && sudo chown %1$s:%1$s %3$s && sudo chmod 600 %3$s && (sudo grep -qxF %4$s %3$s || printf "%%s\n" %4$s | sudo tee -a %3$s >/dev/null)',
-            escapeshellarg($runtimeUser),
-            escapeshellarg("{$home}/.ssh"),
-            escapeshellarg($authorizedKeys),
-            escapeshellarg($publicKey),
-        );
-
-        $authorization = Process::timeout(30)->run($this->ssh(
-            user: $sshUser,
-            host: $host,
-            command: $script,
-        ));
-
-        if ($authorization->successful()) {
-            return null;
-        }
-
-        return $this->failCommand(
-            code: 'node.provisioning_incomplete',
-            message: "Host '{$host}' could not authorize the steady-state SSH user.",
-            meta: [
-                'host' => $host,
-                'step' => 'steady_state_ssh_authorization',
-                'error' => trim($authorization->errorOutput()) ?: trim($authorization->output()) ?: null,
-            ],
-        );
-    }
-
     private function hardenRuntimeSshAccess(Node $node, string $runtimeUser): ?int
     {
         $script = sprintf(
@@ -2091,53 +1697,6 @@ SCRIPT,
             message: "Host '{$node->host}' could not harden steady-state SSH access.",
             meta: [
                 'host' => $node->host,
-                'step' => 'ssh_hardening',
-                'error' => trim($hardening->errorOutput()."\n".$hardening->output()) ?: null,
-            ],
-        );
-    }
-
-    private function hardenRuntimeSshAccessOnHost(string $host, string $runtimeUser): ?int
-    {
-        $script = sprintf(
-            <<<'SCRIPT'
-set -e
-RUNTIME_USER=%s
-sudo install -d -m 0755 /etc/ssh/sshd_config.d
-sudo tee /etc/ssh/sshd_config.d/99-orbit-hardening.conf > /dev/null <<EOF
-# Managed by Orbit.
-# Provisioned nodes accept operator SSH only through the orbit runtime user.
-PermitRootLogin no
-PasswordAuthentication no
-KbdInteractiveAuthentication no
-ChallengeResponseAuthentication no
-PubkeyAuthentication yes
-AllowUsers ${RUNTIME_USER}
-EOF
-sudo chmod 0644 /etc/ssh/sshd_config.d/99-orbit-hardening.conf
-sudo sshd -t
-sudo systemctl reload ssh 2>/dev/null || sudo systemctl reload sshd
-sudo passwd -l root > /dev/null 2>&1 || true
-sudo rm -f /root/.ssh/authorized_keys
-SCRIPT,
-            escapeshellarg($runtimeUser),
-        );
-
-        $hardening = Process::timeout(60)->run($this->ssh(
-            user: $runtimeUser,
-            host: $host,
-            command: $script,
-        ));
-
-        if ($hardening->successful()) {
-            return null;
-        }
-
-        return $this->failCommand(
-            code: 'node.provisioning_incomplete',
-            message: "Host '{$host}' could not harden steady-state SSH access.",
-            meta: [
-                'host' => $host,
                 'step' => 'ssh_hardening',
                 'error' => trim($hardening->errorOutput()."\n".$hardening->output()) ?: null,
             ],
@@ -2193,383 +1752,6 @@ SCRIPT,
         );
     }
 
-    private function bootstrapFirstGateway(
-        OrbitHostInstaller $installer,
-        WireGuardKeyGenerator $wireGuardKeyGenerator,
-        PlatformDetector $platformDetector,
-        WireGuardInterfaceInstaller $wireGuardInterfaceInstaller,
-        string $name,
-    ): int {
-        $host = $this->resolveHost('gateway');
-
-        if ($host === null) {
-            return $this->validationFailed('host', 'Host is required for gateway nodes.');
-        }
-
-        if (! $this->isValidHost($host)) {
-            return $this->validationFailed('host', 'Host must be a valid IP address or dotted DNS name.');
-        }
-
-        $controlName = $this->resolveOperatorName($name);
-
-        if ($controlName === null || ! $this->isValidNodeName($controlName)) {
-            return $this->validationFailed('operator_name', 'Operator node name must be a valid node name.');
-        }
-
-        if ($controlName === $name) {
-            return $this->validationFailed('operator_name', 'Operator node name must be different from gateway node name.');
-        }
-
-        $sshUser = $this->resolveSshUser();
-        $runtimeUser = self::DEFAULT_RUNTIME_USER;
-        $gatewayAddress = '10.6.0.2';
-        $controlAddress = $this->nextWireguardAddress(excluding: [$gatewayAddress]);
-
-        try {
-            $gatewayKeys = $wireGuardKeyGenerator->generateKeyPair();
-            $controlKeys = $wireGuardKeyGenerator->generateKeyPair();
-            $gatewayPreSharedKey = $this->generatePreSharedKey();
-            $controlPreSharedKey = $this->generatePreSharedKey();
-        } catch (RuntimeException $exception) {
-            return $this->failCommand(
-                code: 'node.provisioning_incomplete',
-                message: 'Failed to generate WireGuard identity material.',
-                meta: [
-                    'host' => $host,
-                    'step' => 'wireguard_identity',
-                    'error' => $exception->getMessage(),
-                ],
-            );
-        }
-
-        try {
-            $pinnedHostKey = app(SshHostKeyPinner::class)->pin($host, $this->stringOption('host-key-fingerprint'));
-        } catch (HostKeyMismatch $exception) {
-            return $this->failCommand(
-                code: 'node.host_key_mismatch',
-                message: $exception->getMessage(),
-                meta: ['host' => $host],
-            );
-        } catch (HostKeyPinningFailed $exception) {
-            return $this->failCommand(
-                code: 'node.host_key_pin_failed',
-                message: $exception->getMessage(),
-                meta: ['host' => $host],
-            );
-        }
-
-        $identityJson = json_encode([
-            'gateway' => [
-                'public_key' => $gatewayKeys['public_key'],
-                'private_key' => $gatewayKeys['private_key'],
-                'pre_shared_key' => $gatewayPreSharedKey,
-            ],
-            'control' => [
-                'name' => $controlName,
-                'wireguard_address' => $controlAddress,
-                'public_key' => $controlKeys['public_key'],
-                'private_key' => $controlKeys['private_key'],
-                'pre_shared_key' => $controlPreSharedKey,
-            ],
-        ], JSON_THROW_ON_ERROR);
-
-        $installation = $installer->install($host, $sshUser, $runtimeUser, asGateway: true);
-
-        if (! $installation->successful) {
-            return $this->installerFailure(
-                role: 'gateway',
-                host: $host,
-                sshUser: $sshUser,
-                errorOutput: $installation->errorOutput,
-            );
-        }
-
-        $sshAuthorization = $this->authorizeRuntimeSshUserOnHost(
-            host: $host,
-            sshUser: $sshUser,
-            runtimeUser: $runtimeUser,
-        );
-
-        if (is_int($sshAuthorization)) {
-            return $sshAuthorization;
-        }
-
-        $gatewayTld = $this->resolveGatewayTld();
-
-        $bootstrapCommand = sprintf(
-            'orbit orbit:internal:bootstrap-gateway-local %s %s --identity-json=- --public-host=%s --tld=%s --metadata-json',
-            escapeshellarg($name),
-            escapeshellarg($gatewayAddress),
-            escapeshellarg($host),
-            escapeshellarg($gatewayTld),
-        );
-
-        $command = $sshUser === $runtimeUser
-            ? $bootstrapCommand
-            : sprintf('sudo su - %s -c %s', escapeshellarg($runtimeUser), escapeshellarg($bootstrapCommand));
-
-        $bootstrap = Process::timeout(self::FIRST_GATEWAY_BOOTSTRAP_TIMEOUT_SECONDS)->input($identityJson)->run($this->ssh(
-            user: $sshUser,
-            host: $host,
-            command: $command,
-        ));
-
-        if (! $bootstrap->successful()) {
-            return $this->failCommand(
-                code: 'node.provisioning_incomplete',
-                message: "Gateway host '{$host}' could not bootstrap gateway identity.",
-                meta: [
-                    'host' => $host,
-                    'step' => 'bootstrap_gateway_identity',
-                    'error' => trim($bootstrap->errorOutput()."\n".$bootstrap->output()) ?: null,
-                ],
-            );
-        }
-
-        $bootstrapMetadata = $this->parseGatewayBootstrapMetadata($bootstrap->output(), $host);
-
-        if (is_int($bootstrapMetadata)) {
-            return $bootstrapMetadata;
-        }
-
-        $caCert = $bootstrapMetadata['ca_cert'];
-        $wireguardServerPublicKey = $bootstrapMetadata['wireguard_server_public_key'];
-
-        $gatewayPlatform = $this->detectRemotePlatform(
-            host: $host,
-            sshUser: $sshUser,
-            runtimeUser: $runtimeUser,
-        );
-
-        if (is_int($gatewayPlatform)) {
-            return $gatewayPlatform;
-        }
-
-        $sshHardening = $this->hardenRuntimeSshAccessOnHost(
-            host: $host,
-            runtimeUser: $runtimeUser,
-        );
-
-        if (is_int($sshHardening)) {
-            return $sshHardening;
-        }
-
-        try {
-            $controlPlatform = $platformDetector->detectLocal();
-        } catch (RuntimeException $exception) {
-            return $this->failCommand(
-                code: 'node.provisioning_incomplete',
-                message: 'Failed to detect the local operator platform.',
-                meta: [
-                    'host' => $host,
-                    'step' => 'platform_detection',
-                    'error' => $exception->getMessage(),
-                ],
-            );
-        }
-
-        $trustPath = $this->localGatewayCaPath();
-        File::ensureDirectoryExists(dirname($trustPath));
-
-        if (! File::put($trustPath, $caCert)) {
-            return $this->failCommand(
-                code: 'node.provisioning_incomplete',
-                message: 'Failed to store gateway CA certificate locally.',
-                meta: [
-                    'host' => $host,
-                    'step' => 'bootstrap_gateway_identity',
-                    'error' => 'Trust file write failed.',
-                ],
-            );
-        }
-
-        $caSha256 = hash('sha256', $caCert);
-
-        if (! $this->wantsJson()) {
-            $this->line('○ Verify gateway CA trust');
-        }
-
-        $trustStatus = $this->ensureGatewayCaTrusted(
-            host: $host,
-            trustPath: $trustPath,
-            caSha256: $caSha256,
-        );
-
-        if (is_int($trustStatus)) {
-            return $trustStatus;
-        }
-
-        if (! $this->wantsJson()) {
-            $this->line('○ Install local WireGuard config');
-        }
-
-        try {
-            $wireGuardInterfaceInstaller->install($this->controlWireGuardConfig(
-                controlPrivateKey: $controlKeys['private_key'],
-                controlWireguardAddress: $controlAddress,
-                gatewayPublicKey: $wireguardServerPublicKey,
-                gatewayWireguardAddress: $gatewayAddress,
-                gatewayEndpoint: $host,
-                preSharedKey: $controlPreSharedKey,
-                allowedIps: '10.6.0.0/24',
-            ));
-        } catch (RuntimeException $exception) {
-            return $this->failCommand(
-                code: 'node.provisioning_incomplete',
-                message: 'Failed to install local WireGuard configuration.',
-                meta: [
-                    'host' => $host,
-                    'step' => 'local_wireguard_install',
-                    'error' => $exception->getMessage(),
-                ],
-            );
-        }
-
-        DB::transaction(function () use ($name, $host, $runtimeUser, $controlName, $gatewayAddress, $gatewayPlatform, $controlAddress, $controlPlatform, $controlKeys, $controlPreSharedKey, $trustPath, $caSha256, $pinnedHostKey): void {
-            $gateway = Node::query()->updateOrCreate(
-                ['name' => $name],
-                [
-                    'tld' => null,
-                    'platform' => $gatewayPlatform,
-                    'host' => $host,
-                    'wireguard_address' => $gatewayAddress,
-                    'gateway_endpoint' => $host,
-                    'user' => $runtimeUser,
-                    'orbit_path' => "/home/{$runtimeUser}/orbit",
-                    'status' => 'active',
-                    'host_key_type' => $pinnedHostKey->type,
-                    'host_key_public' => $pinnedHostKey->publicKey,
-                    'host_key_fingerprint' => $pinnedHostKey->fingerprint,
-                    'host_key_pin_mode' => $pinnedHostKey->pinMode,
-                    'host_key_pinned_at' => now(),
-                ],
-            );
-
-            $gateway->roleAssignments()->firstOrCreate(
-                ['role' => NodeRoleName::Gateway->value],
-                [
-                    'status' => NodeRoleStatus::Active->value,
-                    'settings' => [],
-                    'last_error' => null,
-                    'converged_at' => now(),
-                ],
-            );
-
-            $gateway->roleAssignments()->updateOrCreate(
-                ['role' => NodeRoleName::Vpn->value],
-                [
-                    'status' => NodeRoleStatus::Active->value,
-                    'settings' => $this->vpnRoleSettings($host),
-                    'last_error' => null,
-                    'converged_at' => now(),
-                ],
-            );
-
-            $gateway->roleAssignments()->updateOrCreate(
-                ['role' => NodeRoleName::Router->value],
-                [
-                    'status' => NodeRoleStatus::Active->value,
-                    'settings' => [],
-                    'last_error' => null,
-                    'converged_at' => now(),
-                ],
-            );
-
-            $control = Node::query()->updateOrCreate(
-                ['name' => $controlName],
-                [
-                    'tld' => null,
-                    'platform' => $controlPlatform,
-                    'host' => '127.0.0.1',
-                    'wireguard_address' => $controlAddress,
-                    'gateway_endpoint' => $host,
-                    'user' => get_current_user(),
-                    'orbit_path' => repo_path(),
-                    'status' => 'active',
-                ],
-            );
-
-            WireGuardPeer::query()->firstOrCreate(
-                ['node_id' => $control->id],
-                [
-                    'public_key' => $controlKeys['public_key'],
-                    'private_key' => $controlKeys['private_key'],
-                    'pre_shared_key' => $controlPreSharedKey,
-                    'allowed_ips' => "{$controlAddress}/32",
-                ],
-            );
-
-            NodeAccess::query()->firstOrCreate(
-                [
-                    'consumer_node_id' => $control->id,
-                    'serving_node_id' => $gateway->id,
-                ],
-                [
-                    'permissions' => ['*'],
-                    'custom_permissions' => [],
-                ],
-            );
-
-            LocalGatewaySettings::current()->fill([
-                'gateway_url' => $this->gatewayUrl($host),
-                'gateway_wg_ip' => $gatewayAddress,
-                'ca_sha256' => $caSha256,
-                'ca_pem_path' => $trustPath,
-                'trusted_at' => now(),
-            ])->save();
-        });
-
-        if (! $this->wantsJson()) {
-            $this->line('○ Verify gateway API');
-        }
-
-        $apiVerification = $this->verifyGatewayApi($gatewayAddress, $trustPath);
-
-        if (array_key_exists('code', $apiVerification)) {
-            return $this->failCommand(
-                code: $apiVerification['code'],
-                message: $apiVerification['message'],
-                meta: $apiVerification['meta'],
-            );
-        }
-
-        $payload = $this->firstGatewayPayload(
-            action: 'created',
-            provisioningTransport: 'ssh',
-            provisioningStatus: 'complete',
-            name: $name,
-            host: $host,
-            gatewayAddress: $gatewayAddress,
-            controlName: $controlName,
-            controlAddress: $controlAddress,
-            gatewayPlatform: $gatewayPlatform,
-            controlPlatform: $controlPlatform,
-            onboarding: [
-                'wireguard' => 'installed',
-                'gateway_trust' => $trustStatus,
-                'gateway_config' => 'stored',
-                'gateway_api' => 'verified',
-            ],
-            gatewayTrust: [
-                'gateway_url' => $this->gatewayUrl($host),
-                'trusted' => true,
-                'status' => $trustStatus,
-                'ca_sha256' => $caSha256,
-                'ca_pem_path' => $trustPath,
-            ],
-        );
-
-        if ($this->wantsJson()) {
-            return $this->jsonSuccess($payload);
-        }
-
-        $this->info("Created gateway node {$name}.");
-        $this->line("Endpoint: {$host}");
-        $this->line("Operator node: {$controlName}");
-
-        return self::SUCCESS;
-    }
-
     private function controlWireGuardConfig(
         string $controlPrivateKey,
         string $controlWireguardAddress,
@@ -2610,330 +1792,6 @@ SCRIPT,
         }
     }
 
-    /**
-     * @return array{ca_cert: string, wireguard_server_public_key: string}|int
-     */
-    private function parseGatewayBootstrapMetadata(string $output, string $host): array|int
-    {
-        $trimmed = trim($output);
-        $caCert = $trimmed;
-        $wireguardServerPublicKey = null;
-
-        if (str_starts_with($trimmed, '{')) {
-            try {
-                $metadata = json_decode($trimmed, associative: true, flags: JSON_THROW_ON_ERROR);
-            } catch (JsonException) {
-                return $this->failCommand(
-                    code: 'node.provisioning_incomplete',
-                    message: "Gateway host '{$host}' returned invalid bootstrap metadata.",
-                    meta: [
-                        'host' => $host,
-                        'step' => 'bootstrap_gateway_identity',
-                        'error' => 'Remote bootstrap metadata was not valid JSON.',
-                    ],
-                );
-            }
-
-            if (! is_array($metadata)) {
-                return $this->failCommand(
-                    code: 'node.provisioning_incomplete',
-                    message: "Gateway host '{$host}' returned invalid bootstrap metadata.",
-                    meta: [
-                        'host' => $host,
-                        'step' => 'bootstrap_gateway_identity',
-                        'error' => 'Remote bootstrap metadata was not a JSON object.',
-                    ],
-                );
-            }
-
-            $caCert = is_string($metadata['ca_cert'] ?? null) ? trim($metadata['ca_cert']) : '';
-            $wireguardServerPublicKey = is_string($metadata['wireguard_server_public_key'] ?? null)
-                ? trim($metadata['wireguard_server_public_key'])
-                : null;
-        }
-
-        if (! str_starts_with($caCert, '-----BEGIN CERTIFICATE-----') || ! str_contains($caCert, '-----END CERTIFICATE-----')) {
-            return $this->failCommand(
-                code: 'node.provisioning_incomplete',
-                message: "Gateway host '{$host}' returned an invalid or empty CA certificate.",
-                meta: [
-                    'host' => $host,
-                    'step' => 'bootstrap_gateway_identity',
-                    'error' => 'Remote bootstrap did not output a valid PEM certificate.',
-                ],
-            );
-        }
-
-        if (openssl_x509_parse($caCert) === false) {
-            return $this->failCommand(
-                code: 'node.provisioning_incomplete',
-                message: "Gateway host '{$host}' returned an unparsable CA certificate.",
-                meta: [
-                    'host' => $host,
-                    'step' => 'bootstrap_gateway_identity',
-                    'error' => 'Remote bootstrap output is not a valid X.509 certificate.',
-                ],
-            );
-        }
-
-        if ($wireguardServerPublicKey === null || $wireguardServerPublicKey === '') {
-            return $this->failCommand(
-                code: 'node.provisioning_incomplete',
-                message: "Gateway host '{$host}' did not return WireGuard server identity metadata.",
-                meta: [
-                    'host' => $host,
-                    'step' => 'bootstrap_gateway_identity',
-                    'error' => 'Remote bootstrap metadata did not include wireguard_server_public_key.',
-                ],
-            );
-        }
-
-        return [
-            'ca_cert' => $caCert,
-            'wireguard_server_public_key' => $wireguardServerPublicKey,
-        ];
-    }
-
-    /**
-     * @param  array{wireguard: string, gateway_trust: string, gateway_config: string, gateway_api: string}  $onboarding
-     * @param  array<string, mixed>  $gatewayTrust
-     * @return array{
-     *     result: array{action: string},
-     *     node: array<string, mixed>,
-     *     roles: list<array{role: string, status: string, settings: array<string, mixed>, last_error: null}>,
-     *     provisioning: array{transport: string, host: string, status: string},
-     *     local_operator_node: array<string, mixed>,
-     *     local_onboarding: array<string, string>,
-     *     gateway_trust: array<string, mixed>,
-     *     next_steps: array<int, mixed>
-     * }
-     */
-    private function firstGatewayPayload(
-        string $action,
-        string $provisioningTransport,
-        string $provisioningStatus,
-        string $name,
-        string $host,
-        string $gatewayAddress,
-        string $controlName,
-        string $controlAddress,
-        string $gatewayPlatform,
-        string $controlPlatform,
-        array $onboarding,
-        array $gatewayTrust,
-    ): array {
-        return [
-            'result' => [
-                'action' => $action,
-            ],
-            'node' => [
-                'name' => $name,
-                'tld' => null,
-                'platform' => $gatewayPlatform,
-                'addresses' => [
-                    'wireguard' => $gatewayAddress,
-                    'gateway_endpoint' => $host,
-                ],
-                'status' => 'active',
-            ],
-            'roles' => [
-                [
-                    'role' => NodeRoleName::Gateway->value,
-                    'status' => NodeRoleStatus::Active->value,
-                    'settings' => [],
-                    'last_error' => null,
-                ],
-                [
-                    'role' => NodeRoleName::Vpn->value,
-                    'status' => NodeRoleStatus::Active->value,
-                    'settings' => $this->vpnRoleSettings($host),
-                    'last_error' => null,
-                ],
-                [
-                    'role' => NodeRoleName::Router->value,
-                    'status' => NodeRoleStatus::Active->value,
-                    'settings' => [],
-                    'last_error' => null,
-                ],
-            ],
-            'provisioning' => [
-                'transport' => $provisioningTransport,
-                'host' => $host,
-                'status' => $provisioningStatus,
-            ],
-            'local_operator_node' => [
-                'name' => $controlName,
-                'tld' => null,
-                'platform' => $controlPlatform,
-                'addresses' => [
-                    'wireguard' => $controlAddress,
-                ],
-                'status' => 'active',
-            ],
-            'local_onboarding' => $onboarding,
-            'gateway_trust' => $gatewayTrust,
-            'next_steps' => [],
-        ];
-    }
-
-    /**
-     * @return array{public_endpoint: ?string, wireguard_cidr: string, wireguard_port: int, dns_ip: string}
-     */
-    private function vpnRoleSettings(?string $publicEndpoint): array
-    {
-        return VpnRoleSettings::fromArray([
-            'public_endpoint' => $publicEndpoint,
-            'wireguard_cidr' => '10.6.0.0/24',
-            'wireguard_port' => 51820,
-            'dns_ip' => '10.6.0.1',
-        ])->toArray();
-    }
-
-    private function ensureGatewayCaTrusted(string $host, string $trustPath, string $caSha256): string|int
-    {
-        try {
-            $installer = app(TrustStoreInstaller::class);
-        } catch (TrustStoreInstallException $e) {
-            if ($e->reason === TrustStoreInstallReason::UnsupportedPlatform) {
-                return $this->unsupportedTrustStore();
-            }
-
-            throw $e;
-        } catch (RuntimeException) {
-            return $this->unsupportedTrustStore();
-        }
-
-        $alreadyTrusted = $installer->isCaTrusted($trustPath, self::TRUST_LABEL)
-            && LocalGatewaySettings::current()->ca_sha256 === $caSha256;
-
-        if ($alreadyTrusted) {
-            return 'already_trusted';
-        }
-
-        try {
-            $installer->trustCa($trustPath, self::TRUST_LABEL);
-        } catch (TrustStoreInstallException $e) {
-            if ($e->reason === TrustStoreInstallReason::UnsupportedPlatform) {
-                return $this->unsupportedTrustStore();
-            }
-
-            return $this->failCommand(
-                code: 'node.provisioning_incomplete',
-                message: 'Failed to install the gateway CA into the local trust store.',
-                meta: [
-                    'host' => $host,
-                    'step' => 'gateway_ca_trust',
-                    'error' => 'Trust store installation failed.',
-                ],
-            );
-        }
-
-        return 'trusted';
-    }
-
-    private function detectRemotePlatform(string $host, string $sshUser, string $runtimeUser): string|int
-    {
-        $detectCommand = 'orbit orbit:internal:detect-platform --update-local-node';
-
-        $command = $sshUser === $runtimeUser
-            ? $detectCommand
-            : sprintf('sudo su - %s -c %s', escapeshellarg($runtimeUser), escapeshellarg($detectCommand));
-
-        $detection = Process::timeout(30)->run($this->ssh(
-            user: $sshUser,
-            host: $host,
-            command: $command,
-        ));
-
-        if (! $detection->successful()) {
-            return $this->failCommand(
-                code: 'node.provisioning_incomplete',
-                message: "Gateway host '{$host}' could not detect its platform.",
-                meta: [
-                    'host' => $host,
-                    'step' => 'platform_detection',
-                    'error' => trim($detection->errorOutput()) ?: trim($detection->output()) ?: null,
-                ],
-            );
-        }
-
-        $platform = trim($detection->output());
-
-        if ($platform === '') {
-            return $this->failCommand(
-                code: 'node.provisioning_incomplete',
-                message: "Gateway host '{$host}' returned an empty platform identifier.",
-                meta: [
-                    'host' => $host,
-                    'step' => 'platform_detection',
-                    'error' => 'Remote platform detection did not output a platform identifier.',
-                ],
-            );
-        }
-
-        return $platform;
-    }
-
-    /**
-     * @return array{}|array{code: string, message: string, meta: array<string, mixed>}
-     */
-    private function verifyGatewayApi(string $gatewayIp, string $pemPath): array
-    {
-        try {
-            $response = new GatewayConnector(
-                baseUrl: "https://{$gatewayIp}",
-                caPemPath: $pemPath,
-            )->send(new ShowGatewayIdentityRequest);
-        } catch (Throwable) {
-            return [
-                'code' => 'gateway_unavailable',
-                'message' => "Gateway at {$gatewayIp} is unreachable.",
-                'meta' => [
-                    'gateway_ip' => $gatewayIp,
-                    'endpoint' => '/api/me',
-                ],
-            ];
-        }
-
-        $status = $response->status();
-
-        if (! $response->successful()) {
-            return [
-                'code' => 'node.gateway_api_error',
-                'message' => "Gateway at {$gatewayIp} returned HTTP {$status} for /api/me.",
-                'meta' => [
-                    'gateway_ip' => $gatewayIp,
-                    'status' => $status,
-                    'endpoint' => '/api/me',
-                ],
-            ];
-        }
-
-        $self = $response->dto()->self;
-
-        if (! is_array($self)) {
-            return [
-                'code' => 'node.gateway_api_error',
-                'message' => "Gateway at {$gatewayIp} returned an invalid identity response.",
-                'meta' => [
-                    'gateway_ip' => $gatewayIp,
-                    'endpoint' => '/api/me',
-                ],
-            ];
-        }
-
-        return [];
-    }
-
-    private function unsupportedTrustStore(): int
-    {
-        return $this->failCommand(
-            code: 'node.unsupported_platform',
-            message: 'This platform does not support automatic gateway CA trust installation.',
-            meta: ['platform' => PHP_OS_FAMILY, 'reason' => 'unsupported_trust_store'],
-        );
-    }
-
     private function installerFailure(string $role, string $host, string $sshUser, string $errorOutput): int
     {
         $error = trim($errorOutput);
@@ -2967,16 +1825,6 @@ SCRIPT,
         return str_contains($error, 'Permission denied')
             || str_contains($error, 'publickey')
             || str_contains($error, 'Authentication failed');
-    }
-
-    private function gatewayUrl(string $host): string
-    {
-        return str_starts_with($host, 'http') ? $host : "https://{$host}";
-    }
-
-    private function localGatewayCaPath(): string
-    {
-        return storage_path('app/orbit/gateway-ca/orbit.crt');
     }
 
     private function gatewayConfigured(): bool
@@ -3030,13 +1878,6 @@ SCRIPT,
         return array_values(array_filter($value, fn ($item): bool => is_string($item) && $item !== ''));
     }
 
-    private function resolveGatewayTld(): string
-    {
-        $value = $this->stringOption('tld');
-
-        return $value ?? 'gateway';
-    }
-
     private function resolveName(): ?string
     {
         $name = $this->stringArgument('name');
@@ -3076,28 +1917,6 @@ SCRIPT,
             label: 'Host',
             required: true,
             validate: fn (string $value): ?string => $this->validatePromptHost($value),
-        ));
-    }
-
-    private function resolveOperatorName(string $gatewayName): ?string
-    {
-        $controlName = $this->stringOption('operator-name');
-
-        if ($controlName !== null) {
-            return $controlName;
-        }
-
-        $default = $this->defaultOperatorName();
-
-        if (! $this->isInteractiveInput()) {
-            return $default;
-        }
-
-        return trim(text(
-            label: 'Operator node name',
-            default: $default ?? '',
-            required: true,
-            validate: fn (string $value): ?string => $this->validatePromptOperatorName($value, $gatewayName),
         ));
     }
 
@@ -3158,23 +1977,6 @@ SCRIPT,
         }
 
         return $this->isValidNodeName($name) ? null : 'Node name must be a valid node name.';
-    }
-
-    private function validatePromptOperatorName(string $value, string $gatewayName): ?string
-    {
-        $controlName = trim($value);
-
-        if ($controlName === '') {
-            return 'Operator node name is required.';
-        }
-
-        if (! $this->isValidNodeName($controlName)) {
-            return 'Operator node name must be a valid node name.';
-        }
-
-        return $controlName === $gatewayName
-            ? 'Operator node name must be different from gateway node name.'
-            : null;
     }
 
     private function validatePromptHost(string $value): ?string
@@ -3876,21 +2678,6 @@ SCRIPT,
         }
 
         return null;
-    }
-
-    private function defaultOperatorName(): ?string
-    {
-        $hostname = gethostname();
-
-        if (! is_string($hostname) || $hostname === '') {
-            return null;
-        }
-
-        $short = explode('.', $hostname)[0] ?? '';
-        $slug = strtolower((string) preg_replace('/[^a-zA-Z0-9]+/', '-', $short));
-        $slug = trim($slug, '-');
-
-        return $slug !== '' ? $slug : null;
     }
 
     private function isValidNodeName(string $name): bool

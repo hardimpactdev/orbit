@@ -25,14 +25,6 @@ final class DnsResolveTldCommand extends LocalOnlyCommand
 
     public function handle(ResolvesLocalDns $resolver): int
     {
-        if ((bool) config('orbit.is_gateway', false)) {
-            return $this->renderFailure(
-                'validation_failed',
-                'This command is not supported on gateway nodes.',
-                ['reason' => 'not_supported_on_gateway'],
-            );
-        }
-
         $tld = $this->resolveTld();
 
         if (is_int($tld)) {

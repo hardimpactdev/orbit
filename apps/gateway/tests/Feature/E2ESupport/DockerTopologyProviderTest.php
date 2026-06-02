@@ -17,6 +17,8 @@ use Illuminate\Support\Facades\Process;
 
 beforeEach(function (): void {
     putenv('ORBIT_E2E_DOCKER_TEST_RUNNERS=local:8:64,beast:8:64,sidecar1:8:64,sidecar2:8:64');
+    putenv('ORBIT_E2E_DOCKER_SOURCE_PATH');
+    putenv('ORBIT_E2E_DOCKER_SOURCE_PATH_BEAST');
     $this->dockerLeaseDirectory = storage_path('framework/e2e/test-leases-'.bin2hex(random_bytes(4)));
     putenv("ORBIT_E2E_LEASE_DIRECTORY={$this->dockerLeaseDirectory}");
     putenv('ORBIT_E2E_SLOT_WAIT_SECONDS=0');
@@ -25,6 +27,8 @@ beforeEach(function (): void {
 afterEach(function (): void {
     exec('rm -rf '.escapeshellarg($this->dockerLeaseDirectory));
     putenv('ORBIT_E2E_DOCKER_TEST_RUNNERS');
+    putenv('ORBIT_E2E_DOCKER_SOURCE_PATH');
+    putenv('ORBIT_E2E_DOCKER_SOURCE_PATH_BEAST');
     putenv('ORBIT_E2E_LEASE_DIRECTORY');
     putenv('ORBIT_E2E_SLOT_WAIT_SECONDS');
 });
@@ -84,7 +88,9 @@ it('starts Docker client topology nodes without a runtime sibling container', fu
         ->toContain('--group-add "$(stat -c %g /var/run/docker.sock 2>/dev/null || stat -f %g /var/run/docker.sock)"')
         ->toContain("--volume '/var/run/docker.sock:/var/run/docker.sock'")
         ->toContain("--mount 'type=volume,src=orbit-e2e-run123-operator-home-orbit,dst=/home/orbit'")
+        ->toContain("--mount 'type=bind,src=/Users/nckrtl/orbit/.worktrees/source-mounted-live-topologies,dst=/home/orbit/orbit'")
         ->toContain("--env 'ORBIT_E2E_DOCKER_NETWORK=orbit-e2e-run123'")
+        ->toContain("--env 'ORBIT_CONFIG_ROOT=/home/orbit/.config/orbit'")
         ->toContain('ip addr add')
         ->toContain('10.6.0.3/24')
         ->not->toContain('ORBIT_RUNTIME_CONTAINER=orbit-e2e-run123-operator-orbit-runtime')
@@ -114,15 +120,20 @@ it('does not use host PHP or host Caddy paths while starting Docker gateway API 
 
     $setup = implode("\n", $commands);
     $gatewayRuntimeStart = strpos($setup, "docker run -d --restart unless-stopped --name 'orbit-e2e-run123-gateway-orbit-runtime'");
+    $gatewayScheduler = strpos($setup, "docker exec --detach --workdir '/home/orbit/orbit' 'orbit-e2e-run123-gateway-orbit-runtime' orbit orbit-scheduler");
     $gatewayCertificate = strpos($setup, 'issueLeaf');
 
     expect($gatewayRuntimeStart)->toBeInt()
+        ->and($gatewayScheduler)->toBeInt()
         ->and($gatewayCertificate)->toBeInt()
-        ->and($gatewayRuntimeStart)->toBeLessThan($gatewayCertificate);
+        ->and($gatewayRuntimeStart)->toBeLessThan($gatewayScheduler)
+        ->and($gatewayScheduler)->toBeLessThan($gatewayCertificate);
 
     expect($setup)
         ->toContain('php apps/gateway/artisan tinker --execute=')
         ->toContain('php -d display_errors=0 -S')
+        ->toContain("'orbit-runtime:prepared-current' tail -f /dev/null")
+        ->toContain("docker exec --detach --workdir '/home/orbit/orbit' 'orbit-e2e-run123-gateway-orbit-runtime' orbit orbit-scheduler")
         ->not->toContain('orbit serve --host=')
         ->not->toContain('php artisan')
         ->not->toContain('nohup php')
@@ -325,6 +336,7 @@ it('selects the first docker test runner with image availability', function (): 
 
     withE2EConfigEnvironment([
         'ORBIT_E2E_DOCKER_TEST_RUNNERS' => 'beast:1:2,local:1:2',
+        'ORBIT_E2E_DOCKER_SOURCE_PATH' => '/srv/orbit-source',
     ], function (): void {
         $provider = new DockerTopologyProvider(E2EConfig::fromEnvironment());
 
@@ -332,6 +344,29 @@ it('selects the first docker test runner with image availability', function (): 
 
         expect($availability->available)->toBeTrue()
             ->and($availability->message)->toContain('local');
+    });
+});
+
+it('keeps remote docker runners available without a preconfigured source path', function (): void {
+    Process::fake(function ($process) {
+        if ($process->command === 'command -v docker >/dev/null'
+            || $process->command === 'docker info >/dev/null'
+            || str_starts_with($process->command, 'docker image inspect ')
+            || str_starts_with($process->command, 'docker ps ')) {
+            return Process::result();
+        }
+
+        return Process::result(exitCode: 1, errorOutput: $process->command);
+    });
+
+    withE2EConfigEnvironment([
+        'ORBIT_E2E_DOCKER_TEST_RUNNERS' => 'beast:1:64',
+    ], function (): void {
+        $provider = new DockerTopologyProvider(E2EConfig::fromEnvironment());
+        $availability = $provider->availability(E2ETopologyKind::Operator);
+
+        expect($availability->available)->toBeTrue()
+            ->and($availability->message)->toContain('beast');
     });
 });
 
@@ -368,6 +403,7 @@ it('selects the next docker test runner when the first runner is missing images'
 
     withE2EConfigEnvironment([
         'ORBIT_E2E_DOCKER_TEST_RUNNERS' => 'sidecar1:1:1,beast:1:3',
+        'ORBIT_E2E_DOCKER_SOURCE_PATH' => '/srv/orbit-source',
     ], function (): void {
         $provider = new DockerTopologyProvider(E2EConfig::fromEnvironment());
 
@@ -391,6 +427,7 @@ it('allows slow remote docker metadata probes during host selection', function (
 
     withE2EConfigEnvironment([
         'ORBIT_E2E_DOCKER_TEST_RUNNERS' => 'beast:1:64',
+        'ORBIT_E2E_DOCKER_SOURCE_PATH' => '/srv/orbit-source',
         'ORBIT_E2E_TIMEOUT_SECONDS' => '600',
     ], function () use (&$probeTimeouts): void {
         $provider = new DockerTopologyProvider(E2EConfig::fromEnvironment());
@@ -399,6 +436,46 @@ it('allows slow remote docker metadata probes during host selection', function (
             ->and($probeTimeouts['docker info >/dev/null'])->toBe(120)
             ->and($probeTimeouts["docker image inspect 'orbit-e2e:operator_base' >/dev/null"])->toBe(120);
     });
+});
+
+it('uses the configured remote docker source path for source bind mounts', function (): void {
+    $commands = [];
+
+    Process::fake(function ($process) use (&$commands) {
+        $commands[] = $process->command;
+
+        if ($process->command === 'command -v docker >/dev/null'
+            || $process->command === 'docker info >/dev/null'
+            || str_starts_with($process->command, 'docker image inspect ')
+            || $process->command === "docker ps --format '{{.Names}}' --filter 'name=orbit-e2e-'"
+            || str_starts_with($process->command, 'docker network create ')
+            || str_starts_with($process->command, 'docker exec ')
+            || str_starts_with($process->command, 'ssh -o BatchMode=yes -o ConnectTimeout=10 ')
+            || str_starts_with($process->command, 'rsync -az --delete ')) {
+            return Process::result();
+        }
+
+        if (str_starts_with($process->command, 'docker run -d ')) {
+            return Process::result(output: "container-id\n");
+        }
+
+        return Process::result(exitCode: 1, errorOutput: $process->command);
+    });
+
+    withE2EConfigEnvironment([
+        'ORBIT_E2E_DOCKER_TEST_RUNNERS' => 'beast:1:64',
+        'ORBIT_E2E_DOCKER_SOURCE_PATH' => '/srv/global-orbit-source',
+        'ORBIT_E2E_DOCKER_SOURCE_PATH_BEAST' => '/srv/orbit-source',
+    ], function (): void {
+        $provider = new DockerTopologyProvider(E2EConfig::fromEnvironment());
+
+        $lease = $provider->acquire(E2ETopologyKind::Operator, 'run123', new E2EPhaseTimer, new E2ETopologyAcquisitionOptions);
+
+        $lease->cleanup();
+    });
+
+    expect(implode("\n", $commands))
+        ->toContain("--mount 'type=bind,src=/srv/orbit-source,dst=/home/orbit/orbit'");
 });
 
 it('counts running docker containers with the configured e2e instance prefix', function (): void {
@@ -487,6 +564,7 @@ it('does not fail availability on transient docker capacity when host slots are 
 
     withE2EConfigEnvironment([
         'ORBIT_E2E_DOCKER_TEST_RUNNERS' => 'sidecar1:1:1',
+        'ORBIT_E2E_DOCKER_SOURCE_PATH' => '/srv/orbit-source',
     ], function () use (&$probedCapacity): void {
         $provider = new DockerTopologyProvider(E2EConfig::fromEnvironment());
         $availability = $provider->availability(E2ETopologyKind::OperatorGateway);
@@ -526,6 +604,86 @@ it('acquires an operator-gateway lease by launching containers from prepared ima
 
     expect($lease->operator()->name())->toBe('orbit-e2e-run123-operator')
         ->and($lease->gateway()?->name())->toBe('orbit-e2e-run123-gateway');
+
+    $lease->cleanup();
+});
+
+it('prepares source mounted gateway state before seeding docker gateway records', function (): void {
+    $commands = [];
+
+    Process::fake(function ($process) use (&$commands) {
+        $command = (string) $process->command;
+        $commands[] = $command;
+
+        if (
+            $command === 'command -v docker >/dev/null'
+            || $command === 'docker info >/dev/null'
+            || str_starts_with($command, 'docker image inspect ')
+            || $command === "docker ps --format '{{.Names}}' --filter 'name=orbit-e2e-'"
+            || (str_starts_with($command, "docker network create --subnet '10.") && str_ends_with($command, "'orbit-e2e-run123'"))
+            || str_starts_with($command, "docker run -d --name 'orbit-e2e-run123-operator' ")
+            || str_starts_with($command, "docker run -d --name 'orbit-e2e-run123-gateway' ")
+            || str_starts_with($command, "docker run -d --restart unless-stopped --name 'orbit-e2e-run123-gateway-orbit-runtime' ")
+            || str_starts_with($command, 'docker exec ')
+        ) {
+            return str_contains($command, 'docker run -d ')
+                ? Process::result(output: "container-id\n")
+                : Process::result();
+        }
+
+        return Process::result(exitCode: 1, errorOutput: $command);
+    });
+
+    $provider = new DockerTopologyProvider(E2EConfig::fromEnvironment());
+    $lease = $provider->acquire(E2ETopologyKind::OperatorGateway, 'run123', new E2EPhaseTimer, new E2ETopologyAcquisitionOptions);
+    $setup = implode("\n", $commands);
+
+    $runtimeStart = array_find_key(
+        $commands,
+        fn (string $command): bool => str_starts_with($command, "docker run -d --restart unless-stopped --name 'orbit-e2e-run123-gateway-orbit-runtime'"),
+    );
+    $stateBootstrap = array_find_key(
+        $commands,
+        fn (string $command): bool => str_contains($command, '/home/orbit/.config/orbit/gateway.sqlite'),
+    );
+    $stateMigrate = array_find_key(
+        $commands,
+        fn (string $command): bool => str_contains($command, 'php apps/gateway/artisan migrate --force --no-interaction --ansi'),
+    );
+    $scheduler = array_find_key(
+        $commands,
+        fn (string $command): bool => $command === "docker exec --detach --workdir '/home/orbit/orbit' 'orbit-e2e-run123-gateway-orbit-runtime' orbit orbit-scheduler",
+    );
+    $seedOperatorIdentity = array_find_key(
+        $commands,
+        fn (string $command): bool => str_starts_with($command, "docker exec 'orbit-e2e-run123-gateway' sh -lc")
+            && str_contains($command, 'sudo -iu orbit env')
+            && str_contains($command, 'base64_decode'),
+    );
+
+    expect($runtimeStart)->toBeInt()
+        ->and($stateBootstrap)->toBeInt()
+        ->and($stateMigrate)->toBeInt()
+        ->and($scheduler)->toBeInt()
+        ->and($seedOperatorIdentity)->toBeInt()
+        ->and($runtimeStart)->toBeLessThan($stateBootstrap)
+        ->and($stateBootstrap)->toBeLessThan($scheduler)
+        ->and($scheduler)->toBeLessThan($seedOperatorIdentity)
+        ->and($stateBootstrap)->toBeLessThan($seedOperatorIdentity)
+        ->and($stateMigrate)->toBeLessThan($seedOperatorIdentity);
+
+    $stateCommand = $commands[$stateBootstrap];
+    $appKey = strpos($stateCommand, 'php apps/gateway/artisan key:generate --force --no-interaction');
+    $migrate = strpos($stateCommand, 'php apps/gateway/artisan migrate --force --no-interaction --ansi');
+
+    expect($appKey)->toBeInt()
+        ->and($migrate)->toBeInt()
+        ->and($appKey)->toBeLessThan($migrate);
+
+    expect($setup)
+        ->toContain('ORBIT_CONFIG_ROOT=/home/orbit/.config/orbit')
+        ->toContain('/home/orbit/.config/orbit/gateway.sqlite')
+        ->not->toContain('apps/gateway/database/database.sqlite');
 
     $lease->cleanup();
 });
@@ -1006,8 +1164,8 @@ it('maps gateway local orbit-runtime docker commands to the per-run runtime cont
         ->toContain('${node_container}-etc-orbit')
         ->toContain('/usr/bin/docker.real')
         ->toContain('rewrite_mount')
-        ->toContain('/usr/local/bin/orbit')
-        ->toContain('source_path="/home/orbit/orbit"')
+        ->toContain('type=bind,source=*|type=bind,src=*)')
+        ->toContain('source_path="${ORBIT_SOURCE_PATH:-/home/orbit/orbit}"')
         ->not->toContain('/proc/1/environ')
         ->toContain('orbit-runtime)')
         ->toContain('/opt/orbit/*)')
@@ -1019,6 +1177,7 @@ it('uses the parallel worker token to create a non-overlapping docker network', 
         'command -v docker >/dev/null' => Process::result(),
         'docker info >/dev/null' => Process::result(),
         "docker image inspect 'orbit-runtime:prepared-current' >/dev/null" => Process::result(),
+        "docker image inspect 'caddy:2-alpine' >/dev/null" => Process::result(),
         "docker image inspect 'orbit-e2e:operator_base' >/dev/null" => Process::result(),
         "docker image inspect 'orbit-e2e:gateway_base' >/dev/null" => Process::result(),
         "docker ps --format '{{.Names}}' --filter 'name=orbit-e2e-'" => Process::result(),
@@ -1092,6 +1251,11 @@ it('leases docker host slots independently from the parallel worker token', func
             return Process::result();
         }
 
+        if (str_starts_with($process->command, 'ssh -o BatchMode=yes -o ConnectTimeout=10 ')
+            || str_starts_with($process->command, 'rsync -az --delete ')) {
+            return Process::result();
+        }
+
         return Process::result(exitCode: 1, errorOutput: $process->command);
     });
 
@@ -1101,6 +1265,7 @@ it('leases docker host slots independently from the parallel worker token', func
     try {
         withE2EConfigEnvironment([
             'ORBIT_E2E_DOCKER_TEST_RUNNERS' => 'sidecar1:2:64,sidecar2:2:64,beast:3:64',
+            'ORBIT_E2E_DOCKER_SOURCE_PATH' => '/srv/orbit-source',
             'ORBIT_E2E_LEASE_DIRECTORY' => $leaseDirectory,
         ], function () use (&$networkHost): void {
             $provider = new DockerTopologyProvider(E2EConfig::fromEnvironment());
@@ -1135,11 +1300,14 @@ it('releases docker host slots during topology cleanup', function (): void {
         '*docker exec*' => Process::result(),
         '*docker rm -f*' => Process::result(),
         '*docker network rm*' => Process::result(),
+        '*ssh -o BatchMode=yes -o ConnectTimeout=10*' => Process::result(),
+        '*rsync -az --delete*' => Process::result(),
     ]);
 
     try {
         withE2EConfigEnvironment([
             'ORBIT_E2E_DOCKER_TEST_RUNNERS' => 'sidecar1:1:64',
+            'ORBIT_E2E_DOCKER_SOURCE_PATH' => '/srv/orbit-source',
             'ORBIT_E2E_LEASE_DIRECTORY' => $leaseDirectory,
             'ORBIT_E2E_SLOT_WAIT_SECONDS' => '0',
         ], function () use ($leaseDirectory): void {
@@ -1309,8 +1477,9 @@ it('uses dns aliases and primes the gateway api in Docker topology runs', functi
         $lease->cleanup();
     });
 
-    Process::assertNotRan(fn ($process): bool => is_string($process->command)
-        && str_contains($process->command, 'bootstrap-gateway-local'));
+    Process::assertRan(fn ($process): bool => is_string($process->command)
+        && str_contains($process->command, 'bootstrap-gateway-local')
+        && str_contains($process->command, '/home/orbit/.config/orbit/gateway.sqlite'));
     Process::assertRan(fn ($process): bool => is_string($process->command)
         && str_contains($process->command, 'issueLeaf')
         && str_contains($process->command, 'gateway')

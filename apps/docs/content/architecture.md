@@ -53,8 +53,12 @@ One hub, one path: there is exactly one place to answer "what should exist?", an
 
 A client is where you drive Orbit from, usually your Mac or Ubuntu workstation.
 It runs the host `orbit` launcher, presents a WireGuard identity, and
-communicates with the gateway to handle operations. The launcher executes the
-installed Orbit CLI binary and passes local context such as `ORBIT_HOST_CWD`.
+communicates with the gateway to handle operations. The launcher resolves the
+repo root and execs the node-local Orbit CLI entry point; `apps/cli/orbit`
+preserves a supplied `ORBIT_HOST_CWD` value or initializes it from `getcwd()`
+when absent. Production installs still use the native CLI binary artifact;
+source-mounted Docker and Incus development/E2E topologies point
+`/usr/local/bin/orbit` directly at `<source>/apps/cli/orbit`.
 Clients do not write fleet state directly; they call the gateway and let the
 gateway do the work.
 
@@ -69,8 +73,12 @@ The gateway is the central store of everything Orbit knows: apps, nodes, workspa
 The gateway exposes the typed API that the CLI talks to. It holds SSH access to other nodes and applies changes on them over that SSH connection. Because the gateway owns the fleet configuration, a drifted node can be restored from it, and a new node can be provisioned from the same configuration that built the previous one.
 
 The gateway API runs in the gateway's `orbit-runtime` container and is exposed
-inside the Orbit network by the gateway's `orbit-caddy` container. Moving the
-API into Docker does not make the launcher or a local runtime container a
+inside the Orbit network by the gateway's `orbit-caddy` container. The gateway
+runs `orbit-runtime` for the API and scheduler. Workload nodes run the public
+Orbit CLI as a gateway client and run workloads in role-specific runtime
+containers. Any remaining workload-node `orbit-runtime` usage is a
+compatibility concern, not the source-mounted live topology contract. Moving
+the API into Docker does not make the launcher or a local runtime container a
 state writer: durable writes still happen only on the gateway.
 
 ### Node roles
@@ -161,11 +169,12 @@ records.
 
 ### CLI
 
-The CLI is the product surface for humans, AI agents, and CI. The host
-`orbit` executable always enters the installed Orbit CLI binary on every
-node role — clients, workload nodes, and gateway hosts alike. The gateway API
-and scheduler still run in `orbit-runtime` on the gateway, but the public
-`orbit` command never dispatches to gateway Artisan. Gateway maintenance
+The CLI is the product surface for humans, AI agents, and CI. Production
+installs still use the native CLI binary artifact. Source-mounted Docker and
+Incus topologies are development and E2E lanes; in those lanes,
+`/usr/local/bin/orbit` points directly at `<source>/apps/cli/orbit`. The
+gateway API and scheduler still run in `orbit-runtime` on the gateway, but the
+public `orbit` command never dispatches to gateway Artisan. Gateway maintenance
 (migrate, tinker, scheduler, queue, internal bake/build/install commands) uses
 `bin/orbit-gateway-artisan` or direct `php apps/gateway/artisan` from a
 controlled gateway shell.
@@ -201,7 +210,7 @@ The HTTPS choice for the caller→gateway edge is intentional. A CLI caller talk
 
 The blast radius of any single caller, including an AI agent driving Orbit, is bounded by the API surface. If a caller needs to be cut off — a runaway agent, a compromised laptop, a former contributor — revoking its VPN access shuts down everything it could do, immediately.
 
-CLI callers can run on any node — a client, the gateway, or a node carrying workload roles. The caller location changes how local context (current app, current workspace) is resolved. The launcher passes `ORBIT_HOST_CWD` so the dispatched artifact can preserve current-directory ergonomics without broad host access. Caller location never changes who writes state — that is always the gateway.
+CLI callers can run on any node — a client, the gateway, or a node carrying workload roles. The caller location changes how local context (current app, current workspace) is resolved. The convenience wrapper only resolves the repo root and execs the CLI source entrypoint; the source entrypoint initializes `ORBIT_HOST_CWD` when absent and preserves supplied values so current-directory ergonomics survive dispatch without broad host access. Caller location never changes who writes state — that is always the gateway.
 
 Nodes other than the gateway do not accept Orbit API calls from other nodes. They run workloads, not orchestration. When something needs to happen on such a node, the gateway opens the SSH connection and runs the work there. They do send a small amount of outbound traffic back to the gateway — process crash notifications and scheduler run history — but they never accept inbound RPC.
 
@@ -221,20 +230,20 @@ authority path is:
 Node-local CLI execution is never an authority bypass. Internal local executor
 commands are hidden from normal CLI help, require a gateway-issued operation
 token, and must fail before side effects when invoked directly without a valid
-token.
+token. In source-mounted nodes, node-local mutable Orbit state lives under
+`~/.config/orbit`.
 
 Gateway operation tokens are minted by the gateway-side operation token
-factory, using `ORBIT_OPERATION_TOKEN_SECRET` and the configured
+factory, using the gateway Laravel `APP_KEY` and the configured
 `ORBIT_OPERATION_TOKEN_TTL_SECONDS` value. The default TTL is 120 seconds. Each
 token carries the operation id, target node, internal command name, issued
-timestamp, expiry timestamp, and signature. The local executor verifies the
-signature, target node, command, and expiry before side effects. Missing signing
-secret configuration prevents minting; token minting is stateless and uses the
-existing operation id rather than creating operation persistence itself.
-Fresh host installs persist the gateway signing secret as both
-`ORBIT_OPERATION_TOKEN_SECRET` and the local executor's `ORBIT_EXECUTOR_SECRET`;
-known node provisioning also persists `ORBIT_NODE_IDENTITY` so internal
-executor commands can verify the token target.
+timestamp, expiry timestamp, and signature. Internal executor commands verify
+operation tokens through the gateway API before side effects. Missing `APP_KEY`
+configuration prevents minting; token minting is stateless and uses the
+existing operation id rather than creating operation persistence itself. Nodes
+do not store executor token signing material or target-node identity env values;
+the gateway derives the node from the authenticated WireGuard API request when
+verifying the token target.
 
 ### Authentication and authorization
 

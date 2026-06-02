@@ -15,9 +15,7 @@ uses(RefreshDatabase::class);
 
 const WORKSPACE_EXEC_CALLER_WG_IP = '10.6.0.99';
 
-beforeEach(function (): void {
-    config(['orbit.is_gateway' => true]);
-});
+beforeEach(function (): void {});
 
 function createWorkspaceExecCaller(array $overrides = []): Node
 {

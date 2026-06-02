@@ -30,7 +30,6 @@ const DATABASE_API_CALLER_WG_IP = '10.9.0.97';
 function createDatabaseApiCallerNode(array $overrides = []): Node
 {
     config([
-        'orbit.operation_token_secret' => 'gateway-secret',
         'orbit.operation_token_ttl_seconds' => 120,
     ]);
 

@@ -8,10 +8,15 @@
 
 **Prerequisites:**
 - The Orbit install root is writable (`ORBIT_INSTALL_PATH` or `$HOME/orbit`).
-- The configured release source is reachable (GitHub Releases by default, or
-  the `ORBIT_BINARY_URL` override for offline and E2E scenarios).
-- Docker and the `orbit-runtime` runtime are available for dependency
-  installation and migrations.
+- Production artifact installs require a reachable release source (GitHub
+  Releases by default, or the `ORBIT_BINARY_URL` override for offline and E2E
+  artifact scenarios) plus permission to write the binary and update the host
+  launcher link.
+- Gateway runtime update steps require Docker and gateway `orbit-runtime` for
+  dependency installation and migrations.
+- Source-mounted Docker/Incus development and E2E lanes require access to the
+  mounted checkout and keep `/usr/local/bin/orbit` pointed at
+  `<source>/apps/cli/orbit`.
 
 ## Signature
 
@@ -44,8 +49,11 @@ fields and does not prompt.
 
 ### CLI Binary Update Rules
 
-- Download the prebuilt Orbit CLI binary for this host OS/arch from the
-  configured release source.
+- Production installs download the prebuilt Orbit CLI binary for this host
+  OS/arch from the configured release source. Source-mounted Docker/Incus
+  development and E2E lanes keep `/usr/local/bin/orbit` pointed at
+  `<source>/apps/cli/orbit` and update by changing the mounted source rather
+  than downloading a binary artifact.
 - Honor `ORBIT_BINARY_URL` as a full URL override (supports `file://` scheme
   for offline and E2E scenarios that point at a local artifact).
 - When `ORBIT_BINARY_URL` is not set, resolve the asset URL from
@@ -54,27 +62,34 @@ fields and does not prompt.
 - Supported asset names: `orbit-macos-arm64` (macOS Apple Silicon) and
   `orbit-linux-x64` (Ubuntu x86_64). Fail with an unsupported-platform error
   when the host OS/arch does not match a supported binary target.
-- Download to `<install-root>/bin/orbit-binary` where `<install-root>` is
-  `ORBIT_INSTALL_PATH` when set, or `$HOME/orbit` by default.
-- After download, relink the host `orbit` launcher: `ln -sf
+- For production installs, download to `<install-root>/bin/orbit-binary`
+  where `<install-root>` is `ORBIT_INSTALL_PATH` when set, or `$HOME/orbit`
+  by default.
+- After a production download, relink the host `orbit` launcher: `ln -sf
   <install-root>/bin/orbit-binary <link-path>` where `<link-path>` is
   `ORBIT_BIN_PATH` when set, or `/usr/local/bin/orbit` by default.
-- Verify the updated binary responds to `--version`. A failed verify step
-  returns failure and identifies the failed step.
+- Verify the resolved local Orbit entry point responds to `--version`.
+  Production artifact installs verify the updated binary; source-mounted
+  Docker/Incus development and E2E lanes verify the resolved
+  `/usr/local/bin/orbit -> <source>/apps/cli/orbit` entry point. A failed
+  verify step returns failure and identifies the failed step.
 
 ### Gateway-Source Update Rules
 
-- Install Composer dependencies inside `orbit-runtime` after the CLI binary
-  update succeeds.
-- Run Orbit migrations inside `orbit-runtime` after dependencies are installed.
-- The gateway continues to run from source mounted into `orbit-runtime`; the
-  gateway source update (steps 2 and 3) is separate from and subsequent to the
-  CLI binary update.
+- Install Composer dependencies inside gateway `orbit-runtime` after the local
+  entry-point update succeeds when the local installation includes the gateway
+  runtime path.
+- Run Orbit migrations inside gateway `orbit-runtime` after dependencies are
+  installed when the local installation includes the gateway runtime path.
+- The gateway continues to run from source mounted into `orbit-runtime`; these
+  gateway-source steps are separate from and subsequent to the local CLI
+  entry-point update.
 
 ### Local Migration Rules
 
-- Apply migrations inside `orbit-runtime` with non-interactive production-safe
-  semantics.
+- Apply migrations inside gateway `orbit-runtime` with non-interactive
+  production-safe semantics when the local installation includes the gateway
+  runtime path.
 - When the local installation is a gateway installation, migrations may update
   the gateway database schema.
 - Migrations must not create or mutate fleet configuration beyond normal
@@ -114,12 +129,12 @@ fields and does not prompt.
 
 | Failure | Condition | Outcome |
 | --- | --- | --- |
-| Binary unavailable | The binary download fails or the release source is unreachable. | Failure |
+| Binary unavailable | A production artifact download fails or the production release source is unreachable. | Failure |
 | Unsupported platform | The host OS/arch is not a supported binary target. | Failure |
-| Verify failed | The downloaded binary does not respond to `--version`. | Failure |
-| Runtime unavailable | Docker or `orbit-runtime` cannot be found or executed. | Failure |
-| Dependency install failed | Composer dependency installation inside `orbit-runtime` fails. | Failure |
-| Migration failed | Local Orbit migrations inside `orbit-runtime` fail. | Failure |
+| Verify failed | The resolved local Orbit entry point does not respond to `--version`. | Failure |
+| Runtime unavailable | A required gateway runtime update step cannot find or execute Docker or gateway `orbit-runtime`. | Failure |
+| Dependency install failed | Gateway Composer dependency installation inside gateway `orbit-runtime` fails. | Failure |
+| Migration failed | Gateway Orbit migrations inside gateway `orbit-runtime` fail. | Failure |
 
 ## Doctor Relationship
 
@@ -141,7 +156,7 @@ Primary CLI test owners:
 | Path | Coverage |
 | --- | --- |
 | `apps/cli/tests/Feature/Commands/Operation/UpdateCommandTest.php` | Local update contract: step ordering, JSON success and error envelopes, human progress tree, failure prose, and binary-unavailable handling. |
-| `apps/cli/tests/Feature/Services/Updates/LocalCheckoutUpdaterTest.php` | Download-and-relink step invocation (binary URL, install root, link path), verify step, orbit-runtime dependency install, and migration execution. Offline proof via `ORBIT_BINARY_URL=file://`. |
+| `apps/cli/tests/Feature/Services/Updates/LocalCheckoutUpdaterTest.php` | Production/artifact binary download-and-relink invocation (binary URL, install root, link path), entry-point verification, and gateway-context dependency install/migration execution. Offline proof via `ORBIT_BINARY_URL=file://`. |
 | `apps/cli/tests/Feature/Services/Updates/LocalUpdateWorkflowTest.php` | Ordered workflow orchestration, binary-unavailable detection, and failed-step metadata. |
 | `apps/cli/tests/Feature/Services/Updates/CheckoutPathResolverTest.php` | Install-root resolution from `ORBIT_INSTALL_PATH`, `HOME/orbit` fallback, and no `phar://` or `base_path()` paths. |
 

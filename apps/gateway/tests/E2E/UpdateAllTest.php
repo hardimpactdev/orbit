@@ -23,10 +23,9 @@ uses(RefreshDatabase::class);
 
 afterEach(fn (): null => MockClient::destroyGlobal());
 
-// Gateway-role (is_gateway=true): runs local + queries registered nodes, no external gateway call.
+// Gateway role: runs local + queries registered nodes, no external gateway call.
 
 beforeEach(function (): void {
-    config(['orbit.is_gateway' => true]);
 
     DB::table('nodes')->insert([
         [
@@ -195,7 +194,6 @@ it('records fleet failed activity log when a node update fails', function (): vo
 });
 
 it('operator caller fails when no gateway is configured', function (): void {
-    config(['orbit.is_gateway' => false]);
 
     $exitCode = Artisan::call('update:all', ['--json' => true]);
     $output = Artisan::output();
@@ -227,7 +225,6 @@ it('exercises full boot path using injected OrbitUpdater and RemoteShell fakes',
 // Operator-role path: JSON path uses GatewayConnector (Saloon), not UpdateAllGatewayStream.
 
 it('operator caller succeeds when gateway responds with all nodes completed', function (): void {
-    config(['orbit.is_gateway' => false]);
 
     Process::fake([
         '*' => Process::result(output: '', errorOutput: '', exitCode: 0),
@@ -268,7 +265,6 @@ it('operator caller succeeds when gateway responds with all nodes completed', fu
 });
 
 it('operator caller reports partial failure when gateway returns failed nodes', function (): void {
-    config(['orbit.is_gateway' => false]);
 
     Process::fake([
         '*' => Process::result(output: '', errorOutput: '', exitCode: 0),

@@ -5,17 +5,6 @@ set -Eeuo pipefail
 source_path="${ORBIT_SOURCE_PATH:-/opt/orbit}"
 invoked_as="$(basename "${0}")"
 
-truthy() {
-    case "${1:-}" in
-        1|true|TRUE|yes|YES)
-            return 0
-            ;;
-        *)
-            return 1
-            ;;
-    esac
-}
-
 orbit_artisan() {
     printf '%s\n' "${source_path}/apps/gateway/artisan"
 }
@@ -62,9 +51,7 @@ run_scheduler() {
 
     wait_for_source
 
-    if truthy "${ORBIT_IS_GATEWAY:-}"; then
-        start_gateway_http_server
-    fi
+    start_gateway_http_server
 
     run_orbit "${scheduler_args[@]}"
 }
@@ -74,11 +61,7 @@ if [ "$invoked_as" = "orbit" ]; then
 fi
 
 if [ "$#" -eq 0 ]; then
-    if truthy "${ORBIT_IS_GATEWAY:-}"; then
-        run_scheduler
-    fi
-
-    exec sleep infinity
+    run_scheduler
 fi
 
 case "${1:-}" in
@@ -87,7 +70,7 @@ case "${1:-}" in
         run_orbit "$@"
         ;;
     sleep)
-        if truthy "${ORBIT_IS_GATEWAY:-}" && [ "${2:-}" = "infinity" ]; then
+        if [ "${2:-}" = "infinity" ]; then
             run_scheduler
         fi
 

@@ -11,7 +11,7 @@ final class E2ECurrentCheckout
 {
     private const string GatewayArtisanRelativePath = 'apps/gateway/artisan';
 
-    private const string CurrentCheckoutOperationTokenSecret = 'orbit-e2e-current-checkout-operation-token-secret';
+    private const string OrbitConfigRoot = '/home/orbit/.config/orbit';
 
     private static ?string $cachedArchive = null;
 
@@ -36,7 +36,6 @@ final class E2ECurrentCheckout
     public static function installOnTopology(E2ETopologyLease $topology, ?array $roles = null, array $users = [], ?E2EPhaseTimer $timer = null): array
     {
         $roles ??= self::availableTopologyRoles($topology);
-        $operationTokenSecret = self::CurrentCheckoutOperationTokenSecret;
 
         $paths = [];
 
@@ -45,8 +44,8 @@ final class E2ECurrentCheckout
             $executorNodeIdentity = self::topologyRoleNodeIdentity($role);
             $hostLauncher = self::topologyRoleUsesHostLauncher($role);
             $refreshGatewayHostKeys = $role === 'gateway'
-                ? function (string $remotePath) use ($instance, $user, $topology, $timer, $hostLauncher): void {
-                    self::refreshGatewayHostKeys($instance, $user, $topology->sshKeyPair(), $remotePath, $timer, $hostLauncher);
+                ? function (string $remotePath, bool $sourceMountedCheckout = false) use ($instance, $user, $topology, $timer, $hostLauncher): void {
+                    self::refreshGatewayHostKeys($instance, $user, $topology->sshKeyPair(), $remotePath, $timer, $hostLauncher, $sourceMountedCheckout);
                 }
             : null;
             // Configure the orbit CLI gateway endpoint on every node that has a
@@ -55,14 +54,14 @@ final class E2ECurrentCheckout
             // gateway's own WireGuard IP (routed locally), so the gateway's CLI
             // needs the same ~/.config/orbit gateway entry + CA trust as clients.
             $refreshLocalGatewaySettings = $topology->gateway() !== null && ! self::usesDockerRuntime($instance)
-                ? function (string $remotePath) use ($instance, $user, $topology, $timer): void {
-                    self::refreshLocalGatewaySettings($instance, $user, $topology->sshKeyPair(), $remotePath, $topology->gatewayApiIp(), $timer);
+                ? function (string $remotePath, bool $sourceMountedCheckout = false) use ($instance, $user, $topology, $timer): void {
+                    self::refreshLocalGatewaySettings($instance, $user, $topology->sshKeyPair(), $remotePath, $topology->gatewayApiIp(), $timer, $sourceMountedCheckout);
                 }
             : null;
             $afterInstall = ($refreshGatewayHostKeys !== null || $refreshLocalGatewaySettings !== null)
-                ? function (string $remotePath) use ($refreshGatewayHostKeys, $refreshLocalGatewaySettings): void {
-                    $refreshGatewayHostKeys?->__invoke($remotePath);
-                    $refreshLocalGatewaySettings?->__invoke($remotePath);
+                ? function (string $remotePath, bool $sourceMountedCheckout = false) use ($refreshGatewayHostKeys, $refreshLocalGatewaySettings): void {
+                    $refreshGatewayHostKeys?->__invoke($remotePath, $sourceMountedCheckout);
+                    $refreshLocalGatewaySettings?->__invoke($remotePath, $sourceMountedCheckout);
                 }
             : null;
 
@@ -76,17 +75,28 @@ final class E2ECurrentCheckout
                 afterInstall: $afterInstall,
                 executorNodeIdentity: $executorNodeIdentity,
                 hostLauncher: $hostLauncher,
-                operationTokenSecret: $operationTokenSecret,
             );
         }
 
         return $paths;
     }
 
-    public static function install(E2EInstance $instance, string $user, SshKeyPair $keyPair, ?string $seedFrom = null, ?E2EPhaseTimer $timer = null, ?\Closure $afterBaseInstall = null, ?\Closure $afterInstall = null, ?string $executorNodeIdentity = null, bool $hostLauncher = false, ?string $operationTokenSecret = null): string
+    public static function install(E2EInstance $instance, string $user, SshKeyPair $keyPair, ?string $seedFrom = null, ?E2EPhaseTimer $timer = null, ?\Closure $afterBaseInstall = null, ?\Closure $afterInstall = null, ?string $executorNodeIdentity = null, bool $hostLauncher = false): string
     {
+        $sourceMountedCheckoutPath = self::sourceMountedCheckoutPath($instance, $user, $hostLauncher);
+
+        if ($sourceMountedCheckoutPath !== null) {
+            $remotePath = $sourceMountedCheckoutPath;
+
+            self::runInstallPhases($instance, $user, $keyPair, $remotePath, $seedFrom, $timer, $hostLauncher, sourceMountedCheckout: true);
+            self::activateCurrentCheckout($instance, $remotePath, $executorNodeIdentity, $hostLauncher);
+            $afterInstall?->__invoke($remotePath, true);
+
+            return $remotePath;
+        }
+
         if (self::checkoutCacheEnabled()) {
-            return self::installFromCachedBase($instance, $user, $keyPair, $seedFrom, $timer, $afterBaseInstall, $afterInstall, $executorNodeIdentity, $hostLauncher, $operationTokenSecret);
+            return self::installFromCachedBase($instance, $user, $keyPair, $seedFrom, $timer, $afterBaseInstall, $afterInstall, $executorNodeIdentity, $hostLauncher);
         }
 
         $remotePath = "/home/{$user}/orbit-current";
@@ -94,9 +104,9 @@ final class E2ECurrentCheckout
 
         try {
             self::runTimed($timer, 'checkout.copy', fn (): null => self::copyArchive($tarball, $instance));
-            self::runInstallPhases($instance, $user, $keyPair, $remotePath, $seedFrom, $timer, $hostLauncher, $operationTokenSecret);
+            self::runInstallPhases($instance, $user, $keyPair, $remotePath, $seedFrom, $timer, $hostLauncher);
             self::activateCurrentCheckout($instance, $remotePath, $executorNodeIdentity, $hostLauncher);
-            $afterInstall?->__invoke($remotePath);
+            $afterInstall?->__invoke($remotePath, false);
 
             return $remotePath;
         } finally {
@@ -126,17 +136,12 @@ final class E2ECurrentCheckout
     public static function orbitWrapperScript(string $checkout, bool $dockerRuntime, ?string $executorNodeIdentity = null, bool $hostLauncher = false): string
     {
         if ($hostLauncher) {
-            $executorIdentityExport = $executorNodeIdentity === null
-                ? ':'
-                : 'export ORBIT_NODE_IDENTITY="${ORBIT_NODE_IDENTITY:-'.self::escapeDoubleQuotedShellValue($executorNodeIdentity).'}"';
-
             return implode("\n", [
                 '#!/usr/bin/env bash',
                 'set -euo pipefail',
                 'checkout='.escapeshellarg($checkout),
                 'export ORBIT_REPO="${checkout}"',
                 'export ORBIT_HOST_CWD="${ORBIT_HOST_CWD:-$PWD}"',
-                $executorIdentityExport,
                 'exec "${checkout}/bin/orbit" "$@"',
                 '',
             ]);
@@ -153,9 +158,6 @@ final class E2ECurrentCheckout
                 '    --env "ORBIT_HOST_CWD=${runtime_workdir}"',
                 '    --env '.escapeshellarg("ORBIT_SOURCE_PATH={$checkout}"),
                 ')',
-                'if [ -n "${ORBIT_IS_GATEWAY:-}" ]; then',
-                '    env_args+=(--env "ORBIT_IS_GATEWAY=${ORBIT_IS_GATEWAY}")',
-                'fi',
                 'if [ -n "${ORBIT_E2E_DOCKER_NETWORK:-}" ]; then',
                 '    sudo docker network connect "${ORBIT_E2E_DOCKER_NETWORK}" "${runtime_container}" >/dev/null 2>&1 || true',
                 'fi',
@@ -173,11 +175,6 @@ final class E2ECurrentCheckout
         return "#!/usr/bin/env bash\nset -euo pipefail\nexec {$php} ".escapeshellarg(self::gatewayArtisanPath($checkout)).' "$@"'."\n";
     }
 
-    private static function escapeDoubleQuotedShellValue(string $value): string
-    {
-        return str_replace(['\\', '"', '$', '`'], ['\\\\', '\\"', '\\$', '\\`'], $value);
-    }
-
     private static function gatewayArtisanPath(string $checkout): string
     {
         return "{$checkout}/".self::GatewayArtisanRelativePath;
@@ -191,7 +188,7 @@ final class E2ECurrentCheckout
             && in_array(strtolower($value), ['1', 'true', 'yes', 'process'], true);
     }
 
-    private static function installFromCachedBase(E2EInstance $instance, string $user, SshKeyPair $keyPair, ?string $seedFrom, ?E2EPhaseTimer $timer = null, ?\Closure $afterBaseInstall = null, ?\Closure $afterInstall = null, ?string $executorNodeIdentity = null, bool $hostLauncher = false, ?string $operationTokenSecret = null): string
+    private static function installFromCachedBase(E2EInstance $instance, string $user, SshKeyPair $keyPair, ?string $seedFrom, ?E2EPhaseTimer $timer = null, ?\Closure $afterBaseInstall = null, ?\Closure $afterInstall = null, ?string $executorNodeIdentity = null, bool $hostLauncher = false): string
     {
         $cacheKey = implode('|', [$instance->name(), $user, $seedFrom ?? '']);
         $basePath = "/home/{$user}/orbit-current-base-".substr(sha1($cacheKey), 0, 10);
@@ -202,9 +199,9 @@ final class E2ECurrentCheckout
 
             self::runTimed($timer, 'checkout.copy', fn (): null => self::copyArchive($tarball, $instance));
 
-            self::runInstallPhases($instance, $user, $keyPair, $basePath, $seedFrom, $timer, $hostLauncher, $operationTokenSecret);
+            self::runInstallPhases($instance, $user, $keyPair, $basePath, $seedFrom, $timer, $hostLauncher);
             self::activateCurrentCheckout($instance, $basePath, $executorNodeIdentity, $hostLauncher);
-            $afterBaseInstall?->__invoke($basePath);
+            $afterBaseInstall?->__invoke($basePath, false);
 
             self::$cachedBasePaths[$cacheKey] = $basePath;
         }
@@ -228,13 +225,24 @@ final class E2ECurrentCheckout
         }
 
         self::activateCurrentCheckout($instance, $remotePath, $executorNodeIdentity, $hostLauncher);
-        $afterInstall?->__invoke($remotePath);
+        $afterInstall?->__invoke($remotePath, false);
 
         return $remotePath;
     }
 
     private static function activateCurrentCheckout(E2EInstance $instance, string $remotePath, ?string $executorNodeIdentity = null, bool $hostLauncher = false): void
     {
+        if ($hostLauncher) {
+            E2ECommand::exec(
+                $instance,
+                self::hostLauncherActivationCommand($remotePath),
+                'Could not prepare the source-mounted host launcher.',
+                timeoutSeconds: 60,
+            );
+
+            return;
+        }
+
         if (! self::usesDockerRuntime($instance)) {
             return;
         }
@@ -260,7 +268,7 @@ final class E2ECurrentCheckout
         }
     }
 
-    private static function runInstallPhases(E2EInstance $instance, string $user, SshKeyPair $keyPair, string $remotePath, ?string $seedFrom, ?E2EPhaseTimer $timer, bool $hostLauncher = false, ?string $operationTokenSecret = null): void
+    private static function runInstallPhases(E2EInstance $instance, string $user, SshKeyPair $keyPair, string $remotePath, ?string $seedFrom, ?E2EPhaseTimer $timer, bool $hostLauncher = false, bool $sourceMountedCheckout = false): void
     {
         $vendorSourcePath = $seedFrom ?? "/home/{$user}/orbit";
         $deadline = self::now() + 600.0;
@@ -273,7 +281,7 @@ final class E2ECurrentCheckout
         self::runInstallPhase(
             $timer,
             'checkout.extract',
-            fn (): string => self::extractCheckoutCommand($remotePath),
+            fn (): string => self::extractCheckoutCommand($remotePath, $sourceMountedCheckout),
             $instance,
             $user,
             $keyPair,
@@ -283,7 +291,7 @@ final class E2ECurrentCheckout
         self::runInstallPhase(
             $timer,
             'checkout.vendor',
-            fn (): string => self::vendorInstallCommand($remotePath, $vendorSourcePath, $dockerTopology, $vendorRuntimeContainer, $requiresGatewayApplication),
+            fn (): string => self::vendorInstallCommand($remotePath, $vendorSourcePath, $dockerTopology, $vendorRuntimeContainer, $requiresGatewayApplication, $sourceMountedCheckout),
             $instance,
             $user,
             $keyPair,
@@ -293,7 +301,7 @@ final class E2ECurrentCheckout
         self::runInstallPhase(
             $timer,
             'checkout.runtime-state',
-            fn (): string => self::runtimeStateCommand($remotePath, $seedFrom, $dockerTopology, $dockerRuntimeContainer, $runBootstrapInDockerRuntime, $operationTokenSecret),
+            fn (): string => self::runtimeStateCommand($remotePath, $seedFrom, $dockerTopology, $dockerRuntimeContainer, $runBootstrapInDockerRuntime, $sourceMountedCheckout),
             $instance,
             $user,
             $keyPair,
@@ -303,7 +311,7 @@ final class E2ECurrentCheckout
         self::runInstallPhase(
             $timer,
             'checkout.migrate',
-            fn (): string => self::migrateCommand($remotePath, $dockerTopology, $dockerRuntimeContainer, $runBootstrapInDockerRuntime),
+            fn (): string => self::migrateCommand($remotePath, $dockerTopology, $dockerRuntimeContainer, $runBootstrapInDockerRuntime, $sourceMountedCheckout),
             $instance,
             $user,
             $keyPair,
@@ -346,8 +354,12 @@ final class E2ECurrentCheckout
         return $timer->measure($phase, $callback);
     }
 
-    private static function extractCheckoutCommand(string $remotePath): string
+    private static function extractCheckoutCommand(string $remotePath, bool $sourceMounted = false): string
     {
+        if ($sourceMounted) {
+            return 'mkdir -p '.escapeshellarg($remotePath);
+        }
+
         return implode(' && ', [
             'sudo rm -rf '.escapeshellarg($remotePath),
             'mkdir -p '.escapeshellarg($remotePath),
@@ -356,8 +368,16 @@ final class E2ECurrentCheckout
         ]);
     }
 
-    private static function vendorInstallCommand(string $remotePath, string $vendorSourcePath, bool $dockerTopology = false, ?string $dockerRuntimeContainer = null, bool $requiresGatewayApplication = true): string
+    private static function vendorInstallCommand(string $remotePath, string $vendorSourcePath, bool $dockerTopology = false, ?string $dockerRuntimeContainer = null, bool $requiresGatewayApplication = true, bool $sourceMountedCheckout = false): string
     {
+        if ($sourceMountedCheckout) {
+            return implode(' && ', [
+                'cd '.escapeshellarg($remotePath),
+                self::verifyMountedVendorAutoloadCommand('apps/gateway', 'Gateway'),
+                self::verifyMountedVendorAutoloadCommand('apps/cli', 'CLI'),
+            ]);
+        }
+
         return implode(' && ', [
             'cd '.escapeshellarg($remotePath),
             $dockerTopology
@@ -368,10 +388,16 @@ final class E2ECurrentCheckout
 
     private static function reuseRuntimeDependenciesCommand(string $vendorSourcePath, string $remotePath, ?string $dockerRuntimeContainer = null, bool $requiresGatewayApplication = true): string
     {
+        if ($vendorSourcePath === $remotePath) {
+            return implode(' && ', [
+                self::verifyMountedVendorAutoloadCommand('apps/gateway', 'Gateway'),
+                self::verifyMountedVendorAutoloadCommand('apps/cli', 'CLI'),
+            ]);
+        }
+
         $gatewayFallback = $requiresGatewayApplication
             ? self::runtimeComposerInstallCommand($remotePath, $dockerRuntimeContainer)
             : "echo 'Prepared gateway vendor dependencies are required for Docker host-launcher checkout.' >&2; exit 127";
-        $sourceCliEnv = escapeshellarg("{$vendorSourcePath}/apps/cli/.env");
 
         $commands = [
             self::reusePreparedVendorWithLocalAutoloadCommand(
@@ -385,7 +411,7 @@ final class E2ECurrentCheckout
                 fallbackClause: "else echo 'Prepared CLI vendor dependencies are required for Docker current checkout.' >&2; exit 127",
             ),
         ];
-        $commands[] = "if [ -f {$sourceCliEnv} ]; then cp {$sourceCliEnv} apps/cli/.env; fi";
+        $commands[] = self::copyCliEnvCommand($vendorSourcePath);
 
         return implode(' && ', $commands);
     }
@@ -477,52 +503,70 @@ final class E2ECurrentCheckout
         return "if command -v composer >/dev/null 2>&1; then {$localCommand}; fi";
     }
 
-    private static function prepareRuntimeStateCommand(?string $seedFrom, bool $dockerTopology = false, ?string $remotePath = null, ?string $dockerRuntimeContainer = null, ?bool $runArtisanInDockerRuntime = null, ?string $operationTokenSecret = null): string
+    private static function verifyMountedVendorAutoloadCommand(string $appPath, string $label): string
+    {
+        $autoloadPath = escapeshellarg("{$appPath}/vendor/autoload.php");
+
+        return "if [ ! -f {$autoloadPath} ]; then echo '{$label} Composer dependencies must already exist in the mounted source tree at {$appPath}/vendor/autoload.php.' >&2; exit 127; fi";
+    }
+
+    private static function copyCliEnvCommand(string $vendorSourcePath): string
+    {
+        $sourceCliEnv = escapeshellarg("{$vendorSourcePath}/apps/cli/.env");
+
+        return "if [ -f {$sourceCliEnv} ]; then cp {$sourceCliEnv} apps/cli/.env; fi";
+    }
+
+    private static function prepareRuntimeStateCommand(?string $seedFrom, bool $dockerTopology = false, ?string $remotePath = null, ?string $dockerRuntimeContainer = null, ?bool $runArtisanInDockerRuntime = null, bool $sourceMountedCheckout = false): string
     {
         $runArtisanInDockerRuntime ??= $dockerTopology;
-        $runtimeDirectories = 'mkdir -p apps/gateway/storage/framework/cache/data apps/gateway/storage/framework/sessions apps/gateway/storage/framework/testing apps/gateway/storage/framework/views apps/gateway/storage/logs';
+        $runtimeDirectories = self::dockerGatewayStateBootstrapCommand();
 
-        if ($seedFrom === null) {
-            return "cp apps/gateway/.env.example apps/gateway/.env && mkdir -p apps/gateway/database && touch apps/gateway/database/database.sqlite && {$runtimeDirectories} && ".self::dockerTopologyProviderEnvCommand($dockerTopology).' && '.self::operationTokenSecretEnvCommand($operationTokenSecret).' && '.self::artisanCommand('key:generate --ansi', $runArtisanInDockerRuntime, $remotePath, $dockerRuntimeContainer);
+        if ($sourceMountedCheckout) {
+            return implode(' && ', [
+                $runtimeDirectories,
+                self::appKeyCommand(sourceMountedCheckout: true, remotePath: $remotePath),
+            ]);
         }
 
-        $seedEnv = escapeshellarg("{$seedFrom}/apps/gateway/.env");
-        $seedDatabase = escapeshellarg("{$seedFrom}/apps/gateway/database/database.sqlite");
-        $seedStorageApp = escapeshellarg("{$seedFrom}/apps/gateway/storage/app");
+        if ($dockerTopology) {
+            return implode(' && ', [
+                $runtimeDirectories,
+                self::dockerTopologyProviderEnvCommand(true),
+                self::appKeyCommand(dockerTopology: true, runArtisanInDockerRuntime: $runArtisanInDockerRuntime, remotePath: $remotePath, dockerRuntimeContainer: $dockerRuntimeContainer),
+            ]);
+        }
 
         return implode(' && ', [
-            "if [ -f {$seedEnv} ]; then cp {$seedEnv} apps/gateway/.env; else cp apps/gateway/.env.example apps/gateway/.env; fi",
-            'mkdir -p apps/gateway/database',
-            "if [ -f {$seedDatabase} ]; then rm -f apps/gateway/database/database.sqlite apps/gateway/database/database.sqlite-* && cp {$seedDatabase} apps/gateway/database/database.sqlite; else touch apps/gateway/database/database.sqlite; fi",
-            "if [ -d {$seedStorageApp} ]; then mkdir -p apps/gateway/storage && rm -rf apps/gateway/storage/app && cp -a {$seedStorageApp} apps/gateway/storage/app; fi",
             $runtimeDirectories,
-            self::dockerTopologyProviderEnvCommand($dockerTopology),
-            self::operationTokenSecretEnvCommand($operationTokenSecret),
-            self::appKeyCommand($runArtisanInDockerRuntime, $remotePath, $dockerRuntimeContainer),
+            self::dockerTopologyProviderEnvCommand(false),
+            self::appKeyCommand(runArtisanInDockerRuntime: $runArtisanInDockerRuntime, remotePath: $remotePath, dockerRuntimeContainer: $dockerRuntimeContainer),
         ]);
     }
 
-    private static function operationTokenSecretEnvCommand(?string $operationTokenSecret): string
+    private static function dockerGatewayStateBootstrapCommand(): string
     {
-        if ($operationTokenSecret === null) {
-            return ':';
-        }
-
-        $secret = escapeshellarg($operationTokenSecret);
+        $gatewayEnv = escapeshellarg(self::gatewayStatePath('.env'));
+        $gatewayDatabase = escapeshellarg(self::gatewayStatePath('gateway.sqlite'));
 
         return implode(' && ', [
-            "grep -Ev '^(ORBIT_OPERATION_TOKEN_SECRET|ORBIT_EXECUTOR_SECRET)=' apps/gateway/.env > apps/gateway/.env.tmp || true",
-            'mv apps/gateway/.env.tmp apps/gateway/.env',
-            "printf 'ORBIT_OPERATION_TOKEN_SECRET=%s\\nORBIT_EXECUTOR_SECRET=%s\\n' {$secret} {$secret} >> apps/gateway/.env",
+            'mkdir -p '.escapeshellarg(self::OrbitConfigRoot).' apps/gateway/storage/framework/cache/data apps/gateway/storage/framework/sessions apps/gateway/storage/framework/testing apps/gateway/storage/framework/views apps/gateway/storage/logs',
+            "if [ ! -f {$gatewayEnv} ]; then cp apps/gateway/.env.example {$gatewayEnv}; fi",
+            "grep -Ev '^(DB_DATABASE|SESSION_DRIVER)=' {$gatewayEnv} > {$gatewayEnv}.tmp || true",
+            "mv {$gatewayEnv}.tmp {$gatewayEnv}",
+            "printf '\\nDB_DATABASE=%s\\nSESSION_DRIVER=file\\n' {$gatewayDatabase} >> {$gatewayEnv}",
+            "touch {$gatewayDatabase}",
         ]);
     }
 
-    private static function appKeyCommand(bool $dockerTopology = false, ?string $remotePath = null, ?string $dockerRuntimeContainer = null): string
+    private static function appKeyCommand(bool $dockerTopology = false, bool $runArtisanInDockerRuntime = false, ?string $remotePath = null, ?string $dockerRuntimeContainer = null, bool $sourceMountedCheckout = false): string
     {
+        $envPath = escapeshellarg(self::gatewayStatePath('.env'));
+
         return implode(' && ', [
-            "(grep -q '^APP_KEY=' apps/gateway/.env || printf '%s\\n' 'APP_KEY=' >> apps/gateway/.env)",
-            "(grep -Eq '^APP_KEY=base64:.+' apps/gateway/.env || ".self::artisanCommand('key:generate --force --no-interaction --ansi', $dockerTopology, $remotePath, $dockerRuntimeContainer).')',
-            "grep -Eq '^APP_KEY=base64:.+' apps/gateway/.env",
+            "(grep -q '^APP_KEY=' {$envPath} || printf '%s\\n' 'APP_KEY=' >> {$envPath})",
+            "(grep -Eq '^APP_KEY=base64:.+' {$envPath} || ".self::artisanCommand('key:generate --force --no-interaction --ansi', $runArtisanInDockerRuntime, $remotePath, $dockerRuntimeContainer, $sourceMountedCheckout).')',
+            "grep -Eq '^APP_KEY=base64:.+' {$envPath}",
         ]);
     }
 
@@ -532,27 +576,30 @@ final class E2ECurrentCheckout
             return ':';
         }
 
+        $envPath = escapeshellarg(self::gatewayStatePath('.env'));
+        $tmpEnvPath = escapeshellarg(self::gatewayStatePath('.env.tmp'));
+
         return implode(' && ', [
-            "grep -Ev '^(ORBIT_E2E_TOPOLOGY_PROVIDER)=' apps/gateway/.env > apps/gateway/.env.tmp",
-            'mv apps/gateway/.env.tmp apps/gateway/.env',
-            "printf '%s\\n' 'ORBIT_E2E_TOPOLOGY_PROVIDER=docker' >> apps/gateway/.env",
+            "grep -Ev '^(ORBIT_E2E_TOPOLOGY_PROVIDER)=' {$envPath} > {$tmpEnvPath}",
+            "mv {$tmpEnvPath} {$envPath}",
+            "printf '%s\\n' 'ORBIT_E2E_TOPOLOGY_PROVIDER=docker' >> {$envPath}",
         ]);
     }
 
-    private static function runtimeStateCommand(string $remotePath, ?string $seedFrom, bool $dockerTopology = false, ?string $dockerRuntimeContainer = null, ?bool $runArtisanInDockerRuntime = null, ?string $operationTokenSecret = null): string
+    private static function runtimeStateCommand(string $remotePath, ?string $seedFrom, bool $dockerTopology = false, ?string $dockerRuntimeContainer = null, ?bool $runArtisanInDockerRuntime = null, bool $sourceMountedCheckout = false): string
     {
         return implode(' && ', [
             'cd '.escapeshellarg($remotePath),
-            self::prepareRuntimeStateCommand($seedFrom, $dockerTopology, $remotePath, $dockerRuntimeContainer, $runArtisanInDockerRuntime, $operationTokenSecret),
+            self::prepareRuntimeStateCommand($seedFrom, $dockerTopology, $remotePath, $dockerRuntimeContainer, $runArtisanInDockerRuntime, $sourceMountedCheckout),
         ]);
     }
 
-    private static function migrateCommand(string $remotePath, bool $dockerTopology = false, ?string $dockerRuntimeContainer = null, ?bool $runArtisanInDockerRuntime = null): string
+    private static function migrateCommand(string $remotePath, bool $dockerTopology = false, ?string $dockerRuntimeContainer = null, ?bool $runArtisanInDockerRuntime = null, bool $sourceMountedCheckout = false): string
     {
         $runArtisanInDockerRuntime ??= $dockerTopology;
         $commands = [
             'cd '.escapeshellarg($remotePath),
-            self::artisanCommand('migrate --force --ansi', $runArtisanInDockerRuntime, $remotePath, $dockerRuntimeContainer),
+            self::artisanCommand('migrate --force --ansi', $runArtisanInDockerRuntime, $remotePath, $dockerRuntimeContainer, $sourceMountedCheckout),
         ];
 
         if ($dockerTopology) {
@@ -587,7 +634,7 @@ if (\Illuminate\Support\Facades\Schema::hasTable('local_gateway_settings')) {
     if (is_string($rootCa)
         && str_contains($rootCa, '-----BEGIN CERTIFICATE-----')
         && str_contains($rootCa, '-----END CERTIFICATE-----')) {
-        $caPemPath = storage_path('app/orbit/gateway-ca/orbit.crt');
+        $caPemPath = rtrim((string) config('orbit.paths.config_root'), '/').'/gateway-ca/orbit.crt';
         \Illuminate\Support\Facades\File::ensureDirectoryExists(dirname($caPemPath));
         \Illuminate\Support\Facades\File::put($caPemPath, $rootCa);
         $caSha256 = hash('sha256', $rootCa);
@@ -610,7 +657,7 @@ PHP;
         return self::artisanCommand('tinker --execute='.escapeshellarg($php), $runArtisanInDockerRuntime, $remotePath, $dockerRuntimeContainer);
     }
 
-    private static function refreshLocalGatewaySettings(E2EInstance $instance, string $user, SshKeyPair $keyPair, string $remotePath, string $gatewayApiIp, ?E2EPhaseTimer $timer): void
+    private static function refreshLocalGatewaySettings(E2EInstance $instance, string $user, SshKeyPair $keyPair, string $remotePath, string $gatewayApiIp, ?E2EPhaseTimer $timer, bool $sourceMountedCheckout = false): void
     {
         self::runTimed(
             $timer,
@@ -619,13 +666,13 @@ PHP;
                 $instance,
                 $user,
                 $keyPair,
-                self::localGatewaySettingsCommand($remotePath, $gatewayApiIp),
+                self::localGatewaySettingsCommand($remotePath, $gatewayApiIp, $sourceMountedCheckout),
                 timeoutSeconds: 120,
             ),
         );
     }
 
-    private static function localGatewaySettingsCommand(string $remotePath, string $gatewayApiIp): string
+    private static function localGatewaySettingsCommand(string $remotePath, string $gatewayApiIp, bool $sourceMountedCheckout = false): string
     {
         $gatewayUrlValue = var_export("https://{$gatewayApiIp}", true);
         $gatewayApiIpValue = var_export($gatewayApiIp, true);
@@ -644,24 +691,29 @@ PHP;
         // invoke as the role user) needs its own ~/.config/orbit gateway entry
         // AND the gateway root CA recorded as ca_pem_path so its HTTPS calls
         // verify — otherwise CLI calls fail with "Gateway URL is not configured"
-        // (no config) or cURL error 60 (CA not trusted). `orbit gateway:add`
-        // fetches the CA over http bootstrap, installs trust, verifies node
-        // identity, and persists the CLI gateway config (url + ca_pem_path) in
-        // one step. The WireGuard route to the gateway can take a moment to come
-        // up after the topology starts, so retry until it reports success.
+        // (no config) or cURL error 60 (CA not trusted). `gateway:add` fetches
+        // the CA over http bootstrap, installs trust, verifies node identity,
+        // and persists the CLI gateway config (url + ca_pem_path) in one step.
+        // Source-mounted runs call the mounted CLI directly so this step cannot
+        // accidentally use a stale prepared-image launcher. The WireGuard route
+        // to the gateway can take a moment to come up after the topology starts,
+        // so retry until it reports success.
         // Best-effort: a node that never reaches the gateway fails its own
         // assertions later with a clear gateway_unavailable error.
         $gatewayIpArg = escapeshellarg($gatewayApiIp);
+        $orbitCommand = $sourceMountedCheckout
+            ? escapeshellarg("{$remotePath}/apps/cli/orbit")
+            : 'orbit';
         $gatewayAddWithRetry = 'i=0; while [ "$i" -lt 8 ]; do '
-            .'orbit gateway:add '.$gatewayIpArg.' --json 2>&1 | grep -q \'"success"\' && break; '
+            .$orbitCommand.' gateway:add '.$gatewayIpArg.' --json 2>&1 | grep -q \'"success"\' && break; '
             .'i=$((i+1)); sleep 3; done; true';
 
         return 'cd '.escapeshellarg($remotePath)
-            .' && php apps/gateway/artisan tinker --execute='.escapeshellarg($php)
+            .' && '.self::artisanCommand('tinker --execute='.escapeshellarg($php), false, $remotePath, null, $sourceMountedCheckout)
             .' && ('.$gatewayAddWithRetry.')';
     }
 
-    private static function refreshGatewayHostKeys(E2EInstance $instance, string $user, SshKeyPair $keyPair, string $remotePath, ?E2EPhaseTimer $timer, bool $hostLauncher = false): void
+    private static function refreshGatewayHostKeys(E2EInstance $instance, string $user, SshKeyPair $keyPair, string $remotePath, ?E2EPhaseTimer $timer, bool $hostLauncher = false, bool $sourceMountedCheckout = false): void
     {
         self::runTimed(
             $timer,
@@ -674,24 +726,31 @@ PHP;
                     $remotePath,
                     self::usesDockerRuntime($instance) && ! $hostLauncher,
                     self::usesDockerRuntime($instance) && ! $hostLauncher ? self::dockerRuntimeContainerName($instance) : null,
+                    $sourceMountedCheckout,
                 ),
                 timeoutSeconds: 120,
             ),
         );
     }
 
-    private static function hostKeyRefreshCommand(string $remotePath, bool $dockerTopology = false, ?string $dockerRuntimeContainer = null): string
+    private static function hostKeyRefreshCommand(string $remotePath, bool $dockerTopology = false, ?string $dockerRuntimeContainer = null, bool $sourceMountedCheckout = false): string
     {
         return implode(' && ', [
             'cd '.escapeshellarg($remotePath),
-            self::artisanCommand('orbit:internal:pin-node-host-keys --json', $dockerTopology, $remotePath, $dockerRuntimeContainer),
+            self::artisanCommand('orbit:internal:pin-node-host-keys --json', $dockerTopology, $remotePath, $dockerRuntimeContainer, $sourceMountedCheckout),
         ]);
     }
 
-    private static function artisanCommand(string $arguments, bool $dockerTopology, ?string $remotePath = null, ?string $dockerRuntimeContainer = null): string
+    private static function artisanCommand(string $arguments, bool $dockerTopology, ?string $remotePath = null, ?string $dockerRuntimeContainer = null, bool $sourceMountedCheckout = false): string
     {
         if (! $dockerTopology) {
-            return 'php apps/gateway/artisan '.$arguments;
+            $command = 'php apps/gateway/artisan '.$arguments;
+
+            if (! $sourceMountedCheckout) {
+                return $command;
+            }
+
+            return 'ORBIT_CONFIG_ROOT='.escapeshellarg(self::OrbitConfigRoot).' '.$command;
         }
 
         if ($remotePath === null || $dockerRuntimeContainer === null) {
@@ -713,6 +772,39 @@ PHP;
         return $instance instanceof DockerInstance || $instance instanceof DockerBuildInstance;
     }
 
+    private static function usesDockerSourceMountedHostLauncher(E2EInstance $instance, bool $hostLauncher): bool
+    {
+        return $hostLauncher && self::usesDockerRuntime($instance);
+    }
+
+    private static function sourceMountedCheckoutPath(E2EInstance $instance, string $user, bool $hostLauncher): ?string
+    {
+        if (self::usesDockerSourceMountedHostLauncher($instance, $hostLauncher)) {
+            return self::mountedDockerCheckoutPath($user);
+        }
+
+        if ($instance instanceof SourceMountedCheckoutInstance) {
+            $path = $instance->sourceMountedCheckoutPath();
+
+            return is_string($path) && $path !== '' ? $path : null;
+        }
+
+        return null;
+    }
+
+    private static function mountedDockerCheckoutPath(string $user): string
+    {
+        return "/home/{$user}/orbit";
+    }
+
+    private static function hostLauncherActivationCommand(string $remotePath): string
+    {
+        return implode(' && ', [
+            'sudo ln -sfn '.escapeshellarg("{$remotePath}/apps/cli/orbit").' '.escapeshellarg('/usr/local/bin/orbit'),
+            'sudo install -d -m 0700 -o orbit -g orbit '.escapeshellarg(self::OrbitConfigRoot),
+        ]);
+    }
+
     private static function dockerRuntimeContainerName(E2EInstance $instance): string
     {
         return $instance->name().'-orbit-runtime';
@@ -730,9 +822,6 @@ PHP;
             "find . -mindepth 1 -maxdepth 1 ! -name .env -exec sh -c 'target=\$1; shift; for path do dest=\"\$target/\$(basename \"\$path\")\"; rm -rf \"\$dest\"; cp -al \"\$path\" \"\$target\"/ 2>/dev/null || { rm -rf \"\$dest\"; cp -a --reflink=always \"\$path\" \"\$target\"/ 2>/dev/null; } || { rm -rf \"\$dest\"; cp -a \"\$path\" \"\$target\"/; }; done' sh {$quotedRemotePath} {} +",
             "rm -rf {$quotedRemotePath}/apps/gateway/vendor {$quotedRemotePath}/apps/gateway/storage {$quotedRemotePath}/apps/gateway/.env",
             "cd {$quotedRemotePath} && ".self::cloneCachedVendorCommand($basePath, $remotePath),
-            "if [ -f {$quotedBasePath}/apps/gateway/.env ]; then cp {$quotedBasePath}/apps/gateway/.env {$quotedRemotePath}/apps/gateway/.env; fi",
-            "mkdir -p {$quotedRemotePath}/apps/gateway/database",
-            "if [ -f {$quotedBasePath}/apps/gateway/database/database.sqlite ]; then rm -f {$quotedRemotePath}/apps/gateway/database/database.sqlite {$quotedRemotePath}/apps/gateway/database/database.sqlite-* && cp {$quotedBasePath}/apps/gateway/database/database.sqlite {$quotedRemotePath}/apps/gateway/database/database.sqlite; else touch {$quotedRemotePath}/apps/gateway/database/database.sqlite; fi",
             self::cloneCachedStorageCommand($basePath, $remotePath),
         ]);
     }
@@ -755,14 +844,14 @@ PHP;
 
     private static function cloneCachedStorageCommand(string $basePath, string $remotePath): string
     {
-        $baseStorageApp = escapeshellarg("{$basePath}/apps/gateway/storage/app");
         $remoteStorage = escapeshellarg("{$remotePath}/apps/gateway/storage");
-        $remoteStorageApp = escapeshellarg("{$remotePath}/apps/gateway/storage/app");
 
-        return implode(' && ', [
-            "mkdir -p {$remoteStorage}/framework/cache/data {$remoteStorage}/framework/sessions {$remoteStorage}/framework/testing {$remoteStorage}/framework/views {$remoteStorage}/logs",
-            "if [ -d {$baseStorageApp} ]; then rm -rf {$remoteStorageApp} && cp -a {$baseStorageApp} {$remoteStorageApp}; fi",
-        ]);
+        return "mkdir -p {$remoteStorage}/framework/cache/data {$remoteStorage}/framework/sessions {$remoteStorage}/framework/testing {$remoteStorage}/framework/views {$remoteStorage}/logs";
+    }
+
+    private static function gatewayStatePath(string $path): string
+    {
+        return self::OrbitConfigRoot."/{$path}";
     }
 
     /**
@@ -919,6 +1008,9 @@ PHP;
             './apps/gateway/.env',
             './apps/gateway/.env.e2e',
             './apps/gateway/.env.local',
+            './apps/cli/.env',
+            './apps/cli/.env.e2e',
+            './apps/cli/.env.local',
             './apps/gateway/public/build',
             './apps/gateway/public/hot',
             './apps/gateway/public/storage',

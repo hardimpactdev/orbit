@@ -9,16 +9,12 @@ use App\Concerns\PromptsForRegistryEntities;
 use App\Contracts\RemoteShell;
 use App\Exceptions\PromptAborted;
 use App\Http\Gateway\GatewayApiException;
-use App\Http\Gateway\GatewayConnector;
-use App\Http\Gateway\Requests\Apps\RegisterAppRequest;
-use App\Http\Gateway\Responses\Apps\AppRegisterResponse;
 use App\Models\App;
 use App\Models\Node;
 use App\Models\ProxyRoute;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
 use App\Services\Php\PhpRuntimeCatalog;
 use App\Services\Support\GatewayActionResult;
-use Throwable;
 
 use function Laravel\Prompts\confirm;
 use function Laravel\Prompts\text;
@@ -43,31 +39,18 @@ final class AppRegistrar
     {
         $this->arguments = $arguments;
         $this->output = null;
-        $previousGatewayContext = config('orbit.is_gateway');
 
-        try {
-            config(['orbit.is_gateway' => true]);
+        $exitCode = $this->handle(app(EnactAppRuntime::class));
 
-            $exitCode = $this->handle(app(EnactAppRuntime::class));
-
-            return GatewayActionResult::fromJsonOutput($exitCode, $this->output);
-        } finally {
-            config(['orbit.is_gateway' => $previousGatewayContext]);
-        }
+        return GatewayActionResult::fromJsonOutput($exitCode, $this->output);
     }
 
     private function handle(EnactAppRuntime $enactAppRuntime): int
     {
-        $executionContext = (bool) config('orbit.is_gateway', false) ? 'gateway' : 'control';
-
         $input = $this->resolveInput();
 
         if (is_int($input)) {
             return $input;
-        }
-
-        if ($executionContext === 'control') {
-            return $this->forwardRegister($input);
         }
 
         $existingApp = App::query()
@@ -218,46 +201,6 @@ final class AppRegistrar
         $app->setRelation('node', $node);
 
         return $app;
-    }
-
-    /**
-     * @param  array{name: string, node: ?string, path: ?string, root: string, php_version: string, domain: ?string}  $input
-     */
-    private function forwardRegister(array $input): int
-    {
-        try {
-            /** @var AppRegisterResponse $dto */
-            $dto = app(GatewayConnector::class)
-                ->send(new RegisterAppRequest(
-                    name: $input['name'],
-                    node: $input['node'],
-                    path: $input['path'],
-                    root: $input['root'],
-                    phpVersion: $input['php_version'],
-                    domain: $input['domain'],
-                ))
-                ->dto();
-        } catch (GatewayApiException $e) {
-            return $this->failCommand(
-                code: $e->errorCode() ?? 'gateway_unavailable',
-                message: $e->getMessage() !== ''
-                    ? $e->getMessage()
-                    : 'Gateway connection is required to register apps.',
-                meta: $e->errorMeta(),
-            );
-        } catch (Throwable) {
-            return $this->failCommand(
-                code: 'gateway_unavailable',
-                message: 'Gateway connection is required to register apps.',
-                meta: [],
-            );
-        }
-
-        $nodeName = is_string($dto->data['app']['node'] ?? null)
-            ? $dto->data['app']['node']
-            : (string) ($input['node'] ?? '');
-
-        return $this->successCommand($dto->data, $dto->warnings, $nodeName);
     }
 
     /**

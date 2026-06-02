@@ -14,9 +14,10 @@ the invoking OS user's local CLI configuration at
 `~/.config/orbit/config.json`; it does not read or write any gateway-side
 default-node table or `/api/nodes/default` endpoint.
 
-The gateway runtime may still set `ORBIT_IS_GATEWAY=true` for gateway-runtime
-services and maintenance commands. That runtime flag is not a reason for the
-public Orbit CLI binary command to reject local default-node configuration.
+Gateway runtime code assumes it is running as the gateway and does not use a
+gateway role flag. Production installs still use the native CLI binary artifact;
+source-mounted Docker and Incus development/E2E topologies point
+`/usr/local/bin/orbit` directly at `<source>/apps/cli/orbit`.
 
 ## Error Contract
 

@@ -20,6 +20,13 @@ use RuntimeException;
  */
 final class OrbitCliBinaryBundle
 {
+    private const string BundledBinaryFilename = 'orbit-binary';
+
+    public static function bundledBinaryPath(string $bundleDir): string
+    {
+        return rtrim($bundleDir, '/').'/'.self::BundledBinaryFilename;
+    }
+
     /**
      * Build the linux x64 orbit binary and copy it to $bundleDir/orbit-binary.
      *
@@ -81,7 +88,7 @@ final class OrbitCliBinaryBundle
         }
 
         // Step 5: Copy into bundle.
-        $bundleBinary = "{$bundleDir}/orbit-binary";
+        $bundleBinary = self::bundledBinaryPath($bundleDir);
 
         if (! @copy($binarySource, $bundleBinary)) {
             throw new RuntimeException("Could not copy linux binary to bundle: {$binarySource} -> {$bundleBinary}");

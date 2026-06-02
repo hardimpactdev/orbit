@@ -78,9 +78,7 @@ final readonly class NodeRegistryWriter
             hostKey: $hostKey,
         );
 
-        if (config('orbit.is_gateway') === true) {
-            $this->dnsmasqReconciler->reconcile();
-        }
+        $this->dnsmasqReconciler->reconcile();
 
         return $node;
     }

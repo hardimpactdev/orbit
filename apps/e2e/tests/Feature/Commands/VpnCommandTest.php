@@ -10,6 +10,9 @@ use App\E2E\Support\E2ETopologyKind;
 function vpnCommandPrepareFakeBackend(E2ETopologyHarness $topology, string $backendPath): void
 {
     $checkout = escapeshellarg($topology->checkout('gateway'));
+    $envPath = dirname($topology->checkout('gateway')).'/.config/orbit/.env';
+    $envPathArgument = escapeshellarg($envPath);
+    $envTmpPathArgument = escapeshellarg("{$envPath}.vpn-e2e");
     $backendPathValue = var_export($backendPath, true);
     $publicKey = trim($topology->ssh(
         'operator',
@@ -110,7 +113,7 @@ PHP;
 
     $topology->ssh(
         'gateway',
-        "cd {$checkout} && (grep -v '^ORBIT_VPN_FAKE_BACKEND_PATH=' apps/gateway/.env 2>/dev/null || true) > apps/gateway/.env.vpn-e2e && printf '%s\n' ORBIT_VPN_FAKE_BACKEND_PATH=".escapeshellarg($backendPath).' >> apps/gateway/.env.vpn-e2e && mv apps/gateway/.env.vpn-e2e apps/gateway/.env',
+        "cd {$checkout} && mkdir -p ".escapeshellarg(dirname($envPath))." && (grep -v '^ORBIT_VPN_FAKE_BACKEND_PATH=' {$envPathArgument} 2>/dev/null || true) > {$envTmpPathArgument} && printf '%s\n' ORBIT_VPN_FAKE_BACKEND_PATH=".escapeshellarg($backendPath)." >> {$envTmpPathArgument} && mv {$envTmpPathArgument} {$envPathArgument}",
         timeoutSeconds: 60,
     );
 }

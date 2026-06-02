@@ -1225,7 +1225,7 @@ PHP;
 
         $php = <<<PHP
 \$rootCa = {$rootCaValue};
-\$pemPath = storage_path('app/orbit/gateway-ca/orbit.crt');
+\$pemPath = rtrim((string) config('orbit.paths.config_root'), '/').'/gateway-ca/orbit.crt';
 \\Illuminate\\Support\\Facades\\File::ensureDirectoryExists(dirname(\$pemPath));
 \\Illuminate\\Support\\Facades\\File::put(\$pemPath, \$rootCa);
 

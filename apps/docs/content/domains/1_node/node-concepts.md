@@ -41,19 +41,24 @@ Each term below has a precise meaning in the node command family.
   coupled to the `gateway` role in v1, so bootstrap assigns it together with
   `gateway` and normal `node role:*` commands cannot manage it independently.
 - **Orbit launcher:** Host `orbit` wrapper installed in the user's path. It
-  resolves and exports `ORBIT_HOST_CWD`, and always executes the installed
-  Orbit CLI binary on every node role — clients, workload nodes, and gateway
-  hosts alike. The CLI binary owns public gateway-client commands, local-only
-  commands, bootstrap commands, and hidden `internal:*` executor commands.
-  Gateway maintenance (migrate, tinker, scheduler, queue, `orbit:internal:*`
-  bake/build/install commands) uses `bin/orbit-gateway-artisan` or direct
-  `php apps/gateway/artisan` from a controlled gateway shell; the public
-  `orbit` command never dispatches to gateway Artisan.
-- **Orbit runtime container:** One `orbit-runtime` container per node. On the
-  gateway it is the resident gateway API and scheduler runtime. On app nodes it
-  provides the Orbit PHP runtime baseline. App, workspace, and process
-  workloads run in their own containers. `orbit-runtime` is no longer the
-  Docker-only execution target for the host launcher.
+  only resolves the repo root and execs the CLI source entrypoint.
+  Production installs still use the native Orbit CLI binary artifact.
+  Source-mounted Docker and Incus topologies are development and E2E lanes;
+  there, `/usr/local/bin/orbit` points directly at `<source>/apps/cli/orbit`,
+  the source entrypoint initializes `ORBIT_HOST_CWD` when absent and preserves
+  supplied values, and mutable node-local Orbit state lives under
+  `~/.config/orbit`. The CLI entry point owns public gateway-client commands,
+  local-only commands, bootstrap commands, and hidden `internal:*` executor
+  commands. Gateway maintenance (migrate, tinker, scheduler, queue,
+  `orbit:internal:*` bake/build/install commands) uses
+  `bin/orbit-gateway-artisan` or direct `php apps/gateway/artisan` from a
+  controlled gateway shell; the public `orbit` command never dispatches to
+  gateway Artisan.
+- **Orbit runtime container:** The gateway runs `orbit-runtime` for the API
+  and scheduler. Workload nodes run the public Orbit CLI as a gateway client
+  and run workloads in role-specific runtime containers. Any remaining
+  workload-node `orbit-runtime` usage is a compatibility concern, not the
+  source-mounted live topology contract.
 - **Orbit Caddy container:** Standalone `orbit-caddy` fleet proxy container.
   Nodes have at most one. It owns Orbit HTTP routing on that node, including
   gateway API, app/workspace, tool, ingress, router, and private backend routes
@@ -92,8 +97,11 @@ Each term below has a precise meaning in the node command family.
   the gateway owns for that TLD and the agent tool internal HTTPS hostnames
   such as `openclaw.agent` and `hermes.agent`.
 - **Agent role baseline:** Code-defined desired state for a node with the
-  `agent` role: `orbit-runtime`, `orbit-caddy`, WireGuard/node identity and
-  trust material, and the shared unprivileged `agent` runtime user.
+  `agent` role: `orbit-caddy`, WireGuard/node identity and trust material, the
+  shared unprivileged `agent` runtime user, and any role-specific runtime
+  containers the agent workload needs. Any remaining workload-node
+  `orbit-runtime` usage is compatibility scope, not the source-mounted live
+  topology contract.
 - **Agent runtime user:** Shared unprivileged Linux user that owns agent
   tool runtimes on a node with the `agent` role. Agent tools never run as the
   privileged `orbit` maintenance user.
@@ -188,7 +196,7 @@ Role baselines are code-defined desired state, not editable package lists.
 | `app-dev` | Docker-first app runtime baseline, development DNS mapping, and `orbit-caddy` app/workspace routes |
 | `app-prod` | Private `orbit-caddy` backend, FrankenPHP app containers, and Docker process runtime |
 | `database` | Docker running as the substrate for managed database service tools |
-| `agent` | `orbit-runtime`, `orbit-caddy`, the shared unprivileged `agent` runtime user, and the gateway-owned agent DNS mapping for the role's `tld` |
+| `agent` | `orbit-caddy`, the shared unprivileged `agent` runtime user, the gateway-owned agent DNS mapping for the role's `tld`, and any role-specific runtime containers the agent workload needs |
 | `ingress` | `orbit-caddy` running as the public production HTTP ingress boundary, forwarding public routes to `router` |
 | `websocket` | Laravel Reverb in a Docker runtime container managed by Orbit, private TLS backend binding on WireGuard, backend certificate material, and Redis-backed scaling configuration |
 | `s3` | RustFS in a Docker runtime container rendered by Orbit, private S3 API binding on WireGuard, service-level credentials on the `rustfs` tool row, backend pool registration, and role-owned data path |
@@ -238,10 +246,14 @@ Registry-only commands use stored gateway metadata and do not perform live
 platform checks; platform drift belongs to `doctor --family=node`.
 
 All managed Ubuntu nodes have the same Docker-first host prerequisite baseline.
-They require Git, Docker, the prebuilt Orbit CLI binary (embedded PHP 8.5 +
-`pdo_sqlite`/`openssl`/`curl`/`mbstring`/`tokenizer`/`ctype`/`filter`/`fileinfo`/`json`/`phar`),
-the host `orbit` launcher, `orbit-runtime`, WireGuard/SSH identity material,
-and any role-specific host tools such as VitePlus on app nodes. `app-dev` and
+They require Git, Docker, the Orbit CLI entry point, WireGuard/SSH identity
+material, and any role-specific host tools such as VitePlus on app nodes.
+Production installs still use the prebuilt Orbit CLI binary (embedded PHP 8.5
++ `pdo_sqlite`/`openssl`/`curl`/`mbstring`/`tokenizer`/`ctype`/`filter`/`fileinfo`/`json`/`phar`). Source-mounted Docker and Incus topologies are
+development and E2E lanes; in those lanes `/usr/local/bin/orbit` points
+directly at `<source>/apps/cli/orbit` and mutable node-local Orbit state lives
+under `~/.config/orbit`. The gateway role also carries `orbit-runtime` for the
+API and scheduler. `app-dev` and
 `app-prod` nodes additionally carry a host PHP command-line toolchain — host PHP
 8.4 and 8.5, Composer, and the Laravel installer — installed and repaired as
 node tools, because `app:exec`, app setup, and deployment run Composer and
@@ -249,7 +261,9 @@ Artisan on the host (matched to the app's PHP version) against the app source
 the FrankenPHP container serves. This host PHP toolchain is distinct from the
 Orbit CLI binary's embedded PHP, which only runs the CLI itself. Host Caddy and
 host PHP-FPM remain non-prerequisites and non-fallbacks: Caddy runs only as the
-`orbit-caddy` container, and PHP-FPM is never used.
+`orbit-caddy` container, and PHP-FPM is never used. Internal executor commands
+verify operation tokens through the gateway API; nodes do not store executor
+token signing material.
 
 ## Identity and onboarding
 
@@ -275,11 +289,14 @@ These terms describe how nodes communicate and how authority is enforced.
 
 - **CLI-to-gateway edge:** HTTPS over WireGuard from any node's CLI — client,
   gateway-local, or a node with workload roles — to the gateway API. On every
-  node role, the launcher always enters the installed Orbit CLI binary, which
-  calls the gateway API for public gateway-backed commands, mutates
-  caller-local state for local-only commands, runs bootstrap commands before
-  a gateway API exists, and routes hidden `internal:*` executor commands gated
-  by an operation token. Gateway hosts call their own API as HTTPS over the
+  node role, the launcher enters the node-local Orbit CLI entry point. In
+  production that is the native CLI binary artifact; in source-mounted Docker
+  and Incus development/E2E topologies `/usr/local/bin/orbit` points directly
+  at `<source>/apps/cli/orbit`. The CLI calls the gateway API for public
+  gateway-backed commands, mutates caller-local state for local-only commands,
+  runs bootstrap commands before a gateway API exists, and routes hidden
+  `internal:*` executor commands gated by an operation token. Gateway hosts
+  call their own API as HTTPS over the
   gateway's own WireGuard address; there is no privileged local-loopback
   bypass. Gateway maintenance uses `bin/orbit-gateway-artisan` or direct
   `php apps/gateway/artisan` from a controlled gateway shell.

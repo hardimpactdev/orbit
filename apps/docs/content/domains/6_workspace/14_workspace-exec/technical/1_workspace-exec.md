@@ -50,8 +50,8 @@ This command follows the shared
      name matches workspaces in multiple apps and `--app` is not supplied,
      fail with `workspace.ambiguous_name`. When `--app` is supplied,
      scope the lookup to that app.
-   - Otherwise, forward `ORBIT_HOST_CWD` from the host launcher; the
-     gateway resolves it server-side. Workspace match always wins over
+   - Otherwise, forward entrypoint-provided `ORBIT_HOST_CWD`; the gateway
+     resolves it server-side. Workspace match always wins over
      parent-app match.
    - If neither `[workspace]` nor a resolvable `ORBIT_HOST_CWD` is
      available, fail with `validation_failed`, `meta.field=workspace`.
@@ -87,7 +87,7 @@ The gateway HTTP API mirrors the command and exposes two entry points:
 | Method | Path | Permission | Action |
 | --- | --- | --- | --- |
 | `POST` | `/api/workspaces/{name}/exec` | `workspace:exec` | Run a command inside the workspace's runtime container. Optional `?app=<slug>` query disambiguates collisions. Body: `command` array. |
-| `POST` | `/api/workspaces/exec/by-path` | `workspace:exec` | Resolve the target workspace from a launcher-supplied host cwd and run the command. Body: `host_cwd` string plus `command` array. |
+| `POST` | `/api/workspaces/exec/by-path` | `workspace:exec` | Resolve the target workspace from an entrypoint-provided host cwd and run the command. Body: `host_cwd` string plus `command` array. |
 
 CLI operator-mode invocations use the by-path endpoint when no explicit
 selector is supplied, forwarding the raw `ORBIT_HOST_CWD` so the
@@ -144,7 +144,7 @@ HTTP status mapping:
 
 ### Host Cwd Resolution
 
-`ORBIT_HOST_CWD` is the launcher-supplied host working directory.
+`ORBIT_HOST_CWD` is the entrypoint-provided host working directory.
 Resolution is the gateway's responsibility, not the CLI's: operator-mode
 callers forward the raw cwd string in the request body and the gateway
 queries its workspace registry for the canonical workspace entity whose

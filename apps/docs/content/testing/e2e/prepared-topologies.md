@@ -34,8 +34,10 @@ Use this table to choose the smallest active node set for a feature test.
 
 Prepared topology images and templates are branch-agnostic topology baselines.
 They prove OS, users, SSH, Docker, `orbit-runtime`, `orbit-caddy`, service
-containers, trust, routes, the installed Orbit CLI binary, and baseline Orbit
-installation state.
+containers, trust, routes, and baseline Orbit installation state. Production
+artifact lanes still use the native CLI binary artifact. Source-mounted Docker
+and Incus development/E2E topologies point `/usr/local/bin/orbit` directly at
+`<source>/apps/cli/orbit`.
 
 Feature assertions must run the checkout under test inside the disposable clone.
 For worktree-based development, the worker's current worktree is the source of
@@ -68,24 +70,28 @@ that runs on those nodes.
 
 ## Retained dev topologies
 
-`composer e2e:incus -- --start` acquires a prepared topology, overlays the
-current checkout, and retains it (it is not reaped) so a human can do manual
-diagnosis and performance testing against an isolated Incus topology — never
-against a live production topology. It reuses the same prepared-topology
-substrate, run id, and checkout overlay as the source-checkout E2E lane; it only
+`composer e2e:incus -- --start` acquires a prepared topology, mounts the
+current checkout at `/home/orbit/orbit`, and retains it (it is not reaped) so a
+human can do manual diagnosis and performance testing against an isolated Incus
+topology — never against a live production topology. It reuses the same
+prepared-topology substrate and run id as the source-checkout E2E lane; it only
 differs in that the clone is kept until you release it.
 
 ```bash
-# Acquire a retained Incus topology with the current checkout overlaid.
+# Acquire a retained Incus topology with the current checkout source-mounted.
 composer e2e:incus -- --start --topology=operator_gateway_app-dev_app-prod
 
-# Acquire only the operator + gateway checkout overlay.
+# Acquire only the operator + gateway source-mounted checkout.
 composer e2e:incus -- --start --topology=operator_gateway_app-dev \
   --checkout-roles=operator,gateway
 
-# Acquire a retained topology, mint a Mac operator identity, and print the
-# WireGuard config plus the local `orbit gateway:add` follow-up.
+# Acquire a retained topology, mint a Mac operator identity, start a local
+# wg-quick tunnel, add the local gateway, and verify access.
 composer e2e:incus -- --live \
+  --topology=operator_gateway_app-dev_app-prod_ingress
+
+# Generate the live WireGuard config without changing local network state.
+composer e2e:incus -- --live --manual \
   --topology=operator_gateway_app-dev_app-prod_ingress
 
 # Preview the acquisition plan without provisioning anything.
@@ -110,9 +116,13 @@ per-role handle: the instance name plus a ready-to-run SSH example, e.g.
 
 ```text
 [operator] orbit-e2e-dev-1a2b3c-operator
-  ssh: ssh beast incus exec orbit-e2e-dev-1a2b3c-operator -- sudo -u orbit bash -lc 'cd /home/orbit/orbit-current && orbit node:list --json'
+  ssh: ssh beast incus exec orbit-e2e-dev-1a2b3c-operator -- sudo -u orbit bash -lc 'cd /home/orbit/orbit && orbit node:list --json'
+  source-mounted checkout: /home/orbit/orbit
+  launcher: /home/orbit/orbit/apps/cli/orbit
 [dev] orbit-e2e-dev-1a2b3c-dev
-  ssh: ssh beast incus exec orbit-e2e-dev-1a2b3c-dev -- sudo -u orbit bash -lc 'cd /home/orbit/orbit-current && orbit node:list --json'
+  ssh: ssh beast incus exec orbit-e2e-dev-1a2b3c-dev -- sudo -u orbit bash -lc 'cd /home/orbit/orbit && orbit node:list --json'
+  source-mounted checkout: /home/orbit/orbit
+  launcher: /home/orbit/orbit/apps/cli/orbit
   endpoint: 10.6.0.4 (dev node WireGuard address; FrankenPHP app runtime — no app served until you deploy one)
   note: Deploy an app from the operator, then curl the app domain through the gateway router with -w "%{time_total}s".
 ```
@@ -132,8 +142,16 @@ topology acquisition, then runs `orbit node:new mac-<id> --operator --json` from
 the retained operator VM. That mints an additional operator WireGuard identity
 for the local machine. The command rewrites the returned WireGuard `Endpoint`
 line to `ORBIT_E2E_LIVE_WIREGUARD_ENDPOINT` (or `--wireguard-endpoint=<host:port>`)
-and writes the config to
-`apps/e2e/var/dev-topology/<id>-mac-<id>.conf`.
+and writes a local `wg-quick` config under `apps/e2e/var/dev-topology/`.
+
+By default, live mode then starts that `wg-quick` tunnel, runs the current
+checkout's `apps/cli/orbit gateway:add <gateway-ip> --name=incus-<id>` on the
+local machine, and verifies the gateway API through the tunnel. `gateway:add`
+stores the named gateway and makes it the active local gateway.
+
+Use `--manual` when you want only the retained topology plus generated config.
+Manual mode prints the `wg-quick up` and `orbit gateway:add` commands without
+mutating local WireGuard or gateway state.
 
 For a trusted LAN where the Incus host is reachable as `192.168.1.150`, set:
 
@@ -141,12 +159,13 @@ For a trusted LAN where the Incus host is reachable as `192.168.1.150`, set:
 ORBIT_E2E_LIVE_WIREGUARD_ENDPOINT=192.168.1.150:51820
 ```
 
-The live command prints the WireGuard config and follow-up commands:
+Live E2E tunnels use short `oe2e<id>` config names because `wg-quick` requires a
+valid interface label no longer than fifteen characters. On macOS, `wg-quick`
+maps that logical label to a real `utun*` interface under `/var/run/wireguard`.
+Inspect active WireGuard interfaces with:
 
 ```bash
-orbit gateway:add 10.6.0.2 --name=incus-<id>
-orbit gateway:use incus-<id>
-orbit node:list --json
+wg show interfaces
 ```
 
 Use `--operator-name=<name>` when the minted local operator identity should not
@@ -155,7 +174,8 @@ should not default to `incus-<id>`.
 
 Release a retained topology when you are done. Releasing reaps the recorded
 instances on the host, removes the dedicated per-run SSH key directory, and
-deletes the state file:
+deletes the state file. When live mode started a local `wg-quick` tunnel,
+`e2e:incus --stop` brings that tunnel down before releasing Incus resources:
 
 ```bash
 # Release a specific retained topology.
@@ -215,6 +235,9 @@ Required prepared sources for feature lanes:
   `PhpRuntimeCatalog` for app/workspace topologies.
 - Docker build-host helpers: `orbit-e2e-topology-runtime:<namespace>-current`
   and `composer:2`, used only to prepare the canonical role images.
+- Source-mounted live Docker topologies are not prepared sources; their remote
+  sync step may pull and run `composer:2` on a runner host to hydrate synced
+  gateway and CLI dependencies.
 - `operator_gateway_app-dev_app-prod_agent` and
   `operator_gateway_app-dev_app-prod_agent_websocket` Incus role snapshots for
   selective VM boot, including operator-only, operator-gateway, and websocket
@@ -302,7 +325,10 @@ Common requirements for every prepared topology:
 - SSH is authorized for the users needed by the topology handles;
 - `orbit --version` works for the steady-state Orbit user on each managed node;
 - Docker Engine/CLI is available to the host launcher and runtime managers;
-- the installed Orbit CLI binary is available on each managed node;
+- source-mounted prepared topology nodes keep `/usr/local/bin/orbit` pointed at
+  `<source>/apps/cli/orbit`; production artifact and binary-acceptance lanes
+  are the lanes that require the native Orbit CLI binary artifact on managed
+  nodes;
 - host Composer, host Caddy, PHP-FPM, and host Supervisor for PHP app processes
   are absent from Docker-first topology images;
 - Orbit runtime containers use sibling containers through the host Docker socket;

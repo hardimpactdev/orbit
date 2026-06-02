@@ -215,7 +215,7 @@ if (\$gatewayCaUrl !== null) {
     if (is_string(\$rootCa)
         && str_contains(\$rootCa, '-----BEGIN CERTIFICATE-----')
         && str_contains(\$rootCa, '-----END CERTIFICATE-----')) {
-        \$caPemPath = storage_path('app/orbit/gateway-ca/orbit.crt');
+        \$caPemPath = rtrim((string) config('orbit.paths.config_root'), '/').'/gateway-ca/orbit.crt';
         \\Illuminate\\Support\\Facades\\File::ensureDirectoryExists(dirname(\$caPemPath));
         \\Illuminate\\Support\\Facades\\File::put(\$caPemPath, \$rootCa);
         \$caSha256 = hash('sha256', \$rootCa);
@@ -263,8 +263,8 @@ function e2eConfigureCurrentCheckoutCliGatewaySettings(E2ETopologyHarness $topol
 
 function e2eInstallCurrentCheckoutGatewayCa(E2ETopologyHarness $topology, string $role): string
 {
-    $caPemPath = $topology->checkout($role).'/apps/gateway/storage/app/orbit/ca/root.crt';
-    $gatewayCaPath = $topology->checkout('gateway').'/apps/gateway/storage/app/orbit/ca/root.crt';
+    $caPemPath = dirname($topology->checkout($role)).'/.config/orbit/ca/root.crt';
+    $gatewayCaPath = dirname($topology->checkout('gateway')).'/.config/orbit/ca/root.crt';
     $rootCert = $topology->ssh(
         'gateway',
         'cat '.escapeshellarg($gatewayCaPath),

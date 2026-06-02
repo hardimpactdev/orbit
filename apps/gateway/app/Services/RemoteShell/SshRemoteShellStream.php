@@ -74,7 +74,7 @@ final readonly class SshRemoteShellStream implements RemoteShellStream
 
     private function command(Node $node, string $script): string
     {
-        if ((bool) config('orbit.is_gateway', false) && app(NodeRoleAssignments::class)->nodeIsGateway($node)) {
+        if (app(NodeRoleAssignments::class)->nodeIsGateway($node)) {
             return 'bash -c '.escapeshellarg($script);
         }
 

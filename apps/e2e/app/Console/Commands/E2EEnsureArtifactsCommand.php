@@ -80,7 +80,10 @@ class E2EEnsureArtifactsCommand extends Command
         $results = [];
 
         foreach ($steps as $step) {
-            $result = Process::timeout(3600)->run($step['command']);
+            $runCommand = $step['run_command'] ?? $step['command'];
+            $result = Process::timeout(3600)
+                ->path(repo_path())
+                ->run($runCommand);
             $entry = [
                 'lane' => $step['lane'],
                 'name' => $step['name'],
@@ -154,7 +157,7 @@ class E2EEnsureArtifactsCommand extends Command
     /**
      * @param  list<string>  $lanes
      * @param  list<string>|null  $roles
-     * @return list<array{lane: string, name: string, command: string, force_guarded?: bool, templates?: list<array{role: string, name: string, snapshot: string}>}>
+     * @return list<array{lane: string, name: string, command: string, run_command?: string, force_guarded?: bool, templates?: list<array{role: string, name: string, snapshot: string}>}>
      */
     private function steps(E2ETopologyKind $kind, array $lanes, ?array $roles, bool $allRoles, bool $runtime, bool $rebuild): array
     {
@@ -170,6 +173,11 @@ class E2EEnsureArtifactsCommand extends Command
                     $rebuildFlag,
                     escapeshellarg($kind->value),
                 ),
+                'run_command' => sprintf(
+                    'bin/orbit-e2e-artisan e2e:prepare-docker-hosts --force%s --runtime-only %s',
+                    $rebuildFlag,
+                    escapeshellarg($kind->value),
+                ),
             ];
         }
 
@@ -179,6 +187,13 @@ class E2EEnsureArtifactsCommand extends Command
                 'name' => 'topology',
                 'command' => sprintf(
                     'composer e2e:prepare-docker-hosts -- --force%s --topology-only%s%s %s',
+                    $rebuildFlag,
+                    $roles !== null ? ' --roles='.implode(',', $roles) : '',
+                    $allRoles ? ' --all-roles' : '',
+                    escapeshellarg($kind->value),
+                ),
+                'run_command' => sprintf(
+                    'bin/orbit-e2e-artisan e2e:prepare-docker-hosts --force%s --topology-only%s%s %s',
                     $rebuildFlag,
                     $roles !== null ? ' --roles='.implode(',', $roles) : '',
                     $allRoles ? ' --all-roles' : '',

@@ -34,6 +34,7 @@ use App\Services\Doctor\DnsRuntimeProbe;
 use App\Services\Operations\OperationResultRegistry;
 use App\Services\Operations\OperationRunRecorder;
 use App\Services\Operations\OperationTokenFactory;
+use App\Services\Operations\OperationTokenIntrospector;
 use App\Services\RemoteShell\LocalExecutorCommandBuilder;
 use App\Services\RemoteShell\RemoteExecutor;
 use App\Services\RemoteShell\RemoteHostExecutor;
@@ -75,6 +76,7 @@ use App\Tools\SupervisorTool;
 use App\Tools\VitePlusTool;
 use Illuminate\Support\ServiceProvider;
 use Orbit\Core\Security\OperationTokenSigner;
+use Orbit\Core\Security\OperationTokenVerifier;
 use RuntimeException;
 
 class AppServiceProvider extends ServiceProvider
@@ -91,8 +93,12 @@ class AppServiceProvider extends ServiceProvider
         $this->app->singleton(OperationResultRegistry::class);
         $this->app->bind(OperationTokenFactory::class, fn ($app): OperationTokenFactory => new OperationTokenFactory(
             signer: $app->make(OperationTokenSigner::class),
-            secret: $this->operationTokenSecret(),
+            secret: $this->operationTokenSigningKey(),
             ttlSeconds: $this->operationTokenTtlSeconds(),
+        ));
+        $this->app->bind(OperationTokenIntrospector::class, fn ($app): OperationTokenIntrospector => new OperationTokenIntrospector(
+            verifier: $app->make(OperationTokenVerifier::class),
+            secret: $this->operationTokenSigningKey(),
         ));
         $this->app->singleton(GatewayConnector::class);
         $this->app->singleton(LocalResolver::class);
@@ -151,14 +157,14 @@ class AppServiceProvider extends ServiceProvider
         $this->app->bind(WgEasyVpnBackend::class, fn ($app): WgEasyVpnBackend => new WgEasyVpnBackend(
             username: (string) config('services.wg_easy.username', config('orbit.wg_easy.username', 'orbit')),
             password: (string) config('services.wg_easy.password', config('orbit.wg_easy.password', '')),
-            localExecutor: $this->hasOperationTokenSecret() ? $app->make(RemoteLocalExecutor::class) : null,
+            localExecutor: $this->hasOperationTokenSigningKey() ? $app->make(RemoteLocalExecutor::class) : null,
             vpnNodeResolver: $app->make(VpnNodeResolver::class),
         ));
 
         $this->app->singleton(WgEasyServiceInstaller::class, fn ($app): WgEasyServiceInstaller => new WgEasyServiceInstaller(
             rootPath: $this->orbitConfigPath(),
             statePath: $this->wgEasyStatePath(),
-            localExecutor: $this->hasOperationTokenSecret() ? $app->make(RemoteLocalExecutor::class) : null,
+            localExecutor: $this->hasOperationTokenSigningKey() ? $app->make(RemoteLocalExecutor::class) : null,
             vpnNodeResolver: $app->make(VpnNodeResolver::class),
         ));
 
@@ -193,7 +199,7 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
-        //
+        $this->loadMigrationsFrom(base_path('database/migrations'));
     }
 
     private function orbitConfigPath(): string
@@ -213,20 +219,20 @@ class AppServiceProvider extends ServiceProvider
         return $home.'/.config/orbit';
     }
 
-    private function operationTokenSecret(): string
+    private function operationTokenSigningKey(): string
     {
-        $secret = config('orbit.operation_token_secret');
+        $secret = config('app.key');
 
         if (! is_string($secret) || trim($secret) === '') {
-            throw new RuntimeException('Operation token signing secret is not configured.');
+            throw new RuntimeException('Application key is not configured for operation token signing.');
         }
 
         return $secret;
     }
 
-    private function hasOperationTokenSecret(): bool
+    private function hasOperationTokenSigningKey(): bool
     {
-        $secret = config('orbit.operation_token_secret');
+        $secret = config('app.key');
 
         return is_string($secret) && trim($secret) !== '';
     }

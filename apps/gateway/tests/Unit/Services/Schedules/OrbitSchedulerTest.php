@@ -13,7 +13,6 @@ uses(TestCase::class);
 uses(RefreshDatabase::class);
 
 it('runs a gateway scheduler tick without due schedules', function (): void {
-    config(['orbit.is_gateway' => true]);
     createOrbitSchedulerUnitGatewayNode();
 
     $startedAt = CarbonImmutable::parse('2026-05-06 12:34:00', 'UTC');
@@ -25,12 +24,6 @@ it('runs a gateway scheduler tick without due schedules', function (): void {
         ->and($result->executedSchedules)->toBe(0)
         ->and($result->finishedAt)->toBeInstanceOf(CarbonImmutable::class);
 });
-
-it('refuses scheduler ticks on non-gateway nodes', function (): void {
-    config(['orbit.is_gateway' => false]);
-
-    app(OrbitScheduler::class)->tick(CarbonImmutable::parse('2026-05-06 12:34:00', 'UTC'));
-})->throws(RuntimeException::class, 'Orbit Scheduler can only run on the gateway.');
 
 it('aligns daemon sleeps to the next wall-clock minute', function (): void {
     $scheduler = app(OrbitScheduler::class);

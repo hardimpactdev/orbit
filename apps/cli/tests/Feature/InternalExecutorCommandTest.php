@@ -4,8 +4,9 @@ declare(strict_types=1);
 
 use Illuminate\Console\OutputStyle;
 use Illuminate\Contracts\Console\Kernel;
+use Illuminate\Http\Client\Request;
+use Illuminate\Support\Facades\Http;
 use Orbit\Core\Http\JsonEnvelope;
-use Orbit\Core\Security\OperationToken;
 use Orbit\Core\Security\OperationTokenSigner;
 use Symfony\Component\Process\Process;
 
@@ -63,6 +64,9 @@ describe('internal executor verification command', function (): void {
 
     it('rejects a malformed operation token without leaking parser details', function (): void {
         configureOperationTokenGuard();
+        fakeGateway(fakeSuccessEnvelope([
+            'allowed' => false,
+        ]));
 
         [$exitCode, $output] = runInternalExecutorCommand($this, [
             '--operation-token' => 'not-a-token',
@@ -77,6 +81,9 @@ describe('internal executor verification command', function (): void {
 
     it('returns invalid_token failure envelope as JSON when --json and token is malformed', function (): void {
         configureOperationTokenGuard();
+        fakeGateway(fakeSuccessEnvelope([
+            'allowed' => false,
+        ]));
 
         [$exitCode, $output] = runInternalExecutorCommand($this, [
             '--operation-token' => 'not-a-token',
@@ -90,8 +97,11 @@ describe('internal executor verification command', function (): void {
             ));
     });
 
-    it('rejects a token signed for the wrong node', function (): void {
+    it('maps gateway rejection to invalid_token for a wrong-node token', function (): void {
         configureOperationTokenGuard();
+        fakeGateway(fakeSuccessEnvelope([
+            'allowed' => false,
+        ]));
 
         [$exitCode, $output] = runInternalExecutorCommand($this, [
             '--operation-token' => signedOperationToken(node: 'app-prod'),
@@ -102,8 +112,11 @@ describe('internal executor verification command', function (): void {
             ->and($output)->toContain('Operation token is invalid.');
     });
 
-    it('returns invalid_token failure envelope as JSON when --json and token targets the wrong node', function (): void {
+    it('returns invalid_token failure envelope as JSON when the gateway rejects the token', function (): void {
         configureOperationTokenGuard();
+        fakeGateway(fakeSuccessEnvelope([
+            'allowed' => false,
+        ]));
 
         [$exitCode, $output] = runInternalExecutorCommand($this, [
             '--operation-token' => signedOperationToken(node: 'app-prod'),
@@ -117,54 +130,37 @@ describe('internal executor verification command', function (): void {
             ));
     });
 
-    it('rejects a token signed for the wrong command', function (): void {
+    it('posts the token and expected command to the gateway verifier endpoint', function (): void {
         configureOperationTokenGuard();
 
-        [$exitCode, $output] = runInternalExecutorCommand($this, [
-            '--operation-token' => signedOperationToken(command: 'internal:workspace-adapter'),
-        ]);
+        fakeGateway(fakeSuccessEnvelope([
+            'allowed' => true,
+        ]));
 
-        expect($exitCode)->toBe(1)
-            ->and($output)->toContain('invalid_token')
-            ->and($output)->toContain('Operation token is invalid.');
-    });
-
-    it('rejects an expired operation token', function (): void {
-        configureOperationTokenGuard();
+        $token = signedOperationToken(command: 'internal:workspace-adapter');
 
         [$exitCode, $output] = runInternalExecutorCommand($this, [
-            '--operation-token' => signedOperationToken(issuedAt: time() - 240, expiresAt: time() - 120),
+            '--operation-token' => $token,
         ]);
 
-        expect($exitCode)->toBe(1)
-            ->and($output)->toContain('invalid_token')
-            ->and($output)->toContain('Operation token is invalid.');
-    });
+        expect($exitCode)->toBe(0)
+            ->and($output)->toContain('operation_id: operation-verify')
+            ->and($output)->toContain('node: app-dev')
+            ->and($output)->toContain('command: internal:workspace-adapter');
 
-    it('rejects a tampered operation token', function (): void {
-        configureOperationTokenGuard();
-
-        $token = OperationToken::parse(signedOperationToken());
-        $tampered = new OperationToken(
-            id: "{$token->id}-tampered",
-            node: $token->node,
-            command: $token->command,
-            issued_at: $token->issued_at,
-            expires_at: $token->expires_at,
-            signature: $token->signature,
-        );
-
-        [$exitCode, $output] = runInternalExecutorCommand($this, [
-            '--operation-token' => $tampered->toString(),
-        ]);
-
-        expect($exitCode)->toBe(1)
-            ->and($output)->toContain('invalid_token')
-            ->and($output)->toContain('Operation token is invalid.');
+        Http::assertSent(function (Request $request) use ($token): bool {
+            return $request->method() === 'POST'
+                && $request->url() === 'https://gateway.test/api/internal-executor/token/verify'
+                && $request['operation_token'] === $token
+                && $request['command'] === 'internal:executor:verify';
+        });
     });
 
     it('accepts a valid operation token', function (): void {
         configureOperationTokenGuard();
+        fakeGateway(fakeSuccessEnvelope([
+            'allowed' => true,
+        ]));
 
         [$exitCode, $output] = runInternalExecutorCommand($this, [
             '--operation-token' => signedOperationToken(id: 'operation-verify-1'),
@@ -178,6 +174,9 @@ describe('internal executor verification command', function (): void {
 
     it('outputs a success envelope as JSON for a valid operation token', function (): void {
         configureOperationTokenGuard();
+        fakeGateway(fakeSuccessEnvelope([
+            'allowed' => true,
+        ]));
 
         [$exitCode, $output] = runInternalExecutorCommand($this, [
             '--operation-token' => signedOperationToken(id: 'operation-verify-json'),
@@ -206,9 +205,6 @@ describe('internal executor verification command', function (): void {
 
 function configureOperationTokenGuard(): void
 {
-    config()->set('orbit.executor.shared_secret', 'gateway-secret');
-    config()->set('orbit.executor.node_identity', 'app-dev');
-
     app()->forgetInstance('App\Services\Executor\OperationTokenGuard');
 }
 

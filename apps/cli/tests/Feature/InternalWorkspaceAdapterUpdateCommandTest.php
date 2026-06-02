@@ -11,6 +11,9 @@ use Symfony\Component\Process\Process;
 describe('internal workspace adapter update command', function (): void {
     beforeEach(function (): void {
         configureWorkspaceAdapterUpdateOperationTokenGuard();
+        fakeGateway(fakeSuccessEnvelope([
+            'allowed' => true,
+        ]));
 
         $this->workspaceAdapterUpdateTemp = sys_get_temp_dir().'/orbit-cli-workspace-adapter-update-'.bin2hex(random_bytes(8));
         mkdir($this->workspaceAdapterUpdateTemp, recursive: true);
@@ -41,6 +44,10 @@ describe('internal workspace adapter update command', function (): void {
     });
 
     it('rejects an invalid operation token before validating inputs or opening databases', function (): void {
+        config()->set('orbit.gateway.url', null);
+        app()->forgetInstance('App\Services\GatewayApiClient');
+        app()->forgetInstance('App\Services\Executor\OperationTokenGuard');
+
         [$exitCode, $output] = runWorkspaceAdapterUpdateCommand($this, [
             '--adapter' => 'polyscope',
             '--update' => 'workspace-branch',
@@ -230,9 +237,6 @@ describe('internal workspace adapter update command', function (): void {
 
 function configureWorkspaceAdapterUpdateOperationTokenGuard(): void
 {
-    config()->set('orbit.executor.shared_secret', 'gateway-secret');
-    config()->set('orbit.executor.node_identity', 'app-dev');
-
     app()->forgetInstance('App\Services\Executor\OperationTokenGuard');
 }
 

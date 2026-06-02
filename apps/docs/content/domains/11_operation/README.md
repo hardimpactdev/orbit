@@ -22,9 +22,14 @@ These rules constrain all commands in the operation domain.
 
 **Behavior contracts:**
 
-- Updates change Orbit installations through the host launcher and
-  `orbit-runtime`; host PHP and host Composer are not supported update
-  fallbacks.
+- Updates change Orbit installations through the node-local Orbit CLI entry
+  point. Production/artifact installs update and relink the native CLI binary
+  artifact. Source-mounted Docker/Incus development and E2E topologies keep
+  `/usr/local/bin/orbit` pointed at `<source>/apps/cli/orbit` and update by
+  changing the mounted source. Gateway dependency and migration steps run in
+  gateway `orbit-runtime`; host PHP and host Composer are not supported update
+  fallbacks, and those gateway runtime steps do not apply universally to
+  app/workload nodes.
 - Updates do not replace doctor.
 - For drift or runtime readiness questions after an update, run the doctor family that owns the changed artifact.
 - `doctor` owns cross-family verification and resolution. Verify mode is read-only. `--fix` enables interactive resolution; `--restore` and `--adopt` force a single direction non-interactively.

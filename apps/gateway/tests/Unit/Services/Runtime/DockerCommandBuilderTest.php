@@ -15,7 +15,7 @@ uses(TestCase::class);
 it('builds escaped docker run commands for rendered runtime containers', function (): void {
     $container = (new OrbitRuntimeContainerRenderer(new OrbitContainerNames))->render(
         orbitCheckoutPath: "/Users/nckrtl/Orbit Repo/it's fine",
-        gatewayDatabasePath: '/Users/nckrtl/Orbit Repo/apps/gateway/database/database.sqlite',
+        gatewayConfigRoot: "/Users/nckrtl/.config/orbit/it's fine",
         image: "orbit-runtime:sha'abc",
         environment: [
             'APP_NAME' => "Orbit's runtime",
@@ -31,9 +31,10 @@ it('builds escaped docker run commands for rendered runtime containers', functio
         ->toContain('--network '.escapeshellarg('orbit-network'))
         ->toContain('--network-alias '.escapeshellarg('orbit-runtime'))
         ->toContain('--env '.escapeshellarg("APP_NAME=Orbit's runtime"))
+        ->toContain('--env '.escapeshellarg("ORBIT_CONFIG_ROOT=/Users/nckrtl/.config/orbit/it's fine"))
         ->toContain('--env '.escapeshellarg('ORBIT_SOURCE_PATH=/opt/orbit'))
         ->toContain('--mount '.escapeshellarg("type=bind,source=/Users/nckrtl/Orbit Repo/it's fine,target=/opt/orbit"))
-        ->toContain('--mount '.escapeshellarg('type=bind,source=/Users/nckrtl/Orbit Repo/apps/gateway/database/database.sqlite,target=/opt/orbit/apps/gateway/database/database.sqlite'))
+        ->toContain('--mount '.escapeshellarg("type=bind,source=/Users/nckrtl/.config/orbit/it's fine,target=/Users/nckrtl/.config/orbit/it's fine"))
         ->toContain('--mount '.escapeshellarg('type=bind,source=/var/run/docker.sock,target=/var/run/docker.sock'))
         ->toEndWith(' '.escapeshellarg("orbit-runtime:sha'abc"));
 });
@@ -41,14 +42,14 @@ it('builds escaped docker run commands for rendered runtime containers', functio
 it('quotes docker mount fields containing csv separators and quotes', function (): void {
     $container = (new OrbitRuntimeContainerRenderer(new OrbitContainerNames))->render(
         orbitCheckoutPath: '/Users/nckrtl/Orbit, "Repo"',
-        gatewayDatabasePath: '/Users/nckrtl/Orbit, "Repo"/apps/gateway/database/database.sqlite',
+        gatewayConfigRoot: '/Users/nckrtl/.config/Orbit, "Root"',
     );
 
     $command = (new DockerCommandBuilder)->runDetached($container);
 
     expect($command)
         ->toContain('--mount '.escapeshellarg('type=bind,"source=/Users/nckrtl/Orbit, ""Repo""",target=/opt/orbit'))
-        ->toContain('--mount '.escapeshellarg('type=bind,"source=/Users/nckrtl/Orbit, ""Repo""/apps/gateway/database/database.sqlite",target=/opt/orbit/apps/gateway/database/database.sqlite'));
+        ->toContain('--mount '.escapeshellarg('type=bind,"source=/Users/nckrtl/.config/Orbit, ""Root""","target=/Users/nckrtl/.config/Orbit, ""Root"""'));
 });
 
 it('emits route-artifact mounts, port publishing, and extra hosts for orbit-caddy containers', function (): void {

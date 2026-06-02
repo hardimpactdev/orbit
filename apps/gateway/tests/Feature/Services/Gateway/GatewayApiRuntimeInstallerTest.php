@@ -8,11 +8,11 @@ use App\Services\Runtime\OrbitCaddyContainer;
 use App\Services\Runtime\OrbitContainerNames;
 use App\Services\Runtime\OrbitRuntimeContainerRenderer;
 use App\Tools\CaddyTool;
-use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Process;
-
-uses(RefreshDatabase::class);
+use Illuminate\Support\Facades\Schema;
 
 function gatewayApiInstallerPathIsCaddyVisible(string $path, OrbitCaddyContainer $container): bool
 {
@@ -36,13 +36,41 @@ describe('GatewayApiRuntimeInstaller', function (): void {
         $this->tempStorage = sys_get_temp_dir().'/orbit-gateway-api-runtime-test-'.uniqid();
         mkdir($this->tempStorage.'/app/orbit', 0777, true);
         app()->useStoragePath($this->tempStorage);
+        $this->tempConfigRoot = "{$this->tempStorage}/config";
+        File::ensureDirectoryExists($this->tempConfigRoot);
+        config()->set('orbit.paths.config_root', $this->tempConfigRoot);
+        $this->databasePath = $this->tempStorage.'/gateway-test.sqlite';
 
-        createTestGatewayNode([
+        touch($this->databasePath);
+
+        config()->set('database.default', 'sqlite');
+        config()->set('database.connections.sqlite.database', $this->databasePath);
+
+        DB::purge('sqlite');
+        Schema::connection('sqlite')->dropAllTables();
+
+        Schema::connection('sqlite')->create('nodes', function (Blueprint $table): void {
+            $table->id();
+            $table->string('name');
+            $table->string('status');
+        });
+
+        Schema::connection('sqlite')->create('node_role', function (Blueprint $table): void {
+            $table->id();
+            $table->unsignedBigInteger('node_id');
+            $table->string('role');
+            $table->string('status');
+        });
+
+        DB::connection('sqlite')->table('nodes')->insert([
+            'id' => 1,
             'name' => 'gateway-1',
-            'host' => '10.6.0.2',
-            'wireguard_address' => '10.6.0.2',
-            'user' => 'orbit',
-            'orbit_path' => base_path(),
+            'status' => 'active',
+        ]);
+
+        DB::connection('sqlite')->table('node_role')->insert([
+            'node_id' => 1,
+            'role' => 'gateway',
             'status' => 'active',
         ]);
     });
@@ -56,8 +84,8 @@ describe('GatewayApiRuntimeInstaller', function (): void {
     it('issues a leaf certificate and routes the gateway API through orbit-caddy to orbit-runtime', function (): void {
         $writtenGlobalCaddyfile = null;
         $writtenGatewayApiCaddyfile = null;
-        $caDir = storage_path('app/orbit/ca');
-        $certsDir = storage_path('app/orbit/certs');
+        $caDir = $this->tempConfigRoot.'/ca';
+        $certsDir = $this->tempConfigRoot.'/certs';
 
         File::ensureDirectoryExists($caDir);
         File::ensureDirectoryExists($certsDir);
@@ -115,8 +143,8 @@ describe('GatewayApiRuntimeInstaller', function (): void {
 
     it('preserves real-time streaming through the containerized gateway api with flush_interval disabled', function (): void {
         $writtenGatewayApiCaddyfile = null;
-        $caDir = storage_path('app/orbit/ca');
-        $certsDir = storage_path('app/orbit/certs');
+        $caDir = $this->tempConfigRoot.'/ca';
+        $certsDir = $this->tempConfigRoot.'/certs';
 
         File::ensureDirectoryExists($caDir);
         File::ensureDirectoryExists($certsDir);
@@ -150,8 +178,8 @@ describe('GatewayApiRuntimeInstaller', function (): void {
     });
 
     it('ensures the orbit-runtime container before writing the gateway API Caddy config', function (): void {
-        $caDir = storage_path('app/orbit/ca');
-        $certsDir = storage_path('app/orbit/certs');
+        $caDir = $this->tempConfigRoot.'/ca';
+        $certsDir = $this->tempConfigRoot.'/certs';
 
         File::ensureDirectoryExists($caDir);
         File::ensureDirectoryExists($certsDir);
@@ -164,7 +192,7 @@ describe('GatewayApiRuntimeInstaller', function (): void {
         $renderer = new OrbitRuntimeContainerRenderer(new OrbitContainerNames);
         $runtimeContainer = $renderer->render(
             orbitCheckoutPath: '/home/orbit/orbit',
-            gatewayDatabasePath: '/home/orbit/orbit/apps/gateway/database/database.sqlite',
+            gatewayConfigRoot: rtrim((string) getenv('HOME'), '/').'/.config/orbit',
         );
 
         $invocations = [];
@@ -210,8 +238,8 @@ describe('GatewayApiRuntimeInstaller', function (): void {
     });
 
     it('reloads the orbit-caddy container and never installs or restarts host PHP-FPM or host Caddy', function (): void {
-        $caDir = storage_path('app/orbit/ca');
-        $certsDir = storage_path('app/orbit/certs');
+        $caDir = $this->tempConfigRoot.'/ca';
+        $certsDir = $this->tempConfigRoot.'/certs';
 
         File::ensureDirectoryExists($caDir);
         File::ensureDirectoryExists($certsDir);
@@ -258,8 +286,8 @@ describe('GatewayApiRuntimeInstaller', function (): void {
         mkdir($tempContainerRoot, 0777, true);
         app()->useStoragePath($tempContainerRoot);
 
-        $caDir = storage_path('app/orbit/ca');
-        $certsDir = storage_path('app/orbit/certs');
+        $caDir = $this->tempConfigRoot.'/ca';
+        $certsDir = $this->tempConfigRoot.'/certs';
         File::ensureDirectoryExists($caDir);
         File::ensureDirectoryExists($certsDir);
         File::put("{$caDir}/root.key", 'test-root-key');
@@ -312,8 +340,8 @@ describe('GatewayApiRuntimeInstaller', function (): void {
         $writtenGlobalCaddyfile = null;
         $writtenGatewayApiCaddyfile = null;
 
-        $caDir = storage_path('app/orbit/ca');
-        $certsDir = storage_path('app/orbit/certs');
+        $caDir = $this->tempConfigRoot.'/ca';
+        $certsDir = $this->tempConfigRoot.'/certs';
 
         File::ensureDirectoryExists($caDir);
         File::ensureDirectoryExists($certsDir);

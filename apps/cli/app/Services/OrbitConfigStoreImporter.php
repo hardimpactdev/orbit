@@ -11,7 +11,7 @@ use PDOException;
  * One-time, idempotent importer per decision D11 + Phase 3 migration contract.
  *
  * Reads the most recent `local_gateway_settings` row and the most recent `local_node_defaults`
- * row from `apps/gateway/database/database.sqlite` (when present and readable), and writes the
+ * row from `~/.config/orbit/gateway.sqlite` (when present and readable), and writes the
  * equivalent JSON config to `~/.config/orbit/config.json` if the file does not already exist.
  *
  * Never overwrites an existing JSON config with SQLite values. Records provenance in

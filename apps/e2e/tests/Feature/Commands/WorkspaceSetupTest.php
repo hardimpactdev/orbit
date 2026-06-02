@@ -152,7 +152,7 @@ it('resolves an opencode worktree by adapter ownership when a stale registered p
         $install = $topology->ssh(
             'gateway',
             sprintf(
-                'cd %s && ORBIT_IS_GATEWAY=1 orbit tool:install opencode-server --node=app-dev-1 --status=running --json',
+                'cd %s && orbit tool:install opencode-server --node=app-dev-1 --status=running --json',
                 escapeshellarg($topology->checkout('gateway')),
             ),
             timeoutSeconds: 180,
@@ -411,38 +411,21 @@ PHP;
 
 function workspaceSetupConfigureLocalExecutor(E2ETopologyHarness $topology): void
 {
-    $secret = 'orbit-e2e-workspace-adapter-secret';
-
     $topology->ssh(
         'gateway',
         sprintf(
             <<<'SH'
 cd %1$s
-touch apps/gateway/.env
-grep -Ev '^(ORBIT_OPERATION_TOKEN_SECRET|ORBIT_OPERATION_TOKEN_TTL_SECONDS)=' apps/gateway/.env > apps/gateway/.env.tmp || true
-mv apps/gateway/.env.tmp apps/gateway/.env
-printf 'ORBIT_OPERATION_TOKEN_SECRET=%2$s\nORBIT_OPERATION_TOKEN_TTL_SECONDS=120\n' >> apps/gateway/.env
+mkdir -p /home/orbit/.config/orbit apps/gateway/storage/framework/cache/data apps/gateway/storage/framework/sessions apps/gateway/storage/framework/testing apps/gateway/storage/framework/views apps/gateway/storage/logs
+env_file=/home/orbit/.config/orbit/.env
+if [ ! -f "$env_file" ]; then cp apps/gateway/.env.example "$env_file"; fi
+grep -Ev '^(ORBIT_OPERATION_TOKEN_TTL_SECONDS|DB_DATABASE|SESSION_DRIVER)=' "$env_file" > "$env_file.tmp" || true
+mv "$env_file.tmp" "$env_file"
+printf 'DB_DATABASE=/home/orbit/.config/orbit/gateway.sqlite\nSESSION_DRIVER=file\nORBIT_OPERATION_TOKEN_TTL_SECONDS=120\n' >> "$env_file"
+touch /home/orbit/.config/orbit/gateway.sqlite
+ORBIT_CONFIG_ROOT=/home/orbit/.config/orbit php apps/gateway/artisan key:generate --force --no-interaction --ansi
 SH,
             escapeshellarg($topology->checkout('gateway')),
-            $secret,
-        ),
-        timeoutSeconds: 60,
-    );
-
-    $topology->ssh(
-        'dev',
-        sprintf(
-            <<<'SH'
-cd %1$s
-for env_file in apps/gateway/.env apps/cli/.env; do
-    touch "$env_file"
-    grep -Ev '^(ORBIT_EXECUTOR_SECRET|ORBIT_NODE_IDENTITY)=' "$env_file" > "$env_file.tmp" || true
-    mv "$env_file.tmp" "$env_file"
-    printf 'ORBIT_EXECUTOR_SECRET=%2$s\nORBIT_NODE_IDENTITY=app-dev-1\n' >> "$env_file"
-done
-SH,
-            escapeshellarg($topology->checkout('dev')),
-            $secret,
         ),
         timeoutSeconds: 60,
     );

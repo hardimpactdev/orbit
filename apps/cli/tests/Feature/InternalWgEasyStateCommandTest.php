@@ -11,6 +11,9 @@ use Symfony\Component\Process\Process;
 describe('internal wg-easy state command', function (): void {
     beforeEach(function (): void {
         configureWgEasyStateOperationTokenGuard();
+        fakeGateway(fakeSuccessEnvelope([
+            'allowed' => true,
+        ]));
 
         $this->wgEasyStateTemp = sys_get_temp_dir().'/orbit-cli-wg-easy-state-'.bin2hex(random_bytes(8));
         mkdir($this->wgEasyStateTemp, recursive: true);
@@ -42,6 +45,10 @@ describe('internal wg-easy state command', function (): void {
     });
 
     it('rejects an invalid operation token before opening the database', function (): void {
+        config()->set('orbit.gateway.url', null);
+        app()->forgetInstance('App\Services\GatewayApiClient');
+        app()->forgetInstance('App\Services\Executor\OperationTokenGuard');
+
         [$exitCode, $output] = runWgEasyStateCommand($this, [
             '--action' => 'update-user',
             '--host' => 'vpn.example.test',
@@ -95,6 +102,10 @@ describe('internal wg-easy state command', function (): void {
     ]);
 
     it('rejects invalid operation tokens for new actions before opening the database', function (array $parameters): void {
+        config()->set('orbit.gateway.url', null);
+        app()->forgetInstance('App\Services\GatewayApiClient');
+        app()->forgetInstance('App\Services\Executor\OperationTokenGuard');
+
         [$exitCode, $output] = runWgEasyStateCommand($this, array_merge($parameters, [
             '--operation-token' => 'not-a-token',
             '--json' => true,
@@ -883,9 +894,6 @@ describe('internal wg-easy state command', function (): void {
 
 function configureWgEasyStateOperationTokenGuard(): void
 {
-    config()->set('orbit.executor.shared_secret', 'gateway-secret');
-    config()->set('orbit.executor.node_identity', 'app-dev');
-
     app()->forgetInstance('App\Services\Executor\OperationTokenGuard');
 }
 
@@ -1175,13 +1183,146 @@ function runWgEasyStateCommandProcess(array $parameters, array $environment = []
         $arguments[] = "{$key}={$value}";
     }
 
-    $process = new Process($arguments, base_path(), array_merge([
-        'ORBIT_EXECUTOR_SECRET' => 'gateway-secret',
-        'ORBIT_NODE_IDENTITY' => 'app-dev',
-    ], $environment));
-    $process->run();
+    return withFakeGatewayVerificationServer(function (string $gatewayUrl) use ($arguments, $environment): Process {
+        $process = new Process($arguments, base_path(), array_merge([
+            'ORBIT_GATEWAY_URL' => $gatewayUrl,
+        ], $environment));
+        $process->run();
 
-    return $process;
+        return $process;
+    });
+}
+
+/**
+ * @template TReturn
+ *
+ * @param  callable(string): TReturn  $callback
+ * @return TReturn
+ */
+function withFakeGatewayVerificationServer(callable $callback): mixed
+{
+    $directory = sys_get_temp_dir().'/orbit-cli-gateway-'.bin2hex(random_bytes(8));
+    mkdir($directory, recursive: true);
+
+    $routerPath = "{$directory}/router.php";
+    file_put_contents($routerPath, <<<'PHP'
+<?php
+
+http_response_code(200);
+header('Content-Type: application/json');
+
+echo json_encode([
+    'success' => [
+        'data' => [
+            'allowed' => true,
+        ],
+        'meta' => [],
+    ],
+], JSON_THROW_ON_ERROR);
+PHP);
+
+    $server = null;
+
+    try {
+        [$server, $gatewayUrl] = startFakeGatewayVerificationServer($routerPath, $directory);
+
+        return $callback($gatewayUrl);
+    } finally {
+        if ($server instanceof Process) {
+            $server->stop(0);
+        }
+
+        if (is_file($routerPath)) {
+            unlink($routerPath);
+        }
+
+        if (is_dir($directory)) {
+            rmdir($directory);
+        }
+    }
+}
+
+/**
+ * @return array{Process, string}
+ */
+function startFakeGatewayVerificationServer(string $routerPath, string $directory): array
+{
+    $lastError = null;
+
+    for ($attempt = 1; $attempt <= 5; $attempt++) {
+        $port = reserveAvailableLocalPort();
+        $gatewayUrl = "http://127.0.0.1:{$port}";
+        $server = new Process([PHP_BINARY, '-S', "127.0.0.1:{$port}", $routerPath], $directory);
+        $server->start();
+
+        try {
+            waitForFakeGatewayServer($server, $gatewayUrl);
+
+            return [$server, $gatewayUrl];
+        } catch (RuntimeException $exception) {
+            $lastError = $exception;
+            $server->stop(0);
+            usleep(10_000);
+        }
+    }
+
+    throw new RuntimeException(
+        'Unable to start fake gateway verification server after retrying available localhost ports.',
+        previous: $lastError,
+    );
+}
+
+function reserveAvailableLocalPort(): int
+{
+    $socket = @stream_socket_server('tcp://127.0.0.1:0', $errno, $errorMessage);
+
+    if ($socket === false) {
+        throw new RuntimeException("Unable to reserve a local port: {$errorMessage} ({$errno}).");
+    }
+
+    $address = stream_socket_get_name($socket, false);
+    fclose($socket);
+
+    if (! is_string($address) || ! preg_match('/:(\d+)$/', $address, $matches)) {
+        throw new RuntimeException('Unable to determine the reserved local port.');
+    }
+
+    return (int) $matches[1];
+}
+
+function waitForFakeGatewayServer(Process $server, string $gatewayUrl): void
+{
+    $timeoutAt = microtime(true) + 5;
+    $context = stream_context_create([
+        'http' => [
+            'timeout' => 0.2,
+        ],
+    ]);
+
+    while (microtime(true) < $timeoutAt) {
+        if (! $server->isRunning()) {
+            throw new RuntimeException(
+                "Fake gateway verification server exited before becoming reachable.\n\n".fakeGatewayServerOutput($server),
+            );
+        }
+
+        $response = @file_get_contents($gatewayUrl, false, $context);
+
+        if ($response !== false) {
+            return;
+        }
+
+        usleep(10_000);
+    }
+
+    throw new RuntimeException(
+        "Timed out waiting for fake gateway verification server at {$gatewayUrl}.\n\n".fakeGatewayServerOutput($server),
+    );
+}
+
+function fakeGatewayServerOutput(Process $server): string
+{
+    return trim($server->getOutput().$server->getErrorOutput());
 }
 
 function wgEasyStateLogContents(): string

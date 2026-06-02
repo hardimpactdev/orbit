@@ -139,7 +139,7 @@ function registryPromptE2ECapture(E2ETopologyHarness $topology, string $commandA
 
 function registryPromptE2ECommand(E2ETopologyHarness $topology, string $checkout, string $commandArguments): string
 {
-    return sprintf('cd /tmp && ORBIT_HOST_CWD=/tmp ORBIT_IS_GATEWAY=1 %s %s', escapeshellarg("{$checkout}/bin/orbit"), $commandArguments);
+    return sprintf('cd /tmp && ORBIT_HOST_CWD=/tmp %s %s', escapeshellarg("{$checkout}/bin/orbit"), $commandArguments);
 }
 
 it('renders finite registry prompts as data tables in a real terminal session', function (): void {

@@ -44,9 +44,7 @@ final readonly class RemoveNode
 
         $node->delete();
 
-        if (config('orbit.is_gateway') === true) {
-            $this->dnsmasqReconciler->reconcile();
-        }
+        $this->dnsmasqReconciler->reconcile();
 
         return new NodeRemoveResponse(
             name: $name,

@@ -45,8 +45,8 @@ This command follows the shared
    non-interactive command surface so the same invocation works the same
    way in shell pipelines, scripts, and operator terminals.
    - If `[app]` is supplied, forward it to the gateway as the selector.
-   - Otherwise, forward `ORBIT_HOST_CWD` from the host launcher; the
-     gateway resolves it server-side to a canonical app entity (workspace
+   - Otherwise, forward entrypoint-provided `ORBIT_HOST_CWD`; the gateway
+     resolves it server-side to a canonical app entity (workspace
      paths under an app do not resolve as the parent app — they belong to
      `workspace:exec`).
    - If neither `[app]` nor a resolvable `ORBIT_HOST_CWD` is available,
@@ -81,7 +81,7 @@ The gateway HTTP API mirrors the command and exposes two entry points:
 | Method | Path | Permission | Action |
 | --- | --- | --- | --- |
 | `POST` | `/api/apps/{app}/exec` | `app:exec` | Run a command inside the app's runtime container. Body: `command` array of one or more non-empty string tokens. |
-| `POST` | `/api/apps/exec/by-path` | `app:exec` | Resolve the target app from a launcher-supplied host cwd and run the command. Body: `host_cwd` string plus `command` array. |
+| `POST` | `/api/apps/exec/by-path` | `app:exec` | Resolve the target app from an entrypoint-provided host cwd and run the command. Body: `host_cwd` string plus `command` array. |
 
 CLI operator-mode invocations use the by-path endpoint when no explicit
 selector is supplied, forwarding the raw `ORBIT_HOST_CWD` so the
@@ -135,7 +135,7 @@ HTTP status mapping:
 
 ### Host Cwd Resolution
 
-`ORBIT_HOST_CWD` is the launcher-supplied host working directory.
+`ORBIT_HOST_CWD` is the entrypoint-provided host working directory.
 Resolution is the gateway's responsibility, not the CLI's: operator-mode
 callers forward the raw cwd string in the request body and the gateway
 queries its app registry for the canonical app entity whose `path` is an

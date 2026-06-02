@@ -171,7 +171,6 @@ describe('NodeStoreController', function (): void {
     });
 
     it('executes node creation in gateway context even when local config is stale', function (): void {
-        config(['orbit.is_gateway' => false]);
 
         $gatewayId = (int) DB::table('nodes')->insertGetId(apiStoreNodeRow([
             'name' => 'gateway',
@@ -273,8 +272,6 @@ describe('NodeStoreController', function (): void {
     });
 
     it('provisions an app node for an authenticated control caller', function (): void {
-        config(['orbit.operation_token_secret' => 'node-store-controller-test-secret']);
-
         $gatewayId = (int) DB::table('nodes')->insertGetId(apiStoreNodeRow());
         assignStoreNodeRole($gatewayId, 'gateway');
         assignStoreNodeRole($gatewayId, 'vpn');

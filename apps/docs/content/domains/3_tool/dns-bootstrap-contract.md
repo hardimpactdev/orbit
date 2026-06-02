@@ -44,7 +44,6 @@ The gateway bootstrap runs in this order:
 5. **`wg-easy` container started.**
 6. **`orbit-dns` container started inside wg-easy's network namespace,
    with the initial `dnsmasq.conf` rendered from current fleet state.**
-7. Gateway environment marked (`ORBIT_IS_GATEWAY=true`).
 
 `wg-easy` must come up before `orbit-dns`: `orbit-dns` uses
 `network_mode: container:wg-easy`, which pins the netns of the wg-easy
@@ -59,7 +58,7 @@ Required envs / settings:
 
 - `INIT_ENABLED=true` — enables the unattended setup flow in wg-easy v15.
 - `INIT_USERNAME=orbit` and `INIT_PASSWORD=<generated>` — bootstrap the admin
-  account. The generated password is persisted in `apps/gateway/.env` as
+  account. The generated password is persisted in `ORBIT_CONFIG_ROOT/.env` (default `~/.config/orbit/.env`) as
   `WG_EASY_PASSWORD=...` so future runs are idempotent and so
   `tool:credentials wg-easy` can later expose it.
 - `INIT_HOST=<public host>` — the gateway's public IPv4 or DNS name.
@@ -120,7 +119,7 @@ on the same inputs produce byte-identical output.
    `SIGHUP`, but address rules require a restart to take effect reliably.
 5. Skips the restart if the file was already up to date.
 
-Triggers (only on a gateway — `config('orbit.is_gateway')` must be true):
+Triggers in the gateway application:
 
 - `node:new` for any node that carries a TLD-supporting role and has `tld` and `wireguard_address` set.
 - `node:update` when `tld` or `wireguard_address` change.

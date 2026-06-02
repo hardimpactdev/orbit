@@ -17,48 +17,46 @@ beforeEach(function (): void {
     Process::preventStrayProcesses();
 });
 
-describe('first-gateway provisioning contract', function (): void {
-    it('routes remote bootstrap and platform detection through hidden internal CLI commands', function (): void {
+describe('gateway-local provisioning contract', function (): void {
+    it('keeps gateway convergence local to the gateway runtime', function (): void {
         $nodeCreator = file_get_contents(repo_path('apps/gateway/app/Services/Nodes/GatewayNodeCreator.php'));
 
         expect($nodeCreator)
-            ->toContain("'orbit orbit:internal:bootstrap-gateway-local %s %s --identity-json=- --public-host=%s --tld=%s --metadata-json'")
-            ->toContain("'orbit orbit:internal:detect-platform --update-local-node'")
-            ->not->toContain("'php apps/gateway/artisan orbit:internal:bootstrap-gateway-local")
-            ->not->toContain("'php apps/gateway/artisan orbit:internal:detect-platform")
-            ->not->toContain('php artisan orbit:internal:bootstrap-gateway-local')
-            ->not->toContain('php artisan orbit:internal:detect-platform');
+            ->toContain('return $this->convergeGatewayLocally($name);')
+            ->toContain('private function convergeGatewayLocally(string $name): int');
+
+        foreach ([
+            'bootstrapFirstGateway',
+            'convergeFirstGateway',
+            'forwardGatewayConvergence',
+            'forwardHostedRoleNodeCreation',
+            'forwardClientNodeEnrollment',
+            'FIRST_GATEWAY_BOOTSTRAP_TIMEOUT_SECONDS',
+            'orbit:internal:bootstrap-gateway-local',
+            'orbit:internal:detect-platform',
+            'asGateway: true',
+        ] as $legacyGatewayPath) {
+            expect($nodeCreator)->not->toContain($legacyGatewayPath);
+        }
     });
 
-    it('budgets first-gateway identity bootstrap for runtime image loading and container convergence', function (): void {
-        $nodeCreator = file_get_contents(repo_path('apps/gateway/app/Services/Nodes/GatewayNodeCreator.php'));
+    it('keeps workload host installation out of gateway mode', function (): void {
+        $installer = file_get_contents(repo_path('apps/gateway/app/Services/OrbitHostInstaller.php'));
 
-        expect($nodeCreator)
-            ->toContain('private const int FIRST_GATEWAY_BOOTSTRAP_TIMEOUT_SECONDS = 600')
-            ->and(preg_match('/Process::timeout\(self::FIRST_GATEWAY_BOOTSTRAP_TIMEOUT_SECONDS\)\s*->input\(\$identityJson\)\s*->run/s', $nodeCreator))->toBe(1);
+        expect($installer)
+            ->not->toContain('bool $asGateway')
+            ->not->toContain("\$asGateway ? ' --gateway' : ''");
     });
 
-    it('starts orbit-runtime with ORBIT_IS_GATEWAY=1 when install-orbit is invoked with --gateway', function (): void {
+    it('starts orbit-runtime with proxy trust from the explicit gateway install flag only', function (): void {
         $script = file_get_contents(repo_path('bin/install-orbit'));
 
         expect($script)
             ->toContain('--gateway')
-            ->toContain('GATEWAY_MODE')
-            ->toContain('ORBIT_IS_GATEWAY=1')
             ->toContain('ORBIT_TRUST_WIREGUARD_PROXY_HEADER=1')
-            ->toContain('ORBIT_HOST_PATH=$TARGET_DIR');
-    });
-
-    it('passes --gateway from OrbitHostInstaller to install-orbit when bootstrapping a first gateway', function (): void {
-        $installer = file_get_contents(repo_path('apps/gateway/app/Services/OrbitHostInstaller.php'));
-        $nodeCreator = file_get_contents(repo_path('apps/gateway/app/Services/Nodes/GatewayNodeCreator.php'));
-
-        expect($installer)
-            ->toContain('bool $asGateway = false')
-            ->toContain("\$asGateway ? ' --gateway' : ''");
-
-        expect($nodeCreator)
-            ->toContain('$installer->install($host, $sshUser, $runtimeUser, asGateway: true)');
+            ->toContain('TRUST_WIREGUARD_PROXY_HEADER=1')
+            ->toContain('ORBIT_HOST_PATH=$TARGET_DIR')
+            ->not->toContain('ORBIT_INSTALL_GATEWAY');
     });
 });
 
@@ -67,9 +65,12 @@ describe('GatewayApiRuntimeInstaller orbit-caddy convergence', function (): void
         $this->tempStorage = sys_get_temp_dir().'/orbit-gateway-caddy-converge-'.uniqid();
         mkdir($this->tempStorage.'/app/orbit', 0777, true);
         app()->useStoragePath($this->tempStorage);
+        $this->tempConfigRoot = "{$this->tempStorage}/config";
+        File::ensureDirectoryExists($this->tempConfigRoot);
+        config()->set('orbit.paths.config_root', $this->tempConfigRoot);
 
-        $caDir = storage_path('app/orbit/ca');
-        $certsDir = storage_path('app/orbit/certs');
+        $caDir = "{$this->tempConfigRoot}/ca";
+        $certsDir = "{$this->tempConfigRoot}/certs";
         File::ensureDirectoryExists($caDir);
         File::ensureDirectoryExists($certsDir);
         File::put("{$caDir}/root.key", 'test-root-key');
@@ -171,15 +172,15 @@ describe('GatewayApiRuntimeInstaller orbit-caddy convergence', function (): void
     it('renders the gateway API TLS cert/key under the caddy-readable /etc/orbit bind mount', function (): void {
         $writtenGatewayApiCaddyfile = null;
 
-        $containerStorageRoot = sys_get_temp_dir().'/orbit-host-translate-storage-'.uniqid();
-        mkdir($containerStorageRoot.'/app/orbit/ca', 0777, true);
-        mkdir($containerStorageRoot.'/app/orbit/certs', 0777, true);
-        app()->useStoragePath($containerStorageRoot);
+        $containerConfigRoot = sys_get_temp_dir().'/orbit-host-translate-config-'.uniqid();
+        mkdir("{$containerConfigRoot}/ca", 0777, true);
+        mkdir("{$containerConfigRoot}/certs", 0777, true);
+        config()->set('orbit.paths.config_root', $containerConfigRoot);
 
-        File::put("{$containerStorageRoot}/app/orbit/ca/root.key", 'test-root-key');
-        File::put("{$containerStorageRoot}/app/orbit/ca/root.crt", "-----BEGIN CERTIFICATE-----\ntest-root-cert\n-----END CERTIFICATE-----\n");
-        File::put("{$containerStorageRoot}/app/orbit/certs/10.6.0.2.crt", "-----BEGIN CERTIFICATE-----\ntest-leaf\n-----END CERTIFICATE-----\n");
-        File::put("{$containerStorageRoot}/app/orbit/certs/10.6.0.2.key", 'test-key');
+        File::put("{$containerConfigRoot}/ca/root.key", 'test-root-key');
+        File::put("{$containerConfigRoot}/ca/root.crt", "-----BEGIN CERTIFICATE-----\ntest-root-cert\n-----END CERTIFICATE-----\n");
+        File::put("{$containerConfigRoot}/certs/10.6.0.2.crt", "-----BEGIN CERTIFICATE-----\ntest-leaf\n-----END CERTIFICATE-----\n");
+        File::put("{$containerConfigRoot}/certs/10.6.0.2.key", 'test-key');
 
         Process::fake(function ($process) use (&$writtenGatewayApiCaddyfile) {
             if (str_contains($process->command, 'tee /etc/caddy/orbit/orbit-api.caddy')) {
@@ -201,7 +202,7 @@ describe('GatewayApiRuntimeInstaller orbit-caddy convergence', function (): void
         try {
             app(GatewayApiRuntimeInstaller::class)->install('10.6.0.2');
         } finally {
-            File::deleteDirectory($containerStorageRoot);
+            File::deleteDirectory($containerConfigRoot);
         }
 
         $caddyCertPath = '/etc/orbit/certs/10.6.0.2.crt';
@@ -231,11 +232,11 @@ describe('GatewayApiRuntimeInstaller orbit-caddy convergence', function (): void
 
         expect($matches[1])->toBe($caddyCertPath)
             ->and($matches[2])->toBe($caddyKeyPath)
-            ->and($writtenGatewayApiCaddyfile)->not->toContain($containerStorageRoot);
+            ->and($writtenGatewayApiCaddyfile)->not->toContain($containerConfigRoot);
 
         Process::assertRan('sudo install -d -m 0755 /etc/orbit/certs');
-        Process::assertRan('sudo install -m 0644 '.escapeshellarg("{$containerStorageRoot}/app/orbit/certs/10.6.0.2.crt").' '.escapeshellarg($caddyCertPath));
-        Process::assertRan('sudo install -m 0644 '.escapeshellarg("{$containerStorageRoot}/app/orbit/certs/10.6.0.2.key").' '.escapeshellarg($caddyKeyPath));
+        Process::assertRan('sudo install -m 0644 '.escapeshellarg("{$containerConfigRoot}/certs/10.6.0.2.crt").' '.escapeshellarg($caddyCertPath));
+        Process::assertRan('sudo install -m 0644 '.escapeshellarg("{$containerConfigRoot}/certs/10.6.0.2.key").' '.escapeshellarg($caddyKeyPath));
     });
 
     it('writes the gateway API Caddyfile through the host bind mount that orbit-caddy reads', function (): void {

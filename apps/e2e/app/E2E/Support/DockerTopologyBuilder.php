@@ -16,6 +16,10 @@ final readonly class DockerTopologyBuilder
 
     private const string ComposerHelperImage = 'composer:2';
 
+    private const string OrbitPath = '/home/orbit/orbit';
+
+    private const string OrbitConfigRoot = '/home/orbit/.config/orbit';
+
     public function __construct(
         private E2EConfig $config,
     ) {}
@@ -280,7 +284,7 @@ final readonly class DockerTopologyBuilder
             : '';
 
         return sprintf(
-            'docker run -d --cap-add NET_ADMIN --cap-add NET_BIND_SERVICE %s --name %s --network %s%s --ip %s --volume %s --mount %s --mount %s --mount %s --env %s --env %s%s %s',
+            'docker run -d --cap-add NET_ADMIN --cap-add NET_BIND_SERVICE %s --name %s --network %s%s --ip %s --volume %s --mount %s --mount %s --mount %s --env %s --env %s --env %s%s %s',
             $this->dockerSocketGroupAddOption(),
             escapeshellarg($container),
             escapeshellarg($network),
@@ -292,6 +296,7 @@ final readonly class DockerTopologyBuilder
             escapeshellarg($this->nodeVolumeMount($container, 'opt-orbit', '/opt/orbit')),
             escapeshellarg("ORBIT_E2E_DOCKER_NETWORK={$network}"),
             escapeshellarg("ORBIT_NODE_CONTAINER={$container}"),
+            escapeshellarg('ORBIT_CONFIG_ROOT='.self::OrbitConfigRoot),
             $runtimeContainerEnv,
             escapeshellarg(self::runtimeImage()),
         );
@@ -334,12 +339,9 @@ final readonly class DockerTopologyBuilder
     private function runtimeRunCommand(string $nodeContainer, string $network, string $role, string $composerCacheVolume): string
     {
         $orbitPath = $this->orbitPathForRole($role);
-        $gatewayEnv = $role === 'gateway'
-            ? ' --env '.escapeshellarg('ORBIT_IS_GATEWAY=1')
-            : '';
 
         return sprintf(
-            'docker run -d --restart unless-stopped --name %s --network %s --volume %s --mount %s --env %s --env %s --env %s%s --workdir %s %s tail -f /dev/null',
+            'docker run -d --restart unless-stopped --name %s --network %s --volume %s --mount %s --env %s --env %s --env %s --env %s --workdir %s %s tail -f /dev/null',
             escapeshellarg($this->runtimeContainerName($nodeContainer)),
             escapeshellarg("container:{$nodeContainer}"),
             escapeshellarg('/var/run/docker.sock:/var/run/docker.sock'),
@@ -347,7 +349,7 @@ final readonly class DockerTopologyBuilder
             escapeshellarg("ORBIT_E2E_DOCKER_NETWORK={$network}"),
             escapeshellarg("ORBIT_NODE_CONTAINER={$nodeContainer}"),
             escapeshellarg("ORBIT_SOURCE_PATH={$orbitPath}"),
-            $gatewayEnv,
+            escapeshellarg('ORBIT_CONFIG_ROOT='.self::OrbitConfigRoot),
             escapeshellarg($orbitPath),
             escapeshellarg(DockerTopologyProvider::runtimeSiblingImage()),
         );
@@ -378,10 +380,12 @@ final readonly class DockerTopologyBuilder
                     '__RUNTIME_CONTAINER__',
                     '__NODE_CONTAINER__',
                     '__RUNTIME_IMAGE__',
+                    '__ORBIT_PATH__',
                 ], [
                     $this->runtimeContainerName($nodeContainer),
                     $nodeContainer,
                     DockerTopologyProvider::runtimeSiblingImage(),
+                    self::OrbitPath,
                 ], <<<'SH_WRAP'
                 if [ -x /usr/bin/docker ] && ! grep -q ORBIT_E2E_RUNTIME_DOCKER_SHIM /usr/bin/docker 2>/dev/null; then
                     mv /usr/bin/docker /usr/bin/docker.real
@@ -395,11 +399,7 @@ final readonly class DockerTopologyBuilder
                 runtime_container="${ORBIT_RUNTIME_CONTAINER:-__RUNTIME_CONTAINER__}"
                 node_container="${ORBIT_NODE_CONTAINER:-__NODE_CONTAINER__}"
                 runtime_image="${ORBIT_RUNTIME_IMAGE:-__RUNTIME_IMAGE__}"
-                source_path="$(sed -n "s/^checkout='\(.*\)'$/\1/p" /usr/local/bin/orbit 2>/dev/null | head -n 1 || true)"
-
-                if [ -z "${source_path}" ]; then
-                    source_path="/home/orbit/orbit"
-                fi
+                source_path="${ORBIT_SOURCE_PATH:-__ORBIT_PATH__}"
 
                 volume_mountpoint() {
                     "${real_docker}" volume inspect "$1" --format '{{ .Mountpoint }}' 2>/dev/null || true
@@ -442,21 +442,28 @@ final readonly class DockerTopologyBuilder
 
                 rewrite_mount() {
                     local argument="$1"
+                    local prefix
                     local remainder
                     local source
                     local rest
 
                     case "${argument}" in
                         type=bind,source=*)
-                            remainder="${argument#type=bind,source=}"
-                            source="${remainder%%,target=*}"
-                            rest="${remainder#"${source}"}"
-                            printf 'type=bind,source=%s%s' "$(rewrite_path "${source}")" "${rest}"
+                            prefix="type=bind,source="
+                            ;;
+                        type=bind,src=*)
+                            prefix="type=bind,src="
                             ;;
                         *)
                             printf '%s' "${argument}"
+                            return
                             ;;
                     esac
+
+                    remainder="${argument#"${prefix}"}"
+                    source="${remainder%%,*}"
+                    rest="${remainder#"${source}"}"
+                    printf '%s%s%s' "${prefix}" "$(rewrite_path "${source}")" "${rest}"
                 }
 
                 args=()
@@ -475,7 +482,7 @@ final readonly class DockerTopologyBuilder
                         /opt/orbit/*)
                             args+=("${source_path}${argument#/opt/orbit}")
                             ;;
-                        type=bind,source=*)
+                        type=bind,source=*|type=bind,src=*)
                             args+=("$(rewrite_mount "${argument}")")
                             ;;
                         *)
@@ -618,7 +625,7 @@ final readonly class DockerTopologyBuilder
             return;
         }
 
-        $orbitStatePath = "{$this->orbitPathForRole($role)}/apps/gateway/storage/app/orbit";
+        $orbitStatePath = self::gatewayConfigPath();
 
         $this->mustRun(
             sprintf(
@@ -697,8 +704,7 @@ final readonly class DockerTopologyBuilder
         $commands = [
             $this->gatewayEnvironmentCommand($role),
             $chownSource ? sprintf('chown -R %s:%s %s', escapeshellarg($user), escapeshellarg($user), escapeshellarg($sourcePath)) : '',
-            sprintf('chmod 0755 %s', escapeshellarg("{$sourcePath}/bin/orbit")),
-            sprintf('ln -sfn %s %s', escapeshellarg("{$sourcePath}/bin/orbit"), escapeshellarg('/usr/local/bin/orbit')),
+            sprintf('ln -sfn %s %s', escapeshellarg("{$sourcePath}/apps/cli/orbit"), escapeshellarg('/usr/local/bin/orbit')),
         ];
 
         return implode(' && ', array_filter($commands));
@@ -711,19 +717,23 @@ final readonly class DockerTopologyBuilder
         }
 
         $sourcePath = escapeshellarg($this->orbitPathForRole($role));
+        $gatewayEnvPath = escapeshellarg(self::gatewayConfigPath('.env'));
+        $gatewayDatabase = escapeshellarg(self::gatewayConfigPath('gateway.sqlite'));
 
         return <<<SH
 cd {$sourcePath}
-if [ ! -f apps/gateway/.env ]; then
+mkdir -p $(dirname {$gatewayEnvPath}) apps/gateway/storage/framework/cache/data apps/gateway/storage/framework/sessions apps/gateway/storage/framework/testing apps/gateway/storage/framework/views apps/gateway/storage/logs
+if [ ! -f {$gatewayEnvPath} ]; then
     if [ -f apps/gateway/.env.example ]; then
-        cp apps/gateway/.env.example apps/gateway/.env
+        cp apps/gateway/.env.example {$gatewayEnvPath}
     else
-        touch apps/gateway/.env
+        touch {$gatewayEnvPath}
     fi
 fi
-grep -Ev '^ORBIT_IS_GATEWAY=' apps/gateway/.env > apps/gateway/.env.tmp || true
-mv apps/gateway/.env.tmp apps/gateway/.env
-printf '%s\\n' 'ORBIT_IS_GATEWAY=true' >> apps/gateway/.env
+grep -Ev '^(DB_DATABASE|SESSION_DRIVER)=' {$gatewayEnvPath} > {$gatewayEnvPath}.tmp || true
+mv {$gatewayEnvPath}.tmp {$gatewayEnvPath}
+printf '\\nDB_DATABASE=%s\\nSESSION_DRIVER=file\\n' {$gatewayDatabase} >> {$gatewayEnvPath}
+touch {$gatewayDatabase}
 SH;
     }
 
@@ -840,7 +850,16 @@ SH;
 
     private function orbitPathForRole(string $role): string
     {
-        return '/home/orbit/orbit';
+        return self::OrbitPath;
+    }
+
+    private static function gatewayConfigPath(string $suffix = ''): string
+    {
+        $basePath = self::OrbitConfigRoot;
+
+        return $suffix === ''
+            ? $basePath
+            : "{$basePath}/{$suffix}";
     }
 
     private function userForRole(string $role): string
@@ -1161,7 +1180,7 @@ if (\\Illuminate\\Support\\Facades\\Schema::hasTable('local_gateway_settings')) 
     if (is_string(\$rootCa)
         && str_contains(\$rootCa, '-----BEGIN CERTIFICATE-----')
         && str_contains(\$rootCa, '-----END CERTIFICATE-----')) {
-        \$caPemPath = storage_path('app/orbit/gateway-ca/orbit.crt');
+        \$caPemPath = rtrim((string) config('orbit.paths.config_root'), '/').'/gateway-ca/orbit.crt';
         \\Illuminate\\Support\\Facades\\File::ensureDirectoryExists(dirname(\$caPemPath));
         \\Illuminate\\Support\\Facades\\File::put(\$caPemPath, \$rootCa);
         \$caSha256 = hash('sha256', \$rootCa);

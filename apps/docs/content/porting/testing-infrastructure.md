@@ -63,8 +63,8 @@ Prepared Docker topologies model the target runtime contract:
 - topology host images do not bake an Orbit source tree. Docker topology
   preparation streams the current checkout into `/home/orbit/orbit` on the
   operator node and `/home/orbit/orbit` on gateway, app, ingress, and agent
-  nodes, then links `/usr/local/bin/orbit` to the checkout launcher at
-  `~/orbit/bin/orbit`;
+  nodes, then points `/usr/local/bin/orbit` directly at the source CLI entry
+  point, `~/orbit/apps/cli/orbit`;
 - Docker topology preparation installs Composer dependencies per role: gateway
   nodes use `apps/gateway` when that app exists and otherwise the current root
   app until the gateway relocation lands; non-gateway operator, workload,
@@ -72,21 +72,22 @@ Prepared Docker topologies model the target runtime contract:
 - after the gateway API is reachable, topology preparation writes the prepared
   gateway HTTP endpoint (`http://gateway` in DNS-alias mode, otherwise
   `http://10.6.0.2`) into `~/.config/orbit/config.json` on non-gateway nodes
-  (the `OrbitConfigStore` JSON layer); the Orbit CLI binary reads executor and
-  gateway config from that path, with process `env` overlaid on top; it does not
-  read a source-tree `.env`;
-- host launcher -> the Orbit CLI binary (every node role) -> gateway `orbit-caddy`
-  -> gateway `orbit-runtime`; gateway maintenance bypasses the public launcher
-  and uses `bin/orbit-gateway-artisan` or direct `php apps/gateway/artisan`
-  from a controlled gateway shell;
+  (the `OrbitConfigStore` JSON layer); the source CLI entry point reads gateway
+  config from that path, with process `env` overlaid on top; it does not read a
+  source-tree `.env`;
+- host `orbit` command -> node-local Orbit CLI entry point (every node role) ->
+  gateway `orbit-caddy` -> gateway `orbit-runtime`; gateway maintenance
+  bypasses the public launcher and uses `bin/orbit-gateway-artisan` or direct
+  `php apps/gateway/artisan` from a controlled gateway shell;
 - app and workspace PHP runtimes are FrankenPHP containers;
 - PHP app and workspace process units use Docker process runtime containers by
   default;
 - service dependencies, including WebSocket and S3-compatible services, run as
   Docker sibling containers via the host Docker socket;
-- the Orbit CLI binary carries its own embedded PHP runtime; host PHP CLI is
-  not a prerequisite; host Composer, host Caddy, PHP-FPM, and host Supervisor
-  for PHP app processes are intentionally absent.
+- production Orbit CLI artifacts carry their own embedded PHP runtime;
+  source-mounted topologies execute `apps/cli/orbit` from the mounted checkout;
+  host Composer, host Caddy, PHP-FPM, and host Supervisor for PHP app processes
+  are intentionally absent.
 
 Public production HTTP tests must preserve the landed ingress contract:
 `ingress -> router -> backend`. Downstream WebSocket and S3 topology support

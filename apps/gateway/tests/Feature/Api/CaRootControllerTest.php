@@ -11,8 +11,10 @@ uses(RefreshDatabase::class);
 describe('GET /api/ca/root', function (): void {
     beforeEach(function (): void {
         $this->tempStorage = sys_get_temp_dir().'/orbit-api-ca-test-'.uniqid();
-        mkdir($this->tempStorage.'/app/orbit/ca', 0777, true);
         app()->useStoragePath($this->tempStorage);
+        $this->tempConfigRoot = "{$this->tempStorage}/config";
+        File::ensureDirectoryExists("{$this->tempConfigRoot}/ca");
+        config()->set('orbit.paths.config_root', $this->tempConfigRoot);
     });
 
     afterEach(function (): void {
@@ -32,7 +34,7 @@ describe('GET /api/ca/root', function (): void {
         ]);
 
         $pem = "-----BEGIN CERTIFICATE-----\nTESTPEM\n-----END CERTIFICATE-----\n";
-        $caDir = storage_path('app/orbit/ca');
+        $caDir = "{$this->tempConfigRoot}/ca";
         file_put_contents("{$caDir}/root.crt", $pem);
         file_put_contents("{$caDir}/root.key", 'dummy-key');
 

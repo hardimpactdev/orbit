@@ -26,126 +26,53 @@ describe('install-orbit always-cli launcher contract', function (): void {
             ->toContain('"schema_version": 1');
     });
 
-    it('dispatches public commands through the cli artifact on gateway hosts', function (): void {
-        $capture = orbitLauncherProbe(isGateway: true, arguments: ['node:list', '--json']);
+    it('dispatches public commands through the source CLI entrypoint', function (): void {
+        $capture = orbitLauncherProbe(arguments: ['node:list', '--json']);
 
         expect($capture['target'])->toBe($capture['repo'].'/apps/cli/orbit')
-            ->and($capture['ORBIT_REPO'])->toBe($capture['repo'])
             ->and($capture['ORBIT_APP'])->toBe('cli')
-            ->and($capture['ORBIT_HOST_CWD'])->toBe($capture['host_cwd'])
-            ->and($capture['ORBIT_EXECUTOR_SECRET'])->toBe('')
-            ->and($capture['ORBIT_OPERATION_TOKEN_SECRET'])->toBe('')
-            ->and($capture['ORBIT_NODE_IDENTITY'])->toBe('')
             ->and($capture['args'])->toBe('[node:list][--json]');
     });
 
-    it('dispatches workload-role nodes through the cli artifact with launcher environment', function (): void {
-        $capture = orbitLauncherProbe(isGateway: false, arguments: ['app:list']);
-
-        expect($capture['target'])->toBe($capture['repo'].'/apps/cli/orbit')
-            ->and($capture['ORBIT_REPO'])->toBe($capture['repo'])
-            ->and($capture['ORBIT_APP'])->toBe('cli')
-            ->and($capture['ORBIT_HOST_CWD'])->toBe($capture['host_cwd'])
-            ->and($capture['ORBIT_EXECUTOR_SECRET'])->toBe('')
-            ->and($capture['ORBIT_OPERATION_TOKEN_SECRET'])->toBe('')
-            ->and($capture['args'])->toBe('[app:list]');
-    });
-
-    it('dispatches local executor commands through the cli artifact and exports verifier secret only', function (): void {
-        $capture = orbitLauncherProbe(isGateway: true, arguments: ['internal:wg-easy:state', '--json']);
+    it('dispatches internal commands through the same source CLI entrypoint', function (): void {
+        $capture = orbitLauncherProbe(arguments: ['internal:wg-easy:state', '--json']);
 
         expect($capture['target'])->toBe($capture['repo'].'/apps/cli/orbit')
             ->and($capture['ORBIT_APP'])->toBe('cli')
-            ->and($capture['ORBIT_EXECUTOR_SECRET'])->toBe('executor-secret')
-            ->and($capture['ORBIT_NODE_IDENTITY'])->toBe('gateway-1')
-            ->and($capture['ORBIT_OPERATION_TOKEN_SECRET'])->toBe('')
             ->and($capture['args'])->toBe('[internal:wg-easy:state][--json]');
     });
 
-    it('preserves a wrapper supplied node identity for internal commands when the checkout env only has the verifier secret', function (): void {
-        $capture = orbitLauncherProbe(
-            isGateway: false,
-            arguments: ['internal:database-query-local', '--json'],
-            parentEnv: ['ORBIT_NODE_IDENTITY' => 'app-dev-1'],
-            includeNodeIdentity: false,
-        );
+    it('routes internal commands through the same wrapper path without special handling', function (): void {
+        $capture = orbitLauncherProbe(arguments: ['internal:database-query-local', '--json']);
 
         expect($capture['target'])->toBe($capture['repo'].'/apps/cli/orbit')
             ->and($capture['ORBIT_APP'])->toBe('cli')
-            ->and($capture['ORBIT_EXECUTOR_SECRET'])->toBe('executor-secret')
-            ->and($capture['ORBIT_NODE_IDENTITY'])->toBe('app-dev-1')
-            ->and($capture['ORBIT_OPERATION_TOKEN_SECRET'])->toBe('');
+            ->and($capture['args'])->toBe('[internal:database-query-local][--json]');
     });
 
-    it('prefers a wrapper supplied node identity for internal commands over checkout env identity', function (): void {
-        $capture = orbitLauncherProbe(
-            isGateway: false,
-            arguments: ['internal:database-query-local', '--json'],
-            parentEnv: ['ORBIT_NODE_IDENTITY' => 'app-dev-1'],
-        );
+    it('defaults unconfigured nodes to the source CLI entrypoint', function (): void {
+        $capture = orbitLauncherProbe(arguments: ['node:doctor']);
 
         expect($capture['target'])->toBe($capture['repo'].'/apps/cli/orbit')
             ->and($capture['ORBIT_APP'])->toBe('cli')
-            ->and($capture['ORBIT_EXECUTOR_SECRET'])->toBe('executor-secret')
-            ->and($capture['ORBIT_NODE_IDENTITY'])->toBe('app-dev-1')
-            ->and($capture['ORBIT_OPERATION_TOKEN_SECRET'])->toBe('');
-    });
-
-    it('dispatches the workspace-adapter:update internal command through the cli artifact on gateway hosts', function (): void {
-        $capture = orbitLauncherProbe(isGateway: true, arguments: ['internal:workspace-adapter:update', '--json']);
-
-        expect($capture['target'])->toBe($capture['repo'].'/apps/cli/orbit')
-            ->and($capture['ORBIT_APP'])->toBe('cli')
-            ->and($capture['ORBIT_EXECUTOR_SECRET'])->toBe('executor-secret')
-            ->and($capture['ORBIT_NODE_IDENTITY'])->toBe('gateway-1')
-            ->and($capture['ORBIT_OPERATION_TOKEN_SECRET'])->toBe('');
-    });
-
-    it('defaults unconfigured nodes to the cli artifact', function (): void {
-        $capture = orbitLauncherProbe(isGateway: null, arguments: ['node:doctor']);
-
-        expect($capture['target'])->toBe($capture['repo'].'/apps/cli/orbit')
-            ->and($capture['ORBIT_REPO'])->toBe($capture['repo'])
-            ->and($capture['ORBIT_APP'])->toBe('cli')
-            ->and($capture['ORBIT_HOST_CWD'])->toBe($capture['host_cwd'])
-            ->and($capture['ORBIT_EXECUTOR_SECRET'])->toBe('')
             ->and($capture['args'])->toBe('[node:doctor]');
     });
 
-    it('propagates launcher environment even when json and other flags are present', function (): void {
-        $capture = orbitLauncherProbe(isGateway: false, arguments: ['--json', 'node:list', '--no-interaction']);
+    it('propagates wrapper arguments even when flags are present', function (): void {
+        $capture = orbitLauncherProbe(arguments: ['--json', 'node:list', '--no-interaction']);
 
         expect($capture['target'])->toBe($capture['repo'].'/apps/cli/orbit')
-            ->and($capture['ORBIT_REPO'])->toBe($capture['repo'])
             ->and($capture['ORBIT_APP'])->toBe('cli')
-            ->and($capture['ORBIT_HOST_CWD'])->toBe($capture['host_cwd'])
             ->and($capture['args'])->toBe('[--json][node:list][--no-interaction]');
     });
 
-    it('actively unsets inherited executor and mint secrets for public commands', function (): void {
-        $capture = orbitLauncherProbe(
-            isGateway: false,
-            arguments: ['node:list'],
-            parentEnv: [
-                'ORBIT_EXECUTOR_SECRET' => 'stale-parent-secret',
-                'ORBIT_OPERATION_TOKEN_SECRET' => 'stale-mint-secret',
-                'ORBIT_NODE_IDENTITY' => 'stale-node',
-            ],
-        );
-
-        expect($capture['target'])->toBe($capture['repo'].'/apps/cli/orbit')
-            ->and($capture['ORBIT_APP'])->toBe('cli')
-            ->and($capture['ORBIT_EXECUTOR_SECRET'])->toBe('')
-            ->and($capture['ORBIT_OPERATION_TOKEN_SECRET'])->toBe('')
-            ->and($capture['ORBIT_NODE_IDENTITY'])->toBe('');
-    });
-
-    it('documents the production repository default for installed orbit nodes', function (): void {
+    it('resolves the repo root from the wrapper location instead of using a production default', function (): void {
         $launcher = File::get(repo_path('bin/orbit'));
 
         expect($launcher)
-            ->toContain('ORBIT_REPO')
-            ->toContain('/home/orbit/orbit');
+            ->toContain('resolve_default_repo')
+            ->toContain('apps/cli/orbit')
+            ->not->toContain('/home/orbit/orbit');
     });
 
     it('fails clearly when the local CLI artifact dependencies are missing', function (): void {
@@ -168,23 +95,26 @@ describe('install-orbit always-cli launcher contract', function (): void {
         expect(File::exists(repo_path('apps/cli/CompatibilityBridge.php')))->toBeFalse();
     });
 
-    it('keeps the launcher allow-list in sync with the CLI hidden internal commands', function (): void {
-        $launcherCases = orbitLauncherInternalCases(File::get(repo_path('bin/orbit')));
-        $hiddenInternalCommands = orbitCliHiddenInternalCommandSignatures();
+    it('keeps the convenience wrapper free of env-file reads secret bridging and allow-list logic', function (): void {
+        $launcher = File::get(repo_path('bin/orbit'));
 
-        sort($launcherCases);
-        sort($hiddenInternalCommands);
+        expect($launcher)
+            ->not->toContain('apps/gateway/.env')
+            ->not->toContain('is_local_executor_command');
+    });
 
-        expect($launcherCases)->toBe($hiddenInternalCommands);
+    it('keeps the CLI config gateway focused', function (): void {
+        $config = require repo_path('apps/cli/config/orbit.php');
+
+        expect(array_keys($config))->toBe(['gateway']);
     });
 });
 
 /**
  * @param  list<string>  $arguments
- * @param  array<string, string>  $parentEnv
  * @return array<string, string>
  */
-function orbitLauncherProbe(?bool $isGateway, array $arguments, array $parentEnv = [], bool $includeNodeIdentity = true): array
+function orbitLauncherProbe(array $arguments): array
 {
     $root = sys_get_temp_dir().'/orbit-launcher-contract-'.bin2hex(random_bytes(4));
 
@@ -193,32 +123,14 @@ function orbitLauncherProbe(?bool $isGateway, array $arguments, array $parentEnv
         $repo = "{$home}/orbit";
         $hostCwd = "{$root}/caller/project";
         $capturePath = "{$root}/launcher-capture";
-        $fakeBin = "{$root}/bin";
 
-        orbitLauncherPrepareFakeCheckout($repo, $fakeBin);
+        orbitLauncherPrepareFakeCheckout($repo);
         File::ensureDirectoryExists($hostCwd);
-
-        if ($isGateway !== null) {
-            orbitLauncherWriteGatewayEnvironment($repo, $isGateway, includeNodeIdentity: $includeNodeIdentity);
-        }
-
-        $env = [
-            'HOME' => $home,
-            'PATH' => $fakeBin.PATH_SEPARATOR.getenv('PATH'),
-            'ORBIT_LAUNCHER_CAPTURE' => $capturePath,
-            'ORBIT_EXECUTOR_SECRET' => false,
-            'ORBIT_OPERATION_TOKEN_SECRET' => false,
-            'ORBIT_NODE_IDENTITY' => false,
-        ];
-
-        foreach ($parentEnv as $key => $value) {
-            $env[$key] = $value;
-        }
 
         $process = new Process(
             [$repo.'/bin/orbit', ...$arguments],
             $hostCwd,
-            $env,
+            ['HOME' => $home, 'ORBIT_LAUNCHER_CAPTURE' => $capturePath],
         );
 
         $process->run();
@@ -240,38 +152,15 @@ function orbitLauncherProbe(?bool $isGateway, array $arguments, array $parentEnv
     }
 }
 
-function orbitLauncherPrepareFakeCheckout(string $repo, string $fakeBin): void
+function orbitLauncherPrepareFakeCheckout(string $repo): void
 {
     File::ensureDirectoryExists("{$repo}/bin");
-    File::ensureDirectoryExists("{$repo}/apps/gateway");
     File::ensureDirectoryExists("{$repo}/apps/cli");
-    File::ensureDirectoryExists($fakeBin);
 
     File::copy(repo_path('bin/orbit'), "{$repo}/bin/orbit");
     chmod("{$repo}/bin/orbit", 0755);
 
-    orbitLauncherWriteExecutable("{$repo}/apps/gateway/artisan", orbitLauncherCaptureScript());
     orbitLauncherWriteExecutable("{$repo}/apps/cli/orbit", orbitLauncherCaptureScript());
-    orbitLauncherWriteExecutable("{$fakeBin}/php", orbitLauncherFakePhpScript());
-}
-
-function orbitLauncherWriteGatewayEnvironment(string $repo, bool $isGateway, bool $includeNodeIdentity = true): void
-{
-    $value = $isGateway ? 'true' : 'false';
-
-    $lines = [
-        "ORBIT_IS_GATEWAY={$value}",
-        'ORBIT_EXECUTOR_SECRET=executor-secret',
-        'ORBIT_OPERATION_TOKEN_SECRET=mint-secret-must-not-leak',
-    ];
-
-    if ($includeNodeIdentity) {
-        $lines[] = 'ORBIT_NODE_IDENTITY=gateway-1';
-    }
-
-    $lines[] = '';
-
-    File::put("{$repo}/apps/gateway/.env", implode(PHP_EOL, $lines));
 }
 
 function orbitLauncherWriteExecutable(string $path, string $contents): void
@@ -287,38 +176,7 @@ function orbitLauncherCaptureScript(): string
 set -Eeuo pipefail
 {
     printf 'target=%s\n' "$0"
-    printf 'ORBIT_REPO=%s\n' "${ORBIT_REPO:-}"
     printf 'ORBIT_APP=%s\n' "${ORBIT_APP:-}"
-    printf 'ORBIT_HOST_CWD=%s\n' "${ORBIT_HOST_CWD:-}"
-    printf 'ORBIT_EXECUTOR_SECRET=%s\n' "${ORBIT_EXECUTOR_SECRET:-}"
-    printf 'ORBIT_OPERATION_TOKEN_SECRET=%s\n' "${ORBIT_OPERATION_TOKEN_SECRET:-}"
-    printf 'ORBIT_NODE_IDENTITY=%s\n' "${ORBIT_NODE_IDENTITY:-}"
-    printf 'args='
-    for arg in "$@"; do
-        printf '[%s]' "$arg"
-    done
-    printf '\n'
-} > "$ORBIT_LAUNCHER_CAPTURE"
-BASH;
-}
-
-function orbitLauncherFakePhpScript(): string
-{
-    return <<<'BASH'
-#!/usr/bin/env bash
-set -Eeuo pipefail
-target="${1:-}"
-if [ "$#" -gt 0 ]; then
-    shift
-fi
-{
-    printf 'target=%s\n' "$target"
-    printf 'ORBIT_REPO=%s\n' "${ORBIT_REPO:-}"
-    printf 'ORBIT_APP=%s\n' "${ORBIT_APP:-}"
-    printf 'ORBIT_HOST_CWD=%s\n' "${ORBIT_HOST_CWD:-}"
-    printf 'ORBIT_EXECUTOR_SECRET=%s\n' "${ORBIT_EXECUTOR_SECRET:-}"
-    printf 'ORBIT_OPERATION_TOKEN_SECRET=%s\n' "${ORBIT_OPERATION_TOKEN_SECRET:-}"
-    printf 'ORBIT_NODE_IDENTITY=%s\n' "${ORBIT_NODE_IDENTITY:-}"
     printf 'args='
     for arg in "$@"; do
         printf '[%s]' "$arg"
@@ -341,44 +199,4 @@ function orbitLauncherReadCapture(string $path): array
     }
 
     return $capture;
-}
-
-/**
- * @return list<string>
- */
-function orbitLauncherInternalCases(string $launcher): array
-{
-    if (! preg_match('/is_local_executor_command\(\)\s*\{\s*case\s+"\$1"\s+in\s+(.+?)\)/s', $launcher, $matches)) {
-        return [];
-    }
-
-    $cases = preg_split('/\|/', $matches[1]) ?: [];
-
-    return array_values(array_map('trim', $cases));
-}
-
-/**
- * @return list<string>
- */
-function orbitCliHiddenInternalCommandSignatures(): array
-{
-    $config = require repo_path('apps/cli/config/commands.php');
-    $signatures = [];
-
-    foreach ($config['hidden'] ?? [] as $class) {
-        if (! is_string($class) || ! str_starts_with($class, 'App\\Commands\\Internal\\')) {
-            continue;
-        }
-
-        $relativePath = 'apps/cli/'.str_replace(['App\\', '\\'], ['app/', '/'], $class).'.php';
-        $contents = File::get(repo_path($relativePath));
-
-        if (! preg_match('/protected\s+\$signature\s*=\s*[\'"]([^\s\'"]+)/', $contents, $matches)) {
-            continue;
-        }
-
-        $signatures[] = $matches[1];
-    }
-
-    return array_values(array_unique($signatures));
 }

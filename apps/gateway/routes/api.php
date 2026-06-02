@@ -27,6 +27,7 @@ use App\Http\Controllers\Api\FirewallRuleDestroyController;
 use App\Http\Controllers\Api\FirewallRuleListController;
 use App\Http\Controllers\Api\FirewallRuleStoreController;
 use App\Http\Controllers\Api\GatewayStatusController;
+use App\Http\Controllers\Api\InternalExecutorTokenController;
 use App\Http\Controllers\Api\MeController;
 use App\Http\Controllers\Api\NodeAgentIdeController;
 use App\Http\Controllers\Api\NodeGrantController;
@@ -139,6 +140,7 @@ Route::middleware(CorrelationHeader::class)->group(function (): void {
         Route::get('/deploy/steps', [DeployController::class, 'listSteps']);
         Route::post('/deploy/steps', [DeployController::class, 'storeStep']);
         Route::delete('/deploy/steps/{step}', [DeployController::class, 'removeStep']);
+        Route::post('/internal-executor/token/verify', InternalExecutorTokenController::class);
         Route::get('/me', MeController::class);
         Route::post('/events/process', ProcessEventIngestController::class);
         Route::get('/firewall-rules', FirewallRuleListController::class);

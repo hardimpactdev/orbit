@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Console\Commands;
 
+use App\E2E\Support\DockerHost;
 use App\E2E\Support\DockerTopologyBuilder;
 use App\E2E\Support\DockerTopologyProvider;
 use App\E2E\Support\E2EConfig;
@@ -107,8 +108,10 @@ class E2EPrepareDockerHostsCommand extends Command
         }
 
         if (! $failed) {
+            $distributionHosts = $this->availableDistributionHosts($config, $hosts, $buildHosts, $results);
+
             foreach ($pendingImagesByHost as $buildHost => $images) {
-                if (! $this->distributeImages($buildHost, $config, $images, $hosts, 'distribution', $results)) {
+                if (! $this->distributeImages($buildHost, $config, $images, $distributionHosts, 'distribution', $results)) {
                     $failed = true;
 
                     break;
@@ -535,6 +538,79 @@ class E2EPrepareDockerHostsCommand extends Command
         }
 
         return true;
+    }
+
+    /**
+     * @param  list<string>  $hosts
+     * @param  list<string>  $buildHosts
+     * @param  list<array<string, mixed>>  $results
+     * @return list<string>
+     */
+    private function availableDistributionHosts(E2EConfig $config, array $hosts, array $buildHosts, array &$results): array
+    {
+        $availableHosts = [];
+
+        foreach ($hosts as $host) {
+            if ($this->isBuildHost($host, $buildHosts)) {
+                $availableHosts[] = $host;
+
+                continue;
+            }
+
+            $reason = $this->dockerRunnerUnavailableReason($config, $host);
+
+            if ($reason === null) {
+                $availableHosts[] = $host;
+
+                continue;
+            }
+
+            $results[] = [
+                'host' => $host,
+                'step' => 'distribution',
+                'successful' => true,
+                'action' => 'skipped',
+                'output' => $reason,
+            ];
+
+            if (! (bool) $this->option('json')) {
+                $this->line("skipped: {$host} distribution {$reason}");
+            }
+        }
+
+        return $availableHosts;
+    }
+
+    /**
+     * @param  list<string>  $buildHosts
+     */
+    private function isBuildHost(string $host, array $buildHosts): bool
+    {
+        return in_array(strtolower($host), array_map(strtolower(...), $buildHosts), true);
+    }
+
+    private function dockerRunnerUnavailableReason(E2EConfig $config, string $host): ?string
+    {
+        $dockerHost = new DockerHost($config, $host);
+
+        if (! $this->dockerProbeSuccessful($dockerHost, 'command -v docker >/dev/null')) {
+            return 'docker command is not available';
+        }
+
+        if (! $this->dockerProbeSuccessful($dockerHost, 'docker info >/dev/null')) {
+            return 'docker daemon is not reachable';
+        }
+
+        return null;
+    }
+
+    private function dockerProbeSuccessful(DockerHost $dockerHost, string $command): bool
+    {
+        try {
+            return $dockerHost->run($command, timeoutSeconds: 10)->successful();
+        } catch (Throwable) {
+            return false;
+        }
     }
 
     private function failCommand(string $message): int

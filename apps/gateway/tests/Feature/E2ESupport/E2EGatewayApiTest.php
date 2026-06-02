@@ -172,8 +172,10 @@ it('runs Docker gateway api shim commands directly inside orbit runtime', functi
 
     expect($script)
         ->toContain("exec(\$script.' 2>&1'")
+        ->toContain("\$certDirectory = '/home/orbit/.config/orbit/certs';")
         ->toContain("\$GLOBALS['httpUpstream'] = \$httpUpstream;")
         ->toContain("\$GLOBALS['wireguardIdentity'] = \$wireguardIdentity;")
+        ->not->toContain('/apps/gateway/storage/app/orbit/certs')
         ->not->toContain('sudo -iu orbit bash -lc');
 });
 
@@ -247,14 +249,22 @@ it('prepares runtime environment before issuing gateway api certificates', funct
 
     E2EGatewayApi::start($instance, 'runtime-env', '/home/orbit/orbit-current', '10.6.0.2');
 
+    $httpStart = collect($instance->commands)->first(fn (string $command): bool => str_contains($command, 'nohup env')
+        && str_contains($command, 'php -d display_errors=0 -S'));
+
     expect($instance->commands[0])
-        ->toContain('([ -f apps/gateway/.env ] || cp apps/gateway/.env.example apps/gateway/.env)')
+        ->toContain('/home/orbit/.config/orbit/.env')
+        ->toContain('/home/orbit/.config/orbit/gateway.sqlite')
         ->toContain("APP_KEY='")
         ->toContain('printf')
         ->toContain('APP_KEY=base64:.+')
         ->toContain('php apps/gateway/artisan key:generate --force --no-interaction')
         ->not->toContain('orbit key:generate')
         ->not->toContain("grep -q '^APP_KEY=base64:' apps/gateway/.env");
+
+    expect($httpStart)->toBeString()
+        ->toContain('ORBIT_CONFIG_ROOT=\'/home/orbit/.config/orbit\'')
+        ->toContain('VIEW_COMPILED_PATH=\'/home/orbit/orbit-current/apps/gateway/storage/framework/views\'');
 });
 
 it('starts Docker gateway API support through runtime container commands without host PHP or host Caddy', function (): void {
@@ -284,6 +294,9 @@ it('starts Docker gateway API support through runtime container commands without
 
     $setup = implode("\n", $commands);
 
+    $statePrepare = collect($commands)->first(fn (string $command): bool => str_contains($command, "docker exec --user 'orbit' 'orbit-e2e-run123-gateway' sh -lc")
+        && str_contains($command, 'php apps/gateway/artisan key:generate --force --no-interaction')
+        && str_contains($command, 'php apps/gateway/artisan migrate --force --no-interaction --ansi'));
     $httpStart = collect($commands)->first(fn (string $command): bool => str_contains($command, 'sudo docker exec --detach')
         && str_contains($command, 'orbit-e2e-run123-gateway-orbit-runtime')
         && str_contains($command, 'php -d display_errors=0 -S'));
@@ -313,18 +326,34 @@ it('starts Docker gateway API support through runtime container commands without
         ->toContain('sudo docker exec --detach')
         ->toContain("'orbit-e2e-run123-gateway-orbit-runtime'")
         ->toContain('ORBIT_SOURCE_PATH=/home/orbit/orbit')
+        ->toContain('ORBIT_CONFIG_ROOT=/home/orbit/.config/orbit')
+        ->toContain('/home/orbit/.config/orbit/.env')
+        ->toContain('/home/orbit/.config/orbit/gateway.sqlite')
+        ->toContain('/home/orbit/orbit/apps/gateway/storage/framework/views')
         ->not->toContain('php artisan')
         ->not->toContain('nohup php')
         ->not->toContain('php -r')
+        ->not->toContain('([ -f apps/gateway/.env ] || cp apps/gateway/.env.example apps/gateway/.env)')
+        ->not->toContain('/home/orbit/.config/orbit/gateway/storage/framework/views')
         ->not->toContain('systemctl stop caddy');
+
+    $appKey = strpos((string) $statePrepare, 'php apps/gateway/artisan key:generate --force --no-interaction');
+    $migrate = strpos((string) $statePrepare, 'php apps/gateway/artisan migrate --force --no-interaction --ansi');
+
+    expect($statePrepare)->toBeString()
+        ->and($appKey)->toBeInt()
+        ->and($migrate)->toBeInt()
+        ->and($appKey)->toBeLessThan($migrate);
 
     expect($runtimeIdentity)->toBeString()
         ->toContain('install -d -m 700 /root/.ssh')
         ->toContain('cp /home/orbit/.ssh/id_ed25519 /root/.ssh/id_ed25519');
 
     expect($certificateSetup)->toBeString()
-        ->toContain('([ -f apps/gateway/.env ] || cp apps/gateway/.env.example apps/gateway/.env)')
+        ->toContain('/home/orbit/.config/orbit/.env')
+        ->toContain('/home/orbit/.config/orbit/gateway.sqlite')
         ->toContain('ORBIT_SOURCE_PATH=/home/orbit/orbit')
+        ->toContain('ORBIT_CONFIG_ROOT=/home/orbit/.config/orbit')
         ->toContain('--workdir')
         ->not->toContain('orbit key:generate')
         ->not->toContain('sudo -iu orbit');
@@ -335,6 +364,7 @@ it('starts Docker gateway API support through runtime container commands without
 
     expect($httpStart)->toBeString()
         ->toContain('ORBIT_SOURCE_PATH=/home/orbit/orbit')
+        ->toContain('VIEW_COMPILED_PATH=/home/orbit/orbit/apps/gateway/storage/framework/views')
         ->toContain('/tmp/orbit-docker-gateway-api-http-router.php');
 
     expect($httpRouterWrite)->toBeString()
@@ -479,7 +509,7 @@ it('can split gateway wireguard identity from bind address and cert key', functi
         ->and(implode("\n", $instance->commands))
         ->toContain('php -d display_errors=0 -S 0.0.0.0:80')
         ->toContain('$certKey = \'gateway\'')
-        ->toContain('/apps/gateway/storage/app/orbit/certs/')
+        ->toContain("\$certDirectory = '/home/orbit/.config/orbit/certs';")
         ->toContain('$wireguardIdentity = \'10.6.0.2\'')
         ->toContain('$bindAddress = \'0.0.0.0\'')
         ->toContain("stream_socket_server('tls://'.\$bindAddress.':443'")

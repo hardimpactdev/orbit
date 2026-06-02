@@ -26,9 +26,13 @@ it('documents docker runtime image preparation without force', function (): void
 });
 
 it('builds the orbit runtime images and pulls the official Caddy image when forced', function (): void {
-    Process::fake([
-        '*' => Process::result(),
-    ]);
+    $commands = [];
+
+    Process::fake(function ($process) use (&$commands) {
+        $commands[] = (string) $process->command;
+
+        return Process::result();
+    });
 
     $this->artisan('e2e:prepare-docker-runtime', ['--force' => true])
         ->expectsOutputToContain('Built orbit-e2e-topology-runtime:prepared-current.')
@@ -75,6 +79,14 @@ it('builds the orbit runtime images and pulls the official Caddy image when forc
     Process::assertNotRan(fn ($process): bool => is_string($process->command)
         && str_contains($process->command, 'docker build')
         && str_contains($process->command, 'caddy:2-alpine'));
+
+    $runtimeBuildCommand = collect($commands)->first(fn (string $command): bool => str_contains($command, 'docker/orbit-runtime/Dockerfile'));
+
+    expect($runtimeBuildCommand)
+        ->toContain('orbit-runtime:prepared-current')
+        ->not->toContain('apps/cli/orbit')
+        ->and(implode("\n", $commands))
+        ->not->toContain('apps/cli/orbit');
 });
 
 it('keeps the Caddy image local so docker run --pull never can start the container on a fresh node', function (): void {

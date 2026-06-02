@@ -107,6 +107,7 @@ describe('install-orbit Docker-first runtime contract', function (): void {
             ->toContain('docker_cli run --rm')
             ->toContain('orbit-runtime:current')
             ->toContain('--workdir /opt/orbit/apps/gateway')
+            ->toContain('grep -q \'^APP_KEY=base64:\' \"\$GATEWAY_ENV_FILE\"')
             ->not->toContain('--workdir /opt/orbit/apps/cli')
             ->toContain('composer install --no-dev --no-interaction --prefer-dist --optimize-autoloader')
             ->toContain('php artisan key:generate --force --no-interaction')
@@ -116,11 +117,17 @@ describe('install-orbit Docker-first runtime contract', function (): void {
             ->not->toContain('cd $target && php artisan');
     });
 
-    it('stores gateway Laravel env files under the relocated gateway app', function (): void {
+    it('stores gateway mutable state under the Orbit config root', function (): void {
         expect($this->installer)
-            ->toContain('"$TARGET_DIR/apps/gateway/.env"')
+            ->toContain('GATEWAY_ENV_FILE="$CONFIG_ROOT/.env"')
+            ->toContain('GATEWAY_DATABASE_FILE="$CONFIG_ROOT/gateway.sqlite"')
             ->toContain('"$TARGET_DIR/apps/gateway/.env.example"')
+            ->toContain('--env "ORBIT_CONFIG_ROOT=$CONFIG_ROOT"')
+            ->toContain('--mount "type=bind,source=$CONFIG_ROOT,target=$CONFIG_ROOT"')
             ->toContain('[ ! -f "$TARGET_DIR/apps/gateway/artisan" ]')
+            ->not->toContain('$TARGET_DIR/apps/gateway/database/database.sqlite')
+            ->not->toContain('GATEWAY_STATE_DIR="$CONFIG_ROOT/gateway"')
+            ->not->toContain('GATEWAY_STORAGE_DIR')
             ->not->toContain('"$TARGET_DIR/.env"')
             ->not->toContain('"$TARGET_DIR/.env.example"')
             ->not->toContain('[ ! -f "$TARGET_DIR/artisan" ]');
@@ -138,19 +145,17 @@ describe('install-orbit Docker-first runtime contract', function (): void {
             ->and($cacheClear)->toBeLessThan($composerInstall);
     });
 
-    it('creates operation token secrets for the gateway app and CLI local executor during bootstrap', function (): void {
+    it('uses the gateway app key for operation token signing during bootstrap', function (): void {
         expect($this->installer)
-            ->toContain('ensure_operation_token_secret')
-            ->toContain('ORBIT_OPERATION_TOKEN_SECRET')
-            ->toContain('ORBIT_EXECUTOR_SECRET')
-            ->toContain('generate_operation_token_secret')
-            ->toContain('openssl rand -base64 32');
+            ->toContain('APP_KEY=base64:')
+            ->toContain('php artisan key:generate --force --no-interaction');
     });
 
-    it('persists a supplied node identity for the CLI local executor when provisioning a known node', function (): void {
+    it('uses config-root state during runtime bootstrap', function (): void {
         expect($this->installer)
-            ->toContain('ORBIT_NODE_IDENTITY')
-            ->toContain('write_env_var "ORBIT_NODE_IDENTITY"');
+            ->toContain('CONFIG_ROOT="${ORBIT_CONFIG_ROOT:-$HOME/.config/orbit}"')
+            ->toContain('GATEWAY_ENV_FILE="$CONFIG_ROOT/.env"')
+            ->toContain('GATEWAY_DATABASE_FILE="$CONFIG_ROOT/gateway.sqlite"');
     });
 
     it('starts the orbit-runtime container with the documented Docker-first shape', function (): void {
@@ -164,6 +169,7 @@ describe('install-orbit Docker-first runtime contract', function (): void {
             ->toContain('--network orbit-network')
             ->toContain('--network-alias orbit-runtime')
             ->toContain('orbit.container.kind=runtime')
+            ->not->toContain('gateway_env=(')
             ->toContain('ORBIT_TRUST_WIREGUARD_PROXY_HEADER=1')
             ->toContain('target=/opt/orbit')
             ->toContain('/var/run/docker.sock');
@@ -337,7 +343,7 @@ BASH);
         chmod("{$bin}/install", 0755);
 
         $command = sprintf(
-            'export PATH=%s:$PATH; export DOCKER_CALL_LOG=%s; export DOCKER_STATE_DIR=%s; export ORBIT_INSTALL_LOG=%s; export ORBIT_INSTALL_PATH=%s; export ORBIT_INSTALL_DOCKER_FORCE_SUDO=1; source %s; GATEWAY_MODE=1; require_docker; build_runtime_images; start_runtime_container; echo "OK"',
+            'export PATH=%s:$PATH; export DOCKER_CALL_LOG=%s; export DOCKER_STATE_DIR=%s; export ORBIT_INSTALL_LOG=%s; export ORBIT_INSTALL_PATH=%s; export ORBIT_INSTALL_DOCKER_FORCE_SUDO=1; source %s; TRUST_WIREGUARD_PROXY_HEADER=1; require_docker; build_runtime_images; start_runtime_container; echo "OK"',
             escapeshellarg($bin),
             escapeshellarg($callLog),
             escapeshellarg($stateDir),
@@ -377,7 +383,8 @@ BASH);
             ->toContain('docker_cli run --rm')
             ->toContain('-v "$TARGET_DIR":/opt/orbit')
             ->toContain('orbit-runtime:current')
-            ->toContain('php /opt/orbit/apps/gateway/artisan migrate --force --no-interaction')
+            ->toContain('php /opt/orbit/apps/gateway/artisan migrate --force --no-interaction --path=/opt/orbit/apps/gateway/database/migrations --realpath')
+            ->not->toContain('php /opt/orbit/apps/gateway/artisan migrate --force --no-interaction"')
             ->not->toContain('php /opt/orbit/artisan migrate --force --no-interaction')
             ->not->toContain('docker_cli exec \\')
             ->and($migrationStep)->not->toBeFalse()

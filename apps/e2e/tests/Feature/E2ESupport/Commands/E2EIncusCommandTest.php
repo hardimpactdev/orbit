@@ -9,10 +9,10 @@ use App\E2E\Support\E2EConfig;
 use App\E2E\Support\E2EDevTopologyManifestStore;
 use App\E2E\Support\E2ETopologyKind;
 use App\E2E\Support\IncusHost;
+use App\E2E\Support\LiveIncusLocalMachine;
 use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Contracts\Process\ProcessResult;
 use Illuminate\Support\Facades\Process;
-use Orbit\Core\Http\JsonEnvelope;
 use Symfony\Component\Console\Output\BufferedOutput;
 
 beforeEach(function (): void {
@@ -135,32 +135,36 @@ function recordingIncusLiveHost(E2EConfig $config, ArrayObject $log): IncusHost
                 'data' => [
                     'exit_code' => 0,
                     'data' => [
-                        'result' => JsonEnvelope::success([
-                            'node' => [
-                                'name' => 'mac-dev-abc123',
-                                'addresses' => [
-                                    'wireguard' => '10.6.0.8',
+                        'result' => [
+                            'success' => [
+                                'data' => [
+                                    'node' => [
+                                        'name' => 'mac-dev-abc123',
+                                        'addresses' => [
+                                            'wireguard' => '10.6.0.8',
+                                        ],
+                                    ],
+                                    'wireguard' => [
+                                        'config' => <<<'WG'
+                                            [Interface]
+                                            PrivateKey = test-private-key
+                                            Address = 10.6.0.8/32
+
+                                            [Peer]
+                                            PublicKey = test-public-key
+                                            AllowedIPs = 10.6.0.0/24
+                                            Endpoint = 10.6.0.2:51820
+                                            PersistentKeepalive = 25
+                                            WG,
+                                    ],
+                                    'next_steps' => [
+                                        'Install the WireGuard configuration on the operator node.',
+                                        'Join the Orbit WireGuard network.',
+                                        'Run `orbit gateway:add` on the operator node.',
+                                    ],
                                 ],
                             ],
-                            'wireguard' => [
-                                'config' => <<<'WG'
-                                    [Interface]
-                                    PrivateKey = test-private-key
-                                    Address = 10.6.0.8/32
-
-                                    [Peer]
-                                    PublicKey = test-public-key
-                                    AllowedIPs = 10.6.0.0/24
-                                    Endpoint = 10.6.0.2:51820
-                                    PersistentKeepalive = 25
-                                    WG,
-                            ],
-                            'next_steps' => [
-                                'Install the WireGuard configuration on the operator node.',
-                                'Join the Orbit WireGuard network.',
-                                'Run `orbit gateway:add` on the operator node.',
-                            ],
-                        ]),
+                        ],
                     ],
                 ],
             ], JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR)."\n");
@@ -168,10 +172,87 @@ function recordingIncusLiveHost(E2EConfig $config, ArrayObject $log): IncusHost
     };
 }
 
-function incusLiveCommandWith(ArrayObject $log): void
+function recordingLiveIncusLocalMachine(ArrayObject $log, bool $toolsAvailable = true): LiveIncusLocalMachine
+{
+    return new class($log, $toolsAvailable) extends LiveIncusLocalMachine
+    {
+        public function __construct(
+            private readonly ArrayObject $log,
+            private readonly bool $toolsAvailable,
+        ) {}
+
+        #[Override]
+        public function hasWireGuardTools(): bool
+        {
+            return $this->toolsAvailable;
+        }
+
+        #[Override]
+        public function wireGuardInterfaces(): array
+        {
+            return (array) ($this->log['interfaces'] ?? []);
+        }
+
+        #[Override]
+        public function realWireGuardInterface(string $interface): ?string
+        {
+            $real = $this->log['real'] ?? [];
+
+            return is_array($real) && is_string($real[$interface] ?? null)
+                ? $real[$interface]
+                : null;
+        }
+
+        #[Override]
+        public function startWireGuard(string $configPath): ProcessResult
+        {
+            $this->log['local_runs'] = [...($this->log['local_runs'] ?? []), "wg-quick up {$configPath}"];
+            $this->log['interfaces'] = ['utun42'];
+            $this->log['real'] = [
+                ...($this->log['real'] ?? []),
+                'oe2eabc123' => 'utun42',
+            ];
+
+            return Process::result(output: '');
+        }
+
+        #[Override]
+        public function stopWireGuard(string $configPath): ProcessResult
+        {
+            $this->log['local_runs'] = [...($this->log['local_runs'] ?? []), "wg-quick down {$configPath}"];
+
+            return Process::result(output: '');
+        }
+
+        #[Override]
+        public function addGateway(string $gatewayIp, string $gatewayName): ProcessResult
+        {
+            $this->log['local_runs'] = [...($this->log['local_runs'] ?? []), "orbit gateway:add {$gatewayIp} --name={$gatewayName} --json"];
+
+            return Process::result(output: json_encode([
+                'success' => [
+                    'gateway' => [
+                        'name' => $gatewayName,
+                    ],
+                ],
+            ], JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR));
+        }
+
+        #[Override]
+        public function verifyGateway(string $gatewayIp): ProcessResult
+        {
+            $this->log['local_runs'] = [...($this->log['local_runs'] ?? []), "curl http://{$gatewayIp}/api/ca/root"];
+
+            return Process::result(output: 'ok');
+        }
+    };
+}
+
+function incusLiveCommandWith(ArrayObject $log, ?LiveIncusLocalMachine $localMachine = null): void
 {
     $command = app(E2EIncusCommand::class);
     $command->hostFactoryUsing(fn (string $host): IncusHost => recordingIncusLiveHost(incusReleaseConfig($host), $log));
+    $command->localMachineUsing(fn (): LiveIncusLocalMachine => $localMachine ?? recordingLiveIncusLocalMachine($log));
     app()->instance(E2EIncusCommand::class, $command);
 }
 
@@ -262,7 +343,7 @@ it('creates a live accessible Incus topology and prints local onboarding instruc
 
     incusDevTopologyCommandWith(fn (E2ETopologyKind $kind, array $roles): array => fakeIncusPreparedTopology());
 
-    $log = new ArrayObject(['runs' => []]);
+    $log = new ArrayObject(['runs' => [], 'local_runs' => []]);
     incusLiveCommandWith($log);
 
     $output = new BufferedOutput;
@@ -275,24 +356,41 @@ it('creates a live accessible Incus topology and prints local onboarding instruc
     $payload = json_decode(trim($output->fetch()), true, flags: JSON_THROW_ON_ERROR);
     $liveTopology = $payload['success']['live_topology'];
 
-    $wireGuardConfigPath = "{$this->manifestDirectory}/dev-abc123-mac-dev-abc123.conf";
+    $wireGuardConfigPath = "{$this->manifestDirectory}/oe2eabc123.conf";
     $manifest = (new E2EDevTopologyManifestStore($this->manifestDirectory))->read('dev-abc123');
 
     expect($exitCode)->toBe(0)
         ->and($liveTopology['id'])->toBe('dev-abc123')
         ->and($liveTopology['kind'])->toBe('operator_gateway_app-dev_app-prod_ingress')
         ->and($liveTopology['wireguard_endpoint'])->toBe('192.168.1.150:51820')
+        ->and($liveTopology['wireguard']['endpoint'])->toBe('192.168.1.150:51820')
+        ->and($liveTopology['wireguard']['interface'])->toBe('oe2eabc123')
+        ->and($liveTopology['wireguard']['real_interface'])->toBe('utun42')
+        ->and($liveTopology['wireguard']['config_path'])->toBe($wireGuardConfigPath)
+        ->and($liveTopology['wireguard']['started'])->toBeTrue()
+        ->and($liveTopology['wireguard']['gateway_added'])->toBeTrue()
+        ->and($liveTopology['wireguard']['verified'])->toBeTrue()
         ->and($liveTopology['operator_node'])->toBe('mac-dev-abc123')
         ->and($liveTopology['gateway_add_command'])->toBe('orbit gateway:add 10.6.0.2 --name=incus-dev-abc123')
         ->and($liveTopology['gateway_use_command'])->toBe('orbit gateway:use incus-dev-abc123')
         ->and($liveTopology['release_command'])->toBe('composer e2e:incus -- --stop --id=dev-abc123')
-        ->and($liveTopology['next_steps'])->toContain('Import and activate the WireGuard configuration on this Mac.')
+        ->and($liveTopology['commands']['stop'])->toBe('composer e2e:incus -- --stop --id=dev-abc123')
+        ->and($liveTopology['commands']['gateway_check'])->toBe('orbit node:list --json')
+        ->and($liveTopology['next_steps'])->toContain('WireGuard tunnel [oe2eabc123] is active.')
+        ->and($liveTopology['next_steps'])->toContain('Local gateway [incus-dev-abc123] is active.')
         ->and($wireGuardConfigPath)->toBeFile()
         ->and($manifest['kind'])->toBe('operator_gateway_app-dev_app-prod_ingress')
+        ->and($manifest['live']['wireguard']['interface'])->toBe('oe2eabc123')
+        ->and($manifest['live']['wireguard']['started'])->toBeTrue()
+        ->and($manifest['live']['gateway']['name'])->toBe('incus-dev-abc123')
+        ->and($manifest['live']['gateway']['added'])->toBeTrue()
         ->and(file_get_contents($wireGuardConfigPath))->toContain('Endpoint = 192.168.1.150:51820')
         ->and(file_get_contents($wireGuardConfigPath))->not->toContain('Endpoint = 10.6.0.2:51820')
         ->and($log['runs'][0])->toContain("incus exec 'orbit-e2e-dev-abc123-operator'")
-        ->and($log['runs'][0])->toContain('orbit node:new mac-dev-abc123 --operator --json');
+        ->and($log['runs'][0])->toContain('orbit node:new mac-dev-abc123 --operator --json')
+        ->and($log['local_runs'])->toContain("wg-quick up {$wireGuardConfigPath}")
+        ->and($log['local_runs'])->toContain('orbit gateway:add 10.6.0.2 --name=incus-dev-abc123 --json')
+        ->and($log['local_runs'])->toContain('curl http://10.6.0.2/api/ca/root');
 });
 
 it('prints the live WireGuard config and follow-up gateway commands in human mode', function (): void {
@@ -307,12 +405,69 @@ it('prints the live WireGuard config and follow-up gateway commands in human mod
         '--live' => true,
         '--topology' => 'operator_gateway_app-dev',
     ])
+        ->expectsOutputToContain('Preparing live Incus topology')
+        ->expectsOutputToContain('Validate live endpoint')
+        ->expectsOutputToContain('Acquire topology')
+        ->expectsOutputToContain('Mint local operator identity')
+        ->expectsOutputToContain('Write WireGuard config')
+        ->expectsOutputToContain('Start local tunnel')
+        ->expectsOutputToContain('Add local gateway')
+        ->expectsOutputToContain('Verify gateway API')
         ->expectsOutputToContain('Live Incus topology [dev-abc123] is ready.')
         ->expectsOutputToContain('WireGuard config')
         ->expectsOutputToContain('Endpoint = 192.168.1.150:51820')
-        ->expectsOutputToContain('orbit gateway:add 10.6.0.2 --name=incus-dev-abc123')
+        ->expectsOutputToContain('WireGuard interface: oe2eabc123')
+        ->expectsOutputToContain('Local gateway: incus-dev-abc123')
+        ->expectsOutputToContain('Gateway check: orbit node:list --json')
+        ->expectsOutputToContain('Local gateway [incus-dev-abc123] is active.')
         ->expectsOutputToContain('Release: composer e2e:incus -- --stop --id=dev-abc123')
         ->assertSuccessful();
+});
+
+it('can create a live topology in manual mode without mutating the local host', function (): void {
+    putenv('ORBIT_E2E_LIVE_WIREGUARD_ENDPOINT=192.168.1.150:51820');
+
+    incusDevTopologyCommandWith(fn (E2ETopologyKind $kind, array $roles): array => fakeIncusPreparedTopology());
+
+    $log = new ArrayObject(['runs' => [], 'local_runs' => []]);
+    incusLiveCommandWith($log);
+
+    $output = new BufferedOutput;
+    $exitCode = app(Kernel::class)->call('e2e:incus', [
+        '--live' => true,
+        '--manual' => true,
+        '--json' => true,
+    ], $output);
+
+    $payload = json_decode(trim($output->fetch()), true, flags: JSON_THROW_ON_ERROR);
+    $liveTopology = $payload['success']['live_topology'];
+
+    expect($exitCode)->toBe(0)
+        ->and($liveTopology['wireguard']['started'])->toBeFalse()
+        ->and($liveTopology['wireguard']['gateway_added'])->toBeFalse()
+        ->and($liveTopology['wireguard']['verified'])->toBeFalse()
+        ->and($liveTopology['next_steps'])->toContain("Run `wg-quick up {$this->manifestDirectory}/oe2eabc123.conf`.")
+        ->and($liveTopology['next_steps'])->toContain('Run `orbit gateway:add 10.6.0.2 --name=incus-dev-abc123`.')
+        ->and($log['local_runs'])->toBe([]);
+});
+
+it('fails live local setup before mutation when wg quick tooling is unavailable', function (): void {
+    putenv('ORBIT_E2E_LIVE_WIREGUARD_ENDPOINT=192.168.1.150:51820');
+
+    incusDevTopologyCommandWith(fn (E2ETopologyKind $kind, array $roles): array => fakeIncusPreparedTopology());
+
+    $log = new ArrayObject(['runs' => [], 'local_runs' => []]);
+    incusLiveCommandWith($log, recordingLiveIncusLocalMachine($log, toolsAvailable: false));
+
+    $this->artisan('e2e:incus', [
+        '--live' => true,
+        '--json' => true,
+    ])
+        ->expectsOutputToContain('local_wireguard_unavailable')
+        ->assertExitCode(1);
+
+    expect($log['runs'])->toBe([])
+        ->and($log['local_runs'])->toBe([]);
 });
 
 it('rejects live mode without a configured WireGuard endpoint', function (): void {
@@ -354,6 +509,54 @@ it('stops a retained Incus topology by id', function (): void {
         'orbit-e2e-dev-abc123-dev',
     ]])
         ->and((new E2EDevTopologyManifestStore($this->manifestDirectory))->read('dev-abc123'))->toBeNull();
+});
+
+it('stops a recorded live wg quick tunnel before releasing the topology', function (): void {
+    writeIncusRetainedManifest($this->manifestDirectory, 'dev-abc123');
+
+    $store = new E2EDevTopologyManifestStore($this->manifestDirectory);
+    $manifest = $store->read('dev-abc123');
+
+    expect($manifest)->not->toBeNull();
+
+    $configPath = "{$this->manifestDirectory}/oe2eabc123.conf";
+
+    $store->write([
+        ...$manifest,
+        'live' => [
+            'wireguard' => [
+                'interface' => 'oe2eabc123',
+                'real_interface' => 'utun42',
+                'config_path' => $configPath,
+                'started' => true,
+            ],
+        ],
+    ]);
+
+    file_put_contents($configPath, '[Interface]');
+
+    $log = new ArrayObject([
+        'deleted' => [],
+        'runs' => [],
+        'local_runs' => [],
+        'interfaces' => ['utun42'],
+        'real' => ['oe2eabc123' => 'utun42'],
+    ]);
+
+    incusReleaseCommandWith($log);
+
+    $command = app(E2EIncusCommand::class);
+    $command->localMachineUsing(fn (): LiveIncusLocalMachine => recordingLiveIncusLocalMachine($log));
+    app()->instance(E2EIncusCommand::class, $command);
+
+    $this->artisan('e2e:incus', [
+        '--stop' => true,
+        '--id' => 'dev-abc123',
+        '--json' => true,
+    ])->assertSuccessful();
+
+    expect($log['local_runs'])->toContain("wg-quick down {$configPath}")
+        ->and($log['deleted'])->toHaveCount(1);
 });
 
 it('stops every retained Incus topology with all', function (): void {

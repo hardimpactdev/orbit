@@ -209,7 +209,7 @@ class E2EDevTopologyCommand extends Command
                 $kind,
                 $runId,
                 $timer,
-                new E2ETopologyAcquisitionOptions(startGatewayApi: true),
+                new E2ETopologyAcquisitionOptions(startGatewayApi: true, sourceMountedCheckout: true),
             );
         } finally {
             $timer->flush('acquire');
@@ -315,6 +315,10 @@ class E2EDevTopologyCommand extends Command
         $this->line("Kind: {$manifest['kind']}");
         $this->line("Provider: {$manifest['provider']} (host {$manifest['host']})");
         $this->line("Gateway API: http://{$manifest['gateway_ip']}");
+        if ($this->sourceMountedCheckout($manifest)) {
+            $this->line('Source-mounted checkout: /home/orbit/orbit');
+            $this->line('Launcher: /home/orbit/orbit/apps/cli/orbit');
+        }
         $this->line('');
 
         foreach ($handles as $handle) {
@@ -339,6 +343,16 @@ class E2EDevTopologyCommand extends Command
         $this->line('Retained topologies are manual diagnosis tools; they are not standing infrastructure and must be released.');
 
         return self::SUCCESS;
+    }
+
+    /**
+     * @param  array{checkouts: array<string, string>}  $manifest
+     */
+    private function sourceMountedCheckout(array $manifest): bool
+    {
+        return collect($manifest['checkouts'])->contains(
+            fn (string $checkout): bool => $checkout === '/home/orbit/orbit',
+        );
     }
 
     /**

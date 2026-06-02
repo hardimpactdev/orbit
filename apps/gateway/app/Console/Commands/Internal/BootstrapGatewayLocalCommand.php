@@ -59,7 +59,8 @@ class BootstrapGatewayLocalCommand extends Command
             throw new RuntimeException('Name and wireguard-address are required.');
         }
 
-        $enrollment = DB::transaction(function () use ($name, $wireguardAddress, $identity, $gatewayTld, $publicHost, $hostKey): ?array {
+        /** @var array{gateway_name: string, gateway_public_key: string, gateway_private_key: string, gateway_pre_shared_key: string|null, gateway_wireguard_address: string|null, operator_name: string, operator_public_key: string, operator_private_key: string, operator_pre_shared_key: string|null, operator_wireguard_address: string|null}|null $enrollment */
+        $enrollment = DB::transaction(function () use ($name, $wireguardAddress, $identity, $gatewayTld, $publicHost, $hostKey) {
             $gateway = Node::query()->updateOrCreate(
                 ['name' => $name],
                 [
@@ -174,8 +175,6 @@ class BootstrapGatewayLocalCommand extends Command
                 'operator_wireguard_address' => $control->wireguard_address,
             ];
         });
-
-        $this->markGatewayEnvironment($name);
 
         $caService->ensureRootCa();
         $wireguardServerPublicKey = null;
@@ -351,27 +350,6 @@ class BootstrapGatewayLocalCommand extends Command
         $value = $this->option($name);
 
         return is_string($value) && $value !== '' ? $value : null;
-    }
-
-    private function ensureOperationTokenSecret(): string
-    {
-        $secret = $this->readEnvVar('ORBIT_OPERATION_TOKEN_SECRET')
-            ?? $this->readEnvVar('ORBIT_EXECUTOR_SECRET')
-            ?? base64_encode(random_bytes(32));
-
-        $this->writeEnvVar('ORBIT_OPERATION_TOKEN_SECRET', $secret);
-        $this->writeEnvVar('ORBIT_EXECUTOR_SECRET', $secret);
-        config(['orbit.operation_token_secret' => $secret]);
-
-        return $secret;
-    }
-
-    private function markGatewayEnvironment(string $name): void
-    {
-        $this->ensureOperationTokenSecret();
-        $this->writeEnvVar('ORBIT_IS_GATEWAY', 'true');
-        $this->writeEnvVar('ORBIT_NODE_IDENTITY', $name);
-        config(['orbit.is_gateway' => true]);
     }
 
     private function stringArgument(string $name): ?string

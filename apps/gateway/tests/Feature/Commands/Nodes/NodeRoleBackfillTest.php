@@ -11,14 +11,14 @@ uses(RefreshDatabase::class);
 
 function runGatewayCoupledVpnRoleBackfillMigration(): void
 {
-    $migration = require database_path('migrations/2026_05_20_000000_backfill_gateway_coupled_vpn_roles.php');
+    $migration = require base_path('database/migrations/2026_05_20_000000_backfill_gateway_coupled_vpn_roles.php');
 
     $migration->up();
 }
 
 function rollbackGatewayCoupledVpnRoleBackfillMigration(): void
 {
-    $migration = require database_path('migrations/2026_05_20_000000_backfill_gateway_coupled_vpn_roles.php');
+    $migration = require base_path('database/migrations/2026_05_20_000000_backfill_gateway_coupled_vpn_roles.php');
 
     $migration->down();
 }

@@ -705,7 +705,7 @@ final readonly class NodesProbe
      */
     private function checkPlatformReality(Node $node): array
     {
-        if (! (bool) config('orbit.is_gateway', false) || ! app(NodeRoleAssignments::class)->nodeIsGateway($node)) {
+        if (! app(NodeRoleAssignments::class)->nodeIsGateway($node)) {
             return [];
         }
 
@@ -1236,7 +1236,7 @@ final readonly class NodesProbe
             }
         }
 
-        if ((bool) config('orbit.is_gateway', false) && app(NodeRoleAssignments::class)->nodeIsGateway($node)) {
+        if (app(NodeRoleAssignments::class)->nodeIsGateway($node)) {
             try {
                 $observedPlatform = ($this->platformDetector ?? app(PlatformDetector::class))->detectLocal();
             } catch (Throwable) {

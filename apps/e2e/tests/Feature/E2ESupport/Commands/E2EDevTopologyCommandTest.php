@@ -203,6 +203,34 @@ it('persists a retained topology manifest and prints the release command', funct
         ->and($manifest['created_at'])->toBeString();
 });
 
+it('reports source-mounted retained Incus checkouts in output and manifests', function (): void {
+    devTopologyCommandWith(fn (E2ETopologyKind $kind, array $roles): array => fakePreparedTopology(
+        checkouts: [
+            'operator' => '/home/orbit/orbit',
+            'gateway' => '/home/orbit/orbit',
+            'dev' => '/home/orbit/orbit',
+        ],
+    ));
+
+    $this->artisan('e2e:dev-topology', [
+        '--provider' => 'incus',
+        '--kind' => 'operator_gateway_app-dev',
+    ])
+        ->expectsOutputToContain('Source-mounted checkout')
+        ->expectsOutputToContain('/home/orbit/orbit/apps/cli/orbit')
+        ->assertSuccessful();
+
+    $store = new E2EDevTopologyManifestStore($this->manifestDirectory);
+    $manifest = $store->read('dev-abc123');
+
+    expect($manifest)->not->toBeNull()
+        ->and($manifest['checkouts'])->toBe([
+            'operator' => '/home/orbit/orbit',
+            'gateway' => '/home/orbit/orbit',
+            'dev' => '/home/orbit/orbit',
+        ]);
+});
+
 it('overlays app-dev and app-prod onto the canonical dev and prod roles', function (): void {
     $captured = [];
 

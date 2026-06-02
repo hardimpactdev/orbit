@@ -7,6 +7,7 @@ use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
 
 $gatewayRoot = dirname(__DIR__);
+$orbitPaths = require __DIR__.'/orbit_paths.php';
 
 $app = Application::configure(basePath: $gatewayRoot)
     ->withProviders(require __DIR__.'/providers.php', withBootstrapProviders: false)
@@ -25,7 +26,10 @@ $app = Application::configure(basePath: $gatewayRoot)
     ->create();
 
 $app
-    ->useDatabasePath($gatewayRoot.'/database')
+    ->useEnvironmentPath(dirname($orbitPaths['env_path']))
+    ->loadEnvironmentFrom(basename($orbitPaths['env_path']))
+    ->useDatabasePath($orbitPaths['database_path'])
+    ->useStoragePath($orbitPaths['storage_path'])
     ->usePublicPath($gatewayRoot.'/public');
 
 $app->singleton(ConsoleKernelContract::class, ConsoleKernel::class);

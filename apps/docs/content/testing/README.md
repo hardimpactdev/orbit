@@ -31,7 +31,7 @@ runner. It is a full Laravel app so the topology/provider harness can use the
 framework (the `Process`, filesystem, and related facades, paths, and helpers)
 rather than re-implementing them. "External" describes how it drives the system
 under test, not the absence of a framework: it prepares Docker/Incus topologies,
-drives the Orbit CLI binary and the gateway HTTP API, and inspects externally
+drives the node-local Orbit CLI entry point and the gateway HTTP API, and inspects externally
 observable results — CLI output, API responses, files, containers, routes,
 services, and node state. It must not import the gateway application's own
 namespaces (`apps/gateway`'s services, Eloquent models, controllers, jobs, or
@@ -62,16 +62,21 @@ operator, or app nodes as verification targets.
 
 For the MONO local-executor migration, prepared Docker and Incus E2E are the
 primary verification paths. Standing live infrastructure is diagnostic only.
-Prepared topology images provide Orbit-capable hosts with the installed Orbit CLI
-binary. The current checkout is synced into hosts during topology preparation or
-test setup.
+Source-mounted Docker feature tests and retained/live Incus development
+topologies are the source-mounted feedback loops. Production installs remain a
+separate native CLI binary artifact lane. In source-mounted nodes,
+`/usr/local/bin/orbit` points directly at `<source>/apps/cli/orbit`, mutable
+node-local Orbit state lives under `~/.config/orbit`, and executor operation
+tokens are verified through the gateway API so nodes do not carry executor
+token signing material.
 
 ## Development lane invariant
 
 These rules order the lanes above into a development workflow:
 
-- Source-checkout E2E (the Docker/Incus prepared-topology lanes that overlay the
-  current checkout) is the normal feature feedback loop.
+- Source-mounted Docker feature tests are the fast feature loop. Retained/live
+  source-mounted Incus development topologies are the closest disposable
+  real-topology loop.
 - Retained prepared topologies are for manual diagnosis, debugging, and
   performance testing only. They use the same prepared-topology substrate, are
   not standing live infrastructure, and must be explicitly released or reaped
@@ -83,9 +88,10 @@ These rules order the lanes above into a development workflow:
 - Findings from a retained topology are codified back into ordinary
   prepared-topology Pest E2E tests; the durable assertion lives in Pest, not in a
   kept-alive topology.
-- Binary acceptance is a separate release-candidate lane that runs after
-  source-checkout E2E has passed. It proves the built CLI artifact and does not
-  replace the source-checkout feature loop.
+- Binary/runtime artifact verification is a separate release-candidate lane that
+  runs after source-mounted lanes pass. It builds the native CLI binary and
+  Docker runtime image, catches packaging and installer regressions, and does
+  not replace the source-mounted feature loop.
 - Provisioning proves installer and `node:new` provisioning behavior, not the
   inner development loop.
 
@@ -93,7 +99,7 @@ The retained-topology command surface lives in `apps/e2e`
 (`composer e2e:incus`). Legacy `composer e2e:dev-topology` and
 `composer e2e:dev-topology:release` aliases remain available for compatibility.
 It is not added as new public gateway Artisan surface; public operator commands
-remain owned by the Orbit CLI binary.
+remain owned by the Orbit CLI surface.
 
 ## Lane map
 

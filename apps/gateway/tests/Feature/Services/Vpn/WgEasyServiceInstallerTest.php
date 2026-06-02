@@ -28,7 +28,6 @@ beforeEach(function (): void {
     File::ensureDirectoryExists($this->workdir);
     $this->statePath = $this->workdir.'/.wg-easy';
 
-    config()->set('orbit.operation_token_secret', 'gateway-secret');
     config()->set('orbit.operation_token_ttl_seconds', 120);
 
     $this->vpnNode = Node::factory()->create([

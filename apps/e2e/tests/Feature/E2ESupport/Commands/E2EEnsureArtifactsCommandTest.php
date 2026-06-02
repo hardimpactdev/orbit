@@ -58,7 +58,7 @@ it('plans targeted Docker and Incus role artifacts without mutation', function (
 
 it('delegates targeted Docker role preparation to the missing-only host preparer', function (): void {
     Process::fake([
-        "composer e2e:prepare-docker-hosts -- --force --topology-only --roles=agent 'operator_gateway_app-dev_app-prod_agent'" => Process::result(),
+        "bin/orbit-e2e-artisan e2e:prepare-docker-hosts --force --topology-only --roles=agent 'operator_gateway_app-dev_app-prod_agent'" => Process::result(),
     ]);
 
     $this->artisan('e2e:ensure-artifacts', [
@@ -70,12 +70,13 @@ it('delegates targeted Docker role preparation to the missing-only host preparer
         ->expectsOutputToContain('ensured: docker topology')
         ->assertSuccessful();
 
-    Process::assertRan("composer e2e:prepare-docker-hosts -- --force --topology-only --roles=agent 'operator_gateway_app-dev_app-prod_agent'");
+    Process::assertRan("bin/orbit-e2e-artisan e2e:prepare-docker-hosts --force --topology-only --roles=agent 'operator_gateway_app-dev_app-prod_agent'");
+    Process::assertRan(fn ($process): bool => $process->path === repo_path());
 });
 
 it('can explicitly request a targeted Docker role rebuild', function (): void {
     Process::fake([
-        "composer e2e:prepare-docker-hosts -- --force --rebuild --topology-only --roles=agent 'operator_gateway_app-dev_app-prod_agent'" => Process::result(),
+        "bin/orbit-e2e-artisan e2e:prepare-docker-hosts --force --rebuild --topology-only --roles=agent 'operator_gateway_app-dev_app-prod_agent'" => Process::result(),
     ]);
 
     $this->artisan('e2e:ensure-artifacts', [
@@ -88,12 +89,12 @@ it('can explicitly request a targeted Docker role rebuild', function (): void {
         ->expectsOutputToContain('ensured: docker topology')
         ->assertSuccessful();
 
-    Process::assertRan("composer e2e:prepare-docker-hosts -- --force --rebuild --topology-only --roles=agent 'operator_gateway_app-dev_app-prod_agent'");
+    Process::assertRan("bin/orbit-e2e-artisan e2e:prepare-docker-hosts --force --rebuild --topology-only --roles=agent 'operator_gateway_app-dev_app-prod_agent'");
 });
 
 it('delegates Docker runtime preparation separately from topology roles', function (): void {
     Process::fake([
-        "composer e2e:prepare-docker-hosts -- --force --runtime-only 'operator_gateway_app-dev_app-prod_agent'" => Process::result(),
+        "bin/orbit-e2e-artisan e2e:prepare-docker-hosts --force --runtime-only 'operator_gateway_app-dev_app-prod_agent'" => Process::result(),
     ]);
 
     $this->artisan('e2e:ensure-artifacts', [
@@ -104,7 +105,7 @@ it('delegates Docker runtime preparation separately from topology roles', functi
         ->expectsOutputToContain('ensured: docker runtime')
         ->assertSuccessful();
 
-    Process::assertRan("composer e2e:prepare-docker-hosts -- --force --runtime-only 'operator_gateway_app-dev_app-prod_agent'");
+    Process::assertRan("bin/orbit-e2e-artisan e2e:prepare-docker-hosts --force --runtime-only 'operator_gateway_app-dev_app-prod_agent'");
 });
 
 it('guards forced Incus role preparation before mutation', function (): void {

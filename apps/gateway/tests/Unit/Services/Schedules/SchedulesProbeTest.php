@@ -101,7 +101,7 @@ describe('SchedulesProbe', function (): void {
     it('detects missing scheduler configuration in the gateway runtime container', function (): void {
         $gateway = createSchedulesProbeGatewayNode();
         $probe = new SchedulesProbe(new RuntimeBackendProbe(new SchedulesProbeQueuedRemoteShell([
-            new RemoteShellResult(exitCode: 0, stdout: "running=true\nrestart_policy=unless-stopped\nscheduler_running=false\n", stderr: '', durationMs: 1),
+            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
         ])));
 
         $drift = $probe->diffGateway($gateway, $probe->introspectGateway($gateway));
@@ -112,7 +112,7 @@ describe('SchedulesProbe', function (): void {
     it('detects stopped scheduler runtime container on the gateway', function (): void {
         $gateway = createSchedulesProbeGatewayNode();
         $probe = new SchedulesProbe(new RuntimeBackendProbe(new SchedulesProbeQueuedRemoteShell([
-            new RemoteShellResult(exitCode: 0, stdout: "running=false\nrestart_policy=unless-stopped\nenv=ORBIT_IS_GATEWAY=1\nscheduler_running=false\n", stderr: '', durationMs: 1),
+            new RemoteShellResult(exitCode: 0, stdout: "running=false\nrestart_policy=unless-stopped\nscheduler_running=false\n", stderr: '', durationMs: 1),
         ])));
 
         $drift = $probe->diffGateway($gateway, $probe->introspectGateway($gateway));
@@ -123,7 +123,7 @@ describe('SchedulesProbe', function (): void {
     it('detects an absent scheduler process inside a live gateway runtime container', function (): void {
         $gateway = createSchedulesProbeGatewayNode();
         $probe = new SchedulesProbe(new RuntimeBackendProbe(new SchedulesProbeQueuedRemoteShell([
-            new RemoteShellResult(exitCode: 0, stdout: "running=true\nrestart_policy=unless-stopped\nenv=ORBIT_IS_GATEWAY=1\nscheduler_running=false\n", stderr: '', durationMs: 1),
+            new RemoteShellResult(exitCode: 0, stdout: "running=true\nrestart_policy=unless-stopped\nscheduler_running=false\n", stderr: '', durationMs: 1),
         ])));
 
         $drift = $probe->diffGateway($gateway, $probe->introspectGateway($gateway));
@@ -139,7 +139,7 @@ describe('SchedulesProbe', function (): void {
             'registry_synced_at' => now()->subMinutes(20),
         ]);
         $probe = new SchedulesProbe(new RuntimeBackendProbe(new SchedulesProbeQueuedRemoteShell([
-            new RemoteShellResult(exitCode: 0, stdout: "running=true\nrestart_policy=unless-stopped\nenv=ORBIT_IS_GATEWAY=1\nscheduler_running=true\n", stderr: '', durationMs: 1),
+            new RemoteShellResult(exitCode: 0, stdout: "running=true\nrestart_policy=unless-stopped\nscheduler_running=true\n", stderr: '', durationMs: 1),
         ])));
 
         $drift = $probe->diffGateway($gateway, $probe->introspectGateway($gateway));
@@ -161,7 +161,7 @@ describe('SchedulesProbe', function (): void {
             'expires_at' => now()->subMinutes(20),
         ]);
         $probe = new SchedulesProbe(new RuntimeBackendProbe(new SchedulesProbeQueuedRemoteShell([
-            new RemoteShellResult(exitCode: 0, stdout: "running=true\nrestart_policy=unless-stopped\nenv=ORBIT_IS_GATEWAY=1\nscheduler_running=true\n", stderr: '', durationMs: 1),
+            new RemoteShellResult(exitCode: 0, stdout: "running=true\nrestart_policy=unless-stopped\nscheduler_running=true\n", stderr: '', durationMs: 1),
         ])));
 
         $drift = $probe->diffGateway($gateway, $probe->introspectGateway($gateway));

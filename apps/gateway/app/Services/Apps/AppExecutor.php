@@ -7,14 +7,9 @@ namespace App\Services\Apps;
 use App\Contracts\RemoteShell;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Enums\Apps\AppRuntimeKind;
-use App\Http\Gateway\GatewayApiException;
-use App\Http\Gateway\GatewayConnector;
-use App\Http\Gateway\Requests\Apps\AppExecRequest;
-use App\Http\Gateway\Responses\Apps\AppExecResponse;
 use App\Models\App;
 use App\Services\Runtime\OrbitHostCwdResolver;
 use App\Services\Support\GatewayActionResult;
-use Throwable;
 
 final class AppExecutor
 {
@@ -34,20 +29,13 @@ final class AppExecutor
     {
         $this->arguments = $arguments;
         $this->output = null;
-        $previousGatewayContext = config('orbit.is_gateway');
 
-        try {
-            config(['orbit.is_gateway' => true]);
+        $exitCode = $this->handle(
+            app(RemoteShell::class),
+            app(OrbitHostCwdResolver::class),
+        );
 
-            $exitCode = $this->handle(
-                app(RemoteShell::class),
-                app(OrbitHostCwdResolver::class),
-            );
-
-            return GatewayActionResult::fromJsonOutput($exitCode, $this->output);
-        } finally {
-            config(['orbit.is_gateway' => $previousGatewayContext]);
-        }
+        return GatewayActionResult::fromJsonOutput($exitCode, $this->output);
     }
 
     private function handle(RemoteShell $remoteShell, OrbitHostCwdResolver $cwdResolver): int
@@ -61,19 +49,6 @@ final class AppExecutor
         $selector = $this->stringArgument('app');
         $hostCwd = $this->hostCwdFromEnv();
 
-        if (! (bool) config('orbit.is_gateway', false)) {
-            // Control mode: forward the raw selector and raw host cwd to the
-            // gateway. Do NOT resolve App rows locally — gateway-owned state
-            // lives on the gateway and the local SQLite may be stale or
-            // empty on this caller.
-            if ($selector === null && $hostCwd === null) {
-                return $this->failValidation('app', 'App is required.');
-            }
-
-            return $this->forwardExec($selector, $hostCwd, $command);
-        }
-
-        // Gateway mode: resolve locally because we ARE the gateway.
         if ($selector === null) {
             $context = $cwdResolver->resolve($hostCwd);
 
@@ -192,35 +167,6 @@ final class AppExecutor
         return implode(' ', array_map(escapeshellarg(...), ['sudo', '-u', $runtimeUser, '-H', 'bash', '-lc', $inner]));
     }
 
-    /**
-     * @param  list<string>  $command
-     */
-    private function forwardExec(?string $selector, ?string $hostCwd, array $command): int
-    {
-        try {
-            /** @var AppExecResponse $dto */
-            $dto = app(GatewayConnector::class)
-                ->send(new AppExecRequest(app: $selector, command: $command, hostCwd: $hostCwd))
-                ->dto();
-        } catch (GatewayApiException $e) {
-            return $this->failCommand(
-                code: $e->errorCode() ?? 'gateway_unavailable',
-                message: $e->getMessage() !== ''
-                    ? $e->getMessage()
-                    : 'Gateway connection is required to run app:exec.',
-                meta: $e->errorMeta(),
-            );
-        } catch (Throwable) {
-            return $this->failCommand(
-                code: 'gateway_unavailable',
-                message: 'Gateway connection is required to run app:exec.',
-                meta: [],
-            );
-        }
-
-        return $this->emitForwardedSuccess($dto->data);
-    }
-
     private function hostCwdFromEnv(): ?string
     {
         $value = getenv('ORBIT_HOST_CWD');
@@ -272,30 +218,6 @@ final class AppExecutor
         $this->writePassthrough($result->stdout, $result->stderr);
 
         return $result->exitCode;
-    }
-
-    /**
-     * @param  array<string, mixed>  $data
-     */
-    private function emitForwardedSuccess(array $data): int
-    {
-        if ($this->wantsJson()) {
-            $this->line(json_encode([
-                'success' => [
-                    'data' => $data,
-                ],
-            ], JSON_THROW_ON_ERROR));
-
-            return self::SUCCESS;
-        }
-
-        $stdout = is_string($data['stdout'] ?? null) ? $data['stdout'] : '';
-        $stderr = is_string($data['stderr'] ?? null) ? $data['stderr'] : '';
-        $exitCode = is_int($data['exit_code'] ?? null) ? $data['exit_code'] : 0;
-
-        $this->writePassthrough($stdout, $stderr);
-
-        return $exitCode;
     }
 
     /**

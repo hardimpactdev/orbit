@@ -13,7 +13,6 @@ use Spatie\Activitylog\Models\Activity;
 uses(RefreshDatabase::class);
 
 it('uses the active gateway role assignment as the local CLI actor', function (): void {
-    config(['orbit.is_gateway' => true]);
 
     $gateway = Node::factory()->create([
         'name' => 'assigned-gateway',

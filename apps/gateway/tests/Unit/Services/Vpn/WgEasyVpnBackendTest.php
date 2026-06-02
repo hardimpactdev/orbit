@@ -18,6 +18,7 @@ use Illuminate\Contracts\Process\InvokedProcess;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Process;
 use Orbit\Core\Http\JsonEnvelope;
@@ -187,6 +188,40 @@ it('routes password and session secret updates through wg-easy state actions wit
         ->and($completed[2]['stderr_summary'])->toBe('<suppressed>')
         ->and(json_encode([$completed[1], $completed[2]], JSON_THROW_ON_ERROR))->not->toContain($hash)
         ->and(json_encode([$completed[1], $completed[2]], JSON_THROW_ON_ERROR))->not->toContain('new-secret-password');
+});
+
+it('writes WG_EASY_PASSWORD to the active gateway environment file instead of the source tree env', function (): void {
+    $transport = new WgEasyVpnBackendStateTransport(
+        static fn (Node $node, string $script, array $options): RemoteShellResult => new RemoteShellResult(
+            exitCode: 0,
+            stdout: json_encode(JsonEnvelope::success(['updated' => true]), JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES),
+            stderr: '',
+            durationMs: 1,
+        ),
+    );
+
+    $envRoot = sys_get_temp_dir().'/wg-easy-env-root-'.bin2hex(random_bytes(4));
+    File::ensureDirectoryExists($envRoot);
+    File::put($envRoot.'/.env.runtime', "APP_NAME=Orbit\n");
+
+    $app = app();
+    $originalEnvironmentPath = $app->environmentPath();
+    $originalEnvironmentFile = $app->environmentFile();
+
+    $app->useEnvironmentPath($envRoot);
+    $app->loadEnvironmentFrom('.env.runtime');
+
+    try {
+        wgEasyVpnBackendReadyForPasswordRotation($transport)
+            ->changeWebUiPassword('new-secret-password');
+
+        expect(File::get($envRoot.'/.env.runtime'))
+            ->toContain('WG_EASY_PASSWORD="new-secret-password"');
+    } finally {
+        $app->useEnvironmentPath($originalEnvironmentPath);
+        $app->loadEnvironmentFrom($originalEnvironmentFile);
+        File::deleteDirectory($envRoot);
+    }
 });
 
 it('does not leak backend password action values from wg-easy state failures', function (

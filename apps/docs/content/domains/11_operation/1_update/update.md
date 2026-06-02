@@ -2,12 +2,15 @@
 
 [Back to Operation commands.](../README.md)
 
-Update the Orbit CLI binary and the gateway on the machine where the command is invoked.
+Update the local Orbit installation on the machine where the command is invoked.
 
-This command is the local update path. It downloads the prebuilt Orbit CLI
-binary for this host OS/arch, relinks the host `orbit` launcher, installs
-gateway Composer dependencies inside `orbit-runtime`, and applies local Orbit
-migrations. It does not update other nodes and does not repair fleet drift.
+This command is the local update path. In production artifact installs it
+updates the native Orbit CLI binary and runs gateway runtime/dependency/
+migration steps when the local installation is a gateway-context install. In
+source-mounted Docker and Incus development/E2E topologies it keeps
+`/usr/local/bin/orbit` pointed at `<source>/apps/cli/orbit` and updates by
+changing the mounted source. It does not update other nodes and does not repair
+fleet drift.
 
 ## Usage
 
@@ -30,14 +33,17 @@ orbit update --json
 
 `update` runs the local Orbit update sequence:
 
-1. Download the prebuilt Orbit CLI binary for this host OS/arch from the
-   configured release source (default: GitHub Releases, overridable with
-   `ORBIT_BINARY_URL`).
-2. Relink the host `orbit` launcher to the updated binary (default:
-   `/usr/local/bin/orbit`, overridable with `ORBIT_BIN_PATH`).
-3. Verify the updated binary responds to `--version`.
-4. Install gateway Composer dependencies inside `orbit-runtime`.
-5. Run Orbit database migrations for the gateway inside `orbit-runtime`.
+1. For production installs, download the prebuilt Orbit CLI binary for this
+   host OS/arch from the configured release source (default: GitHub Releases,
+   overridable with `ORBIT_BINARY_URL`). Source-mounted Docker/Incus
+   development and E2E lanes keep `/usr/local/bin/orbit` pointed at
+   `<source>/apps/cli/orbit` and update by changing the mounted source.
+2. Keep the host `orbit` launcher pointed at the correct local entry point
+   (updated binary artifact in production, mounted source entry point in
+   source-mounted lanes).
+3. Verify the resolved local Orbit entry point responds to `--version`.
+4. Install gateway Composer dependencies inside gateway `orbit-runtime`.
+5. Run Orbit database migrations for the gateway inside gateway `orbit-runtime`.
 6. Report the local update result.
 
 The command affects only the current Orbit installation. On a gateway host,
@@ -62,10 +68,15 @@ metadata.
 ## Requirements
 
 - The Orbit install root is writable (`ORBIT_INSTALL_PATH` or `$HOME/orbit`).
-- The configured release source is reachable (GitHub Releases by default, or
-  the `ORBIT_BINARY_URL` override for offline and E2E scenarios).
-- Docker and the `orbit-runtime` runtime are available for dependency
-  installation and migrations.
+- Production artifact installs require a reachable release source (GitHub
+  Releases by default, or the `ORBIT_BINARY_URL` override for offline and E2E
+  artifact scenarios) plus permission to write the binary and update the host
+  launcher link.
+- Gateway runtime update steps require Docker and gateway `orbit-runtime` for
+  dependency installation and migrations.
+- Source-mounted Docker/Incus development and E2E lanes require access to the
+  mounted checkout and keep `/usr/local/bin/orbit` pointed at
+  `<source>/apps/cli/orbit`.
 
 ## Related Commands
 

@@ -885,7 +885,7 @@ describe('DoctorReportRunner', function (): void {
             ->and($report['actions'][0])->toMatchArray([
                 'family' => 'schedule',
                 'node' => 'gateway-1',
-                'key' => 'schedule.scheduler_missing',
+                'key' => 'schedule.scheduler_stopped',
                 'mode' => 'restore',
                 'status' => 'completed',
             ])
@@ -975,12 +975,12 @@ describe('DoctorReportRunner', function (): void {
             ->and($report['issues'][0])->toMatchArray([
                 'family' => 'schedule',
                 'node' => 'gateway-1',
-                'key' => 'schedule.scheduler_missing',
+                'key' => 'schedule.scheduler_stopped',
             ])
             ->and($report['actions'][0])->toMatchArray([
                 'family' => 'schedule',
                 'node' => 'gateway-1',
-                'key' => 'schedule.scheduler_missing',
+                'key' => 'schedule.scheduler_stopped',
                 'mode' => 'restore',
                 'status' => 'failed',
                 'details' => [

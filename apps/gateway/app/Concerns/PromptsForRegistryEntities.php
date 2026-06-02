@@ -7,15 +7,6 @@ namespace App\Concerns;
 use App\Enums\Nodes\NodeRoleName;
 use App\Exceptions\PromptAborted;
 use App\Http\Gateway\GatewayApiException;
-use App\Http\Gateway\GatewayConnector;
-use App\Http\Gateway\Requests\Apps\ListAppsRequest;
-use App\Http\Gateway\Requests\Nodes\ListNodesRequest;
-use App\Http\Gateway\Requests\Schedules\ListSchedulesRequest;
-use App\Http\Gateway\Requests\Workspaces\ListWorkspacesRequest;
-use App\Http\Gateway\Responses\Apps\AppListResponse;
-use App\Http\Gateway\Responses\Nodes\NodeListResponse;
-use App\Http\Gateway\Responses\Schedules\ScheduleListResponse;
-use App\Http\Gateway\Responses\Workspaces\WorkspaceListResponse;
 use App\Models\App;
 use App\Models\Node;
 use App\Models\Schedule;
@@ -23,7 +14,6 @@ use App\Models\Workspace;
 use App\Services\Nodes\Roles\NodeRoleAssignmentPayload;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
 use Illuminate\Database\Eloquent\Builder;
-use Throwable;
 
 trait PromptsForRegistryEntities
 {
@@ -160,30 +150,15 @@ trait PromptsForRegistryEntities
      */
     protected function visibleAppPromptPayloads(?string $node = null, ?string $environment = null): array|GatewayApiException
     {
-        if ((bool) config('orbit.is_gateway', false)) {
-            return App::query()
-                ->with('node')
-                ->when($node !== null, fn (Builder $query): Builder => $query->whereHas('node', fn (Builder $query): Builder => $query->where('name', $node)))
-                ->when($environment !== null, fn (Builder $query): Builder => $query->where('environment', $environment))
-                ->orderBy('name')
-                ->get()
-                ->map(fn (App $app): array => $this->appPromptPayload($app))
-                ->values()
-                ->all();
-        }
-
-        try {
-            /** @var AppListResponse $dto */
-            $dto = app(GatewayConnector::class)
-                ->send(new ListAppsRequest(node: $node, environment: $environment))
-                ->dto();
-
-            return $dto->apps;
-        } catch (GatewayApiException $e) {
-            return $e;
-        } catch (Throwable) {
-            return new GatewayApiException('Gateway connection is required to list apps.', 'gateway_unavailable', []);
-        }
+        return App::query()
+            ->with('node')
+            ->when($node !== null, fn (Builder $query): Builder => $query->whereHas('node', fn (Builder $query): Builder => $query->where('name', $node)))
+            ->when($environment !== null, fn (Builder $query): Builder => $query->where('environment', $environment))
+            ->orderBy('name')
+            ->get()
+            ->map(fn (App $app): array => $this->appPromptPayload($app))
+            ->values()
+            ->all();
     }
 
     /**
@@ -191,37 +166,18 @@ trait PromptsForRegistryEntities
      */
     protected function visibleNodePromptPayloads(?string $role = null, ?string $environment = null, bool $activeOnly = true): array|GatewayApiException
     {
-        if ((bool) config('orbit.is_gateway', false)) {
-            $query = Node::query()
-                ->with('roleAssignments')
-                ->when($activeOnly, fn (Builder $query): Builder => $query->where('status', 'active'))
-                ->orderBy('name');
+        $query = Node::query()
+            ->with('roleAssignments')
+            ->when($activeOnly, fn (Builder $query): Builder => $query->where('status', 'active'))
+            ->orderBy('name');
 
-            $this->applyNodePromptRoleFilter($query, $role, $environment);
+        $this->applyNodePromptRoleFilter($query, $role, $environment);
 
-            return $query->get()
-                ->sortBy(fn (Node $node): string => $this->nodePromptRolesLabel($this->nodePromptPayload($node)).' '.$node->name)
-                ->map(fn (Node $node): array => $this->nodePromptPayload($node))
-                ->values()
-                ->all();
-        }
-
-        try {
-            /** @var NodeListResponse $dto */
-            $dto = app(GatewayConnector::class)
-                ->send(new ListNodesRequest(role: $this->nodePromptGatewayRoleFilter($role, $environment)))
-                ->dto();
-
-            return collect($dto->nodes)
-                ->filter(fn (array $node): bool => ! $activeOnly || ($node['status'] ?? null) === 'active')
-                ->filter(fn (array $node): bool => $this->nodePromptMatchesRoleFilter($node, $role, $environment))
-                ->values()
-                ->all();
-        } catch (GatewayApiException $e) {
-            return $e;
-        } catch (Throwable) {
-            return new GatewayApiException('Gateway connection is required to list nodes.', 'gateway_unavailable', []);
-        }
+        return $query->get()
+            ->sortBy(fn (Node $node): string => $this->nodePromptRolesLabel($this->nodePromptPayload($node)).' '.$node->name)
+            ->map(fn (Node $node): array => $this->nodePromptPayload($node))
+            ->values()
+            ->all();
     }
 
     /**
@@ -229,38 +185,23 @@ trait PromptsForRegistryEntities
      */
     protected function visibleWorkspacePromptPayloads(?string $app = null, ?string $node = null): array|GatewayApiException
     {
-        if ((bool) config('orbit.is_gateway', false)) {
-            return Workspace::query()
-                ->with('app.node')
-                ->when($app !== null, fn (Builder $query): Builder => $query->whereHas('app', fn (Builder $query): Builder => $query->where('name', $app)))
-                ->when($node !== null, fn (Builder $query): Builder => $query->whereHas('app.node', fn (Builder $query): Builder => $query->where('name', $node)))
-                ->get()
-                ->sort(fn (Workspace $first, Workspace $second): int => [
-                    mb_strtolower((string) $first->app?->node?->name),
-                    mb_strtolower((string) $first->app?->name),
-                    mb_strtolower($first->name),
-                ] <=> [
-                    mb_strtolower((string) $second->app?->node?->name),
-                    mb_strtolower((string) $second->app?->name),
-                    mb_strtolower($second->name),
-                ])
-                ->map(fn (Workspace $workspace): array => $this->workspacePromptPayload($workspace))
-                ->values()
-                ->all();
-        }
-
-        try {
-            /** @var WorkspaceListResponse $dto */
-            $dto = app(GatewayConnector::class)
-                ->send(new ListWorkspacesRequest(app: $app, node: $node))
-                ->dto();
-
-            return $dto->workspaces;
-        } catch (GatewayApiException $e) {
-            return $e;
-        } catch (Throwable) {
-            return new GatewayApiException('Gateway connection is required to list workspaces.', 'gateway_unavailable', []);
-        }
+        return Workspace::query()
+            ->with('app.node')
+            ->when($app !== null, fn (Builder $query): Builder => $query->whereHas('app', fn (Builder $query): Builder => $query->where('name', $app)))
+            ->when($node !== null, fn (Builder $query): Builder => $query->whereHas('app.node', fn (Builder $query): Builder => $query->where('name', $node)))
+            ->get()
+            ->sort(fn (Workspace $first, Workspace $second): int => [
+                mb_strtolower((string) $first->app?->node?->name),
+                mb_strtolower((string) $first->app?->name),
+                mb_strtolower($first->name),
+            ] <=> [
+                mb_strtolower((string) $second->app?->node?->name),
+                mb_strtolower((string) $second->app?->name),
+                mb_strtolower($second->name),
+            ])
+            ->map(fn (Workspace $workspace): array => $this->workspacePromptPayload($workspace))
+            ->values()
+            ->all();
     }
 
     /**
@@ -268,32 +209,17 @@ trait PromptsForRegistryEntities
      */
     protected function visibleSchedulePromptPayloads(?string $app = null, ?string $node = null): array|GatewayApiException
     {
-        if ((bool) config('orbit.is_gateway', false)) {
-            return Schedule::query()
-                ->with(['app.node', 'node'])
-                ->when($app !== null, fn (Builder $query): Builder => $query->where('scope', 'app')->whereHas('app', fn (Builder $query): Builder => $query->where('name', $app)))
-                ->when($node !== null, fn (Builder $query): Builder => $query->where('scope', 'node')->whereHas('node', fn (Builder $query): Builder => $query->where('name', $node)))
-                ->orderBy('scope')
-                ->orderBy('target_name')
-                ->orderBy('name')
-                ->get()
-                ->map(fn (Schedule $schedule): array => $this->schedulePromptPayload($schedule))
-                ->values()
-                ->all();
-        }
-
-        try {
-            /** @var ScheduleListResponse $dto */
-            $dto = app(GatewayConnector::class)
-                ->send(new ListSchedulesRequest(app: $app, node: $node))
-                ->dto();
-
-            return $dto->schedules;
-        } catch (GatewayApiException $e) {
-            return $e;
-        } catch (Throwable) {
-            return new GatewayApiException('Gateway connection is required to list schedules.', 'gateway_unavailable', []);
-        }
+        return Schedule::query()
+            ->with(['app.node', 'node'])
+            ->when($app !== null, fn (Builder $query): Builder => $query->where('scope', 'app')->whereHas('app', fn (Builder $query): Builder => $query->where('name', $app)))
+            ->when($node !== null, fn (Builder $query): Builder => $query->where('scope', 'node')->whereHas('node', fn (Builder $query): Builder => $query->where('name', $node)))
+            ->orderBy('scope')
+            ->orderBy('target_name')
+            ->orderBy('name')
+            ->get()
+            ->map(fn (Schedule $schedule): array => $this->schedulePromptPayload($schedule))
+            ->values()
+            ->all();
     }
 
     /**

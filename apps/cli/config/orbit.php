@@ -22,9 +22,4 @@ return [
         'ca_sha256' => env('ORBIT_GATEWAY_CA_SHA256'),
         'timeout' => env('ORBIT_GATEWAY_TIMEOUT') !== null ? (int) env('ORBIT_GATEWAY_TIMEOUT') : null,
     ],
-
-    'executor' => [
-        'shared_secret' => env('ORBIT_EXECUTOR_SECRET'),
-        'node_identity' => env('ORBIT_NODE_IDENTITY'),
-    ],
 ];

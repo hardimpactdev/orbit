@@ -383,6 +383,49 @@ it('syncs existing build host images without rebuilding', function (): void {
         ->and($distributions[0]['images'])->toHaveCount(10);
 });
 
+it('skips unavailable Docker runners during host image distribution', function (): void {
+    $distributions = [];
+
+    Process::fake(function ($process) {
+        $host = $process->environment['DOCKER_HOST'] ?? null;
+
+        if ($host === 'ssh://nmbp' && str_contains($process->command, 'docker info')) {
+            return Process::result(errorOutput: 'ssh timeout', exitCode: 1);
+        }
+
+        return Process::result();
+    });
+
+    $distributor = m::mock(DockerImageDistributor::class);
+    $distributor->shouldReceive('distribute')
+        ->once()
+        ->andReturnUsing(function (array $images, array $hosts) use (&$distributions): array {
+            $distributions[] = [
+                'images' => $images,
+                'hosts' => $hosts,
+            ];
+
+            return [];
+        });
+
+    app()->bind(DockerImageDistributor::class, fn (): DockerImageDistributor => $distributor);
+
+    withE2EConfigEnvironment([
+        'ORBIT_E2E_DOCKER_TEST_RUNNERS' => 'sidecar1:2:28,nmbp:2:28,beast:2:28',
+        'ORBIT_E2E_DOCKER_IMAGE_BUILD_HOSTS' => 'beast',
+    ], function (): void {
+        $this->artisan('e2e:prepare-docker-hosts', [
+            'kind' => 'operator_gateway_agent',
+            '--force' => true,
+        ])
+            ->expectsOutputToContain('skipped: nmbp distribution docker daemon is not reachable')
+            ->assertSuccessful();
+    });
+
+    expect($distributions)->toHaveCount(1)
+        ->and($distributions[0]['hosts'])->toBe(['sidecar1', 'beast']);
+});
+
 it('prepares app production ingress from composable docker role images', function (): void {
     $runs = [];
     $distributions = [];

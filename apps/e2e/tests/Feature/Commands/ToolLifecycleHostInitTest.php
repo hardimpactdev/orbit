@@ -104,7 +104,7 @@ function toolLifecyclePrepareGatewayApi(E2ETopologyHarness $topology): void
 
 function toolLifecycleUseGatewayApiUrl(E2ETopologyHarness $topology, string $gatewayApiIp): void
 {
-    $caPath = $topology->checkout('operator').'/apps/gateway/storage/app/orbit/gateway-ca/orbit.crt';
+    $caPath = dirname($topology->checkout('operator')).'/.config/orbit/gateway-ca/orbit.crt';
     $gatewayUrlValue = var_export("https://{$gatewayApiIp}", true);
     $gatewayIpValue = var_export($gatewayApiIp, true);
     $caPathValue = var_export($caPath, true);

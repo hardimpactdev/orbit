@@ -24,9 +24,7 @@ beforeEach(function (): void {
     app()->instance(DnsmasqReconciler::class, $this->reconciler);
 });
 
-it('reconciles dnsmasq when writing an app node on a gateway', function (): void {
-    config(['orbit.is_gateway' => true]);
-
+it('reconciles dnsmasq when writing an app node', function (): void {
     app(NodeRegistryWriter::class)->writeAppNode(
         name: 'app-1',
         tld: 'app-1.test',
@@ -38,20 +36,4 @@ it('reconciles dnsmasq when writing an app node on a gateway', function (): void
     );
 
     expect($this->reconciler->reconciles)->toBe(1);
-});
-
-it('does not reconcile when writing an app node off-gateway', function (): void {
-    config(['orbit.is_gateway' => false]);
-
-    app(NodeRegistryWriter::class)->writeAppNode(
-        name: 'app-1',
-        tld: 'app-1.test',
-        host: '10.6.0.3',
-        wireguardAddress: '10.6.0.3',
-        gatewayEndpoint: null,
-        sshUser: 'orbit',
-        user: 'orbit',
-    );
-
-    expect($this->reconciler->reconciles)->toBe(0);
 });
