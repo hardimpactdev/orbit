@@ -75,9 +75,21 @@ never run preparation. Use `composer test:e2e:docker` or
 `composer test:e2e:incus` when intentionally checking only one
 prepared-topology provider.
 
-`composer test:e2e:provision` runs the single superset provisioning test. It
-launches the base VM, installs Orbit, provisions the gateway, and internally
-provisions app-dev, app-prod, and agent in parallel.
+Provider provision commands are separate from prepared-topology feature lanes:
+
+- `composer test:e2e:provision:docker` refreshes Docker runtime/support images
+  and prepared role images for the Docker host pool.
+- `composer test:e2e:provision:incus` runs the fresh Incus superset provision
+  gate. It launches the base VM, installs Orbit, provisions the gateway, and
+  internally provisions app-dev, app-prod, and agent in parallel.
+
+Run prepared-topology feature lanes first. Provider provision commands are final
+verification for provider substrate and artifact changes, not a prerequisite for
+`composer test:e2e`.
+
+`composer test:e2e:provision` is a human-only aggregate alias for both provider
+provision commands. Agents must not run the aggregate; they must choose the
+provider-specific provision command that matches their assigned lane.
 
 ## Lease namespaces
 

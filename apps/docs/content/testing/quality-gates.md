@@ -24,9 +24,20 @@ Run `composer test:e2e` when behavior touches the integrated prepared topology.
 Use `composer test:e2e:docker` for Docker-eligible feature tests and
 `composer test:e2e:incus` for VM-feature behavior.
 
-Use `composer test:e2e:provision` only when topology preparation, installer
-behavior, image shape, `node:new`, WireGuard provisioning, or other VM setup
-behavior changes. It runs the single Incus superset provision gate.
+Run feature E2E before provider provision gates. The prepared-topology lanes
+exercise the current source checkout and are the normal behavior signal.
+Provider provision commands are final verification for topology preparation,
+installer behavior, image shape, `node:new`, WireGuard provisioning, or other
+provider setup behavior changes:
+
+```bash
+composer test:e2e:provision:docker
+composer test:e2e:provision:incus
+```
+
+These commands may be run by separate agents in parallel after the relevant
+feature lane is green. The aggregate `composer test:e2e:provision` runs both
+provider provision commands and is reserved for humans, not agents.
 
 There is no standing live-node verification lane. Persistent gateway, operator,
 and app nodes are diagnostic targets only.

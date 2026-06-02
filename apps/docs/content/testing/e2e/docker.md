@@ -12,6 +12,20 @@ composer test:e2e:docker
 rebuild Docker images. Missing support or role images fail the lane before Pest
 workers start and include a scoped `composer e2e:ensure-artifacts` command.
 
+Use the Docker provider provision lane when the Docker runtime image, support
+images, prepared role images, or Docker host artifact distribution may have
+changed:
+
+```bash
+composer test:e2e:provision:docker
+```
+
+This command is the agent-facing full Docker artifact refresh. It delegates to
+the Docker host preparer for
+`operator_gateway_app-dev_app-prod_agent_websocket`. It can run in parallel with
+`composer test:e2e:provision:incus` because the provider substrates are
+separate.
+
 Use the ensure command for targeted refreshes:
 
 ```bash

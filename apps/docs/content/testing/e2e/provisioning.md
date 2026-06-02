@@ -8,21 +8,53 @@ installation, cloud-init, or host-level daemon behavior.
 composer e2e:preflight
 composer e2e:prepare-base-image -- --force
 composer e2e:prepare-topology -- --force operator_gateway_app-dev_app-prod_agent_websocket
-composer test:e2e:provision
+composer test:e2e
+composer test:e2e:provision:docker
+composer test:e2e:provision:incus
 ```
 
-Use `composer test:e2e:provision` only when topology, installer, image,
-`node:new`, WireGuard provisioning, or other VM setup behavior changes. Ordinary
-command ports should add feature tests that use prepared topologies instead.
+Use provider-specific provision commands only when topology, installer, image,
+`node:new`, WireGuard provisioning, or other provider setup behavior changes.
+Ordinary command ports should add feature tests that use prepared topologies
+instead.
 
-The provision gate has one supported shape:
+Run feature E2E before provision gates. The topology preparer loads the current
+source checkout into prepared Docker/Incus artifacts, so `composer test:e2e`
+proves the feature against source-prepared topologies. Provider provision
+commands are the last verification gate for fresh installation, binary/image
+asset preparation, and host mutation. When production artifact behavior matters,
+the ideal final pass is source-prepared feature E2E, provider provision, then an
+artifact-backed feature flow using the built CLI and gateway image when that
+lane exists.
+
+`composer test:e2e:provision:docker` refreshes the Docker runtime/support images
+and prepared role images. `composer test:e2e:provision:incus` runs the fresh VM
+provision gate. They can run in parallel because Docker and Incus mutate
+separate provider substrates.
+
+`composer test:e2e:provision` is a human-only aggregate alias for both provider
+provision commands. Agents must never run the aggregate.
+
+The Incus provision gate has one supported shape:
 
 1. Launch a fresh VM from `orbit-base-ubuntu-26.04`.
 2. Install Orbit from the current source bundle on the operator.
 3. Provision the gateway through the real gateway path.
 4. Run `node:new` for app-dev, app-prod, and agent in parallel.
 5. Bake websocket against app-dev Redis and converge its Reverb runtime.
-6. Snapshot the resulting role templates for prepared Incus feature tests.
+6. Snapshot the resulting role templates inside the isolated provision-test
+   namespace for validation and failure inspection.
+
+Before running the Incus feature lane, refresh the shared Incus prepared
+topology pool when the current source or topology shape changed:
+
+```bash
+composer e2e:prepare-topology -- --force operator_gateway_app-dev_app-prod_agent_websocket
+composer test:e2e:incus
+```
+
+Run `composer test:e2e:provision:incus` after that source-prepared feature lane
+when the change also needs fresh VM provision verification.
 
 Command contracts use `e2e-feature` or in-memory Pest coverage when prepared
 topology state is enough to prove the behavior.
@@ -36,7 +68,7 @@ default). It builds one reusable base image plus prepared source snapshots:
    `composer e2e:prepare-base-image -- --force`. It contains Ubuntu cloud, the
    bootstrap user, the `orbit` user, sshd, the E2E OS dependency set, and the
    PHP 8.5 CLI baseline used by Orbit itself. It does not contain Orbit source.
-   It is used by the superset provision gate and as the source for prepared
+   It is used by the Incus provision gate and as the source for prepared
    topology roles.
 2. Prepared source templates `orbit-template-operator-base`,
    `orbit-template-gateway-base`, `orbit-template-app-dev-base`,

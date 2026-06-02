@@ -18,11 +18,24 @@ composer test:e2e:topology-contract
 
 # Superset provisioning lane
 composer e2e:preflight
+composer test:e2e:provision:docker
+composer test:e2e:provision:incus
+
+# Human-only aggregate for both provider provision commands
 composer test:e2e:provision
 
 # Explicit artifact planning/preparation
 composer e2e:ensure-artifacts
 ```
+
+Run prepared-topology feature E2E before provider provision gates. The feature
+lanes consume prepared source artifacts and prove behavior against the current
+checkout. Provider provision gates are final verification for fresh installer,
+`node:new`, image, runtime artifact, and host mutation paths. When a change also
+affects production artifacts, prove the feature against source-prepared
+topologies first, run the provider provision gate, then run the feature flow
+that consumes the built CLI/gateway assets when that artifact-backed lane
+exists.
 
 `composer test:e2e` runs `bin/orbit-gateway-artisan e2e:test`, which selects prepared-topology
 lanes from `ORBIT_E2E_LANES` (`docker,incus` by default) and excludes
@@ -67,8 +80,11 @@ real SSH daemon behavior, sudo prompts, or host init. Mark these tests with
 `e2e-provider-incus` so Docker-only runs skip them without probing an unsuitable
 provider.
 
-Provisioning and installer changes stay in the `e2e-provision` lane on Incus
-regardless of family. Feature tests use prepared topology clones.
+Provisioning and installer changes finish with provider-specific provision
+commands after the relevant prepared-topology feature lane is green. Docker
+image/runtime changes belong in `composer test:e2e:provision:docker`. Incus VM,
+WireGuard, installer, `node:new`, and host-mutation changes belong in
+`composer test:e2e:provision:incus`. Feature tests use prepared topology clones.
 
 ## Lane examples
 
@@ -82,7 +98,8 @@ Use these examples when a feature could fit more than one lane.
 | Runtime backend, process lifecycle, scheduler tick/heartbeat | Docker feature | Docker topologies run `orbit-gateway`, runtime containers, and `orbit-scheduler`. |
 | Host-init service control and journal behavior | Incus VM-feature | Requires real systemd and host init semantics. |
 | OS package installs, trust-store mutation, sudo, real SSH daemon behavior | Incus VM-feature | Depends on VM and OS behavior Docker does not model. |
-| Base image, installer, superset topology preparation, `node:new`, WireGuard routing | Incus provision | Builds the reusable Incus superset and proves production-style provisioning. |
+| Docker runtime image, support image, or prepared role image changes | Docker provision | Refreshes the Docker substrate consumed by Docker feature tests. |
+| Base image, installer, superset topology preparation, `node:new`, WireGuard routing | Incus provision | Proves the fresh VM provision path used to build reusable Incus artifacts. |
 
 When in doubt, start with Docker feature. Move to Incus only when the assertion
 would be false confidence in Docker because the kernel, VM boot, host init, or
@@ -98,12 +115,17 @@ The ephemeral E2E suite is split into two explicit Pest group lanes:
   `composer test:e2e:incus`. The aggregate `composer test:e2e` runs both
   prepared-topology feature lanes and fails if either selected provider cannot
   supply the required prepared topology.
-- `e2e-provision` builds the reusable Incus superset from the supported base
-  image. It launches a fresh base VM, installs Orbit on the operator, provisions
-  the gateway, runs `node:new` for app-dev, app-prod, and agent in parallel,
-  bakes websocket against app-dev Redis, and snapshots the prepared role
-  templates. Run it with
-  `composer test:e2e:provision`.
+- `composer test:e2e:provision:docker` refreshes the Docker runtime/support
+  images and prepared role images used by the Docker feature lane.
+- `composer test:e2e:provision:incus` runs the `e2e-provision` Pest group in an
+  isolated namespace. It launches a fresh base VM, installs Orbit on the
+  operator, provisions the gateway, runs `node:new` for app-dev, app-prod, and
+  agent in parallel, and bakes websocket against app-dev Redis. Run this after
+  the source-prepared Incus feature lane, not before it.
+
+`composer test:e2e:provision` is a human-only aggregate alias for both provider
+provision commands. Agents must never run it; agents choose
+`composer test:e2e:provision:docker` or `composer test:e2e:provision:incus`.
 
 Each prepared topology has its own contract group:
 
@@ -126,9 +148,10 @@ quick topology health check that boots every current prepared workload role,
 while `composer test:e2e` excludes topology-contract tests and runs feature
 assertions only.
 
-The provision gate is intentionally on demand because it runs real
-installer/provisioning paths and is much slower than prepared-topology feature
-tests. It is one superset test.
+Provider provision gates are intentionally on demand because they mutate or
+prove expensive prepared artifacts and are much slower than prepared-topology
+feature tests. Treat them as final verification gates for provider substrate and
+production-artifact changes.
 
 ## Source-Dev And Artifact-Prod
 

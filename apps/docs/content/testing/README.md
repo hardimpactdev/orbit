@@ -53,9 +53,30 @@ Orbit has three supported test lanes:
    and contract coverage.
 2. Feature E2E backed by Docker for prepared-topology command, registry, gateway
    API, and CA trust coverage.
-3. The Incus provisioning gate for the reusable superset topology: fresh base
-   VM, Orbit install, gateway provisioning, parallel `node:new` for app-dev,
-   app-prod, and agent, then websocket runtime baking against app-dev Redis.
+3. Feature E2E backed by Incus for prepared-topology VM behavior.
+
+Provider provisioning is the artifact-preparation and installer verification
+substrate behind those feature lanes. Docker and Incus provider provision
+commands are explicit and can be delegated independently:
+
+- `composer test:e2e:provision:docker` refreshes the Docker runtime/support
+  images and prepared role images for the configured Docker host pool.
+- `composer test:e2e:provision:incus` runs the fresh Incus VM provision gate:
+  base VM, Orbit install, gateway provisioning, parallel `node:new` for app-dev,
+  app-prod, and agent, then websocket runtime baking against app-dev Redis.
+
+`composer test:e2e:provision` is a human-only aggregate convenience alias for
+both provider provision commands. Agents must run the provider-specific
+provision commands instead.
+
+The normal E2E order is feature-first, provision-last. Prepared-topology feature
+lanes exercise the current source checkout through the topology preparer and are
+the development signal for behavior changes. Provider provision gates are final
+verification for installer, `node:new`, image, runtime artifact, and host
+mutation changes. When production artifact behavior matters, first prove the
+feature against the source-prepared topology, then run the provider provision
+gate, then run the feature flow that consumes the built CLI/gateway assets when
+that artifact-backed lane exists.
 
 Standing live infrastructure is not a test lane. Do not use persistent gateway,
 operator, or app nodes as verification targets.
@@ -92,8 +113,10 @@ These rules order the lanes above into a development workflow:
   runs after source-mounted lanes pass. It builds the native CLI binary and
   Docker runtime image, catches packaging and installer regressions, and does
   not replace the source-mounted feature loop.
-- Provisioning proves installer and `node:new` provisioning behavior, not the
-  inner development loop.
+- Provisioning proves installer and `node:new` provisioning behavior after the
+  prepared-topology feature lane is green. It is a final substrate/artifact
+  gate, not the inner development loop and not a precondition for
+  `composer test:e2e`.
 
 The retained-topology command surface lives in `apps/e2e`
 (`composer e2e:incus`). Legacy `composer e2e:dev-topology` and
@@ -138,13 +161,16 @@ composer test:e2e:docker
 composer test:e2e:incus
 composer test:e2e:topology-contract
 
-# Superset provisioning E2E
+# Final provider provisioning E2E
 composer e2e:preflight
-composer test:e2e:provision
+composer test:e2e:provision:docker
+composer test:e2e:provision:incus
 ```
 
 Run the narrowest useful check while developing. Run `composer quality-check`
 before handing off a broad code change. When behavior touches the integrated
-topology, run the E2E lane for the matching prepared topology and provider.
-Provisioning changes belong in `composer test:e2e:provision`, which proves the
-single Incus superset build path.
+topology, run the E2E lane for the matching prepared topology and provider
+before running any provider provision gate. Provisioning changes finish with the
+matching provider provision command. Agents must not run the aggregate
+`composer test:e2e:provision`; it is reserved for humans who intentionally want
+the full Docker plus Incus provision pass.

@@ -147,9 +147,11 @@ Two layers are required to prove a feature works:
   topology in `tests/E2E/`. The Docker-backed feature aggregate runs via
   `composer test:e2e` (or `composer test:e2e:docker` / `composer test:e2e:incus`
   for a single lane). Behavior that depends on real provisioning, WireGuard,
-  systemd, or host mutation belongs in the ephemeral VM lane via
+  systemd, or host mutation belongs in the matching provider provision lane.
+  Agents run `composer test:e2e:provision:docker` or
+  `composer test:e2e:provision:incus`; never run the aggregate
   `composer test:e2e:provision`. There is no standing live-node lane — see
-  `TESTING.md` for the full lane map.
+  `apps/docs/content/testing/README.md` for the full lane map.
 
 Workflow per change:
 

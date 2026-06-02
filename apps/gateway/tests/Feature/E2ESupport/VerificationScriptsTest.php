@@ -140,6 +140,13 @@ it('runs default ephemeral e2e through prepared topology lanes', function (): vo
 
     expect($composer['scripts']['test:e2e:provision'])->toBe([
         'Composer\\Config::disableProcessTimeout',
+        'composer test:e2e:provision:docker',
+        'composer test:e2e:provision:incus',
+    ])->and($composer['scripts']['test:e2e:provision:docker'])->toBe([
+        'Composer\\Config::disableProcessTimeout',
+        'set -a; [ ! -f .env.e2e ] || . ./.env.e2e; set +a; bin/orbit-e2e-artisan e2e:prepare-docker-hosts --force operator_gateway_app-dev_app-prod_agent_websocket @additional_args',
+    ])->and($composer['scripts']['test:e2e:provision:incus'])->toBe([
+        'Composer\\Config::disableProcessTimeout',
         'set -a; [ ! -f .env.e2e ] || . ./.env.e2e; set +a; cd apps/e2e && ORBIT_E2E=1 vendor/bin/pest --group=e2e-provision --fail-on-empty-test-suite @additional_args',
     ])->and($composer['scripts']['test:e2e:next'])->toBe([
         'Composer\\Config::disableProcessTimeout',
@@ -165,6 +172,8 @@ it('documents the supported verification lanes', function (): void {
         ->toContain('composer test:e2e')
         ->toContain('composer test:e2e:docker')
         ->toContain('composer test:e2e:incus')
+        ->toContain('composer test:e2e:provision:docker')
+        ->toContain('composer test:e2e:provision:incus')
         ->toContain('composer test:e2e:provision')
         ->toContain('composer test')
         ->not->toContain('composer test:e2e:features')

@@ -250,6 +250,20 @@ Required prepared sources for feature lanes:
 workers start when a selected provider is missing a required image, template, or
 snapshot, and print a scoped artifact command for the missing lane.
 
+Provider provision commands are explicit and safe to split across agents:
+
+```bash
+composer test:e2e:provision:docker
+composer test:e2e:provision:incus
+```
+
+Run prepared-topology feature tests before these provider provision commands.
+Provision is a final artifact/substrate gate, not the prerequisite for
+`composer test:e2e`.
+
+Agents must not run `composer test:e2e:provision`; that aggregate alias runs
+both provider provision commands and is reserved for humans.
+
 Use `composer e2e:ensure-artifacts` to plan or run a targeted artifact refresh:
 
 ```bash
@@ -276,14 +290,10 @@ role refreshes are guarded; inspect the planned role templates with
 `e2e:ensure-artifacts` and use the explicit topology preparer only when
 intentionally rebuilding an Incus artifact set.
 
-Prepare the canonical Docker role image set once for the host pool:
+Prepare the canonical provider artifacts once for the host pool:
 
 ```bash
-composer e2e:prepare-docker-hosts -- --force operator_gateway_app-dev_app-prod_agent
-
-composer e2e:prepare-topology -- --force operator_gateway_app-dev_app-prod_agent
-
-composer e2e:prepare-docker-hosts -- --force operator_gateway_app-dev_app-prod_agent_websocket
+composer test:e2e:provision:docker
 
 composer e2e:prepare-topology -- --force operator_gateway_app-dev_app-prod_agent_websocket
 ```

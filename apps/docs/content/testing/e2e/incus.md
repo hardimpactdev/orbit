@@ -15,6 +15,22 @@ rebuild topology images and do not run provisioning:
 composer test:e2e:incus
 ```
 
+Use the Incus provider provision gate when base image shape, installer behavior,
+gateway provisioning, `node:new`, WireGuard, VM boot, package installation, or
+host mutation may have changed:
+
+```bash
+composer test:e2e:provision:incus
+```
+
+After that gate passes, refresh the shared prepared Incus artifacts before
+running feature tests against the new topology shape:
+
+```bash
+composer e2e:prepare-topology -- --force operator_gateway_app-dev_app-prod_agent_websocket
+composer test:e2e:incus
+```
+
 Retained/live Incus development topologies acquired with
 `composer e2e:incus -- --start` or `composer e2e:incus -- --live` are
 source-mounted at `/home/orbit/orbit` instead of unpacking a checkout archive.
@@ -36,7 +52,9 @@ selected lane fails before Pest workers start and includes a scoped
 coverage.
 
 Do not put provisioning tests in `e2e-provider-incus`. Provisioning tests stay in
-`e2e-provision` and run only through `composer test:e2e:provision`.
+`e2e-provision` and run through `composer test:e2e:provision:incus`.
+`composer test:e2e:provision` is a human-only aggregate alias and must not be
+used by agents.
 
 ## Resource budgets
 
