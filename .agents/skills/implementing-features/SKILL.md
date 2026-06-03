@@ -148,26 +148,31 @@ pool is fully booked by another worktree, not a real failure.
 5. Follow TDD (see Test-Driven Development below): write or update failing Pest
    tests first, then implement.
 6. Implement the smallest working vertical slice to make the tests pass.
-7. Run focused in-memory and prepared-topology feature verification.
-8. Run artifact-backed feature verification when production artifact behavior
+7. When real topology behavior needs hands-on diagnosis before codifying the
+   final E2E assertion, use a disposable source/dev topology from this worktree.
+   Retained/live Incus topologies source-mount the current worktree after rsync
+   and are suitable for developing against real VM behavior. Release them when
+   finished, and turn findings into Pest E2E coverage.
+8. Run focused in-memory and prepared-topology feature verification.
+9. Run artifact-backed feature verification when production artifact behavior
    matters and that lane exists for the provider.
-9. Run provider provision gates only as final/nightly substrate verification
+10. Run provider provision gates only as final/nightly substrate verification
    when installer, host mutation, image, binary, or topology-preparation
    behavior changed.
-10. If PHP changed, run:
+11. If PHP changed, run:
 
    ```bash
    vendor/bin/pint --dirty --format agent
    ```
 
-11. Before reporting completion, run the project quality gate:
+12. Before reporting completion, run the project quality gate:
 
    ```bash
    composer quality-check
    ```
 
-12. Commit the verified worktree changes on the worktree branch.
-13. Merge the branch back into `main` from the primary `~/orbit` checkout,
+13. Commit the verified worktree changes on the worktree branch.
+14. Merge the branch back into `main` from the primary `~/orbit` checkout,
     remove the completed worktree/branch, and leave `~/orbit` on updated
     `main`. Preserve unrelated dirty files in `~/orbit`; if they overlap with
     the merge, stop for direction instead of discarding them.
@@ -186,6 +191,21 @@ Normal feature work follows a staged E2E model:
 - **Source/dev topology checks** for behavior that needs a live topology during
   iteration. Use source-mounted Docker feature tests or retained Incus dev
   topologies for fast diagnosis, then codify the finding in Pest.
+  - Incus: `composer e2e:incus -- --start --topology=<kind>` acquires a
+    retained disposable topology. `composer e2e:incus -- --live
+    --topology=<kind>` additionally mints a local operator identity and can
+    bring up a local WireGuard tunnel.
+  - Retained/live Incus topologies source-mount the initiating worktree at
+    `/home/orbit/orbit`. Remote Incus hosts rsync the current worktree to
+    `/tmp/orbit-e2e-sources/<worktree>-<hash>` before acquisition, then mount
+    that synced checkout. Node-local mutable Orbit state remains under
+    `/home/orbit/.config/orbit`.
+  - Use retained/live Incus topologies to develop and test against real VM
+    behavior before or while writing the durable E2E test. They are disposable
+    diagnosis loops, not standing live infrastructure and not proof by
+    themselves.
+  - Release retained topologies with `composer e2e:incus -- --stop --id=<id>`
+    or `composer e2e:incus -- --stop --all` when finished.
 - **Source-prepared feature E2E** via `composer test:e2e` or a provider lane
   (`composer test:e2e:docker` / `composer test:e2e:incus`). These lanes consume
   prepared topologies containing the current source and are the normal durable
