@@ -7,6 +7,7 @@ namespace App\E2E\Support;
 use App\Services\Php\PhpRuntimeCatalog;
 use App\Services\Runtime\OrbitCaddyContainer;
 use App\Services\WireGuard\WireGuardKeyGenerator;
+use Illuminate\Contracts\Process\ProcessResult;
 use RuntimeException;
 
 class IncusTopologyBuilder
@@ -721,6 +722,8 @@ class IncusTopologyBuilder
         $rolesToBake = [];
         $downstreamStatuses = [];
 
+        $rolesToPrepare = [];
+
         foreach (['dev', 'prod', 'agent'] as $role) {
             if (isset($resumedInstances[$role])) {
                 $instances[$role] = $resumedInstances[$role];
@@ -729,15 +732,18 @@ class IncusTopologyBuilder
                 continue;
             }
 
-            $instances[$role] = $this->launchBaseRole($role, $key, $kind);
+            $rolesToPrepare[] = $role;
             $rolesToBake[] = $role;
         }
+
+        $instances = [
+            ...$instances,
+            ...$this->timer->measure('prepared.downstream.prepare', fn (): array => $this->launchBaseRolesInParallel($rolesToPrepare, $key, $kind)),
+        ];
 
         $devIp = $this->timer->measure('dev.ipv4', fn (): string => $instances['dev']->waitForIpv4());
         $prodIp = $this->timer->measure('prod.ipv4', fn (): string => $instances['prod']->waitForIpv4());
         $agentIp = $this->timer->measure('agent.ipv4', fn (): string => $instances['agent']->waitForIpv4());
-
-        $this->timer->measure('prepared.dev.runtime-prerequisites', fn () => $this->installPreparedAppRuntimePrerequisites($instances['dev']));
 
         if ($rolesToBake !== []) {
             $downstreamStatuses = [
@@ -748,6 +754,7 @@ class IncusTopologyBuilder
                     $prodIp,
                     $agentIp,
                     $rolesToBake,
+                    fn (): mixed => $this->timer->measure('prepared.dev.runtime-prerequisites', fn () => $this->installPreparedAppRuntimePrerequisites($instances['dev'])),
                 )),
             ];
         }
@@ -824,6 +831,8 @@ class IncusTopologyBuilder
         $rolesToBake = [];
         $downstreamStatuses = [];
 
+        $rolesToPrepare = [];
+
         foreach (['dev', 'prod', 'agent'] as $role) {
             if (isset($resumedInstances[$role])) {
                 $instances[$role] = $resumedInstances[$role];
@@ -832,28 +841,49 @@ class IncusTopologyBuilder
                 continue;
             }
 
-            $instances[$role] = $this->launchBaseRole($role, $key, $kind);
+            $rolesToPrepare[] = $role;
             $rolesToBake[] = $role;
         }
+
+        $instances = [
+            ...$instances,
+            ...$this->timer->measure('prepared-websocket.downstream.prepare', fn (): array => $this->launchBaseRolesInParallel($rolesToPrepare, $key, $kind)),
+        ];
 
         $devIp = $this->timer->measure('dev.ipv4', fn (): string => $instances['dev']->waitForIpv4());
         $prodIp = $this->timer->measure('prod.ipv4', fn (): string => $instances['prod']->waitForIpv4());
         $agentIp = $this->timer->measure('agent.ipv4', fn (): string => $instances['agent']->waitForIpv4());
 
-        $this->timer->measure('prepared-websocket.dev.runtime-prerequisites', fn () => $this->installPreparedAppRuntimePrerequisites(
-            $instances['dev'],
-            includeGatewayImage: true,
-        ));
-
-        if ($rolesToBake !== []) {
+        if ($rolesToBake === [] && $resumeCheckpoints !== []) {
+            $this->timer->measure('prepared-websocket.dev.real-wireguard', fn () => $this->installRealWireGuard(array_intersect_key(
+                $instances,
+                array_flip(['operator', 'gateway', 'dev']),
+            )));
+            $this->timer->measure('prepared-websocket.dev.database-redis-seed', fn () => $this->seedAppdevDatabaseAndRedis($instances['gateway']));
+            $downstreamStatuses['websocket'] = $this->timer->measure('prepared-websocket.websocket.bake', fn (): int => $this->runPreparedWebSocketBake(
+                $instances['gateway'],
+                $devIp,
+            ));
+        } elseif ($rolesToBake !== []) {
             $downstreamStatuses = [
                 ...$downstreamStatuses,
-                ...$this->timer->measure('prepared-websocket.downstream.bake', fn (): array => $this->runPreparedDownstreamBakeInParallel(
+                ...$this->timer->measure('prepared-websocket.downstream.bake', fn (): array => $this->runPreparedDownstreamAndWebSocketBakeInParallel(
                     $instances['gateway'],
                     $devIp,
                     $prodIp,
                     $agentIp,
                     $rolesToBake,
+                    fn (): mixed => $this->timer->measure('prepared-websocket.dev.runtime-prerequisites', fn () => $this->installPreparedAppRuntimePrerequisites(
+                        $instances['dev'],
+                        includeGatewayImage: true,
+                    )),
+                    function () use ($instances): void {
+                        $this->timer->measure('prepared-websocket.dev.real-wireguard', fn () => $this->installRealWireGuard(array_intersect_key(
+                            $instances,
+                            array_flip(['operator', 'gateway', 'dev']),
+                        )));
+                        $this->timer->measure('prepared-websocket.dev.database-redis-seed', fn () => $this->seedAppdevDatabaseAndRedis($instances['gateway']));
+                    },
                 )),
             ];
         }
@@ -864,14 +894,25 @@ class IncusTopologyBuilder
         );
         $this->timer->measure('prepared-websocket.real-wireguard', fn () => $this->installRealWireGuard($instances));
         $this->timer->measure('prepared-websocket.gateway.api.ready-after-downstream-bake', fn () => E2EGatewayApi::waitForGatewayApi($instances['operator'], $this->host->config->operatorUser, $key));
-        $this->timer->measure('prepared-websocket.dev.database-redis-seed', fn () => $this->seedAppdevDatabaseAndRedis($instances['gateway']));
         $this->timer->measure('prepared-websocket.e2e-deps', fn () => $this->installE2EBaseDependencies($instances));
-        $this->timer->measure('prepared-websocket.websocket.bake', fn () => $this->runPreparedWebSocketBake(
-            $instances['gateway'],
-            $devIp,
-        ));
 
         return $instances;
+    }
+
+    private function runPreparedWebSocketBake(IncusInstance $gateway, string $devHost): int
+    {
+        $webSocketCommand = E2ECommand::gatewayArtisanCommand(implode(' ', [
+            'orbit:internal:bake-websocket-node',
+            escapeshellarg('app-dev-1'),
+            '--host='.escapeshellarg($devHost),
+            '--wireguard-address='.escapeshellarg(self::DevWireGuardIp),
+            '--gateway-endpoint='.escapeshellarg(self::GatewayWireGuardIp),
+            '--user='.escapeshellarg($this->host->config->bootstrapUser),
+            '--redis-node='.escapeshellarg('app-dev-1'),
+            '--converge-runtime',
+        ]));
+
+        return $gateway->exec($webSocketCommand, timeoutSeconds: 900)->successful() ? 0 : 1;
     }
 
     /**
@@ -1218,6 +1259,195 @@ BASH,
         return $instance;
     }
 
+    /**
+     * @param  list<string>  $roles
+     * @return array<string, IncusInstance>
+     */
+    private function launchBaseRolesInParallel(array $roles, SshKeyPair $key, E2ETopologyKind $templateKind): array
+    {
+        $roles = array_values(array_intersect(['dev', 'prod', 'agent'], $roles));
+
+        if ($roles === []) {
+            return [];
+        }
+
+        $caseLines = [];
+        $startLines = [];
+        $statusLines = [];
+        $waitLines = [];
+        $echoLines = [];
+
+        foreach ($roles as $role) {
+            $name = IncusTopologyTemplate::templateName($templateKind, $role);
+            $suffix = strtoupper(str_replace('-', '_', $role));
+            $pid = "PID_PREPARE_{$suffix}";
+            $status = "STATUS_PREPARE_{$suffix}";
+            $logPath = "/tmp/orbit-e2e-prepare-{$role}.log";
+
+            $caseLines[] = sprintf(
+                '%s) %s ;;',
+                escapeshellarg($role),
+                $this->launchTopologyInstanceCommand($name),
+            );
+            $startLines[] = sprintf('prepare_role %s %s > %s 2>&1 & %s=$!;', escapeshellarg($role), escapeshellarg($name), escapeshellarg($logPath), $pid);
+            $statusLines[] = "{$status}=0;";
+            $waitLines[] = sprintf(
+                'wait "$%1$s" || { %2$s=$?; echo %3$s >&2; cat %4$s >&2 || true; if [ "$STATUS" -eq 0 ]; then STATUS=$%2$s; fi; };',
+                $pid,
+                $status,
+                escapeshellarg("prepare {$role} failed"),
+                escapeshellarg($logPath),
+            );
+            $echoLines[] = sprintf('echo "__orbit_prepare_status %s $%s";', $role, $status);
+        }
+
+        $script = sprintf(
+            <<<'BASH'
+set -euo pipefail;
+
+bootstrap_user=%s
+private_key_path=%s
+public_key_path=%s
+timeout_seconds=%d
+
+wait_for_agent() {
+    local name="$1"
+    local deadline=$((SECONDS + timeout_seconds))
+
+    until incus exec "$name" -- true >/dev/null 2>&1; do
+        if [ "$SECONDS" -ge "$deadline" ]; then
+            echo "Incus agent never became ready on ${name}." >&2
+            return 1
+        fi
+
+        sleep 2
+    done
+}
+
+wait_for_cloud_init() {
+    local name="$1"
+    local deadline=$((SECONDS + timeout_seconds))
+    local output=''
+
+    while [ "$SECONDS" -lt "$deadline" ]; do
+        output="$(incus exec "$name" -- cloud-init status 2>&1 || true)"
+
+        if printf '%%s' "$output" | grep -Eq 'status: (degraded )?done'; then
+            return 0
+        fi
+
+        sleep 3
+    done
+
+    echo "Cloud-init did not finish on [${name}] within ${timeout_seconds}s." >&2
+    printf '%%s\n' "$output" >&2
+    return 1
+}
+
+authorize_ssh() {
+    local name="$1"
+
+    incus exec "$name" -- sh -lc "install -d -m 700 -o ${bootstrap_user} -g ${bootstrap_user} /home/${bootstrap_user}/.ssh"
+    incus file push "$public_key_path" "${name}/home/${bootstrap_user}/.ssh/authorized_keys"
+    incus exec "$name" -- sh -lc "chown ${bootstrap_user}:${bootstrap_user} /home/${bootstrap_user}/.ssh/authorized_keys && chmod 600 /home/${bootstrap_user}/.ssh/authorized_keys && usermod -p '*' ${bootstrap_user} && (systemctl start ssh || systemctl start sshd || true)"
+}
+
+instance_ipv4() {
+    local name="$1"
+
+    incus list --format csv -c n,4 \
+        | awk -F, -v name="$name" '$1 == name {print $2}' \
+        | grep -Ev '\((wg-orbit|docker0|br-|veth|wg0|lo)' \
+        | grep -Eo '([0-9]{1,3}\.){3}[0-9]{1,3}' \
+        | head -n 1 \
+        || true
+}
+
+wait_for_ssh() {
+    local name="$1"
+    local deadline=$((SECONDS + timeout_seconds))
+    local ipv4=''
+
+    while [ "$SECONDS" -lt "$deadline" ]; do
+        ipv4="$(instance_ipv4 "$name")"
+
+        if [ -n "$ipv4" ] && ssh -i "$private_key_path" -o BatchMode=yes -o ConnectTimeout=5 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null "${bootstrap_user}@${ipv4}" 'test "$(uname -s)" = Linux && test -r /etc/os-release' >/dev/null 2>&1; then
+            return 0
+        fi
+
+        sleep 3
+    done
+
+    echo "SSH never became ready on ${name}." >&2
+    return 1
+}
+
+prepare_role() {
+    local role="$1"
+    local name="$2"
+
+    case "$role" in
+%s
+    *) echo "Unsupported prepared role: ${role}" >&2; return 1 ;;
+    esac
+
+    wait_for_agent "$name"
+    wait_for_cloud_init "$name"
+    wait_for_agent "$name"
+    authorize_ssh "$name"
+    wait_for_ssh "$name"
+}
+
+%s
+
+STATUS=0;
+%s
+%s
+%s
+exit "$STATUS";
+BASH,
+            escapeshellarg($this->host->config->bootstrapUser),
+            escapeshellarg($key->privateKeyPath),
+            escapeshellarg($key->publicKeyPath),
+            $this->host->config->timeoutSeconds,
+            implode("\n", $caseLines),
+            implode("\n", $startLines),
+            implode("\n", $statusLines),
+            implode("\n", $waitLines),
+            implode("\n", $echoLines),
+        );
+        $scriptPath = '/tmp/orbit-e2e-prepared-downstream-roles.sh';
+        $scriptPathArgument = escapeshellarg($scriptPath);
+
+        $writeResult = $this->host->run(
+            "cat > {$scriptPathArgument} <<'BASH'\n{$script}\nBASH\nchmod 755 {$scriptPathArgument}",
+            timeoutSeconds: 30,
+        );
+
+        if (! $writeResult->successful()) {
+            throw new RuntimeException("Could not write prepared downstream role script: {$writeResult->errorOutput()}");
+        }
+
+        $result = $this->host->run($scriptPathArgument, timeoutSeconds: max(900, $this->host->config->timeoutSeconds * 4));
+        $statuses = $this->parsePreparedRoleStatuses($result->output()."\n".$result->errorOutput(), $roles, 'prepare');
+        $failedRoles = array_keys(array_filter(
+            $statuses,
+            fn (int $status): bool => $status !== 0,
+        ));
+
+        if ($failedRoles !== []) {
+            throw new RuntimeException('Could not prepare prepared downstream roles: '.implode(', ', $failedRoles));
+        }
+
+        $instances = [];
+
+        foreach ($roles as $role) {
+            $instances[$role] = new IncusInstance($this->host, IncusTopologyTemplate::templateName($templateKind, $role));
+        }
+
+        return $instances;
+    }
+
     private function useWireGuardGatewayUrl(IncusInstance $operator, SshKeyPair $key): void
     {
         $gatewayUrl = var_export('https://'.self::GatewayWireGuardIp, true);
@@ -1362,6 +1592,7 @@ PHP;
         string $prodHost,
         string $agentHost,
         array $roles = ['dev', 'prod', 'agent'],
+        ?callable $beforeDevelopmentBake = null,
     ): array {
         $roles = array_values(array_intersect(['dev', 'prod', 'agent'], $roles));
 
@@ -1418,35 +1649,77 @@ PHP;
             'agent' => 'agent',
         ];
         $startLines = [];
+        $developmentStartLines = [];
         $statusLines = [];
         $waitLines = [];
+        $developmentWaitLines = [];
         $echoLines = [];
+        $developmentEchoLines = [];
+        $deferDevelopmentBake = $beforeDevelopmentBake !== null && in_array('dev', $roles, true);
 
         foreach ($commands as $role => $command) {
             $suffix = strtoupper(str_replace('-', '_', $role));
             $pid = "PID_BAKE_{$suffix}";
             $status = "STATUS_{$suffix}";
             $logPath = "/tmp/orbit-e2e-bake-{$role}.log";
-
-            $startLines[] = sprintf('(%s) > %s 2>&1 & %s=$!;', $command, escapeshellarg($logPath), $pid);
-            $statusLines[] = "{$status}=0;";
-            $waitLines[] = sprintf(
+            $startLine = sprintf('(%s) > %s 2>&1 & %s=$!;', $command, escapeshellarg($logPath), $pid);
+            $waitLine = sprintf(
                 'wait "$%1$s" || { %2$s=$?; echo %3$s >&2; cat %4$s >&2 || true; if [ "$STATUS" -eq 0 ]; then STATUS=$%2$s; fi; };',
                 $pid,
                 $status,
                 escapeshellarg("bake {$labels[$role]} failed"),
                 escapeshellarg($logPath),
             );
-            $echoLines[] = sprintf('echo "__orbit_bake_status %s $%s";', $role, $status);
+            $echoLine = sprintf('echo "__orbit_bake_status %s $%s";', $role, $status);
+
+            $statusLines[] = "{$status}=0;";
+
+            if ($deferDevelopmentBake && $role === 'dev') {
+                $developmentStartLines[] = $startLine;
+                $developmentWaitLines[] = $waitLine;
+                $developmentEchoLines[] = $echoLine;
+
+                continue;
+            }
+
+            $startLines[] = $startLine;
+            $waitLines[] = $waitLine;
+            $echoLines[] = $echoLine;
+        }
+
+        $devReadyMarkerPath = '/tmp/orbit-e2e-prepared-dev-ready';
+        $developmentLines = [];
+
+        if ($deferDevelopmentBake) {
+            $developmentLines = [
+                'DEV_READY_MARKER='.escapeshellarg($devReadyMarkerPath).';',
+                'DEV_READY_DEADLINE=$(($(date +%s) + 900));',
+                'while [ ! -f "$DEV_READY_MARKER" ]; do',
+                '    if [ "$(date +%s)" -ge "$DEV_READY_DEADLINE" ]; then',
+                '        STATUS_DEV=1;',
+                '        echo '.escapeshellarg('timed out waiting for app-dev runtime prerequisites before bake').' >&2;',
+                '        if [ "$STATUS" -eq 0 ]; then STATUS=$STATUS_DEV; fi;',
+                '        break;',
+                '    fi;',
+                '    sleep 1;',
+                'done;',
+                'if [ "$STATUS_DEV" -eq 0 ]; then',
+                ...array_map(fn (string $line): string => "    {$line}", $developmentStartLines),
+                ...array_map(fn (string $line): string => "    {$line}", $developmentWaitLines),
+                'fi;',
+                ...$developmentEchoLines,
+            ];
         }
 
         $script = implode("\n", [
+            '#!/usr/bin/env bash',
             'set -euo pipefail;',
             'cd /home/orbit/orbit;',
             ...$startLines,
             '',
             'STATUS=0;',
             ...$statusLines,
+            ...$developmentLines,
             ...$waitLines,
             ...$echoLines,
             'exit "$STATUS";',
@@ -1461,8 +1734,78 @@ PHP;
             timeoutSeconds: 30,
         );
 
+        if ($deferDevelopmentBake) {
+            $donePath = '/tmp/orbit-e2e-prepared-bake.done';
+            $exitPath = '/tmp/orbit-e2e-prepared-bake.exit';
+            $pidPath = '/tmp/orbit-e2e-prepared-bake.pid';
+            $outputPath = '/tmp/orbit-e2e-prepared-bake.out';
+            $errorPath = '/tmp/orbit-e2e-prepared-bake.err';
+            $runner = sprintf(
+                'set +e; bash %s > %s 2> %s; code=$?; echo "$code" > %s; touch %s; exit "$code"',
+                $scriptPathArgument,
+                escapeshellarg($outputPath),
+                escapeshellarg($errorPath),
+                escapeshellarg($exitPath),
+                escapeshellarg($donePath),
+            );
+
+            E2ECommand::exec(
+                $gateway,
+                sprintf(
+                    'rm -f %s %s %s %s %s %s; nohup sh -lc %s >/dev/null 2>&1 & echo $! > %s',
+                    escapeshellarg($donePath),
+                    escapeshellarg($exitPath),
+                    escapeshellarg($pidPath),
+                    escapeshellarg($outputPath),
+                    escapeshellarg($errorPath),
+                    escapeshellarg($devReadyMarkerPath),
+                    escapeshellarg($runner),
+                    escapeshellarg($pidPath),
+                ),
+                'Could not start prepared downstream bake script',
+                timeoutSeconds: 30,
+            );
+
+            $beforeDevelopmentBake();
+
+            E2ECommand::exec(
+                $gateway,
+                'touch '.escapeshellarg($devReadyMarkerPath),
+                'Could not release prepared app-dev bake after runtime prerequisites',
+                timeoutSeconds: 30,
+            );
+
+            $result = $gateway->exec(sprintf(
+                <<<'BASH'
+deadline=$(($(date +%%s) + 900))
+while [ ! -f %s ]; do
+    if [ "$(date +%%s)" -ge "$deadline" ]; then
+        echo "prepared downstream bake did not finish" >&2
+        cat %s >&2 2>/dev/null || true
+        cat %s >&2 2>/dev/null || true
+        exit 1
+    fi
+
+    sleep 2
+done
+
+cat %s 2>/dev/null || true
+cat %s >&2 2>/dev/null || true
+exit "$(cat %s 2>/dev/null || echo 1)"
+BASH,
+                escapeshellarg($donePath),
+                escapeshellarg($outputPath),
+                escapeshellarg($errorPath),
+                escapeshellarg($outputPath),
+                escapeshellarg($errorPath),
+                escapeshellarg($exitPath),
+            ), timeoutSeconds: 930);
+
+            return $this->parsePreparedBakeStatuses($result->output()."\n".$result->errorOutput(), $roles);
+        }
+
         $result = $gateway->exec(
-            $scriptPathArgument,
+            'bash '.$scriptPathArgument,
             timeoutSeconds: 900,
         );
 
@@ -1479,11 +1822,354 @@ PHP;
      * @param  list<string>  $roles
      * @return array<string, int>
      */
+    private function runPreparedDownstreamAndWebSocketBakeInParallel(
+        IncusInstance $gateway,
+        string $devHost,
+        string $prodHost,
+        string $agentHost,
+        array $roles = ['dev', 'prod', 'agent'],
+        ?callable $beforeDevelopmentBake = null,
+        ?callable $afterDevelopmentBake = null,
+    ): array {
+        $roles = array_values(array_intersect(['dev', 'prod', 'agent'], $roles));
+
+        if ($roles === []) {
+            return [];
+        }
+
+        $devCommand = E2ECommand::gatewayArtisanCommand(implode(' ', [
+            'orbit:internal:bake-app-node',
+            escapeshellarg('app-dev-1'),
+            '--role=app-dev',
+            '--host='.escapeshellarg($devHost),
+            '--wireguard-address='.escapeshellarg(self::DevWireGuardIp),
+            '--gateway-endpoint='.escapeshellarg(self::GatewayWireGuardIp),
+            '--user='.escapeshellarg($this->host->config->bootstrapUser),
+            '--tld='.escapeshellarg('test'),
+        ]));
+        $prodIngressCommand = E2ECommand::gatewayArtisanCommand(implode(' ', [
+            'orbit:internal:bake-ingress-node',
+            escapeshellarg('app-prod-1'),
+            '--host='.escapeshellarg($prodHost),
+            '--wireguard-address='.escapeshellarg(self::ProdWireGuardIp),
+            '--gateway-endpoint='.escapeshellarg(self::GatewayWireGuardIp),
+            '--user='.escapeshellarg($this->host->config->bootstrapUser),
+        ]));
+        $prodAppCommand = E2ECommand::gatewayArtisanCommand(implode(' ', [
+            'orbit:internal:bake-app-node',
+            escapeshellarg('app-prod-1'),
+            '--role=app-prod',
+            '--host='.escapeshellarg($prodHost),
+            '--wireguard-address='.escapeshellarg(self::ProdWireGuardIp),
+            '--gateway-endpoint='.escapeshellarg(self::GatewayWireGuardIp),
+            '--user='.escapeshellarg($this->host->config->bootstrapUser),
+            '--ingress-node='.escapeshellarg('app-prod-1'),
+        ]));
+        $prodCommand = "{$prodIngressCommand} && {$prodAppCommand}";
+        $agentCommand = E2ECommand::gatewayArtisanCommand(implode(' ', [
+            'orbit:internal:bake-agent-node',
+            escapeshellarg('agent-1'),
+            '--host='.escapeshellarg($agentHost),
+            '--wireguard-address='.escapeshellarg(self::AgentWireGuardIp),
+            '--gateway-endpoint='.escapeshellarg(self::GatewayWireGuardIp),
+            '--user='.escapeshellarg($this->host->config->bootstrapUser),
+            '--tld='.escapeshellarg('agent'),
+        ]));
+        $webSocketCommand = E2ECommand::gatewayArtisanCommand(implode(' ', [
+            'orbit:internal:bake-websocket-node',
+            escapeshellarg('app-dev-1'),
+            '--host='.escapeshellarg($devHost),
+            '--wireguard-address='.escapeshellarg(self::DevWireGuardIp),
+            '--gateway-endpoint='.escapeshellarg(self::GatewayWireGuardIp),
+            '--user='.escapeshellarg($this->host->config->bootstrapUser),
+            '--redis-node='.escapeshellarg('app-dev-1'),
+            '--converge-runtime',
+        ]));
+        $commands = array_filter([
+            'dev' => $devCommand,
+            'prod' => $prodCommand,
+            'agent' => $agentCommand,
+        ], fn (string $role): bool => in_array($role, $roles, true), ARRAY_FILTER_USE_KEY);
+        $labels = [
+            'dev' => 'app-dev',
+            'prod' => 'app-prod',
+            'agent' => 'agent',
+        ];
+        $startLines = [];
+        $developmentStartLines = [];
+        $statusLines = [];
+        $waitDevLines = [];
+        $waitSiblingLines = [];
+
+        foreach ($commands as $role => $command) {
+            $suffix = strtoupper(str_replace('-', '_', $role));
+            $pid = "PID_BAKE_{$suffix}";
+            $status = "STATUS_{$suffix}";
+            $logPath = "/tmp/orbit-e2e-bake-{$role}.log";
+            $waitLine = sprintf(
+                'wait "$%1$s" || { %2$s=$?; echo %3$s >&2; cat %4$s >&2 || true; if [ "$STATUS" -eq 0 ]; then STATUS=$%2$s; fi; };',
+                $pid,
+                $status,
+                escapeshellarg("bake {$labels[$role]} failed"),
+                escapeshellarg($logPath),
+            );
+
+            $startLine = sprintf('(%s) > %s 2>&1 & %s=$!;', $command, escapeshellarg($logPath), $pid);
+            $statusLines[] = "{$status}=0;";
+            $recordLine = sprintf('record_status %s "$%s";', escapeshellarg($role), $status);
+
+            if ($role === 'dev') {
+                $developmentStartLines[] = $startLine;
+                $waitDevLines[] = $waitLine;
+                $waitDevLines[] = $recordLine;
+
+                continue;
+            }
+
+            $startLines[] = $startLine;
+            $waitSiblingLines[] = $waitLine;
+            $waitSiblingLines[] = $recordLine;
+        }
+
+        $webSocketLines = [];
+        $developmentLines = [];
+        $rolesWithWebSocket = $roles;
+
+        if (in_array('dev', $roles, true)) {
+            $rolesWithWebSocket[] = 'websocket';
+            $developmentLines = [
+                'DEV_READY_DEADLINE=$(($(date +%s) + 900));',
+                'while [ ! -f "$DEV_READY_MARKER" ]; do',
+                '    if [ "$(date +%s)" -ge "$DEV_READY_DEADLINE" ]; then',
+                '        STATUS_DEV=1;',
+                '        echo '.escapeshellarg('timed out waiting for app-dev runtime prerequisites before bake').' >&2;',
+                '        if [ "$STATUS" -eq 0 ]; then STATUS=$STATUS_DEV; fi;',
+                '        break;',
+                '    fi;',
+                '    sleep 1;',
+                'done;',
+                'if [ "$STATUS_DEV" -eq 0 ]; then',
+                ...array_map(fn (string $line): string => "    {$line}", $developmentStartLines),
+                ...array_map(fn (string $line): string => "    {$line}", $waitDevLines),
+                'else',
+                '    record_status dev "$STATUS_DEV";',
+                'fi;',
+            ];
+            $webSocketLines = [
+                'STATUS_WEBSOCKET=0;',
+                'if [ "$STATUS_DEV" -eq 0 ]; then',
+                '    SEED_DEADLINE=$(($(date +%s) + 900));',
+                '    until [ -f "$SEED_MARKER" ]; do',
+                '        if [ "$(date +%s)" -ge "$SEED_DEADLINE" ]; then',
+                '            STATUS_WEBSOCKET=1;',
+                '            echo '.escapeshellarg('timed out waiting for app-dev registry seed before websocket bake').' >&2;',
+                '            if [ "$STATUS" -eq 0 ]; then STATUS=$STATUS_WEBSOCKET; fi;',
+                '            break;',
+                '        fi;',
+                '        sleep 1;',
+                '    done;',
+                '    if [ "$STATUS_WEBSOCKET" -eq 0 ]; then',
+                sprintf('        (%s) > %s 2>&1 & PID_BAKE_WEBSOCKET=$!;', $webSocketCommand, escapeshellarg('/tmp/orbit-e2e-bake-websocket.log')),
+                '        wait "$PID_BAKE_WEBSOCKET" || { STATUS_WEBSOCKET=$?; echo '.escapeshellarg('bake websocket failed').' >&2; cat '.escapeshellarg('/tmp/orbit-e2e-bake-websocket.log').' >&2 || true; if [ "$STATUS" -eq 0 ]; then STATUS=$STATUS_WEBSOCKET; fi; };',
+                '    fi;',
+                'else',
+                '    STATUS_WEBSOCKET=1;',
+                'fi;',
+                'record_status websocket "$STATUS_WEBSOCKET";',
+            ];
+        }
+
+        $statusPath = '/tmp/orbit-e2e-prepared-bake.status';
+        $donePath = '/tmp/orbit-e2e-prepared-bake.done';
+        $exitPath = '/tmp/orbit-e2e-prepared-bake.exit';
+        $pidPath = '/tmp/orbit-e2e-prepared-bake.pid';
+        $outputPath = '/tmp/orbit-e2e-prepared-bake.out';
+        $errorPath = '/tmp/orbit-e2e-prepared-bake.err';
+        $seedMarkerPath = '/tmp/orbit-e2e-dev-registry-seeded';
+        $devReadyMarkerPath = '/tmp/orbit-e2e-prepared-dev-ready';
+
+        $script = implode("\n", [
+            '#!/usr/bin/env bash',
+            'set -euo pipefail;',
+            'cd /home/orbit/orbit;',
+            'STATUS_FILE='.escapeshellarg($statusPath).';',
+            'SEED_MARKER='.escapeshellarg($seedMarkerPath).';',
+            'DEV_READY_MARKER='.escapeshellarg($devReadyMarkerPath).';',
+            ': > "$STATUS_FILE";',
+            'record_status() { echo "__orbit_bake_status $1 $2" | tee -a "$STATUS_FILE"; }',
+            ...$startLines,
+            '',
+            'STATUS=0;',
+            ...$statusLines,
+            ...$developmentLines,
+            ...$webSocketLines,
+            ...$waitSiblingLines,
+            'exit "$STATUS";',
+        ]);
+        $scriptPath = '/tmp/orbit-e2e-prepared-bake.sh';
+        $scriptPathArgument = escapeshellarg($scriptPath);
+
+        E2ECommand::exec(
+            $gateway,
+            "cat > {$scriptPathArgument} <<'BASH'\n{$script}\nBASH\nchmod 755 {$scriptPathArgument}\nchown orbit:orbit {$scriptPathArgument}",
+            'Could not write prepared downstream websocket bake script',
+            timeoutSeconds: 30,
+        );
+
+        $runner = sprintf(
+            'set +e; bash %s > %s 2> %s; code=$?; echo "$code" > %s; touch %s; exit "$code"',
+            $scriptPathArgument,
+            escapeshellarg($outputPath),
+            escapeshellarg($errorPath),
+            escapeshellarg($exitPath),
+            escapeshellarg($donePath),
+        );
+        E2ECommand::exec(
+            $gateway,
+            sprintf(
+                'rm -f %s %s %s %s %s %s %s %s; nohup sh -lc %s >/dev/null 2>&1 & echo $! > %s',
+                escapeshellarg($statusPath),
+                escapeshellarg($donePath),
+                escapeshellarg($exitPath),
+                escapeshellarg($pidPath),
+                escapeshellarg($outputPath),
+                escapeshellarg($errorPath),
+                escapeshellarg($seedMarkerPath),
+                escapeshellarg($devReadyMarkerPath),
+                escapeshellarg($runner),
+                escapeshellarg($pidPath),
+            ),
+            'Could not start prepared downstream websocket bake script',
+            timeoutSeconds: 30,
+        );
+
+        if (in_array('dev', $roles, true)) {
+            if ($beforeDevelopmentBake !== null) {
+                $beforeDevelopmentBake();
+            }
+
+            E2ECommand::exec(
+                $gateway,
+                'touch '.escapeshellarg($devReadyMarkerPath),
+                'Could not release prepared app-dev bake after runtime prerequisites',
+                timeoutSeconds: 30,
+            );
+
+            $developmentBakeStatus = $this->waitForPreparedBakeRoleStatus($gateway, 'dev', $statusPath, $donePath, $outputPath, $errorPath);
+
+            if ($developmentBakeStatus === 0) {
+                if ($afterDevelopmentBake !== null) {
+                    $afterDevelopmentBake();
+                }
+
+                E2ECommand::exec(
+                    $gateway,
+                    'touch '.escapeshellarg($seedMarkerPath),
+                    'Could not release prepared websocket bake after app-dev seed',
+                    timeoutSeconds: 30,
+                );
+            }
+        }
+
+        $result = $this->timer->measure(
+            'prepared-websocket.websocket.bake',
+            fn (): ProcessResult => $gateway->exec(sprintf(
+                <<<'BASH'
+deadline=$(($(date +%%s) + 900))
+while [ ! -f %s ]; do
+    if [ "$(date +%%s)" -ge "$deadline" ]; then
+        echo "prepared downstream websocket bake did not finish" >&2
+        cat %s >&2 2>/dev/null || true
+        cat %s >&2 2>/dev/null || true
+        exit 1
+    fi
+
+    sleep 2
+done
+
+cat %s 2>/dev/null || true
+cat %s 2>/dev/null || true
+cat %s >&2 2>/dev/null || true
+exit "$(cat %s 2>/dev/null || echo 1)"
+BASH,
+                escapeshellarg($donePath),
+                escapeshellarg($outputPath),
+                escapeshellarg($errorPath),
+                escapeshellarg($statusPath),
+                escapeshellarg($outputPath),
+                escapeshellarg($errorPath),
+                escapeshellarg($exitPath),
+            ), timeoutSeconds: 930),
+        );
+
+        return $this->parsePreparedBakeStatuses($result->output()."\n".$result->errorOutput(), $rolesWithWebSocket);
+    }
+
+    private function waitForPreparedBakeRoleStatus(
+        IncusInstance $gateway,
+        string $role,
+        string $statusPath,
+        string $donePath,
+        string $outputPath,
+        string $errorPath,
+    ): int {
+        $result = $gateway->exec(sprintf(
+            <<<'BASH'
+deadline=$(($(date +%%s) + 900))
+while true; do
+    if grep -E %s %s 2>/dev/null; then
+        exit 0
+    fi
+
+    if [ -f %s ]; then
+        cat %s 2>/dev/null || true
+        cat %s >&2 2>/dev/null || true
+        exit 1
+    fi
+
+    if [ "$(date +%%s)" -ge "$deadline" ]; then
+        echo "timed out waiting for prepared bake status [%s]" >&2
+        cat %s >&2 2>/dev/null || true
+        cat %s >&2 2>/dev/null || true
+        exit 1
+    fi
+
+    sleep 1
+done
+BASH,
+            escapeshellarg("^__orbit_bake_status {$role} "),
+            escapeshellarg($statusPath),
+            escapeshellarg($donePath),
+            escapeshellarg($outputPath),
+            escapeshellarg($errorPath),
+            $role,
+            escapeshellarg($outputPath),
+            escapeshellarg($errorPath),
+        ), timeoutSeconds: 930);
+
+        $statuses = $this->parsePreparedBakeStatuses($result->output()."\n".$result->errorOutput(), [$role]);
+
+        return $statuses[$role] ?? 1;
+    }
+
+    /**
+     * @param  list<string>  $roles
+     * @return array<string, int>
+     */
     private function parsePreparedBakeStatuses(string $output, array $roles): array
+    {
+        return $this->parsePreparedRoleStatuses($output, $roles, 'bake');
+    }
+
+    /**
+     * @param  list<string>  $roles
+     * @return array<string, int>
+     */
+    private function parsePreparedRoleStatuses(string $output, array $roles, string $phase): array
     {
         $statuses = array_fill_keys($roles, 1);
 
-        if (preg_match_all('/__orbit_bake_status\s+([a-z-]+)\s+(\d+)/', $output, $matches, PREG_SET_ORDER) !== false) {
+        if (preg_match_all('/__orbit_'.$phase.'_status\s+([a-z-]+)\s+(\d+)/', $output, $matches, PREG_SET_ORDER) !== false) {
             foreach ($matches as $match) {
                 $role = $match[1];
 
@@ -1590,27 +2276,6 @@ BASH;
             $gateway,
             $scriptPathArgument,
             'Could not bake prepared dedicated ingress nodes in parallel',
-            timeoutSeconds: 900,
-        );
-    }
-
-    private function runPreparedWebSocketBake(IncusInstance $gateway, string $devHost): void
-    {
-        $command = E2ECommand::gatewayArtisanCommand(implode(' ', [
-            'orbit:internal:bake-websocket-node',
-            escapeshellarg('app-dev-1'),
-            '--host='.escapeshellarg($devHost),
-            '--wireguard-address='.escapeshellarg(self::DevWireGuardIp),
-            '--gateway-endpoint='.escapeshellarg(self::GatewayWireGuardIp),
-            '--user='.escapeshellarg($this->host->config->bootstrapUser),
-            '--redis-node='.escapeshellarg('app-dev-1'),
-            '--converge-runtime',
-        ]));
-
-        E2ECommand::exec(
-            $gateway,
-            $command,
-            'Could not bake prepared websocket node',
             timeoutSeconds: 900,
         );
     }
@@ -1885,7 +2550,12 @@ PHP;
         $manifest = [];
         $snapshot = IncusTopologyTemplate::snapshotName($kind);
 
-        foreach ($instances as $role => $instance) {
+        foreach (IncusTopologyTemplate::rolesFor($kind) as $role) {
+            if (! isset($instances[$role])) {
+                continue;
+            }
+
+            $instance = $instances[$role];
             $name = $instance->name();
 
             $this->timer->measure("finalize.clear-known-hosts.{$role}", fn () => $this->clearKnownHosts($instance));
@@ -2222,5 +2892,25 @@ PHP;
         if (! $result->successful()) {
             throw new RuntimeException("Could not launch {$target} from {$sourceImageAlias}: {$result->errorOutput()}");
         }
+    }
+
+    private function launchTopologyInstanceCommand(string $name): string
+    {
+        $parts = [
+            'incus launch',
+            escapeshellarg($this->host->config->baseImage),
+            escapeshellarg($name),
+            '--vm',
+            sprintf(
+                '--config=limits.cpu=%s --config=limits.memory=%s --device root,size=%s',
+                escapeshellarg($this->host->config->topologyCpus),
+                escapeshellarg($this->host->config->topologyMemory),
+                escapeshellarg($this->host->config->topologyRootSize),
+            ),
+            $this->host->storagePoolArgument(),
+            '>/dev/null',
+        ];
+
+        return implode(' ', array_filter($parts));
     }
 }
