@@ -79,7 +79,7 @@ class BakeAppNodeCommand extends Command
                 throw new RuntimeException('Only production app nodes can reference ingress.');
             }
 
-            $settings['ingress_node_id'] = Node::query()
+            $ingressNodeId = Node::query()
                 ->where('name', $ingressNode)
                 ->whereHas('roleAssignments', fn ($query) => $query
                     ->where('role', NodeRoleName::Ingress->value)
@@ -87,10 +87,14 @@ class BakeAppNodeCommand extends Command
                 ->value('id')
                 ?? throw new RuntimeException("Active ingress node [{$ingressNode}] was not found.");
 
-            NodeRoleAssignment::query()
-                ->where('node_id', $nodeId)
-                ->where('role', NodeRoleName::Ingress->value)
-                ->delete();
+            $settings['ingress_node_id'] = $ingressNodeId;
+
+            if ($ingressNodeId !== $nodeId) {
+                NodeRoleAssignment::query()
+                    ->where('node_id', $nodeId)
+                    ->where('role', NodeRoleName::Ingress->value)
+                    ->delete();
+            }
         }
 
         NodeRoleAssignment::query()->updateOrCreate(

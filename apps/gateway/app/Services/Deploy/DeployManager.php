@@ -339,7 +339,7 @@ final readonly class DeployManager
         $envPrefix = '';
 
         foreach ($this->environment($context) as $key => $value) {
-            $envPrefix .= escapeshellarg("{$key}={$value}").' ';
+            $envPrefix .= "{$key}=".escapeshellarg($value).' ';
         }
 
         $inner = 'cd '.escapeshellarg($appPath)

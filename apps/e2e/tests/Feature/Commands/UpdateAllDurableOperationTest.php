@@ -38,6 +38,17 @@ it('follows a durable update all operation from an operator through gateway even
             ? "http://gateway:{$port}"
             : 'http://'.$topology->lease()->gatewayApiIp().":{$port}";
         $localInstallRoot = '/tmp/orbit-update-all-local';
+        $localBinaryPath = '/tmp/orbit-update-all-binary';
+
+        $topology->ssh(
+            'operator',
+            sprintf(
+                "cat > %s <<'SH'\n#!/usr/bin/env bash\nprintf 'orbit e2e-durable\\n'\nSH\nchmod 0755 %s",
+                escapeshellarg($localBinaryPath),
+                escapeshellarg($localBinaryPath),
+            ),
+            timeoutSeconds: 60,
+        );
 
         $result = $topology->ssh(
             'operator',
@@ -48,7 +59,7 @@ it('follows a durable update all operation from an operator through gateway even
                 'ORBIT_GATEWAY_URL='.escapeshellarg($gatewayUrl),
                 'ORBIT_INSTALL_PATH='.escapeshellarg($localInstallRoot),
                 'ORBIT_BIN_PATH='.escapeshellarg("{$localInstallRoot}/orbit"),
-                'ORBIT_BINARY_URL=file:///usr/local/bin/orbit',
+                'ORBIT_BINARY_URL=file://'.$localBinaryPath,
                 'ORBIT_GATEWAY_OPERATION_FOLLOW_RECONNECT_SLEEP_MS=0',
                 'ORBIT_GATEWAY_OPERATION_FOLLOW_MAX_EMPTY_REPLAYS=3',
                 'orbit update:all --json',

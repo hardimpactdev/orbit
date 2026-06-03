@@ -78,6 +78,7 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
             $instances = $this->startContainers($host, $kind, $runId, $network, $roles, $networkPlan, $topologyMode, $imageNames, $sourcePath, $options->sourceMountedCheckout, $timer, 'docker.start');
 
             $timer->measure('docker.seedGatewayNameShim', fn () => $this->seedGatewayContainerNameShim($instances));
+            $timer->measure('docker.seedClientCliGateways', fn () => $this->seedClientCliGateways($instances, $networkPlan, $topologyMode));
             $timer->measure('docker.seedSshAccess', fn () => $this->seedRemoteShellSshAccess($instances));
             $timer->measure('docker.prepareGatewayState', fn () => $this->prepareGatewayState($instances, $networkPlan, $topologyMode));
             $timer->measure('docker.startGatewayScheduler', fn () => $this->startGatewayScheduler($host, $instances));
@@ -97,6 +98,7 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
             $newInstances = $this->startContainers($host, $kind, $runId, $network, $roles, $networkPlan, $topologyMode, $imageNames, $sourcePath, $options->sourceMountedCheckout, $cycleTimer, 'reset.start');
 
             $cycleTimer->measure('reset.seedGatewayNameShim', fn () => $this->seedGatewayContainerNameShim($newInstances));
+            $cycleTimer->measure('reset.seedClientCliGateways', fn () => $this->seedClientCliGateways($newInstances, $networkPlan, $topologyMode));
             $cycleTimer->measure('reset.seedSshAccess', fn () => $this->seedRemoteShellSshAccess($newInstances));
             $cycleTimer->measure('reset.prepareGatewayState', fn () => $this->prepareGatewayState($newInstances, $networkPlan, $topologyMode));
             $cycleTimer->measure('reset.startGatewayScheduler', fn () => $this->startGatewayScheduler($host, $newInstances));
@@ -804,6 +806,65 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
             "Could not authorize gateway SSH key in Docker {$role} container",
             timeoutSeconds: 60,
         );
+    }
+
+    /**
+     * @param  array<string, DockerInstance>  $instances
+     */
+    private function seedClientCliGateways(array $instances, DockerTopologyNetworkPlan $networkPlan, string $mode): void
+    {
+        $gatewayUrl = 'http://'.$this->gatewayEndpoint($networkPlan, $mode);
+        $jsonBody = $this->cliJsonConfigBody($gatewayUrl);
+
+        foreach ($instances as $role => $instance) {
+            E2ECommand::exec(
+                $instance,
+                $this->seedClientCliGatewayCommand($gatewayUrl, $jsonBody),
+                "Could not configure Docker {$role} CLI gateway endpoint",
+                timeoutSeconds: 60,
+            );
+        }
+    }
+
+    private function seedClientCliGatewayCommand(string $gatewayUrl, string $jsonBody): string
+    {
+        $sourcePath = self::OrbitPath;
+        $jsonConfigDir = self::OrbitConfigRoot;
+        $jsonConfigPath = "{$jsonConfigDir}/config.json";
+
+        return implode(' && ', [
+            sprintf('cd %s', escapeshellarg("{$sourcePath}/apps/cli")),
+            'touch .env',
+            "grep -Ev '^(ORBIT_GATEWAY_URL|ORBIT_GATEWAY_IDENTITY)=' .env > .env.tmp || true",
+            'mv .env.tmp .env',
+            sprintf("printf 'ORBIT_GATEWAY_URL=%%s\\n' %s >> .env", escapeshellarg($gatewayUrl)),
+            'chown orbit:orbit .env',
+            sprintf('install -d -m 700 -o orbit -g orbit %s', escapeshellarg($jsonConfigDir)),
+            sprintf('printf %s > %s', escapeshellarg($jsonBody), escapeshellarg($jsonConfigPath)),
+            sprintf('chmod 0600 %s', escapeshellarg($jsonConfigPath)),
+            sprintf('chown -R orbit:orbit %s', escapeshellarg($jsonConfigDir)),
+        ]);
+    }
+
+    private function cliJsonConfigBody(string $gatewayUrl): string
+    {
+        return json_encode([
+            'schema_version' => 1,
+            'active_gateway' => 'default',
+            'gateways' => [
+                'default' => [
+                    'url' => $gatewayUrl,
+                    'wireguard_ip' => null,
+                    'ca_pem_path' => null,
+                    'ca_sha256' => null,
+                    'ca_fingerprint' => null,
+                    'timeout' => 30,
+                    'self_mode' => 'wireguard_https',
+                ],
+            ],
+            'defaults' => ['node' => null, 'profile' => null],
+            'meta' => ['imported_from' => 'docker-e2e-topology-runtime', 'imported_at' => date(DATE_ATOM)],
+        ], JSON_THROW_ON_ERROR | JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
     }
 
     /**

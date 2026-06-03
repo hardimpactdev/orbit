@@ -138,19 +138,38 @@ it('does not use host PHP or host Caddy paths while starting Docker gateway API 
     );
 
     $setup = implode("\n", $commands);
-    $gatewayRuntimeStart = strpos($setup, "docker run -d --restart unless-stopped --name 'orbit-e2e-run123-gateway-orbit-gateway'");
-    $gatewayScheduler = strpos($setup, "docker exec --detach --workdir '/home/orbit/orbit' 'orbit-e2e-run123-gateway-orbit-gateway' orbit orbit-scheduler");
-    $gatewayCertificate = strpos($setup, 'issueLeaf');
+    $gatewayRuntimeStart = array_find_key(
+        $commands,
+        fn (string $command): bool => str_contains($command, "docker run -d --restart unless-stopped --name 'orbit-e2e-run123-gateway-orbit-gateway'"),
+    );
+    $gatewayScheduler = array_find_key(
+        $commands,
+        fn (string $command): bool => str_contains($command, "docker exec --detach --workdir '/home/orbit/orbit' 'orbit-e2e-run123-gateway-orbit-gateway' orbit orbit-scheduler"),
+    );
+    $gatewayCertificate = array_find_key(
+        $commands,
+        fn (string $command): bool => str_contains($command, 'issueLeaf'),
+    );
+    $gatewayConfigRepairAfterCertificate = array_find_key(
+        $commands,
+        fn (string $command, int $index): bool => is_int($gatewayCertificate)
+            && $index > $gatewayCertificate
+            && str_contains($command, 'chown -R orbit:orbit')
+            && str_contains($command, '/home/orbit/.config/orbit'),
+    );
 
     expect($gatewayRuntimeStart)->toBeInt()
         ->and($gatewayScheduler)->toBeInt()
         ->and($gatewayCertificate)->toBeInt()
+        ->and($gatewayConfigRepairAfterCertificate)->toBeInt()
         ->and($gatewayRuntimeStart)->toBeLessThan($gatewayScheduler)
-        ->and($gatewayScheduler)->toBeLessThan($gatewayCertificate);
+        ->and($gatewayScheduler)->toBeLessThan($gatewayCertificate)
+        ->and($gatewayCertificate)->toBeLessThan($gatewayConfigRepairAfterCertificate);
 
     expect($setup)
         ->toContain('php apps/gateway/artisan tinker --execute=')
         ->toContain('php -d display_errors=0 -d max_execution_time=0 -S')
+        ->toContain('PHP_CLI_SERVER_WORKERS=4')
         ->toContain("'orbit-gateway:prepared-current' tail -f /dev/null")
         ->toContain("docker exec --detach --workdir '/home/orbit/orbit' 'orbit-e2e-run123-gateway-orbit-gateway' orbit orbit-scheduler")
         ->not->toContain('orbit serve --host=')
@@ -681,13 +700,23 @@ it('prepares source mounted gateway state before seeding docker gateway records'
             && str_contains($command, 'cd /home/orbit/orbit && export ORBIT_CONFIG_ROOT=')
             && str_contains($command, 'base64_decode'),
     );
+    $operatorClientGateway = array_find_key(
+        $commands,
+        fn (string $command): bool => str_starts_with($command, "docker exec 'orbit-e2e-run123-operator' sh -lc")
+            && str_contains($command, 'ORBIT_GATEWAY_URL=%s')
+            && str_contains($command, 'http://gateway')
+            && str_contains($command, '/home/orbit/.config/orbit/config.json'),
+    );
 
     expect($runtimeStart)->toBeInt()
         ->and($stateBootstrap)->toBeInt()
         ->and($stateMigrate)->toBeInt()
         ->and($scheduler)->toBeInt()
+        ->and($operatorClientGateway)->toBeInt()
         ->and($seedOperatorIdentity)->toBeInt()
         ->and($runtimeStart)->toBeLessThan($stateBootstrap)
+        ->and($runtimeStart)->toBeLessThan($operatorClientGateway)
+        ->and($operatorClientGateway)->toBeLessThan($seedOperatorIdentity)
         ->and($stateBootstrap)->toBeLessThan($scheduler)
         ->and($scheduler)->toBeLessThan($seedOperatorIdentity)
         ->and($stateBootstrap)->toBeLessThan($seedOperatorIdentity)

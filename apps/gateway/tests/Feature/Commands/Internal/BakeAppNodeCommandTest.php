@@ -145,6 +145,55 @@ describe('orbit:internal:bake-app-node', function (): void {
             ->and($assignment?->settings)->toBe(['ingress_node_id' => $edge->id]);
     });
 
+    it('preserves colocated ingress when production placement selects the same node', function (): void {
+        $appProd = Node::factory()->create([
+            'name' => 'app-prod-1',
+            'host' => '10.6.0.5',
+            'wireguard_address' => '10.6.0.5',
+        ]);
+
+        NodeRoleAssignment::factory()->create([
+            'node_id' => $appProd->id,
+            'role' => NodeRoleName::Ingress->value,
+            'status' => NodeRoleStatus::Active->value,
+        ]);
+
+        $this->artisan('orbit:internal:bake-app-node', [
+            'name' => 'app-prod-1',
+            '--role' => 'app-prod',
+            '--host' => '10.6.0.5',
+            '--wireguard-address' => '10.6.0.5',
+            '--gateway-endpoint' => '10.6.0.2',
+            '--user' => 'orbit',
+            '--ingress-node' => 'app-prod-1',
+        ])->assertSuccessful();
+
+        $assignments = NodeRoleAssignment::query()
+            ->where('node_id', $appProd->id)
+            ->whereIn('role', [NodeRoleName::AppProduction->value, NodeRoleName::Ingress->value])
+            ->orderBy('role')
+            ->get()
+            ->map(fn (NodeRoleAssignment $assignment): array => [
+                'role' => $assignment->role,
+                'status' => $assignment->status,
+                'settings' => $assignment->settings,
+            ])
+            ->all();
+
+        expect($assignments)->toBe([
+            [
+                'role' => NodeRoleName::AppProduction->value,
+                'status' => NodeRoleStatus::Active->value,
+                'settings' => ['ingress_node_id' => $appProd->id],
+            ],
+            [
+                'role' => NodeRoleName::Ingress->value,
+                'status' => NodeRoleStatus::Active->value,
+                'settings' => [],
+            ],
+        ]);
+    });
+
     it('removes stale colocated ingress from production app nodes when dedicated ingress is selected', function (): void {
         $edge = Node::factory()->create([
             'name' => 'edge-1',

@@ -443,6 +443,7 @@ PHP;
             timeoutSeconds: 180,
         );
 
+        self::repairGatewayConfigRootOwnership($gateway);
         self::prepareRootRemoteShellIdentity($gateway);
         self::prepareDockerGatewayRemoteShellIdentity($gateway);
 
@@ -473,10 +474,11 @@ PHP;
         E2ECommand::exec(
             $gateway,
             sprintf(
-                'sudo docker exec --detach --env %s --env %s --env %s --workdir %s %s php -d display_errors=0 -d max_execution_time=0 -S %s:80 -t apps/gateway/public %s',
+                'sudo docker exec --detach --env %s --env %s --env %s --env %s --workdir %s %s php -d display_errors=0 -d max_execution_time=0 -S %s:80 -t apps/gateway/public %s',
                 escapeshellarg("VIEW_COMPILED_PATH={$viewCompiledPath}"),
                 escapeshellarg("ORBIT_SOURCE_PATH={$orbitPath}"),
                 escapeshellarg('ORBIT_CONFIG_ROOT='.self::OrbitConfigRoot),
+                escapeshellarg('PHP_CLI_SERVER_WORKERS=4'),
                 $orbitPathArgument,
                 $gatewayContainer,
                 escapeshellarg($bindAddress),

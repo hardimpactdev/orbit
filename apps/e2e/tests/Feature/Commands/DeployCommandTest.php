@@ -20,6 +20,7 @@ $node = \App\Models\Node::query()->where('name', 'app-dev-1')->firstOrFail();
         'repository' => null,
         'environment' => 'production',
         'php_version' => '8.5',
+        'runtime_kind' => \App\Enums\Apps\AppRuntimeKind::Static->value,
         'adopted' => true,
     ],
 );

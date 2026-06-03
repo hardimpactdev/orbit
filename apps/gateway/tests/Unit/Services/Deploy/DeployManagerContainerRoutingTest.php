@@ -177,7 +177,10 @@ it('passes deploy environment variables to the host command', function (): void 
     $manager->run('docs');
 
     $script = $shell->runs[0]['script'];
-    expect($script)->toContain('ORBIT_DEPLOY_APP_NAME');
+    expect($script)
+        ->toContain('ORBIT_DEPLOY_APP_NAME=')
+        ->toContain('docs')
+        ->not->toContain("'ORBIT_DEPLOY_APP_NAME=docs'");
 });
 
 it('sets the working directory to the app source path for host commands', function (): void {
