@@ -136,6 +136,53 @@ wait, they do not fail loudly. A long hang at the start of `composer
 test:e2e:docker` or `composer test:e2e:incus` usually means the configured
 pool is fully booked by another worktree, not a real failure.
 
+## Retained Incus Inspection Gate
+
+Retained Incus is the mandatory hands-on verification step before durable Incus
+E2E whenever the change touches real VM/node behavior: OS package installs,
+role baselines, doctor restore, tool repair, SSH/sudo, WireGuard, systemd,
+host mutation, gateway API shims, source-mounted checkout behavior, or anything
+that previously failed only inside an Incus topology.
+
+Do not treat retained Incus as optional "extra confidence" for those changes.
+Use it to prove the current worktree behaves on real VMs, then codify the same
+finding in focused Pest E2E. The retained check is not the final signal by
+itself; the durable prepared Incus lane must still pass afterward.
+
+Acquire the topology from the implementation worktree and source-mount only the
+roles that need the current checkout:
+
+```bash
+composer e2e:incus -- --start --topology=<kind> --checkout-roles=<roles> --json
+```
+
+Inspect through the configured Incus host from `.env.e2e`; do not assume a
+host name unless the environment says so. Typical Beast-backed inspection looks
+like:
+
+```bash
+ssh beast 'incus list --format csv -c ns | grep <retained-id> || true'
+ssh beast 'incus exec <instance> -- sudo -u orbit bash -lc "cd /home/orbit/orbit && <orbit command>"'
+ssh beast 'incus exec <instance> -- bash -lc "<host command such as gh --version>"'
+```
+
+Record the retained topology id, topology kind, checkout roles, inspected
+instances, commands run, and observed result in the Solo report. If you mutate
+state for a focused check, isolate unrelated prepared-state drift first and say
+what was isolated.
+
+Release and verify cleanup before starting durable E2E:
+
+```bash
+composer e2e:incus -- --stop --id=<id> --json
+ssh <incus-host> 'incus list --format csv -c ns | grep <id> || true'
+```
+
+If `--stop` misses owned instances because the retained manifest is incomplete,
+delete only the owned leftovers by exact instance name, verify the grep is
+empty, and report the cleanup anomaly. Never leave retained VMs running while
+moving on to durable E2E.
+
 ## Workflow
 
 1. Set up the workspace with `bin/orbit-prepare-worktree`.
@@ -148,11 +195,10 @@ pool is fully booked by another worktree, not a real failure.
 5. Follow TDD (see Test-Driven Development below): write or update failing Pest
    tests first, then implement.
 6. Implement the smallest working vertical slice to make the tests pass.
-7. When real topology behavior needs hands-on diagnosis before codifying the
-   final E2E assertion, use a disposable source/dev topology from this worktree.
-   Retained/live Incus topologies source-mount the current worktree after rsync
-   and are suitable for developing against real VM behavior. Release them when
-   finished, and turn findings into Pest E2E coverage.
+7. For VM/node/tool/package/doctor/role-baseline behavior, run the retained
+   Incus inspection gate from this worktree before durable Incus E2E. Retained
+   topologies source-mount the current worktree after rsync and are suitable for
+   real VM inspection. Release and verify cleanup before continuing.
 8. Run focused in-memory and prepared-topology feature verification.
 9. Run artifact-backed feature verification when production artifact behavior
    matters and that lane exists for the provider.
@@ -203,9 +249,10 @@ Normal feature work follows a staged E2E model:
     that synced checkout. Node-local mutable Orbit state remains under
     `/home/orbit/.config/orbit`.
   - Use retained/live Incus topologies to develop and test against real VM
-    behavior before or while writing the durable E2E test. They are disposable
-    diagnosis loops, not standing live infrastructure and not proof by
-    themselves.
+    behavior before or while writing the durable E2E test. For
+    VM/node/tool/package/doctor/role-baseline changes, this retained check is a
+    required gate before `composer test:e2e:incus`, not an optional diagnostic.
+    It is still not proof by itself; durable prepared-topology E2E must pass.
   - Release retained topologies with `composer e2e:incus -- --stop --id=<id>`
     or `composer e2e:incus -- --stop --all` when finished.
 - **Source-prepared feature E2E** via `composer test:e2e` or a provider lane
