@@ -36,6 +36,8 @@ interface ToolDefinition
      *     images?: list<string>,
      *     version_command?: string,
      *     service?: string,
+     *     supervisor_program?: string,
+     *     supervisor_log?: string,
      *     container?: string,
      *     image?: string,
      *     update_command?: string,

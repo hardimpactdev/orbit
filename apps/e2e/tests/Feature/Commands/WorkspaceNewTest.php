@@ -23,6 +23,10 @@ foreach (['operator-1', 'app-dev-1'] as \$name) {
     }
 }
 
+\\App\\Models\\Node::query()
+    ->whereIn('name', ['operator-1', 'app-dev-1'])
+    ->update(['agent_ide_config' => null]);
+
 \\Illuminate\\Support\\Facades\\DB::table('workspace_run_steps')->delete();
 \\Illuminate\\Support\\Facades\\DB::table('workspace_runs')->delete();
 \\Illuminate\\Support\\Facades\\DB::table('workspace_steps')->delete();
@@ -45,6 +49,7 @@ foreach (['operator-1', 'app-dev-1'] as \$name) {
     'path' => {$appPathValue},
     'document_root' => 'public',
     'php_version' => '8.5',
+    'agent_ide_config' => ['adapter' => 'none'],
 ]);
 
 echo 'seeded';

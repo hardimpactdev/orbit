@@ -6,6 +6,10 @@ namespace App\Tools;
 
 final class OpenCodeServerTool extends BaseTool
 {
+    private const string PROGRAM = 'orbit_tool_opencode_server';
+
+    private const string LOG_PATH = '/var/log/orbit/orbit_tool_opencode_server.log';
+
     public function slug(): string
     {
         return 'opencode-server';
@@ -20,19 +24,18 @@ final class OpenCodeServerTool extends BaseTool
     #[\Override]
     public function capabilities(): array
     {
-        return ['install', 'remove', 'start', 'stop', 'restart', 'update', 'reconfigure', 'credentials', 'safe-fix'];
+        return ['install', 'remove', 'start', 'stop', 'restart', 'update', 'reconfigure', 'logs', 'credentials', 'safe-fix'];
     }
 
     public function installScript(array $config = []): string
     {
         $port = (int) ($config['port'] ?? 4096);
-        $hostname = $config['hostname'] ?? '127.0.0.1';
+        $hostname = $config['hostname'] ?? '0.0.0.0';
         $username = $config['username'] ?? 'opencode';
         $password = $config['password'] ?? null;
-
-        $authEnv = $password === null || $password === ''
-            ? ''
-            : "Environment=OPENCODE_SERVER_USERNAME={$username}\n        Environment=OPENCODE_SERVER_PASSWORD={$password}\n        ";
+        $authEnvironment = $this->authEnvironment($username, $password);
+        $program = self::PROGRAM;
+        $logPath = self::LOG_PATH;
 
         return <<<"BASH"
 #!/usr/bin/env bash
@@ -41,31 +44,29 @@ set -e
 curl -fsSL https://opencode.ai/install | bash
 user=$(whoami)
 home=$(echo \$HOME)
-unitDir="\${home}/.config/systemd/user"
-unitPath="\${unitDir}/opencode-server.service"
-mkdir -p "\${unitDir}"
-cat > "\${unitPath}" <<UNIT
-[Unit]
-Description=OpenCode Server
-After=network-online.target
-Wants=network-online.target
-
-[Service]
-Type=simple
-        {$authEnv}ExecStart=\${home}/.opencode/bin/opencode serve --hostname {$hostname} --port {$port}
-Restart=on-failure
-RestartSec=5
-
-[Install]
-WantedBy=default.target
-UNIT
-if command -v loginctl >/dev/null 2>&1; then
-    sudo loginctl enable-linger "\${user}"
-fi
-export XDG_RUNTIME_DIR=/run/user/\$(id -u)
-systemctl --user daemon-reload
-systemctl --user enable opencode-server
-systemctl --user start opencode-server
+program={$program}
+logPath={$logPath}
+configPath="/etc/supervisor/conf.d/\${program}.conf"
+path="\${home}/.opencode/bin:\$(bash -lc 'echo \$PATH')"
+sudo mkdir -p /etc/supervisor/conf.d
+sudo install -d -m 0755 -o "\${user}" -g "\${user}" "\$(dirname "\${logPath}")"
+sudo tee "\${configPath}" >/dev/null <<SUPERVISOR
+[program:{$program}]
+directory=\${home}
+command=/bin/bash -lc 'exec "\${home}/.opencode/bin/opencode" serve --hostname {$hostname} --port {$port}'
+user=\${user}
+autostart=true
+autorestart=unexpected
+startsecs=0
+redirect_stderr=true
+stdout_logfile=\${logPath}
+stdout_logfile_maxbytes=20MB
+stdout_logfile_backups=5
+environment=HOME="\${home}",PATH="\${path}"{$authEnvironment}
+SUPERVISOR
+sudo supervisorctl reread
+sudo supervisorctl update "\${program}"
+sudo supervisorctl start "\${program}" >/dev/null 2>&1 || sudo supervisorctl restart "\${program}"
 BASH;
     }
 
@@ -76,15 +77,12 @@ BASH;
 # orbit remove opencode-server
 set -e
 home=$(echo $HOME)
-export XDG_RUNTIME_DIR=/run/user/$(id -u)
-systemctl --user stop opencode-server 2>/dev/null || true
-systemctl --user disable opencode-server 2>/dev/null || true
-rm -f "${home}/.config/systemd/user/opencode-server.service"
-systemctl --user daemon-reload
-sudo systemctl stop opencode-server 2>/dev/null || true
-sudo systemctl disable opencode-server 2>/dev/null || true
-sudo rm -f /etc/systemd/system/opencode-server.service
-sudo systemctl daemon-reload
+program=orbit_tool_opencode_server
+sudo supervisorctl stop "${program}" >/dev/null 2>&1 || true
+sudo supervisorctl remove "${program}" >/dev/null 2>&1 || true
+sudo rm -f "/etc/supervisor/conf.d/${program}.conf"
+sudo supervisorctl reread >/dev/null 2>&1 || true
+sudo supervisorctl update >/dev/null 2>&1 || true
 rm -rf "${home}/.opencode"
 BASH;
     }
@@ -96,15 +94,15 @@ BASH;
 # orbit update opencode-server
 set -e
 home=$(echo $HOME)
-export XDG_RUNTIME_DIR=/run/user/$(id -u)
+program=orbit_tool_opencode_server
 "${home}/.opencode/bin/opencode" upgrade
-systemctl --user restart opencode-server
+sudo supervisorctl restart "${program}"
 BASH;
     }
 
     public function credentialsScript(array $config = []): string
     {
-        $hostname = $config['hostname'] ?? '127.0.0.1';
+        $hostname = $config['hostname'] ?? '0.0.0.0';
         $port = (int) ($config['port'] ?? 4096);
         $username = $config['username'] ?? 'opencode';
         $password = $config['password'] ?? null;
@@ -127,39 +125,42 @@ BASH;
     public function reconfigureScript(array $config = []): string
     {
         $port = (int) ($config['port'] ?? 4096);
-        $hostname = $config['hostname'] ?? '127.0.0.1';
+        $hostname = $config['hostname'] ?? '0.0.0.0';
         $username = $config['username'] ?? 'opencode';
         $password = $config['password'] ?? null;
-
-        $authEnv = $password === null || $password === ''
-            ? ''
-            : "Environment=OPENCODE_SERVER_USERNAME={$username}\n        Environment=OPENCODE_SERVER_PASSWORD={$password}\n        ";
+        $authEnvironment = $this->authEnvironment($username, $password);
+        $program = self::PROGRAM;
+        $logPath = self::LOG_PATH;
 
         return <<<"BASH"
 #!/usr/bin/env bash
 # orbit reconfigure opencode-server
 set -e
+user=$(whoami)
 home=$(echo \$HOME)
-unitPath="\${home}/.config/systemd/user/opencode-server.service"
-mkdir -p "\${home}/.config/systemd/user"
-cat > "\${unitPath}" <<UNIT
-[Unit]
-Description=OpenCode Server
-After=network-online.target
-Wants=network-online.target
-
-[Service]
-Type=simple
-        {$authEnv}ExecStart=\${home}/.opencode/bin/opencode serve --hostname {$hostname} --port {$port}
-Restart=on-failure
-RestartSec=5
-
-[Install]
-WantedBy=default.target
-UNIT
-export XDG_RUNTIME_DIR=/run/user/\$(id -u)
-systemctl --user daemon-reload
-systemctl --user restart opencode-server
+program={$program}
+logPath={$logPath}
+configPath="/etc/supervisor/conf.d/\${program}.conf"
+path="\${home}/.opencode/bin:\$(bash -lc 'echo \$PATH')"
+sudo mkdir -p /etc/supervisor/conf.d
+sudo install -d -m 0755 -o "\${user}" -g "\${user}" "\$(dirname "\${logPath}")"
+sudo tee "\${configPath}" >/dev/null <<SUPERVISOR
+[program:{$program}]
+directory=\${home}
+command=/bin/bash -lc 'exec "\${home}/.opencode/bin/opencode" serve --hostname {$hostname} --port {$port}'
+user=\${user}
+autostart=true
+autorestart=unexpected
+startsecs=0
+redirect_stderr=true
+stdout_logfile=\${logPath}
+stdout_logfile_maxbytes=20MB
+stdout_logfile_backups=5
+environment=HOME="\${home}",PATH="\${path}"{$authEnvironment}
+SUPERVISOR
+sudo supervisorctl reread
+sudo supervisorctl update "\${program}"
+sudo supervisorctl restart "\${program}"
 BASH;
     }
 
@@ -168,8 +169,29 @@ BASH;
     {
         return [
             'binary' => 'opencode',
-            'service' => 'opencode-server',
-            'repair_commands' => $this->serviceRepairCommands('opencode-server', restart: true),
+            'supervisor_program' => self::PROGRAM,
+            'supervisor_log' => self::LOG_PATH,
+            'repair_commands' => $this->supervisorProgramRepairCommands(self::PROGRAM),
         ];
+    }
+
+    private function authEnvironment(mixed $username, mixed $password): string
+    {
+        if (! is_string($password) || $password === '') {
+            return '';
+        }
+
+        $username = is_string($username) && $username !== '' ? $username : 'opencode';
+
+        return ',OPENCODE_SERVER_USERNAME="'.$this->escapeSupervisorEnvironmentValue($username).'",OPENCODE_SERVER_PASSWORD="'.$this->escapeSupervisorEnvironmentValue($password).'"';
+    }
+
+    private function escapeSupervisorEnvironmentValue(string $value): string
+    {
+        return str_replace(
+            ['\\', '"', '$', '`'],
+            ['\\\\', '\"', '\$', '\`'],
+            $value,
+        );
     }
 }

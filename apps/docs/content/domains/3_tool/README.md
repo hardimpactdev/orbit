@@ -88,8 +88,8 @@ tool-specific contracts live in [`catalog/`](catalog/README.md).
 | [`mailpit`](catalog/mailpit.md) | Mailpit | Docker service | Installable and removable by Orbit | `development` | install, remove, lifecycle, update, logs, credentials, service endpoint, fix, adopt |
 | [`reverb`](catalog/reverb.md) | Reverb | Docker service | Compatibility tool; superseded by the `websocket` role for fleet realtime | `communication` | install, remove, lifecycle, update, logs, credentials, service endpoint, fix, adopt |
 | [`rustfs`](catalog/rustfs.md) | RustFS | Docker runtime container | Role baseline tool for the `s3` role | `storage` | lifecycle, update, logs, credentials, service endpoint, fix, adopt |
-| [`polyscope-server`](catalog/polyscope-server.md) | PolyScope Server | user systemd service | Installable and removable by Orbit | `development` | install, remove, lifecycle, reconfigure, update, streamed logs, fix, adopt |
-| [`opencode-server`](catalog/opencode-server.md) | OpenCode Server | user systemd service | Installable and removable by Orbit | `development` | install, remove, lifecycle, reconfigure, password reset, update, streamed logs, credentials, service endpoint, fix, adopt |
+| [`polyscope-server`](catalog/polyscope-server.md) | PolyScope Server | Supervisor program | Installable and removable by Orbit | `development` | install, remove, lifecycle, reconfigure, update, streamed logs, fix, adopt |
+| [`opencode-server`](catalog/opencode-server.md) | OpenCode Server | Supervisor program | Installable and removable by Orbit | `development` | install, remove, lifecycle, reconfigure, password reset, update, streamed logs, credentials, service endpoint, fix, adopt |
 | [`openclaw`](catalog/openclaw.md) | OpenClaw | Docker-managed runtime as `agent` | Installable and removable by Orbit | `agent` | install, remove, lifecycle, update, logs, credentials, service endpoint, fix, adopt |
 | [`hermes`](catalog/hermes.md) | Hermes | Docker-managed runtime as `agent` | Installable and removable by Orbit | `agent` | install, remove, lifecycle, update, logs, credentials, service endpoint, fix, adopt |
 

@@ -10,7 +10,7 @@ These fields describe the PolyScope Server tool's identity, backend, and support
 | --- | --- |
 | Slug | `polyscope-server` |
 | Label | PolyScope Server |
-| Backend | user systemd service |
+| Backend | Supervisor program |
 | Support model | Installable and removable by Orbit |
 | Category | `development` |
 
@@ -37,9 +37,9 @@ completed remotely, `tool:install polyscope-server` may report a manual
 `tool:credentials`.
 
 `tool:update polyscope-server` runs PolyScope Server's standalone updater and
-then restarts the user systemd service that Orbit manages.
+then restarts the Supervisor program that Orbit manages.
 
 ## Doctor Relationship
 
-`doctor --family=tool` verifies the managed user service, expected lifecycle
-state, logs availability, and safe repair/adoption boundaries.
+`doctor --family=tool` verifies the managed Supervisor program, expected
+lifecycle state, logs availability, and safe repair/adoption boundaries.

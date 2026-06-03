@@ -6,6 +6,10 @@ namespace App\Tools;
 
 final class PolyscopeServerTool extends BaseTool
 {
+    private const string PROGRAM = 'orbit_tool_polyscope_server';
+
+    private const string LOG_PATH = '/var/log/orbit/orbit_tool_polyscope_server.log';
+
     public function slug(): string
     {
         return 'polyscope-server';
@@ -26,6 +30,8 @@ final class PolyscopeServerTool extends BaseTool
     public function installScript(array $config = []): string
     {
         $localTarget = $config['local_target'] ?? false;
+        $program = self::PROGRAM;
+        $logPath = self::LOG_PATH;
         $guidance = $localTarget ? '' : <<<'GUIDE'
 
 echo ""
@@ -42,37 +48,33 @@ set -e
 curl -fsSL https://getpolyscope.com/install/server | bash
 user=$(whoami)
 home=$(echo \$HOME)
-unitDir="\${home}/.config/systemd/user"
-unitPath="\${unitDir}/polyscope-server.service"
-mkdir -p "\${unitDir}"
+program={$program}
+logPath={$logPath}
+configPath="/etc/supervisor/conf.d/\${program}.conf"
 path=$(bash -lc 'echo \$PATH')
 userBin="\${home}/.local/bin"
 if [[ ":\${path}:" != *":\${userBin}:"* ]]; then
   path="\${userBin}:\${path}"
 fi
-cat > "\${unitPath}" <<UNIT
-[Unit]
-Description=Polyscope Server
-After=network.target
-
-[Service]
-Type=simple
-Environment=HOME=\${home}
-Environment="PATH=\${path}"
-ExecStart=\${home}/.local/bin/polyscope-server
-Restart=on-failure
-RestartSec=5
-
-[Install]
-WantedBy=default.target
-UNIT
-if command -v loginctl >/dev/null 2>&1; then
-    sudo loginctl enable-linger "\${user}"
-fi
-export XDG_RUNTIME_DIR=/run/user/\$(id -u)
-systemctl --user daemon-reload
-systemctl --user enable polyscope-server
-systemctl --user start polyscope-server
+sudo mkdir -p /etc/supervisor/conf.d
+sudo install -d -m 0755 -o "\${user}" -g "\${user}" "\$(dirname "\${logPath}")"
+sudo tee "\${configPath}" >/dev/null <<SUPERVISOR
+[program:{$program}]
+directory=\${home}
+command=/bin/bash -lc 'exec "\${home}/.local/bin/polyscope-server"'
+user=\${user}
+autostart=true
+autorestart=unexpected
+startsecs=0
+redirect_stderr=true
+stdout_logfile=\${logPath}
+stdout_logfile_maxbytes=20MB
+stdout_logfile_backups=5
+environment=HOME="\${home}",PATH="\${path}"
+SUPERVISOR
+sudo supervisorctl reread
+sudo supervisorctl update "\${program}"
+sudo supervisorctl start "\${program}" >/dev/null 2>&1 || sudo supervisorctl restart "\${program}"
 {$guidance}
 BASH;
     }
@@ -84,15 +86,12 @@ BASH;
 # orbit remove polyscope-server
 set -e
 home=$(echo $HOME)
-export XDG_RUNTIME_DIR=/run/user/$(id -u)
-systemctl --user stop polyscope-server 2>/dev/null || true
-systemctl --user disable polyscope-server 2>/dev/null || true
-rm -f "${home}/.config/systemd/user/polyscope-server.service"
-systemctl --user daemon-reload
-sudo systemctl stop polyscope-server 2>/dev/null || true
-sudo systemctl disable polyscope-server 2>/dev/null || true
-sudo rm -f /etc/systemd/system/polyscope-server.service
-sudo systemctl daemon-reload
+program=orbit_tool_polyscope_server
+sudo supervisorctl stop "${program}" >/dev/null 2>&1 || true
+sudo supervisorctl remove "${program}" >/dev/null 2>&1 || true
+sudo rm -f "/etc/supervisor/conf.d/${program}.conf"
+sudo supervisorctl reread >/dev/null 2>&1 || true
+sudo supervisorctl update >/dev/null 2>&1 || true
 rm -f "${home}/.local/bin/polyscope-server"
 BASH;
     }
@@ -104,25 +103,50 @@ BASH;
 # orbit update polyscope-server
 set -e
 home=$(echo $HOME)
-export XDG_RUNTIME_DIR=/run/user/$(id -u)
+program=orbit_tool_polyscope_server
 "${home}/.local/bin/polyscope-server" update
-systemctl --user restart polyscope-server
+sudo supervisorctl restart "${program}"
 BASH;
     }
 
     public function reconfigureScript(array $config = []): string
     {
-        return <<<'BASH'
+        $program = self::PROGRAM;
+        $logPath = self::LOG_PATH;
+
+        return <<<"BASH"
 #!/usr/bin/env bash
 # orbit reconfigure polyscope-server
 set -e
-home=$(echo $HOME)
-unitPath="${home}/.config/systemd/user/polyscope-server.service"
-if [ -f "$unitPath" ]; then
-  export XDG_RUNTIME_DIR=/run/user/$(id -u)
-  systemctl --user daemon-reload
-  systemctl --user restart polyscope-server
+user=$(whoami)
+home=$(echo \$HOME)
+program={$program}
+logPath={$logPath}
+configPath="/etc/supervisor/conf.d/\${program}.conf"
+path=\$(bash -lc 'echo \$PATH')
+userBin="\${home}/.local/bin"
+if [[ ":\${path}:" != *":\${userBin}:"* ]]; then
+  path="\${userBin}:\${path}"
 fi
+sudo mkdir -p /etc/supervisor/conf.d
+sudo install -d -m 0755 -o "\${user}" -g "\${user}" "\$(dirname "\${logPath}")"
+sudo tee "\${configPath}" >/dev/null <<SUPERVISOR
+[program:{$program}]
+directory=\${home}
+command=/bin/bash -lc 'exec "\${home}/.local/bin/polyscope-server"'
+user=\${user}
+autostart=true
+autorestart=unexpected
+startsecs=0
+redirect_stderr=true
+stdout_logfile=\${logPath}
+stdout_logfile_maxbytes=20MB
+stdout_logfile_backups=5
+environment=HOME="\${home}",PATH="\${path}"
+SUPERVISOR
+sudo supervisorctl reread
+sudo supervisorctl update "\${program}"
+sudo supervisorctl restart "\${program}"
 BASH;
     }
 
@@ -131,8 +155,9 @@ BASH;
     {
         return [
             'binary' => 'polyscope-server',
-            'service' => 'polyscope-server',
-            'repair_commands' => $this->serviceRepairCommands('polyscope-server', restart: true),
+            'supervisor_program' => self::PROGRAM,
+            'supervisor_log' => self::LOG_PATH,
+            'repair_commands' => $this->supervisorProgramRepairCommands(self::PROGRAM),
         ];
     }
 }

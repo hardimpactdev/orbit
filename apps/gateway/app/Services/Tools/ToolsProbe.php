@@ -55,6 +55,7 @@ final readonly class ToolsProbe
         $binary = $metadata['binary'] ?? $tool->name;
         $versionCommand = $metadata['version_command'] ?? null;
         $service = $metadata['service'] ?? null;
+        $supervisorProgram = $metadata['supervisor_program'] ?? null;
         $container = $this->expectedContainerName($tool) ?? ($metadata['container'] ?? null);
         $configPath = $this->managedConfigPath($tool);
         $secretPath = $this->managedSecretPath($tool);
@@ -63,6 +64,7 @@ $payload = json_decode(stream_get_contents(STDIN), true);
 $binary = (string) ($payload['binary'] ?? '');
 $versionCommand = (string) ($payload['version_command'] ?? '');
 $service = (string) ($payload['service'] ?? '');
+$supervisorProgram = (string) ($payload['supervisor_program'] ?? '');
 $container = (string) ($payload['container'] ?? '');
 $configPath = (string) ($payload['config_path'] ?? '');
 $secretPath = (string) ($payload['secret_path'] ?? '');
@@ -89,8 +91,16 @@ if ($versionCommand !== '') {
 }
 
 if ($service !== '') {
+    $output = [];
     exec('systemctl is-active --quiet '.escapeshellarg($service).' 2>/dev/null', $output, $exitCode);
     $state = $exitCode === 0 ? 'running' : 'stopped';
+}
+
+if ($supervisorProgram !== '') {
+    $output = [];
+    exec('sudo supervisorctl status '.escapeshellarg($supervisorProgram).' 2>/dev/null', $output, $exitCode);
+    $status = trim(implode("\n", $output));
+    $state = $exitCode === 0 && str_contains($status, 'RUNNING') ? 'running' : 'stopped';
 }
 
 if ($container !== '') {
@@ -134,6 +144,7 @@ PHP;
                 'binary' => $binary,
                 'version_command' => is_string($versionCommand) ? $versionCommand : '',
                 'service' => is_string($service) ? $service : '',
+                'supervisor_program' => is_string($supervisorProgram) ? $supervisorProgram : '',
                 'container' => is_string($container) ? $container : '',
                 'config_path' => $configPath ?? '',
                 'secret_path' => $secretPath ?? '',

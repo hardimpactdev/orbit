@@ -10,7 +10,7 @@ These fields describe the OpenCode Server tool's identity, backend, and support 
 | --- | --- |
 | Slug | `opencode-server` |
 | Label | OpenCode Server |
-| Backend | user systemd service |
+| Backend | Supervisor program |
 | Support model | Installable and removable by Orbit |
 | Category | `development` |
 
@@ -65,10 +65,10 @@ OpenCode Server is an agent IDE server capability. Password reset is owned by
 `tool:reconfigure opencode-server --password=<password>`.
 
 `tool:update opencode-server` runs OpenCode's native `opencode upgrade` command
-through the Orbit-managed binary and then restarts the user systemd service.
+through the Orbit-managed binary and then restarts the Supervisor program.
 
 ## Doctor Relationship
 
-`doctor --family=tool` verifies the managed user service, expected lifecycle
-state, logs availability, credential metadata presence, and safe
+`doctor --family=tool` verifies the managed Supervisor program, expected
+lifecycle state, logs availability, credential metadata presence, and safe
 repair/adoption boundaries.

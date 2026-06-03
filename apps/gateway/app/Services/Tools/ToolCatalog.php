@@ -71,6 +71,20 @@ final readonly class ToolCatalog
             );
         }
 
+        $supervisorLog = is_string($metadata['supervisor_log'] ?? null)
+            ? $metadata['supervisor_log']
+            : null;
+
+        if ($supervisorLog !== null && $supervisorLog !== '') {
+            return sprintf(
+                'sudo tail -n %s%s %s 2>&1%s',
+                escapeshellarg((string) $lineCount),
+                $follow ? ' -f' : '',
+                escapeshellarg($supervisorLog),
+                $follow ? '' : ' || true',
+            );
+        }
+
         $service = is_string($metadata['service'] ?? null)
             ? $metadata['service']
             : null;
@@ -190,6 +204,8 @@ final readonly class ToolCatalog
      *     images?: list<string>,
      *     version_command?: string,
      *     service?: string,
+     *     supervisor_program?: string,
+     *     supervisor_log?: string,
      *     container?: string,
      *     image?: string,
      *     update_command?: string,
