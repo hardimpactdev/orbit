@@ -103,6 +103,11 @@ over `RemoteHostExecutor` (SSH host substrate + Docker inspection).
 ## Tool Fix Map
 
 This table shows what `doctor --restore` does for each fixable issue code.
+When a tool issue overlaps with managed-node setup, restore uses the same
+internal convergence path that `node:new` used before activation. The public
+doctor result still remains a tool-family restore action, and the tool
+definition still owns the safe install, update, lifecycle, config, and
+credential repair logic.
 
 | Code | `doctor --restore` behavior |
 | --- | --- |

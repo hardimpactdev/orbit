@@ -2,13 +2,19 @@
 
 declare(strict_types=1);
 
+use App\Contracts\RemoteShell;
+use App\Data\RemoteShell\RemoteShellResult;
 use App\Data\Security\PinnedHostKey;
 use App\Enums\Nodes\NodeRoleName;
 use App\Enums\Nodes\NodeRoleStatus;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
+use App\Models\NodeTool;
+use App\Services\Nodes\DevelopmentDnsMappingEnactor;
+use App\Services\Runtime\OrbitCaddyContainer;
 use App\Services\Security\SshHostKeyPinner;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\File;
 
 uses(RefreshDatabase::class);
 
@@ -34,6 +40,12 @@ describe('orbit:internal:bake-app-node', function (): void {
         };
 
         app()->instance(SshHostKeyPinner::class, $this->hostKeyPinner);
+        app()->instance(RemoteShell::class, new BakeAppNodeRemoteShell);
+        bindDevelopmentDnsMappingTestDoubles('bake-app-node-dns');
+    });
+
+    afterEach(function (): void {
+        File::deleteDirectory(app(DevelopmentDnsMappingEnactor::class)->configDir());
     });
 
     it('writes an app node row with the same shape as node:new produces', function (): void {
@@ -48,6 +60,9 @@ describe('orbit:internal:bake-app-node', function (): void {
         ])->assertSuccessful();
 
         $node = Node::query()->where('name', 'app-dev-1')->firstOrFail();
+        $shell = app(RemoteShell::class);
+
+        assert($shell instanceof BakeAppNodeRemoteShell);
 
         expect($node->getAttributes())->not->toHaveKeys(['role', 'environment'])
             ->and($node->host)->toBe('10.6.0.4')
@@ -64,6 +79,42 @@ describe('orbit:internal:bake-app-node', function (): void {
             ->and($node->host_key_pinned_at)->not->toBeNull()
             ->and($this->hostKeyPinner->calls)->toBe([
                 ['host' => '10.6.0.4', 'expected' => null],
+            ])
+            ->and(NodeTool::query()->where('node_id', $node->id)->pluck('name')->sort()->values()->all())->toBe([
+                'caddy',
+                'composer',
+                'laravel-installer',
+                'php-cli',
+            ])
+            ->and(File::exists(app(DevelopmentDnsMappingEnactor::class)->configDir().'/test.conf'))->toBeTrue()
+            ->and($shell->repairScripts())->toHaveCount(4);
+    });
+
+    it('uses setup convergence when baking app-dev role intent', function (): void {
+        $this->artisan('orbit:internal:bake-app-node', [
+            'name' => 'app-dev-1',
+            '--role' => 'app-dev',
+            '--host' => 'dev',
+            '--wireguard-address' => '10.6.0.4',
+            '--gateway-endpoint' => 'gateway',
+            '--user' => 'orbit',
+            '--tld' => 'test',
+        ])->assertSuccessful();
+
+        $node = Node::query()->where('name', 'app-dev-1')->firstOrFail();
+        $shell = app(RemoteShell::class);
+
+        assert($shell instanceof BakeAppNodeRemoteShell);
+
+        $scripts = implode("\n", $shell->scripts);
+
+        expect($scripts)->not->toContain('doctor --restore')
+            ->and($scripts)->not->toContain(' orbit doctor ')
+            ->and(NodeTool::query()->where('node_id', $node->id)->pluck('expected_state', 'name')->all())->toMatchArray([
+                'caddy' => 'running',
+                'composer' => 'installed',
+                'laravel-installer' => 'installed',
+                'php-cli' => 'installed',
             ]);
     });
 
@@ -260,3 +311,94 @@ describe('orbit:internal:bake-app-node', function (): void {
         ])->run())->toThrow(RuntimeException::class, 'Active ingress node [edge-1] was not found.');
     });
 });
+
+final class BakeAppNodeRemoteShell implements RemoteShell
+{
+    /** @var list<string> */
+    public array $scripts = [];
+
+    /** @var array<string, bool> */
+    private array $installed = [
+        'caddy' => false,
+        'php-cli' => false,
+        'composer' => false,
+        'laravel-installer' => false,
+    ];
+
+    /**
+     * @param  array<string, mixed>  $options
+     */
+    public function run(Node $node, string $script, array $options = []): RemoteShellResult
+    {
+        $this->scripts[] = $script;
+
+        if ($this->isProbeScript($script)) {
+            return $this->probeResult($node, $options);
+        }
+
+        if (($tool = $this->toolForRepairScript($script)) !== null) {
+            $this->installed[$tool] = true;
+        }
+
+        return new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1);
+    }
+
+    /**
+     * @return list<string>
+     */
+    public function repairScripts(): array
+    {
+        return array_values(array_filter(
+            $this->scripts,
+            fn (string $script): bool => ! $this->isProbeScript($script),
+        ));
+    }
+
+    /**
+     * @param  array<string, mixed>  $options
+     */
+    private function probeResult(Node $node, array $options): RemoteShellResult
+    {
+        $payload = json_decode((string) ($options['input'] ?? ''), associative: true, flags: JSON_THROW_ON_ERROR);
+        $binary = is_string($payload['binary'] ?? null) ? $payload['binary'] : '';
+        $container = is_string($payload['container'] ?? null) ? $payload['container'] : '';
+
+        if ($container === 'orbit-caddy') {
+            $hash = OrbitCaddyContainer::forPrivateNode((string) $node->wireguard_address)->specHash();
+
+            return $this->installed['caddy']
+                ? new RemoteShellResult(exitCode: 0, stdout: "/usr/bin/docker\tDocker version 27.0.0\trunning\t\t\t\t\t1\trunning\t{$hash}\n", stderr: '', durationMs: 1)
+                : new RemoteShellResult(exitCode: 0, stdout: "/usr/bin/docker\tDocker version 27.0.0\tmissing\t\t\t\t\t0\tmissing\t\n", stderr: '', durationMs: 1);
+        }
+
+        return match ($binary) {
+            '/opt/orbit/php/8.5/bin/php' => $this->installedProbe('php-cli', "/opt/orbit/php/8.5/bin/php\t8.5.6\n"),
+            '/usr/local/bin/composer' => $this->installedProbe('composer', "/usr/local/bin/composer\tComposer version 2.9.0\n"),
+            'laravel' => $this->installedProbe('laravel-installer', "/usr/local/bin/laravel\tLaravel Installer 5.0.0\n"),
+            default => new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+        };
+    }
+
+    private function installedProbe(string $tool, string $stdout): RemoteShellResult
+    {
+        return $this->installed[$tool]
+            ? new RemoteShellResult(exitCode: 0, stdout: $stdout, stderr: '', durationMs: 1)
+            : new RemoteShellResult(exitCode: 1, stdout: '', stderr: '', durationMs: 1);
+    }
+
+    private function isProbeScript(string $script): bool
+    {
+        return str_contains($script, '$payload = json_decode(stream_get_contents(STDIN), true);');
+    }
+
+    private function toolForRepairScript(string $script): ?string
+    {
+        return match (true) {
+            str_contains($script, 'orbit.caddy.spec_hash') => 'caddy',
+            str_contains($script, '# orbit install php-cli') => 'php-cli',
+            str_contains($script, '# orbit install composer') => 'composer',
+            str_contains($script, '# orbit install laravel-installer') => 'laravel-installer',
+            default => null,
+        };
+    }
+}

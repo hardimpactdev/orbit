@@ -169,6 +169,9 @@ Caller-path behavior is split out into:
 - If a compatible existing gateway is drifted or incomplete, do not reprovision
   it from `node:new`; report the drift or incomplete provisioning and point to
   `doctor --family=node --restore`.
+- First-gateway bootstrap uses the dedicated bootstrap installer before a
+  gateway API exists. It must not use the shared managed-node setup path that
+  applies gateway intent to already registered nodes.
 
 ### Workload Role Provisioning
 
@@ -201,6 +204,23 @@ and receives traffic only through router-owned S3 service routes.
   convergence failed, `node:new` fails and returns the role status and
   `last_error` in failure metadata. The persisted assignment remains available
   for later doctor recovery.
+
+### Managed Node Setup and Activation
+
+- For a fresh managed workload node, `node:new` writes node identity and role
+  intent first, then applies the setup slice of that gateway intent to the real
+  node before marking the node `active`.
+- The initial setup slice for `app-dev` applies the role baseline tools
+  `caddy`, `php-cli`, `composer`, and `laravel-installer` to node reality
+  through the same internal convergence path that tool doctor restore uses for
+  overlapping safe repairs.
+- `node:new` must not report a successful active managed workload node while
+  the setup slice is still missing or unverifiable. Setup failure returns
+  `node.provisioning_incomplete`, includes the failed setup step in metadata,
+  and rolls back fresh provisioning when rollback is available for that path.
+- A freshly provisioned `app-dev` node should pass a plain
+  `doctor --family=tool` check for the baseline tool slice without requiring
+  an immediate explicit `doctor --family=tool --restore` repair.
 
 ### Shared Provisioning Details
 

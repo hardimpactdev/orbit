@@ -7,6 +7,7 @@ namespace App\Services\Doctor;
 use App\Data\Doctor\DriftEntry;
 use App\Enums\Apps\AppRuntimeKind;
 use App\Enums\DriftKind;
+use App\Enums\Nodes\NodeConvergenceContext;
 use App\Enums\Nodes\NodeRoleName;
 use App\Models\App;
 use App\Models\DatabaseConnection;
@@ -28,6 +29,7 @@ use App\Services\DatabaseConnections\DatabaseConnectionProbe;
 use App\Services\DatabaseConnections\DatabaseConnectionRestorer;
 use App\Services\Firewall\FirewallRuleFixer;
 use App\Services\Firewall\FirewallRuleProbe;
+use App\Services\Nodes\NodeConverger;
 use App\Services\Nodes\NodesProbe;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
 use App\Services\Processes\ProcessesProbe;
@@ -83,6 +85,7 @@ final readonly class DoctorReportRunner
         private FirewallRuleFixer $firewallRuleFixer,
         private ProxyRouteFixer $proxyRouteFixer,
         private ProxyRouteAdopter $proxyRouteAdopter,
+        private NodeConverger $nodeConverger,
         private ToolsProbe $toolsProbe,
         private ToolsFixer $toolsFixer,
         private SchedulesProbe $schedulesProbe,
@@ -522,9 +525,22 @@ final readonly class DoctorReportRunner
     public function apply(Node $node, string $mode, array $issues): array
     {
         $actions = [];
+        $convergenceRestoreIssues = [];
 
         foreach ($issues as $issue) {
             if (! $this->issueSupportsMode($issue, $mode)) {
+                continue;
+            }
+
+            if (
+                $mode === 'restore'
+                && (
+                    ($issue['family'] ?? null) === 'tool'
+                    || (($issue['family'] ?? null) === 'node' && ($issue['key'] ?? null) === 'node.role_baseline_mismatch')
+                )
+            ) {
+                $convergenceRestoreIssues[] = $issue;
+
                 continue;
             }
 
@@ -533,6 +549,14 @@ final readonly class DoctorReportRunner
             if ($action !== null) {
                 $actions[] = $action;
             }
+        }
+
+        if ($convergenceRestoreIssues !== []) {
+            $result = $this->nodeConverger->applyIssues($node, NodeConvergenceContext::Restore, $convergenceRestoreIssues);
+            $actions = [
+                ...$actions,
+                ...$result->actions(),
+            ];
         }
 
         return array_map(fn (array $action): array => $this->normalizeActionMode($action, $mode), $actions);

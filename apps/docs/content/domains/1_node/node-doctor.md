@@ -33,6 +33,12 @@ Tools, firewall rules, apps, workspaces, processes, proxy routes, schedules,
 and deployments depend on node reachability, but their own artifacts are not
 node probe facts.
 
+Fresh managed workload provisioning has a setup phase that applies gateway
+role and tool intent to the real node before the node becomes active. Node
+doctor is the post-activation repair path: `doctor --restore` reuses the
+same internal convergence service for overlapping safe setup repairs while
+preserving the public family split between node-owned and tool-owned findings.
+
 ## Probe Layers
 
 The node probe reads gateway node records and checks these layers:
@@ -235,7 +241,7 @@ This table describes what `doctor --restore --family=node` does for each resolva
 | `node.access_grant_invalid` | Remove stale grant rows that reference missing or non-active nodes. |
 | `node.access_permission_invalid` | Re-normalize the stored permission set on the grant when it can be reduced to a valid set without changing intent; otherwise leave the drift visible for explicit operator action through `node:permissions`. |
 | `node.role_convergence_failed` | Retry synchronous convergence for error role assignments on the selected node and leave an assignment in `error` again if the retry fails. |
-| `node.role_baseline_mismatch` | Re-apply the baseline artifacts for the selected active role assignments, including role-owned derived artifacts such as development DNS mappings. |
+| `node.role_baseline_mismatch` | Re-apply the baseline artifacts for the selected active role assignments through the shared convergence path, including role-owned derived artifacts such as development DNS mappings. |
 | `node.gateway_runtime_unready` | Restart or reinstall the gateway service artifacts required by Orbit API readiness. |
 | `node.runtime_missing` | Rerun the node bootstrap step that installs the minimum Orbit runtime. |
 | `node.vpn_runtime_missing` | Re-apply the active `vpn` role baseline for WireGuard server and VPN-facing DNS runtime artifacts. |

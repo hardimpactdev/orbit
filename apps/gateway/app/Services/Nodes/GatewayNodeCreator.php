@@ -8,6 +8,7 @@ use App\Contracts\RemoteShell;
 use App\Data\Nodes\NodeIdentityArtifact;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Enums\AdoptAction;
+use App\Enums\Nodes\NodeConvergenceContext;
 use App\Enums\Nodes\NodeRoleName;
 use App\Enums\Nodes\NodeRoleStatus;
 use App\Models\LocalGatewaySettings;
@@ -75,6 +76,7 @@ final class GatewayNodeCreator
             app(NodeRoleAssignmentService::class),
             app(WireGuardKeyGenerator::class),
             app(NodesProbe::class),
+            app(NodeConverger::class),
         );
 
         return GatewayActionResult::fromJsonOutput($exitCode, $this->output);
@@ -86,6 +88,7 @@ final class GatewayNodeCreator
         NodeRoleAssignmentService $nodeRoleAssignmentService,
         WireGuardKeyGenerator $wireGuardKeyGenerator,
         NodesProbe $nodesProbe,
+        NodeConverger $nodeConverger,
     ): int {
         $name = $this->resolveName();
 
@@ -156,6 +159,7 @@ final class GatewayNodeCreator
                     nodesProbe: $nodesProbe,
                     roleAssignmentService: $nodeRoleAssignmentService,
                     wireGuardKeyGenerator: $wireGuardKeyGenerator,
+                    nodeConverger: $nodeConverger,
                     name: $name,
                     inputs: [
                         'host' => $inputs['host'],
@@ -1084,6 +1088,7 @@ SH;
         NodesProbe $nodesProbe,
         NodeRoleAssignmentService $roleAssignmentService,
         WireGuardKeyGenerator $wireGuardKeyGenerator,
+        NodeConverger $nodeConverger,
         string $name,
         array $inputs,
         array $initialHostedRoles = [],
@@ -1097,7 +1102,7 @@ SH;
             && app(NodeRoleAssignments::class)->nodeHasActiveAppHostRole($existing)
             && ! WireGuardPeer::query()->where('node_id', $existing->id)->exists()
         ) {
-            return $this->adoptExistingAppNode($nodesProbe, $existing, $inputs, $roleAssignmentService, $initialHostedRoles, $appProductionIngressNodeId);
+            return $this->adoptExistingAppNode($nodesProbe, $nodeConverger, $existing, $inputs, $roleAssignmentService, $initialHostedRoles, $appProductionIngressNodeId);
         }
 
         if ($existing instanceof Node && $existing->status === 'active') {
@@ -1109,7 +1114,7 @@ SH;
         }
 
         if ($existing instanceof Node) {
-            return $this->adoptExistingAppNode($nodesProbe, $existing, $inputs, $roleAssignmentService, $initialHostedRoles, $appProductionIngressNodeId);
+            return $this->adoptExistingAppNode($nodesProbe, $nodeConverger, $existing, $inputs, $roleAssignmentService, $initialHostedRoles, $appProductionIngressNodeId);
         }
 
         if ($inputs['tld'] !== null && Node::query()->where('tld', $inputs['tld'])->where('status', 'active')->exists()) {
@@ -1123,7 +1128,7 @@ SH;
             );
         }
 
-        $adoption = $this->materializeUnknownAppNode($nodesProbe, $registryWriter, $name, $inputs, $roleAssignmentService, $initialHostedRoles, $appProductionIngressNodeId);
+        $adoption = $this->materializeUnknownAppNode($nodesProbe, $registryWriter, $nodeConverger, $name, $inputs, $roleAssignmentService, $initialHostedRoles, $appProductionIngressNodeId);
 
         if (is_int($adoption)) {
             return $adoption;
@@ -1237,6 +1242,17 @@ SH;
                 return $roleAssignmentFailure;
             }
 
+            $nodeSetup = $this->setupManagedNode($nodeConverger, $node, $initialHostedRoles);
+
+            if (is_int($nodeSetup)) {
+                $this->rollbackProvisioningNode($node, 'node_setup_failed', [
+                    'host' => $inputs['host'],
+                    'step' => 'node_setup',
+                ]);
+
+                return $nodeSetup;
+            }
+
             $securityBaseline = $this->finalizeNodeSecurityBaseline($node);
 
             if (is_int($securityBaseline)) {
@@ -1314,6 +1330,7 @@ SH;
     private function materializeUnknownAppNode(
         NodesProbe $nodesProbe,
         NodeRegistryWriter $registryWriter,
+        NodeConverger $nodeConverger,
         string $name,
         array $inputs,
         NodeRoleAssignmentService $roleAssignmentService,
@@ -1408,7 +1425,7 @@ SH;
             'platform' => $artifact->platform,
         ]);
 
-        return $this->adoptExistingAppNode($nodesProbe, $node->refresh(), $inputs, $roleAssignmentService, $initialHostedRoles, $appProductionIngressNodeId);
+        return $this->adoptExistingAppNode($nodesProbe, $nodeConverger, $node->refresh(), $inputs, $roleAssignmentService, $initialHostedRoles, $appProductionIngressNodeId);
     }
 
     /**
@@ -1435,6 +1452,7 @@ SH;
      */
     private function adoptExistingAppNode(
         NodesProbe $nodesProbe,
+        NodeConverger $nodeConverger,
         Node $node,
         array $inputs,
         NodeRoleAssignmentService $roleAssignmentService,
@@ -1516,6 +1534,12 @@ SH;
         }
 
         $developmentDns = app(DevelopmentDnsMappingEnactor::class)->converge($node);
+
+        $nodeSetup = $this->setupManagedNode($nodeConverger, $node, $initialHostedRoles);
+
+        if (is_int($nodeSetup)) {
+            return $nodeSetup;
+        }
 
         if ($initialHostedRoles !== [] && ($developmentDns['status'] ?? null) === 'already_configured') {
             $developmentDns['status'] = 'configured';
@@ -2137,6 +2161,38 @@ SCRIPT,
         }
 
         return null;
+    }
+
+    /**
+     * @param  list<string>  $roles
+     */
+    private function setupManagedNode(NodeConverger $nodeConverger, Node $node, array $roles): ?int
+    {
+        if (! $this->containsDevelopmentAppRole($roles)) {
+            return null;
+        }
+
+        $freshNode = $node->fresh();
+
+        $result = $nodeConverger->converge(
+            node: $freshNode instanceof Node ? $freshNode : $node,
+            context: NodeConvergenceContext::Setup,
+            families: ['node', 'tool'],
+        );
+
+        if ($result->successful()) {
+            return null;
+        }
+
+        return $this->failCommand(
+            code: 'node.provisioning_incomplete',
+            message: "Node '{$node->name}' created but managed setup did not complete.",
+            meta: [
+                'node' => $node->name,
+                'step' => 'node_setup',
+                'setup' => $result->toArray(),
+            ],
+        );
     }
 
     /**

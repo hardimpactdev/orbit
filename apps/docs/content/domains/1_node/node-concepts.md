@@ -97,6 +97,14 @@ Each term below has a precise meaning in the node command family.
 - **Role settings:** Assignment-local configuration for a role. Role-local
   desired configuration lives on the role assignment, not on the generic node
   record.
+- **Node setup:** Internal gateway operation that applies gateway-configured
+  role and tool intent to a real managed node during `node:new`. For a fresh
+  hosted workload node, setup runs after node identity and role intent are
+  stored and before the node is marked `active`.
+- **Node convergence:** Internal service vocabulary for applying stored
+  gateway intent to node reality. Public commands and renderers should describe
+  this as setup during `node:new` and restore during doctor repair, not expose
+  the service name.
 - **Node TLD:** Node-level setting required by the `app-dev` and
   `agent` roles. A node holds at most one `tld` value at a time; roles that
   depend on it read and write the same node-level field. Default `agent` when
@@ -207,6 +215,15 @@ Role baselines are code-defined desired state, not editable package lists.
 | `websocket` | Laravel Reverb in a Docker runtime container managed by Orbit, private TLS backend binding on WireGuard, backend certificate material, and Redis-backed scaling configuration |
 | `s3` | RustFS in a Docker runtime container rendered by Orbit, private S3 API binding on WireGuard, service-level credentials on the `rustfs` tool row, backend pool registration, and role-owned data path |
 
+Baseline convergence first stores the gateway intent for the selected role.
+When `node:new` provisions a real managed workload host, node setup then
+applies the overlapping node and tool intent to the host before activation. The
+initial app-development setup slice applies the role baseline tools
+`caddy`, `php-cli`, `composer`, and `laravel-installer` through the shared
+convergence path. After a node is active, `doctor --restore` uses the same
+internal path for overlapping safe repairs while keeping family-specific issue
+ownership and output.
+
 Local database client binaries (`sqlite3`, `psql`, `mysql`) are not part of
 any role or tool baseline. Orbit interacts with databases through the
 `database_connection` state family and `database:*` commands, which run
@@ -220,7 +237,7 @@ Role assignments use these lifecycle statuses:
 | Status | Meaning |
 | --- | --- |
 | `pending` | The desired role has been stored, but convergence has not completed. |
-| `active` | The role baseline is converged and can be used for eligibility checks. |
+| `active` | The role baseline intent is stored, setup-required host state has been applied for newly provisioned managed nodes, and the role can be used for eligibility checks. |
 | `error` | Convergence failed; `doctor --family=node --restore` can retry after blockers are addressed. |
 | `removing` | Cleanup is in progress or failed; the role is not eligible for new resources. |
 
@@ -283,7 +300,9 @@ These terms describe how nodes join the fleet and prove their identity to the ga
 - **First-gateway bootstrap:** The one allowed no-gateway path. A client
   provisions the first gateway over SSH, creates the initiating client
   identity, installs local trust and gateway config, and verifies gateway API
-  access.
+  access. This bootstrap path uses the dedicated gateway bootstrap installer
+  until a gateway API exists; it does not route through node setup or the
+  shared node convergence service.
 - **Client enrollment:** A two-machine path: the gateway mints the client
   identity, the client machine installs that WireGuard identity, and then runs
   `gateway:add`.

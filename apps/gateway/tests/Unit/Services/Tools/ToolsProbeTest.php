@@ -101,6 +101,16 @@ describe('ToolsProbe', function (): void {
         expect(toolProbeIssue($drift, 'tool.node_invalid')?->kind)->toBe(DriftKind::Divergent);
     });
 
+    it('allows provisioning app nodes during managed setup', function (): void {
+        $node = createToolsProbeAppHostNode(['status' => Node::STATUS_PROVISIONING]);
+        $tool = NodeTool::factory()->create(['node_id' => $node->id, 'name' => 'redis']);
+
+        $drift = (new ToolsProbe)->diff($tool, new ProbeSnapshot([]), allowProvisioning: true);
+
+        expect(toolProbeIssue($drift, 'tool.node_invalid'))->toBeNull()
+            ->and(toolProbeIssue($drift, 'tool.capability_missing')?->kind)->toBe(DriftKind::Missing);
+    });
+
     it('requires known tool catalog definitions', function (): void {
         $node = createToolsProbeAppHostNode();
         $tool = NodeTool::factory()->create(['node_id' => $node->id, 'name' => 'not-a-tool']);

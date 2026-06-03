@@ -4,10 +4,12 @@ declare(strict_types=1);
 
 namespace App\Console\Commands\Internal;
 
+use App\Enums\Nodes\NodeConvergenceContext;
 use App\Enums\Nodes\NodeRoleName;
 use App\Enums\Nodes\NodeRoleStatus;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
+use App\Services\Nodes\NodeConverger;
 use App\Services\Nodes\NodeRegistryWriter;
 use App\Services\Security\SshHostKeyPinner;
 use Illuminate\Console\Attributes\Description;
@@ -31,7 +33,7 @@ class BakeAppNodeCommand extends Command
     #[\Override]
     protected $hidden = true;
 
-    public function handle(NodeRegistryWriter $registryWriter): int
+    public function handle(NodeRegistryWriter $registryWriter, NodeConverger $nodeConverger): int
     {
         $name = $this->stringArgument('name');
         $role = $this->stringOption('role') ?? NodeRoleName::AppDevelopment->value;
@@ -66,8 +68,29 @@ class BakeAppNodeCommand extends Command
         );
 
         $this->upsertRoleAssignment($node->id, $role, $tld, $ingressNode);
+        $this->setupDevelopmentNode($nodeConverger, $node, $role);
 
         return self::SUCCESS;
+    }
+
+    private function setupDevelopmentNode(NodeConverger $nodeConverger, Node $node, string $role): void
+    {
+        if ($role !== NodeRoleName::AppDevelopment->value) {
+            return;
+        }
+
+        $freshNode = $node->fresh();
+        $result = $nodeConverger->converge(
+            node: $freshNode instanceof Node ? $freshNode : $node,
+            context: NodeConvergenceContext::Setup,
+            families: ['node', 'tool'],
+        );
+
+        if ($result->successful()) {
+            return;
+        }
+
+        throw new RuntimeException('Could not converge baked app-dev node baseline: '.json_encode($result->toArray(), JSON_THROW_ON_ERROR));
     }
 
     private function upsertRoleAssignment(int $nodeId, string $role, ?string $tld, ?string $ingressNode): void

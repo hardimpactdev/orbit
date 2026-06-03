@@ -737,6 +737,8 @@ class IncusTopologyBuilder
         $prodIp = $this->timer->measure('prod.ipv4', fn (): string => $instances['prod']->waitForIpv4());
         $agentIp = $this->timer->measure('agent.ipv4', fn (): string => $instances['agent']->waitForIpv4());
 
+        $this->timer->measure('prepared.dev.runtime-prerequisites', fn () => $this->installPreparedAppRuntimePrerequisites($instances['dev']));
+
         if ($rolesToBake !== []) {
             $downstreamStatuses = [
                 ...$downstreamStatuses,
@@ -756,7 +758,6 @@ class IncusTopologyBuilder
         );
         $this->timer->measure('prepared.gateway.api.ready-after-node-new', fn () => E2EGatewayApi::waitForGatewayApi($instances['operator'], $this->host->config->operatorUser, $key));
         $this->timer->measure('prepared.e2e-deps', fn () => $this->installE2EBaseDependencies($instances));
-        $this->timer->measure('prepared.dev.runtime-prerequisites', fn () => $this->installPreparedAppRuntimePrerequisites($instances['dev']));
         $this->timer->measure('dev.database-redis-seed', fn () => $this->seedAppdevDatabaseAndRedis($instances['gateway']));
         $this->timer->measure('prepared.real-wireguard', fn () => $this->installRealWireGuard($instances));
 
@@ -839,6 +840,11 @@ class IncusTopologyBuilder
         $prodIp = $this->timer->measure('prod.ipv4', fn (): string => $instances['prod']->waitForIpv4());
         $agentIp = $this->timer->measure('agent.ipv4', fn (): string => $instances['agent']->waitForIpv4());
 
+        $this->timer->measure('prepared-websocket.dev.runtime-prerequisites', fn () => $this->installPreparedAppRuntimePrerequisites(
+            $instances['dev'],
+            includeGatewayImage: true,
+        ));
+
         if ($rolesToBake !== []) {
             $downstreamStatuses = [
                 ...$downstreamStatuses,
@@ -860,10 +866,6 @@ class IncusTopologyBuilder
         $this->timer->measure('prepared-websocket.gateway.api.ready-after-downstream-bake', fn () => E2EGatewayApi::waitForGatewayApi($instances['operator'], $this->host->config->operatorUser, $key));
         $this->timer->measure('prepared-websocket.dev.database-redis-seed', fn () => $this->seedAppdevDatabaseAndRedis($instances['gateway']));
         $this->timer->measure('prepared-websocket.e2e-deps', fn () => $this->installE2EBaseDependencies($instances));
-        $this->timer->measure('prepared-websocket.dev.runtime-prerequisites', fn () => $this->installPreparedAppRuntimePrerequisites(
-            $instances['dev'],
-            includeGatewayImage: true,
-        ));
         $this->timer->measure('prepared-websocket.websocket.bake', fn () => $this->runPreparedWebSocketBake(
             $instances['gateway'],
             $devIp,

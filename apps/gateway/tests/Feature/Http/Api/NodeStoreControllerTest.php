@@ -9,6 +9,7 @@ use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Models\WireGuardPeer;
 use App\Services\Nodes\DevelopmentDnsMappingEnactor;
+use App\Services\Runtime\OrbitCaddyContainer;
 use App\Services\Security\SshHostKeyPinner;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -320,6 +321,8 @@ describe('NodeStoreController', function (): void {
             return Process::result();
         });
         Process::preventStrayProcesses();
+        $shell = new NodeStoreConvergenceRemoteShell;
+        app()->instance(RemoteShell::class, $shell);
 
         $response = $this
             ->withServerVariables(['REMOTE_ADDR' => '10.6.0.3'])
@@ -345,6 +348,21 @@ describe('NodeStoreController', function (): void {
             ->where('role', 'app-dev')
             ->where('status', 'active')
             ->exists())->toBeTrue();
+
+        expect(DB::table('node_tools')
+            ->where('node_id', $node->id)
+            ->pluck('name')
+            ->sort()
+            ->values()
+            ->all())->toBe([
+                'caddy',
+                'composer',
+                'laravel-installer',
+                'php-cli',
+            ]);
+
+        expect($shell->toolNodeStatuses)->toHaveCount(4)
+            ->and(array_values(array_unique($shell->toolNodeStatuses)))->toBe([Node::STATUS_PROVISIONING]);
 
         $entry = Activity::query()
             ->where('event', 'node.created')
@@ -563,5 +581,41 @@ final class NodeStoreSequencedRemoteShell implements RemoteShell
     public function run(Node $node, string $script, array $options = []): RemoteShellResult
     {
         return array_shift($this->results) ?? new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1);
+    }
+}
+
+final class NodeStoreConvergenceRemoteShell implements RemoteShell
+{
+    /**
+     * @var list<string>
+     */
+    public array $toolNodeStatuses = [];
+
+    /**
+     * @param  array<string, mixed>  $options
+     */
+    public function run(Node $node, string $script, array $options = []): RemoteShellResult
+    {
+        if (! str_contains($script, '$payload = json_decode(stream_get_contents(STDIN), true);')) {
+            return new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1);
+        }
+
+        $this->toolNodeStatuses[] = $node->status;
+        $payload = json_decode((string) ($options['input'] ?? ''), associative: true, flags: JSON_THROW_ON_ERROR);
+        $binary = is_string($payload['binary'] ?? null) ? $payload['binary'] : '';
+        $container = is_string($payload['container'] ?? null) ? $payload['container'] : '';
+
+        if ($container === 'orbit-caddy') {
+            $hash = OrbitCaddyContainer::forPrivateNode((string) $node->wireguard_address)->specHash();
+
+            return new RemoteShellResult(exitCode: 0, stdout: "/usr/bin/docker\tDocker version 27.0.0\trunning\t\t\t\t\t1\trunning\t{$hash}\n", stderr: '', durationMs: 1);
+        }
+
+        return match ($binary) {
+            '/opt/orbit/php/8.5/bin/php' => new RemoteShellResult(exitCode: 0, stdout: "/opt/orbit/php/8.5/bin/php\t8.5.6\n", stderr: '', durationMs: 1),
+            '/usr/local/bin/composer' => new RemoteShellResult(exitCode: 0, stdout: "/usr/local/bin/composer\tComposer version 2.9.0\n", stderr: '', durationMs: 1),
+            'laravel' => new RemoteShellResult(exitCode: 0, stdout: "/usr/local/bin/laravel\tLaravel Installer 5.0.0\n", stderr: '', durationMs: 1),
+            default => new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+        };
     }
 }

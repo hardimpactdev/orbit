@@ -913,6 +913,7 @@ describe('DoctorReportRunner', function (): void {
         $shell = new DoctorReportRunnerRemoteShell([
             new RemoteShellResult(exitCode: 1, stdout: '', stderr: '', durationMs: 1),
             new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+            new RemoteShellResult(exitCode: 0, stdout: "/usr/bin/redis\t7.2.0\trunning\n", stderr: '', durationMs: 1),
         ]);
         app()->instance(RemoteShell::class, $shell);
 
@@ -932,6 +933,7 @@ describe('DoctorReportRunner', function (): void {
                 'mode' => 'restore',
                 'status' => 'completed',
             ])
+            ->and($shell->scripts)->toHaveCount(3)
             ->and($shell->scripts[1])->toContain("docker compose -f '/opt/orbit/docker-compose.yml' pull 'redis'");
     });
 
@@ -1041,7 +1043,7 @@ describe('DoctorReportRunner', function (): void {
             ->and($shell->scripts)->toBe([]);
     });
 
-    it('restores supported node role drift through node family dispatch', function (): void {
+    it('restores supported node role baseline drift through the node converger', function (): void {
         File::deleteDirectory(app(DevelopmentDnsMappingEnactor::class)->configDir());
 
         $node = Node::factory()->create([

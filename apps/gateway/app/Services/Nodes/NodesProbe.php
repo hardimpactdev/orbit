@@ -96,6 +96,23 @@ final readonly class NodesProbe
     /**
      * @return list<DriftEntry>
      */
+    public function roleBaselineDrift(Node $node): array
+    {
+        $drift = [];
+
+        foreach ($node->roleAssignments()->where('status', NodeRoleStatus::Active->value)->get() as $assignment) {
+            $drift = [
+                ...$drift,
+                ...$this->baselineDriftForAssignment($node, $assignment),
+            ];
+        }
+
+        return $drift;
+    }
+
+    /**
+     * @return list<DriftEntry>
+     */
     private function checkRecordCompleteness(Node $node): array
     {
         if ($this->nodeIsMissingRequiredRecordFields($node)) {

@@ -31,21 +31,7 @@ it('serves an app created on a prepared app-dev topology', function (): void {
 
         appServingGrantAccess($topology);
         appServingPrepareRedisProbe($topology);
-        appServingRestoreNodeBaseline($topology);
-
-        $doctorResult = $topology->ssh(
-            'operator',
-            sprintf(
-                'cd %s && orbit doctor --node=app-dev-1 --family=tool --restore --json',
-                escapeshellarg($topology->checkout('operator')),
-            ),
-            timeoutSeconds: 900,
-        );
-        $doctorData = e2eJsonCommandData(e2eJsonCommandPayload($doctorResult->output()));
-
-        expect($doctorData['doctor']['healthy'])->toBeTrue(
-            'doctor --restore left the node unhealthy: '.json_encode($doctorData, JSON_PRETTY_PRINT)
-        );
+        appServingAssertDoctorHealthy($topology, 'tool');
 
         $appNewResult = $topology->ssh(
             'operator',
@@ -159,20 +145,23 @@ function appServingRestoreDoctorFamily(E2ETopologyHarness $topology, string $fam
     );
 }
 
-function appServingRestoreNodeBaseline(E2ETopologyHarness $topology): void
+function appServingAssertDoctorHealthy(E2ETopologyHarness $topology, string $family, ?string $key = null): void
 {
+    $keyOption = $key === null ? '' : ' --key='.escapeshellarg($key);
     $doctorResult = $topology->ssh(
         'operator',
         sprintf(
-            'cd %s && orbit doctor --node=app-dev-1 --family=node --key=node.role_baseline_mismatch --restore --json',
+            'cd %s && orbit doctor --node=app-dev-1 --family=%s%s --json',
             escapeshellarg($topology->checkout('operator')),
+            escapeshellarg($family),
+            $keyOption,
         ),
         timeoutSeconds: 900,
     );
     $doctorData = e2eJsonCommandData(e2eJsonCommandPayload($doctorResult->output()));
 
     expect($doctorData['doctor']['healthy'])->toBeTrue(
-        'doctor --key=node.role_baseline_mismatch --restore left the node baseline unhealthy: '.json_encode($doctorData, JSON_PRETTY_PRINT)
+        "plain doctor --family={$family} check was unhealthy: ".json_encode($doctorData, JSON_PRETTY_PRINT)
     );
 }
 

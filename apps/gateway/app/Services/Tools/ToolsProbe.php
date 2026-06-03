@@ -213,11 +213,11 @@ BASH;
     /**
      * @return list<DriftEntry>
      */
-    public function diff(NodeTool $tool, ProbeSnapshot $snapshot): array
+    public function diff(NodeTool $tool, ProbeSnapshot $snapshot, bool $allowProvisioning = false): array
     {
         return [
             ...$this->checkRecordCompleteness($tool),
-            ...$this->checkNodeEligibility($tool),
+            ...$this->checkNodeEligibility($tool, $allowProvisioning),
             ...$this->checkDefinition($tool),
             ...$this->checkCapabilityPresence($tool, $snapshot),
             ...$this->checkContainerState($tool, $snapshot),
@@ -257,7 +257,7 @@ BASH;
     /**
      * @return list<DriftEntry>
      */
-    private function checkNodeEligibility(NodeTool $tool): array
+    private function checkNodeEligibility(NodeTool $tool, bool $allowProvisioning): array
     {
         $tool->loadMissing('node');
 
@@ -272,7 +272,10 @@ BASH;
             ];
         }
 
-        if ($tool->node->status !== 'active' || ! $this->isToolNode($tool->node)) {
+        $allowedStatus = $tool->node->status === 'active'
+            || ($allowProvisioning && $tool->node->status === Node::STATUS_PROVISIONING);
+
+        if (! $allowedStatus || ! $this->isToolNode($tool->node)) {
             return [
                 new DriftEntry(
                     family: $this->key(),

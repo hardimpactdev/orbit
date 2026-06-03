@@ -257,7 +257,14 @@ describe('DoctorRunController', function (): void {
             'node_id' => $appNode->id,
             'name' => 'caddy',
             'expected_state' => 'running']);
-        app()->instance(RemoteShell::class, new DoctorRunRemoteShell("/usr/bin/caddy\t2.8.4\tstopped\n"));
+        app()->instance(RemoteShell::class, new DoctorRunRemoteShell(
+            "/usr/bin/caddy\t2.8.4\tstopped\n",
+            perRouteStdouts: [
+                "/usr/bin/caddy\t2.8.4\tstopped\n",
+                '',
+                "/usr/bin/caddy\t2.8.4\trunning\n",
+            ],
+        ));
 
         $response = $this->call('POST', '/api/doctor/fix', [
             'mode' => 'restore',
@@ -327,11 +334,20 @@ describe('DoctorRunController', function (): void {
 
 final class DoctorRunRemoteShell implements RemoteShell
 {
+    /** @var list<string> */
+    private array $perRouteStdouts;
+
+    /**
+     * @param  list<string>  $perRouteStdouts
+     */
     public function __construct(
-        private readonly string $perRouteStdout,
+        string $perRouteStdout,
         private readonly string $nodeLevelStdout = '',
         private readonly int $exitCode = 0,
-    ) {}
+        array $perRouteStdouts = [],
+    ) {
+        $this->perRouteStdouts = $perRouteStdouts === [] ? [$perRouteStdout] : $perRouteStdouts;
+    }
 
     /**
      * @param  array<string, mixed>  $options
@@ -355,7 +371,9 @@ final class DoctorRunRemoteShell implements RemoteShell
         }
 
         $isNodeLevel = str_contains($script, '/etc/caddy/sites/*.caddy');
-        $stdout = $isNodeLevel ? $this->nodeLevelStdout : $this->perRouteStdout;
+        $stdout = $isNodeLevel
+            ? $this->nodeLevelStdout
+            : (array_shift($this->perRouteStdouts) ?? '');
 
         return new RemoteShellResult(exitCode: $this->exitCode, stdout: $stdout, stderr: '', durationMs: 1);
     }

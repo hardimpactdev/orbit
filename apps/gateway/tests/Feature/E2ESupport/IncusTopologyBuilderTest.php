@@ -497,7 +497,7 @@ it('builds full prepared websocket roles on the app-dev node', function (): void
             ->and($realWireGuardPhase)->toBeInt()
             ->and($runtimePrerequisitesPhase)->toBeInt()
             ->and($websocketBakePhase)->toBeInt()
-            ->and($realWireGuardPhase)->toBeLessThan($runtimePrerequisitesPhase)
+            ->and($runtimePrerequisitesPhase)->toBeLessThan($realWireGuardPhase)
             ->and($runtimePrerequisitesPhase)->toBeLessThan($websocketBakePhase);
     });
 });

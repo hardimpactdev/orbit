@@ -319,8 +319,8 @@ it('keeps serving assertions out of the provision group', function (): void {
     expect($contents)->toBeString()
         ->and($contents)->not->toContain('e2e-provision')
         ->and($contents)->toContain('E2ETopologyKind::OperatorGatewayAppdev')
-        ->and($contents)->toContain('appServingRestoreNodeBaseline($topology)')
-        ->and($contents)->toContain('--key=node.role_baseline_mismatch')
+        ->and($contents)->toContain('appServingAssertDoctorHealthy($topology, \'tool\')')
+        ->and($contents)->toContain('$keyOption = $key === null')
         ->and($contents)->toContain('HOME=/home/orbit /usr/local/bin/laravel --version')
         ->and($contents)->not->toContain('E2ETopologyKind::OperatorGatewayAppdevWebsocket')
         ->and($contents)->not->toContain('e2e-feature-operator_gateway_app-dev_websocket');
