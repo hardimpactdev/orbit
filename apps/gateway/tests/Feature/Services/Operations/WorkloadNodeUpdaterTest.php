@@ -7,6 +7,7 @@ use App\Data\Operations\OperationUpdatePlanSnapshot;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
+use App\Models\OperationEvent;
 use App\Models\OperationRun;
 use App\Models\OperationUpdatePlan;
 use App\Models\UpdateLease;
@@ -14,11 +15,13 @@ use App\Services\Operations\FleetUpdateVerifier;
 use App\Services\Operations\GatewayServiceUpdater;
 use App\Services\Operations\OperationRunRecorder;
 use App\Services\Operations\OperationUpdatePlanStore;
+use App\Services\Operations\UpdateLeaseConflict;
 use App\Services\Operations\UpdateLeaseManager;
 use App\Services\Operations\UpdateRunner;
 use App\Services\Operations\WorkloadNodeUpdater;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Str;
+use Orbit\Core\Enums\OperationStatus;
 
 uses(RefreshDatabase::class);
 
@@ -133,9 +136,11 @@ it('continues updating later workload nodes when one remote update fails', funct
         ->and(UpdateLease::query()->whereNotNull('active_resource_key')->count())->toBe(0);
 });
 
-it('records a failed target for an active node lease conflict and updates the remaining nodes', function (): void {
+it('fails the update operation when a workload node lease is already held', function (): void {
     $shell = new WorkloadUpdaterFakeShell;
     app()->instance(RemoteShell::class, $shell);
+    app()->instance(GatewayServiceUpdater::class, new WorkloadUpdaterNoopGatewayUpdater);
+    app()->instance(FleetUpdateVerifier::class, new WorkloadUpdaterNoopFleetVerifier);
 
     $run = workloadUpdaterRun();
     $conflictingNode = Node::factory()->appDev()->create(['name' => 'app-dev-1', 'platform' => 'linux']);
@@ -143,7 +148,7 @@ it('records a failed target for an active node lease conflict and updates the re
     $plan = app(OperationUpdatePlanStore::class)->create($run, workloadUpdaterSnapshot());
     $otherRun = workloadUpdaterRun();
 
-    app(UpdateLeaseManager::class)->acquire(
+    $conflictingLease = app(UpdateLeaseManager::class)->acquire(
         resourceType: 'node',
         resourceKey: $conflictingNode->name,
         operationRun: $otherRun,
@@ -151,24 +156,47 @@ it('records a failed target for an active node lease conflict and updates the re
         ttlSeconds: 300,
     );
 
-    $results = app(WorkloadNodeUpdater::class)->update($run, $plan);
+    expect(fn () => app(UpdateRunner::class)->run($run->id))
+        ->toThrow(UpdateLeaseConflict::class);
 
-    expect($results[0])->toMatchArray([
-        'target' => 'app-dev-1',
-        'node' => 'app-dev-1',
-        'role' => 'app-dev',
-        'status' => 'failed',
-        'failed_step' => 'node_lease',
-    ])
-        ->and($results[0]['output'])->toContain('Update resource [node:app-dev-1]')
-        ->and($results[1])->toMatchArray([
-            'target' => 'app-prod-1',
-            'node' => 'app-prod-1',
-            'role' => 'app-prod',
-            'status' => 'completed',
+    $error = OperationEvent::query()
+        ->where('operation_run_id', $run->id)
+        ->where('event_type', 'error')
+        ->firstOrFail();
+
+    expect($shell->calls)->toBe([])
+        ->and($run->refresh()->status)->toBe(OperationStatus::Failed)
+        ->and($run->error)->toMatchArray([
+            'code' => 'update.node_locked',
+            'message' => 'Update resource [node:app-dev-1] is already leased by operation ['.$otherRun->id.'] until '.$conflictingLease->expires_at->toIso8601String().'.',
+            'data' => [
+                'resource' => 'node:app-dev-1',
+                'resource_type' => 'node',
+                'resource_key' => 'app-dev-1',
+                'lease_id' => $conflictingLease->id,
+                'conflicting_operation_id' => $otherRun->id,
+                'expires_at' => $conflictingLease->expires_at->toIso8601String(),
+            ],
         ])
-        ->and($shell->calls)->toHaveCount(1)
-        ->and($shell->calls[0]['node'])->toBe('app-prod-1')
+        ->and($error->payload)->toMatchArray([
+            'exit_code' => 1,
+            'data' => [
+                'code' => 'update.node_locked',
+                'resource' => 'node:app-dev-1',
+                'resource_type' => 'node',
+                'resource_key' => 'app-dev-1',
+                'lease_id' => $conflictingLease->id,
+                'conflicting_operation_id' => $otherRun->id,
+                'expires_at' => $conflictingLease->expires_at->toIso8601String(),
+            ],
+        ])
+        ->and(workloadUpdaterStepEvents($run))->toContain(
+            ['workload-nodes', 'running'],
+            ['workload.app-dev-1', 'running'],
+            ['workload.app-dev-1', 'fail'],
+            ['workload-nodes', 'fail'],
+        )
+        ->and(workloadUpdaterStepEvents($run))->not->toContain(['workload.app-prod-1', 'running'])
         ->and(UpdateLease::query()->whereNotNull('active_resource_key')->pluck('resource_key')->all())->toBe(['app-dev-1']);
 });
 
@@ -198,6 +226,18 @@ function workloadUpdaterRun(): OperationRun
         lane: 'gateway',
         operationType: 'update:all',
     );
+}
+
+/**
+ * @return list<array{0: string, 1: string}>
+ */
+function workloadUpdaterStepEvents(OperationRun $run): array
+{
+    return $run->events()
+        ->where('event_type', 'step')
+        ->get()
+        ->map(fn (OperationEvent $event): array => [$event->payload['key'], $event->payload['status']])
+        ->all();
 }
 
 class WorkloadUpdaterNoopGatewayUpdater extends GatewayServiceUpdater

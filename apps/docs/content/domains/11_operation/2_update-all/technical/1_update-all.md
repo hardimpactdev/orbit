@@ -103,6 +103,10 @@ The expected target shape per calling context:
 - Lease acquisition must map active-lease conflicts, including
   unique-constraint races, to a typed update lease conflict. Expired leases may
   be taken over and must not leave a node permanently blocked.
+- A workload node lease conflict stops workload fan-out before the conflicting
+  node mutation and records terminal durable error data with code
+  `update.node_locked`, the locked resource, the conflicting operation id, and
+  the lease expiry time.
 
 ### Per-Installation Update Rules
 

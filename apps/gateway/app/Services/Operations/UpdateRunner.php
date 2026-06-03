@@ -167,20 +167,52 @@ final readonly class UpdateRunner
 
     private function markFailed(OperationRun $operationRun, Throwable $exception): void
     {
-        $code = $exception instanceof FleetUpdateVerificationFailed
-            ? $exception->failureCode
-            : 'update_runner_failed';
-        $message = $exception instanceof FleetUpdateVerificationFailed
-            ? $exception->publicMessage
-            : 'Update runner failed.';
+        $failure = $this->failurePayload($exception);
 
-        $this->operationRuns->appendError($operationRun->id, $message, 1, [
-            'code' => $code,
+        $this->operationRuns->appendError($operationRun->id, $failure['message'], 1, [
+            'code' => $failure['code'],
+            ...$failure['data'],
         ]);
         $this->operationRuns->failed($operationRun->id, error: [
-            'code' => $code,
-            'message' => $message,
+            'code' => $failure['code'],
+            'message' => $failure['message'],
+            ...($failure['data'] === [] ? [] : ['data' => $failure['data']]),
         ]);
+    }
+
+    /**
+     * @return array{code: string, message: string, data: array<string, mixed>}
+     */
+    private function failurePayload(Throwable $exception): array
+    {
+        if ($exception instanceof FleetUpdateVerificationFailed) {
+            return [
+                'code' => $exception->failureCode,
+                'message' => $exception->publicMessage,
+                'data' => [],
+            ];
+        }
+
+        if ($exception instanceof UpdateLeaseConflict) {
+            return [
+                'code' => $exception->resourceType === 'node' ? 'update.node_locked' : 'update_lease_conflict',
+                'message' => $exception->getMessage(),
+                'data' => [
+                    'resource' => "{$exception->resourceType}:{$exception->resourceKey}",
+                    'resource_type' => $exception->resourceType,
+                    'resource_key' => $exception->resourceKey,
+                    'lease_id' => $exception->leaseId,
+                    'conflicting_operation_id' => $exception->operationRunId,
+                    'expires_at' => $exception->expiresAt->toIso8601String(),
+                ],
+            ];
+        }
+
+        return [
+            'code' => 'update_runner_failed',
+            'message' => 'Update runner failed.',
+            'data' => [],
+        ];
     }
 
     private function phaseFailureMessage(Throwable $exception): string

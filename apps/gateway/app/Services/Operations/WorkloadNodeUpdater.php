@@ -71,12 +71,14 @@ final readonly class WorkloadNodeUpdater
                 callback: fn (): array => $this->runRemoteUpdate($plan, $node),
             );
         } catch (UpdateLeaseConflict $exception) {
-            $result = [
-                ...$this->targetPayload($node),
-                'status' => 'failed',
-                'failed_step' => 'node_lease',
-                'output' => $exception->getMessage(),
-            ];
+            $this->operationRuns->appendStep(
+                $operationRun->id,
+                $this->eventKey($node),
+                'fail',
+                $exception->getMessage(),
+            );
+
+            throw $exception;
         } catch (Throwable $exception) {
             $result = [
                 ...$this->targetPayload($node),
