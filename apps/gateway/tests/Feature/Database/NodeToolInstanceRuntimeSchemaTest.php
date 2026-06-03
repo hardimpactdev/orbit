@@ -19,6 +19,7 @@ it('creates node tool instance runtime columns with expected broad types', funct
         'instance_key',
         'version_family',
         'runtime',
+        'runtime_config',
         'expected_state',
         'expected_version',
         'config',
@@ -39,7 +40,8 @@ it('creates node tool instance runtime columns with expected broad types', funct
         )
         ->and(Schema::getColumnType('node_tools', 'instance_key'))->toBeIn(['string', 'varchar'])
         ->and(Schema::getColumnType('node_tools', 'version_family'))->toBeIn(['string', 'varchar'])
-        ->and(Schema::getColumnType('node_tools', 'runtime'))->toBeIn(['string', 'varchar']);
+        ->and(Schema::getColumnType('node_tools', 'runtime'))->toBeIn(['string', 'varchar'])
+        ->and(Schema::getColumnType('node_tools', 'runtime_config'))->toBeIn(['json', 'text']);
 });
 
 it('backfills existing tool rows to the default instance and runtime', function (): void {
@@ -57,7 +59,7 @@ it('backfills existing tool rows to the default instance and runtime', function 
         ->firstOrFail();
 
     $missingAttributes = array_values(array_filter(
-        ['instance_key', 'version_family', 'runtime'],
+        ['instance_key', 'version_family', 'runtime', 'runtime_config'],
         fn (string $attribute): bool => ! array_key_exists($attribute, $tool->getAttributes()),
     ));
 
@@ -67,7 +69,8 @@ it('backfills existing tool rows to the default instance and runtime', function 
     )
         ->and($tool->instance_key)->toBe('redis:default')
         ->and($tool->version_family)->toBeNull()
-        ->and($tool->runtime)->toBe('docker');
+        ->and($tool->runtime)->toBe('docker')
+        ->and($tool->runtime_config)->toBeNull();
 });
 
 it('keys node tool uniqueness by node name and instance key', function (): void {
@@ -113,6 +116,36 @@ it('allows multiple version-family tool instances on one node', function (): voi
         versionFamily: '8',
         runtime: 'docker',
     ))->toThrow(QueryException::class);
+});
+
+it('casts runtime config without regressing encrypted credentials', function (): void {
+    $node = Node::factory()->create();
+
+    $tool = NodeTool::query()->create([
+        'node_id' => $node->id,
+        'name' => 'redis',
+        'expected_state' => 'running',
+        'runtime_config' => [
+            'service' => 'redis',
+            'volume' => 'orbit-redis-default',
+        ],
+        'credentials' => [
+            'password' => 'secret',
+        ],
+    ]);
+
+    expect($tool->fresh())
+        ->runtime_config->toBe([
+            'service' => 'redis',
+            'volume' => 'orbit-redis-default',
+        ])
+        ->credentials->toBe([
+            'password' => 'secret',
+        ]);
+
+    $storedCredentials = (string) DB::table('node_tools')->whereKey($tool->id)->value('credentials');
+
+    expect(str_contains($storedCredentials, 'secret'))->toBeFalse();
 });
 
 it('keeps default instance tools compatible with name-only callers', function (): void {
@@ -182,6 +215,7 @@ function insertNodeToolInstance(
         'instance_key' => $instanceKey,
         'version_family' => $versionFamily,
         'runtime' => $runtime,
+        'runtime_config' => null,
         'expected_state' => 'running',
         'expected_version' => $versionFamily,
         'config' => json_encode(['endpoints' => []], JSON_THROW_ON_ERROR),

@@ -89,6 +89,10 @@ describe('tool command shared contract', function (): void {
         expect($tool->getFillable())->toBe([
             'node_id',
             'name',
+            'instance_key',
+            'version_family',
+            'runtime',
+            'runtime_config',
             'expected_state',
             'expected_version',
             'config',

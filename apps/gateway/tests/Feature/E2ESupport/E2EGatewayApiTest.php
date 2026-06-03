@@ -177,15 +177,19 @@ it('repairs docker gateway config root write permissions before seeding operator
 
     $setup = implode("\n", $commands);
     $repairPosition = strpos($setup, 'chmod -R u+rwX,g+rwX');
+    $removeTmpPosition = strpos($setup, 'rm -f');
     $seedPosition = strpos($setup, 'grep -Ev');
 
     expect($repairPosition)->toBeInt()
+        ->and($removeTmpPosition)->toBeInt()
         ->and($seedPosition)->toBeInt()
         ->and($repairPosition)->toBeLessThan($seedPosition)
+        ->and($removeTmpPosition)->toBeLessThan($seedPosition)
         ->and($setup)->toContain('install -d -m 775 -o orbit -g orbit')
         ->and($setup)->toContain('chown -R orbit:orbit')
         ->and($setup)->toContain('chmod -R u+rwX,g+rwX')
         ->and($setup)->toContain('/home/orbit/.config/orbit/.env')
+        ->and($setup)->toContain('/home/orbit/.config/orbit/.env.tmp')
         ->and($setup)->toContain('.tmp');
 });
 

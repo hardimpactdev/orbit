@@ -264,15 +264,23 @@ it('writes source-mounted gateway state under the node config root instead of th
         true,
     );
 
+    $removeTmpPosition = strpos($command, "rm -f '/home/orbit/.config/orbit/.env.tmp'");
+    $rewritePosition = strpos($command, "grep -Ev '^(DB_DATABASE|SESSION_DRIVER)='");
+
     expect($command)
         ->toContain("sudo install -d -m 775 -o orbit -g orbit '/home/orbit/.config/orbit'")
         ->toContain("sudo chown -R orbit:orbit '/home/orbit/.config/orbit'")
         ->toContain('/home/orbit/.config/orbit/.env')
+        ->toContain('/home/orbit/.config/orbit/.env.tmp')
         ->toContain('/home/orbit/.config/orbit/gateway.sqlite')
         ->toContain('/home/orbit/.config/orbit')
         ->not->toContain("cp '/home/orbit/orbit/apps/gateway/.env' apps/gateway/.env")
         ->not->toContain('apps/gateway/database/database.sqlite')
         ->not->toContain('apps/gateway/storage/app');
+
+    expect($removeTmpPosition)->toBeInt()
+        ->and($rewritePosition)->toBeInt()
+        ->and($removeTmpPosition)->toBeLessThan($rewritePosition);
 });
 
 it('keeps gateway state in the node config root for regular checkouts', function (): void {
@@ -601,9 +609,16 @@ it('marks Docker topology checkout env files with the Docker provider', function
         fn (string $command): bool => str_starts_with($command, "docker exec --user 'orbit' 'orbit-e2e-run123-operator'"),
     )));
 
+    $removeTmpPosition = strpos($nodeInstallCommands, 'rm -f');
+    $providerRewritePosition = strpos($nodeInstallCommands, 'grep -Ev');
+
     expect($nodeInstallCommands)
         ->toContain('ORBIT_E2E_TOPOLOGY_PROVIDER')
-        ->toContain('ORBIT_E2E_TOPOLOGY_PROVIDER=docker');
+        ->toContain('ORBIT_E2E_TOPOLOGY_PROVIDER=docker')
+        ->toContain('/home/orbit/.config/orbit/.env.tmp')
+        ->and($removeTmpPosition)->toBeInt()
+        ->and($providerRewritePosition)->toBeInt()
+        ->and($removeTmpPosition)->toBeLessThan($providerRewritePosition);
 });
 
 it('keeps Docker seeded gateway state in the node local config root', function (): void {

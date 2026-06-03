@@ -1911,13 +1911,15 @@ PHP;
     private static function dockerGatewayStateBootstrapCommand(): string
     {
         $gatewayEnv = escapeshellarg(self::gatewayStatePath('.env'));
+        $gatewayEnvTmp = escapeshellarg(self::gatewayStatePath('.env.tmp'));
         $gatewayDatabase = escapeshellarg(self::gatewayStatePath('gateway.sqlite'));
 
         return implode(' && ', [
             'mkdir -p '.escapeshellarg(self::OrbitConfigRoot).' apps/gateway/storage/framework/cache/data apps/gateway/storage/framework/sessions apps/gateway/storage/framework/testing apps/gateway/storage/framework/views apps/gateway/storage/logs',
             "if [ ! -f {$gatewayEnv} ]; then cp apps/gateway/.env.example {$gatewayEnv}; fi",
-            "grep -Ev '^(DB_DATABASE|SESSION_DRIVER)=' {$gatewayEnv} > {$gatewayEnv}.tmp || true",
-            "mv {$gatewayEnv}.tmp {$gatewayEnv}",
+            "rm -f {$gatewayEnvTmp}",
+            "grep -Ev '^(DB_DATABASE|SESSION_DRIVER)=' {$gatewayEnv} > {$gatewayEnvTmp} || true",
+            "mv {$gatewayEnvTmp} {$gatewayEnv}",
             "printf '\\nDB_DATABASE=%s\\nSESSION_DRIVER=file\\n' {$gatewayDatabase} >> {$gatewayEnv}",
             "touch {$gatewayDatabase}",
         ]);
@@ -1954,6 +1956,7 @@ PHP;
         $viewCompiledPathArgument = escapeshellarg($viewCompiledPath);
 
         return implode(' && ', [
+            "rm -f {$gatewayEnvTmp}",
             "grep -Ev '^(ORBIT_E2E_TRUST_WIREGUARD_HEADER|VIEW_COMPILED_PATH|ORBIT_E2E_TOPOLOGY_PROVIDER)=' {$gatewayEnv} > {$gatewayEnvTmp} || true",
             "mv {$gatewayEnvTmp} {$gatewayEnv}",
             "printf '\\nORBIT_E2E_TRUST_WIREGUARD_HEADER=true\\nVIEW_COMPILED_PATH=%s\\nORBIT_E2E_TOPOLOGY_PROVIDER=docker\\n' {$viewCompiledPathArgument} >> {$gatewayEnv}",
