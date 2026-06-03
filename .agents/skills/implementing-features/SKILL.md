@@ -184,6 +184,10 @@ the provider substrate or production artifact preparation.
 - Prefer existing Orbit and Laravel patterns.
 - Treat current docs as product authority.
 - Keep docs, tests, and code aligned.
+- When the change lands a direction change or reversal, append a one-line entry
+  to `apps/docs/content/product-decisions.md` (newest first,
+  `- YYYY-MM-DD — <decision with topic noun>. (solo todo #NNNN)`), linking the
+  Solo todo being executed. Skip routine work — flags, fixes, refactors.
 - Retire tests only when current docs reject the behavior or replacement coverage exists.
 - Stop for direction if the docs and requested behavior conflict.
 - Stay inside owned scope and leave unrelated dirty files untouched.
@@ -198,6 +202,9 @@ Worktree:
 
 Changed files:
 - <path>: <why>
+
+Product-decisions ledger:
+- <appended line, or none>
 
 Tests:
 - Pest unit/feature: <test added or changed>
