@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Enums\Gateway\GatewayExposureMode;
 use App\Models\Node;
 use App\Services\Ca\OrbitCaService;
+use App\Services\Gateway\GatewayDirectFirewallInstaller;
 use App\Services\Gateway\GatewayImageReference;
 use App\Services\Gateway\GatewaySwarmInstaller;
 use App\Services\Gateway\GatewaySwarmManager;
@@ -93,6 +94,8 @@ it('converges gateway-direct Swarm service with CA-rooted certs and Docker-aware
         ->and($firewallScript)->toContain('wg-orbit')
         ->and($firewallScript)->toContain('10.6.0.0/24')
         ->and($firewallScript)->toContain('--dport 443')
+        ->and($firewallScript)->toContain('-i "$WG_IFACE" -p tcp --dport 443')
+        ->and($firewallScript)->toContain('-s "$WG_CIDR" -p tcp --dport 443')
         ->and($firewallScript)->toContain('sudo ufw allow in on "$WG_IFACE" proto tcp from "$WG_CIDR" to any port 443')
         ->and($firewallScript)->toContain('sudo ufw deny in proto tcp from 0.0.0.0/0 to any port 443');
 
@@ -112,6 +115,19 @@ it('converges gateway-direct Swarm service with CA-rooted certs and Docker-aware
         ->and($tcp80Check)->toBeLessThan($stackDeploy)
         ->and($tcp443Check)->toBeLessThan($stackDeploy)
         ->and($udp443Check)->toBeLessThan($stackDeploy);
+
+    expect(array_filter(
+        $invocations,
+        fn (string $command): bool => str_contains($command, 'orbit-caddy') || str_contains($command, '/etc/caddy'),
+    ))->toBe([]);
+});
+
+it('fails explicitly instead of publishing gateway-direct through an unsupported nftables Docker firewall backend', function (): void {
+    $script = (new GatewayDirectFirewallInstaller)->script();
+
+    expect($script)->toContain('command -v nft')
+        ->and($script)->toContain('unsupported Docker nftables firewall backend')
+        ->and($script)->toContain('Docker iptables firewall backend');
 });
 
 it('pulls and inspects the gateway image before deploying the stack when no archive is staged', function (): void {

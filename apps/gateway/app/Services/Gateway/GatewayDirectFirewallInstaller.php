@@ -38,11 +38,32 @@ set -euo pipefail
 WG_IFACE={$this->quote($wireguardInterface)}
 WG_CIDR={$this->quote($wireguardCidr)}
 
-sudo iptables -N DOCKER-USER >/dev/null 2>&1 || true
-sudo iptables -C DOCKER-USER -i "\$WG_IFACE" -p tcp -s "\$WG_CIDR" --dport 443 -j RETURN >/dev/null 2>&1 \\
-    || sudo iptables -I DOCKER-USER 1 -i "\$WG_IFACE" -p tcp -s "\$WG_CIDR" --dport 443 -j RETURN
+if ! command -v iptables >/dev/null 2>&1; then
+    if command -v nft >/dev/null 2>&1; then
+        echo "unsupported Docker nftables firewall backend for gateway-direct exposure; Docker iptables firewall backend is required until nftables ingress rules are implemented" >&2
+    else
+        echo "iptables is required for gateway-direct Docker ingress firewall rules" >&2
+    fi
+    exit 78
+fi
+
+if ! sudo iptables -N DOCKER-USER >/dev/null 2>&1; then
+    if ! sudo iptables -S DOCKER-USER >/dev/null 2>&1; then
+        if command -v nft >/dev/null 2>&1; then
+            echo "unsupported Docker nftables firewall backend for gateway-direct exposure; Docker iptables firewall backend is required until nftables ingress rules are implemented" >&2
+        else
+            echo "failed to initialize Docker DOCKER-USER chain for gateway-direct exposure" >&2
+        fi
+        exit 78
+    fi
+fi
+
+sudo iptables -C DOCKER-USER -i "\$WG_IFACE" -p tcp --dport 443 -j RETURN >/dev/null 2>&1 \\
+    || sudo iptables -I DOCKER-USER 1 -i "\$WG_IFACE" -p tcp --dport 443 -j RETURN
+sudo iptables -C DOCKER-USER -s "\$WG_CIDR" -p tcp --dport 443 -j RETURN >/dev/null 2>&1 \\
+    || sudo iptables -I DOCKER-USER 2 -s "\$WG_CIDR" -p tcp --dport 443 -j RETURN
 sudo iptables -C DOCKER-USER -p tcp --dport 443 -j DROP >/dev/null 2>&1 \\
-    || sudo iptables -I DOCKER-USER 2 -p tcp --dport 443 -j DROP
+    || sudo iptables -A DOCKER-USER -p tcp --dport 443 -j DROP
 
 if command -v ip6tables >/dev/null 2>&1; then
     sudo ip6tables -N DOCKER-USER >/dev/null 2>&1 || true
