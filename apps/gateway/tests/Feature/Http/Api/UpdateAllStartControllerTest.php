@@ -211,10 +211,20 @@ it('marks the operation failed when the one shot runner cannot be launched', fun
 
     $operationRunId = $response->json('error.meta.operation_run_id');
     $run = OperationRun::query()->findOrFail($operationRunId);
+    $errorEvent = $run->events()->where('event_type', 'error')->firstOrFail();
 
     expect($run->status)->toBe(OperationStatus::Failed)
         ->and($run->error['code'])->toBe('update_runner_launch_failed')
-        ->and($run->events()->pluck('event_type')->all())->toBe(['tree', 'step', 'step', 'error']);
+        ->and($run->events()->pluck('event_type')->all())->toBe(['tree', 'step', 'step', 'error'])
+        ->and($errorEvent->payload)->toMatchArray([
+            'message' => 'Update runner launch failed',
+            'exit_code' => 1,
+            'data' => [
+                'reason' => 'update_runner_launch_failed',
+            ],
+        ])
+        ->and(json_encode($errorEvent->payload, JSON_THROW_ON_ERROR))->not->toContain('docker denied')
+        ->and(json_encode($errorEvent->payload, JSON_THROW_ON_ERROR))->not->toContain('Failed to launch update runner');
 });
 
 it('returns validation errors before creating an operation run', function (): void {
