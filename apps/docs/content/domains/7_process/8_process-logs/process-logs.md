@@ -5,7 +5,7 @@
 Show or follow logs for a process runtime context.
 
 `process:logs` reads process logs from the owning node process manager through
-the gateway for a resolved app or workspace context.
+the gateway for a resolved node, app, or workspace context.
 
 ## Usage
 
@@ -19,9 +19,9 @@ orbit process:logs queue --app=docs --lines=200 --json
 
 Use this command to read or stream logs for a resolved process runtime context.
 
-- **Context Resolution**: Resolves the process and app/workspace runtime context.
-- **Log Streaming**: Streams or returns Supervisor process logs through the
-  gateway.
+- **Context Resolution**: Resolves the process and node/app/workspace runtime context.
+- **Log Streaming**: Streams or returns logs from the selected process runtime
+  backend through the gateway.
 - **No Mutations**: Does not mutate process configuration.
 - **JSON Restriction**: Uses JSON output only for non-follow mode. `--json --follow` is rejected before opening the log stream.
 

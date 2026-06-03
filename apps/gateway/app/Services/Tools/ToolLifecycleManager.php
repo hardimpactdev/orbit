@@ -6,6 +6,7 @@ namespace App\Services\Tools;
 
 use App\Contracts\RemoteShell;
 use App\Models\NodeTool;
+use App\Services\Processes\ProcessRuntimeDriverRegistry;
 
 final readonly class ToolLifecycleManager
 {
@@ -14,6 +15,8 @@ final readonly class ToolLifecycleManager
         private ToolRegistry $registry,
         private ToolPayloadMapper $payloads,
         private RemoteShell $remoteShell,
+        private ToolRelatedProcessResolver $relatedProcesses,
+        private ProcessRuntimeDriverRegistry $runtimeDrivers,
     ) {}
 
     /**
@@ -21,14 +24,7 @@ final readonly class ToolLifecycleManager
      */
     public function start(string $tool, ?string $node = null, ?string $app = null): array|ToolRegistryFailure
     {
-        return $this->applyLifecycleAction(
-            tool: $tool,
-            node: $node,
-            app: $app,
-            action: 'start',
-            expectedState: 'running',
-            repairCommandKey: 'lifecycle_running',
-        );
+        return $this->applyProcessAction($tool, $node, $app, 'start');
     }
 
     /**
@@ -36,14 +32,7 @@ final readonly class ToolLifecycleManager
      */
     public function stop(string $tool, ?string $node = null, ?string $app = null): array|ToolRegistryFailure
     {
-        return $this->applyLifecycleAction(
-            tool: $tool,
-            node: $node,
-            app: $app,
-            action: 'stop',
-            expectedState: 'installed',
-            repairCommandKey: 'lifecycle_stopped',
-        );
+        return $this->applyProcessAction($tool, $node, $app, 'stop');
     }
 
     /**
@@ -51,45 +40,7 @@ final readonly class ToolLifecycleManager
      */
     public function restart(string $tool, ?string $node = null, ?string $app = null): array|ToolRegistryFailure
     {
-        if (! $this->catalog->supports($tool)) {
-            return ToolRegistryFailure::unsupportedAction($tool, 'restart');
-        }
-
-        $model = $this->registry->show(tool: $tool, node: $node, app: $app);
-
-        if ($model instanceof ToolRegistryFailure) {
-            return $model;
-        }
-
-        $restartCommand = $this->repairCommand($model, 'lifecycle_restarted');
-        $commands = $restartCommand === null ? [] : [$restartCommand];
-
-        if ($restartCommand === null) {
-            $commands = array_values(array_filter([
-                $this->repairCommand($model, 'lifecycle_stopped'),
-                $this->repairCommand($model, 'lifecycle_running'),
-            ]));
-
-            if (count($commands) !== 2) {
-                return ToolRegistryFailure::unsupportedAction($tool, 'restart');
-            }
-        }
-
-        $model->loadMissing('node');
-
-        if ($model->node === null) {
-            return ToolRegistryFailure::remoteActionFailed($tool, '', 'restart', 1, 'Target node is missing.');
-        }
-
-        foreach ($commands as $command) {
-            $result = $this->remoteShell->run($model->node, $command, ['throw' => false]);
-
-            if (! $result->successful()) {
-                return ToolRegistryFailure::remoteActionFailed($tool, $model->node->name, 'restart', $result->exitCode, trim($result->stderr));
-            }
-        }
-
-        return $this->payloads->toArray($model);
+        return $this->applyProcessAction($tool, $node, $app, 'restart');
     }
 
     /**
@@ -109,45 +60,28 @@ final readonly class ToolLifecycleManager
     /**
      * @return array<string, mixed>|ToolRegistryFailure
      */
-    private function applyLifecycleAction(
-        string $tool,
-        ?string $node,
-        ?string $app,
-        string $action,
-        string $expectedState,
-        string $repairCommandKey,
-    ): array|ToolRegistryFailure {
-        if (! $this->catalog->supports($tool)) {
-            return ToolRegistryFailure::unsupportedAction($tool, $action);
+    private function applyProcessAction(string $tool, ?string $node, ?string $app, string $action): array|ToolRegistryFailure
+    {
+        $target = $this->relatedProcesses->resolve($tool, $node, $app, $action);
+
+        if ($target instanceof ToolRegistryFailure) {
+            return $target;
         }
 
-        $model = $this->registry->show(tool: $tool, node: $node, app: $app);
+        $driver = $this->runtimeDrivers->forProcess($target->process);
+        $runtimeUnit = $driver->runtimeUnitName($target->app, $target->process, $target->workspace);
+        $successful = match ($action) {
+            'start' => $driver->start($target->node, $runtimeUnit),
+            'stop' => $driver->stop($target->node, $runtimeUnit),
+            'restart' => $driver->restart($target->node, $runtimeUnit),
+            default => false,
+        };
 
-        if ($model instanceof ToolRegistryFailure) {
-            return $model;
+        if (! $successful) {
+            return ToolRegistryFailure::remoteActionFailed($tool, $target->node->name, $action, 1, 'The process runtime backend reported a lifecycle failure.');
         }
 
-        $command = $this->repairCommand($model, $repairCommandKey);
-
-        if ($command === null) {
-            return ToolRegistryFailure::unsupportedAction($tool, $action);
-        }
-
-        $model->expected_state = $expectedState;
-        $model->save();
-        $model->loadMissing('node');
-
-        if ($model->node === null) {
-            return ToolRegistryFailure::remoteActionFailed($tool, '', $action, 1, 'Target node is missing.');
-        }
-
-        $result = $this->remoteShell->run($model->node, $command, ['throw' => false]);
-
-        if (! $result->successful()) {
-            return ToolRegistryFailure::remoteActionFailed($tool, $model->node->name, $action, $result->exitCode, trim($result->stderr));
-        }
-
-        return $this->payloads->toArray($model);
+        return $this->payloads->toArray($target->tool);
     }
 
     /**

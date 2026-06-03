@@ -8,7 +8,7 @@
 
 **Prerequisites:**
 - The CLI caller can reach the Orbit gateway.
-- The gateway authorizes the authenticated peer for `process:logs` on the target app's owning node.
+- The gateway authorizes the authenticated peer for `process:logs` on the process owning node.
 - Log access requires gateway reachability to the owning node.
 
 ## Signature
@@ -23,7 +23,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
-| `name` | `[name]` | Always. | Never. | None. | Existing process slug within the owning app. |
+| `name` | `[name]` | Always. | Never. | None. | Existing process slug within the resolved owning scope. |
 | `app` | `--app` or app context | Required unless `workspace` resolves the app. | Never. | Local app context when exactly one app is resolvable. | Must resolve to an app whose owning node grants `process:logs`. |
 | `workspace` | `--workspace` or workspace context | Optional. | Never. | Local workspace context when exactly one workspace is resolvable. | Must resolve to a workspace whose app owning node grants `process:logs`. |
 | `follow` | `--follow` | Optional. | Never. | `false`. | Boolean flag. Keeps the human log stream open when true. |
@@ -39,7 +39,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 ### Process Log Streaming Rules
 
-1. Resolve target app or workspace context from supplied input or local context, and resolve the process definition.
+1. Resolve target node, app, or workspace context from supplied input or local context, and resolve the process definition.
 2. Send the request to the gateway, which validates the authenticated peer's authorization.
 3. Derive the runtime-unit identity for the selected context.
 4. Open a log read through the gateway on the owning node.
@@ -64,7 +64,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 
 ## Doctor Relationship
 
-`process:logs` reads Supervisor stdout/stderr logs for process runtime units.
+`process:logs` reads logs from the selected runtime backend for process runtime units.
 [`process-doctor.md`](../../process-doctor.md) owns verification and
 repair of the runtime-unit artifacts and event notifier material that help
 produce process observability.

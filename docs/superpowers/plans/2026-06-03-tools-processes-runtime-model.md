@@ -24,6 +24,7 @@
 - Supervisor remains available for app/workspace host commands and simpler host-side process programs where retained.
 - Docker remains a valid process runtime for containerized processes such as MySQL, Redis, PostgreSQL, and FrankenPHP.
 - Existing `tool:start`, `tool:stop`, `tool:restart`, and `tool:logs` behavior must move toward process-backed adapters or deprecation. Keep compatibility only where needed during migration.
+- Tool lifecycle compatibility commands resolve exactly one related process row. Missing related processes fail explicitly, ambiguous related processes fail with `tool.process_ambiguous`, and `tool:update` remains capability-owned without implicit process restart.
 - FrankenPHP serving an app or workspace is a process with Docker runtime, not a special app runtime lifecycle surface.
 - `php artisan horizon` and `vp dev` are processes scoped to an app or workspace, commonly with Supervisor runtime and a tool dependency such as `php-cli` or `viteplus`.
 - `opencode-server` and `polyscope-server` are node-level processes with Systemd runtime and tool dependencies such as `opencode` and `polyscope`; the tools are installed capabilities, not lifecycle owners.
@@ -200,8 +201,8 @@ Update runtime artifact wording to include:
 
 ```markdown
 - **Process runtime:** Backend that runs a process. Supported runtime families
-  are `supervisor` and `docker`; `systemd` and `docker-swarm` are planned
-  runtime families. Supervisor is the host long-running command runner for
+  are `supervisor`, `docker`, and `systemd`; `docker-swarm` is planned.
+  Supervisor is the host long-running command runner for
   app/workspace commands where retained. Docker is used for containerized
   processes such as databases, caches, and FrankenPHP app or workspace web
   runtimes. Systemd is the node-level Linux service runtime; `systemctl` is
@@ -929,7 +930,7 @@ git commit -m "Add process tool dependency inputs"
 - Modify: `apps/gateway/app/Http/Controllers/Api/ToolStartController.php`
 - Modify: `apps/gateway/app/Http/Controllers/Api/ToolStopController.php`
 - Modify: `apps/gateway/app/Http/Controllers/Api/ToolRestartController.php`
-- Modify: `apps/gateway/app/Http/Controllers/Api/ToolLogController.php`
+- Modify: `apps/gateway/app/Http/Controllers/Api/ToolLogsController.php`
 - Modify: related CLI tool lifecycle commands.
 - Add tests under `apps/gateway/tests/Feature/Http/Api/Tool*ControllerTest.php`.
 
@@ -963,7 +964,7 @@ $response->assertStatus(422)
 Run:
 
 ```bash
-bin/orbit-gateway-pest --compact apps/gateway/tests/Feature/Http/Api/ToolStartControllerTest.php apps/gateway/tests/Feature/Http/Api/ToolStopControllerTest.php apps/gateway/tests/Feature/Http/Api/ToolRestartControllerTest.php apps/gateway/tests/Feature/Http/Api/ToolLogControllerTest.php
+bin/orbit-gateway-pest --compact apps/gateway/tests/Feature/Http/Api/ToolStartControllerTest.php apps/gateway/tests/Feature/Http/Api/ToolStopControllerTest.php apps/gateway/tests/Feature/Http/Api/ToolRestartControllerTest.php apps/gateway/tests/Feature/Http/Api/ToolLogsControllerTest.php
 ```
 
 Expected: FAIL because tool lifecycle does not resolve processes.

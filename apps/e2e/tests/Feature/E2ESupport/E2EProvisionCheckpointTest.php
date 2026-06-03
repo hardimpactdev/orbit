@@ -174,6 +174,23 @@ it('does not invalidate role checkpoints when CLI build output changes', functio
     }
 });
 
+it('does not fingerprint transient test temp files', function (): void {
+    $root = makeProvisionFingerprintFixture();
+
+    try {
+        $before = E2EProvisionFingerprint::fromRoot($root, E2ETopologyKind::OperatorGatewayAppdevAppprodAgentWebsocket);
+
+        file_put_contents("{$root}/apps/cli/tests/.tmp-tool-logs-config.json", '{}');
+
+        $after = E2EProvisionFingerprint::fromRoot($root, E2ETopologyKind::OperatorGatewayAppdevAppprodAgentWebsocket);
+
+        expect($after['fingerprints']['cli_artifact'])->toBe($before['fingerprints']['cli_artifact'])
+            ->and($after['inputs']['source']['cli_artifact']['files'])->not->toHaveKey('apps/cli/tests/.tmp-tool-logs-config.json');
+    } finally {
+        remove_directory($root);
+    }
+});
+
 it('requires matching manifest fingerprints and live snapshots before reusing checkpoints', function (): void {
     $fingerprint = [
         'schema_version' => 1,
@@ -335,6 +352,7 @@ function makeProvisionFingerprintFixture(): string
         'apps/cli/orbit' => "#!/usr/bin/env php\n<?php echo 'orbit';\n",
         'apps/cli/composer.json' => '{"name":"orbit/cli"}',
         'apps/cli/composer.lock' => '{}',
+        'apps/cli/tests/Feature/Commands/Tool/ToolLogsCommandTest.php' => "<?php\nit('asserts', fn () => expect(true)->toBeTrue());\n",
         'packages/core/src/Core.php' => "<?php\nreturn 'core';\n",
         'apps/gateway/app/GatewayRuntime.php' => "<?php\nreturn 'gateway';\n",
         'apps/gateway/composer.json' => '{"name":"orbit/gateway"}',

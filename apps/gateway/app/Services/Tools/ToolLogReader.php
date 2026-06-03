@@ -5,14 +5,14 @@ declare(strict_types=1);
 namespace App\Services\Tools;
 
 use App\Contracts\RemoteShell;
-use App\Models\Node;
+use App\Services\Processes\ProcessRuntimeDriverRegistry;
 
 final readonly class ToolLogReader
 {
     public function __construct(
-        private ToolCatalog $catalog,
-        private ToolRegistry $registry,
         private RemoteShell $remoteShell,
+        private ToolRelatedProcessResolver $relatedProcesses,
+        private ProcessRuntimeDriverRegistry $runtimeDrivers,
     ) {}
 
     /**
@@ -20,37 +20,26 @@ final readonly class ToolLogReader
      */
     public function read(string $tool, ?string $node = null, ?string $app = null, int $lines = 100, bool $follow = false): array|ToolRegistryFailure
     {
-        if (! $this->catalog->supports($tool)) {
-            return ToolRegistryFailure::unsupportedAction($tool, 'logs');
+        $target = $this->relatedProcesses->resolve($tool, $node, $app, 'logs');
+
+        if ($target instanceof ToolRegistryFailure) {
+            return $target;
         }
 
-        $model = $this->registry->show(tool: $tool, node: $node, app: $app);
-
-        if ($model instanceof ToolRegistryFailure) {
-            return $model;
-        }
-
-        $command = $this->catalog->logCommand($model->name, $lines, follow: $follow);
-
-        if ($command === null) {
-            return ToolRegistryFailure::unsupportedAction($tool, 'logs');
-        }
-
-        $model->loadMissing('node');
-
-        if (! $model->node instanceof Node) {
-            return ToolRegistryFailure::remoteActionFailed($tool, '', 'logs', 1, 'Target node is missing.');
-        }
-
-        $result = $this->remoteShell->run($model->node, $command, ['throw' => false]);
+        $driver = $this->runtimeDrivers->forProcess($target->process);
+        $runtimeUnit = $driver->runtimeUnitName($target->app, $target->process, $target->workspace);
+        $command = $driver->logScript($target->app, $target->process, $target->workspace, $runtimeUnit, $lines, $follow);
+        $result = $this->remoteShell->run($target->node, $command, ['throw' => false]);
 
         if (! $result->successful()) {
-            return ToolRegistryFailure::remoteActionFailed($tool, $model->node->name, 'logs', $result->exitCode, trim($result->stderr));
+            return ToolRegistryFailure::remoteActionFailed($tool, $target->node->name, 'logs', $result->exitCode, trim($result->stderr));
         }
 
         return [
-            'tool' => $model->name,
-            'node' => $model->node->name,
+            'tool' => $target->tool->name,
+            'node' => $target->node->name,
+            'process' => $target->process->name,
+            'runtime_unit' => $runtimeUnit,
             'lines' => $this->lines($result->stdout),
         ];
     }

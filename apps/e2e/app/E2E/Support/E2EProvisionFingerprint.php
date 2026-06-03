@@ -243,8 +243,15 @@ final readonly class E2EProvisionFingerprint
             }
 
             foreach (self::filesInDirectory($absolute) as $file) {
-                $relative = ltrim(str_replace($root, '', $file->getPathname()), '/');
-                $files[$relative] = hash_file('sha256', $file->getPathname()) ?: '';
+                $pathName = $file->getPathname();
+                $hash = @hash_file('sha256', $pathName);
+
+                if ($hash === false) {
+                    continue;
+                }
+
+                $relative = ltrim(str_replace($root, '', $pathName), '/');
+                $files[$relative] = $hash;
             }
         }
 
@@ -287,6 +294,10 @@ final readonly class E2EProvisionFingerprint
 
     private static function isIgnoredPath(string $path): bool
     {
+        if (preg_match('#/tests/\.tmp-[^/]+$#', $path) === 1) {
+            return true;
+        }
+
         return array_any(
             ['/.git/', '/vendor/', '/node_modules/', '/storage/', '/bootstrap/cache/', '/build/', '/builds/'],
             fn (string $segment): bool => str_contains($path, $segment),

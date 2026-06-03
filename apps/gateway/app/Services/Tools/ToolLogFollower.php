@@ -6,13 +6,14 @@ namespace App\Services\Tools;
 
 use App\Contracts\RemoteShellStream;
 use App\Models\Node;
+use App\Services\Processes\ProcessRuntimeDriverRegistry;
 
 final readonly class ToolLogFollower
 {
     public function __construct(
-        private ToolCatalog $catalog,
-        private ToolRegistry $registry,
         private RemoteShellStream $stream,
+        private ToolRelatedProcessResolver $relatedProcesses,
+        private ProcessRuntimeDriverRegistry $runtimeDrivers,
     ) {}
 
     /**
@@ -48,31 +49,18 @@ final readonly class ToolLogFollower
      */
     public function streamTarget(string $tool, ?string $node, ?string $app, int $lines): array|ToolRegistryFailure
     {
-        if (! $this->catalog->supports($tool)) {
-            return ToolRegistryFailure::unsupportedAction($tool, 'logs');
+        $target = $this->relatedProcesses->resolve($tool, $node, $app, 'logs');
+
+        if ($target instanceof ToolRegistryFailure) {
+            return $target;
         }
 
-        $model = $this->registry->show(tool: $tool, node: $node, app: $app);
-
-        if ($model instanceof ToolRegistryFailure) {
-            return $model;
-        }
-
-        $command = $this->catalog->logCommand($model->name, $lines, follow: true);
-
-        if ($command === null) {
-            return ToolRegistryFailure::unsupportedAction($tool, 'logs');
-        }
-
-        $model->loadMissing('node');
-
-        if (! $model->node instanceof Node) {
-            return ToolRegistryFailure::remoteActionFailed($tool, '', 'logs', 1, 'Target node is missing.');
-        }
+        $driver = $this->runtimeDrivers->forProcess($target->process);
+        $runtimeUnit = $driver->runtimeUnitName($target->app, $target->process, $target->workspace);
 
         return [
-            'node' => $model->node,
-            'command' => $command,
+            'node' => $target->node,
+            'command' => $driver->logScript($target->app, $target->process, $target->workspace, $runtimeUnit, $lines, follow: true),
         ];
     }
 }

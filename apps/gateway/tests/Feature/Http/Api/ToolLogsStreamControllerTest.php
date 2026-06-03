@@ -3,9 +3,11 @@
 declare(strict_types=1);
 
 use App\Contracts\RemoteShellStream;
+use App\Enums\Processes\ProcessRuntime;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Models\NodeTool;
+use App\Models\Process;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);
@@ -33,14 +35,20 @@ describe('ToolLogsStreamController', function (): void {
         $node = createTestAppHostNode(['name' => 'app-1', 'status' => 'active']);
         NodeTool::factory()->create([
             'node_id' => $node->id,
-            'name' => 'supervisor',
+            'name' => 'opencode-server',
             'expected_state' => 'running']);
+        Process::factory()->forOwner($node)->create([
+            'name' => 'opencode-server',
+            'tool' => 'opencode',
+            'runtime' => ProcessRuntime::Systemd,
+            'command' => 'opencode serve -a',
+        ]);
         $stream = new ToolLogsStreamRecordingRemoteStream;
         app()->instance(RemoteShellStream::class, $stream);
 
         $response = $this->call(
             'GET',
-            '/api/tools/supervisor/logs/stream?node=app-1&lines=1',
+            '/api/tools/opencode-server/logs/stream?node=app-1&lines=1',
             [],
             [],
             [],
@@ -51,31 +59,32 @@ describe('ToolLogsStreamController', function (): void {
             ->assertHeader('Content-Type', 'text/plain; charset=UTF-8')
             ->assertStreamedContent("streamed supervisor line\n");
 
-        expect($stream->scripts)->toBe(["sudo journalctl _SYSTEMD_UNIT='supervisor.service' + SYSLOG_IDENTIFIER='supervisor' -n 1 -f --no-pager --output=short-iso"]);
+        expect($stream->scripts)->toBe(["sudo journalctl -u 'opencode-server.service' -n 1 -f --no-pager 2>&1"]);
     });
 
-    it('returns a gateway error before opening the stream when logs are unsupported', function (): void {
+    it('returns a gateway error before opening the stream when no related process exists', function (): void {
         createToolLogsStreamCallerNode();
         $node = createTestAppHostNode(['name' => 'app-1', 'status' => 'active']);
         NodeTool::factory()->create([
             'node_id' => $node->id,
-            'name' => 'gh',
+            'name' => 'opencode-server',
             'expected_state' => 'running']);
         $stream = new ToolLogsStreamRecordingRemoteStream;
         app()->instance(RemoteShellStream::class, $stream);
 
         $response = $this->call(
             'GET',
-            '/api/tools/gh/logs/stream?node=app-1',
+            '/api/tools/opencode-server/logs/stream?node=app-1',
             [],
             [],
             [],
             ['REMOTE_ADDR' => TOOL_LOGS_STREAM_CALLER_WG_IP],
         );
 
-        $response->assertStatus(400)
-            ->assertJsonPath('error.code', 'tool.unsupported_action')
-            ->assertJsonPath('error.meta.action', 'logs');
+        $response->assertUnprocessable()
+            ->assertJsonPath('error.code', 'tool.process_missing')
+            ->assertJsonPath('error.meta.tool', 'opencode-server')
+            ->assertJsonPath('error.meta.node', 'app-1');
 
         expect($stream->scripts)->toBe([]);
     });

@@ -74,6 +74,7 @@ final class ToolLogsController implements Loggable
             'authorization_failed' => 403,
             'tool.remote_action_failed' => 502,
             'validation_failed' => 422,
+            'tool.process_missing', 'tool.process_ambiguous' => 422,
             default => 400,
         };
 

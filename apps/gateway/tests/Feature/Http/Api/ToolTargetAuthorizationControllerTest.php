@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 use App\Contracts\RemoteShell;
 use App\Data\RemoteShell\RemoteShellResult;
+use App\Enums\Processes\ProcessRuntime;
 use App\Models\Node;
 use App\Models\NodeTool;
+use App\Models\Process;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 
@@ -149,13 +151,19 @@ describe('tool API target authorization', function (): void {
 
         NodeTool::factory()->create([
             'node_id' => $visibleNode->id,
-            'name' => 'redis',
-            'config' => ['compose_path' => '/opt/orbit/docker-compose.yml']]);
+            'name' => 'opencode-server',
+            'expected_state' => 'running']);
+        Process::factory()->forOwner($visibleNode)->create([
+            'name' => 'opencode-server',
+            'tool' => 'opencode',
+            'runtime' => ProcessRuntime::Systemd,
+            'command' => 'opencode serve -a',
+        ]);
 
         $shell = new ToolTargetAuthorizationRecordingShell;
         app()->instance(RemoteShell::class, $shell);
 
-        $response = $this->call('GET', '/api/tools/redis/logs', [
+        $response = $this->call('GET', '/api/tools/opencode-server/logs', [
             'node' => 'visible-node'], [], [], ['REMOTE_ADDR' => TOOL_TARGET_AUTH_CALLER_WG_IP]);
 
         $response->assertOk();

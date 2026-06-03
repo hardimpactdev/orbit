@@ -8,81 +8,81 @@ use App\E2E\Support\E2ETopologyHarness;
 use App\E2E\Support\E2ETopologyKind;
 use Illuminate\Contracts\Process\ProcessResult;
 
-it('manages a system service tool lifecycle on an app node from the gateway', function (): void {
+it('routes tool lifecycle commands through a related systemd process on an app node', function (): void {
     $topology = e2eTopology(E2ETopologyKind::OperatorGatewayAppdev, withGatewayApi: true)
         ->withCurrentCheckout(roles: ['operator', 'gateway']);
 
     try {
         toolLifecyclePrepareGatewayApi($topology);
+        toolLifecycleCleanupProcessRuntime($topology);
+        toolLifecycleSeedGatewayProcess($topology, withAccess: true);
 
-        toolLifecycleSeedGatewayIntent($topology, 'stopped');
-        $start = toolLifecycleRunGatewayCommand($topology, 'tool:start supervisor --node=app-dev-1 --json');
+        $missing = toolLifecycleRunGatewayCommand($topology, 'tool:start supervisor --node=app-dev-1 --json', allowFailure: true);
+        $missingData = e2eJsonCommandData(e2eJsonCommandPayload($missing->output()));
+
+        expect($missing->successful())->toBeFalse()
+            ->and($missingData)->toMatchArray([
+                'code' => 'tool.process_missing',
+                'message' => "Tool 'supervisor' has no related lifecycle process on node 'app-dev-1'.",
+            ]);
+
+        $start = toolLifecycleRunGatewayCommand($topology, 'tool:start opencode-server --node=app-dev-1 --json');
         $startData = e2eJsonCommandData(e2eJsonCommandPayload($start->output()));
 
         expect($start->successful())->toBeTrue()
             ->and($startData['tool'])->toMatchArray([
-                'name' => 'supervisor',
+                'name' => 'opencode-server',
                 'node' => 'app-dev-1',
-                'expected_state' => 'running',
+                'expected_state' => 'installed',
             ]);
-        toolLifecycleExpectSupervisorState($topology, 'active');
+        toolLifecycleExpectServiceState($topology, 'opencode-server.service', 'active');
 
-        toolLifecycleSeedGatewayIntent($topology, 'running');
-        $reload = toolLifecycleRunGatewayCommand($topology, 'tool:reload supervisor --node=app-dev-1 --json');
-        $reloadData = e2eJsonCommandData(e2eJsonCommandPayload($reload->output()));
+        $readMessage = 'opencode-server read '.bin2hex(random_bytes(4));
+        toolLifecycleEmitProcessLog($topology, $readMessage);
+        toolLifecycleWaitForServiceJournal($topology, 'opencode-server.service', $readMessage);
 
-        expect($reload->successful())->toBeTrue()
-            ->and($reloadData['tool'])->toMatchArray([
-                'name' => 'supervisor',
-                'node' => 'app-dev-1',
-                'expected_state' => 'running',
-            ]);
-        toolLifecycleExpectSupervisorState($topology, 'active');
-
-        toolLifecycleSeedGatewayIntent($topology, 'running');
-        $before = $topology->ssh('dev', 'systemctl show supervisor.service --property=ActiveEnterTimestampMonotonic --value', timeoutSeconds: 60);
-        $restart = toolLifecycleRunGatewayCommand($topology, 'tool:restart supervisor --node=app-dev-1 --json');
-        $restartData = e2eJsonCommandData(e2eJsonCommandPayload($restart->output()));
-        $after = $topology->ssh('dev', 'systemctl show supervisor.service --property=ActiveEnterTimestampMonotonic --value', timeoutSeconds: 60);
-
-        expect($restart->successful())->toBeTrue()
-            ->and($restartData['tool'])->toMatchArray([
-                'name' => 'supervisor',
-                'node' => 'app-dev-1',
-                'expected_state' => 'running',
-            ])
-            ->and((int) trim($after->output()))->toBeGreaterThan((int) trim($before->output()));
-        toolLifecycleExpectSupervisorState($topology, 'active');
-
-        toolLifecycleSeedGatewayIntent($topology, 'running', withAccess: true);
-        $topology->ssh('dev', 'sudo systemctl restart supervisor', timeoutSeconds: 60);
-
-        $logs = toolLifecycleRunGatewayCommand($topology, 'tool:logs supervisor --node=app-dev-1 --lines=20 --json');
+        $logs = toolLifecycleRunGatewayCommand($topology, 'tool:logs opencode-server --node=app-dev-1 --lines=20 --json');
         $logsData = e2eJsonCommandData(e2eJsonCommandPayload($logs->output()));
 
         expect($logs->successful())->toBeTrue()
             ->and($logsData['logs'])->toMatchArray([
-                'tool' => 'supervisor',
+                'tool' => 'opencode-server',
                 'node' => 'app-dev-1',
+                'process' => 'opencode-server',
+                'runtime_unit' => 'opencode-server',
             ])
             ->and($logsData['logs']['lines'])->not->toBeEmpty()
-            ->and(implode("\n", array_column($logsData['logs']['lines'], 'message')))->toContain('supervisor');
+            ->and(implode("\n", array_column($logsData['logs']['lines'], 'message')))->toContain($readMessage);
 
         toolLifecycleAssertFollowLogs($topology);
         toolLifecyclePrepareGatewayApi($topology);
 
-        toolLifecycleSeedGatewayIntent($topology, 'running');
-        $stop = toolLifecycleRunGatewayCommand($topology, 'tool:stop supervisor --node=app-dev-1 --json');
+        $before = $topology->ssh('dev', 'systemctl show opencode-server.service --property=ActiveEnterTimestampMonotonic --value', timeoutSeconds: 60);
+        $restart = toolLifecycleRunGatewayCommand($topology, 'tool:restart opencode-server --node=app-dev-1 --json');
+        $restartData = e2eJsonCommandData(e2eJsonCommandPayload($restart->output()));
+        $after = $topology->ssh('dev', 'systemctl show opencode-server.service --property=ActiveEnterTimestampMonotonic --value', timeoutSeconds: 60);
+
+        expect($restart->successful())->toBeTrue()
+            ->and($restartData['tool'])->toMatchArray([
+                'name' => 'opencode-server',
+                'node' => 'app-dev-1',
+                'expected_state' => 'installed',
+            ])
+            ->and((int) trim($after->output()))->toBeGreaterThan((int) trim($before->output()));
+        toolLifecycleExpectServiceState($topology, 'opencode-server.service', 'active');
+
+        $stop = toolLifecycleRunGatewayCommand($topology, 'tool:stop opencode-server --node=app-dev-1 --json');
         $stopData = e2eJsonCommandData(e2eJsonCommandPayload($stop->output()));
 
         expect($stop->successful())->toBeTrue()
             ->and($stopData['tool'])->toMatchArray([
-                'name' => 'supervisor',
+                'name' => 'opencode-server',
                 'node' => 'app-dev-1',
                 'expected_state' => 'installed',
             ]);
-        toolLifecycleExpectSupervisorState($topology, 'inactive', allowFailure: true);
+        toolLifecycleExpectServiceState($topology, 'opencode-server.service', 'inactive', allowFailure: true);
     } finally {
+        toolLifecycleCleanupProcessRuntime($topology);
         $topology->cleanup();
     }
 })->group('e2e-feature', 'e2e-provider-incus', 'e2e-feature-operator_gateway_app-dev', 'e2e-feature-operator-gateway-dev');
@@ -130,7 +130,7 @@ PHP;
     );
 }
 
-function toolLifecycleSeedGatewayIntent(E2ETopologyHarness $topology, string $expectedState, bool $withAccess = false): void
+function toolLifecycleSeedGatewayProcess(E2ETopologyHarness $topology, bool $withAccess = false): void
 {
     $accessPhp = $withAccess ? <<<'PHP'
 $nodes = \App\Models\Node::query()
@@ -156,19 +156,60 @@ PHP : <<<'PHP'
 $node = \App\Models\Node::query()->where('name', 'app-dev-1')->firstOrFail();
 PHP;
 
-    $stateValue = var_export($expectedState, true);
     $php = <<<PHP
 {$accessPhp}
+
+\$node->update(['status' => 'active', 'platform' => 'ubuntu']);
 
 \App\Models\NodeTool::query()->updateOrCreate(
     ['node_id' => \$node->id, 'name' => 'supervisor'],
     [
-        'expected_state' => {$stateValue},
+        'expected_state' => 'installed',
         'expected_version' => null,
         'config' => null,
         'credentials' => null,
     ],
 );
+
+\App\Models\NodeTool::query()->updateOrCreate(
+    ['node_id' => \$node->id, 'name' => 'opencode-server'],
+    [
+        'expected_state' => 'installed',
+        'expected_version' => null,
+        'config' => null,
+        'credentials' => null,
+    ],
+);
+
+\$process = \$node->processes()->updateOrCreate(
+    ['name' => 'opencode-server'],
+    [
+        'node_id' => \$node->id,
+        'command' => 'touch /tmp/orbit-opencode-server-e2e.log; tail -n +1 -F /tmp/orbit-opencode-server-e2e.log',
+        'restart_policy' => \App\Enums\ProcessRestartPolicy::OnFailure,
+        'crash_notification' => \App\Enums\ProcessCrashNotification::None,
+        'runtime' => \App\Enums\Processes\ProcessRuntime::Systemd,
+        'tool' => 'opencode',
+        'runtime_config' => [],
+        'sort_order' => 1,
+    ],
+);
+\$process->load('owner');
+
+\$app = new \App\Models\App([
+    'name' => \$node->name,
+    'path' => \$node->orbit_path,
+    'node_id' => \$node->id,
+]);
+\$app->setRelation('node', \$node);
+
+\$driver = app(\App\Services\Processes\ProcessRuntimeDrivers\SystemdProcessRuntimeDriver::class);
+\$runtimeUnit = \$driver->runtimeUnitName(\$app, \$process);
+\$driver->remove(\$node, \$runtimeUnit);
+
+if (! \$driver->apply(\$node, \$app, \$process)) {
+    throw new \RuntimeException('Failed to apply opencode-server systemd process runtime.');
+}
 
 echo 'seeded';
 PHP;
@@ -180,7 +221,7 @@ PHP;
     );
 }
 
-function toolLifecycleRunGatewayCommand(E2ETopologyHarness $topology, string $command): ProcessResult
+function toolLifecycleRunGatewayCommand(E2ETopologyHarness $topology, string $command, bool $allowFailure = false): ProcessResult
 {
     return $topology->ssh(
         'gateway',
@@ -190,14 +231,42 @@ function toolLifecycleRunGatewayCommand(E2ETopologyHarness $topology, string $co
             $command,
         ),
         timeoutSeconds: 180,
+        allowFailure: $allowFailure,
     );
 }
 
-function toolLifecycleExpectSupervisorState(E2ETopologyHarness $topology, string $state, bool $allowFailure = false): void
+function toolLifecycleExpectServiceState(E2ETopologyHarness $topology, string $serviceName, string $state, bool $allowFailure = false): void
 {
-    $status = $topology->ssh('dev', 'systemctl is-active supervisor.service || true', timeoutSeconds: 60, allowFailure: $allowFailure);
+    $status = $topology->ssh('dev', 'systemctl is-active '.escapeshellarg($serviceName).' || true', timeoutSeconds: 60, allowFailure: $allowFailure);
 
     expect(trim($status->output()))->toBe($state);
+}
+
+function toolLifecycleEmitProcessLog(E2ETopologyHarness $topology, string $message): void
+{
+    $topology->ssh(
+        'dev',
+        'printf %s '.escapeshellarg($message.PHP_EOL).' >> /tmp/orbit-opencode-server-e2e.log',
+        timeoutSeconds: 30,
+    );
+}
+
+function toolLifecycleWaitForServiceJournal(E2ETopologyHarness $topology, string $serviceName, string $message): void
+{
+    $result = $topology->ssh(
+        'dev',
+        sprintf(
+            'timeout 20s bash -lc %s',
+            escapeshellarg(sprintf(
+                'until sudo journalctl -u %s -n 50 --no-pager | grep -F -m 1 %s; do sleep 0.25; done',
+                escapeshellarg($serviceName),
+                escapeshellarg($message),
+            )),
+        ),
+        timeoutSeconds: 25,
+    );
+
+    expect($result->output())->toContain($message);
 }
 
 function toolLifecycleAssertFollowLogs(E2ETopologyHarness $topology): void
@@ -208,7 +277,7 @@ function toolLifecycleAssertFollowLogs(E2ETopologyHarness $topology): void
         checkout: $topology->checkout('operator'),
         logPath: '/tmp/orbit-tool-follow-forwarded.log',
         pidPath: '/tmp/orbit-tool-follow-forwarded.pid',
-        message: 'supervisor follow forwarded e2e',
+        message: 'opencode-server follow '.bin2hex(random_bytes(4)),
     );
 }
 
@@ -223,8 +292,8 @@ function toolLifecycleAssertFollowLogStream(
     toolLifecycleStartFollowLogs($topology, $role, $checkout, $logPath, $pidPath);
 
     try {
-        toolLifecycleStartJournalEmitter($topology, $message);
-        toolLifecycleWaitForDevJournal($topology, $message);
+        toolLifecycleEmitProcessLog($topology, $message);
+        toolLifecycleWaitForServiceJournal($topology, 'opencode-server.service', $message);
         toolLifecycleWaitForFollowLog($topology, $role, $logPath, $message);
     } finally {
         toolLifecycleStopFollowLogs($topology, $role, $pidPath);
@@ -236,7 +305,7 @@ function toolLifecycleStartFollowLogs(E2ETopologyHarness $topology, string $role
     $topology->ssh(
         $role,
         sprintf(
-            'cd %s && rm -f %s %s && (nohup orbit tool:logs supervisor --node=app-dev-1 --lines=20 --follow > %s 2>&1 < /dev/null & echo $! > %s)',
+            'cd %s && rm -f %s %s && (nohup orbit tool:logs opencode-server --node=app-dev-1 --lines=20 --follow > %s 2>&1 < /dev/null & echo $! > %s)',
             escapeshellarg($checkout),
             escapeshellarg($logPath),
             escapeshellarg($pidPath),
@@ -258,38 +327,6 @@ function toolLifecycleStartFollowLogs(E2ETopologyHarness $topology, string $role
         ),
         timeoutSeconds: 10,
     );
-}
-
-function toolLifecycleStartJournalEmitter(E2ETopologyHarness $topology, string $message): void
-{
-    $topology->ssh(
-        'dev',
-        sprintf(
-            'nohup bash -lc %s >/tmp/orbit-tool-follow-emitter.log 2>&1 < /dev/null &',
-            escapeshellarg(sprintf(
-                'for i in $(seq 1 20); do logger -t supervisor %s; sleep 0.5; done',
-                escapeshellarg($message),
-            )),
-        ),
-        timeoutSeconds: 30,
-    );
-}
-
-function toolLifecycleWaitForDevJournal(E2ETopologyHarness $topology, string $message): void
-{
-    $result = $topology->ssh(
-        'dev',
-        sprintf(
-            'timeout 10s bash -lc %s',
-            escapeshellarg(sprintf(
-                'until sudo journalctl _SYSTEMD_UNIT=supervisor.service + SYSLOG_IDENTIFIER=supervisor -n 20 --no-pager --output=short-iso | grep -m 1 %s; do sleep 0.25; done',
-                escapeshellarg($message),
-            )),
-        ),
-        timeoutSeconds: 15,
-    );
-
-    expect($result->output())->toContain($message);
 }
 
 function toolLifecycleWaitForFollowLog(E2ETopologyHarness $topology, string $role, string $logPath, string $message): void
@@ -329,6 +366,39 @@ function toolLifecycleStopFollowLogs(E2ETopologyHarness $topology, string $role,
             escapeshellarg($pidPath),
         ),
         timeoutSeconds: 10,
+        allowFailure: true,
+    );
+}
+
+function toolLifecycleCleanupProcessRuntime(E2ETopologyHarness $topology): void
+{
+    $topology->ssh(
+        'dev',
+        <<<'SH'
+sudo systemctl stop opencode-server.service >/dev/null 2>&1 || true
+sudo systemctl disable opencode-server.service >/dev/null 2>&1 || true
+sudo rm -f /etc/systemd/system/opencode-server.service
+sudo systemctl daemon-reload
+sudo systemctl reset-failed opencode-server.service >/dev/null 2>&1 || true
+rm -f /tmp/orbit-opencode-server-e2e.log
+SH,
+        timeoutSeconds: 120,
+        allowFailure: true,
+    );
+
+    $php = <<<'PHP'
+if ($node = \App\Models\Node::query()->where('name', 'app-dev-1')->first()) {
+    $node->processes()->where('name', 'opencode-server')->delete();
+    $node->nodeTools()->where('name', 'opencode-server')->delete();
+}
+
+echo 'cleaned';
+PHP;
+
+    $topology->ssh(
+        'gateway',
+        'cd '.escapeshellarg($topology->checkout('gateway')).' && php apps/gateway/artisan tinker --execute='.escapeshellarg($php),
+        timeoutSeconds: 120,
         allowFailure: true,
     );
 }
