@@ -40,6 +40,12 @@ Orbit's current product contract lives in this repo under `apps/docs/content/`:
 - `apps/docs/content/tech-stack.md`
 - `apps/docs/content/domains/**`
 
+`apps/docs/content/product-decisions.md` is the chronological intent ledger. It
+does not restate contracts; it records each direction-change decision with a
+date. When docs conflict, the latest dated decision on a topic states current
+intent and indicates which side is stale. Treat it as the intent anchor above
+the authority chain.
+
 Session artifacts (plans, specs) stay at `docs/superpowers/`. They are not
 product authority and are not linted as product docs.
 
