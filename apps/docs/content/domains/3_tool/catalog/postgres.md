@@ -16,9 +16,10 @@ These fields describe the PostgreSQL tool's identity, backend, and support model
 
 ## Capabilities
 
-`postgres` supports `tool:install`, `tool:remove`, lifecycle actions,
-`tool:update`, `tool:logs`, `tool:credentials`, WireGuard service endpoint
-management, safe doctor fix, and safe doctor adopt.
+`postgres` supports `tool:install`, `tool:remove`, process-backed
+compatibility lifecycle actions, `tool:update`, `tool:logs`,
+`tool:credentials`, WireGuard service endpoint management, safe doctor fix, and
+safe doctor adopt.
 
 ## Credentials
 
@@ -71,7 +72,12 @@ state family and `database:*` commands. The `postgres` tool no longer
 installs the `psql` client binary; queries run via PHP driver from the
 gateway or owning node.
 
+Runtime-model migration keeps the `postgres` tool row as the capability and
+compatibility payload record. The backfilled node-owned PostgreSQL process row
+uses `runtime=docker` and owns lifecycle and logs.
+
 ## Doctor Relationship
 
-`doctor --family=tool` verifies the PostgreSQL client capability, managed
-service intent, and safe repair/adoption boundaries.
+`doctor --family=tool` owns PostgreSQL capability and expected-state checks,
+credential metadata, service endpoint metadata, and safe repair/adoption
+boundaries. The related Docker process lifecycle belongs to the process family.

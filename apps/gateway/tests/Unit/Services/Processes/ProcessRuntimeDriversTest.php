@@ -158,6 +158,67 @@ it('applies, removes, and cleans up docker process runtime units through the doc
         ->and(collect($shell->scripts)->contains(fn (string $script): bool => str_contains($script, "docker rm -f 'orbit_docs_main_queue'")))->toBeTrue();
 });
 
+it('applies node owned docker service processes from runtime config', function (): void {
+    $shell = new ProcessRuntimeDriverRecordingShell([
+        new RemoteShellResult(exitCode: 1, stdout: '', stderr: 'No such network', durationMs: 1),
+        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+        new RemoteShellResult(exitCode: 1, stdout: '', stderr: 'No such container', durationMs: 1),
+        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+    ]);
+    app()->instance(RemoteShell::class, $shell);
+
+    $node = Node::factory()->create(['name' => 'database-1']);
+    $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id, 'path' => '/srv/docs']);
+    $process = Process::factory()->forOwner($node)->create([
+        'name' => 'redis',
+        'command' => 'redis-server --bind 0.0.0.0 --protected-mode no',
+        'runtime' => ProcessRuntime::Docker,
+        'tool' => 'redis',
+        'runtime_config' => [
+            'image' => 'redis:7.2',
+            'environment' => [
+                'ALLOW_EMPTY_PASSWORD' => 'yes',
+            ],
+            'mounts' => [
+                [
+                    'source' => '/var/lib/orbit/redis',
+                    'target' => '/data',
+                ],
+            ],
+            'network_aliases' => ['redis'],
+        ],
+    ]);
+
+    $driver = app(DockerProcessRuntimeDriver::class);
+    $runtimeUnit = $driver->runtimeUnitName($app, $process);
+
+    expect($runtimeUnit)->toBe('redis')
+        ->and($driver->apply($node, $app, $process))->toBeTrue()
+        ->and($driver->start($node, $runtimeUnit))->toBeTrue()
+        ->and($driver->stop($node, $runtimeUnit))->toBeTrue()
+        ->and($driver->restart($node, $runtimeUnit))->toBeTrue()
+        ->and($driver->logScript($app, $process, null, $runtimeUnit, 25, false))
+        ->toBe("docker logs --tail 25 'redis' 2>&1");
+
+    $create = collect($shell->scripts)->first(fn (string $script): bool => str_contains($script, 'docker create'));
+
+    expect($create)->toBeString()
+        ->toContain("--name 'redis'")
+        ->toContain("--env 'ALLOW_EMPTY_PASSWORD=yes'")
+        ->toContain("--mount 'type=bind,source=/var/lib/orbit/redis,target=/data'")
+        ->toContain("'redis:7.2'")
+        ->toContain("'-lc' 'redis-server --bind 0.0.0.0 --protected-mode no'");
+
+    expect($shell->scripts)->toContain(
+        "docker start 'redis'",
+        "docker stop 'redis'",
+        "docker restart 'redis'",
+    );
+});
+
 it('runs systemd process lifecycle through the systemd runtime driver', function (): void {
     $shell = new ProcessRuntimeDriverRecordingShell([
         new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),

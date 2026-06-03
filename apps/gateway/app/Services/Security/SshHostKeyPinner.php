@@ -15,29 +15,47 @@ final readonly class SshHostKeyPinner
 {
     private const array PreferredTypes = ['ssh-ed25519', 'ecdsa-sha2-nistp256', 'ssh-rsa'];
 
+    private const int ScanAttempts = 4;
+
+    private const int ScanRetryDelayMicroseconds = 500_000;
+
     public function pin(string $host, ?string $expectedFingerprint = null): PinnedHostKey
     {
-        $result = Process::timeout(20)->run(sprintf(
-            'ssh-keyscan -T 10 -t ed25519,ecdsa,rsa %s 2>/dev/null',
-            escapeshellarg($host),
-        ));
+        $failureReason = 'ssh-keyscan failed';
+        $key = null;
 
-        if (! $result->successful() && trim($result->output()) === '') {
-            $this->logPinEvent('node.host_key.pin_failed', $host, [
-                'reason' => trim($result->errorOutput()) ?: 'ssh-keyscan failed',
-            ]);
+        for ($attempt = 1; $attempt <= self::ScanAttempts; $attempt++) {
+            $result = Process::timeout(20)->run(sprintf(
+                'ssh-keyscan -T 10 -t ed25519,ecdsa,rsa %s 2>/dev/null',
+                escapeshellarg($host),
+            ));
 
-            throw HostKeyPinningFailed::forHost($host, trim($result->errorOutput()) ?: 'ssh-keyscan failed');
+            if (trim($result->output()) !== '') {
+                $key = $this->parsePreferredKey($host, $result->output());
+
+                if ($key instanceof PinnedHostKey) {
+                    break;
+                }
+
+                $failureReason = 'No supported SSH host key was returned by ssh-keyscan.';
+
+                break;
+            }
+
+            $failureReason = trim($result->errorOutput())
+                ?: ($result->successful() ? 'ssh-keyscan returned no host keys.' : 'ssh-keyscan failed');
+
+            if ($attempt < self::ScanAttempts) {
+                usleep(self::ScanRetryDelayMicroseconds);
+            }
         }
-
-        $key = $this->parsePreferredKey($host, $result->output());
 
         if (! $key instanceof PinnedHostKey) {
             $this->logPinEvent('node.host_key.pin_failed', $host, [
-                'reason' => 'No supported SSH host key was returned by ssh-keyscan.',
+                'reason' => $failureReason,
             ]);
 
-            throw HostKeyPinningFailed::forHost($host, 'No supported SSH host key was returned by ssh-keyscan.');
+            throw HostKeyPinningFailed::forHost($host, $failureReason);
         }
 
         if ($expectedFingerprint !== null) {

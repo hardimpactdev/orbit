@@ -29,6 +29,7 @@
 - `php artisan horizon` and `vp dev` are processes scoped to an app or workspace, commonly with Supervisor runtime and a tool dependency such as `php-cli` or `viteplus`.
 - `opencode-server` and `polyscope-server` are node-level processes with Systemd runtime and tool dependencies such as `opencode` and `polyscope`; the tools are installed capabilities, not lifecycle owners.
 - MySQL/PostgreSQL/Redis are processes with Docker runtime. If their client tools are represented later, those client tools are capabilities, not lifecycle units.
+- Managed service `node_tools` rows are backfilled into node-owned process rows. The tool rows remain capability and compatibility payload records; the related process rows own lifecycle.
 
 ## Current Problem
 
@@ -487,7 +488,7 @@ Scope:
 - Prove tool install/update remains tool-owned and does not implicitly start/stop/restart process rows.
 - Prove app/workspace runtime processes, including FrankenPHP Docker processes, can be inspected and controlled through process commands without treating them as tool rows.
 - Put OpenCode/PolyScope systemd service lifecycle E2E in Incus only.
-- Keep Docker E2E scoped to command contracts, registry behavior, validation, Docker-runtime process lifecycle, and scoped doctor repair of seeded drift.
+- Keep Docker E2E scoped to command contracts, registry behavior, validation, Docker-runtime process lifecycle, and scoped doctor repair of seeded drift such as Redis config drift. Do not use broad Docker `--family=tool --restore` coverage that can pick up unrelated OpenCode/PolyScope systemd process drift.
 - Keep tests on prepared topology feature lanes; do not add provisioning tests for this acceptance coverage.
 
 Verification guard:
@@ -1002,12 +1003,14 @@ git commit -m "Route tool lifecycle through related processes"
 
 ## Task 8: Migrate Managed Tool Services To Processes
 
+Status: Completed in solo todo #698.
+
 **Files:**
 - Create migration in `apps/gateway/database/migrations`
 - Modify tool payload and lifecycle mapping code.
 - Add migration tests.
 
-- [ ] **Step 1: Write failing migration tests**
+- [x] **Step 1: Write failing migration tests**
 
 Create tests with existing `NodeTool` rows for:
 
@@ -1026,7 +1029,7 @@ expect(Process::query()->where('tool', 'mysql')->where('runtime', 'docker')->exi
 expect(Process::query()->where('tool', 'opencode')->where('runtime', 'systemd')->exists())->toBeTrue();
 ```
 
-- [ ] **Step 2: Run tests to verify RED**
+- [x] **Step 2: Run tests to verify RED**
 
 Run:
 
@@ -1036,11 +1039,11 @@ bin/orbit-gateway-pest --compact apps/gateway/tests/Feature/Database
 
 Expected: FAIL for missing migration behavior.
 
-- [ ] **Step 3: Implement migration/backfill**
+- [x] **Step 3: Implement migration/backfill**
 
 Backfill process rows for managed service tools only. Do not delete `node_tools` rows. Store minimal runtime config needed to preserve current behavior.
 
-- [ ] **Step 4: Run migration tests**
+- [x] **Step 4: Run migration tests**
 
 Run:
 
@@ -1050,7 +1053,7 @@ bin/orbit-gateway-pest --compact apps/gateway/tests/Feature/Database
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 Run:
 

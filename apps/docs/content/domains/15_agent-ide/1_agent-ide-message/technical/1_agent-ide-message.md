@@ -154,8 +154,9 @@ adapter credentials, raw adapter output, or secrets.
 - `doctor --family=app` verifies Agent IDE configuration that is owned by the app, when supported.
 - `doctor --family=workspace` owns workspace state that adapters may reference.
 - `doctor --family=process` owns crash-event policy and history that may trigger
-  Agent IDE notifications.
-- `doctor --family=tool` owns managed adapter server lifecycle and credentials.
+  Agent IDE notifications, plus process-backed adapter server lifecycle.
+- `doctor --family=tool` owns managed adapter server capability and credential
+  metadata, not start/stop/restart/log lifecycle.
 
 ## Test Mapping
 

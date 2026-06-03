@@ -16,9 +16,9 @@ These fields describe the Redis tool's identity, backend, and support model in O
 
 ## Capabilities
 
-`redis` supports `tool:install`, `tool:remove`, lifecycle actions,
-`tool:update`, `tool:logs`, `tool:credentials`, WireGuard service endpoint
-management, safe doctor fix, and safe doctor adopt.
+`redis` supports `tool:install`, `tool:remove`, process-backed compatibility
+lifecycle actions, `tool:update`, `tool:logs`, `tool:credentials`, WireGuard
+service endpoint management, safe doctor fix, and safe doctor adopt.
 
 ## Credentials
 
@@ -61,7 +61,12 @@ route.
 Redis is a managed cache and queue-adjacent capability. App cache, queue, and
 session configuration remain app concerns.
 
+Runtime-model migration keeps the `redis` tool row as the capability and
+compatibility payload record. The backfilled node-owned `redis` process row
+uses `runtime=docker` and owns lifecycle and logs.
+
 ## Doctor Relationship
 
-`doctor --family=tool` verifies the managed Redis container, expected lifecycle
-state, logs availability, and safe repair/adoption boundaries.
+`doctor --family=tool` owns Redis capability and expected-state checks,
+credential metadata, service endpoint metadata, and safe repair/adoption
+boundaries. The related Docker process lifecycle belongs to the process family.

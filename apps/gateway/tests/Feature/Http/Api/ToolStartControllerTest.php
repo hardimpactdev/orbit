@@ -9,6 +9,7 @@ use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Models\NodeTool;
 use App\Models\Process;
+use App\Services\Tools\ManagedServiceToolProcessBackfill;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);
@@ -98,6 +99,33 @@ describe('ToolStartController process-backed lifecycle', function (): void {
             ->assertJsonPath('error.meta.node', 'app-start-process-1');
 
         expect($shell->scripts)->toBe([]);
+    });
+
+    it('starts a migrated Docker service tool through the related process', function (): void {
+        createToolStartProcessGatewayCaller();
+        $node = createTestAppHostNode([
+            'name' => 'app-start-process-1',
+            'status' => 'active',
+        ]);
+        NodeTool::factory()->create([
+            'node_id' => $node->id,
+            'name' => 'redis',
+            'expected_state' => 'running',
+        ]);
+        app(ManagedServiceToolProcessBackfill::class)->run();
+        $shell = new ToolStartProcessRecordingShell;
+        app()->instance(RemoteShell::class, $shell);
+
+        $response = $this->call('POST', '/api/tools/redis/start', [
+            'node' => 'app-start-process-1',
+        ], [], [], ['REMOTE_ADDR' => TOOL_START_PROCESS_CALLER_WG_IP]);
+
+        $response->assertOk()
+            ->assertJsonPath('success.data.tool.name', 'redis')
+            ->assertJsonPath('success.data.tool.node', 'app-start-process-1');
+
+        expect($shell->scripts)->toBe(["docker start 'redis'"])
+            ->and(NodeTool::query()->where('node_id', $node->id)->where('name', 'redis')->value('expected_state'))->toBe('running');
     });
 });
 

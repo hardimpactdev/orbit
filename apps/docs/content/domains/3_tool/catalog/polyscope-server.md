@@ -10,15 +10,16 @@ These fields describe the PolyScope Server tool's identity, backend, and support
 | --- | --- |
 | Slug | `polyscope-server` |
 | Label | PolyScope Server |
-| Backend | Transitional Supervisor program; pending process-backed `systemd` migration |
+| Backend | Node-owned `systemd` process named `polyscope-server` with `tool=polyscope` |
 | Support model | Installable and removable by Orbit |
 | Category | `development` |
 
 ## Capabilities
 
-`polyscope-server` supports `tool:install`, `tool:remove`, transitional
-lifecycle actions, `tool:reconfigure`, `tool:update`, snapshot and streamed
-`tool:logs`, safe doctor fix, and safe doctor adopt.
+`polyscope-server` supports `tool:install`, `tool:remove`,
+process-backed compatibility lifecycle actions, `tool:reconfigure`,
+`tool:update`, snapshot and streamed `tool:logs`, safe doctor fix, and safe
+doctor adopt.
 
 ## Credentials
 
@@ -32,9 +33,9 @@ provider behavior remain owned by the agent IDE domain when that domain is
 ported.
 
 Runtime-model migration treats `polyscope` as the installed capability and
-`polyscope-server` as the process name. The process will own lifecycle with
-`runtime=systemd`; the current catalog slug remains transitional until that
-migration lands.
+`polyscope-server` as the process name. The backfilled node-owned process row
+owns lifecycle with `runtime=systemd`; the `polyscope-server` tool row remains
+the capability and compatibility payload record.
 
 Provider authentication remains provider-owned. When provider login cannot be
 completed remotely, `tool:install polyscope-server` may report a manual
@@ -42,14 +43,11 @@ completed remotely, `tool:install polyscope-server` may report a manual
 `tool:credentials`.
 
 `tool:update polyscope-server` currently runs PolyScope Server's standalone
-updater and then restarts the Supervisor program that Orbit manages. After
-process migration, update remains tool-owned while restart/log lifecycle belongs
-to the related process.
+updater. Update remains tool-owned while restart/log lifecycle belongs to the
+related process.
 
 ## Doctor Relationship
 
-`doctor --family=tool` currently verifies the managed Supervisor program,
-expected lifecycle state, logs availability, and safe repair/adoption
-boundaries. After process migration, tool doctor owns capability and
-expected-state checks while `doctor --family=process` owns the related
-`systemd` process lifecycle.
+`doctor --family=tool` owns capability and expected-state checks and safe
+repair/adoption boundaries. The related `systemd` process lifecycle belongs to
+the process family.

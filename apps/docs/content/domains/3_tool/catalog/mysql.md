@@ -16,9 +16,9 @@ These fields describe the MySQL tool's identity, backend, and support model in O
 
 ## Capabilities
 
-`mysql` supports `tool:install`, `tool:remove`, lifecycle actions,
-`tool:update`, `tool:logs`, `tool:credentials`, WireGuard service endpoint
-management, safe doctor fix, and safe doctor adopt.
+`mysql` supports `tool:install`, `tool:remove`, process-backed compatibility
+lifecycle actions, `tool:update`, `tool:logs`, `tool:credentials`, WireGuard
+service endpoint management, safe doctor fix, and safe doctor adopt.
 
 ## Credentials
 
@@ -72,7 +72,12 @@ state family and `database:*` commands. The `mysql` tool no longer installs
 the `mysql` client binary; queries run via PHP driver from the gateway or
 owning node.
 
+Runtime-model migration keeps the `mysql` tool row as the capability and
+compatibility payload record. The backfilled node-owned MySQL process row uses
+`runtime=docker` and owns lifecycle and logs.
+
 ## Doctor Relationship
 
-`doctor --family=tool` verifies the MySQL client capability, managed service
-intent, and safe repair/adoption boundaries.
+`doctor --family=tool` owns MySQL capability and expected-state checks,
+credential metadata, service endpoint metadata, and safe repair/adoption
+boundaries. The related Docker process lifecycle belongs to the process family.
