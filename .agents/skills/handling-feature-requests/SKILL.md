@@ -1,33 +1,43 @@
 ---
 name: handling-feature-requests
-description: Use when receiving, refining, triaging, or preparing an Orbit feature request, product change, command behavior change, scope question, or implementation handoff that needs documentation and implementation delegated through Solo.
+description: Use when receiving, refining, triaging, or preparing an Orbit feature request, product change, command behavior change, scope question, or Solo todo handoff.
 ---
 
 # Handling Feature Requests
 
 ## Overview
 
-Turn a feature request into a scoped Orbit product contract, then delegate the
-documentation and implementation work through Solo MCP.
+Capture feature intent as scoped Solo todo work. This skill is intake-only: it
+does not update files, documentation, tests, or implementation code.
+
+Before refining intent, use the `brainstorming` superpower for product shaping
+or behavior changes. Once intent is clear, use this skill to write the outcome,
+contract, scope, and verification expectations into Solo todos. Actual work,
+including documentation updates, happens through the `implementing-features`
+skill.
 
 ## Workflow
 
 1. Restate the requested outcome in concrete Orbit terms.
 2. Identify the affected product surface: command, service, API, docs-only behavior, orchestration flow, E2E lane, or project tooling.
-3. Read current product authority before proposing implementation:
+3. Use the `brainstorming` superpower when intent, behavior, scope, or product
+   direction still needs refinement.
+4. Read current product authority before writing Solo todos:
    - `AGENTS.md`
    - `apps/docs/content/product-decisions.md` (dated intent ledger — read current direction before proposing a change, so a new decision does not contradict or duplicate an existing one)
-   - `docs/mission.md`
-   - `docs/architecture.md`
-   - `docs/tech-stack.md`
-   - `docs/concepts.md`
-   - relevant `docs/domains/**`
+   - `apps/docs/content/mission.md`
+   - `apps/docs/content/architecture.md`
+   - `apps/docs/content/tech-stack.md`
+   - `apps/docs/content/concepts.md`
+   - relevant `apps/docs/content/domains/**`
    - relevant `docs/superpowers/**`
-4. Flag missing or contradictory docs before implementation and record unresolved decisions explicitly.
-5. Define the smallest useful vertical slice that can be documented, tested, implemented, and verified.
-6. Prepare the handoff shape below.
-7. Spawn the Solo documentation agent using the Documentation Agent config below and prompt it to use `updating-documentation`.
-8. After documentation is aligned, spawn the Solo implementation agent using the Implementation Agent config below and prompt it to use `implementing-features`.
+5. Flag missing or contradictory docs in the Solo todo body; do not fix them in
+   this skill.
+6. Define the smallest useful vertical slice that can be documented, tested,
+   implemented, and verified.
+7. Create or update Solo todo(s) with the handoff shape below.
+8. Leave implementation, including documentation edits and product-decision
+   ledger entries, to the agent using `implementing-features`.
 
 ## Product Decisions
 
@@ -37,7 +47,7 @@ Use this decision order when evidence conflicts:
 2. Current tests describe expected implementation behavior only when they match the docs.
 3. Current code explains what exists, not necessarily what should exist.
 
-If a new decision is needed, make it explicit in the handoff:
+If a new decision is needed, make it explicit in the Solo todo:
 
 ```markdown
 Decision needed: <question>
@@ -47,22 +57,9 @@ Known evidence:
 Recommended direction: <specific choice and why>
 ```
 
-### Log direction changes to the intent ledger
-
-When a decision **establishes or changes a product direction** (not a flag, fix,
-or gap-fill), append a one-line entry to
-`apps/docs/content/product-decisions.md` at decision time, newest first:
-
-`- YYYY-MM-DD — <decision, present tense, with the topic noun>. (solo todo #NNNN)`
-
-Link the Solo todo that drove the decision. This is the chronological intent
-anchor the `auditing-docs-drift` skill consults to resolve drift; capture it now
-even if the full authority-doc update lands later.
-
 ## Handoff Shape
 
-Use this shape when preparing work for the documentation and implementation
-skills:
+Use this shape when creating or updating Solo todos:
 
 ```markdown
 ## Feature Request
@@ -95,72 +92,28 @@ skills:
 
 ## Solo Delegation Rules
 
-- Documentation work goes through a Solo Claude agent using the `updating-documentation` skill.
-- Implementation work goes through a Solo Codex agent using the `implementing-features` skill only after product docs are aligned.
-- Each spawned Solo agent must receive the handoff plus current request context.
-- Track returned Solo process ids in the response or working notes so follow-up can inspect them.
+- This skill may create or update Solo todos, comments, blockers, and tags.
+- This skill must not edit repository files or spawn implementation agents.
+- Documentation updates, product-decision ledger entries, tests, and code
+  changes all belong to a later implementation pass using
+  `implementing-features`.
+- The Solo todo body is the handoff. Include enough context for a later
+  implementation agent to start from the todo without reconstructing intent
+  from the conversation.
 
-## Solo Agent Configs
-
-Before spawning, call `mcp__solo__.list_agent_tools` and resolve the current
-tool id by `tool_type`. Spawn the generic Solo CLI tool, then use the spawned
-CLI's interactive `/model` selector before sending the task prompt. The
-selected model option includes the reasoning/effort level.
-
-Documentation agent:
-
-1. Resolve `tool_type: claude` (currently `agent_tool_id: 3`).
-2. Call `mcp__solo__.spawn_process` with `kind: "agent"` and that tool id.
-3. Send `/model` with `mcp__solo__.send_input`, wait for the interactive selector, and select `opus` with `max` effort.
-
-Implementation agent:
-
-1. Resolve `tool_type: codex` (currently `agent_tool_id: 4`).
-2. Call `mcp__solo__.spawn_process` with `kind: "agent"` and that tool id.
-3. Send `/model` with `mcp__solo__.send_input`, wait for the interactive selector, and select `gpt-5.5` with `medium` effort.
-
-For both agents, prepend the `agent_instructions` returned by
-`spawn_process` to the first real prompt.
-
-## Solo Prompt Templates
-
-Documentation prompt:
+## Implementation Handoff
 
 ```markdown
-<agent_instructions from Solo>
-
-Use the Updating Documentation skill at `.agents/skills/updating-documentation/SKILL.md`.
-
-Request:
-<paste the documentation request or feature handoff>
-
-Required context:
-- `AGENTS.md`
-- `apps/docs/content/product-decisions.md` (dated intent ledger — current direction)
-- `docs/mission.md`
-- `docs/architecture.md`
-- `docs/tech-stack.md`
-- `docs/concepts.md`
-- relevant `docs/domains/**`
-- relevant `docs/superpowers/**`
-
-Return changed files, product decisions, unresolved questions, and verification performed.
-```
-
-Implementation prompt:
-
-```markdown
-<agent_instructions from Solo>
-
-Use the Implementing Features skill at `.agents/skills/implementing-features/SKILL.md`.
+Use `.agents/skills/implementing-features/SKILL.md` when executing this todo.
 
 Task:
 <paste the implementation handoff>
 
 Required context:
 - `AGENTS.md`
-- updated product docs named in the handoff
-- relevant `docs/domains/**`
+- `apps/docs/content/product-decisions.md` (dated intent ledger — current direction)
+- relevant product docs under `apps/docs/content/**`
+- relevant session context under `docs/superpowers/**`
 - current code and tests in owned scope
 
 Return changed files, tests, verification, blockers, and risks.
@@ -171,9 +124,16 @@ Return changed files, tests, verification, blockers, and risks.
 - Stop and ask for direction if current docs contradict the requested behavior.
 - Stop and ask for direction if the request requires destructive live-node work without an ephemeral E2E plan.
 - Stop and narrow scope if the request mixes unrelated product surfaces.
+- Stop before editing repository files; switch to `implementing-features` for
+  actual changes.
+- Stop before spawning implementation agents; leave execution to the Solo todo
+  workflow.
 
 ## Common Mistakes
 
 - Treating an implementation guess as product authority.
+- Editing docs, code, tests, or skills while using this intake skill.
+- Spawning an implementation agent instead of capturing the work in Solo todos.
 - Creating broad abstractions before the vertical slice proves they are needed.
-- Starting implementation before the documentation Solo process has aligned the product contract.
+- Splitting documentation into a separate implementation track instead of
+  capturing the doc gap in the Solo todo for `implementing-features`.

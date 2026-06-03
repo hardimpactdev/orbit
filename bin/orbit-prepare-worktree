@@ -1,0 +1,276 @@
+#!/usr/bin/env bash
+
+set -Eeuo pipefail
+
+SCRIPT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." >/dev/null 2>&1 && pwd)"
+
+usage() {
+    cat <<'EOF'
+Usage:
+  bin/orbit-prepare-worktree <branch> [options]
+
+Creates or reuses an Orbit implementation worktree and prepares it for agents.
+
+Options:
+  --base=<ref>       Base ref for new worktrees. Default: main
+  --path=<path>      Worktree path. Default: .worktrees/<branch-with-slashes-as-dashes>
+  --skip-tests       Prepare dependencies and app state, but do not run composer test
+  --with-e2e         Run composer e2e:preflight after composer test
+  --frontend         Install and build gateway/docs frontend assets
+  --dry-run          Print the resolved worktree assignment without changing files
+  -h, --help         Show this help
+
+Examples:
+  bin/orbit-prepare-worktree solo-641
+  bin/orbit-prepare-worktree solo-641-gateway-update --base=main --with-e2e
+EOF
+}
+
+fail() {
+    printf 'orbit-prepare-worktree: %s\n' "$*" >&2
+    exit 1
+}
+
+step() {
+    printf '\n==> %s\n' "$*"
+}
+
+run() {
+    printf '+'
+    printf ' %q' "$@"
+    printf '\n'
+    "$@"
+}
+
+run_in() {
+    local directory="$1"
+
+    shift
+    printf '+ cd %q &&' "$directory"
+    printf ' %q' "$@"
+    printf '\n'
+    (cd "$directory" && "$@")
+}
+
+branch=''
+base_ref='main'
+path=''
+run_tests=1
+run_e2e_preflight=0
+run_frontend=0
+dry_run=0
+
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        --base=*)
+            base_ref="${1#*=}"
+            ;;
+        --path=*)
+            path="${1#*=}"
+            ;;
+        --skip-tests)
+            run_tests=0
+            ;;
+        --with-e2e)
+            run_e2e_preflight=1
+            ;;
+        --frontend)
+            run_frontend=1
+            ;;
+        --dry-run)
+            dry_run=1
+            ;;
+        -h|--help)
+            usage
+            exit 0
+            ;;
+        --*)
+            fail "unknown option: $1"
+            ;;
+        *)
+            if [ -n "$branch" ]; then
+                fail "unexpected argument: $1"
+            fi
+
+            branch="$1"
+            ;;
+    esac
+
+    shift
+done
+
+[ -n "$branch" ] || {
+    usage >&2
+    exit 2
+}
+
+case "$branch" in
+    *' '*)
+        fail "branch must not contain spaces: $branch"
+        ;;
+esac
+
+cd "$SCRIPT_ROOT"
+
+git rev-parse --show-toplevel >/dev/null 2>&1 || fail "not inside a git repository"
+common_git_dir="$(git rev-parse --path-format=absolute --git-common-dir)"
+ROOT="$(dirname "$common_git_dir")"
+cd "$ROOT"
+
+git check-ignore -q .worktrees || fail ".worktrees must be ignored before creating local worktrees"
+git rev-parse --verify --quiet "${base_ref}^{commit}" >/dev/null || fail "base ref does not resolve to a commit: $base_ref"
+
+if [ -z "$path" ]; then
+    path_slug="${branch//\//-}"
+    path=".worktrees/${path_slug}"
+fi
+
+case "$path" in
+    /*)
+        worktree_path="$path"
+        ;;
+    *)
+        worktree_path="${ROOT}/${path}"
+        ;;
+esac
+
+printf 'WORKTREE_ASSIGNMENT path=%s branch=%s base_ref=%s\n' "$worktree_path" "$branch" "$base_ref"
+
+if [ "$dry_run" -eq 1 ]; then
+    printf 'dry_run=1\n'
+    exit 0
+fi
+
+mkdir -p "$(dirname "$worktree_path")"
+
+branch_exists=0
+if git show-ref --verify --quiet "refs/heads/${branch}"; then
+    branch_exists=1
+fi
+
+reuse=0
+if [ -e "$worktree_path" ]; then
+    [ -d "$worktree_path/.git" ] || git -C "$worktree_path" rev-parse --is-inside-work-tree >/dev/null 2>&1 || fail "path exists but is not a git worktree: $worktree_path"
+
+    existing_branch="$(git -C "$worktree_path" branch --show-current)"
+    [ "$existing_branch" = "$branch" ] || fail "path exists on branch ${existing_branch:-detached}, expected $branch"
+
+    reuse=1
+elif [ "$branch_exists" -eq 1 ]; then
+    fail "branch already exists without the requested worktree path: $branch"
+fi
+
+if [ "$reuse" -eq 1 ]; then
+    step "Reusing worktree"
+else
+    step "Creating worktree"
+    run git worktree add -b "$branch" "$worktree_path" "$base_ref"
+fi
+
+step "Linking E2E environment"
+common_git_dir="$(git -C "$worktree_path" rev-parse --path-format=absolute --git-common-dir)"
+main_checkout="$(dirname "$common_git_dir")"
+if [ -f "${main_checkout}/.env.e2e" ] && [ ! -e "${worktree_path}/.env.e2e" ]; then
+    run ln -s "${main_checkout}/.env.e2e" "${worktree_path}/.env.e2e"
+else
+    printf 'skip .env.e2e link: source missing or target exists\n'
+fi
+
+step "Installing Composer dependencies"
+run_in "$worktree_path" composer install
+
+for directory in packages/core apps/gateway apps/docs apps/cli apps/e2e; do
+    if [ -f "${worktree_path}/${directory}/composer.json" ]; then
+        run_in "${worktree_path}/${directory}" composer install
+    fi
+done
+
+prepare_gateway_app() {
+    local app_path="$1"
+    local config_root="${app_path}/storage/framework/testing/worktree-orbit"
+    local env_file="${config_root}/.env"
+    local database_file="${config_root}/gateway.sqlite"
+
+    [ -f "${app_path}/artisan" ] || return 0
+    [ -f "${app_path}/.env.example" ] || return 0
+
+    step "Preparing gateway app state"
+
+    run mkdir -p "$config_root"
+
+    if [ ! -f "$env_file" ]; then
+        run cp "${app_path}/.env.example" "$env_file"
+        {
+            printf '\nORBIT_CONFIG_ROOT=%s\n' "$config_root"
+            printf 'DB_CONNECTION=sqlite\n'
+            printf 'DB_DATABASE=%s\n' "$database_file"
+            printf 'SESSION_DRIVER=file\n'
+        } >> "$env_file"
+    fi
+
+    if [ ! -f "$database_file" ]; then
+        run touch "$database_file"
+    fi
+
+    if ! grep -q '^APP_KEY=base64:' "$env_file"; then
+        run_in "$app_path" env ORBIT_CONFIG_ROOT="$config_root" DB_CONNECTION=sqlite DB_DATABASE="$database_file" SESSION_DRIVER=file php artisan key:generate --no-interaction
+    else
+        printf 'skip key generation: gateway app state already has APP_KEY\n'
+    fi
+
+    run_in "$app_path" env ORBIT_CONFIG_ROOT="$config_root" DB_CONNECTION=sqlite DB_DATABASE="$database_file" SESSION_DRIVER=file php artisan migrate --force --no-interaction
+}
+
+prepare_laravel_app() {
+    local app_path="$1"
+
+    [ -f "${app_path}/artisan" ] || return 0
+    [ -f "${app_path}/.env.example" ] || return 0
+
+    step "Preparing Laravel app: ${app_path#${worktree_path}/}"
+
+    if [ ! -f "${app_path}/.env" ]; then
+        run cp "${app_path}/.env.example" "${app_path}/.env"
+    fi
+
+    mkdir -p "${app_path}/database"
+    if [ ! -f "${app_path}/database/database.sqlite" ]; then
+        run touch "${app_path}/database/database.sqlite"
+    fi
+
+    if ! grep -q '^APP_KEY=base64:' "${app_path}/.env"; then
+        run_in "$app_path" php artisan key:generate --no-interaction
+    else
+        printf 'skip key generation: %s already has APP_KEY\n' "${app_path#${worktree_path}/}"
+    fi
+
+    run_in "$app_path" php artisan migrate --force --no-interaction
+}
+
+prepare_gateway_app "${worktree_path}/apps/gateway"
+prepare_laravel_app "${worktree_path}/apps/docs"
+prepare_laravel_app "${worktree_path}/apps/e2e"
+
+if [ "$run_frontend" -eq 1 ]; then
+    step "Building frontend assets"
+    for directory in apps/gateway apps/docs; do
+        if [ -f "${worktree_path}/${directory}/package.json" ]; then
+            run_in "${worktree_path}/${directory}" npm install --ignore-scripts
+            run_in "${worktree_path}/${directory}" npm run build
+        fi
+    done
+fi
+
+if [ "$run_tests" -eq 1 ]; then
+    step "Running baseline tests"
+    run_in "$worktree_path" composer test
+else
+    printf 'skip composer test: --skip-tests\n'
+fi
+
+if [ "$run_e2e_preflight" -eq 1 ]; then
+    step "Running E2E preflight"
+    run_in "$worktree_path" composer e2e:preflight
+fi
+
+printf '\nWORKTREE_PREPARED path=%s branch=%s base_ref=%s\n' "$worktree_path" "$branch" "$base_ref"

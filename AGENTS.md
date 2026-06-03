@@ -51,6 +51,18 @@ product authority and are not linted as product docs.
 
 ## Development and debugging Rules
 
+- Feature-request handling is intake only: use it to clarify intent and capture
+  scoped Solo todo handoffs. Do not update repository files while handling the
+  request.
+- Actual implementation happens through `.agents/skills/implementing-features`
+  in an isolated worktree. That includes documentation updates, product-decision
+  ledger entries, tests, and code changes.
+- Use `bin/orbit-prepare-worktree` to create, bootstrap, and verify
+  implementation worktrees. Agents must not recreate that setup flow manually.
+- When a feature is implemented and verified, commit the worktree branch, merge
+  it back into `main` from the primary `~/orbit` checkout, remove the completed
+  worktree/branch, and leave `~/orbit` on updated `main`. Preserve unrelated
+  dirty files in `~/orbit`; never discard user changes to make a merge easier.
 - Always make sure that `apps/docs/content/` describes the correct behavior. If
   the docs are lacking or contradict what is requested, flag that first before
   proceeding.
