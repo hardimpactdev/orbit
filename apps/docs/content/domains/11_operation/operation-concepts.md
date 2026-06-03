@@ -19,7 +19,11 @@ These terms describe the update workflow and its components.
 
 - **Local update:** `update` sequence that changes only the current Orbit CLI installation. Production installs update the native CLI binary artifact and relink the host launcher; source-dev Docker/Incus lanes keep `/usr/local/bin/orbit` pointed at `<source>/apps/cli/orbit` and update by changing the mounted source.
 - **Fleet update:** `update:all` sequence that updates the caller-local CLI installation, replaces the gateway/scheduler services through a durable gateway-owned operation, and updates selected active non-local managed Orbit installations.
-- **Operation event journal:** Durable ordered event log for a gateway-owned operation. Followers replay it from the beginning or from `Last-Event-ID`.
+- **Operation event journal:** Durable ordered event log for a gateway-owned
+  operation. Events carry a per-run sequence. The SSE event id is that sequence,
+  `Last-Event-ID` replays only events with a greater sequence, and live
+  followers stay connected with heartbeat comments until a terminal `complete`
+  or `error` event is persisted.
 - **Immutable update plan:** Persisted update plan keyed by `operation_run_id`; it captures target version, digest-pinned gateway image, release manifest source/version/snapshot, CLI artifact URLs and hashes, and required role image metadata.
 - **Update lease:** Expiring lease row for mutually exclusive update work, such as `fleet:update-all`, `gateway`, `scheduler`, or an individual node update.
 - **Update target:** One selected Orbit installation in an update workflow.

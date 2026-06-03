@@ -12,6 +12,7 @@ use App\Http\Middleware\WireGuardIdentity;
 use App\Models\Node;
 use App\Models\NodeAccess;
 use App\Models\OperationRun;
+use App\Services\Operations\OperationEventRecorder;
 use App\Services\Operations\OperationRunRecorder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Route;
@@ -29,8 +30,9 @@ beforeEach(function (): void {
         'wireguard_address' => OPERATION_EVENTS_GATEWAY_WG_IP,
     ]);
 
-    $this->recorder = app(OperationRunRecorder::class);
-    $this->run = $this->recorder->queued(
+    $this->operationRuns = app(OperationRunRecorder::class);
+    $this->recorder = app(OperationEventRecorder::class);
+    $this->run = $this->operationRuns->queued(
         operationId: (string) Str::uuid(),
         lane: 'gateway',
         operationType: 'update:all',
@@ -38,11 +40,11 @@ beforeEach(function (): void {
 });
 
 it('replays operation events from the beginning as server sent events', function (): void {
-    $tree = $this->recorder->appendTree($this->run->id, 'Update all', [
+    $tree = $this->recorder->tree($this->run, 'Update all', [
         ['key' => 'gateway', 'label' => 'Update gateway'],
     ]);
-    $step = $this->recorder->appendStep($this->run->id, 'gateway', 'running', 'Updating gateway');
-    $complete = $this->recorder->appendComplete($this->run->id, 0, ['version' => '1.2.3']);
+    $step = $this->recorder->step($this->run, 'gateway', 'running', 'Updating gateway');
+    $complete = $this->recorder->complete($this->run, 0, ['version' => '1.2.3']);
 
     $response = operationEventStreamRequest($this->run);
 
@@ -52,37 +54,43 @@ it('replays operation events from the beginning as server sent events', function
 
     $content = $response->streamedContent();
 
-    expect($content)->toContain("id: {$tree->id}\n")
+    expect($content)->toContain("id: {$tree->sequence}\n")
         ->and($content)->toContain("event: tree\n")
         ->and($content)->toContain('"title":"Update all"')
-        ->and($content)->toContain("id: {$step->id}\n")
+        ->and($content)->toContain("id: {$step->sequence}\n")
         ->and($content)->toContain('"status":"running"')
-        ->and($content)->toContain("id: {$complete->id}\n")
+        ->and($content)->toContain("id: {$complete->sequence}\n")
         ->and($content)->toContain("event: complete\n")
         ->and($content)->toContain('"exit_code":0')
         ->and($content)->toContain('"version":"1.2.3"');
 });
 
-it('continues replay after the last seen event id', function (): void {
-    $first = $this->recorder->appendStep($this->run->id, 'gateway', 'running');
-    $second = $this->recorder->appendStep($this->run->id, 'gateway', 'done');
+it('continues replay after the last seen event sequence', function (): void {
+    $otherRun = $this->operationRuns->queued((string) Str::uuid(), 'gateway', operationType: 'update:all');
+    $this->recorder->step($otherRun, 'other', 'running');
+
+    $first = $this->recorder->step($this->run, 'gateway', 'running');
+    $second = $this->recorder->step($this->run, 'gateway', 'done');
 
     $response = operationEventStreamRequest($this->run, [
-        'HTTP_LAST_EVENT_ID' => (string) $first->id,
+        'HTTP_LAST_EVENT_ID' => (string) $first->sequence,
+    ], [
+        'once' => '1',
     ]);
 
     $response->assertOk();
 
     $content = $response->streamedContent();
 
-    expect($content)->not->toContain("id: {$first->id}\n")
-        ->and($content)->toContain("id: {$second->id}\n")
+    expect($first->id)->not->toBe($first->sequence)
+        ->and($content)->not->toContain("id: {$first->sequence}\n")
+        ->and($content)->toContain("id: {$second->sequence}\n")
         ->and($content)->toContain('"status":"done"');
 });
 
 it('streams terminal error state when the operation ended with an error event', function (): void {
-    $terminal = $this->recorder->appendError(
-        $this->run->id,
+    $terminal = $this->recorder->error(
+        $this->run,
         message: 'Gateway health failed',
         exitCode: 17,
         data: ['code' => 'gateway_health_failed'],
@@ -92,10 +100,23 @@ it('streams terminal error state when the operation ended with an error event', 
 
     $response->assertOk();
 
-    expect($response->streamedContent())->toContain("id: {$terminal->id}\n")
+    expect($response->streamedContent())->toContain("id: {$terminal->sequence}\n")
         ->and($response->streamedContent())->toContain("event: error\n")
         ->and($response->streamedContent())->toContain('"message":"Gateway health failed"')
         ->and($response->streamedContent())->toContain('"exit_code":17');
+});
+
+it('emits heartbeats while following a non-terminal operation event stream', function (): void {
+    $this->recorder->step($this->run, 'gateway', 'running');
+
+    $response = operationEventStreamRequest($this->run, query: [
+        'max_idle_polls' => '1',
+        'poll_microseconds' => '0',
+    ]);
+
+    $response->assertOk();
+
+    expect($response->streamedContent())->toContain(": heartbeat\n\n");
 });
 
 it('rejects requests that do not resolve to a WireGuard node identity', function (): void {
@@ -135,9 +156,11 @@ it('allows non-gateway callers with gateway admin authority', function (): void 
         'custom_permissions' => ['*'],
     ]);
 
-    $this->recorder->appendStep($this->run->id, 'gateway', 'running');
+    $this->recorder->step($this->run, 'gateway', 'running');
 
-    $response = $this->call('GET', "/api/operations/{$this->run->id}/events", [], [], [], [
+    $response = $this->call('GET', "/api/operations/{$this->run->id}/events", [
+        'once' => '1',
+    ], [], [], [
         'REMOTE_ADDR' => '10.6.0.90',
     ]);
 
@@ -173,10 +196,11 @@ it('uses WireGuard and grant middleware while bypassing LogActivity', function (
 
 /**
  * @param  array<string, string>  $server
+ * @param  array<string, string>  $query
  */
-function operationEventStreamRequest(OperationRun $run, array $server = []): TestResponse
+function operationEventStreamRequest(OperationRun $run, array $server = [], array $query = []): TestResponse
 {
-    return test()->call('GET', "/api/operations/{$run->id}/events", [], [], [], [
+    return test()->call('GET', "/api/operations/{$run->id}/events", $query, [], [], [
         'REMOTE_ADDR' => OPERATION_EVENTS_GATEWAY_WG_IP,
         ...$server,
     ]);

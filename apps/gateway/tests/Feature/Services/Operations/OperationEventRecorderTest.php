@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Models\OperationEvent;
+use App\Services\Operations\OperationEventRecorder;
 use App\Services\Operations\OperationPayloadRejected;
 use App\Services\Operations\OperationRunRecorder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -11,17 +12,18 @@ use Illuminate\Support\Str;
 uses(RefreshDatabase::class);
 
 beforeEach(function (): void {
-    $this->recorder = app(OperationRunRecorder::class);
-    $this->run = $this->recorder->queued((string) Str::uuid(), 'gateway', operationType: 'update:all');
+    $this->operationRuns = app(OperationRunRecorder::class);
+    $this->recorder = app(OperationEventRecorder::class);
+    $this->run = $this->operationRuns->queued((string) Str::uuid(), 'gateway', operationType: 'update:all');
 });
 
 it('appends ordered durable operation events', function (): void {
-    $tree = $this->recorder->appendTree($this->run->id, 'Update all', [
+    $tree = $this->recorder->tree($this->run, 'Update all', [
         ['key' => 'gateway', 'label' => 'Update gateway'],
     ]);
 
-    $step = $this->recorder->appendStep($this->run->id, 'gateway', 'running', 'Updating gateway');
-    $complete = $this->recorder->appendComplete($this->run->id, 0, ['version' => '1.2.3']);
+    $step = $this->recorder->step($this->run, 'gateway', 'running', 'Updating gateway');
+    $complete = $this->recorder->complete($this->run, 0, ['version' => '1.2.3']);
 
     expect($tree)->toBeInstanceOf(OperationEvent::class)
         ->and($tree->sequence)->toBe(1)
@@ -35,19 +37,9 @@ it('appends ordered durable operation events', function (): void {
         ->toBe(['tree', 'step', 'complete']);
 });
 
-it('replays events after the last seen event id', function (): void {
-    $first = $this->recorder->appendStep($this->run->id, 'gateway', 'running');
-    $second = $this->recorder->appendStep($this->run->id, 'gateway', 'done');
-
-    $events = $this->recorder->eventsAfter($this->run->id, $first->id);
-
-    expect($events)->toHaveCount(1)
-        ->and($events->first()?->id)->toBe($second->id);
-});
-
 it('appends terminal error events with metadata', function (): void {
-    $event = $this->recorder->appendError(
-        $this->run->id,
+    $event = $this->recorder->error(
+        $this->run,
         message: 'Gateway health failed',
         exitCode: 17,
         data: ['code' => 'gateway_health_failed'],
@@ -64,7 +56,7 @@ it('appends terminal error events with metadata', function (): void {
 });
 
 it('rejects event payloads with forbidden secret keys before writing rows', function (): void {
-    expect(fn () => $this->recorder->appendEvent($this->run->id, 'step', [
+    expect(fn () => $this->recorder->append($this->run, 'step', [
         'key' => 'gateway',
         'status' => 'running',
         'password' => 'secret',
@@ -74,7 +66,7 @@ it('rejects event payloads with forbidden secret keys before writing rows', func
 });
 
 it('rejects event payload values that embed PEM blocks before writing rows', function (): void {
-    expect(fn () => $this->recorder->appendEvent($this->run->id, 'step', [
+    expect(fn () => $this->recorder->append($this->run, 'step', [
         'key' => 'gateway',
         'status' => 'running',
         'message' => "-----BEGIN PRIVATE KEY-----\nsecret\n-----END PRIVATE KEY-----",
