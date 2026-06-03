@@ -132,10 +132,11 @@ Orbit does not delegate intermediate CA authority to nodes. That delegation woul
 Gateway-owned internal routes are proxy inventory, but their product purpose is the gateway API. Internal gateway ingress must bind to the gateway's Orbit network address, not become a public application route. It must preserve the WireGuard identity model by removing forwarded-client identity headers before the request reaches the gateway API.
 
 Long-lived gateway streams, such as progress or log streams, must not consume
-the same execution lane as short command/API requests. The gateway
-`orbit-caddy` container forwards API traffic to the gateway `orbit-gateway`
-container, and the product contract is that streaming traffic cannot starve
-ordinary gateway API execution.
+the same execution lane as short command/API requests. In `router-colocated`
+mode, router-owned `orbit-caddy` forwards gateway API traffic to
+`orbit-gateway` over `orbit-network`; in `gateway-direct` mode,
+`orbit-gateway` publishes gateway HTTPS directly. In both modes, streaming
+traffic cannot starve ordinary gateway API execution.
 
 ## Proxy Route JSON Entity
 
