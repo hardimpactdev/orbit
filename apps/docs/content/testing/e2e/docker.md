@@ -209,7 +209,8 @@ be mutated by the helper containers.
 Docker is a valid lane for `process:*`, `schedule:*`, and `workspace:*` runtime
 assertions because the Docker topologies that include a gateway provide
 `orbit-gateway`, `orbit-scheduler`, `orbit-caddy`, FrankenPHP app/workspace
-containers, and Docker process runtime containers.
+containers, and Supervisor process programs where configured process units are
+under test.
 
 ## Debugging selected tests
 

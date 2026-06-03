@@ -12,9 +12,9 @@ The process family owns these facts:
 
 - gateway-owned process definitions: app, name, command, restart policy, and crash-notification policy;
 - derived runtime-unit identity for the main app instance and every workspace: `orbit_<app>_<workspace|main>_<process>`;
-- Docker process runtime units rendered from process, app, workspace, and node
-  configuration, including command, working directory, restart policy, runtime
-  environment, and selected app/workspace runtime image;
+- Supervisor process runtime units rendered from process, app, workspace, and
+  node configuration, including command, working directory, restart policy, and
+  runtime environment;
 - lifecycle event notifier material that Orbit manages, required to record runtime `crashed` events from app-host units whose process definitions require crash event reporting;
 - stale process runtime artifacts owned by Orbit whose identity no longer maps
   to an active app, workspace, or process definition.
@@ -35,18 +35,14 @@ The owning app resolves to an active app record and the expected runtime context
 
 ### Process manager availability
 
-The node has Docker process runtime support available and responsive. Explicit
-`process.runtime=supervisor` units also require Supervisor to be installed, with
+The node has Supervisor process runtime support available and responsive, with
 `supervisord` reachable and its control socket responsive. When this layer
 fails, the probe stops and reports `process.runtime_backend_unavailable`
 instead of cascading to downstream checks.
 
-For Docker runtime units, the probe runs `docker container inspect` over SSH
-and checks the container state (`Created`, `Running`, `Exited`) and the
-`orbit.process.spec_hash` label against the rendered gateway spec. For
-Supervisor runtime units, the probe reads `/etc/supervisor/conf.d/orbit_*.conf`
-files and compares their content hash, restart policy, and environment line
-against the rendered gateway spec.
+The probe reads `/etc/supervisor/conf.d/orbit_*.conf` files and compares their
+content hash, restart policy, and environment line against the rendered gateway
+spec.
 
 ### Runtime-unit identity
 
@@ -54,13 +50,12 @@ Each expected runtime context maps to exactly one runtime unit name that Orbit o
 
 ### Runtime artifact presence
 
-Each expected runtime unit exists as the selected backend artifact: Docker
-container for Docker process runtime units, or Supervisor program for explicit
-`supervisor` runtime units. Checked only when the process manager is reachable.
+Each expected runtime unit exists as the selected backend artifact: a
+Supervisor program. Checked only when the process manager is reachable.
 
 ### Runtime artifact shape
 
-The rendered command, working directory, restart policy, user, and runtime environment match gateway configuration. For Docker runtime units, the `orbit.process.spec_hash` label on the live container must match the gateway-rendered spec hash.
+The rendered command, working directory, restart policy, user, and runtime environment match gateway configuration.
 
 ### Lifecycle notifier material
 
@@ -83,7 +78,7 @@ Each code below identifies a specific process-family drift condition that the pr
 | `process.record_incomplete` | A selected process definition lacks app, name, command, restart policy, or crash-notification policy. |
 | `process.owner_app_invalid` | The process definition points at a missing app, unauthorized app, or app whose owning node is not an active node. |
 | `process.runtime_context_unresolved` | The expected main app or workspace runtime context cannot be derived from gateway configuration. |
-| `process.runtime_backend_unavailable` | The selected process runtime backend is unavailable: Docker for default units, or Supervisor for explicit `supervisor` units. Downstream runtime-unit checks are skipped while this code is active. |
+| `process.runtime_backend_unavailable` | The selected process runtime backend is unavailable. Downstream runtime-unit checks are skipped while this code is active. |
 | `process.runtime_unit_missing` | An expected Orbit-owned runtime unit has no corresponding backend artifact. |
 | `process.runtime_unit_extra` | An Orbit-owned backend artifact exists without matching active app, workspace, and process configuration. |
 | `process.runtime_unit_mismatch` | The runtime artifact command, working directory, user, or unit name differs from gateway process configuration. |

@@ -53,9 +53,9 @@ Example JSON shape:
 
 ## Service Endpoint
 
-`mailpit` exposes a WireGuard-only SMTP endpoint at
-`orbit.<node-tld>:1025` and a tool-owned HTTPS proxy route at
-`https://mailpit.<node-tld>` for the Web UI.
+`mailpit` exposes a WireGuard-only SMTP endpoint at the serving node's
+WireGuard service address, such as `10.6.0.12:1025`, and a tool-owned HTTPS
+proxy route at `https://mailpit.<node-tld>` for the Web UI.
 
 ## Orbit Notes
 

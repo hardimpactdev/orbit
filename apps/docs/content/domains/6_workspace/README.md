@@ -38,10 +38,9 @@ These rules govern all workspace family commands.
   primary hostname. For a development app this yields
   `{workspace}.{app}.{tld}`.
 - Workspaces inherit app process definitions as runtime units. Each inherited
-  runtime unit becomes a separate Docker process runtime unit owned by the
-  workspace. It has its own unit name, working directory, environment block,
-  and log stream — distinct from the main app instance and from sibling
-  workspaces.
+  runtime unit becomes a separate Supervisor program owned by the workspace. It
+  has its own unit name, working directory, environment block, and log stream
+  distinct from the main app instance and from sibling workspaces.
   The parent app's process definition supplies the shared fields (command,
   restart policy, crash notification policy). The workspace context supplies
   the per-instance fields (working directory, workspace-specific URL,
@@ -85,8 +84,8 @@ the workspace row.
 Read commands over workspace registry state are fast gateway database reads
 unless their command contract explicitly opts into live inspection. Workspace
 runtime drift belongs to [`workspace-doctor.md`](workspace-doctor.md).
-Implementation-shape details for the process manager, Docker process units, and
-gateway-to-node application live in
+Implementation-shape details for the process manager and gateway-to-node
+application live in
 [tech-stack.md#process-manager](../../tech-stack.md#process-manager),
 [tech-stack.md#scheduler](../../tech-stack.md#scheduler), and
 [tech-stack.md#gateway-to-node](../../tech-stack.md#gateway-to-node).
@@ -96,8 +95,7 @@ Workspace registry-only reads — `workspace:show`, `workspace:history`,
 live process manager. `workspace:new`, `workspace:setup`, and
 `workspace:remove` require a live process manager on the owning node
 when they create, update, remove, or verify inherited runtime units.
-The live process manager is Docker for workspace PHP workloads; Supervisor is
-only an explicit residual runtime for supported non-PHP host-side cases.
+The live process manager for inherited workspace processes is Supervisor.
 
 ## Workspace JSON Entity
 

@@ -20,8 +20,8 @@ orbit process:logs queue --app=docs --lines=200 --json
 Use this command to read or stream logs for a resolved process runtime context.
 
 - **Context Resolution**: Resolves the process and app/workspace runtime context.
-- **Log Streaming**: Streams or returns Docker process logs through the
-  gateway. Explicit `process.runtime=supervisor` units stream Supervisor logs.
+- **Log Streaming**: Streams or returns Supervisor process logs through the
+  gateway.
 - **No Mutations**: Does not mutate process configuration.
 - **JSON Restriction**: Uses JSON output only for non-follow mode. `--json --follow` is rejected before opening the log stream.
 

@@ -21,8 +21,8 @@ These rules govern what the S3 command family owns and what it may not touch.
   to s3 role nodes.
 - Router owns `s3.orbit`, S3 backend pools, S3 upload-compatible proxy
   settings, and private router-to-RustFS routing.
-- RustFS runtime uses Orbit's Docker-first runtime container rendering. The
-  s3 role does not own role-local Docker Compose.
+- RustFS runtime uses Orbit's role runtime container rendering. The s3 role
+  does not own role-local Docker Compose.
 - S3 service credentials are service-level RustFS credentials stored on the
   `rustfs` tool row. They are visible through `tool:credentials rustfs` and
   `s3:credentials`.

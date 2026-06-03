@@ -109,13 +109,13 @@ The other seven are workload roles applied to nodes in the fleet.
 
 `app-dev` uses a local TLD for URLs (`myapp.test`, for example); `app-prod` serves real domains. Staging is a usage pattern of `app-prod`, not a separate role.
 
-Application roles use the Docker-first runtime baseline. PHP apps and PHP
-workspaces run in dedicated FrankenPHP containers. Orbit-defined PHP processes
-run as Docker process runtime units by default. Host PHP and PHP-FPM are not
-app or workspace runtime fallbacks. Gateway Laravel/artisan/PDO work runs
-inside the gateway container or the durable update runner. Packaged node-local
-helpers that need host file access and PHP/PDO use the token-gated local
-executor lane. See [Runtime Execution Lanes](execution-lanes.md).
+Application roles use a per-artifact production substrate. PHP apps and PHP
+workspaces run in dedicated FrankenPHP containers. Orbit-defined app and
+workspace processes run as host Supervisor programs. Host PHP-FPM is not an app
+or workspace runtime fallback. Gateway Laravel/artisan/PDO work runs inside the
+gateway container or the durable update runner. Packaged node-local helpers
+that need host file access and PHP/PDO use the token-gated local executor lane.
+See [Runtime Execution Lanes](execution-lanes.md).
 
 The `websocket` role is a private workload role for Orbit-managed realtime
 infrastructure. A websocket node runs Laravel Reverb in a Docker runtime
@@ -357,7 +357,7 @@ The gateway database is Orbit's source of truth. It stores four kinds of records
 - **Policy** — repeatable workflows (deployment step definitions).
 - **History** — what happened (deployment runs, activity logs).
 
-For standing configuration, a database row is not a cache. It describes a desired physical fact on a node — a FrankenPHP app container that should exist, a proxy route that should resolve, a Docker process runtime unit that should be running. The node-side artifact is the *applied* representation of that row.
+For standing configuration, a database row is not a cache. It describes a desired physical fact on a node — a FrankenPHP app container that should exist, a proxy route that should resolve, a Supervisor process program that should be running. The node-side artifact is the *applied* representation of that row.
 
 The core invariant:
 
@@ -390,7 +390,7 @@ isolation under `workspace.security.*`, and firewall-owned representation drift
 under `firewall_rule.security.*` when needed. `doctor --family=security` is not
 accepted.
 
-These names are how Orbit thinks about each thing. The tools behind them — `orbit-caddy` for proxy routes, UFW for firewall rules, Docker for PHP process runtime units, and Supervisor only for explicitly configured residual process runtime — are implementation choices. The family names stay stable even when the backend changes. See [tech-stack.md](tech-stack.md) for the backends in use today.
+These names are how Orbit thinks about each thing. The tools behind them — `orbit-caddy` for proxy routes, UFW for firewall rules, Docker for role/tool containers, and Supervisor for app/workspace process programs — are implementation choices. The family names stay stable even when the backend changes. See [tech-stack.md](tech-stack.md) for the backends in use today.
 
 ### Keeping nodes in sync
 

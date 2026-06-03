@@ -5,19 +5,21 @@
 Install or configure a managed tool on a node.
 
 `tool:install` bootstraps a supported tool capability on a target node and
-records gateway configuration for that node. It is for first install or re-applying a
-missing managed tool, not for changing an already managed version.
+records gateway configuration for that node. It is for first install or
+re-applying a missing managed tool instance.
 
 ## Usage
 
 ```bash
-orbit tool:install <tool> [--app=<app>] [--node=<node>] [--status=<installed|running>] [--json]
+orbit tool:install <tool> [--app=<app>] [--node=<node>] [--instance=<instance>] [--version=<major-or-specific-version>] [--runtime=<docker|docker-swarm>] [--status=<installed|running>] [--json]
 ```
 
 ## Examples
 
 ```bash
 orbit tool:install redis --node=app-1
+orbit tool:install redis --node=app-1 --version=7 --runtime=docker
+orbit tool:install redis --node=app-1 --version=7.2 --runtime=docker-swarm
 orbit tool:install redis --app=docs --status=running
 orbit tool:install redis --node=app-1 --json
 ```
@@ -27,6 +29,12 @@ orbit tool:install redis --node=app-1 --json
 - `tool`: Tool name from Orbit's tool catalog.
 - `--node`: Target node.
 - `--app`: Resolve the target node from an app.
+- `--instance`: Tool instance id. Defaults to `default` for single-instance
+  tools.
+- `--version`: Major version family or specific version supported by the tool
+  definition.
+- `--runtime`: Runtime family supported by the tool definition and target node
+  platform.
 - `--status`: Expected lifecycle state after install. Defaults to `installed`.
 - `--json`: Output JSON.
 
@@ -41,19 +49,27 @@ Run this command to bootstrap a supported tool on the target node and record gat
 `tool:install`:
 
 1. Resolves the target node and tool definition.
-2. Verifies the tool is supported for the target node role and platform.
-3. Creates or updates the gateway tool row for the node.
-4. Generates managed credentials when the selected tool declares a credential
+2. Resolves the requested instance, version family, specific version, and
+   runtime. Interactive callers are prompted when a tool has multiple supported
+   version families and no `--version` was supplied; non-interactive callers
+   must provide a value unless the tool definition has one unambiguous default.
+3. Verifies the tool is supported for the target node role and platform.
+4. Verifies the runtime family is declared by the tool definition and supported
+   by the target node platform.
+5. Creates or updates the gateway tool row for the node instance.
+6. Generates managed credentials when the selected tool declares a credential
    contract.
-5. Creates or updates service endpoint configuration owned by the tool when the selected tool
+7. Creates or updates service endpoint configuration owned by the tool when the selected tool
    declares one.
-6. Applies the managed install/configuration through the gateway.
-7. Starts the tool when the expected state is `running`.
-8. Reports the resulting expected state and command-owned apply outcome.
+8. Applies the managed install/configuration through the gateway.
+9. Starts the tool when the expected state is `running`.
+10. Reports the resulting expected state and command-owned apply outcome.
 
-If the tool is already managed and the operator wants to change its version
-intent, use [`tool:update --expected-version`](../9_tool-update/tool-update.md).
-`tool:install` does not accept install-time version intent.
+If the tool instance is already managed and the operator wants to change its
+version intent later, use
+[`tool:update --expected-version`](../9_tool-update/tool-update.md). Updating a
+managed tool keeps the stored runtime; it does not silently migrate between
+`docker` and `docker-swarm`.
 
 ## Output
 

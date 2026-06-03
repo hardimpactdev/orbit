@@ -18,6 +18,7 @@ owning family concept document.
 - **Adopt** — doctor mode that records observed node reality into gateway configuration. Flag: `--adopt`. See [Architecture: Keeping Nodes In Sync](architecture.md#keeping-nodes-in-sync).
 - **Fix (interactive)** — doctor mode that asks per drifted item whether to restore or adopt. Flag: `--fix`. See [Architecture: Keeping Nodes In Sync](architecture.md#keeping-nodes-in-sync).
 - **VPN identity** — a node's WireGuard credentials, used by the gateway as the authentication for every API call. See [Architecture: Authentication And Authorization](architecture.md#authentication-and-authorization).
+- **WireGuard service address** — the node's assigned WireGuard IP used as the stable private host for TCP service endpoints and private backend routing. Linux nodes keep a self-route so services on a node can reach their own WireGuard address. See [Node Concepts](domains/1_node/node-concepts.md).
 - **Node access grant** — gateway-stored edge that lets one node operate on another after WireGuard identity is authenticated. The grant edge is the first authorization gate; the scoped permissions stored on it are the second. See [Architecture: Authentication And Authorization](architecture.md#authentication-and-authorization).
 - **Node access permission** — normalized permission string stored on a node access grant; decides what the consuming node may do on the serving node. See [Node Concepts](domains/1_node/node-concepts.md).
 - **Permission preset** — code-defined named bundle of node access permissions. The defined presets are `agent-self`, `operator`, `read-only`, `developer`, `admin`, and `gateway-admin`. See [Node Concepts](domains/1_node/node-concepts.md).
@@ -31,7 +32,7 @@ owning family concept document.
 - **WebSocket role** — private workload role that runs Laravel Reverb in a Docker runtime container managed by Orbit, binds only to WireGuard, and receives traffic through router-owned private service routes. See [Node Concepts](domains/1_node/node-concepts.md).
 - **S3 role** — private workload role that runs one RustFS S3-compatible object storage backend in a Docker runtime container managed by Orbit, binds only to WireGuard, and receives traffic through router-owned S3 service routes. See [Node Concepts](domains/1_node/node-concepts.md).
 - **Gateway-coupled infrastructure role** — role assignment stored separately from `gateway` but coupled to it in v1, so first gateway bootstrap assigns it together with `gateway` and normal `node role:*` commands cannot manage it independently. See [Node Concepts](domains/1_node/node-concepts.md).
-- **Production public HTTP traffic** — traffic that enters the fleet through an active `ingress` role. `app-prod` nodes are production runtime backends: they own app files, FrankenPHP app containers, Docker process runtime units, and a private `orbit-caddy` listener, but they do not own public route exposure unless they also carry `ingress`. See [Architecture: Node roles](architecture.md#node-roles).
+- **Production public HTTP traffic** — traffic that enters the fleet through an active `ingress` role. `app-prod` nodes are production runtime backends: they own app files, FrankenPHP app containers, configured process programs, and a private `orbit-caddy` listener, but they do not own public route exposure unless they also carry `ingress`. See [Architecture: Node roles](architecture.md#node-roles).
 - **App WebSocket binding** — gateway-owned app configuration that enables one app to use the fleet websocket service, including per-app Reverb credentials, allowed origins, public WebSocket hosts, and private `websocket.orbit` publishing configuration. See [App Concepts](domains/5_app/app-concepts.md).
 - **Reverb app credentials** — per-app Reverb application id, key, and secret material owned by an app WebSocket binding. See [App Concepts](domains/5_app/app-concepts.md).
 - **WebSocket backend pool** — router-owned ordered set of websocket role backends behind `websocket.orbit`. See [Proxy Concepts](domains/8_proxy/proxy-concepts.md).
@@ -42,7 +43,7 @@ owning family concept document.
 - **Orbit launcher** — host `orbit` entry point. Production installs still use the native CLI binary artifact; source-mounted Docker and Incus development/E2E topologies point `/usr/local/bin/orbit` directly at `<source>/apps/cli/orbit`. Mutable node-local Orbit state lives under `~/.config/orbit`. See [Node Concepts](domains/1_node/node-concepts.md).
 - **Orbit gateway image** — first-party `ghcr.io/hardimpactdev/orbit-gateway:<version>` FrankenPHP image that bundles the gateway application code and is used by both gateway Swarm services. See [Node Concepts](domains/1_node/node-concepts.md).
 - **Orbit gateway service** — Swarm-managed `orbit-gateway` service that serves the typed gateway API and mounts `ORBIT_CONFIG_ROOT` for mutable gateway state. See [Node Concepts](domains/1_node/node-concepts.md).
-- **Execution lane** — gateway-to-node workload classification for Docker-first-managed nodes. Host substrate work uses `RemoteHostExecutor`; gateway container work uses the gateway service or one-shot runner; packaged node-local helper logic uses `RemoteLocalExecutor`. See [Runtime Execution Lanes](execution-lanes.md).
+- **Execution lane** — gateway-to-node workload classification for managed nodes. Host substrate work uses `RemoteHostExecutor`; gateway container work uses the gateway service or one-shot runner; packaged node-local helper logic uses `RemoteLocalExecutor`. See [Runtime Execution Lanes](execution-lanes.md).
 - **RemoteHostExecutor** — execution lane for host bootstrap, Docker, WireGuard, Caddy, security, filesystem, git, and container-control work. See [Runtime Execution Lanes](execution-lanes.md).
 - **RemoteGatewayRuntimeExecutor** — execution lane for gateway Laravel/artisan/PDO work that must run inside the gateway container boundary. See [Runtime Execution Lanes](execution-lanes.md).
 - **RemoteLocalExecutor** — execution lane where the gateway SSHs to a node and invokes the node-local Orbit CLI entry point's internal executor command for packaged node-local helper logic that needs host file access and PHP/PDO. Internal executor commands verify operation tokens through the gateway API, and nodes do not store executor token signing material. See [Runtime Execution Lanes](execution-lanes.md).
@@ -53,16 +54,15 @@ owning family concept document.
 - **FrankenPHP app runtime** — the PHP web runtime used by app and workspace containers. Classic mode is the default; worker mode is opt-in. See [App Concepts](domains/5_app/app-concepts.md).
 - **Worker mode** — opt-in FrankenPHP mode that keeps a validated Laravel app in memory. See [App Concepts](domains/5_app/app-concepts.md).
 - **Worker config** — gateway-tracked worker settings stored separately from the enabled flag. See [App Concepts](domains/5_app/app-concepts.md).
-- **Process runtime** — explicit process backend selection, currently `docker` or `supervisor`. See [Process Concepts](domains/7_process/process-concepts.md).
-- **Docker process runtime** — default runtime for PHP app and workspace processes; runs as a Docker sidecar container. See [Process Concepts](domains/7_process/process-concepts.md).
-- **Supervisor process runtime** — residual runtime for explicitly supported non-PHP host-side processes. See [Process Concepts](domains/7_process/process-concepts.md).
+- **Process runtime** — backend selection for app/workspace process units, currently host Supervisor. See [Process Concepts](domains/7_process/process-concepts.md).
+- **Supervisor process runtime** — host Supervisor backend for app and workspace configured processes. See [Process Concepts](domains/7_process/process-concepts.md).
 - **Host cwd context** — entrypoint-provided `ORBIT_HOST_CWD` value used to preserve local app/workspace context for the dispatched node-local Orbit CLI entry point. The source CLI entrypoint initializes it from the process cwd when absent and preserves supplied values. Production installs still use the native CLI binary artifact; source-mounted Docker and Incus development/E2E topologies point `/usr/local/bin/orbit` directly at `<source>/apps/cli/orbit`. See [Workspace Concepts](domains/6_workspace/workspace-concepts.md).
 - **VPN role settings** — `public_endpoint`, `wireguard_cidr`, `wireguard_port`, and `dns_ip` settings stored on the `vpn` role assignment. See [Node Concepts](domains/1_node/node-concepts.md).
 - **VPN-role runtime administration** — VPN command-domain exception where `vpn-client:*` and `vpn-web-ui:*` commands are authorized by the gateway and execute against the active `vpn` role runtime. See [VPN Concepts](domains/13_vpn/vpn-concepts.md).
-- **Process manager** — the runtime backend that runs Orbit process units. PHP app processes use Docker process runtime units by default; Supervisor is explicit residual scope. See [Tech Stack: Process Manager](tech-stack.md#process-manager).
+- **Process manager** — the runtime backend that runs Orbit process units. App and workspace configured processes use host Supervisor programs. See [Tech Stack: Process Manager](tech-stack.md#process-manager).
 - **Runtime unit** — derived runnable unit for a process definition in a specific app/workspace context. See [Process Concepts](domains/7_process/process-concepts.md).
 - **Orbit Scheduler** — the resident schedule executor loop that runs as the `orbit-scheduler` Swarm service using the Orbit gateway image. It owns schedule evaluation, dispatch (locally for gateway-target schedules, through `RemoteShell` for every other target), overlap policy, run history, and heartbeat. See [Schedule Concepts](domains/9_schedule/schedule-concepts.md).
-- **Host init** — the host's own service manager. In the Docker-first runtime, its steady-state Orbit responsibility is keeping Docker alive.
+- **Host init** — the host's own service manager. In the production substrate, its steady-state Orbit responsibility is keeping Docker available for Docker-backed artifacts and Supervisor available for configured app/workspace processes.
 - **RemoteShell** — gateway-to-node transport primitive; workload classification belongs to the execution lanes, not the transport itself. See [Runtime Execution Lanes](execution-lanes.md) and [Tech Stack: Gateway To Node](tech-stack.md#gateway-to-node).
 - **Security section** — cross-family doctor issue-code section for security-owned state. Security is not a state family; findings live under owning families such as `node.security.*`, `app.security.*`, and `workspace.security.*`. See [Architecture: State Families](architecture.md#state-families).
 - **CLI caller** — an Orbit CLI invocation from a client, the gateway host, or any other node. See [Architecture: Trust And Transport](architecture.md#trust-and-transport).
@@ -123,6 +123,7 @@ Source: [Node Concepts](domains/1_node/node-concepts.md).
 - **Role assignment status**
 - **Caller identity**
 - **Node identity**
+- **WireGuard service address**
 - **First-gateway bootstrap**
 - **Client enrollment**
 - **Compatible existing node**
@@ -251,7 +252,6 @@ Source: [Process Concepts](domains/7_process/process-concepts.md).
 - **Process order**
 - **Runtime unit**
 - **Process runtime**
-- **Docker process runtime**
 - **Supervisor process runtime**
 - **Runtime unit expansion**
 - **Runtime unit filename**
