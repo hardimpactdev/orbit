@@ -11,8 +11,10 @@
 !/.codex/config.toml
 /.claude/settings.local.json
 /.cursor/
+/.antigravitycli/
 /.worktrees
 /.idea
+/bin/orbit-binary
 /.nova
 /.phpunit.cache
 /.vscode
