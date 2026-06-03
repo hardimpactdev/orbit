@@ -1299,6 +1299,13 @@ class E2ETestCommand extends Command
         $kind = $this->topologyKindFromUnavailableReason($reason)
             ?? $this->laneRequiredTopologies($plan)[0]
             ?? E2ETopologyKind::OperatorGatewayAppdevAppprodAgent;
+
+        if (E2ETopologyArtifactNamespace::artifactSet() === E2ETopologyArtifactNamespace::BaseArtifactSet) {
+            $sourceKind = E2EPreparedTopology::incusSourceKindFor($kind);
+
+            return "composer e2e:prepare-topology -- --force {$sourceKind->value}";
+        }
+
         $roles = array_values(array_unique(array_map(
             E2EPreparedTopology::artifactRoleForIncusRole(...),
             IncusTopologyTemplate::rolesFor($kind),

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Console\Commands;
 
 use App\E2E\Support\E2EPreparedTopology;
+use App\E2E\Support\E2ETopologyArtifactNamespace;
 use App\E2E\Support\E2ETopologyKind;
 use App\E2E\Support\IncusTopologyTemplate;
 use Illuminate\Console\Attributes\Description;
@@ -203,16 +204,22 @@ class E2EEnsureArtifactsCommand extends Command
         }
 
         if (in_array('incus', $lanes, true) && ($roles !== null || $allRoles)) {
-            $templates = $this->incusTemplates($kind, $roles);
+            $baseArtifactSet = E2ETopologyArtifactNamespace::artifactSet() === E2ETopologyArtifactNamespace::BaseArtifactSet;
+            $commandKind = $baseArtifactSet
+                ? E2EPreparedTopology::incusSourceKindFor($kind)
+                : $kind;
+            $roleOptions = $baseArtifactSet
+                ? ''
+                : ($roles !== null ? ' --roles='.implode(',', $roles) : '').($allRoles ? ' --all-roles' : '');
+            $templates = $this->incusTemplates($kind, $baseArtifactSet ? null : $roles);
 
             $steps[] = [
                 'lane' => 'incus',
                 'name' => 'topology',
                 'command' => sprintf(
-                    'composer e2e:prepare-topology -- --force%s%s %s',
-                    $roles !== null ? ' --roles='.implode(',', $roles) : '',
-                    $allRoles ? ' --all-roles' : '',
-                    escapeshellarg($kind->value),
+                    'composer e2e:prepare-topology -- --force%s %s',
+                    $roleOptions,
+                    escapeshellarg($commandKind->value),
                 ),
                 'force_guarded' => true,
                 'templates' => $templates,

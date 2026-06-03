@@ -78,12 +78,13 @@ default). It builds one reusable base image plus prepared source snapshots:
 
 During topology preparation, Orbit tars the current checkout, ships it plus
 `bin/install-orbit` and `bin/e2e-provision-node` to the host, installs Orbit on
-the operator template from the base image, then provisions the gateway through
-real `node:new`. After the gateway is seeded, app-dev, app-prod, and agent are
-provisioned in parallel; app-dev then seeds database and Redis registry state,
-and the websocket role is baked with its Reverb runtime baseline before the
-full source snapshot is taken. Feature tests clone only their requested roles
-from that full prepared source.
+the operator template from the base image, installs host gateway and CLI
+Composer dependencies for pre-overlay `artisan` and `orbit` commands, then
+provisions the gateway through real `node:new`. After the gateway is seeded,
+app-dev, app-prod, and agent are provisioned in parallel; app-dev then seeds
+database and Redis registry state, and the websocket role is baked with its
+Reverb runtime baseline before the full source snapshot is taken. Feature tests
+clone only their requested roles from that full prepared source.
 
 App-dev carries database and Redis state by default. App-prod carries the
 ingress role by default. Websocket carries the Reverb runtime baseline and uses
@@ -98,11 +99,13 @@ independently by trying `orbit-template-<role>-<slug>` with
 `clean-<source-topology>-<slug>` first, then falling back to the matching
 `base` template and snapshot for that role.
 Custom namespace preparation without `--roles` or `--all-roles` is rejected.
-Targeted `--roles` rebakes copy each selected role from its base source snapshot
-into the slug namespace, overlay the current checkout bundle, and retake the
-`clean-<source-topology>-<slug>` snapshot. Unselected roles remain absent and
-fall back to `base` during acquisition. Gateway and operator must be selected
-together because they share CA trust and WireGuard contracts.
+Targeted `--roles` rebakes require a non-base custom namespace: they copy each
+selected role from its base source snapshot into the slug namespace, overlay the
+current checkout bundle, and retake the `clean-<source-topology>-<slug>`
+snapshot. Unselected roles remain absent and fall back to `base` during
+acquisition. Gateway and operator must be selected together because they share
+CA trust and WireGuard contracts. Leave the namespace empty and omit `--roles`
+to rebuild the shared base Incus artifact set.
 
 ## Source bundle and archives
 

@@ -175,7 +175,9 @@ a branch override does not need to rebuild every role.
 Incus acquisition resolves branch/base artifacts per role. Forced Incus
 preparation supports the shared `base` rebuild, explicit full namespaced
 rebuilds with `--all-roles`, and targeted selected-role rebakes with `--roles`.
-A custom namespace without `--roles` or `--all-roles` is rejected.
+A custom namespace without `--roles` or `--all-roles` is rejected. Targeted
+`--roles` rebakes require a non-base namespace; leave the namespace empty and
+omit `--roles` to rebuild the shared base artifact set.
 
 For a targeted `--roles` rebake, the builder copies each selected role from its
 base source snapshot into the slug namespace, starts the VM, overlays the

@@ -317,9 +317,11 @@ role independently by trying `orbit-e2e:<role>_<slug>` first, then
 Custom artifact preparation must declare intent. Docker accepts
 `--roles=operator,gateway,app-dev,app-prod,ingress,agent,websocket` to build only
 selected role images, or `--all-roles` for an explicit full namespaced role set.
-Incus acquisition has the same per-role fallback, but forced targeted Incus
-rebakes are blocked until the builder can refresh only selected VM templates
-without mutating the rest of the artifact set.
+Incus acquisition has the same per-role fallback. Shared `base` Incus artifacts
+are rebuilt as a full source topology by omitting `--roles`; targeted Incus
+`--roles` rebakes require a non-base
+`ORBIT_E2E_TOPOLOGY_ARTIFACT_NAMESPACE` so the selected role is copied from
+`base` into a separate slug.
 
 ## Contract
 

@@ -925,7 +925,7 @@ it('fails unavailable incus lanes before invoking pest', function (): void {
 
         expect($exitCode)->toBe(1)
             ->and($output)->toContain('E2E lane [incus] unavailable: incus: prepared topology operator_gateway is not available on any Incus host')
-            ->and($output)->toContain('composer e2e:ensure-artifacts -- --lanes=incus --roles=operator,gateway operator_gateway');
+            ->and($output)->toContain('composer e2e:prepare-topology -- --force operator_gateway_app-dev_app-prod_agent');
 
         Process::assertRanTimes(fn ($process): bool => is_array($process->command)
             && in_array('test', $process->command, true), 0);
@@ -951,7 +951,7 @@ it('fails the aggregate run when any selected lane is unavailable', function ():
 
         expect($exitCode)->toBe(1)
             ->and($output)->toContain('E2E lane [incus] unavailable: incus: prepared topology operator_gateway_agent is not available on any Incus host')
-            ->and($output)->toContain('composer e2e:ensure-artifacts -- --lanes=incus --roles=operator,gateway,agent operator_gateway_agent');
+            ->and($output)->toContain('composer e2e:prepare-topology -- --force operator_gateway_app-dev_app-prod_agent');
 
         Process::assertRanTimes(fn ($process): bool => is_array($process->command)
             && in_array('test', $process->command, true), 0);
@@ -983,7 +983,7 @@ it('passes explicit incus test paths into artifact availability checks', functio
     expect($seenTestFiles)->toBe(['tests/Feature/Commands/NodeListAgentTopologyTest.php'])
         ->and($exitCode)->toBe(1)
         ->and($output)->toContain('E2E lane [incus] unavailable:')
-        ->and($output)->toContain('composer e2e:ensure-artifacts -- --lanes=incus --roles=operator,gateway,agent operator_gateway_agent');
+        ->and($output)->toContain('composer e2e:prepare-topology -- --force operator_gateway_app-dev_app-prod_agent');
 
     Process::assertRanTimes(fn ($process): bool => is_array($process->command)
         && in_array('test', $process->command, true), 0);

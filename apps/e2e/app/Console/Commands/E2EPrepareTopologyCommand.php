@@ -393,6 +393,10 @@ class E2EPrepareTopologyCommand extends Command
             throw new InvalidArgumentException('Choose either --roles or --all-roles, not both.');
         }
 
+        if ($roles !== null && E2ETopologyArtifactNamespace::artifactSet() === E2ETopologyArtifactNamespace::BaseArtifactSet) {
+            throw new InvalidArgumentException('Set ORBIT_E2E_TOPOLOGY_ARTIFACT_NAMESPACE when using --roles for Incus selected-role rebakes; omit --roles to rebuild the shared base artifact set.');
+        }
+
         if (E2ETopologyArtifactNamespace::hasCustomArtifactSet() && $roles === null && ! $allRoles) {
             throw new InvalidArgumentException('Set --roles or --all-roles when ORBIT_E2E_TOPOLOGY_ARTIFACT_NAMESPACE is set.');
         }

@@ -397,6 +397,36 @@ install_orbit_for_node_kind() {
         "${wg_easy_image_args[@]}"
 }
 
+install_host_composer_dependencies() {
+    local user
+    local home_dir
+    local target_dir
+
+    user="$(target_user_for_node_kind)"
+    home_dir="/home/${user}"
+    target_dir="${home_dir}/orbit"
+
+    sudo_run install -d -m 0755 -o "$user" -g "$user" "${home_dir}/.composer" "${home_dir}/.composer/cache"
+
+    sudo_run runuser -u "$user" -- env \
+        "HOME=${home_dir}" \
+        "COMPOSER_HOME=${home_dir}/.composer" \
+        COMPOSER_CACHE_DIR="${home_dir}/.composer/cache" \
+        COMPOSER_PROCESS_TIMEOUT=1200 \
+        PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
+        composer --working-dir="${target_dir}/apps/gateway" install --no-interaction --prefer-dist --optimize-autoloader --no-progress
+    sudo_run test -f "${target_dir}/apps/gateway/vendor/autoload.php"
+
+    sudo_run runuser -u "$user" -- env \
+        "HOME=${home_dir}" \
+        "COMPOSER_HOME=${home_dir}/.composer" \
+        COMPOSER_CACHE_DIR="${home_dir}/.composer/cache" \
+        COMPOSER_PROCESS_TIMEOUT=1200 \
+        PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
+        composer --working-dir="${target_dir}/apps/cli" install --no-interaction --prefer-dist --optimize-autoloader --no-progress
+    sudo_run test -f "${target_dir}/apps/cli/vendor/autoload.php"
+}
+
 cleanup_bundle() {
     sudo_run rm -rf /var/tmp/orbit-e2e-install
 }
@@ -428,6 +458,10 @@ main() {
 
     start_step "Install Orbit (${NODE_KIND})"
     install_orbit_for_node_kind
+    complete_step
+
+    start_step "Install host Composer dependencies"
+    install_host_composer_dependencies
     complete_step
 
     start_step "Cleanup provisioner bundle"

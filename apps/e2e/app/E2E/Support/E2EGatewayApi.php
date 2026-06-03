@@ -2019,17 +2019,6 @@ PHP;
         return DockerTopologyProvider::gatewayImage();
     }
 
-    private static function dockerTopologyProviderEnvCommand(bool $dockerTopology): string
-    {
-        if (! $dockerTopology) {
-            return ':';
-        }
-
-        $gatewayEnv = escapeshellarg(self::gatewayStatePath('.env'));
-
-        return "printf '%s\\n' 'ORBIT_E2E_TOPOLOGY_PROVIDER=docker' >> {$gatewayEnv}";
-    }
-
     private static function appKeyCommand(?string $envPath = null): string
     {
         $envPath = escapeshellarg($envPath ?? self::gatewayStatePath('.env'));

@@ -65,10 +65,14 @@ it('rejects gateway selected without operator', function (): void {
     $builder = new IncusTopologyBuilder($host);
     $builder->useBundle('/tmp/fake-bundle');
 
-    expect(fn () => $builder->buildSelectedRoles(
-        E2ETopologyKind::OperatorGatewayAppdevAppprodAgent,
-        ['gateway'],
-    ))->toThrow(RuntimeException::class, "Selected roles include 'gateway' but not 'operator'");
+    withE2ETopologyEnvironment([
+        'ORBIT_E2E_TOPOLOGY_ARTIFACT_NAMESPACE' => 'gateway-consistency',
+    ], function () use ($builder): void {
+        expect(fn () => $builder->buildSelectedRoles(
+            E2ETopologyKind::OperatorGatewayAppdevAppprodAgent,
+            ['gateway'],
+        ))->toThrow(RuntimeException::class, "Selected roles include 'gateway' but not 'operator'");
+    });
 });
 
 it('rejects operator selected without gateway', function (): void {
@@ -81,10 +85,14 @@ it('rejects operator selected without gateway', function (): void {
     $builder = new IncusTopologyBuilder($host);
     $builder->useBundle('/tmp/fake-bundle');
 
-    expect(fn () => $builder->buildSelectedRoles(
-        E2ETopologyKind::OperatorGatewayAppdevAppprodAgent,
-        ['operator'],
-    ))->toThrow(RuntimeException::class, "Selected roles include 'operator' but not 'gateway'");
+    withE2ETopologyEnvironment([
+        'ORBIT_E2E_TOPOLOGY_ARTIFACT_NAMESPACE' => 'gateway-consistency',
+    ], function () use ($builder): void {
+        expect(fn () => $builder->buildSelectedRoles(
+            E2ETopologyKind::OperatorGatewayAppdevAppprodAgent,
+            ['operator'],
+        ))->toThrow(RuntimeException::class, "Selected roles include 'operator' but not 'gateway'");
+    });
 });
 
 it('accepts agent selected alone without gateway or operator', function (): void {
@@ -186,17 +194,21 @@ it('accepts gateway and operator selected together', function (): void {
     // Should not throw a consistency error
     $threwConsistencyError = false;
 
-    try {
-        $builder->buildSelectedRoles(
-            E2ETopologyKind::OperatorGatewayAppdevAppprodAgent,
-            ['operator', 'gateway'],
-            replaceExisting: true,
-        );
-    } catch (RuntimeException $e) {
-        if (str_contains($e->getMessage(), 'CA trust') || str_contains($e->getMessage(), 'WireGuard')) {
-            $threwConsistencyError = true;
+    withE2ETopologyEnvironment([
+        'ORBIT_E2E_TOPOLOGY_ARTIFACT_NAMESPACE' => 'gateway-consistency',
+    ], function () use ($builder, &$threwConsistencyError): void {
+        try {
+            $builder->buildSelectedRoles(
+                E2ETopologyKind::OperatorGatewayAppdevAppprodAgent,
+                ['operator', 'gateway'],
+                replaceExisting: true,
+            );
+        } catch (RuntimeException $e) {
+            if (str_contains($e->getMessage(), 'CA trust') || str_contains($e->getMessage(), 'WireGuard')) {
+                $threwConsistencyError = true;
+            }
         }
-    }
+    });
 
     expect($threwConsistencyError)->toBeFalse();
 });
@@ -213,6 +225,21 @@ it('fails without a bundle staged', function (): void {
         E2ETopologyKind::OperatorGatewayAppdevAppprodAgent,
         ['agent'],
     ))->toThrow(RuntimeException::class, 'No provisioning bundle has been staged');
+});
+
+it('rejects selected role rebakes into the shared base namespace', function (): void {
+    Process::fake();
+    $config = E2EConfig::fromEnvironment();
+
+    $host = m::mock(IncusHost::class, [$config])->makePartial();
+
+    $builder = new IncusTopologyBuilder($host);
+    $builder->useBundle('/tmp/fake-bundle');
+
+    expect(fn () => $builder->buildSelectedRoles(
+        E2ETopologyKind::OperatorGatewayAppdevAppprodAgent,
+        ['agent'],
+    ))->toThrow(RuntimeException::class, 'Set ORBIT_E2E_TOPOLOGY_ARTIFACT_NAMESPACE when using selected Incus role rebakes');
 });
 
 // ---------------------------------------------------------------------------

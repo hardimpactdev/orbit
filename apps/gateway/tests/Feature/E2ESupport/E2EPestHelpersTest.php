@@ -574,10 +574,11 @@ it('uses lease gateway identity when restarting the incus gateway api', function
 
     try {
         e2eRestartGatewayApi($harness, 'incus-restart');
+        $commandOutput = str_replace("'\\''", "'", implode("\n", $commands));
 
         expect(e2eGatewayApiUrl($harness))->toBe('https://10.61.0.2')
             ->and(e2eGatewayWireGuardIp($harness))->toBe('10.61.0.2')
-            ->and(implode("\n", $commands))->toContain('10.61.0.2:80')
+            ->and($commandOutput)->toContain('10.61.0.2:80')
             ->toContain('$bindAddress = \'10.61.0.2\';')
             ->toContain('$certKey = \'10.61.0.2\';')
             ->not->toContain('0.0.0.0:80')

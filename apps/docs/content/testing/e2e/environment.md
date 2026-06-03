@@ -148,6 +148,7 @@ uses the same rule with template and snapshot suffixes: it tries
 Preparing artifacts while this variable is set requires an explicit scope. Use
 `composer e2e:ensure-artifacts -- --roles=<comma-separated roles>` for Docker
 role-image overrides or `--all-roles` for an intentional full namespaced
-rebuild. Incus targeted `--roles` preparation is guarded until selected-role
-rebakes are implemented; Incus acquisition falls back per role when branch
-artifacts are absent.
+rebuild. Incus targeted `--roles` preparation requires a non-base namespace;
+leave the variable empty and omit `--roles` when rebuilding the shared base
+Incus artifact set. Incus acquisition falls back per role when branch artifacts
+are absent.

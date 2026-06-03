@@ -74,6 +74,18 @@ it('installs E2E base dependencies before running install-orbit', function (): v
         ->toContain('systemctl enable --now supervisor.service');
 });
 
+it('installs host Composer dependencies after install-orbit for prepared Incus templates', function (): void {
+    $provisioner = file_get_contents(provisionScript());
+
+    expect(str_contains($provisioner, 'install_host_composer_dependencies'))->toBeTrue()
+        ->and(str_contains($provisioner, 'start_step "Install host Composer dependencies"'))->toBeTrue()
+        ->and(str_contains($provisioner, 'COMPOSER_CACHE_DIR="${home_dir}/.composer/cache"'))->toBeTrue()
+        ->and(str_contains($provisioner, 'composer --working-dir="${target_dir}/apps/gateway" install --no-interaction --prefer-dist --optimize-autoloader --no-progress'))->toBeTrue()
+        ->and(str_contains($provisioner, 'composer --working-dir="${target_dir}/apps/cli" install --no-interaction --prefer-dist --optimize-autoloader --no-progress'))->toBeTrue()
+        ->and(str_contains($provisioner, 'sudo_run test -f "${target_dir}/apps/gateway/vendor/autoload.php"'))->toBeTrue()
+        ->and(str_contains($provisioner, 'sudo_run test -f "${target_dir}/apps/cli/vendor/autoload.php"'))->toBeTrue();
+});
+
 it('keeps the E2E dependency helper off the SQLite CLI', function (): void {
     $basePackages = Process::run([depsScript(), '--base']);
     $phpPackages = Process::run([depsScript(), '--php']);

@@ -211,6 +211,21 @@ it('rejects custom Incus artifact namespace preparation without explicit roles',
     Process::assertNothingRan();
 });
 
+it('rejects selected Incus role preparation without a custom namespace', function (): void {
+    Process::fake();
+
+    withE2ETopologyEnvironment([], function (): void {
+        $this->artisan('e2e:prepare-topology', [
+            'kind' => 'operator_gateway_agent',
+            '--roles' => 'agent',
+        ])
+            ->expectsOutputToContain('Set ORBIT_E2E_TOPOLOGY_ARTIFACT_NAMESPACE when using --roles for Incus selected-role rebakes')
+            ->assertFailed();
+    });
+
+    Process::assertNothingRan();
+});
+
 it('plans only selected branch Incus role templates', function (): void {
     Process::fake();
 

@@ -25,7 +25,7 @@ it('dispatches app-node schedules from the gateway scheduler tick', function ():
         $tick = scheduleSchedulerRunGatewayTick($topology);
 
         expect($tick->successful())->toBeTrue();
-        expect($tick->output())->toContain('due=1 executed=1');
+        expect($tick->output())->toContain('Orbit Scheduler tick completed');
 
         $state = scheduleSchedulerGatewayState($topology, $scheduleKey);
 

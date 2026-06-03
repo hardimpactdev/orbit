@@ -1546,6 +1546,10 @@ PHP;
             );
         }
 
+        if (E2ETopologyArtifactNamespace::artifactSet() === E2ETopologyArtifactNamespace::BaseArtifactSet) {
+            throw new RuntimeException('Set ORBIT_E2E_TOPOLOGY_ARTIFACT_NAMESPACE when using selected Incus role rebakes; omit --roles to rebuild the shared base artifact set.');
+        }
+
         $this->validateGatewayConsistency($selectedRoles);
 
         $workDirectory = $this->timer->measure('workdir', fn (): string => $this->createWorkDirectory());

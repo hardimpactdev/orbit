@@ -38,7 +38,7 @@ it('rejects unsupported artifact lanes', function (): void {
     Process::assertNothingRan();
 });
 
-it('plans targeted Docker and Incus role artifacts without mutation', function (): void {
+it('plans targeted Docker artifacts and a full Incus base rebuild without mutation', function (): void {
     Process::fake();
 
     $this->artisan('e2e:ensure-artifacts', [
@@ -49,9 +49,31 @@ it('plans targeted Docker and Incus role artifacts without mutation', function (
         ->expectsOutputToContain('planned: docker topology')
         ->expectsOutputToContain("command: composer e2e:prepare-docker-hosts -- --force --topology-only --roles=agent 'operator_gateway_agent'")
         ->expectsOutputToContain('planned: incus topology (force guarded)')
-        ->expectsOutputToContain("command: composer e2e:prepare-topology -- --force --roles=agent 'operator_gateway_agent'")
+        ->expectsOutputToContain("command: composer e2e:prepare-topology -- --force 'operator_gateway_app-dev_app-prod_agent'")
+        ->expectsOutputToContain('template: orbit-template-operator-base (snapshot: clean-operator_gateway_app-dev_app-prod_agent-base)')
         ->expectsOutputToContain('template: orbit-template-agent-base (snapshot: clean-operator_gateway_app-dev_app-prod_agent-base)')
         ->assertSuccessful();
+
+    Process::assertNothingRan();
+});
+
+it('plans targeted Incus role artifacts in a custom namespace without mutation', function (): void {
+    Process::fake();
+
+    withE2ETopologyEnvironment([
+        'ORBIT_E2E_TOPOLOGY_ARTIFACT_NAMESPACE' => 'Agent isolation',
+    ], function (): void {
+        $this->artisan('e2e:ensure-artifacts', [
+            'kind' => 'operator_gateway_agent',
+            '--lanes' => 'incus',
+            '--roles' => 'agent',
+        ])
+            ->expectsOutputToContain('Dry run. Pass --force to run supported artifact preparation.')
+            ->expectsOutputToContain('planned: incus topology (force guarded)')
+            ->expectsOutputToContain("command: composer e2e:prepare-topology -- --force --roles=agent 'operator_gateway_agent'")
+            ->expectsOutputToContain('template: orbit-template-agent-agent-isolation (snapshot: clean-operator_gateway_app-dev_app-prod_agent-agent-isolation)')
+            ->assertSuccessful();
+    });
 
     Process::assertNothingRan();
 });
