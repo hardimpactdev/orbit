@@ -59,8 +59,9 @@ Provider provisioning is the artifact-preparation and installer verification
 substrate behind those feature lanes. Docker and Incus provider provision
 commands are explicit and can be delegated independently:
 
-- `composer test:e2e:provision:docker` refreshes the Docker runtime/support
-  images and prepared role images for the configured Docker host pool.
+- `composer test:e2e:provision:docker` rebuilds and distributes the Docker
+  runtime/support images and prepared role images for the configured Docker
+  host pool.
 - `composer test:e2e:provision:incus` runs the fresh Incus VM provision gate:
   base VM, Orbit install, gateway provisioning, parallel `node:new` for app-dev,
   app-prod, and agent, then websocket runtime baking against app-dev Redis.

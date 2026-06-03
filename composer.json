@@ -103,7 +103,7 @@
         ],
         "test:e2e:provision:docker": [
             "Composer\\Config::disableProcessTimeout",
-            "set -a; [ ! -f .env.e2e ] || . ./.env.e2e; set +a; bin/orbit-e2e-artisan e2e:prepare-docker-hosts --force operator_gateway_app-dev_app-prod_agent_websocket @additional_args"
+            "set -a; [ ! -f .env.e2e ] || . ./.env.e2e; set +a; bin/orbit-e2e-artisan e2e:prepare-docker-hosts --force --rebuild operator_gateway_app-dev_app-prod_agent_websocket @additional_args"
         ],
         "test:e2e:provision:incus": [
             "Composer\\Config::disableProcessTimeout",

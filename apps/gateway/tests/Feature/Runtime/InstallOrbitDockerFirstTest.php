@@ -77,6 +77,7 @@ describe('install-orbit Docker-first gateway contract', function (): void {
             ->toContain('--frankenphp-image-archive=PATH')
             ->toContain('--wg-easy-image-archive=PATH')
             ->toContain('docker_cli load -i "$GATEWAY_IMAGE_ARCHIVE"')
+            ->toContain('docker_cli tag "$GATEWAY_IMAGE" "orbit-gateway:current"')
             ->toContain('docker_cli load -i "$CADDY_IMAGE_ARCHIVE"')
             ->toContain('docker_cli load -i "$DNSMASQ_IMAGE_ARCHIVE"')
             ->toContain('docker_cli load -i "$FRANKENPHP_IMAGE_ARCHIVE"')

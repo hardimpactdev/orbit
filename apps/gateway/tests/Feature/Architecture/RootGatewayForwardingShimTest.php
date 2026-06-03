@@ -35,6 +35,7 @@ it('routes root composer scripts through app-aware helpers', function (): void {
         ->and($composer['scripts']['test:e2e:provision'][1])->toContain('composer test:e2e:provision:docker')
         ->and($composer['scripts']['test:e2e:provision'][2])->toContain('composer test:e2e:provision:incus')
         ->and($composer['scripts']['test:e2e:provision:docker'][1])->toContain('bin/orbit-e2e-artisan e2e:prepare-docker-hosts')
+        ->and($composer['scripts']['test:e2e:provision:docker'][1])->toContain('--rebuild')
         ->and($composer['scripts']['test:e2e:provision:incus'][1])->toContain('cd apps/e2e')
         ->and($composer['scripts']['e2e:preflight'])->toContain('bin/orbit-e2e-artisan e2e:preflight')
         ->and($composer['scripts']['e2e:prepare-docker-topology'][1])->toContain('bin/orbit-e2e-artisan e2e:prepare-docker-topology')

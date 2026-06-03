@@ -493,6 +493,8 @@ build_gateway_images() {
 
 ensure_gateway_image() {
     if docker_cli image inspect "$GATEWAY_IMAGE" >/dev/null 2>&1; then
+        ensure_gateway_current_alias
+
         return
     fi
 
@@ -500,6 +502,8 @@ ensure_gateway_image() {
         run docker_cli load -i "$GATEWAY_IMAGE_ARCHIVE"
 
         if docker_cli image inspect "$GATEWAY_IMAGE" >/dev/null 2>&1; then
+            ensure_gateway_current_alias
+
             return
         fi
 
@@ -517,6 +521,14 @@ ensure_gateway_image() {
                 "$TARGET_DIR"
             ;;
     esac
+}
+
+ensure_gateway_current_alias() {
+    if [ -z "$GATEWAY_IMAGE_ARCHIVE" ] || [ "$GATEWAY_IMAGE" = "orbit-gateway:current" ]; then
+        return
+    fi
+
+    run docker_cli tag "$GATEWAY_IMAGE" "orbit-gateway:current"
 }
 
 pull_remote_gateway_image() {

@@ -27,10 +27,10 @@ the ideal final pass is source-prepared feature E2E, provider provision, then an
 artifact-backed feature flow using the built CLI and gateway image when that
 lane exists.
 
-`composer test:e2e:provision:docker` refreshes the Docker runtime/support images
-and prepared role images. `composer test:e2e:provision:incus` runs the fresh VM
-provision gate. They can run in parallel because Docker and Incus mutate
-separate provider substrates.
+`composer test:e2e:provision:docker` rebuilds and distributes the Docker
+runtime/support images and prepared role images. `composer
+test:e2e:provision:incus` runs the fresh VM provision gate. They can run in
+parallel because Docker and Incus mutate separate provider substrates.
 
 `composer test:e2e:provision` is a human-only aggregate alias for both provider
 provision commands. Agents must never run the aggregate.

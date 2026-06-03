@@ -77,8 +77,8 @@ prepared-topology provider.
 
 Provider provision commands are separate from prepared-topology feature lanes:
 
-- `composer test:e2e:provision:docker` refreshes Docker runtime/support images
-  and prepared role images for the Docker host pool.
+- `composer test:e2e:provision:docker` rebuilds and distributes Docker
+  runtime/support images and prepared role images for the Docker host pool.
 - `composer test:e2e:provision:incus` runs the fresh Incus superset provision
   gate. It launches the base VM, installs Orbit, provisions the gateway, and
   internally provisions app-dev, app-prod, and agent in parallel.

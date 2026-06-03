@@ -115,8 +115,9 @@ The ephemeral E2E suite is split into two explicit Pest group lanes:
   `composer test:e2e:incus`. The aggregate `composer test:e2e` runs both
   prepared-topology feature lanes and fails if either selected provider cannot
   supply the required prepared topology.
-- `composer test:e2e:provision:docker` refreshes the Docker runtime/support
-  images and prepared role images used by the Docker feature lane.
+- `composer test:e2e:provision:docker` rebuilds and distributes the Docker
+  runtime/support images and prepared role images used by the Docker feature
+  lane.
 - `composer test:e2e:provision:incus` runs the `e2e-provision` Pest group in an
   isolated namespace. It launches a fresh base VM, installs Orbit on the
   operator, provisions the gateway, runs `node:new` for app-dev, app-prod, and
