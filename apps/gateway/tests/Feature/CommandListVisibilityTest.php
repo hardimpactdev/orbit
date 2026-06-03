@@ -121,7 +121,6 @@ function gatewayRemovedAppNodeLocalCommandNames(): array
 {
     return [
         'app:agent-ide',
-        'app:exec',
         'app:list',
         'app:new',
         'app:prune',
@@ -192,7 +191,6 @@ function gatewayRemovedResourceCommandNames(): array
         'workspace-teardown-step:add',
         'workspace-teardown-step:list',
         'workspace-teardown-step:remove',
-        'workspace:exec',
         'workspace:history',
         'workspace:list',
         'workspace:log',
@@ -282,7 +280,6 @@ it('hides CLI-owned public product commands from the gateway command list', func
         'profile',
         'update',
         'activity:list',
-        'app:exec',
         'app:list',
         'app:new',
         'app:register',
@@ -306,7 +303,6 @@ it('hides CLI-owned public product commands from the gateway command list', func
         'tool:list',
         'update:all',
         'vpn-client:list',
-        'workspace:exec',
         'workspace:list',
     );
 });

@@ -6,7 +6,6 @@ use App\Commands\Activity\ActivityListCommand;
 use App\Commands\Activity\ActivityShowCommand;
 use App\Commands\AgentIde\AgentIdeMessageCommand;
 use App\Commands\App\AppAgentIdeCommand;
-use App\Commands\App\AppExecCommand;
 use App\Commands\App\AppListCommand;
 use App\Commands\App\AppNewCommand;
 use App\Commands\App\AppPruneCommand;
@@ -117,7 +116,6 @@ use App\Commands\Vpn\VpnClientListCommand;
 use App\Commands\Vpn\VpnClientNewCommand;
 use App\Commands\Vpn\VpnClientRemoveCommand;
 use App\Commands\Vpn\VpnWebUiChangePasswordCommand;
-use App\Commands\Workspace\WorkspaceExecCommand;
 use App\Commands\Workspace\WorkspaceHistoryCommand;
 use App\Commands\Workspace\WorkspaceListCommand;
 use App\Commands\Workspace\WorkspaceLogCommand;
@@ -159,7 +157,6 @@ return [
         ActivityShowCommand::class,
         AgentIdeMessageCommand::class,
         AppAgentIdeCommand::class,
-        AppExecCommand::class,
         AppListCommand::class,
         AppNewCommand::class,
         AppPruneCommand::class,
@@ -265,7 +262,6 @@ return [
         VpnClientRemoveCommand::class,
         VpnWebUiChangePasswordCommand::class,
         UpdateCommand::class,
-        WorkspaceExecCommand::class,
         WorkspaceHistoryCommand::class,
         WorkspaceListCommand::class,
         WorkspaceLogCommand::class,

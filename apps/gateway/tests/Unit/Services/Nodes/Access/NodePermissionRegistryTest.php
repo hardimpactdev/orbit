@@ -39,6 +39,8 @@ describe('node permission registry', function (): void {
     it('rejects unknown permissions', function (): void {
         expect((new NodePermissionRegistry)->isKnown('unknown:permission'))->toBeFalse()
             ->and((new NodePermissionRegistry)->isKnown('tool:hack'))->toBeFalse()
+            ->and((new NodePermissionRegistry)->isKnown('app:exec'))->toBeFalse()
+            ->and((new NodePermissionRegistry)->isKnown('workspace:exec'))->toBeFalse()
             ->and((new NodePermissionRegistry)->isKnown('role:update'))->toBeFalse()
             ->and((new NodePermissionRegistry)->isKnown('invalid'))->toBeFalse();
     });

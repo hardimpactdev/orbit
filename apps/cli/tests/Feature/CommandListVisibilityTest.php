@@ -66,7 +66,6 @@ describe('command list visibility', function (): void {
             'activity:show',
             'agent-ide:message',
             'app:agent-ide',
-            'app:exec',
             'app:list',
             'app:new',
             'app:prune',
@@ -169,7 +168,6 @@ describe('command list visibility', function (): void {
             'vpn-client:new',
             'vpn-client:remove',
             'vpn-web-ui:change-password',
-            'workspace:exec',
             'workspace:history',
             'workspace:list',
             'workspace:log',
@@ -186,6 +184,15 @@ describe('command list visibility', function (): void {
         ]);
     });
 
+    it('does not register command exec surfaces', function (): void {
+        $list = orbitCommandList();
+        $visible = visibleCommandNames($list);
+
+        expect($visible)->not->toContain('app:exec', 'workspace:exec')
+            ->and(findCommandInList($list, 'app:exec'))->toBeNull()
+            ->and(findCommandInList($list, 'workspace:exec'))->toBeNull();
+    });
+
     it('contains ported commands in the registered command set', function (string $name): void {
         $list = orbitCommandList();
         $command = findCommandInList($list, $name);
@@ -197,7 +204,6 @@ describe('command list visibility', function (): void {
         'activity:show',
         'agent-ide:message',
         'app:agent-ide',
-        'app:exec',
         'app:list',
         'app:new',
         'app:prune',
@@ -303,7 +309,6 @@ describe('command list visibility', function (): void {
         'vpn-client:remove',
         'vpn-web-ui:change-password',
         'update',
-        'workspace:exec',
         'workspace:history',
         'workspace:list',
         'workspace:log',
