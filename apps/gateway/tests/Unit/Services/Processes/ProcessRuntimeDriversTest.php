@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Contracts\RemoteShell;
 use App\Data\RemoteShell\RemoteShellResult;
+use App\Enums\Apps\AppRuntimeKind;
 use App\Enums\Processes\ProcessRuntime;
 use App\Models\App;
 use App\Models\Node;
@@ -50,6 +51,37 @@ it('runs supervisor process lifecycle through the supervisor runtime driver', fu
     ]);
 });
 
+it('applies, removes, and cleans up supervisor process runtime units through the supervisor runtime driver', function (): void {
+    $shell = new ProcessRuntimeDriverRecordingShell([
+        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+    ]);
+    app()->instance(RemoteShell::class, $shell);
+
+    $node = Node::factory()->create(['name' => 'app-dev-1']);
+    $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id, 'path' => '/srv/docs']);
+    $process = Process::factory()->forOwner($app)->create([
+        'name' => 'queue',
+        'command' => 'php artisan queue:work',
+        'runtime' => ProcessRuntime::Supervisor,
+    ]);
+
+    $driver = app(SupervisorProcessRuntimeDriver::class);
+    $runtimeUnit = $driver->runtimeUnitName($app, $process);
+
+    expect($driver->cleanupScript($runtimeUnit))
+        ->toBe("sudo rm -f /etc/supervisor/conf.d/orbit_docs_main_queue.conf 2>/dev/null; sudo supervisorctl reread 2>/dev/null; sudo supervisorctl remove 'orbit_docs_main_queue' 2>/dev/null; true")
+        ->and($driver->apply($node, $app, $process))->toBeTrue()
+        ->and($driver->remove($node, $runtimeUnit))->toBeTrue();
+
+    expect($shell->scripts[0])
+        ->toContain('/etc/supervisor/conf.d/orbit_docs_main_queue.conf')
+        ->toContain('sudo supervisorctl update')
+        ->and($shell->scripts[1])
+        ->toContain("sudo supervisorctl stop 'orbit_docs_main_queue'")
+        ->toContain("sudo supervisorctl remove 'orbit_docs_main_queue'");
+});
+
 it('runs docker process lifecycle through the docker runtime driver', function (): void {
     $shell = new ProcessRuntimeDriverRecordingShell([
         new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
@@ -83,6 +115,45 @@ it('runs docker process lifecycle through the docker runtime driver', function (
         "docker stop 'orbit_docs_main_queue'",
         "docker restart 'orbit_docs_main_queue'",
     ]);
+});
+
+it('applies, removes, and cleans up docker process runtime units through the docker runtime driver', function (): void {
+    $shell = new ProcessRuntimeDriverRecordingShell([
+        new RemoteShellResult(exitCode: 1, stdout: '', stderr: 'No such network', durationMs: 1),
+        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+        new RemoteShellResult(exitCode: 1, stdout: '', stderr: 'No such container', durationMs: 1),
+        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+        new RemoteShellResult(exitCode: 0, stdout: '{"Id":"abc"}', stderr: '', durationMs: 1),
+        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+    ]);
+    app()->instance(RemoteShell::class, $shell);
+
+    $node = Node::factory()->create(['name' => 'app-dev-1', 'user' => 'orbit']);
+    $app = App::factory()->create([
+        'name' => 'docs',
+        'node_id' => $node->id,
+        'path' => '/srv/docs',
+        'php_version' => '8.5',
+        'runtime_kind' => AppRuntimeKind::Php,
+    ]);
+    $process = Process::factory()->forOwner($app)->create([
+        'name' => 'queue',
+        'command' => 'php artisan queue:work',
+        'runtime' => ProcessRuntime::Docker,
+    ]);
+
+    $driver = app(DockerProcessRuntimeDriver::class);
+    $runtimeUnit = $driver->runtimeUnitName($app, $process);
+
+    expect($driver->cleanupScript($runtimeUnit))
+        ->toBe("docker rm -f 'orbit_docs_main_queue' 2>/dev/null || true")
+        ->and($driver->apply($node, $app, $process))->toBeTrue()
+        ->and($driver->remove($node, $runtimeUnit))->toBeTrue();
+
+    expect(collect($shell->scripts)->contains(fn (string $script): bool => str_contains($script, 'docker network inspect')))->toBeTrue()
+        ->and(collect($shell->scripts)->contains(fn (string $script): bool => str_contains($script, 'docker network create')))->toBeTrue()
+        ->and(collect($shell->scripts)->contains(fn (string $script): bool => str_contains($script, 'docker create')))->toBeTrue()
+        ->and(collect($shell->scripts)->contains(fn (string $script): bool => str_contains($script, "docker rm -f 'orbit_docs_main_queue'")))->toBeTrue();
 });
 
 final class ProcessRuntimeDriverRecordingShell implements RemoteShell

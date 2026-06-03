@@ -4,20 +4,17 @@ declare(strict_types=1);
 
 namespace App\Actions\Processes;
 
-use App\Contracts\RemoteShell;
-use App\Enums\Processes\ProcessRuntime;
 use App\Http\Gateway\GatewayApiException;
 use App\Models\App;
 use App\Models\Process;
-use App\Services\Processes\ProcessDockerRuntimeManager;
+use App\Services\Processes\ProcessRuntimeDriverRegistry;
 use App\Services\Processes\ProcessRuntimeUnitPayload;
 
 final readonly class RemoveProcess
 {
     public function __construct(
         private ProcessRuntimeUnitPayload $runtimeUnitPayload,
-        private RemoteShell $remoteShell,
-        private ProcessDockerRuntimeManager $dockerManager,
+        private ProcessRuntimeDriverRegistry $runtimeDrivers,
     ) {}
 
     /**
@@ -90,27 +87,6 @@ final readonly class RemoveProcess
 
     private function removeRuntimeUnit(App $app, Process $process, string $name): bool
     {
-        if ($process->runtime === ProcessRuntime::Docker) {
-            return $this->dockerManager->remove($app->node, $name);
-        }
-
-        return $this->remoteShell->run($app->node, $this->supervisorRemoveScript($name))->successful();
-    }
-
-    private function supervisorRemoveScript(string $name): string
-    {
-        $configPath = "/etc/supervisor/conf.d/{$name}.conf";
-
-        return sprintf(
-            <<<'SH'
-sudo supervisorctl stop %1$s >/dev/null 2>&1 || true
-sudo rm -f %2$s
-sudo supervisorctl reread
-sudo supervisorctl remove %1$s >/dev/null 2>&1 || true
-sudo supervisorctl update
-SH,
-            escapeshellarg($name),
-            escapeshellarg($configPath),
-        );
+        return $this->runtimeDrivers->forProcess($process)->remove($app->node, $name);
     }
 }

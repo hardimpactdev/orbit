@@ -14,6 +14,8 @@ it('routes process lifecycle actions through the runtime driver registry', funct
         'StopProcesses' => base_path('app/Actions/Processes/StopProcesses.php'),
         'RestartProcesses' => base_path('app/Actions/Processes/RestartProcesses.php'),
         'ShowProcessLogs' => base_path('app/Actions/Processes/ShowProcessLogs.php'),
+        'RemoveProcess' => base_path('app/Actions/Processes/RemoveProcess.php'),
+        'EnsureAppProcessRuntimeUnits' => base_path('app/Actions/Apps/EnsureAppProcessRuntimeUnits.php'),
     ];
 
     foreach ($actionFiles as $action => $path) {

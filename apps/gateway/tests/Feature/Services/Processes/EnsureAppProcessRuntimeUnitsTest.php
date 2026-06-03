@@ -11,34 +11,16 @@ use App\Enums\Processes\ProcessRuntime;
 use App\Models\App;
 use App\Models\Node;
 use App\Models\Process as OrbitProcess;
-use App\Services\Php\PhpRuntimeCatalog;
-use App\Services\Php\PhpRuntimePolicy;
-use App\Services\Processes\ProcessDockerContainerRenderer;
-use App\Services\Processes\ProcessDockerRuntimeManager;
-use App\Services\Processes\SupervisorProgramRenderer;
-use App\Services\Runtime\DockerCommandBuilder;
-use App\Services\Runtime\OrbitContainerNames;
-use App\Services\RuntimeBackend\RuntimeBackendProbe;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);
 
 function makeEnsureRuntimeUnitsAction(RemoteShell $remoteShell, SiteCertificateInstaller $certificates): EnsureAppProcessRuntimeUnits
 {
-    return new EnsureAppProcessRuntimeUnits(
-        remoteShell: $remoteShell,
-        renderer: new SupervisorProgramRenderer,
-        runtimeBackendProbe: new RuntimeBackendProbe($remoteShell),
-        siteCertificateInstaller: $certificates,
-        dockerRenderer: new ProcessDockerContainerRenderer(
-            new PhpRuntimePolicy(new PhpRuntimeCatalog),
-            new OrbitContainerNames,
-        ),
-        dockerManager: new ProcessDockerRuntimeManager(
-            $remoteShell,
-            new DockerCommandBuilder,
-        ),
-    );
+    app()->instance(RemoteShell::class, $remoteShell);
+    app()->instance(SiteCertificateInstaller::class, $certificates);
+
+    return app(EnsureAppProcessRuntimeUnits::class);
 }
 
 it('renders and enacts supervisor programs for app process definitions', function (): void {

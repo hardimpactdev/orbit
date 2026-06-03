@@ -4,16 +4,19 @@ declare(strict_types=1);
 
 namespace App\Services\Processes\ProcessRuntimeDrivers;
 
+use App\Contracts\RemoteShell;
 use App\Models\App;
 use App\Models\Node;
 use App\Models\Process;
 use App\Models\Workspace;
 use App\Services\Processes\ProcessDockerContainerRenderer;
 use App\Services\Processes\ProcessDockerRuntimeManager;
+use Throwable;
 
 final readonly class DockerProcessRuntimeDriver implements ProcessRuntimeDriver
 {
     public function __construct(
+        private RemoteShell $remoteShell,
         private ProcessDockerContainerRenderer $renderer,
         private ProcessDockerRuntimeManager $manager,
     ) {}
@@ -21,6 +24,32 @@ final readonly class DockerProcessRuntimeDriver implements ProcessRuntimeDriver
     public function runtimeUnitName(App $app, Process $process, ?Workspace $workspace = null): string
     {
         return $this->renderer->containerName($app, $process, $workspace);
+    }
+
+    public function apply(Node $node, App $app, Process $process, ?Workspace $workspace = null, ?string $preApplyScript = null): bool
+    {
+        try {
+            if ($preApplyScript !== null && trim($preApplyScript) !== '') {
+                $this->remoteShell->run($node, $preApplyScript);
+            }
+
+            $container = $this->renderer->render($app, $process, $workspace);
+            $this->manager->apply($node, $container);
+
+            return true;
+        } catch (Throwable) {
+            return false;
+        }
+    }
+
+    public function remove(Node $node, string $runtimeUnit): bool
+    {
+        return $this->manager->remove($node, $runtimeUnit);
+    }
+
+    public function cleanupScript(string $runtimeUnit): string
+    {
+        return sprintf('docker rm -f %s 2>/dev/null || true', escapeshellarg($runtimeUnit));
     }
 
     public function start(Node $node, string $runtimeUnit): bool

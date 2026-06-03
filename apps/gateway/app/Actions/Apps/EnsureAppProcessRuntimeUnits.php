@@ -4,14 +4,12 @@ declare(strict_types=1);
 
 namespace App\Actions\Apps;
 
-use App\Contracts\RemoteShell;
 use App\Contracts\SiteCertificateInstaller;
 use App\Enums\Processes\ProcessRuntime;
 use App\Models\App;
 use App\Models\Process;
 use App\Models\Workspace;
-use App\Services\Processes\ProcessDockerContainerRenderer;
-use App\Services\Processes\ProcessDockerRuntimeManager;
+use App\Services\Processes\ProcessRuntimeDriverRegistry;
 use App\Services\Processes\SupervisorProgramRenderer;
 use App\Services\RuntimeBackend\RuntimeBackendProbe;
 use RuntimeException;
@@ -20,12 +18,10 @@ use Throwable;
 final readonly class EnsureAppProcessRuntimeUnits
 {
     public function __construct(
-        private RemoteShell $remoteShell,
         private SupervisorProgramRenderer $renderer,
         private RuntimeBackendProbe $runtimeBackendProbe,
         private SiteCertificateInstaller $siteCertificateInstaller,
-        private ProcessDockerContainerRenderer $dockerRenderer,
-        private ProcessDockerRuntimeManager $dockerManager,
+        private ProcessRuntimeDriverRegistry $runtimeDrivers,
     ) {}
 
     /**
@@ -42,6 +38,8 @@ final readonly class EnsureAppProcessRuntimeUnits
         if ($app->processes->isEmpty()) {
             return [];
         }
+
+        $this->validateProcessRuntimes($app);
 
         if ($this->anyProcessNeedsSupervisor($app)) {
             $probe = $this->runtimeBackendProbe->check($app->node);
@@ -87,53 +85,15 @@ final readonly class EnsureAppProcessRuntimeUnits
      */
     private function applyProcess(App $app, Process $process, ?Workspace $workspace): array
     {
-        return match ($process->runtime) {
-            ProcessRuntime::Docker => $this->applyDockerProcess($app, $process, $workspace),
-            ProcessRuntime::Supervisor => $this->applySupervisorProcess($app, $process, $workspace),
-        };
-    }
+        $driver = $this->runtimeDrivers->forProcess($process);
+        $unitName = $driver->runtimeUnitName($app, $process, $workspace);
+        $cleanupScript = $this->runtimeDrivers->for($this->staleRuntime($process))->cleanupScript($unitName);
 
-    /**
-     * @return list<array<string, string>>
-     */
-    private function applyDockerProcess(App $app, Process $process, ?Workspace $workspace): array
-    {
-        // The unit identity is shared across both runtimes, so we can address
-        // any stale Supervisor program by the same name and tear it down
-        // before applying the Docker container.
-        $unitName = $this->renderer->programName($app, $process, $workspace);
-        $this->remoteShell->run($app->node, $this->supervisorCleanupScript($unitName));
-
-        try {
-            $container = $this->dockerRenderer->render($app, $process, $workspace);
-            $this->dockerManager->apply($app->node, $container);
-
-            return [];
-        } catch (Throwable) {
+        if (! $driver->apply($app->node, $app, $process, $workspace, $cleanupScript)) {
             return [[
                 'code' => 'process.runtime_unit_missing',
                 'family' => 'process',
-                'message' => "Docker process runtime unit '{$unitName}' was not enacted. Run doctor to converge process runtime units.",
-                'next_command' => 'doctor --family=process --restore',
-            ]];
-        }
-    }
-
-    /**
-     * @return list<array<string, string>>
-     */
-    private function applySupervisorProcess(App $app, Process $process, ?Workspace $workspace): array
-    {
-        $programName = $this->renderer->programName($app, $process, $workspace);
-        $script = $this->dockerCleanupScript($programName).PHP_EOL.$this->renderer->installScript($app, $process, $workspace);
-
-        $result = $this->remoteShell->run($app->node, $script);
-
-        if (! $result->successful()) {
-            return [[
-                'code' => 'process.runtime_unit_missing',
-                'family' => 'process',
-                'message' => "Process runtime unit '{$programName}' was not enacted. Run doctor to converge process runtime units.",
+                'message' => "Process runtime unit '{$unitName}' was not enacted. Run doctor to converge process runtime units.",
                 'next_command' => 'doctor --family=process --restore',
             ]];
         }
@@ -141,29 +101,24 @@ final readonly class EnsureAppProcessRuntimeUnits
         return [];
     }
 
+    private function validateProcessRuntimes(App $app): void
+    {
+        $app->processes->each(fn (Process $process): mixed => $this->runtimeDrivers->forProcess($process));
+    }
+
     private function anyProcessNeedsSupervisor(App $app): bool
     {
         return $app->processes->contains(
-            fn (Process $process): bool => $process->runtime === ProcessRuntime::Supervisor,
+            fn (Process $process): bool => $process->getRawOriginal('runtime') === ProcessRuntime::Supervisor->value,
         );
     }
 
-    private function dockerCleanupScript(string $unitName): string
+    private function staleRuntime(Process $process): ProcessRuntime
     {
-        // Best-effort. Nodes without Docker installed still succeed because
-        // the failure of `docker` is swallowed; the goal is convergence, not
-        // strict removal accounting.
-        return sprintf('docker rm -f %s 2>/dev/null || true', escapeshellarg($unitName));
-    }
-
-    private function supervisorCleanupScript(string $unitName): string
-    {
-        // Best-effort. Nodes without Supervisor still succeed.
-        return sprintf(
-            'sudo rm -f /etc/supervisor/conf.d/%s.conf 2>/dev/null; sudo supervisorctl reread 2>/dev/null; sudo supervisorctl remove %s 2>/dev/null; true',
-            $unitName,
-            escapeshellarg($unitName),
-        );
+        return match ($process->runtime) {
+            ProcessRuntime::Docker => ProcessRuntime::Supervisor,
+            ProcessRuntime::Supervisor => ProcessRuntime::Docker,
+        };
     }
 
     /**
