@@ -110,7 +110,7 @@ final readonly class ShowProcessLogs
             ]);
         }
 
-        $driver = $this->runtimeDrivers->for($process->runtime);
+        $driver = $this->runtimeDrivers->forProcess($process);
         $runtimeUnit = $driver->runtimeUnitName($app, $process, $workspace);
 
         return [

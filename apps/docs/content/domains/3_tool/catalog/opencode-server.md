@@ -10,16 +10,16 @@ These fields describe the OpenCode Server tool's identity, backend, and support 
 | --- | --- |
 | Slug | `opencode-server` |
 | Label | OpenCode Server |
-| Backend | Supervisor program |
+| Backend | Transitional Supervisor program; planned `systemd` process |
 | Support model | Installable and removable by Orbit |
 | Category | `development` |
 
 ## Capabilities
 
-`opencode-server` supports `tool:install`, `tool:remove`, lifecycle actions,
-`tool:reconfigure`, password reconfiguration, `tool:update`, snapshot and
-streamed `tool:logs`, `tool:credentials`, tool-owned proxy route management,
-safe doctor fix, and safe doctor adopt.
+`opencode-server` supports `tool:install`, `tool:remove`, transitional
+lifecycle actions, `tool:reconfigure`, password reconfiguration, `tool:update`,
+snapshot and streamed `tool:logs`, `tool:credentials`, tool-owned proxy route
+management, safe doctor fix, and safe doctor adopt.
 
 ## Credentials
 
@@ -64,11 +64,20 @@ misleading empty password.
 OpenCode Server is an agent IDE server capability. Password reset is owned by
 `tool:reconfigure opencode-server --password=<password>`.
 
-`tool:update opencode-server` runs OpenCode's native `opencode upgrade` command
-through the Orbit-managed binary and then restarts the Supervisor program.
+Runtime-model migration treats `opencode` as the installed capability and
+`opencode-server` as the process name. The process will own lifecycle with
+`runtime=systemd`; the current catalog slug remains transitional until that
+migration lands.
+
+`tool:update opencode-server` currently runs OpenCode's native `opencode
+upgrade` command through the Orbit-managed binary and then restarts the
+Supervisor program. After process migration, update remains tool-owned while
+restart/log lifecycle belongs to the related process.
 
 ## Doctor Relationship
 
-`doctor --family=tool` verifies the managed Supervisor program, expected
-lifecycle state, logs availability, credential metadata presence, and safe
-repair/adoption boundaries.
+`doctor --family=tool` currently verifies the managed Supervisor program,
+expected lifecycle state, logs availability, credential metadata presence, and
+safe repair/adoption boundaries. After process migration, tool doctor owns
+capability and expected-state checks while `doctor --family=process` owns the
+related `systemd` process lifecycle.

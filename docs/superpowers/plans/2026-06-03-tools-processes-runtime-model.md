@@ -4,7 +4,7 @@
 
 **Goal:** Reframe Orbit runtime ownership so tools are node-level capabilities and processes are the universal lifecycle-managed runtime units.
 
-**Architecture:** Keep the public `process` family and broaden it instead of adding a new `service` family. A tool may be installed, updated, adopted, or removed as a node capability, but start/stop/restart/logs belong to process records. A process may be node-level or attached to an app/workspace, may reference a tool with `--tool`, and may run through a runtime backend such as `supervisor`, `docker`, and later `docker-swarm`.
+**Architecture:** Keep the public `process` family and broaden it instead of adding a new `service` family. A tool may be installed, updated, adopted, or removed as a node capability, but start/stop/restart/logs belong to process records. A process may be node-level or attached to an app/workspace, may reference a tool with `--tool`, and may run through a runtime backend such as `supervisor`, `docker`, `systemd`, and later `docker-swarm`.
 
 **Tech Stack:** Laravel 13 gateway, Laravel Zero CLI, Pest tests, SQLite migrations, Orbit docs under `apps/docs/content`, E2E harness under `apps/e2e`.
 
@@ -20,18 +20,21 @@
 - A process owns lifecycle, logs, restart policy, runtime backend, runtime config, command/image/env/ports/volumes, and scope.
 - Do not add process `kind` or `category` yet.
 - Do not add a `service` command family.
-- `supervisor` is the host long-running process runner. Do not add `systemctl` as a general process runtime in this chain.
+- `systemd` is the node-level Linux service process runtime; `systemctl` is only the command adapter used to control it.
+- Supervisor remains available for app/workspace host commands and simpler host-side process programs where retained.
 - Docker remains a valid process runtime for containerized processes such as MySQL, Redis, PostgreSQL, and FrankenPHP.
 - Existing `tool:start`, `tool:stop`, `tool:restart`, and `tool:logs` behavior must move toward process-backed adapters or deprecation. Keep compatibility only where needed during migration.
 - FrankenPHP serving an app or workspace is a process with Docker runtime, not a special app runtime lifecycle surface.
 - `php artisan horizon` and `vp dev` are processes scoped to an app or workspace, commonly with Supervisor runtime and a tool dependency such as `php-cli` or `viteplus`.
+- `opencode-server` and `polyscope-server` are node-level processes with Systemd runtime and tool dependencies such as `opencode` and `polyscope`; the tools are installed capabilities, not lifecycle owners.
 - MySQL/PostgreSQL/Redis are processes with Docker runtime. If their client tools are represented later, those client tools are capabilities, not lifecycle units.
 
 ## Current Problem
 
 The current Solo chain assumes app/workspace process lifecycle should move to Supervisor and then remove Docker process runtime classes. That is too narrow. The intended model is polymorphic process runtime:
 
-- Supervisor for host commands and tool-backed server commands.
+- Supervisor for app/workspace host commands where retained.
+- Systemd for node-level Linux service processes such as OpenCode Server and PolyScope Server.
 - Docker for containerized services and app/workspace web runtimes.
 - Docker Swarm later for production-grade containerized processes.
 
@@ -78,6 +81,8 @@ Todo `644` ("Move process lifecycle actions to Supervisor") is stale as written.
   - Supervisor lifecycle/log implementation.
 - Create `apps/gateway/app/Services/Processes/ProcessRuntimeDrivers/DockerProcessRuntimeDriver.php`
   - Docker lifecycle/log implementation.
+- Create `apps/gateway/app/Services/Processes/ProcessRuntimeDrivers/SystemdProcessRuntimeDriver.php`
+  - Systemd lifecycle/log implementation for node-level Linux services.
 - Create `apps/gateway/app/Services/Processes/ProcessRuntimeDriverRegistry.php`
   - Runtime family to driver resolver.
 - Modify `apps/gateway/app/Actions/Processes/AddProcess.php`
@@ -195,10 +200,12 @@ Update runtime artifact wording to include:
 
 ```markdown
 - **Process runtime:** Backend that runs a process. Supported runtime families
-  are `supervisor` and `docker`; `docker-swarm` is a planned runtime family.
-  Supervisor is the host long-running command runner. Docker is used for
-  containerized processes such as databases, caches, and FrankenPHP app or
-  workspace web runtimes.
+  are `supervisor` and `docker`; `systemd` and `docker-swarm` are planned
+  runtime families. Supervisor is the host long-running command runner for
+  app/workspace commands where retained. Docker is used for containerized
+  processes such as databases, caches, and FrankenPHP app or workspace web
+  runtimes. Systemd is the node-level Linux service runtime; `systemctl` is
+  only the command adapter.
 ```
 
 - [ ] **Step 5: Update app and workspace docs**
@@ -328,7 +335,7 @@ Goal: extend processes so they can represent node-level, app-level, and workspac
 Scope:
 - Add nullable node/workspace scope fields as needed without breaking existing app-scoped rows.
 - Add optional tool dependency field.
-- Add runtime_config JSON for Docker/Supervisor runtime payload.
+- Add runtime_config JSON for runtime-specific payload.
 - Preserve existing process rows and current app/workspace command behavior.
 
 Verification guard:
@@ -362,7 +369,34 @@ Verification guard:
 - Unsupported runtime errors fail before remote side effects.
 ```
 
-- [ ] **Step 6: Create tool lifecycle adapter todo**
+- [ ] **Step 6: Create systemd process runtime todo**
+
+Create:
+
+```markdown
+Title: [Runtime Model 05A] Add systemd process runtime for node-level Linux services
+Priority: high
+Tags: runtime-model, process, systemd, incus
+
+Body:
+Goal: add `systemd` as the process runtime for node-level Linux services without moving lifecycle ownership back onto tools.
+
+Scope:
+- Add `systemd` as a process runtime value. Do not name the runtime `systemctl`; `systemctl` is only the node command adapter.
+- Add SystemdProcessRuntimeDriver for start/stop/restart/log lifecycle.
+- Support node-level processes such as `opencode-server` and `polyscope-server` that reference installed tool capabilities with `--tool=opencode` or `--tool=polyscope`.
+- Keep Supervisor available for app/workspace host commands where retained.
+- Keep Docker as the runtime for containerized services and app/workspace web runtimes.
+- Do not test real systemd lifecycle in the Docker E2E lane.
+
+Verification guard:
+- Focused registry and lifecycle tests cover `runtime=systemd`.
+- Unsupported runtime validation still fails before remote side effects.
+- Incus feature E2E covers systemd lifecycle; Docker E2E covers only command contracts, registry behavior, validation, and Docker-runtime process behavior.
+- No `composer test:e2e:provision` command is required for this todo.
+```
+
+- [ ] **Step 7: Create tool lifecycle adapter todo**
 
 Create:
 
@@ -386,7 +420,7 @@ Verification guard:
 - Multiple related processes produce an explicit ambiguous-process error.
 ```
 
-- [ ] **Step 7: Create managed tool migration todo**
+- [ ] **Step 8: Create managed tool migration todo**
 
 Create:
 
@@ -401,7 +435,7 @@ Goal: represent managed MySQL/PostgreSQL/Redis/OpenCode/PolyScope service instan
 Scope:
 - Create process rows for managed service tool rows where lifecycle exists.
 - MySQL/PostgreSQL/Redis use Docker runtime.
-- OpenCode/PolyScope use Supervisor runtime.
+- OpenCode/PolyScope use Systemd runtime with process names `opencode-server` and `polyscope-server`, and tool dependencies `opencode` and `polyscope`.
 - Preserve tool rows as capability/expected-state records during migration.
 
 Verification guard:
@@ -410,7 +444,7 @@ Verification guard:
 - Process lifecycle tests prove migrated processes can start/stop/restart/log.
 ```
 
-- [ ] **Step 8: Create app runtime process todo**
+- [ ] **Step 9: Create app runtime process todo**
 
 Create:
 
@@ -434,7 +468,34 @@ Verification guard:
 - App/workspace remove tests prove related process rows and runtime artifacts are cleaned up.
 ```
 
-- [ ] **Step 9: Rewire blockers**
+- [ ] **Step 10: Create process-backed runtime E2E todo**
+
+Create:
+
+```markdown
+Title: [Runtime Model 08] Add E2E coverage for process-backed tools and runtimes
+Priority: high
+Tags: runtime-model, process, tools, docker, systemd, incus, e2e
+
+Body:
+Goal: add prepared-topology E2E acceptance coverage for the new runtime model after tools and app/workspace runtimes have moved onto process-backed lifecycle units.
+
+Scope:
+- Add E2E tests under `apps/e2e/tests/Feature/Commands` for process-backed lifecycle behavior that must work through the real gateway API.
+- Prove tool lifecycle compatibility commands route through related process rows where applicable.
+- Prove tool install/update remains tool-owned and does not implicitly start/stop/restart process rows.
+- Prove app/workspace runtime processes, including FrankenPHP Docker processes, can be inspected and controlled through process commands without treating them as tool rows.
+- Put OpenCode/PolyScope systemd service lifecycle E2E in Incus only.
+- Keep Docker E2E scoped to command contracts, registry behavior, validation, Docker-runtime process lifecycle, and scoped doctor repair of seeded drift.
+- Keep tests on prepared topology feature lanes; do not add provisioning tests for this acceptance coverage.
+
+Verification guard:
+- Focused E2E tests fail before the related implementation is present.
+- `composer test:e2e` passes after implementation.
+- No `composer test:e2e:provision` command is required for this todo.
+```
+
+- [ ] **Step 11: Rewire blockers**
 
 Set blockers so:
 
@@ -443,10 +504,12 @@ Runtime Model 00 blocks Runtime Model 01.
 Runtime Model 01 blocks Runtime Model 02.
 Runtime Model 02 blocks Runtime Model 03.
 Runtime Model 03 blocks Runtime Model 04.
-Runtime Model 04 blocks Runtime Model 05.
+Runtime Model 04 blocks Runtime Model 05A.
+Runtime Model 05A blocks Runtime Model 05.
 Runtime Model 05 blocks Runtime Model 06.
 Runtime Model 06 blocks Runtime Model 07.
-Runtime Model 07 blocks the remaining Swarm process/tool/app-prod runtime todos that currently assume the stale model.
+Runtime Model 07 blocks Runtime Model 08.
+Runtime Model 08 blocks the remaining Swarm process/tool/app-prod runtime todos that currently assume the stale model.
 ```
 
 ---
@@ -801,7 +864,7 @@ $response = $this->call('POST', '/api/processes', [
     'node' => 'app-1',
     'name' => 'opencode-server',
     'tool' => 'opencode',
-    'runtime' => 'supervisor',
+    'runtime' => 'systemd',
     'command' => 'opencode serve -a',
 ], [], [], ['REMOTE_ADDR' => $callerIp]);
 ```
@@ -811,7 +874,7 @@ Expected JSON:
 ```php
 $response->assertOk()
     ->assertJsonPath('success.data.process.tool', 'opencode')
-    ->assertJsonPath('success.data.process.runtime', 'supervisor');
+    ->assertJsonPath('success.data.process.runtime', 'systemd');
 ```
 
 - [ ] **Step 2: Run gateway tests to verify RED**
@@ -833,7 +896,7 @@ Accept `tool`, `node`, `runtime_config`, `app`, and `workspace` according to the
 Expose:
 
 ```bash
-orbit process:add opencode-server --node=app-1 --tool=opencode --runtime=supervisor --command="opencode serve -a"
+orbit process:add opencode-server --node=app-1 --tool=opencode --runtime=systemd --command="opencode serve -a"
 ```
 
 Do not add kind/category.
@@ -879,7 +942,7 @@ Process::factory()->create([
     'node_id' => $node->id,
     'tool' => 'opencode',
     'name' => 'opencode-server',
-    'runtime' => ProcessRuntime::Supervisor,
+    'runtime' => ProcessRuntime::Systemd,
     'command' => 'opencode serve -a',
 ]);
 ```
@@ -959,7 +1022,7 @@ Expected related `Process` rows:
 
 ```php
 expect(Process::query()->where('tool', 'mysql')->where('runtime', 'docker')->exists())->toBeTrue();
-expect(Process::query()->where('tool', 'opencode')->where('runtime', 'supervisor')->exists())->toBeTrue();
+expect(Process::query()->where('tool', 'opencode')->where('runtime', 'systemd')->exists())->toBeTrue();
 ```
 
 - [ ] **Step 2: Run tests to verify RED**

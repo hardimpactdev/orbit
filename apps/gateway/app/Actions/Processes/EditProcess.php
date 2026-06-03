@@ -111,7 +111,7 @@ final readonly class EditProcess
         }
 
         $warnings = [];
-        $driver = $this->runtimeDrivers->for($process->runtime);
+        $driver = $this->runtimeDrivers->forProcess($process);
 
         foreach ($runtimeUnits as $runtimeUnit) {
             $name = $runtimeUnit['name'];

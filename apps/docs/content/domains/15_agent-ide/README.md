@@ -17,9 +17,11 @@ configured at the node level. [`doctor --family=app`](../5_app/app-doctor.md) ow
 the Agent IDE settings configured at the app level, and app runtime health.
 [`doctor --family=workspace`](../6_workspace/workspace-doctor.md) owns
 workspace state and workspace artifacts. [`doctor --family=process`](../7_process/process-doctor.md)
-owns crash-event policy and history that may trigger Agent IDE notifications.
-[`doctor --family=tool`](../3_tool/tool-doctor.md) owns managed adapter server
-tool lifecycle, such as `opencode-server` and `polyscope-server`.
+owns crash-event policy and history that may trigger Agent IDE notifications,
+and will own process-backed adapter server lifecycle as the runtime model
+migration lands. [`doctor --family=tool`](../3_tool/tool-doctor.md) owns
+managed adapter server capability and transitional expected state, not the final
+start/stop/restart/log lifecycle.
 
 There is no `doctor --family=agent-ide` contract.
 

@@ -63,6 +63,29 @@ describe('ProcessLogController', function (): void {
             ->assertJsonPath('success.meta.line_count', 1);
     });
 
+    it('rejects unsupported persisted runtimes before log side effects', function (): void {
+        createProcessLogCallerNode(role: 'gateway');
+        $appNode = createTestAppHostNode();
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
+        $process = Process::factory()->forOwner($app)->create(['name' => 'vite']);
+        DB::table('processes')->where('id', $process->id)->update(['runtime' => 'docker-swarm']);
+        $remoteShell = new ProcessLogApiRemoteShell([]);
+        app()->instance(RemoteShell::class, $remoteShell);
+
+        $response = $this->call('GET', '/api/processes/vite/log', [
+            'app' => 'docs',
+            'lines' => 5,
+        ], [], [], ['REMOTE_ADDR' => PROCESS_LOG_CALLER_WG_IP]);
+
+        $response->assertUnprocessable()
+            ->assertJsonPath('error.code', 'process.unsupported_runtime')
+            ->assertJsonPath('error.meta.process', 'vite')
+            ->assertJsonPath('error.meta.runtime', 'docker-swarm')
+            ->assertJsonPath('error.meta.allowed', ['docker', 'supervisor']);
+
+        expect($remoteShell->scripts)->toBe([]);
+    });
+
     it('requires authorization before log reads', function (): void {
         createProcessLogCallerNode();
         $appNode = createTestAppHostNode();

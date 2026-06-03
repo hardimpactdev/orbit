@@ -61,6 +61,7 @@ test.
 | Gateway API and CA trust | yes | yes |
 | Registry-backed command behavior | yes | yes |
 | Supervisor process runtime backend | conditional | yes |
+| Systemd process runtime backend | no | yes |
 | Orbit Scheduler daemon | yes | yes |
 | Real WireGuard interfaces and peer routing | no | yes |
 | VM boot, cloud-init, package install mutation | no | yes |
@@ -74,13 +75,15 @@ Use Docker for feature tests whose correctness depends on gateway API, CA trust,
 registry state, command forwarding, current-checkout command behavior, the Docker
 Supervisor process runtime backend, the `orbit-scheduler` service, or
 Orbit-managed process and schedule lifecycle. This is the default for
-prepared-topology `e2e-feature` tests.
+prepared-topology `e2e-feature` tests. Docker can test command contracts,
+registry state, validation, and Docker-runtime process behavior for process
+features, but it must not claim real `systemd` lifecycle coverage.
 
 Use Incus for tests whose correctness depends on real VM behavior: WireGuard
 kernel networking, cloud-init, package installation, OS trust-store mutation,
-real SSH daemon behavior, sudo prompts, or host init. Mark these tests with
-`e2e-provider-incus` so Docker-only runs skip them without probing an unsuitable
-provider.
+real SSH daemon behavior, sudo prompts, host init, or `systemd` service
+lifecycle. Mark these tests with `e2e-provider-incus` so Docker-only runs skip
+them without probing an unsuitable provider.
 
 Provisioning and installer changes finish with the Incus provision command after
 the relevant prepared-topology feature lane is green. Docker image/runtime,
@@ -99,6 +102,7 @@ Use these examples when a feature could fit more than one lane.
 | Gateway API forwarding, CA trust, registry reads/writes, Saloon paths | Docker feature | Prepared topology is enough; fast and parallelizable. |
 | Docker-backed tool intent and compose command generation | Docker feature | The command contract is gateway intent plus generated Docker command. |
 | Runtime backend, process lifecycle, scheduler tick/heartbeat | Docker feature | Docker topologies run `orbit-gateway`, runtime containers, and `orbit-scheduler`. |
+| Systemd-backed process lifecycle, such as OpenCode or PolyScope servers | Incus VM-feature | Requires real `systemd`, `systemctl`, and journal semantics. |
 | Host-init service control and journal behavior | Incus VM-feature | Requires real systemd and host init semantics. |
 | OS package installs, trust-store mutation, sudo, real SSH daemon behavior | Incus VM-feature | Depends on VM and OS behavior Docker does not model. |
 | Docker runtime image, support image, or prepared role image changes | Docker provision | Refreshes the Docker substrate consumed by Docker feature tests. |

@@ -23,7 +23,7 @@ class ProcessRuntimeUnitPayload
 
         return collect([null, ...$app->workspaces->all()])
             ->map(fn (?Workspace $workspace): array => [
-                'name' => $this->runtimeDrivers->for($process->runtime)->runtimeUnitName($app, $process, $workspace),
+                'name' => $this->runtimeDrivers->forProcess($process)->runtimeUnitName($app, $process, $workspace),
                 'context' => $workspace instanceof Workspace ? $workspace->name : 'main',
             ])
             ->values()

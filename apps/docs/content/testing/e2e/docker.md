@@ -201,6 +201,9 @@ Docker exercises gateway API, certificate, and registry behavior over isolated
 Docker bridge networks from the `10.90.N.0/24` pool. The DNS alias mode keeps
 canonical `10.6.0.x` WireGuard identities inside seeded gateway state. Docker
 does not exercise real WireGuard interfaces, peer routing, VM boot, or systemd.
+Docker may test systemd process command contracts, registry behavior, and
+validation against seeded gateway state, but real systemd lifecycle assertions
+belong in Incus.
 DNS alias mode is the only supported Docker prepared-topology mode. Parallel
 test isolation comes from per-run container names, Docker bridge networks, and
 subnet allocation; image tags do not carry topology kind, DNS mode, or run

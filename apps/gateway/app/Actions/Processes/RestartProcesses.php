@@ -11,6 +11,7 @@ use App\Models\Process;
 use App\Models\ProcessEvent;
 use App\Models\Workspace;
 use App\Services\Processes\ProcessRuntimeDriverRegistry;
+use App\Services\Processes\ProcessRuntimeDrivers\ProcessRuntimeDriver;
 use Illuminate\Database\Eloquent\Collection;
 
 final readonly class RestartProcesses
@@ -46,10 +47,10 @@ final readonly class RestartProcesses
         $failed = false;
         $restarted = 0;
 
-        foreach ($processes as $process) {
-            $driver = $this->runtimeDrivers->for($process->runtime);
-            $runtimeUnit = $driver->runtimeUnitName($app, $process, $workspace);
-            $ok = $app->node !== null && $driver->restart($app->node, $runtimeUnit);
+        foreach ($this->runtimeTargets($app, $workspace, $processes) as $target) {
+            $process = $target['process'];
+            $runtimeUnit = $target['runtime_unit'];
+            $ok = $app->node !== null && $target['driver']->restart($app->node, $runtimeUnit);
             $events = [];
 
             if ($ok && $app->node !== null) {
@@ -101,5 +102,25 @@ final readonly class RestartProcesses
             ->when($name !== null, fn ($query) => $query->where('name', $name))
             ->orderBy('sort_order')
             ->get();
+    }
+
+    /**
+     * @param  Collection<int, Process>  $processes
+     * @return list<array{process: Process, driver: ProcessRuntimeDriver, runtime_unit: string}>
+     */
+    private function runtimeTargets(App $app, ?Workspace $workspace, Collection $processes): array
+    {
+        return $processes
+            ->map(function (Process $process) use ($app, $workspace): array {
+                $driver = $this->runtimeDrivers->forProcess($process);
+
+                return [
+                    'process' => $process,
+                    'driver' => $driver,
+                    'runtime_unit' => $driver->runtimeUnitName($app, $process, $workspace),
+                ];
+            })
+            ->values()
+            ->all();
     }
 }

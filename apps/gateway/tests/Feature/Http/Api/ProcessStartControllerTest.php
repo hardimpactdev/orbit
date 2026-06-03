@@ -110,6 +110,53 @@ describe('ProcessStartController', function (): void {
         expect($caller)->toBeInstanceOf(Node::class);
     });
 
+    it('rejects unsupported persisted runtimes before runtime side effects', function (): void {
+        createProcessStartCallerNode(role: 'gateway');
+        $appNode = createTestAppHostNode();
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
+        $process = Process::factory()->forOwner($app)->create(['name' => 'vite']);
+        DB::table('processes')->where('id', $process->id)->update(['runtime' => 'docker-swarm']);
+        $remoteShell = new ProcessStartApiRemoteShell([]);
+        app()->instance(RemoteShell::class, $remoteShell);
+
+        $response = $this->call('POST', '/api/processes/start', [
+            'app' => 'docs',
+            'name' => 'vite',
+        ], [], [], ['REMOTE_ADDR' => PROCESS_START_CALLER_WG_IP]);
+
+        $response->assertUnprocessable()
+            ->assertJsonPath('error.code', 'process.unsupported_runtime')
+            ->assertJsonPath('error.meta.process', 'vite')
+            ->assertJsonPath('error.meta.runtime', 'docker-swarm')
+            ->assertJsonPath('error.meta.allowed', ['docker', 'supervisor']);
+
+        expect($remoteShell->scripts)->toBe([]);
+    });
+
+    it('validates all selected process runtimes before bulk runtime side effects', function (): void {
+        createProcessStartCallerNode(role: 'gateway');
+        $appNode = createTestAppHostNode();
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
+        Process::factory()->forOwner($app)->create(['name' => 'queue', 'sort_order' => 10]);
+        $process = Process::factory()->forOwner($app)->create(['name' => 'vite', 'sort_order' => 20]);
+        DB::table('processes')->where('id', $process->id)->update(['runtime' => 'docker-swarm']);
+        $remoteShell = new ProcessStartApiRemoteShell([
+            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+        ]);
+        app()->instance(RemoteShell::class, $remoteShell);
+
+        $response = $this->call('POST', '/api/processes/start', [
+            'app' => 'docs',
+        ], [], [], ['REMOTE_ADDR' => PROCESS_START_CALLER_WG_IP]);
+
+        $response->assertUnprocessable()
+            ->assertJsonPath('error.code', 'process.unsupported_runtime')
+            ->assertJsonPath('error.meta.process', 'vite')
+            ->assertJsonPath('error.meta.runtime', 'docker-swarm');
+
+        expect($remoteShell->scripts)->toBe([]);
+    });
+
     it('requires authorization before runtime side effects', function (): void {
         createProcessStartCallerNode();
         $appNode = createTestAppHostNode();

@@ -21,7 +21,7 @@ it('repairs managed tool configuration drift from gateway intent', function (): 
         $result = $topology->ssh(
             'gateway',
             sprintf(
-                'cd %s && orbit doctor --node=app-dev-1 --family=tool --restore --json',
+                'cd %s && orbit doctor --node=app-dev-1 --family=tool --key=tool.config_missing --restore --json',
                 escapeshellarg($topology->checkout('gateway')),
             ),
             timeoutSeconds: 180,

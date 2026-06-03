@@ -15,6 +15,11 @@ rebuild topology images and do not run provisioning:
 composer test:e2e:incus
 ```
 
+Use Incus for systemd-backed process lifecycle tests. Node-level Linux services
+such as OpenCode Server or PolyScope Server use `runtime=systemd` in the product
+model, and Docker prepared nodes do not model the real `systemctl` and journal
+behavior those tests need.
+
 Use the Incus provider provision gate when base image shape, installer behavior,
 gateway provisioning, `node:new`, WireGuard, VM boot, package installation, or
 host mutation may have changed:
