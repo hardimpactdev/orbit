@@ -16,6 +16,7 @@ documentation and implementation work through Solo MCP.
 2. Identify the affected product surface: command, service, API, docs-only behavior, orchestration flow, E2E lane, or project tooling.
 3. Read current product authority before proposing implementation:
    - `AGENTS.md`
+   - `apps/docs/content/product-decisions.md` (dated intent ledger — read current direction before proposing a change, so a new decision does not contradict or duplicate an existing one)
    - `docs/mission.md`
    - `docs/architecture.md`
    - `docs/tech-stack.md`
@@ -135,6 +136,7 @@ Request:
 
 Required context:
 - `AGENTS.md`
+- `apps/docs/content/product-decisions.md` (dated intent ledger — current direction)
 - `docs/mission.md`
 - `docs/architecture.md`
 - `docs/tech-stack.md`
