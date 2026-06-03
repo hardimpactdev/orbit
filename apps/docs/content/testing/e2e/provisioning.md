@@ -40,8 +40,14 @@ The Incus provision gate has one supported shape:
 1. Launch a fresh VM from `orbit-base-ubuntu-26.04`.
 2. Install Orbit from the current source bundle on the operator.
 3. Provision the gateway through the real gateway path.
-4. Run `node:new` for app-dev, app-prod, and agent in parallel.
-5. Bake websocket against app-dev Redis and converge its Reverb runtime.
+4. After the gateway is ready and its provisioning SSH key is installed, start
+   app-dev, app-prod, and agent role provisioning in parallel. Each downstream
+   role launches from the base image, waits for cloud-init/agent/SSH readiness,
+   and applies its gateway-side bake independently.
+5. Bake websocket against app-dev Redis as soon as the app-dev role succeeds
+   and the app-dev runtime prerequisites plus gateway/app-dev WireGuard route
+   are ready. Websocket does not wait for app-prod or agent unless a future
+   contract adds a real dependency.
 6. Snapshot operator, gateway, app-dev, app-prod, and agent role templates
    inside the isolated provision-test namespace for validation and failure
    inspection.
@@ -88,12 +94,15 @@ During topology preparation, Orbit tars the current checkout, ships it plus
 `bin/install-orbit` and `bin/e2e-provision-node` to the host, installs Orbit on
 the operator template from the base image, installs host gateway and CLI
 Composer dependencies for pre-overlay `artisan` and `orbit` commands, then
-provisions the gateway through real `node:new`. After the gateway is seeded,
-app-dev, app-prod, and agent are provisioned in parallel; app-dev then receives
-the Docker, Caddy, and FrankenPHP runtime images plus `orbit` user Docker access
-needed for app/proxy doctor repair, seeds database and Redis registry state, and
-the websocket role is baked with its Reverb runtime baseline before the full
-source snapshot is taken.
+provisions the gateway through real `node:new`. After the gateway is seeded, the
+prepared full topology uses the explicit role DAG `operator -> gateway -> {dev,
+prod, agent}`. Dev, prod, and agent launch/readiness/bake tasks run as
+independent downstream tasks. In the websocket-capable topology, websocket is a
+dev-dependent task: it starts after app-dev is baked and the app-dev Docker,
+Caddy, FrankenPHP, gateway-image, and gateway/app-dev WireGuard prerequisites
+are ready; it does not wait for app-prod or agent completion. The app-dev role
+then seeds database and Redis registry state before the full source snapshot is
+taken.
 Feature tests clone only their requested roles from that full prepared source.
 
 App-dev carries database, Redis, Caddy, and FrankenPHP app-serving readiness by
@@ -218,6 +227,14 @@ base image, environment, and role-DAG changes invalidate every role. CLI
 artifact changes invalidate every CLI-consuming role. Gateway artifact changes
 invalidate gateway and downstream gateway-state-dependent roles while leaving the
 operator substrate reusable when CLI/provision inputs are unchanged.
+
+When a prepared full topology fails after the gateway is ready, successful
+siblings are checkpointed independently. For example, if app-prod fails while
+app-dev, agent, and websocket succeed, the next run may reuse operator,
+gateway, app-dev, agent, and any dev-dependent websocket state that was safely
+captured, while retrying the missing app-prod work. Resume mode must not
+relaunch or rebake roles whose checkpoint fingerprints and snapshots are still
+valid.
 
 ## Image environment
 
