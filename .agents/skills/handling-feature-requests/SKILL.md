@@ -46,6 +46,18 @@ Known evidence:
 Recommended direction: <specific choice and why>
 ```
 
+### Log direction changes to the intent ledger
+
+When a decision **establishes or changes a product direction** (not a flag, fix,
+or gap-fill), append a one-line entry to
+`apps/docs/content/product-decisions.md` at decision time, newest first:
+
+`- YYYY-MM-DD — <decision, present tense, with the topic noun>. (solo todo #NNNN)`
+
+Link the Solo todo that drove the decision. This is the chronological intent
+anchor the `auditing-docs-drift` skill consults to resolve drift; capture it now
+even if the full authority-doc update lands later.
+
 ## Handoff Shape
 
 Use this shape when preparing work for the documentation and implementation
