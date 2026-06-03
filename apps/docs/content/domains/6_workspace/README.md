@@ -23,8 +23,10 @@ These rules govern all workspace family commands.
   runtime container image; it does not install host PHP or render a host
   FPM pool.
 - Each workspace owns a Docker runtime container derived from workspace,
-  app, and PHP image configuration. Workspace setup, teardown, PHP, Composer,
-  and Artisan execution run through that runtime container.
+  app, and PHP image configuration. The container serves the workspace's web
+  route through FrankenPHP. Workspace setup, teardown, and ad-hoc
+  PHP/Composer/Artisan run on the node's host PHP toolchain against the
+  workspace source.
 - Orbit must not create, require, read, or trust `.php-version` files in app or
   workspace project trees.
 - During `doctor --family=workspace --adopt`, project files are adoption hints
@@ -216,12 +218,6 @@ These commands manage the setup and teardown step policy that runs during worksp
 11. [`orbit workspace-teardown-step:add`](11_workspace-teardown-step-add/workspace-teardown-step-add.md)
 12. [`orbit workspace-teardown-step:list`](12_workspace-teardown-step-list/workspace-teardown-step-list.md)
 13. [`orbit workspace-teardown-step:remove`](13_workspace-teardown-step-remove/workspace-teardown-step-remove.md)
-
-### Container execution commands
-
-These commands run ad-hoc PHP, Composer, or Artisan commands inside a workspace runtime container.
-
-14. [`orbit workspace:exec [workspace] -- <command>`](14_workspace-exec/workspace-exec.md)
 
 ## Related
 

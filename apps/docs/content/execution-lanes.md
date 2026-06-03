@@ -20,8 +20,10 @@ runtime containers. After the baseline exists, gateway Laravel/artisan/PDO work
 must not rely on host PHP, host Composer, host Python, host SQLite, or host
 database client binaries. The CLI/local-executor artifact runs in the binary's
 embedded PHP in production installs. Source-mounted Docker/Incus development
-and E2E nodes invoke `<source>/apps/cli/orbit`. Host PHP is not an
-app/workspace runtime fallback.
+and E2E nodes invoke `<source>/apps/cli/orbit`. Host PHP/PHP-FPM is not the
+app/workspace *web* runtime — FrankenPHP containers serve apps. App-source CLI
+(`php`, `composer`, `artisan`, the Laravel installer) does run on the app
+node's host PHP toolchain; see `RemoteHostExecutor`.
 
 ## Lanes
 
@@ -63,15 +65,21 @@ Allowed work:
   `/var`, and the node user's home.
 - `orbit-caddy` container lifecycle, Caddy include files, route artifacts, and
   Caddy reload/repair.
-- App/workspace web-container dispatch through Docker, including `docker exec`
-  into app or workspace containers.
+- App/workspace web-container lifecycle and control through Docker (create,
+  start, stop, recreate the FrankenPHP serving container).
+- App-source CLI on the node's host PHP toolchain — `php`, `composer`,
+  `artisan` (deploy steps, `composer install`, the Laravel installer,
+  app-scoped `schedule:run`), version-matched to the app. This is the app's
+  own toolchain, not Orbit's framework runtime.
 - Supervisor program lifecycle, logs, and repair for configured app/workspace
   process units.
 
 Forbidden work:
 
-- Running Orbit `php`, `composer`, `artisan`, PDO, Eloquent, Laravel boot, or
-  database query logic on the host after the Docker baseline exists.
+- Running **Orbit's own** `php`, `composer`, `artisan`, PDO, Eloquent, Laravel
+  boot, or database query logic (the gateway application runtime) on the host
+  after the Docker baseline exists. App-source CLI is separate and is allowed
+  above.
 - Using host Python, host `sqlite3`, `psql`, `mysql`, or similar client
   binaries as steady-state helpers for Orbit-owned state.
 - Treating the host `orbit` launcher as the PHP execution path from the gateway
@@ -105,9 +113,10 @@ Forbidden work:
 
 - Host bootstrap, Docker installation, WireGuard host mutation, Caddy host
   artifact writes, UFW/sysctl/SSH hardening, and file ownership repair.
-- App/workspace PHP execution. App and workspace PHP commands run inside their
-  own app/workspace containers; they are not gateway service work unless they
-  boot Orbit itself.
+- App/workspace PHP execution. App and workspace web requests run in their own
+  FrankenPHP containers; app-source CLI (`php`/`composer`/`artisan`) runs on
+  the node's host PHP toolchain via `RemoteHostExecutor`. Neither is
+  gateway-service work.
 - Packaged node-local helper logic that needs host file access and PHP/PDO.
   That belongs in `RemoteLocalExecutor`.
 
@@ -245,14 +254,15 @@ Use these rules for every new or migrated gateway-to-node execution path.
   must choose `RemoteHostExecutor`, `RemoteGatewayRuntimeExecutor`, or
   `RemoteLocalExecutor` explicitly.
 - A host-lane command may control containers, including `docker exec`, but it
-  must not execute Orbit PHP on the host.
+  must not execute Orbit's own framework PHP on the host.
 - A runtime-lane command may read/write Orbit state through Laravel/PDO inside
   `orbit-gateway`, but it must not mutate host substrate directly.
 - A local-executor command may read/write node-local helper state with PHP/PDO,
   but it must validate the gateway-issued operation token before side effects
   and must not become a public authority path.
-- Legacy fallback paths that run PHP/Composer/Artisan on the host are not valid
-  on managed nodes.
+- Running **Orbit's own framework** PHP/Composer/Artisan on the host is not
+  valid on managed nodes. App-source CLI on app-role nodes runs on the host
+  PHP toolchain — see `RemoteHostExecutor`.
 
 ## Orbit Caddy Isolation
 

@@ -4,7 +4,7 @@ This tree is the product authority for which renderer and prompt primitives
 Orbit commands may use, and when each is appropriate. Renderer docs and
 input-mode docs name a primitive from this tree and link to the matching
 page. Implementation mechanics (ANSI, traits, animation patterns) live in
-[`.agents/skills/command-designer/references/terminal-output.md`](../../../.agents/skills/command-designer/references/terminal-output.md).
+[`.agents/skills/command-designer/references/terminal-output.md`](../../../../../.agents/skills/command-designer/references/terminal-output.md).
 
 The base prompt and renderer infrastructure is
 [Laravel Prompts](https://laravel.com/docs/13.x/prompts). Custom Orbit

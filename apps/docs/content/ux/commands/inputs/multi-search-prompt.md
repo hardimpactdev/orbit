@@ -65,4 +65,4 @@ No node commands use `multisearch` at plan time.
 See also these related resources.
 
 - [Laravel Prompts: multisearch](https://laravel.com/docs/13.x/prompts#multi-search)
-- [Skill: terminal output](../../../../.agents/skills/command-designer/references/terminal-output.md)
+- [Skill: terminal output](../../../../../../.agents/skills/command-designer/references/terminal-output.md)

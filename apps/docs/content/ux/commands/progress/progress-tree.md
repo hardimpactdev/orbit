@@ -87,7 +87,7 @@ The canonical entry point is `WithStepTree::runStepTree($title, $steps,
 $jsonData, $doneFooter, $failFooter)`. ANSI constants, animation frames,
 and box-drawing logic live in `SpinnerTreeRenderer` and the `WithStepTree`
 trait. See
-[`.agents/skills/command-designer/references/terminal-output.md`](../../../../.agents/skills/command-designer/references/terminal-output.md)
+[`.agents/skills/command-designer/references/terminal-output.md`](../../../../../../.agents/skills/command-designer/references/terminal-output.md)
 for the trait API, ANSI reference, parallel and async patterns, and the
 gateway-streamed SSE shape.
 
@@ -137,6 +137,6 @@ These commands use the progress tree and are good models to follow.
 
 See also these related resources.
 
-- [Skill: terminal output](../../../../.agents/skills/command-designer/references/terminal-output.md)
+- [Skill: terminal output](../../../../../../.agents/skills/command-designer/references/terminal-output.md)
   for trait API, ANSI codes, async patterns, and SSE event shapes.
 - [`spinner`](spinner.md) for the single-line variant.

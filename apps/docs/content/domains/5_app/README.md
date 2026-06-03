@@ -34,10 +34,10 @@ These rules govern all app family commands.
   app configuration. Changing `php_version` recreates the app runtime container
   from the selected PHP image; it does not install host PHP or render host
   FPM pools.
-- App command execution that needs PHP, Composer, or Artisan runs on the app
-  node's host PHP toolchain (matched to the app's PHP version) through explicit
-  app execution surfaces such as `app:exec`, against the app source the
-  FrankenPHP container serves.
+- Ad-hoc PHP, Composer, or Artisan for an app runs on the app node's host PHP
+  toolchain (matched to the app's PHP version), against the app source the
+  FrankenPHP container serves. Orbit ships no command-`exec` surface; deploy
+  steps use the same host toolchain.
 - Worker mode is an opt-in app runtime setting. It is disabled by default and
   `app:worker enable` must validate app readiness before changing gateway
   configuration.
@@ -164,7 +164,7 @@ The following commands are available in the `app` family.
 8. Reserved for a future app metadata update command. No `app:update` command
    contract exists in the current converted surface.
 9. [`orbit app:agent-ide [app] [agent_ide]`](9_app-agent-ide/app-agent-ide.md)
-10. [`orbit app:exec [app] -- <command>`](10_app-exec/app-exec.md)
+10. Reserved. `app:exec` was removed; Orbit has no command-`exec` surface.
 11. [`orbit app:worker show|enable|disable [app]`](11_app-worker/app-worker.md)
 
 ## Related

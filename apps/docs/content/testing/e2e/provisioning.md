@@ -53,7 +53,7 @@ The Incus provision gate has one supported shape:
    inspection.
 
 Serving assertions are feature behavior, not provision-gate behavior. `app:new`,
-Caddy/FrankenPHP serving, and `app:exec composer install` run from prepared
+Caddy/FrankenPHP serving, and `composer install` run on the host from prepared
 Incus feature coverage against `operator_gateway_app-dev`, which boots only
 operator, gateway, and app-dev while the Incus provider consumes the
 websocket-capable superset source snapshot underneath. The default Incus

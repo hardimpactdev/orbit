@@ -26,8 +26,8 @@ These rules describe what the schedule command family owns and where each kind o
 
 Schedules may target an app, a node, or Orbit-owned maintenance work. The scope determines which node physically runs the command; the gateway always dispatches.
 
-- App-scoped schedules execute inside the app's Docker runtime context on the
-  app's owning node.
+- App-scoped schedules execute on the app's owning node using the app's host
+  PHP toolchain (the same toolchain deploy steps use).
 - Node-scoped schedules execute on the selected node.
 - Orbit-scoped maintenance schedules execute inside the gateway container
   boundary by default. A command may override that default by documenting

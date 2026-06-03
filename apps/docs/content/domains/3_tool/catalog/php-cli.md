@@ -40,10 +40,9 @@ the same logic as install and is safe to re-run.
 ## Orbit Notes
 
 `php-cli` is separate from `php`. `php-cli` describes the **host** PHP CLI
-toolchain installed on app-dev and app-prod nodes; it is used by
-`app:exec` and `app:deploy` (and related commands) to run PHP workloads
-directly on the host. `php` owns PHP image capability evidence for
-containerised app and workspace execution.
+toolchain installed on app-dev and app-prod nodes; it runs deploy steps and
+ad-hoc app PHP/Artisan workloads directly on the host. `php` owns PHP image
+capability evidence for containerised app and workspace web serving.
 
 All three supported minor versions (8.3, 8.4, 8.5) are installed side-by-side
 at pinned patch releases. The default `php` binary resolves to the 8.5 binary.

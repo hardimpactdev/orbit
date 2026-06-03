@@ -126,7 +126,6 @@ Triggers in the gateway application:
 - `node:update` when `tld` or `wireguard_address` change.
 - `node:remove` for any node.
 - `node role:add` when the added role depends on `tld` (`app-dev` or `agent`).
-- `node role:update` when the role-assignment change activates or deactivates a TLD-supporting baseline.
 - `node role:remove` when removing the last TLD-supporting role from a node.
 
 The reconciler is idempotent: running it twice in a row is a no-op for the

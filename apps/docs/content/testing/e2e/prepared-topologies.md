@@ -349,9 +349,10 @@ Common requirements for every prepared topology:
   `<source>/apps/cli/orbit`; production artifact and binary-acceptance lanes
   are the lanes that require the native Orbit CLI binary artifact on managed
   nodes;
-- host Composer, host Caddy, and PHP-FPM are absent from prepared topology
-  images; host Supervisor is present only when the topology exercises
-  configured process units;
+- host Caddy and PHP-FPM are absent from prepared topology images (FrankenPHP
+  and `orbit-caddy` containers replace them); host PHP and Composer are present
+  on `app-dev`/`app-prod` clones via role setup; host Supervisor is present
+  only when the topology exercises configured process units;
 - Orbit runtime containers use sibling containers through the host Docker socket;
 - tests may mutate clones, but must never mutate template instances;
 - cleanup deletes clones unless `ORBIT_E2E_KEEP=1`;

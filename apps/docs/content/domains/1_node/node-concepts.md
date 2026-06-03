@@ -279,11 +279,11 @@ Incus topologies are development and E2E lanes; in those lanes
 node-local Orbit state lives under `~/.config/orbit`.
 
 Host PHP and Composer are production prerequisites only on nodes with
-`app-dev` or `app-prod` roles. Those app-role nodes additionally carry a host
-PHP command-line toolchain — host PHP 8.4 and 8.5, Composer, and the Laravel
-installer — installed and repaired as node tools, because `app:exec`, app
-setup, and deployment run Composer and Artisan on the host (matched to the
-app's PHP version) against the app source
+`app-dev` or `app-prod` roles. Those app-role nodes carry a host PHP
+command-line toolchain — host PHP 8.4 and 8.5 and Composer on both; the Laravel
+installer on `app-dev` only — installed and repaired as node tools, because app
+setup, deployment, and ad-hoc app CLI run Composer and Artisan on the host
+(matched to the app's PHP version) against the app source
 the FrankenPHP container serves. This host PHP toolchain is distinct from the
 Orbit CLI binary's embedded PHP, which only runs the CLI itself. Host Caddy and
 host PHP-FPM remain non-prerequisites and non-fallbacks: Caddy runs only as the

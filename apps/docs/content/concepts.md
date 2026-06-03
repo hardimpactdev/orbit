@@ -208,7 +208,6 @@ Source: [App Concepts](domains/5_app/app-concepts.md).
 - **App WebSocket binding**
 - **Reverb app credentials**
 - **App agent IDE adapter**
-- **App exec**
 - **App registration**
 - **App adoption**
 - **App adoption flag**
@@ -228,7 +227,6 @@ Source: [Workspace Concepts](domains/6_workspace/workspace-concepts.md).
 - **Workspace path**
 - **Workspace lifecycle status**
 - **Workspace runtime container**
-- **Workspace exec**
 - **Host cwd context**
 - **Workspace PHP override**
 - **Workspace PHP inheritance flag**

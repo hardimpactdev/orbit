@@ -71,4 +71,4 @@ These commands use `text` and are good models to follow.
 See also these related resources.
 
 - [Laravel Prompts: text](https://laravel.com/docs/13.x/prompts#text)
-- [Skill: terminal output](../../../../.agents/skills/command-designer/references/terminal-output.md)
+- [Skill: terminal output](../../../../../../.agents/skills/command-designer/references/terminal-output.md)

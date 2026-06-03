@@ -11,7 +11,7 @@ These fields describe the Laravel Installer tool's identity, backend, and suppor
 | Slug | `laravel-installer` |
 | Label | Laravel Installer |
 | Backend | Composer global package (`laravel/installer`) |
-| Support model | Installable, updatable, and removable by Orbit on app-dev/app-prod nodes |
+| Support model | Installable, updatable, and removable by Orbit on app-dev nodes |
 | Category | `runtime` |
 
 ## Capabilities
@@ -36,8 +36,9 @@ as the `orbit` runtime user and removes the `/usr/local/bin/laravel` symlink.
 ## Orbit Notes
 
 `laravel-installer` depends on both `php-cli` and `composer` being installed on
-the host. It is converged automatically on app-dev and app-prod nodes as part of
-the host PHP toolchain baseline alongside `php-cli` and `composer`.
+the host. It is converged automatically on app-dev nodes as part of the app-dev setup
+baseline. (`php-cli` and `composer` converge on both app-dev and app-prod; the
+Laravel installer is app-dev only.)
 
 The global Composer home for the `orbit` user is
 `/home/orbit/.config/composer`. The `laravel` binary is symlinked into
@@ -47,6 +48,6 @@ modifying `$PATH`.
 ## Doctor Relationship
 
 `doctor --family=tool` probes the `laravel` binary on the host. When the
-binary is absent on an app-dev or app-prod node it emits
+binary is absent on an app-dev node it emits
 `tool.capability_missing` and the fixer runs `tool:install laravel-installer`
 to restore the installer.

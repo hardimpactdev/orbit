@@ -11,8 +11,8 @@ These fields describe the GitHub CLI tool's identity, backend, and support model
 | Slug | `gh` |
 | Label | GitHub CLI |
 | Backend | system binary |
-| Support model | Required baseline, adopted and kept converged |
-| Category | `always` |
+| Support model | Role baseline for the `app-dev` and `app-prod` roles, adopted and kept converged |
+| Category | `runtime` |
 
 ## Capabilities
 
@@ -33,4 +33,4 @@ deployment configuration remain owned by their command families.
 ## Doctor Relationship
 
 `doctor --family=tool` may adopt an existing `gh` binary and report missing
-baseline drift.
+baseline drift on `app-dev` and `app-prod` nodes.

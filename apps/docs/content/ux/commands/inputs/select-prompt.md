@@ -61,4 +61,4 @@ These commands use `select` and are good models to follow.
 See also these related resources.
 
 - [Laravel Prompts: select](https://laravel.com/docs/13.x/prompts#select)
-- [Skill: terminal output](../../../../.agents/skills/command-designer/references/terminal-output.md)
+- [Skill: terminal output](../../../../../../.agents/skills/command-designer/references/terminal-output.md)

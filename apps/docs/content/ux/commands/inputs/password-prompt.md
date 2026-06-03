@@ -65,4 +65,4 @@ No node commands use `password` at plan time.
 See also these related resources.
 
 - [Laravel Prompts: password](https://laravel.com/docs/13.x/prompts#password)
-- [Skill: terminal output](../../../../.agents/skills/command-designer/references/terminal-output.md)
+- [Skill: terminal output](../../../../../../.agents/skills/command-designer/references/terminal-output.md)

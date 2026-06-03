@@ -34,9 +34,8 @@ phar to the latest stable release.
 ## Orbit Notes
 
 Composer is installed as a host binary on app-dev and app-prod nodes and is
-used by `app:exec`, `app:deploy`, and related commands to manage PHP project
-dependencies directly on the host. It is also a prerequisite for the
-`laravel-installer` tool.
+used by deploy steps and ad-hoc app dependency management directly on the host.
+It is also a prerequisite for the `laravel-installer` tool.
 
 ## Doctor Relationship
 

@@ -78,5 +78,5 @@ This command uses `datatable` and is the canonical model to follow.
 See also these related resources.
 
 - [Laravel Prompts: datatable](https://laravel.com/docs/13.x/prompts#datatable)
-- [Skill: terminal output](../../../../.agents/skills/command-designer/references/terminal-output.md)
+- [Skill: terminal output](../../../../../../.agents/skills/command-designer/references/terminal-output.md)
 - [`table`](table.md) for the read-only variant

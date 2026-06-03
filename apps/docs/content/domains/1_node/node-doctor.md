@@ -366,5 +366,7 @@ identity, and presented caller identity resolving to a unique active node
 record. It also covers platform reality, SSH reachability, public IP metadata
 exclusion from probe/restore/adopt behavior, gateway service readiness,
 node bootstrap readiness, node security posture, and development TLD mapping readiness. The
-probe additionally covers `node.local_default_invalid`,
-`node.cli_php_default_mismatch`, and `node.agent_ide_default_invalid`.
+probe additionally covers `node.local_default_invalid` and
+`node.agent_ide_default_invalid`, and verifies that the CLI PHP default check
+currently returns no `node.cli_php_default_mismatch` drift (reserved
+placeholder; not yet an emitted issue code).

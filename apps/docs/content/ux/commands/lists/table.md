@@ -68,5 +68,5 @@ This command is the canonical model for the table primitive.
 See also these related resources.
 
 - [Laravel Prompts: tables](https://laravel.com/docs/13.x/prompts#tables)
-- [Skill: terminal output](../../../../.agents/skills/command-designer/references/terminal-output.md)
+- [Skill: terminal output](../../../../../../.agents/skills/command-designer/references/terminal-output.md)
 - [`data-table-prompt`](data-table-prompt.md) for the interactive variant

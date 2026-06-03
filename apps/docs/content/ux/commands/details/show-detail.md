@@ -78,4 +78,4 @@ $this->renderShowDetails("App: {$app['name']}", [
 See also these related resources.
 
 - [`table`](../lists/table.md) for read-only multi-row output
-- [Skill: terminal output](../../../../.agents/skills/command-designer/references/terminal-output.md)
+- [Skill: terminal output](../../../../../../.agents/skills/command-designer/references/terminal-output.md)

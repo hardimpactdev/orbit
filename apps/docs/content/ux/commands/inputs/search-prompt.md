@@ -68,4 +68,4 @@ No node domain commands use `search` at plan time.
 See also these related resources.
 
 - [Laravel Prompts: search](https://laravel.com/docs/13.x/prompts#search)
-- [Skill: terminal output](../../../../.agents/skills/command-designer/references/terminal-output.md)
+- [Skill: terminal output](../../../../../../.agents/skills/command-designer/references/terminal-output.md)

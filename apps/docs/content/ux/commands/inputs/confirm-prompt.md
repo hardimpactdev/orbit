@@ -69,5 +69,5 @@ These commands use `confirm` and are good models to follow.
 See also these related resources.
 
 - [Laravel Prompts: confirm](https://laravel.com/docs/13.x/prompts#confirm)
-- [Skill: terminal output](../../../../.agents/skills/command-designer/references/terminal-output.md)
+- [Skill: terminal output](../../../../../../.agents/skills/command-designer/references/terminal-output.md)
 - `docs/domains/README.md` "Destructive Confirmation" section

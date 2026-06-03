@@ -270,8 +270,9 @@ PHP, host Composer, Git, or an Orbit source checkout. Source-mounted Docker and
 Incus topologies are development and E2E lanes; in those lanes
 `/usr/local/bin/orbit` points directly at `<source>/apps/cli/orbit` and mutable
 node-local Orbit state lives under `~/.config/orbit`. `app-dev` and `app-prod`
-nodes additionally carry a host PHP toolchain (host PHP 8.4 and 8.5, Composer,
-and the Laravel installer) for `app:exec` and deployment. Host Caddy (the
+nodes additionally carry a host PHP toolchain (host PHP 8.4 and 8.5 and
+Composer; the Laravel installer on `app-dev` only) for app setup, deployment,
+and ad-hoc app CLI. Host Caddy (the
 `orbit-caddy` container) and host PHP-FPM remain non-prerequisites and
 non-fallbacks.
 

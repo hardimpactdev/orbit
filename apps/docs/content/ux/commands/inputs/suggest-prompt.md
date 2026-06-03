@@ -65,4 +65,4 @@ No node commands use `suggest` at plan time.
 See also these related resources.
 
 - [Laravel Prompts: suggest](https://laravel.com/docs/13.x/prompts#suggest)
-- [Skill: terminal output](../../../../.agents/skills/command-designer/references/terminal-output.md)
+- [Skill: terminal output](../../../../../../.agents/skills/command-designer/references/terminal-output.md)

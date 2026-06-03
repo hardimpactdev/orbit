@@ -581,7 +581,7 @@ rule.
 ````
 
 The canonical effects vocabulary is maintained in
-[command-designer](../../.agents/skills/command-designer/references/command-documentation.md#effects).
+[command-designer](../../../../.agents/skills/command-designer/references/command-documentation.md#effects).
 Command docs should combine only those effects and should use `none` only for a
 companion path that is denied before prompts and side effects.
 

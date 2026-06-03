@@ -63,7 +63,7 @@ The sections below walk through each layer of the stack in the same order as the
 | Scheduler | One-replica `orbit-scheduler` Swarm service using the Orbit gateway image |
 | Process logs | Supervisor stdout/stderr capture for configured app/workspace process units |
 | Service containers | Docker for Orbit runtime containers and backing services |
-| Host prerequisites | Production gateway-only nodes require Docker Engine/CLI, Docker Swarm, gateway config root, WireGuard/SSH identity, and the native Orbit CLI binary. `app-dev` and `app-prod` nodes additionally require host PHP/Composer/Laravel installer tooling for app-source workflows. Git and `gh` are required where cloning/deployment needs repository access, not for no-source gateway-only production. Source-dev topologies may bind-mount or copy the worktree and point `/usr/local/bin/orbit` at `<source>/apps/cli/orbit`; artifact-prod topologies use built CLI binaries and production images. |
+| Host prerequisites | Production gateway-only nodes require Docker Engine/CLI, Docker Swarm, gateway config root, WireGuard/SSH identity, and the native Orbit CLI binary. `app-dev` and `app-prod` nodes additionally require host PHP and Composer for app-source workflows; the Laravel installer is required on `app-dev` only. Git and `gh` are required where cloning/deployment needs repository access, not for no-source gateway-only production. Source-dev topologies may bind-mount or copy the worktree and point `/usr/local/bin/orbit` at `<source>/apps/cli/orbit`; artifact-prod topologies use built CLI binaries and production images. |
 | Production HTTP ingress | `orbit-caddy` on `ingress` nodes terminating public HTTPS and forwarding to `router` over WireGuard |
 | Private production routing | `orbit-caddy` on the gateway-coupled `router` role selecting private HTTP/WebSocket/S3 routes, `.orbit` service names, and backend pools |
 | Production app backend | App-role-owned `orbit-caddy` on `app-prod` nodes bound to the node's WireGuard address and forwarding to per-app FrankenPHP Docker Swarm runtime services on internal port `8080` over the node Docker network |
@@ -445,8 +445,8 @@ default FrankenPHP app/workspace runtime image for app-role nodes, the
 `orbit-caddy` container where the node role needs HTTP routing, and
 WireGuard/SSH identity material. Production gateway-only nodes do not need host
 PHP, Composer, Git, or a source checkout. `app-dev` and `app-prod` production
-nodes install host PHP/Composer/Laravel installer tooling for app-source
-workflows. In source-dev Docker and Incus topologies, `/usr/local/bin/orbit`
+nodes install host PHP and Composer for app-source workflows; the Laravel
+installer installs on `app-dev` only. In source-dev Docker and Incus topologies, `/usr/local/bin/orbit`
 points directly at `<source>/apps/cli/orbit`, the current checkout is mounted
 or copied into the topology, and mutable node-local Orbit state lives under
 `~/.config/orbit`. Internal executor commands verify operation tokens through

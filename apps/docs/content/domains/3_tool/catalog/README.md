@@ -66,11 +66,12 @@ create them from scratch unless the tool file says otherwise.
 | --- | --- |
 | [`caddy`](caddy.md) | `orbit-caddy` container for HTTP server and proxy runtime |
 | [`docker`](docker.md) | Container runtime substrate |
-| [`gh`](gh.md) | GitHub CLI utility — required fleet-wide for authenticated public and private repository operations during cloning and deployment |
 | [`dns`](dns.md) | VPN-facing development DNS runtime |
 
-PHP, Composer, and Caddy runtime capabilities live in Orbit-managed
-containers. Supervisor is the host process manager for configured app/workspace
+The `php` runtime images and `caddy` proxy run in Orbit-managed containers. The
+host PHP toolchain — `php-cli`, `composer`, and `laravel-installer` — installs
+on `app-dev`/`app-prod` nodes (the Laravel installer on `app-dev` only).
+Supervisor is the host process manager for configured app/workspace
 process programs; whether it is installed as a baseline prerequisite or an
 on-demand tool remains owned by node/tool provisioning contracts.
 
@@ -80,6 +81,10 @@ materialized by their owning role and only required on nodes carrying that role:
 | Tool | Owning role(s) |
 | --- | --- |
 | [`viteplus`](viteplus.md) | `app-dev`, `app-prod` |
+| [`php-cli`](php-cli.md) | `app-dev`, `app-prod` |
+| [`composer`](composer.md) | `app-dev`, `app-prod` |
+| [`laravel-installer`](laravel-installer.md) | `app-dev` |
+| [`gh`](gh.md) | `app-dev`, `app-prod` (repository cloning and deployment) |
 | [`rustfs`](rustfs.md) | `s3` |
 
 ## Installable Tools

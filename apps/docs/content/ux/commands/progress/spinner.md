@@ -37,7 +37,7 @@ These rules govern all uses of the spinner in Orbit commands.
 
 `App\Concerns\WithSpinner` provides the frame set and runner helpers
 (`runWithSpinner`, `runAllWithSpinners`). See
-[`.agents/skills/command-designer/references/terminal-output.md`](../../../../.agents/skills/command-designer/references/terminal-output.md)
+[`.agents/skills/command-designer/references/terminal-output.md`](../../../../../../.agents/skills/command-designer/references/terminal-output.md)
 for the trait API and parallel-checks pattern.
 
 ## Reference Implementations
@@ -51,5 +51,5 @@ These commands use the spinner and are good models to follow.
 
 See also these related resources.
 
-- [Skill: terminal output](../../../../.agents/skills/command-designer/references/terminal-output.md)
+- [Skill: terminal output](../../../../../../.agents/skills/command-designer/references/terminal-output.md)
 - [`progress-tree`](progress-tree.md) for the multi-step variant.

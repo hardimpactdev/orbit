@@ -25,12 +25,9 @@ The terms below define the core identity vocabulary for the workspace family.
   live readiness result.
 - **Workspace runtime container:** Docker container derived from workspace
   configuration, parent app configuration, and the selected PHP image. It
-  serves the workspace route through FrankenPHP and runs workspace-scoped PHP
-  and Composer commands.
-- **Workspace exec:** Explicit execution surface for PHP, Composer, or
-  Artisan commands, run on the node's host PHP toolchain (matched to the
-  workspace's PHP version) against the workspace source. Owned by
-  `workspace:exec`. The commands run on the host, not inside the container.
+  serves the workspace's web route through FrankenPHP. Ad-hoc workspace
+  PHP/Composer/Artisan run on the node's host PHP toolchain, not inside the
+  container.
 - **Host cwd context:** Caller-side working-directory hint used only to resolve
   defaults such as app and workspace identity. It is not an authorization
   source and does not make the CLI operate on local artifacts directly.
