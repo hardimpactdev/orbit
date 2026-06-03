@@ -4,26 +4,19 @@ declare(strict_types=1);
 
 namespace App\Actions\Processes;
 
-use App\Contracts\RemoteShell;
-use App\Enums\Processes\ProcessRuntime;
 use App\Enums\ProcessEventType;
 use App\Http\Gateway\GatewayApiException;
 use App\Models\App;
 use App\Models\Process;
 use App\Models\ProcessEvent;
 use App\Models\Workspace;
-use App\Services\Processes\ProcessDockerContainerRenderer;
-use App\Services\Processes\ProcessDockerRuntimeManager;
-use App\Services\Processes\SupervisorProgramRenderer;
+use App\Services\Processes\ProcessRuntimeDriverRegistry;
 use Illuminate\Database\Eloquent\Collection;
 
 final readonly class RestartProcesses
 {
     public function __construct(
-        private RemoteShell $remoteShell,
-        private SupervisorProgramRenderer $renderer,
-        private ProcessDockerContainerRenderer $dockerRenderer,
-        private ProcessDockerRuntimeManager $dockerManager,
+        private ProcessRuntimeDriverRegistry $runtimeDrivers,
         private RecordProcessEvent $recordProcessEvent,
     ) {}
 
@@ -54,8 +47,9 @@ final readonly class RestartProcesses
         $restarted = 0;
 
         foreach ($processes as $process) {
-            $runtimeUnit = $this->resolveRuntimeUnit($app, $process, $workspace);
-            $ok = $app->node !== null && $this->restartRuntimeUnit($app, $process, $workspace, $runtimeUnit);
+            $driver = $this->runtimeDrivers->for($process->runtime);
+            $runtimeUnit = $driver->runtimeUnitName($app, $process, $workspace);
+            $ok = $app->node !== null && $driver->restart($app->node, $runtimeUnit);
             $events = [];
 
             if ($ok && $app->node !== null) {
@@ -85,24 +79,6 @@ final readonly class RestartProcesses
                 'partial_state' => $restarted === 0 ? 'none_restarted' : 'partially_restarted',
             ],
         ];
-    }
-
-    private function resolveRuntimeUnit(App $app, Process $process, ?Workspace $workspace): string
-    {
-        if ($process->runtime === ProcessRuntime::Docker) {
-            return $this->dockerRenderer->containerName($app, $process, $workspace);
-        }
-
-        return $this->renderer->programName($app, $process, $workspace);
-    }
-
-    private function restartRuntimeUnit(App $app, Process $process, ?Workspace $workspace, string $runtimeUnit): bool
-    {
-        if ($process->runtime === ProcessRuntime::Docker) {
-            return $this->dockerManager->restart($app->node, $runtimeUnit);
-        }
-
-        return $this->remoteShell->run($app->node, 'sudo supervisorctl restart '.escapeshellarg($runtimeUnit))->successful();
     }
 
     /**

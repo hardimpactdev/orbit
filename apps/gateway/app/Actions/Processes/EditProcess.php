@@ -5,14 +5,13 @@ declare(strict_types=1);
 namespace App\Actions\Processes;
 
 use App\Actions\Apps\EnsureAppProcessRuntimeUnits;
-use App\Contracts\RemoteShell;
 use App\Enums\ProcessCrashNotification;
 use App\Enums\Processes\ProcessRuntime;
 use App\Enums\ProcessRestartPolicy;
 use App\Http\Gateway\GatewayApiException;
 use App\Models\App;
 use App\Models\Process;
-use App\Services\Processes\ProcessDockerRuntimeManager;
+use App\Services\Processes\ProcessRuntimeDriverRegistry;
 use App\Services\Processes\ProcessRuntimeUnitPayload;
 
 final readonly class EditProcess
@@ -20,8 +19,7 @@ final readonly class EditProcess
     public function __construct(
         private EnsureAppProcessRuntimeUnits $ensureRuntimeUnits,
         private ProcessRuntimeUnitPayload $runtimeUnitPayload,
-        private RemoteShell $remoteShell,
-        private ProcessDockerRuntimeManager $dockerManager,
+        private ProcessRuntimeDriverRegistry $runtimeDrivers,
     ) {}
 
     /**
@@ -96,11 +94,8 @@ final readonly class EditProcess
     }
 
     /**
-     * Restart the rendered runtime units after a successful apply. The
-     * lifecycle backend is dispatched by `$process->runtime` so Docker
-     * processes use `docker restart` and Supervisor processes use
-     * `supervisorctl restart`. The unit identity is shared between
-     * backends.
+     * Restart the rendered runtime units after a successful apply through the
+     * process runtime driver selected by `$process->runtime`.
      *
      * @param  list<array{name: string, context: string}>  $runtimeUnits
      * @return list<array<string, mixed>>
@@ -117,13 +112,11 @@ final readonly class EditProcess
         }
 
         $warnings = [];
+        $driver = $this->runtimeDrivers->for($process->runtime);
 
         foreach ($runtimeUnits as $runtimeUnit) {
             $name = $runtimeUnit['name'];
-            $restarted = match ($process->runtime) {
-                ProcessRuntime::Docker => $this->dockerManager->restart($app->node, $name),
-                ProcessRuntime::Supervisor => $this->remoteShell->run($app->node, 'sudo supervisorctl restart '.escapeshellarg($name))->successful(),
-            };
+            $restarted = $driver->restart($app->node, $name);
 
             if (! $restarted) {
                 $warnings[] = [

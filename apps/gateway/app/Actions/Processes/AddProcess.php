@@ -5,14 +5,13 @@ declare(strict_types=1);
 namespace App\Actions\Processes;
 
 use App\Actions\Apps\EnsureAppProcessRuntimeUnits;
-use App\Contracts\RemoteShell;
 use App\Enums\ProcessCrashNotification;
 use App\Enums\Processes\ProcessRuntime;
 use App\Enums\ProcessRestartPolicy;
 use App\Http\Gateway\GatewayApiException;
 use App\Models\App;
 use App\Models\Process;
-use App\Services\Processes\ProcessDockerRuntimeManager;
+use App\Services\Processes\ProcessRuntimeDriverRegistry;
 use App\Services\Processes\ProcessRuntimeUnitPayload;
 use Illuminate\Support\Facades\DB;
 
@@ -21,8 +20,7 @@ final readonly class AddProcess
     public function __construct(
         private EnsureAppProcessRuntimeUnits $ensureRuntimeUnits,
         private ProcessRuntimeUnitPayload $runtimeUnitPayload,
-        private RemoteShell $remoteShell,
-        private ProcessDockerRuntimeManager $dockerManager,
+        private ProcessRuntimeDriverRegistry $runtimeDrivers,
     ) {}
 
     /**
@@ -86,11 +84,8 @@ final readonly class AddProcess
     }
 
     /**
-     * Start the rendered runtime units after a successful apply. The
-     * lifecycle backend is dispatched by `$process->runtime` so Docker
-     * processes use `docker start` and Supervisor processes use
-     * `supervisorctl start`. The unit identity is shared between backends,
-     * so the runtime_units payload addresses both.
+     * Start the rendered runtime units after a successful apply through the
+     * process runtime driver selected by `$process->runtime`.
      *
      * @param  list<array{name: string, context: string}>  $runtimeUnits
      * @return list<array<string, mixed>>
@@ -107,13 +102,11 @@ final readonly class AddProcess
         }
 
         $warnings = [];
+        $driver = $this->runtimeDrivers->for($process->runtime);
 
         foreach ($runtimeUnits as $runtimeUnit) {
             $name = $runtimeUnit['name'];
-            $started = match ($process->runtime) {
-                ProcessRuntime::Docker => $this->dockerManager->start($app->node, $name),
-                ProcessRuntime::Supervisor => $this->remoteShell->run($app->node, 'sudo supervisorctl start '.escapeshellarg($name))->successful(),
-            };
+            $started = $driver->start($app->node, $name);
 
             if (! $started) {
                 $warnings[] = [

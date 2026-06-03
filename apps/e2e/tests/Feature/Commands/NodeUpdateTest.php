@@ -16,6 +16,7 @@ it('updates node metadata from a operator caller through the gateway api', funct
 
         e2eRestartGatewayApi($topology, 'node-update');
         E2EGatewayApi::waitForGatewayApi($topology->instance('operator'), $config->operatorUser, $topology->lease()->sshKeyPair(), gatewayIp: $gatewayApiIp);
+        e2eGrantNodeAccess($topology);
 
         $updateResult = $topology->ssh(
             'operator',

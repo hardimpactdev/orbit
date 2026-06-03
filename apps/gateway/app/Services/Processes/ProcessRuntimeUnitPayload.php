@@ -11,7 +11,7 @@ use App\Models\Workspace;
 class ProcessRuntimeUnitPayload
 {
     public function __construct(
-        private readonly SupervisorProgramRenderer $renderer,
+        private readonly ProcessRuntimeDriverRegistry $runtimeDrivers,
     ) {}
 
     /**
@@ -23,7 +23,7 @@ class ProcessRuntimeUnitPayload
 
         return collect([null, ...$app->workspaces->all()])
             ->map(fn (?Workspace $workspace): array => [
-                'name' => $this->renderer->programName($app, $process, $workspace),
+                'name' => $this->runtimeDrivers->for($process->runtime)->runtimeUnitName($app, $process, $workspace),
                 'context' => $workspace instanceof Workspace ? $workspace->name : 'main',
             ])
             ->values()

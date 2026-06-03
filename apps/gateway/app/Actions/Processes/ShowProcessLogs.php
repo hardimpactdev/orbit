@@ -6,22 +6,19 @@ namespace App\Actions\Processes;
 
 use App\Contracts\RemoteShell;
 use App\Contracts\RemoteShellStream;
-use App\Enums\Processes\ProcessRuntime;
 use App\Http\Gateway\GatewayApiException;
 use App\Models\App;
 use App\Models\Node;
 use App\Models\Process;
 use App\Models\Workspace;
-use App\Services\Processes\ProcessDockerContainerRenderer;
-use App\Services\Processes\SupervisorProgramRenderer;
+use App\Services\Processes\ProcessRuntimeDriverRegistry;
 
 final readonly class ShowProcessLogs
 {
     public function __construct(
         private RemoteShell $remoteShell,
         private RemoteShellStream $remoteShellStream,
-        private SupervisorProgramRenderer $renderer,
-        private ProcessDockerContainerRenderer $dockerRenderer,
+        private ProcessRuntimeDriverRegistry $runtimeDrivers,
     ) {}
 
     /**
@@ -114,45 +111,15 @@ final readonly class ShowProcessLogs
             ]);
         }
 
-        $runtimeUnit = $this->resolveRuntimeUnit($app, $process, $workspace);
+        $driver = $this->runtimeDrivers->for($process->runtime);
+        $runtimeUnit = $driver->runtimeUnitName($app, $process, $workspace);
 
         return [
             'node' => $app->node,
             'process' => $process,
             'runtime_unit' => $runtimeUnit,
-            'script' => $this->buildLogScript($app, $process, $workspace, $runtimeUnit, $lines, $follow),
+            'script' => $driver->logScript($app, $process, $workspace, $runtimeUnit, $lines, $follow),
         ];
-    }
-
-    private function resolveRuntimeUnit(App $app, Process $process, ?Workspace $workspace): string
-    {
-        if ($process->runtime === ProcessRuntime::Docker) {
-            return $this->dockerRenderer->containerName($app, $process, $workspace);
-        }
-
-        return $this->renderer->programName($app, $process, $workspace);
-    }
-
-    private function buildLogScript(App $app, Process $process, ?Workspace $workspace, string $runtimeUnit, int $lines, bool $follow): string
-    {
-        if ($process->runtime === ProcessRuntime::Docker) {
-            return collect([
-                'docker logs',
-                "--tail {$lines}",
-                $follow ? '--follow' : null,
-                escapeshellarg($runtimeUnit),
-                '2>&1',
-            ])->filter()->implode(' ');
-        }
-
-        $definition = $this->renderer->definition($app, $process, $workspace);
-
-        return collect([
-            'sudo tail',
-            "-n {$lines}",
-            $follow ? '-F' : null,
-            escapeshellarg($definition->stdoutLogFile),
-        ])->filter()->implode(' ');
     }
 
     /**
