@@ -90,6 +90,41 @@ it('syncs the initiating worktree to a generated remote path without dependency 
     }
 });
 
+it('passes GitHub auth to remote dependency hydration through SSH input', function (): void {
+    $commands = [];
+    $inputs = [];
+
+    Process::fake(function ($process) use (&$commands, &$inputs) {
+        $commands[] = (string) $process->command;
+        $inputs[] = is_string($process->input) ? $process->input : null;
+
+        return Process::result();
+    });
+
+    withE2EConfigEnvironment([
+        'GH_TOKEN' => 'ghp_source_sync_secret',
+    ], function (): void {
+        (new SourceMountedCheckoutSyncer)->sync('sidecar1', 'docker');
+    });
+
+    $commandsOutput = implode("\n", $commands);
+    $inputsOutput = implode("\n", array_filter($inputs, 'is_string'));
+
+    expect($commandsOutput)
+        ->toContain("ssh -o BatchMode=yes -o ConnectTimeout=10 'sidecar1' 'bash -s'")
+        ->not->toContain('ghp_source_sync_secret')
+        ->and($inputsOutput)
+        ->toContain("export GH_TOKEN='ghp_source_sync_secret'")
+        ->toContain("export GITHUB_TOKEN='ghp_source_sync_secret'")
+        ->toContain('composer config --global github-oauth.github.com "${GH_TOKEN:-${GITHUB_TOKEN:-}}"')
+        ->toMatch('/--env .*GH_TOKEN/')
+        ->toMatch('/--env .*GITHUB_TOKEN/')
+        ->toContain('/tmp/orbit-e2e-composer-home')
+        ->toContain('/tmp/orbit-e2e-composer-cache')
+        ->toContain('/tmp/orbit-composer-home')
+        ->toContain('/tmp/orbit-composer-cache');
+});
+
 it('isolates generated remote source paths by provider and parallel worker', function (): void {
     $previousTestToken = getenv('TEST_TOKEN');
 

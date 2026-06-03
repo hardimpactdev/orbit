@@ -12,6 +12,14 @@ final readonly class SourceMountedCheckoutSyncer
 {
     private const string DefaultRemoteRoot = '/tmp/orbit-e2e-sources';
 
+    private const string RemoteComposerCache = '/tmp/orbit-e2e-composer-cache';
+
+    private const string RemoteComposerHome = '/tmp/orbit-e2e-composer-home';
+
+    private const string ContainerComposerCache = '/tmp/orbit-composer-cache';
+
+    private const string ContainerComposerHome = '/tmp/orbit-composer-home';
+
     private const int SyncTimeoutSeconds = 1200;
 
     public function sync(string $host, string $provider, ?E2EPhaseTimer $timer = null): string
@@ -29,7 +37,8 @@ final readonly class SourceMountedCheckoutSyncer
                 $this->mustRun($this->sshCommand($host, $this->ownershipRepairCommand($targetPath)), "Could not repair source checkout ownership on {$host}:{$targetPath}");
                 $this->mustRun($this->rsyncCommand($host, $targetPath), "Could not rsync source checkout to {$host}:{$targetPath}");
                 $this->mustRun($this->sshCommand($host, $this->staleMutableStateCleanupCommand($targetPath)), "Could not clear stale source checkout state on {$host}:{$targetPath}");
-                $this->mustRun($this->sshCommand($host, $this->dependencyHydrationCommand($targetPath)), "Could not hydrate source checkout dependencies on {$host}:{$targetPath}");
+                $hydration = $this->dependencyHydrationSshCommand($host, $targetPath);
+                $this->mustRun($hydration['command'], "Could not hydrate source checkout dependencies on {$host}:{$targetPath}", input: $hydration['input']);
                 $this->mustRun($this->sshCommand($host, $this->permissionNormalizationCommand($targetPath)), "Could not normalize source checkout permissions on {$host}:{$targetPath}");
             } finally {
                 $this->releaseLock($host, $targetPath);
@@ -265,6 +274,13 @@ final readonly class SourceMountedCheckoutSyncer
     {
         return implode("\n", [
             'cd '.escapeshellarg($targetPath),
+            'export COMPOSER_ALLOW_SUPERUSER=1',
+            'export COMPOSER_PROCESS_TIMEOUT=1200',
+            'export COMPOSER_HOME='.escapeshellarg(self::RemoteComposerHome),
+            'export COMPOSER_CACHE_DIR='.escapeshellarg(self::RemoteComposerCache),
+            'mkdir -p "$COMPOSER_HOME" "$COMPOSER_CACHE_DIR"',
+            'trap \'rm -f "$COMPOSER_HOME/auth.json"\' EXIT',
+            E2EGitHubAuth::composerAuthConfigCommand(self::RemoteComposerHome),
             $this->gitSafeDirectoryCommand(),
             $this->dependencyHydrationCommandForApp('apps/gateway'),
             $this->dependencyHydrationCommandForApp('apps/cli'),
@@ -277,10 +293,14 @@ final readonly class SourceMountedCheckoutSyncer
         $innerCommand = implode("\n", [
             'set -eu',
             'cd /work',
+            'mkdir -p "$COMPOSER_HOME" "$COMPOSER_CACHE_DIR"',
+            'trap \'rm -f "$COMPOSER_HOME/auth.json"\' EXIT',
+            E2EGitHubAuth::composerAuthConfigCommand(self::ContainerComposerHome),
             $this->gitSafeDirectoryCommand(),
             $this->dependencyHydrationCommandForApp('apps/gateway'),
             $this->dependencyHydrationCommandForApp('apps/cli'),
         ]);
+        $githubEnvironment = implode(' ', E2EGitHubAuth::dockerEnvOptions());
 
         return implode("\n", [
             'if ! command -v docker >/dev/null 2>&1; then echo "Remote source sync requires composer or docker with '.escapeshellarg($image).'" >&2; exit 1; fi',
@@ -294,12 +314,13 @@ final readonly class SourceMountedCheckoutSyncer
                 escapeshellarg('chown -R "${ORBIT_E2E_HOST_UID}:${ORBIT_E2E_HOST_GID}" /work'),
             ),
             sprintf(
-                'docker run --rm --user "${uid}:${gid}" --mount %s --workdir /work --env %s --env %s --env %s --env %s %s sh -lc %s',
+                'docker run --rm --user "${uid}:${gid}" --mount %s --workdir /work --env %s --env %s --env %s --env %s%s %s sh -lc %s',
                 escapeshellarg("type=bind,src={$targetPath},dst=/work"),
                 escapeshellarg('COMPOSER_ALLOW_SUPERUSER=1'),
                 escapeshellarg('COMPOSER_PROCESS_TIMEOUT=1200'),
-                escapeshellarg('COMPOSER_HOME=/tmp/orbit-composer-home'),
-                escapeshellarg('COMPOSER_CACHE_DIR=/tmp/orbit-composer-cache'),
+                escapeshellarg('COMPOSER_HOME='.self::ContainerComposerHome),
+                escapeshellarg('COMPOSER_CACHE_DIR='.self::ContainerComposerCache),
+                $githubEnvironment !== '' ? ' '.$githubEnvironment : '',
                 escapeshellarg($image),
                 escapeshellarg($innerCommand),
             ),
@@ -359,15 +380,40 @@ final readonly class SourceMountedCheckoutSyncer
         );
     }
 
+    /**
+     * @return array{command: string, input: ?string}
+     */
+    private function dependencyHydrationSshCommand(string $host, string $targetPath): array
+    {
+        $command = $this->dependencyHydrationCommand($targetPath);
+        $input = E2EGitHubAuth::shellInputScript($command);
+
+        if ($input === null) {
+            return [
+                'command' => $this->sshCommand($host, $command),
+                'input' => null,
+            ];
+        }
+
+        return [
+            'command' => sprintf(
+                'ssh -o BatchMode=yes -o ConnectTimeout=10 %s %s',
+                escapeshellarg($host),
+                escapeshellarg('bash -s'),
+            ),
+            'input' => $input,
+        ];
+    }
+
     private function isLocalHost(string $host): bool
     {
         return in_array(strtolower($host), ['local', '', 'localhost', '127.0.0.1', '::1'], true)
             || strtolower($host) === strtolower((string) gethostname());
     }
 
-    private function mustRun(string $command, string $message, ?int $timeoutSeconds = null): ProcessResult
+    private function mustRun(string $command, string $message, ?int $timeoutSeconds = null, ?string $input = null): ProcessResult
     {
-        $result = $this->run($command, $timeoutSeconds);
+        $result = $this->run($command, $timeoutSeconds, $input);
 
         if (! $result->successful()) {
             throw new RuntimeException("{$message}: ".trim($result->errorOutput().' '.$result->output()));
@@ -376,8 +422,14 @@ final readonly class SourceMountedCheckoutSyncer
         return $result;
     }
 
-    private function run(string $command, ?int $timeoutSeconds = null): ProcessResult
+    private function run(string $command, ?int $timeoutSeconds = null, ?string $input = null): ProcessResult
     {
-        return Process::timeout($timeoutSeconds ?? self::SyncTimeoutSeconds)->run($command);
+        $process = Process::timeout($timeoutSeconds ?? self::SyncTimeoutSeconds);
+
+        if ($input !== null) {
+            $process->input($input);
+        }
+
+        return $process->run($command);
     }
 }
