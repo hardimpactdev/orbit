@@ -85,7 +85,7 @@ it('renders a stable dry-run json contract without acquiring providers', functio
         ->and($payload['success']['dev_topology']['provider'])->toBe('docker')
         ->and($payload['success']['dev_topology']['kind'])->toBe('operator_gateway_app-dev')
         ->and($payload['success']['dev_topology']['checkout_roles'])->toBe(['operator', 'gateway', 'app-dev'])
-        ->and($payload['success']['dev_topology']['release_command'])->toBe('composer e2e:incus -- --stop --id=dry-run')
+        ->and($payload['success']['dev_topology']['release_command'])->toBe('composer e2e:dev-topology:release -- dry-run')
         ->and($payload['success']['dev_topology']['shell_command'])->toContain('composer e2e:dev-topology -- --kind=operator_gateway_app-dev --provider=docker');
 });
 
@@ -101,7 +101,7 @@ it('renders human dry-run output with the release command shape', function (): v
     expect($result['exit_code'])->toBe(0, $result['stderr'])
         ->and($result['stdout'])->toContain('Retained topology dry run')
         ->and($result['stdout'])->toContain('Source-checkout E2E remains the normal feature loop')
-        ->and($result['stdout'])->toContain('composer e2e:incus -- --stop --id=dry-run')
+        ->and($result['stdout'])->toContain('composer e2e:dev-topology:release -- dry-run')
         ->and($result['stdout'])->not->toContain('binary acceptance replaces');
 });
 
@@ -145,14 +145,35 @@ it('rejects unsupported topology kinds with a stable json error', function (): v
     ]);
 });
 
-it('rejects retained docker topologies with a clear message', function (): void {
+it('persists a retained docker topology manifest and prints a provider release command', function (): void {
+    devTopologyCommandWith(fn (E2ETopologyKind $kind, array $roles): array => fakePreparedTopology(
+        host: 'local',
+        checkouts: [
+            'operator' => '/home/orbit/orbit',
+            'gateway' => '/home/orbit/orbit',
+            'dev' => '/home/orbit/orbit',
+        ],
+    ));
+
     $this->artisan('e2e:dev-topology', [
         '--provider' => 'docker',
         '--kind' => 'operator_gateway_app-dev',
-        '--json' => true,
     ])
-        ->expectsOutputToContain('Retained docker topologies are not yet supported.')
-        ->assertExitCode(1);
+        ->expectsOutputToContain('Retained topology [dev-abc123] acquired.')
+        ->expectsOutputToContain('Provider: docker (host local)')
+        ->expectsOutputToContain('Release: composer e2e:dev-topology:release -- dev-abc123')
+        ->assertSuccessful();
+
+    $store = new E2EDevTopologyManifestStore($this->manifestDirectory);
+    $manifest = $store->read('dev-abc123');
+
+    expect($manifest)->not->toBeNull()
+        ->and($manifest['provider'])->toBe('docker')
+        ->and($manifest['network'])->toBe('orbit-e2e-dev-abc123')
+        ->and($manifest['release_command'])->toBe('composer e2e:dev-topology:release -- dev-abc123')
+        ->and($manifest['managed_containers'])->toContain('orbit-e2e-dev-abc123-gateway-orbit-gateway')
+        ->and($manifest['managed_containers'])->toContain('orbit-e2e-dev-abc123-dev-orbit-caddy')
+        ->and($manifest['volumes'])->toContain('orbit-e2e-dev-abc123-dev-etc-caddy');
 });
 
 it('routes composer dev topology scripts through apps e2e only', function (): void {

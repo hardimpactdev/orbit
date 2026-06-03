@@ -41,6 +41,22 @@ class IncusHost
             ));
     }
 
+    public function runWithInput(string $command, string $input, ?int $timeoutSeconds = null): ProcessResult
+    {
+        $remoteCommand = sprintf(
+            'bash -lc %s',
+            escapeshellarg("set -euo pipefail\n{$command}"),
+        );
+
+        return Process::timeout($timeoutSeconds ?? $this->config->timeoutSeconds)
+            ->input($input)
+            ->run(sprintf(
+                'ssh -o BatchMode=yes -o ConnectTimeout=10 %s %s',
+                escapeshellarg($this->config->host),
+                escapeshellarg($remoteCommand),
+            ));
+    }
+
     private function runFreshSsh(string $command, ?int $timeoutSeconds = null): ProcessResult
     {
         $remoteCommand = sprintf(
@@ -289,9 +305,8 @@ class IncusHost
             ? ''
             : " --source-archive={$guestBundleDirectory}/orbit-source.tar.gz";
 
-        $script = sprintf(
-            'chmod +x %1$s/e2e-provision-node %1$s/install-orbit %1$s/_e2e-deps.sh && '
-            .'%1$s/e2e-provision-node --node-kind=%2$s%3$s --installer=%1$s/install-orbit%4$s%5$s%6$s%7$s%8$s%9$s%10$s',
+        $provisionCommand = sprintf(
+            '%1$s/e2e-provision-node --node-kind=%2$s%3$s --installer=%1$s/install-orbit%4$s%5$s%6$s%7$s%8$s%9$s%10$s',
             $guestBundleDirectory,
             escapeshellarg($nodeKind),
             $sourceArchiveArg,
@@ -304,13 +319,29 @@ class IncusHost
             $wgEasyImageArchiveArg.$orbitBinaryArg,
         );
 
-        $command = sprintf(
-            'incus exec %s -- bash -lc %s',
-            escapeshellarg($instanceName),
-            escapeshellarg($script),
+        $script = sprintf(
+            'chmod +x %1$s/e2e-provision-node %1$s/install-orbit %1$s/_e2e-deps.sh && '
+            .'%2$s',
+            $guestBundleDirectory,
+            $provisionCommand,
         );
 
-        $result = $this->run($command, timeoutSeconds: $timeoutSeconds ?? max(900, $this->config->timeoutSeconds));
+        $authScript = E2EGitHubAuth::shellInputScript($script);
+
+        $result = $authScript !== null
+            ? $this->runWithInput(
+                sprintf('incus exec %s -- bash -s', escapeshellarg($instanceName)),
+                $authScript,
+                timeoutSeconds: $timeoutSeconds ?? max(900, $this->config->timeoutSeconds),
+            )
+            : $this->run(
+                sprintf(
+                    'incus exec %s -- bash -lc %s',
+                    escapeshellarg($instanceName),
+                    escapeshellarg($script),
+                ),
+                timeoutSeconds: $timeoutSeconds ?? max(900, $this->config->timeoutSeconds),
+            );
 
         if (! $result->successful()) {
             throw new RuntimeException("Provisioner failed on [{$instanceName}] (node_kind={$nodeKind}): {$result->errorOutput()}");

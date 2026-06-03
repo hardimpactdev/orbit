@@ -55,7 +55,7 @@ final readonly class ToolsProbe
         $binary = $metadata['binary'] ?? $tool->name;
         $versionCommand = $metadata['version_command'] ?? null;
         $service = $metadata['service'] ?? null;
-        $container = $metadata['container'] ?? null;
+        $container = $this->expectedContainerName($tool) ?? ($metadata['container'] ?? null);
         $configPath = $this->managedConfigPath($tool);
         $secretPath = $this->managedSecretPath($tool);
         $php = <<<'PHP'

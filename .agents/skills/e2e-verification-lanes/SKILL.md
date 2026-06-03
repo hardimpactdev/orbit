@@ -21,7 +21,7 @@ provision commands and is too broad for delegated agent work.
 Use provider-specific commands.
 
 ```bash
-# Docker artifact provision/preparation
+# Docker artifact refresh for Docker image/topology-preparer changes
 composer test:e2e:provision:docker
 
 # Docker feature E2E
@@ -55,9 +55,15 @@ Use the staged E2E model:
    lane exists for the provider.
 5. Run provider provision gates only as final/nightly substrate verification.
 
-Provider provision gates are final verification for artifact preparation,
-installer, `node:new`, base image, host mutation, Docker image, or runtime asset
-changes. They should run after the relevant feature lane is green, not as a
+Provider provision gates are not a symmetric post-`composer test:e2e` checklist.
+Docker provision is an artifact refresh for Docker runtime/support images,
+prepared role images, Docker host artifact distribution, or Docker topology
+preparation changes. Ordinary Docker feature behavior is proven by
+`composer test:e2e:docker` or the Docker lane inside `composer test:e2e`.
+
+Incus provision is the fresh VM provisioning gate for installer, `node:new`,
+base image, WireGuard, VM boot, package installation, systemd, and host mutation
+changes. It should run after the relevant Incus feature lane is green, not as a
 precondition for feature E2E.
 
 When production artifact behavior matters, the strongest final sequence is:
@@ -77,7 +83,7 @@ background shell and not a generic non-Solo subagent:
 - Incus feature agent: refresh the prepared source topology when needed with
   `composer e2e:prepare-topology -- --force operator_gateway_app-dev_app-prod_agent_websocket`,
   then run `composer test:e2e:incus`.
-- Docker provision agent, only for final artifact/substrate verification:
+- Docker provision agent, only for Docker artifact/substrate refresh:
   `composer test:e2e:provision:docker`.
 - Incus provision agent, only for final fresh-provision verification:
   `composer test:e2e:provision:incus`.
@@ -95,9 +101,10 @@ provider lane and report that provider's command results separately.
 Docker lane:
 
 1. Run `composer test:e2e:docker` for Docker-eligible feature behavior.
-2. Run `composer test:e2e:provision:docker` as a final gate when Docker
-   runtime/support images, Docker prepared role images, or Docker host artifact
-   distribution changed.
+2. Run `composer test:e2e:provision:docker` only when Docker runtime/support
+   images, Docker prepared role images, Docker host artifact distribution, or
+   Docker topology preparation changed. Do not run it merely because
+   `composer test:e2e` passed or because Incus provision is being checked.
 
 Incus lane:
 
@@ -109,8 +116,9 @@ Incus lane:
    shape, installer, gateway provisioning, `node:new`, WireGuard, VM boot,
    systemd, package installation, or host mutation changed.
 
-Docker and Incus provision lanes can run in parallel because they mutate
-separate provider substrates.
+Docker and Incus provision lanes can run in parallel only when both are
+independently required. They mutate separate provider substrates, but Docker
+provision is not required for ordinary feature/E2E code changes.
 
 ## Lane Selection
 
@@ -122,8 +130,12 @@ separate provider substrates.
 - Use `composer test:e2e:incus` for VM-only behavior: real WireGuard, SSH,
   sudo, systemd, cloud-init, OS trust-store mutation, package installation, and
   host init.
-- Use provider provision commands only when the provider substrate itself may
+- Use Docker provision only when Docker runtime/support images, prepared role
+  images, Docker host artifact distribution, or Docker topology preparation may
   have changed.
+- Use Incus provision only when fresh VM provisioning behavior may have changed:
+  base image, installer, `node:new`, WireGuard, systemd, cloud-init, package
+  installation, or host mutation.
 
 Missing prepared artifacts are not fixed by switching providers. Follow the
 scoped artifact command printed by the failing lane, or run the matching

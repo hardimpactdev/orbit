@@ -66,7 +66,9 @@ RestartSec=5
 [Install]
 WantedBy=default.target
 UNIT
-sudo loginctl enable-linger "\${user}"
+if command -v loginctl >/dev/null 2>&1; then
+    sudo loginctl enable-linger "\${user}"
+fi
 export XDG_RUNTIME_DIR=/run/user/\$(id -u)
 systemctl --user daemon-reload
 systemctl --user enable polyscope-server

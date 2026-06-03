@@ -11,6 +11,8 @@ use Mockery as m;
 
 afterEach(function (): void {
     m::close();
+    putenv('GH_TOKEN');
+    putenv('GITHUB_TOKEN');
 });
 
 function e2eCommandProcessResult(bool $successful, string $output = '', string $errorOutput = ''): ProcessResult
@@ -63,6 +65,20 @@ it('runs gateway artisan through the prepared gateway image by default', functio
             ->toContain('/home/orbit/.ssh:/home/orbit/.ssh:ro')
             ->not->toContain('orbit-gateway:current')
             ->toContain('artisan route:list');
+    });
+});
+
+it('passes GitHub auth variable names into prepared gateway artisan containers without embedding token values', function (): void {
+    putenv('GH_TOKEN=ghp_command_secret');
+    putenv('GITHUB_TOKEN');
+
+    withE2ETopologyEnvironment([], function (): void {
+        $command = E2ECommand::gatewayArtisanCommand('route:list');
+
+        expect($command)
+            ->toContain("--env 'GH_TOKEN'")
+            ->toContain("--env 'GITHUB_TOKEN'")
+            ->not->toContain('ghp_command_secret');
     });
 });
 

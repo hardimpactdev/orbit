@@ -5,10 +5,12 @@ declare(strict_types=1);
 namespace App\Services\Tools;
 
 use App\Contracts\RemoteShell;
+use App\Data\RemoteShell\RemoteShellResult;
 use App\Models\App;
 use App\Models\Node;
 use App\Models\NodeTool;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
+use App\Services\RemoteShell\RemoteSecretFile;
 
 final readonly class ToolUpdater
 {
@@ -17,6 +19,8 @@ final readonly class ToolUpdater
         private ToolRegistry $registry,
         private RemoteShell $remoteShell,
         private NodeRoleAssignments $nodeRoleAssignments,
+        private RemoteSecretFile $remoteSecretFile,
+        private GitHubTokenResolver $githubTokenResolver,
     ) {}
 
     /**
@@ -60,7 +64,12 @@ final readonly class ToolUpdater
             $model->save();
         }
 
-        $result = $this->remoteShell->run($model->node, $script, ['throw' => false]);
+        $result = $this->runToolScriptWithGitHubAuth(
+            node: $model->node,
+            tool: $tool,
+            config: $config,
+            scriptFactory: fn (array $config): string => (string) $this->catalog->updateScript($tool, $config),
+        );
 
         if (! $result->successful()) {
             return ToolRegistryFailure::remoteActionFailed(
@@ -169,7 +178,12 @@ final readonly class ToolUpdater
                 continue;
             }
 
-            $result = $this->remoteShell->run($nt->node, $script, ['throw' => false]);
+            $result = $this->runToolScriptWithGitHubAuth(
+                node: $nt->node,
+                tool: $tool,
+                config: $config,
+                scriptFactory: fn (array $config): string => (string) $this->catalog->updateScript($tool, $config),
+            );
 
             if (! $result->successful()) {
                 $failed[] = [
@@ -192,5 +206,37 @@ final readonly class ToolUpdater
             'skipped' => $skipped,
             'failed' => $failed,
         ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $config
+     * @param  callable(array<string, mixed>): string  $scriptFactory
+     */
+    private function runToolScriptWithGitHubAuth(Node $node, string $tool, array $config, callable $scriptFactory): RemoteShellResult
+    {
+        $token = $this->githubTokenForTool($tool);
+
+        if ($token === null) {
+            return $this->remoteShell->run($node, $scriptFactory($config), ['throw' => false]);
+        }
+
+        return $this->remoteSecretFile->stage(
+            $node,
+            $token,
+            fn (string $path): RemoteShellResult => $this->remoteShell->run(
+                $node,
+                $scriptFactory([...$config, 'github_token_file' => $path]),
+                ['throw' => false],
+            ),
+        );
+    }
+
+    private function githubTokenForTool(string $tool): ?string
+    {
+        if ($tool !== 'laravel-installer') {
+            return null;
+        }
+
+        return $this->githubTokenResolver->token();
     }
 }

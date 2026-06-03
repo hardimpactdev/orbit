@@ -430,13 +430,16 @@ final class E2ECurrentCheckout
             'COMPOSER_ALLOW_SUPERUSER=1',
         ];
 
-        $environmentFlags = implode(' ', array_map(
-            fn (string $value): string => '--env '.escapeshellarg($value),
-            $environment,
-        ));
+        $environmentFlags = implode(' ', [
+            ...array_map(
+                fn (string $value): string => '--env '.escapeshellarg($value),
+                $environment,
+            ),
+            ...E2EGitHubAuth::dockerEnvOptions(),
+        ]);
 
         $composerConfig = sprintf(
-            'mkdir -p %s %s && printf %%s %s > %s',
+            'mkdir -p %s %s && printf %%s %s > %s && %s',
             escapeshellarg('/tmp/orbit-composer-cache'),
             escapeshellarg('/tmp/orbit-composer-home'),
             escapeshellarg(json_encode([
@@ -446,6 +449,7 @@ final class E2ECurrentCheckout
                 ],
             ], JSON_THROW_ON_ERROR)),
             escapeshellarg('/tmp/orbit-composer-home/config.json'),
+            E2EGitHubAuth::composerAuthConfigCommand('/tmp/orbit-composer-home'),
         );
 
         return sprintf(
@@ -546,11 +550,13 @@ final class E2ECurrentCheckout
 
     private static function dockerGatewayStateBootstrapCommand(): string
     {
+        $configRoot = escapeshellarg(self::OrbitConfigRoot);
         $gatewayEnv = escapeshellarg(self::gatewayStatePath('.env'));
         $gatewayDatabase = escapeshellarg(self::gatewayStatePath('gateway.sqlite'));
 
         return implode(' && ', [
-            'mkdir -p '.escapeshellarg(self::OrbitConfigRoot).' apps/gateway/storage/framework/cache/data apps/gateway/storage/framework/sessions apps/gateway/storage/framework/testing apps/gateway/storage/framework/views apps/gateway/storage/logs',
+            "if command -v sudo >/dev/null 2>&1; then sudo install -d -m 775 -o orbit -g orbit {$configRoot} && sudo chown -R orbit:orbit {$configRoot}; else install -d -m 775 {$configRoot}; fi",
+            "mkdir -p {$configRoot} apps/gateway/storage/framework/cache/data apps/gateway/storage/framework/sessions apps/gateway/storage/framework/testing apps/gateway/storage/framework/views apps/gateway/storage/logs",
             "if [ ! -f {$gatewayEnv} ]; then cp apps/gateway/.env.example {$gatewayEnv}; fi",
             "grep -Ev '^(DB_DATABASE|SESSION_DRIVER)=' {$gatewayEnv} > {$gatewayEnv}.tmp || true",
             "mv {$gatewayEnv}.tmp {$gatewayEnv}",

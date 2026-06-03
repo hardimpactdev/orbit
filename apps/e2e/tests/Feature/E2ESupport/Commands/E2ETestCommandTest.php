@@ -40,6 +40,42 @@ it('plans docker and incus lanes by default', function (): void {
     });
 });
 
+it('passes GitHub auth to lane workers without exposing it in dry-run plans', function (): void {
+    Process::fake(fn () => Process::result());
+    Process::preventStrayProcesses();
+
+    withE2EEnvironment(['GH_TOKEN', 'GITHUB_TOKEN'], [
+        'GH_TOKEN' => 'ghp_lane_secret',
+        'ORBIT_E2E_DOCKER_TEST_RUNNERS' => 'sidecar1:4:28',
+    ], function (): void {
+        $this->artisan('e2e:test --lanes=docker')
+            ->assertSuccessful();
+    });
+
+    Process::assertRan(fn ($process): bool => is_array($process->command)
+        && in_array('test', $process->command, true)
+        && ($process->environment['GH_TOKEN'] ?? null) === 'ghp_lane_secret');
+
+    withE2EEnvironment(['GH_TOKEN', 'GITHUB_TOKEN'], [
+        'GH_TOKEN' => 'ghp_lane_secret',
+        'ORBIT_E2E_DOCKER_TEST_RUNNERS' => 'sidecar1:4:28',
+        'ORBIT_E2E_INCUS_HOST_VM_CAPS' => 'beast:12',
+    ], function (): void {
+        $exitCode = Artisan::call('e2e:test', [
+            '--dry-run' => true,
+            '--json' => true,
+            '--lanes' => 'all',
+        ]);
+        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(0)
+            ->and(Artisan::output())->not->toContain('ghp_lane_secret')
+            ->and($payload['success']['data']['lanes'])->each(
+                fn ($lane) => $lane->environment->not->toHaveKey('GH_TOKEN'),
+            );
+    });
+});
+
 it('uses selected lanes from the environment', function (): void {
     withE2EEnvironment(['ORBIT_E2E_LANES'], [
         'ORBIT_E2E_LANES' => 'incus',

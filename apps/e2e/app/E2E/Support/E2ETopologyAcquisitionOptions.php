@@ -13,5 +13,6 @@ final readonly class E2ETopologyAcquisitionOptions
         public ?array $sshUsers = null,
         public bool $startGatewayApi = false,
         public bool $sourceMountedCheckout = false,
+        public bool $retainOnFailure = false,
     ) {}
 }

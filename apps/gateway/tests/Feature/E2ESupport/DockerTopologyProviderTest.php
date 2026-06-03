@@ -10,6 +10,7 @@ use App\E2E\Support\E2EConfig;
 use App\E2E\Support\E2EPhaseTimer;
 use App\E2E\Support\E2EResourceLeasePool;
 use App\E2E\Support\E2ETopologyAcquisitionOptions;
+use App\E2E\Support\E2ETopologyAcquisitionRetainedForDiagnosis;
 use App\E2E\Support\E2ETopologyCapabilities;
 use App\E2E\Support\E2ETopologyKind;
 use App\E2E\Support\SshKeyPair;
@@ -31,6 +32,8 @@ afterEach(function (): void {
     putenv('ORBIT_E2E_DOCKER_SOURCE_PATH_BEAST');
     putenv('ORBIT_E2E_LEASE_DIRECTORY');
     putenv('ORBIT_E2E_SLOT_WAIT_SECONDS');
+    putenv('GH_TOKEN');
+    putenv('GITHUB_TOKEN');
 });
 
 it('runs docker exec for instance commands', function (): void {
@@ -57,6 +60,29 @@ it('maps ssh transport to user-scoped docker exec for container feature topologi
 
     expect($result->successful())->toBeTrue()
         ->and($result->output())->toBe("orbit\n");
+});
+
+it('passes GitHub auth variable names into docker feature topology commands without embedding token values', function (): void {
+    putenv('GH_TOKEN=ghp_docker_secret');
+    putenv('GITHUB_TOKEN');
+
+    $commands = [];
+
+    Process::fake(function ($process) use (&$commands) {
+        $commands[] = (string) $process->command;
+
+        return Process::result(output: "ok\n");
+    });
+
+    $instance = new DockerInstance(new DockerHost(E2EConfig::fromEnvironment()), 'orbit-e2e-run-operator');
+
+    $instance->ssh('orbit', new SshKeyPair('/tmp/fake', '/tmp/fake.pub'), 'whoami');
+
+    expect($commands[0])
+        ->toContain("--env 'GH_TOKEN'")
+        ->toContain("--env 'GITHUB_TOKEN'")
+        ->toContain("docker exec --env 'GH_TOKEN' --env 'GITHUB_TOKEN' --user 'orbit'")
+        ->not->toContain('ghp_docker_secret');
 });
 
 it('reads ipv4 from the named docker network only', function (): void {
@@ -1211,12 +1237,15 @@ it('maps gateway local orbit-gateway docker commands to the per-run runtime cont
         ->toContain('node_container=')
         ->toContain('orbit-e2e-run123-gateway-orbit-gateway')
         ->toContain('orbit-e2e-run123-gateway')
+        ->toContain('${node_container}-home-orbit')
         ->toContain('${node_container}-etc-orbit')
         ->toContain('/usr/bin/docker.real')
         ->toContain('ORBIT_E2E_RUNTIME_DOCKER_SHIM')
         ->toContain('elif [ ! -x /usr/bin/docker.real ]; then')
         ->toContain('rewrite_mount')
+        ->toContain('rewrite_volume')
         ->toContain('type=bind,source=*|type=bind,src=*)')
+        ->toContain('/home/orbit/*)')
         ->toContain('source_path="${ORBIT_SOURCE_PATH:-/home/orbit/orbit}"')
         ->not->toContain('/proc/1/environ')
         ->toContain('orbit-gateway)')
@@ -1439,6 +1468,50 @@ it('cleans containers and network when docker acquire fails partway through', fu
 
     Process::assertRan("docker rm -f 'orbit-e2e-run123-operator-orbit-caddy' 'orbit-e2e-run123-operator' 'orbit-e2e-run123-gateway-orbit-gateway' 'orbit-e2e-run123-gateway-orbit-caddy' 'orbit-e2e-run123-gateway' >/dev/null 2>&1 || true");
     Process::assertRan("docker network rm 'orbit-e2e-run123' >/dev/null 2>&1 || true");
+});
+
+it('retains docker acquisition failures for diagnosis when requested', function (): void {
+    $commands = [];
+
+    Process::fake(function ($process) use (&$commands) {
+        $command = $process->command;
+        $commands[] = $command;
+
+        if (str_contains($command, 'orbit:internal:bake-app-node app-dev-1')) {
+            return Process::result(exitCode: 1, errorOutput: "bake failed\n");
+        }
+
+        return Process::result(output: str_starts_with($command, 'docker run -d ') ? "container-id\n" : '');
+    });
+
+    $provider = new DockerTopologyProvider(E2EConfig::fromEnvironment());
+
+    try {
+        $provider->acquire(
+            E2ETopologyKind::OperatorGatewayAppdev,
+            'run123',
+            new E2EPhaseTimer,
+            new E2ETopologyAcquisitionOptions(startGatewayApi: true, retainOnFailure: true),
+        );
+
+        $this->fail('Expected Docker acquisition to be retained after failure.');
+    } catch (E2ETopologyAcquisitionRetainedForDiagnosis $exception) {
+        expect($exception->provider)->toBe('docker')
+            ->and($exception->host)->toBe('local')
+            ->and($exception->runId)->toBe('run123')
+            ->and($exception->network)->toBe('orbit-e2e-run123')
+            ->and($exception->instances)->toMatchArray([
+                'operator' => 'orbit-e2e-run123-operator',
+                'gateway' => 'orbit-e2e-run123-gateway',
+                'dev' => 'orbit-e2e-run123-dev',
+            ])
+            ->and($exception->managedContainers)->toContain('orbit-e2e-run123-dev-orbit-caddy')
+            ->and($exception->volumes)->toContain('orbit-e2e-run123-dev-etc-caddy');
+    }
+
+    expect(implode("\n", $commands))
+        ->not->toContain("docker rm -f 'orbit-e2e-run123-operator-orbit-caddy'")
+        ->not->toContain("docker network rm 'orbit-e2e-run123'");
 });
 
 it('starts docker containers as a batch and rolls back when one start fails', function (): void {

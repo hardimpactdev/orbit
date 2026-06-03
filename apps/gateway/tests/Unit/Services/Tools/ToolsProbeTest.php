@@ -11,6 +11,7 @@ use App\Models\NodeTool;
 use App\Models\ProxyRoute;
 use App\Services\Proxy\ProxyRouteRenderer;
 use App\Services\Runtime\OrbitCaddyContainer;
+use App\Services\Runtime\OrbitContainerNames;
 use App\Services\Tools\ToolsProbe;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -239,29 +240,36 @@ describe('ToolsProbe', function (): void {
     });
 
     it('inspects orbit-caddy container state instead of only checking the docker binary', function (): void {
-        $node = createToolsProbeAppHostNode();
-        $container = OrbitCaddyContainer::forPrivateNode('10.6.0.50');
-        $tool = NodeTool::factory()->create([
-            'node_id' => $node->id,
-            'name' => 'caddy',
-            'expected_state' => 'running',
-            'config' => ['container' => $container->spec()],
-        ]);
-        $shell = new ToolsProbeRemoteShell(
-            exitCode: 0,
-            stdout: "/usr/bin/docker\tDocker version 27.0.0\tunknown\t\t\t\t\t1\tstopped\t{$container->specHash()}\n",
-        );
-        $probe = new ToolsProbe($shell);
-
-        $snapshot = $probe->introspect($tool);
-        $drift = $probe->diff($tool, $snapshot);
-
-        expect($shell->scripts[0])->toContain('docker container inspect')
-            ->and(toolProbeIssue($drift, 'tool.lifecycle_state_mismatch')?->kind)->toBe(DriftKind::Divergent)
-            ->and(toolProbeIssue($drift, 'tool.lifecycle_state_mismatch')?->detail)->toMatchArray([
+        withE2EEnvironment(['ORBIT_E2E_DOCKER_NETWORK'], [
+            'ORBIT_E2E_DOCKER_NETWORK' => 'orbit-e2e-dev-abc123',
+        ], function (): void {
+            $node = createToolsProbeAppHostNode();
+            $container = OrbitCaddyContainer::forPrivateNode('10.6.0.50', OrbitContainerNames::forNodeScope('dev'));
+            $tool = NodeTool::factory()->create([
+                'node_id' => $node->id,
+                'name' => 'caddy',
                 'expected_state' => 'running',
-                'observed_state' => 'stopped',
+                'config' => ['container' => $container->spec()],
             ]);
+            $shell = new RecordingToolsProbeRemoteShell(
+                exitCode: 0,
+                stdout: "/usr/bin/docker\tDocker version 27.0.0\tunknown\t\t\t\t\t1\tstopped\t{$container->specHash()}\n",
+            );
+            $probe = new ToolsProbe($shell);
+
+            $snapshot = $probe->introspect($tool);
+            $drift = $probe->diff($tool, $snapshot);
+            $input = json_decode($shell->input, associative: true, flags: JSON_THROW_ON_ERROR);
+
+            expect($shell->script)->toContain('docker container inspect')
+                ->and($input['container'])->toBe($container->name())
+                ->and($input['container'])->toBe('orbit-e2e-dev-abc123-dev-orbit-caddy')
+                ->and(toolProbeIssue($drift, 'tool.lifecycle_state_mismatch')?->kind)->toBe(DriftKind::Divergent)
+                ->and(toolProbeIssue($drift, 'tool.lifecycle_state_mismatch')?->detail)->toMatchArray([
+                    'expected_state' => 'running',
+                    'observed_state' => 'stopped',
+                ]);
+        });
     });
 
     it('detects missing orbit-caddy containers separately from missing docker capability', function (): void {

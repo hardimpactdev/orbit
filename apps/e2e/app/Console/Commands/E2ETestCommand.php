@@ -1034,7 +1034,7 @@ class E2ETestCommand extends Command
                 $this->emitCheckpoint("e2e.lane.{$lane}", 'started');
 
                 $this->runningProcesses[$lane] = Process::path(base_path())
-                    ->env($plan['environment'])
+                    ->env($this->executionEnvironment($plan))
                     ->forever()
                     ->start($plan['command']);
             }
@@ -1448,7 +1448,7 @@ class E2ETestCommand extends Command
                 $this->emitCheckpoint("e2e.lane.{$lane}", 'started');
 
                 $this->runningProcesses[$lane] = Process::path(base_path())
-                    ->env($plan['environment'])
+                    ->env($this->executionEnvironment($plan))
                     ->forever()
                     ->start($plan['command']);
 
@@ -1595,7 +1595,10 @@ class E2ETestCommand extends Command
             $environment = $this->activeReaperEnvironment($lane);
 
             if ($environment !== []) {
-                $process = $process->env($environment);
+                $process = $process->env([
+                    ...$environment,
+                    ...$this->githubAuthEnvironment(),
+                ]);
             }
 
             $result = $process->run($command, function (string $type, string $output): void {
@@ -1641,6 +1644,44 @@ class E2ETestCommand extends Command
         }
 
         return [];
+    }
+
+    /**
+     * @param  array{environment: array<string, string>}  $plan
+     * @return array<string, string>
+     */
+    private function executionEnvironment(array $plan): array
+    {
+        return [
+            ...$plan['environment'],
+            ...$this->githubAuthEnvironment(),
+        ];
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    private function githubAuthEnvironment(): array
+    {
+        $environment = [];
+
+        foreach (['GH_TOKEN', 'GITHUB_TOKEN'] as $key) {
+            $value = getenv($key);
+
+            if (! is_string($value)) {
+                continue;
+            }
+
+            $token = trim($value);
+
+            if ($token === '') {
+                continue;
+            }
+
+            $environment[$key] = $token;
+        }
+
+        return $environment;
     }
 
     /**

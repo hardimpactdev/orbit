@@ -27,23 +27,33 @@ final class DockerInstance implements E2EInstance, SourceMountedCheckoutInstance
         return $this->sourceMountedCheckoutPath;
     }
 
+    public function hostName(): string
+    {
+        return $this->host->host;
+    }
+
     public function exec(string $command, ?int $timeoutSeconds = null): ProcessResult
     {
-        return $this->host->run(sprintf(
-            'docker exec %s sh -lc %s',
+        return $this->host->run(implode(' ', [
+            'docker exec',
+            ...E2EGitHubAuth::dockerEnvOptions(),
             escapeshellarg($this->name),
+            'sh -lc',
             escapeshellarg($command),
-        ), $timeoutSeconds);
+        ]), $timeoutSeconds);
     }
 
     public function ssh(string $user, SshKeyPair $keyPair, string $command, ?int $timeoutSeconds = null): ProcessResult
     {
-        return $this->host->run(sprintf(
-            'docker exec --user %s %s sh -lc %s',
+        return $this->host->run(implode(' ', [
+            'docker exec',
+            ...E2EGitHubAuth::dockerEnvOptions(),
+            '--user',
             escapeshellarg($user),
             escapeshellarg($this->name),
+            'sh -lc',
             escapeshellarg($command),
-        ), $timeoutSeconds);
+        ]), $timeoutSeconds);
     }
 
     public function authorizeSsh(string $user, SshKeyPair $keyPair): void

@@ -5,9 +5,15 @@ declare(strict_types=1);
 use App\E2E\Support\E2EConfig;
 use App\E2E\Support\IncusHost;
 use App\E2E\Support\IncusInstance;
+use App\E2E\Support\SshKeyPair;
 use Illuminate\Contracts\Process\ProcessResult;
 use Illuminate\Support\Facades\Process;
 use Mockery as m;
+
+beforeEach(function (): void {
+    putenv('GH_TOKEN');
+    putenv('GITHUB_TOKEN');
+});
 
 afterEach(function (): void {
     m::close();
@@ -48,25 +54,42 @@ function incusHostTestProcessResult(string $output = '', int $exitCode = 0): Pro
     return $result;
 }
 
-function recordingIncusHost(E2EConfig $config, array &$commands): IncusHost
+function recordingIncusHost(E2EConfig $config, array &$commands, ?array &$inputs = null): IncusHost
 {
-    return new class($config, $commands) extends IncusHost
+    if ($inputs === null) {
+        $inputs = [];
+    }
+
+    return new class($config, $commands, $inputs) extends IncusHost
     {
         /** @var list<string> */
         private array $commands;
 
+        /** @var list<string> */
+        private array $inputs;
+
         /**
          * @param  list<string>  $commands
+         * @param  list<string>  $inputs
          */
-        public function __construct(E2EConfig $config, array &$commands)
+        public function __construct(E2EConfig $config, array &$commands, array &$inputs)
         {
             parent::__construct($config);
             $this->commands = &$commands;
+            $this->inputs = &$inputs;
         }
 
         public function run(string $command, ?int $timeoutSeconds = null): ProcessResult
         {
             $this->commands[] = $command;
+
+            return incusHostTestProcessResult();
+        }
+
+        public function runWithInput(string $command, string $input, ?int $timeoutSeconds = null): ProcessResult
+        {
+            $this->commands[] = $command;
+            $this->inputs[] = $input;
 
             return incusHostTestProcessResult();
         }
@@ -246,6 +269,63 @@ it('restarts journald after refreshing cloned instance network identity', functi
         ->and($commands[0])->toContain('systemctl restart systemd-journald')
         ->and($commands[0])->toContain('systemctl --no-block restart systemd-networkd')
         ->and($commands[0])->toContain('systemctl --no-block restart NetworkManager');
+});
+
+it('passes GitHub auth into Incus command transport without changing the reported test command', function (): void {
+    $previousGhToken = getenv('GH_TOKEN');
+    $previousGithubToken = getenv('GITHUB_TOKEN');
+    putenv('GH_TOKEN=ghp_incus_secret');
+    putenv('GITHUB_TOKEN');
+
+    try {
+        $commands = [];
+        $inputs = [];
+        $host = recordingIncusHost(incusHostTestConfig(), $commands, $inputs);
+        $instance = new IncusInstance($host, 'orbit-e2e-run-gateway', commandTransport: true);
+
+        $instance->ssh('orbit', new SshKeyPair('/tmp/id_ed25519', '/tmp/id_ed25519.pub'), 'php apps/gateway/artisan about');
+
+        expect($commands[0])
+            ->toContain("incus exec 'orbit-e2e-run-gateway' -- runuser -u 'orbit' -- bash -s")
+            ->not->toContain('ghp_incus_secret')
+            ->and($inputs)->toHaveCount(1)
+            ->and($inputs[0])
+            ->toContain("export GH_TOKEN='ghp_incus_secret'")
+            ->toContain("export GITHUB_TOKEN='ghp_incus_secret'")
+            ->toContain('php apps/gateway/artisan about');
+    } finally {
+        is_string($previousGhToken) ? putenv("GH_TOKEN={$previousGhToken}") : putenv('GH_TOKEN');
+        is_string($previousGithubToken) ? putenv("GITHUB_TOKEN={$previousGithubToken}") : putenv('GITHUB_TOKEN');
+    }
+});
+
+it('passes GitHub auth into the in-guest Incus provisioner when available', function (): void {
+    $previousGhToken = getenv('GH_TOKEN');
+    $previousGithubToken = getenv('GITHUB_TOKEN');
+    putenv('GH_TOKEN=ghp_provision_secret');
+    putenv('GITHUB_TOKEN');
+
+    try {
+        $commands = [];
+        $inputs = [];
+        $host = recordingIncusHost(incusHostTestConfig(), $commands, $inputs);
+
+        $host->provisionInstance('orbit-e2e-run-gateway', 'gateway', '/tmp/orbit-e2e-stage-test/orbit-e2e-bundle', 'orbit');
+
+        $commandOutput = implode("\n", $commands);
+        $inputOutput = implode("\n", $inputs);
+
+        expect($commandOutput)
+            ->toContain("incus exec 'orbit-e2e-run-gateway' -- bash -s")
+            ->not->toContain('ghp_provision_secret')
+            ->and($inputOutput)
+            ->toContain("export GH_TOKEN='ghp_provision_secret'")
+            ->toContain("export GITHUB_TOKEN='ghp_provision_secret'")
+            ->toContain('/var/tmp/orbit-e2e-bundle/e2e-provision-node');
+    } finally {
+        is_string($previousGhToken) ? putenv("GH_TOKEN={$previousGhToken}") : putenv('GH_TOKEN');
+        is_string($previousGithubToken) ? putenv("GITHUB_TOKEN={$previousGithubToken}") : putenv('GITHUB_TOKEN');
+    }
 });
 
 it('keeps locally staged files readable before pushing them into an incus instance', function (): void {
