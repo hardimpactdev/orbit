@@ -53,6 +53,20 @@ record.
   It mounts the app source, uses the selected PHP image, receives app
   environment, and is targeted by `orbit-caddy` over the node Docker network.
   Static apps do not have a runtime container.
+- **Production app runtime service:** App-prod PHP runtime rendered as a
+  per-app Docker Swarm service running FrankenPHP on the owning node. It
+  listens on internal port `8080`, publishes no public host ports, and is
+  reached only by the app-role-owned private backend `orbit-caddy` route. The
+  service owns steady-state supervision for the app HTTP runtime; configured
+  app/workspace processes remain process-family Supervisor programs.
+- **Production app runtime user:** Path-derived Linux user and group used for
+  one production app's source, releases, and runtime service identity. It must
+  not be a member of the Docker group and must not receive access to the Docker
+  socket.
+- **Production release mount boundary:** Runtime service bind mounts are
+  limited to the app source or active release path plus explicitly managed
+  shared paths. The Docker socket, gateway config, host home directories, and
+  unrelated release paths are outside the app runtime mount boundary.
 - **FrankenPHP app runtime:** PHP app/workspace web runtime. Classic mode is
   the default. It serves HTTP for PHP apps and workspaces and must carry
   OPcache, realpath cache, Composer autoload optimization, Laravel cache warmup,
@@ -115,4 +129,6 @@ These boundaries define what the app family owns and what belongs to other famil
   owns the Reverb runtime. App commands do not install or own host Caddy or
   Reverb, nor the host PHP toolchain — the `app-dev`/`app-prod` node role
   provisions the host PHP toolchain (PHP, Composer, Laravel installer) that
-  `app:exec` and deploy use.
+  `app:exec` and deploy use. `app-prod` does not own service-tool runtime
+  drivers such as MySQL, PostgreSQL, Redis, RustFS, or Reverb; those remain
+  under their owning role, tool, database, websocket, or s3 contracts.

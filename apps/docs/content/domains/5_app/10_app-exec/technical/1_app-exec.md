@@ -12,8 +12,8 @@ configuration.
 - The CLI caller can reach the Orbit gateway.
 - The authenticated peer has `app:exec` on the app's owning node.
 - The target app exists in gateway configuration with `runtime_kind=php`.
-- The app's FrankenPHP runtime container exists and is running on the owning
-  node.
+- The owning node has the host PHP toolchain for the app's configured PHP
+  version and the app source path exists.
 
 ## Signature
 
@@ -58,14 +58,10 @@ This command follows the shared
 ## State Model
 
 `app:exec` does not own durable gateway state. It reads the canonical app
-entity to resolve container identity and authorization context. The command
-relies on the
-[app runtime container](../../app-concepts.md#app-runtime-container)
-being present on the owning node.
-
-The container name is the same `orbit-app-<slug>` value the app runtime
-renderer produces. The command does not maintain a separate registry of
-container names.
+entity to resolve the app source path, configured PHP version, owning node, and
+authorization context. The command relies on the owning node's host PHP
+toolchain for the configured PHP version. The app's FrankenPHP runtime
+container serves the same source but is not used to execute the command.
 
 ## Renderer Selection
 
@@ -80,7 +76,7 @@ The gateway HTTP API mirrors the command and exposes two entry points:
 
 | Method | Path | Permission | Action |
 | --- | --- | --- | --- |
-| `POST` | `/api/apps/{app}/exec` | `app:exec` | Run a command inside the app's runtime container. Body: `command` array of one or more non-empty string tokens. |
+| `POST` | `/api/apps/{app}/exec` | `app:exec` | Run a command on the app node's host PHP toolchain from the app source path. Body: `command` array of one or more non-empty string tokens. |
 | `POST` | `/api/apps/exec/by-path` | `app:exec` | Resolve the target app from an entrypoint-provided host cwd and run the command. Body: `host_cwd` string plus `command` array. |
 
 CLI operator-mode invocations use the by-path endpoint when no explicit
@@ -96,11 +92,10 @@ HTTP status mapping:
 | --- | --- |
 | `app.not_found` | 404 |
 | `app.exec_unsupported_runtime` | 422 |
-| `app.exec_container_not_running` | 422 |
 | `app.exec_command_not_executable` | 422 |
 | `app.exec_command_not_found` | 422 |
 | `validation_failed` | 422 |
-| `app.exec_docker_unavailable` | 502 |
+| `app.exec_toolchain_unavailable` | 502 |
 | `app.exec_node_unreachable` | 502 |
 | `authorization_failed` | 403 |
 
@@ -114,23 +109,21 @@ HTTP status mapping:
    operator mode; the gateway authorizes the request and orchestrates the
    `RemoteShell` call into the owning node. Only the gateway-local CLI
    path runs `RemoteShell` itself.
-2. **Container is the runtime container.** `app:exec` runs the command
-   inside the `orbit-app-<slug>` FrankenPHP runtime container on the app's
-   owning node. The container is the same one rendered by the app runtime
-   renderer; the command does not start, stop, or recreate it.
+2. **Host PHP toolchain is the execution boundary.** `app:exec` runs the
+   command on the app's owning node with the host PHP binary matched to the
+   app's configured PHP version, from the app source path tracked by the
+   gateway. The FrankenPHP runtime container serves that source but is not
+   entered for `app:exec`.
 3. **PHP-only.** Apps with `runtime_kind != php` cannot be exec targets.
    `app:exec` fails with `app.exec_unsupported_runtime`.
-4. **Container must be running.** A preflight `docker container inspect`
-   runs before `docker exec`. When the preflight or the exec step reports
-   the container is missing or not running, `app:exec` fails with
-   `app.exec_container_not_running`. The command does not implicitly start
-   the container; that is `doctor --family=app` territory.
-5. **Working directory is the container's app mount.** The command runs
-   with the container's default working directory at the source mount
-   target. Callers do not pick a working directory; that is the
-   container's contract.
-6. **No token rewriting.** The command tokens are passed to the container
-   exec verbatim. `app:exec` does not interpret, expand, or substitute
+4. **Toolchain must be available.** A preflight verifies the matched host PHP
+   binary and required command entrypoint can be resolved on the owning node.
+   Missing host PHP, Composer, Artisan, or path prerequisites fail with
+   `app.exec_toolchain_unavailable` or the command-specific 126/127 code.
+5. **Working directory is the app source path.** The command runs from the
+   gateway-tracked app source path. Callers do not pick a working directory.
+6. **No token rewriting.** The command tokens are passed to the host command
+   runner verbatim. `app:exec` does not interpret, expand, or substitute
    tokens.
 
 ### Host Cwd Resolution
@@ -166,53 +159,49 @@ failures below.
 | Missing app | Non-interactive mode and `ORBIT_HOST_CWD` does not resolve to an app. | `validation_failed`, `meta.field=app`. |
 | App not found | No app record matches `app`. | `app.not_found`. |
 | Unsupported runtime | The target app has `runtime_kind != php`. | `app.exec_unsupported_runtime`. |
-| Container not running | Preflight or exec reports the container is missing or stopped. | `app.exec_container_not_running`. |
-| Command not executable | Docker exec returns exit code `126` — the target is in the container but is not executable (permission denied, wrong architecture). | `app.exec_command_not_executable`. |
-| Command not found | Docker exec returns exit code `127` — the target is not present in the container's `$PATH`. | `app.exec_command_not_found`. |
-| Docker unavailable | Preflight or exec reports the docker daemon is unreachable. | `app.exec_docker_unavailable`. |
-| Node unreachable | Preflight returns an unknown failure before docker can answer (typical SSH-level failures). | `app.exec_node_unreachable`. |
+| Toolchain unavailable | The matched host PHP toolchain or app source execution context cannot be prepared on the owning node. | `app.exec_toolchain_unavailable`. |
+| Command not executable | The host command exits with `126` — the target exists but is not executable (permission denied, wrong architecture). | `app.exec_command_not_executable`. |
+| Command not found | The host command exits with `127` — the target is not present in the execution `$PATH`. | `app.exec_command_not_found`. |
+| Node unreachable | Preflight returns an unknown failure before the host command can run (typical SSH-level failures). | `app.exec_node_unreachable`. |
 | Gateway unavailable (operator mode) | CLI on a non-gateway node cannot reach the gateway exec endpoint, or the endpoint returns an unclassified failure. | `gateway_unavailable`. |
 
 ### Infra failure disambiguation
 
-Docker exec can fail for two distinct reasons that must not be conflated.
-A legitimate non-zero result from the user's command is a child failure;
-the wrapper itself still succeeded. A docker-wrapper failure (node
-unreachable, docker daemon down, container vanished mid-flight) is an
-infra failure and uses a dedicated error code.
+Host command execution can fail for two distinct reasons that must not be
+conflated. A legitimate non-zero result from the user's command is a child
+failure; the wrapper itself still succeeded. A wrapper failure (node
+unreachable, missing host PHP toolchain, unreadable app path) is an infra
+failure and uses a dedicated error code.
 
-The preflight `docker container inspect` captures infra failures before
-the user command ever runs:
+The preflight captures infra failures before the user command ever runs:
 
 | Probe result | Outcome |
 | --- | --- |
-| Container is running | Continue to exec. |
-| Container is in any other state | `app.exec_container_not_running` (carries the observed state). |
-| Docker daemon-down stderr signature | `app.exec_docker_unavailable`. |
-| `No such container` / `No such object` / `is not running` stderr signature | `app.exec_container_not_running`. |
+| Host PHP toolchain and app path are usable | Continue to host command execution. |
+| Host PHP binary or required command shim is unavailable | `app.exec_toolchain_unavailable`. |
+| App source path cannot be entered | `app.exec_toolchain_unavailable`. |
 | Unknown failure | `app.exec_node_unreachable` (carries the underlying signal for diagnostics). |
 
-The exec step is also inspected for docker-wrapper failure signatures so
-a container that vanished between preflight and exec is reported as an
-infra failure, not as the user command's result. Any other non-zero
-result from `docker exec` flows through as the child command's result.
+The exec step is also inspected for wrapper failure signatures so a toolchain
+or path failure between preflight and execution is reported as infra failure,
+not as the user command's result. Any other non-zero result from the host
+command flows through as the child command's result.
 
 ## Doctor Relationship
 
-- [`doctor --family=app`](../../app-doctor.md) verifies the FrankenPHP app
-  runtime container is present and running.
-  `app.exec_container_not_running` failures from `app:exec` are repaired
-  through doctor, not through `app:exec` itself.
+- [`doctor --family=app`](../../app-doctor.md) verifies app runtime artifacts
+  for serving. Host PHP toolchain availability is node/tool substrate and is
+  reported by `app:exec` as an execution prerequisite failure.
 
 ## Side Effects
 
-`app:exec` runs whichever command the caller chose, inside the runtime
-container. The wrapper itself does not:
+`app:exec` runs whichever command the caller chose on the app node's host PHP
+toolchain from the app source path. The wrapper itself does not:
 
 - Start, stop, recreate, or mutate the runtime container.
 - Write to gateway configuration.
-- Pre-process or rewrite the command tokens. Each token is passed to the
-  container exec verbatim.
+- Pre-process or rewrite the command tokens. Each token is passed to the host
+  command runner verbatim.
 
 ## Test Mapping
 
@@ -228,11 +217,10 @@ container. The wrapper itself does not:
   mode only), and name-vs-domain precedence.
 - Command tokenization.
 - Child vs infra failure separation. One test must prove a child that
-  prints Docker-daemon stderr but exits with a code that is not 125 is
+  prints toolchain-looking stderr but exits with a normal child status is
   treated as a child failure, not infra failure.
 - Every preflight failure code plus the exec-step wrapper failures
-  (`exit 125` container-vanished, `exit 126` command-not-executable,
-  `exit 127` command-not-found).
+  (`exit 126` command-not-executable and `exit 127` command-not-found).
 - The `validation_failed`, `app.not_found`, and
   `app.exec_unsupported_runtime` paths.
 - Operator-mode `gateway_unavailable` and success-forwarding paths.
@@ -250,9 +238,9 @@ container. The wrapper itself does not:
   steer caller to `workspace:exec` instead of silently dispatching the
   parent app).
 - HTTP status mapping for `app.not_found` (404),
-  `app.exec_unsupported_runtime` / `app.exec_container_not_running` /
+  `app.exec_unsupported_runtime` /
   `app.exec_command_not_executable` / `app.exec_command_not_found` /
-  `validation_failed` (422), `app.exec_docker_unavailable` /
+  `validation_failed` (422), `app.exec_toolchain_unavailable` /
   `app.exec_node_unreachable` (502), and `authorization_failed` (403).
 
 `OrbitHostCwdResolverTest` must cover: exact-path match, subdirectory

@@ -24,7 +24,7 @@ Internet
   -> private WireGuard route to router
   -> router orbit-caddy for private HTTP/WebSocket/S3 routes, .orbit DNS, and backend pools
   -> private app-prod backend orbit-caddy
-  -> FrankenPHP app container
+  -> per-app FrankenPHP runtime service
 
 Public WebSocket:
 
@@ -66,7 +66,7 @@ The sections below walk through each layer of the stack in the same order as the
 | Host prerequisites | Production gateway-only nodes require Docker Engine/CLI, Docker Swarm, gateway config root, WireGuard/SSH identity, and the native Orbit CLI binary. `app-dev` and `app-prod` nodes additionally require host PHP/Composer/Laravel installer tooling for app-source workflows. Git and `gh` are required where cloning/deployment needs repository access, not for no-source gateway-only production. Source-dev topologies may bind-mount or copy the worktree and point `/usr/local/bin/orbit` at `<source>/apps/cli/orbit`; artifact-prod topologies use built CLI binaries and production images. |
 | Production HTTP ingress | `orbit-caddy` on `ingress` nodes terminating public HTTPS and forwarding to `router` over WireGuard |
 | Private production routing | `orbit-caddy` on the gateway-coupled `router` role selecting private HTTP/WebSocket/S3 routes, `.orbit` service names, and backend pools |
-| Production app backend | `orbit-caddy` on `app-prod` nodes bound to the node's WireGuard address and forwarding to FrankenPHP app containers over the node Docker network |
+| Production app backend | App-role-owned `orbit-caddy` on `app-prod` nodes bound to the node's WireGuard address and forwarding to per-app FrankenPHP Docker Swarm runtime services on internal port `8080` over the node Docker network |
 | Realtime service backend | Laravel Reverb in a Docker runtime container managed by Orbit on `websocket` nodes, bound only to the node's WireGuard address and reached through router-owned WebSocket routes |
 | S3 service backend | RustFS in a Docker runtime container rendered by Orbit on `s3` nodes, bound only to the node's WireGuard address and reached through router-owned S3 routes |
 | Agent runtime | OpenClaw and Hermes as first-party agent tools, installed through `tool:install` on nodes with the `agent` role and run as the shared unprivileged `agent` user |
@@ -239,19 +239,30 @@ app/workspace containers when their runtime kind is PHP. Static or non-PHP
 apps do not get a FrankenPHP container.
 
 Each PHP workspace gets its own FrankenPHP container so workspaces are isolated
-from one another. Production PHP apps get a dedicated container as well. The
-PHP version for an app or workspace is gateway-tracked configuration; changing
-it recreates the affected runtime container from the selected PHP image on the
-owning node through `RemoteShell`. In production installs the CLI/local-
+from one another. Production PHP apps get a dedicated FrankenPHP runtime service
+as well. The PHP version for an app or workspace is gateway-tracked
+configuration; changing it recreates the affected runtime artifact from the
+selected PHP image on the owning node through `RemoteShell`. In production installs the CLI/local-
 executor artifact runs in the native CLI binary's embedded PHP; source-mounted
 Docker/Incus development and E2E nodes invoke `<source>/apps/cli/orbit`. Host
 PHP and PHP-FPM are not app/workspace runtime fallbacks.
 
 Production public HTTP traffic enters the fleet through an active
 `ingress` role. `app-prod` nodes are production runtime backends:
-they own app files, FrankenPHP runtime containers, configured process programs,
+they own app files, FrankenPHP runtime services, configured process programs,
 and a private `orbit-caddy` listener, but they do not own public route exposure
 unless the same node also carries `ingress`.
+
+Each production PHP app runtime is rendered as an isolated per-app Docker Swarm
+service running FrankenPHP. The service listens on internal port `8080`,
+publishes no public host ports, runs as a path-derived app user, and is reached
+only by the app-role backend `orbit-caddy` route. That app user must not be in
+the Docker group and must not have the Docker socket mounted into its runtime.
+Release-aware deployments may switch the source path the service bind mounts,
+but the mount boundary stays inside the app source or active release plus
+explicitly managed shared paths. The Swarm service owns steady-state
+supervision for the HTTP runtime; configured app/workspace processes remain
+host Supervisor programs under the process family.
 
 ### WebSocket runtime
 

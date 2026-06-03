@@ -64,8 +64,17 @@ Production app routes enter through `ingress`, are forwarded over
 WireGuard to the gateway-coupled `router`, and only then fan out to private
 `app-prod` backend artifacts. App commands choose the ingress
 placement; the router owns private route selection and backend-pool targeting.
-The backend artifact terminates at `orbit-caddy` on the app-prod node and
-then reaches the app's FrankenPHP container over the node Docker network.
+The app-prod backend artifact is app-role-owned and separate from the
+router-colocated gateway API Caddy route. It terminates at `orbit-caddy` on the
+app-prod node and then reaches the app's FrankenPHP Docker Swarm runtime
+service on internal port `8080` over the node Docker network.
+
+Production app runtime isolation is app-owned. The runtime service uses a
+path-derived app user, must not grant that user Docker group or Docker socket
+access, and may bind mount only the app source or active release path plus
+explicitly managed shared paths. Service-tool runtimes such as MySQL,
+PostgreSQL, Redis, RustFS, and Reverb remain owned by their tool and role
+families, not by `app-prod`.
 
 ## App Identity Arguments
 

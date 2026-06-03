@@ -44,6 +44,12 @@ Available run context includes `release`, `app_path`, `releases_path`,
 `app_user`, `app_name`, `domain`, and `repository`. The same scalar values are
 also exported as `ORBIT_DEPLOY_*` environment variables.
 
+Release-aware steps may create or prune versioned release directories and move
+`live_path` within the app-owned release boundary. The production runtime
+service may bind mount only the app source or active release path plus
+explicitly managed shared paths; `live_path`, document root, storage, and
+database symlinks must not escape that boundary.
+
 Detached runs return the run identifier without streaming step output.
 
 ## Output

@@ -34,6 +34,11 @@ These rules define what the deploy command family owns and how it behaves.
   the app's owning node. PHP, Composer, and Artisan deployment commands run on
   the host PHP toolchain (matched to the app's PHP version); the app's
   FrankenPHP container serves the deployed source.
+- Release-aware deployment steps may create versioned release directories and
+  switch the active `live_path`, but the active runtime mount must stay inside
+  the app source or release boundary. Symlinks for `live_path`, document root,
+  storage, and database paths must resolve inside that boundary before the
+  production runtime service is rendered.
 - Retention is optional deploy-step metadata for steps that create or prune
   versioned releases. It is not global app policy and not a standalone state
   family.

@@ -26,7 +26,7 @@ Internet
   -> private WireGuard route to router
   -> router private HTTP/WebSocket/S3 routing, .orbit DNS, and backend pools
   -> private app-prod backend orbit-caddy
-  -> FrankenPHP app container
+  -> per-app FrankenPHP runtime service
 
 Public WebSocket:
 

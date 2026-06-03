@@ -32,7 +32,7 @@ owning family concept document.
 - **WebSocket role** — private workload role that runs Laravel Reverb in a Docker runtime container managed by Orbit, binds only to WireGuard, and receives traffic through router-owned private service routes. See [Node Concepts](domains/1_node/node-concepts.md).
 - **S3 role** — private workload role that runs one RustFS S3-compatible object storage backend in a Docker runtime container managed by Orbit, binds only to WireGuard, and receives traffic through router-owned S3 service routes. See [Node Concepts](domains/1_node/node-concepts.md).
 - **Gateway-coupled infrastructure role** — role assignment stored separately from `gateway` but coupled to it in v1, so first gateway bootstrap assigns it together with `gateway` and normal `node role:*` commands cannot manage it independently. See [Node Concepts](domains/1_node/node-concepts.md).
-- **Production public HTTP traffic** — traffic that enters the fleet through an active `ingress` role. `app-prod` nodes are production runtime backends: they own app files, FrankenPHP app containers, configured process programs, and a private `orbit-caddy` listener, but they do not own public route exposure unless they also carry `ingress`. See [Architecture: Node roles](architecture.md#node-roles).
+- **Production public HTTP traffic** — traffic that enters the fleet through an active `ingress` role. `app-prod` nodes are production runtime backends: they own app files, FrankenPHP app runtime services, configured process programs, and a private `orbit-caddy` listener, but they do not own public route exposure unless they also carry `ingress`. See [Architecture: Node roles](architecture.md#node-roles).
 - **App WebSocket binding** — gateway-owned app configuration that enables one app to use the fleet websocket service, including per-app Reverb credentials, allowed origins, public WebSocket hosts, and private `websocket.orbit` publishing configuration. See [App Concepts](domains/5_app/app-concepts.md).
 - **Reverb app credentials** — per-app Reverb application id, key, and secret material owned by an app WebSocket binding. See [App Concepts](domains/5_app/app-concepts.md).
 - **WebSocket backend pool** — router-owned ordered set of websocket role backends behind `websocket.orbit`. See [Proxy Concepts](domains/8_proxy/proxy-concepts.md).
@@ -199,6 +199,9 @@ Source: [App Concepts](domains/5_app/app-concepts.md).
 - **App PHP version**
 - **App runtime kind**
 - **App runtime container**
+- **Production app runtime service**
+- **Production app runtime user**
+- **Production release mount boundary**
 - **FrankenPHP app runtime**
 - **Worker mode**
 - **Worker config**
