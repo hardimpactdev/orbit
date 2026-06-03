@@ -65,7 +65,7 @@
         "rector": "vendor/bin/rector process",
         "test": [
             "@php artisan config:clear --ansi",
-            "vendor/bin/pest --compact"
+            "vendor/bin/pest --exclude-group=e2e-binary --exclude-group=e2e-binary-acceptance --exclude-group=e2e-feature --exclude-group=e2e-provision --exclude-group=e2e-topology-contract --compact"
         ]
     },
     "extra": {

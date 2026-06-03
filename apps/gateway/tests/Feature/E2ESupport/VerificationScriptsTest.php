@@ -95,6 +95,8 @@ it('keeps the aggregate quality gate complete', function (): void {
         ->toContain('bin/orbit-docs-pest')
         ->toContain('cd packages/core && vendor/bin/pest')
         ->toContain('cd apps/e2e && vendor/bin/pest')
+        ->toContain('--exclude-group=e2e-binary')
+        ->toContain('--exclude-group=e2e-provision')
         ->toContain('bin/orbit-gateway-pest')
         ->toContain('--exclude-group=e2e')
         ->toContain('--exclude-group=slow')
@@ -102,8 +104,12 @@ it('keeps the aggregate quality gate complete', function (): void {
         ->toContain('--compact');
 });
 
-it('runs default ephemeral e2e through prepared topology lanes', function (): void {
+it('keeps default composer tests out of e2e lanes', function (): void {
     $composer = json_decode(file_get_contents(repo_path('composer.json')) ?: '', associative: true, flags: JSON_THROW_ON_ERROR);
+    $e2eComposer = json_decode(file_get_contents(repo_path('apps/e2e/composer.json')) ?: '', associative: true, flags: JSON_THROW_ON_ERROR);
+    $appLocalE2eInMemoryScript = 'vendor/bin/pest --exclude-group=e2e-binary --exclude-group=e2e-binary-acceptance --exclude-group=e2e-feature --exclude-group=e2e-provision --exclude-group=e2e-topology-contract --compact';
+    $defaultTestScripts = implode("\n", $composer['scripts']['test']);
+    $slowTestScripts = implode("\n", $composer['scripts']['test:slow']);
 
     expect($composer['scripts']['test'])
         ->sequence(
@@ -116,8 +122,33 @@ it('runs default ephemeral e2e through prepared topology lanes', function (): vo
             fn ($script) => $script->toContain('bin/orbit-cli-pest --compact'),
             fn ($script) => $script->toContain('bin/orbit-docs-pest --compact'),
             fn ($script) => $script->toContain('cd packages/core && vendor/bin/pest --compact'),
-            fn ($script) => $script->toContain('cd apps/e2e && vendor/bin/pest --compact'),
+        )->and($composer['scripts']['test:slow'])
+        ->sequence(
+            fn ($script) => $script->toBe('Composer\\Config::disableProcessTimeout'),
+            fn ($script) => $script->toContain('artisan config:clear'),
+            fn ($script) => $script
+                ->toContain('pest --exclude-group=e2e')
+                ->toContain('--parallel')
+                ->toContain('--compact'),
+            fn ($script) => $script->toContain('bin/orbit-cli-pest --compact'),
+            fn ($script) => $script->toContain('bin/orbit-docs-pest --compact'),
+            fn ($script) => $script->toContain('cd packages/core && vendor/bin/pest --compact'),
+        )->and($e2eComposer['scripts']['test'])
+        ->sequence(
+            fn ($script) => $script->toBe('@php artisan config:clear --ansi'),
+            fn ($script) => $script->toBe($appLocalE2eInMemoryScript),
         );
+
+    expect($defaultTestScripts)
+        ->not->toContain('apps/e2e')
+        ->not->toContain('bin/orbit-e2e')
+        ->not->toContain('ORBIT_E2E=1')
+        ->not->toContain('--group=e2e')
+        ->and($slowTestScripts)
+        ->not->toContain('apps/e2e')
+        ->not->toContain('bin/orbit-e2e')
+        ->not->toContain('ORBIT_E2E=1')
+        ->not->toContain('--group=e2e');
 
     $e2eScript = 'set -a; [ ! -f .env.e2e ] || . ./.env.e2e; set +a; bin/orbit-e2e-artisan e2e:test @additional_args';
     $dockerE2eScript = 'set -a; [ ! -f .env.e2e ] || . ./.env.e2e; set +a; ORBIT_E2E_LANES=docker bin/orbit-e2e-artisan e2e:test @additional_args';
