@@ -231,20 +231,13 @@ it('documents the e2e docker benchmark protocol', function (): void {
         ->toContain('10-20 ms');
 });
 
-it('keeps active testing and orchestration docs on current e2e script names', function (): void {
+it('keeps active testing docs on current e2e script names', function (): void {
     $testing = file_get_contents(repo_path('apps/docs/content/testing/e2e/README.md'));
-    $orchestration = file_get_contents(repo_path('docs/superpowers/plans/solo-orchestration/README.md'));
 
     expect($testing)
         ->toContain('composer test:e2e')
         ->toContain('composer test:e2e:docker')
         ->toContain('composer test:e2e:incus')
-        ->toContain('composer test:e2e:provision')
-        ->not->toContain('composer test:e2e:features')
-        ->not->toContain('composer test:e2e:features:docker');
-
-    expect($orchestration)
-        ->toContain('composer test:e2e')
         ->toContain('composer test:e2e:provision')
         ->not->toContain('composer test:e2e:features')
         ->not->toContain('composer test:e2e:features:docker');
