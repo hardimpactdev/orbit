@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace App\Console\Commands;
 
+use App\E2E\Support\DockerHost;
 use App\E2E\Support\E2EConfig;
 use App\E2E\Support\E2EDevTopologyManifestStore;
+use App\E2E\Support\E2EResourceLease;
 use App\E2E\Support\IncusHost;
 use Closure;
 use Illuminate\Console\Attributes\Description;
@@ -95,6 +97,20 @@ class E2EDevTopologyReleaseCommand extends Command
      */
     private function release(E2EDevTopologyManifestStore $store, array $manifest): array
     {
+        $provider = is_string($manifest['provider'] ?? null) ? $manifest['provider'] : 'incus';
+
+        return match ($provider) {
+            'docker' => $this->releaseDocker($store, $manifest),
+            default => $this->releaseIncus($store, $manifest),
+        };
+    }
+
+    /**
+     * @param  array<string, mixed>  $manifest
+     * @return array{id: string, reaped: list<string>, dry_run: bool}
+     */
+    private function releaseIncus(E2EDevTopologyManifestStore $store, array $manifest): array
+    {
         $id = is_string($manifest['id'] ?? null) ? $manifest['id'] : '';
         $host = is_string($manifest['host'] ?? null) ? $manifest['host'] : '';
         $names = $this->instanceNames($manifest);
@@ -117,6 +133,55 @@ class E2EDevTopologyReleaseCommand extends Command
         return [
             'id' => $id,
             'reaped' => $names,
+            'dry_run' => false,
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $manifest
+     * @return array{id: string, reaped: list<string>, dry_run: bool}
+     */
+    private function releaseDocker(E2EDevTopologyManifestStore $store, array $manifest): array
+    {
+        $id = is_string($manifest['id'] ?? null) ? $manifest['id'] : '';
+        $hostName = is_string($manifest['host'] ?? null) && $manifest['host'] !== ''
+            ? $manifest['host']
+            : 'local';
+        $host = new DockerHost(E2EConfig::fromEnvironment(), $hostName);
+        $containers = $this->dockerContainerNames($manifest);
+        $volumes = $this->dockerVolumeNames($manifest);
+        $network = $this->dockerNetwork($manifest);
+
+        if ($containers !== []) {
+            $host->run(sprintf(
+                'docker rm -f %s >/dev/null 2>&1 || true',
+                implode(' ', array_map(escapeshellarg(...), $containers)),
+            ), timeoutSeconds: 120);
+        }
+
+        if ($volumes !== []) {
+            $host->run(sprintf(
+                'docker volume rm -f %s >/dev/null 2>&1 || true',
+                implode(' ', array_map(escapeshellarg(...), $volumes)),
+            ), timeoutSeconds: 120);
+        }
+
+        if ($network !== '') {
+            $host->run(sprintf(
+                'docker network rm %s >/dev/null 2>&1 || true',
+                escapeshellarg($network),
+            ), timeoutSeconds: 30);
+        }
+
+        $this->releaseResourceLease($manifest);
+
+        if ($id !== '') {
+            $store->remove($id);
+        }
+
+        return [
+            'id' => $id,
+            'reaped' => $containers,
             'dry_run' => false,
         ];
     }
@@ -166,6 +231,133 @@ class E2EDevTopologyReleaseCommand extends Command
         }
 
         return array_values(array_unique($names));
+    }
+
+    /**
+     * @param  array<string, mixed>  $manifest
+     * @return list<string>
+     */
+    private function dockerContainerNames(array $manifest): array
+    {
+        $containers = $manifest['managed_containers'] ?? null;
+
+        if (is_array($containers)) {
+            return $this->stringList($containers);
+        }
+
+        $names = [];
+        $instances = $manifest['instances'] ?? [];
+
+        if (! is_array($instances)) {
+            return [];
+        }
+
+        foreach ($instances as $role => $nodeContainer) {
+            if (! is_string($role) || ! is_string($nodeContainer) || $nodeContainer === '') {
+                continue;
+            }
+
+            if ($role === 'gateway') {
+                $names[] = "{$nodeContainer}-orbit-gateway";
+            }
+
+            $names[] = "{$nodeContainer}-orbit-caddy";
+            $names[] = $nodeContainer;
+        }
+
+        return array_values(array_unique($names));
+    }
+
+    /**
+     * @param  array<string, mixed>  $manifest
+     * @return list<string>
+     */
+    private function dockerVolumeNames(array $manifest): array
+    {
+        $volumes = $manifest['volumes'] ?? null;
+
+        if (is_array($volumes)) {
+            return $this->stringList($volumes);
+        }
+
+        $names = [];
+        $instances = $manifest['instances'] ?? [];
+
+        if (! is_array($instances)) {
+            return [];
+        }
+
+        foreach ($instances as $nodeContainer) {
+            if (! is_string($nodeContainer) || $nodeContainer === '') {
+                continue;
+            }
+
+            array_push(
+                $names,
+                "{$nodeContainer}-home-orbit",
+                "{$nodeContainer}-etc-caddy",
+                "{$nodeContainer}-etc-orbit",
+                "{$nodeContainer}-opt-orbit",
+            );
+        }
+
+        return array_values(array_unique($names));
+    }
+
+    /**
+     * @param  array<string, mixed>  $manifest
+     */
+    private function dockerNetwork(array $manifest): string
+    {
+        $network = $manifest['network'] ?? null;
+
+        if (is_string($network) && $network !== '') {
+            return $network;
+        }
+
+        $runId = $manifest['run_id'] ?? null;
+
+        if (! is_string($runId) || $runId === '') {
+            return '';
+        }
+
+        return E2EConfig::fromEnvironment()->instancePrefix."-{$runId}";
+    }
+
+    /**
+     * @param  array<int|string, mixed>  $values
+     * @return list<string>
+     */
+    private function stringList(array $values): array
+    {
+        $strings = [];
+
+        foreach ($values as $value) {
+            if (is_string($value) && $value !== '') {
+                $strings[] = $value;
+            }
+        }
+
+        return array_values(array_unique($strings));
+    }
+
+    /**
+     * @param  array<string, mixed>  $manifest
+     */
+    private function releaseResourceLease(array $manifest): void
+    {
+        $metadata = $manifest['resource_lease'] ?? null;
+
+        if (! is_array($metadata)) {
+            return;
+        }
+
+        try {
+            E2EResourceLease::fromMetadata($metadata)->release();
+        } catch (Throwable) {
+            // Resource cleanup is the important part. Stale lease files can be
+            // inspected manually if their recorded metadata was malformed.
+        }
     }
 
     private function resolveHost(string $host): IncusHost

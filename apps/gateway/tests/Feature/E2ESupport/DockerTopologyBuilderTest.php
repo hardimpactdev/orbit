@@ -794,7 +794,10 @@ it('builds operator_gateway prepared images through transient docker resources',
     Process::assertRan(fn ($process): bool => is_string($process->command)
         && str_contains($process->command, 'ORBIT_E2E_GATEWAY_DOCKER_SHIM')
         && str_contains($process->command, 'ORBIT_E2E_RUNTIME_DOCKER_SHIM')
-        && str_contains($process->command, 'elif [ ! -x /usr/bin/docker.real ]; then'));
+        && str_contains($process->command, 'elif [ ! -x /usr/bin/docker.real ]; then')
+        && str_contains($process->command, '${node_container}-home-orbit')
+        && str_contains($process->command, '/home/orbit/*)')
+        && str_contains($process->command, 'rewrite_volume'));
     Process::assertRan(fn ($process): bool => is_string($process->command)
         && str_contains($process->command, 'docker commit')
         && $process->timeout === 600

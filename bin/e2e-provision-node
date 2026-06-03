@@ -311,6 +311,39 @@ restore_composer_cache() {
     sudo_run chown -R "${user}:${user}" "$target"
 }
 
+configure_github_auth() {
+    local user
+    local home_dir
+    local token
+    local token_file
+    local auth_file
+
+    token="${GH_TOKEN:-${GITHUB_TOKEN:-}}"
+
+    [ -n "$token" ] || return 0
+
+    user="$(target_user_for_node_kind)"
+    home_dir="/home/${user}"
+    token_file="$(mktemp)"
+    auth_file="$(mktemp)"
+
+    printf '%s' "$token" > "$token_file"
+    chmod 600 "$token_file"
+
+    php -r 'echo json_encode(["github-oauth" => ["github.com" => trim(file_get_contents($argv[1]))]], JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR);' "$token_file" > "$auth_file"
+
+    for composer_home in "${home_dir}/.composer" "${home_dir}/.config/composer"; do
+        sudo_run install -d -m 700 -o "$user" -g "$user" "$composer_home"
+        sudo_run install -m 600 -o "$user" -g "$user" "$auth_file" "${composer_home}/auth.json"
+    done
+
+    if command -v gh >/dev/null 2>&1; then
+        sudo_run runuser -u "$user" -- bash -lc 'cat "$1" | gh auth login --hostname github.com --with-token >/dev/null 2>&1 || true; gh auth setup-git --hostname github.com >/dev/null 2>&1 || true' bash "$token_file"
+    fi
+
+    rm -f "$token_file" "$auth_file"
+}
+
 install_e2e_dependencies() {
     if ! command -v apt-get >/dev/null 2>&1; then
         return
@@ -492,6 +525,10 @@ main() {
         restore_composer_cache
         complete_step
     fi
+
+    start_step "Configure GitHub auth"
+    configure_github_auth
+    complete_step
 
     start_step "Install Orbit (${NODE_KIND})"
     install_orbit_for_node_kind

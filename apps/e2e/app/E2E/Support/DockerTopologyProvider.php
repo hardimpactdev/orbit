@@ -87,6 +87,33 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
             $timer->measure('docker.prune', fn () => $this->prunePreparedGatewayRegistry($instances));
             $timer->measure('docker.primeGatewayApi', fn () => $this->primeGatewayApi($runId, $instances, $networkPlan));
         } catch (\Throwable $exception) {
+            if ($options->retainOnFailure) {
+                $retainedResourceLease = null;
+
+                try {
+                    $retainedResourceLease = $resourceLease?->retain("retained-topology:{$runId}");
+                } catch (\Throwable) {
+                    $this->cleanupResources($host, $network, $roles, $runId);
+                    $resourceLease?->release();
+
+                    throw $exception;
+                }
+
+                throw new E2ETopologyAcquisitionRetainedForDiagnosis(
+                    message: $exception->getMessage(),
+                    provider: $this->name(),
+                    host: $host->host,
+                    runId: $runId,
+                    network: $network,
+                    roles: $roles,
+                    instances: $this->instanceNamesByRole($roles, $runId),
+                    managedContainers: $this->containerNamesForRoles($roles, $runId),
+                    volumes: $this->volumeNamesForRoles($roles, $runId),
+                    resourceLease: $retainedResourceLease?->metadata(),
+                    previous: $exception,
+                );
+            }
+
             $this->cleanupResources($host, $network, $roles, $runId);
             $resourceLease?->release();
 
@@ -657,15 +684,23 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
 
             rewrite_path() {
                 local path="$1"
+                local home_orbit
                 local etc_caddy
                 local etc_orbit
                 local opt_orbit
 
+                home_orbit="$(volume_mountpoint "${node_container}-home-orbit")"
                 etc_caddy="$(volume_mountpoint "${node_container}-etc-caddy")"
                 etc_orbit="$(volume_mountpoint "${node_container}-etc-orbit")"
                 opt_orbit="$(volume_mountpoint "${node_container}-opt-orbit")"
 
                 case "${path}" in
+                    /home/orbit)
+                        if [ -n "${home_orbit}" ]; then printf '%s' "${home_orbit}"; else printf '%s' "${path}"; fi
+                        ;;
+                    /home/orbit/*)
+                        if [ -n "${home_orbit}" ]; then printf '%s%s' "${home_orbit}" "${path#/home/orbit}"; else printf '%s' "${path}"; fi
+                        ;;
                     /etc/caddy)
                         printf '%s' "${etc_caddy}"
                         ;;
@@ -716,9 +751,33 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
                 printf '%s%s%s' "${prefix}" "$(rewrite_path "${source}")" "${rest}"
             }
 
+            rewrite_volume() {
+                local argument="$1"
+                local source
+                local rest
+
+                case "${argument}" in
+                    /*:*)
+                        source="${argument%%:*}"
+                        rest="${argument#"${source}"}"
+                        printf '%s%s' "$(rewrite_path "${source}")" "${rest}"
+                        ;;
+                    *)
+                        printf '%s' "${argument}"
+                        ;;
+                esac
+            }
+
             args=()
+            rewrite_next_volume=false
 
             for argument in "$@"; do
+                if [ "${rewrite_next_volume}" = true ]; then
+                    args+=("$(rewrite_volume "${argument}")")
+                    rewrite_next_volume=false
+                    continue
+                fi
+
                 case "${argument}" in
                     orbit-gateway)
                         args+=("${gateway_container}")
@@ -734,6 +793,13 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
                         ;;
                     type=bind,source=*|type=bind,src=*)
                         args+=("$(rewrite_mount "${argument}")")
+                        ;;
+                    -v|--volume)
+                        args+=("${argument}")
+                        rewrite_next_volume=true
+                        ;;
+                    --volume=*)
+                        args+=("--volume=$(rewrite_volume "${argument#--volume=}")")
                         ;;
                     *)
                         args+=("${argument}")
@@ -1232,6 +1298,21 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
         }
 
         return $names;
+    }
+
+    /**
+     * @param  list<string>  $roles
+     * @return array<string, string>
+     */
+    private function instanceNamesByRole(array $roles, string $runId): array
+    {
+        $instances = [];
+
+        foreach ($roles as $role) {
+            $instances[$role] = "{$this->config->instancePrefix}-{$runId}-{$role}";
+        }
+
+        return $instances;
     }
 
     /**

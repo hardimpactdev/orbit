@@ -5,12 +5,14 @@ declare(strict_types=1);
 namespace App\Services\Tools;
 
 use App\Contracts\RemoteShell;
+use App\Data\RemoteShell\RemoteShellResult;
 use App\Models\App;
 use App\Models\Node;
 use App\Models\NodeTool;
 use App\Models\ProxyRoute;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
 use App\Services\Proxy\ProxyRouteRenderer;
+use App\Services\RemoteShell\RemoteSecretFile;
 
 final readonly class ToolInstaller
 {
@@ -19,6 +21,8 @@ final readonly class ToolInstaller
         private ToolRegistry $registry,
         private RemoteShell $remoteShell,
         private NodeRoleAssignments $nodeRoleAssignments,
+        private RemoteSecretFile $remoteSecretFile,
+        private GitHubTokenResolver $githubTokenResolver,
     ) {}
 
     /**
@@ -77,7 +81,12 @@ final readonly class ToolInstaller
             ],
         );
 
-        $result = $this->remoteShell->run($targetNode, $script, ['throw' => false]);
+        $result = $this->runToolScriptWithGitHubAuth(
+            node: $targetNode,
+            tool: $tool,
+            config: $config,
+            scriptFactory: fn (array $config): string => (string) $this->catalog->installScript($tool, $config),
+        );
 
         if (! $result->successful()) {
             return ToolRegistryFailure::remoteActionFailed(
@@ -242,6 +251,38 @@ final readonly class ToolInstaller
         );
 
         return null;
+    }
+
+    /**
+     * @param  array<string, mixed>  $config
+     * @param  callable(array<string, mixed>): string  $scriptFactory
+     */
+    private function runToolScriptWithGitHubAuth(Node $node, string $tool, array $config, callable $scriptFactory): RemoteShellResult
+    {
+        $token = $this->githubTokenForTool($tool);
+
+        if ($token === null) {
+            return $this->remoteShell->run($node, $scriptFactory($config), ['throw' => false]);
+        }
+
+        return $this->remoteSecretFile->stage(
+            $node,
+            $token,
+            fn (string $path): RemoteShellResult => $this->remoteShell->run(
+                $node,
+                $scriptFactory([...$config, 'github_token_file' => $path]),
+                ['throw' => false],
+            ),
+        );
+    }
+
+    private function githubTokenForTool(string $tool): ?string
+    {
+        if ($tool !== 'laravel-installer') {
+            return null;
+        }
+
+        return $this->githubTokenResolver->token();
     }
 
     private function resolveTargetNode(?string $node, ?string $app, ?string $requiredRole): Node|ToolRegistryFailure

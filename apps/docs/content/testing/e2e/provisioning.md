@@ -9,7 +9,6 @@ composer e2e:preflight
 composer e2e:prepare-base-image -- --force
 composer e2e:prepare-topology -- --force operator_gateway_app-dev_app-prod_agent_websocket
 composer test:e2e
-composer test:e2e:provision:docker
 composer test:e2e:provision:incus
 ```
 
@@ -20,17 +19,21 @@ instead.
 
 Run feature E2E before provision gates. The topology preparer loads the current
 source checkout into prepared Docker/Incus artifacts, so `composer test:e2e`
-proves the feature against source-prepared topologies. Provider provision
-commands are the last verification gate for fresh installation, binary/image
-asset preparation, and host mutation. When production artifact behavior matters,
-the ideal final pass is source-prepared feature E2E, provider provision, then an
-artifact-backed feature flow using the built CLI and gateway image when that
-lane exists.
+proves behavior against source-prepared topologies. Incus provision is the last
+verification gate for fresh installation, `node:new`, VM boot, WireGuard,
+systemd, package installation, and host mutation. Docker provision is not part
+of the ordinary post-`composer test:e2e` sequence; run it only when Docker
+runtime/support images, prepared role images, Docker host artifact
+distribution, or Docker topology-preparation behavior changed. When production
+artifact behavior matters, the ideal final pass is source-prepared feature E2E,
+the affected provider artifact/provision gate, then an artifact-backed feature
+flow using the built CLI and gateway image when that lane exists.
 
 `composer test:e2e:provision:docker` rebuilds and distributes the Docker
 runtime/support images and prepared role images. `composer
 test:e2e:provision:incus` runs the fresh VM provision gate. They can run in
-parallel because Docker and Incus mutate separate provider substrates.
+parallel only when both are independently required because Docker and Incus
+mutate separate provider substrates.
 
 `composer test:e2e:provision` is a human-only aggregate alias for both provider
 provision commands. Agents must never run the aggregate.

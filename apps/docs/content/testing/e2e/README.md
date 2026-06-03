@@ -16,7 +16,7 @@ composer test:e2e:docker
 composer test:e2e:incus
 composer test:e2e:topology-contract
 
-# Superset provisioning lane
+# On-demand provider artifact/provision gates
 composer e2e:preflight
 composer test:e2e:provision:docker
 composer test:e2e:provision:incus
@@ -28,14 +28,17 @@ composer test:e2e:provision
 composer e2e:ensure-artifacts
 ```
 
-Run prepared-topology feature E2E before provider provision gates. The feature
-lanes consume prepared source artifacts and prove behavior against the current
-checkout. Provider provision gates are final verification for fresh installer,
-`node:new`, image, runtime artifact, and host mutation paths. When a change also
-affects production artifacts, prove the feature against source-prepared
-topologies first, run the provider provision gate, then run the feature flow
-that consumes the built CLI/gateway assets when that artifact-backed lane
-exists.
+Run prepared-topology feature E2E before any provider artifact/provision gate.
+The feature lanes consume prepared source artifacts and prove behavior against
+the current checkout. Incus provision is the fresh VM gate for installer,
+`node:new`, base image, WireGuard, systemd, package installation, and host
+mutation paths. Docker provision is not a normal post-`composer test:e2e` gate;
+it refreshes Docker runtime/support images, prepared role images, Docker host
+artifact distribution, or Docker topology-preparation artifacts. When a change
+also affects production artifacts, prove the feature against source-prepared
+topologies first, run only the affected provider artifact/provision gate, then
+run the feature flow that consumes the built CLI/gateway assets when that
+artifact-backed lane exists.
 
 `composer test:e2e` runs `bin/orbit-gateway-artisan e2e:test`, which selects prepared-topology
 lanes from `ORBIT_E2E_LANES` (`docker,incus` by default) and excludes
@@ -79,9 +82,10 @@ real SSH daemon behavior, sudo prompts, or host init. Mark these tests with
 `e2e-provider-incus` so Docker-only runs skip them without probing an unsuitable
 provider.
 
-Provisioning and installer changes finish with provider-specific provision
-commands after the relevant prepared-topology feature lane is green. Docker
-image/runtime changes belong in `composer test:e2e:provision:docker`. Incus VM,
+Provisioning and installer changes finish with the Incus provision command after
+the relevant prepared-topology feature lane is green. Docker image/runtime,
+prepared role image, Docker host artifact distribution, and Docker topology
+preparer changes belong in `composer test:e2e:provision:docker`. Incus VM,
 WireGuard, installer, `node:new`, and host-mutation changes belong in
 `composer test:e2e:provision:incus`. Feature tests use prepared topology clones.
 
@@ -116,7 +120,8 @@ The ephemeral E2E suite is split into two explicit Pest group lanes:
   supply the required prepared topology.
 - `composer test:e2e:provision:docker` rebuilds and distributes the Docker
   runtime/support images and prepared role images used by the Docker feature
-  lane.
+  lane. It is an artifact refresh, not a behavioral provisioning proof after an
+  ordinary `composer test:e2e` pass.
 - `composer test:e2e:provision:incus` runs the `e2e-provision` Pest group in an
   isolated namespace. It launches a fresh base VM, installs Orbit on the
   operator, provisions the gateway, runs `node:new` for app-dev, app-prod, and
@@ -148,10 +153,10 @@ quick topology health check that boots every current prepared workload role,
 while `composer test:e2e` excludes topology-contract tests and runs feature
 assertions only.
 
-Provider provision gates are intentionally on demand because they mutate or
-prove expensive prepared artifacts and are much slower than prepared-topology
-feature tests. Treat them as final verification gates for provider substrate and
-production-artifact changes.
+Provider artifact/provision gates are intentionally on demand because they
+mutate or prove expensive prepared artifacts and are much slower than
+prepared-topology feature tests. Treat Docker provision as Docker artifact
+refresh only, and Incus provision as the fresh VM provisioning gate.
 
 ## Source-Dev And Artifact-Prod
 

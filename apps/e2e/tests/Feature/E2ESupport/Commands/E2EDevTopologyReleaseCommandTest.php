@@ -96,6 +96,64 @@ function writeRetainedManifest(string $directory, string $id, string $host = 'be
     ]);
 }
 
+function writeRetainedDockerManifest(string $directory, string $id, string $host = 'local'): void
+{
+    (new E2EDevTopologyManifestStore($directory))->write([
+        'id' => $id,
+        'kind' => 'operator_gateway_app-dev',
+        'provider' => 'docker',
+        'host' => $host,
+        'run_id' => $id,
+        'ssh_key_path' => '/dev/null',
+        'gateway_ip' => '10.6.0.2',
+        'network' => "orbit-e2e-{$id}",
+        'instances' => [
+            'operator' => "orbit-e2e-{$id}-operator",
+            'gateway' => "orbit-e2e-{$id}-gateway",
+            'dev' => "orbit-e2e-{$id}-dev",
+        ],
+        'managed_containers' => [
+            "orbit-e2e-{$id}-operator-orbit-caddy",
+            "orbit-e2e-{$id}-operator",
+            "orbit-e2e-{$id}-gateway-orbit-gateway",
+            "orbit-e2e-{$id}-gateway-orbit-caddy",
+            "orbit-e2e-{$id}-gateway",
+            "orbit-e2e-{$id}-dev-orbit-caddy",
+            "orbit-e2e-{$id}-dev",
+        ],
+        'volumes' => [
+            "orbit-e2e-{$id}-operator-home-orbit",
+            "orbit-e2e-{$id}-operator-etc-caddy",
+            "orbit-e2e-{$id}-gateway-home-orbit",
+            "orbit-e2e-{$id}-gateway-etc-caddy",
+            "orbit-e2e-{$id}-dev-home-orbit",
+            "orbit-e2e-{$id}-dev-etc-caddy",
+        ],
+        'checkouts' => [
+            'operator' => '/home/orbit/orbit',
+        ],
+        'resource_lease' => [
+            'backend' => 'docker',
+            'host' => $host,
+            'slot' => 1,
+            'path' => "{$directory}/docker-local-1.lease",
+            'owner' => "retained-topology:{$id}",
+            'retained' => true,
+        ],
+        'created_at' => '2026-05-30T10:00:00+00:00',
+    ]);
+
+    file_put_contents("{$directory}/docker-local-1.lease", json_encode([
+        'backend' => 'docker',
+        'host' => $host,
+        'slot' => 1,
+        'owner' => "retained-topology:{$id}",
+        'pid' => null,
+        'retained' => true,
+        'created_at' => time(),
+    ], JSON_THROW_ON_ERROR));
+}
+
 function releaseCommandWith(ArrayObject $log): E2EDevTopologyReleaseCommand
 {
     $command = app(E2EDevTopologyReleaseCommand::class);
@@ -122,6 +180,22 @@ it('reaps the recorded instances and removes the manifest and ssh key', function
         // The dedicated per-run ssh key directory is removed on the host.
         ->and($log['runs'])->toContain("rm -rf '/tmp/orbit-e2e-topology-dev-abc123'")
         ->and((new E2EDevTopologyManifestStore($this->manifestDirectory))->read('dev-abc123'))->toBeNull();
+});
+
+it('releases docker retained topology resources from the manifest', function (): void {
+    writeRetainedDockerManifest($this->manifestDirectory, 'dev-abc123');
+
+    Process::fake(['*' => Process::result()]);
+
+    $this->artisan('e2e:dev-topology:release', ['id' => 'dev-abc123', '--json' => true])
+        ->assertSuccessful();
+
+    Process::assertRan("docker rm -f 'orbit-e2e-dev-abc123-operator-orbit-caddy' 'orbit-e2e-dev-abc123-operator' 'orbit-e2e-dev-abc123-gateway-orbit-gateway' 'orbit-e2e-dev-abc123-gateway-orbit-caddy' 'orbit-e2e-dev-abc123-gateway' 'orbit-e2e-dev-abc123-dev-orbit-caddy' 'orbit-e2e-dev-abc123-dev' >/dev/null 2>&1 || true");
+    Process::assertRan("docker volume rm -f 'orbit-e2e-dev-abc123-operator-home-orbit' 'orbit-e2e-dev-abc123-operator-etc-caddy' 'orbit-e2e-dev-abc123-gateway-home-orbit' 'orbit-e2e-dev-abc123-gateway-etc-caddy' 'orbit-e2e-dev-abc123-dev-home-orbit' 'orbit-e2e-dev-abc123-dev-etc-caddy' >/dev/null 2>&1 || true");
+    Process::assertRan("docker network rm 'orbit-e2e-dev-abc123' >/dev/null 2>&1 || true");
+
+    expect((new E2EDevTopologyManifestStore($this->manifestDirectory))->read('dev-abc123'))->toBeNull()
+        ->and(is_file("{$this->manifestDirectory}/docker-local-1.lease"))->toBeFalse();
 });
 
 it('returns the reaped instances in the json payload', function (): void {

@@ -412,15 +412,23 @@ final readonly class DockerTopologyBuilder
 
                 rewrite_path() {
                     local path="$1"
+                    local home_orbit
                     local etc_caddy
                     local etc_orbit
                     local opt_orbit
 
+                    home_orbit="$(volume_mountpoint "${node_container}-home-orbit")"
                     etc_caddy="$(volume_mountpoint "${node_container}-etc-caddy")"
                     etc_orbit="$(volume_mountpoint "${node_container}-etc-orbit")"
                     opt_orbit="$(volume_mountpoint "${node_container}-opt-orbit")"
 
                     case "${path}" in
+                        /home/orbit)
+                            if [ -n "${home_orbit}" ]; then printf '%s' "${home_orbit}"; else printf '%s' "${path}"; fi
+                            ;;
+                        /home/orbit/*)
+                            if [ -n "${home_orbit}" ]; then printf '%s%s' "${home_orbit}" "${path#/home/orbit}"; else printf '%s' "${path}"; fi
+                            ;;
                         /etc/caddy)
                             printf '%s' "${etc_caddy}"
                             ;;
@@ -471,9 +479,33 @@ final readonly class DockerTopologyBuilder
                     printf '%s%s%s' "${prefix}" "$(rewrite_path "${source}")" "${rest}"
                 }
 
+                rewrite_volume() {
+                    local argument="$1"
+                    local source
+                    local rest
+
+                    case "${argument}" in
+                        /*:*)
+                            source="${argument%%:*}"
+                            rest="${argument#"${source}"}"
+                            printf '%s%s' "$(rewrite_path "${source}")" "${rest}"
+                            ;;
+                        *)
+                            printf '%s' "${argument}"
+                            ;;
+                    esac
+                }
+
                 args=()
+                rewrite_next_volume=false
 
                 for argument in "$@"; do
+                    if [ "${rewrite_next_volume}" = true ]; then
+                        args+=("$(rewrite_volume "${argument}")")
+                        rewrite_next_volume=false
+                        continue
+                    fi
+
                     case "${argument}" in
                         orbit-gateway)
                             args+=("${gateway_container}")
@@ -489,6 +521,13 @@ final readonly class DockerTopologyBuilder
                             ;;
                         type=bind,source=*|type=bind,src=*)
                             args+=("$(rewrite_mount "${argument}")")
+                            ;;
+                        -v|--volume)
+                            args+=("${argument}")
+                            rewrite_next_volume=true
+                            ;;
+                        --volume=*)
+                            args+=("--volume=$(rewrite_volume "${argument#--volume=}")")
                             ;;
                         *)
                             args+=("${argument}")
@@ -753,10 +792,13 @@ SH;
             'COMPOSER_ALLOW_SUPERUSER=1',
         ];
 
-        $environmentFlags = implode(' ', array_map(
-            fn (string $value): string => '--env '.escapeshellarg($value),
-            $environment,
-        ));
+        $environmentFlags = implode(' ', [
+            ...array_map(
+                fn (string $value): string => '--env '.escapeshellarg($value),
+                $environment,
+            ),
+            ...E2EGitHubAuth::dockerEnvOptions(),
+        ]);
 
         return sprintf(
             'docker exec %s --workdir %s %s sh -lc %s',
@@ -811,10 +853,11 @@ SH;
         }
 
         return sprintf(
-            'mkdir -p %s && printf %%s %s > %s',
+            'mkdir -p %s && printf %%s %s > %s && %s',
             escapeshellarg(self::ComposerHomePath),
             escapeshellarg(json_encode($config, JSON_THROW_ON_ERROR)),
             escapeshellarg(self::ComposerHomePath.'/config.json'),
+            E2EGitHubAuth::composerAuthConfigCommand(self::ComposerHomePath),
         );
     }
 
@@ -1593,21 +1636,26 @@ final readonly class DockerBuildInstance implements E2EInstance
 
     public function exec(string $command, ?int $timeoutSeconds = null): ProcessResult
     {
-        return $this->run(sprintf(
-            'docker exec %s sh -lc %s',
+        return $this->run(implode(' ', [
+            'docker exec',
+            ...E2EGitHubAuth::dockerEnvOptions(),
             escapeshellarg($this->name),
+            'sh -lc',
             escapeshellarg($command),
-        ), $timeoutSeconds);
+        ]), $timeoutSeconds);
     }
 
     public function ssh(string $user, SshKeyPair $keyPair, string $command, ?int $timeoutSeconds = null): ProcessResult
     {
-        return $this->run(sprintf(
-            'docker exec --user %s %s sh -lc %s',
+        return $this->run(implode(' ', [
+            'docker exec',
+            ...E2EGitHubAuth::dockerEnvOptions(),
+            '--user',
             escapeshellarg($user),
             escapeshellarg($this->name),
+            'sh -lc',
             escapeshellarg($command),
-        ), $timeoutSeconds);
+        ]), $timeoutSeconds);
     }
 
     public function authorizeSsh(string $user, SshKeyPair $keyPair): void {}

@@ -11,6 +11,11 @@ use App\E2E\Support\SshKeyPair;
 use Illuminate\Contracts\Process\ProcessResult;
 use Mockery as m;
 
+beforeEach(function (): void {
+    putenv('GH_TOKEN');
+    putenv('GITHUB_TOKEN');
+});
+
 afterEach(function (): void {
     m::close();
 });

@@ -49,6 +49,7 @@ final readonly class E2ECommand
 
         $docker = implode(' ', [
             'docker run --rm --pull never',
+            ...E2EGitHubAuth::dockerEnvOptions(),
             '--env '.escapeshellarg("ORBIT_CONFIG_ROOT={$configRoot}"),
             '--env '.escapeshellarg('DB_CONNECTION=sqlite'),
             '--env '.escapeshellarg("DB_DATABASE={$configRoot}/gateway.sqlite"),

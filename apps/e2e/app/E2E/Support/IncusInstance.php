@@ -25,6 +25,15 @@ final class IncusInstance implements E2EInstance, SourceMountedCheckoutInstance
 
     public function exec(string $command, ?int $timeoutSeconds = null): ProcessResult
     {
+        $authScript = E2EGitHubAuth::shellInputScript($command);
+
+        if ($authScript !== null) {
+            return $this->host->runWithInput(sprintf(
+                'incus exec %s -- bash -s',
+                escapeshellarg($this->name),
+            ), $authScript, $timeoutSeconds);
+        }
+
         return $this->host->run(sprintf(
             'incus exec %s -- sh -lc %s',
             escapeshellarg($this->name),
@@ -34,13 +43,32 @@ final class IncusInstance implements E2EInstance, SourceMountedCheckoutInstance
 
     public function ssh(string $user, SshKeyPair $keyPair, string $command, ?int $timeoutSeconds = null): ProcessResult
     {
+        $authScript = E2EGitHubAuth::shellInputScript($command);
+
         if ($this->commandTransport) {
+            if ($authScript !== null) {
+                return $this->host->runWithInput(sprintf(
+                    'incus exec %s -- runuser -u %s -- bash -s',
+                    escapeshellarg($this->name),
+                    escapeshellarg($user),
+                ), $authScript, $timeoutSeconds);
+            }
+
             return $this->host->run(sprintf(
                 'incus exec %s -- runuser -u %s -- bash -lc %s',
                 escapeshellarg($this->name),
                 escapeshellarg($user),
                 escapeshellarg($command),
             ), $timeoutSeconds);
+        }
+
+        if ($authScript !== null) {
+            return $this->host->runWithInput(sprintf(
+                'ssh -i %s -o BatchMode=yes -o ConnectTimeout=5 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null %s %s',
+                escapeshellarg($keyPair->privateKeyPath),
+                escapeshellarg("{$user}@{$this->waitForIpv4()}"),
+                escapeshellarg('bash -s'),
+            ), $authScript, $timeoutSeconds);
         }
 
         return $this->host->run(sprintf(

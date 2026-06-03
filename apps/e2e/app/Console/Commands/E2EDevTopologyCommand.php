@@ -4,17 +4,21 @@ declare(strict_types=1);
 
 namespace App\Console\Commands;
 
+use App\E2E\Support\DockerInstance;
+use App\E2E\Support\DockerTopologyProvider;
 use App\E2E\Support\E2EConfig;
 use App\E2E\Support\E2EDevTopologyManifestStore;
 use App\E2E\Support\E2EInstance;
 use App\E2E\Support\E2EPhaseTimer;
 use App\E2E\Support\E2ETopologyAcquisitionOptions;
+use App\E2E\Support\E2ETopologyAcquisitionRetainedForDiagnosis;
 use App\E2E\Support\E2ETopologyHarness;
 use App\E2E\Support\E2ETopologyKind;
 use App\E2E\Support\E2ETopologyLease;
-use App\E2E\Support\E2ETopologyProviderPool;
+use App\E2E\Support\E2ETopologyProvider;
 use App\E2E\Support\IncusHost;
 use App\E2E\Support\IncusHostPool;
+use App\E2E\Support\IncusTopologyProvider;
 use Closure;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
@@ -109,24 +113,20 @@ class E2EDevTopologyCommand extends Command
             return $this->renderDryRun($kind, $provider, $displayRoles, $json);
         }
 
-        if ($provider === 'docker') {
-            return $this->renderError(
-                'provider_acquisition_unavailable',
-                'Retained docker topologies are not yet supported. Use --provider=incus.',
-                $json,
-            );
-        }
-
-        return $this->acquireIncus($kind, $displayRoles, $json);
+        return $this->acquireProvider($provider, $kind, $displayRoles, $json);
     }
 
     /**
      * @param  list<string>  $displayRoles
      */
-    private function acquireIncus(E2ETopologyKind $kind, array $displayRoles, bool $json): int
+    private function acquireProvider(string $provider, E2ETopologyKind $kind, array $displayRoles, bool $json): int
     {
         try {
-            $manifest = $this->acquireRetainedIncusTopology($kind, $displayRoles);
+            $manifest = $this->acquireRetainedTopology($provider, $kind, $displayRoles);
+        } catch (E2ETopologyAcquisitionRetainedForDiagnosis $exception) {
+            $manifest = $this->writeRetainedFailureManifest($kind, $exception);
+
+            return $this->renderRetainedAcquisitionFailure($exception->getMessage(), $manifest, $json);
         } catch (Throwable $exception) {
             return $this->renderError('acquisition_failed', $exception->getMessage(), $json);
         }
@@ -151,17 +151,57 @@ class E2EDevTopologyCommand extends Command
      */
     public function acquireRetainedIncusTopology(E2ETopologyKind $kind, array $displayRoles): array
     {
+        return $this->acquireRetainedTopology('incus', $kind, $displayRoles);
+    }
+
+    /**
+     * @param  list<string>  $displayRoles
+     * @return array{
+     *     id: string,
+     *     kind: string,
+     *     provider: string,
+     *     host: string,
+     *     run_id: string,
+     *     ssh_key_path: string,
+     *     gateway_ip: string,
+     *     instances: array<string, string>,
+     *     checkouts: array<string, string>,
+     *     created_at: string
+     * }
+     */
+    private function acquireRetainedTopology(string $provider, E2ETopologyKind $kind, array $displayRoles): array
+    {
         $config = E2EConfig::fromEnvironment();
         $overlayRoles = $this->overlayCheckoutRoles($kind, $displayRoles);
 
         $prepared = $this->prepareUsing !== null
             ? ($this->prepareUsing)($kind, $overlayRoles)
-            : $this->acquireAndOverlay($config, $kind, $overlayRoles);
+            : $this->acquireAndOverlay($config, $provider, $kind, $overlayRoles);
 
+        $manifest = $this->retainedManifest($config, $provider, $kind, $prepared);
+
+        E2EDevTopologyManifestStore::fromEnvironment(repo_path())->write($manifest);
+
+        return $manifest;
+    }
+
+    /**
+     * @param  array{
+     *     host: string,
+     *     run_id: string,
+     *     ssh_key_path: string,
+     *     gateway_ip: string,
+     *     instances: array<string, string>,
+     *     checkouts: array<string, string>
+     * }  $prepared
+     * @return array<string, mixed>
+     */
+    private function retainedManifest(E2EConfig $config, string $provider, E2ETopologyKind $kind, array $prepared): array
+    {
         $manifest = [
             'id' => $prepared['run_id'],
             'kind' => $kind->value,
-            'provider' => 'incus',
+            'provider' => $provider,
             'host' => $prepared['host'],
             'run_id' => $prepared['run_id'],
             'ssh_key_path' => $prepared['ssh_key_path'],
@@ -169,9 +209,12 @@ class E2EDevTopologyCommand extends Command
             'instances' => $prepared['instances'],
             'checkouts' => $prepared['checkouts'],
             'created_at' => now()->toIso8601String(),
+            'release_command' => $this->releaseCommandFor($provider, $prepared['run_id']),
         ];
 
-        E2EDevTopologyManifestStore::fromEnvironment(repo_path())->write($manifest);
+        if ($provider === 'docker') {
+            $manifest += $this->dockerManifestDetails($config, $prepared['run_id'], $prepared['instances']);
+        }
 
         return $manifest;
     }
@@ -192,35 +235,44 @@ class E2EDevTopologyCommand extends Command
      *     checkouts: array<string, string>
      * }
      */
-    private function acquireAndOverlay(E2EConfig $config, E2ETopologyKind $kind, array $overlayRoles): array
+    private function acquireAndOverlay(E2EConfig $config, string $providerName, E2ETopologyKind $kind, array $overlayRoles): array
     {
         $runId = 'dev-'.bin2hex(random_bytes(3));
-        $host = $this->resolveHost($config, $kind);
         $timer = new E2EPhaseTimer;
+        $provider = $this->provider($config, $providerName);
 
         try {
-            $selection = E2ETopologyProviderPool::fromEnvironment($config)->select($kind);
+            $availability = $provider->availability($kind);
 
-            if (! $selection->available()) {
-                throw new \RuntimeException('Prepared topology not available: '.$selection->message);
+            if (! $availability->available) {
+                throw new \RuntimeException('Prepared topology not available: '.$availability->message);
             }
 
-            $lease = $selection->provider()->acquire(
+            $lease = $provider->acquire(
                 $kind,
                 $runId,
                 $timer,
-                new E2ETopologyAcquisitionOptions(startGatewayApi: true, sourceMountedCheckout: true),
+                new E2ETopologyAcquisitionOptions(
+                    startGatewayApi: true,
+                    sourceMountedCheckout: true,
+                    retainOnFailure: $providerName === 'docker',
+                ),
             );
         } finally {
             $timer->flush('acquire');
         }
 
+        $host = $this->hostForLease($providerName, $config, $lease);
         $harness = new E2ETopologyHarness($lease, cleanupOnRelease: false);
 
         try {
             $harness->withCurrentCheckout($overlayRoles);
         } catch (Throwable $exception) {
-            $this->reapAfterFailure($config, $host, $lease->instanceNames());
+            if ($providerName === 'incus') {
+                $this->reapAfterFailure($config, $host, $lease->instanceNames());
+            } else {
+                $lease->cleanup();
+            }
 
             throw $exception;
         }
@@ -235,11 +287,28 @@ class E2EDevTopologyCommand extends Command
         ];
     }
 
-    private function resolveHost(E2EConfig $config, E2ETopologyKind $kind): string
+    private function provider(E2EConfig $config, string $provider): E2ETopologyProvider
     {
-        $availability = IncusHostPool::fromEnvironment($config)->availabilityFor($kind, checkCapacity: false);
+        return match ($provider) {
+            'docker' => new DockerTopologyProvider($config),
+            'incus' => new IncusTopologyProvider($config),
+            default => throw new \RuntimeException("Unsupported E2E topology provider [{$provider}]."),
+        };
+    }
 
-        return $availability['host']?->config->host ?? $config->host;
+    private function hostForLease(string $provider, E2EConfig $config, E2ETopologyLease $lease): string
+    {
+        if ($provider !== 'docker') {
+            $availability = IncusHostPool::fromEnvironment($config)->availabilityFor($lease->kind(), checkCapacity: false);
+
+            return $availability['host']?->config->host ?? $config->host;
+        }
+
+        $operator = $lease->operator();
+
+        return $operator instanceof DockerInstance
+            ? $operator->hostName()
+            : 'local';
     }
 
     /**
@@ -279,6 +348,100 @@ class E2EDevTopologyCommand extends Command
     }
 
     /**
+     * @param  array<string, string>  $instances
+     * @return array{network: string, managed_containers: list<string>, volumes: list<string>}
+     */
+    private function dockerManifestDetails(E2EConfig $config, string $runId, array $instances): array
+    {
+        return [
+            'network' => "{$config->instancePrefix}-{$runId}",
+            'managed_containers' => $this->dockerManagedContainers($instances),
+            'volumes' => $this->dockerManagedVolumes($instances),
+        ];
+    }
+
+    /**
+     * @param  array<string, string>  $instances
+     * @return list<string>
+     */
+    private function dockerManagedContainers(array $instances): array
+    {
+        $containers = [];
+
+        foreach ($instances as $role => $nodeContainer) {
+            if ($role === 'gateway') {
+                $containers[] = "{$nodeContainer}-orbit-gateway";
+            }
+
+            $containers[] = "{$nodeContainer}-orbit-caddy";
+            $containers[] = $nodeContainer;
+        }
+
+        return array_values(array_unique($containers));
+    }
+
+    /**
+     * @param  array<string, string>  $instances
+     * @return list<string>
+     */
+    private function dockerManagedVolumes(array $instances): array
+    {
+        $volumes = [];
+
+        foreach ($instances as $nodeContainer) {
+            array_push(
+                $volumes,
+                "{$nodeContainer}-home-orbit",
+                "{$nodeContainer}-etc-caddy",
+                "{$nodeContainer}-etc-orbit",
+                "{$nodeContainer}-opt-orbit",
+            );
+        }
+
+        return array_values(array_unique($volumes));
+    }
+
+    private function releaseCommandFor(string $provider, string $id): string
+    {
+        return $provider === 'incus'
+            ? "composer e2e:incus -- --stop --id={$id}"
+            : "composer e2e:dev-topology:release -- {$id}";
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function writeRetainedFailureManifest(E2ETopologyKind $kind, E2ETopologyAcquisitionRetainedForDiagnosis $exception): array
+    {
+        $manifest = [
+            'id' => $exception->runId,
+            'kind' => $kind->value,
+            'provider' => $exception->provider,
+            'host' => $exception->host,
+            'run_id' => $exception->runId,
+            'ssh_key_path' => '/dev/null',
+            'gateway_ip' => '10.6.0.2',
+            'instances' => $exception->instances,
+            'checkouts' => [],
+            'created_at' => now()->toIso8601String(),
+            'release_command' => $this->releaseCommandFor($exception->provider, $exception->runId),
+            'network' => $exception->network,
+            'managed_containers' => $exception->managedContainers,
+            'volumes' => $exception->volumes,
+            'retained_after_failure' => true,
+            'failure_message' => $exception->getMessage(),
+        ];
+
+        if ($exception->resourceLease !== null) {
+            $manifest['resource_lease'] = $exception->resourceLease;
+        }
+
+        E2EDevTopologyManifestStore::fromEnvironment(repo_path())->write($manifest);
+
+        return $manifest;
+    }
+
+    /**
      * @param  array{
      *     id: string,
      *     kind: string,
@@ -295,7 +458,9 @@ class E2EDevTopologyCommand extends Command
     private function renderAcquired(array $manifest, bool $json): int
     {
         $handles = $this->buildHandles($manifest);
-        $releaseCommand = "composer e2e:incus -- --stop --id={$manifest['id']}";
+        $releaseCommand = is_string($manifest['release_command'] ?? null)
+            ? $manifest['release_command']
+            : $this->releaseCommandFor($manifest['provider'], $manifest['id']);
 
         if ($json) {
             $this->line(json_encode([
@@ -367,6 +532,7 @@ class E2EDevTopologyCommand extends Command
     private function buildHandles(array $manifest): array
     {
         $host = $manifest['host'];
+        $provider = $manifest['provider'] ?? 'incus';
         $handles = [];
 
         foreach ($manifest['instances'] as $role => $instance) {
@@ -376,13 +542,15 @@ class E2EDevTopologyCommand extends Command
             $handle = [
                 'role' => $role,
                 'instance' => $instance,
-                'ssh_example' => sprintf(
-                    'ssh %s incus exec %s -- sudo -u %s bash -lc %s',
-                    $host,
-                    $instance,
-                    $user,
-                    escapeshellarg("cd {$checkout} && orbit node:list --json"),
-                ),
+                'ssh_example' => $provider === 'docker'
+                    ? $this->dockerExecExample($host, $instance, $user, "cd {$checkout} && orbit node:list --json")
+                    : sprintf(
+                        'ssh %s incus exec %s -- sudo -u %s bash -lc %s',
+                        $host,
+                        $instance,
+                        $user,
+                        escapeshellarg("cd {$checkout} && orbit node:list --json"),
+                    ),
             ];
 
             if ($role === 'gateway') {
@@ -390,12 +558,15 @@ class E2EDevTopologyCommand extends Command
                 // bootstrap over plain http with no auth, so it is a clean
                 // round-trip signal for how fast the gateway responds. Works with
                 // no app deployed.
-                $handle['perf_example'] = sprintf(
-                    'ssh %s incus exec %s -- bash -lc %s',
-                    $host,
-                    $instance,
-                    escapeshellarg("curl -sS -o /dev/null -w 'gateway /api/ca/root: %{time_total}s\\n' http://{$manifest['gateway_ip']}/api/ca/root"),
-                );
+                $command = "curl -sS -o /dev/null -w 'gateway /api/ca/root: %{time_total}s\\n' http://{$manifest['gateway_ip']}/api/ca/root";
+                $handle['perf_example'] = $provider === 'docker'
+                    ? $this->dockerExecExample($host, $instance, 'root', $command)
+                    : sprintf(
+                        'ssh %s incus exec %s -- bash -lc %s',
+                        $host,
+                        $instance,
+                        escapeshellarg($command),
+                    );
             }
 
             if (isset(self::AppRoleLabels[$role])) {
@@ -414,6 +585,24 @@ class E2EDevTopologyCommand extends Command
         return $handles;
     }
 
+    private function dockerExecExample(string $host, string $instance, string $user, string $command): string
+    {
+        return sprintf(
+            '%s exec --user %s %s sh -lc %s',
+            $this->dockerCliExample($host),
+            escapeshellarg($user),
+            escapeshellarg($instance),
+            escapeshellarg($command),
+        );
+    }
+
+    private function dockerCliExample(string $host): string
+    {
+        return $host === 'local'
+            ? 'docker'
+            : 'DOCKER_HOST='.escapeshellarg("ssh://{$host}").' docker';
+    }
+
     private function userForRole(string $role): string
     {
         return $role === 'operator'
@@ -427,6 +616,7 @@ class E2EDevTopologyCommand extends Command
     private function renderDryRun(E2ETopologyKind $kind, string $provider, array $displayRoles, bool $json): int
     {
         $shellCommand = $this->shellCommand($kind, $provider, $displayRoles);
+        $releaseCommand = $this->releaseCommandFor($provider, 'dry-run');
         $payload = [
             'id' => 'dry-run',
             'dry_run' => true,
@@ -435,7 +625,7 @@ class E2EDevTopologyCommand extends Command
             'kind' => $kind->value,
             'checkout_roles' => $displayRoles,
             'shell_command' => $shellCommand,
-            'release_command' => 'composer e2e:incus -- --stop --id=dry-run',
+            'release_command' => $releaseCommand,
         ];
 
         if ($json) {
@@ -449,7 +639,7 @@ class E2EDevTopologyCommand extends Command
         $this->line("Kind: {$kind->value}");
         $this->line('Checkout roles: '.implode(', ', $displayRoles));
         $this->line("Shell: {$shellCommand}");
-        $this->line('Release: '.$payload['release_command']);
+        $this->line("Release: {$releaseCommand}");
         $this->line('Source-checkout E2E remains the normal feature loop; retained topologies are manual diagnosis only.');
 
         return self::SUCCESS;
@@ -591,6 +781,37 @@ class E2EDevTopologyCommand extends Command
         }
 
         $this->components->error($message);
+
+        return self::FAILURE;
+    }
+
+    /**
+     * @param  array<string, mixed>  $manifest
+     */
+    private function renderRetainedAcquisitionFailure(string $message, array $manifest, bool $json): int
+    {
+        $releaseCommand = is_string($manifest['release_command'] ?? null)
+            ? $manifest['release_command']
+            : $this->releaseCommandFor((string) $manifest['provider'], (string) $manifest['id']);
+
+        if ($json) {
+            $this->line(json_encode([
+                'error' => [
+                    'code' => 'acquisition_failed_retained',
+                    'message' => $message,
+                    'retained_topology' => $manifest + [
+                        'release_command' => $releaseCommand,
+                    ],
+                ],
+            ], JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR));
+
+            return self::FAILURE;
+        }
+
+        $this->components->error($message);
+        $this->line("Retained failed topology [{$manifest['id']}] for diagnosis.");
+        $this->line("Provider: {$manifest['provider']} (host {$manifest['host']})");
+        $this->line("Release: {$releaseCommand}");
 
         return self::FAILURE;
     }

@@ -55,9 +55,10 @@ Orbit has three supported test lanes:
    API, and CA trust coverage.
 3. Feature E2E backed by Incus for prepared-topology VM behavior.
 
-Provider provisioning is the artifact-preparation and installer verification
-substrate behind those feature lanes. Docker and Incus provider provision
-commands are explicit and can be delegated independently:
+Provider provisioning is the on-demand artifact-preparation and installer
+verification substrate behind those feature lanes. Docker and Incus provider
+provision commands are explicit and can be delegated independently when each
+provider actually changed:
 
 - `composer test:e2e:provision:docker` rebuilds and distributes the Docker
   runtime/support images and prepared role images for the configured Docker
@@ -70,22 +71,25 @@ commands are explicit and can be delegated independently:
 both provider provision commands. Agents must run the provider-specific
 provision commands instead.
 
-The normal E2E order is feature-first, provision-last. Prepared-topology feature
-lanes exercise the current source checkout through the topology preparer and are
-the development signal for behavior changes. Provider provision gates are final
-verification for installer, `node:new`, image, runtime artifact, and host
-mutation changes. When production artifact behavior matters, first prove the
-feature against the source-prepared topology, then run the provider provision
-gate, then run the feature flow that consumes the built CLI/gateway assets when
-that artifact-backed lane exists.
+The normal E2E order is feature-first. Prepared-topology feature lanes exercise
+the current source checkout through the topology preparer and are the
+development signal for behavior changes. Incus provision is the fresh VM gate
+for installer, `node:new`, base image, WireGuard, systemd, package installation,
+and host mutation changes. Docker provision is not a normal post-`composer
+test:e2e` gate; it is a Docker artifact refresh for runtime/support images,
+prepared role images, Docker host artifact distribution, or Docker topology
+preparation changes. When production artifact behavior matters, first prove the
+feature against the source-prepared topology, run only the affected provider
+provision/artifact gate, then run the feature flow that consumes the built
+CLI/gateway assets when that artifact-backed lane exists.
 
 Standing live infrastructure is not a test lane. Do not use persistent gateway,
 operator, or app nodes as verification targets.
 
 For the MONO local-executor migration, prepared Docker and Incus E2E are the
 primary verification paths. Standing live infrastructure is diagnostic only.
-Source-mounted Docker feature tests and retained/live Incus development
-topologies are the source-mounted feedback loops. Production installs remain a
+Source-mounted Docker feature tests plus retained Docker or retained/live Incus
+development topologies are the source-mounted feedback loops. Production installs remain a
 separate native CLI binary artifact lane. In source-mounted nodes,
 `/usr/local/bin/orbit` points directly at `<source>/apps/cli/orbit`, mutable
 node-local Orbit state lives under `~/.config/orbit`, and executor operation
@@ -102,10 +106,11 @@ These rules order the lanes above into a development workflow:
 - Retained prepared topologies are for manual diagnosis, debugging, and
   performance testing only. They use the same prepared-topology substrate, are
   not standing live infrastructure, and must be explicitly released or reaped
-  after use. Acquire one with
-  `composer e2e:incus -- --start --topology=<kind>` and reap it with
-  `composer e2e:incus -- --stop --id=<id>` or
-  `composer e2e:incus -- --stop --all`; see
+  after use. Acquire Incus with
+  `composer e2e:incus -- --start --topology=<kind>` and Docker with
+  `composer e2e:dev-topology -- --provider=docker --kind=<kind>`. Reap Incus
+  with `composer e2e:incus -- --stop --id=<id>` or Docker with
+  `composer e2e:dev-topology:release -- <id>`; see
   `docs/testing/e2e/prepared-topologies.md#retained-dev-topologies`.
 - Findings from a retained topology are codified back into ordinary
   prepared-topology Pest E2E tests; the durable assertion lives in Pest, not in a
@@ -120,10 +125,9 @@ These rules order the lanes above into a development workflow:
   `composer test:e2e`.
 
 The retained-topology command surface lives in `apps/e2e`
-(`composer e2e:incus`). Legacy `composer e2e:dev-topology` and
-`composer e2e:dev-topology:release` aliases remain available for compatibility.
-It is not added as new public gateway Artisan surface; public operator commands
-remain owned by the Orbit CLI surface.
+(`composer e2e:incus`, `composer e2e:dev-topology`, and
+`composer e2e:dev-topology:release`). It is not added as new public gateway
+Artisan surface; public operator commands remain owned by the Orbit CLI surface.
 
 ## Lane map
 
@@ -162,7 +166,7 @@ composer test:e2e:docker
 composer test:e2e:incus
 composer test:e2e:topology-contract
 
-# Final provider provisioning E2E
+# On-demand provider artifact/provision verification
 composer e2e:preflight
 composer test:e2e:provision:docker
 composer test:e2e:provision:incus
@@ -170,8 +174,8 @@ composer test:e2e:provision:incus
 
 Run the narrowest useful check while developing. Run `composer quality-check`
 before handing off a broad code change. When behavior touches the integrated
-topology, run the E2E lane for the matching prepared topology and provider
-before running any provider provision gate. Provisioning changes finish with the
-matching provider provision command. Agents must not run the aggregate
-`composer test:e2e:provision`; it is reserved for humans who intentionally want
-the full Docker plus Incus provision pass.
+topology, run the E2E lane for the matching prepared topology and provider.
+Provisioning changes finish with the matching provider provision command. Docker
+artifact/image/preparer changes finish with the Docker artifact refresh command.
+Agents must not run the aggregate `composer test:e2e:provision`; it is reserved
+for humans who intentionally want the full Docker plus Incus provision pass.

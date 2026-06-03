@@ -79,6 +79,9 @@ it('installs host Composer dependencies after install-orbit for prepared Incus t
     $provisioner = file_get_contents(provisionScript());
 
     expect(str_contains($provisioner, 'install_host_composer_dependencies'))->toBeTrue()
+        ->and(str_contains($provisioner, 'configure_github_auth'))->toBeTrue()
+        ->and(str_contains($provisioner, 'github-oauth'))->toBeTrue()
+        ->and(str_contains($provisioner, 'gh auth login --hostname github.com --with-token'))->toBeTrue()
         ->and(str_contains($provisioner, 'start_step "Install host Composer dependencies"'))->toBeTrue()
         ->and(str_contains($provisioner, 'COMPOSER_CACHE_DIR="${home_dir}/.composer/cache"'))->toBeTrue()
         ->and(str_contains($provisioner, 'composer --working-dir="${target_dir}/apps/gateway" install --no-interaction --prefer-dist --optimize-autoloader --no-progress'))->toBeTrue()

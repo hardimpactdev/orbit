@@ -70,16 +70,20 @@ that runs on those nodes.
 
 ## Retained dev topologies
 
-`composer e2e:incus -- --start` acquires a prepared topology, mounts the
-current checkout at `/home/orbit/orbit`, and retains it (it is not reaped) so a
-human can do manual diagnosis and performance testing against an isolated Incus
-topology — never against a live production topology. It reuses the same
+`composer e2e:incus -- --start` or
+`composer e2e:dev-topology -- --provider=docker` acquires a prepared topology,
+mounts the current checkout at `/home/orbit/orbit`, and retains it (it is not
+reaped) so a human can do manual diagnosis and performance testing against an
+isolated topology — never against a live production topology. It reuses the same
 prepared-topology substrate and run id as the source-checkout E2E lane; it only
 differs in that the clone is kept until you release it.
 
 ```bash
 # Acquire a retained Incus topology with the current checkout source-mounted.
 composer e2e:incus -- --start --topology=operator_gateway_app-dev_app-prod
+
+# Acquire a retained Docker topology with the current checkout source-mounted.
+composer e2e:dev-topology -- --provider=docker --kind=operator_gateway_app-dev
 
 # Acquire only the operator + gateway source-mounted checkout.
 composer e2e:incus -- --start --topology=operator_gateway_app-dev \
@@ -100,19 +104,26 @@ composer e2e:incus -- --start --dry-run \
 ```
 
 Composer requires the separator before command options; keep the `--` between
-`e2e:incus` and `--start`, `--live`, or `--stop`. Acquisition requires a
-configured Incus host (`ORBIT_E2E_HOST` or `ORBIT_E2E_INCUS_HOSTS`). Retained
-Docker topologies are not supported. The cloned instances use a distinct,
+`e2e:incus` and `--start`, `--live`, or `--stop`. Docker retained topology
+options use `--kind` and `--provider=docker`. Incus acquisition requires a
+configured Incus host (`ORBIT_E2E_HOST` or `ORBIT_E2E_INCUS_HOSTS`); Docker
+acquisition requires the configured Docker host pool. The cloned instances use a distinct,
 identifiable dev run id
 (`orbit-e2e-dev-<hex>-<role>`) so they never collide with ephemeral test clones
 and stay easy to reap.
+
+Remote Docker retained topologies rsync the initiating worktree to the runner
+host before acquisition, then bind-mount that synced copy. Reacquire or rerun
+the source sync before using a retained remote Docker topology to verify edits
+made after acquisition.
 
 Root Composer E2E scripts source the repository-level `.env.e2e` before entering
 `apps/e2e`; that file is not copied or converted into `apps/e2e/.env`. Direct
 `apps/e2e` command runs may use the shell environment or `apps/e2e/.env`.
 
 The command prints, in human or `--json` form, an `id`, the gateway API IP, and a
-per-role handle: the instance name plus a ready-to-run SSH example, e.g.
+per-role handle: the instance/container name plus a ready-to-run access example,
+e.g.
 
 ```text
 [operator] orbit-e2e-dev-1a2b3c-operator
@@ -135,7 +146,9 @@ an app is deployed.
 
 Retained state is recorded under `apps/e2e/var/dev-topology/<id>.json` (gitignored)
 with the id, kind, provider, host, run id, ssh key path, gateway IP, per-role
-instance names, per-role checkout paths, and creation timestamp.
+instance/container names, per-role checkout paths, and creation timestamp.
+Docker manifests also record the network, managed containers, volumes, and any
+retained lease metadata needed for deterministic release.
 
 `composer e2e:incus -- --live --topology=<topology>` builds on the same retained
 topology acquisition, then runs `orbit node:new mac-<id> --operator --json` from
@@ -181,17 +194,21 @@ deletes the state file. When live mode started a local `wg-quick` tunnel,
 # Release a specific retained topology.
 composer e2e:incus -- --stop --id=dev-1a2b3c
 
+# Release a specific retained Docker topology.
+composer e2e:dev-topology:release -- dev-1a2b3c
+
 # Release every recorded retained topology.
 composer e2e:incus -- --stop --all
+composer e2e:dev-topology:release -- --all
 ```
 
 Retained topologies are manual diagnosis and performance-testing tools only.
 Durable behavior assertions still live in prepared-topology Pest E2E tests, not in
 a kept-alive topology.
 
-Legacy `composer e2e:dev-topology` and `composer e2e:dev-topology:release`
-aliases still exist for compatibility, but new documentation and command output
-use `composer e2e:incus`.
+Use `composer e2e:incus` for Incus retained/live flows. Use
+`composer e2e:dev-topology -- --provider=docker` and
+`composer e2e:dev-topology:release` for retained Docker diagnosis.
 
 ## Cache behavior
 
@@ -258,16 +275,20 @@ Required prepared sources for feature lanes:
 workers start when a selected provider is missing a required image, template, or
 snapshot, and print a scoped artifact command for the missing lane.
 
-Provider provision commands are explicit and safe to split across agents:
+Provider artifact/provision commands are explicit and safe to split across
+agents when both provider substrates independently changed:
 
 ```bash
 composer test:e2e:provision:docker
 composer test:e2e:provision:incus
 ```
 
-Run prepared-topology feature tests before these provider provision commands.
-Provision is a final artifact/substrate gate, not the prerequisite for
-`composer test:e2e`.
+Run prepared-topology feature tests before any affected provider
+artifact/provision command. Docker provision is only a Docker artifact refresh
+for runtime/support images, prepared role images, Docker host artifact
+distribution, or Docker topology-preparation changes. Incus provision is the
+fresh VM provisioning gate. Neither is a prerequisite for `composer test:e2e`,
+and Docker provision is not required after ordinary feature E2E passes.
 
 Agents must not run `composer test:e2e:provision`; that aggregate alias runs
 both provider provision commands and is reserved for humans.
@@ -305,6 +326,10 @@ composer test:e2e:provision:docker
 
 composer e2e:prepare-topology -- --force operator_gateway_app-dev_app-prod_agent_websocket
 ```
+
+Do not use `composer test:e2e:provision:docker` as a generic final gate after
+prepared-topology feature tests. Use it only when the Docker images,
+Docker-distributed artifacts, or Docker topology preparation flow changed.
 
 Docker and Incus preparation both use Composer caches during provisioning.
 Docker uses a lockfile-keyed volume or the optional

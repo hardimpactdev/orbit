@@ -12,19 +12,19 @@ composer test:e2e:docker
 rebuild Docker images. Missing support or role images fail the lane before Pest
 workers start and include a scoped `composer e2e:ensure-artifacts` command.
 
-Use the Docker provider provision lane when the Docker runtime image, support
-images, prepared role images, or Docker host artifact distribution may have
-changed:
+Use the Docker provider provision lane only when the Docker runtime image,
+support images, prepared role images, Docker topology preparation, or Docker
+host artifact distribution may have changed:
 
 ```bash
 composer test:e2e:provision:docker
 ```
 
-This command is the agent-facing full Docker artifact refresh. It delegates to
-the Docker host preparer for
-`operator_gateway_app-dev_app-prod_agent_websocket`. It can run in parallel with
-`composer test:e2e:provision:incus` because the provider substrates are
-separate.
+This command is the agent-facing full Docker artifact refresh. It is not a
+generic final gate after `composer test:e2e`. It delegates to the Docker host
+preparer for `operator_gateway_app-dev_app-prod_agent_websocket`. It can run in
+parallel with `composer test:e2e:provision:incus` only when both provider gates
+are independently required because the provider substrates are separate.
 
 Use the ensure command for targeted refreshes:
 
@@ -141,6 +141,21 @@ The source sync excludes dependency directories, build output, env files,
 SQLite files, and gateway service state. After rsync, the runner hydrates
 `apps/gateway/vendor` and `apps/cli/vendor` on the remote path from the synced
 lockfiles. Vendor is refreshed only when the lock marker changes.
+
+For hands-on diagnosis, acquire a retained Docker topology from the current
+worktree:
+
+```bash
+composer e2e:dev-topology -- --provider=docker --kind=operator_gateway_app-dev
+composer e2e:dev-topology:release -- <id>
+```
+
+The retained Docker manifest records the Docker host, run id, network,
+containers, volumes, and release command. If acquisition fails after Docker
+resources have been created, the command keeps those resources and writes a
+retained failure manifest so the broken topology can be inspected and released
+deterministically. Remote retained Docker topologies use the rsynced source copy
+from acquisition time; reacquire before verifying later edits.
 
 ## Host pool
 

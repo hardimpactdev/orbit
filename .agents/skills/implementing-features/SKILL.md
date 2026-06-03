@@ -158,7 +158,9 @@ pool is fully booked by another worktree, not a real failure.
    matters and that lane exists for the provider.
 10. Run provider provision gates only as final/nightly substrate verification
    when installer, host mutation, image, binary, or topology-preparation
-   behavior changed.
+   behavior changed. Docker provision is only for Docker artifact/image or
+   Docker topology-preparer changes; do not run it as a generic post-`composer
+   test:e2e` gate.
 11. If PHP changed, run:
 
    ```bash
@@ -212,12 +214,14 @@ Normal feature work follows a staged E2E model:
   E2E signal.
 - **Artifact-backed feature E2E** when production artifacts matter and an
   artifact lane exists. This consumes the built CLI binary and gateway image.
-- **Provider provision gates** only as final/nightly substrate verification for
-  installer, host mutation, image, binary, `node:new`, or topology-preparation
-  behavior. Agents run `composer test:e2e:provision:docker` or
-  `composer test:e2e:provision:incus`; never run the aggregate
-  `composer test:e2e:provision`. There is no standing live-node lane — see
-  `apps/docs/content/testing/README.md` for the full lane map.
+- **Provider provision gates** only as final/nightly substrate verification.
+  Docker provision refreshes Docker runtime/support images, prepared role
+  images, Docker host artifact distribution, or Docker topology-preparation
+  behavior. Incus provision proves the fresh VM path: installer, `node:new`,
+  base image, WireGuard, systemd, package installation, and host mutation.
+  Agents run the relevant provider-specific command only; never run the
+  aggregate `composer test:e2e:provision`. There is no standing live-node lane —
+  see `apps/docs/content/testing/README.md` for the full lane map.
 
 Workflow per change:
 
@@ -230,7 +234,8 @@ Workflow per change:
 
 A feature is not done until the relevant in-memory and prepared-topology feature
 signals pass. Provider provision gates are required only when the change touches
-the provider substrate or production artifact preparation.
+that provider's substrate or production artifact preparation; Docker provision
+is not required after ordinary `composer test:e2e` runs.
 
 ## Implementation Rules
 
