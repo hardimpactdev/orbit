@@ -25,6 +25,34 @@ use Saloon\Http\Faking\MockResponse;
 use Saloon\Http\PendingRequest;
 use Tests\TestCase;
 
+(static function (): void {
+    if (getenv('ORBIT_E2E') === '1') {
+        return;
+    }
+
+    $home = __DIR__.'/../storage/framework/testing/home';
+    $configRoot = $home.'/.config/orbit';
+
+    if (! is_dir($configRoot) && ! @mkdir($configRoot, 0777, true) && ! is_dir($configRoot)) {
+        throw new RuntimeException("Unable to create test Orbit config directory [{$configRoot}].");
+    }
+
+    $envPath = $configRoot.'/.env';
+
+    if (! is_file($envPath)) {
+        file_put_contents($envPath, implode(PHP_EOL, [
+            'APP_NAME=Orbit',
+            'APP_ENV=testing',
+            'APP_KEY=base64:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=',
+            '',
+        ]));
+    }
+
+    putenv('HOME='.$home);
+    $_ENV['HOME'] = $home;
+    $_SERVER['HOME'] = $home;
+})();
+
 require_once __DIR__.'/E2E/Support/Pest.php';
 
 ParallelRunner::resolveApplicationUsing(function (): Application {

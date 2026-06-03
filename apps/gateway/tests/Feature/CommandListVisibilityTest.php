@@ -109,6 +109,14 @@ function gatewayCommandInventoryRows(): array
 /**
  * @return list<string>
  */
+function gatewayRegisteredCommandNames(): array
+{
+    return array_keys(Artisan::all());
+}
+
+/**
+ * @return list<string>
+ */
 function gatewayRemovedAppNodeLocalCommandNames(): array
 {
     return [
@@ -258,12 +266,12 @@ function gatewayRemovedInfraToolCommandNames(): array
     ];
 }
 
-function expectGatewayCommandToBeRemoved(string $commandName): void
+/**
+ * @param  list<string>  $commandNames
+ */
+function expectGatewayCommandsToBeRemoved(array $commandNames): void
 {
-    $process = new Process([PHP_BINARY, 'artisan', 'help', $commandName], base_path());
-    $process->run();
-
-    expect($process->isSuccessful())->toBeFalse();
+    expect(gatewayRegisteredCommandNames())->not->toContain(...$commandNames);
 }
 
 it('hides CLI-owned public product commands from the gateway command list', function (): void {
@@ -395,9 +403,7 @@ it('removes app, node, and local public product commands from gateway Artisan', 
 
     expect($registeredCommandNames)->not->toContain(...gatewayRemovedAppNodeLocalCommandNames());
 
-    foreach (gatewayRemovedAppNodeLocalCommandNames() as $commandName) {
-        expectGatewayCommandToBeRemoved($commandName);
-    }
+    expectGatewayCommandsToBeRemoved(gatewayRemovedAppNodeLocalCommandNames());
 });
 
 it('removes resource public product commands from gateway Artisan', function (): void {
@@ -407,9 +413,7 @@ it('removes resource public product commands from gateway Artisan', function ():
 
     expect($registeredCommandNames)->not->toContain(...gatewayRemovedResourceCommandNames());
 
-    foreach (gatewayRemovedResourceCommandNamesWithoutFrameworkCollisions() as $commandName) {
-        expectGatewayCommandToBeRemoved($commandName);
-    }
+    expectGatewayCommandsToBeRemoved(gatewayRemovedResourceCommandNamesWithoutFrameworkCollisions());
 });
 
 it('removes infra and tool public product commands from gateway Artisan', function (): void {
@@ -419,9 +423,7 @@ it('removes infra and tool public product commands from gateway Artisan', functi
 
     expect($registeredCommandNames)->not->toContain(...gatewayRemovedInfraToolCommandNames());
 
-    foreach (gatewayRemovedInfraToolCommandNames() as $commandName) {
-        expectGatewayCommandToBeRemoved($commandName);
-    }
+    expectGatewayCommandsToBeRemoved(gatewayRemovedInfraToolCommandNames());
 });
 
 it('uses the Orbit CLI name independent of local environment drift', function (): void {
