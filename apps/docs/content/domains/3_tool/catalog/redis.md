@@ -36,7 +36,7 @@ Example JSON shape:
         "tool": "redis",
         "node": "app-1",
         "fields": {
-          "host": "orbit.test",
+          "host": "10.6.0.12",
           "port": 6379,
           "database": 0,
           "username": "orbit",
@@ -51,9 +51,10 @@ Example JSON shape:
 
 ## Service Endpoint
 
-`redis` exposes a TCP service endpoint reachable only over WireGuard at
-`orbit.<node-tld>:6379` for development nodes. This is DNS/service endpoint
-configuration owned by the tool definition, not an HTTP proxy route.
+`redis` exposes a TCP service endpoint reachable only over WireGuard at the
+serving node's WireGuard service address, such as `10.6.0.12:6379`. This is
+service endpoint configuration owned by the tool definition, not an HTTP proxy
+route.
 
 ## Orbit Notes
 

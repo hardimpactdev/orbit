@@ -20,29 +20,23 @@ These terms describe the runtime objects that Orbit derives from process definit
 
 - **Runtime unit:** Abstract product noun for an Orbit-managed long-running
   process derived from app, optional workspace, and process configuration.
-- **Process runtime:** Backend that runs an Orbit runtime unit. Docker process
-  runtime is the default for PHP app and workspace processes.
-- **Docker process runtime:** Runtime backend that runs a process unit in
-  Docker as an app/workspace sidecar container with Docker logs and lifecycle
-  controls.
-- **Supervisor process runtime:** Explicit residual runtime for supported
-  non-PHP host-side process units. It is not the default app/workspace process
-  runtime and must not be used as a host PHP fallback.
+- **Process runtime:** Backend that runs an Orbit runtime unit.
+- **Supervisor process runtime:** Runtime backend that runs a process unit as a
+  host Supervisor program with Supervisor logs and lifecycle controls.
 - **Runtime unit expansion:** One runtime unit is rendered for the main app
   instance and one for each workspace of that app per process definition. Each
   runtime unit is applied by the selected process runtime backend.
 - **Runtime unit filename:** `orbit_<app>_<workspace|main>_<process>`. The
   `orbit_` prefix marks Orbit ownership; underscores are reserved as backend
-  segment delimiters. Docker container names and explicit Supervisor program
-  names derive from the same product identity.
+  segment delimiters. Supervisor program names derive from the same product
+  identity.
 - **Runtime unit environment:** Predictable runtime environment exposed to
   derived runtime units, including `PATH`, `HOME`, `APP_URL`, `VITE_APP_URL`,
   and TLS path variables that Orbit manages. Separate from workspace lifecycle
   step environment.
 - **Runtime backend artifact:** Backend-specific rendering of a runtime unit.
-  Docker runtime units are containers. Explicit `supervisor` runtime units are
-  Supervisor programs. The artifact starts the process command in the resolved
-  app or workspace context.
+  Supervisor runtime units are host Supervisor programs. The artifact starts
+  the process command in the resolved app or workspace context.
 
 ## Policy
 
@@ -55,11 +49,10 @@ These terms define per-process behavioral rules that apply to every derived runt
   delivery. When the policy is enabled, `crashed` events resolve the effective
   agent IDE and notify the active session when one is available.
 - **Process runtime selection:** Process-definition field that records which
-  backend renders the derived runtime units. Allowed values are `docker` and
-  `supervisor`. When a process is added without an explicit runtime, the
-  default is derived from the owning app's runtime kind: PHP apps default to
-  `docker`; non-PHP apps default to `supervisor`. Existing processes keep their
-  stored runtime until `process:edit --runtime=<docker|supervisor>` changes it.
+  backend renders the derived runtime units. New app and workspace process
+  definitions use `supervisor` unless a later command contract explicitly
+  admits another runtime. Existing definitions keep their stored runtime until a
+  migration or `process:edit --runtime=<runtime>` changes it.
 
 ## Events
 

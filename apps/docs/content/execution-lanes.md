@@ -1,17 +1,18 @@
 # Runtime Execution Lanes
 
-This page defines how the gateway may execute work on Docker-first-managed
-nodes. The SSH transport stays `RemoteShell`, but every gateway-to-node
-workload must belong to one of three execution lanes.
+This page defines how the gateway may execute work on managed nodes. The SSH
+transport stays `RemoteShell`, but every gateway-to-node workload must belong
+to one of three execution lanes.
 
 ## Scope
 
-A Docker-first-managed node is a node that has the Orbit Docker baseline:
+An Orbit-managed node has the substrate needed by the artifacts its roles own:
 `orbit-gateway` and `orbit-scheduler` Swarm services on gateway nodes,
-`orbit-caddy` for proxying when needed, and workload containers for apps,
-workspaces, processes, and backing services. Source-dev Docker and Incus
-topologies are development and E2E lanes. Artifact-prod installs use the native
-CLI binary artifact and production images.
+`orbit-caddy` for proxying when needed, Docker-backed app/workspace web
+containers and role/tool services where those artifacts are declared, and host
+Supervisor programs for configured app/workspace processes. Source-dev Docker
+and Incus topologies are development and E2E lanes. Artifact-prod installs use
+the native CLI binary artifact and production images.
 
 Before that baseline exists, bootstrap may use host shell commands to install
 Docker, prepare the `orbit` user, clone Orbit source, and create the first
@@ -62,9 +63,10 @@ Allowed work:
   `/var`, and the node user's home.
 - `orbit-caddy` container lifecycle, Caddy include files, route artifacts, and
   Caddy reload/repair.
-- App/workspace/process container dispatch through Docker, including
-  `docker exec` into app, workspace, or process containers.
-- Explicit residual host runtimes such as non-PHP Supervisor process units.
+- App/workspace web-container dispatch through Docker, including `docker exec`
+  into app or workspace containers.
+- Supervisor program lifecycle, logs, and repair for configured app/workspace
+  process units.
 
 Forbidden work:
 
@@ -87,7 +89,7 @@ host file access and PHP/PDO, it belongs in `RemoteLocalExecutor`.
 `orbit-gateway` container boundary, or runs the equivalent one-shot gateway
 image command when the operation is replacing the gateway service itself. It is
 the lane for gateway Laravel/artisan/PDO work that belongs to the gateway
-runtime container on Docker-first-managed gateway nodes.
+runtime container on managed gateway nodes.
 
 Required work:
 
@@ -230,7 +232,7 @@ structured local-executor input as JSON or as a free-form shell script.
 
 Use these rules for every new or migrated gateway-to-node execution path.
 
-- On Docker-first-managed gateway nodes, gateway Laravel/artisan/PDO work MUST
+- On managed gateway nodes, gateway Laravel/artisan/PDO work MUST
   go through `RemoteGatewayRuntimeExecutor` or the equivalent durable one-shot
   runner when the gateway service is being replaced.
 - Packaged node-local helper logic that needs host file access and PHP/PDO MUST
@@ -250,7 +252,7 @@ Use these rules for every new or migrated gateway-to-node execution path.
   but it must validate the gateway-issued operation token before side effects
   and must not become a public authority path.
 - Legacy fallback paths that run PHP/Composer/Artisan on the host are not valid
-  on Docker-first-managed nodes.
+  on managed nodes.
 
 ## Orbit Caddy Isolation
 
@@ -294,19 +296,19 @@ inherit the lane of the production code they exercise.
 | `apps/gateway/app/Http/Controllers/Api/UpdateAllController.php:272,405` (`installing_dependencies`) | `RemoteGatewayRuntimeExecutor` | Legacy source-dev gateway dependency stage; production artifact updates replace this with immutable image acquisition and the one-shot runner. |
 | `apps/gateway/app/Http/Controllers/Api/UpdateAllController.php:272,405` (`running_migrations`) | `RemoteGatewayRuntimeExecutor` | Legacy source-dev gateway migration stage; production artifact updates run migrations through the target gateway image. |
 | `apps/gateway/app/Actions/Apps/CreateAppSourceOnNode.php:30` | `RemoteHostExecutor` | Creates/checks source directories and git material on the host. |
-| `apps/gateway/app/Actions/Apps/EnsureAppProcessRuntimeUnits.php:105,130` | `RemoteHostExecutor` | Repairs Supervisor residual units and Docker process runtime artifacts. |
+| `apps/gateway/app/Actions/Apps/EnsureAppProcessRuntimeUnits.php:105,130` | `RemoteHostExecutor` | Repairs Supervisor process runtime artifacts. |
 | `apps/gateway/app/Actions/Apps/EnsureAppProxyRoute.php:70,105,134,244,256` | `RemoteHostExecutor` | Writes and reads Caddy route artifacts on serving, router, and backend hosts. |
 | `apps/gateway/app/Actions/Apps/RemoveApp.php:124` | `RemoteHostExecutor` | Removes app host/runtime artifacts. |
-| `apps/gateway/app/Actions/Processes/AddProcess.php:115` | `RemoteHostExecutor` | Starts explicit Supervisor residual process units; Docker units are delegated to Docker managers. |
-| `apps/gateway/app/Actions/Processes/EditProcess.php:125` | `RemoteHostExecutor` | Restarts explicit Supervisor residual units. |
-| `apps/gateway/app/Actions/Processes/RemoveProcess.php:98` | `RemoteHostExecutor` | Removes explicit Supervisor residual units. |
-| `apps/gateway/app/Actions/Processes/RestartProcesses.php:105` | `RemoteHostExecutor` | Restarts explicit Supervisor residual units. |
-| `apps/gateway/app/Actions/Processes/ShowProcessLogs.php:59` | `RemoteHostExecutor` | Reads process logs from Docker or explicit Supervisor host artifacts. |
-| `apps/gateway/app/Actions/Processes/StartProcesses.php:106` | `RemoteHostExecutor` | Starts explicit Supervisor residual units. |
-| `apps/gateway/app/Actions/Processes/StopProcesses.php:106` | `RemoteHostExecutor` | Stops explicit Supervisor residual units. |
+| `apps/gateway/app/Actions/Processes/AddProcess.php:115` | `RemoteHostExecutor` | Starts Supervisor process programs. |
+| `apps/gateway/app/Actions/Processes/EditProcess.php:125` | `RemoteHostExecutor` | Restarts Supervisor process programs. |
+| `apps/gateway/app/Actions/Processes/RemoveProcess.php:98` | `RemoteHostExecutor` | Removes Supervisor process programs. |
+| `apps/gateway/app/Actions/Processes/RestartProcesses.php:105` | `RemoteHostExecutor` | Restarts Supervisor process programs. |
+| `apps/gateway/app/Actions/Processes/ShowProcessLogs.php:59` | `RemoteHostExecutor` | Reads process logs from Supervisor host artifacts. |
+| `apps/gateway/app/Actions/Processes/StartProcesses.php:106` | `RemoteHostExecutor` | Starts Supervisor process programs. |
+| `apps/gateway/app/Actions/Processes/StopProcesses.php:106` | `RemoteHostExecutor` | Stops Supervisor process programs. |
 | `apps/gateway/app/Actions/Workspaces/CreateWorkspace.php:113` | `RemoteHostExecutor` | Preflights target node reachability before workspace creation. |
 | `apps/gateway/app/Actions/Workspaces/RemoveWorkspace.php:73,87,106` | `RemoteHostExecutor` | Removes process units, runs teardown commands, and removes host worktree paths. |
-| `apps/gateway/app/Actions/Workspaces/SetupWorkspace.php:330,342` | `RemoteHostExecutor` | Installs host process artifacts and starts explicit Supervisor residual units. |
+| `apps/gateway/app/Actions/Workspaces/SetupWorkspace.php:330,342` | `RemoteHostExecutor` | Installs host process artifacts and starts Supervisor process programs. |
 | `apps/gateway/app/Services/AgentIde/CoreAgentIdeWorkspacePathResolver.php:36,70` | `RemoteLocalExecutor` | Current OpenCode/Polyscope lookup scripts use host Python/SQLite; adapter state lookup must move into token-gated local executor logic. |
 | `apps/gateway/app/Services/Apps/AppRuntimeContainerManager.php:386` | `RemoteHostExecutor` | Creates, inspects, removes, and starts app runtime containers through Docker. |
 | `apps/gateway/app/Services/Apps/AppsFixer.php:170` | `RemoteHostExecutor` | Repairs app host/runtime artifacts from gateway intent. |
@@ -319,7 +321,7 @@ inherit the lane of the production code they exercise.
 | `apps/gateway/app/Services/DatabaseConnections/DatabaseConnectionExecutor.php:84` | `RemoteGatewayRuntimeExecutor` | Runs local SQLite query work through Orbit code/PDO on the owning node. |
 | `apps/gateway/app/Services/DatabaseConnections/DatabaseConnectionProbe.php:106,213` | `RemoteHostExecutor` | Reads app/workspace `.env` files from host paths for drift probes. |
 | `apps/gateway/app/Services/DatabaseConnections/DatabaseConnectionRestorer.php:45,79` | `RemoteHostExecutor` | Writes and reads app/workspace `.env` files on host paths. |
-| `apps/gateway/app/Services/Deploy/DeployManager.php:159,339,434,495` | `RemoteHostExecutor` | Dispatches deploy steps and app-container warmups; Docker-first PHP/Composer/Artisan deploy commands must run in app containers, not host PHP. |
+| `apps/gateway/app/Services/Deploy/DeployManager.php:159,339,434,495` | `RemoteHostExecutor` | Dispatches deploy steps and app-container warmups; app PHP/Composer/Artisan deploy commands must run in app runtime context, not ad hoc host PHP. |
 | `apps/gateway/app/Services/Firewall/FirewallRuleFixer.php:32,36,37,57,58` | `RemoteHostExecutor` | Applies UFW host firewall rules and reloads UFW. |
 | `apps/gateway/app/Services/Firewall/FirewallRuleProbe.php:52` | `RemoteHostExecutor` | Reads UFW host firewall state. |
 | `apps/gateway/app/Services/Nodes/NodeIdentityArtifactProbe.php:21,58` | `RemoteHostExecutor` | Reads the WireGuard interface public key with host `wg`; that host interface probe is substrate work. |
@@ -330,14 +332,14 @@ inherit the lane of the production code they exercise.
 | `apps/gateway/app/Services/OrbitUpdater.php:70,72,111` (`pullRemoteSource`) | `RemoteHostExecutor` | Runs `git pull --ff-only` in the host source checkout. |
 | `apps/gateway/app/Services/OrbitUpdater.php:75,77,111` (`installRemoteDependencies`) | `RemoteGatewayRuntimeExecutor` | Legacy source-dev gateway dependency path; production artifact updates use immutable image acquisition and the durable runner. |
 | `apps/gateway/app/Services/OrbitUpdater.php:80,82,111` (`runRemoteMigrations`) | `RemoteGatewayRuntimeExecutor` | Legacy source-dev gateway migration path; production artifact updates run migrations through the target gateway image. |
-| `apps/gateway/app/Services/Processes/ProcessDockerRuntimeManager.php:174` | `RemoteHostExecutor` | Creates and controls Docker process runtime units. |
-| `apps/gateway/app/Services/Processes/ProcessesProbe.php:66,127,230` | `RemoteHostExecutor` | Probes Docker process containers and explicit Supervisor residual artifacts; current host PHP helper at `:230` must be rewritten as host-substrate shell. |
+| `apps/gateway/app/Services/Processes/ProcessDockerRuntimeManager.php:174` | `RemoteHostExecutor` | Legacy Docker process runtime manager to retire during the Supervisor process substrate migration. |
+| `apps/gateway/app/Services/Processes/ProcessesProbe.php:66,127,230` | `RemoteHostExecutor` | Probes process runtime artifacts; current host PHP helper at `:230` must be rewritten as host-substrate shell. |
 | `apps/gateway/app/Services/Proxy/ProxyRouteFixer.php:79,113,151,178,349,386,456` | `RemoteHostExecutor` | Writes, removes, reloads, and repairs `orbit-caddy` route artifacts. |
 | `apps/gateway/app/Services/Proxy/ProxyRouteProbe.php:120,166,236,336` | `RemoteHostExecutor` | Probes `orbit-caddy` route files, container state, and proxy reachability. |
 | `apps/gateway/app/Services/RemoteShell/RemoteSecretFile.php:25,49` | `RemoteHostExecutor` | Stages and removes temporary secret files on the host. |
 | `apps/gateway/app/Services/RemoteShell/RemoteShellPool.php:59,91` | `RemoteHostExecutor` | Executes queued SSH jobs; current producer is schedule dispatch and inherits host-lane dispatch rules. |
 | `apps/gateway/app/Services/RuntimeBackend/GatewayRuntimeBackendProbe.php:35` | `RemoteHostExecutor` | Probes the host Docker/Swarm state for `orbit-gateway` and `orbit-scheduler`. |
-| `apps/gateway/app/Services/RuntimeBackend/RuntimeBackendProbe.php:19` | `RemoteHostExecutor` | Probes explicit Supervisor residual availability. |
+| `apps/gateway/app/Services/RuntimeBackend/RuntimeBackendProbe.php:19` | `RemoteHostExecutor` | Probes Supervisor process runtime availability. |
 | `apps/gateway/app/Services/WebSockets/WebSocketRuntimeContainerManager.php:148` | `RemoteHostExecutor` | Creates, inspects, removes, and starts WebSocket Reverb runtime containers through Docker. |
 | `apps/gateway/app/Services/Schedules/ScheduleDispatcher.php:76,90` | `RemoteHostExecutor` | Dispatches generic schedule jobs through the host SSH pool; schedule definitions that execute Orbit PHP must render runtime-lane commands before enqueue. |
 | `apps/gateway/app/Services/Schedules/SchedulesFixer.php:56` | `RemoteHostExecutor` | Repairs scheduler host/runtime artifacts on the gateway node. |

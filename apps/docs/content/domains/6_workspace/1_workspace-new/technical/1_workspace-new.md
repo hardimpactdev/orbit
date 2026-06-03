@@ -135,8 +135,8 @@ register an existing path use
    - **Setup steps:** execute configured workspace setup steps in the
      workspace path with the lifecycle environment defined in
      [Workspaces README](../../README.md#lifecycle-step-environment).
-   - **Inherited runtime units:** render and (re)install Docker process runtime
-     units derived from the parent app's process definitions.
+   - **Inherited runtime units:** render and (re)install Supervisor process
+     programs derived from the parent app's process definitions.
    - **HTTP probe:** perform the same HTTP probe that `workspace:setup`
      performs at setup time. Probe failures are command warnings, not durable
      workspace state and not doctor issue codes.
@@ -202,7 +202,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | Path | Coverage |
 | --- | --- |
 | `apps/gateway/tests/Feature/Commands/Workspaces/WorkspaceNewCommandTest.php` | Input resolution, name/slug validation, reserved-`main` rejection, per-app collision rejection, `--php-version` validation, gateway write, driver dispatch and adapter id capture, `success.meta.warnings[]` shape, and shared exit-status behavior. |
-| `apps/gateway/tests/E2E/WorkspaceNewTest.php` | End-to-end workspace creation against a real node: worktree creation, runtime container artifact installation, workspace-owned proxy route, and inherited runtime unit rendering as Docker process runtime units. |
+| `apps/gateway/tests/E2E/WorkspaceNewTest.php` | End-to-end workspace creation against a real node: worktree creation, runtime container artifact installation, workspace-owned proxy route, and inherited runtime unit rendering as Supervisor process programs. |
 
 Role-specific behavior and test mapping live in:
 

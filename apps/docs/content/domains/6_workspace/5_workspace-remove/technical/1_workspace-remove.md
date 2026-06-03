@@ -110,7 +110,7 @@ definition.
 - **Step 3: Stop traffic.** Re-render the proxy backend so the workspace
   hostname stops serving requests.
 - **Step 4: Stop processes.** Stop and remove inherited runtime units
-  (Docker process runtime units by default) for this workspace. Parent app process definitions
+  (Supervisor process programs) for this workspace. Parent app process definitions
   are not modified.
 - **Step 5: Run teardown steps.** Execute configured workspace teardown steps
   on the node. The worktree is still present and processes are stopped at

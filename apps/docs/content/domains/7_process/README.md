@@ -25,17 +25,15 @@ These rules describe how runtime units are derived from process definitions.
 - Runtime units are the process-family product noun: units derived from app, optional workspace, and process configuration. They are not gateway state rows.
 - Each process definition renders one runtime unit for the main app instance
   and one runtime unit for each workspace of that app.
-- Each rendered runtime unit is a separate Docker process runtime unit by
-  default, with its own unit name, working directory, environment, and Docker
-  log stream.
+- Each rendered runtime unit is a separate host Supervisor program, with its
+  own unit name, working directory, environment, and log capture.
 - The process definition supplies shared fields such as command, restart policy,
   and crash notification policy. The rendering context supplies per-instance
   fields such as main vs. workspace, path, and URL.
 - Runtime unit names use `orbit_<app>_<workspace|main>_<process>`.
 - The `orbit_` prefix marks Orbit ownership, and underscores are reserved as
   backend segment delimiters.
-- Docker container names and explicit Supervisor program names derive from the
-  same product identity.
+- Supervisor program names derive from the same product identity.
 
 ### Restart policy
 
@@ -80,15 +78,15 @@ These rules describe how lifecycle commands address runtime units.
 
 - Runtime lifecycle commands start, stop, restart, and inspect derived units.
 - Omitting `[name]` for `process:start`, `process:stop`, and `process:restart` targets every process definition in process order for the resolved context.
-- Logs come from Docker stdout/stderr for Docker process runtime units. Explicit
-  `process.runtime=supervisor` units read Supervisor stdout/stderr capture.
+- Logs come from Supervisor stdout/stderr capture for the selected runtime
+  unit.
 
 ### Command argument conventions
 
 Create commands use positional arguments for required fields. Edit commands use named options so omitted fields preserve their current value. This is why `process:add` accepts the required `[command]` positionally, while `process:edit` uses `--command=<command>` as one optional edit field among several.
 
-Implementation-shape details for Docker process runtime, explicit Supervisor
-residual runtime, and the Orbit Scheduler live in
+Implementation-shape details for Supervisor process runtime and the Orbit
+Scheduler live in
 [tech-stack.md#process-manager](../../tech-stack.md#process-manager) and
 [tech-stack.md#scheduler](../../tech-stack.md#scheduler).
 

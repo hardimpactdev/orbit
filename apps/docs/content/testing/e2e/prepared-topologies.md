@@ -341,8 +341,9 @@ Common requirements for every prepared topology:
   `<source>/apps/cli/orbit`; production artifact and binary-acceptance lanes
   are the lanes that require the native Orbit CLI binary artifact on managed
   nodes;
-- host Composer, host Caddy, PHP-FPM, and host Supervisor for PHP app processes
-  are absent from Docker-first topology images;
+- host Composer, host Caddy, and PHP-FPM are absent from prepared topology
+  images; host Supervisor is present only when the topology exercises
+  configured process units;
 - Orbit runtime containers use sibling containers through the host Docker socket;
 - tests may mutate clones, but must never mutate template instances;
 - cleanup deletes clones unless `ORBIT_E2E_KEEP=1`;
@@ -357,7 +358,7 @@ Each topology kind adds the handles and seeded state that tests can rely on.
 | `operator` | Provides one operator node clone through the `operator` topology handle. The operator user is `ORBIT_E2E_OPERATOR_USER` (`orbit` by default, with `ORBIT_E2E_CONTROL_USER` accepted as an alias). |
 | `operator_gateway` | Adds one gateway clone through the `gateway` handle. The operator can reach the gateway API, stores gateway settings, and trusts the gateway CA. |
 | `operator_gateway_app-dev` | Adds a development app clone named `app-dev-1`. Development TLD state exists for `test` and points at the development app's WireGuard address. |
-| `operator_gateway_app-dev_app-prod` | Adds a production app clone named `app-prod-1`. Production app runtime assertions use FrankenPHP app containers and Docker process runtime units behind the private `orbit-caddy` backend listener. |
+| `operator_gateway_app-dev_app-prod` | Adds a production app clone named `app-prod-1`. Production app runtime assertions use FrankenPHP app containers and Supervisor process programs behind the private `orbit-caddy` backend listener. |
 | `operator_gateway_app-dev_app-prod_ingress` | Adds a dedicated ingress clone named `edge-1`; app-prod remains `app-prod-1` and points its production ingress setting at `edge-1`. |
 | `operator_gateway_agent` | Adds one agent clone named `agent-1` and skips development and production app clones. |
 | `operator_gateway_app-prod_ingress` | Uses one production app clone that also carries the ingress role. Public production HTTP assertions preserve the path `ingress -> router -> backend`. |
@@ -374,7 +375,8 @@ Prepared E2E topologies keep hosted service assertions on the owning app node:
 - `operator_gateway_app-dev_app-prod_ingress` moves ingress from app-prod to
   `edge-1`;
 - hosted service assertions must not add host PHP, host Composer, host Caddy,
-  PHP-FPM, or host Supervisor to make those services pass.
+  or PHP-FPM to make those services pass. Host Supervisor belongs only to
+  configured process-unit assertions.
 
 ## Reset modes
 

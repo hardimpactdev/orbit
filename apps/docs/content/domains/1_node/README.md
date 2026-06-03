@@ -109,8 +109,8 @@ Roles materialize baseline tool intent when a role assignment converges.
 | `gateway` | Swarm-managed `orbit-gateway` API service, `orbit-scheduler` service, gateway config root, SQLite database, and Orbit CA/certificate material |
 | `vpn` | WireGuard server runtime, public endpoint settings, VPN peer defaults, and VPN-facing DNS runtime |
 | `router` | Private `orbit-caddy` router for private `.orbit` DNS/service names, private route artifacts, backend pools, and private HTTP/WebSocket/S3 routing |
-| `app-dev` | Docker-first app runtime baseline, development DNS mapping, and `orbit-caddy` app/workspace routes |
-| `app-prod` | Private `orbit-caddy` backend, FrankenPHP app containers, and Docker process runtime |
+| `app-dev` | App runtime baseline, development DNS mapping, `orbit-caddy` app/workspace routes, and Supervisor process programs where configured |
+| `app-prod` | Private `orbit-caddy` backend, FrankenPHP app containers, and Supervisor process programs where configured |
 | `database` | Docker running as the substrate for managed database service tools |
 | `agent` | `orbit-caddy`, the shared unprivileged `agent` runtime user, the gateway-owned agent DNS mapping for the role's `tld`, and any role-specific runtime containers the agent workload needs |
 | `ingress` | `orbit-caddy` running as the public production HTTP ingress boundary, forwarding public routes to `router` |
@@ -315,6 +315,12 @@ is role-aware:
 - only nodes with active `ingress` expose public production HTTP/HTTPS;
 - `app-prod` backend port `80` is private backend traffic reachable only through the Orbit/WireGuard network;
 - SSH and other node-management access stay on the Orbit network.
+
+The node's assigned WireGuard IP is its private service address. TCP service
+endpoints and private backend routes use that address directly instead of a
+node TLD hostname. Linux managed nodes keep a self-route for their assigned
+WireGuard address so a service client running on the same node uses the same
+address that remote Orbit peers use.
 
 Node bootstrap applies this baseline with rollback and reachability checks so a
 failed policy change does not silently strand a node. Operator-managed firewall

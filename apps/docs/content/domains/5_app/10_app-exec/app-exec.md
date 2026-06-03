@@ -52,10 +52,10 @@ orbit app:exec -- php artisan tinker
 
 ## What Happens
 
-`app:exec` resolves the selected app, looks up its FrankenPHP runtime
-container on the owning node, and runs `<command...>` inside that container.
-The command runs as the container's default user with the container's
-working directory at the mounted app source root.
+`app:exec` resolves the selected app, chooses the node host PHP binary that
+matches the app's configured PHP version, and runs `<command...>` on the owning
+node from the app source path. The app's FrankenPHP runtime container serves
+that same source but is not the command execution boundary.
 
 Resolution order for `app`:
 
@@ -98,14 +98,15 @@ the exact payload shape, success and error codes, and field meanings.
 ## Related Commands
 
 Use these commands alongside `app:exec` to switch between app and workspace
-runtime targets or to repair a container that is not running.
+execution targets or to repair app serving drift.
 
 - [`workspace:exec`](../../6_workspace/14_workspace-exec/workspace-exec.md) — run
-  a command inside a workspace runtime container instead of the parent app.
+  a command on the owning node's host PHP toolchain from a workspace source
+  path instead of the parent app source path.
 - [`app:show`](../4_app-show/app-show.md) — inspect the canonical app entity
   before running commands against it.
-- [`doctor --family=app`](../app-doctor.md) — verify and repair the app
-  runtime container when `app:exec` reports the container is not running.
+- [`doctor --family=app`](../app-doctor.md) — verify and repair app runtime
+  artifacts when app serving drift is reported.
 
 ## Technical Contract
 

@@ -51,6 +51,11 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
   `database_path`, `app_user`, `app_name`, `domain`, and `repository`, plus
   nested app and node metadata for placeholder resolution.
 - Executes each configured step on the app's owning node through the gateway.
+- Release-aware steps may create versioned release directories under
+  `releases_path` and switch `live_path` to a release inside that app-owned
+  boundary. They must not point `live_path`, document root, storage,
+  database, or any runtime bind mount at paths outside the app source,
+  `releases_path`, or explicitly managed shared paths.
 - Runs steps that invoke `php`, `composer`, or `artisan` on the host PHP
   toolchain matched to the app's PHP version (`php8.4`/`php8.5`) when the app
   uses `runtime_kind=php`, from the app source path on the host node.
@@ -77,10 +82,11 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 - After all configured steps complete successfully for a PHP app, runs built-in
   production warmup on the host PHP toolchain (matched to the app's PHP
   version): `composer install --no-dev --optimize-autoloader --no-interaction`
-  and `php artisan optimize`, against the app source the FrankenPHP container
-  serves.
+  and `php artisan optimize`, against the app source or active release the
+  FrankenPHP runtime service serves.
 - When the app defines `deploy_warmup_paths`, sends HTTP warmup requests to
-  those paths on the app container before the deployment is marked complete.
+  those paths on the app runtime endpoint before the deployment is marked
+  complete.
 - Updates the run status and the app's latest deployment status to
   `completed`, `failed`, or `cancelled`.
 

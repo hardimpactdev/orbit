@@ -2,22 +2,24 @@
 
 [Back to Tool commands.](../README.md)
 
-Upgrade or downgrade an already managed tool on a node.
+Upgrade or downgrade an already managed tool instance on a node.
 
-`tool:update` changes a managed tool's intended version or updates it to the
-latest supported version. It is for version movement, not for first install and
-not for configuration-only repair.
+`tool:update` changes a managed tool instance's intended version or updates it
+to the latest supported version within its stored runtime. It is for version
+movement, not for first install, runtime migration, or configuration-only
+repair.
 
 ## Usage
 
 ```bash
-orbit tool:update [tool] [--app=<app>] [--node=<node>] [--expected-version=<version>] [--json]
+orbit tool:update [tool] [--app=<app>] [--node=<node>] [--instance=<instance>] [--expected-version=<version>] [--json]
 ```
 
 ## Examples
 
 ```bash
 orbit tool:update redis --node=app-1
+orbit tool:update redis --node=app-1 --instance=default
 orbit tool:update redis --node=app-1 --expected-version=7.2
 orbit tool:update --node=app-1
 orbit tool:update redis --app=docs --json
@@ -26,10 +28,12 @@ orbit tool:update redis --app=docs --json
 ## Arguments and options
 
 - `tool`: Optional tool name. When omitted, Orbit attempts to update all managed
-  tools on the target node that support updates.
+  tool instances on the target node that support updates.
+- `--instance`: Tool instance id. Required when selecting one tool would match
+  more than one managed instance.
 - `--expected-version`: Specific target version. This avoids Symfony's global
   `--version` console option. When omitted, the tool definition's latest
-  supported version is used.
+  supported version in the stored version family is used.
 - `--node`: Target node. Defaults to local `node:default` when configured.
 - `--app`: Resolve the target node from an app.
 - `--json`: Output JSON.
@@ -41,17 +45,21 @@ Target context is required when neither `--node`, `--app`, nor local
 
 `tool:update`:
 
-1. Resolves the target node and selected managed tools.
-2. Verifies each selected tool supports updates and the requested version.
+1. Resolves the target node and selected managed tool instances.
+2. Verifies each selected tool supports updates and the requested version
+   belongs to the instance's stored version family.
 3. Updates the gateway expected version.
-4. Applies the version update through the gateway.
+4. Applies the version update through the gateway using the instance's stored
+   runtime family.
 5. Restarts a tool when the update process requires it and the expected state is
    `running`.
 6. Reports updated, skipped, and failed tools.
 
 Use [`tool:install`](../3_tool-install/tool-install.md) to create or configure a tool for the
 first time. Use [`tool:reconfigure`](../12_tool-reconfigure/tool-reconfigure.md) to rerun setup
-without changing intended version.
+without changing intended version. `tool:update` does not silently migrate an
+instance from `docker` to `docker-swarm`; runtime migration requires an
+explicit future command contract.
 
 ## Output
 

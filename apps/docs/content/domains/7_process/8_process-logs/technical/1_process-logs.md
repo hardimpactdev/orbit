@@ -64,9 +64,8 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 
 ## Doctor Relationship
 
-`process:logs` reads Docker stdout/stderr logs for Docker process runtime
-units, and Supervisor logs only for explicit `process.runtime=supervisor`
-units. [`process-doctor.md`](../../process-doctor.md) owns verification and
+`process:logs` reads Supervisor stdout/stderr logs for process runtime units.
+[`process-doctor.md`](../../process-doctor.md) owns verification and
 repair of the runtime-unit artifacts and event notifier material that help
 produce process observability.
 

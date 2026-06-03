@@ -45,30 +45,30 @@ Gateway exposure has two modes:
   certificate chains to the Orbit root CA, and firewall rules restrict access
   to the Orbit/WireGuard path.
 
- ## Streaming under Docker runtime
+## Streaming under Docker runtime
 
- The containerized gateway API preserves the existing progress/SSE streaming
- contract with three mechanisms:
+The containerized gateway API preserves the existing progress/SSE streaming
+contract with three mechanisms:
 
- 1. **Proxy no-buffering in router-colocated mode**: The router-owned gateway
-    API Caddy block disables response buffering on the `reverse_proxy` to
-    `orbit-gateway`, so SSE frames are forwarded immediately.
- 2. **No compression on gateway API**: The gateway API Caddy block omits
-    `encode zstd gzip` to prevent compression middleware from buffering small
-    SSE frames or heartbeats.
- 3. **SAPI-conditional flush in PHP**: Streaming controllers and the progress
-    factory flush output buffers under `fpm-fcgi`, `cli-server`, and the
-    FrankenPHP request SAPI (`frankenphp`) so durable operation progress is
-    observable while the gateway service is being replaced.
- 4. **Gateway service concurrency**: The `orbit-gateway` FrankenPHP service
-    must handle long-lived SSE streams without starving ordinary API requests.
-    Source-development servers keep their multi-worker safeguards when they use
-    the PHP built-in server.
+1. **Proxy no-buffering in router-colocated mode**: The router-owned gateway
+   API Caddy block disables response buffering on the `reverse_proxy` to
+   `orbit-gateway`, so SSE frames are forwarded immediately.
+2. **No compression on gateway API proxy routes**: When a gateway API Caddy
+   block exists in `router-colocated` mode, it omits `encode zstd gzip` to
+   prevent compression middleware from buffering small SSE frames or heartbeats.
+3. **SAPI-conditional flush in PHP**: Streaming controllers and the progress
+   factory flush output buffers under `fpm-fcgi`, `cli-server`, and the
+   FrankenPHP request SAPI (`frankenphp`) so durable operation progress is
+   observable while the gateway service is being replaced.
+4. **Gateway service concurrency**: The `orbit-gateway` FrankenPHP service
+   must handle long-lived SSE streams without starving ordinary API requests.
+   Source-development servers keep their multi-worker safeguards when they use
+   the PHP built-in server.
 
- The product invariant from the proxy domain applies: streaming traffic cannot
- starve ordinary gateway API execution.
+The product invariant from the proxy domain applies: streaming traffic cannot
+starve ordinary gateway API execution.
 
- ## Domain Rules
+## Domain Rules
 
 These rules apply to all gateway commands and define the invariants the family enforces.
 

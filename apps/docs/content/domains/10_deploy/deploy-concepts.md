@@ -39,6 +39,9 @@ These terms describe the units of work that make up a deployment pipeline.
 - **Retention metadata:** Optional deploy-step metadata for steps that create
   or prune versioned releases. It belongs only to the declaring step; Orbit does
   not have global app deployment retention policy or release state.
+  Release-aware steps may move the active `live_path` within the app-owned
+  `releases_path`, but they may not make releases a standalone deploy-family
+  state model.
 
 ## Runs and logs
 
@@ -51,6 +54,10 @@ These terms describe the runtime side of deployments — how runs are tracked an
   `release_path`, `app_user`, and related app/node metadata. Step commands may
   reference context values with `{{ key }}` placeholders or `ORBIT_DEPLOY_*`
   environment variables.
+  `release_path` and `live_path` are path helpers inside the app-owned release
+  boundary. Runtime bind mounts and any live, document-root, storage, or
+  database symlink targets must resolve inside the app source or release
+  boundary before the production app runtime service is rendered.
 - **Deployment run status:** Run lifecycle value: `running`, `completed`,
   `failed`, or `cancelled`.
 - **Deployment step execution:** One step's execution within a deployment run,

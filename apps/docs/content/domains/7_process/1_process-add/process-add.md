@@ -27,7 +27,9 @@ Use this command to define a managed process for an app.
 
 ### Idle render and start dispatch
 
-Rendering does not start the runtime unit. Docker units render in Docker's `Created` state. Supervisor units render with `autostart=false`. The `--start` flag is required to actually run the unit; it dispatches `docker start` for Docker units and `supervisorctl start` for Supervisor units.
+Rendering does not start the runtime unit. Supervisor units render with
+`autostart=false`. The `--start` flag is required to actually run the unit; it
+dispatches `supervisorctl start` for the rendered Supervisor programs.
 
 ## Related
 

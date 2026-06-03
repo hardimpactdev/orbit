@@ -57,8 +57,7 @@ test.
 | --- | --- | --- |
 | Gateway API and CA trust | yes | yes |
 | Registry-backed command behavior | yes | yes |
-| Docker process runtime backend | yes | yes |
-| Explicit Supervisor residual runtime | conditional | yes |
+| Supervisor process runtime backend | conditional | yes |
 | Orbit Scheduler daemon | yes | yes |
 | Real WireGuard interfaces and peer routing | no | yes |
 | VM boot, cloud-init, package install mutation | no | yes |
@@ -70,7 +69,7 @@ test.
 
 Use Docker for feature tests whose correctness depends on gateway API, CA trust,
 registry state, command forwarding, current-checkout command behavior, the Docker
-process runtime backend, the `orbit-scheduler` service, or
+Supervisor process runtime backend, the `orbit-scheduler` service, or
 Orbit-managed process and schedule lifecycle. This is the default for
 prepared-topology `e2e-feature` tests.
 
