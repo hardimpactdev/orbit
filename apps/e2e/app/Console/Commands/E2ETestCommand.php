@@ -23,6 +23,8 @@ use Illuminate\Contracts\Process\ProcessResult;
 use Illuminate\Process\FakeInvokedProcess;
 use Illuminate\Process\InvokedProcess;
 use Illuminate\Support\Facades\Process;
+use Orbit\Core\OrbitCoreServiceProvider;
+use Orbit\Core\Updates\UnattendedUpgradesAptConfig;
 use Symfony\Component\Console\Input\ArgvInput;
 use Symfony\Component\Console\Output\ConsoleOutputInterface;
 
@@ -56,6 +58,14 @@ class E2ETestCommand extends Command
      */
     private ?Closure $laneAvailabilityResolver = null;
 
+    /**
+     * @var list<class-string>
+     */
+    private array $requiredRuntimeDependencyClasses = [
+        OrbitCoreServiceProvider::class,
+        UnattendedUpgradesAptConfig::class,
+    ];
+
     public function __construct()
     {
         parent::__construct();
@@ -69,6 +79,14 @@ class E2ETestCommand extends Command
     public function setLaneAvailabilityResolver(Closure $resolver): void
     {
         $this->laneAvailabilityResolver = $resolver;
+    }
+
+    /**
+     * @param  list<class-string>  $classes
+     */
+    public function setRequiredRuntimeDependencyClasses(array $classes): void
+    {
+        $this->requiredRuntimeDependencyClasses = $classes;
     }
 
     public function handle(): int
@@ -96,6 +114,12 @@ class E2ETestCommand extends Command
 
         if ((bool) $this->option('dry-run')) {
             return $this->renderDryRun($plans);
+        }
+
+        try {
+            $this->validateRuntimeDependencies();
+        } catch (\InvalidArgumentException $exception) {
+            return $this->failCommand($exception->getMessage());
         }
 
         try {
@@ -391,6 +415,23 @@ class E2ETestCommand extends Command
     private function incusTestRunDirectory(): string
     {
         return 'run_'.getmypid().'_'.bin2hex(random_bytes(4));
+    }
+
+    private function validateRuntimeDependencies(): void
+    {
+        $missingClasses = array_values(array_filter(
+            $this->requiredRuntimeDependencyClasses,
+            fn (string $class): bool => ! class_exists($class),
+        ));
+
+        if ($missingClasses === []) {
+            return;
+        }
+
+        throw new \InvalidArgumentException(sprintf(
+            'E2E runtime dependencies are missing or Composer autoload is stale. Missing classes: %s. Run `cd apps/e2e && composer install` from the repository root, then rerun the E2E lane.',
+            implode(', ', $missingClasses),
+        ));
     }
 
     private function topologyCache(): string

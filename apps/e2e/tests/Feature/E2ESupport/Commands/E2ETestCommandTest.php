@@ -943,6 +943,32 @@ it('rejects unsupported lanes', function (): void {
         ->assertFailed();
 });
 
+it('fails before invoking pest when required e2e runtime dependencies are missing', function (): void {
+    withE2EEnvironment([], [
+        'ORBIT_E2E_DOCKER_TEST_RUNNERS' => 'sidecar1:4:28',
+    ], function (): void {
+        Process::fake(['*' => Process::result()]);
+        Process::preventStrayProcesses();
+
+        $command = app(E2ETestCommand::class);
+        $command->setRequiredRuntimeDependencyClasses([
+            'Orbit\\Core\\MissingRuntimeDependency',
+        ]);
+        $this->app->instance(E2ETestCommand::class, $command);
+
+        $exitCode = Artisan::call('e2e:test', ['--lanes' => 'docker']);
+        $output = Artisan::output();
+
+        expect($exitCode)->toBe(1)
+            ->and($output)->toContain('E2E runtime dependencies are missing or Composer autoload is stale')
+            ->and($output)->toContain('Orbit\\Core\\MissingRuntimeDependency')
+            ->and($output)->toContain('cd apps/e2e && composer install');
+
+        Process::assertRanTimes(fn ($process): bool => is_array($process->command)
+            && in_array('test', $process->command, true), 0);
+    });
+});
+
 it('fails unavailable incus lanes before invoking pest', function (): void {
     withE2EEnvironment([], [
         'ORBIT_E2E_INCUS_HOST_VM_CAPS' => 'beast:12',
