@@ -44,14 +44,17 @@ prompt for missing `tool` or target values.
 
 ## Behavior Contract
 
-### Tool configuration and apply rules
+### Tool configuration and compatibility apply rules
 
-- Verifies the registered tool is managed and startable.
-- Updates expected lifecycle state to running.
-- Starts the tool through its lifecycle backend.
-- If start application fails after the expected lifecycle state changes, Orbit keeps the
-  new expected running state and reports the tool as not yet converged; doctor
-  owns later repair when the tool definition supports safe lifecycle repair.
+- Verifies the registered tool is managed and has a related lifecycle path.
+- Resolves the related managed process or transitional backend for that tool
+  capability.
+- Starts the related long-running unit through the gateway.
+- During migration, implementations may preserve a transitional expected
+  running state on the tool row. If start application fails after that state
+  changes, Orbit keeps the new expected state and reports the tool/process pair
+  as not yet converged; doctor owns later repair when the definition supports
+  safe repair.
 
 ### Scope Boundaries
 
@@ -77,7 +80,10 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 
 ## Doctor Relationship
 
-`tool-start` changes the gateway expected lifecycle state and performs command-owned apply only. [`tool-doctor.md`](../../tool-doctor.md) owns the authoritative tool-family probe, issue codes, fix map, and adopt map.
+`tool-start` is a compatibility lifecycle adapter. It may update transitional
+tool expected state while routing the actual long-running lifecycle operation to
+a related managed process or legacy backend. [`tool-doctor.md`](../../tool-doctor.md)
+owns the authoritative tool-family probe, issue codes, fix map, and adopt map.
 
 ## Test Mapping
 

@@ -2,10 +2,12 @@
 
 [Back to Tool commands.](../README.md)
 
-Start a managed tool service.
+Start the managed process related to a tool capability.
 
-`tool:start` changes a managed tool's expected lifecycle state to `running` and
-starts the node-side service through the gateway.
+`tool:start` is a compatibility lifecycle command. Tools are node-level
+capabilities; the lifecycle-managed unit is the related process. During the
+migration, this command resolves the selected tool row to a related managed
+process or legacy backend and starts that long-running unit through the gateway.
 
 ## Usage
 
@@ -43,14 +45,15 @@ is visible.
 
 ## What Happens
 
-Run this command to set a managed tool's expected state to `running` and start it through the gateway.
+Run this command to start the managed process related to a selected tool
+capability through the gateway.
 
 `tool:start`:
 
 1. Resolves the target node and registered tool row.
-2. Verifies the tool is managed and has a start action.
-3. Updates gateway configuration so the expected state is `running`.
-4. Starts the tool through its lifecycle backend on the target node.
+2. Verifies the tool is managed and has a related lifecycle path.
+3. Resolves the related managed process or transitional backend.
+4. Starts the related long-running unit on the target node.
 5. Reports the resulting state.
 
 ## Output
@@ -77,11 +80,11 @@ Use `--json` for the machine-readable tool result.
 
 ## Related Commands
 
-Use these commands for related tool lifecycle actions.
+Use these commands for related compatibility lifecycle actions.
 
-- [`tool:stop`](../6_tool-stop/tool-stop.md) - stop a managed tool service
-- [`tool:restart`](../7_tool-restart/tool-restart.md) - restart a managed tool service
-- [`doctor --family=tool`](../tool-doctor.md) - verify the running expectation
+- [`tool:stop`](../6_tool-stop/tool-stop.md) - stop the related managed process
+- [`tool:restart`](../7_tool-restart/tool-restart.md) - restart the related managed process
+- [`doctor --family=tool`](../tool-doctor.md) - verify the tool capability expectation
 
 ## Technical Contract
 

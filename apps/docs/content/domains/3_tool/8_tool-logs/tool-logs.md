@@ -2,11 +2,13 @@
 
 [Back to Tool commands.](../README.md)
 
-Print or follow log lines for a managed tool.
+Print or follow log lines for the managed process related to a tool capability.
 
-`tool:logs` reads log output for a registered tool that declares a log source.
-It streams through the gateway from the target node and does not mutate tool
-configuration.
+`tool:logs` is a compatibility log command. Tools are node-level capabilities;
+the lifecycle-managed unit is the related process. During the migration, this
+command resolves the selected tool row to a related managed process or legacy
+backend and streams its logs through the gateway from the target node. It does
+not mutate tool configuration.
 
 ## Usage
 
@@ -43,14 +45,16 @@ added.
 
 ## What Happens
 
-Run this command to read or stream log output for a registered tool that declares a log source.
+Run this command to read or stream log output for the managed process related
+to a registered tool capability.
 
 `tool:logs`:
 
 1. Resolves the target node and registered tool row.
-2. Verifies the tool declares a log source.
-3. Asks the gateway to read or follow logs from the target node.
-4. Renders the log lines.
+2. Verifies the tool has a related log source.
+3. Resolves the related managed process or transitional backend.
+4. Asks the gateway to read or follow logs from the target node.
+5. Renders the log lines.
 
 ## Output
 

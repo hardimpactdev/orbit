@@ -9,7 +9,11 @@ override the [Architecture](../../architecture.md).
 These terms define the core vocabulary used across tool command contracts and the tool doctor.
 
 - **Tool:** Orbit product concept for a node capability Orbit installs,
-  configures, observes, or keeps converged.
+  updates, adopts, removes, observes, or keeps available for other runtime
+  units. A tool is not itself the lifecycle-managed unit.
+- **Tool process dependency:** Optional relationship from a process to the
+  tool capability it uses, such as `opencode`, `viteplus`, or `php-cli`.
+  The process owns lifecycle; the tool supplies the capability.
 - **Tool catalog:** The set of supported tool slugs documented in
   [`catalog/`](catalog/README.md). Tool slugs outside the catalog are
   unsupported and fail validation.
@@ -38,7 +42,7 @@ These terms define the core vocabulary used across tool command contracts and th
   the `agent` node role and run as the shared unprivileged
   `agent` user.
 - **Tool row:** Gateway-owned record of expected state for one tool on one
-  node and instance, including expected lifecycle state, version family,
+  node and instance, including expected capability state, version family,
   expected version when tracked, runtime family, install paths, and probe and
   repair settings.
 
@@ -51,8 +55,10 @@ These terms describe how Orbit relates to each tool in the catalog.
   from scratch by `tool:install`.
 - **Installable tool:** Catalog tool that Orbit can provision through
   `tool:install` and remove through `tool:remove`.
-- **Managed tool:** Tool whose lifecycle and configuration Orbit owns on the
-  node. Surfaces as `managed=true` on the tool entity.
+- **Managed tool:** Tool whose capability state Orbit owns on the node,
+  including installation, update, adoption, removal, and configuration when the
+  tool definition supports those actions. Surfaces as `managed=true` on the
+  tool entity.
 - **Observational tool:** Tool whose presence and state Orbit observes but does
   not own.
 - **Role baseline tool:** Tool materialized as a tool row during node
@@ -92,9 +98,13 @@ These terms describe the network surfaces a tool may declare.
 
 These rules define what tool commands may and may not change.
 
-- **Tool-family boundaries:** Tool commands own tool configuration, tool lifecycle,
-  declared service endpoints, and tool catalog membership.
-  They do not own apps, workspaces, processes, schedules, custom proxy routes,
-  or non-tool firewall policy. Tool-specific or capability-specific command
-  families (such as `php:*`) are admitted only when the workflow is clearer as
-  its own product surface.
+- **Tool-family boundaries:** Tool commands own capability inventory,
+  installation, update, adoption, removal, configuration, declared service
+  endpoints, and tool catalog membership. Tools do not own start, stop,
+  restart, or log lifecycle directly because one tool can back multiple
+  processes. During migration, existing tool lifecycle commands may resolve to
+  related process lifecycle operations for compatibility.
+- They do not own apps, workspaces, process lifecycle, schedules, custom proxy
+  routes, or non-tool firewall policy. Tool-specific or capability-specific
+  command families (such as `php:*`) are admitted only when the workflow is
+  clearer as its own product surface.

@@ -24,9 +24,9 @@ These rules govern all workspace family commands.
   FPM pool.
 - Each workspace owns a Docker runtime container derived from workspace,
   app, and PHP image configuration. The container serves the workspace's web
-  route through FrankenPHP. Workspace setup, teardown, and ad-hoc
-  PHP/Composer/Artisan run on the node's host PHP toolchain against the
-  workspace source.
+  route through FrankenPHP and is represented as a process with Docker runtime.
+  Workspace setup, teardown, and ad-hoc PHP/Composer/Artisan run on the node's
+  host PHP toolchain against the workspace source.
 - Orbit must not create, require, read, or trust `.php-version` files in app or
   workspace project trees.
 - During `doctor --family=workspace --adopt`, project files are adoption hints
@@ -39,9 +39,10 @@ These rules govern all workspace family commands.
 - A workspace hostname is the workspace slug prepended to the parent app's
   primary hostname. For a development app this yields
   `{workspace}.{app}.{tld}`.
-- Workspaces inherit app process definitions as runtime units. Each inherited
-  runtime unit becomes a separate Supervisor program owned by the workspace. It
-  has its own unit name, working directory, environment block, and log stream
+- Workspaces inherit app process definitions as runtime units during the
+  app-scoped process compatibility phase. Each inherited runtime unit is owned
+  by the process family and uses the selected process runtime backend. It has
+  its own unit name, working directory, environment block, and log stream
   distinct from the main app instance and from sibling workspaces.
   The parent app's process definition supplies the shared fields (command,
   restart policy, crash notification policy). The workspace context supplies
@@ -97,7 +98,8 @@ Workspace registry-only reads — `workspace:show`, `workspace:history`,
 live process manager. `workspace:new`, `workspace:setup`, and
 `workspace:remove` require a live process manager on the owning node
 when they create, update, remove, or verify inherited runtime units.
-The live process manager for inherited workspace processes is Supervisor.
+Supervisor is the current backend for host command processes; Docker is the
+backend for containerized workspace web runtimes.
 
 ## Workspace JSON Entity
 

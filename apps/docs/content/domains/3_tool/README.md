@@ -1,8 +1,9 @@
 # Tool Commands
 
-Tool commands manage node capabilities Orbit installs, configures, observes,
-and keeps converged. Tools are Orbit product concepts; package managers,
-binaries, containers, and services are backend details.
+Tool commands manage node capabilities Orbit installs, updates, adopts,
+removes, configures, observes, and keeps available for runtime units. Tools are
+Orbit product concepts; package managers, binaries, containers, and services
+are backend details.
 
 ## Domain Rules
 
@@ -11,10 +12,10 @@ These rules govern what the tool command family owns and what it may not touch.
 - The tool command family owns the `tool:*` command prefix.
 - `tool` is a state family. A gateway tool row is the expected state for one
   tool instance on one node.
-- Tool rows include the node, tool name, instance id, expected lifecycle state,
-  version family, expected version or config when the tool definition tracks
-  them, runtime family, install paths, and backend-specific probe and repair
-  settings.
+- Tool rows include the node, tool name, instance id, expected capability
+  state, version family, expected version or config when the tool definition
+  tracks them, runtime family, install paths, and backend-specific probe and
+  repair settings.
 - CLI callers resolve input locally, then the gateway reads or writes configuration and
   performs node inspection or applies changes.
 - Some tools are observational, while others are managed by Orbit.
@@ -42,7 +43,7 @@ These rules govern what the tool command family owns and what it may not touch.
 - Node reality import is not part of the tool command surface. If an adoption
   flow needs to adopt node reality, it must use explicit
   `doctor --family=tool --adopt` semantics.
-- Credential-bearing managed service tools use Orbit-owned generated secrets.
+- Credential-bearing managed capabilities use Orbit-owned generated secrets.
   The default service username is `orbit` when the protocol has a username
   concept.
 - Tool definitions may declare tool-owned service endpoints. HTTP and
@@ -52,6 +53,12 @@ These rules govern what the tool command family owns and what it may not touch.
 - Tools supply capabilities that other domains depend on, but they do not own
   apps, workspaces, processes, schedules, custom proxy routes, or non-tool
   firewall policy.
+- Tools do not own start, stop, restart, or log lifecycle directly. Processes
+  are the lifecycle-managed long-running units. A process may reference a tool
+  with a tool dependency when it needs that node-level capability. During
+  migration, existing `tool:start`, `tool:stop`, `tool:restart`, and
+  `tool:logs` commands may resolve to related process lifecycle operations for
+  compatibility.
 - Tool-specific and capability-specific command families are opt-in product
   surfaces. The tool catalog does not automatically create `redis:*`,
   `mysql:*`, `postgres:*`, or other top-level command families. Generic tool
@@ -72,26 +79,26 @@ tool-specific contracts live in [`catalog/`](catalog/README.md).
 
 | Slug | Label | Backend | Support model | Category | Primary capability surface |
 | --- | --- | --- | --- | --- | --- |
-| [`caddy`](catalog/caddy.md) | Caddy | `orbit-caddy` Docker container | Role baseline where HTTP routing is needed, adopted and kept converged | `always` | lifecycle, reload, reconfigure, update, logs, fix, adopt |
-| [`supervisor`](catalog/supervisor.md) | Supervisor | system service | Explicit residual runtime only where configured | `runtime` | lifecycle, reload, logs, fix, adopt |
+| [`caddy`](catalog/caddy.md) | Caddy | `orbit-caddy` Docker container | Role baseline where HTTP routing is needed, adopted and kept converged | `always` | process-backed lifecycle during migration, reload, reconfigure, update, logs, fix, adopt |
+| [`supervisor`](catalog/supervisor.md) | Supervisor | system service | Explicit residual runtime only where configured | `runtime` | capability probe, repair, reload where supported, adopt |
 | [`docker`](catalog/docker.md) | Docker | system service | Required baseline, adopted and kept converged | `always` | probe, fix, adopt, prerequisite for Docker-backed tools |
 | [`viteplus`](catalog/viteplus.md) | VitePlus | system binary | Role baseline tool for the `app-dev` and `app-prod` roles | `runtime` | probe, adopt |
 | [`php-cli`](catalog/php-cli.md) | PHP CLI | prebuilt static host binaries (dl.static-php.dev bulk preset) | Installable/updatable host toolchain on `app-dev` and `app-prod` | `runtime` | install, update, probe, adopt |
 | [`gh`](catalog/gh.md) | GitHub CLI | system binary | Role baseline tool for the `app-dev` and `app-prod` roles (repository cloning and deployment) | `runtime` | update, adopt |
 | [`composer`](catalog/composer.md) | Composer | host binary (`/usr/local/bin/composer`) | Installable/updatable host toolchain on `app-dev` and `app-prod` | `runtime` | install, update, adopt |
 | [`laravel-installer`](catalog/laravel-installer.md) | Laravel Installer | Composer global package (`laravel/installer`) | Installable/updatable/removable host toolchain on `app-dev` only | `runtime` | install, update, remove, adopt |
-| [`dns`](catalog/dns.md) | DNS | Docker service | Required infrastructure tool, adopted and kept converged | `infrastructure` | lifecycle, update, logs, fix, adopt |
+| [`dns`](catalog/dns.md) | DNS | Docker service | Required infrastructure tool, adopted and kept converged | `infrastructure` | process-backed lifecycle during migration, update, logs, fix, adopt |
 | [`php`](catalog/php.md) | PHP images | FrankenPHP Docker image capability | Selected by app/workspace runtime configuration | `runtime` | image inventory, update, fix, adopt |
-| [`postgres`](catalog/postgres.md) | PostgreSQL | Docker service | Installable and removable by Orbit | `database` | install, remove, lifecycle, update, logs, credentials, service endpoint, fix, adopt |
-| [`mysql`](catalog/mysql.md) | MySQL | Docker service | Installable and removable by Orbit | `database` | install, remove, lifecycle, update, logs, credentials, service endpoint, fix, adopt |
-| [`redis`](catalog/redis.md) | Redis | Docker service | Installable and removable by Orbit | `cache` | install, remove, lifecycle, update, logs, credentials, service endpoint, fix, adopt |
-| [`mailpit`](catalog/mailpit.md) | Mailpit | Docker service | Installable and removable by Orbit | `development` | install, remove, lifecycle, update, logs, credentials, service endpoint, fix, adopt |
-| [`reverb`](catalog/reverb.md) | Reverb | Docker service | Compatibility tool; superseded by the `websocket` role for fleet realtime | `communication` | install, remove, lifecycle, update, logs, credentials, service endpoint, fix, adopt |
-| [`rustfs`](catalog/rustfs.md) | RustFS | Docker runtime container | Role baseline tool for the `s3` role | `storage` | lifecycle, update, logs, credentials, service endpoint, fix, adopt |
-| [`polyscope-server`](catalog/polyscope-server.md) | PolyScope Server | Supervisor program | Installable and removable by Orbit | `development` | install, remove, lifecycle, reconfigure, update, streamed logs, fix, adopt |
-| [`opencode-server`](catalog/opencode-server.md) | OpenCode Server | Supervisor program | Installable and removable by Orbit | `development` | install, remove, lifecycle, reconfigure, password reset, update, streamed logs, credentials, service endpoint, fix, adopt |
-| [`openclaw`](catalog/openclaw.md) | OpenClaw | Docker-managed runtime as `agent` | Installable and removable by Orbit | `agent` | install, remove, lifecycle, update, logs, credentials, service endpoint, fix, adopt |
-| [`hermes`](catalog/hermes.md) | Hermes | Docker-managed runtime as `agent` | Installable and removable by Orbit | `agent` | install, remove, lifecycle, update, logs, credentials, service endpoint, fix, adopt |
+| [`postgres`](catalog/postgres.md) | PostgreSQL | Docker service | Installable and removable by Orbit | `database` | install, remove, process-backed lifecycle during migration, update, logs, credentials, service endpoint, fix, adopt |
+| [`mysql`](catalog/mysql.md) | MySQL | Docker service | Installable and removable by Orbit | `database` | install, remove, process-backed lifecycle during migration, update, logs, credentials, service endpoint, fix, adopt |
+| [`redis`](catalog/redis.md) | Redis | Docker service | Installable and removable by Orbit | `cache` | install, remove, process-backed lifecycle during migration, update, logs, credentials, service endpoint, fix, adopt |
+| [`mailpit`](catalog/mailpit.md) | Mailpit | Docker service | Installable and removable by Orbit | `development` | install, remove, process-backed lifecycle during migration, update, logs, credentials, service endpoint, fix, adopt |
+| [`reverb`](catalog/reverb.md) | Reverb | Docker service | Compatibility tool; superseded by the `websocket` role for fleet realtime | `communication` | install, remove, process-backed lifecycle during migration, update, logs, credentials, service endpoint, fix, adopt |
+| [`rustfs`](catalog/rustfs.md) | RustFS | Docker runtime container | Role baseline tool for the `s3` role | `storage` | process-backed lifecycle during migration, update, logs, credentials, service endpoint, fix, adopt |
+| [`polyscope-server`](catalog/polyscope-server.md) | PolyScope Server | Supervisor program | Installable and removable by Orbit | `development` | install, remove, process-backed lifecycle during migration, reconfigure, update, streamed logs, fix, adopt |
+| [`opencode-server`](catalog/opencode-server.md) | OpenCode Server | Supervisor program | Installable and removable by Orbit | `development` | install, remove, process-backed lifecycle during migration, reconfigure, password reset, update, streamed logs, credentials, service endpoint, fix, adopt |
+| [`openclaw`](catalog/openclaw.md) | OpenClaw | Docker-managed runtime as `agent` | Installable and removable by Orbit | `agent` | install, remove, process-backed lifecycle during migration, update, logs, credentials, service endpoint, fix, adopt |
+| [`hermes`](catalog/hermes.md) | Hermes | Docker-managed runtime as `agent` | Installable and removable by Orbit | `agent` | install, remove, process-backed lifecycle during migration, update, logs, credentials, service endpoint, fix, adopt |
 
 Required baseline tools are expected to exist as part of node provisioning or
 host bootstrap. `tool:install` does not create those tools from scratch unless
@@ -145,7 +152,7 @@ the entity in the command result.
 | `name` | string | Tool identity in Orbit's tool catalog. |
 | `instance` | string | Tool instance identity on the node. Single-instance tools use `default`. |
 | `node` | string | Node slug where the tool is expected. |
-| `expected_state` | string | Gateway-owned intended lifecycle state, such as `installed`, `running`, or `absent`. |
+| `expected_state` | string | Gateway-owned intended capability state, such as `installed`, `available`, or `absent`. During migration, some managed service tools may still expose transitional running-state compatibility here. |
 | `observed_state` | string \| null | Last known or live observed state when the command includes it. Registry reads may return `null`. |
 | `version_family` | string \| null | Intended major or channel line when the tool definition tracks version families. |
 | `version` | string \| null | Intended or observed version when the tool definition tracks versions. |
@@ -155,7 +162,10 @@ the entity in the command result.
 
 ## Commands
 
-The `tool:*` family covers inventory, lifecycle, configuration, and credential operations.
+The `tool:*` family covers inventory, capability state, configuration, and
+credential operations. Lifecycle commands listed below are transitional
+compatibility surfaces: the long-term lifecycle owner is the related process
+record.
 
 ### Inventory and inspection
 
@@ -173,7 +183,9 @@ These commands create or remove an installable tool on a node.
 
 ### Lifecycle
 
-These commands run, stop, restart, or inspect logs for a managed tool.
+These commands run, stop, restart, or inspect logs through a related managed
+process when one exists. They remain in the docs as compatibility surfaces while
+managed service tools migrate to process-backed lifecycle.
 
 5. [`orbit tool:start <tool>`](5_tool-start/tool-start.md)
 6. [`orbit tool:stop <tool>`](6_tool-stop/tool-stop.md)

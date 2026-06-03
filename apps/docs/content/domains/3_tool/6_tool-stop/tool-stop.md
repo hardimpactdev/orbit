@@ -2,11 +2,13 @@
 
 [Back to Tool commands.](../README.md)
 
-Stop a managed tool service.
+Stop the managed process related to a tool capability.
 
-`tool:stop` changes a managed tool's expected lifecycle state to `installed` and
-stops the node-side service through the gateway. The tool remains installed and
-managed.
+`tool:stop` is a compatibility lifecycle command. Tools are node-level
+capabilities; the lifecycle-managed unit is the related process. During the
+migration, this command resolves the selected tool row to a related managed
+process or legacy backend and stops that long-running unit through the gateway.
+The tool remains installed and managed.
 
 ## Usage
 
@@ -43,14 +45,15 @@ because one tool node is visible.
 
 ## What Happens
 
-Run this command to set a managed tool's expected state to `installed` and stop it through the gateway.
+Run this command to stop the managed process related to a selected tool
+capability through the gateway.
 
 `tool:stop`:
 
 1. Resolves the target node and registered tool row.
-2. Verifies the tool is managed and has a stop action.
-3. Updates gateway configuration so the expected state is `installed`.
-4. Stops the tool through its lifecycle backend on the target node.
+2. Verifies the tool is managed and has a related lifecycle path.
+3. Resolves the related managed process or transitional backend.
+4. Stops the related long-running unit on the target node.
 5. Reports the resulting state.
 
 ## Output
@@ -80,11 +83,11 @@ Use `--json` for the machine-readable tool result.
 
 ## Related Commands
 
-Use these commands for related tool lifecycle actions.
+Use these commands for related compatibility lifecycle actions.
 
-- [`tool:start`](../5_tool-start/tool-start.md) - start a managed tool service
-- [`tool:restart`](../7_tool-restart/tool-restart.md) - restart a managed tool service
-- [`doctor --family=tool`](../tool-doctor.md) - verify the installed expectation
+- [`tool:start`](../5_tool-start/tool-start.md) - start the related managed process
+- [`tool:restart`](../7_tool-restart/tool-restart.md) - restart the related managed process
+- [`doctor --family=tool`](../tool-doctor.md) - verify the tool capability expectation
 
 ## Technical Contract
 

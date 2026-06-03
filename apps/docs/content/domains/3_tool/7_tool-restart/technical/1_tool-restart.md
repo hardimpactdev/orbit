@@ -58,15 +58,18 @@ must not use a cardinality fallback such as selecting the only visible tool node
 
 ## Behavior Contract
 
-### Tool configuration and apply rules
+### Tool configuration and compatibility apply rules
 
-- Verifies the registered tool is managed and restartable.
-- Runs the lifecycle restart action through the gateway.
-- Uses a native restart action when the tool definition declares one.
-- When the tool definition has no native restart action but supports both stop
-  and start, Orbit restarts through a stop-then-start fallback.
-- When the tool has neither a native restart action nor both stop and start
-  actions, the command fails with `tool.unsupported_action`.
+- Verifies the registered tool is managed and has a related restart path.
+- Resolves the related managed process or transitional backend for that tool
+  capability.
+- Restarts the related long-running unit through the gateway.
+- Uses a native restart action when the related process/runtime path declares
+  one.
+- When the related lifecycle path has no native restart action but supports
+  both stop and start, Orbit restarts through a stop-then-start fallback.
+- When the tool has no related restart path, native restart action, or both
+  stop and start actions, the command fails with `tool.unsupported_action`.
 - Preserves existing gateway expected version and configuration.
 - If restart or fallback application partially fails, Orbit leaves gateway
   expected state, expected version, and stored configuration unchanged and
@@ -94,7 +97,11 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 
 ## Doctor Relationship
 
-`tool-restart` performs command-owned lifecycle application while preserving gateway expected version and configuration. [`tool-doctor.md`](../../tool-doctor.md) owns the authoritative tool-family probe, issue codes, fix map, and adopt map.
+`tool-restart` is a compatibility lifecycle adapter. It routes the actual
+long-running lifecycle operation to a related managed process or legacy backend
+while preserving gateway expected version and configuration.
+[`tool-doctor.md`](../../tool-doctor.md) owns the authoritative tool-family
+probe, issue codes, fix map, and adopt map.
 
 ## Test Mapping
 

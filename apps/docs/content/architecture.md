@@ -110,12 +110,14 @@ The other seven are workload roles applied to nodes in the fleet.
 `app-dev` uses a local TLD for URLs (`myapp.test`, for example); `app-prod` serves real domains. Staging is a usage pattern of `app-prod`, not a separate role.
 
 Application roles use a per-artifact production substrate. PHP apps and PHP
-workspaces run in dedicated FrankenPHP containers. Orbit-defined app and
-workspace processes run as host Supervisor programs. Host PHP-FPM is not an app
-or workspace runtime fallback. Gateway Laravel/artisan/PDO work runs inside the
-gateway container or the durable update runner. Packaged node-local helpers
-that need host file access and PHP/PDO use the token-gated local executor lane.
-See [Runtime Execution Lanes](execution-lanes.md).
+workspaces run in dedicated FrankenPHP containers represented as process-backed
+runtime units. Orbit-defined host command processes run as Supervisor-backed
+process units, while containerized runtimes use Docker or Docker Swarm-backed
+process units. Host PHP-FPM is not an app or workspace runtime fallback.
+Gateway Laravel/artisan/PDO work runs inside the gateway container or the
+durable update runner. Packaged node-local helpers that need host file access
+and PHP/PDO use the token-gated local executor lane. See [Runtime Execution
+Lanes](execution-lanes.md).
 
 The `websocket` role is a private workload role for Orbit-managed realtime
 infrastructure. A websocket node runs Laravel Reverb in a Docker runtime
@@ -357,7 +359,7 @@ The gateway database is Orbit's source of truth. It stores four kinds of records
 - **Policy** — repeatable workflows (deployment step definitions).
 - **History** — what happened (deployment runs, activity logs).
 
-For standing configuration, a database row is not a cache. It describes a desired physical fact on a node — a FrankenPHP app container that should exist, a proxy route that should resolve, a Supervisor process program that should be running. The node-side artifact is the *applied* representation of that row.
+For standing configuration, a database row is not a cache. It describes a desired physical fact on a node — a FrankenPHP app process that should exist, a proxy route that should resolve, a Supervisor-backed or Docker-backed process unit that should be running. The node-side artifact is the *applied* representation of that row.
 
 The core invariant:
 
@@ -374,12 +376,12 @@ Orbit has nine state families:
 | Family | Owns | Concept doc |
 |---|---|---|
 | `node` | Which nodes exist, their role assignments, VPN identity, SSH access | [Node Concepts](domains/1_node/node-concepts.md) |
-| `app` | App config, process config, deploy steps, app health | [App Concepts](domains/5_app/app-concepts.md) |
-| `workspace` | Workspace config, URL, runtime container, inherited process config | [Workspace Concepts](domains/6_workspace/workspace-concepts.md) |
-| `process` | Long-running processes for apps and workspaces | [Process Concepts](domains/7_process/process-concepts.md) |
+| `app` | App config, runtime policy, deploy steps, app health | [App Concepts](domains/5_app/app-concepts.md) |
+| `workspace` | Workspace config, URL, runtime policy, setup/teardown policy | [Workspace Concepts](domains/6_workspace/workspace-concepts.md) |
+| `process` | Lifecycle-managed long-running units scoped to nodes, apps, or workspaces | [Process Concepts](domains/7_process/process-concepts.md) |
 | `proxy` | Every HTTP/HTTPS route Orbit serves | [Proxy Concepts](domains/8_proxy/proxy-concepts.md) |
 | `schedule` | Recurring tasks for apps, nodes, and Orbit | [Schedule Concepts](domains/9_schedule/schedule-concepts.md) |
-| `tool` | Tools installed on each node | [Tool Concepts](domains/3_tool/tool-concepts.md) |
+| `tool` | Node-level capabilities installed on each node | [Tool Concepts](domains/3_tool/tool-concepts.md) |
 | `firewall_rule` | What network traffic each node allows | [Firewall Concepts](domains/4_firewall/firewall-concepts.md) |
 | `database_connection` | Reusable database connection intent mapped into app and workspace `.env` files | [Database Concepts](domains/18_database/database-concepts.md) |
 
@@ -390,7 +392,7 @@ isolation under `workspace.security.*`, and firewall-owned representation drift
 under `firewall_rule.security.*` when needed. `doctor --family=security` is not
 accepted.
 
-These names are how Orbit thinks about each thing. The tools behind them — `orbit-caddy` for proxy routes, UFW for firewall rules, Docker for role/tool containers, and Supervisor for app/workspace process programs — are implementation choices. The family names stay stable even when the backend changes. See [tech-stack.md](tech-stack.md) for the backends in use today.
+These names are how Orbit thinks about each thing. The tools behind them — `orbit-caddy` for proxy routes, UFW for firewall rules, Docker for containerized process units, and Supervisor for host command process units — are implementation choices. The family names stay stable even when the backend changes. See [tech-stack.md](tech-stack.md) for the backends in use today.
 
 ### Keeping nodes in sync
 

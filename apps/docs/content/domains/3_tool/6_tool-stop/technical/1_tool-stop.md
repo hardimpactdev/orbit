@@ -41,14 +41,17 @@ node."
 
 ## Behavior Contract
 
-### Tool configuration and apply rules
+### Tool configuration and compatibility apply rules
 
-- Verifies the registered tool is managed and stoppable.
-- Updates expected lifecycle state to installed.
-- Stops the tool through its lifecycle backend.
-- If stop application fails after the expected lifecycle state changes, Orbit keeps the
-  new expected installed state and reports the tool as not yet converged; doctor
-  owns later repair when the tool definition supports safe lifecycle repair.
+- Verifies the registered tool is managed and has a related lifecycle path.
+- Resolves the related managed process or transitional backend for that tool
+  capability.
+- Stops the related long-running unit through the gateway.
+- During migration, implementations may preserve a transitional expected
+  installed state on the tool row. If stop application fails after that state
+  changes, Orbit keeps the new expected state and reports the tool/process pair
+  as not yet converged; doctor owns later repair when the definition supports
+  safe repair.
 
 ### Scope Boundaries
 
@@ -73,7 +76,10 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 
 ## Doctor Relationship
 
-`tool-stop` changes the gateway expected lifecycle state and performs command-owned apply only. [`tool-doctor.md`](../../tool-doctor.md) owns the authoritative tool-family probe, issue codes, fix map, and adopt map.
+`tool-stop` is a compatibility lifecycle adapter. It may update transitional
+tool expected state while routing the actual long-running lifecycle operation to
+a related managed process or legacy backend. [`tool-doctor.md`](../../tool-doctor.md)
+owns the authoritative tool-family probe, issue codes, fix map, and adopt map.
 
 ## Test Mapping
 

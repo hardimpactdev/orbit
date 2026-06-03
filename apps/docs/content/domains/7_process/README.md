@@ -1,6 +1,8 @@
 # Process Commands
 
-Process commands manage app-owned runtime configuration. A process definition belongs to one app, is stored on the gateway, and is inherited by every workspace for that app.
+Process commands manage Orbit-owned long-running runtime units. A process
+definition is stored on the gateway, may be scoped to a node, app, or
+workspace, and owns its lifecycle through a selected runtime backend.
 
 The gateway is the source of truth for process configuration. When node-side work is required, the gateway renders and applies derived runtime units on the owning node.
 
@@ -14,26 +16,39 @@ These rules cover who owns process configuration and how process definitions are
 
 - The gateway owns process configuration.
 - Process names are identity slugs: lowercase letters, digits, and hyphens only; they cannot start or end with a hyphen and are limited to 64 characters.
-- Process definitions are edited at the app level, not per workspace.
-- Process definitions have a stable app-local order. `process:add` appends new definitions after existing ones.
+- Process definitions may be scoped to a node, app, or workspace. The scope
+  selects the owning node and default runtime context.
+- Process definitions have a stable order inside their owning scope.
+  `process:add` appends new definitions after existing ones in that scope.
 - Read and bulk lifecycle commands use that order.
+- A process may reference a catalogued tool with a tool dependency. The tool
+  supplies a node-level capability; the process still owns start, stop,
+  restart, and logs.
 
 ### Runtime unit derivation
 
 These rules describe how runtime units are derived from process definitions.
 
-- Runtime units are the process-family product noun: units derived from app, optional workspace, and process configuration. They are not gateway state rows.
-- Each process definition renders one runtime unit for the main app instance
-  and one runtime unit for each workspace of that app.
-- Each rendered runtime unit is a separate host Supervisor program, with its
-  own unit name, working directory, environment, and log capture.
+- Runtime units are the process-family product noun: concrete runnable units
+  derived from node/app/workspace scope and process configuration. They are not
+  gateway state rows.
+- Node-level and workspace-scoped process definitions normally render one
+  runtime unit. App-scoped inherited process definitions may render one runtime
+  unit for the main app instance and one runtime unit for each workspace of
+  that app.
+- Each rendered runtime unit is applied by its selected process runtime backend,
+  such as `supervisor` for host commands or `docker` for containerized
+  processes.
 - The process definition supplies shared fields such as command, restart policy,
-  and crash notification policy. The rendering context supplies per-instance
-  fields such as main vs. workspace, path, and URL.
-- Runtime unit names use `orbit_<app>_<workspace|main>_<process>`.
+  runtime backend, runtime configuration, and crash notification policy. The
+  rendering context supplies per-instance fields such as node/app/workspace
+  identity, path, URL, environment, ports, and volumes.
+- Runtime unit names use Orbit-owned backend-safe names such as
+  `orbit_<scope>_<process>`.
 - The `orbit_` prefix marks Orbit ownership, and underscores are reserved as
   backend segment delimiters.
-- Supervisor program names derive from the same product identity.
+- Supervisor program names and Docker container names derive from the same
+  product identity.
 
 ### Restart policy
 
@@ -78,14 +93,13 @@ These rules describe how lifecycle commands address runtime units.
 
 - Runtime lifecycle commands start, stop, restart, and inspect derived units.
 - Omitting `[name]` for `process:start`, `process:stop`, and `process:restart` targets every process definition in process order for the resolved context.
-- Logs come from Supervisor stdout/stderr capture for the selected runtime
-  unit.
+- Logs come from the selected runtime backend for the selected runtime unit.
 
 ### Command argument conventions
 
 Create commands use positional arguments for required fields. Edit commands use named options so omitted fields preserve their current value. This is why `process:add` accepts the required `[command]` positionally, while `process:edit` uses `--command=<command>` as one optional edit field among several.
 
-Implementation-shape details for Supervisor process runtime and the Orbit
+Implementation-shape details for process runtime backends and the Orbit
 Scheduler live in
 [tech-stack.md#process-manager](../../tech-stack.md#process-manager) and
 [tech-stack.md#scheduler](../../tech-stack.md#scheduler).
@@ -94,10 +108,10 @@ Scheduler live in
 
 Process commands are authorized by the gateway against the authenticated
 WireGuard peer and the scoped permission set stored on the grant that
-connects the caller to the app's owning node. The CLI does not detect or
+connects the caller to the process owning node. The CLI does not detect or
 branch on the node-role column locally.
 
-- `process:list` requires `process:read` on a grant to the resolved app's
+- `process:list` requires `process:read` on a grant to the resolved process
   owning node.
 - `process:logs` requires `process:logs`, which is covered by `process:read`.
 - Runtime-lifecycle commands (`process:start`, `process:stop`,
@@ -113,11 +127,15 @@ branch on the node-role column locally.
 
 Every process command is a request to the gateway typed API. The CLI never
 writes process configuration, reads Docker or Supervisor logs directly, or
-operates the process manager directly.
+operates a runtime backend directly.
 
 ## Runtime Unit Environment
 
-Derived process runtime units expose a runtime environment that is separate from workspace setup and teardown step environment. Runtime units do not receive `ORBIT_*` lifecycle variables by contract.
+Derived process runtime units expose a runtime environment that is separate
+from workspace setup and teardown step environment. App and workspace process
+contexts receive the URL/TLS variables below when applicable; node-level
+processes receive only variables meaningful to their selected runtime. Runtime
+units do not receive `ORBIT_*` lifecycle variables by contract.
 
 | Variable | Value | Why it is exposed |
 | --- | --- | --- |

@@ -16,9 +16,10 @@ These fields describe the Caddy tool's identity, backend, and support model in O
 
 ## Capabilities
 
-`caddy` supports lifecycle actions (`tool:start`, `tool:stop`,
+`caddy` supports compatibility lifecycle actions (`tool:start`, `tool:stop`,
 `tool:restart`), `tool:reload`, `tool:reconfigure`, `tool:update`,
-`tool:logs`, safe doctor fix, and safe doctor adopt.
+`tool:logs`, safe doctor fix, and safe doctor adopt while the proxy runtime
+migrates to process-backed lifecycle.
 
 `tool:install caddy` and `tool:remove caddy` are not supported for host package
 management. Orbit converges `orbit-caddy` as part of node role baseline.
@@ -30,8 +31,9 @@ management. Orbit converges `orbit-caddy` as part of node role baseline.
 ## Orbit Notes
 
 `orbit-caddy` is the current proxy backend, but proxy route ownership remains
-in the `proxy` state family. Tool management owns the container lifecycle,
-logs, reload, and baseline drift only.
+in the `proxy` state family. The Caddy tool row owns capability and baseline
+drift; the long-running container lifecycle and logs are process-backed, with
+transitional `tool:*` compatibility commands where still present.
 
 ## Doctor Relationship
 

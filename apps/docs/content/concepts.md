@@ -32,7 +32,7 @@ owning family concept document.
 - **WebSocket role** — private workload role that runs Laravel Reverb in a Docker runtime container managed by Orbit, binds only to WireGuard, and receives traffic through router-owned private service routes. See [Node Concepts](domains/1_node/node-concepts.md).
 - **S3 role** — private workload role that runs one RustFS S3-compatible object storage backend in a Docker runtime container managed by Orbit, binds only to WireGuard, and receives traffic through router-owned S3 service routes. See [Node Concepts](domains/1_node/node-concepts.md).
 - **Gateway-coupled infrastructure role** — role assignment stored separately from `gateway` but coupled to it in v1, so first gateway bootstrap assigns it together with `gateway` and normal `node role:*` commands cannot manage it independently. See [Node Concepts](domains/1_node/node-concepts.md).
-- **Production public HTTP traffic** — traffic that enters the fleet through an active `ingress` role. `app-prod` nodes are production runtime backends: they own app files, FrankenPHP app runtime services, configured process programs, and a private `orbit-caddy` listener, but they do not own public route exposure unless they also carry `ingress`. See [Architecture: Node roles](architecture.md#node-roles).
+- **Production public HTTP traffic** — traffic that enters the fleet through an active `ingress` role. `app-prod` nodes are production runtime backends: they own app files, FrankenPHP app runtime policy, process-backed runtime units, and a private `orbit-caddy` listener, but they do not own public route exposure unless they also carry `ingress`. See [Architecture: Node roles](architecture.md#node-roles).
 - **App WebSocket binding** — gateway-owned app configuration that enables one app to use the fleet websocket service, including per-app Reverb credentials, allowed origins, public WebSocket hosts, and private `websocket.orbit` publishing configuration. See [App Concepts](domains/5_app/app-concepts.md).
 - **Reverb app credentials** — per-app Reverb application id, key, and secret material owned by an app WebSocket binding. See [App Concepts](domains/5_app/app-concepts.md).
 - **WebSocket backend pool** — router-owned ordered set of websocket role backends behind `websocket.orbit`. See [Proxy Concepts](domains/8_proxy/proxy-concepts.md).
@@ -50,19 +50,20 @@ owning family concept document.
 - **Local executor** — hidden internal CLI command surface used by `RemoteLocalExecutor`; it validates a gateway-issued operation token before reading or mutating node-local state and is not a normal user command surface. See [Architecture: Trust And Transport](architecture.md#trust-and-transport).
 - **Operation token** — gateway-issued token attached to a recorded operation and validated by local executor commands before side effects. See [Architecture: Trust And Transport](architecture.md#trust-and-transport).
 - **Orbit Caddy container** — standalone `orbit-caddy` fleet proxy container; one per node when that node needs HTTP routing. See [Node Concepts](domains/1_node/node-concepts.md).
-- **App runtime container** — dedicated Docker container for one PHP app or workspace runtime. See [App Concepts](domains/5_app/app-concepts.md).
+- **App runtime container** — dedicated Docker container for one PHP app or workspace runtime, represented as a process-backed runtime unit. See [App Concepts](domains/5_app/app-concepts.md).
 - **FrankenPHP app runtime** — the PHP web runtime used by app and workspace containers. Classic mode is the default; worker mode is opt-in. See [App Concepts](domains/5_app/app-concepts.md).
 - **Worker mode** — opt-in FrankenPHP mode that keeps a validated Laravel app in memory. See [App Concepts](domains/5_app/app-concepts.md).
 - **Worker config** — gateway-tracked worker settings stored separately from the enabled flag. See [App Concepts](domains/5_app/app-concepts.md).
-- **Process runtime** — backend selection for app/workspace process units, currently host Supervisor. See [Process Concepts](domains/7_process/process-concepts.md).
-- **Supervisor process runtime** — host Supervisor backend for app and workspace configured processes. See [Process Concepts](domains/7_process/process-concepts.md).
+- **Process runtime** — backend selection for process units scoped to a node, app, or workspace; supported runtime families are `supervisor` and `docker`, with `docker-swarm` planned. See [Process Concepts](domains/7_process/process-concepts.md).
+- **Supervisor process runtime** — host Supervisor backend for long-running host command processes. See [Process Concepts](domains/7_process/process-concepts.md).
+- **Docker process runtime** — Docker backend for containerized processes such as databases, caches, and FrankenPHP app or workspace web runtimes. See [Process Concepts](domains/7_process/process-concepts.md).
 - **Host cwd context** — entrypoint-provided `ORBIT_HOST_CWD` value used to preserve local app/workspace context for the dispatched node-local Orbit CLI entry point. The source CLI entrypoint initializes it from the process cwd when absent and preserves supplied values. Production installs still use the native CLI binary artifact; source-mounted Docker and Incus development/E2E topologies point `/usr/local/bin/orbit` directly at `<source>/apps/cli/orbit`. See [Workspace Concepts](domains/6_workspace/workspace-concepts.md).
 - **VPN role settings** — `public_endpoint`, `wireguard_cidr`, `wireguard_port`, and `dns_ip` settings stored on the `vpn` role assignment. See [Node Concepts](domains/1_node/node-concepts.md).
 - **VPN-role runtime administration** — VPN command-domain exception where `vpn-client:*` and `vpn-web-ui:*` commands are authorized by the gateway and execute against the active `vpn` role runtime. See [VPN Concepts](domains/13_vpn/vpn-concepts.md).
-- **Process manager** — the runtime backend that runs Orbit process units. App and workspace configured processes use host Supervisor programs. See [Tech Stack: Process Manager](tech-stack.md#process-manager).
-- **Runtime unit** — derived runnable unit for a process definition in a specific app/workspace context. See [Process Concepts](domains/7_process/process-concepts.md).
+- **Process manager** — the runtime backend that runs Orbit process units. Supervisor handles host command processes; Docker handles containerized process units. See [Tech Stack: Process Manager](tech-stack.md#process-manager).
+- **Runtime unit** — concrete runnable realization of a process definition in a node, app, or workspace context. See [Process Concepts](domains/7_process/process-concepts.md).
 - **Orbit Scheduler** — the resident schedule executor loop that runs as the `orbit-scheduler` Swarm service using the Orbit gateway image. It owns schedule evaluation, dispatch (locally for gateway-target schedules, through `RemoteShell` for every other target), overlap policy, run history, and heartbeat. See [Schedule Concepts](domains/9_schedule/schedule-concepts.md).
-- **Host init** — the host's own service manager. In the production substrate, its steady-state Orbit responsibility is keeping Docker available for Docker-backed artifacts and Supervisor available for configured app/workspace processes.
+- **Host init** — the host's own service manager. In the production substrate, its steady-state Orbit responsibility is keeping Docker available for Docker-backed artifacts and Supervisor available for host command processes.
 - **RemoteShell** — gateway-to-node transport primitive; workload classification belongs to the execution lanes, not the transport itself. See [Runtime Execution Lanes](execution-lanes.md) and [Tech Stack: Gateway To Node](tech-stack.md#gateway-to-node).
 - **Security section** — cross-family doctor issue-code section for security-owned state. Security is not a state family; findings live under owning families such as `node.security.*`, `app.security.*`, and `workspace.security.*`. See [Architecture: State Families](architecture.md#state-families).
 - **CLI caller** — an Orbit CLI invocation from a client, the gateway host, or any other node. See [Architecture: Trust And Transport](architecture.md#trust-and-transport).
@@ -250,10 +251,13 @@ Source: [Process Concepts](domains/7_process/process-concepts.md).
 <!-- concept-index:domains/7_process/process-concepts.md -->
 - **Process definition**
 - **Process identity slug**
+- **Process scope**
+- **Process tool dependency**
 - **Process order**
 - **Runtime unit**
 - **Process runtime**
 - **Supervisor process runtime**
+- **Docker process runtime**
 - **Runtime unit expansion**
 - **Runtime unit filename**
 - **Runtime unit environment**
@@ -508,6 +512,7 @@ Source: [Tool Concepts](domains/3_tool/tool-concepts.md).
 
 <!-- concept-index:domains/3_tool/tool-concepts.md -->
 - **Tool**
+- **Tool process dependency**
 - **Tool catalog**
 - **Tool definition**
 - **Tool category**

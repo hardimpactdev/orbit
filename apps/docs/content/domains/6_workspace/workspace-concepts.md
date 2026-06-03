@@ -27,7 +27,8 @@ The terms below define the core identity vocabulary for the workspace family.
   configuration, parent app configuration, and the selected PHP image. It
   serves the workspace's web route through FrankenPHP. Ad-hoc workspace
   PHP/Composer/Artisan run on the node's host PHP toolchain, not inside the
-  container.
+  container. The lifecycle-managed concrete workspace web runtime is
+  represented as a process with Docker runtime.
 - **Host cwd context:** Caller-side working-directory hint used only to resolve
   defaults such as app and workspace identity. It is not an authorization
   source and does not make the CLI operate on local artifacts directly.
@@ -91,7 +92,10 @@ These boundaries define what the workspace family owns and what belongs to other
   workspace and surfaced as inventory by the `proxy` family.
 - **Workspace-family boundaries:** Workspace commands own workspace identity,
   setup and teardown policy, workspace PHP override, workspace history, and
-  workspace-derived hostname configuration. They do not own proxy route
-  convergence, inherited process-unit convergence, app configuration, or
-  node-level firewall policy. Workspace commands do not install host PHP,
-  Composer, or Caddy.
+  workspace-derived hostname configuration. Workspace web runtimes and
+  long-running development commands are represented as processes scoped to the
+  workspace. The workspace family owns branch/path/setup state; the process
+  family owns start/stop/restart/log lifecycle for the long-running units. They
+  do not own proxy route convergence, process-unit convergence, app
+  configuration, or node-level firewall policy. Workspace commands do not
+  install host PHP, Composer, or Caddy.

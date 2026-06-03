@@ -81,7 +81,7 @@ configuration and app WebSocket binding state remain app configuration.
 ## Doctor Relationship
 
 `doctor --family=tool` verifies the compatibility Reverb tool's managed
-container, expected lifecycle state, logs availability, and safe
-repair/adoption boundaries. Reverb runtime drift for fleet realtime is owned
-by the websocket role baseline and belongs to the node/proxy doctor checks that
-verify role readiness and route placement.
+container capability, transitional expected state, logs availability, and safe
+repair/adoption boundaries. Reverb runtime drift for fleet realtime is owned by
+the websocket role baseline and belongs to the node/proxy/process doctor checks
+that verify role readiness, route placement, and long-running runtime units.

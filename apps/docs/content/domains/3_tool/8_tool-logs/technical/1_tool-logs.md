@@ -46,10 +46,12 @@ fails with `validation_failed` and `error.meta.fields=["target"]`.
 
 ## Behavior Contract
 
-### Tool configuration and apply rules
+### Tool configuration and compatibility log rules
 
-- Verifies the tool declares a log source.
-- Reads finite logs or follows the log stream through the gateway.
+- Verifies the tool has a related log source.
+- Resolves the related managed process or transitional backend for that tool
+  capability.
+- Reads finite logs or follows the related log stream through the gateway.
 - Does not mutate gateway tool configuration.
 
 ### Scope Boundaries
@@ -74,7 +76,10 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 
 ## Doctor Relationship
 
-`tool-logs` reads gateway tool configuration and streams logs through the gateway without changing tool configuration. [`tool-doctor.md`](../../tool-doctor.md) owns the authoritative tool-family probe, issue codes, fix map, and adopt map.
+`tool-logs` is a compatibility log adapter. It reads gateway tool configuration
+to resolve the related process or legacy backend and streams logs through the
+gateway without changing tool configuration. [`tool-doctor.md`](../../tool-doctor.md)
+owns the authoritative tool-family probe, issue codes, fix map, and adopt map.
 
 ## Test Mapping
 

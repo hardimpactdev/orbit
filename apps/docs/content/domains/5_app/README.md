@@ -31,9 +31,10 @@ These rules govern all app family commands.
   policy; they do not create Vite-specific proxy routes or rewrite app-side
   frontend configuration.
 - PHP app runtime uses a FrankenPHP app runtime container selected by gateway
-  app configuration. Changing `php_version` recreates the app runtime container
-  from the selected PHP image; it does not install host PHP or render host
-  FPM pools.
+  app configuration. The lifecycle-managed concrete FrankenPHP runtime is
+  represented as a process with Docker or Docker Swarm runtime. Changing
+  `php_version` recreates the app runtime artifact from the selected PHP image;
+  it does not install host PHP or render host FPM pools.
 - Ad-hoc PHP, Composer, or Artisan for an app runs on the app node's host PHP
   toolchain (matched to the app's PHP version), against the app source the
   FrankenPHP container serves. Orbit ships no command-`exec` surface; deploy
@@ -69,12 +70,14 @@ router-colocated gateway API Caddy route. It terminates at `orbit-caddy` on the
 app-prod node and then reaches the app's FrankenPHP Docker Swarm runtime
 service on internal port `8080` over the node Docker network.
 
-Production app runtime isolation is app-owned. The runtime service uses a
+Production app runtime policy is app-owned, while the concrete long-running
+runtime unit is process-owned. The runtime service uses a
 path-derived app user, must not grant that user Docker group or Docker socket
 access, and may bind mount only the app source or active release path plus
 explicitly managed shared paths. Service-tool runtimes such as MySQL,
-PostgreSQL, Redis, RustFS, and Reverb remain owned by their tool and role
-families, not by `app-prod`.
+PostgreSQL, Redis, RustFS, and Reverb are modeled as process-backed long-running
+units with tool capability records where needed; they are not owned by
+`app-prod`.
 
 ## App Identity Arguments
 

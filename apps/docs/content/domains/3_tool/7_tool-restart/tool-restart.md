@@ -2,10 +2,13 @@
 
 [Back to Tool commands.](../README.md)
 
-Restart a managed tool service.
+Restart the managed process related to a tool capability.
 
-`tool:restart` cycles a managed tool's service without changing the expected version
-or rerunning the tool's setup flow.
+`tool:restart` is a compatibility lifecycle command. Tools are node-level
+capabilities; the lifecycle-managed unit is the related process. During the
+migration, this command resolves the selected tool row to a related managed
+process or legacy backend and restarts that long-running unit without changing
+the expected version or rerunning the tool's setup flow.
 
 ## Usage
 
@@ -38,10 +41,11 @@ node. Orbit never selects a target just because only one tool node is visible.
 `tool:restart`:
 
 1. Resolves the target node and registered tool row.
-2. Verifies the tool is managed and has a restart path.
-3. Restarts the tool through its lifecycle backend on the target node.
-4. Preserves existing gateway configuration and expected version.
-5. Reports the restart result.
+2. Verifies the tool is managed and has a related restart path.
+3. Resolves the related managed process or transitional backend.
+4. Restarts the related long-running unit on the target node.
+5. Preserves existing gateway configuration and expected version.
+6. Reports the restart result.
 
 The command does not repair divergent configuration. Use
 [`tool:reconfigure`](../12_tool-reconfigure/tool-reconfigure.md) or `doctor --family=tool --restore`
@@ -74,7 +78,8 @@ Use `--json` for the machine-readable tool result.
 
 ## Related Commands
 
-Use these commands for related tool lifecycle and configuration actions.
+Use these commands for related compatibility lifecycle and configuration
+actions.
 
 - [`tool:reload`](../11_tool-reload/tool-reload.md) - reload configuration when supported
 - [`tool:reconfigure`](../12_tool-reconfigure/tool-reconfigure.md) - rerun setup without changing version

@@ -58,10 +58,10 @@ The sections below walk through each layer of the stack in the same order as the
 | Gateway to node | SSH through `RemoteShell`, classified by execution lane |
 | Proxy | Dockerized Caddy in one `orbit-caddy` container per node |
 | PHP runtime | FrankenPHP app/workspace containers |
-| Host init | Docker daemon plus Docker Swarm for gateway services and Docker-backed role/tool services; Supervisor for configured app/workspace process programs |
-| Process manager | Host Supervisor programs for app/workspace configured processes |
+| Host init | Docker daemon plus Docker Swarm for gateway services and Docker-backed runtime units; Supervisor for host command process programs |
+| Process manager | Process runtime backends: Supervisor for host command processes, Docker for containerized process units, Docker Swarm for selected production artifacts |
 | Scheduler | One-replica `orbit-scheduler` Swarm service using the Orbit gateway image |
-| Process logs | Supervisor stdout/stderr capture for configured app/workspace process units |
+| Process logs | Runtime-backend log capture for process units; Supervisor stdout/stderr for host command processes and Docker logs for containerized processes |
 | Service containers | Docker for Orbit runtime containers and backing services |
 | Host prerequisites | Production gateway-only nodes require Docker Engine/CLI, Docker Swarm, gateway config root, WireGuard/SSH identity, and the native Orbit CLI binary. `app-dev` and `app-prod` nodes additionally require host PHP and Composer for app-source workflows; the Laravel installer is required on `app-dev` only. Git and `gh` are required where cloning/deployment needs repository access, not for no-source gateway-only production. Source-dev topologies may bind-mount or copy the worktree and point `/usr/local/bin/orbit` at `<source>/apps/cli/orbit`; artifact-prod topologies use built CLI binaries and production images. |
 | Production HTTP ingress | `orbit-caddy` on `ingress` nodes terminating public HTTPS and forwarding to `router` over WireGuard |
@@ -249,7 +249,7 @@ PHP and PHP-FPM are not app/workspace runtime fallbacks.
 
 Production public HTTP traffic enters the fleet through an active
 `ingress` role. `app-prod` nodes are production runtime backends:
-they own app files, FrankenPHP runtime services, configured process programs,
+they own app files, FrankenPHP runtime policy, process-backed runtime units,
 and a private `orbit-caddy` listener, but they do not own public route exposure
 unless the same node also carries `ingress`.
 
@@ -260,9 +260,9 @@ only by the app-role backend `orbit-caddy` route. That app user must not be in
 the Docker group and must not have the Docker socket mounted into its runtime.
 Release-aware deployments may switch the source path the service bind mounts,
 but the mount boundary stays inside the app source or active release plus
-explicitly managed shared paths. The Swarm service owns steady-state
-supervision for the HTTP runtime; configured app/workspace processes remain
-host Supervisor programs under the process family.
+explicitly managed shared paths. The Swarm service is represented as the
+process-owned long-running HTTP runtime unit; configured host command processes
+remain Supervisor-backed under the process family.
 
 ### WebSocket runtime
 
@@ -329,17 +329,26 @@ boundaries rather than gateway service or model instantiation. See
 
 ### Process manager
 
-App and workspace configured processes render as host Supervisor programs. Each
-runtime unit uses the resolved app or workspace source path, process command,
-restart policy, and Orbit-managed environment. Supervisor owns the process
-lifecycle and stdout/stderr capture surfaced by `process:logs`.
+Processes are the Orbit lifecycle-managed long-running units. Each process
+runtime unit uses its owning node/app/workspace context, selected runtime
+backend, restart policy, and Orbit-managed environment or container
+configuration. The supported runtime backends are Supervisor for host command
+processes and Docker for containerized process units; Docker Swarm is used for
+selected production artifacts and remains the planned general production
+process runtime family.
+
+Supervisor-backed units render as host Supervisor programs and surface
+stdout/stderr through `process:logs`. Docker-backed units render as
+Orbit-managed containers and surface Docker log streams through the process
+family. Tools may supply the node-level capability a process depends on, but
+start, stop, restart, and logs belong to the process record.
 
 Swarm is a per-artifact production backend, not a node-wide execution mode.
 Gateway API and scheduler lifecycles are Swarm services (`orbit-gateway` and
 `orbit-scheduler`). Other artifacts choose their own backend by product
 contract: `orbit-caddy`, app/workspace web runtimes, role services, and
-Docker-backed tools are Docker-managed containers or services; configured
-app/workspace processes are host Supervisor programs.
+Docker-backed process units are Docker-managed containers or services;
+configured host command processes are Supervisor programs.
 
 ### Scheduler
 

@@ -29,7 +29,7 @@ host PHP packages or manage a host PHP-FPM service.
 The `php` tool owns PHP image capability evidence for app and workspace runtime
 containers. PHP runtime selection is admitted as the separate `php:*` command
 family because it mutates app configuration and workspace overrides rather than
-only tool lifecycle state.
+only tool capability state.
 
 Orbit resolves supported PHP versions to the approved official FrankenPHP
 Debian/glibc image family `dunglas/frankenphp:1-php<version>-bookworm`.
