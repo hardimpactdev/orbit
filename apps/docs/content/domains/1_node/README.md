@@ -22,7 +22,7 @@ live in [tech-stack.md](../../tech-stack.md#platform-and-roles) and
 
 ## Role Model
 
-Orbit distinguishes three concepts:
+Orbit distinguishes these concepts:
 
 - **Gateway role:** the singleton authority role. It owns durable Orbit state,
   the typed API, certificate authority material, grants, and doctor
@@ -514,8 +514,9 @@ Use these commands to update, remove, or configure node settings after initial p
 ### Role assignments
 
 Use these commands to inspect and mutate the role assignments on an existing node.
-Role assignment settings are changed through the command that owns the setting;
-for example, `app-dev` role-assignment TLD changes route through
+Role assignment settings are changed through the command that owns the setting.
+The node-level `tld` (a shared field required by the `app-dev` and `agent`
+roles, at most one per node) is changed through
 [`orbit node:update [name] --tld=...`](7_node-update/node-update.md).
 
 11. [`orbit node role:list [node]`](11_node-role-list/node-role-list.md)

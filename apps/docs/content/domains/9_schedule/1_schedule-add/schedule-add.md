@@ -4,7 +4,7 @@
 
 Create a recurring Orbit-managed schedule.
 
-Use `schedule:add` when an app or node needs recurring work managed by Orbit. The command records schedule configuration on the gateway. The Orbit Scheduler on the target node picks up the new schedule on its next sync.
+Use `schedule:add` when an app or node needs recurring work managed by Orbit. The command records schedule configuration on the gateway. The gateway-only Orbit Scheduler reads the gateway database each tick and dispatches the schedule to its resolved target via `RemoteShell` (running locally only when the target is the gateway).
 
 ## Usage
 

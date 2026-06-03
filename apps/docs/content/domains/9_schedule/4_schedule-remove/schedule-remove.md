@@ -4,7 +4,7 @@
 
 Remove a recurring Orbit-managed schedule.
 
-Use `schedule:remove` when a recurring task is no longer managed by Orbit. The command removes gateway configuration. The target node's Orbit Scheduler stops evaluating the schedule on its next sync.
+Use `schedule:remove` when a recurring task is no longer managed by Orbit. The command removes gateway configuration. The gateway-only Orbit Scheduler stops dispatching the schedule on its next tick; there is no node-side scheduler state to clean up.
 
 ## Usage
 

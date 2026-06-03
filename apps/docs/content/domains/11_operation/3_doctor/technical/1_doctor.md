@@ -54,6 +54,9 @@ identity and output, but workload-family doctor eligibility comes from
 | active `agent` role | `Node`, `Tools` |
 | active `app-dev` role | `Node`, `Apps`, `Workspaces`, `Processes`, `Proxy routes`, `Firewall`, `Tools`, `Scheduling`, `Databases` |
 | active `app-prod` role | `Node`, `Apps`, `Processes`, `Proxy routes`, `Firewall`, `Tools`, `Scheduling`, `Databases` |
+| active `ingress` role | `Node`, `Proxy routes`, `Firewall`, `Tools` |
+| active `websocket` role | `Node`, `Tools`, `Proxy routes` |
+| active `s3` role | `Node`, `Tools`, `Proxy routes` |
 
 Families outside the target's role-assignment set are rejected before probes. A narrow `--family` filter intersects with that set. The renderer never shows placeholder rows for families that are not in the target's set.
 
@@ -213,6 +216,7 @@ Converted family doctor contracts:
 - [`process-doctor.md`](../../../7_process/process-doctor.md)
 - [`proxy-doctor.md`](../../../8_proxy/proxy-doctor.md)
 - [`schedule-doctor.md`](../../../9_schedule/schedule-doctor.md)
+- [`database-doctor.md`](../../../18_database/database-doctor.md)
 
 ## Test Mapping
 

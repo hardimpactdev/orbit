@@ -42,9 +42,3 @@ direction.
 - 2026-06-03 — Host PHP CLI and Composer are installed on `app-dev` and `app-prod` nodes; the Laravel installer is installed on `app-dev` only (not `app-prod`). The host toolchain backs scaffolding (`laravel new`, `composer create-project`), Composer dependency management, and zero-downtime deployment. A contained app image built and deployed through Docker Swarm is a deferred later phase.
 - 2026-06-03 — Scheduling is centralized on the gateway, which runs due schedules (tracked in the gateway DB) against each schedule's target nodes; no per-node scheduler.
 - 2026-06-02 — The gateway ships as a packaged orbit-gateway Docker image; the gateway API and scheduler run as Docker Swarm services, and update:all runs as a durable operation via a one-shot runner. (solo todo #615)
-
-## Archive
-
-<!-- Manually move fully-absorbed, settled decisions here once the authority
-docs reflect them. Keeps the active list above high-signal while preserving the
-dated intent trail. -->

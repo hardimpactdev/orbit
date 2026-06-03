@@ -37,10 +37,15 @@ the calling peer's role.
 
 | Target role assignment state | Categories |
 | --- | --- |
-| active `gateway` role (default or `--self`) | `Node` |
+| active `gateway` role (default or `--self`) | `Node`, `Scheduling` |
 | client with no active role | `Node` |
 | active `database` role only | `Node`, `Tools` |
-| active `app-dev` or `app-prod` role | `Node`, `Apps`, `Workspaces`, `Processes`, `Proxy routes`, `Firewall`, `Tools`, `Scheduling` |
+| active `agent` role | `Node`, `Tools` |
+| active `app-dev` role | `Node`, `Apps`, `Workspaces`, `Processes`, `Proxy routes`, `Firewall`, `Tools`, `Scheduling`, `Databases` |
+| active `app-prod` role | `Node`, `Apps`, `Processes`, `Proxy routes`, `Firewall`, `Tools`, `Scheduling`, `Databases` |
+| active `ingress` role | `Node`, `Proxy routes`, `Firewall`, `Tools` |
+| active `websocket` role | `Node`, `Tools`, `Proxy routes` |
+| active `s3` role | `Node`, `Tools`, `Proxy routes` |
 
 A narrow `--family` filter intersects with the target active-role set; families
 outside the set are rejected before probes.

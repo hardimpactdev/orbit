@@ -6,7 +6,7 @@ The proxy family doctor implements the
 [Family Doctor Implementation Contract](../11_operation/3_doctor/technical/1_doctor.md#family-doctor-implementation-contract).
 `key()` returns `proxy`.
 
-`doctor --family=proxy` verifies whether gateway proxy route configuration still matches node proxy and TLS reality. It covers Orbit-owned ingress routes only.
+`doctor --family=proxy` verifies whether gateway proxy route configuration still matches node proxy and TLS reality. It covers all Orbit-owned routes — app, workspace, gateway API, websocket, S3, tool-owned, and custom proxy routes — and their TLS material.
 
 The proxy family owns these facts:
 

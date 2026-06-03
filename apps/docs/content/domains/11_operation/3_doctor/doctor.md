@@ -18,6 +18,9 @@ and does not by itself-grant workload-family probes:
   `Firewall`, `Tools`, `Scheduling`, `Databases`.
 - `app-prod` target: `Node`, `Apps`, `Processes`, `Proxy routes`,
   `Firewall`, `Tools`, `Scheduling`, `Databases`.
+- `ingress` target: `Node`, `Proxy routes`, `Firewall`, `Tools`.
+- `websocket` target: `Node`, `Tools`, `Proxy routes`.
+- `s3` target: `Node`, `Tools`, `Proxy routes`.
 
 `Scheduling` on a `gateway` target surfaces the scheduler daemon's health
 (presence, heartbeat, stuck locks) plus per-target dispatch reachability.
@@ -87,8 +90,8 @@ While the command is running, the panel shows each category in the target's
 active-role set and its current state. The final result uses the same
 category rows, marks healthy categories as `OK`, renders issue tables inline
 below the category that owns them, and ends with a summary line. Healthy
-output must still say what was checked. In `--fix` modes (interactive,
-restore, adopt), action results render inline below the owning category.
+output must still say what was checked. In the resolution modes (`--fix`, `--restore`,
+`--adopt`), action results render inline below the owning category.
 Verify-mode runs do not render action tables.
 
 Use `--json` for machine-readable diagnostics. Exact JSON fields live in the
