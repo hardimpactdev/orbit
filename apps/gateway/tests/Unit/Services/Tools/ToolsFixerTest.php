@@ -231,7 +231,7 @@ describe('ToolsFixer', function (): void {
         $node = createTestAppHostNode(['name' => 'app-1', 'status' => 'active']);
         $tool = NodeTool::factory()->create([
             'node_id' => $node->id,
-            'name' => 'gh',
+            'name' => 'viteplus',
             'expected_state' => 'installed',
         ]);
         $shell = new ToolsFixerRemoteShell;
@@ -240,8 +240,8 @@ describe('ToolsFixer', function (): void {
             family: 'tool',
             key: 'tool.capability_missing',
             kind: DriftKind::Missing,
-            summary: 'Tool gh is missing on the target node.',
-            detail: ['tool' => 'gh'],
+            summary: 'Tool viteplus is missing on the target node.',
+            detail: ['tool' => 'viteplus'],
         ));
 
         expect($action)->toBeNull()

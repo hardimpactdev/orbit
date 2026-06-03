@@ -83,11 +83,12 @@ describe('orbit:internal:bake-app-node', function (): void {
             ->and(NodeTool::query()->where('node_id', $node->id)->pluck('name')->sort()->values()->all())->toBe([
                 'caddy',
                 'composer',
+                'gh',
                 'laravel-installer',
                 'php-cli',
             ])
             ->and(File::exists(app(DevelopmentDnsMappingEnactor::class)->configDir().'/test.conf'))->toBeTrue()
-            ->and($shell->repairScripts())->toHaveCount(4);
+            ->and($shell->repairScripts())->toHaveCount(5);
     });
 
     it('uses setup convergence when baking app-dev role intent', function (): void {
@@ -113,6 +114,7 @@ describe('orbit:internal:bake-app-node', function (): void {
             ->and(NodeTool::query()->where('node_id', $node->id)->pluck('expected_state', 'name')->all())->toMatchArray([
                 'caddy' => 'running',
                 'composer' => 'installed',
+                'gh' => 'installed',
                 'laravel-installer' => 'installed',
                 'php-cli' => 'installed',
             ]);
@@ -322,6 +324,7 @@ final class BakeAppNodeRemoteShell implements RemoteShell
         'caddy' => false,
         'php-cli' => false,
         'composer' => false,
+        'gh' => false,
         'laravel-installer' => false,
     ];
 
@@ -374,6 +377,7 @@ final class BakeAppNodeRemoteShell implements RemoteShell
         return match ($binary) {
             '/opt/orbit/php/8.5/bin/php' => $this->installedProbe('php-cli', "/opt/orbit/php/8.5/bin/php\t8.5.6\n"),
             '/usr/local/bin/composer' => $this->installedProbe('composer', "/usr/local/bin/composer\tComposer version 2.9.0\n"),
+            'gh' => $this->installedProbe('gh', "/usr/bin/gh\tgh version 2.60.0\n"),
             'laravel' => $this->installedProbe('laravel-installer', "/usr/local/bin/laravel\tLaravel Installer 5.0.0\n"),
             default => new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
         };
@@ -397,6 +401,7 @@ final class BakeAppNodeRemoteShell implements RemoteShell
             str_contains($script, 'orbit.caddy.spec_hash') => 'caddy',
             str_contains($script, '# orbit install php-cli') => 'php-cli',
             str_contains($script, '# orbit install composer') => 'composer',
+            str_contains($script, '# orbit install gh') => 'gh',
             str_contains($script, '# orbit install laravel-installer') => 'laravel-installer',
             default => null,
         };

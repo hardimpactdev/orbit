@@ -464,8 +464,9 @@ final readonly class NodeConverger
         return match ($this->toolNameFromIssue($issue)) {
             'php-cli' => 10,
             'composer' => 20,
-            'laravel-installer' => 30,
-            'caddy' => 40,
+            'gh' => 30,
+            'laravel-installer' => 40,
+            'caddy' => 50,
             default => 100,
         };
     }
@@ -491,7 +492,7 @@ final readonly class NodeConverger
             return null;
         }
 
-        return ['caddy', 'php-cli', 'composer', 'laravel-installer'];
+        return ['caddy', 'php-cli', 'composer', 'gh', 'laravel-installer'];
     }
 
     /**

@@ -7,6 +7,7 @@ use App\Services\Gateway\CaddyGlobalConfig;
 use App\Services\Runtime\OrbitCaddyContainer;
 use App\Services\Tools\ToolCatalog;
 use App\Tools\CaddyTool;
+use App\Tools\GhTool;
 use App\Tools\PolyscopeServerTool;
 use App\Tools\RustfsTool;
 use Tests\TestCase;
@@ -23,6 +24,16 @@ describe('tool catalog definitions', function (): void {
 
         expect($catalog->definition('polyscope-server'))
             ->toBeInstanceOf(PolyscopeServerTool::class);
+    });
+
+    it('catalogs gh as an app-role runtime tool, not a fleet-wide always tool', function (): void {
+        $catalog = app(ToolCatalog::class);
+
+        expect($catalog->definition('gh'))->toBeInstanceOf(GhTool::class)
+            ->and($catalog->category('gh'))->toBe('runtime')
+            ->and($catalog->hasCapability('gh', 'install'))->toBeTrue()
+            ->and($catalog->hasCapability('gh', 'update'))->toBeTrue()
+            ->and($catalog->hasCapability('gh', 'safe-adopt'))->toBeTrue();
     });
 
     it('describes caddy as the orbit-caddy Docker container instead of a host Caddy service', function (): void {

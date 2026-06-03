@@ -357,11 +357,12 @@ describe('NodeStoreController', function (): void {
             ->all())->toBe([
                 'caddy',
                 'composer',
+                'gh',
                 'laravel-installer',
                 'php-cli',
             ]);
 
-        expect($shell->toolNodeStatuses)->toHaveCount(4)
+        expect($shell->toolNodeStatuses)->toHaveCount(5)
             ->and(array_values(array_unique($shell->toolNodeStatuses)))->toBe([Node::STATUS_PROVISIONING]);
 
         $entry = Activity::query()
@@ -614,6 +615,7 @@ final class NodeStoreConvergenceRemoteShell implements RemoteShell
         return match ($binary) {
             '/opt/orbit/php/8.5/bin/php' => new RemoteShellResult(exitCode: 0, stdout: "/opt/orbit/php/8.5/bin/php\t8.5.6\n", stderr: '', durationMs: 1),
             '/usr/local/bin/composer' => new RemoteShellResult(exitCode: 0, stdout: "/usr/local/bin/composer\tComposer version 2.9.0\n", stderr: '', durationMs: 1),
+            'gh' => new RemoteShellResult(exitCode: 0, stdout: "/usr/bin/gh\tgh version 2.60.0\n", stderr: '', durationMs: 1),
             'laravel' => new RemoteShellResult(exitCode: 0, stdout: "/usr/local/bin/laravel\tLaravel Installer 5.0.0\n", stderr: '', durationMs: 1),
             default => new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
         };

@@ -1020,6 +1020,25 @@ describe('DoctorReportRunner', function (): void {
             ->and($shell->scripts[1])->toContain('orbit.caddy.spec_hash');
     });
 
+    it('does not require gh on gateway-only no-source nodes', function (): void {
+        $gateway = Node::factory()->gateway()->create([
+            'name' => 'gateway-no-source',
+            'status' => 'active',
+        ]);
+
+        app()->instance(RemoteShell::class, new DoctorReportRunnerRemoteShell([]));
+
+        $report = app(DoctorReportRunner::class)->probe($gateway, families: ['tool']);
+
+        $toolNames = collect($report['issues'])
+            ->map(fn (array $issue): mixed => data_get($issue, 'detail.tool'))
+            ->filter()
+            ->values()
+            ->all();
+
+        expect($toolNames)->not->toContain('gh');
+    });
+
     it('suppresses resolved tool version issues when a safe update restore completes', function (): void {
         $gateway = Node::factory()->gateway()->create(['name' => 'gateway-1', 'status' => 'active']);
         $node = createDoctorRunnerAppHostNode();
