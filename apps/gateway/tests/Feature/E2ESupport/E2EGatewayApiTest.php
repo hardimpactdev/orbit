@@ -161,6 +161,34 @@ it('seeds operator identity with a gateway admin grant', function (): void {
         ->not->toContain("'environment' =>");
 });
 
+it('repairs docker gateway config root write permissions before seeding operator identity', function (): void {
+    $commands = [];
+
+    Process::fake(function ($process) use (&$commands): ProcessResult {
+        $commands[] = (string) $process->command;
+
+        return Process::result();
+    });
+    Process::preventStrayProcesses();
+
+    $gateway = new DockerInstance(new DockerHost(E2EConfig::fromEnvironment()), 'orbit-e2e-run-gateway');
+
+    E2EGatewayApi::seedOperatorIdentity($gateway, 'gateway', 'orbit');
+
+    $setup = implode("\n", $commands);
+    $repairPosition = strpos($setup, 'chmod -R u+rwX,g+rwX');
+    $seedPosition = strpos($setup, 'grep -Ev');
+
+    expect($repairPosition)->toBeInt()
+        ->and($seedPosition)->toBeInt()
+        ->and($repairPosition)->toBeLessThan($seedPosition)
+        ->and($setup)->toContain('install -d -m 775 -o orbit -g orbit')
+        ->and($setup)->toContain('chown -R orbit:orbit')
+        ->and($setup)->toContain('chmod -R u+rwX,g+rwX')
+        ->and($setup)->toContain('/home/orbit/.config/orbit/.env')
+        ->and($setup)->toContain('.tmp');
+});
+
 it('proxies gateway api routes to Laravel before legacy command shims', function (): void {
     $reflection = new ReflectionClass(E2EGatewayApi::class);
     $method = $reflection->getMethod('tlsServerScript');

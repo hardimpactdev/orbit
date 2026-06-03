@@ -1927,7 +1927,9 @@ PHP;
     {
         E2ECommand::exec(
             $gateway,
-            'install -d -m 775 -o orbit -g orbit '.escapeshellarg(self::OrbitConfigRoot).' && chown -R orbit:orbit '.escapeshellarg(self::OrbitConfigRoot),
+            'install -d -m 775 -o orbit -g orbit '.escapeshellarg(self::OrbitConfigRoot)
+                .' && chown -R orbit:orbit '.escapeshellarg(self::OrbitConfigRoot)
+                .' && chmod -R u+rwX,g+rwX '.escapeshellarg(self::OrbitConfigRoot),
             'Could not repair gateway config root ownership',
             timeoutSeconds: 60,
         );
