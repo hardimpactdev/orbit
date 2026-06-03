@@ -42,9 +42,18 @@ provider-specific feature lanes when assigning work to separate agents.
 
 ## Verification Order
 
-Run prepared-topology feature lanes before provider provision gates. Feature
-lanes exercise the current source checkout through prepared Docker/Incus
-topologies and are the normal E2E development signal.
+Use the staged E2E model:
+
+1. Run in-memory Pest tests for command contracts and deterministic behavior.
+2. Use source/dev topology checks for fast diagnosis when a real topology is
+   needed during implementation.
+3. Run source-prepared feature lanes (`composer test:e2e:docker`,
+   `composer test:e2e:incus`, or `composer test:e2e`) as the normal durable E2E
+   signal. These lanes exercise the current source checkout through prepared
+   Docker/Incus topologies.
+4. Run artifact-backed feature lanes when production artifacts matter and that
+   lane exists for the provider.
+5. Run provider provision gates only as final/nightly substrate verification.
 
 Provider provision gates are final verification for artifact preparation,
 installer, `node:new`, base image, host mutation, Docker image, or runtime asset
@@ -119,3 +128,8 @@ separate provider substrates.
 Missing prepared artifacts are not fixed by switching providers. Follow the
 scoped artifact command printed by the failing lane, or run the matching
 provider provision command when a full refresh is intended.
+
+Serving behavior (`app:new`, Caddy/FrankenPHP HTTP serving, and `app:exec
+composer install`) belongs in prepared feature lanes. It must not be tagged with
+the broad `e2e-provision` group unless a focused diagnostic is intentionally
+selected outside the default provision gate.

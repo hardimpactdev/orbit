@@ -25,6 +25,24 @@ function incusTopologyBuilderProcessResult(string $output = '', string $errorOut
     return $result;
 }
 
+function incusTopologyBuilderPreparedBakeResult(string $command): ?ProcessResult
+{
+    if (! str_contains($command, '/tmp/orbit-e2e-prepared-bake.sh')) {
+        return null;
+    }
+
+    if (str_contains($command, 'cat >')) {
+        return null;
+    }
+
+    return incusTopologyBuilderProcessResult(implode("\n", [
+        '__orbit_bake_status dev 0',
+        '__orbit_bake_status prod 0',
+        '__orbit_bake_status agent 0',
+        '',
+    ]));
+}
+
 function incusTopologyBuilderConfig(): E2EConfig
 {
     return new E2EConfig(
@@ -275,6 +293,10 @@ it('builds full prepared roles from the gateway base with parallel downstream ba
         $host->shouldReceive('run')->andReturnUsing(function (string $command, ?int $timeoutSeconds = null) use (&$commands): ProcessResult {
             $commands[] = $command;
 
+            if (($result = incusTopologyBuilderPreparedBakeResult($command)) !== null) {
+                return $result;
+            }
+
             if (str_contains($command, 'docker exec wg-easy wg show wg0 public-key')) {
                 return incusTopologyBuilderProcessResult("wg-easy-public-key\n");
             }
@@ -306,11 +328,15 @@ it('builds full prepared roles from the gateway base with parallel downstream ba
             return incusTopologyBuilderProcessResult();
         });
 
-        $builder = new IncusTopologyBuilder($host);
+        $timer = new E2EPhaseTimer;
+        $builder = new IncusTopologyBuilder($host, $timer);
         $builder->useBundle('/tmp/orbit-e2e-bundle-test');
 
         $manifest = $builder->build(E2ETopologyKind::OperatorGatewayAppdevAppprodAgent);
         $commandOutput = implode("\n", $commands);
+        $phaseNames = array_column($timer->events(), 'name');
+        $runtimePrerequisitesPhase = array_search('prepared.dev.runtime-prerequisites', $phaseNames, true);
+        $redisSeedPhase = array_search('dev.database-redis-seed', $phaseNames, true);
 
         expect($manifest)->toHaveCount(5)
             ->and($manifest)->sequence(
@@ -340,11 +366,24 @@ it('builds full prepared roles from the gateway base with parallel downstream ba
             ->and($commandOutput)->toContain('app-prod-1')
             ->and($commandOutput)->toContain('agent-1')
             ->and($commandOutput)->toContain('/tmp/orbit-e2e-prepared-bake.sh')
+            ->and($commandOutput)->toContain('caddy-2-alpine.tar')
+            ->and($commandOutput)->toContain('frankenphp-1-php8.5-bookworm.tar')
+            ->and($commandOutput)->toContain('caddy:2-alpine')
+            ->and($commandOutput)->toContain('dunglas/frankenphp:1-php8.5-bookworm')
+            ->and($commandOutput)->toContain('docker.io')
+            ->and($commandOutput)->toContain('sudo -u "$bootstrap_user" docker image inspect')
+            ->and($commandOutput)->toContain('runtime_user=orbit')
+            ->and($commandOutput)->toContain('usermod -aG docker "$runtime_user"')
+            ->and($commandOutput)->toContain('sudo -u "$runtime_user" docker image inspect')
+            ->and($commandOutput)->not->toContain('orbit-template-app-dev-base/var/tmp/orbit-gateway-current.tar')
             ->and(substr_count($commandOutput, 'ORBIT_E2E_NODE_WIREGUARD_ADDRESS='))->toBe(0)
             ->and($commandOutput)->toContain('prepared Incus base image is missing E2E dependencies')
             ->and($commandOutput)->toContain('for command in composer git supervisorctl wg wg-quick dig ufw; do')
-            ->and($commandOutput)->not->toContain('apt-get')
-            ->and($commandOutput)->toContain('systemctl enable --now supervisor.service');
+            ->and($commandOutput)->toContain('apt-get -o DPkg::Lock::Timeout=300 install -y -qq docker.io')
+            ->and($commandOutput)->toContain('systemctl enable --now supervisor.service')
+            ->and($runtimePrerequisitesPhase)->toBeInt()
+            ->and($redisSeedPhase)->toBeInt()
+            ->and($runtimePrerequisitesPhase)->toBeLessThan($redisSeedPhase);
         expect(substr_count($commandOutput, 'orbit-template-gateway-base/root/.ssh/id_ed25519'))->toBe(2);
     });
 });
@@ -369,6 +408,10 @@ it('builds full prepared websocket roles on the app-dev node', function (): void
         $host->shouldReceive('snapshotInstance')->times(8)->andReturn(incusTopologyBuilderProcessResult());
         $host->shouldReceive('run')->andReturnUsing(function (string $command, ?int $timeoutSeconds = null) use (&$commands): ProcessResult {
             $commands[] = $command;
+
+            if (($result = incusTopologyBuilderPreparedBakeResult($command)) !== null) {
+                return $result;
+            }
 
             if (str_contains($command, 'docker exec wg-easy wg show wg0 public-key')) {
                 return incusTopologyBuilderProcessResult("wg-easy-public-key\n");
@@ -432,6 +475,10 @@ it('builds full prepared websocket roles on the app-dev node', function (): void
             ->and($commandOutput)->toContain('app-dev-1')
             ->and($commandOutput)->toContain('incus file push')
             ->and($commandOutput)->toContain('orbit-gateway-current.tar')
+            ->and($commandOutput)->toContain('caddy-2-alpine.tar')
+            ->and($commandOutput)->toContain('frankenphp-1-php8.5-bookworm.tar')
+            ->and($commandOutput)->toContain('caddy:2-alpine')
+            ->and($commandOutput)->toContain('dunglas/frankenphp:1-php8.5-bookworm')
             ->and($commandOutput)->toContain('docker.io')
             ->and($commandOutput)->toContain('bootstrap_user=')
             ->and($commandOutput)->toContain('provisioner')
@@ -440,7 +487,10 @@ it('builds full prepared websocket roles on the app-dev node', function (): void
             ->and($commandOutput)->toContain('orbit-gateway:prepared-current')
             ->and($commandOutput)->toContain('orbit-gateway:current')
             ->and($commandOutput)->toContain('usermod -aG docker "$bootstrap_user"')
+            ->and($commandOutput)->toContain('runtime_user=orbit')
+            ->and($commandOutput)->toContain('usermod -aG docker "$runtime_user"')
             ->and($commandOutput)->toContain('sudo -u "$bootstrap_user" docker image inspect')
+            ->and($commandOutput)->toContain('sudo -u "$runtime_user" docker image inspect')
             ->and($commandOutput)->toContain('--converge-runtime')
             ->and($commandOutput)->not->toContain('--environment=')
             ->and($commandOutput)->not->toContain('node.role')
@@ -612,6 +662,10 @@ it('builds prepared topology templates through staged internal gateway baking', 
     $host->shouldReceive('snapshotInstance')->times(8)->andReturn(incusTopologyBuilderProcessResult());
     $host->shouldReceive('run')->andReturnUsing(function (string $command, ?int $timeoutSeconds = null) use (&$commands): ProcessResult {
         $commands[] = $command;
+
+        if (($result = incusTopologyBuilderPreparedBakeResult($command)) !== null) {
+            return $result;
+        }
 
         if (str_contains($command, 'docker exec wg-easy wg show wg0 public-key')) {
             return incusTopologyBuilderProcessResult("wg-easy-public-key\n");

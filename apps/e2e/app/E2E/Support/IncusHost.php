@@ -41,6 +41,21 @@ class IncusHost
             ));
     }
 
+    private function runFreshSsh(string $command, ?int $timeoutSeconds = null): ProcessResult
+    {
+        $remoteCommand = sprintf(
+            'bash -lc %s',
+            escapeshellarg("set -euo pipefail\n{$command}"),
+        );
+
+        return Process::timeout($timeoutSeconds ?? $this->config->timeoutSeconds)
+            ->run(sprintf(
+                'ssh -S none -o ControlMaster=no -o BatchMode=yes -o ConnectTimeout=10 %s %s',
+                escapeshellarg($this->config->host),
+                escapeshellarg($remoteCommand),
+            ));
+    }
+
     /**
      * Push a local provisioning bundle to a per-run remote temp directory.
      * Returns the absolute remote path of the staged bundle. The remote path
@@ -270,11 +285,16 @@ class IncusHost
             ? " --binary={$guestBundleDirectory}/".self::DefaultOrbitBinaryFilename
             : '';
 
+        $sourceArchiveArg = $nodeKind === 'app' && $hasOrbitBinary
+            ? ''
+            : " --source-archive={$guestBundleDirectory}/orbit-source.tar.gz";
+
         $script = sprintf(
             'chmod +x %1$s/e2e-provision-node %1$s/install-orbit %1$s/_e2e-deps.sh && '
-            .'%1$s/e2e-provision-node --node-kind=%2$s --source-archive=%1$s/orbit-source.tar.gz --installer=%1$s/install-orbit%3$s%4$s%5$s%6$s%7$s%8$s%9$s',
+            .'%1$s/e2e-provision-node --node-kind=%2$s%3$s --installer=%1$s/install-orbit%4$s%5$s%6$s%7$s%8$s%9$s%10$s',
             $guestBundleDirectory,
             escapeshellarg($nodeKind),
+            $sourceArchiveArg,
             $operatorUserArg,
             $composerCacheArg,
             $gatewayImageArchiveArg,
@@ -398,6 +418,32 @@ class IncusHost
         return $this->run(sprintf('incus image info %s >/dev/null 2>&1', escapeshellarg($alias)))->successful();
     }
 
+    public function imageIdentity(string $alias): string
+    {
+        $result = $this->run(sprintf('incus image info %s --format json', escapeshellarg($alias)), timeoutSeconds: 30);
+
+        if (! $result->successful()) {
+            return $alias;
+        }
+
+        $payload = json_decode($result->output(), associative: true);
+
+        if (! is_array($payload)) {
+            return $alias;
+        }
+
+        $fingerprint = $payload['fingerprint'] ?? null;
+        $createdAt = $payload['created_at'] ?? null;
+
+        if (is_string($fingerprint) && $fingerprint !== '') {
+            return is_string($createdAt) && $createdAt !== ''
+                ? "{$alias}@{$fingerprint}:{$createdAt}"
+                : "{$alias}@{$fingerprint}";
+        }
+
+        return $alias;
+    }
+
     public function instanceExists(string $name): bool
     {
         return $this->run(sprintf('incus info %s >/dev/null 2>&1', escapeshellarg($name)))->successful();
@@ -445,6 +491,26 @@ class IncusHost
             'incus query %s >/dev/null 2>&1',
             escapeshellarg("/1.0/instances/{$instance}/snapshots/{$snapshot}"),
         ))->successful();
+    }
+
+    public function readTextFile(string $path): ?string
+    {
+        $result = $this->runFreshSsh(sprintf(
+            'test -f %1$s && cat %1$s',
+            escapeshellarg($path),
+        ), timeoutSeconds: 30);
+
+        return $result->successful() ? $result->output() : null;
+    }
+
+    public function writeTextFile(string $path, string $contents): ProcessResult
+    {
+        return $this->runFreshSsh(sprintf(
+            'mkdir -p %s && printf %%s %s | base64 -d > %s',
+            escapeshellarg(dirname($path)),
+            escapeshellarg(base64_encode($contents)),
+            escapeshellarg($path),
+        ), timeoutSeconds: 30);
     }
 
     public function copyInstance(string $source, string $target): ProcessResult

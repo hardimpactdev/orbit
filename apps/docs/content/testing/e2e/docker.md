@@ -44,7 +44,7 @@ refresh each configured Docker host:
 ```bash
 ORBIT_E2E_DOCKER_TEST_RUNNERS=sidecar1:4:28,sidecar2:4:28 \
 ORBIT_E2E_DOCKER_IMAGE_BUILD_HOSTS=beast \
-composer e2e:prepare-docker-hosts -- --force operator_gateway_app-dev_app-prod_agent
+composer e2e:prepare-docker-hosts -- --force operator_gateway_app-dev_app-prod_agent_websocket
 ```
 
 For single-host local debugging, the lower-level equivalents are:

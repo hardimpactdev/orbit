@@ -96,7 +96,7 @@ composer e2e:incus -- --live --manual \
 
 # Preview the acquisition plan without provisioning anything.
 composer e2e:incus -- --start --dry-run \
-  --topology=operator_gateway_app-dev_app-prod_agent
+  --topology=operator_gateway_app-dev_app-prod_agent_websocket
 ```
 
 Composer requires the separator before command options; keep the `--` between
@@ -210,7 +210,6 @@ and gateway come from `operator_gateway`; app-dev, app-prod, agent, ingress,
 and websocket come from their owning source topologies.
 
 The Incus provider clones only selected roles from the prepared
-`operator_gateway_app-dev_app-prod_agent` or
 `operator_gateway_app-dev_app-prod_agent_websocket` snapshots for ordinary
 current-role and websocket topologies. The dedicated-ingress topology clones
 from `operator_gateway_app-dev_app-prod_ingress`. Incus starts those VMs,
@@ -238,10 +237,11 @@ Required prepared sources for feature lanes:
 - Source-mounted live Docker topologies are not prepared sources; their remote
   sync step may pull and run `composer:2` on a runner host to hydrate synced
   gateway and CLI dependencies.
-- `operator_gateway_app-dev_app-prod_agent` and
-  `operator_gateway_app-dev_app-prod_agent_websocket` Incus role snapshots for
-  selective VM boot, including operator-only, operator-gateway, and websocket
-  tests.
+- `operator_gateway_app-dev_app-prod_agent_websocket` Incus role snapshots for
+  selective VM boot, including operator-only, operator-gateway, app-serving,
+  app-prod-ingress, and websocket tests. Their app-dev snapshot carries Docker
+  plus the Caddy and FrankenPHP images and `orbit` user Docker access needed by
+  app/proxy doctor repair.
 - `operator_gateway_app-dev_app-prod_ingress` Incus role snapshots for tests
   that need app-dev, app-prod, and a dedicated ingress VM.
 
@@ -268,14 +268,14 @@ Use `composer e2e:ensure-artifacts` to plan or run a targeted artifact refresh:
 
 ```bash
 # Build or pull Docker runtime/support images only when one is missing.
-composer e2e:ensure-artifacts -- --lanes=docker --runtime --force operator_gateway_app-dev_app-prod_agent
+composer e2e:ensure-artifacts -- --lanes=docker --runtime --force operator_gateway_app-dev_app-prod_agent_websocket
 
 # Refresh only the agent Docker role image for a branch/worktree override.
 ORBIT_E2E_TOPOLOGY_ARTIFACT_NAMESPACE=agent-isolation \
-composer e2e:ensure-artifacts -- --lanes=docker --roles=agent --force operator_gateway_app-dev_app-prod_agent
+composer e2e:ensure-artifacts -- --lanes=docker --roles=agent --force operator_gateway_app-dev_app-prod_agent_websocket
 
 # Rebuild selected Docker role images even when matching tags already exist.
-composer e2e:ensure-artifacts -- --lanes=docker --roles=operator,gateway --rebuild --force operator_gateway_app-dev_app-prod_agent
+composer e2e:ensure-artifacts -- --lanes=docker --roles=operator,gateway --rebuild --force operator_gateway_app-dev_app-prod_agent_websocket
 
 # Inspect the Incus templates for an agent role override.
 ORBIT_E2E_TOPOLOGY_ARTIFACT_NAMESPACE=agent-isolation \

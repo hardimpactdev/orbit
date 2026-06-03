@@ -7,6 +7,7 @@ namespace App\Console\Commands;
 use App\E2E\Support\E2EConfig;
 use App\E2E\Support\E2EPhaseTimer;
 use App\E2E\Support\E2EPreparedTopology;
+use App\E2E\Support\E2EProvisionFingerprint;
 use App\E2E\Support\E2ETopologyArtifactNamespace;
 use App\E2E\Support\E2ETopologyKind;
 use App\E2E\Support\IncusHost;
@@ -142,6 +143,10 @@ class E2EPrepareTopologyCommand extends Command
 
         try {
             $bundleDir = $timer->measure('bundle.local', fn (): string => $this->buildLocalBundle());
+            $provisionFingerprint = $timer->measure(
+                'bundle.fingerprint',
+                fn (): array => E2EProvisionFingerprint::fromHost($host, $buildKind, $bundleDir),
+            );
             $remoteBundle = $timer->measure('bundle.push', fn (): string => $host->pushBundle($bundleDir));
 
             $builder = $this->builderFactory !== null
@@ -149,6 +154,10 @@ class E2EPrepareTopologyCommand extends Command
                 : new IncusTopologyBuilder($host, $timer);
 
             $builder->useBundle($remoteBundle);
+
+            if ($this->builderFactory === null) {
+                $builder->useProvisionFingerprint($provisionFingerprint);
+            }
 
             if ($artifactRoles !== null) {
                 $incusRoles = array_map(

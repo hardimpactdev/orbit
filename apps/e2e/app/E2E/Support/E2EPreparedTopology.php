@@ -60,9 +60,7 @@ final readonly class E2EPreparedTopology
         }
 
         if ($kind === E2ETopologyKind::Operator || self::usesOperatorGatewayBase($kind)) {
-            return self::websocketTopologyKind($kind)
-                ? E2ETopologyKind::OperatorGatewayAppdevAppprodAgentWebsocket
-                : E2ETopologyKind::OperatorGatewayAppdevAppprodAgent;
+            return E2ETopologyKind::OperatorGatewayAppdevAppprodAgentWebsocket;
         }
 
         return $kind;
@@ -258,18 +256,64 @@ final readonly class E2EPreparedTopology
     }
 
     /**
-     * @param  list<string>  $allowedNodeNames
+     * @param  list<string>  $roles
+     * @return array<string, list<string>>
      */
-    public static function gatewayRegistryPrunePhp(array $allowedNodeNames): string
+    public static function gatewayAllowedRoleAssignmentsFor(E2ETopologyKind $kind, array $roles): array
+    {
+        $roles = array_values(array_unique($roles));
+        $assignments = [];
+
+        if (in_array('dev', $roles, true)) {
+            $assignments['app-dev-1'] = ['app-dev', 'database'];
+
+            if (self::websocketTopologyKind($kind)) {
+                $assignments['app-dev-1'][] = 'websocket';
+            }
+        }
+
+        if (in_array('prod', $roles, true)) {
+            $assignments['app-prod-1'] = ['app-prod'];
+
+            if (self::prodHostsIngressRole($kind) && ! in_array('ingress', $roles, true)) {
+                $assignments['app-prod-1'][] = 'ingress';
+            }
+        }
+
+        if (in_array('ingress', $roles, true)) {
+            $assignments['edge-1'] = ['ingress'];
+        }
+
+        if (in_array('agent', $roles, true)) {
+            $assignments['agent-1'] = ['agent'];
+        }
+
+        return $assignments;
+    }
+
+    /**
+     * @param  list<string>  $allowedNodeNames
+     * @param  array<string, list<string>>  $allowedRolesByNode
+     */
+    public static function gatewayRegistryPrunePhp(array $allowedNodeNames, array $allowedRolesByNode = []): string
     {
         $allowedNodeNames = array_values(array_unique($allowedNodeNames));
         $allowedNodeNamesValue = '['.implode(', ', array_map(
             static fn (string $name): string => var_export($name, true),
             $allowedNodeNames,
         )).']';
+        $allowedRolesByNodeValue = '['.implode(', ', array_map(
+            static fn (string $nodeName, array $roles): string => var_export($nodeName, true).' => ['.implode(', ', array_map(
+                static fn (string $role): string => var_export($role, true),
+                array_values(array_unique($roles)),
+            )).']',
+            array_keys($allowedRolesByNode),
+            array_values($allowedRolesByNode),
+        )).']';
 
         return <<<PHP
 \$allowedNodeNames = {$allowedNodeNamesValue};
+\$allowedRolesByNode = {$allowedRolesByNodeValue};
 
 if (in_array('operator-1', \$allowedNodeNames, true)) {
     \$operatorNode = \\App\\Models\\Node::query()
@@ -288,6 +332,22 @@ if (in_array('operator-1', \$allowedNodeNames, true)) {
     if (\$operatorNode === null && \$previousOperatorNode !== null) {
         \$previousOperatorNode->forceFill(['name' => 'operator-1'])->save();
     }
+}
+
+foreach (\$allowedRolesByNode as \$nodeName => \$allowedRoles) {
+    \$node = \\App\\Models\\Node::query()
+        ->where('name', \$nodeName)
+        ->first();
+
+    if (\$node === null) {
+        continue;
+    }
+
+    \\App\\Models\\NodeRoleAssignment::query()
+        ->where('node_id', \$node->id)
+        ->where('status', 'active')
+        ->whereNotIn('role', \$allowedRoles)
+        ->delete();
 }
 
 \$staleNodeIds = \\App\\Models\\Node::query()

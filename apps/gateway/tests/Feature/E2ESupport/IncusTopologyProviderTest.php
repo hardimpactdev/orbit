@@ -74,6 +74,29 @@ it('seeds the gateway ssh key into prepared incus downstream clones', function (
         ->and($joined)->not->toContain("incus exec 'operator' -- sh -lc");
 });
 
+it('seeds gateway ssh access before prepared incus retargeting can converge runtime remotely', function (): void {
+    $source = file_get_contents(repo_path('apps/e2e/app/E2E/Support/IncusTopologyProvider.php'));
+
+    $initialSeed = strpos($source, "\$timer->measure('gateway-ssh-access'");
+    $initialRetarget = strpos($source, "\$timer->measure('retarget'");
+    $resetSeed = strpos($source, "\$cycleTimer->measure('reset.gateway-ssh-access'");
+    $resetRetarget = strpos($source, "\$cycleTimer->measure('reset.retarget'");
+
+    expect($initialSeed)->toBeInt()
+        ->and($initialRetarget)->toBeInt()
+        ->and($resetSeed)->toBeInt()
+        ->and($resetRetarget)->toBeInt()
+        ->and([
+            'initial' => $initialSeed < $initialRetarget,
+            'reset' => $resetSeed < $resetRetarget,
+        ])->toBe([
+            'initial' => true,
+            'reset' => true,
+        ])
+        ->and($source)->toContain('orbit:internal:bake-websocket-node app-dev-1')
+        ->and($source)->toContain('--converge-runtime');
+});
+
 it('keeps incus retarget scripts on node_role assignments instead of legacy node columns', function (): void {
     $providerSource = file_get_contents(repo_path('apps/e2e/app/E2E/Support/IncusTopologyProvider.php'));
     $builderSource = file_get_contents(repo_path('apps/e2e/app/E2E/Support/IncusTopologyBuilder.php'));

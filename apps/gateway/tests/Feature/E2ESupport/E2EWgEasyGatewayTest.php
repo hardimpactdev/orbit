@@ -54,6 +54,8 @@ it('starts wg-easy as the only WireGuard server on host UDP 51820', function ():
         ->and($commands[0])->toContain('--cap-add SYS_MODULE')
         ->and($commands[0])->toContain('-v /lib/modules:/lib/modules:ro')
         ->and($commands[0])->toContain('ghcr.io/wg-easy/wg-easy:15')
+        ->and($commands[0])->toContain('docker exec wg-easy wg show wg0 public-key')
+        ->and($commands[0])->toContain('test -n "${wg_easy_public_key:-}"')
         ->and($commands[0])->toContain('docker exec wg-easy ip addr replace 10.6.0.1/24 dev wg0')
         ->and($commands[0])->toContain('docker exec wg-easy ip route replace 10.6.0.0/24 dev wg0')
         ->and($commands[0])->toContain('sudo -u orbit env')

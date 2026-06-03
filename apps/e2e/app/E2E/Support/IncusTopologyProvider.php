@@ -517,8 +517,8 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
 
         $timer->measure('known-hosts', fn () => $this->clearKnownHosts($instances));
         $timer->measure('wireguard', fn () => $this->retargetRealWireGuard($instances));
-        $timer->measure('retarget', fn () => $this->retargetTopology($instances, $config, $sshKeyPair, $kind, $options->sourceMountedCheckout));
         $timer->measure('gateway-ssh-access', fn () => $this->seedGatewaySshAccess($instances));
+        $timer->measure('retarget', fn () => $this->retargetTopology($instances, $config, $sshKeyPair, $kind, $options->sourceMountedCheckout));
         $timer->measure('network-ready', fn () => $this->waitForPeerRoutes($instances, $config));
 
         if ($options->startGatewayApi && isset($instances['gateway'])) {
@@ -607,8 +607,8 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
             }
 
             $cycleTimer->measure('reset.wireguard', fn () => $this->retargetRealWireGuard($instances));
-            $cycleTimer->measure('reset.retarget', fn () => $this->retargetTopology($instances, $this->config, $sshKeyPair, $kind, $sourceMountedCheckout));
             $cycleTimer->measure('reset.gateway-ssh-access', fn () => $this->seedGatewaySshAccess($instances));
+            $cycleTimer->measure('reset.retarget', fn () => $this->retargetTopology($instances, $this->config, $sshKeyPair, $kind, $sourceMountedCheckout));
             $cycleTimer->measure('reset.network-ready', fn () => $this->waitForPeerRoutes($instances, $this->config));
 
             if ($startGatewayApi && isset($instances['gateway'])) {
@@ -827,13 +827,13 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
             ), timeoutSeconds: 900);
         }
 
-        $this->prunePreparedGatewayRegistry($instances, $sshKeyPair);
+        $this->prunePreparedGatewayRegistry($instances, $sshKeyPair, $kind);
     }
 
     /**
      * @param  array<string, IncusInstance>  $instances
      */
-    private function prunePreparedGatewayRegistry(array $instances, SshKeyPair $sshKeyPair): void
+    private function prunePreparedGatewayRegistry(array $instances, SshKeyPair $sshKeyPair, E2ETopologyKind $kind): void
     {
         $gateway = $instances['gateway'] ?? null;
 
@@ -842,7 +842,8 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
         }
 
         $php = E2EPreparedTopology::gatewayRegistryPrunePhp(
-            E2EPreparedTopology::gatewayNodeNamesForRoles(array_keys($instances)),
+            allowedNodeNames: E2EPreparedTopology::gatewayNodeNamesForRoles(array_keys($instances)),
+            allowedRolesByNode: E2EPreparedTopology::gatewayAllowedRoleAssignmentsFor($kind, array_keys($instances)),
         );
 
         E2ECommand::ssh(

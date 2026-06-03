@@ -20,7 +20,7 @@ LOG_FILE="${ORBIT_E2E_PROVISION_LOG:-}"
 
 usage() {
     cat <<'HELP'
-usage: bin/e2e-provision-node --node-kind=operator|gateway|app --source-archive=PATH [options]
+usage: bin/e2e-provision-node --node-kind=operator|gateway|app [--source-archive=PATH] [options]
 
 Provision an Orbit topology VM cloned from the supported E2E base image by pushing
 a source archive into place via bin/install-orbit. Designed to run inside the
@@ -30,6 +30,10 @@ Required:
   --node-kind=operator|gateway|app
                                Topology node kind being installed.
   --source-archive=PATH        Tarball of the Orbit checkout to install.
+                               Required for operator and gateway nodes.
+                               Optional for app nodes when --binary is given;
+                               binary-backed app nodes receive the CLI artifact
+                               only and do not receive a gateway source tree.
 
 Optional:
   --installer=PATH             Path to bin/install-orbit. Defaults to a sibling
@@ -211,8 +215,13 @@ validate_args() {
             ;;
     esac
 
-    [ -n "$SOURCE_ARCHIVE" ] || fail validation_failed "--source-archive is required"
-    [ -f "$SOURCE_ARCHIVE" ] || fail validation_failed "source archive not found: $SOURCE_ARCHIVE"
+    if ! uses_binary_only_app_artifact; then
+        [ -n "$SOURCE_ARCHIVE" ] || fail validation_failed "--source-archive is required"
+    fi
+
+    if [ -n "$SOURCE_ARCHIVE" ]; then
+        [ -f "$SOURCE_ARCHIVE" ] || fail validation_failed "source archive not found: $SOURCE_ARCHIVE"
+    fi
 
     if [ -z "$INSTALLER" ]; then
         INSTALLER="${SCRIPT_DIR}/install-orbit"
@@ -258,6 +267,10 @@ target_user_for_node_kind() {
             printf '%s' orbit
             ;;
     esac
+}
+
+uses_binary_only_app_artifact() {
+    [ "$NODE_KIND" = "app" ] && [ -n "$BINARY" ]
 }
 
 ensure_target_user() {
@@ -342,6 +355,12 @@ install_orbit_for_node_kind() {
 
     sudo_run rm -rf "$guest_stage_dir"
     sudo_run install -d -m 0755 -o "$user" -g "$user" "$guest_stage_dir"
+
+    if uses_binary_only_app_artifact; then
+        install_orbit_binary_only "$user" "$target_dir"
+        return
+    fi
+
     sudo_run install -m 0644 -o "$user" -g "$user" "$SOURCE_ARCHIVE" "$staged_source_archive"
     sudo_run install -m 0755 -o "$user" -g "$user" "$INSTALLER" "$staged_installer"
 
@@ -397,10 +416,28 @@ install_orbit_for_node_kind() {
         "${wg_easy_image_args[@]}"
 }
 
+install_orbit_binary_only() {
+    local user="$1"
+    local target_dir="$2"
+    local binary_dest="${target_dir}/bin/orbit-binary"
+
+    sudo_run install -d -m 0755 -o "$user" -g "$user" "${target_dir}/bin"
+    sudo_run install -m 0755 -o "$user" -g "$user" "$BINARY" "$binary_dest"
+    sudo_run ln -sf "$binary_dest" /usr/local/bin/orbit
+    sudo_run runuser -u "$user" -- env \
+        "HOME=/home/${user}" \
+        PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
+        /usr/local/bin/orbit --version
+}
+
 install_host_composer_dependencies() {
     local user
     local home_dir
     local target_dir
+
+    if uses_binary_only_app_artifact; then
+        return
+    fi
 
     user="$(target_user_for_node_kind)"
     home_dir="/home/${user}"

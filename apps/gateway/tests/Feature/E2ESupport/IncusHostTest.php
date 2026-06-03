@@ -175,6 +175,33 @@ it('checks snapshots by exact Incus snapshot path', function (): void {
         ->and($commands[0])->not->toContain('grep -q');
 });
 
+it('uses fresh ssh transport for remote checkpoint text files', function (): void {
+    $commands = [];
+
+    Process::fake(function ($process) use (&$commands) {
+        $commands[] = $process->command;
+
+        return Process::result(output: str_contains($process->command, 'cat') ? 'manifest' : '');
+    });
+    Process::preventStrayProcesses();
+
+    $host = new IncusHost(incusHostTestConfig());
+
+    expect($host->readTextFile('.cache/orbit-e2e/provision-checkpoints/base/full.json'))->toBe("manifest\n")
+        ->and($host->writeTextFile('.cache/orbit-e2e/provision-checkpoints/base/full.json', '{}')->successful())->toBeTrue()
+        ->and($commands)->toHaveCount(2)
+        ->and($commands[0])->toContain('ssh -S none -o ControlMaster=no -o BatchMode=yes -o ConnectTimeout=10')
+        ->and($commands[0])->toContain('test -f')
+        ->and($commands[0])->toContain('cat')
+        ->and($commands[0])->toContain('.cache/orbit-e2e/provision-checkpoints/base/full.json')
+        ->and($commands[1])->toContain('ssh -S none -o ControlMaster=no -o BatchMode=yes -o ConnectTimeout=10')
+        ->and($commands[1])->toContain('mkdir -p')
+        ->and($commands[1])->toContain('printf %s')
+        ->and($commands[1])->toContain('e30=')
+        ->and($commands[1])->toContain('base64 -d')
+        ->and($commands[1])->toContain('.cache/orbit-e2e/provision-checkpoints/base/full.json');
+});
+
 it('queries exact Incus instance state when resolving a provider IPv4', function (): void {
     $commands = [];
 
@@ -217,7 +244,8 @@ it('restarts journald after refreshing cloned instance network identity', functi
 
     expect($commands[0])->toContain('systemd-machine-id-setup')
         ->and($commands[0])->toContain('systemctl restart systemd-journald')
-        ->and($commands[0])->toContain('systemctl restart systemd-networkd');
+        ->and($commands[0])->toContain('systemctl --no-block restart systemd-networkd')
+        ->and($commands[0])->toContain('systemctl --no-block restart NetworkManager');
 });
 
 it('keeps locally staged files readable before pushing them into an incus instance', function (): void {
@@ -534,6 +562,8 @@ it('does not pass the wg-easy image archive to non-gateway in-guest provisioning
 
     expect($commandOutput)
         ->toContain('--frankenphp-image-archive=/var/tmp/orbit-e2e-bundle/frankenphp-1-php8.5-bookworm.tar')
+        ->toContain('--binary=/var/tmp/orbit-e2e-bundle/orbit-binary')
+        ->not->toContain('--source-archive=/var/tmp/orbit-e2e-bundle/orbit-source.tar.gz')
         ->not->toContain('orbit-gateway-current.tar')
         ->not->toContain('--gateway-image-archive=')
         ->not->toContain('wg-easy-15.tar')

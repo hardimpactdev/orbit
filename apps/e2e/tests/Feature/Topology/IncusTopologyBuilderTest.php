@@ -41,7 +41,7 @@ it('builds the reusable superset topology from the base image', function (): voi
 
     putenv(E2ETopologyArtifactNamespace::EnvironmentVariable.'='.$artifactNamespace);
 
-    $kind = E2ETopologyKind::OperatorGatewayAppdevAppprodAgent;
+    $kind = E2ETopologyKind::OperatorGatewayAppdevAppprodAgentWebsocket;
     $roles = IncusTopologyTemplate::rolesFor($kind);
     $templateNames = array_map(
         static fn (string $role): string => IncusTopologyTemplate::templateName($kind, $role),

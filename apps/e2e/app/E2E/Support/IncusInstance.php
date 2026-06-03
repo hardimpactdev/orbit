@@ -151,7 +151,7 @@ final class IncusInstance implements E2EInstance, SourceMountedCheckoutInstance
         $this->ipv4 = null;
 
         $result = $this->exec(
-            'rm -f /etc/machine-id /var/lib/dbus/machine-id && systemd-machine-id-setup && systemctl restart systemd-journald && rm -f /run/systemd/netif/leases/* /var/lib/systemd/network/* && (systemctl restart systemd-networkd 2>/dev/null || systemctl restart NetworkManager 2>/dev/null || true)',
+            'rm -f /etc/machine-id /var/lib/dbus/machine-id && systemd-machine-id-setup && systemctl restart systemd-journald && rm -f /run/systemd/netif/leases/* /var/lib/systemd/network/* && (systemctl --no-block restart systemd-networkd 2>/dev/null || systemctl --no-block restart NetworkManager 2>/dev/null || true)',
             timeoutSeconds: 60,
         );
 

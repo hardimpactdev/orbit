@@ -679,7 +679,7 @@ it('acquisition falls back to base snapshot for unselected roles', function (): 
             }
 
             // Slug agent snapshot exists
-            if (str_contains($command, 'orbit-template-agent-agent-isolation') && str_contains($command, 'clean-operator_gateway_app-dev_app-prod_agent-agent-isolation')) {
+            if (str_contains($command, 'orbit-template-agent-agent-isolation') && str_contains($command, 'clean-operator_gateway_app-dev_app-prod_agent_websocket-agent-isolation')) {
                 return fakeSuccess();
             }
 
@@ -700,9 +700,9 @@ it('acquisition falls back to base snapshot for unselected roles', function (): 
         $agentCandidates = IncusTopologyTemplate::snapshotCandidates($kind, 'agent');
 
         expect($agentCandidates[0]['template'])->toBe('orbit-template-agent-agent-isolation')
-            ->and($agentCandidates[0]['snapshot'])->toBe('clean-operator_gateway_app-dev_app-prod_agent-agent-isolation')
+            ->and($agentCandidates[0]['snapshot'])->toBe('clean-operator_gateway_app-dev_app-prod_agent_websocket-agent-isolation')
             ->and($agentCandidates[1]['template'])->toBe('orbit-template-agent-base')
-            ->and($agentCandidates[1]['snapshot'])->toBe('clean-operator_gateway_app-dev_app-prod_agent-base');
+            ->and($agentCandidates[1]['snapshot'])->toBe('clean-operator_gateway_app-dev_app-prod_agent_websocket-base');
 
         // For operator: should find the base candidate (no slug override)
         $operatorCandidates = IncusTopologyTemplate::snapshotCandidates($kind, 'operator');
@@ -723,7 +723,7 @@ it('command with --force and --roles dispatches buildSelectedRoles with correct 
     fakeBundleProcessing();
 
     $manifest = [
-        ['role' => 'agent', 'name' => 'orbit-template-agent-agent-isolation', 'snapshot' => 'clean-operator_gateway_app-dev_app-prod_agent-agent-isolation'],
+        ['role' => 'agent', 'name' => 'orbit-template-agent-agent-isolation', 'snapshot' => 'clean-operator_gateway_app-dev_app-prod_agent_websocket-agent-isolation'],
     ];
 
     $capturedBuildKind = null;
@@ -756,7 +756,7 @@ it('command with --force and --roles dispatches buildSelectedRoles with correct 
         ])->assertSuccessful();
     });
 
-    expect($capturedBuildKind)->toBe(E2ETopologyKind::OperatorGatewayAppdevAppprodAgent)
+    expect($capturedBuildKind)->toBe(E2ETopologyKind::OperatorGatewayAppdevAppprodAgentWebsocket)
         ->and($capturedRoles)->toBe(['agent'])
         ->and($capturedReplace)->toBeTrue();
 });

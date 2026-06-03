@@ -50,7 +50,9 @@ Run these from inside the new worktree, in order:
    new code lands. If this fails on a fresh worktree, the bootstrap above is
    incomplete.
 5. (Only when this change needs the E2E lane.) Run the E2E readiness checks
-   below before the first `composer test:e2e*` run.
+   below before the first prepared-topology feature lane. Provider provision
+   gates are final/nightly substrate verification, not the normal feature-loop
+   precondition.
 
 ## E2E Readiness And Resource Pool
 
@@ -119,14 +121,19 @@ worktree, not a real failure.
 4. Follow TDD (see Test-Driven Development below): write or update failing Pest
    tests first, then implement.
 5. Implement the smallest working vertical slice to make the tests pass.
-6. Run focused verification.
-7. If PHP changed, run:
+6. Run focused in-memory and prepared-topology feature verification.
+7. Run artifact-backed feature verification when production artifact behavior
+   matters and that lane exists for the provider.
+8. Run provider provision gates only as final/nightly substrate verification
+   when installer, host mutation, image, binary, or topology-preparation
+   behavior changed.
+9. If PHP changed, run:
 
    ```bash
    vendor/bin/pint --dirty --format agent
    ```
 
-8. Before reporting completion, run the project quality gate:
+10. Before reporting completion, run the project quality gate:
 
    ```bash
    composer quality-check
@@ -138,17 +145,23 @@ Orbit is a TDD project. Every behavior change ships with Pest coverage that
 fails before the implementation lands and passes after. No exceptions for
 "trivial" changes — if behavior is worth changing, it is worth a test.
 
-Two layers are required to prove a feature works:
+Normal feature work follows a staged E2E model:
 
 - **Pest unit/feature tests** in `tests/Unit/` or `tests/Feature/` that pin the
   internal contract: command output shape, JSON schema, validation, branching
   logic, error paths. These run under `php artisan test --compact`.
-- **Pest end-to-end tests** that exercise the feature against a real Orbit
-  topology in `tests/E2E/`. The Docker-backed feature aggregate runs via
-  `composer test:e2e` (or `composer test:e2e:docker` / `composer test:e2e:incus`
-  for a single lane). Behavior that depends on real provisioning, WireGuard,
-  systemd, or host mutation belongs in the matching provider provision lane.
-  Agents run `composer test:e2e:provision:docker` or
+- **Source/dev topology checks** for behavior that needs a live topology during
+  iteration. Use source-mounted Docker feature tests or retained Incus dev
+  topologies for fast diagnosis, then codify the finding in Pest.
+- **Source-prepared feature E2E** via `composer test:e2e` or a provider lane
+  (`composer test:e2e:docker` / `composer test:e2e:incus`). These lanes consume
+  prepared topologies containing the current source and are the normal durable
+  E2E signal.
+- **Artifact-backed feature E2E** when production artifacts matter and an
+  artifact lane exists. This consumes the built CLI binary and gateway image.
+- **Provider provision gates** only as final/nightly substrate verification for
+  installer, host mutation, image, binary, `node:new`, or topology-preparation
+  behavior. Agents run `composer test:e2e:provision:docker` or
   `composer test:e2e:provision:incus`; never run the aggregate
   `composer test:e2e:provision`. There is no standing live-node lane — see
   `apps/docs/content/testing/README.md` for the full lane map.
@@ -159,9 +172,12 @@ Workflow per change:
    for the integrated behavior.
 2. Run them and confirm they fail for the expected reason.
 3. Implement the smallest slice that turns them green.
-4. Re-run both layers before reporting completion.
+4. Re-run the smallest staged lane that proves the changed behavior before
+   reporting completion.
 
-A feature is not done until both layers pass.
+A feature is not done until the relevant in-memory and prepared-topology feature
+signals pass. Provider provision gates are required only when the change touches
+the provider substrate or production artifact preparation.
 
 ## Implementation Rules
 

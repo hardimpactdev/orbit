@@ -44,6 +44,7 @@ it('prints help with --help', function (): void {
     expect($result->output())->toContain('usage: bin/e2e-provision-node');
     expect($result->output())->toContain('--node-kind=operator|gateway|app');
     expect($result->output())->toContain('--source-archive=PATH');
+    expect($result->output())->toContain('Optional for app nodes when --binary is given');
     expect($result->output())->toContain('--gateway-image=IMAGE');
     expect($result->output())->toContain('--gateway-image-archive=PATH');
     expect($result->output())->toContain('--caddy-image-archive=PATH');
@@ -83,7 +84,21 @@ it('installs host Composer dependencies after install-orbit for prepared Incus t
         ->and(str_contains($provisioner, 'composer --working-dir="${target_dir}/apps/gateway" install --no-interaction --prefer-dist --optimize-autoloader --no-progress'))->toBeTrue()
         ->and(str_contains($provisioner, 'composer --working-dir="${target_dir}/apps/cli" install --no-interaction --prefer-dist --optimize-autoloader --no-progress'))->toBeTrue()
         ->and(str_contains($provisioner, 'sudo_run test -f "${target_dir}/apps/gateway/vendor/autoload.php"'))->toBeTrue()
-        ->and(str_contains($provisioner, 'sudo_run test -f "${target_dir}/apps/cli/vendor/autoload.php"'))->toBeTrue();
+        ->and(str_contains($provisioner, 'sudo_run test -f "${target_dir}/apps/cli/vendor/autoload.php"'))->toBeTrue()
+        ->and(str_contains($provisioner, 'if uses_binary_only_app_artifact; then'))->toBeTrue();
+});
+
+it('supports binary-only app node provisioning without a gateway source archive', function (): void {
+    $provisioner = file_get_contents(provisionScript());
+
+    expect($provisioner)
+        ->toContain('uses_binary_only_app_artifact')
+        ->toContain('[ "$NODE_KIND" = "app" ] && [ -n "$BINARY" ]')
+        ->toContain('install_orbit_binary_only "$user" "$target_dir"')
+        ->toContain('sudo_run install -m 0755 -o "$user" -g "$user" "$BINARY" "$binary_dest"')
+        ->toContain('sudo_run ln -sf "$binary_dest" /usr/local/bin/orbit')
+        ->toContain('if ! uses_binary_only_app_artifact; then')
+        ->toContain('[ -n "$SOURCE_ARCHIVE" ] || fail validation_failed "--source-archive is required"');
 });
 
 it('keeps the E2E dependency helper off the SQLite CLI', function (): void {

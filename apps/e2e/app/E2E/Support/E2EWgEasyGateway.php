@@ -56,6 +56,12 @@ for i in $(seq 1 30); do
     docker exec wg-easy ip link show wg0 >/dev/null 2>&1 && break
     sleep 1
 done
+for i in $(seq 1 30); do
+    wg_easy_public_key="$(docker exec wg-easy wg show wg0 public-key 2>/dev/null || true)"
+    test -n "${wg_easy_public_key}" && break
+    sleep 1
+done
+test -n "${wg_easy_public_key:-}"
 docker exec wg-easy ip addr replace 10.6.0.1/24 dev wg0
 docker exec wg-easy ip route replace 10.6.0.0/24 dev wg0
 %s

@@ -122,9 +122,9 @@ it('returns true when all template instances and clean snapshots exist', functio
                 && str_contains($command, 'orbit-template-operator-base')
                 && str_contains($command, 'orbit-template-gateway-base')
                 && str_contains($command, 'orbit-template-app-dev-base')
-                && str_contains($command, '/1.0/instances/orbit-template-operator-base/snapshots/clean-operator_gateway_app-dev_app-prod_agent-base')
+                && str_contains($command, '/1.0/instances/orbit-template-operator-base/snapshots/clean-operator_gateway_app-dev_app-prod_agent_websocket-base')
                 && ! str_contains($command, 'grep -q')
-                && substr_count($command, '/snapshots/clean-operator_gateway_app-dev_app-prod_agent-base') === 3;
+                && substr_count($command, '/snapshots/clean-operator_gateway_app-dev_app-prod_agent_websocket-base') === 3;
         })
         ->andReturn(successfulProcessResult());
 
@@ -136,8 +136,8 @@ it('checks prepared snapshots by exact snapshot path instead of prefix matching'
     $host->shouldReceive('run')
         ->once()
         ->withArgs(function (string $command): bool {
-            return str_contains($command, "incus query '/1.0/instances/orbit-template-operator-base/snapshots/clean-operator_gateway_app-dev_app-prod_agent-base' >/dev/null 2>&1")
-                && str_contains($command, "incus query '/1.0/instances/orbit-template-gateway-base/snapshots/clean-operator_gateway_app-dev_app-prod_agent-base' >/dev/null 2>&1")
+            return str_contains($command, "incus query '/1.0/instances/orbit-template-operator-base/snapshots/clean-operator_gateway_app-dev_app-prod_agent_websocket-base' >/dev/null 2>&1")
+                && str_contains($command, "incus query '/1.0/instances/orbit-template-gateway-base/snapshots/clean-operator_gateway_app-dev_app-prod_agent_websocket-base' >/dev/null 2>&1")
                 && ! str_contains($command, 'incus info \'orbit-template-operator-base\' --show-log=false')
                 && ! str_contains($command, 'grep -q');
         })
@@ -500,7 +500,7 @@ it('builds a batch script that copies all roles in parallel, applies limits, the
             default => $role,
         };
 
-        expect($script)->toContain("incus copy 'orbit-template-{$artifactRole}-base/clean-operator_gateway_app-dev_app-prod_agent-base' 'orbit-e2e-runX-{$role}' &");
+        expect($script)->toContain("incus copy 'orbit-template-{$artifactRole}-base/clean-operator_gateway_app-dev_app-prod_agent_websocket-base' 'orbit-e2e-runX-{$role}' &");
         expect($script)->toContain("incus start 'orbit-e2e-runX-{$role}' &");
         expect($script)->toContain("incus config set 'orbit-e2e-runX-{$role}' limits.cpu='1' limits.memory='2GiB'");
         expect($script)->toContain("incus config device override 'orbit-e2e-runX-{$role}' eth0 hwaddr=");
@@ -518,7 +518,7 @@ it('builds a batch script that copies all roles in parallel, applies limits, the
             'prod' => 'app-prod',
             default => $role,
         };
-        $copyPos = strpos($script, "incus copy 'orbit-template-{$artifactRole}-base/clean-operator_gateway_app-dev_app-prod_agent-base'");
+        $copyPos = strpos($script, "incus copy 'orbit-template-{$artifactRole}-base/clean-operator_gateway_app-dev_app-prod_agent_websocket-base'");
         expect($copyPos)->toBeLessThan($firstStartPos);
     }
 
@@ -556,14 +556,14 @@ it('falls back from branch-specific Incus snapshots to base snapshots per role',
         $checkedSnapshots = implode("\n", $checks);
 
         expect($script)
-            ->toContain("incus copy 'orbit-template-operator-branch-a-b/clean-operator_gateway_app-dev_app-prod_agent-branch-a-b'")
-            ->toContain("incus copy 'orbit-template-gateway-branch-a-b/clean-operator_gateway_app-dev_app-prod_agent-branch-a-b'")
-            ->toContain("incus copy 'orbit-template-agent-base/clean-operator_gateway_app-dev_app-prod_agent-base'")
-            ->not->toContain('orbit-template-operator-base/clean-operator_gateway_app-dev_app-prod_agent-base')
-            ->not->toContain('orbit-template-gateway-base/clean-operator_gateway_app-dev_app-prod_agent-base')
+            ->toContain("incus copy 'orbit-template-operator-branch-a-b/clean-operator_gateway_app-dev_app-prod_agent_websocket-branch-a-b'")
+            ->toContain("incus copy 'orbit-template-gateway-branch-a-b/clean-operator_gateway_app-dev_app-prod_agent_websocket-branch-a-b'")
+            ->toContain("incus copy 'orbit-template-agent-base/clean-operator_gateway_app-dev_app-prod_agent_websocket-base'")
+            ->not->toContain('orbit-template-operator-base/clean-operator_gateway_app-dev_app-prod_agent_websocket-base')
+            ->not->toContain('orbit-template-gateway-base/clean-operator_gateway_app-dev_app-prod_agent_websocket-base')
             ->and($checkedSnapshots)
-            ->toContain('orbit-template-agent-branch-a-b/snapshots/clean-operator_gateway_app-dev_app-prod_agent-branch-a-b')
-            ->toContain('orbit-template-agent-base/snapshots/clean-operator_gateway_app-dev_app-prod_agent-base');
+            ->toContain('orbit-template-agent-branch-a-b/snapshots/clean-operator_gateway_app-dev_app-prod_agent_websocket-branch-a-b')
+            ->toContain('orbit-template-agent-base/snapshots/clean-operator_gateway_app-dev_app-prod_agent_websocket-base');
     });
 });
 
@@ -579,8 +579,8 @@ it('adds an explicit storage pool to topology clone copies when configured', fun
         IncusTopologyTemplate::rolesFor(E2ETopologyKind::OperatorGateway),
     );
 
-    expect($script)->toContain("incus copy 'orbit-template-operator-base/clean-operator_gateway_app-dev_app-prod_agent-base' 'orbit-e2e-runZ-operator' --storage 'orbit-e2e' &")
-        ->and($script)->toContain("incus copy 'orbit-template-gateway-base/clean-operator_gateway_app-dev_app-prod_agent-base' 'orbit-e2e-runZ-gateway' --storage 'orbit-e2e' &");
+    expect($script)->toContain("incus copy 'orbit-template-operator-base/clean-operator_gateway_app-dev_app-prod_agent_websocket-base' 'orbit-e2e-runZ-operator' --storage 'orbit-e2e' &")
+        ->and($script)->toContain("incus copy 'orbit-template-gateway-base/clean-operator_gateway_app-dev_app-prod_agent_websocket-base' 'orbit-e2e-runZ-gateway' --storage 'orbit-e2e' &");
 });
 
 it('adds a source mount before start for source-mounted Incus retained topologies', function (): void {
@@ -643,7 +643,7 @@ it('requires the requested Incus roles in the prepared full snapshot', function 
                 && str_contains($command, "incus info 'orbit-template-app-dev-base'")
                 && str_contains($command, "incus info 'orbit-template-app-prod-base'")
                 && str_contains($command, "incus info 'orbit-template-agent-base'")
-                && str_contains($command, 'clean-operator_gateway_app-dev_app-prod_agent-base')
+                && str_contains($command, 'clean-operator_gateway_app-dev_app-prod_agent_websocket-base')
                 && ! str_contains($command, "incus image info 'orbit-base-ubuntu-26.04'")
                 && ! str_contains($command, "snapshots/clean-operator-base'")
                 && ! str_contains($command, "snapshots/clean-operator_gateway-base'")
@@ -678,14 +678,14 @@ it('clones only requested Incus roles from the prepared full snapshot', function
         $checkedSnapshots = implode("\n", $snapshotChecks);
 
         expect($script)
-            ->toContain("incus copy 'orbit-template-operator-base/clean-operator_gateway_app-dev_app-prod_agent-base'")
-            ->toContain("incus copy 'orbit-template-gateway-base/clean-operator_gateway_app-dev_app-prod_agent-base'")
-            ->toContain("incus copy 'orbit-template-agent-base/clean-operator_gateway_app-dev_app-prod_agent-base'")
+            ->toContain("incus copy 'orbit-template-operator-base/clean-operator_gateway_app-dev_app-prod_agent_websocket-base'")
+            ->toContain("incus copy 'orbit-template-gateway-base/clean-operator_gateway_app-dev_app-prod_agent_websocket-base'")
+            ->toContain("incus copy 'orbit-template-agent-base/clean-operator_gateway_app-dev_app-prod_agent_websocket-base'")
             ->not->toContain('orbit-template-app-dev-base')
             ->not->toContain('orbit-template-app-prod-base')
             ->not->toContain("orbit-template-operator-base/clean-operator-base'")
             ->and($checkedSnapshots)
-            ->toContain("snapshots/clean-operator_gateway_app-dev_app-prod_agent-base'")
+            ->toContain("snapshots/clean-operator_gateway_app-dev_app-prod_agent_websocket-base'")
             ->not->toContain("snapshots/clean-operator_gateway-base'")
             ->not->toContain("snapshots/clean-operator-base'");
     });

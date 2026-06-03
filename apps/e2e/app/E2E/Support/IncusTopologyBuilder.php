@@ -4,12 +4,19 @@ declare(strict_types=1);
 
 namespace App\E2E\Support;
 
+use App\Services\Php\PhpRuntimeCatalog;
+use App\Services\Runtime\OrbitCaddyContainer;
 use App\Services\WireGuard\WireGuardKeyGenerator;
 use RuntimeException;
 
 class IncusTopologyBuilder
 {
     private ?string $remoteBundleDir = null;
+
+    /**
+     * @var array<string, mixed>|null
+     */
+    private ?array $provisionFingerprint = null;
 
     private const string GatewayWireGuardIp = '10.6.0.2';
 
@@ -44,6 +51,14 @@ class IncusTopologyBuilder
     }
 
     /**
+     * @param  array<string, mixed>  $fingerprint
+     */
+    public function useProvisionFingerprint(array $fingerprint): void
+    {
+        $this->provisionFingerprint = $fingerprint;
+    }
+
+    /**
      * Build every prerequisite topology stage up to the requested kind,
      * snapshot each role with that stage name, and return the templates for
      * the requested kind.
@@ -52,13 +67,25 @@ class IncusTopologyBuilder
      */
     public function build(E2ETopologyKind $kind, bool $replaceExisting = false): array
     {
-        $plan = $this->timer->measure('preflight', fn (): array => $this->validatePreFlight($kind, $replaceExisting));
+        $resumeCheckpoints = [];
+
+        if ($replaceExisting && $this->provisionFingerprint !== null) {
+            $checkpointPlan = $this->checkpointPlan($kind);
+
+            if ($checkpointPlan['complete'] !== null) {
+                return $checkpointPlan['complete'];
+            }
+
+            $resumeCheckpoints = $checkpointPlan['resume'];
+        }
+
+        $plan = $this->timer->measure('preflight', fn (): array => $this->validatePreFlight($kind, $replaceExisting, $resumeCheckpoints));
 
         $workDirectory = $this->timer->measure('workdir', fn (): string => $this->createWorkDirectory());
 
         try {
             $key = $this->timer->measure('ssh-key', fn (): SshKeyPair => $this->createSshKeyPair($workDirectory));
-            $manifests = $this->buildStages($plan['target'], $key, $plan['reusableBase']);
+            $manifests = $this->buildStages($plan['target'], $key, $plan['reusableBase'], $resumeCheckpoints);
 
             return $manifests[$kind->value]
                 ?? $manifests[E2EPreparedTopology::incusSourceKindFor($kind)->value]
@@ -69,12 +96,13 @@ class IncusTopologyBuilder
     }
 
     /**
+     * @param  list<array{role: string, name: string, snapshot: string}>  $resumeCheckpoints
      * @return array{
      *     target: E2ETopologyKind,
      *     reusableBase: E2ETopologyKind|null,
      * }
      */
-    private function validatePreFlight(E2ETopologyKind $kind, bool $replaceExisting): array
+    private function validatePreFlight(E2ETopologyKind $kind, bool $replaceExisting, array $resumeCheckpoints = []): array
     {
         $baseImage = $this->host->config->baseImage;
 
@@ -92,7 +120,13 @@ class IncusTopologyBuilder
             ? $this->resolveReusableBaseStage($kind)
             : null;
 
+        $preservedTemplates = array_column($resumeCheckpoints, 'name');
+
         foreach ($this->templateNamesForRefresh($kind, $reusableBase, includeLegacyNames: $replaceExisting) as $name) {
+            if (in_array($name, $preservedTemplates, true)) {
+                continue;
+            }
+
             if (! $this->host->instanceExists($name)) {
                 continue;
             }
@@ -189,9 +223,10 @@ class IncusTopologyBuilder
     }
 
     /**
+     * @param  list<array{role: string, name: string, snapshot: string}>  $resumeCheckpoints
      * @return array<string, list<array{role: string, name: string, snapshot: string}>>
      */
-    private function buildStages(E2ETopologyKind $target, SshKeyPair $key, ?E2ETopologyKind $reusableBase): array
+    private function buildStages(E2ETopologyKind $target, SshKeyPair $key, ?E2ETopologyKind $reusableBase, array $resumeCheckpoints = []): array
     {
         $manifests = [];
         $instances = [];
@@ -213,6 +248,14 @@ class IncusTopologyBuilder
             $startIndex = $baseIndex + 1;
         }
 
+        if ($this->canResumePreparedCheckpoint($target, $resumeCheckpoints)) {
+            $targetIndex = array_search($target, $stages, true);
+
+            if ($targetIndex !== false) {
+                $startIndex = max($startIndex, $targetIndex);
+            }
+        }
+
         foreach (array_slice($stages, $startIndex) as $stage) {
             $instances = match ($stage) {
                 E2ETopologyKind::Operator => $this->buildOperatorStage($key),
@@ -220,18 +263,94 @@ class IncusTopologyBuilder
                 E2ETopologyKind::OperatorGatewayAppdev => $this->buildDevelopmentAppStage($key),
                 E2ETopologyKind::OperatorGatewayAppdevAppprod => $this->buildProductionAppStage($key),
                 E2ETopologyKind::OperatorGatewayAgent => $this->buildAgentOnlyStage($key),
-                E2ETopologyKind::OperatorGatewayAppdevAppprodAgent => $this->buildPreparedFullStage($key),
+                E2ETopologyKind::OperatorGatewayAppdevAppprodAgent => $this->buildPreparedFullStage($key, $stage === $target ? $resumeCheckpoints : []),
                 E2ETopologyKind::OperatorGatewayAppdevAppprodIngress => $this->buildPreparedDedicatedIngressStage($key),
                 E2ETopologyKind::OperatorGatewayAppprodIngress => $this->buildIngressProductionStage($key),
-                E2ETopologyKind::OperatorGatewayAppdevAppprodAgentWebsocket => $this->buildPreparedFullWebSocketStage($key),
+                E2ETopologyKind::OperatorGatewayAppdevAppprodAgentWebsocket => $this->buildPreparedFullWebSocketStage($key, $stage === $target ? $resumeCheckpoints : []),
                 E2ETopologyKind::OperatorGatewayAppdevWebsocket,
                 E2ETopologyKind::OperatorGatewayAppdevAppprodWebsocket => throw new RuntimeException("Build websocket topology source [{$stage->value}] through [".E2ETopologyKind::OperatorGatewayAppdevAppprodAgentWebsocket->value.'].'),
             };
 
-            $manifests[$stage->value] = $this->finalizeInstances($stage, $instances);
+            $stageManifest = $this->finalizeInstances($stage, $instances);
+            $manifests[$stage->value] = $stageManifest;
+            $this->recordCheckpointManifest($target, $stageManifest, $stage === $target);
         }
 
         return $manifests;
+    }
+
+    /**
+     * @return array{
+     *     complete: list<array{role: string, name: string, snapshot: string}>|null,
+     *     resume: list<array{role: string, name: string, snapshot: string}>,
+     * }
+     */
+    private function checkpointPlan(E2ETopologyKind $kind): array
+    {
+        $manifest = new E2EProvisionCheckpointStore($this->host)->read($kind);
+
+        $roles = IncusTopologyTemplate::rolesFor($kind);
+        $validCheckpoints = E2EProvisionCheckpointManifest::validCheckpoints(
+            manifest: $manifest,
+            currentFingerprint: (array) $this->provisionFingerprint,
+            snapshotExists: fn (string $template, string $snapshot): bool => $this->host->snapshotExists($template, $snapshot),
+        );
+        $validRoles = array_column($validCheckpoints, 'role');
+
+        if (($manifest['complete'] ?? false) === true && array_values($validRoles) === array_values($roles)) {
+            return [
+                'complete' => $validCheckpoints,
+                'resume' => [],
+            ];
+        }
+
+        return [
+            'complete' => null,
+            'resume' => $this->canResumePreparedCheckpoint($kind, $validCheckpoints) ? $validCheckpoints : [],
+        ];
+    }
+
+    /**
+     * @param  list<array{role: string, name: string, snapshot: string}>  $checkpoints
+     */
+    private function canResumePreparedCheckpoint(E2ETopologyKind $kind, array $checkpoints): bool
+    {
+        if (! in_array($kind, [
+            E2ETopologyKind::OperatorGatewayAppdevAppprodAgent,
+            E2ETopologyKind::OperatorGatewayAppdevAppprodAgentWebsocket,
+        ], true)) {
+            return false;
+        }
+
+        $roles = array_column($checkpoints, 'role');
+
+        return in_array('operator', $roles, true)
+            && in_array('gateway', $roles, true);
+    }
+
+    /**
+     * @param  list<array{role: string, name: string, snapshot: string}>  $checkpoints
+     */
+    private function recordCheckpointManifest(E2ETopologyKind $target, array $checkpoints, bool $complete): void
+    {
+        if ($this->provisionFingerprint === null) {
+            return;
+        }
+
+        $store = new E2EProvisionCheckpointStore($this->host);
+        $existing = E2EProvisionCheckpointManifest::checkpoints($store->read($target));
+        $merged = [];
+
+        foreach ([...$existing, ...$checkpoints] as $checkpoint) {
+            $merged[$checkpoint['role']] = $checkpoint;
+        }
+
+        $store->write($target, E2EProvisionCheckpointManifest::create(
+            kind: $target,
+            fingerprint: $this->provisionFingerprint,
+            checkpoints: array_values($merged),
+            complete: $complete,
+        ));
     }
 
     private function usesCopiedReusableBase(E2ETopologyKind $target, E2ETopologyKind $reusableBase): bool
@@ -579,11 +698,19 @@ class IncusTopologyBuilder
     }
 
     /**
+     * @param  list<array{role: string, name: string, snapshot: string}>  $resumeCheckpoints
      * @return array<string, IncusInstance>
      */
-    private function buildPreparedFullStage(SshKeyPair $key): array
+    private function buildPreparedFullStage(SshKeyPair $key, array $resumeCheckpoints = []): array
     {
-        $instances = $this->startTemplateRoles(['operator', 'gateway'], $key);
+        $kind = E2ETopologyKind::OperatorGatewayAppdevAppprodAgent;
+        $resumedInstances = $this->restorePreparedCheckpointInstances($resumeCheckpoints, $key);
+        $instances = array_intersect_key($resumedInstances, array_flip(['operator', 'gateway']));
+
+        if (! isset($instances['operator'], $instances['gateway'])) {
+            $resumedInstances = [];
+            $instances = $this->startTemplateRoles(['operator', 'gateway'], $key);
+        }
 
         $this->timer->measure('prepared.real-wireguard.retarget', fn () => $this->installRealWireGuard($instances));
         $this->timer->measure('prepared.gateway.api.start', fn () => E2EGatewayApi::start($instances['gateway'], 'template-prepared-full'));
@@ -591,26 +718,45 @@ class IncusTopologyBuilder
         $this->timer->measure('prepared.gateway.wg-easy.ready', fn () => $this->waitForGatewayWireGuard($instances['gateway']));
         $this->timer->measure('prepared.gateway.provisioning-ssh-key', fn () => E2EGatewayApi::installProvisioningSshKey($instances['gateway'], $key));
 
-        $dev = $this->launchBaseRole('dev', $key, E2ETopologyKind::OperatorGatewayAppdevAppprodAgent);
-        $prod = $this->launchBaseRole('prod', $key, E2ETopologyKind::OperatorGatewayAppdevAppprodAgent);
-        $agent = $this->launchBaseRole('agent', $key, E2ETopologyKind::OperatorGatewayAppdevAppprodAgent);
+        $rolesToBake = [];
+        $downstreamStatuses = [];
 
-        $devIp = $this->timer->measure('dev.ipv4', fn (): string => $dev->waitForIpv4());
-        $prodIp = $this->timer->measure('prod.ipv4', fn (): string => $prod->waitForIpv4());
-        $agentIp = $this->timer->measure('agent.ipv4', fn (): string => $agent->waitForIpv4());
+        foreach (['dev', 'prod', 'agent'] as $role) {
+            if (isset($resumedInstances[$role])) {
+                $instances[$role] = $resumedInstances[$role];
+                $downstreamStatuses[$role] = 0;
 
-        $instances['dev'] = $dev;
-        $instances['prod'] = $prod;
-        $instances['agent'] = $agent;
+                continue;
+            }
 
-        $this->timer->measure('prepared.downstream.bake', fn () => $this->runPreparedDownstreamBakeInParallel(
-            $instances['gateway'],
-            $devIp,
-            $prodIp,
-            $agentIp,
-        ));
+            $instances[$role] = $this->launchBaseRole($role, $key, $kind);
+            $rolesToBake[] = $role;
+        }
+
+        $devIp = $this->timer->measure('dev.ipv4', fn (): string => $instances['dev']->waitForIpv4());
+        $prodIp = $this->timer->measure('prod.ipv4', fn (): string => $instances['prod']->waitForIpv4());
+        $agentIp = $this->timer->measure('agent.ipv4', fn (): string => $instances['agent']->waitForIpv4());
+
+        if ($rolesToBake !== []) {
+            $downstreamStatuses = [
+                ...$downstreamStatuses,
+                ...$this->timer->measure('prepared.downstream.bake', fn (): array => $this->runPreparedDownstreamBakeInParallel(
+                    $instances['gateway'],
+                    $devIp,
+                    $prodIp,
+                    $agentIp,
+                    $rolesToBake,
+                )),
+            ];
+        }
+        $this->checkpointSuccessfulPreparedRolesOrFail(
+            $kind,
+            $instances,
+            $downstreamStatuses,
+        );
         $this->timer->measure('prepared.gateway.api.ready-after-node-new', fn () => E2EGatewayApi::waitForGatewayApi($instances['operator'], $this->host->config->operatorUser, $key));
         $this->timer->measure('prepared.e2e-deps', fn () => $this->installE2EBaseDependencies($instances));
+        $this->timer->measure('prepared.dev.runtime-prerequisites', fn () => $this->installPreparedAppRuntimePrerequisites($instances['dev']));
         $this->timer->measure('dev.database-redis-seed', fn () => $this->seedAppdevDatabaseAndRedis($instances['gateway']));
         $this->timer->measure('prepared.real-wireguard', fn () => $this->installRealWireGuard($instances));
 
@@ -654,11 +800,19 @@ class IncusTopologyBuilder
     }
 
     /**
+     * @param  list<array{role: string, name: string, snapshot: string}>  $resumeCheckpoints
      * @return array<string, IncusInstance>
      */
-    private function buildPreparedFullWebSocketStage(SshKeyPair $key): array
+    private function buildPreparedFullWebSocketStage(SshKeyPair $key, array $resumeCheckpoints = []): array
     {
-        $instances = $this->startTemplateRoles(['operator', 'gateway'], $key);
+        $kind = E2ETopologyKind::OperatorGatewayAppdevAppprodAgentWebsocket;
+        $resumedInstances = $this->restorePreparedCheckpointInstances($resumeCheckpoints, $key);
+        $instances = array_intersect_key($resumedInstances, array_flip(['operator', 'gateway']));
+
+        if (! isset($instances['operator'], $instances['gateway'])) {
+            $resumedInstances = [];
+            $instances = $this->startTemplateRoles(['operator', 'gateway'], $key);
+        }
 
         $this->timer->measure('prepared-websocket.real-wireguard.retarget', fn () => $this->installRealWireGuard($instances));
         $this->timer->measure('prepared-websocket.gateway.api.start', fn () => E2EGatewayApi::start($instances['gateway'], 'template-prepared-full-websocket'));
@@ -666,30 +820,50 @@ class IncusTopologyBuilder
         $this->timer->measure('prepared-websocket.gateway.wg-easy.ready', fn () => $this->waitForGatewayWireGuard($instances['gateway']));
         $this->timer->measure('prepared-websocket.gateway.provisioning-ssh-key', fn () => E2EGatewayApi::installProvisioningSshKey($instances['gateway'], $key));
 
-        $kind = E2ETopologyKind::OperatorGatewayAppdevAppprodAgentWebsocket;
-        $dev = $this->launchBaseRole('dev', $key, $kind);
-        $prod = $this->launchBaseRole('prod', $key, $kind);
-        $agent = $this->launchBaseRole('agent', $key, $kind);
+        $rolesToBake = [];
+        $downstreamStatuses = [];
 
-        $devIp = $this->timer->measure('dev.ipv4', fn (): string => $dev->waitForIpv4());
-        $prodIp = $this->timer->measure('prod.ipv4', fn (): string => $prod->waitForIpv4());
-        $agentIp = $this->timer->measure('agent.ipv4', fn (): string => $agent->waitForIpv4());
+        foreach (['dev', 'prod', 'agent'] as $role) {
+            if (isset($resumedInstances[$role])) {
+                $instances[$role] = $resumedInstances[$role];
+                $downstreamStatuses[$role] = 0;
 
-        $instances['dev'] = $dev;
-        $instances['prod'] = $prod;
-        $instances['agent'] = $agent;
+                continue;
+            }
 
-        $this->timer->measure('prepared-websocket.downstream.bake', fn () => $this->runPreparedDownstreamBakeInParallel(
-            $instances['gateway'],
-            $devIp,
-            $prodIp,
-            $agentIp,
-        ));
+            $instances[$role] = $this->launchBaseRole($role, $key, $kind);
+            $rolesToBake[] = $role;
+        }
+
+        $devIp = $this->timer->measure('dev.ipv4', fn (): string => $instances['dev']->waitForIpv4());
+        $prodIp = $this->timer->measure('prod.ipv4', fn (): string => $instances['prod']->waitForIpv4());
+        $agentIp = $this->timer->measure('agent.ipv4', fn (): string => $instances['agent']->waitForIpv4());
+
+        if ($rolesToBake !== []) {
+            $downstreamStatuses = [
+                ...$downstreamStatuses,
+                ...$this->timer->measure('prepared-websocket.downstream.bake', fn (): array => $this->runPreparedDownstreamBakeInParallel(
+                    $instances['gateway'],
+                    $devIp,
+                    $prodIp,
+                    $agentIp,
+                    $rolesToBake,
+                )),
+            ];
+        }
+        $this->checkpointSuccessfulPreparedRolesOrFail(
+            $kind,
+            $instances,
+            $downstreamStatuses,
+        );
         $this->timer->measure('prepared-websocket.real-wireguard', fn () => $this->installRealWireGuard($instances));
         $this->timer->measure('prepared-websocket.gateway.api.ready-after-downstream-bake', fn () => E2EGatewayApi::waitForGatewayApi($instances['operator'], $this->host->config->operatorUser, $key));
         $this->timer->measure('prepared-websocket.dev.database-redis-seed', fn () => $this->seedAppdevDatabaseAndRedis($instances['gateway']));
         $this->timer->measure('prepared-websocket.e2e-deps', fn () => $this->installE2EBaseDependencies($instances));
-        $this->timer->measure('prepared-websocket.dev.runtime-prerequisites', fn () => $this->installPreparedWebSocketRuntimePrerequisites($dev));
+        $this->timer->measure('prepared-websocket.dev.runtime-prerequisites', fn () => $this->installPreparedAppRuntimePrerequisites(
+            $instances['dev'],
+            includeGatewayImage: true,
+        ));
         $this->timer->measure('prepared-websocket.websocket.bake', fn () => $this->runPreparedWebSocketBake(
             $instances['gateway'],
             $devIp,
@@ -774,7 +948,7 @@ BASH;
         return 'bash -lc '.escapeshellarg($script);
     }
 
-    private function installPreparedWebSocketRuntimePrerequisites(IncusInstance $instance): void
+    private function installPreparedAppRuntimePrerequisites(IncusInstance $instance, bool $includeGatewayImage = false): void
     {
         $bundleDir = $this->remoteBundleDir;
 
@@ -782,37 +956,84 @@ BASH;
             throw new RuntimeException('No provisioning bundle has been staged.');
         }
 
-        $guestArchive = '/var/tmp/'.E2EArtifactProdManifest::GatewayImageArchive;
-        $hostArchive = "{$bundleDir}/".E2EArtifactProdManifest::GatewayImageArchive;
+        $archives = [
+            [
+                'guest' => '/var/tmp/caddy-2-alpine.tar',
+                'host' => "{$bundleDir}/caddy-2-alpine.tar",
+            ],
+            [
+                'guest' => '/var/tmp/frankenphp-1-php8.5-bookworm.tar',
+                'host' => "{$bundleDir}/frankenphp-1-php8.5-bookworm.tar",
+            ],
+        ];
 
-        $push = $this->host->run(sprintf(
-            'incus file push %s %s',
-            escapeshellarg($hostArchive),
-            escapeshellarg("{$instance->name()}{$guestArchive}"),
-        ), timeoutSeconds: 300);
+        if ($includeGatewayImage) {
+            $archives[] = [
+                'guest' => '/var/tmp/'.E2EArtifactProdManifest::GatewayImageArchive,
+                'host' => "{$bundleDir}/".E2EArtifactProdManifest::GatewayImageArchive,
+            ];
+        }
 
-        if (! $push->successful()) {
-            throw new RuntimeException("Could not push gateway image archive into [{$instance->name()}]: {$push->errorOutput()}");
+        foreach ($archives as $archive) {
+            $push = $this->host->run(sprintf(
+                'incus file push %s %s',
+                escapeshellarg($archive['host']),
+                escapeshellarg("{$instance->name()}{$archive['guest']}"),
+            ), timeoutSeconds: 300);
+
+            if (! $push->successful()) {
+                throw new RuntimeException("Could not push runtime image archive [{$archive['host']}] into [{$instance->name()}]: {$push->errorOutput()}");
+            }
         }
 
         E2ECommand::exec(
             $instance,
-            $this->preparedWebSocketRuntimePrerequisitesCommand(
-                $guestArchive,
-                DockerTopologyProvider::gatewayImage(),
-                $this->host->config->bootstrapUser,
+            $this->preparedAppRuntimePrerequisitesCommand(
+                caddyImageArchive: '/var/tmp/caddy-2-alpine.tar',
+                frankenPhpImageArchive: '/var/tmp/frankenphp-1-php8.5-bookworm.tar',
+                caddyImage: OrbitCaddyContainer::Image,
+                frankenPhpImage: (new PhpRuntimeCatalog)->imageFor(PhpRuntimeCatalog::DEFAULT),
+                bootstrapUser: $this->host->config->bootstrapUser,
+                gatewayImageArchive: $includeGatewayImage ? '/var/tmp/'.E2EArtifactProdManifest::GatewayImageArchive : null,
+                preparedGatewayImage: $includeGatewayImage ? DockerTopologyProvider::gatewayImage() : null,
             ),
-            "Could not install prepared websocket runtime prerequisites on {$instance->name()}",
+            "Could not install prepared app runtime prerequisites on {$instance->name()}",
             timeoutSeconds: 900,
         );
     }
 
-    private function preparedWebSocketRuntimePrerequisitesCommand(string $gatewayImageArchive, string $preparedGatewayImage, string $bootstrapUser): string
-    {
+    private function preparedAppRuntimePrerequisitesCommand(
+        string $caddyImageArchive,
+        string $frankenPhpImageArchive,
+        string $caddyImage,
+        string $frankenPhpImage,
+        string $bootstrapUser,
+        ?string $gatewayImageArchive = null,
+        ?string $preparedGatewayImage = null,
+    ): string {
+        $gatewayImageScript = '';
+
+        if ($gatewayImageArchive !== null && $preparedGatewayImage !== null) {
+            $gatewayImageScript = sprintf(
+                <<<'BASH'
+
+sudo docker load -i %s
+if sudo docker image inspect %s >/dev/null 2>&1; then
+    sudo docker tag %s 'orbit-gateway:current'
+fi
+sudo docker image inspect 'orbit-gateway:current' >/dev/null
+BASH,
+                escapeshellarg($gatewayImageArchive),
+                escapeshellarg($preparedGatewayImage),
+                escapeshellarg($preparedGatewayImage),
+            );
+        }
+
         $script = sprintf(
             <<<'BASH'
 set -euo pipefail
 bootstrap_user=%s
+runtime_user=orbit
 
 if ! command -v docker >/dev/null 2>&1; then
     sudo apt-get -o DPkg::Lock::Timeout=300 update -qq
@@ -828,21 +1049,40 @@ if getent group docker >/dev/null 2>&1; then
     if getent passwd "$bootstrap_user" >/dev/null 2>&1; then
         sudo usermod -aG docker "$bootstrap_user"
     fi
+    if getent passwd "$runtime_user" >/dev/null 2>&1; then
+        sudo usermod -aG docker "$runtime_user"
+    fi
 fi
 
 sudo docker load -i %s
-if sudo docker image inspect %s >/dev/null 2>&1; then
-    sudo docker tag %s 'orbit-gateway:current'
-fi
-sudo docker image inspect 'orbit-gateway:current' >/dev/null
+sudo docker image inspect %s >/dev/null
+sudo docker load -i %s
+sudo docker image inspect %s >/dev/null%s
 if getent passwd "$bootstrap_user" >/dev/null 2>&1; then
-    sudo -u "$bootstrap_user" docker image inspect 'orbit-gateway:current' >/dev/null
+    sudo -u "$bootstrap_user" docker image inspect %s >/dev/null
+    sudo -u "$bootstrap_user" docker image inspect %s >/dev/null
+    if sudo docker image inspect 'orbit-gateway:current' >/dev/null 2>&1; then
+        sudo -u "$bootstrap_user" docker image inspect 'orbit-gateway:current' >/dev/null
+    fi
+fi
+if getent passwd "$runtime_user" >/dev/null 2>&1; then
+    sudo -u "$runtime_user" docker image inspect %s >/dev/null
+    sudo -u "$runtime_user" docker image inspect %s >/dev/null
+    if sudo docker image inspect 'orbit-gateway:current' >/dev/null 2>&1; then
+        sudo -u "$runtime_user" docker image inspect 'orbit-gateway:current' >/dev/null
+    fi
 fi
 BASH,
             escapeshellarg($bootstrapUser),
-            escapeshellarg($gatewayImageArchive),
-            escapeshellarg($preparedGatewayImage),
-            escapeshellarg($preparedGatewayImage),
+            escapeshellarg($caddyImageArchive),
+            escapeshellarg($caddyImage),
+            escapeshellarg($frankenPhpImageArchive),
+            escapeshellarg($frankenPhpImage),
+            $gatewayImageScript,
+            escapeshellarg($caddyImage),
+            escapeshellarg($frankenPhpImage),
+            escapeshellarg($caddyImage),
+            escapeshellarg($frankenPhpImage),
         );
 
         return 'bash -lc '.escapeshellarg($script);
@@ -870,6 +1110,73 @@ BASH,
 
         foreach ($roles as $role) {
             $instances[$role] = $this->startTemplateRole($role, $key, $templateKind);
+        }
+
+        return $instances;
+    }
+
+    /**
+     * @param  list<array{role: string, name: string, snapshot: string}>  $checkpoints
+     * @return array<string, IncusInstance>
+     */
+    private function restorePreparedCheckpointInstances(array $checkpoints, SshKeyPair $key): array
+    {
+        if ($checkpoints === []) {
+            return [];
+        }
+
+        $names = array_column($checkpoints, 'name');
+        $stopResult = $this->timer->measure('checkpoint.stop', fn () => $this->host->stopInstancesIfRunning($names));
+
+        if (! $stopResult->successful()) {
+            throw new RuntimeException("Could not stop checkpoint templates before restore: {$stopResult->errorOutput()}");
+        }
+
+        $restoreLines = [];
+        $waitLines = [];
+
+        foreach (array_values($checkpoints) as $index => $checkpoint) {
+            $pid = 'PID_RESTORE_CHECKPOINT_'.($index + 1);
+            $restoreLines[] = sprintf(
+                'incus snapshot restore %s %s & %s=$!',
+                escapeshellarg($checkpoint['name']),
+                escapeshellarg($checkpoint['snapshot']),
+                $pid,
+            );
+            $waitLines[] = "wait \${$pid}";
+        }
+
+        $restoreResult = $this->timer->measure(
+            'checkpoint.restore',
+            fn () => $this->host->run(implode("\n", [...$restoreLines, ...$waitLines]), timeoutSeconds: 600),
+        );
+
+        if (! $restoreResult->successful()) {
+            throw new RuntimeException("Could not restore checkpoint templates: {$restoreResult->errorOutput()}");
+        }
+
+        $startResult = $this->timer->measure('checkpoint.start', fn () => $this->host->startInstancesIfStopped($names));
+
+        if (! $startResult->successful()) {
+            throw new RuntimeException("Could not start checkpoint templates: {$startResult->errorOutput()}");
+        }
+
+        $instances = [];
+
+        foreach ($checkpoints as $checkpoint) {
+            $role = $checkpoint['role'];
+            $instance = new IncusInstance($this->host, $checkpoint['name']);
+            $this->timer->measure("checkpoint.agent-ready.{$role}", fn () => $instance->waitForAgent());
+
+            if ($role === 'operator') {
+                $this->timer->measure("checkpoint.ssh-authorize.{$role}", fn () => $instance->authorizeSsh($this->host->config->operatorUser, $key));
+                $this->timer->measure("checkpoint.ssh-ready.{$role}", fn () => $instance->waitForSsh($this->host->config->operatorUser, $key));
+            } elseif ($role !== 'gateway') {
+                $this->timer->measure("checkpoint.ssh-authorize.{$role}", fn () => $instance->authorizeSsh($this->host->config->bootstrapUser, $key));
+                $this->timer->measure("checkpoint.ssh-ready.{$role}", fn () => $instance->waitForSsh($this->host->config->bootstrapUser, $key));
+            }
+
+            $instances[$role] = $instance;
         }
 
         return $instances;
@@ -1043,12 +1350,23 @@ PHP;
         E2EGatewayApi::waitForGatewayApi($operator, $this->host->config->operatorUser, $key);
     }
 
+    /**
+     * @param  list<string>  $roles
+     * @return array<string, int>
+     */
     private function runPreparedDownstreamBakeInParallel(
         IncusInstance $gateway,
         string $devHost,
         string $prodHost,
         string $agentHost,
-    ): void {
+        array $roles = ['dev', 'prod', 'agent'],
+    ): array {
+        $roles = array_values(array_intersect(['dev', 'prod', 'agent'], $roles));
+
+        if ($roles === []) {
+            return [];
+        }
+
         $devCommand = E2ECommand::gatewayArtisanCommand(implode(' ', [
             'orbit:internal:bake-app-node',
             escapeshellarg('app-dev-1'),
@@ -1087,19 +1405,50 @@ PHP;
             '--user='.escapeshellarg($this->host->config->bootstrapUser),
             '--tld='.escapeshellarg('agent'),
         ]));
-        $script = <<<BASH
-set -euo pipefail;
-cd /home/orbit/orbit;
-({$devCommand}) > /tmp/orbit-e2e-bake-dev.log 2>&1 & PID_BAKE_DEV=\$!;
-({$prodCommand}) > /tmp/orbit-e2e-bake-prod.log 2>&1 & PID_BAKE_PROD=\$!;
-({$agentCommand}) > /tmp/orbit-e2e-bake-agent.log 2>&1 & PID_BAKE_AGENT=\$!;
+        $commands = array_filter([
+            'dev' => $devCommand,
+            'prod' => $prodCommand,
+            'agent' => $agentCommand,
+        ], fn (string $role): bool => in_array($role, $roles, true), ARRAY_FILTER_USE_KEY);
+        $labels = [
+            'dev' => 'app-dev',
+            'prod' => 'app-prod',
+            'agent' => 'agent',
+        ];
+        $startLines = [];
+        $statusLines = [];
+        $waitLines = [];
+        $echoLines = [];
 
-STATUS=0;
-wait "\$PID_BAKE_DEV" || { CODE=\$?; echo "bake app-dev failed" >&2; cat /tmp/orbit-e2e-bake-dev.log >&2 || true; if [ "\$STATUS" -eq 0 ]; then STATUS=\$CODE; fi; };
-wait "\$PID_BAKE_PROD" || { CODE=\$?; echo "bake app-prod failed" >&2; cat /tmp/orbit-e2e-bake-prod.log >&2 || true; if [ "\$STATUS" -eq 0 ]; then STATUS=\$CODE; fi; };
-wait "\$PID_BAKE_AGENT" || { CODE=\$?; echo "bake agent failed" >&2; cat /tmp/orbit-e2e-bake-agent.log >&2 || true; if [ "\$STATUS" -eq 0 ]; then STATUS=\$CODE; fi; };
-exit "\$STATUS";
-BASH;
+        foreach ($commands as $role => $command) {
+            $suffix = strtoupper(str_replace('-', '_', $role));
+            $pid = "PID_BAKE_{$suffix}";
+            $status = "STATUS_{$suffix}";
+            $logPath = "/tmp/orbit-e2e-bake-{$role}.log";
+
+            $startLines[] = sprintf('(%s) > %s 2>&1 & %s=$!;', $command, escapeshellarg($logPath), $pid);
+            $statusLines[] = "{$status}=0;";
+            $waitLines[] = sprintf(
+                'wait "$%1$s" || { %2$s=$?; echo %3$s >&2; cat %4$s >&2 || true; if [ "$STATUS" -eq 0 ]; then STATUS=$%2$s; fi; };',
+                $pid,
+                $status,
+                escapeshellarg("bake {$labels[$role]} failed"),
+                escapeshellarg($logPath),
+            );
+            $echoLines[] = sprintf('echo "__orbit_bake_status %s $%s";', $role, $status);
+        }
+
+        $script = implode("\n", [
+            'set -euo pipefail;',
+            'cd /home/orbit/orbit;',
+            ...$startLines,
+            '',
+            'STATUS=0;',
+            ...$statusLines,
+            ...$waitLines,
+            ...$echoLines,
+            'exit "$STATUS";',
+        ]);
         $scriptPath = '/tmp/orbit-e2e-prepared-bake.sh';
         $scriptPathArgument = escapeshellarg($scriptPath);
 
@@ -1109,12 +1458,72 @@ BASH;
             'Could not write prepared downstream bake script',
             timeoutSeconds: 30,
         );
-        E2ECommand::exec(
-            $gateway,
+
+        $result = $gateway->exec(
             $scriptPathArgument,
-            'Could not bake prepared downstream nodes in parallel',
             timeoutSeconds: 900,
         );
+
+        $statuses = $this->parsePreparedBakeStatuses($result->output()."\n".$result->errorOutput(), $roles);
+
+        if ($result->successful()) {
+            return $statuses;
+        }
+
+        return $statuses;
+    }
+
+    /**
+     * @param  list<string>  $roles
+     * @return array<string, int>
+     */
+    private function parsePreparedBakeStatuses(string $output, array $roles): array
+    {
+        $statuses = array_fill_keys($roles, 1);
+
+        if (preg_match_all('/__orbit_bake_status\s+([a-z-]+)\s+(\d+)/', $output, $matches, PREG_SET_ORDER) !== false) {
+            foreach ($matches as $match) {
+                $role = $match[1];
+
+                if (! array_key_exists($role, $statuses)) {
+                    continue;
+                }
+
+                $statuses[$role] = (int) $match[2];
+            }
+        }
+
+        return $statuses;
+    }
+
+    /**
+     * @param  array<string, IncusInstance>  $instances
+     * @param  array<string, int>  $statuses
+     */
+    private function checkpointSuccessfulPreparedRolesOrFail(E2ETopologyKind $kind, array $instances, array $statuses): void
+    {
+        $failedRoles = array_keys(array_filter(
+            $statuses,
+            fn (int $status): bool => $status !== 0,
+        ));
+
+        if ($failedRoles === []) {
+            return;
+        }
+
+        $successfulRoles = array_keys(array_filter(
+            $statuses,
+            fn (int $status): bool => $status === 0,
+        ));
+        $checkpointRoles = array_values(array_unique(['operator', 'gateway', ...$successfulRoles]));
+        $checkpointInstances = array_intersect_key($instances, array_flip($checkpointRoles));
+
+        if ($checkpointInstances !== []) {
+            $manifest = $this->finalizeInstances($kind, $checkpointInstances);
+            $this->recordCheckpointManifest($kind, $manifest, complete: false);
+        }
+
+        throw new RuntimeException('Could not bake prepared downstream roles: '.implode(', ', $failedRoles).'. Successful sibling checkpoints were retained when possible.');
     }
 
     private function runPreparedDedicatedIngressBakeInParallel(
@@ -1208,7 +1617,7 @@ BASH;
     {
         E2ECommand::exec(
             $gateway,
-            'deadline=$((SECONDS+180)); until test -f /home/orbit/.wg-easy/wg-easy.db && docker exec wg-easy ip link show wg0 >/dev/null 2>&1; do if [ "$SECONDS" -ge "$deadline" ]; then docker ps -a; docker logs --tail=120 wg-easy 2>&1 || true; exit 1; fi; sleep 2; done',
+            'deadline=$((SECONDS+180)); wg_easy_public_key=""; until test -f /home/orbit/.wg-easy/wg-easy.db && docker exec wg-easy ip link show wg0 >/dev/null 2>&1 && wg_easy_public_key="$(docker exec wg-easy wg show wg0 public-key 2>/dev/null || true)" && test -n "$wg_easy_public_key"; do if [ "$SECONDS" -ge "$deadline" ]; then docker ps -a; docker logs --tail=120 wg-easy 2>&1 || true; exit 1; fi; sleep 2; done',
             "wg-easy did not become ready on {$gateway->name()}",
             timeoutSeconds: 210,
         );
@@ -1483,6 +1892,8 @@ PHP;
             if (! $result->successful()) {
                 throw new RuntimeException("Could not stop {$name}: {$result->errorOutput()}");
             }
+
+            $this->timer->measure("finalize.delete-snapshot.{$role}", fn () => $this->host->deleteSnapshot($name, $snapshot));
 
             $result = $this->timer->measure("finalize.snapshot.{$role}", fn () => $this->host->snapshotInstance($name, $snapshot));
             if (! $result->successful()) {

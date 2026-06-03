@@ -42,8 +42,16 @@ The Incus provision gate has one supported shape:
 3. Provision the gateway through the real gateway path.
 4. Run `node:new` for app-dev, app-prod, and agent in parallel.
 5. Bake websocket against app-dev Redis and converge its Reverb runtime.
-6. Snapshot the resulting role templates inside the isolated provision-test
-   namespace for validation and failure inspection.
+6. Snapshot operator, gateway, app-dev, app-prod, and agent role templates
+   inside the isolated provision-test namespace for validation and failure
+   inspection.
+
+Serving assertions are feature behavior, not provision-gate behavior. `app:new`,
+Caddy/FrankenPHP serving, and `app:exec composer install` run from prepared
+Incus feature coverage against `operator_gateway_app-dev`, which boots only
+operator, gateway, and app-dev while the Incus provider consumes the
+websocket-capable superset source snapshot underneath. The default Incus
+provision gate runs only the websocket-capable superset build/validation path.
 
 Before running the Incus feature lane, refresh the shared Incus prepared
 topology pool when the current source or topology shape changed:
@@ -81,14 +89,16 @@ During topology preparation, Orbit tars the current checkout, ships it plus
 the operator template from the base image, installs host gateway and CLI
 Composer dependencies for pre-overlay `artisan` and `orbit` commands, then
 provisions the gateway through real `node:new`. After the gateway is seeded,
-app-dev, app-prod, and agent are provisioned in parallel; app-dev then seeds
-database and Redis registry state, and the websocket role is baked with its
-Reverb runtime baseline before the full source snapshot is taken. Feature tests
-clone only their requested roles from that full prepared source.
+app-dev, app-prod, and agent are provisioned in parallel; app-dev then receives
+the Docker, Caddy, and FrankenPHP runtime images plus `orbit` user Docker access
+needed for app/proxy doctor repair, seeds database and Redis registry state, and
+the websocket role is baked with its Reverb runtime baseline before the full
+source snapshot is taken.
+Feature tests clone only their requested roles from that full prepared source.
 
-App-dev carries database and Redis state by default. App-prod carries the
-ingress role by default. Websocket carries the Reverb runtime baseline and uses
-app-dev Redis.
+App-dev carries database, Redis, Caddy, and FrankenPHP app-serving readiness by
+default. App-prod carries the ingress role by default. Websocket carries the
+Reverb runtime baseline and uses app-dev Redis.
 
 The shared prepared Incus artifact set is `base`: role templates are named
 `orbit-template-<role>-base`, and source snapshots are named
@@ -112,6 +122,38 @@ to rebuild the shared base Incus artifact set.
 Source code lives in the per-run bundle, not in the base image. Forced topology
 preparation rebuilds the canonical full prepared source from the base image.
 Rebuild the base image only when the base image shape changes.
+
+The provision fingerprint separates three input classes:
+
+- CLI artifact inputs: the built Orbit CLI binary and source/build inputs needed
+  to produce it (`apps/cli`, `packages/core`, root and CLI Composer manifests
+  and lockfiles, and CLI runtime configuration). Generated CLI build output
+  under `apps/cli/build/` and `apps/cli/builds/` is excluded. The CLI artifact
+  is consumed by operator, gateway, app-dev, app-prod, agent, and
+  websocket-capable prepared roles.
+- Gateway artifact inputs: gateway source, gateway Composer manifests and
+  lockfiles, gateway runtime configuration, and gateway image/build assets. They
+  apply to the gateway role and to downstream roles whose prepared state depends
+  on gateway database registration.
+- Provision support inputs: `bin/install-orbit`, `bin/e2e-provision-node`,
+  `bin/_e2e-deps.sh`, E2E topology builder/support code, command-shape code,
+  topology kind/DAG, relevant `ORBIT_E2E_*` environment values, and base image
+  identity.
+
+Ordinary assertion-only files under `apps/e2e/tests/**` are not provision
+fingerprint inputs. Changing a Pest assertion should rerun the assertion without
+forcing a fresh provision rebuild. Changing provision support, the role DAG,
+base image identity, CLI artifact inputs, or gateway artifact inputs invalidates
+the affected checkpoints.
+
+Runtime archive byte hashes are kept as diagnostic fingerprint metadata, but
+role checkpoint validity depends on the stable source and build inputs that
+produce those archives. Rebuilding the same CLI binary or Docker image archive
+from unchanged source should not invalidate otherwise reusable VM checkpoints.
+
+Workload roles consume the CLI artifact. They do not rely on a full gateway
+source checkout as their production-style artifact contract. Source overlays
+remain a development-topology behavior for feature iteration.
 
 The provisioning bundle stages host-local `orbit-gateway:current`,
 `caddy:2-alpine`, `4km3/dnsmasq:latest`, and
@@ -161,6 +203,21 @@ STDOUT.
 The provision gate cleans up on success. On failure it keeps tracked
 VMs/templates for inspection and prints their names plus a reap command. Set
 `ORBIT_E2E_KEEP_ON_FAILURE=0` to restore cleanup-on-failure behavior.
+
+The Incus provision builder records a checkpoint manifest for each provision
+artifact namespace. The manifest records schema version, topology kind, role
+DAG, role checkpoints, snapshot names, creation timestamps, compact artifact
+fingerprints, and per-role fingerprints. The raw source file hash maps stay in
+the in-memory fingerprint calculation and are not persisted in the manifest.
+Snapshot existence is never enough to resume: a checkpoint is reusable only when
+the manifest exists, the required snapshot exists, and the stored role
+fingerprint matches the current computed fingerprint.
+
+The first implementation uses conservative role fingerprints. Provision support,
+base image, environment, and role-DAG changes invalidate every role. CLI
+artifact changes invalidate every CLI-consuming role. Gateway artifact changes
+invalidate gateway and downstream gateway-state-dependent roles while leaving the
+operator substrate reusable when CLI/provision inputs are unchanged.
 
 ## Image environment
 
