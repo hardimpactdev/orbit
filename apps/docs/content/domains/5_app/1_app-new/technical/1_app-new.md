@@ -104,7 +104,7 @@ Execute the convergent behavior shared with `app:register`:
 - **Runtime container:** Render and install runtime container configuration on
   the target node.
 - **Proxy Routes:** Create a gateway-owned proxy route for the app.
-- **Process Artifacts:** Render and install Docker process runtime units for
+- **Process Artifacts:** Render and install Supervisor process programs for
   any app-owned process definitions already present in gateway configuration.
   `app:new` does not invent undocumented default process definitions.
 - **Apply Verification:** Verify that command-owned setup and artifact

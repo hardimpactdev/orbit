@@ -11,7 +11,7 @@ These fields describe the Supervisor tool's identity, backend, and support model
 | Slug | `supervisor` |
 | Label | Supervisor |
 | Backend | system service |
-| Support model | Explicit residual runtime only where configured |
+| Support model | Host process manager for configured app/workspace processes |
 | Category | `runtime` |
 
 ## Capabilities
@@ -20,10 +20,9 @@ These fields describe the Supervisor tool's identity, backend, and support model
 `tool:restart`), `tool:reload`, `tool:logs`, safe doctor fix, and safe
 doctor adopt.
 
-`tool:install supervisor` and `tool:remove supervisor` are supported only for
-nodes that explicitly use `process.runtime=supervisor` or another documented
-residual runtime on the host for non-PHP work. Supervisor is not a general node
-baseline and is not a host PHP fallback.
+`tool:install supervisor` and `tool:remove supervisor` are supported only where
+the node/tool provisioning contract allows the Supervisor process manager to be
+managed through `tool:*`. Supervisor is not a host PHP fallback.
 
 ## Credentials
 
@@ -31,29 +30,26 @@ baseline and is not a host PHP fallback.
 
 ## Orbit Notes
 
-Supervisor is an explicit residual process runtime for supported non-PHP
-host-side units. Docker process runtime is the default for PHP app and
-workspace process units. The Orbit Scheduler runs inside gateway
-`orbit-scheduler`, not as a host Supervisor program.
+Supervisor is the host process runtime for app and workspace configured process
+units. The Orbit Scheduler runs inside gateway `orbit-scheduler`, not as a host
+Supervisor program.
 
 The tool family owns Supervisor's installation status, the `supervisord`
-daemon's reachability, and lifecycle drift only where explicit Supervisor
-runtime is configured. It does not own the Supervisor program registry;
-Orbit-defined runtime units belong to the `process` family.
+daemon's reachability, and lifecycle drift. It does not own the Supervisor
+program registry; Orbit-defined runtime units belong to the `process` family.
 
-Supervisor itself runs under host init when an explicit residual runtime needs
-it. Docker remains the baseline host service for Orbit runtime containers.
+Supervisor itself runs under host init. Docker remains the baseline host
+service for Orbit runtime containers and service backends.
 
 ## Doctor Relationship
 
 `doctor --family=tool` may adopt an existing Supervisor installation and
 may fix safe service drift such as a stopped `supervisord` daemon.
 
-When `process.runtime_backend_unavailable` is reported for an explicit
-`supervisor` process runtime, the `tool` family is the right doctor to repair
-the Supervisor installation or restart the `supervisord` daemon.
+When `process.runtime_backend_unavailable` is reported for a Supervisor process
+runtime, the `tool` family is the right doctor to repair the Supervisor
+installation or restart the `supervisord` daemon.
 
-The `process` family owns Supervisor program drift for residual runtime units
-that Orbit manages. The `schedule` family owns Orbit Scheduler liveness and
-heartbeat drift in `orbit-scheduler`. The `tool` family does not duplicate those
-checks.
+The `process` family owns Supervisor program drift for runtime units that Orbit
+manages. The `schedule` family owns Orbit Scheduler liveness and heartbeat
+drift in `orbit-scheduler`. The `tool` family does not duplicate those checks.

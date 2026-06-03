@@ -207,8 +207,8 @@ Role baselines are code-defined desired state, not editable package lists.
 | `gateway` | Swarm-managed `orbit-gateway` API service, `orbit-scheduler` service, gateway config root, SQLite database, and Orbit CA/certificate material |
 | `vpn` | WireGuard server runtime, public endpoint settings, VPN peer defaults, and VPN-facing DNS runtime |
 | `router` | Private `orbit-caddy` router for private `.orbit` DNS/service names, private route artifacts, backend pools, and private HTTP/WebSocket/S3 routing |
-| `app-dev` | Docker-first app runtime baseline, development DNS mapping, and `orbit-caddy` app/workspace routes |
-| `app-prod` | Private `orbit-caddy` backend, FrankenPHP app containers, and Docker process runtime |
+| `app-dev` | App runtime baseline, development DNS mapping, `orbit-caddy` app/workspace routes, and Supervisor process programs where configured |
+| `app-prod` | Private `orbit-caddy` backend, FrankenPHP app containers, and Supervisor process programs where configured |
 | `database` | Docker running as the substrate for managed database service tools |
 | `agent` | `orbit-caddy`, the shared unprivileged `agent` runtime user, the gateway-owned agent DNS mapping for the role's `tld`, and any role-specific runtime containers the agent workload needs |
 | `ingress` | `orbit-caddy` running as the public production HTTP ingress boundary, forwarding public routes to `router` |
@@ -297,6 +297,11 @@ These terms describe how nodes join the fleet and prove their identity to the ga
 
 - **Node identity:** The node record that the gateway owns, plus its WireGuard
   peer identity, assigned WireGuard address, role assignments, and node name.
+- **WireGuard service address:** The node's assigned WireGuard IP used as the
+  stable private service host for TCP tool endpoints and backend-to-router
+  targets. Linux managed nodes keep a self-route for this address so local
+  services and local clients on the same node use the same WireGuard service
+  address as remote peers.
 - **First-gateway bootstrap:** The one allowed no-gateway path. A client
   provisions the first gateway over SSH, creates the initiating client
   identity, installs local trust and gateway config, and verifies gateway API

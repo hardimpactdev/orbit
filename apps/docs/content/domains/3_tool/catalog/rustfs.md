@@ -28,9 +28,8 @@ object-storage service. `tool:remove rustfs` is not the role-removal path; use
 
 ## Runtime
 
-RustFS uses Orbit's Docker-first runtime container rendering. The `s3` role
-does not own Docker Compose for the role and does not install a host package
-fallback.
+RustFS uses Orbit's role runtime container rendering. The `s3` role does not
+own Docker Compose for the role and does not install a host package fallback.
 
 Orbit renders one `rustfs/rustfs` runtime container for each active `s3` role
 assignment. The role assignment's `data_path` setting, defaulting to

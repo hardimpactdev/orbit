@@ -37,7 +37,7 @@ Example JSON shape:
         "tool": "mysql",
         "node": "app-1",
         "fields": {
-          "host": "orbit.test",
+          "host": "10.6.0.12",
           "port": 3306,
           "database": "orbit",
           "username": "orbit",
@@ -52,9 +52,10 @@ Example JSON shape:
 
 ## Service Endpoint
 
-`mysql` exposes a TCP service endpoint reachable only over WireGuard at
-`orbit.<node-tld>:3306` for development nodes. This is DNS/service endpoint
-configuration owned by the tool definition, not an HTTP proxy route.
+`mysql` exposes a TCP service endpoint reachable only over WireGuard at the
+serving node's WireGuard service address, such as `10.6.0.12:3306`. This is
+service endpoint configuration owned by the tool definition, not an HTTP proxy
+route.
 
 ## Orbit Notes
 

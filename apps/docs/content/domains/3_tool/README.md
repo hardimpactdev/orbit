@@ -10,18 +10,27 @@ These rules govern what the tool command family owns and what it may not touch.
 
 - The tool command family owns the `tool:*` command prefix.
 - `tool` is a state family. A gateway tool row is the expected state for one
-  tool on one node.
-- Tool rows include the node, tool name, expected lifecycle state, expected
-  version or config when the tool definition tracks them, install paths, and
-  backend-specific probe and repair settings.
+  tool instance on one node.
+- Tool rows include the node, tool name, instance id, expected lifecycle state,
+  version family, expected version or config when the tool definition tracks
+  them, runtime family, install paths, and backend-specific probe and repair
+  settings.
 - CLI callers resolve input locally, then the gateway reads or writes configuration and
   performs node inspection or applies changes.
 - Some tools are observational, while others are managed by Orbit.
 - Tool reads use gateway-tracked configuration by default. Live node status is
   included only when a command explicitly requests live inspection or when
   doctor runs.
-- `tool:update` changes expected version configuration or updates a managed tool to the latest
-  supported version. It is not a generic setup rerun command.
+- Tool definitions declare supported version families and runtime families.
+  Runtime support is platform-scoped: the runtime family plus `Node.platform`
+  resolves the concrete implementation. A runtime family may be declared by a
+  tool while still unsupported on a platform, such as `docker-swarm` on macOS
+  until that implementation exists.
+- `tool:update` changes expected version configuration or updates a managed
+  tool instance to the latest supported version within the stored runtime. It
+  does not silently migrate an installed instance from `docker` to
+  `docker-swarm`; use the command contract that explicitly changes runtime
+  once that migration workflow exists.
 - `tool:reconfigure` reruns a managed tool's configuration/setup flow without
   changing the intended version.
 - `tool:reload` reloads configuration without a full restart only when the tool
@@ -38,8 +47,8 @@ These rules govern what the tool command family owns and what it may not touch.
   concept.
 - Tool definitions may declare tool-owned service endpoints. HTTP and
   WebSocket tool endpoints are represented as tool-owned `proxy` routes; TCP
-  service endpoints are WireGuard-only host/port records and are not HTTP proxy
-  routes.
+  service endpoints are WireGuard-only host/port records using the serving
+  node's WireGuard service address and are not HTTP proxy routes.
 - Tools supply capabilities that other domains depend on, but they do not own
   apps, workspaces, processes, schedules, custom proxy routes, or non-tool
   firewall policy.
@@ -111,16 +120,19 @@ the entity in the command result.
 ```json
 {
   "name": "redis",
+  "instance": "default",
   "node": "app-1",
   "expected_state": "running",
   "observed_state": "running",
+  "version_family": "7",
   "version": "7.2",
+  "runtime": "docker",
   "managed": true,
   "endpoints": [
     {
       "name": "redis",
       "kind": "tcp",
-      "host": "orbit.test",
+      "host": "10.6.0.12",
       "port": 6379
     }
   ]
@@ -130,10 +142,13 @@ the entity in the command result.
 | Field | Type | Meaning |
 | --- | --- | --- |
 | `name` | string | Tool identity in Orbit's tool catalog. |
+| `instance` | string | Tool instance identity on the node. Single-instance tools use `default`. |
 | `node` | string | Node slug where the tool is expected. |
 | `expected_state` | string | Gateway-owned intended lifecycle state, such as `installed`, `running`, or `absent`. |
 | `observed_state` | string \| null | Last known or live observed state when the command includes it. Registry reads may return `null`. |
+| `version_family` | string \| null | Intended major or channel line when the tool definition tracks version families. |
 | `version` | string \| null | Intended or observed version when the tool definition tracks versions. |
+| `runtime` | string \| null | Stored runtime family for this installed instance, such as `docker` or `docker-swarm`. |
 | `managed` | boolean | Whether Orbit owns lifecycle/configuration for this tool on the node. |
 | `endpoints` | array | Non-secret service endpoint metadata declared by the tool definition. Omit or return an empty array when the tool declares no service endpoint. |
 

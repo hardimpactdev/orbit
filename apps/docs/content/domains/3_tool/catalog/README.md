@@ -26,16 +26,15 @@ generation, persistence, repair, and credential rendering.
 - `tool:credentials` returns the connection fields owned by the selected tool
   catalog file.
 
-Development app-role service hostnames use the development TLD stored on the
-node record. HTTP and WebSocket tools expose tool-owned `proxy` routes, such as
+HTTP and WebSocket tools expose tool-owned `proxy` routes, such as
 `mailpit.<node-tld>`. TCP tools expose WireGuard-only service endpoints on the
-node service host, such as `orbit.<node-tld>:5432`, and must not be represented
-as HTTP proxy routes.
+serving node's WireGuard service address, such as `10.6.0.12:5432`, and must
+not be represented as HTTP proxy routes.
 
 Catalog placeholders such as `<node-tld>` and `<agent-tld>` are contextual
 references to that same node-level TLD field. Use `<node-tld>` for generic
-tool endpoints and `<agent-tld>` only when the example is explicitly scoped to
-an agent node; neither placeholder names a separate TLD owner.
+HTTP/WebSocket tool routes and `<agent-tld>` only when the example is explicitly
+scoped to an agent node; neither placeholder names a separate TLD owner.
 
 ## Tool-Specific Command Families
 
@@ -71,8 +70,9 @@ create them from scratch unless the tool file says otherwise.
 | [`dns`](dns.md) | VPN-facing development DNS runtime |
 
 PHP, Composer, and Caddy runtime capabilities live in Orbit-managed
-containers. Supervisor is available only as an explicit residual process
-runtime where configured, not as a required baseline tool.
+containers. Supervisor is the host process manager for configured app/workspace
+process programs; whether it is installed as a baseline prerequisite or an
+on-demand tool remains owned by node/tool provisioning contracts.
 
 Role baseline tools are not in the fleet-wide table above. They are
 materialized by their owning role and only required on nodes carrying that role:
@@ -117,6 +117,8 @@ Each tool file owns:
 
 - supported slug, label, backend, support model, and category;
 - supported command capability surface;
+- supported version families and runtime families, including platform support
+  for each runtime family;
 - credential behavior and example output when credentials are supported;
 - service endpoint behavior when the tool is reachable over the Orbit network;
 - ownership notes specific to the tool and Orbit's management of it;

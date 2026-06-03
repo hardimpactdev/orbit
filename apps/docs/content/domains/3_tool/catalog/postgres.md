@@ -36,7 +36,7 @@ Example JSON shape:
         "tool": "postgres",
         "node": "app-1",
         "fields": {
-          "host": "orbit.test",
+          "host": "10.6.0.12",
           "port": 5432,
           "database": "orbit",
           "username": "orbit",
@@ -51,9 +51,10 @@ Example JSON shape:
 
 ## Service Endpoint
 
-`postgres` exposes a TCP service endpoint reachable only over WireGuard at
-`orbit.<node-tld>:5432` for development nodes. This is DNS/service endpoint
-configuration owned by the tool definition, not an HTTP proxy route.
+`postgres` exposes a TCP service endpoint reachable only over WireGuard at the
+serving node's WireGuard service address, such as `10.6.0.12:5432`. This is
+service endpoint configuration owned by the tool definition, not an HTTP proxy
+route.
 
 ## Orbit Notes
 

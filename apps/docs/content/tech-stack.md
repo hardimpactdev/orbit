@@ -49,7 +49,7 @@ The sections below walk through each layer of the stack in the same order as the
 
 ## Runtime
 
-| Layer | Docker-first implementation |
+| Layer | Production substrate implementation |
 |---|---|
 | Application | Laravel 13 gateway application bundled into `ghcr.io/hardimpactdev/orbit-gateway:<version>` |
 | Runtime language | PHP 8.5 inside Orbit-managed containers |
@@ -58,10 +58,10 @@ The sections below walk through each layer of the stack in the same order as the
 | Gateway to node | SSH through `RemoteShell`, classified by execution lane |
 | Proxy | Dockerized Caddy in one `orbit-caddy` container per node |
 | PHP runtime | FrankenPHP app/workspace containers |
-| Host init | Docker daemon plus Docker Swarm for gateway services |
-| Process manager | `process.runtime=docker` for PHP app processes; `supervisor` only where explicitly configured |
+| Host init | Docker daemon plus Docker Swarm for gateway services and Docker-backed role/tool services; Supervisor for configured app/workspace process programs |
+| Process manager | Host Supervisor programs for app/workspace configured processes |
 | Scheduler | One-replica `orbit-scheduler` Swarm service using the Orbit gateway image |
-| Process logs | Docker stdout/stderr logs for Docker process runtime units; Supervisor logs only for explicit `supervisor` runtime units |
+| Process logs | Supervisor stdout/stderr capture for configured app/workspace process units |
 | Service containers | Docker for Orbit runtime containers and backing services |
 | Host prerequisites | Production gateway-only nodes require Docker Engine/CLI, Docker Swarm, gateway config root, WireGuard/SSH identity, and the native Orbit CLI binary. `app-dev` and `app-prod` nodes additionally require host PHP/Composer/Laravel installer tooling for app-source workflows. Git and `gh` are required where cloning/deployment needs repository access, not for no-source gateway-only production. Source-dev topologies may bind-mount or copy the worktree and point `/usr/local/bin/orbit` at `<source>/apps/cli/orbit`; artifact-prod topologies use built CLI binaries and production images. |
 | Production HTTP ingress | `orbit-caddy` on `ingress` nodes terminating public HTTPS and forwarding to `router` over WireGuard |
@@ -147,7 +147,7 @@ private `orbit-gateway` hop. Caller identity still comes from the Orbit network
 identity model, not from caller-supplied headers.
 
 Long-lived stream and log endpoints must not starve short command/API requests.
-The Docker-first API runtime owns this concurrency contract inside
+The Swarm-managed API runtime owns this concurrency contract inside
 `orbit-gateway`; it does not use host PHP-FPM sockets and must be validated
 through gateway API tests. Server-sent event emitters flush under the
 FrankenPHP request SAPI (`frankenphp`) as well as development SAPIs so durable
@@ -249,7 +249,7 @@ PHP and PHP-FPM are not app/workspace runtime fallbacks.
 
 Production public HTTP traffic enters the fleet through an active
 `ingress` role. `app-prod` nodes are production runtime backends:
-they own app files, FrankenPHP runtime containers, Docker process containers,
+they own app files, FrankenPHP runtime containers, configured process programs,
 and a private `orbit-caddy` listener, but they do not own public route exposure
 unless the same node also carries `ingress`.
 
@@ -284,7 +284,7 @@ websocket backends fail clearly instead of silently fanning out.
 ### S3 runtime
 
 The `s3` role runs RustFS for fleet object storage. RustFS runs in a Docker
-runtime container rendered by Orbit's Docker-first runtime container services;
+runtime container rendered by Orbit's role runtime container services;
 it is not rendered from role-local Docker Compose and does not use host package
 installation as a fallback. The container uses the `rustfs/rustfs` image,
 mounts the role-owned `data_path` as `/data`, and binds the S3 API only to the
@@ -309,7 +309,7 @@ RustFS, or HA guarantees.
 
 Focused S3 E2E coverage is pending the S3 role runtime. When that role lands,
 coverage must use the prepared Docker/Incus topology lane, keep RustFS on the
-Docker-first runtime substrate, and must not add role-local Docker Compose,
+role runtime container substrate, and must not add role-local Docker Compose,
 host Caddy, host PHP, PHP-FPM, or host Supervisor to make object-storage
 assertions pass. S3 E2E starts in the dedicated `apps/e2e` runner, not in the
 gateway test harness, and drives object storage through external CLI/API
@@ -318,14 +318,17 @@ boundaries rather than gateway service or model instantiation. See
 
 ### Process manager
 
-PHP app and workspace processes use Docker process runtime units by default. Each Docker-backed process becomes an Orbit-managed sidecar container that uses the same app/workspace runtime boundary, PHP version, mounted source, and environment as the web runtime. Docker restart policy and Orbit lifecycle hooks restart crashed processes and capture stdout/stderr surfaced by `process:logs`.
+App and workspace configured processes render as host Supervisor programs. Each
+runtime unit uses the resolved app or workspace source path, process command,
+restart policy, and Orbit-managed environment. Supervisor owns the process
+lifecycle and stdout/stderr capture surfaced by `process:logs`.
 
-`process.runtime=supervisor` remains an explicit residual runtime for supported non-PHP host-side cases. Those units are documented per process definition; they are not the default PHP app process path and must not be used as a host PHP fallback.
-
-Host init is reduced to keeping Docker alive. Gateway API and scheduler
-lifecycles are Swarm services (`orbit-gateway` and `orbit-scheduler`).
-`orbit-caddy`, app/workspace runtime containers, and Docker process runtime
-units are Docker-managed containers, not host services.
+Swarm is a per-artifact production backend, not a node-wide execution mode.
+Gateway API and scheduler lifecycles are Swarm services (`orbit-gateway` and
+`orbit-scheduler`). Other artifacts choose their own backend by product
+contract: `orbit-caddy`, app/workspace web runtimes, role services, and
+Docker-backed tools are Docker-managed containers or services; configured
+app/workspace processes are host Supervisor programs.
 
 ### Scheduler
 
@@ -366,8 +369,8 @@ This centralizes observability: every scheduled run's result lands in the gatewa
 
 Docker is the baseline substrate for Orbit runtime containers and backing
 services. Orbit uses Docker for `orbit-gateway`, `orbit-scheduler`,
-`orbit-caddy`, FrankenPHP app/workspace containers, Docker process runtime
-units, databases, caches, mail servers, Laravel Reverb containers for the
+`orbit-caddy`, FrankenPHP app/workspace containers, databases, caches, mail
+servers, Laravel Reverb containers for the
 `websocket` role, RustFS containers for the `s3` role, and similar backing
 infrastructure. Docker E2E topologies use sibling containers through the host
 Docker socket, not Docker-in-Docker.
