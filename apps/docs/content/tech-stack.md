@@ -211,7 +211,7 @@ The current sudo model intentionally grants the `orbit` maintenance user broad p
 
 ### Proxy
 
-`orbit-caddy` is the standalone fleet proxy container on every node that needs HTTP routing. It terminates TLS, serves the gateway API on the gateway, serves public ingress routes on `ingress` nodes, serves private router/backend routes, and serves app and workspace routes on nodes with application roles. App-route certificates are issued by the Orbit root CA, so nodes serve HTTPS without ever holding the root CA private key or any general signing authority.
+`orbit-caddy` is the standalone fleet proxy container on every node that needs HTTP routing. It terminates TLS for managed routes, fronts the gateway API only in `router-colocated` mode, serves public ingress routes on `ingress` nodes, serves private router/backend routes, and serves app and workspace routes on nodes with application roles. App-route certificates are issued by the Orbit root CA, so nodes serve HTTPS without ever holding the root CA private key or any general signing authority.
 
 #### Caddy include boundaries
 
@@ -220,7 +220,7 @@ Caddy configuration is split by exposure boundary, not by who happens to write t
 - `/etc/caddy/orbit/*.caddy` for Orbit platform surfaces that are internal to the Orbit network
 - `/etc/caddy/sites/*.caddy` for app, workspace, and custom proxy site routes
 
-Files under `/etc/caddy/orbit/*.caddy` must be reachable only through the Orbit/WireGuard network or another explicitly internal gateway interface. The gateway API belongs here. Its `orbit-caddy` container publishes ports only on the gateway WireGuard address, while the Caddy site uses default `:80` and `:443` listeners inside the container so IP-address clients that do not send SNI can still complete TLS. It must not create a broad public virtual host.
+Files under `/etc/caddy/orbit/*.caddy` must be reachable only through the Orbit/WireGuard network or another explicitly internal gateway interface. Gateway API proxy routes belong here only when the gateway is in `router-colocated` mode, where router-owned `orbit-caddy` forwards to `orbit-gateway` over `orbit-network`. In `gateway-direct` mode, `orbit-gateway` publishes gateway HTTPS directly and no gateway API Caddy route is required. Gateway API exposure must not create a broad public virtual host.
 
 Files under `/etc/caddy/sites/*.caddy` are user-facing site routes. App routes, workspace routes, and custom proxy routes write here because they may be served on public or project domains. These files may import shared snippets from the managed `orbit-caddy` Caddyfile, but they must not define Orbit control-plane endpoints.
 
