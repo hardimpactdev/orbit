@@ -94,6 +94,64 @@ describe('SchedulesFixer', function (): void {
         Process::assertNotRan(fn ($process): bool => str_contains((string) $process->command, 'orbit'.'-runtime'));
     });
 
+    it('updates and scales the gateway orbit-scheduler Swarm service when the image drifts', function (): void {
+        $gateway = createSchedulesFixerGatewayNode();
+        $shell = new SchedulesFixerRemoteShell;
+        $desiredImage = 'ghcr.io/hardimpactdev/orbit-gateway:1.2.4@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
+        config()->set('orbit.updates.gateway_image', $desiredImage);
+        Process::fake([
+            "docker service inspect --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' 'orbit_orbit-scheduler'" => Process::result(output: "ghcr.io/hardimpactdev/orbit-gateway:1.2.3@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n"),
+            "docker service update --image '{$desiredImage}' --update-order 'stop-first' --update-failure-action rollback --update-monitor 60s 'orbit_orbit-scheduler'" => Process::result(),
+            "docker service scale 'orbit_orbit-scheduler=1'" => Process::result(),
+        ]);
+
+        $action = (new SchedulesFixer)->fixGateway($gateway, new DriftEntry(
+            family: 'schedule',
+            key: 'schedule.scheduler_image_mismatch',
+            kind: DriftKind::Divergent,
+            summary: 'Orbit Scheduler service image does not match the configured gateway image.',
+            detail: ['expected_image' => $desiredImage],
+        ));
+
+        expect($action)->toMatchArray([
+            'family' => 'schedule',
+            'node' => 'gateway-1',
+            'key' => 'schedule.scheduler_image_mismatch',
+            'mode' => 'fix',
+            'status' => 'completed',
+        ])->and($shell->scripts)->toBe([]);
+
+        Process::assertRan("docker service update --image '{$desiredImage}' --update-order 'stop-first' --update-failure-action rollback --update-monitor 60s 'orbit_orbit-scheduler'");
+        Process::assertRan("docker service scale 'orbit_orbit-scheduler=1'");
+    });
+
+    it('scales the gateway orbit-scheduler Swarm service back to one replica when replica state drifts', function (): void {
+        $gateway = createSchedulesFixerGatewayNode();
+        $shell = new SchedulesFixerRemoteShell;
+        Process::fake([
+            "docker service inspect --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' 'orbit_orbit-scheduler'" => Process::result(output: "ghcr.io/hardimpactdev/orbit-gateway:1.2.3@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n"),
+            "docker service scale 'orbit_orbit-scheduler=1'" => Process::result(),
+        ]);
+
+        $action = (new SchedulesFixer)->fixGateway($gateway, new DriftEntry(
+            family: 'schedule',
+            key: 'schedule.scheduler_replicas_mismatch',
+            kind: DriftKind::Divergent,
+            summary: 'Orbit Scheduler service replica count is not singleton.',
+            detail: ['observed_replicas' => '2/2'],
+        ));
+
+        expect($action)->toMatchArray([
+            'family' => 'schedule',
+            'node' => 'gateway-1',
+            'key' => 'schedule.scheduler_replicas_mismatch',
+            'mode' => 'fix',
+            'status' => 'completed',
+        ])->and($shell->scripts)->toBe([]);
+
+        Process::assertRan("docker service scale 'orbit_orbit-scheduler=1'");
+    });
+
     it('releases stale gateway schedule locks and marks running history failed', function (): void {
         $gateway = createSchedulesFixerGatewayNode();
         $node = createTestAppHostNode(['name' => 'app-1']);

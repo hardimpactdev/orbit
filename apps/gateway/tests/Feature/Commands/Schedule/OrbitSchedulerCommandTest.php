@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 use App\Contracts\RemoteShell;
 use App\Contracts\StartsRemoteShellProcesses;
+use App\Data\Doctor\DriftEntry;
 use App\Data\RemoteShell\RemoteShellResult;
+use App\Enums\DriftKind;
 use App\Models\App;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
@@ -13,8 +15,8 @@ use App\Models\ScheduleLock;
 use App\Models\SchedulerState;
 use App\Models\ScheduleRun;
 use App\Services\Schedules\OrbitScheduler;
-use App\Services\Schedules\OrbitSchedulerProgramRenderer;
 use App\Services\Schedules\ScheduleInterval;
+use App\Services\Schedules\SchedulesFixer;
 use Carbon\CarbonImmutable;
 use Illuminate\Contracts\Process\InvokedProcess;
 use Illuminate\Contracts\Process\ProcessResult;
@@ -37,22 +39,30 @@ it('starts the scheduler through the gateway image scheduler entrypoint', functi
 
     expect($entrypoint)
         ->toContain('scheduler)')
-        ->toContain('run_artisan orbit-scheduler "$@"')
+        ->toContain('run_artisan orbit-'.'scheduler "$@"')
         ->not->toContain('php "$artisan" serve')
         ->not->toContain('PHP_CLI_SERVER_WORKERS');
 });
 
 it('renders scheduler repair through the gateway Swarm scheduler service instead of host supervisor', function (): void {
-    $script = (new OrbitSchedulerProgramRenderer)->installScript();
+    $gateway = createOrbitSchedulerGatewayNode();
+    Process::fake([
+        "docker service inspect --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' 'orbit_orbit-scheduler'" => Process::result(output: "ghcr.io/hardimpactdev/orbit-gateway:1.2.3@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n"),
+        "docker service scale 'orbit_orbit-scheduler=1'" => Process::result(),
+    ]);
 
-    expect($script)
-        ->toContain("docker service inspect 'orbit_orbit-scheduler'")
-        ->toContain("docker service scale 'orbit_orbit-scheduler=1'")
-        ->toContain('orbit-scheduler')
-        ->not->toContain('orbit'.'-runtime')
-        ->not->toContain('supervisor')
-        ->not->toContain('/etc/supervisor')
-        ->not->toContain('docker restart');
+    (new SchedulesFixer)->fixGateway($gateway, new DriftEntry(
+        family: 'schedule',
+        key: 'schedule.scheduler_stopped',
+        kind: DriftKind::Divergent,
+        summary: 'Orbit Scheduler service is stopped.',
+    ));
+
+    Process::assertRan("docker service inspect --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' 'orbit_orbit-scheduler'");
+    Process::assertRan("docker service scale 'orbit_orbit-scheduler=1'");
+    Process::assertNotRan(fn ($process): bool => str_contains((string) $process->command, 'orbit'.'-runtime'));
+    Process::assertNotRan(fn ($process): bool => str_contains((string) $process->command, 'supervisor'));
+    Process::assertNotRan(fn ($process): bool => str_contains((string) $process->command, 'docker restart'));
 });
 
 it('dispatches due app schedules from the gateway and records run history centrally', function (): void {

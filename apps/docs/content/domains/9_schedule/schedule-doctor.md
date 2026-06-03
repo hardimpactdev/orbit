@@ -27,11 +27,11 @@ The schedule probe reads gateway schedule configuration and checks these layers:
 
 **Gateway scheduler layers** (verified once per doctor run, not per schedule):
 
-3. **Scheduler runtime availability:** the gateway Swarm services and gateway
-   image are available and can run the scheduler daemon.
-4. **Orbit Scheduler presence:** the scheduler daemon configuration exists in
-   the gateway container.
-5. **Orbit Scheduler liveness:** the scheduler daemon is in a running state.
+3. **Scheduler runtime availability:** the `orbit_orbit-scheduler` Swarm service
+   exists and exposes service state.
+4. **Orbit Scheduler desired state:** the service uses the configured
+   `orbit-gateway` image and has exactly one desired/running replica.
+5. **Orbit Scheduler liveness:** the scheduler service is in a running state.
 6. **Heartbeat freshness:** the most recent scheduler heartbeat is within the configured threshold.
 7. **Schedule lock health:** no schedule lock in `schedule_locks` exceeds the configured stale-lock threshold.
 
@@ -51,8 +51,10 @@ The table below lists every issue code the schedule probe may emit and the condi
 | `schedule.record_incomplete` | A selected gateway schedule lacks scope, target, interval, timezone, execution source, or enabled state. |
 | `schedule.target_invalid` | The schedule points at a missing, unauthorized, inactive, unsupported, or role-incompatible target. |
 | `schedule.runtime_backend_unavailable` | The gateway Swarm runtime or gateway image cannot run the scheduler daemon. |
-| `schedule.scheduler_missing` | The gateway service has no scheduler daemon configuration. |
-| `schedule.scheduler_stopped` | The scheduler daemon is configured but not running. |
+| `schedule.scheduler_missing` | The `orbit_orbit-scheduler` Swarm service has no desired scheduler replica. |
+| `schedule.scheduler_stopped` | The `orbit_orbit-scheduler` Swarm service is configured but not running. |
+| `schedule.scheduler_image_mismatch` | The scheduler service image differs from the configured `orbit-gateway` image. |
+| `schedule.scheduler_replicas_mismatch` | The scheduler service is running but is not a singleton `1/1` service. |
 | `schedule.heartbeat_stale` | The most recent scheduler heartbeat is older than the configured threshold. |
 | `schedule.lock_stuck` | A row in `schedule_locks` exceeds the configured stale-lock threshold. |
 | `schedule.target_unreachable` | The gateway cannot open a `RemoteShell` connection to the schedule's target node. Dispatch will fail until reachability is restored. |
@@ -65,8 +67,10 @@ The table below lists what `doctor --restore` does for each issue code.
 | Code | `doctor --restore` behavior |
 | --- | --- |
 | `schedule.runtime_backend_unavailable` | No `doctor --restore` action. Gateway service recovery belongs to node operations. |
-| `schedule.scheduler_missing` | Re-render and load the scheduler daemon configuration in the gateway service. |
-| `schedule.scheduler_stopped` | Start the scheduler daemon in the gateway service. |
+| `schedule.scheduler_missing` | Scale `orbit_orbit-scheduler` to one replica. |
+| `schedule.scheduler_stopped` | Scale `orbit_orbit-scheduler` to one replica. |
+| `schedule.scheduler_image_mismatch` | Update `orbit_orbit-scheduler` to the configured gateway image with stop-first order, then scale it to one replica. |
+| `schedule.scheduler_replicas_mismatch` | Scale `orbit_orbit-scheduler` back to one replica. |
 | `schedule.heartbeat_stale` | No `doctor --restore` action. Stale heartbeat is a runtime symptom; restart the scheduler daemon or investigate the gateway service. |
 | `schedule.lock_stuck` | Release the stale lock row in `schedule_locks` and record the affected run as `failed`. |
 
@@ -97,7 +101,7 @@ Required test files:
 | `apps/gateway/tests/Feature/Doctor/ScheduleFamilyDoctorContractTest.php` | Schedule-family dispatch, probe-layer selection, schedule issue codes, fix map, denied adopt cases, scope filtering, and assertion that `schedule.runtime_backend_unavailable` short-circuits downstream scheduler layer checks. |
 | `apps/gateway/tests/Unit/Services/Schedules/ScheduleProbeTest.php` | In-memory probe diff behavior across registry, eligibility, runtime, scheduler, and history layers (scope below). |
 | `apps/gateway/tests/E2E/Read/ScheduleDoctorTest.php` | Real read-only `doctor --family=schedule --json` against a topology with the Orbit Scheduler running. Docker-eligible. |
-| `apps/gateway/tests/E2E/Ephemeral/ScheduleDoctorFixTest.php` | Real `doctor --family=schedule --restore` repair for `scheduler_missing`, `scheduler_stopped`, and `lock_stuck` codes. Docker-eligible. |
+| `apps/gateway/tests/E2E/Ephemeral/ScheduleDoctorFixTest.php` | Real `doctor --family=schedule --restore` repair for `scheduler_missing`, `scheduler_stopped`, `scheduler_image_mismatch`, `scheduler_replicas_mismatch`, and `lock_stuck` codes. Docker-eligible. |
 
 `ScheduleProbeTest` covers registry configuration, target eligibility, gateway
 scheduler process manager availability, scheduler presence, scheduler

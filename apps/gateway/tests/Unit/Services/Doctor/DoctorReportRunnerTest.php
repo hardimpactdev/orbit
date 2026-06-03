@@ -11,6 +11,7 @@ use App\Models\FirewallRule;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Models\NodeTool;
+use App\Models\SchedulerState;
 use App\Models\WireGuardPeer;
 use App\Models\Workspace;
 use App\Services\Doctor\DoctorReportRunner;
@@ -131,11 +132,13 @@ function doctorRunnerUpdateProbeResult(array $overrides = []): RemoteShellResult
     );
 }
 
-function fakeDoctorRunnerSchedulerSwarmService(string $replicas = '1/1'): void
+function fakeDoctorRunnerSchedulerSwarmService(string $replicas = '1/1', ?string $image = null): void
 {
+    $image ??= 'ghcr.io/hardimpactdev/orbit-gateway:1.2.3@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+
     Process::preventStrayProcesses();
     Process::fake([
-        "docker service inspect --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' 'orbit_orbit-scheduler'" => Process::result(output: "ghcr.io/hardimpactdev/orbit-gateway:1.2.3@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n"),
+        "docker service inspect --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' 'orbit_orbit-scheduler'" => Process::result(output: "{$image}\n"),
         "docker service ls --filter 'name=orbit_orbit-scheduler' --format '{{.Replicas}}'" => Process::result(output: "{$replicas}\n"),
         "docker service scale 'orbit_orbit-scheduler=1'" => Process::result(),
     ]);
@@ -903,6 +906,49 @@ describe('DoctorReportRunner', function (): void {
 
         Process::assertRan("docker service inspect --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' 'orbit_orbit-scheduler'");
         Process::assertRan("docker service ls --filter 'name=orbit_orbit-scheduler' --format '{{.Replicas}}'");
+        Process::assertRan("docker service scale 'orbit_orbit-scheduler=1'");
+    });
+
+    it('suppresses resolved scheduler image drift when restore updates the Swarm service image', function (): void {
+        $gateway = Node::factory()->gateway()->create(['name' => 'gateway-1', 'status' => 'active']);
+        $shell = new DoctorReportRunnerRemoteShell([]);
+        $desiredImage = 'ghcr.io/hardimpactdev/orbit-gateway:1.2.4@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
+        app()->instance(RemoteShell::class, $shell);
+        config()->set('orbit.updates.gateway_image', $desiredImage);
+        Process::preventStrayProcesses();
+        Process::fake([
+            "docker service inspect --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' 'orbit_orbit-scheduler'" => Process::result(output: "ghcr.io/hardimpactdev/orbit-gateway:1.2.3@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n"),
+            "docker service ls --filter 'name=orbit_orbit-scheduler' --format '{{.Replicas}}'" => Process::result(output: "1/1\n"),
+            "docker service update --image '{$desiredImage}' --update-order 'stop-first' --update-failure-action rollback --update-monitor 60s 'orbit_orbit-scheduler'" => Process::result(),
+            "docker service scale 'orbit_orbit-scheduler=1'" => Process::result(),
+        ]);
+
+        SchedulerState::factory()->create([
+            'node_id' => $gateway->id,
+            'heartbeat_at' => now(),
+            'registry_synced_at' => now(),
+        ]);
+
+        $report = app(DoctorReportRunner::class)->run($gateway, mode: 'restore', families: ['schedule']);
+
+        expect($report['healthy'])->toBeTrue()
+            ->and($report['summary'])->toMatchArray([
+                'issues' => 0,
+                'fixed' => 1,
+                'failed' => 0,
+                'skipped' => 0,
+            ])
+            ->and($report['issues'])->toBe([])
+            ->and($report['actions'][0])->toMatchArray([
+                'family' => 'schedule',
+                'node' => 'gateway-1',
+                'key' => 'schedule.scheduler_image_mismatch',
+                'mode' => 'restore',
+                'status' => 'completed',
+            ])
+            ->and($shell->scripts)->toBe([]);
+
+        Process::assertRan("docker service update --image '{$desiredImage}' --update-order 'stop-first' --update-failure-action rollback --update-monitor 60s 'orbit_orbit-scheduler'");
         Process::assertRan("docker service scale 'orbit_orbit-scheduler=1'");
     });
 

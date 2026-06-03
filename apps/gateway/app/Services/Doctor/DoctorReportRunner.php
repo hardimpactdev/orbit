@@ -1416,7 +1416,7 @@ final readonly class DoctorReportRunner
     {
         $scheduleKey = is_string($detail['schedule_key'] ?? null) ? $detail['schedule_key'] : null;
 
-        if (in_array($key, ['schedule.scheduler_missing', 'schedule.scheduler_stopped', 'schedule.lock_stuck'], true)) {
+        if (in_array($key, ['schedule.scheduler_missing', 'schedule.scheduler_stopped', 'schedule.scheduler_image_mismatch', 'schedule.scheduler_replicas_mismatch', 'schedule.lock_stuck'], true)) {
             $gatewayNode = $this->gatewayNode() ?? $this->nodeFromIssue($issue) ?? $node;
             $schedule = $scheduleKey === null
                 ? null
@@ -1557,6 +1557,8 @@ final readonly class DoctorReportRunner
             'tool.credentials_mismatch',
             'schedule.scheduler_missing',
             'schedule.scheduler_stopped',
+            'schedule.scheduler_image_mismatch',
+            'schedule.scheduler_replicas_mismatch',
             'schedule.lock_stuck',
             'node.role_convergence_failed',
             'node.role_baseline_mismatch',

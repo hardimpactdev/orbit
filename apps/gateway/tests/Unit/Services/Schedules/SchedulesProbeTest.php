@@ -178,6 +178,51 @@ describe('SchedulesProbe', function (): void {
             ]);
     });
 
+    it('detects scheduler Swarm service image drift from the configured gateway image', function (): void {
+        $gateway = createSchedulesProbeGatewayNode();
+        SchedulerState::factory()->create([
+            'node_id' => $gateway->id,
+            'heartbeat_at' => now(),
+            'registry_synced_at' => now(),
+        ]);
+        config()->set('orbit.updates.gateway_image', 'ghcr.io/hardimpactdev/orbit-gateway:1.2.4@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb');
+        $probe = new SchedulesProbe(new RuntimeBackendProbe(new SchedulesProbeRemoteShell));
+        fakeSchedulerSwarmService(
+            image: 'ghcr.io/hardimpactdev/orbit-gateway:1.2.3@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+            replicas: '1/1',
+        );
+
+        $snapshot = $probe->introspectGateway($gateway);
+        $drift = $probe->diffGateway($gateway, $snapshot);
+
+        expect(scheduleProbeIssue($drift, 'schedule.scheduler_image_mismatch')?->kind)->toBe(DriftKind::Divergent)
+            ->and(scheduleProbeIssue($drift, 'schedule.scheduler_image_mismatch')?->detail)->toMatchArray([
+                'observed_image' => 'ghcr.io/hardimpactdev/orbit-gateway:1.2.3@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+                'expected_image' => 'ghcr.io/hardimpactdev/orbit-gateway:1.2.4@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+            ]);
+    });
+
+    it('detects scheduler Swarm service replica drift when it is not a singleton service', function (): void {
+        $gateway = createSchedulesProbeGatewayNode();
+        SchedulerState::factory()->create([
+            'node_id' => $gateway->id,
+            'heartbeat_at' => now(),
+            'registry_synced_at' => now(),
+        ]);
+        $probe = new SchedulesProbe(new RuntimeBackendProbe(new SchedulesProbeRemoteShell));
+        fakeSchedulerSwarmService(
+            image: 'ghcr.io/hardimpactdev/orbit-gateway:1.2.3@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+            replicas: '2/2',
+        );
+
+        $snapshot = $probe->introspectGateway($gateway);
+        $drift = $probe->diffGateway($gateway, $snapshot);
+
+        expect(scheduleProbeIssue($drift, 'schedule.scheduler_replicas_mismatch')?->kind)->toBe(DriftKind::Divergent)
+            ->and(scheduleProbeIssue($drift, 'schedule.scheduler_replicas_mismatch')?->detail)->toHaveKey('observed_replicas', '2/2')
+            ->and(scheduleProbeIssue($drift, 'schedule.scheduler_stopped'))->toBeNull();
+    });
+
     it('detects stale gateway heartbeat', function (): void {
         $gateway = createSchedulesProbeGatewayNode();
         SchedulerState::factory()->create([

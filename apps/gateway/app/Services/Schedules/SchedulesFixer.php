@@ -9,6 +9,7 @@ use App\Models\Node;
 use App\Models\Schedule;
 use App\Models\ScheduleLock;
 use App\Models\ScheduleRun;
+use App\Services\Gateway\GatewayImageReference;
 use App\Services\Gateway\GatewaySwarmManager;
 use App\Services\Gateway\GatewaySwarmStackRenderer;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
@@ -46,7 +47,13 @@ final readonly class SchedulesFixer
             return $this->action($gatewayNode, $entry, $schedule);
         }
 
-        if (! in_array($entry->key, ['schedule.scheduler_missing', 'schedule.scheduler_stopped'], true)) {
+        if ($entry->key === 'schedule.scheduler_image_mismatch') {
+            $this->restoreGatewaySchedulerImage($entry);
+
+            return $this->action($gatewayNode, $entry, $schedule);
+        }
+
+        if (! in_array($entry->key, ['schedule.scheduler_missing', 'schedule.scheduler_stopped', 'schedule.scheduler_replicas_mismatch'], true)) {
             return null;
         }
 
@@ -63,6 +70,21 @@ final readonly class SchedulesFixer
             throw new RuntimeException("Gateway scheduler Swarm service [{$service}] is missing.");
         }
 
+        $this->swarm->scaleService($service, 1);
+    }
+
+    private function restoreGatewaySchedulerImage(DriftEntry $entry): void
+    {
+        $service = $this->schedulerStackService();
+        $expectedImage = is_string($entry->detail['expected_image'] ?? null)
+            ? $entry->detail['expected_image']
+            : config('orbit.updates.gateway_image');
+
+        if (! is_string($expectedImage) || trim($expectedImage) === '') {
+            throw new RuntimeException('Configured gateway image is unavailable for scheduler image repair.');
+        }
+
+        $this->swarm->updateServiceImage($service, GatewayImageReference::fromString($expectedImage), 'stop-first');
         $this->swarm->scaleService($service, 1);
     }
 

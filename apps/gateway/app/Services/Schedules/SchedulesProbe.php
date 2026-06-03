@@ -23,6 +23,8 @@ final readonly class SchedulesProbe
 {
     private const int FreshnessMinutes = 10;
 
+    private const string SingletonReplicas = '1/1';
+
     private const string Stack = 'orbit';
 
     public function __construct(
@@ -73,6 +75,8 @@ final readonly class SchedulesProbe
     {
         return [
             ...$this->checkGatewayRuntimeAndScheduler($gatewayNode, $snapshot),
+            ...$this->checkGatewaySchedulerImage($gatewayNode, $snapshot),
+            ...$this->checkGatewaySchedulerReplicas($gatewayNode, $snapshot),
             ...$this->checkGatewayFreshness($snapshot),
             ...$this->checkGatewayLockHealth($gatewayNode, $snapshot),
         ];
@@ -315,6 +319,71 @@ final readonly class SchedulesProbe
         }
 
         return [];
+    }
+
+    /**
+     * @return list<DriftEntry>
+     */
+    private function checkGatewaySchedulerImage(Node $gatewayNode, ProbeSnapshot $snapshot): array
+    {
+        $observed = $snapshot->get('gateway');
+
+        if (($observed['runtime_available'] ?? null) !== true || ($observed['scheduler_status'] ?? null) !== 'running') {
+            return [];
+        }
+
+        $observedImage = is_string($observed['scheduler_image'] ?? null) ? trim($observed['scheduler_image']) : '';
+        $expectedImage = is_string($observed['scheduler_desired_image'] ?? null) ? trim($observed['scheduler_desired_image']) : '';
+
+        if ($expectedImage === '' || $observedImage === '' || $observedImage === $expectedImage) {
+            return [];
+        }
+
+        return [
+            new DriftEntry(
+                family: $this->key(),
+                key: 'schedule.scheduler_image_mismatch',
+                kind: DriftKind::Divergent,
+                summary: "Orbit Scheduler service image does not match the configured gateway image on node {$gatewayNode->name}.",
+                detail: [
+                    'node' => $gatewayNode->name,
+                    'observed_image' => $observedImage,
+                    'expected_image' => $expectedImage,
+                ],
+            ),
+        ];
+    }
+
+    /**
+     * @return list<DriftEntry>
+     */
+    private function checkGatewaySchedulerReplicas(Node $gatewayNode, ProbeSnapshot $snapshot): array
+    {
+        $observed = $snapshot->get('gateway');
+
+        if (($observed['runtime_available'] ?? null) !== true || ($observed['scheduler_status'] ?? null) !== 'running') {
+            return [];
+        }
+
+        $replicas = is_string($observed['scheduler_replicas'] ?? null) ? trim($observed['scheduler_replicas']) : '';
+
+        if ($replicas === self::SingletonReplicas) {
+            return [];
+        }
+
+        return [
+            new DriftEntry(
+                family: $this->key(),
+                key: 'schedule.scheduler_replicas_mismatch',
+                kind: DriftKind::Divergent,
+                summary: "Orbit Scheduler service replica count is not singleton on node {$gatewayNode->name}.",
+                detail: [
+                    'node' => $gatewayNode->name,
+                    'observed_replicas' => $replicas,
+                    'expected_replicas' => self::SingletonReplicas,
+                ],
+            ),
+        ];
     }
 
     /**
