@@ -219,7 +219,7 @@ final readonly class FirewallRuleProbe
                     family: $this->key(),
                     key: 'firewall_rule.node_invalid',
                     kind: DriftKind::Divergent,
-                    summary: "Firewall rule {$rule->name} targets node {$rule->node->name}, which is not an active Ubuntu gateway or app node.",
+                    summary: "Firewall rule {$rule->name} targets node {$rule->node->name}, which is not an active Ubuntu node eligible to own firewall rules.",
                     detail: [
                         'node' => $rule->node->name,
                         'role' => $rule->node->displayRole(),
@@ -235,7 +235,7 @@ final readonly class FirewallRuleProbe
 
     private function canOwnFirewallRules(Node $node): bool
     {
-        return app(NodeRoleAssignments::class)->nodeCanServeGatewayOrAppHostWorkloads($node);
+        return app(NodeRoleAssignments::class)->nodeCanOwnFirewallRules($node);
     }
 
     /**

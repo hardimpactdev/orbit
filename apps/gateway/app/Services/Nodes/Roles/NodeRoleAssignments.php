@@ -201,6 +201,31 @@ class NodeRoleAssignments
     }
 
     /**
+     * Roles whose nodes may own firewall rules. Single source of truth shared by
+     * firewall rule creation (intent) and the firewall doctor probe so the two
+     * cannot drift apart.
+     *
+     * @return list<string>
+     */
+    public function firewallEligibleRoles(): array
+    {
+        return [
+            NodeRoleName::Gateway->value,
+            NodeRoleName::Router->value,
+            NodeRoleName::AppDevelopment->value,
+            NodeRoleName::AppProduction->value,
+            NodeRoleName::Database->value,
+            NodeRoleName::Agent->value,
+            NodeRoleName::Ingress->value,
+        ];
+    }
+
+    public function nodeCanOwnFirewallRules(Node $node): bool
+    {
+        return $this->nodeHasAnyActiveRole($node, $this->firewallEligibleRoles());
+    }
+
+    /**
      * Roles whose baseline provisions an orbit-caddy container on the node.
      * Mirrors {@see ManagesNodeToolBaseline::defaultOrbitCaddyContainer()}:
      * gateway, app-host, and router nodes get a private/default spec; ingress

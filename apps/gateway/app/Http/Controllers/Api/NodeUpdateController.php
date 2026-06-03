@@ -162,7 +162,7 @@ final class NodeUpdateController implements Loggable
         }
 
         if (isset($providedFields['tld'])) {
-            if (! $node->hasActiveRole('app-dev')) {
+            if (! $node->hasActiveRole('app-dev') && ! $node->hasActiveRole('agent')) {
                 return ['field' => 'tld', 'role' => $role];
             }
         }

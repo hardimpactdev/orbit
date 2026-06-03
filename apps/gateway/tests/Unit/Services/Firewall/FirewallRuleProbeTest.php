@@ -87,7 +87,7 @@ Status: active
 [ 2] 5173/tcp (v6)              ALLOW IN    Anywhere (v6)
 UFW);
 
-        $snapshot = (new FirewallRuleProbe($shell))->introspect($rule);
+        $snapshot = new FirewallRuleProbe($shell)->introspect($rule);
 
         expect($snapshot->get('incoming:allow:10.6.0.0/24:any:5173:tcp:v4:any'))->toMatchArray([
             'direction' => 'incoming',
@@ -115,7 +115,7 @@ Status: active
      --                         ------      ----
 UFW);
 
-        $snapshot = (new FirewallRuleProbe($shell))->introspect($rule);
+        $snapshot = new FirewallRuleProbe($shell)->introspect($rule);
         $drift = (new FirewallRuleProbe)->diff($rule, $snapshot);
 
         expect(firewallProbeIssue($drift, 'firewall_rule.rule_missing')?->kind)->toBe(DriftKind::Missing);
@@ -137,7 +137,7 @@ Status: active
 [ 1] 5173/tcp                   ALLOW IN    Anywhere
 UFW);
 
-        $snapshot = (new FirewallRuleProbe($shell))->introspect($rule);
+        $snapshot = new FirewallRuleProbe($shell)->introspect($rule);
         $drift = (new FirewallRuleProbe)->diff($rule, $snapshot);
         $issue = firewallProbeIssue($drift, 'firewall_rule.rule_mismatch');
 
@@ -162,7 +162,7 @@ Status: active
 [ 1] 5173/tcp                   ALLOW IN    10.6.0.0/24
 UFW);
 
-        $snapshot = (new FirewallRuleProbe($shell))->introspect($rule);
+        $snapshot = new FirewallRuleProbe($shell)->introspect($rule);
         $drift = (new FirewallRuleProbe)->diff($rule, $snapshot);
 
         expect($drift)->toBe([]);
@@ -247,6 +247,21 @@ describe('firewall registry probe foundation', function (): void {
         'unsupported platform' => [fn (): Node => Node::factory()->appDev()->create(['status' => 'active', 'platform' => 'macos'])],
     ]);
 
+    it('treats every firewall-eligible role as a valid target node', function (string $role): void {
+        $node = Node::factory()->create(['name' => "{$role}-fw-node", 'status' => 'active', 'platform' => 'ubuntu']);
+        NodeRoleAssignment::factory()->create([
+            'node_id' => $node->id,
+            'role' => $role,
+            'status' => 'active',
+            'settings' => in_array($role, ['app-dev', 'agent'], true) ? ['tld' => $role] : [],
+        ]);
+        $rule = FirewallRule::factory()->create(['node_id' => $node->id, 'name' => "{$role}-rule"]);
+
+        $drift = (new FirewallRuleProbe)->diff($rule, new ProbeSnapshot([]));
+
+        expect(firewallProbeIssue($drift, 'firewall_rule.node_invalid'))->toBeNull();
+    })->with(['gateway', 'router', 'app-dev', 'app-prod', 'database', 'agent', 'ingress']);
+
     it('detects baseline policy boundary conflicts', function (): void {
         $node = createFirewallRuleProbeAppHostNode();
         $rule = FirewallRule::factory()->create([
@@ -276,8 +291,8 @@ Status: active
      --                         ------      ----
 [ 1] 5173/tcp                   ALLOW IN    10.6.0.0/24
 UFW);
-        $snapshot = (new FirewallRuleProbe($shell))->introspectNode($node);
-        $results = (new FirewallRuleProbe($shell))->adopt($node, $snapshot);
+        $snapshot = new FirewallRuleProbe($shell)->introspectNode($node);
+        $results = new FirewallRuleProbe($shell)->adopt($node, $snapshot);
 
         expect($results)->toHaveCount(1)
             ->and($results[0]->action)->toBe(AdoptAction::Created)
@@ -303,8 +318,8 @@ Status: active
      --                         ------      ----
 [ 1] 22/tcp                     ALLOW IN    Anywhere
 UFW);
-        $snapshot = (new FirewallRuleProbe($shell))->introspectNode($node);
-        $results = (new FirewallRuleProbe($shell))->adopt($node, $snapshot);
+        $snapshot = new FirewallRuleProbe($shell)->introspectNode($node);
+        $results = new FirewallRuleProbe($shell)->adopt($node, $snapshot);
 
         expect($results)->toBeEmpty()
             ->and(FirewallRule::query()->where('node_id', $node->id)->count())->toBe(0);
@@ -325,8 +340,8 @@ Status: active
      --                         ------      ----
 [ 1] 5173/tcp                   ALLOW IN    10.6.0.0/24
 UFW);
-        $snapshot = (new FirewallRuleProbe($shell))->introspectNode($node);
-        $results = (new FirewallRuleProbe($shell))->adopt($node, $snapshot);
+        $snapshot = new FirewallRuleProbe($shell)->introspectNode($node);
+        $results = new FirewallRuleProbe($shell)->adopt($node, $snapshot);
 
         expect($results)->toBeEmpty()
             ->and(FirewallRule::query()->where('node_id', $node->id)->count())->toBe(1);
@@ -347,8 +362,8 @@ Status: active
      --                         ------      ----
 [ 1] 5173/tcp                   ALLOW IN    10.6.0.0/24
 UFW);
-        $snapshot = (new FirewallRuleProbe($shell))->introspectNode($node);
-        $results = (new FirewallRuleProbe($shell))->adopt($node, $snapshot);
+        $snapshot = new FirewallRuleProbe($shell)->introspectNode($node);
+        $results = new FirewallRuleProbe($shell)->adopt($node, $snapshot);
 
         expect($results)->toHaveCount(1)
             ->and($results[0]->action)->toBe(AdoptAction::Conflict)
@@ -364,8 +379,8 @@ Status: active
      --                         ------      ----
 [ 1] 5173/tcp                   ALLOW IN    10.6.0.0/24             # orbit:local-vite
 UFW);
-        $snapshot = (new FirewallRuleProbe($shell))->introspectNode($node);
-        $results = (new FirewallRuleProbe($shell))->adopt($node, $snapshot);
+        $snapshot = new FirewallRuleProbe($shell)->introspectNode($node);
+        $results = new FirewallRuleProbe($shell)->adopt($node, $snapshot);
 
         expect($results[0]->action)->toBe(AdoptAction::Created);
 

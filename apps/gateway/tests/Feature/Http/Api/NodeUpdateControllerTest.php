@@ -417,6 +417,20 @@ describe('NodeUpdateController', function (): void {
         expect(DB::table('nodes')->where('name', 'app-1')->value('tld'))->toBe('test');
     });
 
+    it('updates the tld for an agent node', function (): void {
+        $callerId = createUpdateCallerNode();
+        $gatewayId = createUpdateGatewayNode();
+        grantUpdateGatewayAccess($callerId, $gatewayId);
+        createApiUpdateNode(['tld' => null], 'agent');
+
+        $response = putUpdateNodeJson('/api/nodes/app-1', ['tld' => 'demo'], ['REMOTE_ADDR' => UPDATE_CALLER_WG_IP]);
+
+        $response->assertOk()
+            ->assertJsonPath('success.data.changed', ['tld']);
+
+        expect(DB::table('nodes')->where('name', 'app-1')->value('tld'))->toBe('demo');
+    });
+
     it('rejects an invalid tld value', function (): void {
         $callerId = createUpdateCallerNode();
         $gatewayId = createUpdateGatewayNode();

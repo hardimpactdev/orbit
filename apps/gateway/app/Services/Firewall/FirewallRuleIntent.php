@@ -6,7 +6,6 @@ namespace App\Services\Firewall;
 
 use App\Data\Doctor\DriftEntry;
 use App\Enums\DriftKind;
-use App\Enums\Nodes\NodeRoleName;
 use App\Http\Gateway\GatewayApiException;
 use App\Models\FirewallRule;
 use App\Models\Node;
@@ -260,15 +259,7 @@ class FirewallRuleIntent
      */
     private function eligibleTargetRoles(): array
     {
-        return [
-            NodeRoleName::Gateway->value,
-            NodeRoleName::Router->value,
-            NodeRoleName::AppDevelopment->value,
-            NodeRoleName::AppProduction->value,
-            NodeRoleName::Database->value,
-            NodeRoleName::Agent->value,
-            NodeRoleName::Ingress->value,
-        ];
+        return app(NodeRoleAssignments::class)->firewallEligibleRoles();
     }
 
     /**
