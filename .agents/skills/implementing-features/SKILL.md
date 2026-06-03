@@ -156,23 +156,20 @@ pool is fully booked by another worktree, not a real failure.
 8. Run focused in-memory and prepared-topology feature verification.
 9. Run artifact-backed feature verification when production artifact behavior
    matters and that lane exists for the provider.
-10. Run provider provision gates only as final/nightly substrate verification
-   when installer, host mutation, image, binary, or topology-preparation
-   behavior changed.
-11. If PHP changed, run:
+10. If PHP changed, run:
 
    ```bash
    vendor/bin/pint --dirty --format agent
    ```
 
-12. Before reporting completion, run the project quality gate:
+11. Before reporting completion, run the project quality gate:
 
    ```bash
    composer quality-check
    ```
 
-13. Commit the verified worktree changes on the worktree branch.
-14. Merge the branch back into `main` from the primary `~/orbit` checkout,
+12. Commit the verified worktree changes on the worktree branch.
+13. Merge the branch back into `main` from the primary `~/orbit` checkout,
     remove the completed worktree/branch, and leave `~/orbit` on updated
     `main`. Preserve unrelated dirty files in `~/orbit`; if they overlap with
     the merge, stop for direction instead of discarding them.
@@ -212,12 +209,6 @@ Normal feature work follows a staged E2E model:
   E2E signal.
 - **Artifact-backed feature E2E** when production artifacts matter and an
   artifact lane exists. This consumes the built CLI binary and gateway image.
-- **Provider provision gates** only as final/nightly substrate verification for
-  installer, host mutation, image, binary, `node:new`, or topology-preparation
-  behavior. Agents run `composer test:e2e:provision:docker` or
-  `composer test:e2e:provision:incus`; never run the aggregate
-  `composer test:e2e:provision`. There is no standing live-node lane — see
-  `apps/docs/content/testing/README.md` for the full lane map.
 
 Workflow per change:
 
@@ -229,8 +220,7 @@ Workflow per change:
    reporting completion.
 
 A feature is not done until the relevant in-memory and prepared-topology feature
-signals pass. Provider provision gates are required only when the change touches
-the provider substrate or production artifact preparation.
+signals pass.
 
 ## Implementation Rules
 

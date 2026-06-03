@@ -110,13 +110,100 @@ final readonly class RemoteHostExecutor implements RemoteExecutor
 
         return $this->ssh->enforceForNode(
             node: $node,
-            remoteCommand: 'bash -lc '.escapeshellarg($script),
+            remoteCommand: 'bash -lc '.escapeshellarg($this->scriptWithE2eDockerEnvironment($node, $script)),
             options: [
                 'log_level' => 'ERROR',
                 'server_alive_interval' => 30,
                 'server_alive_count_max' => 10,
             ],
         );
+    }
+
+    private function scriptWithE2eDockerEnvironment(Node $node, string $script): string
+    {
+        $environment = $this->e2eDockerEnvironment($node);
+
+        if ($environment === []) {
+            return $script;
+        }
+
+        $exports = array_map(
+            fn (string $key, string $value): string => escapeshellarg("{$key}={$value}"),
+            array_keys($environment),
+            array_values($environment),
+        );
+
+        return implode(' ', ['env', ...$exports, 'bash', '-lc', escapeshellarg($script)]);
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    private function e2eDockerEnvironment(Node $node): array
+    {
+        $network = $this->e2eEnvironmentValue('ORBIT_E2E_DOCKER_NETWORK');
+
+        if ($network === null) {
+            return [];
+        }
+
+        return [
+            'ORBIT_E2E_DOCKER_NETWORK' => $network,
+            'ORBIT_NODE_CONTAINER' => $this->e2eNodeContainer($node, $network),
+        ];
+    }
+
+    private function e2eNodeContainer(Node $node, string $network): string
+    {
+        $scope = $this->nodeContainerScope($node);
+
+        if (str_starts_with($scope, "{$network}-")) {
+            return $scope;
+        }
+
+        return $this->dockerName($network, $scope);
+    }
+
+    private function nodeContainerScope(Node $node): string
+    {
+        $host = is_string($node->host) ? trim($node->host) : '';
+
+        if ($host !== '' && filter_var($host, FILTER_VALIDATE_IP) === false) {
+            return $this->sanitizeDockerName($host);
+        }
+
+        return $this->sanitizeDockerName($node->name);
+    }
+
+    private function dockerName(string ...$parts): string
+    {
+        return implode('-', array_map($this->sanitizeDockerName(...), $parts));
+    }
+
+    private function sanitizeDockerName(string $value): string
+    {
+        $sanitized = preg_replace('/[^a-zA-Z0-9_.-]+/', '-', trim($value)) ?? '';
+
+        return trim($sanitized, '-');
+    }
+
+    private function e2eEnvironmentValue(string $key): ?string
+    {
+        $processValue = getenv($key);
+
+        if (is_string($processValue) && trim($processValue) !== '') {
+            return trim($processValue);
+        }
+
+        $serverValue = $_SERVER[$key] ?? null;
+
+        if (is_string($serverValue) && trim($serverValue) !== '') {
+            return trim($serverValue);
+        }
+
+        $envValue = $_ENV[$key] ?? null;
+
+        return is_string($envValue) && trim($envValue) !== '' ? trim($envValue) : null;
     }
 
     private function runningInsideOrbitGateway(): bool

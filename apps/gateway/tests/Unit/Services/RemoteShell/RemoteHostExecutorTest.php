@@ -67,6 +67,43 @@ it('throws host shell failures with the current RemoteShellFailed semantics', fu
     }
 });
 
+it('carries docker e2e node scope into remote ssh sessions', function (): void {
+    $previousNetwork = getenv('ORBIT_E2E_DOCKER_NETWORK');
+
+    putenv('ORBIT_E2E_DOCKER_NETWORK=orbit-e2e-run123');
+    Process::preventStrayProcesses();
+    Process::fake([
+        '*' => Process::result(output: "docker-context-ok\n"),
+    ]);
+
+    try {
+        app(RemoteHostExecutor::class)->run(
+            remoteHostExecutorNode([
+                'name' => 'app-dev-1',
+                'host' => 'dev',
+                'wireguard_address' => '10.6.0.4',
+            ]),
+            'docker container inspect orbit-caddy',
+        );
+
+        Process::assertRan(function (PendingProcess $process): bool {
+            $command = (string) $process->command;
+
+            return str_contains($command, 'ssh -o StrictHostKeyChecking=yes')
+                && str_contains($command, 'bash -lc')
+                && str_contains($command, escapeshellarg('ORBIT_E2E_DOCKER_NETWORK=orbit-e2e-run123'))
+                && str_contains($command, escapeshellarg('ORBIT_NODE_CONTAINER=orbit-e2e-run123-dev'))
+                && str_contains($command, 'docker container inspect orbit-caddy');
+        });
+    } finally {
+        if ($previousNetwork === false) {
+            putenv('ORBIT_E2E_DOCKER_NETWORK');
+        } else {
+            putenv("ORBIT_E2E_DOCKER_NETWORK={$previousNetwork}");
+        }
+    }
+});
+
 it('starts host shell processes with the same command composition surface', function (): void {
     Process::preventStrayProcesses();
     Process::fake();
