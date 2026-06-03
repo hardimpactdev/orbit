@@ -104,9 +104,10 @@ it('starts Docker client topology nodes without a runtime sibling container', fu
         return Process::result(output: str_starts_with($process->command, 'docker run -d ') ? "container-id\n" : '');
     });
 
+    $timer = new E2EPhaseTimer;
     $provider = new DockerTopologyProvider(E2EConfig::fromEnvironment());
 
-    $lease = $provider->acquire(E2ETopologyKind::Operator, 'run123', new E2EPhaseTimer, new E2ETopologyAcquisitionOptions);
+    $lease = $provider->acquire(E2ETopologyKind::Operator, 'run123', $timer, new E2ETopologyAcquisitionOptions);
 
     $setup = implode("\n", $commands);
 
@@ -114,14 +115,16 @@ it('starts Docker client topology nodes without a runtime sibling container', fu
         ->toContain('--group-add "$(stat -c %g /var/run/docker.sock 2>/dev/null || stat -f %g /var/run/docker.sock)"')
         ->toContain("--volume '/var/run/docker.sock:/var/run/docker.sock'")
         ->toContain("--mount 'type=volume,src=orbit-e2e-run123-operator-home-orbit,dst=/home/orbit'")
-        ->toContain("--mount 'type=bind,src=".repo_path().",dst=/home/orbit/orbit'")
         ->toContain("--env 'ORBIT_E2E_DOCKER_NETWORK=orbit-e2e-run123'")
         ->toContain("--env 'ORBIT_CONFIG_ROOT=/home/orbit/.config/orbit'")
         ->toContain('ip addr add')
         ->toContain('10.6.0.3/24')
         ->not->toContain('ORBIT_GATEWAY_CONTAINER=orbit-e2e-run123-operator-orbit-gateway')
         ->not->toContain("docker run -d --restart unless-stopped --name 'orbit-e2e-run123-operator-orbit-gateway'")
+        ->not->toContain("--mount 'type=bind,src=".repo_path().",dst=/home/orbit/orbit'")
         ->not->toContain('/home/operator');
+
+    expect(array_column($timer->events(), 'name'))->not->toContain('docker.source-sync');
 
     $lease->cleanup();
 });
@@ -502,8 +505,9 @@ it('allows slow remote docker metadata probes during host selection', function (
     });
 });
 
-it('uses the configured remote docker source path for source bind mounts', function (): void {
+it('uses the configured remote docker source path for source-mounted bind mounts', function (): void {
     $commands = [];
+    $timer = new E2EPhaseTimer;
 
     Process::fake(function ($process) use (&$commands) {
         $commands[] = $process->command;
@@ -530,16 +534,23 @@ it('uses the configured remote docker source path for source bind mounts', funct
         'ORBIT_E2E_DOCKER_TEST_RUNNERS' => 'beast:1:64',
         'ORBIT_E2E_DOCKER_SOURCE_PATH' => '/srv/global-orbit-source',
         'ORBIT_E2E_DOCKER_SOURCE_PATH_BEAST' => '/srv/orbit-source',
-    ], function (): void {
+    ], function () use ($timer): void {
         $provider = new DockerTopologyProvider(E2EConfig::fromEnvironment());
 
-        $lease = $provider->acquire(E2ETopologyKind::Operator, 'run123', new E2EPhaseTimer, new E2ETopologyAcquisitionOptions);
+        $lease = $provider->acquire(
+            E2ETopologyKind::Operator,
+            'run123',
+            $timer,
+            new E2ETopologyAcquisitionOptions(sourceMountedCheckout: true),
+        );
 
         $lease->cleanup();
     });
 
     expect(implode("\n", $commands))
         ->toContain("--mount 'type=bind,src=/srv/orbit-source,dst=/home/orbit/orbit'");
+
+    expect(array_column($timer->events(), 'name'))->toContain('docker.source-sync');
 });
 
 it('counts running docker containers with the configured e2e instance prefix', function (): void {

@@ -142,6 +142,12 @@ SQLite files, and gateway service state. After rsync, the runner hydrates
 `apps/gateway/vendor` and `apps/cli/vendor` on the remote path from the synced
 lockfiles. Vendor is refreshed only when the lock marker changes.
 
+Normal prepared Docker feature lanes do not source-sync or bind-mount the
+initiating worktree during topology acquisition. They start from prepared Docker
+images and install the current checkout through the checkout archive path for
+the roles that need branch code. Reserve source-mounted Docker acquisitions for
+retained development and diagnosis loops.
+
 For hands-on diagnosis, acquire a retained Docker topology from the current
 worktree:
 
