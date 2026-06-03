@@ -13,6 +13,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
+use Illuminate\Database\Eloquent\Relations\MorphMany;
 use Illuminate\Support\Str;
 
 /**
@@ -99,11 +100,11 @@ class App extends Model
     }
 
     /**
-     * @return HasMany<Process, $this>
+     * @return MorphMany<Process, $this>
      */
-    public function processes(): HasMany
+    public function processes(): MorphMany
     {
-        return $this->hasMany(Process::class)->orderBy('sort_order');
+        return $this->morphMany(Process::class, 'owner')->orderBy('sort_order');
     }
 
     /**

@@ -53,7 +53,7 @@ describe('ProcessUpdateController', function (): void {
         $appNode = createTestAppHostNode();
         grantProcessUpdateAccess($caller, $appNode);
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
-        Process::factory()->create(['app_id' => $app->id, 'name' => 'vite', 'command' => 'npm run dev']);
+        Process::factory()->forOwner($app)->create(['name' => 'vite', 'command' => 'npm run dev']);
         app()->instance(RemoteShell::class, new ProcessUpdateRemoteShell([
             new RemoteShellResult(exitCode: 0, stdout: 'supervisor OK', stderr: '', durationMs: 1),
             new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
@@ -75,7 +75,7 @@ describe('ProcessUpdateController', function (): void {
         createProcessUpdateCallerNode();
         $appNode = createTestAppHostNode();
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
-        Process::factory()->create(['app_id' => $app->id, 'name' => 'vite', 'command' => 'npm run dev']);
+        Process::factory()->forOwner($app)->create(['name' => 'vite', 'command' => 'npm run dev']);
         app()->instance(RemoteShell::class, new ProcessUpdateRemoteShell([]));
 
         $response = $this->call('PATCH', '/api/processes/vite', [
@@ -94,7 +94,7 @@ describe('ProcessUpdateController', function (): void {
     it('denies app callers without a process edit grant before changing intent', function (): void {
         $caller = createProcessUpdateCallerNode(role: 'app-dev');
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $caller->id]);
-        Process::factory()->create(['app_id' => $app->id, 'name' => 'vite', 'command' => 'npm run dev']);
+        Process::factory()->forOwner($app)->create(['name' => 'vite', 'command' => 'npm run dev']);
         app()->instance(RemoteShell::class, new ProcessUpdateRemoteShell([]));
 
         $response = $this->call('PATCH', '/api/processes/vite', [
@@ -113,7 +113,7 @@ describe('ProcessUpdateController', function (): void {
         $appNode = createTestAppHostNode();
         grantProcessUpdateAccess($caller, $appNode);
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
-        Process::factory()->create(['app_id' => $app->id, 'name' => 'queue', 'runtime' => 'docker']);
+        Process::factory()->forOwner($app)->create(['name' => 'queue', 'runtime' => 'docker']);
         app()->instance(RemoteShell::class, new ProcessUpdateRemoteShell([
             new RemoteShellResult(exitCode: 0, stdout: 'supervisor OK', stderr: '', durationMs: 1),
             new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
@@ -136,7 +136,7 @@ describe('ProcessUpdateController', function (): void {
         $appNode = createTestAppHostNode();
         grantProcessUpdateAccess($caller, $appNode);
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
-        Process::factory()->create(['app_id' => $app->id, 'name' => 'queue', 'runtime' => 'docker']);
+        Process::factory()->forOwner($app)->create(['name' => 'queue', 'runtime' => 'docker']);
         app()->instance(RemoteShell::class, new ProcessUpdateRemoteShell([]));
 
         $response = $this->call('PATCH', '/api/processes/queue', [
@@ -157,7 +157,7 @@ describe('ProcessUpdateController', function (): void {
         createProcessUpdateCallerNode(role: 'gateway');
         $appNode = createTestAppHostNode();
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
-        Process::factory()->create(['app_id' => $app->id, 'name' => 'vite', 'command' => 'npm run dev']);
+        Process::factory()->forOwner($app)->create(['name' => 'vite', 'command' => 'npm run dev']);
         app()->instance(RemoteShell::class, new ProcessUpdateRemoteShell([]));
 
         $response = $this->call('PATCH', "/api/processes/{$processName}", $payload, [], [], ['REMOTE_ADDR' => PROCESS_UPDATE_CALLER_WG_IP]);

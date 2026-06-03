@@ -71,6 +71,20 @@ final readonly class RemoveApp
                 ->doesntExist();
 
         DB::transaction(function () use ($app, $proxyRouteIds): void {
+            $workspaceIds = Workspace::query()
+                ->where('app_id', $app->id)
+                ->pluck('id')
+                ->all();
+
+            $app->processes()->delete();
+
+            if ($workspaceIds !== []) {
+                Process::query()
+                    ->where('owner_type', Workspace::class)
+                    ->whereIn('owner_id', $workspaceIds)
+                    ->delete();
+            }
+
             $app->delete();
 
             if ($proxyRouteIds !== []) {

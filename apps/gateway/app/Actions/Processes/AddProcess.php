@@ -32,7 +32,7 @@ final readonly class AddProcess
 
         $resolvedRuntime = $runtime ?? ProcessRuntime::defaultForApp($app);
 
-        if (Process::query()->where('app_id', $app->id)->where('name', $name)->exists()) {
+        if ($app->processes()->where('name', $name)->exists()) {
             throw new GatewayApiException("Process '{$name}' already exists for app '{$app->name}'.", 'process.name_collision', [
                 'app' => $app->name,
                 'name' => $name,
@@ -40,13 +40,12 @@ final readonly class AddProcess
         }
 
         $process = DB::transaction(function () use ($app, $name, $command, $restartPolicy, $crashNotification, $resolvedRuntime): Process {
-            $maxOrder = Process::query()
-                ->where('app_id', $app->id)
+            $maxOrder = $app->processes()
                 ->lockForUpdate()
                 ->max('sort_order') ?? 0;
 
-            return Process::query()->create([
-                'app_id' => $app->id,
+            return $app->processes()->create([
+                'node_id' => $app->node_id,
                 'name' => $name,
                 'command' => $command,
                 'restart_policy' => $restartPolicy,

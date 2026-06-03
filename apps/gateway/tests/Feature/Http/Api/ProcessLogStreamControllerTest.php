@@ -21,7 +21,7 @@ describe('ProcessLogController follow stream', function (): void {
         ]);
         $appNode = createTestAppHostNode(['name' => 'app-1']);
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
-        Process::factory()->create(['app_id' => $app->id, 'name' => 'vite']);
+        Process::factory()->forOwner($app)->create(['name' => 'vite']);
         $stream = new ProcessLogApiRecordingRemoteStream;
         app()->instance(RemoteShellStream::class, $stream);
 

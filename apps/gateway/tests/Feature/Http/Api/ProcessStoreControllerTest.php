@@ -177,7 +177,7 @@ describe('ProcessStoreController', function (): void {
         createProcessStoreCallerNode(role: 'gateway');
         $appNode = createTestAppHostNode();
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
-        Process::factory()->create(['app_id' => $app->id, 'name' => 'vite']);
+        Process::factory()->forOwner($app)->create(['name' => 'vite']);
         app()->instance(RemoteShell::class, new ProcessStoreRemoteShell([]));
 
         $response = $this->call('POST', '/api/processes', [

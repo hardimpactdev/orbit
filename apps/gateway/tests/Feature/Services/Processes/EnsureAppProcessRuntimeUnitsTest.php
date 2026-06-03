@@ -56,8 +56,7 @@ it('renders and enacts supervisor programs for app process definitions', functio
     ]);
     $app->setRelation('node', $node);
 
-    OrbitProcess::query()->create([
-        'app_id' => $app->id,
+    OrbitProcess::factory()->forOwner($app)->create([
         'name' => 'vite',
         'command' => 'npm run dev -- --host=0.0.0.0',
         'restart_policy' => 'on_failure',
@@ -107,8 +106,7 @@ it('reports process family warnings when supervisor is unavailable after intent 
     ]);
     $app->setRelation('node', $node);
 
-    OrbitProcess::query()->create([
-        'app_id' => $app->id,
+    OrbitProcess::factory()->forOwner($app)->create([
         'name' => 'worker',
         'command' => 'php artisan queue:work',
         'restart_policy' => 'always',
@@ -146,8 +144,7 @@ it('reports process.tls_certificate_missing when the site certificate installer 
     ]);
     $app->setRelation('node', $node);
 
-    OrbitProcess::query()->create([
-        'app_id' => $app->id,
+    OrbitProcess::factory()->forOwner($app)->create([
         'name' => 'watch',
         'command' => './watch.sh',
         'restart_policy' => 'always',
@@ -216,8 +213,7 @@ describe('runtime dispatcher', function (): void {
         ]);
         $app->setRelation('node', $node);
 
-        OrbitProcess::query()->create([
-            'app_id' => $app->id,
+        OrbitProcess::factory()->forOwner($app)->create([
             'name' => 'queue',
             'command' => 'php artisan queue:work',
             'restart_policy' => 'always',
@@ -264,8 +260,7 @@ describe('runtime dispatcher', function (): void {
         ]);
         $app->setRelation('node', $node);
 
-        OrbitProcess::query()->create([
-            'app_id' => $app->id,
+        OrbitProcess::factory()->forOwner($app)->create([
             'name' => 'watch',
             'command' => './watch.sh',
             'restart_policy' => 'always',
@@ -306,8 +301,7 @@ describe('runtime dispatcher', function (): void {
         // Process is currently marked supervisor (the flipped-to runtime).
         // Convergence must remove the prior Docker container by the shared
         // unit identity before installing the Supervisor program.
-        OrbitProcess::query()->create([
-            'app_id' => $app->id,
+        OrbitProcess::factory()->forOwner($app)->create([
             'name' => 'queue',
             'command' => 'php artisan queue:work',
             'restart_policy' => 'always',
@@ -345,8 +339,7 @@ describe('runtime dispatcher', function (): void {
         ]);
         $app->setRelation('node', $node);
 
-        OrbitProcess::query()->create([
-            'app_id' => $app->id,
+        OrbitProcess::factory()->forOwner($app)->create([
             'name' => 'queue',
             'command' => 'php artisan queue:work',
             'restart_policy' => 'always',

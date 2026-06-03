@@ -95,7 +95,7 @@ describe('ServingNodeResolver', function (): void {
     it('resolves app-owning nodes from process identity', function (): void {
         $node = Node::factory()->create(['name' => 'process-node']);
         $app = OrbitApp::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
-        OrbitProcess::factory()->create(['app_id' => $app->id, 'name' => 'queue']);
+        OrbitProcess::factory()->forOwner($app)->create(['name' => 'queue']);
 
         $resolved = (new ServingNodeResolver)->resolve(
             servingNodeRequest(['name' => 'queue']),

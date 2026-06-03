@@ -47,7 +47,7 @@ describe('ProcessLogController', function (): void {
         $appNode = createTestAppHostNode();
         grantProcessLogAccess($caller, $appNode);
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
-        Process::factory()->create(['app_id' => $app->id, 'name' => 'vite']);
+        Process::factory()->forOwner($app)->create(['name' => 'vite']);
         app()->instance(RemoteShell::class, new ProcessLogApiRemoteShell([
             new RemoteShellResult(exitCode: 0, stdout: "Vite ready\n", stderr: '', durationMs: 1),
         ]));
@@ -67,7 +67,7 @@ describe('ProcessLogController', function (): void {
         createProcessLogCallerNode();
         $appNode = createTestAppHostNode();
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
-        Process::factory()->create(['app_id' => $app->id, 'name' => 'vite']);
+        Process::factory()->forOwner($app)->create(['name' => 'vite']);
         $remoteShell = new ProcessLogApiRemoteShell([]);
         app()->instance(RemoteShell::class, $remoteShell);
 
@@ -87,7 +87,7 @@ describe('ProcessLogController', function (): void {
         createProcessLogCallerNode(role: 'gateway');
         $appNode = createTestAppHostNode();
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
-        Process::factory()->create(['app_id' => $app->id, 'name' => 'vite']);
+        Process::factory()->forOwner($app)->create(['name' => 'vite']);
         app()->instance(RemoteShell::class, new ProcessLogApiRemoteShell([
             new RemoteShellResult(exitCode: 1, stdout: '', stderr: 'missing', durationMs: 1),
         ]));

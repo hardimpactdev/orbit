@@ -87,8 +87,7 @@ final readonly class StartProcesses
      */
     private function processes(App $app, ?string $name): Collection
     {
-        return Process::query()
-            ->where('app_id', $app->id)
+        return $app->processes()
             ->when($name !== null, fn ($query) => $query->where('name', $name))
             ->orderBy('sort_order')
             ->get();

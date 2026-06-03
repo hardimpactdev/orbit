@@ -69,7 +69,7 @@ final class ServingNodeResolver
             );
 
             if ($process instanceof OrbitProcess) {
-                return $process->app->node;
+                return $this->appForProcess($process)?->node;
             }
         }
 
@@ -205,7 +205,7 @@ final class ServingNodeResolver
     private function processFromValue(mixed $value, ?OrbitApp $app = null): ?OrbitProcess
     {
         if ($value instanceof OrbitProcess) {
-            $value->loadMissing('app.node');
+            $value->loadMissing('owner');
 
             return $value;
         }
@@ -215,14 +215,33 @@ final class ServingNodeResolver
         }
 
         return OrbitProcess::query()
-            ->with('app.node')
-            ->when($app instanceof OrbitApp, fn ($query) => $query->where('app_id', $app->id))
+            ->with('owner')
+            ->when($app instanceof OrbitApp, fn ($query) => $query->ownedBy($app))
             ->when(
                 is_int($value) || ctype_digit((string) $value),
                 fn ($query) => $query->whereKey($value),
                 fn ($query) => $query->where('name', $value),
             )
             ->first();
+    }
+
+    private function appForProcess(OrbitProcess $process): ?OrbitApp
+    {
+        $process->loadMissing('owner');
+
+        if ($process->owner instanceof OrbitApp) {
+            $process->owner->loadMissing('node');
+
+            return $process->owner;
+        }
+
+        if ($process->owner instanceof Workspace) {
+            $process->owner->loadMissing('app.node');
+
+            return $process->owner->app;
+        }
+
+        return null;
     }
 
     private function workspaceFromValue(mixed $value, ?OrbitApp $app = null): ?Workspace

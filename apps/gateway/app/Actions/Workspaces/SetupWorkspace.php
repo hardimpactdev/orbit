@@ -12,7 +12,6 @@ use App\Enums\WorkspaceLifecycleStatus;
 use App\Exceptions\WorkspaceUnsupportedForProduction;
 use App\Models\App;
 use App\Models\Node;
-use App\Models\Process;
 use App\Models\Workspace;
 use App\Models\WorkspaceRun;
 use App\Models\WorkspaceStep;
@@ -290,8 +289,7 @@ final readonly class SetupWorkspace
      */
     public function startProcesses(App $app, Workspace $workspace, Node $node): array
     {
-        $appProcesses = Process::query()
-            ->where('app_id', $app->id)
+        $appProcesses = $app->processes()
             ->orderBy('sort_order')
             ->get();
 

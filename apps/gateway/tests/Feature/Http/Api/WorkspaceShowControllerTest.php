@@ -72,8 +72,7 @@ describe('WorkspaceShowController', function (): void {
             'path' => '/home/orbit/apps/docs/.worktrees/feature-docs',
         ]);
 
-        Process::query()->create([
-            'app_id' => $app->id,
+        Process::factory()->forOwner($app)->create([
             'name' => 'vite',
             'command' => 'npm run dev',
             'restart_policy' => ProcessRestartPolicy::Always,

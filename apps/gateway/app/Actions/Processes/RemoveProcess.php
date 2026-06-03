@@ -27,8 +27,7 @@ final readonly class RemoveProcess
     {
         $app->loadMissing(['node', 'workspaces']);
 
-        $process = Process::query()
-            ->where('app_id', $app->id)
+        $process = $app->processes()
             ->where('name', $name)
             ->first();
 

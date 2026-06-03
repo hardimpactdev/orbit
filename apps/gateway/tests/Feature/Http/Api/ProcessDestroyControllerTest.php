@@ -47,7 +47,7 @@ describe('ProcessDestroyController', function (): void {
         $appNode = createTestAppHostNode();
         grantProcessDestroyAccess($caller, $appNode);
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
-        Process::factory()->create(['app_id' => $app->id, 'name' => 'vite']);
+        Process::factory()->forOwner($app)->create(['name' => 'vite']);
         app()->instance(RemoteShell::class, new ProcessDestroyRemoteShell([
             new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
         ]));
@@ -75,7 +75,7 @@ describe('ProcessDestroyController', function (): void {
             grantProcessDestroyAccess($caller, $appNode);
         }
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
-        Process::factory()->create(['app_id' => $app->id, 'name' => 'vite']);
+        Process::factory()->forOwner($app)->create(['name' => 'vite']);
         app()->instance(RemoteShell::class, new ProcessDestroyRemoteShell([]));
 
         $response = $this->call('DELETE', '/api/processes/vite', $payload, [], [], ['REMOTE_ADDR' => PROCESS_DESTROY_CALLER_WG_IP]);
@@ -92,7 +92,7 @@ describe('ProcessDestroyController', function (): void {
     it('denies app callers without a process remove grant before deleting intent', function (): void {
         $caller = createProcessDestroyCallerNode(role: 'app-dev');
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $caller->id]);
-        Process::factory()->create(['app_id' => $app->id, 'name' => 'vite']);
+        Process::factory()->forOwner($app)->create(['name' => 'vite']);
         app()->instance(RemoteShell::class, new ProcessDestroyRemoteShell([]));
 
         $response = $this->call('DELETE', '/api/processes/vite', [

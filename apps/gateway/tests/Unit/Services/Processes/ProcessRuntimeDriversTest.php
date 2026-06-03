@@ -25,8 +25,7 @@ it('runs supervisor process lifecycle through the supervisor runtime driver', fu
 
     $node = Node::factory()->create(['name' => 'app-dev-1']);
     $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id, 'path' => '/srv/docs']);
-    $process = Process::factory()->create([
-        'app_id' => $app->id,
+    $process = Process::factory()->forOwner($app)->create([
         'name' => 'queue',
         'command' => 'php artisan queue:work',
         'runtime' => ProcessRuntime::Supervisor,
@@ -61,8 +60,7 @@ it('runs docker process lifecycle through the docker runtime driver', function (
 
     $node = Node::factory()->create(['name' => 'app-dev-1']);
     $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id, 'path' => '/srv/docs']);
-    $process = Process::factory()->create([
-        'app_id' => $app->id,
+    $process = Process::factory()->forOwner($app)->create([
         'name' => 'queue',
         'command' => 'php artisan queue:work',
         'runtime' => ProcessRuntime::Docker,

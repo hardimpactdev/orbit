@@ -229,8 +229,7 @@ describe('DoctorRunController', function (): void {
             'name' => 'docs',
             'node_id' => $appNode->id,
             'path' => '/home/orbit/apps/docs']);
-        Process::factory()->create([
-            'app_id' => $app->id,
+        Process::factory()->forOwner($app)->create([
             'name' => 'queue',
             // Pin to supervisor runtime so the probe exercises the
             // supervisorctl availability layer. Docker-runtime processes

@@ -11,6 +11,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\MorphMany;
 use Illuminate\Support\Carbon;
 
 /**
@@ -27,6 +28,7 @@ use Illuminate\Support\Carbon;
  * @property-read App|null $app
  * @property-read Collection<int, DatabaseConnection> $databaseConnections
  * @property-read Collection<int, DatabaseConnectionTarget> $databaseConnectionTargets
+ * @property-read Collection<int, Process> $processes
  * @property-read Collection<int, WorkspaceRun> $runs
  */
 class Workspace extends Model
@@ -74,6 +76,14 @@ class Workspace extends Model
     public function proxyRoutes(): HasMany
     {
         return $this->hasMany(ProxyRoute::class);
+    }
+
+    /**
+     * @return MorphMany<Process, $this>
+     */
+    public function processes(): MorphMany
+    {
+        return $this->morphMany(Process::class, 'owner')->orderBy('sort_order');
     }
 
     /**

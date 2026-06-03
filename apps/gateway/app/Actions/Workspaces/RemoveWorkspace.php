@@ -61,6 +61,7 @@ final readonly class RemoveWorkspace
                     ->delete();
             }
 
+            $workspace->processes()->delete();
             $workspace->delete();
         });
 

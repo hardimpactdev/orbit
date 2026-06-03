@@ -361,7 +361,7 @@ final readonly class DoctorReportRunner
         }
 
         if (in_array('process', $selectedFamilies, true)) {
-            foreach (Process::query()->with(['app.node', 'app.workspaces'])->whereHas('app', fn ($query) => $query->where('node_id', $node->id))->get() as $process) {
+            foreach (Process::query()->with('owner')->where('node_id', $node->id)->get() as $process) {
                 $snapshot = $this->processesProbe->introspect($process);
 
                 foreach ($this->processesProbe->diff($process, $snapshot) as $entry) {
@@ -636,11 +636,13 @@ final readonly class DoctorReportRunner
      */
     private function processIssuePayload(DriftEntry $entry, Process $process): array
     {
-        $process->loadMissing('app.node');
+        $app = $process->ownerApp();
+        $app?->loadMissing('node');
+        $node = $app instanceof App ? $app->node : $process->node;
 
         return $this->annotateIssue([
             'family' => $entry->family,
-            'node' => $process->app->node?->name,
+            'node' => $node instanceof Node ? $node->name : null,
             'key' => $entry->key,
             'kind' => $entry->kind->value,
             'summary' => $entry->summary,

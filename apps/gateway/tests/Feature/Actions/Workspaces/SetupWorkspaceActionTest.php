@@ -299,8 +299,9 @@ it('starts configured app processes for the workspace after rendering runtime un
         'lifecycle_status' => WorkspaceLifecycleStatus::SetupPending,
     ]);
 
-    OrbitProcess::query()->create([
-        'app_id' => 1,
+    $app = App::query()->with('node')->firstOrFail();
+
+    OrbitProcess::factory()->forOwner($app)->create([
         'name' => 'vite',
         'command' => 'npm run dev -- --host=0.0.0.0',
         'restart_policy' => 'always',
@@ -308,7 +309,6 @@ it('starts configured app processes for the workspace after rendering runtime un
         'sort_order' => 1,
     ]);
 
-    $app = App::query()->with('node')->first();
     $node = $app->node;
     $shell = new SetupWorkspaceActionTestShell;
     $certificates = new SetupWorkspaceActionTestCertificateInstaller;

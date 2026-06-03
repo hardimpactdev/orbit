@@ -10,6 +10,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
+use Illuminate\Database\Eloquent\Relations\MorphMany;
 use Illuminate\Support\Carbon;
 
 /**
@@ -34,6 +35,7 @@ use Illuminate\Support\Carbon;
  * @property-read Collection<int, NodeTool> $nodeTools
  * @property-read Collection<int, NodeRoleAssignment> $roleAssignments
  * @property-read Collection<int, FirewallRule> $firewallRules
+ * @property-read Collection<int, Process> $processes
  * @property-read SchedulerState|null $schedulerState
  * @property-read Collection<int, Schedule> $schedules
  */
@@ -131,6 +133,14 @@ class Node extends Model
     public function roleAssignments(): HasMany
     {
         return $this->hasMany(NodeRoleAssignment::class)->orderBy('role');
+    }
+
+    /**
+     * @return MorphMany<Process, $this>
+     */
+    public function processes(): MorphMany
+    {
+        return $this->morphMany(Process::class, 'owner')->orderBy('sort_order');
     }
 
     public function hasActiveRole(string $role): bool

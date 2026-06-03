@@ -35,7 +35,7 @@ function makeProcessRendererApp(array $overrides = []): App
 
 function makeProcessRendererProcess(App $app, array $overrides = []): Process
 {
-    return Process::factory()->for($app)->create(array_merge([
+    return Process::factory()->forOwner($app)->create(array_merge([
         'name' => 'queue',
         'command' => 'php artisan queue:work',
         'restart_policy' => ProcessRestartPolicy::Always,

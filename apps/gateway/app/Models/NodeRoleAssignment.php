@@ -5,9 +5,11 @@ declare(strict_types=1);
 namespace App\Models;
 
 use Database\Factories\NodeRoleAssignmentFactory;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\MorphMany;
 use Illuminate\Support\Carbon;
 
 /**
@@ -19,6 +21,7 @@ use Illuminate\Support\Carbon;
  * @property string|null $last_error
  * @property Carbon|null $converged_at
  * @property-read Node|null $node
+ * @property-read Collection<int, Process> $processes
  */
 class NodeRoleAssignment extends Model
 {
@@ -53,5 +56,13 @@ class NodeRoleAssignment extends Model
     public function node(): BelongsTo
     {
         return $this->belongsTo(Node::class);
+    }
+
+    /**
+     * @return MorphMany<Process, $this>
+     */
+    public function processes(): MorphMany
+    {
+        return $this->morphMany(Process::class, 'owner')->orderBy('sort_order');
     }
 }

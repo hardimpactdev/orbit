@@ -405,7 +405,9 @@ describe('registry intent', function (): void {
         $app = processableApp();
 
         $id = DB::table('processes')->insertGetId([
-            'app_id' => $app->id,
+            'node_id' => $app->node_id,
+            'owner_type' => $app->getMorphClass(),
+            'owner_id' => $app->id,
             'name' => 'vite',
             'command' => '',
             'restart_policy' => ProcessRestartPolicy::Never->value,
@@ -429,7 +431,9 @@ describe('registry intent', function (): void {
         $app = processableApp();
 
         $id = DB::table('processes')->insertGetId([
-            'app_id' => $app->id,
+            'node_id' => $app->node_id,
+            'owner_type' => $app->getMorphClass(),
+            'owner_id' => $app->id,
             'name' => 'vite',
             'command' => 'npm run dev -- --host=0.0.0.0',
             'restart_policy' => 'sometimes',
@@ -450,7 +454,9 @@ describe('registry intent', function (): void {
         $app = processableApp();
 
         $id = DB::table('processes')->insertGetId([
-            'app_id' => $app->id,
+            'node_id' => $app->node_id,
+            'owner_type' => $app->getMorphClass(),
+            'owner_id' => $app->id,
             'name' => 'vite',
             'command' => 'npm run dev -- --host=0.0.0.0',
             'restart_policy' => ProcessRestartPolicy::Never->value,
@@ -706,7 +712,7 @@ function processableApp(array $overrides = []): App
 function processFor(App $app, array $overrides = []): Process
 {
     return Process::factory()
-        ->for($app, 'app')
+        ->forOwner($app)
         ->create([
             'name' => 'vite',
             'command' => 'npm run dev -- --host=0.0.0.0',

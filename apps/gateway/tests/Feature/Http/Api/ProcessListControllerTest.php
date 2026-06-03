@@ -47,15 +47,13 @@ describe('ProcessListController', function (): void {
         grantProcessListAccess($caller, $appNode);
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
 
-        Process::factory()->create([
-            'app_id' => $app->id,
+        Process::factory()->forOwner($app)->create([
             'name' => 'queue',
             'command' => 'php artisan queue:work',
             'restart_policy' => ProcessRestartPolicy::Always,
             'crash_notification' => ProcessCrashNotification::None,
             'sort_order' => 20]);
-        Process::factory()->create([
-            'app_id' => $app->id,
+        Process::factory()->forOwner($app)->create([
             'name' => 'vite',
             'command' => 'npm run dev',
             'restart_policy' => ProcessRestartPolicy::Never,
@@ -77,7 +75,7 @@ describe('ProcessListController', function (): void {
         $appNode = createTestAppHostNode(['name' => 'app-1']);
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
         Workspace::factory()->create(['name' => 'feature-docs', 'app_id' => $app->id]);
-        Process::factory()->create(['app_id' => $app->id, 'name' => 'vite', 'sort_order' => 1]);
+        Process::factory()->forOwner($app)->create(['name' => 'vite', 'sort_order' => 1]);
 
         $response = $this->call('GET', '/api/processes?app=docs&workspace=feature-docs', [], [], [], ['REMOTE_ADDR' => PROCESS_LIST_CALLER_WG_IP]);
 
@@ -94,7 +92,7 @@ describe('ProcessListController', function (): void {
 
         App::factory()->create(['name' => 'visible', 'node_id' => $visibleNode->id]);
         $hiddenApp = App::factory()->create(['name' => 'hidden', 'node_id' => $hiddenNode->id]);
-        Process::factory()->create(['app_id' => $hiddenApp->id, 'name' => 'queue']);
+        Process::factory()->forOwner($hiddenApp)->create(['name' => 'queue']);
 
         $response = $this->call('GET', '/api/processes?app=hidden', [], [], [], ['REMOTE_ADDR' => PROCESS_LIST_CALLER_WG_IP]);
 
@@ -107,7 +105,7 @@ describe('ProcessListController', function (): void {
         createProcessListCallerNode();
         $appNode = createTestAppHostNode();
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
-        Process::factory()->create(['app_id' => $app->id]);
+        Process::factory()->forOwner($app)->create();
 
         $response = $this->call('GET', '/api/processes?app=docs', [], [], [], ['REMOTE_ADDR' => PROCESS_LIST_CALLER_WG_IP]);
 

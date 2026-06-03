@@ -50,8 +50,7 @@ final readonly class ProcessRuntimeUnitResolver
             }
         }
 
-        $process = Process::query()
-            ->where('app_id', $app->id)
+        $process = $app->processes()
             ->where('name', $processName)
             ->first();
 

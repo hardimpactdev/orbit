@@ -39,7 +39,7 @@ final readonly class ProcessesProbe
 
     public function introspect(Process $process): ProbeSnapshot
     {
-        $process->loadMissing('app.node');
+        $this->loadProcessApp($process);
 
         if (! $process->app instanceof App || ! $process->app->node instanceof Node) {
             return new ProbeSnapshot([]);
@@ -317,7 +317,10 @@ PHP;
         $crashNotification = $process->getRawOriginal('crash_notification');
 
         if (
-            ! is_int($process->app_id)
+            ! is_int($process->node_id)
+            || ! is_string($process->owner_type)
+            || $process->owner_type === ''
+            || ! is_int($process->owner_id)
             || ! is_string($process->name)
             || $process->name === ''
             || ! is_string($process->command)
@@ -346,7 +349,7 @@ PHP;
      */
     private function checkOwnerApp(Process $process): array
     {
-        $process->loadMissing('app.node');
+        $this->loadProcessApp($process);
 
         if (! $process->app instanceof App) {
             return [
@@ -628,7 +631,7 @@ PHP;
      */
     private function checkRuntimeBackend(Process $process, ProbeSnapshot $snapshot): array
     {
-        $process->loadMissing('app.node');
+        $this->loadProcessApp($process);
 
         if (! $process->app instanceof App || ! $process->app->node instanceof Node) {
             return [];
@@ -668,7 +671,7 @@ PHP;
      */
     private function checkRuntimeContexts(Process $process): array
     {
-        $process->loadMissing('app.node', 'app.workspaces');
+        $this->loadProcessApp($process, withWorkspaces: true);
 
         if (! $process->app instanceof App) {
             return [];
@@ -709,7 +712,7 @@ PHP;
      */
     private function expectedRuntimeUnits(Process $process): array
     {
-        $process->loadMissing('app.workspaces');
+        $this->loadProcessApp($process, withWorkspaces: true);
 
         if (! $process->app instanceof App) {
             return [];
@@ -733,7 +736,7 @@ PHP;
      */
     private function expectedRuntimeUnitSpecs(Process $process): array
     {
-        $process->loadMissing('app.workspaces');
+        $this->loadProcessApp($process, withWorkspaces: true);
 
         if (! $process->app instanceof App) {
             return [];
@@ -751,7 +754,7 @@ PHP;
      */
     private function expectedDockerUnitSpecs(Process $process): array
     {
-        $process->loadMissing('app.workspaces');
+        $this->loadProcessApp($process, withWorkspaces: true);
 
         if (! $process->app instanceof App) {
             return [];
@@ -778,7 +781,7 @@ PHP;
      */
     private function expectedSupervisorUnitSpecs(Process $process): array
     {
-        $process->loadMissing('app.workspaces');
+        $this->loadProcessApp($process, withWorkspaces: true);
 
         if (! $process->app instanceof App) {
             return [];
@@ -826,6 +829,21 @@ PHP;
         }
 
         return $process->runtime ?? ProcessRuntime::Docker;
+    }
+
+    private function loadProcessApp(Process $process, bool $withWorkspaces = false): void
+    {
+        $process->loadMissing('owner');
+
+        if ($process->owner instanceof App) {
+            $process->owner->loadMissing($withWorkspaces ? ['node', 'workspaces'] : ['node']);
+
+            return;
+        }
+
+        if ($process->owner instanceof Workspace) {
+            $process->owner->loadMissing($withWorkspaces ? ['app.node', 'app.workspaces'] : ['app.node']);
+        }
     }
 
     private function supervisorProgramRenderer(): SupervisorProgramRenderer

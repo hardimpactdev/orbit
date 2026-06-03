@@ -33,7 +33,7 @@ describe('ProcessEventIngestController', function (): void {
     it('records a crashed process event from an active app node and links runtime intent', function (): void {
         $node = createProcessEventIngestNode();
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
-        $process = Process::factory()->create(['app_id' => $app->id, 'name' => 'vite']);
+        $process = Process::factory()->forOwner($app)->create(['name' => 'vite']);
 
         $response = $this->call('POST', '/api/events/process', [
             'event_id' => 'evt-crash-1',
@@ -64,7 +64,7 @@ describe('ProcessEventIngestController', function (): void {
         $node = createProcessEventIngestNode();
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
         $workspace = Workspace::factory()->create(['app_id' => $app->id, 'name' => 'feature-docs']);
-        $process = Process::factory()->create(['app_id' => $app->id, 'name' => 'vite']);
+        $process = Process::factory()->forOwner($app)->create(['name' => 'vite']);
 
         $this->call('POST', '/api/events/process', [
             'event_id' => 'evt-crash-workspace-1',

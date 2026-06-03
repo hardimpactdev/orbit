@@ -48,7 +48,7 @@ describe('ProcessStopController', function (): void {
         $appNode = createTestAppHostNode();
         grantProcessStopAccess($caller, $appNode);
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
-        Process::factory()->create(['app_id' => $app->id, 'name' => 'vite']);
+        Process::factory()->forOwner($app)->create(['name' => 'vite']);
         app()->instance(RemoteShell::class, new ProcessStopApiRemoteShell([
             new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
         ]));
@@ -69,8 +69,8 @@ describe('ProcessStopController', function (): void {
         createProcessStopCallerNode(role: 'gateway');
         $appNode = createTestAppHostNode();
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
-        Process::factory()->create(['app_id' => $app->id, 'name' => 'vite', 'sort_order' => 10]);
-        Process::factory()->create(['app_id' => $app->id, 'name' => 'queue', 'sort_order' => 20]);
+        Process::factory()->forOwner($app)->create(['name' => 'vite', 'sort_order' => 10]);
+        Process::factory()->forOwner($app)->create(['name' => 'queue', 'sort_order' => 20]);
         app()->instance(RemoteShell::class, new ProcessStopApiRemoteShell([
             new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
             new RemoteShellResult(exitCode: 1, stdout: '', stderr: 'failed', durationMs: 1),
@@ -90,7 +90,7 @@ describe('ProcessStopController', function (): void {
         createProcessStopCallerNode();
         $appNode = createTestAppHostNode();
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
-        Process::factory()->create(['app_id' => $app->id, 'name' => 'vite']);
+        Process::factory()->forOwner($app)->create(['name' => 'vite']);
         $remoteShell = new ProcessStopApiRemoteShell([]);
         app()->instance(RemoteShell::class, $remoteShell);
 

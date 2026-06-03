@@ -93,8 +93,7 @@ final readonly class ShowProcessLogs
 
         $app->loadMissing('node');
 
-        $process = Process::query()
-            ->where('app_id', $app->id)
+        $process = $app->processes()
             ->where('name', $name)
             ->first();
 
