@@ -180,7 +180,6 @@ final class NodePermissionPresets
             'app:root',
             'app:update',
             'app:new',
-            'app:exec',
             'app:worker',
             'workspace:read',
             'workspace:write',
@@ -189,7 +188,6 @@ final class NodePermissionPresets
             'workspace:remove',
             'workspace:history',
             'workspace:log',
-            'workspace:exec',
             'process:read',
             'process:add',
             'process:edit',
@@ -259,7 +257,6 @@ final class NodePermissionPresets
             'app:root',
             'app:update',
             'app:new',
-            'app:exec',
             'app:worker',
 
             // Cloudflare
@@ -357,7 +354,6 @@ final class NodePermissionPresets
             'workspace:remove',
             'workspace:history',
             'workspace:log',
-            'workspace:exec',
         ];
     }
 }

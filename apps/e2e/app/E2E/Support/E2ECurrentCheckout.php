@@ -487,13 +487,14 @@ final class E2ECurrentCheckout
         $sourceComposer = escapeshellarg("{$vendorSourcePath}/{$appPath}/vendor/composer");
         $sourceVendor = escapeshellarg("{$vendorSourcePath}/{$appPath}/vendor");
         $appVendor = "{$appPath}/vendor";
+        $appVendorArgument = escapeshellarg($appVendor);
 
         $reuseVendor = implode(' && ', [
-            "rm -rf {$appVendor}",
-            "mkdir -p {$appVendor}",
-            "find {$sourceVendor} -mindepth 1 -maxdepth 1 ! -name composer ! -name autoload.php -exec ln -s {} {$appPath}/vendor/ \\;",
-            "cp -a {$sourceComposer} {$appPath}/vendor/composer",
-            "cp {$sourceAutoload} {$appPath}/vendor/autoload.php",
+            "rm -rf {$appVendorArgument}",
+            "mkdir -p {$appVendorArgument}",
+            "find {$sourceVendor} -mindepth 1 -maxdepth 1 ! -name composer ! -name autoload.php -exec sh -c 'target=\$1; shift; for path do dest=\"\$target/\$(basename \"\$path\")\"; rm -rf \"\$dest\"; cp -al \"\$path\" \"\$target\"/ 2>/dev/null || { rm -rf \"\$dest\"; cp -a --reflink=always \"\$path\" \"\$target\"/ 2>/dev/null; } || { rm -rf \"\$dest\"; cp -a \"\$path\" \"\$target\"/; }; done' sh {$appVendorArgument} {} +",
+            "cp -a {$sourceComposer} {$appVendorArgument}/composer",
+            "cp {$sourceAutoload} {$appVendorArgument}/autoload.php",
             self::composerDumpAutoloadCommand($appPath),
         ]);
 

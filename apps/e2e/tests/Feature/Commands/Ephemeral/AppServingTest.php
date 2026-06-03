@@ -67,19 +67,17 @@ it('serves an app created on a prepared app-dev topology', function (): void {
             timeoutSeconds: 60,
         );
 
-        $execResult = $topology->ssh(
-            'operator',
+        $composerInstallResult = $topology->ssh(
+            'dev',
             sprintf(
-                'cd %s && orbit app:exec %s --json -- composer install --no-interaction --no-progress',
-                escapeshellarg($topology->checkout('operator')),
-                escapeshellarg($appName),
+                'sudo -u orbit bash -lc %s',
+                escapeshellarg('cd '.escapeshellarg($appPath).' && HOME=/home/orbit /usr/local/bin/composer install --no-interaction --no-progress'),
             ),
             timeoutSeconds: 300,
         );
-        $execData = e2eJsonCommandData(e2eJsonCommandPayload($execResult->output()));
 
-        expect($execData['exit_code'] ?? 0)->toBe(0,
-            'composer install inside app:exec failed: '.json_encode($execData, JSON_PRETTY_PRINT)
+        expect($composerInstallResult->successful())->toBeTrue(
+            "composer install on app-dev failed: {$composerInstallResult->output()}{$composerInstallResult->errorOutput()}"
         );
 
         appServingRestoreDoctorFamily($topology, 'app');
@@ -224,7 +222,7 @@ foreach (['operator-1', 'app-dev-1'] as $name) {
     'consumer_node_id' => $nodes->get('operator-1'),
     'serving_node_id' => $nodes->get('app-dev-1'),
 ], [
-    'permissions' => json_encode(['app:new', 'app:exec'], JSON_THROW_ON_ERROR),
+    'permissions' => json_encode(['app:new'], JSON_THROW_ON_ERROR),
     'custom_permissions' => json_encode([], JSON_THROW_ON_ERROR),
     'created_at' => now(),
     'updated_at' => now(),

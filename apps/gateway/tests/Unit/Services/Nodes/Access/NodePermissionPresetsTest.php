@@ -40,6 +40,15 @@ describe('node permission presets', function (): void {
         }
     });
 
+    it('excludes removed command exec permissions from all presets', function (): void {
+        $presets = new NodePermissionPresets;
+
+        foreach ($presets->names() as $name) {
+            expect($presets->permissions($name))
+                ->not->toContain('app:exec', 'workspace:exec');
+        }
+    });
+
     describe('agent-self preset', function (): void {
         it('contains the expected permissions', function (): void {
             $permissions = (new NodePermissionPresets)->permissions('agent-self');

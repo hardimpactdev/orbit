@@ -276,6 +276,7 @@ SH;
         self::startIncusGatewayContainerShim(
             gateway: $gateway,
             label: $label,
+            orbitPath: $orbitPath,
             wireguardIdentity: $wireguardIdentity,
             bindAddress: $bindAddress,
             certKey: $certKey,
@@ -290,6 +291,7 @@ SH;
     private static function startIncusGatewayContainerShim(
         E2EInstance $gateway,
         string $label,
+        string $orbitPath,
         string $wireguardIdentity,
         string $bindAddress,
         string $certKey,
@@ -302,6 +304,8 @@ SH;
         $tlsScriptPath = "/tmp/orbit-{$label}-tls.php";
         $httpContainer = self::gatewayE2eContainerName($label, 'http');
         $tlsContainer = self::gatewayE2eContainerName($label, 'tls');
+        $hostOrbitPath = self::gatewayHostOrbitPath($gateway, $orbitPath);
+        $hostCliPath = self::gatewayHostOrbitCliPath($hostOrbitPath);
 
         E2ECommand::gatewayArtisan(
             $gateway,
@@ -326,6 +330,8 @@ SH;
                     ."\nPHP\ncd ".escapeshellarg(self::GatewayContainerOrbitPath.'/apps/gateway')."\nexec php -d display_errors=0 -d max_execution_time=0 -S {$bindAddress}:80 -t public {$httpRouterPath}",
                 mountHostCli: true,
                 mountSsh: true,
+                hostCliPath: $hostCliPath,
+                hostOrbitPath: $hostOrbitPath,
             ),
             'Could not start gateway HTTP API',
             timeoutSeconds: 120,
@@ -348,6 +354,8 @@ SH;
                     ."\nPHP\nexec php ".escapeshellarg($tlsScriptPath),
                 mountHostCli: true,
                 mountSsh: true,
+                hostCliPath: $hostCliPath,
+                hostOrbitPath: $hostOrbitPath,
             ),
             'Could not start gateway TLS test server',
             timeoutSeconds: 120,
@@ -1976,6 +1984,8 @@ PHP;
         string $script,
         bool $mountHostCli = false,
         bool $mountSsh = false,
+        ?string $hostCliPath = null,
+        ?string $hostOrbitPath = null,
     ): string {
         $arguments = [
             'docker run --rm --detach --pull never',
@@ -1994,12 +2004,18 @@ PHP;
             '--mount '.escapeshellarg('type=bind,source=/var/run/docker.sock,target=/var/run/docker.sock'),
         ];
 
+        if ($hostOrbitPath !== null) {
+            $arguments[] = '--mount '.escapeshellarg("type=bind,source={$hostOrbitPath},target=".self::GatewayContainerOrbitPath);
+        }
+
         if ($mountHostCli) {
+            $hostCliPath ??= self::HostOrbitCliPath;
+
             $arguments[] = '--env '.escapeshellarg('ORBIT_GATEWAY_URL='.self::GatewayWireGuardHttpUrl);
             $arguments[] = '--env '.escapeshellarg('ORBIT_GATEWAY_E2E_CLI='.self::GatewayContainerOrbitCliPath);
             $arguments[] = '--env '.escapeshellarg('ORBIT_FORWARD_INSTALL_BINARY='.self::GatewayContainerOrbitCliPath);
             $arguments[] = '--env '.escapeshellarg('ORBIT_LOCAL_EXECUTOR_BINARY='.self::GatewayContainerOrbitCliPath);
-            $arguments[] = '-v '.escapeshellarg(self::HostOrbitCliPath.':'.self::GatewayContainerOrbitCliPath.':ro');
+            $arguments[] = '-v '.escapeshellarg($hostCliPath.':'.self::GatewayContainerOrbitCliPath.':ro');
             $arguments[] = '-v '.escapeshellarg(self::WgEasyStatePath.':'.self::WgEasyStatePath);
         }
 
@@ -2017,6 +2033,43 @@ PHP;
     private static function gatewayImage(): string
     {
         return DockerTopologyProvider::gatewayImage();
+    }
+
+    private static function gatewayHostOrbitCliPath(?string $hostOrbitPath): string
+    {
+        if ($hostOrbitPath !== null) {
+            return "{$hostOrbitPath}/apps/cli/orbit";
+        }
+
+        return self::HostOrbitCliPath;
+    }
+
+    private static function gatewayHostOrbitPath(E2EInstance $gateway, string $orbitPath): ?string
+    {
+        $sourceMountedCheckout = self::gatewaySourceMountedCheckoutPath($gateway);
+
+        if ($sourceMountedCheckout !== null) {
+            return $sourceMountedCheckout;
+        }
+
+        $orbitPath = rtrim($orbitPath, '/');
+
+        return $orbitPath !== '/home/orbit/orbit'
+            ? $orbitPath
+            : null;
+    }
+
+    private static function gatewaySourceMountedCheckoutPath(E2EInstance $gateway): ?string
+    {
+        if (! $gateway instanceof SourceMountedCheckoutInstance) {
+            return null;
+        }
+
+        $checkout = $gateway->sourceMountedCheckoutPath();
+
+        return is_string($checkout) && $checkout !== ''
+            ? rtrim($checkout, '/')
+            : null;
     }
 
     private static function appKeyCommand(?string $envPath = null): string
