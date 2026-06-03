@@ -48,6 +48,31 @@ it('stores node owned process runtime configuration', function (): void {
         ]);
 });
 
+it('stores node owned systemd process runtime configuration with a tool dependency', function (): void {
+    $node = Node::factory()->create(['name' => 'app-dev-1']);
+
+    $process = $node->processes()->create([
+        'node_id' => $node->id,
+        'name' => 'opencode-server',
+        'command' => 'opencode serve -a',
+        'runtime' => ProcessRuntime::Systemd,
+        'tool' => 'opencode',
+        'runtime_config' => [
+            'service' => 'opencode-server',
+        ],
+        'sort_order' => 1,
+    ]);
+
+    expect($process->refresh())
+        ->owner->toBeInstanceOf(Node::class)
+        ->node_id->toBe($node->id)
+        ->runtime->toBe(ProcessRuntime::Systemd)
+        ->tool->toBe('opencode')
+        ->runtime_config->toBe([
+            'service' => 'opencode-server',
+        ]);
+});
+
 it('stores role owned process runtime configuration', function (): void {
     $node = Node::factory()->create(['name' => 'database-1']);
     $role = NodeRoleAssignment::factory()->create([

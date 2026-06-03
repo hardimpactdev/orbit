@@ -81,7 +81,7 @@ describe('ProcessLogController', function (): void {
             ->assertJsonPath('error.code', 'process.unsupported_runtime')
             ->assertJsonPath('error.meta.process', 'vite')
             ->assertJsonPath('error.meta.runtime', 'docker-swarm')
-            ->assertJsonPath('error.meta.allowed', ['docker', 'supervisor']);
+            ->assertJsonPath('error.meta.allowed', ['docker', 'supervisor', 'systemd']);
 
         expect($remoteShell->scripts)->toBe([]);
     });

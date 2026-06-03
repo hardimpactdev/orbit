@@ -37,8 +37,8 @@ These rules describe how runtime units are derived from process definitions.
   unit for the main app instance and one runtime unit for each workspace of
   that app.
 - Each rendered runtime unit is applied by its selected process runtime backend,
-  such as `supervisor` for host commands or `docker` for containerized
-  processes.
+  such as `supervisor` for retained host commands, `docker` for containerized
+  processes, or `systemd` for node-level Linux services.
 - The process definition supplies shared fields such as command, restart policy,
   runtime backend, runtime configuration, and crash notification policy. The
   rendering context supplies per-instance fields such as node/app/workspace

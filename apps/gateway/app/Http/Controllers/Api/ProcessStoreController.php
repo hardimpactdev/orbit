@@ -123,6 +123,14 @@ final class ProcessStoreController implements Loggable
                     'allowed' => array_column(ProcessRuntime::cases(), 'value'),
                 ], 422);
             }
+
+            if ($runtime === ProcessRuntime::Systemd) {
+                return $this->error('validation_failed', 'The systemd runtime is only valid for node-owned processes.', [
+                    'field' => 'runtime',
+                    'value' => $runtimeInput,
+                    'reason' => 'systemd_requires_node_owned_process',
+                ], 422);
+            }
         }
 
         return [

@@ -10,7 +10,7 @@ These fields describe the PolyScope Server tool's identity, backend, and support
 | --- | --- |
 | Slug | `polyscope-server` |
 | Label | PolyScope Server |
-| Backend | Transitional Supervisor program; planned `systemd` process |
+| Backend | Transitional Supervisor program; pending process-backed `systemd` migration |
 | Support model | Installable and removable by Orbit |
 | Category | `development` |
 

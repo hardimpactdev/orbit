@@ -29,19 +29,19 @@ These terms describe the runtime objects that Orbit derives from process definit
 - **Runtime unit:** Concrete runnable realization of a process definition in
   its selected node, app, or workspace context.
 - **Process runtime:** Backend that runs a process. Supported runtime families
-  are `supervisor` and `docker`; `systemd` and `docker-swarm` are planned
-  runtime families. Supervisor is the host long-running command runner for
-  app/workspace commands where retained. Docker is used for containerized
-  processes such as databases, caches, and FrankenPHP app or workspace web
-  runtimes. Systemd is the intended node-level Linux service runtime;
-  `systemctl` is only the command adapter used to control those units.
+  are `supervisor`, `docker`, and `systemd`; `docker-swarm` is planned.
+  Supervisor is the host long-running command runner for app/workspace
+  commands where retained. Docker is used for containerized processes such as
+  databases, caches, and FrankenPHP app or workspace web runtimes. Systemd is
+  the node-level Linux service runtime; `systemctl` is only the command adapter
+  used to control those units.
 - **Supervisor process runtime:** Runtime backend that runs a process unit as a
   host Supervisor program with Supervisor logs and lifecycle controls.
 - **Docker process runtime:** Runtime backend that runs a process as an
   Orbit-managed Docker container. It is used for containerized database, cache,
   agent, app, and workspace runtime units.
-- **Systemd process runtime:** Planned runtime backend for node-level Linux
-  services such as OpenCode Server or PolyScope Server. The process row owns
+- **Systemd process runtime:** Runtime backend for node-level Linux services
+  such as OpenCode Server or PolyScope Server. The process row owns
   start/stop/restart/log lifecycle; any related tool row supplies only the
   installed capability.
 - **Runtime unit expansion:** One process definition renders one or more
@@ -75,7 +75,7 @@ These terms define per-process behavioral rules that apply to every derived runt
   backend renders the runtime units. Existing process command compatibility may
   default app and workspace command processes to `supervisor` until the runtime
   migration is complete; the product model admits `supervisor`, `docker`, and
-  planned `systemd` and `docker-swarm` process runtimes.
+  `systemd` process runtimes, with `docker-swarm` planned.
 
 ## Events
 

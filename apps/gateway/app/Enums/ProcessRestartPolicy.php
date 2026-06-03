@@ -27,4 +27,13 @@ enum ProcessRestartPolicy: string
             self::Always => 'always',
         };
     }
+
+    public function toSystemd(): string
+    {
+        return match ($this) {
+            self::Never => 'no',
+            self::OnFailure => 'on-failure',
+            self::Always => 'always',
+        };
+    }
 }

@@ -168,9 +168,33 @@ describe('ProcessStoreController', function (): void {
             ->assertJsonPath('error.code', 'validation_failed')
             ->assertJsonPath('error.meta.field', 'runtime')
             ->assertJsonPath('error.meta.value', 'podman')
-            ->assertJsonPath('error.meta.allowed', ['docker', 'supervisor']);
+            ->assertJsonPath('error.meta.allowed', ['docker', 'supervisor', 'systemd']);
 
         expect(Process::query()->where('name', 'queue')->exists())->toBeFalse();
+    });
+
+    it('rejects systemd for app scoped process creation before runtime side effects', function (): void {
+        createProcessStoreCallerNode(role: 'gateway');
+        $appNode = createTestAppHostNode();
+        App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
+        $remoteShell = new ProcessStoreRemoteShell([]);
+        app()->instance(RemoteShell::class, $remoteShell);
+
+        $response = $this->call('POST', '/api/processes', [
+            'app' => 'docs',
+            'name' => 'opencode-server',
+            'command' => 'opencode serve -a',
+            'runtime' => 'systemd',
+        ], [], [], ['REMOTE_ADDR' => PROCESS_STORE_CALLER_WG_IP]);
+
+        $response->assertStatus(422)
+            ->assertJsonPath('error.code', 'validation_failed')
+            ->assertJsonPath('error.meta.field', 'runtime')
+            ->assertJsonPath('error.meta.value', 'systemd')
+            ->assertJsonPath('error.meta.reason', 'systemd_requires_node_owned_process');
+
+        expect(Process::query()->where('name', 'opencode-server')->exists())->toBeFalse()
+            ->and($remoteShell->scripts)->toBe([]);
     });
 
     it('returns duplicate process conflicts', function (): void {
@@ -198,10 +222,13 @@ final class ProcessStoreRemoteShell implements RemoteShell
      */
     public function __construct(
         private array $results,
+        public array $scripts = [],
     ) {}
 
     public function run(Node $node, string $script, array $options = []): RemoteShellResult
     {
+        $this->scripts[] = $script;
+
         return array_shift($this->results) ?? new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1);
     }
 }

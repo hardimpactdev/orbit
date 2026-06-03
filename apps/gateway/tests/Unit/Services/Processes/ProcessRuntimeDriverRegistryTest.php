@@ -6,6 +6,7 @@ use App\Enums\Processes\ProcessRuntime;
 use App\Services\Processes\ProcessRuntimeDriverRegistry;
 use App\Services\Processes\ProcessRuntimeDrivers\DockerProcessRuntimeDriver;
 use App\Services\Processes\ProcessRuntimeDrivers\SupervisorProcessRuntimeDriver;
+use App\Services\Processes\ProcessRuntimeDrivers\SystemdProcessRuntimeDriver;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -17,5 +18,7 @@ it('resolves concrete drivers by process runtime', function (): void {
     expect($registry->for(ProcessRuntime::Supervisor))
         ->toBeInstanceOf(SupervisorProcessRuntimeDriver::class)
         ->and($registry->for(ProcessRuntime::Docker))
-        ->toBeInstanceOf(DockerProcessRuntimeDriver::class);
+        ->toBeInstanceOf(DockerProcessRuntimeDriver::class)
+        ->and($registry->for(ProcessRuntime::Systemd))
+        ->toBeInstanceOf(SystemdProcessRuntimeDriver::class);
 });

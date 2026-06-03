@@ -10,12 +10,14 @@ use App\Models\Process;
 use App\Services\Processes\ProcessRuntimeDrivers\DockerProcessRuntimeDriver;
 use App\Services\Processes\ProcessRuntimeDrivers\ProcessRuntimeDriver;
 use App\Services\Processes\ProcessRuntimeDrivers\SupervisorProcessRuntimeDriver;
+use App\Services\Processes\ProcessRuntimeDrivers\SystemdProcessRuntimeDriver;
 
 final readonly class ProcessRuntimeDriverRegistry
 {
     public function __construct(
         private SupervisorProcessRuntimeDriver $supervisor,
         private DockerProcessRuntimeDriver $docker,
+        private SystemdProcessRuntimeDriver $systemd,
     ) {}
 
     public function for(ProcessRuntime|string $runtime): ProcessRuntimeDriver
@@ -36,6 +38,7 @@ final readonly class ProcessRuntimeDriverRegistry
         return match ($runtime) {
             ProcessRuntime::Supervisor => $this->supervisor,
             ProcessRuntime::Docker => $this->docker,
+            ProcessRuntime::Systemd => $this->systemd,
         };
     }
 

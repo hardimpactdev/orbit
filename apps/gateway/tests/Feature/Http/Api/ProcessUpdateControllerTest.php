@@ -148,9 +148,33 @@ describe('ProcessUpdateController', function (): void {
             ->assertJsonPath('error.code', 'validation_failed')
             ->assertJsonPath('error.meta.field', 'runtime')
             ->assertJsonPath('error.meta.value', 'podman')
-            ->assertJsonPath('error.meta.allowed', ['docker', 'supervisor']);
+            ->assertJsonPath('error.meta.allowed', ['docker', 'supervisor', 'systemd']);
 
         expect(Process::query()->where('name', 'queue')->value('runtime')->value)->toBe('docker');
+    });
+
+    it('rejects systemd for app scoped process updates before runtime side effects', function (): void {
+        $caller = createProcessUpdateCallerNode();
+        $appNode = createTestAppHostNode();
+        grantProcessUpdateAccess($caller, $appNode);
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
+        Process::factory()->forOwner($app)->create(['name' => 'queue', 'runtime' => 'docker']);
+        $remoteShell = new ProcessUpdateRemoteShell([]);
+        app()->instance(RemoteShell::class, $remoteShell);
+
+        $response = $this->call('PATCH', '/api/processes/queue', [
+            'app' => 'docs',
+            'runtime' => 'systemd',
+        ], [], [], ['REMOTE_ADDR' => PROCESS_UPDATE_CALLER_WG_IP]);
+
+        $response->assertStatus(422)
+            ->assertJsonPath('error.code', 'validation_failed')
+            ->assertJsonPath('error.meta.field', 'runtime')
+            ->assertJsonPath('error.meta.value', 'systemd')
+            ->assertJsonPath('error.meta.reason', 'systemd_requires_node_owned_process');
+
+        expect(Process::query()->where('name', 'queue')->value('runtime')->value)->toBe('docker')
+            ->and($remoteShell->scripts)->toBe([]);
     });
 
     it('returns validation and not found errors', function (array $payload, string $processName, int $status, string $code): void {
@@ -179,10 +203,13 @@ final class ProcessUpdateRemoteShell implements RemoteShell
      */
     public function __construct(
         private array $results,
+        public array $scripts = [],
     ) {}
 
     public function run(Node $node, string $script, array $options = []): RemoteShellResult
     {
+        $this->scripts[] = $script;
+
         return array_shift($this->results) ?? new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1);
     }
 }

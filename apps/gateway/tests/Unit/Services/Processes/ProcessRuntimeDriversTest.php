@@ -6,11 +6,13 @@ use App\Contracts\RemoteShell;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Enums\Apps\AppRuntimeKind;
 use App\Enums\Processes\ProcessRuntime;
+use App\Enums\ProcessRestartPolicy;
 use App\Models\App;
 use App\Models\Node;
 use App\Models\Process;
 use App\Services\Processes\ProcessRuntimeDrivers\DockerProcessRuntimeDriver;
 use App\Services\Processes\ProcessRuntimeDrivers\SupervisorProcessRuntimeDriver;
+use App\Services\Processes\ProcessRuntimeDrivers\SystemdProcessRuntimeDriver;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -154,6 +156,83 @@ it('applies, removes, and cleans up docker process runtime units through the doc
         ->and(collect($shell->scripts)->contains(fn (string $script): bool => str_contains($script, 'docker network create')))->toBeTrue()
         ->and(collect($shell->scripts)->contains(fn (string $script): bool => str_contains($script, 'docker create')))->toBeTrue()
         ->and(collect($shell->scripts)->contains(fn (string $script): bool => str_contains($script, "docker rm -f 'orbit_docs_main_queue'")))->toBeTrue();
+});
+
+it('runs systemd process lifecycle through the systemd runtime driver', function (): void {
+    $shell = new ProcessRuntimeDriverRecordingShell([
+        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+    ]);
+    app()->instance(RemoteShell::class, $shell);
+
+    $node = Node::factory()->create(['name' => 'app-dev-1', 'user' => 'orbit', 'orbit_path' => '/home/orbit/orbit']);
+    $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id, 'path' => '/srv/docs']);
+    $process = Process::factory()->forOwner($node)->create([
+        'name' => 'opencode-server',
+        'command' => 'opencode serve -a',
+        'runtime' => ProcessRuntime::Systemd,
+        'tool' => 'opencode',
+    ]);
+
+    $driver = app(SystemdProcessRuntimeDriver::class);
+    $runtimeUnit = $driver->runtimeUnitName($app, $process);
+
+    expect($runtimeUnit)->toBe('opencode-server')
+        ->and($driver->start($node, $runtimeUnit))->toBeTrue()
+        ->and($driver->stop($node, $runtimeUnit))->toBeTrue()
+        ->and($driver->restart($node, $runtimeUnit))->toBeTrue()
+        ->and($driver->logScript($app, $process, null, $runtimeUnit, 25, false))
+        ->toBe("sudo journalctl -u 'opencode-server.service' -n 25 --no-pager 2>&1")
+        ->and($driver->logScript($app, $process, null, $runtimeUnit, 25, true))
+        ->toBe("sudo journalctl -u 'opencode-server.service' -n 25 -f --no-pager 2>&1");
+
+    expect($shell->scripts)->toBe([
+        "sudo systemctl start 'opencode-server.service'",
+        "sudo systemctl stop 'opencode-server.service'",
+        "sudo systemctl restart 'opencode-server.service'",
+    ]);
+});
+
+it('applies, removes, and cleans up systemd process runtime units through the systemd runtime driver', function (): void {
+    $shell = new ProcessRuntimeDriverRecordingShell([
+        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+    ]);
+    app()->instance(RemoteShell::class, $shell);
+
+    $node = Node::factory()->create(['name' => 'app-dev-1', 'user' => 'orbit', 'orbit_path' => '/home/orbit/orbit']);
+    $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id, 'path' => '/srv/docs']);
+    $process = Process::factory()->forOwner($node)->create([
+        'name' => 'opencode-server',
+        'command' => 'opencode serve -a',
+        'restart_policy' => ProcessRestartPolicy::OnFailure,
+        'runtime' => ProcessRuntime::Systemd,
+        'tool' => 'opencode',
+    ]);
+
+    $driver = app(SystemdProcessRuntimeDriver::class);
+    $runtimeUnit = $driver->runtimeUnitName($app, $process);
+
+    expect($driver->cleanupScript($runtimeUnit))
+        ->toBe("sudo systemctl stop 'opencode-server.service' >/dev/null 2>&1 || true; sudo systemctl disable 'opencode-server.service' >/dev/null 2>&1 || true; sudo rm -f '/etc/systemd/system/opencode-server.service'; sudo systemctl daemon-reload; sudo systemctl reset-failed 'opencode-server.service' >/dev/null 2>&1 || true; true")
+        ->and($driver->apply($node, $app, $process))->toBeTrue()
+        ->and($driver->remove($node, $runtimeUnit))->toBeTrue();
+
+    expect($shell->scripts[0])
+        ->toContain("sudo tee '/etc/systemd/system/opencode-server.service' >/dev/null")
+        ->toContain('sudo systemctl daemon-reload')
+        ->toContain("sudo systemctl enable 'opencode-server.service' >/dev/null")
+        ->toContain('Description=Orbit process opencode-server')
+        ->toContain('User=orbit')
+        ->toContain('WorkingDirectory=/home/orbit')
+        ->toContain("ExecStart=/bin/bash -lc 'opencode serve -a'")
+        ->toContain('Restart=on-failure')
+        ->and($shell->scripts[1])
+        ->toContain("sudo systemctl stop 'opencode-server.service'")
+        ->toContain("sudo systemctl disable 'opencode-server.service'")
+        ->toContain("sudo rm -f '/etc/systemd/system/opencode-server.service'")
+        ->toContain('sudo systemctl daemon-reload');
 });
 
 final class ProcessRuntimeDriverRecordingShell implements RemoteShell

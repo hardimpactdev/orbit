@@ -87,7 +87,10 @@ final readonly class EnsureAppProcessRuntimeUnits
     {
         $driver = $this->runtimeDrivers->forProcess($process);
         $unitName = $driver->runtimeUnitName($app, $process, $workspace);
-        $cleanupScript = $this->runtimeDrivers->for($this->staleRuntime($process))->cleanupScript($unitName);
+        $staleRuntime = $this->staleRuntime($process);
+        $cleanupScript = $staleRuntime instanceof ProcessRuntime
+            ? $this->runtimeDrivers->for($staleRuntime)->cleanupScript($unitName)
+            : null;
 
         if (! $driver->apply($app->node, $app, $process, $workspace, $cleanupScript)) {
             return [[
@@ -113,11 +116,12 @@ final readonly class EnsureAppProcessRuntimeUnits
         );
     }
 
-    private function staleRuntime(Process $process): ProcessRuntime
+    private function staleRuntime(Process $process): ?ProcessRuntime
     {
         return match ($process->runtime) {
             ProcessRuntime::Docker => ProcessRuntime::Supervisor,
             ProcessRuntime::Supervisor => ProcessRuntime::Docker,
+            ProcessRuntime::Systemd => null,
         };
     }
 

@@ -59,7 +59,7 @@ The sections below walk through each layer of the stack in the same order as the
 | Proxy | Dockerized Caddy in one `orbit-caddy` container per node |
 | PHP runtime | FrankenPHP app/workspace containers |
 | Host init | Docker daemon plus Docker Swarm for gateway services and Docker-backed runtime units; Supervisor for host command process programs |
-| Process manager | Process runtime backends: Supervisor for host command processes, Docker for containerized process units, Docker Swarm for selected production artifacts |
+| Process manager | Process runtime backends: Supervisor for retained host command processes, Docker for containerized process units, systemd for node-level Linux service processes, Docker Swarm for selected production artifacts |
 | Scheduler | One-replica `orbit-scheduler` Swarm service using the Orbit gateway image |
 | Process logs | Runtime-backend log capture for process units; Supervisor stdout/stderr for host command processes and Docker logs for containerized processes |
 | Service containers | Docker for Orbit runtime containers and backing services |
@@ -332,16 +332,19 @@ boundaries rather than gateway service or model instantiation. See
 Processes are the Orbit lifecycle-managed long-running units. Each process
 runtime unit uses its owning node/app/workspace context, selected runtime
 backend, restart policy, and Orbit-managed environment or container
-configuration. The supported runtime backends are Supervisor for host command
-processes and Docker for containerized process units; Docker Swarm is used for
-selected production artifacts and remains the planned general production
-process runtime family.
+configuration. The supported runtime backends are Supervisor for retained host
+command processes, Docker for containerized process units, and systemd for
+node-level Linux service processes; Docker Swarm is used for selected
+production artifacts and remains the planned general production process runtime
+family.
 
 Supervisor-backed units render as host Supervisor programs and surface
 stdout/stderr through `process:logs`. Docker-backed units render as
 Orbit-managed containers and surface Docker log streams through the process
-family. Tools may supply the node-level capability a process depends on, but
-start, stop, restart, and logs belong to the process record.
+family. Systemd-backed units render as host systemd services and surface
+journald streams through the process family. Tools may supply the node-level
+capability a process depends on, but start, stop, restart, and logs belong to
+the process record.
 
 Swarm is a per-artifact production backend, not a node-wide execution mode.
 Gateway API and scheduler lifecycles are Swarm services (`orbit-gateway` and
