@@ -99,7 +99,21 @@ class GatewaySwarmInstaller
             'write router-colocated gateway Caddy route',
         );
 
+        $this->assertRouterCaddyCanReadGatewayLeaf();
+
         $this->runRequired(CaddyTool::reloadCommand('orbit-caddy'), 'reload router-owned orbit-caddy container');
+    }
+
+    private function assertRouterCaddyCanReadGatewayLeaf(): void
+    {
+        $this->runRequired(
+            sprintf('docker exec %s test -r %s', escapeshellarg('orbit-caddy'), escapeshellarg(self::GatewayCertPath)),
+            'verify router-owned orbit-caddy can read gateway certificate',
+        );
+        $this->runRequired(
+            sprintf('docker exec %s test -r %s', escapeshellarg('orbit-caddy'), escapeshellarg(self::GatewayKeyPath)),
+            'verify router-owned orbit-caddy can read gateway certificate key',
+        );
     }
 
     /**

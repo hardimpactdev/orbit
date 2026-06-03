@@ -236,9 +236,11 @@ it('converges router-colocated Caddy as the only host 80 443 and udp 443 listene
     $caddyScript = null;
     $gatewayRoute = null;
     $stackPath = "{$this->configRoot}/swarm/".GatewaySwarmManager::StackFile;
+    $certReadableCommand = "docker exec 'orbit-caddy' test -r '/etc/orbit/certs/gateway.crt'";
+    $keyReadableCommand = "docker exec 'orbit-caddy' test -r '/etc/orbit/certs/gateway.key'";
     $invocations = [];
 
-    Process::fake(function ($process) use (&$caddyScript, &$gatewayRoute, &$invocations, $stackPath) {
+    Process::fake(function ($process) use (&$caddyScript, &$gatewayRoute, &$invocations, $certReadableCommand, $keyReadableCommand, $stackPath) {
         $invocations[] = (string) $process->command;
 
         if ($process->command === 'bash -s') {
@@ -258,6 +260,8 @@ it('converges router-colocated Caddy as the only host 80 443 and udp 443 listene
             'docker node update --label-add orbit.role.gateway=true self' => Process::result(),
             "docker network inspect --format '{{.Driver}} {{.Scope}} {{.Attachable}}' 'orbit-network'" => Process::result(output: "overlay swarm true\n"),
             'docker stack deploy -c '.escapeshellarg($stackPath)." 'orbit'" => Process::result(),
+            $certReadableCommand => Process::result(),
+            $keyReadableCommand => Process::result(),
             CaddyTool::reloadCommand('orbit-caddy') => Process::result(),
             "sudo ss -H -ltn 'sport = :80' | grep -q ." => Process::result(exitCode: 1),
             "sudo ss -H -ltn 'sport = :443' | grep -q ." => Process::result(exitCode: 1),
@@ -285,6 +289,7 @@ it('converges router-colocated Caddy as the only host 80 443 and udp 443 listene
         ->and($gatewayBlock)->toContain('- orbit-gateway')
         ->and($gatewayBlock)->not->toContain('ports:')
         ->and($caddyScript)->toContain('orbit-caddy')
+        ->and($caddyScript)->not->toContain('orbit-gateway-caddy')
         ->and($caddyScript)->toContain("--publish '80:80'")
         ->and($caddyScript)->toContain("--publish '443:443'")
         ->and($caddyScript)->toContain("--publish '443:443/udp'")
@@ -297,9 +302,15 @@ it('converges router-colocated Caddy as the only host 80 443 and udp 443 listene
         ->and($gatewayRoute)->toContain('flush_interval -1');
 
     Process::assertRan('sudo tee /etc/caddy/orbit/orbit-gateway.caddy > /dev/null');
+    Process::assertRan($certReadableCommand);
+    Process::assertRan($keyReadableCommand);
     Process::assertRan(CaddyTool::reloadCommand('orbit-caddy'));
 
     $stackDeploy = array_search('docker stack deploy -c '.escapeshellarg($stackPath)." 'orbit'", $invocations, true);
+    $routeWrite = array_search('sudo tee /etc/caddy/orbit/orbit-gateway.caddy > /dev/null', $invocations, true);
+    $certReadable = array_search($certReadableCommand, $invocations, true);
+    $keyReadable = array_search($keyReadableCommand, $invocations, true);
+    $caddyReload = array_search(CaddyTool::reloadCommand('orbit-caddy'), $invocations, true);
     $tcp80Check = array_search("sudo ss -H -ltn 'sport = :80' | grep -q .", $invocations, true);
     $tcp443Check = array_search("sudo ss -H -ltn 'sport = :443' | grep -q .", $invocations, true);
     $udp443Check = array_search("sudo ss -H -lun 'sport = :443' | grep -q .", $invocations, true);
@@ -310,10 +321,18 @@ it('converges router-colocated Caddy as the only host 80 443 and udp 443 listene
         ->and($tcp443Check)->not->toBeFalse()
         ->and($udp443Check)->not->toBeFalse()
         ->and($caddyConverge)->not->toBeFalse()
+        ->and($routeWrite)->not->toBeFalse()
+        ->and($certReadable)->not->toBeFalse()
+        ->and($keyReadable)->not->toBeFalse()
+        ->and($caddyReload)->not->toBeFalse()
         ->and($stackDeploy)->toBeLessThan($tcp80Check)
         ->and($tcp80Check)->toBeLessThan($caddyConverge)
         ->and($tcp443Check)->toBeLessThan($caddyConverge)
-        ->and($udp443Check)->toBeLessThan($caddyConverge);
+        ->and($udp443Check)->toBeLessThan($caddyConverge)
+        ->and($caddyConverge)->toBeLessThan($routeWrite)
+        ->and($routeWrite)->toBeLessThan($certReadable)
+        ->and($certReadable)->toBeLessThan($keyReadable)
+        ->and($keyReadable)->toBeLessThan($caddyReload);
 });
 
 readonly class GatewaySwarmInstallerFakeCa extends OrbitCaService
