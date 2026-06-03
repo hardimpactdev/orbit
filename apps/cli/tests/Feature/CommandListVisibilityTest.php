@@ -9,12 +9,21 @@ use Symfony\Component\Process\Process;
  */
 function orbitCommandList(): array
 {
+    /** @var array<string, mixed>|null $commandList */
+    static $commandList = null;
+
+    if ($commandList !== null) {
+        return $commandList;
+    }
+
     $process = new Process([PHP_BINARY, 'orbit', 'list', '--format=json'], base_path());
     $process->run();
 
     expect($process->getExitCode())->toBe(0, 'orbit list --format=json failed: '.$process->getErrorOutput());
 
-    return json_decode($process->getOutput(), associative: true, flags: JSON_THROW_ON_ERROR);
+    $commandList = json_decode($process->getOutput(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+    return $commandList;
 }
 
 /**
