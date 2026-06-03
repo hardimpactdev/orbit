@@ -40,8 +40,7 @@
             "bin/orbit-gateway-pest --exclude-group=e2e --exclude-group=slow --parallel --compact",
             "bin/orbit-cli-pest --compact",
             "bin/orbit-docs-pest --compact",
-            "cd packages/core && vendor/bin/pest --compact",
-            "cd apps/e2e && vendor/bin/pest --compact"
+            "cd packages/core && vendor/bin/pest --compact"
         ],
         "test:slow": [
             "Composer\\Config::disableProcessTimeout",
@@ -49,8 +48,7 @@
             "bin/orbit-gateway-pest --exclude-group=e2e --parallel --compact",
             "bin/orbit-cli-pest --compact",
             "bin/orbit-docs-pest --compact",
-            "cd packages/core && vendor/bin/pest --compact",
-            "cd apps/e2e && vendor/bin/pest --compact"
+            "cd packages/core && vendor/bin/pest --compact"
         ],
         "test:e2e": [
             "Composer\\Config::disableProcessTimeout",

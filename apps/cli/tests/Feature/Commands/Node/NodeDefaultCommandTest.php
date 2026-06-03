@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Services\OrbitConfigStore;
+use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
 
 beforeEach(function (): void {
@@ -136,10 +137,15 @@ describe('node:default', function (): void {
                 ],
             ]));
 
-            runCommand($this, 'node:default', ['name' => 'app-1', '--json' => true]);
+            [$exitCode] = runCommand($this, 'node:default', ['name' => 'app-1', '--json' => true]);
 
-            Http::assertNothingSent();
-        })->skip('Http assertions cleared by fakeGateway; local-write guarantee is tested via store->defaultNode()');
+            expect($exitCode)->toBe(0);
+
+            Http::assertSentCount(1);
+            Http::assertSent(fn (Request $request): bool => $request->method() === 'GET'
+                && str_contains($request->url(), '/api/nodes')
+                && str_contains($request->url(), 'role=app-dev'));
+        });
 
         it('stores the name locally without gateway mutation', function (): void {
             fakeGateway(fakeSuccessEnvelope([
