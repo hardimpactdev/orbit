@@ -75,9 +75,9 @@ it('creates a PHP app proxy route targeting the FrankenPHP runtime container', f
     $caddySite = base64_decode((string) str((string) $siteScript)->match("/printf %s\\s+'([^']+)'/")->toString(), true);
 
     expect($route->domain)->toBe('docs.test')
-        ->and($route->config['runtime_upstream'])->toBe('http://orbit-app-docs')
+        ->and($route->config['runtime_upstream'])->toBe('http://orbit-app-docs:8080')
         ->and($route->config['php_socket'])->toBeNull()
-        ->and($caddySite)->toContain('reverse_proxy http://orbit-app-docs')
+        ->and($caddySite)->toContain('reverse_proxy http://orbit-app-docs:8080')
         ->and($caddySite)->not->toContain('php_fastcgi')
         ->and($caddySite)->not->toContain('file_server');
 });

@@ -60,7 +60,7 @@ describe('orbit-caddy container coverage of route renderer outputs', function ()
                     'domain' => 'docs.test',
                     'bind' => '10.6.0.21',
                     'document_root' => '/home/orbit/sites/docs/current/public',
-                    'runtime_upstream' => 'http://orbit-app-docs',
+                    'runtime_upstream' => 'http://orbit-app-docs:8080',
                     'php_socket' => null,
                     'source_hash' => str_repeat('a', 64),
                 ]],
@@ -77,7 +77,7 @@ describe('orbit-caddy container coverage of route renderer outputs', function ()
             ->and(todo314PathIsReachableFromContainer($route->config['tls']['key_path']))->toBeTrue();
 
         expect($renderer->renderPrivateBackend($route, $artifact))
-            ->toContain('reverse_proxy http://orbit-app-docs')
+            ->toContain('reverse_proxy http://orbit-app-docs:8080')
             ->not->toContain('php_fastcgi')
             ->not->toContain('bind 10.6.0.21');
     });
@@ -182,7 +182,7 @@ describe('orbit-caddy container coverage of route renderer outputs', function ()
                     'domain' => 'docs.test',
                     'bind' => '10.6.0.21',
                     'document_root' => '/home/orbit/sites/docs/current/public',
-                    'runtime_upstream' => 'http://orbit-app-docs',
+                    'runtime_upstream' => 'http://orbit-app-docs:8080',
                     'php_socket' => null,
                     'source_hash' => str_repeat('a', 64),
                 ]],

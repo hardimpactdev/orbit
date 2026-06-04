@@ -1140,7 +1140,7 @@ describe('legacy php_fastcgi route convergence after Docker-first runtime backfi
                 'kind' => 'app',
                 'config' => [
                     'document_root' => '/home/orbit/apps/legacy-docs/public',
-                    'runtime_upstream' => 'http://orbit-app-legacy-docs',
+                    'runtime_upstream' => 'http://orbit-app-legacy-docs:8080',
                     'php_socket' => null,
                     'tls' => [
                         'cert_path' => '/etc/orbit/certs/legacy-docs.test.crt',
@@ -1184,7 +1184,7 @@ describe('legacy php_fastcgi route convergence after Docker-first runtime backfi
             'node_id' => $backend->id,
             'bind' => '10.6.0.21',
             'document_root' => '/home/orbit/apps/legacy-docs/public',
-            'runtime_upstream' => 'http://orbit-app-legacy-docs',
+            'runtime_upstream' => 'http://orbit-app-legacy-docs:8080',
             'php_socket' => null,
         ];
         $route = ProxyRoute::factory()->create([

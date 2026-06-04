@@ -240,7 +240,7 @@ describe('ProxyRouteFixer', function (): void {
                     'node_id' => $backend->id,
                     'bind' => '10.6.0.21',
                     'document_root' => '/home/orbit/apps/docs/public',
-                    'runtime_upstream' => 'http://orbit-app-docs',
+                    'runtime_upstream' => 'http://orbit-app-docs:8080',
                     'php_socket' => null,
                     'source_hash' => str_repeat('b', 64),
                 ]],
@@ -262,7 +262,7 @@ describe('ProxyRouteFixer', function (): void {
             ->and($shell->nodes[0]->is($backend))->toBeTrue()
             ->and($shell->scripts[0])->toContain('/etc/caddy/sites/docs.test.backend.caddy')
             ->and($caddySite)->not->toContain('bind 10.6.0.21')
-            ->and($caddySite)->toContain('reverse_proxy http://orbit-app-docs')
+            ->and($caddySite)->toContain('reverse_proxy http://orbit-app-docs:8080')
             ->and($caddySite)->not->toContain('php_fastcgi');
     });
 
@@ -364,7 +364,7 @@ describe('ProxyRouteFixer', function (): void {
             'source_hash' => str_repeat('0', 64),
             'config' => [
                 'document_root' => '/home/orbit/apps/docs/public',
-                'runtime_upstream' => 'http://orbit-app-docs',
+                'runtime_upstream' => 'http://orbit-app-docs:8080',
                 'php_socket' => null,
                 'tls' => 'internal',
             ],
@@ -388,7 +388,7 @@ describe('ProxyRouteFixer', function (): void {
         ])
             ->and($shell->scripts[0])->toContain('/etc/caddy/sites/docs.test.caddy')
             ->and($caddySite)->toContain('tls /etc/orbit/certs/docs.test.crt /etc/orbit/certs/docs.test.key')
-            ->and($caddySite)->toContain('reverse_proxy http://orbit-app-docs')
+            ->and($caddySite)->toContain('reverse_proxy http://orbit-app-docs:8080')
             ->and($caddySite)->not->toContain('php_fastcgi')
             ->and($certificates->hosts)->toBe(['docs.test'])
             ->and($route->refresh()->source_hash)->toBe(hash('sha256', $caddySite))
@@ -470,7 +470,7 @@ describe('ProxyRouteFixer', function (): void {
         $caddySite = base64_decode((string) str($shell->scripts[0])->match("/printf %s\\s+'([^']+)'/")->toString(), true);
 
         expect($action['status'])->toBe('completed')
-            ->and($caddySite)->toContain('reverse_proxy http://orbit-app-legacy-docs')
+            ->and($caddySite)->toContain('reverse_proxy http://orbit-app-legacy-docs:8080')
             ->and($caddySite)->not->toContain('php_fastcgi')
             ->and($caddySite)->not->toContain('file_server');
     });
@@ -638,7 +638,7 @@ describe('ProxyRouteFixer', function (): void {
         $caddySite = base64_decode((string) str($shell->scripts[0])->match("/printf %s\\s+'([^']+)'/")->toString(), true);
 
         expect($action['status'])->toBe('completed')
-            ->and($caddySite)->toContain('reverse_proxy http://orbit-app-legacy-docs')
+            ->and($caddySite)->toContain('reverse_proxy http://orbit-app-legacy-docs:8080')
             ->and($caddySite)->not->toContain('php_fastcgi');
     });
 });

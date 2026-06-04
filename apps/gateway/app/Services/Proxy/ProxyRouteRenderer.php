@@ -6,6 +6,7 @@ namespace App\Services\Proxy;
 
 use App\Enums\Apps\AppRuntimeKind;
 use App\Models\ProxyRoute;
+use App\Services\Apps\AppRuntimeContainerRenderer;
 use App\Services\Runtime\OrbitCaddyContainer;
 use RuntimeException;
 
@@ -598,7 +599,7 @@ CADDY;
             return "http://orbit-ws-{$slug}-{$route->workspace->name}";
         }
 
-        return "http://orbit-app-{$slug}";
+        return "http://orbit-app-{$slug}:".AppRuntimeContainerRenderer::InternalPort;
     }
 
     private function validatedHttpUpstream(ProxyRoute $route, string $value): string

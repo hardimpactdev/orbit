@@ -137,20 +137,26 @@ it('renders FrankenPHP-consumed SERVER_NAME and SERVER_ROOT so the configured ro
     $projectRoot = $renderer->render(makePhpApp(['name' => 'c', 'document_root' => '.']));
 
     expect($publicRoot->environment())->toMatchArray([
-        'SERVER_NAME' => ':80',
+        'SERVER_NAME' => ':8080',
         'SERVER_ROOT' => '/app/public',
         'ORBIT_APP_DOCUMENT_ROOT' => 'public',
     ])
         ->and($webRoot->environment())->toMatchArray([
-            'SERVER_NAME' => ':80',
+            'SERVER_NAME' => ':8080',
             'SERVER_ROOT' => '/app/web',
         ])
         ->and($projectRoot->environment())->toMatchArray([
-            'SERVER_NAME' => ':80',
+            'SERVER_NAME' => ':8080',
             'SERVER_ROOT' => '/app',
         ])
         ->and($publicRoot->specHash())->not->toBe($webRoot->specHash())
         ->and($publicRoot->specHash())->not->toBe($projectRoot->specHash());
+});
+
+it('uses the internal app runtime upstream on port 8080', function (): void {
+    $app = makePhpApp(['name' => 'docs']);
+
+    expect(rendererForTest()->upstreamUrl($app))->toBe('http://orbit-app-docs:8080');
 });
 
 it('exposes the document-root env on the rendered docker run command so the configured root reaches FrankenPHP', function (): void {
@@ -159,8 +165,9 @@ it('exposes the document-root env on the rendered docker run command so the conf
 
     $command = (new DockerCommandBuilder)->runDetached($container);
 
-    expect($command)->toContain("--env 'SERVER_NAME=:80'")
-        ->and($command)->toContain("--env 'SERVER_ROOT=/app/web'");
+    expect($command)->toContain("--env 'SERVER_NAME=:8080'")
+        ->and($command)->toContain("--env 'SERVER_ROOT=/app/web'")
+        ->and($command)->not->toContain(' --publish ');
 });
 
 it('exposes labels with the spec hash so the manager can detect drift', function (): void {

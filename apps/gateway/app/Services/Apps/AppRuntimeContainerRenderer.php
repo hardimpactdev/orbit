@@ -12,6 +12,8 @@ use InvalidArgumentException;
 
 final readonly class AppRuntimeContainerRenderer
 {
+    public const int InternalPort = 8080;
+
     /**
      * Canonical name of the Laravel Octane FrankenPHP worker file. Generated
      * by `php artisan octane:install --server=frankenphp` and resolved
@@ -78,7 +80,7 @@ final readonly class AppRuntimeContainerRenderer
 
     public function upstreamUrl(App $app): string
     {
-        return 'http://'.$this->containerName($app);
+        return 'http://'.$this->containerName($app).':'.self::InternalPort;
     }
 
     /**
@@ -91,7 +93,7 @@ final readonly class AppRuntimeContainerRenderer
             // address; SERVER_ROOT sets the document root served inside the
             // container. Together they make app:root and app:new actually
             // change the served URL boundary.
-            'SERVER_NAME' => ':80',
+            'SERVER_NAME' => ':'.self::InternalPort,
             'SERVER_ROOT' => $this->documentRootInContainer($app),
             'ORBIT_APP' => $app->name,
             'ORBIT_APP_DOCUMENT_ROOT' => $app->document_root,

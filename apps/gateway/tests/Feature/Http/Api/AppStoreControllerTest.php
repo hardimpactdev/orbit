@@ -272,7 +272,7 @@ describe('AppStoreController', function (): void {
             ->and($route->config['backend_artifacts'][0]['node_id'])->toBe($targetNode->id)
             ->and($route->config['backend_artifacts'][0]['bind'])->toBe('10.6.0.21')
             ->and($route->config['backend_artifacts'][0]['document_root'])->toBe('/home/docs/app/public')
-            ->and($route->config['backend_artifacts'][0]['runtime_upstream'])->toBe('http://orbit-app-docs')
+            ->and($route->config['backend_artifacts'][0]['runtime_upstream'])->toBe('http://orbit-app-docs:8080')
             ->and($route->config['backend_artifacts'][0]['php_socket'])->toBeNull()
             ->and($route->config['backend_artifacts'][0]['source_hash'])->toHaveLength(64)
             ->and($route->source_hash)->toHaveLength(64)

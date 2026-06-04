@@ -206,6 +206,47 @@ http://example.com {
 CADDY);
     });
 
+    it('keeps router routes pointed at app-role backend routes instead of app runtime containers', function (): void {
+        $router = Node::factory()->create(['name' => 'gateway-1']);
+        $route = ProxyRoute::factory()->create([
+            'node_id' => $router->id,
+            'domain' => 'example.com',
+            'owner_type' => 'app',
+            'kind' => 'app',
+            'config' => [
+                'placement' => 'ingress',
+                'router_upstream' => [
+                    'node_id' => $router->id,
+                    'node' => 'gateway-1',
+                    'url' => 'http://10.6.0.2:80',
+                ],
+                'router_backend_pool' => [
+                    [
+                        'node_id' => 42,
+                        'node' => 'web-1',
+                        'url' => 'http://10.6.0.21:8081',
+                    ],
+                ],
+                'backend_artifacts' => [
+                    [
+                        'node_id' => 42,
+                        'domain' => 'example.com',
+                        'bind' => '10.6.0.21',
+                        'document_root' => '/home/orbit/sites/example/current/public',
+                        'runtime_upstream' => 'http://orbit-app-example:8080',
+                        'php_socket' => null,
+                        'source_hash' => str_repeat('b', 64),
+                    ],
+                ],
+            ],
+        ]);
+
+        $content = (new ProxyRouteRenderer)->renderRouterRoute($route);
+
+        expect($content)->toContain('reverse_proxy http://10.6.0.21:8081')
+            ->and($content)->not->toContain('orbit-app-example');
+    });
+
     it('renders websocket service router routes with long lived upgrade settings', function (): void {
         $router = Node::factory()->router()->create(['name' => 'gateway-1']);
         $route = ProxyRoute::factory()->create([
@@ -431,7 +472,7 @@ CADDY);
                         'domain' => 'example.com',
                         'bind' => '10.6.0.21',
                         'document_root' => '/home/orbit/sites/example/current/public',
-                        'runtime_upstream' => 'http://orbit-app-example',
+                        'runtime_upstream' => 'http://orbit-app-example:8080',
                         'php_socket' => null,
                         'source_hash' => str_repeat('b', 64),
                     ],
@@ -451,7 +492,7 @@ http://example.com:8081 {
     import security_txt
     import cache_headers
 
-    reverse_proxy http://orbit-app-example {
+    reverse_proxy http://orbit-app-example:8080 {
         header_up Host {host}
         header_up X-Forwarded-Host {host}
         header_up X-Forwarded-Proto {scheme}
@@ -573,7 +614,7 @@ CADDY);
                         'domain' => 'example.com',
                         'bind' => '10.6.0.21',
                         'document_root' => '/home/orbit/sites/example/current/public',
-                        'runtime_upstream' => "http://orbit-app-example\r\n",
+                        'runtime_upstream' => "http://orbit-app-example:8080\r\n",
                         'php_socket' => null,
                         'source_hash' => str_repeat('b', 64),
                     ],
@@ -611,7 +652,7 @@ CADDY);
         expect($content)->toContain('legacy-docs.test {')
             // Renderer must derive runtime_upstream from the app identity
             // so legacy routes do not throw before ProxyRouteFixer can repair.
-            ->and($content)->toContain('reverse_proxy http://orbit-app-legacy-docs')
+            ->and($content)->toContain('reverse_proxy http://orbit-app-legacy-docs:8080')
             // App routes never revert to php_fastcgi under the Docker-first model.
             ->and($content)->not->toContain('php_fastcgi')
             // file_server is reserved for static apps.
@@ -645,7 +686,7 @@ CADDY);
 
         $content = (new ProxyRouteRenderer)->renderPrivateBackend($route, $route->config['backend_artifacts'][0]);
 
-        expect($content)->toContain('reverse_proxy http://orbit-app-legacy-docs')
+        expect($content)->toContain('reverse_proxy http://orbit-app-legacy-docs:8080')
             ->and($content)->not->toContain('php_fastcgi')
             ->and($content)->not->toContain('file_server');
     });

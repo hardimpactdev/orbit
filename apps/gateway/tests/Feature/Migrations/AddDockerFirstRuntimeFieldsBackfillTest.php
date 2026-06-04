@@ -99,7 +99,7 @@ it('backfills legacy app proxy route configs with a Docker-first runtime_upstrea
     $row = DB::table('proxy_routes')->find($id);
     $config = json_decode((string) $row->config, true);
 
-    expect($config['runtime_upstream'] ?? null)->toBe('http://orbit-app-legacy-docs')
+    expect($config['runtime_upstream'] ?? null)->toBe('http://orbit-app-legacy-docs:8080')
         ->and(array_key_exists('php_socket', $config))->toBeTrue()
         ->and($config['php_socket'])->toBeNull()
         ->and($config['document_root'])->toBe('/home/orbit/apps/legacy-docs/public')
@@ -143,9 +143,9 @@ it('backfills nested backend_artifacts entries too (ingress topology with privat
     $row = DB::table('proxy_routes')->find($id);
     $config = json_decode((string) $row->config, true);
 
-    expect($config['runtime_upstream'] ?? null)->toBe('http://orbit-app-legacy-docs')
+    expect($config['runtime_upstream'] ?? null)->toBe('http://orbit-app-legacy-docs:8080')
         ->and($config['php_socket'])->toBeNull()
-        ->and($config['backend_artifacts'][0]['runtime_upstream'] ?? null)->toBe('http://orbit-app-legacy-docs')
+        ->and($config['backend_artifacts'][0]['runtime_upstream'] ?? null)->toBe('http://orbit-app-legacy-docs:8080')
         ->and($config['backend_artifacts'][0]['php_socket'])->toBeNull();
 });
 
@@ -222,7 +222,7 @@ it('is idempotent: re-running over already-backfilled rows does not mutate them'
         'source_hash' => str_repeat('0', 64),
         'config' => json_encode([
             'document_root' => '/home/orbit/apps/legacy-docs/public',
-            'runtime_upstream' => 'http://orbit-app-legacy-docs',
+            'runtime_upstream' => 'http://orbit-app-legacy-docs:8080',
             'php_socket' => null,
         ], JSON_THROW_ON_ERROR),
         'created_at' => now(),
@@ -235,7 +235,7 @@ it('is idempotent: re-running over already-backfilled rows does not mutate them'
     $row = DB::table('proxy_routes')->find($id);
     $config = json_decode((string) $row->config, true);
 
-    expect($config['runtime_upstream'])->toBe('http://orbit-app-legacy-docs')
+    expect($config['runtime_upstream'])->toBe('http://orbit-app-legacy-docs:8080')
         ->and($config['php_socket'])->toBeNull();
 });
 
@@ -293,7 +293,7 @@ it('updates non-ingress source_hash from the legacy php_fastcgi rendered content
 
     expect($route->source_hash)->toBe($dockerFirstHash)
         ->and($route->source_hash)->not->toBe($legacyHash)
-        ->and($dockerFirstContent)->toContain('reverse_proxy http://orbit-app-legacy-docs')
+        ->and($dockerFirstContent)->toContain('reverse_proxy http://orbit-app-legacy-docs:8080')
         ->and($dockerFirstContent)->not->toContain('php_fastcgi')
         ->and($dockerFirstContent)->not->toContain($phpSocket);
 });
@@ -358,11 +358,11 @@ it('updates each ingress backend_artifact source_hash from the legacy private-ba
     $dockerFirstBackendContent = (new ProxyRouteRenderer)->renderPrivateBackend($route, $artifact);
     $dockerFirstBackendHash = hash('sha256', $dockerFirstBackendContent);
 
-    expect($artifact['runtime_upstream'])->toBe('http://orbit-app-legacy-docs')
+    expect($artifact['runtime_upstream'])->toBe('http://orbit-app-legacy-docs:8080')
         ->and($artifact['php_socket'])->toBeNull()
         ->and($artifact['source_hash'])->toBe($dockerFirstBackendHash)
         ->and($artifact['source_hash'])->not->toBe($legacyBackendHash)
-        ->and($dockerFirstBackendContent)->toContain('reverse_proxy http://orbit-app-legacy-docs')
+        ->and($dockerFirstBackendContent)->toContain('reverse_proxy http://orbit-app-legacy-docs:8080')
         ->and($dockerFirstBackendContent)->not->toContain('php_fastcgi')
         ->and($dockerFirstBackendContent)->not->toContain($phpSocket);
 });

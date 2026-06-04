@@ -60,7 +60,7 @@ final readonly class AppProxyRouteRuntimeUpstreamBackfill
                     return;
                 }
 
-                $upstream = "http://orbit-app-{$app->name}";
+                $upstream = "http://orbit-app-{$app->name}:".AppRuntimeContainerRenderer::InternalPort;
                 $configChanged = false;
 
                 if (! isset($config['runtime_upstream']) || ! is_string($config['runtime_upstream']) || $config['runtime_upstream'] === '') {
