@@ -526,6 +526,30 @@ it('builds a batch script that copies all roles in parallel, applies limits, the
     expect(strpos($script, "root size='16GiB'"))->toBeLessThan($firstStartPos);
 });
 
+it('attaches cloned roles to an allocated provider network with static role IPs', function (): void {
+    $config = makeIncusTopologyTemplateTestConfig('1', '2GiB');
+    $host = m::mock(IncusHost::class, [$config])->makePartial();
+    mockIncusTopologyCurrentSnapshots($host, 4);
+
+    $script = IncusTopologyTemplate::buildBatchScript(
+        $host,
+        E2ETopologyKind::OperatorGatewayAppdevAppprod,
+        'runNetwork',
+        IncusTopologyTemplate::rolesFor(E2ETopologyKind::OperatorGatewayAppdevAppprod),
+        networkName: 'ob-network1234',
+        subnetPrefix: '10.240.42',
+    );
+
+    expect($script)->toContain("incus config device override 'orbit-e2e-runNetwork-gateway' eth0 hwaddr=")
+        ->and($script)->toContain("network='ob-network1234' ipv4.address='10.240.42.2'")
+        ->and($script)->toContain("incus config device override 'orbit-e2e-runNetwork-operator' eth0 hwaddr=")
+        ->and($script)->toContain("network='ob-network1234' ipv4.address='10.240.42.3'")
+        ->and($script)->toContain("incus config device override 'orbit-e2e-runNetwork-dev' eth0 hwaddr=")
+        ->and($script)->toContain("network='ob-network1234' ipv4.address='10.240.42.4'")
+        ->and($script)->toContain("incus config device override 'orbit-e2e-runNetwork-prod' eth0 hwaddr=")
+        ->and($script)->toContain("network='ob-network1234' ipv4.address='10.240.42.5'");
+});
+
 it('falls back from branch-specific Incus snapshots to base snapshots per role', function (): void {
     withE2ETopologyEnvironment([
         'ORBIT_E2E_TOPOLOGY_ARTIFACT_NAMESPACE' => 'Branch A/B',

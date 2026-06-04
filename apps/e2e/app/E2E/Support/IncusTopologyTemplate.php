@@ -98,12 +98,12 @@ final readonly class IncusTopologyTemplate
     /**
      * @return array<string, IncusInstance>
      */
-    public static function clone(IncusHost $host, E2ETopologyKind $kind, string $runId, ?E2EPhaseTimer $timer = null, bool $stateful = false, bool $sourceMounted = false, bool $readonlySourceMount = false): array
+    public static function clone(IncusHost $host, E2ETopologyKind $kind, string $runId, ?E2EPhaseTimer $timer = null, bool $stateful = false, bool $sourceMounted = false, bool $readonlySourceMount = false, ?string $networkName = null, ?string $subnetPrefix = null): array
     {
         $timer ??= new E2EPhaseTimer;
         $roles = self::rolesFor($kind);
 
-        $script = self::buildBatchScript($host, $kind, $runId, $roles, stateful: $stateful, sourceMounted: $sourceMounted, readonlySourceMount: $readonlySourceMount);
+        $script = self::buildBatchScript($host, $kind, $runId, $roles, stateful: $stateful, sourceMounted: $sourceMounted, readonlySourceMount: $readonlySourceMount, networkName: $networkName, subnetPrefix: $subnetPrefix);
 
         $result = $timer->measure('batch.copy-start', fn () => $host->run($script));
 
@@ -128,7 +128,7 @@ final readonly class IncusTopologyTemplate
     /**
      * @param  list<string>  $roles
      */
-    public static function buildBatchScript(IncusHost $host, E2ETopologyKind $kind, string $runId, array $roles, ?bool $stateful = null, bool $sourceMounted = false, bool $readonlySourceMount = false): string
+    public static function buildBatchScript(IncusHost $host, E2ETopologyKind $kind, string $runId, array $roles, ?bool $stateful = null, bool $sourceMounted = false, bool $readonlySourceMount = false, ?string $networkName = null, ?string $subnetPrefix = null): string
     {
         $cpus = escapeshellarg($host->config->topologyCpus);
         $memory = escapeshellarg($host->config->topologyMemory);
@@ -160,7 +160,15 @@ final readonly class IncusTopologyTemplate
             $copyLines[] = "incus copy {$template} {$clone}{$storagePool} & PID_COPY_{$index}=\$!";
             $waitCopyLines[] = "wait \$PID_COPY_{$index}";
             $limitLines[] = "incus config set {$clone} limits.cpu={$cpus} limits.memory={$memory}";
-            $identityLines[] = "incus config device override {$clone} eth0 hwaddr={$macAddress}";
+            $networkAttr = '';
+            if ($networkName !== null) {
+                $networkAttr .= ' network='.escapeshellarg($networkName);
+                if ($subnetPrefix !== null) {
+                    $networkAttr .= ' ipv4.address='.escapeshellarg($subnetPrefix.'.'.self::staticIpOctetForRole($role));
+                }
+            }
+
+            $identityLines[] = "incus config device override {$clone} eth0 hwaddr={$macAddress}{$networkAttr}";
             $rootSizeLines[] = "incus config device set {$clone} root size={$rootSize} || incus config device override {$clone} root size={$rootSize}";
 
             if ($stateful) {
@@ -216,6 +224,20 @@ final readonly class IncusTopologyTemplate
         $hash = substr(sha1("{$runId}:{$role}"), 0, 6);
 
         return '00:16:3e:'.implode(':', str_split($hash, 2));
+    }
+
+    private static function staticIpOctetForRole(string $role): int
+    {
+        return match ($role) {
+            'gateway' => 2,
+            'operator' => 3,
+            'dev' => 4,
+            'prod' => 5,
+            'agent' => 6,
+            'ingress' => 7,
+            'websocket' => 8,
+            default => throw new \RuntimeException("Unknown role [{$role}] for static IP allocation."),
+        };
     }
 
     private static function artifactRole(string $role): string

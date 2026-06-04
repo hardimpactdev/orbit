@@ -94,6 +94,7 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
         $availability = $timer->measure('availability', fn () => $pool->availabilityFor($kind, [$resourceLease->host()], checkCapacity: false));
         $host = $availability['host'];
         $instances = [];
+        $providerNetwork = null;
 
         if ($host === null) {
             $resourceLease->release();
@@ -106,7 +107,8 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
                 $timer->measure('incus.source-sync', fn (): string => $this->sourceSyncer()->sync($host->config->host, 'incus'));
             }
 
-            $instances = IncusTopologyTemplate::clone($host, $kind, $runId, $timer, sourceMounted: $options->sourceMountedCheckout, readonlySourceMount: $options->readonlySourceMount);
+            $providerNetwork = $timer->measure('incus.network.create', fn (): array => $this->allocateProviderNetwork($host, $runId));
+            $instances = IncusTopologyTemplate::clone($host, $kind, $runId, $timer, sourceMounted: $options->sourceMountedCheckout, readonlySourceMount: $options->readonlySourceMount, networkName: $providerNetwork['name'], subnetPrefix: $providerNetwork['subnet_prefix']);
 
             $sshKeyPair = $this->createSshKeyPair($host, $runId);
             $primaryUsers = $this->prepareInstances($instances, $this->config, $sshKeyPair, $timer, $options, $kind);
@@ -120,17 +122,25 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
                 }
             }
 
+            if ($providerNetwork !== null) {
+                try {
+                    $this->deleteProviderNetwork($host, $providerNetwork['name']);
+                } catch (\Throwable) {
+                    // Keep the original acquisition failure visible.
+                }
+            }
+
             $resourceLease->release();
 
             throw $exception;
         }
 
-        $rebuild = function (E2EPhaseTimer $cycleTimer) use ($host, $kind, $runId, $sshKeyPair, $options): array {
+        $rebuild = function (E2EPhaseTimer $cycleTimer) use ($host, $kind, $runId, $sshKeyPair, $options, $providerNetwork): array {
             if ($options->sourceMountedCheckout) {
                 $cycleTimer->measure('reset.source-sync', fn (): string => $this->sourceSyncer()->sync($host->config->host, 'incus'));
             }
 
-            $newInstances = IncusTopologyTemplate::clone($host, $kind, $runId, $cycleTimer, sourceMounted: $options->sourceMountedCheckout, readonlySourceMount: $options->readonlySourceMount);
+            $newInstances = IncusTopologyTemplate::clone($host, $kind, $runId, $cycleTimer, sourceMounted: $options->sourceMountedCheckout, readonlySourceMount: $options->readonlySourceMount, networkName: $providerNetwork['name'], subnetPrefix: $providerNetwork['subnet_prefix']);
             $newPrimaryUsers = $this->prepareInstances($newInstances, $this->config, $sshKeyPair, $cycleTimer, $options, $kind);
             $leaseInstances = $this->leaseInstancesFor($kind, $newInstances);
 
@@ -138,6 +148,10 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
                 'instances' => $leaseInstances,
                 'snapshotReset' => $this->prepareSnapshotReset($host, $newInstances, $newPrimaryUsers, $sshKeyPair, $cycleTimer, $options->startGatewayApi, $kind, $options->sourceMountedCheckout),
             ];
+        };
+
+        $teardown = function (E2EPhaseTimer $teardownTimer) use ($host, $providerNetwork): void {
+            $teardownTimer->measure('incus.network.delete', fn () => $this->deleteProviderNetwork($host, $providerNetwork['name']));
         };
 
         $leaseInstances = $this->leaseInstancesFor($kind, $instances);
@@ -151,6 +165,7 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
             sshKeyPair: $sshKeyPair,
             rebuild: $rebuild,
             snapshotReset: $snapshotReset,
+            teardown: $teardown,
             gatewayApiIp: self::GatewayWireGuardIp,
             resourceLease: $resourceLease,
             agent: $leaseInstances['agent'] ?? null,
@@ -707,6 +722,85 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
     private function meshFor(array $instances, string $gatewayProviderIp): E2EWireGuardMesh
     {
         return E2EWireGuardMesh::fixed($gatewayProviderIp);
+    }
+
+    /**
+     * @return array{name: string, subnet_prefix: string}
+     */
+    private function allocateProviderNetwork(IncusHost $host, string $runId, ?int $preferredSubnetByte = null): array
+    {
+        $networkName = 'ob-'.substr(md5($runId), 0, 12);
+        $preferredSubnetByte ??= 10 + (crc32($runId) % 190);
+        $occupiedSubnetBytes = $this->occupiedProviderSubnetBytes($host);
+
+        for ($offset = 0; $offset < 190; $offset++) {
+            $subnetByte = 10 + (($preferredSubnetByte - 10 + $offset) % 190);
+
+            if (isset($occupiedSubnetBytes[$subnetByte])) {
+                continue;
+            }
+
+            $subnetPrefix = "10.240.{$subnetByte}";
+            $result = $host->run("incus network create {$networkName} ipv4.address={$subnetPrefix}.1/24 ipv4.nat=true ipv6.address=none raw.dnsmasq=port=0");
+
+            if (! $result->successful()) {
+                throw new \RuntimeException("Could not create Incus network {$networkName}: ".$result->errorOutput());
+            }
+
+            return [
+                'name' => $networkName,
+                'subnet_prefix' => $subnetPrefix,
+            ];
+        }
+
+        throw new \RuntimeException('No free Orbit E2E provider subnet is available in 10.240.10.0/24 through 10.240.199.0/24.');
+    }
+
+    /**
+     * @return array<int, true>
+     */
+    private function occupiedProviderSubnetBytes(IncusHost $host): array
+    {
+        $result = $host->run('incus network list --format json');
+
+        if (! $result->successful()) {
+            throw new \RuntimeException('Could not list Incus networks: '.$result->errorOutput());
+        }
+
+        $networks = json_decode($result->output(), true, flags: JSON_THROW_ON_ERROR);
+        $occupied = [];
+
+        foreach ($networks as $network) {
+            if (! is_array($network)) {
+                continue;
+            }
+
+            $address = $network['config']['ipv4.address'] ?? null;
+
+            if (! is_string($address)) {
+                continue;
+            }
+
+            if (preg_match('/^10\.240\.(\d{1,3})\.1\/24$/', $address, $matches) !== 1) {
+                continue;
+            }
+
+            $subnetByte = (int) $matches[1];
+            if ($subnetByte >= 10 && $subnetByte <= 199) {
+                $occupied[$subnetByte] = true;
+            }
+        }
+
+        return $occupied;
+    }
+
+    private function deleteProviderNetwork(IncusHost $host, string $networkName): void
+    {
+        $result = $host->run("incus network delete {$networkName}");
+
+        if (! $result->successful()) {
+            throw new \RuntimeException("Could not delete Incus network {$networkName}: ".$result->errorOutput());
+        }
     }
 
     /**

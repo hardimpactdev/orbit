@@ -187,6 +187,63 @@ it('uses the fixed WireGuard mesh while keeping app retargeting in the lease pat
         ->and($wireguard)->toBeLessThan($retarget);
 });
 
+it('allocates the first free provider subnet instead of reusing an occupied hash bucket', function (): void {
+    $commands = [];
+    $config = incusTopologyProviderTestConfig();
+    $host = new class($config, $commands) extends IncusHost
+    {
+        /**
+         * @param  array<int, string>  $commands
+         */
+        public function __construct(E2EConfig $config, private array &$commands)
+        {
+            parent::__construct($config);
+        }
+
+        #[Override]
+        public function run(string $command, ?int $timeoutSeconds = null): ProcessResult
+        {
+            $this->commands[] = $command;
+
+            if ($command === 'incus network list --format json') {
+                return incusTopologyProviderTestProcessResult(json_encode([
+                    ['name' => 'ob-live-a', 'config' => ['ipv4.address' => '10.240.42.1/24']],
+                    ['name' => 'ob-live-b', 'config' => ['ipv4.address' => '10.240.43.1/24']],
+                    ['name' => 'docker0', 'config' => ['ipv4.address' => '172.17.0.1/16']],
+                ], JSON_THROW_ON_ERROR));
+            }
+
+            return incusTopologyProviderTestProcessResult();
+        }
+    };
+
+    $provider = new IncusTopologyProvider($config);
+    $method = new ReflectionMethod($provider, 'allocateProviderNetwork');
+    $method->setAccessible(true);
+
+    $allocation = $method->invoke($provider, $host, 'run-colliding-with-42', preferredSubnetByte: 42);
+
+    expect($allocation)->toBe([
+        'name' => 'ob-'.substr(md5('run-colliding-with-42'), 0, 12),
+        'subnet_prefix' => '10.240.44',
+    ])
+        ->and($commands)->toContain('incus network list --format json')
+        ->and(implode("\n", $commands))->toContain("incus network create {$allocation['name']} ipv4.address=10.240.44.1/24 ipv4.nat=true ipv6.address=none raw.dnsmasq=port=0")
+        ->and(implode("\n", $commands))->not->toContain('10.240.42.1/24 ipv4.nat=true')
+        ->and(implode("\n", $commands))->not->toContain('10.240.43.1/24 ipv4.nat=true');
+});
+
+it('uses the allocated provider network for clone, rebuild, and strict lease teardown', function (): void {
+    $source = file_get_contents(repo_path('apps/e2e/app/E2E/Support/IncusTopologyProvider.php'));
+
+    expect($source)->toContain("\$providerNetwork = \$timer->measure('incus.network.create'")
+        ->and($source)->toContain('$instances = IncusTopologyTemplate::clone($host, $kind, $runId, $timer, sourceMounted: $options->sourceMountedCheckout, readonlySourceMount: $options->readonlySourceMount, networkName: $providerNetwork[\'name\'], subnetPrefix: $providerNetwork[\'subnet_prefix\']);')
+        ->and($source)->toContain('$newInstances = IncusTopologyTemplate::clone($host, $kind, $runId, $cycleTimer, sourceMounted: $options->sourceMountedCheckout, readonlySourceMount: $options->readonlySourceMount, networkName: $providerNetwork[\'name\'], subnetPrefix: $providerNetwork[\'subnet_prefix\']);')
+        ->and($source)->toContain('teardown: $teardown')
+        ->and($source)->toContain('private function deleteProviderNetwork(IncusHost $host, string $networkName): void')
+        ->and($source)->toContain('Could not delete Incus network');
+});
+
 it('keeps incus retarget scripts on node_role assignments instead of legacy node columns', function (): void {
     $providerSource = file_get_contents(repo_path('apps/e2e/app/E2E/Support/IncusTopologyProvider.php'));
     $builderSource = file_get_contents(repo_path('apps/e2e/app/E2E/Support/IncusTopologyBuilder.php'));
