@@ -6,8 +6,10 @@ use App\Enums\Processes\ProcessRuntime;
 use App\Models\App;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
+use App\Models\Process;
 use App\Models\Workspace;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
 uses(RefreshDatabase::class);
@@ -158,4 +160,36 @@ it('stores workspace owned process runtime configuration', function (): void {
         ->runtime_config->toBe([
             'directory' => '/home/orbit/apps/abc/worktrees/redesign',
         ]);
+});
+
+it('defaults app and workspace host command processes to supervisor when runtime is omitted', function (): void {
+    $node = Node::factory()->create(['name' => 'app-dev-1']);
+    $app = App::factory()->create(['node_id' => $node->id, 'name' => 'abc']);
+    $workspace = Workspace::factory()->create(['app_id' => $app->id, 'name' => 'redesign']);
+
+    $relationProcess = $app->processes()->create([
+        'node_id' => $node->id,
+        'name' => 'queue',
+        'command' => 'php artisan queue:work',
+        'sort_order' => 1,
+    ]);
+
+    $factoryProcess = Process::factory()->forOwner($workspace)->create([
+        'name' => 'horizon-redesign',
+    ]);
+
+    DB::table('processes')->insert([
+        'node_id' => $node->id,
+        'owner_type' => $workspace->getMorphClass(),
+        'owner_id' => $workspace->id,
+        'name' => 'vite-redesign',
+        'command' => 'npm run dev',
+        'sort_order' => 3,
+        'created_at' => now(),
+        'updated_at' => now(),
+    ]);
+
+    expect($relationProcess->refresh()->runtime)->toBe(ProcessRuntime::Supervisor)
+        ->and($factoryProcess->refresh()->runtime)->toBe(ProcessRuntime::Supervisor)
+        ->and(DB::table('processes')->where('name', 'vite-redesign')->value('runtime'))->toBe(ProcessRuntime::Supervisor->value);
 });

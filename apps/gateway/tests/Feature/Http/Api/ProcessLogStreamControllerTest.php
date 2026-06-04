@@ -38,7 +38,7 @@ describe('ProcessLogController follow stream', function (): void {
             ->assertHeader('Content-Type', 'text/plain; charset=UTF-8')
             ->assertStreamedContent("streamed vite line\n");
 
-        expect($stream->scripts)->toBe(["docker logs --tail 5 --follow 'orbit_docs_main_vite' 2>&1"]);
+        expect($stream->scripts)->toBe(["sudo tail -n 5 -F '/home/orbit/.config/orbit/logs/orbit_docs_main_vite.log'"]);
     });
 });
 

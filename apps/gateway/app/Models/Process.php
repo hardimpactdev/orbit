@@ -74,7 +74,7 @@ class Process extends Model
 
     #[\Override]
     protected $attributes = [
-        'runtime' => 'docker',
+        'runtime' => 'supervisor',
         'runtime_config' => '[]',
     ];
 
