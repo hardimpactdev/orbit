@@ -26,7 +26,7 @@ it('is hidden', function (): void {
 it('defaults to a dry-run plan', function (): void {
     $this->artisan('e2e:prepare-base-image')
         ->expectsOutputToContain('Dry run. Pass --force to build the Incus base image.')
-        ->expectsOutputToContain('planned: base -> orbit-base-ubuntu-26.04 (source: images:ubuntu/26.04/cloud)')
+        ->expectsOutputToContain('planned: base -> orbit-base-ubuntu-26.04 (source: images:ubuntu/26.04)')
         ->assertSuccessful();
 });
 
@@ -39,7 +39,7 @@ it('outputs json for the dry-run plan', function (): void {
                 'image' => [
                     'role' => 'base',
                     'alias' => 'orbit-base-ubuntu-26.04',
-                    'source' => 'images:ubuntu/26.04/cloud',
+                    'source' => 'images:ubuntu/26.04',
                 ],
             ],
         ],

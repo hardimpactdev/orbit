@@ -344,7 +344,7 @@ it('starts Incus gateway API support from orbit-gateway containers without host 
         ->toContain('ORBIT_FORWARD_INSTALL_BINARY=/usr/local/bin/orbit-cli')
         ->toContain('ORBIT_LOCAL_EXECUTOR_BINARY=/usr/local/bin/orbit-cli')
         ->toContain('PHP_CLI_SERVER_WORKERS=4')
-        ->toContain('VIEW_COMPILED_PATH=/srv/orbit/apps/gateway/storage/framework/views')
+        ->toContain('VIEW_COMPILED_PATH=/home/orbit/.config/orbit/storage/framework/views')
         ->toContain('type=bind,source=/home/orbit/orbit-current,target=/srv/orbit')
         ->toContain('/home/orbit/orbit-current/apps/cli/orbit:/usr/local/bin/orbit-cli:ro')
         ->not->toContain('/usr/local/bin/orbit:/usr/local/bin/orbit-cli')
@@ -484,7 +484,7 @@ it('starts Docker gateway API support through gateway container commands without
         ->toContain('ORBIT_CONFIG_ROOT=/home/orbit/.config/orbit')
         ->toContain('/home/orbit/.config/orbit/.env')
         ->toContain('/home/orbit/.config/orbit/gateway.sqlite')
-        ->toContain('/home/orbit/orbit/apps/gateway/storage/framework/views')
+        ->toContain('/home/orbit/.config/orbit/storage/framework/views')
         ->not->toContain('php artisan')
         ->not->toContain('nohup php')
         ->not->toContain('php -r')
@@ -538,7 +538,7 @@ it('starts Docker gateway API support through gateway container commands without
 
     expect($httpStart)->toBeString()
         ->toContain('ORBIT_SOURCE_PATH=/home/orbit/orbit')
-        ->toContain('VIEW_COMPILED_PATH=/home/orbit/orbit/apps/gateway/storage/framework/views')
+        ->toContain('VIEW_COMPILED_PATH=/home/orbit/.config/orbit/storage/framework/views')
         ->toContain('/tmp/orbit-docker-gateway-api-http-router.php');
 
     expect($httpRouterWrite)->toBeString()
