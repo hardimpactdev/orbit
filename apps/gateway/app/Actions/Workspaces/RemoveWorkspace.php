@@ -5,19 +5,24 @@ declare(strict_types=1);
 namespace App\Actions\Workspaces;
 
 use App\Contracts\RemoteShell;
+use App\Enums\Apps\AppRuntimeKind;
 use App\Enums\WorkspaceLifecyclePhase;
 use App\Models\Process;
 use App\Models\ProxyRoute;
 use App\Models\Workspace;
 use App\Models\WorkspaceStep;
 use App\Services\Processes\SupervisorProgramRenderer;
+use App\Services\Workspaces\WorkspaceRuntimeArtifactRemovalOutcome;
+use App\Services\Workspaces\WorkspaceRuntimeContainerManager;
 use Illuminate\Support\Facades\DB;
+use Throwable;
 
 final readonly class RemoveWorkspace
 {
     public function __construct(
         private RemoteShell $remoteShell,
         private SupervisorProgramRenderer $supervisorProgramRenderer,
+        private WorkspaceRuntimeContainerManager $workspaceRuntimeContainerManager,
     ) {}
 
     /**
@@ -39,6 +44,7 @@ final readonly class RemoveWorkspace
 
         $name = $workspace->name;
         $appName = (string) $workspace->app?->name;
+        $isPhpWorkspace = $workspace->app?->runtime_kind === AppRuntimeKind::Php;
         $proxyRouteIds = ProxyRoute::query()
             ->where('workspace_id', $workspace->id)
             ->pluck('id')
@@ -71,6 +77,38 @@ final readonly class RemoveWorkspace
         $teardownStepsRun = 0;
 
         if ($node !== null) {
+            if ($isPhpWorkspace) {
+                try {
+                    $containerOutcome = $this->workspaceRuntimeContainerManager->remove($node, $appName, $name);
+                } catch (Throwable) {
+                    $containerOutcome = WorkspaceRuntimeArtifactRemovalOutcome::FailedRemaining;
+                }
+
+                try {
+                    $configOutcome = $this->workspaceRuntimeContainerManager->removeRuntimeConfigFile($node, $appName, $name);
+                } catch (Throwable) {
+                    $configOutcome = WorkspaceRuntimeArtifactRemovalOutcome::FailedRemaining;
+                }
+
+                if ($containerOutcome === WorkspaceRuntimeArtifactRemovalOutcome::FailedRemaining) {
+                    $warnings[] = [
+                        'code' => 'workspace.runtime_container_extra',
+                        'family' => 'workspace',
+                        'message' => "Workspace runtime container for '{$name}' could not be removed during cleanup.",
+                        'next_command' => 'doctor --family=workspace --restore',
+                    ];
+                }
+
+                if ($configOutcome === WorkspaceRuntimeArtifactRemovalOutcome::FailedRemaining) {
+                    $warnings[] = [
+                        'code' => 'workspace.runtime_config_extra',
+                        'family' => 'workspace',
+                        'message' => "Managed workspace runtime configuration for '{$name}' could not be removed during cleanup.",
+                        'next_command' => 'doctor --family=workspace --restore',
+                    ];
+                }
+            }
+
             $processResult = $this->remoteShell->run($node, $this->renderProcessRemovalScript($processProgramNames));
             $processesRemoved = $processResult->successful() ? count($processProgramNames) : 0;
 

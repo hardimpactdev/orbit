@@ -70,6 +70,10 @@ final readonly class EnsureAppProcessRuntimeUnits
                     continue;
                 }
 
+                if ($this->isManagedRuntimeArtifactProcess($process)) {
+                    continue;
+                }
+
                 $warnings = [
                     ...$warnings,
                     ...$this->applyProcess($app, $process, $workspace),
@@ -102,6 +106,14 @@ final readonly class EnsureAppProcessRuntimeUnits
         }
 
         return [];
+    }
+
+    private function isManagedRuntimeArtifactProcess(Process $process): bool
+    {
+        $config = is_array($process->runtime_config) ? $process->runtime_config : [];
+        $hashLabel = $config['container_spec_hash_label'] ?? null;
+
+        return is_string($hashLabel) && trim($hashLabel) !== '';
     }
 
     private function validateProcessRuntimes(App $app): void

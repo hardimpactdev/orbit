@@ -85,6 +85,37 @@ it('renders a docker process container for a workspace process with workspace id
         ]);
 });
 
+it('uses an explicit managed container name from runtime config for process-backed app runtime rows', function (): void {
+    $app = makeProcessRendererApp();
+    $process = makeProcessRendererProcess($app, [
+        'name' => 'frankenphp-docs',
+        'command' => 'frankenphp',
+        'runtime_config' => [
+            'container_name' => 'orbit-app-docs',
+        ],
+    ]);
+
+    expect(processDockerRenderer()->containerName($app, $process))->toBe('orbit-app-docs');
+});
+
+it('uses an explicit managed container name from runtime config for process-backed workspace runtime rows', function (): void {
+    $app = makeProcessRendererApp();
+    $workspace = Workspace::factory()->for($app)->create([
+        'name' => 'feature-x',
+        'path' => '/home/orbit/apps/docs/.worktrees/feature-x',
+        'php_version' => '8.5',
+    ]);
+    $process = Process::factory()->forOwner($workspace)->create([
+        'name' => 'frankenphp-docs-feature-x',
+        'command' => 'frankenphp',
+        'runtime_config' => [
+            'container_name' => 'orbit-ws-docs-feature-x',
+        ],
+    ]);
+
+    expect(processDockerRenderer()->containerName($app, $process, $workspace))->toBe('orbit-ws-docs-feature-x');
+});
+
 it('mounts the app source path at the runtime source target for main processes', function (): void {
     $app = makeProcessRendererApp(['path' => '/home/orbit/apps/docs/']);
     $process = makeProcessRendererProcess($app);

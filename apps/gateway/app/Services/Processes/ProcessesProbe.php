@@ -110,7 +110,7 @@ final readonly class ProcessesProbe
             }
 
             $labels = $inspection['Config']['Labels'] ?? [];
-            $observedHash = is_array($labels) ? ($labels[ProcessDockerContainer::SpecHashLabel] ?? null) : null;
+            $observedHash = is_array($labels) ? ($labels[$unit['config_hash_label']] ?? null) : null;
             $containerState = $inspection['State']['Status'] ?? null;
 
             $runtimeUnits[$unit['name']] = [
@@ -719,20 +719,20 @@ PHP;
         }
 
         if ($this->runtimeFor($process) === ProcessRuntime::Docker) {
-            return collect([null, ...$process->app->workspaces->all()])
+            return collect($this->runtimeContexts($process))
                 ->map(fn (?Workspace $workspace): string => $this->dockerContainerRenderer()->containerName($process->app, $process, $workspace))
                 ->values()
                 ->all();
         }
 
-        return collect([null, ...$process->app->workspaces->all()])
+        return collect($this->runtimeContexts($process))
             ->map(fn (?Workspace $workspace): string => $this->supervisorProgramRenderer()->programName($process->app, $process, $workspace))
             ->values()
             ->all();
     }
 
     /**
-     * @return list<array{name: string, config_path: string, config_hash: string, restart_policy: string, environment_line: string}>
+     * @return list<array{name: string, config_path: string, config_hash: string, config_hash_label: string, restart_policy: string, environment_line: string}>
      */
     private function expectedRuntimeUnitSpecs(Process $process): array
     {
@@ -750,7 +750,7 @@ PHP;
     }
 
     /**
-     * @return list<array{name: string, config_path: string, config_hash: string, restart_policy: string, environment_line: string}>
+     * @return list<array{name: string, config_path: string, config_hash: string, config_hash_label: string, restart_policy: string, environment_line: string}>
      */
     private function expectedDockerUnitSpecs(Process $process): array
     {
@@ -760,14 +760,22 @@ PHP;
             return [];
         }
 
-        return collect([null, ...$process->app->workspaces->all()])
+        return collect($this->runtimeContexts($process))
             ->map(function (?Workspace $workspace) use ($process): array {
                 $container = $this->dockerContainerRenderer()->render($process->app, $process, $workspace);
+                $config = is_array($process->runtime_config) ? $process->runtime_config : [];
+                $configuredHash = $config['container_spec_hash'] ?? null;
+                $configuredHashLabel = $config['container_spec_hash_label'] ?? null;
 
                 return [
                     'name' => $container->name(),
                     'config_path' => $container->name(),
-                    'config_hash' => $container->specHash(),
+                    'config_hash' => is_string($configuredHash) && $configuredHash !== ''
+                        ? $configuredHash
+                        : $container->specHash(),
+                    'config_hash_label' => is_string($configuredHashLabel) && $configuredHashLabel !== ''
+                        ? $configuredHashLabel
+                        : ProcessDockerContainer::SpecHashLabel,
                     'restart_policy' => '',
                     'environment_line' => '',
                 ];
@@ -777,7 +785,7 @@ PHP;
     }
 
     /**
-     * @return list<array{name: string, config_path: string, config_hash: string, restart_policy: string, environment_line: string}>
+     * @return list<array{name: string, config_path: string, config_hash: string, config_hash_label: string, restart_policy: string, environment_line: string}>
      */
     private function expectedSupervisorUnitSpecs(Process $process): array
     {
@@ -787,7 +795,7 @@ PHP;
             return [];
         }
 
-        return collect([null, ...$process->app->workspaces->all()])
+        return collect($this->runtimeContexts($process))
             ->map(function (?Workspace $workspace) use ($process): array {
                 $definition = $this->supervisorProgramRenderer()->definition($process->app, $process, $workspace);
                 $content = $this->supervisorProgramRenderer()->render($process->app, $process, $workspace);
@@ -796,6 +804,7 @@ PHP;
                     'name' => $definition->name,
                     'config_path' => $this->supervisorProgramRenderer()->configPath($process->app, $process, $workspace),
                     'config_hash' => hash('sha256', $content),
+                    'config_hash_label' => '',
                     'restart_policy' => $definition->restartPolicy,
                     'environment_line' => $this->environmentLine($content),
                 ];
@@ -829,6 +838,33 @@ PHP;
         }
 
         return $process->runtime ?? ProcessRuntime::Docker;
+    }
+
+    /**
+     * @return list<Workspace|null>
+     */
+    private function runtimeContexts(Process $process): array
+    {
+        $process->loadMissing('owner');
+
+        if ($process->owner instanceof Workspace) {
+            return [$process->owner];
+        }
+
+        $config = is_array($process->runtime_config) ? $process->runtime_config : [];
+        $containerName = $config['container_name'] ?? null;
+
+        if (is_string($containerName) && trim($containerName) !== '') {
+            return [null];
+        }
+
+        if (! $process->app instanceof App) {
+            return [];
+        }
+
+        $process->app->loadMissing('workspaces');
+
+        return [null, ...$process->app->workspaces->all()];
     }
 
     private function loadProcessApp(Process $process, bool $withWorkspaces = false): void

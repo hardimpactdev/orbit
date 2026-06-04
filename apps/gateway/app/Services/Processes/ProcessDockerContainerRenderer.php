@@ -74,6 +74,12 @@ final readonly class ProcessDockerContainerRenderer
     {
         $process->loadMissing('owner');
 
+        $configuredName = $this->configuredContainerName($process);
+
+        if ($configuredName !== null) {
+            return $configuredName;
+        }
+
         if ($process->owner instanceof Node) {
             return $this->assertIdentitySlug($process->name);
         }
@@ -89,6 +95,22 @@ final readonly class ProcessDockerContainerRenderer
         }
 
         return "orbit_{$app->name}_{$scope}_{$process->name}";
+    }
+
+    private function configuredContainerName(Process $process): ?string
+    {
+        $config = is_array($process->runtime_config) ? $process->runtime_config : [];
+        $name = $this->optionalConfigString($config, 'container_name');
+
+        if ($name === null) {
+            return null;
+        }
+
+        if (! preg_match('/^[a-zA-Z0-9][a-zA-Z0-9_.-]*$/', $name)) {
+            throw new InvalidArgumentException("Unsafe Docker process runtime container name: {$name}");
+        }
+
+        return $name;
     }
 
     private function renderNodeProcess(Node $node, Process $process): ProcessDockerContainer

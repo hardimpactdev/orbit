@@ -15,6 +15,7 @@ use App\Models\Node;
 use App\Models\Workspace;
 use App\Models\WorkspaceRun;
 use App\Models\WorkspaceStep;
+use App\Services\Processes\EnsureFrankenPhpRuntimeProcess;
 use App\Services\Processes\SupervisorProgramRenderer;
 use App\Services\RuntimeBackend\RuntimeBackendProbe;
 use App\Services\Workspaces\EnsureWorkspaceProxyRoute;
@@ -41,6 +42,7 @@ final readonly class SetupWorkspace
         private SupervisorProgramRenderer $supervisorRenderer,
         private SiteCertificateInstaller $siteCertificateInstaller,
         private WorkspaceRoleGuard $roleGuard,
+        private EnsureFrankenPhpRuntimeProcess $ensureFrankenPhpRuntimeProcess,
     ) {}
 
     /**
@@ -171,6 +173,7 @@ final readonly class SetupWorkspace
         }
 
         try {
+            $this->ensureFrankenPhpRuntimeProcess->forWorkspace($workspace);
             $container = $this->runtimeContainerRenderer->render($workspace);
             $this->runtimeContainerManager->apply($node, $container);
         } catch (WorkspaceRuntimeImageUnavailableException $exception) {

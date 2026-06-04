@@ -10,6 +10,7 @@ use App\Services\Apps\AppRuntimeContainerApplyException;
 use App\Services\Apps\AppRuntimeContainerManager;
 use App\Services\Apps\AppRuntimeContainerRenderer;
 use App\Services\Apps\AppRuntimeImageUnavailableException;
+use App\Services\Processes\EnsureFrankenPhpRuntimeProcess;
 use RuntimeException;
 use Throwable;
 
@@ -20,6 +21,7 @@ final readonly class EnactAppRuntime
         private EnsureAppProcessRuntimeUnits $ensureAppProcessRuntimeUnits,
         private AppRuntimeContainerRenderer $appRuntimeContainerRenderer,
         private AppRuntimeContainerManager $appRuntimeContainerManager,
+        private EnsureFrankenPhpRuntimeProcess $ensureFrankenPhpRuntimeProcess,
     ) {}
 
     /**
@@ -37,6 +39,7 @@ final readonly class EnactAppRuntime
 
         if ($app->runtime_kind === AppRuntimeKind::Php) {
             try {
+                $this->ensureFrankenPhpRuntimeProcess->forApp($app);
                 $container = $this->appRuntimeContainerRenderer->render($app);
                 $this->appRuntimeContainerManager->apply($app->node, $container);
             } catch (AppRuntimeImageUnavailableException $exception) {

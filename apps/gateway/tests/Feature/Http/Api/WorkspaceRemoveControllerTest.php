@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 use App\Contracts\RemoteShell;
 use App\Data\RemoteShell\RemoteShellResult;
+use App\Enums\Processes\ProcessRuntime;
 use App\Models\App;
 use App\Models\Node;
+use App\Models\Process as OrbitProcess;
 use App\Models\ProxyRoute;
 use App\Models\Workspace;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -69,12 +71,26 @@ describe('WorkspaceRemoveController', function (): void {
             'kind' => 'workspace',
         ]);
 
-        app()->instance(RemoteShell::class, new WorkspaceRemoveApiSequencedRemoteShell([
+        OrbitProcess::factory()->forOwner($workspace)->create([
+            'name' => 'frankenphp-docs-feature-api',
+            'command' => 'frankenphp',
+            'runtime' => ProcessRuntime::Docker,
+            'runtime_config' => [
+                'container_name' => 'orbit-ws-docs-feature-api',
+                'php_ini_path' => '/etc/orbit/workspaces/docs-feature-api.ini',
+            ],
+        ]);
+
+        $shell = new WorkspaceRemoveApiSequencedRemoteShell([
+            new RemoteShellResult(exitCode: 0, stdout: '{"Id":"abc"}', stderr: '', durationMs: 1),
+            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+            new RemoteShellResult(exitCode: 0, stdout: 'orbit-container-config-probe:present', stderr: '', durationMs: 1),
+            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+            new RemoteShellResult(exitCode: 0, stdout: 'orbit-container-config-probe:absent', stderr: '', durationMs: 1),
             new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
             new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
-            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
-            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
-        ]));
+        ]);
+        app()->instance(RemoteShell::class, $shell);
 
         $response = $this->call(
             'DELETE',
@@ -95,7 +111,10 @@ describe('WorkspaceRemoveController', function (): void {
             ->assertJsonPath('success.meta.kept_files', false);
 
         expect(Workspace::query()->whereKey($workspace->id)->exists())->toBeFalse()
-            ->and(ProxyRoute::query()->where('domain', 'feature-api.docs.test')->exists())->toBeFalse();
+            ->and(ProxyRoute::query()->where('domain', 'feature-api.docs.test')->exists())->toBeFalse()
+            ->and(OrbitProcess::query()->where('name', 'frankenphp-docs-feature-api')->exists())->toBeFalse()
+            ->and(collect($shell->scripts)->contains(fn (string $script): bool => str_contains($script, "docker rm -f 'orbit-ws-docs-feature-api'")))->toBeTrue()
+            ->and(collect($shell->scripts)->contains(fn (string $script): bool => str_contains($script, "sudo rm -f '/etc/orbit/workspaces/docs-feature-api.ini'")))->toBeTrue();
     });
 
     it('requires destructive consent before removing workspace intent', function (): void {
@@ -159,6 +178,11 @@ describe('WorkspaceRemoveController', function (): void {
 final class WorkspaceRemoveApiSequencedRemoteShell implements RemoteShell
 {
     /**
+     * @var list<string>
+     */
+    public array $scripts = [];
+
+    /**
      * @param  list<RemoteShellResult>  $results
      */
     public function __construct(
@@ -167,6 +191,8 @@ final class WorkspaceRemoveApiSequencedRemoteShell implements RemoteShell
 
     public function run(Node $node, string $script, array $options = []): RemoteShellResult
     {
+        $this->scripts[] = $script;
+
         return array_shift($this->results) ?? new RemoteShellResult(
             exitCode: 0,
             stdout: '',

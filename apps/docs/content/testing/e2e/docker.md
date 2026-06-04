@@ -203,7 +203,10 @@ canonical `10.6.0.x` WireGuard identities inside seeded gateway state. Docker
 does not exercise real WireGuard interfaces, peer routing, VM boot, or systemd.
 Docker may test systemd process command contracts, registry behavior, and
 validation against seeded gateway state, but real systemd lifecycle assertions
-belong in Incus.
+belong in Incus. Docker tests that seed tool or process drift must restore only
+the drift they create; broad `--family=tool --restore` coverage is not a Docker
+systemd lifecycle substitute and must not pick up unrelated OpenCode or
+PolyScope systemd process drift.
 DNS alias mode is the only supported Docker prepared-topology mode. Parallel
 test isolation comes from per-run container names, Docker bridge networks, and
 subnet allocation; image tags do not carry topology kind, DNS mode, or run

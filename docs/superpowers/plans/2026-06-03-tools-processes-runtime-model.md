@@ -1071,30 +1071,30 @@ git commit -m "Backfill managed tool services as processes"
 - Modify workspace runtime actions/services under `apps/gateway/app/Actions/Workspaces` and `apps/gateway/app/Services/Workspaces`
 - Add app/workspace runtime tests.
 
-- [ ] **Step 1: Write failing app runtime process tests**
+- [x] **Step 1: Write failing app runtime process tests**
 
 Assert app registration/enactment creates a Docker process:
 
 ```php
 expect(Process::query()
-    ->where('app_id', $app->id)
+    ->ownedBy($app)
     ->where('name', 'frankenphp-'.$app->name)
     ->where('runtime', ProcessRuntime::Docker)
     ->exists())->toBeTrue();
 ```
 
-- [ ] **Step 2: Write failing workspace runtime process tests**
+- [x] **Step 2: Write failing workspace runtime process tests**
 
 Assert workspace creation/enactment creates a Docker process scoped to workspace:
 
 ```php
 expect(Process::query()
-    ->where('workspace_id', $workspace->id)
+    ->ownedBy($workspace)
     ->where('runtime', ProcessRuntime::Docker)
     ->exists())->toBeTrue();
 ```
 
-- [ ] **Step 3: Run tests to verify RED**
+- [x] **Step 3: Run tests to verify RED**
 
 Run:
 
@@ -1104,11 +1104,11 @@ bin/orbit-gateway-pest --compact apps/gateway/tests/Feature/Http/Api apps/gatewa
 
 Expected: FAIL for missing process rows.
 
-- [ ] **Step 4: Implement app/workspace process creation**
+- [x] **Step 4: Implement app/workspace process creation**
 
 Create or update process rows when app/workspace runtime desired state changes. Keep app/workspace public commands unchanged in this task.
 
-- [ ] **Step 5: Run focused tests**
+- [x] **Step 5: Run focused tests**
 
 Run:
 
@@ -1118,7 +1118,7 @@ bin/orbit-gateway-pest --compact apps/gateway/tests/Feature/Http/Api apps/gatewa
 
 Expected: PASS.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 Run:
 

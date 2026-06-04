@@ -17,9 +17,13 @@ use App\Models\LocalGatewaySettings;
 use App\Models\Node;
 use App\Models\Process;
 use App\Models\Workspace;
+use App\Services\Apps\AppRuntimeContainer;
+use App\Services\Apps\AppRuntimeContainerRenderer;
 use App\Services\Processes\ProcessDockerContainerRenderer;
 use App\Services\Processes\ProcessesProbe;
 use App\Services\RuntimeBackend\RuntimeBackendProbe;
+use App\Services\Workspaces\WorkspaceRuntimeContainer;
+use App\Services\Workspaces\WorkspaceRuntimeContainerRenderer;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Tests\TestCase;
@@ -516,6 +520,95 @@ describe('runtime context expansion', function (): void {
 });
 
 describe('docker runtime probe scope', function (): void {
+    it('matches process-backed app runtime rows against the managed app runtime container label', function (): void {
+        $app = processableApp([
+            'name' => 'docs',
+            'path' => '/home/orbit/apps/docs',
+            'php_version' => '8.5',
+        ]);
+        $container = app(AppRuntimeContainerRenderer::class)->render($app);
+        $process = processFor($app, [
+            'name' => 'frankenphp-docs',
+            'command' => 'frankenphp',
+            'runtime' => ProcessRuntime::Docker,
+            'runtime_config' => [
+                'container_name' => 'orbit-app-docs',
+                'container_spec_hash' => $container->specHash(),
+                'container_spec_hash_label' => AppRuntimeContainer::SpecHashLabel,
+            ],
+        ]);
+        $shell = new ProcessesProbeRecordingRemoteShell([
+            new RemoteShellResult(exitCode: 0, stdout: json_encode([
+                'State' => ['Status' => 'running'],
+                'Config' => ['Labels' => [AppRuntimeContainer::SpecHashLabel => $container->specHash()]],
+            ], JSON_THROW_ON_ERROR), stderr: '', durationMs: 1),
+        ]);
+
+        $snapshot = (new ProcessesProbe(runtimeBackendProbe: new RuntimeBackendProbe($shell)))->introspect($process);
+
+        expect($shell->scripts[0])->toContain("docker container inspect --format '{{json .}}' 'orbit-app-docs'")
+            ->and($snapshot->get('frankenphp-docs'))->toMatchArray([
+                'runtime_backend_available' => true,
+                'runtime_units' => [
+                    'orbit-app-docs' => [
+                        'config_exists' => true,
+                        'config_matches' => true,
+                        'container_state' => 'running',
+                    ],
+                ],
+            ]);
+    });
+
+    it('matches process-backed workspace runtime rows only against the owning workspace container label', function (): void {
+        $app = processableApp([
+            'name' => 'docs',
+            'path' => '/home/orbit/apps/docs',
+            'php_version' => '8.5',
+        ]);
+        $workspace = Workspace::factory()->for($app)->create([
+            'name' => 'feature-a',
+            'path' => '/home/orbit/apps/docs/.worktrees/feature-a',
+            'php_version' => '8.5',
+        ]);
+        Workspace::factory()->for($app)->create([
+            'name' => 'other',
+            'path' => '/home/orbit/apps/docs/.worktrees/other',
+            'php_version' => '8.5',
+        ]);
+        $container = app(WorkspaceRuntimeContainerRenderer::class)->render($workspace);
+        $process = Process::factory()->forOwner($workspace)->create([
+            'name' => 'frankenphp-docs-feature-a',
+            'command' => 'frankenphp',
+            'runtime' => ProcessRuntime::Docker,
+            'runtime_config' => [
+                'container_name' => 'orbit-ws-docs-feature-a',
+                'container_spec_hash' => $container->specHash(),
+                'container_spec_hash_label' => WorkspaceRuntimeContainer::SpecHashLabel,
+            ],
+        ]);
+        $shell = new ProcessesProbeRecordingRemoteShell([
+            new RemoteShellResult(exitCode: 0, stdout: json_encode([
+                'State' => ['Status' => 'running'],
+                'Config' => ['Labels' => [WorkspaceRuntimeContainer::SpecHashLabel => $container->specHash()]],
+            ], JSON_THROW_ON_ERROR), stderr: '', durationMs: 1),
+        ]);
+
+        $snapshot = (new ProcessesProbe(runtimeBackendProbe: new RuntimeBackendProbe($shell)))->introspect($process);
+
+        expect($shell->scripts)->toHaveCount(2)
+            ->and($shell->scripts[0])->toContain("docker container inspect --format '{{json .}}' 'orbit-ws-docs-feature-a'")
+            ->and($snapshot->get('frankenphp-docs-feature-a'))->toMatchArray([
+                'runtime_backend_available' => true,
+                'runtime_units' => [
+                    'orbit-ws-docs-feature-a' => [
+                        'config_exists' => true,
+                        'config_matches' => true,
+                        'container_state' => 'running',
+                    ],
+                ],
+            ]);
+    });
+
     it('introspects docker containers for docker-runtime processes via docker container inspect', function (): void {
         $app = processableApp(['name' => 'docs']);
         $process = processFor($app, [

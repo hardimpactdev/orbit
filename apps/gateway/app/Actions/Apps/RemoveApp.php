@@ -6,6 +6,7 @@ namespace App\Actions\Apps;
 
 use App\Contracts\RemoteShell;
 use App\Enums\Apps\AppRuntimeKind;
+use App\Enums\Processes\ProcessRuntime;
 use App\Models\App;
 use App\Models\Process;
 use App\Models\ProxyRoute;
@@ -49,6 +50,7 @@ final readonly class RemoveApp
         $appName = $app->name;
         $isPhpApp = $app->runtime_kind === AppRuntimeKind::Php;
         $processProgramNames = $app->processes
+            ->filter(fn (Process $process): bool => $process->runtime === ProcessRuntime::Supervisor)
             ->map(fn (Process $process): string => $this->supervisorProgramRenderer->programName($app, $process))
             ->values()
             ->all();

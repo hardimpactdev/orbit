@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 use App\Contracts\RemoteShell;
 use App\Data\RemoteShell\RemoteShellResult;
+use App\Enums\Processes\ProcessRuntime;
 use App\Models\App;
 use App\Models\Node;
+use App\Models\Process as OrbitProcess;
 use App\Models\ProxyRoute;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -63,10 +65,24 @@ describe('AppRemoveController', function (): void {
             'source_hash' => str_repeat('a', 64),
         ]);
 
-        app()->instance(RemoteShell::class, new AppRemoveApiSequencedRemoteShell([
+        OrbitProcess::factory()->forOwner($app)->create([
+            'name' => 'frankenphp-docs',
+            'command' => 'frankenphp',
+            'runtime' => ProcessRuntime::Docker,
+            'runtime_config' => [
+                'container_name' => 'orbit-app-docs',
+                'php_ini_path' => '/etc/orbit/apps/docs.ini',
+            ],
+        ]);
+
+        $shell = new AppRemoveApiSequencedRemoteShell([
+            new RemoteShellResult(exitCode: 0, stdout: '{"Id":"abc"}', stderr: '', durationMs: 1),
             new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+            new RemoteShellResult(exitCode: 0, stdout: 'orbit-container-config-probe:present', stderr: '', durationMs: 1),
             new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
-        ]));
+            new RemoteShellResult(exitCode: 0, stdout: 'orbit-container-config-probe:absent', stderr: '', durationMs: 1),
+        ]);
+        app()->instance(RemoteShell::class, $shell);
 
         $response = $this->call('DELETE', '/api/apps/docs', [
             'destructive_consent' => true,
@@ -78,7 +94,10 @@ describe('AppRemoveController', function (): void {
             ->assertJsonPath('success.data.cleanup.proxy_routes_removed', 1);
 
         expect(App::query()->where('name', 'docs')->exists())->toBeFalse()
-            ->and(ProxyRoute::query()->where('domain', 'docs.test')->exists())->toBeFalse();
+            ->and(ProxyRoute::query()->where('domain', 'docs.test')->exists())->toBeFalse()
+            ->and(OrbitProcess::query()->where('name', 'frankenphp-docs')->exists())->toBeFalse()
+            ->and(collect($shell->scripts)->contains(fn (string $script): bool => str_contains($script, "docker rm -f 'orbit-app-docs'")))->toBeTrue()
+            ->and(collect($shell->scripts)->contains(fn (string $script): bool => str_contains($script, "sudo rm -f '/etc/orbit/apps/docs.ini'")))->toBeTrue();
     });
 
     it('requires destructive consent before removing app intent', function (): void {
@@ -135,6 +154,11 @@ describe('AppRemoveController', function (): void {
 final class AppRemoveApiSequencedRemoteShell implements RemoteShell
 {
     /**
+     * @var list<string>
+     */
+    public array $scripts = [];
+
+    /**
      * @param  list<RemoteShellResult>  $results
      */
     public function __construct(
@@ -143,6 +167,8 @@ final class AppRemoveApiSequencedRemoteShell implements RemoteShell
 
     public function run(Node $node, string $script, array $options = []): RemoteShellResult
     {
+        $this->scripts[] = $script;
+
         return array_shift($this->results) ?? new RemoteShellResult(
             exitCode: 0,
             stdout: '',

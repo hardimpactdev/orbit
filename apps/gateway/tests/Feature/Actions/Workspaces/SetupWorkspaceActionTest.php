@@ -6,6 +6,9 @@ use App\Actions\Workspaces\SetupWorkspace;
 use App\Contracts\RemoteShell;
 use App\Contracts\SiteCertificateInstaller;
 use App\Data\RemoteShell\RemoteShellResult;
+use App\Enums\ProcessCrashNotification;
+use App\Enums\Processes\ProcessRuntime;
+use App\Enums\ProcessRestartPolicy;
 use App\Enums\WorkspaceLifecyclePhase;
 use App\Enums\WorkspaceLifecycleStatus;
 use App\Models\App;
@@ -136,6 +139,36 @@ it('enacts the FrankenPHP runtime container for PHP workspaces without FPM', fun
         ->and($runScript)->toContain('/etc/orbit/workspaces/demo-feature-a.ini')
         ->and(collect($shell->scripts)->contains(fn (string $script): bool => str_contains($script, "docker image inspect 'dunglas/frankenphp:1-php8.5-bookworm'")))->toBeTrue()
         ->and(collect($shell->scripts)->contains(fn (string $script): bool => str_contains($script, '/etc/php/8.5/fpm/pool.d/orbit-demo-feature-a.conf')))->toBeFalse();
+
+    expectWorkspaceFrankenPhpRuntimeProcess($workspace);
+});
+
+it('reconciles an existing FrankenPHP workspace runtime process row', function (): void {
+    $workspace = Workspace::create([
+        'app_id' => 1,
+        'name' => 'feature-a',
+        'path' => '/home/nckrtl/apps/demo/.worktrees/feature-a',
+        'lifecycle_status' => WorkspaceLifecycleStatus::SetupPending,
+    ]);
+
+    OrbitProcess::factory()->forOwner($workspace)->create([
+        'name' => 'frankenphp-demo-feature-a',
+        'command' => 'stale command',
+        'restart_policy' => ProcessRestartPolicy::Never,
+        'crash_notification' => ProcessCrashNotification::AgentIde,
+        'runtime' => ProcessRuntime::Supervisor,
+        'runtime_config' => [
+            'container_name' => 'stale-container',
+            'php_ini_path' => '/stale.ini',
+        ],
+    ]);
+
+    $app = App::query()->with('node')->first();
+    $node = $app->node;
+
+    app(SetupWorkspace::class)->handle($app, $workspace, $node);
+
+    expectWorkspaceFrankenPhpRuntimeProcess($workspace);
 });
 
 it('registers workspace proxy routes against the FrankenPHP runtime container', function (): void {
@@ -691,4 +724,27 @@ final class SetupWorkspaceActionTestCertificateInstaller implements SiteCertific
             'key' => "/home/gateway/.config/orbit/certs/{$host}.key",
         ];
     }
+}
+
+function expectWorkspaceFrankenPhpRuntimeProcess(Workspace $workspace): void
+{
+    $workspace->loadMissing('app');
+
+    $process = OrbitProcess::query()
+        ->ownedBy($workspace)
+        ->where('name', "frankenphp-{$workspace->app->name}-{$workspace->name}")
+        ->first();
+
+    expect($process)->not->toBeNull()
+        ->and($process?->node_id)->toBe($workspace->app->node_id)
+        ->and($process?->command)->toBe('frankenphp')
+        ->and($process?->restart_policy)->toBe(ProcessRestartPolicy::Always)
+        ->and($process?->crash_notification)->toBe(ProcessCrashNotification::None)
+        ->and($process?->runtime)->toBe(ProcessRuntime::Docker)
+        ->and($process?->tool)->toBeNull()
+        ->and($process?->runtime_config)->toMatchArray([
+            'container_name' => 'orbit-ws-demo-feature-a',
+            'php_ini_path' => '/etc/orbit/workspaces/demo-feature-a.ini',
+            'container_spec_hash_label' => 'orbit.workspace.spec_hash',
+        ]);
 }

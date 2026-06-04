@@ -20,13 +20,33 @@ class ProcessRuntimeUnitPayload
     public function forProcess(App $app, Process $process): array
     {
         $app->loadMissing('workspaces');
+        $process->loadMissing('owner');
 
-        return collect([null, ...$app->workspaces->all()])
+        return collect($this->contexts($app, $process))
             ->map(fn (?Workspace $workspace): array => [
                 'name' => $this->runtimeDrivers->forProcess($process)->runtimeUnitName($app, $process, $workspace),
                 'context' => $workspace instanceof Workspace ? $workspace->name : 'main',
             ])
             ->values()
             ->all();
+    }
+
+    /**
+     * @return list<Workspace|null>
+     */
+    private function contexts(App $app, Process $process): array
+    {
+        if ($process->owner instanceof Workspace) {
+            return [$process->owner];
+        }
+
+        $config = is_array($process->runtime_config) ? $process->runtime_config : [];
+        $containerName = $config['container_name'] ?? null;
+
+        if (is_string($containerName) && trim($containerName) !== '') {
+            return [null];
+        }
+
+        return [null, ...$app->workspaces->all()];
     }
 }

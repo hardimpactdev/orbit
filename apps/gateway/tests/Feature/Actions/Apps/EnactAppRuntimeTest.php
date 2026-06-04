@@ -7,9 +7,13 @@ use App\Contracts\RemoteShell;
 use App\Contracts\SiteCertificateInstaller;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Enums\Apps\AppRuntimeKind;
+use App\Enums\ProcessCrashNotification;
+use App\Enums\Processes\ProcessRuntime;
+use App\Enums\ProcessRestartPolicy;
 use App\Models\App;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
+use App\Models\Process as OrbitProcess;
 use App\Models\ProxyRoute;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\Fakes\SiteCertificateInstallerFake;
@@ -93,6 +97,8 @@ it('converges a FrankenPHP runtime container for PHP apps and writes the php.ini
         ->and($runtimeScripts[4])->toContain("'/etc/orbit/apps/docs.ini'")
         ->and(base64DecodedPhpIni($runtimeScripts[4]))->toContain('opcache.enable=1')
         ->and(base64DecodedPhpIni($runtimeScripts[4]))->toContain('realpath_cache_size=4096K');
+
+    expectAppFrankenPhpRuntimeProcess($app);
 });
 
 function base64DecodedPhpIni(string $script): string
@@ -165,6 +171,34 @@ it('returns app.runtime_container_missing when installing the container fails', 
             'next_command' => 'doctor --family=app --restore',
         ])
         ->and(ProxyRoute::query()->where('app_id', $app->id)->exists())->toBeTrue();
+});
+
+it('reconciles an existing FrankenPHP app runtime process row', function (): void {
+    $app = makeAppOnDevNode(AppRuntimeKind::Php);
+
+    OrbitProcess::factory()->forOwner($app)->create([
+        'name' => 'frankenphp-docs',
+        'command' => 'stale command',
+        'restart_policy' => ProcessRestartPolicy::Never,
+        'crash_notification' => ProcessCrashNotification::AgentIde,
+        'runtime' => ProcessRuntime::Supervisor,
+        'runtime_config' => [
+            'container_name' => 'stale-container',
+            'php_ini_path' => '/stale.ini',
+        ],
+    ]);
+
+    $shell = new EnactAppRuntimeRecordingShell(
+        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+        new RemoteShellResult(exitCode: 1, stdout: '', stderr: '', durationMs: 1),
+        new RemoteShellResult(exitCode: 0, stdout: '[{"Id":"sha256:abc"}]', stderr: '', durationMs: 1),
+        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+    );
+    app()->instance(RemoteShell::class, $shell);
+
+    app(EnactAppRuntime::class)->handle($app);
+
+    expectAppFrankenPhpRuntimeProcess($app);
 });
 
 it('returns app.php_version_unavailable when the selected FrankenPHP image is missing on the owning node', function (): void {
@@ -319,3 +353,24 @@ it('throws when the app has no owning node', function (): void {
 
     expect(fn () => app(EnactAppRuntime::class)->handle($app))->toThrow(RuntimeException::class);
 });
+
+function expectAppFrankenPhpRuntimeProcess(App $app): void
+{
+    $process = OrbitProcess::query()
+        ->ownedBy($app)
+        ->where('name', "frankenphp-{$app->name}")
+        ->first();
+
+    expect($process)->not->toBeNull()
+        ->and($process?->node_id)->toBe($app->node_id)
+        ->and($process?->command)->toBe('frankenphp')
+        ->and($process?->restart_policy)->toBe(ProcessRestartPolicy::Always)
+        ->and($process?->crash_notification)->toBe(ProcessCrashNotification::None)
+        ->and($process?->runtime)->toBe(ProcessRuntime::Docker)
+        ->and($process?->tool)->toBeNull()
+        ->and($process?->runtime_config)->toMatchArray([
+            'container_name' => 'orbit-app-docs',
+            'php_ini_path' => '/etc/orbit/apps/docs.ini',
+            'container_spec_hash_label' => 'orbit.app.spec_hash',
+        ]);
+}
