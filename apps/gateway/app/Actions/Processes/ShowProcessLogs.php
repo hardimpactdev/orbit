@@ -11,6 +11,7 @@ use App\Models\Node;
 use App\Models\Process;
 use App\Services\Processes\ProcessOwnerContext;
 use App\Services\Processes\ProcessRuntimeDriverRegistry;
+use App\Services\Processes\ProcessServiceMetadataPayload;
 
 final readonly class ShowProcessLogs
 {
@@ -18,6 +19,7 @@ final readonly class ShowProcessLogs
         private RemoteShell $remoteShell,
         private RemoteShellStream $remoteShellStream,
         private ProcessRuntimeDriverRegistry $runtimeDrivers,
+        private ProcessServiceMetadataPayload $serviceMetadata,
     ) {}
 
     /**
@@ -46,6 +48,7 @@ final readonly class ShowProcessLogs
                     'app' => $context->app?->name,
                     'workspace' => $target['workspace'],
                     'runtime_unit' => $target['runtime_unit'],
+                    'service' => $this->serviceMetadata->forProcess($target['process']),
                     'lines' => $parsedLines,
                 ],
             ],

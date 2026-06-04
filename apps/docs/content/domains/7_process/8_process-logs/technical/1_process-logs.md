@@ -45,8 +45,9 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 3. Derive the runtime-unit identity for the selected context.
 4. Open a log read through the gateway on the owning node.
 5. Read up to `lines` historical lines.
-6. If `--follow` is present, keep streaming appended log lines until the operator interrupts the command.
-7. Render the selected output.
+6. For bounded service process log reads, include safe process-owned connection metadata: definition, version family, concrete version, service name, endpoint host/port, and credential field names. Do not include credential values.
+7. If `--follow` is present, keep streaming appended log lines until the operator interrupts the command.
+8. Render the selected output.
 
 `process:logs` does not mutate process configuration, runtime state, or durable lifecycle events.
 

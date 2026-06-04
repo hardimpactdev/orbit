@@ -248,6 +248,33 @@ describe('ToolsFixer', function (): void {
             ->and($shell->scripts)->toBe([]);
     });
 
+    it('does not repair stale service process names as tool rows', function (string $toolName, string $key): void {
+        $node = createTestAppHostNode(['name' => 'database-1', 'status' => 'active']);
+        $tool = NodeTool::factory()->create([
+            'node_id' => $node->id,
+            'name' => $toolName,
+            'expected_state' => 'running',
+        ]);
+        $shell = new ToolsFixerRemoteShell;
+
+        $action = (new ToolsFixer($shell))->fix($tool, new DriftEntry(
+            family: 'tool',
+            key: $key,
+            kind: DriftKind::Missing,
+            summary: "Tool {$toolName} drift should not be repaired as a tool.",
+            detail: ['tool' => $toolName],
+        ));
+
+        expect(app(ToolCatalog::class)->supports($toolName))->toBeFalse()
+            ->and($action)->toBeNull()
+            ->and($shell->scripts)->toBe([]);
+    })->with([
+        'redis capability' => ['redis', 'tool.capability_missing'],
+        'redis container' => ['redis', 'tool.container_missing'],
+        'mysql capability' => ['mysql', 'tool.capability_missing'],
+        'mysql container' => ['mysql', 'tool.container_missing'],
+    ]);
+
     it('reconciles missing or drifted orbit-caddy containers through the declared container spec', function (string $key): void {
         $node = createTestAppHostNode(['name' => 'app-1', 'status' => 'active']);
         $container = OrbitCaddyContainer::forPrivateNode('10.6.0.50');

@@ -41,22 +41,31 @@ final readonly class ProcessesProbe
 
     public function introspect(Process $process): ProbeSnapshot
     {
+        $node = $this->processNode($process);
+
+        if (! $node instanceof Node) {
+            return new ProbeSnapshot([]);
+        }
+
+        if ($this->runtimeFor($process) === ProcessRuntime::Docker) {
+            return $this->introspectDocker($process, $node);
+        }
+
+        if ($this->runtimeFor($process) === ProcessRuntime::DockerSwarm) {
+            return $this->introspectDockerSwarm($process, $node);
+        }
+
         $this->loadProcessApp($process);
 
         if (! $process->app instanceof App || ! $process->app->node instanceof Node) {
             return new ProbeSnapshot([]);
         }
 
-        if ($this->runtimeFor($process) === ProcessRuntime::Docker) {
-            return $this->introspectDocker($process);
-        }
-
         return $this->introspectSupervisor($process);
     }
 
-    private function introspectDocker(Process $process): ProbeSnapshot
+    private function introspectDocker(Process $process, Node $node): ProbeSnapshot
     {
-        $node = $process->app->node;
         $shell = $this->runtimeBackendProbe()->remoteShell();
         $expectedUnits = $this->expectedDockerUnitSpecs($process);
         $runtimeUnits = [];
@@ -128,11 +137,7 @@ final readonly class ProcessesProbe
             $expectedNames = array_column($expectedUnits, 'name');
             $psResult = $shell->run(
                 $node,
-                sprintf(
-                    "docker ps -a --filter label=orbit.managed=true --filter label=orbit.app=%s --filter label=orbit.process=%s --format '{{.Names}}'",
-                    escapeshellarg($process->app->name),
-                    escapeshellarg($process->name),
-                ),
+                $this->dockerRuntimeUnitExtraCommand($process),
             );
 
             if ($psResult->successful()) {
@@ -141,6 +146,105 @@ final readonly class ProcessesProbe
 
                     if ($containerName !== '' && ! in_array($containerName, $expectedNames, true)) {
                         $runtimeUnitExtras[] = $containerName;
+                    }
+                }
+            }
+        }
+
+        return new ProbeSnapshot([
+            $process->name => [
+                'runtime_backend_available' => $backendAvailable,
+                'runtime_backend_exit_code' => $backendExitCode,
+                'runtime_backend_output' => $backendOutput,
+                'runtime_units' => $runtimeUnits,
+                'runtime_unit_extras' => $runtimeUnitExtras,
+                'event_notifier' => null,
+            ],
+        ]);
+    }
+
+    private function introspectDockerSwarm(Process $process, Node $node): ProbeSnapshot
+    {
+        $shell = $this->runtimeBackendProbe()->remoteShell();
+        $expectedUnits = $this->expectedDockerSwarmUnitSpecs($process);
+        $runtimeUnits = [];
+        $backendAvailable = true;
+        $backendExitCode = 0;
+        $backendOutput = '';
+
+        foreach ($expectedUnits as $unit) {
+            $result = $shell->run($node, 'docker service inspect --format \'{{json .}}\' '.escapeshellarg($unit['name']));
+
+            if (! $result->successful()) {
+                $message = $result->errorOutput().' '.$result->stdout;
+
+                if (preg_match('/(no such service|not found)/i', $message) === 1) {
+                    $runtimeUnits[$unit['name']] = [
+                        'config_exists' => false,
+                        'config_matches' => false,
+                        'service_replicas' => null,
+                    ];
+
+                    continue;
+                }
+
+                $backendAvailable = false;
+                $backendExitCode = $result->exitCode;
+                $backendOutput = trim($result->output());
+
+                break;
+            }
+
+            $output = trim($result->stdout);
+
+            if ($output === '') {
+                $runtimeUnits[$unit['name']] = [
+                    'config_exists' => false,
+                    'config_matches' => false,
+                    'service_replicas' => null,
+                ];
+
+                continue;
+            }
+
+            $inspection = json_decode($output, true);
+
+            if (! is_array($inspection)) {
+                $runtimeUnits[$unit['name']] = [
+                    'config_exists' => false,
+                    'config_matches' => false,
+                    'service_replicas' => null,
+                ];
+
+                continue;
+            }
+
+            $labels = $inspection['Spec']['Labels'] ?? [];
+            $observedHash = is_array($labels) ? ($labels[$unit['config_hash_label']] ?? null) : null;
+            $replicas = $inspection['Spec']['Mode']['Replicated']['Replicas'] ?? null;
+
+            $runtimeUnits[$unit['name']] = [
+                'config_exists' => true,
+                'config_matches' => $observedHash === $unit['config_hash'],
+                'service_replicas' => is_numeric($replicas) ? (int) $replicas : null,
+            ];
+        }
+
+        $runtimeUnitExtras = [];
+
+        if ($backendAvailable) {
+            $expectedNames = array_column($expectedUnits, 'name');
+            $psResult = $shell->run(
+                $node,
+                'docker service ls --filter label=orbit.managed=true --filter label=orbit.process='.escapeshellarg($process->name)." --format '{{.Name}}'",
+            );
+
+            if ($psResult->successful()) {
+                foreach (explode("\n", trim($psResult->stdout)) as $serviceName) {
+                    $serviceName = trim($serviceName);
+
+                    if ($serviceName !== '' && ! in_array($serviceName, $expectedNames, true)) {
+                        $runtimeUnitExtras[] = $serviceName;
                     }
                 }
             }
@@ -463,12 +567,15 @@ PHP;
             return [];
         }
 
-        $isDocker = $this->runtimeFor($process) === ProcessRuntime::Docker;
+        $isDocker = in_array($this->runtimeFor($process), [ProcessRuntime::Docker, ProcessRuntime::DockerSwarm], true);
 
         return collect($observed['runtime_unit_extras'])
             ->filter(fn (mixed $runtimeUnit): bool => is_string($runtimeUnit) && $runtimeUnit !== '')
-            ->map(function (string $runtimeUnit) use ($isDocker): DriftEntry {
-                $detail = ['runtime_unit' => $runtimeUnit];
+            ->map(function (string $runtimeUnit) use ($process, $isDocker): DriftEntry {
+                $detail = $this->runtimeUnitDetail($process, [
+                    'name' => $runtimeUnit,
+                    'config_path' => $runtimeUnit,
+                ]);
 
                 if (! $isDocker) {
                     $detail['expected_path'] = "/etc/supervisor/conf.d/{$runtimeUnit}.conf";
@@ -552,7 +659,7 @@ PHP;
      */
     private function checkRestartPolicy(Process $process, ProbeSnapshot $snapshot): array
     {
-        if ($this->runtimeFor($process) === ProcessRuntime::Docker) {
+        if (in_array($this->runtimeFor($process), [ProcessRuntime::Docker, ProcessRuntime::DockerSwarm], true)) {
             return [];
         }
 
@@ -570,7 +677,7 @@ PHP;
      */
     private function checkRuntimeEnvironment(Process $process, ProbeSnapshot $snapshot): array
     {
-        if ($this->runtimeFor($process) === ProcessRuntime::Docker) {
+        if (in_array($this->runtimeFor($process), [ProcessRuntime::Docker, ProcessRuntime::DockerSwarm], true)) {
             return [];
         }
 
@@ -620,10 +727,7 @@ PHP;
                     key: $key,
                     kind: DriftKind::Divergent,
                     summary: $summary($name),
-                    detail: [
-                        'runtime_unit' => $name,
-                        'expected' => $unit['config_path'],
-                    ],
+                    detail: $this->runtimeUnitDetail($process, $unit),
                 );
             }
         }
@@ -658,10 +762,7 @@ PHP;
                     key: 'process.runtime_unit_missing',
                     kind: DriftKind::Missing,
                     summary: "Process runtime unit {$name} is missing.",
-                    detail: [
-                        'runtime_unit' => $name,
-                        'expected' => $unit['config_path'],
-                    ],
+                    detail: $this->runtimeUnitDetail($process, $unit),
                 );
 
                 continue;
@@ -671,7 +772,7 @@ PHP;
             // For Supervisor, config_matches false with restart_policy_matches true and environment_matches true is a mismatch
             $isMismatch = ($runtimeUnit['config_matches'] ?? null) === false;
 
-            if ($this->runtimeFor($process) !== ProcessRuntime::Docker) {
+            if (! in_array($this->runtimeFor($process), [ProcessRuntime::Docker, ProcessRuntime::DockerSwarm], true)) {
                 $isMismatch = $isMismatch
                     && ($runtimeUnit['restart_policy_matches'] ?? null) !== false
                     && ($runtimeUnit['environment_matches'] ?? null) !== false;
@@ -683,10 +784,7 @@ PHP;
                     key: 'process.runtime_unit_mismatch',
                     kind: DriftKind::Divergent,
                     summary: "Process runtime unit {$name} differs from gateway process intent.",
-                    detail: [
-                        'runtime_unit' => $name,
-                        'expected' => $unit['config_path'],
-                    ],
+                    detail: $this->runtimeUnitDetail($process, $unit),
                 );
             }
         }
@@ -699,9 +797,9 @@ PHP;
      */
     private function checkRuntimeBackend(Process $process, ProbeSnapshot $snapshot): array
     {
-        $this->loadProcessApp($process);
+        $node = $this->processNode($process);
 
-        if (! $process->app instanceof App || ! $process->app->node instanceof Node) {
+        if (! $node instanceof Node) {
             return [];
         }
 
@@ -712,18 +810,23 @@ PHP;
         }
 
         if (($observed['runtime_backend_available'] ?? null) === false) {
-            $backendName = $this->runtimeFor($process) === ProcessRuntime::Docker
-                ? 'Docker'
-                : 'Supervisor';
+            $backendName = match ($this->runtimeFor($process)) {
+                ProcessRuntime::Docker, ProcessRuntime::DockerSwarm => 'Docker',
+                ProcessRuntime::Systemd => 'systemd',
+                ProcessRuntime::Supervisor => 'Supervisor',
+            };
 
             return [
                 new DriftEntry(
                     family: $this->key(),
                     key: 'process.runtime_backend_unavailable',
                     kind: DriftKind::Unverifiable,
-                    summary: "{$backendName} runtime backend is unavailable for process {$process->name} on app node {$process->app->node->name}.",
+                    summary: "{$backendName} runtime backend is unavailable for process {$process->name} on node {$node->name}.",
                     detail: [
-                        'node' => $process->app->node->name,
+                        'process' => $process->name,
+                        'node' => $node->name,
+                        'runtime' => $this->runtimeFor($process)->value,
+                        ...$this->serviceRuntimeDetail($process),
                         'exit_code' => $observed['runtime_backend_exit_code'] ?? null,
                         'output' => $observed['runtime_backend_output'] ?? '',
                     ],
@@ -862,6 +965,15 @@ PHP;
      */
     private function expectedRuntimeUnits(Process $process): array
     {
+        $process->loadMissing('owner');
+
+        if ($process->owner instanceof Node) {
+            return collect($this->expectedRuntimeUnitSpecs($process))
+                ->pluck('name')
+                ->values()
+                ->all();
+        }
+
         $this->loadProcessApp($process, withWorkspaces: true);
 
         if (! $process->app instanceof App) {
@@ -886,6 +998,20 @@ PHP;
      */
     private function expectedRuntimeUnitSpecs(Process $process): array
     {
+        $process->loadMissing('owner');
+
+        if ($process->owner instanceof Node) {
+            if ($this->runtimeFor($process) === ProcessRuntime::Docker) {
+                return $this->expectedDockerUnitSpecs($process);
+            }
+
+            if ($this->runtimeFor($process) === ProcessRuntime::DockerSwarm) {
+                return $this->expectedDockerSwarmUnitSpecs($process);
+            }
+
+            return [];
+        }
+
         $this->loadProcessApp($process, withWorkspaces: true);
 
         if (! $process->app instanceof App) {
@@ -904,6 +1030,28 @@ PHP;
      */
     private function expectedDockerUnitSpecs(Process $process): array
     {
+        $process->loadMissing('owner');
+
+        if ($process->owner instanceof Node) {
+            $container = $this->dockerContainerRenderer()->render($this->surrogateAppForNode($process->owner), $process);
+            $config = is_array($process->runtime_config) ? $process->runtime_config : [];
+            $configuredHash = $config['container_spec_hash'] ?? $config['spec_hash'] ?? null;
+            $configuredHashLabel = $config['container_spec_hash_label'] ?? null;
+
+            return [[
+                'name' => $container->name(),
+                'config_path' => $container->name(),
+                'config_hash' => is_string($configuredHash) && $configuredHash !== ''
+                    ? $configuredHash
+                    : $container->specHash(),
+                'config_hash_label' => is_string($configuredHashLabel) && $configuredHashLabel !== ''
+                    ? $configuredHashLabel
+                    : ProcessDockerContainer::SpecHashLabel,
+                'restart_policy' => '',
+                'environment_line' => '',
+            ]];
+        }
+
         $this->loadProcessApp($process, withWorkspaces: true);
 
         if (! $process->app instanceof App) {
@@ -932,6 +1080,27 @@ PHP;
             })
             ->values()
             ->all();
+    }
+
+    /**
+     * @return list<array{name: string, config_path: string, config_hash: string, config_hash_label: string, restart_policy: string, environment_line: string}>
+     */
+    private function expectedDockerSwarmUnitSpecs(Process $process): array
+    {
+        $config = is_array($process->runtime_config) ? $process->runtime_config : [];
+        $serviceName = $this->optionalConfigString($config, 'service_name') ?? $process->name;
+        $configuredHash = $this->optionalConfigString($config, 'spec_hash')
+            ?? $this->optionalConfigString($this->stringMap($config['labels'] ?? []), ProcessDockerContainer::SpecHashLabel)
+            ?? '';
+
+        return [[
+            'name' => $serviceName,
+            'config_path' => $serviceName,
+            'config_hash' => $configuredHash,
+            'config_hash_label' => ProcessDockerContainer::SpecHashLabel,
+            'restart_policy' => '',
+            'environment_line' => '',
+        ]];
     }
 
     /**
@@ -1015,6 +1184,139 @@ PHP;
         $process->app->loadMissing('workspaces');
 
         return [null, ...$process->app->workspaces->all()];
+    }
+
+    private function dockerRuntimeUnitExtraCommand(Process $process): string
+    {
+        $parts = [
+            'docker ps -a',
+            '--filter label=orbit.managed=true',
+        ];
+
+        if ($process->app instanceof App) {
+            $parts[] = '--filter label=orbit.app='.escapeshellarg($process->app->name);
+        }
+
+        $parts[] = '--filter label=orbit.process='.escapeshellarg($process->name);
+        $parts[] = "--format '{{.Names}}'";
+
+        return implode(' ', $parts);
+    }
+
+    /**
+     * @param  array<string, mixed>  $unit
+     * @return array<string, mixed>
+     */
+    private function runtimeUnitDetail(Process $process, array $unit): array
+    {
+        return array_filter([
+            'process' => $process->name,
+            'runtime' => $this->runtimeFor($process)->value,
+            'runtime_unit' => $unit['name'] ?? null,
+            'expected' => $unit['config_path'] ?? null,
+            ...$this->serviceRuntimeDetail($process),
+        ], $this->filledDetail(...));
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function serviceRuntimeDetail(Process $process): array
+    {
+        $config = is_array($process->runtime_config) ? $process->runtime_config : [];
+        $definition = $this->optionalConfigString($config, 'definition');
+
+        if ($definition === null) {
+            return [];
+        }
+
+        return array_filter([
+            'definition' => $definition,
+            'version_family' => $this->optionalConfigString($config, 'version_family'),
+            'version' => $this->optionalConfigString($config, 'version'),
+            'service_name' => $this->optionalConfigString($config, 'service_name'),
+            'endpoint' => $this->serviceEndpointDetail($config['endpoint'] ?? null),
+        ], $this->filledDetail(...));
+    }
+
+    private function filledDetail(mixed $value): bool
+    {
+        if ($value === null) {
+            return false;
+        }
+
+        return ! is_string($value) || $value !== '';
+    }
+
+    /**
+     * @return array{name: string|null, host: string, port: int|null}|null
+     */
+    private function serviceEndpointDetail(mixed $endpoint): ?array
+    {
+        if (! is_array($endpoint)) {
+            return null;
+        }
+
+        $host = is_string($endpoint['host'] ?? null) ? trim($endpoint['host']) : '';
+
+        if ($host === '') {
+            return null;
+        }
+
+        $name = is_string($endpoint['name'] ?? null) ? trim($endpoint['name']) : null;
+        $port = is_numeric($endpoint['port'] ?? null) ? (int) $endpoint['port'] : null;
+
+        return [
+            'name' => $name !== '' ? $name : null,
+            'host' => $host,
+            'port' => $port,
+        ];
+    }
+
+    private function surrogateAppForNode(Node $node): App
+    {
+        $app = new App([
+            'name' => $node->name,
+            'path' => ($node->user ?: 'orbit') === 'root'
+                ? '/root'
+                : '/home/'.($node->user ?: 'orbit'),
+            'node_id' => $node->id,
+        ]);
+        $app->setRelation('node', $node);
+
+        return $app;
+    }
+
+    /**
+     * @param  array<string, mixed>  $config
+     */
+    private function optionalConfigString(array $config, string $key): ?string
+    {
+        $value = $config[$key] ?? null;
+
+        return is_string($value) && trim($value) !== '' ? trim($value) : null;
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    private function stringMap(mixed $value): array
+    {
+        if (! is_array($value)) {
+            return [];
+        }
+
+        $map = [];
+
+        foreach ($value as $key => $item) {
+            if (! is_string($key) || ! is_scalar($item)) {
+                continue;
+            }
+
+            $map[$key] = (string) $item;
+        }
+
+        return $map;
     }
 
     private function loadProcessApp(Process $process, bool $withWorkspaces = false): void

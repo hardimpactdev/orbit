@@ -125,6 +125,52 @@ describe('ProcessListController', function (): void {
             ->assertJsonPath('success.data.processes.0.runtime_unit', 'opencode-server');
     });
 
+    it('lists service definition connection metadata for node owned service processes without exposing credential values', function (): void {
+        createProcessListCallerNode(role: 'gateway');
+        $node = createTestAppHostNode([
+            'name' => 'database-1',
+            'wireguard_address' => '10.6.0.44',
+        ]);
+        Process::factory()->forOwner($node)->create([
+            'name' => 'mysql8',
+            'command' => 'mysqld',
+            'runtime' => ProcessRuntime::DockerSwarm,
+            'runtime_config' => [
+                'definition' => 'mysql',
+                'version_family' => '8',
+                'version' => '8.4',
+                'service_name' => 'orbit-mysql8',
+                'endpoint' => [
+                    'name' => 'mysql8',
+                    'kind' => 'tcp',
+                    'host' => '10.6.0.44',
+                    'port' => 3308,
+                ],
+                'credentials' => [
+                    'database' => 'orbit',
+                    'password' => 'orbit',
+                    'username' => 'orbit',
+                ],
+            ],
+            'sort_order' => 1,
+        ]);
+
+        $response = $this->call('GET', '/api/processes?node=database-1', [], [], [], ['REMOTE_ADDR' => PROCESS_LIST_CALLER_WG_IP]);
+
+        $response->assertOk()
+            ->assertJsonPath('success.data.processes.0.name', 'mysql8')
+            ->assertJsonPath('success.data.processes.0.tool', null)
+            ->assertJsonPath('success.data.processes.0.runtime', 'docker-swarm')
+            ->assertJsonPath('success.data.processes.0.runtime_unit', 'orbit-mysql8')
+            ->assertJsonPath('success.data.processes.0.service.definition', 'mysql')
+            ->assertJsonPath('success.data.processes.0.service.version_family', '8')
+            ->assertJsonPath('success.data.processes.0.service.version', '8.4')
+            ->assertJsonPath('success.data.processes.0.service.endpoint.host', '10.6.0.44')
+            ->assertJsonPath('success.data.processes.0.service.endpoint.port', 3308)
+            ->assertJsonPath('success.data.processes.0.service.credential_fields', ['database', 'password', 'username'])
+            ->assertJsonMissingPath('success.data.processes.0.service.credentials');
+    });
+
     it('omits process intent hidden from the caller', function (): void {
         $caller = createProcessListCallerNode();
         $visibleNode = createTestAppHostNode();

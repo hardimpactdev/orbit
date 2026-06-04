@@ -714,6 +714,159 @@ describe('docker runtime probe scope', function (): void {
             ]);
     });
 
+    it('introspects node-owned Docker service definition processes without app labels', function (): void {
+        $node = Node::factory()->database()->create([
+            'name' => 'database-1',
+            'status' => 'active',
+            'wireguard_address' => '10.6.0.7',
+        ]);
+        $process = Process::factory()->forOwner($node)->create([
+            'name' => 'redis',
+            'command' => 'redis-server --appendonly yes',
+            'runtime' => ProcessRuntime::Docker,
+            'runtime_config' => [
+                'definition' => 'redis',
+                'version_family' => '7',
+                'version' => '7.2',
+                'image' => 'redis:7.2',
+                'spec_hash' => 'redis-spec-hash',
+                'endpoint' => [
+                    'name' => 'redis',
+                    'kind' => 'tcp',
+                    'host' => '10.6.0.7',
+                    'port' => 6379,
+                ],
+                'labels' => [
+                    'orbit.managed' => 'true',
+                    'orbit.process' => 'redis',
+                    'orbit.process.definition' => 'redis',
+                    'orbit.process.version_family' => '7',
+                    'orbit.process.version' => '7.2',
+                    'orbit.process.spec_hash' => 'redis-spec-hash',
+                ],
+            ],
+        ]);
+        $shell = new ProcessesProbeRecordingRemoteShell([
+            new RemoteShellResult(exitCode: 0, stdout: json_encode([
+                'State' => ['Status' => 'running'],
+                'Config' => ['Labels' => ['orbit.process.spec_hash' => 'redis-spec-hash']],
+            ], JSON_THROW_ON_ERROR), stderr: '', durationMs: 1),
+            new RemoteShellResult(exitCode: 0, stdout: "redis-old\n", stderr: '', durationMs: 1),
+        ]);
+
+        $snapshot = (new ProcessesProbe(runtimeBackendProbe: new RuntimeBackendProbe($shell)))->introspect($process);
+
+        expect($shell->nodes[0]->is($node))->toBeTrue()
+            ->and($shell->scripts[0])->toContain("docker container inspect --format '{{json .}}' 'redis'")
+            ->and($shell->scripts[1])->toContain("--filter label=orbit.process='redis'")
+            ->and($shell->scripts[1])->not->toContain('label=orbit.app=')
+            ->and($snapshot->get('redis'))->toMatchArray([
+                'runtime_backend_available' => true,
+                'runtime_units' => [
+                    'redis' => [
+                        'config_exists' => true,
+                        'config_matches' => true,
+                        'container_state' => 'running',
+                    ],
+                ],
+                'runtime_unit_extras' => ['redis-old'],
+            ]);
+    });
+
+    it('reports concrete service metadata for missing Docker Swarm service units', function (): void {
+        $node = Node::factory()->database()->create([
+            'name' => 'database-1',
+            'status' => 'active',
+            'wireguard_address' => '10.6.0.7',
+        ]);
+        $process = Process::factory()->forOwner($node)->create([
+            'name' => 'mysql8',
+            'command' => 'mysqld',
+            'runtime' => ProcessRuntime::DockerSwarm,
+            'runtime_config' => [
+                'definition' => 'mysql',
+                'version_family' => '8',
+                'version' => '8.4',
+                'service_name' => 'orbit-mysql8',
+                'spec_hash' => 'mysql-spec-hash',
+                'endpoint' => [
+                    'name' => 'mysql8',
+                    'kind' => 'tcp',
+                    'host' => '10.6.0.7',
+                    'port' => 3308,
+                ],
+            ],
+        ]);
+
+        $drift = $this->probe->diff($process, new ProbeSnapshot([
+            'mysql8' => [
+                'runtime_backend_available' => true,
+                'runtime_units' => [
+                    'orbit-mysql8' => [
+                        'config_exists' => false,
+                        'config_matches' => false,
+                    ],
+                ],
+            ],
+        ]));
+
+        expect(issue($drift, 'process.runtime_unit_missing')?->kind)->toBe(DriftKind::Missing)
+            ->and(issue($drift, 'process.runtime_unit_missing')?->detail)->toMatchArray([
+                'process' => 'mysql8',
+                'runtime' => 'docker-swarm',
+                'runtime_unit' => 'orbit-mysql8',
+                'definition' => 'mysql',
+                'version_family' => '8',
+                'version' => '8.4',
+                'service_name' => 'orbit-mysql8',
+                'endpoint' => [
+                    'name' => 'mysql8',
+                    'host' => '10.6.0.7',
+                    'port' => 3308,
+                ],
+            ]);
+    });
+
+    it('reports runtime backend drift for node-owned service processes on the owning node', function (): void {
+        $node = Node::factory()->database()->create([
+            'name' => 'database-1',
+            'status' => 'active',
+            'wireguard_address' => '10.6.0.7',
+        ]);
+        $process = Process::factory()->forOwner($node)->create([
+            'name' => 'mysql8',
+            'command' => 'mysqld',
+            'runtime' => ProcessRuntime::DockerSwarm,
+            'runtime_config' => [
+                'definition' => 'mysql',
+                'version_family' => '8',
+                'version' => '8.4',
+                'service_name' => 'orbit-mysql8',
+            ],
+        ]);
+
+        $drift = $this->probe->diff($process, new ProbeSnapshot([
+            'mysql8' => [
+                'runtime_backend_available' => false,
+                'runtime_backend_exit_code' => 127,
+                'runtime_backend_output' => 'docker missing',
+            ],
+        ]));
+
+        expect(issue($drift, 'process.runtime_backend_unavailable')?->kind)->toBe(DriftKind::Unverifiable)
+            ->and(issue($drift, 'process.runtime_backend_unavailable')?->detail)->toMatchArray([
+                'process' => 'mysql8',
+                'node' => 'database-1',
+                'runtime' => 'docker-swarm',
+                'definition' => 'mysql',
+                'version_family' => '8',
+                'version' => '8.4',
+                'service_name' => 'orbit-mysql8',
+                'exit_code' => 127,
+                'output' => 'docker missing',
+            ]);
+    });
+
     it('introspects docker containers for docker-runtime processes via docker container inspect', function (): void {
         $app = processableApp(['name' => 'docs']);
         $process = processFor($app, [

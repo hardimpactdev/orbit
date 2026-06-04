@@ -107,6 +107,10 @@ ports, volumes, labels, lifecycle, and logs on the process row.
 The endpoint host is always the owning node's WireGuard service address. Orbit
 does not fall back to the node SSH host, node name, loopback, or Docker network
 alias for managed service endpoints.
+`process:list` and bounded `process:logs` expose safe connection metadata for
+service definitions: definition name, version family, concrete version, service
+runtime unit name, endpoint host/port, and credential field names. They do not
+expose credential values.
 When a service endpoint points back at the owning node's own WireGuard service
 address, `doctor --family=process` diagnoses the Linux self-route with
 `ip route get <wireguard-ip>`. The diagnostic is read-only. macOS reports

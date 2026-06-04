@@ -24,6 +24,9 @@ Use this command to inspect process configuration and last known state without l
 - **Process Definitions**: Reads process definitions from gateway configuration.
 - **Context Resolution**: Resolves a node, app, or workspace context. A workspace context includes workspace-owned process definitions and app-owned definitions inherited by that workspace.
 - **Runtime Identity**: Derives expected runtime unit identities for that context.
+- **Service Metadata**: Includes safe connection metadata for service process
+  definitions, including endpoint and credential field names but not credential
+  values.
 - **Lifecycle Events**: Shows the latest durable process lifecycle event when one exists.
 - **No Live Probing**: Does not SSH to the owning node and does not run live runtime probes.
 

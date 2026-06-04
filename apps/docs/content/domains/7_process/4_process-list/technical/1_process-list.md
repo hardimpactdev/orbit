@@ -40,8 +40,9 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 2. Send the request to the gateway, which validates the authenticated peer's authorization.
 3. Read process definitions from gateway configuration in process order. A workspace context includes workspace-owned definitions and app-owned definitions inherited by that workspace.
 4. Derive expected runtime-unit identities for the selected context.
-5. Read latest durable lifecycle events for the selected runtime context when events exist.
-6. Render the selected output.
+5. For service process definitions, include safe process-owned connection metadata: definition, version family, concrete version, service name, endpoint host/port, and credential field names. Do not include credential values.
+6. Read latest durable lifecycle events for the selected runtime context when events exist.
+7. Render the selected output.
 
 `process:list` must not SSH to nodes, run live process manager probes, mutate gateway configuration, or change runtime state.
 

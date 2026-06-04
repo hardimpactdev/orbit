@@ -117,6 +117,61 @@ describe('ProcessLogController', function (): void {
             ->assertJsonPath('success.data.logs.lines.0.message', 'OpenCode ready');
     });
 
+    it('returns service definition metadata when reading node owned service process logs', function (): void {
+        createProcessLogCallerNode(role: 'gateway');
+        $node = createTestAppHostNode([
+            'name' => 'database-1',
+            'wireguard_address' => '10.6.0.44',
+        ]);
+        Process::factory()->forOwner($node)->create([
+            'name' => 'mysql8',
+            'command' => 'mysqld',
+            'runtime' => ProcessRuntime::DockerSwarm,
+            'runtime_config' => [
+                'definition' => 'mysql',
+                'version_family' => '8',
+                'version' => '8.4',
+                'service_name' => 'orbit-mysql8',
+                'endpoint' => [
+                    'name' => 'mysql8',
+                    'kind' => 'tcp',
+                    'host' => '10.6.0.44',
+                    'port' => 3308,
+                ],
+                'credentials' => [
+                    'database' => 'orbit',
+                    'password' => 'orbit',
+                    'username' => 'orbit',
+                ],
+            ],
+        ]);
+        $remoteShell = new ProcessLogApiRemoteShell([
+            new RemoteShellResult(exitCode: 0, stdout: "MySQL ready\n", stderr: '', durationMs: 1),
+        ]);
+        app()->instance(RemoteShell::class, $remoteShell);
+
+        $response = $this->call('GET', '/api/processes/mysql8/log', [
+            'node' => 'database-1',
+            'lines' => 5,
+        ], [], [], ['REMOTE_ADDR' => PROCESS_LOG_CALLER_WG_IP]);
+
+        $response->assertOk()
+            ->assertJsonPath('success.data.logs.node', 'database-1')
+            ->assertJsonPath('success.data.logs.app', null)
+            ->assertJsonPath('success.data.logs.workspace', null)
+            ->assertJsonPath('success.data.logs.runtime_unit', 'orbit-mysql8')
+            ->assertJsonPath('success.data.logs.service.definition', 'mysql')
+            ->assertJsonPath('success.data.logs.service.version_family', '8')
+            ->assertJsonPath('success.data.logs.service.version', '8.4')
+            ->assertJsonPath('success.data.logs.service.endpoint.host', '10.6.0.44')
+            ->assertJsonPath('success.data.logs.service.endpoint.port', 3308)
+            ->assertJsonPath('success.data.logs.service.credential_fields', ['database', 'password', 'username'])
+            ->assertJsonMissingPath('success.data.logs.service.credentials')
+            ->assertJsonPath('success.data.logs.lines.0.message', 'MySQL ready');
+
+        expect($remoteShell->scripts[0])->toBe("docker service logs --tail 5 'orbit-mysql8' 2>&1");
+    });
+
     it('rejects unsupported persisted runtimes before log side effects', function (): void {
         createProcessLogCallerNode(role: 'gateway');
         $appNode = createTestAppHostNode();

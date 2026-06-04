@@ -19,6 +19,10 @@ The process family owns these facts:
 - Supervisor process runtime units rendered from process, app, workspace, and
   node configuration, including command, working directory, restart policy, and
   runtime environment;
+- Docker containers and Docker Swarm services rendered from node-owned service
+  process definitions, including service definition, version family, concrete
+  version, runtime unit name, spec hash, endpoint metadata, and credential
+  field names;
 - lifecycle event notifier material that Orbit manages, required to record runtime `crashed` events from app-host units whose process definitions require crash event reporting;
 - stale process runtime artifacts owned by Orbit whose identity no longer maps
   to an active app, workspace, or process definition.
@@ -47,14 +51,18 @@ The owning app resolves to an active app record and the expected runtime context
 
 ### Process manager availability
 
-The node has Supervisor process runtime support available and responsive, with
-`supervisord` reachable and its control socket responsive. When this layer
-fails, the probe stops and reports `process.runtime_backend_unavailable`
-instead of cascading to downstream checks.
+The owning node has the selected runtime backend available and responsive.
+Supervisor-backed process units require `supervisord` and its control socket.
+Docker-backed service process units require Docker container inspection.
+Docker Swarm-backed service process units require Docker service inspection.
+When this layer fails, the probe stops and reports
+`process.runtime_backend_unavailable` instead of cascading to downstream
+checks.
 
 The probe reads `/etc/supervisor/conf.d/orbit_*.conf` files and compares their
 content hash, restart policy, and environment line against the rendered gateway
-spec.
+spec. For Docker and Docker Swarm runtime units, the probe compares the
+Orbit-managed process spec hash on the concrete container or service labels.
 
 ### Runtime-unit identity
 
@@ -74,7 +82,8 @@ to node provisioning/topology work.
 ### Runtime artifact presence
 
 Each expected runtime unit exists as the selected backend artifact: a
-Supervisor program. Checked only when the process manager is reachable.
+Supervisor program, Docker container, or Docker Swarm service. Checked only
+when the selected runtime backend is reachable.
 
 ### Runtime artifact shape
 
@@ -170,7 +179,8 @@ that `process.runtime_backend_unavailable` short-circuits downstream layers.
 
 `ProcessesProbeTest` covers registry configuration, node/app/workspace owner
 validation, app and workspace expansion, process manager availability,
-runtime-unit identity, WireGuard self-route diagnostics for same-node service
-endpoints, missing/extra/drifted runtime artifacts, restart policy drift,
-runtime environment drift, event notifier drift, and exclusion of non-process
-drift from issue codes.
+runtime-unit identity, Docker and Docker Swarm service definition metadata,
+WireGuard self-route diagnostics for same-node service endpoints,
+missing/extra/drifted runtime artifacts, restart policy drift, runtime
+environment drift, event notifier drift, and exclusion of non-process drift
+from issue codes.

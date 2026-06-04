@@ -15,6 +15,7 @@ class ProcessListPayload
     public function __construct(
         private readonly ProcessOwnerContextResolver $contexts,
         private readonly ProcessRuntimeDriverRegistry $runtimeDrivers,
+        private readonly ProcessServiceMetadataPayload $serviceMetadata,
     ) {}
 
     /**
@@ -50,6 +51,7 @@ class ProcessListPayload
                         'crash_notification' => $process->crash_notification->value,
                         'runtime' => $process->runtime->value,
                         'tool' => $process->tool,
+                        'service' => $this->serviceMetadata->forProcess($process),
                         'runtime_unit' => $driver->runtimeUnitName($app, $process, $workspace),
                         'last_event' => $this->lastEvent($process, $workspace),
                     ];
