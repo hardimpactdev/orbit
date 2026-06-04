@@ -491,6 +491,69 @@ it('rejects dry-run live mode because no operator identity can be minted', funct
         ->assertExitCode(1);
 });
 
+it('syncs the current checkout to a retained Incus topology by id', function (): void {
+    writeIncusRetainedManifest($this->manifestDirectory, 'dev-abc123');
+
+    $commands = [];
+
+    Process::fake(function ($process) use (&$commands) {
+        $commands[] = (string) $process->command;
+
+        return Process::result();
+    });
+
+    $output = new BufferedOutput;
+    $exitCode = app(Kernel::class)->call('e2e:incus', [
+        '--sync' => true,
+        '--id' => 'dev-abc123',
+        '--json' => true,
+    ], $output);
+
+    $payload = json_decode(trim($output->fetch()), true, flags: JSON_THROW_ON_ERROR);
+    $sync = $payload['success']['source_sync'];
+    $commandsOutput = implode("\n", $commands);
+
+    expect($exitCode)->toBe(0)
+        ->and($sync['id'])->toBe('dev-abc123')
+        ->and($sync['kind'])->toBe('operator_gateway_app-dev')
+        ->and($sync['provider'])->toBe('incus')
+        ->and($sync['host'])->toBe('beast')
+        ->and($sync['source_path'])->toContain('-incus-')
+        ->and($sync['checkouts']['operator'])->toBe('/home/orbit/orbit-current')
+        ->and($sync['sync_command'])->toBe('composer e2e:incus -- --sync --id=dev-abc123')
+        ->and($sync['release_command'])->toBe('composer e2e:incus -- --stop --id=dev-abc123')
+        ->and($commandsOutput)
+        ->toContain('rsync -az --delete')
+        ->toContain("'beast:{$sync['source_path']}/'");
+});
+
+it('prints a human retained Incus sync summary', function (): void {
+    writeIncusRetainedManifest($this->manifestDirectory, 'dev-abc123');
+
+    Process::fake(fn () => Process::result());
+
+    $this->artisan('e2e:incus', [
+        '--sync' => true,
+        '--id' => 'dev-abc123',
+    ])
+        ->expectsOutputToContain('Synced retained Incus topology [dev-abc123].')
+        ->expectsOutputToContain('Host: beast')
+        ->expectsOutputToContain('Source path:')
+        ->expectsOutputToContain('Mounted checkouts:')
+        ->expectsOutputToContain('- operator: /home/orbit/orbit-current')
+        ->expectsOutputToContain('Release: composer e2e:incus -- --stop --id=dev-abc123')
+        ->assertSuccessful();
+});
+
+it('requires an id when syncing a retained Incus topology', function (): void {
+    $this->artisan('e2e:incus', [
+        '--sync' => true,
+        '--json' => true,
+    ])
+        ->expectsOutputToContain('A retained topology id is required for --sync.')
+        ->assertExitCode(1);
+});
+
 it('stops a retained Incus topology by id', function (): void {
     writeIncusRetainedManifest($this->manifestDirectory, 'dev-abc123');
 
@@ -582,7 +645,7 @@ it('rejects ambiguous start and stop mode selection', function (): void {
         '--stop' => true,
         '--json' => true,
     ])
-        ->expectsOutputToContain('Choose exactly one Incus topology action: --start, --stop, or --live.')
+        ->expectsOutputToContain('Choose exactly one Incus topology action: --start, --stop, --live, or --sync.')
         ->assertExitCode(1);
 });
 

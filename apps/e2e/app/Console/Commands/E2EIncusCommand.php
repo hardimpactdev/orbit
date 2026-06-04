@@ -10,6 +10,7 @@ use App\E2E\Support\E2ETopologyKind;
 use App\E2E\Support\IncusHost;
 use App\E2E\Support\LiveIncusLocalMachine;
 use App\E2E\Support\LiveIncusStepTree;
+use App\E2E\Support\SourceMountedCheckoutSyncer;
 use Closure;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
@@ -22,8 +23,9 @@ use Throwable;
     {--start : Acquire a retained Incus topology}
     {--stop : Release a retained Incus topology}
     {--live : Acquire a retained Incus topology and mint a local operator WireGuard identity}
+    {--sync : Refresh the current checkout source mount for a retained Incus topology}
     {--topology=operator_gateway_app-dev : Prepared topology kind to acquire}
-    {--id= : Retained topology id to release}
+    {--id= : Retained topology id to release or sync}
     {--all : Release every recorded retained topology}
     {--checkout-roles= : Comma-separated roles to overlay the current checkout onto}
     {--operator-name= : Operator identity name to mint for --live (defaults to mac-<id>)}
@@ -71,9 +73,10 @@ class E2EIncusCommand extends Command
         $start = (bool) $this->option('start');
         $stop = (bool) $this->option('stop');
         $live = (bool) $this->option('live');
+        $sync = (bool) $this->option('sync');
 
-        if (count(array_filter([$start, $stop, $live])) !== 1) {
-            return $this->renderError('validation_failed', 'Choose exactly one Incus topology action: --start, --stop, or --live.', $json);
+        if (count(array_filter([$start, $stop, $live, $sync])) !== 1) {
+            return $this->renderError('validation_failed', 'Choose exactly one Incus topology action: --start, --stop, --live, or --sync.', $json);
         }
 
         if ($start) {
@@ -82,6 +85,10 @@ class E2EIncusCommand extends Command
 
         if ($live) {
             return $this->live();
+        }
+
+        if ($sync) {
+            return $this->sync();
         }
 
         return $this->stop();
@@ -131,6 +138,45 @@ class E2EIncusCommand extends Command
         }
 
         return $this->call('e2e:dev-topology:release', $parameters);
+    }
+
+    private function sync(): int
+    {
+        $json = (bool) $this->option('json');
+        $id = $this->stringOption('id');
+
+        if ($id === null) {
+            return $this->renderError('validation_failed', 'A retained topology id is required for --sync.', $json);
+        }
+
+        $store = E2EDevTopologyManifestStore::fromEnvironment(repo_path());
+        $manifest = $store->read($id);
+
+        if ($manifest === null) {
+            return $this->renderError('retained_topology_not_found', "No retained topology manifest found for [{$id}].", $json);
+        }
+
+        $provider = $manifest['provider'] ?? null;
+
+        if ($provider !== 'incus') {
+            $providerName = is_string($provider) && $provider !== '' ? $provider : 'unknown';
+
+            return $this->renderError('validation_failed', "Retained topology [{$id}] is a [{$providerName}] topology, not an Incus topology.", $json);
+        }
+
+        $host = $manifest['host'] ?? null;
+
+        if (! is_string($host) || trim($host) === '') {
+            return $this->renderError('validation_failed', "Retained topology [{$id}] does not record an Incus host.", $json);
+        }
+
+        try {
+            $sourcePath = (new SourceMountedCheckoutSyncer)->sync(trim($host), 'incus');
+        } catch (Throwable $exception) {
+            return $this->renderError('source_sync_failed', $exception->getMessage(), $json);
+        }
+
+        return $this->renderSourceSync($this->sourceSyncPayload($manifest, trim($host), $sourcePath), $json);
     }
 
     private function live(): int
@@ -593,6 +639,61 @@ class E2EIncusCommand extends Command
                 ],
             ],
         ]);
+    }
+
+    /**
+     * @param  array<string, mixed>  $manifest
+     * @return array<string, mixed>
+     */
+    private function sourceSyncPayload(array $manifest, string $host, string $sourcePath): array
+    {
+        $id = (string) ($manifest['id'] ?? '');
+
+        return [
+            'id' => $id,
+            'kind' => (string) ($manifest['kind'] ?? ''),
+            'provider' => 'incus',
+            'host' => $host,
+            'source_path' => $sourcePath,
+            'checkouts' => is_array($manifest['checkouts'] ?? null) ? $manifest['checkouts'] : [],
+            'sync_command' => "composer e2e:incus -- --sync --id={$id}",
+            'release_command' => "composer e2e:incus -- --stop --id={$id}",
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     */
+    private function renderSourceSync(array $payload, bool $json): int
+    {
+        if ($json) {
+            $this->line(json_encode([
+                'success' => [
+                    'source_sync' => $payload,
+                ],
+            ], JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR));
+
+            return self::SUCCESS;
+        }
+
+        $this->line("Synced retained Incus topology [{$payload['id']}].");
+        $this->line("Kind: {$payload['kind']}");
+        $this->line("Host: {$payload['host']}");
+        $this->line("Source path: {$payload['source_path']}");
+        $this->line('Mounted checkouts:');
+
+        foreach ($payload['checkouts'] as $role => $checkout) {
+            if (! is_string($role) || ! is_string($checkout)) {
+                continue;
+            }
+
+            $this->line("- {$role}: {$checkout}");
+        }
+
+        $this->line("Sync again: {$payload['sync_command']}");
+        $this->line("Release: {$payload['release_command']}");
+
+        return self::SUCCESS;
     }
 
     /**

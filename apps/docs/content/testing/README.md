@@ -110,7 +110,9 @@ These rules order the lanes above into a development workflow:
   `composer e2e:incus -- --start --topology=<kind>` and Docker with
   `composer e2e:dev-topology -- --provider=docker --kind=<kind>`. Reap Incus
   with `composer e2e:incus -- --stop --id=<id>` or Docker with
-  `composer e2e:dev-topology:release -- <id>`; see
+  `composer e2e:dev-topology:release -- <id>`. Refresh the current checkout in a
+  running retained Incus topology with `composer e2e:incus -- --sync --id=<id>`;
+  see
   `docs/testing/e2e/prepared-topologies.md#retained-dev-topologies`.
 - Findings from a retained topology are codified back into ordinary
   prepared-topology Pest E2E tests; the durable assertion lives in Pest, not in a

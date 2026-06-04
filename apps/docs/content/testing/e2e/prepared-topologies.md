@@ -98,6 +98,9 @@ composer e2e:incus -- --live \
 composer e2e:incus -- --live --manual \
   --topology=operator_gateway_app-dev_app-prod_ingress
 
+# Refresh the current checkout source mount for a running retained Incus topology.
+composer e2e:incus -- --sync --id=dev-1a2b3c
+
 # Preview the acquisition plan without provisioning anything.
 composer e2e:incus -- --start --dry-run \
   --topology=operator_gateway_app-dev_app-prod_agent_websocket
@@ -112,10 +115,15 @@ identifiable dev run id
 (`orbit-e2e-dev-<hex>-<role>`) so they never collide with ephemeral test clones
 and stay easy to reap.
 
-Remote Docker retained topologies rsync the initiating worktree to the runner
-host before acquisition, then bind-mount that synced copy. Reacquire or rerun
-the source sync before using a retained remote Docker topology to verify edits
-made after acquisition.
+Remote Docker and Incus retained topologies rsync the initiating worktree to the
+runner host before acquisition, then bind-mount that synced copy. Use
+`composer e2e:incus -- --sync --id=<id>` to refresh the source-mounted checkout
+for a running retained Incus topology after local edits. The command reuses the
+recorded manifest host, updates the synced host path behind `/home/orbit/orbit`
+inside the retained VMs, and does not reacquire VMs, rerun topology bake hooks,
+restart services, or change local WireGuard state. Reacquire the topology when
+the behavior you are testing depends on boot-time topology setup rather than
+changed source files.
 
 Root Composer E2E scripts source the repository-level `.env.e2e` before entering
 `apps/e2e`; that file is not copied or converted into `apps/e2e/.env`. Direct
