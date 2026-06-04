@@ -112,7 +112,10 @@ These rules order the lanes above into a development workflow:
   with `composer e2e:incus -- --stop --id=<id>` or Docker with
   `composer e2e:dev-topology:release -- <id>`. Refresh the current checkout in a
   running retained Incus topology with `composer e2e:incus -- --sync --id=<id>`;
-  see
+  the sync is one-way from the initiating worktree to the runner-host source
+  mount and then to each VM-local runtime mirror. Keep the local worktree as
+  source of truth, run commands from the retained VM's runtime mirror, and treat
+  VM-side edits as disposable unless explicitly copied back. See
   `docs/testing/e2e/prepared-topologies.md#retained-dev-topologies`.
 - Findings from a retained topology are codified back into ordinary
   prepared-topology Pest E2E tests; the durable assertion lives in Pest, not in a

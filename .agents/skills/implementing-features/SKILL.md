@@ -162,9 +162,26 @@ like:
 
 ```bash
 ssh beast 'incus list --format csv -c ns | grep <retained-id> || true'
-ssh beast 'incus exec <instance> -- sudo -u orbit bash -lc "cd /home/orbit/orbit && <orbit command>"'
+ssh beast 'incus exec <instance> -- sudo -u orbit bash -lc "cd /home/orbit/orbit-run && <orbit command>"'
 ssh beast 'incus exec <instance> -- bash -lc "<host command such as gh --version>"'
 ```
+
+For source-mounted Incus topologies, `/home/orbit/orbit` is the synced source
+mount and `/home/orbit/orbit-run` is the VM-local runtime mirror. Run Orbit
+commands from `/home/orbit/orbit-run` unless explicitly testing the source
+mount itself. After local worktree edits, refresh a retained topology with:
+
+```bash
+composer e2e:incus -- --sync --id=<id>
+```
+
+That sync is one-way from the implementation worktree to the runner-host source
+mount and then to each recorded VM runtime mirror. It transfers filesystem
+deltas for included files to the runner host, not only Git-dirty files, and then
+refreshes the VM-local runtime mirrors. Keep the implementation worktree as the
+source of truth. VM-side edits in `/home/orbit/orbit-run` are scratch work and
+are overwritten by the next sync; VM-side edits in `/home/orbit/orbit` mutate
+the runner-host copy, not the local worktree.
 
 Record the retained topology id, topology kind, checkout roles, inspected
 instances, commands run, and observed result in the Solo report. If you mutate
@@ -197,8 +214,9 @@ moving on to durable E2E.
 6. Implement the smallest working vertical slice to make the tests pass.
 7. For VM/node/tool/package/doctor/role-baseline behavior, run the retained
    Incus inspection gate from this worktree before durable Incus E2E. Retained
-   topologies source-mount the current worktree after rsync and are suitable for
-   real VM inspection. Release and verify cleanup before continuing.
+   topologies sync the current worktree into a runner-host source mount and
+   execute from each VM's runtime mirror, so they are suitable for real VM
+   inspection. Release and verify cleanup before continuing.
 8. Run focused in-memory and prepared-topology feature verification.
 9. Run artifact-backed feature verification when production artifact behavior
    matters and that lane exists for the provider.
@@ -243,11 +261,15 @@ Normal feature work follows a staged E2E model:
     retained disposable topology. `composer e2e:incus -- --live
     --topology=<kind>` additionally mints a local operator identity and can
     bring up a local WireGuard tunnel.
-  - Retained/live Incus topologies source-mount the initiating worktree at
-    `/home/orbit/orbit`. Remote Incus hosts rsync the current worktree to
-    `/tmp/orbit-e2e-sources/<worktree>-<hash>` before acquisition, then mount
-    that synced checkout. Node-local mutable Orbit state remains under
-    `/home/orbit/.config/orbit`.
+  - Retained/live Incus topologies mount the initiating worktree through a
+    synced source checkout at `/home/orbit/orbit`, then execute from a VM-local
+    runtime mirror at `/home/orbit/orbit-run`. Remote Incus hosts rsync the
+    current worktree to `/tmp/orbit-e2e-sources/<worktree>-<hash>` before
+    acquisition, then mount that synced checkout. After local edits, use
+    `composer e2e:incus -- --sync --id=<id>` to refresh the source mount and
+    runtime mirrors. Keep the local worktree as source of truth; VM-side mirror
+    edits are disposable unless copied back explicitly. Node-local mutable
+    Orbit state remains under `/home/orbit/.config/orbit`.
   - Use retained/live Incus topologies to develop and test against real VM
     behavior before or while writing the durable E2E test. For
     VM/node/tool/package/doctor/role-baseline changes, this retained check is a

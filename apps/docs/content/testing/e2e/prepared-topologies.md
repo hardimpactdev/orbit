@@ -130,6 +130,41 @@ restart services, or change local WireGuard state. Reacquire the topology when
 the behavior you are testing depends on boot-time topology setup rather than
 changed source files.
 
+For retained Incus, `/home/orbit/orbit` is the transport checkout and
+`/home/orbit/orbit-run` is the execution checkout. The transport checkout is
+the only path Incus can mount from the runner host into the VM, so it remains
+part of the flow even though Orbit commands should run from the VM-local
+runtime mirror. The mirror keeps PHP/Laravel execution on the VM filesystem and
+keeps gateway Docker bind mounts attached to a stable directory.
+
+`--sync` is one-way from the initiating worktree to the retained topology. On a
+remote Incus host it has two stages:
+
+1. Rsync the initiating checkout to the retained host source path that backs
+   `/home/orbit/orbit`. This stage is filesystem-incremental for included
+   files; it is not based on Git status and it also deletes files removed from
+   the initiating checkout. Gateway and CLI Composer dependencies are hydrated
+   only when their lock hashes changed.
+2. Refresh each recorded VM runtime checkout from `/home/orbit/orbit`, usually
+   into `/home/orbit/orbit-run`. This stage replaces the mirror contents inside
+   the stable runtime directory while preserving gateway and CLI `vendor`
+   directories.
+
+The recommended development loop is: keep the Mac worktree as source of truth,
+sync it into the retained topology, inspect through `incus exec` or an
+interactive shell, run Orbit commands from `/home/orbit/orbit-run`, then edit
+locally and sync forward again. Changes made in `/home/orbit/orbit-run` are
+scratch work and are overwritten by the next sync. Changes made in
+`/home/orbit/orbit` mutate the runner-host copy, not the Mac worktree, and are
+also liable to be overwritten by the next local sync. If a VM-side experiment
+finds a useful patch, copy that patch back explicitly and reapply it in the
+local worktree before syncing forward.
+
+Plain retained Incus start mode does not need local WireGuard for inspection:
+use SSH to the configured Incus host and `incus exec` into the retained VM. Use
+`--live` only when the local Mac must become an Orbit operator and talk to the
+retained gateway through a local WireGuard tunnel.
+
 Root Composer E2E scripts source the repository-level `.env.e2e` before entering
 `apps/e2e`; that file is not copied or converted into `apps/e2e/.env`. Direct
 `apps/e2e` command runs may use the shell environment or `apps/e2e/.env`.
