@@ -43,6 +43,10 @@ These rules describe how runtime units are derived from process definitions.
   such as `supervisor` for retained host commands, `docker` for containerized
   processes, `docker-swarm` for node-owned managed service processes, or
   `systemd` for node-level Linux services.
+- Public app/workspace host-command process definitions use the `supervisor`
+  runtime. App/workspace `docker` rows are reserved for Orbit-managed runtime
+  processes such as generated FrankenPHP web-runtime units, not arbitrary
+  public host commands.
 - The process definition supplies shared fields such as command, restart policy,
   runtime backend, runtime configuration, and crash notification policy. The
   rendering context supplies per-instance fields such as node/app/workspace

@@ -20,7 +20,7 @@ describe('process write commands', function (): void {
             '--app' => 'docs',
             '--restart-policy' => 'always',
             '--crash-notification' => 'agent_ide',
-            '--runtime' => 'docker',
+            '--runtime' => 'supervisor',
             '--start' => true,
             '--json' => true,
         ]);
@@ -36,11 +36,32 @@ describe('process write commands', function (): void {
                 'restart_policy' => 'always',
                 'crash_notification' => 'agent_ide',
                 'start' => true,
-                'runtime' => 'docker',
+                'runtime' => 'supervisor',
             ]);
 
         expect($exitCode)->toBe(0)
             ->and($decoded['success']['data']['process']['name'])->toBe('vite');
+    });
+
+    it('rejects app scoped docker process:add payloads before contacting the gateway', function (): void {
+        Http::fake();
+
+        [$exitCode, $output] = runCommand($this, 'process:add', [
+            'name' => 'queue',
+            'processCommand' => 'php artisan queue:work',
+            '--app' => 'docs',
+            '--runtime' => 'docker',
+            '--json' => true,
+        ]);
+
+        $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+
+        Http::assertNothingSent();
+
+        expect($exitCode)->toBe(1)
+            ->and($decoded['error']['code'])->toBe('validation_failed')
+            ->and($decoded['error']['meta']['field'])->toBe('runtime')
+            ->and($decoded['error']['meta']['reason'])->toBe('docker_runtime_requires_service_or_managed_process');
     });
 
     it('posts node owned process:add payloads with tool dependencies to the gateway', function (): void {
@@ -246,6 +267,26 @@ describe('process write commands', function (): void {
 
         expect($exitCode)->toBe(0)
             ->and($decoded['success']['data']['process']['restart_policy'])->toBe('on_failure');
+    });
+
+    it('rejects app scoped docker process:edit payloads before contacting the gateway', function (): void {
+        Http::fake();
+
+        [$exitCode, $output] = runCommand($this, 'process:edit', [
+            'name' => 'queue',
+            '--app' => 'docs',
+            '--runtime' => 'docker',
+            '--json' => true,
+        ]);
+
+        $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+
+        Http::assertNothingSent();
+
+        expect($exitCode)->toBe(1)
+            ->and($decoded['error']['code'])->toBe('validation_failed')
+            ->and($decoded['error']['meta']['field'])->toBe('runtime')
+            ->and($decoded['error']['meta']['reason'])->toBe('docker_runtime_requires_service_or_managed_process');
     });
 
     it('patches node owned process:edit payloads to the gateway', function (): void {

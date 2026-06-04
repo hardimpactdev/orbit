@@ -20,7 +20,7 @@ final class ProcessAddCommand extends ProcessGatewayCommand
         {--definition-version= : Service process definition version or version family}
         {--restart-policy=never : Restart policy (never|on_failure|always)}
         {--crash-notification=none : Crash notification policy (none|agent_ide)}
-        {--runtime= : Process runtime (docker|docker-swarm|supervisor|systemd); defaults to docker for service definitions, systemd for other node processes, docker for PHP apps, and supervisor for non-PHP apps}
+        {--runtime= : Process runtime (docker|docker-swarm|supervisor|systemd); defaults to docker for service definitions, systemd for other node processes, and supervisor for app/workspace host commands}
         {--start : Start rendered runtime units after creation}
         {--json : Output JSON}';
 
@@ -58,6 +58,7 @@ final class ProcessAddCommand extends ProcessGatewayCommand
             ?? $this->validateRestartPolicy($restartPolicy)
             ?? $this->validateCrashNotification($crashNotification)
             ?? $this->validateRuntime($runtime)
+            ?? $this->validateAppWorkspaceCommandRuntime($runtime, $node, $definition)
             ?? $this->validateTool($tool)
             ?? $this->validateDefinition($definition)
             ?? ($definition === null && $version !== null ? $this->failValidation('definition_version', 'Process definition version requires --definition.', [

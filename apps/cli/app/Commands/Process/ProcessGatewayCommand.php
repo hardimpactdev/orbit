@@ -90,4 +90,27 @@ abstract class ProcessGatewayCommand extends GatewayCommand
             'allowed' => self::RUNTIMES,
         ]);
     }
+
+    protected function validateAppWorkspaceCommandRuntime(?string $runtime, ?string $node, ?string $definition = null): ?int
+    {
+        if ($runtime === null || $node !== null || $definition !== null || $runtime === 'supervisor') {
+            return null;
+        }
+
+        return match ($runtime) {
+            'docker' => $this->failValidation('runtime', 'The docker runtime is only valid for service definitions or Orbit-managed runtime processes.', [
+                'value' => $runtime,
+                'reason' => 'docker_runtime_requires_service_or_managed_process',
+            ]),
+            'docker-swarm' => $this->failValidation('runtime', 'The docker-swarm runtime is only valid for node-owned processes.', [
+                'value' => $runtime,
+                'reason' => 'docker_swarm_requires_node_owned_process',
+            ]),
+            'systemd' => $this->failValidation('runtime', 'The systemd runtime is only valid for node-owned processes.', [
+                'value' => $runtime,
+                'reason' => 'systemd_requires_node_owned_process',
+            ]),
+            default => null,
+        };
+    }
 }

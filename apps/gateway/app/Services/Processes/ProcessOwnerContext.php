@@ -56,7 +56,11 @@ final readonly class ProcessOwnerContext
 
     public function allowsRuntime(ProcessRuntime $runtime): bool
     {
-        return ! $runtime->requiresNodeOwner() || $this->owner instanceof Node;
+        if ($this->owner instanceof Node) {
+            return true;
+        }
+
+        return $runtime->appWorkspaceCommandViolationReason() === null;
     }
 
     public function assertRuntimeAllowed(ProcessRuntime $runtime): void
@@ -65,10 +69,10 @@ final readonly class ProcessOwnerContext
             return;
         }
 
-        throw new GatewayApiException($runtime->nodeOwnerViolationMessage() ?? 'The selected runtime is not valid for this process owner.', 'validation_failed', [
+        throw new GatewayApiException($runtime->appWorkspaceCommandViolationMessage() ?? 'The selected runtime is not valid for this process owner.', 'validation_failed', [
             'field' => 'runtime',
             'value' => $runtime->value,
-            'reason' => $runtime->nodeOwnerViolationReason(),
+            'reason' => $runtime->appWorkspaceCommandViolationReason(),
         ]);
     }
 

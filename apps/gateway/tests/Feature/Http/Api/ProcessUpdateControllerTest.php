@@ -264,6 +264,56 @@ describe('ProcessUpdateController', function (): void {
             ->and($remoteShell->scripts)->toBe([]);
     });
 
+    it('rejects docker for app scoped host-command process updates before runtime side effects', function (): void {
+        $caller = createProcessUpdateCallerNode();
+        $appNode = createTestAppHostNode();
+        grantProcessUpdateAccess($caller, $appNode);
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
+        Process::factory()->forOwner($app)->create(['name' => 'queue', 'runtime' => 'supervisor']);
+        $remoteShell = new ProcessUpdateRemoteShell([]);
+        app()->instance(RemoteShell::class, $remoteShell);
+
+        $response = $this->call('PATCH', '/api/processes/queue', [
+            'app' => 'docs',
+            'runtime' => 'docker',
+        ], [], [], ['REMOTE_ADDR' => PROCESS_UPDATE_CALLER_WG_IP]);
+
+        $response->assertStatus(422)
+            ->assertJsonPath('error.code', 'validation_failed')
+            ->assertJsonPath('error.meta.field', 'runtime')
+            ->assertJsonPath('error.meta.value', 'docker')
+            ->assertJsonPath('error.meta.reason', 'docker_runtime_requires_service_or_managed_process');
+
+        expect(Process::query()->where('name', 'queue')->value('runtime')->value)->toBe('supervisor')
+            ->and($remoteShell->scripts)->toBe([]);
+    });
+
+    it('rejects docker for workspace scoped host-command process updates before runtime side effects', function (): void {
+        $caller = createProcessUpdateCallerNode();
+        $appNode = createTestAppHostNode();
+        grantProcessUpdateAccess($caller, $appNode);
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
+        $workspace = Workspace::factory()->for($app)->create(['name' => 'feature-docs']);
+        Process::factory()->forOwner($workspace)->create(['name' => 'queue', 'runtime' => 'supervisor']);
+        $remoteShell = new ProcessUpdateRemoteShell([]);
+        app()->instance(RemoteShell::class, $remoteShell);
+
+        $response = $this->call('PATCH', '/api/processes/queue', [
+            'app' => 'docs',
+            'workspace' => 'feature-docs',
+            'runtime' => 'docker',
+        ], [], [], ['REMOTE_ADDR' => PROCESS_UPDATE_CALLER_WG_IP]);
+
+        $response->assertStatus(422)
+            ->assertJsonPath('error.code', 'validation_failed')
+            ->assertJsonPath('error.meta.field', 'runtime')
+            ->assertJsonPath('error.meta.value', 'docker')
+            ->assertJsonPath('error.meta.reason', 'docker_runtime_requires_service_or_managed_process');
+
+        expect($workspace->processes()->where('name', 'queue')->value('runtime')->value)->toBe('supervisor')
+            ->and($remoteShell->scripts)->toBe([]);
+    });
+
     it('returns validation and not found errors', function (array $payload, string $processName, int $status, string $code): void {
         createProcessUpdateCallerNode(role: 'gateway');
         $appNode = createTestAppHostNode();

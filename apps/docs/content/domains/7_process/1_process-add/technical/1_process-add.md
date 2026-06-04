@@ -33,7 +33,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | `version` | `--definition-version` | Optional for one-version definitions; required when the definition has multiple version families. | When `definition` is absent. | Definition default when unambiguous. | Supported service process definition version or version family. |
 | `restart_policy` | `--restart-policy` | Optional. | Never. | `never`. | One of `never`, `on_failure`, `always`. |
 | `crash_notification` | `--crash-notification` | Optional. | Never. | `none`. | One of `none`, `agent_ide`. |
-| `runtime` | `--runtime` | Optional. | Never. | `docker` for service definitions; `systemd` for other node-owned processes; app runtime default for app/workspace processes. | One of `docker`, `docker-swarm`, `supervisor`, `systemd`. `systemd` is valid only when `node` owns the process. `docker-swarm` is valid only for node-owned managed service processes. Service definitions support `docker` and `docker-swarm`. |
+| `runtime` | `--runtime` | Optional. | Never. | `docker` for service definitions; `systemd` for other node-owned processes; `supervisor` for app/workspace host-command processes. | One of `docker`, `docker-swarm`, `supervisor`, `systemd`. `supervisor` is the only public runtime for app/workspace host-command process creation. `systemd` is valid only when `node` owns the process. `docker-swarm` is valid only for node-owned managed service processes. Service definitions support `docker` and `docker-swarm`. |
 | `start` | `--start` | Optional. | Never. | `false`. | Boolean flag. Starts rendered runtime units after applying when true. |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer and non-interactive input mode. |
 
@@ -79,7 +79,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | --- | --- | --- |
 | Duplicate process | The resolved owner scope already has a process definition with the same name. | Failure (`error.code=process.name_collision`). |
 | Invalid context | `--node` is combined with `--app` or `--workspace`, or no node/app/workspace context resolves. | Failure (`error.code=validation_failed`). |
-| Invalid runtime scope | `--runtime=systemd` or `--runtime=docker-swarm` is supplied for an app- or workspace-owned process. | Failure (`error.code=validation_failed`; `error.meta.reason=systemd_requires_node_owned_process` or `docker_swarm_requires_node_owned_process`). |
+| Invalid app/workspace command runtime | `--runtime=docker`, `--runtime=systemd`, or `--runtime=docker-swarm` is supplied for an app- or workspace-owned host-command process. | Failure (`error.code=validation_failed`; `error.meta.reason=docker_runtime_requires_service_or_managed_process`, `systemd_requires_node_owned_process`, or `docker_swarm_requires_node_owned_process`). |
 | Version without service definition | `--definition-version` is supplied without `--definition`. | Failure (`error.code=validation_failed`; `error.meta.reason=process_definition_version_requires_definition`). |
 | Invalid service definition scope | `--definition` is supplied for an app- or workspace-owned process. | Failure (`error.code=validation_failed`; `error.meta.reason=process_definition_requires_node_owned_process`). |
 | Service definition with tool | `--definition` is combined with `--tool`. | Failure (`error.code=validation_failed`; `error.meta.reason=process_definition_cannot_reference_tool`). |

@@ -47,7 +47,6 @@ final readonly class AddProcess
         $app->loadMissing(['node', 'workspaces']);
 
         $resolvedRuntime = $runtime ?? ($definition === null ? $context->defaultRuntime() : ProcessRuntime::Docker);
-        $context->assertRuntimeAllowed($resolvedRuntime);
         $runtimeConfig = [];
 
         if ($definition !== null) {
@@ -67,6 +66,8 @@ final readonly class AddProcess
                 ]);
             }
 
+            $context->assertRuntimeAllowed($resolvedRuntime);
+
             $serviceDefinition = $this->serviceDefinitions->resolve(
                 definition: $definition,
                 version: $version,
@@ -77,6 +78,8 @@ final readonly class AddProcess
 
             $command = $serviceDefinition->command;
             $runtimeConfig = $serviceDefinition->runtimeConfig;
+        } else {
+            $context->assertRuntimeAllowed($resolvedRuntime);
         }
 
         if ($command === null || trim($command) === '') {

@@ -5,10 +5,12 @@ declare(strict_types=1);
 use App\Contracts\RemoteShell;
 use App\Contracts\SiteCertificateInstaller;
 use App\Data\RemoteShell\RemoteShellResult;
+use App\Enums\Apps\AppRuntimeKind;
 use App\Enums\Processes\ProcessRuntime;
 use App\Models\App;
 use App\Models\Node;
 use App\Models\Process;
+use App\Models\Workspace;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Tests\Fakes\SiteCertificateInstallerFake;
@@ -69,10 +71,44 @@ describe('ProcessStoreController', function (): void {
 
         $response->assertOk()
             ->assertJsonPath('success.data.process.name', 'vite')
+            ->assertJsonPath('success.data.process.runtime', 'supervisor')
             ->assertJsonPath('success.data.runtime_units.0.name', 'orbit_docs_main_vite')
             ->assertJsonPath('success.meta.warnings', []);
 
-        expect(Process::query()->where('name', 'vite')->exists())->toBeTrue();
+        expect(Process::query()->where('name', 'vite')->value('runtime'))->toBe(ProcessRuntime::Supervisor);
+    });
+
+    it('defaults workspace command processes to supervisor for PHP app workspaces', function (): void {
+        createProcessStoreCallerNode(role: 'gateway');
+        $appNode = createTestAppHostNode();
+        $app = App::factory()->create([
+            'name' => 'docs',
+            'node_id' => $appNode->id,
+            'runtime_kind' => AppRuntimeKind::Php,
+        ]);
+        $workspace = Workspace::factory()->for($app)->create(['name' => 'feature-docs']);
+        app()->instance(RemoteShell::class, new ProcessStoreRemoteShell([
+            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+        ]));
+
+        $response = $this->call('POST', '/api/processes', [
+            'app' => 'docs',
+            'workspace' => 'feature-docs',
+            'name' => 'horizon',
+            'command' => 'php artisan horizon',
+        ], [], [], ['REMOTE_ADDR' => PROCESS_STORE_CALLER_WG_IP]);
+
+        $response->assertOk()
+            ->assertJsonPath('success.data.process.name', 'horizon')
+            ->assertJsonPath('success.data.process.workspace', 'feature-docs')
+            ->assertJsonPath('success.data.process.runtime', 'supervisor')
+            ->assertJsonPath('success.data.runtime_units.0.name', 'orbit_docs_feature-docs_horizon');
+
+        $process = Process::query()->where('name', 'horizon')->firstOrFail();
+
+        expect($process->owner_type)->toBe($workspace->getMorphClass())
+            ->and($process->owner_id)->toBe($workspace->id)
+            ->and($process->runtime)->toBe(ProcessRuntime::Supervisor);
     });
 
     it('rejects unauthorized callers before writing intent', function (): void {
@@ -219,6 +255,56 @@ describe('ProcessStoreController', function (): void {
             ->assertJsonPath('error.meta.reason', 'docker_swarm_requires_node_owned_process');
 
         expect(Process::query()->where('name', 'mysql8')->exists())->toBeFalse()
+            ->and($remoteShell->scripts)->toBe([]);
+    });
+
+    it('rejects docker for app scoped host-command process creation before runtime side effects', function (): void {
+        createProcessStoreCallerNode(role: 'gateway');
+        $appNode = createTestAppHostNode();
+        App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
+        $remoteShell = new ProcessStoreRemoteShell([]);
+        app()->instance(RemoteShell::class, $remoteShell);
+
+        $response = $this->call('POST', '/api/processes', [
+            'app' => 'docs',
+            'name' => 'queue',
+            'command' => 'php artisan queue:work',
+            'runtime' => 'docker',
+        ], [], [], ['REMOTE_ADDR' => PROCESS_STORE_CALLER_WG_IP]);
+
+        $response->assertStatus(422)
+            ->assertJsonPath('error.code', 'validation_failed')
+            ->assertJsonPath('error.meta.field', 'runtime')
+            ->assertJsonPath('error.meta.value', 'docker')
+            ->assertJsonPath('error.meta.reason', 'docker_runtime_requires_service_or_managed_process');
+
+        expect(Process::query()->where('name', 'queue')->exists())->toBeFalse()
+            ->and($remoteShell->scripts)->toBe([]);
+    });
+
+    it('rejects docker for workspace scoped host-command process creation before runtime side effects', function (): void {
+        createProcessStoreCallerNode(role: 'gateway');
+        $appNode = createTestAppHostNode();
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
+        Workspace::factory()->for($app)->create(['name' => 'feature-docs']);
+        $remoteShell = new ProcessStoreRemoteShell([]);
+        app()->instance(RemoteShell::class, $remoteShell);
+
+        $response = $this->call('POST', '/api/processes', [
+            'app' => 'docs',
+            'workspace' => 'feature-docs',
+            'name' => 'queue',
+            'command' => 'php artisan queue:work',
+            'runtime' => 'docker',
+        ], [], [], ['REMOTE_ADDR' => PROCESS_STORE_CALLER_WG_IP]);
+
+        $response->assertStatus(422)
+            ->assertJsonPath('error.code', 'validation_failed')
+            ->assertJsonPath('error.meta.field', 'runtime')
+            ->assertJsonPath('error.meta.value', 'docker')
+            ->assertJsonPath('error.meta.reason', 'docker_runtime_requires_service_or_managed_process');
+
+        expect(Process::query()->where('name', 'queue')->exists())->toBeFalse()
             ->and($remoteShell->scripts)->toBe([]);
     });
 

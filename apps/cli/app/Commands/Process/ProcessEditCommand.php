@@ -17,7 +17,7 @@ final class ProcessEditCommand extends ProcessGatewayCommand
         {--command= : New command}
         {--restart-policy= : Restart policy (never|on_failure|always)}
         {--crash-notification= : Crash notification policy (none|agent_ide)}
-        {--runtime= : Process runtime (docker|supervisor|systemd)}
+        {--runtime= : Process runtime (docker|docker-swarm|supervisor|systemd)}
         {--restart : Restart affected runtime units after update}
         {--json : Output JSON}';
 
@@ -51,7 +51,8 @@ final class ProcessEditCommand extends ProcessGatewayCommand
             ?? $this->validateEditableFields($command, $restartPolicy, $crashNotification, $runtime)
             ?? $this->validateRestartPolicy($restartPolicy)
             ?? $this->validateCrashNotification($crashNotification)
-            ?? $this->validateRuntime($runtime);
+            ?? $this->validateRuntime($runtime)
+            ?? $this->validateAppWorkspaceCommandRuntime($runtime, $node);
 
         if ($validation !== null) {
             return $validation;

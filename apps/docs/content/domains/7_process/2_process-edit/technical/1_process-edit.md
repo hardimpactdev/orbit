@@ -30,7 +30,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | `command` | `--command` | Optional. At least one editable field is required. | Never. | Current value. | Non-empty command string when supplied. |
 | `restart_policy` | `--restart-policy` | Optional. At least one editable field is required. | Never. | Current value. | One of `never`, `on_failure`, `always`. |
 | `crash_notification` | `--crash-notification` | Optional. At least one editable field is required. | Never. | Current value. | One of `none`, `agent_ide`. |
-| `runtime` | `--runtime` | Optional. At least one editable field is required. | Never. | Current value. | One of `docker`, `docker-swarm`, `supervisor`, `systemd`. `systemd` is valid only when `node` owns the process. `docker-swarm` is valid only for node-owned managed service processes. |
+| `runtime` | `--runtime` | Optional. At least one editable field is required. | Never. | Current value. | One of `docker`, `docker-swarm`, `supervisor`, `systemd`. `supervisor` is the only public runtime for app/workspace host-command process edits. `systemd` is valid only when `node` owns the process. `docker-swarm` is valid only for node-owned managed service processes. Existing Orbit-managed Docker process rows may still be lifecycle-managed by process commands. |
 | `restart` | `--restart` | Optional. | Never. | `false`. | Boolean flag. Restarts affected running runtime units after applying when true. |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer and non-interactive input mode. |
 
@@ -67,7 +67,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | --- | --- | --- |
 | Process not found | The named process does not exist for the resolved owner scope. | Failure (`error.code=process.not_found`). |
 | Invalid context | `--node` is combined with `--app` or `--workspace`, or no node/app/workspace context resolves. | Failure (`error.code=validation_failed`). |
-| Invalid runtime scope | `--runtime=systemd` or `--runtime=docker-swarm` is supplied for an app- or workspace-owned process. | Failure (`error.code=validation_failed`; `error.meta.reason=systemd_requires_node_owned_process` or `docker_swarm_requires_node_owned_process`). |
+| Invalid app/workspace command runtime | `--runtime=docker`, `--runtime=systemd`, or `--runtime=docker-swarm` is supplied for an app- or workspace-owned host-command process. | Failure (`error.code=validation_failed`; `error.meta.reason=docker_runtime_requires_service_or_managed_process`, `systemd_requires_node_owned_process`, or `docker_swarm_requires_node_owned_process`). |
 
 ## Doctor Relationship
 
