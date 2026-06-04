@@ -16,7 +16,13 @@ final class IncusInstance implements E2EInstance, SourceMountedCheckoutInstance
         private readonly string $name,
         private readonly bool $commandTransport = false,
         private readonly bool $sourceMountedCheckout = false,
+        private readonly bool $readonlySourceMount = false,
     ) {}
+
+    public function readonlySourceMount(): bool
+    {
+        return $this->readonlySourceMount;
+    }
 
     public function name(): string
     {

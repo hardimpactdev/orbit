@@ -14,5 +14,6 @@ final readonly class E2ETopologyAcquisitionOptions
         public bool $startGatewayApi = false,
         public bool $sourceMountedCheckout = false,
         public bool $retainOnFailure = false,
+        public bool $readonlySourceMount = false,
     ) {}
 }

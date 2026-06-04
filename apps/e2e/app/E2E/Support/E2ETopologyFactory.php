@@ -95,10 +95,19 @@ final readonly class E2ETopologyFactory
 
     private function acquisitionOptions(): E2ETopologyAcquisitionOptions
     {
+        $sourceMountedCheckout = $this->sourceMountedCheckout;
+        $readonlySourceMount = false;
+
+        if (getenv('ORBIT_E2E_TOPOLOGY_PROVIDER') === 'incus') {
+            $sourceMountedCheckout = true;
+            $readonlySourceMount = true;
+        }
+
         return new E2ETopologyAcquisitionOptions(
             sshUsers: $this->sshUsers,
             startGatewayApi: $this->startGatewayApi,
-            sourceMountedCheckout: $this->sourceMountedCheckout,
+            sourceMountedCheckout: $sourceMountedCheckout,
+            readonlySourceMount: $readonlySourceMount,
         );
     }
 }

@@ -98,12 +98,12 @@ final readonly class IncusTopologyTemplate
     /**
      * @return array<string, IncusInstance>
      */
-    public static function clone(IncusHost $host, E2ETopologyKind $kind, string $runId, ?E2EPhaseTimer $timer = null, bool $stateful = false, bool $sourceMounted = false): array
+    public static function clone(IncusHost $host, E2ETopologyKind $kind, string $runId, ?E2EPhaseTimer $timer = null, bool $stateful = false, bool $sourceMounted = false, bool $readonlySourceMount = false): array
     {
         $timer ??= new E2EPhaseTimer;
         $roles = self::rolesFor($kind);
 
-        $script = self::buildBatchScript($host, $kind, $runId, $roles, stateful: $stateful, sourceMounted: $sourceMounted);
+        $script = self::buildBatchScript($host, $kind, $runId, $roles, stateful: $stateful, sourceMounted: $sourceMounted, readonlySourceMount: $readonlySourceMount);
 
         $result = $timer->measure('batch.copy-start', fn () => $host->run($script));
 
@@ -116,7 +116,7 @@ final readonly class IncusTopologyTemplate
         $instances = [];
         foreach ($roles as $role) {
             $clone = self::cloneName($runId, $role);
-            $instance = new IncusInstance($host, $clone, commandTransport: true, sourceMountedCheckout: $sourceMounted);
+            $instance = new IncusInstance($host, $clone, commandTransport: true, sourceMountedCheckout: $sourceMounted, readonlySourceMount: $readonlySourceMount);
             $timer->measure("agent-ready.{$role}", fn () => $instance->waitForAgent());
             $timer->measure("network-identity.{$role}", fn () => $instance->refreshNetworkIdentity());
             $instances[$role] = $instance;
@@ -128,7 +128,7 @@ final readonly class IncusTopologyTemplate
     /**
      * @param  list<string>  $roles
      */
-    public static function buildBatchScript(IncusHost $host, E2ETopologyKind $kind, string $runId, array $roles, ?bool $stateful = null, bool $sourceMounted = false): string
+    public static function buildBatchScript(IncusHost $host, E2ETopologyKind $kind, string $runId, array $roles, ?bool $stateful = null, bool $sourceMounted = false, bool $readonlySourceMount = false): string
     {
         $cpus = escapeshellarg($host->config->topologyCpus);
         $memory = escapeshellarg($host->config->topologyMemory);
@@ -171,7 +171,7 @@ final readonly class IncusTopologyTemplate
             if ($sourceMounted) {
                 $sourceMountLines = [
                     ...$sourceMountLines,
-                    ...self::sourceMountCommands($sourcePath, $clone),
+                    ...self::sourceMountCommands($sourcePath, $clone, $readonlySourceMount),
                 ];
             }
 
@@ -195,7 +195,7 @@ final readonly class IncusTopologyTemplate
     /**
      * @return list<string>
      */
-    private static function sourceMountCommands(string $sourcePath, string $clone): array
+    private static function sourceMountCommands(string $sourcePath, string $clone, bool $readonly = false): array
     {
         $source = escapeshellarg($sourcePath);
 
@@ -204,8 +204,9 @@ final readonly class IncusTopologyTemplate
             "  incus config device set {$clone} orbit-source source={$source}",
             "  incus config device set {$clone} orbit-source path='/home/orbit/orbit'",
             "  incus config device set {$clone} orbit-source shift=true",
+            "  incus config device set {$clone} orbit-source readonly=".($readonly ? 'true' : 'false'),
             'else',
-            "  incus config device add {$clone} orbit-source disk source={$source} path='/home/orbit/orbit' shift=true",
+            "  incus config device add {$clone} orbit-source disk source={$source} path='/home/orbit/orbit' shift=true readonly=".($readonly ? 'true' : 'false'),
             'fi',
         ];
     }

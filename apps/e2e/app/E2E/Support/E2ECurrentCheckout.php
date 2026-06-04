@@ -88,7 +88,9 @@ final class E2ECurrentCheckout
         $sourceMountedCheckoutPath = self::sourceMountedCheckoutPath($instance, $user, $hostLauncher);
 
         if ($sourceMountedCheckoutPath !== null) {
-            if (self::usesDockerRuntime($instance)) {
+            $readonlySourceMount = $instance instanceof IncusInstance && $instance->readonlySourceMount();
+
+            if (self::usesDockerRuntime($instance) || $readonlySourceMount) {
                 $remotePath = $sourceMountedCheckoutPath;
 
                 self::runInstallPhases($instance, $user, $keyPair, $remotePath, $seedFrom, $timer, $hostLauncher, sourceMountedCheckout: true);
@@ -636,7 +638,7 @@ final class E2ECurrentCheckout
 
         return implode(' && ', [
             "if command -v sudo >/dev/null 2>&1; then sudo install -d -m 775 -o orbit -g orbit {$configRoot} && sudo chown -R orbit:orbit {$configRoot}; else install -d -m 775 {$configRoot}; fi",
-            "mkdir -p {$configRoot} apps/gateway/storage/framework/cache/data apps/gateway/storage/framework/sessions apps/gateway/storage/framework/testing apps/gateway/storage/framework/views apps/gateway/storage/logs",
+            "mkdir -p {$configRoot} {$configRoot}/storage/framework/cache/data {$configRoot}/storage/framework/sessions {$configRoot}/storage/framework/testing {$configRoot}/storage/framework/views {$configRoot}/storage/logs {$configRoot}/bootstrap-cache",
             "if [ ! -f {$gatewayEnv} ]; then cp apps/gateway/.env.example {$gatewayEnv}; fi",
             "rm -f {$gatewayEnvTmp}",
             "grep -Ev '^(DB_DATABASE|SESSION_DRIVER)=' {$gatewayEnv} > {$gatewayEnvTmp} || true",
@@ -838,7 +840,7 @@ PHP;
                 return $command;
             }
 
-            return 'ORBIT_CONFIG_ROOT='.escapeshellarg(self::OrbitConfigRoot).' '.$command;
+            return 'ORBIT_CONFIG_ROOT='.escapeshellarg(self::OrbitConfigRoot).' ORBIT_STORAGE_PATH='.escapeshellarg(self::OrbitConfigRoot.'/storage').' ORBIT_BOOTSTRAP_CACHE_PATH='.escapeshellarg(self::OrbitConfigRoot.'/bootstrap-cache').' '.$command;
         }
 
         if ($remotePath === null || $dockerRuntimeContainer === null) {
