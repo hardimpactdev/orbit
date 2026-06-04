@@ -22,11 +22,15 @@ abstract class ToolActionCommand extends ToolGatewayCommand
             return $payload;
         }
 
+        $instancePayload = $this->resolveToolInstancePayload($tool, $payload);
+
+        if (is_int($instancePayload)) {
+            return $instancePayload;
+        }
+
         return $this->streamToolAction($tool, $this->action(), [
             ...$payload,
-            ...$this->filledQuery([
-                'instance' => $this->stringOption('instance'),
-            ]),
+            ...$instancePayload,
         ]);
     }
 }

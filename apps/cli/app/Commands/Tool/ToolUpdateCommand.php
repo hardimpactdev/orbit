@@ -39,10 +39,16 @@ final class ToolUpdateCommand extends ToolGatewayCommand
             return $this->updateAll($payload);
         }
 
+        $instancePayload = $this->resolveToolInstancePayload($tool, $payload);
+
+        if (is_int($instancePayload)) {
+            return $instancePayload;
+        }
+
         return $this->updateOne($tool, [
             ...$payload,
+            ...$instancePayload,
             ...$this->filledQuery([
-                'instance' => $this->stringOption('instance'),
                 'version' => $version,
             ]),
         ]);

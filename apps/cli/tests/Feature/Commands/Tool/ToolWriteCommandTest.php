@@ -2,9 +2,13 @@
 
 declare(strict_types=1);
 
+use App\Commands\Tool\ToolStartCommand;
+use App\Services\GatewayStreamClient;
 use App\Services\OrbitConfigStore;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
+use Orbit\Core\Progress\ProgressEventType;
+use Symfony\Component\Console\Tester\CommandTester;
 
 describe('tool write commands', function (): void {
     beforeEach(function (): void {
@@ -110,6 +114,63 @@ describe('tool write commands', function (): void {
             ->and($decoded['event'])->toBe('complete')
             ->and($decoded['data']['data']['tool']['instance'])->toBe('mysql:8')
             ->and($decoded['data']['data']['tool']['runtime'])->toBe('docker-swarm');
+    });
+
+    it('prompts for an install version when the tool has multiple version families', function (): void {
+        fakeGatewayProgressStream(gatewayProgressFrame('complete', [
+            'exit_code' => 0,
+            'data' => [
+                'tool' => [
+                    'name' => 'mysql',
+                    'node' => 'database-1',
+                    'instance' => 'mysql:8',
+                    'version_family' => '8',
+                    'version' => '8.4',
+                    'runtime' => 'docker',
+                    'state' => 'running',
+                ],
+            ],
+        ]));
+
+        $this->artisan('tool:install', [
+            'tool' => 'mysql',
+            '--node' => 'database-1',
+            '--status' => 'running',
+        ])
+            ->expectsChoice('Version', '8', ['8', '9'])
+            ->expectsOutputToContain('mysql')
+            ->assertSuccessful();
+
+        Http::assertSent(fn (Request $request): bool => $request->method() === 'POST'
+            && $request->url() === 'https://gateway.test/api/tools/mysql/install'
+            && $request->data() === [
+                'node' => 'database-1',
+                'version' => '8',
+                'status' => 'running',
+            ]);
+    });
+
+    it('fails before contacting the gateway when json omits a required install version', function (): void {
+        Http::fake();
+
+        [$exitCode, $output] = runCommand($this, 'tool:install', [
+            'tool' => 'mysql',
+            '--node' => 'database-1',
+            '--json' => true,
+        ]);
+
+        $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+
+        Http::assertNothingSent();
+
+        expect($exitCode)->toBe(1)
+            ->and($decoded['error']['code'])->toBe('validation_failed')
+            ->and($decoded['error']['meta'])->toMatchArray([
+                'field' => 'version',
+                'reason' => 'required',
+                'tool' => 'mysql',
+                'supported_version_families' => ['8', '9'],
+            ]);
     });
 
     it('uses the local default node for tool:install when no target is supplied', function (): void {
@@ -298,6 +359,86 @@ describe('tool write commands', function (): void {
         ['tool:restart', 'restart'],
         ['tool:reload', 'reload'],
     ]);
+
+    it('prompts for a lifecycle instance when a base tool resolves to multiple instances', function (): void {
+        fakeGateway(fakeSuccessEnvelope([
+            'tools' => [
+                [
+                    'name' => 'mysql',
+                    'node' => 'database-1',
+                    'instance' => 'mysql:8',
+                ],
+                [
+                    'name' => 'mysql',
+                    'node' => 'database-1',
+                    'instance' => 'mysql:9',
+                ],
+            ],
+        ]));
+
+        $streamClient = new class
+        {
+            /** @var list<array{path: string, payload: array<string, mixed>, method: string}> */
+            public array $requests = [];
+
+            /**
+             * @param  array<string, mixed>  $payload
+             * @param  callable(ProgressEventType, array<string, mixed>): void  $onEvent
+             */
+            public function streamEvents(string $path, array $payload, callable $onEvent, string $method = 'post'): int
+            {
+                $this->requests[] = [
+                    'path' => $path,
+                    'payload' => $payload,
+                    'method' => $method,
+                ];
+
+                $onEvent(ProgressEventType::Complete, [
+                    'exit_code' => 0,
+                    'data' => [
+                        'tool' => [
+                            'name' => 'mysql',
+                            'node' => 'database-1',
+                            'instance' => 'mysql:8',
+                            'action' => 'start',
+                        ],
+                    ],
+                ]);
+
+                return 0;
+            }
+        };
+
+        app()->instance(GatewayStreamClient::class, $streamClient);
+
+        $command = app(ToolStartCommand::class);
+        $command->setLaravel(app());
+
+        $tester = new CommandTester($command);
+        $tester->setInputs(['mysql:8']);
+
+        $exitCode = $tester->execute([
+            'tool' => 'mysql',
+            '--node' => 'database-1',
+        ]);
+
+        expect($exitCode)->toBe(0)
+            ->and($tester->getDisplay())->toContain('mysql:8')
+            ->and($tester->getDisplay())->toContain('"action":"start"');
+
+        Http::assertSentCount(1);
+
+        expect($streamClient->requests)->toBe([
+            [
+                'path' => '/api/tools/mysql/start',
+                'payload' => [
+                    'node' => 'database-1',
+                    'instance' => 'mysql:8',
+                ],
+                'method' => 'post',
+            ],
+        ]);
+    });
 
     it('streams tool:update payloads to the single-tool gateway endpoint', function (): void {
         fakeGatewayProgressStream(gatewayProgressFrame('complete', [
