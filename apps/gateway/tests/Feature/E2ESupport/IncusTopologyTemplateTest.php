@@ -691,14 +691,52 @@ it('clones only requested Incus roles from the prepared full snapshot', function
     });
 });
 
+it('prepared Incus acquisition retargets selected snapshot roles without dynamic base provisioning', function (): void {
+    $source = file_get_contents(repo_path('apps/e2e/app/E2E/Support/IncusTopologyProvider.php'));
+
+    expect($source)
+        ->toContain('prepareInstances($instances, $this->config, $sshKeyPair, $timer, $options, $kind)')
+        ->toContain('retargetTopology($instances, $config, $sshKeyPair, $kind, $options->sourceMountedCheckout)')
+        ->toContain('--public-host=%s --skip-gateway-service-install')
+        ->toContain('php apps/gateway/artisan orbit:internal:bootstrap-gateway-local')
+        ->toContain('php apps/gateway/artisan orbit:internal:bake-app-node app-dev-1 --role=app-dev')
+        ->toContain('php apps/gateway/artisan tinker --execute=')
+        ->toContain('/orbit/apps/cli')
+        ->toContain('/.config/orbit')
+        ->toContain('config.json')
+        ->toContain('ORBIT_GATEWAY_URL=%%s')
+        ->toContain('orbit:internal:bake-app-node app-dev-1 --role=app-dev')
+        ->toContain('seedAppdevDatabaseAndRedis($gateway')
+        ->toContain('orbit:internal:bake-ingress-node app-prod-1')
+        ->toContain('E2EPreparedTopology::prodHostsIngressRole($kind)')
+        ->toContain('orbit:internal:bake-app-node app-prod-1 --role=app-prod')
+        ->toContain('orbit:internal:bake-agent-node agent-1')
+        ->toContain('orbit:internal:bake-websocket-node app-dev-1')
+        ->toContain("private const string DevWireGuardIp = '10.6.0.4'")
+        ->toContain("private const string ProdWireGuardIp = '10.6.0.5'")
+        ->toContain("private const string AgentWireGuardIp = '10.6.0.6'")
+        ->toContain('escapeshellarg(self::DevWireGuardIp)')
+        ->toContain('escapeshellarg(self::ProdWireGuardIp)')
+        ->toContain('escapeshellarg(self::AgentWireGuardIp)')
+        ->toContain("foreach (['dev', 'prod', 'agent', 'ingress'] as \$role)")
+        ->not->toContain('cd /home/orbit/orbit && php artisan')
+        ->not->toContain('prepared.node-new')
+        ->not->toContain('launchPreparedBaseRole')
+        ->not->toContain('& PID_');
+});
+
 it('does not use synthetic provider-interface routes for prepared gateway clones', function (): void {
     $source = file_get_contents(repo_path('apps/e2e/app/E2E/Support/IncusTopologyProvider.php'));
 
     expect($source)->not->toContain('ip addr add')
-        ->and($source)->not->toContain('ip route'.' replace')
+        ->and($source)->not->toContain('ip route replace')
         ->and($source)->not->toContain('DockerTopologyNetworkPlan')
         ->and($source)->toContain("private const string GatewayWireGuardIp = '10.6.0.2'")
-        ->and($source)->toContain('retargetRealWireGuard');
+        ->and($source)->toContain("private const string DevWireGuardIp = '10.6.0.4'")
+        ->and($source)->toContain("private const string AgentWireGuardIp = '10.6.0.6'")
+        ->and($source)->toContain('retargetRealWireGuard')
+        ->and($source)->toContain('orbit:internal:bake-agent-node agent-1')
+        ->and($source)->toContain('E2EWgEasyGateway');
 });
 
 it('enables stateful migration before starting clones when stateful reset is requested', function (): void {

@@ -681,7 +681,7 @@ it('can split gateway wireguard identity from bind address and cert key', functi
     $method->setAccessible(true);
     $tlsScript = $method->invoke(null, '/srv/orbit', '10.6.0.2', '0.0.0.0', 'gateway', [], true, '/usr/local/bin/orbit-cli');
 
-    expect(gatewayDecodedTinkerPayload(implode("\n", $instance->commands)))
+    expect(gatewayDecodedTinkerPayload($instance->commands[0]))
         ->toContain('issueLeaf')
         ->toContain('gateway')
         ->toContain('10.6.0.2');

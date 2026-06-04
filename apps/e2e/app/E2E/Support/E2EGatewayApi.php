@@ -318,12 +318,6 @@ SH;
         $hostOrbitPath = self::gatewayHostOrbitPath($gateway, $orbitPath);
         $hostCliPath = self::gatewayHostOrbitCliPath($hostOrbitPath);
 
-        $namespace = E2ETopologyArtifactNamespace::current();
-        $gateway->exec(sprintf(
-            'sudo docker tag orbit-gateway:current %s >/dev/null 2>&1 || true',
-            escapeshellarg("orbit-gateway:{$namespace}-current")
-        ), timeoutSeconds: 30);
-
         E2ECommand::gatewayArtisan(
             $gateway,
             self::tinkerEvalArguments("app(\\App\\Services\\Ca\\OrbitCaService::class)->issueLeaf({$certKeyValue}, {$certSansValue}); echo 'issued';"),

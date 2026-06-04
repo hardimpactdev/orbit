@@ -6,6 +6,7 @@ namespace App\E2E\Support;
 
 use App\Services\Php\PhpRuntimeCatalog;
 use App\Services\Runtime\OrbitCaddyContainer;
+use App\Services\WireGuard\WireGuardKeyGenerator;
 use Illuminate\Contracts\Process\ProcessResult;
 use RuntimeException;
 
@@ -917,8 +918,7 @@ class IncusTopologyBuilder
         $webSocketCommand = E2ECommand::gatewayArtisanCommand(implode(' ', [
             'orbit:internal:bake-websocket-node',
             escapeshellarg('app-dev-1'),
-            '--host='.escapeshellarg(self::DevWireGuardIp),
-            '--host-key-host='.escapeshellarg($devHost),
+            '--host='.escapeshellarg($devHost),
             '--wireguard-address='.escapeshellarg(self::DevWireGuardIp),
             '--gateway-endpoint='.escapeshellarg(self::GatewayWireGuardIp),
             '--user='.escapeshellarg(self::AppDevelopmentRuntimeUser),
@@ -1630,8 +1630,7 @@ PHP;
             'orbit:internal:bake-app-node',
             escapeshellarg('app-dev-1'),
             '--role=app-dev',
-            '--host='.escapeshellarg(self::DevWireGuardIp),
-            '--host-key-host='.escapeshellarg($devHost),
+            '--host='.escapeshellarg($devHost),
             '--wireguard-address='.escapeshellarg(self::DevWireGuardIp),
             '--gateway-endpoint='.escapeshellarg(self::GatewayWireGuardIp),
             '--user='.escapeshellarg(self::AppDevelopmentRuntimeUser),
@@ -1640,8 +1639,7 @@ PHP;
         $prodIngressCommand = E2ECommand::gatewayArtisanCommand(implode(' ', [
             'orbit:internal:bake-ingress-node',
             escapeshellarg('app-prod-1'),
-            '--host='.escapeshellarg(self::ProdWireGuardIp),
-            '--host-key-host='.escapeshellarg($prodHost),
+            '--host='.escapeshellarg($prodHost),
             '--wireguard-address='.escapeshellarg(self::ProdWireGuardIp),
             '--gateway-endpoint='.escapeshellarg(self::GatewayWireGuardIp),
             '--user='.escapeshellarg($this->host->config->bootstrapUser),
@@ -1650,8 +1648,7 @@ PHP;
             'orbit:internal:bake-app-node',
             escapeshellarg('app-prod-1'),
             '--role=app-prod',
-            '--host='.escapeshellarg(self::ProdWireGuardIp),
-            '--host-key-host='.escapeshellarg($prodHost),
+            '--host='.escapeshellarg($prodHost),
             '--wireguard-address='.escapeshellarg(self::ProdWireGuardIp),
             '--gateway-endpoint='.escapeshellarg(self::GatewayWireGuardIp),
             '--user='.escapeshellarg($this->host->config->bootstrapUser),
@@ -1661,8 +1658,7 @@ PHP;
         $agentCommand = E2ECommand::gatewayArtisanCommand(implode(' ', [
             'orbit:internal:bake-agent-node',
             escapeshellarg('agent-1'),
-            '--host='.escapeshellarg(self::AgentWireGuardIp),
-            '--host-key-host='.escapeshellarg($agentHost),
+            '--host='.escapeshellarg($agentHost),
             '--wireguard-address='.escapeshellarg(self::AgentWireGuardIp),
             '--gateway-endpoint='.escapeshellarg(self::GatewayWireGuardIp),
             '--user='.escapeshellarg($this->host->config->bootstrapUser),
@@ -1874,8 +1870,7 @@ BASH,
             'orbit:internal:bake-app-node',
             escapeshellarg('app-dev-1'),
             '--role=app-dev',
-            '--host='.escapeshellarg(self::DevWireGuardIp),
-            '--host-key-host='.escapeshellarg($devHost),
+            '--host='.escapeshellarg($devHost),
             '--wireguard-address='.escapeshellarg(self::DevWireGuardIp),
             '--gateway-endpoint='.escapeshellarg(self::GatewayWireGuardIp),
             '--user='.escapeshellarg(self::AppDevelopmentRuntimeUser),
@@ -1884,8 +1879,7 @@ BASH,
         $prodIngressCommand = E2ECommand::gatewayArtisanCommand(implode(' ', [
             'orbit:internal:bake-ingress-node',
             escapeshellarg('app-prod-1'),
-            '--host='.escapeshellarg(self::ProdWireGuardIp),
-            '--host-key-host='.escapeshellarg($prodHost),
+            '--host='.escapeshellarg($prodHost),
             '--wireguard-address='.escapeshellarg(self::ProdWireGuardIp),
             '--gateway-endpoint='.escapeshellarg(self::GatewayWireGuardIp),
             '--user='.escapeshellarg($this->host->config->bootstrapUser),
@@ -1894,8 +1888,7 @@ BASH,
             'orbit:internal:bake-app-node',
             escapeshellarg('app-prod-1'),
             '--role=app-prod',
-            '--host='.escapeshellarg(self::ProdWireGuardIp),
-            '--host-key-host='.escapeshellarg($prodHost),
+            '--host='.escapeshellarg($prodHost),
             '--wireguard-address='.escapeshellarg(self::ProdWireGuardIp),
             '--gateway-endpoint='.escapeshellarg(self::GatewayWireGuardIp),
             '--user='.escapeshellarg($this->host->config->bootstrapUser),
@@ -1905,8 +1898,7 @@ BASH,
         $agentCommand = E2ECommand::gatewayArtisanCommand(implode(' ', [
             'orbit:internal:bake-agent-node',
             escapeshellarg('agent-1'),
-            '--host='.escapeshellarg(self::AgentWireGuardIp),
-            '--host-key-host='.escapeshellarg($agentHost),
+            '--host='.escapeshellarg($agentHost),
             '--wireguard-address='.escapeshellarg(self::AgentWireGuardIp),
             '--gateway-endpoint='.escapeshellarg(self::GatewayWireGuardIp),
             '--user='.escapeshellarg($this->host->config->bootstrapUser),
@@ -1915,8 +1907,7 @@ BASH,
         $webSocketCommand = E2ECommand::gatewayArtisanCommand(implode(' ', [
             'orbit:internal:bake-websocket-node',
             escapeshellarg('app-dev-1'),
-            '--host='.escapeshellarg(self::DevWireGuardIp),
-            '--host-key-host='.escapeshellarg($devHost),
+            '--host='.escapeshellarg($devHost),
             '--wireguard-address='.escapeshellarg(self::DevWireGuardIp),
             '--gateway-endpoint='.escapeshellarg(self::GatewayWireGuardIp),
             '--user='.escapeshellarg($this->host->config->bootstrapUser),
@@ -2272,8 +2263,7 @@ BASH,
             'orbit:internal:bake-app-node',
             escapeshellarg('app-dev-1'),
             '--role=app-dev',
-            '--host='.escapeshellarg(self::DevWireGuardIp),
-            '--host-key-host='.escapeshellarg($devHost),
+            '--host='.escapeshellarg($devHost),
             '--wireguard-address='.escapeshellarg(self::DevWireGuardIp),
             '--gateway-endpoint='.escapeshellarg(self::GatewayWireGuardIp),
             '--user='.escapeshellarg(self::AppDevelopmentRuntimeUser),
@@ -2282,8 +2272,7 @@ BASH,
         $ingressCommand = E2ECommand::gatewayArtisanCommand(implode(' ', [
             'orbit:internal:bake-ingress-node',
             escapeshellarg('edge-1'),
-            '--host='.escapeshellarg(self::IngressWireGuardIp),
-            '--host-key-host='.escapeshellarg($ingressHost),
+            '--host='.escapeshellarg($ingressHost),
             '--wireguard-address='.escapeshellarg(self::IngressWireGuardIp),
             '--gateway-endpoint='.escapeshellarg(self::GatewayWireGuardIp),
             '--user='.escapeshellarg($this->host->config->bootstrapUser),
@@ -2292,8 +2281,7 @@ BASH,
             'orbit:internal:bake-app-node',
             escapeshellarg('app-prod-1'),
             '--role=app-prod',
-            '--host='.escapeshellarg(self::ProdWireGuardIp),
-            '--host-key-host='.escapeshellarg($prodHost),
+            '--host='.escapeshellarg($prodHost),
             '--wireguard-address='.escapeshellarg(self::ProdWireGuardIp),
             '--gateway-endpoint='.escapeshellarg(self::GatewayWireGuardIp),
             '--user='.escapeshellarg($this->host->config->bootstrapUser),
@@ -2554,7 +2542,7 @@ PHP;
             isset($instances['agent']) ? 'agent' : null,
             isset($instances['ingress']) ? 'ingress' : null,
             isset($instances['websocket']) ? 'websocket' : null,
-        ])), pingPeers: false);
+        ])));
     }
 
     /**
@@ -2562,7 +2550,34 @@ PHP;
      */
     private function meshFor(array $instances, string $gatewayProviderIp): E2EWireGuardMesh
     {
-        return E2EWireGuardMesh::fixed($gatewayProviderIp);
+        $generator = app(WireGuardKeyGenerator::class);
+        $gatewayHost = $generator->generateKeyPair();
+        $operator = $generator->generateKeyPair();
+        $dev = isset($instances['dev']) ? $generator->generateKeyPair() : null;
+        $prod = isset($instances['prod']) ? $generator->generateKeyPair() : null;
+        $agent = isset($instances['agent']) ? $generator->generateKeyPair() : null;
+        $ingress = isset($instances['ingress']) ? $generator->generateKeyPair() : null;
+        $websocket = isset($instances['websocket']) ? $generator->generateKeyPair() : null;
+        $wgEasyPublicKey = trim($instances['gateway']->exec('docker exec wg-easy wg show wg0 public-key')->output());
+
+        return E2EWireGuardMesh::standard(
+            gatewayProviderIp: $gatewayProviderIp,
+            wgEasyPublicKey: $wgEasyPublicKey,
+            gatewayHostPrivateKey: $gatewayHost['private_key'],
+            gatewayHostPublicKey: $gatewayHost['public_key'],
+            operatorPrivateKey: $operator['private_key'],
+            operatorPublicKey: $operator['public_key'],
+            devPrivateKey: $dev['private_key'] ?? null,
+            devPublicKey: $dev['public_key'] ?? null,
+            prodPrivateKey: $prod['private_key'] ?? null,
+            prodPublicKey: $prod['public_key'] ?? null,
+            agentPrivateKey: $agent['private_key'] ?? null,
+            agentPublicKey: $agent['public_key'] ?? null,
+            ingressPrivateKey: $ingress['private_key'] ?? null,
+            ingressPublicKey: $ingress['public_key'] ?? null,
+            websocketPrivateKey: $websocket['private_key'] ?? null,
+            websocketPublicKey: $websocket['public_key'] ?? null,
+        );
     }
 
     /**
@@ -2902,17 +2917,6 @@ PHP;
 
         if (! $composerResult->successful()) {
             throw new RuntimeException("Composer install failed on [{$instance->name()}] role={$role}: {$composerResult->errorOutput()}");
-        }
-
-        // Install baked WireGuard client/peer config using fixed keys
-        $mesh = E2EWireGuardMesh::fixed('127.0.0.1');
-        $mesh->installRole($instance, $role);
-
-        // If this is the gateway VM, start and configure the wg-easy container
-        if ($role === 'gateway') {
-            $wgEasy = new E2EWgEasyGateway;
-            $wgEasy->start($instance, '127.0.0.1');
-            $wgEasy->configurePeers($instance, $mesh->wgEasyPeers());
         }
 
         // Cleanup overlay bundle from guest.

@@ -23,35 +23,6 @@ command -v docker >/dev/null 2>&1 || { echo 'docker is missing from the prepared
 sudo systemctl enable --now docker
 docker rm -f wg-easy >/dev/null 2>&1 || true
 sudo install -d -m 0755 -o orbit -g orbit /home/orbit/.wg-easy
-
-if [ ! -f /home/orbit/.wg-easy/wg-easy.db ]; then
-    docker run -d \
-        --name wg-easy-init \
-        -e INIT_ENABLED=true \
-        -e INIT_USERNAME=orbit \
-        -e INIT_PASSWORD=orbit-e2e-bootstrap-password \
-        -e %s \
-        -e INIT_PORT=51820 \
-        -e INIT_DNS=10.6.0.1 \
-        -e INIT_ALLOWED_IPS=10.6.0.0/24 \
-        -e INSECURE=true \
-        -e PORT=51821 \
-        -e HOST=0.0.0.0 \
-        -e DISABLE_IPV6=true \
-        -v /home/orbit/.wg-easy:/etc/wireguard \
-        ghcr.io/wg-easy/wg-easy:15
-    for i in $(seq 1 30); do
-        test -f /home/orbit/.wg-easy/wg-easy.db && break
-        sleep 1
-    done
-    test -f /home/orbit/.wg-easy/wg-easy.db
-    docker rm -f wg-easy-init >/dev/null 2>&1 || true
-fi
-
-sudo chown -R orbit:orbit /home/orbit/.wg-easy
-
-%s
-
 docker run -d \
     --name wg-easy \
     --restart unless-stopped \
@@ -75,33 +46,34 @@ docker run -d \
     -v /home/orbit/.wg-easy:/etc/wireguard \
     -v /lib/modules:/lib/modules:ro \
     ghcr.io/wg-easy/wg-easy:15
-
+for i in $(seq 1 30); do
+    test -f /home/orbit/.wg-easy/wg-easy.db && break
+    sleep 1
+done
+test -f /home/orbit/.wg-easy/wg-easy.db
+sudo chown -R orbit:orbit /home/orbit/.wg-easy
 for i in $(seq 1 30); do
     docker exec wg-easy ip link show wg0 >/dev/null 2>&1 && break
     sleep 1
 done
-
 for i in $(seq 1 30); do
     wg_easy_public_key="$(docker exec wg-easy wg show wg0 public-key 2>/dev/null || true)"
     test -n "${wg_easy_public_key}" && break
     sleep 1
 done
 test -n "${wg_easy_public_key:-}"
-
-docker exec wg-easy ip addr replace 10.6.0.1/24 dev wg0 >/dev/null 2>&1 || true
-docker exec wg-easy ip route replace 10.6.0.0/24 dev wg0 >/dev/null 2>&1 || true
+docker exec wg-easy ip addr replace 10.6.0.1/24 dev wg0
+docker exec wg-easy ip route replace 10.6.0.0/24 dev wg0
+%s
 SH,
                 escapeshellarg("INIT_HOST={$advertisedHost}"),
                 $this->phpCommand(
                     marker: 'ORBIT_WG_EASY_START_PHP',
                     environment: [
                         'ORBIT_WG_EASY_ADVERTISED_HOST' => $advertisedHost,
-                        'ORBIT_WG_EASY_PRIVATE_KEY' => E2EWireGuardMesh::FIXED_KEYS['wg-easy']['private_key'],
-                        'ORBIT_WG_EASY_PUBLIC_KEY' => E2EWireGuardMesh::FIXED_KEYS['wg-easy']['public_key'],
                     ],
                     script: $this->startStateScript(),
                 ),
-                escapeshellarg("INIT_HOST={$advertisedHost}"),
             ),
             "Could not start wg-easy on {$gateway->name()}",
             timeoutSeconds: 240,
@@ -209,8 +181,6 @@ declare(strict_types=1);
 
 $databasePath = getenv('ORBIT_WG_EASY_DB_PATH');
 $advertisedHost = getenv('ORBIT_WG_EASY_ADVERTISED_HOST');
-$privateKey = getenv('ORBIT_WG_EASY_PRIVATE_KEY');
-$publicKey = getenv('ORBIT_WG_EASY_PUBLIC_KEY');
 
 if (! is_string($databasePath) || trim($databasePath) === '') {
     fwrite(STDERR, "ORBIT_WG_EASY_DB_PATH is required.\n");
@@ -231,10 +201,8 @@ $database = new PDO('sqlite:'.$databasePath, null, null, [
 $database->beginTransaction();
 
 try {
-    $database->prepare('UPDATE interfaces_table SET ipv4_cidr = :ipv4_cidr, private_key = :private_key, public_key = :public_key WHERE name = :name')->execute([
+    $database->prepare('UPDATE interfaces_table SET ipv4_cidr = :ipv4_cidr WHERE name = :name')->execute([
         'ipv4_cidr' => '10.6.0.0/24',
-        'private_key' => $privateKey,
-        'public_key' => $publicKey,
         'name' => 'wg0',
     ]);
 

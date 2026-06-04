@@ -95,29 +95,15 @@ final readonly class IncusTopologyTemplate
         return $host->run(implode("\n", $checks), timeoutSeconds: 30)->successful();
     }
 
-    public static function staticIpOctetForRole(string $role): int
-    {
-        return match ($role) {
-            'gateway' => 2,
-            'operator' => 3,
-            'dev' => 4,
-            'prod' => 5,
-            'agent' => 6,
-            'ingress' => 7,
-            'websocket' => 8,
-            default => throw new \RuntimeException("Unknown role [{$role}] for static IP allocation."),
-        };
-    }
-
     /**
      * @return array<string, IncusInstance>
      */
-    public static function clone(IncusHost $host, E2ETopologyKind $kind, string $runId, ?E2EPhaseTimer $timer = null, bool $stateful = false, bool $sourceMounted = false, bool $readonlySourceMount = false, ?string $networkName = null, ?string $subnetPrefix = null): array
+    public static function clone(IncusHost $host, E2ETopologyKind $kind, string $runId, ?E2EPhaseTimer $timer = null, bool $stateful = false, bool $sourceMounted = false, bool $readonlySourceMount = false): array
     {
         $timer ??= new E2EPhaseTimer;
         $roles = self::rolesFor($kind);
 
-        $script = self::buildBatchScript($host, $kind, $runId, $roles, stateful: $stateful, sourceMounted: $sourceMounted, readonlySourceMount: $readonlySourceMount, networkName: $networkName, subnetPrefix: $subnetPrefix);
+        $script = self::buildBatchScript($host, $kind, $runId, $roles, stateful: $stateful, sourceMounted: $sourceMounted, readonlySourceMount: $readonlySourceMount);
 
         $result = $timer->measure('batch.copy-start', fn () => $host->run($script));
 
@@ -132,6 +118,7 @@ final readonly class IncusTopologyTemplate
             $clone = self::cloneName($runId, $role);
             $instance = new IncusInstance($host, $clone, commandTransport: true, sourceMountedCheckout: $sourceMounted, readonlySourceMount: $readonlySourceMount);
             $timer->measure("agent-ready.{$role}", fn () => $instance->waitForAgent());
+            $timer->measure("network-identity.{$role}", fn () => $instance->refreshNetworkIdentity());
             $instances[$role] = $instance;
         }
 
@@ -141,7 +128,7 @@ final readonly class IncusTopologyTemplate
     /**
      * @param  list<string>  $roles
      */
-    public static function buildBatchScript(IncusHost $host, E2ETopologyKind $kind, string $runId, array $roles, ?bool $stateful = null, bool $sourceMounted = false, bool $readonlySourceMount = false, ?string $networkName = null, ?string $subnetPrefix = null): string
+    public static function buildBatchScript(IncusHost $host, E2ETopologyKind $kind, string $runId, array $roles, ?bool $stateful = null, bool $sourceMounted = false, bool $readonlySourceMount = false): string
     {
         $cpus = escapeshellarg($host->config->topologyCpus);
         $memory = escapeshellarg($host->config->topologyMemory);
@@ -173,16 +160,7 @@ final readonly class IncusTopologyTemplate
             $copyLines[] = "incus copy {$template} {$clone}{$storagePool} & PID_COPY_{$index}=\$!";
             $waitCopyLines[] = "wait \$PID_COPY_{$index}";
             $limitLines[] = "incus config set {$clone} limits.cpu={$cpus} limits.memory={$memory}";
-
-            $networkAttr = '';
-            if ($networkName !== null) {
-                $networkAttr .= ' network='.escapeshellarg($networkName);
-                if ($subnetPrefix !== null) {
-                    $staticIp = "{$subnetPrefix}.".self::staticIpOctetForRole($role);
-                    $networkAttr .= ' ipv4.address='.escapeshellarg($staticIp);
-                }
-            }
-            $identityLines[] = "incus config device override {$clone} eth0 hwaddr={$macAddress}{$networkAttr}";
+            $identityLines[] = "incus config device override {$clone} eth0 hwaddr={$macAddress}";
             $rootSizeLines[] = "incus config device set {$clone} root size={$rootSize} || incus config device override {$clone} root size={$rootSize}";
 
             if ($stateful) {
