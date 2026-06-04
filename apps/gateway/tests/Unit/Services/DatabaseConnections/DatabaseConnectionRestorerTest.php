@@ -96,8 +96,12 @@ ENV);
             ->not->toContain('DB_HOST=postgres.orbit');
     });
 
-    it('writes remote env content through base64-safe transport', function (): void {
+    it('writes remote managed database env through base64-safe transport', function (): void {
         $node = Node::factory()->appDev()->create(['status' => 'active']);
+        $databaseNode = Node::factory()->database()->create([
+            'name' => 'database-1',
+            'wireguard_address' => '10.6.0.7',
+        ]);
         $app = App::factory()->create(['node_id' => $node->id, 'name' => 'docs']);
         $workspace = Workspace::factory()->create([
             'app_id' => $app->id,
@@ -105,8 +109,9 @@ ENV);
             'path' => '/srv/docs/.worktrees/feature',
         ]);
         $connection = DatabaseConnection::factory()->create([
+            'node_id' => $databaseNode->id,
             'driver' => 'pgsql',
-            'host' => 'db.internal',
+            'host' => 'postgres.orbit',
             'port' => 5432,
             'database' => 'docs',
             'username' => 'orbit',
@@ -124,10 +129,16 @@ ENV);
 
         app(DatabaseConnectionRestorer::class)->restore($target);
 
+        preg_match("/printf %s '([^']+)' \\| base64 -d/", $shell->scripts[1], $matches);
+        $written = base64_decode($matches[1] ?? '', strict: true);
+
         expect($shell->scripts)->toHaveCount(2)
             ->and($shell->scripts[1])->not->toContain("ORBIT_ENV\"#=\nsecret")
             ->and($shell->scripts[1])->toContain('base64 -d')
-            ->and($shell->scripts[1])->toContain('/srv/docs/.worktrees/feature/.env');
+            ->and($shell->scripts[1])->toContain('/srv/docs/.worktrees/feature/.env')
+            ->and($written)->toContain('DB_HOST=10.6.0.7')
+            ->and($written)->not->toContain('DB_HOST=postgres.orbit')
+            ->and($written)->not->toContain('DB_HOST=127.0.0.1');
     });
 });
 

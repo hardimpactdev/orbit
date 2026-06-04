@@ -79,6 +79,43 @@ it('keeps MySQL 8 and MySQL 9 process definitions distinct', function (): void {
         ->and($mysql8->runtimeConfig['spec_hash'])->not->toBe($mysql9->runtimeConfig['spec_hash']);
 });
 
+it('requires service process endpoints to use the owner node WireGuard address', function (): void {
+    $node = Node::factory()->create([
+        'name' => 'database-1',
+        'host' => 'database-1.example.com',
+        'wireguard_address' => '10.6.0.44',
+    ]);
+
+    $definition = app(ProcessServiceDefinitionRegistry::class)->resolve(
+        definition: 'redis',
+        version: '7',
+        runtime: ProcessRuntime::Docker,
+        node: $node,
+        processName: 'redis',
+    );
+
+    expect($definition->runtimeConfig['endpoint']['host'])->toBe('10.6.0.44')
+        ->and($definition->runtimeConfig['endpoints'][0]['host'])->toBe('10.6.0.44')
+        ->and($definition->runtimeConfig['endpoint']['host'])->not->toBe('database-1.example.com')
+        ->and($definition->runtimeConfig['endpoint']['host'])->not->toBe('database-1');
+});
+
+it('rejects service process endpoints when the owning node has no WireGuard address', function (): void {
+    $node = Node::factory()->create([
+        'name' => 'database-1',
+        'host' => 'database-1.example.com',
+        'wireguard_address' => null,
+    ]);
+
+    app(ProcessServiceDefinitionRegistry::class)->resolve(
+        definition: 'redis',
+        version: '7',
+        runtime: ProcessRuntime::Docker,
+        node: $node,
+        processName: 'redis',
+    );
+})->throws(GatewayApiException::class, "Node 'database-1' cannot host service process endpoints without a WireGuard address.");
+
 it('rejects unsupported service process definition inputs', function (Closure $operation, string $field, string $reason): void {
     $node = Node::factory()->create();
 

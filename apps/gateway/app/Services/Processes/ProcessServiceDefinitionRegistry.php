@@ -7,9 +7,15 @@ namespace App\Services\Processes;
 use App\Enums\Processes\ProcessRuntime;
 use App\Http\Gateway\GatewayApiException;
 use App\Models\Node;
+use App\Services\Nodes\NodeWireGuardServiceAddress;
+use RuntimeException;
 
 final readonly class ProcessServiceDefinitionRegistry
 {
+    public function __construct(
+        private NodeWireGuardServiceAddress $serviceAddress,
+    ) {}
+
     /**
      * @return list<string>
      */
@@ -271,13 +277,16 @@ final readonly class ProcessServiceDefinitionRegistry
 
     private function serviceHost(Node $node): string
     {
-        foreach ([$node->wireguard_address, $node->host, $node->name] as $value) {
-            if (is_string($value) && trim($value) !== '') {
-                return trim($value);
-            }
+        try {
+            return $this->serviceAddress->forServiceOn($node, $node, 'process');
+        } catch (RuntimeException) {
+            throw new GatewayApiException("Node '{$node->name}' cannot host service process endpoints without a WireGuard address.", 'validation_failed', [
+                'field' => 'node',
+                'value' => $node->name,
+                'reason' => 'wireguard_address_required',
+            ]);
         }
 
-        return $node->name;
     }
 
     /**

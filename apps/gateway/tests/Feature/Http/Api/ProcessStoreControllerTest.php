@@ -384,11 +384,25 @@ describe('ProcessStoreController', function (): void {
             'version',
             'process_definition_version_requires_definition',
         ],
+        'service definition node without WireGuard address' => [
+            [
+                'node' => 'database-1',
+                'name' => 'redis',
+                'definition' => 'redis',
+                'version' => '7',
+                'runtime' => 'docker',
+            ],
+            'node',
+            'wireguard_address_required',
+        ],
     ]);
 
     it('rejects service definition endpoint conflicts before runtime side effects', function (): void {
         createProcessStoreCallerNode(role: 'gateway');
-        $node = createTestAppHostNode(['name' => 'database-1']);
+        $node = createTestAppHostNode([
+            'name' => 'database-1',
+            'wireguard_address' => '10.6.0.44',
+        ]);
         Process::factory()->forOwner($node)->create([
             'name' => 'existing-redis',
             'runtime' => ProcessRuntime::Docker,

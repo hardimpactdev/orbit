@@ -35,9 +35,10 @@ These rules govern ownership, route kinds, and the boundaries of the proxy comma
   routes that forward to `router`; they must not route directly to s3 role
   nodes. Router owns `s3.orbit`, S3 backend pools, S3 upload-compatible proxy
   settings, and private router-to-RustFS routing.
-- Tool-owned `proxy` routes are HTTP or WebSocket ingress routes only. TCP tool
+- Tool-owned `proxy` routes are HTTP or WebSocket ingress routes only. TCP
   service endpoints such as PostgreSQL, MySQL, and Redis are WireGuard service
-  endpoints owned by the tool catalog and do not appear as HTTP proxy routes.
+  endpoints owned by process definitions and do not appear as HTTP proxy
+  routes.
 - Custom routes are created, updated, and removed through `proxy:add` and
   `proxy:remove`.
 - Redirects are custom proxy routes with kind `redirect`; they are created by

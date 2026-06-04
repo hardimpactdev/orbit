@@ -104,6 +104,9 @@ These rules describe how lifecycle commands address runtime units.
 Service process definitions are the supported way to create node-owned
 database/cache services. They own service version, image, endpoint, credentials,
 ports, volumes, labels, lifecycle, and logs on the process row.
+The endpoint host is always the owning node's WireGuard service address. Orbit
+does not fall back to the node SSH host, node name, loopback, or Docker network
+alias for managed service endpoints.
 
 Supported definitions in this vertical slice:
 

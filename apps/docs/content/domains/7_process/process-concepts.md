@@ -22,7 +22,8 @@ These terms define how process definitions are identified, scoped, and ordered.
 - **Service process definition:** Process-family catalog entry for a runnable
   service such as MySQL or Redis. Service version, runtime, endpoint,
   credentials, lifecycle, and logs belong to the process row produced from the
-  definition.
+  definition. The service endpoint host is the owning node's WireGuard service
+  address.
 - **Process order:** Stable order of process definitions inside their owning
   scope. Read and bulk lifecycle commands use that order.
 
