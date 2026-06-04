@@ -61,7 +61,7 @@ it('starts wg-easy as the only WireGuard server on host UDP 51820', function ():
         ->and($commands[0])->toContain('sudo -u orbit env')
         ->and($commands[0])->toContain('ORBIT_WG_EASY_ADVERTISED_HOST=')
         ->and($commands[0])->toContain('PDO::SQLITE_OPEN_READWRITE')
-        ->and($commands[0])->toContain('UPDATE interfaces_table SET ipv4_cidr = :ipv4_cidr WHERE name = :name')
+        ->and($commands[0])->toContain('UPDATE interfaces_table SET ipv4_cidr = :ipv4_cidr, private_key = :private_key, public_key = :public_key WHERE name = :name')
         ->and($commands[0])->toContain('UPDATE user_configs_table')
         ->and($commands[0])->toContain('UPDATE general_table SET setup_step = :setup_step')
         ->and($commands[0])->toContain('INIT_HOST=10.231.0.11')
@@ -225,7 +225,7 @@ function createE2EWgEasyGatewayFixtureDatabase(string $path): PDO
 
     $pdo = new PDO("sqlite:{$path}");
     $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
-    $pdo->exec('create table interfaces_table (name text primary key, ipv4_cidr text not null)');
+    $pdo->exec('create table interfaces_table (name text primary key, ipv4_cidr text not null, private_key text, public_key text)');
     $pdo->exec('create table user_configs_table (host text not null, default_dns text not null, default_persistent_keepalive integer not null)');
     $pdo->exec('create table general_table (setup_step integer not null)');
     $pdo->exec(<<<'SQL'
@@ -246,7 +246,7 @@ function createE2EWgEasyGatewayFixtureDatabase(string $path): PDO
             enabled integer not null
         )
         SQL);
-    $pdo->exec("insert into interfaces_table (name, ipv4_cidr) values ('wg0', '10.0.0.0/24')");
+    $pdo->exec("insert into interfaces_table (name, ipv4_cidr, private_key, public_key) values ('wg0', '10.0.0.0/24', 'old-private', 'old-public')");
     $pdo->exec("insert into user_configs_table (host, default_dns, default_persistent_keepalive) values ('old.example.test', '[\"8.8.8.8\"]', 0)");
     $pdo->exec('insert into general_table (setup_step) values (1)');
 
