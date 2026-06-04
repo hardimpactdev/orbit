@@ -748,7 +748,6 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
         ])));
     }
 
-
     /**
      * @param  array<string, IncusInstance>  $instances
      * @return array<string, IncusInstance>
