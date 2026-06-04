@@ -2,16 +2,18 @@
 
 [Back to Process commands.](../README.md)
 
-List process configuration and last known runtime state for an app or workspace.
+List process configuration and last known runtime state for a node, app, or
+workspace.
 
-`process:list` reads app-owned process definitions and latest durable lifecycle
-events from the gateway without performing live node inspection.
+`process:list` reads process definitions and latest durable lifecycle events
+from the gateway without performing live node inspection.
 
 ## Usage
 
 ```bash
 orbit process:list --app=docs
 orbit process:list --app=docs --workspace=feature-docs
+orbit process:list --node=app-dev-1
 orbit process:list --app=docs --json
 ```
 
@@ -20,7 +22,7 @@ orbit process:list --app=docs --json
 Use this command to inspect process configuration and last known state without live node probing.
 
 - **Process Definitions**: Reads process definitions from gateway configuration.
-- **Context Resolution**: Resolves an app or workspace context.
+- **Context Resolution**: Resolves a node, app, or workspace context. A workspace context includes workspace-owned process definitions and app-owned definitions inherited by that workspace.
 - **Runtime Identity**: Derives expected runtime unit identities for that context.
 - **Lifecycle Events**: Shows the latest durable process lifecycle event when one exists.
 - **No Live Probing**: Does not SSH to the owning node and does not run live runtime probes.

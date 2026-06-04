@@ -179,12 +179,21 @@ it('repairs docker gateway config root write permissions before seeding operator
     $repairPosition = strpos($setup, 'chmod -R u+rwX,g+rwX');
     $removeTmpPosition = strpos($setup, 'rm -f');
     $seedPosition = strpos($setup, 'grep -Ev');
+    $sudoPosition = strpos($setup, 'sudo -iu orbit');
+    $migratePosition = strpos($setup, 'php apps/gateway/artisan migrate --force --no-interaction --ansi');
+    $lastRepairPosition = strrpos($setup, 'chmod -R u+rwX,g+rwX');
 
     expect($repairPosition)->toBeInt()
         ->and($removeTmpPosition)->toBeInt()
         ->and($seedPosition)->toBeInt()
+        ->and($sudoPosition)->toBeInt()
+        ->and($migratePosition)->toBeInt()
+        ->and($lastRepairPosition)->toBeInt()
         ->and($repairPosition)->toBeLessThan($seedPosition)
         ->and($removeTmpPosition)->toBeLessThan($seedPosition)
+        ->and($seedPosition)->toBeLessThan($sudoPosition)
+        ->and($sudoPosition)->toBeLessThan($migratePosition)
+        ->and($migratePosition)->toBeLessThan($lastRepairPosition)
         ->and($setup)->toContain('install -d -m 775 -o orbit -g orbit')
         ->and($setup)->toContain('chown -R orbit:orbit')
         ->and($setup)->toContain('chmod -R u+rwX,g+rwX')

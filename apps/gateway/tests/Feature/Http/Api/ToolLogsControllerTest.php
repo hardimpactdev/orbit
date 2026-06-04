@@ -143,7 +143,7 @@ describe('ToolLogsController target resolution', function (): void {
             ->assertJsonPath('success.data.logs.runtime_unit', 'opencode-server')
             ->assertJsonPath('success.data.logs.lines.0.message', 'first line');
 
-        expect($shell->scripts)->toBe(["sudo journalctl -u 'opencode-server.service' -n 5 --no-pager 2>&1"]);
+        expect($shell->scripts)->toBe(["sudo journalctl -u 'opencode-server.service' -n 5 --no-pager --output=short-iso 2>&1"]);
     });
 
     it('fails explicitly when logs have no related process', function (): void {

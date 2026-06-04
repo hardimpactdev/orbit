@@ -8,13 +8,13 @@
 
 **Prerequisites:**
 - The CLI caller can reach the Orbit gateway.
-- The gateway authorizes the authenticated peer for `process:edit` on the target app's owning node.
+- The gateway authorizes the authenticated peer for `process:edit` on the resolved owning node.
 - To re-render runtime artifacts, the gateway must reach the owning node.
 
 ## Signature
 
 ```bash
-orbit process:edit [name] [--app=<app>] [--command=<command>] [--restart-policy=<never|on_failure|always>] [--crash-notification=<none|agent_ide>] [--runtime=<docker|supervisor>] [--restart] [--json]
+orbit process:edit [name] [--node=<node>] [--app=<app>] [--workspace=<workspace>] [--command=<command>] [--restart-policy=<never|on_failure|always>] [--crash-notification=<none|agent_ide>] [--runtime=<docker|supervisor|systemd>] [--restart] [--json]
 ```
 
 ## Input Contract
@@ -23,12 +23,14 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
-| `name` | `[name]` | Always. | Never. | None. | Existing process slug within the owning app. |
-| `app` | `--app` or app context | Always. | Never. | Local app context when exactly one app is resolvable. | Must resolve to an app whose owning node grants `process:edit`. |
+| `name` | `[name]` | Always. | Never. | None. | Existing process slug within the resolved owner scope. |
+| `node` | `--node` | Required when editing a node-owned process. | `app` or `workspace` is present. | None. | Must resolve to a node that grants `process:edit`. |
+| `app` | `--app` or app context | Required unless `node` is supplied or `workspace` resolves the app. | `node` is present. | Local app context when exactly one app is resolvable. | Must resolve to an app whose owning node grants `process:edit`. |
+| `workspace` | `--workspace` or workspace context | Required when editing a workspace-owned process. | `node` is present. | Local workspace context when exactly one workspace is resolvable. | Must resolve to a workspace whose app owning node grants `process:edit`; pass `--app` when the workspace name is ambiguous. |
 | `command` | `--command` | Optional. At least one editable field is required. | Never. | Current value. | Non-empty command string when supplied. |
 | `restart_policy` | `--restart-policy` | Optional. At least one editable field is required. | Never. | Current value. | One of `never`, `on_failure`, `always`. |
 | `crash_notification` | `--crash-notification` | Optional. At least one editable field is required. | Never. | Current value. | One of `none`, `agent_ide`. |
-| `runtime` | `--runtime` | Optional. At least one editable field is required. | Never. | Current value. | One of `docker`, `supervisor`. Changes the backend that renders derived runtime units. |
+| `runtime` | `--runtime` | Optional. At least one editable field is required. | Never. | Current value. | One of `docker`, `supervisor`, `systemd`. `systemd` is valid only when `node` owns the process. |
 | `restart` | `--restart` | Optional. | Never. | `false`. | Boolean flag. Restarts affected running runtime units after applying when true. |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer and non-interactive input mode. |
 
@@ -43,11 +45,11 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 ### Process Definition Update Rules
 
-1. Resolve target app from supplied input or local app context, and resolve the existing process definition.
+1. Resolve target node, app, or workspace context from supplied input or local context, and resolve the existing process definition within that owner scope.
 2. Validate that at least one editable field is supplied.
 3. Send the request to the gateway, which validates the authenticated peer's authorization.
 4. Update gateway-owned process configuration.
-5. Re-render the main app runtime unit and every active workspace runtime unit derived from the process definition.
+5. Re-render runtime units derived from the process definition. Node-owned and workspace-owned processes normally derive one unit; app-owned processes derive one main-app unit plus one unit for each active workspace.
 6. When `--restart` is present, restart affected running runtime units and record lifecycle events for units that restart successfully.
 7. Render the selected output.
 
@@ -63,7 +65,9 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 
 | Failure | Condition | Outcome |
 | --- | --- | --- |
-| Process not found | The named process does not exist for the owning app. | Failure (`error.code=process.not_found`). |
+| Process not found | The named process does not exist for the resolved owner scope. | Failure (`error.code=process.not_found`). |
+| Invalid context | `--node` is combined with `--app` or `--workspace`, or no node/app/workspace context resolves. | Failure (`error.code=validation_failed`). |
+| Invalid runtime scope | `--runtime=systemd` is supplied for an app- or workspace-owned process. | Failure (`error.code=validation_failed`, `error.meta.reason=systemd_requires_node_owned_process`). |
 
 ## Doctor Relationship
 
@@ -77,8 +81,8 @@ The gateway API endpoint emits an activity entry for successful and failed proce
 | --- | --- |
 | Type | `api:PATCH /processes/{name}` |
 | Effect | `write` |
-| Subject | `App` when the parent app is resolved and visible; `none` for validation, app-resolution, or authorization failures before the app can be logged. |
-| Properties | `app` (string or null). No raw process command text, environment data, runtime output, or secrets. |
+| Subject | Resolved `Node` for node-owned processes or `App` for app/workspace-owned processes; `none` for validation, context-resolution, or authorization failures before the owner can be logged. |
+| Properties | `node` (string or null), `app` (string or null), and `workspace` (string or null). No raw process command text, environment data, runtime output, or secrets. |
 | Description | derived |
 
 ## Test Mapping

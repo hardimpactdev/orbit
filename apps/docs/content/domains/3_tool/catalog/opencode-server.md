@@ -17,10 +17,10 @@ These fields describe the OpenCode Server tool's identity, backend, and support 
 ## Capabilities
 
 `opencode-server` supports `tool:install`, `tool:remove`,
-process-backed compatibility lifecycle actions, `tool:reconfigure`, password
-reconfiguration, `tool:update`, snapshot and streamed `tool:logs`,
+`tool:reconfigure`, password reconfiguration, `tool:update`,
 `tool:credentials`, tool-owned proxy route management, safe doctor fix, and
-safe doctor adopt.
+safe doctor adopt. Start, stop, restart, and logs for the long-running server
+belong to the related `opencode-server` process.
 
 ## Credentials
 
@@ -72,7 +72,7 @@ the capability and compatibility payload record.
 
 `tool:update opencode-server` currently runs OpenCode's native `opencode
 upgrade` command through the Orbit-managed binary. Update remains tool-owned
-while restart/log lifecycle belongs to the related process.
+while start, stop, restart, and logs belong to the related process.
 
 ## Doctor Relationship
 

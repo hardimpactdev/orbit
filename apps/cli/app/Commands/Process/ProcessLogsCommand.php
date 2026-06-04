@@ -16,6 +16,7 @@ final class ProcessLogsCommand extends GatewayCommand
     #[\Override]
     protected $signature = 'process:logs
         {name? : Process name}
+        {--node= : Owning node name}
         {--app= : Parent app slug}
         {--workspace= : Workspace name}
         {--follow : Follow log output}
@@ -23,14 +24,26 @@ final class ProcessLogsCommand extends GatewayCommand
         {--json}';
 
     #[\Override]
-    protected $description = 'Read app process runtime logs.';
+    protected $description = 'Read process runtime logs.';
 
     public function handle(): int
     {
         $name = $this->stringArgument('name');
+        $node = $this->stringOption('node');
+        $app = $node === null ? $this->stringOption('app') ?? $this->appFromOrbitMarker() : $this->stringOption('app');
+        $workspace = $this->stringOption('workspace');
 
         if ($name === null) {
             return $this->renderFailure('validation_failed', 'The process name is required.', ['field' => 'name']);
+        }
+
+        if ($node !== null && ($app !== null || $workspace !== null)) {
+            return $this->renderFailure('validation_failed', 'A node context cannot be combined with app or workspace context.', [
+                'field' => 'context',
+                'node' => $node,
+                'app' => $app,
+                'workspace' => $workspace,
+            ]);
         }
 
         $lines = $this->lines();
@@ -49,8 +62,9 @@ final class ProcessLogsCommand extends GatewayCommand
 
         try {
             $response = $this->gatewayGet('/api/processes/'.rawurlencode($name).'/log', $this->filledQuery([
-                'app' => $this->stringOption('app') ?? $this->appFromOrbitMarker(),
-                'workspace' => $this->stringOption('workspace'),
+                'node' => $node,
+                'app' => $app,
+                'workspace' => $workspace,
                 'lines' => $lines,
             ]));
         } catch (GatewayApiException $exception) {
@@ -68,12 +82,17 @@ final class ProcessLogsCommand extends GatewayCommand
 
     private function followLogs(string $name, int $lines): int
     {
+        $node = $this->stringOption('node');
+        $app = $node === null ? $this->stringOption('app') ?? $this->appFromOrbitMarker() : $this->stringOption('app');
+        $workspace = $this->stringOption('workspace');
+
         try {
             return app(GatewayLogStreamClient::class)->streamText(
                 '/api/processes/'.rawurlencode($name).'/log',
                 $this->filledQuery([
-                    'app' => $this->stringOption('app') ?? $this->appFromOrbitMarker(),
-                    'workspace' => $this->stringOption('workspace'),
+                    'node' => $node,
+                    'app' => $app,
+                    'workspace' => $workspace,
                     'lines' => $lines,
                     'follow' => 1,
                 ]),

@@ -12,6 +12,7 @@ the gateway for a resolved node, app, or workspace context.
 ```bash
 orbit process:logs vite --app=docs
 orbit process:logs vite --app=docs --workspace=feature-docs --follow
+orbit process:logs opencode-server --node=app-dev-1 --lines=200
 orbit process:logs queue --app=docs --lines=200 --json
 ```
 

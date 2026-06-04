@@ -87,7 +87,7 @@ it('removes an app from a operator caller through the gateway api', function ():
         expect($app)->toBeArray()
             ->and($payload['success']['data']['result']['action'])->toBe('removed')
             ->and($payload['success']['data']['cleanup']['proxy_routes_removed'])->toBe(1)
-            ->and($payload['success']['data']['cleanup']['processes_removed'])->toBe(0)
+            ->and($payload['success']['data']['cleanup']['processes_removed'])->toBe(1)
             ->and($app['name'])->toBe($name)
             ->and($app['node'])->toBe('app-dev-1')
             ->and($app['path'])->toBe($path);

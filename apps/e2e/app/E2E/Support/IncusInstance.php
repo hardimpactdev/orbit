@@ -186,6 +186,8 @@ final class IncusInstance implements E2EInstance, SourceMountedCheckoutInstance
         if (! $result->successful()) {
             throw new \RuntimeException("Could not refresh network identity for {$this->name}: {$result->errorOutput()}");
         }
+
+        $this->ipv4 = null;
     }
 
     public function waitForIpv4(): string
@@ -312,6 +314,12 @@ final class IncusInstance implements E2EInstance, SourceMountedCheckoutInstance
 
     private function providerIpv4(): ?string
     {
+        $guestIpv4 = $this->guestIpv4();
+
+        if ($guestIpv4 !== null) {
+            return $guestIpv4;
+        }
+
         try {
             $python = <<<'PY'
 import json
@@ -341,6 +349,47 @@ PY;
                 escapeshellarg($this->name),
             ), timeoutSeconds: 30);
         } catch (\Throwable) {
+            return null;
+        }
+
+        $output = trim($result->output());
+
+        return $output !== '' ? $output : null;
+    }
+
+    private function guestIpv4(): ?string
+    {
+        try {
+            $python = <<<'PY'
+import json
+import sys
+
+addresses = json.load(sys.stdin)
+ignored = {"docker0", "lo", "wg-orbit", "wg0"}
+
+for details in addresses:
+    interface = details.get("ifname", "")
+
+    if interface in ignored or interface.startswith(("br-", "veth")):
+        continue
+
+    for address in details.get("addr_info", []):
+        if address.get("family") == "inet" and address.get("scope") == "global":
+            print(address.get("local", ""))
+            raise SystemExit(0)
+PY;
+
+            $result = $this->host->run(sprintf(
+                'incus exec %s -- sh -lc %s | python3 -c %s',
+                escapeshellarg($this->name),
+                escapeshellarg('ip -j -4 address show scope global'),
+                escapeshellarg($python),
+            ), timeoutSeconds: 30);
+        } catch (\Throwable) {
+            return null;
+        }
+
+        if (! $result->successful()) {
             return null;
         }
 

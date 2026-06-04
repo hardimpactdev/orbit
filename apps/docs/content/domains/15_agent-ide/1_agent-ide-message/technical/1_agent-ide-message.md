@@ -84,7 +84,8 @@ This command follows the shared
 - A missing node/app default also fails with `no_effective_adapter`.
 - Adapter support is gateway-owned. The command must not accept an adapter name
   merely because local client code knows about it.
-- Adapter server lifecycle and credentials are tool-family concerns.
+- Adapter server lifecycle is a process-family concern. Adapter server
+  credentials are a tool-family concern.
 
 ### Delivery Rules
 

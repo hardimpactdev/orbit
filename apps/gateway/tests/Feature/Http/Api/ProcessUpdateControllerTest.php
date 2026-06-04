@@ -8,6 +8,7 @@ use App\Data\RemoteShell\RemoteShellResult;
 use App\Models\App;
 use App\Models\Node;
 use App\Models\Process;
+use App\Models\Workspace;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Tests\Fakes\SiteCertificateInstallerFake;
@@ -129,6 +130,68 @@ describe('ProcessUpdateController', function (): void {
             ->assertJsonPath('success.data.changed', ['runtime']);
 
         expect(Process::query()->where('name', 'queue')->value('runtime')->value)->toBe('supervisor');
+    });
+
+    it('updates node owned systemd process intent', function (): void {
+        $caller = createProcessUpdateCallerNode();
+        $node = createTestAppHostNode(['name' => 'app-1']);
+        grantProcessUpdateAccess($caller, $node);
+        Process::factory()->forOwner($node)->create([
+            'name' => 'opencode-server',
+            'command' => 'opencode serve',
+            'runtime' => 'systemd',
+            'tool' => 'opencode',
+        ]);
+        app()->instance(RemoteShell::class, new ProcessUpdateRemoteShell([
+            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+        ]));
+
+        $response = $this->call('PATCH', '/api/processes/opencode-server', [
+            'node' => 'app-1',
+            'command' => 'opencode serve -a',
+            'runtime' => 'systemd',
+        ], [], [], ['REMOTE_ADDR' => PROCESS_UPDATE_CALLER_WG_IP]);
+
+        $response->assertOk()
+            ->assertJsonPath('success.data.process.node', 'app-1')
+            ->assertJsonPath('success.data.process.app', null)
+            ->assertJsonPath('success.data.process.workspace', null)
+            ->assertJsonPath('success.data.process.command', 'opencode serve -a')
+            ->assertJsonPath('success.data.process.runtime', 'systemd')
+            ->assertJsonPath('success.data.process.tool', 'opencode')
+            ->assertJsonPath('success.data.runtime_units.0', ['name' => 'opencode-server', 'context' => 'node']);
+
+        expect(Process::query()->where('name', 'opencode-server')->value('command'))->toBe('opencode serve -a');
+    });
+
+    it('updates workspace owned process intent', function (): void {
+        $caller = createProcessUpdateCallerNode();
+        $appNode = createTestAppHostNode();
+        grantProcessUpdateAccess($caller, $appNode);
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
+        $workspace = Workspace::factory()->for($app)->create(['name' => 'feature-docs', 'path' => '/srv/docs-feature']);
+        Process::factory()->forOwner($workspace)->create([
+            'name' => 'worker',
+            'command' => 'php artisan queue:work',
+            'runtime' => 'supervisor',
+        ]);
+        app()->instance(RemoteShell::class, new ProcessUpdateRemoteShell([
+            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+        ]));
+
+        $response = $this->call('PATCH', '/api/processes/worker', [
+            'app' => 'docs',
+            'workspace' => 'feature-docs',
+            'command' => 'php artisan horizon',
+        ], [], [], ['REMOTE_ADDR' => PROCESS_UPDATE_CALLER_WG_IP]);
+
+        $response->assertOk()
+            ->assertJsonPath('success.data.process.app', 'docs')
+            ->assertJsonPath('success.data.process.workspace', 'feature-docs')
+            ->assertJsonPath('success.data.process.command', 'php artisan horizon')
+            ->assertJsonPath('success.data.runtime_units.0', ['name' => 'orbit_docs_feature-docs_worker', 'context' => 'feature-docs']);
+
+        expect($workspace->processes()->where('name', 'worker')->value('command'))->toBe('php artisan horizon');
     });
 
     it('rejects invalid runtime values with the documented validation envelope', function (): void {

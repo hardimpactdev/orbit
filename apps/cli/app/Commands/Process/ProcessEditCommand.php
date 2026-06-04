@@ -11,11 +11,13 @@ final class ProcessEditCommand extends ProcessGatewayCommand
     #[\Override]
     protected $signature = 'process:edit
         {name? : Existing process name}
+        {--node= : Owning node name}
         {--app= : Parent app slug}
+        {--workspace= : Workspace name}
         {--command= : New command}
         {--restart-policy= : Restart policy (never|on_failure|always)}
         {--crash-notification= : Crash notification policy (none|agent_ide)}
-        {--runtime= : Process runtime (docker|supervisor)}
+        {--runtime= : Process runtime (docker|supervisor|systemd)}
         {--restart : Restart affected runtime units after update}
         {--json : Output JSON}';
 
@@ -24,15 +26,25 @@ final class ProcessEditCommand extends ProcessGatewayCommand
 
     public function handle(): int
     {
-        $app = $this->appContext();
+        $node = $this->nodeContext();
+        $app = $node === null ? $this->appContext() : $this->stringOption('app');
+        $workspace = $this->workspaceContext();
         $name = $this->stringArgument('name');
         $command = $this->stringOption('command');
         $restartPolicy = $this->stringOption('restart-policy');
         $crashNotification = $this->stringOption('crash-notification');
         $runtime = $this->stringOption('runtime');
 
-        if ($app === null) {
-            return $this->failValidation('app', 'An app context is required.');
+        if ($node !== null && ($app !== null || $workspace !== null)) {
+            return $this->failValidation('context', 'A node context cannot be combined with app or workspace context.', [
+                'node' => $node,
+                'app' => $app,
+                'workspace' => $workspace,
+            ]);
+        }
+
+        if ($node === null && $app === null && $workspace === null) {
+            return $this->failValidation('app', 'A node, app, or workspace context is required.');
         }
 
         $validation = $this->validateProcessName($name)
@@ -47,7 +59,9 @@ final class ProcessEditCommand extends ProcessGatewayCommand
 
         try {
             $response = $this->gatewayPatch('/api/processes/'.rawurlencode((string) $name), $this->filledQuery([
+                'node' => $node,
                 'app' => $app,
+                'workspace' => $workspace,
                 'command' => $command,
                 'restart_policy' => $restartPolicy,
                 'crash_notification' => $crashNotification,

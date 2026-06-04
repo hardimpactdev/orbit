@@ -2,7 +2,8 @@
 
 [Back to Process commands.](../README.md)
 
-Start one process, or all processes, in an app or workspace runtime context.
+Start one process, or all processes, in a node, app, or workspace runtime
+context.
 
 `process:start` starts derived runtime units through the gateway on the owning
 node and records durable `started` events.
@@ -12,15 +13,16 @@ node and records durable `started` events.
 ```bash
 orbit process:start vite --app=docs
 orbit process:start vite --app=docs --workspace=feature-docs
+orbit process:start opencode-server --node=app-dev-1
 orbit process:start vite --app=docs --json
 orbit process:start --app=docs --workspace=feature-docs
 ```
 
 ## Behavior Summary
 
-Use this command to start one process or all processes for a resolved app or workspace context.
+Use this command to start one process or all processes for a resolved node, app, or workspace context.
 
-- **Context Resolution**: Resolves the app or workspace runtime context.
+- **Context Resolution**: Resolves the node, app, or workspace runtime context.
 - **Single Process**: When `[name]` is supplied, starts that process only.
 - **All Processes**: Omitting `[name]` starts every process definition for the selected context in process order.
 - **Event Recording**: Records and publishes a `started` process event after each successful start.

@@ -12,34 +12,49 @@ final class ProcessAddCommand extends ProcessGatewayCommand
     protected $signature = 'process:add
         {name? : Process name}
         {processCommand? : Command to run}
+        {--node= : Owning node name}
         {--app= : Parent app slug}
+        {--workspace= : Workspace name}
+        {--tool= : Tool capability this process uses}
         {--restart-policy=never : Restart policy (never|on_failure|always)}
         {--crash-notification=none : Crash notification policy (none|agent_ide)}
-        {--runtime= : Process runtime (docker|supervisor); defaults to docker for PHP apps and supervisor for non-PHP apps}
+        {--runtime= : Process runtime (docker|supervisor|systemd); defaults to systemd for node processes, docker for PHP apps, and supervisor for non-PHP apps}
         {--start : Start rendered runtime units after creation}
         {--json : Output JSON}';
 
     #[\Override]
-    protected $description = 'Add an app process definition.';
+    protected $description = 'Add a process definition.';
 
     public function handle(): int
     {
-        $app = $this->appContext();
+        $node = $this->nodeContext();
+        $app = $node === null ? $this->appContext() : $this->stringOption('app');
+        $workspace = $this->workspaceContext();
         $name = $this->stringArgument('name');
         $command = $this->stringArgument('processCommand');
         $restartPolicy = $this->stringOption('restart-policy') ?? 'never';
         $crashNotification = $this->stringOption('crash-notification') ?? 'none';
         $runtime = $this->stringOption('runtime');
+        $tool = $this->stringOption('tool');
 
-        if ($app === null) {
-            return $this->failValidation('app', 'An app context is required.');
+        if ($node !== null && ($app !== null || $workspace !== null)) {
+            return $this->failValidation('context', 'A node context cannot be combined with app or workspace context.', [
+                'node' => $node,
+                'app' => $app,
+                'workspace' => $workspace,
+            ]);
+        }
+
+        if ($node === null && $app === null && $workspace === null) {
+            return $this->failValidation('app', 'A node, app, or workspace context is required.');
         }
 
         $validation = $this->validateProcessName($name)
             ?? ($command === null ? $this->failValidation('command', 'The process command is required.') : null)
             ?? $this->validateRestartPolicy($restartPolicy)
             ?? $this->validateCrashNotification($crashNotification)
-            ?? $this->validateRuntime($runtime);
+            ?? $this->validateRuntime($runtime)
+            ?? $this->validateTool($tool);
 
         if ($validation !== null) {
             return $validation;
@@ -47,18 +62,36 @@ final class ProcessAddCommand extends ProcessGatewayCommand
 
         try {
             $response = $this->gatewayPost('/api/processes', $this->filledQuery([
+                'node' => $node,
                 'app' => $app,
+                'workspace' => $workspace,
                 'name' => $name,
                 'command' => $command,
                 'restart_policy' => $restartPolicy,
                 'crash_notification' => $crashNotification,
                 'start' => $this->option('start') === true,
                 'runtime' => $runtime,
+                'tool' => $tool,
             ]));
         } catch (GatewayApiException $exception) {
             return $this->renderGatewayFailure($exception);
         }
 
         return $this->renderSuccess($response);
+    }
+
+    private function validateTool(?string $tool): ?int
+    {
+        if ($tool === null) {
+            return null;
+        }
+
+        if (preg_match('/^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$/', $tool)) {
+            return null;
+        }
+
+        return $this->failValidation('tool', 'The process tool must contain only lowercase letters, digits, and hyphens, cannot start or end with a hyphen, and may not exceed 64 characters.', [
+            'value' => $tool,
+        ]);
     }
 }

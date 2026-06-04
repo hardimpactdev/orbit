@@ -244,9 +244,9 @@ it('runs systemd process lifecycle through the systemd runtime driver', function
         ->and($driver->stop($node, $runtimeUnit))->toBeTrue()
         ->and($driver->restart($node, $runtimeUnit))->toBeTrue()
         ->and($driver->logScript($app, $process, null, $runtimeUnit, 25, false))
-        ->toBe("sudo journalctl -u 'opencode-server.service' -n 25 --no-pager 2>&1")
+        ->toBe("sudo journalctl -u 'opencode-server.service' -n 25 --no-pager --output=short-iso 2>&1")
         ->and($driver->logScript($app, $process, null, $runtimeUnit, 25, true))
-        ->toBe("sudo journalctl -u 'opencode-server.service' -n 25 -f --no-pager 2>&1");
+        ->toBe("sudo journalctl -u 'opencode-server.service' -n 25 -f --no-pager --output=short-iso 2>&1");
 
     expect($shell->scripts)->toBe([
         "sudo systemctl start 'opencode-server.service'",

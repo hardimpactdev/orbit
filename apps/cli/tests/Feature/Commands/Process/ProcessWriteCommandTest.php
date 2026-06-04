@@ -43,6 +43,47 @@ describe('process write commands', function (): void {
             ->and($decoded['success']['data']['process']['name'])->toBe('vite');
     });
 
+    it('posts node owned process:add payloads with tool dependencies to the gateway', function (): void {
+        fakeGateway(fakeSuccessEnvelope([
+            'process' => [
+                'name' => 'opencode-server',
+                'node' => 'app-1',
+                'tool' => 'opencode',
+                'runtime' => 'systemd',
+            ],
+            'runtime_units' => [['name' => 'opencode-server', 'context' => 'node']],
+        ], [
+            'warnings' => [],
+        ]));
+
+        [$exitCode, $output] = runCommand($this, 'process:add', [
+            'name' => 'opencode-server',
+            'processCommand' => 'opencode serve -a',
+            '--node' => 'app-1',
+            '--tool' => 'opencode',
+            '--runtime' => 'systemd',
+            '--json' => true,
+        ]);
+
+        $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+
+        Http::assertSent(fn (Request $request): bool => $request->method() === 'POST'
+            && $request->url() === 'https://gateway.test/api/processes'
+            && $request->data() === [
+                'node' => 'app-1',
+                'name' => 'opencode-server',
+                'command' => 'opencode serve -a',
+                'restart_policy' => 'never',
+                'crash_notification' => 'none',
+                'start' => false,
+                'runtime' => 'systemd',
+                'tool' => 'opencode',
+            ]);
+
+        expect($exitCode)->toBe(0)
+            ->and($decoded['success']['data']['process']['runtime'])->toBe('systemd');
+    });
+
     it('validates process:add input before contacting the gateway', function (): void {
         fakeGateway(fakeSuccessEnvelope());
 
@@ -83,7 +124,7 @@ describe('process write commands', function (): void {
     })->with([
         'restart policy' => [['--restart-policy' => 'sometimes'], 'restart_policy'],
         'crash notification' => [['--crash-notification' => 'email'], 'crash_notification'],
-        'runtime' => [['--runtime' => 'systemd'], 'runtime'],
+        'runtime' => [['--runtime' => 'podman'], 'runtime'],
     ]);
 
     it('patches process:edit payloads to the gateway', function (): void {
@@ -120,6 +161,37 @@ describe('process write commands', function (): void {
 
         expect($exitCode)->toBe(0)
             ->and($decoded['success']['data']['process']['restart_policy'])->toBe('on_failure');
+    });
+
+    it('patches node owned process:edit payloads to the gateway', function (): void {
+        fakeGateway(fakeSuccessEnvelope([
+            'process' => ['name' => 'opencode-server', 'node' => 'app-1', 'runtime' => 'systemd'],
+            'runtime_units' => [['name' => 'opencode-server', 'context' => 'node']],
+        ], [
+            'warnings' => [],
+        ]));
+
+        [$exitCode, $output] = runCommand($this, 'process:edit', [
+            'name' => 'opencode-server',
+            '--node' => 'app-1',
+            '--command' => 'opencode serve -a',
+            '--runtime' => 'systemd',
+            '--json' => true,
+        ]);
+
+        $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+
+        Http::assertSent(fn (Request $request): bool => $request->method() === 'PATCH'
+            && $request->url() === 'https://gateway.test/api/processes/opencode-server'
+            && $request->data() === [
+                'node' => 'app-1',
+                'command' => 'opencode serve -a',
+                'runtime' => 'systemd',
+                'restart' => false,
+            ]);
+
+        expect($exitCode)->toBe(0)
+            ->and($decoded['success']['data']['process']['runtime'])->toBe('systemd');
     });
 
     it('requires at least one process:edit field before contacting the gateway', function (): void {
@@ -205,6 +277,37 @@ describe('process write commands', function (): void {
 
         expect($exitCode)->toBe(0)
             ->and($decoded['success']['data']['process']['name'])->toBe('vite');
+    });
+
+    it('deletes workspace owned process:remove payloads with destructive consent when forced', function (): void {
+        fakeGateway(fakeSuccessEnvelope([
+            'process' => ['name' => 'worker', 'app' => 'docs', 'workspace' => 'feature-docs'],
+            'runtime_units_removed' => [],
+        ], [
+            'warnings' => [],
+        ]));
+
+        [$exitCode, $output] = runCommand($this, 'process:remove', [
+            'name' => 'worker',
+            '--app' => 'docs',
+            '--workspace' => 'feature-docs',
+            '--force' => true,
+            '--json' => true,
+        ]);
+
+        $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+
+        Http::assertSent(fn (Request $request): bool => $request->method() === 'DELETE'
+            && $request->url() === 'https://gateway.test/api/processes/worker'
+            && $request->data() === [
+                'app' => 'docs',
+                'workspace' => 'feature-docs',
+                'destructive_consent' => true,
+                'destructive_consent_source' => 'force',
+            ]);
+
+        expect($exitCode)->toBe(0)
+            ->and($decoded['success']['data']['process']['workspace'])->toBe('feature-docs');
     });
 
     it('prompts before removing a process without force in interactive mode', function (): void {
@@ -294,7 +397,38 @@ describe('process write commands', function (): void {
             ->and($decoded['success']['data']['runtimes'][0]['workspace'])->toBe('feature-docs');
     });
 
-    it('requires an app or workspace context before process runtime actions contact the gateway', function (string $command): void {
+    it('posts process runtime actions with a node context', function (): void {
+        fakeGateway(fakeSuccessEnvelope([
+            'runtimes' => [
+                [
+                    'process' => 'opencode-server',
+                    'node' => 'app-1',
+                    'runtime_unit' => 'opencode-server',
+                    'status' => 'ok',
+                ],
+            ],
+        ]));
+
+        [$exitCode, $output] = runCommand($this, 'process:start', [
+            'name' => 'opencode-server',
+            '--node' => 'app-1',
+            '--json' => true,
+        ]);
+
+        $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+
+        Http::assertSent(fn (Request $request): bool => $request->method() === 'POST'
+            && $request->url() === 'https://gateway.test/api/processes/start'
+            && $request->data() === [
+                'node' => 'app-1',
+                'name' => 'opencode-server',
+            ]);
+
+        expect($exitCode)->toBe(0)
+            ->and($decoded['success']['data']['runtimes'][0]['node'])->toBe('app-1');
+    });
+
+    it('requires an app, workspace, or node context before process runtime actions contact the gateway', function (string $command): void {
         Http::fake();
 
         [$exitCode, $output] = runCommand($this, $command, [

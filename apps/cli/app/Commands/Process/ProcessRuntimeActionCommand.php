@@ -12,15 +12,25 @@ abstract class ProcessRuntimeActionCommand extends ProcessGatewayCommand
 
     public function handle(): int
     {
-        $app = $this->appContext();
-        $workspace = $this->stringOption('workspace');
+        $node = $this->nodeContext();
+        $app = $node === null ? $this->appContext() : $this->stringOption('app');
+        $workspace = $this->workspaceContext();
 
-        if ($app === null && $workspace === null) {
-            return $this->failValidation('app', 'An app context is required.');
+        if ($node !== null && ($app !== null || $workspace !== null)) {
+            return $this->failValidation('context', 'A node context cannot be combined with app or workspace context.', [
+                'node' => $node,
+                'app' => $app,
+                'workspace' => $workspace,
+            ]);
+        }
+
+        if ($node === null && $app === null && $workspace === null) {
+            return $this->failValidation('app', 'A node, app, or workspace context is required.');
         }
 
         try {
             $response = $this->gatewayPost("/api/processes/{$this->action()}", $this->filledQuery([
+                'node' => $node,
                 'app' => $app,
                 'workspace' => $workspace,
                 'name' => $this->stringArgument('name'),

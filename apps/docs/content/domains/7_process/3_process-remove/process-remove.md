@@ -2,16 +2,19 @@
 
 [Back to Process commands.](../README.md)
 
-Remove an app-owned process definition and its rendered runtime units.
+Remove a node-, app-, or workspace-owned process definition and its rendered
+runtime units.
 
 `process:remove` deletes process configuration from the gateway, then stops and
-removes the derived runtime units for the main app instance and every workspace.
+removes the derived runtime units for the resolved owner scope.
 
 ## Usage
 
 ```bash
 orbit process:remove vite --app=docs
 orbit process:remove queue --app=docs --force
+orbit process:remove horizon --app=docs --workspace=feature-docs --force
+orbit process:remove opencode-server --node=app-dev-1 --force
 orbit process:remove vite --app=docs --force --json
 ```
 
@@ -20,8 +23,9 @@ orbit process:remove vite --app=docs --force --json
 Use this command to remove a process definition and its runtime units.
 
 - **Destructive Consent**: Requires an interactive confirmation prompt or `--force` before side effects.
-- **Gateway Removal**: Removes app-owned process configuration from the gateway.
-- **Runtime Unit Cleanup**: Stops and removes derived runtime units for the main app instance and all workspaces.
+- **Gateway Removal**: Removes process configuration from the gateway for the resolved owner scope.
+- **Scope Resolution**: `--node` removes a node-owned process and cannot be combined with `--app` or `--workspace`; `--workspace` removes a workspace-owned process; otherwise `--app` removes an app-owned process.
+- **Runtime Unit Cleanup**: Stops and removes runtime units derived from the selected process definition.
 - **Log Preservation**: Does not remove historical logs.
 - **Drift Reporting**: Reports repairable cleanup drift when runtime-unit cleanup does not fully converge.
 

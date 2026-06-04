@@ -8,13 +8,13 @@
 
 **Prerequisites:**
 - The CLI caller can reach the Orbit gateway.
-- The gateway authorizes the authenticated peer for `process:add` on the target app's owning node.
+- The gateway authorizes the authenticated peer for `process:add` on the resolved owning node.
 - Runtime artifact rendering requires gateway reachability to the owning node.
 
 ## Signature
 
 ```bash
-orbit process:add [name] [command] [--app=<app>] [--restart-policy=<never|on_failure|always>] [--crash-notification=<none|agent_ide>] [--runtime=<supervisor>] [--start] [--json]
+orbit process:add [name] [command] [--node=<node>] [--app=<app>] [--workspace=<workspace>] [--tool=<tool>] [--restart-policy=<never|on_failure|always>] [--crash-notification=<none|agent_ide>] [--runtime=<docker|supervisor|systemd>] [--start] [--json]
 ```
 
 ## Input Contract
@@ -23,12 +23,15 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
-| `name` | `[name]` | Always. | Never. | None. | Process slug: lowercase letters, digits, and hyphens only; cannot start or end with a hyphen; max 64 characters; unique within the owning app. |
+| `name` | `[name]` | Always. | Never. | None. | Process slug: lowercase letters, digits, and hyphens only; cannot start or end with a hyphen; max 64 characters; unique within the resolved owner scope. |
 | `command` | `[command]` | Always. | Never. | None. | Non-empty command string. Stored as process configuration without shell rewriting by the input adapter. |
-| `app` | `--app` or app context | Always. | Never. | Local app context when exactly one app is resolvable. | Must resolve to an app whose owning node grants `process:add`. |
+| `node` | `--node` | Required when adding a node-owned process. | `app` or `workspace` is present. | None. | Must resolve to a node that grants `process:add`. |
+| `app` | `--app` or app context | Required unless `node` is supplied or `workspace` resolves the app. | `node` is present. | Local app context when exactly one app is resolvable. | Must resolve to an app whose owning node grants `process:add`. |
+| `workspace` | `--workspace` or workspace context | Required when adding a workspace-owned process. | `node` is present. | Local workspace context when exactly one workspace is resolvable. | Must resolve to a workspace whose app owning node grants `process:add`; pass `--app` when the workspace name is ambiguous. |
+| `tool` | `--tool` | Optional. | Never. | `null`. | Tool slug for the installed node capability this process uses. Tools do not own lifecycle. |
 | `restart_policy` | `--restart-policy` | Optional. | Never. | `never`. | One of `never`, `on_failure`, `always`. |
 | `crash_notification` | `--crash-notification` | Optional. | Never. | `none`. | One of `none`, `agent_ide`. |
-| `runtime` | `--runtime` | Optional. | Never. | `supervisor`. | `supervisor`, unless a later command contract explicitly admits another runtime. Stored on the process definition and used to select the backend that renders derived runtime units. |
+| `runtime` | `--runtime` | Optional. | Never. | Context default: `systemd` for node-owned processes, app runtime default for app/workspace processes. | One of `docker`, `supervisor`, `systemd`. `systemd` is valid only when `node` owns the process. |
 | `start` | `--start` | Optional. | Never. | `false`. | Boolean flag. Starts rendered runtime units after applying when true. |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer and non-interactive input mode. |
 
@@ -43,11 +46,11 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 ### Process Definition Creation Rules
 
-1. Resolve target app from supplied input or local app context.
-2. Send the request to the gateway, which validates the authenticated peer's authorization and process name uniqueness within the app.
-3. Append gateway-owned process configuration after existing definitions for the app, with command, restart policy, and crash notification policy.
-4. Derive runtime-unit identities for the main app instance and all active workspaces.
-5. Render the derived runtime units on the owning node.
+1. Resolve target node, app, or workspace context from supplied input or local context.
+2. Send the request to the gateway, which validates the authenticated peer's authorization and process name uniqueness within the owner scope.
+3. Append gateway-owned process configuration after existing definitions for that owner, with command, runtime, optional tool dependency, restart policy, and crash notification policy.
+4. Derive runtime-unit identities for the selected scope. Node-owned and workspace-owned processes normally derive one unit; app-owned processes derive one main-app unit plus one unit for each active workspace.
+5. Render the derived runtime units on the owning node through the selected runtime backend.
 6. When `--start` is present, start the rendered runtime units and record `started` events for units that start successfully.
 7. Render the selected output.
 
@@ -72,7 +75,9 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 
 | Failure | Condition | Outcome |
 | --- | --- | --- |
-| Duplicate process | The owning app already has a process definition with the same name. | Failure (`error.code=process.name_collision`). |
+| Duplicate process | The resolved owner scope already has a process definition with the same name. | Failure (`error.code=process.name_collision`). |
+| Invalid context | `--node` is combined with `--app` or `--workspace`, or no node/app/workspace context resolves. | Failure (`error.code=validation_failed`). |
+| Invalid runtime scope | `--runtime=systemd` is supplied for an app- or workspace-owned process. | Failure (`error.code=validation_failed`, `error.meta.reason=systemd_requires_node_owned_process`). |
 
 ## Doctor Relationship
 
@@ -86,8 +91,8 @@ The gateway API endpoint emits an activity entry for successful and failed proce
 | --- | --- |
 | Type | `api:POST /processes` |
 | Effect | `write` |
-| Subject | `App` when the parent app is resolved and visible; `none` for validation, app-resolution, or authorization failures before the app can be logged. |
-| Properties | `app` (string or null) and `name` (string or null). No raw process command text, environment data, runtime output, or secrets. |
+| Subject | Resolved `Node` for node-owned processes or `App` for app/workspace-owned processes; `none` for validation, context-resolution, or authorization failures before the owner can be logged. |
+| Properties | `node` (string or null), `app` (string or null), `workspace` (string or null), `name` (string or null), and `tool` (string or null). No raw process command text, environment data, runtime output, or secrets. |
 | Description | derived |
 
 ## Test Mapping

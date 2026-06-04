@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services\Processes;
 
 use App\Models\App;
+use App\Models\Node;
 use App\Models\Process;
 use App\Models\Workspace;
 
@@ -17,15 +18,15 @@ class ProcessRuntimeUnitPayload
     /**
      * @return list<array{name: string, context: string}>
      */
-    public function forProcess(App $app, Process $process): array
+    public function forProcess(App $app, Process $process, ?Workspace $workspaceContext = null): array
     {
         $app->loadMissing('workspaces');
         $process->loadMissing('owner');
 
-        return collect($this->contexts($app, $process))
+        return collect($this->contexts($app, $process, $workspaceContext))
             ->map(fn (?Workspace $workspace): array => [
                 'name' => $this->runtimeDrivers->forProcess($process)->runtimeUnitName($app, $process, $workspace),
-                'context' => $workspace instanceof Workspace ? $workspace->name : 'main',
+                'context' => $this->contextName($process, $workspace),
             ])
             ->values()
             ->all();
@@ -34,8 +35,16 @@ class ProcessRuntimeUnitPayload
     /**
      * @return list<Workspace|null>
      */
-    private function contexts(App $app, Process $process): array
+    private function contexts(App $app, Process $process, ?Workspace $workspaceContext): array
     {
+        if ($process->owner instanceof Node) {
+            return [null];
+        }
+
+        if ($workspaceContext instanceof Workspace) {
+            return [$workspaceContext];
+        }
+
         if ($process->owner instanceof Workspace) {
             return [$process->owner];
         }
@@ -48,5 +57,16 @@ class ProcessRuntimeUnitPayload
         }
 
         return [null, ...$app->workspaces->all()];
+    }
+
+    private function contextName(Process $process, ?Workspace $workspace): string
+    {
+        $process->loadMissing('owner');
+
+        if ($process->owner instanceof Node) {
+            return 'node';
+        }
+
+        return $workspace instanceof Workspace ? $workspace->name : 'main';
     }
 }

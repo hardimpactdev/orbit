@@ -157,6 +157,10 @@ final class E2ECurrentCheckout
                 'env_args=(',
                 '    --env "ORBIT_HOST_CWD=${runtime_workdir}"',
                 '    --env '.escapeshellarg("ORBIT_SOURCE_PATH={$checkout}"),
+                '    --env '.escapeshellarg('ORBIT_CONFIG_ROOT='.self::OrbitConfigRoot),
+                '    --env '.escapeshellarg('DB_CONNECTION=sqlite'),
+                '    --env '.escapeshellarg('DB_DATABASE='.self::OrbitConfigRoot.'/gateway.sqlite'),
+                '    --env '.escapeshellarg('SESSION_DRIVER=file'),
                 ')',
                 'if [ -n "${ORBIT_E2E_DOCKER_NETWORK:-}" ]; then',
                 '    sudo docker network connect "${ORBIT_E2E_DOCKER_NETWORK}" "${runtime_container}" >/dev/null 2>&1 || true',
@@ -782,17 +786,8 @@ PHP;
         return $instance instanceof DockerInstance || $instance instanceof DockerBuildInstance;
     }
 
-    private static function usesDockerSourceMountedHostLauncher(E2EInstance $instance, bool $hostLauncher): bool
-    {
-        return $hostLauncher && self::usesDockerRuntime($instance);
-    }
-
     private static function sourceMountedCheckoutPath(E2EInstance $instance, string $user, bool $hostLauncher): ?string
     {
-        if (self::usesDockerSourceMountedHostLauncher($instance, $hostLauncher)) {
-            return self::mountedDockerCheckoutPath($user);
-        }
-
         if ($instance instanceof SourceMountedCheckoutInstance) {
             $path = $instance->sourceMountedCheckoutPath();
 
@@ -800,11 +795,6 @@ PHP;
         }
 
         return null;
-    }
-
-    private static function mountedDockerCheckoutPath(string $user): string
-    {
-        return "/home/{$user}/orbit";
     }
 
     private static function hostLauncherActivationCommand(string $remotePath): string

@@ -2,7 +2,8 @@
 
 [Back to Process commands.](../README.md)
 
-Restart one process, or all processes, in an app or workspace runtime context.
+Restart one process, or all processes, in a node, app, or workspace runtime
+context.
 
 `process:restart` cycles derived runtime units through the gateway on the owning
 node and records lifecycle events for the transition.
@@ -12,15 +13,16 @@ node and records lifecycle events for the transition.
 ```bash
 orbit process:restart vite --app=docs
 orbit process:restart vite --app=docs --workspace=feature-docs
+orbit process:restart opencode-server --node=app-dev-1
 orbit process:restart vite --app=docs --json
 orbit process:restart --app=docs --workspace=feature-docs
 ```
 
 ## Behavior Summary
 
-Use this command to cycle one process or all processes for a resolved app or workspace context.
+Use this command to cycle one process or all processes for a resolved node, app, or workspace context.
 
-- **Context Resolution**: Resolves the app or workspace runtime context.
+- **Context Resolution**: Resolves the node, app, or workspace runtime context.
 - **Single Process**: When `[name]` is supplied, restarts that process only.
 - **All Processes**: Omitting `[name]` restarts every process definition for the selected context in process order.
 - **Runtime Effects**: Restarts the derived runtime units through the gateway and records lifecycle events for the stopped and started runtime transitions.

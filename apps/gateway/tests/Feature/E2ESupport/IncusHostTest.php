@@ -225,7 +225,7 @@ it('uses fresh ssh transport for remote checkpoint text files', function (): voi
         ->and($commands[1])->toContain('.cache/orbit-e2e/provision-checkpoints/base/full.json');
 });
 
-it('queries exact Incus instance state when resolving a provider IPv4', function (): void {
+it('queries live guest state first when resolving a provider IPv4', function (): void {
     $commands = [];
 
     $host = new class(incusHostTestConfig(), $commands) extends IncusHost
@@ -253,9 +253,45 @@ it('queries exact Incus instance state when resolving a provider IPv4', function
     $instance = new IncusInstance($host, 'orbit-template-operator');
 
     expect($instance->waitForIpv4())->toBe('10.231.0.10')
-        ->and($commands[0])->toContain("incus query '/1.0/instances/orbit-template-operator/state'")
-        ->and($commands[0])->toContain('python3 -c')
-        ->and($commands[0])->toContain("awk -F, -v name='orbit-template-operator'");
+        ->and($commands[0])->toContain("incus exec 'orbit-template-operator' -- sh -lc 'ip -j -4 address show scope global'")
+        ->and($commands[0])->toContain('python3 -c');
+});
+
+it('falls back to exact Incus instance state when guest IPv4 lookup fails', function (): void {
+    $commands = [];
+
+    $host = new class(incusHostTestConfig(), $commands) extends IncusHost
+    {
+        /** @var list<string> */
+        private array $commands;
+
+        /**
+         * @param  list<string>  $commands
+         */
+        public function __construct(E2EConfig $config, array &$commands)
+        {
+            parent::__construct($config);
+            $this->commands = &$commands;
+        }
+
+        public function run(string $command, ?int $timeoutSeconds = null): ProcessResult
+        {
+            $this->commands[] = $command;
+
+            if (str_contains($command, 'ip -j -4 address show scope global')) {
+                return incusHostTestProcessResult('', 1);
+            }
+
+            return incusHostTestProcessResult("10.231.0.10\n");
+        }
+    };
+
+    $instance = new IncusInstance($host, 'orbit-template-operator');
+
+    expect($instance->waitForIpv4())->toBe('10.231.0.10')
+        ->and($commands[1])->toContain("incus query '/1.0/instances/orbit-template-operator/state'")
+        ->and($commands[1])->toContain('python3 -c')
+        ->and($commands[1])->toContain("awk -F, -v name='orbit-template-operator'");
 });
 
 it('restarts journald after refreshing cloned instance network identity', function (): void {

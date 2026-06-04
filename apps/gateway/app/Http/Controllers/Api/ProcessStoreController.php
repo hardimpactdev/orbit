@@ -13,7 +13,9 @@ use App\Enums\ProcessRestartPolicy;
 use App\Http\Authorization\RequiresPermission;
 use App\Http\Authorization\ServingNode;
 use App\Http\Gateway\GatewayApiException;
-use App\Models\App;
+use App\Models\Node;
+use App\Services\Nodes\Access\NodeAccessAuthorizer;
+use App\Services\Processes\ProcessOwnerContextResolver;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -21,37 +23,60 @@ use Illuminate\Http\Request;
 #[RequiresPermission('process:add', servingNode: ServingNode::AppOwning)]
 final class ProcessStoreController implements Loggable
 {
-    private ?App $activitySubject = null;
+    private ?Model $activitySubject = null;
+
+    public function __construct(
+        private readonly ProcessOwnerContextResolver $contexts,
+        private readonly NodeAccessAuthorizer $authorizer,
+    ) {}
 
     public function __invoke(Request $request, AddProcess $addProcess): JsonResponse
     {
+        /** @var mixed $caller */
+        $caller = $request->user();
+
+        if (! $caller instanceof Node) {
+            return $this->error('authorization_failed', 'Peer identity unknown.', [], 403);
+        }
+
         $input = $this->validatedInput($request);
 
         if ($input instanceof JsonResponse) {
             return $input;
         }
 
-        $app = App::query()->with(['node', 'workspaces'])->where('name', $input['app'])->first();
+        try {
+            $context = $this->contexts->resolve(
+                nodeName: $input['node'],
+                appName: $input['app'],
+                workspaceName: $input['workspace'],
+            );
+        } catch (GatewayApiException $e) {
+            return $this->error($e->errorCode() ?? 'validation_failed', $e->getMessage(), $e->errorMeta(), 422);
+        }
 
-        if (! $app instanceof App) {
-            return $this->error('validation_failed', "App '{$input['app']}' not found.", ['field' => 'app', 'value' => $input['app']], 422);
+        $authorization = $this->authorizeProcessAccess($caller, $context->node, 'process:add');
+
+        if ($authorization instanceof JsonResponse) {
+            return $authorization;
         }
 
         try {
             $result = $addProcess->handle(
-                app: $app,
+                context: $context,
                 name: $input['name'],
                 command: $input['command'],
                 restartPolicy: $input['restart_policy'],
                 crashNotification: $input['crash_notification'],
                 start: $input['start'],
                 runtime: $input['runtime'],
+                tool: $input['tool'],
             );
         } catch (GatewayApiException $e) {
             return $this->error($e->errorCode() ?? 'validation_failed', $e->getMessage(), $e->errorMeta(), $e->errorCode() === 'process.name_collision' ? 409 : 422);
         }
 
-        $this->activitySubject = $app;
+        $this->activitySubject = $context->subject();
 
         return response()->json([
             'success' => [
@@ -64,19 +89,31 @@ final class ProcessStoreController implements Loggable
     }
 
     /**
-     * @return array{app: string, name: string, command: string, restart_policy: ProcessRestartPolicy, crash_notification: ProcessCrashNotification, runtime: ?ProcessRuntime, start: bool}|JsonResponse
+     * @return array{node: string|null, app: string|null, workspace: string|null, name: string, command: string, restart_policy: ProcessRestartPolicy, crash_notification: ProcessCrashNotification, runtime: ?ProcessRuntime, tool: string|null, start: bool}|JsonResponse
      */
     private function validatedInput(Request $request): array|JsonResponse
     {
+        $node = $this->optionalString($request, 'node');
         $app = $this->optionalString($request, 'app');
+        $workspace = $this->optionalString($request, 'workspace');
         $name = $this->optionalString($request, 'name');
         $command = $this->optionalString($request, 'command');
         $restartPolicyInput = $this->optionalString($request, 'restart_policy') ?? ProcessRestartPolicy::Never->value;
         $crashNotificationInput = $this->optionalString($request, 'crash_notification') ?? ProcessCrashNotification::None->value;
         $runtimeInput = $this->optionalString($request, 'runtime');
+        $tool = $this->optionalString($request, 'tool');
 
-        if ($app === null) {
-            return $this->error('validation_failed', 'An app context is required.', ['field' => 'app'], 422);
+        if ($node !== null && ($app !== null || $workspace !== null)) {
+            return $this->error('validation_failed', 'A node context cannot be combined with app or workspace context.', [
+                'field' => 'context',
+                'node' => $node,
+                'app' => $app,
+                'workspace' => $workspace,
+            ], 422);
+        }
+
+        if ($node === null && $app === null && $workspace === null) {
+            return $this->error('validation_failed', 'A node, app, or workspace context is required.', ['field' => 'app'], 422);
         }
 
         if ($name === null) {
@@ -89,6 +126,10 @@ final class ProcessStoreController implements Loggable
 
         if ($command === null) {
             return $this->error('validation_failed', 'The process command is required.', ['field' => 'command'], 422);
+        }
+
+        if ($tool !== null && ! preg_match('/^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$/', $tool)) {
+            return $this->error('validation_failed', 'The process tool must contain only lowercase letters, digits, and hyphens, cannot start or end with a hyphen, and may not exceed 64 characters.', ['field' => 'tool', 'value' => $tool], 422);
         }
 
         $restartPolicy = ProcessRestartPolicy::tryFrom($restartPolicyInput);
@@ -124,7 +165,7 @@ final class ProcessStoreController implements Loggable
                 ], 422);
             }
 
-            if ($runtime === ProcessRuntime::Systemd) {
+            if ($runtime === ProcessRuntime::Systemd && $node === null) {
                 return $this->error('validation_failed', 'The systemd runtime is only valid for node-owned processes.', [
                     'field' => 'runtime',
                     'value' => $runtimeInput,
@@ -134,14 +175,32 @@ final class ProcessStoreController implements Loggable
         }
 
         return [
+            'node' => $node,
             'app' => $app,
+            'workspace' => $workspace,
             'name' => $name,
             'command' => $command,
             'restart_policy' => $restartPolicy,
             'crash_notification' => $crashNotification,
             'runtime' => $runtime,
+            'tool' => $tool,
             'start' => $request->boolean('start'),
         ];
+    }
+
+    private function authorizeProcessAccess(Node $caller, Node $node, string $permission): ?JsonResponse
+    {
+        $result = $this->authorizer->authorize($caller, $node, $permission);
+
+        if ($result->allowed) {
+            return null;
+        }
+
+        return $this->error('authorization_failed', "This node is not authorized for '{$permission}' on '{$node->name}'.", [
+            'reason' => $result->reason,
+            'missing_permission' => $result->missingPermission,
+            'serving_node' => $node->name,
+        ], 403);
     }
 
     private function optionalString(Request $request, string $key): ?string
@@ -186,8 +245,11 @@ final class ProcessStoreController implements Loggable
     public function properties(): array
     {
         return [
+            'node' => $this->optionalString(request(), 'node'),
             'app' => $this->optionalString(request(), 'app'),
+            'workspace' => $this->optionalString(request(), 'workspace'),
             'name' => $this->optionalString(request(), 'name'),
+            'tool' => $this->optionalString(request(), 'tool'),
         ];
     }
 

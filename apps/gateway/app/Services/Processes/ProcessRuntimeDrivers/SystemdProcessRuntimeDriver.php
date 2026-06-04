@@ -73,6 +73,7 @@ final readonly class SystemdProcessRuntimeDriver implements ProcessRuntimeDriver
             "-n {$lines}",
             $follow ? '-f' : null,
             '--no-pager',
+            '--output=short-iso',
             '2>&1',
         ])->filter()->implode(' ');
     }

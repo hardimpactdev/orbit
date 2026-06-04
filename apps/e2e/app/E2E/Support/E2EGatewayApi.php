@@ -75,21 +75,26 @@ PHP;
             return;
         }
 
-        $commands = [
+        $rootCommands = [
             'cd /home/orbit/orbit',
             'export ORBIT_CONFIG_ROOT='.escapeshellarg(self::OrbitConfigRoot),
+            self::repairGatewayConfigRootOwnershipCommand(),
             self::dockerGatewayStateBootstrapCommand(),
+            self::repairGatewayConfigRootOwnershipCommand(),
+        ];
+        $orbitCommands = [
+            'cd /home/orbit/orbit',
+            'export ORBIT_CONFIG_ROOT='.escapeshellarg(self::OrbitConfigRoot),
             self::appKeyCommand(self::gatewayStatePath('.env')),
             'php apps/gateway/artisan migrate --force --no-interaction --ansi',
             self::tinkerEvalCommand($php),
         ];
-        self::repairGatewayConfigRootOwnership($gateway);
-
-        E2ECommand::orbit(
+        E2ECommand::exec(
             $gateway,
-            implode(' && ', $commands),
+            implode(' && ', $rootCommands).' && sudo -iu orbit env ORBIT_GATEWAY_CONTAINER="${ORBIT_GATEWAY_CONTAINER:-}" ORBIT_E2E_DOCKER_NETWORK="${ORBIT_E2E_DOCKER_NETWORK:-}" ORBIT_CONFIG_ROOT="${ORBIT_CONFIG_ROOT:-/home/orbit/.config/orbit}" DB_CONNECTION="${DB_CONNECTION:-sqlite}" DB_DATABASE="${DB_DATABASE:-/home/orbit/.config/orbit/gateway.sqlite}" SESSION_DRIVER="${SESSION_DRIVER:-file}" bash -lc '.escapeshellarg(implode(' && ', $orbitCommands)),
             'Could not seed operator identity on gateway',
         );
+        self::repairGatewayConfigRootOwnership($gateway);
     }
 
     public static function prepareDockerGatewayState(
@@ -131,6 +136,7 @@ PHP;
             implode(' && ', $commands),
             timeoutSeconds: 180,
         );
+        self::repairGatewayConfigRootOwnership($gateway);
     }
 
     public static function sourceMountedGatewayStateCommand(): string
@@ -1929,12 +1935,17 @@ PHP;
     {
         E2ECommand::exec(
             $gateway,
-            'install -d -m 775 -o orbit -g orbit '.escapeshellarg(self::OrbitConfigRoot)
-                .' && chown -R orbit:orbit '.escapeshellarg(self::OrbitConfigRoot)
-                .' && chmod -R u+rwX,g+rwX '.escapeshellarg(self::OrbitConfigRoot),
+            self::repairGatewayConfigRootOwnershipCommand(),
             'Could not repair gateway config root ownership',
             timeoutSeconds: 60,
         );
+    }
+
+    private static function repairGatewayConfigRootOwnershipCommand(): string
+    {
+        return 'install -d -m 775 -o orbit -g orbit '.escapeshellarg(self::OrbitConfigRoot)
+            .' && chown -R orbit:orbit '.escapeshellarg(self::OrbitConfigRoot)
+            .' && chmod -R u+rwX,g+rwX '.escapeshellarg(self::OrbitConfigRoot);
     }
 
     private static function dockerGatewayStateReadyCommand(): string

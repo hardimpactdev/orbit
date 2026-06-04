@@ -50,9 +50,15 @@ final readonly class ProcessRuntimeUnitResolver
             }
         }
 
-        $process = $app->processes()
-            ->where('name', $processName)
-            ->first();
+        $process = $workspace instanceof Workspace
+            ? $workspace->processes()->where('name', $processName)->first()
+            : null;
+
+        if (! $process instanceof Process) {
+            $process = $app->processes()
+                ->where('name', $processName)
+                ->first();
+        }
 
         if (! $process instanceof Process) {
             return null;

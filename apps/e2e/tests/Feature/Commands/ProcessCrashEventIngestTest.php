@@ -67,9 +67,10 @@ $app = \App\Models\App::query()->updateOrCreate(
     ],
 );
 
-\App\Models\Process::query()->updateOrCreate(
-    ['app_id' => $app->id, 'name' => '__PROCESS__'],
+$app->processes()->updateOrCreate(
+    ['name' => '__PROCESS__'],
     [
+        'node_id' => $node->id,
         'command' => 'sleep 300',
         'restart_policy' => 'never',
         'crash_notification' => 'agent_ide',

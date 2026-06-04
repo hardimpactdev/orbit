@@ -7,6 +7,7 @@ use App\Data\RemoteShell\RemoteShellResult;
 use App\Models\App;
 use App\Models\Node;
 use App\Models\Process;
+use App\Models\Workspace;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 
@@ -58,7 +59,12 @@ describe('ProcessDestroyController', function (): void {
         ], [], [], ['REMOTE_ADDR' => PROCESS_DESTROY_CALLER_WG_IP]);
 
         $response->assertOk()
-            ->assertJsonPath('success.data.process', ['name' => 'vite', 'app' => 'docs'])
+            ->assertJsonPath('success.data.process', [
+                'name' => 'vite',
+                'node' => $appNode->name,
+                'app' => 'docs',
+                'workspace' => null,
+            ])
             ->assertJsonPath('success.data.removed_runtime_units', ['orbit_docs_main_vite'])
             ->assertJsonPath('success.meta.warnings.0.code', 'process.runtime_unit_extra')
             ->assertJsonPath('success.meta.warnings.0.family', 'process')
@@ -66,6 +72,68 @@ describe('ProcessDestroyController', function (): void {
             ->assertJsonPath('success.meta.warnings.0.next_command', 'doctor --family=process --restore');
 
         expect(Process::query()->where('name', 'vite')->exists())->toBeFalse();
+    });
+
+    it('removes node owned process intent with destructive consent', function (): void {
+        $caller = createProcessDestroyCallerNode();
+        $node = createTestAppHostNode(['name' => 'app-1']);
+        grantProcessDestroyAccess($caller, $node);
+        Process::factory()->forOwner($node)->create([
+            'name' => 'opencode-server',
+            'runtime' => 'systemd',
+            'tool' => 'opencode',
+        ]);
+        app()->instance(RemoteShell::class, new ProcessDestroyRemoteShell([
+            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+        ]));
+
+        $response = $this->call('DELETE', '/api/processes/opencode-server', [
+            'node' => 'app-1',
+            'destructive_consent' => true,
+        ], [], [], ['REMOTE_ADDR' => PROCESS_DESTROY_CALLER_WG_IP]);
+
+        $response->assertOk()
+            ->assertJsonPath('success.data.process', [
+                'name' => 'opencode-server',
+                'node' => 'app-1',
+                'app' => null,
+                'workspace' => null,
+            ])
+            ->assertJsonPath('success.data.removed_runtime_units', ['opencode-server']);
+
+        expect(Process::query()->where('name', 'opencode-server')->exists())->toBeFalse();
+    });
+
+    it('removes workspace owned process intent with destructive consent', function (): void {
+        $caller = createProcessDestroyCallerNode();
+        $appNode = createTestAppHostNode();
+        grantProcessDestroyAccess($caller, $appNode);
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
+        $workspace = Workspace::factory()->for($app)->create(['name' => 'feature-docs', 'path' => '/srv/docs-feature']);
+        Process::factory()->forOwner($workspace)->create([
+            'name' => 'worker',
+            'runtime' => 'supervisor',
+        ]);
+        app()->instance(RemoteShell::class, new ProcessDestroyRemoteShell([
+            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+        ]));
+
+        $response = $this->call('DELETE', '/api/processes/worker', [
+            'app' => 'docs',
+            'workspace' => 'feature-docs',
+            'destructive_consent' => true,
+        ], [], [], ['REMOTE_ADDR' => PROCESS_DESTROY_CALLER_WG_IP]);
+
+        $response->assertOk()
+            ->assertJsonPath('success.data.process', [
+                'name' => 'worker',
+                'node' => $appNode->name,
+                'app' => 'docs',
+                'workspace' => 'feature-docs',
+            ])
+            ->assertJsonPath('success.data.removed_runtime_units', ['orbit_docs_feature-docs_worker']);
+
+        expect($workspace->processes()->where('name', 'worker')->exists())->toBeFalse();
     });
 
     it('requires authorization and destructive consent before deleting intent', function (array $payload, bool $grantAccess, int $status, string $code): void {

@@ -14,19 +14,34 @@ final class ProcessListCommand extends GatewayCommand
 
     #[\Override]
     protected $signature = 'process:list
+        {--node= : Owning node name}
         {--app= : Parent app slug}
         {--workspace= : Workspace name}
         {--json}';
 
     #[\Override]
-    protected $description = 'List configured app processes.';
+    protected $description = 'List configured processes.';
 
     public function handle(): int
     {
+        $node = $this->stringOption('node');
+        $app = $node === null ? $this->stringOption('app') ?? $this->appFromOrbitMarker() : $this->stringOption('app');
+        $workspace = $this->stringOption('workspace');
+
+        if ($node !== null && ($app !== null || $workspace !== null)) {
+            return $this->renderFailure('validation_failed', 'A node context cannot be combined with app or workspace context.', [
+                'field' => 'context',
+                'node' => $node,
+                'app' => $app,
+                'workspace' => $workspace,
+            ]);
+        }
+
         try {
             $response = $this->gatewayGet('/api/processes', $this->filledQuery([
-                'app' => $this->stringOption('app') ?? $this->appFromOrbitMarker(),
-                'workspace' => $this->stringOption('workspace'),
+                'node' => $node,
+                'app' => $app,
+                'workspace' => $workspace,
             ]));
         } catch (GatewayApiException $exception) {
             return $this->renderGatewayFailure($exception);

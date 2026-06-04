@@ -16,7 +16,7 @@ final readonly class RecordProcessEvent
 {
     public function handle(
         ProcessEventType $type,
-        App $app,
+        ?App $app,
         ?Workspace $workspace,
         Process $process,
         Node $node,
@@ -29,7 +29,7 @@ final readonly class RecordProcessEvent
             'event' => $type,
             'event_id' => (string) Str::uuid(),
             'process_id' => $process->id,
-            'app_id' => $app->id,
+            'app_id' => $app?->id,
             'workspace_id' => $workspace?->id,
             'node_id' => $node->id,
             'unit_name' => $unitName,

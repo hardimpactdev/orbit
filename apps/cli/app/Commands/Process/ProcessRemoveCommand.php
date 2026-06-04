@@ -13,7 +13,9 @@ final class ProcessRemoveCommand extends ProcessGatewayCommand
     #[\Override]
     protected $signature = 'process:remove
         {name? : Existing process name}
+        {--node= : Owning node name}
         {--app= : Parent app slug}
+        {--workspace= : Workspace name}
         {--force : Confirm destructive operation without prompting}
         {--json : Output JSON}';
 
@@ -22,11 +24,21 @@ final class ProcessRemoveCommand extends ProcessGatewayCommand
 
     public function handle(): int
     {
-        $app = $this->appContext();
+        $node = $this->nodeContext();
+        $app = $node === null ? $this->appContext() : $this->stringOption('app');
+        $workspace = $this->workspaceContext();
         $name = $this->stringArgument('name');
 
-        if ($app === null) {
-            return $this->failValidation('app', 'An app context is required.');
+        if ($node !== null && ($app !== null || $workspace !== null)) {
+            return $this->failValidation('context', 'A node context cannot be combined with app or workspace context.', [
+                'node' => $node,
+                'app' => $app,
+                'workspace' => $workspace,
+            ]);
+        }
+
+        if ($node === null && $app === null && $workspace === null) {
+            return $this->failValidation('app', 'A node, app, or workspace context is required.');
         }
 
         $validation = $this->validateProcessName($name)
@@ -37,11 +49,13 @@ final class ProcessRemoveCommand extends ProcessGatewayCommand
         }
 
         try {
-            $response = $this->gatewayDelete('/api/processes/'.rawurlencode((string) $name), [
+            $response = $this->gatewayDelete('/api/processes/'.rawurlencode((string) $name), $this->filledQuery([
+                'node' => $node,
                 'app' => $app,
+                'workspace' => $workspace,
                 'destructive_consent' => true,
                 'destructive_consent_source' => 'force',
-            ]);
+            ]));
         } catch (GatewayApiException $exception) {
             return $this->renderGatewayFailure($exception);
         }

@@ -36,9 +36,11 @@ if (\$gateway instanceof \\App\\Models\\Node) {
     \$gateway->update(['orbit_path' => '{$topology->checkout('gateway')}', 'status' => 'active']);
 }
 
-\\Spatie\\Activitylog\\Models\\Activity::query()->delete();
+\Spatie\Activitylog\Models\Activity::query()->delete();
 
-file_put_contents({$backendPathValue}, json_encode([
+\$backendPath = {$backendPathValue};
+\Illuminate\Support\Facades\File::ensureDirectoryExists(dirname(\$backendPath));
+\$written = file_put_contents(\$backendPath, json_encode([
     'clients' => [
         [
             'id' => 'client-1',
@@ -49,6 +51,10 @@ file_put_contents({$backendPathValue}, json_encode([
         ],
     ],
 ], JSON_THROW_ON_ERROR));
+
+if (\$written === false) {
+    throw new \RuntimeException("Could not write VPN fake backend state to {\$backendPath}.");
+}
 
 echo 'prepared';
 PHP;

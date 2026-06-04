@@ -37,7 +37,7 @@ describe('tool catalog definitions', function (): void {
             ->and($catalog->hasCapability('gh', 'safe-adopt'))->toBeTrue();
     });
 
-    it('catalogs agent IDE servers as supervisor-managed tool programs', function (string $tool, string $program, string $definition): void {
+    it('catalogs agent IDE servers as installed capabilities with process-owned lifecycle', function (string $tool, string $binary, string $definition): void {
         $catalog = app(ToolCatalog::class);
         $metadata = $catalog->probeMetadata($tool);
         $repairCommands = is_array($metadata['repair_commands'] ?? null)
@@ -46,30 +46,30 @@ describe('tool catalog definitions', function (): void {
 
         expect($catalog->definition($tool))->toBeInstanceOf($definition)
             ->and($metadata)->toMatchArray([
-                'supervisor_program' => $program,
-                'supervisor_log' => "/var/log/orbit/{$program}.log",
+                'binary' => $binary,
             ])
-            ->and($repairCommands['lifecycle_running'] ?? null)->toContain('supervisorctl')
-            ->and($repairCommands['lifecycle_stopped'] ?? null)->toContain('supervisorctl')
-            ->and($repairCommands['lifecycle_restarted'] ?? null)->toContain('supervisorctl')
-            ->and($catalog->logCommand($tool, 50))->toBe("sudo tail -n '50' '/var/log/orbit/{$program}.log' 2>&1 || true")
-            ->and($catalog->logCommand($tool, 50, follow: true))->toBe("sudo tail -n '50' -f '/var/log/orbit/{$program}.log' 2>&1");
+            ->and($metadata)->not->toHaveKey('supervisor_program')
+            ->and($metadata)->not->toHaveKey('supervisor_log')
+            ->and($repairCommands)->toBe([])
+            ->and($catalog->logCommand($tool, 50))->toBeNull()
+            ->and($catalog->logCommand($tool, 50, follow: true))->toBeNull();
 
         foreach ([
             $catalog->installScript($tool),
             $catalog->removeScript($tool),
             $catalog->reconfigureScript($tool),
             $catalog->updateScript($tool),
-            ...array_values($repairCommands),
         ] as $script) {
             expect((string) $script)
+                ->not->toContain('supervisorctl')
+                ->not->toContain('/etc/supervisor')
                 ->not->toContain('systemctl')
                 ->not->toContain('loginctl')
                 ->not->toContain('.config/systemd/user');
         }
     })->with([
-        'opencode server' => ['opencode-server', 'orbit_tool_opencode_server', OpenCodeServerTool::class],
-        'polyscope server' => ['polyscope-server', 'orbit_tool_polyscope_server', PolyscopeServerTool::class],
+        'opencode server' => ['opencode-server', 'opencode', OpenCodeServerTool::class],
+        'polyscope server' => ['polyscope-server', 'polyscope-server', PolyscopeServerTool::class],
     ]);
 
     it('describes caddy as the orbit-caddy Docker container instead of a host Caddy service', function (): void {

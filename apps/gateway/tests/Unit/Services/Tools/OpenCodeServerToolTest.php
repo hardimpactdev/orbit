@@ -4,43 +4,39 @@ declare(strict_types=1);
 
 use App\Tools\OpenCodeServerTool;
 
-it('installs the server as a supervisor-managed tool program', function (): void {
+it('installs only the server binary because lifecycle belongs to a process', function (): void {
     $script = (new OpenCodeServerTool)->installScript();
 
     expect($script)
-        ->toContain('program=orbit_tool_opencode_server')
-        ->toContain('[program:orbit_tool_opencode_server]')
-        ->toContain('sudo supervisorctl reread')
-        ->toContain('sudo supervisorctl update "${program}"')
-        ->toContain('--hostname 0.0.0.0')
+        ->toContain('https://opencode.ai/install')
+        ->not->toContain('supervisorctl')
+        ->not->toContain('/etc/supervisor')
         ->not->toContain('systemctl')
         ->not->toContain('loginctl')
         ->not->toContain('.config/systemd/user');
 });
 
-it('uses supervisor for lifecycle scripts and probe metadata', function (): void {
+it('keeps lifecycle metadata out of the tool definition', function (): void {
     $tool = new OpenCodeServerTool;
     $metadata = $tool->probeMetadata();
-    $repairCommands = is_array($metadata['repair_commands'] ?? null)
-        ? $metadata['repair_commands']
-        : [];
 
     expect($tool->removeScript())
-        ->toContain('sudo supervisorctl stop "${program}"')
+        ->toContain('rm -rf "${home}/.opencode"')
+        ->not->toContain('supervisorctl')
         ->not->toContain('systemctl')
         ->and($tool->updateScript())
-        ->toContain('sudo supervisorctl restart "${program}"')
+        ->toContain('"${home}/.opencode/bin/opencode" upgrade')
+        ->not->toContain('supervisorctl')
         ->not->toContain('systemctl')
         ->and($tool->reconfigureScript())
-        ->toContain('sudo supervisorctl update "${program}"')
+        ->toContain('tool capability config and credentials')
+        ->not->toContain('supervisorctl')
         ->not->toContain('systemctl')
         ->and($metadata)
         ->toMatchArray([
             'binary' => 'opencode',
-            'supervisor_program' => 'orbit_tool_opencode_server',
-            'supervisor_log' => '/var/log/orbit/orbit_tool_opencode_server.log',
         ])
-        ->and($repairCommands['lifecycle_running'] ?? null)->toContain('supervisorctl')
-        ->and($repairCommands['lifecycle_stopped'] ?? null)->toContain('supervisorctl')
-        ->and($repairCommands['lifecycle_restarted'] ?? null)->toContain('supervisorctl');
+        ->and($metadata)->not->toHaveKey('supervisor_program')
+        ->and($metadata)->not->toHaveKey('supervisor_log')
+        ->and($metadata)->not->toHaveKey('repair_commands');
 });

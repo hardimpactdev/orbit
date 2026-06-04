@@ -9,12 +9,13 @@ final class ProcessRestartCommand extends ProcessRuntimeActionCommand
     #[\Override]
     protected $signature = 'process:restart
         {name? : Existing process name}
+        {--node= : Owning node name}
         {--app= : Parent app slug}
         {--workspace= : Workspace name}
         {--json : Output JSON}';
 
     #[\Override]
-    protected $description = 'Restart app process runtime units.';
+    protected $description = 'Restart process runtime units.';
 
     protected function action(): string
     {

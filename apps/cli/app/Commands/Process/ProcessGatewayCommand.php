@@ -15,7 +15,7 @@ abstract class ProcessGatewayCommand extends GatewayCommand
 
     private const array CRASH_NOTIFICATIONS = ['none', 'agent_ide'];
 
-    private const array RUNTIMES = ['docker', 'supervisor'];
+    private const array RUNTIMES = ['docker', 'supervisor', 'systemd'];
 
     /**
      * @param  array<string, mixed>  $extraMeta
@@ -28,6 +28,16 @@ abstract class ProcessGatewayCommand extends GatewayCommand
     protected function appContext(): ?string
     {
         return $this->stringOption('app') ?? $this->appFromOrbitMarker();
+    }
+
+    protected function nodeContext(): ?string
+    {
+        return $this->stringOption('node');
+    }
+
+    protected function workspaceContext(): ?string
+    {
+        return $this->stringOption('workspace');
     }
 
     protected function validateProcessName(?string $name): ?int

@@ -59,7 +59,7 @@ describe('ToolLogsStreamController', function (): void {
             ->assertHeader('Content-Type', 'text/plain; charset=UTF-8')
             ->assertStreamedContent("streamed supervisor line\n");
 
-        expect($stream->scripts)->toBe(["sudo journalctl -u 'opencode-server.service' -n 1 -f --no-pager 2>&1"]);
+        expect($stream->scripts)->toBe(["sudo journalctl -u 'opencode-server.service' -n 1 -f --no-pager --output=short-iso 2>&1"]);
     });
 
     it('returns a gateway error before opening the stream when no related process exists', function (): void {

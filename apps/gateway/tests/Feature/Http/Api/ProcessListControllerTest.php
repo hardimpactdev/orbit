@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Enums\ProcessCrashNotification;
+use App\Enums\Processes\ProcessRuntime;
 use App\Enums\ProcessRestartPolicy;
 use App\Models\App;
 use App\Models\Node;
@@ -63,7 +64,7 @@ describe('ProcessListController', function (): void {
         $response = $this->call('GET', '/api/processes?app=docs', [], [], [], ['REMOTE_ADDR' => PROCESS_LIST_CALLER_WG_IP]);
 
         $response->assertOk()
-            ->assertJsonPath('success.data.context', ['app' => 'docs', 'workspace' => null])
+            ->assertJsonPath('success.data.context', ['node' => 'app-1', 'app' => 'docs', 'workspace' => null])
             ->assertJsonPath('success.data.processes.0.name', 'vite')
             ->assertJsonPath('success.data.processes.0.runtime_unit', 'orbit_docs_main_vite')
             ->assertJsonPath('success.data.processes.0.last_event', null)
@@ -80,8 +81,48 @@ describe('ProcessListController', function (): void {
         $response = $this->call('GET', '/api/processes?app=docs&workspace=feature-docs', [], [], [], ['REMOTE_ADDR' => PROCESS_LIST_CALLER_WG_IP]);
 
         $response->assertOk()
-            ->assertJsonPath('success.data.context', ['app' => 'docs', 'workspace' => 'feature-docs'])
+            ->assertJsonPath('success.data.context', ['node' => 'app-1', 'app' => 'docs', 'workspace' => 'feature-docs'])
             ->assertJsonPath('success.data.processes.0.runtime_unit', 'orbit_docs_feature-docs_vite');
+    });
+
+    it('lists workspace owned process rows for workspace context', function (): void {
+        createProcessListCallerNode(role: 'gateway');
+        $appNode = createTestAppHostNode(['name' => 'app-1']);
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
+        $workspace = Workspace::factory()->create(['name' => 'feature-docs', 'app_id' => $app->id]);
+        Process::factory()->forOwner($workspace)->create([
+            'name' => 'frankenphp-docs-feature-docs',
+            'runtime' => ProcessRuntime::Docker,
+            'runtime_config' => ['container_name' => 'orbit-ws-docs-feature-docs'],
+            'sort_order' => 1,
+        ]);
+
+        $response = $this->call('GET', '/api/processes?app=docs&workspace=feature-docs', [], [], [], ['REMOTE_ADDR' => PROCESS_LIST_CALLER_WG_IP]);
+
+        $response->assertOk()
+            ->assertJsonPath('success.data.context', ['node' => 'app-1', 'app' => 'docs', 'workspace' => 'feature-docs'])
+            ->assertJsonPath('success.data.processes.0.name', 'frankenphp-docs-feature-docs')
+            ->assertJsonPath('success.data.processes.0.runtime_unit', 'orbit-ws-docs-feature-docs');
+    });
+
+    it('lists node owned process rows for node context', function (): void {
+        createProcessListCallerNode(role: 'gateway');
+        $node = createTestAppHostNode(['name' => 'app-1']);
+        Process::factory()->forOwner($node)->create([
+            'name' => 'opencode-server',
+            'runtime' => ProcessRuntime::Systemd,
+            'tool' => 'opencode',
+            'sort_order' => 1,
+        ]);
+
+        $response = $this->call('GET', '/api/processes?node=app-1', [], [], [], ['REMOTE_ADDR' => PROCESS_LIST_CALLER_WG_IP]);
+
+        $response->assertOk()
+            ->assertJsonPath('success.data.context', ['node' => 'app-1', 'app' => null, 'workspace' => null])
+            ->assertJsonPath('success.data.processes.0.name', 'opencode-server')
+            ->assertJsonPath('success.data.processes.0.tool', 'opencode')
+            ->assertJsonPath('success.data.processes.0.runtime', 'systemd')
+            ->assertJsonPath('success.data.processes.0.runtime_unit', 'opencode-server');
     });
 
     it('omits process intent hidden from the caller', function (): void {

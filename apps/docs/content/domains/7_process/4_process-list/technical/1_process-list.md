@@ -8,12 +8,12 @@
 
 **Prerequisites:**
 - The CLI caller can reach the Orbit gateway.
-- The gateway authorizes the authenticated peer for `process:read` on the target app's owning node.
+- The gateway authorizes the authenticated peer for `process:read` on the resolved owning node.
 
 ## Signature
 
 ```bash
-orbit process:list [--app=<app>] [--workspace=<workspace>] [--json]
+orbit process:list [--node=<node>] [--app=<app>] [--workspace=<workspace>] [--json]
 ```
 
 ## Input Contract
@@ -22,8 +22,9 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
-| `app` | `--app` or app context | Required unless `workspace` resolves the app. | Never. | Local app context when exactly one app is resolvable. | Must resolve to an app whose owning node grants `process:read`. |
-| `workspace` | `--workspace` or workspace context | Optional. | Never. | Local workspace context when exactly one workspace is resolvable. | Must resolve to a workspace whose app owning node grants `process:read`. |
+| `node` | `--node` | Required when listing node-owned processes. | `app` or `workspace` is present. | None. | Must resolve to a node that grants `process:read`. |
+| `app` | `--app` or app context | Required unless `node` is supplied or `workspace` resolves the app. | `node` is present. | Local app context when exactly one app is resolvable. | Must resolve to an app whose owning node grants `process:read`. |
+| `workspace` | `--workspace` or workspace context | Optional. | `node` is present. | Local workspace context when exactly one workspace is resolvable. | Must resolve to a workspace whose app owning node grants `process:read`; pass `--app` when the workspace name is ambiguous. |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer and non-interactive input mode. |
 
 ## Input Mode Contracts
@@ -35,10 +36,10 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 ### Process Listing Rules
 
-1. Resolve target app or workspace context from supplied input or local context.
+1. Resolve target node, app, or workspace context from supplied input or local context.
 2. Send the request to the gateway, which validates the authenticated peer's authorization.
-3. Read app-owned process definitions from gateway configuration in process order.
-4. Derive expected runtime-unit identities for the selected main app or workspace context.
+3. Read process definitions from gateway configuration in process order. A workspace context includes workspace-owned definitions and app-owned definitions inherited by that workspace.
+4. Derive expected runtime-unit identities for the selected context.
 5. Read latest durable lifecycle events for the selected runtime context when events exist.
 6. Render the selected output.
 
@@ -54,6 +55,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 
 | Failure | Condition | Outcome |
 | --- | --- | --- |
+| Invalid context | `--node` is combined with `--app` or `--workspace`, or no node/app/workspace context resolves. | Failure (`error.code=validation_failed`). |
 
 Owning app-host reachability is not part of the default list path and does not cause this command to fail.
 

@@ -8,13 +8,13 @@
 
 **Prerequisites:**
 - The CLI caller can reach the Orbit gateway.
-- The gateway authorizes the authenticated peer for `process:remove` on the target app's owning node.
+- The gateway authorizes the authenticated peer for `process:remove` on the resolved owning node.
 - Runtime artifact cleanup requires gateway reachability to the owning node.
 
 ## Signature
 
 ```bash
-orbit process:remove [name] [--app=<app>] [--force] [--json]
+orbit process:remove [name] [--node=<node>] [--app=<app>] [--workspace=<workspace>] [--force] [--json]
 ```
 
 ## Input Contract
@@ -23,8 +23,10 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
-| `name` | `[name]` | Always. | Never. | None. | Existing process slug within the owning app. |
-| `app` | `--app` or app context | Always. | Never. | Local app context when exactly one app is resolvable. | Must resolve to an app whose owning node grants `process:remove`. |
+| `name` | `[name]` | Always. | Never. | None. | Existing process slug within the resolved owner scope. |
+| `node` | `--node` | Required when removing a node-owned process. | `app` or `workspace` is present. | None. | Must resolve to a node that grants `process:remove`. |
+| `app` | `--app` or app context | Required unless `node` is supplied or `workspace` resolves the app. | `node` is present. | Local app context when exactly one app is resolvable. | Must resolve to an app whose owning node grants `process:remove`. |
+| `workspace` | `--workspace` or workspace context | Required when removing a workspace-owned process. | `node` is present. | Local workspace context when exactly one workspace is resolvable. | Must resolve to a workspace whose app owning node grants `process:remove`; pass `--app` when the workspace name is ambiguous. |
 | `force` | `--force` | Required in non-interactive input mode. | Never. | `false`. | Boolean flag. Bypasses the interactive confirmation prompt when true. |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer and non-interactive input mode. It never grants destructive consent. |
 
@@ -39,10 +41,10 @@ Destructive consent is required before side effects. In interactive input mode, 
 
 ### Process Removal Rules
 
-1. Resolve target app from supplied input or local app context, and resolve the existing process definition.
+1. Resolve target node, app, or workspace context from supplied input or local context, and resolve the existing process definition within that owner scope.
 2. Resolve destructive consent.
 3. Send the request to the gateway, which validates the authenticated peer's authorization.
-4. Stop and remove derived runtime units for the main app instance and every active workspace.
+4. Stop and remove runtime units derived from the selected process definition. Node-owned and workspace-owned processes normally derive one unit; app-owned processes derive one main-app unit plus one unit for each active workspace.
 5. Remove gateway-owned process configuration.
 6. Render the selected output.
 
@@ -61,7 +63,8 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | Failure | Condition | Outcome |
 | --- | --- | --- |
 | Missing destructive consent | Non-interactive input mode and `--force` is absent. | Failure (`error.code=validation_failed`, `error.meta.field=force`). |
-| Process not found | The named process does not exist for the owning app. | Failure (`error.code=process.not_found`). |
+| Process not found | The named process does not exist for the resolved owner scope. | Failure (`error.code=process.not_found`). |
+| Invalid context | `--node` is combined with `--app` or `--workspace`, or no node/app/workspace context resolves. | Failure (`error.code=validation_failed`). |
 | Cancelled | The operator declines the interactive confirmation prompt. | Failure (`error.code=validation_failed`, `error.meta.field=force`). |
 
 ## Doctor Relationship
@@ -76,8 +79,8 @@ The gateway API endpoint emits an activity entry for successful and failed proce
 | --- | --- |
 | Type | `api:DELETE /processes/{name}` |
 | Effect | `destructive` |
-| Subject | `App` when the parent app is resolved and visible; `none` for validation, app-resolution, or authorization failures before the app can be logged. |
-| Properties | `app` (string or null). No raw process command text, runtime output, cleanup logs, or secrets. |
+| Subject | Resolved `Node` for node-owned processes or `App` for app/workspace-owned processes; `none` for validation, context-resolution, or authorization failures before the owner can be logged. |
+| Properties | `node` (string or null), `app` (string or null), and `workspace` (string or null). No raw process command text, runtime output, cleanup logs, or secrets. |
 | Description | derived |
 
 ## Test Mapping

@@ -239,7 +239,7 @@ describe('ToolsProbe', function (): void {
             ]);
     });
 
-    it('inspects supervisor-managed tool program state through supervisorctl', function (): void {
+    it('inspects agent IDE server capability without probing process lifecycle', function (): void {
         $node = createToolsProbeAppHostNode();
         $tool = NodeTool::factory()->create([
             'node_id' => $node->id,
@@ -248,19 +248,18 @@ describe('ToolsProbe', function (): void {
         ]);
         $shell = new RecordingToolsProbeRemoteShell(
             exitCode: 0,
-            stdout: "/home/orbit/.opencode/bin/opencode\t\trunning\t\t\t\t\t\t\t\n",
+            stdout: "/home/orbit/.opencode/bin/opencode\t\tunknown\t\t\t\t\t\t\t\n",
         );
         $probe = new ToolsProbe($shell);
 
         $snapshot = $probe->introspect($tool);
         $input = json_decode($shell->input, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($shell->script)->toContain('sudo supervisorctl status')
-            ->and($input['supervisor_program'])->toBe('orbit_tool_opencode_server')
+        expect($input['supervisor_program'])->toBe('')
             ->and($snapshot->get('opencode-server'))->toMatchArray([
                 'installed' => true,
                 'path' => '/home/orbit/.opencode/bin/opencode',
-                'state' => 'running',
+                'state' => 'unknown',
             ]);
     });
 

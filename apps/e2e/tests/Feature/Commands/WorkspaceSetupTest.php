@@ -147,24 +147,6 @@ it('resolves an opencode worktree by adapter ownership when a stale registered p
         E2EGatewayApi::waitForGatewayApi($topology->instance('operator'), $config->operatorUser, $topology->lease()->sshKeyPair(), gatewayIp: $gatewayApiIp);
 
         workspaceSetupOpencodeSeed($topology, $workspaceName, $workspacePath);
-        workspaceSetupInstallFakeOpenCode($topology);
-
-        $install = $topology->ssh(
-            'gateway',
-            sprintf(
-                'cd %s && orbit tool:install opencode-server --node=app-dev-1 --status=running --json',
-                escapeshellarg($topology->checkout('gateway')),
-            ),
-            timeoutSeconds: 180,
-        );
-        $installData = e2eJsonCommandData(e2eJsonCommandPayload($install->output()));
-
-        expect($installData['tool'])->toMatchArray([
-            'name' => 'opencode-server',
-            'node' => 'app-dev-1',
-            'state' => 'running',
-        ]);
-
         workspaceSetupWriteOpenCodeDatabase($topology, $workspaceName, $workspacePath);
 
         $setup = $topology->ssh(
@@ -295,39 +277,6 @@ printf 'api\n' > /home/orbit/apps/api/public/index.html
 printf 'workspace\n' > %1$s/public/index.html
 SH,
             escapeshellarg($workspacePath),
-        ),
-        timeoutSeconds: 120,
-    );
-}
-
-function workspaceSetupInstallFakeOpenCode(E2ETopologyHarness $topology): void
-{
-    $curl = <<<'BASH'
-#!/usr/bin/env bash
-cat <<'INSTALL'
-#!/usr/bin/env bash
-set -e
-mkdir -p "${HOME}/.opencode/bin"
-cat > "${HOME}/.opencode/bin/opencode" <<'OPENCODE'
-#!/usr/bin/env bash
-echo "opencode fake"
-OPENCODE
-chmod 0755 "${HOME}/.opencode/bin/opencode"
-INSTALL
-BASH;
-
-    $systemctl = <<<'BASH'
-#!/usr/bin/env bash
-exit 0
-BASH;
-
-    $topology->ssh(
-        'dev',
-        sprintf(
-            'printf %%s %s | sudo tee /usr/local/bin/curl >/dev/null && printf %%s %s | sudo tee /usr/local/bin/systemctl >/dev/null && printf %%s %s | sudo tee /usr/local/bin/loginctl >/dev/null && sudo chmod 0755 /usr/local/bin/curl /usr/local/bin/systemctl /usr/local/bin/loginctl',
-            escapeshellarg($curl),
-            escapeshellarg($systemctl),
-            escapeshellarg($systemctl),
         ),
         timeoutSeconds: 120,
     );

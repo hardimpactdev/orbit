@@ -14,7 +14,7 @@
 ## Signature
 
 ```bash
-orbit process:logs [name] [--app=<app>] [--workspace=<workspace>] [--follow] [--lines=<count>] [--json]
+orbit process:logs [name] [--node=<node>] [--app=<app>] [--workspace=<workspace>] [--follow] [--lines=<count>] [--json]
 ```
 
 ## Input Contract
@@ -24,8 +24,9 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
 | `name` | `[name]` | Always. | Never. | None. | Existing process slug within the resolved owning scope. |
-| `app` | `--app` or app context | Required unless `workspace` resolves the app. | Never. | Local app context when exactly one app is resolvable. | Must resolve to an app whose owning node grants `process:logs`. |
-| `workspace` | `--workspace` or workspace context | Optional. | Never. | Local workspace context when exactly one workspace is resolvable. | Must resolve to a workspace whose app owning node grants `process:logs`. |
+| `node` | `--node` | Required when reading logs for a node-owned process. | `app` or `workspace` is present. | None. | Must resolve to a node that grants `process:logs`. |
+| `app` | `--app` or app context | Required unless `node` is supplied or `workspace` resolves the app. | `node` is present. | Local app context when exactly one app is resolvable. | Must resolve to an app whose owning node grants `process:logs`. |
+| `workspace` | `--workspace` or workspace context | Optional. | `node` is present. | Local workspace context when exactly one workspace is resolvable. | Must resolve to a workspace whose app owning node grants `process:logs`; pass `--app` when the workspace name is ambiguous. |
 | `follow` | `--follow` | Optional. | Never. | `false`. | Boolean flag. Keeps the human log stream open when true. |
 | `lines` | `--lines` | Optional. | Never. | `100`. | Positive integer count of historical log lines to read before streaming or returning. |
 | `json` | `--json` | Optional. | When `follow=true`. | `false`. | Selects the JSON renderer and non-interactive input mode. JSON output is only defined for bounded, non-follow log reads. |
@@ -59,7 +60,8 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 
 | Failure | Condition | Outcome |
 | --- | --- | --- |
-| Process not found | The named process does not exist for the owning app. | Failure (`error.code=process.not_found`). |
+| Process not found | The named process does not exist for the resolved context. | Failure (`error.code=process.not_found`). |
+| Invalid context | `--node` is combined with `--app` or `--workspace`, or no node/app/workspace context resolves. | Failure (`error.code=validation_failed`). |
 | Log read failed | The gateway cannot read logs from the owning node process manager. | Failure (`error.code=process.log_read_failed`). |
 
 ## Doctor Relationship
@@ -77,8 +79,8 @@ The gateway API endpoint emits an activity entry for successful and failed proce
 | --- | --- |
 | Type | `api:GET /processes/{name}/log` |
 | Effect | `read` |
-| Subject | `App` when the parent app is resolved and visible; `none` for validation, app-resolution, or authorization failures before the app can be logged. |
-| Properties | `app` (string or null) and `workspace` (string or null). No captured stdout, stderr, log payload, backend command text, or secrets. |
+| Subject | Resolved `Node` for node-owned processes or `App` for app/workspace contexts; `none` for validation, context-resolution, or authorization failures before the owner can be logged. |
+| Properties | `node` (string or null), `app` (string or null), and `workspace` (string or null). No captured stdout, stderr, log payload, backend command text, or secrets. |
 | Description | derived |
 
 ## Test Mapping

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Contracts\RemoteShell;
 use App\Data\RemoteShell\RemoteShellResult;
+use App\Enums\Processes\ProcessRuntime;
 use App\Models\App;
 use App\Models\Node;
 use App\Models\Process;
@@ -85,6 +86,57 @@ describe('ProcessStartController', function (): void {
         $response->assertOk()
             ->assertJsonPath('success.data.runtimes.0.workspace', 'feature-docs')
             ->assertJsonPath('success.data.runtimes.0.runtime_unit', 'orbit_docs_feature-docs_vite');
+    });
+
+    it('starts a workspace owned process for workspace context', function (): void {
+        $appNode = createProcessStartCallerNode(role: 'app-dev');
+        grantProcessStartAccess($appNode, $appNode);
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
+        $workspace = Workspace::factory()->create(['name' => 'feature-docs', 'app_id' => $app->id]);
+        Process::factory()->forOwner($workspace)->create([
+            'name' => 'frankenphp-docs-feature-docs',
+            'runtime' => ProcessRuntime::Docker,
+            'runtime_config' => ['container_name' => 'orbit-ws-docs-feature-docs'],
+        ]);
+        app()->instance(RemoteShell::class, new ProcessStartApiRemoteShell([
+            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+        ]));
+
+        $response = $this->call('POST', '/api/processes/start', [
+            'workspace' => 'feature-docs',
+            'name' => 'frankenphp-docs-feature-docs',
+        ], [], [], ['REMOTE_ADDR' => PROCESS_START_CALLER_WG_IP]);
+
+        $response->assertOk()
+            ->assertJsonPath('success.data.runtimes.0.node', $appNode->name)
+            ->assertJsonPath('success.data.runtimes.0.app', 'docs')
+            ->assertJsonPath('success.data.runtimes.0.workspace', 'feature-docs')
+            ->assertJsonPath('success.data.runtimes.0.runtime_unit', 'orbit-ws-docs-feature-docs');
+    });
+
+    it('starts a node owned process for node context', function (): void {
+        createProcessStartCallerNode(role: 'gateway');
+        $node = createTestAppHostNode(['name' => 'app-1']);
+        Process::factory()->forOwner($node)->create([
+            'name' => 'opencode-server',
+            'runtime' => ProcessRuntime::Systemd,
+            'tool' => 'opencode',
+            'command' => 'opencode serve --hostname 0.0.0.0',
+        ]);
+        app()->instance(RemoteShell::class, new ProcessStartApiRemoteShell([
+            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+        ]));
+
+        $response = $this->call('POST', '/api/processes/start', [
+            'node' => 'app-1',
+            'name' => 'opencode-server',
+        ], [], [], ['REMOTE_ADDR' => PROCESS_START_CALLER_WG_IP]);
+
+        $response->assertOk()
+            ->assertJsonPath('success.data.runtimes.0.node', 'app-1')
+            ->assertJsonPath('success.data.runtimes.0.app', null)
+            ->assertJsonPath('success.data.runtimes.0.workspace', null)
+            ->assertJsonPath('success.data.runtimes.0.runtime_unit', 'opencode-server');
     });
 
     it('returns partial runtime failure data', function (): void {

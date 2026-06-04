@@ -7,10 +7,9 @@ namespace App\Actions\Processes;
 use App\Contracts\RemoteShell;
 use App\Contracts\RemoteShellStream;
 use App\Http\Gateway\GatewayApiException;
-use App\Models\App;
 use App\Models\Node;
 use App\Models\Process;
-use App\Models\Workspace;
+use App\Services\Processes\ProcessOwnerContext;
 use App\Services\Processes\ProcessRuntimeDriverRegistry;
 
 final readonly class ShowProcessLogs
@@ -24,9 +23,9 @@ final readonly class ShowProcessLogs
     /**
      * @return array{data: array{logs: array<string, mixed>}, meta: array{line_count: int}}
      */
-    public function handle(App $app, ?Workspace $workspace, string $name, int $lines, bool $follow = false): array
+    public function handle(ProcessOwnerContext $context, string $name, int $lines, bool $follow = false): array
     {
-        $target = $this->target($app, $workspace, $name, $lines, $follow);
+        $target = $this->target($context, $name, $lines, $follow);
 
         $result = $this->remoteShell->run($target['node'], $target['script']);
 
@@ -43,8 +42,9 @@ final readonly class ShowProcessLogs
             'data' => [
                 'logs' => [
                     'process' => $target['process']->name,
-                    'app' => $app->name,
-                    'workspace' => $workspace?->name,
+                    'node' => $target['node']->name,
+                    'app' => $context->app?->name,
+                    'workspace' => $target['workspace'],
                     'runtime_unit' => $target['runtime_unit'],
                     'lines' => $parsedLines,
                 ],
@@ -56,15 +56,15 @@ final readonly class ShowProcessLogs
     }
 
     /**
-     * @return array{node: Node, process: Process, runtime_unit: string, script: string}
+     * @return array{node: Node, process: Process, workspace: string|null, runtime_unit: string, script: string}
      */
-    public function streamTarget(App $app, ?Workspace $workspace, string $name, int $lines): array
+    public function streamTarget(ProcessOwnerContext $context, string $name, int $lines): array
     {
-        return $this->target($app, $workspace, $name, $lines, true);
+        return $this->target($context, $name, $lines, true);
     }
 
     /**
-     * @param  array{node: Node, process: Process, runtime_unit: string, script: string}  $target
+     * @param  array{node: Node, process: Process, workspace: string|null, runtime_unit: string, script: string}  $target
      * @param  callable(string): void  $onOutput
      */
     public function followTarget(array $target, callable $onOutput): void
@@ -80,9 +80,9 @@ final readonly class ShowProcessLogs
     }
 
     /**
-     * @return array{node: Node, process: Process, runtime_unit: string, script: string}
+     * @return array{node: Node, process: Process, workspace: string|null, runtime_unit: string, script: string}
      */
-    private function target(App $app, ?Workspace $workspace, string $name, int $lines, bool $follow): array
+    private function target(ProcessOwnerContext $context, string $name, int $lines, bool $follow): array
     {
         if ($lines < 1) {
             throw new GatewayApiException('The --lines value must be a positive integer.', 'validation_failed', [
@@ -91,31 +91,21 @@ final readonly class ShowProcessLogs
             ]);
         }
 
-        $app->loadMissing('node');
-
-        $process = $app->processes()
-            ->where('name', $name)
-            ->first();
+        $process = $context->lifecycleProcesses($name)->first();
 
         if (! $process instanceof Process) {
-            throw new GatewayApiException("Process '{$name}' not found for app '{$app->name}'.", 'process.not_found', [
-                'app' => $app->name,
-                'name' => $name,
-            ]);
+            throw new GatewayApiException("Process '{$name}' not found for {$context->label()}.", 'process.not_found', $context->errorMeta($name));
         }
 
-        if (! $app->node instanceof Node) {
-            throw new GatewayApiException("App '{$app->name}' has no node.", 'process.log_read_failed', [
-                'app' => $app->name,
-            ]);
-        }
-
+        $app = $context->runtimeApp();
+        $workspace = $context->runtimeWorkspaceFor($process);
         $driver = $this->runtimeDrivers->forProcess($process);
         $runtimeUnit = $driver->runtimeUnitName($app, $process, $workspace);
 
         return [
-            'node' => $app->node,
+            'node' => $context->node,
             'process' => $process,
+            'workspace' => $workspace?->name,
             'runtime_unit' => $runtimeUnit,
             'script' => $driver->logScript($app, $process, $workspace, $runtimeUnit, $lines, $follow),
         ];

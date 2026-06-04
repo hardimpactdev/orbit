@@ -65,6 +65,39 @@ describe('process:logs', function (): void {
             ->and($output)->toContain('plain line');
     });
 
+    it('forwards node context for bounded logs', function (): void {
+        fakeGateway(fakeSuccessEnvelope([
+            'logs' => [
+                'node' => 'app-1',
+                'runtime_unit' => 'opencode-server',
+                'lines' => [
+                    ['timestamp' => null, 'message' => 'OpenCode ready'],
+                ],
+            ],
+        ], ['line_count' => 1]));
+
+        [$exitCode, $output] = runCommand($this, 'process:logs', [
+            'name' => 'opencode-server',
+            '--node' => 'app-1',
+            '--lines' => 5,
+            '--json' => true,
+        ]);
+
+        $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+
+        Http::assertSent(function (Request $request): bool {
+            $url = urldecode($request->url());
+
+            return $request->method() === 'GET'
+                && str_contains($url, '/api/processes/opencode-server/log')
+                && str_contains($url, 'node=app-1')
+                && str_contains($url, 'lines=5');
+        });
+
+        expect($exitCode)->toBe(0)
+            ->and($decoded['success']['data']['logs']['node'])->toBe('app-1');
+    });
+
     it('streams followed logs as text and requests the gateway stream endpoint', function (): void {
         config()->set('orbit.gateway.url', 'https://gateway.test');
         config()->set('orbit.gateway.timeout', 30);

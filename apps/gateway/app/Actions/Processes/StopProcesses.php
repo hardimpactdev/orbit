@@ -6,9 +6,8 @@ namespace App\Actions\Processes;
 
 use App\Enums\ProcessEventType;
 use App\Http\Gateway\GatewayApiException;
-use App\Models\App;
 use App\Models\Process;
-use App\Models\Workspace;
+use App\Services\Processes\ProcessOwnerContext;
 use App\Services\Processes\ProcessRuntimeDriverRegistry;
 use App\Services\Processes\ProcessRuntimeDrivers\ProcessRuntimeDriver;
 use Illuminate\Database\Eloquent\Collection;
@@ -23,44 +22,39 @@ final readonly class StopProcesses
     /**
      * @return array{data: array<string, mixed>, failed: bool, meta: array<string, mixed>, message: string}
      */
-    public function handle(App $app, ?Workspace $workspace, ?string $name): array
+    public function handle(ProcessOwnerContext $context, ?string $name): array
     {
-        $app->loadMissing('node');
-
-        $processes = $this->processes($app, $name);
+        $processes = $context->lifecycleProcesses($name);
 
         if ($processes->isEmpty()) {
             if ($name !== null) {
-                throw new GatewayApiException("Process '{$name}' not found for app '{$app->name}'.", 'process.not_found', [
-                    'app' => $app->name,
-                    'name' => $name,
-                ]);
+                throw new GatewayApiException("Process '{$name}' not found for {$context->label()}.", 'process.not_found', $context->errorMeta($name));
             }
 
-            throw new GatewayApiException("App '{$app->name}' has no configured processes.", 'process.none_configured', [
-                'app' => $app->name,
-            ]);
+            throw new GatewayApiException("{$context->label()} has no configured processes.", 'process.none_configured', $context->errorMeta());
         }
 
         $runtimes = [];
         $failed = false;
         $stopped = 0;
 
-        foreach ($this->runtimeTargets($app, $workspace, $processes) as $target) {
+        foreach ($this->runtimeTargets($context, $processes) as $target) {
             $process = $target['process'];
             $runtimeUnit = $target['runtime_unit'];
-            $ok = $app->node !== null && $target['driver']->stop($app->node, $runtimeUnit);
+            $workspace = $context->runtimeWorkspaceFor($process);
+            $ok = $target['driver']->stop($context->node, $runtimeUnit);
             $event = null;
 
-            if ($ok && $app->node !== null) {
-                $event = $this->recordProcessEvent->handle(ProcessEventType::Stopped, $app, $workspace, $process, $app->node, $runtimeUnit);
+            if ($ok) {
+                $event = $this->recordProcessEvent->handle(ProcessEventType::Stopped, $context->eventApp(), $workspace, $process, $context->node, $runtimeUnit);
                 $stopped++;
             }
 
             $failed = $failed || ! $ok;
             $runtimes[] = [
                 'process' => $process->name,
-                'app' => $app->name,
+                'node' => $context->node->name,
+                'app' => $context->app?->name,
                 'workspace' => $workspace?->name,
                 'runtime_unit' => $runtimeUnit,
                 'state' => $ok ? 'stopped' : 'failed',
@@ -84,25 +78,17 @@ final readonly class StopProcesses
     }
 
     /**
-     * @return Collection<int, Process>
-     */
-    private function processes(App $app, ?string $name): Collection
-    {
-        return $app->processes()
-            ->when($name !== null, fn ($query) => $query->where('name', $name))
-            ->orderBy('sort_order')
-            ->get();
-    }
-
-    /**
      * @param  Collection<int, Process>  $processes
      * @return list<array{process: Process, driver: ProcessRuntimeDriver, runtime_unit: string}>
      */
-    private function runtimeTargets(App $app, ?Workspace $workspace, Collection $processes): array
+    private function runtimeTargets(ProcessOwnerContext $context, Collection $processes): array
     {
+        $app = $context->runtimeApp();
+
         return $processes
-            ->map(function (Process $process) use ($app, $workspace): array {
+            ->map(function (Process $process) use ($context, $app): array {
                 $driver = $this->runtimeDrivers->forProcess($process);
+                $workspace = $context->runtimeWorkspaceFor($process);
 
                 return [
                     'process' => $process,

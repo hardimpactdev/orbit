@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Contracts\RemoteShell;
 use App\Contracts\SiteCertificateInstaller;
 use App\Data\RemoteShell\RemoteShellResult;
+use App\Enums\Processes\ProcessRuntime;
 use App\Models\App;
 use App\Models\Node;
 use App\Models\Process;
@@ -195,6 +196,39 @@ describe('ProcessStoreController', function (): void {
 
         expect(Process::query()->where('name', 'opencode-server')->exists())->toBeFalse()
             ->and($remoteShell->scripts)->toBe([]);
+    });
+
+    it('creates node owned systemd process intent with an optional tool dependency', function (): void {
+        createProcessStoreCallerNode(role: 'gateway');
+        $node = createTestAppHostNode(['name' => 'app-1']);
+        $remoteShell = new ProcessStoreRemoteShell([
+            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+        ]);
+        app()->instance(RemoteShell::class, $remoteShell);
+
+        $response = $this->call('POST', '/api/processes', [
+            'node' => 'app-1',
+            'name' => 'opencode-server',
+            'command' => 'opencode serve --hostname 0.0.0.0',
+            'runtime' => 'systemd',
+            'tool' => 'opencode',
+        ], [], [], ['REMOTE_ADDR' => PROCESS_STORE_CALLER_WG_IP]);
+
+        $response->assertOk()
+            ->assertJsonPath('success.data.process.name', 'opencode-server')
+            ->assertJsonPath('success.data.process.node', 'app-1')
+            ->assertJsonPath('success.data.process.tool', 'opencode')
+            ->assertJsonPath('success.data.process.runtime', 'systemd')
+            ->assertJsonPath('success.data.runtime_units.0.name', 'opencode-server');
+
+        $process = Process::query()->where('name', 'opencode-server')->firstOrFail();
+
+        expect($process->owner_type)->toBe($node->getMorphClass())
+            ->and($process->owner_id)->toBe($node->id)
+            ->and($process->node_id)->toBe($node->id)
+            ->and($process->tool)->toBe('opencode')
+            ->and($process->runtime)->toBe(ProcessRuntime::Systemd)
+            ->and($remoteShell->scripts[0])->toContain("sudo systemctl enable 'opencode-server.service'");
     });
 
     it('returns duplicate process conflicts', function (): void {

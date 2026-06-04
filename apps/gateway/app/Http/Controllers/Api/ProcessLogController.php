@@ -10,10 +10,9 @@ use App\Enums\ActivityLogType;
 use App\Http\Authorization\RequiresPermission;
 use App\Http\Authorization\ServingNode;
 use App\Http\Gateway\GatewayApiException;
-use App\Models\App;
 use App\Models\Node;
-use App\Models\Workspace;
 use App\Services\Nodes\Access\NodeAccessAuthorizer;
+use App\Services\Processes\ProcessOwnerContextResolver;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -22,10 +21,11 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
 #[RequiresPermission('process:logs', servingNode: ServingNode::AppOwning)]
 final class ProcessLogController implements Loggable
 {
-    private ?App $activitySubject = null;
+    private ?Model $activitySubject = null;
 
     public function __construct(
         private readonly NodeAccessAuthorizer $authorizer,
+        private readonly ProcessOwnerContextResolver $contexts,
     ) {}
 
     public function __invoke(string $name, Request $request, ShowProcessLogs $showProcessLogs): JsonResponse|StreamedResponse
@@ -37,15 +37,17 @@ final class ProcessLogController implements Loggable
             return $this->error('authorization_failed', 'Peer identity unknown.', [], 403);
         }
 
-        $context = $this->resolveContext($request);
-
-        if ($context instanceof JsonResponse) {
-            return $context;
+        try {
+            $context = $this->contexts->resolve(
+                nodeName: $this->optionalString($request, 'node'),
+                appName: $this->optionalString($request, 'app'),
+                workspaceName: $this->optionalString($request, 'workspace'),
+            );
+        } catch (GatewayApiException $e) {
+            return $this->error($e->errorCode() ?? 'validation_failed', $e->getMessage(), $e->errorMeta(), $this->statusFor($e));
         }
 
-        [$app, $workspace] = $context;
-
-        $authorization = $this->authorizeProcessAccess($caller, $app, 'process:logs');
+        $authorization = $this->authorizeProcessAccess($caller, $context->node, 'process:logs');
 
         if ($authorization instanceof JsonResponse) {
             return $authorization;
@@ -53,12 +55,12 @@ final class ProcessLogController implements Loggable
 
         if ($request->boolean('follow')) {
             try {
-                $target = $showProcessLogs->streamTarget($app, $workspace, $name, $this->lines($request));
+                $target = $showProcessLogs->streamTarget($context, $name, $this->lines($request));
             } catch (GatewayApiException $e) {
                 return $this->error($e->errorCode() ?? 'validation_failed', $e->getMessage(), $e->errorMeta(), $this->statusFor($e));
             }
 
-            $this->activitySubject = $app;
+            $this->activitySubject = $context->subject();
 
             return response()->stream(function () use ($showProcessLogs, $target): void {
                 $showProcessLogs->followTarget($target, function (string $output): void {
@@ -77,12 +79,12 @@ final class ProcessLogController implements Loggable
         }
 
         try {
-            $result = $showProcessLogs->handle($app, $workspace, $name, $this->lines($request));
+            $result = $showProcessLogs->handle($context, $name, $this->lines($request));
         } catch (GatewayApiException $e) {
             return $this->error($e->errorCode() ?? 'validation_failed', $e->getMessage(), $e->errorMeta(), $this->statusFor($e));
         }
 
-        $this->activitySubject = $app;
+        $this->activitySubject = $context->subject();
 
         return response()->json([
             'success' => [
@@ -92,72 +94,18 @@ final class ProcessLogController implements Loggable
         ]);
     }
 
-    /**
-     * @return array{App, Workspace|null}|JsonResponse
-     */
-    private function resolveContext(Request $request): array|JsonResponse
+    private function authorizeProcessAccess(Node $caller, Node $node, string $permission): ?JsonResponse
     {
-        $appName = $this->optionalString($request, 'app');
-        $workspaceName = $this->optionalString($request, 'workspace');
-
-        if ($workspaceName !== null) {
-            $workspaces = Workspace::query()
-                ->with('app.node')
-                ->where('name', $workspaceName)
-                ->when($appName !== null, fn ($query) => $query->whereHas('app', fn ($query) => $query->where('name', $appName)))
-                ->get();
-
-            if ($workspaces->isEmpty()) {
-                return $this->error('validation_failed', "Workspace '{$workspaceName}' not found.", ['field' => 'workspace', 'value' => $workspaceName], 422);
-            }
-
-            if ($workspaces->count() > 1) {
-                return $this->error('validation_failed', "Workspace name '{$workspaceName}' is ambiguous.", ['field' => 'workspace', 'value' => $workspaceName], 422);
-            }
-
-            $workspace = $workspaces->first();
-
-            if (! $workspace->app instanceof App) {
-                return $this->error('validation_failed', "Workspace '{$workspaceName}' is not attached to an app.", ['field' => 'workspace', 'value' => $workspaceName], 422);
-            }
-
-            return [$workspace->app, $workspace];
-        }
-
-        if ($appName === null) {
-            return $this->error('validation_failed', 'An app context is required.', ['field' => 'app'], 422);
-        }
-
-        $app = App::query()->with('node')->where('name', $appName)->first();
-
-        if (! $app instanceof App) {
-            return $this->error('validation_failed', "App '{$appName}' not found.", ['field' => 'app', 'value' => $appName], 422);
-        }
-
-        return [$app, null];
-    }
-
-    private function authorizeProcessAccess(Node $caller, App $app, string $permission): ?JsonResponse
-    {
-        $app->loadMissing('node');
-
-        if (! $app->node instanceof Node) {
-            return $this->error('authorization_failed', "Serving node could not be resolved for app '{$app->name}'.", [
-                'reason' => 'serving_node_unresolved',
-                'missing_permission' => $permission,
-            ], 403);
-        }
-
-        $result = $this->authorizer->authorize($caller, $app->node, $permission);
+        $result = $this->authorizer->authorize($caller, $node, $permission);
 
         if ($result->allowed) {
             return null;
         }
 
-        return $this->error('authorization_failed', "This node is not authorized for '{$permission}' on '{$app->node->name}'.", [
+        return $this->error('authorization_failed', "This node is not authorized for '{$permission}' on '{$node->name}'.", [
             'reason' => $result->reason,
             'missing_permission' => $result->missingPermission,
-            'serving_node' => $app->node->name,
+            'serving_node' => $node->name,
         ], 403);
     }
 
@@ -220,6 +168,7 @@ final class ProcessLogController implements Loggable
     public function properties(): array
     {
         return [
+            'node' => $this->optionalString(request(), 'node'),
             'app' => $this->optionalString(request(), 'app'),
             'workspace' => $this->optionalString(request(), 'workspace'),
         ];

@@ -9,7 +9,6 @@ use App\E2E\Support\E2ETopologyKind;
 
 function processListSeed(E2ETopologyHarness $topology): void
 {
-    $checkout = escapeshellarg($topology->checkout('gateway'));
     $script = <<<'PHP'
 $nodes = \App\Models\Node::query()
     ->whereIn('name', ['operator-1', 'app-dev-1'])
@@ -55,38 +54,59 @@ $app = \App\Models\App::query()->create([
     'document_root' => 'public',
 ]);
 
-\App\Models\Process::query()->create([
-    'app_id' => $app->id,
+$app->processes()->create([
+    'node_id' => $nodes->get('app-dev-1'),
     'name' => 'queue',
     'command' => 'orbit queue:work',
     'restart_policy' => \App\Enums\ProcessRestartPolicy::Always,
     'crash_notification' => \App\Enums\ProcessCrashNotification::None,
+    'runtime' => \App\Enums\Processes\ProcessRuntime::Docker,
+    'runtime_config' => [],
     'sort_order' => 20,
 ]);
 
-\App\Models\Process::query()->create([
-    'app_id' => $app->id,
+$app->processes()->create([
+    'node_id' => $nodes->get('app-dev-1'),
     'name' => 'vite',
     'command' => 'npm run dev',
     'restart_policy' => \App\Enums\ProcessRestartPolicy::Never,
     'crash_notification' => \App\Enums\ProcessCrashNotification::None,
+    'runtime' => \App\Enums\Processes\ProcessRuntime::Docker,
+    'runtime_config' => [],
     'sort_order' => 10,
 ]);
 
-\App\Models\Workspace::query()->create([
+$workspace = \App\Models\Workspace::query()->create([
     'app_id' => $app->id,
     'name' => 'feature-docs',
     'path' => '/srv/docs/.worktrees/feature-docs',
     'lifecycle_status' => \App\Enums\WorkspaceLifecycleStatus::Expected,
 ]);
 
+$workspace->processes()->create([
+    'node_id' => $nodes->get('app-dev-1'),
+    'name' => 'frankenphp-docs-feature-docs',
+    'command' => 'frankenphp run',
+    'restart_policy' => \App\Enums\ProcessRestartPolicy::Always,
+    'crash_notification' => \App\Enums\ProcessCrashNotification::None,
+    'runtime' => \App\Enums\Processes\ProcessRuntime::Docker,
+    'runtime_config' => ['container_name' => 'orbit-ws-docs-feature-docs'],
+    'sort_order' => 1,
+]);
+
 echo 'seeded';
 PHP;
 
-    $topology->ssh(
+    processListRunGatewayTinker($topology, $script);
+}
+
+function processListRunGatewayTinker(E2ETopologyHarness $topology, string $script): void
+{
+    e2eRunInRoleRuntime(
+        $topology,
         'gateway',
-        "cd {$checkout} && php apps/gateway/artisan tinker --execute=".escapeshellarg($script),
-        timeoutSeconds: 120,
+        'cd '.escapeshellarg($topology->checkout('gateway')).' && php apps/gateway/artisan tinker --execute='.escapeshellarg($script),
+        timeoutSeconds: 180,
     );
 }
 
@@ -133,9 +153,9 @@ it('lists app processes from a operator caller through the gateway api', functio
         $context = $payload['success']['data']['context'] ?? null;
 
         expect($processes)->toBeArray()
-            ->and($context)->toBe(['app' => 'docs', 'workspace' => null])
+            ->and($context)->toBe(['node' => 'app-dev-1', 'app' => 'docs', 'workspace' => null])
             ->and(array_column($processes, 'name'))->toBe(['vite', 'queue'])
-            ->and($processes[0])->toHaveKeys(['name', 'command', 'restart_policy', 'crash_notification', 'runtime_unit', 'last_event'])
+            ->and($processes[0])->toHaveKeys(['node', 'app', 'workspace', 'name', 'command', 'restart_policy', 'crash_notification', 'runtime', 'tool', 'runtime_unit', 'last_event'])
             ->and($processes[0]['runtime_unit'])->toBe('orbit_docs_main_vite')
             ->and($processes[0]['last_event'])->toBeNull();
 
@@ -151,15 +171,13 @@ it('lists app processes from a operator caller through the gateway api', functio
 
         $workspacePayload = json_decode(trim($workspaceResult->output()), associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($workspacePayload['success']['data']['context'])->toBe(['app' => 'docs', 'workspace' => 'feature-docs'])
-            ->and($workspacePayload['success']['data']['processes'][0]['runtime_unit'])->toBe('orbit_docs_feature-docs_vite');
+        expect($workspacePayload['success']['data']['context'])->toBe(['node' => 'app-dev-1', 'app' => 'docs', 'workspace' => 'feature-docs'])
+            ->and(array_column($workspacePayload['success']['data']['processes'], 'name'))->toBe(['frankenphp-docs-feature-docs', 'vite', 'queue'])
+            ->and($workspacePayload['success']['data']['processes'][0]['runtime_unit'])->toBe('orbit-ws-docs-feature-docs')
+            ->and($workspacePayload['success']['data']['processes'][1]['runtime_unit'])->toBe('orbit_docs_feature-docs_vite');
 
         // Empty state: app with no processes — clear processes on gateway then re-list
-        $topology->ssh(
-            'gateway',
-            'cd '.escapeshellarg($topology->checkout('gateway')).' && php apps/gateway/artisan tinker --execute='.escapeshellarg("\\App\\Models\\Process::query()->delete(); echo 'cleared';"),
-            timeoutSeconds: 120,
-        );
+        processListRunGatewayTinker($topology, "\\App\\Models\\Process::query()->delete(); echo 'cleared';");
 
         $emptyListResult = $topology->ssh(
             'operator',

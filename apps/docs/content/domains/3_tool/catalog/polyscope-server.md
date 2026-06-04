@@ -17,9 +17,9 @@ These fields describe the PolyScope Server tool's identity, backend, and support
 ## Capabilities
 
 `polyscope-server` supports `tool:install`, `tool:remove`,
-process-backed compatibility lifecycle actions, `tool:reconfigure`,
-`tool:update`, snapshot and streamed `tool:logs`, safe doctor fix, and safe
-doctor adopt.
+`tool:reconfigure`, `tool:update`, safe doctor fix, and safe doctor adopt.
+Start, stop, restart, and logs for the long-running server belong to the
+related `polyscope-server` process.
 
 ## Credentials
 
@@ -43,8 +43,8 @@ completed remotely, `tool:install polyscope-server` may report a manual
 `tool:credentials`.
 
 `tool:update polyscope-server` currently runs PolyScope Server's standalone
-updater. Update remains tool-owned while restart/log lifecycle belongs to the
-related process.
+updater. Update remains tool-owned while start, stop, restart, and logs belong
+to the related process.
 
 ## Doctor Relationship
 

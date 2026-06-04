@@ -13,7 +13,9 @@ use App\Enums\ProcessRestartPolicy;
 use App\Http\Authorization\RequiresPermission;
 use App\Http\Authorization\ServingNode;
 use App\Http\Gateway\GatewayApiException;
-use App\Models\App;
+use App\Models\Node;
+use App\Services\Nodes\Access\NodeAccessAuthorizer;
+use App\Services\Processes\ProcessOwnerContextResolver;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -21,34 +23,56 @@ use Illuminate\Http\Request;
 #[RequiresPermission('process:edit', servingNode: ServingNode::AppOwning)]
 final class ProcessUpdateController implements Loggable
 {
-    private ?App $activitySubject = null;
+    private ?Model $activitySubject = null;
+
+    public function __construct(
+        private readonly NodeAccessAuthorizer $authorizer,
+        private readonly ProcessOwnerContextResolver $contexts,
+    ) {}
 
     public function __invoke(string $name, Request $request, EditProcess $editProcess): JsonResponse
     {
+        /** @var mixed $caller */
+        $caller = $request->user();
+
+        if (! $caller instanceof Node) {
+            return $this->error('authorization_failed', 'Peer identity unknown.', [], 403);
+        }
+
         $input = $this->validatedInput($request);
 
         if ($input instanceof JsonResponse) {
             return $input;
         }
 
-        $app = App::query()->with(['node', 'workspaces'])->where('name', $input['app'])->first();
+        try {
+            $context = $this->contexts->resolve(
+                nodeName: $input['node'],
+                appName: $input['app'],
+                workspaceName: $input['workspace'],
+            );
+        } catch (GatewayApiException $e) {
+            return $this->error($e->errorCode() ?? 'validation_failed', $e->getMessage(), $e->errorMeta(), $this->statusFor($e));
+        }
 
-        if (! $app instanceof App) {
-            return $this->error('validation_failed', "App '{$input['app']}' not found.", ['field' => 'app', 'value' => $input['app']], 422);
+        $authorization = $this->authorizeProcessAccess($caller, $context->node, 'process:edit');
+
+        if ($authorization instanceof JsonResponse) {
+            return $authorization;
         }
 
         try {
             $result = $editProcess->handle(
-                app: $app,
+                context: $context,
                 name: $name,
                 changes: $input['changes'],
                 restart: $input['restart'],
             );
         } catch (GatewayApiException $e) {
-            return $this->error($e->errorCode() ?? 'validation_failed', $e->getMessage(), $e->errorMeta(), $e->errorCode() === 'process.not_found' ? 404 : 422);
+            return $this->error($e->errorCode() ?? 'validation_failed', $e->getMessage(), $e->errorMeta(), $this->statusFor($e));
         }
 
-        $this->activitySubject = $app;
+        $this->activitySubject = $context->subject();
 
         return response()->json([
             'success' => [
@@ -61,18 +85,29 @@ final class ProcessUpdateController implements Loggable
     }
 
     /**
-     * @return array{app: string, changes: array{command?: string, restart_policy?: ProcessRestartPolicy, crash_notification?: ProcessCrashNotification, runtime?: ProcessRuntime}, restart: bool}|JsonResponse
+     * @return array{node: string|null, app: string|null, workspace: string|null, changes: array{command?: string, restart_policy?: ProcessRestartPolicy, crash_notification?: ProcessCrashNotification, runtime?: ProcessRuntime}, restart: bool}|JsonResponse
      */
     private function validatedInput(Request $request): array|JsonResponse
     {
+        $node = $this->optionalString($request, 'node');
         $app = $this->optionalString($request, 'app');
+        $workspace = $this->optionalString($request, 'workspace');
         $command = $this->optionalString($request, 'command');
         $restartPolicyInput = $this->optionalString($request, 'restart_policy');
         $crashNotificationInput = $this->optionalString($request, 'crash_notification');
         $runtimeInput = $this->optionalString($request, 'runtime');
 
-        if ($app === null) {
-            return $this->error('validation_failed', 'An app context is required.', ['field' => 'app'], 422);
+        if ($node !== null && ($app !== null || $workspace !== null)) {
+            return $this->error('validation_failed', 'A node context cannot be combined with app or workspace context.', [
+                'field' => 'context',
+                'node' => $node,
+                'app' => $app,
+                'workspace' => $workspace,
+            ], 422);
+        }
+
+        if ($node === null && $app === null && $workspace === null) {
+            return $this->error('validation_failed', 'A node, app, or workspace context is required.', ['field' => 'app'], 422);
         }
 
         if ($command === null && $restartPolicyInput === null && $crashNotificationInput === null && $runtimeInput === null) {
@@ -124,22 +159,31 @@ final class ProcessUpdateController implements Loggable
                 ], 422);
             }
 
-            if ($runtime === ProcessRuntime::Systemd) {
-                return $this->error('validation_failed', 'The systemd runtime is only valid for node-owned processes.', [
-                    'field' => 'runtime',
-                    'value' => $runtimeInput,
-                    'reason' => 'systemd_requires_node_owned_process',
-                ], 422);
-            }
-
             $changes['runtime'] = $runtime;
         }
 
         return [
+            'node' => $node,
             'app' => $app,
+            'workspace' => $workspace,
             'changes' => $changes,
             'restart' => $request->boolean('restart'),
         ];
+    }
+
+    private function authorizeProcessAccess(Node $caller, Node $node, string $permission): ?JsonResponse
+    {
+        $result = $this->authorizer->authorize($caller, $node, $permission);
+
+        if ($result->allowed) {
+            return null;
+        }
+
+        return $this->error('authorization_failed', "This node is not authorized for '{$permission}' on '{$node->name}'.", [
+            'reason' => $result->reason,
+            'missing_permission' => $result->missingPermission,
+            'serving_node' => $node->name,
+        ], 403);
     }
 
     private function optionalString(Request $request, string $key): ?string
@@ -163,6 +207,15 @@ final class ProcessUpdateController implements Loggable
         ], $status);
     }
 
+    private function statusFor(GatewayApiException $exception): int
+    {
+        return match ($exception->errorCode()) {
+            'process.not_found' => 404,
+            'authorization_failed' => 403,
+            default => 422,
+        };
+    }
+
     public function effect(): ActivityLogType
     {
         return ActivityLogType::Write;
@@ -184,7 +237,9 @@ final class ProcessUpdateController implements Loggable
     public function properties(): array
     {
         return [
+            'node' => $this->optionalString(request(), 'node'),
             'app' => $this->optionalString(request(), 'app'),
+            'workspace' => $this->optionalString(request(), 'workspace'),
         ];
     }
 
