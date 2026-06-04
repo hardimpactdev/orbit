@@ -55,6 +55,45 @@ final readonly class ToolRegistryFailure
         );
     }
 
+    public static function versionUnsupported(string $tool, string $version): self
+    {
+        return new self(
+            code: 'tool.version_unsupported',
+            message: "Tool '{$tool}' does not support version '{$version}'.",
+            meta: [
+                'field' => 'version',
+                'reason' => 'unsupported_value',
+                'tool' => $tool,
+                'version' => $version,
+            ],
+        );
+    }
+
+    public static function runtimeUnsupported(string $tool, string $runtime): self
+    {
+        return new self(
+            code: 'tool.runtime_unsupported',
+            message: "Tool '{$tool}' does not support runtime '{$runtime}'.",
+            meta: [
+                'tool' => $tool,
+                'runtime' => $runtime,
+            ],
+        );
+    }
+
+    public static function runtimePlatformUnsupported(string $tool, string $runtime, string $platform): self
+    {
+        return new self(
+            code: 'tool.runtime_platform_unsupported',
+            message: "Tool '{$tool}' runtime '{$runtime}' is not supported on platform '{$platform}'.",
+            meta: [
+                'tool' => $tool,
+                'runtime' => $runtime,
+                'platform' => $platform,
+            ],
+        );
+    }
+
     public static function nodeRoleRequired(string $tool, string $node, string $requiredRole): self
     {
         return new self(
