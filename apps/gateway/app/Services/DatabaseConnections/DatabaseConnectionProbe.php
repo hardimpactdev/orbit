@@ -10,6 +10,7 @@ use App\Models\DatabaseConnection;
 use App\Models\DatabaseConnectionTarget;
 use App\Models\Node;
 use App\Models\Workspace;
+use App\Services\Nodes\NodeWireGuardSelfRouteProbe;
 use App\Services\Nodes\NodeWireGuardServiceAddress;
 
 final readonly class DatabaseConnectionProbe
@@ -25,6 +26,7 @@ final readonly class DatabaseConnectionProbe
         private DatabaseConnectionEnvMapper $envMapper,
         private RemoteShell $remoteShell,
         private NodeWireGuardServiceAddress $serviceAddress,
+        private NodeWireGuardSelfRouteProbe $wireGuardSelfRouteProbe,
     ) {}
 
     /**
@@ -73,6 +75,12 @@ final readonly class DatabaseConnectionProbe
                 $issues[] = $this->issue('database_connection.env_mismatch', 'mismatch', $target, [
                     'mismatched_keys' => $mismatched,
                 ]);
+            }
+
+            $selfRouteIssue = $this->wireGuardSelfRouteIssue($target, $expected);
+
+            if ($selfRouteIssue !== null) {
+                $issues[] = $selfRouteIssue;
             }
         }
 
@@ -137,6 +145,45 @@ final readonly class DatabaseConnectionProbe
     }
 
     /**
+     * @param  array<string, string>  $expected
+     * @return array<string, mixed>|null
+     */
+    private function wireGuardSelfRouteIssue(DatabaseConnectionTarget $target, array $expected): ?array
+    {
+        $connection = $target->connection;
+
+        if ($connection->driver === 'sqlite' || ! $connection->node instanceof Node) {
+            return null;
+        }
+
+        $targetNode = $this->targetNode($target);
+
+        if (! $connection->node->is($targetNode)) {
+            return null;
+        }
+
+        $wireGuardAddress = trim((string) $targetNode->wireguard_address);
+        $host = $expected["{$target->env_prefix}_HOST"] ?? null;
+
+        if ($wireGuardAddress === '' || $host !== $wireGuardAddress) {
+            return null;
+        }
+
+        $diagnostic = $this->wireGuardSelfRouteProbe->probe($targetNode);
+
+        if (($diagnostic['ok'] ?? false) === true) {
+            return null;
+        }
+
+        return $this->issue('database_connection.wireguard_self_route_unavailable', 'unverifiable', $target, [
+            'connection' => $connection->slug,
+            'node' => $targetNode->name,
+            'host' => $host,
+            ...$this->wireGuardSelfRouteDetail($diagnostic),
+        ]);
+    }
+
+    /**
      * @return list<DatabaseConnectionTarget>
      */
     private function targetsForNode(Node $node): array
@@ -163,6 +210,23 @@ final readonly class DatabaseConnectionProbe
         }
 
         throw new \RuntimeException('Database connection target has no owning node.');
+    }
+
+    /**
+     * @param  array<string, mixed>  $diagnostic
+     * @return array<string, mixed>
+     */
+    private function wireGuardSelfRouteDetail(array $diagnostic): array
+    {
+        return array_filter([
+            'wireguard_address' => $diagnostic['wireguard_address'] ?? null,
+            'platform' => $diagnostic['platform'] ?? null,
+            'reason' => $diagnostic['reason'] ?? null,
+            'message' => $diagnostic['message'] ?? null,
+            'command' => $diagnostic['command'] ?? null,
+            'exit_code' => $diagnostic['exit_code'] ?? null,
+            'output' => $diagnostic['output'] ?? null,
+        ], fn (mixed $value): bool => $value !== null && $value !== '');
     }
 
     /**

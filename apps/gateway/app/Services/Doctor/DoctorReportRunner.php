@@ -59,7 +59,7 @@ final readonly class DoctorReportRunner
 
     private const array APP_PRODUCTION_CATEGORIES = ['node', 'app', 'process', 'proxy', 'firewall_rule', 'tool', 'schedule', 'database_connection'];
 
-    private const array DATABASE_CATEGORIES = ['node', 'tool'];
+    private const array DATABASE_CATEGORIES = ['node', 'tool', 'process'];
 
     private const array AGENT_CATEGORIES = ['node', 'tool'];
 

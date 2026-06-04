@@ -10,6 +10,7 @@ use App\Models\DatabaseConnectionTarget;
 use App\Models\Node;
 use App\Models\Workspace;
 use App\Services\DatabaseConnections\DatabaseConnectionProbe;
+use App\Services\Nodes\NodeWireGuardSelfRouteProbe;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\File;
 use Tests\TestCase;
@@ -119,6 +120,105 @@ describe('DatabaseConnectionProbe', function (): void {
         $issues = app(DatabaseConnectionProbe::class)->probe($appNode);
 
         expect($issues)->toBe([]);
+    });
+
+    it('reports WireGuard self-route diagnostics for same-node managed database hosts', function (): void {
+        $node = Node::factory()->gateway()->create([
+            'name' => 'gateway-1',
+            'status' => 'active',
+            'platform' => 'ubuntu_24-04',
+            'wireguard_address' => '10.6.0.7',
+        ]);
+        $path = storage_path('framework/testing/database-probe-managed-self-route');
+        File::ensureDirectoryExists($path);
+        File::put($path.'/.env', "DB_CONNECTION=pgsql\nDB_HOST=10.6.0.7\nDB_PORT=5432\nDB_DATABASE=docs\nDB_USERNAME=orbit\nDB_PASSWORD=secret\n");
+
+        $app = App::factory()->create([
+            'node_id' => $node->id,
+            'name' => 'docs',
+            'path' => $path,
+        ]);
+        $connection = DatabaseConnection::factory()->create([
+            'node_id' => $node->id,
+            'slug' => 'docs',
+            'driver' => 'pgsql',
+            'host' => 'postgres.orbit',
+            'port' => 5432,
+            'database' => 'docs',
+            'username' => 'orbit',
+            'credentials' => ['password' => 'secret'],
+        ]);
+        DatabaseConnectionTarget::factory()->forApp($app)->create([
+            'database_connection_id' => $connection->id,
+            'env_prefix' => 'DB',
+        ]);
+        $shell = new DatabaseConnectionProbeRemoteShell([
+            new RemoteShellResult(exitCode: 0, stdout: "10.6.0.7 dev wg-orbit src 10.6.0.2\n", stderr: '', durationMs: 1),
+        ]);
+        app()->instance(RemoteShell::class, $shell);
+
+        $issue = collect(app(DatabaseConnectionProbe::class)->probe($node))
+            ->firstWhere('key', 'database_connection.wireguard_self_route_unavailable');
+
+        expect($issue)->not->toBeNull()
+            ->and($issue['kind'])->toBe('unverifiable')
+            ->and($issue['detail'])->toMatchArray([
+                'target_type' => 'app',
+                'app' => 'docs',
+                'env_prefix' => 'DB',
+                'connection' => 'docs',
+                'node' => 'gateway-1',
+                'wireguard_address' => '10.6.0.7',
+                'host' => '10.6.0.7',
+                'reason' => 'self_route_missing',
+                'message' => 'Linux node does not route its own WireGuard address locally.',
+            ])
+            ->and($shell->scripts)->toBe(["ip route get '10.6.0.7'"]);
+    });
+
+    it('reports macOS as unsupported for same-node managed database self-route diagnostics without route mutation', function (): void {
+        $node = Node::factory()->gateway()->create([
+            'name' => 'gateway-1',
+            'status' => 'active',
+            'platform' => 'macos_15-4',
+            'wireguard_address' => '10.6.0.7',
+        ]);
+        $path = storage_path('framework/testing/database-probe-managed-self-route-macos');
+        File::ensureDirectoryExists($path);
+        File::put($path.'/.env', "DB_CONNECTION=pgsql\nDB_HOST=10.6.0.7\nDB_PORT=5432\nDB_DATABASE=docs\nDB_USERNAME=orbit\nDB_PASSWORD=secret\n");
+
+        $app = App::factory()->create([
+            'node_id' => $node->id,
+            'name' => 'docs',
+            'path' => $path,
+        ]);
+        $connection = DatabaseConnection::factory()->create([
+            'node_id' => $node->id,
+            'slug' => 'docs',
+            'driver' => 'pgsql',
+            'host' => 'postgres.orbit',
+            'port' => 5432,
+            'database' => 'docs',
+            'username' => 'orbit',
+            'credentials' => ['password' => 'secret'],
+        ]);
+        DatabaseConnectionTarget::factory()->forApp($app)->create([
+            'database_connection_id' => $connection->id,
+            'env_prefix' => 'DB',
+        ]);
+        $shell = new DatabaseConnectionProbeRemoteShell([]);
+        app()->instance(RemoteShell::class, $shell);
+
+        $issue = collect(app(DatabaseConnectionProbe::class)->probe($node))
+            ->firstWhere('key', 'database_connection.wireguard_self_route_unavailable');
+
+        expect($issue)->not->toBeNull()
+            ->and($issue['detail'])->toMatchArray([
+                'platform' => 'macos_15-4',
+                'reason' => 'unsupported_platform',
+                'message' => NodeWireGuardSelfRouteProbe::UnsupportedMessage,
+            ])
+            ->and($shell->scripts)->toBe([]);
     });
 
     it('reads remote env files through remote shell for hosted workspaces', function (): void {

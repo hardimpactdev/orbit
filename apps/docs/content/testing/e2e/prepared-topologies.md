@@ -236,10 +236,11 @@ not booted.
 The canonical Incus websocket-capable prepared source is built from an explicit
 role DAG: `operator -> gateway -> {dev, prod, agent}`, with `websocket -> dev`.
 After the gateway is ready, dev, prod, and agent launch/readiness/bake tasks run
-in parallel. Websocket starts as soon as dev succeeds and app-dev runtime
-prerequisites plus the gateway/app-dev WireGuard route are ready; it does not
-wait for prod or agent. Partial provision checkpoints preserve successful
-siblings so a later forced rebuild retries only missing or invalid roles.
+in parallel. Websocket starts as soon as dev succeeds, app-dev runtime services
+are ready, and the provisioning-owned gateway/app-dev WireGuard route is ready;
+it does not wait for prod or agent. Partial provision checkpoints preserve
+successful siblings so a later forced rebuild retries only missing or invalid
+roles.
 
 ## Prepared sources
 

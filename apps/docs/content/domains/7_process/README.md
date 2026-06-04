@@ -107,6 +107,11 @@ ports, volumes, labels, lifecycle, and logs on the process row.
 The endpoint host is always the owning node's WireGuard service address. Orbit
 does not fall back to the node SSH host, node name, loopback, or Docker network
 alias for managed service endpoints.
+When a service endpoint points back at the owning node's own WireGuard service
+address, `doctor --family=process` diagnoses the Linux self-route with
+`ip route get <wireguard-ip>`. The diagnostic is read-only. macOS reports
+`WireGuard self-route diagnostics are only supported on Linux.` for this
+optimization and does not attempt to add or replace routes.
 
 Supported definitions in this vertical slice:
 

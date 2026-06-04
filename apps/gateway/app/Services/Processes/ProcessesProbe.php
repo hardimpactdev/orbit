@@ -14,6 +14,7 @@ use App\Models\App;
 use App\Models\Node;
 use App\Models\Process;
 use App\Models\Workspace;
+use App\Services\Nodes\NodeWireGuardSelfRouteProbe;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
 use App\Services\RuntimeBackend\RuntimeBackendProbe;
 use InvalidArgumentException;
@@ -25,6 +26,7 @@ final readonly class ProcessesProbe
         private ?RuntimeBackendProbe $runtimeBackendProbe = null,
         private ?ProcessEventNotifierRenderer $processEventNotifierRenderer = null,
         private ?ProcessDockerContainerRenderer $dockerContainerRenderer = null,
+        private ?NodeWireGuardSelfRouteProbe $wireGuardSelfRouteProbe = null,
     ) {}
 
     public function key(): string
@@ -296,8 +298,9 @@ PHP;
         $drift = [];
 
         $drift = array_merge($drift, $this->checkRecordCompleteness($process));
-        $drift = array_merge($drift, $this->checkOwnerApp($process));
+        $drift = array_merge($drift, $this->checkOwner($process));
         $drift = array_merge($drift, $this->checkRuntimeContexts($process));
+        $drift = array_merge($drift, $this->checkWireGuardSelfRoute($process));
         $drift = array_merge($drift, $this->checkRuntimeBackend($process, $snapshot));
         $drift = array_merge($drift, $this->checkRuntimeUnits($process, $snapshot));
         $drift = array_merge($drift, $this->checkRestartPolicy($process, $snapshot));
@@ -347,8 +350,25 @@ PHP;
     /**
      * @return list<DriftEntry>
      */
-    private function checkOwnerApp(Process $process): array
+    private function checkOwner(Process $process): array
     {
+        $process->loadMissing('owner');
+
+        if ($process->owner instanceof Node) {
+            if ($process->owner->status === Node::STATUS_ACTIVE) {
+                return [];
+            }
+
+            return [
+                new DriftEntry(
+                    family: $this->key(),
+                    key: 'process.owner_node_invalid',
+                    kind: DriftKind::Divergent,
+                    summary: "Process {$process->name} owner node {$process->owner->name} is not active.",
+                ),
+            ];
+        }
+
         $this->loadProcessApp($process);
 
         if (! $process->app instanceof App) {
@@ -378,6 +398,54 @@ PHP;
         }
 
         return [];
+    }
+
+    /**
+     * @return list<DriftEntry>
+     */
+    private function checkWireGuardSelfRoute(Process $process): array
+    {
+        $node = $this->processNode($process);
+
+        if (! $node instanceof Node) {
+            return [];
+        }
+
+        $wireGuardAddress = trim((string) $node->wireguard_address);
+
+        if ($wireGuardAddress === '') {
+            return [];
+        }
+
+        $endpoint = collect($this->serviceEndpoints($process))
+            ->first(fn (array $endpoint): bool => $endpoint['host'] === $wireGuardAddress);
+
+        if (! is_array($endpoint)) {
+            return [];
+        }
+
+        $diagnostic = $this->wireGuardSelfRouteProbe()->probe($node);
+
+        if (($diagnostic['ok'] ?? false) === true) {
+            return [];
+        }
+
+        return [
+            new DriftEntry(
+                family: $this->key(),
+                key: 'process.wireguard_self_route_unavailable',
+                kind: DriftKind::Unverifiable,
+                summary: "Process {$process->name} endpoint points at node {$node->name}'s own WireGuard address, but local self-route diagnostics are not healthy.",
+                detail: [
+                    'process' => $process->name,
+                    'node' => $node->name,
+                    'endpoint' => $endpoint['name'] ?? null,
+                    'host' => $endpoint['host'],
+                    'port' => $endpoint['port'] ?? null,
+                    ...$this->wireGuardSelfRouteDetail($diagnostic),
+                ],
+            ),
+        ];
     }
 
     /**
@@ -671,6 +739,12 @@ PHP;
      */
     private function checkRuntimeContexts(Process $process): array
     {
+        $process->loadMissing('owner');
+
+        if ($process->owner instanceof Node) {
+            return [];
+        }
+
         $this->loadProcessApp($process, withWorkspaces: true);
 
         if (! $process->app instanceof App) {
@@ -705,6 +779,82 @@ PHP;
         }
 
         return [];
+    }
+
+    private function processNode(Process $process): ?Node
+    {
+        $process->loadMissing(['owner', 'node']);
+
+        if ($process->owner instanceof Node) {
+            return $process->owner;
+        }
+
+        $this->loadProcessApp($process);
+
+        if ($process->app instanceof App && $process->app->node instanceof Node) {
+            return $process->app->node;
+        }
+
+        return $process->node;
+    }
+
+    /**
+     * @return list<array{name: string|null, host: string, port: int|null}>
+     */
+    private function serviceEndpoints(Process $process): array
+    {
+        $config = is_array($process->runtime_config) ? $process->runtime_config : [];
+        $rawEndpoints = [];
+
+        if (is_array($config['endpoint'] ?? null)) {
+            $rawEndpoints[] = $config['endpoint'];
+        }
+
+        if (is_array($config['endpoints'] ?? null)) {
+            foreach ($config['endpoints'] as $endpoint) {
+                if (is_array($endpoint)) {
+                    $rawEndpoints[] = $endpoint;
+                }
+            }
+        }
+
+        $endpoints = [];
+
+        foreach ($rawEndpoints as $endpoint) {
+            $host = is_string($endpoint['host'] ?? null) ? trim($endpoint['host']) : '';
+
+            if ($host === '') {
+                continue;
+            }
+
+            $name = is_string($endpoint['name'] ?? null) ? trim($endpoint['name']) : null;
+            $port = is_numeric($endpoint['port'] ?? null) ? (int) $endpoint['port'] : null;
+
+            $endpoints[] = [
+                'name' => $name !== '' ? $name : null,
+                'host' => $host,
+                'port' => $port,
+            ];
+        }
+
+        return $endpoints;
+    }
+
+    /**
+     * @param  array<string, mixed>  $diagnostic
+     * @return array<string, mixed>
+     */
+    private function wireGuardSelfRouteDetail(array $diagnostic): array
+    {
+        return array_filter([
+            'wireguard_address' => $diagnostic['wireguard_address'] ?? null,
+            'platform' => $diagnostic['platform'] ?? null,
+            'reason' => $diagnostic['reason'] ?? null,
+            'message' => $diagnostic['message'] ?? null,
+            'command' => $diagnostic['command'] ?? null,
+            'exit_code' => $diagnostic['exit_code'] ?? null,
+            'output' => $diagnostic['output'] ?? null,
+        ], fn (mixed $value): bool => $value !== null && $value !== '');
     }
 
     /**
@@ -900,5 +1050,10 @@ PHP;
     private function dockerContainerRenderer(): ProcessDockerContainerRenderer
     {
         return $this->dockerContainerRenderer ?? app(ProcessDockerContainerRenderer::class);
+    }
+
+    private function wireGuardSelfRouteProbe(): NodeWireGuardSelfRouteProbe
+    {
+        return $this->wireGuardSelfRouteProbe ?? app(NodeWireGuardSelfRouteProbe::class);
     }
 }

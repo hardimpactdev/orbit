@@ -23,7 +23,8 @@ These terms define how process definitions are identified, scoped, and ordered.
   service such as MySQL or Redis. Service version, runtime, endpoint,
   credentials, lifecycle, and logs belong to the process row produced from the
   definition. The service endpoint host is the owning node's WireGuard service
-  address.
+  address. Same-node service consumers rely on the node's provisioning-owned
+  WireGuard self-route, not on loopback or Docker aliases.
 - **Process order:** Stable order of process definitions inside their owning
   scope. Read and bulk lifecycle commands use that order.
 
@@ -117,7 +118,9 @@ These terms define what the process family owns and what remains outside its sco
   runtime configuration, command or image configuration, environment, ports,
   volumes, restart policy, lifecycle commands, logs, crash notification policy,
   runtime unit derivation, runtime unit environment, and lifecycle event
-  history.
+  history. WireGuard interface setup and self-route mutation belong to node
+  provisioning/topology work; process doctor may only diagnose self-route
+  health when a process endpoint depends on it.
 - They do not own app or workspace registry configuration, proxy routes,
   firewall policy, schedule definitions, tool catalog membership, or tool
   installation/update/removal. Orbit does not add a separate service family for

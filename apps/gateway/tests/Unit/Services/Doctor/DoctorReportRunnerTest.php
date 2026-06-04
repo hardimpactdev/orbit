@@ -1203,7 +1203,8 @@ describe('DoctorReportRunner', function (): void {
 
         expect($runner->supportedFamilies())->toContain('database_connection')
             ->and($runner->categoriesForNode($appNode))->toContain('database_connection')
-            ->and($runner->categoriesForNode($databaseNode))->not->toContain('database_connection');
+            ->and($runner->categoriesForNode($databaseNode))->not->toContain('database_connection')
+            ->and($runner->categoriesForNode($databaseNode))->toContain('process');
     });
 
     it('does not mark database connection unverifiable issues as adoptable', function (): void {

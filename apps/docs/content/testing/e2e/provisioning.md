@@ -47,10 +47,10 @@ The Incus provision gate has one supported shape:
    app-dev, app-prod, and agent role provisioning in parallel. Each downstream
    role launches from the base image, waits for cloud-init/agent/SSH readiness,
    and applies its gateway-side bake independently.
-5. Bake websocket against app-dev Redis as soon as the app-dev role succeeds
-   and the app-dev runtime prerequisites plus gateway/app-dev WireGuard route
-   are ready. Websocket does not wait for app-prod or agent unless a future
-   contract adds a real dependency.
+5. Bake websocket against app-dev Redis as soon as the app-dev role succeeds,
+   app-dev runtime services are ready, and the provisioning-owned
+   gateway/app-dev WireGuard route is ready. Websocket does not wait for
+   app-prod or agent unless a future contract adds a real dependency.
 6. Snapshot operator, gateway, app-dev, app-prod, and agent role templates
    inside the isolated provision-test namespace for validation and failure
    inspection.
@@ -101,11 +101,11 @@ provisions the gateway through real `node:new`. After the gateway is seeded, the
 prepared full topology uses the explicit role DAG `operator -> gateway -> {dev,
 prod, agent}`. Dev, prod, and agent launch/readiness/bake tasks run as
 independent downstream tasks. In the websocket-capable topology, websocket is a
-dev-dependent task: it starts after app-dev is baked and the app-dev Docker,
-Caddy, FrankenPHP, gateway-image, and gateway/app-dev WireGuard prerequisites
-are ready; it does not wait for app-prod or agent completion. The app-dev role
-then seeds database and Redis registry state before the full source snapshot is
-taken.
+dev-dependent task: it starts after app-dev is baked, app-dev Docker, Caddy,
+FrankenPHP, and gateway-image runtime services are ready, and the
+provisioning-owned gateway/app-dev WireGuard route is ready; it does not wait
+for app-prod or agent completion. The app-dev role then seeds database and Redis
+registry state before the full source snapshot is taken.
 Feature tests clone only their requested roles from that full prepared source.
 
 App-dev carries database, Redis, Caddy, and FrankenPHP app-serving readiness by

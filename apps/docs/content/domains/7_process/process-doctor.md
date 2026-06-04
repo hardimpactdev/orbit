@@ -6,11 +6,15 @@ The process family doctor implements the
 [Family Doctor Implementation Contract](../11_operation/3_doctor/technical/1_doctor.md#family-doctor-implementation-contract).
 `key()` returns `process`.
 
-`doctor --family=process` verifies whether gateway process definitions still match the runtime-unit artifacts that make those definitions executable on their owning nodes.
+`doctor --family=process` verifies whether gateway process definitions still
+match the runtime-unit artifacts and node-local service endpoint assumptions
+that make those definitions executable on their owning nodes.
 
 The process family owns these facts:
 
-- gateway-owned process definitions: app, name, command, restart policy, and crash-notification policy;
+- gateway-owned process definitions: node/app/workspace owner, name, command,
+  restart policy, crash-notification policy, optional tool dependency, runtime,
+  runtime configuration, and service endpoint metadata;
 - derived runtime-unit identity for the main app instance and every workspace: `orbit_<app>_<workspace|main>_<process>`;
 - Supervisor process runtime units rendered from process, app, workspace, and
   node configuration, including command, working directory, restart policy, and
@@ -18,8 +22,14 @@ The process family owns these facts:
 - lifecycle event notifier material that Orbit manages, required to record runtime `crashed` events from app-host units whose process definitions require crash event reporting;
 - stale process runtime artifacts owned by Orbit whose identity no longer maps
   to an active app, workspace, or process definition.
+- read-only self-route diagnostics for node-owned service endpoints that point
+  back at the owning node's own WireGuard service address.
 
-Node reachability belongs to `node`. App source, PHP runtime, and app-owned runtime configuration belong to `app`. Workspace source directories and setup state belong to `workspace`. Proxy routes, schedules, tools, and firewall rules remain outside the process family.
+Node reachability and WireGuard route mutation belong to `node` provisioning
+and topology work. App source, PHP runtime, and app-owned runtime configuration
+belong to `app`. Workspace source directories and setup state belong to
+`workspace`. Proxy routes, schedules, tools, and firewall rules remain outside
+the process family.
 
 ## Probe Layers
 
@@ -27,7 +37,9 @@ The processes probe reads gateway process definitions and checks the layers belo
 
 ### Registry configuration
 
-Every selected process definition has a valid app reference, process name, command, restart policy, and crash-notification policy.
+Every selected process definition has a valid app reference, process name,
+command, restart policy, and crash-notification policy. Node-owned service
+process definitions have a valid active node owner instead of an app owner.
 
 ### Owning app and workspace expansion
 
@@ -47,6 +59,17 @@ spec.
 ### Runtime-unit identity
 
 Each expected runtime context maps to exactly one runtime unit name that Orbit owns, using `orbit_<app>_<workspace|main>_<process>`.
+
+### WireGuard self-route diagnostics
+
+When a node-owned service process endpoint host equals the owning node's
+WireGuard service address, the process probe runs `ip route get <wireguard-ip>`
+on Linux and expects a local route such as `local <ip> dev lo` or an equivalent
+local route. macOS reports the exact unsupported message
+`WireGuard self-route diagnostics are only supported on Linux.` and does not
+mutate routes. Missing, unsupported, or unverifiable self-route diagnostics are
+reported as process-family `unverifiable` drift because route mutation belongs
+to node provisioning/topology work.
 
 ### Runtime artifact presence
 
@@ -77,7 +100,9 @@ Each code below identifies a specific process-family drift condition that the pr
 | --- | --- |
 | `process.record_incomplete` | A selected process definition lacks app, name, command, restart policy, or crash-notification policy. |
 | `process.owner_app_invalid` | The process definition points at a missing app, unauthorized app, or app whose owning node is not an active node. |
+| `process.owner_node_invalid` | The process definition points at a node owner that is not active. |
 | `process.runtime_context_unresolved` | The expected main app or workspace runtime context cannot be derived from gateway configuration. |
+| `process.wireguard_self_route_unavailable` | A node-owned service endpoint points at the owning node's own WireGuard service address, but Linux self-route diagnostics are missing/unhealthy or the platform does not support this diagnostic. |
 | `process.runtime_backend_unavailable` | The selected process runtime backend is unavailable. Downstream runtime-unit checks are skipped while this code is active. |
 | `process.runtime_unit_missing` | An expected Orbit-owned runtime unit has no corresponding backend artifact. |
 | `process.runtime_unit_extra` | An Orbit-owned backend artifact exists without matching active app, workspace, and process configuration. |
@@ -94,6 +119,7 @@ Use `doctor --restore` to trigger the repair action listed for each code.
 | Code | `doctor --restore` behavior |
 | --- | --- |
 | `process.runtime_backend_unavailable` | No `doctor --restore` action. Process manager installation and recovery belong to `tool` family doctor and node operations. Process doctor reports the dependency and does not attempt to install Docker or Supervisor. |
+| `process.wireguard_self_route_unavailable` | No `doctor --restore` action. WireGuard self-route mutation belongs to node provisioning/topology repair, not the process family. |
 | `process.runtime_unit_missing` | Re-render and reload the missing backend artifact from gateway app, workspace, and process configuration. |
 | `process.runtime_unit_extra` | Stop and remove the stale Orbit-owned backend artifact whose identity no longer maps to active gateway app, workspace, and process configuration. |
 | `process.runtime_unit_mismatch` | Rewrite the backend artifact from gateway app, workspace, and process configuration. |
@@ -102,7 +128,11 @@ Use `doctor --restore` to trigger the repair action listed for each code.
 | `process.event_notifier_missing` | Reinstall Orbit-managed lifecycle event notifier material for the selected runtime unit. |
 | `process.event_notifier_mismatch` | Rewrite lifecycle event notifier material to match gateway configuration and the current gateway event intake identity. |
 
-`doctor --restore` does not handle `process.record_incomplete`, `process.owner_app_invalid`, `process.runtime_context_unresolved`, or `process.runtime_backend_unavailable`.
+`doctor --restore` does not handle `process.record_incomplete`,
+`process.owner_app_invalid`, `process.owner_node_invalid`,
+`process.runtime_context_unresolved`,
+`process.wireguard_self_route_unavailable`, or
+`process.runtime_backend_unavailable`.
 
 Missing or invalid process definitions and app ownership problems remain explicit process, app, or workspace command work. Process doctor never creates process definitions, changes process names, edits app or workspace records, or adopts arbitrary runtime-unit files as gateway configuration.
 
@@ -113,6 +143,7 @@ Use `doctor --adopt` to apply the adoption action listed for each code.
 | Code | `doctor --adopt` behavior |
 | --- | --- |
 | `process.runtime_backend_unavailable` | No adoption action. |
+| `process.wireguard_self_route_unavailable` | No adoption action. |
 | `process.runtime_unit_extra` | No adoption action. Runtime artifacts are derived and must not create process configuration. |
 | `process.runtime_unit_mismatch` | No adoption action. Update process configuration with `process:edit` when the observed runtime command should become configuration. |
 | `process.restart_policy_mismatch` | No adoption action. Update restart policy with `process:edit` when the observed policy should become configuration. |
@@ -137,8 +168,9 @@ probe-layer selection, process issue codes, the process fix map, denied
 process adopt cases, and scope filtering for process probes. It also asserts
 that `process.runtime_backend_unavailable` short-circuits downstream layers.
 
-`ProcessesProbeTest` covers registry configuration, app and workspace
-expansion, process manager availability, runtime-unit identity,
-missing/extra/drifted runtime artifacts, restart policy drift, runtime environment
-drift, event notifier drift, and exclusion of non-process drift from issue
-codes.
+`ProcessesProbeTest` covers registry configuration, node/app/workspace owner
+validation, app and workspace expansion, process manager availability,
+runtime-unit identity, WireGuard self-route diagnostics for same-node service
+endpoints, missing/extra/drifted runtime artifacts, restart policy drift,
+runtime environment drift, event notifier drift, and exclusion of non-process
+drift from issue codes.

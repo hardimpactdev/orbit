@@ -29,6 +29,11 @@ touch.
   comparisons materialize `*_HOST` as the owning node's WireGuard service
   address, even when the consuming app or workspace is on that same node.
   External connections without an owning node keep their stored host value.
+- When a mapped managed database host equals the consuming node's own WireGuard
+  service address, `doctor --family=database_connection` diagnoses the Linux
+  self-route with `ip route get <wireguard-ip>`. macOS reports
+  `WireGuard self-route diagnostics are only supported on Linux.` and the
+  database family does not mutate routes.
 - Database adopt reads observed `.env` values by supported prefixes, creates or
   updates reusable connection records, creates or updates target mappings, and
   stores adopted passwords in encrypted credentials.
@@ -44,8 +49,9 @@ touch.
   process definitions, schedule definitions, proxy routes, tool installation,
   or firewall policy.
 - Managed database service lifecycle belongs to process-owned service
-  definitions. The database family owns connection intent and data-plane
-  operations, not service installation or lifecycle.
+  definitions. The database family owns connection intent, data-plane
+  operations, and read-only same-node WireGuard self-route diagnostics, not
+  service installation, lifecycle, or route mutation.
 
 ## Permissions
 

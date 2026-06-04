@@ -19,6 +19,7 @@ use App\Models\Process;
 use App\Models\Workspace;
 use App\Services\Apps\AppRuntimeContainer;
 use App\Services\Apps\AppRuntimeContainerRenderer;
+use App\Services\Nodes\NodeWireGuardSelfRouteProbe;
 use App\Services\Processes\ProcessDockerContainerRenderer;
 use App\Services\Processes\ProcessesProbe;
 use App\Services\RuntimeBackend\RuntimeBackendProbe;
@@ -111,6 +112,110 @@ describe('runtime backend availability', function (): void {
         ]));
 
         expect(issue($drift, 'process.runtime_backend_unavailable'))->toBeNull();
+    });
+});
+
+describe('WireGuard self-route diagnostics', function (): void {
+    it('reports unavailable Linux self-routes for node-owned service process endpoints', function (): void {
+        $node = Node::factory()->database()->create([
+            'name' => 'database-1',
+            'platform' => 'ubuntu_24-04',
+            'wireguard_address' => '10.6.0.7',
+        ]);
+        $process = Process::factory()->forOwner($node)->create([
+            'name' => 'redis',
+            'command' => 'redis-server --appendonly yes',
+            'runtime' => ProcessRuntime::Docker,
+            'runtime_config' => [
+                'definition' => 'redis',
+                'endpoint' => [
+                    'name' => 'redis',
+                    'kind' => 'tcp',
+                    'host' => '10.6.0.7',
+                    'port' => 6379,
+                ],
+            ],
+        ]);
+        $shell = new ProcessesProbeRecordingRemoteShell([
+            new RemoteShellResult(exitCode: 0, stdout: "10.6.0.7 dev wg-orbit src 10.6.0.2\n", stderr: '', durationMs: 1),
+        ]);
+        app()->instance(RemoteShell::class, $shell);
+
+        $drift = $this->probe->diff($process, new ProbeSnapshot([]));
+
+        expect(issue($drift, 'process.owner_app_invalid'))->toBeNull()
+            ->and(issue($drift, 'process.wireguard_self_route_unavailable')?->kind)->toBe(DriftKind::Unverifiable)
+            ->and(issue($drift, 'process.wireguard_self_route_unavailable')?->detail)->toMatchArray([
+                'process' => 'redis',
+                'node' => 'database-1',
+                'endpoint' => 'redis',
+                'host' => '10.6.0.7',
+                'port' => 6379,
+                'wireguard_address' => '10.6.0.7',
+                'reason' => 'self_route_missing',
+                'message' => 'Linux node does not route its own WireGuard address locally.',
+            ])
+            ->and($shell->scripts)->toBe(["ip route get '10.6.0.7'"]);
+    });
+
+    it('does not report process self-route drift when Linux routes its own WireGuard address locally', function (): void {
+        $node = Node::factory()->database()->create([
+            'name' => 'database-1',
+            'platform' => 'ubuntu_24-04',
+            'wireguard_address' => '10.6.0.7',
+        ]);
+        $process = Process::factory()->forOwner($node)->create([
+            'name' => 'redis',
+            'command' => 'redis-server --appendonly yes',
+            'runtime' => ProcessRuntime::Docker,
+            'runtime_config' => [
+                'endpoint' => [
+                    'name' => 'redis',
+                    'kind' => 'tcp',
+                    'host' => '10.6.0.7',
+                    'port' => 6379,
+                ],
+            ],
+        ]);
+        app()->instance(RemoteShell::class, new ProcessesProbeRecordingRemoteShell([
+            new RemoteShellResult(exitCode: 0, stdout: "local 10.6.0.7 dev lo src 10.6.0.7\n", stderr: '', durationMs: 1),
+        ]));
+
+        $drift = $this->probe->diff($process, new ProbeSnapshot([]));
+
+        expect(issue($drift, 'process.wireguard_self_route_unavailable'))->toBeNull();
+    });
+
+    it('reports macOS as unsupported for process self-route diagnostics without route commands', function (): void {
+        $node = Node::factory()->database()->create([
+            'name' => 'database-1',
+            'platform' => 'macos_15-4',
+            'wireguard_address' => '10.6.0.7',
+        ]);
+        $process = Process::factory()->forOwner($node)->create([
+            'name' => 'redis',
+            'command' => 'redis-server --appendonly yes',
+            'runtime' => ProcessRuntime::Docker,
+            'runtime_config' => [
+                'endpoint' => [
+                    'name' => 'redis',
+                    'kind' => 'tcp',
+                    'host' => '10.6.0.7',
+                    'port' => 6379,
+                ],
+            ],
+        ]);
+        $shell = new ProcessesProbeRecordingRemoteShell([]);
+        app()->instance(RemoteShell::class, $shell);
+
+        $drift = $this->probe->diff($process, new ProbeSnapshot([]));
+
+        expect(issue($drift, 'process.wireguard_self_route_unavailable')?->detail)->toMatchArray([
+            'platform' => 'macos_15-4',
+            'reason' => 'unsupported_platform',
+            'message' => NodeWireGuardSelfRouteProbe::UnsupportedMessage,
+        ])
+            ->and($shell->scripts)->toBe([]);
     });
 });
 
