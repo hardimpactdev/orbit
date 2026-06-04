@@ -120,6 +120,25 @@ describe('AppDevelopmentRoleBaseline host toolchain', function (): void {
             ->and($tool->expected_state)->toBe('installed');
     });
 
+    it('converges supervisor with expected_state running', function (): void {
+        $node = appDevBaselineNode();
+        $assignment = appDevBaselineAssignment($node);
+
+        $baseline = new AppDevelopmentRoleBaseline(
+            new DevelopmentDnsMappingEnactor($this->configDir),
+        );
+
+        $baseline->converge($node, $assignment);
+
+        $tool = NodeTool::query()
+            ->where('node_id', $node->id)
+            ->where('name', 'supervisor')
+            ->first();
+
+        expect($tool)->not->toBeNull()
+            ->and($tool->expected_state)->toBe('running');
+    });
+
     it('does not converge the legacy php runtime tool row', function (): void {
         $node = appDevBaselineNode();
         $assignment = appDevBaselineAssignment($node);
@@ -146,10 +165,10 @@ describe('AppDevelopmentRoleBaseline host toolchain', function (): void {
 
         $baseline->converge($node, $assignment);
 
-        expect(NodeTool::query()->where('node_id', $node->id)->whereIn('name', ['php-cli', 'composer', 'laravel-installer', 'gh'])->count())->toBe(4);
+        expect(NodeTool::query()->where('node_id', $node->id)->whereIn('name', ['php-cli', 'composer', 'laravel-installer', 'gh', 'supervisor'])->count())->toBe(5);
 
         $baseline->remove($node, $assignment, purgeData: false);
 
-        expect(NodeTool::query()->where('node_id', $node->id)->whereIn('name', ['php-cli', 'composer', 'laravel-installer', 'gh'])->count())->toBe(0);
+        expect(NodeTool::query()->where('node_id', $node->id)->whereIn('name', ['php-cli', 'composer', 'laravel-installer', 'gh', 'supervisor'])->count())->toBe(0);
     });
 });

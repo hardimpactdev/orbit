@@ -86,6 +86,7 @@ describe('orbit:internal:bake-app-node', function (): void {
                 'gh',
                 'laravel-installer',
                 'php-cli',
+                'supervisor',
             ])
             ->and(File::exists(app(DevelopmentDnsMappingEnactor::class)->configDir().'/test.conf'))->toBeTrue()
             ->and($shell->repairScripts())->toHaveCount(5);
@@ -117,6 +118,7 @@ describe('orbit:internal:bake-app-node', function (): void {
                 'gh' => 'installed',
                 'laravel-installer' => 'installed',
                 'php-cli' => 'installed',
+                'supervisor' => 'running',
             ]);
     });
 

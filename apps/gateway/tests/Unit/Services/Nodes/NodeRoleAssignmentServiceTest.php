@@ -233,25 +233,26 @@ describe('node role assignment service', function (): void {
 
         $tools = NodeTool::query()
             ->where('node_id', $node->id)
-            ->whereIn('name', ['caddy', 'composer', 'laravel-installer', 'php', 'php-cli'])
+            ->whereIn('name', ['caddy', 'composer', 'laravel-installer', 'php', 'php-cli', 'supervisor'])
             ->orderBy('name')
             ->get();
 
         expect($tools->pluck('name')->all())
-            ->toBe(['caddy', 'composer', 'laravel-installer', 'php-cli'])
+            ->toBe(['caddy', 'composer', 'laravel-installer', 'php-cli', 'supervisor'])
             ->and($tools->mapWithKeys(fn (NodeTool $tool): array => [$tool->name => $tool->expected_state])->all())
             ->toBe([
                 'caddy' => 'running',
                 'composer' => 'installed',
                 'laravel-installer' => 'installed',
                 'php-cli' => 'installed',
+                'supervisor' => 'running',
             ]);
 
         app(NodeRoleAssignmentService::class)->remove($node->refresh(), 'app-dev', force: true);
 
         expect(NodeTool::query()
             ->where('node_id', $node->id)
-            ->whereIn('name', ['caddy', 'composer', 'laravel-installer', 'php-cli'])
+            ->whereIn('name', ['caddy', 'composer', 'laravel-installer', 'php-cli', 'supervisor'])
             ->exists())->toBeFalse();
     });
 

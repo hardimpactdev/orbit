@@ -31,7 +31,7 @@ class AppDevelopmentRoleBaseline implements RoleBaseline
 
         if (($result['status'] ?? null) !== 'not_applicable') {
             $this->removeTools($node, ['php']);
-            $this->convergeTool($node, 'caddy');
+            $this->convergeTools($node, ['caddy', 'supervisor']);
             $this->convergeTool($node, 'php-cli', 'installed');
             $this->convergeTool($node, 'composer', 'installed');
             $this->convergeTool($node, 'gh', 'installed');
@@ -54,7 +54,7 @@ class AppDevelopmentRoleBaseline implements RoleBaseline
         $result = $this->developmentDnsMappingEnactor->removeDevelopmentRole($node, $tld);
 
         if (($result['status'] ?? null) !== 'failed') {
-            $this->removeTools($node, ['caddy', 'php', 'php-cli', 'composer', 'gh', 'laravel-installer']);
+            $this->removeTools($node, ['caddy', 'php', 'supervisor', 'php-cli', 'composer', 'gh', 'laravel-installer']);
 
             return;
         }

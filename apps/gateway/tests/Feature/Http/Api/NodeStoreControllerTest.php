@@ -360,6 +360,7 @@ describe('NodeStoreController', function (): void {
                 'gh',
                 'laravel-installer',
                 'php-cli',
+                'supervisor',
             ]);
 
         expect($shell->toolNodeStatuses)->toHaveCount(5)
