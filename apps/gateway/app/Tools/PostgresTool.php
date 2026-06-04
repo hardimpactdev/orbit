@@ -22,4 +22,34 @@ final class PostgresTool extends DockerComposeTool
     {
         return 'database';
     }
+
+    #[\Override]
+    public function defaultRuntime(): string
+    {
+        return 'docker';
+    }
+
+    #[\Override]
+    public function supportedRuntimes(): array
+    {
+        return [
+            'docker' => [
+                'platforms' => ['linux', 'ubuntu'],
+            ],
+            'docker-swarm' => [
+                'platforms' => ['linux', 'ubuntu'],
+            ],
+        ];
+    }
+
+    #[\Override]
+    public function supportedVersionFamilies(): array
+    {
+        return [
+            '16' => [
+                'default' => '16',
+                'versions' => ['16'],
+            ],
+        ];
+    }
 }

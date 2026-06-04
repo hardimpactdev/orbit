@@ -22,4 +22,38 @@ final class MysqlTool extends DockerComposeTool
     {
         return 'database';
     }
+
+    #[\Override]
+    public function defaultRuntime(): string
+    {
+        return 'docker';
+    }
+
+    #[\Override]
+    public function supportedRuntimes(): array
+    {
+        return [
+            'docker' => [
+                'platforms' => ['linux', 'ubuntu'],
+            ],
+            'docker-swarm' => [
+                'platforms' => ['linux', 'ubuntu'],
+            ],
+        ];
+    }
+
+    #[\Override]
+    public function supportedVersionFamilies(): array
+    {
+        return [
+            '8' => [
+                'default' => '8.4',
+                'versions' => ['8.4'],
+            ],
+            '9' => [
+                'default' => '9',
+                'versions' => ['9'],
+            ],
+        ];
+    }
 }

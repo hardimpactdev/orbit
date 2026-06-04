@@ -30,6 +30,23 @@ interface ToolDefinition
     public function latestSupportedVersion(): ?string;
 
     /**
+     * @return array<string, array{platforms: list<string>}>
+     */
+    public function supportedRuntimes(): array;
+
+    public function defaultRuntime(): ?string;
+
+    /**
+     * @return array<array-key, array{default: string, versions: list<string>}>
+     */
+    public function supportedVersionFamilies(): array;
+
+    /**
+     * @return array{version_family: string, expected_version: string}|null
+     */
+    public function resolveVersionRequest(string $version): ?array;
+
+    /**
      * @return array{
      *     binary?: string,
      *     probe?: string,

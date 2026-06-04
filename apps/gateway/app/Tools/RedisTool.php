@@ -18,6 +18,36 @@ final class RedisTool extends DockerComposeTool
     }
 
     #[\Override]
+    public function defaultRuntime(): string
+    {
+        return 'docker';
+    }
+
+    #[\Override]
+    public function supportedRuntimes(): array
+    {
+        return [
+            'docker' => [
+                'platforms' => ['linux', 'ubuntu'],
+            ],
+            'docker-swarm' => [
+                'platforms' => ['linux', 'ubuntu'],
+            ],
+        ];
+    }
+
+    #[\Override]
+    public function supportedVersionFamilies(): array
+    {
+        return [
+            '7' => [
+                'default' => '7.2',
+                'versions' => ['7.2'],
+            ],
+        ];
+    }
+
+    #[\Override]
     public function probeMetadata(): array
     {
         return [

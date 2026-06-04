@@ -642,6 +642,26 @@ final class ToolsFixerAgentToolDefinition implements ToolDefinition
         return null;
     }
 
+    public function supportedRuntimes(): array
+    {
+        return [];
+    }
+
+    public function defaultRuntime(): ?string
+    {
+        return null;
+    }
+
+    public function supportedVersionFamilies(): array
+    {
+        return [];
+    }
+
+    public function resolveVersionRequest(string $version): ?array
+    {
+        return null;
+    }
+
     public function probeMetadata(): array
     {
         return [];

@@ -56,6 +56,59 @@ abstract class BaseTool implements ToolDefinition
         return null;
     }
 
+    /**
+     * @return array<string, array{platforms: list<string>}>
+     */
+    public function supportedRuntimes(): array
+    {
+        return [];
+    }
+
+    public function defaultRuntime(): ?string
+    {
+        return null;
+    }
+
+    /**
+     * @return array<array-key, array{default: string, versions: list<string>}>
+     */
+    public function supportedVersionFamilies(): array
+    {
+        return [];
+    }
+
+    /**
+     * @return array{version_family: string, expected_version: string}|null
+     */
+    public function resolveVersionRequest(string $version): ?array
+    {
+        $version = trim($version);
+
+        if ($version === '') {
+            return null;
+        }
+
+        foreach ($this->supportedVersionFamilies() as $family => $metadata) {
+            $family = (string) $family;
+
+            if ($version === $family) {
+                return [
+                    'version_family' => $family,
+                    'expected_version' => $metadata['default'],
+                ];
+            }
+
+            if (in_array($version, $metadata['versions'], true)) {
+                return [
+                    'version_family' => $family,
+                    'expected_version' => $version,
+                ];
+            }
+        }
+
+        return null;
+    }
+
     public function probeMetadata(): array
     {
         return ['binary' => $this->slug()];
