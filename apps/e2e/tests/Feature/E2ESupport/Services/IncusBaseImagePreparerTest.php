@@ -139,13 +139,13 @@ it('builds the base image with the expected incus call sequence', function (): v
     expect($publishes[0])->toContain("--alias 'orbit-base-ubuntu-26.04'");
 });
 
-it('writes cloud-init that installs the deps helper packages and the orbit user', function (): void {
+it('provisions the base via an exec script that installs the deps packages and the orbit user', function (): void {
     $host = m::mock(IncusHost::class);
 
-    $cloudInitYaml = null;
+    $provisionScript = null;
 
     $host->shouldReceive('run')
-        ->andReturnUsing(function (string $command) use (&$cloudInitYaml): ProcessResult {
+        ->andReturnUsing(function (string $command) use (&$provisionScript): ProcessResult {
             if (str_contains($command, 'mktemp -d')) {
                 return fakeProcessResult(output: "/tmp/orbit-prep-base\n");
             }
@@ -159,7 +159,7 @@ it('writes cloud-init that installs the deps helper packages and the orbit user'
             }
 
             if (str_starts_with(ltrim($command), 'cat > ')) {
-                $cloudInitYaml = $command;
+                $provisionScript = $command;
 
                 return fakeProcessResult();
             }
@@ -172,33 +172,27 @@ it('writes cloud-init that installs the deps helper packages and the orbit user'
                 return fakeProcessResult(output: "10.0.0.5\n");
             }
 
-            if (str_contains($command, 'cloud-init status')) {
-                return fakeProcessResult(output: "status: done\n");
-            }
-
             return fakeProcessResult();
         });
 
     $preparer = new IncusBaseImagePreparer($host);
     $preparer->build(baseImageOptions(force: true));
 
-    expect($cloudInitYaml)->not->toBeNull();
-    expect($cloudInitYaml)->toContain('package_update: true');
-    expect($cloudInitYaml)->toContain('uri: http://mirror.leaseweb.com/ubuntu');
-    expect($cloudInitYaml)->toContain('Acquire::ForceIPv4');
-    expect($cloudInitYaml)->toContain('Acquire::http::Timeout');
-    expect($cloudInitYaml)->toContain('disable_suites:');
-    expect($cloudInitYaml)->toContain('    - security');
-    expect($cloudInitYaml)->toContain('  - composer');
-    expect($cloudInitYaml)->toContain('  - bind9-dnsutils');
-    expect($cloudInitYaml)->toContain('  - ufw');
-    expect($cloudInitYaml)->toContain('  - wireguard');
-    expect($cloudInitYaml)->toContain('  - php8.5-cli');
-    expect($cloudInitYaml)->toContain('  - php8.5-bcmath');
-    expect($cloudInitYaml)->toContain('name: provisioner');
-    expect($cloudInitYaml)->toContain('name: orbit');
-    expect($cloudInitYaml)->toContain('install -d -m 700 -o orbit -g orbit /home/orbit/.ssh');
-    expect($cloudInitYaml)->toContain('install -d -m 755 -o orbit -g orbit /home/orbit/.config/orbit');
+    expect($provisionScript)->not->toBeNull();
+    expect($provisionScript)->toContain('apt-get update -y');
+    expect($provisionScript)->toContain('apt-get install -y');
+    expect($provisionScript)->toContain('Acquire::ForceIPv4');
+    expect($provisionScript)->toContain('composer');
+    expect($provisionScript)->toContain('bind9-dnsutils');
+    expect($provisionScript)->toContain('ufw');
+    expect($provisionScript)->toContain('wireguard');
+    expect($provisionScript)->toContain('php8.5-cli');
+    expect($provisionScript)->toContain('php8.5-bcmath');
+    expect($provisionScript)->toContain('useradd --create-home --shell /bin/bash --groups sudo provisioner');
+    expect($provisionScript)->toContain('useradd --create-home --shell /bin/bash --groups sudo orbit');
+    expect($provisionScript)->toContain('install -d -m 700 -o orbit -g orbit /home/orbit/.ssh');
+    expect($provisionScript)->toContain('install -d -m 755 -o orbit -g orbit /home/orbit/.config/orbit');
+    expect($provisionScript)->toContain('update-alternatives --set php /usr/bin/php8.5');
 });
 
 it('throws when the source image is not available', function (): void {

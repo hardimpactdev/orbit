@@ -48,12 +48,11 @@ class IncusBaseImagePreparer
 
             $packages = $this->readPackageList($options->depsScriptPath, '--all');
 
-            $this->launchBaseInstance($instanceName, $remoteWorkDir, $options, $publicKey, $packages);
+            $this->launchBaseInstance($instanceName, $options);
             $tempInstance = $instanceName;
 
             $this->waitForAgent($instanceName, $options->timeoutSeconds);
-            $this->waitForCloudInit($instanceName, $options->timeoutSeconds);
-            $this->waitForAgent($instanceName, $options->timeoutSeconds);
+            $this->provisionBase($instanceName, $remoteWorkDir, $publicKey, $packages, $options);
             $ipv4 = $this->waitForIpv4($instanceName, $options->timeoutSeconds);
             $this->waitForSsh($ipv4, $remotePrivateKey, $options->bootstrapUser, $options->timeoutSeconds);
 
@@ -162,34 +161,12 @@ class IncusBaseImagePreparer
         return $packages;
     }
 
-    /**
-     * @param  list<string>  $packages
-     */
-    private function launchBaseInstance(
-        string $name,
-        string $remoteWorkDir,
-        IncusBaseImagePreparationOptions $options,
-        string $publicKey,
-        array $packages,
-    ): void {
-        $userData = $this->cloudInit($options, $publicKey, $packages);
-        $userDataPath = "{$remoteWorkDir}/user-data.yaml";
-
-        $write = $this->host->run(sprintf(
-            "cat > %s <<'CLOUDINITEOF'\n%s\nCLOUDINITEOF\n",
-            escapeshellarg($userDataPath),
-            $userData,
-        ), timeoutSeconds: 30);
-
-        if (! $write->successful()) {
-            throw new RuntimeException("Failed to write cloud-init user-data on Incus host: {$write->errorOutput()}");
-        }
-
+    private function launchBaseInstance(string $name, IncusBaseImagePreparationOptions $options): void
+    {
         $launch = $this->host->run(sprintf(
-            'incus launch %s %s --vm --config=user.user-data="$(cat %s)" --config=limits.cpu=%s --config=limits.memory=%s >/dev/null',
+            'incus launch %s %s --vm --config=limits.cpu=%s --config=limits.memory=%s >/dev/null',
             escapeshellarg($options->sourceImage),
             escapeshellarg($name),
-            escapeshellarg($userDataPath),
             escapeshellarg((string) $options->cpus),
             escapeshellarg($options->memory),
         ), timeoutSeconds: $options->timeoutSeconds);
@@ -217,42 +194,6 @@ class IncusBaseImagePreparer
         }
 
         throw new RuntimeException("Incus agent never became ready on [{$instanceName}].");
-    }
-
-    private function waitForCloudInit(string $instanceName, int $timeoutSeconds): void
-    {
-        $deadline = time() + $timeoutSeconds;
-        $lastOutput = '';
-        $lastExitCode = null;
-
-        while (time() < $deadline) {
-            $remainingSeconds = max(1, $deadline - time());
-
-            // `cloud-init status` exits:
-            //   0 — done, clean
-            //   1 — error
-            //   2 — done with recoverable_errors (e.g. systemd-networkd-wait-online
-            //       flakes during a heavy first-boot apt install). The image is
-            //       still usable, so we accept it as success.
-            // 255 — Incus agent disappeared during a first-boot reboot; retry.
-            $result = $this->host->run(
-                sprintf('incus exec %s -- cloud-init status', escapeshellarg($instanceName)),
-                timeoutSeconds: min(10, $remainingSeconds),
-            );
-
-            $lastOutput = trim($result->output().$result->errorOutput());
-            $lastExitCode = $result->exitCode();
-
-            if (str_contains($lastOutput, 'status: done') || str_contains($lastOutput, 'status: degraded done')) {
-                return;
-            }
-
-            sleep(3);
-        }
-
-        throw new RuntimeException(
-            "Cloud-init did not complete on [{$instanceName}] (exit={$lastExitCode}): {$lastOutput}"
-        );
     }
 
     private function waitForIpv4(string $instanceName, int $timeoutSeconds): string
@@ -380,61 +321,97 @@ class IncusBaseImagePreparer
     }
 
     /**
+     * Provision the freshly launched base instance over the Incus agent.
+     *
+     * The fast non-cloud Ubuntu image has no cloud-init, so the previous
+     * user-data flow is replaced by a single provisioning script piped to
+     * `incus exec ... -- bash`. It performs the same setup the cloud-init
+     * config used to: apt/DNS hardening, the package list, the bootstrap and
+     * `orbit` users, the bootstrap SSH key, the runtime directory tree, and
+     * the php8.5 alternative.
+     *
      * @param  list<string>  $packages
      */
-    private function cloudInit(IncusBaseImagePreparationOptions $options, string $publicKey, array $packages): string
-    {
-        $packageLines = implode("\n", array_map(
-            fn (string $package): string => '  - '.$package,
-            $packages,
-        ));
+    private function provisionBase(
+        string $name,
+        string $remoteWorkDir,
+        string $publicKey,
+        array $packages,
+        IncusBaseImagePreparationOptions $options,
+    ): void {
+        $script = $this->provisionScript($options, $publicKey, $packages);
+        $localScriptPath = "{$remoteWorkDir}/provision-base.sh";
 
-        return <<<YAML
-#cloud-config
-bootcmd:
-  - [ sh, -lc, "rm -f /etc/resolv.conf && printf 'nameserver 1.1.1.1\\nnameserver 8.8.8.8\\n' > /etc/resolv.conf" ]
-  - [ sh, -lc, "printf '%s\\n' 'Acquire::ForceIPv4 \"true\";' 'Acquire::http::Timeout \"10\";' 'Acquire::https::Timeout \"10\";' 'Acquire::Retries \"1\";' > /etc/apt/apt.conf.d/99orbit-e2e-network" ]
-apt:
-  primary:
-    - arches: [default]
-      uri: http://mirror.leaseweb.com/ubuntu
-  security:
-    - arches: [default]
-      uri: http://mirror.leaseweb.com/ubuntu
-  conf: |
-    Acquire::ForceIPv4 "true";
-    Acquire::http::Timeout "10";
-    Acquire::https::Timeout "10";
-    Acquire::Retries "1";
-  disable_suites:
-    - security
-package_update: true
-package_upgrade: false
-packages:
-{$packageLines}
-ssh_pwauth: false
-users:
-  - default
-  - name: {$options->bootstrapUser}
-    groups: sudo
-    shell: /bin/bash
-    sudo: "ALL=(ALL) NOPASSWD:ALL"
-    lock_passwd: false
-    ssh_authorized_keys:
-      - {$publicKey}
-  - name: orbit
-    groups: sudo
-    shell: /bin/bash
-    sudo: "ALL=(ALL) NOPASSWD:ALL"
-    lock_passwd: true
-runcmd:
-  - [ sh, -lc, "usermod -p '*' {$options->bootstrapUser}" ]
-  - [ sh, -lc, "usermod -p '*' orbit" ]
-  - [ sh, -lc, "install -d -m 700 -o orbit -g orbit /home/orbit/.ssh" ]
-  - [ sh, -lc, "install -d -m 755 -o orbit -g orbit /home/orbit/.config" ]
-  - [ sh, -lc, "install -d -m 755 -o orbit -g orbit /home/orbit/.config/orbit" ]
-  - [ sh, -lc, "update-alternatives --set php /usr/bin/php8.5 || true" ]
-  - [ sh, -lc, "systemctl enable --now ssh || systemctl enable --now sshd || true" ]
-YAML;
+        $write = $this->host->run(sprintf(
+            "cat > %s <<'PROVISIONEOF'\n%s\nPROVISIONEOF\n",
+            escapeshellarg($localScriptPath),
+            $script,
+        ), timeoutSeconds: 30);
+
+        if (! $write->successful()) {
+            throw new RuntimeException("Failed to write base provision script on Incus host: {$write->errorOutput()}");
+        }
+
+        $provision = $this->host->run(sprintf(
+            'cat %s | incus exec %s -- bash',
+            escapeshellarg($localScriptPath),
+            escapeshellarg($name),
+        ), timeoutSeconds: $options->timeoutSeconds);
+
+        if (! $provision->successful()) {
+            throw new RuntimeException(
+                "Base provisioning failed on [{$name}]: ".trim($provision->output()."\n".$provision->errorOutput())
+            );
+        }
+    }
+
+    /**
+     * @param  list<string>  $packages
+     */
+    private function provisionScript(IncusBaseImagePreparationOptions $options, string $publicKey, array $packages): string
+    {
+        $packageList = implode(' ', $packages);
+        $bootstrapUser = $options->bootstrapUser;
+        $publicKeyBase64 = base64_encode($publicKey);
+
+        $lines = [
+            '#!/usr/bin/env bash',
+            'set -euo pipefail',
+            'export DEBIAN_FRONTEND=noninteractive',
+            '',
+            '# apt + DNS hardening (was cloud-init bootcmd/apt)',
+            'rm -f /etc/resolv.conf',
+            "printf 'nameserver 1.1.1.1\\nnameserver 8.8.8.8\\n' > /etc/resolv.conf",
+            "printf '%s\\n' 'Acquire::ForceIPv4 \"true\";' 'Acquire::http::Timeout \"10\";' 'Acquire::https::Timeout \"10\";' 'Acquire::Retries \"1\";' > /etc/apt/apt.conf.d/99orbit-e2e-network",
+            '',
+            '# Package list (was cloud-init packages:)',
+            'apt-get update -y',
+            "apt-get install -y {$packageList}",
+            '',
+            '# Bootstrap + orbit users (was cloud-init users:)',
+            "id {$bootstrapUser} >/dev/null 2>&1 || useradd --create-home --shell /bin/bash --groups sudo {$bootstrapUser}",
+            'id orbit >/dev/null 2>&1 || useradd --create-home --shell /bin/bash --groups sudo orbit',
+            "printf '%s ALL=(ALL) NOPASSWD:ALL\\norbit ALL=(ALL) NOPASSWD:ALL\\n' {$bootstrapUser} > /etc/sudoers.d/99-orbit-e2e",
+            'chmod 0440 /etc/sudoers.d/99-orbit-e2e',
+            "usermod -p '*' {$bootstrapUser}",
+            "usermod -p '*' orbit",
+            '',
+            '# Bootstrap user SSH key (was cloud-init ssh_authorized_keys)',
+            "install -d -m 700 -o {$bootstrapUser} -g {$bootstrapUser} /home/{$bootstrapUser}/.ssh",
+            "printf '%s' '{$publicKeyBase64}' | base64 -d > /home/{$bootstrapUser}/.ssh/authorized_keys",
+            "printf '\\n' >> /home/{$bootstrapUser}/.ssh/authorized_keys",
+            "chown {$bootstrapUser}:{$bootstrapUser} /home/{$bootstrapUser}/.ssh/authorized_keys",
+            "chmod 600 /home/{$bootstrapUser}/.ssh/authorized_keys",
+            '',
+            '# Orbit runtime dirs + php8.5 alternative + ssh (was cloud-init runcmd)',
+            'install -d -m 700 -o orbit -g orbit /home/orbit/.ssh',
+            'install -d -m 755 -o orbit -g orbit /home/orbit/.config',
+            'install -d -m 755 -o orbit -g orbit /home/orbit/.config/orbit',
+            'update-alternatives --set php /usr/bin/php8.5 || true',
+            'systemctl enable --now ssh || systemctl enable --now sshd || true',
+            '',
+        ];
+
+        return implode("\n", $lines);
     }
 }
