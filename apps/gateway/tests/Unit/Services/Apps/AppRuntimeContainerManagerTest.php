@@ -96,16 +96,19 @@ it('creates the orbit network, writes php.ini, and runs the app runtime containe
         new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
     );
 
-    (new AppRuntimeContainerManager($shell, new DockerCommandBuilder))->apply($node, $container);
+    $outcome = (new AppRuntimeContainerManager($shell, new DockerCommandBuilder))->apply($node, $container);
 
     $scripts = array_map(fn (array $call): string => $call['script'], $shell->calls);
 
-    expect($scripts[0])->toContain('docker network inspect')
+    expect($outcome)->toBe(AppRuntimeContainerApplyOutcome::Created)
+        ->and($scripts[0])->toContain('docker network inspect')
         ->and($scripts[1])->toContain('docker network create')
         ->and($scripts[2])->toContain('docker container inspect')
         ->and($scripts[3])->toContain("docker image inspect 'dunglas/frankenphp:1-php8.5-bookworm'")
         ->and($scripts[4])->toContain('/etc/orbit/apps/docs.ini')
         ->and($scripts[4])->toContain('docker run -d')
+        ->and($scripts[4])->toContain("--env 'SERVER_NAME=:8080'")
+        ->and($scripts[4])->not->toContain(' --publish ')
         ->and($scripts[4])->toContain("'orbit-app-docs'")
         ->and($scripts[4])->toContain("'dunglas/frankenphp:1-php8.5-bookworm'");
 });
@@ -179,14 +182,17 @@ it('recreates the container when the rendered spec drifts', function (): void {
         new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
     );
 
-    (new AppRuntimeContainerManager($shell, new DockerCommandBuilder))->apply($node, $container);
+    $outcome = (new AppRuntimeContainerManager($shell, new DockerCommandBuilder))->apply($node, $container);
 
     $scripts = array_map(fn (array $call): string => $call['script'], $shell->calls);
 
-    expect($scripts[1])->toContain('docker container inspect')
+    expect($outcome)->toBe(AppRuntimeContainerApplyOutcome::Recreated)
+        ->and($scripts[1])->toContain('docker container inspect')
         ->and($scripts[2])->toContain("docker image inspect 'dunglas/frankenphp:1-php8.5-bookworm'")
         ->and($scripts[3])->toContain('docker rm -f')
-        ->and($scripts[4])->toContain('docker run -d');
+        ->and($scripts[4])->toContain('docker run -d')
+        ->and($scripts[4])->toContain("--env 'SERVER_NAME=:8080'")
+        ->and($scripts[4])->not->toContain(' --publish ');
 });
 
 it('returns AlreadyAbsent when removing a container that does not exist on the node', function (): void {
