@@ -29,17 +29,51 @@ describe('node:list', function (): void {
             ->and($decoded['success']['data']['nodes'][0]['name'])->toBe('app-1');
     });
 
-    it('renders human output containing node fields', function (): void {
+    it('renders human output as a node table', function (): void {
         fakeGateway(fakeSuccessEnvelope([
             'nodes' => [
-                ['name' => 'gateway-1', 'role' => 'gateway'],
+                [
+                    'name' => 'app-1',
+                    'platform' => 'ubuntu_24-04',
+                    'status' => 'active',
+                    'roles' => [
+                        ['role' => 'app-dev', 'status' => 'active'],
+                        ['role' => 'database', 'status' => 'error'],
+                    ],
+                ],
+                [
+                    'name' => 'operator-1',
+                    'platform' => 'macos_15-4',
+                    'status' => 'active',
+                    'roles' => [],
+                ],
             ],
         ]));
 
         [$exitCode, $output] = runCommand($this, 'node:list');
 
         expect($exitCode)->toBe(0)
-            ->and($output)->toContain('nodes');
+            ->and($output)->toContain('ROLES')
+            ->and($output)->toContain('NAME')
+            ->and($output)->toContain('PLATFORM')
+            ->and($output)->toContain('STATUS')
+            ->and($output)->toContain('app-dev, database (error)')
+            ->and($output)->toContain('app-1')
+            ->and($output)->toContain('ubuntu_24-04')
+            ->and($output)->toContain('operator-1')
+            ->and($output)->toContain('macos_15-4')
+            ->and($output)->not->toContain('nodes: [');
+    });
+
+    it('renders human empty output when no nodes are visible', function (): void {
+        fakeGateway(fakeSuccessEnvelope([
+            'nodes' => [],
+        ]));
+
+        [$exitCode, $output] = runCommand($this, 'node:list');
+
+        expect($exitCode)->toBe(0)
+            ->and($output)->toBe('No nodes found.');
     });
 
     it('surfaces gateway_unavailable on gateway HTTP errors', function (): void {
