@@ -83,7 +83,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
   production warmup on the host PHP toolchain (matched to the app's PHP
   version): `composer install --no-dev --optimize-autoloader --no-interaction`
   and `php artisan optimize`, against the app source or active release the
-  FrankenPHP runtime service serves.
+  FrankenPHP runtime container serves.
 - When the app defines `deploy_warmup_paths`, sends HTTP warmup requests to
   those paths on the app runtime endpoint before the deployment is marked
   complete.

@@ -53,17 +53,17 @@ record.
   It mounts the app source, uses the selected PHP image, receives app
   environment, and is targeted by `orbit-caddy` over the node Docker network.
   Static apps do not have a runtime container. The lifecycle-managed concrete
-  app runtime is represented as a process with Docker or Docker Swarm runtime.
-- **Production app runtime service:** App-prod PHP runtime rendered as a
-  per-app Docker Swarm service running FrankenPHP on the owning node. It
+  app runtime is represented as a process with Docker runtime.
+- **Production app runtime container:** App-prod PHP runtime rendered as a
+  per-app Docker container running FrankenPHP on the owning node. It
   listens on internal port `8080`, publishes no public host ports, and is
   reached only by the app-role-owned private backend `orbit-caddy` route. The
-  process family owns the concrete long-running lifecycle unit for the service.
+  process family owns the concrete long-running lifecycle unit for the container.
 - **Production app runtime user:** Path-derived Linux user and group used for
-  one production app's source, releases, and runtime service identity. It must
+  one production app's source, releases, and runtime container identity. It must
   not be a member of the Docker group and must not receive access to the Docker
   socket.
-- **Production release mount boundary:** Runtime service bind mounts are
+- **Production release mount boundary:** Runtime container bind mounts are
   limited to the app source or active release path plus explicitly managed
   shared paths. The Docker socket, gateway config, host home directories, and
   unrelated release paths are outside the app runtime mount boundary.
@@ -71,8 +71,8 @@ record.
   the default. It serves HTTP for PHP apps and workspaces and must carry
   OPcache, realpath cache, Composer autoload optimization, Laravel cache warmup,
   and optional preload configuration. The lifecycle-managed FrankenPHP runtime
-  for a concrete app or workspace is represented as a process with Docker or
-  Docker Swarm runtime. The app family owns desired app configuration, URL,
+  for a concrete app or workspace is represented as a process with Docker
+  runtime. The app family owns desired app configuration, URL,
   source path, deployment policy, and runtime selection; the process family owns
   the concrete long-running lifecycle unit.
 - **Worker mode:** Opt-in FrankenPHP mode that keeps a validated Laravel app in

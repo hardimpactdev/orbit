@@ -26,7 +26,7 @@ Internet
   -> private WireGuard route to router
   -> router private HTTP/WebSocket/S3 routing, .orbit DNS, and backend pools
   -> private app-prod backend orbit-caddy
-  -> per-app FrankenPHP runtime service
+  -> per-app FrankenPHP runtime container
 
 Public WebSocket:
 
@@ -112,7 +112,7 @@ The other seven are workload roles applied to nodes in the fleet.
 Application roles use a per-artifact production substrate. PHP apps and PHP
 workspaces run in dedicated FrankenPHP containers represented as process-backed
 runtime units. Orbit-defined host command processes run as Supervisor-backed
-process units, while containerized runtimes use Docker or Docker Swarm-backed
+process units, while containerized app and workspace runtimes use Docker-backed
 process units. Host PHP-FPM is not an app or workspace runtime fallback.
 Gateway Laravel/artisan/PDO work runs inside the gateway container or the
 durable update runner. Packaged node-local helpers that need host file access

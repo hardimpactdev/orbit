@@ -57,7 +57,7 @@ These terms describe the runtime side of deployments — how runs are tracked an
   `release_path` and `live_path` are path helpers inside the app-owned release
   boundary. Runtime bind mounts and any live, document-root, storage, or
   database symlink targets must resolve inside the app source or release
-  boundary before the production app runtime service is rendered.
+  boundary before the production app runtime container is rendered.
 - **Deployment run status:** Run lifecycle value: `running`, `completed`,
   `failed`, or `cancelled`.
 - **Deployment step execution:** One step's execution within a deployment run,

@@ -38,7 +38,7 @@ These rules define what the deploy command family owns and how it behaves.
   switch the active `live_path`, but the active runtime mount must stay inside
   the app source or release boundary. Symlinks for `live_path`, document root,
   storage, and database paths must resolve inside that boundary before the
-  production runtime service is rendered.
+  production runtime container is rendered.
 - Retention is optional deploy-step metadata for steps that create or prune
   versioned releases. It is not global app policy and not a standalone state
   family.

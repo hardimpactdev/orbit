@@ -32,7 +32,7 @@ These rules govern all app family commands.
   frontend configuration.
 - PHP app runtime uses a FrankenPHP app runtime container selected by gateway
   app configuration. The lifecycle-managed concrete FrankenPHP runtime is
-  represented as a process with Docker or Docker Swarm runtime. Changing
+  represented as a process with Docker runtime. Changing
   `php_version` recreates the app runtime artifact from the selected PHP image;
   it does not install host PHP or render host FPM pools.
 - Ad-hoc PHP, Composer, or Artisan for an app runs on the app node's host PHP
@@ -67,11 +67,11 @@ WireGuard to the gateway-coupled `router`, and only then fan out to private
 placement; the router owns private route selection and backend-pool targeting.
 The app-prod backend artifact is app-role-owned and separate from the
 router-colocated gateway API Caddy route. It terminates at `orbit-caddy` on the
-app-prod node and then reaches the app's FrankenPHP Docker Swarm runtime
-service on internal port `8080` over the node Docker network.
+app-prod node and then reaches the app's FrankenPHP Docker runtime container
+on internal port `8080` over the node Docker network.
 
 Production app runtime policy is app-owned, while the concrete long-running
-runtime unit is process-owned. The runtime service uses a
+runtime unit is process-owned. The runtime container uses a
 path-derived app user, must not grant that user Docker group or Docker socket
 access, and may bind mount only the app source or active release path plus
 explicitly managed shared paths. Runnable services such as MySQL, PostgreSQL,

@@ -201,7 +201,7 @@ Source: [App Concepts](domains/5_app/app-concepts.md).
 - **App PHP version**
 - **App runtime kind**
 - **App runtime container**
-- **Production app runtime service**
+- **Production app runtime container**
 - **Production app runtime user**
 - **Production release mount boundary**
 - **FrankenPHP app runtime**
