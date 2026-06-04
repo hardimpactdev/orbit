@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Console\Commands;
 
 use App\E2E\Support\E2EConfig;
+use App\E2E\Support\E2ECurrentCheckout;
 use App\E2E\Support\E2EDevTopologyManifestStore;
 use App\E2E\Support\E2ETopologyKind;
 use App\E2E\Support\IncusHost;
@@ -171,12 +172,14 @@ class E2EIncusCommand extends Command
         }
 
         try {
-            $sourcePath = (new SourceMountedCheckoutSyncer)->sync(trim($host), 'incus');
+            $host = trim($host);
+            $sourcePath = (new SourceMountedCheckoutSyncer)->sync($host, 'incus');
+            $runtimeCheckouts = $this->refreshRuntimeCheckouts($manifest, $host);
         } catch (Throwable $exception) {
             return $this->renderError('source_sync_failed', $exception->getMessage(), $json);
         }
 
-        return $this->renderSourceSync($this->sourceSyncPayload($manifest, trim($host), $sourcePath), $json);
+        return $this->renderSourceSync($this->sourceSyncPayload($manifest, $host, $sourcePath, $runtimeCheckouts), $json);
     }
 
     private function live(): int
@@ -645,7 +648,7 @@ class E2EIncusCommand extends Command
      * @param  array<string, mixed>  $manifest
      * @return array<string, mixed>
      */
-    private function sourceSyncPayload(array $manifest, string $host, string $sourcePath): array
+    private function sourceSyncPayload(array $manifest, string $host, string $sourcePath, array $runtimeCheckouts = []): array
     {
         $id = (string) ($manifest['id'] ?? '');
 
@@ -656,9 +659,67 @@ class E2EIncusCommand extends Command
             'host' => $host,
             'source_path' => $sourcePath,
             'checkouts' => is_array($manifest['checkouts'] ?? null) ? $manifest['checkouts'] : [],
+            'runtime_checkouts' => $runtimeCheckouts,
             'sync_command' => "composer e2e:incus -- --sync --id={$id}",
             'release_command' => "composer e2e:incus -- --stop --id={$id}",
         ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $manifest
+     * @return array<string, string>
+     */
+    private function refreshRuntimeCheckouts(array $manifest, string $host): array
+    {
+        $instances = is_array($manifest['instances'] ?? null) ? $manifest['instances'] : [];
+        $checkouts = is_array($manifest['checkouts'] ?? null) ? $manifest['checkouts'] : [];
+        $config = E2EConfig::fromEnvironment()->forHost($host);
+        $runtimeCheckouts = [];
+
+        foreach ($checkouts as $role => $checkout) {
+            if (! is_string($role) || ! is_string($checkout) || trim($checkout) === '') {
+                continue;
+            }
+
+            $instance = $instances[$role] ?? null;
+
+            if (! is_string($instance) || trim($instance) === '') {
+                continue;
+            }
+
+            $user = $this->runtimeCheckoutUser($role, $config);
+            $targetPath = rtrim($checkout, '/');
+
+            if ($targetPath === E2ECurrentCheckout::sourceMountedGuestPath()) {
+                $targetPath = E2ECurrentCheckout::sourceMountedRuntimePath($user);
+            }
+
+            $command = E2ECurrentCheckout::sourceMountedRuntimeMirrorCommand(
+                E2ECurrentCheckout::sourceMountedGuestPath(),
+                $targetPath,
+            );
+            $result = $this->hostFor($host)->run(sprintf(
+                'incus exec %s -- sudo -u %s bash -lc %s',
+                escapeshellarg(trim($instance)),
+                escapeshellarg($user),
+                escapeshellarg($command),
+            ), timeoutSeconds: $config->timeoutSeconds);
+
+            if (! $result->successful()) {
+                throw new RuntimeException("Could not refresh runtime checkout [{$targetPath}] in [{$instance}]: ".$this->processError($result));
+            }
+
+            $runtimeCheckouts[$role] = $targetPath;
+        }
+
+        return $runtimeCheckouts;
+    }
+
+    private function runtimeCheckoutUser(string $role, E2EConfig $config): string
+    {
+        return $role === 'operator'
+            ? $config->operatorUser
+            : 'orbit';
     }
 
     /**
@@ -688,6 +749,18 @@ class E2EIncusCommand extends Command
             }
 
             $this->line("- {$role}: {$checkout}");
+        }
+
+        if ($payload['runtime_checkouts'] !== []) {
+            $this->line('Runtime checkouts:');
+
+            foreach ($payload['runtime_checkouts'] as $role => $checkout) {
+                if (! is_string($role) || ! is_string($checkout)) {
+                    continue;
+                }
+
+                $this->line("- {$role}: {$checkout}");
+            }
         }
 
         $this->line("Sync again: {$payload['sync_command']}");

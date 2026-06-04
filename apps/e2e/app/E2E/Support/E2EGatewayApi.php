@@ -2062,17 +2062,19 @@ PHP;
 
     private static function gatewayHostOrbitPath(E2EInstance $gateway, string $orbitPath): ?string
     {
+        $orbitPath = rtrim($orbitPath, '/');
+
+        if ($orbitPath !== '/home/orbit/orbit') {
+            return $orbitPath;
+        }
+
         $sourceMountedCheckout = self::gatewaySourceMountedCheckoutPath($gateway);
 
         if ($sourceMountedCheckout !== null) {
             return $sourceMountedCheckout;
         }
 
-        $orbitPath = rtrim($orbitPath, '/');
-
-        return $orbitPath !== '/home/orbit/orbit'
-            ? $orbitPath
-            : null;
+        return null;
     }
 
     private static function gatewaySourceMountedCheckoutPath(E2EInstance $gateway): ?string

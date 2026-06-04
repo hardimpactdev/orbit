@@ -252,6 +252,41 @@ it('reports source-mounted retained Incus checkouts in output and manifests', fu
         ]);
 });
 
+it('reports source-mounted retained Incus runtime mirrors in output and handles', function (): void {
+    devTopologyCommandWith(fn (E2ETopologyKind $kind, array $roles): array => fakePreparedTopology(
+        checkouts: [
+            'operator' => '/home/orbit/orbit-run',
+            'gateway' => '/home/orbit/orbit-run',
+            'dev' => '/home/orbit/orbit-run',
+        ],
+    ));
+
+    $exitCode = Artisan::call('e2e:dev-topology', [
+        '--provider' => 'incus',
+        '--kind' => 'operator_gateway_app-dev',
+    ]);
+
+    expect($exitCode)->toBe(0);
+
+    $output = Artisan::output();
+
+    expect($output)
+        ->toContain('Source-mounted checkout: /home/orbit/orbit')
+        ->toContain('Runtime checkout: /home/orbit/orbit-run')
+        ->toContain('Launcher: /home/orbit/orbit-run/apps/cli/orbit')
+        ->toContain('cd /home/orbit/orbit-run && orbit node:list --json');
+
+    $store = new E2EDevTopologyManifestStore($this->manifestDirectory);
+    $manifest = $store->read('dev-abc123');
+
+    expect($manifest)->not->toBeNull()
+        ->and($manifest['checkouts'])->toBe([
+            'operator' => '/home/orbit/orbit-run',
+            'gateway' => '/home/orbit/orbit-run',
+            'dev' => '/home/orbit/orbit-run',
+        ]);
+});
+
 it('overlays app-dev and app-prod onto the canonical dev and prod roles', function (): void {
     $captured = [];
 

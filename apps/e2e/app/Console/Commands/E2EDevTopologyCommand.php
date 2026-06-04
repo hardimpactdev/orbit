@@ -7,6 +7,7 @@ namespace App\Console\Commands;
 use App\E2E\Support\DockerInstance;
 use App\E2E\Support\DockerTopologyProvider;
 use App\E2E\Support\E2EConfig;
+use App\E2E\Support\E2ECurrentCheckout;
 use App\E2E\Support\E2EDevTopologyManifestStore;
 use App\E2E\Support\E2EInstance;
 use App\E2E\Support\E2EPhaseTimer;
@@ -481,8 +482,16 @@ class E2EDevTopologyCommand extends Command
         $this->line("Provider: {$manifest['provider']} (host {$manifest['host']})");
         $this->line("Gateway API: http://{$manifest['gateway_ip']}");
         if ($this->sourceMountedCheckout($manifest)) {
-            $this->line('Source-mounted checkout: /home/orbit/orbit');
-            $this->line('Launcher: /home/orbit/orbit/apps/cli/orbit');
+            $runtimeCheckout = $this->sourceMountedRuntimeCheckout($manifest);
+
+            $this->line('Source-mounted checkout: '.E2ECurrentCheckout::sourceMountedGuestPath());
+
+            if ($runtimeCheckout !== null) {
+                $this->line("Runtime checkout: {$runtimeCheckout}");
+                $this->line("Launcher: {$runtimeCheckout}/apps/cli/orbit");
+            } else {
+                $this->line('Launcher: '.E2ECurrentCheckout::sourceMountedGuestPath().'/apps/cli/orbit');
+            }
         }
         $this->line('');
 
@@ -516,8 +525,34 @@ class E2EDevTopologyCommand extends Command
     private function sourceMountedCheckout(array $manifest): bool
     {
         return collect($manifest['checkouts'])->contains(
-            fn (string $checkout): bool => $checkout === '/home/orbit/orbit',
+            fn (string $checkout): bool => $checkout === E2ECurrentCheckout::sourceMountedGuestPath()
+                || $checkout === E2ECurrentCheckout::sourceMountedRuntimePath($this->userForCheckoutPath($checkout)),
         );
+    }
+
+    /**
+     * @param  array{checkouts: array<string, string>}  $manifest
+     */
+    private function sourceMountedRuntimeCheckout(array $manifest): ?string
+    {
+        foreach ($manifest['checkouts'] as $checkout) {
+            if (! is_string($checkout)) {
+                continue;
+            }
+
+            if ($checkout === E2ECurrentCheckout::sourceMountedRuntimePath($this->userForCheckoutPath($checkout))) {
+                return $checkout;
+            }
+        }
+
+        return null;
+    }
+
+    private function userForCheckoutPath(string $checkout): string
+    {
+        $parts = explode('/', trim($checkout, '/'));
+
+        return $parts[1] ?? 'orbit';
     }
 
     /**

@@ -36,8 +36,12 @@ Prepared topology images and templates are branch-agnostic topology baselines.
 They prove OS, users, SSH, Docker, `orbit-gateway`, `orbit-scheduler`, `orbit-caddy`, service
 containers, trust, routes, and baseline Orbit installation state. Production
 artifact lanes still use the native CLI binary artifact. Source-mounted Docker
-and Incus development/E2E topologies point `/usr/local/bin/orbit` directly at
-`<source>/apps/cli/orbit`.
+development/E2E topologies point `/usr/local/bin/orbit` directly at
+`<source>/apps/cli/orbit`. Source-mounted Incus topologies mount the synced
+source at `/home/orbit/orbit`, then refresh a VM-local runtime mirror at
+`/home/orbit/orbit-run`; `/usr/local/bin/orbit` and the retained gateway API
+shim execute from that ext4 mirror so ordinary CLI/API calls do not walk the
+shared VM filesystem.
 
 Feature assertions must run the checkout under test inside the disposable clone.
 For worktree-based development, the worker's current worktree is the source of
@@ -119,8 +123,9 @@ Remote Docker and Incus retained topologies rsync the initiating worktree to the
 runner host before acquisition, then bind-mount that synced copy. Use
 `composer e2e:incus -- --sync --id=<id>` to refresh the source-mounted checkout
 for a running retained Incus topology after local edits. The command reuses the
-recorded manifest host, updates the synced host path behind `/home/orbit/orbit`
-inside the retained VMs, and does not reacquire VMs, rerun topology bake hooks,
+recorded manifest host, updates the synced host path behind `/home/orbit/orbit`,
+then refreshes each recorded VM runtime checkout such as
+`/home/orbit/orbit-run`. It does not reacquire VMs, rerun topology bake hooks,
 restart services, or change local WireGuard state. Reacquire the topology when
 the behavior you are testing depends on boot-time topology setup rather than
 changed source files.
@@ -135,13 +140,15 @@ e.g.
 
 ```text
 [operator] orbit-e2e-dev-1a2b3c-operator
-  ssh: ssh beast incus exec orbit-e2e-dev-1a2b3c-operator -- sudo -u orbit bash -lc 'cd /home/orbit/orbit && orbit node:list --json'
+  ssh: ssh beast incus exec orbit-e2e-dev-1a2b3c-operator -- sudo -u orbit bash -lc 'cd /home/orbit/orbit-run && orbit node:list --json'
   source-mounted checkout: /home/orbit/orbit
-  launcher: /home/orbit/orbit/apps/cli/orbit
+  runtime checkout: /home/orbit/orbit-run
+  launcher: /home/orbit/orbit-run/apps/cli/orbit
 [dev] orbit-e2e-dev-1a2b3c-dev
-  ssh: ssh beast incus exec orbit-e2e-dev-1a2b3c-dev -- sudo -u orbit bash -lc 'cd /home/orbit/orbit && orbit node:list --json'
+  ssh: ssh beast incus exec orbit-e2e-dev-1a2b3c-dev -- sudo -u orbit bash -lc 'cd /home/orbit/orbit-run && orbit node:list --json'
   source-mounted checkout: /home/orbit/orbit
-  launcher: /home/orbit/orbit/apps/cli/orbit
+  runtime checkout: /home/orbit/orbit-run
+  launcher: /home/orbit/orbit-run/apps/cli/orbit
   endpoint: 10.6.0.4 (dev node WireGuard address; FrankenPHP app runtime — no app served until you deploy one)
   note: Deploy an app from the operator, then curl the app domain through the gateway router with -w "%{time_total}s".
 ```

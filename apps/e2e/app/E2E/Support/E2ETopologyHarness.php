@@ -39,6 +39,7 @@ final class E2ETopologyHarness
 
         try {
             $this->checkouts = E2ECurrentCheckout::installOnTopology($this->lease, $roles, $users, $timer);
+            $this->restartGatewayApiForRuntimeCheckout($timer);
         } finally {
             $timer?->flush('checkout');
         }
@@ -73,6 +74,37 @@ final class E2ETopologyHarness
     public function checkouts(): array
     {
         return $this->checkouts;
+    }
+
+    private function restartGatewayApiForRuntimeCheckout(?E2EPhaseTimer $timer): void
+    {
+        $gateway = $this->lease->gateway();
+
+        if (! $gateway instanceof SourceMountedCheckoutInstance) {
+            return;
+        }
+
+        $runtimeCheckout = $this->checkouts['gateway'] ?? null;
+        $sourceCheckout = $gateway->sourceMountedCheckoutPath();
+
+        if (! is_string($runtimeCheckout) || ! is_string($sourceCheckout)) {
+            return;
+        }
+
+        if (rtrim($runtimeCheckout, '/') === rtrim($sourceCheckout, '/')) {
+            return;
+        }
+
+        self::runTimed(
+            $timer,
+            'gateway-api.restart',
+            fn () => E2EGatewayApi::restart(
+                $gateway,
+                'topology-lease',
+                $runtimeCheckout,
+                $this->lease->gatewayApiIp(),
+            ),
+        );
     }
 
     public function ssh(string $role, string $command, ?string $user = null, ?int $timeoutSeconds = null, bool $allowFailure = false): ProcessResult
@@ -149,5 +181,14 @@ final class E2ETopologyHarness
         $this->timer = new E2EPhaseTimer;
 
         return $this->timer;
+    }
+
+    private static function runTimed(?E2EPhaseTimer $timer, string $phase, callable $callback): mixed
+    {
+        if ($timer === null) {
+            return $callback();
+        }
+
+        return $timer->measure($phase, $callback);
     }
 }

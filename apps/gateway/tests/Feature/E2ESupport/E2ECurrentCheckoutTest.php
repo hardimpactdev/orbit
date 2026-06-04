@@ -199,27 +199,29 @@ it('skips cli env copies when docker host-launcher vendor reuse points at the mo
         ->not->toContain("cp '/home/orbit/orbit/apps/cli/.env' apps/cli/.env");
 });
 
-it('uses the mounted Incus checkout without archiving or composer-installing into source', function (): void {
+it('runs source-mounted Incus checkouts from a VM-local runtime mirror', function (): void {
     $commands = [];
     $instance = currentCheckoutFakeSourceMountedInstance($commands);
     $key = new SshKeyPair('/tmp/id_ed25519', '/tmp/id_ed25519.pub');
 
-    E2ECurrentCheckout::install($instance, 'orbit', $key, hostLauncher: true);
+    $checkout = E2ECurrentCheckout::install($instance, 'orbit', $key, hostLauncher: true);
 
     $commandOutput = implode("\n", $commands);
 
-    expect($commandOutput)
-        ->toContain("mkdir -p '/home/orbit/orbit'")
-        ->toContain("[ ! -f 'apps/gateway/vendor/autoload.php' ]")
-        ->toContain("[ ! -f 'apps/cli/vendor/autoload.php' ]")
+    expect($checkout)->toBe('/home/orbit/orbit-run')
+        ->and($commandOutput)
+        ->toContain("source='/home/orbit/orbit'")
+        ->toContain("target='/home/orbit/orbit-run'")
+        ->toContain('tar --warning=no-unknown-keyword')
+        ->toContain('tar -C "${target}" -xf -')
+        ->toContain('apps/gateway/vendor apps/cli/vendor')
+        ->toContain("cmp -s '/home/orbit/orbit/apps/gateway/composer.lock' apps/gateway/composer.lock")
+        ->toContain("cmp -s '/home/orbit/orbit/apps/cli/composer.lock' apps/cli/composer.lock")
         ->toContain("install -d -m 0700 -o orbit -g orbit '/home/orbit/.config/orbit'")
-        ->toContain("sudo ln -sfn '/home/orbit/orbit/apps/cli/orbit' '/usr/local/bin/orbit'")
+        ->toContain("sudo ln -sfn '/home/orbit/orbit-run/apps/cli/orbit' '/usr/local/bin/orbit'")
+        ->not->toContain("sudo ln -sfn '/home/orbit/orbit/apps/cli/orbit' '/usr/local/bin/orbit'")
         ->not->toContain('/tmp/orbit-current.tar.gz')
-        ->not->toContain('tar --warning=no-unknown-keyword -xzf')
-        ->not->toContain('composer --working-dir=apps/gateway install')
-        ->not->toContain('composer --working-dir=apps/cli install')
-        ->not->toContain('composer --working-dir=apps/gateway dump-autoload')
-        ->not->toContain('composer --working-dir=apps/cli dump-autoload');
+        ->not->toContain('tar --warning=no-unknown-keyword -xzf');
 });
 
 it('refreshes source-mounted Incus gateway settings through the mounted CLI', function (): void {
@@ -240,13 +242,13 @@ it('refreshes source-mounted Incus gateway settings through the mounted CLI', fu
     E2ECurrentCheckout::installOnTopology($topology, roles: ['operator', 'gateway', 'dev']);
 
     expect(implode("\n", $operatorCommands))
-        ->toContain("'/home/orbit/orbit/apps/cli/orbit' gateway:add '10.6.0.2' --json")
+        ->toContain("'/home/orbit/orbit-run/apps/cli/orbit' gateway:add '10.6.0.2' --json")
         ->not->toContain('orbit gateway:add')
         ->and(implode("\n", $gatewayCommands))
-        ->toContain("'/home/orbit/orbit/apps/cli/orbit' gateway:add '10.6.0.2' --json")
+        ->toContain("'/home/orbit/orbit-run/apps/cli/orbit' gateway:add '10.6.0.2' --json")
         ->not->toContain('orbit gateway:add')
         ->and(implode("\n", $devCommands))
-        ->toContain("'/home/orbit/orbit/apps/cli/orbit' gateway:add '10.6.0.2' --json")
+        ->toContain("'/home/orbit/orbit-run/apps/cli/orbit' gateway:add '10.6.0.2' --json")
         ->not->toContain('orbit gateway:add');
 });
 

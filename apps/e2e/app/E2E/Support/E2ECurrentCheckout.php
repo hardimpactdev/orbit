@@ -9,6 +9,8 @@ use RuntimeException;
 
 final class E2ECurrentCheckout
 {
+    private const string SourceMountedGuestPath = '/home/orbit/orbit';
+
     private const string GatewayArtisanRelativePath = 'apps/gateway/artisan';
 
     private const string OrbitConfigRoot = '/home/orbit/.config/orbit';
@@ -86,9 +88,20 @@ final class E2ECurrentCheckout
         $sourceMountedCheckoutPath = self::sourceMountedCheckoutPath($instance, $user, $hostLauncher);
 
         if ($sourceMountedCheckoutPath !== null) {
-            $remotePath = $sourceMountedCheckoutPath;
+            if (self::usesDockerRuntime($instance)) {
+                $remotePath = $sourceMountedCheckoutPath;
 
-            self::runInstallPhases($instance, $user, $keyPair, $remotePath, $seedFrom, $timer, $hostLauncher, sourceMountedCheckout: true);
+                self::runInstallPhases($instance, $user, $keyPair, $remotePath, $seedFrom, $timer, $hostLauncher, sourceMountedCheckout: true);
+                self::activateCurrentCheckout($instance, $remotePath, $executorNodeIdentity, $hostLauncher);
+                $afterInstall?->__invoke($remotePath, true);
+
+                return $remotePath;
+            }
+
+            $remotePath = self::sourceMountedRuntimePath($user);
+
+            self::refreshSourceMountedRuntimeMirror($instance, $user, $keyPair, $sourceMountedCheckoutPath, $remotePath, $timer);
+            self::runInstallPhases($instance, $user, $keyPair, $remotePath, $sourceMountedCheckoutPath, $timer, $hostLauncher, checkoutAlreadyPresent: true);
             self::activateCurrentCheckout($instance, $remotePath, $executorNodeIdentity, $hostLauncher);
             $afterInstall?->__invoke($remotePath, true);
 
@@ -126,6 +139,67 @@ final class E2ECurrentCheckout
 
         self::$cachedArchive = null;
         self::$cachedArchiveIsShared = false;
+    }
+
+    public static function sourceMountedGuestPath(): string
+    {
+        return self::SourceMountedGuestPath;
+    }
+
+    public static function sourceMountedRuntimePath(string $user): string
+    {
+        return "/home/{$user}/orbit-run";
+    }
+
+    public static function sourceMountedRuntimeMirrorCommand(string $sourcePath, string $targetPath): string
+    {
+        $excludeArguments = implode(' ', array_map(
+            fn (string $pattern): string => '--exclude='.escapeshellarg($pattern),
+            self::archiveExcludePatterns(),
+        ));
+
+        return implode("\n", [
+            'source='.escapeshellarg(rtrim($sourcePath, '/')),
+            'target='.escapeshellarg(rtrim($targetPath, '/')),
+            'sudo_prefix=',
+            'if command -v sudo >/dev/null 2>&1 && sudo -n true >/dev/null 2>&1; then sudo_prefix=sudo; fi',
+            'preserve="$(mktemp -d /tmp/orbit-e2e-runtime-preserve-XXXXXX)"',
+            'cleanup() { $sudo_prefix rm -rf "$preserve"; }',
+            'trap cleanup EXIT',
+            'for path in apps/gateway/vendor apps/cli/vendor; do',
+            '  if [ -d "$target/$path" ]; then',
+            '    mkdir -p "$preserve/$(dirname "$path")"',
+            '    $sudo_prefix mv "$target/$path" "$preserve/$path"',
+            '  fi',
+            'done',
+            '$sudo_prefix rm -rf "$target"',
+            'mkdir -p "$target"',
+            'cd "$source"',
+            "tar --warning=no-unknown-keyword {$excludeArguments} -cf - . | tar -C \"\${target}\" -xf -",
+            'for path in apps/gateway/vendor apps/cli/vendor; do',
+            '  if [ -d "$preserve/$path" ]; then',
+            '    mkdir -p "$target/$(dirname "$path")"',
+            '    rm -rf "$target/$path"',
+            '    $sudo_prefix mv "$preserve/$path" "$target/$path"',
+            '  fi',
+            'done',
+            'if [ -n "$sudo_prefix" ]; then $sudo_prefix chown -R "$(id -u):$(id -g)" "$target"; fi',
+        ]);
+    }
+
+    private static function refreshSourceMountedRuntimeMirror(E2EInstance $instance, string $user, SshKeyPair $keyPair, string $sourcePath, string $targetPath, ?E2EPhaseTimer $timer): void
+    {
+        self::runTimed(
+            $timer,
+            'checkout.source-mirror',
+            fn () => E2ECommand::ssh(
+                $instance,
+                $user,
+                $keyPair,
+                self::sourceMountedRuntimeMirrorCommand($sourcePath, $targetPath),
+                timeoutSeconds: 600,
+            ),
+        );
     }
 
     public static function useNowResolverForTests(?callable $resolver): void
@@ -272,7 +346,7 @@ final class E2ECurrentCheckout
         }
     }
 
-    private static function runInstallPhases(E2EInstance $instance, string $user, SshKeyPair $keyPair, string $remotePath, ?string $seedFrom, ?E2EPhaseTimer $timer, bool $hostLauncher = false, bool $sourceMountedCheckout = false): void
+    private static function runInstallPhases(E2EInstance $instance, string $user, SshKeyPair $keyPair, string $remotePath, ?string $seedFrom, ?E2EPhaseTimer $timer, bool $hostLauncher = false, bool $sourceMountedCheckout = false, bool $checkoutAlreadyPresent = false): void
     {
         $vendorSourcePath = $seedFrom ?? "/home/{$user}/orbit";
         $deadline = self::now() + 600.0;
@@ -285,7 +359,7 @@ final class E2ECurrentCheckout
         self::runInstallPhase(
             $timer,
             'checkout.extract',
-            fn (): string => self::extractCheckoutCommand($remotePath, $sourceMountedCheckout),
+            fn (): string => self::extractCheckoutCommand($remotePath, $sourceMountedCheckout || $checkoutAlreadyPresent),
             $instance,
             $user,
             $keyPair,

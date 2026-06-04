@@ -520,11 +520,19 @@ it('syncs the current checkout to a retained Incus topology by id', function ():
         ->and($sync['host'])->toBe('beast')
         ->and($sync['source_path'])->toContain('-incus-')
         ->and($sync['checkouts']['operator'])->toBe('/home/orbit/orbit-current')
+        ->and($sync['runtime_checkouts']['operator'])->toBe('/home/orbit/orbit-current')
         ->and($sync['sync_command'])->toBe('composer e2e:incus -- --sync --id=dev-abc123')
         ->and($sync['release_command'])->toBe('composer e2e:incus -- --stop --id=dev-abc123')
         ->and($commandsOutput)
         ->toContain('rsync -az --delete')
-        ->toContain("'beast:{$sync['source_path']}/'");
+        ->toContain("'beast:{$sync['source_path']}/'")
+        ->toContain('incus exec')
+        ->toContain('orbit-e2e-dev-abc123-operator')
+        ->toContain('sudo -u')
+        ->toContain('orbit')
+        ->toContain('/home/orbit/orbit')
+        ->toContain('/home/orbit/orbit-current')
+        ->toContain('tar --warning=no-unknown-keyword');
 });
 
 it('prints a human retained Incus sync summary', function (): void {
