@@ -37,6 +37,57 @@ describe('tool catalog definitions', function (): void {
             ->and($catalog->hasCapability('gh', 'safe-adopt'))->toBeTrue();
     });
 
+    it('declares platform-scoped service tool runtimes and runtime defaults', function (string $tool): void {
+        $catalog = app(ToolCatalog::class);
+
+        expect($catalog->defaultRuntime($tool))->toBe('docker')
+            ->and($catalog->supportedRuntimes($tool))->toMatchArray([
+                'docker' => [
+                    'platforms' => ['linux', 'ubuntu'],
+                ],
+                'docker-swarm' => [
+                    'platforms' => ['linux', 'ubuntu'],
+                ],
+            ])
+            ->and($catalog->supportedRuntimes($tool)['docker-swarm']['platforms'])
+            ->not->toContain('macos');
+    })->with([
+        'mysql',
+        'postgres',
+        'redis',
+    ]);
+
+    it('declares service tool version families without splitting catalog slugs', function (): void {
+        $catalog = app(ToolCatalog::class);
+
+        expect($catalog->supportedVersionFamilies('mysql'))->toHaveKeys(['8', '9'])
+            ->and($catalog->supportedVersionFamilies('postgres'))->toHaveKeys(['16'])
+            ->and($catalog->supportedVersionFamilies('redis'))->toHaveKeys(['7'])
+            ->and($catalog->supports('mysql'))->toBeTrue()
+            ->and($catalog->supports('mysql-8'))->toBeFalse()
+            ->and($catalog->supports('mysql-9'))->toBeFalse();
+    });
+
+    it('resolves major and specific version requests to a tool version family', function (): void {
+        $catalog = app(ToolCatalog::class);
+
+        expect($catalog->resolveVersionRequest('mysql', '8'))->toMatchArray([
+            'version_family' => '8',
+            'expected_version' => '8.4',
+        ])
+            ->and($catalog->resolveVersionRequest('mysql', '8.4'))->toMatchArray([
+                'version_family' => '8',
+                'expected_version' => '8.4',
+            ])
+            ->and($catalog->resolveVersionRequest('mysql', '9'))->toMatchArray([
+                'version_family' => '9',
+            ])
+            ->and($catalog->resolveVersionRequest('redis', '7.2'))->toMatchArray([
+                'version_family' => '7',
+                'expected_version' => '7.2',
+            ]);
+    });
+
     it('catalogs agent IDE servers as installed capabilities with process-owned lifecycle', function (string $tool, string $binary, string $definition): void {
         $catalog = app(ToolCatalog::class);
         $metadata = $catalog->probeMetadata($tool);
