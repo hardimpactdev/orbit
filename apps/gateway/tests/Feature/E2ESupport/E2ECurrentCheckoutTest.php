@@ -214,6 +214,8 @@ it('runs source-mounted Incus checkouts from a VM-local runtime mirror', functio
         ->toContain("target='/home/orbit/orbit-run'")
         ->toContain('tar --warning=no-unknown-keyword')
         ->toContain('tar -C "${target}" -xf -')
+        ->toContain('$sudo_prefix find "$target" -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +')
+        ->not->toContain('$sudo_prefix rm -rf "$target"')
         ->toContain('apps/gateway/vendor apps/cli/vendor')
         ->toContain("cmp -s '/home/orbit/orbit/apps/gateway/composer.lock' apps/gateway/composer.lock")
         ->toContain("cmp -s '/home/orbit/orbit/apps/cli/composer.lock' apps/cli/composer.lock")
