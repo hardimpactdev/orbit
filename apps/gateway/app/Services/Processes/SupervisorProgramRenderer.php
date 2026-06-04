@@ -4,17 +4,23 @@ declare(strict_types=1);
 
 namespace App\Services\Processes;
 
+use App\Contracts\AppRuntimeUserResolver;
+use App\Contracts\WorkspaceRuntimeUserResolver;
 use App\Data\RuntimeBackend\SupervisorProgramDefinition;
 use App\Models\App;
 use App\Models\Process;
 use App\Models\Workspace;
+use App\Services\Apps\AppRuntimeUser;
 use App\Services\RuntimeBackend\SupervisorProgramRenderer as RuntimeBackendSupervisorProgramRenderer;
+use App\Services\Workspaces\WorkspaceRuntimeUser;
 use InvalidArgumentException;
 
 final readonly class SupervisorProgramRenderer
 {
     public function __construct(
         private RuntimeBackendSupervisorProgramRenderer $renderer = new RuntimeBackendSupervisorProgramRenderer,
+        private AppRuntimeUserResolver $appRuntimeUser = new AppRuntimeUser,
+        private WorkspaceRuntimeUserResolver $workspaceRuntimeUser = new WorkspaceRuntimeUser,
     ) {}
 
     public function render(App $app, Process $process, ?Workspace $workspace = null): string
@@ -49,13 +55,13 @@ final readonly class SupervisorProgramRenderer
         $app->loadMissing('node');
 
         $programName = $this->programName($app, $process, $workspace);
-        $user = $app->node?->user ?: 'orbit';
+        $user = $this->runtimeUser($app, $workspace);
         $home = $user === 'root' ? '/root' : "/home/{$user}";
         $logPath = "{$home}/.config/orbit/logs/{$programName}.log";
 
         return new SupervisorProgramDefinition(
             name: $programName,
-            directory: $workspace instanceof Workspace ? $workspace->path : $app->path,
+            directory: $this->directory($app, $workspace),
             command: $process->command,
             user: $user,
             restartPolicy: $process->restart_policy->toSupervisor(),
@@ -96,6 +102,34 @@ final readonly class SupervisorProgramRenderer
             'VITE_DEV_SERVER_KEY' => "{$tlsBase}.key",
             'VITE_DEV_SERVER_CERT' => "{$tlsBase}.crt",
         ];
+    }
+
+    private function directory(App $app, ?Workspace $workspace): string
+    {
+        $path = trim((string) ($workspace instanceof Workspace ? $workspace->path : $app->path));
+
+        if ($path === '') {
+            $owner = $workspace instanceof Workspace ? "Workspace '{$workspace->name}'" : "App '{$app->name}'";
+
+            throw new InvalidArgumentException("{$owner} has no source path; cannot render Supervisor program.");
+        }
+
+        return $path === '/' ? $path : rtrim($path, '/');
+    }
+
+    private function runtimeUser(App $app, ?Workspace $workspace): string
+    {
+        $user = trim($workspace instanceof Workspace
+            ? $this->workspaceRuntimeUser->forWorkspace($workspace)
+            : $this->appRuntimeUser->forApp($app));
+
+        if ($user === '') {
+            $owner = $workspace instanceof Workspace ? "Workspace '{$workspace->name}'" : "App '{$app->name}'";
+
+            throw new InvalidArgumentException("{$owner} has no runtime user; cannot render Supervisor program.");
+        }
+
+        return $user;
     }
 
     private function assertIdentitySlug(string $value): void

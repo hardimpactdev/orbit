@@ -4,10 +4,11 @@ declare(strict_types=1);
 
 namespace App\Services\Workspaces;
 
+use App\Contracts\WorkspaceRuntimeUserResolver;
 use App\Models\Workspace;
 use Illuminate\Support\Str;
 
-final readonly class WorkspaceRuntimeUser
+final readonly class WorkspaceRuntimeUser implements WorkspaceRuntimeUserResolver
 {
     public function forWorkspace(Workspace $workspace): string
     {

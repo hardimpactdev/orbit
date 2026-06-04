@@ -37,6 +37,11 @@ These terms describe the runtime objects that Orbit derives from process definit
   used to control those units.
 - **Supervisor process runtime:** Runtime backend that runs a process unit as a
   host Supervisor program with Supervisor logs and lifecycle controls.
+  App-scoped units run as the resolved app runtime user in the app source
+  directory. Workspace-scoped units run as the resolved workspace runtime user
+  in the workspace source directory. Orbit still performs Supervisor
+  control-plane actions through the operator SSH user with `sudo supervisorctl`;
+  that control user does not become the program runtime user.
 - **Docker process runtime:** Runtime backend that runs a process as an
   Orbit-managed Docker container. It is used for containerized database, cache,
   agent, app, and workspace runtime units.

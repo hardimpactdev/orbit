@@ -4,12 +4,13 @@ declare(strict_types=1);
 
 namespace App\Services\Apps;
 
+use App\Contracts\AppRuntimeUserResolver;
 use App\Models\App;
 use App\Models\Node;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
 use Illuminate\Support\Str;
 
-final readonly class AppRuntimeUser
+final readonly class AppRuntimeUser implements AppRuntimeUserResolver
 {
     public function forApp(App $app): string
     {
