@@ -97,7 +97,14 @@ describe('AppStoreController', function (): void {
         assignAppStoreRole($targetNode, 'app-dev', settings: ['tld' => 'test']);
         grantAppStoreAccess($caller, $targetNode, ['app:read']);
 
-        $remoteShell = new AppStoreRecordingRemoteShell;
+        $remoteShell = new AppStoreRecordingRemoteShell(scriptResults: [
+            "id -u 'docs'" => new RemoteShellResult(
+                exitCode: 0,
+                stdout: "1001\n1002\n",
+                stderr: '',
+                durationMs: 1,
+            ),
+        ]);
         app()->instance(RemoteShell::class, $remoteShell);
 
         $response = $this->call('POST', '/api/apps', [
@@ -232,7 +239,14 @@ describe('AppStoreController', function (): void {
         assignAppStoreRole($targetNode, 'app-prod', settings: ['ingress_node_id' => $ingress->id]);
         grantAppStoreAccess($caller, $targetNode);
 
-        $remoteShell = new AppStoreRecordingRemoteShell;
+        $remoteShell = new AppStoreRecordingRemoteShell(scriptResults: [
+            "id -u 'docs'" => new RemoteShellResult(
+                exitCode: 0,
+                stdout: "1001\n1002\n",
+                stderr: '',
+                durationMs: 1,
+            ),
+        ]);
         app()->instance(RemoteShell::class, $remoteShell);
         app()->instance(SiteCertificateInstaller::class, new SiteCertificateInstallerFake);
 
@@ -298,8 +312,12 @@ final class AppStoreRecordingRemoteShell implements RemoteShell
      */
     public array $runs = [];
 
+    /**
+     * @param  array<string, RemoteShellResult>  $scriptResults
+     */
     public function __construct(
         private readonly ?RemoteShellResult $result = null,
+        private readonly array $scriptResults = [],
     ) {}
 
     public function run(Node $node, string $script, array $options = []): RemoteShellResult
@@ -309,6 +327,12 @@ final class AppStoreRecordingRemoteShell implements RemoteShell
             'script' => $script,
             'options' => $options,
         ];
+
+        foreach ($this->scriptResults as $needle => $result) {
+            if (str_contains($script, $needle)) {
+                return $result;
+            }
+        }
 
         return $this->result ?? new RemoteShellResult(
             exitCode: 0,

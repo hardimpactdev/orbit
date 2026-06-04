@@ -38,10 +38,12 @@ class AppRuntimeContainer
         private readonly string $network,
         private readonly string $restartPolicy,
         private readonly string $appSlug,
+        private readonly ?string $runtimeUser,
         array $environment,
         array $mounts,
         array $networkAliases,
         array $phpIni,
+        private readonly ?string $dockerUser = null,
     ) {
         $this->environment = $this->normalizeEnvironment($environment);
         $this->mounts = $this->normalizeMounts($mounts);
@@ -72,6 +74,33 @@ class AppRuntimeContainer
     public function appSlug(): string
     {
         return $this->appSlug;
+    }
+
+    public function runtimeUser(): ?string
+    {
+        return $this->runtimeUser;
+    }
+
+    public function dockerUser(): ?string
+    {
+        return $this->dockerUser;
+    }
+
+    public function withDockerUser(string $dockerUser): self
+    {
+        return new self(
+            name: $this->name,
+            image: $this->image,
+            network: $this->network,
+            restartPolicy: $this->restartPolicy,
+            appSlug: $this->appSlug,
+            runtimeUser: $this->runtimeUser,
+            environment: $this->environment,
+            mounts: $this->mounts,
+            networkAliases: $this->networkAliases,
+            phpIni: $this->phpIni,
+            dockerUser: trim($dockerUser),
+        );
     }
 
     /** @return array<string, string> */
@@ -132,6 +161,7 @@ class AppRuntimeContainer
      *     network: string,
      *     restart_policy: string,
      *     app_slug: string,
+     *     runtime_user: string|null,
      *     environment: array<string, string>,
      *     mounts: list<array{source: string, target: string, read_only: bool}>,
      *     network_aliases: list<string>,
@@ -146,6 +176,7 @@ class AppRuntimeContainer
             'network' => $this->network,
             'restart_policy' => $this->restartPolicy,
             'app_slug' => $this->appSlug,
+            'runtime_user' => $this->runtimeUser,
             'environment' => $this->environment,
             'mounts' => $this->mounts,
             'network_aliases' => $this->networkAliases,

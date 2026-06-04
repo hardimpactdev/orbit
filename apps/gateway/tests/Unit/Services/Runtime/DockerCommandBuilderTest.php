@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Services\Apps\AppRuntimeContainer;
 use App\Services\Processes\ProcessDockerContainer;
 use App\Services\Runtime\DockerCommandBuilder;
 use App\Services\Runtime\OrbitCaddyContainer;
@@ -50,6 +51,51 @@ it('quotes docker mount fields containing csv separators and quotes', function (
     expect($command)
         ->toContain('--mount '.escapeshellarg('type=bind,"source=/Users/nckrtl/Orbit, ""Repo""",target=/opt/orbit'))
         ->toContain('--mount '.escapeshellarg('type=bind,"source=/Users/nckrtl/.config/Orbit, ""Root""","target=/Users/nckrtl/.config/Orbit, ""Root"""'));
+});
+
+it('emits numeric docker users for app runtime containers', function (): void {
+    $container = new AppRuntimeContainer(
+        name: 'orbit-app-docs',
+        image: 'dunglas/frankenphp:1-php8.5-bookworm',
+        network: 'orbit-network',
+        restartPolicy: 'unless-stopped',
+        appSlug: 'docs',
+        runtimeUser: 'docs',
+        environment: [],
+        mounts: [
+            [
+                'source' => '/home/docs/app',
+                'target' => AppRuntimeContainer::SourceTarget,
+                'read_only' => false,
+            ],
+        ],
+        networkAliases: ['orbit-app-docs'],
+        phpIni: [],
+    )->withDockerUser('1001:1002');
+
+    $command = (new DockerCommandBuilder)->runDetached($container);
+
+    expect($command)->toContain('--user '.escapeshellarg('1001:1002'))
+        ->and($command)->not->toContain('/var/run/docker.sock')
+        ->and($command)->not->toContain('--group-add');
+});
+
+it('rejects non-numeric docker users for app runtime containers', function (): void {
+    $container = new AppRuntimeContainer(
+        name: 'orbit-app-docs',
+        image: 'dunglas/frankenphp:1-php8.5-bookworm',
+        network: 'orbit-network',
+        restartPolicy: 'unless-stopped',
+        appSlug: 'docs',
+        runtimeUser: 'docs',
+        environment: [],
+        mounts: [],
+        networkAliases: ['orbit-app-docs'],
+        phpIni: [],
+    )->withDockerUser('docs');
+
+    expect(fn () => (new DockerCommandBuilder)->runDetached($container))
+        ->toThrow(InvalidArgumentException::class, 'numeric UID:GID');
 });
 
 it('emits route-artifact mounts, port publishing, and extra hosts for orbit-caddy containers', function (): void {

@@ -24,6 +24,7 @@ final readonly class AppRuntimeContainerRenderer
     public function __construct(
         private PhpRuntimePolicy $phpRuntimePolicy,
         private OrbitContainerNames $names,
+        private AppRuntimeUser $appRuntimeUser = new AppRuntimeUser,
     ) {}
 
     public function render(App $app, ?string $preloadPath = null): AppRuntimeContainer
@@ -47,6 +48,7 @@ final readonly class AppRuntimeContainerRenderer
             network: $this->names->network(),
             restartPolicy: 'unless-stopped',
             appSlug: $app->name,
+            runtimeUser: $this->appRuntimeUser->containerUserForApp($app),
             environment: $this->environmentFor($app),
             mounts: [
                 [

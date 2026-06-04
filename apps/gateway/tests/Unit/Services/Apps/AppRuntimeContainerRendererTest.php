@@ -55,6 +55,29 @@ it('renders a FrankenPHP app runtime container for a PHP app with deterministic 
         ]);
 });
 
+it('renders a production app runtime user from the app source owner but leaves development containers on the node user', function (): void {
+    $productionNode = createTestAppHostNode(['user' => 'orbit'], 'app-prod');
+    $productionApp = App::factory()->for($productionNode, 'node')->create([
+        'name' => 'docs-prod',
+        'environment' => 'production',
+        'path' => '/home/docs/app',
+        'document_root' => 'public',
+        'php_version' => '8.5',
+        'runtime_kind' => AppRuntimeKind::Php,
+    ]);
+
+    $developmentApp = makePhpApp([
+        'name' => 'docs-dev',
+        'environment' => 'development',
+        'path' => '/home/docs/app',
+    ]);
+
+    $renderer = rendererForTest();
+
+    expect($renderer->render($productionApp)->runtimeUser())->toBe('docs')
+        ->and($renderer->render($developmentApp)->runtimeUser())->toBeNull();
+});
+
 it('renders the selected PHP image when php_version differs', function (): void {
     $app = makePhpApp(['php_version' => '8.4']);
 

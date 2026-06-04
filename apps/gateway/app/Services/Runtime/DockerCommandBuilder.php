@@ -8,6 +8,7 @@ use App\Services\Apps\AppRuntimeContainer;
 use App\Services\Processes\ProcessDockerContainer;
 use App\Services\WebSockets\WebSocketRuntimeContainer;
 use App\Services\Workspaces\WorkspaceRuntimeContainer;
+use InvalidArgumentException;
 
 class DockerCommandBuilder
 {
@@ -101,6 +102,11 @@ class DockerCommandBuilder
             $parts[] = $this->quote('sh');
         }
 
+        if ($container instanceof AppRuntimeContainer && $container->dockerUser() !== null) {
+            $parts[] = '--user';
+            $parts[] = $this->quote($this->numericDockerUser($container->dockerUser()));
+        }
+
         if (! $this->usesE2eNodeNetwork($container)) {
             foreach ($container->networkAliases() as $alias) {
                 $parts[] = '--network-alias';
@@ -147,6 +153,17 @@ class DockerCommandBuilder
         }
 
         return $container->network();
+    }
+
+    private function numericDockerUser(string $dockerUser): string
+    {
+        $dockerUser = trim($dockerUser);
+
+        if (preg_match('/^\d+:\d+$/', $dockerUser) !== 1) {
+            throw new InvalidArgumentException('Docker app runtime users must be numeric UID:GID values.');
+        }
+
+        return $dockerUser;
     }
 
     private function usesE2eNodeNetwork(OrbitGatewayContainer|OrbitCaddyContainer|AppRuntimeContainer|WorkspaceRuntimeContainer|ProcessDockerContainer|WebSocketRuntimeContainer $container): bool

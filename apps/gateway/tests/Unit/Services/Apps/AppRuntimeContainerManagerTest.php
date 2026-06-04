@@ -14,6 +14,7 @@ use App\Services\Apps\AppRuntimeContainerApplyOutcome;
 use App\Services\Apps\AppRuntimeContainerManager;
 use App\Services\Apps\AppRuntimeContainerRenderer;
 use App\Services\Apps\AppRuntimeImageUnavailableException;
+use App\Services\Apps\AppRuntimeUserUnavailableException;
 use App\Services\Php\PhpRuntimeCatalog;
 use App\Services\Php\PhpRuntimePolicy;
 use App\Services\Runtime\DockerCommandBuilder;
@@ -30,6 +31,20 @@ function appAndNodeForManagerTest(): array
     $app = App::factory()->for($node, 'node')->create([
         'name' => 'docs',
         'path' => '/home/orbit/apps/docs',
+        'php_version' => '8.5',
+        'runtime_kind' => AppRuntimeKind::Php,
+    ]);
+
+    return [$app, $node];
+}
+
+function productionAppAndNodeForManagerTest(): array
+{
+    $node = createTestAppHostNode(['user' => 'orbit'], 'app-prod');
+    $app = App::factory()->for($node, 'node')->create([
+        'name' => 'docs',
+        'environment' => 'production',
+        'path' => '/home/docs/app',
         'php_version' => '8.5',
         'runtime_kind' => AppRuntimeKind::Php,
     ]);
@@ -111,6 +126,55 @@ it('creates the orbit network, writes php.ini, and runs the app runtime containe
         ->and($scripts[4])->not->toContain(' --publish ')
         ->and($scripts[4])->toContain("'orbit-app-docs'")
         ->and($scripts[4])->toContain("'dunglas/frankenphp:1-php8.5-bookworm'");
+});
+
+it('resolves production runtime users to numeric uid gid before creating the container', function (): void {
+    [$app, $node] = productionAppAndNodeForManagerTest();
+    $container = renderTestAppContainer($app);
+
+    $shell = new AppRuntimeRecordingShell(
+        // network inspect ok
+        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+        // container inspect: absent
+        new RemoteShellResult(exitCode: 1, stdout: '', stderr: '', durationMs: 1),
+        // image inspect succeeds
+        new RemoteShellResult(exitCode: 0, stdout: '[{"Id":"sha256:abc"}]', stderr: '', durationMs: 1),
+        // runtime user uid/gid resolution
+        new RemoteShellResult(exitCode: 0, stdout: "1001\n1002\n", stderr: '', durationMs: 1),
+        // create script
+        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+    );
+
+    $outcome = (new AppRuntimeContainerManager($shell, new DockerCommandBuilder))->apply($node, $container);
+
+    $scripts = array_map(fn (array $call): string => $call['script'], $shell->calls);
+
+    expect($outcome)->toBe(AppRuntimeContainerApplyOutcome::Created)
+        ->and($container->runtimeUser())->toBe('docs')
+        ->and($scripts[3])->toContain("id -u 'docs'")
+        ->and($scripts[3])->toContain("id -g 'docs'")
+        ->and($scripts[4])->toContain("--user '1001:1002'")
+        ->and($scripts[4])->not->toContain('/var/run/docker.sock')
+        ->and($scripts[4])->not->toContain('--group-add');
+});
+
+it('throws a runtime-user exception before creating the container when the production runtime user is missing', function (): void {
+    [$app, $node] = productionAppAndNodeForManagerTest();
+    $container = renderTestAppContainer($app);
+
+    $shell = new AppRuntimeRecordingShell(
+        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+        new RemoteShellResult(exitCode: 1, stdout: '', stderr: '', durationMs: 1),
+        new RemoteShellResult(exitCode: 0, stdout: '[{"Id":"sha256:abc"}]', stderr: '', durationMs: 1),
+        new RemoteShellResult(exitCode: 1, stdout: '', stderr: 'id: docs: no such user', durationMs: 1),
+    );
+
+    expect(fn () => (new AppRuntimeContainerManager($shell, new DockerCommandBuilder))->apply($node, $container))
+        ->toThrow(AppRuntimeUserUnavailableException::class);
+
+    $scripts = array_map(fn (array $call): string => $call['script'], $shell->calls);
+
+    expect(collect($scripts)->contains(fn (string $script): bool => str_contains($script, 'docker run -d')))->toBeFalse();
 });
 
 it('verifies image presence on the matching-running ("Unchanged") path before returning healthy', function (): void {

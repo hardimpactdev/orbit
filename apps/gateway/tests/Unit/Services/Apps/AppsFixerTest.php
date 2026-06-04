@@ -370,7 +370,10 @@ it('repairs the production runtime user when handed app.security.system_user', f
         ->and($shell->scripts[0])->toContain('useradd')
         ->and($shell->scripts[0])->toContain('--system')
         ->and($shell->scripts[0])->toContain('chown -R')
-        ->and($shell->scripts[0])->toContain("'/home/orbit/apps/docs'");
+        ->and($shell->scripts[0])->toContain("'/home/orbit/apps/docs'")
+        ->and($shell->scripts[0])->not->toContain('usermod')
+        ->and($shell->scripts[0])->not->toContain('docker')
+        ->and($shell->scripts[0])->not->toContain('/var/run/docker.sock');
 });
 
 it('reapplies filesystem ownership when handed app.security.fs_permissions', function (): void {

@@ -10,6 +10,7 @@ use App\Services\Apps\AppRuntimeContainerApplyException;
 use App\Services\Apps\AppRuntimeContainerManager;
 use App\Services\Apps\AppRuntimeContainerRenderer;
 use App\Services\Apps\AppRuntimeImageUnavailableException;
+use App\Services\Apps\AppRuntimeUserUnavailableException;
 use App\Services\Processes\EnsureFrankenPhpRuntimeProcess;
 use RuntimeException;
 use Throwable;
@@ -44,6 +45,8 @@ final readonly class EnactAppRuntime
                 $this->appRuntimeContainerManager->apply($app->node, $container);
             } catch (AppRuntimeImageUnavailableException $exception) {
                 $warnings[] = $this->phpVersionUnavailableWarning($app, $exception);
+            } catch (AppRuntimeUserUnavailableException $exception) {
+                $warnings[] = $this->runtimeUserUnavailableWarning($app, $exception);
             } catch (AppRuntimeContainerApplyException $exception) {
                 $warnings[] = $this->runtimeContainerWarning($app, $exception->hadExistingContainer, $exception);
             } catch (Throwable $exception) {
@@ -95,6 +98,19 @@ final readonly class EnactAppRuntime
             'code' => 'app.php_version_unavailable',
             'family' => 'app',
             'message' => "PHP {$app->php_version} runtime image '{$exception->image}' is not available on node '{$app->node->name}'. Make the image available, then run doctor.",
+            'next_command' => 'doctor --family=app --restore',
+        ];
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    private function runtimeUserUnavailableWarning(App $app, AppRuntimeUserUnavailableException $exception): array
+    {
+        return [
+            'code' => 'app.security.system_user',
+            'family' => 'app',
+            'message' => "Production runtime user '{$exception->runtimeUser}' for app '{$app->name}' is missing on '{$app->node->name}': {$exception->getMessage()}",
             'next_command' => 'doctor --family=app --restore',
         ];
     }

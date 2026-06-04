@@ -41,6 +41,38 @@ function makeAppOnDevNode(AppRuntimeKind $kind = AppRuntimeKind::Php): App
     ]);
 }
 
+function makeAppOnProdNode(AppRuntimeKind $kind = AppRuntimeKind::Php): App
+{
+    $ingress = Node::factory()->ingress()->create([
+        'wireguard_address' => '10.6.0.10',
+    ]);
+    Node::factory()->router()->create([
+        'wireguard_address' => '10.6.0.2',
+    ]);
+
+    $node = Node::factory()->create([
+        'status' => 'active',
+        'user' => 'orbit',
+        'wireguard_address' => '10.6.0.4',
+    ]);
+    NodeRoleAssignment::factory()->create([
+        'node_id' => $node->id,
+        'role' => 'app-prod',
+        'status' => 'active',
+        'settings' => [
+            'ingress_node_id' => $ingress->id,
+        ],
+    ]);
+
+    return App::factory()->for($node, 'node')->create([
+        'name' => 'docs',
+        'environment' => 'production',
+        'path' => '/home/docs/app',
+        'php_version' => '8.5',
+        'runtime_kind' => $kind,
+    ]);
+}
+
 final class EnactAppRuntimeRecordingShell implements RemoteShell
 {
     /** @var list<string> */
@@ -170,6 +202,34 @@ it('returns app.runtime_container_missing when installing the container fails', 
             'family' => 'app',
             'next_command' => 'doctor --family=app --restore',
         ])
+        ->and(ProxyRoute::query()->where('app_id', $app->id)->exists())->toBeTrue();
+});
+
+it('returns app.security.system_user when production runtime user resolution fails before creating the container', function (): void {
+    $app = makeAppOnProdNode(AppRuntimeKind::Php);
+
+    $shell = new EnactAppRuntimeRecordingShell(
+        // network inspect ok
+        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+        // container inspect: absent
+        new RemoteShellResult(exitCode: 1, stdout: '', stderr: '', durationMs: 1),
+        // image inspect: present
+        new RemoteShellResult(exitCode: 0, stdout: '[{"Id":"sha256:abc"}]', stderr: '', durationMs: 1),
+        // runtime user lookup fails
+        new RemoteShellResult(exitCode: 1, stdout: '', stderr: 'id: docs: no such user', durationMs: 1),
+    );
+    app()->instance(RemoteShell::class, $shell);
+
+    $drift = app(EnactAppRuntime::class)->handle($app);
+
+    $systemUser = collect($drift)->firstWhere('code', 'app.security.system_user');
+
+    expect($systemUser)->not->toBeNull()
+        ->and($systemUser['family'])->toBe('app')
+        ->and($systemUser['next_command'])->toBe('doctor --family=app --restore')
+        ->and($systemUser['message'])->toContain("Production runtime user 'docs'")
+        ->and(collect($drift)->firstWhere('code', 'app.runtime_container_missing'))->toBeNull()
+        ->and(collect($shell->scripts)->contains(fn (string $script): bool => str_contains($script, 'docker run -d')))->toBeFalse()
         ->and(ProxyRoute::query()->where('app_id', $app->id)->exists())->toBeTrue();
 });
 

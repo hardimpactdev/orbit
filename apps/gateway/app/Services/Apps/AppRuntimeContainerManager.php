@@ -44,12 +44,14 @@ final readonly class AppRuntimeContainerManager
 
         try {
             if ($inspection === null) {
+                $container = $this->withResolvedRuntimeUser($node, $container, hadExistingContainer: false);
                 $this->createContainer($node, $container);
 
                 return AppRuntimeContainerApplyOutcome::Created;
             }
 
             if (! $this->matchesSpec($inspection, $container)) {
+                $container = $this->withResolvedRuntimeUser($node, $container, hadExistingContainer: true);
                 $this->runRequired(
                     $node,
                     $this->commands->containerRemove($container->name()),
@@ -71,7 +73,7 @@ final readonly class AppRuntimeContainerManager
             }
 
             return AppRuntimeContainerApplyOutcome::Unchanged;
-        } catch (AppRuntimeImageUnavailableException|AppRuntimeContainerApplyException $exception) {
+        } catch (AppRuntimeImageUnavailableException|AppRuntimeContainerApplyException|AppRuntimeUserUnavailableException $exception) {
             throw $exception;
         } catch (Throwable $exception) {
             throw new AppRuntimeContainerApplyException(
@@ -126,6 +128,48 @@ final readonly class AppRuntimeContainerManager
             hadExistingContainer: $hadExistingContainer,
             message: "Failed to verify FrankenPHP runtime image '{$image}' on node '{$node->name}': {$detail}",
         );
+    }
+
+    private function withResolvedRuntimeUser(Node $node, AppRuntimeContainer $container, bool $hadExistingContainer): AppRuntimeContainer
+    {
+        $runtimeUser = $container->runtimeUser();
+
+        if ($runtimeUser === null) {
+            return $container;
+        }
+
+        $result = $this->run($node, sprintf(
+            "id -u %s\nid -g %s",
+            escapeshellarg($runtimeUser),
+            escapeshellarg($runtimeUser),
+        ));
+
+        if (! $result->successful()) {
+            $message = trim($result->errorOutput().' '.$result->stdout);
+            $message = $message !== '' ? $message : "Runtime user '{$runtimeUser}' is unavailable.";
+
+            throw new AppRuntimeUserUnavailableException(
+                runtimeUser: $runtimeUser,
+                message: $message,
+            );
+        }
+
+        $lines = array_values(array_filter(
+            array_map(trim(...), explode("\n", $result->stdout)),
+            fn (string $line): bool => $line !== '',
+        ));
+
+        $uid = $lines[0] ?? '';
+        $gid = $lines[1] ?? '';
+
+        if (preg_match('/^\d+$/', $uid) !== 1 || preg_match('/^\d+$/', $gid) !== 1) {
+            throw new AppRuntimeContainerApplyException(
+                hadExistingContainer: $hadExistingContainer,
+                message: "Failed to resolve runtime user '{$runtimeUser}' to numeric UID:GID on node '{$node->name}'.",
+            );
+        }
+
+        return $container->withDockerUser("{$uid}:{$gid}");
     }
 
     private function isDockerNoSuchImage(RemoteShellResult $result): bool
