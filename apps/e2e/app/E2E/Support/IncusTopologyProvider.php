@@ -111,7 +111,7 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
             $instances = IncusTopologyTemplate::clone($host, $kind, $runId, $timer, sourceMounted: $options->sourceMountedCheckout, readonlySourceMount: $options->readonlySourceMount, networkName: $providerNetwork['name'], subnetPrefix: $providerNetwork['subnet_prefix']);
 
             $sshKeyPair = $this->createSshKeyPair($host, $runId);
-            $primaryUsers = $this->prepareInstances($instances, $this->config, $sshKeyPair, $timer, $options, $kind);
+            $primaryUsers = $this->prepareInstances($instances, $this->config, $sshKeyPair, $timer, $options, $kind, host: $host, providerDnsIp: $providerNetwork['subnet_prefix'].'.1');
             $snapshotReset = $this->prepareSnapshotReset($host, $instances, $primaryUsers, $sshKeyPair, $timer, $options->startGatewayApi, $kind, $options->sourceMountedCheckout);
         } catch (\Throwable $exception) {
             foreach ($instances as $instance) {
@@ -141,7 +141,7 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
             }
 
             $newInstances = IncusTopologyTemplate::clone($host, $kind, $runId, $cycleTimer, sourceMounted: $options->sourceMountedCheckout, readonlySourceMount: $options->readonlySourceMount, networkName: $providerNetwork['name'], subnetPrefix: $providerNetwork['subnet_prefix']);
-            $newPrimaryUsers = $this->prepareInstances($newInstances, $this->config, $sshKeyPair, $cycleTimer, $options, $kind);
+            $newPrimaryUsers = $this->prepareInstances($newInstances, $this->config, $sshKeyPair, $cycleTimer, $options, $kind, host: $host, providerDnsIp: $providerNetwork['subnet_prefix'].'.1');
             $leaseInstances = $this->leaseInstancesFor($kind, $newInstances);
 
             return [
@@ -511,7 +511,7 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
      * @param  array<string, IncusInstance>  $instances
      * @return array<string, string>
      */
-    private function prepareInstances(array $instances, E2EConfig $config, SshKeyPair $sshKeyPair, E2EPhaseTimer $timer, E2ETopologyAcquisitionOptions $options, E2ETopologyKind $kind): array
+    private function prepareInstances(array $instances, E2EConfig $config, SshKeyPair $sshKeyPair, E2EPhaseTimer $timer, E2ETopologyAcquisitionOptions $options, E2ETopologyKind $kind, ?IncusHost $host = null, ?string $providerDnsIp = null): array
     {
         $sshUsers = $this->sshUsersFor($instances, $config, $options);
         $primaryUsers = [];
@@ -529,6 +529,7 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
         }
 
         $timer->measure('known-hosts', fn () => $this->clearKnownHosts($instances));
+        $timer->measure('provider-dns', fn () => $this->configureProviderDns($instances, $host, $providerDnsIp));
         $timer->measure('wireguard', fn () => $this->retargetRealWireGuard($instances));
         $timer->measure('gateway-ssh-access', fn () => $this->seedGatewaySshAccess($instances));
         $timer->measure('retarget', fn () => $this->retargetTopology($instances, $config, $sshKeyPair, $kind, $options->sourceMountedCheckout));
@@ -682,6 +683,28 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
     /**
      * @param  array<string, IncusInstance>  $instances
      */
+    private function configureProviderDns(array $instances, ?IncusHost $host, ?string $providerDnsIp): void
+    {
+        if ($host === null || $providerDnsIp === null) {
+            return;
+        }
+
+        foreach ($instances as $instance) {
+            $result = $host->run(sprintf(
+                'incus exec %s -- sh -lc %s',
+                escapeshellarg($instance->name()),
+                escapeshellarg('printf '.escapeshellarg("nameserver {$providerDnsIp}\n").' > /etc/resolv.conf'),
+            ), timeoutSeconds: 30);
+
+            if (! $result->successful()) {
+                throw new \RuntimeException("Could not configure provider DNS for {$instance->name()}: ".$result->errorOutput());
+            }
+        }
+    }
+
+    /**
+     * @param  array<string, IncusInstance>  $instances
+     */
     private function retargetRealWireGuard(array $instances): void
     {
         $operator = $instances['operator'] ?? null;
@@ -741,9 +764,14 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
             }
 
             $subnetPrefix = "10.240.{$subnetByte}";
-            $result = $host->run("incus network create {$networkName} ipv4.address={$subnetPrefix}.1/24 ipv4.nat=true ipv6.address=none raw.dnsmasq=port=0");
+            $rawDnsmasq = escapeshellarg("port=0\ndhcp-option=6,10.6.0.1");
+            $result = $host->run("incus network create {$networkName} ipv4.address={$subnetPrefix}.1/24 ipv4.nat=true ipv6.address=none raw.dnsmasq={$rawDnsmasq}");
 
             if (! $result->successful()) {
+                if (str_contains($result->errorOutput(), 'Address already in use')) {
+                    continue;
+                }
+
                 throw new \RuntimeException("Could not create Incus network {$networkName}: ".$result->errorOutput());
             }
 

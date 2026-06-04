@@ -228,9 +228,51 @@ it('allocates the first free provider subnet instead of reusing an occupied hash
         'subnet_prefix' => '10.240.44',
     ])
         ->and($commands)->toContain('incus network list --format json')
-        ->and(implode("\n", $commands))->toContain("incus network create {$allocation['name']} ipv4.address=10.240.44.1/24 ipv4.nat=true ipv6.address=none raw.dnsmasq=port=0")
+        ->and(implode("\n", $commands))->toContain("incus network create {$allocation['name']} ipv4.address=10.240.44.1/24 ipv4.nat=true ipv6.address=none raw.dnsmasq='port=0")
+        ->and(implode("\n", $commands))->toContain('dhcp-option=6,10.6.0.1')
         ->and(implode("\n", $commands))->not->toContain('10.240.42.1/24 ipv4.nat=true')
         ->and(implode("\n", $commands))->not->toContain('10.240.43.1/24 ipv4.nat=true');
+});
+
+it('retries provider subnet allocation when dnsmasq reports an address collision', function (): void {
+    $commands = [];
+    $config = incusTopologyProviderTestConfig();
+    $host = new class($config, $commands) extends IncusHost
+    {
+        /**
+         * @param  array<int, string>  $commands
+         */
+        public function __construct(E2EConfig $config, private array &$commands)
+        {
+            parent::__construct($config);
+        }
+
+        #[Override]
+        public function run(string $command, ?int $timeoutSeconds = null): ProcessResult
+        {
+            $this->commands[] = $command;
+
+            if ($command === 'incus network list --format json') {
+                return incusTopologyProviderTestProcessResult('[]');
+            }
+
+            if (str_contains($command, '10.240.50.1/24')) {
+                return incusTopologyProviderTestProcessResult('', exitCode: 1, errorOutput: 'dnsmasq: failed to create listening socket for 10.240.50.1: Address already in use');
+            }
+
+            return incusTopologyProviderTestProcessResult();
+        }
+    };
+
+    $provider = new IncusTopologyProvider($config);
+    $method = new ReflectionMethod($provider, 'allocateProviderNetwork');
+    $method->setAccessible(true);
+
+    $allocation = $method->invoke($provider, $host, 'run-with-host-address-collision', preferredSubnetByte: 50);
+
+    expect($allocation['subnet_prefix'])->toBe('10.240.51')
+        ->and(implode("\n", $commands))->toContain('10.240.50.1/24')
+        ->and(implode("\n", $commands))->toContain('10.240.51.1/24');
 });
 
 it('uses the allocated provider network for clone, rebuild, and strict lease teardown', function (): void {

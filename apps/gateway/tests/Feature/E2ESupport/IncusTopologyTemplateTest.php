@@ -719,7 +719,7 @@ it('prepared Incus acquisition retargets selected snapshot roles without dynamic
     $source = file_get_contents(repo_path('apps/e2e/app/E2E/Support/IncusTopologyProvider.php'));
 
     expect($source)
-        ->toContain('prepareInstances($instances, $this->config, $sshKeyPair, $timer, $options, $kind)')
+        ->toContain('prepareInstances($instances, $this->config, $sshKeyPair, $timer, $options, $kind, host: $host, providerDnsIp: $providerNetwork[\'subnet_prefix\'].\'.1\')')
         ->toContain('retargetTopology($instances, $config, $sshKeyPair, $kind, $options->sourceMountedCheckout)')
         ->toContain('--public-host=%s --skip-gateway-service-install')
         ->toContain('php apps/gateway/artisan orbit:internal:bootstrap-gateway-local')
