@@ -2,9 +2,17 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Align Orbit's production runtime substrate so Docker Swarm is a selectable, platform-scoped production/infra service backend behind managed tools, app/workspace configured processes run through host Supervisor on the owning node, app-prod FrankenPHP services have a shared Swarm/release-mount contract to consume, and app dependency addresses work consistently from both host processes and containers without Docker-specific `.env` values.
+**Goal:** Align Orbit's production runtime substrate so Docker Swarm is a selectable, platform-scoped production/infra service backend for managed processes, app/workspace configured processes run through host Supervisor on the owning node, app-prod FrankenPHP services have a shared Swarm/release-mount contract to consume, and app dependency addresses work consistently from both host processes and containers without Docker-specific `.env` values.
 
-**Architecture:** Runtime backend selection is per managed artifact, not a whole-node mode. A node can run Swarm services for production/infra workloads, standalone Docker services for simpler tool instances, standalone/direct app-dev runtime where appropriate, and host Supervisor programs for app/workspace processes. Managed service tools such as MySQL, PostgreSQL, and Redis resolve `tool:install <tool> --version=<major-or-version> --runtime=<runtime>` into concrete version-family tool instances with runtime intents. The runtime registry then resolves the selected runtime plus the target node's recorded platform, such as `docker-swarm` + `ubuntu_24-04`, to a platform-specific implementation. App dependency hosts use node WireGuard IP service addresses, so the same `.env` is valid for host Supervisor processes and FrankenPHP containers. Linux self-WireGuard routing is treated as the production baseline. macOS self-route optimization is intentionally out of scope for this plan.
+**Architecture:** Runtime backend selection is per managed process, not a whole-node mode. A node can run Swarm services for production/infra workloads, standalone Docker processes for simpler service instances, standalone/direct app-dev runtime where appropriate, and host Supervisor programs for app/workspace processes. Runnable services such as MySQL, PostgreSQL, Redis, FrankenPHP, Horizon, OpenCode Server, and PolyScope Server are process rows or process definitions, not tool runtime instances. A process runtime registry resolves the selected runtime plus the target node's recorded platform, such as `docker-swarm` + `ubuntu_24-04`, to a platform-specific implementation. App dependency hosts use node WireGuard IP service addresses, so the same `.env` is valid for host Supervisor processes and FrankenPHP containers. WireGuard service-address readiness is provisioning/topology infrastructure; Linux self-WireGuard routing is treated as the production baseline. macOS self-route optimization is intentionally out of scope for this plan.
+
+> **2026-06-04 direction update:** This plan predates the strict tool/process
+> boundary decision in solo todo #681. Remaining and future work must treat
+> managed service-tool instances, tool runtimes, `tool:install mysql`, `mysql:8`
+> tool instance keys, and tool-owned lifecycle/logs for MySQL/PostgreSQL/Redis
+> as superseded. Those services are process definitions and process rows. Tool
+> coverage is limited to host-installed capabilities and boundary guards that
+> prevent runnable services from re-entering tool lifecycle ownership.
 
 **Tech Stack:** Laravel 13 gateway, Pest 4, Docker Engine, Docker Swarm, Supervisor, FrankenPHP, WireGuard.
 
@@ -21,15 +29,18 @@ lifecycle.
 This plan is the shared substrate correction. It owns:
 
 - Swarm as a per-artifact production/infra backend, not a node-wide mode.
-- First-class tool runtime drivers, supported runtime metadata, install-time
-  `--runtime` selection, and version-family tool instances for service tools.
+- First-class process runtime drivers, supported runtime metadata, process
+  definition selection, and versioned process service instances for MySQL,
+  PostgreSQL, Redis, and similar runnable services.
 - Platform-scoped runtime implementations below the user-facing runtime
   family, using the existing node platform record.
 - App/workspace configured processes moving from Docker sidecars to host
   Supervisor.
 - App-dev Supervisor availability without converting app-dev web runtime to
   Swarm.
-- WireGuard-IP service addressing for app dependency `.env` values.
+- WireGuard-IP service addressing for app dependency `.env` values, owned by
+  node provisioning/topology readiness rather than app, process, tool, or
+  database runtime prerequisites.
 - Linux self-WireGuard route diagnostics and explicit macOS deferral.
 
 This plan does not implement the app-prod FrankenPHP service renderer,
@@ -88,60 +99,59 @@ which should be implemented after this substrate plan.
    - Orbit/operator-owned deployment actions create and update containers/services.
    - The app user's security role is app file ownership and runtime process identity, not Docker daemon access.
 
-9. Managed service tools resolve into version-family tool instances.
-   - The public selector remains the base tool name, for example `mysql`,
-     `postgres`, or `redis`.
-   - Interactive `orbit tool:install mysql` prompts for a supported version
-     request when the tool definition has more than one supported version
-     family.
-   - Non-interactive installs use `--version=<major-or-specific-version>`, for
-     example `--version=8` or `--version=8.4`.
-   - The version request resolves to a version family and expected version. For
-     MySQL, `--version=8` creates the internal instance key `mysql:8`; a
-     specific `--version=8.4` still belongs to version family `8`.
-   - A node may run one instance per `(tool, version family)` by default, such
-     as MySQL 8 and MySQL 9 on the same database node.
-   - Two instances for the same `(tool, version family)` on the same node are
-     out of scope unless a later plan adds explicit advanced instance aliases.
+9. Managed service processes resolve into versioned process definitions.
+   - The public service definition selector is the process definition name, for
+     example `mysql`, `postgres`, or `redis`.
+   - A node may run separate process rows for distinct version families, such
+     as MySQL 8 and MySQL 9 on the same database node, when the definition
+     supports those families.
+   - The version request resolves to a version family and expected service
+     version on the process definition. Service version, runtime config,
+     credentials, endpoints, volumes, health checks, lifecycle, logs, and state
+     belong to the process row or process definition.
+   - Two process rows for the same definition and version family on the same
+     node require explicit names or aliases; no hidden tool instance key is
+     created.
 
-10. Tool runtime is selected at install time and constrained by the tool definition.
-    - Tool definitions declare their supported runtimes, for example
-      `docker` and `docker-swarm`.
-    - `orbit tool:install mysql --version=8.4 --runtime=docker-swarm` installs
-      the MySQL 8 family through the Swarm runtime driver.
-    - `orbit tool:install mysql --version=8.4 --runtime=docker` installs the
-      same product instance through the standalone Docker runtime driver.
-    - The resolved runtime is stored on the tool instance and reused by
-      lifecycle, logs, credentials, update, reconfigure, doctor, and fix paths.
-    - `tool:update` may update version/config within the stored runtime. It
-      must not silently migrate a tool instance from `docker` to `docker-swarm`.
+10. Process runtime is selected when the process is defined and constrained by
+    the process definition.
+    - Process definitions declare their supported runtimes, for example
+      `docker`, `docker-swarm`, `supervisor`, or `systemd`.
+    - A MySQL process can select `runtime=docker-swarm` for a Swarm-backed
+      service or `runtime=docker` for a standalone Docker service when the
+      target platform supports that runtime.
+    - The resolved runtime is stored on the process and reused by lifecycle,
+      logs, credentials, update, reconfigure, doctor, and fix paths.
+    - Process updates may update version/config within the stored runtime. They
+      must not silently migrate a process from `docker` to `docker-swarm`.
       Runtime migration requires a future explicit guarded command or
       destructive reconfigure path.
 
 11. Runtime support is platform-scoped below the user-facing runtime name.
     - The public runtime value is a runtime family, such as `docker`,
-      `docker-swarm`, `apt-systemd`, `homebrew`, or a future `kubernetes`.
+      `docker-swarm`, `supervisor`, `systemd`, or a future `kubernetes`.
     - The runtime driver registry resolves runtime family plus target
       `Node.platform` to a concrete implementation, such as
-      `docker-swarm/ubuntu`, `docker/macos`, `apt-systemd/ubuntu`, or
-      `homebrew/macos`.
+      `docker-swarm/ubuntu`, `docker/macos`, `systemd/ubuntu`, or
+      `supervisor/linux`.
     - `docker-swarm` on Ubuntu/Linux is the production-supported
       implementation in this plan.
     - `docker-swarm` on macOS is not production-equivalent to Linux Docker
       because Docker Desktop networking, bind mounts, WireGuard self-routing,
       and published-port semantics differ. It must fail with
-      `tool.runtime_platform_unsupported` until a macOS-specific implementation
-      is explicitly added.
-    - Homebrew is a plausible future `homebrew/macos` runtime implementation
-      for client/local tools, but it is not part of this implementation slice.
-    - Tool definitions declare runtime support with platform eligibility, not
-      just a flat list of runtime names.
+      `process.runtime_platform_unsupported` until a macOS-specific
+      implementation is explicitly added.
+    - Host-installed capability tools such as PHP, Composer, OpenCode, or
+      PolyScope may still be referenced by processes when a process command
+      depends on them, but the tool does not own lifecycle.
+    - Process definitions declare runtime support with platform eligibility,
+      not just a flat list of runtime names.
 
 12. Swarm improves convergence but does not promise zero-downtime singleton databases.
-    - Stateless or replicated service tools may use Swarm rolling update
+    - Stateless or replicated service processes may use Swarm rolling update
       behavior when their definition declares that strategy.
-    - Singleton stateful tools such as MySQL, PostgreSQL, and Redis default to
-      conservative stop-first or guarded update behavior unless their tool
+    - Singleton stateful processes such as MySQL, PostgreSQL, and Redis default
+      to conservative stop-first or guarded update behavior unless their process
       definition declares safe replication/failover semantics.
     - Version-family instances must have distinct ports, volumes, credentials,
       service names, endpoint names, and runtime intent hashes.
@@ -163,41 +173,18 @@ Known drift points:
 - `apps/docs/content/domains/3_tool/README.md`
 - `apps/docs/content/domains/3_tool/tool-concepts.md`
 - `apps/docs/content/domains/3_tool/catalog/README.md`
-- `apps/docs/content/domains/3_tool/catalog/mysql.md`
-- `apps/docs/content/domains/3_tool/catalog/postgres.md`
-- `apps/docs/content/domains/3_tool/catalog/redis.md`
-- `apps/docs/content/domains/3_tool/1_tool-list/tool-list.md`
-- `apps/docs/content/domains/3_tool/2_tool-show/tool-show.md`
-- `apps/docs/content/domains/3_tool/3_tool-install/tool-install.md`
-- `apps/docs/content/domains/3_tool/7_tool-restart/tool-restart.md`
-- `apps/docs/content/domains/3_tool/8_tool-logs/tool-logs.md`
-- `apps/docs/content/domains/3_tool/9_tool-update/tool-update.md`
-- `apps/docs/content/domains/3_tool/10_tool-credentials/tool-credentials.md`
-- `apps/docs/content/domains/3_tool/11_tool-reload/tool-reload.md`
-- `apps/docs/content/domains/3_tool/12_tool-reconfigure/tool-reconfigure.md`
+- `apps/docs/content/domains/18_database/README.md`
+- `apps/docs/content/domains/18_database/database-concepts.md`
+- process command/API docs for process definitions, runtimes, lifecycle, logs,
+  credentials, and update behavior
+- tool docs for negative boundary language that prevents MySQL, PostgreSQL,
+  Redis, and similar runnable services from being documented as tool lifecycle
+  units
 - `apps/docs/content/testing/README.md`
-- `apps/cli/app/Commands/Tool/ToolInstallCommand.php`
-- `apps/cli/app/Commands/Tool/ToolGatewayCommand.php`
-- `apps/cli/app/Commands/Tool/ToolActionCommand.php`
-- `apps/cli/app/Commands/Tool/ToolUpdateCommand.php`
-- `apps/gateway/database/migrations/2026_05_06_014625_create_node_tools_table.php`
-- New gateway migration adding tool instance/runtime fields.
-- `apps/gateway/app/Models/NodeTool.php`
-- `apps/gateway/app/Contracts/ToolDefinition.php`
-- `apps/gateway/app/Services/Tools/ToolCatalog.php`
-- `apps/gateway/app/Services/Tools/ToolRegistry.php`
-- `apps/gateway/app/Services/Tools/ToolInstaller.php`
-- `apps/gateway/app/Services/Tools/ToolUpdater.php`
-- `apps/gateway/app/Services/Tools/ToolLifecycleManager.php`
-- `apps/gateway/app/Services/Tools/ToolCredentialsReader.php`
-- `apps/gateway/app/Services/Tools/ToolLogReader.php`
-- `apps/gateway/app/Services/Tools/ToolLogFollower.php`
-- `apps/gateway/app/Services/Tools/ToolReconfigurer.php`
-- `apps/gateway/app/Services/Tools/ToolPayloadMapper.php`
-- `apps/gateway/app/Services/Tools/ToolsProbe.php`
-- `apps/gateway/app/Services/Tools/ToolsFixer.php`
-- New `apps/gateway/app/Services/Tools/Runtime/**` value objects, runtime
-  drivers, runtime-driver registry, version resolver, and instance selector.
+- `apps/cli/app/Commands/Process/**`
+- process HTTP API controllers under `apps/gateway/app/Http/Controllers/Api/**`
+- process service definitions and runtime drivers under
+  `apps/gateway/app/Services/Processes/**`
 - `apps/gateway/app/Enums/Processes/ProcessRuntime.php`
 - `apps/gateway/app/Models/Process.php`
 - `apps/gateway/app/Actions/Apps/EnsureAppProcessRuntimeUnits.php`
@@ -209,6 +196,8 @@ Known drift points:
 - `apps/gateway/app/Data/Processes/ProcessDockerContainer.php`
 - `apps/gateway/app/NodeRoles/AppDevelopmentRoleBaseline.php`
 - Process feature tests under `apps/gateway/tests/Feature/Services/Processes/`
+- process unit tests under `apps/gateway/tests/Unit/Services/Processes/`
+- tool boundary tests under `apps/gateway/tests/Unit/Services/Tools/`
 
 ---
 
@@ -252,39 +241,42 @@ connects to itself, while remote nodes route over WireGuard. Services bind or
 publish on the WireGuard address and are firewalled away from public interfaces.
 ```
 
-- [ ] Update tool product docs before implementation so the new tool contract is explicit:
-  - A tool definition describes one product capability family, such as `mysql`.
-  - A tool instance is one installed version family on one node, such as
-    `mysql:8`.
-  - `tool:install <tool> --version=<major-or-specific-version>` resolves the
-    instance key and expected version.
-  - `tool:install <tool> --runtime=<docker|docker-swarm>` selects an install
-    runtime from the tool definition's supported runtimes.
+- [ ] Update process and tool product docs before implementation so the strict
+  boundary is explicit:
+  - A tool is a host-installed capability such as PHP, Composer, OpenCode, or
+    PolyScope. A tool can be installed, updated, adopted, removed, configured,
+    and diagnosed as capability state, but it does not own lifecycle/logs.
+  - A process is a runnable unit with owner, runtime, version/config, start,
+    stop, restart, logs, and state.
+  - Runnable services such as MySQL, PostgreSQL, Redis, FrankenPHP, Horizon,
+    OpenCode Server, and PolyScope Server are processes.
+  - A process may reference a tool with `--tool=<tool>` when its command
+    depends on a host-installed capability, for example `opencode serve`, but
+    the process still owns lifecycle.
+  - Process definitions declare supported versions and runtimes for services
+    such as MySQL, PostgreSQL, and Redis.
   - Runtime support is platform-scoped: `docker-swarm` on Linux/Ubuntu and
     `docker-swarm` on macOS are separate runtime implementations behind the
     same public runtime name.
-  - Unsupported runtime/platform combinations fail before side effects with
-    `tool.runtime_platform_unsupported`.
-  - `tool:update` updates within the stored runtime and does not migrate
-    runtimes.
-  - `tool:list` groups version-family instances under the base tool name in
-    human output while JSON exposes stable instance fields.
+  - Unsupported process runtime/platform combinations fail before side effects
+    with `process.runtime_platform_unsupported`.
+  - Tool docs must include negative boundary language: MySQL, PostgreSQL, and
+    Redis are not tool lifecycle units.
 
-- [ ] Add command-contract docs for interactive and non-interactive install behavior:
+- [ ] Add command-contract docs for interactive and non-interactive process definition behavior:
 
 ```md
-In interactive mode, `orbit tool:install mysql` prompts for a version request
-when the MySQL definition supports more than one version family. It prompts for
-runtime when more than one runtime is supported and no node/default policy can
-choose unambiguously.
+In interactive mode, `orbit process:add` prompts for required process
+definition fields before side effects when a selected definition has multiple
+supported versions or runtimes.
 
-In non-interactive mode, missing required version or runtime input fails before
-side effects with `validation_failed`. An unsupported runtime fails before side
-effects with `tool.runtime_unsupported`. A runtime supported by the tool but
-not by the target node platform fails before side effects with
-`tool.runtime_platform_unsupported`. A command targeting a base tool with
-multiple matching instances fails with `tool.instance_required` unless
-interactive input can prompt for the target version.
+In non-interactive mode, missing required process definition, version, owner, or
+runtime input fails before side effects with `validation_failed`. An unsupported
+runtime fails before side effects with `process.runtime_unsupported`. A runtime
+supported by the process definition but not by the target node platform fails
+before side effects with `process.runtime_platform_unsupported`. A command
+targeting an ambiguous process definition must fail with an explicit process
+selector error unless interactive input can prompt for the target process.
 ```
 
 - [ ] Run docs verification:
@@ -293,90 +285,69 @@ interactive input can prompt for the target version.
 composer docs-lint
 ```
 
-### 2. Add Tool Instance And Runtime Driver State
+### 2. Add Process Definition And Runtime State
 
-- [ ] Add migration tests proving existing rows backfill to the default instance and runtime:
+- [ ] Add tests proving MySQL, PostgreSQL, and Redis are cataloged as process
+  service definitions, not tool definitions:
+  - `ToolCatalog` does not support `mysql`, `postgres`, or `redis`.
+  - `ProcessServiceDefinitionRegistry` resolves each service definition.
+  - process runtime config contains no `orbit.tool` labels for those services.
 
-```php
-it('backfills existing tool rows to the default instance and runtime', function (): void {
-    $node = Node::factory()->create();
-
-    NodeTool::query()->create([
-        'node_id' => $node->id,
-        'name' => 'redis',
-        'expected_state' => 'running',
-    ]);
-
-    $tool = NodeTool::query()->where('name', 'redis')->firstOrFail();
-
-    expect($tool->instance_key)->toBe('redis:default')
-        ->and($tool->version_family)->toBeNull()
-        ->and($tool->runtime)->toBe('docker');
-});
-```
-
-- [ ] Add a migration that adds nullable/backfilled tool-instance columns:
-  - `instance_key`, defaulting existing rows to `<tool>:default`;
-  - `version_family`, nullable for non-version-family tools;
-  - `runtime`, defaulting existing Docker-backed service tools to `docker`;
-  - `runtime_config`, nullable JSON for runtime-driver-owned state.
-
-- [ ] Replace the current unique key with a uniqueness rule that permits multiple version families:
-
-```php
-$table->unique(['node_id', 'name', 'instance_key']);
-```
-
-- [ ] Keep existing single-instance tools on `instance_key=<tool>:default` so old command behavior remains stable.
-
-- [ ] Update `NodeTool` casts/fillable/PHPDoc for the new fields and keep credentials encrypted.
-
-- [ ] Add `ToolInstanceSelector`, `ToolVersionRequest`, and `ToolRuntimeSelection` value objects under `apps/gateway/app/Services/Tools/Runtime/`.
-
-- [ ] Add tests proving version request resolution:
-  - `8` resolves to version family `8` and latest supported MySQL 8 version.
-  - `8.4` resolves to version family `8` and expected version `8.4`.
+- [ ] Add process definition tests proving version request resolution:
+  - `8` resolves to MySQL version family `8` and latest supported MySQL 8
+    version.
+  - `8.4` resolves to MySQL version family `8` and expected version `8.4`.
   - unsupported major families fail before side effects.
-  - specific versions outside the tool definition's support policy fail before side effects.
+  - specific versions outside the process definition's support policy fail
+    before side effects.
 
-- [ ] Extend `ToolDefinition` and `ToolCatalog` with supported runtimes and version-family metadata without duplicating `mysql-8` or `mysql-9` as separate catalog definitions.
+- [ ] Store version, runtime, runtime config, credentials, endpoints, volumes,
+  health checks, and deterministic spec hashes on process-owned state. Do not
+  add service version/runtime fields to `NodeTool`.
 
-- [ ] Add runtime metadata to MySQL, PostgreSQL, and Redis definitions first. Leave non-service and observational tools on a default/single runtime path unless their definition explicitly opts in.
+- [ ] Process ownership must be explicit and extensible for node-level,
+  role-level, app-level, workspace-level, or tool-related processes. Do not
+  backfill production data for this migration; Orbit is not production-used yet.
 
-- [ ] Run focused tool catalog tests:
+- [ ] Run focused process definition and tool-boundary tests:
 
 ```bash
-bin/orbit-gateway-pest --compact apps/gateway/tests/Unit/Services/Tools/ToolCatalogTest.php
+bin/orbit-gateway-pest --compact tests/Unit/Services/Processes/ProcessServiceDefinitionRegistryTest.php tests/Unit/Services/Tools/ToolCatalogTest.php tests/Unit/Services/Tools/ToolProcessBoundaryTest.php
 ```
 
-### 3. Add Tool Runtime Drivers And Runtime Intents
+### 3. Add Process Runtime Drivers And Runtime Intents
 
-- [ ] Add platform-resolution tests for the runtime registry:
-  - `docker-swarm` + `ubuntu_24-04` resolves to the Linux Swarm implementation;
+- [ ] Add platform-resolution tests for the process runtime registry:
+  - `docker-swarm` + `ubuntu_24-04` resolves to the Linux Swarm
+    implementation.
   - `docker-swarm` + `macos_15-4` fails with
-    `tool.runtime_platform_unsupported`;
-  - `docker` + `ubuntu_24-04` resolves to the Linux Docker implementation;
+    `process.runtime_platform_unsupported`.
+  - `docker` + `ubuntu_24-04` resolves to the Linux Docker implementation.
+  - `systemd` resolves only where real systemd service management is available.
   - future runtime families can register platform implementations without
-    changing the public command contract.
+    changing the public process command contract.
 
-- [ ] Add failing tests for a `ToolRuntimeDriverRegistry`:
-  - resolves `docker` to a standalone Docker runtime driver;
-  - resolves `docker-swarm` to a Swarm service runtime driver;
-  - rejects runtimes not declared by the tool definition;
-  - rejects runtimes not supported by the target node platform before side effects.
+- [ ] Add failing tests for a `ProcessRuntimeDriverRegistry`:
+  - resolves `docker` to a standalone Docker process runtime driver.
+  - resolves `docker-swarm` to a Swarm service process runtime driver.
+  - resolves `supervisor` to a host Supervisor process runtime driver.
+  - resolves `systemd` to a Linux node service process runtime driver.
+  - rejects runtimes not declared by the process definition.
+  - rejects runtimes not supported by the target node platform before side
+    effects.
 
-- [ ] Add a runtime-platform value object or resolver that normalizes existing
+- [ ] Add or update a runtime-platform resolver that normalizes existing
   node platform strings such as `ubuntu`, `ubuntu_24-04`, `linux`, and
   `macos_15-4` into platform families and implementation keys. Use the existing
   `nodes.platform` record; do not add a second OS field.
 
-- [ ] Add a `ToolRuntimeIntent` value object that carries:
-  - tool name;
-  - instance key;
+- [ ] Add a process runtime intent that carries:
+  - process name;
+  - process definition;
   - expected version;
   - version family;
   - runtime;
-  - service/container name;
+  - service/container/program name;
   - published or bound host/port;
   - volume name/path;
   - endpoint metadata;
@@ -384,123 +355,116 @@ bin/orbit-gateway-pest --compact apps/gateway/tests/Unit/Services/Tools/ToolCata
   - update strategy;
   - deterministic spec hash.
 
-- [ ] Add `DockerToolRuntimeDriver` and `DockerSwarmToolRuntimeDriver` interfaces plus platform-specific implementations, starting with Linux implementations for production role nodes. The registry may expose them as the public `docker` and `docker-swarm` runtime families.
-
 - [ ] Keep macOS implementations explicitly unsupported in this slice unless a
-  tool definition and platform-specific implementation are added in a future
+  process definition and platform-specific implementation are added in a future
   plan. Do not treat Docker Desktop as equivalent to Linux Docker/Swarm.
 
 - [ ] Keep singleton stateful database defaults conservative:
-  - MySQL/PostgreSQL/Redis Swarm services default to guarded stop-first update unless the definition declares a safe replicated update strategy.
-  - Stateless service tools may opt in to start-first rolling updates.
+  - MySQL/PostgreSQL/Redis Swarm services default to guarded stop-first update
+    unless the definition declares a safe replicated update strategy.
+  - Stateless service processes may opt in to start-first rolling updates.
 
-- [ ] Make runtime intent rendering allocate distinct service names, ports, volumes, endpoint names, and labels per version family:
+- [ ] Make runtime intent rendering allocate distinct service names, ports,
+  volumes, endpoint names, and labels per process name/version family:
 
 ```text
-mysql:8 -> orbit-mysql-8, volume orbit-mysql-8, endpoint mysql-8
-mysql:9 -> orbit-mysql-9, volume orbit-mysql-9, endpoint mysql-9
+mysql8 -> orbit-mysql8, volume orbit-mysql8, endpoint mysql8
+mysql9 -> orbit-mysql9, volume orbit-mysql9, endpoint mysql9
 ```
 
-- [ ] Add conflict checks before install:
-  - duplicate `(node, tool, version family)` fails with `tool.instance_exists`;
-  - port conflicts fail with `tool.endpoint_conflict`;
-  - unsupported runtime fails with `tool.runtime_unsupported`;
-  - unsupported version request fails with `tool.version_unsupported`.
+- [ ] Add conflict checks before process creation/update:
+  - duplicate process name on the same owner fails with `process.exists`;
+  - port conflicts fail with `process.endpoint_conflict`;
+  - unsupported runtime fails with `process.runtime_unsupported`;
+  - unsupported version request fails with `process.version_unsupported`.
 
 - [ ] Run focused runtime-driver tests:
 
 ```bash
-bin/orbit-gateway-pest --compact apps/gateway/tests/Unit/Services/Tools
+bin/orbit-gateway-pest --compact tests/Unit/Services/Processes/ProcessRuntimeDriverRegistryTest.php tests/Unit/Services/Processes/ProcessRuntimeDriversTest.php
 ```
 
-### 4. Update Tool Commands For Version And Runtime Selection
+### 4. Update Process Commands For Definition And Runtime Selection
 
-- [ ] Update `tool:install` docs and CLI signature to accept:
+- [ ] Update process docs and CLI/API contracts to accept definition, version,
+  runtime, owner, and optional related tool fields. Final CLI shape is owned by
+  solo todo #681; until then, tests should focus on gateway process API and
+  registry behavior.
 
 ```bash
-orbit tool:install [tool] [--app=<app>] [--node=<node>] [--version=<version>] [--runtime=<docker|docker-swarm>] [--status=installed|running] [--json]
+orbit process:add mysql8 --definition=mysql --version=8 --runtime=docker-swarm --node=database-1 --json
+orbit process:add opencode-server --runtime=systemd --tool=opencode --command="opencode serve --hostname=0.0.0.0" --node=operator-1 --json
 ```
 
-- [ ] Interactive `tool:install mysql` prompts before side effects:
-  - prompt ID `tool_install.version`;
-  - primitive `suggest`;
-  - choices from the tool definition's supported version families/specific versions;
-  - prompt ID `tool_install.runtime`;
-  - primitive `select`;
-  - choices from the tool definition's supported runtimes after node eligibility is known.
+- [ ] Interactive `process:add` prompts before side effects when a selected
+  process definition needs a version, runtime, owner, or name.
 
-- [ ] Non-interactive `tool:install mysql --json` fails before side effects when the tool requires a version and no default can be selected.
+- [ ] Non-interactive `process:add --json` fails before side effects when a
+  required definition field has no unambiguous default.
 
-- [ ] Update lifecycle/logs/credentials/reload/reconfigure/update command contracts and CLI payloads to accept `--version=<major-or-specific-version>` as the concrete instance selector when multiple instances exist:
+- [ ] Process lifecycle/logs/credentials/reload/reconfigure/update command
+  contracts target concrete process rows by process selector. Tool lifecycle
+  compatibility commands may only delegate to exactly one related process and
+  must fail when no related process or multiple related processes exist.
+
+- [ ] Update gateway request DTOs, API validation, stream payloads, JSON
+  renderers, and command tests so process `definition`, `version`, `runtime`,
+  `owner`, and optional `tool` are stable request/response fields.
+
+- [ ] Run CLI and gateway process command/API tests after #681 finalizes the
+  command shape:
 
 ```bash
-orbit tool:restart mysql --version=8
-orbit tool:logs mysql --version=9
-orbit tool:credentials mysql --version=8
-orbit tool:update mysql --version=8 --expected-version=8.4.6
+bin/orbit-gateway-pest --compact tests/Feature/Http/Api/ProcessStoreControllerTest.php tests/Feature/Http/Api/ProcessUpdateControllerTest.php tests/Feature/Http/Api/ProcessListControllerTest.php
+(cd apps/cli && php vendor/bin/pest --compact tests/Feature/Commands/Process)
 ```
 
-- [ ] A base-tool command without `--version` targets the only matching instance when exactly one exists. If multiple matching instances exist, interactive mode prompts for the version and non-interactive mode fails with `tool.instance_required`.
+### 5. Implement MySQL/Redis Swarm And Docker Process Runtime Vertical Slice
 
-- [ ] Update gateway request DTOs, API validation, stream payloads, JSON renderers, and command tests so `version` and `runtime` are stable request/response fields.
-
-- [ ] Extend the canonical tool JSON entity with:
-
-```json
-{
-  "name": "mysql",
-  "instance": "mysql:8",
-  "version_family": "8",
-  "runtime": "docker-swarm",
-  "version": "8.4",
-  "endpoints": []
-}
-```
-
-- [ ] Run CLI and gateway command tests:
-
-```bash
-bin/orbit-gateway-pest --compact apps/gateway/tests/Feature/Http/Api/ToolInstallControllerTest.php apps/gateway/tests/Feature/Http/Api/ToolUpdateControllerTest.php apps/gateway/tests/Feature/Http/Api/ToolShowControllerTest.php apps/gateway/tests/Feature/Http/Api/ToolListControllerTest.php
-php apps/cli/vendor/bin/pest --compact apps/cli/tests/Feature/Commands/Tool
-```
-
-### 5. Implement MySQL/Redis Swarm And Docker Runtime Vertical Slice
-
-- [ ] Add MySQL/Redis install tests proving two version families can coexist on one node:
+- [ ] Add MySQL/Redis process definition tests proving two version families can
+  coexist on one node as separate process rows:
 
 ```php
-it('installs mysql 8 and mysql 9 as separate tool instances on one node', function (): void {
+it('defines mysql 8 and mysql 9 as separate process service instances on one node', function (): void {
     $node = Node::factory()->database()->create();
 
-    $mysql8 = app(ToolInstaller::class)->install('mysql', node: $node->name, expectedState: 'running', config: [
+    $mysql8 = app(ProcessServiceDefinitionRegistry::class)->resolve('mysql', [
+        'name' => 'mysql8',
         'version' => '8.4',
         'runtime' => 'docker-swarm',
+        'node' => $node->name,
     ]);
 
-    $mysql9 = app(ToolInstaller::class)->install('mysql', node: $node->name, expectedState: 'running', config: [
+    $mysql9 = app(ProcessServiceDefinitionRegistry::class)->resolve('mysql', [
+        'name' => 'mysql9',
         'version' => '9.0',
         'runtime' => 'docker-swarm',
+        'node' => $node->name,
     ]);
 
-    expect($mysql8['tool']['instance'])->toBe('mysql:8')
-        ->and($mysql9['tool']['instance'])->toBe('mysql:9');
+    expect($mysql8->versionFamily)->toBe('8')
+        ->and($mysql9->versionFamily)->toBe('9');
 });
 ```
 
-- [ ] Make `ToolInstaller` create/update a `NodeTool` row keyed by `(node, tool, instance_key)` and dispatch to the selected runtime driver instead of directly asking the catalog for a shell script.
+- [ ] Make process creation/update persist a process row and dispatch to the
+  selected process runtime driver. Do not create `NodeTool` rows for MySQL,
+  PostgreSQL, Redis, or other always-runnable service instances.
 
-- [ ] Make `ToolUpdater`, `ToolLifecycleManager`, `ToolReconfigurer`, `ToolCredentialsReader`, `ToolLogReader`, `ToolLogFollower`, `ToolsProbe`, and `ToolsFixer` resolve the concrete instance before dispatch.
+- [ ] Make process lifecycle managers, process credentials readers, process log
+  readers/followers, `ProcessesProbe`, and process fixers resolve the concrete
+  process row before dispatch.
 
-- [ ] Keep the old default-instance path working for tools that have no version-family support.
+- [ ] Add MySQL and Redis runtime-intent tests for both `docker` and
+  `docker-swarm`.
 
-- [ ] Add MySQL and Redis runtime-intent tests for both `docker` and `docker-swarm`.
+- [ ] Add endpoint tests proving version-family services get distinct ports and
+  endpoint names, and that conflicts fail before side effects.
 
-- [ ] Add endpoint tests proving version-family services get distinct ports and endpoint names, and that conflicts fail before side effects.
-
-- [ ] Run focused MySQL/Redis tool tests:
+- [ ] Run focused MySQL/Redis process tests and tool boundary guards:
 
 ```bash
-bin/orbit-gateway-pest --compact apps/gateway/tests/Unit/Services/Tools apps/gateway/tests/Feature/Http/Api/ToolInstallControllerTest.php --filter='mysql|redis|runtime|instance'
+bin/orbit-gateway-pest --compact tests/Unit/Services/Processes/ProcessServiceDefinitionRegistryTest.php tests/Feature/Http/Api/ProcessStoreControllerTest.php tests/Unit/Services/Tools/ToolCatalogTest.php tests/Unit/Services/Tools/ToolProcessBoundaryTest.php --filter='mysql|redis|runtime|definition|boundary'
 ```
 
 ### 6. Make Supervisor The App/Workspace Process Runtime
@@ -580,7 +544,7 @@ supervisorctl restart <program>
 - [ ] Run the focused process test suite:
 
 ```bash
-bin/orbit-gateway-pest --compact apps/gateway/tests/Feature/Services/Processes
+bin/orbit-gateway-pest --compact tests/Feature/Services/Processes
 ```
 
 ### 8. Run Supervisor Processes As The Owning Runtime User
@@ -714,11 +678,14 @@ macOS self-WireGuard local routing is not validated by this doctor. Use the macO
 - [ ] Run focused tests:
 
 ```bash
-bin/orbit-gateway-pest --compact apps/gateway/tests/Feature/Services/Processes
-bin/orbit-gateway-pest --compact apps/gateway/tests/Unit/Services/Tools apps/gateway/tests/Feature/Http/Api/ToolInstallControllerTest.php apps/gateway/tests/Feature/Http/Api/ToolUpdateControllerTest.php apps/gateway/tests/Feature/Http/Api/ToolShowControllerTest.php apps/gateway/tests/Feature/Http/Api/ToolListControllerTest.php
-php apps/cli/vendor/bin/pest --compact apps/cli/tests/Feature/Commands/Tool
+bin/orbit-gateway-pest --compact tests/Feature/Services/Processes
+bin/orbit-gateway-pest --compact tests/Unit/Services/Processes/ProcessServiceDefinitionRegistryTest.php tests/Unit/Services/Processes/ProcessRuntimeDriverRegistryTest.php tests/Unit/Services/Processes/ProcessRuntimeDriversTest.php tests/Unit/Services/Processes/ProcessDockerContainerRendererTest.php tests/Unit/Services/Processes/ProcessesProbeTest.php
+bin/orbit-gateway-pest --compact tests/Feature/Http/Api/ProcessStoreControllerTest.php tests/Feature/Http/Api/ProcessListControllerTest.php tests/Feature/Http/Api/ProcessUpdateControllerTest.php
+bin/orbit-gateway-pest --compact tests/Unit/Services/Tools/ToolCatalogTest.php tests/Unit/Services/Tools/ToolProcessBoundaryTest.php
+(cd apps/cli && php vendor/bin/pest --compact tests/Feature/Commands/Process)
 bin/orbit-gateway-pest --compact --filter=AppDevelopmentRoleBaseline
 bin/orbit-gateway-pest --compact --filter=NodeWireGuardServiceAddress
+bin/orbit-gateway-pest --compact tests/Unit/Services/Nodes/NodeWireGuardSelfRouteProbeTest.php tests/Unit/Services/DatabaseConnections/DatabaseConnectionProbeTest.php tests/Unit/Services/DatabaseConnections/DatabaseConnectionRestorerTest.php tests/Unit/Services/DatabaseConnections/DatabaseConnectionEnvMapperTest.php tests/Unit/Services/Doctor/DoctorReportRunnerTest.php
 ```
 
 - [ ] Run formatting after PHP edits:
@@ -739,11 +706,19 @@ composer docs-lint
 composer quality-check
 ```
 
-- [ ] Run provisioning/E2E verification when implementation changes host mutation, Supervisor convergence, Swarm services, or managed DB/Redis service binding:
+- [ ] Run `composer test:e2e` when implementation changes integrated topology
+      behavior for prepared Docker/Incus feature lanes.
 
 ```bash
-composer test:e2e:provision
+composer test:e2e
 ```
+
+- [ ] Run provider-specific provisioning verification only when implementation
+      changes installer behavior, fresh host mutation, image/topology
+      preparation, WireGuard provisioning, systemd provisioning, or production
+      artifact preparation. Do not run provider provision gates as a generic
+      post-`composer test:e2e` step, and do not run provision gates for a
+      documentation-only verification sweep.
 
 ---
 
@@ -752,24 +727,23 @@ composer test:e2e:provision
 - Product docs no longer state that PHP app/workspace processes default to Docker runtime units.
 - Runtime execution lane docs no longer describe app/workspace/process
   containers as the default process-management baseline.
-- Tool docs distinguish base tool definitions from installed version-family
-  tool instances.
-- `tool:install <tool>` supports interactive version/runtime selection before
-  side effects.
-- `tool:install <tool> --version=<major-or-specific-version>
-  --runtime=<docker|docker-swarm>` resolves a concrete instance and runtime.
-- Tool definitions declare supported runtimes, and unsupported runtimes fail
+- Tool docs distinguish host-installed capabilities from runnable processes and
+  explicitly prevent MySQL, PostgreSQL, Redis, FrankenPHP, Horizon, OpenCode
+  Server, and PolyScope Server from being documented as tool lifecycle units.
+- Process command/API docs support interactive process definition, version,
+  owner, and runtime selection before side effects.
+- Process definitions declare supported runtimes, and unsupported runtimes fail
   before side effects.
 - Runtime support is resolved by runtime family plus `Node.platform`; unsupported
   runtime/platform combinations fail before side effects with
-  `tool.runtime_platform_unsupported`.
+  `process.runtime_platform_unsupported`.
 - `docker-swarm` on Ubuntu/Linux is production-supported in this slice, while
   macOS Docker Desktop/Swarm semantics remain unsupported until a
   platform-specific implementation is designed.
-- A node can run MySQL 8 and MySQL 9 as separate `mysql` tool instances with
+- A node can run MySQL 8 and MySQL 9 as separate `mysql` process rows with
   distinct ports, volumes, credentials, endpoints, and runtime intent hashes.
-- `tool:update` updates within the stored runtime and does not silently migrate
-  `docker` instances to `docker-swarm`.
+- Process update behavior updates within the stored runtime and does not
+  silently migrate `docker` processes to `docker-swarm`.
 - New and updated app/workspace processes converge as Supervisor programs.
 - The public process API rejects `runtime=docker`.
 - Existing `runtime=docker` process rows migrate to `supervisor`.
@@ -777,7 +751,9 @@ composer test:e2e:provision
 - App-dev nodes converge Supervisor without turning app-dev web runtime into Swarm.
 - Swarm-backed infra services and direct app-dev behavior can coexist on the same node.
 - App `.env` dependency hosts are not Docker service names and are valid from host Supervisor and FrankenPHP containers.
-- Managed DB/Redis service hosts use owner node WireGuard IPs.
+- Managed DB/Redis process service hosts use owner node WireGuard IPs.
+- WireGuard service-address readiness is provisioning/topology infrastructure,
+  not an app, process, tool, or database runtime prerequisite.
 - Linux node-local access to the node's own WireGuard IP is documented and diagnostically checked.
 - macOS WireGuard self-route behavior is explicitly deferred to a separate plan.
 - App-prod FrankenPHP zero downtime is documented as Swarm `start-first` with
