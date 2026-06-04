@@ -261,12 +261,16 @@ These rules apply to all node commands and define the invariants the family enfo
   reachability expectations, including gateway service readiness for gateway
   nodes.
 
-The node host contract is Docker-first. Production artifact installs use the
-prebuilt Orbit CLI binary (embedded PHP 8.5 +
-`pdo_sqlite`/`openssl`/`curl`/`mbstring`/`tokenizer`/`ctype`/`filter`/`fileinfo`/`json`/`phar`). A production gateway-only node requires Docker
-Engine/CLI, initialized Docker Swarm, the gateway config root, WireGuard/SSH
-identity material, and the native Orbit CLI binary. It does not require host
-PHP, host Composer, Git, or an Orbit source checkout. Source-mounted Docker and
+The node host contract is Docker-first. Provisioning creates or adopts
+WireGuard/SSH identity material, node-local Orbit config, WireGuard
+service-address routing, and the node-local Orbit CLI entry point for every
+managed Ubuntu node. That state is topology infrastructure, not app, process,
+tool, or database runtime prerequisite state. Production artifact installs use
+the prebuilt Orbit CLI binary (embedded PHP 8.5 +
+`pdo_sqlite`/`openssl`/`curl`/`mbstring`/`tokenizer`/`ctype`/`filter`/`fileinfo`/`json`/`phar`). A production gateway-only node's extra host capability
+prerequisites are Docker Engine/CLI, initialized Docker Swarm, the gateway
+config root, and the native Orbit CLI binary. It does not require host PHP,
+host Composer, Git, or an Orbit source checkout. Source-mounted Docker and
 Incus topologies are development and E2E lanes; in those lanes
 `/usr/local/bin/orbit` points directly at `<source>/apps/cli/orbit` and mutable
 node-local Orbit state lives under `~/.config/orbit`. `app-dev` and `app-prod`

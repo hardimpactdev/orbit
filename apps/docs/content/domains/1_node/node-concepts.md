@@ -268,12 +268,17 @@ active workload roles before side effects.
 Registry-only commands use stored gateway metadata and do not perform live
 platform checks; platform drift belongs to `doctor --family=node`.
 
-Managed Ubuntu nodes use a Docker-first prerequisite baseline. Production
-artifact installs use the prebuilt Orbit CLI binary (embedded PHP 8.5 +
-`pdo_sqlite`/`openssl`/`curl`/`mbstring`/`tokenizer`/`ctype`/`filter`/`fileinfo`/`json`/`phar`). A production gateway-only node requires Docker
-Engine/CLI, initialized Docker Swarm, the gateway config root, WireGuard/SSH
-identity material, and the native Orbit CLI binary. It does not require host
-PHP, host Composer, Git, or an Orbit source checkout. Source-mounted Docker and
+Managed Ubuntu nodes use a Docker-first provisioning baseline. Provisioning
+creates or adopts the node's WireGuard/SSH identity material, node-local Orbit
+config root, WireGuard service-address routing, and node-local Orbit CLI entry
+point for gateway, app, agent, ingress, database, and other managed roles. That
+state belongs to topology/provisioning, not to app, process, tool, or database
+runtime prerequisite inventories. Production artifact installs use the prebuilt
+Orbit CLI binary (embedded PHP 8.5 +
+`pdo_sqlite`/`openssl`/`curl`/`mbstring`/`tokenizer`/`ctype`/`filter`/`fileinfo`/`json`/`phar`). A production gateway-only node's extra host capability
+prerequisites are Docker Engine/CLI, initialized Docker Swarm, the gateway
+config root, and the native Orbit CLI binary. It does not require host PHP,
+host Composer, Git, or an Orbit source checkout. Source-mounted Docker and
 Incus topologies are development and E2E lanes; in those lanes
 `/usr/local/bin/orbit` points directly at `<source>/apps/cli/orbit` and mutable
 node-local Orbit state lives under `~/.config/orbit`.
@@ -301,7 +306,8 @@ These terms describe how nodes join the fleet and prove their identity to the ga
   stable private service host for TCP tool endpoints and backend-to-router
   targets. Linux managed nodes keep a self-route for this address so local
   services and local clients on the same node use the same WireGuard service
-  address as remote peers.
+  address as remote peers. That self-route is provisioning/topology state, not
+  process, tool, app, or database runtime state.
 - **First-gateway bootstrap:** The one allowed no-gateway path. A client
   provisions the first gateway over SSH, creates the initiating client
   identity, installs local trust and gateway config, and verifies gateway API
