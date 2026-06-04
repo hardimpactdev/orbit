@@ -30,6 +30,46 @@ it('waits for operator host-key scan reachability before checkout pinning runs',
         ->and($checkoutSource)->toContain("self::artisanCommand('orbit:internal:pin-node-host-keys --json'");
 });
 
+it('waits for gateway host-key scan reachability before incus bake commands pin host keys', function (): void {
+    $source = file_get_contents(repo_path('apps/e2e/app/E2E/Support/IncusTopologyProvider.php'));
+
+    $devWait = strpos($source, '$this->waitForGatewayHostKeyScan($gateway, $sshKeyPair, self::DevWireGuardIp);');
+    $devBake = strpos($source, 'orbit:internal:bake-app-node app-dev-1');
+    $ingressWait = strpos($source, '$this->waitForGatewayHostKeyScan($gateway, $sshKeyPair, self::IngressWireGuardIp);');
+    $ingressBake = strpos($source, 'orbit:internal:bake-ingress-node edge-1');
+    $prodWait = strpos($source, '$this->waitForGatewayHostKeyScan($gateway, $sshKeyPair, self::ProdWireGuardIp);');
+    $prodBake = strpos($source, 'orbit:internal:bake-app-node app-prod-1');
+    $agentWait = strpos($source, '$this->waitForGatewayHostKeyScan($gateway, $sshKeyPair, self::AgentWireGuardIp);');
+    $agentBake = strpos($source, 'orbit:internal:bake-agent-node agent-1');
+    $websocketBake = strpos($source, 'orbit:internal:bake-websocket-node app-dev-1');
+
+    expect($source)->toContain('private function waitForGatewayHostKeyScan')
+        ->and($source)->toContain('private function waitForHostKeyScan')
+        ->and($source)->toContain('ssh-keyscan -T 5 -t ed25519,ecdsa,rsa')
+        ->and($devWait)->toBeInt()
+        ->and($devBake)->toBeInt()
+        ->and($ingressWait)->toBeInt()
+        ->and($ingressBake)->toBeInt()
+        ->and($prodWait)->toBeInt()
+        ->and($prodBake)->toBeInt()
+        ->and($agentWait)->toBeInt()
+        ->and($agentBake)->toBeInt()
+        ->and($websocketBake)->toBeInt()
+        ->and([
+            'dev' => $devWait < $devBake,
+            'ingress' => $ingressWait < $ingressBake,
+            'prod' => $prodWait < $prodBake,
+            'agent' => $agentWait < $agentBake,
+            'websocket' => $devWait < $websocketBake,
+        ])->toBe([
+            'dev' => true,
+            'ingress' => true,
+            'prod' => true,
+            'agent' => true,
+            'websocket' => true,
+        ]);
+});
+
 it('seeds the gateway ssh key into prepared incus downstream clones', function (): void {
     $commands = [];
     $host = new class(incusTopologyProviderTestConfig(), $commands) extends IncusHost
@@ -76,6 +116,7 @@ it('seeds the gateway ssh key into prepared incus downstream clones', function (
         ->and($joined)->toContain("incus exec 'agent' -- sh -lc")
         ->and($joined)->toContain('ssh-ed25519 gateway-key orbit-e2e-gateway')
         ->and($joined)->toContain('/home/orbit/.ssh/authorized_keys')
+        ->and($joined)->toContain('systemctl start ssh || systemctl start sshd || true')
         ->and($joined)->not->toContain("incus exec 'operator' -- sh -lc");
 });
 

@@ -766,6 +766,8 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
         $this->retargetOperator($operator, $config, $sshKeyPair, $sourceMountedCheckout);
 
         if (isset($instances['dev'])) {
+            $this->waitForGatewayHostKeyScan($gateway, $sshKeyPair, self::DevWireGuardIp);
+
             E2ECommand::ssh($gateway, 'orbit', $sshKeyPair, sprintf(
                 'cd /home/orbit/orbit && php apps/gateway/artisan orbit:internal:bake-app-node app-dev-1 --role=app-dev --host=%s --wireguard-address=%s --tld=test --gateway-endpoint=%s --user=orbit --user=orbit',
                 escapeshellarg(self::DevWireGuardIp),
@@ -776,6 +778,8 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
         }
 
         if (isset($instances['ingress'])) {
+            $this->waitForGatewayHostKeyScan($gateway, $sshKeyPair, self::IngressWireGuardIp);
+
             E2ECommand::ssh($gateway, 'orbit', $sshKeyPair, sprintf(
                 'cd /home/orbit/orbit && php apps/gateway/artisan orbit:internal:bake-ingress-node edge-1 --host=%s --wireguard-address=%s --gateway-endpoint=%s --user=orbit',
                 escapeshellarg(self::IngressWireGuardIp),
@@ -785,6 +789,8 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
         }
 
         if (isset($instances['prod'])) {
+            $this->waitForGatewayHostKeyScan($gateway, $sshKeyPair, self::ProdWireGuardIp);
+
             if (E2EPreparedTopology::prodHostsIngressRole($kind) && ! isset($instances['ingress'])) {
                 E2ECommand::ssh($gateway, 'orbit', $sshKeyPair, sprintf(
                     'cd /home/orbit/orbit && php apps/gateway/artisan orbit:internal:bake-ingress-node app-prod-1 --host=%s --wireguard-address=%s --gateway-endpoint=%s --user=orbit',
@@ -810,6 +816,8 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
         }
 
         if (isset($instances['agent'])) {
+            $this->waitForGatewayHostKeyScan($gateway, $sshKeyPair, self::AgentWireGuardIp);
+
             E2ECommand::ssh($gateway, 'orbit', $sshKeyPair, sprintf(
                 'cd /home/orbit/orbit && php apps/gateway/artisan orbit:internal:bake-agent-node agent-1 --host=%s --wireguard-address=%s --gateway-endpoint=%s --user=orbit --tld=agent',
                 escapeshellarg(self::AgentWireGuardIp),
@@ -1051,7 +1059,7 @@ PHP;
         E2ECommand::exec(
             $instance,
             sprintf(
-                'install -d -m 700 -o orbit -g orbit /home/orbit/.ssh && touch /home/orbit/.ssh/authorized_keys && chown orbit:orbit /home/orbit/.ssh/authorized_keys && chmod 600 /home/orbit/.ssh/authorized_keys && grep -qxF %1$s /home/orbit/.ssh/authorized_keys || printf "%%s\n" %1$s >> /home/orbit/.ssh/authorized_keys',
+                'install -d -m 700 -o orbit -g orbit /home/orbit/.ssh && touch /home/orbit/.ssh/authorized_keys && chown orbit:orbit /home/orbit/.ssh/authorized_keys && chmod 600 /home/orbit/.ssh/authorized_keys && (grep -qxF %1$s /home/orbit/.ssh/authorized_keys || printf "%%s\n" %1$s >> /home/orbit/.ssh/authorized_keys) && (systemctl start ssh || systemctl start sshd || true)',
                 escapeshellarg($publicKey),
             ),
             "Could not authorize gateway SSH key in Incus {$role} instance",
@@ -1126,12 +1134,22 @@ PHP;
         );
     }
 
+    private function waitForGatewayHostKeyScan(IncusInstance $gateway, SshKeyPair $sshKeyPair, string $wireGuardIp): void
+    {
+        $this->waitForHostKeyScan($gateway, 'orbit', $sshKeyPair, $wireGuardIp);
+    }
+
     private function waitForOperatorHostKeyScan(IncusInstance $operator, E2EConfig $config, string $wireGuardIp): void
     {
+        $this->waitForHostKeyScan($operator, $config->operatorUser, new SshKeyPair('/dev/null', '/dev/null'), $wireGuardIp);
+    }
+
+    private function waitForHostKeyScan(IncusInstance $instance, string $user, SshKeyPair $sshKeyPair, string $wireGuardIp): void
+    {
         E2ECommand::ssh(
-            $operator,
-            $config->operatorUser,
-            new SshKeyPair('/dev/null', '/dev/null'),
+            $instance,
+            $user,
+            $sshKeyPair,
             sprintf(
                 'deadline=$((SECONDS+60)); until ssh-keyscan -T 5 -t ed25519,ecdsa,rsa %1$s >/dev/null 2>&1; do if [ "$SECONDS" -ge "$deadline" ]; then ssh-keyscan -T 10 -t ed25519,ecdsa,rsa %1$s; exit 1; fi; sleep 2; done',
                 escapeshellarg($wireGuardIp),
