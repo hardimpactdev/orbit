@@ -13,6 +13,9 @@ final class ToolInstallCommand extends ToolGatewayCommand
         {tool? : Tool catalog name to install}
         {--app= : Resolve target by app selector}
         {--node= : Resolve target by node}
+        {--instance= : Tool instance selector}
+        {--tool-version= : Version or version family to install}
+        {--runtime= : Runtime family to use}
         {--status=installed : Desired state after install (installed|running)}
         {--json : Output JSON}';
 
@@ -44,6 +47,11 @@ final class ToolInstallCommand extends ToolGatewayCommand
 
         return $this->streamToolAction($tool, 'install', [
             ...$payload,
+            ...$this->filledQuery([
+                'instance' => $this->stringOption('instance'),
+                'version' => $this->stringOption('tool-version'),
+                'runtime' => $this->stringOption('runtime'),
+            ]),
             'status' => $status,
         ]);
     }

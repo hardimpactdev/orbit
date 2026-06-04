@@ -69,7 +69,7 @@ final class ToolRestartController implements Loggable
             return $agentSelfAuth;
         }
 
-        return $this->executeRestart($request, $tool, $lifecycle, $streams, $caller, $node, $app);
+        return $this->executeRestart($request, $tool, $lifecycle, $streams, $caller, $node, $app, $this->toolTargetString($request, 'instance'));
     }
 
     private function isAgentSelfWithRestartPermission(Node $caller): bool
@@ -112,7 +112,7 @@ final class ToolRestartController implements Loggable
             return $this->toolTargetAuthorizationFailed($result['reason'] ?? 'Agent self is not authorized to perform this action.');
         }
 
-        return $this->executeRestart($request, $tool, $lifecycle, $streams, $caller, $caller->name, null);
+        return $this->executeRestart($request, $tool, $lifecycle, $streams, $caller, $caller->name, null, $this->toolTargetString($request, 'instance'));
     }
 
     private function executeRestart(
@@ -123,8 +123,9 @@ final class ToolRestartController implements Loggable
         Node $caller,
         ?string $node,
         ?string $app,
+        ?string $instance,
     ): JsonResponse|StreamedResponse {
-        $operation = fn (): array|ToolRegistryFailure => $lifecycle->restart($tool, node: $node, app: $app);
+        $operation = fn (): array|ToolRegistryFailure => $lifecycle->restart($tool, node: $node, app: $app, instance: $instance);
 
         if ($this->wantsEventStream($request)) {
             return $this->streamToolAction(
@@ -165,7 +166,7 @@ final class ToolRestartController implements Loggable
             'tool.not_found' => 404,
             'authorization_failed' => 403,
             'tool.remote_action_failed' => 502,
-            'tool.process_missing', 'tool.process_ambiguous' => 422,
+            'tool.process_missing', 'tool.process_ambiguous', 'tool.instance_required' => 422,
             default => 400,
         };
 

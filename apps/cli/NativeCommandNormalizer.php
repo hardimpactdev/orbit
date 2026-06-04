@@ -9,6 +9,19 @@ const ORBIT_NATIVE_MULTI_TOKEN_COMMANDS = [
 ];
 
 /**
+ * Normalize native argv quirks before Symfony binds global options.
+ *
+ * @param  list<string>  $argv
+ * @return list<string>
+ */
+function normalizeNativeCommandArgv(array $argv): array
+{
+    return normalizeNativeToolInstallVersionArgv(
+        normalizeNativeMultiTokenCommandArgv($argv),
+    );
+}
+
+/**
  * Convert supported multi-token native command invocations into the single
  * Symfony command-name argument expected by Laravel Zero.
  *
@@ -63,6 +76,72 @@ function normalizeNativeMultiTokenCommandArgv(array $argv): array
 
         if ($remainingCommandTokens > 0) {
             $remainingCommandTokens--;
+
+            continue;
+        }
+
+        $rewritten[] = $argument;
+    }
+
+    return $rewritten;
+}
+
+/**
+ * Rewrite the public `tool:install --version=<version>` contract to an
+ * internal option name because Symfony reserves `--version` globally.
+ *
+ * @param  list<string>  $argv
+ * @return list<string>
+ */
+function normalizeNativeToolInstallVersionArgv(array $argv): array
+{
+    if ($argv === []) {
+        return [];
+    }
+
+    $rewritten = [];
+    $insideToolInstall = false;
+    $afterEndOfOptions = false;
+    $count = count($argv);
+
+    for ($index = 0; $index < $count; $index++) {
+        $argument = $argv[$index];
+
+        if ($index === 0) {
+            $rewritten[] = $argument;
+
+            continue;
+        }
+
+        if ($afterEndOfOptions) {
+            $rewritten[] = $argument;
+
+            continue;
+        }
+
+        if ($argument === '--') {
+            $rewritten[] = $argument;
+            $afterEndOfOptions = true;
+
+            continue;
+        }
+
+        if (! $insideToolInstall && $argument !== '' && ! str_starts_with($argument, '-')) {
+            $insideToolInstall = $argument === 'tool:install';
+            $rewritten[] = $argument;
+
+            continue;
+        }
+
+        if ($insideToolInstall && str_starts_with($argument, '--version=')) {
+            $rewritten[] = '--tool-version='.substr($argument, strlen('--version='));
+
+            continue;
+        }
+
+        if ($insideToolInstall && $argument === '--version' && $index + 1 < $count && ! str_starts_with($argv[$index + 1], '-')) {
+            $rewritten[] = '--tool-version='.$argv[$index + 1];
+            $index++;
 
             continue;
         }

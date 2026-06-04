@@ -69,8 +69,9 @@ final class ToolUpdateController implements Loggable
         }
 
         $version = $this->requestString($request, 'version');
+        $instance = $this->requestString($request, 'instance');
 
-        return $this->executeUpdate($request, $tool, $updater, $streams, $caller, $node, $app, $version);
+        return $this->executeUpdate($request, $tool, $updater, $streams, $caller, $node, $app, $version, $instance);
     }
 
     private function isAgentSelfWithUpdatePermission(Node $caller): bool
@@ -109,8 +110,9 @@ final class ToolUpdateController implements Loggable
         }
 
         $version = $this->requestString($request, 'version');
+        $instance = $this->requestString($request, 'instance');
 
-        return $this->executeUpdate($request, $tool, app(ToolUpdater::class), app(ProgressEventStreamResponseFactory::class), $caller, $caller->name, null, $version);
+        return $this->executeUpdate($request, $tool, app(ToolUpdater::class), app(ProgressEventStreamResponseFactory::class), $caller, $caller->name, null, $version, $instance);
     }
 
     private function executeUpdate(
@@ -122,6 +124,7 @@ final class ToolUpdateController implements Loggable
         ?string $node,
         ?string $app,
         ?string $version,
+        ?string $instance,
     ): JsonResponse|StreamedResponse {
 
         $operation = fn (): array|ToolRegistryFailure => $updater->update(
@@ -129,6 +132,7 @@ final class ToolUpdateController implements Loggable
             node: $node,
             app: $app,
             expectedVersion: $version,
+            instance: $instance,
         );
 
         if ($this->wantsEventStream($request)) {
@@ -173,7 +177,7 @@ final class ToolUpdateController implements Loggable
         $status = match ($failure->code) {
             'tool.not_found' => 404,
             'authorization_failed' => 403,
-            'validation_failed' => 422,
+            'validation_failed', 'tool.instance_required' => 422,
             default => 400,
         };
 

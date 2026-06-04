@@ -58,3 +58,19 @@ describe('native multi-token command normalization', function (): void {
             ->toBeNull();
     });
 });
+
+describe('native command option normalization', function (): void {
+    it('rewrites tool install version options after the command name', function (): void {
+        expect(normalizeNativeCommandArgv(['orbit', 'tool:install', 'mysql', '--version=8.4', '--runtime=docker-swarm']))
+            ->toBe(['orbit', 'tool:install', 'mysql', '--tool-version=8.4', '--runtime=docker-swarm'])
+            ->and(normalizeNativeCommandArgv(['orbit', 'tool:install', 'mysql', '--version', '8.4']))
+            ->toBe(['orbit', 'tool:install', 'mysql', '--tool-version=8.4']);
+    });
+
+    it('preserves the global version option before a command name', function (): void {
+        expect(normalizeNativeCommandArgv(['orbit', '--version']))
+            ->toBe(['orbit', '--version'])
+            ->and(normalizeNativeCommandArgv(['orbit', '--version', 'tool:install', 'mysql']))
+            ->toBe(['orbit', '--version', 'tool:install', 'mysql']);
+    });
+});

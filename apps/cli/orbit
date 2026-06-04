@@ -11,7 +11,7 @@ setEntrypointEnvironment();
 
 $argv = $_SERVER['argv'] ?? [];
 
-$_SERVER['argv'] = normalizeNativeMultiTokenCommandArgv($argv);
+$_SERVER['argv'] = normalizeNativeCommandArgv($argv);
 
 $autoload = __DIR__.'/vendor/autoload.php';
 

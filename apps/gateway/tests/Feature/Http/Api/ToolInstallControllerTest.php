@@ -175,7 +175,7 @@ describe('ToolInstallController', function (): void {
             ->and($shell->scripts)->toBe([]);
     });
 
-    it('rejects direct API install-time version intent before side effects', function (array $payload): void {
+    it('rejects update-only version intent before side effects', function (array $payload): void {
         $caller = createToolInstallApiCallerNode();
         $node = Node::factory()->create(['name' => 'app-install-api-1', 'status' => 'active']);
         assignToolInstallApiRole($node, 'app-dev');
@@ -195,10 +195,135 @@ describe('ToolInstallController', function (): void {
         expect(NodeTool::query()->count())->toBe(0)
             ->and($shell->scripts)->toBe([]);
     })->with([
-        'version' => [['version' => '1.0.0']],
         'expected_version' => [['expected_version' => '1.0.0']],
         'expected-version' => [['expected-version' => '1.0.0']],
     ]);
+
+    it('records install-time version and runtime intent before applying the managed tool', function (): void {
+        $caller = createToolInstallApiCallerNode();
+        $node = Node::factory()->create([
+            'name' => 'database-install-api-1',
+            'platform' => 'ubuntu_24-04',
+            'status' => 'active',
+            'wireguard_address' => '10.6.0.44',
+        ]);
+        assignToolInstallApiRole($node, 'database');
+        grantToolInstallApiAccess($caller, $node);
+        $shell = new ToolInstallApiRecordingShell;
+        app()->instance(RemoteShell::class, $shell);
+
+        $response = $this->call('POST', '/api/tools/mysql/install', [
+            'node' => 'database-install-api-1',
+            'version' => '8.4',
+            'runtime' => 'docker-swarm',
+            'status' => 'running',
+        ], [], [], ['REMOTE_ADDR' => TOOL_INSTALL_API_CALLER_WG_IP]);
+
+        $response->assertOk()
+            ->assertJsonPath('success.data.tool.name', 'mysql')
+            ->assertJsonPath('success.data.tool.node', 'database-install-api-1')
+            ->assertJsonPath('success.data.tool.state', 'running')
+            ->assertJsonPath('success.data.tool.instance', 'mysql:8')
+            ->assertJsonPath('success.data.tool.version_family', '8')
+            ->assertJsonPath('success.data.tool.version', '8.4')
+            ->assertJsonPath('success.data.tool.runtime', 'docker-swarm');
+
+        $tool = NodeTool::query()
+            ->where('node_id', $node->id)
+            ->where('name', 'mysql')
+            ->where('instance_key', 'mysql:8')
+            ->firstOrFail();
+
+        expect($tool->version_family)->toBe('8')
+            ->and($tool->expected_version)->toBe('8.4')
+            ->and($tool->runtime)->toBe('docker-swarm')
+            ->and($tool->expected_state)->toBe('running')
+            ->and($tool->runtime_config['implementation_key'] ?? null)->toBe('docker-swarm/ubuntu')
+            ->and($tool->config['endpoints'][0]['host'] ?? null)->toBe('10.6.0.44')
+            ->and($tool->config['endpoints'][0]['port'] ?? null)->toBe(3308)
+            ->and($shell->scripts)->toHaveCount(1);
+    });
+
+    it('rejects unsupported install runtime before row writes or remote shell actions', function (): void {
+        $caller = createToolInstallApiCallerNode();
+        $node = Node::factory()->create([
+            'name' => 'database-install-api-1',
+            'platform' => 'ubuntu_24-04',
+            'status' => 'active',
+        ]);
+        assignToolInstallApiRole($node, 'database');
+        grantToolInstallApiAccess($caller, $node);
+        $shell = new ToolInstallApiRecordingShell;
+        app()->instance(RemoteShell::class, $shell);
+
+        $response = $this->call('POST', '/api/tools/mysql/install', [
+            'node' => 'database-install-api-1',
+            'version' => '8',
+            'runtime' => 'podman',
+        ], [], [], ['REMOTE_ADDR' => TOOL_INSTALL_API_CALLER_WG_IP]);
+
+        $response->assertStatus(400)
+            ->assertJsonPath('error.code', 'tool.runtime_unsupported')
+            ->assertJsonPath('error.meta.tool', 'mysql')
+            ->assertJsonPath('error.meta.runtime', 'podman');
+
+        expect(NodeTool::query()->count())->toBe(0)
+            ->and($shell->scripts)->toBe([]);
+    });
+
+    it('rejects runtime platform mismatches before row writes or remote shell actions', function (): void {
+        $caller = createToolInstallApiCallerNode();
+        $node = Node::factory()->create([
+            'name' => 'database-install-api-1',
+            'platform' => 'macos_15-4',
+            'status' => 'active',
+        ]);
+        assignToolInstallApiRole($node, 'database');
+        grantToolInstallApiAccess($caller, $node);
+        $shell = new ToolInstallApiRecordingShell;
+        app()->instance(RemoteShell::class, $shell);
+
+        $response = $this->call('POST', '/api/tools/mysql/install', [
+            'node' => 'database-install-api-1',
+            'version' => '8',
+            'runtime' => 'docker-swarm',
+        ], [], [], ['REMOTE_ADDR' => TOOL_INSTALL_API_CALLER_WG_IP]);
+
+        $response->assertStatus(400)
+            ->assertJsonPath('error.code', 'tool.runtime_platform_unsupported')
+            ->assertJsonPath('error.meta.tool', 'mysql')
+            ->assertJsonPath('error.meta.runtime', 'docker-swarm')
+            ->assertJsonPath('error.meta.platform', 'macos_15-4');
+
+        expect(NodeTool::query()->count())->toBe(0)
+            ->and($shell->scripts)->toBe([]);
+    });
+
+    it('requires explicit version selection for multi-version tools before side effects', function (): void {
+        $caller = createToolInstallApiCallerNode();
+        $node = Node::factory()->create([
+            'name' => 'database-install-api-1',
+            'platform' => 'ubuntu_24-04',
+            'status' => 'active',
+        ]);
+        assignToolInstallApiRole($node, 'database');
+        grantToolInstallApiAccess($caller, $node);
+        $shell = new ToolInstallApiRecordingShell;
+        app()->instance(RemoteShell::class, $shell);
+
+        $response = $this->call('POST', '/api/tools/mysql/install', [
+            'node' => 'database-install-api-1',
+            'runtime' => 'docker',
+        ], [], [], ['REMOTE_ADDR' => TOOL_INSTALL_API_CALLER_WG_IP]);
+
+        $response->assertUnprocessable()
+            ->assertJsonPath('error.code', 'validation_failed')
+            ->assertJsonPath('error.meta.field', 'version')
+            ->assertJsonPath('error.meta.reason', 'required');
+
+        expect(NodeTool::query()->count())->toBe(0)
+            ->and($shell->scripts)->toBe([]);
+    });
 
     it('requires an explicit target selector even when exactly one app node is visible', function (): void {
         $caller = createToolInstallApiCallerNode();

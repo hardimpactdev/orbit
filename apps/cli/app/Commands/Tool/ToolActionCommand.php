@@ -22,6 +22,11 @@ abstract class ToolActionCommand extends ToolGatewayCommand
             return $payload;
         }
 
-        return $this->streamToolAction($tool, $this->action(), $payload);
+        return $this->streamToolAction($tool, $this->action(), [
+            ...$payload,
+            ...$this->filledQuery([
+                'instance' => $this->stringOption('instance'),
+            ]),
+        ]);
     }
 }

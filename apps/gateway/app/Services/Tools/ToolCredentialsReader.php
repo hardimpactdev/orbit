@@ -14,13 +14,13 @@ final readonly class ToolCredentialsReader
     /**
      * @return array<string, mixed>|ToolRegistryFailure
      */
-    public function read(string $tool, ?string $node = null, ?string $app = null): array|ToolRegistryFailure
+    public function read(string $tool, ?string $node = null, ?string $app = null, ?string $instance = null): array|ToolRegistryFailure
     {
         if (! $this->catalog->supports($tool)) {
             return ToolRegistryFailure::unsupportedAction($tool, 'credentials');
         }
 
-        $model = $this->registry->show(tool: $tool, node: $node, app: $app);
+        $model = $this->registry->show(tool: $tool, node: $node, app: $app, instance: $instance);
 
         if ($model instanceof ToolRegistryFailure) {
             return $model;
@@ -46,6 +46,7 @@ final readonly class ToolCredentialsReader
         return [
             'tool' => $tool,
             'node' => $model->node->name,
+            'instance' => $model->instance_key,
             'fields' => $fields,
         ];
     }

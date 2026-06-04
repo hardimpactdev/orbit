@@ -19,9 +19,9 @@ final readonly class ToolLogFollower
     /**
      * @param  callable(string): void  $onOutput
      */
-    public function follow(string $tool, ?string $node, ?string $app, int $lines, callable $onOutput): int|ToolRegistryFailure
+    public function follow(string $tool, ?string $node, ?string $app, ?string $instance, int $lines, callable $onOutput): int|ToolRegistryFailure
     {
-        $target = $this->streamTarget($tool, $node, $app, $lines);
+        $target = $this->streamTarget($tool, $node, $app, $instance, $lines);
 
         if ($target instanceof ToolRegistryFailure) {
             return $target;
@@ -47,9 +47,9 @@ final readonly class ToolLogFollower
     /**
      * @return array{node: Node, command: string}|ToolRegistryFailure
      */
-    public function streamTarget(string $tool, ?string $node, ?string $app, int $lines): array|ToolRegistryFailure
+    public function streamTarget(string $tool, ?string $node, ?string $app, ?string $instance, int $lines): array|ToolRegistryFailure
     {
-        $target = $this->relatedProcesses->resolve($tool, $node, $app, 'logs');
+        $target = $this->relatedProcesses->resolve($tool, $node, $app, 'logs', $instance);
 
         if ($target instanceof ToolRegistryFailure) {
             return $target;

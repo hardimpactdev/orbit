@@ -45,6 +45,42 @@ describe('tool:credentials', function (): void {
             ->and($output)->not->toContain('executor_secret');
     });
 
+    it('forwards explicit instance selectors for credential reads', function (): void {
+        fakeGateway(fakeSuccessEnvelope([
+            'credentials' => [
+                'tool' => 'mysql',
+                'node' => 'database-1',
+                'instance' => 'mysql:8',
+                'fields' => [
+                    'host' => '10.6.0.12',
+                    'port' => 3308,
+                    'password' => 'gateway-managed-secret',
+                ],
+            ],
+        ]));
+
+        [$exitCode, $output] = runCommand($this, 'tool:credentials', [
+            'tool' => 'mysql',
+            '--node' => 'database-1',
+            '--instance' => 'mysql:8',
+            '--json' => true,
+        ]);
+
+        $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+
+        Http::assertSent(function (Request $request): bool {
+            $url = urldecode($request->url());
+
+            return $request->method() === 'GET'
+                && str_contains($url, '/api/tools/mysql/credentials')
+                && str_contains($url, 'node=database-1')
+                && str_contains($url, 'instance=mysql:8');
+        });
+
+        expect($exitCode)->toBe(0)
+            ->and($decoded['success']['data']['credentials']['instance'])->toBe('mysql:8');
+    });
+
     it('does not emit extra sensitive gateway envelope fields in JSON mode', function (): void {
         fakeGateway(fakeSuccessEnvelope([
             'credentials' => [

@@ -17,13 +17,13 @@ final readonly class ToolRelatedProcessResolver
         private ToolRegistry $registry,
     ) {}
 
-    public function resolve(string $tool, ?string $node, ?string $app, string $action): ToolRelatedProcessTarget|ToolRegistryFailure
+    public function resolve(string $tool, ?string $node, ?string $app, string $action, ?string $instance = null): ToolRelatedProcessTarget|ToolRegistryFailure
     {
         if (! $this->catalog->supports($tool)) {
             return ToolRegistryFailure::unsupportedAction($tool, $action);
         }
 
-        $model = $this->registry->show(tool: $tool, node: $node, app: $app);
+        $model = $this->registry->show(tool: $tool, node: $node, app: $app, instance: $instance);
 
         if ($model instanceof ToolRegistryFailure) {
             return $model;
@@ -35,7 +35,7 @@ final readonly class ToolRelatedProcessResolver
             return ToolRegistryFailure::remoteActionFailed($tool, '', $action, 1, 'Target node is missing.');
         }
 
-        $processes = $this->relatedProcesses($model->node, $tool);
+        $processes = $this->relatedProcesses($model->node, $tool, $instance === null ? null : $model->instance_key);
 
         if ($processes->isEmpty()) {
             return ToolRegistryFailure::processMissing($tool, $model->node->name, $action);
@@ -74,15 +74,23 @@ final readonly class ToolRelatedProcessResolver
     /**
      * @return Collection<int, Process>
      */
-    private function relatedProcesses(Node $node, string $tool): Collection
+    private function relatedProcesses(Node $node, string $tool, ?string $instanceKey): Collection
     {
-        return Process::query()
+        $processes = Process::query()
             ->with('owner')
             ->where('node_id', $node->id)
             ->whereIn('tool', $this->processToolNames($tool))
             ->orderBy('sort_order')
             ->orderBy('id')
             ->get();
+
+        if ($instanceKey === null) {
+            return $processes;
+        }
+
+        return $processes
+            ->filter(fn (Process $process): bool => $this->matchesInstance($process, $instanceKey))
+            ->values();
     }
 
     /**
@@ -159,5 +167,13 @@ final readonly class ToolRelatedProcessResolver
         $app->setRelation('node', $node);
 
         return $app;
+    }
+
+    private function matchesInstance(Process $process, string $instanceKey): bool
+    {
+        $config = is_array($process->runtime_config) ? $process->runtime_config : [];
+        $processInstance = $config['tool_instance_key'] ?? null;
+
+        return ! is_string($processInstance) || trim($processInstance) === '' || $processInstance === $instanceKey;
     }
 }

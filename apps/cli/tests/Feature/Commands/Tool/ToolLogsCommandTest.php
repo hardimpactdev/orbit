@@ -39,6 +39,42 @@ describe('tool:logs', function (): void {
             ->and($decoded['success']['data']['logs']['lines'][0]['message'])->toBe('supervisor started');
     });
 
+    it('forwards explicit instance selectors for bounded logs', function (): void {
+        fakeGateway(fakeSuccessEnvelope([
+            'logs' => [
+                'tool' => 'mysql',
+                'node' => 'database-1',
+                'process' => 'mysql8',
+                'lines' => [
+                    ['message' => 'mysql started'],
+                ],
+            ],
+        ]));
+
+        [$exitCode, $output] = runCommand($this, 'tool:logs', [
+            'tool' => 'mysql',
+            '--node' => 'database-1',
+            '--instance' => 'mysql:8',
+            '--lines' => 1,
+            '--json' => true,
+        ]);
+
+        $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+
+        Http::assertSent(function (Request $request): bool {
+            $url = urldecode($request->url());
+
+            return $request->method() === 'GET'
+                && str_contains($url, '/api/tools/mysql/logs')
+                && str_contains($url, 'node=database-1')
+                && str_contains($url, 'instance=mysql:8')
+                && str_contains($url, 'lines=1');
+        });
+
+        expect($exitCode)->toBe(0)
+            ->and($decoded['success']['data']['logs']['process'])->toBe('mysql8');
+    });
+
     it('renders bounded log lines for human output', function (): void {
         fakeGateway(fakeSuccessEnvelope([
             'logs' => [

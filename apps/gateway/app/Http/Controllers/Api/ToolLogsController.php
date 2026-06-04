@@ -43,6 +43,7 @@ final class ToolLogsController implements Loggable
             tool: $tool,
             node: $target['node'],
             app: $target['app'],
+            instance: $this->toolTargetString($request, 'instance'),
             lines: $this->positiveInteger($request, 'lines', 100),
         );
 
@@ -74,7 +75,7 @@ final class ToolLogsController implements Loggable
             'authorization_failed' => 403,
             'tool.remote_action_failed' => 502,
             'validation_failed' => 422,
-            'tool.process_missing', 'tool.process_ambiguous' => 422,
+            'tool.process_missing', 'tool.process_ambiguous', 'tool.instance_required' => 422,
             default => 400,
         };
 

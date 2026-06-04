@@ -23,6 +23,7 @@ final readonly class ToolInstaller
         private NodeRoleAssignments $nodeRoleAssignments,
         private RemoteSecretFile $remoteSecretFile,
         private GitHubTokenResolver $githubTokenResolver,
+        private ToolRuntimeIntentPlanner $runtimeIntents,
     ) {}
 
     /**
@@ -34,6 +35,9 @@ final readonly class ToolInstaller
         ?string $app = null,
         string $expectedState = 'installed',
         array $config = [],
+        ?string $version = null,
+        ?string $runtime = null,
+        ?string $instance = null,
     ): array|ToolRegistryFailure {
         if (! $this->catalog->supports($tool)) {
             return ToolRegistryFailure::unsupportedAction($tool, 'install');
@@ -52,6 +56,32 @@ final readonly class ToolInstaller
 
         if ($requiredRole !== null && ! $targetNode->hasActiveRole($requiredRole)) {
             return ToolRegistryFailure::nodeRoleRequired($tool, $targetNode->name, $requiredRole);
+        }
+
+        $instanceSelection = ToolInstanceSelector::forInstall(
+            $this->catalog,
+            $tool,
+            ToolVersionRequest::fromInput($version),
+            $instance,
+        );
+
+        if ($instanceSelection instanceof ToolRegistryFailure) {
+            return $instanceSelection;
+        }
+
+        $runtimeIntent = $this->runtimeIntent(
+            node: $targetNode,
+            instance: $instanceSelection,
+            runtime: $runtime,
+            shouldPlan: $runtime !== null || $version !== null || $instance !== null,
+        );
+
+        if ($runtimeIntent instanceof ToolRegistryFailure) {
+            return $runtimeIntent;
+        }
+
+        if ($runtimeIntent instanceof ToolRuntimeIntent) {
+            $config = $this->withRuntimeConfig($config, $runtimeIntent);
         }
 
         $script = $this->catalog->installScript($tool, $config);
@@ -73,9 +103,13 @@ final readonly class ToolInstaller
             [
                 'node_id' => $targetNode->id,
                 'name' => $tool,
+                'instance_key' => $instanceSelection->instanceKey,
             ],
             [
-                'expected_version' => null,
+                'version_family' => $instanceSelection->versionFamily,
+                'expected_version' => $instanceSelection->expectedVersion,
+                'runtime' => $runtimeIntent->runtime ?? NodeTool::defaultRuntimeForTool($tool),
+                'runtime_config' => $runtimeIntent?->spec(),
                 'expected_state' => $expectedState,
                 'config' => $config === [] ? null : $config,
             ],
@@ -129,7 +163,54 @@ final readonly class ToolInstaller
             'name' => $tool,
             'node' => $targetNode->name,
             'state' => $row->expected_state,
+            'instance' => $row->instance_key,
+            'version_family' => $row->version_family,
             'version' => $row->expected_version,
+            'runtime' => $row->runtime,
+        ];
+    }
+
+    private function runtimeIntent(Node $node, ToolInstanceSelector $instance, ?string $runtime, bool $shouldPlan): ToolRuntimeIntent|ToolRegistryFailure|null
+    {
+        if (! $shouldPlan || ($runtime === null && $this->catalog->supportedRuntimes($instance->tool) === [])) {
+            return null;
+        }
+
+        $selection = ToolRuntimeSelection::resolve(
+            $this->catalog,
+            $instance->tool,
+            $runtime,
+            (string) $node->platform,
+        );
+
+        return $this->runtimeIntents->plan($node, $instance, $selection);
+    }
+
+    /**
+     * @param  array<string, mixed>  $config
+     * @return array<string, mixed>
+     */
+    private function withRuntimeConfig(array $config, ToolRuntimeIntent $intent): array
+    {
+        return [
+            ...$config,
+            'endpoints' => $this->mergeEndpoints($config['endpoints'] ?? null, [$intent->endpoint]),
+        ];
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $newEndpoints
+     * @return list<array<string, mixed>>
+     */
+    private function mergeEndpoints(mixed $existingEndpoints, array $newEndpoints): array
+    {
+        if (! is_array($existingEndpoints)) {
+            return $newEndpoints;
+        }
+
+        return [
+            ...array_values(array_filter($existingEndpoints, is_array(...))),
+            ...$newEndpoints,
         ];
     }
 

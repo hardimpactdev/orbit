@@ -22,36 +22,37 @@ final readonly class ToolLifecycleManager
     /**
      * @return array<string, mixed>|ToolRegistryFailure
      */
-    public function start(string $tool, ?string $node = null, ?string $app = null): array|ToolRegistryFailure
+    public function start(string $tool, ?string $node = null, ?string $app = null, ?string $instance = null): array|ToolRegistryFailure
     {
-        return $this->applyProcessAction($tool, $node, $app, 'start');
+        return $this->applyProcessAction($tool, $node, $app, $instance, 'start');
     }
 
     /**
      * @return array<string, mixed>|ToolRegistryFailure
      */
-    public function stop(string $tool, ?string $node = null, ?string $app = null): array|ToolRegistryFailure
+    public function stop(string $tool, ?string $node = null, ?string $app = null, ?string $instance = null): array|ToolRegistryFailure
     {
-        return $this->applyProcessAction($tool, $node, $app, 'stop');
+        return $this->applyProcessAction($tool, $node, $app, $instance, 'stop');
     }
 
     /**
      * @return array<string, mixed>|ToolRegistryFailure
      */
-    public function restart(string $tool, ?string $node = null, ?string $app = null): array|ToolRegistryFailure
+    public function restart(string $tool, ?string $node = null, ?string $app = null, ?string $instance = null): array|ToolRegistryFailure
     {
-        return $this->applyProcessAction($tool, $node, $app, 'restart');
+        return $this->applyProcessAction($tool, $node, $app, $instance, 'restart');
     }
 
     /**
      * @return array<string, mixed>|ToolRegistryFailure
      */
-    public function reload(string $tool, ?string $node = null, ?string $app = null): array|ToolRegistryFailure
+    public function reload(string $tool, ?string $node = null, ?string $app = null, ?string $instance = null): array|ToolRegistryFailure
     {
         return $this->runIntentPreservingAction(
             tool: $tool,
             node: $node,
             app: $app,
+            instance: $instance,
             action: 'reload',
             repairCommandKey: 'lifecycle_reloaded',
         );
@@ -60,9 +61,9 @@ final readonly class ToolLifecycleManager
     /**
      * @return array<string, mixed>|ToolRegistryFailure
      */
-    private function applyProcessAction(string $tool, ?string $node, ?string $app, string $action): array|ToolRegistryFailure
+    private function applyProcessAction(string $tool, ?string $node, ?string $app, ?string $instance, string $action): array|ToolRegistryFailure
     {
-        $target = $this->relatedProcesses->resolve($tool, $node, $app, $action);
+        $target = $this->relatedProcesses->resolve($tool, $node, $app, $action, $instance);
 
         if ($target instanceof ToolRegistryFailure) {
             return $target;
@@ -91,6 +92,7 @@ final readonly class ToolLifecycleManager
         string $tool,
         ?string $node,
         ?string $app,
+        ?string $instance,
         string $action,
         string $repairCommandKey,
     ): array|ToolRegistryFailure {
@@ -98,7 +100,7 @@ final readonly class ToolLifecycleManager
             return ToolRegistryFailure::unsupportedAction($tool, $action);
         }
 
-        $model = $this->registry->show(tool: $tool, node: $node, app: $app);
+        $model = $this->registry->show(tool: $tool, node: $node, app: $app, instance: $instance);
 
         if ($model instanceof ToolRegistryFailure) {
             return $model;

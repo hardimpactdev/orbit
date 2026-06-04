@@ -43,6 +43,24 @@ final readonly class ToolRegistryFailure
         );
     }
 
+    /**
+     * @param  list<string>  $instances
+     */
+    public static function instanceRequired(string $tool, string $node, array $instances): self
+    {
+        return new self(
+            code: 'tool.instance_required',
+            message: "Tool '{$tool}' has multiple instances on node '{$node}'. Provide an instance selector.",
+            meta: [
+                'field' => 'instance',
+                'reason' => 'ambiguous',
+                'tool' => $tool,
+                'node' => $node,
+                'instances' => $instances,
+            ],
+        );
+    }
+
     public static function unsupportedAction(string $tool, string $action): self
     {
         return new self(

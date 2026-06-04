@@ -52,7 +52,8 @@ final class ToolReloadController implements Loggable
 
         $node = $target['node'];
         $app = $target['app'];
-        $operation = fn (): array|ToolRegistryFailure => $lifecycle->reload($tool, node: $node, app: $app);
+        $instance = $this->toolTargetString($request, 'instance');
+        $operation = fn (): array|ToolRegistryFailure => $lifecycle->reload($tool, node: $node, app: $app, instance: $instance);
 
         if ($this->wantsEventStream($request)) {
             return $this->streamToolAction(
@@ -93,6 +94,7 @@ final class ToolReloadController implements Loggable
             'tool.not_found' => 404,
             'authorization_failed' => 403,
             'tool.remote_action_failed' => 502,
+            'tool.instance_required' => 422,
             default => 400,
         };
 

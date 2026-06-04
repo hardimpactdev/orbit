@@ -2,6 +2,12 @@
 
 declare(strict_types=1);
 
+use App\Console\Kernel as OrbitKernel;
+use Illuminate\Contracts\Console\Kernel;
 use LaravelZero\Framework\Application;
 
-return Application::configure(basePath: dirname(__DIR__))->create();
+$app = Application::configure(basePath: dirname(__DIR__))->create();
+
+$app->singleton(Kernel::class, OrbitKernel::class);
+
+return $app;

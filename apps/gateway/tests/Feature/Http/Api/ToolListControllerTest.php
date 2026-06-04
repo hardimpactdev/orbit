@@ -157,9 +157,12 @@ describe('ToolListController', function (): void {
             ->assertJsonPath('success.data.tools.0', [
                 'name' => 'redis',
                 'node' => 'app-1',
+                'instance' => 'redis:default',
                 'expected_state' => 'running',
                 'observed_state' => null,
+                'version_family' => null,
                 'version' => '7.2',
+                'runtime' => 'docker',
                 'managed' => true,
                 'endpoints' => [
                     ['name' => 'redis', 'kind' => 'tcp', 'host' => 'orbit.test', 'port' => 6379]]]);

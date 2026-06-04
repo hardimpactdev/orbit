@@ -11,6 +11,7 @@ final class ToolStartCommand extends ToolActionCommand
         {tool? : Tool catalog name to start}
         {--app= : Resolve target by app selector}
         {--node= : Resolve target by node}
+        {--instance= : Tool instance selector}
         {--json : Output JSON}';
 
     #[\Override]

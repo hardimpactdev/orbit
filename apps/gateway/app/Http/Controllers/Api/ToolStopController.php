@@ -59,7 +59,8 @@ final class ToolStopController implements Loggable
             return $agentSelfAuth;
         }
 
-        $operation = fn (): array|ToolRegistryFailure => $lifecycle->stop($tool, node: $node, app: $app);
+        $instance = $this->toolTargetString($request, 'instance');
+        $operation = fn (): array|ToolRegistryFailure => $lifecycle->stop($tool, node: $node, app: $app, instance: $instance);
 
         if ($this->wantsEventStream($request)) {
             return $this->streamToolAction(
@@ -100,7 +101,7 @@ final class ToolStopController implements Loggable
             'tool.not_found' => 404,
             'authorization_failed' => 403,
             'tool.remote_action_failed' => 502,
-            'tool.process_missing', 'tool.process_ambiguous' => 422,
+            'tool.process_missing', 'tool.process_ambiguous', 'tool.instance_required' => 422,
             default => 400,
         };
 

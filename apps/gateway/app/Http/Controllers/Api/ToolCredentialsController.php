@@ -50,7 +50,7 @@ final class ToolCredentialsController implements Loggable
             return $agentSelfAuth;
         }
 
-        $result = $reader->read($tool, node: $node, app: $app);
+        $result = $reader->read($tool, node: $node, app: $app, instance: $this->toolTargetString($request, 'instance'));
 
         if ($result instanceof ToolRegistryFailure) {
             return $this->failureResponse($result);
@@ -73,6 +73,7 @@ final class ToolCredentialsController implements Loggable
         $status = match ($failure->code) {
             'tool.not_found' => 404,
             'authorization_failed' => 403,
+            'tool.instance_required' => 422,
             default => 400,
         };
 

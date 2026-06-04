@@ -69,6 +69,49 @@ describe('ToolCredentialsController', function (): void {
             ->assertJsonPath('success.data.credentials.fields.url', 'https://openclaw.agent');
     });
 
+    it('requires an instance selector when reading credentials for a multi-instance tool', function (): void {
+        $caller = createToolCredentialsCallerNode();
+        $agentNode = Node::factory()->create([
+            'name' => 'agent-1',
+            'status' => 'active',
+        ]);
+
+        NodeRoleAssignment::factory()->create([
+            'node_id' => $agentNode->id,
+            'role' => 'agent',
+            'status' => 'active',
+        ]);
+
+        NodeTool::factory()->create([
+            'node_id' => $agentNode->id,
+            'name' => 'openclaw',
+            'instance_key' => 'openclaw:a',
+            'expected_state' => 'running',
+            'credentials' => ['fields' => ['password' => 'a-secret']],
+        ]);
+        NodeTool::factory()->create([
+            'node_id' => $agentNode->id,
+            'name' => 'openclaw',
+            'instance_key' => 'openclaw:b',
+            'expected_state' => 'running',
+            'credentials' => ['fields' => ['password' => 'b-secret']],
+        ]);
+
+        grantToolCredentialsAccess($caller, $agentNode);
+
+        $ambiguous = $this->call('GET', '/api/tools/openclaw/credentials?node=agent-1', [], [], [], ['REMOTE_ADDR' => TOOL_CREDENTIALS_CALLER_WG_IP]);
+
+        $ambiguous->assertUnprocessable()
+            ->assertJsonPath('error.code', 'tool.instance_required')
+            ->assertJsonPath('error.meta.instances', ['openclaw:a', 'openclaw:b']);
+
+        $selected = $this->call('GET', '/api/tools/openclaw/credentials?node=agent-1&instance=b', [], [], [], ['REMOTE_ADDR' => TOOL_CREDENTIALS_CALLER_WG_IP]);
+
+        $selected->assertOk()
+            ->assertJsonPath('success.data.credentials.instance', 'openclaw:b')
+            ->assertJsonPath('success.data.credentials.fields.password', 'b-secret');
+    });
+
     it('rejects caller without tool:credentials grant', function (): void {
         $caller = createToolCredentialsCallerNode();
         $agentNode = Node::factory()->create([

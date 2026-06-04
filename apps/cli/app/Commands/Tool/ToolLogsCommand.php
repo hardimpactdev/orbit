@@ -19,6 +19,7 @@ final class ToolLogsCommand extends GatewayCommand
         {tool? : Tool catalog name to read logs for}
         {--app= : Resolve target by app selector}
         {--node= : Resolve target by node}
+        {--instance= : Tool instance selector}
         {--follow : Follow log output}
         {--lines=100 : Number of historical lines}
         {--json}';
@@ -52,6 +53,7 @@ final class ToolLogsCommand extends GatewayCommand
             $response = $this->gatewayGet('/api/tools/'.rawurlencode($tool).'/logs', $this->filledQuery([
                 'app' => $this->stringOption('app'),
                 'node' => $this->targetNodeOptionOrDefault(),
+                'instance' => $this->stringOption('instance'),
                 'lines' => $lines,
             ]));
         } catch (OrbitConfigStoreException $exception) {
@@ -77,6 +79,7 @@ final class ToolLogsCommand extends GatewayCommand
                 $this->filledQuery([
                     'app' => $this->stringOption('app'),
                     'node' => $this->targetNodeOptionOrDefault(),
+                    'instance' => $this->stringOption('instance'),
                     'lines' => $lines,
                 ]),
                 function (string $chunk): void {

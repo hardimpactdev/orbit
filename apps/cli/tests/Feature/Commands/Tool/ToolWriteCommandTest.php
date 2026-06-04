@@ -69,6 +69,49 @@ describe('tool write commands', function (): void {
             ->and($decoded['data']['data']['tool']['state'])->toBe('running');
     });
 
+    it('streams tool:install version and runtime intent to the gateway', function (): void {
+        fakeGatewayProgressStream(gatewayProgressFrame('complete', [
+            'exit_code' => 0,
+            'data' => [
+                'tool' => [
+                    'name' => 'mysql',
+                    'node' => 'database-1',
+                    'instance' => 'mysql:8',
+                    'version_family' => '8',
+                    'version' => '8.4',
+                    'runtime' => 'docker-swarm',
+                    'state' => 'running',
+                ],
+            ],
+        ]));
+
+        [$exitCode, $output] = runCommand($this, 'tool:install', [
+            'tool' => 'mysql',
+            '--node' => 'database-1',
+            '--version' => '8.4',
+            '--runtime' => 'docker-swarm',
+            '--status' => 'running',
+            '--json' => true,
+        ]);
+
+        $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+
+        Http::assertSent(fn (Request $request): bool => $request->method() === 'POST'
+            && $request->url() === 'https://gateway.test/api/tools/mysql/install'
+            && $request->hasHeader('Accept', 'text/event-stream')
+            && $request->data() === [
+                'node' => 'database-1',
+                'version' => '8.4',
+                'runtime' => 'docker-swarm',
+                'status' => 'running',
+            ]);
+
+        expect($exitCode)->toBe(0)
+            ->and($decoded['event'])->toBe('complete')
+            ->and($decoded['data']['data']['tool']['instance'])->toBe('mysql:8')
+            ->and($decoded['data']['data']['tool']['runtime'])->toBe('docker-swarm');
+    });
+
     it('uses the local default node for tool:install when no target is supplied', function (): void {
         $store = new OrbitConfigStore(overridePath: base_path('tests/.tmp-tool-install-config.json'));
         @unlink($store->path());
@@ -221,6 +264,41 @@ describe('tool write commands', function (): void {
         ['tool:reload', 'reload'],
     ]);
 
+    it('streams explicit tool instance selectors for lifecycle actions', function (string $command, string $endpoint): void {
+        fakeGatewayProgressStream(gatewayProgressFrame('complete', [
+            'exit_code' => 0,
+            'data' => [
+                'tool' => ['name' => 'mysql', 'node' => 'database-1', 'instance' => 'mysql:8', 'action' => $endpoint],
+            ],
+        ]));
+
+        [$exitCode, $output] = runCommand($this, $command, [
+            'tool' => 'mysql',
+            '--node' => 'database-1',
+            '--instance' => 'mysql:8',
+            '--json' => true,
+        ]);
+
+        $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+
+        Http::assertSent(fn (Request $request): bool => $request->method() === 'POST'
+            && $request->url() === "https://gateway.test/api/tools/mysql/{$endpoint}"
+            && $request->hasHeader('Accept', 'text/event-stream')
+            && $request->data() === [
+                'node' => 'database-1',
+                'instance' => 'mysql:8',
+            ]);
+
+        expect($exitCode)->toBe(0)
+            ->and($decoded['event'])->toBe('complete')
+            ->and($decoded['data']['data']['tool']['instance'])->toBe('mysql:8');
+    })->with([
+        ['tool:start', 'start'],
+        ['tool:stop', 'stop'],
+        ['tool:restart', 'restart'],
+        ['tool:reload', 'reload'],
+    ]);
+
     it('streams tool:update payloads to the single-tool gateway endpoint', function (): void {
         fakeGatewayProgressStream(gatewayProgressFrame('complete', [
             'exit_code' => 0,
@@ -249,6 +327,38 @@ describe('tool write commands', function (): void {
         expect($exitCode)->toBe(0)
             ->and($decoded['event'])->toBe('complete')
             ->and($decoded['data']['data']['tool']['version'])->toBe('7.2');
+    });
+
+    it('streams tool:update instance selectors to the single-tool gateway endpoint', function (): void {
+        fakeGatewayProgressStream(gatewayProgressFrame('complete', [
+            'exit_code' => 0,
+            'data' => [
+                'tool' => ['name' => 'mysql', 'node' => 'database-1', 'instance' => 'mysql:8', 'version' => '8.4'],
+            ],
+        ]));
+
+        [$exitCode, $output] = runCommand($this, 'tool:update', [
+            'tool' => 'mysql',
+            '--node' => 'database-1',
+            '--instance' => 'mysql:8',
+            '--expected-version' => '8.4',
+            '--json' => true,
+        ]);
+
+        $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+
+        Http::assertSent(fn (Request $request): bool => $request->method() === 'POST'
+            && $request->url() === 'https://gateway.test/api/tools/mysql/update'
+            && $request->hasHeader('Accept', 'text/event-stream')
+            && $request->data() === [
+                'node' => 'database-1',
+                'instance' => 'mysql:8',
+                'version' => '8.4',
+            ]);
+
+        expect($exitCode)->toBe(0)
+            ->and($decoded['event'])->toBe('complete')
+            ->and($decoded['data']['data']['tool']['instance'])->toBe('mysql:8');
     });
 
     it('streams tool:update bulk payloads when the tool argument is omitted', function (): void {

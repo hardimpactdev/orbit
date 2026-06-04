@@ -86,6 +86,9 @@ final class ToolInstallController implements Loggable
             app: $app,
             expectedState: $status,
             config: $toolConfig,
+            version: $this->requestTargetString($request, 'version'),
+            runtime: $this->requestTargetString($request, 'runtime'),
+            instance: $this->requestTargetString($request, 'instance'),
         );
 
         $meta = (object) [];
@@ -154,12 +157,12 @@ final class ToolInstallController implements Loggable
             ], 422);
         }
 
-        foreach (['version', 'expected_version', 'expected-version'] as $field) {
+        foreach (['expected_version', 'expected-version'] as $field) {
             if ($request->exists($field)) {
                 return response()->json([
                     'error' => [
                         'code' => 'validation_failed',
-                        'message' => 'Install-time version intent is not supported. Use tool:update --expected-version after install.',
+                        'message' => 'Update-only version intent is not supported during install. Use tool:update --expected-version after install.',
                         'meta' => [
                             'field' => $field,
                             'reason' => 'unsupported_field',

@@ -18,9 +18,15 @@ final readonly class ToolLogReader
     /**
      * @return array<string, mixed>|ToolRegistryFailure
      */
-    public function read(string $tool, ?string $node = null, ?string $app = null, int $lines = 100, bool $follow = false): array|ToolRegistryFailure
-    {
-        $target = $this->relatedProcesses->resolve($tool, $node, $app, 'logs');
+    public function read(
+        string $tool,
+        ?string $node = null,
+        ?string $app = null,
+        ?string $instance = null,
+        int $lines = 100,
+        bool $follow = false,
+    ): array|ToolRegistryFailure {
+        $target = $this->relatedProcesses->resolve($tool, $node, $app, 'logs', $instance);
 
         if ($target instanceof ToolRegistryFailure) {
             return $target;
@@ -38,6 +44,7 @@ final readonly class ToolLogReader
         return [
             'tool' => $target->tool->name,
             'node' => $target->node->name,
+            'instance' => $target->tool->instance_key,
             'process' => $target->process->name,
             'runtime_unit' => $runtimeUnit,
             'lines' => $this->lines($result->stdout),
