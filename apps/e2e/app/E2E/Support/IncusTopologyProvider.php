@@ -1059,7 +1059,30 @@ PHP;
         E2ECommand::exec(
             $instance,
             sprintf(
-                'install -d -m 700 -o orbit -g orbit /home/orbit/.ssh && touch /home/orbit/.ssh/authorized_keys && chown orbit:orbit /home/orbit/.ssh/authorized_keys && chmod 600 /home/orbit/.ssh/authorized_keys && (grep -qxF %1$s /home/orbit/.ssh/authorized_keys || printf "%%s\n" %1$s >> /home/orbit/.ssh/authorized_keys) && (systemctl start ssh || systemctl start sshd || true)',
+                <<<'SH'
+set -euo pipefail
+install -d -m 700 -o orbit -g orbit /home/orbit/.ssh
+touch /home/orbit/.ssh/authorized_keys
+chown orbit:orbit /home/orbit/.ssh/authorized_keys
+chmod 600 /home/orbit/.ssh/authorized_keys
+grep -qxF %1$s /home/orbit/.ssh/authorized_keys || printf "%%s\n" %1$s >> /home/orbit/.ssh/authorized_keys
+
+if ! (systemctl restart ssh || systemctl restart sshd || systemctl start ssh || systemctl start sshd); then
+    systemctl status ssh sshd --no-pager || true
+    exit 1
+fi
+
+deadline=$((SECONDS+60))
+until ss -ltn | grep -Eq '(^|[[:space:]])LISTEN[[:space:]].*:22[[:space:]]'; do
+    if [ "$SECONDS" -ge "$deadline" ]; then
+        systemctl status ssh sshd --no-pager || true
+        ss -ltn || true
+        exit 1
+    fi
+
+    sleep 1
+done
+SH,
                 escapeshellarg($publicKey),
             ),
             "Could not authorize gateway SSH key in Incus {$role} instance",
@@ -1127,10 +1150,31 @@ PHP;
             'orbit',
             new SshKeyPair('/dev/null', '/dev/null'),
             sprintf(
-                'deadline=$((SECONDS+60)); until ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=5 orbit@%s true; do if [ "$SECONDS" -ge "$deadline" ]; then exit 1; fi; sleep 2; done',
+                <<<'SH'
+deadline=$((SECONDS+180))
+successes=0
+
+until [ "$successes" -ge 3 ]; do
+    if ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o LogLevel=ERROR -o ConnectTimeout=10 -o ServerAliveInterval=30 -o ServerAliveCountMax=10 orbit@%s true; then
+        successes=$((successes+1))
+    else
+        successes=0
+    fi
+
+    if [ "$successes" -ge 3 ]; then
+        exit 0
+    fi
+
+    if [ "$SECONDS" -ge "$deadline" ]; then
+        exit 1
+    fi
+
+    sleep 2
+done
+SH,
                 escapeshellarg($wireGuardIp),
             ),
-            timeoutSeconds: 75,
+            timeoutSeconds: 210,
         );
     }
 

@@ -30,7 +30,7 @@ it('waits for operator host-key scan reachability before checkout pinning runs',
         ->and($checkoutSource)->toContain("self::artisanCommand('orbit:internal:pin-node-host-keys --json'");
 });
 
-it('waits for gateway host-key scan reachability before incus bake commands pin host keys', function (): void {
+it('waits for gateway host-key reachability before incus bake commands pin host keys', function (): void {
     $source = file_get_contents(repo_path('apps/e2e/app/E2E/Support/IncusTopologyProvider.php'));
 
     $devWait = strpos($source, '$this->waitForGatewayHostKeyScan($gateway, $sshKeyPair, self::DevWireGuardIp);');
@@ -68,6 +68,26 @@ it('waits for gateway host-key scan reachability before incus bake commands pin 
             'agent' => true,
             'websocket' => true,
         ]);
+});
+
+it('waits for stable gateway ssh reachability after prepared incus retargeting', function (): void {
+    $source = file_get_contents(repo_path('apps/e2e/app/E2E/Support/IncusTopologyProvider.php'));
+
+    $networkReady = strpos($source, '$timer->measure(\'network-ready\', fn () => $this->waitForPeerRoutes($instances, $config));');
+    $gatewaySshWait = strpos($source, '$this->waitForGatewaySsh($gateway, $wireGuardIp);');
+    $operatorScan = strpos($source, '$this->waitForOperatorHostKeyScan($operator, $config, $wireGuardIp);');
+
+    expect($source)->toContain('private function waitForGatewaySsh')
+        ->and($source)->toContain('StrictHostKeyChecking=accept-new')
+        ->and($source)->toContain('successes=0')
+        ->and($source)->toContain('[ "$successes" -ge 3 ]')
+        ->and($source)->toContain('ConnectTimeout=10')
+        ->and($source)->toContain('ServerAliveInterval=30')
+        ->and($source)->toContain('ServerAliveCountMax=10')
+        ->and($networkReady)->toBeInt()
+        ->and($gatewaySshWait)->toBeInt()
+        ->and($operatorScan)->toBeInt()
+        ->and($gatewaySshWait)->toBeLessThan($operatorScan);
 });
 
 it('seeds the gateway ssh key into prepared incus downstream clones', function (): void {
@@ -116,7 +136,9 @@ it('seeds the gateway ssh key into prepared incus downstream clones', function (
         ->and($joined)->toContain("incus exec 'agent' -- sh -lc")
         ->and($joined)->toContain('ssh-ed25519 gateway-key orbit-e2e-gateway')
         ->and($joined)->toContain('/home/orbit/.ssh/authorized_keys')
-        ->and($joined)->toContain('systemctl start ssh || systemctl start sshd || true')
+        ->and($joined)->toContain('systemctl restart ssh || systemctl restart sshd || systemctl start ssh || systemctl start sshd')
+        ->and($joined)->toContain('ss -ltn')
+        ->and($joined)->not->toContain('systemctl start ssh || systemctl start sshd || true')
         ->and($joined)->not->toContain("incus exec 'operator' -- sh -lc");
 });
 

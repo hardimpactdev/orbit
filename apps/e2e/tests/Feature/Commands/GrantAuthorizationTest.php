@@ -191,7 +191,6 @@ it('enforces grants through real gateway middleware and node access rows', funct
         }
     } finally {
         $topology->ssh('dev', 'sudo rm -rf '.escapeshellarg($appPath), timeoutSeconds: 60, allowFailure: true);
-        $topology->reset();
         $topology->cleanup();
     }
 })->group('e2e-feature', 'e2e-feature-operator_gateway_app-dev_app-prod', 'e2e-feature-operator-gateway-dev-prod');

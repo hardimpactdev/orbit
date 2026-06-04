@@ -20,6 +20,8 @@ it('repairs gh on app-role nodes through the tool doctor', function (): void {
 
         foreach (['dev' => 'app-dev-1', 'prod' => 'app-prod-1'] as $role => $node) {
             ghRoleBaselineRemoveGh($topology, $role);
+            ghRoleBaselineWaitForGatewayRemoteShell($topology, $node);
+            ghRoleBaselineWaitForGithubDns($topology, $role);
 
             $result = ghRoleBaselineRunToolDoctorRestore($topology, $node);
             $data = e2eJsonCommandData(e2eJsonCommandPayload($result->output()));
@@ -115,6 +117,53 @@ PHP;
         'gateway',
         'cd '.escapeshellarg($topology->checkout('gateway')).' && php apps/gateway/artisan tinker --execute='.escapeshellarg($php),
         timeoutSeconds: 120,
+    );
+
+    expect($result->successful())->toBeTrue($result->output().$result->errorOutput());
+}
+
+function ghRoleBaselineWaitForGatewayRemoteShell(E2ETopologyHarness $topology, string $node): void
+{
+    $nodeName = var_export($node, true);
+    $php = <<<PHP
+\$node = \App\Models\Node::query()->where('name', {$nodeName})->firstOrFail();
+\$deadline = time() + 120;
+\$last = null;
+\$ready = false;
+
+do {
+    \$last = app(\App\Contracts\RemoteShell::class)->run(\$node, 'true', ['timeout' => 20]);
+
+    if (\$last->successful()) {
+        \$ready = true;
+        break;
+    }
+
+    sleep(2);
+} while (time() < \$deadline);
+
+if (! \$ready) {
+    throw new \RuntimeException(\$last?->output() ?: 'gateway remote shell did not become ready');
+}
+
+echo 'ready';
+PHP;
+
+    $result = $topology->ssh(
+        'gateway',
+        'cd '.escapeshellarg($topology->checkout('gateway')).' && php apps/gateway/artisan tinker --execute='.escapeshellarg($php),
+        timeoutSeconds: 150,
+    );
+
+    expect($result->successful())->toBeTrue($result->output().$result->errorOutput());
+}
+
+function ghRoleBaselineWaitForGithubDns(E2ETopologyHarness $topology, string $role): void
+{
+    $result = $topology->ssh(
+        $role,
+        'deadline=$((SECONDS+120)); until getent hosts cli.github.com >/dev/null 2>&1; do if [ "$SECONDS" -ge "$deadline" ]; then getent hosts cli.github.com; exit 1; fi; sleep 2; done',
+        timeoutSeconds: 150,
     );
 
     expect($result->successful())->toBeTrue($result->output().$result->errorOutput());
