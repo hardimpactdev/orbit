@@ -109,6 +109,63 @@ final readonly class ToolRegistryFailure
         );
     }
 
+    public static function instanceExists(
+        string $node,
+        string $tool,
+        string $instance,
+        string $source,
+        ?string $process = null,
+    ): self {
+        $meta = [
+            'node' => $node,
+            'tool' => $tool,
+            'instance' => $instance,
+            'source' => $source,
+        ];
+
+        if ($process !== null) {
+            $meta['process'] = $process;
+        }
+
+        return new self(
+            code: 'tool.instance_exists',
+            message: "Tool '{$tool}' instance '{$instance}' already exists on node '{$node}'.",
+            meta: $meta,
+        );
+    }
+
+    public static function endpointConflict(
+        string $node,
+        string $tool,
+        string $instance,
+        string $host,
+        int $port,
+        ?string $existingTool = null,
+        ?string $existingInstance = null,
+    ): self {
+        $meta = [
+            'node' => $node,
+            'tool' => $tool,
+            'instance' => $instance,
+            'host' => $host,
+            'port' => $port,
+        ];
+
+        if ($existingTool !== null) {
+            $meta['existing_tool'] = $existingTool;
+        }
+
+        if ($existingInstance !== null) {
+            $meta['existing_instance'] = $existingInstance;
+        }
+
+        return new self(
+            code: 'tool.endpoint_conflict',
+            message: "Tool '{$tool}' instance '{$instance}' endpoint {$host}:{$port} conflicts with existing intent.",
+            meta: $meta,
+        );
+    }
+
     public static function nodeRoleRequired(string $tool, string $node, string $requiredRole): self
     {
         return new self(

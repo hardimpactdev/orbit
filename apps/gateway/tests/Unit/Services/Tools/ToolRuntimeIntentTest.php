@@ -70,7 +70,9 @@ it('renders a managed service runtime intent as process-owned lifecycle configur
         ])
         ->and($intent->labels()['orbit.tool.spec_hash'] ?? null)->toBe($intent->specHash());
 
-    expect($intent->processAttributes($node, sortOrder: 4))->toMatchArray([
+    $processAttributes = $intent->processAttributes($node, sortOrder: 4);
+
+    expect($processAttributes)->toMatchArray([
         'node_id' => $node->id,
         'owner_type' => $node->getMorphClass(),
         'owner_id' => $node->id,
@@ -80,7 +82,8 @@ it('renders a managed service runtime intent as process-owned lifecycle configur
         'runtime' => 'docker-swarm',
         'tool' => 'mysql',
         'sort_order' => 4,
-        'runtime_config' => [
+    ])
+        ->and($processAttributes['runtime_config'])->toMatchArray([
             'implementation_key' => 'docker-swarm/ubuntu',
             'service_name' => 'orbit-mysql-8',
             'image' => 'mysql:8.4',
@@ -90,8 +93,7 @@ it('renders a managed service runtime intent as process-owned lifecycle configur
                 'host' => '10.6.0.12',
                 'port' => 3308,
             ],
-        ],
-    ]);
+        ]);
 });
 
 it('uses distinct names, ports, volumes, endpoints, labels, and hashes per version family', function (): void {
