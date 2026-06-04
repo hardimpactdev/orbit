@@ -4,8 +4,6 @@ declare(strict_types=1);
 
 namespace App\E2E\Support;
 
-use App\Services\WireGuard\WireGuardKeyGenerator;
-
 final readonly class IncusTopologyProvider implements E2ETopologyProvider
 {
     private const string GatewayWireGuardIp = '10.6.0.2';
@@ -708,34 +706,7 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
      */
     private function meshFor(array $instances, string $gatewayProviderIp): E2EWireGuardMesh
     {
-        $generator = app(WireGuardKeyGenerator::class);
-        $gatewayHost = $generator->generateKeyPair();
-        $operator = $generator->generateKeyPair();
-        $dev = isset($instances['dev']) ? $generator->generateKeyPair() : null;
-        $prod = isset($instances['prod']) ? $generator->generateKeyPair() : null;
-        $agent = isset($instances['agent']) ? $generator->generateKeyPair() : null;
-        $ingress = isset($instances['ingress']) ? $generator->generateKeyPair() : null;
-        $websocket = isset($instances['websocket']) ? $generator->generateKeyPair() : null;
-        $wgEasyPublicKey = trim($instances['gateway']->exec('docker exec wg-easy wg show wg0 public-key')->output());
-
-        return E2EWireGuardMesh::standard(
-            gatewayProviderIp: $gatewayProviderIp,
-            wgEasyPublicKey: $wgEasyPublicKey,
-            gatewayHostPrivateKey: $gatewayHost['private_key'],
-            gatewayHostPublicKey: $gatewayHost['public_key'],
-            operatorPrivateKey: $operator['private_key'],
-            operatorPublicKey: $operator['public_key'],
-            devPrivateKey: $dev['private_key'] ?? null,
-            devPublicKey: $dev['public_key'] ?? null,
-            prodPrivateKey: $prod['private_key'] ?? null,
-            prodPublicKey: $prod['public_key'] ?? null,
-            agentPrivateKey: $agent['private_key'] ?? null,
-            agentPublicKey: $agent['public_key'] ?? null,
-            ingressPrivateKey: $ingress['private_key'] ?? null,
-            ingressPublicKey: $ingress['public_key'] ?? null,
-            websocketPrivateKey: $websocket['private_key'] ?? null,
-            websocketPublicKey: $websocket['public_key'] ?? null,
-        );
+        return E2EWireGuardMesh::fixed($gatewayProviderIp);
     }
 
     /**

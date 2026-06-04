@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\E2E\Support\E2EConfig;
 use App\E2E\Support\E2ETopologyKind;
+use App\E2E\Support\E2EWireGuardMesh;
 use App\E2E\Support\IncusHost;
 use App\E2E\Support\IncusInstance;
 use App\E2E\Support\IncusTopologyProvider;
@@ -163,6 +164,27 @@ it('seeds gateway ssh access before prepared incus retargeting can converge runt
         ])
         ->and($source)->toContain('orbit:internal:bake-websocket-node app-dev-1')
         ->and($source)->toContain('--converge-runtime');
+});
+
+it('uses the fixed WireGuard mesh while keeping app retargeting in the lease path', function (): void {
+    $source = file_get_contents(repo_path('apps/e2e/app/E2E/Support/IncusTopologyProvider.php'));
+    $wireguard = strpos($source, "\$timer->measure('wireguard'");
+    $retarget = strpos($source, "\$timer->measure('retarget'");
+
+    $provider = new IncusTopologyProvider(incusTopologyProviderTestConfig());
+    $method = new ReflectionMethod($provider, 'meshFor');
+    $method->setAccessible(true);
+
+    $mesh = $method->invoke($provider, [], '10.231.0.11');
+
+    expect($mesh->peerConfig('dev'))->toContain('PrivateKey = '.E2EWireGuardMesh::FIXED_KEYS['dev']['private_key'])
+        ->and($mesh->peerConfig('dev'))->toContain('PublicKey = '.E2EWireGuardMesh::FIXED_KEYS['wg-easy']['public_key'])
+        ->and($source)->toContain('E2EWireGuardMesh::fixed($gatewayProviderIp)')
+        ->and($source)->toContain('private function retargetTopology')
+        ->and($source)->toContain('orbit:internal:bake-websocket-node app-dev-1')
+        ->and($wireguard)->toBeInt()
+        ->and($retarget)->toBeInt()
+        ->and($wireguard)->toBeLessThan($retarget);
 });
 
 it('keeps incus retarget scripts on node_role assignments instead of legacy node columns', function (): void {
