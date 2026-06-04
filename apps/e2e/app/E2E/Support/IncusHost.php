@@ -371,6 +371,23 @@ class IncusHost
         $timeout = $timeoutSeconds ?? $this->config->timeoutSeconds;
         $deadline = time() + $timeout;
 
+        // Non-cloud base images do not ship cloud-init; there is nothing to wait
+        // for, since topology role provisioning runs over the agent/SSH rather
+        // than cloud-init. Skip only when the probe runs and reports it absent;
+        // a failed probe (transient agent loss) falls through to the wait loop.
+        $probe = $this->run(
+            sprintf(
+                'incus exec %s -- sh -lc %s',
+                escapeshellarg($instanceName),
+                escapeshellarg('command -v cloud-init >/dev/null 2>&1 && echo present || echo absent'),
+            ),
+            timeoutSeconds: 10,
+        );
+
+        if ($probe->successful() && str_contains($probe->output(), 'absent')) {
+            return;
+        }
+
         while (time() < $deadline) {
             $remainingSeconds = max(1, $deadline - time());
 
