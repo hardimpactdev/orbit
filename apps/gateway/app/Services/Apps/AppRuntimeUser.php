@@ -8,19 +8,27 @@ use App\Contracts\AppRuntimeUserResolver;
 use App\Models\App;
 use App\Models\Node;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
-use Illuminate\Support\Str;
 
 final readonly class AppRuntimeUser implements AppRuntimeUserResolver
 {
     public function forApp(App $app): string
     {
-        if (! $this->isProduction($app)) {
-            $app->loadMissing('node');
+        $app->loadMissing('node');
 
-            return $app->node?->user ?: 'orbit';
+        if (! $this->isProduction($app)) {
+            return $this->nodeUser($app);
         }
 
-        return $this->safeRuntimeUser($app->name);
+        return $this->productionUser($app);
+    }
+
+    public function containerUserForApp(App $app): ?string
+    {
+        if (! $this->isProduction($app)) {
+            return null;
+        }
+
+        return $this->productionUser($app);
     }
 
     private function isProduction(App $app): bool
@@ -35,13 +43,23 @@ final readonly class AppRuntimeUser implements AppRuntimeUserResolver
             && app(NodeRoleAssignments::class)->nodeHasActiveRole($app->node, 'app-prod');
     }
 
-    private function safeRuntimeUser(string $name): string
+    private function productionUser(App $app): string
     {
-        $slug = Str::of($name)->slug('-')->lower()->toString();
-        $slug = $slug !== '' ? $slug : 'app';
-        $suffix = substr(hash('sha1', $slug), 0, 6);
-        $base = substr($slug, 0, 18);
+        return $this->userFromHomePath((string) $app->path)
+            ?? $this->nodeUser($app);
+    }
 
-        return "orbit-{$base}-{$suffix}";
+    private function userFromHomePath(string $path): ?string
+    {
+        if (preg_match('#^/home/([^/]+)/#', $path, $matches) !== 1) {
+            return null;
+        }
+
+        return $matches[1];
+    }
+
+    private function nodeUser(App $app): string
+    {
+        return $app->node?->user ?: 'orbit';
     }
 }

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\Deploy;
 
+use App\Contracts\AppRuntimeUserResolver;
 use App\Contracts\ProgressReporter;
 use App\Contracts\RemoteShell;
 use App\Enums\Apps\AppRuntimeKind;
@@ -12,6 +13,7 @@ use App\Models\App;
 use App\Models\DeploymentRun;
 use App\Models\DeploymentRunStep;
 use App\Models\DeployStep;
+use App\Services\Apps\AppRuntimeUser;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Carbon;
@@ -21,6 +23,7 @@ final readonly class DeployManager
 {
     public function __construct(
         private RemoteShell $remoteShell,
+        private AppRuntimeUserResolver $appRuntimeUser = new AppRuntimeUser,
     ) {}
 
     /**
@@ -334,7 +337,7 @@ final readonly class DeployManager
     {
         $appPath = rtrim((string) $app->path, '/');
         $phpVersion = $app->php_version;
-        $runtimeUser = $app->node?->user ?: 'orbit';
+        $runtimeUser = $this->appRuntimeUser->forApp($app);
 
         $envPrefix = '';
 
@@ -758,11 +761,7 @@ final readonly class DeployManager
 
     private function appUser(App $app): string
     {
-        if (preg_match('#^/home/([^/]+)/#', $app->path, $matches) === 1) {
-            return $matches[1];
-        }
-
-        return $app->node?->user ?: 'orbit';
+        return $this->appRuntimeUser->forApp($app);
     }
 
     /**

@@ -87,6 +87,24 @@ it('routes php commands through the host php toolchain for php apps', function (
         ->and($shell->runs[0]['script'])->toContain('php artisan migrate --force');
 });
 
+it('runs routed php deploy commands as the path-derived production app user', function (): void {
+    $app = createDeployManagerTestApp([
+        'path' => '/home/docs/app',
+    ]);
+    createDeployManagerTestStep($app, 'php artisan migrate --force');
+
+    $shell = new DeployManagerRecordingShell;
+
+    app()->instance(RemoteShell::class, $shell);
+
+    $manager = app(DeployManager::class);
+    $manager->run('docs');
+
+    expect($shell->runs[0]['script'])->toContain("'sudo' '-u' 'docs'")
+        ->and($shell->runs[0]['script'])->not->toContain("'sudo' '-u' 'orbit'")
+        ->and($shell->runs[0]['script'])->toContain('/home/docs/app');
+});
+
 it('routes composer commands through the host php toolchain for php apps', function (): void {
     $app = createDeployManagerTestApp();
     createDeployManagerTestStep($app, 'composer install --no-interaction');
