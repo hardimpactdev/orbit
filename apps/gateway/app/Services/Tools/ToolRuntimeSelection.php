@@ -10,6 +10,9 @@ final readonly class ToolRuntimeSelection
         public string $tool,
         public string $runtime,
         public string $platform,
+        public string $nodePlatform,
+        public string $platformFamily,
+        public string $implementationKey,
     ) {}
 
     public static function resolve(
@@ -42,16 +45,27 @@ final readonly class ToolRuntimeSelection
             return ToolRegistryFailure::runtimeUnsupported($tool, $runtime);
         }
 
+        $runtimePlatform = (new ToolRuntimePlatformResolver)->fromNodePlatform($platform);
         $platforms = $supportedRuntimes[$runtime]['platforms'];
+        $implementationKey = $runtimePlatform->implementationKey($runtime);
 
-        if (! in_array($platform, $platforms, true)) {
-            return ToolRegistryFailure::runtimePlatformUnsupported($tool, $runtime, $platform);
+        if (! in_array($runtimePlatform->platformFamily, $platforms, true)) {
+            return ToolRegistryFailure::runtimePlatformUnsupported(
+                tool: $tool,
+                runtime: $runtime,
+                platform: $runtimePlatform->nodePlatform,
+                platformFamily: $runtimePlatform->platformFamily,
+                implementationKey: $implementationKey,
+            );
         }
 
         return new self(
             tool: $tool,
             runtime: $runtime,
-            platform: $platform,
+            platform: $runtimePlatform->nodePlatform,
+            nodePlatform: $runtimePlatform->nodePlatform,
+            platformFamily: $runtimePlatform->platformFamily,
+            implementationKey: $implementationKey,
         );
     }
 }

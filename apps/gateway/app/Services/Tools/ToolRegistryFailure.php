@@ -81,16 +81,31 @@ final readonly class ToolRegistryFailure
         );
     }
 
-    public static function runtimePlatformUnsupported(string $tool, string $runtime, string $platform): self
-    {
+    public static function runtimePlatformUnsupported(
+        string $tool,
+        string $runtime,
+        string $platform,
+        ?string $platformFamily = null,
+        ?string $implementationKey = null,
+    ): self {
+        $meta = [
+            'tool' => $tool,
+            'runtime' => $runtime,
+            'platform' => $platform,
+        ];
+
+        if ($platformFamily !== null) {
+            $meta['platform_family'] = $platformFamily;
+        }
+
+        if ($implementationKey !== null) {
+            $meta['implementation_key'] = $implementationKey;
+        }
+
         return new self(
             code: 'tool.runtime_platform_unsupported',
             message: "Tool '{$tool}' runtime '{$runtime}' is not supported on platform '{$platform}'.",
-            meta: [
-                'tool' => $tool,
-                'runtime' => $runtime,
-                'platform' => $platform,
-            ],
+            meta: $meta,
         );
     }
 
