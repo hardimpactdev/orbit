@@ -23,7 +23,6 @@ final readonly class ToolInstaller
         private NodeRoleAssignments $nodeRoleAssignments,
         private RemoteSecretFile $remoteSecretFile,
         private GitHubTokenResolver $githubTokenResolver,
-        private ToolRuntimeIntentPlanner $runtimeIntents,
     ) {}
 
     /**
@@ -58,30 +57,22 @@ final readonly class ToolInstaller
             return ToolRegistryFailure::nodeRoleRequired($tool, $targetNode->name, $requiredRole);
         }
 
-        $instanceSelection = ToolInstanceSelector::forInstall(
-            $this->catalog,
-            $tool,
-            ToolVersionRequest::fromInput($version),
-            $instance,
-        );
-
-        if ($instanceSelection instanceof ToolRegistryFailure) {
-            return $instanceSelection;
+        if ($runtime !== null) {
+            return ToolRegistryFailure::validation(
+                field: 'runtime',
+                value: $runtime,
+                message: 'Tools do not own runtime lifecycle. Use process:add --definition for runnable services.',
+                meta: ['reason' => 'unsupported_field'],
+            );
         }
 
-        $runtimeIntent = $this->runtimeIntent(
-            node: $targetNode,
-            instance: $instanceSelection,
-            runtime: $runtime,
-            shouldPlan: $runtime !== null || $version !== null || $instance !== null,
-        );
-
-        if ($runtimeIntent instanceof ToolRegistryFailure) {
-            return $runtimeIntent;
-        }
-
-        if ($runtimeIntent instanceof ToolRuntimeIntent) {
-            $config = $this->withRuntimeConfig($config, $runtimeIntent);
+        if ($instance !== null) {
+            return ToolRegistryFailure::validation(
+                field: 'instance',
+                value: $instance,
+                message: 'Tools do not support runnable service instances. Use process:add --definition for runnable services.',
+                meta: ['reason' => 'unsupported_field'],
+            );
         }
 
         $script = $this->catalog->installScript($tool, $config);
@@ -103,13 +94,9 @@ final readonly class ToolInstaller
             [
                 'node_id' => $targetNode->id,
                 'name' => $tool,
-                'instance_key' => $instanceSelection->instanceKey,
             ],
             [
-                'version_family' => $instanceSelection->versionFamily,
-                'expected_version' => $instanceSelection->expectedVersion,
-                'runtime' => $runtimeIntent->runtime ?? NodeTool::defaultRuntimeForTool($tool),
-                'runtime_config' => $runtimeIntent?->spec(),
+                'expected_version' => $version,
                 'expected_state' => $expectedState,
                 'config' => $config === [] ? null : $config,
             ],
@@ -163,54 +150,7 @@ final readonly class ToolInstaller
             'name' => $tool,
             'node' => $targetNode->name,
             'state' => $row->expected_state,
-            'instance' => $row->instance_key,
-            'version_family' => $row->version_family,
             'version' => $row->expected_version,
-            'runtime' => $row->runtime,
-        ];
-    }
-
-    private function runtimeIntent(Node $node, ToolInstanceSelector $instance, ?string $runtime, bool $shouldPlan): ToolRuntimeIntent|ToolRegistryFailure|null
-    {
-        if (! $shouldPlan || ($runtime === null && $this->catalog->supportedRuntimes($instance->tool) === [])) {
-            return null;
-        }
-
-        $selection = ToolRuntimeSelection::resolve(
-            $this->catalog,
-            $instance->tool,
-            $runtime,
-            (string) $node->platform,
-        );
-
-        return $this->runtimeIntents->plan($node, $instance, $selection);
-    }
-
-    /**
-     * @param  array<string, mixed>  $config
-     * @return array<string, mixed>
-     */
-    private function withRuntimeConfig(array $config, ToolRuntimeIntent $intent): array
-    {
-        return [
-            ...$config,
-            'endpoints' => $this->mergeEndpoints($config['endpoints'] ?? null, [$intent->endpoint]),
-        ];
-    }
-
-    /**
-     * @param  list<array<string, mixed>>  $newEndpoints
-     * @return list<array<string, mixed>>
-     */
-    private function mergeEndpoints(mixed $existingEndpoints, array $newEndpoints): array
-    {
-        if (! is_array($existingEndpoints)) {
-            return $newEndpoints;
-        }
-
-        return [
-            ...array_values(array_filter($existingEndpoints, is_array(...))),
-            ...$newEndpoints,
         ];
     }
 

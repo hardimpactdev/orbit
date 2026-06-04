@@ -36,19 +36,19 @@ describe('ToolShowController', function (): void {
         grantToolShowAccess($caller, $node);
 
         NodeTool::factory()->create([
-            'name' => 'redis',
+            'name' => 'composer',
             'node_id' => $node->id,
-            'expected_state' => 'running',
-            'expected_version' => '7.2']);
+            'expected_state' => 'installed',
+            'expected_version' => '2.8']);
 
-        $response = $this->call('GET', '/api/tools/redis?node=app-1', [], [], [], ['REMOTE_ADDR' => TOOL_SHOW_CALLER_WG_IP]);
+        $response = $this->call('GET', '/api/tools/composer?node=app-1', [], [], [], ['REMOTE_ADDR' => TOOL_SHOW_CALLER_WG_IP]);
 
         $response->assertOk()
-            ->assertJsonPath('success.data.tool.name', 'redis')
+            ->assertJsonPath('success.data.tool.name', 'composer')
             ->assertJsonPath('success.data.tool.node', 'app-1')
-            ->assertJsonPath('success.data.tool.expected_state', 'running')
+            ->assertJsonPath('success.data.tool.expected_state', 'installed')
             ->assertJsonPath('success.data.tool.observed_state', null)
-            ->assertJsonPath('success.data.tool.version', '7.2')
+            ->assertJsonPath('success.data.tool.version', '2.8')
             ->assertJsonPath('success.data.tool.managed', true);
     });
 
@@ -88,7 +88,7 @@ describe('ToolShowController', function (): void {
         grantToolShowAccess($caller, $firstNode);
         grantToolShowAccess($caller, $secondNode);
 
-        $response = $this->call('GET', '/api/tools/redis', [], [], [], ['REMOTE_ADDR' => TOOL_SHOW_CALLER_WG_IP]);
+        $response = $this->call('GET', '/api/tools/composer', [], [], [], ['REMOTE_ADDR' => TOOL_SHOW_CALLER_WG_IP]);
 
         $response->assertStatus(400)
             ->assertJsonPath('error.code', 'validation_failed')
@@ -100,11 +100,11 @@ describe('ToolShowController', function (): void {
         $node = createTestAppHostNode(['name' => 'app-1']);
         grantToolShowAccess($caller, $node);
 
-        $response = $this->call('GET', '/api/tools/redis?node=app-1', [], [], [], ['REMOTE_ADDR' => TOOL_SHOW_CALLER_WG_IP]);
+        $response = $this->call('GET', '/api/tools/composer?node=app-1', [], [], [], ['REMOTE_ADDR' => TOOL_SHOW_CALLER_WG_IP]);
 
         $response->assertNotFound()
             ->assertJsonPath('error.code', 'tool.not_found')
-            ->assertJsonPath('error.meta.tool', 'redis')
+            ->assertJsonPath('error.meta.tool', 'composer')
             ->assertJsonPath('error.meta.node', 'app-1');
     });
 
@@ -122,14 +122,14 @@ describe('ToolShowController', function (): void {
         createToolShowCallerNode();
         Node::factory()->create(['name' => 'hidden']);
 
-        $response = $this->call('GET', '/api/tools/redis?node=hidden', [], [], [], ['REMOTE_ADDR' => TOOL_SHOW_CALLER_WG_IP]);
+        $response = $this->call('GET', '/api/tools/composer?node=hidden', [], [], [], ['REMOTE_ADDR' => TOOL_SHOW_CALLER_WG_IP]);
 
         $response->assertForbidden()
             ->assertJsonPath('error.code', 'authorization_failed');
     });
 
     it('rejects unauthenticated requests', function (): void {
-        $response = $this->getJson('/api/tools/redis');
+        $response = $this->getJson('/api/tools/composer');
 
         $response->assertForbidden()
             ->assertJsonPath('error.code', 'authorization_failed')

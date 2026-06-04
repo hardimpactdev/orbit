@@ -14,7 +14,7 @@
 ## Signature
 
 ```bash
-orbit process:add [name] [command] [--node=<node>] [--app=<app>] [--workspace=<workspace>] [--tool=<tool>] [--restart-policy=<never|on_failure|always>] [--crash-notification=<none|agent_ide>] [--runtime=<docker|supervisor|systemd>] [--start] [--json]
+orbit process:add [name] [command] [--node=<node>] [--app=<app>] [--workspace=<workspace>] [--tool=<tool>] [--definition=<mysql|redis>] [--definition-version=<version-or-family>] [--restart-policy=<never|on_failure|always>] [--crash-notification=<none|agent_ide>] [--runtime=<docker|docker-swarm|supervisor|systemd>] [--start] [--json]
 ```
 
 ## Input Contract
@@ -24,14 +24,16 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
 | `name` | `[name]` | Always. | Never. | None. | Process slug: lowercase letters, digits, and hyphens only; cannot start or end with a hyphen; max 64 characters; unique within the resolved owner scope. |
-| `command` | `[command]` | Always. | Never. | None. | Non-empty command string. Stored as process configuration without shell rewriting by the input adapter. |
+| `command` | `[command]` | When `definition` is absent. | Never. | Service definition command when `definition` is present. | Non-empty command string. Stored as process configuration without shell rewriting by the input adapter. |
 | `node` | `--node` | Required when adding a node-owned process. | `app` or `workspace` is present. | None. | Must resolve to a node that grants `process:add`. |
 | `app` | `--app` or app context | Required unless `node` is supplied or `workspace` resolves the app. | `node` is present. | Local app context when exactly one app is resolvable. | Must resolve to an app whose owning node grants `process:add`. |
 | `workspace` | `--workspace` or workspace context | Required when adding a workspace-owned process. | `node` is present. | Local workspace context when exactly one workspace is resolvable. | Must resolve to a workspace whose app owning node grants `process:add`; pass `--app` when the workspace name is ambiguous. |
 | `tool` | `--tool` | Optional. | Never. | `null`. | Tool slug for the installed node capability this process uses. Tools do not own lifecycle. |
+| `definition` | `--definition` | Optional. | When `tool` is present or when owner scope is app/workspace. | `null`. | Supported service process definition: `mysql` or `redis`. |
+| `version` | `--definition-version` | Optional for one-version definitions; required when the definition has multiple version families. | When `definition` is absent. | Definition default when unambiguous. | Supported service process definition version or version family. |
 | `restart_policy` | `--restart-policy` | Optional. | Never. | `never`. | One of `never`, `on_failure`, `always`. |
 | `crash_notification` | `--crash-notification` | Optional. | Never. | `none`. | One of `none`, `agent_ide`. |
-| `runtime` | `--runtime` | Optional. | Never. | Context default: `systemd` for node-owned processes, app runtime default for app/workspace processes. | One of `docker`, `supervisor`, `systemd`. `systemd` is valid only when `node` owns the process. |
+| `runtime` | `--runtime` | Optional. | Never. | `docker` for service definitions; `systemd` for other node-owned processes; app runtime default for app/workspace processes. | One of `docker`, `docker-swarm`, `supervisor`, `systemd`. `systemd` is valid only when `node` owns the process. `docker-swarm` is valid only for node-owned managed service processes. Service definitions support `docker` and `docker-swarm`. |
 | `start` | `--start` | Optional. | Never. | `false`. | Boolean flag. Starts rendered runtime units after applying when true. |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer and non-interactive input mode. |
 
@@ -48,7 +50,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 1. Resolve target node, app, or workspace context from supplied input or local context.
 2. Send the request to the gateway, which validates the authenticated peer's authorization and process name uniqueness within the owner scope.
-3. Append gateway-owned process configuration after existing definitions for that owner, with command, runtime, optional tool dependency, restart policy, and crash notification policy.
+3. Append gateway-owned process configuration after existing definitions for that owner, with command, runtime, optional tool dependency, service-definition runtime configuration, restart policy, and crash notification policy.
 4. Derive runtime-unit identities for the selected scope. Node-owned and workspace-owned processes normally derive one unit; app-owned processes derive one main-app unit plus one unit for each active workspace.
 5. Render the derived runtime units on the owning node through the selected runtime backend.
 6. When `--start` is present, start the rendered runtime units and record `started` events for units that start successfully.
@@ -77,7 +79,13 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | --- | --- | --- |
 | Duplicate process | The resolved owner scope already has a process definition with the same name. | Failure (`error.code=process.name_collision`). |
 | Invalid context | `--node` is combined with `--app` or `--workspace`, or no node/app/workspace context resolves. | Failure (`error.code=validation_failed`). |
-| Invalid runtime scope | `--runtime=systemd` is supplied for an app- or workspace-owned process. | Failure (`error.code=validation_failed`, `error.meta.reason=systemd_requires_node_owned_process`). |
+| Invalid runtime scope | `--runtime=systemd` or `--runtime=docker-swarm` is supplied for an app- or workspace-owned process. | Failure (`error.code=validation_failed`; `error.meta.reason=systemd_requires_node_owned_process` or `docker_swarm_requires_node_owned_process`). |
+| Version without service definition | `--definition-version` is supplied without `--definition`. | Failure (`error.code=validation_failed`; `error.meta.reason=process_definition_version_requires_definition`). |
+| Invalid service definition scope | `--definition` is supplied for an app- or workspace-owned process. | Failure (`error.code=validation_failed`; `error.meta.reason=process_definition_requires_node_owned_process`). |
+| Service definition with tool | `--definition` is combined with `--tool`. | Failure (`error.code=validation_failed`; `error.meta.reason=process_definition_cannot_reference_tool`). |
+| Unsupported service definition | `--definition` names an unsupported definition. | Failure (`error.code=validation_failed`; `error.meta.reason=unsupported_value`). |
+| Unsupported service definition runtime | `--definition` is combined with a runtime other than `docker` or `docker-swarm`. | Failure (`error.code=validation_failed`; `error.meta.reason=process_definition_runtime_unsupported`). |
+| Service definition resource conflict | The service definition endpoint port or volume conflicts with another process on the node. | Failure (`error.code=validation_failed`; `error.meta.reason=endpoint_conflict` or `volume_conflict`). |
 
 ## Doctor Relationship
 

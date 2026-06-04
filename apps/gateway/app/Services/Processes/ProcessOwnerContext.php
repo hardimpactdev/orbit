@@ -56,7 +56,7 @@ final readonly class ProcessOwnerContext
 
     public function allowsRuntime(ProcessRuntime $runtime): bool
     {
-        return $runtime !== ProcessRuntime::Systemd || $this->owner instanceof Node;
+        return ! $runtime->requiresNodeOwner() || $this->owner instanceof Node;
     }
 
     public function assertRuntimeAllowed(ProcessRuntime $runtime): void
@@ -65,10 +65,10 @@ final readonly class ProcessOwnerContext
             return;
         }
 
-        throw new GatewayApiException('The systemd runtime is only valid for node-owned processes.', 'validation_failed', [
+        throw new GatewayApiException($runtime->nodeOwnerViolationMessage() ?? 'The selected runtime is not valid for this process owner.', 'validation_failed', [
             'field' => 'runtime',
             'value' => $runtime->value,
-            'reason' => 'systemd_requires_node_owned_process',
+            'reason' => $runtime->nodeOwnerViolationReason(),
         ]);
     }
 

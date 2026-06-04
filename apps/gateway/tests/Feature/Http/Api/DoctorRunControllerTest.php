@@ -164,7 +164,7 @@ describe('DoctorRunController', function (): void {
     it('accepts the tool family scope and returns tool drift', function (): void {
         createDoctorRunCallerNode();
         $appNode = createTestAppHostNode(['name' => 'app-1', 'status' => 'active']);
-        NodeTool::factory()->create(['node_id' => $appNode->id, 'name' => 'redis']);
+        NodeTool::factory()->create(['node_id' => $appNode->id, 'name' => 'composer']);
         app()->instance(RemoteShell::class, new DoctorRunRemoteShell(perRouteStdout: '', exitCode: 1));
 
         $response = $this->call('POST', '/api/doctor/run', [

@@ -62,14 +62,11 @@ use App\Tools\GhTool;
 use App\Tools\HermesTool;
 use App\Tools\LaravelInstallerTool;
 use App\Tools\MailpitTool;
-use App\Tools\MysqlTool;
 use App\Tools\OpenClawTool;
 use App\Tools\OpenCodeServerTool;
 use App\Tools\PhpCliTool;
 use App\Tools\PhpTool;
 use App\Tools\PolyscopeServerTool;
-use App\Tools\PostgresTool;
-use App\Tools\RedisTool;
 use App\Tools\ReverbTool;
 use App\Tools\RustfsTool;
 use App\Tools\SupervisorTool;
@@ -138,9 +135,6 @@ class AppServiceProvider extends ServiceProvider
             $app->make(ComposerTool::class),
             $app->make(DnsTool::class),
             $app->make(PhpTool::class),
-            $app->make(PostgresTool::class),
-            $app->make(MysqlTool::class),
-            $app->make(RedisTool::class),
             $app->make(MailpitTool::class),
             $app->make(ReverbTool::class),
             $app->make(RustfsTool::class),

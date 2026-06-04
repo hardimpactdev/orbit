@@ -76,7 +76,14 @@ describe('LaravelInstallerTool', function (): void {
         $tool = new LaravelInstallerTool;
         $metadata = $tool->probeMetadata();
 
-        expect($metadata['binary'])->toBe('laravel');
+        expect($metadata['binary'])->toBe('/usr/local/bin/laravel');
+    });
+
+    it('probeMetadata runs the installer version command from the orbit home directory', function (): void {
+        $tool = new LaravelInstallerTool;
+        $metadata = $tool->probeMetadata();
+
+        expect($metadata['version_command'])->toBe('cd /home/orbit && /usr/local/bin/laravel --version');
     });
 
     it('is resolvable by slug from the tool catalog', function (): void {

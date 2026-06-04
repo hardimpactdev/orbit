@@ -46,7 +46,6 @@ final readonly class ToolCredentialsReader
         return [
             'tool' => $tool,
             'node' => $model->node->name,
-            'instance' => $model->instance_key,
             'fields' => $fields,
         ];
     }

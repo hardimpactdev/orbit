@@ -9,7 +9,7 @@ use App\Enums\Nodes\NodeRoleName;
 use App\Enums\Nodes\NodeRoleStatus;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
-use App\Models\NodeTool;
+use App\Models\Process;
 use App\Services\Nodes\NodeRegistryWriter;
 use App\Services\Nodes\Roles\NodeRoleBaselineConverger;
 use App\Services\Security\SshHostKeyPinner;
@@ -94,10 +94,9 @@ class BakeWebSocketNodeCommand extends Command
             throw new RuntimeException("Active Redis node [{$name}] was not found.");
         }
 
-        $hasRedis = NodeTool::query()
-            ->where('node_id', $node->id)
-            ->where('name', 'redis')
-            ->whereIn('expected_state', ['installed', 'running'])
+        $hasRedis = Process::query()
+            ->ownedBy($node)
+            ->where('runtime_config->definition', 'redis')
             ->exists();
 
         if (! $hasRedis) {

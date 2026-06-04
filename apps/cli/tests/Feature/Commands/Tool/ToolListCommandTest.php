@@ -10,9 +10,9 @@ describe('tool:list', function (): void {
         fakeGateway(fakeSuccessEnvelope([
             'tools' => [
                 [
-                    'name' => 'redis',
+                    'name' => 'composer',
                     'node' => 'app-1',
-                    'expected_state' => 'running',
+                    'expected_state' => 'installed',
                     'observed_state' => null,
                 ],
             ],
@@ -34,7 +34,7 @@ describe('tool:list', function (): void {
         });
 
         expect($exitCode)->toBe(0)
-            ->and($decoded['success']['data']['tools'][0]['name'])->toBe('redis')
+            ->and($decoded['success']['data']['tools'][0]['name'])->toBe('composer')
             ->and($decoded['success']['meta']['count'])->toBe(1);
     });
 
@@ -42,11 +42,11 @@ describe('tool:list', function (): void {
         fakeGateway(fakeSuccessEnvelope([
             'tools' => [
                 [
-                    'name' => 'redis',
+                    'name' => 'composer',
                     'node' => 'app-1',
-                    'expected_state' => 'running',
+                    'expected_state' => 'installed',
                     'observed_state' => null,
-                    'version' => '7.2',
+                    'version' => '2.8',
                     'managed' => true,
                     'endpoints' => [],
                 ],
@@ -57,9 +57,9 @@ describe('tool:list', function (): void {
 
         expect($exitCode)->toBe(0)
             ->and($output)->toContain('Node: app-1')
-            ->and($output)->toContain('redis')
-            ->and($output)->toContain('running')
-            ->and($output)->toContain('7.2');
+            ->and($output)->toContain('composer')
+            ->and($output)->toContain('installed')
+            ->and($output)->toContain('2.8');
     });
 
     it('passes through gateway error codes from HTTP failures', function (): void {

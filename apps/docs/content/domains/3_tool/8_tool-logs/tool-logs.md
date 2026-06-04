@@ -19,10 +19,10 @@ orbit tool:logs <tool> [--app=<app>] [--node=<node>] [--lines=<count>] [--follow
 ## Examples
 
 ```bash
-orbit tool:logs redis --node=app-1
-orbit tool:logs redis --app=docs --lines=200
-orbit tool:logs redis --node=app-1 --follow
-orbit tool:logs redis --node=app-1 --json
+orbit tool:logs opencode-server --node=agent-1
+orbit tool:logs opencode-server --app=docs --lines=200
+orbit tool:logs opencode-server --node=agent-1 --follow
+orbit tool:logs opencode-server --node=agent-1 --json
 ```
 
 ## Arguments and options

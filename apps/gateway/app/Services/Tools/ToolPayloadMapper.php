@@ -16,12 +16,9 @@ final readonly class ToolPayloadMapper
         return [
             'name' => $tool->name,
             'node' => $tool->node?->name,
-            'instance' => $tool->instance_key,
             'expected_state' => $tool->expected_state,
             'observed_state' => null,
-            'version_family' => $tool->version_family,
             'version' => $tool->expected_version,
-            'runtime' => $tool->runtime,
             'managed' => true,
             'endpoints' => $this->endpoints($tool),
         ];

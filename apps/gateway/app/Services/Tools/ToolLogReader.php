@@ -44,7 +44,6 @@ final readonly class ToolLogReader
         return [
             'tool' => $target->tool->name,
             'node' => $target->node->name,
-            'instance' => $target->tool->instance_key,
             'process' => $target->process->name,
             'runtime_unit' => $runtimeUnit,
             'lines' => $this->lines($result->stdout),

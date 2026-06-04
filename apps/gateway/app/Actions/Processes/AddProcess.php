@@ -10,10 +10,12 @@ use App\Enums\Processes\ProcessRuntime;
 use App\Enums\ProcessRestartPolicy;
 use App\Http\Gateway\GatewayApiException;
 use App\Models\App;
+use App\Models\Node;
 use App\Models\Process;
 use App\Services\Processes\ProcessOwnerContext;
 use App\Services\Processes\ProcessRuntimeDriverRegistry;
 use App\Services\Processes\ProcessRuntimeUnitPayload;
+use App\Services\Processes\ProcessServiceDefinitionRegistry;
 use Illuminate\Support\Facades\DB;
 use LogicException;
 
@@ -23,24 +25,75 @@ final readonly class AddProcess
         private EnsureAppProcessRuntimeUnits $ensureRuntimeUnits,
         private ProcessRuntimeUnitPayload $runtimeUnitPayload,
         private ProcessRuntimeDriverRegistry $runtimeDrivers,
+        private ProcessServiceDefinitionRegistry $serviceDefinitions,
     ) {}
 
     /**
      * @return array{data: array<string, mixed>, warnings: list<array<string, mixed>>}
      */
-    public function handle(ProcessOwnerContext $context, string $name, string $command, ProcessRestartPolicy $restartPolicy, ProcessCrashNotification $crashNotification, bool $start, ?ProcessRuntime $runtime = null, ?string $tool = null): array
-    {
+    public function handle(
+        ProcessOwnerContext $context,
+        string $name,
+        ?string $command,
+        ProcessRestartPolicy $restartPolicy,
+        ProcessCrashNotification $crashNotification,
+        bool $start,
+        ?ProcessRuntime $runtime = null,
+        ?string $tool = null,
+        ?string $definition = null,
+        ?string $version = null,
+    ): array {
         $app = $context->runtimeApp();
         $app->loadMissing(['node', 'workspaces']);
 
-        $resolvedRuntime = $runtime ?? $context->defaultRuntime();
+        $resolvedRuntime = $runtime ?? ($definition === null ? $context->defaultRuntime() : ProcessRuntime::Docker);
         $context->assertRuntimeAllowed($resolvedRuntime);
+        $runtimeConfig = [];
+
+        if ($definition !== null) {
+            if (! $context->owner instanceof Node) {
+                throw new GatewayApiException('Process definitions are only valid for node-owned service processes.', 'validation_failed', [
+                    'field' => 'definition',
+                    'value' => $definition,
+                    'reason' => 'process_definition_requires_node_owned_process',
+                ]);
+            }
+
+            if ($tool !== null) {
+                throw new GatewayApiException('Service process definitions do not use tool dependencies.', 'validation_failed', [
+                    'field' => 'tool',
+                    'value' => $tool,
+                    'reason' => 'process_definition_cannot_reference_tool',
+                ]);
+            }
+
+            $serviceDefinition = $this->serviceDefinitions->resolve(
+                definition: $definition,
+                version: $version,
+                runtime: $resolvedRuntime,
+                node: $context->node,
+                processName: $name,
+            );
+
+            $command = $serviceDefinition->command;
+            $runtimeConfig = $serviceDefinition->runtimeConfig;
+        }
+
+        if ($command === null || trim($command) === '') {
+            throw new GatewayApiException('The process command is required.', 'validation_failed', [
+                'field' => 'command',
+            ]);
+        }
 
         if ($context->ownerProcesses()->where('name', $name)->exists()) {
             throw new GatewayApiException("Process '{$name}' already exists for {$context->label()}.", 'process.name_collision', $context->errorMeta($name));
         }
 
-        $process = DB::transaction(function () use ($context, $name, $command, $restartPolicy, $crashNotification, $resolvedRuntime, $tool): Process {
+        if ($runtimeConfig !== []) {
+            $this->assertServiceDefinitionHasNoResourceConflicts($context, $name, $runtimeConfig);
+        }
+
+        $process = DB::transaction(function () use ($context, $name, $command, $restartPolicy, $crashNotification, $resolvedRuntime, $tool, $runtimeConfig): Process {
             $maxOrder = $context->ownerProcesses()
                 ->lockForUpdate()
                 ->max('sort_order') ?? 0;
@@ -53,6 +106,7 @@ final readonly class AddProcess
                 'crash_notification' => $crashNotification,
                 'runtime' => $resolvedRuntime,
                 'tool' => $tool,
+                'runtime_config' => $runtimeConfig,
                 'sort_order' => $maxOrder + 1,
             ]);
 
@@ -140,5 +194,125 @@ final readonly class AddProcess
         }
 
         return $warnings;
+    }
+
+    /**
+     * @param  array<string, mixed>  $runtimeConfig
+     */
+    private function assertServiceDefinitionHasNoResourceConflicts(ProcessOwnerContext $context, string $name, array $runtimeConfig): void
+    {
+        $requestedEndpoints = $this->endpoints($runtimeConfig);
+        $requestedVolumeNames = $this->volumeNames($runtimeConfig);
+
+        $processes = Process::query()
+            ->where('node_id', $context->node->id)
+            ->get();
+
+        foreach ($processes as $process) {
+            $config = is_array($process->runtime_config) ? $process->runtime_config : [];
+
+            foreach ($requestedEndpoints as $endpoint) {
+                foreach ($this->endpoints($config) as $existingEndpoint) {
+                    if ($endpoint['port'] !== $existingEndpoint['port']) {
+                        continue;
+                    }
+
+                    throw new GatewayApiException("Process '{$name}' endpoint port {$endpoint['port']} conflicts with process '{$process->name}'.", 'validation_failed', [
+                        'field' => 'definition',
+                        'reason' => 'endpoint_conflict',
+                        'node' => $context->node->name,
+                        'process' => $name,
+                        'existing_process' => $process->name,
+                        'port' => $endpoint['port'],
+                    ]);
+                }
+            }
+
+            foreach ($requestedVolumeNames as $volumeName) {
+                if (! in_array($volumeName, $this->volumeNames($config), true)) {
+                    continue;
+                }
+
+                throw new GatewayApiException("Process '{$name}' volume '{$volumeName}' conflicts with process '{$process->name}'.", 'validation_failed', [
+                    'field' => 'definition',
+                    'reason' => 'volume_conflict',
+                    'node' => $context->node->name,
+                    'process' => $name,
+                    'existing_process' => $process->name,
+                    'volume' => $volumeName,
+                ]);
+            }
+        }
+    }
+
+    /**
+     * @param  array<string, mixed>  $config
+     * @return list<array{name: string|null, port: int}>
+     */
+    private function endpoints(array $config): array
+    {
+        $rawEndpoints = [];
+
+        if (is_array($config['endpoint'] ?? null)) {
+            $rawEndpoints[] = $config['endpoint'];
+        }
+
+        if (is_array($config['endpoints'] ?? null)) {
+            foreach ($config['endpoints'] as $endpoint) {
+                if (is_array($endpoint)) {
+                    $rawEndpoints[] = $endpoint;
+                }
+            }
+        }
+
+        $endpoints = [];
+
+        foreach ($rawEndpoints as $endpoint) {
+            $port = (int) ($endpoint['port'] ?? 0);
+
+            if ($port < 1) {
+                continue;
+            }
+
+            $name = is_string($endpoint['name'] ?? null) ? trim($endpoint['name']) : null;
+
+            $endpoints[] = [
+                'name' => $name !== '' ? $name : null,
+                'port' => $port,
+            ];
+        }
+
+        return $endpoints;
+    }
+
+    /**
+     * @param  array<string, mixed>  $config
+     * @return list<string>
+     */
+    private function volumeNames(array $config): array
+    {
+        $volumes = [];
+
+        foreach (['mounts', 'volumes'] as $key) {
+            if (! is_array($config[$key] ?? null)) {
+                continue;
+            }
+
+            foreach ($config[$key] as $volume) {
+                if (! is_array($volume)) {
+                    continue;
+                }
+
+                foreach (['name', 'source'] as $nameKey) {
+                    $name = is_string($volume[$nameKey] ?? null) ? trim($volume[$nameKey]) : '';
+
+                    if ($name !== '') {
+                        $volumes[] = $name;
+                    }
+                }
+            }
+        }
+
+        return array_values(array_unique($volumes));
     }
 }

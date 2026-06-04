@@ -84,6 +84,91 @@ describe('process write commands', function (): void {
             ->and($decoded['success']['data']['process']['runtime'])->toBe('systemd');
     });
 
+    it('posts node owned service definition process:add payloads to the gateway', function (): void {
+        fakeGateway(fakeSuccessEnvelope([
+            'process' => [
+                'name' => 'mysql8',
+                'node' => 'database-1',
+                'tool' => null,
+                'runtime' => 'docker-swarm',
+            ],
+            'runtime_units' => [['name' => 'orbit-mysql8', 'context' => 'node']],
+        ], [
+            'warnings' => [],
+        ]));
+
+        [$exitCode, $output] = runCommand($this, 'process:add', [
+            'name' => 'mysql8',
+            '--node' => 'database-1',
+            '--definition' => 'mysql',
+            '--definition-version' => '8',
+            '--runtime' => 'docker-swarm',
+            '--json' => true,
+        ]);
+
+        $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+
+        Http::assertSent(fn (Request $request): bool => $request->method() === 'POST'
+            && $request->url() === 'https://gateway.test/api/processes'
+            && $request->data() === [
+                'node' => 'database-1',
+                'name' => 'mysql8',
+                'restart_policy' => 'never',
+                'crash_notification' => 'none',
+                'start' => false,
+                'runtime' => 'docker-swarm',
+                'definition' => 'mysql',
+                'version' => '8',
+            ]);
+
+        expect($exitCode)->toBe(0)
+            ->and($decoded['success']['data']['process']['tool'])->toBeNull()
+            ->and($decoded['success']['data']['process']['runtime'])->toBe('docker-swarm');
+    });
+
+    it('rejects service definition tool dependencies before contacting the gateway', function (): void {
+        Http::fake();
+
+        [$exitCode, $output] = runCommand($this, 'process:add', [
+            'name' => 'redis',
+            '--node' => 'database-1',
+            '--definition' => 'redis',
+            '--definition-version' => '7',
+            '--tool' => 'redis',
+            '--json' => true,
+        ]);
+
+        $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+
+        Http::assertNothingSent();
+
+        expect($exitCode)->toBe(1)
+            ->and($decoded['error']['code'])->toBe('validation_failed')
+            ->and($decoded['error']['meta']['field'])->toBe('tool')
+            ->and($decoded['error']['meta']['reason'])->toBe('process_definition_cannot_reference_tool');
+    });
+
+    it('rejects service definition versions without definitions before contacting the gateway', function (): void {
+        Http::fake();
+
+        [$exitCode, $output] = runCommand($this, 'process:add', [
+            'name' => 'worker',
+            'processCommand' => 'php artisan queue:work',
+            '--node' => 'app-1',
+            '--definition-version' => '8',
+            '--json' => true,
+        ]);
+
+        $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+
+        Http::assertNothingSent();
+
+        expect($exitCode)->toBe(1)
+            ->and($decoded['error']['code'])->toBe('validation_failed')
+            ->and($decoded['error']['meta']['field'])->toBe('definition_version')
+            ->and($decoded['error']['meta']['reason'])->toBe('process_definition_version_requires_definition');
+    });
+
     it('validates process:add input before contacting the gateway', function (): void {
         fakeGateway(fakeSuccessEnvelope());
 

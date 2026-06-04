@@ -26,7 +26,7 @@ Use this command to update a process definition and re-render its runtime units.
 - **Gateway Update**: Updates the gateway-owned process definition.
 - **Scope Resolution**: `--node` edits a node-owned process and cannot be combined with `--app` or `--workspace`; `--workspace` edits a workspace-owned process; otherwise `--app` edits an app-owned process.
 - **Runtime Unit Re-rendering**: Re-renders the runtime units derived from the selected process definition.
-- **Runtime Boundary**: `systemd` is only valid for node-owned Linux service processes.
+- **Runtime Boundary**: `systemd` is only valid for node-owned Linux service processes. `docker-swarm` is only valid for node-owned managed service processes.
 - **Restart Behavior**: Does not restart running runtime units unless `--restart` is supplied.
 - **Drift Reporting**: Reports repairable runtime-unit apply drift after successful configuration changes.
 

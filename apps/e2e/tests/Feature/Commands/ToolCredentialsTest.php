@@ -10,13 +10,13 @@ it('reads managed tool credentials from gateway intent', function (): void {
         ->withCurrentCheckout(roles: ['gateway']);
 
     try {
-        e2eRestartGatewayApi($topology, 'tool-credentials-redis');
+        e2eRestartGatewayApi($topology, 'tool-credentials-opencode-intent');
         toolCredentialsSeedGatewayIntent($topology);
 
         $result = $topology->ssh(
             'gateway',
             sprintf(
-                'cd %s && orbit tool:credentials redis --node=app-dev-1 --json',
+                'cd %s && orbit tool:credentials opencode-server --node=app-dev-1 --json',
                 escapeshellarg($topology->checkout('gateway')),
             ),
             timeoutSeconds: 180,
@@ -25,11 +25,11 @@ it('reads managed tool credentials from gateway intent', function (): void {
 
         expect($result->successful())->toBeTrue()
             ->and($payload['success']['data']['credentials'])->toMatchArray([
-                'tool' => 'redis',
+                'tool' => 'opencode-server',
                 'node' => 'app-dev-1',
                 'fields' => [
-                    'host' => 'redis.app-dev-1.test',
-                    'port' => 6379,
+                    'host' => '127.0.0.1',
+                    'port' => 4096,
                     'username' => 'orbit',
                     'password' => 'secret123',
                 ],
@@ -80,15 +80,15 @@ function toolCredentialsSeedGatewayIntent(E2ETopologyHarness $topology): void
 $node = \App\Models\Node::query()->where('name', 'app-dev-1')->firstOrFail();
 
 \App\Models\NodeTool::query()->updateOrCreate(
-    ['node_id' => $node->id, 'name' => 'redis'],
+    ['node_id' => $node->id, 'name' => 'opencode-server'],
     [
         'expected_state' => 'running',
         'expected_version' => null,
         'config' => null,
         'credentials' => [
             'fields' => [
-                'host' => 'redis.app-dev-1.test',
-                'port' => 6379,
+                'host' => '127.0.0.1',
+                'port' => 4096,
                 'username' => 'orbit',
                 'password' => 'secret123',
             ],

@@ -17,9 +17,9 @@ orbit tool:remove <tool> [--app=<app>] [--node=<node>] [--force] [--json]
 ## Examples
 
 ```bash
-orbit tool:remove redis --node=app-1
-orbit tool:remove redis --app=docs --force
-orbit tool:remove redis --node=app-1 --json
+orbit tool:remove composer --node=app-1
+orbit tool:remove opencode-server --app=docs --force
+orbit tool:remove composer --node=app-1 --json
 ```
 
 ## Arguments and options

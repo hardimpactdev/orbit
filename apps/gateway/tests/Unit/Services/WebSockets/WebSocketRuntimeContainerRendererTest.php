@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 use App\Data\Nodes\RoleSettings\WebSocketRoleSettings;
 use App\Models\Node;
-use App\Models\NodeTool;
+use App\Models\Process;
 use App\Services\Nodes\NodeWireGuardServiceAddress;
 use App\Services\Runtime\DockerCommandBuilder;
 use App\Services\Runtime\OrbitContainerNames;
@@ -45,10 +45,9 @@ function websocketRuntimeRedisNode(array $overrides = []): Node
         'status' => Node::STATUS_ACTIVE,
     ], $overrides));
 
-    NodeTool::factory()->create([
-        'node_id' => $node->id,
+    Process::factory()->forOwner($node)->create([
         'name' => 'redis',
-        'expected_state' => 'running',
+        'runtime_config' => ['definition' => 'redis'],
     ]);
 
     return $node;

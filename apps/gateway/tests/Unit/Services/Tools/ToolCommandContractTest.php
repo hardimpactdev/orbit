@@ -28,24 +28,14 @@ function assignToolContractAppHostRole(Node $node, string $role = 'app-dev', arr
 }
 
 describe('tool command shared contract', function (): void {
-    it('maps node tool models to the canonical JSON entity shape', function (): void {
+    it('maps node tool models to the canonical JSON entity shape without runtime instance state', function (): void {
         $node = new Node(['name' => 'app-contract-1']);
         $tool = new NodeTool([
-            'name' => 'redis',
-            'instance_key' => 'redis:7',
-            'version_family' => '7',
-            'runtime' => 'docker',
-            'expected_state' => 'running',
-            'expected_version' => '7.2',
+            'name' => 'php',
+            'expected_state' => 'installed',
+            'expected_version' => '8.5',
             'config' => [
-                'endpoints' => [
-                    [
-                        'name' => 'redis',
-                        'kind' => 'tcp',
-                        'host' => 'redis.app-contract-1.test',
-                        'port' => 6379,
-                    ],
-                ],
+                'endpoints' => [],
             ],
         ]);
         $tool->setRelation('node', $node);
@@ -55,44 +45,22 @@ describe('tool command shared contract', function (): void {
         expect(array_keys($payload))->toBe([
             'name',
             'node',
-            'instance',
             'expected_state',
             'observed_state',
-            'version_family',
             'version',
-            'runtime',
             'managed',
             'endpoints',
         ])
             ->and($payload)->toMatchArray([
-                'name' => 'redis',
+                'name' => 'php',
                 'node' => 'app-contract-1',
-                'instance' => 'redis:7',
-                'expected_state' => 'running',
+                'expected_state' => 'installed',
                 'observed_state' => null,
-                'version_family' => '7',
-                'version' => '7.2',
-                'runtime' => 'docker',
+                'version' => '8.5',
                 'managed' => true,
-                'endpoints' => [
-                    [
-                        'name' => 'redis',
-                        'kind' => 'tcp',
-                        'host' => 'redis.app-contract-1.test',
-                        'port' => 6379,
-                    ],
-                ],
+                'endpoints' => [],
             ])
-            ->and($payload['name'])->toBeString()
-            ->and($payload['node'])->toBeString()
-            ->and($payload['instance'])->toBeString()
-            ->and($payload['expected_state'])->toBeString()
-            ->and($payload['observed_state'])->toBeNull()
-            ->and($payload['version_family'])->toBeString()
-            ->and($payload['version'])->toBeString()
-            ->and($payload['runtime'])->toBeString()
-            ->and($payload['managed'])->toBeBool()
-            ->and($payload['endpoints'])->toBeArray();
+            ->and($payload)->not->toHaveKeys(['instance', 'version_family', 'runtime']);
     });
 
     it('keeps observed state out of the registry model because tool:list does not probe live state', function (): void {
@@ -101,40 +69,21 @@ describe('tool command shared contract', function (): void {
         expect($tool->getFillable())->toBe([
             'node_id',
             'name',
-            'instance_key',
-            'version_family',
-            'runtime',
-            'runtime_config',
             'expected_state',
             'expected_version',
             'config',
             'credentials',
         ])
-            ->and($tool->getFillable())->not->toContain('observed_state');
-    });
-
-    it('keeps the mapper registry-only with null observed state for tool show without live input', function (): void {
-        $node = new Node(['name' => 'app-contract-1']);
-        $tool = new NodeTool([
-            'name' => 'redis',
-            'expected_state' => 'running',
-            'expected_version' => '7.2',
-        ]);
-        $tool->setRelation('node', $node);
-
-        $payload = app(ToolPayloadMapper::class)->toArray($tool);
-
-        expect($payload['observed_state'])->toBeNull()
-            ->and($payload)->not->toHaveKey('observed_version');
+            ->and($tool->getFillable())->not->toContain('observed_state', 'instance_key', 'version_family', 'runtime', 'runtime_config');
     });
 
     it('preserves populated observed state as a gateway-owned live inspection overlay', function (): void {
         $node = createTestAppHostNode(['name' => 'app-contract-live', 'status' => 'active']);
         $tool = NodeTool::factory()->create([
-            'name' => 'redis',
+            'name' => 'php-cli',
             'node_id' => $node->id,
-            'expected_state' => 'running',
-            'expected_version' => '7.2',
+            'expected_state' => 'installed',
+            'expected_version' => '8.5',
         ]);
 
         app()->instance(RemoteShell::class, new class implements RemoteShell
@@ -143,7 +92,7 @@ describe('tool command shared contract', function (): void {
             {
                 return new RemoteShellResult(
                     exitCode: 0,
-                    stdout: "/usr/bin/redis-server\t7.2.4\trunning\n",
+                    stdout: "/opt/orbit/php/8.5/bin/php\t8.5.1\tinstalled\n",
                     stderr: '',
                     durationMs: 1,
                 );
@@ -154,8 +103,8 @@ describe('tool command shared contract', function (): void {
         $live = app(ToolShowLiveInspector::class)->inspect($tool);
 
         expect([...$payload, ...$live])->toMatchArray([
-            'observed_state' => 'running',
-            'observed_version' => '7.2.4',
+            'observed_state' => 'installed',
+            'observed_version' => '8.5.1',
         ]);
     });
 
@@ -175,9 +124,9 @@ describe('tool command shared contract', function (): void {
             'node_id' => $secondNode->id,
         ]);
 
-        NodeTool::factory()->create(['name' => 'z-redis', 'node_id' => $firstNode->id]);
+        NodeTool::factory()->create(['name' => 'z-php', 'node_id' => $firstNode->id]);
         NodeTool::factory()->create(['name' => 'a-caddy', 'node_id' => $firstNode->id]);
-        NodeTool::factory()->create(['name' => 'php', 'node_id' => $secondNode->id]);
+        NodeTool::factory()->create(['name' => 'composer', 'node_id' => $secondNode->id]);
         NodeTool::factory()->create(['name' => 'hidden', 'node_id' => $inactiveNode->id]);
         NodeTool::factory()->create(['name' => 'unassigned', 'node_id' => $unassignedNode->id]);
         NodeTool::factory()->create(['name' => 'gateway-only', 'node_id' => $gatewayNode->id]);
@@ -186,12 +135,12 @@ describe('tool command shared contract', function (): void {
 
         expect($registry->list()->map(fn (NodeTool $tool): string => "{$tool->node?->name}:{$tool->name}")->all())->toBe([
             'app-contract-a:a-caddy',
-            'app-contract-a:z-redis',
-            'app-contract-b:php',
+            'app-contract-a:z-php',
+            'app-contract-b:composer',
         ])
-            ->and($registry->list(node: 'app-contract-a')->pluck('name')->all())->toBe(['a-caddy', 'z-redis'])
-            ->and($registry->list(app: 'docs-contract')->pluck('name')->all())->toBe(['php'])
-            ->and($registry->list(app: 'docs-contract.test')->pluck('name')->all())->toBe(['php']);
+            ->and($registry->list(node: 'app-contract-a')->pluck('name')->all())->toBe(['a-caddy', 'z-php'])
+            ->and($registry->list(app: 'docs-contract')->pluck('name')->all())->toBe(['composer'])
+            ->and($registry->list(app: 'docs-contract.test')->pluck('name')->all())->toBe(['composer']);
     });
 
     it('returns contract failures for invalid or conflicting registry filters', function (): void {
@@ -246,15 +195,15 @@ describe('tool command shared contract', function (): void {
             'node_id' => $secondNode->id,
         ]);
 
-        NodeTool::factory()->create(['name' => 'redis', 'node_id' => $firstNode->id]);
-        NodeTool::factory()->create(['name' => 'redis', 'node_id' => $secondNode->id]);
+        NodeTool::factory()->create(['name' => 'php', 'node_id' => $firstNode->id]);
+        NodeTool::factory()->create(['name' => 'php', 'node_id' => $secondNode->id]);
 
         $registry = app(ToolRegistry::class);
 
-        $slugResult = $registry->show('redis', app: 'docs-contract');
-        $domainResult = $registry->show('redis', app: 'docs-contract.example.test');
-        $combinedResult = $registry->show('redis', app: 'docs-contract.dev1');
-        $matchingResult = $registry->show('redis', node: $firstNode->name, app: 'docs-contract');
+        $slugResult = $registry->show('php', app: 'docs-contract');
+        $domainResult = $registry->show('php', app: 'docs-contract.example.test');
+        $combinedResult = $registry->show('php', app: 'docs-contract.dev1');
+        $matchingResult = $registry->show('php', node: $firstNode->name, app: 'docs-contract');
 
         expect($slugResult)->toBeInstanceOf(NodeTool::class)
             ->and($slugResult->node?->name)->toBe($firstNode->name)
@@ -264,66 +213,21 @@ describe('tool command shared contract', function (): void {
             ->and($combinedResult->node?->name)->toBe($firstNode->name)
             ->and($matchingResult)->toBeInstanceOf(NodeTool::class)
             ->and($matchingResult->node?->name)->toBe($firstNode->name);
-
-        $mismatch = $registry->validateFilters(node: $secondNode->name, app: 'docs-contract');
-
-        expect($mismatch)->toBeInstanceOf(ToolRegistryFailure::class)
-            ->and($mismatch->code)->toBe('validation_failed')
-            ->and($mismatch->meta)->toMatchArray([
-                'field' => 'app',
-                'value' => 'docs-contract',
-                'node' => $secondNode->name,
-                'resolved_node' => $firstNode->name,
-            ]);
     });
 
-    it('keeps the shared target hierarchy explicit before registry access', function (): void {
+    it('does not resolve service process versions as tool instances', function (): void {
         $node = Node::factory()->create(['name' => 'app-contract-default', 'status' => 'active']);
         assignToolContractAppHostRole($node);
-        NodeTool::factory()->create(['name' => 'redis', 'node_id' => $node->id]);
+        NodeTool::factory()->create(['name' => 'php', 'node_id' => $node->id]);
 
         $registry = app(ToolRegistry::class);
 
-        expect($registry->show('redis', node: $node->name)->node?->name)->toBe($node->name)
-            ->and($registry->show('redis')->code)->toBe('validation_failed');
-    });
+        $withInstance = $registry->show('php', node: $node->name, instance: '8.5');
 
-    it('requires an instance selector when a base tool has multiple instances on one node', function (): void {
-        $node = Node::factory()->create(['name' => 'app-contract-instances', 'status' => 'active']);
-        assignToolContractAppHostRole($node);
-        NodeTool::factory()->create([
-            'node_id' => $node->id,
-            'name' => 'mysql',
-            'instance_key' => 'mysql:8',
-            'version_family' => '8',
-            'expected_version' => '8.4',
-        ]);
-        NodeTool::factory()->create([
-            'node_id' => $node->id,
-            'name' => 'mysql',
-            'instance_key' => 'mysql:9',
-            'version_family' => '9',
-            'expected_version' => '9',
-        ]);
-
-        $registry = app(ToolRegistry::class);
-        $ambiguous = $registry->show('mysql', node: $node->name);
-        $mysql8 = $registry->show('mysql', node: $node->name, instance: '8');
-        $mysql9 = $registry->show('mysql', node: $node->name, instance: 'mysql:9');
-
-        expect($ambiguous)->toBeInstanceOf(ToolRegistryFailure::class)
-            ->and($ambiguous->code)->toBe('tool.instance_required')
-            ->and($ambiguous->meta)->toMatchArray([
-                'field' => 'instance',
-                'reason' => 'ambiguous',
-                'tool' => 'mysql',
-                'node' => $node->name,
-                'instances' => ['mysql:8', 'mysql:9'],
-            ])
-            ->and($mysql8)->toBeInstanceOf(NodeTool::class)
-            ->and($mysql8->instance_key)->toBe('mysql:8')
-            ->and($mysql9)->toBeInstanceOf(NodeTool::class)
-            ->and($mysql9->instance_key)->toBe('mysql:9');
+        expect($registry->show('php', node: $node->name))->toBeInstanceOf(NodeTool::class)
+            ->and($registry->show('php')->code)->toBe('validation_failed')
+            ->and($withInstance)->toBeInstanceOf(ToolRegistryFailure::class)
+            ->and($withInstance->code)->toBe('tool.not_found');
     });
 
     it('exposes the shared tool failure shape and allowed remote action metadata', function (): void {

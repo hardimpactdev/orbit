@@ -14,7 +14,7 @@
 ## Signature
 
 ```bash
-orbit process:edit [name] [--node=<node>] [--app=<app>] [--workspace=<workspace>] [--command=<command>] [--restart-policy=<never|on_failure|always>] [--crash-notification=<none|agent_ide>] [--runtime=<docker|supervisor|systemd>] [--restart] [--json]
+orbit process:edit [name] [--node=<node>] [--app=<app>] [--workspace=<workspace>] [--command=<command>] [--restart-policy=<never|on_failure|always>] [--crash-notification=<none|agent_ide>] [--runtime=<docker|docker-swarm|supervisor|systemd>] [--restart] [--json]
 ```
 
 ## Input Contract
@@ -30,7 +30,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | `command` | `--command` | Optional. At least one editable field is required. | Never. | Current value. | Non-empty command string when supplied. |
 | `restart_policy` | `--restart-policy` | Optional. At least one editable field is required. | Never. | Current value. | One of `never`, `on_failure`, `always`. |
 | `crash_notification` | `--crash-notification` | Optional. At least one editable field is required. | Never. | Current value. | One of `none`, `agent_ide`. |
-| `runtime` | `--runtime` | Optional. At least one editable field is required. | Never. | Current value. | One of `docker`, `supervisor`, `systemd`. `systemd` is valid only when `node` owns the process. |
+| `runtime` | `--runtime` | Optional. At least one editable field is required. | Never. | Current value. | One of `docker`, `docker-swarm`, `supervisor`, `systemd`. `systemd` is valid only when `node` owns the process. `docker-swarm` is valid only for node-owned managed service processes. |
 | `restart` | `--restart` | Optional. | Never. | `false`. | Boolean flag. Restarts affected running runtime units after applying when true. |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer and non-interactive input mode. |
 
@@ -67,7 +67,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | --- | --- | --- |
 | Process not found | The named process does not exist for the resolved owner scope. | Failure (`error.code=process.not_found`). |
 | Invalid context | `--node` is combined with `--app` or `--workspace`, or no node/app/workspace context resolves. | Failure (`error.code=validation_failed`). |
-| Invalid runtime scope | `--runtime=systemd` is supplied for an app- or workspace-owned process. | Failure (`error.code=validation_failed`, `error.meta.reason=systemd_requires_node_owned_process`). |
+| Invalid runtime scope | `--runtime=systemd` or `--runtime=docker-swarm` is supplied for an app- or workspace-owned process. | Failure (`error.code=validation_failed`; `error.meta.reason=systemd_requires_node_owned_process` or `docker_swarm_requires_node_owned_process`). |
 
 ## Doctor Relationship
 

@@ -32,11 +32,6 @@ describe('NodeConverger', function (): void {
             'status' => Node::STATUS_PROVISIONING,
             'wireguard_address' => '10.6.0.50',
         ]);
-        NodeTool::factory()->create([
-            'node_id' => $node->id,
-            'name' => 'redis',
-            'expected_state' => 'running',
-        ]);
         $shell = new NodeConvergerSetupRemoteShell;
 
         app()->instance(RemoteShell::class, $shell);
@@ -73,7 +68,6 @@ describe('NodeConverger', function (): void {
                     'laravel-installer',
                     'php-cli',
                 ])
-            ->and(NodeTool::query()->where('node_id', $node->id)->where('name', 'redis')->exists())->toBeTrue()
             ->and(implode("\n", $shell->scripts))->not->toContain('doctor --restore')
             ->and(implode("\n", $shell->scripts))->not->toContain(' orbit doctor ')
             ->and($shell->repairScripts())->toHaveCount(5);
@@ -200,7 +194,7 @@ final class NodeConvergerSetupRemoteShell implements RemoteShell
             '/opt/orbit/php/8.5/bin/php' => $this->installedProbe('php-cli', "/opt/orbit/php/8.5/bin/php\t8.5.6\n"),
             '/usr/local/bin/composer' => $this->installedProbe('composer', "/usr/local/bin/composer\tComposer version 2.9.0\n"),
             'gh' => $this->installedProbe('gh', "/usr/bin/gh\tgh version 2.60.0\n"),
-            'laravel' => $this->installedProbe('laravel-installer', "/usr/local/bin/laravel\tLaravel Installer 5.0.0\n"),
+            '/usr/local/bin/laravel' => $this->installedProbe('laravel-installer', "/usr/local/bin/laravel\tLaravel Installer 5.0.0\n"),
             default => new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
         };
     }

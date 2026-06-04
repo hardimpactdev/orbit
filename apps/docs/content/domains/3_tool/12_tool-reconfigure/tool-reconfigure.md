@@ -17,9 +17,9 @@ orbit tool:reconfigure [tool] [--app=<app>] [--node=<node>] [--password=<passwor
 ## Examples
 
 ```bash
-orbit tool:reconfigure redis --node=app-1
+orbit tool:reconfigure opencode-server --node=agent-1
 orbit tool:reconfigure opencode-server --app=docs --password=<new-password>
-orbit tool:reconfigure redis --node=app-1 --json
+orbit tool:reconfigure opencode-server --node=agent-1 --json
 ```
 
 ## Arguments and options

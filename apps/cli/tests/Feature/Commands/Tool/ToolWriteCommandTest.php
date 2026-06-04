@@ -2,13 +2,9 @@
 
 declare(strict_types=1);
 
-use App\Commands\Tool\ToolStartCommand;
-use App\Services\GatewayStreamClient;
 use App\Services\OrbitConfigStore;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
-use Orbit\Core\Progress\ProgressEventType;
-use Symfony\Component\Console\Tester\CommandTester;
 
 describe('tool write commands', function (): void {
     beforeEach(function (): void {
@@ -25,18 +21,18 @@ describe('tool write commands', function (): void {
         fakeGatewayProgressStream(gatewayProgressFrame('complete', [
             'exit_code' => 0,
             'data' => [
-                'tool' => ['name' => 'redis', 'node' => 'app-1', 'state' => 'installed'],
+                'tool' => ['name' => 'composer', 'node' => 'app-1', 'state' => 'installed'],
             ],
         ]));
 
         $this->artisan('tool:install')
-            ->expectsQuestion('Tool name', 'redis')
+            ->expectsQuestion('Tool name', 'composer')
             ->expectsQuestion('Target node', 'app-1')
-            ->expectsOutputToContain('redis')
+            ->expectsOutputToContain('composer')
             ->assertSuccessful();
 
         Http::assertSent(fn (Request $request): bool => $request->method() === 'POST'
-            && $request->url() === 'https://gateway.test/api/tools/redis/install'
+            && $request->url() === 'https://gateway.test/api/tools/composer/install'
             && $request->data() === [
                 'node' => 'app-1',
                 'status' => 'installed',
@@ -47,12 +43,12 @@ describe('tool write commands', function (): void {
         fakeGatewayProgressStream(gatewayProgressFrame('complete', [
             'exit_code' => 0,
             'data' => [
-                'tool' => ['name' => 'redis', 'node' => 'app-1', 'state' => 'running'],
+                'tool' => ['name' => 'composer', 'node' => 'app-1', 'state' => 'running'],
             ],
         ]));
 
         [$exitCode, $output] = runCommand($this, 'tool:install', [
-            'tool' => 'redis',
+            'tool' => 'composer',
             '--node' => 'app-1',
             '--status' => 'running',
             '--json' => true,
@@ -61,7 +57,7 @@ describe('tool write commands', function (): void {
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
         Http::assertSent(fn (Request $request): bool => $request->method() === 'POST'
-            && $request->url() === 'https://gateway.test/api/tools/redis/install'
+            && $request->url() === 'https://gateway.test/api/tools/composer/install'
             && $request->hasHeader('Accept', 'text/event-stream')
             && $request->data() === [
                 'node' => 'app-1',
@@ -73,104 +69,40 @@ describe('tool write commands', function (): void {
             ->and($decoded['data']['data']['tool']['state'])->toBe('running');
     });
 
-    it('streams tool:install version and runtime intent to the gateway', function (): void {
+    it('streams host tool version intent without runtime fields', function (): void {
         fakeGatewayProgressStream(gatewayProgressFrame('complete', [
             'exit_code' => 0,
             'data' => [
                 'tool' => [
-                    'name' => 'mysql',
+                    'name' => 'composer',
                     'node' => 'database-1',
-                    'instance' => 'mysql:8',
-                    'version_family' => '8',
-                    'version' => '8.4',
-                    'runtime' => 'docker-swarm',
-                    'state' => 'running',
+                    'version' => '2.8',
+                    'state' => 'installed',
                 ],
             ],
         ]));
 
         [$exitCode, $output] = runCommand($this, 'tool:install', [
-            'tool' => 'mysql',
+            'tool' => 'composer',
             '--node' => 'database-1',
-            '--version' => '8.4',
-            '--runtime' => 'docker-swarm',
-            '--status' => 'running',
+            '--tool-version' => '2.8',
             '--json' => true,
         ]);
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
         Http::assertSent(fn (Request $request): bool => $request->method() === 'POST'
-            && $request->url() === 'https://gateway.test/api/tools/mysql/install'
+            && $request->url() === 'https://gateway.test/api/tools/composer/install'
             && $request->hasHeader('Accept', 'text/event-stream')
             && $request->data() === [
                 'node' => 'database-1',
-                'version' => '8.4',
-                'runtime' => 'docker-swarm',
-                'status' => 'running',
+                'version' => '2.8',
+                'status' => 'installed',
             ]);
 
         expect($exitCode)->toBe(0)
             ->and($decoded['event'])->toBe('complete')
-            ->and($decoded['data']['data']['tool']['instance'])->toBe('mysql:8')
-            ->and($decoded['data']['data']['tool']['runtime'])->toBe('docker-swarm');
-    });
-
-    it('prompts for an install version when the tool has multiple version families', function (): void {
-        fakeGatewayProgressStream(gatewayProgressFrame('complete', [
-            'exit_code' => 0,
-            'data' => [
-                'tool' => [
-                    'name' => 'mysql',
-                    'node' => 'database-1',
-                    'instance' => 'mysql:8',
-                    'version_family' => '8',
-                    'version' => '8.4',
-                    'runtime' => 'docker',
-                    'state' => 'running',
-                ],
-            ],
-        ]));
-
-        $this->artisan('tool:install', [
-            'tool' => 'mysql',
-            '--node' => 'database-1',
-            '--status' => 'running',
-        ])
-            ->expectsChoice('Version', '8', ['8', '9'])
-            ->expectsOutputToContain('mysql')
-            ->assertSuccessful();
-
-        Http::assertSent(fn (Request $request): bool => $request->method() === 'POST'
-            && $request->url() === 'https://gateway.test/api/tools/mysql/install'
-            && $request->data() === [
-                'node' => 'database-1',
-                'version' => '8',
-                'status' => 'running',
-            ]);
-    });
-
-    it('fails before contacting the gateway when json omits a required install version', function (): void {
-        Http::fake();
-
-        [$exitCode, $output] = runCommand($this, 'tool:install', [
-            'tool' => 'mysql',
-            '--node' => 'database-1',
-            '--json' => true,
-        ]);
-
-        $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
-
-        Http::assertNothingSent();
-
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('validation_failed')
-            ->and($decoded['error']['meta'])->toMatchArray([
-                'field' => 'version',
-                'reason' => 'required',
-                'tool' => 'mysql',
-                'supported_version_families' => ['8', '9'],
-            ]);
+            ->and($decoded['data']['data']['tool'])->not->toHaveKeys(['instance', 'version_family', 'runtime']);
     });
 
     it('uses the local default node for tool:install when no target is supplied', function (): void {
@@ -182,19 +114,19 @@ describe('tool write commands', function (): void {
         fakeGatewayProgressStream(gatewayProgressFrame('complete', [
             'exit_code' => 0,
             'data' => [
-                'tool' => ['name' => 'redis', 'node' => 'default-app', 'state' => 'installed'],
+                'tool' => ['name' => 'composer', 'node' => 'default-app', 'state' => 'installed'],
             ],
         ]));
 
         [$exitCode, $output] = runCommand($this, 'tool:install', [
-            'tool' => 'redis',
+            'tool' => 'composer',
             '--json' => true,
         ]);
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
         Http::assertSent(fn (Request $request): bool => $request->method() === 'POST'
-            && $request->url() === 'https://gateway.test/api/tools/redis/install'
+            && $request->url() === 'https://gateway.test/api/tools/composer/install'
             && $request->hasHeader('Accept', 'text/event-stream')
             && $request->data() === [
                 'node' => 'default-app',
@@ -212,7 +144,7 @@ describe('tool write commands', function (): void {
         fakeGateway(fakeSuccessEnvelope());
 
         [$exitCode, $output] = runCommand($this, 'tool:install', [
-            'tool' => 'redis',
+            'tool' => 'composer',
             '--node' => 'app-1',
             '--status' => 'started',
             '--json' => true,
@@ -230,11 +162,11 @@ describe('tool write commands', function (): void {
 
     it('uses --json as destructive consent for tool:remove', function (): void {
         fakeGateway(fakeSuccessEnvelope([
-            'tool' => ['name' => 'redis', 'node' => 'app-1', 'state' => 'removed'],
+            'tool' => ['name' => 'composer', 'node' => 'app-1', 'state' => 'removed'],
         ]));
 
         [$exitCode, $output] = runCommand($this, 'tool:remove', [
-            'tool' => 'redis',
+            'tool' => 'composer',
             '--node' => 'app-1',
             '--json' => true,
         ]);
@@ -242,7 +174,7 @@ describe('tool write commands', function (): void {
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
         Http::assertSent(fn (Request $request): bool => $request->method() === 'DELETE'
-            && $request->url() === 'https://gateway.test/api/tools/redis'
+            && $request->url() === 'https://gateway.test/api/tools/composer'
             && $request->data() === [
                 'node' => 'app-1',
                 'destructive_consent' => true,
@@ -255,19 +187,19 @@ describe('tool write commands', function (): void {
 
     it('prompts before removing a tool in interactive mode', function (): void {
         fakeGateway(fakeSuccessEnvelope([
-            'tool' => ['name' => 'redis', 'node' => 'app-1', 'state' => 'removed'],
+            'tool' => ['name' => 'composer', 'node' => 'app-1', 'state' => 'removed'],
         ]));
 
         $this->artisan('tool:remove', [
-            'tool' => 'redis',
+            'tool' => 'composer',
             '--node' => 'app-1',
         ])
-            ->expectsConfirmation("Remove tool 'redis'?", 'yes')
+            ->expectsConfirmation("Remove tool 'composer'?", 'yes')
             ->expectsOutputToContain('removed')
             ->assertSuccessful();
 
         Http::assertSent(fn (Request $request): bool => $request->method() === 'DELETE'
-            && $request->url() === 'https://gateway.test/api/tools/redis'
+            && $request->url() === 'https://gateway.test/api/tools/composer'
             && $request->data() === [
                 'node' => 'app-1',
                 'destructive_consent' => true,
@@ -279,7 +211,7 @@ describe('tool write commands', function (): void {
         fakeGateway(fakeSuccessEnvelope());
 
         [$exitCode, $output] = runCommand($this, 'tool:remove', [
-            'tool' => 'redis',
+            'tool' => 'composer',
             '--node' => 'app-1',
             '--no-interaction' => true,
         ]);
@@ -294,12 +226,12 @@ describe('tool write commands', function (): void {
         fakeGatewayProgressStream(gatewayProgressFrame('complete', [
             'exit_code' => 0,
             'data' => [
-                'tool' => ['name' => 'redis', 'node' => 'app-1', 'action' => $endpoint],
+                'tool' => ['name' => 'opencode-server', 'node' => 'app-1', 'action' => $endpoint],
             ],
         ]));
 
         [$exitCode, $output] = runCommand($this, $command, [
-            'tool' => 'redis',
+            'tool' => 'opencode-server',
             '--app' => 'docs',
             '--node' => 'app-1',
             '--json' => true,
@@ -308,7 +240,7 @@ describe('tool write commands', function (): void {
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
         Http::assertSent(fn (Request $request): bool => $request->method() === 'POST'
-            && $request->url() === "https://gateway.test/api/tools/redis/{$endpoint}"
+            && $request->url() === "https://gateway.test/api/tools/opencode-server/{$endpoint}"
             && $request->hasHeader('Accept', 'text/event-stream')
             && $request->data() === [
                 'app' => 'docs',
@@ -325,181 +257,34 @@ describe('tool write commands', function (): void {
         ['tool:reload', 'reload'],
     ]);
 
-    it('streams explicit tool instance selectors for lifecycle actions', function (string $command, string $endpoint): void {
-        fakeGatewayProgressStream(gatewayProgressFrame('complete', [
-            'exit_code' => 0,
-            'data' => [
-                'tool' => ['name' => 'mysql', 'node' => 'database-1', 'instance' => 'mysql:8', 'action' => $endpoint],
-            ],
-        ]));
-
-        [$exitCode, $output] = runCommand($this, $command, [
-            'tool' => 'mysql',
-            '--node' => 'database-1',
-            '--instance' => 'mysql:8',
-            '--json' => true,
-        ]);
-
-        $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
-
-        Http::assertSent(fn (Request $request): bool => $request->method() === 'POST'
-            && $request->url() === "https://gateway.test/api/tools/mysql/{$endpoint}"
-            && $request->hasHeader('Accept', 'text/event-stream')
-            && $request->data() === [
-                'node' => 'database-1',
-                'instance' => 'mysql:8',
-            ]);
-
-        expect($exitCode)->toBe(0)
-            ->and($decoded['event'])->toBe('complete')
-            ->and($decoded['data']['data']['tool']['instance'])->toBe('mysql:8');
-    })->with([
-        ['tool:start', 'start'],
-        ['tool:stop', 'stop'],
-        ['tool:restart', 'restart'],
-        ['tool:reload', 'reload'],
-    ]);
-
-    it('prompts for a lifecycle instance when a base tool resolves to multiple instances', function (): void {
-        fakeGateway(fakeSuccessEnvelope([
-            'tools' => [
-                [
-                    'name' => 'mysql',
-                    'node' => 'database-1',
-                    'instance' => 'mysql:8',
-                ],
-                [
-                    'name' => 'mysql',
-                    'node' => 'database-1',
-                    'instance' => 'mysql:9',
-                ],
-            ],
-        ]));
-
-        $streamClient = new class
-        {
-            /** @var list<array{path: string, payload: array<string, mixed>, method: string}> */
-            public array $requests = [];
-
-            /**
-             * @param  array<string, mixed>  $payload
-             * @param  callable(ProgressEventType, array<string, mixed>): void  $onEvent
-             */
-            public function streamEvents(string $path, array $payload, callable $onEvent, string $method = 'post'): int
-            {
-                $this->requests[] = [
-                    'path' => $path,
-                    'payload' => $payload,
-                    'method' => $method,
-                ];
-
-                $onEvent(ProgressEventType::Complete, [
-                    'exit_code' => 0,
-                    'data' => [
-                        'tool' => [
-                            'name' => 'mysql',
-                            'node' => 'database-1',
-                            'instance' => 'mysql:8',
-                            'action' => 'start',
-                        ],
-                    ],
-                ]);
-
-                return 0;
-            }
-        };
-
-        app()->instance(GatewayStreamClient::class, $streamClient);
-
-        $command = app(ToolStartCommand::class);
-        $command->setLaravel(app());
-
-        $tester = new CommandTester($command);
-        $tester->setInputs(['mysql:8']);
-
-        $exitCode = $tester->execute([
-            'tool' => 'mysql',
-            '--node' => 'database-1',
-        ]);
-
-        expect($exitCode)->toBe(0)
-            ->and($tester->getDisplay())->toContain('mysql:8')
-            ->and($tester->getDisplay())->toContain('"action":"start"');
-
-        Http::assertSentCount(1);
-
-        expect($streamClient->requests)->toBe([
-            [
-                'path' => '/api/tools/mysql/start',
-                'payload' => [
-                    'node' => 'database-1',
-                    'instance' => 'mysql:8',
-                ],
-                'method' => 'post',
-            ],
-        ]);
-    });
-
     it('streams tool:update payloads to the single-tool gateway endpoint', function (): void {
         fakeGatewayProgressStream(gatewayProgressFrame('complete', [
             'exit_code' => 0,
             'data' => [
-                'tool' => ['name' => 'redis', 'node' => 'app-1', 'version' => '7.2'],
+                'tool' => ['name' => 'composer', 'node' => 'app-1', 'version' => '2.8'],
             ],
         ]));
 
         [$exitCode, $output] = runCommand($this, 'tool:update', [
-            'tool' => 'redis',
+            'tool' => 'composer',
             '--node' => 'app-1',
-            '--expected-version' => '7.2',
+            '--expected-version' => '2.8',
             '--json' => true,
         ]);
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
         Http::assertSent(fn (Request $request): bool => $request->method() === 'POST'
-            && $request->url() === 'https://gateway.test/api/tools/redis/update'
+            && $request->url() === 'https://gateway.test/api/tools/composer/update'
             && $request->hasHeader('Accept', 'text/event-stream')
             && $request->data() === [
                 'node' => 'app-1',
-                'version' => '7.2',
+                'version' => '2.8',
             ]);
 
         expect($exitCode)->toBe(0)
             ->and($decoded['event'])->toBe('complete')
-            ->and($decoded['data']['data']['tool']['version'])->toBe('7.2');
-    });
-
-    it('streams tool:update instance selectors to the single-tool gateway endpoint', function (): void {
-        fakeGatewayProgressStream(gatewayProgressFrame('complete', [
-            'exit_code' => 0,
-            'data' => [
-                'tool' => ['name' => 'mysql', 'node' => 'database-1', 'instance' => 'mysql:8', 'version' => '8.4'],
-            ],
-        ]));
-
-        [$exitCode, $output] = runCommand($this, 'tool:update', [
-            'tool' => 'mysql',
-            '--node' => 'database-1',
-            '--instance' => 'mysql:8',
-            '--expected-version' => '8.4',
-            '--json' => true,
-        ]);
-
-        $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
-
-        Http::assertSent(fn (Request $request): bool => $request->method() === 'POST'
-            && $request->url() === 'https://gateway.test/api/tools/mysql/update'
-            && $request->hasHeader('Accept', 'text/event-stream')
-            && $request->data() === [
-                'node' => 'database-1',
-                'instance' => 'mysql:8',
-                'version' => '8.4',
-            ]);
-
-        expect($exitCode)->toBe(0)
-            ->and($decoded['event'])->toBe('complete')
-            ->and($decoded['data']['data']['tool']['instance'])->toBe('mysql:8');
+            ->and($decoded['data']['data']['tool']['version'])->toBe('2.8');
     });
 
     it('streams tool:update bulk payloads when the tool argument is omitted', function (): void {
@@ -508,7 +293,7 @@ describe('tool write commands', function (): void {
             'data' => [
                 'updated' => [],
                 'skipped' => [
-                    ['tool' => 'redis', 'node' => 'app-1', 'reason' => 'null_latest_version'],
+                    ['tool' => 'composer', 'node' => 'app-1', 'reason' => 'null_latest_version'],
                 ],
                 'failed' => [],
             ],

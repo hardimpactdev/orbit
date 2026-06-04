@@ -5,17 +5,18 @@ declare(strict_types=1);
 use App\E2E\Support\E2ETopologyHarness;
 use App\E2E\Support\E2ETopologyKind;
 
-it('installs a docker-managed tool on an app node through the gateway', function (): void {
+it('installs a host-level tool on an app node through the gateway', function (): void {
     $topology = e2eTopology(E2ETopologyKind::OperatorGatewayAppdev)
         ->withCurrentCheckout(roles: ['gateway']);
 
     try {
-        toolInstallPrepareComposeFile($topology);
+        e2eRestartGatewayApi($topology, 'tool-install');
+        toolInstallPrepareComposer($topology);
 
         $result = $topology->ssh(
             'gateway',
             sprintf(
-                'cd %s && orbit tool:install redis --node=app-dev-1 --status=running --json',
+                'cd %s && orbit tool:install laravel-installer --node=app-dev-1 --json',
                 escapeshellarg($topology->checkout('gateway')),
             ),
             timeoutSeconds: 180,
@@ -24,48 +25,41 @@ it('installs a docker-managed tool on an app node through the gateway', function
 
         expect($result->successful())->toBeTrue()
             ->and($data['tool'])->toMatchArray([
-                'name' => 'redis',
+                'name' => 'laravel-installer',
                 'node' => 'app-dev-1',
-                'state' => 'running',
+                'state' => 'installed',
             ]);
 
         $stored = $topology->ssh(
             'gateway',
-            'cd '.escapeshellarg($topology->checkout('gateway')).' && php apps/gateway/artisan tinker --execute='.escapeshellarg("echo \\App\\Models\\NodeTool::query()->where('name', 'redis')->value('expected_state');"),
+            'cd '.escapeshellarg($topology->checkout('gateway')).' && php apps/gateway/artisan tinker --execute='.escapeshellarg("echo \\App\\Models\\NodeTool::query()->where('name', 'laravel-installer')->value('expected_state');"),
             timeoutSeconds: 120,
         );
 
-        expect(trim($stored->output()))->toBe('running');
+        expect(trim($stored->output()))->toBe('installed');
 
-        $dockerLog = $topology->ssh('dev', 'cat /tmp/orbit-tool-install-docker.log', timeoutSeconds: 60);
+        $composerLog = $topology->ssh('dev', 'cat /tmp/orbit-tool-install-composer.log', timeoutSeconds: 60);
 
-        expect($dockerLog->successful())->toBeTrue()
-            ->and($dockerLog->output())->toContain('compose -f /opt/orbit/docker-compose.yml pull redis')
-            ->and($dockerLog->output())->toContain('compose -f /opt/orbit/docker-compose.yml up -d redis');
+        expect($composerLog->successful())->toBeTrue()
+            ->and($composerLog->output())->toContain('global require laravel/installer');
     } finally {
         $topology->cleanup();
     }
 })->group('e2e-feature', 'e2e-feature-operator_gateway_app-dev', 'e2e-feature-operator-gateway-dev');
 
-function toolInstallPrepareComposeFile(E2ETopologyHarness $topology): void
+function toolInstallPrepareComposer(E2ETopologyHarness $topology): void
 {
-    $compose = <<<'YAML'
-services:
-  redis:
-    image: redis:7-alpine
-YAML;
-    $docker = <<<'BASH'
+    $composer = <<<'BASH'
 #!/usr/bin/env bash
 set -euo pipefail
-printf '%s\n' "$*" >> /tmp/orbit-tool-install-docker.log
+printf '%s\n' "$*" >> /tmp/orbit-tool-install-composer.log
 BASH;
 
     $topology->ssh(
         'dev',
         sprintf(
-            'sudo install -d -m 0755 /opt/orbit && printf %%s %s | sudo tee /opt/orbit/docker-compose.yml >/dev/null && printf %%s %s | sudo tee /usr/local/bin/docker >/dev/null && sudo chmod 0755 /usr/local/bin/docker && sudo install -m 0666 -o orbit -g orbit /dev/null /tmp/orbit-tool-install-docker.log',
-            escapeshellarg($compose),
-            escapeshellarg($docker),
+            'printf %%s %s | sudo tee /usr/local/bin/composer >/dev/null && sudo chmod 0755 /usr/local/bin/composer && sudo install -m 0666 -o orbit -g orbit /dev/null /tmp/orbit-tool-install-composer.log',
+            escapeshellarg($composer),
         ),
         timeoutSeconds: 120,
     );

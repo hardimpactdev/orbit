@@ -26,16 +26,26 @@ final readonly class E2EPreparedTopologyRegistry
     ],
 );
 
-\\App\\Models\\NodeTool::query()->updateOrCreate(
+\\App\\Models\\Process::query()->updateOrCreate(
     [
-        'node_id' => \$node->id,
+        'owner_type' => \$node->getMorphClass(),
+        'owner_id' => \$node->id,
         'name' => 'redis',
     ],
     [
-        'expected_state' => 'running',
-        'expected_version' => null,
-        'config' => ['endpoints' => []],
-        'credentials' => null,
+        'node_id' => \$node->id,
+        'command' => 'redis-server --appendonly yes --bind 0.0.0.0 --protected-mode no',
+        'restart_policy' => \\App\\Enums\\ProcessRestartPolicy::Always->value,
+        'crash_notification' => \\App\\Enums\\ProcessCrashNotification::None->value,
+        'runtime' => \\App\\Enums\\Processes\\ProcessRuntime::Docker->value,
+        'tool' => null,
+        'runtime_config' => [
+            'definition' => 'redis',
+            'version_family' => '7',
+            'version' => '7.2',
+            'endpoints' => [],
+        ],
+        'sort_order' => 10,
     ],
 );
 PHP;

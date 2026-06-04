@@ -19,6 +19,10 @@ These terms define how process definitions are identified, scoped, and ordered.
   such as `php-cli`, `viteplus`, `opencode`, or `polyscope`. The dependency
   asserts required capability; it does not transfer lifecycle ownership to the
   tool.
+- **Service process definition:** Process-family catalog entry for a runnable
+  service such as MySQL or Redis. Service version, runtime, endpoint,
+  credentials, lifecycle, and logs belong to the process row produced from the
+  definition.
 - **Process order:** Stable order of process definitions inside their owning
   scope. Read and bulk lifecycle commands use that order.
 
@@ -29,12 +33,14 @@ These terms describe the runtime objects that Orbit derives from process definit
 - **Runtime unit:** Concrete runnable realization of a process definition in
   its selected node, app, or workspace context.
 - **Process runtime:** Backend that runs a process. Supported runtime families
-  are `supervisor`, `docker`, and `systemd`; `docker-swarm` is planned.
-  Supervisor is the host long-running command runner for app/workspace
-  commands where retained. Docker is used for containerized processes such as
-  databases, caches, and FrankenPHP app or workspace web runtimes. Systemd is
-  the node-level Linux service runtime; `systemctl` is only the command adapter
-  used to control those units.
+  are `supervisor`, `docker`, `docker-swarm`, and `systemd`. Supervisor is the
+  host long-running command runner for app/workspace commands where retained.
+  Docker is used for containerized processes such as databases, caches, and
+  FrankenPHP app or workspace web runtimes. Docker Swarm is valid only for
+  node-owned managed service processes created from process service
+  definitions.
+  Systemd is the node-level Linux service runtime; `systemctl` is only the
+  command adapter used to control those units.
 - **Supervisor process runtime:** Runtime backend that runs a process unit as a
   host Supervisor program with Supervisor logs and lifecycle controls.
   App-scoped units run as the resolved app runtime user in the app source
@@ -45,6 +51,11 @@ These terms describe the runtime objects that Orbit derives from process definit
 - **Docker process runtime:** Runtime backend that runs a process as an
   Orbit-managed Docker container. It is used for containerized database, cache,
   agent, app, and workspace runtime units.
+- **Docker Swarm process runtime:** Runtime backend that runs a node-owned
+  managed service process as an Orbit-managed Swarm service. It is currently
+  admitted for process-defined MySQL and Redis service processes.
+  App/workspace Swarm runtime remains deferred and is rejected before runtime
+  side effects.
 - **Systemd process runtime:** Runtime backend for node-level Linux services
   such as OpenCode Server or PolyScope Server. The process row owns
   start/stop/restart/log lifecycle; any related tool row supplies only the
@@ -79,8 +90,9 @@ These terms define per-process behavioral rules that apply to every derived runt
 - **Process runtime selection:** Process-definition field that records which
   backend renders the runtime units. Existing process command compatibility may
   default app and workspace command processes to `supervisor` until the runtime
-  migration is complete; the product model admits `supervisor`, `docker`, and
-  `systemd` process runtimes, with `docker-swarm` planned.
+  migration is complete; the product model admits `supervisor`, `docker`,
+  `docker-swarm`, and `systemd` process runtimes with the owner-scope
+  restrictions documented above.
 
 ## Events
 

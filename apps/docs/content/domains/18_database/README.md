@@ -41,11 +41,11 @@ touch.
   MySQL and PostgreSQL query execution runs from the gateway when the target is
   reachable over Orbit's private network.
 - Database commands do not own app registration, workspace registration,
-  process definitions, schedule definitions, proxy routes, tool lifecycle, or
-  firewall policy.
-- Managed database service lifecycle remains under `tool:*`. The database
-  family owns connection intent and data-plane operations, not service
-  installation.
+  process definitions, schedule definitions, proxy routes, tool installation,
+  or firewall policy.
+- Managed database service lifecycle belongs to process-owned service
+  definitions. The database family owns connection intent and data-plane
+  operations, not service installation or lifecycle.
 
 ## Permissions
 
@@ -87,8 +87,9 @@ The database command domain owns the `database_connection` state family.
   app runtime artifacts that are not part of database env mapping.
 - [`doctor --family=workspace`](../6_workspace/workspace-doctor.md) owns
   workspace runtime artifacts and workspace path drift.
-- [`doctor --family=tool`](../3_tool/tool-doctor.md) owns managed database
-  service tool lifecycle such as PostgreSQL or MySQL installation.
+- [`doctor --family=process`](../7_process/process-doctor.md) owns managed
+  database service runtime drift when the service is represented as a process
+  definition.
 
 ## Database JSON Entity
 

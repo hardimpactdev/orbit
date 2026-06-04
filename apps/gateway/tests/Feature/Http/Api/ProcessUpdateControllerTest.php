@@ -211,7 +211,7 @@ describe('ProcessUpdateController', function (): void {
             ->assertJsonPath('error.code', 'validation_failed')
             ->assertJsonPath('error.meta.field', 'runtime')
             ->assertJsonPath('error.meta.value', 'podman')
-            ->assertJsonPath('error.meta.allowed', ['docker', 'supervisor', 'systemd']);
+            ->assertJsonPath('error.meta.allowed', ['docker', 'docker-swarm', 'supervisor', 'systemd']);
 
         expect(Process::query()->where('name', 'queue')->value('runtime')->value)->toBe('docker');
     });
@@ -235,6 +235,30 @@ describe('ProcessUpdateController', function (): void {
             ->assertJsonPath('error.meta.field', 'runtime')
             ->assertJsonPath('error.meta.value', 'systemd')
             ->assertJsonPath('error.meta.reason', 'systemd_requires_node_owned_process');
+
+        expect(Process::query()->where('name', 'queue')->value('runtime')->value)->toBe('docker')
+            ->and($remoteShell->scripts)->toBe([]);
+    });
+
+    it('rejects docker swarm for app scoped process updates before runtime side effects', function (): void {
+        $caller = createProcessUpdateCallerNode();
+        $appNode = createTestAppHostNode();
+        grantProcessUpdateAccess($caller, $appNode);
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
+        Process::factory()->forOwner($app)->create(['name' => 'queue', 'runtime' => 'docker']);
+        $remoteShell = new ProcessUpdateRemoteShell([]);
+        app()->instance(RemoteShell::class, $remoteShell);
+
+        $response = $this->call('PATCH', '/api/processes/queue', [
+            'app' => 'docs',
+            'runtime' => 'docker-swarm',
+        ], [], [], ['REMOTE_ADDR' => PROCESS_UPDATE_CALLER_WG_IP]);
+
+        $response->assertStatus(422)
+            ->assertJsonPath('error.code', 'validation_failed')
+            ->assertJsonPath('error.meta.field', 'runtime')
+            ->assertJsonPath('error.meta.value', 'docker-swarm')
+            ->assertJsonPath('error.meta.reason', 'docker_swarm_requires_node_owned_process');
 
         expect(Process::query()->where('name', 'queue')->value('runtime')->value)->toBe('docker')
             ->and($remoteShell->scripts)->toBe([]);

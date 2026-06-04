@@ -1,4 +1,4 @@
-# Technical Contract: `orbit tool:update [tool] [--app=<app>] [--node=<node>] [--instance=<instance>] [--expected-version=<version>] [--json]`
+# Technical Contract: `orbit tool:update [tool] [--app=<app>] [--node=<node>] [--expected-version=<version>] [--json]`
 
 [Back to public `tool-update` documentation.](../tool-update.md)
 
@@ -13,7 +13,7 @@
 ## Signature
 
 ```bash
-orbit tool:update [tool] [--app=<app>] [--node=<node>] [--instance=<instance>] [--expected-version=<version>] [--json]
+orbit tool:update [tool] [--app=<app>] [--node=<node>] [--expected-version=<version>] [--json]
 ```
 
 ## Input Contract
@@ -22,9 +22,8 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
-| `tool` | `argument` | `Optional.` | `Never.` | `all update-capable managed tool instances on the node` | `Registered managed tool name.` |
-| `instance` | `--instance` | When `tool` selects more than one managed instance. | When `tool` is omitted. | `default` when the selected tool has only one managed instance. | Managed tool instance id. |
-| `expected_version` | `--expected-version` | `Optional.` | `when tool is omitted.` | `latest supported version in the instance's stored version family` | `Supported version string in the managed instance's stored version family.` |
+| `tool` | `argument` | `Optional.` | `Never.` | `all update-capable managed tools on the node` | `Registered managed tool name.` |
+| `expected_version` | `--expected-version` | `Optional.` | `when tool is omitted.` | `latest supported version` | Supported version string for the selected tool definition. |
 | `node` | `--node` | `Optional.` | `Never.` | `node:default if set; otherwise --self (the calling peer).` | `Visible node slug.` |
 | `app` | `--app` | `Optional.` | `Never.` | `None.` | `Visible app selector used to resolve the owning node.` |
 | `json` | `--json` | `Optional.` | `Never.` | `false` | `Selects the JSON renderer.` |
@@ -33,12 +32,8 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 ### Tool configuration and apply rules
 
-- Selects one tool instance or all update-capable managed tool instances on the
-  target node.
-- Verifies update support and requested version compatibility before writing.
-- Uses the managed instance's stored runtime family. This command must not
-  silently migrate runtime from `docker` to `docker-swarm` or between any other
-  runtime families.
+- Selects one tool or all update-capable managed tools on the target node.
+- Verifies update support before writing.
 - Writes the gateway expected version and applies the update through the gateway.
 - Reports updated, skipped, and failed tools.
 - Bulk mode skips managed tools without update support and reports the skip
@@ -63,9 +58,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | Failure | Condition | Outcome |
 | --- | --- | --- |
 | Tool not found | The selected tool row or tool definition cannot be resolved. | `error.code=tool.not_found` |
-| Instance required | The selected tool resolves to more than one managed instance and `--instance` is omitted. | `error.code=tool.instance_required`; `error.meta.tool=<tool>` |
 | Unsupported tool action | The selected tool definition does not support this command's action. | `error.code=tool.unsupported_action` |
-| Unsupported version | The requested `--expected-version` is not in the managed instance's stored version family. | `error.code=validation_failed`; `error.meta.field=expected_version`; `error.meta.reason=unsupported_value` |
 | Remote action failed | Gateway configuration was readable, but node inspection or apply failed. | `error.code=tool.remote_action_failed` |
 
 ## Doctor Relationship

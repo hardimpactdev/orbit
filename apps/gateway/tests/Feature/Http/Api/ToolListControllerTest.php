@@ -46,7 +46,7 @@ describe('ToolListController', function (): void {
         grantToolListAccess($caller, $zNode);
         grantToolListAccess($caller, $aNode);
 
-        NodeTool::factory()->create(['name' => 'redis', 'node_id' => $zNode->id]);
+        NodeTool::factory()->create(['name' => 'composer', 'node_id' => $zNode->id]);
         NodeTool::factory()->create(['name' => 'php', 'node_id' => $aNode->id]);
         NodeTool::factory()->create(['name' => 'caddy', 'node_id' => $aNode->id]);
 
@@ -58,7 +58,7 @@ describe('ToolListController', function (): void {
         expect(array_map(fn (array $tool): string => "{$tool['node']}:{$tool['name']}", $tools))->toBe([
             'a-node:caddy',
             'a-node:php',
-            'z-node:redis']);
+            'z-node:composer']);
     });
 
     it('filters tools by owning node', function (): void {
@@ -68,7 +68,7 @@ describe('ToolListController', function (): void {
         grantToolListAccess($caller, $firstNode);
         grantToolListAccess($caller, $secondNode);
 
-        NodeTool::factory()->create(['name' => 'redis', 'node_id' => $firstNode->id]);
+        NodeTool::factory()->create(['name' => 'composer', 'node_id' => $firstNode->id]);
         NodeTool::factory()->create(['name' => 'php', 'node_id' => $secondNode->id]);
 
         $response = $this->call('GET', '/api/tools?node=app-2', [], [], [], ['REMOTE_ADDR' => TOOL_LIST_CALLER_WG_IP]);
@@ -84,7 +84,7 @@ describe('ToolListController', function (): void {
         grantToolListAccess($caller, $node);
 
         App::factory()->create(['name' => 'docs', 'node_id' => $node->id, 'domain' => 'docs.example.com']);
-        NodeTool::factory()->create(['name' => 'redis', 'node_id' => $node->id]);
+        NodeTool::factory()->create(['name' => 'composer', 'node_id' => $node->id]);
 
         $response = $this->call('GET', '/api/tools?app=docs.example.com', [], [], [], ['REMOTE_ADDR' => TOOL_LIST_CALLER_WG_IP]);
 
@@ -99,14 +99,14 @@ describe('ToolListController', function (): void {
         $hiddenNode = createTestAppHostNode(['name' => 'hidden-node']);
         grantToolListAccess($caller, $visibleNode);
 
-        NodeTool::factory()->create(['name' => 'redis', 'node_id' => $visibleNode->id]);
+        NodeTool::factory()->create(['name' => 'composer', 'node_id' => $visibleNode->id]);
         NodeTool::factory()->create(['name' => 'php', 'node_id' => $hiddenNode->id]);
 
         $response = $this->call('GET', '/api/tools', [], [], [], ['REMOTE_ADDR' => TOOL_LIST_CALLER_WG_IP]);
 
         $response->assertOk()
             ->assertJsonCount(1, 'success.data.tools')
-            ->assertJsonPath('success.data.tools.0.name', 'redis');
+            ->assertJsonPath('success.data.tools.0.name', 'composer');
     });
 
     it('lets active gateway role assignments read all active tool host records', function (): void {
@@ -116,7 +116,7 @@ describe('ToolListController', function (): void {
         $secondNode = createTestAppHostNode(['name' => 'app-2']);
         $controlNode = Node::factory()->create(['name' => 'control-1']);
 
-        NodeTool::factory()->create(['name' => 'redis', 'node_id' => $firstNode->id]);
+        NodeTool::factory()->create(['name' => 'composer', 'node_id' => $firstNode->id]);
         NodeTool::factory()->create(['name' => 'php', 'node_id' => $secondNode->id]);
         NodeTool::factory()->create(['name' => 'gh', 'node_id' => $controlNode->id]);
 
@@ -129,7 +129,7 @@ describe('ToolListController', function (): void {
     it('does not treat unassigned nodes as gateway-visible tool hosts', function (): void {
         createToolListCallerNode([]);
         $node = createTestAppHostNode(['name' => 'app-1']);
-        NodeTool::factory()->create(['name' => 'redis', 'node_id' => $node->id]);
+        NodeTool::factory()->create(['name' => 'composer', 'node_id' => $node->id]);
 
         $response = $this->call('GET', '/api/tools', [], [], [], ['REMOTE_ADDR' => TOOL_LIST_CALLER_WG_IP]);
 
@@ -143,35 +143,32 @@ describe('ToolListController', function (): void {
         $node = createTestAppHostNode(['name' => 'app-1']);
 
         NodeTool::factory()->create([
-            'name' => 'redis',
+            'name' => 'composer',
             'node_id' => $node->id,
             'expected_state' => 'running',
-            'expected_version' => '7.2',
+            'expected_version' => '2.8',
             'config' => [
                 'endpoints' => [
-                    ['name' => 'redis', 'kind' => 'tcp', 'host' => 'orbit.test', 'port' => 6379]]]]);
+                    ['name' => 'composer', 'kind' => 'tcp', 'host' => 'orbit.test', 'port' => 8080]]]]);
 
         $response = $this->call('GET', '/api/tools', [], [], [], ['REMOTE_ADDR' => TOOL_LIST_CALLER_WG_IP]);
 
         $response->assertOk()
             ->assertJsonPath('success.data.tools.0', [
-                'name' => 'redis',
+                'name' => 'composer',
                 'node' => 'app-1',
-                'instance' => 'redis:default',
                 'expected_state' => 'running',
                 'observed_state' => null,
-                'version_family' => null,
-                'version' => '7.2',
-                'runtime' => 'docker',
+                'version' => '2.8',
                 'managed' => true,
                 'endpoints' => [
-                    ['name' => 'redis', 'kind' => 'tcp', 'host' => 'orbit.test', 'port' => 6379]]]);
+                    ['name' => 'composer', 'kind' => 'tcp', 'host' => 'orbit.test', 'port' => 8080]]]);
     });
 
     it('returns authorization failure when the caller has no tool registry visibility', function (): void {
         createToolListCallerNode();
         $node = Node::factory()->create(['name' => 'app-1']);
-        NodeTool::factory()->create(['name' => 'redis', 'node_id' => $node->id]);
+        NodeTool::factory()->create(['name' => 'composer', 'node_id' => $node->id]);
 
         $response = $this->call('GET', '/api/tools', [], [], [], ['REMOTE_ADDR' => TOOL_LIST_CALLER_WG_IP]);
 

@@ -61,12 +61,6 @@ final readonly class ToolUpdater
         }
 
         if ($expectedVersion !== null) {
-            $versionFailure = $this->validateExpectedVersion($tool, $model, $expectedVersion);
-
-            if ($versionFailure instanceof ToolRegistryFailure) {
-                return $versionFailure;
-            }
-
             $model->expected_version = $expectedVersion;
             $model->save();
         }
@@ -91,38 +85,8 @@ final readonly class ToolUpdater
         return [
             'name' => $tool,
             'node' => $model->node->name,
-            'instance' => $model->instance_key,
-            'version_family' => $model->version_family,
             'version' => $model->expected_version,
-            'runtime' => $model->runtime,
         ];
-    }
-
-    private function validateExpectedVersion(string $tool, NodeTool $model, string $expectedVersion): ?ToolRegistryFailure
-    {
-        $versionFamily = is_string($model->version_family) ? trim($model->version_family) : '';
-
-        if ($versionFamily === '') {
-            return null;
-        }
-
-        $resolved = $this->catalog->resolveVersionRequest($tool, $expectedVersion);
-
-        if ($resolved !== null && $resolved['version_family'] === $versionFamily) {
-            return null;
-        }
-
-        return ToolRegistryFailure::validation(
-            field: 'expected_version',
-            value: $expectedVersion,
-            message: "Tool '{$tool}' instance '{$model->instance_key}' does not support expected version '{$expectedVersion}'.",
-            meta: [
-                'reason' => 'unsupported_value',
-                'tool' => $tool,
-                'instance' => $model->instance_key,
-                'version_family' => $versionFamily,
-            ],
-        );
     }
 
     /**

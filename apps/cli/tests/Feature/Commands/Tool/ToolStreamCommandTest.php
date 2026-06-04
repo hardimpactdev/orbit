@@ -10,32 +10,31 @@ describe('ToolStream commands', function (): void {
         $complete = [
             'exit_code' => 0,
             'data' => [
-                'footer' => "Tool 'redis' installed on app-1.",
-                'tool' => ['name' => 'redis', 'node' => 'app-1', 'state' => 'running'],
+                'footer' => "Tool 'composer' installed on app-1.",
+                'tool' => ['name' => 'composer', 'node' => 'app-1', 'state' => 'installed'],
             ],
         ];
 
         fakeGatewayProgressStream(
             gatewayProgressFrame('tree', ['title' => 'Installing Tool'])
-            .gatewayProgressFrame('step', ['key' => 'install', 'status' => 'running', 'message' => 'Installing redis'])
+            .gatewayProgressFrame('step', ['key' => 'install', 'status' => 'running', 'message' => 'Installing composer'])
             .gatewayProgressFrame('complete', $complete),
         );
 
         [$exitCode, $output] = runCommand($this, 'tool:install', [
-            'tool' => 'redis',
+            'tool' => 'composer',
             '--node' => 'app-1',
-            '--status' => 'running',
             '--json' => true,
         ]);
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
         Http::assertSent(fn (Request $request): bool => $request->method() === 'POST'
-            && $request->url() === 'https://gateway.test/api/tools/redis/install'
+            && $request->url() === 'https://gateway.test/api/tools/composer/install'
             && $request->hasHeader('Accept', 'text/event-stream')
             && $request->data() === [
                 'node' => 'app-1',
-                'status' => 'running',
+                'status' => 'installed',
             ]);
 
         expect($exitCode)->toBe(0)
@@ -44,21 +43,21 @@ describe('ToolStream commands', function (): void {
                 'data' => $complete,
             ])
             ->and(count(array_filter(explode("\n", $output))))->toBe(1)
-            ->and($output)->not->toContain('Installing redis');
+            ->and($output)->not->toContain('Installing composer');
     });
 
     it('streams lifecycle action commands to their gateway endpoints', function (string $command, string $endpoint): void {
         $complete = [
             'exit_code' => 0,
             'data' => [
-                'tool' => ['name' => 'redis', 'node' => 'app-1', 'action' => $endpoint],
+                'tool' => ['name' => 'opencode-server', 'node' => 'app-1', 'action' => $endpoint],
             ],
         ];
 
         fakeGatewayProgressStream(gatewayProgressFrame('complete', $complete));
 
         [$exitCode, $output] = runCommand($this, $command, [
-            'tool' => 'redis',
+            'tool' => 'opencode-server',
             '--app' => 'docs',
             '--node' => 'app-1',
             '--json' => true,
@@ -67,7 +66,7 @@ describe('ToolStream commands', function (): void {
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
         Http::assertSent(fn (Request $request): bool => $request->method() === 'POST'
-            && $request->url() === "https://gateway.test/api/tools/redis/{$endpoint}"
+            && $request->url() === "https://gateway.test/api/tools/opencode-server/{$endpoint}"
             && $request->hasHeader('Accept', 'text/event-stream')
             && $request->data() === [
                 'app' => 'docs',
@@ -88,27 +87,27 @@ describe('ToolStream commands', function (): void {
         $complete = [
             'exit_code' => 0,
             'data' => [
-                'tool' => ['name' => 'redis', 'node' => 'app-1', 'version' => '7.2'],
+                'tool' => ['name' => 'composer', 'node' => 'app-1', 'version' => '2.8'],
             ],
         ];
 
         fakeGatewayProgressStream(gatewayProgressFrame('complete', $complete));
 
         [$exitCode, $output] = runCommand($this, 'tool:update', [
-            'tool' => 'redis',
+            'tool' => 'composer',
             '--node' => 'app-1',
-            '--expected-version' => '7.2',
+            '--expected-version' => '2.8',
             '--json' => true,
         ]);
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
         Http::assertSent(fn (Request $request): bool => $request->method() === 'POST'
-            && $request->url() === 'https://gateway.test/api/tools/redis/update'
+            && $request->url() === 'https://gateway.test/api/tools/composer/update'
             && $request->hasHeader('Accept', 'text/event-stream')
             && $request->data() === [
                 'node' => 'app-1',
-                'version' => '7.2',
+                'version' => '2.8',
             ]);
 
         expect($exitCode)->toBe(0)
@@ -122,7 +121,7 @@ describe('ToolStream commands', function (): void {
             'data' => [
                 'updated' => [],
                 'skipped' => [
-                    ['tool' => 'redis', 'node' => 'app-1', 'reason' => 'null_latest_version'],
+                    ['tool' => 'composer', 'node' => 'app-1', 'reason' => 'null_latest_version'],
                 ],
                 'failed' => [],
             ],
@@ -213,17 +212,17 @@ describe('ToolStream commands', function (): void {
             'data' => [
                 'code' => 'tool.action_failed',
                 'message' => 'Tool action failed.',
-                'meta' => ['tool' => 'redis', 'action' => 'restart'],
+                'meta' => ['tool' => 'opencode-server', 'action' => 'restart'],
             ],
         ];
 
         fakeGatewayProgressStream(
-            gatewayProgressFrame('step', ['key' => 'restart', 'status' => 'running', 'message' => 'Restarting redis'])
+            gatewayProgressFrame('step', ['key' => 'restart', 'status' => 'running', 'message' => 'Restarting opencode-server'])
             .gatewayProgressFrame('error', $error),
         );
 
         [$exitCode, $output] = runCommand($this, 'tool:restart', [
-            'tool' => 'redis',
+            'tool' => 'opencode-server',
             '--node' => 'app-1',
             '--json' => true,
         ]);
@@ -236,7 +235,7 @@ describe('ToolStream commands', function (): void {
                 'data' => $error,
             ])
             ->and(count(array_filter(explode("\n", $output))))->toBe(1)
-            ->and($output)->not->toContain('Restarting redis');
+            ->and($output)->not->toContain('Restarting opencode-server');
     });
 
     it('preserves gateway error envelopes before a stream starts', function (): void {

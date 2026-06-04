@@ -38,7 +38,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 - Resolves a credential-bearing tool on the target node.
 - Reads credential metadata from gateway configuration or the managed secret store.
-- Returns generated Orbit-owned credentials for managed service tools, using
+- Returns generated Orbit-owned credentials for credential-bearing tools, using
   the tool catalog's field names and endpoint shape.
 - Does not rotate credentials or reconfigure the tool.
 

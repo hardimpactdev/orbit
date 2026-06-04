@@ -955,11 +955,11 @@ describe('DoctorReportRunner', function (): void {
     it('installs missing tools through restore mode family dispatch', function (): void {
         $gateway = Node::factory()->gateway()->create(['name' => 'gateway-1', 'status' => 'active']);
         $node = createDoctorRunnerAppHostNode();
-        NodeTool::factory()->create(['node_id' => $node->id, 'name' => 'redis']);
+        NodeTool::factory()->create(['node_id' => $node->id, 'name' => 'composer']);
         $shell = new DoctorReportRunnerRemoteShell([
             new RemoteShellResult(exitCode: 1, stdout: '', stderr: '', durationMs: 1),
             new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
-            new RemoteShellResult(exitCode: 0, stdout: "/usr/bin/redis\t7.2.0\trunning\n", stderr: '', durationMs: 1),
+            new RemoteShellResult(exitCode: 0, stdout: "/usr/local/bin/composer\tComposer version 2.8.0\n", stderr: '', durationMs: 1),
         ]);
         app()->instance(RemoteShell::class, $shell);
 
@@ -980,7 +980,7 @@ describe('DoctorReportRunner', function (): void {
                 'status' => 'completed',
             ])
             ->and($shell->scripts)->toHaveCount(3)
-            ->and($shell->scripts[1])->toContain("docker compose -f '/opt/orbit/docker-compose.yml' pull 'redis'");
+            ->and($shell->scripts[1])->toContain('composer-setup.php');
     });
 
     it('restores missing orbit-caddy containers through restore mode family dispatch', function (): void {

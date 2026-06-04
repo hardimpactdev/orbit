@@ -87,7 +87,7 @@ final class ToolLogsStreamController implements Loggable
             'authorization_failed' => 403,
             'tool.remote_action_failed' => 502,
             'validation_failed' => 422,
-            'tool.process_missing', 'tool.process_ambiguous', 'tool.instance_required' => 422,
+            'tool.process_missing', 'tool.process_ambiguous' => 422,
             default => 400,
         };
 

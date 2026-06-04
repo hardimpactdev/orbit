@@ -51,7 +51,7 @@ it('lists registered tools from gateway intent as human output', function (): vo
 
         expect($result->successful())->toBeTrue()
             ->and($result->output())->toContain('Node:')
-            ->and($result->output())->toContain('redis');
+            ->and($result->output())->toContain('opencode-server');
     } finally {
         $topology->cleanup();
     }
@@ -105,7 +105,7 @@ it('filters tool list by app', function (): void {
 
         expect($result->successful())->toBeTrue()
             ->and($tools)->toBeArray()
-            ->and(array_column($tools, 'name'))->toContain('redis');
+            ->and(array_column($tools, 'name'))->toContain('opencode-server');
     } finally {
         $topology->cleanup();
     }
@@ -117,7 +117,7 @@ function toolListSeedGatewayIntent(E2ETopologyHarness $topology): void
 $node = \App\Models\Node::query()->where('name', 'app-dev-1')->firstOrFail();
 
 \App\Models\NodeTool::query()->updateOrCreate(
-    ['node_id' => $node->id, 'name' => 'redis'],
+    ['node_id' => $node->id, 'name' => 'opencode-server'],
     [
         'expected_state' => 'running',
         'expected_version' => null,
@@ -151,7 +151,7 @@ $node = \App\Models\Node::query()->where('name', 'app-dev-1')->firstOrFail();
 );
 
 \App\Models\NodeTool::query()->updateOrCreate(
-    ['node_id' => $node->id, 'name' => 'redis'],
+    ['node_id' => $node->id, 'name' => 'opencode-server'],
     [
         'expected_state' => 'running',
         'expected_version' => null,

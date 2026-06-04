@@ -10,6 +10,7 @@ use App\Models\Node;
 use App\Models\NodeAccess;
 use App\Models\NodeRoleAssignment;
 use App\Models\NodeTool;
+use App\Models\Process;
 use App\Models\ProxyRoute;
 use App\Models\Workspace;
 use App\Services\Nodes\DevelopmentDnsMappingEnactor;
@@ -473,7 +474,7 @@ describe('node role assignment service', function (): void {
             ->and($assignment->fresh()->last_error)->toBeNull();
     });
 
-    it('rejects websocket assignment when redis node is not an active database node with redis installed', function (callable $createRedisNode): void {
+    it('rejects websocket assignment when redis node is not an active database node with a Redis process', function (callable $createRedisNode): void {
         $node = Node::factory()->create([
             'platform' => 'ubuntu',
             'status' => 'active',
@@ -482,47 +483,45 @@ describe('node role assignment service', function (): void {
 
         expect(fn () => app(NodeRoleAssignmentService::class)->add($node, 'websocket', [
             'redis_node_id' => $redisNode->id,
-        ]))->toThrow(InvalidArgumentException::class, 'The websocket role requires redis_node_id to reference an active database node with Redis installed.');
+        ]))->toThrow(InvalidArgumentException::class, 'The websocket role requires redis_node_id to reference an active database node with a Redis process.');
 
         expect($node->roleAssignments()->where('role', 'websocket')->exists())->toBeFalse();
     })->with([
-        'non-database node with redis' => fn (): Node => tap(Node::factory()->create([
+        'non-database node with redis process' => fn (): Node => tap(Node::factory()->create([
             'platform' => 'ubuntu',
             'status' => 'active',
         ]), function (Node $node): void {
-            NodeTool::factory()->create([
-                'node_id' => $node->id,
+            Process::factory()->forOwner($node)->create([
                 'name' => 'redis',
-                'expected_state' => 'running',
+                'runtime_config' => ['definition' => 'redis'],
             ]);
         }),
-        'inactive database node with redis' => fn (): Node => tap(Node::factory()->database()->create([
+        'inactive database node with redis process' => fn (): Node => tap(Node::factory()->database()->create([
             'platform' => 'ubuntu',
             'status' => 'provisioning',
         ]), function (Node $node): void {
-            NodeTool::factory()->create([
-                'node_id' => $node->id,
+            Process::factory()->forOwner($node)->create([
                 'name' => 'redis',
-                'expected_state' => 'running',
+                'runtime_config' => ['definition' => 'redis'],
             ]);
         }),
-        'database node without redis' => fn (): Node => Node::factory()->database()->create([
+        'database node without redis process' => fn (): Node => Node::factory()->database()->create([
             'platform' => 'ubuntu',
             'status' => 'active',
         ]),
-        'database node with stopped redis' => fn (): Node => tap(Node::factory()->database()->create([
+        'database node with legacy redis tool row only' => fn (): Node => tap(Node::factory()->database()->create([
             'platform' => 'ubuntu',
             'status' => 'active',
         ]), function (Node $node): void {
             NodeTool::factory()->create([
                 'node_id' => $node->id,
                 'name' => 'redis',
-                'expected_state' => 'stopped',
+                'expected_state' => 'running',
             ]);
         }),
     ]);
 
-    it('allows websocket assignment when redis node is an active database node with redis installed', function (string $redisState): void {
+    it('allows websocket assignment when redis node is an active database node with a Redis process', function (): void {
         app()->instance(NodeRoleBaselineConverger::class, new class extends NodeRoleBaselineConverger
         {
             public function __construct() {}
@@ -534,10 +533,9 @@ describe('node role assignment service', function (): void {
             'platform' => 'ubuntu',
             'status' => 'active',
         ]);
-        NodeTool::factory()->create([
-            'node_id' => $databaseNode->id,
+        Process::factory()->forOwner($databaseNode)->create([
             'name' => 'redis',
-            'expected_state' => $redisState,
+            'runtime_config' => ['definition' => 'redis'],
         ]);
         $node = Node::factory()->create([
             'platform' => 'ubuntu',
@@ -550,10 +548,7 @@ describe('node role assignment service', function (): void {
 
         expect($assignment->status)->toBe(NodeRoleStatus::Active->value)
             ->and($assignment->settings)->toBe(['redis_node_id' => $databaseNode->id]);
-    })->with([
-        'installed',
-        'running',
-    ]);
+    });
 
     it('rejects websocket updates with an invalid redis node and preserves the existing assignment', function (): void {
         app()->instance(NodeRoleBaselineConverger::class, new class extends NodeRoleBaselineConverger
@@ -567,10 +562,9 @@ describe('node role assignment service', function (): void {
             'platform' => 'ubuntu',
             'status' => 'active',
         ]);
-        NodeTool::factory()->create([
-            'node_id' => $validRedisNode->id,
+        Process::factory()->forOwner($validRedisNode)->create([
             'name' => 'redis',
-            'expected_state' => 'running',
+            'runtime_config' => ['definition' => 'redis'],
         ]);
         $invalidRedisNode = Node::factory()->create([
             'platform' => 'ubuntu',
@@ -594,7 +588,7 @@ describe('node role assignment service', function (): void {
 
         expect(fn () => app(NodeRoleAssignmentService::class)->update($node, 'websocket', [
             'redis_node_id' => $invalidRedisNode->id,
-        ]))->toThrow(InvalidArgumentException::class, 'The websocket role requires redis_node_id to reference an active database node with Redis installed.');
+        ]))->toThrow(InvalidArgumentException::class, 'The websocket role requires redis_node_id to reference an active database node with a Redis process.');
 
         expect($assignment->fresh()->settings)->toBe(['redis_node_id' => $validRedisNode->id])
             ->and($assignment->fresh()->status)->toBe(NodeRoleStatus::Active->value)
@@ -1252,10 +1246,9 @@ describe('node role assignment service', function (): void {
             'role' => 'database',
             'status' => NodeRoleStatus::Active->value,
         ]);
-        NodeTool::factory()->create([
-            'node_id' => $node->id,
-            'name' => 'postgres',
-            'expected_state' => 'running',
+        Process::factory()->forOwner($node)->create([
+            'name' => 'postgres16',
+            'runtime_config' => ['definition' => 'postgres'],
         ]);
         NodeTool::factory()->create([
             'node_id' => $node->id,
@@ -1265,7 +1258,7 @@ describe('node role assignment service', function (): void {
 
         app(NodeRoleAssignmentService::class)->remove($node, 'database', force: true);
 
-        expect(NodeTool::query()->where('node_id', $node->id)->where('name', 'postgres')->exists())->toBeFalse()
+        expect(Process::query()->ownedBy($node)->where('runtime_config->definition', 'postgres')->exists())->toBeFalse()
             ->and(NodeTool::query()->where('node_id', $node->id)->where('name', 'docker')->exists())->toBeFalse()
             ->and($node->fresh()->roleAssignments)->toHaveCount(0);
     });
@@ -1278,10 +1271,9 @@ describe('node role assignment service', function (): void {
             'role' => 'database',
             'status' => NodeRoleStatus::Active->value,
         ]);
-        NodeTool::factory()->create([
-            'node_id' => $node->id,
-            'name' => 'postgres',
-            'expected_state' => 'running',
+        Process::factory()->forOwner($node)->create([
+            'name' => 'postgres16',
+            'runtime_config' => ['definition' => 'postgres'],
         ]);
         NodeTool::factory()->create([
             'node_id' => $node->id,
@@ -1291,7 +1283,8 @@ describe('node role assignment service', function (): void {
 
         app(NodeRoleAssignmentService::class)->remove($node, 'database', force: true, purgeData: true);
 
-        expect(NodeTool::query()->where('node_id', $node->id)->whereIn('name', ['postgres', 'docker'])->exists())->toBeFalse()
+        expect(Process::query()->ownedBy($node)->where('runtime_config->definition', 'postgres')->exists())->toBeFalse()
+            ->and(NodeTool::query()->where('node_id', $node->id)->where('name', 'docker')->exists())->toBeFalse()
             ->and($node->fresh()->roleAssignments)->toHaveCount(0);
     });
 

@@ -14,6 +14,8 @@ class IncusTopologyBuilder
 {
     private ?string $remoteBundleDir = null;
 
+    private string $lastPreparedBakeOutput = '';
+
     /**
      * @var array<string, mixed>|null
      */
@@ -30,6 +32,8 @@ class IncusTopologyBuilder
     private const string AgentWireGuardIp = '10.6.0.6';
 
     private const string IngressWireGuardIp = '10.6.0.7';
+
+    private const string AppDevelopmentRuntimeUser = 'orbit';
 
     private readonly E2EPhaseTimer $timer;
 
@@ -746,6 +750,15 @@ class IncusTopologyBuilder
         $agentIp = $this->timer->measure('agent.ipv4', fn (): string => $instances['agent']->waitForIpv4());
 
         if ($rolesToBake !== []) {
+            $this->timer->measure('prepared.downstream.real-wireguard', fn () => $this->installRealWireGuard($instances));
+        }
+
+        if (in_array('dev', $rolesToBake, true)) {
+            $this->timer->measure('prepared.dev.runtime-prerequisites', fn () => $this->installPreparedAppRuntimePrerequisites($instances['dev']));
+            $this->timer->measure('prepared.dev.runtime-ssh-authorize', fn () => $this->authorizePreparedRuntimeUserSsh($instances['dev'], $key));
+        }
+
+        if ($rolesToBake !== []) {
             $downstreamStatuses = [
                 ...$downstreamStatuses,
                 ...$this->timer->measure('prepared.downstream.bake', fn (): array => $this->runPreparedDownstreamBakeInParallel(
@@ -754,7 +767,6 @@ class IncusTopologyBuilder
                     $prodIp,
                     $agentIp,
                     $rolesToBake,
-                    fn (): mixed => $this->timer->measure('prepared.dev.runtime-prerequisites', fn () => $this->installPreparedAppRuntimePrerequisites($instances['dev'])),
                 )),
             ];
         }
@@ -854,11 +866,20 @@ class IncusTopologyBuilder
         $prodIp = $this->timer->measure('prod.ipv4', fn (): string => $instances['prod']->waitForIpv4());
         $agentIp = $this->timer->measure('agent.ipv4', fn (): string => $instances['agent']->waitForIpv4());
 
+        if ($rolesToBake !== []) {
+            $this->timer->measure('prepared-websocket.downstream.real-wireguard', fn () => $this->installRealWireGuard($instances));
+        }
+
+        if (in_array('dev', $rolesToBake, true)) {
+            $this->timer->measure('prepared-websocket.dev.runtime-prerequisites', fn () => $this->installPreparedAppRuntimePrerequisites(
+                $instances['dev'],
+                includeGatewayImage: true,
+            ));
+            $this->timer->measure('prepared-websocket.dev.runtime-ssh-authorize', fn () => $this->authorizePreparedRuntimeUserSsh($instances['dev'], $key));
+        }
+
         if ($rolesToBake === [] && $resumeCheckpoints !== []) {
-            $this->timer->measure('prepared-websocket.dev.real-wireguard', fn () => $this->installRealWireGuard(array_intersect_key(
-                $instances,
-                array_flip(['operator', 'gateway', 'dev']),
-            )));
+            $this->timer->measure('prepared-websocket.downstream.real-wireguard', fn () => $this->installRealWireGuard($instances));
             $this->timer->measure('prepared-websocket.dev.database-redis-seed', fn () => $this->seedAppdevDatabaseAndRedis($instances['gateway']));
             $downstreamStatuses['websocket'] = $this->timer->measure('prepared-websocket.websocket.bake', fn (): int => $this->runPreparedWebSocketBake(
                 $instances['gateway'],
@@ -873,15 +894,8 @@ class IncusTopologyBuilder
                     $prodIp,
                     $agentIp,
                     $rolesToBake,
-                    fn (): mixed => $this->timer->measure('prepared-websocket.dev.runtime-prerequisites', fn () => $this->installPreparedAppRuntimePrerequisites(
-                        $instances['dev'],
-                        includeGatewayImage: true,
-                    )),
+                    null,
                     function () use ($instances): void {
-                        $this->timer->measure('prepared-websocket.dev.real-wireguard', fn () => $this->installRealWireGuard(array_intersect_key(
-                            $instances,
-                            array_flip(['operator', 'gateway', 'dev']),
-                        )));
                         $this->timer->measure('prepared-websocket.dev.database-redis-seed', fn () => $this->seedAppdevDatabaseAndRedis($instances['gateway']));
                     },
                 )),
@@ -907,7 +921,7 @@ class IncusTopologyBuilder
             '--host='.escapeshellarg($devHost),
             '--wireguard-address='.escapeshellarg(self::DevWireGuardIp),
             '--gateway-endpoint='.escapeshellarg(self::GatewayWireGuardIp),
-            '--user='.escapeshellarg($this->host->config->bootstrapUser),
+            '--user='.escapeshellarg(self::AppDevelopmentRuntimeUser),
             '--redis-node='.escapeshellarg('app-dev-1'),
             '--converge-runtime',
         ]));
@@ -1043,6 +1057,11 @@ BASH;
             "Could not install prepared app runtime prerequisites on {$instance->name()}",
             timeoutSeconds: 900,
         );
+    }
+
+    private function authorizePreparedRuntimeUserSsh(IncusInstance $instance, SshKeyPair $key): void
+    {
+        $instance->authorizeSsh('orbit', $key);
     }
 
     private function preparedAppRuntimePrerequisitesCommand(
@@ -1607,7 +1626,7 @@ PHP;
             '--host='.escapeshellarg($devHost),
             '--wireguard-address='.escapeshellarg(self::DevWireGuardIp),
             '--gateway-endpoint='.escapeshellarg(self::GatewayWireGuardIp),
-            '--user='.escapeshellarg($this->host->config->bootstrapUser),
+            '--user='.escapeshellarg(self::AppDevelopmentRuntimeUser),
             '--tld='.escapeshellarg('test'),
         ]));
         $prodIngressCommand = E2ECommand::gatewayArtisanCommand(implode(' ', [
@@ -1801,7 +1820,9 @@ BASH,
                 escapeshellarg($exitPath),
             ), timeoutSeconds: 930);
 
-            return $this->parsePreparedBakeStatuses($result->output()."\n".$result->errorOutput(), $roles);
+            $this->lastPreparedBakeOutput = trim($result->output()."\n".$result->errorOutput());
+
+            return $this->parsePreparedBakeStatuses($this->lastPreparedBakeOutput, $roles);
         }
 
         $result = $gateway->exec(
@@ -1809,7 +1830,8 @@ BASH,
             timeoutSeconds: 900,
         );
 
-        $statuses = $this->parsePreparedBakeStatuses($result->output()."\n".$result->errorOutput(), $roles);
+        $this->lastPreparedBakeOutput = trim($result->output()."\n".$result->errorOutput());
+        $statuses = $this->parsePreparedBakeStatuses($this->lastPreparedBakeOutput, $roles);
 
         if ($result->successful()) {
             return $statuses;
@@ -1844,7 +1866,7 @@ BASH,
             '--host='.escapeshellarg($devHost),
             '--wireguard-address='.escapeshellarg(self::DevWireGuardIp),
             '--gateway-endpoint='.escapeshellarg(self::GatewayWireGuardIp),
-            '--user='.escapeshellarg($this->host->config->bootstrapUser),
+            '--user='.escapeshellarg(self::AppDevelopmentRuntimeUser),
             '--tld='.escapeshellarg('test'),
         ]));
         $prodIngressCommand = E2ECommand::gatewayArtisanCommand(implode(' ', [
@@ -1934,10 +1956,11 @@ BASH,
         $webSocketLines = [];
         $developmentLines = [];
         $rolesWithWebSocket = $roles;
+        $deferDevelopmentBake = $beforeDevelopmentBake !== null;
 
         if (in_array('dev', $roles, true)) {
             $rolesWithWebSocket[] = 'websocket';
-            $developmentLines = [
+            $developmentLines = $deferDevelopmentBake ? [
                 'DEV_READY_DEADLINE=$(($(date +%s) + 900));',
                 'while [ ! -f "$DEV_READY_MARKER" ]; do',
                 '    if [ "$(date +%s)" -ge "$DEV_READY_DEADLINE" ]; then',
@@ -1954,6 +1977,9 @@ BASH,
                 'else',
                 '    record_status dev "$STATUS_DEV";',
                 'fi;',
+            ] : [
+                ...$developmentStartLines,
+                ...$waitDevLines,
             ];
             $webSocketLines = [
                 'STATUS_WEBSOCKET=0;',
@@ -2046,14 +2072,14 @@ BASH,
         if (in_array('dev', $roles, true)) {
             if ($beforeDevelopmentBake !== null) {
                 $beforeDevelopmentBake();
-            }
 
-            E2ECommand::exec(
-                $gateway,
-                'touch '.escapeshellarg($devReadyMarkerPath),
-                'Could not release prepared app-dev bake after runtime prerequisites',
-                timeoutSeconds: 30,
-            );
+                E2ECommand::exec(
+                    $gateway,
+                    'touch '.escapeshellarg($devReadyMarkerPath),
+                    'Could not release prepared app-dev bake after runtime prerequisites',
+                    timeoutSeconds: 30,
+                );
+            }
 
             $developmentBakeStatus = $this->waitForPreparedBakeRoleStatus($gateway, 'dev', $statusPath, $donePath, $outputPath, $errorPath);
 
@@ -2102,7 +2128,9 @@ BASH,
             ), timeoutSeconds: 930),
         );
 
-        return $this->parsePreparedBakeStatuses($result->output()."\n".$result->errorOutput(), $rolesWithWebSocket);
+        $this->lastPreparedBakeOutput = trim($result->output()."\n".$result->errorOutput());
+
+        return $this->parsePreparedBakeStatuses($this->lastPreparedBakeOutput, $rolesWithWebSocket);
     }
 
     private function waitForPreparedBakeRoleStatus(
@@ -2211,7 +2239,11 @@ BASH,
             $this->recordCheckpointManifest($kind, $manifest, complete: false);
         }
 
-        throw new RuntimeException('Could not bake prepared downstream roles: '.implode(', ', $failedRoles).'. Successful sibling checkpoints were retained when possible.');
+        $details = $this->lastPreparedBakeOutput !== ''
+            ? "\n\n".$this->lastPreparedBakeOutput
+            : '';
+
+        throw new RuntimeException('Could not bake prepared downstream roles: '.implode(', ', $failedRoles).'. Successful sibling checkpoints were retained when possible.'.$details);
     }
 
     private function runPreparedDedicatedIngressBakeInParallel(
@@ -2227,7 +2259,7 @@ BASH,
             '--host='.escapeshellarg($devHost),
             '--wireguard-address='.escapeshellarg(self::DevWireGuardIp),
             '--gateway-endpoint='.escapeshellarg(self::GatewayWireGuardIp),
-            '--user='.escapeshellarg($this->host->config->bootstrapUser),
+            '--user='.escapeshellarg(self::AppDevelopmentRuntimeUser),
             '--tld='.escapeshellarg('test'),
         ]));
         $ingressCommand = E2ECommand::gatewayArtisanCommand(implode(' ', [

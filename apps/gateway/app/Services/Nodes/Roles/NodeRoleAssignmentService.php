@@ -310,7 +310,7 @@ class NodeRoleAssignmentService
             return;
         }
 
-        throw new InvalidArgumentException('The websocket role requires redis_node_id to reference an active database node with Redis installed.');
+        throw new InvalidArgumentException('The websocket role requires redis_node_id to reference an active database node with a Redis process.');
     }
 
     /**

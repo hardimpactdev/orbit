@@ -7,7 +7,7 @@ use App\Enums\Nodes\NodeRoleName;
 use App\Enums\Nodes\NodeRoleStatus;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
-use App\Models\NodeTool;
+use App\Models\Process;
 use App\Services\Nodes\Roles\NodeRoleBaselineConverger;
 use App\Services\Security\SshHostKeyPinner;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -86,7 +86,7 @@ describe('orbit:internal:bake-websocket-node', function (): void {
             ->and($assignment?->converged_at)->not->toBeNull();
     });
 
-    it('requires an active database node with Redis installed', function (): void {
+    it('requires an active database node with a Redis process', function (): void {
         Node::factory()->database()->create([
             'name' => 'app-dev-1',
             'status' => Node::STATUS_ACTIVE,
@@ -138,9 +138,9 @@ function createBakeWebSocketRedisNode(): Node
         'status' => NodeRoleStatus::Active->value,
     ]);
 
-    NodeTool::factory()->for($node)->create([
+    Process::factory()->forOwner($node)->create([
         'name' => 'redis',
-        'expected_state' => 'running',
+        'runtime_config' => ['definition' => 'redis'],
     ]);
 
     return $node;

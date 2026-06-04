@@ -13,18 +13,17 @@ describe('tool:credentials', function (): void {
     it('returns gateway credential fields verbatim in JSON mode without CLI-side mutation', function (): void {
         fakeGateway(fakeSuccessEnvelope([
             'credentials' => [
-                'tool' => 'redis',
+                'tool' => 'openclaw',
                 'node' => 'app-1',
                 'fields' => [
                     'host' => 'orbit.test',
-                    'port' => 6379,
                     'password' => 'gateway-managed-secret',
                 ],
             ],
         ]));
 
         [$exitCode, $output] = runCommand($this, 'tool:credentials', [
-            'tool' => 'redis',
+            'tool' => 'openclaw',
             '--node' => 'app-1',
             '--json' => true,
         ]);
@@ -35,7 +34,7 @@ describe('tool:credentials', function (): void {
             $url = urldecode($request->url());
 
             return $request->method() === 'GET'
-                && str_contains($url, '/api/tools/redis/credentials')
+                && str_contains($url, '/api/tools/openclaw/credentials')
                 && str_contains($url, 'node=app-1');
         });
 
@@ -45,46 +44,10 @@ describe('tool:credentials', function (): void {
             ->and($output)->not->toContain('executor_secret');
     });
 
-    it('forwards explicit instance selectors for credential reads', function (): void {
-        fakeGateway(fakeSuccessEnvelope([
-            'credentials' => [
-                'tool' => 'mysql',
-                'node' => 'database-1',
-                'instance' => 'mysql:8',
-                'fields' => [
-                    'host' => '10.6.0.12',
-                    'port' => 3308,
-                    'password' => 'gateway-managed-secret',
-                ],
-            ],
-        ]));
-
-        [$exitCode, $output] = runCommand($this, 'tool:credentials', [
-            'tool' => 'mysql',
-            '--node' => 'database-1',
-            '--instance' => 'mysql:8',
-            '--json' => true,
-        ]);
-
-        $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
-
-        Http::assertSent(function (Request $request): bool {
-            $url = urldecode($request->url());
-
-            return $request->method() === 'GET'
-                && str_contains($url, '/api/tools/mysql/credentials')
-                && str_contains($url, 'node=database-1')
-                && str_contains($url, 'instance=mysql:8');
-        });
-
-        expect($exitCode)->toBe(0)
-            ->and($decoded['success']['data']['credentials']['instance'])->toBe('mysql:8');
-    });
-
     it('does not emit extra sensitive gateway envelope fields in JSON mode', function (): void {
         fakeGateway(fakeSuccessEnvelope([
             'credentials' => [
-                'tool' => 'redis',
+                'tool' => 'openclaw',
                 'node' => 'app-1',
                 'fields' => [
                     'password' => 'gateway-managed-secret',
@@ -96,7 +59,7 @@ describe('tool:credentials', function (): void {
         ]));
 
         [$exitCode, $output] = runCommand($this, 'tool:credentials', [
-            'tool' => 'redis',
+            'tool' => 'openclaw',
             '--node' => 'app-1',
             '--json' => true,
         ]);
@@ -113,7 +76,7 @@ describe('tool:credentials', function (): void {
     it('renders human credential fields from the gateway payload only', function (): void {
         fakeGateway(fakeSuccessEnvelope([
             'credentials' => [
-                'tool' => 'redis',
+                'tool' => 'openclaw',
                 'node' => 'app-1',
                 'fields' => [
                     'host' => 'orbit.test',
@@ -123,12 +86,12 @@ describe('tool:credentials', function (): void {
         ]));
 
         [$exitCode, $output] = runCommand($this, 'tool:credentials', [
-            'tool' => 'redis',
+            'tool' => 'openclaw',
             '--node' => 'app-1',
         ]);
 
         expect($exitCode)->toBe(0)
-            ->and($output)->toContain('Credentials for redis on app-1:')
+            ->and($output)->toContain('Credentials for openclaw on app-1:')
             ->and($output)->toContain('host: orbit.test')
             ->and($output)->toContain('password: gateway-managed-secret')
             ->and($output)->not->toContain('operation_token');
@@ -142,7 +105,7 @@ describe('tool:credentials', function (): void {
 
         fakeGateway(fakeSuccessEnvelope([
             'credentials' => [
-                'tool' => 'redis',
+                'tool' => 'openclaw',
                 'node' => 'default-app',
                 'fields' => [
                     'password' => 'gateway-managed-secret',
@@ -151,7 +114,7 @@ describe('tool:credentials', function (): void {
         ]));
 
         [$exitCode, $output] = runCommand($this, 'tool:credentials', [
-            'tool' => 'redis',
+            'tool' => 'openclaw',
             '--json' => true,
         ]);
 
@@ -160,7 +123,7 @@ describe('tool:credentials', function (): void {
         Http::assertSent(function (Request $request): bool {
             $url = urldecode($request->url());
 
-            return str_contains($url, '/api/tools/redis/credentials')
+            return str_contains($url, '/api/tools/openclaw/credentials')
                 && str_contains($url, 'node=default-app');
         });
 
@@ -188,7 +151,7 @@ describe('tool:credentials', function (): void {
                 return Http::response(fakeSuccessEnvelope([
                     'tools' => [
                         [
-                            'name' => 'redis',
+                            'name' => 'openclaw',
                             'node' => 'app-1',
                         ],
                     ],
@@ -197,12 +160,12 @@ describe('tool:credentials', function (): void {
 
             if (
                 $request->method() === 'GET'
-                && $path === '/api/tools/redis/credentials'
+                && $path === '/api/tools/openclaw/credentials'
                 && ($parameters['node'] ?? null) === 'app-1'
             ) {
                 return Http::response(fakeSuccessEnvelope([
                     'credentials' => [
-                        'tool' => 'redis',
+                        'tool' => 'openclaw',
                         'node' => 'app-1',
                         'fields' => [
                             'password' => 'gateway-managed-secret',
@@ -217,7 +180,7 @@ describe('tool:credentials', function (): void {
         $command = app(ToolCredentialsCommand::class);
         $command->setLaravel(app());
         $tester = new CommandTester($command);
-        $tester->setInputs(['redis']);
+        $tester->setInputs(['openclaw']);
 
         $exitCode = $tester->execute([]);
 
@@ -252,7 +215,7 @@ describe('tool:credentials', function (): void {
                 return Http::response(fakeSuccessEnvelope([
                     'tools' => [
                         [
-                            'name' => 'redis',
+                            'name' => 'openclaw',
                             'node' => 'default-app',
                         ],
                     ],
@@ -261,12 +224,12 @@ describe('tool:credentials', function (): void {
 
             if (
                 $request->method() === 'GET'
-                && $path === '/api/tools/redis/credentials'
+                && $path === '/api/tools/openclaw/credentials'
                 && ($parameters['node'] ?? null) === 'default-app'
             ) {
                 return Http::response(fakeSuccessEnvelope([
                     'credentials' => [
-                        'tool' => 'redis',
+                        'tool' => 'openclaw',
                         'node' => 'default-app',
                         'fields' => [
                             'password' => 'gateway-managed-secret',
@@ -281,7 +244,7 @@ describe('tool:credentials', function (): void {
         $command = app(ToolCredentialsCommand::class);
         $command->setLaravel(app());
         $tester = new CommandTester($command);
-        $tester->setInputs(['redis']);
+        $tester->setInputs(['openclaw']);
 
         $exitCode = $tester->execute([]);
 
@@ -311,7 +274,7 @@ describe('tool:credentials', function (): void {
         fakeGateway(fakeErrorEnvelope('authorization_failed', 'This node is not authorized to manage tools.'), 403);
 
         [$exitCode, $output] = runCommand($this, 'tool:credentials', [
-            'tool' => 'redis',
+            'tool' => 'openclaw',
             '--node' => 'app-1',
             '--json' => true,
         ]);
@@ -344,7 +307,7 @@ describe('tool:credentials', function (): void {
         fakeGatewayDown('Network is unreachable');
 
         [$exitCode, $output] = runCommand($this, 'tool:credentials', [
-            'tool' => 'redis',
+            'tool' => 'openclaw',
             '--node' => 'app-1',
             '--json' => true,
         ]);

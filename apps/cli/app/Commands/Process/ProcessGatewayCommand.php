@@ -15,7 +15,7 @@ abstract class ProcessGatewayCommand extends GatewayCommand
 
     private const array CRASH_NOTIFICATIONS = ['none', 'agent_ide'];
 
-    private const array RUNTIMES = ['docker', 'supervisor', 'systemd'];
+    private const array RUNTIMES = ['docker', 'docker-swarm', 'supervisor', 'systemd'];
 
     /**
      * @param  array<string, mixed>  $extraMeta

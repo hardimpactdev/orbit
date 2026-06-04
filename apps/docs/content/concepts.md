@@ -54,7 +54,7 @@ owning family concept document.
 - **FrankenPHP app runtime** — the PHP web runtime used by app and workspace containers. Classic mode is the default; worker mode is opt-in. See [App Concepts](domains/5_app/app-concepts.md).
 - **Worker mode** — opt-in FrankenPHP mode that keeps a validated Laravel app in memory. See [App Concepts](domains/5_app/app-concepts.md).
 - **Worker config** — gateway-tracked worker settings stored separately from the enabled flag. See [App Concepts](domains/5_app/app-concepts.md).
-- **Process runtime** — backend selection for process units scoped to a node, app, or workspace; supported runtime families are `supervisor`, `docker`, and `systemd`, with `docker-swarm` planned. See [Process Concepts](domains/7_process/process-concepts.md).
+- **Process runtime** — backend selection for process units scoped to a node, app, or workspace; supported runtime families are `supervisor`, `docker`, `docker-swarm`, and `systemd`, with owner-scope restrictions documented in [Process Concepts](domains/7_process/process-concepts.md).
 - **Supervisor process runtime** — host Supervisor backend for long-running host command processes. See [Process Concepts](domains/7_process/process-concepts.md).
 - **Docker process runtime** — Docker backend for containerized processes such as databases, caches, and FrankenPHP app or workspace web runtimes. See [Process Concepts](domains/7_process/process-concepts.md).
 - **Systemd process runtime** — Linux service backend for node-level process units such as OpenCode Server or PolyScope Server; `systemctl` is only the command adapter. See [Process Concepts](domains/7_process/process-concepts.md).
@@ -254,11 +254,13 @@ Source: [Process Concepts](domains/7_process/process-concepts.md).
 - **Process identity slug**
 - **Process scope**
 - **Process tool dependency**
+- **Service process definition**
 - **Process order**
 - **Runtime unit**
 - **Process runtime**
 - **Supervisor process runtime**
 - **Docker process runtime**
+- **Docker Swarm process runtime**
 - **Systemd process runtime**
 - **Runtime unit expansion**
 - **Runtime unit filename**

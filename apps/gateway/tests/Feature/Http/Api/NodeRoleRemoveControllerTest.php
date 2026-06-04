@@ -5,7 +5,7 @@ declare(strict_types=1);
 use App\Models\Node;
 use App\Models\NodeAccess;
 use App\Models\NodeRoleAssignment;
-use App\Models\NodeTool;
+use App\Models\Process;
 use App\Services\Nodes\Roles\NodeRoleBaselineConverger;
 use App\Services\Nodes\Roles\RoleBaselines\AgentRoleBaseline;
 use App\Services\Nodes\Roles\RoleBaselines\AppDevelopmentRoleBaseline;
@@ -277,13 +277,9 @@ describe('NodeRoleRemoveController', function (): void {
             'status' => 'active',
         ]);
 
-        NodeTool::query()->create([
-            'node_id' => $node->id,
-            'name' => 'postgres',
-            'expected_state' => 'running',
-            'installed_version' => null,
-            'settings' => [],
-            'status' => 'running',
+        Process::factory()->forOwner($node)->create([
+            'name' => 'postgres16',
+            'runtime_config' => ['definition' => 'postgres'],
         ]);
 
         $response = deleteNodeRoleRemoveJson('/api/nodes/target-1/roles/database', [
@@ -295,7 +291,7 @@ describe('NodeRoleRemoveController', function (): void {
         $response->assertOk()
             ->assertJsonPath('success.data.purged_data', false);
 
-        expect(NodeTool::query()->where('node_id', $node->id)->where('name', 'postgres')->exists())->toBeFalse();
+        expect(Process::query()->ownedBy($node)->where('runtime_config->definition', 'postgres')->exists())->toBeFalse();
     });
 
     it('rejects purge data without force before removing role state', function (): void {
@@ -314,13 +310,9 @@ describe('NodeRoleRemoveController', function (): void {
             'status' => 'active',
         ]);
 
-        NodeTool::query()->create([
-            'node_id' => $node->id,
-            'name' => 'postgres',
-            'expected_state' => 'running',
-            'installed_version' => null,
-            'settings' => [],
-            'status' => 'running',
+        Process::factory()->forOwner($node)->create([
+            'name' => 'postgres16',
+            'runtime_config' => ['definition' => 'postgres'],
         ]);
 
         $response = deleteNodeRoleRemoveJson('/api/nodes/target-1/roles/database', [
@@ -335,7 +327,7 @@ describe('NodeRoleRemoveController', function (): void {
             ->assertJsonPath('error.meta.field', 'purge_data');
 
         expect($node->roleAssignments()->where('role', 'database')->exists())->toBeTrue()
-            ->and(NodeTool::query()->where('node_id', $node->id)->where('name', 'postgres')->exists())
+            ->and(Process::query()->ownedBy($node)->where('runtime_config->definition', 'postgres')->exists())
             ->toBeTrue();
     });
 
@@ -355,13 +347,9 @@ describe('NodeRoleRemoveController', function (): void {
             'status' => 'active',
         ]);
 
-        NodeTool::query()->create([
-            'node_id' => $node->id,
-            'name' => 'postgres',
-            'expected_state' => 'running',
-            'installed_version' => null,
-            'settings' => [],
-            'status' => 'running',
+        Process::factory()->forOwner($node)->create([
+            'name' => 'postgres16',
+            'runtime_config' => ['definition' => 'postgres'],
         ]);
 
         $response = deleteNodeRoleRemoveJson('/api/nodes/target-1/roles/database', [
@@ -374,7 +362,7 @@ describe('NodeRoleRemoveController', function (): void {
         $response->assertOk()
             ->assertJsonPath('success.data.purged_data', true);
 
-        expect(NodeTool::query()->where('node_id', $node->id)->where('name', 'postgres')->exists())->toBeFalse();
+        expect(Process::query()->ownedBy($node)->where('runtime_config->definition', 'postgres')->exists())->toBeFalse();
     });
 
     it('returns an error when role removal cleanup fails', function (): void {

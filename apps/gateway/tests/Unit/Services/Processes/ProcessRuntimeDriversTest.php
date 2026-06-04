@@ -11,6 +11,7 @@ use App\Models\App;
 use App\Models\Node;
 use App\Models\Process;
 use App\Services\Processes\ProcessRuntimeDrivers\DockerProcessRuntimeDriver;
+use App\Services\Processes\ProcessRuntimeDrivers\DockerSwarmProcessRuntimeDriver;
 use App\Services\Processes\ProcessRuntimeDrivers\SupervisorProcessRuntimeDriver;
 use App\Services\Processes\ProcessRuntimeDrivers\SystemdProcessRuntimeDriver;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -176,7 +177,6 @@ it('applies node owned docker service processes from runtime config', function (
         'name' => 'redis',
         'command' => 'redis-server --bind 0.0.0.0 --protected-mode no',
         'runtime' => ProcessRuntime::Docker,
-        'tool' => 'redis',
         'runtime_config' => [
             'image' => 'redis:7.2',
             'environment' => [
@@ -217,6 +217,112 @@ it('applies node owned docker service processes from runtime config', function (
         "docker stop 'redis'",
         "docker restart 'redis'",
     );
+});
+
+it('runs docker swarm process lifecycle through the docker swarm runtime driver', function (): void {
+    $shell = new ProcessRuntimeDriverRecordingShell([
+        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+    ]);
+    app()->instance(RemoteShell::class, $shell);
+
+    $node = Node::factory()->create(['name' => 'database-1']);
+    $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id, 'path' => '/srv/docs']);
+    $process = Process::factory()->forOwner($node)->create([
+        'name' => 'redis7',
+        'command' => 'redis-server --bind 0.0.0.0 --protected-mode no',
+        'runtime' => ProcessRuntime::DockerSwarm,
+        'runtime_config' => [
+            'service_name' => 'orbit-redis-7',
+        ],
+    ]);
+
+    $driver = app(DockerSwarmProcessRuntimeDriver::class);
+    $runtimeUnit = $driver->runtimeUnitName($app, $process);
+
+    expect($runtimeUnit)->toBe('orbit-redis-7')
+        ->and($driver->start($node, $runtimeUnit))->toBeTrue()
+        ->and($driver->stop($node, $runtimeUnit))->toBeTrue()
+        ->and($driver->restart($node, $runtimeUnit))->toBeTrue()
+        ->and($driver->logScript($app, $process, null, $runtimeUnit, 25, false))
+        ->toBe("docker service logs --tail 25 'orbit-redis-7' 2>&1")
+        ->and($driver->logScript($app, $process, null, $runtimeUnit, 25, true))
+        ->toBe("docker service logs --tail 25 --follow 'orbit-redis-7' 2>&1");
+
+    expect($shell->scripts)->toBe([
+        "docker service update --replicas 1 'orbit-redis-7'",
+        "docker service update --replicas 0 'orbit-redis-7'",
+        "docker service update --force 'orbit-redis-7'",
+    ]);
+});
+
+it('applies, removes, and cleans up docker swarm process runtime services from runtime config', function (): void {
+    $shell = new ProcessRuntimeDriverRecordingShell([
+        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+    ]);
+    app()->instance(RemoteShell::class, $shell);
+
+    $node = Node::factory()->create(['name' => 'database-1']);
+    $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id, 'path' => '/srv/docs']);
+    $process = Process::factory()->forOwner($node)->create([
+        'name' => 'mysql8',
+        'command' => 'mysqld',
+        'runtime' => ProcessRuntime::DockerSwarm,
+        'runtime_config' => [
+            'image' => 'mysql:8.4',
+            'labels' => [
+                'orbit.managed' => 'true',
+                'orbit.process' => 'mysql8',
+                'orbit.process.definition' => 'mysql',
+                'orbit.process.spec_hash' => 'abc123',
+                'orbit.process.version' => '8.4',
+                'orbit.process.version_family' => '8',
+            ],
+            'ports' => [
+                [
+                    'published' => 3308,
+                    'target' => 3306,
+                    'protocol' => 'tcp',
+                ],
+            ],
+            'service_name' => 'orbit-mysql-8',
+            'update_strategy' => [
+                'order' => 'stop-first',
+                'parallelism' => 1,
+            ],
+            'volumes' => [
+                [
+                    'name' => 'orbit-mysql-8',
+                    'target' => '/var/lib/mysql',
+                ],
+            ],
+        ],
+    ]);
+
+    $driver = app(DockerSwarmProcessRuntimeDriver::class);
+    $runtimeUnit = $driver->runtimeUnitName($app, $process);
+
+    expect($driver->cleanupScript($runtimeUnit))
+        ->toBe("docker service rm 'orbit-mysql-8' 2>/dev/null || true")
+        ->and($driver->apply($node, $app, $process))->toBeTrue()
+        ->and($driver->remove($node, $runtimeUnit))->toBeTrue();
+
+    expect($shell->scripts[0])
+        ->toContain("docker service inspect 'orbit-mysql-8' >/dev/null 2>&1")
+        ->toContain('docker service create')
+        ->toContain("--name 'orbit-mysql-8'")
+        ->toContain("--label 'orbit.process.definition=mysql'")
+        ->toContain("--label 'orbit.process.spec_hash=abc123'")
+        ->toContain("--publish 'published=3308,target=3306,protocol=tcp'")
+        ->toContain("--mount 'type=volume,source=orbit-mysql-8,target=/var/lib/mysql'")
+        ->toContain("--update-order 'stop-first'")
+        ->toContain("--update-parallelism '1'")
+        ->toContain("'mysql:8.4'")
+        ->toContain("'-lc' 'mysqld'")
+        ->and($shell->scripts[1])
+        ->toBe("docker service rm 'orbit-mysql-8'");
 });
 
 it('runs systemd process lifecycle through the systemd runtime driver', function (): void {

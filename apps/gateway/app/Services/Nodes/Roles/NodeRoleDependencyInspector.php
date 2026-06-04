@@ -8,7 +8,7 @@ use App\Enums\Nodes\NodeRoleName;
 use App\Models\App;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
-use App\Models\NodeTool;
+use App\Models\Process;
 use App\Models\ProxyRoute;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
@@ -26,9 +26,10 @@ class NodeRoleDependencyInspector
     /**
      * @var list<string>
      */
-    private const array DatabaseTools = [
-        'postgres',
+    private const array DatabaseProcessDefinitions = [
         'mysql',
+        'postgres',
+        'redis',
     ];
 
     /**
@@ -93,16 +94,16 @@ class NodeRoleDependencyInspector
      */
     private function databaseDependentSummaries(Node $node): array
     {
-        $count = NodeTool::query()
-            ->where('node_id', $node->id)
-            ->whereIn('name', self::DatabaseTools)
+        $count = Process::query()
+            ->ownedBy($node)
+            ->whereIn('runtime_config->definition', self::DatabaseProcessDefinitions)
             ->count();
 
         if ($count === 0) {
             return [];
         }
 
-        return ["{$count} database tool ".($count === 1 ? 'record' : 'records')];
+        return ["{$count} database process ".($count === 1 ? 'record' : 'records')];
     }
 
     private function removeAppRoleDependents(Node $node, string $role): void
@@ -132,9 +133,9 @@ class NodeRoleDependencyInspector
 
     private function removeDatabaseDependents(Node $node): void
     {
-        NodeTool::query()
-            ->where('node_id', $node->id)
-            ->whereIn('name', self::DatabaseTools)
+        Process::query()
+            ->ownedBy($node)
+            ->whereIn('runtime_config->definition', self::DatabaseProcessDefinitions)
             ->delete();
     }
 

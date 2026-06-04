@@ -159,6 +159,14 @@ final class ProcessUpdateController implements Loggable
                 ], 422);
             }
 
+            if ($runtime->requiresNodeOwner() && $node === null) {
+                return $this->error('validation_failed', $runtime->nodeOwnerViolationMessage() ?? 'The selected runtime is not valid for this process owner.', [
+                    'field' => 'runtime',
+                    'value' => $runtimeInput,
+                    'reason' => $runtime->nodeOwnerViolationReason(),
+                ], 422);
+            }
+
             $changes['runtime'] = $runtime;
         }
 

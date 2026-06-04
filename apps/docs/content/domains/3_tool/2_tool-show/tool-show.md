@@ -17,10 +17,10 @@ orbit tool:show <tool> [--app=<app>] [--node=<node>] [--live] [--json]
 ## Examples
 
 ```bash
-orbit tool:show redis --node=app-1
-orbit tool:show redis --app=docs
-orbit tool:show redis --node=app-1 --live
-orbit tool:show redis --node=app-1 --json
+orbit tool:show composer --node=app-1
+orbit tool:show opencode-server --app=docs
+orbit tool:show composer --node=app-1 --live
+orbit tool:show composer --node=app-1 --json
 ```
 
 ## Arguments and options

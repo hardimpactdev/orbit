@@ -18,10 +18,10 @@ orbit tool:start <tool> [--app=<app>] [--node=<node>] [--json]
 ## Examples
 
 ```bash
-orbit tool:start redis --node=app-1
-orbit tool:start redis --app=docs
-orbit tool:start redis --app=docs.app-1
-orbit tool:start redis --node=app-1 --json
+orbit tool:start opencode-server --node=agent-1
+orbit tool:start opencode-server --app=docs
+orbit tool:start opencode-server --app=docs.agent-1
+orbit tool:start opencode-server --node=agent-1 --json
 ```
 
 ## Arguments and options

@@ -94,7 +94,6 @@ final class ToolReloadController implements Loggable
             'tool.not_found' => 404,
             'authorization_failed' => 403,
             'tool.remote_action_failed' => 502,
-            'tool.instance_required' => 422,
             default => 400,
         };
 

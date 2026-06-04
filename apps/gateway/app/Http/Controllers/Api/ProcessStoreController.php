@@ -71,6 +71,8 @@ final class ProcessStoreController implements Loggable
                 start: $input['start'],
                 runtime: $input['runtime'],
                 tool: $input['tool'],
+                definition: $input['definition'],
+                version: $input['version'],
             );
         } catch (GatewayApiException $e) {
             return $this->error($e->errorCode() ?? 'validation_failed', $e->getMessage(), $e->errorMeta(), $e->errorCode() === 'process.name_collision' ? 409 : 422);
@@ -89,7 +91,7 @@ final class ProcessStoreController implements Loggable
     }
 
     /**
-     * @return array{node: string|null, app: string|null, workspace: string|null, name: string, command: string, restart_policy: ProcessRestartPolicy, crash_notification: ProcessCrashNotification, runtime: ?ProcessRuntime, tool: string|null, start: bool}|JsonResponse
+     * @return array{node: string|null, app: string|null, workspace: string|null, name: string, command: string|null, restart_policy: ProcessRestartPolicy, crash_notification: ProcessCrashNotification, runtime: ?ProcessRuntime, tool: string|null, definition: string|null, version: string|null, start: bool}|JsonResponse
      */
     private function validatedInput(Request $request): array|JsonResponse
     {
@@ -102,6 +104,8 @@ final class ProcessStoreController implements Loggable
         $crashNotificationInput = $this->optionalString($request, 'crash_notification') ?? ProcessCrashNotification::None->value;
         $runtimeInput = $this->optionalString($request, 'runtime');
         $tool = $this->optionalString($request, 'tool');
+        $definition = $this->optionalString($request, 'definition');
+        $version = $this->optionalString($request, 'version');
 
         if ($node !== null && ($app !== null || $workspace !== null)) {
             return $this->error('validation_failed', 'A node context cannot be combined with app or workspace context.', [
@@ -124,8 +128,36 @@ final class ProcessStoreController implements Loggable
             return $this->error('validation_failed', 'The process name must contain only lowercase letters, digits, and hyphens, cannot start or end with a hyphen, and may not exceed 64 characters.', ['field' => 'name', 'value' => $name], 422);
         }
 
-        if ($command === null) {
+        if ($command === null && $definition === null) {
             return $this->error('validation_failed', 'The process command is required.', ['field' => 'command'], 422);
+        }
+
+        if ($definition !== null && ! preg_match('/^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$/', $definition)) {
+            return $this->error('validation_failed', 'The process definition must contain only lowercase letters, digits, and hyphens, cannot start or end with a hyphen, and may not exceed 64 characters.', ['field' => 'definition', 'value' => $definition], 422);
+        }
+
+        if ($definition === null && $version !== null) {
+            return $this->error('validation_failed', 'Process definition version requires a service process definition.', [
+                'field' => 'version',
+                'value' => $version,
+                'reason' => 'process_definition_version_requires_definition',
+            ], 422);
+        }
+
+        if ($definition !== null && $node === null) {
+            return $this->error('validation_failed', 'Process definitions are only valid for node-owned service processes.', [
+                'field' => 'definition',
+                'value' => $definition,
+                'reason' => 'process_definition_requires_node_owned_process',
+            ], 422);
+        }
+
+        if ($definition !== null && $tool !== null) {
+            return $this->error('validation_failed', 'Service process definitions do not use tool dependencies.', [
+                'field' => 'tool',
+                'value' => $tool,
+                'reason' => 'process_definition_cannot_reference_tool',
+            ], 422);
         }
 
         if ($tool !== null && ! preg_match('/^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$/', $tool)) {
@@ -165,11 +197,11 @@ final class ProcessStoreController implements Loggable
                 ], 422);
             }
 
-            if ($runtime === ProcessRuntime::Systemd && $node === null) {
-                return $this->error('validation_failed', 'The systemd runtime is only valid for node-owned processes.', [
+            if ($runtime->requiresNodeOwner() && $node === null) {
+                return $this->error('validation_failed', $runtime->nodeOwnerViolationMessage() ?? 'The selected runtime is not valid for this process owner.', [
                     'field' => 'runtime',
                     'value' => $runtimeInput,
-                    'reason' => 'systemd_requires_node_owned_process',
+                    'reason' => $runtime->nodeOwnerViolationReason(),
                 ], 422);
             }
         }
@@ -184,6 +216,8 @@ final class ProcessStoreController implements Loggable
             'crash_notification' => $crashNotification,
             'runtime' => $runtime,
             'tool' => $tool,
+            'definition' => $definition,
+            'version' => $version,
             'start' => $request->boolean('start'),
         ];
     }
@@ -250,6 +284,7 @@ final class ProcessStoreController implements Loggable
             'workspace' => $this->optionalString(request(), 'workspace'),
             'name' => $this->optionalString(request(), 'name'),
             'tool' => $this->optionalString(request(), 'tool'),
+            'definition' => $this->optionalString(request(), 'definition'),
         ];
     }
 

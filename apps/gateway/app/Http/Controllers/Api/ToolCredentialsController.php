@@ -73,7 +73,6 @@ final class ToolCredentialsController implements Loggable
         $status = match ($failure->code) {
             'tool.not_found' => 404,
             'authorization_failed' => 403,
-            'tool.instance_required' => 422,
             default => 400,
         };
 

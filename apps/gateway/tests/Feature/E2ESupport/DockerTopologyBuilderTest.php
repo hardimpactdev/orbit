@@ -627,7 +627,7 @@ it('does not accept bare client aliases for downstream small topology fixtures',
     expect(E2ETopologyKind::tryFromInput('client-gateway-appdev'))->toBeNull();
 });
 
-it('seeds appdev docker topology with database role and Redis expectation for downstream service tests', function (): void {
+it('seeds appdev docker topology with database role and Redis process for downstream service tests', function (): void {
     $commands = [];
 
     Process::fake(function ($process) use (&$commands) {
@@ -647,10 +647,10 @@ it('seeds appdev docker topology with database role and Redis expectation for do
 
     expect($setup)
         ->toContain('NodeRoleName::Database')
-        ->toContain('NodeTool::query()->updateOrCreate')
+        ->toContain('Process::query()->updateOrCreate')
         ->toContain('redis')
-        ->toContain('expected_state')
-        ->toContain('running');
+        ->toContain('definition')
+        ->toContain('7.2');
 });
 
 it('provisions Docker downstream role source images in parallel after the gateway baseline', function (): void {

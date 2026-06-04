@@ -133,6 +133,7 @@ final readonly class EnsureAppProcessRuntimeUnits
         return match ($process->runtime) {
             ProcessRuntime::Docker => ProcessRuntime::Supervisor,
             ProcessRuntime::Supervisor => ProcessRuntime::Docker,
+            ProcessRuntime::DockerSwarm,
             ProcessRuntime::Systemd => null,
         };
     }

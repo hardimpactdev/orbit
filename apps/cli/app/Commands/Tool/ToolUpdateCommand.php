@@ -11,7 +11,6 @@ final class ToolUpdateCommand extends ToolGatewayCommand
         {tool? : Tool catalog name to update}
         {--app= : Resolve target by app selector}
         {--node= : Resolve target by node}
-        {--instance= : Tool instance selector}
         {--expected-version= : Expected version constraint}
         {--json : Output JSON}';
 
@@ -39,15 +38,8 @@ final class ToolUpdateCommand extends ToolGatewayCommand
             return $this->updateAll($payload);
         }
 
-        $instancePayload = $this->resolveToolInstancePayload($tool, $payload);
-
-        if (is_int($instancePayload)) {
-            return $instancePayload;
-        }
-
         return $this->updateOne($tool, [
             ...$payload,
-            ...$instancePayload,
             ...$this->filledQuery([
                 'version' => $version,
             ]),

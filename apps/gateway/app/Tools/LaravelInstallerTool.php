@@ -119,8 +119,8 @@ BASH;
     public function probeMetadata(): array
     {
         return [
-            'binary' => 'laravel',
-            'version_command' => 'laravel --version 2>/dev/null || true',
+            'binary' => '/usr/local/bin/laravel',
+            'version_command' => 'cd /home/orbit && /usr/local/bin/laravel --version',
         ];
     }
 

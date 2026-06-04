@@ -179,35 +179,6 @@ final readonly class ToolCatalog
         return $this->definition($tool)?->latestSupportedVersion();
     }
 
-    /**
-     * @return array<string, array{platforms: list<string>}>
-     */
-    public function supportedRuntimes(string $tool): array
-    {
-        return $this->definition($tool)?->supportedRuntimes() ?? [];
-    }
-
-    public function defaultRuntime(string $tool): ?string
-    {
-        return $this->definition($tool)?->defaultRuntime();
-    }
-
-    /**
-     * @return array<array-key, array{default: string, versions: list<string>}>
-     */
-    public function supportedVersionFamilies(string $tool): array
-    {
-        return $this->definition($tool)?->supportedVersionFamilies() ?? [];
-    }
-
-    /**
-     * @return array{version_family: string, expected_version: string}|null
-     */
-    public function resolveVersionRequest(string $tool, string $version): ?array
-    {
-        return $this->definition($tool)?->resolveVersionRequest($version);
-    }
-
     public function credentialsScript(string $tool, array $config = []): ?string
     {
         if (! $this->hasCapability($tool, 'credentials')) {

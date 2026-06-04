@@ -10,6 +10,7 @@ use App\Enums\Nodes\NodeRoleStatus;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Models\NodeTool;
+use App\Models\Process;
 use App\Services\Ca\OrbitCaService;
 use App\Services\Nodes\Roles\NodeRoleBaselineConverger;
 use App\Services\WebSockets\WebSocketRuntimeContainer;
@@ -162,10 +163,9 @@ function webSocketBaselineRedisNode(array $overrides = []): Node
         'status' => Node::STATUS_ACTIVE,
     ], $overrides));
 
-    NodeTool::factory()->create([
-        'node_id' => $node->id,
+    Process::factory()->forOwner($node)->create([
         'name' => 'redis',
-        'expected_state' => 'running',
+        'runtime_config' => ['definition' => 'redis'],
     ]);
 
     return $node;

@@ -24,6 +24,9 @@ These rules cover who owns process configuration and how process definitions are
 - A process may reference a catalogued tool with a tool dependency. The tool
   supplies a node-level capability; the process still owns start, stop,
   restart, and logs.
+- A process may also be materialized from a service process definition. Service
+  definitions are node-owned runnable services such as MySQL or Redis; they do
+  not reference tools.
 
 ### Runtime unit derivation
 
@@ -38,7 +41,8 @@ These rules describe how runtime units are derived from process definitions.
   that app.
 - Each rendered runtime unit is applied by its selected process runtime backend,
   such as `supervisor` for retained host commands, `docker` for containerized
-  processes, or `systemd` for node-level Linux services.
+  processes, `docker-swarm` for node-owned managed service processes, or
+  `systemd` for node-level Linux services.
 - The process definition supplies shared fields such as command, restart policy,
   runtime backend, runtime configuration, and crash notification policy. The
   rendering context supplies per-instance fields such as node/app/workspace
@@ -47,8 +51,8 @@ These rules describe how runtime units are derived from process definitions.
   `orbit_<scope>_<process>`.
 - The `orbit_` prefix marks Orbit ownership, and underscores are reserved as
   backend segment delimiters.
-- Supervisor program names and Docker container names derive from the same
-  product identity.
+- Supervisor program names, Docker container names, and Swarm service names
+  derive from the same product identity.
 
 ### Restart policy
 
@@ -94,6 +98,23 @@ These rules describe how lifecycle commands address runtime units.
 - Runtime lifecycle commands start, stop, restart, and inspect derived units.
 - Omitting `[name]` for `process:start`, `process:stop`, and `process:restart` targets every process definition in process order for the resolved context.
 - Logs come from the selected runtime backend for the selected runtime unit.
+
+### Service process definitions
+
+Service process definitions are the supported way to create node-owned
+database/cache services. They own service version, image, endpoint, credentials,
+ports, volumes, labels, lifecycle, and logs on the process row.
+
+Supported definitions in this vertical slice:
+
+| Definition | Versions | Default runtime | Notes |
+| --- | --- | --- | --- |
+| `mysql` | `8` -> `8.4`, `9` -> `9` | `docker` | Published ports are version-family specific, so MySQL 8 and 9 can coexist on one node. |
+| `redis` | `7` -> `7.2` | `docker` | Publishes the Redis TCP endpoint from the owning node's WireGuard service address. |
+
+`docker-swarm` is also admitted for node-owned service process definitions.
+PostgreSQL follows the same process-owned product direction, but it is not
+advertised as a supported process definition until its definition lands.
 
 ### Command argument conventions
 

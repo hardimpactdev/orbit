@@ -177,7 +177,7 @@ final class ToolUpdateController implements Loggable
         $status = match ($failure->code) {
             'tool.not_found' => 404,
             'authorization_failed' => 403,
-            'validation_failed', 'tool.instance_required' => 422,
+            'validation_failed' => 422,
             default => 400,
         };
 

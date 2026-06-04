@@ -19,9 +19,9 @@ orbit tool:restart <tool> [--app=<app>] [--node=<node>] [--json]
 ## Examples
 
 ```bash
-orbit tool:restart redis --node=app-1
-orbit tool:restart redis --app=docs
-orbit tool:restart redis --node=app-1 --json
+orbit tool:restart opencode-server --node=agent-1
+orbit tool:restart opencode-server --app=docs
+orbit tool:restart opencode-server --node=agent-1 --json
 ```
 
 ## Arguments and options
@@ -58,7 +58,7 @@ Use `--json` to get a machine-readable result; omit it for a summary of the rest
 Human output stays concise:
 
 ```text
-Restarted redis on app-1.
+Restarted opencode-server on agent-1.
 ```
 
 Use `tool:show`, `--json`, `doctor`, or `tool:logs` for detailed state,

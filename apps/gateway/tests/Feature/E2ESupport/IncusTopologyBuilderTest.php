@@ -383,13 +383,20 @@ it('builds full prepared roles from the gateway base with parallel downstream ba
         $manifest = $builder->build(E2ETopologyKind::OperatorGatewayAppdevAppprodAgent);
         $commandOutput = implode("\n", $commands);
         $phaseNames = array_column($timer->events(), 'name');
+        $wireGuardPhase = array_search('prepared.downstream.real-wireguard', $phaseNames, true);
         $runtimePrerequisitesPhase = array_search('prepared.dev.runtime-prerequisites', $phaseNames, true);
+        $bakePhase = array_search('prepared.downstream.bake', $phaseNames, true);
         $redisSeedPhase = array_search('dev.database-redis-seed', $phaseNames, true);
-        $runnerStartPosition = strpos($commandOutput, 'nohup sh -lc');
+        $wireGuardCommandPosition = strpos($commandOutput, 'wg-quick up wg-orbit');
         $runtimePrerequisiteCommandPosition = strpos($commandOutput, 'sudo -u "$runtime_user" docker image inspect');
+        $runtimeSshAuthorizeCommandPosition = strpos($commandOutput, 'orbit-template-app-dev-base/home/orbit/.ssh/authorized_keys');
         $developmentReadyWaitPosition = strpos($commandOutput, 'while [ ! -f "$DEV_READY_MARKER" ]; do');
         $developmentBakePosition = strpos($commandOutput, '--role=app-dev');
         $productionBakePosition = strpos($commandOutput, 'orbit:internal:bake-ingress-node');
+        $developmentTldPosition = $developmentBakePosition !== false ? strpos($commandOutput, '--tld=', $developmentBakePosition) : false;
+        $developmentCommandSegment = $developmentBakePosition !== false && $developmentTldPosition !== false
+            ? substr($commandOutput, $developmentBakePosition, $developmentTldPosition - $developmentBakePosition + 24)
+            : '';
         $agentBakePosition = strpos($commandOutput, 'orbit:internal:bake-agent-node');
 
         expect($manifest)->toHaveCount(5)
@@ -416,16 +423,20 @@ it('builds full prepared roles from the gateway base with parallel downstream ba
             ->and($commandOutput)->toContain('set -euo pipefail;')
             ->and($commandOutput)->toContain('PID_BAKE_DEV=$!;')
             ->and($commandOutput)->toContain("incus exec 'orbit-template-gateway-base' -- sh -lc")
-            ->and($runnerStartPosition)->toBeInt()
+            ->and($wireGuardCommandPosition)->toBeInt()
             ->and($runtimePrerequisiteCommandPosition)->toBeInt()
-            ->and($runnerStartPosition)->toBeLessThan($runtimePrerequisiteCommandPosition)
+            ->and($wireGuardCommandPosition)->toBeLessThan($runtimePrerequisiteCommandPosition)
             ->and($productionBakePosition)->toBeInt()
             ->and($agentBakePosition)->toBeInt()
-            ->and($developmentReadyWaitPosition)->toBeInt()
+            ->and($developmentReadyWaitPosition)->toBeFalse()
             ->and($developmentBakePosition)->toBeInt()
-            ->and($productionBakePosition)->toBeLessThan($developmentReadyWaitPosition)
-            ->and($agentBakePosition)->toBeLessThan($developmentReadyWaitPosition)
-            ->and($developmentReadyWaitPosition)->toBeLessThan($developmentBakePosition)
+            ->and($developmentCommandSegment)->toContain('--user=')
+            ->and($developmentCommandSegment)->toContain('orbit')
+            ->and($developmentCommandSegment)->not->toContain('provisioner')
+            ->and($runtimePrerequisiteCommandPosition)->toBeLessThan($developmentBakePosition)
+            ->and($runtimeSshAuthorizeCommandPosition)->toBeInt()
+            ->and($runtimePrerequisiteCommandPosition)->toBeLessThan($runtimeSshAuthorizeCommandPosition)
+            ->and($runtimeSshAuthorizeCommandPosition)->toBeLessThan($developmentBakePosition)
             ->and($commandOutput)->toContain('orbit-gateway:prepared-current')
             ->and($commandOutput)->toContain('artisan tinker --execute=')
             ->and($commandOutput)->not->toContain('cd /home/orbit/orbit && php artisan')
@@ -452,8 +463,12 @@ it('builds full prepared roles from the gateway base with parallel downstream ba
             ->and($commandOutput)->toContain('for command in composer git supervisorctl wg wg-quick dig ufw; do')
             ->and($commandOutput)->toContain('apt-get -o DPkg::Lock::Timeout=300 install -y -qq docker.io')
             ->and($commandOutput)->toContain('systemctl enable --now supervisor.service')
+            ->and($wireGuardPhase)->toBeInt()
             ->and($runtimePrerequisitesPhase)->toBeInt()
+            ->and($bakePhase)->toBeInt()
             ->and($redisSeedPhase)->toBeInt()
+            ->and($wireGuardPhase)->toBeLessThan($runtimePrerequisitesPhase)
+            ->and($runtimePrerequisitesPhase)->toBeLessThan($bakePhase)
             ->and($runtimePrerequisitesPhase)->toBeLessThan($redisSeedPhase);
         expect(substr_count($commandOutput, 'orbit-template-gateway-base/root/.ssh/id_ed25519'))->toBe(2);
     });
@@ -527,14 +542,20 @@ it('builds full prepared websocket roles on the app-dev node', function (): void
         $commandOutput = implode("\n", $commands);
         $phaseNames = array_column($timer->events(), 'name');
         $realWireGuardPhase = array_search('prepared-websocket.real-wireguard', $phaseNames, true);
+        $downstreamWireGuardPhase = array_search('prepared-websocket.downstream.real-wireguard', $phaseNames, true);
         $runtimePrerequisitesPhase = array_search('prepared-websocket.dev.runtime-prerequisites', $phaseNames, true);
-        $developmentWireGuardPhase = array_search('prepared-websocket.dev.real-wireguard', $phaseNames, true);
         $websocketBakePhase = array_search('prepared-websocket.websocket.bake', $phaseNames, true);
         $runnerStartPosition = strpos($commandOutput, 'nohup sh -lc');
+        $wireGuardCommandPosition = strpos($commandOutput, 'wg-quick up wg-orbit');
         $runtimePrerequisiteCommandPosition = strpos($commandOutput, 'sudo -u "$runtime_user" docker image inspect');
+        $runtimeSshAuthorizeCommandPosition = strpos($commandOutput, 'orbit-template-app-dev-base/home/orbit/.ssh/authorized_keys');
         $developmentReadyWaitPosition = strpos($commandOutput, 'while [ ! -f "$DEV_READY_MARKER" ]; do');
         $developmentBakePosition = strpos($commandOutput, '--role=app-dev');
         $productionBakePosition = strpos($commandOutput, 'orbit:internal:bake-ingress-node');
+        $developmentTldPosition = $developmentBakePosition !== false ? strpos($commandOutput, '--tld=', $developmentBakePosition) : false;
+        $developmentCommandSegment = $developmentBakePosition !== false && $developmentTldPosition !== false
+            ? substr($commandOutput, $developmentBakePosition, $developmentTldPosition - $developmentBakePosition + 24)
+            : '';
         $agentBakePosition = strpos($commandOutput, 'orbit:internal:bake-agent-node');
         $devWaitPosition = strpos($commandOutput, 'wait "$PID_BAKE_DEV"');
         $devStatusPosition = $devWaitPosition === false ? false : strpos($commandOutput, '"$STATUS_DEV";', $devWaitPosition);
@@ -553,15 +574,20 @@ it('builds full prepared websocket roles on the app-dev node', function (): void
             ->and($commandOutput)->toContain('artisan orbit:internal:bake-websocket-node')
             ->and($commandOutput)->toContain('PID_BAKE_WEBSOCKET=$!')
             ->and($runnerStartPosition)->toBeInt()
+            ->and($wireGuardCommandPosition)->toBeInt()
             ->and($runtimePrerequisiteCommandPosition)->toBeInt()
-            ->and($runnerStartPosition)->toBeLessThan($runtimePrerequisiteCommandPosition)
+            ->and($wireGuardCommandPosition)->toBeLessThan($runtimePrerequisiteCommandPosition)
+            ->and($runtimePrerequisiteCommandPosition)->toBeLessThan($runnerStartPosition)
             ->and($productionBakePosition)->toBeInt()
             ->and($agentBakePosition)->toBeInt()
-            ->and($developmentReadyWaitPosition)->toBeInt()
+            ->and($developmentReadyWaitPosition)->toBeFalse()
             ->and($developmentBakePosition)->toBeInt()
-            ->and($productionBakePosition)->toBeLessThan($developmentReadyWaitPosition)
-            ->and($agentBakePosition)->toBeLessThan($developmentReadyWaitPosition)
-            ->and($developmentReadyWaitPosition)->toBeLessThan($developmentBakePosition)
+            ->and($developmentCommandSegment)->toContain('--user=')
+            ->and($developmentCommandSegment)->toContain('orbit')
+            ->and($developmentCommandSegment)->not->toContain('provisioner')
+            ->and($runtimeSshAuthorizeCommandPosition)->toBeInt()
+            ->and($runtimePrerequisiteCommandPosition)->toBeLessThan($runtimeSshAuthorizeCommandPosition)
+            ->and($runtimeSshAuthorizeCommandPosition)->toBeLessThan($developmentBakePosition)
             ->and($devWaitPosition)->toBeLessThan(strpos($commandOutput, 'orbit:internal:bake-websocket-node'))
             ->and($devStatusPosition)->toBeInt()
             ->and($seedWaitPosition)->toBeInt()
@@ -597,12 +623,12 @@ it('builds full prepared websocket roles on the app-dev node', function (): void
             ->and($commandOutput)->not->toContain('--environment=')
             ->and($commandOutput)->not->toContain('node.role')
             ->and($realWireGuardPhase)->toBeInt()
+            ->and($downstreamWireGuardPhase)->toBeInt()
             ->and($runtimePrerequisitesPhase)->toBeInt()
-            ->and($developmentWireGuardPhase)->toBeInt()
             ->and($websocketBakePhase)->toBeInt()
-            ->and($runtimePrerequisitesPhase)->toBeLessThan($realWireGuardPhase)
-            ->and($runtimePrerequisitesPhase)->toBeLessThan($developmentWireGuardPhase)
-            ->and($developmentWireGuardPhase)->toBeLessThan($websocketBakePhase);
+            ->and($downstreamWireGuardPhase)->toBeLessThan($runtimePrerequisitesPhase)
+            ->and($runtimePrerequisitesPhase)->toBeLessThan($websocketBakePhase)
+            ->and($runtimePrerequisitesPhase)->toBeLessThan($realWireGuardPhase);
     });
 });
 
@@ -925,7 +951,7 @@ it('retries websocket bake when all concrete role checkpoints are valid but the 
         $phaseNames = array_column($timer->events(), 'name');
 
         expect(array_column($manifest, 'role'))->toBe(['operator', 'gateway', 'dev', 'prod', 'agent'])
-            ->and($phaseNames)->toContain('prepared-websocket.dev.real-wireguard')
+            ->and($phaseNames)->toContain('prepared-websocket.downstream.real-wireguard')
             ->and($phaseNames)->toContain('prepared-websocket.dev.database-redis-seed')
             ->and($phaseNames)->toContain('prepared-websocket.websocket.bake')
             ->and($commandOutput)->toContain('artisan orbit:internal:bake-websocket-node')

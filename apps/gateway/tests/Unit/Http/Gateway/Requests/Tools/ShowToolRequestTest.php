@@ -25,14 +25,14 @@ beforeEach(function (): void {
 });
 
 it('resolves to GET /api/tools/{tool}', function (): void {
-    $request = new ShowToolRequest(tool: 'redis');
+    $request = new ShowToolRequest(tool: 'composer');
 
-    expect($request->resolveEndpoint())->toBe('/api/tools/redis');
+    expect($request->resolveEndpoint())->toBe('/api/tools/composer');
     expect($request->getMethod())->toBe(Method::GET);
 });
 
 it('serializes app node and live filters when provided', function (): void {
-    $request = new ShowToolRequest(tool: 'redis', app: 'docs', node: 'app-1', live: true);
+    $request = new ShowToolRequest(tool: 'composer', app: 'docs', node: 'app-1', live: true);
 
     expect($request->query()->all())->toBe([
         'app' => 'docs',
@@ -42,7 +42,7 @@ it('serializes app node and live filters when provided', function (): void {
 });
 
 it('omits null and false filters from the query', function (): void {
-    $request = new ShowToolRequest(tool: 'redis', node: 'app-1');
+    $request = new ShowToolRequest(tool: 'composer', node: 'app-1');
 
     expect($request->query()->all())->toBe(['node' => 'app-1']);
 });
@@ -53,7 +53,7 @@ it('returns a ToolShowResponse DTO with a tool', function (): void {
             'success' => [
                 'data' => [
                     'tool' => [
-                        'name' => 'redis',
+                        'name' => 'composer',
                         'node' => 'app-1',
                     ],
                 ],
@@ -64,11 +64,11 @@ it('returns a ToolShowResponse DTO with a tool', function (): void {
     $connector = new GatewayConnector;
     $connector->withMockClient($mock);
 
-    $dto = $connector->send(new ShowToolRequest(tool: 'redis'))->dto();
+    $dto = $connector->send(new ShowToolRequest(tool: 'composer'))->dto();
 
     expect($dto)->toBeInstanceOf(ToolShowResponse::class);
     expect($dto->tool)->toBe([
-        'name' => 'redis',
+        'name' => 'composer',
         'node' => 'app-1',
     ]);
 });

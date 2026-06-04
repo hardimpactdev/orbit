@@ -38,18 +38,18 @@ describe('ToolRemoveController', function (): void {
         grantToolRemoveApiAccess($caller, $node);
         $tool = NodeTool::factory()->create([
             'node_id' => $node->id,
-            'name' => 'redis',
-            'expected_state' => 'running']);
+            'name' => 'laravel-installer',
+            'expected_state' => 'installed']);
         $shell = new ToolRemoveApiRecordingShell;
         app()->instance(RemoteShell::class, $shell);
 
-        $response = test()->call('DELETE', '/api/tools/redis', [
+        $response = test()->call('DELETE', '/api/tools/laravel-installer', [
             'node' => 'app-remove-api-1',
             'destructive_consent' => true,
             'destructive_consent_source' => 'json'], [], [], ['REMOTE_ADDR' => TOOL_REMOVE_API_CALLER_WG_IP]);
 
         $response->assertOk()
-            ->assertJsonPath('success.data.tool.name', 'redis')
+            ->assertJsonPath('success.data.tool.name', 'laravel-installer')
             ->assertJsonPath('success.data.tool.node', 'app-remove-api-1');
 
         $entry = Activity::query()->first();
@@ -59,7 +59,7 @@ describe('ToolRemoveController', function (): void {
             ->and($entry)->not->toBeNull()
             ->and($entry->properties->get('destructive_consent'))->toBeTrue()
             ->and($entry->properties->get('destructive_consent_source'))->toBe('json')
-            ->and($entry->properties->get('tool'))->toBe('redis')
+            ->and($entry->properties->get('tool'))->toBe('laravel-installer')
             ->and($entry->properties->get('node'))->toBe('app-remove-api-1');
     });
 
@@ -69,11 +69,11 @@ describe('ToolRemoveController', function (): void {
         grantToolRemoveApiAccess($caller, $node);
         NodeTool::factory()->create([
             'node_id' => $node->id,
-            'name' => 'redis',
-            'expected_state' => 'running']);
+            'name' => 'laravel-installer',
+            'expected_state' => 'installed']);
         app()->instance(RemoteShell::class, new ToolRemoveApiRecordingShell);
 
-        $response = test()->call('DELETE', '/api/tools/redis', [
+        $response = test()->call('DELETE', '/api/tools/laravel-installer', [
             'node' => 'app-remove-api-1',
             'destructive_consent' => true,
             'destructive_consent_source' => 'interactive_confirm'], [], [], [
@@ -99,12 +99,12 @@ describe('ToolRemoveController', function (): void {
         grantToolRemoveApiAccess($caller, $node);
         $tool = NodeTool::factory()->create([
             'node_id' => $node->id,
-            'name' => 'redis',
-            'expected_state' => 'running']);
+            'name' => 'composer',
+            'expected_state' => 'installed']);
         $shell = new ToolRemoveApiRecordingShell;
         app()->instance(RemoteShell::class, $shell);
 
-        $response = test()->call('DELETE', '/api/tools/redis', [
+        $response = test()->call('DELETE', '/api/tools/composer', [
             'node' => 'app-remove-api-1'], [], [], ['REMOTE_ADDR' => TOOL_REMOVE_API_CALLER_WG_IP]);
 
         $response->assertUnprocessable()
@@ -122,12 +122,12 @@ describe('ToolRemoveController', function (): void {
         grantToolRemoveApiAccess($caller, $node);
         $tool = NodeTool::factory()->create([
             'node_id' => $node->id,
-            'name' => 'redis',
-            'expected_state' => 'running']);
+            'name' => 'composer',
+            'expected_state' => 'installed']);
         $shell = new ToolRemoveApiRecordingShell;
         app()->instance(RemoteShell::class, $shell);
 
-        $response = test()->call('DELETE', '/api/tools/redis', [
+        $response = test()->call('DELETE', '/api/tools/composer', [
             'destructive_consent' => true,
             'destructive_consent_source' => 'json'], [], [], ['REMOTE_ADDR' => TOOL_REMOVE_API_CALLER_WG_IP]);
 
@@ -142,16 +142,16 @@ describe('ToolRemoveController', function (): void {
     it('rejects unauthenticated and unauthorized removals with documented codes', function (): void {
         $visibleNode = createTestAppHostNode(['name' => 'visible-node', 'status' => 'active']);
         $hiddenNode = createTestAppHostNode(['name' => 'hidden-node', 'status' => 'active']);
-        NodeTool::factory()->create(['node_id' => $hiddenNode->id, 'name' => 'redis']);
+        NodeTool::factory()->create(['node_id' => $hiddenNode->id, 'name' => 'composer']);
         $caller = createToolRemoveApiCallerNode();
         grantToolRemoveApiAccess($caller, $visibleNode);
 
-        $unauthenticated = test()->call('DELETE', '/api/tools/redis', [
+        $unauthenticated = test()->call('DELETE', '/api/tools/composer', [
             'node' => 'hidden-node',
             'destructive_consent' => true,
             'destructive_consent_source' => 'json']);
 
-        $unauthorized = test()->call('DELETE', '/api/tools/redis', [
+        $unauthorized = test()->call('DELETE', '/api/tools/composer', [
             'node' => 'hidden-node',
             'destructive_consent' => true,
             'destructive_consent_source' => 'json'], [], [], ['REMOTE_ADDR' => TOOL_REMOVE_API_CALLER_WG_IP]);

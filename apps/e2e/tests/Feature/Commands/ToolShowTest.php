@@ -16,7 +16,7 @@ it('shows a registered tool from gateway intent as JSON', function (): void {
         $result = $topology->ssh(
             'gateway',
             sprintf(
-                'cd %s && orbit tool:show redis --node=app-dev-1 --json',
+                'cd %s && orbit tool:show opencode-server --node=app-dev-1 --json',
                 escapeshellarg($topology->checkout('gateway')),
             ),
             timeoutSeconds: 120,
@@ -26,7 +26,7 @@ it('shows a registered tool from gateway intent as JSON', function (): void {
 
         expect($result->successful())->toBeTrue()
             ->and($payload['success']['data']['tool'])->toMatchArray([
-                'name' => 'redis',
+                'name' => 'opencode-server',
                 'node' => 'app-dev-1',
                 'expected_state' => 'running',
             ])
@@ -47,7 +47,7 @@ it('shows a registered tool from gateway intent as human output', function (): v
         $result = $topology->ssh(
             'gateway',
             sprintf(
-                'cd %s && orbit tool:show redis --node=app-dev-1',
+                'cd %s && orbit tool:show opencode-server --node=app-dev-1',
                 escapeshellarg($topology->checkout('gateway')),
             ),
             timeoutSeconds: 120,
@@ -55,7 +55,7 @@ it('shows a registered tool from gateway intent as human output', function (): v
         );
 
         expect($result->successful())->toBeTrue()
-            ->and($result->output())->toContain('Tool: redis')
+            ->and($result->output())->toContain('Tool: opencode-server')
             ->and($result->output())->toContain('Node')
             ->and($result->output())->toContain('app-dev-1');
     } finally {
@@ -117,11 +117,12 @@ it('includes live key in JSON output when --live flag is passed', function (): v
     try {
         e2eRestartGatewayApi($topology, 'tool-show-live');
         toolShowSeedGatewayIntent($topology);
+        toolShowPrepareOpencodeBinary($topology);
 
         $result = $topology->ssh(
             'gateway',
             sprintf(
-                'cd %s && orbit tool:show redis --node=app-dev-1 --live --json',
+                'cd %s && orbit tool:show opencode-server --node=app-dev-1 --live --json',
                 escapeshellarg($topology->checkout('gateway')),
             ),
             timeoutSeconds: 180,
@@ -147,7 +148,7 @@ function toolShowSeedGatewayIntent(E2ETopologyHarness $topology): void
 $node = \App\Models\Node::query()->where('name', 'app-dev-1')->firstOrFail();
 
 \App\Models\NodeTool::query()->updateOrCreate(
-    ['node_id' => $node->id, 'name' => 'redis'],
+    ['node_id' => $node->id, 'name' => 'opencode-server'],
     [
         'expected_state' => 'running',
         'expected_version' => null,
@@ -162,6 +163,24 @@ PHP;
     $topology->ssh(
         'gateway',
         'cd '.escapeshellarg($topology->checkout('gateway')).' && php apps/gateway/artisan tinker --execute='.escapeshellarg($php),
+        timeoutSeconds: 120,
+    );
+}
+
+function toolShowPrepareOpencodeBinary(E2ETopologyHarness $topology): void
+{
+    $opencode = <<<'BASH'
+#!/usr/bin/env bash
+set -euo pipefail
+echo "opencode 1.0.0"
+BASH;
+
+    $topology->ssh(
+        'dev',
+        sprintf(
+            'printf %%s %s | sudo tee /usr/local/bin/opencode >/dev/null && sudo chmod 0755 /usr/local/bin/opencode',
+            escapeshellarg($opencode),
+        ),
         timeoutSeconds: 120,
     );
 }

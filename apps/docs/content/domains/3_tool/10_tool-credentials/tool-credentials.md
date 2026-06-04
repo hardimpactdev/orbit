@@ -4,9 +4,10 @@
 
 Show connection credentials for a managed tool.
 
-`tool:credentials` displays generated or registered connection details for tools
-that declare a credential contract, such as PostgreSQL, MySQL, Redis, Mailpit,
-Reverb, or OpenCode Server.
+`tool:credentials` displays generated or registered connection details for
+tools that declare a credential contract, such as Mailpit, Reverb, OpenClaw,
+or OpenCode Server. Credentials for runnable services such as MySQL,
+PostgreSQL, and Redis are not tool credentials.
 
 ## Usage
 
@@ -17,11 +18,11 @@ orbit tool:credentials [tool] [--app=<app>] [--node=<node>] [--json]
 ## Examples
 
 ```bash
-orbit tool:credentials postgres --node=app-1
 orbit tool:credentials mailpit --node=app-1
+orbit tool:credentials openclaw --node=agent-1
 orbit tool:credentials opencode-server --app=docs
 orbit tool:credentials --node=app-1
-orbit tool:credentials postgres --node=app-1 --json
+orbit tool:credentials opencode-server --node=agent-1 --json
 ```
 
 ## Arguments and options
@@ -46,10 +47,9 @@ Run this command to read connection credentials for a managed tool on the target
    store.
 3. Renders the tool's declared credential fields.
 
-Credential-bearing managed service tools use generated Orbit-owned secrets.
-`tool:credentials` reads the current values; it does not rotate credentials,
-reconfigure the tool, or expose credentials for tools that do not declare a
-credential contract.
+Credential-bearing tools use generated Orbit-owned secrets. `tool:credentials`
+reads the current values; it does not rotate credentials, reconfigure the tool,
+or expose credentials for tools that do not declare a credential contract.
 
 ## Output
 

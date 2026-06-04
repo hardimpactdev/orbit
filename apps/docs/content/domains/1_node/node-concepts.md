@@ -116,7 +116,7 @@ Each term below has a precise meaning in the node command family.
   shared unprivileged `agent` runtime user, and any role-specific runtime
   containers the agent workload needs.
 - **Agent runtime user:** Shared unprivileged Linux user that owns agent
-  tool runtimes on a node with the `agent` role. Agent tools never run as the
+  process runtimes on a node with the `agent` role. Agent tools never run as the
   privileged `orbit` maintenance user.
 - **Role assignment status:** Lifecycle state of one role assignment:
   `pending`, `active`, `error`, or `removing`. Eligibility checks use only

@@ -19,9 +19,9 @@ orbit tool:stop <tool> [--app=<app>] [--node=<node>] [--json]
 ## Examples
 
 ```bash
-orbit tool:stop redis --node=app-1
-orbit tool:stop redis --app=docs
-orbit tool:stop redis --node=app-1 --json
+orbit tool:stop opencode-server --node=agent-1
+orbit tool:stop opencode-server --app=docs
+orbit tool:stop opencode-server --node=agent-1 --json
 ```
 
 ## Arguments and options
@@ -63,7 +63,7 @@ Use `--json` to get a machine-readable result; omit it for a summary of the stop
 Human success output is concise:
 
 ```text
-Stopped redis on app-1.
+Stopped opencode-server on agent-1.
 ```
 
 Use `tool:show`, JSON, `tool:logs`, or `doctor --family=tool` for detailed

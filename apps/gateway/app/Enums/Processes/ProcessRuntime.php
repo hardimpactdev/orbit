@@ -9,6 +9,7 @@ use App\Models\App;
 enum ProcessRuntime: string
 {
     case Docker = 'docker';
+    case DockerSwarm = 'docker-swarm';
     case Supervisor = 'supervisor';
     case Systemd = 'systemd';
 
@@ -17,5 +18,31 @@ enum ProcessRuntime: string
         return $app->runtime_kind->usesPhpRuntimeContainer()
             ? self::Docker
             : self::Supervisor;
+    }
+
+    public function requiresNodeOwner(): bool
+    {
+        return match ($this) {
+            self::DockerSwarm, self::Systemd => true,
+            self::Docker, self::Supervisor => false,
+        };
+    }
+
+    public function nodeOwnerViolationReason(): ?string
+    {
+        return match ($this) {
+            self::DockerSwarm => 'docker_swarm_requires_node_owned_process',
+            self::Systemd => 'systemd_requires_node_owned_process',
+            self::Docker, self::Supervisor => null,
+        };
+    }
+
+    public function nodeOwnerViolationMessage(): ?string
+    {
+        return match ($this) {
+            self::DockerSwarm => 'The docker-swarm runtime is only valid for node-owned processes.',
+            self::Systemd => 'The systemd runtime is only valid for node-owned processes.',
+            self::Docker, self::Supervisor => null,
+        };
     }
 }

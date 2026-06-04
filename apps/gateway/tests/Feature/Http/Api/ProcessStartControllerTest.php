@@ -180,7 +180,7 @@ describe('ProcessStartController', function (): void {
             ->assertJsonPath('error.code', 'process.unsupported_runtime')
             ->assertJsonPath('error.meta.process', 'vite')
             ->assertJsonPath('error.meta.runtime', 'docker-swarm')
-            ->assertJsonPath('error.meta.allowed', ['docker', 'supervisor', 'systemd']);
+            ->assertJsonPath('error.meta.reason', 'docker_swarm_requires_node_owned_process');
 
         expect($remoteShell->scripts)->toBe([]);
     });
@@ -204,7 +204,8 @@ describe('ProcessStartController', function (): void {
         $response->assertUnprocessable()
             ->assertJsonPath('error.code', 'process.unsupported_runtime')
             ->assertJsonPath('error.meta.process', 'vite')
-            ->assertJsonPath('error.meta.runtime', 'docker-swarm');
+            ->assertJsonPath('error.meta.runtime', 'docker-swarm')
+            ->assertJsonPath('error.meta.reason', 'docker_swarm_requires_node_owned_process');
 
         expect($remoteShell->scripts)->toBe([]);
     });

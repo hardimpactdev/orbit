@@ -26,11 +26,13 @@ it('stores node owned process runtime configuration', function (): void {
     $process = $node->processes()->create([
         'node_id' => $node->id,
         'name' => 'mysql8',
-        'command' => 'docker run mysql:8',
+        'command' => 'mysqld',
         'runtime' => ProcessRuntime::Docker,
-        'tool' => 'mysql',
+        'tool' => null,
         'runtime_config' => [
-            'image' => 'mysql:8',
+            'definition' => 'mysql',
+            'version' => '8.4',
+            'image' => 'mysql:8.4',
             'ports' => ['3306:3306'],
             'volumes' => ['mysql8-data:/var/lib/mysql'],
         ],
@@ -40,9 +42,11 @@ it('stores node owned process runtime configuration', function (): void {
     expect($process->refresh())
         ->owner->toBeInstanceOf(Node::class)
         ->node_id->toBe($node->id)
-        ->tool->toBe('mysql')
+        ->tool->toBeNull()
         ->runtime_config->toBe([
-            'image' => 'mysql:8',
+            'definition' => 'mysql',
+            'version' => '8.4',
+            'image' => 'mysql:8.4',
             'ports' => ['3306:3306'],
             'volumes' => ['mysql8-data:/var/lib/mysql'],
         ]);
@@ -83,10 +87,12 @@ it('stores role owned process runtime configuration', function (): void {
     $process = $role->processes()->create([
         'node_id' => $node->id,
         'name' => 'postgres16',
-        'command' => 'docker run postgres:16',
+        'command' => 'postgres',
         'runtime' => ProcessRuntime::Docker,
-        'tool' => 'postgres',
+        'tool' => null,
         'runtime_config' => [
+            'definition' => 'postgres',
+            'version' => '16',
             'image' => 'postgres:16',
         ],
         'sort_order' => 1,
@@ -95,8 +101,10 @@ it('stores role owned process runtime configuration', function (): void {
     expect($process->refresh())
         ->owner->toBeInstanceOf(NodeRoleAssignment::class)
         ->node_id->toBe($node->id)
-        ->tool->toBe('postgres')
+        ->tool->toBeNull()
         ->runtime_config->toBe([
+            'definition' => 'postgres',
+            'version' => '16',
             'image' => 'postgres:16',
         ]);
 });

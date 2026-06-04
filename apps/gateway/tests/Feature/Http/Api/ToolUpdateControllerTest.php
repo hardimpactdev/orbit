@@ -4,193 +4,130 @@ declare(strict_types=1);
 
 use App\Contracts\RemoteShell;
 use App\Data\RemoteShell\RemoteShellResult;
-use App\Enums\Processes\ProcessRuntime;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Models\NodeTool;
-use App\Models\Process;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 
 uses(RefreshDatabase::class);
 
-const TOOL_UPDATE_PROCESS_CALLER_WG_IP = '10.6.0.204';
+const TOOL_UPDATE_API_CALLER_WG_IP = '10.6.0.93';
 
-function createToolUpdateProcessGatewayCaller(): Node
+function createToolUpdateApiCallerNode(array $overrides = []): Node
 {
-    $caller = Node::factory()->create([
-        'name' => 'tool-update-process-caller',
-        'host' => TOOL_UPDATE_PROCESS_CALLER_WG_IP,
-        'wireguard_address' => TOOL_UPDATE_PROCESS_CALLER_WG_IP,
-    ]);
-
-    NodeRoleAssignment::factory()->create([
-        'node_id' => $caller->id,
-        'role' => 'gateway',
-        'status' => 'active',
-    ]);
-
-    return $caller;
+    return Node::factory()->create(array_merge([
+        'name' => 'tool-update-api-caller',
+        'host' => TOOL_UPDATE_API_CALLER_WG_IP,
+        'wireguard_address' => TOOL_UPDATE_API_CALLER_WG_IP,
+    ], $overrides));
 }
 
-describe('ToolUpdateController process boundary', function (): void {
-    it('updates the tool capability without restarting a related process implicitly', function (): void {
-        createToolUpdateProcessGatewayCaller();
-        $node = createTestAppHostNode([
-            'name' => 'app-update-process-1',
-            'status' => 'active',
-        ]);
-        NodeTool::factory()->create([
-            'node_id' => $node->id,
-            'name' => 'redis',
-            'expected_state' => 'running',
-            'config' => ['compose_path' => '/opt/orbit/docker-compose.yml'],
-        ]);
-        Process::factory()->forOwner($node)->create([
-            'name' => 'redis',
-            'tool' => 'redis',
-            'runtime' => ProcessRuntime::Systemd,
-            'command' => 'redis-server',
-        ]);
-        $shell = new ToolUpdateProcessRecordingShell;
-        app()->instance(RemoteShell::class, $shell);
+function assignToolUpdateApiRole(Node $node, string $role): void
+{
+    NodeRoleAssignment::factory()->create([
+        'node_id' => $node->id,
+        'role' => $role,
+        'status' => 'active',
+    ]);
+}
 
-        $response = $this->call('POST', '/api/tools/redis/update', [
-            'node' => 'app-update-process-1',
-        ], [], [], ['REMOTE_ADDR' => TOOL_UPDATE_PROCESS_CALLER_WG_IP]);
+function grantToolUpdateApiAccess(Node $caller, Node $node): void
+{
+    DB::table('node_access')->insert([
+        'consumer_node_id' => $caller->id,
+        'serving_node_id' => $node->id,
+        'permissions' => json_encode(['tool:update'], JSON_THROW_ON_ERROR),
+        'created_at' => now(),
+        'updated_at' => now(),
+    ]);
+}
 
-        $response->assertOk()
-            ->assertJsonPath('success.data.tool.name', 'redis')
-            ->assertJsonPath('success.data.tool.node', 'app-update-process-1');
+it('updates host capability expected versions without service instance fields', function (): void {
+    $caller = createToolUpdateApiCallerNode();
+    $node = Node::factory()->create(['name' => 'app-update-api-1', 'status' => 'active']);
+    assignToolUpdateApiRole($node, 'app-dev');
+    grantToolUpdateApiAccess($caller, $node);
+    NodeTool::factory()->create([
+        'node_id' => $node->id,
+        'name' => 'php-cli',
+        'expected_version' => '8.4',
+    ]);
+    $shell = new ToolUpdateApiRecordingShell;
+    app()->instance(RemoteShell::class, $shell);
 
-        expect($shell->scripts)->toHaveCount(1)
-            ->and($shell->scripts[0])->toContain("docker compose -f '/opt/orbit/docker-compose.yml' pull 'redis'")
-            ->and($shell->scripts[0])->not->toContain('systemctl restart')
-            ->and($shell->scripts[0])->not->toContain('supervisorctl restart');
-    });
+    $response = $this->call('POST', '/api/tools/php-cli/update', [
+        'node' => 'app-update-api-1',
+        'version' => '8.5',
+    ], [], [], ['REMOTE_ADDR' => TOOL_UPDATE_API_CALLER_WG_IP]);
 
-    it('requires an instance selector when updating a multi-instance base tool', function (): void {
-        createToolUpdateProcessGatewayCaller();
-        $node = createTestAppHostNode([
-            'name' => 'app-update-process-1',
-            'status' => 'active',
-        ]);
-        NodeTool::factory()->create([
-            'node_id' => $node->id,
-            'name' => 'mysql',
-            'instance_key' => 'mysql:8',
-            'version_family' => '8',
-            'expected_version' => '8.4',
-            'config' => ['compose_path' => '/opt/orbit/mysql8.yml'],
-        ]);
-        NodeTool::factory()->create([
-            'node_id' => $node->id,
-            'name' => 'mysql',
-            'instance_key' => 'mysql:9',
-            'version_family' => '9',
-            'expected_version' => '9',
-            'config' => ['compose_path' => '/opt/orbit/mysql9.yml'],
-        ]);
-        $shell = new ToolUpdateProcessRecordingShell;
-        app()->instance(RemoteShell::class, $shell);
+    $response->assertOk()
+        ->assertJsonPath('success.data.tool.name', 'php-cli')
+        ->assertJsonPath('success.data.tool.version', '8.5');
 
-        $response = $this->call('POST', '/api/tools/mysql/update', [
-            'node' => 'app-update-process-1',
-        ], [], [], ['REMOTE_ADDR' => TOOL_UPDATE_PROCESS_CALLER_WG_IP]);
+    $tool = NodeTool::query()->where('name', 'php-cli')->firstOrFail();
 
-        $response->assertUnprocessable()
-            ->assertJsonPath('error.code', 'tool.instance_required')
-            ->assertJsonPath('error.meta.instances', ['mysql:8', 'mysql:9']);
-
-        expect($shell->scripts)->toBe([]);
-    });
-
-    it('updates the selected tool instance and version without touching siblings', function (): void {
-        createToolUpdateProcessGatewayCaller();
-        $node = createTestAppHostNode([
-            'name' => 'app-update-process-1',
-            'status' => 'active',
-        ]);
-        $mysql8 = NodeTool::factory()->create([
-            'node_id' => $node->id,
-            'name' => 'mysql',
-            'instance_key' => 'mysql:8',
-            'version_family' => '8',
-            'expected_version' => '8.0',
-            'config' => ['compose_path' => '/opt/orbit/mysql8.yml'],
-        ]);
-        $mysql9 = NodeTool::factory()->create([
-            'node_id' => $node->id,
-            'name' => 'mysql',
-            'instance_key' => 'mysql:9',
-            'version_family' => '9',
-            'expected_version' => '9',
-            'config' => ['compose_path' => '/opt/orbit/mysql9.yml'],
-        ]);
-        $shell = new ToolUpdateProcessRecordingShell;
-        app()->instance(RemoteShell::class, $shell);
-
-        $response = $this->call('POST', '/api/tools/mysql/update', [
-            'node' => 'app-update-process-1',
-            'instance' => 'mysql:8',
-            'version' => '8.4',
-        ], [], [], ['REMOTE_ADDR' => TOOL_UPDATE_PROCESS_CALLER_WG_IP]);
-
-        $response->assertOk()
-            ->assertJsonPath('success.data.tool.name', 'mysql')
-            ->assertJsonPath('success.data.tool.node', 'app-update-process-1')
-            ->assertJsonPath('success.data.tool.instance', 'mysql:8')
-            ->assertJsonPath('success.data.tool.version_family', '8')
-            ->assertJsonPath('success.data.tool.version', '8.4');
-
-        expect($mysql8->fresh()->expected_version)->toBe('8.4')
-            ->and($mysql9->fresh()->expected_version)->toBe('9')
-            ->and($shell->scripts)->toHaveCount(1)
-            ->and($shell->scripts[0])->toContain("docker compose -f '/opt/orbit/mysql8.yml' pull 'mysql'")
-            ->and($shell->scripts[0])->not->toContain('mysql9.yml');
-    });
-
-    it('rejects expected versions outside the selected instance family before side effects', function (): void {
-        createToolUpdateProcessGatewayCaller();
-        $node = createTestAppHostNode([
-            'name' => 'app-update-process-1',
-            'status' => 'active',
-        ]);
-        NodeTool::factory()->create([
-            'node_id' => $node->id,
-            'name' => 'mysql',
-            'instance_key' => 'mysql:8',
-            'version_family' => '8',
-            'expected_version' => '8.0',
-            'config' => ['compose_path' => '/opt/orbit/mysql8.yml'],
-        ]);
-        $shell = new ToolUpdateProcessRecordingShell;
-        app()->instance(RemoteShell::class, $shell);
-
-        $response = $this->call('POST', '/api/tools/mysql/update', [
-            'node' => 'app-update-process-1',
-            'instance' => 'mysql:8',
-            'version' => '9',
-        ], [], [], ['REMOTE_ADDR' => TOOL_UPDATE_PROCESS_CALLER_WG_IP]);
-
-        $response->assertUnprocessable()
-            ->assertJsonPath('error.code', 'validation_failed')
-            ->assertJsonPath('error.meta.field', 'expected_version')
-            ->assertJsonPath('error.meta.reason', 'unsupported_value');
-
-        expect($shell->scripts)->toBe([]);
-    });
+    expect($tool->expected_version)->toBe('8.5')
+        ->and($tool->getAttributes())->not->toHaveKeys(['instance_key', 'version_family', 'runtime', 'runtime_config'])
+        ->and($shell->scripts)->toHaveCount(1);
 });
 
-final class ToolUpdateProcessRecordingShell implements RemoteShell
+it('does not update database and cache services through tool updates', function (string $tool): void {
+    $caller = createToolUpdateApiCallerNode();
+    $node = Node::factory()->create(['name' => 'app-update-api-1', 'status' => 'active']);
+    assignToolUpdateApiRole($node, 'app-dev');
+    grantToolUpdateApiAccess($caller, $node);
+    $shell = new ToolUpdateApiRecordingShell;
+    app()->instance(RemoteShell::class, $shell);
+
+    $response = $this->call('POST', "/api/tools/{$tool}/update", [
+        'node' => 'app-update-api-1',
+        'version' => '8',
+    ], [], [], ['REMOTE_ADDR' => TOOL_UPDATE_API_CALLER_WG_IP]);
+
+    $response->assertStatus(400)
+        ->assertJsonPath('error.code', 'tool.unsupported_action')
+        ->assertJsonPath('error.meta.tool', $tool)
+        ->assertJsonPath('error.meta.action', 'update');
+
+    expect(NodeTool::query()->count())->toBe(0)
+        ->and($shell->scripts)->toBe([]);
+})->with([
+    'mysql',
+    'postgres',
+    'redis',
+]);
+
+it('treats service-style instance selectors as missing tool rows', function (): void {
+    $caller = createToolUpdateApiCallerNode();
+    $node = Node::factory()->create(['name' => 'app-update-api-1', 'status' => 'active']);
+    assignToolUpdateApiRole($node, 'app-dev');
+    grantToolUpdateApiAccess($caller, $node);
+    NodeTool::factory()->create([
+        'node_id' => $node->id,
+        'name' => 'php-cli',
+    ]);
+    $shell = new ToolUpdateApiRecordingShell;
+    app()->instance(RemoteShell::class, $shell);
+
+    $response = $this->call('POST', '/api/tools/php-cli/update', [
+        'node' => 'app-update-api-1',
+        'instance' => 'php-cli:8.5',
+    ], [], [], ['REMOTE_ADDR' => TOOL_UPDATE_API_CALLER_WG_IP]);
+
+    $response->assertNotFound()
+        ->assertJsonPath('error.code', 'tool.not_found');
+
+    expect($shell->scripts)->toBe([]);
+});
+
+final class ToolUpdateApiRecordingShell implements RemoteShell
 {
     /**
      * @var list<string>
      */
     public array $scripts = [];
 
-    /**
-     * @param  array<string, mixed>  $options
-     */
     public function run(Node $node, string $script, array $options = []): RemoteShellResult
     {
         $this->scripts[] = $script;

@@ -9,28 +9,28 @@ surfaces apply.
 
 ## Credential and endpoint policy
 
-Managed service tools must not rely on unauthenticated upstream defaults. When
-a supported service has an authentication concept, Orbit owns credential
+Credential-bearing tools must not rely on unauthenticated upstream defaults.
+When a supported tool has an authentication concept, Orbit owns credential
 generation, persistence, repair, and credential rendering.
 
 - The default service username is `orbit` when the protocol has a username
   concept.
-- Generated passwords and service secrets are created by Orbit during install
-  or tool-defined reconfiguration flows and stored as managed secret material.
+- Generated passwords and secrets are created by Orbit during install or
+  tool-defined reconfiguration flows and stored as managed secret material.
   Catalog examples use `<generated-password>` or a tool-specific generated
   placeholder; those values are not literal defaults.
 - Admin-only backend secrets, such as a database root password, are generated
   and managed by Orbit when required by the backend, but the default credential
   returned to operators is the `orbit` service credential unless a catalog file
   explicitly documents an admin credential field.
-- `tool:credentials` returns the connection fields owned by the selected tool
-  catalog file.
+- `tool:credentials` returns the credential fields owned by the selected tool
+  catalog file. Credentials for runnable database/cache service instances
+  belong to process definitions and database connection intent, not tool rows.
 
 HTTP and WebSocket tools expose tool-owned `proxy` routes, such as
-`mailpit.<node-tld>`. TCP tools expose WireGuard-only service endpoints on the
-serving node's WireGuard service address, such as `10.6.0.12:5432`, and must
-be protected by Orbit-managed firewall policy rather than represented as HTTP
-proxy routes.
+`mailpit.<node-tld>`. TCP endpoints for runnable services such as MySQL,
+PostgreSQL, and Redis are process-owned service endpoints and must be protected
+by Orbit-managed firewall policy rather than represented as HTTP proxy routes.
 
 Catalog placeholders such as `<node-tld>` and `<agent-tld>` are contextual
 references to that same node-level TLD field. Use `<node-tld>` for generic
@@ -93,29 +93,26 @@ materialized by their owning role and only required on nodes carrying that role:
 These tools are provisioned by `tool:install`, removed by `tool:remove`, and
 verified by `doctor --family=tool`.
 
-### Runtime, database, cache, and communication
+### Runtime and communication
 
-These installable tools cover the PHP runtime, managed databases, caches, mail,
-and compatibility websocket capability. Fleet realtime uses the `websocket`
-role; the `reverb` tool remains documented for compatibility until it is
-removed or migrated.
+These installable tools cover the PHP runtime, mail, and compatibility
+websocket capability. MySQL, PostgreSQL, and Redis are process-owned services,
+not tool installs. Fleet realtime uses the `websocket` role; the `reverb` tool
+remains documented for compatibility until it is removed or migrated.
 
 1. [`php`](php.md)
-2. [`postgres`](postgres.md)
-3. [`mysql`](mysql.md)
-4. [`redis`](redis.md)
-5. [`mailpit`](mailpit.md)
-6. [`reverb`](reverb.md)
+2. [`mailpit`](mailpit.md)
+3. [`reverb`](reverb.md)
 
 ### Agent IDE servers and autonomous agent tools
 
 These installable tools support agent IDE sessions and first-party
 autonomous agents that run under the `agent` role.
 
-7. [`polyscope-server`](polyscope-server.md)
-8. [`opencode-server`](opencode-server.md)
-9. [`openclaw`](openclaw.md)
-10. [`hermes`](hermes.md)
+4. [`polyscope-server`](polyscope-server.md)
+5. [`opencode-server`](opencode-server.md)
+6. [`openclaw`](openclaw.md)
+7. [`hermes`](hermes.md)
 
 ## File Contract
 
@@ -123,8 +120,7 @@ Each tool file owns:
 
 - supported slug, label, backend, support model, and category;
 - supported command capability surface;
-- supported version families and runtime families, including platform support
-  for each runtime family;
+- supported tool versions when the tool tracks a host capability version;
 - credential behavior and example output when credentials are supported;
 - service endpoint behavior when the tool is reachable over the Orbit network;
 - ownership notes specific to the tool and Orbit's management of it;

@@ -95,7 +95,7 @@ describe('ToolsProbe', function (): void {
 
     it('requires active app or gateway nodes', function (): void {
         $node = Node::factory()->create(['status' => 'active']);
-        $tool = NodeTool::factory()->create(['node_id' => $node->id, 'name' => 'redis']);
+        $tool = NodeTool::factory()->create(['node_id' => $node->id, 'name' => 'composer']);
 
         $drift = (new ToolsProbe)->diff($tool, new ProbeSnapshot([]));
 
@@ -104,7 +104,7 @@ describe('ToolsProbe', function (): void {
 
     it('allows provisioning app nodes during managed setup', function (): void {
         $node = createToolsProbeAppHostNode(['status' => Node::STATUS_PROVISIONING]);
-        $tool = NodeTool::factory()->create(['node_id' => $node->id, 'name' => 'redis']);
+        $tool = NodeTool::factory()->create(['node_id' => $node->id, 'name' => 'composer']);
 
         $drift = (new ToolsProbe)->diff($tool, new ProbeSnapshot([]), allowProvisioning: true);
 
@@ -123,7 +123,7 @@ describe('ToolsProbe', function (): void {
 
     it('detects missing live capabilities', function (): void {
         $node = createToolsProbeAppHostNode();
-        $tool = NodeTool::factory()->create(['node_id' => $node->id, 'name' => 'redis']);
+        $tool = NodeTool::factory()->create(['node_id' => $node->id, 'name' => 'composer']);
         $probe = new ToolsProbe(new ToolsProbeRemoteShell(exitCode: 1));
 
         $snapshot = $probe->introspect($tool);
@@ -134,8 +134,8 @@ describe('ToolsProbe', function (): void {
 
     it('passes when live capability exists', function (): void {
         $node = createToolsProbeAppHostNode();
-        $tool = NodeTool::factory()->create(['node_id' => $node->id, 'name' => 'redis']);
-        $probe = new ToolsProbe(new ToolsProbeRemoteShell(exitCode: 0, stdout: "/usr/bin/redis\n"));
+        $tool = NodeTool::factory()->create(['node_id' => $node->id, 'name' => 'composer']);
+        $probe = new ToolsProbe(new ToolsProbeRemoteShell(exitCode: 0, stdout: "/usr/local/bin/composer\n"));
 
         $snapshot = $probe->introspect($tool);
 
@@ -205,18 +205,18 @@ describe('ToolsProbe', function (): void {
         $node = createToolsProbeAppHostNode();
         $tool = NodeTool::factory()->create([
             'node_id' => $node->id,
-            'name' => 'redis',
-            'expected_version' => '7.2',
+            'name' => 'composer',
+            'expected_version' => '2.8',
         ]);
-        $probe = new ToolsProbe(new ToolsProbeRemoteShell(exitCode: 0, stdout: "/usr/bin/redis-server\t6.0.16\n"));
+        $probe = new ToolsProbe(new ToolsProbeRemoteShell(exitCode: 0, stdout: "/usr/local/bin/composer\tComposer version 2.7.0\n"));
 
         $snapshot = $probe->introspect($tool);
         $drift = $probe->diff($tool, $snapshot);
 
         expect(toolProbeIssue($drift, 'tool.version_mismatch')?->kind)->toBe(DriftKind::Divergent)
             ->and(toolProbeIssue($drift, 'tool.version_mismatch')?->detail)->toMatchArray([
-                'expected_version' => '7.2',
-                'observed_version' => '6.0.16',
+                'expected_version' => '2.8',
+                'observed_version' => 'Composer version 2.7.0',
             ]);
     });
 
@@ -224,10 +224,10 @@ describe('ToolsProbe', function (): void {
         $node = createToolsProbeAppHostNode();
         $tool = NodeTool::factory()->create([
             'node_id' => $node->id,
-            'name' => 'redis',
+            'name' => 'supervisor',
             'expected_state' => 'running',
         ]);
-        $probe = new ToolsProbe(new ToolsProbeRemoteShell(exitCode: 0, stdout: "/usr/bin/redis-server\t7.2.0\tstopped\n"));
+        $probe = new ToolsProbe(new ToolsProbeRemoteShell(exitCode: 0, stdout: "/usr/bin/supervisord\tSupervisor 4.2.5\tstopped\n"));
 
         $snapshot = $probe->introspect($tool);
         $drift = $probe->diff($tool, $snapshot);
@@ -343,15 +343,15 @@ describe('ToolsProbe', function (): void {
         $node = createToolsProbeAppHostNode();
         $tool = NodeTool::factory()->create([
             'node_id' => $node->id,
-            'name' => 'redis',
+            'name' => 'dns',
             'config' => [
                 'managed_config' => [
-                    'path' => '/etc/redis/redis.conf',
+                    'path' => '/etc/orbit/dns.conf',
                     'hash' => str_repeat('a', 64),
                 ],
             ],
         ]);
-        $probe = new ToolsProbe(new ToolsProbeRemoteShell(exitCode: 0, stdout: "/usr/bin/redis-server\t7.2.0\trunning\t0\t\n"));
+        $probe = new ToolsProbe(new ToolsProbeRemoteShell(exitCode: 0, stdout: "/usr/bin/dns\t\trunning\t0\t\n"));
 
         $snapshot = $probe->introspect($tool);
         $drift = $probe->diff($tool, $snapshot);
@@ -363,22 +363,22 @@ describe('ToolsProbe', function (): void {
         $node = createToolsProbeAppHostNode();
         $tool = NodeTool::factory()->create([
             'node_id' => $node->id,
-            'name' => 'redis',
+            'name' => 'dns',
             'config' => [
                 'managed_config' => [
-                    'path' => '/etc/redis/redis.conf',
+                    'path' => '/etc/orbit/dns.conf',
                     'hash' => str_repeat('a', 64),
                 ],
             ],
         ]);
-        $probe = new ToolsProbe(new ToolsProbeRemoteShell(exitCode: 0, stdout: "/usr/bin/redis-server\t7.2.0\trunning\t1\t".str_repeat('b', 64)."\n"));
+        $probe = new ToolsProbe(new ToolsProbeRemoteShell(exitCode: 0, stdout: "/usr/bin/dns\t\trunning\t1\t".str_repeat('b', 64)."\n"));
 
         $snapshot = $probe->introspect($tool);
         $drift = $probe->diff($tool, $snapshot);
 
         expect(toolProbeIssue($drift, 'tool.config_mismatch')?->kind)->toBe(DriftKind::Divergent)
             ->and(toolProbeIssue($drift, 'tool.config_mismatch')?->detail)->toMatchArray([
-                'path' => '/etc/redis/redis.conf',
+                'path' => '/etc/orbit/dns.conf',
                 'expected_hash' => str_repeat('a', 64),
                 'observed_hash' => str_repeat('b', 64),
             ]);

@@ -20,7 +20,6 @@ final class ToolCredentialsCommand extends GatewayCommand
         {tool? : Tool catalog name to read credentials for}
         {--app= : Resolve target by app selector}
         {--node= : Resolve target by node}
-        {--instance= : Tool instance selector}
         {--json}';
 
     #[\Override]
@@ -38,7 +37,6 @@ final class ToolCredentialsCommand extends GatewayCommand
             $response = $this->gatewayGet('/api/tools/'.rawurlencode($tool).'/credentials', $this->filledQuery([
                 'app' => $this->stringOption('app'),
                 'node' => $this->resolvedToolNode(),
-                'instance' => $this->stringOption('instance'),
             ]));
         } catch (OrbitConfigStoreException $exception) {
             return $this->renderFailure($exception->orbitCode, $exception->getMessage());

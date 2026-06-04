@@ -45,7 +45,7 @@ describe('tool API target authorization', function (): void {
 
         NodeTool::factory()->create([
             'node_id' => $hiddenNode->id,
-            'name' => str_contains($uri, 'polyscope-server') ? 'polyscope-server' : 'redis',
+            'name' => toolTargetAuthToolNameFromUri($uri),
             'expected_state' => 'running',
             'config' => ['compose_path' => '/opt/orbit/docker-compose.yml'],
             'credentials' => [
@@ -62,17 +62,17 @@ describe('tool API target authorization', function (): void {
 
         expect($shell->scripts)->toBe([]);
     })->with([
-        'install' => ['POST', '/api/tools/redis/install', ['node' => 'hidden-node']],
-        'update' => ['POST', '/api/tools/redis/update', ['node' => 'hidden-node']],
-        'credentials' => ['GET', '/api/tools/redis/credentials', ['node' => 'hidden-node']],
-        'logs' => ['GET', '/api/tools/redis/logs', ['node' => 'hidden-node']],
-        'logs stream' => ['GET', '/api/tools/redis/logs/stream', ['node' => 'hidden-node']],
-        'reload' => ['POST', '/api/tools/redis/reload', ['node' => 'hidden-node']],
-        'remove' => ['DELETE', '/api/tools/redis', ['node' => 'hidden-node', 'destructive_consent' => true]],
+        'install' => ['POST', '/api/tools/composer/install', ['node' => 'hidden-node']],
+        'update' => ['POST', '/api/tools/composer/update', ['node' => 'hidden-node']],
+        'credentials' => ['GET', '/api/tools/openclaw/credentials', ['node' => 'hidden-node']],
+        'logs' => ['GET', '/api/tools/opencode-server/logs', ['node' => 'hidden-node']],
+        'logs stream' => ['GET', '/api/tools/opencode-server/logs/stream', ['node' => 'hidden-node']],
+        'reload' => ['POST', '/api/tools/opencode-server/reload', ['node' => 'hidden-node']],
+        'remove' => ['DELETE', '/api/tools/composer', ['node' => 'hidden-node', 'destructive_consent' => true]],
         'reconfigure' => ['POST', '/api/tools/polyscope-server/reconfigure', ['node' => 'hidden-node']],
-        'restart' => ['POST', '/api/tools/redis/restart', ['node' => 'hidden-node']],
-        'start' => ['POST', '/api/tools/redis/start', ['node' => 'hidden-node']],
-        'stop' => ['POST', '/api/tools/redis/stop', ['node' => 'hidden-node']]]);
+        'restart' => ['POST', '/api/tools/opencode-server/restart', ['node' => 'hidden-node']],
+        'start' => ['POST', '/api/tools/opencode-server/start', ['node' => 'hidden-node']],
+        'stop' => ['POST', '/api/tools/opencode-server/stop', ['node' => 'hidden-node']]]);
 
     it('uses the only visible target when no selector is supplied', function (): void {
         $caller = createToolTargetAuthCaller();
@@ -82,18 +82,18 @@ describe('tool API target authorization', function (): void {
 
         NodeTool::factory()->create([
             'node_id' => $visibleNode->id,
-            'name' => 'redis',
+            'name' => 'openclaw',
             'credentials' => [
                 'fields' => [
                     'password' => 'visible-secret']]]);
         NodeTool::factory()->create([
             'node_id' => $hiddenNode->id,
-            'name' => 'redis',
+            'name' => 'openclaw',
             'credentials' => [
                 'fields' => [
                     'password' => 'hidden-secret']]]);
 
-        $response = $this->call('GET', '/api/tools/redis/credentials', [], [], [], ['REMOTE_ADDR' => TOOL_TARGET_AUTH_CALLER_WG_IP]);
+        $response = $this->call('GET', '/api/tools/openclaw/credentials', [], [], [], ['REMOTE_ADDR' => TOOL_TARGET_AUTH_CALLER_WG_IP]);
 
         $response->assertOk()
             ->assertJsonPath('success.data.credentials.node', 'visible-node')
@@ -110,12 +110,12 @@ describe('tool API target authorization', function (): void {
 
         NodeTool::factory()->create([
             'node_id' => $caller->id,
-            'name' => 'redis',
+            'name' => 'openclaw',
             'credentials' => [
                 'fields' => [
                     'password' => 'self-secret']]]);
 
-        $response = $this->call('GET', '/api/tools/redis/credentials', [
+        $response = $this->call('GET', '/api/tools/openclaw/credentials', [
             'node' => 'caller'], [], [], ['REMOTE_ADDR' => TOOL_TARGET_AUTH_CALLER_WG_IP]);
 
         $response->assertOk()
@@ -132,12 +132,12 @@ describe('tool API target authorization', function (): void {
 
         NodeTool::factory()->create([
             'node_id' => $visibleNode->id,
-            'name' => 'redis',
+            'name' => 'openclaw',
             'credentials' => [
                 'fields' => [
                     'password' => 'visible-secret']]]);
 
-        $response = $this->call('GET', '/api/tools/redis/credentials', [
+        $response = $this->call('GET', '/api/tools/openclaw/credentials', [
             'node' => 'visible-node'], [], [], ['REMOTE_ADDR' => TOOL_TARGET_AUTH_CALLER_WG_IP]);
 
         $response->assertForbidden()
@@ -180,7 +180,7 @@ describe('tool API target authorization', function (): void {
 
         $response = $this->call(
             'POST',
-            '/api/tools/redis/install',
+            '/api/tools/composer/install',
             ['node' => 'visible-node'],
             [],
             [],
@@ -199,10 +199,27 @@ describe('tool API target authorization', function (): void {
             ->and($content)->toContain('"key":"read-intent"')
             ->and($content)->toContain('"key":"run-action"')
             ->and($content)->toContain('event: complete')
-            ->and($content)->toContain('"name":"redis"')
+            ->and($content)->toContain('"name":"composer"')
             ->and($content)->not->toContain('/stream');
     });
 });
+
+function toolTargetAuthToolNameFromUri(string $uri): string
+{
+    if (str_contains($uri, 'openclaw')) {
+        return 'openclaw';
+    }
+
+    if (str_contains($uri, 'opencode-server')) {
+        return 'opencode-server';
+    }
+
+    if (str_contains($uri, 'polyscope-server')) {
+        return 'polyscope-server';
+    }
+
+    return 'composer';
+}
 
 final class ToolTargetAuthorizationRecordingShell implements RemoteShell
 {

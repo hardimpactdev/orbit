@@ -56,35 +56,21 @@ final readonly class ToolRegistry
             ->with('node')
             ->where('node_id', $targetNode->id)
             ->where('name', $tool)
-            ->orderBy('instance_key')
+            ->orderBy('name')
             ->get();
 
         if ($instance !== null) {
-            $models = $models
-                ->filter(fn (NodeTool $model): bool => $this->matchesInstance($model, $tool, $instance))
-                ->values();
+            return ToolRegistryFailure::notFound($tool, $targetNode->name);
         }
 
         if ($version !== null) {
             $models = $models
-                ->filter(fn (NodeTool $model): bool => $model->version_family === $version || $model->expected_version === $version)
+                ->filter(fn (NodeTool $model): bool => $model->expected_version === $version)
                 ->values();
         }
 
         if ($models->isEmpty()) {
             return ToolRegistryFailure::notFound($tool, $targetNode->name);
-        }
-
-        if ($models->count() > 1) {
-            return ToolRegistryFailure::instanceRequired(
-                tool: $tool,
-                node: $targetNode->name,
-                instances: $models
-                    ->map(fn (NodeTool $model): string => (string) $model->instance_key)
-                    ->filter(fn (string $instance): bool => $instance !== '')
-                    ->values()
-                    ->all(),
-            );
         }
 
         return $models->first();
@@ -216,25 +202,5 @@ final readonly class ToolRegistry
         return $query
             ->whereIn('id', $this->nodeRoleAssignments->activeToolHostNodeIds())
             ->where('status', 'active');
-    }
-
-    private function matchesInstance(NodeTool $model, string $tool, string $instance): bool
-    {
-        $selector = trim($instance);
-        $key = is_string($model->instance_key) ? trim($model->instance_key) : '';
-
-        if ($selector === '' || $key === '') {
-            return false;
-        }
-
-        if ($key === $selector) {
-            return true;
-        }
-
-        if (! str_contains($selector, ':') && $key === "{$tool}:{$selector}") {
-            return true;
-        }
-
-        return false;
     }
 }

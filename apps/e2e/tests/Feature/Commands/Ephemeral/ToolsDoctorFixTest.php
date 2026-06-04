@@ -10,8 +10,8 @@ pest()->group('e2e-feature', 'e2e-feature-operator_gateway_app-dev', 'e2e-featur
 it('repairs managed tool configuration drift from gateway intent', function (): void {
     $topology = e2eTopology(E2ETopologyKind::OperatorGatewayAppdev)
         ->withCurrentCheckout(roles: ['gateway']);
-    $configPath = '/tmp/orbit-e2e-redis.conf';
-    $configContent = "port 6379\nbind 127.0.0.1\n";
+    $configPath = '/tmp/orbit-e2e-opencode.json';
+    $configContent = "{\"hostname\":\"127.0.0.1\",\"port\":4096}\n";
 
     try {
         e2eRestartGatewayApi($topology, 'tools-doctor-fix');
@@ -43,7 +43,7 @@ it('repairs managed tool configuration drift from gateway intent', function (): 
 
         expect(trim($hash->output()))->toBe(hash('sha256', $configContent));
     } finally {
-        $topology->ssh('dev', 'sudo rm -f '.escapeshellarg($configPath).' /usr/local/bin/redis-server', timeoutSeconds: 60);
+        $topology->ssh('dev', 'sudo rm -f '.escapeshellarg($configPath).' /usr/local/bin/opencode', timeoutSeconds: 60);
         $topology->cleanup();
     }
 });
@@ -53,8 +53,8 @@ function toolsDoctorFixPrepareDevNode(E2ETopologyHarness $topology, string $conf
     $topology->ssh(
         'dev',
         sprintf(
-            'printf %s | sudo tee /usr/local/bin/redis-server >/dev/null && sudo chmod 0755 /usr/local/bin/redis-server && sudo rm -f %s',
-            escapeshellarg("#!/usr/bin/env bash\necho 'Redis server v=7.2.0'\n"),
+            'printf %s | sudo tee /usr/local/bin/opencode >/dev/null && sudo chmod 0755 /usr/local/bin/opencode && sudo rm -f %s',
+            escapeshellarg("#!/usr/bin/env bash\necho 'opencode 1.0.0'\n"),
             escapeshellarg($configPath),
         ),
         timeoutSeconds: 60,
@@ -71,7 +71,7 @@ function toolsDoctorFixSeedGatewayIntent(E2ETopologyHarness $topology, string $c
 \$node = \\App\\Models\\Node::query()->where('name', 'app-dev-1')->firstOrFail();
 
 \\App\\Models\\NodeTool::query()->updateOrCreate(
-    ['node_id' => \$node->id, 'name' => 'redis'],
+    ['node_id' => \$node->id, 'name' => 'opencode-server'],
     [
         'expected_state' => 'installed',
         'expected_version' => null,

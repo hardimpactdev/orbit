@@ -52,7 +52,7 @@ it('returns a ToolListResponse DTO with tools', function (): void {
             'success' => [
                 'data' => [
                     'tools' => [
-                        ['name' => 'redis', 'node' => 'app-1'],
+                        ['name' => 'composer', 'node' => 'app-1'],
                     ],
                 ],
             ],
@@ -66,6 +66,6 @@ it('returns a ToolListResponse DTO with tools', function (): void {
 
     expect($dto)->toBeInstanceOf(ToolListResponse::class);
     expect($dto->tools)->toBe([
-        ['name' => 'redis', 'node' => 'app-1'],
+        ['name' => 'composer', 'node' => 'app-1'],
     ]);
 });

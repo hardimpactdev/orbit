@@ -1,9 +1,8 @@
 # Tool Commands
 
 Tool commands manage node capabilities Orbit installs, updates, adopts,
-removes, configures, observes, and keeps available for runtime units. Tools are
-Orbit product concepts; package managers, binaries, containers, and services
-are backend details.
+removes, configures, observes, and keeps available for runtime units. A tool is
+not itself the lifecycle-managed runnable unit; processes own lifecycle.
 
 ## Domain Rules
 
@@ -11,27 +10,21 @@ These rules govern what the tool command family owns and what it may not touch.
 
 - The tool command family owns the `tool:*` command prefix.
 - `tool` is a state family. A gateway tool row is the expected state for one
-  tool instance on one node.
-- Tool rows include the node, tool name, instance id, expected capability
-  state, version family, expected version or config when the tool definition
-  tracks them, runtime family, install paths, and backend-specific probe and
-  repair settings.
+  installed or observed capability on one node.
+- Tool rows include the node, tool name, expected capability state, expected
+  version or config when the tool definition tracks them, install paths, and
+  backend-specific probe and repair settings.
 - CLI callers resolve input locally, then the gateway reads or writes configuration and
   performs node inspection or applies changes.
 - Some tools are observational, while others are managed by Orbit.
 - Tool reads use gateway-tracked configuration by default. Live node status is
   included only when a command explicitly requests live inspection or when
   doctor runs.
-- Tool definitions declare supported version families and runtime families.
-  Runtime support is platform-scoped: the runtime family plus `Node.platform`
-  resolves the concrete implementation. A runtime family may be declared by a
-  tool while still unsupported on a platform, such as `docker-swarm` on macOS
-  until that implementation exists.
+- Tool definitions may declare capability versions, install scripts,
+  reconfiguration scripts, credentials, probe metadata, and repair commands.
 - `tool:update` changes expected version configuration or updates a managed
-  tool instance to the latest supported version within the stored runtime. It
-  does not silently migrate an installed instance from `docker` to
-  `docker-swarm`; use the command contract that explicitly changes runtime
-  once that migration workflow exists.
+  host capability. It does not change process runtime, process version, or any
+  runnable service instance.
 - `tool:reconfigure` reruns a managed tool's configuration/setup flow without
   changing the intended version.
 - `tool:reload` reloads configuration without a full restart only when the tool
@@ -44,12 +37,10 @@ These rules govern what the tool command family owns and what it may not touch.
   flow needs to adopt node reality, it must use explicit
   `doctor --family=tool --adopt` semantics.
 - Credential-bearing managed capabilities use Orbit-owned generated secrets.
-  The default service username is `orbit` when the protocol has a username
-  concept.
-- Tool definitions may declare tool-owned service endpoints. HTTP and
-  WebSocket tool endpoints are represented as tool-owned `proxy` routes; TCP
-  service endpoints are WireGuard-only host/port records using the serving
-  node's WireGuard service address and are not HTTP proxy routes.
+- Tool definitions may declare tool-owned service endpoints for capability UIs.
+  HTTP and WebSocket tool endpoints are represented as tool-owned `proxy`
+  routes. TCP endpoints for runnable services such as databases and caches
+  belong to process definitions, not tool rows.
 - Tools supply capabilities that other domains depend on, but they do not own
   apps, workspaces, processes, schedules, custom proxy routes, or non-tool
   firewall policy.
@@ -81,7 +72,7 @@ tool-specific contracts live in [`catalog/`](catalog/README.md).
 | --- | --- | --- | --- | --- | --- |
 | [`caddy`](catalog/caddy.md) | Caddy | `orbit-caddy` Docker container | Role baseline where HTTP routing is needed, adopted and kept converged | `always` | process-backed lifecycle during migration, reload, reconfigure, update, logs, fix, adopt |
 | [`supervisor`](catalog/supervisor.md) | Supervisor | system service | Explicit residual runtime only where configured | `runtime` | capability probe, repair, reload where supported, adopt |
-| [`docker`](catalog/docker.md) | Docker | system service | Required baseline, adopted and kept converged | `always` | probe, fix, adopt, prerequisite for Docker-backed tools |
+| [`docker`](catalog/docker.md) | Docker | system service | Required baseline, adopted and kept converged | `always` | probe, fix, adopt, prerequisite for Docker-backed processes |
 | [`viteplus`](catalog/viteplus.md) | VitePlus | system binary | Role baseline tool for the `app-dev` and `app-prod` roles | `runtime` | probe, adopt |
 | [`php-cli`](catalog/php-cli.md) | PHP CLI | prebuilt static host binaries (dl.static-php.dev bulk preset) | Installable/updatable host toolchain on `app-dev` and `app-prod` | `runtime` | install, update, probe, adopt |
 | [`gh`](catalog/gh.md) | GitHub CLI | system binary | Role baseline tool for the `app-dev` and `app-prod` roles (repository cloning and deployment) | `runtime` | update, adopt |
@@ -89,9 +80,6 @@ tool-specific contracts live in [`catalog/`](catalog/README.md).
 | [`laravel-installer`](catalog/laravel-installer.md) | Laravel Installer | Composer global package (`laravel/installer`) | Installable/updatable/removable host toolchain on `app-dev` only | `runtime` | install, update, remove, adopt |
 | [`dns`](catalog/dns.md) | DNS | Docker service | Required infrastructure tool, adopted and kept converged | `infrastructure` | process-backed lifecycle during migration, update, logs, fix, adopt |
 | [`php`](catalog/php.md) | PHP images | FrankenPHP Docker image capability | Selected by app/workspace runtime configuration | `runtime` | image inventory, update, fix, adopt |
-| [`postgres`](catalog/postgres.md) | PostgreSQL | Docker service | Installable and removable by Orbit | `database` | install, remove, process-backed lifecycle during migration, update, logs, credentials, service endpoint, fix, adopt |
-| [`mysql`](catalog/mysql.md) | MySQL | Docker service | Installable and removable by Orbit | `database` | install, remove, process-backed lifecycle during migration, update, logs, credentials, service endpoint, fix, adopt |
-| [`redis`](catalog/redis.md) | Redis | Docker service | Installable and removable by Orbit | `cache` | install, remove, process-backed lifecycle during migration, update, logs, credentials, service endpoint, fix, adopt |
 | [`mailpit`](catalog/mailpit.md) | Mailpit | Docker service | Installable and removable by Orbit | `development` | install, remove, process-backed lifecycle during migration, update, logs, credentials, service endpoint, fix, adopt |
 | [`reverb`](catalog/reverb.md) | Reverb | Docker service | Compatibility tool; superseded by the `websocket` role for fleet realtime | `communication` | install, remove, process-backed lifecycle during migration, update, logs, credentials, service endpoint, fix, adopt |
 | [`rustfs`](catalog/rustfs.md) | RustFS | Docker runtime container | Role baseline tool for the `s3` role | `storage` | process-backed lifecycle during migration, update, logs, credentials, service endpoint, fix, adopt |
@@ -103,9 +91,9 @@ tool-specific contracts live in [`catalog/`](catalog/README.md).
 Required baseline tools are expected to exist as part of node provisioning or
 host bootstrap. `tool:install` does not create those tools from scratch unless
 a future tool definition explicitly changes their support model. Role baseline
-service tools, such as `rustfs`, are materialized by their owning role and may
-only be installed or reconverged through `tool:*` when the target node already
-has the required active role. Installable tools are provisioned by
+tools, such as `rustfs`, are materialized by their owning role and may only be
+installed or reconverged through `tool:*` when the target node already has the
+required active role. Installable tools are provisioned by
 `tool:install`, removed by `tool:remove`, and verified by
 `doctor --family=tool`.
 
@@ -127,38 +115,25 @@ the entity in the command result.
 
 ```json
 {
-  "name": "redis",
-  "instance": "default",
+  "name": "composer",
   "node": "app-1",
-  "expected_state": "running",
-  "observed_state": "running",
-  "version_family": "7",
-  "version": "7.2",
-  "runtime": "docker",
+  "expected_state": "installed",
+  "observed_state": null,
+  "version": "2.9.2",
   "managed": true,
-  "endpoints": [
-    {
-      "name": "redis",
-      "kind": "tcp",
-      "host": "10.6.0.12",
-      "port": 6379
-    }
-  ]
+  "endpoints": []
 }
 ```
 
 | Field | Type | Meaning |
 | --- | --- | --- |
 | `name` | string | Tool identity in Orbit's tool catalog. |
-| `instance` | string | Tool instance identity on the node. Single-instance tools use `default`. |
 | `node` | string | Node slug where the tool is expected. |
-| `expected_state` | string | Gateway-owned intended capability state, such as `installed`, `available`, or `absent`. During migration, some managed service tools may still expose transitional running-state compatibility here. |
+| `expected_state` | string | Gateway-owned intended capability state, such as `installed`, `available`, or `absent`. |
 | `observed_state` | string \| null | Last known or live observed state when the command includes it. Registry reads may return `null`. |
-| `version_family` | string \| null | Intended major or channel line when the tool definition tracks version families. |
 | `version` | string \| null | Intended or observed version when the tool definition tracks versions. |
-| `runtime` | string \| null | Stored runtime family for this installed instance, such as `docker` or `docker-swarm`. |
-| `managed` | boolean | Whether Orbit owns lifecycle/configuration for this tool on the node. |
-| `endpoints` | array | Non-secret service endpoint metadata declared by the tool definition. Omit or return an empty array when the tool declares no service endpoint. |
+| `managed` | boolean | Whether Orbit owns capability configuration for this tool on the node. |
+| `endpoints` | array | Non-secret endpoint metadata declared by the tool definition. Omit or return an empty array when the tool declares no endpoint. |
 
 ## Commands
 
@@ -184,8 +159,8 @@ These commands create or remove an installable tool on a node.
 ### Lifecycle
 
 These commands run, stop, restart, or inspect logs through a related managed
-process when one exists. They remain in the docs as compatibility surfaces while
-managed service tools migrate to process-backed lifecycle.
+process when one exists. They remain in the docs as compatibility surfaces for
+tool-associated processes; the long-term lifecycle owner is still `process:*`.
 
 5. [`orbit tool:start <tool>`](5_tool-start/tool-start.md)
 6. [`orbit tool:stop <tool>`](6_tool-stop/tool-stop.md)

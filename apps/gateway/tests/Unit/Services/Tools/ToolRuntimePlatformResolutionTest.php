@@ -2,73 +2,42 @@
 
 declare(strict_types=1);
 
-use App\Services\Tools\ToolCatalog;
-use App\Services\Tools\ToolRegistryFailure;
-use App\Services\Tools\ToolRuntimeSelection;
+use App\Enums\Processes\ProcessRuntime;
+use App\Http\Gateway\GatewayApiException;
+use App\Models\Node;
+use App\Services\Processes\ProcessServiceDefinitionRegistry;
+use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
-uses(TestCase::class);
+uses(TestCase::class, RefreshDatabase::class);
 
-describe('tool runtime platform resolution', function (): void {
-    it('normalizes recorded node platforms before resolving runtime implementations', function (
-        string $nodePlatform,
-        string $platformFamily,
-        string $implementationKey,
-    ): void {
-        $selection = ToolRuntimeSelection::resolve(
-            catalog: app(ToolCatalog::class),
-            tool: 'mysql',
-            runtime: 'docker',
-            platform: $nodePlatform,
-        );
-
-        expect($selection)->toBeInstanceOf(ToolRuntimeSelection::class)
-            ->and($selection->nodePlatform)->toBe($nodePlatform)
-            ->and($selection->platformFamily)->toBe($platformFamily)
-            ->and($selection->implementationKey)->toBe($implementationKey);
-    })->with([
-        'linux family' => ['linux', 'linux', 'docker/linux'],
-        'ubuntu family' => ['ubuntu', 'ubuntu', 'docker/ubuntu'],
-        'versioned ubuntu family' => ['ubuntu_24-04', 'ubuntu', 'docker/ubuntu'],
+it('keeps service process runtime selection independent of node tool platform rows', function (): void {
+    $node = Node::factory()->create([
+        'platform' => 'ubuntu_24-04',
+        'wireguard_address' => '10.6.0.44',
     ]);
 
-    it('resolves Linux Docker and Swarm implementations from versioned Ubuntu platforms', function (
-        string $runtime,
-        string $implementationKey,
-    ): void {
-        $selection = ToolRuntimeSelection::resolve(
-            catalog: app(ToolCatalog::class),
-            tool: 'mysql',
-            runtime: $runtime,
-            platform: 'ubuntu_24-04',
-        );
+    $definition = app(ProcessServiceDefinitionRegistry::class)->resolve(
+        definition: 'redis',
+        version: '7',
+        runtime: ProcessRuntime::DockerSwarm,
+        node: $node,
+        processName: 'redis',
+    );
 
-        expect($selection)->toBeInstanceOf(ToolRuntimeSelection::class)
-            ->and($selection->runtime)->toBe($runtime)
-            ->and($selection->nodePlatform)->toBe('ubuntu_24-04')
-            ->and($selection->platformFamily)->toBe('ubuntu')
-            ->and($selection->implementationKey)->toBe($implementationKey);
-    })->with([
-        'standalone docker' => ['docker', 'docker/ubuntu'],
-        'swarm docker' => ['docker-swarm', 'docker-swarm/ubuntu'],
-    ]);
-
-    it('rejects Swarm on macOS platforms before runtime side effects', function (): void {
-        $failure = ToolRuntimeSelection::resolve(
-            catalog: app(ToolCatalog::class),
-            tool: 'mysql',
-            runtime: 'docker-swarm',
-            platform: 'macos_15-4',
-        );
-
-        expect($failure)->toBeInstanceOf(ToolRegistryFailure::class)
-            ->and($failure->code)->toBe('tool.runtime_platform_unsupported')
-            ->and($failure->meta)->toMatchArray([
-                'tool' => 'mysql',
-                'runtime' => 'docker-swarm',
-                'platform' => 'macos_15-4',
-                'platform_family' => 'macos',
-                'implementation_key' => 'docker-swarm/macos',
-            ]);
-    });
+    expect($definition->runtimeConfig['image'])->toBe('redis:7.2')
+        ->and($definition->runtimeConfig['endpoint']['host'])->toBe('10.6.0.44')
+        ->and($definition->runtimeConfig['labels']['orbit.process.definition'])->toBe('redis');
 });
+
+it('rejects unsupported process definition runtimes through the process definition registry', function (): void {
+    $node = Node::factory()->create();
+
+    app(ProcessServiceDefinitionRegistry::class)->resolve(
+        definition: 'redis',
+        version: '7',
+        runtime: ProcessRuntime::Systemd,
+        node: $node,
+        processName: 'redis',
+    );
+})->throws(GatewayApiException::class, "Process definition 'redis' does not support runtime 'systemd'.");

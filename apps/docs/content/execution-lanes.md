@@ -358,9 +358,9 @@ inherit the lane of the production code they exercise.
 | `apps/gateway/app/Services/Security/SysctlBaselineInstaller.php:14` | `RemoteHostExecutor` | Writes host sysctl baseline and applies kernel settings. |
 | `apps/gateway/app/Services/Security/UnattendedUpgradesInstaller.php:15` | `RemoteHostExecutor` | Installs and configures host unattended-upgrades packages. |
 | `apps/gateway/app/Services/Tools/ToolInstaller.php:80,97` | `RemoteHostExecutor` | Runs catalog install and credential scripts on the host/tool substrate. |
-| `apps/gateway/app/Services/Tools/ToolLifecycleManager.php:85,144,185` | `RemoteHostExecutor` | Starts, stops, and restarts host/tool runtime commands. |
-| `apps/gateway/app/Services/Tools/ToolLogFollower.php:37` | `RemoteHostExecutor` | Streams host/tool logs through `RemoteShellStream`. |
-| `apps/gateway/app/Services/Tools/ToolLogReader.php:45` | `RemoteHostExecutor` | Reads host/tool logs. |
+| `apps/gateway/app/Services/Tools/ToolLifecycleManager.php:85,144,185` | `RemoteHostExecutor` | Compatibility adapter for start, stop, and restart requests that route to related process lifecycle. |
+| `apps/gateway/app/Services/Tools/ToolLogFollower.php:37` | `RemoteHostExecutor` | Streams logs for tool-related host capabilities or related process adapters through `RemoteShellStream`. |
+| `apps/gateway/app/Services/Tools/ToolLogReader.php:45` | `RemoteHostExecutor` | Reads logs for tool-related host capabilities or related process adapters. |
 | `apps/gateway/app/Services/Tools/ToolReconfigurer.php:68` | `RemoteHostExecutor` | Runs catalog reconfiguration scripts on the host/tool substrate. |
 | `apps/gateway/app/Services/Tools/ToolRemover.php:48` | `RemoteHostExecutor` | Runs catalog removal scripts on the host/tool substrate. |
 | `apps/gateway/app/Services/Tools/ToolsFixer.php:58,286,309,310` | `RemoteHostExecutor` | Repairs tool config, credentials, containers, and host agent user state. |

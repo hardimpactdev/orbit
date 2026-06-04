@@ -74,14 +74,14 @@ describe('ToolsFixer', function (): void {
     });
 
     it('rewrites managed config when the row contains complete content intent', function (): void {
-        $content = "port 6379\n";
+        $content = "address=/test/10.6.0.2\n";
         $node = createTestAppHostNode(['name' => 'app-1', 'status' => 'active']);
         $tool = NodeTool::factory()->create([
             'node_id' => $node->id,
-            'name' => 'redis',
+            'name' => 'dns',
             'config' => [
                 'managed_config' => [
-                    'path' => '/etc/redis/redis.conf',
+                    'path' => '/etc/orbit/dns.conf',
                     'hash' => hash('sha256', $content),
                     'content' => $content,
                 ],
@@ -93,10 +93,10 @@ describe('ToolsFixer', function (): void {
             family: 'tool',
             key: 'tool.config_mismatch',
             kind: DriftKind::Divergent,
-            summary: 'Tool redis managed configuration differs from gateway intent.',
+            summary: 'Tool dns managed configuration differs from gateway intent.',
             detail: [
-                'tool' => 'redis',
-                'path' => '/etc/redis/redis.conf',
+                'tool' => 'dns',
+                'path' => '/etc/orbit/dns.conf',
             ],
         ));
 
@@ -105,20 +105,20 @@ describe('ToolsFixer', function (): void {
             'node' => 'app-1',
             'key' => 'tool.config_mismatch',
             'status' => 'completed',
-        ])->and($shell->scripts[0])->toContain("sudo install -d -m 0755 '/etc/redis'")
-            ->and($shell->scripts[0])->toContain("base64 -d | sudo tee '/etc/redis/redis.conf' >/dev/null");
+        ])->and($shell->scripts[0])->toContain("sudo install -d -m 0755 '/etc/orbit'")
+            ->and($shell->scripts[0])->toContain("base64 -d | sudo tee '/etc/orbit/dns.conf' >/dev/null");
     });
 
     it('does not repair managed config when content does not match declared hash', function (): void {
         $node = createTestAppHostNode(['name' => 'app-1', 'status' => 'active']);
         $tool = NodeTool::factory()->create([
             'node_id' => $node->id,
-            'name' => 'redis',
+            'name' => 'dns',
             'config' => [
                 'managed_config' => [
-                    'path' => '/etc/redis/redis.conf',
+                    'path' => '/etc/orbit/dns.conf',
                     'hash' => str_repeat('a', 64),
-                    'content' => "port 6379\n",
+                    'content' => "address=/test/10.6.0.2\n",
                 ],
             ],
         ]);
@@ -128,8 +128,8 @@ describe('ToolsFixer', function (): void {
             family: 'tool',
             key: 'tool.config_missing',
             kind: DriftKind::Missing,
-            summary: 'Tool redis managed configuration is missing.',
-            detail: ['tool' => 'redis'],
+            summary: 'Tool dns managed configuration is missing.',
+            detail: ['tool' => 'dns'],
         ));
 
         expect($action)->toBeNull()
@@ -200,12 +200,12 @@ describe('ToolsFixer', function (): void {
             ->and($shell->scripts)->toBe([]);
     });
 
-    it('installs missing docker-managed tools through catalog install script', function (): void {
+    it('installs missing host tools through catalog install script', function (): void {
         $node = createTestAppHostNode(['name' => 'app-1', 'status' => 'active']);
         $tool = NodeTool::factory()->create([
             'node_id' => $node->id,
-            'name' => 'redis',
-            'expected_state' => 'running',
+            'name' => 'composer',
+            'expected_state' => 'installed',
         ]);
         $shell = new ToolsFixerRemoteShell;
 
@@ -213,8 +213,8 @@ describe('ToolsFixer', function (): void {
             family: 'tool',
             key: 'tool.capability_missing',
             kind: DriftKind::Missing,
-            summary: 'Tool redis is missing on the target node.',
-            detail: ['tool' => 'redis'],
+            summary: 'Tool composer is missing on the target node.',
+            detail: ['tool' => 'composer'],
         ));
 
         expect($action)->toMatchArray([
@@ -223,8 +223,8 @@ describe('ToolsFixer', function (): void {
             'key' => 'tool.capability_missing',
             'mode' => 'fix',
             'status' => 'completed',
-        ])->and($shell->scripts[0])->toContain("docker compose -f '/opt/orbit/docker-compose.yml' pull 'redis'")
-            ->and($shell->scripts[0])->toContain("docker compose -f '/opt/orbit/docker-compose.yml' up -d 'redis'");
+        ])->and($shell->scripts[0])->toContain('composer-setup.php')
+            ->and($shell->scripts[0])->toContain('sudo php composer-setup.php --install-dir=/usr/local/bin --filename=composer');
     });
 
     it('returns null for capability missing when no install script exists', function (): void {
@@ -638,26 +638,6 @@ final class ToolsFixerAgentToolDefinition implements ToolDefinition
     }
 
     public function latestSupportedVersion(): ?string
-    {
-        return null;
-    }
-
-    public function supportedRuntimes(): array
-    {
-        return [];
-    }
-
-    public function defaultRuntime(): ?string
-    {
-        return null;
-    }
-
-    public function supportedVersionFamilies(): array
-    {
-        return [];
-    }
-
-    public function resolveVersionRequest(string $version): ?array
     {
         return null;
     }

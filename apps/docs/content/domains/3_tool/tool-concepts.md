@@ -20,16 +20,9 @@ These terms define the core vocabulary used across tool command contracts and th
 - **Tool definition:** Per-tool catalog entry that declares the tool's support
   model, role and platform eligibility, managed artifacts, service endpoints,
   credential behavior, and supported tool actions.
-- **Tool runtime family:** Catalog-declared backend family such as `docker` or
-  `docker-swarm`. The runtime family plus `Node.platform` resolves the concrete
-  implementation used on a node.
-- **Tool version family:** Catalog-declared major or channel line, such as
-  `7`, `8`, or `latest`. A specific version belongs to exactly one version
-  family when the tool tracks versions.
-- **Tool instance:** One installed version-family/runtime realization of a tool
-  on a node. Single-instance tools use the stable instance id `default`;
-  multi-instance tools require an explicit instance id when a command cannot
-  infer the target.
+- Service process definitions belong to the process family. Service version,
+  runtime, endpoint, credentials, lifecycle, and logs belong to the process row
+  produced from the definition, not to a tool row.
 - **Tool category:** Catalog-declared classification for a tool, such as
   `always`, `runtime`, `database`, `cache`, `development`, `communication`,
   `infrastructure`, `storage`, or `agent`. Used by authorization and routing
@@ -42,9 +35,8 @@ These terms define the core vocabulary used across tool command contracts and th
   the `agent` node role and run as the shared unprivileged
   `agent` user.
 - **Tool row:** Gateway-owned record of expected state for one tool on one
-  node and instance, including expected capability state, version family,
-  expected version when tracked, runtime family, install paths, and probe and
-  repair settings.
+  node, including expected capability state, expected version when tracked,
+  install paths, and probe and repair settings.
 
 ## Support Models
 
@@ -91,8 +83,8 @@ These terms describe the network surfaces a tool may declare.
   WireGuard-only host/port records that use the serving node's WireGuard
   service address.
 - **Tool credentials:** Orbit-owned generated secrets for credential-bearing
-  managed service tools. The default service username is `orbit` when the
-  protocol has a username concept.
+  tools. Credentials for runnable service instances belong to the owning
+  process definition or process runtime configuration.
 
 ## Boundaries
 

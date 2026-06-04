@@ -11,7 +11,6 @@ final class ToolStopCommand extends ToolActionCommand
         {tool? : Tool catalog name to stop}
         {--app= : Resolve target by app selector}
         {--node= : Resolve target by node}
-        {--instance= : Tool instance selector}
         {--json : Output JSON}';
 
     #[\Override]

@@ -6,7 +6,7 @@ namespace App\Services\WebSockets;
 
 use App\Enums\Nodes\NodeRoleName;
 use App\Models\Node;
-use App\Models\NodeTool;
+use App\Models\Process;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
 
 final readonly class WebSocketRedisResolver
@@ -31,10 +31,9 @@ final readonly class WebSocketRedisResolver
             return null;
         }
 
-        $hasRedis = NodeTool::query()
-            ->where('node_id', $node->id)
-            ->where('name', 'redis')
-            ->whereIn('expected_state', ['installed', 'running'])
+        $hasRedis = Process::query()
+            ->ownedBy($node)
+            ->where('runtime_config->definition', 'redis')
             ->exists();
 
         return $hasRedis ? $node : null;
