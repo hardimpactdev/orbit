@@ -9,6 +9,7 @@ use App\Models\App;
 use App\Models\DatabaseConnectionTarget;
 use App\Models\Node;
 use App\Models\Workspace;
+use App\Services\Nodes\NodeWireGuardServiceAddress;
 use RuntimeException;
 
 final readonly class DatabaseConnectionRestorer
@@ -17,6 +18,7 @@ final readonly class DatabaseConnectionRestorer
         private EnvFileEditor $envFileEditor,
         private DatabaseConnectionEnvMapper $envMapper,
         private RemoteShell $remoteShell,
+        private NodeWireGuardServiceAddress $serviceAddress,
     ) {}
 
     public function restore(DatabaseConnectionTarget $target): void
@@ -55,12 +57,17 @@ final readonly class DatabaseConnectionRestorer
     private function expectedEnvValues(DatabaseConnectionTarget $target): array
     {
         $connection = $target->connection;
+        $host = $connection->host;
+
+        if ($connection->driver !== 'sqlite' && $connection->node instanceof Node) {
+            $host = $this->serviceAddress->forServiceOn($connection->node, $this->targetNode($target), $connection->driver);
+        }
 
         return $this->envMapper->toEnvValues(
             $target->env_prefix,
             DatabaseConnectionPayload::fromArray([
                 'driver' => $connection->driver,
-                'host' => $connection->host,
+                'host' => $host,
                 'port' => $connection->port,
                 'database' => $connection->database,
                 'path' => $connection->path,

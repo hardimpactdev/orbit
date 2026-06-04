@@ -60,6 +60,42 @@ ENV);
             ->toContain('DB_PASSWORD=secret');
     });
 
+    it('writes managed database hosts as the owner node WireGuard service address', function (): void {
+        $appNode = Node::factory()->gateway()->create(['status' => 'active']);
+        $databaseNode = Node::factory()->database()->create([
+            'name' => 'database-1',
+            'wireguard_address' => '10.6.0.7',
+        ]);
+        $path = storage_path('framework/testing/database-restorer-managed-host');
+        File::ensureDirectoryExists($path);
+        File::put($path.'/.env', "DB_CONNECTION=pgsql\nDB_HOST=localhost\n");
+
+        $app = App::factory()->create([
+            'node_id' => $appNode->id,
+            'path' => $path,
+        ]);
+        $connection = DatabaseConnection::factory()->create([
+            'node_id' => $databaseNode->id,
+            'driver' => 'pgsql',
+            'host' => 'postgres.orbit',
+            'port' => 5432,
+            'database' => 'docs',
+            'username' => 'orbit',
+            'credentials' => ['password' => 'secret'],
+        ]);
+        $target = DatabaseConnectionTarget::factory()->forApp($app)->create([
+            'database_connection_id' => $connection->id,
+            'env_prefix' => 'DB',
+        ]);
+
+        app(DatabaseConnectionRestorer::class)->restore($target);
+
+        expect(File::get($path.'/.env'))
+            ->toContain('DB_HOST=10.6.0.7')
+            ->not->toContain('DB_HOST=localhost')
+            ->not->toContain('DB_HOST=postgres.orbit');
+    });
+
     it('writes remote env content through base64-safe transport', function (): void {
         $node = Node::factory()->appDev()->create(['status' => 'active']);
         $app = App::factory()->create(['node_id' => $node->id, 'name' => 'docs']);

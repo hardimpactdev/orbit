@@ -25,6 +25,10 @@ touch.
   workspace `.env` files.
 - Database restore writes gateway-owned values into selected app and workspace
   `.env` files while preserving unrelated keys and comments.
+- For node-owned MySQL and PostgreSQL connections, database restore and doctor
+  comparisons materialize `*_HOST` as the owning node's WireGuard service
+  address, even when the consuming app or workspace is on that same node.
+  External connections without an owning node keep their stored host value.
 - Database adopt reads observed `.env` values by supported prefixes, creates or
   updates reusable connection records, creates or updates target mappings, and
   stores adopted passwords in encrypted credentials.

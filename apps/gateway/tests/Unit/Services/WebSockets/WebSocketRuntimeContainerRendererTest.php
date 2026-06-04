@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Data\Nodes\RoleSettings\WebSocketRoleSettings;
 use App\Models\Node;
 use App\Models\NodeTool;
+use App\Services\Nodes\NodeWireGuardServiceAddress;
 use App\Services\Runtime\DockerCommandBuilder;
 use App\Services\Runtime\OrbitContainerNames;
 use App\Services\WebSockets\WebSocketBackendName;
@@ -23,6 +24,7 @@ function websocketRuntimeRenderer(): WebSocketRuntimeContainerRenderer
         new OrbitContainerNames,
         new WebSocketBackendName,
         app(WebSocketRedisResolver::class),
+        app(NodeWireGuardServiceAddress::class),
     );
 }
 
@@ -86,6 +88,21 @@ it('renders Reverb env with a private WireGuard bind and Redis service config', 
         ->not->toContain('REVERB_SERVER_HOST=0.0.0.0')
         ->not->toContain('app-dev-1.example.com')
         ->not->toContain('.websocket.orbit');
+});
+
+it('uses the Redis owner WireGuard service address for same-node Redis access', function (): void {
+    $node = websocketRuntimeRedisNode([
+        'name' => 'app-dev-1',
+        'host' => 'app-dev-1.example.com',
+        'wireguard_address' => '10.6.0.44',
+    ]);
+
+    $env = websocketRuntimeRenderer()->env($node, websocketRuntimeSettings($node));
+
+    expect($env)
+        ->toContain('REDIS_HOST=10.6.0.44')
+        ->not->toContain('REDIS_HOST=127.0.0.1')
+        ->not->toContain('REDIS_HOST=redis');
 });
 
 it('renders a deterministic WebSocket runtime container', function (): void {
@@ -221,6 +238,15 @@ it('throws when the configured Redis node has no WireGuard address', function ()
     $node = websocketRuntimeNode();
     $redisNode = websocketRuntimeRedisNode(['wireguard_address' => null]);
 
-    expect(fn () => websocketRuntimeRenderer()->env($node, websocketRuntimeSettings($redisNode)))
-        ->toThrow(RuntimeException::class, 'The websocket role requires the Redis node to have a WireGuard address.');
+    $exception = null;
+
+    try {
+        websocketRuntimeRenderer()->env($node, websocketRuntimeSettings($redisNode));
+    } catch (RuntimeException $caught) {
+        $exception = $caught;
+    }
+
+    expect($exception)->toBeInstanceOf(RuntimeException::class)
+        ->and($exception?->getMessage())->toContain('redis-1')
+        ->and($exception?->getMessage())->toContain('redis');
 });

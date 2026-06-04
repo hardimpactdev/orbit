@@ -10,6 +10,7 @@ use App\Models\DatabaseConnection;
 use App\Models\DatabaseConnectionTarget;
 use App\Models\Node;
 use App\Models\Workspace;
+use App\Services\Nodes\NodeWireGuardServiceAddress;
 
 final readonly class DatabaseConnectionProbe
 {
@@ -23,6 +24,7 @@ final readonly class DatabaseConnectionProbe
         private EnvFileEditor $envFileEditor,
         private DatabaseConnectionEnvMapper $envMapper,
         private RemoteShell $remoteShell,
+        private NodeWireGuardServiceAddress $serviceAddress,
     ) {}
 
     /**
@@ -114,12 +116,17 @@ final readonly class DatabaseConnectionProbe
     private function expectedEnvValues(DatabaseConnectionTarget $target): array
     {
         $connection = $target->connection;
+        $host = $connection->host;
+
+        if ($connection->driver !== 'sqlite' && $connection->node instanceof Node) {
+            $host = $this->serviceAddress->forServiceOn($connection->node, $this->targetNode($target), $connection->driver);
+        }
 
         return $this->envMapper->toEnvValues(
             $target->env_prefix,
             DatabaseConnectionPayload::fromArray([
                 'driver' => $connection->driver,
-                'host' => $connection->host,
+                'host' => $host,
                 'port' => $connection->port,
                 'database' => $connection->database,
                 'path' => $connection->path,
@@ -135,7 +142,7 @@ final readonly class DatabaseConnectionProbe
     private function targetsForNode(Node $node): array
     {
         return DatabaseConnectionTarget::query()
-            ->with(['connection', 'app.node', 'workspace.app.node'])
+            ->with(['connection.node', 'app.node', 'workspace.app.node'])
             ->where(function ($query) use ($node): void {
                 $query
                     ->whereHas('app', fn ($appQuery) => $appQuery->where('node_id', $node->id))
@@ -143,6 +150,19 @@ final readonly class DatabaseConnectionProbe
             })
             ->get()
             ->all();
+    }
+
+    private function targetNode(DatabaseConnectionTarget $target): Node
+    {
+        if ($target->app instanceof App && $target->app->node instanceof Node) {
+            return $target->app->node;
+        }
+
+        if ($target->workspace instanceof Workspace && $target->workspace->app instanceof App && $target->workspace->app->node instanceof Node) {
+            return $target->workspace->app->node;
+        }
+
+        throw new \RuntimeException('Database connection target has no owning node.');
     }
 
     /**
@@ -384,8 +404,17 @@ final readonly class DatabaseConnectionProbe
         }
 
         $password = $connection->credentials['password'] ?? null;
+        $host = $connection->host;
 
-        return $connection->host === $payload->host
+        if ($connection->node instanceof Node) {
+            try {
+                $host = $this->serviceAddress->forServiceOn($connection->node, $node, $connection->driver);
+            } catch (\RuntimeException) {
+                return false;
+            }
+        }
+
+        return $host === $payload->host
             && $connection->port === $payload->port
             && $connection->database === $payload->database
             && $connection->username === $payload->username

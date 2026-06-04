@@ -86,6 +86,41 @@ describe('DatabaseConnectionProbe', function (): void {
             ->and(json_encode($issue, JSON_THROW_ON_ERROR))->not->toContain('observed-secret');
     });
 
+    it('expects managed database hosts to use the owner node WireGuard service address', function (): void {
+        $appNode = Node::factory()->gateway()->create(['name' => 'gateway-1', 'status' => 'active']);
+        $databaseNode = Node::factory()->database()->create([
+            'name' => 'database-1',
+            'wireguard_address' => '10.6.0.7',
+        ]);
+        $path = storage_path('framework/testing/database-probe-managed-host');
+        File::ensureDirectoryExists($path);
+        File::put($path.'/.env', "DB_CONNECTION=pgsql\nDB_HOST=10.6.0.7\nDB_PORT=5432\nDB_DATABASE=docs\nDB_USERNAME=orbit\nDB_PASSWORD=secret\n");
+
+        $app = App::factory()->create([
+            'node_id' => $appNode->id,
+            'name' => 'docs',
+            'path' => $path,
+        ]);
+        $connection = DatabaseConnection::factory()->create([
+            'node_id' => $databaseNode->id,
+            'slug' => 'docs',
+            'driver' => 'pgsql',
+            'host' => 'postgres.orbit',
+            'port' => 5432,
+            'database' => 'docs',
+            'username' => 'orbit',
+            'credentials' => ['password' => 'secret'],
+        ]);
+        DatabaseConnectionTarget::factory()->forApp($app)->create([
+            'database_connection_id' => $connection->id,
+            'env_prefix' => 'DB',
+        ]);
+
+        $issues = app(DatabaseConnectionProbe::class)->probe($appNode);
+
+        expect($issues)->toBe([]);
+    });
+
     it('reads remote env files through remote shell for hosted workspaces', function (): void {
         $node = Node::factory()->appDev()->create(['name' => 'app-1', 'status' => 'active']);
         $app = App::factory()->create(['node_id' => $node->id, 'name' => 'docs']);
@@ -233,6 +268,43 @@ ENV);
 
         expect($issue)->not->toBeNull()
             ->and($issue['detail']['database_connection_id'] ?? null)->toBe($connection->id)
+            ->and($issue['detail']['connection'] ?? null)->toBe('docs');
+    });
+
+    it('matches missing target mappings for managed database hosts by owner WireGuard address', function (): void {
+        $appNode = Node::factory()->gateway()->create(['name' => 'gateway-1', 'status' => 'active']);
+        $databaseNode = Node::factory()->database()->create([
+            'name' => 'database-1',
+            'wireguard_address' => '10.6.0.7',
+        ]);
+        $path = storage_path('framework/testing/database-probe-target-missing-managed-host');
+        File::ensureDirectoryExists($path);
+        File::put($path.'/.env', "DB_CONNECTION=pgsql\nDB_HOST=10.6.0.7\nDB_PORT=5432\nDB_DATABASE=docs\nDB_USERNAME=orbit\nDB_PASSWORD=secret\n");
+
+        App::factory()->create([
+            'node_id' => $appNode->id,
+            'name' => 'docs',
+            'path' => $path,
+        ]);
+        $connection = DatabaseConnection::factory()->create([
+            'node_id' => $databaseNode->id,
+            'slug' => 'docs',
+            'driver' => 'pgsql',
+            'host' => 'postgres.orbit',
+            'port' => 5432,
+            'database' => 'docs',
+            'username' => 'orbit',
+            'credentials' => ['password' => 'secret'],
+        ]);
+
+        $issues = collect(app(DatabaseConnectionProbe::class)->probe($appNode));
+
+        expect($issues->pluck('key')->all())->toContain('database_connection.target_missing')
+            ->not->toContain('database_connection.env_extra');
+
+        $issue = $issues->firstWhere('key', 'database_connection.target_missing');
+
+        expect($issue['detail']['database_connection_id'] ?? null)->toBe($connection->id)
             ->and($issue['detail']['connection'] ?? null)->toBe('docs');
     });
 

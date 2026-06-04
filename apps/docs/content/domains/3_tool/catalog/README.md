@@ -29,7 +29,8 @@ generation, persistence, repair, and credential rendering.
 HTTP and WebSocket tools expose tool-owned `proxy` routes, such as
 `mailpit.<node-tld>`. TCP tools expose WireGuard-only service endpoints on the
 serving node's WireGuard service address, such as `10.6.0.12:5432`, and must
-not be represented as HTTP proxy routes.
+be protected by Orbit-managed firewall policy rather than represented as HTTP
+proxy routes.
 
 Catalog placeholders such as `<node-tld>` and `<agent-tld>` are contextual
 references to that same node-level TLD field. Use `<node-tld>` for generic

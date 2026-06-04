@@ -6,6 +6,7 @@ namespace App\Services\WebSockets;
 
 use App\Data\Nodes\RoleSettings\WebSocketRoleSettings;
 use App\Models\Node;
+use App\Services\Nodes\NodeWireGuardServiceAddress;
 use App\Services\Runtime\OrbitContainerNames;
 use InvalidArgumentException;
 use RuntimeException;
@@ -16,6 +17,7 @@ class WebSocketRuntimeContainerRenderer
         private readonly OrbitContainerNames $names,
         private readonly WebSocketBackendName $backendName,
         private readonly WebSocketRedisResolver $redisResolver,
+        private readonly NodeWireGuardServiceAddress $serviceAddress,
     ) {}
 
     public function render(
@@ -26,7 +28,7 @@ class WebSocketRuntimeContainerRenderer
     ): WebSocketRuntimeContainer {
         $wireGuardAddress = $this->wireGuardAddress($node);
         $backendName = $this->backendName->forNode($node);
-        $redisAddress = $this->redisAddress($settings);
+        $redisAddress = $this->redisAddress($settings, $node);
 
         return new WebSocketRuntimeContainer(
             name: $this->containerName($node),
@@ -120,7 +122,7 @@ class WebSocketRuntimeContainerRenderer
         return $wireGuardAddress;
     }
 
-    private function redisAddress(WebSocketRoleSettings $settings): string
+    private function redisAddress(WebSocketRoleSettings $settings, Node $node): string
     {
         $redisNode = $this->redisResolver->usableRedisNode($settings->redisNodeId);
 
@@ -128,13 +130,7 @@ class WebSocketRuntimeContainerRenderer
             throw new RuntimeException('The websocket role requires an active Redis node before runtime config can be rendered.');
         }
 
-        $wireGuardAddress = trim((string) $redisNode->wireguard_address);
-
-        if ($wireGuardAddress === '') {
-            throw new RuntimeException('The websocket role requires the Redis node to have a WireGuard address.');
-        }
-
-        return $wireGuardAddress;
+        return $this->serviceAddress->forServiceOn($redisNode, $node, 'redis');
     }
 
     private function normalizeSourcePath(string $sourcePath): string
