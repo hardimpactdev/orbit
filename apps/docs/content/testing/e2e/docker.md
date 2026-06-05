@@ -218,8 +218,8 @@ Docker topologies are disposable containers seeded from per-role prepared images
 They are useful for fast command, registry, gateway API, CA trust,
 HTTPS-verification, and forwarding assertions where command behavior is the
 thing under test. Tests that require real SSH daemon behavior, sudo prompts,
-OS trust-store mutation, systemd units, package installation, cloud-init,
-WireGuard interfaces, WireGuard peer routing, or VM networking must require VM
+OS trust-store mutation, systemd units, package installation, WireGuard
+interfaces, WireGuard peer routing, or VM networking must require VM
 capabilities so the provider pool refuses Docker.
 
 The Docker topology build context intentionally includes the local `vendor/`

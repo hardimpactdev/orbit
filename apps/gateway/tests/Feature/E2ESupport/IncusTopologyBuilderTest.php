@@ -93,8 +93,8 @@ function incusTopologyBuilderConfig(): E2EConfig
         providerNames: ['incus'],
         topologyProviderNames: ['incus'],
         host: 'beast',
-        sourceImage: 'images:ubuntu/26.04/cloud',
-        baseImage: 'orbit-base-ubuntu-26.04',
+        sourceImage: 'images:ubuntu/26.04',
+        baseImage: 'orbit-base-ubuntu-26.04-runtime',
         bootstrapUser: 'provisioner',
         operatorUser: 'operator',
         instancePrefix: 'orbit-e2e',
@@ -329,7 +329,6 @@ it('builds full prepared roles from the gateway base with parallel downstream ba
         $host = m::mock(IncusHost::class, [$config])->makePartial();
         $host->shouldReceive('imageExists')->with($config->baseImage)->andReturn(true);
         $host->shouldReceive('instanceExists')->andReturn(false);
-        $host->shouldReceive('waitForCloudInit')->times(2);
         $host->shouldReceive('provisionInstance')->with('orbit-template-operator-base', 'operator', '/tmp/orbit-e2e-bundle-test', 'operator')->once()->andReturn(incusTopologyBuilderProcessResult());
         $host->shouldReceive('provisionInstance')->with('orbit-template-gateway-base', 'gateway', '/tmp/orbit-e2e-bundle-test')->once()->andReturn(incusTopologyBuilderProcessResult());
         $host->shouldReceive('stopInstance')->times(8)->andReturn(incusTopologyBuilderProcessResult());
@@ -407,9 +406,9 @@ it('builds full prepared roles from the gateway base with parallel downstream ba
                 fn ($template) => $template->role->toBe('prod')->snapshot->toBe('clean-operator_gateway_app-dev_app-prod_agent-base'),
                 fn ($template) => $template->role->toBe('agent')->snapshot->toBe('clean-operator_gateway_app-dev_app-prod_agent-base'),
             )
-            ->and($commandOutput)->toContain("incus launch 'orbit-base-ubuntu-26.04' 'orbit-template-app-dev-base'")
-            ->and($commandOutput)->toContain("incus launch 'orbit-base-ubuntu-26.04' 'orbit-template-app-prod-base'")
-            ->and($commandOutput)->toContain("incus launch 'orbit-base-ubuntu-26.04' 'orbit-template-agent-base'")
+            ->and($commandOutput)->toContain("incus launch 'orbit-base-ubuntu-26.04-runtime' 'orbit-template-app-dev-base'")
+            ->and($commandOutput)->toContain("incus launch 'orbit-base-ubuntu-26.04-runtime' 'orbit-template-app-prod-base'")
+            ->and($commandOutput)->toContain("incus launch 'orbit-base-ubuntu-26.04-runtime' 'orbit-template-agent-base'")
             ->and($commandOutput)->toContain('/tmp/orbit-e2e-prepared-downstream-roles.sh')
             ->and($commandOutput)->toContain('PID_PREPARE_DEV=$!')
             ->and($commandOutput)->toContain('PID_PREPARE_PROD=$!')
@@ -487,7 +486,6 @@ it('builds full prepared websocket roles on the app-dev node', function (): void
         $host = m::mock(IncusHost::class, [$config])->makePartial();
         $host->shouldReceive('imageExists')->with($config->baseImage)->andReturn(true);
         $host->shouldReceive('instanceExists')->andReturn(false);
-        $host->shouldReceive('waitForCloudInit')->times(2);
         $host->shouldReceive('provisionInstance')->with('orbit-template-operator-base', 'operator', '/tmp/orbit-e2e-bundle-test', 'operator')->once()->andReturn(incusTopologyBuilderProcessResult());
         $host->shouldReceive('provisionInstance')->with('orbit-template-gateway-base', 'gateway', '/tmp/orbit-e2e-bundle-test')->once()->andReturn(incusTopologyBuilderProcessResult());
         $host->shouldReceive('stopInstance')->times(8)->andReturn(incusTopologyBuilderProcessResult());
@@ -569,7 +567,7 @@ it('builds full prepared websocket roles on the app-dev node', function (): void
                 fn ($template) => $template->role->toBe('prod')->snapshot->toBe('clean-operator_gateway_app-dev_app-prod_agent_websocket-base'),
                 fn ($template) => $template->role->toBe('agent')->snapshot->toBe('clean-operator_gateway_app-dev_app-prod_agent_websocket-base'),
             )
-            ->and($commandOutput)->not->toContain("incus launch 'orbit-base-ubuntu-26.04' 'orbit-template-websocket-base'")
+            ->and($commandOutput)->not->toContain("incus launch 'orbit-base-ubuntu-26.04-runtime' 'orbit-template-websocket-base'")
             ->and($commandOutput)->toContain('orbit-gateway:prepared-current')
             ->and($commandOutput)->toContain('artisan orbit:internal:bake-websocket-node')
             ->and($commandOutput)->toContain('PID_BAKE_WEBSOCKET=$!')
@@ -646,7 +644,6 @@ it('keeps successful app-dev agent and websocket checkpoints when app production
         $host = m::mock(IncusHost::class, [$config])->makePartial();
         $host->shouldReceive('imageExists')->with($config->baseImage)->andReturn(true);
         $host->shouldReceive('instanceExists')->andReturn(false);
-        $host->shouldReceive('waitForCloudInit')->zeroOrMoreTimes();
         $host->shouldReceive('provisionInstance')->with('orbit-template-operator-base', 'operator', '/tmp/orbit-e2e-bundle-test', 'operator')->once()->andReturn(incusTopologyBuilderProcessResult());
         $host->shouldReceive('provisionInstance')->with('orbit-template-gateway-base', 'gateway', '/tmp/orbit-e2e-bundle-test')->once()->andReturn(incusTopologyBuilderProcessResult());
         $host->shouldReceive('stopInstance')->zeroOrMoreTimes()->andReturn(incusTopologyBuilderProcessResult());
@@ -783,7 +780,6 @@ it('reuses valid app production and agent checkpoints while retrying missing app
         $host->shouldReceive('instanceExists')->andReturn(false);
         $host->shouldReceive('stopInstancesIfRunning')->once()->andReturn(incusTopologyBuilderProcessResult());
         $host->shouldReceive('startInstancesIfStopped')->once()->andReturn(incusTopologyBuilderProcessResult());
-        $host->shouldReceive('waitForCloudInit')->never();
         $host->shouldReceive('stopInstance')->zeroOrMoreTimes()->andReturn(incusTopologyBuilderProcessResult());
         $host->shouldReceive('snapshotInstance')->zeroOrMoreTimes()->andReturn(incusTopologyBuilderProcessResult());
         $host->shouldReceive('writeTextFile')->zeroOrMoreTimes()->andReturn(incusTopologyBuilderProcessResult());
@@ -837,9 +833,9 @@ it('reuses valid app production and agent checkpoints while retrying missing app
         $commandOutput = implode("\n", $commands);
 
         expect(array_column($manifest, 'role'))->toBe(['operator', 'gateway', 'dev', 'prod', 'agent'])
-            ->and($commandOutput)->toContain("incus launch 'orbit-base-ubuntu-26.04' 'orbit-template-app-dev-base'")
-            ->and($commandOutput)->not->toContain("incus launch 'orbit-base-ubuntu-26.04' 'orbit-template-app-prod-base'")
-            ->and($commandOutput)->not->toContain("incus launch 'orbit-base-ubuntu-26.04' 'orbit-template-agent-base'")
+            ->and($commandOutput)->toContain("incus launch 'orbit-base-ubuntu-26.04-runtime' 'orbit-template-app-dev-base'")
+            ->and($commandOutput)->not->toContain("incus launch 'orbit-base-ubuntu-26.04-runtime' 'orbit-template-app-prod-base'")
+            ->and($commandOutput)->not->toContain("incus launch 'orbit-base-ubuntu-26.04-runtime' 'orbit-template-agent-base'")
             ->and($commandOutput)->toContain('PID_PREPARE_DEV=$!')
             ->and($commandOutput)->not->toContain('PID_PREPARE_PROD=$!')
             ->and($commandOutput)->not->toContain('PID_PREPARE_AGENT=$!')
@@ -899,7 +895,6 @@ it('retries websocket bake when all concrete role checkpoints are valid but the 
         $host->shouldReceive('instanceExists')->andReturn(false);
         $host->shouldReceive('stopInstancesIfRunning')->once()->andReturn(incusTopologyBuilderProcessResult());
         $host->shouldReceive('startInstancesIfStopped')->once()->andReturn(incusTopologyBuilderProcessResult());
-        $host->shouldReceive('waitForCloudInit')->never();
         $host->shouldReceive('stopInstance')->zeroOrMoreTimes()->andReturn(incusTopologyBuilderProcessResult());
         $host->shouldReceive('snapshotInstance')->zeroOrMoreTimes()->andReturn(incusTopologyBuilderProcessResult());
         $host->shouldReceive('writeTextFile')->zeroOrMoreTimes()->andReturn(incusTopologyBuilderProcessResult());
@@ -1067,7 +1062,6 @@ it('records phase timings while building topology templates', function (): void 
     $host = m::mock(IncusHost::class, [$config])->makePartial();
     $host->shouldReceive('imageExists')->with($config->baseImage)->andReturn(true);
     $host->shouldReceive('instanceExists')->with('orbit-template-operator-base')->andReturn(false);
-    $host->shouldReceive('waitForCloudInit')->with('orbit-template-operator-base')->once();
     $host->shouldReceive('provisionInstance')
         ->with('orbit-template-operator-base', 'operator', '/tmp/orbit-e2e-bundle-test', 'operator')
         ->once()
@@ -1097,7 +1091,7 @@ it('records phase timings while building topology templates', function (): void 
         ->and($eventNames)->toContain('workdir')
         ->and($eventNames)->toContain('ssh-key')
         ->and($eventNames)->toContain('operator.launch')
-        ->and($eventNames)->toContain('operator.cloud-init')
+        ->and($eventNames)->toContain('operator.agent.ready')
         ->and($eventNames)->toContain('operator.provision')
         ->and($eventNames)->toContain('operator.provisioning-ssh-key')
         ->and($eventNames)->toContain('operator.identity')
@@ -1118,7 +1112,6 @@ it('builds prepared topology templates through staged internal gateway baking', 
     $host = m::mock(IncusHost::class, [$config])->makePartial();
     $host->shouldReceive('imageExists')->with($config->baseImage)->andReturn(true);
     $host->shouldReceive('instanceExists')->andReturn(false);
-    $host->shouldReceive('waitForCloudInit')->times(2);
     $host->shouldReceive('provisionInstance')->with('orbit-template-operator-base', 'operator', '/tmp/orbit-e2e-bundle-test', 'operator')->once()->andReturn(incusTopologyBuilderProcessResult());
     $host->shouldReceive('stopInstance')->times(8)->andReturn(incusTopologyBuilderProcessResult());
     $host->shouldReceive('snapshotInstance')->times(8)->andReturn(incusTopologyBuilderProcessResult());
@@ -1197,11 +1190,11 @@ it('builds prepared topology templates through staged internal gateway baking', 
             'name' => 'orbit-template-agent-base',
             'snapshot' => 'clean-operator_gateway_app-dev_app-prod_agent-base',
         ],
-    ])->and($commandOutput)->toContain("incus launch 'orbit-base-ubuntu-26.04' 'orbit-template-operator-base'")
-        ->and($commandOutput)->toContain("incus launch 'orbit-base-ubuntu-26.04' 'orbit-template-gateway-base'")
-        ->and($commandOutput)->toContain("incus launch 'orbit-base-ubuntu-26.04' 'orbit-template-app-dev-base'")
-        ->and($commandOutput)->toContain("incus launch 'orbit-base-ubuntu-26.04' 'orbit-template-app-prod-base'")
-        ->and($commandOutput)->toContain("incus launch 'orbit-base-ubuntu-26.04' 'orbit-template-agent-base'")
+    ])->and($commandOutput)->toContain("incus launch 'orbit-base-ubuntu-26.04-runtime' 'orbit-template-operator-base'")
+        ->and($commandOutput)->toContain("incus launch 'orbit-base-ubuntu-26.04-runtime' 'orbit-template-gateway-base'")
+        ->and($commandOutput)->toContain("incus launch 'orbit-base-ubuntu-26.04-runtime' 'orbit-template-app-dev-base'")
+        ->and($commandOutput)->toContain("incus launch 'orbit-base-ubuntu-26.04-runtime' 'orbit-template-app-prod-base'")
+        ->and($commandOutput)->toContain("incus launch 'orbit-base-ubuntu-26.04-runtime' 'orbit-template-agent-base'")
         ->and($commandOutput)->not->toContain('orbit-template-operator_gateway_app-dev_app-prod-operator-base')
         ->and($commandOutput)->not->toContain('orbit node:new gateway-1')
         ->and($commandOutput)->not->toContain('--role=gateway')
@@ -1255,7 +1248,6 @@ it('builds app production ingress on the prod template without development or ag
     $host = m::mock(IncusHost::class, [$config])->makePartial();
     $host->shouldReceive('imageExists')->with($config->baseImage)->andReturn(true);
     $host->shouldReceive('instanceExists')->andReturn(false);
-    $host->shouldReceive('waitForCloudInit')->times(3);
     $host->shouldReceive('provisionInstance')->with('orbit-template-operator-base', 'operator', '/tmp/orbit-e2e-bundle-test', 'operator')->once()->andReturn(incusTopologyBuilderProcessResult());
     $host->shouldReceive('stopInstance')->times(6)->andReturn(incusTopologyBuilderProcessResult());
     $host->shouldReceive('snapshotInstance')->times(6)->andReturn(incusTopologyBuilderProcessResult());
@@ -1307,8 +1299,8 @@ it('builds app production ingress on the prod template without development or ag
             'name' => 'orbit-template-app-prod-base',
             'snapshot' => 'clean-operator_gateway_app-prod_ingress-base',
         ],
-    ])->and($commandOutput)->toContain("incus launch 'orbit-base-ubuntu-26.04' 'orbit-template-app-prod-base'")
-        ->and($commandOutput)->not->toContain("incus launch 'orbit-base-ubuntu-26.04' 'orbit-template-ingress-base'")
+    ])->and($commandOutput)->toContain("incus launch 'orbit-base-ubuntu-26.04-runtime' 'orbit-template-app-prod-base'")
+        ->and($commandOutput)->not->toContain("incus launch 'orbit-base-ubuntu-26.04-runtime' 'orbit-template-ingress-base'")
         ->and($commandOutput)->not->toContain("incus copy 'orbit-template-operator-base/clean-operator_gateway-base'")
         ->and($commandOutput)->not->toContain('edge-1')
         ->and($commandOutput)->toContain('--roles=app-prod,ingress')

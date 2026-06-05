@@ -64,7 +64,7 @@ test.
 | Systemd process runtime backend | no | yes |
 | Orbit Scheduler daemon | yes | yes |
 | Real WireGuard interfaces and peer routing | no | yes |
-| VM boot, cloud-init, package install mutation | no | yes |
+| VM boot and package install mutation | no | yes |
 | Real SSH daemon and sudo behavior | no | yes |
 | OS trust-store mutation | no | yes |
 | Host init on the node itself | no | yes |
@@ -80,10 +80,10 @@ registry state, validation, and Docker-runtime process behavior for process
 features, but it must not claim real `systemd` lifecycle coverage.
 
 Use Incus for tests whose correctness depends on real VM behavior: WireGuard
-kernel networking, cloud-init, package installation, OS trust-store mutation,
-real SSH daemon behavior, sudo prompts, host init, or `systemd` service
-lifecycle. Mark these tests with `e2e-provider-incus` so Docker-only runs skip
-them without probing an unsuitable provider.
+kernel networking, package installation, OS trust-store mutation, real SSH
+daemon behavior, sudo prompts, host init, or `systemd` service lifecycle. Mark
+these tests with `e2e-provider-incus` so Docker-only runs skip them without
+probing an unsuitable provider.
 
 Provisioning and installer changes finish with the Incus provision command after
 the relevant prepared-topology feature lane is green. Docker image/runtime,

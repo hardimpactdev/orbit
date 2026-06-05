@@ -27,8 +27,8 @@ function incusImageDistributorConfig(string $host): E2EConfig
         providerNames: ['incus'],
         topologyProviderNames: ['incus'],
         host: $host,
-        sourceImage: 'images:ubuntu/26.04/cloud',
-        baseImage: 'orbit-base-ubuntu-26.04',
+        sourceImage: 'images:ubuntu/26.04',
+        baseImage: 'orbit-base-ubuntu-26.04-runtime',
         bootstrapUser: 'provisioner',
         operatorUser: 'operator',
         instancePrefix: 'orbit-e2e',
@@ -92,19 +92,19 @@ it('exports from the build host and imports on target hosts', function (): void 
 
     $distributor = new IncusImageDistributor($source);
 
-    $result = $distributor->distribute('orbit-base-ubuntu-26.04', [$sidecar1, $sidecar2]);
+    $result = $distributor->distribute('orbit-base-ubuntu-26.04-runtime', [$sidecar1, $sidecar2]);
 
     expect($result)->toBe([
         [
             'host' => 'sidecar1',
             'role' => 'base',
-            'alias' => 'orbit-base-ubuntu-26.04',
+            'alias' => 'orbit-base-ubuntu-26.04-runtime',
             'action' => 'imported',
         ],
         [
             'host' => 'sidecar2',
             'role' => 'base',
-            'alias' => 'orbit-base-ubuntu-26.04',
+            'alias' => 'orbit-base-ubuntu-26.04-runtime',
             'action' => 'imported',
         ],
     ]);
@@ -126,7 +126,7 @@ it('does not distribute to the source host', function (): void {
 
     $distributor = new IncusImageDistributor($source);
 
-    expect($distributor->distribute('orbit-base-ubuntu-26.04', [$source]))->toBe([]);
+    expect($distributor->distribute('orbit-base-ubuntu-26.04-runtime', [$source]))->toBe([]);
 
     Process::assertRanTimes(fn (): bool => true, 0);
 });

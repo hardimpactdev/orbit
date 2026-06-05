@@ -62,7 +62,6 @@ it('refreshes the reused gateway checkout before dedicated ingress baking', func
     $host = m::mock(IncusHost::class, [E2EConfig::fromEnvironment()])->makePartial();
     $host->shouldReceive('startInstance')->andReturn(dedicatedIngressBakeResult());
     $host->shouldReceive('launchTopologyInstance')->andReturn(dedicatedIngressBakeResult());
-    $host->shouldReceive('waitForCloudInit')->andReturnNull();
     $host->shouldReceive('run')
         ->andReturnUsing(function (string $command, ?int $timeoutSeconds = null) use (&$commands): ProcessResult {
             $commands[] = $command;
