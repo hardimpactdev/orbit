@@ -274,8 +274,11 @@ final readonly class NodeConverger
             $query->whereIn('name', $onlyTools);
         }
 
-        foreach ($query->get() as $tool) {
-            $snapshot = $this->toolsProbe->introspect($tool);
+        $tools = $query->get();
+        $snapshots = $this->toolsProbe->introspectMany($tools->all());
+
+        foreach ($tools as $tool) {
+            $snapshot = $snapshots[$tool->name] ?? $this->toolsProbe->introspect($tool);
 
             foreach ($this->toolsProbe->diff($tool, $snapshot, allowProvisioning: $context->allowsProvisioningNode()) as $entry) {
                 if ($onlyKeys !== null && ! in_array($entry->key, $onlyKeys, true)) {

@@ -171,6 +171,187 @@ PHP;
     }
 
     /**
+     * @param  list<NodeTool>  $tools
+     * @return array<string, ProbeSnapshot>
+     */
+    public function introspectMany(array $tools): array
+    {
+        $snapshots = [];
+        $batch = [];
+        $node = null;
+
+        foreach ($tools as $tool) {
+            $tool->loadMissing('node');
+
+            if (! $tool->node instanceof Node || $tool->name === '') {
+                $snapshots[$tool->name] = new ProbeSnapshot([]);
+
+                continue;
+            }
+
+            $metadata = ($this->catalog ?? app(ToolCatalog::class))->probeMetadata($tool->name);
+
+            if (($metadata['probe'] ?? null) === 'docker_images') {
+                $snapshots[$tool->name] = $this->introspectDockerImages($tool, $metadata);
+
+                continue;
+            }
+
+            if ($node !== null && $node->id !== $tool->node->id) {
+                $snapshots[$tool->name] = $this->introspect($tool);
+
+                continue;
+            }
+
+            $node = $tool->node;
+            $batch[$tool->name] = [
+                'binary' => $metadata['binary'] ?? $tool->name,
+                'version_command' => is_string($metadata['version_command'] ?? null) ? $metadata['version_command'] : '',
+                'service' => is_string($metadata['service'] ?? null) ? $metadata['service'] : '',
+                'supervisor_program' => is_string($metadata['supervisor_program'] ?? null) ? $metadata['supervisor_program'] : '',
+                'container' => $this->expectedContainerName($tool) ?? (is_string($metadata['container'] ?? null) ? $metadata['container'] : ''),
+                'config_path' => $this->managedConfigPath($tool) ?? '',
+                'secret_path' => $this->managedSecretPath($tool) ?? '',
+            ];
+        }
+
+        if ($batch === [] || ! $node instanceof Node) {
+            return $snapshots;
+        }
+
+        $php = <<<'PHP'
+$payload = json_decode(stream_get_contents(STDIN), true);
+$tools = is_array($payload['tools'] ?? null) ? $payload['tools'] : [];
+
+foreach ($tools as $name => $tool) {
+    if (! is_string($name) || ! is_array($tool)) {
+        continue;
+    }
+
+    $binary = (string) ($tool['binary'] ?? '');
+    $versionCommand = (string) ($tool['version_command'] ?? '');
+    $service = (string) ($tool['service'] ?? '');
+    $supervisorProgram = (string) ($tool['supervisor_program'] ?? '');
+    $container = (string) ($tool['container'] ?? '');
+    $configPath = (string) ($tool['config_path'] ?? '');
+    $secretPath = (string) ($tool['secret_path'] ?? '');
+    $path = str_contains($binary, '/')
+        ? (is_executable($binary) ? $binary : '')
+        : trim((string) shell_exec('command -v '.escapeshellarg($binary).' 2>/dev/null'));
+
+    $version = '';
+    $state = 'unknown';
+    $configExists = null;
+    $configHash = null;
+    $secretExists = null;
+    $secretHash = null;
+    $containerExists = null;
+    $containerState = null;
+    $containerSpecHash = null;
+
+    if ($path !== '' && $versionCommand !== '') {
+        $version = trim((string) shell_exec($versionCommand.' 2>/dev/null | head -n 1'));
+    }
+
+    if ($path !== '' && $service !== '') {
+        $output = [];
+        exec('systemctl is-active --quiet '.escapeshellarg($service).' 2>/dev/null', $output, $exitCode);
+        $state = $exitCode === 0 ? 'running' : 'stopped';
+    }
+
+    if ($path !== '' && $supervisorProgram !== '') {
+        $output = [];
+        exec('sudo supervisorctl status '.escapeshellarg($supervisorProgram).' 2>/dev/null', $output, $exitCode);
+        $status = trim(implode("\n", $output));
+        $state = $exitCode === 0 && str_contains($status, 'RUNNING') ? 'running' : 'stopped';
+    }
+
+    if ($path !== '' && $container !== '') {
+        $inspectJson = trim((string) shell_exec('docker container inspect --format '.escapeshellarg('{{json .}}').' '.escapeshellarg($container).' 2>/dev/null'));
+
+        if ($inspectJson === '') {
+            $containerExists = false;
+            $containerState = 'missing';
+        } else {
+            $inspect = json_decode($inspectJson, true);
+            $containerExists = true;
+
+            if (is_array($inspect)) {
+                $running = $inspect['State']['Running'] ?? false;
+                $containerState = $running === true ? 'running' : 'stopped';
+                $state = $containerState;
+                $labels = is_array($inspect['Config']['Labels'] ?? null) ? $inspect['Config']['Labels'] : [];
+                $containerSpecHash = is_string($labels['orbit.caddy.spec_hash'] ?? null) ? $labels['orbit.caddy.spec_hash'] : null;
+            }
+        }
+    }
+
+    if ($path !== '' && $configPath !== '') {
+        $configExists = is_file($configPath);
+        $configHash = $configExists ? hash_file('sha256', $configPath) : null;
+    }
+
+    if ($path !== '' && $secretPath !== '') {
+        $secretExists = is_file($secretPath);
+        $secretHash = $secretExists ? hash_file('sha256', $secretPath) : null;
+    }
+
+    echo json_encode([
+        'name' => $name,
+        'installed' => $path !== '',
+        'path' => $path !== '' ? $path : null,
+        'version' => $version !== '' ? $version : null,
+        'state' => $containerState ?? ($state !== '' ? $state : null),
+        'config_exists' => $configExists,
+        'config_hash' => $configHash,
+        'secret_exists' => $secretExists,
+        'secret_hash' => $secretHash,
+        'container_exists' => $containerExists,
+        'container_state' => $containerState,
+        'container_spec_hash' => $containerSpecHash,
+    ], JSON_THROW_ON_ERROR)."\n";
+}
+PHP;
+
+        $script = 'php -r '.escapeshellarg($php);
+        $result = ($this->remoteShell ?? app(RemoteShell::class))->run($node, $script, [
+            'throw' => false,
+            'input' => (string) json_encode(['tools' => $batch], JSON_THROW_ON_ERROR),
+        ]);
+
+        if (! $result->successful()) {
+            foreach (array_keys($batch) as $toolName) {
+                $snapshots[$toolName] = new ProbeSnapshot([]);
+            }
+
+            return $snapshots;
+        }
+
+        foreach (preg_split('/\R/', trim($result->stdout)) ?: [] as $line) {
+            if ($line === '') {
+                continue;
+            }
+
+            $payload = json_decode($line, associative: true);
+
+            if (! is_array($payload) || ! is_string($payload['name'] ?? null)) {
+                continue;
+            }
+
+            $name = $payload['name'];
+            unset($payload['name']);
+
+            $snapshots[$name] = new ProbeSnapshot([$name => $payload]);
+        }
+
+        foreach (array_keys($batch) as $toolName) {
+            $snapshots[$toolName] ??= new ProbeSnapshot([]);
+        }
+
+        return $snapshots;
+    }
+
+    /**
      * @param  array<string, mixed>  $metadata
      */
     private function introspectDockerImages(NodeTool $tool, array $metadata): ProbeSnapshot

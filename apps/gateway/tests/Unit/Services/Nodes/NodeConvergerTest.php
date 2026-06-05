@@ -70,6 +70,7 @@ describe('NodeConverger', function (): void {
                 ])
             ->and(implode("\n", $shell->scripts))->not->toContain('doctor --restore')
             ->and(implode("\n", $shell->scripts))->not->toContain(' orbit doctor ')
+            ->and($shell->probeScripts())->toHaveCount(2)
             ->and($shell->repairScripts())->toHaveCount(5);
     });
 
@@ -174,11 +175,32 @@ final class NodeConvergerSetupRemoteShell implements RemoteShell
     }
 
     /**
+     * @return list<string>
+     */
+    public function probeScripts(): array
+    {
+        return array_values(array_filter(
+            $this->scripts,
+            $this->isProbeScript(...),
+        ));
+    }
+
+    /**
      * @param  array<string, mixed>  $options
      */
     private function probeResult(Node $node, array $options): RemoteShellResult
     {
         $payload = json_decode((string) ($options['input'] ?? ''), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        if (is_array($payload['tools'] ?? null)) {
+            return new RemoteShellResult(
+                exitCode: 0,
+                stdout: $this->batchProbeOutput($node, $payload['tools']),
+                stderr: '',
+                durationMs: 1,
+            );
+        }
+
         $binary = is_string($payload['binary'] ?? null) ? $payload['binary'] : '';
         $container = is_string($payload['container'] ?? null) ? $payload['container'] : '';
 
@@ -197,6 +219,74 @@ final class NodeConvergerSetupRemoteShell implements RemoteShell
             '/usr/local/bin/laravel' => $this->installedProbe('laravel-installer', "/usr/local/bin/laravel\tLaravel Installer 5.0.0\n"),
             default => new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
         };
+    }
+
+    /**
+     * @param  array<string, mixed>  $tools
+     */
+    private function batchProbeOutput(Node $node, array $tools): string
+    {
+        $lines = [];
+
+        foreach ($tools as $name => $tool) {
+            if (! is_string($name) || ! is_array($tool)) {
+                continue;
+            }
+
+            $lines[] = json_encode($this->batchProbePayload($node, $name, $tool), JSON_THROW_ON_ERROR);
+        }
+
+        return implode("\n", $lines)."\n";
+    }
+
+    /**
+     * @param  array<string, mixed>  $tool
+     * @return array<string, mixed>
+     */
+    private function batchProbePayload(Node $node, string $name, array $tool): array
+    {
+        if ($name === 'caddy') {
+            $hash = OrbitCaddyContainer::forPrivateNode((string) $node->wireguard_address)->specHash();
+
+            return [
+                'name' => 'caddy',
+                'installed' => true,
+                'path' => '/usr/bin/docker',
+                'version' => 'Docker version 27.0.0',
+                'state' => $this->installed['caddy'] ? 'running' : 'missing',
+                'config_exists' => null,
+                'config_hash' => null,
+                'secret_exists' => null,
+                'secret_hash' => null,
+                'container_exists' => $this->installed['caddy'],
+                'container_state' => $this->installed['caddy'] ? 'running' : 'missing',
+                'container_spec_hash' => $this->installed['caddy'] ? $hash : null,
+            ];
+        }
+
+        $installedPayloads = [
+            'composer' => ['/usr/local/bin/composer', 'Composer version 2.9.0'],
+            'gh' => ['/usr/bin/gh', 'gh version 2.60.0'],
+            'laravel-installer' => ['/usr/local/bin/laravel', 'Laravel Installer 5.0.0'],
+            'php-cli' => ['/opt/orbit/php/8.5/bin/php', '8.5.6'],
+        ];
+        [$path, $version] = $installedPayloads[$name] ?? [is_string($tool['binary'] ?? null) ? $tool['binary'] : null, null];
+        $installed = $this->installed[$name] ?? false;
+
+        return [
+            'name' => $name,
+            'installed' => $installed,
+            'path' => $installed ? $path : null,
+            'version' => $installed ? $version : null,
+            'state' => $installed ? 'unknown' : null,
+            'config_exists' => null,
+            'config_hash' => null,
+            'secret_exists' => null,
+            'secret_hash' => null,
+            'container_exists' => null,
+            'container_state' => null,
+            'container_spec_hash' => null,
+        ];
     }
 
     private function installedProbe(string $tool, string $stdout): RemoteShellResult

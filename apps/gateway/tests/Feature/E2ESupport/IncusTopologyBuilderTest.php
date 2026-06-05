@@ -43,7 +43,7 @@ function incusTopologyBuilderPreparedBakeResult(string $command): ?ProcessResult
             '__orbit_bake_timing dev registry 200',
             '__orbit_bake_timing dev role-assignment 300',
             '__orbit_bake_timing dev setup-node 150',
-            '__orbit_bake_timing dev setup-caddy 250',
+            '__orbit_bake_timing dev setup-tool 250',
             '__orbit_bake_timing dev setup-converge 400',
             '__orbit_bake_timing dev total 1100',
             '__orbit_bake_timing prod total 2200',
@@ -63,7 +63,7 @@ function incusTopologyBuilderPreparedBakeResult(string $command): ?ProcessResult
             '__orbit_bake_timing dev registry 200',
             '__orbit_bake_timing dev role-assignment 300',
             '__orbit_bake_timing dev setup-node 150',
-            '__orbit_bake_timing dev setup-caddy 250',
+            '__orbit_bake_timing dev setup-tool 250',
             '__orbit_bake_timing dev setup-converge 400',
             '__orbit_bake_timing dev total 1100',
             '__orbit_bake_timing prod total 2200',
@@ -90,7 +90,7 @@ function incusTopologyBuilderPreparedBakeResult(string $command): ?ProcessResult
         '__orbit_bake_timing dev registry 200',
         '__orbit_bake_timing dev role-assignment 300',
         '__orbit_bake_timing dev setup-node 150',
-        '__orbit_bake_timing dev setup-caddy 250',
+        '__orbit_bake_timing dev setup-tool 250',
         '__orbit_bake_timing dev setup-converge 400',
         '__orbit_bake_timing dev total 1100',
         '__orbit_bake_timing prod total 2200',
@@ -537,7 +537,7 @@ it('builds full prepared roles from the gateway base with parallel downstream ba
             ->and($phaseNames)->toContain('prepared.downstream.bake.dev.registry')
             ->and($phaseNames)->toContain('prepared.downstream.bake.dev.role-assignment')
             ->and($phaseNames)->toContain('prepared.downstream.bake.dev.setup-node')
-            ->and($phaseNames)->toContain('prepared.downstream.bake.dev.setup-caddy')
+            ->and($phaseNames)->toContain('prepared.downstream.bake.dev.setup-tool')
             ->and($phaseNames)->toContain('prepared.downstream.bake.dev.setup-converge')
             ->and($phaseNames)->toContain('prepared.downstream.bake.dev.total')
             ->and($phaseNames)->toContain('prepared.downstream.bake.prod.total')
@@ -711,7 +711,7 @@ it('builds full prepared websocket roles on the app-dev node', function (): void
             ->and($phaseNames)->toContain('prepared-websocket.downstream.bake.dev.registry')
             ->and($phaseNames)->toContain('prepared-websocket.downstream.bake.dev.role-assignment')
             ->and($phaseNames)->toContain('prepared-websocket.downstream.bake.dev.setup-node')
-            ->and($phaseNames)->toContain('prepared-websocket.downstream.bake.dev.setup-caddy')
+            ->and($phaseNames)->toContain('prepared-websocket.downstream.bake.dev.setup-tool')
             ->and($phaseNames)->toContain('prepared-websocket.downstream.bake.dev.setup-converge')
             ->and($phaseNames)->toContain('prepared-websocket.downstream.bake.dev.total')
             ->and($phaseNames)->toContain('prepared-websocket.downstream.bake.prod.total')
