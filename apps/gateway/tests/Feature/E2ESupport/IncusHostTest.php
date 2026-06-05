@@ -25,8 +25,8 @@ function incusHostTestConfig(string $incusStoragePool = '', string $host = 'beas
         providerNames: ['incus'],
         topologyProviderNames: ['incus'],
         host: $host,
-        sourceImage: 'images:ubuntu/26.04/cloud',
-        baseImage: 'orbit-base-ubuntu-26.04',
+        sourceImage: 'images:ubuntu/26.04',
+        baseImage: 'orbit-base-ubuntu-26.04-runtime',
         bootstrapUser: 'provisioner',
         operatorUser: 'operator',
         instancePrefix: 'orbit-e2e',
@@ -100,10 +100,10 @@ it('adds configured storage pool to launch and copy commands', function (): void
     $commands = [];
     $host = recordingIncusHost(incusHostTestConfig('orbit-e2e'), $commands);
 
-    $host->launchInstance('orbit-base-ubuntu-26.04', 'orbit-template-operator');
+    $host->launchInstance('orbit-base-ubuntu-26.04-runtime', 'orbit-template-operator');
     $host->copyInstance('orbit-template-operator/clean-operator', 'orbit-e2e-run-operator');
 
-    expect($commands[0])->toContain("incus launch 'orbit-base-ubuntu-26.04' 'orbit-template-operator' --vm --storage 'orbit-e2e' >/dev/null")
+    expect($commands[0])->toContain("incus launch 'orbit-base-ubuntu-26.04-runtime' 'orbit-template-operator' --vm --storage 'orbit-e2e' >/dev/null")
         ->and($commands[1])->toContain("incus copy 'orbit-template-operator/clean-operator' 'orbit-e2e-run-operator' --storage 'orbit-e2e'");
 });
 
@@ -111,9 +111,9 @@ it('sets the configured root disk size when launching topology instances', funct
     $commands = [];
     $host = recordingIncusHost(incusHostTestConfig(), $commands);
 
-    $host->launchTopologyInstance('orbit-base-ubuntu-26.04', 'orbit-template-operator');
+    $host->launchTopologyInstance('orbit-base-ubuntu-26.04-runtime', 'orbit-template-operator');
 
-    expect($commands[0])->toContain("incus launch 'orbit-base-ubuntu-26.04' 'orbit-template-operator' --vm --config=limits.cpu='1' --config=limits.memory='2GiB' --device root,size='16GiB' >/dev/null");
+    expect($commands[0])->toContain("incus launch 'orbit-base-ubuntu-26.04-runtime' 'orbit-template-operator' --vm --config=limits.cpu='1' --config=limits.memory='2GiB' --device root,size='16GiB' >/dev/null");
 });
 
 it('uses incus snapshot restore and supports stateful restore', function (): void {

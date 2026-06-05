@@ -312,17 +312,7 @@ validate_args() {
     fi
 }
 
-wait_for_cloud_init() {
-    if ! command -v cloud-init >/dev/null 2>&1; then
-        return
-    fi
-
-    sudo_run cloud-init status --wait || true
-}
-
 install_ubuntu_prerequisites() {
-    wait_for_cloud_init
-
     apt_get_update
     apt_get_install \
         ca-certificates \

@@ -16,8 +16,8 @@ function baseImageOptions(bool $force = false): IncusBaseImagePreparationOptions
 {
     return new IncusBaseImagePreparationOptions(
         force: $force,
-        sourceImage: 'images:ubuntu/26.04/cloud',
-        baseImageAlias: 'orbit-base-ubuntu-26.04',
+        sourceImage: 'images:ubuntu/26.04',
+        baseImageAlias: 'orbit-base-ubuntu-26.04-runtime',
         bootstrapUser: 'provisioner',
         cpus: 2,
         memory: '2GiB',
@@ -46,7 +46,7 @@ it('returns dry-run plan when force is false', function (): void {
 
     expect($result)->toBe([
         'role' => 'base',
-        'alias' => 'orbit-base-ubuntu-26.04',
+        'alias' => 'orbit-base-ubuntu-26.04-runtime',
         'action' => 'planned',
     ]);
 });
@@ -72,10 +72,6 @@ it('builds the base image with the expected incus call sequence', function (): v
                 return fakeProcessResult();
             }
 
-            if (str_starts_with(ltrim($command), 'cat > ')) {
-                return fakeProcessResult();
-            }
-
             if (str_starts_with(ltrim($command), 'cat ')) {
                 return fakeProcessResult(output: "ssh-ed25519 AAAA fake-key\n");
             }
@@ -86,11 +82,7 @@ it('builds the base image with the expected incus call sequence', function (): v
                 return fakeProcessResult();
             }
 
-            if (str_contains($command, 'cloud-init status')) {
-                return fakeProcessResult(output: "status: done\n");
-            }
-
-            if (str_contains($command, 'incus list') && str_contains($command, '-c 4')) {
+            if (str_contains($command, 'ip -o -4 addr show scope global')) {
                 return fakeProcessResult(output: "10.0.0.5\n");
             }
 
@@ -98,7 +90,7 @@ it('builds the base image with the expected incus call sequence', function (): v
                 return fakeProcessResult();
             }
 
-            if (str_contains($command, 'incus exec') && str_contains($command, 'cloud-init clean')) {
+            if (str_contains($command, 'incus exec')) {
                 return fakeProcessResult();
             }
 
@@ -129,23 +121,23 @@ it('builds the base image with the expected incus call sequence', function (): v
     $result = $preparer->build(baseImageOptions(force: true));
 
     expect($result['role'])->toBe('base');
-    expect($result['alias'])->toBe('orbit-base-ubuntu-26.04');
+    expect($result['alias'])->toBe('orbit-base-ubuntu-26.04-runtime');
     expect($result['action'])->toBe('built');
     expect($launches)->toHaveCount(1);
-    expect($launches[0])->toContain("'images:ubuntu/26.04/cloud'");
+    expect($launches[0])->toContain("'images:ubuntu/26.04'");
     expect($launches[0])->toContain("'orbit-e2e-");
     expect($stops)->toHaveCount(1);
     expect($publishes)->toHaveCount(1);
-    expect($publishes[0])->toContain("--alias 'orbit-base-ubuntu-26.04'");
+    expect($publishes[0])->toContain("--alias 'orbit-base-ubuntu-26.04-runtime'");
 });
 
-it('writes cloud-init that installs the deps helper packages and the orbit user', function (): void {
+it('bootstraps the runtime image without guest user-data', function (): void {
     $host = m::mock(IncusHost::class);
 
-    $cloudInitYaml = null;
+    $bootstrapScript = null;
 
     $host->shouldReceive('run')
-        ->andReturnUsing(function (string $command) use (&$cloudInitYaml): ProcessResult {
+        ->andReturnUsing(function (string $command) use (&$bootstrapScript): ProcessResult {
             if (str_contains($command, 'mktemp -d')) {
                 return fakeProcessResult(output: "/tmp/orbit-prep-base\n");
             }
@@ -158,22 +150,18 @@ it('writes cloud-init that installs the deps helper packages and the orbit user'
                 return fakeProcessResult();
             }
 
-            if (str_starts_with(ltrim($command), 'cat > ')) {
-                $cloudInitYaml = $command;
-
-                return fakeProcessResult();
-            }
-
             if (str_starts_with(ltrim($command), 'cat ')) {
                 return fakeProcessResult(output: "ssh-ed25519 AAAA fake-key\n");
             }
 
-            if (str_contains($command, 'incus list') && str_contains($command, '-c 4')) {
-                return fakeProcessResult(output: "10.0.0.5\n");
+            if (str_contains($command, 'bash -lc') && str_contains($command, 'docker.io') && str_contains($command, 'orbit-e2e-docker-swarm-init.service')) {
+                $bootstrapScript = $command;
+
+                return fakeProcessResult();
             }
 
-            if (str_contains($command, 'cloud-init status')) {
-                return fakeProcessResult(output: "status: done\n");
+            if (str_contains($command, 'ip -o -4 addr show scope global')) {
+                return fakeProcessResult(output: "10.0.0.5\n");
             }
 
             return fakeProcessResult();
@@ -182,23 +170,23 @@ it('writes cloud-init that installs the deps helper packages and the orbit user'
     $preparer = new IncusBaseImagePreparer($host);
     $preparer->build(baseImageOptions(force: true));
 
-    expect($cloudInitYaml)->not->toBeNull();
-    expect($cloudInitYaml)->toContain('package_update: true');
-    expect($cloudInitYaml)->toContain('uri: http://mirror.leaseweb.com/ubuntu');
-    expect($cloudInitYaml)->toContain('Acquire::ForceIPv4');
-    expect($cloudInitYaml)->toContain('Acquire::http::Timeout');
-    expect($cloudInitYaml)->toContain('disable_suites:');
-    expect($cloudInitYaml)->toContain('    - security');
-    expect($cloudInitYaml)->toContain('  - composer');
-    expect($cloudInitYaml)->toContain('  - bind9-dnsutils');
-    expect($cloudInitYaml)->toContain('  - ufw');
-    expect($cloudInitYaml)->toContain('  - wireguard');
-    expect($cloudInitYaml)->toContain('  - php8.5-cli');
-    expect($cloudInitYaml)->toContain('  - php8.5-bcmath');
-    expect($cloudInitYaml)->toContain('name: provisioner');
-    expect($cloudInitYaml)->toContain('name: orbit');
-    expect($cloudInitYaml)->toContain('install -d -m 700 -o orbit -g orbit /home/orbit/.ssh');
-    expect($cloudInitYaml)->toContain('install -d -m 755 -o orbit -g orbit /home/orbit/.config/orbit');
+    expect($bootstrapScript)->not->toBeNull();
+    expect($bootstrapScript)->toContain('nameserver 1.1.1.1');
+    expect($bootstrapScript)->toContain('getent hosts archive.ubuntu.com');
+    expect($bootstrapScript)->toContain('Acquire::ForceIPv4');
+    expect($bootstrapScript)->toContain('composer');
+    expect($bootstrapScript)->toContain('bind9-dnsutils');
+    expect($bootstrapScript)->toContain('ufw');
+    expect($bootstrapScript)->toContain('wireguard');
+    expect($bootstrapScript)->toContain('php8.5-cli');
+    expect($bootstrapScript)->toContain('php8.5-bcmath');
+    expect($bootstrapScript)->toContain('docker.io');
+    expect($bootstrapScript)->toContain('docker swarm init');
+    expect($bootstrapScript)->toContain('bootstrap_user=');
+    expect($bootstrapScript)->toContain('id -u orbit');
+    expect($bootstrapScript)->toContain('install -d -m 700 -o orbit -g orbit /home/orbit/.ssh');
+    expect($bootstrapScript)->toContain('/home/orbit/.config/composer');
+    expect($bootstrapScript)->toContain('/home/orbit/.config/orbit');
 });
 
 it('throws when the source image is not available', function (): void {
@@ -220,7 +208,7 @@ it('throws when the source image is not available', function (): void {
     $preparer = new IncusBaseImagePreparer($host);
 
     expect(fn () => $preparer->build(baseImageOptions(force: true)))
-        ->toThrow(RuntimeException::class, 'Source image [images:ubuntu/26.04/cloud]');
+        ->toThrow(RuntimeException::class, 'Source image [images:ubuntu/26.04]');
 });
 
 it('throws when the deps helper is missing', function (): void {
@@ -249,8 +237,8 @@ it('throws when the deps helper is missing', function (): void {
 
     $options = new IncusBaseImagePreparationOptions(
         force: true,
-        sourceImage: 'images:ubuntu/26.04/cloud',
-        baseImageAlias: 'orbit-base-ubuntu-26.04',
+        sourceImage: 'images:ubuntu/26.04',
+        baseImageAlias: 'orbit-base-ubuntu-26.04-runtime',
         bootstrapUser: 'provisioner',
         cpus: 2,
         memory: '2GiB',

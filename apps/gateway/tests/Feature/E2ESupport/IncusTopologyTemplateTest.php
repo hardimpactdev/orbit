@@ -633,7 +633,7 @@ it('does not add a source mount for ordinary prepared Incus acquisitions', funct
 
 it('requires the requested Incus roles in the prepared full snapshot', function (): void {
     withE2ETopologyEnvironment([], function (): void {
-        $config = makeIncusTopologyTemplateTestConfig(baseImage: 'orbit-base-ubuntu-26.04');
+        $config = makeIncusTopologyTemplateTestConfig(baseImage: 'orbit-base-ubuntu-26.04-runtime');
         $host = m::mock(IncusHost::class, [$config])->makePartial();
         $host->shouldReceive('run')
             ->once()
@@ -644,7 +644,7 @@ it('requires the requested Incus roles in the prepared full snapshot', function 
                 && str_contains($command, "incus info 'orbit-template-app-prod-base'")
                 && str_contains($command, "incus info 'orbit-template-agent-base'")
                 && str_contains($command, 'clean-operator_gateway_app-dev_app-prod_agent_websocket-base')
-                && ! str_contains($command, "incus image info 'orbit-base-ubuntu-26.04'")
+                && ! str_contains($command, "incus image info 'orbit-base-ubuntu-26.04-runtime'")
                 && ! str_contains($command, "snapshots/clean-operator-base'")
                 && ! str_contains($command, "snapshots/clean-operator_gateway-base'")
                 && ! str_contains($command, 'orbit-template-ingress-base'))

@@ -388,10 +388,10 @@ it('installs Docker via docker.com and downloads the prebuilt CLI binary instead
         ->not->toContain('keyserver.ubuntu.com');
 });
 
-it('waits for cloud-init before mutating apt on Ubuntu', function (): void {
+it('does not wait for guest initialization tooling before mutating apt on Ubuntu', function (): void {
     $script = file_get_contents(repo_path('bin/install-orbit'));
 
-    expect($script)->toContain('cloud-init status --wait');
+    expect($script)->not->toContain('cloud-init');
 });
 
 it('aggregates e2e timing lines by label and event', function (): void {

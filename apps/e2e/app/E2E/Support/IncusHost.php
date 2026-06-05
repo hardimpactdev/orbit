@@ -360,49 +360,6 @@ class IncusHost
         return $result;
     }
 
-    /**
-     * Wait until cloud-init has fully completed inside an Incus instance,
-     * including any queued reboots (Ubuntu cloud images sometimes queue a
-     * netplan-ovs-cleanup → systemd-reboot transaction during first boot).
-     * Tolerates the "degraded done" exit status (cloud-init exit code 2).
-     */
-    public function waitForCloudInit(string $instanceName, ?int $timeoutSeconds = null): void
-    {
-        $timeout = $timeoutSeconds ?? $this->config->timeoutSeconds;
-        $deadline = time() + $timeout;
-
-        while (time() < $deadline) {
-            $remainingSeconds = max(1, $deadline - time());
-
-            $result = $this->run(
-                sprintf(
-                    'incus exec %s -- sh -lc %s',
-                    escapeshellarg($instanceName),
-                    escapeshellarg('command -v cloud-init >/dev/null 2>&1 || exit 127; cloud-init status'),
-                ),
-                timeoutSeconds: min(10, $remainingSeconds),
-            );
-
-            $exitCode = $result->exitCode();
-
-            if ($exitCode === 127) {
-                return;
-            }
-
-            $output = trim($result->output().$result->errorOutput());
-
-            if (str_contains($output, 'status: done') || str_contains($output, 'status: degraded done')) {
-                return;
-            }
-
-            // exitCode 255 typically means the agent went away (reboot in
-            // progress). Sleep briefly and retry.
-            sleep(3);
-        }
-
-        throw new RuntimeException("Cloud-init did not finish on [{$instanceName}] within {$timeout}s.");
-    }
-
     public function cleanupBundle(string $remoteBundleDir): void
     {
         if ($remoteBundleDir === '') {

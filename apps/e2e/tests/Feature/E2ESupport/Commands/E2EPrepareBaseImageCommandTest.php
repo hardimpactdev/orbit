@@ -26,7 +26,7 @@ it('is hidden', function (): void {
 it('defaults to a dry-run plan', function (): void {
     $this->artisan('e2e:prepare-base-image')
         ->expectsOutputToContain('Dry run. Pass --force to build the Incus base image.')
-        ->expectsOutputToContain('planned: base -> orbit-base-ubuntu-26.04 (source: images:ubuntu/26.04/cloud)')
+        ->expectsOutputToContain('planned: base -> orbit-base-ubuntu-26.04-runtime (source: images:ubuntu/26.04)')
         ->assertSuccessful();
 });
 
@@ -38,8 +38,8 @@ it('outputs json for the dry-run plan', function (): void {
                 'dry_run' => true,
                 'image' => [
                     'role' => 'base',
-                    'alias' => 'orbit-base-ubuntu-26.04',
-                    'source' => 'images:ubuntu/26.04/cloud',
+                    'alias' => 'orbit-base-ubuntu-26.04-runtime',
+                    'source' => 'images:ubuntu/26.04',
                 ],
             ],
         ],
@@ -54,7 +54,7 @@ it('--force invokes the preparer and emits a JSON success envelope', function ()
     $preparer = m::mock(IncusBaseImagePreparer::class);
     $preparer->shouldReceive('build')->andReturn([
         'role' => 'base',
-        'alias' => 'orbit-base-ubuntu-26.04',
+        'alias' => 'orbit-base-ubuntu-26.04-runtime',
         'action' => 'built',
     ]);
 
@@ -70,14 +70,14 @@ it('--force invokes the preparer and emits a JSON success envelope', function ()
                 'image' => [
                     'host' => 'beast',
                     'role' => 'base',
-                    'alias' => 'orbit-base-ubuntu-26.04',
+                    'alias' => 'orbit-base-ubuntu-26.04-runtime',
                     'action' => 'built',
                 ],
                 'images' => [
                     [
                         'host' => 'beast',
                         'role' => 'base',
-                        'alias' => 'orbit-base-ubuntu-26.04',
+                        'alias' => 'orbit-base-ubuntu-26.04-runtime',
                         'action' => 'built',
                     ],
                 ],
@@ -103,7 +103,7 @@ it('--force builds on the configured image build host and distributes to configu
     $preparer->shouldReceive('build')
         ->andReturn([
             'role' => 'base',
-            'alias' => 'orbit-base-ubuntu-26.04',
+            'alias' => 'orbit-base-ubuntu-26.04-runtime',
             'action' => 'built',
         ]);
     $distributor = m::mock(IncusImageDistributor::class);
@@ -113,13 +113,13 @@ it('--force builds on the configured image build host and distributes to configu
             [
                 'host' => 'sidecar1',
                 'role' => 'base',
-                'alias' => 'orbit-base-ubuntu-26.04',
+                'alias' => 'orbit-base-ubuntu-26.04-runtime',
                 'action' => 'imported',
             ],
             [
                 'host' => 'sidecar2',
                 'role' => 'base',
-                'alias' => 'orbit-base-ubuntu-26.04',
+                'alias' => 'orbit-base-ubuntu-26.04-runtime',
                 'action' => 'imported',
             ],
         ]);
@@ -145,26 +145,26 @@ it('--force builds on the configured image build host and distributes to configu
                 'image' => [
                     'host' => 'beast',
                     'role' => 'base',
-                    'alias' => 'orbit-base-ubuntu-26.04',
+                    'alias' => 'orbit-base-ubuntu-26.04-runtime',
                     'action' => 'built',
                 ],
                 'images' => [
                     [
                         'host' => 'beast',
                         'role' => 'base',
-                        'alias' => 'orbit-base-ubuntu-26.04',
+                        'alias' => 'orbit-base-ubuntu-26.04-runtime',
                         'action' => 'built',
                     ],
                     [
                         'host' => 'sidecar1',
                         'role' => 'base',
-                        'alias' => 'orbit-base-ubuntu-26.04',
+                        'alias' => 'orbit-base-ubuntu-26.04-runtime',
                         'action' => 'imported',
                     ],
                     [
                         'host' => 'sidecar2',
                         'role' => 'base',
-                        'alias' => 'orbit-base-ubuntu-26.04',
+                        'alias' => 'orbit-base-ubuntu-26.04-runtime',
                         'action' => 'imported',
                     ],
                 ],

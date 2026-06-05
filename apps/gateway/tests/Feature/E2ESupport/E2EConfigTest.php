@@ -26,8 +26,8 @@ it('defaults provisioning images to Ubuntu 26.04 base image', function (): void 
     withE2EConfigEnvironment([], function (): void {
         $config = E2EConfig::fromEnvironment();
 
-        expect($config->sourceImage)->toBe('images:ubuntu/26.04/cloud')
-            ->and($config->baseImage)->toBe('orbit-base-ubuntu-26.04');
+        expect($config->sourceImage)->toBe('images:ubuntu/26.04')
+            ->and($config->baseImage)->toBe('orbit-base-ubuntu-26.04-runtime');
     });
 });
 

@@ -2,7 +2,7 @@
 
 Use E2E backed by a VM only when the behavior depends on real provisioning,
 WireGuard, VM networking, OS trust-store mutation, systemd, package
-installation, cloud-init, or host-level daemon behavior.
+installation, or host-level daemon behavior.
 
 ```bash
 composer e2e:preflight
@@ -40,13 +40,13 @@ provision commands. Agents must never run the aggregate.
 
 The Incus provision gate has one supported shape:
 
-1. Launch a fresh VM from `orbit-base-ubuntu-26.04`.
+1. Launch a fresh VM from `orbit-base-ubuntu-26.04-runtime`.
 2. Install Orbit from the current source bundle on the operator.
 3. Provision the gateway through the real gateway path.
 4. After the gateway is ready and its provisioning SSH key is installed, start
    app-dev, app-prod, and agent role provisioning in parallel. Each downstream
-   role launches from the base image, waits for cloud-init/agent/SSH readiness,
-   and applies its gateway-side bake independently.
+   role launches from the base image, waits for agent/SSH readiness, and applies
+   its gateway-side bake independently.
 5. Bake websocket against app-dev Redis as soon as the app-dev role succeeds,
    app-dev runtime services are ready, and the provisioning-owned
    gateway/app-dev WireGuard route is ready. Websocket does not wait for
@@ -81,18 +81,13 @@ topology state is enough to prove the behavior.
 The VM E2E harness uses Incus VMs on the configured E2E host (`beast` by
 default). It builds one reusable base image plus prepared source snapshots:
 
-1. Base image `orbit-base-ubuntu-26.04`. Built once via
-   `composer e2e:prepare-base-image -- --force`. It contains Ubuntu cloud, the
-   bootstrap user, the `orbit` user, sshd, the E2E OS dependency set, and the
-   PHP 8.5 CLI baseline used by Orbit itself. It does not contain Orbit source.
-   It is used by the Incus provision gate and as the source for prepared
-   topology roles.
-   The no-cloud-init runtime image `orbit-base-ubuntu-26.04-runtime` may be
-   selected with `ORBIT_E2E_BASE_IMAGE=orbit-base-ubuntu-26.04-runtime` for
-   faster topology builds. That image is based on the non-cloud Ubuntu 26.04 VM
-   image and preinstalls the role baseline runtime tools, including WireGuard,
-   Docker Engine, first-boot Docker Swarm initialization, Supervisor, PHP CLI,
-   and Composer.
+1. Base image `orbit-base-ubuntu-26.04-runtime`. Built via
+   `composer e2e:prepare-base-image -- --force` from the non-cloud Ubuntu 26.04
+   VM image through direct Incus-agent bootstrap. It contains the bootstrap
+   user, the `orbit` user, sshd, the E2E OS dependency set, WireGuard, Docker
+   Engine, first-boot Docker Swarm initialization, Supervisor, PHP CLI, and
+   Composer. It does not contain Orbit source. It is used by the Incus provision
+   gate and as the source for prepared topology roles.
 2. Prepared source templates `orbit-template-operator-base`,
    `orbit-template-gateway-base`, `orbit-template-app-dev-base`,
    `orbit-template-app-prod-base`, `orbit-template-agent-base`, and
@@ -117,13 +112,6 @@ Feature tests clone only their requested roles from that full prepared source.
 App-dev carries database, Redis, Caddy, and FrankenPHP app-serving readiness by
 default. App-prod carries the ingress role by default. Websocket carries the
 Reverb runtime baseline and uses app-dev Redis.
-
-Incus topology preparation treats cloud-init as an image capability, not as a
-hard requirement. When a cloned VM has `cloud-init`, the builder waits for
-`cloud-init status` to reach `done` or `degraded done` before continuing. When
-the binary is absent, as in `orbit-base-ubuntu-26.04-runtime`, that wait is
-skipped and readiness continues from the Incus agent, IPv4, and SSH/runtime
-checks.
 
 The shared prepared Incus artifact set is `base`: role templates are named
 `orbit-template-<role>-base`, and source snapshots are named
@@ -189,8 +177,8 @@ falling back to Docker Hub and marks archive-seeded installs with
 local runtime images to freshly provisioned gateway and app nodes.
 
 Forwarded archives and source bundles are staged under `/var/tmp` rather than
-`/tmp`; Ubuntu cloud VMs often mount `/tmp` as a small tmpfs that cannot hold
-Docker image archives.
+`/tmp`; VM images may mount `/tmp` as a small tmpfs that cannot hold Docker
+image archives.
 
 ## SSH requirements
 
@@ -260,8 +248,8 @@ changes the image shape.
 ```bash
 ORBIT_E2E_HOST=beast
 ORBIT_E2E_INCUS_IMAGE_BUILD_HOST=beast
-ORBIT_E2E_SOURCE_IMAGE=images:ubuntu/26.04/cloud
-ORBIT_E2E_BASE_IMAGE=orbit-base-ubuntu-26.04
+ORBIT_E2E_SOURCE_IMAGE=images:ubuntu/26.04
+ORBIT_E2E_BASE_IMAGE=orbit-base-ubuntu-26.04-runtime
 ORBIT_E2E_BOOTSTRAP_USER=provisioner
 ORBIT_E2E_OPERATOR_USER=orbit
 ORBIT_E2E_CONTROL_USER=orbit # Operator user alias.

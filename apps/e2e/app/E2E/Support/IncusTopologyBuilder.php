@@ -577,9 +577,7 @@ class IncusTopologyBuilder
         $operatorName = IncusTopologyTemplate::templateName(E2ETopologyKind::Operator, 'operator');
         $this->timer->measure('operator.launch', fn () => $this->launchBase($operatorName));
         $operator = new IncusInstance($this->host, $operatorName);
-        $this->timer->measure('operator.agent.initial', fn () => $operator->waitForAgent());
-        $this->timer->measure('operator.cloud-init', fn () => $this->host->waitForCloudInit($operatorName));
-        $this->timer->measure('operator.agent.after-cloud-init', fn () => $operator->waitForAgent());
+        $this->timer->measure('operator.agent.ready', fn () => $operator->waitForAgent());
         $this->timer->measure('operator.provision', fn () => $this->host->provisionInstance($operatorName, 'operator', (string) $this->remoteBundleDir, $this->host->config->operatorUser));
         $this->timer->measure('operator.ssh-authorize', fn () => $operator->authorizeSsh($this->host->config->operatorUser, $key));
         $this->timer->measure('operator.ssh-ready', fn () => $operator->waitForSsh($this->host->config->operatorUser, $key));
@@ -1269,9 +1267,7 @@ BASH,
         $name = IncusTopologyTemplate::templateName($templateKind, $role);
         $this->timer->measure("{$role}.launch", fn () => $this->launchBase($name));
         $instance = new IncusInstance($this->host, $name);
-        $this->timer->measure("{$role}.agent.initial", fn () => $instance->waitForAgent());
-        $this->timer->measure("{$role}.cloud-init", fn () => $this->host->waitForCloudInit($name));
-        $this->timer->measure("{$role}.agent.after-cloud-init", fn () => $instance->waitForAgent());
+        $this->timer->measure("{$role}.agent.ready", fn () => $instance->waitForAgent());
         $this->timer->measure("{$role}.ssh-authorize", fn () => $instance->authorizeSsh($this->host->config->bootstrapUser, $key));
         $this->timer->measure("{$role}.ssh-ready", fn () => $instance->waitForSsh($this->host->config->bootstrapUser, $key));
 
@@ -1344,35 +1340,6 @@ wait_for_agent() {
     done
 }
 
-wait_for_cloud_init() {
-    local name="$1"
-    local deadline=$((SECONDS + timeout_seconds))
-    local exit_code=0
-    local output=''
-
-    while [ "$SECONDS" -lt "$deadline" ]; do
-        if output="$(incus exec "$name" -- sh -lc 'command -v cloud-init >/dev/null 2>&1 || exit 127; cloud-init status' 2>&1)"; then
-            exit_code=0
-        else
-            exit_code=$?
-        fi
-
-        if [ "$exit_code" -eq 127 ]; then
-            return 0
-        fi
-
-        if printf '%%s' "$output" | grep -Eq 'status: (degraded )?done'; then
-            return 0
-        fi
-
-        sleep 3
-    done
-
-    echo "Cloud-init did not finish on [${name}] within ${timeout_seconds}s." >&2
-    printf '%%s\n' "$output" >&2
-    return 1
-}
-
 authorize_ssh() {
     local name="$1"
 
@@ -1432,8 +1399,6 @@ prepare_role() {
     *) echo "Unsupported prepared role: ${role}" >&2; return 1 ;;
     esac
 
-    wait_for_agent "$name"
-    wait_for_cloud_init "$name"
     wait_for_agent "$name"
     install_orbit_binary "$name"
     authorize_ssh "$name"
