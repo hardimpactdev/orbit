@@ -24,6 +24,8 @@ it('syncs the initiating worktree to a generated remote path without dependency 
         $rsyncOffset = strpos($commandsOutput, 'rsync -az --delete');
         $cleanupOffset = strpos($commandsOutput, 'rm -f');
         $hydrationOffset = strpos($commandsOutput, 'if command -v composer >/dev/null 2>&1; then');
+        $vendorArchiveOffset = strpos($commandsOutput, 'archive_dir=');
+        $permissionOffset = strpos($commandsOutput, 'find . -type d -exec chmod a+rx {} +');
         $worktreeSlug = trim(strtolower((string) preg_replace('/[^A-Za-z0-9._-]+/', '-', basename(repo_path()))), '-._');
         $expectedPathPrefix = '/tmp/orbit-e2e-sources/'.($worktreeSlug !== '' ? $worktreeSlug : 'orbit').'-docker-';
 
@@ -67,6 +69,12 @@ it('syncs the initiating worktree to a generated remote path without dependency 
             ->toContain('apps/gateway')
             ->toContain('apps/cli')
             ->toContain('install --no-interaction --prefer-dist --optimize-autoloader --no-progress --no-cache')
+            ->toContain(SourceMountedCheckoutSyncer::VendorArchiveDirectory)
+            ->toContain(SourceMountedCheckoutSyncer::vendorArchiveRelativePath('apps/gateway'))
+            ->toContain(SourceMountedCheckoutSyncer::vendorArchiveRelativePath('apps/cli'))
+            ->toContain('tar --warning=no-unknown-keyword -C')
+            ->toContain('-vendor.tar')
+            ->toContain('find "$archive_dir" -type f -exec chmod a+r {} +')
             ->toContain('find . -type d -exec chmod a+rx {} +')
             ->toContain('find . -type f -exec chmod a+r {} +')
             ->toContain('find . -type f -perm -u+x -exec chmod a+rx {} +')
@@ -78,9 +86,13 @@ it('syncs the initiating worktree to a generated remote path without dependency 
             ->and($cleanupOffset)->not->toBeFalse()
             ->and($rsyncOffset)->not->toBeFalse()
             ->and($hydrationOffset)->not->toBeFalse()
+            ->and($vendorArchiveOffset)->not->toBeFalse()
+            ->and($permissionOffset)->not->toBeFalse()
             ->and($ownershipRepairOffset)->toBeLessThan($rsyncOffset)
             ->and($rsyncOffset)->toBeLessThan($cleanupOffset)
-            ->and($cleanupOffset)->toBeLessThan($hydrationOffset);
+            ->and($cleanupOffset)->toBeLessThan($hydrationOffset)
+            ->and($hydrationOffset)->toBeLessThan($vendorArchiveOffset)
+            ->and($vendorArchiveOffset)->toBeLessThan($permissionOffset);
     } finally {
         if (is_string($previousTestToken)) {
             putenv("TEST_TOKEN={$previousTestToken}");

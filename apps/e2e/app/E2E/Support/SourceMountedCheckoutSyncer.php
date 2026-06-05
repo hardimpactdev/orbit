@@ -10,6 +10,8 @@ use RuntimeException;
 
 final readonly class SourceMountedCheckoutSyncer
 {
+    public const string VendorArchiveDirectory = '.orbit-e2e-vendor-archives';
+
     private const string DefaultRemoteRoot = '/tmp/orbit-e2e-sources';
 
     private const string RemoteComposerCache = '/tmp/orbit-e2e-composer-cache';
@@ -39,6 +41,7 @@ final readonly class SourceMountedCheckoutSyncer
                 $this->mustRun($this->sshCommand($host, $this->staleMutableStateCleanupCommand($targetPath)), "Could not clear stale source checkout state on {$host}:{$targetPath}");
                 $hydration = $this->dependencyHydrationSshCommand($host, $targetPath);
                 $this->mustRun($hydration['command'], "Could not hydrate source checkout dependencies on {$host}:{$targetPath}", input: $hydration['input']);
+                $this->mustRun($this->sshCommand($host, $this->vendorArchiveCommand($targetPath)), "Could not archive source checkout vendor dependencies on {$host}:{$targetPath}");
                 $this->mustRun($this->sshCommand($host, $this->permissionNormalizationCommand($targetPath)), "Could not normalize source checkout permissions on {$host}:{$targetPath}");
             } finally {
                 $this->releaseLock($host, $targetPath);
@@ -67,6 +70,13 @@ final readonly class SourceMountedCheckoutSyncer
         }
 
         return self::DefaultRemoteRoot.'/'.$this->worktreeSlug($provider);
+    }
+
+    public static function vendorArchiveRelativePath(string $appPath): string
+    {
+        $slug = str_replace('/', '-', trim($appPath, '/'));
+
+        return self::VendorArchiveDirectory."/{$slug}-vendor.tar";
     }
 
     /**
@@ -339,6 +349,32 @@ final readonly class SourceMountedCheckoutSyncer
                 '  if [ -e "$path" ]; then chmod -R a+rwX "$path"; fi',
                 'done',
             ]),
+        ]);
+    }
+
+    private function vendorArchiveCommand(string $targetPath): string
+    {
+        return implode("\n", [
+            'cd '.escapeshellarg($targetPath),
+            'archive_dir='.escapeshellarg(self::VendorArchiveDirectory),
+            'rm -rf "$archive_dir"',
+            'mkdir -p "$archive_dir"',
+            $this->vendorArchiveCommandForApp('apps/gateway'),
+            $this->vendorArchiveCommandForApp('apps/cli'),
+            'chmod a+rx "$archive_dir"',
+            'find "$archive_dir" -type f -exec chmod a+r {} +',
+        ]);
+    }
+
+    private function vendorArchiveCommandForApp(string $appPath): string
+    {
+        $app = escapeshellarg($appPath);
+        $archive = escapeshellarg(self::vendorArchiveRelativePath($appPath));
+
+        return implode(' ', [
+            "if [ -f {$app}/vendor/autoload.php ]; then",
+            "tar --warning=no-unknown-keyword -C {$app} -cf {$archive} vendor;",
+            'fi',
         ]);
     }
 

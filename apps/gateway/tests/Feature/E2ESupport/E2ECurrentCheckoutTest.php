@@ -213,6 +213,7 @@ it('runs source-mounted Incus checkouts from a VM-local runtime mirror', functio
         ->toContain("source='/home/orbit/orbit'")
         ->toContain("target='/home/orbit/orbit-run'")
         ->toContain('tar --warning=no-unknown-keyword')
+        ->toContain("--exclude='./.orbit-e2e-vendor-archives'")
         ->toContain('tar -C "${target}" -xf -')
         ->toContain('$sudo_prefix find "$target" -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +')
         ->not->toContain('$sudo_prefix rm -rf "$target"')
@@ -546,6 +547,7 @@ it('publishes the checkout archive excludes for tarball construction', function 
         ->toContain(
             './.git',
             './.worktrees',
+            './.orbit-e2e-vendor-archives',
             './.env',
             './build',
             './apps/gateway/.env',
