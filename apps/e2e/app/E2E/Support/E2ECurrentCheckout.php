@@ -1069,6 +1069,7 @@ PHP;
             './.cursor',
             './.idea',
             './.nova',
+            './.orbit-e2e-vendor-archives',
             './.phpunit.cache',
             './.vscode',
             './.zed',

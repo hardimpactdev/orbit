@@ -8,6 +8,7 @@ use App\E2E\Support\E2EProvisionCheckpointManifest;
 use App\E2E\Support\E2ETopologyKind;
 use App\E2E\Support\IncusHost;
 use App\E2E\Support\IncusTopologyBuilder;
+use App\E2E\Support\SourceMountedCheckoutSyncer;
 use Illuminate\Contracts\Process\ProcessResult;
 use Illuminate\Support\Facades\Process;
 use Mockery as m;
@@ -110,6 +111,20 @@ function incusTopologyBuilderConfig(): E2EConfig
         keep: false,
     );
 }
+
+it('extracts source-mounted vendor archives instead of recursively copying vendor trees', function (): void {
+    $builder = new IncusTopologyBuilder(new IncusHost(incusTopologyBuilderConfig()));
+    $method = new ReflectionMethod(IncusTopologyBuilder::class, 'sourceMountedRuntimeInstallCommand');
+    $method->setAccessible(true);
+
+    $command = $method->invoke($builder, 'orbit');
+
+    expect($command)
+        ->toContain(SourceMountedCheckoutSyncer::VendorArchiveDirectory)
+        ->toContain('tar -C "$target/$app" -xf "$archive"')
+        ->toContain('Missing source-mounted vendor archive for $app at $archive')
+        ->not->toContain('cp -a');
+});
 
 it('throws when the base image is missing', function (): void {
     $config = E2EConfig::fromEnvironment();
