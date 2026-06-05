@@ -10,9 +10,11 @@ it('syncs the initiating worktree to a generated remote path without dependency 
     putenv('TEST_TOKEN');
 
     $commands = [];
-
     Process::fake(function ($process) use (&$commands) {
-        $commands[] = (string) $process->command;
+        $commands[] = implode("\n", array_filter([
+            (string) $process->command,
+            is_string($process->input) ? $process->input : null,
+        ], 'is_string'));
 
         return Process::result();
     });
@@ -70,10 +72,21 @@ it('syncs the initiating worktree to a generated remote path without dependency 
             ->toContain('apps/cli')
             ->toContain('install --no-interaction --prefer-dist --optimize-autoloader --no-progress --no-cache')
             ->toContain(SourceMountedCheckoutSyncer::VendorArchiveDirectory)
+            ->toContain(SourceMountedCheckoutSyncer::VendorArchiveFingerprintFile)
             ->toContain(SourceMountedCheckoutSyncer::vendorArchiveRelativePath('apps/gateway'))
             ->toContain(SourceMountedCheckoutSyncer::vendorArchiveRelativePath('apps/cli'))
+            ->toContain('apps/gateway/composer.json')
+            ->toContain('apps/gateway/composer.lock')
+            ->toContain('apps/cli/composer.json')
+            ->toContain('apps/cli/composer.lock')
+            ->toContain('fingerprint_input="$(mktemp)"')
+            ->toContain('sha256sum "$path" >> "$fingerprint_input"')
+            ->toContain('fingerprint="$(sha256sum "$fingerprint_input" | cut -d " " -f 1)"')
+            ->toContain('apps-gateway-vendor.tar')
+            ->toContain('apps-cli-vendor.tar')
             ->toContain('tar --warning=no-unknown-keyword -C')
             ->toContain('-vendor.tar')
+            ->toContain('"$fingerprint" > "$fingerprint_file"')
             ->toContain('find "$archive_dir" -type f -exec chmod a+r {} +')
             ->toContain('find . -type d -exec chmod a+rx {} +')
             ->toContain('find . -type f -exec chmod a+r {} +')

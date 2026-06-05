@@ -12,6 +12,8 @@ final readonly class SourceMountedCheckoutSyncer
 {
     public const string VendorArchiveDirectory = '.orbit-e2e-vendor-archives';
 
+    public const string VendorArchiveFingerprintFile = 'dependency-fingerprint.sha256';
+
     private const string DefaultRemoteRoot = '/tmp/orbit-e2e-sources';
 
     private const string RemoteComposerCache = '/tmp/orbit-e2e-composer-cache';
@@ -41,7 +43,8 @@ final readonly class SourceMountedCheckoutSyncer
                 $this->mustRun($this->sshCommand($host, $this->staleMutableStateCleanupCommand($targetPath)), "Could not clear stale source checkout state on {$host}:{$targetPath}");
                 $hydration = $this->dependencyHydrationSshCommand($host, $targetPath);
                 $this->mustRun($hydration['command'], "Could not hydrate source checkout dependencies on {$host}:{$targetPath}", input: $hydration['input']);
-                $this->mustRun($this->sshCommand($host, $this->vendorArchiveCommand($targetPath)), "Could not archive source checkout vendor dependencies on {$host}:{$targetPath}");
+                $vendorArchive = $this->vendorArchiveSshCommand($host, $targetPath);
+                $this->mustRun($vendorArchive['command'], "Could not archive source checkout vendor dependencies on {$host}:{$targetPath}", input: $vendorArchive['input']);
                 $this->mustRun($this->sshCommand($host, $this->permissionNormalizationCommand($targetPath)), "Could not normalize source checkout permissions on {$host}:{$targetPath}");
             } finally {
                 $this->releaseLock($host, $targetPath);
@@ -354,15 +357,43 @@ final readonly class SourceMountedCheckoutSyncer
 
     private function vendorArchiveCommand(string $targetPath): string
     {
+        $archivePaths = [
+            self::vendorArchiveRelativePath('apps/gateway'),
+            self::vendorArchiveRelativePath('apps/cli'),
+        ];
+
         return implode("\n", [
             'cd '.escapeshellarg($targetPath),
             'archive_dir='.escapeshellarg(self::VendorArchiveDirectory),
+            'fingerprint_file="$archive_dir/'.self::VendorArchiveFingerprintFile.'"',
+            'fingerprint_input="$(mktemp)"',
+            'trap \'rm -f "$fingerprint_input"\' EXIT',
+            $this->vendorArchiveFingerprintCommand(),
+            'fingerprint="$(sha256sum "$fingerprint_input" | cut -d " " -f 1)"',
+            'if [ -f "$fingerprint_file" ] && [ "$(cat "$fingerprint_file")" = "$fingerprint" ] && '.implode(' && ', array_map(
+                fn (string $path): string => '[ -f '.escapeshellarg($path).' ]',
+                $archivePaths,
+            )).'; then',
+            '  chmod a+rx "$archive_dir"',
+            '  find "$archive_dir" -type f -exec chmod a+r {} +',
+            '  exit 0',
+            'fi',
             'rm -rf "$archive_dir"',
             'mkdir -p "$archive_dir"',
             $this->vendorArchiveCommandForApp('apps/gateway'),
             $this->vendorArchiveCommandForApp('apps/cli'),
+            'printf \'%s\' "$fingerprint" > "$fingerprint_file"',
             'chmod a+rx "$archive_dir"',
             'find "$archive_dir" -type f -exec chmod a+r {} +',
+        ]);
+    }
+
+    private function vendorArchiveFingerprintCommand(): string
+    {
+        return implode("\n", [
+            'for path in apps/gateway/composer.json apps/gateway/composer.lock apps/cli/composer.json apps/cli/composer.lock; do',
+            '  if [ -f "$path" ]; then sha256sum "$path" >> "$fingerprint_input"; else printf \'missing  %s\n\' "$path" >> "$fingerprint_input"; fi',
+            'done',
         ]);
     }
 
@@ -376,6 +407,21 @@ final readonly class SourceMountedCheckoutSyncer
             "tar --warning=no-unknown-keyword -C {$app} -cf {$archive} vendor;",
             'fi',
         ]);
+    }
+
+    /**
+     * @return array{command: string, input: string}
+     */
+    private function vendorArchiveSshCommand(string $host, string $targetPath): array
+    {
+        return [
+            'command' => sprintf(
+                'ssh -o BatchMode=yes -o ConnectTimeout=10 %s %s',
+                escapeshellarg($host),
+                escapeshellarg('bash -s'),
+            ),
+            'input' => "set -euo pipefail\n".$this->vendorArchiveCommand($targetPath),
+        ];
     }
 
     private function dependencyHydrationCommandForApp(string $appPath): string
