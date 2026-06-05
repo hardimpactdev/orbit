@@ -246,6 +246,44 @@ install -d -m 755 -o orbit -g orbit /home/orbit/.config /home/orbit/.config/comp
 update-alternatives --set php /usr/bin/php8.5 || true
 systemctl enable --now ssh || systemctl enable --now sshd || true
 
+case "\$(uname -m)" in
+    x86_64|amd64) static_php_arch=x86_64 ;;
+    aarch64|arm64) static_php_arch=aarch64 ;;
+    *) echo "unsupported static PHP architecture: \$(uname -m)" >&2; exit 1 ;;
+esac
+
+for php_version in 8.5:8.5.6 8.4:8.4.21 8.3:8.3.31; do
+    php_minor="\${php_version%%:*}"
+    php_patch="\${php_version#*:}"
+    install -d -m 0755 "/opt/orbit/php/\$php_minor/bin"
+    curl -fsSL "https://dl.static-php.dev/static-php-cli/bulk/php-\$php_patch-cli-linux-\$static_php_arch.tar.gz" -o "/tmp/orbit-php-\$php_minor.tar.gz"
+    tar -xzf "/tmp/orbit-php-\$php_minor.tar.gz" -C "/opt/orbit/php/\$php_minor/bin"
+    chmod +x "/opt/orbit/php/\$php_minor/bin/php"
+    ln -sf "/opt/orbit/php/\$php_minor/bin/php" "/usr/local/bin/php\$php_minor"
+    rm -f "/tmp/orbit-php-\$php_minor.tar.gz"
+done
+ln -sf /opt/orbit/php/8.5/bin/php /usr/local/bin/php
+
+expected_composer_signature="\$(curl -fsSL https://composer.github.io/installer.sig)"
+curl -fsSL https://getcomposer.org/installer -o /tmp/composer-setup.php
+actual_composer_signature="\$(php -r "echo hash_file('sha384', '/tmp/composer-setup.php');")"
+if [ "\$expected_composer_signature" != "\$actual_composer_signature" ]; then
+    echo "Composer installer signature verification failed." >&2
+    exit 1
+fi
+php /tmp/composer-setup.php --install-dir=/usr/local/bin --filename=composer
+rm -f /tmp/composer-setup.php
+
+install -d -m 0755 /etc/apt/keyrings
+curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg -o /etc/apt/keyrings/githubcli-archive-keyring.gpg
+chmod go+r /etc/apt/keyrings/githubcli-archive-keyring.gpg
+printf 'deb [arch=%s signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main\n' "\$(dpkg --print-architecture)" > /etc/apt/sources.list.d/github-cli.list
+apt-get update -qq
+apt-get install -y -qq gh
+
+runuser -u orbit -- env COMPOSER_HOME=/home/orbit/.config/composer composer global require laravel/installer --no-interaction --no-progress
+ln -sf /home/orbit/.config/composer/vendor/bin/laravel /usr/local/bin/laravel
+
 cat > /etc/systemd/system/orbit-e2e-docker-swarm-init.service <<'UNIT'
 [Unit]
 Description=Initialize Docker Swarm for Orbit E2E
@@ -302,7 +340,10 @@ DOCKERFILE
 docker build --pull=false -t {$webSocketRuntimeImage} -f /tmp/orbit-e2e-websocket-runtime.Dockerfile /tmp
 docker image inspect {$webSocketRuntimeImage} >/dev/null
 
-composer --version >/dev/null
+/opt/orbit/php/8.5/bin/php -r "echo PHP_VERSION;" >/dev/null
+/usr/local/bin/composer --version >/dev/null
+gh --version >/dev/null
+cd /home/orbit && /usr/local/bin/laravel --version >/dev/null
 apt-get clean
 rm -rf /var/lib/apt/lists/*
 BASH;

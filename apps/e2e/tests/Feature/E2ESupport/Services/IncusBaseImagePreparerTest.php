@@ -181,6 +181,16 @@ it('bootstraps the runtime image without guest user-data', function (): void {
     expect($bootstrapScript)->toContain('php8.5-cli');
     expect($bootstrapScript)->toContain('php8.5-bcmath');
     expect($bootstrapScript)->toContain('docker.io');
+    expect($bootstrapScript)->toContain('static_php_arch=');
+    expect($bootstrapScript)->toContain('https://dl.static-php.dev/static-php-cli/bulk/php-$php_patch-cli-linux-$static_php_arch.tar.gz');
+    expect($bootstrapScript)->toContain('/opt/orbit/php/$php_minor/bin');
+    expect($bootstrapScript)->toContain('ln -sf /opt/orbit/php/8.5/bin/php /usr/local/bin/php');
+    expect($bootstrapScript)->toContain('https://getcomposer.org/installer');
+    expect($bootstrapScript)->toContain('php /tmp/composer-setup.php --install-dir=/usr/local/bin --filename=composer');
+    expect($bootstrapScript)->toContain('https://cli.github.com/packages/githubcli-archive-keyring.gpg');
+    expect($bootstrapScript)->toContain('apt-get install -y -qq gh');
+    expect($bootstrapScript)->toContain('composer global require laravel/installer');
+    expect($bootstrapScript)->toContain('ln -sf /home/orbit/.config/composer/vendor/bin/laravel /usr/local/bin/laravel');
     expect($bootstrapScript)->toContain('docker swarm init');
     expect($bootstrapScript)->toContain('docker pull "$image"');
     expect($bootstrapScript)->toContain('caddy:2-alpine');
@@ -196,6 +206,10 @@ it('bootstraps the runtime image without guest user-data', function (): void {
     expect($bootstrapScript)->toContain('install -d -m 700 -o orbit -g orbit /home/orbit/.ssh');
     expect($bootstrapScript)->toContain('/home/orbit/.config/composer');
     expect($bootstrapScript)->toContain('/home/orbit/.config/orbit');
+    expect($bootstrapScript)->toContain('/opt/orbit/php/8.5/bin/php -r "echo PHP_VERSION;" >/dev/null');
+    expect($bootstrapScript)->toContain('/usr/local/bin/composer --version >/dev/null');
+    expect($bootstrapScript)->toContain('gh --version >/dev/null');
+    expect($bootstrapScript)->toContain('cd /home/orbit && /usr/local/bin/laravel --version >/dev/null');
 });
 
 it('throws when the source image is not available', function (): void {
