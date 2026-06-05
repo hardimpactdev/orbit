@@ -98,11 +98,11 @@ function incusTopologyBuilderPreparedRoleResult(string $command): ?ProcessResult
         '__orbit_prepare_status agent 0',
         '__orbit_prepare_timing dev launch 120',
         '__orbit_prepare_timing dev agent-ready 230',
-        '__orbit_prepare_timing dev source-runtime 340',
+        '__orbit_prepare_timing dev orbit-binary 340',
         '__orbit_prepare_timing dev ssh-authorize 450',
         '__orbit_prepare_timing dev ssh-ready 560',
         '__orbit_prepare_timing prod launch 130',
-        '__orbit_prepare_timing prod source-runtime 350',
+        '__orbit_prepare_timing prod orbit-binary 350',
         '__orbit_prepare_timing agent launch 140',
         '',
     ]));
@@ -507,7 +507,7 @@ it('builds full prepared roles from the gateway base with parallel downstream ba
             ->and($redisSeedPhase)->toBeInt()
             ->and($phaseNames)->toContain('prepared.downstream.prepare.dev.launch')
             ->and($phaseNames)->toContain('prepared.downstream.prepare.dev.agent-ready')
-            ->and($phaseNames)->toContain('prepared.downstream.prepare.dev.source-runtime')
+            ->and($phaseNames)->toContain('prepared.downstream.prepare.dev.orbit-binary')
             ->and($phaseNames)->toContain('prepared.downstream.prepare.dev.ssh-authorize')
             ->and($phaseNames)->toContain('prepared.downstream.prepare.dev.ssh-ready')
             ->and($phaseNames)->toContain('prepared.downstream.bake.dev.total')
@@ -676,7 +676,7 @@ it('builds full prepared websocket roles on the app-dev node', function (): void
             ->and($runtimePrerequisitesPhase)->toBeInt()
             ->and($websocketBakePhase)->toBeInt()
             ->and($phaseNames)->toContain('prepared-websocket.downstream.prepare.dev.launch')
-            ->and($phaseNames)->toContain('prepared-websocket.downstream.prepare.dev.source-runtime')
+            ->and($phaseNames)->toContain('prepared-websocket.downstream.prepare.dev.orbit-binary')
             ->and($phaseNames)->toContain('prepared-websocket.downstream.bake.dev.total')
             ->and($phaseNames)->toContain('prepared-websocket.downstream.bake.prod.total')
             ->and($phaseNames)->toContain('prepared-websocket.downstream.bake.agent.total')

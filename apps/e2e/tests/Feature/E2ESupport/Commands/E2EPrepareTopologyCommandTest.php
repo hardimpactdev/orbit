@@ -36,6 +36,7 @@ function fakeBundleProcessing(): void
         'rm -rf *' => Process::result(),
         // Remote ops (SSH-wrapped). pushBundle creates a stage dir and an
         // orbit-e2e-bundle subdir, then scps into it.
+        'ssh *mktemp -d /tmp/orbit-e2e-cli-binary*' => Process::result(output: "/tmp/orbit-e2e-cli-binary-remote\n"),
         'ssh *mktemp -d /tmp/orbit-e2e-stage*' => Process::result(output: "/tmp/orbit-e2e-stage-remote\n"),
         'ssh *' => Process::result(),
         'scp *' => Process::result(),
@@ -412,6 +413,7 @@ it('--force uses the default Incus host when host environment is unset', functio
 
     $builder = m::mock(IncusTopologyBuilder::class);
     $builder->shouldReceive('useSourcePath')->once();
+    $builder->shouldReceive('useOrbitBinaryBundle')->once();
     $builder->shouldReceive('build')
         ->with(E2ETopologyKind::OperatorGatewayAppdevAppprodAgentWebsocket, true)
         ->andReturn($manifest);
@@ -523,6 +525,7 @@ it('--force records prepare topology phase timings', function (): void {
 
     $builder = m::mock(IncusTopologyBuilder::class);
     $builder->shouldReceive('useSourcePath')->once();
+    $builder->shouldReceive('useOrbitBinaryBundle')->once();
     $builder->shouldReceive('build')
         ->with(E2ETopologyKind::OperatorGatewayAppdevAppprodAgentWebsocket, true)
         ->andReturn($manifest);
@@ -545,6 +548,8 @@ it('--force records prepare topology phase timings', function (): void {
     expect($capturedTimer)->toBeInstanceOf(E2EPhaseTimer::class)
         ->and($capturedTimer->streamsCheckpoints())->toBeFalse()
         ->and($eventNames)->toContain('source-sync')
+        ->and($eventNames)->toContain('cli-binary.local')
+        ->and($eventNames)->toContain('cli-binary.push')
         ->and($eventNames)->toContain('builder.build');
 });
 
@@ -649,6 +654,7 @@ it('--force outputs JSON success envelope when builder returns a manifest', func
 
     $builder = m::mock(IncusTopologyBuilder::class);
     $builder->shouldReceive('useSourcePath')->once();
+    $builder->shouldReceive('useOrbitBinaryBundle')->once();
     $builder->shouldReceive('build')
         ->with(E2ETopologyKind::OperatorGatewayAppdevAppprodAgentWebsocket, true)
         ->andReturn($manifest);
@@ -685,6 +691,7 @@ it('--force surfaces builder failure as command failure', function (): void {
 
     $builder = m::mock(IncusTopologyBuilder::class);
     $builder->shouldReceive('useSourcePath');
+    $builder->shouldReceive('useOrbitBinaryBundle');
     $builder->shouldReceive('build')
         ->andThrow(new RuntimeException('Required base image [orbit-base-ubuntu-26.04-runtime] not found.'));
 

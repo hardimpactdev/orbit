@@ -151,6 +151,8 @@ class E2EPrepareTopologyCommand extends Command
 
         $bundleDir = null;
         $remoteBundle = null;
+        $binaryBundleDir = null;
+        $remoteBinaryBundle = null;
         $timer = new E2EPhaseTimer(stream: ! $this->laravel->runningUnitTests());
 
         try {
@@ -176,8 +178,11 @@ class E2EPrepareTopologyCommand extends Command
                     'source-sync',
                     fn (): string => (new SourceMountedCheckoutSyncer)->sync($host->config->host, 'incus'),
                 );
+                $binaryBundleDir = $timer->measure('cli-binary.local', fn (): string => $this->buildLocalCliBinaryBundle());
+                $remoteBinaryBundle = $timer->measure('cli-binary.push', fn (): string => $this->pushLocalCliBinaryBundle($host, $binaryBundleDir));
 
                 $builder->useSourcePath($remoteSourcePath);
+                $builder->useOrbitBinaryBundle($remoteBinaryBundle);
             }
 
             if ($artifactRoles !== null) {
@@ -198,8 +203,16 @@ class E2EPrepareTopologyCommand extends Command
                 $timer->measure('bundle.cleanup.remote', fn () => $host->cleanupBundle($remoteBundle));
             }
 
+            if ($remoteBinaryBundle !== null) {
+                $timer->measure('cli-binary.cleanup.remote', fn () => $this->cleanupRemoteCliBinaryBundle($host, $remoteBinaryBundle));
+            }
+
             if ($bundleDir !== null && is_dir($bundleDir)) {
                 $timer->measure('bundle.cleanup.local', fn () => Process::run('rm -rf '.escapeshellarg((string) $bundleDir)));
+            }
+
+            if ($binaryBundleDir !== null && is_dir($binaryBundleDir)) {
+                $timer->measure('cli-binary.cleanup.local', fn () => Process::run('rm -rf '.escapeshellarg((string) $binaryBundleDir)));
             }
 
             $timer->flush('prepare-topology');
@@ -281,6 +294,63 @@ class E2EPrepareTopologyCommand extends Command
         }
 
         return $bundleDir;
+    }
+
+    private function buildLocalCliBinaryBundle(): string
+    {
+        $bundleDir = sys_get_temp_dir().'/orbit-e2e-cli-binary-'.bin2hex(random_bytes(6));
+
+        if (! mkdir($bundleDir, 0755, true)) {
+            throw new RuntimeException("Could not create local CLI binary bundle directory: {$bundleDir}");
+        }
+
+        if (! app()->runningUnitTests()) {
+            (new OrbitCliBinaryBundle)->buildLinuxBinaryInto($bundleDir);
+        }
+
+        return $bundleDir;
+    }
+
+    private function pushLocalCliBinaryBundle(IncusHost $host, string $bundleDir): string
+    {
+        $binary = OrbitCliBinaryBundle::bundledBinaryPath($bundleDir);
+
+        if (! app()->runningUnitTests() && ! is_file($binary)) {
+            throw new RuntimeException("Orbit CLI binary bundle is missing: {$binary}");
+        }
+
+        $stage = $host->run('mktemp -d /tmp/orbit-e2e-cli-binary-XXXXXX', timeoutSeconds: 30);
+
+        if (! $stage->successful()) {
+            throw new RuntimeException("Could not create remote CLI binary bundle directory on {$host->config->host}: {$stage->errorOutput()}");
+        }
+
+        $remoteDir = trim($stage->output());
+
+        if ($remoteDir === '') {
+            throw new RuntimeException("Remote CLI binary bundle directory was empty on {$host->config->host}.");
+        }
+
+        if (app()->runningUnitTests()) {
+            return $remoteDir;
+        }
+
+        $copy = Process::timeout(120)->run(sprintf(
+            'scp -q %s %s',
+            escapeshellarg($binary),
+            escapeshellarg("{$host->config->host}:{$remoteDir}/orbit-binary"),
+        ));
+
+        if (! $copy->successful()) {
+            throw new RuntimeException("Could not push Orbit CLI binary bundle to {$host->config->host}:{$remoteDir}: {$copy->errorOutput()}");
+        }
+
+        return $remoteDir;
+    }
+
+    private function cleanupRemoteCliBinaryBundle(IncusHost $host, string $remoteDir): void
+    {
+        $host->run('rm -rf '.escapeshellarg($remoteDir).' || true', timeoutSeconds: 30);
     }
 
     private function resolveSourceArchive(string $bundleDir): string

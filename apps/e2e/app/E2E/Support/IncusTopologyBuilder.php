@@ -15,6 +15,8 @@ class IncusTopologyBuilder
 {
     private ?string $remoteBundleDir = null;
 
+    private ?string $remoteOrbitBinaryBundleDir = null;
+
     private ?string $remoteSourcePath = null;
 
     private string $lastPreparedBakeOutput = '';
@@ -58,6 +60,7 @@ class IncusTopologyBuilder
     public function useBundle(string $remoteBundleDir): void
     {
         $this->remoteBundleDir = $remoteBundleDir;
+        $this->remoteOrbitBinaryBundleDir = $remoteBundleDir;
         $this->remoteSourcePath = null;
     }
 
@@ -65,6 +68,12 @@ class IncusTopologyBuilder
     {
         $this->remoteSourcePath = rtrim($remoteSourcePath, '/');
         $this->remoteBundleDir = null;
+        $this->remoteOrbitBinaryBundleDir = null;
+    }
+
+    public function useOrbitBinaryBundle(string $remoteBundleDir): void
+    {
+        $this->remoteOrbitBinaryBundleDir = rtrim($remoteBundleDir, '/');
     }
 
     /**
@@ -1032,6 +1041,37 @@ BASH;
         }
 
         $this->installSourceMountedRuntime($instance, $user);
+
+        if ($this->remoteOrbitBinaryBundleDir !== null) {
+            $this->installOrbitBinaryFromBundle($instance, $user);
+        }
+    }
+
+    private function installOrbitBinaryFromBundle(IncusInstance $instance, string $user): void
+    {
+        $bundleDir = $this->remoteOrbitBinaryBundleDir;
+
+        if ($bundleDir === null) {
+            throw new RuntimeException('No Orbit CLI binary bundle has been staged.');
+        }
+
+        $name = $instance->name();
+        $binary = "{$bundleDir}/orbit-binary";
+        $target = "/home/{$user}/orbit/bin/orbit-binary";
+
+        $result = $this->host->run(implode("\n", [
+            'set -euo pipefail',
+            'test -f '.escapeshellarg($binary),
+            'incus exec '.escapeshellarg($name).' -- sh -lc '.escapeshellarg('id '.escapeshellarg($user).' >/dev/null 2>&1 || useradd -m -s /bin/bash '.escapeshellarg($user)),
+            'incus exec '.escapeshellarg($name).' -- sh -lc '.escapeshellarg('install -d -m 0755 -o '.escapeshellarg($user).' -g '.escapeshellarg($user).' /home/'.escapeshellarg($user).'/orbit/bin'),
+            'incus file push '.escapeshellarg($binary).' '.escapeshellarg("{$name}{$target}"),
+            'incus exec '.escapeshellarg($name).' -- sh -lc '.escapeshellarg('chown '.escapeshellarg($user).':'.escapeshellarg($user).' '.escapeshellarg($target).' && chmod 0755 '.escapeshellarg($target).' && ln -sf '.escapeshellarg($target).' /usr/local/bin/orbit'),
+            'incus exec '.escapeshellarg($name).' -- sh -lc '.escapeshellarg('runuser -u '.escapeshellarg($user).' -- env HOME=/home/'.escapeshellarg($user).' PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin /usr/local/bin/orbit --version >/dev/null'),
+        ]), timeoutSeconds: 120);
+
+        if (! $result->successful()) {
+            throw new RuntimeException("Could not install Orbit CLI binary on {$name}: {$result->errorOutput()}{$result->output()}");
+        }
     }
 
     private function installSourceMountedRuntime(IncusInstance $instance, string $user): void
@@ -1460,6 +1500,7 @@ set -euo pipefail;
 
 bootstrap_user=%s
 bundle_dir=%s
+binary_bundle_dir=%s
 source_path=%s
 private_key_path=%s
 public_key_path=%s
@@ -1536,7 +1577,7 @@ wait_for_ssh() {
 
 install_orbit_binary() {
     local name="$1"
-    local binary="${bundle_dir}/orbit-binary"
+    local binary="${binary_bundle_dir}/orbit-binary"
 
     if [ ! -f "$binary" ]; then
         echo "Orbit binary artifact missing from prepared topology bundle: ${binary}" >&2
@@ -1584,7 +1625,11 @@ prepare_role() {
     wait_for_agent "$name"
     record_timing "$role" agent-ready "$phase_start"
 
-    if [ -n "$source_path" ]; then
+    if [ -n "$binary_bundle_dir" ]; then
+        phase_start="$(now_ms)"
+        install_orbit_binary "$name"
+        record_timing "$role" orbit-binary "$phase_start"
+    elif [ -n "$source_path" ]; then
         phase_start="$(now_ms)"
         install_source_runtime "$name"
         record_timing "$role" source-runtime "$phase_start"
@@ -1611,6 +1656,7 @@ exit "$STATUS";
 BASH,
             escapeshellarg($this->host->config->bootstrapUser),
             escapeshellarg((string) $this->remoteBundleDir),
+            escapeshellarg((string) $this->remoteOrbitBinaryBundleDir),
             escapeshellarg((string) $this->remoteSourcePath),
             escapeshellarg($key->privateKeyPath),
             escapeshellarg($key->publicKeyPath),
