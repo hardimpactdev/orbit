@@ -135,7 +135,7 @@ it('throws when no provisioning bundle has been staged', function (): void {
     $builder = new IncusTopologyBuilder($host);
 
     expect(fn () => $builder->build(E2ETopologyKind::Operator))
-        ->toThrow(RuntimeException::class, 'No provisioning bundle has been staged');
+        ->toThrow(RuntimeException::class, 'No source checkout or provisioning bundle has been staged');
 });
 
 it('throws when a target template instance already exists', function (): void {
@@ -331,7 +331,7 @@ it('builds full prepared roles from the gateway base with parallel downstream ba
         $host->shouldReceive('instanceExists')->andReturn(false);
         $host->shouldReceive('provisionInstance')->with('orbit-template-operator-base', 'operator', '/tmp/orbit-e2e-bundle-test', 'operator')->once()->andReturn(incusTopologyBuilderProcessResult());
         $host->shouldReceive('provisionInstance')->with('orbit-template-gateway-base', 'gateway', '/tmp/orbit-e2e-bundle-test')->once()->andReturn(incusTopologyBuilderProcessResult());
-        $host->shouldReceive('stopInstance')->times(8)->andReturn(incusTopologyBuilderProcessResult());
+        $host->shouldReceive('forceStopInstance')->times(8)->andReturn(incusTopologyBuilderProcessResult());
         $host->shouldReceive('snapshotInstance')->times(8)->andReturn(incusTopologyBuilderProcessResult());
         $host->shouldReceive('run')->andReturnUsing(function (string $command, ?int $timeoutSeconds = null) use (&$commands): ProcessResult {
             $commands[] = $command;
@@ -449,8 +449,10 @@ it('builds full prepared roles from the gateway base with parallel downstream ba
             ->and($commandOutput)->toContain('/tmp/orbit-e2e-prepared-bake.sh')
             ->and($commandOutput)->toContain('caddy-2-alpine.tar')
             ->and($commandOutput)->toContain('frankenphp-1-php8.5-bookworm.tar')
+            ->and($commandOutput)->toContain('orbit-websocket-current.tar')
             ->and($commandOutput)->toContain('caddy:2-alpine')
             ->and($commandOutput)->toContain('dunglas/frankenphp:1-php8.5-bookworm')
+            ->and($commandOutput)->toContain('orbit-websocket:current')
             ->and($commandOutput)->toContain('docker.io')
             ->and($commandOutput)->toContain('sudo -u "$bootstrap_user" docker image inspect')
             ->and($commandOutput)->toContain('runtime_user=orbit')
@@ -488,7 +490,7 @@ it('builds full prepared websocket roles on the app-dev node', function (): void
         $host->shouldReceive('instanceExists')->andReturn(false);
         $host->shouldReceive('provisionInstance')->with('orbit-template-operator-base', 'operator', '/tmp/orbit-e2e-bundle-test', 'operator')->once()->andReturn(incusTopologyBuilderProcessResult());
         $host->shouldReceive('provisionInstance')->with('orbit-template-gateway-base', 'gateway', '/tmp/orbit-e2e-bundle-test')->once()->andReturn(incusTopologyBuilderProcessResult());
-        $host->shouldReceive('stopInstance')->times(8)->andReturn(incusTopologyBuilderProcessResult());
+        $host->shouldReceive('forceStopInstance')->times(8)->andReturn(incusTopologyBuilderProcessResult());
         $host->shouldReceive('snapshotInstance')->times(8)->andReturn(incusTopologyBuilderProcessResult());
         $host->shouldReceive('run')->andReturnUsing(function (string $command, ?int $timeoutSeconds = null) use (&$commands): ProcessResult {
             $commands[] = $command;
@@ -603,8 +605,10 @@ it('builds full prepared websocket roles on the app-dev node', function (): void
             ->and($commandOutput)->toContain('orbit-gateway-current.tar')
             ->and($commandOutput)->toContain('caddy-2-alpine.tar')
             ->and($commandOutput)->toContain('frankenphp-1-php8.5-bookworm.tar')
+            ->and($commandOutput)->toContain('orbit-websocket-current.tar')
             ->and($commandOutput)->toContain('caddy:2-alpine')
             ->and($commandOutput)->toContain('dunglas/frankenphp:1-php8.5-bookworm')
+            ->and($commandOutput)->toContain('orbit-websocket:current')
             ->and($commandOutput)->toContain('docker.io')
             ->and($commandOutput)->toContain('bootstrap_user=')
             ->and($commandOutput)->toContain('provisioner')
@@ -646,7 +650,7 @@ it('keeps successful app-dev agent and websocket checkpoints when app production
         $host->shouldReceive('instanceExists')->andReturn(false);
         $host->shouldReceive('provisionInstance')->with('orbit-template-operator-base', 'operator', '/tmp/orbit-e2e-bundle-test', 'operator')->once()->andReturn(incusTopologyBuilderProcessResult());
         $host->shouldReceive('provisionInstance')->with('orbit-template-gateway-base', 'gateway', '/tmp/orbit-e2e-bundle-test')->once()->andReturn(incusTopologyBuilderProcessResult());
-        $host->shouldReceive('stopInstance')->zeroOrMoreTimes()->andReturn(incusTopologyBuilderProcessResult());
+        $host->shouldReceive('forceStopInstance')->zeroOrMoreTimes()->andReturn(incusTopologyBuilderProcessResult());
         $host->shouldReceive('snapshotInstance')
             ->zeroOrMoreTimes()
             ->andReturnUsing(function (string $name, string $snapshot) use (&$snapshots): ProcessResult {
@@ -780,7 +784,7 @@ it('reuses valid app production and agent checkpoints while retrying missing app
         $host->shouldReceive('instanceExists')->andReturn(false);
         $host->shouldReceive('stopInstancesIfRunning')->once()->andReturn(incusTopologyBuilderProcessResult());
         $host->shouldReceive('startInstancesIfStopped')->once()->andReturn(incusTopologyBuilderProcessResult());
-        $host->shouldReceive('stopInstance')->zeroOrMoreTimes()->andReturn(incusTopologyBuilderProcessResult());
+        $host->shouldReceive('forceStopInstance')->zeroOrMoreTimes()->andReturn(incusTopologyBuilderProcessResult());
         $host->shouldReceive('snapshotInstance')->zeroOrMoreTimes()->andReturn(incusTopologyBuilderProcessResult());
         $host->shouldReceive('writeTextFile')->zeroOrMoreTimes()->andReturn(incusTopologyBuilderProcessResult());
         $host->shouldReceive('run')->andReturnUsing(function (string $command, ?int $timeoutSeconds = null) use (&$commands): ProcessResult {
@@ -895,7 +899,7 @@ it('retries websocket bake when all concrete role checkpoints are valid but the 
         $host->shouldReceive('instanceExists')->andReturn(false);
         $host->shouldReceive('stopInstancesIfRunning')->once()->andReturn(incusTopologyBuilderProcessResult());
         $host->shouldReceive('startInstancesIfStopped')->once()->andReturn(incusTopologyBuilderProcessResult());
-        $host->shouldReceive('stopInstance')->zeroOrMoreTimes()->andReturn(incusTopologyBuilderProcessResult());
+        $host->shouldReceive('forceStopInstance')->zeroOrMoreTimes()->andReturn(incusTopologyBuilderProcessResult());
         $host->shouldReceive('snapshotInstance')->zeroOrMoreTimes()->andReturn(incusTopologyBuilderProcessResult());
         $host->shouldReceive('writeTextFile')->zeroOrMoreTimes()->andReturn(incusTopologyBuilderProcessResult());
         $host->shouldReceive('run')->andReturnUsing(function (string $command, ?int $timeoutSeconds = null) use (&$commands): ProcessResult {
@@ -1066,7 +1070,7 @@ it('records phase timings while building topology templates', function (): void 
         ->with('orbit-template-operator-base', 'operator', '/tmp/orbit-e2e-bundle-test', 'operator')
         ->once()
         ->andReturn(incusTopologyBuilderProcessResult());
-    $host->shouldReceive('stopInstance')->with('orbit-template-operator-base')->once()->andReturn(incusTopologyBuilderProcessResult());
+    $host->shouldReceive('forceStopInstance')->with('orbit-template-operator-base')->once()->andReturn(incusTopologyBuilderProcessResult());
     $host->shouldReceive('snapshotInstance')->with('orbit-template-operator-base', 'clean-operator-base')->once()->andReturn(incusTopologyBuilderProcessResult());
     $host->shouldReceive('run')->andReturnUsing(function (string $command, ?int $timeoutSeconds = null): ProcessResult {
         if (str_starts_with($command, 'mktemp -d ')) {
@@ -1113,7 +1117,7 @@ it('builds prepared topology templates through staged internal gateway baking', 
     $host->shouldReceive('imageExists')->with($config->baseImage)->andReturn(true);
     $host->shouldReceive('instanceExists')->andReturn(false);
     $host->shouldReceive('provisionInstance')->with('orbit-template-operator-base', 'operator', '/tmp/orbit-e2e-bundle-test', 'operator')->once()->andReturn(incusTopologyBuilderProcessResult());
-    $host->shouldReceive('stopInstance')->times(8)->andReturn(incusTopologyBuilderProcessResult());
+    $host->shouldReceive('forceStopInstance')->times(8)->andReturn(incusTopologyBuilderProcessResult());
     $host->shouldReceive('snapshotInstance')->times(8)->andReturn(incusTopologyBuilderProcessResult());
     $host->shouldReceive('run')->andReturnUsing(function (string $command, ?int $timeoutSeconds = null) use (&$commands): ProcessResult {
         $commands[] = $command;
@@ -1249,7 +1253,7 @@ it('builds app production ingress on the prod template without development or ag
     $host->shouldReceive('imageExists')->with($config->baseImage)->andReturn(true);
     $host->shouldReceive('instanceExists')->andReturn(false);
     $host->shouldReceive('provisionInstance')->with('orbit-template-operator-base', 'operator', '/tmp/orbit-e2e-bundle-test', 'operator')->once()->andReturn(incusTopologyBuilderProcessResult());
-    $host->shouldReceive('stopInstance')->times(6)->andReturn(incusTopologyBuilderProcessResult());
+    $host->shouldReceive('forceStopInstance')->times(6)->andReturn(incusTopologyBuilderProcessResult());
     $host->shouldReceive('snapshotInstance')->times(6)->andReturn(incusTopologyBuilderProcessResult());
     $host->shouldReceive('run')->andReturnUsing(function (string $command, ?int $timeoutSeconds = null) use (&$commands): ProcessResult {
         $commands[] = $command;

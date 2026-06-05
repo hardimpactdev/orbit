@@ -22,6 +22,8 @@ class IncusHost
 
     private const string DefaultOrbitGatewayImageArchive = E2EArtifactProdManifest::GatewayImageArchive;
 
+    private const string DefaultOrbitWebSocketImageArchive = 'orbit-websocket-current.tar';
+
     public function __construct(
         public readonly E2EConfig $config,
     ) {}
@@ -119,6 +121,7 @@ class IncusHost
             $this->stageDockerImageArchive('caddy:2-alpine', 'caddy-2-alpine.tar', $bundleDir, pullIfMissing: true);
             $this->stageDockerImageArchive('4km3/dnsmasq:latest', 'dnsmasq-latest.tar', $bundleDir, pullIfMissing: true);
             $this->stageDockerImageArchive($this->defaultFrankenPhpImage(), self::DefaultFrankenPhpImageArchive, $bundleDir, pullIfMissing: true);
+            $this->stageWebSocketImageArchive($bundleDir);
             $this->stageDockerImageArchive(WgEasyServiceInstaller::Image, self::DefaultWgEasyImageArchive, $bundleDir, pullIfMissing: true);
 
             return $bundleDir;
@@ -139,6 +142,7 @@ class IncusHost
         $this->stageDockerImageArchive('caddy:2-alpine', 'caddy-2-alpine.tar', $bundleDir, pullIfMissing: true);
         $this->stageDockerImageArchive('4km3/dnsmasq:latest', 'dnsmasq-latest.tar', $bundleDir, pullIfMissing: true);
         $this->stageDockerImageArchive($this->defaultFrankenPhpImage(), self::DefaultFrankenPhpImageArchive, $bundleDir, pullIfMissing: true);
+        $this->stageWebSocketImageArchive($bundleDir);
         $this->stageDockerImageArchive(WgEasyServiceInstaller::Image, self::DefaultWgEasyImageArchive, $bundleDir, pullIfMissing: true);
 
         return $bundleDir;
@@ -154,6 +158,11 @@ class IncusHost
         return DockerTopologyProvider::gatewayImage();
     }
 
+    private function defaultWebSocketImage(): string
+    {
+        return DockerTopologyProvider::webSocketRuntimeImage();
+    }
+
     private function stageGatewayImageArchive(string $bundleDir): void
     {
         $this->stageDockerImageArchive(
@@ -162,6 +171,53 @@ class IncusHost
             $bundleDir,
             fallbackImage: 'orbit-gateway:prepared-current',
         );
+    }
+
+    private function stageWebSocketImageArchive(string $bundleDir): void
+    {
+        $this->ensureWebSocketRuntimeImage();
+        $this->stageDockerImageArchive($this->defaultWebSocketImage(), self::DefaultOrbitWebSocketImageArchive, $bundleDir);
+    }
+
+    private function ensureWebSocketRuntimeImage(): void
+    {
+        $image = escapeshellarg($this->defaultWebSocketImage());
+
+        $result = $this->run(sprintf(
+            <<<'BASH'
+if ! docker image inspect %1$s >/dev/null 2>&1; then
+    cat >/tmp/orbit-e2e-websocket-runtime.Dockerfile <<'DOCKERFILE'
+FROM ubuntu:26.04
+ENV DEBIAN_FRONTEND=noninteractive
+RUN printf '%s\n' 'Acquire::ForceIPv4 "true";' 'Acquire::http::Timeout "10";' 'Acquire::https::Timeout "10";' 'Acquire::Retries "3";' >/etc/apt/apt.conf.d/99orbit-e2e-network \
+    && apt-get update -qq \
+    && apt-get install -y -qq --no-install-recommends \
+        ca-certificates \
+        php8.5-bcmath \
+        php8.5-cli \
+        php8.5-common \
+        php8.5-curl \
+        php8.5-intl \
+        php8.5-mbstring \
+        php8.5-redis \
+        php8.5-sqlite3 \
+        php8.5-xml \
+        php8.5-zip \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+WORKDIR /app
+CMD ["php", "artisan", "reverb:start", "--host=0.0.0.0", "--port=8080"]
+DOCKERFILE
+    docker build --pull=false -t %1$s -f /tmp/orbit-e2e-websocket-runtime.Dockerfile /tmp
+fi
+docker image inspect %1$s >/dev/null
+BASH,
+            $image,
+        ), timeoutSeconds: 900);
+
+        if (! $result->successful()) {
+            throw new RuntimeException("Could not prepare {$this->defaultWebSocketImage()} on {$this->config->host}: {$result->errorOutput()}");
+        }
     }
 
     private function stageDockerImageArchive(string $image, string $fileName, string $bundleDir, bool $pullIfMissing = false, ?string $fallbackImage = null): void
@@ -580,6 +636,14 @@ class IncusHost
             'incus stop %1$s --timeout 120 || incus stop %1$s --force',
             escapeshellarg($name),
         ), timeoutSeconds: 180);
+    }
+
+    public function forceStopInstance(string $name): ProcessResult
+    {
+        return $this->run(sprintf(
+            'incus stop %s --force',
+            escapeshellarg($name),
+        ), timeoutSeconds: 30);
     }
 
     /**

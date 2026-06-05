@@ -39,6 +39,7 @@ function fakeBundleProcessing(): void
         'ssh *mktemp -d /tmp/orbit-e2e-stage*' => Process::result(output: "/tmp/orbit-e2e-stage-remote\n"),
         'ssh *' => Process::result(),
         'scp *' => Process::result(),
+        'rsync *' => Process::result(),
     ]);
 }
 
@@ -270,6 +271,7 @@ it('accepts targeted Incus role preparation when forced with a custom namespace'
         $this->artisan('e2e:prepare-topology', [
             'kind' => 'operator_gateway_agent',
             '--force' => true,
+            '--use-build-artifacts' => true,
             '--roles' => 'agent',
         ])
             ->doesntExpectOutputToContain('not implemented')
@@ -409,7 +411,7 @@ it('--force uses the default Incus host when host environment is unset', functio
     $selectedHost = null;
 
     $builder = m::mock(IncusTopologyBuilder::class);
-    $builder->shouldReceive('useBundle')->once();
+    $builder->shouldReceive('useSourcePath')->once();
     $builder->shouldReceive('build')
         ->with(E2ETopologyKind::OperatorGatewayAppdevAppprodAgentWebsocket, true)
         ->andReturn($manifest);
@@ -466,6 +468,7 @@ it('--force builds the source archive and forwards the bundle path to the builde
     $this->artisan('e2e:prepare-topology', [
         'kind' => 'operator',
         '--force' => true,
+        '--use-build-artifacts' => true,
     ])->assertSuccessful();
 
     expect($forwardedBundle)->toBe('/tmp/orbit-e2e-stage-remote/orbit-e2e-bundle');
@@ -502,6 +505,7 @@ it('--force excludes persisted orbit gateway state from the source archive', fun
     $this->artisan('e2e:prepare-topology', [
         'kind' => 'operator',
         '--force' => true,
+        '--use-build-artifacts' => true,
     ])->assertSuccessful();
 
     expect($tarCommand)
@@ -518,7 +522,7 @@ it('--force records prepare topology phase timings', function (): void {
     $capturedTimer = null;
 
     $builder = m::mock(IncusTopologyBuilder::class);
-    $builder->shouldReceive('useBundle')->once();
+    $builder->shouldReceive('useSourcePath')->once();
     $builder->shouldReceive('build')
         ->with(E2ETopologyKind::OperatorGatewayAppdevAppprodAgentWebsocket, true)
         ->andReturn($manifest);
@@ -540,11 +544,8 @@ it('--force records prepare topology phase timings', function (): void {
 
     expect($capturedTimer)->toBeInstanceOf(E2EPhaseTimer::class)
         ->and($capturedTimer->streamsCheckpoints())->toBeFalse()
-        ->and($eventNames)->toContain('bundle.local')
-        ->and($eventNames)->toContain('bundle.push')
-        ->and($eventNames)->toContain('builder.build')
-        ->and($eventNames)->toContain('bundle.cleanup.remote')
-        ->and($eventNames)->toContain('bundle.cleanup.local');
+        ->and($eventNames)->toContain('source-sync')
+        ->and($eventNames)->toContain('builder.build');
 });
 
 it('--branch uses git archive instead of tar', function (): void {
@@ -565,6 +566,7 @@ it('--branch uses git archive instead of tar', function (): void {
     $this->artisan('e2e:prepare-topology', [
         'kind' => 'operator',
         '--force' => true,
+        '--use-build-artifacts' => true,
         '--branch' => 'main',
     ])->assertSuccessful();
 
@@ -593,6 +595,7 @@ it('--source-archive forwards the provided archive', function (): void {
         $this->artisan('e2e:prepare-topology', [
             'kind' => 'operator',
             '--force' => true,
+            '--use-build-artifacts' => true,
             '--source-archive' => $tempArchive,
         ])->assertSuccessful();
 
@@ -613,6 +616,7 @@ it('--source-archive fails clearly when archive is missing', function (): void {
     $this->artisan('e2e:prepare-topology', [
         'kind' => 'operator',
         '--force' => true,
+        '--use-build-artifacts' => true,
         '--source-archive' => '/tmp/orbit-source-does-not-exist.tar.gz',
     ])
         ->expectsOutputToContain('--source-archive not found')
@@ -629,6 +633,7 @@ it('--composer-cache fails clearly when an explicit cache directory is missing',
     $this->artisan('e2e:prepare-topology', [
         'kind' => 'operator',
         '--force' => true,
+        '--use-build-artifacts' => true,
         '--composer-cache' => '/tmp/orbit-composer-cache-does-not-exist',
     ])
         ->expectsOutputToContain('--composer-cache directory not found')
@@ -643,7 +648,7 @@ it('--force outputs JSON success envelope when builder returns a manifest', func
     ];
 
     $builder = m::mock(IncusTopologyBuilder::class);
-    $builder->shouldReceive('useBundle')->once();
+    $builder->shouldReceive('useSourcePath')->once();
     $builder->shouldReceive('build')
         ->with(E2ETopologyKind::OperatorGatewayAppdevAppprodAgentWebsocket, true)
         ->andReturn($manifest);
@@ -679,7 +684,7 @@ it('--force surfaces builder failure as command failure', function (): void {
     fakeBundleProcessing();
 
     $builder = m::mock(IncusTopologyBuilder::class);
-    $builder->shouldReceive('useBundle');
+    $builder->shouldReceive('useSourcePath');
     $builder->shouldReceive('build')
         ->andThrow(new RuntimeException('Required base image [orbit-base-ubuntu-26.04-runtime] not found.'));
 

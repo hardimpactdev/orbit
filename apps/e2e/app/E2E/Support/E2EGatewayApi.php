@@ -310,7 +310,8 @@ SH;
         $tlsScriptPath = "/tmp/orbit-{$label}-tls.php";
         $httpContainer = self::gatewayE2eContainerName($label, 'http');
         $tlsContainer = self::gatewayE2eContainerName($label, 'tls');
-        $hostOrbitPath = self::gatewayHostOrbitPath($gateway, $orbitPath);
+        $hostOrbitPath = self::gatewaySourceMountedRuntimePath($gateway, $orbitPath)
+            ?? self::gatewayHostOrbitPath($gateway, $orbitPath);
         $hostCliPath = self::gatewayHostOrbitCliPath($hostOrbitPath);
 
         E2ECommand::gatewayArtisan(
@@ -2040,15 +2041,31 @@ PHP;
             $arguments[] = '-v '.escapeshellarg('/root/.ssh:/root/.ssh:ro');
         }
 
-        $arguments[] = escapeshellarg(self::gatewayImage());
+        $arguments[] = '"$gateway_e2e_image"';
         $arguments[] = 'sh -lc '.escapeshellarg($script);
 
-        return 'docker rm -f '.escapeshellarg($container).' >/dev/null 2>&1 || true && '.implode(' ', $arguments);
+        return self::gatewayE2eImageSelectionCommand().' && docker rm -f '.escapeshellarg($container).' >/dev/null 2>&1 || true && '.implode(' ', $arguments);
     }
 
     private static function gatewayImage(): string
     {
         return DockerTopologyProvider::gatewayImage();
+    }
+
+    private static function sourceGatewayArtisanImage(): string
+    {
+        return DockerTopologyProvider::sourceGatewayArtisanImage();
+    }
+
+    private static function gatewayE2eImageSelectionCommand(): string
+    {
+        return sprintf(
+            'gateway_e2e_image=$(if [ -f %s ] && [ -f %s ]; then printf %%s %s; else printf %%s %s; fi)',
+            escapeshellarg(self::OrbitConfigRoot.'/source-mounted-runtime'),
+            escapeshellarg('/home/orbit/orbit/apps/gateway/artisan'),
+            escapeshellarg(self::sourceGatewayArtisanImage()),
+            escapeshellarg(self::gatewayImage()),
+        );
     }
 
     private static function gatewayHostOrbitCliPath(?string $hostOrbitPath): string
@@ -2075,6 +2092,24 @@ PHP;
         }
 
         return null;
+    }
+
+    private static function gatewaySourceMountedRuntimePath(E2EInstance $gateway, string $orbitPath): ?string
+    {
+        $orbitPath = rtrim($orbitPath, '/');
+
+        $result = $gateway->exec(sprintf(
+            'test -f %s && test -f %s && printf %%s %s',
+            escapeshellarg(self::OrbitConfigRoot.'/source-mounted-runtime'),
+            escapeshellarg("{$orbitPath}/apps/gateway/artisan"),
+            escapeshellarg($orbitPath),
+        ), timeoutSeconds: 10);
+
+        $path = trim($result->output());
+
+        return $result->successful() && $path === $orbitPath
+            ? $orbitPath
+            : null;
     }
 
     private static function gatewaySourceMountedCheckoutPath(E2EInstance $gateway): ?string

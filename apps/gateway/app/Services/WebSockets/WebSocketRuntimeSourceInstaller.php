@@ -20,8 +20,6 @@ class WebSocketRuntimeSourceInstaller
 
     public const AppsConfigPath = '/etc/orbit/websocket/apps.php';
 
-    public const DependencyInstallerImage = 'orbit-gateway:current';
-
     private readonly string $sourcePath;
 
     public function __construct(
@@ -94,7 +92,13 @@ fi
 sudo ln -sfn "$shared_env" "${release_dir}/.env"
 
 if ! sudo test -f "${release_dir}/vendor/autoload.php"; then
-    docker run --rm --pull 'never' --mount "type=bind,source=${release_dir},target=/app" --workdir '/app' %s 'composer' 'install' '--no-dev' '--no-interaction' '--prefer-dist' '--optimize-autoloader' '--no-progress'
+    if ! command -v composer >/dev/null 2>&1; then
+        printf 'WebSocket runtime dependencies require host composer.\n' >&2
+        exit 1
+    fi
+
+    cd "$release_dir"
+    sudo env COMPOSER_ALLOW_SUPERUSER=1 composer install --no-dev --no-interaction --prefer-dist --optimize-autoloader --no-progress
 fi
 
 printf '%%s\n' "$expected_hash" | sudo tee "${release_dir}/.orbit-websocket-source-hash" >/dev/null
@@ -104,7 +108,6 @@ SH,
             $sourceHash,
             escapeshellarg(self::AppsConfigPath),
             escapeshellarg($sourceHash),
-            escapeshellarg(self::DependencyInstallerImage),
             escapeshellarg(WebSocketRuntimeContainer::SourceHostPath),
         );
     }

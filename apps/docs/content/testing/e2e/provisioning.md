@@ -19,7 +19,10 @@ instead.
 
 Run feature E2E before provision gates. The topology preparer loads the current
 source checkout into prepared Docker/Incus artifacts, so `composer test:e2e`
-proves behavior against source-prepared topologies. Incus provision is the last
+proves behavior against source-prepared topologies. Incus prepared topology
+builds sync the initiating worktree to the Incus host, bind-mount that synced
+copy into each VM, mirror it onto the VM ext4 filesystem, and snapshot the
+mirrored runtime. Incus provision is the last
 verification gate for fresh installation, `node:new`, VM boot, WireGuard,
 systemd, package installation, and host mutation. Docker provision is not part
 of the ordinary post-`composer test:e2e` sequence; run it only when Docker
@@ -41,7 +44,7 @@ provision commands. Agents must never run the aggregate.
 The Incus provision gate has one supported shape:
 
 1. Launch a fresh VM from `orbit-base-ubuntu-26.04-runtime`.
-2. Install Orbit from the current source bundle on the operator.
+2. Install Orbit from the synced source checkout on the operator.
 3. Provision the gateway through the real gateway path.
 4. After the gateway is ready and its provisioning SSH key is installed, start
    app-dev, app-prod, and agent role provisioning in parallel. Each downstream
@@ -86,27 +89,32 @@ default). It builds one reusable base image plus prepared source snapshots:
    VM image through direct Incus-agent bootstrap. It contains the bootstrap
    user, the `orbit` user, sshd, the E2E OS dependency set, WireGuard, Docker
    Engine, first-boot Docker Swarm initialization, Supervisor, PHP CLI, and
-   Composer. It does not contain Orbit source. It is used by the Incus provision
-   gate and as the source for prepared topology roles.
+   Composer. It also preloads the Caddy, FrankenPHP, and wg-easy Docker images
+   required by source-prepared topologies. It does not contain Orbit source. It
+   is used by the Incus provision gate and as the source for prepared topology
+   roles.
 2. Prepared source templates `orbit-template-operator-base`,
    `orbit-template-gateway-base`, `orbit-template-app-dev-base`,
    `orbit-template-app-prod-base`, `orbit-template-agent-base`, and
    `orbit-template-websocket-base`. Build them with
    `composer e2e:prepare-topology -- --force operator_gateway_app-dev_app-prod_agent_websocket`.
 
-During topology preparation, Orbit tars the current checkout, ships it plus
-`bin/install-orbit` and `bin/e2e-provision-node` to the host, installs Orbit on
-the operator template from the base image, installs host gateway and CLI
-Composer dependencies for pre-overlay `artisan` and `orbit` commands, then
-provisions the gateway through real `node:new`. After the gateway is seeded, the
-prepared full topology uses the explicit role DAG `operator -> gateway -> {dev,
-prod, agent}`. Dev, prod, and agent launch/readiness/bake tasks run as
-independent downstream tasks. In the websocket-capable topology, websocket is a
-dev-dependent task: it starts after app-dev is baked, app-dev Docker, Caddy,
-FrankenPHP, and gateway-image runtime services are ready, and the
-provisioning-owned gateway/app-dev WireGuard route is ready; it does not wait
-for app-prod or agent completion. The app-dev role then seeds database and Redis
-registry state before the full source snapshot is taken.
+During topology preparation, Orbit syncs the current checkout to the Incus host,
+launches each VM from `orbit-base-ubuntu-26.04-runtime`, attaches the synced
+checkout as a temporary Incus disk, mirrors it onto the VM ext4 filesystem, and
+links `/usr/local/bin/orbit` to the mirrored CLI shim. The operator mirrors into
+`/home/operator/orbit`; gateway and managed roles mirror into
+`/home/orbit/orbit`. Gateway-local artisan commands run from the mirrored
+`apps/gateway` path through the FrankenPHP PHP image. After the gateway is
+seeded, the prepared full topology uses the explicit role DAG
+`operator -> gateway -> {dev, prod, agent}`. Dev, prod, and agent
+launch/readiness/bake tasks run as independent downstream tasks through
+gateway-side role bake commands. In the websocket-capable topology, websocket is
+a dev-dependent task: it starts after app-dev is baked, app-dev Docker, Caddy,
+FrankenPHP, and Redis services are ready, and the provisioning-owned
+gateway/app-dev WireGuard route is ready; it does not wait for app-prod or agent
+completion. The app-dev role then seeds database and Redis registry state before
+the full source snapshot is taken.
 Feature tests clone only their requested roles from that full prepared source.
 
 App-dev carries database, Redis, Caddy, and FrankenPHP app-serving readiness by
@@ -122,19 +130,29 @@ independently by trying `orbit-template-<role>-<slug>` with
 `clean-<source-topology>-<slug>` first, then falling back to the matching
 `base` template and snapshot for that role.
 Custom namespace preparation without `--roles` or `--all-roles` is rejected.
-Targeted `--roles` rebakes require a non-base custom namespace: they copy each
-selected role from its base source snapshot into the slug namespace, overlay the
-current checkout bundle, and retake the `clean-<source-topology>-<slug>`
-snapshot. Unselected roles remain absent and fall back to `base` during
-acquisition. Gateway and operator must be selected together because they share
-CA trust and WireGuard contracts. Leave the namespace empty and omit `--roles`
-to rebuild the shared base Incus artifact set.
+Targeted `--roles` rebakes are artifact-mode operations. They require
+`--use-build-artifacts` and a non-base custom namespace: they copy each selected
+role from its base source snapshot into the slug namespace, overlay the current
+checkout bundle, and retake the `clean-<source-topology>-<slug>` snapshot.
+Unselected roles remain absent and fall back to `base` during acquisition.
+Gateway and operator must be selected together because they share CA trust and
+WireGuard contracts. Leave the namespace empty and omit `--roles` to rebuild
+the shared base Incus artifact set from the synced source checkout.
 
-## Source bundle and archives
+## Source sync and artifact bundles
 
-Source code lives in the per-run bundle, not in the base image. Forced topology
-preparation rebuilds the canonical full prepared source from the base image.
-Rebuild the base image only when the base image shape changes.
+Source code lives in the synced worktree on the Incus host, not in the base
+image. Forced topology preparation rebuilds the canonical full prepared source
+from the base image. Rebuild the base image only when the base image shape
+changes.
+
+Use `--use-build-artifacts` when the prepared topology should consume the native
+CLI binary, packaged gateway runtime image, source archive, and forwarded Docker
+image archives instead of the synced source checkout:
+
+```bash
+composer e2e:prepare-topology -- --force <kind> --use-build-artifacts
+```
 
 The provision fingerprint separates three input classes:
 
@@ -164,12 +182,14 @@ role checkpoint validity depends on the stable source and build inputs that
 produce those archives. Rebuilding the same CLI binary or Docker image archive
 from unchanged source should not invalidate otherwise reusable VM checkpoints.
 
-Workload roles consume the CLI artifact. They do not rely on a full gateway
-source checkout as their production-style artifact contract. Source overlays
-remain a development-topology behavior for feature iteration.
+In default source mode, workload roles consume the mirrored checkout and do not
+require the native CLI binary artifact or packaged gateway image. In
+artifact mode, workload roles consume the CLI artifact and the gateway runtime
+image; they do not rely on a full gateway source checkout as their
+production-style artifact contract.
 
 The provisioning bundle stages host-local `orbit-gateway:current`,
-`caddy:2-alpine`, `4km3/dnsmasq:latest`, and
+`orbit-websocket:current`, `caddy:2-alpine`, `4km3/dnsmasq:latest`, and
 `dunglas/frankenphp:1-php8.5-bookworm` Docker image archives when those images
 exist on the Incus host. `bin/install-orbit` loads those archives before
 falling back to Docker Hub and marks archive-seeded installs with
@@ -192,15 +212,15 @@ If `ssh -o BatchMode=yes beast true` works but checkout copy fails with
 `Permission denied (publickey)`, check local SSH options before changing E2E lane
 selection.
 
-## Source overrides
+## Artifact source overrides
 
 Use these flags when the prepared topology should source code from something
-other than the current worktree.
+other than the current worktree in artifact mode.
 
 ```bash
-composer e2e:prepare-topology -- --force <kind> --branch=<ref>
-composer e2e:prepare-topology -- --force <kind> --source-archive=<path>
-composer e2e:prepare-topology -- --force <kind> --composer-cache=<dir>
+composer e2e:prepare-topology -- --force <kind> --use-build-artifacts --branch=<ref>
+composer e2e:prepare-topology -- --force <kind> --use-build-artifacts --source-archive=<path>
+composer e2e:prepare-topology -- --force <kind> --use-build-artifacts --composer-cache=<dir>
 ```
 
 Without `--composer-cache`, `~/.cache/orbit-e2e/composer` is bundled when

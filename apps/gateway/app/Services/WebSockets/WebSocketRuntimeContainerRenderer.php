@@ -13,6 +13,8 @@ use RuntimeException;
 
 class WebSocketRuntimeContainerRenderer
 {
+    public const string RuntimeImage = 'orbit-websocket:current';
+
     public function __construct(
         private readonly OrbitContainerNames $names,
         private readonly WebSocketBackendName $backendName,
@@ -24,7 +26,7 @@ class WebSocketRuntimeContainerRenderer
         Node $node,
         WebSocketRoleSettings $settings,
         string $sourcePath = WebSocketRuntimeContainer::SourceHostPath,
-        string $image = WebSocketRuntimeSourceInstaller::DependencyInstallerImage,
+        string $image = self::RuntimeImage,
     ): WebSocketRuntimeContainer {
         $wireGuardAddress = $this->wireGuardAddress($node);
         $backendName = $this->backendName->forNode($node);

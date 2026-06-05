@@ -113,7 +113,7 @@ it('renders a deterministic WebSocket runtime container', function (): void {
 
     expect($container)->toBeInstanceOf(WebSocketRuntimeContainer::class)
         ->and($container->name())->toBe('orbit-websocket-app-dev-1')
-        ->and($container->image())->toBe('orbit-gateway:current')
+        ->and($container->image())->toBe('orbit-websocket:current')
         ->and($container->network())->toBe('orbit-network')
         ->and($container->restartPolicy())->toBe('unless-stopped')
         ->and($container->backendName())->toBe('10.6.0.44')
