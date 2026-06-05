@@ -4,15 +4,19 @@ declare(strict_types=1);
 
 namespace App\Console\Commands\Internal;
 
+use App\Data\Doctor\DriftEntry;
 use App\Data\Security\PinnedHostKey;
+use App\Enums\DriftKind;
 use App\Enums\Nodes\NodeConvergenceContext;
 use App\Enums\Nodes\NodeRoleName;
 use App\Enums\Nodes\NodeRoleStatus;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
+use App\Models\NodeTool;
 use App\Services\Nodes\NodeConverger;
 use App\Services\Nodes\NodeRegistryWriter;
 use App\Services\Security\SshHostKeyPinner;
+use App\Services\Tools\ToolsFixer;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
@@ -34,7 +38,7 @@ class BakeAppNodeCommand extends Command
     #[\Override]
     protected $hidden = true;
 
-    public function handle(NodeRegistryWriter $registryWriter, NodeConverger $nodeConverger): int
+    public function handle(NodeRegistryWriter $registryWriter, NodeConverger $nodeConverger, ToolsFixer $toolsFixer): int
     {
         $name = $this->stringArgument('name');
         $role = $this->stringOption('role') ?? NodeRoleName::AppDevelopment->value;
@@ -87,30 +91,57 @@ class BakeAppNodeCommand extends Command
         $this->measureBakeStep(
             $timingRole,
             'setup-converge',
-            fn () => $this->setupDevelopmentNode($nodeConverger, $node, $role),
+            fn () => $this->setupDevelopmentNode($nodeConverger, $toolsFixer, $node, $role, $timingRole),
         );
 
         return self::SUCCESS;
     }
 
-    private function setupDevelopmentNode(NodeConverger $nodeConverger, Node $node, string $role): void
+    private function setupDevelopmentNode(NodeConverger $nodeConverger, ToolsFixer $toolsFixer, Node $node, string $role, string $timingRole): void
     {
         if ($role !== NodeRoleName::AppDevelopment->value) {
             return;
         }
 
         $freshNode = $node->fresh();
-        $result = $nodeConverger->converge(
-            node: $freshNode instanceof Node ? $freshNode : $node,
-            context: NodeConvergenceContext::Setup,
-            families: ['node', 'tool'],
+        $node = $freshNode instanceof Node ? $freshNode : $node;
+
+        $nodeResult = $this->measureBakeStep(
+            $timingRole,
+            'setup-node',
+            fn () => $nodeConverger->converge(
+                node: $node,
+                context: NodeConvergenceContext::Setup,
+                families: ['node'],
+            ),
         );
 
-        if ($result->successful()) {
-            return;
+        if (! $nodeResult->successful()) {
+            throw new RuntimeException('Could not converge baked app-dev node baseline: '.json_encode($nodeResult->toArray(), JSON_THROW_ON_ERROR));
         }
 
-        throw new RuntimeException('Could not converge baked app-dev node baseline: '.json_encode($result->toArray(), JSON_THROW_ON_ERROR));
+        $this->measureBakeStep(
+            $timingRole,
+            'setup-caddy',
+            fn () => $this->convergePreparedDevelopmentCaddy($toolsFixer, $node),
+        );
+    }
+
+    private function convergePreparedDevelopmentCaddy(ToolsFixer $toolsFixer, Node $node): void
+    {
+        $tool = NodeTool::query()
+            ->where('node_id', $node->id)
+            ->where('name', 'caddy')
+            ->first()
+            ?? throw new RuntimeException('Could not find baked app-dev Caddy tool intent.');
+
+        $toolsFixer->fix($tool, new DriftEntry(
+            family: 'tool',
+            key: 'tool.container_missing',
+            kind: DriftKind::Missing,
+            summary: 'Prepared app-dev Caddy container must be materialized.',
+            detail: ['tool' => 'caddy'],
+        ));
     }
 
     private function upsertRoleAssignment(int $nodeId, string $role, ?string $tld, ?string $ingressNode): void

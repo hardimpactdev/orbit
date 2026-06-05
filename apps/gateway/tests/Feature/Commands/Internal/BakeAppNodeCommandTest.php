@@ -89,7 +89,12 @@ describe('orbit:internal:bake-app-node', function (): void {
                 'supervisor',
             ])
             ->and(File::exists(app(DevelopmentDnsMappingEnactor::class)->configDir().'/test.conf'))->toBeTrue()
-            ->and($shell->repairScripts())->toHaveCount(5);
+            ->and($shell->repairScripts())->toHaveCount(1)
+            ->and($shell->repairScripts()[0])->toContain('orbit.caddy.spec_hash')
+            ->and(implode("\n", $shell->repairScripts()))->not->toContain('# orbit install php-cli')
+            ->and(implode("\n", $shell->repairScripts()))->not->toContain('# orbit install composer')
+            ->and(implode("\n", $shell->repairScripts()))->not->toContain('# orbit install gh')
+            ->and(implode("\n", $shell->repairScripts()))->not->toContain('# orbit install laravel-installer');
     });
 
     it('uses setup convergence when baking app-dev role intent', function (): void {
@@ -112,6 +117,10 @@ describe('orbit:internal:bake-app-node', function (): void {
 
         expect($scripts)->not->toContain('doctor --restore')
             ->and($scripts)->not->toContain(' orbit doctor ')
+            ->and($scripts)->not->toContain('# orbit install php-cli')
+            ->and($scripts)->not->toContain('# orbit install composer')
+            ->and($scripts)->not->toContain('# orbit install gh')
+            ->and($scripts)->not->toContain('# orbit install laravel-installer')
             ->and(NodeTool::query()->where('node_id', $node->id)->pluck('expected_state', 'name')->all())->toMatchArray([
                 'caddy' => 'running',
                 'composer' => 'installed',
@@ -135,6 +144,8 @@ describe('orbit:internal:bake-app-node', function (): void {
             ->expectsOutputToContain('__orbit_bake_timing dev host-key')
             ->expectsOutputToContain('__orbit_bake_timing dev registry')
             ->expectsOutputToContain('__orbit_bake_timing dev role-assignment')
+            ->expectsOutputToContain('__orbit_bake_timing dev setup-node')
+            ->expectsOutputToContain('__orbit_bake_timing dev setup-caddy')
             ->expectsOutputToContain('__orbit_bake_timing dev setup-converge')
             ->assertSuccessful();
     });
