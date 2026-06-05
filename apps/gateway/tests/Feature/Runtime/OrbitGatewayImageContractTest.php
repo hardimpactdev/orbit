@@ -9,8 +9,6 @@ it('packages the gateway app in a FrankenPHP image without relying on host PHP s
         ->toContain('FROM dunglas/frankenphp:')
         ->toContain('COPY apps/gateway /srv/orbit/apps/gateway')
         ->toContain('COPY packages/core /srv/orbit/packages/core')
-        ->toContain('COPY bin/install-orbit /srv/orbit/bin/install-orbit')
-        ->toContain('chmod 755 /srv/orbit/bin/install-orbit')
         ->toContain('docker-ce-cli')
         ->toContain('docker-compose-plugin')
         ->toContain('iputils-ping')
@@ -25,6 +23,7 @@ it('packages the gateway app in a FrankenPHP image without relying on host PHP s
         ->toContain('orbit-gateway-healthcheck')
         ->toContain('HEALTHCHECK')
         ->not->toContain('COPY apps/gateway /app')
+        ->not->toContain('COPY bin/install-orbit')
         ->not->toContain('COPY --from=composer')
         ->not->toContain('COPY --from=docker')
         ->not->toContain('VOLUME ["/opt/orbit"]');
@@ -46,7 +45,6 @@ it('keeps the orbit gateway image build context free of host secrets and generat
         ->toContain('!apps/gateway/.env.example')
         ->toContain('!apps/gateway/**')
         ->toContain('!packages/core/**')
-        ->toContain('!bin/install-orbit')
         ->toContain('!docker/orbit-gateway/**');
 });
 

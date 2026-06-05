@@ -43,10 +43,8 @@ WORKDIR /srv/orbit/apps/gateway
 
 COPY apps/gateway /srv/orbit/apps/gateway
 COPY packages/core /srv/orbit/packages/core
-COPY bin/install-orbit /srv/orbit/bin/install-orbit
 
-RUN chmod 755 /srv/orbit/bin/install-orbit \
-    && install -d "$ORBIT_CONFIG_ROOT" \
+RUN install -d "$ORBIT_CONFIG_ROOT" \
     && cp .env.example "$ORBIT_CONFIG_ROOT/.env" \
     && touch "$ORBIT_CONFIG_ROOT/gateway.sqlite" \
     && sed -i "s|^DB_DATABASE=.*|DB_DATABASE=$ORBIT_CONFIG_ROOT/gateway.sqlite|" "$ORBIT_CONFIG_ROOT/.env" \

@@ -37,6 +37,7 @@ function fakeBundleProcessing(): void
         // Remote ops (SSH-wrapped). pushBundle creates a stage dir and an
         // orbit-e2e-bundle subdir, then scps into it.
         'ssh *mktemp -d /tmp/orbit-e2e-cli-binary*' => Process::result(output: "/tmp/orbit-e2e-cli-binary-remote\n"),
+        'ssh *mktemp -d /tmp/orbit-e2e-gateway-artifacts*' => Process::result(output: "/tmp/orbit-e2e-gateway-artifacts-remote\n"),
         'ssh *mktemp -d /tmp/orbit-e2e-stage*' => Process::result(output: "/tmp/orbit-e2e-stage-remote\n"),
         'ssh *' => Process::result(),
         'scp *' => Process::result(),
@@ -412,8 +413,9 @@ it('--force uses the default Incus host when host environment is unset', functio
     $selectedHost = null;
 
     $builder = m::mock(IncusTopologyBuilder::class);
-    $builder->shouldReceive('useSourcePath')->once();
-    $builder->shouldReceive('useOrbitBinaryBundle')->once();
+    $builder->shouldReceive('useGatewayArtifactBundle')
+        ->once()
+        ->with('/tmp/orbit-e2e-gateway-artifacts-remote');
     $builder->shouldReceive('build')
         ->with(E2ETopologyKind::OperatorGatewayAppdevAppprodAgentWebsocket, true)
         ->andReturn($manifest);
@@ -524,8 +526,9 @@ it('--force records prepare topology phase timings', function (): void {
     $capturedTimer = null;
 
     $builder = m::mock(IncusTopologyBuilder::class);
-    $builder->shouldReceive('useSourcePath')->once();
-    $builder->shouldReceive('useOrbitBinaryBundle')->once();
+    $builder->shouldReceive('useGatewayArtifactBundle')
+        ->once()
+        ->with('/tmp/orbit-e2e-gateway-artifacts-remote');
     $builder->shouldReceive('build')
         ->with(E2ETopologyKind::OperatorGatewayAppdevAppprodAgentWebsocket, true)
         ->andReturn($manifest);
@@ -547,10 +550,20 @@ it('--force records prepare topology phase timings', function (): void {
 
     expect($capturedTimer)->toBeInstanceOf(E2EPhaseTimer::class)
         ->and($capturedTimer->streamsCheckpoints())->toBeFalse()
-        ->and($eventNames)->toContain('source-sync')
-        ->and($eventNames)->toContain('cli-binary.local')
-        ->and($eventNames)->toContain('cli-binary.push')
+        ->and($eventNames)->toContain('gateway-artifacts.local')
+        ->and($eventNames)->toContain('gateway-artifacts.push')
         ->and($eventNames)->toContain('builder.build');
+});
+
+it('builds the gateway artifact image on the Incus host', function (): void {
+    $command = file_get_contents(app_path('Console/Commands/E2EPrepareTopologyCommand.php'));
+
+    expect($command)
+        ->toContain('gateway-build-context')
+        ->toContain('rsync -a --delete')
+        ->toContain('docker build -f docker/orbit-gateway/Dockerfile')
+        ->toContain('docker save')
+        ->toContain('docker/orbit-gateway/Dockerfile');
 });
 
 it('--branch uses git archive instead of tar', function (): void {
@@ -653,8 +666,7 @@ it('--force outputs JSON success envelope when builder returns a manifest', func
     ];
 
     $builder = m::mock(IncusTopologyBuilder::class);
-    $builder->shouldReceive('useSourcePath')->once();
-    $builder->shouldReceive('useOrbitBinaryBundle')->once();
+    $builder->shouldReceive('useGatewayArtifactBundle')->once();
     $builder->shouldReceive('build')
         ->with(E2ETopologyKind::OperatorGatewayAppdevAppprodAgentWebsocket, true)
         ->andReturn($manifest);
@@ -690,8 +702,7 @@ it('--force surfaces builder failure as command failure', function (): void {
     fakeBundleProcessing();
 
     $builder = m::mock(IncusTopologyBuilder::class);
-    $builder->shouldReceive('useSourcePath');
-    $builder->shouldReceive('useOrbitBinaryBundle');
+    $builder->shouldReceive('useGatewayArtifactBundle');
     $builder->shouldReceive('build')
         ->andThrow(new RuntimeException('Required base image [orbit-base-ubuntu-26.04-runtime] not found.'));
 

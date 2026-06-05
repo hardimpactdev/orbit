@@ -17,6 +17,8 @@ class IncusTopologyBuilder
 
     private ?string $remoteOrbitBinaryBundleDir = null;
 
+    private ?string $remoteGatewayArtifactBundleDir = null;
+
     private ?string $remoteSourcePath = null;
 
     private string $lastPreparedBakeOutput = '';
@@ -67,6 +69,7 @@ class IncusTopologyBuilder
         $this->remoteBundleDir = $remoteBundleDir;
         $this->remoteOrbitBinaryBundleDir = $remoteBundleDir;
         $this->remoteSourcePath = null;
+        $this->remoteGatewayArtifactBundleDir = null;
     }
 
     public function useSourcePath(string $remoteSourcePath): void
@@ -74,11 +77,20 @@ class IncusTopologyBuilder
         $this->remoteSourcePath = rtrim($remoteSourcePath, '/');
         $this->remoteBundleDir = null;
         $this->remoteOrbitBinaryBundleDir = null;
+        $this->remoteGatewayArtifactBundleDir = null;
     }
 
     public function useOrbitBinaryBundle(string $remoteBundleDir): void
     {
         $this->remoteOrbitBinaryBundleDir = rtrim($remoteBundleDir, '/');
+    }
+
+    public function useGatewayArtifactBundle(string $remoteBundleDir): void
+    {
+        $this->remoteGatewayArtifactBundleDir = rtrim($remoteBundleDir, '/');
+        $this->remoteOrbitBinaryBundleDir = rtrim($remoteBundleDir, '/');
+        $this->remoteBundleDir = null;
+        $this->remoteSourcePath = null;
     }
 
     /**
@@ -141,9 +153,9 @@ class IncusTopologyBuilder
             throw new RuntimeException("Required base image [{$baseImage}] not found on host.");
         }
 
-        if ($this->remoteBundleDir === null && $this->remoteSourcePath === null) {
+        if ($this->remoteBundleDir === null && $this->remoteSourcePath === null && $this->remoteGatewayArtifactBundleDir === null) {
             throw new RuntimeException(
-                'No source checkout or provisioning bundle has been staged. Call useSourcePath() or useBundle() before build().'
+                'No source checkout or provisioning bundle has been staged. Call useSourcePath(), useBundle(), or useGatewayArtifactBundle() before build().'
             );
         }
 
@@ -1047,6 +1059,20 @@ BASH;
 
         if ($nodeKind === 'operator' && $this->remoteOrbitBinaryBundleDir !== null) {
             $this->installOrbitBinaryFromBundle($instance, $user);
+
+            return;
+        }
+
+        if ($nodeKind === 'gateway' && $this->remoteGatewayArtifactBundleDir !== null) {
+            $this->installOrbitBinaryFromBundle($instance, $user);
+            $this->installGatewayImageFromArtifactBundle($instance);
+            E2ECommand::gatewayArtisan(
+                $instance,
+                'migrate --force --no-interaction --ansi',
+                "Could not migrate gateway database on {$instance->name()}",
+                timeoutSeconds: 120,
+            );
+
             return;
         }
 
@@ -1081,6 +1107,37 @@ BASH;
 
         if (! $result->successful()) {
             throw new RuntimeException("Could not install Orbit CLI binary on {$name}: {$result->errorOutput()}{$result->output()}");
+        }
+    }
+
+    private function installGatewayImageFromArtifactBundle(IncusInstance $instance): void
+    {
+        $bundleDir = $this->remoteGatewayArtifactBundleDir;
+
+        if ($bundleDir === null) {
+            throw new RuntimeException('No gateway artifact bundle has been staged.');
+        }
+
+        $name = $instance->name();
+        $archive = "{$bundleDir}/".E2EArtifactProdManifest::GatewayImageArchive;
+        $preparedImage = DockerTopologyProvider::gatewayImage();
+        $guestArchive = '/var/tmp/'.E2EArtifactProdManifest::GatewayImageArchive;
+
+        $result = $this->host->run(implode("\n", [
+            'set -euo pipefail',
+            'test -f '.escapeshellarg($archive),
+            'incus exec '.escapeshellarg($name).' -- sh -lc '.escapeshellarg('install -d -m 0700 -o orbit -g orbit /home/orbit/.config/orbit'),
+            'incus exec '.escapeshellarg($name).' -- sh -lc '.escapeshellarg('if command -v systemctl >/dev/null 2>&1; then systemctl enable --now docker || systemctl start docker || true; fi'),
+            'incus file push '.escapeshellarg($archive).' '.escapeshellarg("{$name}{$guestArchive}"),
+            'incus exec '.escapeshellarg($name).' -- sh -lc '.escapeshellarg('docker load -i '.escapeshellarg($guestArchive)),
+            'incus exec '.escapeshellarg($name).' -- sh -lc '.escapeshellarg('docker image inspect '.escapeshellarg($preparedImage).' >/dev/null'),
+            'incus exec '.escapeshellarg($name).' -- sh -lc '.escapeshellarg('docker tag '.escapeshellarg($preparedImage).' orbit-gateway:current'),
+            'incus exec '.escapeshellarg($name).' -- sh -lc '.escapeshellarg('runuser -u orbit -- docker image inspect '.escapeshellarg($preparedImage).' >/dev/null && runuser -u orbit -- docker image inspect orbit-gateway:current >/dev/null'),
+            'incus exec '.escapeshellarg($name).' -- rm -f '.escapeshellarg($guestArchive),
+        ]), timeoutSeconds: 300);
+
+        if (! $result->successful()) {
+            throw new RuntimeException("Could not install gateway image artifact on {$name}: {$result->errorOutput()}{$result->output()}");
         }
     }
 

@@ -6,8 +6,6 @@
 !packages/
 !packages/core/
 !packages/core/**
-!bin/
-!bin/install-orbit
 !docker/
 !docker/orbit-gateway/
 !docker/orbit-gateway/**

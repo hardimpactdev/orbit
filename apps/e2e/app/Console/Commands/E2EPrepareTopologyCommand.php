@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Console\Commands;
 
+use App\E2E\Support\DockerTopologyProvider;
+use App\E2E\Support\E2EArtifactProdManifest;
 use App\E2E\Support\E2EConfig;
 use App\E2E\Support\E2EPhaseTimer;
 use App\E2E\Support\E2EPreparedTopology;
@@ -15,7 +17,6 @@ use App\E2E\Support\IncusHostPool;
 use App\E2E\Support\IncusTopologyBuilder;
 use App\E2E\Support\IncusTopologyTemplate;
 use App\E2E\Support\OrbitCliBinaryBundle;
-use App\E2E\Support\SourceMountedCheckoutSyncer;
 use Closure;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
@@ -151,8 +152,8 @@ class E2EPrepareTopologyCommand extends Command
 
         $bundleDir = null;
         $remoteBundle = null;
-        $binaryBundleDir = null;
-        $remoteBinaryBundle = null;
+        $gatewayArtifactBundleDir = null;
+        $remoteGatewayArtifactBundle = null;
         $timer = new E2EPhaseTimer(stream: ! $this->laravel->runningUnitTests());
 
         try {
@@ -174,15 +175,10 @@ class E2EPrepareTopologyCommand extends Command
                     $builder->useProvisionFingerprint($provisionFingerprint);
                 }
             } else {
-                $remoteSourcePath = $timer->measure(
-                    'source-sync',
-                    fn (): string => (new SourceMountedCheckoutSyncer)->sync($host->config->host, 'incus'),
-                );
-                $binaryBundleDir = $timer->measure('cli-binary.local', fn (): string => $this->buildLocalCliBinaryBundle());
-                $remoteBinaryBundle = $timer->measure('cli-binary.push', fn (): string => $this->pushLocalCliBinaryBundle($host, $binaryBundleDir));
+                $gatewayArtifactBundleDir = $timer->measure('gateway-artifacts.local', fn (): string => $this->buildLocalGatewayArtifactBundle());
+                $remoteGatewayArtifactBundle = $timer->measure('gateway-artifacts.push', fn (): string => $this->pushLocalGatewayArtifactBundle($host, $gatewayArtifactBundleDir));
 
-                $builder->useSourcePath($remoteSourcePath);
-                $builder->useOrbitBinaryBundle($remoteBinaryBundle);
+                $builder->useGatewayArtifactBundle($remoteGatewayArtifactBundle);
             }
 
             if ($artifactRoles !== null) {
@@ -203,16 +199,16 @@ class E2EPrepareTopologyCommand extends Command
                 $timer->measure('bundle.cleanup.remote', fn () => $host->cleanupBundle($remoteBundle));
             }
 
-            if ($remoteBinaryBundle !== null) {
-                $timer->measure('cli-binary.cleanup.remote', fn () => $this->cleanupRemoteCliBinaryBundle($host, $remoteBinaryBundle));
+            if ($remoteGatewayArtifactBundle !== null) {
+                $timer->measure('gateway-artifacts.cleanup.remote', fn () => $this->cleanupRemoteCliBinaryBundle($host, $remoteGatewayArtifactBundle));
             }
 
             if ($bundleDir !== null && is_dir($bundleDir)) {
                 $timer->measure('bundle.cleanup.local', fn () => Process::run('rm -rf '.escapeshellarg((string) $bundleDir)));
             }
 
-            if ($binaryBundleDir !== null && is_dir($binaryBundleDir)) {
-                $timer->measure('cli-binary.cleanup.local', fn () => Process::run('rm -rf '.escapeshellarg((string) $binaryBundleDir)));
+            if ($gatewayArtifactBundleDir !== null && is_dir($gatewayArtifactBundleDir)) {
+                $timer->measure('gateway-artifacts.cleanup.local', fn () => Process::run('rm -rf '.escapeshellarg((string) $gatewayArtifactBundleDir)));
             }
 
             $timer->flush('prepare-topology');
@@ -296,12 +292,12 @@ class E2EPrepareTopologyCommand extends Command
         return $bundleDir;
     }
 
-    private function buildLocalCliBinaryBundle(): string
+    private function buildLocalGatewayArtifactBundle(): string
     {
-        $bundleDir = sys_get_temp_dir().'/orbit-e2e-cli-binary-'.bin2hex(random_bytes(6));
+        $bundleDir = sys_get_temp_dir().'/orbit-e2e-gateway-artifacts-'.bin2hex(random_bytes(6));
 
         if (! mkdir($bundleDir, 0755, true)) {
-            throw new RuntimeException("Could not create local CLI binary bundle directory: {$bundleDir}");
+            throw new RuntimeException("Could not create local gateway artifact bundle directory: {$bundleDir}");
         }
 
         if (! app()->runningUnitTests()) {
@@ -311,41 +307,101 @@ class E2EPrepareTopologyCommand extends Command
         return $bundleDir;
     }
 
-    private function pushLocalCliBinaryBundle(IncusHost $host, string $bundleDir): string
+    private function pushLocalGatewayArtifactBundle(IncusHost $host, string $bundleDir): string
     {
         $binary = OrbitCliBinaryBundle::bundledBinaryPath($bundleDir);
 
         if (! app()->runningUnitTests() && ! is_file($binary)) {
-            throw new RuntimeException("Orbit CLI binary bundle is missing: {$binary}");
+            throw new RuntimeException("Gateway artifact bundle is missing: {$binary}");
         }
 
-        $stage = $host->run('mktemp -d /tmp/orbit-e2e-cli-binary-XXXXXX', timeoutSeconds: 30);
+        $stage = $host->run('mktemp -d /tmp/orbit-e2e-gateway-artifacts-XXXXXX', timeoutSeconds: 30);
 
         if (! $stage->successful()) {
-            throw new RuntimeException("Could not create remote CLI binary bundle directory on {$host->config->host}: {$stage->errorOutput()}");
+            throw new RuntimeException("Could not create remote gateway artifact bundle directory on {$host->config->host}: {$stage->errorOutput()}");
         }
 
         $remoteDir = trim($stage->output());
 
         if ($remoteDir === '') {
-            throw new RuntimeException("Remote CLI binary bundle directory was empty on {$host->config->host}.");
+            throw new RuntimeException("Remote gateway artifact bundle directory was empty on {$host->config->host}.");
         }
 
         if (app()->runningUnitTests()) {
             return $remoteDir;
         }
 
-        $copy = Process::timeout(120)->run(sprintf(
-            'scp -q %s %s',
-            escapeshellarg($binary),
-            escapeshellarg("{$host->config->host}:{$remoteDir}/orbit-binary"),
-        ));
+        try {
+            $copy = Process::timeout(120)->run(sprintf(
+                'scp -q %s %s',
+                escapeshellarg($binary),
+                escapeshellarg("{$host->config->host}:{$remoteDir}/orbit-binary"),
+            ));
 
-        if (! $copy->successful()) {
-            throw new RuntimeException("Could not push Orbit CLI binary bundle to {$host->config->host}:{$remoteDir}: {$copy->errorOutput()}");
+            if (! $copy->successful()) {
+                throw new RuntimeException("Could not push gateway artifact bundle to {$host->config->host}:{$remoteDir}: {$copy->errorOutput()}");
+            }
+
+            $this->buildRemoteGatewayImageArtifact($host, $remoteDir);
+        } catch (RuntimeException $exception) {
+            $host->run('rm -rf '.escapeshellarg($remoteDir).' || true', timeoutSeconds: 30);
+
+            throw $exception;
         }
 
         return $remoteDir;
+    }
+
+    private function buildRemoteGatewayImageArtifact(IncusHost $host, string $remoteDir): void
+    {
+        if (app()->runningUnitTests()) {
+            return;
+        }
+
+        $remoteBuildContext = "{$remoteDir}/gateway-build-context";
+
+        $mkdir = $host->run('mkdir -p '.escapeshellarg($remoteBuildContext), timeoutSeconds: 30);
+
+        if (! $mkdir->successful()) {
+            throw new RuntimeException("Could not create remote gateway image build context on {$host->config->host}: {$mkdir->errorOutput()}");
+        }
+
+        foreach (['apps/gateway', 'packages/core', 'docker/orbit-gateway'] as $path) {
+            $mkdirParent = $host->run('mkdir -p '.escapeshellarg("{$remoteBuildContext}/".dirname($path)), timeoutSeconds: 30);
+
+            if (! $mkdirParent->successful()) {
+                throw new RuntimeException("Could not create remote gateway image build context parent for {$path} on {$host->config->host}: {$mkdirParent->errorOutput()}");
+            }
+
+            $copy = Process::timeout(300)->run(sprintf(
+                'rsync -a --delete --include=.env.example --exclude=.env --exclude=.env.* --exclude=vendor --exclude=node_modules %s %s',
+                escapeshellarg(repo_path($path).'/'),
+                escapeshellarg("{$host->config->host}:{$remoteBuildContext}/{$path}/"),
+            ));
+
+            if (! $copy->successful()) {
+                throw new RuntimeException("Could not stage {$path} on {$host->config->host}: {$copy->errorOutput()}");
+            }
+        }
+
+        $gatewayImage = DockerTopologyProvider::gatewayImage();
+        $archive = "{$remoteDir}/".E2EArtifactProdManifest::GatewayImageArchive;
+        $build = $host->run(sprintf(
+            <<<'BASH'
+cd %1$s
+docker build -f docker/orbit-gateway/Dockerfile -t %2$s .
+docker save %2$s -o %3$s
+chmod 0644 %3$s
+rm -rf %1$s
+BASH,
+            escapeshellarg($remoteBuildContext),
+            escapeshellarg($gatewayImage),
+            escapeshellarg($archive),
+        ), timeoutSeconds: 1800);
+
+        if (! $build->successful()) {
+            throw new RuntimeException("Could not build {$gatewayImage} on {$host->config->host}: {$build->output()}{$build->errorOutput()}");
+        }
     }
 
     private function cleanupRemoteCliBinaryBundle(IncusHost $host, string $remoteDir): void
