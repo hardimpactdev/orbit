@@ -182,6 +182,15 @@ it('bootstraps the runtime image without guest user-data', function (): void {
     expect($bootstrapScript)->toContain('php8.5-bcmath');
     expect($bootstrapScript)->toContain('docker.io');
     expect($bootstrapScript)->toContain('docker swarm init');
+    expect($bootstrapScript)->toContain('docker pull "$image"');
+    expect($bootstrapScript)->toContain('caddy:2-alpine');
+    expect($bootstrapScript)->toContain('dunglas/frankenphp:1-php8.5-bookworm');
+    expect($bootstrapScript)->toContain('orbit-frankenphp-source-artisan:prepared-current');
+    expect($bootstrapScript)->toContain('orbit-websocket:current');
+    expect($bootstrapScript)->toContain('apt-get install -y --no-install-recommends openssh-client');
+    expect($bootstrapScript)->toContain('php8.5-redis');
+    expect($bootstrapScript)->toContain('docker build --pull=false');
+    expect($bootstrapScript)->toContain('ghcr.io/wg-easy/wg-easy:15');
     expect($bootstrapScript)->toContain('bootstrap_user=');
     expect($bootstrapScript)->toContain('id -u orbit');
     expect($bootstrapScript)->toContain('install -d -m 700 -o orbit -g orbit /home/orbit/.ssh');

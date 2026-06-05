@@ -382,9 +382,11 @@ Do not use `composer test:e2e:provision:docker` as a generic final gate after
 prepared-topology feature tests. Use it only when the Docker images,
 Docker-distributed artifacts, or Docker topology preparation flow changed.
 
-Docker and Incus preparation both use Composer caches during provisioning.
-Docker uses a lockfile-keyed volume or the optional
-`ORBIT_E2E_DOCKER_COMPOSER_CACHE` bind mount. Incus stages the local
+Docker and Incus preparation both hydrate Composer dependencies during
+provisioning. Docker uses a lockfile-keyed volume or the optional
+`ORBIT_E2E_DOCKER_COMPOSER_CACHE` bind mount. Default Incus preparation syncs
+the current checkout to the Incus host and mirrors that source into each VM.
+Incus artifact mode, enabled with `--use-build-artifacts`, stages the local
 `~/.cache/orbit-e2e/composer` cache into the provisioning bundle when present.
 
 Prepared topology artifacts use an explicit namespace by default. Docker role
@@ -404,8 +406,8 @@ selected role images, or `--all-roles` for an explicit full namespaced role set.
 Incus acquisition has the same per-role fallback. Shared `base` Incus artifacts
 are rebuilt as a full source topology by omitting `--roles`; targeted Incus
 `--roles` rebakes require a non-base
-`ORBIT_E2E_TOPOLOGY_ARTIFACT_NAMESPACE` so the selected role is copied from
-`base` into a separate slug.
+`ORBIT_E2E_TOPOLOGY_ARTIFACT_NAMESPACE` and `--use-build-artifacts` so the
+selected role is copied from `base` into a separate slug.
 
 ## Contract
 
@@ -421,10 +423,10 @@ Common requirements for every prepared topology:
 - SSH is authorized for the users needed by the topology handles;
 - `orbit --version` works for the steady-state Orbit user on each managed node;
 - Docker Engine/CLI is available to the host launcher and runtime managers;
-- source-mounted prepared topology nodes keep `/usr/local/bin/orbit` pointed at
-  `<source>/apps/cli/orbit`; production artifact and binary-acceptance lanes
-  are the lanes that require the native Orbit CLI binary artifact on managed
-  nodes;
+- source-prepared Incus topology nodes keep `/usr/local/bin/orbit` pointed at
+  the VM-local mirrored checkout's `bin/orbit`; production artifact and
+  binary-acceptance lanes are the lanes that require the native Orbit CLI
+  binary artifact on managed nodes;
 - host Caddy and PHP-FPM are absent from prepared topology images (FrankenPHP
   and `orbit-caddy` containers replace them); host PHP and Composer are present
   on `app-dev`/`app-prod` clones via role setup; host Supervisor is present

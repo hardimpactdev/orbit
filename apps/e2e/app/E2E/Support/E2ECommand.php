@@ -46,6 +46,27 @@ final readonly class E2ECommand
     {
         $configRoot = self::GatewayConfigRoot;
         $gatewayImage = DockerTopologyProvider::gatewayImage();
+        $sourcePath = '/home/orbit/orbit';
+        $sourceGatewayPath = "{$sourcePath}/apps/gateway";
+        $frankenPhpImage = DockerTopologyProvider::sourceGatewayArtisanImage();
+
+        $sourceDocker = implode(' ', [
+            'docker run --rm --pull never',
+            '--network host',
+            ...E2EGitHubAuth::dockerEnvOptions(),
+            '--env '.escapeshellarg("ORBIT_CONFIG_ROOT={$configRoot}"),
+            '--env '.escapeshellarg('DB_CONNECTION=sqlite'),
+            '--env '.escapeshellarg("DB_DATABASE={$configRoot}/gateway.sqlite"),
+            '--env '.escapeshellarg('SESSION_DRIVER=file'),
+            '--mount '.escapeshellarg("type=bind,source={$configRoot},target={$configRoot}"),
+            '--mount '.escapeshellarg("type=bind,source={$sourcePath},target=/work"),
+            '-v '.escapeshellarg('/root/.ssh:/root/.ssh:ro'),
+            '-v '.escapeshellarg('/home/orbit/.ssh:/home/orbit/.ssh:ro'),
+            '--workdir /work/apps/gateway',
+            escapeshellarg($frankenPhpImage),
+            'php artisan',
+            $arguments,
+        ]);
 
         $docker = implode(' ', [
             'docker run --rm --pull never',
@@ -62,7 +83,9 @@ final readonly class E2ECommand
             $arguments,
         ]);
 
-        return "status=0; {$docker} || status=\$?; chown -R orbit:orbit ".escapeshellarg($configRoot).' 2>/dev/null || true; exit "$status"';
+        $sourceModeMarker = "{$configRoot}/source-mounted-runtime";
+
+        return 'status=0; if [ -f '.escapeshellarg($sourceModeMarker).' ] && [ -f '.escapeshellarg("{$sourceGatewayPath}/artisan")." ]; then {$sourceDocker}; else {$docker}; fi || status=\$?; chown -R orbit:orbit ".escapeshellarg($configRoot).' 2>/dev/null || true; exit "$status"';
     }
 
     public static function ssh(E2EInstance $instance, string $user, SshKeyPair $key, string $command, ?int $timeoutSeconds = null, bool $allowFailure = false): ProcessResult

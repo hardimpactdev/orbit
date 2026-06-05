@@ -15,6 +15,7 @@ use App\E2E\Support\IncusHostPool;
 use App\E2E\Support\IncusTopologyBuilder;
 use App\E2E\Support\IncusTopologyTemplate;
 use App\E2E\Support\OrbitCliBinaryBundle;
+use App\E2E\Support\SourceMountedCheckoutSyncer;
 use Closure;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
@@ -31,6 +32,7 @@ use RuntimeException;
     {--composer-cache= : Local composer cache directory to ship in the bundle (default ~/.cache/orbit-e2e/composer when present)}
     {--roles= : Comma-separated prepared artifact roles to build (operator,gateway,app-dev,app-prod,ingress,agent,websocket)}
     {--all-roles : Explicitly build every prepared artifact role when a custom namespace is set}
+    {--use-build-artifacts : Build topology templates from CLI/gateway build artifacts instead of the synced source checkout}
     {--json : Output as JSON}')]
 #[Description('Prepare Incus topology templates used by ephemeral E2E tests')]
 class E2EPrepareTopologyCommand extends Command
@@ -76,6 +78,8 @@ class E2EPrepareTopologyCommand extends Command
         } catch (InvalidArgumentException $exception) {
             return $this->failValidation($exception->getMessage());
         }
+
+        $useBuildArtifacts = (bool) $this->option('use-build-artifacts');
 
         $buildKind = E2EPreparedTopology::incusSourceKindFor($kind);
         $requestedRoles = IncusTopologyTemplate::rolesFor($kind);
@@ -130,6 +134,14 @@ class E2EPrepareTopologyCommand extends Command
             return self::SUCCESS;
         }
 
+        if (! $useBuildArtifacts && $artifactRoles !== null) {
+            return $this->failValidation('Selected Incus role rebakes use build artifacts. Pass --use-build-artifacts with --roles or --all-roles.');
+        }
+
+        if (! $useBuildArtifacts && ($this->option('branch') !== null || $this->option('source-archive') !== null || $this->option('composer-cache') !== null)) {
+            return $this->failValidation('--branch, --source-archive, and --composer-cache only apply with --use-build-artifacts.');
+        }
+
         $hostPool = IncusHostPool::fromEnvironment($config);
         $host = $hostPool->first();
 
@@ -142,21 +154,30 @@ class E2EPrepareTopologyCommand extends Command
         $timer = new E2EPhaseTimer(stream: ! $this->laravel->runningUnitTests());
 
         try {
-            $bundleDir = $timer->measure('bundle.local', fn (): string => $this->buildLocalBundle());
-            $provisionFingerprint = $timer->measure(
-                'bundle.fingerprint',
-                fn (): array => E2EProvisionFingerprint::fromHost($host, $buildKind, $bundleDir),
-            );
-            $remoteBundle = $timer->measure('bundle.push', fn (): string => $host->pushBundle($bundleDir));
-
             $builder = $this->builderFactory !== null
                 ? ($this->builderFactory)($host, $timer)
                 : new IncusTopologyBuilder($host, $timer);
 
-            $builder->useBundle($remoteBundle);
+            if ($useBuildArtifacts) {
+                $bundleDir = $timer->measure('bundle.local', fn (): string => $this->buildLocalBundle());
+                $provisionFingerprint = $timer->measure(
+                    'bundle.fingerprint',
+                    fn (): array => E2EProvisionFingerprint::fromHost($host, $buildKind, $bundleDir),
+                );
+                $remoteBundle = $timer->measure('bundle.push', fn (): string => $host->pushBundle($bundleDir));
 
-            if ($this->builderFactory === null) {
-                $builder->useProvisionFingerprint($provisionFingerprint);
+                $builder->useBundle($remoteBundle);
+
+                if ($this->builderFactory === null) {
+                    $builder->useProvisionFingerprint($provisionFingerprint);
+                }
+            } else {
+                $remoteSourcePath = $timer->measure(
+                    'source-sync',
+                    fn (): string => (new SourceMountedCheckoutSyncer)->sync($host->config->host, 'incus'),
+                );
+
+                $builder->useSourcePath($remoteSourcePath);
             }
 
             if ($artifactRoles !== null) {

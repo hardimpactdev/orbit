@@ -61,6 +61,10 @@ it('runs gateway artisan through the prepared gateway image by default', functio
         expect($command)
             ->toContain('docker run --rm --pull never')
             ->toContain("'orbit-gateway:prepared-current'")
+            ->toContain("'orbit-frankenphp-source-artisan:prepared-current'")
+            ->toContain('--network host')
+            ->toContain('type=bind,source=/home/orbit/orbit,target=/work')
+            ->toContain('--workdir /work/apps/gateway')
             ->toContain('/root/.ssh:/root/.ssh:ro')
             ->toContain('/home/orbit/.ssh:/home/orbit/.ssh:ro')
             ->not->toContain('orbit-gateway:current')
@@ -90,6 +94,7 @@ it('runs gateway artisan through the namespaced gateway image for isolated artif
 
         expect($command)
             ->toContain("'orbit-gateway:provision-serving-current'")
+            ->toContain("'orbit-frankenphp-source-artisan:provision-serving-current'")
             ->not->toContain("'orbit-gateway:prepared-current'")
             ->toContain('artisan route:list');
     });

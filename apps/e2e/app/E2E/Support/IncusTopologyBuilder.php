@@ -6,6 +6,7 @@ namespace App\E2E\Support;
 
 use App\Services\Php\PhpRuntimeCatalog;
 use App\Services\Runtime\OrbitCaddyContainer;
+use App\Services\Vpn\WgEasyServiceInstaller;
 use App\Services\WireGuard\WireGuardKeyGenerator;
 use Illuminate\Contracts\Process\ProcessResult;
 use RuntimeException;
@@ -13,6 +14,8 @@ use RuntimeException;
 class IncusTopologyBuilder
 {
     private ?string $remoteBundleDir = null;
+
+    private ?string $remoteSourcePath = null;
 
     private string $lastPreparedBakeOutput = '';
 
@@ -35,6 +38,8 @@ class IncusTopologyBuilder
 
     private const string AppDevelopmentRuntimeUser = 'orbit';
 
+    private const string PreparedSourceMountPath = '/mnt/orbit-source';
+
     private readonly E2EPhaseTimer $timer;
 
     public function __construct(
@@ -53,6 +58,13 @@ class IncusTopologyBuilder
     public function useBundle(string $remoteBundleDir): void
     {
         $this->remoteBundleDir = $remoteBundleDir;
+        $this->remoteSourcePath = null;
+    }
+
+    public function useSourcePath(string $remoteSourcePath): void
+    {
+        $this->remoteSourcePath = rtrim($remoteSourcePath, '/');
+        $this->remoteBundleDir = null;
     }
 
     /**
@@ -115,9 +127,9 @@ class IncusTopologyBuilder
             throw new RuntimeException("Required base image [{$baseImage}] not found on host.");
         }
 
-        if ($this->remoteBundleDir === null) {
+        if ($this->remoteBundleDir === null && $this->remoteSourcePath === null) {
             throw new RuntimeException(
-                'No provisioning bundle has been staged. Call useBundle() before build().'
+                'No source checkout or provisioning bundle has been staged. Call useSourcePath() or useBundle() before build().'
             );
         }
 
@@ -578,7 +590,7 @@ class IncusTopologyBuilder
         $this->timer->measure('operator.launch', fn () => $this->launchBase($operatorName));
         $operator = new IncusInstance($this->host, $operatorName);
         $this->timer->measure('operator.agent.ready', fn () => $operator->waitForAgent());
-        $this->timer->measure('operator.provision', fn () => $this->host->provisionInstance($operatorName, 'operator', (string) $this->remoteBundleDir, $this->host->config->operatorUser));
+        $this->timer->measure('operator.provision', fn () => $this->provisionPreparedInstance($operator, 'operator', $this->host->config->operatorUser));
         $this->timer->measure('operator.ssh-authorize', fn () => $operator->authorizeSsh($this->host->config->operatorUser, $key));
         $this->timer->measure('operator.ssh-ready', fn () => $operator->waitForSsh($this->host->config->operatorUser, $key));
         $this->timer->measure('operator.ipv4', fn (): string => $operator->waitForIpv4());
@@ -600,7 +612,7 @@ class IncusTopologyBuilder
         $gatewayIp = $this->timer->measure('gateway.ipv4', fn (): string => $gateway->waitForIpv4());
         $instances['gateway'] = $gateway;
 
-        $this->timer->measure('gateway.provision', fn () => $this->host->provisionInstance($gateway->name(), 'gateway', (string) $this->remoteBundleDir));
+        $this->timer->measure('gateway.provision', fn () => $this->provisionPreparedInstance($gateway, 'gateway', 'orbit'));
         $this->timer->measure('gateway.real-wireguard', fn () => $this->installRealWireGuard($instances));
         $this->timer->measure('gateway.bootstrap-local', fn () => $this->bootstrapGatewayLocal($gateway, $gatewayIp));
         $this->timer->measure('gateway.trust-operator', fn () => $this->trustGatewayCaOnOperator($operator, $gateway, $key));
@@ -1003,12 +1015,112 @@ BASH;
         return 'bash -lc '.escapeshellarg($script);
     }
 
+    private function provisionPreparedInstance(IncusInstance $instance, string $nodeKind, string $user): void
+    {
+        if ($this->remoteBundleDir !== null) {
+            $result = $nodeKind === 'operator'
+                ? $this->host->provisionInstance($instance->name(), $nodeKind, $this->remoteBundleDir, $user)
+                : $this->host->provisionInstance($instance->name(), $nodeKind, $this->remoteBundleDir);
+
+            if (! $result->successful()) {
+                throw new RuntimeException("Could not provision {$instance->name()}: {$result->errorOutput()}");
+            }
+
+            return;
+        }
+
+        $this->installSourceMountedRuntime($instance, $user);
+    }
+
+    private function installSourceMountedRuntime(IncusInstance $instance, string $user): void
+    {
+        if ($this->remoteSourcePath === null) {
+            throw new RuntimeException('No source checkout has been staged.');
+        }
+
+        E2ECommand::exec(
+            $instance,
+            $this->sourceMountedRuntimeInstallCommand($user),
+            "Could not install source-mounted runtime on {$instance->name()}",
+            timeoutSeconds: 900,
+        );
+
+        if ($user === 'orbit') {
+            E2ECommand::exec(
+                $instance,
+                $this->verifySourceMountedDockerImagesCommand(),
+                "Source-mounted Docker runtime images are missing on {$instance->name()}",
+                timeoutSeconds: 120,
+            );
+        }
+    }
+
+    private function sourceMountedRuntimeInstallCommand(string $user): string
+    {
+        $targetPath = "/home/{$user}/orbit";
+        $mirrorCommand = E2ECurrentCheckout::sourceMountedRuntimeMirrorCommand(self::PreparedSourceMountPath, $targetPath);
+        $cli = "{$targetPath}/bin/orbit";
+
+        $script = implode("\n", [
+            'set -euo pipefail',
+            'user='.escapeshellarg($user),
+            'target='.escapeshellarg($targetPath),
+            'config_root="/home/$user/.config/orbit"',
+            'if ! id "$user" >/dev/null 2>&1; then useradd -m -s /bin/bash "$user"; fi',
+            'install -d -m 0755 -o "$user" -g "$user" "$target"',
+            'runuser -u "$user" -- bash -lc '.escapeshellarg($mirrorCommand),
+            'for path in apps/gateway/vendor apps/cli/vendor; do',
+            '  if [ -d '.escapeshellarg(self::PreparedSourceMountPath).'/"$path" ]; then',
+            '    rm -rf "$target/$path"',
+            '    mkdir -p "$target/$(dirname "$path")"',
+            '    cp -a '.escapeshellarg(self::PreparedSourceMountPath).'/"$path" "$target/$path"',
+            '  fi',
+            'done',
+            'chown -R "$user:$user" "$target"',
+            'install -d -m 0755 -o "$user" -g "$user" "$config_root"',
+            'runuser -u "$user" -- env ORBIT_CONFIG_ROOT="$config_root" DB_CONNECTION=sqlite DB_DATABASE="$config_root/gateway.sqlite" SESSION_DRIVER=file bash -lc "cd \"$target\" && php apps/gateway/artisan migrate --force --no-interaction --ansi"',
+            'touch "$config_root/source-mounted-runtime"',
+            'chown "$user:$user" "$config_root/source-mounted-runtime"',
+            'chmod 0755 '.escapeshellarg($cli),
+            'ln -sf '.escapeshellarg($cli).' /usr/local/bin/orbit',
+            'runuser -u "$user" -- env HOME="/home/$user" PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin /usr/local/bin/orbit --version >/dev/null',
+        ]);
+
+        return 'bash -lc '.escapeshellarg($script);
+    }
+
+    private function verifySourceMountedDockerImagesCommand(): string
+    {
+        $frankenPhpImage = (new PhpRuntimeCatalog)->imageFor(PhpRuntimeCatalog::DEFAULT);
+        $sourceGatewayArtisanImage = DockerTopologyProvider::sourceGatewayArtisanImage();
+        $webSocketRuntimeImage = DockerTopologyProvider::webSocketRuntimeImage();
+        $caddyImage = OrbitCaddyContainer::Image;
+        $wgEasyImage = WgEasyServiceInstaller::Image;
+
+        $script = implode("\n", [
+            'set -euo pipefail',
+            'if command -v systemctl >/dev/null 2>&1; then sudo systemctl enable --now docker || sudo systemctl start docker || true; fi',
+            'for image in '.escapeshellarg($frankenPhpImage).' '.escapeshellarg($sourceGatewayArtisanImage).' '.escapeshellarg($webSocketRuntimeImage).' '.escapeshellarg($caddyImage).' '.escapeshellarg($wgEasyImage).'; do',
+            '  docker image inspect "$image" >/dev/null 2>&1 || { echo "prepared Incus runtime base image is missing Docker image: $image. Rebuild it with composer e2e:prepare-base-image -- --force." >&2; exit 1; }',
+            'done',
+        ]);
+
+        return 'bash -lc '.escapeshellarg($script);
+    }
+
     private function installPreparedAppRuntimePrerequisites(IncusInstance $instance, bool $includeGatewayImage = false): void
     {
         $bundleDir = $this->remoteBundleDir;
 
         if ($bundleDir === null) {
-            throw new RuntimeException('No provisioning bundle has been staged.');
+            E2ECommand::exec(
+                $instance,
+                $this->verifySourceMountedDockerImagesCommand(),
+                "Source-mounted app runtime images are missing on {$instance->name()}",
+                timeoutSeconds: 120,
+            );
+
+            return;
         }
 
         $archives = [
@@ -1019,6 +1131,10 @@ BASH;
             [
                 'guest' => '/var/tmp/frankenphp-1-php8.5-bookworm.tar',
                 'host' => "{$bundleDir}/frankenphp-1-php8.5-bookworm.tar",
+            ],
+            [
+                'guest' => '/var/tmp/orbit-websocket-current.tar',
+                'host' => "{$bundleDir}/orbit-websocket-current.tar",
             ],
         ];
 
@@ -1048,6 +1164,8 @@ BASH;
                 frankenPhpImageArchive: '/var/tmp/frankenphp-1-php8.5-bookworm.tar',
                 caddyImage: OrbitCaddyContainer::Image,
                 frankenPhpImage: (new PhpRuntimeCatalog)->imageFor(PhpRuntimeCatalog::DEFAULT),
+                webSocketImageArchive: '/var/tmp/orbit-websocket-current.tar',
+                webSocketImage: DockerTopologyProvider::webSocketRuntimeImage(),
                 bootstrapUser: $this->host->config->bootstrapUser,
                 gatewayImageArchive: $includeGatewayImage ? '/var/tmp/'.E2EArtifactProdManifest::GatewayImageArchive : null,
                 preparedGatewayImage: $includeGatewayImage ? DockerTopologyProvider::gatewayImage() : null,
@@ -1067,6 +1185,8 @@ BASH;
         string $frankenPhpImageArchive,
         string $caddyImage,
         string $frankenPhpImage,
+        string $webSocketImageArchive,
+        string $webSocketImage,
         string $bootstrapUser,
         ?string $gatewayImageArchive = null,
         ?string $preparedGatewayImage = null,
@@ -1118,7 +1238,10 @@ sudo docker load -i %s
 sudo docker image inspect %s >/dev/null
 sudo docker load -i %s
 sudo docker image inspect %s >/dev/null%s
+sudo docker load -i %s
+sudo docker image inspect %s >/dev/null
 if getent passwd "$bootstrap_user" >/dev/null 2>&1; then
+    sudo -u "$bootstrap_user" docker image inspect %s >/dev/null
     sudo -u "$bootstrap_user" docker image inspect %s >/dev/null
     sudo -u "$bootstrap_user" docker image inspect %s >/dev/null
     if sudo docker image inspect 'orbit-gateway:current' >/dev/null 2>&1; then
@@ -1126,6 +1249,7 @@ if getent passwd "$bootstrap_user" >/dev/null 2>&1; then
     fi
 fi
 if getent passwd "$runtime_user" >/dev/null 2>&1; then
+    sudo -u "$runtime_user" docker image inspect %s >/dev/null
     sudo -u "$runtime_user" docker image inspect %s >/dev/null
     sudo -u "$runtime_user" docker image inspect %s >/dev/null
     if sudo docker image inspect 'orbit-gateway:current' >/dev/null 2>&1; then
@@ -1139,10 +1263,14 @@ BASH,
             escapeshellarg($frankenPhpImageArchive),
             escapeshellarg($frankenPhpImage),
             $gatewayImageScript,
+            escapeshellarg($webSocketImageArchive),
+            escapeshellarg($webSocketImage),
             escapeshellarg($caddyImage),
             escapeshellarg($frankenPhpImage),
+            escapeshellarg($webSocketImage),
             escapeshellarg($caddyImage),
             escapeshellarg($frankenPhpImage),
+            escapeshellarg($webSocketImage),
         );
 
         return 'bash -lc '.escapeshellarg($script);
@@ -1268,6 +1396,9 @@ BASH,
         $this->timer->measure("{$role}.launch", fn () => $this->launchBase($name));
         $instance = new IncusInstance($this->host, $name);
         $this->timer->measure("{$role}.agent.ready", fn () => $instance->waitForAgent());
+        if ($this->remoteSourcePath !== null && $role !== 'gateway') {
+            $this->timer->measure("{$role}.source-runtime", fn () => $this->installSourceMountedRuntime($instance, $this->host->config->bootstrapUser));
+        }
         $this->timer->measure("{$role}.ssh-authorize", fn () => $instance->authorizeSsh($this->host->config->bootstrapUser, $key));
         $this->timer->measure("{$role}.ssh-ready", fn () => $instance->waitForSsh($this->host->config->bootstrapUser, $key));
 
@@ -1316,15 +1447,18 @@ BASH,
             $echoLines[] = sprintf('echo "__orbit_prepare_status %s $%s";', $role, $status);
         }
 
+        $sourceRuntimeInstallCommand = $this->sourceMountedRuntimeInstallCommand($this->host->config->bootstrapUser);
         $script = sprintf(
             <<<'BASH'
 set -euo pipefail;
 
 bootstrap_user=%s
 bundle_dir=%s
+source_path=%s
 private_key_path=%s
 public_key_path=%s
 timeout_seconds=%d
+source_runtime_install_command=%s
 
 wait_for_agent() {
     local name="$1"
@@ -1390,6 +1524,24 @@ install_orbit_binary() {
     incus exec "$name" -- sh -lc 'runuser -u orbit -- env HOME=/home/orbit PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin /usr/local/bin/orbit --version >/dev/null'
 }
 
+install_source_runtime() {
+    local name="$1"
+
+    if [ -z "$source_path" ]; then
+        return 1
+    fi
+
+    if incus config device get "$name" orbit-source path >/dev/null 2>&1; then
+        incus config device set "$name" orbit-source source="$source_path"
+        incus config device set "$name" orbit-source path='%s'
+        incus config device set "$name" orbit-source shift=true
+    else
+        incus config device add "$name" orbit-source disk source="$source_path" path='%s' shift=true
+    fi
+
+    incus exec "$name" -- bash -lc "$source_runtime_install_command"
+}
+
 prepare_role() {
     local role="$1"
     local name="$2"
@@ -1400,7 +1552,11 @@ prepare_role() {
     esac
 
     wait_for_agent "$name"
-    install_orbit_binary "$name"
+    if [ -n "$source_path" ]; then
+        install_source_runtime "$name"
+    else
+        install_orbit_binary "$name"
+    fi
     authorize_ssh "$name"
     wait_for_ssh "$name"
 }
@@ -1415,9 +1571,13 @@ exit "$STATUS";
 BASH,
             escapeshellarg($this->host->config->bootstrapUser),
             escapeshellarg((string) $this->remoteBundleDir),
+            escapeshellarg((string) $this->remoteSourcePath),
             escapeshellarg($key->privateKeyPath),
             escapeshellarg($key->publicKeyPath),
             $this->host->config->timeoutSeconds,
+            escapeshellarg($sourceRuntimeInstallCommand),
+            self::PreparedSourceMountPath,
+            self::PreparedSourceMountPath,
             implode("\n", $caseLines),
             implode("\n", $startLines),
             implode("\n", $statusLines),
@@ -2581,7 +2741,11 @@ PHP;
 
             $this->timer->measure("finalize.clear-known-hosts.{$role}", fn () => $this->clearKnownHosts($instance));
 
-            $result = $this->timer->measure("finalize.stop.{$role}", fn () => $this->host->stopInstance($name));
+            if ($this->remoteSourcePath !== null) {
+                $this->timer->measure("finalize.detach-source.{$role}", fn () => $this->detachPreparedSourceMount($instance));
+            }
+
+            $result = $this->timer->measure("finalize.stop.{$role}", fn () => $this->host->forceStopInstance($name));
             if (! $result->successful()) {
                 throw new RuntimeException("Could not stop {$name}: {$result->errorOutput()}");
             }
@@ -2624,6 +2788,14 @@ PHP;
                 .'[ -d "$d/.ssh" ] || continue; '
                 .'rm -f "$d/.ssh/known_hosts" "$d/.ssh/known_hosts.old"; '
             .'done',
+            timeoutSeconds: 30,
+        );
+    }
+
+    private function detachPreparedSourceMount(IncusInstance $instance): void
+    {
+        $this->host->run(
+            'incus config device remove '.escapeshellarg($instance->name()).' orbit-source >/dev/null 2>&1 || true',
             timeoutSeconds: 30,
         );
     }
@@ -2907,6 +3079,16 @@ PHP;
 
     private function launchBase(string $target): void
     {
+        if ($this->remoteSourcePath !== null) {
+            $result = $this->host->run($this->launchTopologyInstanceCommand($target), timeoutSeconds: $this->host->config->timeoutSeconds);
+
+            if (! $result->successful()) {
+                throw new RuntimeException("Could not launch {$target} from {$this->host->config->baseImage}: {$result->errorOutput()}");
+            }
+
+            return;
+        }
+
         $sourceImageAlias = $this->host->config->baseImage;
         $result = $this->host->launchTopologyInstance($sourceImageAlias, $target, timeoutSeconds: $this->host->config->timeoutSeconds);
 
@@ -2917,6 +3099,33 @@ PHP;
 
     private function launchTopologyInstanceCommand(string $name): string
     {
+        if ($this->remoteSourcePath !== null) {
+            $parts = [
+                'incus init',
+                escapeshellarg($this->host->config->baseImage),
+                escapeshellarg($name),
+                '--vm',
+                sprintf(
+                    '--config=limits.cpu=%s --config=limits.memory=%s --device root,size=%s',
+                    escapeshellarg($this->host->config->topologyCpus),
+                    escapeshellarg($this->host->config->topologyMemory),
+                    escapeshellarg($this->host->config->topologyRootSize),
+                ),
+                $this->host->storagePoolArgument(),
+            ];
+
+            return implode("\n", [
+                implode(' ', array_filter($parts)),
+                sprintf(
+                    'incus config device add %s orbit-source disk source=%s path=%s shift=true',
+                    escapeshellarg($name),
+                    escapeshellarg($this->remoteSourcePath),
+                    escapeshellarg(self::PreparedSourceMountPath),
+                ),
+                'incus start '.escapeshellarg($name).' >/dev/null',
+            ]);
+        }
+
         $parts = [
             'incus launch',
             escapeshellarg($this->host->config->baseImage),

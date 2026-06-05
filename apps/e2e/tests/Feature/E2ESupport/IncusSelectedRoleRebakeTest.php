@@ -18,6 +18,20 @@ afterEach(function (): void {
     m::close();
 });
 
+function fakeSelectedRoleBundleProcessing(): void
+{
+    Process::fake([
+        'COPYFILE_DISABLE=1 tar *' => Process::result(),
+        'tar *' => Process::result(),
+        'git -C *archive*' => Process::result(),
+        'cp -R *' => Process::result(),
+        'rm -rf *' => Process::result(),
+        'ssh *mktemp -d /tmp/orbit-e2e-stage*' => Process::result(output: "/tmp/orbit-e2e-stage-remote\n"),
+        'ssh *' => Process::result(),
+        'scp *' => Process::result(),
+    ]);
+}
+
 // ---------------------------------------------------------------------------
 // Role validation: websocket and other canonical roles
 // ---------------------------------------------------------------------------
@@ -720,7 +734,7 @@ it('acquisition falls back to base snapshot for unselected roles', function (): 
 // ---------------------------------------------------------------------------
 
 it('command with --force and --roles dispatches buildSelectedRoles with correct Incus roles', function (): void {
-    fakeBundleProcessing();
+    fakeSelectedRoleBundleProcessing();
 
     $manifest = [
         ['role' => 'agent', 'name' => 'orbit-template-agent-agent-isolation', 'snapshot' => 'clean-operator_gateway_app-dev_app-prod_agent_websocket-agent-isolation'],
@@ -752,6 +766,7 @@ it('command with --force and --roles dispatches buildSelectedRoles with correct 
         $this->artisan('e2e:prepare-topology', [
             'kind' => 'operator_gateway_agent',
             '--force' => true,
+            '--use-build-artifacts' => true,
             '--roles' => 'agent',
         ])->assertSuccessful();
     });
@@ -762,7 +777,7 @@ it('command with --force and --roles dispatches buildSelectedRoles with correct 
 });
 
 it('command with --force and --roles=websocket dispatches buildSelectedRoles with dev Incus role for websocket topology', function (): void {
-    fakeBundleProcessing();
+    fakeSelectedRoleBundleProcessing();
 
     $manifest = [
         ['role' => 'dev', 'name' => 'orbit-template-app-dev-ws-branch', 'snapshot' => 'clean-operator_gateway_app-dev_app-prod_agent_websocket-ws-branch'],
@@ -790,6 +805,7 @@ it('command with --force and --roles=websocket dispatches buildSelectedRoles wit
         $this->artisan('e2e:prepare-topology', [
             'kind' => 'operator_gateway_app-dev_app-prod_agent_websocket',
             '--force' => true,
+            '--use-build-artifacts' => true,
             '--roles' => 'websocket',
         ])->assertSuccessful();
     });
@@ -799,7 +815,7 @@ it('command with --force and --roles=websocket dispatches buildSelectedRoles wit
 });
 
 it('command with --force and --roles outputs JSON success with selected templates', function (): void {
-    fakeBundleProcessing();
+    fakeSelectedRoleBundleProcessing();
 
     $manifest = [
         ['role' => 'agent', 'name' => 'orbit-template-agent-pr-123', 'snapshot' => 'clean-operator_gateway_app-dev_app-prod_agent-pr-123'],
@@ -819,6 +835,7 @@ it('command with --force and --roles outputs JSON success with selected template
         $exitCode = Artisan::call('e2e:prepare-topology', [
             'kind' => 'operator_gateway_agent',
             '--force' => true,
+            '--use-build-artifacts' => true,
             '--roles' => 'agent',
             '--json' => true,
         ]);
@@ -834,7 +851,7 @@ it('command with --force and --roles outputs JSON success with selected template
 });
 
 it('command with --force and gateway consistency failure surfaces as command failure', function (): void {
-    fakeBundleProcessing();
+    fakeSelectedRoleBundleProcessing();
 
     $builder = m::mock(IncusTopologyBuilder::class);
     $builder->shouldReceive('useBundle')->once();
@@ -851,6 +868,7 @@ it('command with --force and gateway consistency failure surfaces as command fai
         $this->artisan('e2e:prepare-topology', [
             'kind' => 'operator_gateway_agent',
             '--force' => true,
+            '--use-build-artifacts' => true,
             '--roles' => 'gateway',
         ])
             ->expectsOutputToContain("Selected roles include 'gateway' but not 'operator'")

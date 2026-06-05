@@ -247,6 +247,16 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
         return (new PhpRuntimeCatalog)->imageFor(PhpRuntimeCatalog::DEFAULT);
     }
 
+    public static function sourceGatewayArtisanImage(): string
+    {
+        return E2ETopologyArtifactNamespace::dockerRuntimeImage('orbit-frankenphp-source-artisan');
+    }
+
+    public static function webSocketRuntimeImage(): string
+    {
+        return 'orbit-websocket:current';
+    }
+
     /**
      * @return list<string>
      */

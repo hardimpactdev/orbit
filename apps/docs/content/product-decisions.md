@@ -38,6 +38,7 @@ direction.
 
 <!-- newest first; add new entries directly under this comment -->
 
+- 2026-06-05 — Incus E2E topology preparation defaults to the synced source checkout plus VM-local ext4 mirrors from `orbit-base-ubuntu-26.04-runtime`; native CLI binary and packaged gateway runtime artifacts are opt-in through `--use-build-artifacts`.
 - 2026-06-05 — Incus E2E topology preparation uses `orbit-base-ubuntu-26.04-runtime` by default. Base-image preparation builds that runtime image from the non-cloud Ubuntu 26.04 VM image through direct Incus-agent bootstrap, and runtime VM readiness starts from the Incus agent, SSH, and role runtime checks.
 - 2026-06-04 — Production app FrankenPHP runtimes are currently rendered as per-app Docker runtime containers on the owning app node, exposed only on internal port `8080` to the app-role backend `orbit-caddy`. The fully baked app-runtime Docker Swarm service phase remains deferred; current app runtime intent is the Docker container renderer and process-backed lifecycle model. (solo todo #662)
 - 2026-06-04 — Public app/workspace host-command process definitions default to `supervisor` and only accept `supervisor` through `process:add` and `process:edit`. App/workspace `docker` process rows are reserved for Orbit-managed runtime processes such as FrankenPHP web-runtime units, while node-owned service definitions continue to support Docker and Docker Swarm runtimes. (solo todo #642)

@@ -4,7 +4,11 @@ declare(strict_types=1);
 
 namespace App\Services\E2E;
 
+use App\E2E\Support\DockerTopologyProvider;
 use App\E2E\Support\IncusHost;
+use App\Services\Php\PhpRuntimeCatalog;
+use App\Services\Runtime\OrbitCaddyContainer;
+use App\Services\Vpn\WgEasyServiceInstaller;
 use Illuminate\Support\Facades\Process;
 use RuntimeException;
 
@@ -191,6 +195,12 @@ class IncusBaseImagePreparer
         $packageArguments = implode(' ', array_map(escapeshellarg(...), $packages));
         $bootstrapUser = escapeshellarg($options->bootstrapUser);
         $publicKeyValue = escapeshellarg($publicKey);
+        $caddyImage = escapeshellarg(OrbitCaddyContainer::Image);
+        $frankenPhpDockerfileImage = (new PhpRuntimeCatalog)->imageFor(PhpRuntimeCatalog::DEFAULT);
+        $frankenPhpImage = escapeshellarg($frankenPhpDockerfileImage);
+        $sourceGatewayArtisanImage = escapeshellarg(DockerTopologyProvider::sourceGatewayArtisanImage());
+        $webSocketRuntimeImage = escapeshellarg(DockerTopologyProvider::webSocketRuntimeImage());
+        $wgEasyImage = escapeshellarg(WgEasyServiceInstaller::Image);
 
         $script = <<<BASH
 set -euo pipefail
@@ -253,6 +263,45 @@ systemctl enable orbit-e2e-docker-swarm-init.service
 docker info --format "{{.Swarm.LocalNodeState}}" | grep -qx active || docker swarm init --advertise-addr 127.0.0.1 >/dev/null 2>&1 || true
 
 docker --version >/dev/null
+for image in {$caddyImage} {$frankenPhpImage} {$wgEasyImage}; do
+    docker pull "\$image"
+    docker image inspect "\$image" >/dev/null
+done
+
+cat > /tmp/orbit-e2e-source-gateway-artisan.Dockerfile <<'DOCKERFILE'
+FROM {$frankenPhpDockerfileImage}
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends openssh-client \
+    && rm -rf /var/lib/apt/lists/*
+DOCKERFILE
+docker build --pull=false -t {$sourceGatewayArtisanImage} -f /tmp/orbit-e2e-source-gateway-artisan.Dockerfile /tmp
+docker image inspect {$sourceGatewayArtisanImage} >/dev/null
+
+cat > /tmp/orbit-e2e-websocket-runtime.Dockerfile <<'DOCKERFILE'
+FROM ubuntu:26.04
+ENV DEBIAN_FRONTEND=noninteractive
+RUN printf '%s\\n' 'Acquire::ForceIPv4 "true";' 'Acquire::http::Timeout "10";' 'Acquire::https::Timeout "10";' 'Acquire::Retries "3";' > /etc/apt/apt.conf.d/99orbit-e2e-network \
+    && apt-get update -qq \
+    && apt-get install -y -qq --no-install-recommends \
+        ca-certificates \
+        php8.5-bcmath \
+        php8.5-cli \
+        php8.5-common \
+        php8.5-curl \
+        php8.5-intl \
+        php8.5-mbstring \
+        php8.5-redis \
+        php8.5-sqlite3 \
+        php8.5-xml \
+        php8.5-zip \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+WORKDIR /app
+CMD ["php", "artisan", "reverb:start", "--host=0.0.0.0", "--port=8080"]
+DOCKERFILE
+docker build --pull=false -t {$webSocketRuntimeImage} -f /tmp/orbit-e2e-websocket-runtime.Dockerfile /tmp
+docker image inspect {$webSocketRuntimeImage} >/dev/null
+
 composer --version >/dev/null
 apt-get clean
 rm -rf /var/lib/apt/lists/*

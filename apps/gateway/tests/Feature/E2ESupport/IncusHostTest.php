@@ -175,6 +175,15 @@ it('force stops instances when graceful incus stop times out', function (): void
     expect($commands[0])->toContain("incus stop 'orbit-template-operator' --timeout 120 || incus stop 'orbit-template-operator' --force");
 });
 
+it('force stops an instance immediately', function (): void {
+    $commands = [];
+    $host = recordingIncusHost(incusHostTestConfig(), $commands);
+
+    $host->forceStopInstance('orbit-template-operator');
+
+    expect($commands[0])->toContain("incus stop 'orbit-template-operator' --force");
+});
+
 it('force stops reusable template instances only when they are running', function (): void {
     $commands = [];
     $host = recordingIncusHost(incusHostTestConfig(), $commands);
@@ -501,6 +510,10 @@ it('stages local Docker image archives in the pushed provisioning bundle when av
         ->and($commandOutput)->toContain("docker pull 'dunglas/frankenphp:1-php8.5-bookworm'")
         ->and($commandOutput)->toContain("docker save 'dunglas/frankenphp:1-php8.5-bookworm'")
         ->and($commandOutput)->toContain("'{$remoteStage}/orbit-e2e-bundle/frankenphp-1-php8.5-bookworm.tar'")
+        ->and($commandOutput)->toContain("docker image inspect 'orbit-websocket:current'")
+        ->and($commandOutput)->toContain("docker build --pull=false -t 'orbit-websocket:current'")
+        ->and($commandOutput)->toContain("docker save 'orbit-websocket:current'")
+        ->and($commandOutput)->toContain("'{$remoteStage}/orbit-e2e-bundle/orbit-websocket-current.tar'")
         ->and($commandOutput)->toContain("docker image inspect 'ghcr.io/wg-easy/wg-easy:15'")
         ->and($commandOutput)->toContain("docker pull 'ghcr.io/wg-easy/wg-easy:15'")
         ->and($commandOutput)->toContain("docker save 'ghcr.io/wg-easy/wg-easy:15'")

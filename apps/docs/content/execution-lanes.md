@@ -324,7 +324,7 @@ inherit the lane of the production code they exercise.
 | `apps/gateway/app/Services/Apps/AppWorkerReadiness.php:63` | `RemoteHostExecutor` | Checks app worker/readiness artifacts on the host/runtime boundary. |
 | `apps/gateway/app/Services/Ca/OrbitSiteCertificateInstaller.php:30` | `RemoteHostExecutor` | Writes leaf cert/key files into host-managed certificate paths. |
 | `apps/gateway/app/Services/WebSockets/WebSocketCertificateInstaller.php:30` | `RemoteHostExecutor` | Writes WebSocket backend cert/key files into host-managed certificate paths. |
-| `apps/gateway/app/Services/WebSockets/WebSocketRuntimeSourceInstaller.php` | `RemoteHostExecutor` | Syncs the dedicated Laravel Reverb runtime source to `/opt/orbit/websocket/current` and runs dependency installation inside an Orbit-managed PHP tooling container through Docker. |
+| `apps/gateway/app/Services/WebSockets/WebSocketRuntimeSourceInstaller.php` | `RemoteHostExecutor` | Syncs the dedicated Laravel Reverb runtime source to `/opt/orbit/websocket/current` and installs its dependencies with host Composer; the long-running Reverb service runs separately inside the `orbit-websocket` runtime container. |
 | `apps/gateway/app/Services/DatabaseConnections/DatabaseConnectionAdopter.php:108` | `RemoteHostExecutor` | Reads app/workspace `.env` files from host paths for adoption. |
 | `apps/gateway/app/Services/DatabaseConnections/DatabaseConnectionExecutor.php:84` | `RemoteGatewayRuntimeExecutor` | Runs local SQLite query work through Orbit code/PDO on the owning node. |
 | `apps/gateway/app/Services/DatabaseConnections/DatabaseConnectionProbe.php:106,213` | `RemoteHostExecutor` | Reads app/workspace `.env` files from host paths for drift probes. |

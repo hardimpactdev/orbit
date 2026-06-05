@@ -36,6 +36,13 @@ composer e2e:prepare-topology -- --force operator_gateway_app-dev_app-prod_agent
 composer test:e2e:incus
 ```
 
+`composer e2e:prepare-topology -- --force` uses the synced source checkout by
+default. It mounts the checkout into each runtime-image VM, mirrors it onto the
+VM ext4 filesystem, links the Orbit CLI shim, and runs gateway commands from
+the mirrored gateway app through FrankenPHP. Pass `--use-build-artifacts` only
+when intentionally validating the native CLI binary plus packaged gateway
+runtime image path.
+
 Retained/live Incus development topologies acquired with
 `composer e2e:incus -- --start` or `composer e2e:incus -- --live` are
 source-mounted at `/home/orbit/orbit` instead of unpacking a checkout archive.
@@ -181,8 +188,9 @@ Incus acquisition resolves branch/base artifacts per role. Forced Incus
 preparation supports the shared `base` rebuild, explicit full namespaced
 rebuilds with `--all-roles`, and targeted selected-role rebakes with `--roles`.
 A custom namespace without `--roles` or `--all-roles` is rejected. Targeted
-`--roles` rebakes require a non-base namespace; leave the namespace empty and
-omit `--roles` to rebuild the shared base artifact set.
+`--roles` rebakes require `--use-build-artifacts` and a non-base namespace;
+leave the namespace empty and omit `--roles` to rebuild the shared base artifact
+set from the synced source checkout.
 
 For a targeted `--roles` rebake, the builder copies each selected role from its
 base source snapshot into the slug namespace, starts the VM, overlays the
