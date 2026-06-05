@@ -8,19 +8,41 @@ final readonly class E2EOperatorIdentity
 {
     public static function ensure(E2EInstance $operator, string $operatorUser, SshKeyPair $key): void
     {
-        $database = "/home/{$operatorUser}/.config/orbit/gateway.sqlite";
-        $databaseValue = var_export($database, true);
+        $configPath = "/home/{$operatorUser}/.config/orbit/config.json";
+        $configPathValue = var_export($configPath, true);
 
         $php = <<<'PHP'
-$database = DATABASE_PATH;
-$pdo = new PDO('sqlite:'.$database);
-$pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
-$pdo->exec('PRAGMA busy_timeout = 5000');
-$statement = $pdo->prepare('DELETE FROM nodes WHERE name = :name');
-$statement->execute(['name' => 'operator-1']);
+$configPath = CONFIG_PATH;
+
+if (! is_file($configPath)) {
+    exit(0);
+}
+
+$contents = file_get_contents($configPath);
+
+if ($contents === false || trim($contents) === '') {
+    exit(0);
+}
+
+$config = json_decode($contents, true, flags: JSON_THROW_ON_ERROR);
+
+if (! is_array($config)) {
+    exit(0);
+}
+
+if (($config['defaults']['node'] ?? null) === 'operator-1') {
+    $config['defaults']['node'] = null;
+}
+
+if (isset($config['nodes']) && is_array($config['nodes'])) {
+    unset($config['nodes']['operator-1']);
+}
+
+file_put_contents($configPath, json_encode($config, JSON_THROW_ON_ERROR | JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES).PHP_EOL);
+chmod($configPath, 0600);
 PHP;
 
-        $php = str_replace('DATABASE_PATH', $databaseValue, $php);
+        $php = str_replace('CONFIG_PATH', $configPathValue, $php);
 
         E2ECommand::ssh(
             $operator,

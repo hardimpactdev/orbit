@@ -251,12 +251,16 @@ it('does not erase trusted gateway CA config when switching the operator to the 
 
     expect($source)->toBeString();
 
-    preg_match('/private function useWireGuardGatewayUrl\(.*?private function writeOperatorCliConfig/s', (string) $source, $matches);
+    preg_match('/private function updateOperatorCliGatewayUrl\(.*?private function cliJsonConfigBody/s', (string) $source, $matches);
 
     expect($matches[0] ?? '')
-        ->toContain('local_gateway_settings')
-        ->toContain('gateway_url')
-        ->not->toContain('writeOperatorCliConfig($operator, $key)');
+        ->toContain('$gateway')
+        ->toContain('array_merge')
+        ->toContain('ca_pem_path')
+        ->toContain('ca_sha256')
+        ->toContain('config.json')
+        ->not->toContain('gateway.sqlite')
+        ->not->toContain('local_gateway_settings');
 });
 
 it('does not seed database and redis fixture state in the plain app-dev provisioning stage', function (): void {
@@ -1157,6 +1161,50 @@ it('records phase timings while building topology templates', function (): void 
         ->and($eventNames)->toContain('workdir.cleanup');
 });
 
+it('provisions a source-mode operator from the current cli binary without gateway runtime state', function (): void {
+    $config = incusTopologyBuilderConfig();
+    $commands = [];
+
+    $host = m::mock(IncusHost::class, [$config])->makePartial();
+    $host->shouldReceive('imageExists')->with($config->baseImage)->andReturn(true);
+    $host->shouldReceive('instanceExists')->with('orbit-template-operator-base')->andReturn(false);
+    $host->shouldReceive('forceStopInstance')->with('orbit-template-operator-base')->once()->andReturn(incusTopologyBuilderProcessResult());
+    $host->shouldReceive('snapshotInstance')->with('orbit-template-operator-base', 'clean-operator-base')->once()->andReturn(incusTopologyBuilderProcessResult());
+    $host->shouldReceive('run')->andReturnUsing(function (string $command, ?int $timeoutSeconds = null) use (&$commands): ProcessResult {
+        $commands[] = $command;
+
+        if (str_starts_with($command, 'mktemp -d ')) {
+            return incusTopologyBuilderProcessResult("/tmp/orbit-topology-builder-test\n");
+        }
+
+        if (str_contains($command, 'orbit-template-operator-base')) {
+            return incusTopologyBuilderProcessResult("10.201.0.10\n");
+        }
+
+        return incusTopologyBuilderProcessResult();
+    });
+
+    $timer = new E2EPhaseTimer;
+    $builder = new IncusTopologyBuilder($host, $timer);
+    $builder->useSourcePath('/var/tmp/orbit-current-source');
+    $builder->useOrbitBinaryBundle('/var/tmp/orbit-current-binary');
+
+    $builder->build(E2ETopologyKind::Operator);
+
+    $commandOutput = implode("\n", $commands);
+    $phaseNames = array_column($timer->events(), 'name');
+
+    expect($commandOutput)
+        ->toContain('/var/tmp/orbit-current-binary/orbit-binary')
+        ->toContain('/home/operator/orbit/bin/orbit-binary')
+        ->toContain('/home/operator/.config/orbit/config.json')
+        ->not->toContain('/var/tmp/orbit-current-source')
+        ->not->toContain('orbit-source disk')
+        ->not->toContain('apps/gateway/artisan migrate')
+        ->not->toContain('/home/operator/.config/orbit/gateway.sqlite')
+        ->and($phaseNames)->not->toContain('finalize.detach-source.operator');
+});
+
 it('builds prepared topology templates through staged internal gateway baking', function (): void {
     $config = incusTopologyBuilderConfig();
     $commands = [];
@@ -1265,7 +1313,8 @@ it('builds prepared topology templates through staged internal gateway baking', 
         ->and($commandOutput)->not->toContain('51822')
         ->and($commandOutput)->toContain('orbit:internal:bootstrap-gateway-local gateway')
         ->and($commandOutput)->toContain('--public-host=')
-        ->and($commandOutput)->toContain('public_endpoint')
+        ->and($commandOutput)->toContain('active_gateway')
+        ->and($commandOutput)->not->toContain('public_endpoint')
         ->and($commandOutput)->toContain('gateway-ca/orbit.crt')
         ->and($commandOutput)->toContain('ca_pem_path')
         ->and($commandOutput)->toContain('/etc/wireguard/wg-orbit.conf')

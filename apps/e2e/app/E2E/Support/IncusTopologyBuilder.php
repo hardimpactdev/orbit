@@ -26,6 +26,11 @@ class IncusTopologyBuilder
      */
     private ?array $provisionFingerprint = null;
 
+    /**
+     * @var array<string, true>
+     */
+    private array $sourceMountedInstances = [];
+
     private const string GatewayWireGuardIp = '10.6.0.2';
 
     private const string OperatorWireGuardIp = '10.6.0.3';
@@ -596,7 +601,7 @@ class IncusTopologyBuilder
     {
         $instances = [];
         $operatorName = IncusTopologyTemplate::templateName(E2ETopologyKind::Operator, 'operator');
-        $this->timer->measure('operator.launch', fn () => $this->launchBase($operatorName));
+        $this->timer->measure('operator.launch', fn () => $this->launchBase($operatorName, attachSource: $this->remoteOrbitBinaryBundleDir === null));
         $operator = new IncusInstance($this->host, $operatorName);
         $this->timer->measure('operator.agent.ready', fn () => $operator->waitForAgent());
         $this->timer->measure('operator.provision', fn () => $this->provisionPreparedInstance($operator, 'operator', $this->host->config->operatorUser));
@@ -1040,6 +1045,11 @@ BASH;
             return;
         }
 
+        if ($nodeKind === 'operator' && $this->remoteOrbitBinaryBundleDir !== null) {
+            $this->installOrbitBinaryFromBundle($instance, $user);
+            return;
+        }
+
         $this->installSourceMountedRuntime($instance, $user);
 
         if ($this->remoteOrbitBinaryBundleDir !== null) {
@@ -1439,10 +1449,11 @@ BASH,
     private function launchBaseRole(string $role, SshKeyPair $key, E2ETopologyKind $templateKind = E2ETopologyKind::Operator): IncusInstance
     {
         $name = IncusTopologyTemplate::templateName($templateKind, $role);
-        $this->timer->measure("{$role}.launch", fn () => $this->launchBase($name));
+        $attachSource = $role === 'gateway' || $this->remoteOrbitBinaryBundleDir === null;
+        $this->timer->measure("{$role}.launch", fn () => $this->launchBase($name, attachSource: $attachSource));
         $instance = new IncusInstance($this->host, $name);
         $this->timer->measure("{$role}.agent.ready", fn () => $instance->waitForAgent());
-        if ($this->remoteSourcePath !== null && $role !== 'gateway') {
+        if ($this->remoteSourcePath !== null && $role !== 'gateway' && $this->remoteOrbitBinaryBundleDir === null) {
             $this->timer->measure("{$role}.source-runtime", fn () => $this->installSourceMountedRuntime($instance, $this->host->config->bootstrapUser));
         }
         $this->timer->measure("{$role}.ssh-authorize", fn () => $instance->authorizeSsh($this->host->config->bootstrapUser, $key));
@@ -1479,7 +1490,7 @@ BASH,
             $caseLines[] = sprintf(
                 '%s) %s ;;',
                 escapeshellarg($role),
-                $this->launchTopologyInstanceCommand($name),
+                $this->launchTopologyInstanceCommand($name, attachSource: $this->remoteOrbitBinaryBundleDir === null),
             );
             $startLines[] = sprintf('prepare_role %s %s > %s 2>&1 & %s=$!;', escapeshellarg($role), escapeshellarg($name), escapeshellarg($logPath), $pid);
             $statusLines[] = "{$status}=0;";
@@ -1706,27 +1717,7 @@ BASH,
 
     private function useWireGuardGatewayUrl(IncusInstance $operator, SshKeyPair $key): void
     {
-        $gatewayUrl = var_export('https://'.self::GatewayWireGuardIp, true);
-        $gatewayIp = var_export(self::GatewayWireGuardIp, true);
-        $database = var_export($this->operatorGatewayDatabasePath(), true);
-
-        $php = <<<PHP
-\$pdo = new PDO('sqlite:'.{$database});
-\$pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
-\$pdo->exec('PRAGMA busy_timeout = 5000');
-\$now = gmdate('Y-m-d H:i:s');
-\$id = \$pdo->query('SELECT id FROM local_gateway_settings ORDER BY id LIMIT 1')->fetchColumn();
-
-if (\$id === false) {
-    \$statement = \$pdo->prepare('INSERT INTO local_gateway_settings (gateway_url, gateway_wg_ip, created_at, updated_at) VALUES (:gateway_url, :gateway_wg_ip, :now, :now)');
-    \$statement->execute(['gateway_url' => {$gatewayUrl}, 'gateway_wg_ip' => {$gatewayIp}, 'now' => \$now]);
-} else {
-    \$statement = \$pdo->prepare('UPDATE local_gateway_settings SET gateway_url = :gateway_url, gateway_wg_ip = :gateway_wg_ip, updated_at = :now WHERE id = :id');
-    \$statement->execute(['gateway_url' => {$gatewayUrl}, 'gateway_wg_ip' => {$gatewayIp}, 'now' => \$now, 'id' => \$id]);
-}
-PHP;
-
-        $this->runOperatorPhp($operator, $key, $php);
+        $this->updateOperatorCliGatewayUrl($operator, $key, 'https://'.self::GatewayWireGuardIp, self::GatewayWireGuardIp);
     }
 
     private function writeOperatorCliConfig(IncusInstance $operator, SshKeyPair $key, string $gatewayUrl = 'https://10.6.0.2', ?string $caPemPath = null, ?string $caSha256 = null): void
@@ -1750,6 +1741,59 @@ PHP;
             $command,
             timeoutSeconds: 60,
         );
+    }
+
+    private function updateOperatorCliGatewayUrl(IncusInstance $operator, SshKeyPair $key, string $gatewayUrl, string $gatewayIp): void
+    {
+        $operatorUser = $this->host->config->operatorUser;
+        $configPath = var_export('/home/'.$operatorUser.'/.config/orbit/config.json', true);
+        $gatewayUrlValue = var_export($gatewayUrl, true);
+        $gatewayIpValue = var_export($gatewayIp, true);
+
+        $php = <<<PHP
+\$configPath = {$configPath};
+\$gatewayUrl = {$gatewayUrlValue};
+\$gatewayIp = {$gatewayIpValue};
+\$config = [];
+
+if (is_file(\$configPath)) {
+    \$contents = file_get_contents(\$configPath);
+
+    if (is_string(\$contents) && trim(\$contents) !== '') {
+        \$decoded = json_decode(\$contents, true, flags: JSON_THROW_ON_ERROR);
+
+        if (is_array(\$decoded)) {
+            \$config = \$decoded;
+        }
+    }
+}
+
+\$config['schema_version'] = 1;
+\$config['active_gateway'] = 'default';
+\$config['defaults'] = \$config['defaults'] ?? ['node' => null, 'profile' => null];
+\$config['meta'] = \$config['meta'] ?? ['imported_from' => 'incus-e2e-topology', 'imported_at' => date(DATE_ATOM)];
+\$config['gateways'] = is_array(\$config['gateways'] ?? null) ? \$config['gateways'] : [];
+\$gateway = is_array(\$config['gateways']['default'] ?? null) ? \$config['gateways']['default'] : [];
+\$config['gateways']['default'] = array_merge([
+    'ca_pem_path' => null,
+    'ca_sha256' => null,
+    'ca_fingerprint' => null,
+    'timeout' => 30,
+    'self_mode' => 'wireguard_https',
+], \$gateway, [
+    'url' => \$gatewayUrl,
+    'wireguard_ip' => \$gatewayIp,
+]);
+
+if (! is_dir(dirname(\$configPath))) {
+    mkdir(dirname(\$configPath), 0700, true);
+}
+
+file_put_contents(\$configPath, json_encode(\$config, JSON_THROW_ON_ERROR | JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES).PHP_EOL);
+chmod(\$configPath, 0600);
+PHP;
+
+        $this->runOperatorPhp($operator, $key, $php);
     }
 
     private function cliJsonConfigBody(string $gatewayUrl, ?string $caPemPath = null, ?string $caSha256 = null): string
@@ -2625,74 +2669,7 @@ BASH;
 
     private function retargetOperator(IncusInstance $operator, string $gatewayPublicEndpoint, SshKeyPair $key): void
     {
-        $gatewayIpValue = var_export(self::GatewayWireGuardIp, true);
-        $gatewayPublicEndpointValue = var_export($gatewayPublicEndpoint, true);
-        $database = var_export($this->operatorGatewayDatabasePath(), true);
-
-        $php = <<<PHP
-\$pdo = new PDO('sqlite:'.{$database});
-\$pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
-\$pdo->exec('PRAGMA busy_timeout = 5000');
-\$now = gmdate('Y-m-d H:i:s');
-
-\$statement = \$pdo->prepare(<<<'SQL'
-INSERT INTO nodes (name, tld, platform, host, wireguard_address, gateway_endpoint, user, orbit_path, status, created_at, updated_at)
-VALUES (:name, NULL, :platform, :host, :wireguard_address, NULL, :user, :orbit_path, :status, :now, :now)
-ON CONFLICT(name) DO UPDATE SET
-    tld = excluded.tld,
-    platform = excluded.platform,
-    host = excluded.host,
-    wireguard_address = excluded.wireguard_address,
-    gateway_endpoint = excluded.gateway_endpoint,
-    user = excluded.user,
-    orbit_path = excluded.orbit_path,
-    status = excluded.status,
-    updated_at = excluded.updated_at
-SQL);
-\$statement->execute([
-    'name' => 'gateway',
-    'platform' => 'unknown',
-    'host' => {$gatewayIpValue},
-    'wireguard_address' => {$gatewayIpValue},
-    'user' => 'orbit',
-    'orbit_path' => '/home/orbit/orbit',
-    'status' => 'active',
-    'now' => \$now,
-]);
-
-\$gatewayId = (int) \$pdo->query("SELECT id FROM nodes WHERE name = 'gateway'")->fetchColumn();
-\$roleStatement = \$pdo->prepare(<<<'SQL'
-INSERT INTO node_role (node_id, role, status, settings, last_error, converged_at, created_at, updated_at)
-VALUES (:node_id, :role, :status, :settings, NULL, :now, :now, :now)
-ON CONFLICT(node_id, role) DO UPDATE SET
-    status = excluded.status,
-    settings = excluded.settings,
-    last_error = excluded.last_error,
-    converged_at = excluded.converged_at,
-    updated_at = excluded.updated_at
-SQL);
-\$roleStatement->execute([
-    'node_id' => \$gatewayId,
-    'role' => 'gateway',
-    'status' => 'active',
-    'settings' => json_encode([], JSON_THROW_ON_ERROR),
-    'now' => \$now,
-]);
-\$roleStatement->execute([
-    'node_id' => \$gatewayId,
-    'role' => 'vpn',
-    'status' => 'active',
-    'settings' => json_encode([
-        'public_endpoint' => {$gatewayPublicEndpointValue},
-        'wireguard_cidr' => '10.6.0.0/24',
-        'wireguard_port' => 51820,
-        'dns_ip' => '10.6.0.1',
-    ], JSON_THROW_ON_ERROR),
-    'now' => \$now,
-]);
-PHP;
-
-        $this->runOperatorPhp($operator, $key, $php, timeoutSeconds: 120);
+        $this->updateOperatorCliGatewayUrl($operator, $key, 'https://'.$gatewayPublicEndpoint, self::GatewayWireGuardIp);
     }
 
     private function trustGatewayCaOnOperator(IncusInstance $operator, IncusInstance $gateway, SshKeyPair $key): void
@@ -2705,16 +2682,9 @@ PHP;
         )->output();
 
         $rootCaValue = var_export($rootCa, true);
-        $gatewayUrlValue = var_export('https://'.self::GatewayWireGuardIp, true);
-        $gatewayIpValue = var_export(self::GatewayWireGuardIp, true);
-        $database = var_export($this->operatorGatewayDatabasePath(), true);
         $pemPathValue = var_export('/home/'.$this->host->config->operatorUser.'/.config/orbit/gateway-ca/orbit.crt', true);
 
         $php = <<<PHP
-\$pdo = new PDO('sqlite:'.{$database});
-\$pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
-\$pdo->exec('PRAGMA busy_timeout = 5000');
-\$now = gmdate('Y-m-d H:i:s');
 \$rootCa = {$rootCaValue};
 \$pemPath = {$pemPathValue};
 
@@ -2724,25 +2694,10 @@ if (! is_dir(dirname(\$pemPath))) {
 
 file_put_contents(\$pemPath, \$rootCa);
 chmod(\$pemPath, 0600);
-
-\$id = \$pdo->query('SELECT id FROM local_gateway_settings ORDER BY id LIMIT 1')->fetchColumn();
-
-if (\$id === false) {
-    \$statement = \$pdo->prepare('INSERT INTO local_gateway_settings (gateway_url, gateway_wg_ip, ca_sha256, ca_pem_path, trusted_at, created_at, updated_at) VALUES (:gateway_url, :gateway_wg_ip, :ca_sha256, :ca_pem_path, :trusted_at, :now, :now)');
-    \$statement->execute(['gateway_url' => {$gatewayUrlValue}, 'gateway_wg_ip' => {$gatewayIpValue}, 'ca_sha256' => hash('sha256', \$rootCa), 'ca_pem_path' => \$pemPath, 'trusted_at' => \$now, 'now' => \$now]);
-} else {
-    \$statement = \$pdo->prepare('UPDATE local_gateway_settings SET gateway_url = :gateway_url, gateway_wg_ip = :gateway_wg_ip, ca_sha256 = :ca_sha256, ca_pem_path = :ca_pem_path, trusted_at = :trusted_at, updated_at = :now WHERE id = :id');
-    \$statement->execute(['gateway_url' => {$gatewayUrlValue}, 'gateway_wg_ip' => {$gatewayIpValue}, 'ca_sha256' => hash('sha256', \$rootCa), 'ca_pem_path' => \$pemPath, 'trusted_at' => \$now, 'now' => \$now, 'id' => \$id]);
-}
 PHP;
 
         $this->writeOperatorCliConfig($operator, $key, 'https://'.self::GatewayWireGuardIp, '/home/'.$this->host->config->operatorUser.'/.config/orbit/gateway-ca/orbit.crt', hash('sha256', $rootCa));
         $this->runOperatorPhp($operator, $key, $php, timeoutSeconds: 120);
-    }
-
-    private function operatorGatewayDatabasePath(): string
-    {
-        return '/home/'.$this->host->config->operatorUser.'/.config/orbit/gateway.sqlite';
     }
 
     private function runOperatorPhp(IncusInstance $operator, SshKeyPair $key, string $php, int $timeoutSeconds = 60): void
@@ -2879,7 +2834,7 @@ PHP;
 
             $this->timer->measure("finalize.clear-known-hosts.{$role}", fn () => $this->clearKnownHosts($instance));
 
-            if ($this->remoteSourcePath !== null) {
+            if (isset($this->sourceMountedInstances[$name])) {
                 $this->timer->measure("finalize.detach-source.{$role}", fn () => $this->detachPreparedSourceMount($instance));
             }
 
@@ -2936,6 +2891,8 @@ PHP;
             'incus config device remove '.escapeshellarg($instance->name()).' orbit-source >/dev/null 2>&1 || true',
             timeoutSeconds: 30,
         );
+
+        unset($this->sourceMountedInstances[$instance->name()]);
     }
 
     /**
@@ -3215,10 +3172,10 @@ PHP;
         $instance->exec('rm -rf '.escapeshellarg($guestBundleDir), timeoutSeconds: 30);
     }
 
-    private function launchBase(string $target): void
+    private function launchBase(string $target, bool $attachSource = true): void
     {
         if ($this->remoteSourcePath !== null) {
-            $result = $this->host->run($this->launchTopologyInstanceCommand($target), timeoutSeconds: $this->host->config->timeoutSeconds);
+            $result = $this->host->run($this->launchTopologyInstanceCommand($target, $attachSource), timeoutSeconds: $this->host->config->timeoutSeconds);
 
             if (! $result->successful()) {
                 throw new RuntimeException("Could not launch {$target} from {$this->host->config->baseImage}: {$result->errorOutput()}");
@@ -3235,9 +3192,11 @@ PHP;
         }
     }
 
-    private function launchTopologyInstanceCommand(string $name): string
+    private function launchTopologyInstanceCommand(string $name, bool $attachSource = true): string
     {
-        if ($this->remoteSourcePath !== null) {
+        if ($this->remoteSourcePath !== null && $attachSource) {
+            $this->sourceMountedInstances[$name] = true;
+
             $parts = [
                 'incus init',
                 escapeshellarg($this->host->config->baseImage),
