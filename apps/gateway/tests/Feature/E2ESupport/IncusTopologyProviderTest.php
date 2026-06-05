@@ -230,6 +230,8 @@ it('allocates the first free provider subnet instead of reusing an occupied hash
         ->and($commands)->toContain('incus network list --format json')
         ->and(implode("\n", $commands))->toContain("incus network create {$allocation['name']} ipv4.address=10.240.44.1/24 ipv4.nat=true ipv6.address=none raw.dnsmasq='port=0")
         ->and(implode("\n", $commands))->toContain('dhcp-option=6,10.6.0.1')
+        ->and(implode("\n", $commands))->toContain("sudo iptables -I FORWARD 1 -i '{$allocation['name']}' -j ACCEPT")
+        ->and(implode("\n", $commands))->toContain("sudo iptables -I FORWARD 1 -o '{$allocation['name']}' -j ACCEPT")
         ->and(implode("\n", $commands))->not->toContain('10.240.42.1/24 ipv4.nat=true')
         ->and(implode("\n", $commands))->not->toContain('10.240.43.1/24 ipv4.nat=true');
 });
@@ -283,7 +285,42 @@ it('uses the allocated provider network for clone, rebuild, and strict lease tea
         ->and($source)->toContain('$newInstances = IncusTopologyTemplate::clone($host, $kind, $runId, $cycleTimer, sourceMounted: $options->sourceMountedCheckout, readonlySourceMount: $options->readonlySourceMount, networkName: $providerNetwork[\'name\'], subnetPrefix: $providerNetwork[\'subnet_prefix\']);')
         ->and($source)->toContain('teardown: $teardown')
         ->and($source)->toContain('private function deleteProviderNetwork(IncusHost $host, string $networkName): void')
-        ->and($source)->toContain('Could not delete Incus network');
+        ->and($source)->toContain('Could not delete Incus network')
+        ->and($source)->toContain('private function allowProviderNetworkForwarding(IncusHost $host, string $networkName): void')
+        ->and($source)->toContain('private function removeProviderNetworkForwarding(IncusHost $host, string $networkName): void');
+});
+
+it('removes provider network forwarding rules after deleting the incus network', function (): void {
+    $commands = [];
+    $host = new class(incusTopologyProviderTestConfig(), $commands) extends IncusHost
+    {
+        /**
+         * @param  array<int, string>  $commands
+         */
+        public function __construct(E2EConfig $config, private array &$commands)
+        {
+            parent::__construct($config);
+        }
+
+        #[Override]
+        public function run(string $command, ?int $timeoutSeconds = null): ProcessResult
+        {
+            $this->commands[] = $command;
+
+            return incusTopologyProviderTestProcessResult();
+        }
+    };
+
+    $provider = new IncusTopologyProvider(incusTopologyProviderTestConfig());
+    $method = new ReflectionMethod($provider, 'deleteProviderNetwork');
+    $method->setAccessible(true);
+
+    $method->invoke($provider, $host, 'ob-test123');
+
+    expect($commands)->toHaveCount(2)
+        ->and($commands[0])->toBe('incus network delete ob-test123')
+        ->and($commands[1])->toContain("sudo iptables -D FORWARD -i 'ob-test123' -j ACCEPT")
+        ->and($commands[1])->toContain("sudo iptables -D FORWARD -o 'ob-test123' -j ACCEPT");
 });
 
 it('keeps incus retarget scripts on node_role assignments instead of legacy node columns', function (): void {

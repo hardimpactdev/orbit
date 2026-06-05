@@ -775,6 +775,15 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
                 throw new \RuntimeException("Could not create Incus network {$networkName}: ".$result->errorOutput());
             }
 
+            try {
+                $this->allowProviderNetworkForwarding($host, $networkName);
+            } catch (\Throwable $exception) {
+                $this->removeProviderNetworkForwarding($host, $networkName);
+                $host->run("incus network delete {$networkName}");
+
+                throw $exception;
+            }
+
             return [
                 'name' => $networkName,
                 'subnet_prefix' => $subnetPrefix,
@@ -828,6 +837,43 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
 
         if (! $result->successful()) {
             throw new \RuntimeException("Could not delete Incus network {$networkName}: ".$result->errorOutput());
+        }
+
+        $this->removeProviderNetworkForwarding($host, $networkName);
+    }
+
+    private function allowProviderNetworkForwarding(IncusHost $host, string $networkName): void
+    {
+        $network = escapeshellarg($networkName);
+        $result = $host->run(<<<BASH
+if command -v iptables >/dev/null 2>&1; then
+    sudo iptables -C FORWARD -i {$network} -j ACCEPT 2>/dev/null || sudo iptables -I FORWARD 1 -i {$network} -j ACCEPT
+    sudo iptables -C FORWARD -o {$network} -j ACCEPT 2>/dev/null || sudo iptables -I FORWARD 1 -o {$network} -j ACCEPT
+fi
+BASH);
+
+        if (! $result->successful()) {
+            throw new \RuntimeException("Could not allow forwarding for Incus network {$networkName}: ".$result->errorOutput());
+        }
+    }
+
+    private function removeProviderNetworkForwarding(IncusHost $host, string $networkName): void
+    {
+        $network = escapeshellarg($networkName);
+        $result = $host->run(<<<BASH
+if command -v iptables >/dev/null 2>&1; then
+    while sudo iptables -C FORWARD -i {$network} -j ACCEPT 2>/dev/null; do
+        sudo iptables -D FORWARD -i {$network} -j ACCEPT || break
+    done
+
+    while sudo iptables -C FORWARD -o {$network} -j ACCEPT 2>/dev/null; do
+        sudo iptables -D FORWARD -o {$network} -j ACCEPT || break
+    done
+fi
+BASH);
+
+        if (! $result->successful()) {
+            throw new \RuntimeException("Could not remove forwarding for Incus network {$networkName}: ".$result->errorOutput());
         }
     }
 
