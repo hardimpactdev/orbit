@@ -23,6 +23,6 @@ return (static function (): array {
         'env_path' => $configRoot.'/.env',
         'database_file' => $configRoot.'/gateway.sqlite',
         'database_path' => $gatewayRoot.'/database',
-        'storage_path' => getenv('ORBIT_STORAGE_PATH') ?: $gatewayRoot.'/storage',
+        'storage_path' => $gatewayRoot.'/storage',
     ];
 })();

@@ -56,7 +56,7 @@ final readonly class E2EConfig
             providerNames: self::providerNames(),
             topologyProviderNames: self::topologyProviderNames(),
             host: $host,
-            sourceImage: self::envString('ORBIT_E2E_SOURCE_IMAGE', self::envString('ORBIT_E2E_IMAGE', 'images:ubuntu/26.04')),
+            sourceImage: self::envString('ORBIT_E2E_SOURCE_IMAGE', self::envString('ORBIT_E2E_IMAGE', 'images:ubuntu/26.04/cloud')),
             baseImage: self::envString('ORBIT_E2E_BASE_IMAGE', 'orbit-base-ubuntu-26.04'),
             bootstrapUser: self::envString('ORBIT_E2E_BOOTSTRAP_USER', 'provisioner'),
             operatorUser: self::envString('ORBIT_E2E_OPERATOR_USER', 'orbit'),

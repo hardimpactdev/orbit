@@ -3,8 +3,7 @@
 #
 # Single source of truth for the E2E base-image apt package list. Sourced by
 # bin/install-orbit and bin/e2e-provision-node, and read by
-# IncusBaseImagePreparer to install the same list over the agent when baking
-# the base image.
+# IncusBaseImagePreparer to inject the same list into cloud-init.
 #
 # When sourced, exports ORBIT_E2E_BASE_PACKAGES + ORBIT_E2E_PHP_PACKAGES as
 # Bash arrays. When invoked directly, prints one of the lists, one per line.
@@ -22,7 +21,6 @@ ORBIT_E2E_BASE_PACKAGES=(
     openssh-server
     supervisor
     tar
-    unattended-upgrades
     unzip
     ufw
     wireguard

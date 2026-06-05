@@ -141,16 +141,11 @@ PHP;
 
     public static function sourceMountedGatewayStateCommand(): string
     {
-        $storagePath = self::OrbitConfigRoot.'/storage';
-        $bootstrapCachePath = self::OrbitConfigRoot.'/bootstrap-cache';
-
         return implode(' && ', [
             'export ORBIT_CONFIG_ROOT='.escapeshellarg(self::OrbitConfigRoot),
-            'export ORBIT_STORAGE_PATH='.escapeshellarg($storagePath),
-            'export ORBIT_BOOTSTRAP_CACHE_PATH='.escapeshellarg($bootstrapCachePath),
             self::dockerGatewayStateBootstrapCommand(),
             self::appKeyCommand(self::gatewayStatePath('.env')),
-            'ORBIT_STORAGE_PATH='.escapeshellarg($storagePath).' ORBIT_BOOTSTRAP_CACHE_PATH='.escapeshellarg($bootstrapCachePath).' php apps/gateway/artisan migrate --force --no-interaction --ansi',
+            'php apps/gateway/artisan migrate --force --no-interaction --ansi',
         ]);
     }
 
@@ -406,7 +401,7 @@ SH;
         $certKeyValue = var_export($certKey, true);
         $certSansValue = var_export(array_values($certSans), true);
         $wireguardIdentityValue = var_export($wireguardIdentity, true);
-        $viewCompiledPath = self::OrbitConfigRoot.'/storage/framework/views';
+        $viewCompiledPath = "{$orbitPath}/apps/gateway/storage/framework/views";
         $gatewayContainer = escapeshellarg(self::gatewayContainerName($gateway));
         $scriptPath = "/tmp/orbit-{$label}-tls.php";
         $httpRouterPath = "/tmp/orbit-{$label}-http-router.php";
@@ -727,22 +722,14 @@ PHP;
             ? "exec(\$script.' 2>&1', \$output, \$exitCode);"
             : "exec('sudo -iu orbit bash -lc '.escapeshellarg(\$script).' 2>&1', \$output, \$exitCode);";
         $runOrbitScript = $dockerGatewayContainer
-            ? '$configRoot = '.var_export(self::OrbitConfigRoot, true).";\n            \$viewCompiledPath = \$configRoot.'/storage/framework/views';\n            \$stateDirectories = ".var_export([
-                self::OrbitConfigRoot.'/storage/framework/cache/data',
-                self::OrbitConfigRoot.'/storage/framework/sessions',
-                self::OrbitConfigRoot.'/storage/framework/testing',
-                self::OrbitConfigRoot.'/storage/framework/views',
-                self::OrbitConfigRoot.'/storage/logs',
-                self::OrbitConfigRoot.'/bootstrap-cache',
-            ], true).";\n            \$script = 'cd '.escapeshellarg(\$orbitPath).' && export ORBIT_CONFIG_ROOT='.escapeshellarg(\$configRoot).' && export ORBIT_STORAGE_PATH='.escapeshellarg(\$configRoot.\"/storage\").' && export ORBIT_BOOTSTRAP_CACHE_PATH='.escapeshellarg(\$configRoot.\"/bootstrap-cache\").' && mkdir -p '.implode(' ', array_map('escapeshellarg', \$stateDirectories)).' && VIEW_COMPILED_PATH='.escapeshellarg(\$viewCompiledPath).' '.\$command;"
-            : '$configRoot = '.var_export(self::OrbitConfigRoot, true).";\n            \$viewCompiledPath = \$configRoot.'/storage/framework/views';\n            \$stateDirectories = ".var_export([
-                self::OrbitConfigRoot.'/storage/framework/cache/data',
-                self::OrbitConfigRoot.'/storage/framework/sessions',
-                self::OrbitConfigRoot.'/storage/framework/testing',
-                self::OrbitConfigRoot.'/storage/framework/views',
-                self::OrbitConfigRoot.'/storage/logs',
-                self::OrbitConfigRoot.'/bootstrap-cache',
-            ], true).";\n            \$script = 'cd '.escapeshellarg(\$orbitPath).' && export ORBIT_CONFIG_ROOT='.escapeshellarg(\$configRoot).' && export ORBIT_STORAGE_PATH='.escapeshellarg(\$configRoot.\"/storage\").' && export ORBIT_BOOTSTRAP_CACHE_PATH='.escapeshellarg(\$configRoot.\"/bootstrap-cache\").' && mkdir -p '.implode(' ', array_map('escapeshellarg', \$stateDirectories)).' && VIEW_COMPILED_PATH='.escapeshellarg(\$viewCompiledPath).' '.\$command;";
+            ? '$configRoot = '.var_export(self::OrbitConfigRoot, true).";\n            \$viewCompiledPath = \$orbitPath.'/apps/gateway/storage/framework/views';\n            \$stateDirectories = ".var_export([
+                'apps/gateway/storage/framework/cache/data',
+                'apps/gateway/storage/framework/sessions',
+                'apps/gateway/storage/framework/testing',
+                'apps/gateway/storage/framework/views',
+                'apps/gateway/storage/logs',
+            ], true).";\n            \$script = 'cd '.escapeshellarg(\$orbitPath).' && export ORBIT_CONFIG_ROOT='.escapeshellarg(\$configRoot).' && mkdir -p '.implode(' ', array_map('escapeshellarg', \$stateDirectories)).' && VIEW_COMPILED_PATH='.escapeshellarg(\$viewCompiledPath).' '.\$command;"
+            : "\$script = 'cd '.escapeshellarg(\$orbitPath).' && mkdir -p apps/gateway/storage/framework/cache/data apps/gateway/storage/framework/sessions apps/gateway/storage/framework/testing apps/gateway/storage/framework/views apps/gateway/storage/logs && VIEW_COMPILED_PATH='.escapeshellarg(\$orbitPath.'/apps/gateway/storage/framework/views').' '.\$command;";
 
         $script = "<?php\n\n\$orbitPath = ".var_export($orbitPath, true).";\n\$orbitCommand = ".var_export($orbitCommand, true).";\n\$wireguardIdentity = ".var_export($wireguardIdentity, true).";\n\$bindAddress = ".var_export($bindAddress, true).";\n\$certKey = ".var_export($certKey, true).";\n\$certDirectory = ".var_export($certDirectory, true).";\n\$httpUpstream = ".var_export($httpUpstream, true).";\n\$peerIdentityMap = ".var_export($peerIdentityMap, true).";\n\$GLOBALS['orbitPath'] = \$orbitPath;\n\$GLOBALS['orbitCommand'] = \$orbitCommand;\n\$GLOBALS['wireguardIdentity'] = \$wireguardIdentity;\n\$GLOBALS['httpUpstream'] = \$httpUpstream;\n\$GLOBALS['peerIdentityMap'] = \$peerIdentityMap;\n\n".<<<'PHP_WRAP'
         
@@ -1934,7 +1921,7 @@ PHP;
         $gatewayDatabase = escapeshellarg(self::gatewayStatePath('gateway.sqlite'));
 
         return implode(' && ', [
-            'mkdir -p '.escapeshellarg(self::OrbitConfigRoot).' '.escapeshellarg(self::OrbitConfigRoot.'/storage/framework/cache/data').' '.escapeshellarg(self::OrbitConfigRoot.'/storage/framework/sessions').' '.escapeshellarg(self::OrbitConfigRoot.'/storage/framework/testing').' '.escapeshellarg(self::OrbitConfigRoot.'/storage/framework/views').' '.escapeshellarg(self::OrbitConfigRoot.'/storage/logs').' '.escapeshellarg(self::OrbitConfigRoot.'/bootstrap-cache'),
+            'mkdir -p '.escapeshellarg(self::OrbitConfigRoot).' apps/gateway/storage/framework/cache/data apps/gateway/storage/framework/sessions apps/gateway/storage/framework/testing apps/gateway/storage/framework/views apps/gateway/storage/logs',
             "if [ ! -f {$gatewayEnv} ]; then cp apps/gateway/.env.example {$gatewayEnv}; fi",
             "rm -f {$gatewayEnvTmp}",
             "grep -Ev '^(DB_DATABASE|SESSION_DRIVER)=' {$gatewayEnv} > {$gatewayEnvTmp} || true",
@@ -1978,14 +1965,12 @@ PHP;
         $gatewayEnv = escapeshellarg(self::gatewayStatePath('.env'));
         $gatewayEnvTmp = escapeshellarg(self::gatewayStatePath('.env.tmp'));
         $viewCompiledPathArgument = escapeshellarg($viewCompiledPath);
-        $storagePathArgument = escapeshellarg(self::OrbitConfigRoot.'/storage');
-        $bootstrapCachePathArgument = escapeshellarg(self::OrbitConfigRoot.'/bootstrap-cache');
 
         return implode(' && ', [
             "rm -f {$gatewayEnvTmp}",
-            "grep -Ev '^(ORBIT_E2E_TRUST_WIREGUARD_HEADER|VIEW_COMPILED_PATH|ORBIT_E2E_TOPOLOGY_PROVIDER|ORBIT_STORAGE_PATH|ORBIT_BOOTSTRAP_CACHE_PATH)=' {$gatewayEnv} > {$gatewayEnvTmp} || true",
+            "grep -Ev '^(ORBIT_E2E_TRUST_WIREGUARD_HEADER|VIEW_COMPILED_PATH|ORBIT_E2E_TOPOLOGY_PROVIDER)=' {$gatewayEnv} > {$gatewayEnvTmp} || true",
             "mv {$gatewayEnvTmp} {$gatewayEnv}",
-            "printf '\\nORBIT_E2E_TRUST_WIREGUARD_HEADER=true\\nVIEW_COMPILED_PATH=%s\\nORBIT_E2E_TOPOLOGY_PROVIDER=docker\\nORBIT_STORAGE_PATH=%s\\nORBIT_BOOTSTRAP_CACHE_PATH=%s\\n' {$viewCompiledPathArgument} {$storagePathArgument} {$bootstrapCachePathArgument} >> {$gatewayEnv}",
+            "printf '\\nORBIT_E2E_TRUST_WIREGUARD_HEADER=true\\nVIEW_COMPILED_PATH=%s\\nORBIT_E2E_TOPOLOGY_PROVIDER=docker\\n' {$viewCompiledPathArgument} >> {$gatewayEnv}",
         ]);
     }
 
@@ -2028,9 +2013,7 @@ PHP;
             '--env '.escapeshellarg('SESSION_DRIVER=file'),
             '--env '.escapeshellarg('ORBIT_E2E_TRUST_WIREGUARD_HEADER=true'),
             '--env '.escapeshellarg('ORBIT_TRUST_WIREGUARD_PROXY_HEADER=1'),
-            '--env '.escapeshellarg('VIEW_COMPILED_PATH='.self::OrbitConfigRoot.'/storage/framework/views'),
-            '--env '.escapeshellarg('ORBIT_STORAGE_PATH='.self::OrbitConfigRoot.'/storage'),
-            '--env '.escapeshellarg('ORBIT_BOOTSTRAP_CACHE_PATH='.self::OrbitConfigRoot.'/bootstrap-cache'),
+            '--env '.escapeshellarg('VIEW_COMPILED_PATH='.self::GatewayContainerOrbitPath.'/apps/gateway/storage/framework/views'),
             '--env '.escapeshellarg('HOME=/home/orbit'),
             '--env '.escapeshellarg('PHP_CLI_SERVER_WORKERS=4'),
             '--mount '.escapeshellarg('type=bind,source='.self::OrbitConfigRoot.',target='.self::OrbitConfigRoot),

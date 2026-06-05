@@ -1345,13 +1345,6 @@ wait_for_agent() {
 
 wait_for_cloud_init() {
     local name="$1"
-
-    # Non-cloud base images do not ship cloud-init; nothing to wait for
-    # (role provisioning runs over the agent/SSH, not cloud-init).
-    if ! incus exec "$name" -- sh -lc 'command -v cloud-init >/dev/null 2>&1'; then
-        return 0
-    fi
-
     local deadline=$((SECONDS + timeout_seconds))
     local output=''
 

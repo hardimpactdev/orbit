@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\E2E\Support;
 
+use App\Services\WireGuard\WireGuardKeyGenerator;
+
 final readonly class IncusTopologyProvider implements E2ETopologyProvider
 {
     private const string GatewayWireGuardIp = '10.6.0.2';
@@ -94,7 +96,6 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
         $availability = $timer->measure('availability', fn () => $pool->availabilityFor($kind, [$resourceLease->host()], checkCapacity: false));
         $host = $availability['host'];
         $instances = [];
-        $providerNetwork = null;
 
         if ($host === null) {
             $resourceLease->release();
@@ -107,11 +108,10 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
                 $timer->measure('incus.source-sync', fn (): string => $this->sourceSyncer()->sync($host->config->host, 'incus'));
             }
 
-            $providerNetwork = $timer->measure('incus.network.create', fn (): array => $this->allocateProviderNetwork($host, $runId));
-            $instances = IncusTopologyTemplate::clone($host, $kind, $runId, $timer, sourceMounted: $options->sourceMountedCheckout, readonlySourceMount: $options->readonlySourceMount, networkName: $providerNetwork['name'], subnetPrefix: $providerNetwork['subnet_prefix']);
+            $instances = IncusTopologyTemplate::clone($host, $kind, $runId, $timer, sourceMounted: $options->sourceMountedCheckout);
 
             $sshKeyPair = $this->createSshKeyPair($host, $runId);
-            $primaryUsers = $this->prepareInstances($instances, $this->config, $sshKeyPair, $timer, $options, $kind, host: $host, providerDnsIp: $providerNetwork['subnet_prefix'].'.1');
+            $primaryUsers = $this->prepareInstances($instances, $this->config, $sshKeyPair, $timer, $options, $kind);
             $snapshotReset = $this->prepareSnapshotReset($host, $instances, $primaryUsers, $sshKeyPair, $timer, $options->startGatewayApi, $kind, $options->sourceMountedCheckout);
         } catch (\Throwable $exception) {
             foreach ($instances as $instance) {
@@ -122,36 +122,24 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
                 }
             }
 
-            if ($providerNetwork !== null) {
-                try {
-                    $this->deleteProviderNetwork($host, $providerNetwork['name']);
-                } catch (\Throwable) {
-                    // Keep the original acquisition failure visible.
-                }
-            }
-
             $resourceLease->release();
 
             throw $exception;
         }
 
-        $rebuild = function (E2EPhaseTimer $cycleTimer) use ($host, $kind, $runId, $sshKeyPair, $options, $providerNetwork): array {
+        $rebuild = function (E2EPhaseTimer $cycleTimer) use ($host, $kind, $runId, $sshKeyPair, $options): array {
             if ($options->sourceMountedCheckout) {
                 $cycleTimer->measure('reset.source-sync', fn (): string => $this->sourceSyncer()->sync($host->config->host, 'incus'));
             }
 
-            $newInstances = IncusTopologyTemplate::clone($host, $kind, $runId, $cycleTimer, sourceMounted: $options->sourceMountedCheckout, readonlySourceMount: $options->readonlySourceMount, networkName: $providerNetwork['name'], subnetPrefix: $providerNetwork['subnet_prefix']);
-            $newPrimaryUsers = $this->prepareInstances($newInstances, $this->config, $sshKeyPair, $cycleTimer, $options, $kind, host: $host, providerDnsIp: $providerNetwork['subnet_prefix'].'.1');
+            $newInstances = IncusTopologyTemplate::clone($host, $kind, $runId, $cycleTimer, sourceMounted: $options->sourceMountedCheckout);
+            $newPrimaryUsers = $this->prepareInstances($newInstances, $this->config, $sshKeyPair, $cycleTimer, $options, $kind);
             $leaseInstances = $this->leaseInstancesFor($kind, $newInstances);
 
             return [
                 'instances' => $leaseInstances,
                 'snapshotReset' => $this->prepareSnapshotReset($host, $newInstances, $newPrimaryUsers, $sshKeyPair, $cycleTimer, $options->startGatewayApi, $kind, $options->sourceMountedCheckout),
             ];
-        };
-
-        $teardown = function (E2EPhaseTimer $teardownTimer) use ($host, $providerNetwork): void {
-            $teardownTimer->measure('incus.network.delete', fn () => $this->deleteProviderNetwork($host, $providerNetwork['name']));
         };
 
         $leaseInstances = $this->leaseInstancesFor($kind, $instances);
@@ -165,7 +153,6 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
             sshKeyPair: $sshKeyPair,
             rebuild: $rebuild,
             snapshotReset: $snapshotReset,
-            teardown: $teardown,
             gatewayApiIp: self::GatewayWireGuardIp,
             resourceLease: $resourceLease,
             agent: $leaseInstances['agent'] ?? null,
@@ -511,7 +498,7 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
      * @param  array<string, IncusInstance>  $instances
      * @return array<string, string>
      */
-    private function prepareInstances(array $instances, E2EConfig $config, SshKeyPair $sshKeyPair, E2EPhaseTimer $timer, E2ETopologyAcquisitionOptions $options, E2ETopologyKind $kind, ?IncusHost $host = null, ?string $providerDnsIp = null): array
+    private function prepareInstances(array $instances, E2EConfig $config, SshKeyPair $sshKeyPair, E2EPhaseTimer $timer, E2ETopologyAcquisitionOptions $options, E2ETopologyKind $kind): array
     {
         $sshUsers = $this->sshUsersFor($instances, $config, $options);
         $primaryUsers = [];
@@ -529,7 +516,6 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
         }
 
         $timer->measure('known-hosts', fn () => $this->clearKnownHosts($instances));
-        $timer->measure('provider-dns', fn () => $this->configureProviderDns($instances, $host, $providerDnsIp));
         $timer->measure('wireguard', fn () => $this->retargetRealWireGuard($instances));
         $timer->measure('gateway-ssh-access', fn () => $this->seedGatewaySshAccess($instances));
         $timer->measure('retarget', fn () => $this->retargetTopology($instances, $config, $sshKeyPair, $kind, $options->sourceMountedCheckout));
@@ -683,28 +669,6 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
     /**
      * @param  array<string, IncusInstance>  $instances
      */
-    private function configureProviderDns(array $instances, ?IncusHost $host, ?string $providerDnsIp): void
-    {
-        if ($host === null || $providerDnsIp === null) {
-            return;
-        }
-
-        foreach ($instances as $instance) {
-            $result = $host->run(sprintf(
-                'incus exec %s -- sh -lc %s',
-                escapeshellarg($instance->name()),
-                escapeshellarg('printf '.escapeshellarg("nameserver {$providerDnsIp}\n").' > /etc/resolv.conf'),
-            ), timeoutSeconds: 30);
-
-            if (! $result->successful()) {
-                throw new \RuntimeException("Could not configure provider DNS for {$instance->name()}: ".$result->errorOutput());
-            }
-        }
-    }
-
-    /**
-     * @param  array<string, IncusInstance>  $instances
-     */
     private function retargetRealWireGuard(array $instances): void
     {
         $operator = $instances['operator'] ?? null;
@@ -744,137 +708,34 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
      */
     private function meshFor(array $instances, string $gatewayProviderIp): E2EWireGuardMesh
     {
-        return E2EWireGuardMesh::fixed($gatewayProviderIp);
-    }
+        $generator = app(WireGuardKeyGenerator::class);
+        $gatewayHost = $generator->generateKeyPair();
+        $operator = $generator->generateKeyPair();
+        $dev = isset($instances['dev']) ? $generator->generateKeyPair() : null;
+        $prod = isset($instances['prod']) ? $generator->generateKeyPair() : null;
+        $agent = isset($instances['agent']) ? $generator->generateKeyPair() : null;
+        $ingress = isset($instances['ingress']) ? $generator->generateKeyPair() : null;
+        $websocket = isset($instances['websocket']) ? $generator->generateKeyPair() : null;
+        $wgEasyPublicKey = trim($instances['gateway']->exec('docker exec wg-easy wg show wg0 public-key')->output());
 
-    /**
-     * @return array{name: string, subnet_prefix: string}
-     */
-    private function allocateProviderNetwork(IncusHost $host, string $runId, ?int $preferredSubnetByte = null): array
-    {
-        $networkName = 'ob-'.substr(md5($runId), 0, 12);
-        $preferredSubnetByte ??= 10 + (crc32($runId) % 190);
-        $occupiedSubnetBytes = $this->occupiedProviderSubnetBytes($host);
-
-        for ($offset = 0; $offset < 190; $offset++) {
-            $subnetByte = 10 + (($preferredSubnetByte - 10 + $offset) % 190);
-
-            if (isset($occupiedSubnetBytes[$subnetByte])) {
-                continue;
-            }
-
-            $subnetPrefix = "10.240.{$subnetByte}";
-            $rawDnsmasq = escapeshellarg("port=0\ndhcp-option=6,10.6.0.1");
-            $result = $host->run("incus network create {$networkName} ipv4.address={$subnetPrefix}.1/24 ipv4.nat=true ipv6.address=none raw.dnsmasq={$rawDnsmasq}");
-
-            if (! $result->successful()) {
-                if (str_contains($result->errorOutput(), 'Address already in use')) {
-                    continue;
-                }
-
-                throw new \RuntimeException("Could not create Incus network {$networkName}: ".$result->errorOutput());
-            }
-
-            try {
-                $this->allowProviderNetworkForwarding($host, $networkName);
-            } catch (\Throwable $exception) {
-                $this->removeProviderNetworkForwarding($host, $networkName);
-                $host->run("incus network delete {$networkName}");
-
-                throw $exception;
-            }
-
-            return [
-                'name' => $networkName,
-                'subnet_prefix' => $subnetPrefix,
-            ];
-        }
-
-        throw new \RuntimeException('No free Orbit E2E provider subnet is available in 10.240.10.0/24 through 10.240.199.0/24.');
-    }
-
-    /**
-     * @return array<int, true>
-     */
-    private function occupiedProviderSubnetBytes(IncusHost $host): array
-    {
-        $result = $host->run('incus network list --format json');
-
-        if (! $result->successful()) {
-            throw new \RuntimeException('Could not list Incus networks: '.$result->errorOutput());
-        }
-
-        $networks = json_decode($result->output(), true, flags: JSON_THROW_ON_ERROR);
-        $occupied = [];
-
-        foreach ($networks as $network) {
-            if (! is_array($network)) {
-                continue;
-            }
-
-            $address = $network['config']['ipv4.address'] ?? null;
-
-            if (! is_string($address)) {
-                continue;
-            }
-
-            if (preg_match('/^10\.240\.(\d{1,3})\.1\/24$/', $address, $matches) !== 1) {
-                continue;
-            }
-
-            $subnetByte = (int) $matches[1];
-            if ($subnetByte >= 10 && $subnetByte <= 199) {
-                $occupied[$subnetByte] = true;
-            }
-        }
-
-        return $occupied;
-    }
-
-    private function deleteProviderNetwork(IncusHost $host, string $networkName): void
-    {
-        $result = $host->run("incus network delete {$networkName}");
-
-        if (! $result->successful()) {
-            throw new \RuntimeException("Could not delete Incus network {$networkName}: ".$result->errorOutput());
-        }
-
-        $this->removeProviderNetworkForwarding($host, $networkName);
-    }
-
-    private function allowProviderNetworkForwarding(IncusHost $host, string $networkName): void
-    {
-        $network = escapeshellarg($networkName);
-        $result = $host->run(<<<BASH
-if command -v iptables >/dev/null 2>&1; then
-    sudo iptables -C FORWARD -i {$network} -j ACCEPT 2>/dev/null || sudo iptables -I FORWARD 1 -i {$network} -j ACCEPT
-    sudo iptables -C FORWARD -o {$network} -j ACCEPT 2>/dev/null || sudo iptables -I FORWARD 1 -o {$network} -j ACCEPT
-fi
-BASH);
-
-        if (! $result->successful()) {
-            throw new \RuntimeException("Could not allow forwarding for Incus network {$networkName}: ".$result->errorOutput());
-        }
-    }
-
-    private function removeProviderNetworkForwarding(IncusHost $host, string $networkName): void
-    {
-        $network = escapeshellarg($networkName);
-        $result = $host->run(<<<BASH
-if command -v iptables >/dev/null 2>&1; then
-    while sudo iptables -C FORWARD -i {$network} -j ACCEPT 2>/dev/null; do
-        sudo iptables -D FORWARD -i {$network} -j ACCEPT || break
-    done
-
-    while sudo iptables -C FORWARD -o {$network} -j ACCEPT 2>/dev/null; do
-        sudo iptables -D FORWARD -o {$network} -j ACCEPT || break
-    done
-fi
-BASH);
-
-        if (! $result->successful()) {
-            throw new \RuntimeException("Could not remove forwarding for Incus network {$networkName}: ".$result->errorOutput());
-        }
+        return E2EWireGuardMesh::standard(
+            gatewayProviderIp: $gatewayProviderIp,
+            wgEasyPublicKey: $wgEasyPublicKey,
+            gatewayHostPrivateKey: $gatewayHost['private_key'],
+            gatewayHostPublicKey: $gatewayHost['public_key'],
+            operatorPrivateKey: $operator['private_key'],
+            operatorPublicKey: $operator['public_key'],
+            devPrivateKey: $dev['private_key'] ?? null,
+            devPublicKey: $dev['public_key'] ?? null,
+            prodPrivateKey: $prod['private_key'] ?? null,
+            prodPublicKey: $prod['public_key'] ?? null,
+            agentPrivateKey: $agent['private_key'] ?? null,
+            agentPublicKey: $agent['public_key'] ?? null,
+            ingressPrivateKey: $ingress['private_key'] ?? null,
+            ingressPublicKey: $ingress['public_key'] ?? null,
+            websocketPrivateKey: $websocket['private_key'] ?? null,
+            websocketPublicKey: $websocket['public_key'] ?? null,
+        );
     }
 
     /**
@@ -888,10 +749,6 @@ BASH);
         if ($operator === null || $gateway === null) {
             return;
         }
-
-        $envPrefix = $sourceMountedCheckout
-            ? 'export ORBIT_CONFIG_ROOT=/home/orbit/.config/orbit && export ORBIT_STORAGE_PATH=/home/orbit/.config/orbit/storage && export ORBIT_BOOTSTRAP_CACHE_PATH=/home/orbit/.config/orbit/bootstrap-cache && '
-            : '';
 
         $bootstrapCommand = sprintf(
             'php apps/gateway/artisan orbit:internal:bootstrap-gateway-local gateway %s --public-host=%s --skip-gateway-service-install',
@@ -912,21 +769,19 @@ BASH);
             $this->waitForGatewayHostKeyScan($gateway, $sshKeyPair, self::DevWireGuardIp);
 
             E2ECommand::ssh($gateway, 'orbit', $sshKeyPair, sprintf(
-                'cd /home/orbit/orbit && %sphp apps/gateway/artisan orbit:internal:bake-app-node app-dev-1 --role=app-dev --host=%s --wireguard-address=%s --tld=test --gateway-endpoint=%s --user=orbit --user=orbit',
-                $envPrefix,
+                'cd /home/orbit/orbit && php apps/gateway/artisan orbit:internal:bake-app-node app-dev-1 --role=app-dev --host=%s --wireguard-address=%s --tld=test --gateway-endpoint=%s --user=orbit --user=orbit',
                 escapeshellarg(self::DevWireGuardIp),
                 escapeshellarg(self::DevWireGuardIp),
                 escapeshellarg(self::GatewayWireGuardIp),
             ), timeoutSeconds: 120);
-            $this->seedAppdevDatabaseAndRedis($gateway, $sshKeyPair, $sourceMountedCheckout);
+            $this->seedAppdevDatabaseAndRedis($gateway, $sshKeyPair);
         }
 
         if (isset($instances['ingress'])) {
             $this->waitForGatewayHostKeyScan($gateway, $sshKeyPair, self::IngressWireGuardIp);
 
             E2ECommand::ssh($gateway, 'orbit', $sshKeyPair, sprintf(
-                'cd /home/orbit/orbit && %sphp apps/gateway/artisan orbit:internal:bake-ingress-node edge-1 --host=%s --wireguard-address=%s --gateway-endpoint=%s --user=orbit',
-                $envPrefix,
+                'cd /home/orbit/orbit && php apps/gateway/artisan orbit:internal:bake-ingress-node edge-1 --host=%s --wireguard-address=%s --gateway-endpoint=%s --user=orbit',
                 escapeshellarg(self::IngressWireGuardIp),
                 escapeshellarg(self::IngressWireGuardIp),
                 escapeshellarg(self::GatewayWireGuardIp),
@@ -938,8 +793,7 @@ BASH);
 
             if (E2EPreparedTopology::prodHostsIngressRole($kind) && ! isset($instances['ingress'])) {
                 E2ECommand::ssh($gateway, 'orbit', $sshKeyPair, sprintf(
-                    'cd /home/orbit/orbit && %sphp apps/gateway/artisan orbit:internal:bake-ingress-node app-prod-1 --host=%s --wireguard-address=%s --gateway-endpoint=%s --user=orbit',
-                    $envPrefix,
+                    'cd /home/orbit/orbit && php apps/gateway/artisan orbit:internal:bake-ingress-node app-prod-1 --host=%s --wireguard-address=%s --gateway-endpoint=%s --user=orbit',
                     escapeshellarg(self::ProdWireGuardIp),
                     escapeshellarg(self::ProdWireGuardIp),
                     escapeshellarg(self::GatewayWireGuardIp),
@@ -953,8 +807,7 @@ BASH);
             };
 
             E2ECommand::ssh($gateway, 'orbit', $sshKeyPair, sprintf(
-                'cd /home/orbit/orbit && %sphp apps/gateway/artisan orbit:internal:bake-app-node app-prod-1 --role=app-prod --host=%s --wireguard-address=%s --gateway-endpoint=%s --user=orbit%s',
-                $envPrefix,
+                'cd /home/orbit/orbit && php apps/gateway/artisan orbit:internal:bake-app-node app-prod-1 --role=app-prod --host=%s --wireguard-address=%s --gateway-endpoint=%s --user=orbit%s',
                 escapeshellarg(self::ProdWireGuardIp),
                 escapeshellarg(self::ProdWireGuardIp),
                 escapeshellarg(self::GatewayWireGuardIp),
@@ -966,8 +819,7 @@ BASH);
             $this->waitForGatewayHostKeyScan($gateway, $sshKeyPair, self::AgentWireGuardIp);
 
             E2ECommand::ssh($gateway, 'orbit', $sshKeyPair, sprintf(
-                'cd /home/orbit/orbit && %sphp apps/gateway/artisan orbit:internal:bake-agent-node agent-1 --host=%s --wireguard-address=%s --gateway-endpoint=%s --user=orbit --tld=agent',
-                $envPrefix,
+                'cd /home/orbit/orbit && php apps/gateway/artisan orbit:internal:bake-agent-node agent-1 --host=%s --wireguard-address=%s --gateway-endpoint=%s --user=orbit --tld=agent',
                 escapeshellarg(self::AgentWireGuardIp),
                 escapeshellarg(self::AgentWireGuardIp),
                 escapeshellarg(self::GatewayWireGuardIp),
@@ -976,31 +828,26 @@ BASH);
 
         if (self::websocketTopologyKind($kind) && isset($instances['dev'])) {
             E2ECommand::ssh($gateway, 'orbit', $sshKeyPair, sprintf(
-                'cd /home/orbit/orbit && %sphp apps/gateway/artisan orbit:internal:bake-websocket-node app-dev-1 --host=%s --wireguard-address=%s --gateway-endpoint=%s --user=orbit --redis-node=app-dev-1 --converge-runtime',
-                $envPrefix,
+                'cd /home/orbit/orbit && php apps/gateway/artisan orbit:internal:bake-websocket-node app-dev-1 --host=%s --wireguard-address=%s --gateway-endpoint=%s --user=orbit --redis-node=app-dev-1 --converge-runtime',
                 escapeshellarg(self::DevWireGuardIp),
                 escapeshellarg(self::DevWireGuardIp),
                 escapeshellarg(self::GatewayWireGuardIp),
             ), timeoutSeconds: 900);
         }
 
-        $this->prunePreparedGatewayRegistry($instances, $sshKeyPair, $kind, $sourceMountedCheckout);
+        $this->prunePreparedGatewayRegistry($instances, $sshKeyPair, $kind);
     }
 
     /**
      * @param  array<string, IncusInstance>  $instances
      */
-    private function prunePreparedGatewayRegistry(array $instances, SshKeyPair $sshKeyPair, E2ETopologyKind $kind, bool $sourceMountedCheckout = false): void
+    private function prunePreparedGatewayRegistry(array $instances, SshKeyPair $sshKeyPair, E2ETopologyKind $kind): void
     {
         $gateway = $instances['gateway'] ?? null;
 
         if ($gateway === null) {
             return;
         }
-
-        $envPrefix = $sourceMountedCheckout
-            ? 'export ORBIT_CONFIG_ROOT=/home/orbit/.config/orbit && export ORBIT_STORAGE_PATH=/home/orbit/.config/orbit/storage && export ORBIT_BOOTSTRAP_CACHE_PATH=/home/orbit/.config/orbit/bootstrap-cache && '
-            : '';
 
         $php = E2EPreparedTopology::gatewayRegistryPrunePhp(
             allowedNodeNames: E2EPreparedTopology::gatewayNodeNamesForRoles(array_keys($instances)),
@@ -1011,7 +858,7 @@ BASH);
             $gateway,
             'orbit',
             $sshKeyPair,
-            'cd /home/orbit/orbit && '.$envPrefix.'php apps/gateway/artisan tinker --execute='.escapeshellarg($php),
+            'cd /home/orbit/orbit && php apps/gateway/artisan tinker --execute='.escapeshellarg($php),
             timeoutSeconds: 120,
         );
     }
@@ -1123,17 +970,13 @@ PHP;
         ], JSON_THROW_ON_ERROR);
     }
 
-    private function seedAppdevDatabaseAndRedis(IncusInstance $gateway, SshKeyPair $sshKeyPair, bool $sourceMountedCheckout = false): void
+    private function seedAppdevDatabaseAndRedis(IncusInstance $gateway, SshKeyPair $sshKeyPair): void
     {
-        $envPrefix = $sourceMountedCheckout
-            ? 'export ORBIT_CONFIG_ROOT=/home/orbit/.config/orbit && export ORBIT_STORAGE_PATH=/home/orbit/.config/orbit/storage && export ORBIT_BOOTSTRAP_CACHE_PATH=/home/orbit/.config/orbit/bootstrap-cache && '
-            : '';
-
         E2ECommand::ssh(
             $gateway,
             'orbit',
             $sshKeyPair,
-            'cd /home/orbit/orbit && '.$envPrefix.'php apps/gateway/artisan tinker --execute='.escapeshellarg(E2EPreparedTopologyRegistry::appdevDatabaseAndRedisPhp()),
+            'cd /home/orbit/orbit && php apps/gateway/artisan tinker --execute='.escapeshellarg(E2EPreparedTopologyRegistry::appdevDatabaseAndRedisPhp()),
             timeoutSeconds: 120,
         );
     }

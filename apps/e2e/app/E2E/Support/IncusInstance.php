@@ -16,13 +16,7 @@ final class IncusInstance implements E2EInstance, SourceMountedCheckoutInstance
         private readonly string $name,
         private readonly bool $commandTransport = false,
         private readonly bool $sourceMountedCheckout = false,
-        private readonly bool $readonlySourceMount = false,
     ) {}
-
-    public function readonlySourceMount(): bool
-    {
-        return $this->readonlySourceMount;
-    }
 
     public function name(): string
     {
@@ -53,17 +47,11 @@ final class IncusInstance implements E2EInstance, SourceMountedCheckoutInstance
 
         if ($this->commandTransport) {
             if ($authScript !== null) {
-                return $this->runGuestScript(
-                    $authScript,
-                    $user,
-                    sprintf(
-                        'incus exec %s -- runuser -u %s -- bash %s </dev/null',
-                        escapeshellarg($this->name),
-                        escapeshellarg($user),
-                        '%s',
-                    ),
-                    $timeoutSeconds,
-                );
+                return $this->host->runWithInput(sprintf(
+                    'incus exec %s -- runuser -u %s -- bash -s',
+                    escapeshellarg($this->name),
+                    escapeshellarg($user),
+                ), $authScript, $timeoutSeconds);
             }
 
             return $this->host->run(sprintf(
@@ -89,53 +77,6 @@ final class IncusInstance implements E2EInstance, SourceMountedCheckoutInstance
             escapeshellarg("{$user}@{$this->waitForIpv4()}"),
             escapeshellarg($command),
         ), $timeoutSeconds);
-    }
-
-    private function runGuestScript(string $script, string $user, string $commandFormat, ?int $timeoutSeconds = null): ProcessResult
-    {
-        $localPath = tempnam(sys_get_temp_dir(), 'orbit-e2e-github-auth-');
-
-        if (! is_string($localPath)) {
-            throw new \RuntimeException('Could not create local E2E auth script.');
-        }
-
-        $guestPath = '/tmp/orbit-e2e-github-auth-'.bin2hex(random_bytes(8)).'.sh';
-
-        try {
-            if (file_put_contents($localPath, $script) === false) {
-                throw new \RuntimeException("Could not write local E2E auth script to {$localPath}.");
-            }
-
-            if (! chmod($localPath, 0600)) {
-                throw new \RuntimeException("Could not make local E2E auth script readable at {$localPath}.");
-            }
-
-            $this->copyLocalFileToInstance($localPath, $guestPath);
-            $permissions = $this->host->run(sprintf(
-                'incus exec %s -- chown %s %s && incus exec %s -- chmod 700 %s',
-                escapeshellarg($this->name),
-                escapeshellarg($user),
-                escapeshellarg($guestPath),
-                escapeshellarg($this->name),
-                escapeshellarg($guestPath),
-            ), timeoutSeconds: 30);
-
-            if (! $permissions->successful()) {
-                throw new \RuntimeException("Could not make E2E auth script executable on {$this->name}: {$permissions->errorOutput()}");
-            }
-
-            $result = $this->host->run(sprintf($commandFormat, escapeshellarg($guestPath)), $timeoutSeconds);
-        } finally {
-            @unlink($localPath);
-
-            $this->host->run(sprintf(
-                'incus exec %s -- rm -f %s',
-                escapeshellarg($this->name),
-                escapeshellarg($guestPath),
-            ), timeoutSeconds: 30);
-        }
-
-        return $result;
     }
 
     public function authorizeSsh(string $user, SshKeyPair $keyPair): void
@@ -276,7 +217,6 @@ final class IncusInstance implements E2EInstance, SourceMountedCheckoutInstance
     {
         if ($this->commandTransport) {
             $deadline = time() + $this->host->config->timeoutSeconds;
-            $lastFailure = null;
 
             while (time() < $deadline) {
                 try {
@@ -285,22 +225,13 @@ final class IncusInstance implements E2EInstance, SourceMountedCheckoutInstance
                     if ($result->successful()) {
                         return;
                     }
-
-                    $lastFailure = trim($result->output().$result->errorOutput());
                 } catch (\Throwable) {
-                    $lastFailure = trim((string) $this->host->run(sprintf(
-                        'incus exec %s -- sh -lc %s',
-                        escapeshellarg($this->name),
-                        escapeshellarg('id '.escapeshellarg($user).' 2>&1; test -r /etc/os-release 2>&1; ps -eo pid,ppid,stat,etime,cmd | head -20 2>&1'),
-                    ), timeoutSeconds: 15)->output());
                 }
 
                 sleep(1);
             }
 
-            $detail = $lastFailure !== null && $lastFailure !== '' ? " Last failure: {$lastFailure}" : '';
-
-            throw new \RuntimeException("Incus command transport is not ready for {$user}@{$this->name}.{$detail}");
+            throw new \RuntimeException("Incus command transport is not ready for {$user}@{$this->name}.");
         }
 
         $deadline = time() + $this->host->config->timeoutSeconds;

@@ -21,27 +21,6 @@ function e2eWireGuardMeshResult(bool $successful = true, string $output = '', st
     return $result;
 }
 
-it('can build the fixed-key mesh without changing role addresses', function (): void {
-    $mesh = E2EWireGuardMesh::fixed('10.231.0.11');
-
-    expect($mesh->addressFor('gateway'))->toBe('10.6.0.2')
-        ->and($mesh->addressFor('operator'))->toBe('10.6.0.3')
-        ->and($mesh->addressFor('dev'))->toBe('10.6.0.4')
-        ->and($mesh->addressFor('prod'))->toBe('10.6.0.5')
-        ->and($mesh->addressFor('agent'))->toBe('10.6.0.6')
-        ->and($mesh->addressFor('ingress'))->toBe('10.6.0.7')
-        ->and($mesh->addressFor('websocket'))->toBe('10.6.0.8')
-        ->and($mesh->peerConfig('dev'))->toContain('PrivateKey = '.E2EWireGuardMesh::FIXED_KEYS['dev']['private_key'])
-        ->and($mesh->peerConfig('dev'))->toContain('PublicKey = '.E2EWireGuardMesh::FIXED_KEYS['wg-easy']['public_key'])
-        ->and($mesh->wgEasyPeers())->toHaveCount(7)
-        ->and($mesh->wgEasyPeers()[0])->toMatchArray([
-            'name' => 'gateway',
-            'private_key' => E2EWireGuardMesh::FIXED_KEYS['gateway']['private_key'],
-            'public_key' => E2EWireGuardMesh::FIXED_KEYS['gateway']['public_key'],
-            'address' => '10.6.0.2',
-        ]);
-});
-
 it('renders the gateway host config as a peer of wg-easy', function (): void {
     $mesh = E2EWireGuardMesh::standard(
         gatewayProviderIp: '10.231.0.11',

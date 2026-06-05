@@ -8,41 +8,6 @@ use RuntimeException;
 
 final readonly class E2EWireGuardMesh
 {
-    public const array FIXED_KEYS = [
-        'wg-easy' => [
-            'private_key' => 'gADoQ5V3F4I2dB/8rTgANci1pm8TUdNXCWsmKBwsunA=',
-            'public_key' => '1xH+B+7zwqZZkW9/iSlHGIzQwH81wNpf1PFhxqyJ3ls=',
-        ],
-        'gateway' => [
-            'private_key' => 'MJmvfHlurBj4OTEw46bQv+AAFwRBODuDA9Rm4YYlAG4=',
-            'public_key' => 'SQpu6tHDgr00hOBHprDUQw1sdgklQ8eSDVf+2n8qh0I=',
-        ],
-        'operator' => [
-            'private_key' => 'yCln6NjLMSdRRDQEbZ/sBKv/WbwFXVJAaLd1YNywdUY=',
-            'public_key' => 'KjOM+E7qg8RPtRSo6W26BURMQtOMkNiukQ4FdfMA/ic=',
-        ],
-        'dev' => [
-            'private_key' => 'UHWrVrPjNEaq7pfUO9h0WXzpL2YeE9AUzaDK5c8Tnkg=',
-            'public_key' => 'R+4OKkrVchK+WjCPup9gWvY4n6QuJ4Oksq7XVhn8kGo=',
-        ],
-        'prod' => [
-            'private_key' => 'ANQAsS1qU2GVRFMDx1n/q7GvL2A8fOPHfreshpfHsE4=',
-            'public_key' => '/lYf0ofa2OCH9WVm92ws3rRHQMp+EQKeYX9tymKIDHE=',
-        ],
-        'agent' => [
-            'private_key' => 'aJT77NdCCE7cbV6U0i+nFx5mcUogS7Kduy0LvU5UaFc=',
-            'public_key' => '/KO7fXMbJY1BFiL6yG2yvh/OlrFY8uEFW5R4NlGdUHQ=',
-        ],
-        'ingress' => [
-            'private_key' => 'MFAmqpmR2BRHZRUCpdbGs7F815Z06+XKIZIW0T4X3lc=',
-            'public_key' => 'SSJrFh5rrB8fIShlKYG4VhWfNyMPxlqA4g1x1eFyTFQ=',
-        ],
-        'websocket' => [
-            'private_key' => '0EJNXFkinJ5tmbVZH1yS6pvxDZhGolb+6KlyN8mXY38=',
-            'public_key' => 'yeHZ1tfpspgsnlbfvjeJrgzYwu6MFdNvgGeJNkaC0C4=',
-        ],
-    ];
-
     /**
      * @param  array<string, array{address: string, private_key: string, public_key: string, pre_shared_key: string}>  $peers
      */
@@ -51,28 +16,6 @@ final readonly class E2EWireGuardMesh
         private string $wgEasyPublicKey,
         private array $peers,
     ) {}
-
-    public static function fixed(string $gatewayProviderIp): self
-    {
-        return self::standard(
-            gatewayProviderIp: $gatewayProviderIp,
-            wgEasyPublicKey: self::FIXED_KEYS['wg-easy']['public_key'],
-            gatewayHostPrivateKey: self::FIXED_KEYS['gateway']['private_key'],
-            gatewayHostPublicKey: self::FIXED_KEYS['gateway']['public_key'],
-            operatorPrivateKey: self::FIXED_KEYS['operator']['private_key'],
-            operatorPublicKey: self::FIXED_KEYS['operator']['public_key'],
-            devPrivateKey: self::FIXED_KEYS['dev']['private_key'],
-            devPublicKey: self::FIXED_KEYS['dev']['public_key'],
-            prodPrivateKey: self::FIXED_KEYS['prod']['private_key'],
-            prodPublicKey: self::FIXED_KEYS['prod']['public_key'],
-            agentPrivateKey: self::FIXED_KEYS['agent']['private_key'],
-            agentPublicKey: self::FIXED_KEYS['agent']['public_key'],
-            ingressPrivateKey: self::FIXED_KEYS['ingress']['private_key'],
-            ingressPublicKey: self::FIXED_KEYS['ingress']['public_key'],
-            websocketPrivateKey: self::FIXED_KEYS['websocket']['private_key'],
-            websocketPublicKey: self::FIXED_KEYS['websocket']['public_key'],
-        );
-    }
 
     public static function standard(
         string $gatewayProviderIp,

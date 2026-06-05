@@ -32,14 +32,6 @@ $app
     ->useStoragePath($orbitPaths['storage_path'])
     ->usePublicPath($gatewayRoot.'/public');
 
-if ($bootstrapCachePath = getenv('ORBIT_BOOTSTRAP_CACHE_PATH')) {
-    $_ENV['APP_SERVICES_CACHE'] = $bootstrapCachePath.'/services.php';
-    $_ENV['APP_PACKAGES_CACHE'] = $bootstrapCachePath.'/packages.php';
-    $_ENV['APP_CONFIG_CACHE'] = $bootstrapCachePath.'/config.php';
-    $_ENV['APP_ROUTES_CACHE'] = $bootstrapCachePath.'/routes-v7.php';
-    $_ENV['APP_EVENTS_CACHE'] = $bootstrapCachePath.'/events.php';
-}
-
 $app->singleton(ConsoleKernelContract::class, ConsoleKernel::class);
 
 return $app;
