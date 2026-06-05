@@ -122,6 +122,23 @@ describe('orbit:internal:bake-app-node', function (): void {
             ]);
     });
 
+    it('emits app-dev bake phase timings', function (): void {
+        $this->artisan('orbit:internal:bake-app-node', [
+            'name' => 'app-dev-1',
+            '--role' => 'app-dev',
+            '--host' => 'dev',
+            '--wireguard-address' => '10.6.0.4',
+            '--gateway-endpoint' => 'gateway',
+            '--user' => 'orbit',
+            '--tld' => 'test',
+        ])
+            ->expectsOutputToContain('__orbit_bake_timing dev host-key')
+            ->expectsOutputToContain('__orbit_bake_timing dev registry')
+            ->expectsOutputToContain('__orbit_bake_timing dev role-assignment')
+            ->expectsOutputToContain('__orbit_bake_timing dev setup-converge')
+            ->assertSuccessful();
+    });
+
     it('writes the matching active composable role assignment', function (): void {
         $this->artisan('orbit:internal:bake-app-node', [
             'name' => 'app-dev-1',

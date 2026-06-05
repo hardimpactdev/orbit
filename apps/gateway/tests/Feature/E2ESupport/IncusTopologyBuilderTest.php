@@ -39,6 +39,10 @@ function incusTopologyBuilderPreparedBakeResult(string $command): ?ProcessResult
             '__orbit_bake_status prod 0',
             '__orbit_bake_status agent 0',
             '__orbit_bake_status websocket 0',
+            '__orbit_bake_timing dev host-key 100',
+            '__orbit_bake_timing dev registry 200',
+            '__orbit_bake_timing dev role-assignment 300',
+            '__orbit_bake_timing dev setup-converge 400',
             '__orbit_bake_timing dev total 1100',
             '__orbit_bake_timing prod total 2200',
             '__orbit_bake_timing agent total 3300',
@@ -53,6 +57,10 @@ function incusTopologyBuilderPreparedBakeResult(string $command): ?ProcessResult
             '__orbit_bake_status prod 0',
             '__orbit_bake_status agent 0',
             '__orbit_bake_status websocket 0',
+            '__orbit_bake_timing dev host-key 100',
+            '__orbit_bake_timing dev registry 200',
+            '__orbit_bake_timing dev role-assignment 300',
+            '__orbit_bake_timing dev setup-converge 400',
             '__orbit_bake_timing dev total 1100',
             '__orbit_bake_timing prod total 2200',
             '__orbit_bake_timing agent total 3300',
@@ -74,6 +82,10 @@ function incusTopologyBuilderPreparedBakeResult(string $command): ?ProcessResult
         '__orbit_bake_status prod 0',
         '__orbit_bake_status agent 0',
         '__orbit_bake_status websocket 0',
+        '__orbit_bake_timing dev host-key 100',
+        '__orbit_bake_timing dev registry 200',
+        '__orbit_bake_timing dev role-assignment 300',
+        '__orbit_bake_timing dev setup-converge 400',
         '__orbit_bake_timing dev total 1100',
         '__orbit_bake_timing prod total 2200',
         '__orbit_bake_timing agent total 3300',
@@ -454,6 +466,7 @@ it('builds full prepared roles from the gateway base with parallel downstream ba
             ->and($commandOutput)->toContain('PID_PREPARE_AGENT=$!')
             ->and($commandOutput)->toContain('__orbit_prepare_timing')
             ->and($commandOutput)->toContain('__orbit_bake_timing')
+            ->and($commandOutput)->toContain('grep "__orbit_bake_timing "')
             ->and($commandOutput)->toContain('wait "$PID_PREPARE_DEV"')
             ->and($commandOutput)->toContain('wait "$PID_PREPARE_PROD"')
             ->and($commandOutput)->toContain('wait "$PID_PREPARE_AGENT"')
@@ -514,6 +527,10 @@ it('builds full prepared roles from the gateway base with parallel downstream ba
             ->and($phaseNames)->toContain('prepared.downstream.prepare.dev.orbit-binary')
             ->and($phaseNames)->toContain('prepared.downstream.prepare.dev.ssh-authorize')
             ->and($phaseNames)->toContain('prepared.downstream.prepare.dev.ssh-ready')
+            ->and($phaseNames)->toContain('prepared.downstream.bake.dev.host-key')
+            ->and($phaseNames)->toContain('prepared.downstream.bake.dev.registry')
+            ->and($phaseNames)->toContain('prepared.downstream.bake.dev.role-assignment')
+            ->and($phaseNames)->toContain('prepared.downstream.bake.dev.setup-converge')
             ->and($phaseNames)->toContain('prepared.downstream.bake.dev.total')
             ->and($phaseNames)->toContain('prepared.downstream.bake.prod.total')
             ->and($phaseNames)->toContain('prepared.downstream.bake.agent.total')
@@ -660,6 +677,7 @@ it('builds full prepared websocket roles on the app-dev node', function (): void
             ->and($commandOutput)->toContain('caddy:2-alpine')
             ->and($commandOutput)->toContain('dunglas/frankenphp:1-php8.5-bookworm')
             ->and($commandOutput)->toContain('orbit-websocket:current')
+            ->and($commandOutput)->toContain('grep "__orbit_bake_timing "')
             ->and($commandOutput)->toContain('docker.io')
             ->and($commandOutput)->toContain('bootstrap_user=')
             ->and($commandOutput)->toContain('provisioner')
@@ -681,6 +699,10 @@ it('builds full prepared websocket roles on the app-dev node', function (): void
             ->and($websocketBakePhase)->toBeInt()
             ->and($phaseNames)->toContain('prepared-websocket.downstream.prepare.dev.launch')
             ->and($phaseNames)->toContain('prepared-websocket.downstream.prepare.dev.orbit-binary')
+            ->and($phaseNames)->toContain('prepared-websocket.downstream.bake.dev.host-key')
+            ->and($phaseNames)->toContain('prepared-websocket.downstream.bake.dev.registry')
+            ->and($phaseNames)->toContain('prepared-websocket.downstream.bake.dev.role-assignment')
+            ->and($phaseNames)->toContain('prepared-websocket.downstream.bake.dev.setup-converge')
             ->and($phaseNames)->toContain('prepared-websocket.downstream.bake.dev.total')
             ->and($phaseNames)->toContain('prepared-websocket.downstream.bake.prod.total')
             ->and($phaseNames)->toContain('prepared-websocket.downstream.bake.agent.total')

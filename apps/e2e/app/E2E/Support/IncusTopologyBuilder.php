@@ -1971,7 +1971,7 @@ PHP;
                 $pid,
             );
             $waitLine = sprintf(
-                'wait "$%1$s" || { %2$s=$?; echo %3$s >&2; cat %4$s >&2 || true; if [ "$STATUS" -eq 0 ]; then STATUS=$%2$s; fi; };',
+                'wait "$%1$s" || { %2$s=$?; echo %3$s >&2; cat %4$s >&2 || true; if [ "$STATUS" -eq 0 ]; then STATUS=$%2$s; fi; }; grep "__orbit_bake_timing " %4$s >> "$TIMING_FILE" 2>/dev/null || true;',
                 $pid,
                 $status,
                 escapeshellarg("bake {$labels[$role]} failed"),
@@ -2226,7 +2226,7 @@ BASH,
             $status = "STATUS_{$suffix}";
             $logPath = "/tmp/orbit-e2e-bake-{$role}.log";
             $waitLine = sprintf(
-                'wait "$%1$s" || { %2$s=$?; echo %3$s >&2; cat %4$s >&2 || true; if [ "$STATUS" -eq 0 ]; then STATUS=$%2$s; fi; };',
+                'wait "$%1$s" || { %2$s=$?; echo %3$s >&2; cat %4$s >&2 || true; if [ "$STATUS" -eq 0 ]; then STATUS=$%2$s; fi; }; grep "__orbit_bake_timing " %4$s >> "$STATUS_FILE" 2>/dev/null || true;',
                 $pid,
                 $status,
                 escapeshellarg("bake {$labels[$role]} failed"),

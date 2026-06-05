@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Console\Commands\Internal;
 
+use App\Data\Security\PinnedHostKey;
 use App\Enums\Nodes\NodeConvergenceContext;
 use App\Enums\Nodes\NodeRoleName;
 use App\Enums\Nodes\NodeRoleStatus;
@@ -53,22 +54,41 @@ class BakeAppNodeCommand extends Command
             throw new RuntimeException('Only app-dev and app-prod nodes can be baked with this command.');
         }
 
-        $hostKey = app(SshHostKeyPinner::class)->pin($hostKeyHost ?? $host);
+        $timingRole = $this->timingRole($role);
 
-        $node = $registryWriter->writeAppNode(
-            name: $name,
-            tld: $tld,
-            host: $host,
-            wireguardAddress: $wireguardAddress,
-            gatewayEndpoint: $gatewayEndpoint,
-            sshUser: $user,
-            user: $user,
-            status: Node::STATUS_ACTIVE,
-            hostKey: $hostKey,
+        $hostKey = $this->measureBakeStep(
+            $timingRole,
+            'host-key',
+            fn (): PinnedHostKey => app(SshHostKeyPinner::class)->pin($hostKeyHost ?? $host),
         );
 
-        $this->upsertRoleAssignment($node->id, $role, $tld, $ingressNode);
-        $this->setupDevelopmentNode($nodeConverger, $node, $role);
+        $node = $this->measureBakeStep(
+            $timingRole,
+            'registry',
+            fn (): Node => $registryWriter->writeAppNode(
+                name: $name,
+                tld: $tld,
+                host: $host,
+                wireguardAddress: $wireguardAddress,
+                gatewayEndpoint: $gatewayEndpoint,
+                sshUser: $user,
+                user: $user,
+                status: Node::STATUS_ACTIVE,
+                hostKey: $hostKey,
+            ),
+        );
+
+        $this->measureBakeStep(
+            $timingRole,
+            'role-assignment',
+            fn () => $this->upsertRoleAssignment($node->id, $role, $tld, $ingressNode),
+        );
+
+        $this->measureBakeStep(
+            $timingRole,
+            'setup-converge',
+            fn () => $this->setupDevelopmentNode($nodeConverger, $node, $role),
+        );
 
         return self::SUCCESS;
     }
@@ -146,5 +166,27 @@ class BakeAppNodeCommand extends Command
         $value = $this->option($name);
 
         return is_string($value) && $value !== '' ? $value : null;
+    }
+
+    private function measureBakeStep(string $role, string $step, callable $callback): mixed
+    {
+        $startedAt = hrtime(true);
+
+        try {
+            return $callback();
+        } finally {
+            $milliseconds = (int) round((hrtime(true) - $startedAt) / 1_000_000);
+
+            $this->line("__orbit_bake_timing {$role} {$step} {$milliseconds}");
+        }
+    }
+
+    private function timingRole(string $role): string
+    {
+        return match ($role) {
+            NodeRoleName::AppDevelopment->value => 'dev',
+            NodeRoleName::AppProduction->value => 'prod',
+            default => $role,
+        };
     }
 }
