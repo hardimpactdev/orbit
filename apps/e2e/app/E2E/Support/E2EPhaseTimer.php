@@ -58,6 +58,12 @@ final class E2EPhaseTimer
         return $result;
     }
 
+    public function recordExternal(string $name, float $seconds): void
+    {
+        $this->record($name, $seconds);
+        $this->write(sprintf('%s done %.3fs', $name, $seconds));
+    }
+
     /**
      * @return list<array{name: string, seconds: float}>
      */

@@ -39,6 +39,10 @@ function incusTopologyBuilderPreparedBakeResult(string $command): ?ProcessResult
             '__orbit_bake_status prod 0',
             '__orbit_bake_status agent 0',
             '__orbit_bake_status websocket 0',
+            '__orbit_bake_timing dev total 1100',
+            '__orbit_bake_timing prod total 2200',
+            '__orbit_bake_timing agent total 3300',
+            '__orbit_bake_timing websocket total 4400',
             '',
         ]));
     }
@@ -49,6 +53,10 @@ function incusTopologyBuilderPreparedBakeResult(string $command): ?ProcessResult
             '__orbit_bake_status prod 0',
             '__orbit_bake_status agent 0',
             '__orbit_bake_status websocket 0',
+            '__orbit_bake_timing dev total 1100',
+            '__orbit_bake_timing prod total 2200',
+            '__orbit_bake_timing agent total 3300',
+            '__orbit_bake_timing websocket total 4400',
             '',
         ]));
     }
@@ -66,6 +74,10 @@ function incusTopologyBuilderPreparedBakeResult(string $command): ?ProcessResult
         '__orbit_bake_status prod 0',
         '__orbit_bake_status agent 0',
         '__orbit_bake_status websocket 0',
+        '__orbit_bake_timing dev total 1100',
+        '__orbit_bake_timing prod total 2200',
+        '__orbit_bake_timing agent total 3300',
+        '__orbit_bake_timing websocket total 4400',
         '',
     ]));
 }
@@ -84,6 +96,14 @@ function incusTopologyBuilderPreparedRoleResult(string $command): ?ProcessResult
         '__orbit_prepare_status dev 0',
         '__orbit_prepare_status prod 0',
         '__orbit_prepare_status agent 0',
+        '__orbit_prepare_timing dev launch 120',
+        '__orbit_prepare_timing dev agent-ready 230',
+        '__orbit_prepare_timing dev source-runtime 340',
+        '__orbit_prepare_timing dev ssh-authorize 450',
+        '__orbit_prepare_timing dev ssh-ready 560',
+        '__orbit_prepare_timing prod launch 130',
+        '__orbit_prepare_timing prod source-runtime 350',
+        '__orbit_prepare_timing agent launch 140',
         '',
     ]));
 }
@@ -428,6 +448,8 @@ it('builds full prepared roles from the gateway base with parallel downstream ba
             ->and($commandOutput)->toContain('PID_PREPARE_DEV=$!')
             ->and($commandOutput)->toContain('PID_PREPARE_PROD=$!')
             ->and($commandOutput)->toContain('PID_PREPARE_AGENT=$!')
+            ->and($commandOutput)->toContain('__orbit_prepare_timing')
+            ->and($commandOutput)->toContain('__orbit_bake_timing')
             ->and($commandOutput)->toContain('wait "$PID_PREPARE_DEV"')
             ->and($commandOutput)->toContain('wait "$PID_PREPARE_PROD"')
             ->and($commandOutput)->toContain('wait "$PID_PREPARE_AGENT"')
@@ -483,6 +505,14 @@ it('builds full prepared roles from the gateway base with parallel downstream ba
             ->and($runtimePrerequisitesPhase)->toBeInt()
             ->and($bakePhase)->toBeInt()
             ->and($redisSeedPhase)->toBeInt()
+            ->and($phaseNames)->toContain('prepared.downstream.prepare.dev.launch')
+            ->and($phaseNames)->toContain('prepared.downstream.prepare.dev.agent-ready')
+            ->and($phaseNames)->toContain('prepared.downstream.prepare.dev.source-runtime')
+            ->and($phaseNames)->toContain('prepared.downstream.prepare.dev.ssh-authorize')
+            ->and($phaseNames)->toContain('prepared.downstream.prepare.dev.ssh-ready')
+            ->and($phaseNames)->toContain('prepared.downstream.bake.dev.total')
+            ->and($phaseNames)->toContain('prepared.downstream.bake.prod.total')
+            ->and($phaseNames)->toContain('prepared.downstream.bake.agent.total')
             ->and($wireGuardPhase)->toBeLessThan($runtimePrerequisitesPhase)
             ->and($runtimePrerequisitesPhase)->toBeLessThan($bakePhase)
             ->and($runtimePrerequisitesPhase)->toBeLessThan($redisSeedPhase);
@@ -588,6 +618,8 @@ it('builds full prepared websocket roles on the app-dev node', function (): void
             ->and($commandOutput)->toContain('orbit-gateway:prepared-current')
             ->and($commandOutput)->toContain('artisan orbit:internal:bake-websocket-node')
             ->and($commandOutput)->toContain('PID_BAKE_WEBSOCKET=$!')
+            ->and($commandOutput)->toContain('__orbit_prepare_timing')
+            ->and($commandOutput)->toContain('__orbit_bake_timing')
             ->and($runnerStartPosition)->toBeInt()
             ->and($wireGuardCommandPosition)->toBeInt()
             ->and($runtimePrerequisiteCommandPosition)->toBeInt()
@@ -643,6 +675,12 @@ it('builds full prepared websocket roles on the app-dev node', function (): void
             ->and($downstreamWireGuardPhase)->toBeInt()
             ->and($runtimePrerequisitesPhase)->toBeInt()
             ->and($websocketBakePhase)->toBeInt()
+            ->and($phaseNames)->toContain('prepared-websocket.downstream.prepare.dev.launch')
+            ->and($phaseNames)->toContain('prepared-websocket.downstream.prepare.dev.source-runtime')
+            ->and($phaseNames)->toContain('prepared-websocket.downstream.bake.dev.total')
+            ->and($phaseNames)->toContain('prepared-websocket.downstream.bake.prod.total')
+            ->and($phaseNames)->toContain('prepared-websocket.downstream.bake.agent.total')
+            ->and($phaseNames)->toContain('prepared-websocket.downstream.bake.websocket.total')
             ->and($downstreamWireGuardPhase)->toBeLessThan($runtimePrerequisitesPhase)
             ->and($runtimePrerequisitesPhase)->toBeLessThan($websocketBakePhase)
             ->and($runtimePrerequisitesPhase)->toBeLessThan($realWireGuardPhase);

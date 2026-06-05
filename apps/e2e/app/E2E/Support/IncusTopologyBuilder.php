@@ -752,7 +752,7 @@ class IncusTopologyBuilder
 
         $instances = [
             ...$instances,
-            ...$this->timer->measure('prepared.downstream.prepare', fn (): array => $this->launchBaseRolesInParallel($rolesToPrepare, $key, $kind)),
+            ...$this->timer->measure('prepared.downstream.prepare', fn (): array => $this->launchBaseRolesInParallel($rolesToPrepare, $key, $kind, 'prepared.downstream.prepare')),
         ];
 
         $devIp = $this->timer->measure('dev.ipv4', fn (): string => $instances['dev']->waitForIpv4());
@@ -777,6 +777,7 @@ class IncusTopologyBuilder
                     $prodIp,
                     $agentIp,
                     $rolesToBake,
+                    timerPrefix: 'prepared.downstream.bake',
                 )),
             ];
         }
@@ -869,7 +870,7 @@ class IncusTopologyBuilder
 
         $instances = [
             ...$instances,
-            ...$this->timer->measure('prepared-websocket.downstream.prepare', fn (): array => $this->launchBaseRolesInParallel($rolesToPrepare, $key, $kind)),
+            ...$this->timer->measure('prepared-websocket.downstream.prepare', fn (): array => $this->launchBaseRolesInParallel($rolesToPrepare, $key, $kind, 'prepared-websocket.downstream.prepare')),
         ];
 
         $devIp = $this->timer->measure('dev.ipv4', fn (): string => $instances['dev']->waitForIpv4());
@@ -904,8 +905,9 @@ class IncusTopologyBuilder
                     $prodIp,
                     $agentIp,
                     $rolesToBake,
-                    null,
-                    function () use ($instances): void {
+                    timerPrefix: 'prepared-websocket.downstream.bake',
+                    beforeDevelopmentBake: null,
+                    afterDevelopmentBake: function () use ($instances): void {
                         $this->timer->measure('prepared-websocket.dev.database-redis-seed', fn () => $this->seedAppdevDatabaseAndRedis($instances['gateway']));
                     },
                 )),
@@ -1413,7 +1415,7 @@ BASH,
      * @param  list<string>  $roles
      * @return array<string, IncusInstance>
      */
-    private function launchBaseRolesInParallel(array $roles, SshKeyPair $key, E2ETopologyKind $templateKind): array
+    private function launchBaseRolesInParallel(array $roles, SshKeyPair $key, E2ETopologyKind $templateKind, string $timerPrefix = 'prepared.downstream.prepare'): array
     {
         $roles = array_values(array_intersect(['dev', 'prod', 'agent'], $roles));
 
@@ -1442,7 +1444,7 @@ BASH,
             $startLines[] = sprintf('prepare_role %s %s > %s 2>&1 & %s=$!;', escapeshellarg($role), escapeshellarg($name), escapeshellarg($logPath), $pid);
             $statusLines[] = "{$status}=0;";
             $waitLines[] = sprintf(
-                'wait "$%1$s" || { %2$s=$?; echo %3$s >&2; cat %4$s >&2 || true; if [ "$STATUS" -eq 0 ]; then STATUS=$%2$s; fi; };',
+                'wait "$%1$s" || { %2$s=$?; echo %3$s >&2; cat %4$s >&2 || true; if [ "$STATUS" -eq 0 ]; then STATUS=$%2$s; fi; }; cat %4$s || true;',
                 $pid,
                 $status,
                 escapeshellarg("prepare {$role} failed"),
@@ -1463,6 +1465,26 @@ private_key_path=%s
 public_key_path=%s
 timeout_seconds=%d
 source_runtime_install_command=%s
+
+now_ms() {
+    if command -v python3 >/dev/null 2>&1; then
+        python3 -c 'import time; print(int(time.time() * 1000))'
+
+        return
+    fi
+
+    echo "$(($(date +%%s) * 1000))"
+}
+
+record_timing() {
+    local role="$1"
+    local phase="$2"
+    local start_ms="$3"
+    local end_ms
+
+    end_ms="$(now_ms)"
+    echo "__orbit_prepare_timing ${role} ${phase} $((end_ms - start_ms))"
+}
 
 wait_for_agent() {
     local name="$1"
@@ -1549,20 +1571,34 @@ install_source_runtime() {
 prepare_role() {
     local role="$1"
     local name="$2"
+    local phase_start
 
+    phase_start="$(now_ms)"
     case "$role" in
 %s
     *) echo "Unsupported prepared role: ${role}" >&2; return 1 ;;
     esac
+    record_timing "$role" launch "$phase_start"
 
+    phase_start="$(now_ms)"
     wait_for_agent "$name"
+    record_timing "$role" agent-ready "$phase_start"
+
     if [ -n "$source_path" ]; then
+        phase_start="$(now_ms)"
         install_source_runtime "$name"
+        record_timing "$role" source-runtime "$phase_start"
     else
+        phase_start="$(now_ms)"
         install_orbit_binary "$name"
+        record_timing "$role" orbit-binary "$phase_start"
     fi
+    phase_start="$(now_ms)"
     authorize_ssh "$name"
+    record_timing "$role" ssh-authorize "$phase_start"
+    phase_start="$(now_ms)"
     wait_for_ssh "$name"
+    record_timing "$role" ssh-ready "$phase_start"
 }
 
 %s
@@ -1601,7 +1637,9 @@ BASH,
         }
 
         $result = $this->host->run($scriptPathArgument, timeoutSeconds: max(900, $this->host->config->timeoutSeconds * 4));
-        $statuses = $this->parsePreparedRoleStatuses($result->output()."\n".$result->errorOutput(), $roles, 'prepare');
+        $output = $result->output()."\n".$result->errorOutput();
+        $this->recordPreparedRoleTimings($output, $roles, 'prepare', $timerPrefix);
+        $statuses = $this->parsePreparedRoleStatuses($output, $roles, 'prepare');
         $failedRoles = array_keys(array_filter(
             $statuses,
             fn (int $status): bool => $status !== 0,
@@ -1765,6 +1803,7 @@ PHP;
         string $agentHost,
         array $roles = ['dev', 'prod', 'agent'],
         ?callable $beforeDevelopmentBake = null,
+        string $timerPrefix = 'prepared.downstream.bake',
     ): array {
         $roles = array_values(array_intersect(['dev', 'prod', 'agent'], $roles));
 
@@ -1834,7 +1873,13 @@ PHP;
             $pid = "PID_BAKE_{$suffix}";
             $status = "STATUS_{$suffix}";
             $logPath = "/tmp/orbit-e2e-bake-{$role}.log";
-            $startLine = sprintf('(%s) > %s 2>&1 & %s=$!;', $command, escapeshellarg($logPath), $pid);
+            $startLine = sprintf(
+                '(BAKE_START_MS="$(now_ms)"; (%s); BAKE_STATUS=$?; BAKE_END_MS="$(now_ms)"; echo "__orbit_bake_timing %s total $((BAKE_END_MS - BAKE_START_MS))" | tee -a "$TIMING_FILE"; exit "$BAKE_STATUS") > %s 2>&1 & %s=$!;',
+                $command,
+                $role,
+                escapeshellarg($logPath),
+                $pid,
+            );
             $waitLine = sprintf(
                 'wait "$%1$s" || { %2$s=$?; echo %3$s >&2; cat %4$s >&2 || true; if [ "$STATUS" -eq 0 ]; then STATUS=$%2$s; fi; };',
                 $pid,
@@ -1860,6 +1905,7 @@ PHP;
         }
 
         $devReadyMarkerPath = '/tmp/orbit-e2e-prepared-dev-ready';
+        $timingPath = '/tmp/orbit-e2e-prepared-bake.timing';
         $developmentLines = [];
 
         if ($deferDevelopmentBake) {
@@ -1887,6 +1933,9 @@ PHP;
             '#!/usr/bin/env bash',
             'set -euo pipefail;',
             'cd /home/orbit/orbit;',
+            'now_ms() { if command -v python3 >/dev/null 2>&1; then python3 -c '.escapeshellarg('import time; print(int(time.time() * 1000))').'; else echo "$(($(date +%s) * 1000))"; fi; }',
+            'TIMING_FILE='.escapeshellarg($timingPath).';',
+            ': > "$TIMING_FILE";',
             ...$startLines,
             '',
             'STATUS=0;',
@@ -1894,6 +1943,7 @@ PHP;
             ...$developmentLines,
             ...$waitLines,
             ...$echoLines,
+            'cat "$TIMING_FILE" 2>/dev/null || true;',
             'exit "$STATUS";',
         ]);
         $scriptPath = '/tmp/orbit-e2e-prepared-bake.sh';
@@ -1924,13 +1974,14 @@ PHP;
             E2ECommand::exec(
                 $gateway,
                 sprintf(
-                    'rm -f %s %s %s %s %s %s; nohup sh -lc %s >/dev/null 2>&1 & echo $! > %s',
+                    'rm -f %s %s %s %s %s %s %s; nohup sh -lc %s >/dev/null 2>&1 & echo $! > %s',
                     escapeshellarg($donePath),
                     escapeshellarg($exitPath),
                     escapeshellarg($pidPath),
                     escapeshellarg($outputPath),
                     escapeshellarg($errorPath),
                     escapeshellarg($devReadyMarkerPath),
+                    escapeshellarg($timingPath),
                     escapeshellarg($runner),
                     escapeshellarg($pidPath),
                 ),
@@ -1974,6 +2025,7 @@ BASH,
             ), timeoutSeconds: 930);
 
             $this->lastPreparedBakeOutput = trim($result->output()."\n".$result->errorOutput());
+            $this->recordPreparedRoleTimings($this->lastPreparedBakeOutput, $roles, 'bake', $timerPrefix);
 
             return $this->parsePreparedBakeStatuses($this->lastPreparedBakeOutput, $roles);
         }
@@ -1984,6 +2036,7 @@ BASH,
         );
 
         $this->lastPreparedBakeOutput = trim($result->output()."\n".$result->errorOutput());
+        $this->recordPreparedRoleTimings($this->lastPreparedBakeOutput, $roles, 'bake', $timerPrefix);
         $statuses = $this->parsePreparedBakeStatuses($this->lastPreparedBakeOutput, $roles);
 
         if ($result->successful()) {
@@ -2003,6 +2056,7 @@ BASH,
         string $prodHost,
         string $agentHost,
         array $roles = ['dev', 'prod', 'agent'],
+        string $timerPrefix = 'prepared-websocket.downstream.bake',
         ?callable $beforeDevelopmentBake = null,
         ?callable $afterDevelopmentBake = null,
     ): array {
@@ -2089,7 +2143,13 @@ BASH,
                 escapeshellarg($logPath),
             );
 
-            $startLine = sprintf('(%s) > %s 2>&1 & %s=$!;', $command, escapeshellarg($logPath), $pid);
+            $startLine = sprintf(
+                '(BAKE_START_MS="$(now_ms)"; (%s); BAKE_STATUS=$?; BAKE_END_MS="$(now_ms)"; echo "__orbit_bake_timing %s total $((BAKE_END_MS - BAKE_START_MS))" | tee -a "$STATUS_FILE"; exit "$BAKE_STATUS") > %s 2>&1 & %s=$!;',
+                $command,
+                $role,
+                escapeshellarg($logPath),
+                $pid,
+            );
             $statusLines[] = "{$status}=0;";
             $recordLine = sprintf('record_status %s "$%s";', escapeshellarg($role), $status);
 
@@ -2148,7 +2208,7 @@ BASH,
                 '        sleep 1;',
                 '    done;',
                 '    if [ "$STATUS_WEBSOCKET" -eq 0 ]; then',
-                sprintf('        (%s) > %s 2>&1 & PID_BAKE_WEBSOCKET=$!;', $webSocketCommand, escapeshellarg('/tmp/orbit-e2e-bake-websocket.log')),
+                sprintf('        (BAKE_START_MS="$(now_ms)"; (%s); BAKE_STATUS=$?; BAKE_END_MS="$(now_ms)"; echo "__orbit_bake_timing websocket total $((BAKE_END_MS - BAKE_START_MS))" | tee -a "$STATUS_FILE"; exit "$BAKE_STATUS") > %s 2>&1 & PID_BAKE_WEBSOCKET=$!;', $webSocketCommand, escapeshellarg('/tmp/orbit-e2e-bake-websocket.log')),
                 '        wait "$PID_BAKE_WEBSOCKET" || { STATUS_WEBSOCKET=$?; echo '.escapeshellarg('bake websocket failed').' >&2; cat '.escapeshellarg('/tmp/orbit-e2e-bake-websocket.log').' >&2 || true; if [ "$STATUS" -eq 0 ]; then STATUS=$STATUS_WEBSOCKET; fi; };',
                 '    fi;',
                 'else',
@@ -2175,6 +2235,7 @@ BASH,
             'SEED_MARKER='.escapeshellarg($seedMarkerPath).';',
             'DEV_READY_MARKER='.escapeshellarg($devReadyMarkerPath).';',
             ': > "$STATUS_FILE";',
+            'now_ms() { if command -v python3 >/dev/null 2>&1; then python3 -c '.escapeshellarg('import time; print(int(time.time() * 1000))').'; else echo "$(($(date +%s) * 1000))"; fi; }',
             'record_status() { echo "__orbit_bake_status $1 $2" | tee -a "$STATUS_FILE"; }',
             ...$startLines,
             '',
@@ -2282,6 +2343,7 @@ BASH,
         );
 
         $this->lastPreparedBakeOutput = trim($result->output()."\n".$result->errorOutput());
+        $this->recordPreparedRoleTimings($this->lastPreparedBakeOutput, $rolesWithWebSocket, 'bake', $timerPrefix);
 
         return $this->parsePreparedBakeStatuses($this->lastPreparedBakeOutput, $rolesWithWebSocket);
     }
@@ -2363,6 +2425,32 @@ BASH,
         }
 
         return $statuses;
+    }
+
+    /**
+     * @param  list<string>  $roles
+     */
+    private function recordPreparedRoleTimings(string $output, array $roles, string $phase, string $timerPrefix): void
+    {
+        $allowedRoles = array_fill_keys($roles, true);
+        $pattern = '/__orbit_'.$phase.'_timing\s+([a-z-]+)\s+([a-z-]+)\s+(\d+)/';
+
+        if (preg_match_all($pattern, $output, $matches, PREG_SET_ORDER) === false) {
+            return;
+        }
+
+        foreach ($matches as $match) {
+            $role = $match[1];
+
+            if (! array_key_exists($role, $allowedRoles)) {
+                continue;
+            }
+
+            $step = $match[2];
+            $milliseconds = (int) $match[3];
+
+            $this->timer->recordExternal("{$timerPrefix}.{$role}.{$step}", $milliseconds / 1000);
+        }
     }
 
     /**
