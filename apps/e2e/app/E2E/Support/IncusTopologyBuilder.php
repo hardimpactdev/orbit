@@ -1325,6 +1325,7 @@ BASH,
 set -euo pipefail;
 
 bootstrap_user=%s
+bundle_dir=%s
 private_key_path=%s
 public_key_path=%s
 timeout_seconds=%d
@@ -1346,10 +1347,19 @@ wait_for_agent() {
 wait_for_cloud_init() {
     local name="$1"
     local deadline=$((SECONDS + timeout_seconds))
+    local exit_code=0
     local output=''
 
     while [ "$SECONDS" -lt "$deadline" ]; do
-        output="$(incus exec "$name" -- cloud-init status 2>&1 || true)"
+        if output="$(incus exec "$name" -- sh -lc 'command -v cloud-init >/dev/null 2>&1 || exit 127; cloud-init status' 2>&1)"; then
+            exit_code=0
+        else
+            exit_code=$?
+        fi
+
+        if [ "$exit_code" -eq 127 ]; then
+            return 0
+        fi
 
         if printf '%%s' "$output" | grep -Eq 'status: (degraded )?done'; then
             return 0
@@ -1374,12 +1384,8 @@ authorize_ssh() {
 instance_ipv4() {
     local name="$1"
 
-    incus list --format csv -c n,4 \
-        | awk -F, -v name="$name" '$1 == name {print $2}' \
-        | grep -Ev '\((wg-orbit|docker0|br-|veth|wg0|lo)' \
-        | grep -Eo '([0-9]{1,3}\.){3}[0-9]{1,3}' \
-        | head -n 1 \
-        || true
+    incus exec "$name" -- sh -lc 'ip -o -4 addr show scope global' \
+        | awk '$2 !~ /^(lo|docker0|docker_gwbridge|wg-orbit|wg0|br-|veth)/ && found != 1 { split($4, parts, "/"); print parts[1]; found = 1 }'
 }
 
 wait_for_ssh() {
@@ -1401,6 +1407,22 @@ wait_for_ssh() {
     return 1
 }
 
+install_orbit_binary() {
+    local name="$1"
+    local binary="${bundle_dir}/orbit-binary"
+
+    if [ ! -f "$binary" ]; then
+        echo "Orbit binary artifact missing from prepared topology bundle: ${binary}" >&2
+        return 1
+    fi
+
+    incus exec "$name" -- sh -lc 'id orbit >/dev/null 2>&1 || useradd -m -s /bin/bash orbit'
+    incus exec "$name" -- sh -lc 'install -d -m 0755 -o orbit -g orbit /home/orbit/orbit/bin'
+    incus file push "$binary" "${name}/home/orbit/orbit/bin/orbit-binary"
+    incus exec "$name" -- sh -lc 'chown orbit:orbit /home/orbit/orbit/bin/orbit-binary && chmod 0755 /home/orbit/orbit/bin/orbit-binary && ln -sf /home/orbit/orbit/bin/orbit-binary /usr/local/bin/orbit'
+    incus exec "$name" -- sh -lc 'runuser -u orbit -- env HOME=/home/orbit PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin /usr/local/bin/orbit --version >/dev/null'
+}
+
 prepare_role() {
     local role="$1"
     local name="$2"
@@ -1413,6 +1435,7 @@ prepare_role() {
     wait_for_agent "$name"
     wait_for_cloud_init "$name"
     wait_for_agent "$name"
+    install_orbit_binary "$name"
     authorize_ssh "$name"
     wait_for_ssh "$name"
 }
@@ -1426,6 +1449,7 @@ STATUS=0;
 exit "$STATUS";
 BASH,
             escapeshellarg($this->host->config->bootstrapUser),
+            escapeshellarg((string) $this->remoteBundleDir),
             escapeshellarg($key->privateKeyPath),
             escapeshellarg($key->publicKeyPath),
             $this->host->config->timeoutSeconds,

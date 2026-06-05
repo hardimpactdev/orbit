@@ -120,7 +120,7 @@ function expectPreparedOperatorTopology(E2ETopologyLease $topology, E2EConfig $c
     $operator = $topology->operator();
     $key = $topology->sshKeyPair();
 
-    expectPreparedOrbitCli($operator, $config->operatorUser, $key);
+    expectPreparedOrbitSourceCheckout($operator, $config->operatorUser, $key);
 }
 
 function expectPreparedGatewayTopology(E2ETopologyLease $topology, E2EConfig $config): void
@@ -135,7 +135,7 @@ function expectPreparedGatewayTopology(E2ETopologyLease $topology, E2EConfig $co
         throw new RuntimeException('Prepared operator-gateway topology did not return a gateway handle.');
     }
 
-    expectPreparedOrbitCli($gateway, 'orbit', $key);
+    expectPreparedOrbitSourceCheckout($gateway, 'orbit', $key);
 
     $gatewayUrl = readPreparedClientGatewayUrl($operator, $config->operatorUser, $key);
 
@@ -328,13 +328,25 @@ function expectPreparedFullWebSocketTopology(E2ETopologyLease $topology, E2EConf
 
 function expectPreparedOrbitCli(E2EInstance $instance, string $user, SshKeyPair $key): void
 {
+    $result = E2ECommand::ssh(
+        $instance,
+        $user,
+        $key,
+        '/usr/local/bin/orbit --version',
+    );
+
+    expect(trim($result->output()))->not->toBe('');
+}
+
+function expectPreparedOrbitSourceCheckout(E2EInstance $instance, string $user, SshKeyPair $key): void
+{
     $orbitPath = "/home/{$user}/orbit";
 
     $result = E2ECommand::ssh(
         $instance,
         $user,
         $key,
-        'cd '.escapeshellarg($orbitPath).' && test -f apps/gateway/artisan && orbit --version',
+        'cd '.escapeshellarg($orbitPath).' && test -f apps/gateway/artisan && /usr/local/bin/orbit --version',
     );
 
     expect(trim($result->output()))->not->toBe('');
@@ -362,6 +374,14 @@ function readPreparedDevServiceState(E2EInstance $gateway): array
 {
     $php = <<<'PHP'
 $node = \App\Models\Node::query()->where('name', 'app-dev-1')->firstOrFail();
+$redisRuntimeConfig = \App\Models\Process::query()
+    ->ownedBy($node)
+    ->where('name', 'redis')
+    ->value('runtime_config');
+
+if (is_string($redisRuntimeConfig)) {
+    $redisRuntimeConfig = json_decode($redisRuntimeConfig, associative: true, flags: JSON_THROW_ON_ERROR);
+}
 
 echo json_encode([
     'roles' => $node->roleAssignments()
@@ -370,10 +390,9 @@ echo json_encode([
         ->pluck('role')
         ->values()
         ->all(),
-    'redis_process_definition' => \App\Models\Process::query()
-        ->ownedBy($node)
-        ->where('name', 'redis')
-        ->value('runtime_config->definition'),
+    'redis_process_definition' => is_array($redisRuntimeConfig)
+        ? ($redisRuntimeConfig['definition'] ?? null)
+        : null,
 ], JSON_THROW_ON_ERROR);
 PHP;
 

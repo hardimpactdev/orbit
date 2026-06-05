@@ -326,7 +326,7 @@ import json
 import sys
 
 state = json.load(sys.stdin)
-ignored = {"docker0", "lo", "wg-orbit", "wg0"}
+ignored = {"docker0", "docker_gwbridge", "lo", "wg-orbit", "wg0"}
 
 for interface, details in state.get("network", {}).items():
     if interface in ignored or interface.startswith(("br-", "veth")):
@@ -342,7 +342,7 @@ PY;
                 "if command -v python3 >/dev/null 2>&1; then\n"
                     .'incus query %s | python3 -c %s'."\n"
                     ."else\n"
-                    ."incus list --format csv -c n,4 | awk -F, -v name=%s '\$1 == name {print \$2}' | grep -Ev '\\((wg-orbit|docker0|br-|veth|wg0|lo)' | grep -Eo '([0-9]{1,3}\.){3}[0-9]{1,3}' | head -n 1 || true\n"
+                    ."incus list --format csv -c n,4 | awk -F, -v name=%s '\$1 == name {print \$2}' | grep -Ev '\\((wg-orbit|docker0|docker_gwbridge|br-|veth|wg0|lo)' | grep -Eo '([0-9]{1,3}\.){3}[0-9]{1,3}' | head -n 1 || true\n"
                     .'fi',
                 escapeshellarg("/1.0/instances/{$this->name}/state"),
                 escapeshellarg($python),
@@ -365,7 +365,7 @@ import json
 import sys
 
 addresses = json.load(sys.stdin)
-ignored = {"docker0", "lo", "wg-orbit", "wg0"}
+ignored = {"docker0", "docker_gwbridge", "lo", "wg-orbit", "wg0"}
 
 for details in addresses:
     interface = details.get("ifname", "")

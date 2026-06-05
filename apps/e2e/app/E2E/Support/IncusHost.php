@@ -375,11 +375,19 @@ class IncusHost
             $remainingSeconds = max(1, $deadline - time());
 
             $result = $this->run(
-                sprintf('incus exec %s -- cloud-init status', escapeshellarg($instanceName)),
+                sprintf(
+                    'incus exec %s -- sh -lc %s',
+                    escapeshellarg($instanceName),
+                    escapeshellarg('command -v cloud-init >/dev/null 2>&1 || exit 127; cloud-init status'),
+                ),
                 timeoutSeconds: min(10, $remainingSeconds),
             );
 
             $exitCode = $result->exitCode();
+
+            if ($exitCode === 127) {
+                return;
+            }
 
             $output = trim($result->output().$result->errorOutput());
 

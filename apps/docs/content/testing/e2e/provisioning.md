@@ -87,6 +87,12 @@ default). It builds one reusable base image plus prepared source snapshots:
    PHP 8.5 CLI baseline used by Orbit itself. It does not contain Orbit source.
    It is used by the Incus provision gate and as the source for prepared
    topology roles.
+   The no-cloud-init runtime image `orbit-base-ubuntu-26.04-runtime` may be
+   selected with `ORBIT_E2E_BASE_IMAGE=orbit-base-ubuntu-26.04-runtime` for
+   faster topology builds. That image is based on the non-cloud Ubuntu 26.04 VM
+   image and preinstalls the role baseline runtime tools, including WireGuard,
+   Docker Engine, first-boot Docker Swarm initialization, Supervisor, PHP CLI,
+   and Composer.
 2. Prepared source templates `orbit-template-operator-base`,
    `orbit-template-gateway-base`, `orbit-template-app-dev-base`,
    `orbit-template-app-prod-base`, `orbit-template-agent-base`, and
@@ -111,6 +117,13 @@ Feature tests clone only their requested roles from that full prepared source.
 App-dev carries database, Redis, Caddy, and FrankenPHP app-serving readiness by
 default. App-prod carries the ingress role by default. Websocket carries the
 Reverb runtime baseline and uses app-dev Redis.
+
+Incus topology preparation treats cloud-init as an image capability, not as a
+hard requirement. When a cloned VM has `cloud-init`, the builder waits for
+`cloud-init status` to reach `done` or `degraded done` before continuing. When
+the binary is absent, as in `orbit-base-ubuntu-26.04-runtime`, that wait is
+skipped and readiness continues from the Incus agent, IPv4, and SSH/runtime
+checks.
 
 The shared prepared Incus artifact set is `base`: role templates are named
 `orbit-template-<role>-base`, and source snapshots are named
