@@ -4,9 +4,8 @@ declare(strict_types=1);
 
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
-use App\Services\Dns\OrbitDnsServiceInstaller;
 use App\Services\Nodes\Roles\RoleBaselines\VpnRoleBaseline;
-use App\Services\Vpn\WgEasyServiceInstaller;
+use App\Services\Vpn\VpnDnsSwarmInstaller;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);
@@ -16,7 +15,7 @@ describe('VpnRoleBaseline', function (): void {
         config()->set('services.wg_easy.password', 'secret-password');
         config()->set('services.wg_easy.username', 'orbit-admin');
 
-        $this->wgEasyInstaller = new class extends WgEasyServiceInstaller
+        $this->vpnDnsInstaller = new class extends VpnDnsSwarmInstaller
         {
             /** @var list<array{publicHost: string, username: string, password: string, wireguardCidr: string, wireguardPort: int, dnsIp: string}> */
             public array $invocations = [];
@@ -42,20 +41,9 @@ describe('VpnRoleBaseline', function (): void {
             }
         };
 
-        $this->dnsInstaller = new class extends OrbitDnsServiceInstaller
-        {
-            public int $installs = 0;
-
-            public function __construct() {}
-
-            public function install(): void
-            {
-                $this->installs++;
-            }
-        };
     });
 
-    it('installs wg-easy and orbit-dns when the vpn role has a public endpoint', function (): void {
+    it('installs the vpn dns Swarm runtime when the vpn role has a public endpoint', function (): void {
         $node = Node::factory()->create();
         $assignment = NodeRoleAssignment::factory()->for($node)->create([
             'role' => 'vpn',
@@ -67,11 +55,11 @@ describe('VpnRoleBaseline', function (): void {
             ],
         ]);
 
-        $baseline = new VpnRoleBaseline($this->wgEasyInstaller, $this->dnsInstaller);
+        $baseline = new VpnRoleBaseline($this->vpnDnsInstaller);
 
         $baseline->converge($node, $assignment);
 
-        expect($this->wgEasyInstaller->invocations)->toBe([
+        expect($this->vpnDnsInstaller->invocations)->toBe([
             [
                 'publicHost' => 'vpn.example.com',
                 'username' => 'orbit-admin',
@@ -80,7 +68,7 @@ describe('VpnRoleBaseline', function (): void {
                 'wireguardPort' => 51830,
                 'dnsIp' => '10.7.0.1',
             ],
-        ])->and($this->dnsInstaller->installs)->toBe(1);
+        ]);
     });
 
     it('uses the default wg-easy username when it is not configured', function (): void {
@@ -94,14 +82,14 @@ describe('VpnRoleBaseline', function (): void {
             ],
         ]);
 
-        $baseline = new VpnRoleBaseline($this->wgEasyInstaller, $this->dnsInstaller);
+        $baseline = new VpnRoleBaseline($this->vpnDnsInstaller);
 
         $baseline->converge($node, $assignment);
 
-        expect($this->wgEasyInstaller->invocations[0]['username'])->toBe('orbit')
-            ->and($this->wgEasyInstaller->invocations[0]['wireguardCidr'])->toBe('10.6.0.0/24')
-            ->and($this->wgEasyInstaller->invocations[0]['wireguardPort'])->toBe(51820)
-            ->and($this->wgEasyInstaller->invocations[0]['dnsIp'])->toBe('10.6.0.1');
+        expect($this->vpnDnsInstaller->invocations[0]['username'])->toBe('orbit')
+            ->and($this->vpnDnsInstaller->invocations[0]['wireguardCidr'])->toBe('10.6.0.0/24')
+            ->and($this->vpnDnsInstaller->invocations[0]['wireguardPort'])->toBe(51820)
+            ->and($this->vpnDnsInstaller->invocations[0]['dnsIp'])->toBe('10.6.0.1');
     });
 
     it('does nothing when the vpn role has no public endpoint', function (): void {
@@ -113,12 +101,11 @@ describe('VpnRoleBaseline', function (): void {
             ],
         ]);
 
-        $baseline = new VpnRoleBaseline($this->wgEasyInstaller, $this->dnsInstaller);
+        $baseline = new VpnRoleBaseline($this->vpnDnsInstaller);
 
         $baseline->converge($node, $assignment);
 
-        expect($this->wgEasyInstaller->invocations)->toBe([])
-            ->and($this->dnsInstaller->installs)->toBe(0);
+        expect($this->vpnDnsInstaller->invocations)->toBe([]);
     });
 
     it('requires the wg-easy password when converging runtime', function (): void {
@@ -132,7 +119,7 @@ describe('VpnRoleBaseline', function (): void {
             ],
         ]);
 
-        $baseline = new VpnRoleBaseline($this->wgEasyInstaller, $this->dnsInstaller);
+        $baseline = new VpnRoleBaseline($this->vpnDnsInstaller);
 
         expect(fn (): mixed => $baseline->converge($node, $assignment))
             ->toThrow(RuntimeException::class, 'WG_EASY_PASSWORD is required to converge the vpn role runtime.');
@@ -144,7 +131,7 @@ describe('VpnRoleBaseline', function (): void {
             'role' => 'vpn',
         ]);
 
-        $baseline = new VpnRoleBaseline($this->wgEasyInstaller, $this->dnsInstaller);
+        $baseline = new VpnRoleBaseline($this->vpnDnsInstaller);
 
         expect(fn (): mixed => $baseline->remove($node, $assignment, purgeData: false))
             ->toThrow(RuntimeException::class, 'The vpn role cannot be removed independently in this version.');

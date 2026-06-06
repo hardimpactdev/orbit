@@ -33,7 +33,7 @@ use App\Services\Support\GatewayActionResult;
 use App\Services\Tools\ToolCatalog;
 use App\Services\Tools\ToolInstaller;
 use App\Services\Tools\ToolRegistryFailure;
-use App\Services\Vpn\WgEasyServiceInstaller;
+use App\Services\Vpn\VpnDnsSwarmInstaller;
 use App\Services\WireGuard\WireGuardKeyGenerator;
 use App\Services\WireGuard\WireGuardPeerRealityProbe;
 use Illuminate\Database\Eloquent\Builder;
@@ -711,7 +711,7 @@ final class GatewayNodeCreator
         }
 
         try {
-            $installer = app(WgEasyServiceInstaller::class);
+            $installer = app(VpnDnsSwarmInstaller::class);
             $installer->configurePeers([
                 [
                     'name' => $node->name,

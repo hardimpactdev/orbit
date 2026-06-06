@@ -37,12 +37,24 @@ it('does not initialize Docker Swarm when it is already active', function (): vo
 
 it('labels the gateway Swarm node', function (): void {
     Process::fake([
-        'docker node update --label-add orbit.role.gateway=true self' => Process::result(),
+        "docker info --format '{{.Swarm.NodeID}}'" => Process::result(output: "node-123\n"),
+        "docker node update --label-add 'orbit.role.gateway=true' 'node-123'" => Process::result(),
     ]);
 
     (new GatewaySwarmManager)->ensureGatewayNodeLabel();
 
-    Process::assertRan('docker node update --label-add orbit.role.gateway=true self');
+    Process::assertRan("docker node update --label-add 'orbit.role.gateway=true' 'node-123'");
+});
+
+it('labels the local Swarm node for colocated gateway vpn and dns services', function (): void {
+    Process::fake([
+        "docker info --format '{{.Swarm.NodeID}}'" => Process::result(output: "node-123\n"),
+        "docker node update --label-add 'orbit.role.gateway=true' --label-add 'orbit.role.vpn=true' --label-add 'orbit.role.dns=true' 'node-123'" => Process::result(),
+    ]);
+
+    (new GatewaySwarmManager)->ensureGatewayEdgeNodeLabels();
+
+    Process::assertRan("docker node update --label-add 'orbit.role.gateway=true' --label-add 'orbit.role.vpn=true' --label-add 'orbit.role.dns=true' 'node-123'");
 });
 
 it('creates an attachable overlay network when orbit-network is absent', function (): void {

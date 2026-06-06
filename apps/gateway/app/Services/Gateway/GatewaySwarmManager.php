@@ -41,7 +41,34 @@ final readonly class GatewaySwarmManager
 
     public function ensureGatewayNodeLabel(): void
     {
-        $this->run('docker node update --label-add orbit.role.gateway=true self', 'label the gateway Swarm node');
+        $this->ensureNodeRoleLabels(['gateway']);
+    }
+
+    /**
+     * @param  list<string>  $roles
+     */
+    public function ensureNodeRoleLabels(array $roles): void
+    {
+        $labels = [];
+
+        foreach ($roles as $role) {
+            $role = $this->normalizeName($role, 'role');
+            $labels[] = '--label-add '.escapeshellarg("orbit.role.{$role}=true");
+        }
+
+        if ($labels === []) {
+            throw new InvalidArgumentException('At least one Swarm node role label is required.');
+        }
+
+        $this->run(
+            'docker node update '.implode(' ', $labels).' '.escapeshellarg($this->localNodeId()),
+            'label the local Swarm node',
+        );
+    }
+
+    public function ensureGatewayEdgeNodeLabels(): void
+    {
+        $this->ensureNodeRoleLabels(['gateway', 'vpn', 'dns']);
     }
 
     public function ensureAttachableOverlayNetwork(string $network = GatewaySwarmStackRenderer::Network): void
@@ -64,10 +91,10 @@ final readonly class GatewaySwarmManager
         throw new RuntimeException(str_replace('[orbit-network]', "[{$network}]", self::LegacyNetworkMessage));
     }
 
-    public function writeStackFile(string $contents): string
+    public function writeStackFile(string $contents, string $filename = self::StackFile): string
     {
         $directory = $this->configRoot().'/swarm';
-        $path = $directory.'/'.self::StackFile;
+        $path = $directory.'/'.$this->normalizeName($filename, 'stack file');
 
         File::ensureDirectoryExists($directory, 0700);
         File::put($path, $contents);
@@ -195,6 +222,18 @@ final readonly class GatewaySwarmManager
         }
 
         return $order;
+    }
+
+    private function localNodeId(): string
+    {
+        $result = $this->run("docker info --format '{{.Swarm.NodeID}}'", 'inspect local Swarm node id');
+        $nodeId = trim($result->output());
+
+        if ($nodeId === '') {
+            throw new RuntimeException('Docker Swarm local node id is empty.');
+        }
+
+        return $nodeId;
     }
 
     private function run(string $command, string $step): ProcessResult

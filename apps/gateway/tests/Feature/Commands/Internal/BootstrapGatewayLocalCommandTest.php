@@ -9,11 +9,10 @@ use App\Models\NodeAccess;
 use App\Models\NodeRoleAssignment;
 use App\Models\WireGuardPeer;
 use App\Services\Ca\OrbitCaService;
-use App\Services\Dns\OrbitDnsServiceInstaller;
 use App\Services\Gateway\GatewayImageReference;
 use App\Services\Gateway\GatewaySwarmInstaller;
 use App\Services\Security\SshHostKeyPinner;
-use App\Services\Vpn\WgEasyServiceInstaller;
+use App\Services\Vpn\VpnDnsSwarmInstaller;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\File;
@@ -94,7 +93,7 @@ describe('orbit:internal:bootstrap-gateway-local', function (): void {
             }
         };
 
-        $this->wgEasyServiceInstaller = new class extends WgEasyServiceInstaller
+        $this->vpnDnsSwarmInstaller = new class extends VpnDnsSwarmInstaller
         {
             /** @var list<array{publicHost: string, username: string, password: string, wireguardCidr: string, wireguardPort: int, dnsIp: string}> */
             public array $invocations = [];
@@ -133,18 +132,6 @@ describe('orbit:internal:bootstrap-gateway-local', function (): void {
             }
         };
 
-        $this->orbitDnsServiceInstaller = new class extends OrbitDnsServiceInstaller
-        {
-            public int $installs = 0;
-
-            public function __construct() {}
-
-            public function install(): void
-            {
-                $this->installs++;
-            }
-        };
-
         $this->hostKeyPinner = new class
         {
             /** @var list<array{host: string, expected: string|null}> */
@@ -165,8 +152,7 @@ describe('orbit:internal:bootstrap-gateway-local', function (): void {
         };
 
         app()->instance(GatewaySwarmInstaller::class, $this->gatewaySwarmInstaller);
-        app()->instance(WgEasyServiceInstaller::class, $this->wgEasyServiceInstaller);
-        app()->instance(OrbitDnsServiceInstaller::class, $this->orbitDnsServiceInstaller);
+        app()->instance(VpnDnsSwarmInstaller::class, $this->vpnDnsSwarmInstaller);
         app()->instance(SshHostKeyPinner::class, $this->hostKeyPinner);
     });
 
@@ -235,8 +221,7 @@ describe('orbit:internal:bootstrap-gateway-local', function (): void {
         expect($exitCode)->toBe(0)
             ->and(Node::query()->where('name', 'gateway-1')->exists())->toBeTrue()
             ->and($this->gatewaySwarmInstaller->installs)->toBe([])
-            ->and($this->wgEasyServiceInstaller->invocations)->toBe([])
-            ->and($this->orbitDnsServiceInstaller->installs)->toBe(0);
+            ->and($this->vpnDnsSwarmInstaller->invocations)->toBe([]);
     });
 
     it('keeps gateway bootstrap aligned with the host launcher install contract', function (): void {
@@ -254,11 +239,10 @@ describe('orbit:internal:bootstrap-gateway-local', function (): void {
         ]);
 
         expect($this->gatewaySwarmInstaller->installs)->toHaveCount(1)
-            ->and($this->wgEasyServiceInstaller->invocations)->toHaveCount(1)
-            ->and($this->wgEasyServiceInstaller->invocations[0]['publicHost'])->toBe('203.0.113.10')
-            ->and($this->wgEasyServiceInstaller->invocations[0]['username'])->toBe('orbit')
-            ->and($this->wgEasyServiceInstaller->invocations[0]['password'])->not->toBe('')
-            ->and($this->orbitDnsServiceInstaller->installs)->toBe(1);
+            ->and($this->vpnDnsSwarmInstaller->invocations)->toHaveCount(1)
+            ->and($this->vpnDnsSwarmInstaller->invocations[0]['publicHost'])->toBe('203.0.113.10')
+            ->and($this->vpnDnsSwarmInstaller->invocations[0]['username'])->toBe('orbit')
+            ->and($this->vpnDnsSwarmInstaller->invocations[0]['password'])->not->toBe('');
     });
 
     it('passes configured gateway image and archive to the Swarm installer', function (): void {
@@ -315,7 +299,7 @@ describe('orbit:internal:bootstrap-gateway-local', function (): void {
             'wireguard-address' => '10.6.0.2',
             '--public-host' => '203.0.113.10',
         ]);
-        $firstPassword = $this->wgEasyServiceInstaller->invocations[0]['password'];
+        $firstPassword = $this->vpnDnsSwarmInstaller->invocations[0]['password'];
 
         Artisan::call('orbit:internal:bootstrap-gateway-local', [
             'name' => 'gateway-1',
@@ -323,7 +307,7 @@ describe('orbit:internal:bootstrap-gateway-local', function (): void {
             '--public-host' => '203.0.113.10',
         ]);
 
-        expect($this->wgEasyServiceInstaller->invocations[1]['password'])->toBe($firstPassword);
+        expect($this->vpnDnsSwarmInstaller->invocations[1]['password'])->toBe($firstPassword);
     });
 
     it('skips wg-easy and orbit-dns when public host is not provided', function (): void {
@@ -332,8 +316,7 @@ describe('orbit:internal:bootstrap-gateway-local', function (): void {
             'wireguard-address' => '10.6.0.2',
         ]);
 
-        expect($this->wgEasyServiceInstaller->invocations)->toBe([])
-            ->and($this->orbitDnsServiceInstaller->installs)->toBe(0);
+        expect($this->vpnDnsSwarmInstaller->invocations)->toBe([]);
     });
 
     it('sets the gateway tld to "gateway" by default', function (): void {
@@ -547,7 +530,7 @@ describe('orbit:internal:bootstrap-gateway-local', function (): void {
             ->and($gatewayPeer->pre_shared_key)->toBe('gateway-psk-v1')
             ->and($controlPeer)->toBeInstanceOf(WireGuardPeer::class)
             ->and($controlPeer->pre_shared_key)->toBe('control-psk-v1')
-            ->and($this->wgEasyServiceInstaller->peers)->toMatchArray([
+            ->and($this->vpnDnsSwarmInstaller->peers)->toMatchArray([
                 [
                     'name' => 'gateway-1',
                     'private_key' => 'gateway-private-v1',

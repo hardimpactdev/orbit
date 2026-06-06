@@ -182,11 +182,14 @@ The `dns:*` command family does not edit gateway-owned development DNS or
 router-owned private `.orbit` service names; the tool family does not own DNS
 records.
 
-`wg-easy` and `orbit-dns` are a coupled VPN substrate: `orbit-dns` runs in the
-wg-easy network namespace so VPN clients can resolve node TLDs and private
-Orbit names. The gateway Swarm update does not split them. A follow-up VPN/DNS
-Swarm plan must move `wg-easy` and `orbit-dns` together, or keep both on the
-same non-Swarm substrate until that coupled move is implemented.
+`wg-easy` and `orbit-dns` are a coupled VPN substrate. In the current Compose
+runtime, `orbit-dns` runs in the wg-easy network namespace so VPN clients can
+resolve node TLDs and private Orbit names. The Swarm migration keeps them as
+separate Swarm-managed services, not one multi-process container: coupling is a
+placement and networking contract. In v1 the router, vpn, and dns roles remain
+co-located on the gateway edge node. The Swarm target gives `wg-easy` and
+`orbit-dns` a shared private Swarm network, keeps DNS unpublished publicly, and
+forwards VPN-side DNS traffic from the WireGuard namespace to the DNS service.
 
 ### CLI
 
