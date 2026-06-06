@@ -31,7 +31,7 @@ This command follows the shared
 
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
-| `gateway_ip` | `[gateway_ip]` | Never; derived from network or fails. | Never. | Derived from active WireGuard network when unambiguous. | Valid IPv4 gateway WireGuard API address in Orbit's `10.6.0.0/16` range. |
+| `gateway_ip` | `[gateway_ip]` | Never; derived from network or fails. | Never. | Derived from active WireGuard network when unambiguous. | Valid IPv4 gateway WireGuard API address in Orbit's `10.6.0.0/24` range. |
 | `name` | `--name` | Never. | Never. | `default`. | Local gateway name slug: lowercase letters, digits, `.`, `_`, or `-`; starts with a lowercase letter or digit. |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer and non-interactive input mode. |
 
@@ -41,7 +41,7 @@ This command follows the shared
    WireGuard network when omitted.
 2. Resolve `gateway_add.name` from `--name`, defaulting to `default`.
 3. Validate inputs immediately.
-   - Must be a valid Orbit WireGuard IPv4 address in `10.6.0.0/16`.
+   - Must be a valid Orbit WireGuard IPv4 address in `10.6.0.0/24`.
    - Must be reachable as a gateway API endpoint.
    - Gateway names must be filesystem-safe local slugs and must not contain
      path separators.
@@ -133,7 +133,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | Failure | Condition | Outcome |
 | --- | --- | --- |
 | Gateway host unsupported | The local process is running in gateway context. | Failure |
-| Invalid gateway IP | Supplied or derived value is not a valid Orbit WireGuard IPv4 address in `10.6.0.0/16`. | Failure |
+| Invalid gateway IP | Supplied or derived value is not a valid Orbit WireGuard IPv4 address in `10.6.0.0/24`. | Failure |
 | Identity unknown | `/api/me` returns 403; the local peer is not registered. | Failure |
 | Gateway API error | `/api/me` returns a successful HTTP response with an invalid identity payload. | Failure |
 | Unsupported platform | The caller platform cannot install gateway CA trust automatically. | Failure |

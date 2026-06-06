@@ -165,7 +165,7 @@ Primary test owners:
 
 | Path | Coverage |
 | --- | --- |
-| `apps/gateway/tests/Feature/Commands/AgentIde/AgentIdeMessageCommandTest.php` | Target resolution (explicit app, workspace, cwd); caller-role behavior; authorization failures; adapter resolution; stdin delivery; no-adapter failure; no-session failure; adapter delivery failure; accepted delivery success; read-only guarantee; no session creation. |
+| `apps/gateway/tests/Feature/Commands/AgentIde/AgentIdeMessageCommandTest.php` | Target resolution (explicit app, workspace, cwd); caller authorization behavior; authorization failures; adapter resolution; stdin delivery; no-adapter failure; no-session failure; adapter delivery failure; accepted delivery success; read-only guarantee; no session creation. |
 
 Input-mode-specific test mapping lives in:
 

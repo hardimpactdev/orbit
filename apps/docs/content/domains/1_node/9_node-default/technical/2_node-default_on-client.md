@@ -4,7 +4,7 @@
 
 This page describes the supported non-gateway deployment context for
 `node:default`. The command stores a local CLI preference; it does not grant
-node access and does not require caller-role authorization.
+node access and does not require a gateway access grant.
 
 **Effects:** `read`, `write`, `local-only`.
 

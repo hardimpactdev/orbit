@@ -181,10 +181,11 @@ Caller-path behavior is split out into:
   `app-dev` plus `app-prod` must fail before node creation or
   provisioning.
 - Create the node identity first, then add each requested role. Role settings
-  stay minimal: `app-dev` assignments store `settings.tld`,
-  `app-prod` assignments store `settings.ingress_node_id`, and
-  `websocket` assignments store `settings.redis_node_id`. `s3` assignments
-  store `settings.data_path`. `database` assignments use empty settings.
+  stay minimal: `app-prod` assignments store `settings.ingress_node_id`,
+  `websocket` assignments store `settings.redis_node_id`, and `s3` assignments
+  store `settings.data_path`. `database` assignments use empty settings. The
+  `app-dev` role requires the node-level `tld` field (shared with `agent`), not
+  a role-assignment setting.
 - `app-prod` placement must be explicit. The command's public and
   companion contracts own the exact prompt, placement choices, and failure
   shape for missing ingress.
