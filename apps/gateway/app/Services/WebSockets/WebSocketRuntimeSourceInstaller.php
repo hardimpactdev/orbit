@@ -40,7 +40,7 @@ class WebSocketRuntimeSourceInstaller
             'source-remote',
             fn () => $this->remoteShell->run($node, $this->installScript($sourceHash), [
                 'throw' => true,
-                'input' => base64_encode($sourceArchive),
+                'input' => base64_encode((string) $sourceArchive),
                 'metadata' => [
                     'ORBIT_OPERATION_ID' => 'websocket-runtime-source-install',
                 ],

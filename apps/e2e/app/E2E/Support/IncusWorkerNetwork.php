@@ -55,8 +55,10 @@ fi
 if command -v iptables >/dev/null 2>&1; then
     sudo_prefix=
     if command -v sudo >/dev/null 2>&1 && sudo -n true >/dev/null 2>&1; then sudo_prefix=sudo; fi
-    $sudo_prefix iptables -C FORWARD -i %1$s -j ACCEPT 2>/dev/null || $sudo_prefix iptables -I FORWARD 1 -i %1$s -j ACCEPT
-    $sudo_prefix iptables -C FORWARD -o %1$s -j ACCEPT 2>/dev/null || $sudo_prefix iptables -I FORWARD 1 -o %1$s -j ACCEPT
+    while $sudo_prefix iptables -D FORWARD -i %1$s -j ACCEPT 2>/dev/null; do :; done
+    while $sudo_prefix iptables -D FORWARD -o %1$s -j ACCEPT 2>/dev/null; do :; done
+    $sudo_prefix iptables -I FORWARD 1 -o %1$s -j ACCEPT
+    $sudo_prefix iptables -I FORWARD 1 -i %1$s -j ACCEPT
 fi
 BASH,
             escapeshellarg($this->name),

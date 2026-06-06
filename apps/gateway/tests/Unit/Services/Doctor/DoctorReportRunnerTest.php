@@ -959,7 +959,20 @@ describe('DoctorReportRunner', function (): void {
         $shell = new DoctorReportRunnerRemoteShell([
             new RemoteShellResult(exitCode: 1, stdout: '', stderr: '', durationMs: 1),
             new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
-            new RemoteShellResult(exitCode: 0, stdout: "/usr/local/bin/composer\tComposer version 2.8.0\n", stderr: '', durationMs: 1),
+            new RemoteShellResult(exitCode: 0, stdout: json_encode([
+                'name' => 'composer',
+                'installed' => true,
+                'path' => '/usr/local/bin/composer',
+                'version' => 'Composer version 2.8.0',
+                'state' => 'unknown',
+                'config_exists' => null,
+                'config_hash' => null,
+                'secret_exists' => null,
+                'secret_hash' => null,
+                'container_exists' => null,
+                'container_state' => null,
+                'container_spec_hash' => null,
+            ], JSON_THROW_ON_ERROR)."\n", stderr: '', durationMs: 1),
         ]);
         app()->instance(RemoteShell::class, $shell);
 

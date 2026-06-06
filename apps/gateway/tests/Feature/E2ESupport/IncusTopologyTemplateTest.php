@@ -153,9 +153,9 @@ it('opens worker network forwarding ahead of host firewall drops without enablin
             return $timeoutSeconds === 120
                 && str_contains($command, 'raw.dnsmasq port=0')
                 && ! str_contains($command, 'dhcp-option=option:dns-server')
-                && str_contains($command, "iptables -C FORWARD -i 'orbit-e2e-n-1' -j ACCEPT")
+                && str_contains($command, "while \$sudo_prefix iptables -D FORWARD -i 'orbit-e2e-n-1' -j ACCEPT")
                 && str_contains($command, "iptables -I FORWARD 1 -i 'orbit-e2e-n-1' -j ACCEPT")
-                && str_contains($command, "iptables -C FORWARD -o 'orbit-e2e-n-1' -j ACCEPT")
+                && str_contains($command, "while \$sudo_prefix iptables -D FORWARD -o 'orbit-e2e-n-1' -j ACCEPT")
                 && str_contains($command, "iptables -I FORWARD 1 -o 'orbit-e2e-n-1' -j ACCEPT");
         })
         ->andReturn(successfulProcessResult());

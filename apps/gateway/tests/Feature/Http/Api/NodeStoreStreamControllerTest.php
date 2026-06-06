@@ -2,11 +2,15 @@
 
 declare(strict_types=1);
 
+use App\Contracts\RemoteShell;
+use App\Data\RemoteShell\RemoteShellResult;
 use App\Data\Security\PinnedHostKey;
+use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Models\OperationRun;
 use App\Models\WireGuardPeer;
 use App\Services\Nodes\DevelopmentDnsMappingEnactor;
+use App\Services\Runtime\OrbitCaddyContainer;
 use App\Services\Security\SshHostKeyPinner;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -121,9 +125,14 @@ it('streams node creation from an operation_run source', function (): void {
             return Process::result(output: json_encode(['success' => ['data' => [], 'meta' => []]], JSON_THROW_ON_ERROR)."\n");
         }
 
+        if (str_contains($command, 'com.docker.swarm.service.name=orbit_orbit-vpn')) {
+            return Process::result(output: "vpn-container-id\n");
+        }
+
         return Process::result();
     });
     Process::preventStrayProcesses();
+    app()->instance(RemoteShell::class, new NodeStoreStreamConvergenceRemoteShell);
 
     $response = $this->call('POST', '/api/nodes', [
         'name' => 'app-dev-1',
@@ -149,3 +158,84 @@ it('streams node creation from an operation_run source', function (): void {
         ->and($operationRun->caller_node_id)->toBe($callerId)
         ->and($operationRun->result['success']['data']['node']['name'])->toBe('app-dev-1');
 });
+
+final class NodeStoreStreamConvergenceRemoteShell implements RemoteShell
+{
+    /**
+     * @param  array<string, mixed>  $options
+     */
+    public function run(Node $node, string $script, array $options = []): RemoteShellResult
+    {
+        if (! str_contains($script, '$payload = json_decode(stream_get_contents(STDIN), true);')) {
+            return new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1);
+        }
+
+        $payload = json_decode((string) ($options['input'] ?? ''), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        if (is_array($payload['tools'] ?? null)) {
+            return new RemoteShellResult(
+                exitCode: 0,
+                stdout: collect($payload['tools'])
+                    ->map(fn (mixed $tool, string $name): string => json_encode([
+                        'name' => $name,
+                        ...$this->toolProbePayload($node, is_array($tool) ? $tool : []),
+                    ], JSON_THROW_ON_ERROR))
+                    ->implode("\n")."\n",
+                stderr: '',
+                durationMs: 1,
+            );
+        }
+
+        return new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1);
+    }
+
+    /**
+     * @param  array<string, mixed>  $tool
+     * @return array<string, mixed>
+     */
+    private function toolProbePayload(Node $node, array $tool): array
+    {
+        $binary = is_string($tool['binary'] ?? null) ? $tool['binary'] : '';
+        $container = is_string($tool['container'] ?? null) ? $tool['container'] : '';
+
+        if ($container === 'orbit-caddy') {
+            $hash = OrbitCaddyContainer::forPrivateNode((string) $node->wireguard_address)->specHash();
+
+            return [
+                'installed' => true,
+                'path' => '/usr/bin/docker',
+                'version' => 'Docker version 27.0.0',
+                'state' => 'running',
+                'config_exists' => null,
+                'config_hash' => null,
+                'secret_exists' => null,
+                'secret_hash' => null,
+                'container_exists' => true,
+                'container_state' => 'running',
+                'container_spec_hash' => $hash,
+            ];
+        }
+
+        [$path, $version] = match ($binary) {
+            '/opt/orbit/php/8.5/bin/php' => ['/opt/orbit/php/8.5/bin/php', '8.5.6'],
+            '/usr/local/bin/composer' => ['/usr/local/bin/composer', 'Composer version 2.9.0'],
+            'gh' => ['/usr/bin/gh', 'gh version 2.60.0'],
+            'laravel', '/usr/local/bin/laravel', 'laravel-installer' => ['/usr/local/bin/laravel', 'Laravel Installer 5.0.0'],
+            default => ['', ''],
+        };
+
+        return [
+            'installed' => $path !== '',
+            'path' => $path !== '' ? $path : null,
+            'version' => $version !== '' ? $version : null,
+            'state' => 'unknown',
+            'config_exists' => null,
+            'config_hash' => null,
+            'secret_exists' => null,
+            'secret_hash' => null,
+            'container_exists' => null,
+            'container_state' => null,
+            'container_spec_hash' => null,
+        ];
+    }
+}

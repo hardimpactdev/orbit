@@ -318,6 +318,10 @@ describe('NodeStoreController', function (): void {
                 return Process::result(output: json_encode(['success' => ['data' => [], 'meta' => []]], JSON_THROW_ON_ERROR)."\n");
             }
 
+            if (str_contains($command, 'com.docker.swarm.service.name=orbit_orbit-vpn')) {
+                return Process::result(output: "vpn-container-id\n");
+            }
+
             return Process::result();
         });
         Process::preventStrayProcesses();
@@ -363,7 +367,7 @@ describe('NodeStoreController', function (): void {
                 'supervisor',
             ]);
 
-        expect($shell->toolNodeStatuses)->toHaveCount(5)
+        expect($shell->toolNodeStatuses)->toHaveCount(1)
             ->and(array_values(array_unique($shell->toolNodeStatuses)))->toBe([Node::STATUS_PROVISIONING]);
 
         $entry = Activity::query()
@@ -457,6 +461,7 @@ describe('NodeStoreController', function (): void {
             'docker restart orbit-dns' => Process::result(),
         ]);
         Process::preventStrayProcesses();
+        app()->instance(RemoteShell::class, new NodeStoreConvergenceRemoteShell);
 
         $response = $this
             ->withServerVariables(['REMOTE_ADDR' => '10.6.0.3'])
@@ -529,6 +534,7 @@ describe('NodeStoreController', function (): void {
 
         Process::fake([
             'sudo wg show wg-orbit allowed-ips' => Process::result(output: "app-public-key\t10.6.0.8/32\n"),
+            "docker service inspect 'orbit_orbit-dns'" => Process::result(exitCode: 1),
             'docker restart orbit-dns' => Process::result(),
         ]);
         Process::preventStrayProcesses();
@@ -582,6 +588,10 @@ final class NodeStoreSequencedRemoteShell implements RemoteShell
 
     public function run(Node $node, string $script, array $options = []): RemoteShellResult
     {
+        if (str_contains($script, '$payload = json_decode(stream_get_contents(STDIN), true);')) {
+            return (new NodeStoreConvergenceRemoteShell)->run($node, $script, $options);
+        }
+
         return array_shift($this->results) ?? new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1);
     }
 }
@@ -604,21 +614,103 @@ final class NodeStoreConvergenceRemoteShell implements RemoteShell
 
         $this->toolNodeStatuses[] = $node->status;
         $payload = json_decode((string) ($options['input'] ?? ''), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        if (is_array($payload['tools'] ?? null)) {
+            return new RemoteShellResult(
+                exitCode: 0,
+                stdout: collect($payload['tools'])
+                    ->map(fn (mixed $tool, string $name): string => json_encode([
+                        'name' => $name,
+                        ...$this->toolProbePayload($node, is_array($tool) ? $tool : []),
+                    ], JSON_THROW_ON_ERROR))
+                    ->implode("\n")."\n",
+                stderr: '',
+                durationMs: 1,
+            );
+        }
+
         $binary = is_string($payload['binary'] ?? null) ? $payload['binary'] : '';
         $container = is_string($payload['container'] ?? null) ? $payload['container'] : '';
+
+        return new RemoteShellResult(
+            exitCode: 0,
+            stdout: $this->toolProbeTabOutput($node, [
+                'binary' => $binary,
+                'container' => $container,
+            ]),
+            stderr: '',
+            durationMs: 1,
+        );
+    }
+
+    /**
+     * @param  array<string, mixed>  $tool
+     * @return array<string, mixed>
+     */
+    private function toolProbePayload(Node $node, array $tool): array
+    {
+        $binary = is_string($tool['binary'] ?? null) ? $tool['binary'] : '';
+        $container = is_string($tool['container'] ?? null) ? $tool['container'] : '';
 
         if ($container === 'orbit-caddy') {
             $hash = OrbitCaddyContainer::forPrivateNode((string) $node->wireguard_address)->specHash();
 
-            return new RemoteShellResult(exitCode: 0, stdout: "/usr/bin/docker\tDocker version 27.0.0\trunning\t\t\t\t\t1\trunning\t{$hash}\n", stderr: '', durationMs: 1);
+            return [
+                'installed' => true,
+                'path' => '/usr/bin/docker',
+                'version' => 'Docker version 27.0.0',
+                'state' => 'running',
+                'config_exists' => null,
+                'config_hash' => null,
+                'secret_exists' => null,
+                'secret_hash' => null,
+                'container_exists' => true,
+                'container_state' => 'running',
+                'container_spec_hash' => $hash,
+            ];
         }
 
-        return match ($binary) {
-            '/opt/orbit/php/8.5/bin/php' => new RemoteShellResult(exitCode: 0, stdout: "/opt/orbit/php/8.5/bin/php\t8.5.6\n", stderr: '', durationMs: 1),
-            '/usr/local/bin/composer' => new RemoteShellResult(exitCode: 0, stdout: "/usr/local/bin/composer\tComposer version 2.9.0\n", stderr: '', durationMs: 1),
-            'gh' => new RemoteShellResult(exitCode: 0, stdout: "/usr/bin/gh\tgh version 2.60.0\n", stderr: '', durationMs: 1),
-            'laravel' => new RemoteShellResult(exitCode: 0, stdout: "/usr/local/bin/laravel\tLaravel Installer 5.0.0\n", stderr: '', durationMs: 1),
-            default => new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+        [$path, $version] = match ($binary) {
+            '/opt/orbit/php/8.5/bin/php' => ['/opt/orbit/php/8.5/bin/php', '8.5.6'],
+            '/usr/local/bin/composer' => ['/usr/local/bin/composer', 'Composer version 2.9.0'],
+            'gh' => ['/usr/bin/gh', 'gh version 2.60.0'],
+            'laravel', '/usr/local/bin/laravel', 'laravel-installer' => ['/usr/local/bin/laravel', 'Laravel Installer 5.0.0'],
+            default => ['', ''],
         };
+
+        return [
+            'installed' => $path !== '',
+            'path' => $path !== '' ? $path : null,
+            'version' => $version !== '' ? $version : null,
+            'state' => 'unknown',
+            'config_exists' => null,
+            'config_hash' => null,
+            'secret_exists' => null,
+            'secret_hash' => null,
+            'container_exists' => null,
+            'container_state' => null,
+            'container_spec_hash' => null,
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $tool
+     */
+    private function toolProbeTabOutput(Node $node, array $tool): string
+    {
+        $payload = $this->toolProbePayload($node, $tool);
+
+        return implode("\t", [
+            $payload['path'] ?? '',
+            $payload['version'] ?? '',
+            $payload['state'] ?? '',
+            $payload['config_exists'] === null ? '' : ($payload['config_exists'] ? '1' : '0'),
+            $payload['config_hash'] ?? '',
+            $payload['secret_exists'] === null ? '' : ($payload['secret_exists'] ? '1' : '0'),
+            $payload['secret_hash'] ?? '',
+            $payload['container_exists'] === null ? '' : ($payload['container_exists'] ? '1' : '0'),
+            $payload['container_state'] ?? '',
+            $payload['container_spec_hash'] ?? '',
+        ])."\n";
     }
 }

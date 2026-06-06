@@ -55,7 +55,8 @@ it('converges gateway-direct Swarm service with CA-rooted certs and Docker-aware
 
         return match ($process->command) {
             "docker info --format '{{.Swarm.LocalNodeState}}'" => Process::result(output: "active\n"),
-            'docker node update --label-add orbit.role.gateway=true self' => Process::result(),
+            "docker info --format '{{.Swarm.NodeID}}'" => Process::result(output: "swarm-node-id\n"),
+            "docker node update --label-add 'orbit.role.gateway=true' 'swarm-node-id'" => Process::result(),
             "docker network inspect --format '{{.Driver}} {{.Scope}} {{.Attachable}}' 'orbit-network'" => Process::result(output: "overlay swarm true\n"),
             'docker stack deploy -c '.escapeshellarg($stackPath)." 'orbit'" => Process::result(),
             "sudo ss -H -ltn 'sport = :80' | grep -q ." => Process::result(exitCode: 1),
@@ -100,7 +101,7 @@ it('converges gateway-direct Swarm service with CA-rooted certs and Docker-aware
         ->and($firewallScript)->toContain('sudo ufw deny in proto tcp from 0.0.0.0/0 to any port 443');
 
     Process::assertRan("docker info --format '{{.Swarm.LocalNodeState}}'");
-    Process::assertRan('docker node update --label-add orbit.role.gateway=true self');
+    Process::assertRan("docker node update --label-add 'orbit.role.gateway=true' 'swarm-node-id'");
     Process::assertRan("docker network inspect --format '{{.Driver}} {{.Scope}} {{.Attachable}}' 'orbit-network'");
     Process::assertRan('docker stack deploy -c '.escapeshellarg($stackPath)." 'orbit'");
 
@@ -143,7 +144,8 @@ it('pulls and inspects the gateway image before deploying the stack when no arch
             'docker pull '.escapeshellarg($image->canonical()) => Process::result(),
             'docker image inspect '.escapeshellarg($image->canonical()) => Process::result(),
             "docker info --format '{{.Swarm.LocalNodeState}}'" => Process::result(output: "active\n"),
-            'docker node update --label-add orbit.role.gateway=true self' => Process::result(),
+            "docker info --format '{{.Swarm.NodeID}}'" => Process::result(output: "swarm-node-id\n"),
+            "docker node update --label-add 'orbit.role.gateway=true' 'swarm-node-id'" => Process::result(),
             "docker network inspect --format '{{.Driver}} {{.Scope}} {{.Attachable}}' 'orbit-network'" => Process::result(output: "overlay swarm true\n"),
             "sudo ss -H -ltn 'sport = :80' | grep -q ." => Process::result(exitCode: 1),
             "sudo ss -H -ltn 'sport = :443' | grep -q ." => Process::result(exitCode: 1),
@@ -188,7 +190,8 @@ it('loads and inspects a staged gateway image archive before deploying the stack
             'docker load -i '.escapeshellarg($archive) => Process::result(),
             'docker image inspect '.escapeshellarg($image->canonical()) => Process::result(),
             "docker info --format '{{.Swarm.LocalNodeState}}'" => Process::result(output: "active\n"),
-            'docker node update --label-add orbit.role.gateway=true self' => Process::result(),
+            "docker info --format '{{.Swarm.NodeID}}'" => Process::result(output: "swarm-node-id\n"),
+            "docker node update --label-add 'orbit.role.gateway=true' 'swarm-node-id'" => Process::result(),
             "docker network inspect --format '{{.Driver}} {{.Scope}} {{.Attachable}}' 'orbit-network'" => Process::result(output: "overlay swarm true\n"),
             "sudo ss -H -ltn 'sport = :80' | grep -q ." => Process::result(exitCode: 1),
             "sudo ss -H -ltn 'sport = :443' | grep -q ." => Process::result(exitCode: 1),
@@ -257,7 +260,8 @@ it('converges router-colocated Caddy as the only host 80 443 and udp 443 listene
 
         return match ($process->command) {
             "docker info --format '{{.Swarm.LocalNodeState}}'" => Process::result(output: "active\n"),
-            'docker node update --label-add orbit.role.gateway=true self' => Process::result(),
+            "docker info --format '{{.Swarm.NodeID}}'" => Process::result(output: "swarm-node-id\n"),
+            "docker node update --label-add 'orbit.role.gateway=true' 'swarm-node-id'" => Process::result(),
             "docker network inspect --format '{{.Driver}} {{.Scope}} {{.Attachable}}' 'orbit-network'" => Process::result(output: "overlay swarm true\n"),
             'docker stack deploy -c '.escapeshellarg($stackPath)." 'orbit'" => Process::result(),
             $certReadableCommand => Process::result(),

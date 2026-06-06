@@ -322,7 +322,7 @@ class E2EPrepareTopologyCommand extends Command
             throw new RuntimeException("Could not create remote gateway artifact bundle directory on {$host->config->host}: {$stage->errorOutput()}");
         }
 
-        $remoteDir = trim($stage->output());
+        $remoteDir = trim((string) $stage->output());
 
         if ($remoteDir === '') {
             throw new RuntimeException("Remote gateway artifact bundle directory was empty on {$host->config->host}.");
