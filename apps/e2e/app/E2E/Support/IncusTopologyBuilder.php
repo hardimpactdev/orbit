@@ -1243,7 +1243,7 @@ BASH;
     private function sourceMountedRuntimeInstallCommand(string $user): string
     {
         $targetPath = "/home/{$user}/orbit";
-        $mirrorCommand = E2ECurrentCheckout::sourceMountedRuntimeMirrorCommand(self::PreparedSourceMountPath, $targetPath);
+        $copyCommand = self::sourceMountedPreparedRuntimeCopyCommand(self::PreparedSourceMountPath, $targetPath);
         $cli = "{$targetPath}/bin/orbit";
 
         $script = implode("\n", [
@@ -1253,7 +1253,7 @@ BASH;
             'config_root="/home/$user/.config/orbit"',
             'if ! id "$user" >/dev/null 2>&1; then useradd -m -s /bin/bash "$user"; fi',
             'install -d -m 0755 -o "$user" -g "$user" "$target"',
-            'runuser -u "$user" -- bash -lc '.escapeshellarg($mirrorCommand),
+            'runuser -u "$user" -- bash -lc '.escapeshellarg($copyCommand),
             'for app in apps/gateway apps/cli; do',
             '  archive='.escapeshellarg(self::PreparedSourceMountPath).'"/'.SourceMountedCheckoutSyncer::VendorArchiveDirectory.'/$(printf "%s" "$app" | tr "/" "-")-vendor.tar"',
             '  if [ -f "$archive" ]; then',
@@ -1276,6 +1276,30 @@ BASH;
         ]);
 
         return 'bash -lc '.escapeshellarg($script);
+    }
+
+    private static function sourceMountedPreparedRuntimeCopyCommand(string $sourcePath, string $targetPath): string
+    {
+        $excludeArguments = implode(' ', array_map(
+            fn (string $pattern): string => '--exclude='.escapeshellarg($pattern),
+            [
+                ...E2ECurrentCheckout::archiveExcludePatterns(),
+                './apps/gateway/vendor',
+                './apps/cli/vendor',
+            ],
+        ));
+
+        return implode("\n", [
+            'source='.escapeshellarg(rtrim($sourcePath, '/')),
+            'target='.escapeshellarg(rtrim($targetPath, '/')),
+            'sudo_prefix=',
+            'if command -v sudo >/dev/null 2>&1 && sudo -n true >/dev/null 2>&1; then sudo_prefix=sudo; fi',
+            'mkdir -p "$target"',
+            '$sudo_prefix find "$target" -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +',
+            'cd "$source"',
+            "tar --warning=no-unknown-keyword {$excludeArguments} -cf - . | tar -C \"\${target}\" -xf -",
+            'if [ -n "$sudo_prefix" ]; then $sudo_prefix chown -R "$(id -u):$(id -g)" "$target"; fi',
+        ]);
     }
 
     private function verifySourceMountedDockerImagesCommand(): string

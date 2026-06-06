@@ -274,7 +274,7 @@ it('reports source-mounted retained Incus checkouts in output and manifests', fu
         ]);
 });
 
-it('reports source-mounted retained Incus runtime mirrors in output and handles', function (): void {
+it('reports source-mounted retained Incus runtime overlays in output and handles', function (): void {
     devTopologyCommandWith(fn (E2ETopologyKind $kind, array $roles): array => fakePreparedTopology(
         checkouts: [
             'operator' => '/home/orbit/orbit-run',

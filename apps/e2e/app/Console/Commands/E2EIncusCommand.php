@@ -694,9 +694,10 @@ class E2EIncusCommand extends Command
                 $targetPath = E2ECurrentCheckout::sourceMountedRuntimePath($user);
             }
 
-            $command = E2ECurrentCheckout::sourceMountedRuntimeRefreshCommand(
+            $command = E2ECurrentCheckout::sourceMountedRuntimeOverlayCommand(
                 E2ECurrentCheckout::sourceMountedGuestPath(),
                 $targetPath,
+                resetUpper: false,
             );
             $result = $this->hostFor($host)->run(sprintf(
                 'incus exec %s -- sudo -u %s bash -lc %s',

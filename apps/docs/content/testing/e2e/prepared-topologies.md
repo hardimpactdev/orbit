@@ -38,10 +38,10 @@ containers, trust, routes, and baseline Orbit installation state. Production
 artifact lanes still use the native CLI binary artifact. Source-mounted Docker
 development/E2E topologies point `/usr/local/bin/orbit` directly at
 `<source>/apps/cli/orbit`. Source-mounted Incus topologies mount the synced
-source at `/home/orbit/orbit`, then refresh a VM-local runtime mirror at
-`/home/orbit/orbit-run`; `/usr/local/bin/orbit` and the retained gateway API
-shim execute from that ext4 mirror so ordinary CLI/API calls do not walk the
-shared VM filesystem.
+source at `/home/orbit/orbit`, then mount a VM-local overlay runtime checkout
+at `/home/orbit/orbit-run`; `/usr/local/bin/orbit` and the retained gateway API
+shim execute from that overlay path so generated files and runtime state stay
+inside the VM.
 
 Feature assertions must run the checkout under test inside the disposable clone.
 For worktree-based development, the worker's current worktree is the source of
@@ -134,15 +134,11 @@ For retained Incus, `/home/orbit/orbit` is the transport checkout and
 `/home/orbit/orbit-run` is the execution checkout. The transport checkout is
 the only path Incus can mount from the runner host into the VM, so it remains
 part of the flow even though Orbit commands should run from the VM-local
-runtime mirror. The mirror keeps PHP/Laravel execution on the VM filesystem and
-keeps gateway Docker bind mounts attached to a stable directory.
-
-Set `ORBIT_E2E_INCUS_FAST_OVERLAY=1` only for measurement runs that explicitly
-compare the runtime mirror with an overlayfs runtime checkout. The overlay mode
-mounts `/home/orbit/orbit-run` with `/home/orbit/orbit` as the lowerdir and a
-VM-local upperdir/workdir. It avoids the mirror refresh copy, but ordinary PHP
-execution still reads unchanged source files through the mounted lowerdir, so it
-is not the default retained Incus development path.
+runtime overlay. The overlay mounts `/home/orbit/orbit-run` with
+`/home/orbit/orbit` as the lowerdir and a VM-local upperdir/workdir. Start
+resets the upperdir for a clean retained runtime; sync remounts the overlay
+while preserving that upperdir so installed dependencies and runtime state
+survive source refreshes.
 
 `--sync` is one-way from the initiating worktree to the retained topology. On a
 remote Incus host it has two stages:
@@ -152,10 +148,10 @@ remote Incus host it has two stages:
    files; it is not based on Git status and it also deletes files removed from
    the initiating checkout. Gateway and CLI Composer dependencies are hydrated
    only when their lock hashes changed.
-2. Refresh each recorded VM runtime checkout from `/home/orbit/orbit`, usually
-   into `/home/orbit/orbit-run`. This stage replaces the mirror contents inside
-   the stable runtime directory while preserving gateway and CLI `vendor`
-   directories.
+2. Remount each recorded VM runtime overlay from `/home/orbit/orbit`, usually
+   at `/home/orbit/orbit-run`. This stage preserves the VM-local overlay
+   upperdir so gateway and CLI `vendor` directories and runtime state survive
+   source refreshes.
 
 The recommended development loop is: keep the Mac worktree as source of truth,
 sync it into the retained topology, inspect through `incus exec` or an

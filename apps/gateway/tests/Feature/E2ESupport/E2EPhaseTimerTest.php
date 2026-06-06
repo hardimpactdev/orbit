@@ -97,12 +97,12 @@ it('merges externally recorded child events back into the parent timer', functio
     $timer = new E2EPhaseTimer;
 
     $timer->mergeExternalEvents([
-        ['name' => 'operator checkout.source-mirror', 'seconds' => 1.2],
+        ['name' => 'operator checkout.source-overlay', 'seconds' => 1.2],
         ['name' => 'operator checkout.vendor', 'seconds' => 0.4],
     ]);
 
     expect($timer->events())->toBe([
-        ['name' => 'operator checkout.source-mirror', 'seconds' => 1.2],
+        ['name' => 'operator checkout.source-overlay', 'seconds' => 1.2],
         ['name' => 'operator checkout.vendor', 'seconds' => 0.4],
     ]);
 });

@@ -25,7 +25,6 @@ afterEach(function (): void {
     putenv('ORBIT_E2E_DEV_TOPOLOGY_MANIFEST_DIRECTORY');
     putenv('ORBIT_E2E_LIVE_WIREGUARD_ENDPOINT');
     putenv('ORBIT_E2E_LIVE_WG_ENDPOINT');
-    putenv('ORBIT_E2E_INCUS_FAST_OVERLAY');
     remove_directory($this->manifestDirectory);
 });
 
@@ -534,53 +533,14 @@ it('syncs the current checkout to a retained Incus topology by id', function ():
         ->toContain('orbit')
         ->toContain('/home/orbit/orbit')
         ->toContain('/home/orbit/orbit-current')
-        ->toContain('tar --warning=no-unknown-keyword');
+        ->toContain('/home/orbit/.orbit-current-overlay/upper')
+        ->toContain('/home/orbit/.orbit-current-overlay/work')
+        ->toContain('mount -t overlay overlay')
+        ->not->toContain('tar -C "${target}" -xf -')
+        ->not->toContain('$sudo_prefix rm -rf "$target" "$upper" "$work"');
 });
 
-it('syncs source-mounted retained Incus checkouts into VM-local runtime mirrors', function (): void {
-    writeIncusRetainedManifest($this->manifestDirectory, 'dev-abc123', [
-        'operator' => '/home/orbit/orbit',
-        'gateway' => '/home/orbit/orbit',
-        'dev' => '/home/orbit/orbit',
-    ]);
-
-    $commands = [];
-
-    Process::fake(function ($process) use (&$commands) {
-        $commands[] = (string) $process->command;
-
-        return Process::result();
-    });
-
-    $output = new BufferedOutput;
-    $exitCode = app(Kernel::class)->call('e2e:incus', [
-        '--sync' => true,
-        '--id' => 'dev-abc123',
-        '--json' => true,
-    ], $output);
-
-    $payload = json_decode(trim($output->fetch()), true, flags: JSON_THROW_ON_ERROR);
-    $sync = $payload['success']['source_sync'];
-    $commandsOutput = implode("\n", $commands);
-
-    expect($exitCode)->toBe(0)
-        ->and($sync['runtime_checkouts'])->toBe([
-            'operator' => '/home/orbit/orbit-run',
-            'gateway' => '/home/orbit/orbit-run',
-            'dev' => '/home/orbit/orbit-run',
-        ])
-        ->and($commandsOutput)
-        ->toContain('/home/orbit/orbit')
-        ->toContain('/home/orbit/orbit-run')
-        ->toContain('tar --warning=no-unknown-keyword')
-        ->toContain('orbit-e2e-dev-abc123-operator')
-        ->toContain('orbit-e2e-dev-abc123-gateway')
-        ->toContain('orbit-e2e-dev-abc123-dev');
-});
-
-it('syncs source-mounted retained Incus checkouts into overlay runtime paths when enabled', function (): void {
-    putenv('ORBIT_E2E_INCUS_FAST_OVERLAY=1');
-
+it('syncs source-mounted retained Incus checkouts into overlay runtime paths', function (): void {
     writeIncusRetainedManifest($this->manifestDirectory, 'dev-abc123', [
         'operator' => '/home/orbit/orbit',
         'gateway' => '/home/orbit/orbit',
@@ -621,7 +581,8 @@ it('syncs source-mounted retained Incus checkouts into overlay runtime paths whe
         ->toContain('orbit-e2e-dev-abc123-operator')
         ->toContain('orbit-e2e-dev-abc123-gateway')
         ->toContain('orbit-e2e-dev-abc123-dev')
-        ->not->toContain('tar -C "${target}" -xf -');
+        ->not->toContain('tar -C "${target}" -xf -')
+        ->not->toContain('$sudo_prefix rm -rf "$target" "$upper" "$work"');
 });
 
 it('prints a human retained Incus sync summary', function (): void {
