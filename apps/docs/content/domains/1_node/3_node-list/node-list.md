@@ -69,7 +69,10 @@ commands.
 
 ## Output
 
-Human output is a table sorted by effective role assignment.
+Human output is a table sorted by effective role assignment. The first column is
+an unlabeled health indicator: a green filled circle for active nodes and a red
+filled circle for inactive nodes. The remaining columns are `NAME`, `PEER IP`,
+`PLATFORM`, and `ROLES`.
 
 JSON output is a structured node array. See the
 [JSON renderer contract](technical/6.2_node-list_output-render_json.md) for the

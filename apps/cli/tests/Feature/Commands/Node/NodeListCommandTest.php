@@ -34,6 +34,7 @@ describe('node:list', function (): void {
             'nodes' => [
                 [
                     'name' => 'app-1',
+                    'host' => '10.6.0.4',
                     'platform' => 'ubuntu_24-04',
                     'status' => 'active',
                     'roles' => [
@@ -43,9 +44,21 @@ describe('node:list', function (): void {
                 ],
                 [
                     'name' => 'operator-1',
-                    'platform' => 'macos_15-4',
-                    'status' => 'active',
+                    'host' => '10.6.0.3',
+                    'platform' => 'ubuntu',
+                    'status' => 'inactive',
                     'roles' => [],
+                ],
+                [
+                    'name' => 'gateway',
+                    'host' => '10.6.0.2',
+                    'platform' => 'ubuntu',
+                    'status' => 'active',
+                    'roles' => [
+                        ['role' => 'gateway', 'status' => 'active'],
+                        ['role' => 'router', 'status' => 'active'],
+                        ['role' => 'vpn', 'status' => 'active'],
+                    ],
                 ],
             ],
         ]));
@@ -55,13 +68,17 @@ describe('node:list', function (): void {
         expect($exitCode)->toBe(0)
             ->and($output)->toContain('ROLES')
             ->and($output)->toContain('NAME')
+            ->and($output)->toContain('PEER IP')
             ->and($output)->toContain('PLATFORM')
-            ->and($output)->toContain('STATUS')
+            ->and($output)->not->toContain('STATUS')
+            ->and($output)->toContain('●')
             ->and($output)->toContain('app-dev, database (error)')
             ->and($output)->toContain('app-1')
-            ->and($output)->toContain('ubuntu_24-04')
+            ->and($output)->toContain('10.6.0.4')
+            ->and($output)->toContain('ubuntu')
             ->and($output)->toContain('operator-1')
-            ->and($output)->toContain('macos_15-4')
+            ->and($output)->toContain('10.6.0.3')
+            ->and($output)->toContain('gateway, vpn, router')
             ->and($output)->not->toContain('nodes: [');
     });
 

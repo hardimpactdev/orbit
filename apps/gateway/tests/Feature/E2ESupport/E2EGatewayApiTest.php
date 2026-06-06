@@ -152,6 +152,7 @@ it('seeds operator identity with a gateway admin grant', function (): void {
     $script = gatewayDecodedTinkerPayload(implode("\n", $instance->commands));
 
     expect($script)
+        ->toContain("'platform' => 'ubuntu'")
         ->toContain('NodeAccess::query()->updateOrCreate')
         ->toContain('activeGatewayNodeQuery()')
         ->toContain('permissions')

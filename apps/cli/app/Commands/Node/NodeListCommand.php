@@ -11,6 +11,23 @@ use function Laravel\Prompts\table;
 
 final class NodeListCommand extends GatewayCommand
 {
+    private const string ActiveStatusIndicator = "\e[32m●\e[0m";
+
+    private const string InactiveStatusIndicator = "\e[31m●\e[0m";
+
+    private const array RoleSortOrder = [
+        'gateway' => 0,
+        'vpn' => 1,
+        'router' => 2,
+        'app-dev' => 3,
+        'app-prod' => 4,
+        'database' => 5,
+        'agent' => 6,
+        'ingress' => 7,
+        'websocket' => 8,
+        's3' => 9,
+    ];
+
     #[\Override]
     protected $signature = 'node:list
         {--role= : Filter by role}
@@ -42,12 +59,13 @@ final class NodeListCommand extends GatewayCommand
         }
 
         table(
-            headers: ['ROLES', 'NAME', 'PLATFORM', 'STATUS'],
+            headers: ['', 'NAME', 'PEER IP', 'PLATFORM', 'ROLES'],
             rows: array_map(fn (array $node): array => [
-                $this->humanRoles($node['roles'] ?? []),
+                $this->statusIndicator($node),
                 $this->nodeString($node, 'name'),
-                $this->nodeString($node, 'platform'),
-                $this->nodeString($node, 'status'),
+                $this->nodeString($node, 'host'),
+                $this->humanPlatform($node),
+                $this->humanRoles($node['roles'] ?? []),
             ], $nodes),
         );
 
@@ -89,7 +107,46 @@ final class NodeListCommand extends GatewayCommand
                 : "{$role['role']} ({$status})";
         }
 
+        usort($labels, fn (string $first, string $second): int => [
+            $this->roleSortIndex($first),
+            $first,
+        ] <=> [
+            $this->roleSortIndex($second),
+            $second,
+        ]);
+
         return $labels === [] ? '—' : implode(', ', $labels);
+    }
+
+    private function roleSortIndex(string $label): int
+    {
+        $role = trim((string) preg_replace('/\s+\(.+\)$/', '', $label));
+
+        return self::RoleSortOrder[$role] ?? 999;
+    }
+
+    /**
+     * @param  array<string, mixed>  $node
+     */
+    private function statusIndicator(array $node): string
+    {
+        return ($node['status'] ?? null) === 'active'
+            ? self::ActiveStatusIndicator
+            : self::InactiveStatusIndicator;
+    }
+
+    /**
+     * @param  array<string, mixed>  $node
+     */
+    private function humanPlatform(array $node): string
+    {
+        $platform = $this->nodeString($node, 'platform');
+
+        if ($platform === 'unknown') {
+            return $platform;
+        }
+
+        return explode('_', $platform, 2)[0] ?: 'unknown';
     }
 
     /**

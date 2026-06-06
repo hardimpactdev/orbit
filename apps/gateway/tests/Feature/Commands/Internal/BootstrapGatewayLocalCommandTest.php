@@ -177,6 +177,7 @@ describe('orbit:internal:bootstrap-gateway-local', function (): void {
 
         expect($exitCode)->toBe(0)
             ->and(Node::query()->where('name', 'gateway-1')->exists())->toBeTrue()
+            ->and(Node::query()->where('name', 'gateway-1')->value('platform'))->toBe('ubuntu')
             ->and(NodeRoleAssignment::query()
                 ->whereHas('node', fn ($query) => $query->where('name', 'gateway-1'))
                 ->orderBy('role')
@@ -425,6 +426,7 @@ describe('orbit:internal:bootstrap-gateway-local', function (): void {
 
         expect($exitCode)->toBe(0)
             ->and($gateway)->toBeInstanceOf(Node::class)
+            ->and($gateway->platform)->toBe('ubuntu')
             ->and($control)->toBeInstanceOf(Node::class)
             ->and($control->isOperator())->toBeTrue()
             ->and($control->wireguard_address)->toBe('10.6.0.3')

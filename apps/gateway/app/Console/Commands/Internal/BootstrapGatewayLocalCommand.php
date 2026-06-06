@@ -65,7 +65,7 @@ class BootstrapGatewayLocalCommand extends Command
                 ['name' => $name],
                 [
                     'tld' => $gatewayTld,
-                    'platform' => 'unknown',
+                    'platform' => 'ubuntu',
                     'host' => $wireguardAddress,
                     'wireguard_address' => $wireguardAddress,
                     'gateway_endpoint' => null,

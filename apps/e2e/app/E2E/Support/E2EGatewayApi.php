@@ -37,7 +37,7 @@ final readonly class E2EGatewayApi
     array_merge(
         [
             'tld' => null,
-            'platform' => 'unknown',
+            'platform' => 'ubuntu',
             'host' => {$operatorIpValue},
             'wireguard_address' => {$operatorWireGuardIpValue},
             'gateway_endpoint' => {$gatewayIpValue},
@@ -1286,7 +1286,7 @@ PHP;
                         'name' => 'operator-1',
                         'roles' => [],
                         'status' => 'active',
-                        'platform' => 'unknown',
+                        'platform' => 'ubuntu',
                         'addresses' => [
                             'wireguard' => preg_replace('/\.2$/', '.3', $wireguardIdentity),
                         ],
@@ -1303,7 +1303,7 @@ PHP;
                             ],
                         ],
                         'status' => 'active',
-                        'platform' => 'unknown',
+                        'platform' => 'ubuntu',
                         'addresses' => [
                             'wireguard' => $wireguardIdentity,
                         ],
