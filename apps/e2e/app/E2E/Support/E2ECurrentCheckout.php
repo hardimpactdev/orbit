@@ -405,6 +405,15 @@ final class E2ECurrentCheckout
         ]);
     }
 
+    public static function sourceMountedRuntimeRefreshCommand(string $sourcePath, string $targetPath): string
+    {
+        if (self::sourceMountedRuntimeOverlayEnabled()) {
+            return self::sourceMountedRuntimeOverlayCommand($sourcePath, $targetPath);
+        }
+
+        return self::sourceMountedRuntimeMirrorCommand($sourcePath, $targetPath);
+    }
+
     public static function sourceMountedRuntimeOverlayCommand(string $sourcePath, string $targetPath): string
     {
         $targetPath = rtrim($targetPath, '/');

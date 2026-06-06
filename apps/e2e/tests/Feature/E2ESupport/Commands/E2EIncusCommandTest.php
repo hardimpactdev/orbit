@@ -25,6 +25,7 @@ afterEach(function (): void {
     putenv('ORBIT_E2E_DEV_TOPOLOGY_MANIFEST_DIRECTORY');
     putenv('ORBIT_E2E_LIVE_WIREGUARD_ENDPOINT');
     putenv('ORBIT_E2E_LIVE_WG_ENDPOINT');
+    putenv('ORBIT_E2E_INCUS_FAST_OVERLAY');
     remove_directory($this->manifestDirectory);
 });
 
@@ -575,6 +576,52 @@ it('syncs source-mounted retained Incus checkouts into VM-local runtime mirrors'
         ->toContain('orbit-e2e-dev-abc123-operator')
         ->toContain('orbit-e2e-dev-abc123-gateway')
         ->toContain('orbit-e2e-dev-abc123-dev');
+});
+
+it('syncs source-mounted retained Incus checkouts into overlay runtime paths when enabled', function (): void {
+    putenv('ORBIT_E2E_INCUS_FAST_OVERLAY=1');
+
+    writeIncusRetainedManifest($this->manifestDirectory, 'dev-abc123', [
+        'operator' => '/home/orbit/orbit',
+        'gateway' => '/home/orbit/orbit',
+        'dev' => '/home/orbit/orbit',
+    ]);
+
+    $commands = [];
+
+    Process::fake(function ($process) use (&$commands) {
+        $commands[] = (string) $process->command;
+
+        return Process::result();
+    });
+
+    $output = new BufferedOutput;
+    $exitCode = app(Kernel::class)->call('e2e:incus', [
+        '--sync' => true,
+        '--id' => 'dev-abc123',
+        '--json' => true,
+    ], $output);
+
+    $payload = json_decode(trim($output->fetch()), true, flags: JSON_THROW_ON_ERROR);
+    $sync = $payload['success']['source_sync'];
+    $commandsOutput = implode("\n", $commands);
+
+    expect($exitCode)->toBe(0)
+        ->and($sync['runtime_checkouts'])->toBe([
+            'operator' => '/home/orbit/orbit-run',
+            'gateway' => '/home/orbit/orbit-run',
+            'dev' => '/home/orbit/orbit-run',
+        ])
+        ->and($commandsOutput)
+        ->toContain('/home/orbit/orbit')
+        ->toContain('/home/orbit/orbit-run')
+        ->toContain('/home/orbit/.orbit-run-overlay/upper')
+        ->toContain('/home/orbit/.orbit-run-overlay/work')
+        ->toContain('mount -t overlay overlay')
+        ->toContain('orbit-e2e-dev-abc123-operator')
+        ->toContain('orbit-e2e-dev-abc123-gateway')
+        ->toContain('orbit-e2e-dev-abc123-dev')
+        ->not->toContain('tar -C "${target}" -xf -');
 });
 
 it('prints a human retained Incus sync summary', function (): void {

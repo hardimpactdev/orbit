@@ -694,7 +694,7 @@ class E2EIncusCommand extends Command
                 $targetPath = E2ECurrentCheckout::sourceMountedRuntimePath($user);
             }
 
-            $command = E2ECurrentCheckout::sourceMountedRuntimeMirrorCommand(
+            $command = E2ECurrentCheckout::sourceMountedRuntimeRefreshCommand(
                 E2ECurrentCheckout::sourceMountedGuestPath(),
                 $targetPath,
             );
