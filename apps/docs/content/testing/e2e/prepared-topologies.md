@@ -137,6 +137,13 @@ part of the flow even though Orbit commands should run from the VM-local
 runtime mirror. The mirror keeps PHP/Laravel execution on the VM filesystem and
 keeps gateway Docker bind mounts attached to a stable directory.
 
+Set `ORBIT_E2E_INCUS_FAST_OVERLAY=1` only for measurement runs that explicitly
+compare the runtime mirror with an overlayfs runtime checkout. The overlay mode
+mounts `/home/orbit/orbit-run` with `/home/orbit/orbit` as the lowerdir and a
+VM-local upperdir/workdir. It avoids the mirror refresh copy, but ordinary PHP
+execution still reads unchanged source files through the mounted lowerdir, so it
+is not the default retained Incus development path.
+
 `--sync` is one-way from the initiating worktree to the retained topology. On a
 remote Incus host it has two stages:
 

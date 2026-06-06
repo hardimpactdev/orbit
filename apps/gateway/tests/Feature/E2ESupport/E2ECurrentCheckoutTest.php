@@ -237,6 +237,39 @@ it('runs source-mounted Incus checkouts from a VM-local runtime mirror', functio
         ->not->toContain('tar --warning=no-unknown-keyword -xzf');
 });
 
+it('can run source-mounted Incus checkouts from an opt-in overlay runtime path', function (): void {
+    $previous = getenv('ORBIT_E2E_INCUS_FAST_OVERLAY');
+    $commands = [];
+    $instance = currentCheckoutFakeSourceMountedInstance($commands);
+    $key = new SshKeyPair('/tmp/id_ed25519', '/tmp/id_ed25519.pub');
+    $timer = new E2EPhaseTimer;
+
+    putenv('ORBIT_E2E_INCUS_FAST_OVERLAY=1');
+
+    try {
+        $checkout = E2ECurrentCheckout::install($instance, 'orbit', $key, hostLauncher: true, timer: $timer);
+    } finally {
+        if ($previous === false) {
+            putenv('ORBIT_E2E_INCUS_FAST_OVERLAY');
+        } else {
+            putenv("ORBIT_E2E_INCUS_FAST_OVERLAY={$previous}");
+        }
+    }
+
+    $commandOutput = implode("\n", $commands);
+
+    expect($checkout)->toBe('/home/orbit/orbit-run')
+        ->and($commandOutput)
+        ->toContain("source='/home/orbit/orbit'")
+        ->toContain("target='/home/orbit/orbit-run'")
+        ->toContain("upper='/home/orbit/.orbit-run-overlay/upper'")
+        ->toContain("work='/home/orbit/.orbit-run-overlay/work'")
+        ->toContain('mount -t overlay overlay')
+        ->not->toContain('tar -C "${target}" -xf -')
+        ->and(array_column($timer->events(), 'name'))->toContain('checkout.source-overlay')
+        ->not->toContain('checkout.source-mirror');
+});
+
 it('refreshes source-mounted Incus gateway settings through the mounted CLI', function (): void {
     $operatorCommands = [];
     $gatewayCommands = [];

@@ -309,7 +309,12 @@ final class E2ECurrentCheckout
 
             $remotePath = self::sourceMountedRuntimePath($user);
 
-            self::refreshSourceMountedRuntimeMirror($instance, $user, $keyPair, $sourceMountedCheckoutPath, $remotePath, $timer);
+            if (self::sourceMountedRuntimeOverlayEnabled()) {
+                self::refreshSourceMountedRuntimeOverlay($instance, $user, $keyPair, $sourceMountedCheckoutPath, $remotePath, $timer);
+            } else {
+                self::refreshSourceMountedRuntimeMirror($instance, $user, $keyPair, $sourceMountedCheckoutPath, $remotePath, $timer);
+            }
+
             self::runInstallPhases($instance, $user, $keyPair, $remotePath, $sourceMountedCheckoutPath, $timer, $hostLauncher, sourceMountedCheckout: true, checkoutAlreadyPresent: true);
             self::activateCurrentCheckout($instance, $remotePath, $executorNodeIdentity, $hostLauncher);
             $afterInstall?->__invoke($remotePath, true);
@@ -400,6 +405,27 @@ final class E2ECurrentCheckout
         ]);
     }
 
+    public static function sourceMountedRuntimeOverlayCommand(string $sourcePath, string $targetPath): string
+    {
+        $targetPath = rtrim($targetPath, '/');
+        $overlayBase = dirname($targetPath).'/.'.basename($targetPath).'-overlay';
+
+        return implode("\n", [
+            'source='.escapeshellarg(rtrim($sourcePath, '/')),
+            'target='.escapeshellarg($targetPath),
+            'upper='.escapeshellarg("{$overlayBase}/upper"),
+            'work='.escapeshellarg("{$overlayBase}/work"),
+            'sudo_prefix=',
+            'if command -v sudo >/dev/null 2>&1 && sudo -n true >/dev/null 2>&1; then sudo_prefix=sudo; fi',
+            'if ! grep -qw overlay /proc/filesystems; then echo "overlayfs is not available on this node." >&2; exit 127; fi',
+            'if mountpoint -q "$target"; then $sudo_prefix umount "$target"; fi',
+            '$sudo_prefix rm -rf "$target" "$upper" "$work"',
+            'mkdir -p "$target" "$upper" "$work"',
+            'if [ -n "$sudo_prefix" ]; then $sudo_prefix chown -R "$(id -u):$(id -g)" "$target" "$upper" "$work"; fi',
+            '$sudo_prefix mount -t overlay overlay -o "lowerdir=$source,upperdir=$upper,workdir=$work" "$target"',
+        ]);
+    }
+
     private static function refreshSourceMountedRuntimeMirror(E2EInstance $instance, string $user, SshKeyPair $keyPair, string $sourcePath, string $targetPath, ?E2EPhaseTimer $timer): void
     {
         self::runTimed(
@@ -411,6 +437,21 @@ final class E2ECurrentCheckout
                 $keyPair,
                 self::sourceMountedRuntimeMirrorCommand($sourcePath, $targetPath),
                 timeoutSeconds: 600,
+            ),
+        );
+    }
+
+    private static function refreshSourceMountedRuntimeOverlay(E2EInstance $instance, string $user, SshKeyPair $keyPair, string $sourcePath, string $targetPath, ?E2EPhaseTimer $timer): void
+    {
+        self::runTimed(
+            $timer,
+            'checkout.source-overlay',
+            fn () => E2ECommand::ssh(
+                $instance,
+                $user,
+                $keyPair,
+                self::sourceMountedRuntimeOverlayCommand($sourcePath, $targetPath),
+                timeoutSeconds: 120,
             ),
         );
     }
@@ -482,6 +523,14 @@ final class E2ECurrentCheckout
 
         return is_string($value)
             && in_array(strtolower($value), ['1', 'true', 'yes', 'process'], true);
+    }
+
+    private static function sourceMountedRuntimeOverlayEnabled(): bool
+    {
+        $value = getenv('ORBIT_E2E_INCUS_FAST_OVERLAY');
+
+        return is_string($value)
+            && in_array(strtolower($value), ['1', 'true', 'yes'], true);
     }
 
     private static function installFromCachedBase(E2EInstance $instance, string $user, SshKeyPair $keyPair, ?string $seedFrom, ?E2EPhaseTimer $timer = null, ?\Closure $afterBaseInstall = null, ?\Closure $afterInstall = null, ?string $executorNodeIdentity = null, bool $hostLauncher = false): string
