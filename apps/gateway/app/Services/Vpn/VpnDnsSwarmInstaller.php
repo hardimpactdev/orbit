@@ -35,6 +35,7 @@ class VpnDnsSwarmInstaller extends WgEasyServiceInstaller
         );
     }
 
+    #[\Override]
     public function install(
         string $publicHost,
         string $username,
@@ -83,6 +84,7 @@ class VpnDnsSwarmInstaller extends WgEasyServiceInstaller
         $this->manager->convergeDnsForwarding();
     }
 
+    #[\Override]
     public function publicKey(): string
     {
         $this->waitUntilReady();
@@ -108,6 +110,7 @@ class VpnDnsSwarmInstaller extends WgEasyServiceInstaller
     /**
      * @param  list<array{name: string, private_key: string, public_key: string, address: string, pre_shared_key: string}>  $peers
      */
+    #[\Override]
     public function configurePeers(array $peers): void
     {
         if ($peers === []) {

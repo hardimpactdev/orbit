@@ -222,41 +222,6 @@ describe('tool write commands', function (): void {
             ->and($output)->toContain('Use --force or --json to remove this tool.');
     });
 
-    it('streams tool lifecycle actions to their gateway endpoints', function (string $command, string $endpoint): void {
-        fakeGatewayProgressStream(gatewayProgressFrame('complete', [
-            'exit_code' => 0,
-            'data' => [
-                'tool' => ['name' => 'opencode-server', 'node' => 'app-1', 'action' => $endpoint],
-            ],
-        ]));
-
-        [$exitCode, $output] = runCommand($this, $command, [
-            'tool' => 'opencode-server',
-            '--app' => 'docs',
-            '--node' => 'app-1',
-            '--json' => true,
-        ]);
-
-        $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
-
-        Http::assertSent(fn (Request $request): bool => $request->method() === 'POST'
-            && $request->url() === "https://gateway.test/api/tools/opencode-server/{$endpoint}"
-            && $request->hasHeader('Accept', 'text/event-stream')
-            && $request->data() === [
-                'app' => 'docs',
-                'node' => 'app-1',
-            ]);
-
-        expect($exitCode)->toBe(0)
-            ->and($decoded['event'])->toBe('complete')
-            ->and($decoded['data']['data']['tool']['action'])->toBe($endpoint);
-    })->with([
-        ['tool:start', 'start'],
-        ['tool:stop', 'stop'],
-        ['tool:restart', 'restart'],
-        ['tool:reload', 'reload'],
-    ]);
-
     it('streams tool:update payloads to the single-tool gateway endpoint', function (): void {
         fakeGatewayProgressStream(gatewayProgressFrame('complete', [
             'exit_code' => 0,

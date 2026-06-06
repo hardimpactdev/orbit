@@ -72,10 +72,9 @@ Use `--json` for the machine-readable tool and action result.
 
 ## Related Commands
 
-Use these commands for related tool configuration and lifecycle actions.
+Use these commands for related tool configuration actions.
 
 - [`tool:update`](../9_tool-update/tool-update.md) - change intended version
-- [`tool:reload`](../11_tool-reload/tool-reload.md) - reload configuration without full restart
 - [`doctor --family=tool`](../tool-doctor.md) - verify resulting tool state
 
 ## Technical Contract

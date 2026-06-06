@@ -32,8 +32,8 @@ comma-separated permission list.
 orbit node:permissions agent-1 app-1 --json
 orbit node:permissions agent-1 app-1 --preset=operator --json
 orbit node:permissions agent-1 app-1 --permissions=tool:read,doctor:verify --json
-orbit node:permissions agent-1 app-1 --add=tool:restart --json
-orbit node:permissions agent-1 app-1 --remove=tool:restart --json
+orbit node:permissions agent-1 app-1 --add=tool:update --json
+orbit node:permissions agent-1 app-1 --remove=tool:update --json
 ```
 
 ## Arguments and options

@@ -83,36 +83,6 @@ final readonly class ToolRegistryFailure
         );
     }
 
-    public static function processMissing(string $tool, string $node, string $action): self
-    {
-        return new self(
-            code: 'tool.process_missing',
-            message: "Tool '{$tool}' has no related lifecycle process on node '{$node}'.",
-            meta: [
-                'tool' => $tool,
-                'node' => $node,
-                'action' => $action,
-            ],
-        );
-    }
-
-    /**
-     * @param  list<string>  $processes
-     */
-    public static function processAmbiguous(string $tool, string $node, string $action, array $processes): self
-    {
-        return new self(
-            code: 'tool.process_ambiguous',
-            message: "Tool '{$tool}' has multiple related lifecycle processes on node '{$node}'.",
-            meta: [
-                'tool' => $tool,
-                'node' => $node,
-                'action' => $action,
-                'processes' => $processes,
-            ],
-        );
-    }
-
     public static function authorization(string $message): self
     {
         return new self(

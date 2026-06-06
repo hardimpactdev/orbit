@@ -292,7 +292,7 @@ class E2EDevTopologyCommand extends Command
         }
 
         $host = $this->hostForLease($providerName, $config, $lease);
-        $harness = (new E2ETopologyHarness($lease, cleanupOnRelease: false))->setTimer($timer);
+        $harness = new E2ETopologyHarness($lease, cleanupOnRelease: false)->setTimer($timer);
 
         try {
             $timer->measure('checkout.overlay', fn () => $harness->withCurrentCheckout($overlayRoles));

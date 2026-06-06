@@ -20,8 +20,8 @@ Choose a simpler alternative in the following situations.
   Render the result directly with no progress UI.
 - The command performs a single short async wait without meaningful
   sub-steps. Use a [spinner](spinner.md).
-- The command is line-oriented log or stream output, such as `tool:logs` or a
-  future `tool:logs --follow` JSON stream. The stream itself is the command's
+- The command is line-oriented log or stream output, such as `process:logs` or a
+  `process:logs --follow` JSON stream. The stream itself is the command's
   primary output. Progress UI is reserved for commands whose product output is
   structured data or status reporting.
 

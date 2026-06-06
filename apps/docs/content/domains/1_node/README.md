@@ -405,7 +405,7 @@ permission sets; custom permissions can be supplied as a comma-separated list.
 Examples:
 
 ```json
-["doctor:verify", "node:read", "tool:read", "tool:restart", "tool:update"]
+["doctor:verify", "node:read", "tool:read", "tool:update"]
 ```
 
 ```json

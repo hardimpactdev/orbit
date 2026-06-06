@@ -7,9 +7,7 @@ use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Route;
 
 it('keeps command action progress streams on their canonical api routes', function (): void {
-    $allowedStreamRoutes = [
-        'api/tools/{tool}/logs/stream',
-    ];
+    $allowedStreamRoutes = [];
 
     $violations = collect(Route::getRoutes())
         ->map(fn ($route): string => $route->uri())
@@ -23,9 +21,7 @@ it('keeps command action progress streams on their canonical api routes', functi
 });
 
 it('keeps gateway stream requests on canonical action endpoints', function (): void {
-    $allowedRequestFiles = [
-        app_path('Http/Gateway/Requests/Tools/ToolLogsStreamRequest.php'),
-    ];
+    $allowedRequestFiles = [];
 
     $violations = collect(File::allFiles(app_path('Http/Gateway/Requests')))
         ->reject(fn (SplFileInfo $file): bool => in_array($file->getPathname(), $allowedRequestFiles, true))

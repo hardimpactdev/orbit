@@ -45,15 +45,9 @@ final readonly class AgentToolAuthorizer
         return match ($action) {
             'install' => $this->authorizeAgentSelfWithPermission($caller, $tool, $category, 'tool:install', 'install'),
             'remove' => $this->authorizeAgentSelfWithPermission($caller, $tool, $category, 'tool:remove', 'remove'),
-            'stop' => $this->authorizeAgentSelfWithPermission($caller, $tool, $category, 'tool:stop', 'stop'),
             'reconfigure' => $this->authorizeAgentSelfWithPermission($caller, $tool, $category, 'tool:reconfigure', 'reconfigure'),
             'credentials' => $this->authorizeAgentSelfWithPermission($caller, $tool, $category, 'tool:credentials', 'read tool credentials'),
             'update' => $this->authorizeAgentSelfUpdate($caller, $tool, $category),
-            'restart' => $this->authorizeAgentSelfRestart($caller, $tool, $category),
-            'start' => [
-                'authorized' => false,
-                'reason' => 'Agent self is not authorized to start tools.',
-            ],
             default => [
                 'authorized' => false,
                 'reason' => "Agent self is not authorized to {$action} tools.",
@@ -99,28 +93,6 @@ final readonly class AgentToolAuthorizer
             return [
                 'authorized' => false,
                 'reason' => 'Agent self is not authorized to update agent tools.',
-            ];
-        }
-
-        return ['authorized' => true];
-    }
-
-    /**
-     * @return array{authorized: bool, reason?: string}
-     */
-    private function authorizeAgentSelfRestart(Node $caller, string $tool, ?string $category): array
-    {
-        if ($category !== 'agent') {
-            return [
-                'authorized' => false,
-                'reason' => "Agent self may only restart agent-category tools. '{$tool}' is not an agent tool.",
-            ];
-        }
-
-        if (! $this->authorizer->allows($caller, $caller, 'tool:restart')) {
-            return [
-                'authorized' => false,
-                'reason' => 'Agent self is not authorized to restart tools.',
             ];
         }
 

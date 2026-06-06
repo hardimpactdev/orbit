@@ -4,10 +4,8 @@ declare(strict_types=1);
 
 use App\Contracts\RemoteShell;
 use App\Data\RemoteShell\RemoteShellResult;
-use App\Enums\Processes\ProcessRuntime;
 use App\Models\Node;
 use App\Models\NodeTool;
-use App\Models\Process;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 
@@ -65,14 +63,8 @@ describe('tool API target authorization', function (): void {
         'install' => ['POST', '/api/tools/composer/install', ['node' => 'hidden-node']],
         'update' => ['POST', '/api/tools/composer/update', ['node' => 'hidden-node']],
         'credentials' => ['GET', '/api/tools/openclaw/credentials', ['node' => 'hidden-node']],
-        'logs' => ['GET', '/api/tools/opencode-server/logs', ['node' => 'hidden-node']],
-        'logs stream' => ['GET', '/api/tools/opencode-server/logs/stream', ['node' => 'hidden-node']],
-        'reload' => ['POST', '/api/tools/opencode-server/reload', ['node' => 'hidden-node']],
         'remove' => ['DELETE', '/api/tools/composer', ['node' => 'hidden-node', 'destructive_consent' => true]],
-        'reconfigure' => ['POST', '/api/tools/polyscope-server/reconfigure', ['node' => 'hidden-node']],
-        'restart' => ['POST', '/api/tools/opencode-server/restart', ['node' => 'hidden-node']],
-        'start' => ['POST', '/api/tools/opencode-server/start', ['node' => 'hidden-node']],
-        'stop' => ['POST', '/api/tools/opencode-server/stop', ['node' => 'hidden-node']]]);
+        'reconfigure' => ['POST', '/api/tools/polyscope-server/reconfigure', ['node' => 'hidden-node']]]);
 
     it('uses the only visible target when no selector is supplied', function (): void {
         $caller = createToolTargetAuthCaller();
@@ -142,33 +134,6 @@ describe('tool API target authorization', function (): void {
 
         $response->assertForbidden()
             ->assertJsonPath('error.code', 'authorization_failed');
-    });
-
-    it('allows logs when the grant allows reading tools', function (): void {
-        $caller = createToolTargetAuthCaller();
-        $visibleNode = createTestAppHostNode(['name' => 'visible-node', 'status' => 'active']);
-        grantToolTargetAuthAccess($caller, $visibleNode, ['tool:read']);
-
-        NodeTool::factory()->create([
-            'node_id' => $visibleNode->id,
-            'name' => 'opencode-server',
-            'expected_state' => 'running']);
-        Process::factory()->forOwner($visibleNode)->create([
-            'name' => 'opencode-server',
-            'tool' => 'opencode',
-            'runtime' => ProcessRuntime::Systemd,
-            'command' => 'opencode serve -a',
-        ]);
-
-        $shell = new ToolTargetAuthorizationRecordingShell;
-        app()->instance(RemoteShell::class, $shell);
-
-        $response = $this->call('GET', '/api/tools/opencode-server/logs', [
-            'node' => 'visible-node'], [], [], ['REMOTE_ADDR' => TOOL_TARGET_AUTH_CALLER_WG_IP]);
-
-        $response->assertOk();
-
-        expect($shell->scripts)->toHaveCount(1);
     });
 
     it('streams tool mutation progress from the canonical endpoint', function (): void {

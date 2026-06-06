@@ -68,11 +68,11 @@ path through the Orbit-managed binary. It does not implicitly restart related
 runtime processes.
 
 `tool:update hermes` from the node itself requires `tool:update` on the
-self-grant. `tool:install hermes`, `tool:remove hermes`, `tool:stop hermes`,
+self-grant. `tool:install hermes`, `tool:remove hermes`,
 `tool:reconfigure hermes`, and `tool:credentials` are not part of the default
 agent self-grant; they require explicit permissions from a gateway-admin.
 
-Installing or starting Hermes while another agent tool is already running
+Installing Hermes while another agent tool is already running
 on the same node emits the `tool.multiple_agent_tools_running`
 warning. Orbit attributes activity at the node level, and the warning
 surfaces that this attribution is weaker when more than one agent tool

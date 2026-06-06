@@ -593,7 +593,7 @@ describe('NodeGrantController', function (): void {
             ->first();
 
         expect($grant)->not->toBeNull();
-        expect($grant->permissions)->toBe(['app:read', 'database:read', 'doctor:verify', 'firewall_rule:read', 'node:read', 'tool:read', 'tool:restart']);
+        expect($grant->permissions)->toBe(['app:read', 'database:read', 'doctor:verify', 'firewall_rule:read', 'node:read', 'tool:read']);
     });
 
     it('requires force for gateway-admin grants', function (): void {

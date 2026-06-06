@@ -73,10 +73,9 @@ processes.
 self-grant. `tool:install openclaw`, `tool:remove openclaw`,
 `tool:reconfigure openclaw`, and `tool:credentials` are not part of the
 default agent self-grant; they require explicit permissions from a
-gateway-admin. Compatibility `tool:stop openclaw` additionally requires a
-related process to resolve.
+gateway-admin.
 
-Installing or starting OpenClaw while another agent tool is already
+Installing OpenClaw while another agent tool is already
 running on the same node emits the
 `tool.multiple_agent_tools_running` warning. Orbit attributes activity
 at the node level, and the warning surfaces that this attribution is

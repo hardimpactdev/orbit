@@ -73,7 +73,6 @@ final class NodePermissionPresets
             'doctor:verify',
             'node:read',
             'tool:read',
-            'tool:restart',
             'tool:update:agent-tools',
         ];
     }
@@ -129,7 +128,6 @@ final class NodePermissionPresets
             'firewall_rule:read',
             'node:read',
             'tool:read',
-            'tool:restart',
         ];
     }
 
@@ -211,13 +209,10 @@ final class NodePermissionPresets
             'database:query',
             'database:query:write',
             'tool:read',
-            'tool:restart',
             'tool:update',
             'tool:update:agent-tools',
             'tool:install',
             'tool:remove',
-            'tool:start',
-            'tool:stop',
             'tool:reconfigure',
             'agent-ide:message',
             'node:read',
@@ -331,15 +326,11 @@ final class NodePermissionPresets
 
             // Tool
             'tool:read',
-            'tool:restart',
             'tool:update',
             'tool:update:agent-tools',
             'tool:install',
             'tool:remove',
-            'tool:start',
-            'tool:stop',
             'tool:reconfigure',
-            'tool:reload',
             'tool:credentials',
 
             // VPN

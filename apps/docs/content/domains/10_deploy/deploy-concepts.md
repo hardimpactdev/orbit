@@ -88,7 +88,7 @@ These terms define what the deploy family owns and what belongs to other familie
   node state during reads, model releases as standalone state, or prove
   production app health after a deployment run.
 - **Cross-family invocation:** Deploy steps may invoke documented commands from
-  other families as their step command, including `process:restart [name]`
-  after artifact rotation or `tool:reload php` after a PHP version change.
-  Lifecycle semantics still belong to the invoked family; the deploy family
-  only records the step's exit code and captured output as run history.
+  other families as their step command, such as `process:restart [name]`
+  after artifact rotation. Lifecycle semantics still belong to the invoked
+  family; the deploy family only records the step's exit code and captured
+  output as run history.

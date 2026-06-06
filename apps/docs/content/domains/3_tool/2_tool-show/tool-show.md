@@ -73,10 +73,9 @@ metadata that is not secret may be included in the machine-readable output.
 
 ## Related Commands
 
-Use these commands to list, review logs, or verify tool state.
+Use these commands to list or verify tool state.
 
 - [`tool:list`](../1_tool-list/tool-list.md) - list registered tool configuration
-- [`tool:logs`](../8_tool-logs/tool-logs.md) - read logs from the related managed process
 - [`doctor --family=tool`](../tool-doctor.md) - verify expected tool state
 
 ## Technical Contract

@@ -142,7 +142,6 @@ describe('NodeAccessAuthorizer', function (): void {
         grantAccess($control, $app, ['tool:read']);
 
         expect($this->authorizer->allows($control, $app, 'tool:read'))->toBeTrue()
-            ->and($this->authorizer->allows($control, $app, 'tool:logs'))->toBeTrue()
             ->and($this->authorizer->allows($control, $app, 'tool:list'))->toBeTrue();
     });
 
@@ -152,7 +151,7 @@ describe('NodeAccessAuthorizer', function (): void {
 
         grantAccess($control, $app, ['tool:read']);
 
-        $result = $this->authorizer->authorize($control, $app, 'tool:logs');
+        $result = $this->authorizer->authorize($control, $app, 'tool:show');
 
         expect($result->allowed)->toBeTrue()
             ->and($result->missingPermission)->toBeNull()
@@ -173,11 +172,11 @@ describe('NodeAccessAuthorizer', function (): void {
     it('allows explicit self-grants with covering permission', function (): void {
         $app = createAppNode();
 
-        grantAccess($app, $app, ['tool:read', 'tool:restart']);
+        grantAccess($app, $app, ['tool:read', 'tool:credentials']);
 
         expect($this->authorizer->allows($app, $app, 'tool:read'))->toBeTrue()
-            ->and($this->authorizer->allows($app, $app, 'tool:restart'))->toBeTrue()
-            ->and($this->authorizer->allows($app, $app, 'tool:logs'))->toBeTrue();
+            ->and($this->authorizer->allows($app, $app, 'tool:credentials'))->toBeTrue()
+            ->and($this->authorizer->allows($app, $app, 'tool:list'))->toBeTrue();
     });
 
     it('returns authorization metadata for self-grants', function (): void {
@@ -202,7 +201,7 @@ describe('NodeAccessAuthorizer', function (): void {
     it('denies self-grant when requested permission is not covered', function (): void {
         $app = createAppNode();
 
-        grantAccess($app, $app, ['tool:read', 'tool:restart']);
+        grantAccess($app, $app, ['tool:read', 'tool:update']);
 
         expect($this->authorizer->allows($app, $app, 'tool:credentials'))->toBeFalse()
             ->and($this->authorizer->allows($app, $app, 'tool:install'))->toBeFalse()
@@ -220,7 +219,6 @@ describe('NodeAccessAuthorizer', function (): void {
         grantAccess($agent, $agent, $presets->permissions('agent-self'));
 
         expect($this->authorizer->allows($agent, $agent, 'tool:read'))->toBeTrue()
-            ->and($this->authorizer->allows($agent, $agent, 'tool:restart'))->toBeTrue()
             ->and($this->authorizer->allows($agent, $agent, 'tool:update:agent-tools'))->toBeTrue()
             ->and($this->authorizer->allows($agent, $agent, 'doctor:verify'))->toBeTrue()
             ->and($this->authorizer->allows($agent, $agent, 'node:read'))->toBeTrue()

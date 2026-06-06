@@ -67,7 +67,6 @@ describe('RoleSelfGrantMaterializer', function (): void {
                 'doctor:verify',
                 'node:read',
                 'tool:read',
-                'tool:restart',
                 'tool:update:agent-tools',
                 'workspace:setup',
             ])
@@ -132,7 +131,6 @@ describe('RoleSelfGrantMaterializer', function (): void {
             'doctor:verify',
             'node:read',
             'tool:read',
-            'tool:restart',
             'tool:update:agent-tools',
         ])
             ->and(roleSelfGrant($node)?->custom_permissions)->toBe(['node:read', 'tool:read']);

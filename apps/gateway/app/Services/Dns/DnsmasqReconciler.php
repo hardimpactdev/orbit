@@ -31,7 +31,7 @@ class DnsmasqReconciler
 
         File::put($confPath, $expected);
 
-        if ($this->swarmManager()?->restartDnsServiceIfPresent() === true) {
+        if ($this->swarmManager()->restartDnsServiceIfPresent() === true) {
             return;
         }
 

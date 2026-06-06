@@ -16,11 +16,9 @@ These fields describe the Supervisor tool's identity, backend, and support model
 
 ## Capabilities
 
-`supervisor` supports install/adopt/remove capability management,
-`tool:reload`, safe doctor fix, and safe doctor adopt. Compatibility
-`tool:start`, `tool:stop`, `tool:restart`, and `tool:logs` commands may route
-to a related Supervisor process when one exists; they do not make the
-Supervisor tool own Orbit-defined process units.
+`supervisor` supports install/adopt/remove capability management, safe doctor
+fix, and safe doctor adopt. Runtime lifecycle and logs for Supervisor-backed
+services belong to the related process family, not the Supervisor tool.
 
 `tool:install supervisor` and `tool:remove supervisor` are supported only where
 the node/tool provisioning contract allows the Supervisor process manager to be

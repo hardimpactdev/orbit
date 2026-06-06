@@ -54,7 +54,6 @@ describe('node permission registry', function (): void {
 
         expect($implied)->toContain('tool:list')
             ->and($implied)->toContain('tool:show')
-            ->and($implied)->toContain('tool:logs')
             ->and($implied)->not->toContain('tool:credentials');
     });
 
@@ -79,7 +78,7 @@ describe('node permission registry', function (): void {
     it('checks whether permission sets allow a required permission', function (): void {
         $registry = new NodePermissionRegistry;
 
-        expect($registry->allows(['tool:read'], 'tool:logs'))->toBeTrue()
+        expect($registry->allows(['tool:read'], 'tool:show'))->toBeTrue()
             ->and($registry->allows(['tool:read'], 'tool:credentials'))->toBeFalse()
             ->and($registry->allows(['app:read'], 'app:credentials'))->toBeFalse()
             ->and($registry->allows(['app:write'], 'app:credentials'))->toBeFalse()
@@ -132,7 +131,6 @@ describe('node permission registry', function (): void {
 
         expect($registry->isCoveredBy('tool:list', 'tool:read'))->toBeTrue()
             ->and($registry->isCoveredBy('tool:show', 'tool:read'))->toBeTrue()
-            ->and($registry->isCoveredBy('tool:logs', 'tool:read'))->toBeTrue()
             ->and($registry->isCoveredBy('tool:credentials', 'tool:read'))->toBeFalse()
             ->and($registry->isCoveredBy('database:show', 'database:read'))->toBeTrue()
             ->and($registry->isCoveredBy('database:query', 'database:read'))->toBeFalse()

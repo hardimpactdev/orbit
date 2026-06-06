@@ -46,43 +46,6 @@ describe('ToolStream commands', function (): void {
             ->and($output)->not->toContain('Installing composer');
     });
 
-    it('streams lifecycle action commands to their gateway endpoints', function (string $command, string $endpoint): void {
-        $complete = [
-            'exit_code' => 0,
-            'data' => [
-                'tool' => ['name' => 'opencode-server', 'node' => 'app-1', 'action' => $endpoint],
-            ],
-        ];
-
-        fakeGatewayProgressStream(gatewayProgressFrame('complete', $complete));
-
-        [$exitCode, $output] = runCommand($this, $command, [
-            'tool' => 'opencode-server',
-            '--app' => 'docs',
-            '--node' => 'app-1',
-            '--json' => true,
-        ]);
-
-        $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
-
-        Http::assertSent(fn (Request $request): bool => $request->method() === 'POST'
-            && $request->url() === "https://gateway.test/api/tools/opencode-server/{$endpoint}"
-            && $request->hasHeader('Accept', 'text/event-stream')
-            && $request->data() === [
-                'app' => 'docs',
-                'node' => 'app-1',
-            ]);
-
-        expect($exitCode)->toBe(0)
-            ->and($decoded['event'])->toBe('complete')
-            ->and($decoded['data'])->toBe($complete);
-    })->with([
-        ['tool:start', 'start'],
-        ['tool:stop', 'stop'],
-        ['tool:restart', 'restart'],
-        ['tool:reload', 'reload'],
-    ]);
-
     it('streams tool:update payloads to the single-tool gateway endpoint', function (): void {
         $complete = [
             'exit_code' => 0,
@@ -193,7 +156,7 @@ describe('ToolStream commands', function (): void {
             ]),
         );
 
-        [$exitCode, $output] = runCommand($this, 'tool:start', [
+        [$exitCode, $output] = runCommand($this, 'tool:update', [
             'tool' => 'supervisor',
             '--node' => 'app-1',
         ]);
@@ -221,7 +184,7 @@ describe('ToolStream commands', function (): void {
             .gatewayProgressFrame('error', $error),
         );
 
-        [$exitCode, $output] = runCommand($this, 'tool:restart', [
+        [$exitCode, $output] = runCommand($this, 'tool:update', [
             'tool' => 'opencode-server',
             '--node' => 'app-1',
             '--json' => true,

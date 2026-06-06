@@ -38,6 +38,7 @@ direction.
 
 <!-- newest first; add new entries directly under this comment -->
 
+- 2026-06-06 — Orbit removes the `tool:start`, `tool:stop`, `tool:restart`, `tool:logs`, and `tool:reload` commands. Tool commands cover capability lifecycle only (install, update, remove, plus show, credentials, reconfigure); start/stop/restart/logs belong exclusively to the process family. A process may reference a tool via `--tool=`, but the process row owns runtime lifecycle. Supersedes the tool-lifecycle compatibility-adapter direction from solo todos #699 and #700. (solo todo #703)
 - 2026-06-06 — VPN/DNS Swarm migration keeps `wg-easy` and `orbit-dns` as separate Swarm-managed services, co-located with the router/vpn/dns gateway edge roles. They share a private Swarm network, DNS stays unpublished publicly, and VPN-side DNS traffic is forwarded from the WireGuard namespace to the DNS service instead of merging both runtimes into one container. (solo todo #702)
 - 2026-06-05 — Incus E2E topology preparation defaults to the synced source checkout plus VM-local ext4 mirrors from `orbit-base-ubuntu-26.04-runtime`; native CLI binary and packaged gateway runtime artifacts are opt-in through `--use-build-artifacts`.
 - 2026-06-05 — Incus E2E topology preparation uses `orbit-base-ubuntu-26.04-runtime` by default. Base-image preparation builds that runtime image from the non-cloud Ubuntu 26.04 VM image through direct Incus-agent bootstrap, and runtime VM readiness starts from the Incus agent, SSH, and role runtime checks.

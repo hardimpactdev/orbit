@@ -104,14 +104,9 @@ authority](../architecture.md#gateway-implicit-authority).
 | `tool:credentials` | `tool:credentials` | target node | None | `authorization_failed` | Standard missing-permission meta plus tool |
 | `tool:install` | `tool:install` | target node | None | `authorization_failed` | Standard missing-permission meta plus tool |
 | `tool:list` | `tool:read` | target node or each visible tool owner | Row-level filtering applies | `authorization_failed` | Standard missing-permission meta when a requested target resolves to no visible node |
-| `tool:logs` | `tool:read` | target node | None | `authorization_failed` | Standard missing-permission meta plus tool |
 | `tool:reconfigure` | `tool:reconfigure` | target node | None | `authorization_failed` | Standard missing-permission meta plus tool |
-| `tool:reload` | `tool:reload` | target node | None | `authorization_failed` | Standard missing-permission meta plus tool |
 | `tool:remove` | `tool:remove` | target node | None | `authorization_failed` | Standard missing-permission meta plus tool |
-| `tool:restart` | `tool:restart` | target node | None | `authorization_failed` | Standard missing-permission meta plus tool |
 | `tool:show` | `tool:read` | target node | None | `authorization_failed` | Standard missing-permission meta plus tool |
-| `tool:start` | `tool:start` | target node | None | `authorization_failed` | Standard missing-permission meta plus tool |
-| `tool:stop` | `tool:stop` | target node | None | `authorization_failed` | Standard missing-permission meta plus tool |
 | `tool:update` | `tool:update` | target node | None | `authorization_failed` | Standard missing-permission meta plus tool |
 | `update` | n/a - local-only | n/a | Updates caller's own checkout | n/a | n/a |
 | `update:all` | gateway-admin only | gateway | No narrow permission | `authorization_failed` | `reason=missing_gateway_admin`, `serving_node=<gateway>` |

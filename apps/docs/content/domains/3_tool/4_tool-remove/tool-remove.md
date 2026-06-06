@@ -79,10 +79,9 @@ warnings.
 
 ## Related Commands
 
-Use these commands to stop related processes or audit managed tool state
-without removing the tool capability.
+Use these commands to audit managed tool state without removing the tool
+capability.
 
-- [`tool:stop`](../6_tool-stop/tool-stop.md) - stop the related managed process
 - [`doctor --family=tool`](../tool-doctor.md) - report leftover managed artifacts
 
 ## Technical Contract

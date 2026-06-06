@@ -82,7 +82,6 @@ describe('node permission normalizer', function (): void {
             'tool:read',
             'tool:list',
             'tool:show',
-            'tool:logs',
             'node:read',
             'node:show',
         ]);
@@ -90,7 +89,6 @@ describe('node permission normalizer', function (): void {
         expect($result->permissions)->toBe(['node:read', 'tool:read']);
         expect($result->removed)->toContain('node:show')
             ->and($result->removed)->toContain('tool:list')
-            ->and($result->removed)->toContain('tool:logs')
             ->and($result->removed)->toContain('tool:show');
     });
 
@@ -102,7 +100,7 @@ describe('node permission normalizer', function (): void {
             'firewall_rule:read',
             'node:read',
             'tool:read',
-            'tool:restart',
+            'tool:update',
         ]);
 
         expect($result->permissions)->toBe([
@@ -112,7 +110,7 @@ describe('node permission normalizer', function (): void {
             'firewall_rule:read',
             'node:read',
             'tool:read',
-            'tool:restart',
+            'tool:update',
         ]);
         expect($result->removed)->toBe([]);
     });

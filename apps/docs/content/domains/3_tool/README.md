@@ -27,8 +27,6 @@ These rules govern what the tool command family owns and what it may not touch.
   runnable service instance.
 - `tool:reconfigure` reruns a managed tool's configuration/setup flow without
   changing the intended version.
-- `tool:reload` reloads configuration without a full restart only when the tool
-  definition supports reload.
 - Tools observed on a node without a gateway tool row are unmanaged inventory,
   not drift, unless explicit `doctor --family=tool --adopt` semantics are used.
 - Role baseline tools are materialized as tool rows during node provisioning, so
@@ -46,10 +44,7 @@ These rules govern what the tool command family owns and what it may not touch.
   firewall policy.
 - Tools do not own start, stop, restart, or log lifecycle directly. Processes
   are the lifecycle-managed long-running units. A process may reference a tool
-  with a tool dependency when it needs that node-level capability. During
-  migration, existing `tool:start`, `tool:stop`, `tool:restart`, and
-  `tool:logs` commands may resolve to related process lifecycle operations for
-  compatibility.
+  with a tool dependency when it needs that node-level capability.
 - Tool-specific and capability-specific command families are opt-in product
   surfaces. The tool catalog does not automatically create `redis:*`,
   `mysql:*`, `postgres:*`, or other top-level command families. Generic tool
@@ -156,25 +151,15 @@ These commands create or remove an installable tool on a node.
 3. [`orbit tool:install <tool>`](3_tool-install/tool-install.md)
 4. [`orbit tool:remove <tool>`](4_tool-remove/tool-remove.md)
 
-### Lifecycle
-
-These commands run, stop, restart, or inspect logs through a related managed
-process when one exists. They remain in the docs as compatibility surfaces for
-tool-associated processes; the long-term lifecycle owner is still `process:*`.
-
-5. [`orbit tool:start <tool>`](5_tool-start/tool-start.md)
-6. [`orbit tool:stop <tool>`](6_tool-stop/tool-stop.md)
-7. [`orbit tool:restart <tool>`](7_tool-restart/tool-restart.md)
-8. [`orbit tool:logs <tool>`](8_tool-logs/tool-logs.md)
-
 ### Configuration and credentials
 
-These commands change tool versions or configuration and expose generated credentials.
+Lifecycle (start, stop, restart, logs) belongs to the `process:*` family; tools
+do not own runtime lifecycle. These commands change tool versions or
+configuration and expose generated credentials.
 
-9. [`orbit tool:update [tool]`](9_tool-update/tool-update.md)
-10. [`orbit tool:credentials [tool]`](10_tool-credentials/tool-credentials.md)
-11. [`orbit tool:reload [tool]`](11_tool-reload/tool-reload.md)
-12. [`orbit tool:reconfigure [tool]`](12_tool-reconfigure/tool-reconfigure.md)
+5. [`orbit tool:update [tool]`](9_tool-update/tool-update.md)
+6. [`orbit tool:credentials [tool]`](10_tool-credentials/tool-credentials.md)
+7. [`orbit tool:reconfigure [tool]`](12_tool-reconfigure/tool-reconfigure.md)
 
 ## Related
 

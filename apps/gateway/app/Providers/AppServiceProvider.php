@@ -13,11 +13,9 @@ use App\Contracts\RemoteShellStream;
 use App\Contracts\RequestProfiler;
 use App\Contracts\SiteCertificateInstaller;
 use App\Contracts\StartsRemoteShellProcesses;
-use App\Contracts\ToolLogGatewayStream;
 use App\Contracts\UpdateAllGatewayStream;
 use App\Contracts\WorkspaceSourceDrivers;
 use App\Http\Gateway\GatewayConnector;
-use App\Http\Gateway\ToolLogGatewayStreamClient;
 use App\Http\Gateway\UpdateAllGatewayStreamClient;
 use App\Services\ActivityLogCorrelation;
 use App\Services\ActivityLogger;
@@ -126,7 +124,6 @@ class AppServiceProvider extends ServiceProvider
             localExecutor: $app->make(RemoteLocalExecutor::class),
         ));
         $this->app->bind(SiteCertificateInstaller::class, OrbitSiteCertificateInstaller::class);
-        $this->app->bind(ToolLogGatewayStream::class, ToolLogGatewayStreamClient::class);
         $this->app->bind(UpdateAllGatewayStream::class, UpdateAllGatewayStreamClient::class);
         $this->app->bind(WorkspaceSourceDrivers::class, WorkspaceSourceDriverResolver::class);
         $this->app->singleton(ToolDefinitionRegistry::class, fn ($app): ToolDefinitionRegistry => new ToolDefinitionRegistry([

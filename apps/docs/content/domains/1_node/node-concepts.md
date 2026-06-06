@@ -371,8 +371,8 @@ exists.
   labels, descriptions, namespaces, implications, and dynamic wildcard
   matching rules.
 - **Permission implication:** Registry-declared relationship where one
-  permission implies another. For example, `tool:read` implies `tool:list`,
-  `tool:show`, and `tool:logs`.
+  permission implies another. For example, `tool:read` implies `tool:list`
+  and `tool:show`.
 - **Permission normalization:** Process of removing redundant permissions
   (implied or duplicated) and rejecting unknown permission strings before a
   grant is stored.
@@ -385,9 +385,9 @@ exists.
   `--preset`. Presets do not embed wildcard permissions except the
   `gateway-admin` preset.
 - **Agent self preset:** Preset used by `agent` self-grants. Contains
-  `doctor:verify`, `node:read`, `tool:read`, `tool:restart`, and `tool:update`.
+  `doctor:verify`, `node:read`, `tool:read`, and `tool:update:agent-tools`.
   Excludes `node:update`, `tool:credentials`, `tool:install`, `tool:remove`,
-  `tool:stop`, `tool:reconfigure`, firewall writes, grant writes, node role
+  `tool:reconfigure`, firewall writes, grant writes, node role
   writes, VPN writes, `doctor:restore`, and `doctor:adopt`.
 - **Operator preset:** Default cross-node preset for nodes with the `agent`
   role and the general-purpose preset for fleet operators. Reads firewall

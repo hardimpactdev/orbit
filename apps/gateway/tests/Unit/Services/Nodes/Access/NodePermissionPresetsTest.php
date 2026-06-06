@@ -55,7 +55,6 @@ describe('node permission presets', function (): void {
 
             expect($permissions)->toContain('node:read')
                 ->and($permissions)->toContain('tool:read')
-                ->and($permissions)->toContain('tool:restart')
                 ->and($permissions)->toContain('tool:update:agent-tools')
                 ->and($permissions)->toContain('doctor:verify');
         });
@@ -112,8 +111,7 @@ describe('node permission presets', function (): void {
                 ->and($permissions)->toContain('doctor:verify')
                 ->and($permissions)->toContain('firewall_rule:read')
                 ->and($permissions)->toContain('node:read')
-                ->and($permissions)->toContain('tool:read')
-                ->and($permissions)->toContain('tool:restart');
+                ->and($permissions)->toContain('tool:read');
         });
 
         it('excludes explicit credential permissions', function (): void {
@@ -219,7 +217,6 @@ describe('node permission presets', function (): void {
             $permissions = (new NodePermissionPresets)->permissions('developer');
 
             expect($permissions)->toContain('tool:read')
-                ->and($permissions)->toContain('tool:restart')
                 ->and($permissions)->toContain('tool:update')
                 ->and($permissions)->toContain('tool:install')
                 ->and($permissions)->toContain('tool:remove');
@@ -243,7 +240,6 @@ describe('node permission presets', function (): void {
             $permissions = (new NodePermissionPresets)->permissions('admin');
 
             expect($permissions)->toContain('tool:read')
-                ->and($permissions)->toContain('tool:restart')
                 ->and($permissions)->toContain('tool:update')
                 ->and($permissions)->toContain('tool:install')
                 ->and($permissions)->toContain('tool:remove')

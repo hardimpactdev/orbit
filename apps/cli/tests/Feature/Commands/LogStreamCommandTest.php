@@ -53,49 +53,6 @@ describe('LogStream commands', function (): void {
             ->and($decoded['error']['meta']['field'])->toBe('json');
     });
 
-    it('streams tool follow output as plain text from the gateway', function (): void {
-        fakeGatewayTextStream("supervisor started\n");
-
-        [$exitCode, $output] = runCommand($this, 'tool:logs', [
-            'tool' => 'supervisor',
-            '--node' => 'app-1',
-            '--lines' => 2,
-            '--follow' => true,
-        ]);
-
-        Http::assertSent(function (Request $request): bool {
-            $url = urldecode($request->url());
-
-            return $request->method() === 'GET'
-                && $request->hasHeader('Accept', 'text/plain')
-                && str_contains($url, '/api/tools/supervisor/logs/stream')
-                && str_contains($url, 'node=app-1')
-                && str_contains($url, 'lines=2');
-        });
-
-        expect($exitCode)->toBe(0)
-            ->and($output)->toContain('supervisor started');
-    });
-
-    it('rejects JSON tool follow output before opening a stream', function (): void {
-        Http::fake();
-
-        [$exitCode, $output] = runCommand($this, 'tool:logs', [
-            'tool' => 'supervisor',
-            '--node' => 'app-1',
-            '--follow' => true,
-            '--json' => true,
-        ]);
-
-        $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
-
-        Http::assertNothingSent();
-
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('validation_failed')
-            ->and($decoded['error']['meta']['field'])->toBe('json');
-    });
-
     it('reads deploy log output as captured finite history', function (): void {
         fakeGateway(fakeSuccessEnvelope([
             'run' => ['id' => 42, 'status' => 'failed'],

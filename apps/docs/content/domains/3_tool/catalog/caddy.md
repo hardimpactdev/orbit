@@ -16,10 +16,9 @@ These fields describe the Caddy tool's identity, backend, and support model in O
 
 ## Capabilities
 
-`caddy` supports compatibility lifecycle actions (`tool:start`, `tool:stop`,
-`tool:restart`), `tool:reload`, `tool:reconfigure`, `tool:update`,
-`tool:logs`, safe doctor fix, and safe doctor adopt while the proxy runtime
-migrates to process-backed lifecycle.
+`caddy` supports `tool:reconfigure`, `tool:update`, safe doctor fix, and safe
+doctor adopt. Runtime lifecycle and logs for the proxy runtime belong to the
+related process family, not the tool.
 
 `tool:install caddy` and `tool:remove caddy` are not supported for host package
 management. Orbit converges `orbit-caddy` as part of node role baseline.

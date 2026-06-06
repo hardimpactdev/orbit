@@ -1719,7 +1719,7 @@ describe('access permission validity', function (): void {
         NodeAccess::create([
             'consumer_node_id' => $consumer->id,
             'serving_node_id' => $serving->id,
-            'permissions' => ['doctor:verify', 'node:read', 'tool:read', 'tool:restart', 'tool:update:agent-tools'],
+            'permissions' => ['doctor:verify', 'node:read', 'tool:read', 'tool:update:agent-tools'],
         ]);
 
         $drift = $this->probe->diff($consumer, new ProbeSnapshot([]));
@@ -1783,7 +1783,7 @@ describe('access permission validity', function (): void {
         NodeAccess::create([
             'consumer_node_id' => $consumer->id,
             'serving_node_id' => $serving->id,
-            'permissions' => ['tool:read', 'tool:logs'],
+            'permissions' => ['tool:read', 'tool:list'],
         ]);
 
         $drift = $this->probe->diff($consumer, new ProbeSnapshot([]));
@@ -1791,7 +1791,7 @@ describe('access permission validity', function (): void {
 
         expect($permission)->toHaveCount(1);
         expect($permission[0]->kind)->toBe(DriftKind::Divergent);
-        expect($permission[0]->detail['stored_permissions'] ?? null)->toBe(['tool:read', 'tool:logs']);
+        expect($permission[0]->detail['stored_permissions'] ?? null)->toBe(['tool:read', 'tool:list']);
     });
 });
 
