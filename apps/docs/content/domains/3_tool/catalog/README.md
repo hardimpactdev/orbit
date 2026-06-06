@@ -54,8 +54,9 @@ Admitted examples:
   SQL execution, and database backup/restore workflows belong to `database:*`,
   not separate `mysql:*` and `postgres:*` families.
 - `s3:*` owns role-backed object-storage publication and service credentials
-  for the RustFS-backed S3 role. Generic RustFS lifecycle, logs, updates, and
-  inventory remain under `tool:*`.
+  for the RustFS-backed S3 role. Generic RustFS capability update and inventory
+  remain under `tool:*`; lifecycle and logs belong to the related runtime
+  process.
 
 ## Required Baseline Tools
 

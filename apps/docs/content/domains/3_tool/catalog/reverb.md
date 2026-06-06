@@ -16,10 +16,11 @@ These fields describe the Reverb tool's identity, backend, and support model in 
 
 ## Capabilities
 
-`reverb` supports `tool:install`, `tool:remove`, lifecycle actions,
-`tool:update`, `tool:logs`, `tool:credentials`, tool-owned proxy route
-management, safe doctor fix, and safe doctor adopt while the compatibility
-tool remains available.
+`reverb` supports `tool:install`, `tool:remove`, `tool:update`,
+`tool:credentials`, proxy route metadata, safe doctor fix, and safe doctor
+adopt while the compatibility tool remains available. Compatibility lifecycle
+and log commands may route to the related Reverb runtime process; lifecycle
+ownership belongs to the process row.
 
 Fleet realtime infrastructure should use the `websocket` role instead of an
 installable `reverb` tool. The role runs Laravel Reverb in a Docker runtime

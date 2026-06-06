@@ -17,9 +17,11 @@ Orbit.
 
 ## Capabilities
 
-`rustfs` supports lifecycle actions, `tool:update`, `tool:logs`,
-`tool:credentials`, service endpoint metadata, safe doctor fix, and safe
-doctor adopt as the role baseline tool materialized by the `s3` role.
+`rustfs` supports `tool:update`, `tool:credentials`, service endpoint
+metadata, safe doctor fix, and safe doctor adopt as the role baseline tool
+materialized by the `s3` role. Compatibility lifecycle and log commands may
+route to the related RustFS runtime process; lifecycle ownership belongs to
+the process row.
 
 `tool:install rustfs` is allowed only for a node with an active `s3` role and
 must converge the role baseline rather than creating an ad hoc standalone
@@ -88,13 +90,15 @@ The RustFS console is not publicly exposed in v1.
 
 RustFS is the backend technology for the `s3` role. The product surface is the
 S3 role, router-owned S3 service routing, public S3 publication, and
-service-level credentials. Generic lifecycle, logs, updates, and inventory
-remain under `tool:*`; S3 publication and credential UX lives under `s3:*`.
+service-level credentials. Capability update and inventory remain under
+`tool:*`; lifecycle and logs belong to the related runtime process. S3
+publication and credential UX lives under `s3:*`.
 
 ## Doctor Relationship
 
-`doctor --family=tool` verifies the `rustfs` tool row, expected container
-lifecycle state, credential material, logs availability, and safe repair or
-adoption boundaries. S3 route placement, `s3.orbit`, backend pools, and public
-host forwarding are proxy-family and S3 command-domain contracts. S3 role
-assignment settings and the role-owned data path are node-family contracts.
+`doctor --family=tool` verifies the `rustfs` tool row, credential material, and
+safe repair or adoption boundaries. Runtime process lifecycle and logs belong
+to the process family. S3 route placement, `s3.orbit`, backend pools, and
+public host forwarding are proxy-family and S3 command-domain contracts. S3
+role assignment settings and the role-owned data path are node-family
+contracts.

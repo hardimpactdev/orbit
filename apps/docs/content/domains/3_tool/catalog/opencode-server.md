@@ -18,9 +18,9 @@ These fields describe the OpenCode Server tool's identity, backend, and support 
 
 `opencode-server` supports `tool:install`, `tool:remove`,
 `tool:reconfigure`, password reconfiguration, `tool:update`,
-`tool:credentials`, tool-owned proxy route management, safe doctor fix, and
-safe doctor adopt. Start, stop, restart, and logs for the long-running server
-belong to the related `opencode-server` process.
+`tool:credentials`, proxy route metadata, safe doctor fix, and safe doctor
+adopt. Start, stop, restart, and logs for the long-running server belong to
+the related `opencode-server` process.
 
 ## Credentials
 

@@ -2,11 +2,11 @@
 
 [Back to Tool commands.](../README.md)
 
-Reload a managed tool's configuration without a full restart.
+Reload a reload-capable tool's configuration without a full restart.
 
 `tool:reload` asks a reload-capable tool to apply current configuration without
-cycling the service. It is lower impact than `tool:restart` when the tool
-definition supports it.
+restarting the related process. It is lower impact than `tool:restart` when the
+tool definition supports it.
 
 ## Usage
 
@@ -35,7 +35,8 @@ Target context is required when neither `--node`, `--app`, nor local
 
 ## What Happens
 
-Run this command to apply current configuration to a reload-capable tool without cycling the service.
+Run this command to apply current configuration to a reload-capable tool
+without restarting the related process.
 
 `tool:reload`:
 
@@ -68,9 +69,10 @@ Use `--json` for the machine-readable tool and action result.
 
 ## Related Commands
 
-Use these commands for related tool lifecycle and configuration actions.
+Use these commands for related compatibility lifecycle and configuration
+actions.
 
-- [`tool:restart`](../7_tool-restart/tool-restart.md) - cycle a managed tool service
+- [`tool:restart`](../7_tool-restart/tool-restart.md) - restart the related managed process
 - [`tool:reconfigure`](../12_tool-reconfigure/tool-reconfigure.md) - rerun setup/configuration
 - [`doctor --family=tool`](../tool-doctor.md) - verify tool drift
 

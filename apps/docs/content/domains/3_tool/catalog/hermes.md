@@ -18,9 +18,10 @@ model in Orbit.
 
 ## Capabilities
 
-`hermes` supports `tool:install`, `tool:remove`, lifecycle actions,
-`tool:update`, snapshot and streamed `tool:logs`, `tool:credentials`,
-tool-owned proxy route management, safe doctor fix, and safe doctor adopt.
+`hermes` supports `tool:install`, `tool:remove`, `tool:update`,
+`tool:credentials`, proxy route metadata, safe doctor fix, and safe doctor
+adopt. Compatibility lifecycle and log commands may route to the related
+Hermes runtime process; lifecycle ownership belongs to the process row.
 
 ## Credentials
 
@@ -61,10 +62,10 @@ has no ingress baseline.
 
 ## Orbit Notes
 
-Hermes is a first-party autonomous agent tool. Orbit installs and runs it
-as the shared unprivileged `agent` user. `tool:update hermes` runs
-Hermes's native update path through the Orbit-managed binary and then
-restarts the runtime container that wraps it.
+Hermes is a first-party autonomous agent tool. Orbit installs it for the shared
+unprivileged `agent` user. `tool:update hermes` runs Hermes's native update
+path through the Orbit-managed binary. It does not implicitly restart related
+runtime processes.
 
 `tool:update hermes` from the node itself requires `tool:update` on the
 self-grant. `tool:install hermes`, `tool:remove hermes`, `tool:stop hermes`,
@@ -108,9 +109,9 @@ sudo -u agent -H bash -lc 'hermes doctor'
 
 ## Doctor Relationship
 
-`doctor --family=tool` verifies that the runtime container exists, that
-the lifecycle state matches gateway expectations, and that managed
-credential metadata is present. It also checks that the Hermes binary
-version matches the gateway expected version when version tracking is
-enabled, and that the tool's internal proxy route resolves to the active
-agent role TLD.
+`doctor --family=tool` verifies that the Hermes capability is installed and
+that managed credential metadata is present. It also checks that the Hermes
+binary version matches the gateway expected version when version tracking is
+enabled, and that the tool's internal proxy route metadata resolves to the
+active agent role TLD. Runtime process lifecycle drift belongs to the process
+family.

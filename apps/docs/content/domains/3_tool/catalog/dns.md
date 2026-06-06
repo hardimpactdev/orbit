@@ -16,8 +16,10 @@ These fields describe the DNS tool's identity, backend, and support model in Orb
 
 ## Capabilities
 
-`dns` supports lifecycle actions (`tool:start`, `tool:stop`, `tool:restart`),
-`tool:update`, `tool:logs`, safe doctor fix, and safe doctor adopt.
+`dns` supports `tool:update`, safe doctor fix, and safe doctor adopt for the
+gateway DNS substrate capability. Compatibility lifecycle and log commands may
+route to the related DNS runtime process while this tool row remains the
+bootstrap/adoption record; lifecycle ownership belongs to the runtime process.
 
 `tool:install dns` and `tool:remove dns` are not operator-facing commands.
 They are reachable only through the gateway bootstrap path described in

@@ -16,9 +16,11 @@ These fields describe the Supervisor tool's identity, backend, and support model
 
 ## Capabilities
 
-`supervisor` supports lifecycle actions (`tool:start`, `tool:stop`,
-`tool:restart`), `tool:reload`, `tool:logs`, safe doctor fix, and safe
-doctor adopt.
+`supervisor` supports install/adopt/remove capability management,
+`tool:reload`, safe doctor fix, and safe doctor adopt. Compatibility
+`tool:start`, `tool:stop`, `tool:restart`, and `tool:logs` commands may route
+to a related Supervisor process when one exists; they do not make the
+Supervisor tool own Orbit-defined process units.
 
 `tool:install supervisor` and `tool:remove supervisor` are supported only where
 the node/tool provisioning contract allows the Supervisor process manager to be
@@ -34,9 +36,10 @@ Supervisor is the host process runtime for app and workspace configured process
 units. The Orbit Scheduler runs inside gateway `orbit-scheduler`, not as a host
 Supervisor program.
 
-The tool family owns Supervisor's installation status, the `supervisord`
-daemon's reachability, and lifecycle drift. It does not own the Supervisor
-program registry; Orbit-defined runtime units belong to the `process` family.
+The tool family owns Supervisor's installation status and the `supervisord`
+daemon's reachability. It does not own the Supervisor program registry or
+Orbit-defined process lifecycle; Orbit-defined runtime units belong to the
+`process` family.
 
 Supervisor itself runs under host init. Docker remains the baseline host
 service for Orbit runtime containers and service backends.
