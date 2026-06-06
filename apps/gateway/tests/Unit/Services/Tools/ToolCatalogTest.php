@@ -249,7 +249,6 @@ describe('tool catalog definitions', function (): void {
             ->and($catalog->requiredNodeRole('rustfs'))->toBe('s3')
             ->and($catalog->category('rustfs'))->toBe('storage')
             ->and($catalog->hasCapability('rustfs', 'credentials'))->toBeTrue()
-            ->and($catalog->hasCapability('rustfs', 'logs'))->toBeTrue()
             ->and($catalog->hasCapability('rustfs', 'safe-fix'))->toBeTrue()
             ->and($catalog->hasCapability('rustfs', 'safe-adopt'))->toBeTrue()
             ->and($metadata)->toMatchArray([

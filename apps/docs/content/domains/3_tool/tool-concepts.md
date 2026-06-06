@@ -13,7 +13,11 @@ These terms define the core vocabulary used across tool command contracts and th
   units. A tool is not itself the lifecycle-managed unit.
 - **Tool process dependency:** Optional relationship from a process to the
   tool capability it uses, such as `opencode`, `viteplus`, or `php-cli`.
-  The process owns lifecycle; the tool supplies the capability.
+  The process owns lifecycle; the tool supplies the capability. A tool
+  definition may also declare a related singleton process (runtime, command,
+  and `--tool` dependency); `tool:install` configures that process by default so
+  installing the capability yields a running service, while lifecycle stays
+  process-owned. `--no-process` installs the capability only.
 - **Tool catalog:** The set of supported tool slugs documented in
   [`catalog/`](catalog/README.md). Tool slugs outside the catalog are
   unsupported and fail validation.

@@ -669,6 +669,11 @@ final class ToolsFixerAgentToolDefinition implements ToolDefinition
         return null;
     }
 
+    public function relatedProcess(): ?array
+    {
+        return null;
+    }
+
     public function probeMetadata(): array
     {
         return [];

@@ -1,4 +1,4 @@
-# Technical Contract: `orbit tool:install <tool> [--app=<app>] [--node=<node>] [--tool-version=<version>] [--status=<installed|running>] [--json]`
+# Technical Contract: `orbit tool:install <tool> [--app=<app>] [--node=<node>] [--tool-version=<version>] [--status=<installed|running>] [--with-process|--no-process] [--json]`
 
 [Back to public `tool-install` documentation.](../tool-install.md)
 
@@ -13,7 +13,7 @@
 ## Signature
 
 ```bash
-orbit tool:install <tool> [--app=<app>] [--node=<node>] [--tool-version=<version>] [--status=<installed|running>] [--json]
+orbit tool:install <tool> [--app=<app>] [--node=<node>] [--tool-version=<version>] [--status=<installed|running>] [--with-process|--no-process] [--json]
 ```
 
 ## Input Contract
@@ -27,6 +27,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | `app` | `--app` | `Optional.` | `Never.` | `None.` | `Visible app selector used to resolve the owning node.` |
 | `version` | `--tool-version` | Optional. | `Never.` | Tool-defined latest supported version when applicable. | Specific version supported by the selected tool definition. |
 | `status` | `--status` | `Optional.` | `Never.` | `installed` | Expected capability state: installed or running. This does not start a process. |
+| `with_process` | `--with-process` / `--no-process` | `Optional.` | `Never.` | `true` for tools that declare a related process | When set true (the default), a tool that declares a related singleton process configures that process. `--no-process` installs the capability only. Supplying both `--with-process` and `--no-process` fails. |
 | `json` | `--json` | `Optional.` | `Never.` | `false` | `Selects the JSON renderer.` |
 
 `--tool-version` records install-time tool version intent. `--expected-version`
@@ -56,12 +57,31 @@ and `expected_version` remain `tool:update` inputs and are rejected here.
   converged; `doctor --family=tool --restore` owns later convergence when the tool
   definition declares a safe repair path.
 
+### Related process configuration
+
+- When the tool definition declares a related singleton service process and
+  `--no-process` is not supplied, `tool:install` converges that process through
+  the process family after the capability install succeeds. The process is
+  node-owned and uses the runtime, command, and `--tool` dependency declared by
+  the tool definition (for `opencode-server`: `runtime=systemd`, command
+  `opencode serve -a`, `tool=opencode`).
+- The convergence is idempotent: a newly created process is reported as
+  `configured`; an existing related process is reported as `converged`. It never
+  creates a duplicate.
+- `--no-process` installs the capability only and configures no process.
+  `--with-process` is the explicit form of the default; supplying both
+  `--with-process` and `--no-process` fails with `validation_failed`.
+- Process lifecycle (start, stop, restart, logs) stays owned by `process:*`.
+  `tool:install` only configures the related process row and its initial
+  convergence.
+
 ### Scope Boundaries
 
-`tool-install` must not create apps, workspaces, processes, schedules, custom
-proxy routes, non-tool firewall rules, node identities, or node grants.
-Tool-owned endpoint configuration is allowed only when declared by the selected
-tool definition. Runnable service endpoints are process-family configuration.
+`tool-install` must not create apps, workspaces, schedules, custom proxy routes,
+non-tool firewall rules, node identities, or node grants. It may configure only
+the singleton service process a tool definition declares as its related process;
+all other process creation belongs to the process family. Tool-owned endpoint
+configuration is allowed only when declared by the selected tool definition.
 Related drift belongs to each owning family doctor contract.
 
 ## Renderer Contracts
@@ -81,6 +101,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | Missing target source | Non-interactive input provides no `--node`, `--app`, or local `node:default`. | `error.code=validation_failed`; `error.meta.fields=["target"]` |
 | Unsupported runtime field | API input includes `runtime`. Tools do not own runtime lifecycle. | `error.code=validation_failed`; `error.meta.field=runtime`; `error.meta.reason=unsupported_field` |
 | Unsupported instance field | API input includes `instance`. Tools do not support runnable service instances. | `error.code=validation_failed`; `error.meta.field=instance`; `error.meta.reason=unsupported_field` |
+| Conflicting process options | Both `--with-process` and `--no-process` are supplied. | `error.code=validation_failed`; `error.meta.reason=conflicting_options` |
 | Remote action failed | Gateway configuration was readable, but node inspection or apply failed. | `error.code=tool.remote_action_failed` |
 
 ## Doctor Relationship

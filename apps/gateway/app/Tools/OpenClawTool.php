@@ -26,7 +26,7 @@ final class OpenClawTool extends BaseTool
     #[\Override]
     public function capabilities(): array
     {
-        return ['install', 'remove', 'start', 'stop', 'restart', 'update', 'reconfigure', 'logs', 'credentials', 'safe-fix', 'safe-adopt'];
+        return ['install', 'remove', 'update', 'reconfigure', 'credentials', 'safe-fix', 'safe-adopt'];
     }
 
     public function installScript(array $config = []): string

@@ -20,7 +20,7 @@ final class SupervisorTool extends BaseTool
     #[\Override]
     public function capabilities(): array
     {
-        return ['start', 'stop', 'restart', 'reload', 'logs', 'safe-fix', 'safe-adopt'];
+        return ['safe-fix', 'safe-adopt'];
     }
 
     #[\Override]

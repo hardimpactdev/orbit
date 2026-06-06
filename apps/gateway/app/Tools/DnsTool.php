@@ -20,7 +20,7 @@ final class DnsTool extends BaseTool
     #[\Override]
     public function capabilities(): array
     {
-        return ['start', 'stop', 'restart', 'update', 'logs', 'safe-fix', 'safe-adopt'];
+        return ['update', 'safe-fix', 'safe-adopt'];
     }
 
     public function installScript(array $config = []): string

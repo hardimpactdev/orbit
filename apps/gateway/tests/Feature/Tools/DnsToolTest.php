@@ -30,5 +30,5 @@ it('advertises required capabilities for gateway DNS infrastructure', function (
 
     expect($tool->capabilities())->toContain('safe-fix')
         ->and($tool->capabilities())->toContain('safe-adopt')
-        ->and($tool->capabilities())->toContain('restart');
+        ->and($tool->capabilities())->toContain('update');
 });

@@ -35,6 +35,7 @@ describe('ToolStream commands', function (): void {
             && $request->data() === [
                 'node' => 'app-1',
                 'status' => 'installed',
+                'with_process' => true,
             ]);
 
         expect($exitCode)->toBe(0)
@@ -44,6 +45,32 @@ describe('ToolStream commands', function (): void {
             ])
             ->and(count(array_filter(explode("\n", $output))))->toBe(1)
             ->and($output)->not->toContain('Installing composer');
+    });
+
+    it('sends with_process=false for tool:install --no-process', function (): void {
+        fakeGatewayProgressStream(
+            gatewayProgressFrame('complete', [
+                'exit_code' => 0,
+                'data' => ['tool' => ['name' => 'opencode-server', 'node' => 'app-1', 'state' => 'installed', 'process' => null]],
+            ]),
+        );
+
+        [$exitCode] = runCommand($this, 'tool:install', [
+            'tool' => 'opencode-server',
+            '--node' => 'app-1',
+            '--no-process' => true,
+            '--json' => true,
+        ]);
+
+        Http::assertSent(fn (Request $request): bool => $request->method() === 'POST'
+            && $request->url() === 'https://gateway.test/api/tools/opencode-server/install'
+            && $request->data() === [
+                'node' => 'app-1',
+                'status' => 'installed',
+                'with_process' => false,
+            ]);
+
+        expect($exitCode)->toBe(0);
     });
 
     it('streams tool:update payloads to the single-tool gateway endpoint', function (): void {

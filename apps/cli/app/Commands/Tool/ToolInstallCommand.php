@@ -15,6 +15,8 @@ final class ToolInstallCommand extends ToolGatewayCommand
         {--node= : Resolve target by node}
         {--tool-version= : Version or version family to install}
         {--status=installed : Desired state after install (installed|running)}
+        {--with-process : Also configure the related service process (default for service tools)}
+        {--no-process : Install the capability only; do not configure the related service process}
         {--json : Output JSON}';
 
     #[\Override]
@@ -37,6 +39,12 @@ final class ToolInstallCommand extends ToolGatewayCommand
             ]);
         }
 
+        if ($this->option('with-process') && $this->option('no-process')) {
+            return $this->failValidation('process', 'Use only one of --with-process or --no-process.', [
+                'reason' => 'conflicting_options',
+            ]);
+        }
+
         $payload = $this->toolTargetPayload(requireTarget: true);
 
         if (is_int($payload)) {
@@ -49,6 +57,7 @@ final class ToolInstallCommand extends ToolGatewayCommand
                 'version' => $this->stringOption('tool-version'),
             ]),
             'status' => $status,
+            'with_process' => ! $this->option('no-process'),
         ]);
     }
 }

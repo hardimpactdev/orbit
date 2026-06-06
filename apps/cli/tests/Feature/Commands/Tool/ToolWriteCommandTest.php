@@ -36,6 +36,7 @@ describe('tool write commands', function (): void {
             && $request->data() === [
                 'node' => 'app-1',
                 'status' => 'installed',
+                'with_process' => true,
             ]);
     });
 
@@ -62,6 +63,7 @@ describe('tool write commands', function (): void {
             && $request->data() === [
                 'node' => 'app-1',
                 'status' => 'running',
+                'with_process' => true,
             ]);
 
         expect($exitCode)->toBe(0)
@@ -98,6 +100,7 @@ describe('tool write commands', function (): void {
                 'node' => 'database-1',
                 'version' => '2.8',
                 'status' => 'installed',
+                'with_process' => true,
             ]);
 
         expect($exitCode)->toBe(0)
@@ -131,6 +134,7 @@ describe('tool write commands', function (): void {
             && $request->data() === [
                 'node' => 'default-app',
                 'status' => 'installed',
+                'with_process' => true,
             ]);
 
         expect($exitCode)->toBe(0)

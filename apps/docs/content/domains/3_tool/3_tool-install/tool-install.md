@@ -5,9 +5,11 @@
 Install or configure a managed host tool on a node.
 
 `tool:install` bootstraps a supported tool capability on a target node and
-records gateway configuration for that node. It does not create runnable
-service instances; use `process:add --definition` for services such as MySQL
-or Redis.
+records gateway configuration for that node. When the tool backs a singleton
+service (such as `opencode-server`), install also configures that tool's
+related process by default so the capability comes up running; pass
+`--no-process` to install the capability only. Multi-instance services such as
+MySQL or Redis are not tool installs; use `process:add --definition` for those.
 
 ## Usage
 
@@ -32,6 +34,10 @@ orbit tool:install composer --node=app-1 --json
 - `--tool-version`: Specific tool version supported by the tool definition.
 - `--status`: Expected capability state after install. Defaults to
   `installed`; it does not create or start a process.
+- `--with-process`: Also configure the tool's related service process. This is
+  the default for service-backing tools.
+- `--no-process`: Install the capability only; do not configure the related
+  service process.
 - `--json`: Output JSON.
 
 Target context is required. Provide `--node`, `--app`, configure local
@@ -54,6 +60,13 @@ Run this command to bootstrap a supported tool on the target node and record gat
 7. Applies the managed install/configuration through the gateway.
 8. Reports the resulting expected state and command-owned apply outcome.
 
+When the tool declares a related singleton service process and `--no-process`
+is not supplied, `tool:install` also converges that process (runtime, command,
+and tool dependency) so installing the capability yields a running service.
+Re-installing converges the existing process instead of creating a duplicate.
+Process lifecycle (start, stop, restart, logs) remains owned by the `process:*`
+family.
+
 If the tool is already managed and the operator wants to change its version
 intent later, use
 [`tool:update --expected-version`](../9_tool-update/tool-update.md). Updating a
@@ -66,7 +79,9 @@ Use `--json` to get a machine-readable result; omit it for progress.
 Human output shows progress for configuration write and install/configuration
 steps.
 
-Use `--json` for the machine-readable tool and command outcome metadata.
+Use `--json` for the machine-readable tool and command outcome metadata. When a
+related service process is configured, the result includes it under
+`success.data.tool.process` with an `action` of `configured` or `converged`.
 
 ## Requirements
 

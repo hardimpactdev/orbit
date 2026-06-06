@@ -147,6 +147,14 @@ final readonly class ToolCatalog
         return $this->definition($tool)?->category();
     }
 
+    /**
+     * @return array{name: string, command: string, runtime: string, tool: string}|null
+     */
+    public function relatedProcess(string $tool): ?array
+    {
+        return $this->definition($tool)?->relatedProcess();
+    }
+
     public function installScript(string $tool, array $config = []): ?string
     {
         if (! $this->hasCapability($tool, 'install')) {

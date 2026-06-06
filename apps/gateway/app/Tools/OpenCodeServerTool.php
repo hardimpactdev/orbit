@@ -20,7 +20,21 @@ final class OpenCodeServerTool extends BaseTool
     #[\Override]
     public function capabilities(): array
     {
-        return ['install', 'remove', 'start', 'stop', 'restart', 'update', 'reconfigure', 'logs', 'credentials', 'safe-fix'];
+        return ['install', 'remove', 'update', 'reconfigure', 'credentials', 'safe-fix'];
+    }
+
+    /**
+     * @return array{name: string, command: string, runtime: string, tool: string}
+     */
+    #[\Override]
+    public function relatedProcess(): array
+    {
+        return [
+            'name' => 'opencode-server',
+            'command' => 'opencode serve -a',
+            'runtime' => 'systemd',
+            'tool' => 'opencode',
+        ];
     }
 
     public function installScript(array $config = []): string

@@ -56,6 +56,14 @@ abstract class BaseTool implements ToolDefinition
         return null;
     }
 
+    /**
+     * @return array{name: string, command: string, runtime: string, tool: string}|null
+     */
+    public function relatedProcess(): ?array
+    {
+        return null;
+    }
+
     public function probeMetadata(): array
     {
         return ['binary' => $this->slug()];

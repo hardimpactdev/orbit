@@ -79,6 +79,73 @@ describe('ToolInstallController', function (): void {
             ->and($shell->scripts)->toHaveCount(1);
     });
 
+    it('configures the related singleton process by default when installing a service tool', function (): void {
+        $caller = createToolInstallApiCallerNode();
+        assignToolInstallApiRole($caller, 'gateway');
+        $node = Node::factory()->create(['name' => 'app-oc-1', 'status' => 'active', 'platform' => 'ubuntu_24-04']);
+        assignToolInstallApiRole($node, 'app-dev');
+        app()->instance(RemoteShell::class, new ToolInstallApiRecordingShell);
+
+        $response = $this->call('POST', '/api/tools/opencode-server/install', [
+            'node' => 'app-oc-1',
+        ], [], [], ['REMOTE_ADDR' => TOOL_INSTALL_API_CALLER_WG_IP]);
+
+        $response->assertOk()
+            ->assertJsonPath('success.data.tool.name', 'opencode-server')
+            ->assertJsonPath('success.data.tool.process.name', 'opencode-server')
+            ->assertJsonPath('success.data.tool.process.runtime', 'systemd')
+            ->assertJsonPath('success.data.tool.process.tool', 'opencode')
+            ->assertJsonPath('success.data.tool.process.action', 'configured');
+
+        $process = DB::table('processes')
+            ->where('node_id', $node->id)
+            ->where('name', 'opencode-server')
+            ->first();
+
+        expect($process)->not->toBeNull()
+            ->and($process->command)->toBe('opencode serve -a')
+            ->and($process->runtime)->toBe('systemd')
+            ->and($process->tool)->toBe('opencode');
+    });
+
+    it('skips process configuration when with_process is false', function (): void {
+        $caller = createToolInstallApiCallerNode();
+        assignToolInstallApiRole($caller, 'gateway');
+        $node = Node::factory()->create(['name' => 'app-oc-2', 'status' => 'active', 'platform' => 'ubuntu_24-04']);
+        assignToolInstallApiRole($node, 'app-dev');
+        app()->instance(RemoteShell::class, new ToolInstallApiRecordingShell);
+
+        $response = $this->call('POST', '/api/tools/opencode-server/install', [
+            'node' => 'app-oc-2',
+            'with_process' => false,
+        ], [], [], ['REMOTE_ADDR' => TOOL_INSTALL_API_CALLER_WG_IP]);
+
+        $response->assertOk()
+            ->assertJsonPath('success.data.tool.process', null);
+
+        expect(DB::table('processes')->where('node_id', $node->id)->where('name', 'opencode-server')->exists())->toBeFalse();
+    });
+
+    it('converges the related process idempotently on re-install', function (): void {
+        $caller = createToolInstallApiCallerNode();
+        assignToolInstallApiRole($caller, 'gateway');
+        $node = Node::factory()->create(['name' => 'app-oc-3', 'status' => 'active', 'platform' => 'ubuntu_24-04']);
+        assignToolInstallApiRole($node, 'app-dev');
+        app()->instance(RemoteShell::class, new ToolInstallApiRecordingShell);
+
+        $payload = ['node' => 'app-oc-3'];
+        $headers = ['REMOTE_ADDR' => TOOL_INSTALL_API_CALLER_WG_IP];
+
+        $this->call('POST', '/api/tools/opencode-server/install', $payload, [], [], $headers)->assertOk();
+
+        $response = $this->call('POST', '/api/tools/opencode-server/install', $payload, [], [], $headers);
+
+        $response->assertOk()
+            ->assertJsonPath('success.data.tool.process.action', 'converged');
+
+        expect(DB::table('processes')->where('node_id', $node->id)->where('name', 'opencode-server')->count())->toBe(1);
+    });
+
     it('does not treat an unassigned caller as gateway tool authority', function (): void {
         createToolInstallApiCallerNode([
             'name' => 'plain-gateway-install-api-caller',

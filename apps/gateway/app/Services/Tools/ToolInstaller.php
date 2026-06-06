@@ -4,13 +4,18 @@ declare(strict_types=1);
 
 namespace App\Services\Tools;
 
+use App\Actions\Processes\AddProcess;
 use App\Contracts\RemoteShell;
 use App\Data\RemoteShell\RemoteShellResult;
+use App\Enums\ProcessCrashNotification;
+use App\Enums\Processes\ProcessRuntime;
+use App\Enums\ProcessRestartPolicy;
 use App\Models\App;
 use App\Models\Node;
 use App\Models\NodeTool;
 use App\Models\ProxyRoute;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
+use App\Services\Processes\ProcessOwnerContextResolver;
 use App\Services\Proxy\ProxyRouteRenderer;
 use App\Services\RemoteShell\RemoteSecretFile;
 
@@ -23,6 +28,8 @@ final readonly class ToolInstaller
         private NodeRoleAssignments $nodeRoleAssignments,
         private RemoteSecretFile $remoteSecretFile,
         private GitHubTokenResolver $githubTokenResolver,
+        private ProcessOwnerContextResolver $processContexts,
+        private AddProcess $addProcess,
     ) {}
 
     /**
@@ -37,6 +44,7 @@ final readonly class ToolInstaller
         ?string $version = null,
         ?string $runtime = null,
         ?string $instance = null,
+        bool $withProcess = true,
     ): array|ToolRegistryFailure {
         if (! $this->catalog->supports($tool)) {
             return ToolRegistryFailure::unsupportedAction($tool, 'install');
@@ -146,11 +154,62 @@ final readonly class ToolInstaller
             }
         }
 
+        $process = null;
+        $relatedProcess = $this->catalog->relatedProcess($tool);
+
+        if ($withProcess && $relatedProcess !== null) {
+            $process = $this->configureRelatedProcess($targetNode, $relatedProcess);
+        }
+
         return [
             'name' => $tool,
             'node' => $targetNode->name,
             'state' => $row->expected_state,
             'version' => $row->expected_version,
+            'process' => $process,
+        ];
+    }
+
+    /**
+     * Converge the singleton service process a tool backs. Idempotent: an
+     * existing process row is reported as converged, never duplicated.
+     *
+     * @param  array{name: string, command: string, runtime: string, tool: string}  $spec
+     * @return array{name: string, runtime: string, tool: string, action: string}
+     */
+    private function configureRelatedProcess(Node $node, array $spec): array
+    {
+        $context = $this->processContexts->resolve(
+            nodeName: $node->name,
+            appName: null,
+            workspaceName: null,
+        );
+
+        if ($context->ownerProcesses()->where('name', $spec['name'])->exists()) {
+            return [
+                'name' => $spec['name'],
+                'runtime' => $spec['runtime'],
+                'tool' => $spec['tool'],
+                'action' => 'converged',
+            ];
+        }
+
+        $this->addProcess->handle(
+            context: $context,
+            name: $spec['name'],
+            command: $spec['command'],
+            restartPolicy: ProcessRestartPolicy::Always,
+            crashNotification: ProcessCrashNotification::None,
+            start: true,
+            runtime: ProcessRuntime::from($spec['runtime']),
+            tool: $spec['tool'],
+        );
+
+        return [
+            'name' => $spec['name'],
+            'runtime' => $spec['runtime'],
+            'tool' => $spec['tool'],
+            'action' => 'configured',
         ];
     }
 

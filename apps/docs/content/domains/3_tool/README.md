@@ -44,7 +44,11 @@ These rules govern what the tool command family owns and what it may not touch.
   firewall policy.
 - Tools do not own start, stop, restart, or log lifecycle directly. Processes
   are the lifecycle-managed long-running units. A process may reference a tool
-  with a tool dependency when it needs that node-level capability.
+  with a tool dependency when it needs that node-level capability. A tool
+  definition may declare a related singleton process; `tool:install` configures
+  that process by default (idempotently) so installing the capability yields a
+  running service, while lifecycle stays process-owned. `--no-process` installs
+  the capability only.
 - Tool-specific and capability-specific command families are opt-in product
   surfaces. The tool catalog does not automatically create `redis:*`,
   `mysql:*`, `postgres:*`, or other top-level command families. Generic tool

@@ -9,7 +9,7 @@ abstract class DockerComposeTool extends BaseTool
     #[\Override]
     public function capabilities(): array
     {
-        return ['install', 'remove', 'start', 'stop', 'restart', 'update', 'logs', 'credentials', 'safe-fix', 'safe-adopt'];
+        return ['install', 'remove', 'update', 'credentials', 'safe-fix', 'safe-adopt'];
     }
 
     public function installScript(array $config = []): string

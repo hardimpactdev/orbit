@@ -22,6 +22,12 @@ These fields describe the OpenCode Server tool's identity, backend, and support 
 adopt. Start, stop, restart, and logs for the long-running server belong to
 the related `opencode-server` process.
 
+`opencode-server` declares a related singleton process, so `tool:install
+opencode-server` configures that process by default: a node-owned `systemd`
+process named `opencode-server`, command `opencode serve -a`, with a
+`tool=opencode` dependency. The convergence is idempotent. Pass `--no-process`
+to install the capability only.
+
 ## Credentials
 
 `tool:credentials opencode-server` returns connection and authentication fields

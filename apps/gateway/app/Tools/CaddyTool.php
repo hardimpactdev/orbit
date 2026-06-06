@@ -24,7 +24,7 @@ final class CaddyTool extends BaseTool
     #[\Override]
     public function capabilities(): array
     {
-        return ['start', 'stop', 'restart', 'reload', 'reconfigure', 'update', 'logs', 'safe-fix', 'safe-adopt'];
+        return ['reconfigure', 'update', 'safe-fix', 'safe-adopt'];
     }
 
     public function reconfigureScript(array $config = []): string

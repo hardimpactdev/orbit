@@ -26,7 +26,7 @@ final class RustfsTool extends BaseTool
     #[\Override]
     public function capabilities(): array
     {
-        return ['install', 'remove', 'update', 'logs', 'credentials', 'safe-fix', 'safe-adopt'];
+        return ['install', 'remove', 'update', 'credentials', 'safe-fix', 'safe-adopt'];
     }
 
     #[\Override]

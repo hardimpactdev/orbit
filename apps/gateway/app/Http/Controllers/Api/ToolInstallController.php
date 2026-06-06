@@ -89,6 +89,7 @@ final class ToolInstallController implements Loggable
             version: $this->requestTargetString($request, 'version'),
             runtime: $this->requestTargetString($request, 'runtime'),
             instance: $this->requestTargetString($request, 'instance'),
+            withProcess: $request->boolean('with_process', true),
         );
 
         $meta = (object) [];

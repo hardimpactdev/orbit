@@ -30,6 +30,15 @@ interface ToolDefinition
     public function latestSupportedVersion(): ?string;
 
     /**
+     * The singleton service process this tool backs, if any. When set,
+     * `tool:install` configures this process by default so installing the
+     * capability also yields a running service. Lifecycle remains process-owned.
+     *
+     * @return array{name: string, command: string, runtime: string, tool: string}|null
+     */
+    public function relatedProcess(): ?array;
+
+    /**
      * @return array{
      *     binary?: string,
      *     probe?: string,
