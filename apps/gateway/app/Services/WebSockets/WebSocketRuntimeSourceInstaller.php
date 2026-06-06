@@ -24,23 +24,30 @@ class WebSocketRuntimeSourceInstaller
 
     public function __construct(
         private readonly RemoteShell $remoteShell,
+        private readonly ?WebSocketRoleBaselineTiming $timing = null,
         ?string $sourcePath = null,
     ) {
-        $this->sourcePath = $this->normalizeSourcePath($sourcePath ?? resource_path('websocket-runtime'));
+        $this->sourcePath = rtrim($sourcePath ?? repo_path('apps/reverb'), DIRECTORY_SEPARATOR);
     }
 
     public function install(Node $node): void
     {
-        $files = $this->sourceFiles();
-        $sourceHash = $this->sourceHash($files);
+        $files = $this->timer()->measure('source-files', fn (): array => $this->sourceFiles());
+        $sourceHash = $this->timer()->measure('source-hash', fn (): string => $this->sourceHash($files));
+        $sourceArchive = $this->timer()->measure('source-archive', fn (): string => $this->sourceArchive($files));
 
-        $this->remoteShell->run($node, $this->installScript($sourceHash), [
-            'throw' => true,
-            'input' => base64_encode($this->sourceArchive($files)),
-            'metadata' => [
-                'ORBIT_OPERATION_ID' => 'websocket-runtime-source-install',
-            ],
-        ]);
+        $result = $this->timer()->measure(
+            'source-remote',
+            fn () => $this->remoteShell->run($node, $this->installScript($sourceHash), [
+                'throw' => true,
+                'input' => base64_encode($sourceArchive),
+                'metadata' => [
+                    'ORBIT_OPERATION_ID' => 'websocket-runtime-source-install',
+                ],
+            ]),
+        );
+
+        $this->recordRemoteTimings($result->stdout);
     }
 
     private function installScript(string $sourceHash): string
@@ -48,6 +55,8 @@ class WebSocketRuntimeSourceInstaller
         return sprintf(
             <<<'SH'
 set -e
+now_ms() { if command -v python3 >/dev/null 2>&1; then python3 -c 'import time; print(int(time.time() * 1000))'; else echo "$(($(date +%%s) * 1000))"; fi; }
+record_timing() { printf '__orbit_websocket_source_timing %%s %%s\n' "$1" "$2"; }
 runtime_root=%s
 release_dir="${runtime_root}/releases/%s"
 shared_dir="${runtime_root}/shared"
@@ -62,15 +71,18 @@ trap cleanup EXIT
 
 cat > "$source_archive"
 
+step_start="$(now_ms)"
 sudo install -d -m 0755 "$runtime_root" "${runtime_root}/releases" "$shared_dir" "$(dirname "$apps_config")"
 
 if ! sudo test -f "$apps_config"; then
     printf '%%s\n' '<?php return [];' | sudo tee "$apps_config" >/dev/null
     sudo chmod 0644 "$apps_config"
 fi
+record_timing setup "$(($(now_ms) - step_start))"
 
 current_hash="$(sudo cat "${release_dir}/.orbit-websocket-source-hash" 2>/dev/null || true)"
 
+step_start="$(now_ms)"
 if [ "$current_hash" != "$expected_hash" ]; then
     sudo rm -rf "$release_dir"
     sudo install -d -m 0755 "$release_dir"
@@ -79,7 +91,9 @@ if [ "$current_hash" != "$expected_hash" ]; then
     sudo find "$release_dir" -type f -exec chmod 0644 {} +
     sudo chmod 0755 "${release_dir}/artisan"
 fi
+record_timing extract "$(($(now_ms) - step_start))"
 
+step_start="$(now_ms)"
 if ! sudo test -f "$shared_env"; then
     app_key="base64:$(head -c 32 /dev/urandom | base64 | tr -d '\n')"
     printf 'APP_KEY=%%s\n' "$app_key" | sudo tee "$shared_env" >/dev/null
@@ -90,7 +104,9 @@ elif ! sudo grep -q '^APP_KEY=' "$shared_env"; then
 fi
 
 sudo ln -sfn "$shared_env" "${release_dir}/.env"
+record_timing env "$(($(now_ms) - step_start))"
 
+step_start="$(now_ms)"
 if ! sudo test -f "${release_dir}/vendor/autoload.php"; then
     if ! command -v composer >/dev/null 2>&1; then
         printf 'WebSocket runtime dependencies require host composer.\n' >&2
@@ -100,9 +116,12 @@ if ! sudo test -f "${release_dir}/vendor/autoload.php"; then
     cd "$release_dir"
     sudo env COMPOSER_ALLOW_SUPERUSER=1 composer install --no-dev --no-interaction --prefer-dist --optimize-autoloader --no-progress
 fi
+record_timing composer "$(($(now_ms) - step_start))"
 
+step_start="$(now_ms)"
 printf '%%s\n' "$expected_hash" | sudo tee "${release_dir}/.orbit-websocket-source-hash" >/dev/null
 sudo ln -sfn "releases/${expected_hash}" %s
+record_timing activate "$(($(now_ms) - step_start))"
 SH,
             escapeshellarg(self::RuntimeRoot),
             $sourceHash,
@@ -129,8 +148,9 @@ SH,
     private function sourceFiles(): array
     {
         $files = [];
+        $sourcePath = $this->normalizeSourcePath($this->sourcePath);
         $iterator = new RecursiveIteratorIterator(
-            new RecursiveDirectoryIterator($this->sourcePath, RecursiveDirectoryIterator::SKIP_DOTS),
+            new RecursiveDirectoryIterator($sourcePath, RecursiveDirectoryIterator::SKIP_DOTS),
         );
 
         foreach ($iterator as $file) {
@@ -160,7 +180,8 @@ SH,
 
     private function relativePath(SplFileInfo $file): string
     {
-        $relativePath = substr($file->getPathname(), strlen($this->sourcePath) + 1);
+        $sourcePath = $this->normalizeSourcePath($this->sourcePath);
+        $relativePath = substr($file->getPathname(), strlen($sourcePath) + 1);
 
         return str_replace(DIRECTORY_SEPARATOR, '/', $relativePath);
     }
@@ -234,5 +255,21 @@ SH,
                 @unlink($tarPath);
             }
         }
+    }
+
+    private function recordRemoteTimings(string $output): void
+    {
+        if (preg_match_all('/__orbit_websocket_source_timing\s+([a-z-]+)\s+(\d+)/', $output, $matches, PREG_SET_ORDER) === false) {
+            return;
+        }
+
+        foreach ($matches as $match) {
+            $this->timer()->record("source-{$match[1]}", (int) $match[2]);
+        }
+    }
+
+    private function timer(): WebSocketRoleBaselineTiming
+    {
+        return $this->timing ?? app(WebSocketRoleBaselineTiming::class);
     }
 }

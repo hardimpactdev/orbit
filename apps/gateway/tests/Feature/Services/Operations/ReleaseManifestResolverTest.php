@@ -30,7 +30,7 @@ it('downloads validates and exposes a release manifest from the configured GitHu
         ->and($manifest->source)->toBe('github-release')
         ->and($manifest->gatewayImage)->toBe('ghcr.io/hardimpactdev/orbit-gateway:1.2.3@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa')
         ->and($manifest->cliArtifacts['linux-amd64']['sha256'])->toBe(str_repeat('b', 64))
-        ->and($manifest->roleImages['orbit-websocket'])->toBe('ghcr.io/hardimpactdev/orbit-websocket:1.2.3@sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd')
+        ->and($manifest->roleImages['orbit-websocket'])->toBe('hardimpact/orbit-reverb:1.2.3@sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd')
         ->and($manifest->snapshot())->toBe(releaseManifestResolverFixture());
 });
 
@@ -158,7 +158,7 @@ function releaseManifestResolverFixture(array $overrides = []): array
         ],
         'role_images' => [
             'orbit-caddy' => 'caddy:2-alpine',
-            'orbit-websocket' => 'ghcr.io/hardimpactdev/orbit-websocket:1.2.3@sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd',
+            'orbit-websocket' => 'hardimpact/orbit-reverb:1.2.3@sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd',
         ],
     ], $overrides);
 }

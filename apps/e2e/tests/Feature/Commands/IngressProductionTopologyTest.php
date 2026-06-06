@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\E2E\Support\E2EConfig;
+use App\E2E\Support\E2ECommand;
 use App\E2E\Support\E2EGatewayApi;
 use App\E2E\Support\E2ETopologyHarness;
 use App\E2E\Support\E2ETopologyKind;
@@ -13,14 +14,14 @@ use App\E2E\Support\E2ETopologyKind;
 function preparedIngressProductionRoute(E2ETopologyHarness $topology, string $domain): array
 {
     $domainValue = var_export($domain, true);
-    $checkout = escapeshellarg($topology->checkout('gateway'));
 
-    $route = $topology->ssh(
-        'gateway',
-        'cd '.$checkout.' && php apps/gateway/artisan tinker --execute='.escapeshellarg(<<<PHP
+    $route = E2ECommand::gatewayArtisan(
+        $topology->instance('gateway'),
+        'tinker --execute='.escapeshellarg(<<<PHP
 echo json_encode(app(\\App\\Services\\Proxy\\ProxyRouteQuery::class)
     ->toRouteEntity(\\App\\Models\\ProxyRoute::query()->where('domain', {$domainValue})->firstOrFail()), JSON_THROW_ON_ERROR);
 PHP),
+        'Could not read prepared app production ingress state',
         timeoutSeconds: 120,
     );
 

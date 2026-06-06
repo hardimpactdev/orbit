@@ -15,6 +15,7 @@ it('documents docker runtime image preparation without force', function (): void
     $this->artisan('e2e:prepare-docker-runtime')
         ->expectsOutputToContain('orbit-e2e-topology-runtime:prepared-current')
         ->expectsOutputToContain('orbit-gateway:prepared-current')
+        ->expectsOutputToContain('orbit-reverb:current')
         ->expectsOutputToContain('Orbit CLI binary artifact')
         ->expectsOutputToContain('caddy:2-alpine')
         ->expectsOutputToContain('dunglas/frankenphp:1-php8.5-bookworm')
@@ -39,6 +40,7 @@ it('builds the topology and gateway images and pulls the official Caddy image wh
     $this->artisan('e2e:prepare-docker-runtime', ['--force' => true])
         ->expectsOutputToContain('Built orbit-e2e-topology-runtime:prepared-current.')
         ->expectsOutputToContain('Built orbit-gateway:prepared-current.')
+        ->expectsOutputToContain('Built orbit-reverb:current.')
         ->expectsOutputToContain('Prepared Orbit CLI binary artifact')
         ->expectsOutputToContain('Pulled caddy:2-alpine.')
         ->expectsOutputToContain('Pulled dunglas/frankenphp:1-php8.5-bookworm.')
@@ -57,6 +59,12 @@ it('builds the topology and gateway images and pulls the official Caddy image wh
         && str_contains($process->command, 'docker build')
         && str_contains($process->command, 'docker/orbit-gateway/Dockerfile')
         && str_contains($process->command, 'orbit-gateway:prepared-current')
+        && str_contains($process->command, repo_path()));
+
+    Process::assertRan(fn ($process): bool => is_string($process->command)
+        && str_contains($process->command, 'docker build')
+        && str_contains($process->command, 'docker/orbit-reverb/Dockerfile')
+        && str_contains($process->command, 'orbit-reverb:current')
         && str_contains($process->command, repo_path()));
 
     $retiredRuntimeContext = 'docker/orbit'.'-runtime';
@@ -89,10 +97,13 @@ it('builds the topology and gateway images and pulls the official Caddy image wh
         && str_contains($process->command, 'caddy:2-alpine'));
 
     $gatewayBuildCommand = collect($commands)->first(fn (string $command): bool => str_contains($command, 'docker/orbit-gateway/Dockerfile'));
+    $webSocketBuildCommand = collect($commands)->first(fn (string $command): bool => str_contains($command, 'docker/orbit-reverb/Dockerfile'));
 
     expect($gatewayBuildCommand)
         ->toContain('orbit-gateway:prepared-current')
         ->not->toContain('apps/cli/orbit')
+        ->and($webSocketBuildCommand)
+        ->toContain('orbit-reverb:current')
         ->and(implode("\n", $commands))
         ->not->toContain('orbit'.'-runtime')
         ->not->toContain('apps/cli/orbit');

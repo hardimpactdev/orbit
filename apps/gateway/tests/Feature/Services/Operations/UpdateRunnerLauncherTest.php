@@ -127,7 +127,7 @@ function updateRunnerLaunchSnapshot(
         ],
         'role_images' => [
             'orbit-caddy' => 'caddy:2-alpine',
-            'orbit-websocket' => 'ghcr.io/hardimpactdev/orbit-websocket:1.2.3@sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd',
+            'orbit-websocket' => 'hardimpact/orbit-reverb:1.2.3@sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd',
         ],
     ], $manifestOverrides);
 

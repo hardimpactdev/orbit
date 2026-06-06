@@ -254,7 +254,7 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
 
     public static function webSocketRuntimeImage(): string
     {
-        return 'orbit-websocket:current';
+        return 'orbit-reverb:current';
     }
 
     /**
@@ -305,6 +305,12 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
 
             if (! $this->hasOrbitCaddyImage($host)) {
                 $failures[] = "{$hostName}: Docker orbit-caddy image ".OrbitCaddyContainer::Image.' is not available';
+
+                continue;
+            }
+
+            if (self::websocketTopologyKind($kind) && ! $this->hasWebSocketRuntimeImage($host)) {
+                $failures[] = "{$hostName}: Docker websocket image ".self::webSocketRuntimeImage().' is not available';
 
                 continue;
             }
@@ -414,6 +420,14 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
     {
         return $host->run(
             sprintf('docker image inspect %s >/dev/null', escapeshellarg(OrbitCaddyContainer::Image)),
+            timeoutSeconds: $this->dockerMetadataProbeTimeoutSeconds(),
+        )->successful();
+    }
+
+    private function hasWebSocketRuntimeImage(DockerHost $host): bool
+    {
+        return $host->run(
+            sprintf('docker image inspect %s >/dev/null', escapeshellarg(self::webSocketRuntimeImage())),
             timeoutSeconds: $this->dockerMetadataProbeTimeoutSeconds(),
         )->successful();
     }

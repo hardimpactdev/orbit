@@ -13,6 +13,7 @@ use App\Models\Process;
 use App\Services\Nodes\NodeRegistryWriter;
 use App\Services\Nodes\Roles\NodeRoleBaselineConverger;
 use App\Services\Security\SshHostKeyPinner;
+use App\Services\WebSockets\WebSocketRoleBaselineTiming;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
@@ -33,8 +34,11 @@ class BakeWebSocketNodeCommand extends Command
     #[\Override]
     protected $hidden = true;
 
-    public function handle(NodeRegistryWriter $registryWriter, NodeRoleBaselineConverger $converger): int
-    {
+    public function handle(
+        NodeRegistryWriter $registryWriter,
+        NodeRoleBaselineConverger $converger,
+        WebSocketRoleBaselineTiming $roleBaselineTiming,
+    ): int {
         $name = $this->stringArgument('name');
         $host = $this->stringOption('host');
         $hostKeyHost = $this->stringOption('host-key-host');
@@ -47,34 +51,55 @@ class BakeWebSocketNodeCommand extends Command
             throw new RuntimeException('Name, host, wireguard-address, and redis-node are required.');
         }
 
-        $redisNode = $this->activeRedisNode($redisNodeName);
-        $hostKey = app(SshHostKeyPinner::class)->pin($hostKeyHost ?? $host);
-
-        $node = $this->writeWebSocketRoleNode(
-            registryWriter: $registryWriter,
-            name: $name,
-            host: $host,
-            wireguardAddress: $wireguardAddress,
-            gatewayEndpoint: $gatewayEndpoint,
-            user: $user,
-            hostKey: $hostKey,
+        $redisNode = $this->measureBakeStep(
+            'redis-node',
+            fn (): Node => $this->activeRedisNode($redisNodeName),
+        );
+        $hostKey = $this->measureBakeStep(
+            'host-key',
+            fn (): PinnedHostKey => app(SshHostKeyPinner::class)->pin($hostKeyHost ?? $host),
         );
 
-        $assignment = NodeRoleAssignment::query()->updateOrCreate(
-            [
-                'node_id' => $node->id,
-                'role' => NodeRoleName::WebSocket->value,
-            ],
-            [
-                'status' => NodeRoleStatus::Active->value,
-                'settings' => ['redis_node_id' => $redisNode->id],
-                'last_error' => null,
-                'converged_at' => now(),
-            ],
+        $node = $this->measureBakeStep(
+            'registry',
+            fn (): Node => $this->writeWebSocketRoleNode(
+                registryWriter: $registryWriter,
+                name: $name,
+                host: $host,
+                wireguardAddress: $wireguardAddress,
+                gatewayEndpoint: $gatewayEndpoint,
+                user: $user,
+                hostKey: $hostKey,
+            ),
+        );
+
+        $assignment = $this->measureBakeStep(
+            'role-assignment',
+            fn (): NodeRoleAssignment => NodeRoleAssignment::query()->updateOrCreate(
+                [
+                    'node_id' => $node->id,
+                    'role' => NodeRoleName::WebSocket->value,
+                ],
+                [
+                    'status' => NodeRoleStatus::Active->value,
+                    'settings' => ['redis_node_id' => $redisNode->id],
+                    'last_error' => null,
+                    'converged_at' => now(),
+                ],
+            ),
         );
 
         if ($this->option('converge-runtime') === true) {
-            $this->convergeRuntime($converger, $node, $assignment);
+            $roleBaselineTiming->reset();
+
+            $this->measureBakeStep(
+                'runtime-converge',
+                fn () => $this->convergeRuntime($converger, $node, $assignment),
+            );
+
+            foreach ($roleBaselineTiming->records() as $record) {
+                $this->line("__orbit_bake_timing websocket runtime-{$record['step']} {$record['milliseconds']}");
+            }
         }
 
         return self::SUCCESS;
@@ -184,5 +209,18 @@ class BakeWebSocketNodeCommand extends Command
         $value = $this->option($name);
 
         return is_string($value) && $value !== '' ? $value : null;
+    }
+
+    private function measureBakeStep(string $step, callable $callback): mixed
+    {
+        $startedAt = hrtime(true);
+
+        try {
+            return $callback();
+        } finally {
+            $milliseconds = (int) round((hrtime(true) - $startedAt) / 1_000_000);
+
+            $this->line("__orbit_bake_timing websocket {$step} {$milliseconds}");
+        }
     }
 }

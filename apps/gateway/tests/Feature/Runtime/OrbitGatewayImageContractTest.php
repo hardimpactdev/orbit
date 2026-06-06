@@ -7,8 +7,19 @@ it('packages the gateway app in a FrankenPHP image without relying on host PHP s
 
     expect($dockerfile)
         ->toContain('FROM dunglas/frankenphp:')
-        ->toContain('COPY apps/gateway /srv/orbit/apps/gateway')
-        ->toContain('COPY packages/core /srv/orbit/packages/core')
+        ->toContain('FROM base AS dependencies')
+        ->toContain('FROM dependencies AS application')
+        ->toContain('COPY apps/gateway/artisan apps/gateway/composer.json apps/gateway/composer.lock apps/gateway/.env.example /srv/orbit/apps/gateway/')
+        ->toContain('COPY packages/core/composer.json packages/core/composer.lock /srv/orbit/packages/core/')
+        ->toContain('composer install --no-dev --no-interaction --prefer-dist --no-autoloader --no-scripts')
+        ->toContain('COPY apps/gateway/app /srv/orbit/apps/gateway/app')
+        ->toContain('COPY apps/gateway/resources/css /srv/orbit/apps/gateway/resources/css')
+        ->toContain('COPY apps/gateway/resources/js /srv/orbit/apps/gateway/resources/js')
+        ->toContain('COPY apps/gateway/resources/node-scripts /srv/orbit/apps/gateway/resources/node-scripts')
+        ->toContain('COPY apps/gateway/resources/views /srv/orbit/apps/gateway/resources/views')
+        ->toContain('COPY packages/core/src /srv/orbit/packages/core/src')
+        ->toContain('rm -f bootstrap/cache/*.php')
+        ->toContain('composer dump-autoload --no-dev --no-interaction --optimize --no-scripts')
         ->toContain('docker-ce-cli')
         ->toContain('docker-compose-plugin')
         ->toContain('iputils-ping')
@@ -21,8 +32,12 @@ it('packages the gateway app in a FrankenPHP image without relying on host PHP s
         ->toContain('/home/orbit')
         ->toContain('orbit-gateway-entrypoint')
         ->toContain('orbit-gateway-healthcheck')
+        ->toContain('COPY --from=application --chown=orbit:orbit /srv/orbit /srv/orbit')
         ->toContain('HEALTHCHECK')
+        ->not->toContain('COPY apps/gateway /srv/orbit/apps/gateway')
+        ->not->toContain('COPY packages/core /srv/orbit/packages/core')
         ->not->toContain('COPY apps/gateway /app')
+        ->not->toContain('COPY apps/reverb')
         ->not->toContain('COPY bin/install-orbit')
         ->not->toContain('COPY --from=composer')
         ->not->toContain('COPY --from=docker')
@@ -42,10 +57,33 @@ it('keeps the orbit gateway image build context free of host secrets and generat
         ->toContain('apps/gateway/database/*.sqlite-*')
         ->toContain('apps/gateway/storage/logs')
         ->toContain('apps/gateway/storage/framework')
+        ->toContain('apps/gateway/bootstrap/cache')
         ->toContain('!apps/gateway/.env.example')
-        ->toContain('!apps/gateway/**')
-        ->toContain('!packages/core/**')
+        ->toContain('!apps/gateway/app/**')
+        ->toContain('!apps/gateway/resources/views/**')
+        ->toContain('!packages/core/src/**')
+        ->toContain('**/tests')
+        ->toContain('**/build')
+        ->toContain('**/builds')
+        ->not->toContain('!apps/gateway/**')
+        ->not->toContain('!apps/reverb/**')
+        ->not->toContain('!packages/core/**')
         ->toContain('!docker/orbit-gateway/**');
+});
+
+it('packages the Reverb runtime as a self-contained image', function (): void {
+    $dockerfile = file_get_contents(repo_path('docker/orbit-reverb/Dockerfile'));
+    $dockerignore = file_get_contents(repo_path('docker/orbit-reverb/Dockerfile.dockerignore'));
+
+    expect($dockerfile)
+        ->toContain('COPY apps/reverb /app')
+        ->toContain('composer install --no-dev --no-interaction --prefer-dist --optimize-autoloader --no-scripts')
+        ->toContain('LABEL orbit.websocket.self_contained="true"')
+        ->toContain('CMD ["php", "artisan", "reverb:start"')
+        ->and($dockerignore)
+        ->toContain('!apps/reverb/**')
+        ->toContain('**/vendor')
+        ->not->toContain('!apps/gateway/**');
 });
 
 it('runs FrankenPHP on the internal gateway port and exposes a local health probe', function (): void {

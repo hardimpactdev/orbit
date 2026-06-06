@@ -181,6 +181,7 @@ class E2EPrepareDockerHostsCommand extends Command
 
         $runnerImages = [
             ['role' => 'orbit-gateway', 'image' => DockerTopologyProvider::gatewayImage()],
+            ['role' => 'orbit-websocket', 'image' => DockerTopologyProvider::webSocketRuntimeImage()],
             ['role' => 'orbit-caddy', 'image' => OrbitCaddyContainer::Image],
             ...array_map(
                 fn (string $image): array => ['role' => 'frankenphp-runtime', 'image' => $image],

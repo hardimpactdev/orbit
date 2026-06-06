@@ -10,6 +10,7 @@ use App\Models\NodeRoleAssignment;
 use App\Models\Process;
 use App\Services\Nodes\Roles\NodeRoleBaselineConverger;
 use App\Services\Security\SshHostKeyPinner;
+use App\Services\WebSockets\WebSocketRoleBaselineTiming;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Mockery as m;
 
@@ -54,7 +55,12 @@ describe('orbit:internal:bake-websocket-node', function (): void {
             '--gateway-endpoint' => 'gateway',
             '--user' => 'orbit',
             '--redis-node' => 'app-dev-1',
-        ])->assertSuccessful();
+        ])
+            ->expectsOutputToContain('__orbit_bake_timing websocket redis-node')
+            ->expectsOutputToContain('__orbit_bake_timing websocket host-key')
+            ->expectsOutputToContain('__orbit_bake_timing websocket registry')
+            ->expectsOutputToContain('__orbit_bake_timing websocket role-assignment')
+            ->assertSuccessful();
 
         $node = Node::query()->where('name', 'app-dev-1')->firstOrFail();
         $assignment = NodeRoleAssignment::query()
@@ -104,6 +110,7 @@ describe('orbit:internal:bake-websocket-node', function (): void {
 
     it('converges the websocket runtime baseline when requested', function (): void {
         $redis = createBakeWebSocketRedisNode();
+        $timing = app(WebSocketRoleBaselineTiming::class);
         $converger = m::mock(NodeRoleBaselineConverger::class);
         $converger->shouldReceive('converge')
             ->once()
@@ -111,7 +118,12 @@ describe('orbit:internal:bake-websocket-node', function (): void {
                 m::on(fn (Node $node): bool => $node->name === 'app-dev-1'),
                 m::on(fn (NodeRoleAssignment $assignment): bool => $assignment->role === NodeRoleName::WebSocket->value
                 && $assignment->settings === ['redis_node_id' => $redis->id]),
-            );
+            )
+            ->andReturnUsing(function () use ($timing): void {
+                foreach (['render', 'tools', 'certificates', 'source-install', 'container-apply'] as $step) {
+                    $timing->measure($step, fn (): null => null);
+                }
+            });
         app()->instance(NodeRoleBaselineConverger::class, $converger);
 
         $this->artisan('orbit:internal:bake-websocket-node', [
@@ -122,7 +134,14 @@ describe('orbit:internal:bake-websocket-node', function (): void {
             '--user' => 'orbit',
             '--redis-node' => 'app-dev-1',
             '--converge-runtime' => true,
-        ])->assertSuccessful();
+        ])
+            ->expectsOutputToContain('__orbit_bake_timing websocket runtime-converge')
+            ->expectsOutputToContain('__orbit_bake_timing websocket runtime-render')
+            ->expectsOutputToContain('__orbit_bake_timing websocket runtime-tools')
+            ->expectsOutputToContain('__orbit_bake_timing websocket runtime-certificates')
+            ->expectsOutputToContain('__orbit_bake_timing websocket runtime-source-install')
+            ->expectsOutputToContain('__orbit_bake_timing websocket runtime-container-apply')
+            ->assertSuccessful();
     });
 });
 

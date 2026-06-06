@@ -256,7 +256,10 @@ function incusLiveCommandWith(ArrayObject $log, ?LiveIncusLocalMachine $localMac
     app()->instance(E2EIncusCommand::class, $command);
 }
 
-function writeIncusRetainedManifest(string $directory, string $id): void
+/**
+ * @param  array<string, string>  $checkouts
+ */
+function writeIncusRetainedManifest(string $directory, string $id, array $checkouts = ['operator' => '/home/orbit/orbit-current']): void
 {
     (new E2EDevTopologyManifestStore($directory))->write([
         'id' => $id,
@@ -271,9 +274,7 @@ function writeIncusRetainedManifest(string $directory, string $id): void
             'gateway' => "orbit-e2e-{$id}-gateway",
             'dev' => "orbit-e2e-{$id}-dev",
         ],
-        'checkouts' => [
-            'operator' => '/home/orbit/orbit-current',
-        ],
+        'checkouts' => $checkouts,
         'created_at' => '2026-05-30T10:00:00+00:00',
     ]);
 }
@@ -533,6 +534,47 @@ it('syncs the current checkout to a retained Incus topology by id', function ():
         ->toContain('/home/orbit/orbit')
         ->toContain('/home/orbit/orbit-current')
         ->toContain('tar --warning=no-unknown-keyword');
+});
+
+it('syncs source-mounted retained Incus checkouts into VM-local runtime mirrors', function (): void {
+    writeIncusRetainedManifest($this->manifestDirectory, 'dev-abc123', [
+        'operator' => '/home/orbit/orbit',
+        'gateway' => '/home/orbit/orbit',
+        'dev' => '/home/orbit/orbit',
+    ]);
+
+    $commands = [];
+
+    Process::fake(function ($process) use (&$commands) {
+        $commands[] = (string) $process->command;
+
+        return Process::result();
+    });
+
+    $output = new BufferedOutput;
+    $exitCode = app(Kernel::class)->call('e2e:incus', [
+        '--sync' => true,
+        '--id' => 'dev-abc123',
+        '--json' => true,
+    ], $output);
+
+    $payload = json_decode(trim($output->fetch()), true, flags: JSON_THROW_ON_ERROR);
+    $sync = $payload['success']['source_sync'];
+    $commandsOutput = implode("\n", $commands);
+
+    expect($exitCode)->toBe(0)
+        ->and($sync['runtime_checkouts'])->toBe([
+            'operator' => '/home/orbit/orbit-run',
+            'gateway' => '/home/orbit/orbit-run',
+            'dev' => '/home/orbit/orbit-run',
+        ])
+        ->and($commandsOutput)
+        ->toContain('/home/orbit/orbit')
+        ->toContain('/home/orbit/orbit-run')
+        ->toContain('tar --warning=no-unknown-keyword')
+        ->toContain('orbit-e2e-dev-abc123-operator')
+        ->toContain('orbit-e2e-dev-abc123-gateway')
+        ->toContain('orbit-e2e-dev-abc123-dev');
 });
 
 it('prints a human retained Incus sync summary', function (): void {

@@ -39,6 +39,12 @@ class E2EPrepareDockerRuntimeCommand extends Command
                 'context' => repo_path(),
             ],
             [
+                'image' => DockerTopologyProvider::webSocketRuntimeImage(),
+                'action' => 'build',
+                'dockerfile' => repo_path('docker/orbit-reverb/Dockerfile'),
+                'context' => repo_path(),
+            ],
+            [
                 'image' => OrbitCaddyContainer::Image,
                 'action' => 'pull',
             ],

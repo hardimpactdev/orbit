@@ -18,6 +18,11 @@ final readonly class E2EResourceLeaseSet
         return $this->leases[0]->host();
     }
 
+    public function slot(): int
+    {
+        return $this->leases[0]->slot();
+    }
+
     /**
      * @return non-empty-list<E2EResourceLease>
      */

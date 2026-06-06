@@ -396,9 +396,9 @@ echo json_encode([
 ], JSON_THROW_ON_ERROR);
 PHP;
 
-    $result = E2ECommand::orbit(
+    $result = E2ECommand::gatewayArtisan(
         $gateway,
-        preparedOrbitTinkerCommand('/home/orbit/orbit', $php),
+        preparedGatewayTinkerArguments($php),
         'Could not read prepared appdev service state',
     );
 
@@ -427,9 +427,9 @@ echo json_encode([
 ], JSON_THROW_ON_ERROR);
 PHP;
 
-    $result = E2ECommand::orbit(
+    $result = E2ECommand::gatewayArtisan(
         $gateway,
-        preparedOrbitTinkerCommand('/home/orbit/orbit', $php),
+        preparedGatewayTinkerArguments($php),
         'Could not read prepared agent state',
     );
 
@@ -467,9 +467,9 @@ echo json_encode([
 ], JSON_THROW_ON_ERROR);
 PHP;
 
-    $result = E2ECommand::orbit(
+    $result = E2ECommand::gatewayArtisan(
         $gateway,
-        preparedOrbitTinkerCommand('/home/orbit/orbit', $php),
+        preparedGatewayTinkerArguments($php),
         'Could not read prepared app production ingress state',
     );
 
@@ -507,9 +507,9 @@ echo json_encode([
 ], JSON_THROW_ON_ERROR);
 PHP;
 
-    $result = E2ECommand::orbit(
+    $result = E2ECommand::gatewayArtisan(
         $gateway,
-        preparedOrbitTinkerCommand('/home/orbit/orbit', $php),
+        preparedGatewayTinkerArguments($php),
         'Could not read prepared websocket state',
     );
 
@@ -563,20 +563,20 @@ echo json_encode($node->only([
     ], JSON_THROW_ON_ERROR);
 PHP;
 
-    $result = E2ECommand::orbit(
+    $result = E2ECommand::gatewayArtisan(
         $gateway,
-        preparedOrbitTinkerCommand('/home/orbit/orbit', $php),
+        preparedGatewayTinkerArguments($php),
         'Could not read prepared local gateway node',
     );
 
     return json_decode(trim($result->output()), associative: true, flags: JSON_THROW_ON_ERROR);
 }
 
-function preparedOrbitTinkerCommand(string $orbitPath, string $php): string
+function preparedGatewayTinkerArguments(string $php): string
 {
     $encodedPhp = base64_encode($php);
 
-    return 'cd '.escapeshellarg($orbitPath).' && php apps/gateway/artisan tinker --execute='.escapeshellarg("eval(base64_decode('{$encodedPhp}'));");
+    return 'tinker --execute='.escapeshellarg("eval(base64_decode('{$encodedPhp}'));");
 }
 
 function readPreparedClientGatewayUrl(E2EInstance $operator, string $operatorUser, SshKeyPair $key): string
@@ -591,9 +591,6 @@ function readPreparedClientGatewayUrl(E2EInstance $operator, string $operatorUse
     return trim($result->output());
 }
 
-/**
- * @param  array<string, mixed>  $node
- */
 function expectedPreparedGatewayUrl(E2ETopologyLease $topology): string
 {
     if (getenv('ORBIT_E2E_TOPOLOGY_PROVIDER') === 'docker') {

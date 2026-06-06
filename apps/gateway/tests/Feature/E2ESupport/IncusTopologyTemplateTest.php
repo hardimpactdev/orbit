@@ -12,6 +12,7 @@ use App\E2E\Support\IncusHostPool;
 use App\E2E\Support\IncusTopologyProvider;
 use App\E2E\Support\IncusTopologyTemplate;
 use App\E2E\Support\IncusWarmTopologyPool;
+use App\E2E\Support\IncusWorkerNetwork;
 use Illuminate\Contracts\Process\ProcessResult;
 use Illuminate\Support\Facades\Process;
 use Mockery as m;
@@ -111,6 +112,55 @@ it('generates correct template and clone names', function (): void {
         ->toBe('clean-operator_gateway_app-dev_app-prod_agent_websocket-base')
         ->and(IncusTopologyTemplate::cloneName('abc123', 'operator'))
         ->toBe('orbit-e2e-abc123-operator');
+});
+
+it('generates Incus worker network names that fit the Linux interface limit', function (): void {
+    $config = new E2EConfig(
+        providerNames: ['incus'],
+        topologyProviderNames: ['incus'],
+        host: 'beast',
+        sourceImage: '',
+        baseImage: '',
+        bootstrapUser: 'provisioner',
+        operatorUser: 'operator',
+        instancePrefix: 'orbit-e2e-prepared',
+        timeoutSeconds: 60,
+        cpus: '2',
+        memory: '2GiB',
+        topologyCpus: '1',
+        topologyMemory: '2GiB',
+        topologyRootSize: '16GiB',
+        topologyStateSize: '4GiB',
+        incusStoragePool: '',
+        dockerHosts: ['local'],
+        keep: false,
+    );
+
+    $network = IncusWorkerNetwork::forSlot($config, 200);
+
+    expect($network->name)
+        ->toBe('orbit-e2e-n-200')
+        ->and(strlen($network->name))->toBeLessThanOrEqual(15);
+});
+
+it('opens worker network forwarding ahead of host firewall drops without enabling dnsmasq dns', function (): void {
+    $config = makeIncusTopologyTemplateTestConfig();
+    $host = m::mock(IncusHost::class, [$config])->makePartial();
+
+    $host->shouldReceive('run')
+        ->once()
+        ->withArgs(function (string $command, int $timeoutSeconds): bool {
+            return $timeoutSeconds === 120
+                && str_contains($command, 'raw.dnsmasq port=0')
+                && ! str_contains($command, 'dhcp-option=option:dns-server')
+                && str_contains($command, "iptables -C FORWARD -i 'orbit-e2e-n-1' -j ACCEPT")
+                && str_contains($command, "iptables -I FORWARD 1 -i 'orbit-e2e-n-1' -j ACCEPT")
+                && str_contains($command, "iptables -C FORWARD -o 'orbit-e2e-n-1' -j ACCEPT")
+                && str_contains($command, "iptables -I FORWARD 1 -o 'orbit-e2e-n-1' -j ACCEPT");
+        })
+        ->andReturn(successfulProcessResult());
+
+    IncusWorkerNetwork::forSlot($config, 1)->ensureOn($host);
 });
 
 it('returns true when all template instances and clean snapshots exist', function (): void {
@@ -526,6 +576,26 @@ it('builds a batch script that copies all roles in parallel, applies limits, the
     expect(strpos($script, "root size='16GiB'"))->toBeLessThan($firstStartPos);
 });
 
+it('attaches cloned Incus topology instances to the worker network before start', function (): void {
+    $config = makeIncusTopologyTemplateTestConfig();
+    $host = m::mock(IncusHost::class, [$config])->makePartial();
+    mockIncusTopologyCurrentSnapshots($host, 2);
+    $network = IncusWorkerNetwork::forSlot($config, 3);
+
+    $script = IncusTopologyTemplate::buildBatchScript(
+        $host,
+        E2ETopologyKind::OperatorGateway,
+        'runNetwork',
+        IncusTopologyTemplate::rolesFor(E2ETopologyKind::OperatorGateway),
+        network: $network,
+    );
+
+    expect($script)
+        ->toContain("incus config device set 'orbit-e2e-runNetwork-operator' eth0 network 'orbit-e2e-n-3'")
+        ->toContain("incus config device add 'orbit-e2e-runNetwork-gateway' eth0 nic network='orbit-e2e-n-3' name=eth0")
+        ->and(strpos($script, "eth0 network 'orbit-e2e-n-3'"))->toBeLessThan(strpos($script, "incus start 'orbit-e2e-runNetwork-operator'"));
+});
+
 it('falls back from branch-specific Incus snapshots to base snapshots per role', function (): void {
     withE2ETopologyEnvironment([
         'ORBIT_E2E_TOPOLOGY_ARTIFACT_NAMESPACE' => 'Branch A/B',
@@ -698,13 +768,12 @@ it('prepared Incus acquisition retargets selected snapshot roles without dynamic
         ->toContain('prepareInstances($instances, $this->config, $sshKeyPair, $timer, $options, $kind)')
         ->toContain('retargetTopology($instances, $config, $sshKeyPair, $kind, $options->sourceMountedCheckout)')
         ->toContain('--public-host=%s --skip-gateway-service-install')
-        ->toContain('php apps/gateway/artisan orbit:internal:bootstrap-gateway-local')
-        ->toContain('php apps/gateway/artisan orbit:internal:bake-app-node app-dev-1 --role=app-dev')
-        ->toContain('php apps/gateway/artisan tinker --execute=')
-        ->toContain('/orbit/apps/cli')
+        ->toContain('$bootstrapArguments')
+        ->toContain('runGatewayArtisan($gateway')
+        ->toContain('E2ECommand::gatewayArtisan(')
+        ->toContain("'cd /home/orbit/orbit && php apps/gateway/artisan '.\$arguments")
         ->toContain('/.config/orbit')
         ->toContain('config.json')
-        ->toContain('ORBIT_GATEWAY_URL=%%s')
         ->toContain('orbit:internal:bake-app-node app-dev-1 --role=app-dev')
         ->toContain('seedAppdevDatabaseAndRedis($gateway')
         ->toContain('orbit:internal:bake-ingress-node app-prod-1')
@@ -792,21 +861,21 @@ it('clones runs the batch script through the host and waits for each agent', fun
     $host = m::mock(IncusHost::class, [$config])->makePartial();
 
     $captured = null;
-    $host->shouldReceive('run')
+    $host->shouldReceive('runWithoutMultiplexing')
+        ->once()
         ->withArgs(function (string $command) use (&$captured): bool {
-            // First run is the batch (matches incus copy/start). Subsequent
-            // runs are the per-role waitForAgent (incus exec ... true).
-            if ($captured === null && str_contains($command, 'incus copy')) {
-                $captured = $command;
-            }
+            $captured = $command;
 
-            return true;
+            return str_contains($command, 'incus copy');
         })
+        ->andReturn(successfulProcessResult());
+    $host->shouldReceive('run')
         ->andReturn(successfulProcessResult());
 
     $instances = IncusTopologyTemplate::clone($host, E2ETopologyKind::OperatorGateway, 'runY');
 
-    expect($instances)->toHaveKeys(['operator', 'gateway'])
+    expect($instances)->toHaveKey('operator')
+        ->toHaveKey('gateway')
         ->and($captured)->toContain('incus copy')
         ->and($captured)->toContain("'orbit-e2e-runY-operator'")
         ->and($captured)->toContain("'orbit-e2e-runY-gateway'")
@@ -821,7 +890,7 @@ it('throws when the batch script fails, surfacing the host error output', functi
     $failure->shouldReceive('errorOutput')->andReturn("incus copy: not found\n");
 
     $host = m::mock(IncusHost::class, [$config])->makePartial();
-    $host->shouldReceive('run')->andReturn($failure);
+    $host->shouldReceive('runWithoutMultiplexing')->andReturn($failure);
 
     expect(fn () => IncusTopologyTemplate::clone($host, E2ETopologyKind::Operator, 'runZ'))
         ->toThrow(RuntimeException::class, 'Topology batch failed for operator');

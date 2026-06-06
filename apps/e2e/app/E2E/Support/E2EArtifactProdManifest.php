@@ -10,6 +10,8 @@ final readonly class E2EArtifactProdManifest
 {
     public const string GatewayImageArchive = 'orbit-gateway-current.tar';
 
+    public const string WebSocketImageArchive = 'orbit-reverb-current.tar';
+
     public const string BinaryArtifactDirectory = 'apps/cli/builds/e2e-artifact-prod';
 
     public function __construct(

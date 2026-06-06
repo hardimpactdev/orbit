@@ -32,6 +32,7 @@ final readonly class E2EProvisionFingerprint
                 'provision' => self::hashPathSet($root, self::provisionSourcePaths()),
                 'cli_artifact' => self::hashPathSet($root, self::cliArtifactPaths()),
                 'gateway_artifact' => self::hashPathSet($root, self::gatewayArtifactPaths()),
+                'websocket_artifact' => self::hashPathSet($root, self::webSocketArtifactPaths()),
             ],
             'runtime_archives' => self::runtimeArchiveFingerprints($bundleDirectory),
         ];
@@ -48,6 +49,7 @@ final readonly class E2EProvisionFingerprint
             'provision' => self::hashValue($globalInput),
             'cli_artifact' => $inputs['source']['cli_artifact']['hash'],
             'gateway_artifact' => $inputs['source']['gateway_artifact']['hash'],
+            'websocket_artifact' => $inputs['source']['websocket_artifact']['hash'],
             'runtime_archives' => self::hashValue($inputs['runtime_archives']),
         ];
         $fingerprints['global'] = self::hashValue($fingerprints);
@@ -59,6 +61,7 @@ final readonly class E2EProvisionFingerprint
                 'provision' => $fingerprints['provision'],
                 'cli_artifact' => $fingerprints['cli_artifact'],
                 'gateway_artifact' => self::roleDependsOnGatewayState($role) ? $fingerprints['gateway_artifact'] : null,
+                'websocket_artifact' => $role === 'dev' ? $fingerprints['websocket_artifact'] : null,
             ]);
         }
 
@@ -190,16 +193,32 @@ final readonly class E2EProvisionFingerprint
     private static function gatewayArtifactPaths(): array
     {
         return [
+            'apps/gateway/artisan',
             'apps/gateway/app',
             'apps/gateway/bootstrap',
             'apps/gateway/config',
-            'apps/gateway/database/migrations',
-            'apps/gateway/resources',
+            'apps/gateway/database',
+            'apps/gateway/public',
+            'apps/gateway/resources/css',
+            'apps/gateway/resources/js',
+            'apps/gateway/resources/node-scripts',
+            'apps/gateway/resources/views',
             'apps/gateway/routes',
+            'apps/gateway/.env.example',
             'apps/gateway/composer.json',
             'apps/gateway/composer.lock',
-            'apps/gateway/Dockerfile',
-            'apps/gateway/docker',
+            'docker/orbit-gateway',
+        ];
+    }
+
+    /**
+     * @return list<string>
+     */
+    private static function webSocketArtifactPaths(): array
+    {
+        return [
+            'apps/reverb',
+            'docker/orbit-reverb',
         ];
     }
 
@@ -213,9 +232,22 @@ final readonly class E2EProvisionFingerprint
             'bin/install-orbit',
             'bin/e2e-provision-node',
             'bin/_e2e-deps.sh',
-            'apps/e2e/app/Console/Commands/E2EPrepareTopologyCommand.php',
-            'apps/e2e/app/Console/Commands/E2EEnsureArtifactsCommand.php',
-            'apps/e2e/app/E2E/Support',
+            'apps/e2e/app/E2E/Support/DockerTopologyProvider.php',
+            'apps/e2e/app/E2E/Support/E2EArtifactProdManifest.php',
+            'apps/e2e/app/E2E/Support/E2ECommand.php',
+            'apps/e2e/app/E2E/Support/E2EConfig.php',
+            'apps/e2e/app/E2E/Support/E2ECurrentCheckout.php',
+            'apps/e2e/app/E2E/Support/E2EGatewayApi.php',
+            'apps/e2e/app/E2E/Support/E2EImage.php',
+            'apps/e2e/app/E2E/Support/E2EOperatorIdentity.php',
+            'apps/e2e/app/E2E/Support/E2ETopologyKind.php',
+            'apps/e2e/app/E2E/Support/E2EWgEasyGateway.php',
+            'apps/e2e/app/E2E/Support/E2EWireGuardIdentitySet.php',
+            'apps/e2e/app/E2E/Support/E2EWireGuardMesh.php',
+            'apps/e2e/app/E2E/Support/IncusHost.php',
+            'apps/e2e/app/E2E/Support/IncusTopologyBuilder.php',
+            'apps/e2e/app/E2E/Support/OrbitCliBinaryBundle.php',
+            'apps/e2e/app/E2E/Support/SourceMountedCheckoutSyncer.php',
         ];
     }
 

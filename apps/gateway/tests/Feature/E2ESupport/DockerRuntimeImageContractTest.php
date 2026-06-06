@@ -17,6 +17,15 @@ it('keeps a gateway image build context that excludes host secrets and local art
         ->and($ignore)->toContain('**/.env')
         ->and($ignore)->toContain('**/vendor')
         ->and($ignore)->toContain('**/node_modules')
+        ->and($ignore)->toContain('**/tests')
+        ->and($ignore)->toContain('**/build')
+        ->and($ignore)->toContain('**/builds')
+        ->and($ignore)->toContain('!apps/gateway/app/**')
+        ->and($ignore)->toContain('!apps/gateway/resources/views/**')
+        ->and($ignore)->toContain('!packages/core/src/**')
+        ->and($ignore)->not->toContain('!apps/gateway/**')
+        ->and($ignore)->not->toContain('!apps/reverb/**')
+        ->and($ignore)->not->toContain('!packages/core/**')
         ->and($ignore)->toContain('.git')
         ->and($ignore)->toContain('apps/gateway/database/*.sqlite')
         ->and($ignore)->toContain('apps/gateway/storage/*.sqlite')
@@ -25,6 +34,20 @@ it('keeps a gateway image build context that excludes host secrets and local art
         ->and($ignore)->toContain('apps/gateway/storage/app/orbit/ca')
         ->and($ignore)->toContain('apps/gateway/storage/app/orbit/certs')
         ->and($ignore)->toContain('apps/gateway/storage/app/orbit/keys');
+});
+
+it('keeps a self-contained Reverb image build context separate from gateway', function (): void {
+    $dockerfile = file_get_contents(repo_path('docker/orbit-reverb/Dockerfile'));
+    $ignore = file_get_contents(repo_path('docker/orbit-reverb/Dockerfile.dockerignore'));
+
+    expect(file_exists(repo_path('docker/orbit-reverb/Dockerfile')))->toBeTrue()
+        ->and(file_exists(repo_path('docker/orbit-reverb/Dockerfile.dockerignore')))->toBeTrue()
+        ->and($dockerfile)->toContain('COPY apps/reverb /app')
+        ->and($dockerfile)->toContain('composer install --no-dev --no-interaction --prefer-dist --optimize-autoloader --no-scripts')
+        ->and($dockerfile)->toContain('LABEL orbit.websocket.self_contained="true"')
+        ->and($ignore)->toContain('!apps/reverb/**')
+        ->and($ignore)->toContain('**/vendor')
+        ->and($ignore)->not->toContain('!apps/gateway/**');
 });
 
 it('uses the orbit-gateway image for source-dev gateway sibling execution', function (): void {
@@ -39,6 +62,9 @@ it('keeps the gateway image capable of mounted source commands for source-dev to
 
     expect($dockerfile)
         ->toContain('getcomposer.org/download/latest-stable/composer.phar')
+        ->toContain('composer install --no-dev --no-interaction --prefer-dist --no-autoloader --no-scripts')
+        ->toContain('composer dump-autoload --no-dev --no-interaction --optimize --no-scripts')
+        ->toContain('COPY packages/core/src /srv/orbit/packages/core/src')
         ->toContain('download.docker.com/linux/debian')
         ->toContain('docker-ce-cli')
         ->toContain('docker-compose-plugin')

@@ -37,23 +37,47 @@ RUN apt-get update \
     && install -d -m 700 -o orbit -g orbit /home/orbit/.config/orbit \
     && rm -rf /var/lib/apt/lists/*
 
-FROM base AS vendor
+FROM base AS dependencies
 
 WORKDIR /srv/orbit/apps/gateway
 
-COPY apps/gateway /srv/orbit/apps/gateway
-COPY packages/core /srv/orbit/packages/core
+COPY apps/gateway/artisan apps/gateway/composer.json apps/gateway/composer.lock apps/gateway/.env.example /srv/orbit/apps/gateway/
+COPY packages/core/composer.json packages/core/composer.lock /srv/orbit/packages/core/
 
 RUN install -d "$ORBIT_CONFIG_ROOT" \
     && cp .env.example "$ORBIT_CONFIG_ROOT/.env" \
     && touch "$ORBIT_CONFIG_ROOT/gateway.sqlite" \
     && sed -i "s|^DB_DATABASE=.*|DB_DATABASE=$ORBIT_CONFIG_ROOT/gateway.sqlite|" "$ORBIT_CONFIG_ROOT/.env" \
-    && composer install --no-dev --no-interaction --prefer-dist --optimize-autoloader \
+    && composer install --no-dev --no-interaction --prefer-dist --no-autoloader --no-scripts \
+    && rm -rf "$ORBIT_CONFIG_ROOT" /root/.composer/cache
+
+FROM dependencies AS application
+
+COPY apps/gateway/app /srv/orbit/apps/gateway/app
+COPY apps/gateway/bootstrap /srv/orbit/apps/gateway/bootstrap
+COPY apps/gateway/config /srv/orbit/apps/gateway/config
+COPY apps/gateway/database /srv/orbit/apps/gateway/database
+COPY apps/gateway/public /srv/orbit/apps/gateway/public
+COPY apps/gateway/resources/css /srv/orbit/apps/gateway/resources/css
+COPY apps/gateway/resources/js /srv/orbit/apps/gateway/resources/js
+COPY apps/gateway/resources/node-scripts /srv/orbit/apps/gateway/resources/node-scripts
+COPY apps/gateway/resources/views /srv/orbit/apps/gateway/resources/views
+COPY apps/gateway/routes /srv/orbit/apps/gateway/routes
+COPY packages/core/src /srv/orbit/packages/core/src
+
+RUN install -d "$ORBIT_CONFIG_ROOT" \
+    && install -d bootstrap/cache storage/app storage/framework/cache storage/framework/sessions storage/framework/views storage/logs \
+    && rm -f bootstrap/cache/*.php \
+    && cp .env.example "$ORBIT_CONFIG_ROOT/.env" \
+    && touch "$ORBIT_CONFIG_ROOT/gateway.sqlite" \
+    && sed -i "s|^DB_DATABASE=.*|DB_DATABASE=$ORBIT_CONFIG_ROOT/gateway.sqlite|" "$ORBIT_CONFIG_ROOT/.env" \
+    && composer dump-autoload --no-dev --no-interaction --optimize --no-scripts \
+    && php artisan package:discover --ansi \
     && rm -rf "$ORBIT_CONFIG_ROOT" /root/.composer/cache
 
 FROM base AS gateway
 
-COPY --from=vendor --chown=orbit:orbit /srv/orbit /srv/orbit
+COPY --from=application --chown=orbit:orbit /srv/orbit /srv/orbit
 COPY docker/orbit-gateway/Caddyfile /etc/caddy/Caddyfile
 COPY docker/orbit-gateway/entrypoint.sh /usr/local/bin/orbit-gateway-entrypoint
 COPY docker/orbit-gateway/healthcheck.sh /usr/local/bin/orbit-gateway-healthcheck

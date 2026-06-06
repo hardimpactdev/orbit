@@ -115,6 +115,10 @@ function nodeUpdatesDoctorRestoreExpectedAptConfig(E2ETopologyHarness $topology)
     $autoUpgrades = rtrim($config->autoUpgrades(), "\n");
     $unattendedUpgrades = rtrim($config->unattendedUpgrades(), "\n");
     $script = <<<SH
+if ! dpkg-query -W -f='\${Status}' unattended-upgrades 2>/dev/null | grep -q 'install ok installed'; then
+    sudo apt-get update -qq
+    sudo apt-get install -y -qq unattended-upgrades
+fi
 sudo tee /etc/apt/apt.conf.d/20auto-upgrades >/dev/null <<'EOF'
 {$autoUpgrades}
 EOF

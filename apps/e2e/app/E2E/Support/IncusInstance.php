@@ -156,6 +156,24 @@ final class IncusInstance implements E2EInstance, SourceMountedCheckoutInstance
         }
     }
 
+    public function copyHostFileToInstance(string $sourcePath, string $targetPath): void
+    {
+        $result = $this->host->run(sprintf(
+            'incus file push %s %s',
+            escapeshellarg($sourcePath),
+            escapeshellarg("{$this->name}{$targetPath}"),
+        ), timeoutSeconds: 120);
+
+        if (! $result->successful()) {
+            throw new \RuntimeException("Could not copy {$sourcePath} into {$this->name}: {$result->errorOutput()}");
+        }
+    }
+
+    public function hostSourcePath(): string
+    {
+        return $this->host->sourcePath();
+    }
+
     public function waitForAgent(): void
     {
         $deadline = time() + $this->host->config->timeoutSeconds;

@@ -25,7 +25,7 @@ it('generates a release manifest with gateway digest cli hashes and role image m
             "--cli-artifact=linux-amd64=orbit-linux-x64={$linux}",
             "--cli-artifact=darwin-arm64=orbit-macos-arm64={$mac}",
             '--role-image=orbit-caddy=caddy:2-alpine',
-            '--role-image=orbit-websocket=ghcr.io/hardimpactdev/orbit-websocket:1.2.3',
+            '--role-image=orbit-websocket=hardimpact/orbit-reverb:1.2.3',
             "--output={$output}",
         ], repo_path());
         $process->run();
@@ -53,7 +53,7 @@ it('generates a release manifest with gateway digest cli hashes and role image m
             ],
             'role_images' => [
                 'orbit-caddy' => 'caddy:2-alpine',
-                'orbit-websocket' => 'ghcr.io/hardimpactdev/orbit-websocket:1.2.3',
+                'orbit-websocket' => 'hardimpact/orbit-reverb:1.2.3',
             ],
         ]);
     } finally {

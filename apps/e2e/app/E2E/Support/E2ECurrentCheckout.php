@@ -101,7 +101,7 @@ final class E2ECurrentCheckout
             $remotePath = self::sourceMountedRuntimePath($user);
 
             self::refreshSourceMountedRuntimeMirror($instance, $user, $keyPair, $sourceMountedCheckoutPath, $remotePath, $timer);
-            self::runInstallPhases($instance, $user, $keyPair, $remotePath, $sourceMountedCheckoutPath, $timer, $hostLauncher, checkoutAlreadyPresent: true);
+            self::runInstallPhases($instance, $user, $keyPair, $remotePath, $sourceMountedCheckoutPath, $timer, $hostLauncher, sourceMountedCheckout: true, checkoutAlreadyPresent: true);
             self::activateCurrentCheckout($instance, $remotePath, $executorNodeIdentity, $hostLauncher);
             $afterInstall?->__invoke($remotePath, true);
 
@@ -155,7 +155,11 @@ final class E2ECurrentCheckout
     {
         $excludeArguments = implode(' ', array_map(
             fn (string $pattern): string => '--exclude='.escapeshellarg($pattern),
-            self::archiveExcludePatterns(),
+            [
+                ...self::archiveExcludePatterns(),
+                './apps/gateway/vendor',
+                './apps/cli/vendor',
+            ],
         ));
 
         return implode("\n", [
@@ -366,6 +370,8 @@ final class E2ECurrentCheckout
             $deadline,
         );
 
+        self::copyIncusVendorArchives($instance, $remotePath, $timer);
+
         self::runInstallPhase(
             $timer,
             'checkout.vendor',
@@ -395,6 +401,31 @@ final class E2ECurrentCheckout
             $keyPair,
             $deadline,
         );
+    }
+
+    private static function copyIncusVendorArchives(E2EInstance $instance, string $remotePath, ?E2EPhaseTimer $timer): void
+    {
+        if (! $instance instanceof IncusInstance) {
+            return;
+        }
+
+        self::runTimed($timer, 'checkout.vendor-archives', function () use ($instance, $remotePath): void {
+            E2ECommand::exec(
+                $instance,
+                'mkdir -p '.escapeshellarg("{$remotePath}/".SourceMountedCheckoutSyncer::VendorArchiveDirectory),
+                'Could not prepare current checkout vendor archive directory.',
+                timeoutSeconds: 30,
+            );
+
+            foreach (['apps/gateway', 'apps/cli'] as $appPath) {
+                $relativeArchive = SourceMountedCheckoutSyncer::vendorArchiveRelativePath($appPath);
+
+                $instance->copyHostFileToInstance(
+                    $instance->hostSourcePath().'/'.$relativeArchive,
+                    "{$remotePath}/{$relativeArchive}",
+                );
+            }
+        });
     }
 
     private static function runInstallPhase(?E2EPhaseTimer $timer, string $phase, callable $command, E2EInstance $instance, string $user, SshKeyPair $keyPair, float $deadline): void
@@ -451,8 +482,8 @@ final class E2ECurrentCheckout
         if ($sourceMountedCheckout) {
             return implode(' && ', [
                 'cd '.escapeshellarg($remotePath),
-                self::verifyMountedVendorAutoloadCommand('apps/gateway', 'Gateway'),
-                self::verifyMountedVendorAutoloadCommand('apps/cli', 'CLI'),
+                self::verifyOrInstallVendorArchiveCommand('apps/gateway', 'Gateway'),
+                self::verifyOrInstallVendorArchiveCommand('apps/cli', 'CLI'),
             ]);
         }
 
@@ -545,13 +576,53 @@ final class E2ECurrentCheckout
             self::reusePreparedVendorWithLocalAutoloadCommand(
                 appPath: 'apps/gateway',
                 vendorSourcePath: $vendorSourcePath,
-                fallbackClause: "elif command -v composer >/dev/null 2>&1; then composer --working-dir=apps/gateway install --no-interaction --prefer-dist --optimize-autoloader; else echo 'Gateway Composer dependencies are not installed and prepared vendor dependencies could not be reused.' >&2; exit 127",
+                fallbackClause: self::vendorArchiveFallbackClause(
+                    appPath: 'apps/gateway',
+                    fallbackClause: "elif command -v composer >/dev/null 2>&1; then composer --working-dir=apps/gateway install --no-interaction --prefer-dist --optimize-autoloader; else echo 'Gateway Composer dependencies are not installed and prepared vendor dependencies could not be reused.' >&2; exit 127",
+                ),
             ),
             self::reusePreparedVendorWithLocalAutoloadCommand(
                 appPath: 'apps/cli',
                 vendorSourcePath: $vendorSourcePath,
-                fallbackClause: "elif command -v composer >/dev/null 2>&1; then composer --working-dir=apps/cli install --no-interaction --prefer-dist --optimize-autoloader; else echo 'CLI Composer dependencies are not installed and prepared vendor dependencies could not be reused.' >&2; exit 127",
+                fallbackClause: self::vendorArchiveFallbackClause(
+                    appPath: 'apps/cli',
+                    fallbackClause: "elif command -v composer >/dev/null 2>&1; then composer --working-dir=apps/cli install --no-interaction --prefer-dist --optimize-autoloader; else echo 'CLI Composer dependencies are not installed and prepared vendor dependencies could not be reused.' >&2; exit 127",
+                ),
             ),
+        ]);
+    }
+
+    private static function vendorArchiveFallbackClause(string $appPath, string $fallbackClause): string
+    {
+        $archive = escapeshellarg(SourceMountedCheckoutSyncer::vendorArchiveRelativePath($appPath));
+        $appVendor = escapeshellarg("{$appPath}/vendor");
+        $appPathArgument = escapeshellarg($appPath);
+
+        return implode(' ', [
+            "elif [ -f {$archive} ]; then",
+            "rm -rf {$appVendor};",
+            "tar --warning=no-unknown-keyword -C {$appPathArgument} -xf {$archive};",
+            self::composerDumpAutoloadCommand($appPath).';',
+            $fallbackClause,
+        ]);
+    }
+
+    private static function verifyOrInstallVendorArchiveCommand(string $appPath, string $label): string
+    {
+        $archive = escapeshellarg(SourceMountedCheckoutSyncer::vendorArchiveRelativePath($appPath));
+        $autoloadPath = escapeshellarg("{$appPath}/vendor/autoload.php");
+        $appVendor = escapeshellarg("{$appPath}/vendor");
+        $appPathArgument = escapeshellarg($appPath);
+
+        return implode(' ', [
+            "if [ -f {$autoloadPath} ]; then",
+            ':;',
+            "elif [ -f {$archive} ]; then",
+            "rm -rf {$appVendor};",
+            "tar --warning=no-unknown-keyword -C {$appPathArgument} -xf {$archive};",
+            self::composerDumpAutoloadCommand($appPath).';',
+            "else echo '{$label} Composer dependencies are not installed and prepared vendor archive {$archive} is missing.' >&2; exit 127;",
+            'fi',
         ]);
     }
 

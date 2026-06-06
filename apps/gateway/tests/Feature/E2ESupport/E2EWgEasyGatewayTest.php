@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\E2E\Support\E2EInstance;
 use App\E2E\Support\E2EWgEasyGateway;
+use App\E2E\Support\E2EWireGuardIdentitySet;
 use Illuminate\Contracts\Process\ProcessResult;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Process;
@@ -15,6 +16,14 @@ afterEach(function (): void {
     if (isset($this->wgEasyGatewayTemp) && is_string($this->wgEasyGatewayTemp) && is_dir($this->wgEasyGatewayTemp)) {
         File::deleteDirectory($this->wgEasyGatewayTemp);
     }
+});
+
+it('uses fixed E2E WireGuard identities for prepared topology roles', function (): void {
+    expect(E2EWireGuardIdentitySet::forRole('gateway'))
+        ->toBe(E2EWireGuardIdentitySet::forRole('gateway'))
+        ->and(E2EWireGuardIdentitySet::forRole('gateway')['public_key'])->toBe('FGvPNoz2W40e67fcPssa5XgmqJJWOY6PGReQZ1eQ2T0=')
+        ->and(E2EWireGuardIdentitySet::forRole('operator')['public_key'])->toBe('8Kk1eHvFjl9KapqdZ6U2epl3KkMLhscWFhABalzBplk=')
+        ->and(E2EWireGuardIdentitySet::version())->toBe('2026-06-05.1');
 });
 
 function e2eWgEasyGatewayResult(bool $successful = true, string $output = '', string $errorOutput = ''): ProcessResult

@@ -12,6 +12,7 @@ use App\E2E\Support\E2ETopologyHarness;
 use App\E2E\Support\E2ETopologyKind;
 use App\E2E\Support\E2ETopologyLease;
 use App\E2E\Support\SourceMountedCheckoutInstance;
+use App\E2E\Support\SourceMountedCheckoutSyncer;
 use App\E2E\Support\SshKeyPair;
 use Illuminate\Contracts\Process\ProcessResult;
 use Illuminate\Support\Facades\File;
@@ -172,6 +173,8 @@ it('reuses prepared vendor packages while rebuilding checkout local autoload fil
         ->and($commandOutput)->toContain("cp -a '/home/orbit/orbit/apps/gateway/vendor/composer' 'apps/gateway/vendor'/composer")
         ->and($commandOutput)->toContain("cp '/home/orbit/orbit/apps/gateway/vendor/autoload.php' 'apps/gateway/vendor'/autoload.php")
         ->and($commandOutput)->toContain('composer --working-dir=apps/gateway dump-autoload --no-interaction --optimize')
+        ->and($commandOutput)->toContain(SourceMountedCheckoutSyncer::vendorArchiveRelativePath('apps/gateway'))
+        ->and($commandOutput)->toContain("tar --warning=no-unknown-keyword -C 'apps/gateway' -xf")
         ->and($commandOutput)->toContain("cmp -s '/home/orbit/orbit/apps/cli/composer.lock' apps/cli/composer.lock")
         ->and($commandOutput)->toContain("[ -d '/home/orbit/orbit/apps/cli/vendor/composer' ]")
         ->and($commandOutput)->toContain("rm -rf 'apps/cli/vendor'")
@@ -179,6 +182,8 @@ it('reuses prepared vendor packages while rebuilding checkout local autoload fil
         ->and($commandOutput)->toContain("cp -a '/home/orbit/orbit/apps/cli/vendor/composer' 'apps/cli/vendor'/composer")
         ->and($commandOutput)->toContain("cp '/home/orbit/orbit/apps/cli/vendor/autoload.php' 'apps/cli/vendor'/autoload.php")
         ->and($commandOutput)->toContain('composer --working-dir=apps/cli dump-autoload --no-interaction --optimize')
+        ->and($commandOutput)->toContain(SourceMountedCheckoutSyncer::vendorArchiveRelativePath('apps/cli'))
+        ->and($commandOutput)->toContain("tar --warning=no-unknown-keyword -C 'apps/cli' -xf")
         ->and($commandOutput)->not->toContain("ln -s '/home/orbit/orbit/vendor' vendor")
         ->and($commandOutput)->not->toContain('-exec ln -s')
         ->and($commandOutput)->toContain('elif command -v composer >/dev/null 2>&1; then composer --working-dir=apps/gateway install --no-interaction --prefer-dist --optimize-autoloader')
@@ -214,12 +219,16 @@ it('runs source-mounted Incus checkouts from a VM-local runtime mirror', functio
         ->toContain("target='/home/orbit/orbit-run'")
         ->toContain('tar --warning=no-unknown-keyword')
         ->toContain("--exclude='./.orbit-e2e-vendor-archives'")
+        ->toContain("--exclude='./apps/gateway/vendor'")
+        ->toContain("--exclude='./apps/cli/vendor'")
         ->toContain('tar -C "${target}" -xf -')
         ->toContain('$sudo_prefix find "$target" -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +')
         ->not->toContain('$sudo_prefix rm -rf "$target"')
         ->toContain('apps/gateway/vendor apps/cli/vendor')
-        ->toContain("cmp -s '/home/orbit/orbit/apps/gateway/composer.lock' apps/gateway/composer.lock")
-        ->toContain("cmp -s '/home/orbit/orbit/apps/cli/composer.lock' apps/cli/composer.lock")
+        ->toContain('.orbit-e2e-vendor-archives/apps-gateway-vendor.tar')
+        ->toContain('.orbit-e2e-vendor-archives/apps-cli-vendor.tar')
+        ->not->toContain("find '/home/orbit/orbit/apps/gateway/vendor'")
+        ->not->toContain("find '/home/orbit/orbit/apps/cli/vendor'")
         ->toContain("install -d -m 0700 -o orbit -g orbit '/home/orbit/.config/orbit'")
         ->toContain("sudo ln -sfn '/home/orbit/orbit-run/apps/cli/orbit' '/usr/local/bin/orbit'")
         ->not->toContain("sudo ln -sfn '/home/orbit/orbit/apps/cli/orbit' '/usr/local/bin/orbit'")
@@ -981,7 +990,7 @@ it('can cache the checkout install and clone isolated runtime paths', function (
         expect($firstPath)->toStartWith('/home/orbit/orbit-current-')
             ->and($secondPath)->toStartWith('/home/orbit/orbit-current-')
             ->and($secondPath)->not->toBe($firstPath)
-            ->and(substr_count($commandOutput, 'tar --warning=no-unknown-keyword'))->toBe(1)
+            ->and(substr_count($commandOutput, 'tar --warning=no-unknown-keyword -xzf /tmp/orbit-current.tar.gz'))->toBe(1)
             ->and($commandOutput)->toContain('! -name .env -exec sh -c')
             ->and($commandOutput)->toContain('cp -al "$path" "$target"/')
             ->and($commandOutput)->toContain('dest="$target/$(basename "$path")"')

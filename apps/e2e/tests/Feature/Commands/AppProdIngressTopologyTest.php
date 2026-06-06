@@ -71,9 +71,9 @@ PHP;
 
     $encodedPhp = base64_encode($php);
 
-    $result = E2ECommand::orbit(
+    $result = E2ECommand::gatewayArtisan(
         $gateway,
-        'cd /home/orbit/orbit && php apps/gateway/artisan tinker --execute='.escapeshellarg("eval(base64_decode('{$encodedPhp}'));"),
+        'tinker --execute='.escapeshellarg("eval(base64_decode('{$encodedPhp}'));"),
         'Could not read prepared app production ingress state',
     );
 

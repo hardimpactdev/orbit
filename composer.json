@@ -19,6 +19,7 @@
             "cd apps/gateway && composer install",
             "cd apps/docs && composer install",
             "cd apps/cli && composer install",
+            "cd apps/reverb && composer install",
             "cd apps/e2e && composer install",
             "cd apps/gateway && npm install --ignore-scripts && npm run build",
             "cd apps/docs && npm install --ignore-scripts && npm run build"

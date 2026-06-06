@@ -352,6 +352,39 @@ it('stages the linux binary into the bundled binary path', function (): void {
     }
 });
 
+it('reuses a cached linux binary for matching fingerprints', function (): void {
+    $bundleDir = make_temp_directory('binary-bundle-cache');
+    $cacheRoot = make_temp_directory('binary-cache-root');
+    $previousXdgCacheHome = getenv('XDG_CACHE_HOME');
+    $fingerprint = str_repeat('a', 64);
+    $cacheBinary = "{$cacheRoot}/orbit-e2e/cli-binaries/{$fingerprint}/orbit-binary";
+
+    mkdir(dirname($cacheBinary), 0755, recursive: true);
+    file_put_contents($cacheBinary, 'cached-linux-binary');
+    chmod($cacheBinary, 0755);
+    putenv("XDG_CACHE_HOME={$cacheRoot}");
+
+    Process::fake();
+    Process::preventStrayProcesses();
+
+    try {
+        (new OrbitCliBinaryBundle)->buildLinuxBinaryInto($bundleDir, $fingerprint);
+
+        $bundleBinary = OrbitCliBinaryBundle::bundledBinaryPath($bundleDir);
+
+        expect($bundleBinary)
+            ->toBeFile()
+            ->and(file_get_contents($bundleBinary))->toBe('cached-linux-binary')
+            ->and(substr(sprintf('%o', fileperms($bundleBinary)), -3))->toBe('755');
+
+        Process::assertNothingRan();
+    } finally {
+        $previousXdgCacheHome === false ? putenv('XDG_CACHE_HOME') : putenv("XDG_CACHE_HOME={$previousXdgCacheHome}");
+        remove_directory($bundleDir);
+        remove_directory($cacheRoot);
+    }
+});
+
 it('--version prints the expected version', function (): void {
     requireOrbitBinaryBuilt();
 

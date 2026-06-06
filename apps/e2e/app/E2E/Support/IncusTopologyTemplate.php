@@ -98,14 +98,14 @@ final readonly class IncusTopologyTemplate
     /**
      * @return array<string, IncusInstance>
      */
-    public static function clone(IncusHost $host, E2ETopologyKind $kind, string $runId, ?E2EPhaseTimer $timer = null, bool $stateful = false, bool $sourceMounted = false): array
+    public static function clone(IncusHost $host, E2ETopologyKind $kind, string $runId, ?E2EPhaseTimer $timer = null, bool $stateful = false, bool $sourceMounted = false, ?IncusWorkerNetwork $network = null): array
     {
         $timer ??= new E2EPhaseTimer;
         $roles = self::rolesFor($kind);
 
-        $script = self::buildBatchScript($host, $kind, $runId, $roles, stateful: $stateful, sourceMounted: $sourceMounted);
+        $script = self::buildBatchScript($host, $kind, $runId, $roles, stateful: $stateful, sourceMounted: $sourceMounted, network: $network);
 
-        $result = $timer->measure('batch.copy-start', fn () => $host->run($script));
+        $result = $timer->measure('batch.copy-start', fn () => $host->runWithoutMultiplexing($script));
 
         if (! $result->successful()) {
             throw new \RuntimeException(
@@ -128,7 +128,7 @@ final readonly class IncusTopologyTemplate
     /**
      * @param  list<string>  $roles
      */
-    public static function buildBatchScript(IncusHost $host, E2ETopologyKind $kind, string $runId, array $roles, ?bool $stateful = null, bool $sourceMounted = false): string
+    public static function buildBatchScript(IncusHost $host, E2ETopologyKind $kind, string $runId, array $roles, ?bool $stateful = null, bool $sourceMounted = false, ?IncusWorkerNetwork $network = null): string
     {
         $cpus = escapeshellarg($host->config->topologyCpus);
         $memory = escapeshellarg($host->config->topologyMemory);
@@ -141,6 +141,7 @@ final readonly class IncusTopologyTemplate
         $waitCopyLines = [];
         $limitLines = [];
         $identityLines = [];
+        $networkLines = [];
         $rootSizeLines = [];
         $statefulLines = [];
         $sourceMountLines = [];
@@ -161,6 +162,9 @@ final readonly class IncusTopologyTemplate
             $waitCopyLines[] = "wait \$PID_COPY_{$index}";
             $limitLines[] = "incus config set {$clone} limits.cpu={$cpus} limits.memory={$memory}";
             $identityLines[] = "incus config device override {$clone} eth0 hwaddr={$macAddress}";
+            if ($network !== null) {
+                $networkLines[] = $network->attachCommand(self::cloneName($runId, $role));
+            }
             $rootSizeLines[] = "incus config device set {$clone} root size={$rootSize} || incus config device override {$clone} root size={$rootSize}";
 
             if ($stateful) {
@@ -184,6 +188,7 @@ final readonly class IncusTopologyTemplate
             ...$waitCopyLines,
             ...$limitLines,
             ...$identityLines,
+            ...$networkLines,
             ...$rootSizeLines,
             ...$statefulLines,
             ...$sourceMountLines,

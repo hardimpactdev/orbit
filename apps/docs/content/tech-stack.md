@@ -268,15 +268,18 @@ fully baked app-runtime Docker Swarm service remains a deferred phase.
 ### WebSocket runtime
 
 The `websocket` role runs Laravel Reverb for fleet realtime traffic. Reverb
-runs in the dedicated `orbit-websocket` Docker runtime container managed by
-Orbit on the node that carries the websocket role; it is not a host Supervisor
-program and does not use the gateway or FrankenPHP runtime images. The role
-syncs the Reverb source to `/opt/orbit/websocket/current` and may use host
-Composer to install dependencies, but the long-running service itself is
-`php artisan reverb:start` inside the websocket runtime container. The container
-binds only to that node's WireGuard address, and the router targets the backend
-as `https://<wireguard-ip>:8080`. Backend certificates and runtime identity use
-the backend WireGuard IP, not per-node websocket DNS.
+runs in the dedicated `orbit-reverb` Docker runtime container managed by Orbit
+on the node that carries the websocket role; it is not a host Supervisor program
+and does not use the gateway or FrankenPHP runtime images. The Reverb runtime
+application lives at `apps/reverb/` and is packaged as the
+`hardimpact/orbit-reverb` image, where Composer dependencies are installed at
+image build time. Source sync to `/opt/orbit/websocket/current` and host
+Composer install remain a fallback for non-self-contained local runtime images.
+The long-running service is `php artisan reverb:start` inside the Reverb runtime
+container. The container binds only to that node's WireGuard address, and the
+router targets the backend as `https://<wireguard-ip>:8080`. Backend
+certificates and runtime identity use the backend WireGuard IP, not per-node
+websocket DNS.
 
 The `router` role owns `websocket.orbit`, the websocket backend pool, and
 private router-to-websocket TLS verification. Apps publish to

@@ -13,7 +13,7 @@ use RuntimeException;
 
 class WebSocketRuntimeContainerRenderer
 {
-    public const string RuntimeImage = 'orbit-websocket:current';
+    public const string RuntimeImage = 'orbit-reverb:current';
 
     public function __construct(
         private readonly OrbitContainerNames $names,
@@ -25,8 +25,9 @@ class WebSocketRuntimeContainerRenderer
     public function render(
         Node $node,
         WebSocketRoleSettings $settings,
-        string $sourcePath = WebSocketRuntimeContainer::SourceHostPath,
+        ?string $sourcePath = WebSocketRuntimeContainer::SourceHostPath,
         string $image = self::RuntimeImage,
+        ?string $appKey = null,
     ): WebSocketRuntimeContainer {
         $wireGuardAddress = $this->wireGuardAddress($node);
         $backendName = $this->backendName->forNode($node);
@@ -41,19 +42,8 @@ class WebSocketRuntimeContainerRenderer
             redisNodeId: $settings->redisNodeId,
             workingDirectory: WebSocketRuntimeContainer::SourceTarget,
             command: $this->command($wireGuardAddress, $backendName),
-            environment: $this->environment($wireGuardAddress, $backendName, $redisAddress),
-            mounts: [
-                [
-                    'source' => $this->normalizeSourcePath($sourcePath),
-                    'target' => WebSocketRuntimeContainer::SourceTarget,
-                    'read_only' => false,
-                ],
-                [
-                    'source' => '/etc/orbit',
-                    'target' => '/etc/orbit',
-                    'read_only' => true,
-                ],
-            ],
+            environment: $this->environment($wireGuardAddress, $backendName, $redisAddress, $appKey),
+            mounts: $this->mounts($sourcePath),
             networkAliases: [
                 $this->containerName($node),
             ],
@@ -87,9 +77,9 @@ class WebSocketRuntimeContainerRenderer
     /**
      * @return array<string, string>
      */
-    private function environment(string $wireGuardAddress, string $backendName, string $redisAddress): array
+    private function environment(string $wireGuardAddress, string $backendName, string $redisAddress, ?string $appKey = null): array
     {
-        return [
+        $environment = [
             'APP_DEBUG' => 'false',
             'APP_ENV' => 'production',
             'BROADCAST_CONNECTION' => 'reverb',
@@ -106,11 +96,41 @@ class WebSocketRuntimeContainerRenderer
             'REVERB_TLS_CERT' => "/etc/orbit/certs/{$backendName}.crt",
             'REVERB_TLS_KEY' => "/etc/orbit/certs/{$backendName}.key",
         ];
+
+        if (is_string($appKey) && trim($appKey) !== '') {
+            $environment['APP_KEY'] = trim($appKey);
+        }
+
+        return $environment;
     }
 
     private function command(string $wireGuardAddress, string $backendName): string
     {
         return "php artisan reverb:start --host={$wireGuardAddress} --port=8080 --hostname={$backendName}";
+    }
+
+    /**
+     * @return list<array{source: string, target: string, read_only: bool}>
+     */
+    private function mounts(?string $sourcePath): array
+    {
+        $mounts = [
+            [
+                'source' => '/etc/orbit',
+                'target' => '/etc/orbit',
+                'read_only' => true,
+            ],
+        ];
+
+        if ($sourcePath !== null) {
+            array_unshift($mounts, [
+                'source' => $this->normalizeSourcePath($sourcePath),
+                'target' => WebSocketRuntimeContainer::SourceTarget,
+                'read_only' => false,
+            ]);
+        }
+
+        return $mounts;
     }
 
     private function wireGuardAddress(Node $node): string

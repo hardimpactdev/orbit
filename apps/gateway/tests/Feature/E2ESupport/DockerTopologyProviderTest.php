@@ -612,6 +612,34 @@ it('accounts for the gateway sibling container when checking docker capacity', f
     });
 });
 
+it('fails websocket docker topology availability when the reverb runtime image is missing', function (): void {
+    Process::fake(function ($process) {
+        if ($process->command === 'command -v docker >/dev/null' || $process->command === 'docker info >/dev/null') {
+            return Process::result();
+        }
+
+        if ($process->command === "docker image inspect 'orbit-reverb:current' >/dev/null") {
+            return Process::result(exitCode: 1);
+        }
+
+        if (str_starts_with($process->command, 'docker image inspect ')) {
+            return Process::result();
+        }
+
+        return Process::result(exitCode: 1, errorOutput: $process->command);
+    });
+
+    withE2EConfigEnvironment([
+        'ORBIT_E2E_DOCKER_TEST_RUNNERS' => 'local:8:64',
+    ], function (): void {
+        $provider = new DockerTopologyProvider(E2EConfig::fromEnvironment());
+        $availability = $provider->availability(E2ETopologyKind::OperatorGatewayAppdevWebsocket);
+
+        expect($availability->available)->toBeFalse()
+            ->and($availability->message)->toContain('Docker websocket image orbit-reverb:current is not available');
+    });
+});
+
 it('does not fail availability on transient docker capacity when host slots are configured', function (): void {
     $probedCapacity = false;
 

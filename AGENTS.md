@@ -17,6 +17,8 @@ provisioning, hosting workflows, and node orchestration.
 - `apps/docs/` is the Laravel 13 documentation and Librarian application. It
   owns the product documentation under `apps/docs/content/` and docs-linting.
 - `apps/cli/` is the Laravel Zero local CLI and executor application.
+- `apps/reverb/` is the dedicated Laravel Reverb runtime application packaged
+  into the `hardimpact/orbit-reverb` image for websocket role nodes.
 - `packages/core/` is the shared Orbit package for contracts, helpers, and
   cross-application primitives.
 - Each app/package owns its own `composer.json`, test config, Pint config,

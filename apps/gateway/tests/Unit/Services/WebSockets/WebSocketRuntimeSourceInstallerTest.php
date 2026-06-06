@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Contracts\RemoteShell;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Models\Node;
+use App\Services\WebSockets\WebSocketRoleBaselineTiming;
 use App\Services\WebSockets\WebSocketRuntimeContainer;
 use App\Services\WebSockets\WebSocketRuntimeSourceInstaller;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -20,6 +21,7 @@ it('installs the WebSocket Reverb runtime source through a Docker-first script',
     (new WebSocketRuntimeSourceInstaller($shell))->install($node);
 
     $script = $shell->scripts[0];
+    $timingSteps = array_column(app(WebSocketRoleBaselineTiming::class)->records(), 'step');
 
     expect($shell->nodes[0]->is($node))->toBeTrue()
         ->and($shell->options[0])->toMatchArray([
@@ -31,6 +33,8 @@ it('installs the WebSocket Reverb runtime source through a Docker-first script',
         ->and($script)->toContain('release_dir="${runtime_root}/releases/')
         ->and($script)->toContain('sudo install -d -m 0755 "$release_dir"')
         ->and($script)->toContain('sudo ln -sfn "releases/${expected_hash}" \''.WebSocketRuntimeContainer::SourceHostPath."'")
+        ->and($script)->toContain('__orbit_websocket_source_timing')
+        ->and($script)->toContain('record_timing composer')
         ->and($script)->not->toContain('orbit-gateway:current')
         ->and($script)->not->toContain('docker image inspect')
         ->and($script)->not->toContain('docker run --rm')
@@ -40,13 +44,18 @@ it('installs the WebSocket Reverb runtime source through a Docker-first script',
         ->and($script)->toContain('app_key="base64:$(head -c 32 /dev/urandom | base64')
         ->and($script)->toContain("printf 'APP_KEY=%s\\n'")
         ->and($script)->toContain(WebSocketRuntimeSourceInstaller::AppsConfigPath)
+        ->and($timingSteps)->toContain('source-files')
+        ->and($timingSteps)->toContain('source-hash')
+        ->and($timingSteps)->toContain('source-archive')
+        ->and($timingSteps)->toContain('source-remote')
+        ->and($timingSteps)->toContain('source-composer')
         ->and($script)->not->toContain("\nphp artisan")
         ->and($script)->not->toContain('reverb:install')
         ->and($script)->not->toContain('install:broadcasting');
 });
 
 it('ships a bootable Laravel Reverb source artifact without committed vendor files', function (): void {
-    $sourcePath = resource_path('websocket-runtime');
+    $sourcePath = repo_path('apps/reverb');
 
     expect("{$sourcePath}/artisan")->toBeFile()
         ->and("{$sourcePath}/bootstrap/app.php")->toBeFile()
@@ -64,6 +73,16 @@ it('ships a bootable Laravel Reverb source artifact without committed vendor fil
         'laravel/framework' => '13.7.0',
         'laravel/reverb' => '^1.10',
     ]);
+});
+
+it('defers fallback source path validation until source install runs', function (): void {
+    $shell = new WebSocketRuntimeSourceInstallerTestShell;
+
+    expect(fn () => new WebSocketRuntimeSourceInstaller($shell, sourcePath: '/missing/orbit-reverb'))
+        ->not->toThrow(InvalidArgumentException::class);
+
+    expect(fn () => (new WebSocketRuntimeSourceInstaller($shell, sourcePath: '/missing/orbit-reverb'))->install(Node::factory()->create()))
+        ->toThrow(InvalidArgumentException::class, 'WebSocket runtime source path [/missing/orbit-reverb] does not exist.');
 });
 
 final class WebSocketRuntimeSourceInstallerTestShell implements RemoteShell
@@ -89,6 +108,17 @@ final class WebSocketRuntimeSourceInstallerTestShell implements RemoteShell
         $this->scripts[] = $script;
         $this->options[] = $options;
 
-        return new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1);
+        return new RemoteShellResult(
+            exitCode: 0,
+            stdout: implode("\n", [
+                '__orbit_websocket_source_timing setup 1',
+                '__orbit_websocket_source_timing extract 2',
+                '__orbit_websocket_source_timing env 3',
+                '__orbit_websocket_source_timing composer 4',
+                '__orbit_websocket_source_timing activate 5',
+            ]),
+            stderr: '',
+            durationMs: 1,
+        );
     }
 }

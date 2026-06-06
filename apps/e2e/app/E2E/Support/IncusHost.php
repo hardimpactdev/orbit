@@ -22,7 +22,7 @@ class IncusHost
 
     private const string DefaultOrbitGatewayImageArchive = E2EArtifactProdManifest::GatewayImageArchive;
 
-    private const string DefaultOrbitWebSocketImageArchive = 'orbit-websocket-current.tar';
+    private const string DefaultOrbitWebSocketImageArchive = 'orbit-reverb-current.tar';
 
     public function __construct(
         public readonly E2EConfig $config,
@@ -57,6 +57,11 @@ class IncusHost
                 escapeshellarg($this->config->host),
                 escapeshellarg($remoteCommand),
             ));
+    }
+
+    public function runWithoutMultiplexing(string $command, ?int $timeoutSeconds = null): ProcessResult
+    {
+        return $this->runFreshSsh($command, $timeoutSeconds);
     }
 
     private function runFreshSsh(string $command, ?int $timeoutSeconds = null): ProcessResult
@@ -651,15 +656,23 @@ BASH,
      */
     public function stopInstancesIfRunning(array $names): ProcessResult
     {
-        $lines = array_map(
-            static fn (string $name): string => sprintf(
-                'incus stop %s --force >/dev/null 2>&1 || true',
-                escapeshellarg($name),
-            ),
-            $names,
-        );
+        $lines = [];
+        $waitLines = [];
 
-        return $this->run(implode("\n", $lines), timeoutSeconds: 180);
+        foreach (array_values($names) as $index => $name) {
+            $pid = "PID_STOP_{$index}";
+            $lines[] = sprintf(
+                'incus stop %s --force >/dev/null 2>&1 || true & %s=$!',
+                escapeshellarg($name),
+                $pid,
+            );
+            $waitLines[] = "wait \${$pid} || true";
+        }
+
+        return $this->run(implode("\n", [
+            ...$lines,
+            ...$waitLines,
+        ]), timeoutSeconds: 180);
     }
 
     /**
@@ -712,6 +725,31 @@ BASH,
             escapeshellarg($name),
             escapeshellarg($snapshot),
         ));
+    }
+
+    /**
+     * @param  list<string>  $names
+     */
+    public function snapshotInstancesConcurrently(array $names, string $snapshot): ProcessResult
+    {
+        $lines = [];
+        $waitLines = [];
+
+        foreach (array_values($names) as $index => $name) {
+            $pid = "PID_SNAPSHOT_{$index}";
+            $lines[] = sprintf(
+                'incus snapshot create %s %s & %s=$!',
+                escapeshellarg($name),
+                escapeshellarg($snapshot),
+                $pid,
+            );
+            $waitLines[] = "wait \${$pid}";
+        }
+
+        return $this->run(implode("\n", [
+            ...$lines,
+            ...$waitLines,
+        ]), timeoutSeconds: 300);
     }
 
     public function snapshotStatefulInstance(string $name, string $snapshot): ProcessResult
@@ -776,6 +814,31 @@ BASH,
             escapeshellarg($name),
             escapeshellarg($snapshot),
         ));
+    }
+
+    /**
+     * @param  list<string>  $names
+     */
+    public function deleteSnapshotsIfPresent(array $names, string $snapshot): ProcessResult
+    {
+        $lines = [];
+        $waitLines = [];
+
+        foreach (array_values($names) as $index => $name) {
+            $pid = "PID_DELETE_SNAPSHOT_{$index}";
+            $lines[] = sprintf(
+                'incus snapshot delete %s %s >/dev/null 2>&1 || true & %s=$!',
+                escapeshellarg($name),
+                escapeshellarg($snapshot),
+                $pid,
+            );
+            $waitLines[] = "wait \${$pid} || true";
+        }
+
+        return $this->run(implode("\n", [
+            ...$lines,
+            ...$waitLines,
+        ]), timeoutSeconds: 180);
     }
 
     public function storagePoolArgument(): string

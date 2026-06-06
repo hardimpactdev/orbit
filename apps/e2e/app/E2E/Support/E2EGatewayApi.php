@@ -143,7 +143,9 @@ PHP;
     {
         return implode(' && ', [
             'export ORBIT_CONFIG_ROOT='.escapeshellarg(self::OrbitConfigRoot),
+            self::sudoRepairGatewayConfigRootOwnershipCommand(),
             self::dockerGatewayStateBootstrapCommand(),
+            self::sudoRepairGatewayConfigRootOwnershipCommand(),
             self::appKeyCommand(self::gatewayStatePath('.env')),
             'php apps/gateway/artisan migrate --force --no-interaction --ansi',
         ]);
@@ -1947,6 +1949,13 @@ PHP;
         return 'install -d -m 775 -o orbit -g orbit '.escapeshellarg(self::OrbitConfigRoot)
             .' && chown -R orbit:orbit '.escapeshellarg(self::OrbitConfigRoot)
             .' && chmod -R u+rwX,g+rwX '.escapeshellarg(self::OrbitConfigRoot);
+    }
+
+    private static function sudoRepairGatewayConfigRootOwnershipCommand(): string
+    {
+        return 'sudo install -d -m 775 -o orbit -g orbit '.escapeshellarg(self::OrbitConfigRoot)
+            .' && sudo chown -R orbit:orbit '.escapeshellarg(self::OrbitConfigRoot)
+            .' && sudo chmod -R u+rwX,g+rwX '.escapeshellarg(self::OrbitConfigRoot);
     }
 
     private static function dockerGatewayStateReadyCommand(): string

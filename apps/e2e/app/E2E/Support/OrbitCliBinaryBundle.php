@@ -32,8 +32,21 @@ final class OrbitCliBinaryBundle
      *
      * Throws on any failure — a failed binary build must fail the caller.
      */
-    public function buildLinuxBinaryInto(string $bundleDir): void
+    public function buildLinuxBinaryInto(string $bundleDir, ?string $fingerprint = null): void
     {
+        $bundleBinary = self::bundledBinaryPath($bundleDir);
+        $cacheBinary = $fingerprint !== null ? $this->cachedBinaryPath($fingerprint) : null;
+
+        if ($cacheBinary !== null && is_file($cacheBinary)) {
+            if (! @copy($cacheBinary, $bundleBinary)) {
+                throw new RuntimeException("Could not copy cached linux binary to bundle: {$cacheBinary} -> {$bundleBinary}");
+            }
+
+            chmod($bundleBinary, 0755);
+
+            return;
+        }
+
         $cliDir = repo_path('apps/cli');
         $coreDir = repo_path('packages/core');
         $orbitCoreVendorDir = "{$cliDir}/vendor/hardimpactdev/orbit-core";
@@ -88,18 +101,52 @@ final class OrbitCliBinaryBundle
         }
 
         // Step 5: Copy into bundle.
-        $bundleBinary = self::bundledBinaryPath($bundleDir);
-
         if (! @copy($binarySource, $bundleBinary)) {
             throw new RuntimeException("Could not copy linux binary to bundle: {$binarySource} -> {$bundleBinary}");
         }
 
         chmod($bundleBinary, 0755);
 
+        if ($cacheBinary !== null) {
+            $cacheDir = dirname($cacheBinary);
+
+            if (! is_dir($cacheDir) && ! mkdir($cacheDir, 0755, true)) {
+                throw new RuntimeException("Could not create CLI binary cache directory: {$cacheDir}");
+            }
+
+            if (! @copy($bundleBinary, $cacheBinary)) {
+                throw new RuntimeException("Could not write cached linux binary: {$cacheBinary}");
+            }
+
+            chmod($cacheBinary, 0755);
+        }
+
         // Step 6: Restore apps/cli dev deps so vendor/bin tools (phpstan/pint/pest) remain usable.
         Process::timeout(300)
             ->path($cliDir)
             ->run('composer install --no-interaction')
             ->throw();
+    }
+
+    private function cachedBinaryPath(string $fingerprint): string
+    {
+        return $this->cacheRoot()."/cli-binaries/{$fingerprint}/".self::BundledBinaryFilename;
+    }
+
+    private function cacheRoot(): string
+    {
+        $xdgCacheHome = getenv('XDG_CACHE_HOME');
+
+        if (is_string($xdgCacheHome) && $xdgCacheHome !== '') {
+            return rtrim($xdgCacheHome, '/').'/orbit-e2e';
+        }
+
+        $home = getenv('HOME');
+
+        if (is_string($home) && $home !== '') {
+            return rtrim($home, '/').'/.cache/orbit-e2e';
+        }
+
+        return sys_get_temp_dir().'/orbit-e2e-cache';
     }
 }

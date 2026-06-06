@@ -552,7 +552,9 @@ it('--force records prepare topology phase timings', function (): void {
         ->and($capturedTimer->streamsCheckpoints())->toBeFalse()
         ->and($eventNames)->toContain('gateway-artifacts.local')
         ->and($eventNames)->toContain('gateway-artifacts.push')
-        ->and($eventNames)->toContain('builder.build');
+        ->and($eventNames)->toContain('builder.build')
+        ->and($eventNames)->not->toContain('gateway-artifacts.fingerprint')
+        ->and($eventNames)->not->toContain('builder.reuse-check');
 });
 
 it('builds the gateway artifact image on the Incus host', function (): void {

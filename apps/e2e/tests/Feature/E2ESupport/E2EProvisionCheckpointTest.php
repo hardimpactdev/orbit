@@ -42,6 +42,64 @@ it('does not invalidate provision checkpoints for assertion-only e2e test change
     }
 });
 
+it('does not invalidate provision checkpoints for acquisition-only incus support changes', function (): void {
+    $root = makeProvisionFingerprintFixture();
+
+    try {
+        $before = E2EProvisionFingerprint::fromRoot(
+            root: $root,
+            kind: E2ETopologyKind::OperatorGatewayAppdevAppprodAgentWebsocket,
+            environment: ['ORBIT_E2E_HOST' => 'beast'],
+            baseImageIdentity: 'orbit-base@sha256:base',
+        );
+
+        file_put_contents("{$root}/apps/e2e/app/E2E/Support/IncusTopologyProvider.php", "<?php\nreturn 'provider changed';\n");
+        file_put_contents("{$root}/apps/e2e/app/E2E/Support/IncusTopologyTemplate.php", "<?php\nreturn 'template clone changed';\n");
+        file_put_contents("{$root}/apps/e2e/app/E2E/Support/IncusWorkerNetwork.php", "<?php\nreturn 'worker network changed';\n");
+        file_put_contents("{$root}/apps/e2e/app/E2E/Support/E2EResourceLeaseSet.php", "<?php\nreturn 'lease changed';\n");
+
+        $after = E2EProvisionFingerprint::fromRoot(
+            root: $root,
+            kind: E2ETopologyKind::OperatorGatewayAppdevAppprodAgentWebsocket,
+            environment: ['ORBIT_E2E_HOST' => 'beast'],
+            baseImageIdentity: 'orbit-base@sha256:base',
+        );
+
+        expect($after['fingerprints'])->toBe($before['fingerprints'])
+            ->and($after['role_fingerprints'])->toBe($before['role_fingerprints']);
+    } finally {
+        remove_directory($root);
+    }
+});
+
+it('does not invalidate gateway artifact checkpoints for gateway test-only changes', function (): void {
+    $root = makeProvisionFingerprintFixture();
+
+    try {
+        $before = E2EProvisionFingerprint::fromRoot(
+            root: $root,
+            kind: E2ETopologyKind::OperatorGatewayAppdevAppprodAgentWebsocket,
+            environment: ['ORBIT_E2E_HOST' => 'beast'],
+            baseImageIdentity: 'orbit-base@sha256:base',
+        );
+
+        mkdir("{$root}/apps/gateway/tests/Feature", 0777, true);
+        file_put_contents("{$root}/apps/gateway/tests/Feature/GatewayRuntimeTest.php", "<?php\nit('changes gateway assertions only', fn () => expect(true)->toBeTrue());\n");
+
+        $after = E2EProvisionFingerprint::fromRoot(
+            root: $root,
+            kind: E2ETopologyKind::OperatorGatewayAppdevAppprodAgentWebsocket,
+            environment: ['ORBIT_E2E_HOST' => 'beast'],
+            baseImageIdentity: 'orbit-base@sha256:base',
+        );
+
+        expect($after['fingerprints']['gateway_artifact'])->toBe($before['fingerprints']['gateway_artifact'])
+            ->and($after['role_fingerprints'])->toBe($before['role_fingerprints']);
+    } finally {
+        remove_directory($root);
+    }
+});
+
 it('invalidates every role checkpoint when provision support changes', function (): void {
     $root = makeProvisionFingerprintFixture();
 
@@ -49,6 +107,24 @@ it('invalidates every role checkpoint when provision support changes', function 
         $before = E2EProvisionFingerprint::fromRoot($root, E2ETopologyKind::OperatorGatewayAppdevAppprodAgentWebsocket);
 
         file_put_contents("{$root}/bin/e2e-provision-node", "#!/usr/bin/env bash\necho changed\n");
+
+        $after = E2EProvisionFingerprint::fromRoot($root, E2ETopologyKind::OperatorGatewayAppdevAppprodAgentWebsocket);
+
+        foreach (['operator', 'gateway', 'dev', 'prod', 'agent'] as $role) {
+            expect($after['role_fingerprints'][$role])->not->toBe($before['role_fingerprints'][$role]);
+        }
+    } finally {
+        remove_directory($root);
+    }
+});
+
+it('invalidates every role checkpoint when prepared topology builder code changes', function (): void {
+    $root = makeProvisionFingerprintFixture();
+
+    try {
+        $before = E2EProvisionFingerprint::fromRoot($root, E2ETopologyKind::OperatorGatewayAppdevAppprodAgentWebsocket);
+
+        file_put_contents("{$root}/apps/e2e/app/E2E/Support/IncusTopologyBuilder.php", "<?php\nreturn 'prepared builder changed';\n");
 
         $after = E2EProvisionFingerprint::fromRoot($root, E2ETopologyKind::OperatorGatewayAppdevAppprodAgentWebsocket);
 

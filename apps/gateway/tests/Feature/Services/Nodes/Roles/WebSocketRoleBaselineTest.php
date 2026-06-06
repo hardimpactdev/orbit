@@ -13,6 +13,7 @@ use App\Models\NodeTool;
 use App\Models\Process;
 use App\Services\Ca\OrbitCaService;
 use App\Services\Nodes\Roles\NodeRoleBaselineConverger;
+use App\Services\WebSockets\WebSocketRoleBaselineTiming;
 use App\Services\WebSockets\WebSocketRuntimeContainer;
 use App\Services\WebSockets\WebSocketRuntimeContainerRenderer;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -45,19 +46,21 @@ it('converges websocket backend TLS material and runtime container through the r
     app(NodeRoleBaselineConverger::class)->converge($node, $assignment);
 
     $scripts = implode("\n---\n", $this->webSocketBaselineShell->scripts);
+    $timingSteps = array_column(app(WebSocketRoleBaselineTiming::class)->records(), 'step');
 
     expect($this->webSocketBaselineIssued->getArrayCopy())->toBe([
         ['host' => '10.6.0.44', 'additional_sans' => ['10.6.0.44']],
     ])
+        ->and($timingSteps)->toBe(['tools', 'image', 'render', 'certificates', 'source-files', 'source-hash', 'source-archive', 'source-remote', 'source-install', 'container-apply'])
         ->and(NodeTool::query()
             ->where('node_id', $node->id)
             ->where('name', 'docker')
             ->value('expected_state'))->toBe('running')
         ->and($scripts)->toContain("sudo install -d -m 0755 '/etc/orbit/certs'")
+        ->and($scripts)->toContain("docker image inspect --format '{{ index .Config.Labels \"orbit.websocket.self_contained\" }}' 'orbit-reverb:current'")
         ->and($scripts)->toContain('release_dir="${runtime_root}/releases/')
         ->and($scripts)->toContain('sudo install -d -m 0755 "$release_dir"')
         ->and($scripts)->not->toContain('orbit-gateway:current')
-        ->and($scripts)->not->toContain('docker image inspect')
         ->and($scripts)->toContain('sudo env COMPOSER_ALLOW_SUPERUSER=1 composer install --no-dev --no-interaction --prefer-dist --optimize-autoloader --no-progress')
         ->and($scripts)->toContain("docker network inspect 'orbit-network'")
         ->and($scripts)->toContain("docker container inspect --format '{{json .}}' 'orbit-websocket-app-dev-1'")
@@ -68,6 +71,26 @@ it('converges websocket backend TLS material and runtime container through the r
         ->and($scripts)->toContain("--env 'REDIS_HOST=10.6.0.3'")
         ->and($scripts)->toContain('php artisan reverb:start --host=10.6.0.44 --port=8080 --hostname=10.6.0.44')
         ->and($scripts)->not->toContain('REVERB_SERVER_HOST=0.0.0.0');
+});
+
+it('uses self-contained websocket images without installing source on the node', function (): void {
+    $node = webSocketBaselineNode();
+    $assignment = webSocketBaselineAssignment($node, redisNode: webSocketBaselineRedisNode());
+    $this->webSocketBaselineShell->selfContainedImage = true;
+
+    app(NodeRoleBaselineConverger::class)->converge($node, $assignment);
+
+    $scripts = implode("\n---\n", $this->webSocketBaselineShell->scripts);
+    $timingSteps = array_column(app(WebSocketRoleBaselineTiming::class)->records(), 'step');
+
+    expect($timingSteps)->toBe(['tools', 'image', 'env', 'render', 'certificates', 'container-apply'])
+        ->and($scripts)->toContain("docker image inspect --format '{{ index .Config.Labels \"orbit.websocket.self_contained\" }}' 'orbit-reverb:current'")
+        ->and($scripts)->toContain('key_file=/etc/orbit/websocket/app.key')
+        ->and($scripts)->not->toContain('release_dir="${runtime_root}/releases/')
+        ->and($scripts)->not->toContain('composer install --no-dev')
+        ->and($scripts)->not->toContain("--mount 'type=bind,source=/opt/orbit/websocket/current,target=/app'")
+        ->and($scripts)->toContain("--mount 'type=bind,source=/etc/orbit,target=/etc/orbit,readonly'")
+        ->and($scripts)->toContain("--env 'APP_KEY=base64:self-contained-test-key'");
 });
 
 it('starts an existing matching websocket runtime container when it is stopped', function (): void {
@@ -214,6 +237,8 @@ readonly class WebSocketRoleBaselineTestCa extends OrbitCaService
 
 final class WebSocketRoleBaselineTestShell implements RemoteShell
 {
+    public bool $selfContainedImage = false;
+
     /**
      * @var array<string, mixed>|null
      */
@@ -239,6 +264,19 @@ final class WebSocketRoleBaselineTestShell implements RemoteShell
         $this->nodes[] = $node;
         $this->scripts[] = $script;
         $this->options[] = $options;
+
+        if (str_contains($script, 'orbit.websocket.self_contained')) {
+            return new RemoteShellResult(
+                exitCode: 0,
+                stdout: $this->selfContainedImage ? "true\n" : "false\n",
+                stderr: '',
+                durationMs: 1,
+            );
+        }
+
+        if (str_contains($script, 'key_file=/etc/orbit/websocket/app.key')) {
+            return new RemoteShellResult(exitCode: 0, stdout: "base64:self-contained-test-key\n", stderr: '', durationMs: 1);
+        }
 
         if (str_contains($script, 'docker network inspect')) {
             return $this->success();

@@ -113,7 +113,7 @@ it('renders a deterministic WebSocket runtime container', function (): void {
 
     expect($container)->toBeInstanceOf(WebSocketRuntimeContainer::class)
         ->and($container->name())->toBe('orbit-websocket-app-dev-1')
-        ->and($container->image())->toBe('orbit-websocket:current')
+        ->and($container->image())->toBe('orbit-reverb:current')
         ->and($container->network())->toBe('orbit-network')
         ->and($container->restartPolicy())->toBe('unless-stopped')
         ->and($container->backendName())->toBe('10.6.0.44')
@@ -140,6 +140,22 @@ it('renders a deterministic WebSocket runtime container', function (): void {
             'REVERB_TLS_KEY' => '/etc/orbit/certs/10.6.0.44.key',
             'REDIS_HOST' => '10.6.0.3',
         ]);
+});
+
+it('renders a self-contained WebSocket runtime container without a source mount', function (): void {
+    $container = websocketRuntimeRenderer()->render(
+        websocketRuntimeNode(),
+        websocketRuntimeSettings(),
+        sourcePath: null,
+    );
+
+    expect($container->mounts())->toBe([
+        [
+            'source' => '/etc/orbit',
+            'target' => '/etc/orbit',
+            'read_only' => true,
+        ],
+    ]);
 });
 
 it('scopes the runtime container to the websocket node inside Docker E2E', function (): void {

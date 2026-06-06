@@ -86,7 +86,7 @@ function updateRunnerManifestPlanHandoffManifest(): array
         ],
         'role_images' => [
             'orbit-caddy' => 'caddy:2.9-alpine',
-            'orbit-websocket' => 'ghcr.io/hardimpactdev/orbit-websocket:2.1.0@sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd',
+            'orbit-websocket' => 'hardimpact/orbit-reverb:2.1.0@sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd',
         ],
     ];
 }

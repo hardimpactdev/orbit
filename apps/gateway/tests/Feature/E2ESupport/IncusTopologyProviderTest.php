@@ -165,18 +165,59 @@ it('seeds gateway ssh access before prepared incus retargeting can converge runt
         ->and($source)->toContain('--converge-runtime');
 });
 
-it('keeps incus retarget scripts on node_role assignments instead of legacy node columns', function (): void {
+it('keeps prepared Incus role assignment seeding out of retarget scripts', function (): void {
     $providerSource = file_get_contents(repo_path('apps/e2e/app/E2E/Support/IncusTopologyProvider.php'));
-    $builderSource = file_get_contents(repo_path('apps/e2e/app/E2E/Support/IncusTopologyBuilder.php'));
 
     expect($providerSource)->not->toContain("'environment' => null")
         ->and($providerSource)->not->toContain("'role' => 'gateway',\n        'environment' => null")
-        ->and($providerSource)->toContain('\\\\App\\\\Models\\\\NodeRoleAssignment::query()->updateOrCreate');
+        ->and($providerSource)->not->toContain('\\\\App\\\\Models\\\\NodeRoleAssignment::query()->updateOrCreate')
+        ->and($providerSource)->toContain('writeOperatorCliConfig($operator, $config, $sshKeyPair');
+});
 
-    expect($builderSource)->not->toContain("'environment' => null")
-        ->and($builderSource)->not->toContain("'role' => 'gateway',\n        'environment' => null")
-        ->and($builderSource)->toContain('INSERT INTO node_role')
-        ->and($builderSource)->toContain('ON CONFLICT(node_id, role) DO UPDATE SET');
+it('retargets artifact-backed Incus gateway nodes through the gateway image instead of a source checkout', function (): void {
+    $commands = [];
+    $host = new class(incusTopologyProviderTestConfig(), $commands) extends IncusHost
+    {
+        /**
+         * @param  array<int, string>  $commands
+         */
+        public function __construct(E2EConfig $config, private array &$commands)
+        {
+            parent::__construct($config);
+        }
+
+        #[Override]
+        public function run(string $command, ?int $timeoutSeconds = null): ProcessResult
+        {
+            $this->commands[] = $command;
+
+            if (str_contains($command, 'ip -j -4 address show scope global') || str_contains($command, 'incus query')) {
+                return incusTopologyProviderTestProcessResult("10.231.7.84\n");
+            }
+
+            return incusTopologyProviderTestProcessResult();
+        }
+    };
+
+    $provider = new IncusTopologyProvider(incusTopologyProviderTestConfig());
+    $method = new ReflectionMethod($provider, 'retargetTopology');
+    $method->setAccessible(true);
+
+    $method->invoke($provider, [
+        'operator' => new IncusInstance($host, 'operator', commandTransport: true),
+        'gateway' => new IncusInstance($host, 'gateway', commandTransport: true),
+    ], incusTopologyProviderTestConfig(), new SshKeyPair('/tmp/id_ed25519', '/tmp/id_ed25519.pub'), E2ETopologyKind::OperatorGateway, false);
+
+    $commandOutput = implode("\n", $commands);
+
+    expect($commandOutput)
+        ->toContain('docker run --rm --pull never')
+        ->toContain('orbit-gateway:prepared-current')
+        ->toContain('artisan orbit:internal:bootstrap-gateway-local gateway')
+        ->toContain('/home/operator/.config/orbit/config.json')
+        ->not->toContain('cd /home/orbit/orbit && php apps/gateway/artisan')
+        ->not->toContain('cd /home/operator/orbit && php apps/gateway/artisan')
+        ->not->toContain('/home/operator/orbit/apps/cli');
 });
 
 it('prepares gateway state before source-mounted incus retarget bootstrap', function (): void {

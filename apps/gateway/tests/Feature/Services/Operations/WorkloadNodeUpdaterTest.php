@@ -60,7 +60,7 @@ it('updates active non-gateway app-role nodes from the persisted manifest snapsh
             ],
             roleImages: [
                 'orbit-caddy' => 'caddy:2.9-alpine',
-                'orbit-websocket' => 'ghcr.io/hardimpactdev/orbit-websocket:2.0.0@sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff',
+                'orbit-websocket' => 'hardimpact/orbit-reverb:2.0.0@sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff',
             ],
         ),
     );
@@ -100,7 +100,7 @@ it('updates active non-gateway app-role nodes from the persisted manifest snapsh
 
     expect($shell->scriptFor('app-prod-1'))
         ->toContain("docker pull 'caddy:2.9-alpine'")
-        ->toContain("docker pull 'ghcr.io/hardimpactdev/orbit-websocket:2.0.0@sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff'");
+        ->toContain("docker pull 'hardimpact/orbit-reverb:2.0.0@sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff'");
 });
 
 it('continues updating later workload nodes when one remote update fails', function (): void {
@@ -278,7 +278,7 @@ function workloadUpdaterSnapshot(
     ] : $cliArtifacts;
     $roleImages = $roleImages === [] ? [
         'orbit-caddy' => 'caddy:2-alpine',
-        'orbit-websocket' => 'ghcr.io/hardimpactdev/orbit-websocket:1.2.3@sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd',
+        'orbit-websocket' => 'hardimpact/orbit-reverb:1.2.3@sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd',
     ] : $roleImages;
 
     return new OperationUpdatePlanSnapshot(

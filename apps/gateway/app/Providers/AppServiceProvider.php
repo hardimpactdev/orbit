@@ -49,6 +49,7 @@ use App\Services\Updates\UpdateDriverRegistry;
 use App\Services\Vpn\VpnNodeResolver;
 use App\Services\Vpn\WgEasyServiceInstaller;
 use App\Services\Vpn\WgEasyVpnBackend;
+use App\Services\WebSockets\WebSocketRoleBaselineTiming;
 use App\Services\Workspaces\PolyscopeWorkspaceBranchAligner;
 use App\Services\Workspaces\PolyscopeWorkspaceDriver;
 use App\Services\Workspaces\WorkspaceSourceDriverResolver;
@@ -87,6 +88,7 @@ class AppServiceProvider extends ServiceProvider
         $_SERVER['PAO_DISABLE'] ??= '1';
 
         $this->app->scoped(ActivityLogCorrelation::class);
+        $this->app->scoped(WebSocketRoleBaselineTiming::class);
         $this->app->singleton(OperationResultRegistry::class);
         $this->app->bind(OperationTokenFactory::class, fn ($app): OperationTokenFactory => new OperationTokenFactory(
             signer: $app->make(OperationTokenSigner::class),
