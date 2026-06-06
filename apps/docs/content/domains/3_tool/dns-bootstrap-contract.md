@@ -4,8 +4,9 @@
 [Back to tool family.](README.md)
 
 This contract spells out how Orbit provisions DNS for development names over
-the VPN. The runtime shape is `wg-easy` + `orbit-dns` + `dnsmasq.conf`, kept in
-sync with fleet state and verified by `doctor`. It is referenced from
+the VPN. The current runtime shape is `wg-easy` + `orbit-dns` +
+`dnsmasq.conf`, kept in sync with fleet state and verified by `doctor`. It is
+referenced from
 [`catalog/dns.md`](catalog/dns.md) and from the gateway bootstrap path
 (`orbit:internal:bootstrap-gateway-local`).
 
@@ -91,6 +92,34 @@ Service shape:
 
 The initial `dnsmasq.conf` is rendered from fleet state before
 `docker compose up -d`, so the container starts with a valid config.
+
+## Swarm VPN/DNS Target Shape
+
+The Swarm migration keeps VPN and DNS as separate Swarm services. Do not merge
+wg-easy and dnsmasq into one image/container: Docker Swarm must be able to
+start, stop, restart, replace, and observe the VPN and DNS containers
+independently.
+
+Target service shape:
+
+- `wg-easy` and `orbit-dns` are separate Swarm services with one replica each.
+- Both services are constrained to the same gateway edge node. In v1 that is
+  the node carrying the co-located router, vpn, and dns responsibilities.
+- Both services attach to the private `orbit-network` Swarm overlay network so
+  the VPN service can reach the DNS service by service name.
+- `wg-easy` retains `/dev/net/tun`, `NET_ADMIN`, the required WireGuard state
+  mount, and host-mode publication of the public WireGuard UDP endpoint.
+- `orbit-dns` mounts the rendered `dnsmasq.conf`, listens on port 53 inside the
+  private service network, and publishes no public host port.
+- Peer configs continue to advertise the VPN-side DNS address, currently
+  `10.6.0.1`.
+- The VPN service owns forwarding from WireGuard peer DNS traffic to the DNS
+  service over `orbit-network`. The forwarding rule must cover UDP and TCP 53,
+  avoid public `:53` exposure, and preserve return traffic.
+
+The DNS service may be restarted or updated independently when
+`dnsmasq.conf` changes. DNS reconciliation must not restart WireGuard just
+because node-family DNS mappings changed.
 
 ## `dnsmasq.conf` Shape
 

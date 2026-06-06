@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services\Dns;
 
 use App\Models\Node;
+use App\Services\Vpn\VpnDnsSwarmManager;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Process;
 
@@ -13,6 +14,7 @@ class DnsmasqReconciler
     public function __construct(
         private readonly DnsmasqConfigBuilder $configBuilder,
         private readonly string $rootPath,
+        private readonly ?VpnDnsSwarmManager $swarmManager = null,
     ) {}
 
     public function reconcile(): void
@@ -29,6 +31,15 @@ class DnsmasqReconciler
 
         File::put($confPath, $expected);
 
+        if ($this->swarmManager()?->restartDnsServiceIfPresent() === true) {
+            return;
+        }
+
         Process::timeout(30)->run('docker restart orbit-dns');
+    }
+
+    private function swarmManager(): VpnDnsSwarmManager
+    {
+        return $this->swarmManager ?? app(VpnDnsSwarmManager::class);
     }
 }

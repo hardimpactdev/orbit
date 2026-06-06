@@ -46,6 +46,8 @@ use App\Services\Trust\MacOsTrustStoreInstaller;
 use App\Services\Trust\TrustStoreInstaller;
 use App\Services\Updates\UnattendedUpgradesDriver;
 use App\Services\Updates\UpdateDriverRegistry;
+use App\Services\Vpn\VpnDnsSwarmInstaller;
+use App\Services\Vpn\VpnDnsSwarmManager;
 use App\Services\Vpn\VpnNodeResolver;
 use App\Services\Vpn\WgEasyServiceInstaller;
 use App\Services\Vpn\WgEasyVpnBackend;
@@ -164,6 +166,13 @@ class AppServiceProvider extends ServiceProvider
             vpnNodeResolver: $app->make(VpnNodeResolver::class),
         ));
 
+        $this->app->singleton(VpnDnsSwarmInstaller::class, fn ($app): VpnDnsSwarmInstaller => new VpnDnsSwarmInstaller(
+            rootPath: $this->orbitConfigPath(),
+            statePath: $this->wgEasyStatePath(),
+            localExecutor: $this->hasOperationTokenSigningKey() ? $app->make(RemoteLocalExecutor::class) : null,
+            vpnNodeResolver: $app->make(VpnNodeResolver::class),
+        ));
+
         $this->app->singleton(OrbitDnsServiceInstaller::class, fn ($app): OrbitDnsServiceInstaller => new OrbitDnsServiceInstaller(
             configBuilder: $app->make(DnsmasqConfigBuilder::class),
             rootPath: $this->orbitConfigPath(),
@@ -172,6 +181,7 @@ class AppServiceProvider extends ServiceProvider
         $this->app->singleton(DnsmasqReconciler::class, fn ($app): DnsmasqReconciler => new DnsmasqReconciler(
             configBuilder: $app->make(DnsmasqConfigBuilder::class),
             rootPath: $this->orbitConfigPath(),
+            swarmManager: $app->make(VpnDnsSwarmManager::class),
         ));
 
         $this->app->singleton(DnsRuntimeProbe::class, fn ($app): DnsRuntimeProbe => new DnsRuntimeProbe(

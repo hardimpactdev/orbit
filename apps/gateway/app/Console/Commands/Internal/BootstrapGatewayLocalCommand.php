@@ -14,11 +14,10 @@ use App\Models\NodeAccess;
 use App\Models\NodeRoleAssignment;
 use App\Models\WireGuardPeer;
 use App\Services\Ca\OrbitCaService;
-use App\Services\Dns\OrbitDnsServiceInstaller;
 use App\Services\Gateway\GatewayImageReference;
 use App\Services\Gateway\GatewaySwarmInstaller;
 use App\Services\Security\SshHostKeyPinner;
-use App\Services\Vpn\WgEasyServiceInstaller;
+use App\Services\Vpn\VpnDnsSwarmInstaller;
 use App\Services\WireGuard\WireGuardInterfaceInstaller;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
@@ -45,8 +44,7 @@ class BootstrapGatewayLocalCommand extends Command
         OrbitCaService $caService,
         WireGuardInterfaceInstaller $wireGuard,
         GatewaySwarmInstaller $gatewaySwarmInstaller,
-        WgEasyServiceInstaller $wgEasyServiceInstaller,
-        OrbitDnsServiceInstaller $orbitDnsServiceInstaller,
+        VpnDnsSwarmInstaller $vpnDnsSwarmInstaller,
     ): int {
         $name = $this->stringArgument('name');
         $wireguardAddress = $this->stringArgument('wireguard-address');
@@ -185,15 +183,15 @@ class BootstrapGatewayLocalCommand extends Command
             if ($publicHost !== null) {
                 $password = $this->ensureWgEasyPassword();
                 $username = (string) config('services.wg_easy.username', 'orbit');
-                $wgEasyServiceInstaller->install(publicHost: $publicHost, username: $username, password: $password);
-                $wireguardServerPublicKey = $wgEasyServiceInstaller->publicKey();
+                $vpnDnsSwarmInstaller->install(publicHost: $publicHost, username: $username, password: $password);
+                $wireguardServerPublicKey = $vpnDnsSwarmInstaller->publicKey();
 
                 if ($enrollment !== null) {
                     if ($enrollment['gateway_pre_shared_key'] === null || $enrollment['operator_pre_shared_key'] === null) {
                         throw new RuntimeException('WireGuard identity payload must include pre-shared keys when bootstrapping through wg-easy.');
                     }
 
-                    $wgEasyServiceInstaller->configurePeers([
+                    $vpnDnsSwarmInstaller->configurePeers([
                         [
                             'name' => $enrollment['gateway_name'],
                             'private_key' => $enrollment['gateway_private_key'],
@@ -240,10 +238,6 @@ class BootstrapGatewayLocalCommand extends Command
                 wireguardInterface: 'wg-orbit',
                 imageArchive: $this->gatewayImageArchive(),
             );
-
-            if ($publicHost !== null) {
-                $orbitDnsServiceInstaller->install();
-            }
         }
 
         if ((bool) $this->option('metadata-json')) {

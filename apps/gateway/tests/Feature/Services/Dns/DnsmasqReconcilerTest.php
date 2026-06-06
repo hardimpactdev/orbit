@@ -24,7 +24,10 @@ afterEach(function (): void {
 });
 
 it('writes dnsmasq.conf and restarts orbit-dns when state changes', function (): void {
-    Process::fake();
+    Process::fake([
+        "docker service inspect 'orbit_orbit-dns'" => Process::result(exitCode: 1),
+        'docker restart orbit-dns' => Process::result(),
+    ]);
 
     Node::factory()->create([
         'name' => 'gateway',
@@ -67,7 +70,10 @@ it('is a no-op when the on-disk config already matches state', function (): void
 });
 
 it('rewrites the conf and restarts dns when fleet state changes', function (): void {
-    Process::fake();
+    Process::fake([
+        "docker service inspect 'orbit_orbit-dns'" => Process::result(exitCode: 1),
+        'docker restart orbit-dns' => Process::result(),
+    ]);
 
     Node::factory()->create([
         'name' => 'gateway',
@@ -94,7 +100,10 @@ it('rewrites the conf and restarts dns when fleet state changes', function (): v
 });
 
 it('does not rewrite the compose topology while reconciling dns state', function (): void {
-    Process::fake();
+    Process::fake([
+        "docker service inspect 'orbit_orbit-dns'" => Process::result(exitCode: 1),
+        'docker restart orbit-dns' => Process::result(),
+    ]);
 
     File::put($this->workdir.'/docker-compose.yaml', <<<'YAML'
 services:
@@ -115,4 +124,25 @@ YAML);
     ))->reconcile();
 
     expect(File::get($this->workdir.'/docker-compose.yaml'))->toContain('network_mode: "container:wg-easy"');
+});
+
+it('restarts the Swarm dns service when it exists', function (): void {
+    Process::fake([
+        "docker service inspect 'orbit_orbit-dns'" => Process::result(),
+        "docker service update --force 'orbit_orbit-dns'" => Process::result(),
+    ]);
+
+    Node::factory()->create([
+        'name' => 'gateway',
+        'tld' => 'gateway',
+        'wireguard_address' => '10.6.0.2',
+    ]);
+
+    (new DnsmasqReconciler(
+        configBuilder: new DnsmasqConfigBuilder,
+        rootPath: $this->workdir,
+    ))->reconcile();
+
+    Process::assertRan("docker service update --force 'orbit_orbit-dns'");
+    Process::assertNotRan('docker restart orbit-dns');
 });

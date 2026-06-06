@@ -296,7 +296,7 @@ services:
 YAML;
     }
 
-    private function cidrPrefix(string $wireguardCidr): int
+    protected function cidrPrefix(string $wireguardCidr): int
     {
         [, $prefix] = explode('/', $wireguardCidr, 2);
 
@@ -322,19 +322,19 @@ YAML;
         return escapeshellarg($this->statePath());
     }
 
-    private function dockerShellPrefix(): string
+    protected function dockerShellPrefix(): string
     {
         return 'if docker ps >/dev/null 2>&1; then ORBIT_DOCKER=docker; else ORBIT_DOCKER="sudo docker"; fi';
     }
 
-    private function ipv6For(string $ipv4): string
+    protected function ipv6For(string $ipv4): string
     {
         $lastOctet = (int) substr(strrchr($ipv4, '.') ?: '.0', 1);
 
         return 'fdcc:ad94:bacf:61a4::cafe:'.dechex($lastOctet);
     }
 
-    private function deleteWgEasyPeer(string $name): void
+    protected function deleteWgEasyPeer(string $name): void
     {
         $this->runWgEasyStateAction(
             action: self::ACTION_DELETE_PEER,
@@ -349,7 +349,7 @@ YAML;
     /**
      * @param  array{name: string, private_key: string, public_key: string, address: string, pre_shared_key: string}  $peer
      */
-    private function upsertWgEasyPeer(array $peer): void
+    protected function upsertWgEasyPeer(array $peer): void
     {
         $this->runWgEasyStateAction(
             action: self::ACTION_UPSERT_PEER,
@@ -368,7 +368,7 @@ YAML;
         );
     }
 
-    private function updateWgEasyInterface(string $wireguardCidr): void
+    protected function updateWgEasyInterface(string $wireguardCidr): void
     {
         $this->runWgEasyStateAction(
             action: self::ACTION_UPDATE_INTERFACE,
@@ -379,7 +379,7 @@ YAML;
         );
     }
 
-    private function updateWgEasyUserConfig(string $host, string $defaultDns, int $defaultPersistentKeepalive): void
+    protected function updateWgEasyUserConfig(string $host, string $defaultDns, int $defaultPersistentKeepalive): void
     {
         $this->runWgEasyStateAction(
             action: self::ACTION_UPDATE_USER,
@@ -392,7 +392,7 @@ YAML;
         );
     }
 
-    private function updateWgEasyGeneralSetupStep(int $setupStep): void
+    protected function updateWgEasyGeneralSetupStep(int $setupStep): void
     {
         $this->runWgEasyStateAction(
             action: self::ACTION_UPDATE_GENERAL,
@@ -403,7 +403,7 @@ YAML;
         );
     }
 
-    private function ensureWgEasyStateWritable(): void
+    protected function ensureWgEasyStateWritable(): void
     {
         $this->runWgEasyStateAction(
             action: self::ACTION_ENSURE_WRITABLE,
