@@ -16,6 +16,7 @@ final class E2EPhaseTimer
          */
         private readonly ?\Closure $writer = null,
         private readonly string $prefix = '',
+        private readonly ?self $parent = null,
     ) {}
 
     public function child(string $label): self
@@ -26,6 +27,7 @@ final class E2EPhaseTimer
             stream: $this->stream,
             writer: $this->writer,
             prefix: $prefix,
+            parent: $this,
         );
     }
 
@@ -99,10 +101,19 @@ final class E2EPhaseTimer
 
     private function record(string $name, float $seconds): void
     {
-        $this->events[] = [
-            'name' => $name,
+        $this->recordEvent([
+            'name' => trim("{$this->prefix} {$name}"),
             'seconds' => $seconds,
-        ];
+        ]);
+    }
+
+    /**
+     * @param  array{name: string, seconds: float}  $event
+     */
+    private function recordEvent(array $event): void
+    {
+        $this->events[] = $event;
+        $this->parent?->recordEvent($event);
     }
 
     private function write(string $message): void

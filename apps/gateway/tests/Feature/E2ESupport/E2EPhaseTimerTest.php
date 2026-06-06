@@ -72,7 +72,7 @@ it('streams failed checkpoints before rethrowing', function (): void {
         ->and($lines[1])->toContain('RuntimeException: nope');
 });
 
-it('creates child timers that share stream output with a label prefix', function (): void {
+it('creates child timers that share stream output and parent events with a label prefix', function (): void {
     $lines = [];
     $timer = new E2EPhaseTimer(
         stream: true,
@@ -85,8 +85,10 @@ it('creates child timers that share stream output with a label prefix', function
 
     $child->measure('checkout.archive', fn () => null);
 
-    expect($timer->events())->toBeEmpty()
+    expect($timer->events())->toHaveCount(1)
+        ->and($timer->events()[0]['name'])->toBe('checkout checkout.archive')
         ->and($child->events())->toHaveCount(1)
+        ->and($child->events()[0]['name'])->toBe('checkout checkout.archive')
         ->and($lines[0])->toBe('[orbit-e2e] checkout checkout.archive started')
         ->and($lines[1])->toStartWith('[orbit-e2e] checkout checkout.archive done ');
 });

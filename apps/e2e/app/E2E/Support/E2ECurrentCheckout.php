@@ -42,12 +42,13 @@ final class E2ECurrentCheckout
         $paths = [];
 
         foreach ($roles as $role) {
+            $roleTimer = $timer?->child($role);
             [$instance, $user, $seedFrom] = self::topologyRoleTarget($topology, $role, $users);
             $executorNodeIdentity = self::topologyRoleNodeIdentity($role);
             $hostLauncher = self::topologyRoleUsesHostLauncher($role);
             $refreshGatewayHostKeys = $role === 'gateway'
-                ? function (string $remotePath, bool $sourceMountedCheckout = false) use ($instance, $user, $topology, $timer, $hostLauncher): void {
-                    self::refreshGatewayHostKeys($instance, $user, $topology->sshKeyPair(), $remotePath, $timer, $hostLauncher, $sourceMountedCheckout);
+                ? function (string $remotePath, bool $sourceMountedCheckout = false) use ($instance, $user, $topology, $roleTimer, $hostLauncher): void {
+                    self::refreshGatewayHostKeys($instance, $user, $topology->sshKeyPair(), $remotePath, $roleTimer, $hostLauncher, $sourceMountedCheckout);
                 }
             : null;
             // Configure the orbit CLI gateway endpoint on every node that has a
@@ -56,8 +57,8 @@ final class E2ECurrentCheckout
             // gateway's own WireGuard IP (routed locally), so the gateway's CLI
             // needs the same ~/.config/orbit gateway entry + CA trust as clients.
             $refreshLocalGatewaySettings = $topology->gateway() !== null && ! self::usesDockerRuntime($instance)
-                ? function (string $remotePath, bool $sourceMountedCheckout = false) use ($instance, $user, $topology, $timer): void {
-                    self::refreshLocalGatewaySettings($instance, $user, $topology->sshKeyPair(), $remotePath, $topology->gatewayApiIp(), $timer, $sourceMountedCheckout);
+                ? function (string $remotePath, bool $sourceMountedCheckout = false) use ($instance, $user, $topology, $roleTimer): void {
+                    self::refreshLocalGatewaySettings($instance, $user, $topology->sshKeyPair(), $remotePath, $topology->gatewayApiIp(), $roleTimer, $sourceMountedCheckout);
                 }
             : null;
             $afterInstall = ($refreshGatewayHostKeys !== null || $refreshLocalGatewaySettings !== null)
@@ -72,7 +73,7 @@ final class E2ECurrentCheckout
                 $user,
                 $topology->sshKeyPair(),
                 seedFrom: $seedFrom,
-                timer: $timer,
+                timer: $roleTimer,
                 afterBaseInstall: $refreshGatewayHostKeys,
                 afterInstall: $afterInstall,
                 executorNodeIdentity: $executorNodeIdentity,

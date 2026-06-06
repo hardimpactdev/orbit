@@ -1200,7 +1200,7 @@ it('passes checkout timing through topology installation', function (): void {
 
     E2ECurrentCheckout::installOnTopology($topology, roles: ['operator'], timer: $timer);
 
-    expect(array_column($timer->events(), 'name'))->toContain('checkout.archive', 'checkout.migrate');
+    expect(array_column($timer->events(), 'name'))->toContain('operator checkout.archive', 'operator checkout.migrate');
 });
 
 it('streams checkout timings from the topology harness timer child', function (): void {
@@ -1231,6 +1231,6 @@ it('streams checkout timings from the topology harness timer child', function ()
         ->setTimer($timer)
         ->withCurrentCheckout(roles: ['operator']);
 
-    expect($lines[0])->toBe('[orbit-e2e] checkout checkout.archive started')
-        ->and(implode("\n", $lines))->toContain('checkout checkout.migrate done ');
+    expect($lines[0])->toBe('[orbit-e2e] checkout operator checkout.archive started')
+        ->and(implode("\n", $lines))->toContain('checkout operator checkout.migrate done ');
 });
