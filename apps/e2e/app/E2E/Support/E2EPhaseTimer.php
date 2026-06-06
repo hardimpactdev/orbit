@@ -67,6 +67,16 @@ final class E2EPhaseTimer
     }
 
     /**
+     * @param  list<array{name: string, seconds: float}>  $events
+     */
+    public function mergeExternalEvents(array $events): void
+    {
+        foreach ($events as $event) {
+            $this->recordEvent($event);
+        }
+    }
+
+    /**
      * @return list<array{name: string, seconds: float}>
      */
     public function events(): array

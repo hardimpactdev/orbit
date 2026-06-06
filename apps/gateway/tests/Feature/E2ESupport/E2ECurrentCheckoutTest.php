@@ -22,6 +22,7 @@ use Mockery as m;
 afterEach(function (): void {
     E2ECurrentCheckout::flushCache();
     E2ECurrentCheckout::useNowResolverForTests(null);
+    E2ECurrentCheckout::useInstallerForTests(null);
     m::close();
 });
 
@@ -1201,6 +1202,63 @@ it('passes checkout timing through topology installation', function (): void {
     E2ECurrentCheckout::installOnTopology($topology, roles: ['operator'], timer: $timer);
 
     expect(array_column($timer->events(), 'name'))->toContain('operator checkout.archive', 'operator checkout.migrate');
+});
+
+it('installs source-mounted topology roles concurrently when fork workers are available', function (): void {
+    if (! function_exists('pcntl_fork') || ! function_exists('pcntl_waitpid')) {
+        $this->markTestSkipped('pcntl is required for checkout role worker concurrency.');
+    }
+
+    $logPath = tempnam(sys_get_temp_dir(), 'orbit-checkout-role-workers-');
+    $operatorCommands = [];
+    $gatewayCommands = [];
+    $devCommands = [];
+    $key = new SshKeyPair('/tmp/id_ed25519', '/tmp/id_ed25519.pub');
+    $topology = new E2ETopologyLease(
+        kind: E2ETopologyKind::OperatorGatewayAppdev,
+        operator: currentCheckoutFakeSourceMountedInstance($operatorCommands, 'operator'),
+        gateway: currentCheckoutFakeSourceMountedInstance($gatewayCommands, 'gateway'),
+        dev: currentCheckoutFakeSourceMountedInstance($devCommands, 'dev'),
+        prod: null,
+        sshKeyPair: $key,
+        rebuild: fn () => throw new RuntimeException('not expected'),
+    );
+    $timer = new E2EPhaseTimer;
+
+    E2ECurrentCheckout::useInstallerForTests(function (string $role, E2EPhaseTimer $roleTimer) use ($logPath): string {
+        file_put_contents($logPath, "{$role}:start:".microtime(true).PHP_EOL, FILE_APPEND | LOCK_EX);
+        usleep(250_000);
+        file_put_contents($logPath, "{$role}:done:".microtime(true).PHP_EOL, FILE_APPEND | LOCK_EX);
+        $roleTimer->recordExternal('checkout.test-worker', 0.25);
+
+        return "/home/orbit/orbit-run-{$role}";
+    });
+
+    try {
+        $start = microtime(true);
+
+        $paths = E2ECurrentCheckout::installOnTopology($topology, roles: ['operator', 'gateway', 'dev'], timer: $timer);
+
+        $elapsed = microtime(true) - $start;
+        $lines = file($logPath, FILE_IGNORE_NEW_LINES);
+    } finally {
+        @unlink($logPath);
+    }
+
+    $starts = array_values(array_filter($lines, fn (string $line): bool => str_contains($line, ':start:')));
+
+    expect($paths)->toBe([
+        'operator' => '/home/orbit/orbit-run-operator',
+        'gateway' => '/home/orbit/orbit-run-gateway',
+        'dev' => '/home/orbit/orbit-run-dev',
+    ])
+        ->and($starts)->toHaveCount(3)
+        ->and($elapsed)->toBeLessThan(0.65)
+        ->and(array_column($timer->events(), 'name'))->toContain(
+            'operator checkout.test-worker',
+            'gateway checkout.test-worker',
+            'dev checkout.test-worker',
+        );
 });
 
 it('streams checkout timings from the topology harness timer child', function (): void {

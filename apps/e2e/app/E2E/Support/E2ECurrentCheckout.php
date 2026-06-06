@@ -25,6 +25,9 @@ final class E2ECurrentCheckout
     /** @var (\Closure(): float)|null */
     private static ?\Closure $nowResolver = null;
 
+    /** @var (\Closure(string, E2EPhaseTimer): string)|null */
+    private static ?\Closure $installerForTests = null;
+
     /**
      * Install the current local checkout into selected roles of an acquired
      * topology. This is the branch-overlay helper for E2E tests: the topology
@@ -39,49 +42,254 @@ final class E2ECurrentCheckout
     {
         $roles ??= self::availableTopologyRoles($topology);
 
+        if (self::canInstallTopologyRolesConcurrently($topology, $roles, $users)) {
+            return self::installTopologyRolesConcurrently($topology, $roles, $users, $timer);
+        }
+
         $paths = [];
 
         foreach ($roles as $role) {
-            $roleTimer = $timer?->child($role);
-            [$instance, $user, $seedFrom] = self::topologyRoleTarget($topology, $role, $users);
-            $executorNodeIdentity = self::topologyRoleNodeIdentity($role);
-            $hostLauncher = self::topologyRoleUsesHostLauncher($role);
-            $refreshGatewayHostKeys = $role === 'gateway'
-                ? function (string $remotePath, bool $sourceMountedCheckout = false) use ($instance, $user, $topology, $roleTimer, $hostLauncher): void {
-                    self::refreshGatewayHostKeys($instance, $user, $topology->sshKeyPair(), $remotePath, $roleTimer, $hostLauncher, $sourceMountedCheckout);
-                }
-            : null;
-            // Configure the orbit CLI gateway endpoint on every node that has a
-            // gateway, INCLUDING the gateway node itself: gateway-role feature
-            // tests run `orbit` against the gateway API as a self-call to the
-            // gateway's own WireGuard IP (routed locally), so the gateway's CLI
-            // needs the same ~/.config/orbit gateway entry + CA trust as clients.
-            $refreshLocalGatewaySettings = $topology->gateway() !== null && ! self::usesDockerRuntime($instance)
-                ? function (string $remotePath, bool $sourceMountedCheckout = false) use ($instance, $user, $topology, $roleTimer): void {
-                    self::refreshLocalGatewaySettings($instance, $user, $topology->sshKeyPair(), $remotePath, $topology->gatewayApiIp(), $roleTimer, $sourceMountedCheckout);
-                }
-            : null;
-            $afterInstall = ($refreshGatewayHostKeys !== null || $refreshLocalGatewaySettings !== null)
-                ? function (string $remotePath, bool $sourceMountedCheckout = false) use ($refreshGatewayHostKeys, $refreshLocalGatewaySettings): void {
-                    $refreshGatewayHostKeys?->__invoke($remotePath, $sourceMountedCheckout);
-                    $refreshLocalGatewaySettings?->__invoke($remotePath, $sourceMountedCheckout);
-                }
-            : null;
-
-            $paths[$role] = self::install(
-                $instance,
-                $user,
-                $topology->sshKeyPair(),
-                seedFrom: $seedFrom,
-                timer: $roleTimer,
-                afterBaseInstall: $refreshGatewayHostKeys,
-                afterInstall: $afterInstall,
-                executorNodeIdentity: $executorNodeIdentity,
-                hostLauncher: $hostLauncher,
-            );
+            $paths[$role] = self::installTopologyRole($topology, $role, $users, $timer?->child($role));
         }
 
         return $paths;
+    }
+
+    /**
+     * @param  array<string, string>  $users
+     */
+    private static function installTopologyRole(E2ETopologyLease $topology, string $role, array $users, ?E2EPhaseTimer $roleTimer): string
+    {
+        if (self::$installerForTests !== null) {
+            return (self::$installerForTests)($role, $roleTimer ?? new E2EPhaseTimer);
+        }
+
+        [$instance, $user, $seedFrom] = self::topologyRoleTarget($topology, $role, $users);
+        $executorNodeIdentity = self::topologyRoleNodeIdentity($role);
+        $hostLauncher = self::topologyRoleUsesHostLauncher($role);
+        $refreshGatewayHostKeys = $role === 'gateway'
+            ? function (string $remotePath, bool $sourceMountedCheckout = false) use ($instance, $user, $topology, $roleTimer, $hostLauncher): void {
+                self::refreshGatewayHostKeys($instance, $user, $topology->sshKeyPair(), $remotePath, $roleTimer, $hostLauncher, $sourceMountedCheckout);
+            }
+        : null;
+        // Configure the orbit CLI gateway endpoint on every node that has a
+        // gateway, INCLUDING the gateway node itself: gateway-role feature
+        // tests run `orbit` against the gateway API as a self-call to the
+        // gateway's own WireGuard IP (routed locally), so the gateway's CLI
+        // needs the same ~/.config/orbit gateway entry + CA trust as clients.
+        $refreshLocalGatewaySettings = $topology->gateway() !== null && ! self::usesDockerRuntime($instance)
+            ? function (string $remotePath, bool $sourceMountedCheckout = false) use ($instance, $user, $topology, $roleTimer): void {
+                self::refreshLocalGatewaySettings($instance, $user, $topology->sshKeyPair(), $remotePath, $topology->gatewayApiIp(), $roleTimer, $sourceMountedCheckout);
+            }
+        : null;
+        $afterInstall = ($refreshGatewayHostKeys !== null || $refreshLocalGatewaySettings !== null)
+            ? function (string $remotePath, bool $sourceMountedCheckout = false) use ($refreshGatewayHostKeys, $refreshLocalGatewaySettings): void {
+                $refreshGatewayHostKeys?->__invoke($remotePath, $sourceMountedCheckout);
+                $refreshLocalGatewaySettings?->__invoke($remotePath, $sourceMountedCheckout);
+            }
+        : null;
+
+        return self::install(
+            $instance,
+            $user,
+            $topology->sshKeyPair(),
+            seedFrom: $seedFrom,
+            timer: $roleTimer,
+            afterBaseInstall: $refreshGatewayHostKeys,
+            afterInstall: $afterInstall,
+            executorNodeIdentity: $executorNodeIdentity,
+            hostLauncher: $hostLauncher,
+        );
+    }
+
+    /**
+     * @param  list<string>  $roles
+     * @param  array<string, string>  $users
+     */
+    private static function canInstallTopologyRolesConcurrently(E2ETopologyLease $topology, array $roles, array $users): bool
+    {
+        if (count($roles) < 2) {
+            return false;
+        }
+
+        if (! function_exists('pcntl_fork') || ! function_exists('pcntl_waitpid')) {
+            return false;
+        }
+
+        foreach ($roles as $role) {
+            [$instance, $user] = self::topologyRoleTarget($topology, $role, $users);
+            $hostLauncher = self::topologyRoleUsesHostLauncher($role);
+
+            if (self::usesDockerRuntime($instance)) {
+                return false;
+            }
+
+            if (self::$installerForTests === null && ! $instance instanceof IncusInstance) {
+                return false;
+            }
+
+            if (self::sourceMountedCheckoutPath($instance, $user, $hostLauncher) === null) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /**
+     * @param  list<string>  $roles
+     * @param  array<string, string>  $users
+     * @return array<string, string>
+     */
+    private static function installTopologyRolesConcurrently(E2ETopologyLease $topology, array $roles, array $users, ?E2EPhaseTimer $timer): array
+    {
+        $workers = [];
+
+        foreach ($roles as $role) {
+            $resultPath = tempnam(sys_get_temp_dir(), 'orbit-checkout-role-');
+
+            if (! is_string($resultPath)) {
+                throw new RuntimeException('Could not create temporary checkout role result path.');
+            }
+
+            $pid = pcntl_fork();
+
+            if ($pid === -1) {
+                @unlink($resultPath);
+
+                return self::installTopologyRolesSequentially($topology, $roles, $users, $timer);
+            }
+
+            if ($pid === 0) {
+                $exitCode = self::runTopologyRoleInstallWorker($topology, $role, $users, $timer, $resultPath);
+
+                if (function_exists('posix_kill')) {
+                    posix_kill(getmypid(), SIGKILL);
+                }
+
+                exit($exitCode);
+            }
+
+            $workers[$role] = [
+                'pid' => $pid,
+                'result_path' => $resultPath,
+            ];
+        }
+
+        return self::collectTopologyRoleInstallWorkers($workers, $timer);
+    }
+
+    /**
+     * @param  list<string>  $roles
+     * @param  array<string, string>  $users
+     * @return array<string, string>
+     */
+    private static function installTopologyRolesSequentially(E2ETopologyLease $topology, array $roles, array $users, ?E2EPhaseTimer $timer): array
+    {
+        $paths = [];
+
+        foreach ($roles as $role) {
+            $paths[$role] = self::installTopologyRole($topology, $role, $users, $timer?->child($role));
+        }
+
+        return $paths;
+    }
+
+    /**
+     * @param  array<string, string>  $users
+     */
+    private static function runTopologyRoleInstallWorker(E2ETopologyLease $topology, string $role, array $users, ?E2EPhaseTimer $timer, string $resultPath): int
+    {
+        $roleTimer = $timer?->child($role);
+
+        try {
+            $path = self::installTopologyRole($topology, $role, $users, $roleTimer);
+
+            file_put_contents($resultPath, serialize([
+                'path' => $path,
+                'events' => $roleTimer?->events() ?? [],
+            ]));
+
+            return 0;
+        } catch (\Throwable $throwable) {
+            file_put_contents($resultPath, serialize([
+                'error' => [
+                    'type' => get_debug_type($throwable),
+                    'message' => $throwable->getMessage(),
+                ],
+                'events' => $roleTimer?->events() ?? [],
+            ]));
+
+            return 1;
+        }
+    }
+
+    /**
+     * @param  array<string, array{pid: int, result_path: string}>  $workers
+     * @return array<string, string>
+     */
+    private static function collectTopologyRoleInstallWorkers(array $workers, ?E2EPhaseTimer $timer): array
+    {
+        $paths = [];
+        $failures = [];
+
+        foreach ($workers as $role => $worker) {
+            pcntl_waitpid($worker['pid'], $status);
+
+            try {
+                $payload = self::readTopologyRoleWorkerPayload($worker['result_path']);
+                $timer?->mergeExternalEvents($payload['events'] ?? []);
+
+                if (isset($payload['error']) || ! isset($payload['path'])) {
+                    $error = $payload['error'] ?? ['type' => 'worker', 'message' => 'exited without a result'];
+                    $failures[] = "{$role}: {$error['type']}: {$error['message']}";
+
+                    continue;
+                }
+
+                $paths[$role] = $payload['path'];
+            } finally {
+                @unlink($worker['result_path']);
+            }
+        }
+
+        if ($failures !== []) {
+            throw new RuntimeException('Could not install current checkout roles in parallel: '.implode('; ', $failures));
+        }
+
+        return $paths;
+    }
+
+    /**
+     * @return array{path?: string, events?: list<array{name: string, seconds: float}>, error?: array{type: string, message: string}}
+     */
+    private static function readTopologyRoleWorkerPayload(string $path): array
+    {
+        $contents = is_file($path) ? file_get_contents($path) : false;
+
+        if (! is_string($contents) || $contents === '') {
+            return [
+                'error' => [
+                    'type' => 'worker',
+                    'message' => 'did not write a result',
+                ],
+                'events' => [],
+            ];
+        }
+
+        $payload = unserialize($contents, ['allowed_classes' => false]);
+
+        if (! is_array($payload)) {
+            return [
+                'error' => [
+                    'type' => 'worker',
+                    'message' => 'wrote an invalid result',
+                ],
+                'events' => [],
+            ];
+        }
+
+        return $payload;
     }
 
     public static function install(E2EInstance $instance, string $user, SshKeyPair $keyPair, ?string $seedFrom = null, ?E2EPhaseTimer $timer = null, ?\Closure $afterBaseInstall = null, ?\Closure $afterInstall = null, ?string $executorNodeIdentity = null, bool $hostLauncher = false): string
@@ -210,6 +418,11 @@ final class E2ECurrentCheckout
     public static function useNowResolverForTests(?callable $resolver): void
     {
         self::$nowResolver = $resolver !== null ? \Closure::fromCallable($resolver) : null;
+    }
+
+    public static function useInstallerForTests(?callable $installer): void
+    {
+        self::$installerForTests = $installer !== null ? \Closure::fromCallable($installer) : null;
     }
 
     public static function orbitWrapperScript(string $checkout, bool $dockerRuntime, ?string $executorNodeIdentity = null, bool $hostLauncher = false): string

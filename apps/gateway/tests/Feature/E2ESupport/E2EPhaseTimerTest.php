@@ -93,6 +93,20 @@ it('creates child timers that share stream output and parent events with a label
         ->and($lines[1])->toStartWith('[orbit-e2e] checkout checkout.archive done ');
 });
 
+it('merges externally recorded child events back into the parent timer', function (): void {
+    $timer = new E2EPhaseTimer;
+
+    $timer->mergeExternalEvents([
+        ['name' => 'operator checkout.source-mirror', 'seconds' => 1.2],
+        ['name' => 'operator checkout.vendor', 'seconds' => 0.4],
+    ]);
+
+    expect($timer->events())->toBe([
+        ['name' => 'operator checkout.source-mirror', 'seconds' => 1.2],
+        ['name' => 'operator checkout.vendor', 'seconds' => 0.4],
+    ]);
+});
+
 it('flush is silent when ORBIT_E2E_TIMINGS is not 1', function (): void {
     $previous = getenv('ORBIT_E2E_TIMINGS');
     putenv('ORBIT_E2E_TIMINGS');
