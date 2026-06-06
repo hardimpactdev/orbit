@@ -69,7 +69,8 @@ class E2EDevTopologyCommand extends Command
      *     ssh_key_path: string,
      *     gateway_ip: string,
      *     instances: array<string, string>,
-     *     checkouts: array<string, string>
+     *     checkouts: array<string, string>,
+     *     timings?: list<array{name: string, seconds: float}>
      * })|null
      */
     private ?Closure $prepareUsing = null;
@@ -84,7 +85,8 @@ class E2EDevTopologyCommand extends Command
      *     ssh_key_path: string,
      *     gateway_ip: string,
      *     instances: array<string, string>,
-     *     checkouts: array<string, string>
+     *     checkouts: array<string, string>,
+     *     timings?: list<array{name: string, seconds: float}>
      * }  $prepare
      */
     public function prepareUsing(Closure $prepare): void
@@ -123,7 +125,7 @@ class E2EDevTopologyCommand extends Command
     private function acquireProvider(string $provider, E2ETopologyKind $kind, array $displayRoles, bool $json): int
     {
         try {
-            $manifest = $this->acquireRetainedTopology($provider, $kind, $displayRoles);
+            $manifest = $this->acquireRetainedTopology($provider, $kind, $displayRoles, streamTimings: ! $json);
         } catch (E2ETopologyAcquisitionRetainedForDiagnosis $exception) {
             $manifest = $this->writeRetainedFailureManifest($kind, $exception);
 
@@ -170,14 +172,14 @@ class E2EDevTopologyCommand extends Command
      *     created_at: string
      * }
      */
-    private function acquireRetainedTopology(string $provider, E2ETopologyKind $kind, array $displayRoles): array
+    private function acquireRetainedTopology(string $provider, E2ETopologyKind $kind, array $displayRoles, bool $streamTimings = false): array
     {
         $config = E2EConfig::fromEnvironment();
         $overlayRoles = $this->overlayCheckoutRoles($kind, $displayRoles);
 
         $prepared = $this->prepareUsing !== null
             ? ($this->prepareUsing)($kind, $overlayRoles)
-            : $this->acquireAndOverlay($config, $provider, $kind, $overlayRoles);
+            : $this->acquireAndOverlay($config, $provider, $kind, $overlayRoles, $streamTimings);
 
         $manifest = $this->retainedManifest($config, $provider, $kind, $prepared);
 
@@ -193,7 +195,8 @@ class E2EDevTopologyCommand extends Command
      *     ssh_key_path: string,
      *     gateway_ip: string,
      *     instances: array<string, string>,
-     *     checkouts: array<string, string>
+     *     checkouts: array<string, string>,
+     *     timings?: list<array{name: string, seconds: float}>
      * }  $prepared
      * @return array<string, mixed>
      */
@@ -213,11 +216,30 @@ class E2EDevTopologyCommand extends Command
             'release_command' => $this->releaseCommandFor($provider, $prepared['run_id']),
         ];
 
+        if (isset($prepared['timings']) && is_array($prepared['timings'])) {
+            $manifest['timings'] = $this->normalizeTimings($prepared['timings']);
+        }
+
         if ($provider === 'docker') {
             $manifest += $this->dockerManifestDetails($config, $prepared['run_id'], $prepared['instances']);
         }
 
         return $manifest;
+    }
+
+    /**
+     * @param  list<array{name: string, seconds: float|int}>  $timings
+     * @return list<array{name: string, seconds: float}>
+     */
+    private function normalizeTimings(array $timings): array
+    {
+        return array_map(
+            fn (array $timing): array => [
+                'name' => $timing['name'],
+                'seconds' => round((float) $timing['seconds'], 3),
+            ],
+            $timings,
+        );
     }
 
     /**
@@ -233,17 +255,23 @@ class E2EDevTopologyCommand extends Command
      *     ssh_key_path: string,
      *     gateway_ip: string,
      *     instances: array<string, string>,
-     *     checkouts: array<string, string>
+     *     checkouts: array<string, string>,
+     *     timings: list<array{name: string, seconds: float}>
      * }
      */
-    private function acquireAndOverlay(E2EConfig $config, string $providerName, E2ETopologyKind $kind, array $overlayRoles): array
+    private function acquireAndOverlay(E2EConfig $config, string $providerName, E2ETopologyKind $kind, array $overlayRoles, bool $streamTimings): array
     {
         $runId = 'dev-'.bin2hex(random_bytes(3));
-        $timer = new E2EPhaseTimer;
+        $timer = new E2EPhaseTimer(
+            stream: $streamTimings && ! $this->laravel->runningUnitTests(),
+            writer: function (string $line): void {
+                $this->output->writeln($line);
+            },
+        );
         $provider = $this->provider($config, $providerName);
 
         try {
-            $availability = $provider->availability($kind);
+            $availability = $timer->measure('prepared-availability', fn () => $provider->availability($kind));
 
             if (! $availability->available) {
                 throw new \RuntimeException('Prepared topology not available: '.$availability->message);
@@ -264,10 +292,10 @@ class E2EDevTopologyCommand extends Command
         }
 
         $host = $this->hostForLease($providerName, $config, $lease);
-        $harness = new E2ETopologyHarness($lease, cleanupOnRelease: false);
+        $harness = (new E2ETopologyHarness($lease, cleanupOnRelease: false))->setTimer($timer);
 
         try {
-            $harness->withCurrentCheckout($overlayRoles);
+            $timer->measure('checkout.overlay', fn () => $harness->withCurrentCheckout($overlayRoles));
         } catch (Throwable $exception) {
             if ($providerName === 'incus') {
                 $this->reapAfterFailure($config, $host, $lease->instanceNames());
@@ -285,6 +313,7 @@ class E2EDevTopologyCommand extends Command
             'gateway_ip' => $lease->gatewayApiIp(),
             'instances' => $this->instanceNamesByRole($lease, $overlayRoles),
             'checkouts' => $harness->checkouts(),
+            'timings' => $this->normalizeTimings($timer->events()),
         ];
     }
 
@@ -481,6 +510,8 @@ class E2EDevTopologyCommand extends Command
         $this->line("Kind: {$manifest['kind']}");
         $this->line("Provider: {$manifest['provider']} (host {$manifest['host']})");
         $this->line("Gateway API: http://{$manifest['gateway_ip']}");
+        $this->renderTimings($manifest);
+
         if ($this->sourceMountedCheckout($manifest)) {
             $runtimeCheckout = $this->sourceMountedRuntimeCheckout($manifest);
 
@@ -517,6 +548,28 @@ class E2EDevTopologyCommand extends Command
         $this->line('Retained topologies are manual diagnosis tools; they are not standing infrastructure and must be released.');
 
         return self::SUCCESS;
+    }
+
+    /**
+     * @param  array<string, mixed>  $manifest
+     */
+    private function renderTimings(array $manifest): void
+    {
+        $timings = $manifest['timings'] ?? null;
+
+        if (! is_array($timings) || $timings === []) {
+            return;
+        }
+
+        $this->line('Timings:');
+
+        foreach ($timings as $timing) {
+            if (! is_array($timing) || ! isset($timing['name'], $timing['seconds'])) {
+                continue;
+            }
+
+            $this->line(sprintf('  %s: %.3fs', $timing['name'], (float) $timing['seconds']));
+        }
     }
 
     /**

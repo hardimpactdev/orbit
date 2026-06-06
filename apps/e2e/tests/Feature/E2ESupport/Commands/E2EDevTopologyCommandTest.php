@@ -30,6 +30,7 @@ function fakePreparedTopology(
     string $host = 'beast',
     array $instances = [],
     array $checkouts = [],
+    array $timings = [],
 ): array {
     $instances = $instances === []
         ? [
@@ -47,7 +48,7 @@ function fakePreparedTopology(
         ]
         : $checkouts;
 
-    return [
+    $topology = [
         'host' => $host,
         'run_id' => $runId,
         'ssh_key_path' => "/tmp/orbit-e2e-topology-{$runId}/id_ed25519",
@@ -55,6 +56,12 @@ function fakePreparedTopology(
         'instances' => $instances,
         'checkouts' => $checkouts,
     ];
+
+    if ($timings !== []) {
+        $topology['timings'] = $timings;
+    }
+
+    return $topology;
 }
 
 function devTopologyCommandWith(callable $prepare): E2EDevTopologyCommand
@@ -194,13 +201,23 @@ it('routes composer dev topology scripts through apps e2e only', function (): vo
 });
 
 it('persists a retained topology manifest and prints the release command', function (): void {
-    devTopologyCommandWith(fn (E2ETopologyKind $kind, array $roles): array => fakePreparedTopology());
+    devTopologyCommandWith(fn (E2ETopologyKind $kind, array $roles): array => fakePreparedTopology(
+        timings: [
+            ['name' => 'availability', 'seconds' => 0.111],
+            ['name' => 'incus.source-sync', 'seconds' => 1.234],
+            ['name' => 'checkout.overlay', 'seconds' => 2.345],
+        ],
+    ));
 
     $this->artisan('e2e:dev-topology', [
         '--provider' => 'incus',
         '--kind' => 'operator_gateway_app-dev',
     ])
         ->expectsOutputToContain('Retained topology [dev-abc123] acquired.')
+        ->expectsOutputToContain('Timings:')
+        ->expectsOutputToContain('availability: 0.111s')
+        ->expectsOutputToContain('incus.source-sync: 1.234s')
+        ->expectsOutputToContain('checkout.overlay: 2.345s')
         ->expectsOutputToContain('composer e2e:incus -- --stop --id=dev-abc123')
         ->assertSuccessful();
 
@@ -221,6 +238,11 @@ it('persists a retained topology manifest and prints the release command', funct
             'dev' => 'orbit-e2e-dev-abc123-dev',
         ])
         ->and($manifest['checkouts'])->toHaveKey('operator')
+        ->and($manifest['timings'])->toBe([
+            ['name' => 'availability', 'seconds' => 0.111],
+            ['name' => 'incus.source-sync', 'seconds' => 1.234],
+            ['name' => 'checkout.overlay', 'seconds' => 2.345],
+        ])
         ->and($manifest['created_at'])->toBeString();
 });
 
@@ -305,7 +327,12 @@ it('overlays app-dev and app-prod onto the canonical dev and prod roles', functi
 });
 
 it('renders ssh and performance handles for app roles in json output', function (): void {
-    devTopologyCommandWith(fn (E2ETopologyKind $kind, array $roles): array => fakePreparedTopology());
+    devTopologyCommandWith(fn (E2ETopologyKind $kind, array $roles): array => fakePreparedTopology(
+        timings: [
+            ['name' => 'availability', 'seconds' => 0.111],
+            ['name' => 'checkout.overlay', 'seconds' => 2.345],
+        ],
+    ));
 
     $exitCode = Artisan::call('e2e:dev-topology', [
         '--provider' => 'incus',
@@ -320,7 +347,11 @@ it('renders ssh and performance handles for app roles in json output', function 
     $devTopology = $payload['success']['dev_topology'];
 
     expect($devTopology['release_command'])->toBe('composer e2e:incus -- --stop --id=dev-abc123')
-        ->and($devTopology['handles'])->toBeArray();
+        ->and($devTopology['handles'])->toBeArray()
+        ->and($devTopology['timings'])->toBe([
+            ['name' => 'availability', 'seconds' => 0.111],
+            ['name' => 'checkout.overlay', 'seconds' => 2.345],
+        ]);
 
     $byRole = collect($devTopology['handles'])->keyBy('role');
 
