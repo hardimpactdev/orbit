@@ -10,10 +10,9 @@ The tool family doctor implements the
 capabilities those rows expect. It covers both managed tools, where Orbit owns
 installation, update, adoption, removal, or configuration artifacts, and
 observational tools, where Orbit only records and verifies expected capability
-state. Long-running lifecycle belongs to processes; tool doctor may still
-report or repair legacy role/tool capability drift where the current catalog has
-not yet moved that runnable unit to an explicit process row. Database and cache
-services are not tool lifecycle.
+state. Long-running lifecycle belongs to processes. A tool row's expected
+capability state is `installed` or `absent`; runtime up/down state and logs
+are process-family facts and never tool drift.
 
 The tool family owns these facts:
 
@@ -23,9 +22,7 @@ The tool family owns these facts:
 - managed install artifacts declared by the tool definition, such as packages,
   binaries, container definitions, systemd units, generated config, and managed
   secret material;
-- legacy lifecycle compatibility state when the tool row still exposes a
-  running or installed expectation for a non-database role/tool capability;
-- reload, update, reconfigure, and removal support declared by the tool
+- update, reconfigure, and removal support declared by the tool
   definition;
 - service endpoint configuration owned by the tool and declared by the tool definition, while
   backend proxy artifacts and firewall application remain verified by their own
@@ -54,10 +51,7 @@ The tools probe reads gateway tool rows and checks these layers:
    backend metadata match gateway configuration when the tool definition owns them.
 6. **Credential material:** managed credentials or connection metadata exist and
    match the tool definition when credentials are part of the tool contract.
-7. **Lifecycle compatibility state:** legacy role/tool capabilities match the
-   transitional expected state, such as `running` or `installed`, only while
-   that catalog entry has not moved to a process-backed lifecycle record.
-8. **Adoption scope:** during `doctor --adopt`, explicitly selected observed tools may
+7. **Adoption scope:** during `doctor --adopt`, explicitly selected observed tools may
    be inspected for compatible tool facts.
 
 Observed node capabilities without gateway tool rows are unmanaged inventory by
@@ -84,7 +78,6 @@ Each code below identifies a specific kind of drift the tool probe can detect.
 | `tool.config_mismatch` | Managed configuration exists but differs from gateway configuration. |
 | `tool.credentials_missing` | Managed credential material required by the tool definition is absent. |
 | `tool.credentials_mismatch` | Managed credential metadata exists but differs from gateway configuration. |
-| `tool.lifecycle_state_mismatch` | During migration, a legacy role/tool capability is running when it should be installed-only, stopped when it should be running, or otherwise differs from transitional expected state. |
 | `tool.unregistered_capability` | During an explicit adoption scope, a selected observed capability has no matching gateway tool row. |
 | `tool.dns_container_missing` | The `orbit-dns` container is not present on a gateway that should be serving DNS over WireGuard. |
 | `tool.dns_port_not_listening` | `orbit-dns` is running but nothing is listening on port 53 inside the wg-easy network namespace. |
@@ -122,7 +115,6 @@ credential repair logic.
 | `tool.config_mismatch` | Rewrite managed configuration from gateway configuration when the tool definition declares a safe reconfigure path. |
 | `tool.credentials_missing` | Recreate managed credential material when the tool definition owns credential generation and declares the repair safe. |
 | `tool.credentials_mismatch` | Rewrite managed credential metadata or generated material when the tool definition declares the repair safe. |
-| `tool.lifecycle_state_mismatch` | Route start, stop, or restart through the related process lifecycle path when available, or through the transitional managed backend while migration is incomplete. |
 | `tool.dns_container_missing` | Re-run the orbit-dns installer (renders compose file + dnsmasq.conf + `docker compose up -d`). Requires wg-easy to be running first. |
 | `tool.dns_port_not_listening` | Restart the `orbit-dns` container. |
 | `tool.dns_config_drift` | Rewrite `dnsmasq.conf` from the gateway intent and SIGHUP `orbit-dns` (no container restart). |
@@ -146,7 +138,7 @@ ownership; live proxy and firewall artifact drift remains in the `proxy` and
 `firewall_rule` families.
 
 Tool fixes apply existing gateway configuration to node reality. They do not change
-`expected_version`, transitional expected state, generated config, or credential
+`expected_version`, expected capability state, generated config, or credential
 configuration to match observed node state; adoption owns those configuration changes.
 
 ## Tool Adopt Map
@@ -193,6 +185,7 @@ Required test files:
 | `apps/gateway/tests/E2E/Ephemeral/ToolsDoctorAdoptTest.php` | Real `doctor --family=tool --adopt` for compatible selected observed tool adoption. |
 
 `ToolsProbeTest` covers registry configuration, node eligibility, capability
-presence, version/configuration/credential/lifecycle drift, and adoption
+presence, version/configuration/credential drift, and adoption
 scopes. It also asserts that app, workspace, process, schedule, proxy,
-firewall, and node drift do not surface as tool issue codes.
+firewall, and node drift do not surface as tool issue codes, and that runtime
+up/down state never surfaces as tool drift.

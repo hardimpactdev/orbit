@@ -299,9 +299,11 @@ or writing the node identity. If an initial role is persisted but its
 first convergence fails, the command fails and leaves that role assignment in
 `error` for later doctor recovery.
 
-During hosted-node provisioning, `provisioning` is a transient node status for a
-row that is being baked. A failed bake deletes the provisional node row instead
-of leaving a permanent failed node identity.
+During provisioning, `provisioning` is a transient node status: the node row
+exists in the gateway database, but the first node convergence run for its
+assigned roles has not completed. If that first convergence fails, Orbit
+deletes the provisional node row instead of leaving a permanent failed node
+identity. Later re-convergence happens through doctor restore.
 
 `node:new` does not detect, infer, or store public IPv4/IPv6 metadata. The
 provided `--host` is treated as the operator-supplied SSH/bootstrap endpoint;

@@ -10,11 +10,10 @@ These rules govern what the firewall command family owns and what it may not tou
 
 - The firewall command family owns the `firewall:*` command prefix.
 - `firewall_rule` is a state family. The gateway is the source of truth for firewall rule configuration.
-- Firewall rules target registered active Ubuntu managed nodes with role
-  `gateway`, `router`, `app-dev`, `app-prod`, `database`,
-  `agent`, or `ingress`. `database`-only nodes have an empty public
+- Firewall rules target registered active Ubuntu managed nodes with at least
+  one active role assignment. `database`-only nodes have an empty public
   ingress baseline but accept operator-managed firewall rules.
-- Clients, unsupported platforms, inactive nodes, and unmanaged roles are not firewall-rule targets.
+- Clients, unsupported platforms, inactive nodes, and role-less identities are not firewall-rule targets.
 - Rules are expressed in Orbit terms: name, node, direction, action, source, destination, protocol, port, and reason.
 - Rule names are unique on the target node. Reapplying the same named rule with the same policy shape is idempotent; reusing the name for a different policy fails before mutation.
 - Firewall commands resolve input locally, then the gateway writes configuration and applies host policy through the current firewall backend.

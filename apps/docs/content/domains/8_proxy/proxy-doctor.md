@@ -34,12 +34,12 @@ The proxy probe reads gateway proxy route configuration and checks these layers:
 1. **Registry configuration:** every selected route has a valid domain, kind, owner,
    serving node, target, and TLS policy.
 2. **Owner eligibility:** the owner reference still resolves when the route is
-   owned by an app, app WebSocket binding, workspace, gateway route, websocket
-   service, S3 service, or tool.
+   owned by an app, app WebSocket binding, workspace, gateway route, router
+   service, S3 publication, or tool.
 3. **Node eligibility:** the serving node resolves to a visible active Ubuntu
    gateway or node with proxy capability.
 4. **Conflict boundary:** custom routes do not claim domains owned by app, app
-   WebSocket binding, workspace, gateway, websocket service, S3 service, or
+   WebSocket binding, workspace, gateway, router service, S3 publication, or
    tool routes.
 5. **Caddy container readiness:** the `orbit-caddy` container exists and is
    running on each serving node. Route artifacts mounted into `orbit-caddy` are
@@ -72,9 +72,9 @@ Each code below identifies a specific proxy-family drift condition that the prob
 | Code | Detected when |
 | --- | --- |
 | `proxy.record_incomplete` | A selected gateway route lacks domain, kind, owner, serving node, target, redirect code, TLS policy, or backend identity metadata required for comparison. |
-| `proxy.owner_invalid` | An app, app-websocket binding, workspace, gateway, websocket service, S3 service, or tool owner reference cannot be resolved or is not visible to the caller. |
+| `proxy.owner_invalid` | An app, app-websocket binding, workspace, gateway, router service, S3 publication, or tool owner reference cannot be resolved or is not visible to the caller. |
 | `proxy.node_invalid` | The route points at a missing, unauthorized, inactive, unsupported, or role-incompatible serving node. |
-| `proxy.domain_conflict` | A custom route claims a domain owned by an app, app WebSocket binding, workspace, gateway, websocket service, S3 service, or tool route. |
+| `proxy.domain_conflict` | A custom route claims a domain owned by an app, app WebSocket binding, workspace, gateway, router service, S3 publication, or tool route. |
 | `proxy.docker_runtime_unavailable` | The serving node's Docker CLI is missing or the Docker daemon is unreachable, so `orbit-caddy` container readiness cannot be probed. Repair the node runtime through `doctor --family=node --restore` first. |
 | `proxy.caddy_container_missing` | The `orbit-caddy` container is absent on a serving node that still owns proxy routes. |
 | `proxy.caddy_container_down` | The `orbit-caddy` container exists on the serving node but is not running. Mounted route artifacts are not served. |
@@ -82,9 +82,11 @@ Each code below identifies a specific proxy-family drift condition that the prob
 | `proxy.route_mismatch` | A managed backend route exists but differs from gateway configuration. |
 | `proxy.websocket.router_route_missing` | Gateway WebSocket route intent expects the private router-owned `websocket.orbit` route row, but it is missing or differs from the canonical WebSocket service route. |
 | `proxy.websocket.public_route_missing` | An enabled app WebSocket binding expects a public ingress route, but the route row is missing or differs from the canonical app-websocket public route. |
+| `proxy.websocket.router_route_orphaned` | The private `websocket.orbit` service route row exists, but no active `websocket` role assignment remains in the topology. Service routes exist only while a matching role is active. |
 | `proxy.s3.router_route_missing` | Gateway S3 route intent expects the private router-owned `s3.orbit` route row, but it is absent or any field (node, owner, config, source_hash) differs from gateway S3 service-route intent. Emitted only for absence or intent divergence; does not overlap with `proxy.s3.router_backend_invalid`. |
 | `proxy.s3.router_backend_invalid` | The `s3.orbit` route exists and matches intent structurally, but its backend pool is semantically invalid: the upstreams list is empty, or at least one upstream resolves to a host that is not a valid `<s3-node>.s3.orbit:9000` RustFS backend (for example, it points to the ingress node). Emitted only when the route is present; absence is reported by `proxy.s3.router_route_missing` instead. |
 | `proxy.s3.public_route_missing` | An active rustfs tool row lists one or more public hosts, but the ingress public S3 route for a host is absent or differs from the expected ingress route intent built from that rustfs row. |
+| `proxy.s3.router_route_orphaned` | The private `s3.orbit` service route row exists, but no active `s3` role assignment remains in the topology. Service routes exist only while a matching role is active. |
 | `proxy.tls_missing` | Gateway configuration expects Orbit-managed TLS material, but it is absent from node reality. |
 | `proxy.tls_mismatch` | Managed TLS material exists but does not match the expected route policy. |
 | `proxy.route_extra` | An Orbit-owned backend route has no matching gateway proxy route row, or an explicitly selected observed backend route has no matching gateway proxy route row during adoption scope. |
@@ -101,9 +103,11 @@ Use `doctor --restore` to trigger the repair action listed for each code.
 | `proxy.route_mismatch` | Replace the backend route with the gateway-configured route when the route can be identified safely. |
 | `proxy.websocket.router_route_missing` | Re-sync the private `websocket.orbit` service route from gateway WebSocket route intent. |
 | `proxy.websocket.public_route_missing` | Re-sync public app-websocket ingress routes from the owning app WebSocket binding. |
+| `proxy.websocket.router_route_orphaned` | Remove the orphaned `websocket.orbit` service route row and its rendered artifacts. |
 | `proxy.s3.router_route_missing` | Re-sync the private `s3.orbit` service route from gateway S3 intent. |
 | `proxy.s3.router_backend_invalid` | Re-sync the `s3.orbit` service route to rebuild the backend pool from active RustFS backends. |
 | `proxy.s3.public_route_missing` | Re-sync public S3 ingress routes from the owning rustfs tool row. |
+| `proxy.s3.router_route_orphaned` | Remove the orphaned `s3.orbit` service route row and its rendered artifacts. |
 | `proxy.tls_missing` | Recreate Orbit-managed TLS material for the selected route when prerequisites are available. |
 | `proxy.tls_mismatch` | Replace or relink Orbit-managed TLS material to match gateway configuration. Repair must converge to gateway-issued route leaf certificates when the node serves Caddy-local or intermediate-CA-issued material outside Orbit policy. |
 | `proxy.route_extra` | Remove the extra backend route only when it carries Orbit ownership metadata or can otherwise be tied safely to an absent gateway route. |
@@ -117,9 +121,9 @@ Use `doctor --adopt` to apply the adoption action listed for each code.
 | Code | `doctor --adopt` behavior |
 | --- | --- |
 | `proxy.route_extra` | Create a custom gateway proxy route row when: the operator selected a specific node and backend route; the domain is unowned; and the observed route maps to `--upstream` or `--redirect`. |
-| `proxy.route_mismatch` | Update gateway configuration only when the operator selected a custom route and the observed backend route can be represented without changing app, app-websocket, workspace, gateway, websocket, S3, or tool ownership. |
+| `proxy.route_mismatch` | Update gateway configuration only when the operator selected a custom route and the observed backend route can be represented without changing app, app-websocket, workspace, gateway, router, S3, or tool ownership. |
 
-`doctor --adopt` does not scan arbitrary hosts, adopt app/app-websocket/workspace/gateway/websocket/S3/tool routes as custom routes, infer app ownership from upstream paths, or adopt service health into the proxy family.
+`doctor --adopt` does not scan arbitrary hosts, adopt app/app-websocket/workspace/gateway/router/S3/tool routes as custom routes, infer app ownership from upstream paths, or adopt service health into the proxy family.
 
 ## Test Mapping
 

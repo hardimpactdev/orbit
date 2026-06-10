@@ -97,10 +97,11 @@ Each term below has a precise meaning in the node command family.
 - **Role settings:** Assignment-local configuration for a role. Role-local
   desired configuration lives on the role assignment, not on the generic node
   record.
-- **Node setup:** Internal gateway operation that applies gateway-configured
-  role and tool intent to a real managed node during `node:new`. For a fresh
-  hosted workload node, setup runs after node identity and role intent are
-  stored and before the node is marked `active`.
+- **Node setup:** Internal gateway operation during `node:new`: the node row
+  is created in the gateway database, one or more roles are assigned, and node
+  convergence applies the stored role and tool intent to the node. For a fresh
+  workload node, setup runs after node identity and role intent are stored and
+  before the node is marked `active`.
 - **Node convergence:** Internal service vocabulary for applying stored
   gateway intent to node reality. Public commands and renderers should describe
   this as setup during `node:new` and restore during doctor repair, not expose

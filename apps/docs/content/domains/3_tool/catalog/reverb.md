@@ -18,9 +18,8 @@ These fields describe the Reverb tool's identity, backend, and support model in 
 
 `reverb` supports `tool:install`, `tool:remove`, `tool:update`,
 `tool:credentials`, proxy route metadata, safe doctor fix, and safe doctor
-adopt while the compatibility tool remains available. Compatibility lifecycle
-and log commands may route to the related Reverb runtime process; lifecycle
-ownership belongs to the process row.
+adopt while the compatibility tool remains available. Runtime lifecycle and
+logs belong to the related Reverb process row (`process:*`).
 
 Fleet realtime infrastructure should use the `websocket` role instead of an
 installable `reverb` tool. The role runs Laravel Reverb in a Docker runtime
@@ -81,8 +80,9 @@ configuration and app WebSocket binding state remain app configuration.
 
 ## Doctor Relationship
 
-`doctor --family=tool` verifies the compatibility Reverb tool's managed
-container capability, transitional expected state, logs availability, and safe
-repair/adoption boundaries. Reverb runtime drift for fleet realtime is owned by
-the websocket role baseline and belongs to the node/proxy/process doctor checks
-that verify role readiness, route placement, and long-running runtime units.
+`doctor --family=tool` verifies the compatibility Reverb tool's installed
+capability, credential and route metadata, and safe repair/adoption
+boundaries. Runtime up/down state and logs belong to the process family.
+Reverb runtime drift for fleet realtime is owned by the websocket role
+baseline and belongs to the node/proxy/process doctor checks that verify role
+readiness, route placement, and long-running runtime units.

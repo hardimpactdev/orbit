@@ -19,9 +19,8 @@ Orbit.
 
 `rustfs` supports `tool:update`, `tool:credentials`, service endpoint
 metadata, safe doctor fix, and safe doctor adopt as the role baseline tool
-materialized by the `s3` role. Compatibility lifecycle and log commands may
-route to the related RustFS runtime process; lifecycle ownership belongs to
-the process row.
+materialized by the `s3` role. Runtime lifecycle and logs belong to the
+related RustFS process row (`process:*`).
 
 `tool:install rustfs` is allowed only for a node with an active `s3` role and
 must converge the role baseline rather than creating an ad hoc standalone

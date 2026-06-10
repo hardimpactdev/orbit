@@ -10,8 +10,10 @@ These terms define the types of routes that the proxy family owns and manages.
   exposes through its HTTP ingress, with an owner, a kind, a serving node, a
   target, and TLS configuration.
 - **Route owner:** The domain that owns route lifecycle. One of `app`,
-  `app-websocket`, `workspace`, `gateway`, `websocket`, `s3`, `tool`, or
-  `custom`.
+  `app-websocket`, `workspace`, `gateway`, `router`, `s3`, `tool`, or
+  `custom`. The `owner` value classifies which domain's convergence edits the
+  route record; it is not necessarily the role that owns the hostname or
+  artifact.
 - **Route kind:** Route behavior at ingress. One of `app`, `workspace`,
   `internal`, `proxy`, or `redirect`.
 - **App route:** Proxy route whose owner is an app and whose kind is `app`.
@@ -33,15 +35,19 @@ These terms define the types of routes that the proxy family owns and manages.
   WebSocket binding, rendered on an `ingress` node, and forwards to `router`;
   it must not target a concrete websocket node.
 - **WebSocket service route:** Private router route for `websocket.orbit`,
-  owned by `websocket`. It targets the websocket backend pool owned by the
-  router and is the stable private publishing endpoint apps use.
+  owned by `router`. It exists while at least one active `websocket` role
+  assignment exists in the topology and is removed when none remains. It
+  targets the router-owned websocket backend pool and is the stable private
+  publishing endpoint apps use.
 - **Public S3 route:** Public S3 route whose owner is `s3` and whose kind is
   `proxy`. It is rendered on an `ingress` node, forwards to `router`, preserves
   S3 request metadata needed for uploads, and must not target a concrete s3
   node.
-- **S3 service route:** Private router route for `s3.orbit`, owned by `s3`. It
-  targets the S3 backend pool owned by the router and is the stable private S3
-  endpoint apps and VPN clients use.
+- **S3 service route:** Private router route for `s3.orbit`, owned by
+  `router`. It exists while at least one active `s3` role assignment exists in
+  the topology and is removed when none remains. It targets the router-owned
+  S3 backend pool and is the stable private S3 endpoint apps and VPN clients
+  use.
 - **Public route artifact:** `orbit-caddy` site rendered on a `ingress` node.
   It terminates public HTTPS and reverse proxies to the active `router` over
   WireGuard.

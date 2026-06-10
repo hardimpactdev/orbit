@@ -18,9 +18,8 @@ These fields describe the Mailpit tool's identity, backend, and support model in
 
 `mailpit` supports `tool:install`, `tool:remove`, `tool:update`,
 `tool:credentials`, proxy route metadata, WireGuard SMTP endpoint metadata,
-safe doctor fix, and safe doctor adopt. Compatibility lifecycle and log
-commands may route to the related Mailpit runtime process; lifecycle
-ownership belongs to the process row.
+safe doctor fix, and safe doctor adopt. Runtime lifecycle and logs belong to
+the related Mailpit process row (`process:*`).
 
 ## Credentials
 

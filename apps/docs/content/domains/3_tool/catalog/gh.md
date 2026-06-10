@@ -16,8 +16,9 @@ These fields describe the GitHub CLI tool's identity, backend, and support model
 
 ## Capabilities
 
-`gh` supports `tool:update` and safe doctor adopt. It does not support
-lifecycle commands, reload, logs, credentials, or removal.
+`gh` supports `tool:update` and safe doctor adopt only. It has no install,
+remove, credentials, or reconfigure surface. Runtime lifecycle and logs belong
+to the process family.
 
 ## Credentials
 

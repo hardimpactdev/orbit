@@ -12,7 +12,9 @@ These rules govern ownership, route kinds, and the boundaries of the proxy comma
 - The `proxy` state family is the canonical registry of every hostname Orbit
   exposes.
 - Every proxy route has an owner: `app`, `app-websocket`, `workspace`,
-  `gateway`, `websocket`, `s3`, `tool`, or `custom`.
+  `gateway`, `router`, `s3`, `tool`, or `custom`. The owner value classifies
+  which domain's convergence edits the route record; the private
+  `websocket.orbit` and `s3.orbit` service routes are owned by `router`.
 - Every proxy route has a kind: `app`, `workspace`, `internal`, `proxy`, or
   `redirect`.
 - `proxy:list` shows all proxy routes by default, including app routes,
@@ -20,7 +22,10 @@ These rules govern ownership, route kinds, and the boundaries of the proxy comma
   routes, and redirects.
 - `proxy:list --filter=<filter>` narrows the unified view. Supported filters are
   `all`, `app`, `app-websocket`, `workspace`, `gateway`, `websocket`, `s3`,
-  `tool`, `custom`, and `redirect`.
+  `tool`, `custom`, and `redirect`. `websocket` and `s3` are service filters:
+  `websocket` selects the router-owned `websocket.orbit` service route, and
+  `s3` selects the router-owned `s3.orbit` service route plus public S3 host
+  routes. They are not owner-enum mirrors.
 - App, workspace, gateway, and tool-owned routes are visible through proxy
   commands but edited through their owning domain commands.
 - App WebSocket routes are visible through proxy commands but edited through
@@ -169,8 +174,8 @@ Proxy JSON renderers that return one route entity embed this shape under `succes
 | --- | --- | --- |
 | `domain` | string | Hostname or host/path route identity. |
 | `kind` | `app`, `workspace`, `internal`, `proxy`, or `redirect` | Route behavior at ingress. |
-| `owner.type` | `app`, `app-websocket`, `workspace`, `gateway`, `websocket`, `s3`, `tool`, or `custom` | Domain that owns route lifecycle. |
-| `owner.name` | string \| null | Owning app, app WebSocket binding, workspace, gateway route, websocket service, S3 service, or tool identity when applicable. |
+| `owner.type` | `app`, `app-websocket`, `workspace`, `gateway`, `router`, `s3`, `tool`, or `custom` | Domain whose convergence edits the route record. Router-owned service routes (`websocket.orbit`, `s3.orbit`) use `router`; `s3` is used by public S3 host routes. |
+| `owner.name` | string \| null | Owning app, app WebSocket binding, workspace, gateway route, router service, S3 publication, or tool identity when applicable. |
 | `node` | string | Serving node where proxy artifacts are expected. |
 | `target.type` | string | Target behavior, such as `upstream`, `redirect`, `app`, `workspace`, `gateway`, `websocket`, `s3`, or `tool`. |
 | `target.value` | string | Upstream URL, redirect URL, or owner-specific target value. |

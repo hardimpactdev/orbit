@@ -40,8 +40,12 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 ### Filter Rules
 
 - `all` includes every visible route.
-- `app`, `app-websocket`, `workspace`, `gateway`, `websocket`, `s3`, and `tool`
-  filter by owner type.
+- `app`, `app-websocket`, `workspace`, `gateway`, and `tool` filter by owner
+  type.
+- `websocket` and `s3` are service filters, not owner-enum mirrors:
+  `websocket` selects the router-owned `websocket.orbit` service route; `s3`
+  selects the router-owned `s3.orbit` service route plus public S3 host routes
+  (owner `s3`).
 - `custom` filters user-authored upstream routes with owner `custom` and kind
   `proxy`.
 - `redirect` filters routes with kind `redirect`.
