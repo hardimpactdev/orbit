@@ -18,6 +18,8 @@ final readonly class WebSocketProxyDoctorProbe
 {
     public const string RouterRouteKey = 'proxy.websocket.router_route_missing';
 
+    public const string RouterRouteOrphanedKey = 'proxy.websocket.router_route_orphaned';
+
     public const string PublicRouteKey = 'proxy.websocket.public_route_missing';
 
     public function __construct(
@@ -32,6 +34,7 @@ final readonly class WebSocketProxyDoctorProbe
     {
         return [
             ...$this->routerRouteDrift($node),
+            ...$this->routerRouteOrphanedDrift($node),
             ...$this->publicRouteDrift($node),
         ];
     }
@@ -54,6 +57,23 @@ final readonly class WebSocketProxyDoctorProbe
                 'summary' => 'Re-synced private WebSocket router route from gateway intent.',
                 'details' => [
                     'domain' => $route->domain,
+                ],
+            ];
+        }
+
+        if ($entry->key === self::RouterRouteOrphanedKey) {
+            ProxyRoute::query()->where('domain', WebSocketRouteRegistrar::ServiceDomain)->delete();
+
+            return [
+                'family' => 'proxy',
+                'node' => $node->name,
+                'code' => $entry->key,
+                'key' => $entry->key,
+                'mode' => 'fix',
+                'status' => 'completed',
+                'summary' => 'Removed orphaned websocket.orbit service route row and its rendered artifacts.',
+                'details' => [
+                    'domain' => WebSocketRouteRegistrar::ServiceDomain,
                 ],
             ];
         }
@@ -130,6 +150,45 @@ final readonly class WebSocketProxyDoctorProbe
             missingSummary: 'WebSocket service route websocket.orbit is missing from gateway proxy registry.',
             mismatchSummary: 'WebSocket service route websocket.orbit differs from gateway WebSocket route intent.',
         );
+    }
+
+    /**
+     * Detect orphaned websocket.orbit service route rows.
+     *
+     * Fires when the node is a router, the websocket.orbit route row exists,
+     * but no active websocket role assignment remains in the topology.
+     *
+     * @return list<DriftEntry>
+     */
+    private function routerRouteOrphanedDrift(Node $node): array
+    {
+        if (! $this->nodeRoleAssignments->nodeCanServeRouter($node)) {
+            return [];
+        }
+
+        if ($this->nodeRoleAssignments->activeNodeIdsForRole(NodeRoleName::WebSocket->value) !== []) {
+            return [];
+        }
+
+        $route = ProxyRoute::query()
+            ->where('domain', WebSocketRouteRegistrar::ServiceDomain)
+            ->first();
+
+        if (! $route instanceof ProxyRoute) {
+            return [];
+        }
+
+        return [
+            new DriftEntry(
+                family: 'proxy',
+                key: self::RouterRouteOrphanedKey,
+                kind: DriftKind::Extra,
+                summary: 'The websocket.orbit service route row exists but no active websocket role assignment remains.',
+                detail: [
+                    'domain' => WebSocketRouteRegistrar::ServiceDomain,
+                ],
+            ),
+        ];
     }
 
     /**

@@ -18,7 +18,7 @@ class NodeToolFactory extends Factory
         return [
             'node_id' => Node::factory(),
             'name' => 'php',
-            'expected_state' => 'running',
+            'expected_state' => 'installed',
             'expected_version' => null,
             'config' => [
                 'endpoints' => [],

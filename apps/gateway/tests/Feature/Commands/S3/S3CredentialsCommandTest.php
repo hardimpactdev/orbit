@@ -83,7 +83,7 @@ function s3CredCmdRustfsTool(Node $storage, array $credentials = [], array $conf
     return NodeTool::factory()->create([
         'node_id' => $storage->id,
         'name' => 'rustfs',
-        'expected_state' => 'running',
+        'expected_state' => 'installed',
         'config' => array_merge([
             'backend_host' => "{$storage->name}.s3.orbit",
             'public_hosts' => [],
@@ -105,7 +105,7 @@ function s3CredCmdServiceRoute(Node $router): ProxyRoute
     return ProxyRoute::factory()->create([
         'node_id' => $router->id,
         'domain' => 's3.orbit',
-        'owner_type' => 'tool',
+        'owner_type' => 'router',
         'kind' => 'proxy',
         'config' => [
             'owner_name' => 'rustfs',
@@ -377,7 +377,7 @@ describe('S3Credentials missing credentials', function (): void {
         NodeTool::factory()->create([
             'node_id' => $storage->id,
             'name' => 'rustfs',
-            'expected_state' => 'running',
+            'expected_state' => 'installed',
             'config' => ['backend_host' => 'storage-1.s3.orbit', 'public_hosts' => []],
             'credentials' => null,
         ]);
@@ -443,7 +443,7 @@ describe('S3Credentials missing credentials', function (): void {
         NodeTool::factory()->create([
             'node_id' => $storage->id,
             'name' => 'rustfs',
-            'expected_state' => 'running',
+            'expected_state' => 'installed',
             'config' => ['backend_host' => 'storage-1.s3.orbit', 'public_hosts' => []],
             'credentials' => null,
         ]);

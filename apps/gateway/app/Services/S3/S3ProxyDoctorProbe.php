@@ -46,6 +46,8 @@ final readonly class S3ProxyDoctorProbe
 
     public const string RouterBackendKey = 'proxy.s3.router_backend_invalid';
 
+    public const string RouterRouteOrphanedKey = 'proxy.s3.router_route_orphaned';
+
     public const string PublicRouteKey = 'proxy.s3.public_route_missing';
 
     public function __construct(
@@ -61,6 +63,7 @@ final readonly class S3ProxyDoctorProbe
         return [
             ...$this->routerRouteDrift($node),
             ...$this->routerBackendDrift($node),
+            ...$this->routerRouteOrphanedDrift($node),
             ...$this->publicRouteDrift($node),
         ];
     }
@@ -83,6 +86,23 @@ final readonly class S3ProxyDoctorProbe
                 'summary' => 'Re-synced private S3 router route from gateway intent.',
                 'details' => [
                     'domain' => $route->domain,
+                ],
+            ];
+        }
+
+        if ($entry->key === self::RouterRouteOrphanedKey) {
+            ProxyRoute::query()->where('domain', S3RouteRegistrar::ServiceDomain)->delete();
+
+            return [
+                'family' => 'proxy',
+                'node' => $node->name,
+                'code' => $entry->key,
+                'key' => $entry->key,
+                'mode' => 'fix',
+                'status' => 'completed',
+                'summary' => 'Removed orphaned s3.orbit service route row and its rendered artifacts.',
+                'details' => [
+                    'domain' => S3RouteRegistrar::ServiceDomain,
                 ],
             ];
         }
@@ -293,6 +313,45 @@ final readonly class S3ProxyDoctorProbe
         }
 
         return false;
+    }
+
+    /**
+     * Detect orphaned s3.orbit service route rows.
+     *
+     * Fires when the node is a router, the s3.orbit route row exists,
+     * but no active s3 role assignment remains in the topology.
+     *
+     * @return list<DriftEntry>
+     */
+    private function routerRouteOrphanedDrift(Node $node): array
+    {
+        if (! $this->nodeRoleAssignments->nodeCanServeRouter($node)) {
+            return [];
+        }
+
+        if ($this->nodeRoleAssignments->activeNodeIdsForRole(NodeRoleName::S3->value) !== []) {
+            return [];
+        }
+
+        $route = ProxyRoute::query()
+            ->where('domain', S3RouteRegistrar::ServiceDomain)
+            ->first();
+
+        if (! $route instanceof ProxyRoute) {
+            return [];
+        }
+
+        return [
+            new DriftEntry(
+                family: 'proxy',
+                key: self::RouterRouteOrphanedKey,
+                kind: DriftKind::Extra,
+                summary: 'The s3.orbit service route row exists but no active s3 role assignment remains.',
+                detail: [
+                    'domain' => S3RouteRegistrar::ServiceDomain,
+                ],
+            ),
+        ];
     }
 
     /**

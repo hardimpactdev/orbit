@@ -89,7 +89,7 @@ function regionAgreementRustfsTool(Node $storage): NodeTool
     return NodeTool::factory()->create([
         'node_id' => $storage->id,
         'name' => 'rustfs',
-        'expected_state' => 'running',
+        'expected_state' => 'installed',
         'config' => ['backend_host' => 'storage-1.s3.orbit', 'public_hosts' => []],
         'credentials' => [
             'fields' => [

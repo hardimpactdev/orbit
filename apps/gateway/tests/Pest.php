@@ -312,7 +312,7 @@ function createPhpTool(Node $node, array $config = []): NodeTool
     return NodeTool::factory()->create([
         'node_id' => $node->id,
         'name' => 'php',
-        'expected_state' => 'running',
+        'expected_state' => 'installed',
         'config' => array_merge([
             'versions' => $versions,
             'images' => array_map($catalog->imageFor(...), $versions),

@@ -28,7 +28,7 @@ trait ManagesNodeToolBaseline
     /**
      * @param  array<string, mixed>|null  $config
      */
-    protected function convergeTool(Node $node, string $tool, string $expectedState = 'running', ?array $config = null): void
+    protected function convergeTool(Node $node, string $tool, string $expectedState = 'installed', ?array $config = null): void
     {
         if (! $this->toolCatalog()->supports($tool)) {
             return;

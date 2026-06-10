@@ -47,7 +47,7 @@ function configuratorRustfsTool(Node $node, array $overrides = []): NodeTool
     return NodeTool::factory()->create(array_merge([
         'node_id' => $node->id,
         'name' => 'rustfs',
-        'expected_state' => 'running',
+        'expected_state' => 'installed',
         'config' => ['public_hosts' => []],
         'credentials' => null,
     ], $overrides));
@@ -261,7 +261,7 @@ it('persists full metadata to the rustfs NodeTool config', function (): void {
         'container_name' => S3RuntimeContainer::ContainerName,
         'runtime' => 'docker-container',
         'public_hosts' => [],
-    ])->and($rustfsTool->expected_state)->toBe('running');
+    ])->and($rustfsTool->expected_state)->toBe('installed');
 });
 
 it('returns the persisted rustfs NodeTool in the result', function (): void {

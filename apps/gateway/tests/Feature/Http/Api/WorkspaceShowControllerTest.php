@@ -8,9 +8,7 @@ use App\Models\App;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Models\Process;
-use App\Models\ProxyRoute;
 use App\Models\Workspace;
-use App\Models\WorkspaceRun;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 
@@ -70,6 +68,8 @@ describe('WorkspaceShowController', function (): void {
             'name' => 'feature-docs',
             'app_id' => $app->id,
             'path' => '/home/orbit/apps/docs/.worktrees/feature-docs',
+            'agent_ide' => 'opencode',
+            'agent_ide_workspace_id' => null,
         ]);
 
         Process::factory()->forOwner($app)->create([
@@ -79,36 +79,35 @@ describe('WorkspaceShowController', function (): void {
             'crash_notification' => ProcessCrashNotification::None,
             'sort_order' => 1,
         ]);
-        ProxyRoute::query()->create([
-            'node_id' => $node->id,
-            'domain' => 'feature-docs.docs.test',
-            'app_id' => $app->id,
-            'workspace_id' => $workspace->id,
-            'owner_type' => 'workspace',
-            'kind' => 'workspace',
-            'source_hash' => str_repeat('a', 64),
-        ]);
-        WorkspaceRun::factory()->create([
-            'workspace_id' => $workspace->id,
-            'status' => 'completed',
-            'completed_at' => now()->setMicrosecond(0),
-        ]);
 
         $response = $this->call('GET', '/api/workspaces/feature-docs?app=docs', [], [], [], ['REMOTE_ADDR' => WORKSPACE_SHOW_CALLER_WG_IP]);
 
         $response->assertOk()
             ->assertJsonPath('success.meta.registry_only', true)
+            // canonical workspace entity
             ->assertJsonPath('success.data.workspace.name', 'feature-docs')
             ->assertJsonPath('success.data.workspace.app', 'docs')
-            ->assertJsonPath('success.data.workspace.node.name', 'app-1')
-            ->assertJsonPath('success.data.workspace.node.host', '1.2.3.4')
+            ->assertJsonPath('success.data.workspace.node', 'app-1')
+            ->assertJsonPath('success.data.workspace.path', '/home/orbit/apps/docs/.worktrees/feature-docs')
+            ->assertJsonPath('success.data.workspace.php_version', '8.5')
+            ->assertJsonPath('success.data.workspace.php_inherited', true)
             ->assertJsonPath('success.data.workspace.agent_ide.adapter', 'opencode')
-            ->assertJsonPath('success.data.workspace.agent_ide.inherited_from', 'node')
-            ->assertJsonPath('success.data.workspace.runtime_expectations.php_version', '8.5')
-            ->assertJsonPath('success.data.workspace.runtime_expectations.php_version_inherited_from', 'app')
-            ->assertJsonPath('success.data.workspace.inherited_processes.0.name', 'vite')
-            ->assertJsonPath('success.data.workspace.route.host', 'feature-docs.docs.test')
-            ->assertJsonPath('success.data.workspace.latest_setup_run.status', 'completed');
+            ->assertJsonPath('success.data.workspace.agent_ide.workspace_id', null)
+            ->assertJsonPath('success.data.workspace.adopted', false)
+            ->assertJsonPath('success.data.workspace.lifecycle_status', 'expected')
+            // show-only siblings
+            ->assertJsonPath('success.data.node.name', 'app-1')
+            ->assertJsonPath('success.data.node.host', '1.2.3.4')
+            ->assertJsonPath('success.data.inherited_processes.0.name', 'vite')
+            // node must be a string slug inside the entity
+            ->assertJsonPath('success.data.workspace.node', 'app-1');
+        $ws = $response->json('success.data.workspace');
+        // absent legacy fields
+        expect($ws)->not->toHaveKey('branch')
+            ->and($ws)->not->toHaveKey('runtime_expectations')
+            ->and($ws)->not->toHaveKey('route')
+            ->and($ws)->not->toHaveKey('latest_setup_run')
+            ->and($ws['agent_ide'])->not->toHaveKey('inherited_from');
     });
 
     it('returns ambiguous name errors when app is omitted', function (): void {

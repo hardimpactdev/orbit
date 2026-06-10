@@ -94,7 +94,7 @@ final class ToolInstallController implements Loggable
 
         $meta = (object) [];
 
-        if ($status === 'running' && $node !== null) {
+        if ($node !== null) {
             $targetNode = Node::query()->where('name', $node)->where('status', 'active')->first();
 
             if ($targetNode instanceof Node) {
@@ -142,13 +142,13 @@ final class ToolInstallController implements Loggable
     {
         $status = $request->input('status', 'installed');
 
-        if (! is_string($status) || ! in_array($status, ['installed', 'running'], true)) {
+        if (! is_string($status) || $status !== 'installed') {
             $statusValue = is_scalar($status) ? (string) $status : get_debug_type($status);
 
             return response()->json([
                 'error' => [
                     'code' => 'validation_failed',
-                    'message' => "Invalid status value '{$statusValue}'. Valid values: installed, running.",
+                    'message' => "Invalid status value '{$statusValue}'. Valid values: installed.",
                     'meta' => [
                         'field' => 'status',
                         'value' => $statusValue,

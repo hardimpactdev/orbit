@@ -163,13 +163,13 @@ describe('ProxyRouteFixer', function (): void {
         NodeTool::factory()->create([
             'node_id' => $router->id,
             'name' => 'caddy',
-            'expected_state' => 'running',
+            'expected_state' => 'installed',
             'config' => ['container' => ['name' => 'orbit-e2e-gateway-orbit-caddy']],
         ]);
         $route = ProxyRoute::factory()->create([
             'node_id' => $router->id,
             'domain' => 'websocket.orbit',
-            'owner_type' => 'websocket',
+            'owner_type' => 'router',
             'kind' => 'proxy',
             'source_hash' => str_repeat('0', 64),
             'config' => [
@@ -511,7 +511,7 @@ describe('ProxyRouteFixer', function (): void {
         NodeTool::factory()->create([
             'node_id' => $node->id,
             'name' => 'caddy',
-            'expected_state' => 'running',
+            'expected_state' => 'installed',
             'config' => ['container' => $managedSpec],
         ]);
         $shell = new ProxyFixerRecordingRemoteShell;
@@ -577,7 +577,7 @@ describe('ProxyRouteFixer', function (): void {
         NodeTool::factory()->create([
             'node_id' => $node->id,
             'name' => 'caddy',
-            'expected_state' => 'running',
+            'expected_state' => 'installed',
             'config' => ['container' => $managedSpec],
         ]);
         $shell = new ProxyFixerRecordingRemoteShell;

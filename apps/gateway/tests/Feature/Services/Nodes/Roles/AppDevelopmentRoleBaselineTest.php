@@ -136,7 +136,7 @@ describe('AppDevelopmentRoleBaseline host toolchain', function (): void {
             ->first();
 
         expect($tool)->not->toBeNull()
-            ->and($tool->expected_state)->toBe('running');
+            ->and($tool->expected_state)->toBe('installed');
     });
 
     it('does not converge the legacy php runtime tool row', function (): void {

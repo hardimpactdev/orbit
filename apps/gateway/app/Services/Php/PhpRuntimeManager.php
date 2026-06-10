@@ -333,7 +333,7 @@ final readonly class PhpRuntimeManager
         NodeTool::query()->updateOrCreate(
             ['node_id' => $node->id, 'name' => 'php'],
             [
-                'expected_state' => $tool->expected_state ?? 'running',
+                'expected_state' => $tool->expected_state ?? 'installed',
                 'expected_version' => $tool?->expected_version,
                 'config' => $config,
             ],

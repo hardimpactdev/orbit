@@ -201,23 +201,19 @@ class NodeRoleAssignments
     }
 
     /**
-     * Roles whose nodes may own firewall rules. Single source of truth shared by
-     * firewall rule creation (intent) and the firewall doctor probe so the two
-     * cannot drift apart.
+     * Roles whose nodes may own firewall rules. Any active role assignment makes
+     * a managed node an eligible firewall target (2026-06-10 product decision).
+     * Single source of truth shared by firewall rule creation (intent) and the
+     * firewall doctor probe so the two cannot drift apart.
      *
      * @return list<string>
      */
     public function firewallEligibleRoles(): array
     {
-        return [
-            NodeRoleName::Gateway->value,
-            NodeRoleName::Router->value,
-            NodeRoleName::AppDevelopment->value,
-            NodeRoleName::AppProduction->value,
-            NodeRoleName::Database->value,
-            NodeRoleName::Agent->value,
-            NodeRoleName::Ingress->value,
-        ];
+        return array_map(
+            static fn (NodeRoleName $role): string => $role->value,
+            NodeRoleName::cases(),
+        );
     }
 
     public function nodeCanOwnFirewallRules(Node $node): bool

@@ -68,7 +68,7 @@ final readonly class S3RouteRegistrar
         $sourceHash = $this->proxyRouteRenderer->sourceHash(new ProxyRoute([
             'node_id' => $router->id,
             'domain' => self::ServiceDomain,
-            'owner_type' => 'tool',
+            'owner_type' => 'router',
             'kind' => 'proxy',
             'config' => $config,
         ]));
@@ -78,7 +78,7 @@ final readonly class S3RouteRegistrar
             'domain' => self::ServiceDomain,
             'app_id' => null,
             'workspace_id' => null,
-            'owner_type' => 'tool',
+            'owner_type' => 'router',
             'kind' => 'proxy',
             'config' => $config,
             'source_hash' => $sourceHash,
@@ -146,7 +146,7 @@ final readonly class S3RouteRegistrar
         $sourceHash = $this->proxyRouteRenderer->sourceHash(new ProxyRoute([
             'node_id' => $ingress->id,
             'domain' => $host,
-            'owner_type' => 'tool',
+            'owner_type' => 's3',
             'kind' => 'proxy',
             'config' => $config,
         ]));
@@ -156,7 +156,7 @@ final readonly class S3RouteRegistrar
             'domain' => $host,
             'app_id' => null,
             'workspace_id' => null,
-            'owner_type' => 'tool',
+            'owner_type' => 's3',
             'kind' => 'proxy',
             'config' => $config,
             'source_hash' => $sourceHash,
@@ -172,7 +172,7 @@ final readonly class S3RouteRegistrar
     {
         ProxyRoute::query()
             ->where('domain', $host)
-            ->where('owner_type', 'tool')
+            ->where('owner_type', 's3')
             ->whereJsonContains('config->owner_name', 'rustfs')
             ->whereJsonContains('config->protocol', 's3')
             ->delete();

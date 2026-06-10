@@ -255,13 +255,18 @@ describe('DoctorRunController', function (): void {
         NodeTool::factory()->create([
             'node_id' => $appNode->id,
             'name' => 'caddy',
-            'expected_state' => 'running']);
+            'expected_state' => 'installed',
+            'expected_version' => '2.9',
+        ]);
         app()->instance(RemoteShell::class, new DoctorRunRemoteShell(
             "/usr/bin/caddy\t2.8.4\tstopped\n",
             perRouteStdouts: [
+                // First call: probe returns installed but mismatched version (2.8.4 vs expected 2.9)
                 "/usr/bin/caddy\t2.8.4\tstopped\n",
+                // Second call: update script runs and succeeds
                 '',
-                "/usr/bin/caddy\t2.8.4\trunning\n",
+                // Third call: re-probe after fix confirms correct version
+                "/usr/bin/caddy\t2.9.0\tstopped\n",
             ],
         ));
 

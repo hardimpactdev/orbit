@@ -252,7 +252,7 @@ CADDY);
         $route = ProxyRoute::factory()->create([
             'node_id' => $router->id,
             'domain' => 'websocket.orbit',
-            'owner_type' => 'websocket',
+            'owner_type' => 'router',
             'kind' => 'proxy',
             'config' => [
                 'protocol' => 'websocket',
@@ -876,7 +876,7 @@ describe('s3 upload-safe proxy rendering', function (): void {
         $route = ProxyRoute::factory()->create([
             'node_id' => $router->id,
             'domain' => 's3.orbit',
-            'owner_type' => 'tool',
+            'owner_type' => 'router',
             'kind' => 'proxy',
             'config' => [
                 'owner_name' => 'rustfs',
@@ -915,7 +915,7 @@ CADDY)
         $route = ProxyRoute::factory()->create([
             'node_id' => $ingress->id,
             'domain' => 's3.example.com',
-            'owner_type' => 'tool',
+            'owner_type' => 's3',
             'kind' => 'proxy',
             'config' => [
                 'placement' => 'ingress',
@@ -962,7 +962,7 @@ CADDY)
         $route = ProxyRoute::factory()->create([
             'node_id' => $router->id,
             'domain' => 's3.orbit',
-            'owner_type' => 'tool',
+            'owner_type' => 'router',
             'kind' => 'proxy',
             'config' => [
                 'owner_name' => 'rustfs',

@@ -75,7 +75,7 @@ function s3CredJsonRustfsTool(Node $storage, array $credentials = [], array $con
     return NodeTool::factory()->create([
         'node_id' => $storage->id,
         'name' => 'rustfs',
-        'expected_state' => 'running',
+        'expected_state' => 'installed',
         'config' => array_merge([
             'backend_host' => "{$storage->name}.s3.orbit",
             'public_hosts' => [],
@@ -97,7 +97,7 @@ function s3CredJsonServiceRoute(Node $router): ProxyRoute
     return ProxyRoute::factory()->create([
         'node_id' => $router->id,
         'domain' => 's3.orbit',
-        'owner_type' => 'tool',
+        'owner_type' => 'router',
         'kind' => 'proxy',
         'config' => [
             'owner_name' => 'rustfs',
@@ -250,7 +250,7 @@ describe('S3CredentialsJsonRenderer error codes', function (): void {
         NodeTool::factory()->create([
             'node_id' => $storage->id,
             'name' => 'rustfs',
-            'expected_state' => 'running',
+            'expected_state' => 'installed',
             'config' => ['backend_host' => 'storage-1.s3.orbit', 'public_hosts' => []],
             'credentials' => null,
         ]);

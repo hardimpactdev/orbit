@@ -55,7 +55,7 @@ it('converges websocket backend TLS material and runtime container through the r
         ->and(NodeTool::query()
             ->where('node_id', $node->id)
             ->where('name', 'docker')
-            ->value('expected_state'))->toBe('running')
+            ->value('expected_state'))->toBe('installed')
         ->and($scripts)->toContain("sudo install -d -m 0755 '/etc/orbit/certs'")
         ->and($scripts)->toContain("docker image inspect --format '{{ index .Config.Labels \"orbit.websocket.self_contained\" }}' 'orbit-reverb:current'")
         ->and($scripts)->toContain('release_dir="${runtime_root}/releases/')

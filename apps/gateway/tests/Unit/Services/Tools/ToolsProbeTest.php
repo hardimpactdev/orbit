@@ -220,23 +220,55 @@ describe('ToolsProbe', function (): void {
             ]);
     });
 
-    it('detects lifecycle state drift for running tools', function (): void {
+    it('does not emit tool.lifecycle_state_mismatch when a service-backed tool is stopped', function (): void {
         $node = createToolsProbeAppHostNode();
         $tool = NodeTool::factory()->create([
             'node_id' => $node->id,
-            'name' => 'supervisor',
-            'expected_state' => 'running',
+            'name' => 'composer',
+            'expected_state' => 'installed',
         ]);
-        $probe = new ToolsProbe(new ToolsProbeRemoteShell(exitCode: 0, stdout: "/usr/bin/supervisord\tSupervisor 4.2.5\tstopped\n"));
+        // Probe reports binary present but runtime state stopped — must produce no tool issue code
+        $probe = new ToolsProbe(new ToolsProbeRemoteShell(exitCode: 0, stdout: "/usr/local/bin/composer\tComposer version 2.8.0\tstopped\n"));
 
         $snapshot = $probe->introspect($tool);
         $drift = $probe->diff($tool, $snapshot);
 
-        expect(toolProbeIssue($drift, 'tool.lifecycle_state_mismatch')?->kind)->toBe(DriftKind::Divergent)
-            ->and(toolProbeIssue($drift, 'tool.lifecycle_state_mismatch')?->detail)->toMatchArray([
-                'expected_state' => 'running',
-                'observed_state' => 'stopped',
-            ]);
+        $codes = array_column($drift, null);
+        $issueKeys = array_map(fn ($entry) => $entry->key, $drift);
+
+        expect(in_array('tool.lifecycle_state_mismatch', $issueKeys, true))->toBeFalse()
+            ->and($probe->diff($tool, $snapshot))->toBe([]);
+    });
+
+    it('does not produce any tool issue code when a tool is installed but its backing service is not running', function (): void {
+        $node = createToolsProbeAppHostNode();
+        $tool = NodeTool::factory()->create([
+            'node_id' => $node->id,
+            'name' => 'composer',
+            'expected_state' => 'installed',
+        ]);
+        // Service down: binary exists, state is stopped — runtime state is process-family fact
+        $probe = new ToolsProbe(new ToolsProbeRemoteShell(exitCode: 0, stdout: "/usr/local/bin/composer\tComposer version 2.8.0\tstopped\n"));
+
+        $snapshot = $probe->introspect($tool);
+        $drift = $probe->diff($tool, $snapshot);
+
+        expect($drift)->toBe([]);
+    });
+
+    it('only accepts installed and absent as valid expected_state values', function (): void {
+        $node = createToolsProbeAppHostNode();
+        // Deliberately write an illegal expected_state value that the old contract allowed
+        $tool = NodeTool::factory()->make([
+            'node_id' => $node->id,
+            'name' => 'composer',
+        ]);
+        $tool->expected_state = 'running'; // bypasses factory default to test validation
+        $tool->save();
+
+        $drift = (new ToolsProbe)->diff($tool, new ProbeSnapshot([]));
+
+        expect(collect($drift)->first(fn ($entry) => $entry->key === 'tool.record_incomplete'))->not->toBeNull();
     });
 
     it('inspects agent IDE server capability without probing process lifecycle', function (): void {
@@ -244,7 +276,7 @@ describe('ToolsProbe', function (): void {
         $tool = NodeTool::factory()->create([
             'node_id' => $node->id,
             'name' => 'opencode-server',
-            'expected_state' => 'running',
+            'expected_state' => 'installed',
         ]);
         $shell = new RecordingToolsProbeRemoteShell(
             exitCode: 0,
@@ -259,7 +291,6 @@ describe('ToolsProbe', function (): void {
             ->and($snapshot->get('opencode-server'))->toMatchArray([
                 'installed' => true,
                 'path' => '/home/orbit/.opencode/bin/opencode',
-                'state' => 'unknown',
             ]);
     });
 
@@ -272,7 +303,7 @@ describe('ToolsProbe', function (): void {
             $tool = NodeTool::factory()->create([
                 'node_id' => $node->id,
                 'name' => 'caddy',
-                'expected_state' => 'running',
+                'expected_state' => 'installed',
                 'config' => ['container' => $container->spec()],
             ]);
             $shell = new RecordingToolsProbeRemoteShell(
@@ -285,14 +316,12 @@ describe('ToolsProbe', function (): void {
             $drift = $probe->diff($tool, $snapshot);
             $input = json_decode($shell->input, associative: true, flags: JSON_THROW_ON_ERROR);
 
+            $issueKeys = array_map(fn ($entry) => $entry->key, $drift);
+
             expect($shell->script)->toContain('docker container inspect')
                 ->and($input['container'])->toBe($container->name())
                 ->and($input['container'])->toBe('orbit-e2e-dev-abc123-dev-orbit-caddy')
-                ->and(toolProbeIssue($drift, 'tool.lifecycle_state_mismatch')?->kind)->toBe(DriftKind::Divergent)
-                ->and(toolProbeIssue($drift, 'tool.lifecycle_state_mismatch')?->detail)->toMatchArray([
-                    'expected_state' => 'running',
-                    'observed_state' => 'stopped',
-                ]);
+                ->and(in_array('tool.lifecycle_state_mismatch', $issueKeys, true))->toBeFalse();
         });
     });
 
@@ -302,7 +331,7 @@ describe('ToolsProbe', function (): void {
         $tool = NodeTool::factory()->create([
             'node_id' => $node->id,
             'name' => 'caddy',
-            'expected_state' => 'running',
+            'expected_state' => 'installed',
             'config' => ['container' => $container->spec()],
         ]);
         $probe = new ToolsProbe(new ToolsProbeRemoteShell(
@@ -322,7 +351,7 @@ describe('ToolsProbe', function (): void {
         $tool = NodeTool::factory()->create([
             'node_id' => $node->id,
             'name' => 'caddy',
-            'expected_state' => 'running',
+            'expected_state' => 'installed',
             'config' => ['container' => $container->spec()],
         ]);
         $probe = new ToolsProbe(new ToolsProbeRemoteShell(
@@ -434,7 +463,7 @@ describe('ToolsProbe', function (): void {
         $tool = NodeTool::factory()->create([
             'node_id' => $node->id,
             'name' => 'openclaw',
-            'expected_state' => 'running',
+            'expected_state' => 'installed',
         ]);
 
         $drift = (new ToolsProbe)->diff($tool, new ProbeSnapshot([]));
@@ -451,7 +480,7 @@ describe('ToolsProbe', function (): void {
         $tool = NodeTool::factory()->create([
             'node_id' => $node->id,
             'name' => 'openclaw',
-            'expected_state' => 'running',
+            'expected_state' => 'installed',
         ]);
         ProxyRoute::factory()->create([
             'node_id' => $node->id,
@@ -472,7 +501,7 @@ describe('ToolsProbe', function (): void {
         $tool = NodeTool::factory()->create([
             'node_id' => $node->id,
             'name' => 'openclaw',
-            'expected_state' => 'running',
+            'expected_state' => 'installed',
         ]);
         ProxyRoute::factory()->create([
             'node_id' => $node->id,
@@ -496,7 +525,7 @@ describe('ToolsProbe', function (): void {
         $tool = NodeTool::factory()->create([
             'node_id' => $node->id,
             'name' => 'openclaw',
-            'expected_state' => 'running',
+            'expected_state' => 'installed',
         ]);
         ProxyRoute::factory()->create([
             'node_id' => $node->id,
@@ -523,7 +552,7 @@ describe('ToolsProbe', function (): void {
         $tool = NodeTool::factory()->create([
             'node_id' => $node->id,
             'name' => 'openclaw',
-            'expected_state' => 'running',
+            'expected_state' => 'installed',
         ]);
         ProxyRoute::factory()->create([
             'node_id' => $node->id,
@@ -554,7 +583,7 @@ describe('ToolsProbe', function (): void {
         $tool = NodeTool::factory()->create([
             'node_id' => $node->id,
             'name' => 'openclaw',
-            'expected_state' => 'running',
+            'expected_state' => 'installed',
             'credentials' => null,
         ]);
 
@@ -568,7 +597,7 @@ describe('ToolsProbe', function (): void {
         $tool = NodeTool::factory()->create([
             'node_id' => $node->id,
             'name' => 'openclaw',
-            'expected_state' => 'running',
+            'expected_state' => 'installed',
             'credentials' => ['fields' => ['url' => 'https://openclaw.agent']],
         ]);
 
@@ -582,7 +611,7 @@ describe('ToolsProbe', function (): void {
         $tool = NodeTool::factory()->create([
             'node_id' => $node->id,
             'name' => 'openclaw',
-            'expected_state' => 'running',
+            'expected_state' => 'installed',
         ]);
         $probe = new ToolsProbe(new ToolsProbeRemoteShell(exitCode: 1));
 

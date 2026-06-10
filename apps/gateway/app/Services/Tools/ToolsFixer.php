@@ -87,28 +87,11 @@ final readonly class ToolsFixer
             return $catalog->installScript($tool->name, is_array($tool->config) ? $tool->config : []);
         }
 
-        $metadata = $catalog->probeMetadata($tool->name);
-        $commands = is_array($metadata) && is_array($metadata['repair_commands'] ?? null)
-            ? $metadata['repair_commands']
-            : [];
-
-        $key = match ($entry->key) {
-            'tool.version_mismatch' => 'update',
-            'tool.lifecycle_state_mismatch' => match ($tool->expected_state) {
-                'running' => 'lifecycle_running',
-                'stopped', 'installed' => 'lifecycle_stopped',
-                default => null,
-            },
-            default => null,
-        };
-
-        if ($key === null) {
+        if ($entry->key !== 'tool.version_mismatch') {
             return null;
         }
 
-        $command = $key === 'update'
-            ? $catalog->updateScript($tool->name, is_array($tool->config) ? $tool->config : [])
-            : ($commands[$key] ?? null);
+        $command = $catalog->updateScript($tool->name, is_array($tool->config) ? $tool->config : []);
 
         return is_string($command) && $command !== '' ? $command : null;
     }

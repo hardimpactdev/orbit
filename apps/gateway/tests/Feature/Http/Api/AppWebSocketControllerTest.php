@@ -167,7 +167,7 @@ describe('AppWebSocketController', function (): void {
             ->assertJsonMissingPath('success.data.binding.reverb_app_key');
 
         expect(AppWebSocketBinding::query()->where('app_id', $app->id)->where('enabled', true)->exists())->toBeTrue()
-            ->and(ProxyRoute::query()->where('domain', 'websocket.orbit')->where('owner_type', 'websocket')->exists())->toBeTrue()
+            ->and(ProxyRoute::query()->where('domain', 'websocket.orbit')->where('owner_type', 'router')->exists())->toBeTrue()
             ->and(ProxyRoute::query()->where('domain', 'ws.docs.test')->where('owner_type', 'app-websocket')->exists())->toBeTrue()
             ->and(ProxyRoute::query()->where('domain', 'events.docs.test')->where('owner_type', 'app-websocket')->exists())->toBeTrue();
     });

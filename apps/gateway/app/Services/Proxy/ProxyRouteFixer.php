@@ -77,7 +77,7 @@ final readonly class ProxyRouteFixer
         $content = $this->renderer->render($route);
         $this->ensureSiteCertificateForOwnedPhpRoute($route);
 
-        if ($route->owner_type === 'websocket') {
+        if ($route->owner_type === 'router') {
             $this->ensureRouterTrustPool($route->node, $route);
         }
 

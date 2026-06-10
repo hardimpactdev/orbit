@@ -44,7 +44,7 @@ describe('tool API target authorization', function (): void {
         NodeTool::factory()->create([
             'node_id' => $hiddenNode->id,
             'name' => toolTargetAuthToolNameFromUri($uri),
-            'expected_state' => 'running',
+            'expected_state' => 'installed',
             'config' => ['compose_path' => '/opt/orbit/docker-compose.yml'],
             'credentials' => [
                 'fields' => [

@@ -73,7 +73,7 @@ function s3UnpublishHumanRustfsTool(Node $storage, array $config = []): NodeTool
     return NodeTool::factory()->create([
         'node_id' => $storage->id,
         'name' => 'rustfs',
-        'expected_state' => 'running',
+        'expected_state' => 'installed',
         'config' => array_merge([
             'backend_host' => 'storage-1.s3.orbit',
             'public_hosts' => ['s3.example.com'],

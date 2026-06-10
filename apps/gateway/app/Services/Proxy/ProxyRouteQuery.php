@@ -21,6 +21,7 @@ class ProxyRouteQuery
         'workspace',
         'gateway',
         'websocket',
+        's3',
         'tool',
         'custom',
         'redirect',
@@ -174,6 +175,17 @@ class ProxyRouteQuery
                 ->where('kind', 'proxy');
         }
 
+        if ($filter === 'websocket') {
+            return $query->where('domain', 'websocket.orbit');
+        }
+
+        if ($filter === 's3') {
+            return $query->where(function (Builder $q): void {
+                $q->where('domain', 's3.orbit')
+                    ->orWhere('owner_type', 's3');
+            });
+        }
+
         return $query->where('owner_type', $filter);
     }
 
@@ -223,8 +235,8 @@ class ProxyRouteQuery
             'app' => $route->app?->name,
             'app-websocket' => $route->app?->name,
             'workspace' => $route->workspace?->name,
-            'websocket' => 'websocket',
-            'gateway', 'tool' => $this->stringConfig($config, ['owner_name', 'tool']),
+            'router' => $route->domain,
+            'gateway', 'tool', 's3' => $this->stringConfig($config, ['owner_name', 'tool']),
             default => null,
         };
     }
@@ -240,8 +252,7 @@ class ProxyRouteQuery
             'app-websocket' => 'websocket',
             'workspace' => 'workspace',
             'gateway' => 'gateway',
-            'websocket' => 'websocket',
-            'tool' => 'tool',
+            'tool', 's3', 'router' => 'upstream',
             default => 'upstream',
         };
     }
@@ -259,8 +270,8 @@ class ProxyRouteQuery
             'app' => $route->app?->name,
             'app-websocket' => $this->stringConfig($config, ['target.value', 'target', 'upstream']),
             'workspace' => $route->workspace?->name,
-            'websocket' => $route->domain,
-            'gateway', 'tool' => $this->stringConfig($config, ['target.value', 'target', 'upstream']),
+            'router' => $this->stringConfig($config, ['target.value', 'target', 'upstream']) ?? $route->domain,
+            'gateway', 'tool', 's3' => $this->stringConfig($config, ['target.value', 'target', 'upstream']),
             default => $this->stringConfig($config, ['upstream', 'target.value', 'target']),
         };
     }

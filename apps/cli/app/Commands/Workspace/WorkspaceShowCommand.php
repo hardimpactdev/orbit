@@ -115,7 +115,7 @@ final class WorkspaceShowCommand extends GatewayCommand
             return $this->renderFailure('gateway_unavailable', 'Gateway response missing required workspace data.');
         }
 
-        $this->renderWorkspace($workspace);
+        $this->renderWorkspace($workspace, $response);
 
         return self::SUCCESS;
     }
@@ -133,38 +133,37 @@ final class WorkspaceShowCommand extends GatewayCommand
 
     /**
      * @param  array<string, mixed>  $workspace
+     * @param  array<string, mixed>  $response
      */
-    private function renderWorkspace(array $workspace): void
+    private function renderWorkspace(array $workspace, array $response): void
     {
-        $runtime = is_array($workspace['runtime_expectations'] ?? null) ? $workspace['runtime_expectations'] : [];
+        $node = is_array($response['success']['data']['node'] ?? null) ? $response['success']['data']['node'] : [];
+        $inheritedProcesses = is_array($response['success']['data']['inherited_processes'] ?? null)
+            ? $response['success']['data']['inherited_processes']
+            : [];
         $agentIde = is_array($workspace['agent_ide'] ?? null) ? $workspace['agent_ide'] : [];
 
-        $this->renderShowDetails('Workspace: '.(string) ($workspace['name'] ?? ''), [
-            'App' => $workspace['app'] ?? null,
-            'Branch' => $workspace['branch'] ?? null,
-            'Node' => $this->nodeLabel($workspace['node'] ?? null),
+        $title = sprintf(
+            'Workspace: %s.%s',
+            (string) ($workspace['name'] ?? ''),
+            (string) ($workspace['app'] ?? ''),
+        );
+
+        $this->renderShowDetails($title, [
             'URL' => $workspace['url'] ?? null,
+            'Node' => $this->nodeLabel($node),
             'Path' => $workspace['path'] ?? null,
-            'Agent IDE' => $agentIde['adapter'] ?? null,
-            'PHP' => sprintf(
-                '%s (inherited from %s)',
-                (string) ($runtime['php_version'] ?? '—'),
-                (string) ($runtime['php_version_inherited_from'] ?? '—'),
-            ),
-            'Runtime container' => $runtime['runtime_container'] ?? null,
-            'Hostname' => $runtime['hostname'] ?? null,
-            'Processes' => $this->processLabels($workspace['inherited_processes'] ?? null),
-            'Route' => $this->routeLabel($workspace['route'] ?? null),
-            'Latest setup' => $this->latestSetupLabel($workspace['latest_setup_run'] ?? null),
+            'Agent IDE' => $this->agentIdeLabel($agentIde),
+            'PHP' => $workspace['php_version'] ?? null,
+            'Processes' => $this->processLabels($inheritedProcesses),
         ]);
     }
 
-    private function nodeLabel(mixed $node): string
+    /**
+     * @param  array<string, mixed>  $node
+     */
+    private function nodeLabel(array $node): string
     {
-        if (! is_array($node)) {
-            return '—';
-        }
-
         $name = is_string($node['name'] ?? null) ? $node['name'] : null;
         $host = is_string($node['host'] ?? null) ? $node['host'] : null;
 
@@ -175,9 +174,22 @@ final class WorkspaceShowCommand extends GatewayCommand
         return $host === null || $host === '' ? $name : "{$name} ({$host})";
     }
 
-    private function processLabels(mixed $processes): string
+    /**
+     * @param  array<string, mixed>  $agentIde
+     */
+    private function agentIdeLabel(array $agentIde): string
     {
-        if (! is_array($processes) || $processes === []) {
+        $adapter = $agentIde['adapter'] ?? null;
+
+        return is_string($adapter) && $adapter !== '' ? $adapter : '—';
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $processes
+     */
+    private function processLabels(array $processes): string
+    {
+        if ($processes === []) {
             return '—';
         }
 
@@ -190,35 +202,5 @@ final class WorkspaceShowCommand extends GatewayCommand
         }
 
         return $labels === [] ? '—' : implode(', ', $labels);
-    }
-
-    private function routeLabel(mixed $route): string
-    {
-        if (! is_array($route) || ! is_string($route['host'] ?? null) || $route['host'] === '') {
-            return '—';
-        }
-
-        $kind = is_string($route['kind'] ?? null) ? $route['kind'] : 'unknown';
-        $owner = is_string($route['owner'] ?? null) ? $route['owner'] : 'unknown';
-
-        return "{$route['host']} (kind: {$kind}, owner: {$owner})";
-    }
-
-    private function latestSetupLabel(mixed $latestSetupRun): string
-    {
-        if (! is_array($latestSetupRun)) {
-            return '—';
-        }
-
-        $id = $latestSetupRun['run_id'] ?? null;
-        $status = $latestSetupRun['status'] ?? null;
-        $completed = $latestSetupRun['completed_at'] ?? null;
-
-        return sprintf(
-            '%s, %s, finished %s',
-            is_scalar($id) ? (string) $id : 'unknown run',
-            is_scalar($status) ? (string) $status : 'unknown status',
-            is_scalar($completed) && $completed !== '' ? (string) $completed : 'not completed',
-        );
     }
 }

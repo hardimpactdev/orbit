@@ -100,7 +100,7 @@ final readonly class AgentToolAuthorizer
     }
 
     /**
-     * Check if a node has multiple running agent tools.
+     * Check if a node has multiple installed agent tools.
      *
      * @return list<string>
      */
@@ -108,7 +108,7 @@ final readonly class AgentToolAuthorizer
     {
         return NodeTool::query()
             ->where('node_id', $node->id)
-            ->where('expected_state', 'running')
+            ->where('expected_state', 'installed')
             ->whereIn('name', $this->agentToolNames())
             ->pluck('name')
             ->all();
@@ -126,7 +126,7 @@ final readonly class AgentToolAuthorizer
     }
 
     /**
-     * Check if installing or starting an agent tool should emit a multiple running agent tools warning.
+     * Check if installing an agent tool should emit a multiple installed agent tools warning.
      *
      * @return array{code: string, tools: list<string>}|null
      */
@@ -142,7 +142,7 @@ final readonly class AgentToolAuthorizer
             return null;
         }
 
-        // If the tool being installed/started is already in the running list, don't warn
+        // If the tool being installed is already in the installed list, don't warn
         if (in_array($tool, $runningAgentTools, true)) {
             return null;
         }

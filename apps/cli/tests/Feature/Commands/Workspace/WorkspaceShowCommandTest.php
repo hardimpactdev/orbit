@@ -68,36 +68,57 @@ describe('workspace:show', function (): void {
             ->and($decoded['success']['data']['workspace']['name'])->toBe('feature-docs');
     });
 
-    it('renders human output containing workspace fields', function (): void {
+    it('renders human output with the contracted layout', function (): void {
         fakeGateway(fakeSuccessEnvelope([
             'workspace' => [
                 'name' => 'feature-docs',
                 'app' => 'docs',
-                'branch' => 'feature/docs',
-                'path' => '/srv/docs/.worktrees/feature-docs',
+                'node' => 'app-1',
+                'path' => '/home/orbit/apps/docs/.worktrees/feature-docs',
                 'url' => 'https://feature-docs.docs.test',
-                'node' => ['name' => 'app-dev-1', 'host' => '192.0.2.10'],
-                'agent_ide' => ['adapter' => 'opencode'],
-                'runtime_expectations' => [
-                    'php_version' => '8.5',
-                    'php_version_inherited_from' => 'app',
-                    'runtime_container' => 'orbit-docs-feature-docs',
-                    'hostname' => 'feature-docs.docs.test',
-                ],
-                'inherited_processes' => [['name' => 'vite']],
-                'route' => ['host' => 'feature-docs.docs.test', 'kind' => 'workspace', 'owner' => 'workspace'],
-                'latest_setup_run' => null,
+                'php_version' => '8.5',
+                'php_inherited' => true,
+                'agent_ide' => ['adapter' => 'opencode', 'workspace_id' => null],
+                'adopted' => false,
+                'lifecycle_status' => 'expected',
             ],
-        ]));
+            'node' => ['name' => 'app-1', 'host' => '1.2.3.4'],
+            'inherited_processes' => [['name' => 'vite'], ['name' => 'queue']],
+        ], ['registry_only' => true]));
 
         [$exitCode, $output] = runCommand($this, 'workspace:show', ['name' => 'feature-docs']);
 
         expect($exitCode)->toBe(0)
-            ->and($output)->toContain('Workspace: feature-docs')
-            ->and($output)->toContain('App')
-            ->and($output)->toContain('docs')
+            // title
+            ->and($output)->toContain('Workspace: feature-docs.docs')
+            // URL line
+            ->and($output)->toContain('URL')
+            ->and($output)->toContain('https://feature-docs.docs.test')
+            // Node line with host
+            ->and($output)->toContain('Node')
+            ->and($output)->toContain('app-1 (1.2.3.4)')
+            // Path
+            ->and($output)->toContain('Path')
+            ->and($output)->toContain('/home/orbit/apps/docs/.worktrees/feature-docs')
+            // Agent IDE
+            ->and($output)->toContain('Agent IDE')
+            ->and($output)->toContain('opencode')
+            // PHP
+            ->and($output)->toContain('PHP')
+            ->and($output)->toContain('8.5')
+            // Processes
             ->and($output)->toContain('Processes')
-            ->and($output)->toContain('vite');
+            ->and($output)->toContain('vite')
+            ->and($output)->toContain('queue')
+            // absent legacy fields
+            ->and($output)->not->toContain('Branch')
+            ->and($output)->not->toContain('Route')
+            ->and($output)->not->toContain('Runtime container')
+            ->and($output)->not->toContain('Hostname')
+            ->and($output)->not->toContain('Status')
+            ->and($output)->not->toContain('Adopted')
+            ->and($output)->not->toContain('Latest setup')
+            ->and($output)->not->toContain('inherited from');
     });
 
     it('surfaces gateway error envelopes without replacing the error code', function (): void {

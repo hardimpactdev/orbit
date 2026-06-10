@@ -131,7 +131,7 @@ final readonly class S3ServiceConfigurator
                 'name' => 'rustfs',
             ],
             [
-                'expected_state' => 'running',
+                'expected_state' => 'installed',
                 'expected_version' => null,
                 'config' => $toolConfig,
             ],

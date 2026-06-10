@@ -145,7 +145,7 @@ describe('ToolListController', function (): void {
         NodeTool::factory()->create([
             'name' => 'composer',
             'node_id' => $node->id,
-            'expected_state' => 'running',
+            'expected_state' => 'installed',
             'expected_version' => '2.8',
             'config' => [
                 'endpoints' => [
@@ -157,7 +157,7 @@ describe('ToolListController', function (): void {
             ->assertJsonPath('success.data.tools.0', [
                 'name' => 'composer',
                 'node' => 'app-1',
-                'expected_state' => 'running',
+                'expected_state' => 'installed',
                 'observed_state' => null,
                 'version' => '2.8',
                 'managed' => true,

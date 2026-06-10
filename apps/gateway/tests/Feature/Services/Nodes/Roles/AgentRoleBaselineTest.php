@@ -79,8 +79,8 @@ describe('agent role baseline', function (): void {
         expect($tools->pluck('name')->all())->toBe(['caddy', 'supervisor'])
             ->and($tools->mapWithKeys(fn (NodeTool $tool): array => [$tool->name => $tool->expected_state])->all())
             ->toBe([
-                'caddy' => 'running',
-                'supervisor' => 'running',
+                'caddy' => 'installed',
+                'supervisor' => 'installed',
             ]);
     });
 

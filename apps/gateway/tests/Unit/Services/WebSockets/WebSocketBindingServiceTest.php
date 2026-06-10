@@ -87,7 +87,7 @@ it('enables an app websocket binding with generated credentials and synced route
         ->and($binding->allowed_origins)->toBe(['https://docs.test'])
         ->and($binding->public_hosts)->toBe(['ws.docs.test', 'events.docs.test']);
 
-    expect(ProxyRoute::query()->where('domain', 'websocket.orbit')->where('owner_type', 'websocket')->exists())->toBeTrue()
+    expect(ProxyRoute::query()->where('domain', 'websocket.orbit')->where('owner_type', 'router')->exists())->toBeTrue()
         ->and(ProxyRoute::query()->where('domain', 'ws.docs.test')->where('owner_type', 'app-websocket')->exists())->toBeTrue()
         ->and(ProxyRoute::query()->where('domain', 'events.docs.test')->where('owner_type', 'app-websocket')->exists())->toBeTrue();
 });
@@ -120,7 +120,7 @@ it('allows private-only bindings for apps without a public domain', function ():
     expect($binding->enabled)->toBeTrue()
         ->and($binding->allowed_origins)->toBe([])
         ->and($binding->public_hosts)->toBe([])
-        ->and(ProxyRoute::query()->where('domain', 'websocket.orbit')->where('owner_type', 'websocket')->exists())->toBeTrue()
+        ->and(ProxyRoute::query()->where('domain', 'websocket.orbit')->where('owner_type', 'router')->exists())->toBeTrue()
         ->and(ProxyRoute::query()->where('owner_type', 'app-websocket')->exists())->toBeFalse();
 });
 

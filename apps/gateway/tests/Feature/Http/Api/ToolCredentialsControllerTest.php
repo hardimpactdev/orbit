@@ -49,7 +49,7 @@ describe('ToolCredentialsController', function (): void {
         NodeTool::factory()->create([
             'node_id' => $agentNode->id,
             'name' => 'openclaw',
-            'expected_state' => 'running',
+            'expected_state' => 'installed',
             'credentials' => [
                 'fields' => [
                     'url' => 'https://openclaw.agent',
@@ -85,7 +85,7 @@ describe('ToolCredentialsController', function (): void {
         NodeTool::factory()->create([
             'node_id' => $agentNode->id,
             'name' => 'openclaw',
-            'expected_state' => 'running',
+            'expected_state' => 'installed',
             'credentials' => [
                 'fields' => [
                     'url' => 'https://openclaw.agent',
@@ -120,7 +120,7 @@ describe('ToolCredentialsController', function (): void {
         NodeTool::factory()->create([
             'node_id' => $agentNode->id,
             'name' => 'openclaw',
-            'expected_state' => 'running',
+            'expected_state' => 'installed',
             'credentials' => [
                 'fields' => [
                     'url' => 'https://openclaw.agent',

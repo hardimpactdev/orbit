@@ -199,7 +199,7 @@ describe('node role assignment service', function (): void {
             ->first();
 
         expect($tool)->not->toBeNull()
-            ->and($tool->expected_state)->toBe('running')
+            ->and($tool->expected_state)->toBe('installed')
             ->and(NodeTool::query()
                 ->where('node_id', $node->id)
                 ->whereIn('name', ['mysql', 'postgres'])
@@ -242,11 +242,11 @@ describe('node role assignment service', function (): void {
             ->toBe(['caddy', 'composer', 'laravel-installer', 'php-cli', 'supervisor'])
             ->and($tools->mapWithKeys(fn (NodeTool $tool): array => [$tool->name => $tool->expected_state])->all())
             ->toBe([
-                'caddy' => 'running',
+                'caddy' => 'installed',
                 'composer' => 'installed',
                 'laravel-installer' => 'installed',
                 'php-cli' => 'installed',
-                'supervisor' => 'running',
+                'supervisor' => 'installed',
             ]);
 
         app(NodeRoleAssignmentService::class)->remove($node->refresh(), 'app-dev', force: true);
@@ -290,11 +290,11 @@ describe('node role assignment service', function (): void {
             ->toBe(['caddy', 'composer', 'laravel-installer', 'php-cli', 'supervisor'])
             ->and($tools->mapWithKeys(fn (NodeTool $tool): array => [$tool->name => $tool->expected_state])->all())
             ->toBe([
-                'caddy' => 'running',
+                'caddy' => 'installed',
                 'composer' => 'installed',
                 'laravel-installer' => 'installed',
                 'php-cli' => 'installed',
-                'supervisor' => 'running',
+                'supervisor' => 'installed',
             ]);
     });
 
@@ -313,7 +313,7 @@ describe('node role assignment service', function (): void {
             ->get();
 
         expect($tools->pluck('name')->all())->toBe(['caddy'])
-            ->and($tools->first()?->expected_state)->toBe('running');
+            ->and($tools->first()?->expected_state)->toBe('installed');
     });
 
     it('rejects conflicting roles', function (): void {
@@ -516,7 +516,7 @@ describe('node role assignment service', function (): void {
             NodeTool::factory()->create([
                 'node_id' => $node->id,
                 'name' => 'redis',
-                'expected_state' => 'running',
+                'expected_state' => 'installed',
             ]);
         }),
     ]);
@@ -573,7 +573,7 @@ describe('node role assignment service', function (): void {
         NodeTool::factory()->create([
             'node_id' => $invalidRedisNode->id,
             'name' => 'redis',
-            'expected_state' => 'running',
+            'expected_state' => 'installed',
         ]);
         $node = Node::factory()->create([
             'platform' => 'ubuntu',
@@ -1253,7 +1253,7 @@ describe('node role assignment service', function (): void {
         NodeTool::factory()->create([
             'node_id' => $node->id,
             'name' => 'docker',
-            'expected_state' => 'running',
+            'expected_state' => 'installed',
         ]);
 
         app(NodeRoleAssignmentService::class)->remove($node, 'database', force: true);
@@ -1278,7 +1278,7 @@ describe('node role assignment service', function (): void {
         NodeTool::factory()->create([
             'node_id' => $node->id,
             'name' => 'docker',
-            'expected_state' => 'running',
+            'expected_state' => 'installed',
         ]);
 
         app(NodeRoleAssignmentService::class)->remove($node, 'database', force: true, purgeData: true);

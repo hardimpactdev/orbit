@@ -99,7 +99,7 @@ final readonly class S3PublishAction
         $existing = ProxyRoute::query()->where('domain', $host)->first();
 
         if ($existing instanceof ProxyRoute) {
-            $isS3Tool = $existing->owner_type === 'tool'
+            $isS3Tool = $existing->owner_type === 's3'
                 && isset($existing->config['owner_name'])
                 && $existing->config['owner_name'] === 'rustfs'
                 && isset($existing->config['protocol'])
@@ -304,7 +304,7 @@ final readonly class S3PublishAction
         $existing = ProxyRoute::query()->where('domain', $host)->first();
 
         if ($existing instanceof ProxyRoute) {
-            $isS3Tool = $existing->owner_type === 'tool'
+            $isS3Tool = $existing->owner_type === 's3'
                 && isset($existing->config['owner_name'])
                 && $existing->config['owner_name'] === 'rustfs'
                 && isset($existing->config['protocol'])

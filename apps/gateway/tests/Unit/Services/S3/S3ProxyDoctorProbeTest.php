@@ -119,7 +119,7 @@ it('s3 router_route_missing when s3.orbit route is divergent from intent', funct
     ProxyRoute::factory()->create([
         'domain' => 's3.orbit',
         'node_id' => $router->id,
-        'owner_type' => 'tool',
+        'owner_type' => 'router',
         'kind' => 'proxy',
         'source_hash' => 'wrong-hash',
         'config' => [
@@ -193,7 +193,7 @@ it('s3 router_backend_invalid when the upstreams list is empty', function (): vo
     ProxyRoute::factory()->create([
         'domain' => 's3.orbit',
         'node_id' => $router->id,
-        'owner_type' => 'tool',
+        'owner_type' => 'router',
         'kind' => 'proxy',
         'source_hash' => 'some-hash',
         'config' => [
@@ -224,7 +224,7 @@ it('s3 router_backend_invalid when upstreams point to a raw IP (non-.s3.orbit ho
     ProxyRoute::factory()->create([
         'domain' => 's3.orbit',
         'node_id' => $router->id,
-        'owner_type' => 'tool',
+        'owner_type' => 'router',
         'kind' => 'proxy',
         'source_hash' => 'some-hash',
         'config' => [
@@ -251,7 +251,7 @@ it('s3 router_backend_invalid when upstreams point to a host not ending with .s3
     ProxyRoute::factory()->create([
         'domain' => 's3.orbit',
         'node_id' => $router->id,
-        'owner_type' => 'tool',
+        'owner_type' => 'router',
         'kind' => 'proxy',
         'source_hash' => 'some-hash',
         'config' => [
@@ -297,7 +297,7 @@ it('s3 pure intent-drift reports router_route_missing not router_backend_invalid
     ProxyRoute::factory()->create([
         'domain' => 's3.orbit',
         'node_id' => $router->id,
-        'owner_type' => 'tool',
+        'owner_type' => 'router',
         'kind' => 'proxy',
         'source_hash' => 'intentionally-wrong-hash',
         'config' => [
@@ -371,7 +371,7 @@ it('s3 public_route_missing when public host route is divergent', function (): v
     ProxyRoute::factory()->create([
         'domain' => 's3.example.com',
         'node_id' => $ingress->id,
-        'owner_type' => 'tool',
+        'owner_type' => 's3',
         'kind' => 'proxy',
         'source_hash' => 'wrong-public-hash',
         'config' => [
@@ -573,4 +573,107 @@ it('s3 node categories for s3 role node includes proxy', function (): void {
     expect($categories)->toContain('node')
         ->toContain('tool')
         ->toContain('proxy');
+})->group('s3', 'proxy-doctor');
+
+// ---------------------------------------------------------------------------
+// routerRouteOrphanedDrift — proxy.s3.router_route_orphaned
+// ---------------------------------------------------------------------------
+
+it('s3 router_route_orphaned when s3.orbit route exists and no active s3 role remains', function (): void {
+    $router = s3ProxyRouter();
+    // No active s3 role assignment
+
+    ProxyRoute::factory()->create([
+        'domain' => S3RouteRegistrar::ServiceDomain,
+        'node_id' => $router->id,
+        'owner_type' => 'router',
+        'kind' => 'proxy',
+        'config' => ['owner_name' => 'rustfs', 'protocol' => 's3'],
+    ]);
+
+    $probe = app(S3ProxyDoctorProbe::class);
+    $drift = $probe->drift($router);
+
+    $keys = array_map(fn ($e) => $e->key, $drift);
+    expect($keys)->toContain(S3ProxyDoctorProbe::RouterRouteOrphanedKey);
+
+    $entry = $drift[array_search(S3ProxyDoctorProbe::RouterRouteOrphanedKey, $keys)];
+    expect($entry->kind)->toBe(DriftKind::Extra);
+})->group('s3', 'proxy-doctor');
+
+it('s3 router_route_orphaned not emitted when active s3 role exists', function (): void {
+    $router = s3ProxyRouter();
+    s3ProxyStorageNode();
+
+    ProxyRoute::factory()->create([
+        'domain' => S3RouteRegistrar::ServiceDomain,
+        'node_id' => $router->id,
+        'owner_type' => 'router',
+        'kind' => 'proxy',
+        'config' => ['owner_name' => 'rustfs', 'protocol' => 's3'],
+    ]);
+
+    $probe = app(S3ProxyDoctorProbe::class);
+    $drift = $probe->drift($router);
+
+    $keys = array_map(fn ($e) => $e->key, $drift);
+    expect($keys)->not->toContain(S3ProxyDoctorProbe::RouterRouteOrphanedKey);
+})->group('s3', 'proxy-doctor');
+
+it('s3 router_route_orphaned not emitted when s3.orbit route does not exist', function (): void {
+    $router = s3ProxyRouter();
+    // No active s3 role, no route row either
+
+    $probe = app(S3ProxyDoctorProbe::class);
+    $drift = $probe->drift($router);
+
+    $keys = array_map(fn ($e) => $e->key, $drift);
+    expect($keys)->not->toContain(S3ProxyDoctorProbe::RouterRouteOrphanedKey);
+})->group('s3', 'proxy-doctor');
+
+it('s3 router_route_orphaned not emitted for non-router nodes', function (): void {
+    $ingress = s3ProxyIngress();
+    // No active s3 role
+
+    ProxyRoute::factory()->create([
+        'domain' => S3RouteRegistrar::ServiceDomain,
+        'node_id' => $ingress->id,
+        'owner_type' => 'router',
+        'kind' => 'proxy',
+        'config' => ['owner_name' => 'rustfs', 'protocol' => 's3'],
+    ]);
+
+    $probe = app(S3ProxyDoctorProbe::class);
+    $drift = $probe->drift($ingress);
+
+    $keys = array_map(fn ($e) => $e->key, $drift);
+    expect($keys)->not->toContain(S3ProxyDoctorProbe::RouterRouteOrphanedKey);
+})->group('s3', 'proxy-doctor');
+
+it('s3 restore router_route_orphaned removes the s3.orbit service route row', function (): void {
+    $router = s3ProxyRouter();
+
+    ProxyRoute::factory()->create([
+        'domain' => S3RouteRegistrar::ServiceDomain,
+        'node_id' => $router->id,
+        'owner_type' => 'router',
+        'kind' => 'proxy',
+        'config' => ['owner_name' => 'rustfs', 'protocol' => 's3'],
+    ]);
+
+    $probe = app(S3ProxyDoctorProbe::class);
+    $entry = new DriftEntry(
+        family: 'proxy',
+        key: S3ProxyDoctorProbe::RouterRouteOrphanedKey,
+        kind: DriftKind::Extra,
+        summary: 'Orphaned s3.orbit route.',
+    );
+
+    $result = $probe->restore($router, $entry);
+
+    expect($result)->not->toBeNull()
+        ->and($result['key'])->toBe(S3ProxyDoctorProbe::RouterRouteOrphanedKey)
+        ->and($result['status'])->toBe('completed')
+        ->and($result['mode'])->toBe('fix')
+        ->and(ProxyRoute::query()->where('domain', S3RouteRegistrar::ServiceDomain)->exists())->toBeFalse();
 })->group('s3', 'proxy-doctor');

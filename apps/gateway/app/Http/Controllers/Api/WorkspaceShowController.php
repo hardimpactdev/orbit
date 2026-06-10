@@ -197,7 +197,7 @@ final readonly class WorkspaceShowController implements Loggable
     private function matchingWorkspaces(Node $caller, array $visibleNodeIds, string $name, ?string $app): Collection
     {
         return Workspace::query()
-            ->with(['app.node', 'app.processes', 'proxyRoutes', 'runs'])
+            ->with(['app.node', 'app.processes'])
             ->where('name', $name)
             ->when(! $this->callerIsGateway($caller), fn (Builder $query): Builder => $query->whereHas('app', fn (Builder $query): Builder => $query->whereIn('node_id', $visibleNodeIds)))
             ->when($app !== null, fn (Builder $query): Builder => $query->whereHas('app', fn (Builder $query): Builder => $query->where('name', $app)))
@@ -212,7 +212,7 @@ final readonly class WorkspaceShowController implements Loggable
         $normalizedPath = rtrim($path, '/');
 
         return Workspace::query()
-            ->with(['app.node', 'app.processes', 'proxyRoutes', 'runs'])
+            ->with(['app.node', 'app.processes'])
             ->when(! $this->callerIsGateway($caller), fn (Builder $query): Builder => $query->whereHas('app', fn (Builder $query): Builder => $query->whereIn('node_id', $visibleNodeIds)))
             ->get()
             ->first(function (Workspace $workspace) use ($normalizedPath): bool {

@@ -114,12 +114,12 @@ describe('orbit:internal:bake-app-node', function (): void {
         expect($scripts)->not->toContain('doctor --restore')
             ->and($scripts)->not->toContain(' orbit doctor ')
             ->and(NodeTool::query()->where('node_id', $node->id)->pluck('expected_state', 'name')->all())->toMatchArray([
-                'caddy' => 'running',
+                'caddy' => 'installed',
                 'composer' => 'installed',
                 'gh' => 'installed',
                 'laravel-installer' => 'installed',
                 'php-cli' => 'installed',
-                'supervisor' => 'running',
+                'supervisor' => 'installed',
             ]);
     });
 

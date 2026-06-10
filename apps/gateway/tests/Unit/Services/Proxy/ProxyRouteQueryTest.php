@@ -128,13 +128,13 @@ describe('ProxyRouteQuery', function (): void {
             ->and($route['router']['backend_pool'][0])->not->toHaveKey('node_id');
     });
 
-    it('normalizes websocket service routes and filters them by owner', function (): void {
+    it('normalizes websocket service routes and selects them via the websocket service filter', function (): void {
         $router = Node::factory()->router()->create(['name' => 'router-1']);
 
         ProxyRoute::factory()->create([
             'node_id' => $router->id,
             'domain' => 'websocket.orbit',
-            'owner_type' => 'websocket',
+            'owner_type' => 'router',
             'kind' => 'proxy',
             'config' => [
                 'protocol' => 'websocket',
@@ -158,11 +158,38 @@ describe('ProxyRouteQuery', function (): void {
             ->and($result['routes'][0])->toMatchArray([
                 'domain' => 'websocket.orbit',
                 'kind' => 'proxy',
-                'owner' => ['type' => 'websocket', 'name' => 'websocket'],
+                'owner' => ['type' => 'router', 'name' => 'websocket.orbit'],
                 'node' => 'router-1',
-                'target' => ['type' => 'websocket', 'value' => 'websocket.orbit'],
+                'target' => ['type' => 'upstream', 'value' => 'websocket.orbit'],
                 'tls' => ['managed_by' => 'internal', 'trusted_by_gateway_ca' => true],
             ]);
+    });
+
+    it('websocket service filter does not include non-service-domain router routes', function (): void {
+        $router = Node::factory()->router()->create(['name' => 'router-1']);
+
+        // A router-owned route at a different domain — must NOT appear under websocket filter
+        ProxyRoute::factory()->create([
+            'node_id' => $router->id,
+            'domain' => 'other.orbit',
+            'owner_type' => 'router',
+            'kind' => 'proxy',
+            'config' => ['protocol' => 'other'],
+        ]);
+
+        // The websocket.orbit service route — must appear
+        ProxyRoute::factory()->create([
+            'node_id' => $router->id,
+            'domain' => 'websocket.orbit',
+            'owner_type' => 'router',
+            'kind' => 'proxy',
+            'config' => ['protocol' => 'websocket'],
+        ]);
+
+        $result = app(ProxyRouteQuery::class)->list(filter: 'websocket');
+
+        expect($result['meta']['count'])->toBe(1)
+            ->and($result['routes'][0]['domain'])->toBe('websocket.orbit');
     });
 
     it('normalizes app websocket public routes and filters them by owner', function (): void {
@@ -258,6 +285,45 @@ describe('ProxyRouteQuery', function (): void {
             ->and(array_column($query->list(filter: 'workspace')['routes'], 'domain'))->toBe(['feature.docs.test'])
             ->and(array_column($query->list(filter: 'custom')['routes'], 'domain'))->toBe(['custom.test'])
             ->and(array_column($query->list(filter: 'redirect')['routes'], 'domain'))->toBe(['old.test']);
+    });
+
+    it('s3 service filter selects router-owned s3.orbit route and public s3 host routes', function (): void {
+        $router = Node::factory()->router()->create(['name' => 'router-1']);
+        $edge = Node::factory()->ingress()->create(['name' => 'edge-1']);
+
+        // The router-owned s3.orbit service route
+        ProxyRoute::factory()->create([
+            'node_id' => $router->id,
+            'domain' => 's3.orbit',
+            'owner_type' => 'router',
+            'kind' => 'proxy',
+            'config' => ['protocol' => 's3'],
+        ]);
+
+        // A public S3 host route (owner s3)
+        ProxyRoute::factory()->create([
+            'node_id' => $edge->id,
+            'domain' => 's3.example.com',
+            'owner_type' => 's3',
+            'kind' => 'proxy',
+            'config' => ['placement' => 'ingress', 'protocol' => 's3'],
+        ]);
+
+        // A route with a different owner — must NOT appear
+        ProxyRoute::factory()->create([
+            'node_id' => $edge->id,
+            'domain' => 'app.example.com',
+            'owner_type' => 'app',
+            'kind' => 'app',
+        ]);
+
+        $result = app(ProxyRouteQuery::class)->list(filter: 's3');
+
+        $domains = array_column($result['routes'], 'domain');
+        sort($domains);
+
+        expect($domains)->toBe(['s3.example.com', 's3.orbit'])
+            ->and($result['meta']['count'])->toBe(2);
     });
 
     it('filters by visible serving node and rejects unknown node scope', function (): void {

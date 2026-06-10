@@ -77,7 +77,7 @@ it('syncs the service route on the active router with the websocket backend', fu
         ->and($route->node_id)->toBe($router->id)
         ->and($route->app_id)->toBeNull()
         ->and($route->workspace_id)->toBeNull()
-        ->and($route->owner_type)->toBe('websocket')
+        ->and($route->owner_type)->toBe('router')
         ->and($route->kind)->toBe('proxy')
         ->and($route->config)->toMatchArray([
             'protocol' => 'websocket',
@@ -161,7 +161,7 @@ it('updates the service route when websocket backends change', function (): void
 
     $route = app(WebSocketRouteRegistrar::class)->syncServiceRoute();
 
-    expect($route->owner_type)->toBe('websocket')
+    expect($route->owner_type)->toBe('router')
         ->and($route->config['router_backend_pool'])->toBe([
             [
                 'node_id' => $activeBackend->id,

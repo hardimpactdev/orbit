@@ -99,7 +99,7 @@ function s3UnpublishRustfsTool(Node $storage, array $config = []): NodeTool
     return NodeTool::factory()->create([
         'node_id' => $storage->id,
         'name' => 'rustfs',
-        'expected_state' => 'running',
+        'expected_state' => 'installed',
         'config' => array_merge([
             'backend_host' => 'storage-1.s3.orbit',
             'public_hosts' => ['s3.example.com'],
@@ -323,7 +323,7 @@ describe('S3Unpublish success', function (): void {
         ProxyRoute::factory()->create([
             'domain' => 's3.example.com',
             'node_id' => $ingress->id,
-            'owner_type' => 'tool',
+            'owner_type' => 's3',
             'kind' => 'proxy',
             'config' => [
                 'owner_name' => 'rustfs',

@@ -30,7 +30,7 @@ describe('node role caddy baseline convergence', function (): void {
 
         $container = is_array($tool->config) ? ($tool->config['container'] ?? null) : null;
 
-        expect($tool->expected_state)->toBe('running')
+        expect($tool->expected_state)->toBe('installed')
             ->and($container)->toBeArray()
             ->and($container['name'] ?? null)->toBe('orbit-caddy')
             ->and($container['image'] ?? null)->toBe('caddy:2-alpine')

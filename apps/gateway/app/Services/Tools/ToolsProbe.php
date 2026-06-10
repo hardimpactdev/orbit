@@ -21,7 +21,7 @@ use Throwable;
 
 final readonly class ToolsProbe
 {
-    private const array ExpectedStates = ['installed', 'running', 'stopped', 'absent'];
+    private const array ExpectedStates = ['installed', 'absent'];
 
     public function __construct(
         private ?RemoteShell $remoteShell = null,
@@ -414,7 +414,6 @@ BASH;
             ...$this->checkCapabilityPresence($tool, $snapshot),
             ...$this->checkContainerState($tool, $snapshot),
             ...$this->checkVersionState($tool, $snapshot),
-            ...$this->checkLifecycleState($tool, $snapshot),
             ...$this->checkConfigState($tool, $snapshot),
             ...$this->checkCredentialState($tool, $snapshot),
             ...$this->checkAgentRoute($tool),
@@ -633,46 +632,6 @@ BASH;
                     'container' => $containerName,
                     'expected_hash' => $expectedHash,
                     'observed_hash' => $observedHash,
-                ],
-            ),
-        ];
-    }
-
-    /**
-     * @return list<DriftEntry>
-     */
-    private function checkLifecycleState(NodeTool $tool, ProbeSnapshot $snapshot): array
-    {
-        if (! in_array($tool->expected_state, ['running', 'stopped'], true)) {
-            return [];
-        }
-
-        $observed = $snapshot->get($tool->name);
-
-        if (($observed['installed'] ?? null) !== true) {
-            return [];
-        }
-
-        if (($observed['container_exists'] ?? null) === false) {
-            return [];
-        }
-
-        $state = is_string($observed['state'] ?? null) ? $observed['state'] : null;
-
-        if ($state === null || $state === 'unknown' || $state === $tool->expected_state) {
-            return [];
-        }
-
-        return [
-            new DriftEntry(
-                family: $this->key(),
-                key: 'tool.lifecycle_state_mismatch',
-                kind: DriftKind::Divergent,
-                summary: "Tool {$tool->name} lifecycle state differs from gateway intent.",
-                detail: [
-                    'tool' => $tool->name,
-                    'expected_state' => $tool->expected_state,
-                    'observed_state' => $state,
                 ],
             ),
         ];

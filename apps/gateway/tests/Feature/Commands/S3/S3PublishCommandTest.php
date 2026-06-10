@@ -96,7 +96,7 @@ function s3PublishRustfsTool(Node $storage, array $config = []): NodeTool
     return NodeTool::factory()->create([
         'node_id' => $storage->id,
         'name' => 'rustfs',
-        'expected_state' => 'running',
+        'expected_state' => 'installed',
         'config' => array_merge([
             'backend_host' => 'storage-1.s3.orbit',
             'public_hosts' => [],
@@ -287,7 +287,7 @@ describe('S3Publish domain conflict', function (): void {
         ProxyRoute::factory()->create([
             'domain' => 's3.example.com',
             'node_id' => $ingress->id,
-            'owner_type' => 'tool',
+            'owner_type' => 's3',
             'kind' => 'proxy',
             'config' => [
                 'owner_name' => 'rustfs',
@@ -375,7 +375,7 @@ describe('S3Publish success', function (): void {
         $response->streamedContent(); // Execute the stream body to apply DB writes.
 
         $route = ProxyRoute::query()->where('domain', 's3.example.com')->firstOrFail();
-        expect($route->owner_type)->toBe('tool')
+        expect($route->owner_type)->toBe('s3')
             ->and($route->config['owner_name'])->toBe('rustfs')
             ->and($route->config['protocol'])->toBe('s3');
     });

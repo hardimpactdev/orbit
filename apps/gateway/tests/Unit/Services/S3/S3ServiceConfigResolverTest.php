@@ -43,7 +43,7 @@ function s3RustfsTool(Node $node, array $overrides = []): NodeTool
     return NodeTool::factory()->create(array_merge([
         'node_id' => $node->id,
         'name' => 'rustfs',
-        'expected_state' => 'running',
+        'expected_state' => 'installed',
         'config' => ['public_hosts' => []],
         'credentials' => null,
     ], $overrides));

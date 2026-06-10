@@ -60,7 +60,7 @@ class WebSocketRouteRegistrar
             'domain' => self::ServiceDomain,
             'app_id' => null,
             'workspace_id' => null,
-            'owner_type' => 'websocket',
+            'owner_type' => 'router',
             'kind' => 'proxy',
             'config' => $config,
             'source_hash' => $this->sourceHash($router, $config),
@@ -439,7 +439,7 @@ class WebSocketRouteRegistrar
         return $this->proxyRouteRenderer->sourceHash(new ProxyRoute([
             'node_id' => $router->id,
             'domain' => self::ServiceDomain,
-            'owner_type' => 'websocket',
+            'owner_type' => 'router',
             'kind' => 'proxy',
             'config' => $config,
         ]));

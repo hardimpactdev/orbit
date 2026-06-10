@@ -50,7 +50,7 @@ it('registers router-owned s3 service route to one rustfs backend', function ():
 
     expect($route)
         ->node_id->toBe($router->id)
-        ->owner_type->toBe('tool')
+        ->owner_type->toBe('router')
         ->kind->toBe('proxy')
         ->and($route->config)->toMatchArray([
             'owner_name' => 'rustfs',
@@ -163,7 +163,7 @@ it('syncs public s3 host as ingress route forwarding to s3.orbit', function (): 
 
     expect($route)
         ->node_id->toBe($edge->id)
-        ->owner_type->toBe('tool')
+        ->owner_type->toBe('s3')
         ->kind->toBe('proxy')
         ->and($route->config)->toMatchArray([
             'owner_name' => 'rustfs',
@@ -183,7 +183,7 @@ it('skips ingress route sync when there are no public hosts', function (): void 
 
     app(S3RouteRegistrar::class)->syncPublicHosts($tool);
 
-    expect(ProxyRoute::query()->where('owner_type', 'tool')->count())->toBe(0);
+    expect(ProxyRoute::query()->where('owner_type', 's3')->count())->toBe(0);
 })->group('service');
 
 it('removes the public host route when owner_type is tool and owner_name is rustfs', function (): void {
@@ -201,7 +201,7 @@ it('removes the public host route when owner_type is tool and owner_name is rust
     ProxyRoute::factory()->create([
         'domain' => 's3.example.com',
         'node_id' => $edge->id,
-        'owner_type' => 'tool',
+        'owner_type' => 's3',
         'kind' => 'proxy',
         'config' => ['owner_name' => 'rustfs', 'protocol' => 's3', 'target' => ['type' => 'upstream', 'value' => 'https://s3.orbit']],
     ]);
@@ -239,7 +239,7 @@ it('registers an ingress-placement route on the ingress node targeting the route
 
     expect($route)
         ->node_id->toBe($edge->id)
-        ->owner_type->toBe('tool')
+        ->owner_type->toBe('s3')
         ->kind->toBe('proxy')
         ->and($route->config['placement'])->toBe('ingress')
         ->and($route->config['router_upstream']['node_id'])->toBe($router->id)
@@ -308,7 +308,7 @@ it('creates separate ingress routes for each public host on the same rustfs tool
 
     app(S3RouteRegistrar::class)->syncPublicHosts($tool);
 
-    expect(ProxyRoute::query()->where('owner_type', 'tool')->count())->toBe(2);
+    expect(ProxyRoute::query()->where('owner_type', 's3')->count())->toBe(2);
 
     foreach (['s3.example.com', 'files.example.com'] as $host) {
         $route = ProxyRoute::query()->where('domain', $host)->firstOrFail();
@@ -392,7 +392,7 @@ it('removePublicHost removes only the rustfs s3 owned route and leaves unrelated
     ProxyRoute::factory()->create([
         'domain' => 's3.example.com',
         'node_id' => $edge->id,
-        'owner_type' => 'tool',
+        'owner_type' => 's3',
         'kind' => 'proxy',
         'config' => [
             'placement' => 'ingress',

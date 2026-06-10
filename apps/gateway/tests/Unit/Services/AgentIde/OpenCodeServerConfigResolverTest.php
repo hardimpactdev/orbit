@@ -25,7 +25,7 @@ it('resolves remote local-bind tool config through the node wireguard address', 
     NodeTool::query()->create([
         'node_id' => $node->id,
         'name' => 'opencode-server',
-        'expected_state' => 'running',
+        'expected_state' => 'installed',
         'config' => [
             'hostname' => '127.0.0.1',
             'port' => 4096,
@@ -55,7 +55,7 @@ it('prefers explicit opencode credentials url and auth fields', function (): voi
     NodeTool::query()->create([
         'node_id' => $node->id,
         'name' => 'opencode-server',
-        'expected_state' => 'running',
+        'expected_state' => 'installed',
         'config' => [
             'hostname' => '127.0.0.1',
             'port' => 4096,
@@ -90,7 +90,7 @@ it('resolves remote credential host and port through the node wireguard address'
     NodeTool::query()->create([
         'node_id' => $node->id,
         'name' => 'opencode-server',
-        'expected_state' => 'running',
+        'expected_state' => 'installed',
         'credentials' => [
             'fields' => [
                 'Host' => '127.0.0.1',

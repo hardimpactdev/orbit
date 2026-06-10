@@ -1551,7 +1551,6 @@ final readonly class DoctorReportRunner
             'tool.capability_missing',
             'tool.container_missing',
             'tool.container_spec_mismatch',
-            'tool.lifecycle_state_mismatch',
             'tool.version_mismatch',
             'tool.config_missing',
             'tool.config_mismatch',

@@ -100,7 +100,7 @@ describe('proxy registry probe foundation', function (): void {
         $route = ProxyRoute::factory()->create([
             'node_id' => $node->id,
             'domain' => 'websocket.orbit',
-            'owner_type' => 'websocket',
+            'owner_type' => 'router',
             'kind' => 'proxy',
             'config' => [
                 'protocol' => 'websocket',
@@ -124,7 +124,7 @@ describe('proxy registry probe foundation', function (): void {
         $route = ProxyRoute::factory()->create([
             'node_id' => $node->id,
             'domain' => 'websocket.orbit',
-            'owner_type' => 'websocket',
+            'owner_type' => 'router',
             'kind' => 'proxy',
             'config' => [
                 'protocol' => 'websocket',
@@ -1009,7 +1009,7 @@ describe('s3 upload-safe proxy route probe', function (): void {
         $route = ProxyRoute::factory()->create([
             'node_id' => $node->id,
             'domain' => 's3.orbit',
-            'owner_type' => 'tool',
+            'owner_type' => 'router',
             'kind' => 'proxy',
             'config' => $config,
         ]);
@@ -1045,7 +1045,7 @@ describe('s3 upload-safe proxy route probe', function (): void {
         $route = ProxyRoute::factory()->create([
             'node_id' => $node->id,
             'domain' => 's3.orbit',
-            'owner_type' => 'tool',
+            'owner_type' => 'router',
             'kind' => 'proxy',
             'config' => $config,
         ]);
@@ -1091,7 +1091,7 @@ describe('s3 upload-safe proxy route probe', function (): void {
         $route = ProxyRoute::factory()->create([
             'node_id' => $edge->id,
             'domain' => 's3.example.com',
-            'owner_type' => 'tool',
+            'owner_type' => 's3',
             'kind' => 'proxy',
             'config' => $config,
         ]);
@@ -1271,7 +1271,7 @@ describe('s3 service route node eligibility in ProxyRouteProbe', function (): vo
         $route = ProxyRoute::factory()->create([
             'node_id' => $node->id,
             'domain' => 's3.orbit',
-            'owner_type' => 'tool',
+            'owner_type' => 'router',
             'kind' => 'proxy',
             'config' => [
                 'owner_name' => 'rustfs',
@@ -1298,7 +1298,7 @@ describe('s3 service route node eligibility in ProxyRouteProbe', function (): vo
         $route = ProxyRoute::factory()->create([
             'node_id' => $node->id,
             'domain' => 's3.example.com',
-            'owner_type' => 'tool',
+            'owner_type' => 's3',
             'kind' => 'proxy',
             'config' => [
                 'placement' => 'ingress',
@@ -1329,7 +1329,7 @@ describe('s3 service route node eligibility in ProxyRouteProbe', function (): vo
         $route = ProxyRoute::factory()->create([
             'node_id' => $node->id,
             'domain' => 's3.orbit',
-            'owner_type' => 'tool',
+            'owner_type' => 'router',
             'kind' => 'proxy',
             'config' => [
                 'owner_name' => 'rustfs',

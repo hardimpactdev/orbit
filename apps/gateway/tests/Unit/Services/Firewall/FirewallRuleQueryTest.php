@@ -145,7 +145,7 @@ describe('FirewallRuleQuery', function (): void {
     });
 
     it('lists firewall rules for every active Ubuntu role target', function (): void {
-        foreach (['gateway', 'router', 'app-dev', 'app-prod', 'database', 'agent', 'ingress'] as $role) {
+        foreach (['gateway', 'vpn', 'router', 'app-dev', 'app-prod', 'database', 'agent', 'ingress', 'websocket', 's3'] as $role) {
             $node = Node::factory()->create(['name' => "{$role}-node", 'platform' => 'ubuntu', 'status' => 'active']);
             assignFirewallRuleQueryRole($node, $role);
             FirewallRule::factory()->create(['node_id' => $node->id, 'name' => "{$role}-rule"]);
@@ -161,6 +161,9 @@ describe('FirewallRuleQuery', function (): void {
             'gateway-rule',
             'ingress-rule',
             'router-rule',
+            's3-rule',
+            'vpn-rule',
+            'websocket-rule',
         ]);
     });
 

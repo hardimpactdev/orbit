@@ -74,7 +74,7 @@ function s3CredHumanRustfsTool(Node $storage, array $credentials = [], array $co
     return NodeTool::factory()->create([
         'node_id' => $storage->id,
         'name' => 'rustfs',
-        'expected_state' => 'running',
+        'expected_state' => 'installed',
         'config' => array_merge([
             'backend_host' => "{$storage->name}.s3.orbit",
             'public_hosts' => ['s3.example.com'],
@@ -166,7 +166,7 @@ describe('S3CredentialsHumanRenderer missing credentials', function (): void {
         NodeTool::factory()->create([
             'node_id' => $storage->id,
             'name' => 'rustfs',
-            'expected_state' => 'running',
+            'expected_state' => 'installed',
             'config' => ['backend_host' => 'storage-1.s3.orbit', 'public_hosts' => []],
             'credentials' => null,
         ]);

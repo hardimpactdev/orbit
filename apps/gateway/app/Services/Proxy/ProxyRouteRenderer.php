@@ -38,7 +38,7 @@ final readonly class ProxyRouteRenderer
             return $this->renderIngress($route);
         }
 
-        if ($route->owner_type === 'websocket') {
+        if ($this->isRouterServiceRoute($route)) {
             return $this->renderRouterRoute($route);
         }
 
@@ -466,6 +466,15 @@ CADDY;
         $config = is_array($route->config) ? $route->config : [];
 
         return ($config['placement'] ?? null) === 'ingress';
+    }
+
+    private function isRouterServiceRoute(ProxyRoute $route): bool
+    {
+        $config = is_array($route->config) ? $route->config : [];
+
+        return $route->owner_type === 'router'
+            && isset($config['router_upstream'])
+            && ($config['placement'] ?? null) !== 'ingress';
     }
 
     private function isWebSocketProtocol(ProxyRoute $route): bool

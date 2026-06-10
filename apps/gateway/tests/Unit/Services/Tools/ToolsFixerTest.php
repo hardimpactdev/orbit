@@ -23,12 +23,12 @@ uses()->group('doctor', 'fixer');
 uses(RefreshDatabase::class);
 
 describe('ToolsFixer', function (): void {
-    it('starts service-backed tools when lifecycle intent expects running', function (): void {
+    it('returns null for tool.lifecycle_state_mismatch since runtime state is process-family owned', function (): void {
         $node = createTestAppHostNode(['name' => 'app-1', 'status' => 'active']);
         $tool = NodeTool::factory()->create([
             'node_id' => $node->id,
             'name' => 'caddy',
-            'expected_state' => 'running',
+            'expected_state' => 'installed',
         ]);
         $shell = new ToolsFixerRemoteShell;
 
@@ -39,18 +39,14 @@ describe('ToolsFixer', function (): void {
             summary: 'Tool caddy lifecycle state differs from gateway intent.',
             detail: [
                 'tool' => 'caddy',
-                'expected_state' => 'running',
+                'expected_state' => 'installed',
                 'observed_state' => 'stopped',
             ],
         ));
 
-        expect($action)->toMatchArray([
-            'family' => 'tool',
-            'node' => 'app-1',
-            'key' => 'tool.lifecycle_state_mismatch',
-            'mode' => 'fix',
-            'status' => 'completed',
-        ])->and($shell->scripts)->toBe(["docker start 'orbit-caddy'"]);
+        // tool.lifecycle_state_mismatch is not a tool issue code; fixer must return null
+        expect($action)->toBeNull()
+            ->and($shell->scripts)->toBe([]);
     });
 
     it('skips issue codes without catalog-declared repair commands', function (): void {
@@ -253,7 +249,7 @@ describe('ToolsFixer', function (): void {
         $tool = NodeTool::factory()->create([
             'node_id' => $node->id,
             'name' => $toolName,
-            'expected_state' => 'running',
+            'expected_state' => 'installed',
         ]);
         $shell = new ToolsFixerRemoteShell;
 
@@ -515,7 +511,7 @@ function createAgentToolForFixer(): array
     $tool = NodeTool::factory()->create([
         'node_id' => $node->id,
         'name' => 'openclaw',
-        'expected_state' => 'running',
+        'expected_state' => 'installed',
     ]);
 
     return [$node, $tool];

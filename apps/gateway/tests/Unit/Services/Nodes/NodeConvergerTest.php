@@ -118,7 +118,7 @@ function createNodeConvergerAppDevToolRows(Node $node): void
     NodeTool::factory()->create([
         'node_id' => $node->id,
         'name' => 'caddy',
-        'expected_state' => 'running',
+        'expected_state' => 'installed',
         'config' => ['container' => $container->spec()],
     ]);
 

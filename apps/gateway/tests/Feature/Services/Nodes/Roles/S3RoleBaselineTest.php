@@ -82,7 +82,7 @@ it('creates the rustfs NodeTool row on first converge', function (): void {
         ->first();
 
     expect($rustfsTool)->not->toBeNull()
-        ->and($rustfsTool->expected_state)->toBe('running');
+        ->and($rustfsTool->expected_state)->toBe('installed');
 });
 
 it('writes credentials to the rustfs NodeTool row on first converge', function (): void {
@@ -180,7 +180,7 @@ it('removes the rustfs NodeTool row on remove', function (): void {
     NodeTool::factory()->create([
         'node_id' => $node->id,
         'name' => 'rustfs',
-        'expected_state' => 'running',
+        'expected_state' => 'installed',
     ]);
 
     app(NodeRoleBaselineConverger::class)->remove($node, $assignment, purgeData: false);
@@ -204,7 +204,7 @@ it('does not purge the host data path when purgeData is true (configurator bound
     NodeTool::factory()->create([
         'node_id' => $node->id,
         'name' => 'rustfs',
-        'expected_state' => 'running',
+        'expected_state' => 'installed',
     ]);
 
     // purgeData: true — should still only delete the DB row, no file ops.
