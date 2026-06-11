@@ -44,8 +44,8 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
   `rustfs` tool row and S3-owned proxy routes.
 - Remove the S3-owned public host route from gateway proxy configuration.
 - Remove the public host from the selected `rustfs` tool row configuration.
-- Apply ingress and router route convergence so the public host no longer
-  forwards to the S3 service.
+- Apply ingress and router route convergence to stop the public host from
+  forwarding to the S3 service.
 
 Removing a host that is already absent from the selected S3 node is idempotent
 and returns `success.meta.action=unpublished` with

@@ -11,8 +11,8 @@ orbit workspace-teardown-step:remove --step=<id> [--app=<app>] [--force] [--json
 ## Description
 
 The `workspace-teardown-step:remove` command deletes a teardown step definition
-from an app's workspace lifecycle policy. Once removed, the step will no longer
-execute during future workspace removal or app prune teardown runs.
+from an app's workspace lifecycle policy. Removing the step excludes it from
+future workspace removal and app prune teardown runs.
 
 Removing a step definition does not undo side effects (such as removed files or
 database cleanups) from previous executions of the step. It only updates the

@@ -50,7 +50,7 @@ The command:
 1. Validates that the target app exists in gateway configuration.
 2. Validates that the requested adapter is supported.
 3. When switching away from a previous effective adapter, identifies
-   workspaces that no longer exist for the app under the new adapter. This
+   workspaces absent from the app under the new adapter. This
    operation requires explicit consent (`--force` or interactive confirmation)
    before any configuration is written.
 4. Stores the adapter as the app-level default.
@@ -77,7 +77,7 @@ does not prune workspaces for those apps.
 - SSH into the target node (except as part of workspace removal side effects).
 - Notify running agent-IDE sessions, restart processes on the node, invalidate
   cached workspace-level overrides, or emit warnings for "downstream consumers
-  still using the old adapter". Current workspaces
+  still using the prior adapter". Current workspaces
   resolve their effective agent IDE per-event through the app default, then the
   owning node default, and pick up the new app default at the next
   consumer-side resolution event.

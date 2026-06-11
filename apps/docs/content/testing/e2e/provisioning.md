@@ -12,25 +12,27 @@ composer test:e2e
 composer test:e2e:provision:incus
 ```
 
-Use provider-specific provision commands only when topology, installer, image,
-`node:new`, WireGuard provisioning, or other provider setup behavior changes.
-Ordinary command ports should add feature tests that use prepared topologies
-instead.
+Use provision commands for a specific provider only when topology, installer,
+image, `node:new`, WireGuard provisioning, or other provider setup behavior
+changes. Ordinary command ports should add feature tests that use prepared
+topologies instead.
 
 Run feature E2E before provision gates. The topology preparer loads the current
 source checkout into prepared Docker/Incus artifacts, so `composer test:e2e`
-proves behavior against source-prepared topologies. Incus prepared topology
+proves behavior against topologies prepared from source. Incus prepared topology
 builds sync the initiating worktree to the Incus host, bind-mount that synced
 copy into each VM, mirror it onto the VM ext4 filesystem, and snapshot the
-mirrored runtime. Incus provision is the last
-verification gate for fresh installation, `node:new`, VM boot, WireGuard,
-systemd, package installation, and host mutation. Docker provision is not part
-of the ordinary post-`composer test:e2e` sequence; run it only when Docker
-runtime/support images, prepared role images, Docker host artifact
-distribution, or Docker topology-preparation behavior changed. When production
-artifact behavior matters, the ideal final pass is source-prepared feature E2E,
-the affected provider artifact/provision gate, then an artifact-backed feature
-flow using the built CLI and gateway image when that lane exists.
+mirrored runtime. Incus provision is the last verification gate for fresh
+installation, `node:new`, VM boot, WireGuard, systemd, package installation,
+and host mutation.
+
+Docker provision is not part of the ordinary post-`composer test:e2e` sequence;
+run it only when Docker runtime/support images, prepared role images, Docker
+host artifact distribution, or Docker topology-preparation behavior changed.
+When production artifact behavior matters, the ideal final pass is feature E2E
+against a source-prepared topology, the affected provider artifact/provision
+gate, then an artifact-backed feature flow using the built CLI and gateway image
+when that lane exists.
 
 `composer test:e2e:provision:docker` rebuilds and distributes the Docker
 runtime/support images and prepared role images. `composer
@@ -61,9 +63,10 @@ The Incus provision gate has one supported shape:
 Serving assertions are feature behavior, not provision-gate behavior. `app:new`,
 Caddy/FrankenPHP serving, and `composer install` run on the host from prepared
 Incus feature coverage against `operator_gateway_app-dev`, which boots only
-operator, gateway, and app-dev while the Incus provider consumes the
-websocket-capable superset source snapshot underneath. The default Incus
-provision gate runs only the websocket-capable superset build/validation path.
+operator, gateway, and app-dev while the Incus provider uses the source
+snapshot from the websocket-capable superset topology as its base. The default
+Incus provision gate runs only the build/validation path for that
+websocket-capable superset.
 
 Before running the Incus feature lane, refresh the shared Incus prepared
 topology pool when the current source or topology shape changed:
@@ -88,9 +91,10 @@ default). It builds one reusable base image plus prepared source snapshots:
    `composer e2e:prepare-base-image -- --force` from the non-cloud Ubuntu 26.04
    VM image through direct Incus-agent bootstrap. It contains the bootstrap
    user, the `orbit` user, sshd, the E2E OS dependency set, WireGuard, Docker
-   Engine, first-boot Docker Swarm initialization, Supervisor, PHP CLI, and
+   Engine, Docker Swarm initialized on first boot, Supervisor, PHP CLI, and
    Composer. It also preloads the Caddy, FrankenPHP, and wg-easy Docker images
-   required by source-prepared topologies. It does not contain Orbit source. It
+   that topologies prepared from source require. It does not contain Orbit
+   source. It
    is used by the Incus provision gate and as the source for prepared topology
    roles.
 2. Prepared source templates `orbit-template-operator-base`,
@@ -105,16 +109,19 @@ checkout as a temporary Incus disk, mirrors it onto the VM ext4 filesystem, and
 links `/usr/local/bin/orbit` to the mirrored CLI shim. The operator mirrors into
 `/home/operator/orbit`; gateway and managed roles mirror into
 `/home/orbit/orbit`. Gateway-local artisan commands run from the mirrored
-`apps/gateway` path through the FrankenPHP PHP image. After the gateway is
-seeded, the prepared full topology uses the explicit role DAG
-`operator -> gateway -> {dev, prod, agent}`. Dev, prod, and agent
-launch/readiness/bake tasks run as independent downstream tasks through
-gateway-side role bake commands. In the websocket-capable topology, websocket is
-a dev-dependent task: it starts after app-dev is baked, app-dev Docker, Caddy,
-FrankenPHP, and Redis services are ready, and the provisioning-owned
-gateway/app-dev WireGuard route is ready; it does not wait for app-prod or agent
-completion. The app-dev role then seeds database and Redis registry state before
-the full source snapshot is taken.
+`apps/gateway` path through the FrankenPHP PHP image.
+
+After the gateway is seeded, the prepared full topology uses the explicit role
+DAG `operator -> gateway -> {dev, prod, agent}`. Dev, prod, and agent
+launch/readiness/bake tasks run as independent downstream tasks through bake
+commands that run on the gateway side. In the websocket-capable topology,
+websocket is a dev-dependent task. It starts after app-dev is baked, app-dev
+Docker, Caddy, FrankenPHP, and Redis services are ready, and the
+provisioning-owned gateway/app-dev WireGuard route is ready. It does not wait
+for app-prod or agent completion. After websocket completes, the development
+app node seeds database and Redis registry state before the full source snapshot
+is taken.
+
 Feature tests clone only their requested roles from that full prepared source.
 
 App-dev carries database, Redis, Caddy, and FrankenPHP app-serving readiness by
@@ -129,6 +136,7 @@ worktree-specific role artifacts. Incus feature acquisition resolves each role
 independently by trying `orbit-template-<role>-<slug>` with
 `clean-<source-topology>-<slug>` first, then falling back to the matching
 `base` template and snapshot for that role.
+
 Custom namespace preparation without `--roles` or `--all-roles` is rejected.
 Targeted `--roles` rebakes are artifact-mode operations. They require
 `--use-build-artifacts` and a non-base custom namespace: they copy each selected
@@ -168,8 +176,8 @@ The provision fingerprint separates three input classes:
   on gateway database registration.
 - Provision support inputs: `bin/install-orbit`, `bin/e2e-provision-node`,
   `bin/_e2e-deps.sh`, E2E topology builder/support code, command-shape code,
-  topology kind/DAG, relevant `ORBIT_E2E_*` environment values, and base image
-  identity.
+  topology kind/DAG, `ORBIT_E2E_*` environment values that affect topology
+  shape, and base image identity.
 
 Ordinary assertion-only files under `apps/e2e/tests/**` are not provision
 fingerprint inputs. Changing a Pest assertion should rerun the assertion without

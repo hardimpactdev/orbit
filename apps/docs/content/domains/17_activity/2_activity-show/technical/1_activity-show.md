@@ -109,7 +109,7 @@ also produce an entry recording the outcome.
 
 ## Doctor Relationship
 
-- `activity:show` reads historical gateway records.
+- `activity:show` reads gateway-owned activity records.
 - `doctor` verifies current gateway-tracked configuration against applied
   reality. It does not use activity history as a substitute for current probes.
 

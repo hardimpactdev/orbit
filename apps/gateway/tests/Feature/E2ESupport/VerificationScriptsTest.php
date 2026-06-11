@@ -56,8 +56,10 @@ it('reports command docs lint severities in agent format', function (): void {
     expect($docsLintScript)
         ->toContain('artisan librarian:lint')
         ->toContain('--format=agent')
-        ->toContain('--path=content/domains')
-        ->toContain('--path=content/testing')
+        ->toContain('--path=domains')
+        ->toContain('--path=testing')
+        ->toContain('--group=references')
+        ->not->toContain('--path=content/')
         ->not->toContain('--strict');
 });
 
@@ -75,7 +77,8 @@ it('keeps the aggregate quality gate complete', function (): void {
 
     expect($script)
         ->toContain('librarian:lint')
-        ->toContain('--path=content/testing')
+        ->toContain('--path=testing')
+        ->toContain('--group=references')
         ->toContain('phpstan analyse')
         ->toContain('rector process')
         ->toContain('bin/orbit-gateway-vendor-bin pint')

@@ -30,11 +30,7 @@ Use this command to update a process definition and re-render its runtime units.
 - **Restart Behavior**: Does not restart running runtime units unless `--restart` is supplied.
 - **Drift Reporting**: Reports repairable runtime-unit apply drift after successful configuration changes.
 
-## Related
-
-- [`process:add`](../1_process-add/process-add.md)
-- [`process:restart`](../7_process-restart/process-restart.md)
-- [`process-doctor.md`](../process-doctor.md)
+See also: [`process:add`](../1_process-add/process-add.md), [`process:restart`](../7_process-restart/process-restart.md), [`process-doctor.md`](../process-doctor.md).
 
 ***
 

@@ -80,18 +80,22 @@ final readonly class OrbitCommandDocs
         return $files;
     }
 
+    /**
+     * Finding paths use the Librarian canonical `docs/` namespace so
+     * `librarian:lint --path` filtering matches them; the on-disk docs
+     * directory name (`content`) must not leak into finding paths.
+     */
     public function relativePath(string $path): string
     {
         $docsRoot = $this->normalizePath($this->config->path);
         $path = $this->normalizePath($path);
-        $prefix = basename($docsRoot);
 
         if ($path === $docsRoot) {
-            return $prefix;
+            return 'docs';
         }
 
         if (str_starts_with($path, "{$docsRoot}/")) {
-            return $prefix.'/'.substr($path, strlen($docsRoot) + 1);
+            return 'docs/'.substr($path, strlen($docsRoot) + 1);
         }
 
         return $path;

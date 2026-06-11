@@ -20,7 +20,7 @@
 ## Signature
 
 ```bash
-orbit node:new [name] [--template=<template>] [--operator] [--roles=<roles>] [--host=<host>] [--operator-name=<name>] [--tld=<tld>] [--user=<user>] [--ingress=<node>] [--redis-node=<node>] [--s3-data-path=<path>] [--json]
+orbit node:new [name] [--template=<template>] [--operator] [--roles=<roles>] [--host=<host>] [--operator-name=<name>] [--tld=<tld>] [--user=<user>] [--ingress=<node>] [--redis-node=<node>] [--s3-data-path=<path>] [--host-key-fingerprint=<fingerprint>] [--self-grant=<mode>] [--self-grant-permissions=<permissions>] [--grant-to=<node>] [--grant-to-preset=<preset>] [--grant-to-permissions=<permissions>] [--grant-from=<node>] [--grant-from-preset=<preset>] [--grant-from-permissions=<permissions>] [--agent-tool=<tool>] [--json]
 ```
 
 ## Input Contract
@@ -41,14 +41,23 @@ This command follows the shared
 | `ingress_node` | `--ingress` | Private `app-prod` placement. | Every path other than private `app-prod` placement. | None. | Must match an active node with the `ingress` role. |
 | `redis_node` | `--redis-node` | `websocket`. | Every path that does not include `websocket`. | None. | Must match an active node with the `database` role and Redis expected or installed. |
 | `s3_data_path` | `--s3-data-path` | Never. | Every path that does not include `s3`. | `/srv/orbit/s3/data`. | Absolute host path mounted into RustFS as `/data`. |
+| `host_key_fingerprint` | `--host-key-fingerprint` | Optional. | Never. | None. | Expected SSH host key SHA256 fingerprint for verification during provisioning. |
+| `self_grant` | `--self-grant` | Optional. | Never. | None. | Self-grant mode applied to this node identity. |
+| `self_grant_permissions` | `--self-grant-permissions` | Optional. | Never. | None. | Custom permission set for the self-grant. Requires `--self-grant`. |
+| `grant_to` | `--grant-to` | Optional. | Never. | None. | Grant this node access to another node. Multiple values allowed. |
+| `grant_to_preset` | `--grant-to-preset` | Optional. | Never. | None. | Preset for the `--grant-to` permission set. |
+| `grant_to_permissions` | `--grant-to-permissions` | Optional. | Never. | None. | Custom permission set for the `--grant-to` grant. |
+| `grant_from` | `--grant-from` | Optional. | Never. | None. | Grant another node access to this node. Multiple values allowed. |
+| `grant_from_preset` | `--grant-from-preset` | Optional. | Never. | None. | Preset for the `--grant-from` permission set. |
+| `grant_from_permissions` | `--grant-from-permissions` | Optional. | Never. | None. | Custom permission set for the `--grant-from` grant. |
+| `agent_tool` | `--agent-tool` | Optional. | Never. | None. | Agent tool to install on this node. Multiple values allowed. |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer and non-interactive input mode. |
 
 Canonical stored role values accepted through `--roles` are `app-dev`,
 `app-prod`, `database`, `agent`, `ingress`, `websocket`, and `s3`. Role
 aliases are not accepted through `--roles`; `app-development` and
-`app-production` are template names only. `gateway`, `vpn`, and `router` are
-gateway-coupled internal assignments expanded only by `--template=gateway`,
-not public role values.
+`app-production` are template names only. `gateway`, `vpn`, and `router` are internal assignments coupled to the gateway,
+expanded only by `--template=gateway`, not public role values.
 
 ## Template Expansion
 
@@ -109,10 +118,10 @@ their implementations land.
      affect the blocker.
 6. Send the typed request to the gateway. The gateway authenticates the
    presented WireGuard identity and applies the grant authorization rules
-   described in [`2_node-new_on-operator-node.md`](2_node-new_on-operator-node.md) or
+   described in [`2_node-new_on-client.md`](2_node-new_on-client.md) or
    [`3_node-new_on-gateway-node.md`](3_node-new_on-gateway-node.md) before any
    gateway-owned side effects. First-gateway bootstrap is the exception
-   described in [`2_node-new_on-operator-node.md`](2_node-new_on-operator-node.md).
+   described in [`2_node-new_on-client.md`](2_node-new_on-client.md).
 7. Select the output renderer and begin the side-effect flow. Renderer-specific
    progress and payload details live in the renderer contracts.
 
@@ -129,7 +138,7 @@ Input mode behavior is split out of the canonical command contract:
 
 Caller-path behavior is split out into:
 
-- [`2_node-new_on-operator-node.md`](2_node-new_on-operator-node.md)
+- [`2_node-new_on-client.md`](2_node-new_on-client.md)
 - [`3_node-new_on-gateway-node.md`](3_node-new_on-gateway-node.md)
 
 ## Behavior Contract
@@ -348,5 +357,5 @@ Renderer-specific test mapping lives in:
 
 Role-specific and E2E test mapping lives in:
 
-- [`2_node-new_on-operator-node.md`](2_node-new_on-operator-node.md#test-mapping)
+- [`2_node-new_on-client.md`](2_node-new_on-client.md#test-mapping)
 - [`3_node-new_on-gateway-node.md`](3_node-new_on-gateway-node.md#test-mapping)

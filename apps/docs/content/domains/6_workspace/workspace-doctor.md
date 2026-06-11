@@ -9,7 +9,7 @@ The workspace family doctor implements the
 `doctor --family=workspace` verifies whether gateway workspace records still
 match the workspace facts that make those records usable development contexts
 on their parent app's node. It also detects stale workspace artifacts owned by Orbit
-whose identity no longer maps to active gateway workspace configuration, so
+with identities absent from active gateway workspace configuration, so
 post-removal cleanup can be repaired without recreating deleted workspace
 records.
 
@@ -27,8 +27,8 @@ The workspace family owns these facts:
   `app-dev` role, reported as `workspace.security.*` issue keys;
 - workspace-owned adoption facts: selected existing workspace paths that can be
   tied to an explicit app and workspace name during `doctor --adopt`.
-- stale workspace artifacts owned by Orbit whose identity no longer maps to an
-  active gateway workspace record.
+- stale workspace artifacts owned by Orbit with identities absent from
+  active gateway workspace records.
 
 A workspace record that points at a missing, unauthorized, or non-workspaceable
 parent app is a workspace record issue because the workspace cannot resolve.
@@ -66,8 +66,8 @@ The workspaces probe reads gateway workspace records and checks these layers:
    is the only project file that may provide a PHP version hint, and only for a
    PHP project.
 8. **Stale workspace artifacts:** Orbit-owned worktrees, runtime containers, or
-   runtime artifacts whose encoded workspace identity no longer maps to an
-   active workspace record are reported as orphaned workspace drift.
+   runtime artifacts whose encoded workspace identity is absent from
+   active workspace records are reported as orphaned workspace drift.
 
 The workspaces probe may mention related family drift only as a handoff. It
 must not duplicate proxy route, process, app, node, tool, or firewall probe
@@ -110,7 +110,7 @@ The table below shows what `doctor --restore` does for each fixable code.
 | `workspace.security.system_user` | Restore the development workspace runtime user and group when workspace configuration is complete. |
 | `workspace.security.fs_permissions` | Reapply development workspace ownership and permission policy. |
 | `workspace.security.runtime_container_isolation` | Recreate the workspace runtime container with required isolation settings. |
-| `workspace.artifact_extra` | Remove the stale Orbit-owned workspace artifact when its encoded identity no longer maps to active workspace configuration. |
+| `workspace.artifact_extra` | Remove the stale Orbit-owned workspace artifact when its encoded identity is absent from active workspace configuration. |
 
 `doctor --restore` does not handle `workspace.record_incomplete`,
 `workspace.parent_app_invalid`, `workspace.path_unusable`,
@@ -120,7 +120,7 @@ The table below shows what `doctor --restore` does for each fixable code.
 Unsupported PHP versions and invalid parent app records remain explicit command
 or operator work. Failed setup and teardown runs are visible through
 `workspace:history` and `workspace:log`; doctor verifies current workspace
-reality instead of rewriting historical runs. Workspace doctor never creates
+reality and does not rewrite past runs. Workspace doctor never creates
 parent apps, changes workspace names, moves a workspace to another app, edits
 setup or teardown step definitions, edits workspace-owned proxy routes,
 edits inherited runtime units, or changes node reachability.

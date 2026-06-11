@@ -200,5 +200,5 @@ slice.
 
 Context-specific behavior and test mapping live in:
 
-- [`2_app-new_on-operator-node.md`](2_app-new_on-operator-node.md)
+- [`2_app-new_on-client.md`](2_app-new_on-client.md)
 - [`3_app-new_on-gateway-node.md`](3_app-new_on-gateway-node.md)

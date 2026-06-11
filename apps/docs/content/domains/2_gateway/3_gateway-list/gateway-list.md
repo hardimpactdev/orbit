@@ -2,7 +2,7 @@
 
 [Back to Gateway commands.](../README.md)
 
-List the gateway entries stored in the caller-local Orbit CLI configuration.
+List the gateway entries stored in the Orbit CLI configuration on the caller's machine.
 
 `gateway:list` is local-only. It does not contact the active gateway, verify
 WireGuard reachability, refresh trust material, or mutate gateway-owned state.
@@ -22,6 +22,8 @@ orbit gateway:list --json
 
 ## What Happens
 
+Run `gateway:list` to see all gateway entries configured on your machine and which one is active.
+
 `gateway:list` reads `~/.config/orbit/config.json`, reports every configured
 gateway entry, and marks the single active gateway selected by
 `active_gateway`.
@@ -29,6 +31,8 @@ gateway entry, and marks the single active gateway selected by
 The command fails when no local gateway entries exist.
 
 ## Related Commands
+
+See also these commands for managing your local gateway configuration.
 
 - [`gateway:add`](../1_gateway-add/gateway-add.md) - add or refresh a named
   local gateway entry

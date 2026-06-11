@@ -55,8 +55,12 @@ final readonly class TestMappingFormatRule implements GroupedRule
         $rows = $this->testRows($section);
 
         if ($rows === []) {
+            if ($this->declaresNoGatewayCoverage($section)) {
+                return [];
+            }
+
             return [
-                $this->finding($file, 'Test Mapping must include at least one table row with an `apps/gateway/tests/...Test.php` path and coverage description.'),
+                $this->finding($file, 'Test Mapping must include at least one table row with an `apps/gateway/tests/...Test.php` path and coverage description, or state why there is no gateway-side coverage.'),
             ];
         }
 
@@ -116,6 +120,16 @@ final readonly class TestMappingFormatRule implements GroupedRule
     private function containsMissingFileInstruction(string $section): bool
     {
         return str_contains($section, 'create it before changing behavior');
+    }
+
+    /**
+     * A Test Mapping section may state that no gateway-side coverage exists
+     * (with the reason) instead of listing a gateway test row, for commands
+     * whose behavior is owned entirely outside the gateway test suite.
+     */
+    private function declaresNoGatewayCoverage(string $section): bool
+    {
+        return preg_match('/no gateway-side coverage/i', $section) === 1;
     }
 
     private function finding(string $path, string $message): Finding

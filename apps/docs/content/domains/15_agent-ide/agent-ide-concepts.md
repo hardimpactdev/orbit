@@ -84,9 +84,10 @@ This section defines the message delivery model.
   session for a resolved app or workspace context. Accepted delivery means the
   adapter accepted the message; it does not mean the requested work completed.
 - **Agent IDE launcher context:** Working-directory context held in
-  `ORBIT_HOST_CWD`. The node-local `apps/cli/orbit` entry point preserves a
-  supplied value or initializes it from `getcwd()` when absent, while the host
-  `orbit` launcher only resolves the repo root and execs the entry point.
+  `ORBIT_HOST_CWD`. The `apps/cli/orbit` entry point, which runs on the node,
+  preserves a supplied value or initializes it from `getcwd()` when absent,
+  while the host `orbit` launcher only resolves the repo root and execs the
+  entry point.
   Production installs still use the native CLI binary artifact; source-mounted
   Docker and Incus development/E2E topologies point `/usr/local/bin/orbit`
   directly at `<source>/apps/cli/orbit`. Agent IDE commands may use it to

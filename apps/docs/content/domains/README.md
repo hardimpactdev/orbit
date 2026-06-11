@@ -16,7 +16,7 @@ Before adding or changing a command:
 5. Implement code to match the contract.
 
 After changing converted command documentation, run `composer docs-lint`. Use a
-scoped path such as `composer docs-lint -- --path=content/domains/1_node` while a
+scoped path such as `composer docs-lint -- --path=domains/1_node` while a
 different domain is still mid-conversion. Librarian is the executable structure
 contract for converted command docs, with Orbit-specific registries under
 `config/librarian-command-docs/`. When the documentation structure changes,
@@ -116,7 +116,7 @@ These rules govern every command contract in this directory.
   inputs, outputs, side-effect boundaries, persisted contract state, and
   externally visible calls. They must not assert internal services, private
   methods, handler names, or temporary implementation structure.
-- Migration mappings from old commands belong in contraction audits, not here.
+- Migration mappings from prior commands belong in contraction audits, not here.
 - Backend-shaped import or sync commands are not stable command contracts. Migration adoption must be explicit through `doctor --adopt` or live outside permanent command docs.
 - Upgrade work belongs in Laravel migrations, `orbit doctor --restore`, or explicit `orbit doctor --adopt`.
 - Public versioned migration commands and helper commands for one-off upgrades are not part of the stable command surface.
@@ -153,7 +153,7 @@ instead of redescribing primitives inline.
 Command groups with hidden or internal machinery commands include an `Internal Commands` section in their `README.md` that links to the `internal/` subdirectory. Public command lists remain separate to maintain visibility distinctions.
 
 Flat numbered command files are not valid in converted command families. If a
-legacy family is being ported, each public command must be converted into the
+command family is being ported, each public command must be converted into the
 directory shape with at least a public command page, canonical technical
 contract, and renderer contracts. Add companion technical files for caller-role
 authorization, topology, input-mode, destructive consent, cross-node, or E2E
@@ -310,7 +310,7 @@ destructive consent, before cleanup side effects. Pre-confirmation gateway reads
 for target or subject resolution are allowed.
 
 Interactive input mode re-prompts invalid input for the current field until the
-value is valid, the answer changes the path so the prompt is no longer needed,
+value is valid, the answer changes the path so the prompt is skipped,
 or the user aborts. There is no generic retry cap unless the command contract
 documents one. Prompt aborts such as Ctrl-C, EOF, or a cancel action supported
 by the primitive exit with the standard command failure status and no side
@@ -392,7 +392,7 @@ Use shared failure vocabulary unless a domain-specific code is needed:
 | `gateway_unavailable` | The CLI cannot reach the gateway API required for the command. |
 
 Do not introduce new synonyms such as `missing_input`, `missing_argument`,
-`validation.missing_input`, `unauthorized`, or role-denial-specific legacy
+`validation.missing_input`, `unauthorized`, or role-denial-specific
 codes in new or touched contracts.
 
 Fields that are structural members of an entity object are serialized as `null`

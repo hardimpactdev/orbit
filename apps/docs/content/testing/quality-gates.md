@@ -37,8 +37,8 @@ composer test:e2e:provision:docker
 composer test:e2e:provision:incus
 ```
 
-These commands may be run by separate agents in parallel after the relevant
-feature lane is green only when both provider gates are independently required.
+These commands may be run by separate agents in parallel only when both provider
+gates are independently required and the matching provider feature lane is green.
 The aggregate `composer test:e2e:provision` runs both provider provision
 commands and is reserved for humans, not agents.
 

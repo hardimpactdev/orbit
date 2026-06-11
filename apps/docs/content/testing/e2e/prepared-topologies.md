@@ -35,13 +35,13 @@ Use this table to choose the smallest active node set for a feature test.
 Prepared topology images and templates are branch-agnostic topology baselines.
 They prove OS, users, SSH, Docker, `orbit-gateway`, `orbit-scheduler`, `orbit-caddy`, service
 containers, trust, routes, and baseline Orbit installation state. Production
-artifact lanes still use the native CLI binary artifact. Source-mounted Docker
-development/E2E topologies point `/usr/local/bin/orbit` directly at
-`<source>/apps/cli/orbit`. Source-mounted Incus topologies mount the synced
-source at `/home/orbit/orbit`, then mount a VM-local overlay runtime checkout
-at `/home/orbit/orbit-run`; `/usr/local/bin/orbit` and the retained gateway API
-shim execute from that overlay path so generated files and runtime state stay
-inside the VM.
+artifact lanes still use the native CLI binary artifact. Docker topologies with
+a source mount point `/usr/local/bin/orbit` directly at
+`<source>/apps/cli/orbit`. Incus topologies with a source mount attach the synced source at
+`/home/orbit/orbit`, then mount a runtime checkout at `/home/orbit/orbit-run`
+using VM-local overlay directories. `/usr/local/bin/orbit` and the retained
+gateway API shim execute from that overlay path so generated files and runtime
+state stay inside the VM.
 
 Feature assertions must run the checkout under test inside the disposable clone.
 For worktree-based development, the worker's current worktree is the source of
@@ -79,8 +79,8 @@ that runs on those nodes.
 mounts the current checkout at `/home/orbit/orbit`, and retains it (it is not
 reaped) so a human can do manual diagnosis and performance testing against an
 isolated topology — never against a live production topology. It reuses the same
-prepared-topology substrate and run id as the source-checkout E2E lane; it only
-differs in that the clone is kept until you release it.
+prepared-topology substrate and run id as the E2E lane that runs from a source
+checkout; it only differs in that the clone is kept until you release it.
 
 ```bash
 # Acquire a retained Incus topology with the current checkout source-mounted.
@@ -127,18 +127,18 @@ recorded manifest host, updates the synced host path behind `/home/orbit/orbit`,
 then refreshes each recorded VM runtime checkout such as
 `/home/orbit/orbit-run`. It does not reacquire VMs, rerun topology bake hooks,
 restart services, or change local WireGuard state. Reacquire the topology when
-the behavior you are testing depends on boot-time topology setup rather than
-changed source files.
+the behavior you are testing depends on setup that runs at topology boot time
+rather than changed source files.
 
 For retained Incus, `/home/orbit/orbit` is the transport checkout and
 `/home/orbit/orbit-run` is the execution checkout. The transport checkout is
 the only path Incus can mount from the runner host into the VM, so it remains
 part of the flow even though Orbit commands should run from the VM-local
-runtime overlay. The overlay mounts `/home/orbit/orbit-run` with
-`/home/orbit/orbit` as the lowerdir and a VM-local upperdir/workdir. Start
-resets the upperdir for a clean retained runtime; sync remounts the overlay
-while preserving that upperdir so installed dependencies and runtime state
-survive source refreshes.
+runtime overlay. The overlay mounts `/home/orbit/orbit-run` with `/home/orbit/orbit` as the
+lowerdir and an upperdir/workdir that lives inside the VM. Acquisition resets
+the upperdir for a clean retained runtime; sync remounts the overlay while
+preserving that upperdir so installed dependencies and runtime state survive
+source refreshes.
 
 `--sync` is one-way from the initiating worktree to the retained topology. On a
 remote Incus host it has two stages:
@@ -226,7 +226,7 @@ ORBIT_E2E_LIVE_WIREGUARD_ENDPOINT=192.168.1.150:51820
 ```
 
 Live E2E tunnels use short `oe2e<id>` config names because `wg-quick` requires a
-valid interface label no longer than fifteen characters. On macOS, `wg-quick`
+valid interface label of at most fifteen characters. On macOS, `wg-quick`
 maps that logical label to a real `utun*` interface under `/var/run/wireguard`.
 Inspect active WireGuard interfaces with:
 
@@ -239,8 +239,8 @@ default to `mac-<id>`. Use `--gateway-name=<name>` when the local gateway entry
 should not default to `incus-<id>`.
 
 Release a retained topology when you are done. Releasing reaps the recorded
-instances on the host, removes the dedicated per-run SSH key directory, and
-deletes the state file. When live mode started a local `wg-quick` tunnel,
+instances on the host, removes the SSH key directory that was created for the
+run, and deletes the state file. When live mode started a local `wg-quick` tunnel,
 `e2e:incus --stop` brings that tunnel down before releasing Incus resources:
 
 ```bash
@@ -256,8 +256,8 @@ composer e2e:dev-topology:release -- --all
 ```
 
 Retained topologies are manual diagnosis and performance-testing tools only.
-Durable behavior assertions still live in prepared-topology Pest E2E tests, not in
-a kept-alive topology.
+Durable behavior assertions still live in Pest E2E tests backed by prepared
+topologies, not in a kept-alive topology.
 
 Use `composer e2e:incus` for Incus retained/live flows. Use
 `composer e2e:dev-topology -- --provider=docker` and
@@ -318,9 +318,9 @@ Required prepared sources for feature lanes:
   gateway and CLI dependencies.
 - `operator_gateway_app-dev_app-prod_agent_websocket` Incus role snapshots for
   selective VM boot, including operator-only, operator-gateway, app-serving,
-  app-prod-ingress, and websocket tests. Their app-dev snapshot carries Docker
-  plus the Caddy and FrankenPHP images and `orbit` user Docker access needed by
-  app/proxy doctor repair.
+  app-prod-ingress, and websocket tests. The app-dev snapshot in this set
+  carries Docker, Caddy, and FrankenPHP images plus `orbit` user Docker access
+  needed by app/proxy doctor repair.
 - `operator_gateway_app-dev_app-prod_ingress` Incus role snapshots for tests
   that need app-dev, app-prod, and a dedicated ingress VM.
 
@@ -426,8 +426,8 @@ Common requirements for every prepared topology:
 - SSH is authorized for the users needed by the topology handles;
 - `orbit --version` works for the steady-state Orbit user on each managed node;
 - Docker Engine/CLI is available to the host launcher and runtime managers;
-- source-prepared Incus topology nodes keep `/usr/local/bin/orbit` pointed at
-  the VM-local mirrored checkout's `bin/orbit`; production artifact and
+- Incus topology nodes prepared from source keep `/usr/local/bin/orbit` pointed
+  at the VM-local mirrored checkout's `bin/orbit`; production artifact and
   binary-acceptance lanes are the lanes that require the native Orbit CLI
   binary artifact on managed nodes;
 - host Caddy and PHP-FPM are absent from prepared topology images (FrankenPHP

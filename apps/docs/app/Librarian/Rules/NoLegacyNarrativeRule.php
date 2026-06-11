@@ -77,7 +77,7 @@ final readonly class NoLegacyNarrativeRule implements GroupedRule
 
         $findings = [];
 
-        foreach (explode("\n", $contents) as $index => $line) {
+        foreach ($this->proseLines($contents) as $index => $line) {
             foreach (self::BANNED_TERMS as $term) {
                 if (preg_match('/\b'.preg_quote($term, '/').'\b/i', $line, $matches) !== 1) {
                     continue;
@@ -97,6 +97,41 @@ final readonly class NoLegacyNarrativeRule implements GroupedRule
         }
 
         return $findings;
+    }
+
+    /**
+     * Lines outside `text`/`json` output-sample fences, keyed by zero-based
+     * line index. Fenced output samples document literal renderer output and
+     * are part of the output contract, not narrative prose.
+     *
+     * @return array<int, string>
+     */
+    private function proseLines(string $contents): array
+    {
+        $insideOutputFence = false;
+        $prose = [];
+
+        foreach (explode("\n", $contents) as $index => $line) {
+            $trimmed = ltrim($line);
+
+            if ($insideOutputFence) {
+                if (str_starts_with($trimmed, '```')) {
+                    $insideOutputFence = false;
+                }
+
+                continue;
+            }
+
+            if (preg_match('/^```(?:text|json)\b/', $trimmed) === 1) {
+                $insideOutputFence = true;
+
+                continue;
+            }
+
+            $prose[$index] = $line;
+        }
+
+        return $prose;
     }
 
     private function isExempt(string $relative): bool

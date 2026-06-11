@@ -28,14 +28,16 @@ composer test:e2e:provision
 composer e2e:ensure-artifacts
 ```
 
-Run prepared-topology feature E2E before any provider artifact/provision gate.
-The feature lanes consume prepared source artifacts and prove behavior against
-the current checkout. Incus provision is the fresh VM gate for installer,
-`node:new`, base image, WireGuard, systemd, package installation, and host
-mutation paths. Docker provision is not a normal post-`composer test:e2e` gate;
-it refreshes Docker runtime/support images, prepared role images, Docker host
-artifact distribution, or Docker topology-preparation artifacts. When a change
-also affects production artifacts, prove the feature against source-prepared
+Run feature E2E backed by prepared topologies before any provider
+artifact/provision gate. The feature lanes consume prepared source artifacts and
+prove behavior against the current checkout. Incus provision is the fresh VM
+gate for installer, `node:new`, base image, WireGuard, systemd, package
+installation, and host mutation paths.
+
+Docker provision is not a normal post-`composer test:e2e` gate; it refreshes
+Docker runtime/support images, prepared role images, Docker host artifact
+distribution, or Docker topology-preparation artifacts. When a change also
+affects production artifacts, prove the feature against source-prepared
 topologies first, run only the affected provider artifact/provision gate, then
 run the feature flow that consumes the built CLI/gateway assets when that
 artifact-backed lane exists.
@@ -86,7 +88,7 @@ these tests with `e2e-provider-incus` so Docker-only runs skip them without
 probing an unsuitable provider.
 
 Provisioning and installer changes finish with the Incus provision command after
-the relevant prepared-topology feature lane is green. Docker image/runtime,
+the matching prepared-topology feature lane is green. Docker image/runtime,
 prepared role image, Docker host artifact distribution, and Docker topology
 preparer changes belong in `composer test:e2e:provision:docker`. Incus VM,
 WireGuard, installer, `node:new`, and host-mutation changes belong in
@@ -130,7 +132,7 @@ The ephemeral E2E suite is split into two explicit Pest group lanes:
   isolated namespace. It launches a fresh base VM, installs Orbit on the
   operator, provisions the gateway, runs `node:new` for app-dev, app-prod, and
   agent in parallel, and bakes websocket against app-dev Redis. Run this after
-  the source-prepared Incus feature lane, not before it.
+  the Incus feature lane backed by a prepared source, not before it.
 
 `composer test:e2e:provision` is a human-only aggregate alias for both provider
 provision commands. Agents must never run it; agents choose
@@ -162,7 +164,7 @@ mutate or prove expensive prepared artifacts and are much slower than
 prepared-topology feature tests. Treat Docker provision as Docker artifact
 refresh only, and Incus provision as the fresh VM provisioning gate.
 
-## Source-Dev And Artifact-Prod
+## Source-dev and artifact-prod
 
 Orbit keeps development ergonomics and production artifact validation in
 separate topology lanes:

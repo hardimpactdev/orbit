@@ -14,7 +14,7 @@
 ## Signature
 
 ```bash
-orbit process:restart [name] [--node=<node>] [--app=<app>] [--workspace=<workspace>] [--json]
+orbit process:restart [name] [--app=<app>] [--workspace=<workspace>] [--node=<node>] [--json]
 ```
 
 ## Input Contract

@@ -38,7 +38,7 @@ Run `app:prune` to compare Orbit's workspace registry against configured agent I
 
 ### Stale Detection
 
-Identifies workspaces tracked in Orbit's registry that no longer exist in any configured agent IDE adapter.
+Identifies workspaces tracked in Orbit's registry that have no match in any configured agent IDE adapter.
 
 ### App-Scoped
 

@@ -56,11 +56,9 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
   boundary. They must not point `live_path`, document root, storage,
   database, or any runtime bind mount at paths outside the app source,
   `releases_path`, or explicitly managed shared paths.
-- Runs steps that invoke `php`, `composer`, or `artisan` on the host PHP
-  toolchain matched to the app's PHP version (`php8.4`/`php8.5`) when the app
-  uses `runtime_kind=php`, from the app source path on the host node.
-- Executes non-PHP steps and static app steps from the app source path on the
-  host node.
+- Executes all steps from the app source path on the host node. Steps that
+  invoke `php`, `composer`, or `artisan` use the host PHP toolchain matched to
+  the app's PHP version (`php8.4`/`php8.5`) when `runtime_kind=php`.
 - Renders `{{ key }}` placeholders against the deployment run context before
   execution. Dot notation may address nested context values such as
   `{{ app.name }}`.

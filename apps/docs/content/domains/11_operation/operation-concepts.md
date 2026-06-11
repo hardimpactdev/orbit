@@ -17,14 +17,14 @@ Product families remain the owners of configuration, reality, issue codes, and r
 
 These terms describe the update workflow and its components.
 
-- **Local update:** `update` sequence that changes only the current Orbit CLI installation. Production installs update the native CLI binary artifact and relink the host launcher; source-dev Docker/Incus lanes keep `/usr/local/bin/orbit` pointed at `<source>/apps/cli/orbit` and update by changing the mounted source.
-- **Fleet update:** `update:all` sequence that updates the caller-local CLI installation, replaces the gateway/scheduler services through a durable gateway-owned operation, and updates selected active non-local managed Orbit installations.
+- **Local update:** `update` sequence that changes only the current Orbit CLI installation. Production installs replace the native CLI binary and relink the host launcher. Source-dev lanes update by changing the mounted source checkout.
+- **Fleet update:** `update:all` sequence that updates the caller's local CLI first, then replaces the gateway/scheduler services and updates selected active managed Orbit installations through a durable gateway-owned operation.
 - **Operation event journal:** Durable ordered event log for a gateway-owned
   operation. Events carry a per-run sequence. The SSE event id is that sequence,
   `Last-Event-ID` replays only events with a greater sequence, and live
   followers stay connected with heartbeat comments until a terminal `complete`
   or `error` event is persisted.
-- **Immutable update plan:** Persisted update plan keyed by `operation_run_id`; it captures target version, digest-pinned gateway image, release manifest source/version/snapshot, CLI artifact URLs and hashes, and required role image metadata.
+- **Immutable update plan:** Persisted plan keyed by `operation_run_id`. Captures target version, gateway image digest, manifest snapshot, CLI artifact hashes, and required role images.
 - **Update lease:** Expiring lease row for mutually exclusive update work, such as `fleet:update-all`, `gateway`, `scheduler`, or an individual node update.
 - **Update target:** One selected Orbit installation in an update workflow.
 - **Update step:** Ordered local installation update action: native CLI artifact update or source-mounted checkout refresh, launcher verification, containerized dependency installation, or migration execution.

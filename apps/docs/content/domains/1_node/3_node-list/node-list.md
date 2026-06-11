@@ -11,7 +11,7 @@ availability.
 ## Usage
 
 ```bash
-orbit node:list [--role=<gateway|vpn|router|app-dev|app-prod|database|agent|ingress|websocket|s3>] [--doctor] [--json]
+orbit node:list [--role=<gateway|vpn|router|app-dev|app-prod|database|agent|ingress|websocket|s3>] [--json]
 ```
 
 Run from any node with gateway visibility. No arguments are required.
@@ -23,7 +23,6 @@ orbit node:list
 orbit node:list --role=vpn
 orbit node:list --role=router
 orbit node:list --role=app-prod
-orbit node:list --doctor
 orbit node:list --role=app-dev --json
 ```
 
@@ -37,35 +36,24 @@ Filters by effective role assignment. Accepts a single role value:
 `gateway`, `vpn`, `router`, `app-dev`, `app-prod`, `database`,
 `agent`, `ingress`, `websocket`, or `s3`. Comma-separated input is rejected.
 
-### `--doctor`
-
-Includes node doctor checks and summaries. This flag is explicit because it may perform live checks and take longer than a registry list.
-
 ### `--json`
 
 Outputs JSON.
 
 ## What Happens
 
+Run `node:list` to see the gateway registry state visible to your current consuming node.
+
 `node:list` reads gateway registry state visible to the current consuming node.
 On the gateway, lists all nodes unless filters are provided. Does not probe hosts
-as part of the default list operation. Live node reality belongs to
-`doctor --family=node` or the explicit node-family-only `--doctor` summary flag.
+as part of the list operation. Live node reality belongs to
+`doctor --family=node`.
 
 Only nodes visible to the authenticated caller are returned. Hidden nodes are
 omitted entirely; `node:list` does not surface placeholder rows for nodes the
 caller cannot access. An authorized caller with no visible nodes sees an
 empty list. A caller that is not authorized to read the node registry at all
 receives an authorization error.
-
-When `--doctor` is supplied, runs node doctor checks as an explicit secondary
-operation and includes the resulting summary. Doctor findings do not change the
-list result. Use `orbit doctor --family=node [--json]` when drift should fail
-the command.
-
-This flag is intentionally limited to `node:list`. App and workspace list
-commands stay registry-only and direct live verification to their family doctor
-commands.
 
 ## Output
 

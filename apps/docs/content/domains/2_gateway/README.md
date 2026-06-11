@@ -101,3 +101,5 @@ These are the gateway-family commands available to operator-node callers.
    [`orbit gateway:list`](3_gateway-list/gateway-list.md)
 4. Active gateway selection:
    [`orbit gateway:use <name>`](4_gateway-use/gateway-use.md)
+5. Gateway API health check:
+   [`orbit gateway:status`](5_gateway-status/gateway-status.md)

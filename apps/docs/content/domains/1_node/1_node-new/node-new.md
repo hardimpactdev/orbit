@@ -58,8 +58,8 @@ orbit node:new agent-1 --roles=agent --host=192.0.2.10 --grant-to=all --grant-to
 - `--operator`: create a client identity with the operator permission preset and
   no workload role assignments. Operator is not a node role; use this flag
   instead of a role value. Mutually exclusive with `--roles` and with
-  workload-bearing `--template` values other than `operator`.
-- `--roles`: comma-separated initial role assignments for programmatic callers
+  `--template` values that carry a workload role, other than `operator`.
+- `--roles`: role assignments as a comma-separated list, for programmatic callers
   that need an explicit composition instead of a template. Supported role
   values are `app-dev`, `app-prod`, `database`, `agent`, `ingress`,
   `websocket`, and `s3`. Role aliases are not accepted; `app-development`
@@ -114,6 +114,8 @@ orbit node:new agent-1 --roles=agent --host=192.0.2.10 --grant-to=all --grant-to
 - `--json`: Output JSON.
 
 ## Templates At A Glance
+
+Each template pre-selects a role set and provisioning path. Use a template when you want a standard composition; use `--roles` for explicit control.
 
 | Template | Roles | Optional add-ons | Requires `--host` | Status |
 | --- | --- | --- | --- | --- |

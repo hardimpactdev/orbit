@@ -4,7 +4,7 @@
 
 Decommissions an application and cleans up its registry state and managed infrastructure artifacts.
 
-Use this command when a service is no longer needed or is being moved to a different node.
+Use this command to decommission a service or move it to a different node.
 
 ## Usage
 

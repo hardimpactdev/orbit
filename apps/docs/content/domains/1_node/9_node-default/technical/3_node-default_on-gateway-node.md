@@ -2,8 +2,7 @@
 
 [Back to `node:default` technical contract.](1_node-default.md)
 
-This page documents the retired gateway-host rejection path and the current
-target behavior.
+This page documents the gateway-host behavior for `node:default`.
 
 **Effects:** `read`, `write`.
 
@@ -28,7 +27,7 @@ validation and gateway-unavailable failures as other operator hosts.
 
 | Failure | Condition | Outcome |
 | --- | --- | --- |
-| Gateway-host rejection | Historical behavior only. | Retired; do not implement. |
+| Gateway-host rejection | Not applicable. | Not implemented. |
 
 ## Test Mapping
 
@@ -36,4 +35,5 @@ Primary test owners:
 
 | Path | Coverage |
 | --- | --- |
+| `apps/gateway/tests/Feature/Commands/Nodes/NodeDefaultCommandTest.php` | Gateway-host deployment context: no gateway-side default-node route, local-only config write guarantee. |
 | `apps/cli/tests/Feature/Commands/Node/NodeDefaultOnGatewayHostTest.php` | Gateway-host execution edits local CLI config and does not call gateway-side default-node routes. |

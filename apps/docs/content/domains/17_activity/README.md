@@ -12,7 +12,7 @@ commands own.
 ## State Ownership
 
 The activity command domain does not own a state family. Activity entries are
-historical evidence of operations that read or mutated product-family state.
+durable records of operations that read or mutated product-family state.
 For live drift, run the family doctor that owns the entity recorded as the
 activity subject. The nine family doctors are:
 
@@ -46,7 +46,7 @@ These rules apply to every command and API endpoint in the Orbit product.
   apply). Correlation is metadata; it does not collapse those entries.
 - Activity history is gateway-owned. The gateway authorizes every read against
   the caller's node identity and the requested filters.
-- Activity is historical evidence, not a substitute for live `doctor` probes.
+- Activity is a durable record, not a substitute for live `doctor` probes.
 
 ## Commands
 

@@ -119,6 +119,8 @@ Source: [Node Concepts](domains/1_node/node-concepts.md).
 - **Role assignability**
 - **Role assignment**
 - **Role settings**
+- **Node setup**
+- **Node convergence**
 - **Node TLD**
 - **Agent role baseline**
 - **Agent runtime user**
@@ -130,6 +132,7 @@ Source: [Node Concepts](domains/1_node/node-concepts.md).
 - **Client enrollment**
 - **Compatible existing node**
 - **CLI-to-gateway edge**
+- **Gateway maintenance edge**
 - **Gateway-to-node edge**
 - **Node event ingestion**
 - **Node reality**
@@ -170,6 +173,7 @@ Source: [Gateway Concepts](domains/2_gateway/gateway-concepts.md).
 - **Gateway command domain**
 - **Gateway relationship**
 - **Configured gateway endpoint**
+- **Active gateway**
 - **Gateway WireGuard API address**
 - **Gateway API runtime**
 - **Local gateway configuration**
@@ -405,6 +409,9 @@ Source: [Operation Concepts](domains/11_operation/operation-concepts.md).
 - **Fleet-changing operation command**
 - **Local update**
 - **Fleet update**
+- **Operation event journal**
+- **Immutable update plan**
+- **Update lease**
 - **Update target**
 - **Update step**
 - **Target result**

@@ -52,8 +52,8 @@ record.
 - **App runtime container:** Dedicated Docker container for one PHP app runtime.
   It mounts the app source, uses the selected PHP image, receives app
   environment, and is targeted by `orbit-caddy` over the node Docker network.
-  Static apps do not have a runtime container. The lifecycle-managed concrete
-  app runtime is represented as a process with Docker runtime.
+  Static apps do not have a runtime container. The concrete app runtime, managed
+  through the process lifecycle, is represented as a process with Docker runtime.
 - **Production app runtime container:** App-prod PHP runtime rendered as a
   per-app Docker container running FrankenPHP on the owning node. It
   listens on internal port `8080`, publishes no public host ports, and is
@@ -104,8 +104,8 @@ The terms below describe how an app moves through its active states.
 - **App registration:** Idempotent convergence of app configuration and node artifacts
   performed by `app:register`. Used to install Orbit management on a new path,
   re-apply management to an existing app, or retry production domain activation.
-- **App adoption:** Result of `app:register` against an existing path that was
-  not previously Orbit-managed. The resulting app entity reports `adopted=true`.
+- **App adoption:** Result of `app:register` against an existing path with no
+  Orbit management. The resulting app entity reports `adopted=true`.
 - **App adoption flag:** Boolean entity field that records whether an app was
   adopted from an existing path (`true`) or created fresh (`false`). Exposed in
   JSON as `adopted`.
@@ -123,13 +123,15 @@ These boundaries define what the app family owns and what belongs to other famil
   deployment policy, app health configuration, and app WebSocket binding state.
   They do not own proxy route registry, workspace policy, process
   configuration, schedule definitions, tool registration, or firewall policy
-  beyond what derives from app configuration. Production route exposure belongs
-  to `ingress`; private route selection and backend-pool targeting belong to
-  `router`; `app-prod` owns the private backend runtime; `websocket`
-  owns the Reverb runtime. App commands do not install or own host Caddy or
-  Reverb, nor the host PHP toolchain — the `app-dev`/`app-prod` node role
-  provisions the host PHP toolchain (PHP and Composer on both; the Laravel
-  installer on `app-dev` only) that deploy and ad-hoc app CLI use. `app-prod`
-  does not own lifecycle for database, cache, agent, storage, or web runtime
-  units; long-running units are represented by processes, while tools remain
-  node-level capability records.
+  beyond what derives from app configuration.
+
+  Production route exposure belongs to `ingress`; private route selection and
+  backend-pool targeting belong to `router`; `app-prod` owns the private
+  backend runtime; `websocket` owns the Reverb runtime.
+
+  App commands do not install or own host Caddy, Reverb, or the host PHP
+  toolchain. The `app-dev`/`app-prod` node role provisions the host PHP toolchain
+  (PHP and Composer on both; the Laravel installer on `app-dev` only) for deploy
+  and ad-hoc app CLI use. `app-prod` does not own lifecycle for database, cache,
+  agent, storage, or web runtime units; long-running units are represented by
+  processes, while tools remain node-level capability records.

@@ -1,4 +1,4 @@
-# Technical Contract: `orbit deploy:step-add [app] [command] [--title=<title>] [--order=<number>] [--timeout=<seconds>] [--retention=<count>] [--json]`
+# Technical Contract: `orbit deploy:step-add [app] [deploy_command] [--title=<title>] [--order=<number>] [--timeout=<seconds>] [--retention=<count>] [--json]`
 
 [Back to public `deploy-step-add` documentation.](../deploy-step-add.md)
 
@@ -13,7 +13,7 @@
 ## Signature
 
 ```bash
-orbit deploy:step-add [app] [command] [--title=<title>] [--order=<number>] [--timeout=<seconds>] [--retention=<count>] [--json]
+orbit deploy:step-add [app] [deploy_command] [--title=<title>] [--order=<number>] [--timeout=<seconds>] [--retention=<count>] [--json]
 ```
 
 ## Input Contract
@@ -23,7 +23,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
 | `app` | `argument` | `Required in non-interactive mode.` | `Never.` | `None.` | Visible production app the caller may manage. |
-| `command` | `argument` | `Required in non-interactive mode.` | `Never.` | `None.` | Non-empty shell command or multiline shell script string. |
+| `deploy_command` | `argument` | `Required in non-interactive mode.` | `Never.` | `None.` | Non-empty shell command or multiline shell script string. |
 | `title` | `--title` | `Optional.` | `Never.` | Command-derived title. | Non-empty display label. |
 | `order` | `--order` | `Optional.` | `Never.` | Next pipeline position. | Positive integer insertion order. |
 | `timeout` | `--timeout` | `Optional.` | `Never.` | `600`. | Positive integer seconds. |

@@ -55,19 +55,24 @@ assignments. Supported platforms are tracked in
 [`node-concepts.md#role-platform-support`](node-concepts.md#role-platform-support).
 
 Nodes may run the Orbit CLI as a stateless gateway client through the host
-`orbit` launcher. Production installs still use the native CLI binary artifact;
+`orbit` launcher. Production installs use the native CLI binary artifact;
 source-mounted Docker and Incus development/E2E topologies point
-`/usr/local/bin/orbit` directly at `<source>/apps/cli/orbit`. The CLI entry
-point owns public gateway-backed commands
-(which call the gateway typed API over the VPN), local-only commands (which
-mutate caller-local state such as `~/.config/orbit/config.json`), bootstrap
-commands (which run before a gateway API exists), and hidden `internal:*`
-executor commands gated by operation tokens. Gateway maintenance uses
-`bin/orbit-gateway-artisan` or direct `php apps/gateway/artisan` from a
-controlled gateway shell; the public `orbit` command never dispatches to
-gateway Artisan. Nodes do not own fleet state or run a local Orbit
-capability layer. They run workload services, call the gateway when a local
-command is invoked, and receive gateway-applied changes over SSH.
+`/usr/local/bin/orbit` directly at `<source>/apps/cli/orbit`.
+
+The CLI entry point owns four command types:
+
+- Public gateway-backed commands call the gateway typed API over the VPN.
+- Commands that are local-only write state on the caller's machine, such as `~/.config/orbit/config.json`.
+- Bootstrap commands run before a gateway API exists.
+- Hidden `internal:*` executor commands are gated by operation tokens.
+
+Gateway maintenance uses `bin/orbit-gateway-artisan` or direct
+`php apps/gateway/artisan` from a controlled gateway shell; the public `orbit`
+command never dispatches to gateway Artisan.
+
+Nodes do not own fleet state or run a local Orbit capability layer. They run
+workload services, call the gateway when a local command is invoked, and receive
+gateway-applied changes over SSH.
 
 Node-side CLI availability is not general write permission. Any node-side
 write that follows the standard `node → gateway → SSH-back-via-RemoteShell`
@@ -262,23 +267,23 @@ These rules apply to all node commands and define the invariants the family enfo
   nodes.
 
 The node host contract is Docker-first. Provisioning creates or adopts
-WireGuard/SSH identity material, node-local Orbit config, WireGuard
-service-address routing, and the node-local Orbit CLI entry point for every
+WireGuard/SSH identity material, the Orbit config local to the node, WireGuard
+service-address routing, and the Orbit CLI entry point on the node for every
 managed Ubuntu node. That state is topology infrastructure, not app, process,
-tool, or database runtime prerequisite state. Production artifact installs use
-the prebuilt Orbit CLI binary (embedded PHP 8.5 +
-`pdo_sqlite`/`openssl`/`curl`/`mbstring`/`tokenizer`/`ctype`/`filter`/`fileinfo`/`json`/`phar`). A production gateway-only node's extra host capability
-prerequisites are Docker Engine/CLI, initialized Docker Swarm, the gateway
-config root, and the native Orbit CLI binary. It does not require host PHP,
-host Composer, Git, or an Orbit source checkout. Source-mounted Docker and
-Incus topologies are development and E2E lanes; in those lanes
-`/usr/local/bin/orbit` points directly at `<source>/apps/cli/orbit` and mutable
-node-local Orbit state lives under `~/.config/orbit`. `app-dev` and `app-prod`
-nodes additionally carry a host PHP toolchain (host PHP 8.4 and 8.5 and
+tool, or database runtime prerequisite state.
+
+Production artifact installs use the prebuilt Orbit CLI binary (embedded PHP 8.5 +
+`pdo_sqlite`/`openssl`/`curl`/`mbstring`/`tokenizer`/`ctype`/`filter`/`fileinfo`/`json`/`phar`). A node running the gateway role in production requires Docker Engine/CLI,
+initialized Docker Swarm, the gateway config root, and the native Orbit CLI binary.
+It does not require host PHP, host Composer, Git, or an Orbit source checkout.
+
+Source-mounted Docker and Incus topologies are development and E2E lanes; in those
+lanes `/usr/local/bin/orbit` points directly at `<source>/apps/cli/orbit` and
+mutable Orbit state local to the node lives under `~/.config/orbit`. `app-dev` and
+`app-prod` nodes additionally carry a host PHP toolchain (host PHP 8.4 and 8.5 and
 Composer; the Laravel installer on `app-dev` only) for app setup, deployment,
-and ad-hoc app CLI. Host Caddy (the
-`orbit-caddy` container) and host PHP-FPM remain non-prerequisites and
-non-fallbacks.
+and ad-hoc app CLI. Host Caddy (the `orbit-caddy` container) and host PHP-FPM
+remain non-prerequisites and non-fallbacks.
 
 ## Transport Model
 

@@ -59,8 +59,8 @@ other revocation and does not require an extra flag beyond `--force`.
 When self-lockout succeeds, the gateway deletes the caller's consuming→gateway
 `node_access` record. The local machine keeps its local gateway endpoint,
 trusted CA, WireGuard configuration, and node record. Future Orbit commands
-from that machine will fail authorization at the gateway because the caller is
-no longer authorized to operate on the gateway node; recovery is to run
+from that machine will fail authorization at the gateway because the caller lacks
+authorization to operate on the gateway node; recovery is to run
 `node:grant <caller> <gateway>` from the gateway itself.
 
 Interactive input mode renders the self-lockout confirmation label. JSON output

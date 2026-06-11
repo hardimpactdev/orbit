@@ -16,8 +16,8 @@ This contract defines behavior when `workspace:setup` is invoked from a
   before forwarding configuration.
 - **Progress streaming**: Streams the step tree and apply progress from
   the gateway to the local TTY.
-- **Local config update**: If successful and not previously tracked locally,
-  updates local workspace tracking.
+- **Local config update**: If successful and the workspace is absent from local
+  tracking, updates local workspace tracking.
 - **Apply**: The gateway performs the actual SSH application to the owning
   node.
 

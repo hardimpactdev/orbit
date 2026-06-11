@@ -13,12 +13,20 @@
 ## Signature
 
 ```bash
-orbit database:detach {connection} (--app=<app>|--workspace=<workspace>) [--env-prefix=DB] [--json]
+orbit database:detach [connection] [--app=<app>] [--workspace=<workspace>] [--env-prefix=DB] [--json]
 ```
 
 ## Input Contract
 
 This command follows the shared [Invocation Model](../../../README.md#invocation-model).
+
+| Field | Source | Required when | Default | Validation |
+| --- | --- | --- | --- | --- |
+| `connection` | `argument` | Always. | n/a | Visible database connection slug. |
+| `app` | `--app` | Required when `workspace` is absent. | None. | Visible active app the caller may manage. |
+| `workspace` | `--workspace` | Required when `app` is absent. | None. | Visible workspace the caller may manage. |
+| `env_prefix` | `--env-prefix` | Optional. | `DB`. | Selects the mapping row to remove. |
+| `json` | `--json` | Optional. | `false`. | Selects the JSON renderer. |
 
 Exactly one of `--app` or `--workspace` is required. `--env-prefix` defaults to
 `DB` and selects the mapping row to remove.
@@ -29,7 +37,7 @@ Exactly one of `--app` or `--workspace` is required. `--env-prefix` defaults to
 
 - Removes one target mapping row for the selected connection, target, and env prefix.
 - Does not edit the target `.env` file during detach.
-- A later doctor restore may rewrite mapped prefixes that still exist for other connections, but detached prefixes are no longer expected family state.
+- A later doctor restore may rewrite mapped prefixes that still exist for other connections, but detached prefixes are outside expected family state.
 
 ## Renderer Contracts
 

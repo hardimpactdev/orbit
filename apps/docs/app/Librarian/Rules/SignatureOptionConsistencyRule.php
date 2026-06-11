@@ -147,7 +147,7 @@ final readonly class SignatureOptionConsistencyRule implements GroupedRule
     {
         $mentions = [];
 
-        foreach (explode("\n", $contents) as $index => $line) {
+        foreach ($this->proseLines($contents) as $index => $line) {
             foreach ($this->mentionedOptions($line) as $option) {
                 $mentions[] = [
                     'option' => $option,
@@ -158,6 +158,41 @@ final readonly class SignatureOptionConsistencyRule implements GroupedRule
         }
 
         return $mentions;
+    }
+
+    /**
+     * Lines outside `text`/`json` output-sample fences, keyed by zero-based
+     * line index. Fenced output samples document literal renderer output, so
+     * option tokens inside them are output contract, not option mentions.
+     *
+     * @return array<int, string>
+     */
+    private function proseLines(string $contents): array
+    {
+        $insideOutputFence = false;
+        $prose = [];
+
+        foreach (explode("\n", $contents) as $index => $line) {
+            $trimmed = ltrim($line);
+
+            if ($insideOutputFence) {
+                if (str_starts_with($trimmed, '```')) {
+                    $insideOutputFence = false;
+                }
+
+                continue;
+            }
+
+            if (preg_match('/^```(?:text|json)\b/', $trimmed) === 1) {
+                $insideOutputFence = true;
+
+                continue;
+            }
+
+            $prose[$index] = $line;
+        }
+
+        return $prose;
     }
 
     /**

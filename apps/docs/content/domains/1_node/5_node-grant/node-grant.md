@@ -107,7 +107,7 @@ any redundant-permission warnings.
   in `provisioning` are rejected as not found; live reachability is not
   probed and belongs to `doctor --family=node`.
 - Self-grants are allowed and required for explicit self-access; node
-  access policy no longer rejects them.
+  access policy accepts them.
 - Elevated grants (`gateway-admin` or `*` to the gateway) require
   interactive confirmation or `--force`.
 

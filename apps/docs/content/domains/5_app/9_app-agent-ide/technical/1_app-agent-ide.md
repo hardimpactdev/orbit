@@ -54,7 +54,7 @@ This command follows the shared
      `app.unsupported_adapter`.
 5. Identify potential destructive side effects.
    - If `agent_ide` differs from the current effective adapter, check the
-     previous adapter for app workspaces that no longer exist for the app.
+     previous adapter for app workspaces absent under the new adapter.
    - If workspaces would be removed, require destructive consent.
 6. Select the output renderer and begin the side-effect flow.
 
@@ -85,7 +85,7 @@ This command follows the shared
 4. **Workspace Cleanup Planning (Destructive).**
    - Identify the previous effective adapter.
    - Identify workspaces that exist for the app under the previous adapter
-     but not under the new adapter.
+     but absent under the new adapter.
    - If workspaces are identified, require destructive consent (`--force` or
      interactive confirmation) before writing app configuration.
 5. **Write configuration.** Store the adapter as the app-level default in gateway
@@ -134,7 +134,7 @@ A change to the app default is naturally picked up at the next consumer-side res
 - Trigger downstream session restart or process invalidation.
 - Notify running agent-IDE sessions, restart processes on the node,
   invalidate cached workspace-level overrides, or emit
-  `success.meta.warnings[]` for "downstream consumers still using the old
+  `success.meta.warnings[]` for "downstream consumers still using the prior
   adapter".
 - Partially mutate workspace state outside the documented cleanup step.
 

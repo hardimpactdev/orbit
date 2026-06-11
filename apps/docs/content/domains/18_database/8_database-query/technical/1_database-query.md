@@ -14,7 +14,7 @@
 ## Signature
 
 ```bash
-orbit database:query {target} --sql=<sql> [--connection=<slug>] [--limit=50] [--full] [--write] [--json]
+orbit database:query [target] --sql=<sql> [--connection=<slug>] [--limit=50] [--full] [--write] [--timeout=<seconds>] [--max-json-bytes=<bytes>] [--json]
 ```
 
 ## Input Contract
@@ -29,6 +29,8 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | `limit` | `--limit` | Optional. | `50`. | Positive integer row cap for row-returning statements. |
 | `full` | `--full` | Optional. | `false`. | Disables result truncation within the JSON response. |
 | `write` | `--write` | Required for write-capable SQL. | `false`. | Explicit consent for non-read-only execution. |
+| `timeout` | `--timeout` | Optional. | Gateway default. | Query timeout in seconds. Positive integer. |
+| `max_json_bytes` | `--max-json-bytes` | Optional. | Gateway default. | Maximum JSON response size in bytes. Positive integer. |
 | `json` | `--json` | Optional. | `false`. | Accepted for consistency; this command emits strict JSON in both modes. |
 
 ## Behavior Contract

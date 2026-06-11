@@ -30,16 +30,16 @@ family.
 
 ## Orbit Notes
 
-Docker is infrastructure for process-defined services such as MySQL and Redis,
-for app/workspace runtime containers, for compatibility tools such as Mailpit
-and Reverb while they remain tool-backed, for the `websocket` role's Laravel
-Reverb runtime container, for the `s3` role's RustFS runtime container, and for
-`dns`. It is not itself a database, cache, mail, realtime, object-storage, or
-DNS configuration owner.
+Docker is the infrastructure substrate for process-defined services such as MySQL
+and Redis, app/workspace runtime containers, the `websocket` role's Laravel Reverb
+runtime, the `s3` role's RustFS runtime, and `dns`. Compatibility tools such as
+Mailpit and Reverb run as Docker services while they remain tool-backed. Docker is
+not itself a database, cache, mail, realtime, object-storage, or DNS configuration
+owner.
 
 ## Doctor Relationship
 
-`doctor --family=tool` reports Docker baseline drift. Docker-backed process
-drift is reported against the concrete process row; any remaining Docker-backed
-tool capability drift is reported against the concrete tool row that depends on
-Docker.
+`doctor --family=tool` reports Docker baseline drift. Process drift for
+Docker-backed processes is reported against the concrete process row. Drift in
+the capabilities of tools that depend on Docker is reported against their
+concrete tool row.

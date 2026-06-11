@@ -71,7 +71,7 @@ are not part of the initial contract.
 - Probe host reachability or health.
 - Modify gateway configuration or node artifacts.
 - Touch downstream family state.
-- Rewrite or repair historical run rows.
+- Rewrite or repair past run rows.
 
 ### Status Taxonomy
 
@@ -140,7 +140,7 @@ including when the result set is empty.
 
 ## Doctor Relationship
 
-- `workspace:history` is a historical audit log. It is **not** a source of
+- `workspace:history` is an audit log of past runs. It is **not** a source of
   truth for current convergence.
 - [`doctor --family=workspace`](../../workspace-doctor.md) verifies current
   workspace reality and owns repair behavior. History explains **how** the

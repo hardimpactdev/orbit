@@ -1280,6 +1280,86 @@ it('skips docs/superpowers when checking legacy-narrative terms', function (): v
         ->and(findingsForRule($payload, 'command_docs.no_legacy_narrative'))->toBe([]);
 });
 
+it('skips legacy-narrative terms inside output sample fences', function (): void {
+    writeOrbitDocsFile(
+        $this->docsRoot,
+        'docs/architecture.md',
+        "# Architecture\n\nOutput sample:\n\n```text\nThis machine no longer has Orbit gateway access.\n```\n\nThe legacy control name is retained.\n",
+    );
+
+    $exitCode = Artisan::call('librarian:lint', [
+        '--format' => 'agent',
+        '--path' => 'docs/architecture.md',
+        '--group' => 'prose',
+    ]);
+    $payload = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
+
+    $matchingFindings = findingsForRule($payload, 'command_docs.no_legacy_narrative');
+
+    expect($exitCode)->toBe(0)
+        ->and($matchingFindings)->toHaveCount(1)
+        ->and($matchingFindings[0]['line'])->toBe(9)
+        ->and($matchingFindings[0]['message'])->toContain('legacy');
+});
+
+it('skips option mentions inside output sample fences for option consistency', function (): void {
+    writeOrbitCommandDocsFamily(
+        $this->docsRoot,
+        humanRendererContract: "# Human Renderer\n\n## Primitive\n\nNone. No human renderer primitive.\n\n## Progress Tree\n\n```text\n┌ Creating Node\n○ Resolve target\n└ Working...\n```\n\nFailure output sample:\n\n```text\nentry point did not respond to --version\n```\n\n## Test Mapping\n\n| Path | Coverage |\n| --- | --- |\n| `apps/gateway/tests/Feature/Librarian/OrbitCommandDocsRulesTest.php` | Covers human renderer documentation mapping for node commands. |\n",
+    );
+
+    $exitCode = Artisan::call('librarian:lint', [
+        '--format' => 'agent',
+    ]);
+    $payload = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
+
+    expect(findingsForRule($payload, 'command_docs.signature_option_consistency'))->toBe([]);
+});
+
+it('still flags prose option mentions outside the canonical signature', function (): void {
+    writeOrbitCommandDocsFamily(
+        $this->docsRoot,
+        humanRendererContract: "# Human Renderer\n\n## Primitive\n\nNone. No human renderer primitive.\n\n## Progress Tree\n\n```text\n┌ Creating Node\n○ Resolve target\n└ Working...\n```\n\nPass --version to inspect the runtime.\n\n## Test Mapping\n\n| Path | Coverage |\n| --- | --- |\n| `apps/gateway/tests/Feature/Librarian/OrbitCommandDocsRulesTest.php` | Covers human renderer documentation mapping for node commands. |\n",
+    );
+
+    $exitCode = Artisan::call('librarian:lint', [
+        '--format' => 'agent',
+    ]);
+    $payload = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
+
+    $matchingFindings = findingsForRule($payload, 'command_docs.signature_option_consistency');
+
+    expect($matchingFindings)->toHaveCount(1)
+        ->and($matchingFindings[0]['message'])->toContain('--version');
+});
+
+it('accepts a test mapping that declares no gateway-side coverage', function (): void {
+    writeOrbitCommandDocsFamily(
+        $this->docsRoot,
+        humanRendererContract: "# Human Renderer\n\n## Primitive\n\nNone. No human renderer primitive.\n\n## Progress Tree\n\n```text\n┌ Creating Node\n○ Resolve target\n└ Working...\n```\n\n## Test Mapping\n\n| Path | Coverage |\n| --- | --- |\n| `apps/cli/tests/Feature/Commands/Node/NodeNewCommandTest.php` | Human renderer output coverage for the node command surface. |\n\nThere is no gateway-side coverage for this renderer: public command ownership lives in `apps/cli`.\n",
+    );
+
+    $exitCode = Artisan::call('librarian:lint', ['--format' => 'agent']);
+    $payload = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
+
+    expect(findingsForRule($payload, 'command_docs.test_mapping_format'))->toBe([]);
+});
+
+it('still requires a gateway test row when no coverage declaration exists', function (): void {
+    writeOrbitCommandDocsFamily(
+        $this->docsRoot,
+        humanRendererContract: "# Human Renderer\n\n## Primitive\n\nNone. No human renderer primitive.\n\n## Progress Tree\n\n```text\n┌ Creating Node\n○ Resolve target\n└ Working...\n```\n\n## Test Mapping\n\n| Path | Coverage |\n| --- | --- |\n| `apps/cli/tests/Feature/Commands/Node/NodeNewCommandTest.php` | Human renderer output coverage for the node command surface. |\n",
+    );
+
+    $exitCode = Artisan::call('librarian:lint', ['--format' => 'agent']);
+    $payload = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
+
+    $matchingFindings = findingsForRule($payload, 'command_docs.test_mapping_format');
+
+    expect($matchingFindings)->not->toBeEmpty()
+        ->and($matchingFindings[0]['message'])->toContain('no gateway-side coverage');
+});
+
 function makeOrbitLibrarianDocsFixture(): string
 {
     $path = sys_get_temp_dir().'/orbit-librarian-'.bin2hex(random_bytes(6));

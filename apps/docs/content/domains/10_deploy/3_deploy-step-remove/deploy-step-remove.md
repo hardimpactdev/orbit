@@ -4,8 +4,8 @@
 
 Remove a deployment pipeline step from a production app.
 
-Use `deploy:step-remove` when a deployment task no longer belongs in the
-app-owned deployment policy. Removing a step does not mutate past deployment
+Use `deploy:step-remove` to remove a deployment task from the app-owned
+deployment policy. Removing a step does not mutate past deployment
 history.
 
 ## Usage
@@ -30,7 +30,7 @@ orbit deploy:step-remove docs "Run migrations" --force
 
 ## What Happens
 
-Run `deploy:step-remove` when a deployment task no longer belongs in the pipeline. `deploy:step-remove` resolves the production app and step, requires destructive consent, and removes the step from deployment policy on the gateway. It does not remove deployment run history or logs.
+Run `deploy:step-remove` to remove a task from the deployment pipeline. `deploy:step-remove` resolves the production app and step, requires destructive consent, and removes the step from deployment policy on the gateway. It does not remove deployment run history or logs.
 
 ## Output
 

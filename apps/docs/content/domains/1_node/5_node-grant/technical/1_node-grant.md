@@ -12,7 +12,7 @@
   `node:grant` or `*`. Callers without that permission receive
   `authorization_failed`.
 - Configured operator-node callers have gateway access as defined in
-  [`2_node-grant_on-operator-node.md`](2_node-grant_on-operator-node.md).
+  [`2_node-grant_on-client.md`](2_node-grant_on-client.md).
 
 **Post-input path eligibility:**
 - Both `consuming_node` and `serving_node` resolve to existing active node
@@ -85,7 +85,7 @@ This command follows the shared
 
 - Evaluate node access policy for the requested grant.
 - Self-grants are accepted. Explicit self-access is required; node access
-  policy no longer rejects same-node grants.
+  policy accepts same-node grants.
 - If the grant violates any remaining policy rule, fail before side effects
   with `node.grant_policy_violation` and a stable `error.meta.reason`
   discriminator.
@@ -142,7 +142,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 
 ## Doctor Relationship
 
-- Invalid grants where a referenced node no longer exists are reported by
+- Invalid grants where a referenced node is absent are reported by
   `doctor --family=node`. See [`node-doctor.md`](../../node-doctor.md#node-issue-codes).
 - `doctor --family=node --restore` may clean up grants that reference removed nodes.
 - `node:grant` does not repair drift or adopt node reality; those are doctor
@@ -178,5 +178,5 @@ Renderer-specific test mapping lives in:
 
 Deployment-context test mapping lives in:
 
-- [`2_node-grant_on-operator-node.md`](2_node-grant_on-operator-node.md#test-mapping)
+- [`2_node-grant_on-client.md`](2_node-grant_on-client.md#test-mapping)
 - [`3_node-grant_on-gateway-node.md`](3_node-grant_on-gateway-node.md#test-mapping)

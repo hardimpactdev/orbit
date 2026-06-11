@@ -29,8 +29,8 @@ generation, persistence, repair, and credential rendering.
 
 HTTP and WebSocket tools expose tool-owned `proxy` routes, such as
 `mailpit.<node-tld>`. TCP endpoints for runnable services such as MySQL,
-PostgreSQL, and Redis are process-owned service endpoints and must be protected
-by Orbit-managed firewall policy rather than represented as HTTP proxy routes.
+PostgreSQL, and Redis are process-owned service endpoints. They are protected by
+the firewall policy that Orbit manages, not represented as HTTP proxy routes.
 
 Catalog placeholders such as `<node-tld>` and `<agent-tld>` are contextual
 references to that same node-level TLD field. Use `<node-tld>` for generic
@@ -74,8 +74,8 @@ The `php` runtime images and `caddy` proxy run in Orbit-managed containers. The
 host PHP toolchain — `php-cli`, `composer`, and `laravel-installer` — installs
 on `app-dev`/`app-prod` nodes (the Laravel installer on `app-dev` only).
 Supervisor is the host process manager for configured app/workspace
-process programs; whether it is installed as a baseline prerequisite or an
-on-demand tool remains owned by node/tool provisioning contracts.
+process programs; whether it is installed as a baseline prerequisite or on demand remains owned
+by node/tool provisioning contracts.
 
 Role baseline tools are not in the fleet-wide table above. They are
 materialized by their owning role and only required on nodes carrying that role:

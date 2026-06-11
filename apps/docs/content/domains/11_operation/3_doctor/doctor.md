@@ -7,8 +7,8 @@ Verify gateway configuration against observed node reality for one node at a tim
 `doctor` is Orbit's convergence command. Each run targets a single node. It orchestrates state-family probes for families such as `node`, `app`, `database_connection`, `firewall_rule`, `process`, `proxy`, `schedule`, `tool`, and `workspace`. The global command owns scope resolution, mode selection, authorization, result handling, and output selection. Family doctor contracts own concrete probe facts, issue codes, and safe restore/adopt maps.
 
 The categories rendered for a run are derived from the target node's active
-role assignments. The legacy node role field is only a compatibility shadow
-and does not by itself-grant workload-family probes:
+role assignments. The compatibility node role field is only a shadow value
+and does not by itself grant workload-family probes:
 
 - client target: `Node`.
 - `gateway` target: `Node`, `Scheduling`.

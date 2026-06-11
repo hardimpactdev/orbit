@@ -6,7 +6,7 @@ Remove a node access grant between a consuming node and a serving node.
 
 Use `node:revoke` when decommissioning services, rotating security credentials,
 or hardening network policy by removing unnecessary access. The command deletes
-gateway-owned grant configuration; it does not change historical activity logs
+gateway-owned grant configuration; it does not change activity logs
 or mutate serving-node host state.
 
 ## Usage
@@ -69,7 +69,7 @@ mutation. Gateway-local revokes are gateway-owned writes and do not report
 
 `node:revoke` does not:
 
-- Change historical activity logs.
+- Change activity logs.
 - Mutate serving-node host state.
 - End in-flight RPCs, invalidate tokens, or mark sessions stale.
 - Block revocation when the grant is referenced by active apps or workspaces.

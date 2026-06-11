@@ -37,17 +37,17 @@ These terms define the types of routes that the proxy family owns and manages.
 - **WebSocket service route:** Private router route for `websocket.orbit`,
   owned by `router`. It exists while at least one active `websocket` role
   assignment exists in the topology and is removed when none remains. It
-  targets the router-owned websocket backend pool and is the stable private
-  publishing endpoint apps use.
+  targets the websocket backend pool owned by the router and is the stable
+  private publishing endpoint apps use.
 - **Public S3 route:** Public S3 route whose owner is `s3` and whose kind is
   `proxy`. It is rendered on an `ingress` node, forwards to `router`, preserves
   S3 request metadata needed for uploads, and must not target a concrete s3
   node.
 - **S3 service route:** Private router route for `s3.orbit`, owned by
   `router`. It exists while at least one active `s3` role assignment exists in
-  the topology and is removed when none remains. It targets the router-owned
-  S3 backend pool and is the stable private S3 endpoint apps and VPN clients
-  use.
+  the topology and is removed when none remains. It targets the S3 backend
+  pool owned by the router and is the stable private S3 endpoint apps and
+  VPN clients use.
 - **Public route artifact:** `orbit-caddy` site rendered on a `ingress` node.
   It terminates public HTTPS and reverse proxies to the active `router` over
   WireGuard.

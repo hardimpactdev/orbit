@@ -1,4 +1,4 @@
-# Technical Contract: `orbit process:add [name] [command]`
+# Technical Contract: `orbit process:add [name] [process_command]`
 
 [Back to public `process:add` documentation.](../process-add.md)
 
@@ -14,7 +14,7 @@
 ## Signature
 
 ```bash
-orbit process:add [name] [command] [--node=<node>] [--app=<app>] [--workspace=<workspace>] [--tool=<tool>] [--definition=<mysql|redis>] [--definition-version=<version-or-family>] [--restart-policy=<never|on_failure|always>] [--crash-notification=<none|agent_ide>] [--runtime=<docker|docker-swarm|supervisor|systemd>] [--start] [--json]
+orbit process:add [name] [process_command] [--app=<app>] [--workspace=<workspace>] [--node=<node>] [--tool=<tool>] [--definition=<mysql|redis>] [--definition-version=<version-or-family>] [--restart-policy=<never|on_failure|always>] [--crash-notification=<none|agent_ide>] [--runtime=<docker|docker-swarm|supervisor|systemd>] [--start] [--json]
 ```
 
 ## Input Contract
@@ -24,7 +24,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
 | `name` | `[name]` | Always. | Never. | None. | Process slug: lowercase letters, digits, and hyphens only; cannot start or end with a hyphen; max 64 characters; unique within the resolved owner scope. |
-| `command` | `[command]` | When `definition` is absent. | Never. | Service definition command when `definition` is present. | Non-empty command string. Stored as process configuration without shell rewriting by the input adapter. |
+| `process_command` | `[process_command]` | When `definition` is absent. | Never. | Service definition command when `definition` is present. | Non-empty command string. Stored as process configuration without shell rewriting by the input adapter. |
 | `node` | `--node` | Required when adding a node-owned process. | `app` or `workspace` is present. | None. | Must resolve to a node that grants `process:add`. |
 | `app` | `--app` or app context | Required unless `node` is supplied or `workspace` resolves the app. | `node` is present. | Local app context when exactly one app is resolvable. | Must resolve to an app whose owning node grants `process:add`. |
 | `workspace` | `--workspace` or workspace context | Required when adding a workspace-owned process. | `node` is present. | Local workspace context when exactly one workspace is resolvable. | Must resolve to a workspace whose app owning node grants `process:add`; pass `--app` when the workspace name is ambiguous. |
@@ -33,11 +33,11 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | `version` | `--definition-version` | Optional for one-version definitions; required when the definition has multiple version families. | When `definition` is absent. | Definition default when unambiguous. | Supported service process definition version or version family. |
 | `restart_policy` | `--restart-policy` | Optional. | Never. | `never`. | One of `never`, `on_failure`, `always`. |
 | `crash_notification` | `--crash-notification` | Optional. | Never. | `none`. | One of `none`, `agent_ide`. |
-| `runtime` | `--runtime` | Optional. | Never. | `docker` for service definitions; `systemd` for other node-owned processes; `supervisor` for app/workspace host-command processes. | One of `docker`, `docker-swarm`, `supervisor`, `systemd`. `supervisor` is the only public runtime for app/workspace host-command process creation. `systemd` is valid only when `node` owns the process. `docker-swarm` is valid only for node-owned managed service processes. Service definitions support `docker` and `docker-swarm`. |
+| `runtime` | `--runtime` | Optional. | Never. | `docker` for service definitions; `systemd` for other node-owned processes; `supervisor` for app/workspace host-command processes. | One of `docker`, `docker-swarm`, `supervisor`, `systemd`. App/workspace processes accept only `supervisor`; `systemd` and `docker-swarm` require node ownership. Service definitions accept `docker` and `docker-swarm`. |
 | `start` | `--start` | Optional. | Never. | `false`. | Boolean flag. Starts rendered runtime units after applying when true. |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer and non-interactive input mode. |
 
-`command` is positional here because it is required to create a process definition. The sibling `process:edit` command uses `--command=<command>` because command is one optional editable field and omission preserves the current value.
+`process_command` is positional here because it is required to create a process definition. The sibling `process:edit` command uses `--command=<command>` because command is one optional editable field and omission preserves the current value.
 
 ## Input Mode Contracts
 
@@ -50,7 +50,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 1. Resolve target node, app, or workspace context from supplied input or local context.
 2. Send the request to the gateway, which validates the authenticated peer's authorization and process name uniqueness within the owner scope.
-3. Append gateway-owned process configuration after existing definitions for that owner, with command, runtime, optional tool dependency, service-definition runtime configuration, restart policy, and crash notification policy.
+3. Append gateway-owned process configuration after existing definitions for that owner, recording command, runtime, and policy fields.
 4. Derive runtime-unit identities for the selected scope. Node-owned and workspace-owned processes normally derive one unit; app-owned processes derive one main-app unit plus one unit for each active workspace.
 5. Render the derived runtime units on the owning node through the selected runtime backend.
 6. When `--start` is present, start the rendered runtime units and record `started` events for units that start successfully.

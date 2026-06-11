@@ -14,7 +14,7 @@
 ## Signature
 
 ```bash
-orbit process:logs [name] [--node=<node>] [--app=<app>] [--workspace=<workspace>] [--follow] [--lines=<count>] [--json]
+orbit process:logs [name] [--app=<app>] [--workspace=<workspace>] [--node=<node>] [--follow] [--lines=<count>] [--json]
 ```
 
 ## Input Contract
@@ -28,7 +28,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | `app` | `--app` or app context | Required unless `node` is supplied or `workspace` resolves the app. | `node` is present. | Local app context when exactly one app is resolvable. | Must resolve to an app whose owning node grants `process:logs`. |
 | `workspace` | `--workspace` or workspace context | Optional. | `node` is present. | Local workspace context when exactly one workspace is resolvable. | Must resolve to a workspace whose app owning node grants `process:logs`; pass `--app` when the workspace name is ambiguous. |
 | `follow` | `--follow` | Optional. | Never. | `false`. | Boolean flag. Keeps the human log stream open when true. |
-| `lines` | `--lines` | Optional. | Never. | `100`. | Positive integer count of historical log lines to read before streaming or returning. |
+| `lines` | `--lines` | Optional. | Never. | `100`. | Positive integer. How many prior log lines to read before streaming or returning. |
 | `json` | `--json` | Optional. | When `follow=true`. | `false`. | Selects the JSON renderer and non-interactive input mode. JSON output is only defined for bounded, non-follow log reads. |
 
 ## Input Mode Contracts
@@ -44,8 +44,8 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 2. Send the request to the gateway, which validates the authenticated peer's authorization.
 3. Derive the runtime-unit identity for the selected context.
 4. Open a log read through the gateway on the owning node.
-5. Read up to `lines` historical lines.
-6. For bounded service process log reads, include safe process-owned connection metadata: definition, version family, concrete version, service name, endpoint host/port, and credential field names. Do not include credential values.
+5. Read up to `lines` prior log lines.
+6. For bounded service process log reads, include process-owned connection metadata: definition name, version, service name, endpoint, and credential field names. Credential values are excluded.
 7. If `--follow` is present, keep streaming appended log lines until the operator interrupts the command.
 8. Render the selected output.
 

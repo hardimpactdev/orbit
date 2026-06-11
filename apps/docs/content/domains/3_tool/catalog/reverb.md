@@ -11,7 +11,7 @@ These fields describe the Reverb tool's identity, backend, and support model in 
 | Slug | `reverb` |
 | Label | Reverb |
 | Backend | Docker service |
-| Support model | Compatibility tool; superseded by the `websocket` role for fleet realtime |
+| Support model | Compatibility tool; the `websocket` role is the current choice for fleet realtime |
 | Category | `communication` |
 
 ## Capabilities

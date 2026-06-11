@@ -270,32 +270,32 @@ Registry-only commands use stored gateway metadata and do not perform live
 platform checks; platform drift belongs to `doctor --family=node`.
 
 Managed Ubuntu nodes use a Docker-first provisioning baseline. Provisioning
-creates or adopts the node's WireGuard/SSH identity material, node-local Orbit
-config root, WireGuard service-address routing, and node-local Orbit CLI entry
-point for gateway, app, agent, ingress, database, and other managed roles. That
-state belongs to topology/provisioning, not to app, process, tool, or database
-runtime prerequisite inventories. Production artifact installs use the prebuilt
-Orbit CLI binary (embedded PHP 8.5 +
-`pdo_sqlite`/`openssl`/`curl`/`mbstring`/`tokenizer`/`ctype`/`filter`/`fileinfo`/`json`/`phar`). A production gateway-only node's extra host capability
-prerequisites are Docker Engine/CLI, initialized Docker Swarm, the gateway
-config root, and the native Orbit CLI binary. It does not require host PHP,
-host Composer, Git, or an Orbit source checkout. Source-mounted Docker and
-Incus topologies are development and E2E lanes; in those lanes
-`/usr/local/bin/orbit` points directly at `<source>/apps/cli/orbit` and mutable
-node-local Orbit state lives under `~/.config/orbit`.
+creates or adopts the node's WireGuard/SSH identity material, the Orbit config
+root on the node, WireGuard service-address routing, and the Orbit CLI entry
+point on the node for gateway, app, agent, ingress, database, and other managed
+roles. That state belongs to topology/provisioning, not to app, process, tool,
+or database runtime prerequisite inventories.
 
-Host PHP and Composer are production prerequisites only on nodes with
-`app-dev` or `app-prod` roles. Those app-role nodes carry a host PHP
-command-line toolchain — host PHP 8.4 and 8.5 and Composer on both; the Laravel
-installer on `app-dev` only — installed and repaired as node tools, because app
-setup, deployment, and ad-hoc app CLI run Composer and Artisan on the host
-(matched to the app's PHP version) against the app source
-the FrankenPHP container serves. This host PHP toolchain is distinct from the
-Orbit CLI binary's embedded PHP, which only runs the CLI itself. Host Caddy and
-host PHP-FPM remain non-prerequisites and non-fallbacks: Caddy runs only as the
-`orbit-caddy` container, and PHP-FPM is never used. Internal executor commands
-verify operation tokens through the gateway API; nodes do not store executor
-token signing material.
+Production artifact installs use the prebuilt Orbit CLI binary (embedded PHP 8.5 +
+`pdo_sqlite`/`openssl`/`curl`/`mbstring`/`tokenizer`/`ctype`/`filter`/`fileinfo`/`json`/`phar`). A node running the gateway role in production requires Docker Engine/CLI,
+initialized Docker Swarm, the gateway config root, and the native Orbit CLI
+binary. It does not require host PHP, host Composer, Git, or an Orbit source
+checkout. Source-mounted Docker and Incus topologies are development and E2E
+lanes; in those lanes `/usr/local/bin/orbit` points directly at
+`<source>/apps/cli/orbit` and mutable Orbit state on the node lives under
+`~/.config/orbit`.
+
+Host PHP and Composer are production prerequisites only on nodes with `app-dev`
+or `app-prod` roles. Those nodes carry a host PHP command-line toolchain: PHP 8.4
+and 8.5 plus Composer on both; the Laravel installer on `app-dev` only. App setup,
+deployment, and ad-hoc app CLI run Composer and Artisan on the host, matched to
+the app's PHP version, against the app source the FrankenPHP container serves.
+
+This host PHP toolchain is distinct from the Orbit CLI binary's embedded PHP,
+which only runs the CLI itself. Host Caddy and host PHP-FPM remain
+non-prerequisites and non-fallbacks: Caddy runs only as the `orbit-caddy`
+container, and PHP-FPM is never used. Internal executor commands verify operation
+tokens through the gateway API; nodes do not store executor token signing material.
 
 ## Identity and onboarding
 
@@ -329,17 +329,18 @@ These terms describe how nodes communicate and how authority is enforced.
 
 - **CLI-to-gateway edge:** HTTPS over WireGuard from any node's CLI — client,
   gateway-local, or a node with workload roles — to the gateway API. On every
-  node role, the launcher enters the node-local Orbit CLI entry point. In
+  node role, the launcher enters the Orbit CLI entry point on that node. In
   production that is the native CLI binary artifact; in source-mounted Docker
   and Incus development/E2E topologies `/usr/local/bin/orbit` points directly
   at `<source>/apps/cli/orbit`. The CLI calls the gateway API for public
   gateway-backed commands, mutates caller-local state for local-only commands,
   runs bootstrap commands before a gateway API exists, and routes hidden
-  `internal:*` executor commands gated by an operation token. Gateway hosts
-  call their own API as HTTPS over the
-  gateway's own WireGuard address; there is no privileged local-loopback
-  bypass. Gateway maintenance uses `bin/orbit-gateway-artisan` or direct
-  `php apps/gateway/artisan` from a controlled gateway shell.
+  `internal:*` executor commands gated by an operation token. Gateway hosts call
+  their own API as HTTPS over the gateway's own WireGuard address; there is no
+  privileged local-loopback bypass.
+- **Gateway maintenance edge:** `bin/orbit-gateway-artisan` or direct
+  `php apps/gateway/artisan` from a controlled gateway shell. The public `orbit`
+  command does not dispatch to gateway Artisan.
 - **Gateway-to-node edge:** SSH through `RemoteShell` for node-side applying
   from the gateway.
 - **Node event ingestion:** Narrow node-to-gateway callbacks for purpose-built

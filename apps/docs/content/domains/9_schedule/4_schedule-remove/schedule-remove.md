@@ -4,7 +4,7 @@
 
 Remove a recurring Orbit-managed schedule.
 
-Use `schedule:remove` when a recurring task is no longer managed by Orbit. The command removes gateway configuration. The gateway-only Orbit Scheduler stops dispatching the schedule on its next tick; there is no node-side scheduler state to clean up.
+Use `schedule:remove` when a recurring task should be removed from Orbit management. The command removes gateway configuration. The Orbit Scheduler (gateway-only) stops dispatching the schedule on its next tick; there is no node-side scheduler state to clean up.
 
 ## Usage
 
@@ -32,7 +32,7 @@ orbit schedule:remove backups --node=app-1 --force
 
 ## What Happens
 
-Run `schedule:remove` when a recurring task no longer needs to be managed by Orbit. `schedule:remove` resolves the schedule and removes the gateway schedule row. Subsequent gateway-scheduler ticks no longer dispatch it.
+Run `schedule:remove` when a recurring task should be removed from Orbit management. `schedule:remove` resolves the schedule and removes the gateway schedule row. Subsequent gateway-scheduler ticks skip it.
 
 It does not remove app code, app process definitions, nodes, scripts outside the managed schedule policy, or past run-history records.
 

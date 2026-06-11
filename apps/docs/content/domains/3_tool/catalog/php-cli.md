@@ -41,7 +41,7 @@ the same logic as install and is safe to re-run.
 
 `php-cli` is separate from `php`. `php-cli` describes the **host** PHP CLI
 toolchain installed on app-dev and app-prod nodes; it runs deploy steps and
-ad-hoc app PHP/Artisan workloads directly on the host. `php` owns PHP image
+running app PHP/Artisan workloads directly on the host. `php` owns PHP image
 capability evidence for containerised app and workspace web serving.
 
 All three supported minor versions (8.3, 8.4, 8.5) are installed side-by-side

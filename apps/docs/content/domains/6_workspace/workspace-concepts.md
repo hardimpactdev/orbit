@@ -27,8 +27,8 @@ The terms below define the core identity vocabulary for the workspace family.
   configuration, parent app configuration, and the selected PHP image. It
   serves the workspace's web route through FrankenPHP. Ad-hoc workspace
   PHP/Composer/Artisan run on the node's host PHP toolchain, not inside the
-  container. The lifecycle-managed concrete workspace web runtime is
-  represented as a process with Docker runtime.
+  container. The concrete workspace web runtime, managed through the process
+  lifecycle, is represented as a process with Docker runtime.
 - **Host cwd context:** Caller-side working-directory hint used only to resolve
   defaults such as app and workspace identity. It is not an authorization
   source and does not make the CLI operate on local artifacts directly.
@@ -75,8 +75,7 @@ The terms below describe setup and teardown step vocabulary.
 The terms below describe how a workspace moves through its active states.
 
 - **Workspace adoption:** Result of `workspace:setup` against an existing path
-  that was not previously Orbit-managed. The resulting workspace entity reports
-  `adopted=true`.
+  with no Orbit management. The resulting workspace entity reports `adopted=true`.
 - **Workspace adoption flag:** Boolean entity field that records whether a
   workspace was adopted from an existing path (`true`) or created fresh
   (`false`). Exposed in JSON as `adopted`.

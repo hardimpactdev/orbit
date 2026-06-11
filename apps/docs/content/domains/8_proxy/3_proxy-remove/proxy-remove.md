@@ -24,8 +24,8 @@ Redirects are removed through the same command as custom upstream routes.
 
 ```bash
 orbit proxy:remove vite.docs.test
-orbit proxy:remove old.test --force
-orbit proxy:remove old.test --force --json
+orbit proxy:remove redirect.docs.test --force
+orbit proxy:remove redirect.docs.test --force --json
 ```
 
 ## Output

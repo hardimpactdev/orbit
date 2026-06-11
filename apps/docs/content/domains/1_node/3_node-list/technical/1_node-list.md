@@ -13,7 +13,7 @@
 ## Signature
 
 ```bash
-orbit node:list [--role=<gateway|vpn|router|app-dev|app-prod|database|agent|ingress|websocket|s3>] [--doctor] [--json]
+orbit node:list [--role=<gateway|vpn|router|app-dev|app-prod|database|agent|ingress|websocket|s3>] [--json]
 ```
 
 ## Input Contract
@@ -27,7 +27,6 @@ options are optional.
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
 | `role` | `--role` | Optional. | Never. | None. | One of `gateway`, `vpn`, `router`, `app-dev`, `app-prod`, `database`, `agent`, `ingress`, `websocket`, `s3`. |
-| `doctor` | `--doctor` | Optional. | Never. | `false`. | Boolean flag. Explicit secondary operation. |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer and non-interactive input mode according to the shared invocation model in [`docs/domains/README.md`](../../../README.md#invocation-model). |
 
 `--role` is a scalar enum filter with single-value semantics; comma-separated
@@ -40,12 +39,8 @@ post-filter the result, or run separate scoped invocations.
 ## Input Resolution
 
 1. Resolve `node_list.role` from `--role` when present. Validate immediately.
-2. Resolve `node_list.doctor` from `--doctor`. Default `false`.
-4. Select the output renderer and query the gateway for visible node registry
+2. Select the output renderer and query the gateway for visible node registry
    configuration.
-5. If `--doctor` is present, run node doctor checks as an explicit secondary
-   operation after the list query succeeds. Attach doctor summaries to the
-   output.
 
 ## Behavior Contract
 
@@ -73,14 +68,6 @@ post-filter the result, or run separate scoped invocations.
   by effective role assignment and then by node name. Renderer contracts own
   presentation shape.
 
-### Doctor Summary Rules
-
-- If `--doctor` is present, run node doctor checks and include a summary.
-- Treat doctor checks as an explicit secondary operation because they may
-  perform live checks and take longer than a registry list.
-- Return the filtered node list through the selected output renderer after the
-  optional doctor summary is attached.
-
 ### Scope Boundaries
 
 `node:list` must not:
@@ -102,24 +89,9 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | --- | --- | --- |
 | Invalid filter value | `--role` contains an unsupported value, including comma-separated input. | Failure |
 
-Doctor findings are not failures of `node:list`. When `--doctor` is present
-and the secondary doctor probe reports drift on one or more nodes, the
-command still exits zero because the primary registry read succeeded. The
-findings are reported as structured metadata under `success.meta.doctor` in
-JSON output and beneath the table in human output. Operators who want
-exit-on-drift semantics should run `orbit doctor --family=node [--json]`
-instead of relying on `--doctor` here.
-
 ## Doctor Relationship
 
 - `node:list` reports configuration. `doctor --family=node` verifies reality.
-- `--doctor` is an explicit secondary operation that runs node doctor checks and
-  includes their summaries. It must remain explicit because it can be slow.
-- `--doctor` is a node-family-only convenience flag, not a shared list-command
-  convention. App and workspace list commands remain registry-only and use
-  `doctor --family=app` or `doctor --family=workspace` for live verification.
-- Node doctor checks may report drift, missing peers, or readiness issues. These
-  are summarized in the output but do not cause the list command to fail.
 - See [`node-doctor.md`](../../node-doctor.md) for the authoritative node-family
   probe, drift, restore, and adopt contract.
 
@@ -142,9 +114,9 @@ Primary test owners:
 
 | Path | Coverage |
 | --- | --- |
-| `apps/gateway/tests/Feature/Commands/Nodes/NodeListCommandTest.php` | Command contract: listing all visible nodes, role filtering, `--doctor` secondary operation, gateway-unavailable failure, invalid filter validation, authorization failure, and read-only guarantee (no SSH, no configuration mutation). |
-| `apps/gateway/tests/Feature/Commands/Nodes/NodeListJsonRendererTest.php` | JSON envelope shape, success payload with node array, `--doctor` meta attachment, filter error JSON shape, and enum values. |
-| `apps/gateway/tests/Feature/Commands/Nodes/NodeListHumanRendererTest.php` | Human renderer selection, table grouping by role, success prose, filter error prose, and `--doctor` summary prose. |
+| `apps/gateway/tests/Feature/Commands/Nodes/NodeListCommandTest.php` | Command contract: listing all visible nodes, role filtering, gateway-unavailable failure, invalid filter validation, authorization failure, and read-only guarantee (no SSH, no configuration mutation). |
+| `apps/gateway/tests/Feature/Commands/Nodes/NodeListJsonRendererTest.php` | JSON envelope shape, success payload with node array, filter error JSON shape, and enum values. |
+| `apps/gateway/tests/Feature/Commands/Nodes/NodeListHumanRendererTest.php` | Human renderer selection, table grouping by role, success prose, filter error prose, and exact error messages. |
 
 Renderer-specific test mapping lives in:
 

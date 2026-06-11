@@ -50,8 +50,8 @@ touch.
   or firewall policy.
 - Managed database service lifecycle belongs to process-owned service
   definitions. The database family owns connection intent, data-plane
-  operations, and read-only same-node WireGuard self-route diagnostics, not
-  service installation, lifecycle, or route mutation.
+  operations, and read-only WireGuard self-route diagnostics for same-node
+  connections, not service installation, lifecycle, or route mutation.
 
 ## Permissions
 

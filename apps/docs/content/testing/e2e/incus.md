@@ -53,9 +53,9 @@ gateway/runtime state under `/home/orbit/.config/orbit`. Ordinary
 and do not mount the local checkout.
 
 When `ORBIT_E2E_INCUS_WARM_SNAPSHOTS=1` is enabled, ordinary prepared feature
-acquisitions may still restore warm snapshots. Source-mounted retained/live
-acquisitions bypass the warm pool and take a fresh source-mounted clone so the
-local checkout mount is always present for that run.
+acquisitions may still restore warm snapshots. Retained/live acquisitions with a
+source mount bypass the warm pool and take a fresh clone so the local checkout
+mount is always present for that run.
 
 When Incus is unavailable or the required prepared topology is missing, the
 selected lane fails before Pest workers start and includes a scoped

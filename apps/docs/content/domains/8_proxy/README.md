@@ -139,7 +139,7 @@ Gateway-owned internal routes are proxy inventory, but their product purpose is 
 
 Long-lived gateway streams, such as progress or log streams, must not consume
 the same execution lane as short command/API requests. In `router-colocated`
-mode, router-owned `orbit-caddy` forwards gateway API traffic to
+mode, `orbit-caddy` (owned by the router) forwards gateway API traffic to
 `orbit-gateway` over `orbit-network`; in `gateway-direct` mode,
 `orbit-gateway` publishes gateway HTTPS directly. In both modes, streaming
 traffic cannot starve ordinary gateway API execution.

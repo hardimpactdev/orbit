@@ -14,7 +14,7 @@
 ## Signature
 
 ```bash
-orbit process:stop [name] [--node=<node>] [--app=<app>] [--workspace=<workspace>] [--json]
+orbit process:stop [name] [--app=<app>] [--workspace=<workspace>] [--node=<node>] [--json]
 ```
 
 ## Input Contract

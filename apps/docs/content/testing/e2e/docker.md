@@ -20,8 +20,8 @@ host artifact distribution may have changed:
 composer test:e2e:provision:docker
 ```
 
-This command is the agent-facing full Docker artifact refresh. It is not a
-generic final gate after `composer test:e2e`. It delegates to the Docker host
+This command refreshes all Docker artifacts and is the correct gate for agents.
+It is not a generic final gate after `composer test:e2e`. It delegates to the Docker host
 preparer for `operator_gateway_app-dev_app-prod_agent_websocket`. It can run in
 parallel with `composer test:e2e:provision:incus` only when both provider gates
 are independently required because the provider substrates are separate.
@@ -207,6 +207,7 @@ belong in Incus. Docker tests that seed tool or process drift must restore only
 the drift they create; broad `--family=tool --restore` coverage is not a Docker
 systemd lifecycle substitute and must not pick up unrelated OpenCode or
 PolyScope systemd process drift.
+
 DNS alias mode is the only supported Docker prepared-topology mode. Parallel
 test isolation comes from per-run container names, Docker bridge networks, and
 subnet allocation; image tags do not carry topology kind, DNS mode, or run

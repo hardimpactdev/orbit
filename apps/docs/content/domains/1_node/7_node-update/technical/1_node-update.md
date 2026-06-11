@@ -12,7 +12,7 @@
   authorized. A grant using the `gateway-admin` preset also authorizes the
   write.
 - Non-gateway callers have configured gateway access as defined in
-  [`2_node-update_on-operator-node.md`](2_node-update_on-operator-node.md) and a covering
+  [`2_node-update_on-client.md`](2_node-update_on-client.md) and a covering
   node access grant for this operation.
 
 **Post-input path eligibility:**
@@ -70,8 +70,8 @@ updated by `--public-ipv4` or `--public-ipv6`.
 (at most one per node); changing it triggers baseline convergence for every
 active role assignment that depends on it. Changing a node's roles is a
 role-assignment change outside `node:update`; use
-[`node role:remove`](../14_node-role-remove/node-role-remove.md) and
-[`node role:add`](../12_node-role-add/node-role-add.md). Gateway and
+[`node role:remove`](../../14_node-role-remove/node-role-remove.md) and
+[`node role:add`](../../12_node-role-add/node-role-add.md). Gateway and
 operator-identity targets, and nodes without an `app-dev` or `agent`
 assignment, fail with `node.field_role_incompatible`, `meta.field=tld`, and the
 target role in metadata.
@@ -146,7 +146,7 @@ Input mode behavior is split out of the canonical command contract:
 - Fields that match the current value are no-ops and do not appear in
   `changed`.
 - Update the node record with the new values for changed fields.
-- Changing `tld` updates the node-level development TLD metadata that the
+- Changing `tld` updates the development TLD stored at node level, which the
   gateway owns for the `app-dev` or `agent` node. Any wider convergence or
   repair after that metadata write belongs to the node-family doctor path.
 
@@ -254,7 +254,7 @@ Primary test owners:
 | Path | Coverage |
 | --- | --- |
 | `apps/gateway/tests/Feature/Commands/Nodes/NodeUpdateCommandTest.php` | Command contract: updating fields, role-conditional validation, TLD success/failure paths, no-op success with empty `changed`, node-not-found failure, client forwarding, artifact re-applying reporting, and warning payload for partial-success drift. |
-| `apps/gateway/tests/Feature/Commands/Nodes/NodeUpdateOnOperatorNodeContractTest.php` | Operator-node caller behavior: forwarding over HTTPS through WireGuard, forwarded `tld` payloads, gateway-preserved TLD role rejection for targets without an `app-dev` or `agent` assignment, structured errors, unconfigured caller failures, grant authorization failures, and no SSH-to-gateway path. |
+| `apps/gateway/tests/Feature/Commands/Nodes/NodeUpdateOnOperatorNodeContractTest.php` | Operator-node caller: HTTPS/WireGuard forwarding, `tld` payloads, TLD role rejection for non-`app-dev`/`agent` targets, structured errors, unconfigured caller failures, grant authorization failures, no SSH-to-gateway path. |
 | `apps/gateway/tests/Feature/Commands/Nodes/NodeUpdateNonInteractiveInputModeTest.php` | Non-interactive input mode: missing required input, `--json` no-prompt behavior, TLD rejection for targets without an `app-dev` or `agent` assignment, `app-dev` and `agent` TLD success, duplicate TLD conflict, and invalid TLD syntax. |
 
 Input-mode-specific test mapping lives in:
@@ -269,5 +269,5 @@ Renderer-specific test mapping lives in:
 
 Role-specific and E2E test mapping lives in:
 
-- [`2_node-update_on-operator-node.md`](2_node-update_on-operator-node.md#test-mapping)
+- [`2_node-update_on-client.md`](2_node-update_on-client.md#test-mapping)
 - [`3_node-update_on-gateway-node.md`](3_node-update_on-gateway-node.md#test-mapping)

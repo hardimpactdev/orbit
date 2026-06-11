@@ -97,8 +97,8 @@ SSH operation; split copy/start timing should only be added if it can keep that
 single remote operation.
 
 Prepared Docker feature lanes should not emit `docker.source-sync` or
-`reset.source-sync`; those events belong to source-mounted retained development
-topologies. If a normal `composer test:e2e:docker` or
+`reset.source-sync`; those events belong to retained development topologies with
+a source mount. If a normal `composer test:e2e:docker` or
 `composer test:e2e:docker:canary` run spends time in source sync, the lane is
 paying for rsync/hydration work that should be limited to active development
 topologies.

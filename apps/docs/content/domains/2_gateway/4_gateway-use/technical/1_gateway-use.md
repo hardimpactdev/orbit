@@ -6,6 +6,9 @@
 
 **Effects:** `write`.
 
+**Prerequisites:**
+- No network or gateway access is required. This command reads and writes local CLI configuration only.
+
 ## Signature
 
 ```bash
@@ -14,6 +17,8 @@ orbit gateway:use <name> [--json]
 
 ## Input Contract
 
+This command follows the shared [Invocation Model](../../../README.md#invocation-model).
+
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
 | `name` | `<name>` | Always. | Never. | None. | Existing local gateway name slug. |
@@ -21,10 +26,15 @@ orbit gateway:use <name> [--json]
 
 ## Behavior Contract
 
+### Active gateway selection
+
 - Read caller-local gateway entries from `~/.config/orbit/config.json`.
 - Validate that `<name>` is a configured gateway entry.
 - Set `active_gateway` to `<name>`.
 - Preserve all gateway entries and defaults.
+
+### Scope Boundaries
+
 - Never contact the gateway API.
 - Never refresh CA trust or gateway identity.
 
@@ -43,3 +53,13 @@ Human output reports the selected gateway name and endpoint.
 | --- | --- | --- |
 | Invalid name | `<name>` is not a local gateway name slug. | `validation_failed` with `meta.reason: "invalid_name"` |
 | Unknown gateway | `<name>` is not configured locally. | `validation_failed` with `meta.reason: "not_found"` |
+
+## Doctor Relationship
+
+`gateway:use` has no doctor relationship. It writes local CLI configuration only and does not verify gateway connectivity or CA trust.
+
+## Test Mapping
+
+| Path | Coverage |
+| --- | --- |
+| `apps/gateway/tests/Feature/Commands/Gateway/GatewayUseCommandTest.php` | Command contract: active gateway persistence, validation, unknown name failure, and no gateway API contact. |

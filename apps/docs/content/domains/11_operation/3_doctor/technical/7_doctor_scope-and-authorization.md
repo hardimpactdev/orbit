@@ -6,7 +6,7 @@ This page owns the cross-peer scope-resolution rules and grant requirements
 that the global [`doctor` technical contract](1_doctor.md) inherits.
 Authorization details for client and gateway execution live in the on-node
 companion contracts:
-[`2_doctor_on-operator-node.md`](2_doctor_on-operator-node.md),
+[`2_doctor_on-client.md`](2_doctor_on-client.md),
 and [`3_doctor_on-gateway-node.md`](3_doctor_on-gateway-node.md).
 
 ## Scope and Authorization Rules

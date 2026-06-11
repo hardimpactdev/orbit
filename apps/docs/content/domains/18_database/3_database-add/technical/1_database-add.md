@@ -13,7 +13,7 @@
 ## Signature
 
 ```bash
-orbit database:add {slug} --driver=<mysql|pgsql|sqlite> [--node=<node>] [--host=<host>] [--port=<port>] [--database=<name>] [--path=<path>] [--username=<username>] [--password=<password>] [--json]
+orbit database:add [slug] --driver=<mysql|pgsql|sqlite> [--node=<node>] [--host=<host>] [--port=<port>] [--database=<name>] [--path=<path>] [--username=<username>] [--password=<password>] [--json]
 ```
 
 ## Input Contract

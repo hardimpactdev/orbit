@@ -28,7 +28,7 @@ orbit update:all --json
 
 ## What Happens
 
-`update:all` performs a gateway-authorized durable fleet update:
+`update:all` performs a fleet update authorized through the gateway:
 
 1. Ask the gateway to authorize gateway-admin authority (`*` on the active gateway node). The gateway identifies the calling peer over WireGuard and applies authorization; the CLI does not classify itself.
 2. Update the caller-local CLI installation using [`orbit update`](../1_update/update.md).
@@ -57,9 +57,9 @@ client is an operator workstation and updates through `orbit update` on
 that machine. When the gateway is the calling peer, the command therefore
 updates the gateway installation and selected nodes only.
 
-The command does not create nodes, deploy apps, change app runtime artifacts
-except required Orbit-managed role image updates named in the release manifest,
-or repair unrelated family drift. Run doctor after the update when the operator
+The command does not create nodes, deploy apps, or repair unrelated family drift.
+It may change app runtime artifacts only when role image updates are required by
+the release manifest. Run doctor after the update when the operator
 needs convergence verification.
 
 ## Output
@@ -86,7 +86,7 @@ the exact shape.
 - The gateway can launch a one-shot runner from the target `orbit-gateway`
   image with the Docker socket and gateway config root mounted.
 - Each selected workload installation has a writable Orbit install root and a
-  host `orbit` launcher or equivalent node-local Orbit CLI entry point.
+  host `orbit` launcher or an equivalent Orbit CLI entry point local to the node.
 - Production artifact update targets require a reachable release source for the
   CLI binary plus permission to write the binary and update the launcher link.
 - Gateway update targets require Docker Engine/CLI, Docker Swarm, the

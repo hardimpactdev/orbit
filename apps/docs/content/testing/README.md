@@ -10,40 +10,41 @@ public entry points are the root Composer scripts (`composer test:e2e` and its
 provider variants); operators and CI do not need to know where the harness
 lives.
 
-E2E is implemented by the dedicated `apps/e2e` application. The harness, the
-prepared-topology/provider support layer, the externally-driven E2E test suites,
-and the runner itself (`e2e:test` plus the `e2e:prepare-*`, `e2e:reap-*`,
-`e2e:preflight`, and `e2e:ensure-artifacts` commands) all live in `apps/e2e`.
-The root Composer E2E scripts run through `apps/e2e` (via `bin/orbit-e2e-artisan`
-and `apps/e2e` Pest); there is no gateway-owned E2E runner. New S3/RustFS E2E
-coverage is added under `apps/e2e`, never under `apps/gateway/tests/E2E`.
+`apps/e2e` implements the E2E harness. That application owns the harness, the
+prepared-topology/provider support layer, the test suites driven externally, and
+the runner itself (`e2e:test` plus the `e2e:prepare-*`, `e2e:reap-*`,
+`e2e:preflight`, and `e2e:ensure-artifacts` commands). The root Composer E2E
+scripts run through `apps/e2e` (via `bin/orbit-e2e-artisan` and `apps/e2e`
+Pest); there is no E2E runner owned by the gateway. New S3/RustFS E2E coverage
+is added under `apps/e2e`, never under `apps/gateway/tests/E2E`.
 
-A small set of gateway-internal unit tests intentionally remains in
-`apps/gateway/tests/Feature/E2ESupport` (they assert gateway-resolved behavior of
-the shared support classes through a temporary Composer PSR-4 bridge that maps
-`App\E2E\Support\*` to `apps/e2e`) along with the gateway `update`/`update:all`
+A small set of unit tests in `apps/gateway/tests/Feature/E2ESupport` remain
+gateway-owned. They assert gateway-resolved behavior of the shared support
+classes through a temporary Composer PSR-4 bridge that maps
+`App\E2E\Support\*` to `apps/e2e`, along with the gateway `update`/`update:all`
 unit tests. See
 `docs/superpowers/notes/future-apps-e2e-migration-2026-05-29.md` for the full
 split and rationale.
 
-`apps/e2e` is a stock Laravel 13 application that hosts the external Orbit
-runner. It is a full Laravel app so the topology/provider harness can use the
-framework (the `Process`, filesystem, and related facades, paths, and helpers)
-rather than re-implementing them. "External" describes how it drives the system
-under test, not the absence of a framework: it prepares Docker/Incus topologies,
-drives the node-local Orbit CLI entry point and the gateway HTTP API, and inspects externally
-observable results — CLI output, API responses, files, containers, routes,
-services, and node state. It must not import the gateway application's own
-namespaces (`apps/gateway`'s services, Eloquent models, controllers, jobs, or
-internal actions) as the test subject. Gateway product behavior stays in
-`apps/gateway` and is not moved into `packages/core` as a convenience dump for
-the E2E app; small pure values the harness needs (for example container image
-identities) are mirrored locally in `apps/e2e` and kept in sync.
+`apps/e2e` is a stock Laravel 13 application. It is a full Laravel app so the
+topology/provider harness can use the framework (the `Process`, filesystem, and
+related facades, paths, and helpers) rather than re-implementing them.
+"External" describes how it drives the system under test, not the absence of a
+framework. It prepares Docker/Incus topologies, drives the Orbit CLI entry point
+on each node and the gateway HTTP API, and inspects externally observable
+results: CLI output, API responses, files, containers, routes, services, and
+node state.
 
-During the migration, immediate E2E support helpers live under `apps/e2e`
-internal support namespaces. Do not create `packages/e2e-support` or move
-helpers to `packages/core` unless a separate architecture task approves that
-location later.
+`apps/e2e` must not import the gateway application's own namespaces
+(`apps/gateway`'s services, Eloquent models, controllers, jobs, or internal
+actions) as the test subject. Gateway product behavior stays in `apps/gateway`
+and is not moved into `packages/core` as a convenience dump for the E2E app;
+small pure values the harness needs (for example container image identities) are
+mirrored locally in `apps/e2e` and kept in sync.
+
+When E2E support helpers are needed, place them under `apps/e2e` internal
+support namespaces. Do not create `packages/e2e-support` or move helpers to
+`packages/core` unless a separate architecture task approves that location.
 
 ## Verification model
 
@@ -67,30 +68,33 @@ provider actually changed:
   base VM, Orbit install, gateway provisioning, parallel `node:new` for app-dev,
   app-prod, and agent, then websocket runtime baking against app-dev Redis.
 
-`composer test:e2e:provision` is a human-only aggregate convenience alias for
-both provider provision commands. Agents must run the provider-specific
-provision commands instead.
+`composer test:e2e:provision` is a convenience alias reserved for humans who
+want to run both provider provision commands. Agents must run the
+provider-specific provision command that matches their assigned lane.
 
-The normal E2E order is feature-first. Prepared-topology feature lanes exercise
-the current source checkout through the topology preparer and are the
-development signal for behavior changes. Incus provision is the fresh VM gate
-for installer, `node:new`, base image, WireGuard, systemd, package installation,
-and host mutation changes. Docker provision is not a normal post-`composer
-test:e2e` gate; it is a Docker artifact refresh for runtime/support images,
-prepared role images, Docker host artifact distribution, or Docker topology
-preparation changes. When production artifact behavior matters, first prove the
-feature against the source-prepared topology, run only the affected provider
-provision/artifact gate, then run the feature flow that consumes the built
-CLI/gateway assets when that artifact-backed lane exists.
+The normal E2E order is feature-first. The topology preparer loads the current
+source checkout into prepared Docker/Incus artifacts, so the feature lanes are
+the development signal for behavior changes. Incus provision is the fresh VM
+gate for installer, `node:new`, base image, WireGuard, systemd, package
+installation, and host mutation changes.
+
+Docker provision is not a normal post-`composer test:e2e` gate; it is a Docker
+artifact refresh for runtime/support images, prepared role images, Docker host
+artifact distribution, or Docker topology preparation changes. When production
+artifact behavior matters, first prove the feature against the source-prepared
+topology, run only the affected provider provision/artifact gate, then run the
+feature flow that consumes the built CLI/gateway assets when that
+artifact-backed lane exists.
 
 Standing live infrastructure is not a test lane. Do not use persistent gateway,
 operator, or app nodes as verification targets.
 
 For the MONO local-executor migration, prepared Docker and Incus E2E are the
 primary verification paths. Standing live infrastructure is diagnostic only.
-Source-mounted Docker feature tests plus retained Docker or retained/live Incus
-development topologies are the source-mounted feedback loops. Production installs remain a
-separate native CLI binary artifact lane. In source-mounted nodes,
+Docker feature tests backed by a source mount, together with retained Docker or
+retained/live source-mounted Incus topologies, form the fast feedback loops.
+Production installs remain a separate native CLI binary artifact lane. In
+source-mounted nodes,
 `/usr/local/bin/orbit` points directly at `<source>/apps/cli/orbit`, mutable
 node-local Orbit state lives under `~/.config/orbit`, and executor operation
 tokens are verified through the gateway API so nodes do not carry executor
@@ -100,8 +104,8 @@ token signing material.
 
 These rules order the lanes above into a development workflow:
 
-- Source-mounted Docker feature tests are the fast feature loop. Retained/live
-  source-mounted Incus development topologies are the closest disposable
+- Docker feature tests with a source mount are the fast feature loop. Incus
+  topologies retained or live with a source mount are the closest disposable
   real-topology loop.
 - Retained prepared topologies are for manual diagnosis, debugging, and
   performance testing only. They use the same prepared-topology substrate, are
@@ -117,8 +121,8 @@ These rules order the lanes above into a development workflow:
   source of truth, run commands from the retained VM's runtime overlay, and treat
   VM-side edits as disposable unless explicitly copied back. See
   `docs/testing/e2e/prepared-topologies.md#retained-dev-topologies`.
-- Findings from a retained topology are codified back into ordinary
-  prepared-topology Pest E2E tests; the durable assertion lives in Pest, not in a
+- Findings from a retained topology are codified back into Pest E2E tests backed
+  by prepared topologies; the durable assertion lives in Pest, not in a
   kept-alive topology.
 - Binary/runtime artifact verification is a separate release-candidate lane that
   runs after source-mounted lanes pass. It builds the native CLI binary and

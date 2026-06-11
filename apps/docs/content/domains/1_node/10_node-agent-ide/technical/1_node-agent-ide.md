@@ -125,7 +125,7 @@ path in `app:agent-ide`.
 - Trigger downstream session restart or app-level invalidation.
 - Notify running agent-IDE sessions, restart processes on the node, invalidate
   cached app-level or workspace-level overrides, or emit
-  `success.meta.warnings[]` for "downstream apps still using the old adapter".
+  `success.meta.warnings[]` for "downstream apps still using the previous adapter".
 - Remove or prune workspaces for apps that inherit the node default.
 - Partially mutate app or workspace state.
 

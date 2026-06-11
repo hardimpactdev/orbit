@@ -23,7 +23,7 @@ These terms define how process definitions are identified, scoped, and ordered.
   service such as MySQL or Redis. Service version, runtime, endpoint,
   credentials, lifecycle, and logs belong to the process row produced from the
   definition. The service endpoint host is the owning node's WireGuard service
-  address. Same-node service consumers rely on the node's provisioning-owned
+  address. Consumers on the same node rely on the provisioning-owned
   WireGuard self-route, not on loopback or Docker aliases.
 - **Process order:** Stable order of process definitions inside their owning
   scope. Read and bulk lifecycle commands use that order.
@@ -41,7 +41,7 @@ These terms describe the runtime objects that Orbit derives from process definit
   FrankenPHP app or workspace web runtimes. Docker Swarm is valid only for
   node-owned managed service processes created from process service
   definitions.
-  Systemd is the node-level Linux service runtime; `systemctl` is only the
+  Systemd is the Linux service runtime at the node level; `systemctl` is only the
   command adapter used to control those units.
 - **Supervisor process runtime:** Runtime backend that runs a process unit as a
   host Supervisor program with Supervisor logs and lifecycle controls.

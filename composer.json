@@ -29,8 +29,9 @@
             "cd apps/gateway && composer run dev"
         ],
         "docs-lint": [
-            "bin/orbit-docs-artisan librarian:lint --format=agent --path=content/domains",
-            "bin/orbit-docs-artisan librarian:lint --format=agent --path=content/testing"
+            "bin/orbit-docs-artisan librarian:lint --format=agent --path=domains",
+            "bin/orbit-docs-artisan librarian:lint --format=agent --path=testing",
+            "bin/orbit-docs-artisan librarian:lint --format=agent --group=references"
         ],
         "docs-test": [
             "bin/orbit-docs-pest --compact"

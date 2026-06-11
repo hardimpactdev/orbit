@@ -16,7 +16,7 @@ describe('process write commands', function (): void {
 
         [$exitCode, $output] = runCommand($this, 'process:add', [
             'name' => 'vite',
-            'processCommand' => 'npm run dev',
+            'process_command' => 'npm run dev',
             '--app' => 'docs',
             '--restart-policy' => 'always',
             '--crash-notification' => 'agent_ide',
@@ -48,7 +48,7 @@ describe('process write commands', function (): void {
 
         [$exitCode, $output] = runCommand($this, 'process:add', [
             'name' => 'queue',
-            'processCommand' => 'php artisan queue:work',
+            'process_command' => 'php artisan queue:work',
             '--app' => 'docs',
             '--runtime' => 'docker',
             '--json' => true,
@@ -79,7 +79,7 @@ describe('process write commands', function (): void {
 
         [$exitCode, $output] = runCommand($this, 'process:add', [
             'name' => 'opencode-server',
-            'processCommand' => 'opencode serve -a',
+            'process_command' => 'opencode serve -a',
             '--node' => 'app-1',
             '--tool' => 'opencode',
             '--runtime' => 'systemd',
@@ -174,7 +174,7 @@ describe('process write commands', function (): void {
 
         [$exitCode, $output] = runCommand($this, 'process:add', [
             'name' => 'worker',
-            'processCommand' => 'php artisan queue:work',
+            'process_command' => 'php artisan queue:work',
             '--node' => 'app-1',
             '--definition-version' => '8',
             '--json' => true,
@@ -195,7 +195,7 @@ describe('process write commands', function (): void {
 
         [$exitCode, $output] = runCommand($this, 'process:add', [
             'name' => 'Vite',
-            'processCommand' => 'npm run dev',
+            'process_command' => 'npm run dev',
             '--app' => 'docs',
             '--json' => true,
         ]);
@@ -214,7 +214,7 @@ describe('process write commands', function (): void {
 
         [$exitCode, $output] = runCommand($this, 'process:add', [
             'name' => 'vite',
-            'processCommand' => 'npm run dev',
+            'process_command' => 'npm run dev',
             '--app' => 'docs',
             ...$params,
             '--json' => true,

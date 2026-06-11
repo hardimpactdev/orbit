@@ -18,7 +18,7 @@ orbit process:add horizon "php artisan horizon" --app=docs --workspace=feature-d
 orbit process:add opencode-server "opencode serve -a" --node=app-dev-1 --runtime=systemd --tool=opencode
 orbit process:add mysql8 --node=database-1 --definition=mysql --definition-version=8 --runtime=docker-swarm
 orbit process:add redis --node=database-1 --definition=redis --definition-version=7
-orbit process:add legacy-watcher "watch.sh" --app=static-site --runtime=supervisor
+orbit process:add file-watcher "watch.sh" --app=static-site --runtime=supervisor
 orbit process:add vite "npm run dev" --app=docs --json
 ```
 
@@ -29,7 +29,8 @@ Use this command to define a managed process for a node, app, or workspace.
 - **Gateway Configuration**: Creates process configuration on the gateway for the resolved owner scope.
 - **Scope Resolution**: `--node` creates a node-owned process and cannot be combined with `--app` or `--workspace`; `--workspace` creates a workspace-owned process; otherwise `--app` creates an app-owned process.
 - **Runtime Unit Rendering**: Node-owned and workspace-owned definitions normally render one runtime unit. App-owned definitions render one main-app unit and one unit for each existing workspace.
-- **Runtime Boundary**: App/workspace host-command processes use `supervisor`. `systemd` is only valid for node-owned Linux service processes. `docker-swarm` is only valid for node-owned managed service processes. `docker` remains valid for service definitions and Orbit-managed runtime processes. `systemctl` is the node command adapter, not the runtime name.
+- **Runtime Boundary**: App/workspace host-command processes use `supervisor`. `systemd` is only valid for node-owned Linux service processes. `docker-swarm` is only valid for node-owned managed service processes. `docker` is valid for service definitions and Orbit-managed runtime processes.
+- **Runtime Naming**: `systemctl` is the node command adapter, not the runtime name.
 - **Tool Dependency**: `--tool=<tool>` records the installed node capability the process uses. The process still owns start, stop, restart, and logs.
 - **Service Definition**: `--definition=<mysql|redis>` materializes a
   node-owned runnable service process. The definition supplies command,

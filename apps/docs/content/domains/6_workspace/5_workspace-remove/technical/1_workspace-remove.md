@@ -209,7 +209,7 @@ family doctor — not a removal failure.
 
 ## Doctor Relationship
 
-- Removed workspaces must no longer appear in registry-backed workspace command
+- Removed workspaces must be absent from registry-backed workspace command
   output.
 - Workspace-owned artifacts remaining after a failed cleanup are detected as
   orphaned workspace drift by [`workspace-doctor.md`](../../workspace-doctor.md)

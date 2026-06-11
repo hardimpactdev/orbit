@@ -4,7 +4,6 @@
 2. [Architecture](architecture.md)
 3. [Tech Stack](tech-stack.md)
 4. [Concepts](concepts.md)
-5. [Product Decisions](product-decisions.md) — chronological intent ledger; newest entry states current direction
 
 ## Domains
 

@@ -39,7 +39,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 - Resolves the schedule by name and optional app or node disambiguation from gateway schedule configuration.
 - Fails before side effects when no visible schedule matches.
-- Records removal on the gateway. The gateway-only Orbit Scheduler reads the gateway database every tick; subsequent ticks no longer dispatch the removed schedule.
+- Records removal on the gateway. The Orbit Scheduler (gateway-only) reads the gateway database every tick; subsequent ticks skip the removed schedule.
 - Finalizes the schedule as removed once the gateway configuration has been written.
 - Retains durable run history unless a future retention command explicitly prunes it.
 

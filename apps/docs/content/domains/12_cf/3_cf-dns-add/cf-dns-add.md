@@ -53,7 +53,7 @@ output.
 
 ## Related Commands
 
-Use these commands to list existing records or remove one you no longer need.
+Use these commands to list existing records or remove one.
 
 - [`orbit cf-dns:list`](../2_cf-dns-list/cf-dns-list.md)
 - [`orbit cf-dns:remove`](../4_cf-dns-remove/cf-dns-remove.md)

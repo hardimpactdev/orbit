@@ -84,7 +84,7 @@ lanes:
   gate. It launches the base VM, installs Orbit, provisions the gateway, and
   internally provisions app-dev, app-prod, and agent in parallel.
 
-Run prepared-topology feature lanes first. Docker provision is only a Docker
+Run feature lanes backed by prepared topologies first. Docker provision is only a Docker
 artifact refresh for runtime/support images, prepared role images, Docker host
 artifact distribution, or Docker topology-preparation changes. Incus provision
 is the fresh VM gate for installer, `node:new`, base image, WireGuard, systemd,

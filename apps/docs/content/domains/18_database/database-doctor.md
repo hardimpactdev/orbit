@@ -55,8 +55,8 @@ selected app/workspace `.env` files and checks these layers:
    database env-prefix groups that are present in a selected target `.env`
    without a matching gateway connection record are eligible for adoption.
 8. **Verifiability:** malformed, partial, unsupported env-prefix groups, or
-   unhealthy same-node WireGuard self-route diagnostics are reported as
-   unverifiable instead of being guessed into gateway state.
+   unhealthy WireGuard self-route diagnostics for same-node connections are
+   reported as unverifiable instead of being guessed into gateway state.
 
 Observed `.env` keys outside the supported prefix model are not drift by
 default. They are preserved during restore unless Orbit has an explicit target

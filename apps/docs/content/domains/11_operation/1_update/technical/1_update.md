@@ -82,7 +82,7 @@ fields and does not prompt.
 - Source-dev shells may run gateway maintenance commands explicitly, but that
   is not part of this public local update command contract.
 
-### Privilege, Version Source, And Rollback Rules
+### Privilege, version source, and rollback rules
 
 - Run every step as the current OS user. `update` must not prompt for `sudo`,
   escalate privileges, or rewrite host ownership to make the install root

@@ -254,8 +254,8 @@ all documented command failures exit with the standard command failure status
   `workspace.http_probe_unhealthy` is not owned by the workspaces doctor
   family.
 - Failed setup-step runs are visible through `workspace:history` and
-  `workspace:log`; doctor verifies current workspace reality instead of
-  rewriting historical runs.
+  `workspace:log`; doctor verifies current workspace reality and does not
+  rewrite past runs.
 
 ## Test Mapping
 
@@ -271,5 +271,5 @@ all documented command failures exit with the standard command failure status
 
 Role-specific behavior and test mapping live in:
 
-- [`2_workspace-setup_on-operator-node.md`](2_workspace-setup_on-operator-node.md)
+- [`2_workspace-setup_on-client.md`](2_workspace-setup_on-client.md)
 - [`3_workspace-setup_on-gateway-node.md`](3_workspace-setup_on-gateway-node.md)

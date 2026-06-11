@@ -13,12 +13,20 @@
 ## Signature
 
 ```bash
-orbit database:attach {connection} (--app=<app>|--workspace=<workspace>) [--env-prefix=DB] [--json]
+orbit database:attach [connection] [--app=<app>] [--workspace=<workspace>] [--env-prefix=DB] [--json]
 ```
 
 ## Input Contract
 
 This command follows the shared [Invocation Model](../../../README.md#invocation-model).
+
+| Field | Source | Required when | Default | Validation |
+| --- | --- | --- | --- | --- |
+| `connection` | `argument` | Always. | n/a | Visible database connection slug. |
+| `app` | `--app` | Required when `workspace` is absent. | None. | Visible active app the caller may manage. |
+| `workspace` | `--workspace` | Required when `app` is absent. | None. | Visible workspace the caller may manage. |
+| `env_prefix` | `--env-prefix` | Optional. | `DB`. | Stored on the target mapping, not on the connection record. |
+| `json` | `--json` | Optional. | `false`. | Selects the JSON renderer. |
 
 Exactly one of `--app` or `--workspace` is required. `--env-prefix` defaults to
 `DB` and is stored on the target mapping, not on the connection record.

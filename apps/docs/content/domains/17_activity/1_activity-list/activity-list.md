@@ -69,7 +69,7 @@ Use these commands to drill into individual entries or to check live state.
 - [`activity:show`](../2_activity-show/activity-show.md) - show one activity
   entry and its correlated context
 - [`doctor`](../../11_operation/3_doctor/doctor.md) - verify current drift
-  instead of reading historical events
+  rather than reading past activity records
 
 ## Technical Contract
 

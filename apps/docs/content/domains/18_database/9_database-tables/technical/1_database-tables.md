@@ -13,7 +13,7 @@
 ## Signature
 
 ```bash
-orbit database:tables {target} [--connection=<slug>] [--json]
+orbit database:tables [target] [--connection=<slug>] [--json]
 ```
 
 ## Input Contract

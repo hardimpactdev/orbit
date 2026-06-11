@@ -12,7 +12,7 @@
   `node:revoke` or `*`. Callers without that permission receive
   `authorization_failed`.
 - Configured operator-node callers have gateway access as defined in
-[`2_node-revoke_on-operator-node.md`](2_node-revoke_on-operator-node.md).
+[`2_node-revoke_on-client.md`](2_node-revoke_on-client.md).
 - Both `consuming_node` and `serving_node` exist in gateway node configuration.
 
 **Post-input path eligibility:**
@@ -106,7 +106,7 @@ This command follows the shared
 ### Scope Boundaries
 
 `node:revoke` must not:
-- Change historical activity logs.
+- Change activity logs.
 - Mutate serving-node host state.
 - End in-flight RPCs, invalidate tokens, or mark sessions stale.
 - Block revocation when the grant is referenced by active apps or workspaces.
@@ -173,5 +173,5 @@ Renderer-specific test mapping lives in:
 
 Deployment-context test mapping lives in:
 
-- [`2_node-revoke_on-operator-node.md`](2_node-revoke_on-operator-node.md#test-mapping)
+- [`2_node-revoke_on-client.md`](2_node-revoke_on-client.md#test-mapping)
 - [`3_node-revoke_on-gateway-node.md`](3_node-revoke_on-gateway-node.md#test-mapping)

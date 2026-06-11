@@ -13,7 +13,7 @@
 ## Signature
 
 ```bash
-orbit database:remove {connection} --force [--json]
+orbit database:remove [connection] [--force] [--json]
 ```
 
 ## Input Contract

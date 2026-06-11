@@ -14,7 +14,7 @@
 ## Signature
 
 ```bash
-orbit process:remove [name] [--node=<node>] [--app=<app>] [--workspace=<workspace>] [--force] [--json]
+orbit process:remove [name] [--app=<app>] [--workspace=<workspace>] [--node=<node>] [--force] [--json]
 ```
 
 ## Input Contract
@@ -48,7 +48,7 @@ Destructive consent is required before side effects. In interactive input mode, 
 5. Remove gateway-owned process configuration.
 6. Render the selected output.
 
-Historical logs and lifecycle events are not removed by this command.
+Process logs and lifecycle events are not removed by this command.
 
 If process configuration is removed but runtime-unit cleanup fails, the command returns success with repairable process-family warnings because the requested durable state transition completed.
 
@@ -89,7 +89,7 @@ Primary test owners:
 
 | Path | Coverage |
 | --- | --- |
-| `apps/gateway/tests/Feature/Commands/Processes/ProcessRemoveCommandTest.php` | Grant authorization denial, destructive consent, process removal, runtime-unit cleanup, historical log retention, post-configuration cleanup warnings, process-not-found failure, and no side effects on validation failure. |
+| `apps/gateway/tests/Feature/Commands/Processes/ProcessRemoveCommandTest.php` | Grant authorization denial, destructive consent, process removal, runtime-unit cleanup, log retention after removal, post-configuration cleanup warnings, process-not-found failure, and no side effects on validation failure. |
 | `apps/gateway/tests/Feature/Commands/Processes/ProcessRemoveInputContractTest.php` | Required inputs, app resolution, `--force` destructive consent behavior, `--json` not granting consent, and cancelled confirmation behavior. |
 
 Renderer and input-mode test mapping lives in the split companion files.

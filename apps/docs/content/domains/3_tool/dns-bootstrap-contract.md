@@ -119,7 +119,7 @@ Target service shape:
 
 The DNS service may be restarted or updated independently when
 `dnsmasq.conf` changes. DNS reconciliation must not restart WireGuard just
-because node-family DNS mappings changed.
+because DNS mappings for the node family changed.
 
 ## `dnsmasq.conf` Shape
 

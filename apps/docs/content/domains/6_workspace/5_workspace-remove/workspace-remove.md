@@ -5,8 +5,8 @@
 Remove a workspace and its owned runtime artifacts.
 
 `workspace:remove` tears down a development context and safely deletes its
-gateway registry record and node-side artifacts. It is used when a workspace
-is no longer needed or is being reset.
+gateway registry record and node-side artifacts. Use it to decommission a
+workspace or reset its state.
 
 ## Usage
 

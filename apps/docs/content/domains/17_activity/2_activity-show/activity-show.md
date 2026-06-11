@@ -60,7 +60,7 @@ Use these commands to browse the activity history or check live state.
 - [`activity:list`](../1_activity-list/activity-list.md) - list recent
   activity entries
 - [`doctor`](../../11_operation/3_doctor/doctor.md) - verify current drift
-  instead of reading historical events
+  rather than reading past activity records
 
 ## Technical Contract
 

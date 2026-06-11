@@ -14,6 +14,7 @@ return [
         'addresses' => 'object',
         'agent_ide' => 'object',
         'grants' => 'object',
+        'host' => 'string|null',
         'roles' => 'array',
         'tld' => 'string|null',
     ],

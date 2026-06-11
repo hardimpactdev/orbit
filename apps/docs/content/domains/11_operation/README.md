@@ -22,8 +22,8 @@ These rules constrain all commands in the operation domain.
 
 **Behavior contracts:**
 
-- Updates change Orbit installations through the node-local Orbit CLI entry
-  point. Production/artifact installs update and relink the native CLI binary
+- Updates change Orbit installations through the Orbit CLI entry point local
+  to each node. Production/artifact installs update and relink the native CLI binary
   artifact. Source-mounted Docker/Incus development and E2E topologies keep
   `/usr/local/bin/orbit` pointed at `<source>/apps/cli/orbit` and update by
   changing the mounted source. Gateway service replacement is a durable

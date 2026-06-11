@@ -31,8 +31,8 @@ These rules govern all app family commands.
   policy; they do not create Vite-specific proxy routes or rewrite app-side
   frontend configuration.
 - PHP app runtime uses a FrankenPHP app runtime container selected by gateway
-  app configuration. The lifecycle-managed concrete FrankenPHP runtime is
-  represented as a process with Docker runtime. Changing
+  app configuration. The concrete FrankenPHP runtime, managed through the
+  process lifecycle, is represented as a process with Docker runtime. Changing
   `php_version` recreates the app runtime artifact from the selected PHP image;
   it does not install host PHP or render host FPM pools.
 - Ad-hoc PHP, Composer, or Artisan for an app runs on the app node's host PHP
@@ -66,7 +66,7 @@ WireGuard to the gateway-coupled `router`, and only then fan out to private
 `app-prod` backend artifacts. App commands choose the ingress
 placement; the router owns private route selection and backend-pool targeting.
 The app-prod backend artifact is app-role-owned and separate from the
-router-colocated gateway API Caddy route. It terminates at `orbit-caddy` on the
+API Caddy route that is colocated with the gateway router. It terminates at `orbit-caddy` on the
 app-prod node and then reaches the app's FrankenPHP Docker runtime container
 on internal port `8080` over the node Docker network.
 
@@ -169,6 +169,9 @@ The following commands are available in the `app` family.
 9. [`orbit app:agent-ide [app] [agent_ide]`](9_app-agent-ide/app-agent-ide.md)
 10. Reserved. `app:exec` was removed; Orbit has no command-`exec` surface.
 11. [`orbit app:worker show|enable|disable [app]`](11_app-worker/app-worker.md)
+12. [`orbit app:websocket enable [app]`](12_app-websocket-enable/app-websocket-enable.md)
+13. [`orbit app:websocket disable [app]`](13_app-websocket-disable/app-websocket-disable.md)
+14. [`orbit app:websocket credentials [app]`](14_app-websocket-credentials/app-websocket-credentials.md)
 
 ## Related
 

@@ -107,8 +107,8 @@ This command follows the shared
   or adopted app may still need project setup steps before it is healthy, and
   durable runtime health belongs to `doctor --family=app`. The outcome layer
   reports which path was taken via `result.action`:
-  - `registered` — first-time registration of a previously-known path that
-    was not yet managed by Orbit.
+  - `registered` — first-time registration of a known path that is not yet
+    managed by Orbit.
   - `adopted` — first-time registration where the path existed on the node
     but was unmanaged. The durable `app.adopted` boolean on the app entity is
     set to `true` for this run only; subsequent re-runs report
@@ -180,5 +180,5 @@ registration attempts.
 
 Context-specific behavior and test mapping live in:
 
-- [`2_app-register_on-operator-node.md`](2_app-register_on-operator-node.md)
+- [`2_app-register_on-client.md`](2_app-register_on-client.md)
 - [`3_app-register_on-gateway-node.md`](3_app-register_on-gateway-node.md)

@@ -59,7 +59,7 @@ No gateway call is required.
 
 ## Stale Default Behavior
 
-When a stored default no longer resolves to an active, authorized development
+When a stored default does not resolve to an active, authorized development
 node, the `show` sub-action still returns the stored name. The stale default
 is not cleared automatically. `doctor --self` may report
 `node.local_default_invalid`, but repair remains an explicit `node:default`

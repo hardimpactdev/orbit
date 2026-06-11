@@ -30,7 +30,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | `with_process` | `--with-process` / `--no-process` | `Optional.` | `Never.` | `true` for tools that declare a related process | When set true (the default), a tool that declares a related singleton process configures that process. `--no-process` installs the capability only. Supplying both `--with-process` and `--no-process` fails. |
 | `json` | `--json` | `Optional.` | `Never.` | `false` | `Selects the JSON renderer.` |
 
-`--tool-version` records install-time tool version intent. `--expected-version`
+`--tool-version` records the intended tool version at install time. `--expected-version`
 and `expected_version` remain `tool:update` inputs and are rejected here.
 
 ## Behavior Contract

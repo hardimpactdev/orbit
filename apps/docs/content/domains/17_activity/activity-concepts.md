@@ -13,9 +13,9 @@ These terms define the scope of the activity command domain.
   gateway activity history (`activity:list`, `activity:show`) and for the
   doctrine every command and API endpoint follows when it emits an activity
   entry. It does not create a separate state family.
-- **Gateway activity history:** Durable operational history recorded by the
-  gateway database. It is historical evidence, not a substitute for live
-  doctor probes.
+- **Gateway activity history:** Durable operational records stored in the
+  gateway database. They capture past operations, not live state, and do not
+  substitute for doctor probes.
 - **Activity entry:** One gateway history record with stable fields:
   occurrence time, type, effect, subject, causer (actor), command,
   correlation id, description, and structured properties.
@@ -55,7 +55,7 @@ Each activity entry carries the following fields.
   is the node identity. Orbit does not attribute activity to a
   per-tool sub-identity, because per-tool identities are spoofable
   without a stronger identity mechanism than the node handshake. The actor
-  is serialized as `{ node: <slug> }`; the legacy node-row `role` shadow
+  is serialized as `{ node: <slug> }`; the compatibility node-row `role` shadow
   field is not part of the actor object.
 - **Properties:** Structured audit fields declared by the command or
   controller. Properties never include secrets, raw command argv, raw

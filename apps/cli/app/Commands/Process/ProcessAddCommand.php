@@ -11,7 +11,7 @@ final class ProcessAddCommand extends ProcessGatewayCommand
     #[\Override]
     protected $signature = 'process:add
         {name? : Process name}
-        {processCommand? : Command to run}
+        {process_command? : Command to run}
         {--node= : Owning node name}
         {--app= : Parent app slug}
         {--workspace= : Workspace name}
@@ -33,7 +33,7 @@ final class ProcessAddCommand extends ProcessGatewayCommand
         $app = $node === null ? $this->appContext() : $this->stringOption('app');
         $workspace = $this->workspaceContext();
         $name = $this->stringArgument('name');
-        $command = $this->stringArgument('processCommand');
+        $command = $this->stringArgument('process_command');
         $restartPolicy = $this->stringOption('restart-policy') ?? 'never';
         $crashNotification = $this->stringOption('crash-notification') ?? 'none';
         $runtime = $this->stringOption('runtime');

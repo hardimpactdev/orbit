@@ -111,7 +111,7 @@ produce an entry recording the failure outcome under the same correlation id.
 
 ## Doctor Relationship
 
-- `activity:list` reads historical gateway records.
+- `activity:list` reads gateway-owned activity records.
 - `doctor` verifies current gateway-tracked configuration against applied
   reality. It does not use activity history as a substitute for current probes.
 

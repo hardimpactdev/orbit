@@ -193,7 +193,7 @@ Each code below identifies a specific kind of node-family drift that `doctor --f
 | `node.role_conflict` | Active, pending, or error role assignments violate the compatibility matrix. Assignments already in `removing` are ignored. |
 | `node.role_settings_invalid` | A role assignment's typed settings cannot be hydrated or are missing required values such as the `app-dev` `tld`. |
 | `node.role_convergence_failed` | A role assignment is left in `error` after synchronous convergence failed. |
-| `node.role_baseline_mismatch` | Active role-owned baseline artifacts no longer match the role assignment's desired state. |
+| `node.role_baseline_mismatch` | Active role-owned baseline artifacts do not match the role assignment's desired state. |
 | `node.access_grant_invalid` | A node access grant references a missing or non-active consuming or serving node. |
 | `node.access_permission_invalid` | A node access grant stores an unknown permission string or a permission set that does not normalize cleanly against the permission registry. |
 | `node.identity_unresolved` | The caller presents no WireGuard identity or an identity that does not resolve to exactly one active node record. |

@@ -60,9 +60,9 @@ These terms define each target scope that a PHP command can read or write.
   applying workspace override or parent-app inheritance.
 - **Runtime PHP binary:** The `php` binary inside an app, workspace, or gateway
   runtime container — the web *serving* runtime and, in `orbit-gateway`, the
-  gateway's own runtime. App and workspace setup and deploy commands, and
-  ad-hoc app/workspace PHP/Composer/Artisan, instead run on the app node's host
-  PHP toolchain, matched to the app's PHP version.
+  gateway's own runtime. App and workspace setup, deploy commands, and ad-hoc
+  PHP/Composer/Artisan invocations run on the app node's host PHP toolchain,
+  matched to the app's PHP version.
 
 ## Application and drift
 

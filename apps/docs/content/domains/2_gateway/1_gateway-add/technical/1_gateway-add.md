@@ -100,7 +100,7 @@ certificate lifecycle belongs to the route-owning domain and its doctor family.
 - Set `active_gateway` to the selected name after successful onboarding.
 - Preserve other configured gateway entries when adding or refreshing a named
   gateway.
-- `default` remains the implicit name for legacy `gateway:add [gateway_ip]`
+- `default` is the implicit name for `gateway:add [gateway_ip]`
   calls that omit `--name`.
 - The clean repo has no separate `LocalNodeContext` cache to invalidate. If one
   is introduced later, invalidate it at this persistence boundary.
@@ -184,5 +184,5 @@ Required split contract tests:
 
 Context-specific behavior and test mapping live in:
 
-- [`2_gateway-add_on-operator-node.md`](2_gateway-add_on-operator-node.md)
+- [`2_gateway-add_on-client.md`](2_gateway-add_on-client.md)
 - [`3_gateway-add_on-gateway-node.md`](3_gateway-add_on-gateway-node.md)

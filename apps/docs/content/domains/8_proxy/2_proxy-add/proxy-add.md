@@ -31,9 +31,9 @@ command.
 
 ```bash
 orbit proxy:add vite.docs.test --upstream=http://127.0.0.1:5173 --node=app-1
-orbit proxy:add old.test --redirect=https://docs.test --code=302 --node=app-1
+orbit proxy:add redirect.docs.test --redirect=https://docs.test --code=302 --node=app-1
 orbit proxy:add redis.app-1.test --upstream=http://127.0.0.1:6379 --node=app-1
-orbit proxy:add old.test --redirect=https://docs.test --force --json
+orbit proxy:add redirect.docs.test --redirect=https://docs.test --force --json
 ```
 
 ## Output

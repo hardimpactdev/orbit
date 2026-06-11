@@ -53,7 +53,7 @@ or from the `latest_setup_run.run_id` field returned by
 
 ## Behavior Contract
 
-1. **Historical audit read.** Read the run record and its captured per-step
+1. **Audit read.** Read the run record and its captured per-step
    output from the gateway database. The command surfaces stored
    `stdout`/`stderr`/`exit_code` plus timing data captured per step and per
    run during application. No live process inspection is performed.
@@ -90,7 +90,7 @@ or from the `latest_setup_run.run_id` field returned by
   [`orbit process:logs`](../../../7_process/8_process-logs/process-logs.md).
 - SSH into the owning node. The command is gateway-only.
 - Modify gateway configuration or node artifacts.
-- Rewrite or repair historical run rows or captured output.
+- Rewrite or repair past run rows or captured output.
 
 ### Status Taxonomy
 

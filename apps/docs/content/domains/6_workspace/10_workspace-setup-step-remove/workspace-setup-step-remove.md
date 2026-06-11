@@ -11,8 +11,8 @@ orbit workspace-setup-step:remove --step=<id> [--app=<app>] [--force] [--json]
 ## Description
 
 The `workspace-setup-step:remove` command deletes a setup step definition from
-an app's workspace lifecycle policy. Once removed, the step will no longer
-execute during new workspace creation or setup.
+an app's workspace lifecycle policy. Removing the step excludes it from
+future workspace creation and setup runs.
 
 Removing a step definition does not undo side effects (such as installed files
 or database migrations) on existing app workspaces. It only updates the policy

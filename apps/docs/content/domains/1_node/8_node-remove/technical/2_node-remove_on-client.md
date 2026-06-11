@@ -58,8 +58,8 @@ require an extra flag beyond the shared destructive consent model.
 When self-removal succeeds, the gateway removes the caller's gateway-owned
 node record, node access grants, and WireGuard peer. The local machine keeps
 its local gateway endpoint, trusted CA, and local WireGuard configuration.
-Future Orbit commands from that machine may fail because the gateway no longer
-recognizes its node identity.
+Future Orbit commands from that machine may fail because the gateway does not
+recognize its node identity.
 
 ## Error Contract
 

@@ -8,8 +8,8 @@ The app family doctor implements the
 
 `doctor --family=app` verifies whether gateway app records still match the
 app facts that make those records runnable on their owning nodes. It also
-detects stale runtime artifacts owned by Orbit whose identity no longer maps
-to active gateway app configuration, so post-removal cleanup can be repaired without
+detects stale runtime artifacts owned by Orbit with identities absent from
+active gateway app configuration, so post-removal cleanup can be repaired without
 recreating deleted app records.
 
 The app family owns these facts:
@@ -36,8 +36,8 @@ The app family owns these facts:
   hints, and only when the app path is a PHP project. Orbit must not read
   `.php-version`, `package.json`, or other project files for app adoption
   hints.
-- stale runtime containers and runtime artifacts owned by Orbit whose identity
-  no longer maps to an active gateway app record.
+- stale runtime containers and runtime artifacts owned by Orbit with identities
+  absent from active gateway app records.
 
 Node reachability belongs to the node family. App-owned proxy routes belong to
 `proxy`. Workspace artifacts belong to `workspace`. App process units
@@ -73,7 +73,7 @@ The apps probe reads gateway app records and checks these layers:
    `app.security.*` keys and do not depend on workspaces.
 9. **App agent IDE default:** a configured agent IDE default set at the app level must point at a supported adapter.
 10. **Stale app artifacts:** App runtime containers or runtime artifacts owned by Orbit whose
-   encoded app identity no longer maps to an active app record are reported as
+   encoded app identity is absent from active app records are reported as
    orphaned app drift.
 
 The apps probe may mention related family drift only as a handoff. It must not
@@ -123,8 +123,8 @@ The table below shows what `doctor --restore` does for each fixable code.
 | `app.runtime_container_mismatch` | Recreate the app runtime container to match gateway app configuration. |
 | `app.runtime_config_missing` | Reinstall managed app runtime configuration from gateway app configuration. |
 | `app.runtime_config_mismatch` | Rewrite managed app runtime configuration to match gateway app configuration. |
-| `app.runtime_container_extra` | Remove the stale Orbit-owned app runtime container when its encoded identity no longer maps to active app configuration. |
-| `app.runtime_config_extra` | Remove the stale Orbit-owned app runtime artifact when its encoded identity no longer maps to active app configuration. |
+| `app.runtime_container_extra` | Remove the stale Orbit-owned app runtime container when its encoded identity is absent from active app configuration. |
+| `app.runtime_config_extra` | Remove the stale Orbit-owned app runtime artifact when its encoded identity is absent from active app configuration. |
 | `app.runtime_config_probe_failed` | Re-probe the directory. The drift clears if the underlying issue resolves; otherwise the action records a failed status with the error. |
 | `app.runtime_container_probe_failed` | Re-probe the runtime container scan. Clears if docker is reachable; otherwise the action records a failed status with the underlying error. |
 | `app.production_user_missing` | Create or restore the production app user and ownership policy when production configuration is complete. |

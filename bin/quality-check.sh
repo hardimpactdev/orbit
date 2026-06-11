@@ -42,8 +42,9 @@ run_bg() {
     eval "${label}_PID=$!"
 }
 
-run_bg docs_lint bin/orbit-docs-artisan librarian:lint --format=agent --path=content/domains
-run_bg docs_testing bin/orbit-docs-artisan librarian:lint --format=agent --path=content/testing
+run_bg docs_lint bin/orbit-docs-artisan librarian:lint --format=agent --path=domains
+run_bg docs_testing bin/orbit-docs-artisan librarian:lint --format=agent --path=testing
+run_bg docs_references bin/orbit-docs-artisan librarian:lint --format=agent --group=references
 
 run_bg gateway_phpstan bin/orbit-gateway-vendor-bin phpstan analyse --memory-limit=512M --no-progress
 run_bg cli_phpstan bash -lc 'cd apps/cli && vendor/bin/phpstan analyse --memory-limit=512M --no-progress'
@@ -75,6 +76,7 @@ pest_exit=$?
 CHECK_LABELS=(
     docs_lint
     docs_testing
+    docs_references
     gateway_phpstan
     cli_phpstan
     docs_phpstan

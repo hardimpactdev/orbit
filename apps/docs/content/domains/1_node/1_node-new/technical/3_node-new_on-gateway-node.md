@@ -58,7 +58,7 @@ complete before side effects that the gateway owns begin.
 | `agent` role set | Provision or adopt an agent node over SSH, then create the role assignment with `tld`. |
 | `websocket` role set | Reserved stable input surface; returns `role_not_implemented` before side effects until the WebSocket todo lands. |
 | `s3` role set | Reserved stable input surface; returns `role_not_implemented` before side effects until the S3 todo lands. |
-| explicit multi-role set | Provision or adopt one compatible host for the requested role set, then create each role assignment. Supported initial live combinations are `app-dev` + `database` and `app-prod` + `ingress`; `websocket` and `s3` combinations are reserved until their implementation todos land. |
+| explicit multi-role set | Provision or adopt one compatible host, then create each role assignment. Live combinations: `app-dev` + `database` and `app-prod` + `ingress`. `websocket` and `s3` combinations are reserved. |
 
 ## Gateway Authority Rules
 

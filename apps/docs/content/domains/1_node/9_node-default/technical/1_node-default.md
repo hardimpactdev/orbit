@@ -11,9 +11,8 @@
   `~/.config/orbit/config.json` on the invoking machine. There is no
   gateway-side default-node store and no gateway-side `/api/nodes/default`
   endpoint; the default is per-operator-host, not per-gateway.
-- The previous gateway-host rejection path is retired. Gateway hosts run
-  `node:default` like any other operator host: it edits the operator user's
-  local CLI config.
+- Gateway hosts run `node:default` like any other operator host: it edits the
+  operator user's local CLI config.
 - For the `choose` or `set` sub-action: the target node resolves as a visible
   active app-dev node, validated against the configured gateway when
   one is reachable; the stored default remains local CLI state regardless.
@@ -106,7 +105,7 @@ interactive input mode contract.
 ### Clear sub-action
 
 1. Remove the locally stored default development node, if any.
-2. Return the clear result, indicating whether a default was previously set.
+2. Return the clear result, indicating whether a default existed.
 
 No gateway call or grant check is required for the clear sub-action.
 
@@ -144,8 +143,8 @@ because the `show` sub-action is selected instead.
 ## Doctor Relationship
 
 - `node:default` is local client configuration, not gateway configuration.
-- `doctor --self` may warn when the configured default no longer resolves or is
-  no longer authorized. See `node.local_default_invalid` in
+- `doctor --self` may warn when the configured default does not resolve or is
+  not authorized. See `node.local_default_invalid` in
   [`node-doctor.md`](../../node-doctor.md#node-issue-codes).
 - `doctor --family=node` verifies gateway node configuration and node reachability,
   not the CLI's local target preference.
@@ -157,10 +156,11 @@ because the `show` sub-action is selected instead.
 
 ## Activity Logging
 
-`node:default` is local CLI configuration. It does not write gateway activity
-rows for show, set, choose, or clear. Gateway validation calls used by choose
-or set may have their own API request telemetry, but the default-node mutation
-itself is local state under `~/.config/orbit/config.json`.
+`node:default` does not emit gateway activity log entries. It is local CLI
+configuration that mutates only `~/.config/orbit/config.json` on the invoking
+machine. Gateway validation calls used by the `choose` or `set` sub-actions
+may produce their own API request telemetry, but the default-node mutation
+itself is local state.
 
 ## Test Mapping
 
@@ -168,6 +168,7 @@ Primary test owners:
 
 | Path | Coverage |
 | --- | --- |
+| `apps/gateway/tests/Feature/Commands/Nodes/NodeDefaultCommandTest.php` | Gateway-side contract: node visibility validation for choose and set sub-actions, active development node resolution, gateway-unavailable failure, and local-only write guarantee. |
 | `apps/cli/tests/Feature/Commands/Node/NodeDefaultCommandTest.php` | Command contract (see scope below). |
 | `apps/cli/tests/Feature/Commands/Node/NodeDefaultNonInteractiveInputModeTest.php` | Non-interactive input contract, including exact JSON validation output for mutually exclusive `name` and `--clear`. |
 | `apps/cli/tests/Feature/Commands/Node/NodeDefaultJsonRendererTest.php` | JSON envelope shape, show success with default, show empty state, set success payload, clear success payload with `was_set`, every error code, and enum values. |

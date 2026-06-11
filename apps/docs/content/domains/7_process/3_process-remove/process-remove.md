@@ -26,14 +26,10 @@ Use this command to remove a process definition and its runtime units.
 - **Gateway Removal**: Removes process configuration from the gateway for the resolved owner scope.
 - **Scope Resolution**: `--node` removes a node-owned process and cannot be combined with `--app` or `--workspace`; `--workspace` removes a workspace-owned process; otherwise `--app` removes an app-owned process.
 - **Runtime Unit Cleanup**: Stops and removes runtime units derived from the selected process definition.
-- **Log Preservation**: Does not remove historical logs.
+- **Log Preservation**: Retains process logs; they are not removed.
 - **Drift Reporting**: Reports repairable cleanup drift when runtime-unit cleanup does not fully converge.
 
-## Related
-
-- [`process:add`](../1_process-add/process-add.md)
-- [`process:list`](../4_process-list/process-list.md)
-- [`process-doctor.md`](../process-doctor.md)
+See also: [`process:add`](../1_process-add/process-add.md), [`process:list`](../4_process-list/process-list.md), [`process-doctor.md`](../process-doctor.md).
 
 ***
 

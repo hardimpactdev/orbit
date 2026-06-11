@@ -318,6 +318,11 @@ is not required after ordinary `composer test:e2e` runs.
   to `apps/docs/content/product-decisions.md` (newest first,
   `- YYYY-MM-DD — <decision with topic noun>. (solo todo #NNNN)`), linking the
   Solo todo being executed. Skip routine work — flags, fixes, refactors.
+- When a decision removes or renames a public command, flag, or product term,
+  also append an entry to `banned_terms` in `apps/docs/config/librarian.php`
+  in the same change (terms, decision line, replacement wording, allow paths).
+  `composer docs-lint` then fails on every stale mention of the retired term
+  until the docs sweep is complete, and keeps it from coming back.
 - Retire tests only when current docs reject the behavior or replacement coverage exists.
 - Stop for direction if the docs and requested behavior conflict.
 - Stay inside owned scope and leave unrelated dirty files untouched.

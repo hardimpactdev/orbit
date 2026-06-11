@@ -17,7 +17,7 @@
 ## Signature
 
 ```bash
-orbit app:worker {action} [app] [--json]
+orbit app:worker [action] [app] [--json]
 ```
 
 ## Input Contract

@@ -7,7 +7,7 @@ The process family doctor implements the
 `key()` returns `process`.
 
 `doctor --family=process` verifies whether gateway process definitions still
-match the runtime-unit artifacts and node-local service endpoint assumptions
+match the runtime-unit artifacts and the service endpoint assumptions
 that make those definitions executable on their owning nodes.
 
 The process family owns these facts:
@@ -24,8 +24,8 @@ The process family owns these facts:
   version, runtime unit name, spec hash, endpoint metadata, and credential
   field names;
 - lifecycle event notifier material that Orbit manages, required to record runtime `crashed` events from app-host units whose process definitions require crash event reporting;
-- stale process runtime artifacts owned by Orbit whose identity no longer maps
-  to an active app, workspace, or process definition.
+- stale process runtime artifacts owned by Orbit whose identity maps to
+  nothing active — no matching app, workspace, or process definition.
 - read-only self-route diagnostics for node-owned service endpoints that point
   back at the owning node's own WireGuard service address.
 
@@ -95,7 +95,7 @@ The crash event hooks that Orbit manages, gateway endpoint material, and gateway
 
 ### Stale runtime units
 
-Runtime artifacts that Orbit owns are reported as process-family drift when their encoded app, workspace, or process identity no longer maps to active gateway configuration.
+Runtime artifacts that Orbit owns are reported as process-family drift when their encoded app, workspace, or process identity has no match in active gateway configuration.
 
 ### Lifecycle events as history
 
@@ -130,7 +130,7 @@ Use `doctor --restore` to trigger the repair action listed for each code.
 | `process.runtime_backend_unavailable` | No `doctor --restore` action. Process manager installation and recovery belong to `tool` family doctor and node operations. Process doctor reports the dependency and does not attempt to install Docker or Supervisor. |
 | `process.wireguard_self_route_unavailable` | No `doctor --restore` action. WireGuard self-route mutation belongs to node provisioning/topology repair, not the process family. |
 | `process.runtime_unit_missing` | Re-render and reload the missing backend artifact from gateway app, workspace, and process configuration. |
-| `process.runtime_unit_extra` | Stop and remove the stale Orbit-owned backend artifact whose identity no longer maps to active gateway app, workspace, and process configuration. |
+| `process.runtime_unit_extra` | Stop and remove the stale Orbit-owned backend artifact whose identity has no match in active gateway app, workspace, and process configuration. |
 | `process.runtime_unit_mismatch` | Rewrite the backend artifact from gateway app, workspace, and process configuration. |
 | `process.restart_policy_mismatch` | Rewrite the backend restart policy from the process definition. |
 | `process.runtime_environment_mismatch` | Rewrite the runtime environment from the runtime unit environment contract. |
@@ -178,9 +178,8 @@ process adopt cases, and scope filtering for process probes. It also asserts
 that `process.runtime_backend_unavailable` short-circuits downstream layers.
 
 `ProcessesProbeTest` covers registry configuration, node/app/workspace owner
-validation, app and workspace expansion, process manager availability,
-runtime-unit identity, Docker and Docker Swarm service definition metadata,
-WireGuard self-route diagnostics for same-node service endpoints,
-missing/extra/drifted runtime artifacts, restart policy drift, runtime
-environment drift, event notifier drift, and exclusion of non-process drift
-from issue codes.
+validation, app and workspace expansion, and process manager availability.
+It also covers runtime-unit identity and Docker/Docker Swarm service definition metadata.
+WireGuard self-route diagnostics, missing/extra/drifted runtime artifacts, restart
+policy drift, runtime environment drift, event notifier drift, and exclusion of
+non-process drift from issue codes are also covered.
