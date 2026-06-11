@@ -13,6 +13,10 @@ use Illuminate\Contracts\Process\ProcessResult;
 use Illuminate\Support\Facades\Process;
 use Mockery as m;
 
+beforeEach(function (): void {
+    Process::preventStrayProcesses();
+});
+
 afterEach(function (): void {
     m::close();
 });

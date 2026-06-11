@@ -19,6 +19,10 @@ use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Process;
 use Mockery as m;
 
+beforeEach(function (): void {
+    Process::preventStrayProcesses();
+});
+
 afterEach(function (): void {
     E2ECurrentCheckout::flushCache();
     E2ECurrentCheckout::useNowResolverForTests(null);

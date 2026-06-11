@@ -12,6 +12,10 @@ use App\E2E\Support\E2ETopologyProviderPool;
 use App\E2E\Support\ProviderAvailability;
 use Illuminate\Support\Facades\Process;
 
+beforeEach(function (): void {
+    Process::preventStrayProcesses();
+});
+
 it('selects the first topology provider with the requested kind available', function (): void {
     $pool = new E2ETopologyProviderPool([
         fakeTopologyProvider('docker', false),

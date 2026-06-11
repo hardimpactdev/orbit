@@ -14,6 +14,10 @@ use App\E2E\Support\ProviderPool;
 use App\E2E\Support\SshKeyPair;
 use Illuminate\Support\Facades\Process;
 
+beforeEach(function (): void {
+    Process::preventStrayProcesses();
+});
+
 it('defaults to the incus provider', function (): void {
     withE2EProviderEnvironment([], function (): void {
         expect(E2EConfig::fromEnvironment()->providerNames)->toBe(['incus']);
