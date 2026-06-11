@@ -8,6 +8,7 @@ final readonly class LocalUpdateWorkflow
 {
     public function __construct(
         private RunsLocalUpdate $updater,
+        private CheckoutPathResolver $checkoutPathResolver,
     ) {}
 
     /**
@@ -15,6 +16,15 @@ final readonly class LocalUpdateWorkflow
      */
     public function run(?callable $onStep = null): LocalUpdateResult
     {
+        $installRoot = $this->checkoutPathResolver->resolve();
+
+        if (! is_dir($installRoot)) {
+            return new LocalUpdateResult(
+                status: LocalUpdateResult::STATUS_CHECKOUT_UNAVAILABLE,
+                checkoutPath: $installRoot,
+            );
+        }
+
         $steps = [
             'pull_source' => $this->updater->pullSource(...),
         ];

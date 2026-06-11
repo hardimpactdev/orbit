@@ -139,18 +139,14 @@ Primary CLI test owners:
 
 | Path | Coverage |
 | --- | --- |
-| `apps/cli/tests/Feature/Commands/Operation/UpdateCommandTest.php` | Local update contract: step ordering, JSON success and error envelopes, human progress tree, failure prose, and binary-unavailable handling. |
+| `apps/cli/tests/Feature/Commands/Operation/UpdateCommandTest.php` | Local update contract: step ordering, JSON success and error envelopes, human progress tree, failure prose, binary-unavailable handling, and checkout-unavailable handling. |
 | `apps/cli/tests/Feature/Services/Updates/LocalCheckoutUpdaterTest.php` | Production/artifact binary download-and-relink invocation (binary URL, install root, link path), entry-point verification, and gateway-context dependency install/migration execution. Offline proof via `ORBIT_BINARY_URL=file://`. |
-| `apps/cli/tests/Feature/Services/Updates/LocalUpdateWorkflowTest.php` | Ordered workflow orchestration, binary-unavailable detection, and failed-step metadata. |
+| `apps/cli/tests/Feature/Services/Updates/LocalUpdateWorkflowTest.php` | Ordered workflow orchestration, install-root availability detection, binary-unavailable detection, and failed-step metadata. |
 | `apps/cli/tests/Feature/Services/Updates/CheckoutPathResolverTest.php` | Install-root resolution from `ORBIT_INSTALL_PATH`, `HOME/orbit` fallback, and no `phar://` or `base_path()` paths. |
 
-Gateway coverage retained for bridged local-update behavior:
-
-| Path | Coverage |
-| --- | --- |
-| `apps/gateway/tests/Feature/Commands/UpdateCommandTest.php` | Gateway bootstrap implementation for local update command execution. |
-| `apps/gateway/tests/Feature/Commands/Operations/UpdateCommandTest.php` | Gateway-local update contract, renderer selection, and failure handling. |
-| `apps/gateway/tests/E2E/UpdateTest.php` | Integrated local update behavior inside the gateway topology. |
+There is no gateway-side coverage for this command: the gateway `update`
+Artisan command was removed when public command ownership moved to
+`apps/cli`, and integrated update coverage lives in the `apps/e2e` runner.
 
 ## Named Blocker
 

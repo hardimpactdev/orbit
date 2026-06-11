@@ -200,16 +200,21 @@ fleet failures are Orbit-handled command failures.
 
 ## Activity Logging
 
-The local CLI command emits an activity entry for successful and failed fleet
-update attempts. Activity logging is best-effort and must not change the
-documented command result.
+The gateway records fleet update activity at the chokepoint; the CLI does not
+emit activity entries. The `update:all` start API route records the attempt
+entry through gateway activity middleware, and the durable update runner
+records one outcome entry when the operation reaches a terminal state.
+Activity logging is best-effort and must not change the documented command
+result or the operation status.
+
+The runner outcome entry uses these fields:
 
 | Field | Value |
 | --- | --- |
 | Type | `update:all` |
 | Effect | `write` |
 | Subject | The `operation_run_id` for the durable fleet update operation. |
-| Properties | `scope=fleet`, `operation_run_id`, `status` (`queued`, `running`, `completed`, or `failed`), summary counts, selected `targets` with target/node/role metadata, `target_version`, gateway image digest, manifest version/source, and `failed_step` for local, gateway, scheduler, remote, or verification failures. No process output, SSH output, environment values, private keys, operation tokens, or secrets. |
+| Properties | `scope=fleet`, `operation_run_id`, `status` (`completed` or `failed`), `target_version`, gateway image digest, manifest version/source, and `failed_step` for local, gateway, scheduler, remote, or verification failures. Per-target results and summary counts live in the durable operation record, not the activity entry. No process output, SSH output, environment values, private keys, operation tokens, or secrets. |
 | Description | derived |
 
 ## Test Mapping
@@ -218,12 +223,9 @@ Primary existing test owners:
 
 | Path | Coverage |
 | --- | --- |
-| `apps/gateway/tests/Feature/Commands/UpdateAllCommandTest.php` | Bootstrap coverage for local plus registered-node update execution. Expand to cover: gateway-admin denial, gateway authorization, JSON output, partial failure payloads, and gateway-owned remote execution boundaries. |
-
-Required split contract tests:
-
-| Path | Coverage |
-| --- | --- |
-| `apps/gateway/tests/Feature/Commands/Operations/UpdateAllCommandTest.php` | Fleet update contract: gateway-authorized peer eligibility, selection rules, local-first behavior, per-target continuation after remote failure, and no app deployment or drift repair side effects. |
-| `apps/gateway/tests/Feature/Commands/Operations/UpdateAllJsonRendererTest.php` | JSON renderer selection, success envelope, partial failure error envelope, target result metadata, and every `error.code` value. |
-| `apps/gateway/tests/Feature/Commands/Operations/UpdateAllHumanRendererTest.php` | Progress tree shape, per-target success output, partial failure output, and local failure output. |
+| `apps/cli/tests/Feature/Commands/Operation/UpdateAllCommandTest.php` | CLI fleet update contract: local update preflight, durable operation start, event-stream following and reconnects, terminal operation errors, and JSON/human rendering. |
+| `apps/gateway/tests/Feature/Http/Api/UpdateAllStartControllerTest.php` | Gateway start API contract: authorization, durable operation creation, and attempt activity logging via route middleware. |
+| `apps/gateway/tests/Feature/Http/Api/UpdateAllControllerTest.php` | Gateway operation read/event API contract for durable fleet updates. |
+| `apps/gateway/tests/Unit/Http/Gateway/UpdateAllGatewayStreamClientTest.php` | Gateway event-stream client behavior, including reconnect handling. |
+| `apps/gateway/tests/Feature/Services/Operations/UpdateRunnerActivityTest.php` | Durable runner outcome activity entries for completed and failed fleet updates, including best-effort logging-failure handling. |
+| `apps/e2e/tests/Feature/Commands/UpdateAllDurableOperationTest.php` | Integrated durable fleet update from an operator through gateway event replay. |

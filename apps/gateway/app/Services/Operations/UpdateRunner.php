@@ -6,6 +6,7 @@ namespace App\Services\Operations;
 
 use App\Models\OperationRun;
 use App\Models\OperationUpdatePlan;
+use App\Services\ActivityLogger;
 use RuntimeException;
 use Throwable;
 
@@ -22,6 +23,7 @@ final readonly class UpdateRunner
         private OperationUpdatePlanStore $updatePlans,
         private UpdateLeaseManager $leases,
         private UpdateRunnerPipeline $pipeline,
+        private ActivityLogger $activityLogger,
     ) {}
 
     public function start(string $operationRunId): OperationUpdatePlan
@@ -163,6 +165,8 @@ final readonly class UpdateRunner
 
         $this->operationRuns->appendComplete($operationRun->id, 0, $result);
         $this->operationRuns->succeeded($operationRun->id, result: $result);
+
+        $this->logOutcomeActivity($operationRun, $plan, 'completed');
     }
 
     private function markFailed(OperationRun $operationRun, Throwable $exception): void
@@ -178,6 +182,42 @@ final readonly class UpdateRunner
             'message' => $failure['message'],
             ...($failure['data'] === [] ? [] : ['data' => $failure['data']]),
         ]);
+
+        $plan = $this->updatePlans->forOperationRun($operationRun->id);
+
+        if ($plan instanceof OperationUpdatePlan) {
+            $this->logOutcomeActivity($operationRun, $plan, 'failed', $this->failedStep($exception));
+        }
+    }
+
+    private function logOutcomeActivity(OperationRun $operationRun, OperationUpdatePlan $plan, string $status, ?string $failedStep = null): void
+    {
+        try {
+            $this->activityLogger->log(
+                new FleetUpdateOutcomeActivity($operationRun, $plan, $status, $failedStep),
+                channel: 'fleet_update',
+                causer: null,
+            );
+        } catch (Throwable) {
+            // Activity logging is best-effort; failure must not change the runner result.
+        }
+    }
+
+    private function failedStep(Throwable $exception): string
+    {
+        if ($exception instanceof FleetUpdateVerificationFailed) {
+            return 'verification';
+        }
+
+        if ($exception instanceof UpdateLeaseConflict) {
+            return match ($exception->resourceType) {
+                'gateway', 'scheduler' => 'gateway',
+                'node' => 'workloads',
+                default => 'fleet_lease',
+            };
+        }
+
+        return 'runner';
     }
 
     /**

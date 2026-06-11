@@ -88,6 +88,25 @@ describe('update', function (): void {
             ->and($output)->not->toContain('"success"');
     });
 
+    it('renders local_checkout_unavailable when the install root does not exist', function (): void {
+        $previous = getenv('ORBIT_INSTALL_PATH');
+        putenv('ORBIT_INSTALL_PATH=/nonexistent/orbit-update-cmd-test');
+
+        try {
+            [$exitCode, $output] = runCommand($this, 'update', ['--json' => true]);
+
+            $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+
+            expect($exitCode)->toBe(1)
+                ->and($decoded['error']['code'])->toBe('local_checkout_unavailable')
+                ->and($decoded['error']['message'])->toBe('Local Orbit checkout cannot be updated.')
+                ->and($decoded['error']['meta'])->toBe(['path' => '/nonexistent/orbit-update-cmd-test'])
+                ->and($this->updater->calls)->toBe([]);
+        } finally {
+            $previous === false ? putenv('ORBIT_INSTALL_PATH') : putenv("ORBIT_INSTALL_PATH={$previous}");
+        }
+    });
+
     it('renders local_update_failed with binary update output', function (): void {
         $this->updater->results['pull_source'] = [
             'successful' => false,
@@ -108,6 +127,11 @@ describe('update', function (): void {
 
     it('keeps the install path out of binary download failures', function (): void {
         $previous = getenv('ORBIT_INSTALL_PATH');
+
+        if (! is_dir('/tmp/orbit-update-cmd-test')) {
+            mkdir('/tmp/orbit-update-cmd-test', 0755, true);
+        }
+
         putenv('ORBIT_INSTALL_PATH=/tmp/orbit-update-cmd-test');
 
         try {

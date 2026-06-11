@@ -38,6 +38,7 @@ direction.
 
 <!-- newest first; add new entries directly under this comment -->
 
+- 2026-06-11 — Fleet update activity is gateway-recorded: the `update:all` start API route logs the attempt and the durable update runner records the `completed`/`failed` outcome entry; the CLI emits no activity entries. Supersedes the CLI-emission activity wording in the update:all contract.
 - 2026-06-10 — Firewall rule eligibility drops the per-role allowlist: any registered active Ubuntu managed node with at least one active role assignment is an eligible firewall target, including `websocket` and `s3` nodes. Clients, unsupported platforms, inactive nodes, and role-less identities remain ineligible.
 
 - 2026-06-06 — `tool:install` of a tool that backs a singleton service (starting with `opencode-server`) also configures that tool's related process by default, so installing the capability yields a running service. A tool definition declares the related process (runtime, command, `--tool` dependency); install converges it idempotently through the process family. `--no-process` installs the capability only; `--with-process` is the explicit default. Lifecycle stays process-owned. (solo todo #704)
