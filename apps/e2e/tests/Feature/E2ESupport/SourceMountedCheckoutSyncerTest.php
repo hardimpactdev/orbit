@@ -11,10 +11,15 @@ it('syncs the initiating worktree to a generated remote path without dependency 
 
     $commands = [];
     Process::fake(function ($process) use (&$commands) {
-        $commands[] = implode("\n", array_filter([
+        $command = implode("\n", array_filter([
             (string) $process->command,
             is_string($process->input) ? $process->input : null,
         ], 'is_string'));
+        $commands[] = $command;
+
+        if (str_contains($command, 'rsync -az --delete')) {
+            return Process::result(">f+++++++++ apps/gateway/app/Example.php\n");
+        }
 
         return Process::result();
     });
@@ -192,4 +197,80 @@ it('uses the local worktree directly for local source mounts', function (): void
     expect((new SourceMountedCheckoutSyncer)->sync('local', 'docker'))->toBe(repo_path());
 
     Process::assertNothingRan();
+});
+
+it('guards the ownership repair chown behind a foreign-owner probe', function (): void {
+    $commands = [];
+    Process::fake(function ($process) use (&$commands) {
+        $commands[] = implode("\n", array_filter([
+            (string) $process->command,
+            is_string($process->input) ? $process->input : null,
+        ], 'is_string'));
+
+        return Process::result();
+    });
+
+    (new SourceMountedCheckoutSyncer)->sync('beast', 'incus');
+
+    $commandsOutput = implode("\n", $commands);
+
+    expect($commandsOutput)
+        ->toContain('! -user "$(id -un)"')
+        ->toContain('-print -quit')
+        ->and(strpos($commandsOutput, '! -user "$(id -un)"'))
+        ->toBeLessThan(strpos($commandsOutput, 'chown -R "${ORBIT_E2E_SOURCE_SYNC_UID}:${ORBIT_E2E_SOURCE_SYNC_GID}" /work'));
+});
+
+it('itemizes rsync changes so unchanged syncs can skip maintenance work', function (): void {
+    $commands = [];
+    Process::fake(function ($process) use (&$commands) {
+        $commands[] = (string) $process->command;
+
+        return Process::result();
+    });
+
+    (new SourceMountedCheckoutSyncer)->sync('beast', 'incus');
+
+    expect(implode("\n", $commands))->toContain('rsync -az --delete --itemize-changes');
+});
+
+it('skips permission normalization when rsync reports no changes', function (): void {
+    $commands = [];
+    Process::fake(function ($process) use (&$commands) {
+        $commands[] = implode("\n", array_filter([
+            (string) $process->command,
+            is_string($process->input) ? $process->input : null,
+        ], 'is_string'));
+
+        return Process::result();
+    });
+
+    (new SourceMountedCheckoutSyncer)->sync('beast', 'incus');
+
+    expect(implode("\n", $commands))
+        ->not->toContain('find . -type d -exec chmod a+rx {} +')
+        ->not->toContain('find . -type f -exec chmod a+r {} +');
+});
+
+it('normalizes permissions when rsync reports changed files', function (): void {
+    $commands = [];
+    Process::fake(function ($process) use (&$commands) {
+        $command = implode("\n", array_filter([
+            (string) $process->command,
+            is_string($process->input) ? $process->input : null,
+        ], 'is_string'));
+        $commands[] = $command;
+
+        if (str_contains($command, 'rsync -az --delete')) {
+            return Process::result(">f+++++++++ apps/gateway/app/Example.php\n");
+        }
+
+        return Process::result();
+    });
+
+    (new SourceMountedCheckoutSyncer)->sync('beast', 'incus');
+
+    expect(implode("\n", $commands))
+        ->toContain('find . -type d -exec chmod a+rx {} +')
+        ->toContain('find . -type f -exec chmod a+r {} +');
 });

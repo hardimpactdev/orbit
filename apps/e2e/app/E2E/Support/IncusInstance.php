@@ -23,6 +23,11 @@ final class IncusInstance implements E2EInstance, SourceMountedCheckoutInstance
         return $this->name;
     }
 
+    public function host(): IncusHost
+    {
+        return $this->host;
+    }
+
     public function exec(string $command, ?int $timeoutSeconds = null): ProcessResult
     {
         $authScript = E2EGitHubAuth::shellInputScript($command);
@@ -192,14 +197,16 @@ final class IncusInstance implements E2EInstance, SourceMountedCheckoutInstance
         throw new \RuntimeException("Incus agent never became ready on {$this->name}.");
     }
 
+    public static function networkIdentityRefreshCommand(): string
+    {
+        return 'rm -f /etc/machine-id /var/lib/dbus/machine-id && systemd-machine-id-setup && systemctl restart systemd-journald && rm -f /run/systemd/netif/leases/* /var/lib/systemd/network/* && (systemctl --no-block restart systemd-networkd 2>/dev/null || systemctl --no-block restart NetworkManager 2>/dev/null || true)';
+    }
+
     public function refreshNetworkIdentity(): void
     {
         $this->ipv4 = null;
 
-        $result = $this->exec(
-            'rm -f /etc/machine-id /var/lib/dbus/machine-id && systemd-machine-id-setup && systemctl restart systemd-journald && rm -f /run/systemd/netif/leases/* /var/lib/systemd/network/* && (systemctl --no-block restart systemd-networkd 2>/dev/null || systemctl --no-block restart NetworkManager 2>/dev/null || true)',
-            timeoutSeconds: 60,
-        );
+        $result = $this->exec(self::networkIdentityRefreshCommand(), timeoutSeconds: 60);
 
         if (! $result->successful()) {
             throw new \RuntimeException("Could not refresh network identity for {$this->name}: {$result->errorOutput()}");

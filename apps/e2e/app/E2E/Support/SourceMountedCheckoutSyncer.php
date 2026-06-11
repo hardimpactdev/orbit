@@ -39,13 +39,17 @@ final readonly class SourceMountedCheckoutSyncer
 
             try {
                 $this->mustRun($this->sshCommand($host, $this->ownershipRepairCommand($targetPath)), "Could not repair source checkout ownership on {$host}:{$targetPath}");
-                $this->mustRun($this->rsyncCommand($host, $targetPath), "Could not rsync source checkout to {$host}:{$targetPath}");
+                $rsync = $this->mustRun($this->rsyncCommand($host, $targetPath), "Could not rsync source checkout to {$host}:{$targetPath}");
+                $changed = trim($rsync->output()) !== '';
                 $this->mustRun($this->sshCommand($host, $this->staleMutableStateCleanupCommand($targetPath)), "Could not clear stale source checkout state on {$host}:{$targetPath}");
                 $hydration = $this->dependencyHydrationSshCommand($host, $targetPath);
                 $this->mustRun($hydration['command'], "Could not hydrate source checkout dependencies on {$host}:{$targetPath}", input: $hydration['input']);
                 $vendorArchive = $this->vendorArchiveSshCommand($host, $targetPath);
                 $this->mustRun($vendorArchive['command'], "Could not archive source checkout vendor dependencies on {$host}:{$targetPath}", input: $vendorArchive['input']);
-                $this->mustRun($this->sshCommand($host, $this->permissionNormalizationCommand($targetPath)), "Could not normalize source checkout permissions on {$host}:{$targetPath}");
+
+                if ($changed) {
+                    $this->mustRun($this->sshCommand($host, $this->permissionNormalizationCommand($targetPath)), "Could not normalize source checkout permissions on {$host}:{$targetPath}");
+                }
             } finally {
                 $this->releaseLock($host, $targetPath);
             }
@@ -193,7 +197,7 @@ final readonly class SourceMountedCheckoutSyncer
         ));
 
         return sprintf(
-            'rsync -az --delete %s %s %s',
+            'rsync -az --delete --itemize-changes %s %s %s',
             $excludes,
             escapeshellarg(repo_path().'/'),
             escapeshellarg("{$host}:{$targetPath}/"),
@@ -206,18 +210,23 @@ final readonly class SourceMountedCheckoutSyncer
 
         return implode("\n", [
             'target='.escapeshellarg($targetPath),
-            'if [ ! -d "$target" ]; then exit 0; fi',
-            'ORBIT_E2E_SOURCE_SYNC_UID="$(id -u)"',
-            'ORBIT_E2E_SOURCE_SYNC_GID="$(id -g)"',
-            'if command -v docker >/dev/null 2>&1; then',
-            '  if ! docker image inspect '.escapeshellarg($image).' >/dev/null 2>&1; then docker pull '.escapeshellarg($image).'; fi',
+            'foreign=""',
+            'if [ -d "$target" ]; then',
+            '  foreign="$(find "$target" ! -user "$(id -un)" -print -quit 2>/dev/null || true)"',
+            'fi',
+            'if [ -n "$foreign" ]; then',
+            '  ORBIT_E2E_SOURCE_SYNC_UID="$(id -u)"',
+            '  ORBIT_E2E_SOURCE_SYNC_GID="$(id -g)"',
+            '  if command -v docker >/dev/null 2>&1; then',
+            '    if ! docker image inspect '.escapeshellarg($image).' >/dev/null 2>&1; then docker pull '.escapeshellarg($image).'; fi',
             sprintf(
-                '  docker run --rm --mount "type=bind,src=${target},dst=/work" --env "ORBIT_E2E_SOURCE_SYNC_UID=${ORBIT_E2E_SOURCE_SYNC_UID}" --env "ORBIT_E2E_SOURCE_SYNC_GID=${ORBIT_E2E_SOURCE_SYNC_GID}" %s sh -lc %s',
+                '    docker run --rm --mount "type=bind,src=${target},dst=/work" --env "ORBIT_E2E_SOURCE_SYNC_UID=${ORBIT_E2E_SOURCE_SYNC_UID}" --env "ORBIT_E2E_SOURCE_SYNC_GID=${ORBIT_E2E_SOURCE_SYNC_GID}" %s sh -lc %s',
                 escapeshellarg($image),
                 escapeshellarg('chown -R "${ORBIT_E2E_SOURCE_SYNC_UID}:${ORBIT_E2E_SOURCE_SYNC_GID}" /work'),
             ),
-            'elif command -v sudo >/dev/null 2>&1 && sudo -n true >/dev/null 2>&1; then',
-            '  sudo chown -R "${ORBIT_E2E_SOURCE_SYNC_UID}:${ORBIT_E2E_SOURCE_SYNC_GID}" "$target"',
+            '  elif command -v sudo >/dev/null 2>&1 && sudo -n true >/dev/null 2>&1; then',
+            '    sudo chown -R "${ORBIT_E2E_SOURCE_SYNC_UID}:${ORBIT_E2E_SOURCE_SYNC_GID}" "$target"',
+            '  fi',
             'fi',
         ]);
     }

@@ -113,16 +113,47 @@ final readonly class IncusTopologyTemplate
             );
         }
 
+        $timer->measure('clone-ready', fn () => self::awaitClonesReady($host, $runId, $roles, $timer));
+
         $instances = [];
         foreach ($roles as $role) {
-            $clone = self::cloneName($runId, $role);
-            $instance = new IncusInstance($host, $clone, commandTransport: true, sourceMountedCheckout: $sourceMounted);
-            $timer->measure("agent-ready.{$role}", fn () => $instance->waitForAgent());
-            $timer->measure("network-identity.{$role}", fn () => $instance->refreshNetworkIdentity());
-            $instances[$role] = $instance;
+            $instances[$role] = new IncusInstance($host, self::cloneName($runId, $role), commandTransport: true, sourceMountedCheckout: $sourceMounted);
         }
 
         return $instances;
+    }
+
+    /**
+     * Wait for every clone's Incus agent and refresh its network identity in
+     * one parallel host invocation instead of serial per-role round trips.
+     *
+     * @param  list<string>  $roles
+     */
+    private static function awaitClonesReady(IncusHost $host, string $runId, array $roles, E2EPhaseTimer $timer): void
+    {
+        $tasks = [];
+
+        foreach ($roles as $role) {
+            $clone = escapeshellarg(self::cloneName($runId, $role));
+
+            $tasks[$role] = implode("\n", [
+                'deadline=$((SECONDS + '.$host->config->timeoutSeconds.'))',
+                "until incus exec {$clone} -- true >/dev/null 2>&1; do",
+                '    if [ "$SECONDS" -ge "$deadline" ]; then echo "Incus agent never became ready on '.self::cloneName($runId, $role).'." >&2; exit 1; fi',
+                '    sleep 1',
+                'done',
+                "incus exec {$clone} -- sh -lc ".escapeshellarg(IncusInstance::networkIdentityRefreshCommand()),
+            ]);
+        }
+
+        IncusParallelHostTasks::run(
+            $host,
+            $tasks,
+            $timer,
+            'clone-ready',
+            timeoutSeconds: $host->config->timeoutSeconds + 120,
+            failureMessage: 'Prepared topology clones never became ready',
+        );
     }
 
     /**
@@ -150,10 +181,12 @@ final readonly class IncusTopologyTemplate
         $stateful ??= getenv('ORBIT_E2E_TOPOLOGY_RESET') === 'stateful-restore';
         $sourcePath = $sourceMounted ? $host->sourcePath() : null;
 
+        $sources = self::resolveSnapshotSources($host, $kind, $roles);
+
         $index = 0;
         foreach ($roles as $role) {
             $index++;
-            $source = self::resolveSnapshotSource($host, $kind, $role);
+            $source = $sources[$role];
             $template = escapeshellarg("{$source['template']}/{$source['snapshot']}");
             $clone = escapeshellarg(self::cloneName($runId, $role));
             $macAddress = escapeshellarg(self::cloneMacAddress($runId, $role));
@@ -233,22 +266,57 @@ final readonly class IncusTopologyTemplate
     }
 
     /**
-     * @return array{template: string, snapshot: string}
+     * Resolve the template/snapshot source for every role in one host call.
+     *
+     * Branch-namespaced candidates fall back to the matching base candidate
+     * per role; roles whose markers are missing fall back to their first
+     * candidate, matching the previous per-role resolution behavior.
+     *
+     * @param  list<string>  $roles
+     * @return array<string, array{template: string, snapshot: string}>
      */
-    private static function resolveSnapshotSource(IncusHost $host, E2ETopologyKind $kind, string $role): array
+    private static function resolveSnapshotSources(IncusHost $host, E2ETopologyKind $kind, array $roles): array
     {
-        foreach (self::snapshotCandidates($kind, $role) as $candidate) {
-            $result = $host->run(
-                'incus info '.escapeshellarg($candidate['template']).' >/dev/null 2>&1 && '.self::snapshotExistsCommand($candidate['template'], $candidate['snapshot']),
-                timeoutSeconds: 30,
-            );
+        $fallbacks = [];
+        $lines = [];
 
-            if ($result->successful()) {
-                return $candidate;
+        foreach ($roles as $role) {
+            $candidates = self::snapshotCandidates($kind, $role);
+            $fallbacks[$role] = $candidates[0];
+
+            foreach ($candidates as $index => $candidate) {
+                $lines[] = sprintf(
+                    '%s incus info %s >/dev/null 2>&1 && %s; then',
+                    $index === 0 ? 'if' : 'elif',
+                    escapeshellarg($candidate['template']),
+                    self::snapshotExistsCommand($candidate['template'], $candidate['snapshot']),
+                );
+                $lines[] = '    echo '.escapeshellarg("__orbit_snapshot_source {$role} {$candidate['template']} {$candidate['snapshot']}");
+            }
+
+            $lines[] = 'else';
+            $lines[] = '    echo '.escapeshellarg("__orbit_snapshot_source {$role} {$fallbacks[$role]['template']} {$fallbacks[$role]['snapshot']}");
+            $lines[] = 'fi';
+        }
+
+        $result = $host->run(implode("\n", $lines), timeoutSeconds: 60);
+        $resolved = [];
+
+        if ($result->successful()
+            && preg_match_all('/__orbit_snapshot_source\s+(\S+)\s+(\S+)\s+(\S+)/', $result->output(), $matches, PREG_SET_ORDER) !== false) {
+            foreach ($matches as $match) {
+                $resolved[$match[1]] = [
+                    'template' => $match[2],
+                    'snapshot' => $match[3],
+                ];
             }
         }
 
-        return self::snapshotCandidates($kind, $role)[0];
+        foreach ($roles as $role) {
+            $resolved[$role] ??= $fallbacks[$role];
+        }
+
+        return $resolved;
     }
 
     private static function snapshotExistsCommand(string $template, string $snapshot): string

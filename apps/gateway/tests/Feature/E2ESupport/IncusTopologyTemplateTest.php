@@ -47,10 +47,14 @@ function failedProcessResult(string $error = ''): ProcessResult
 
 function mockIncusTopologyCurrentSnapshots(IncusHost $host, int $count): void
 {
+    // Snapshot sources for every role resolve through one batched host call.
+    // Empty marker output makes each role fall back to its first candidate,
+    // which is the base template/snapshot in the base artifact namespace.
     $host->shouldReceive('run')
-        ->times($count)
-        ->withArgs(fn (string $command, int $timeoutSeconds): bool => $timeoutSeconds === 30
-            && str_contains($command, '/snapshots/clean-'))
+        ->once()
+        ->withArgs(fn (string $command, int $timeoutSeconds): bool => str_contains($command, '__orbit_snapshot_source')
+            && str_contains($command, '/snapshots/clean-')
+            && substr_count($command, 'else') >= $count)
         ->andReturn(successfulProcessResult());
 }
 
@@ -610,12 +614,19 @@ it('falls back from branch-specific Incus snapshots to base snapshots per role',
 
         $host->shouldReceive('run')
             ->andReturnUsing(function (string $command) use (&$checks): ProcessResult {
-                if (str_contains($command, '/snapshots/')) {
+                if (str_contains($command, '__orbit_snapshot_source')) {
                     $checks[] = $command;
-                }
 
-                if (str_contains($command, 'orbit-template-agent-branch-a-b')) {
-                    return failedProcessResult();
+                    $result = m::mock(ProcessResult::class);
+                    $result->shouldReceive('successful')->andReturn(true);
+                    $result->shouldReceive('errorOutput')->andReturn('');
+                    $result->shouldReceive('output')->andReturn(implode("\n", [
+                        '__orbit_snapshot_source operator orbit-template-operator-branch-a-b clean-operator_gateway_app-dev_app-prod_agent_websocket-branch-a-b',
+                        '__orbit_snapshot_source gateway orbit-template-gateway-branch-a-b clean-operator_gateway_app-dev_app-prod_agent_websocket-branch-a-b',
+                        '__orbit_snapshot_source agent orbit-template-agent-base clean-operator_gateway_app-dev_app-prod_agent_websocket-base',
+                    ]));
+
+                    return $result;
                 }
 
                 return successfulProcessResult();
@@ -635,6 +646,7 @@ it('falls back from branch-specific Incus snapshots to base snapshots per role',
             ->toContain("incus copy 'orbit-template-agent-base/clean-operator_gateway_app-dev_app-prod_agent_websocket-base'")
             ->not->toContain('orbit-template-operator-base/clean-operator_gateway_app-dev_app-prod_agent_websocket-base')
             ->not->toContain('orbit-template-gateway-base/clean-operator_gateway_app-dev_app-prod_agent_websocket-base')
+            ->and($checks)->toHaveCount(1)
             ->and($checkedSnapshots)
             ->toContain('orbit-template-agent-branch-a-b/snapshots/clean-operator_gateway_app-dev_app-prod_agent_websocket-branch-a-b')
             ->toContain('orbit-template-agent-base/snapshots/clean-operator_gateway_app-dev_app-prod_agent_websocket-base');
@@ -770,7 +782,7 @@ it('prepared Incus acquisition retargets selected snapshot roles without dynamic
 
     expect($source)
         ->toContain('prepareInstances($instances, $this->config, $sshKeyPair, $timer, $options, $kind)')
-        ->toContain('retargetTopology($instances, $config, $sshKeyPair, $kind, $options->sourceMountedCheckout)')
+        ->toContain('retargetTopology($instances, $config, $sshKeyPair, $kind, $options->sourceMountedCheckout, $timer)')
         ->toContain('--public-host=%s --skip-gateway-service-install')
         ->toContain('$bootstrapArguments')
         ->toContain('runGatewayArtisan($gateway')

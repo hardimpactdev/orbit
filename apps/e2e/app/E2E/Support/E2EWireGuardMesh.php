@@ -94,12 +94,18 @@ final readonly class E2EWireGuardMesh
 
     public function installRole(E2EInstance $instance, string $role): void
     {
-        $config = $this->peerConfig($role);
-
         E2ECommand::exec(
             $instance,
-            sprintf(
-                <<<'SH'
+            $this->installScript($role),
+            "Could not install wg-orbit on {$instance->name()}",
+            timeoutSeconds: 180,
+        );
+    }
+
+    public function installScript(string $role): string
+    {
+        return sprintf(
+            <<<'SH'
 set -euo pipefail
 command -v wg >/dev/null 2>&1 || { echo 'wg is missing from the prepared Incus artifact. Rebuild the base image and prepared topology.' >&2; exit 1; }
 command -v wg-quick >/dev/null 2>&1 || { echo 'wg-quick is missing from the prepared Incus artifact. Rebuild the base image and prepared topology.' >&2; exit 1; }
@@ -112,10 +118,7 @@ sudo wg-quick down wg-orbit >/dev/null 2>&1 || true
 sudo wg-quick up wg-orbit
 sudo systemctl enable wg-quick@wg-orbit
 SH,
-                $config,
-            ),
-            "Could not install wg-orbit on {$instance->name()}",
-            timeoutSeconds: 180,
+            $this->peerConfig($role),
         );
     }
 

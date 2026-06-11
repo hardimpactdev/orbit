@@ -12,6 +12,14 @@ final readonly class E2EWgEasyGateway
         private string $databasePath = self::WG_EASY_DATABASE_PATH,
     ) {}
 
+    /**
+     * Start or reuse the gateway wg-easy container.
+     *
+     * Prepared snapshots already carry a configured wg-easy container and
+     * database, so a healthy baked container is reused and only its database
+     * state and runtime addresses are retargeted. A failed reuse verification
+     * falls back to the full recreate path.
+     */
     public function start(E2EInstance $gateway, string $advertisedHost): void
     {
         E2ECommand::exec(
@@ -21,47 +29,69 @@ final readonly class E2EWgEasyGateway
 set -euo pipefail
 command -v docker >/dev/null 2>&1 || { echo 'docker is missing from the prepared Incus gateway artifact. Rebuild the prepared topology.' >&2; exit 1; }
 sudo systemctl enable --now docker
-docker rm -f wg-easy >/dev/null 2>&1 || true
-sudo install -d -m 0755 -o orbit -g orbit /home/orbit/.wg-easy
-docker run -d \
-    --name wg-easy \
-    --restart unless-stopped \
-    -e INIT_ENABLED=true \
-    -e INIT_USERNAME=orbit \
-    -e INIT_PASSWORD=orbit-e2e-bootstrap-password \
-    -e %s \
-    -e INIT_PORT=51820 \
-    -e INIT_DNS=10.6.0.1 \
-    -e INIT_ALLOWED_IPS=10.6.0.0/24 \
-    -e INSECURE=true \
-    -e PORT=51821 \
-    -e HOST=0.0.0.0 \
-    -e DISABLE_IPV6=true \
-    -p 51820:51820/udp \
-    -p 127.0.0.1:51821:51821/tcp \
-    --cap-add NET_ADMIN \
-    --cap-add SYS_MODULE \
-    --sysctl net.ipv4.conf.all.src_valid_mark=1 \
-    --sysctl net.ipv4.ip_forward=1 \
-    -v /home/orbit/.wg-easy:/etc/wireguard \
-    -v /lib/modules:/lib/modules:ro \
-    ghcr.io/wg-easy/wg-easy:15
-for i in $(seq 1 30); do
-    test -f /home/orbit/.wg-easy/wg-easy.db && break
-    sleep 1
-done
-test -f /home/orbit/.wg-easy/wg-easy.db
-sudo chown -R orbit:orbit /home/orbit/.wg-easy
-for i in $(seq 1 30); do
-    docker exec wg-easy ip link show wg0 >/dev/null 2>&1 && break
-    sleep 1
-done
-for i in $(seq 1 30); do
-    wg_easy_public_key="$(docker exec wg-easy wg show wg0 public-key 2>/dev/null || true)"
-    test -n "${wg_easy_public_key}" && break
-    sleep 1
-done
-test -n "${wg_easy_public_key:-}"
+
+ensure_wg_easy() {
+    force="$1"
+
+    if [ "$force" -eq 1 ]; then
+        docker rm -f wg-easy >/dev/null 2>&1 || true
+        sudo install -d -m 0755 -o orbit -g orbit /home/orbit/.wg-easy
+        docker run -d \
+            --name wg-easy \
+            --restart unless-stopped \
+            -e INIT_ENABLED=true \
+            -e INIT_USERNAME=orbit \
+            -e INIT_PASSWORD=orbit-e2e-bootstrap-password \
+            -e %s \
+            -e INIT_PORT=51820 \
+            -e INIT_DNS=10.6.0.1 \
+            -e INIT_ALLOWED_IPS=10.6.0.0/24 \
+            -e INSECURE=true \
+            -e PORT=51821 \
+            -e HOST=0.0.0.0 \
+            -e DISABLE_IPV6=true \
+            -p 51820:51820/udp \
+            -p 127.0.0.1:51821:51821/tcp \
+            --cap-add NET_ADMIN \
+            --cap-add SYS_MODULE \
+            --sysctl net.ipv4.conf.all.src_valid_mark=1 \
+            --sysctl net.ipv4.ip_forward=1 \
+            -v /home/orbit/.wg-easy:/etc/wireguard \
+            -v /lib/modules:/lib/modules:ro \
+            ghcr.io/wg-easy/wg-easy:15
+    fi
+
+    for i in $(seq 1 30); do
+        test -f /home/orbit/.wg-easy/wg-easy.db && break
+        sleep 1
+    done
+    test -f /home/orbit/.wg-easy/wg-easy.db || return 1
+    sudo chown -R orbit:orbit /home/orbit/.wg-easy
+    for i in $(seq 1 30); do
+        docker exec wg-easy ip link show wg0 >/dev/null 2>&1 && break
+        sleep 1
+    done
+    wg_easy_public_key=''
+    for i in $(seq 1 30); do
+        wg_easy_public_key="$(docker exec wg-easy wg show wg0 public-key 2>/dev/null || true)"
+        test -n "${wg_easy_public_key}" && break
+        sleep 1
+    done
+    test -n "${wg_easy_public_key:-}" || return 1
+}
+
+wg_easy_reusable=0
+if docker ps --filter name='^wg-easy$' --format '{{.Names}}' 2>/dev/null | grep -qx wg-easy \
+    && test -f /home/orbit/.wg-easy/wg-easy.db \
+    && docker exec wg-easy ip link show wg0 >/dev/null 2>&1; then
+    wg_easy_reusable=1
+fi
+
+if [ "$wg_easy_reusable" -eq 1 ] && ensure_wg_easy 0; then
+    :
+else
+    ensure_wg_easy 1
+fi
 docker exec wg-easy ip addr replace 10.6.0.1/24 dev wg0
 docker exec wg-easy ip route replace 10.6.0.0/24 dev wg0
 %s

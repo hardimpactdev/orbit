@@ -21,73 +21,84 @@ afterEach(function (): void {
 });
 
 it('waits for operator host-key scan reachability before checkout pinning runs', function (): void {
-    $providerSource = file_get_contents(repo_path('apps/e2e/app/E2E/Support/IncusTopologyProvider.php'));
     $checkoutSource = file_get_contents(repo_path('apps/e2e/app/E2E/Support/E2ECurrentCheckout.php'));
+    $host = new IncusHost(incusTopologyProviderTestConfig());
+    $provider = new IncusTopologyProvider(incusTopologyProviderTestConfig());
 
-    expect($providerSource)->toContain('waitForOperatorHostKeyScan')
-        ->and($providerSource)->toContain('ssh-keyscan -T 5 -t ed25519,ecdsa,rsa')
-        ->and($providerSource)->toContain('$this->waitForOperatorHostKeyScan($operator, $config, $wireGuardIp);')
+    $method = new ReflectionMethod($provider, 'peerRouteTasks');
+    $method->setAccessible(true);
+    $tasks = $method->invoke($provider, [
+        'operator' => new IncusInstance($host, 'operator', commandTransport: true),
+        'gateway' => new IncusInstance($host, 'gateway', commandTransport: true),
+        'dev' => new IncusInstance($host, 'dev', commandTransport: true),
+    ], incusTopologyProviderTestConfig());
+
+    $gatewayProbe = strpos($tasks['dev'], 'StrictHostKeyChecking=accept-new');
+    $operatorScan = strpos($tasks['dev'], 'ssh-keyscan');
+
+    expect($tasks)->toHaveKey('dev')
+        ->and($tasks['dev'])->toContain('ssh-keyscan -T 5 -t ed25519,ecdsa,rsa')
+        ->and($gatewayProbe)->toBeInt()
+        ->and($operatorScan)->toBeInt()
+        ->and($gatewayProbe)->toBeLessThan($operatorScan)
         ->and($checkoutSource)->toContain("self::artisanCommand('orbit:internal:pin-node-host-keys --json'");
 });
 
 it('waits for gateway host-key reachability before incus bake commands pin host keys', function (): void {
     $source = file_get_contents(repo_path('apps/e2e/app/E2E/Support/IncusTopologyProvider.php'));
+    $host = new IncusHost(incusTopologyProviderTestConfig());
+    $provider = new IncusTopologyProvider(incusTopologyProviderTestConfig());
 
-    $devWait = strpos($source, '$this->waitForGatewayHostKeyScan($gateway, $sshKeyPair, self::DevWireGuardIp);');
-    $devBake = strpos($source, 'orbit:internal:bake-app-node app-dev-1');
-    $ingressWait = strpos($source, '$this->waitForGatewayHostKeyScan($gateway, $sshKeyPair, self::IngressWireGuardIp);');
-    $ingressBake = strpos($source, 'orbit:internal:bake-ingress-node edge-1');
-    $prodWait = strpos($source, '$this->waitForGatewayHostKeyScan($gateway, $sshKeyPair, self::ProdWireGuardIp);');
-    $prodBake = strpos($source, 'orbit:internal:bake-app-node app-prod-1');
-    $agentWait = strpos($source, '$this->waitForGatewayHostKeyScan($gateway, $sshKeyPair, self::AgentWireGuardIp);');
-    $agentBake = strpos($source, 'orbit:internal:bake-agent-node agent-1');
-    $websocketBake = strpos($source, 'orbit:internal:bake-websocket-node app-dev-1');
+    $method = new ReflectionMethod($provider, 'retargetBakeTasks');
+    $method->setAccessible(true);
+    $gateway = new IncusInstance($host, 'gateway', commandTransport: true);
+    $instances = [
+        'operator' => new IncusInstance($host, 'operator', commandTransport: true),
+        'gateway' => $gateway,
+        'dev' => new IncusInstance($host, 'dev', commandTransport: true),
+        'prod' => new IncusInstance($host, 'prod', commandTransport: true),
+        'agent' => new IncusInstance($host, 'agent', commandTransport: true),
+        'ingress' => new IncusInstance($host, 'ingress', commandTransport: true),
+    ];
+    $tasks = $method->invoke($provider, $instances, $gateway, E2ETopologyKind::OperatorGatewayAppdevAppprodIngress, false);
 
-    expect($source)->toContain('private function waitForGatewayHostKeyScan')
-        ->and($source)->toContain('private function waitForHostKeyScan')
-        ->and($source)->toContain('ssh-keyscan -T 5 -t ed25519,ecdsa,rsa')
-        ->and($devWait)->toBeInt()
-        ->and($devBake)->toBeInt()
-        ->and($ingressWait)->toBeInt()
+    $orderings = [];
+
+    foreach (['dev' => 'orbit:internal:bake-app-node app-dev-1', 'prod' => 'orbit:internal:bake-app-node app-prod-1', 'agent' => 'orbit:internal:bake-agent-node agent-1'] as $role => $bake) {
+        $orderings[$role] = strpos($tasks[$role], 'ssh-keyscan') < strpos($tasks[$role], $bake);
+    }
+
+    $ingressBake = strpos($tasks['prod'], 'orbit:internal:bake-ingress-node edge-1');
+    $prodBake = strpos($tasks['prod'], 'orbit:internal:bake-app-node app-prod-1');
+    $websocketBakeTask = array_filter($tasks, fn (string $task): bool => str_contains($task, 'bake-websocket-node'));
+
+    expect($orderings)->toBe(['dev' => true, 'prod' => true, 'agent' => true])
         ->and($ingressBake)->toBeInt()
-        ->and($prodWait)->toBeInt()
         ->and($prodBake)->toBeInt()
-        ->and($agentWait)->toBeInt()
-        ->and($agentBake)->toBeInt()
-        ->and($websocketBake)->toBeInt()
-        ->and([
-            'dev' => $devWait < $devBake,
-            'ingress' => $ingressWait < $ingressBake,
-            'prod' => $prodWait < $prodBake,
-            'agent' => $agentWait < $agentBake,
-            'websocket' => $devWait < $websocketBake,
-        ])->toBe([
-            'dev' => true,
-            'ingress' => true,
-            'prod' => true,
-            'agent' => true,
-            'websocket' => true,
-        ]);
+        ->and($ingressBake)->toBeLessThan($prodBake)
+        ->and($websocketBakeTask)->toBe([])
+        ->and(strpos($source, 'retargetBakeTasks($instances, $gateway, $kind, $sourceMountedCheckout)'))
+        ->toBeLessThan(strpos($source, 'seedAppdevDatabaseAndRedis($gateway, $sshKeyPair, $sourceMountedCheckout)'))
+        ->and(strpos($source, 'seedAppdevDatabaseAndRedis($gateway, $sshKeyPair, $sourceMountedCheckout)'))
+        ->toBeLessThan(strpos($source, 'orbit:internal:bake-websocket-node app-dev-1'));
 });
 
 it('waits for stable gateway ssh reachability after prepared incus retargeting', function (): void {
     $source = file_get_contents(repo_path('apps/e2e/app/E2E/Support/IncusTopologyProvider.php'));
 
-    $networkReady = strpos($source, '$timer->measure(\'network-ready\', fn () => $this->waitForPeerRoutes($instances, $config));');
-    $gatewaySshWait = strpos($source, '$this->waitForGatewaySsh($gateway, $wireGuardIp);');
-    $operatorScan = strpos($source, '$this->waitForOperatorHostKeyScan($operator, $config, $wireGuardIp);');
+    $retarget = strpos($source, "\$timer->measure('retarget'");
+    $networkReady = strpos($source, "\$timer->measure('network-ready'");
 
-    expect($source)->toContain('private function waitForGatewaySsh')
+    expect($source)->toContain('private function gatewaySshProbeTask')
         ->and($source)->toContain('StrictHostKeyChecking=accept-new')
         ->and($source)->toContain('successes=0')
         ->and($source)->toContain('[ "$successes" -ge 3 ]')
         ->and($source)->toContain('ConnectTimeout=10')
         ->and($source)->toContain('ServerAliveInterval=30')
         ->and($source)->toContain('ServerAliveCountMax=10')
+        ->and($retarget)->toBeInt()
         ->and($networkReady)->toBeInt()
-        ->and($gatewaySshWait)->toBeInt()
-        ->and($operatorScan)->toBeInt()
-        ->and($gatewaySshWait)->toBeLessThan($operatorScan);
+        ->and($retarget)->toBeLessThan($networkReady);
 });
 
 it('seeds the gateway ssh key into prepared incus downstream clones', function (): void {

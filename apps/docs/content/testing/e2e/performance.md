@@ -89,12 +89,22 @@ factory and lease. Forced `e2e:prepare-topology` already streams checkpoints by
 default; the environment flag also covers topology acquisition, cleanup, and
 reset paths.
 
-Current event names include `availability`, `batch.copy-start`,
-`agent-ready.<role>`, `command-ready.<role>`, `wireguard`, `cleanup.<role>`, and
-`reset.*`. Output goes to STDERR with the prefix `[orbit-e2e]` so it interleaves
-cleanly with Pest output. The clone/start batch intentionally stays one remote
-SSH operation; split copy/start timing should only be added if it can keep that
-single remote operation.
+Current event names include `batch.copy-start`, `clone-ready.<role>`,
+`command-ready.<role>`, `known-hosts.<role>`, `wireguard`,
+`wireguard.install.<role>`, `gateway-ssh-access.<role>`, `retarget`,
+`retarget.bake.<role>`, `network-ready.<role>`, `cleanup.bulk`, and `reset.*`.
+Warm-snapshot and checkpoint paths still emit `agent-ready.<role>` and
+`cleanup.<role>`. Output goes to STDERR with the prefix `[orbit-e2e]` so it
+interleaves cleanly with Pest output. The clone/start batch intentionally stays
+one remote SSH operation; split copy/start timing should only be added if it
+can keep that single remote operation. Incus acquisition per-role readiness,
+WireGuard installs, gateway SSH authorization, retarget bakes, and peer-route
+checks each run as one parallel host invocation whose per-role durations are
+reported through those `<role>`-suffixed events.
+
+Incus acquisition `incus.source-sync` skips full-tree ownership repair and
+permission normalization when rsync reports an unchanged checkout; only
+changed syncs pay the chown and chmod passes.
 
 Prepared Docker feature lanes should not emit `docker.source-sync` or
 `reset.source-sync`; those events belong to retained development topologies with
