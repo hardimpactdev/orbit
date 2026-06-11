@@ -17,6 +17,8 @@ use App\E2E\Support\SshKeyPair;
 use Illuminate\Support\Facades\Process;
 
 beforeEach(function (): void {
+    Process::preventStrayProcesses();
+
     putenv('ORBIT_E2E_DOCKER_TEST_RUNNERS=local:8:64,beast:8:64,sidecar1:8:64,sidecar2:8:64');
     putenv('ORBIT_E2E_DOCKER_SOURCE_PATH');
     putenv('ORBIT_E2E_DOCKER_SOURCE_PATH_BEAST');
@@ -225,6 +227,7 @@ it('reports docker unavailable when prepared per-role image is missing', functio
         'command -v docker >/dev/null' => Process::result(),
         'docker info >/dev/null' => Process::result(),
         "docker image inspect 'orbit-gateway:prepared-current' >/dev/null" => Process::result(),
+        "docker image inspect 'caddy:2-alpine' >/dev/null" => Process::result(),
         "docker image inspect 'orbit-e2e:operator_base' >/dev/null" => Process::result(exitCode: 1),
     ]);
 
@@ -1308,6 +1311,9 @@ it('uses the parallel worker token to create a non-overlapping docker network', 
         "docker run -d --name 'orbit-e2e-run123-gateway' *" => Process::result(output: "gateway-id\n"),
         "docker run -d --restart unless-stopped --name 'orbit-e2e-run123-gateway-orbit-gateway' *" => Process::result(output: "runtime-id\n"),
         'docker exec *' => Process::result(),
+        'docker rm -f *' => Process::result(),
+        'docker volume rm -f *' => Process::result(),
+        'docker network rm *' => Process::result(),
     ]);
 
     $previous = getenv('TEST_TOKEN');
@@ -1421,6 +1427,7 @@ it('releases docker host slots during topology cleanup', function (): void {
         '*docker run -d*' => Process::result(output: "container-id\n"),
         '*docker exec*' => Process::result(),
         '*docker rm -f*' => Process::result(),
+        '*docker volume rm*' => Process::result(),
         '*docker network rm*' => Process::result(),
         '*ssh -o BatchMode=yes -o ConnectTimeout=10*' => Process::result(),
         '*rsync -az --delete*' => Process::result(),
@@ -1564,6 +1571,7 @@ it('starts docker containers as a batch and rolls back when one start fails', fu
             'command -v docker >/dev/null' => Process::result(),
             'docker info >/dev/null' => Process::result(),
             "docker image inspect 'orbit-gateway:prepared-current' >/dev/null" => Process::result(),
+            "docker image inspect 'caddy:2-alpine' >/dev/null" => Process::result(),
             "docker image inspect 'orbit-e2e:operator_base' >/dev/null" => Process::result(),
             "docker image inspect 'orbit-e2e:gateway_base' >/dev/null" => Process::result(),
             "docker ps --format '{{.Names}}' --filter 'name=orbit-e2e-'" => Process::result(),
@@ -1571,7 +1579,7 @@ it('starts docker containers as a batch and rolls back when one start fails', fu
             "docker run -d --name 'orbit-e2e-run123-operator' *" => Process::result(exitCode: 1, errorOutput: "operator failed\n"),
             "docker run -d --name 'orbit-e2e-run123-gateway' *" => Process::result(output: "gateway-id\n"),
             "docker rm -f 'orbit-e2e-run123-operator-orbit-caddy' 'orbit-e2e-run123-operator' 'orbit-e2e-run123-gateway-orbit-gateway' 'orbit-e2e-run123-gateway-orbit-caddy' 'orbit-e2e-run123-gateway' >/dev/null 2>&1 || true" => Process::result(),
-            "docker volume rm -f 'orbit-e2e-run123-operator-home-orbit' 'orbit-e2e-run123-gateway-home-orbit' >/dev/null 2>&1 || true" => Process::result(),
+            'docker volume rm -f *' => Process::result(),
             "docker network rm 'orbit-e2e-run123' >/dev/null 2>&1 || true" => Process::result(),
         ]);
 
@@ -1616,6 +1624,7 @@ it('uses dns aliases and primes the gateway api in Docker topology runs', functi
         'command -v docker >/dev/null' => Process::result(),
         'docker info >/dev/null' => Process::result(),
         "docker image inspect 'orbit-gateway:prepared-current' >/dev/null" => Process::result(),
+        "docker image inspect 'caddy:2-alpine' >/dev/null" => Process::result(),
         "docker image inspect 'orbit-e2e:operator_base' >/dev/null" => Process::result(),
         "docker image inspect 'orbit-e2e:gateway_base' >/dev/null" => Process::result(),
         "docker ps --format '{{.Names}}' --filter 'name=orbit-e2e-'" => Process::result(),
@@ -1624,6 +1633,9 @@ it('uses dns aliases and primes the gateway api in Docker topology runs', functi
         "docker run -d --name 'orbit-e2e-run123-gateway' *" => Process::result(output: "gateway-id\n"),
         "docker run -d --restart unless-stopped --name 'orbit-e2e-run123-gateway-orbit-gateway' *" => Process::result(output: "runtime-id\n"),
         'docker exec *' => Process::result(),
+        'docker rm -f *' => Process::result(),
+        'docker volume rm -f *' => Process::result(),
+        'docker network rm *' => Process::result(),
     ]);
 
     withE2EEnvironment(['TEST_TOKEN'], [
