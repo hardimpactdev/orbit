@@ -97,9 +97,9 @@ These rules define what tool commands may and may not change.
 - **Tool-family boundaries:** Tool commands own capability inventory,
   installation, update, adoption, removal, configuration, declared service
   endpoints, and tool catalog membership. Tools do not own start, stop,
-  restart, or log lifecycle directly because one tool can back multiple
-  processes. During migration, existing tool lifecycle commands may resolve to
-  related process lifecycle operations for compatibility.
+  restart, or log lifecycle because one tool can back multiple processes;
+  the `process:*` family owns that lifecycle through the related process
+  record.
 - They do not own apps, workspaces, process lifecycle, schedules, custom proxy
   routes, or non-tool firewall policy. Tool-specific or capability-specific
   command families (such as `php:*`) are admitted only when the workflow is

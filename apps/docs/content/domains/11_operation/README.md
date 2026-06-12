@@ -36,7 +36,7 @@ These rules constrain all commands in the operation domain.
 - `doctor` owns cross-family verification and resolution. Verify mode is read-only. `--fix` enables interactive resolution; `--restore` and `--adopt` force a single direction non-interactively.
 - Family doctor contracts own concrete probes, issue codes, and restore/adopt action maps.
 - Profiling reads request/runtime data and must not mutate app configuration.
-- Operation commands emit activity entries through the cross-cutting Loggable contract. See [`activity-concepts.md`](../17_activity/activity-concepts.md).
+- Operation activity is recorded at the gateway: commands emit through the cross-cutting Loggable contract when they are the canonical actor, and the `update`/`update:all` outcome entries are recorded by the gateway start route and durable update runner. See [`activity-concepts.md`](../17_activity/activity-concepts.md).
 
 ## Commands
 

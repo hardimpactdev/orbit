@@ -386,11 +386,8 @@ The ideal node lifecycle is:
 The node family probe, drift kinds, and `doctor --family=node --restore` /
 `doctor --family=node --adopt` boundaries are defined in [`node-doctor.md`](node-doctor.md).
 `doctor --fix` runs an interactive resolution flow that prompts per item to
-restore or adopt.
-`node:list --doctor` is a node-family-only inspection convenience that attaches a
-node-family doctor summary to the registry list. It is not a shared list-command
-convention; app and workspace list commands remain registry-only and point to
-their family doctor commands for live verification.
+restore or adopt. List commands are registry-only; `doctor --family=node` owns
+live node verification and resolution.
 
 ## Access Vocabulary
 

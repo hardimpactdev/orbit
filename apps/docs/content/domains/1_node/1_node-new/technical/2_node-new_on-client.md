@@ -24,8 +24,8 @@ bootstrap path where the gateway does not exist yet.
   - the gateway authorizes the caller for `node:new` on the active gateway node.
 
 Evaluate each path eligibility rule as soon as the fields needed for that rule
-are known. For example, an operator node with no configured gateway and a
-resolved path other than first-gateway bootstrap fails before side effects,
+are known. For example, a client with an operator identity and no configured
+gateway and a resolved path other than first-gateway bootstrap fails before side effects,
 before prompting for workload host, TLD, or any later input. Omitted
 `--template`, `--operator`, and `--roles` values follow the bare client identity
 path and only succeed when a gateway is already configured.

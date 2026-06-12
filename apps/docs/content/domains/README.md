@@ -230,17 +230,19 @@ migrated routes according to the authorization matrix.
 ### Technical Slot Map
 
 When a command uses a `technical/` directory, reserve these slots. The
-`*_on-operator-node.md`, `*_on-gateway-node.md`, and `*_on-workload-node.md` slots are
+`*_on-client.md`, `*_on-gateway-node.md`, and `*_on-workload-node.md` slots are
 deployment-context companion contracts: they describe distinct command
-behavior or rendering depending on where the CLI is running locally
-(operator-identity node vs. gateway-local vs. node carrying a workload role).
-They are not authorization gates — authorization is grants-only — but they
-capture real context-specific behavior that varies with deployment context.
+behavior or rendering depending on where the CLI is running locally.
+"Client" in slot names is shorthand for a machine carrying an operator
+identity with no role assignments — operator is an identity and permission
+preset, not a node kind. The slots are not authorization gates —
+authorization is grants-only — but they capture real context-specific
+behavior that varies with deployment context.
 
 | Slot | Meaning |
 | --- | --- |
 | `1_command-name.md` | Canonical technical contract. |
-| `2_command-name_on-operator-node.md` | Behavior or rendering specific to a CLI running on an operator-identity node (no role assignments). |
+| `2_command-name_on-client.md` | Behavior or rendering specific to a CLI running on a client carrying an operator identity (no role assignments). |
 | `3_command-name_on-gateway-node.md` | Behavior or rendering specific to a CLI running on the gateway host. |
 | `4_command-name_on-workload-node.md` | Behavior or rendering specific to a CLI running on a node carrying any workload role. |
 | `5.1_command-name_input-mode_interactive.md` | Interactive input-mode contract. |

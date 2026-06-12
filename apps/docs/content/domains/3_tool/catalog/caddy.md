@@ -31,8 +31,7 @@ management. Orbit converges `orbit-caddy` as part of node role baseline.
 
 `orbit-caddy` is the current proxy backend, but proxy route ownership remains
 in the `proxy` state family. The Caddy tool row owns capability and baseline
-drift; the long-running container lifecycle and logs are process-backed, with
-transitional `tool:*` compatibility commands where still present.
+drift; the long-running container lifecycle and logs are process-backed.
 
 ## Doctor Relationship
 

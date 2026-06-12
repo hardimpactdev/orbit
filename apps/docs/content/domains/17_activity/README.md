@@ -36,8 +36,11 @@ doctor contracts.
 
 These rules apply to every command and API endpoint in the Orbit product.
 
-- Every state-changing command and API endpoint MUST emit an activity entry
-  through the gateway-owned activity logger. See
+- Every state-changing operation MUST be recorded as an activity entry at the
+  gateway chokepoint. Commands and API endpoints emit through the
+  gateway-owned activity logger when they are the canonical actor;
+  gateway-recorded flows such as `update:all` record at the gateway start
+  route and durable runner instead. See
   [`activity-concepts.md`](activity-concepts.md) for the contract.
 - Activity logging records configuration and outcome, not raw request or command
   arguments. Properties are declared per command; secrets are never logged.

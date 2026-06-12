@@ -137,9 +137,9 @@ the entity in the command result.
 ## Commands
 
 The `tool:*` family covers inventory, capability state, configuration, and
-credential operations. Lifecycle commands listed below are transitional
-compatibility surfaces: the long-term lifecycle owner is the related process
-record.
+credential operations. Lifecycle is process-owned: `process:*` commands
+start, stop, restart, and stream logs for tool-backed services through the
+related process record.
 
 ### Inventory and inspection
 

@@ -6,7 +6,7 @@
 
 ## Behavior
 
-When run from an operator node, `workspace:new` acts as a gateway client:
+When run from a client with an operator identity, `workspace:new` acts as a gateway client:
 
 - **Input Resolution:** Gathers all arguments and options. Resolves the
   parent app from `--app`, the `.orbit/config` marker, or the gateway
