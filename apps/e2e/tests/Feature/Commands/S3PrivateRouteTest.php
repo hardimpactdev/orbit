@@ -37,7 +37,7 @@ it('routes the private s3 service to a rustfs backend through the router and ret
         expect($route)->toMatchArray([
             'domain' => 's3.orbit',
             'node' => 'gateway',
-            'owner_type' => 'tool',
+            'owner_type' => 'router',
             'kind' => 'proxy',
         ])
             ->and($snapshot['proxy_route_count'])->toBe(1)

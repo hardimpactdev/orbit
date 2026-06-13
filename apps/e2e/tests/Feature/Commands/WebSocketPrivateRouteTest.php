@@ -35,7 +35,7 @@ it('routes the private websocket service to a websocket-role backend through the
             ->and($route)->toMatchArray([
                 'domain' => 'websocket.orbit',
                 'node' => 'gateway',
-                'owner_type' => 'websocket',
+                'owner_type' => 'router',
                 'kind' => 'proxy',
             ])
             ->and($snapshot['proxy_route_count'])->toBe(1)

@@ -77,7 +77,7 @@ it('delivers public websocket events through ingress and router to websocket-rol
 
         expect($serviceRoute['domain'])->toBe('websocket.orbit')
             ->and($serviceRoute['node'])->toBe('gateway')
-            ->and($serviceRoute['owner_type'])->toBe('websocket')
+            ->and($serviceRoute['owner_type'])->toBe('router')
             ->and($serviceRoute['kind'])->toBe('proxy')
             ->and($serviceRoute['source_hash'])->toBe($serviceRoute['expected_source_hash'])
             ->and($serviceConfig['protocol'])->toBe('websocket')

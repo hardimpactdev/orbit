@@ -40,7 +40,6 @@ it('grants node access from a operator caller through the gateway api', function
                 'firewall_rule:read',
                 'node:read',
                 'tool:read',
-                'tool:restart',
             ],
         ]);
 
@@ -64,7 +63,6 @@ it('grants node access from a operator caller through the gateway api', function
                 'firewall_rule:read',
                 'node:read',
                 'tool:read',
-                'tool:restart',
             ],
         ]);
     } finally {

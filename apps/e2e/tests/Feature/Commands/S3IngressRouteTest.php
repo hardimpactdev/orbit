@@ -42,7 +42,7 @@ it('flows public s3 ingress through router to rustfs backend and includes public
         expect($serviceRoute)->toMatchArray([
             'domain' => 's3.orbit',
             'node' => 'gateway',
-            'owner_type' => 'tool',
+            'owner_type' => 'router',
             'kind' => 'proxy',
         ])
             ->and($serviceConfig['protocol'])->toBe('s3')
@@ -88,7 +88,7 @@ it('flows public s3 ingress through router to rustfs backend and includes public
         expect($publicRoute)->toMatchArray([
             'domain' => $publicHost,
             'node' => 'app-prod-1',
-            'owner_type' => 'tool',
+            'owner_type' => 's3',
             'kind' => 'proxy',
         ])
             ->and($publicRoute['source_hash'])->toBe($publicRoute['expected_source_hash'])

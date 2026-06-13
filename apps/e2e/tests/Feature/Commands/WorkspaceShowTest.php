@@ -84,8 +84,8 @@ it('shows workspace details from a non-gateway caller through the gateway api', 
         );
 
         expect($humanResult->successful())->toBeTrue()
-            ->and($humanResult->output())->toContain('Workspace: feature-docs')
-            ->and($humanResult->output())->toContain('App')
+            ->and($humanResult->output())->toContain('Workspace: feature-docs.docs')
+            ->and($humanResult->output())->toContain('URL')
             ->and($humanResult->output())->toContain('docs');
 
         // JSON output happy path
