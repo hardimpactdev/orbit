@@ -68,7 +68,7 @@ describe('value object shape', function (): void {
             ->and($fields['secret_access_key'])->toBe($credentials->secretAccessKey);
     });
 
-    it('produces a fields array compatible with the rustfs tool row credentials shape', function (): void {
+    it('produces a fields array compatible with the seaweedfs tool row credentials shape', function (): void {
         $credentials = $this->generator->generate();
         $fields = $credentials->toFields();
 

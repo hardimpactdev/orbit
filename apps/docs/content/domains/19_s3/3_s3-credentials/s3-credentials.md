@@ -14,8 +14,8 @@ orbit s3:credentials [--node=<node>] [--json]
 
 ## Description
 
-`s3:credentials` reads the service-level RustFS credentials stored on the
-selected `rustfs` tool row and renders endpoint metadata for clients.
+`s3:credentials` reads the service-level SeaweedFS credentials stored on the
+selected `seaweedfs` tool row and renders endpoint metadata for clients.
 
 The command returns the private endpoint `https://s3.orbit`, any public S3
 hosts published for the selected node, the generated access key and secret
@@ -32,7 +32,7 @@ orbit s3:credentials --json
 ## Output
 
 Pass `--json` to receive machine-readable output. Human output renders the
-connection fields without probing live RustFS health.
+connection fields without probing live SeaweedFS health.
 
 ## Requirements
 
@@ -46,5 +46,5 @@ connection fields without probing live RustFS health.
 
 - [`orbit s3:publish`](../1_s3-publish/s3-publish.md)
 - [`orbit s3:unpublish`](../2_s3-unpublish/s3-unpublish.md)
-- [`orbit tool:credentials rustfs`](../../3_tool/10_tool-credentials/tool-credentials.md)
+- [`orbit tool:credentials seaweedfs`](../../3_tool/10_tool-credentials/tool-credentials.md)
 - [Technical contract](technical/1_s3-credentials.md)

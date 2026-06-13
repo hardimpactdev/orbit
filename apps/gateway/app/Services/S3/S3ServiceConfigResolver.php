@@ -14,7 +14,7 @@ use RuntimeException;
  * Resolves an S3ServiceConfig for a given S3-role node.
  *
  * Credential strategy:
- *  - Preserves existing credentials when the rustfs tool row already holds a
+ *  - Preserves existing credentials when the seaweedfs tool row already holds a
  *    complete credentials['fields'] array (access_key_id + secret_access_key).
  *  - Generates new credentials via S3CredentialGenerator only when credentials
  *    are missing or incomplete.
@@ -30,9 +30,9 @@ final readonly class S3ServiceConfigResolver
      *
      * @param  Node  $node  Must have a non-empty wireguard_address and an active s3 role assignment.
      * @param  NodeRoleAssignment  $assignment  The active s3 role assignment carrying role settings.
-     * @param  NodeTool|null  $rustfsTool  The rustfs tool row, if it exists.
+     * @param  NodeTool|null  $seaweedfsTool  The seaweedfs tool row, if it exists.
      */
-    public function resolve(Node $node, NodeRoleAssignment $assignment, ?NodeTool $rustfsTool = null): S3ServiceConfig
+    public function resolve(Node $node, NodeRoleAssignment $assignment, ?NodeTool $seaweedfsTool = null): S3ServiceConfig
     {
         $wireguardAddress = $this->requireWireguardAddress($node);
 
@@ -40,9 +40,9 @@ final readonly class S3ServiceConfigResolver
             is_array($assignment->settings) ? $assignment->settings : [],
         );
 
-        $credentials = $this->resolveCredentials($rustfsTool);
+        $credentials = $this->resolveCredentials($seaweedfsTool);
 
-        $publicHosts = $this->readPublicHosts($rustfsTool);
+        $publicHosts = $this->readPublicHosts($seaweedfsTool);
 
         return new S3ServiceConfig(
             nodeName: $node->name,
@@ -74,10 +74,10 @@ final readonly class S3ServiceConfigResolver
      * Preserve existing credentials when both fields are present and non-empty;
      * generate fresh credentials otherwise.
      */
-    private function resolveCredentials(?NodeTool $rustfsTool): S3Credentials
+    private function resolveCredentials(?NodeTool $seaweedfsTool): S3Credentials
     {
-        if ($rustfsTool !== null) {
-            $stored = $this->extractStoredCredentials($rustfsTool);
+        if ($seaweedfsTool !== null) {
+            $stored = $this->extractStoredCredentials($seaweedfsTool);
 
             if ($stored !== null) {
                 return $stored;
@@ -88,7 +88,7 @@ final readonly class S3ServiceConfigResolver
     }
 
     /**
-     * Extract credentials from the rustfs tool row when they are complete.
+     * Extract credentials from the seaweedfs tool row when they are complete.
      *
      * The NodeTool::credentials column is an encrypted JSON array. The S3
      * credentials live at credentials['fields']['access_key_id'] and
@@ -97,9 +97,9 @@ final readonly class S3ServiceConfigResolver
      * Returns null when the tool row has no credentials or when either field
      * is missing or empty, so that callers can fall back to generation.
      */
-    private function extractStoredCredentials(NodeTool $rustfsTool): ?S3Credentials
+    private function extractStoredCredentials(NodeTool $seaweedfsTool): ?S3Credentials
     {
-        $raw = $rustfsTool->credentials;
+        $raw = $seaweedfsTool->credentials;
 
         if (! is_array($raw)) {
             return null;
@@ -129,18 +129,18 @@ final readonly class S3ServiceConfigResolver
     }
 
     /**
-     * Read the public_hosts list from rustfs tool config, defaulting to an
+     * Read the public_hosts list from seaweedfs tool config, defaulting to an
      * empty array when the tool row is absent or config is unset.
      *
      * @return list<string>
      */
-    private function readPublicHosts(?NodeTool $rustfsTool): array
+    private function readPublicHosts(?NodeTool $seaweedfsTool): array
     {
-        if ($rustfsTool === null) {
+        if ($seaweedfsTool === null) {
             return [];
         }
 
-        $config = $rustfsTool->config;
+        $config = $seaweedfsTool->config;
 
         if (! is_array($config)) {
             return [];

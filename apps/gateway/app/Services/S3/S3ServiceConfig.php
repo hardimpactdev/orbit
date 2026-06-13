@@ -25,12 +25,12 @@ final readonly class S3ServiceConfig
     ) {}
 
     /**
-     * The backend bind address — WireGuard address:9000 — used for the
-     * RustFS container port binding and router backend pool entries.
+     * The backend bind address — WireGuard address:8333 — used for the
+     * SeaweedFS container port binding and router backend pool entries.
      */
     public function backendBind(): string
     {
-        return "{$this->wireguardAddress}:9000";
+        return "{$this->wireguardAddress}:8333";
     }
 
     /**

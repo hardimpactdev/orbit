@@ -84,8 +84,8 @@ Each code below identifies a specific proxy-family drift condition that the prob
 | `proxy.websocket.public_route_missing` | An enabled app WebSocket binding expects a public ingress route, but the route row is missing or differs from the canonical app-websocket public route. |
 | `proxy.websocket.router_route_orphaned` | The private `websocket.orbit` service route row exists, but no active `websocket` role assignment remains in the topology. Service routes exist only while a matching role is active. |
 | `proxy.s3.router_route_missing` | The private `s3.orbit` route is absent or any field (node, owner, config, source_hash) diverges from gateway S3 service-route intent. Does not overlap with `proxy.s3.router_backend_invalid`. |
-| `proxy.s3.router_backend_invalid` | The `s3.orbit` route exists and matches intent structurally, but its backend pool is invalid: the upstreams list is empty or contains a non-RustFS host. Route absence is covered by `proxy.s3.router_route_missing`. |
-| `proxy.s3.public_route_missing` | An active rustfs tool row lists public hosts, but the ingress public S3 route for a host is absent or diverges from expected ingress route intent. |
+| `proxy.s3.router_backend_invalid` | The `s3.orbit` route exists and matches intent structurally, but its backend pool is invalid: the upstreams list is empty or contains a non-SeaweedFS host. Route absence is covered by `proxy.s3.router_route_missing`. |
+| `proxy.s3.public_route_missing` | An active seaweedfs tool row lists public hosts, but the ingress public S3 route for a host is absent or diverges from expected ingress route intent. |
 | `proxy.s3.router_route_orphaned` | The private `s3.orbit` service route row exists, but no active `s3` role assignment remains in the topology. Service routes exist only while a matching role is active. |
 | `proxy.tls_missing` | Gateway configuration expects Orbit-managed TLS material, but it is absent from node reality. |
 | `proxy.tls_mismatch` | Managed TLS material exists but does not match the expected route policy. |
@@ -105,8 +105,8 @@ Use `doctor --restore` to trigger the repair action listed for each code.
 | `proxy.websocket.public_route_missing` | Re-sync public app-websocket ingress routes from the owning app WebSocket binding. |
 | `proxy.websocket.router_route_orphaned` | Remove the orphaned `websocket.orbit` service route row and its rendered artifacts. |
 | `proxy.s3.router_route_missing` | Re-sync the private `s3.orbit` service route from gateway S3 intent. |
-| `proxy.s3.router_backend_invalid` | Re-sync the `s3.orbit` service route to rebuild the backend pool from active RustFS backends. |
-| `proxy.s3.public_route_missing` | Re-sync public S3 ingress routes from the owning rustfs tool row. |
+| `proxy.s3.router_backend_invalid` | Re-sync the `s3.orbit` service route to rebuild the backend pool from active SeaweedFS backends. |
+| `proxy.s3.public_route_missing` | Re-sync public S3 ingress routes from the owning seaweedfs tool row. |
 | `proxy.s3.router_route_orphaned` | Remove the orphaned `s3.orbit` service route row and its rendered artifacts. |
 | `proxy.tls_missing` | Recreate Orbit-managed TLS material for the selected route when prerequisites are available. |
 | `proxy.tls_mismatch` | Replace or relink Orbit-managed TLS material to match gateway configuration. Repair must converge to gateway-issued route leaf certificates when the node serves Caddy-local or intermediate-CA-issued material outside Orbit policy. |

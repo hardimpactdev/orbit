@@ -101,7 +101,7 @@ final readonly class S3PublishAction
         if ($existing instanceof ProxyRoute) {
             $isS3Tool = $existing->owner_type === 's3'
                 && isset($existing->config['owner_name'])
-                && $existing->config['owner_name'] === 'rustfs'
+                && $existing->config['owner_name'] === 'seaweedfs'
                 && isset($existing->config['protocol'])
                 && $existing->config['protocol'] === 's3';
 
@@ -119,32 +119,32 @@ final readonly class S3PublishAction
 
         $emitter->stepEvent('check_router_ingress', 'done', 'Router and ingress nodes verified');
 
-        // Step 3: Ensure RustFS credentials.
-        $emitter->stepEvent('ensure_credentials', 'running', 'Checking RustFS credentials on node');
+        // Step 3: Ensure SeaweedFS credentials.
+        $emitter->stepEvent('ensure_credentials', 'running', 'Checking SeaweedFS credentials on node');
 
-        $rustfs = NodeTool::query()
+        $seaweedfs = NodeTool::query()
             ->where('node_id', $s3Node->id)
-            ->where('name', 'rustfs')
+            ->where('name', 'seaweedfs')
             ->first();
 
-        if (! $rustfs instanceof NodeTool) {
-            $emitter->stepEvent('ensure_credentials', 'failed', 'No rustfs tool row found on node.');
+        if (! $seaweedfs instanceof NodeTool) {
+            $emitter->stepEvent('ensure_credentials', 'failed', 'No seaweedfs tool row found on node.');
 
             return $this->error(
                 'validation_failed',
-                'The selected s3 node does not have a rustfs tool row with service-level credentials.',
+                'The selected s3 node does not have a seaweedfs tool row with service-level credentials.',
                 ['field' => 'node'],
                 422,
             );
         }
 
-        $emitter->stepEvent('ensure_credentials', 'done', 'RustFS credentials found');
+        $emitter->stepEvent('ensure_credentials', 'done', 'SeaweedFS credentials found');
 
         // Step 4: Ensure private s3.orbit route.
         $emitter->stepEvent('ensure_private_route', 'running', 'Ensuring private s3.orbit service route');
 
         // Determine whether the host was already published.
-        $config = is_array($rustfs->config) ? $rustfs->config : [];
+        $config = is_array($seaweedfs->config) ? $seaweedfs->config : [];
         $publicHosts = is_array($config['public_hosts'] ?? null) ? $config['public_hosts'] : [];
 
         /** @var list<string> $publicHosts */
@@ -154,8 +154,8 @@ final readonly class S3PublishAction
 
         if (! $alreadyPublished) {
             $publicHosts[] = $host;
-            $rustfs->config = array_merge($config, ['public_hosts' => $publicHosts]);
-            $rustfs->save();
+            $seaweedfs->config = array_merge($config, ['public_hosts' => $publicHosts]);
+            $seaweedfs->save();
         }
 
         try {
@@ -190,10 +190,10 @@ final readonly class S3PublishAction
         // Step 6: Publish ingress host.
         $emitter->stepEvent('publish_ingress', 'running', "Publishing ingress route for '{$host}'");
 
-        $rustfs->refresh();
+        $seaweedfs->refresh();
 
         try {
-            $this->routeRegistrar->syncPublicHosts($rustfs);
+            $this->routeRegistrar->syncPublicHosts($seaweedfs);
         } catch (\RuntimeException $e) {
             $emitter->stepEvent('publish_ingress', 'failed', $e->getMessage());
 
@@ -205,8 +205,8 @@ final readonly class S3PublishAction
         // Step 7: Verify route intent.
         $emitter->stepEvent('verify_intent', 'running', 'Verifying route intent');
 
-        $rustfs->refresh();
-        $refreshedConfig = is_array($rustfs->config) ? $rustfs->config : [];
+        $seaweedfs->refresh();
+        $refreshedConfig = is_array($seaweedfs->config) ? $seaweedfs->config : [];
         $allPublicHosts = is_array($refreshedConfig['public_hosts'] ?? null) ? $refreshedConfig['public_hosts'] : [];
 
         /** @var list<string> $allPublicHosts */
@@ -224,7 +224,7 @@ final readonly class S3PublishAction
                         'public_endpoints' => $publicEndpoints,
                         'backend_pool' => $backendPool,
                         'credentials_ref' => [
-                            'tool' => 'rustfs',
+                            'tool' => 'seaweedfs',
                             'node' => $s3Node->name,
                         ],
                     ],
@@ -306,7 +306,7 @@ final readonly class S3PublishAction
         if ($existing instanceof ProxyRoute) {
             $isS3Tool = $existing->owner_type === 's3'
                 && isset($existing->config['owner_name'])
-                && $existing->config['owner_name'] === 'rustfs'
+                && $existing->config['owner_name'] === 'seaweedfs'
                 && isset($existing->config['protocol'])
                 && $existing->config['protocol'] === 's3';
 
@@ -320,23 +320,23 @@ final readonly class S3PublishAction
             }
         }
 
-        // Ensure the selected s3 node has a rustfs tool row.
-        $rustfs = NodeTool::query()
+        // Ensure the selected s3 node has a seaweedfs tool row.
+        $seaweedfs = NodeTool::query()
             ->where('node_id', $s3Node->id)
-            ->where('name', 'rustfs')
+            ->where('name', 'seaweedfs')
             ->first();
 
-        if (! $rustfs instanceof NodeTool) {
+        if (! $seaweedfs instanceof NodeTool) {
             return $this->error(
                 'validation_failed',
-                'The selected s3 node does not have a rustfs tool row with service-level credentials.',
+                'The selected s3 node does not have a seaweedfs tool row with service-level credentials.',
                 ['field' => 'node'],
                 422,
             );
         }
 
         // Determine whether the host was already published.
-        $config = is_array($rustfs->config) ? $rustfs->config : [];
+        $config = is_array($seaweedfs->config) ? $seaweedfs->config : [];
         $publicHosts = is_array($config['public_hosts'] ?? null) ? $config['public_hosts'] : [];
 
         /** @var list<string> $publicHosts */
@@ -345,18 +345,18 @@ final readonly class S3PublishAction
         $action = $alreadyPublished ? 'published' : 'published';
 
         if (! $alreadyPublished) {
-            // Record the host on the rustfs tool row.
+            // Record the host on the seaweedfs tool row.
             $publicHosts[] = $host;
-            $rustfs->config = array_merge($config, ['public_hosts' => $publicHosts]);
-            $rustfs->save();
+            $seaweedfs->config = array_merge($config, ['public_hosts' => $publicHosts]);
+            $seaweedfs->save();
             $action = 'published';
         }
 
         // Converge route intent via S3RouteRegistrar.
         try {
             $this->routeRegistrar->syncServiceRoute();
-            $rustfs->refresh();
-            $this->routeRegistrar->syncPublicHosts($rustfs);
+            $seaweedfs->refresh();
+            $this->routeRegistrar->syncPublicHosts($seaweedfs);
         } catch (\RuntimeException $e) {
             return $this->error(
                 's3.publish_failed',
@@ -381,9 +381,9 @@ final readonly class S3PublishAction
             }
         }
 
-        // Collect all public endpoints for this node's rustfs tool.
-        $rustfs->refresh();
-        $refreshedConfig = is_array($rustfs->config) ? $rustfs->config : [];
+        // Collect all public endpoints for this node's seaweedfs tool.
+        $seaweedfs->refresh();
+        $refreshedConfig = is_array($seaweedfs->config) ? $seaweedfs->config : [];
         $allPublicHosts = is_array($refreshedConfig['public_hosts'] ?? null) ? $refreshedConfig['public_hosts'] : [];
 
         /** @var list<string> $allPublicHosts */
@@ -399,7 +399,7 @@ final readonly class S3PublishAction
                         'public_endpoints' => $publicEndpoints,
                         'backend_pool' => $backendPool,
                         'credentials_ref' => [
-                            'tool' => 'rustfs',
+                            'tool' => 'seaweedfs',
                             'node' => $s3Node->name,
                         ],
                     ],

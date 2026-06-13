@@ -15,10 +15,10 @@ orbit s3:unpublish [host] [--node=<node>] [--force] [--json]
 ## Description
 
 `s3:unpublish` removes one public S3 host route and removes that host from the
-selected `rustfs` tool row configuration.
+selected `seaweedfs` tool row configuration.
 
 The command does not remove the private `https://s3.orbit` endpoint, the S3
-backend pool, RustFS credentials, buckets, object data, or the s3 role's
+backend pool, SeaweedFS credentials, buckets, object data, or the s3 role's
 `data_path`.
 
 ## Examples

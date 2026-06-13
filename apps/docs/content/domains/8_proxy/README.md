@@ -39,7 +39,7 @@ These rules govern ownership, route kinds, and the boundaries of the proxy comma
   commands but edited by S3 route convergence. Public S3 hosts are `ingress`
   routes that forward to `router`; they must not route directly to s3 role
   nodes. Router owns `s3.orbit`, S3 backend pools, S3 upload-compatible proxy
-  settings, and private router-to-RustFS routing.
+  settings, and private router-to-SeaweedFS routing.
 - Tool-owned `proxy` routes are HTTP or WebSocket ingress routes only. TCP
   service endpoints such as PostgreSQL, MySQL, and Redis are WireGuard service
   endpoints owned by process definitions and do not appear as HTTP proxy
@@ -123,8 +123,8 @@ Custom, redirect, and tool routes are separate route kinds. They may share TLS, 
   WireGuard IP targets such as `https://10.6.0.4:8080`, owned by `router`. V1
   supports one active backend and fails clearly if more than one websocket
   backend is active.
-- **S3 backend pool:** Ordered list of RustFS backend URLs, such as
-  `http://storage-1.s3.orbit:9000`, owned by `router`. V1 creates one target
+- **S3 backend pool:** Ordered list of SeaweedFS backend URLs, such as
+  `http://storage-1.s3.orbit:8333`, owned by `router`. V1 creates one target
   but stores a list.
 
 ## TLS Authority Model

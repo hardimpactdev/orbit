@@ -76,7 +76,7 @@ Each term below has a precise meaning in the node command family.
   traffic through router-owned private service routes, and uses Redis selected
   from a `database` role node.
 - **S3 role:** Private workload role for object storage with an S3-compatible
-  API. An S3 node runs one RustFS instance in a Docker runtime container
+  API. An S3 node runs one SeaweedFS instance in a Docker runtime container
   rendered by Orbit, binds the S3 API only to the node's WireGuard address, and
   receives private and public S3 traffic through router-owned service routes.
 - **Agent role:** Exclusive workload role for first-party autonomous agent
@@ -196,7 +196,7 @@ configs. In v1 the DNS resolver runtime is coupled to the `vpn` role.
 service backs Reverb scaling for the `websocket` role. The websocket role uses
 that Redis service but does not install or own Redis.
 `data_path` defaults to `/srv/orbit/s3/data`. It is the host path mounted into
-the RustFS container as `/data` and is role-owned persistent data. Removing the
+the SeaweedFS container as `/data` and is role-owned persistent data. Removing the
 role without `--purge-data` must not delete this path.
 
 ## Role Baselines
@@ -214,7 +214,7 @@ Role baselines are code-defined desired state, not editable package lists.
 | `agent` | `orbit-caddy`, the shared unprivileged `agent` runtime user, the gateway-owned agent DNS mapping for the role's `tld`, and any role-specific runtime containers the agent workload needs |
 | `ingress` | `orbit-caddy` running as the public production HTTP ingress boundary, forwarding public routes to `router` |
 | `websocket` | Laravel Reverb in a Docker runtime container managed by Orbit, private TLS backend binding on WireGuard, backend certificate material, and Redis-backed scaling configuration |
-| `s3` | RustFS in a Docker runtime container rendered by Orbit, private S3 API binding on WireGuard, service-level credentials on the `rustfs` tool row, backend pool registration, and role-owned data path |
+| `s3` | SeaweedFS in a Docker runtime container rendered by Orbit, private S3 API binding on WireGuard, service-level credentials on the `seaweedfs` tool row, backend pool registration, and role-owned data path |
 
 Baseline convergence first stores the gateway intent for the selected role.
 When `node:new` provisions a real managed workload host, node setup then

@@ -341,7 +341,7 @@ describe('S3Unpublish CLI command', function (): void {
                     ['key' => 'resolve_node', 'label' => 'Resolve S3 node'],
                     ['key' => 'check_router', 'label' => 'Check router'],
                     ['key' => 'remove_ingress', 'label' => 'Remove ingress host'],
-                    ['key' => 'remove_rustfs_config', 'label' => 'Remove RustFS public host config'],
+                    ['key' => 'remove_seaweedfs_config', 'label' => 'Remove SeaweedFS public host config'],
                     ['key' => 'apply_cleanup', 'label' => 'Apply route cleanup'],
                 ],
             ])
@@ -360,7 +360,7 @@ describe('S3Unpublish CLI command', function (): void {
             ->and($output)->toContain('Resolve S3 node')
             ->and($output)->toContain('Check router')
             ->and($output)->toContain('Remove ingress host')
-            ->and($output)->toContain('Remove RustFS public host config')
+            ->and($output)->toContain('Remove SeaweedFS public host config')
             ->and($output)->toContain('Apply route cleanup');
     });
 
@@ -480,7 +480,7 @@ function s3UnpublishCompleteFrame(
                 'node' => $node,
                 'private_endpoint' => 'https://s3.orbit',
                 'public_endpoints' => [],
-                'backend_pool' => ["http://{$node}.s3.orbit:9000"],
+                'backend_pool' => ["http://{$node}.s3.orbit:8333"],
             ],
             'meta' => [
                 'host' => $host,

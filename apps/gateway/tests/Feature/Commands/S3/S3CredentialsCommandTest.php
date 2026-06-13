@@ -78,11 +78,11 @@ function s3CredCmdRouterNode(): Node
  * @param  array<string, mixed>  $credentials
  * @param  array<string, mixed>  $config
  */
-function s3CredCmdRustfsTool(Node $storage, array $credentials = [], array $config = []): NodeTool
+function s3CredCmdSeaweedfsTool(Node $storage, array $credentials = [], array $config = []): NodeTool
 {
     return NodeTool::factory()->create([
         'node_id' => $storage->id,
-        'name' => 'rustfs',
+        'name' => 'seaweedfs',
         'expected_state' => 'installed',
         'config' => array_merge([
             'backend_host' => "{$storage->name}.s3.orbit",
@@ -108,10 +108,10 @@ function s3CredCmdServiceRoute(Node $router): ProxyRoute
         'owner_type' => 'router',
         'kind' => 'proxy',
         'config' => [
-            'owner_name' => 'rustfs',
+            'owner_name' => 'seaweedfs',
             'protocol' => 's3',
             'upstreams' => [
-                ['scheme' => 'http', 'host' => 'storage-1.s3.orbit', 'port' => 9000],
+                ['scheme' => 'http', 'host' => 'storage-1.s3.orbit', 'port' => 8333],
             ],
         ],
     ]);
@@ -149,7 +149,7 @@ describe('S3Credentials authorization', function (): void {
         $caller = s3CredCmdCallerNode(role: 'gateway');
         $storage = s3CredCmdStorageNode();
         s3CredCmdRouterNode();
-        s3CredCmdRustfsTool($storage);
+        s3CredCmdSeaweedfsTool($storage);
 
         $response = s3CredCmdGet($this, ['node' => 'storage-1']);
 
@@ -161,7 +161,7 @@ describe('S3Credentials authorization', function (): void {
         $caller = s3CredCmdCallerNode(role: 'app-production');
         $storage = s3CredCmdStorageNode();
         s3CredCmdRouterNode();
-        s3CredCmdRustfsTool($storage);
+        s3CredCmdSeaweedfsTool($storage);
 
         $response = s3CredCmdGet($this, ['node' => 'storage-1']);
 
@@ -173,7 +173,7 @@ describe('S3Credentials authorization', function (): void {
         $caller = s3CredCmdCallerNode(role: 'app-production');
         $storage = s3CredCmdStorageNode();
         s3CredCmdRouterNode();
-        s3CredCmdRustfsTool($storage);
+        s3CredCmdSeaweedfsTool($storage);
 
         DB::table('node_access')->insert([
             'consumer_node_id' => $caller->id,
@@ -222,7 +222,7 @@ describe('S3Credentials prerequisites', function (): void {
         s3CredCmdCallerNode(role: 'gateway');
         $storage = s3CredCmdStorageNode();
         s3CredCmdRouterNode();
-        s3CredCmdRustfsTool($storage);
+        s3CredCmdSeaweedfsTool($storage);
 
         $response = s3CredCmdGet($this);
 
@@ -254,7 +254,7 @@ describe('S3Credentials payload shape', function (): void {
         s3CredCmdCallerNode(role: 'gateway');
         $storage = s3CredCmdStorageNode();
         $router = s3CredCmdRouterNode();
-        s3CredCmdRustfsTool($storage, credentials: [
+        s3CredCmdSeaweedfsTool($storage, credentials: [
             'fields' => [
                 'access_key_id' => 'MYACCESSKEYID12345678',
                 'secret_access_key' => 'my-secret-access-key-value',
@@ -278,15 +278,15 @@ describe('S3Credentials payload shape', function (): void {
             ->assertJsonPath('success.data.credentials.access_key_id', 'MYACCESSKEYID12345678')
             ->assertJsonPath('success.data.credentials.secret_access_key', 'my-secret-access-key-value')
             ->assertJsonPath('success.data.credentials.bucket_endpoint_style', 'path')
-            ->assertJsonPath('success.data.credentials.backend_pool', ['http://storage-1.s3.orbit:9000'])
-            ->assertJsonPath('success.meta.tool', 'rustfs');
+            ->assertJsonPath('success.data.credentials.backend_pool', ['http://storage-1.s3.orbit:8333'])
+            ->assertJsonPath('success.meta.tool', 'seaweedfs');
     });
 
     it('returns an empty backend pool when no service route exists', function (): void {
         s3CredCmdCallerNode(role: 'gateway');
         $storage = s3CredCmdStorageNode();
         s3CredCmdRouterNode();
-        s3CredCmdRustfsTool($storage);
+        s3CredCmdSeaweedfsTool($storage);
 
         $response = s3CredCmdGet($this, ['node' => 'storage-1']);
 
@@ -298,7 +298,7 @@ describe('S3Credentials payload shape', function (): void {
         s3CredCmdCallerNode(role: 'gateway');
         $storage = s3CredCmdStorageNode();
         s3CredCmdRouterNode();
-        s3CredCmdRustfsTool($storage);
+        s3CredCmdSeaweedfsTool($storage);
 
         $response = s3CredCmdGet($this, ['node' => 'storage-1']);
 
@@ -310,7 +310,7 @@ describe('S3Credentials payload shape', function (): void {
         s3CredCmdCallerNode(role: 'gateway');
         $storage = s3CredCmdStorageNode();
         s3CredCmdRouterNode();
-        s3CredCmdRustfsTool($storage, credentials: [
+        s3CredCmdSeaweedfsTool($storage, credentials: [
             'fields' => [
                 'access_key_id' => 'MYACCESSKEYID12345678',
                 'secret_access_key' => 'my-secret-access-key-value',
@@ -327,7 +327,7 @@ describe('S3Credentials payload shape', function (): void {
         s3CredCmdCallerNode(role: 'gateway');
         $storage = s3CredCmdStorageNode();
         s3CredCmdRouterNode();
-        s3CredCmdRustfsTool($storage, credentials: [
+        s3CredCmdSeaweedfsTool($storage, credentials: [
             'fields' => [
                 'access_key_id' => 'MYACCESSKEYID12345678',
                 'secret_access_key' => 'my-secret-access-key-value',
@@ -350,7 +350,7 @@ describe('S3Credentials no mutation', function (): void {
         s3CredCmdCallerNode(role: 'gateway');
         $storage = s3CredCmdStorageNode();
         s3CredCmdRouterNode();
-        $tool = s3CredCmdRustfsTool($storage);
+        $tool = s3CredCmdSeaweedfsTool($storage);
 
         $beforeCredentials = $tool->credentials;
         $beforeConfig = $tool->config;
@@ -369,14 +369,14 @@ describe('S3Credentials no mutation', function (): void {
 // ---------------------------------------------------------------------------
 
 describe('S3Credentials missing credentials', function (): void {
-    it('returns s3.credentials_missing when the rustfs tool row has no credentials', function (): void {
+    it('returns s3.credentials_missing when the seaweedfs tool row has no credentials', function (): void {
         s3CredCmdCallerNode(role: 'gateway');
         $storage = s3CredCmdStorageNode();
         s3CredCmdRouterNode();
 
         NodeTool::factory()->create([
             'node_id' => $storage->id,
-            'name' => 'rustfs',
+            'name' => 'seaweedfs',
             'expected_state' => 'installed',
             'config' => ['backend_host' => 'storage-1.s3.orbit', 'public_hosts' => []],
             'credentials' => null,
@@ -387,10 +387,10 @@ describe('S3Credentials missing credentials', function (): void {
         $response->assertStatus(422)
             ->assertJsonPath('error.code', 's3.credentials_missing')
             ->assertJsonPath('error.meta.node', 'storage-1')
-            ->assertJsonPath('error.meta.tool', 'rustfs');
+            ->assertJsonPath('error.meta.tool', 'seaweedfs');
     });
 
-    it('returns s3.credentials_missing when the rustfs tool row has no tool row at all', function (): void {
+    it('returns s3.credentials_missing when the seaweedfs tool row has no tool row at all', function (): void {
         s3CredCmdCallerNode(role: 'gateway');
         $storage = s3CredCmdStorageNode();
         s3CredCmdRouterNode();
@@ -405,7 +405,7 @@ describe('S3Credentials missing credentials', function (): void {
         s3CredCmdCallerNode(role: 'gateway');
         $storage = s3CredCmdStorageNode();
         s3CredCmdRouterNode();
-        s3CredCmdRustfsTool($storage, credentials: [
+        s3CredCmdSeaweedfsTool($storage, credentials: [
             'fields' => [
                 'access_key_id' => '',
                 'secret_access_key' => 'my-secret-access-key-value',
@@ -422,7 +422,7 @@ describe('S3Credentials missing credentials', function (): void {
         s3CredCmdCallerNode(role: 'gateway');
         $storage = s3CredCmdStorageNode();
         s3CredCmdRouterNode();
-        s3CredCmdRustfsTool($storage, credentials: [
+        s3CredCmdSeaweedfsTool($storage, credentials: [
             'fields' => [
                 'access_key_id' => 'MYACCESSKEYID12345678',
                 'secret_access_key' => '',
@@ -442,7 +442,7 @@ describe('S3Credentials missing credentials', function (): void {
 
         NodeTool::factory()->create([
             'node_id' => $storage->id,
-            'name' => 'rustfs',
+            'name' => 'seaweedfs',
             'expected_state' => 'installed',
             'config' => ['backend_host' => 'storage-1.s3.orbit', 'public_hosts' => []],
             'credentials' => null,

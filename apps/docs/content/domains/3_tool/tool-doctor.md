@@ -85,16 +85,16 @@ Each code below identifies a specific kind of drift the tool probe can detect.
 | `tool.agent_route_missing` | An installed agent tool with a declared internal proxy route has no tool-owned route under the active agent role TLD. |
 | `tool.agent_user_missing` | An agent tool is installed on a node whose `agent` user is absent or not configured as the tool's runtime user. |
 | `tool.agent_credentials_missing` | An agent tool declares credentials but no managed credential material is present on the node tool row. |
-| `tool.rustfs.row_missing` | No `rustfs` tool row exists on an active `s3` role node. Not auto-fixable; requires manual tool adoption or re-provision. |
-| `tool.rustfs.credentials_missing` | The `rustfs` tool row exists but lacks service-level credentials (`credentials['fields']['access_key_id']` / `secret_access_key`). |
-| `tool.rustfs.runtime_container_missing` | The RustFS runtime container (`orbit-rustfs`) is absent on the node, or its rendered config diverges from gateway intent (missing or divergent). |
-| `tool.rustfs.bind_public_interface` | The RustFS API is bound to a public or non-WireGuard interface instead of the node's WireGuard address only. |
+| `tool.seaweedfs.row_missing` | No `seaweedfs` tool row exists on an active `s3` role node. Not auto-fixable; requires manual tool adoption or re-provision. |
+| `tool.seaweedfs.credentials_missing` | The `seaweedfs` tool row exists but lacks service-level credentials (`credentials['fields']['access_key_id']` / `secret_access_key`). |
+| `tool.seaweedfs.runtime_container_missing` | The SeaweedFS runtime container (`orbit-seaweedfs`) is absent on the node, or its rendered config diverges from gateway intent (missing or divergent). |
+| `tool.seaweedfs.bind_public_interface` | The SeaweedFS API is bound to a public or non-WireGuard interface instead of the node's WireGuard address only. |
 
 The three `tool.dns_*` codes are owned by the VPN-facing development DNS
 bootstrap contract; see [`dns-bootstrap-contract.md`](dns-bootstrap-contract.md)
 for the runtime layout they probe.
 
-The four `tool.rustfs.*` codes are owned by the S3 role's RustFS managed tool
+The four `tool.seaweedfs.*` codes are owned by the S3 role's SeaweedFS managed tool
 contract; they are detected by the `S3DoctorProbe` via container introspection
 over `RemoteHostExecutor` (SSH host substrate + Docker inspection).
 
@@ -121,13 +121,13 @@ credential repair logic.
 | `tool.agent_route_missing` | Recreate the tool-owned internal proxy route for the agent tool under the active agent role TLD. |
 | `tool.agent_user_missing` | Re-apply the `agent` role baseline to recreate the `agent` user. |
 | `tool.agent_credentials_missing` | Regenerate managed credential material when the tool definition declares credential generation safe. |
-| `tool.rustfs.credentials_missing` | Regenerate managed RustFS credentials via the `rustfs` tool definition credential generation path. |
-| `tool.rustfs.runtime_container_missing` | Recreate or restart the `orbit-rustfs` runtime container from gateway S3 config using `RustfsTool` repair commands. |
-| `tool.rustfs.bind_public_interface` | Restart and re-render the `orbit-rustfs` container bound to the node's WireGuard address only. |
+| `tool.seaweedfs.credentials_missing` | Regenerate managed SeaweedFS credentials via the `seaweedfs` tool definition credential generation path. |
+| `tool.seaweedfs.runtime_container_missing` | Recreate or restart the `orbit-seaweedfs` runtime container from gateway S3 config using `SeaweedfsTool` repair commands. |
+| `tool.seaweedfs.bind_public_interface` | Restart and re-render the `orbit-seaweedfs` container bound to the node's WireGuard address only. |
 
 `doctor --restore` does not handle `tool.record_incomplete`, `tool.node_invalid`,
 `tool.definition_missing`, `tool.unsupported_on_node`, `tool.unregistered_capability`,
-or `tool.rustfs.row_missing` (the `rustfs` tool row must be created through
+or `tool.seaweedfs.row_missing` (the `seaweedfs` tool row must be created through
 `tool:adopt` or re-provision; restore does not create tool rows).
 
 Tools without a safe repair path are reported with the required manual action.

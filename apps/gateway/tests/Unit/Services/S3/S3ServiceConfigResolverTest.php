@@ -38,11 +38,11 @@ function s3RoleAssignment(Node $node, array $settings = []): NodeRoleAssignment
     ]);
 }
 
-function s3RustfsTool(Node $node, array $overrides = []): NodeTool
+function s3SeaweedfsTool(Node $node, array $overrides = []): NodeTool
 {
     return NodeTool::factory()->create(array_merge([
         'node_id' => $node->id,
-        'name' => 'rustfs',
+        'name' => 'seaweedfs',
         'expected_state' => 'installed',
         'config' => ['public_hosts' => []],
         'credentials' => null,
@@ -58,10 +58,10 @@ function s3Resolver(): S3ServiceConfigResolver
 // Credential preservation
 // ---------------------------------------------------------------------------
 
-it('preserves existing credentials from the rustfs tool row', function (): void {
+it('preserves existing credentials from the seaweedfs tool row', function (): void {
     $node = s3ResolverNode();
     $assignment = s3RoleAssignment($node);
-    $rustfs = s3RustfsTool($node, [
+    $seaweedfs = s3SeaweedfsTool($node, [
         'credentials' => [
             'fields' => [
                 'access_key_id' => 'EXISTINGACCESSKEYID12',
@@ -70,18 +70,18 @@ it('preserves existing credentials from the rustfs tool row', function (): void 
         ],
     ]);
 
-    $config = s3Resolver()->resolve($node, $assignment, $rustfs);
+    $config = s3Resolver()->resolve($node, $assignment, $seaweedfs);
 
     expect($config->accessKeyId)->toBe('EXISTINGACCESSKEYID12')
         ->and($config->secretAccessKey)->toBe('existing-secret-access-key-value-here');
 });
 
-it('generates new credentials when the rustfs tool row has no credentials', function (): void {
+it('generates new credentials when the seaweedfs tool row has no credentials', function (): void {
     $node = s3ResolverNode();
     $assignment = s3RoleAssignment($node);
-    $rustfs = s3RustfsTool($node, ['credentials' => null]);
+    $seaweedfs = s3SeaweedfsTool($node, ['credentials' => null]);
 
-    $config = s3Resolver()->resolve($node, $assignment, $rustfs);
+    $config = s3Resolver()->resolve($node, $assignment, $seaweedfs);
 
     expect($config->accessKeyId)->toBeString()->not->toBeEmpty()
         ->and($config->secretAccessKey)->toBeString()->not->toBeEmpty();
@@ -90,11 +90,11 @@ it('generates new credentials when the rustfs tool row has no credentials', func
 it('generates new credentials when the credentials fields array is empty', function (): void {
     $node = s3ResolverNode();
     $assignment = s3RoleAssignment($node);
-    $rustfs = s3RustfsTool($node, [
+    $seaweedfs = s3SeaweedfsTool($node, [
         'credentials' => ['fields' => []],
     ]);
 
-    $config = s3Resolver()->resolve($node, $assignment, $rustfs);
+    $config = s3Resolver()->resolve($node, $assignment, $seaweedfs);
 
     expect($config->accessKeyId)->toBeString()->not->toBeEmpty()
         ->and($config->secretAccessKey)->toBeString()->not->toBeEmpty();
@@ -103,7 +103,7 @@ it('generates new credentials when the credentials fields array is empty', funct
 it('generates new credentials when the access_key_id is missing', function (): void {
     $node = s3ResolverNode();
     $assignment = s3RoleAssignment($node);
-    $rustfs = s3RustfsTool($node, [
+    $seaweedfs = s3SeaweedfsTool($node, [
         'credentials' => [
             'fields' => [
                 'secret_access_key' => 'only-secret-no-key-id',
@@ -111,7 +111,7 @@ it('generates new credentials when the access_key_id is missing', function (): v
         ],
     ]);
 
-    $config = s3Resolver()->resolve($node, $assignment, $rustfs);
+    $config = s3Resolver()->resolve($node, $assignment, $seaweedfs);
 
     // Generated credentials will differ from the partial stored ones
     expect($config->accessKeyId)->toBeString()->not->toBeEmpty();
@@ -120,7 +120,7 @@ it('generates new credentials when the access_key_id is missing', function (): v
 it('generates new credentials when the secret_access_key is missing', function (): void {
     $node = s3ResolverNode();
     $assignment = s3RoleAssignment($node);
-    $rustfs = s3RustfsTool($node, [
+    $seaweedfs = s3SeaweedfsTool($node, [
         'credentials' => [
             'fields' => [
                 'access_key_id' => 'ONLYKEYNIDSECRET12345',
@@ -128,12 +128,12 @@ it('generates new credentials when the secret_access_key is missing', function (
         ],
     ]);
 
-    $config = s3Resolver()->resolve($node, $assignment, $rustfs);
+    $config = s3Resolver()->resolve($node, $assignment, $seaweedfs);
 
     expect($config->secretAccessKey)->toBeString()->not->toBeEmpty();
 });
 
-it('generates credentials when no rustfs tool row is provided', function (): void {
+it('generates credentials when no seaweedfs tool row is provided', function (): void {
     $node = s3ResolverNode();
     $assignment = s3RoleAssignment($node);
 
@@ -156,13 +156,13 @@ it('resolves the stable s3.orbit service endpoint', function (): void {
     expect($config->serviceEndpoint())->toBe('https://s3.orbit');
 });
 
-it('resolves the backend bind as wireguard_address:9000', function (): void {
+it('resolves the backend bind as wireguard_address:8333', function (): void {
     $node = s3ResolverNode(['wireguard_address' => '10.6.0.44']);
     $assignment = s3RoleAssignment($node);
 
     $config = s3Resolver()->resolve($node, $assignment, null);
 
-    expect($config->backendBind())->toBe('10.6.0.44:9000');
+    expect($config->backendBind())->toBe('10.6.0.44:8333');
 });
 
 it('reflects different wireguard addresses in the backend bind', function (): void {
@@ -171,7 +171,7 @@ it('reflects different wireguard addresses in the backend bind', function (): vo
 
     $config = s3Resolver()->resolve($node, $assignment, null);
 
-    expect($config->backendBind())->toBe('10.6.0.99:9000');
+    expect($config->backendBind())->toBe('10.6.0.99:8333');
 });
 
 // ---------------------------------------------------------------------------
@@ -231,10 +231,10 @@ it('includes the wireguard address in the resolved config', function (): void {
 // Public hosts
 // ---------------------------------------------------------------------------
 
-it('resolves public hosts from the rustfs tool config', function (): void {
+it('resolves public hosts from the seaweedfs tool config', function (): void {
     $node = s3ResolverNode();
     $assignment = s3RoleAssignment($node);
-    $rustfs = s3RustfsTool($node, [
+    $seaweedfs = s3SeaweedfsTool($node, [
         'config' => ['public_hosts' => ['s3.example.com', 's3.other.com']],
         'credentials' => [
             'fields' => [
@@ -244,7 +244,7 @@ it('resolves public hosts from the rustfs tool config', function (): void {
         ],
     ]);
 
-    $config = s3Resolver()->resolve($node, $assignment, $rustfs);
+    $config = s3Resolver()->resolve($node, $assignment, $seaweedfs);
 
     expect($config->publicHosts)->toBe(['s3.example.com', 's3.other.com']);
 });
@@ -252,14 +252,14 @@ it('resolves public hosts from the rustfs tool config', function (): void {
 it('defaults to empty public hosts when tool row has no config', function (): void {
     $node = s3ResolverNode();
     $assignment = s3RoleAssignment($node);
-    $rustfs = s3RustfsTool($node, ['config' => null]);
+    $seaweedfs = s3SeaweedfsTool($node, ['config' => null]);
 
-    $config = s3Resolver()->resolve($node, $assignment, $rustfs);
+    $config = s3Resolver()->resolve($node, $assignment, $seaweedfs);
 
     expect($config->publicHosts)->toBe([]);
 });
 
-it('defaults to empty public hosts when no rustfs tool row is provided', function (): void {
+it('defaults to empty public hosts when no seaweedfs tool row is provided', function (): void {
     $node = s3ResolverNode();
     $assignment = s3RoleAssignment($node);
 

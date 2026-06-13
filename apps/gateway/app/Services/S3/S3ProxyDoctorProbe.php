@@ -111,19 +111,19 @@ final readonly class S3ProxyDoctorProbe
             return null;
         }
 
-        $toolId = $this->integerDetail($entry, 'rustfs_tool_id');
+        $toolId = $this->integerDetail($entry, 'seaweedfs_tool_id');
 
         if ($toolId === null) {
             return null;
         }
 
-        $rustfs = NodeTool::query()->find($toolId);
+        $seaweedfs = NodeTool::query()->find($toolId);
 
-        if (! $rustfs instanceof NodeTool) {
+        if (! $seaweedfs instanceof NodeTool) {
             return null;
         }
 
-        $this->routeRegistrar->syncPublicHosts($rustfs);
+        $this->routeRegistrar->syncPublicHosts($seaweedfs);
 
         return [
             'family' => 'proxy',
@@ -134,7 +134,7 @@ final readonly class S3ProxyDoctorProbe
             'status' => 'completed',
             'summary' => 'Re-synced public S3 ingress routes from gateway intent.',
             'details' => [
-                'rustfs_tool_id' => $rustfs->id,
+                'seaweedfs_tool_id' => $seaweedfs->id,
             ],
         ];
     }
@@ -212,7 +212,7 @@ final readonly class S3ProxyDoctorProbe
      * Gated on: node must be a router AND the s3.orbit route must exist.
      * Only fires when the route is present; absence is covered by routerRouteDrift.
      * Reports router_backend_invalid (Divergent) when the upstreams list is empty
-     * or any upstream host is not a valid <name>.s3.orbit:9000 RustFS backend.
+     * or any upstream host is not a valid <name>.s3.orbit:8333 SeaweedFS backend.
      *
      * Non-overlap with router_route_missing: this check fires ONLY on backend-content
      * invalidity, regardless of whether source_hash also differs. routerRouteDrift
@@ -256,7 +256,7 @@ final readonly class S3ProxyDoctorProbe
             ];
         }
 
-        // Validate each upstream — every host must end with .s3.orbit and use port 9000.
+        // Validate each upstream — every host must end with .s3.orbit and use port 8333.
         foreach ($upstreams as $upstream) {
             if (! is_array($upstream)) {
                 continue;
@@ -288,7 +288,7 @@ final readonly class S3ProxyDoctorProbe
 
     /**
      * Returns true when the route's backend pool is semantically invalid
-     * (empty upstreams or any upstream is not a valid .s3.orbit:9000 host).
+     * (empty upstreams or any upstream is not a valid .s3.orbit:8333 host).
      */
     private function hasInvalidBackendPool(ProxyRoute $route): bool
     {
@@ -356,11 +356,11 @@ final readonly class S3ProxyDoctorProbe
 
     /**
      * Check whether public S3 ingress routes exist and match gateway intent for
-     * each active rustfs tool row that lists public hosts.
+     * each active seaweedfs tool row that lists public hosts.
      *
      * Gated on: node must be an ingress node.
      * Reports only when intent->node_id === node->id (this is the owning ingress).
-     * Drift detail includes rustfs_tool_id so restore() can locate the rustfs row.
+     * Drift detail includes seaweedfs_tool_id so restore() can locate the seaweedfs row.
      *
      * @return list<DriftEntry>
      */
@@ -377,16 +377,16 @@ final readonly class S3ProxyDoctorProbe
             return [];
         }
 
-        /** @var Collection<int, NodeTool> $rustfsTools */
-        $rustfsTools = NodeTool::query()
-            ->where('name', 'rustfs')
+        /** @var Collection<int, NodeTool> $seaweedfsTools */
+        $seaweedfsTools = NodeTool::query()
+            ->where('name', 'seaweedfs')
             ->whereIn('node_id', $s3NodeIds)
             ->orderBy('id')
             ->get();
 
-        foreach ($rustfsTools as $rustfs) {
+        foreach ($seaweedfsTools as $seaweedfs) {
             try {
-                $intents = $this->routeRegistrar->publicRouteIntents($rustfs);
+                $intents = $this->routeRegistrar->publicRouteIntents($seaweedfs);
             } catch (Throwable) {
                 continue;
             }
@@ -404,7 +404,7 @@ final readonly class S3ProxyDoctorProbe
                         missingSummary: "S3 public route {$intent->domain} is missing from gateway proxy registry.",
                         mismatchSummary: "S3 public route {$intent->domain} differs from gateway S3 route intent.",
                         detail: [
-                            'rustfs_tool_id' => $rustfs->id,
+                            'seaweedfs_tool_id' => $seaweedfs->id,
                         ],
                     ),
                 ];

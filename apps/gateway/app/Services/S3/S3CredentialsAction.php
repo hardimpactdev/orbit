@@ -18,7 +18,7 @@ final readonly class S3CredentialsAction
     ) {}
 
     /**
-     * Read RustFS service-level credentials and endpoint metadata for the selected s3 node.
+     * Read SeaweedFS service-level credentials and endpoint metadata for the selected s3 node.
      *
      * Returns a success or error array. The error array always includes a `status` key
      * with the HTTP status code to use in the response.
@@ -79,27 +79,27 @@ final readonly class S3CredentialsAction
             );
         }
 
-        // Read the rustfs tool row for this s3 node.
-        $rustfs = NodeTool::query()
+        // Read the seaweedfs tool row for this s3 node.
+        $seaweedfs = NodeTool::query()
             ->where('node_id', $s3Node->id)
-            ->where('name', 'rustfs')
+            ->where('name', 'seaweedfs')
             ->first();
 
-        if (! $rustfs instanceof NodeTool) {
+        if (! $seaweedfs instanceof NodeTool) {
             return $this->error(
                 's3.credentials_missing',
-                "RustFS service credentials are missing for '{$s3Node->name}'.",
+                "SeaweedFS service credentials are missing for '{$s3Node->name}'.",
                 [
                     'node' => $s3Node->name,
-                    'tool' => 'rustfs',
+                    'tool' => 'seaweedfs',
                     'next_command' => "doctor --family=tool --restore --node={$s3Node->name}",
                 ],
                 422,
             );
         }
 
-        // Extract credentials from the rustfs tool row.
-        $credentials = is_array($rustfs->credentials) ? $rustfs->credentials : [];
+        // Extract credentials from the seaweedfs tool row.
+        $credentials = is_array($seaweedfs->credentials) ? $seaweedfs->credentials : [];
         $fields = is_array($credentials['fields'] ?? null) ? $credentials['fields'] : [];
 
         $accessKeyId = is_string($fields['access_key_id'] ?? null) ? $fields['access_key_id'] : '';
@@ -108,10 +108,10 @@ final readonly class S3CredentialsAction
         if ($accessKeyId === '' || $secretAccessKey === '') {
             return $this->error(
                 's3.credentials_missing',
-                "RustFS service credentials are missing for '{$s3Node->name}'.",
+                "SeaweedFS service credentials are missing for '{$s3Node->name}'.",
                 [
                     'node' => $s3Node->name,
-                    'tool' => 'rustfs',
+                    'tool' => 'seaweedfs',
                     'next_command' => "doctor --family=tool --restore --node={$s3Node->name}",
                 ],
                 422,
@@ -127,8 +127,8 @@ final readonly class S3CredentialsAction
             ? $fields['bucket_style']
             : 'path';
 
-        // Build public endpoints from rustfs tool config.
-        $config = is_array($rustfs->config) ? $rustfs->config : [];
+        // Build public endpoints from seaweedfs tool config.
+        $config = is_array($seaweedfs->config) ? $seaweedfs->config : [];
         $publicHosts = is_array($config['public_hosts'] ?? null) ? $config['public_hosts'] : [];
 
         /** @var list<string> $publicHosts */
@@ -165,7 +165,7 @@ final readonly class S3CredentialsAction
                     ],
                 ],
                 'meta' => [
-                    'tool' => 'rustfs',
+                    'tool' => 'seaweedfs',
                 ],
             ],
         ];

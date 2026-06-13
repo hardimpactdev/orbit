@@ -27,7 +27,7 @@ function s3AssignRole(Node $node, string $role, string $status = 'active', array
     ]);
 }
 
-it('registers router-owned s3 service route to one rustfs backend', function (): void {
+it('registers router-owned s3 service route to one seaweedfs backend', function (): void {
     $router = Node::factory()->create(['name' => 'gateway-1', 'wireguard_address' => '10.6.0.1']);
     s3AssignRole($router, 'gateway');
     s3AssignRole($router, 'vpn');
@@ -37,7 +37,7 @@ it('registers router-owned s3 service route to one rustfs backend', function ():
     s3AssignRole($storage, 's3');
     NodeTool::factory()->create([
         'node_id' => $storage->id,
-        'name' => 'rustfs',
+        'name' => 'seaweedfs',
         'config' => [
             'backend_host' => 'storage-1.s3.orbit',
             'public_hosts' => [],
@@ -53,16 +53,16 @@ it('registers router-owned s3 service route to one rustfs backend', function ():
         ->owner_type->toBe('router')
         ->kind->toBe('proxy')
         ->and($route->config)->toMatchArray([
-            'owner_name' => 'rustfs',
+            'owner_name' => 'seaweedfs',
             'protocol' => 's3',
-            'target' => ['type' => 'upstream', 'value' => 'http://storage-1.s3.orbit:9000'],
+            'target' => ['type' => 'upstream', 'value' => 'http://storage-1.s3.orbit:8333'],
             'upstreams' => [
-                ['scheme' => 'http', 'host' => 'storage-1.s3.orbit', 'port' => 9000],
+                ['scheme' => 'http', 'host' => 'storage-1.s3.orbit', 'port' => 8333],
             ],
         ]);
 })->group('service');
 
-it('stores the pool shape even for a single rustfs backend', function (): void {
+it('stores the pool shape even for a single seaweedfs backend', function (): void {
     $router = Node::factory()->create(['name' => 'gateway-1', 'wireguard_address' => '10.6.0.1']);
     s3AssignRole($router, 'router');
 
@@ -70,7 +70,7 @@ it('stores the pool shape even for a single rustfs backend', function (): void {
     s3AssignRole($storage, 's3');
     NodeTool::factory()->create([
         'node_id' => $storage->id,
-        'name' => 'rustfs',
+        'name' => 'seaweedfs',
         'config' => [
             'backend_host' => 'storage-1.s3.orbit',
             'public_hosts' => [],
@@ -85,7 +85,7 @@ it('stores the pool shape even for a single rustfs backend', function (): void {
         ->and($route->config['upstreams'][0])->toBe([
             'scheme' => 'http',
             'host' => 'storage-1.s3.orbit',
-            'port' => 9000,
+            'port' => 8333,
         ]);
 })->group('service');
 
@@ -94,7 +94,7 @@ it('fails clearly when there is no active router node', function (): void {
     s3AssignRole($storage, 's3');
     NodeTool::factory()->create([
         'node_id' => $storage->id,
-        'name' => 'rustfs',
+        'name' => 'seaweedfs',
         'config' => ['backend_host' => 'storage-1.s3.orbit', 'public_hosts' => []],
     ]);
 
@@ -110,7 +110,7 @@ it('fails clearly when there are no active s3 nodes', function (): void {
 })->throws(RuntimeException::class, 'The S3 service route requires at least one active s3 backend.')
     ->group('service');
 
-it('fails clearly when s3 node has no rustfs tool row', function (): void {
+it('fails clearly when s3 node has no seaweedfs tool row', function (): void {
     $router = Node::factory()->create(['name' => 'gateway-1', 'wireguard_address' => '10.6.0.1']);
     s3AssignRole($router, 'router');
 
@@ -118,7 +118,7 @@ it('fails clearly when s3 node has no rustfs tool row', function (): void {
     s3AssignRole($storage, 's3');
 
     app(S3RouteRegistrar::class)->syncServiceRoute();
-})->throws(RuntimeException::class, 'The S3 service route requires at least one active rustfs tool row.')
+})->throws(RuntimeException::class, 'The S3 service route requires at least one active seaweedfs tool row.')
     ->group('service');
 
 it('updates the service route when called again', function (): void {
@@ -129,7 +129,7 @@ it('updates the service route when called again', function (): void {
     s3AssignRole($storage, 's3');
     NodeTool::factory()->create([
         'node_id' => $storage->id,
-        'name' => 'rustfs',
+        'name' => 'seaweedfs',
         'config' => ['backend_host' => 'storage-1.s3.orbit', 'public_hosts' => []],
     ]);
 
@@ -150,7 +150,7 @@ it('syncs public s3 host as ingress route forwarding to s3.orbit', function (): 
     s3AssignRole($storage, 's3');
     $tool = NodeTool::factory()->create([
         'node_id' => $storage->id,
-        'name' => 'rustfs',
+        'name' => 'seaweedfs',
         'config' => [
             'backend_host' => 'storage-1.s3.orbit',
             'public_hosts' => ['s3.example.com'],
@@ -166,7 +166,7 @@ it('syncs public s3 host as ingress route forwarding to s3.orbit', function (): 
         ->owner_type->toBe('s3')
         ->kind->toBe('proxy')
         ->and($route->config)->toMatchArray([
-            'owner_name' => 'rustfs',
+            'owner_name' => 'seaweedfs',
             'protocol' => 's3',
             'target' => ['type' => 'upstream', 'value' => 'https://s3.orbit'],
         ]);
@@ -177,7 +177,7 @@ it('skips ingress route sync when there are no public hosts', function (): void 
     s3AssignRole($storage, 's3');
     $tool = NodeTool::factory()->create([
         'node_id' => $storage->id,
-        'name' => 'rustfs',
+        'name' => 'seaweedfs',
         'config' => ['backend_host' => 'storage-1.s3.orbit', 'public_hosts' => []],
     ]);
 
@@ -186,7 +186,7 @@ it('skips ingress route sync when there are no public hosts', function (): void 
     expect(ProxyRoute::query()->where('owner_type', 's3')->count())->toBe(0);
 })->group('service');
 
-it('removes the public host route when owner_type is tool and owner_name is rustfs', function (): void {
+it('removes the public host route when owner_type is tool and owner_name is seaweedfs', function (): void {
     $edge = Node::factory()->create(['name' => 'edge-1', 'wireguard_address' => '10.6.0.10']);
     s3AssignRole($edge, 'ingress');
 
@@ -194,7 +194,7 @@ it('removes the public host route when owner_type is tool and owner_name is rust
     s3AssignRole($storage, 's3');
     $tool = NodeTool::factory()->create([
         'node_id' => $storage->id,
-        'name' => 'rustfs',
+        'name' => 'seaweedfs',
         'config' => ['backend_host' => 'storage-1.s3.orbit', 'public_hosts' => ['s3.example.com']],
     ]);
 
@@ -203,7 +203,7 @@ it('removes the public host route when owner_type is tool and owner_name is rust
         'node_id' => $edge->id,
         'owner_type' => 's3',
         'kind' => 'proxy',
-        'config' => ['owner_name' => 'rustfs', 'protocol' => 's3', 'target' => ['type' => 'upstream', 'value' => 'https://s3.orbit']],
+        'config' => ['owner_name' => 'seaweedfs', 'protocol' => 's3', 'target' => ['type' => 'upstream', 'value' => 'https://s3.orbit']],
     ]);
 
     app(S3RouteRegistrar::class)->removePublicHost($tool, 's3.example.com');
@@ -226,7 +226,7 @@ it('registers an ingress-placement route on the ingress node targeting the route
     s3AssignRole($storage, 's3');
     $tool = NodeTool::factory()->create([
         'node_id' => $storage->id,
-        'name' => 'rustfs',
+        'name' => 'seaweedfs',
         'config' => [
             'backend_host' => 'storage-1.s3.orbit',
             'public_hosts' => ['s3.example.com'],
@@ -259,7 +259,7 @@ it('public ingress route preserves Host and forwarded-proto via router_upstream 
     s3AssignRole($storage, 's3');
     $tool = NodeTool::factory()->create([
         'node_id' => $storage->id,
-        'name' => 'rustfs',
+        'name' => 'seaweedfs',
         'config' => [
             'backend_host' => 'storage-1.s3.orbit',
             'public_hosts' => ['s3.example.com'],
@@ -288,7 +288,7 @@ it('public ingress route preserves Host and forwarded-proto via router_upstream 
         ->toContain('reverse_proxy http://10.6.0.1:80');
 })->group('public');
 
-it('creates separate ingress routes for each public host on the same rustfs tool', function (): void {
+it('creates separate ingress routes for each public host on the same seaweedfs tool', function (): void {
     $router = Node::factory()->create(['name' => 'gateway-1', 'wireguard_address' => '10.6.0.1']);
     s3AssignRole($router, 'router');
 
@@ -299,7 +299,7 @@ it('creates separate ingress routes for each public host on the same rustfs tool
     s3AssignRole($storage, 's3');
     $tool = NodeTool::factory()->create([
         'node_id' => $storage->id,
-        'name' => 'rustfs',
+        'name' => 'seaweedfs',
         'config' => [
             'backend_host' => 'storage-1.s3.orbit',
             'public_hosts' => ['s3.example.com', 'files.example.com'],
@@ -330,7 +330,7 @@ it('public host route does not target the concrete s3 storage node', function ()
     s3AssignRole($storage, 's3');
     $tool = NodeTool::factory()->create([
         'node_id' => $storage->id,
-        'name' => 'rustfs',
+        'name' => 'seaweedfs',
         'config' => [
             'backend_host' => 'storage-1.s3.orbit',
             'public_hosts' => ['s3.example.com'],
@@ -363,7 +363,7 @@ it('re-syncing a public host is idempotent and does not create duplicate routes'
     s3AssignRole($storage, 's3');
     $tool = NodeTool::factory()->create([
         'node_id' => $storage->id,
-        'name' => 'rustfs',
+        'name' => 'seaweedfs',
         'config' => [
             'backend_host' => 'storage-1.s3.orbit',
             'public_hosts' => ['s3.example.com'],
@@ -376,7 +376,7 @@ it('re-syncing a public host is idempotent and does not create duplicate routes'
     expect(ProxyRoute::query()->where('domain', 's3.example.com')->count())->toBe(1);
 })->group('public');
 
-it('removePublicHost removes only the rustfs s3 owned route and leaves unrelated routes intact', function (): void {
+it('removePublicHost removes only the seaweedfs s3 owned route and leaves unrelated routes intact', function (): void {
     $edge = Node::factory()->create(['name' => 'edge-1', 'wireguard_address' => '10.6.0.10']);
     s3AssignRole($edge, 'ingress');
 
@@ -384,11 +384,11 @@ it('removePublicHost removes only the rustfs s3 owned route and leaves unrelated
     s3AssignRole($storage, 's3');
     $tool = NodeTool::factory()->create([
         'node_id' => $storage->id,
-        'name' => 'rustfs',
+        'name' => 'seaweedfs',
         'config' => ['backend_host' => 'storage-1.s3.orbit', 'public_hosts' => ['s3.example.com']],
     ]);
 
-    // The route owned by this rustfs S3 publication.
+    // The route owned by this seaweedfs S3 publication.
     ProxyRoute::factory()->create([
         'domain' => 's3.example.com',
         'node_id' => $edge->id,
@@ -396,7 +396,7 @@ it('removePublicHost removes only the rustfs s3 owned route and leaves unrelated
         'kind' => 'proxy',
         'config' => [
             'placement' => 'ingress',
-            'owner_name' => 'rustfs',
+            'owner_name' => 'seaweedfs',
             'protocol' => 's3',
             'target' => ['type' => 'upstream', 'value' => 'https://s3.orbit'],
         ],
@@ -425,7 +425,7 @@ it('removePublicHost does not remove a non-s3 tool route at the same domain', fu
     s3AssignRole($storage, 's3');
     $tool = NodeTool::factory()->create([
         'node_id' => $storage->id,
-        'name' => 'rustfs',
+        'name' => 'seaweedfs',
         'config' => ['backend_host' => 'storage-1.s3.orbit', 'public_hosts' => []],
     ]);
 
@@ -435,7 +435,7 @@ it('removePublicHost does not remove a non-s3 tool route at the same domain', fu
         'node_id' => $edge->id,
         'owner_type' => 'tool',
         'kind' => 'proxy',
-        'config' => ['owner_name' => 'rustfs', 'protocol' => 'websocket', 'target' => 'https://other.orbit'],
+        'config' => ['owner_name' => 'seaweedfs', 'protocol' => 'websocket', 'target' => 'https://other.orbit'],
     ]);
 
     app(S3RouteRegistrar::class)->removePublicHost($tool, 's3.example.com');
@@ -455,7 +455,7 @@ it('fails clearly when the router node has no WireGuard address', function (): v
     s3AssignRole($storage, 's3');
     $tool = NodeTool::factory()->create([
         'node_id' => $storage->id,
-        'name' => 'rustfs',
+        'name' => 'seaweedfs',
         'config' => [
             'backend_host' => 'storage-1.s3.orbit',
             'public_hosts' => ['s3.example.com'],
@@ -474,7 +474,7 @@ it('fails clearly when there is no active ingress node for a public host', funct
     s3AssignRole($storage, 's3');
     $tool = NodeTool::factory()->create([
         'node_id' => $storage->id,
-        'name' => 'rustfs',
+        'name' => 'seaweedfs',
         'config' => [
             'backend_host' => 'storage-1.s3.orbit',
             'public_hosts' => ['s3.example.com'],

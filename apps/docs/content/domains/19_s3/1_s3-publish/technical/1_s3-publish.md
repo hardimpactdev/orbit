@@ -41,14 +41,14 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 - Resolve the selected active s3 node.
 - Validate that an active router exists.
 - Validate that an active ingress exists.
-- Ensure the selected s3 node has a `rustfs` tool row with service-level
+- Ensure the selected s3 node has a `seaweedfs` tool row with service-level
   credentials.
 - Ensure the router-owned private service route for `https://s3.orbit` exists.
-- Ensure the S3 backend pool owned by router contains the selected RustFS
-  backend, such as `http://storage-1.s3.orbit:9000`.
+- Ensure the S3 backend pool owned by router contains the selected SeaweedFS
+  backend, such as `http://storage-1.s3.orbit:8333`.
 - Create or update the S3 public host proxy route on ingress. The ingress route
   forwards to router and must not target the s3 node directly.
-- Record the public host in the selected `rustfs` tool row configuration.
+- Record the public host in the selected `seaweedfs` tool row configuration.
 - Preserve request `Host`, forwarded-proto metadata, and upload-safe proxy
   behavior for large S3 uploads.
 
@@ -59,7 +59,7 @@ and returns `success.meta.action=published` with
 ### Scope Boundaries
 
 `s3:publish` must not create buckets, manage bucket policy, create per-app
-credentials, rotate credentials, expose the RustFS console, create wildcard DNS
+credentials, rotate credentials, expose the SeaweedFS console, create wildcard DNS
 or TLS, or render role-local Docker Compose.
 
 ## Renderer Contracts
@@ -84,7 +84,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 `s3:publish` changes S3 publication intent stored on the gateway and applies
 route artifacts for the command. [`doctor --family=proxy`](../../../8_proxy/proxy-doctor.md)
 owns route drift verification and repair after partial apply. [`doctor --family=tool`](../../../3_tool/tool-doctor.md)
-owns RustFS tool-row and container drift. [`doctor --family=node`](../../../1_node/node-doctor.md)
+owns SeaweedFS tool-row and container drift. [`doctor --family=node`](../../../1_node/node-doctor.md)
 owns s3 role assignment readiness.
 
 ## Activity Logging

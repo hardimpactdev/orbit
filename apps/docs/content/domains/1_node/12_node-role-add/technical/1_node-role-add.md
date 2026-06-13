@@ -28,7 +28,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | `role` | `[role]` | Always. | Never. | None. | `gateway`, `vpn`, `router`, and `agent` are rejected. |
 | `tld` | `--tld` | Required for `app-dev`. | Forbidden for roles that do not support it. | None. | Must be a single lowercase DNS label without a leading dot. |
 | `redis_node` | `--redis-node` | Required for `websocket`. | Forbidden for roles that do not support it. | None. | Must match an active node with the `database` role and Redis expected or installed. |
-| `s3_data_path` | `--s3-data-path` | Never. | Forbidden for roles that do not support it. | `/srv/orbit/s3/data` for `s3`. | Absolute host path mounted into RustFS as `/data`. |
+| `s3_data_path` | `--s3-data-path` | Never. | Forbidden for roles that do not support it. | `/srv/orbit/s3/data` for `s3`. | Absolute host path mounted into SeaweedFS as `/data`. |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer and forces non-interactive input mode. |
 
 ## Behavior Contract
@@ -48,7 +48,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
   `database` role and Redis expected or installed.
 - `s3` accepts optional `--s3-data-path`. The resolved path defaults to
   `/srv/orbit/s3/data`, must be absolute, is stored as `settings.data_path`,
-  and is mounted into RustFS as `/data`.
+  and is mounted into SeaweedFS as `/data`.
 - `app-prod`, `database`, and other roles reject role-local options they
   do not support.
 - Role conflicts are validated by `NodeRoleAssignmentService`.

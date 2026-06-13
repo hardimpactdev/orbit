@@ -42,11 +42,11 @@ function configuratorAssignment(Node $node, array $settings = []): NodeRoleAssig
     ]);
 }
 
-function configuratorRustfsTool(Node $node, array $overrides = []): NodeTool
+function configuratorSeaweedfsTool(Node $node, array $overrides = []): NodeTool
 {
     return NodeTool::factory()->create(array_merge([
         'node_id' => $node->id,
-        'name' => 'rustfs',
+        'name' => 'seaweedfs',
         'expected_state' => 'installed',
         'config' => ['public_hosts' => []],
         'credentials' => null,
@@ -65,19 +65,19 @@ function makeConfigurator(): S3ServiceConfigurator
 // (a) First configure — no stored credentials → persists generated credentials
 // ---------------------------------------------------------------------------
 
-it('persists generated credentials to the rustfs NodeTool row on first configure', function (): void {
+it('persists generated credentials to the seaweedfs NodeTool row on first configure', function (): void {
     $node = configuratorNode();
     $assignment = configuratorAssignment($node, ['data_path' => '/srv/orbit/s3/data']);
 
-    // No pre-existing rustfs tool row — credentials must be generated and written.
+    // No pre-existing seaweedfs tool row — credentials must be generated and written.
     makeConfigurator()->configure($node, $assignment);
 
-    $rustfsTool = NodeTool::query()
+    $seaweedfsTool = NodeTool::query()
         ->where('node_id', $node->id)
-        ->where('name', 'rustfs')
+        ->where('name', 'seaweedfs')
         ->firstOrFail();
 
-    $fields = $rustfsTool->credentials['fields'] ?? null;
+    $fields = $seaweedfsTool->credentials['fields'] ?? null;
 
     expect($fields)->toBeArray()
         ->and($fields['access_key_id'])->toBeString()->not->toBeEmpty()
@@ -95,8 +95,8 @@ it('does not rotate existing credentials on re-configure', function (): void {
     $node = configuratorNode();
     $assignment = configuratorAssignment($node, ['data_path' => '/srv/orbit/s3/data']);
 
-    // Pre-seed the rustfs row with stored credentials.
-    configuratorRustfsTool($node, [
+    // Pre-seed the seaweedfs row with stored credentials.
+    configuratorSeaweedfsTool($node, [
         'credentials' => [
             'fields' => [
                 'access_key_id' => 'STOREDACCESSKEYID1234',
@@ -107,12 +107,12 @@ it('does not rotate existing credentials on re-configure', function (): void {
 
     makeConfigurator()->configure($node, $assignment);
 
-    $rustfsTool = NodeTool::query()
+    $seaweedfsTool = NodeTool::query()
         ->where('node_id', $node->id)
-        ->where('name', 'rustfs')
+        ->where('name', 'seaweedfs')
         ->firstOrFail();
 
-    $fields = $rustfsTool->credentials['fields'] ?? null;
+    $fields = $seaweedfsTool->credentials['fields'] ?? null;
 
     expect($fields)->toBeArray()
         ->and($fields['access_key_id'])->toBe('STOREDACCESSKEYID1234')
@@ -130,7 +130,7 @@ it('does not change stored credentials when called multiple times (idempotent)',
 
     $afterFirst = NodeTool::query()
         ->where('node_id', $node->id)
-        ->where('name', 'rustfs')
+        ->where('name', 'seaweedfs')
         ->firstOrFail();
 
     $firstFields = $afterFirst->credentials['fields'];
@@ -140,7 +140,7 @@ it('does not change stored credentials when called multiple times (idempotent)',
 
     $afterSecond = NodeTool::query()
         ->where('node_id', $node->id)
-        ->where('name', 'rustfs')
+        ->where('name', 'seaweedfs')
         ->firstOrFail();
 
     $secondFields = $afterSecond->credentials['fields'];
@@ -150,7 +150,7 @@ it('does not change stored credentials when called multiple times (idempotent)',
 });
 
 // ---------------------------------------------------------------------------
-// (c) Renders the runtime container (rustfs/rustfs, WireGuard:9000, data_path mount)
+// (c) Renders the runtime container (chrislusf/seaweedfs:4.33, WireGuard:8333, data_path mount)
 // ---------------------------------------------------------------------------
 
 it('returns an S3ServiceConfiguratorResult with a rendered runtime container', function (): void {
@@ -164,25 +164,23 @@ it('returns an S3ServiceConfiguratorResult with a rendered runtime container', f
         ->and($result->serviceConfig)->toBeInstanceOf(S3ServiceConfig::class);
 });
 
-it('renders the rustfs/rustfs image in the runtime container', function (): void {
+it('renders the chrislusf/seaweedfs:4.33 image in the runtime container', function (): void {
     $node = configuratorNode();
     $assignment = configuratorAssignment($node);
 
     $result = makeConfigurator()->configure($node, $assignment);
 
-    expect($result->runtimeContainer->image())->toBe('rustfs/rustfs');
+    expect($result->runtimeContainer->image())->toBe('chrislusf/seaweedfs:4.33');
 });
 
-it('binds the runtime container to the WireGuard address on port 9000', function (): void {
+it('binds the runtime container to the WireGuard address on port 8333', function (): void {
     $node = configuratorNode(['wireguard_address' => '10.6.0.44']);
     $assignment = configuratorAssignment($node);
 
     $result = makeConfigurator()->configure($node, $assignment);
 
-    expect($result->runtimeContainer->publishedPorts())->toContain('10.6.0.44:9000:9000')
-        ->and($result->runtimeContainer->environment())->toMatchArray([
-            'RUSTFS_ADDRESS' => '10.6.0.44:9000',
-        ]);
+    expect($result->runtimeContainer->publishedPorts())->toContain('10.6.0.44:8333:8333')
+        ->and($result->runtimeContainer->environment())->toBe([]);
 });
 
 it('mounts the role data path at /data in the runtime container', function (): void {
@@ -197,6 +195,34 @@ it('mounts the role data path at /data in the runtime container', function (): v
         'source' => '/srv/orbit/s3/data',
         'target' => '/data',
         'read_only' => false,
+    ])->toContain([
+        'source' => '/srv/orbit/s3/data/s3.json',
+        'target' => '/etc/seaweedfs/s3.json',
+        'read_only' => true,
+    ]);
+});
+
+it('renders a SeaweedFS S3 identity config from service credentials', function (): void {
+    $node = configuratorNode();
+    $assignment = configuratorAssignment($node);
+
+    $result = makeConfigurator()->configure($node, $assignment);
+
+    $fields = $result->seaweedfsTool->credentials['fields'];
+
+    expect($result->runtimeContainer->s3Config())->toMatchArray([
+        'identities' => [
+            [
+                'name' => 'orbit',
+                'credentials' => [
+                    [
+                        'accessKey' => $fields['access_key_id'],
+                        'secretKey' => $fields['secret_access_key'],
+                    ],
+                ],
+                'actions' => ['Admin', 'Read', 'List', 'Tagging', 'Write'],
+            ],
+        ],
     ]);
 });
 
@@ -204,18 +230,18 @@ it('mounts the role data path at /data in the runtime container', function (): v
 // (d) Role-owned data path preserved in tool config
 // ---------------------------------------------------------------------------
 
-it('persists the role data path in rustfs tool config', function (): void {
+it('persists the role data path in seaweedfs tool config', function (): void {
     $node = configuratorNode();
     $assignment = configuratorAssignment($node, ['data_path' => '/mnt/fast-disk/s3']);
 
     makeConfigurator()->configure($node, $assignment);
 
-    $rustfsTool = NodeTool::query()
+    $seaweedfsTool = NodeTool::query()
         ->where('node_id', $node->id)
-        ->where('name', 'rustfs')
+        ->where('name', 'seaweedfs')
         ->firstOrFail();
 
-    expect($rustfsTool->config['data_path'])->toBe('/mnt/fast-disk/s3');
+    expect($seaweedfsTool->config['data_path'])->toBe('/mnt/fast-disk/s3');
 });
 
 it('does not overwrite the data path when the role setting changes during re-configure', function (): void {
@@ -230,47 +256,52 @@ it('does not overwrite the data path when the role setting changes during re-con
 
     makeConfigurator()->configure($node, $assignment);
 
-    $rustfsTool = NodeTool::query()
+    $seaweedfsTool = NodeTool::query()
         ->where('node_id', $node->id)
-        ->where('name', 'rustfs')
+        ->where('name', 'seaweedfs')
         ->firstOrFail();
 
     // The tool config data_path always reflects the current role settings.
-    expect($rustfsTool->config['data_path'])->toBe('/mnt/fast-disk/s3');
+    expect($seaweedfsTool->config['data_path'])->toBe('/mnt/fast-disk/s3');
 });
 
 // ---------------------------------------------------------------------------
 // Tool metadata written to NodeTool config
 // ---------------------------------------------------------------------------
 
-it('persists full metadata to the rustfs NodeTool config', function (): void {
+it('persists full metadata to the seaweedfs NodeTool config', function (): void {
     $node = configuratorNode(['name' => 'storage-1', 'wireguard_address' => '10.6.0.44']);
     $assignment = configuratorAssignment($node, ['data_path' => '/srv/orbit/s3/data']);
 
     makeConfigurator()->configure($node, $assignment);
 
-    $rustfsTool = NodeTool::query()
+    $seaweedfsTool = NodeTool::query()
         ->where('node_id', $node->id)
-        ->where('name', 'rustfs')
+        ->where('name', 'seaweedfs')
         ->firstOrFail();
 
-    expect($rustfsTool->config)->toMatchArray([
+    expect($seaweedfsTool->config)->toMatchArray([
         'data_path' => '/srv/orbit/s3/data',
         'service_host' => 's3.orbit',
         'backend_host' => 'storage-1.s3.orbit',
         'container_name' => S3RuntimeContainer::ContainerName,
+        'image' => 'chrislusf/seaweedfs:4.33',
+        'command' => 'weed server -filer -s3 -s3.port=8333 -s3.config=/etc/seaweedfs/s3.json',
+        'api_port' => 8333,
+        'mode' => 'head',
         'runtime' => 'docker-container',
+        's3_config_path' => '/srv/orbit/s3/data/s3.json',
         'public_hosts' => [],
-    ])->and($rustfsTool->expected_state)->toBe('installed');
+    ])->and($seaweedfsTool->expected_state)->toBe('installed');
 });
 
-it('returns the persisted rustfs NodeTool in the result', function (): void {
+it('returns the persisted seaweedfs NodeTool in the result', function (): void {
     $node = configuratorNode();
     $assignment = configuratorAssignment($node);
 
     $result = makeConfigurator()->configure($node, $assignment);
 
-    expect($result->rustfsTool)->toBeInstanceOf(NodeTool::class)
-        ->and($result->rustfsTool->name)->toBe('rustfs')
-        ->and($result->rustfsTool->node_id)->toBe($node->id);
+    expect($result->seaweedfsTool)->toBeInstanceOf(NodeTool::class)
+        ->and($result->seaweedfsTool->name)->toBe('seaweedfs')
+        ->and($result->seaweedfsTool->node_id)->toBe($node->id);
 });

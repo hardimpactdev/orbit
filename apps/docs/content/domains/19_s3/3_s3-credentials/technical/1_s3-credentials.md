@@ -38,15 +38,15 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 - Resolve the selected active s3 node.
 - Validate that an active router exists.
-- Read service-level credentials from the selected node's `rustfs` tool row.
+- Read service-level credentials from the selected node's `seaweedfs` tool row.
 - Return private endpoint metadata for `https://s3.orbit`.
 - Return public endpoint metadata for published S3 hosts recorded on the
-  selected `rustfs` tool row.
+  selected `seaweedfs` tool row.
 - Return the router-owned backend pool as non-secret diagnostic metadata.
 
 ### Scope Boundaries
 
-`s3:credentials` must not probe live RustFS health, rotate credentials, create
+`s3:credentials` must not probe live SeaweedFS health, rotate credentials, create
 buckets, create per-app credentials, change proxy routes, or mutate gateway
 state.
 
@@ -63,12 +63,12 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | --- | --- | --- |
 | Active S3 node required | No visible active s3 node exists, or `--node` does not select one. | `error.code=validation_failed`, `error.meta.field=node`, `error.meta.required_role=s3` |
 | Active router required | No active router exists. | `error.code=validation_failed`, `error.meta.field=router`, `error.meta.required_role=router` |
-| Credentials missing | The selected `rustfs` tool row has no service-level credentials. | `error.code=s3.credentials_missing` |
+| Credentials missing | The selected `seaweedfs` tool row has no service-level credentials. | `error.code=s3.credentials_missing` |
 
 ## Doctor Relationship
 
 `s3:credentials` reads gateway-owned credential and endpoint state only.
-[`doctor --family=tool`](../../../3_tool/tool-doctor.md) owns RustFS
+[`doctor --family=tool`](../../../3_tool/tool-doctor.md) owns SeaweedFS
 credential drift and repair. [`doctor --family=proxy`](../../../8_proxy/proxy-doctor.md)
 owns route and backend-pool drift. [`doctor --family=node`](../../../1_node/node-doctor.md)
 owns s3 role assignment readiness.

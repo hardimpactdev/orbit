@@ -91,11 +91,11 @@ function s3PublishIngressNode(): Node
     return $node;
 }
 
-function s3PublishRustfsTool(Node $storage, array $config = []): NodeTool
+function s3PublishSeaweedfsTool(Node $storage, array $config = []): NodeTool
 {
     return NodeTool::factory()->create([
         'node_id' => $storage->id,
-        'name' => 'rustfs',
+        'name' => 'seaweedfs',
         'expected_state' => 'installed',
         'config' => array_merge([
             'backend_host' => 'storage-1.s3.orbit',
@@ -165,7 +165,7 @@ describe('S3Publish input validation', function (): void {
     it('auto-resolves node when exactly one active s3 node exists', function (): void {
         s3PublishCallerNode(role: 'gateway');
         $storage = s3PublishStorageNode();
-        s3PublishRustfsTool($storage);
+        s3PublishSeaweedfsTool($storage);
         s3PublishRouterNode();
         s3PublishIngressNode();
 
@@ -208,7 +208,7 @@ describe('S3Publish prerequisites', function (): void {
     it('fails when no active router exists', function (): void {
         s3PublishCallerNode(role: 'gateway');
         $storage = s3PublishStorageNode();
-        s3PublishRustfsTool($storage);
+        s3PublishSeaweedfsTool($storage);
         // No router.
 
         $response = s3PublishStream($this, ['host' => 's3.example.com', 'node' => 'storage-1']);
@@ -222,7 +222,7 @@ describe('S3Publish prerequisites', function (): void {
     it('fails when no active ingress exists', function (): void {
         s3PublishCallerNode(role: 'gateway');
         $storage = s3PublishStorageNode();
-        s3PublishRustfsTool($storage);
+        s3PublishSeaweedfsTool($storage);
         s3PublishRouterNode();
         // No ingress.
 
@@ -234,12 +234,12 @@ describe('S3Publish prerequisites', function (): void {
             ->and($content)->toContain('"required_role":"ingress"');
     });
 
-    it('fails when the s3 node has no rustfs tool row', function (): void {
+    it('fails when the s3 node has no seaweedfs tool row', function (): void {
         s3PublishCallerNode(role: 'gateway');
         s3PublishStorageNode();
         s3PublishRouterNode();
         s3PublishIngressNode();
-        // No rustfs tool row.
+        // No seaweedfs tool row.
 
         $response = s3PublishStream($this, ['host' => 's3.example.com', 'node' => 'storage-1']);
 
@@ -257,7 +257,7 @@ describe('S3Publish domain conflict', function (): void {
     it('rejects a host owned by a non-S3 proxy route', function (): void {
         s3PublishCallerNode(role: 'gateway');
         $storage = s3PublishStorageNode();
-        s3PublishRustfsTool($storage);
+        s3PublishSeaweedfsTool($storage);
         s3PublishRouterNode();
         $ingress = s3PublishIngressNode();
 
@@ -280,7 +280,7 @@ describe('S3Publish domain conflict', function (): void {
     it('does not conflict with an existing S3-owned route at the same domain', function (): void {
         s3PublishCallerNode(role: 'gateway');
         $storage = s3PublishStorageNode();
-        s3PublishRustfsTool($storage, ['public_hosts' => ['s3.example.com']]);
+        s3PublishSeaweedfsTool($storage, ['public_hosts' => ['s3.example.com']]);
         s3PublishRouterNode();
         $ingress = s3PublishIngressNode();
 
@@ -290,7 +290,7 @@ describe('S3Publish domain conflict', function (): void {
             'owner_type' => 's3',
             'kind' => 'proxy',
             'config' => [
-                'owner_name' => 'rustfs',
+                'owner_name' => 'seaweedfs',
                 'protocol' => 's3',
                 'target' => ['type' => 'upstream', 'value' => 'https://s3.orbit'],
             ],
@@ -306,7 +306,7 @@ describe('S3Publish domain conflict', function (): void {
     it('accepts re-publishing an already-S3-owned route idempotently', function (): void {
         s3PublishCallerNode(role: 'gateway');
         $storage = s3PublishStorageNode();
-        s3PublishRustfsTool($storage, ['public_hosts' => ['s3.example.com']]);
+        s3PublishSeaweedfsTool($storage, ['public_hosts' => ['s3.example.com']]);
         s3PublishRouterNode();
         s3PublishIngressNode();
 
@@ -327,7 +327,7 @@ describe('S3Publish success', function (): void {
     it('publishes the host and returns the expected success shape', function (): void {
         s3PublishCallerNode(role: 'gateway');
         $storage = s3PublishStorageNode();
-        s3PublishRustfsTool($storage);
+        s3PublishSeaweedfsTool($storage);
         s3PublishRouterNode();
         s3PublishIngressNode();
 
@@ -341,7 +341,7 @@ describe('S3Publish success', function (): void {
             ->and($content)->toContain('"host":"s3.example.com"')
             ->and($content)->toContain('"action":"published"')
             ->and($content)->toContain('"already_published":false')
-            ->and($content)->toContain('"tool":"rustfs"');
+            ->and($content)->toContain('"tool":"seaweedfs"');
 
         // Decode the complete frame to check URL fields without slash-escaping issues.
         $frame = s3PublishParseCompleteFrame($content);
@@ -350,10 +350,10 @@ describe('S3Publish success', function (): void {
             ->and($frame['data']['s3']['public_endpoints'])->toContain('https://s3.example.com');
     });
 
-    it('records the public host on the rustfs tool row', function (): void {
+    it('records the public host on the seaweedfs tool row', function (): void {
         s3PublishCallerNode(role: 'gateway');
         $storage = s3PublishStorageNode();
-        $tool = s3PublishRustfsTool($storage);
+        $tool = s3PublishSeaweedfsTool($storage);
         s3PublishRouterNode();
         s3PublishIngressNode();
 
@@ -367,7 +367,7 @@ describe('S3Publish success', function (): void {
     it('creates the ingress proxy route on the ingress node', function (): void {
         s3PublishCallerNode(role: 'gateway');
         $storage = s3PublishStorageNode();
-        s3PublishRustfsTool($storage);
+        s3PublishSeaweedfsTool($storage);
         s3PublishRouterNode();
         s3PublishIngressNode();
 
@@ -376,14 +376,14 @@ describe('S3Publish success', function (): void {
 
         $route = ProxyRoute::query()->where('domain', 's3.example.com')->firstOrFail();
         expect($route->owner_type)->toBe('s3')
-            ->and($route->config['owner_name'])->toBe('rustfs')
+            ->and($route->config['owner_name'])->toBe('seaweedfs')
             ->and($route->config['protocol'])->toBe('s3');
     });
 
     it('creates the router-owned s3.orbit service route', function (): void {
         s3PublishCallerNode(role: 'gateway');
         $storage = s3PublishStorageNode();
-        s3PublishRustfsTool($storage);
+        s3PublishSeaweedfsTool($storage);
         s3PublishRouterNode();
         s3PublishIngressNode();
 
@@ -396,7 +396,7 @@ describe('S3Publish success', function (): void {
     it('does not add a duplicate host when re-publishing an already-published host', function (): void {
         s3PublishCallerNode(role: 'gateway');
         $storage = s3PublishStorageNode();
-        $tool = s3PublishRustfsTool($storage, ['public_hosts' => ['s3.example.com']]);
+        $tool = s3PublishSeaweedfsTool($storage, ['public_hosts' => ['s3.example.com']]);
         s3PublishRouterNode();
         s3PublishIngressNode();
 
@@ -411,7 +411,7 @@ describe('S3Publish success', function (): void {
     it('ingress route must not target the s3 storage node directly', function (): void {
         s3PublishCallerNode(role: 'gateway');
         $storage = s3PublishStorageNode();
-        s3PublishRustfsTool($storage);
+        s3PublishSeaweedfsTool($storage);
         s3PublishRouterNode();
         s3PublishIngressNode();
 

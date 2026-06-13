@@ -272,7 +272,7 @@ describe('S3Publish CLI command', function (): void {
                 'steps' => [
                     ['key' => 'resolve_node', 'label' => 'Resolve S3 node'],
                     ['key' => 'check_router_ingress', 'label' => 'Check router and ingress'],
-                    ['key' => 'ensure_credentials', 'label' => 'Ensure RustFS credentials'],
+                    ['key' => 'ensure_credentials', 'label' => 'Ensure SeaweedFS credentials'],
                     ['key' => 'ensure_private_route', 'label' => 'Ensure private s3.orbit route'],
                     ['key' => 'ensure_backend_pool', 'label' => 'Ensure S3 backend pool'],
                     ['key' => 'publish_ingress', 'label' => 'Publish ingress host'],
@@ -291,7 +291,7 @@ describe('S3Publish CLI command', function (): void {
             ->and($output)->toContain('Publishing S3 Host')
             ->and($output)->toContain('Resolve S3 node')
             ->and($output)->toContain('Check router and ingress')
-            ->and($output)->toContain('Ensure RustFS credentials')
+            ->and($output)->toContain('Ensure SeaweedFS credentials')
             ->and($output)->toContain('Ensure private s3.orbit route')
             ->and($output)->toContain('Ensure S3 backend pool')
             ->and($output)->toContain('Publish ingress host')
@@ -373,9 +373,9 @@ function s3PublishCompleteFrame(string $host = 's3.example.com', string $node = 
                 'node' => $node,
                 'private_endpoint' => 'https://s3.orbit',
                 'public_endpoints' => ["https://{$host}"],
-                'backend_pool' => ["http://{$node}.s3.orbit:9000"],
+                'backend_pool' => ["http://{$node}.s3.orbit:8333"],
                 'credentials_ref' => [
-                    'tool' => 'rustfs',
+                    'tool' => 'seaweedfs',
                     'node' => $node,
                 ],
             ],

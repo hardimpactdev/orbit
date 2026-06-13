@@ -44,7 +44,7 @@ Internet
   -> ingress edge orbit-caddy
   -> private WireGuard route to router
   -> router private S3 route and backend pool
-  -> s3 node RustFS runtime container
+  -> s3 node SeaweedFS runtime container
 ```
 
 One hub, one path: there is exactly one place to answer "what should exist?", and exactly one place changes are written. Spokes initiate commands and serve workloads, but durable configuration always lives on the gateway.
@@ -129,11 +129,11 @@ websocket node. The role depends on a Redis service selected from a
 `database` role node and does not install or own Redis itself.
 
 The `s3` role is a private workload role for Orbit-managed S3-compatible object
-storage. An S3 node runs one RustFS instance in a Docker runtime container
+storage. An S3 node runs one SeaweedFS instance in a Docker runtime container
 rendered by Orbit, binds its S3 API only to the node's WireGuard address, and
 receives traffic through router-owned private service routes. Public S3 traffic
 enters through `ingress`, then flows to `router`, then to the S3 backend pool.
-In v1 the backend pool contains one RustFS node. Apps and VPN clients use the
+In v1 the backend pool contains one SeaweedFS node. Apps and VPN clients use the
 stable `s3.orbit` endpoint and never target a concrete S3 node.
 
 The `agent` role runs first-party autonomous agent tools — OpenClaw and Hermes — that operate Orbit through the gateway API on the fleet's behalf. The `agent` role is exclusive: it cannot combine with `gateway`, `vpn`, `router`, `app-dev`, `app-prod`, `database`, `ingress`, `websocket`, or `s3`, and it can only be selected during `node:new`. `node role:add` rejects `agent` because adding it to an existing node bypasses the isolation model the role enforces. A node carrying the `agent` role combines that workload role with explicit scoped grants so the agent can call the gateway like any other caller. Agent tool web UIs are exposed only as internal HTTPS routes under the agent role TLD (for example `https://openclaw.agent` and `https://hermes.agent`); they have no ingress baseline. Activity emitted while autonomous agent tools work is attributed to the node identity — Orbit does not claim per-tool sub-identities.

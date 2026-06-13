@@ -42,7 +42,7 @@ Orbit distinguishes these concepts:
   exclusive and selectable only during `node:new`; `node role:add` rejects it.
   `websocket` is a private workload role for Laravel Reverb; it binds only to
   WireGuard and receives traffic through router-owned private service routes.
-  `s3` is a private workload role for RustFS object storage; it binds only to
+  `s3` is a private workload role for SeaweedFS object storage; it binds only to
   WireGuard and receives traffic through router-owned S3 service routes.
 - **Client identity:** a CLI installation that has gateway configuration
   and a gateway-issued WireGuard identity. A client may have no workload role
@@ -120,7 +120,7 @@ Roles materialize baseline tool intent when a role assignment converges.
 | `agent` | `orbit-caddy`, the shared unprivileged `agent` runtime user, the gateway-owned agent DNS mapping for the role's `tld`, and any role-specific runtime containers the agent workload needs |
 | `ingress` | `orbit-caddy` running as the public production HTTP ingress boundary, forwarding public routes to `router` |
 | `websocket` | Laravel Reverb in a Docker runtime container managed by Orbit, private TLS backend binding on WireGuard, backend certificate material, and Redis-backed scaling configuration |
-| `s3` | RustFS in a Docker runtime container rendered by Orbit, private S3 API binding on WireGuard, service-level credentials on the `rustfs` tool row, backend pool registration, and role-owned data path |
+| `s3` | SeaweedFS in a Docker runtime container rendered by Orbit, private S3 API binding on WireGuard, service-level credentials on the `seaweedfs` tool row, backend pool registration, and role-owned data path |
 
 Local database client binaries (`sqlite3`, `psql`, `mysql`) are not part of
 any role or tool baseline. Orbit interacts with databases through the
@@ -245,7 +245,7 @@ These rules apply to all node commands and define the invariants the family enfo
   `redis_node_id`, which points at the `database` role node whose managed Redis
   service backs Reverb scaling; `database` and `gateway` have no
   role-assignment settings. `s3` stores `data_path`, which defaults to
-  `/srv/orbit/s3/data` and is mounted into the RustFS container as `/data`.
+  `/srv/orbit/s3/data` and is mounted into the SeaweedFS container as `/data`.
 - Role add and role update converge synchronously. Failed convergence leaves the
   role assignment in `error` for a later `doctor --family=node --restore`
   retry.

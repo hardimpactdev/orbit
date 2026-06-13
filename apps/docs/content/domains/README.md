@@ -61,7 +61,7 @@ These rules govern every command contract in this directory.
   inspection, audited SQL execution, and database backup/restore workflows
   belong to `database:*` instead of `mysql:*` or `postgres:*` command
   families. `s3:*` owns role-backed object-storage publication and service
-  credentials for the RustFS-backed S3 role; generic RustFS lifecycle remains
+  credentials for the SeaweedFS-backed S3 role; generic SeaweedFS lifecycle remains
   under `tool:*`.
 - Commands must state whether they mutate gateway configuration, apply node artifacts, stream runtime data, or only read state.
 - The CLI is a thin gateway client. Every command call is a request to the

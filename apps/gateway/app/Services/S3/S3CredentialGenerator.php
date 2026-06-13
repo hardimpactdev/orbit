@@ -5,13 +5,13 @@ declare(strict_types=1);
 namespace App\Services\S3;
 
 /**
- * Generates service-level RustFS credentials for the `rustfs` tool row.
+ * Generates service-level SeaweedFS credentials for the `seaweedfs` tool row.
  *
  * Access key ID: 20-character uppercase alphanumeric token, compatible with
  * S3 client expectations for access key identifiers.
  *
  * Secret access key: 43-character base64url string derived from 32 secure
- * random bytes (~256 bits of entropy), URL-safe and compatible with RustFS
+ * random bytes (~256 bits of entropy), URL-safe and compatible with SeaweedFS
  * and S3 client libraries.
  */
 final class S3CredentialGenerator

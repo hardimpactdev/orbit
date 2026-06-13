@@ -69,11 +69,11 @@ function s3UnpublishJsonRouterNode(): Node
 /**
  * @param  array<string, mixed>  $config
  */
-function s3UnpublishJsonRustfsTool(Node $storage, array $config = []): NodeTool
+function s3UnpublishJsonSeaweedfsTool(Node $storage, array $config = []): NodeTool
 {
     return NodeTool::factory()->create([
         'node_id' => $storage->id,
-        'name' => 'rustfs',
+        'name' => 'seaweedfs',
         'expected_state' => 'installed',
         'config' => array_merge([
             'backend_host' => 'storage-1.s3.orbit',
@@ -117,7 +117,7 @@ describe('S3UnpublishJsonRenderer success shape', function (): void {
     it('emits the documented success envelope with all required fields', function (): void {
         s3UnpublishJsonCallerNode();
         $storage = s3UnpublishJsonStorageNode();
-        s3UnpublishJsonRustfsTool($storage);
+        s3UnpublishJsonSeaweedfsTool($storage);
         s3UnpublishJsonRouterNode();
 
         $frame = s3UnpublishJsonStreamFinalFrame($this, 's3.example.com', ['node' => 'storage-1']);
@@ -141,7 +141,7 @@ describe('S3UnpublishJsonRenderer action metadata', function (): void {
     it('returns action=unpublished and already_absent=false on first removal', function (): void {
         s3UnpublishJsonCallerNode();
         $storage = s3UnpublishJsonStorageNode();
-        s3UnpublishJsonRustfsTool($storage);
+        s3UnpublishJsonSeaweedfsTool($storage);
         s3UnpublishJsonRouterNode();
 
         $frame = s3UnpublishJsonStreamFinalFrame($this, 's3.example.com', ['node' => 'storage-1']);
@@ -153,7 +153,7 @@ describe('S3UnpublishJsonRenderer action metadata', function (): void {
     it('returns already_absent=true on idempotent removal of an absent host', function (): void {
         s3UnpublishJsonCallerNode();
         $storage = s3UnpublishJsonStorageNode();
-        s3UnpublishJsonRustfsTool($storage, ['public_hosts' => []]);
+        s3UnpublishJsonSeaweedfsTool($storage, ['public_hosts' => []]);
         s3UnpublishJsonRouterNode();
 
         $frame = s3UnpublishJsonStreamFinalFrame($this, 's3.example.com', ['node' => 'storage-1']);
@@ -188,7 +188,7 @@ describe('S3UnpublishJsonRenderer error codes', function (): void {
     it('emits validation_failed for missing router', function (): void {
         s3UnpublishJsonCallerNode();
         $storage = s3UnpublishJsonStorageNode();
-        s3UnpublishJsonRustfsTool($storage);
+        s3UnpublishJsonSeaweedfsTool($storage);
         // No router.
 
         $response = $this->call('DELETE', '/api/s3/public-hosts/s3.example.com', [
@@ -206,7 +206,7 @@ describe('S3UnpublishJsonRenderer error codes', function (): void {
     it('emits proxy.owned_route_denied when host is owned by a non-S3 route', function (): void {
         s3UnpublishJsonCallerNode();
         $storage = s3UnpublishJsonStorageNode();
-        s3UnpublishJsonRustfsTool($storage);
+        s3UnpublishJsonSeaweedfsTool($storage);
         s3UnpublishJsonRouterNode();
         $ingress = Node::factory()->create([
             'name' => 'edge-1',

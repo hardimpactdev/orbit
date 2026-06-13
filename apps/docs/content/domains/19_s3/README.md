@@ -3,14 +3,14 @@
 S3 commands manage Orbit's object-storage surface. The service exposes an
 S3-compatible API across the fleet. The command family is `s3:*`.
 
-The backend technology is RustFS. RustFS is not the product model.
+The backend technology is SeaweedFS. SeaweedFS is not the product model.
 
 ## Domain Rules
 
 These rules govern what the S3 command family owns and what it may not touch.
 
 - The S3 command family owns the `s3:*` command prefix.
-- The `s3` role is a private workload role. It runs RustFS in a Docker runtime
+- The `s3` role is a private workload role. It runs SeaweedFS in a Docker runtime
   container rendered by Orbit, binds the S3 API only to the node's WireGuard
   address, and receives traffic through router-owned S3 service routes.
 - The private fleet endpoint is `https://s3.orbit`. Apps and VPN clients use
@@ -20,11 +20,11 @@ These rules govern what the S3 command family owns and what it may not touch.
 - Ingress forwards public S3 hosts to router. Ingress must not route directly
   to s3 role nodes.
 - Router owns `s3.orbit`, S3 backend pools, S3 upload-compatible proxy
-  settings, and private router-to-RustFS routing.
-- RustFS runtime uses Orbit's role runtime container rendering. The s3 role
+  settings, and private router-to-SeaweedFS routing.
+- SeaweedFS runtime uses Orbit's role runtime container rendering. The s3 role
   does not own role-local Docker Compose.
-- S3 service credentials are service-level RustFS credentials stored on the
-  `rustfs` tool row. They are visible through `tool:credentials rustfs` and
+- S3 service credentials are service-level SeaweedFS credentials stored on the
+  `seaweedfs` tool row. They are visible through `tool:credentials seaweedfs` and
   `s3:credentials`.
 - The S3 command family coordinates node, tool, and proxy state. It does not
   own an independent `doctor --family=s3` state family in v1.
@@ -32,7 +32,7 @@ These rules govern what the S3 command family owns and what it may not touch.
 ## Permissions
 
 S3 commands keep the `s3:*` command family, but v1 authorization uses the
-tool-backed permissions for the selected `rustfs` tool row on the active s3
+tool-backed permissions for the selected `seaweedfs` tool row on the active s3
 node.
 
 - `s3:publish` requires `tool:reconfigure` on the selected active s3 node.
@@ -49,8 +49,8 @@ The S3 command domain coordinates state owned by other families:
 - [`node`](../1_node/README.md) owns the `s3` role assignment and its
   `data_path` setting. Role assignment drift is verified and repaired through
   `doctor --family=node`.
-- [`tool`](../3_tool/README.md) owns the `rustfs` tool row, credentials,
-  container lifecycle, logs, and updates. RustFS tool-row and container drift
+- [`tool`](../3_tool/README.md) owns the `seaweedfs` tool row, credentials,
+  container lifecycle, logs, and updates. SeaweedFS tool-row and container drift
   is verified and repaired through `doctor --family=tool`.
 - [`proxy`](../8_proxy/README.md) owns the proxy route rows, route artifacts,
   TLS material, router private service route, and S3 backend pool. S3 route
@@ -81,7 +81,7 @@ The `s3:*` family covers public host publication, removal, and credentials.
 
 V1 does not include per-app S3 credentials, bucket lifecycle policy, bucket
 creation, bucket-level IAM, virtual-hosted bucket routes, wildcard DNS or TLS,
-distributed RustFS, high availability, public RustFS console exposure, or
+distributed SeaweedFS, high availability, public SeaweedFS console exposure, or
 role-local Docker Compose.
 
 ## Related
@@ -89,4 +89,4 @@ role-local Docker Compose.
 - [`orbit node:*`](../1_node/README.md)
 - [`orbit proxy:*`](../8_proxy/README.md)
 - [`orbit tool:*`](../3_tool/README.md)
-- [`rustfs` tool catalog](../3_tool/catalog/rustfs.md)
+- [`seaweedfs` tool catalog](../3_tool/catalog/seaweedfs.md)

@@ -41,9 +41,9 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 - Resolve the selected active s3 node.
 - Validate that an active router exists.
 - Resolve the selected host from the public S3 hosts recorded on the selected
-  `rustfs` tool row and S3-owned proxy routes.
+  `seaweedfs` tool row and S3-owned proxy routes.
 - Remove the S3-owned public host route from gateway proxy configuration.
-- Remove the public host from the selected `rustfs` tool row configuration.
+- Remove the public host from the selected `seaweedfs` tool row configuration.
 - Apply ingress and router route convergence to stop the public host from
   forwarding to the S3 service.
 
@@ -60,7 +60,7 @@ and returns `success.meta.action=unpublished` with
 ### Scope Boundaries
 
 `s3:unpublish` must not remove `s3.orbit`, delete the S3 backend pool, rotate
-or delete RustFS credentials, delete buckets or objects, remove the s3 role, or
+or delete SeaweedFS credentials, delete buckets or objects, remove the s3 role, or
 purge the s3 role data path.
 
 ## Renderer Contracts
@@ -85,7 +85,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 `s3:unpublish` removes S3 publication intent and applies route cleanup for the
 command. [`doctor --family=proxy`](../../../8_proxy/proxy-doctor.md) owns route
 drift verification and repair after partial cleanup. [`doctor --family=tool`](../../../3_tool/tool-doctor.md)
-owns RustFS tool-row drift. [`doctor --family=node`](../../../1_node/node-doctor.md)
+owns SeaweedFS tool-row drift. [`doctor --family=node`](../../../1_node/node-doctor.md)
 owns s3 role assignment readiness.
 
 ## Activity Logging
@@ -106,5 +106,5 @@ requests.
 | Path | Coverage |
 | --- | --- |
 | `apps/gateway/tests/Feature/Commands/S3/S3UnpublishCommandTest.php` | Input validation, active s3/router prerequisites, authorization, destructive consent, idempotent absent behavior, owned-route denial, and cleanup failure handoff. |
-| `apps/gateway/tests/Unit/Services/S3/S3RouteRegistrarTest.php` | In-memory removal from S3 public hosts, RustFS config, ingress routes, and router relay intent. |
+| `apps/gateway/tests/Unit/Services/S3/S3RouteRegistrarTest.php` | In-memory removal from S3 public hosts, SeaweedFS config, ingress routes, and router relay intent. |
 | `apps/e2e/tests/Feature/Commands/S3IngressRouteTest.php` | Planned public S3 host removal coverage once the S3 role runtime exists. |

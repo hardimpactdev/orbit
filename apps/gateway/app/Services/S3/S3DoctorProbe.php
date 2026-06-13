@@ -28,10 +28,10 @@ use Throwable;
  *  - data_path setting validity (node.s3_data_path_invalid)
  *
  * Tool family owns:
- *  - RustFS tool row existence (tool.rustfs.row_missing)
- *  - RustFS credential completeness (tool.rustfs.credentials_missing)
- *  - RustFS runtime container presence/divergence (tool.rustfs.runtime_container_missing)
- *  - RustFS bind address posture (tool.rustfs.bind_public_interface)
+ *  - SeaweedFS tool row existence (tool.seaweedfs.row_missing)
+ *  - SeaweedFS credential completeness (tool.seaweedfs.credentials_missing)
+ *  - SeaweedFS runtime container presence/divergence (tool.seaweedfs.runtime_container_missing)
+ *  - SeaweedFS bind address posture (tool.seaweedfs.bind_public_interface)
  */
 final readonly class S3DoctorProbe
 {
@@ -69,14 +69,14 @@ final readonly class S3DoctorProbe
     {
         $drift = [];
 
-        $rustfsTool = $this->rustfsToolFor($node);
+        $seaweedfsTool = $this->seaweedfsToolFor($node);
 
-        if (! $rustfsTool instanceof NodeTool) {
+        if (! $seaweedfsTool instanceof NodeTool) {
             $drift[] = new DriftEntry(
                 family: 'tool',
-                key: 'tool.rustfs.row_missing',
+                key: 'tool.seaweedfs.row_missing',
                 kind: DriftKind::Missing,
-                summary: "No rustfs tool row exists on s3 node {$node->name}.",
+                summary: "No seaweedfs tool row exists on s3 node {$node->name}.",
                 detail: [
                     'role' => $assignment->role,
                     'node' => $node->name,
@@ -86,16 +86,16 @@ final readonly class S3DoctorProbe
             return $drift;
         }
 
-        $drift = array_merge($drift, $this->checkCredentials($node, $assignment, $rustfsTool));
+        $drift = array_merge($drift, $this->checkCredentials($node, $assignment, $seaweedfsTool));
 
         $probe = $this->containerProbe($node);
 
         if (! $probe->successful()) {
             $drift[] = new DriftEntry(
                 family: 'tool',
-                key: 'tool.rustfs.runtime_container_missing',
+                key: 'tool.seaweedfs.runtime_container_missing',
                 kind: DriftKind::Unverifiable,
-                summary: "RustFS runtime container could not be verified on node {$node->name}.",
+                summary: "SeaweedFS runtime container could not be verified on node {$node->name}.",
                 detail: [
                     'role' => $assignment->role,
                     'container' => S3RuntimeContainer::ContainerName,
@@ -114,9 +114,9 @@ final readonly class S3DoctorProbe
             $exists = ($state['exists'] ?? null) === '1';
             $drift[] = new DriftEntry(
                 family: 'tool',
-                key: 'tool.rustfs.runtime_container_missing',
+                key: 'tool.seaweedfs.runtime_container_missing',
                 kind: $exists ? DriftKind::Divergent : DriftKind::Missing,
-                summary: 'RustFS runtime container is '.($exists ? 'stopped' : 'absent')." on node {$node->name}.",
+                summary: 'SeaweedFS runtime container is '.($exists ? 'stopped' : 'absent')." on node {$node->name}.",
                 detail: [
                     'role' => $assignment->role,
                     'container' => S3RuntimeContainer::ContainerName,
@@ -188,22 +188,22 @@ final readonly class S3DoctorProbe
     /**
      * @return list<DriftEntry>
      */
-    private function checkCredentials(Node $node, NodeRoleAssignment $assignment, NodeTool $rustfsTool): array
+    private function checkCredentials(Node $node, NodeRoleAssignment $assignment, NodeTool $seaweedfsTool): array
     {
-        if ($this->hasCompleteCredentials($rustfsTool)) {
+        if ($this->hasCompleteCredentials($seaweedfsTool)) {
             return [];
         }
 
         return [
             new DriftEntry(
                 family: 'tool',
-                key: 'tool.rustfs.credentials_missing',
+                key: 'tool.seaweedfs.credentials_missing',
                 kind: DriftKind::Missing,
-                summary: "RustFS tool row on node {$node->name} is missing service-level credentials.",
+                summary: "SeaweedFS tool row on node {$node->name} is missing service-level credentials.",
                 detail: [
                     'role' => $assignment->role,
                     'node' => $node->name,
-                    'tool' => 'rustfs',
+                    'tool' => 'seaweedfs',
                 ],
             ),
         ];
@@ -222,8 +222,6 @@ final readonly class S3DoctorProbe
             return [];
         }
 
-        // The RUSTFS_ADDRESS env var contains the full bind address, e.g. "10.6.0.20:9000".
-        // Extract the host portion for comparison.
         $observedHost = $this->extractBindHost($observedAddress);
 
         if ($observedHost === $expectedBind) {
@@ -233,9 +231,9 @@ final readonly class S3DoctorProbe
         return [
             new DriftEntry(
                 family: 'tool',
-                key: 'tool.rustfs.bind_public_interface',
+                key: 'tool.seaweedfs.bind_public_interface',
                 kind: DriftKind::Divergent,
-                summary: "RustFS on node {$node->name} is bound to '{$observedHost}' instead of its WireGuard address '{$expectedBind}'.",
+                summary: "SeaweedFS on node {$node->name} is bound to '{$observedHost}' instead of its WireGuard address '{$expectedBind}'.",
                 detail: [
                     'role' => $assignment->role,
                     'container' => S3RuntimeContainer::ContainerName,
@@ -247,9 +245,9 @@ final readonly class S3DoctorProbe
         ];
     }
 
-    private function hasCompleteCredentials(NodeTool $rustfsTool): bool
+    private function hasCompleteCredentials(NodeTool $seaweedfsTool): bool
     {
-        $credentials = $rustfsTool->credentials;
+        $credentials = $seaweedfsTool->credentials;
 
         if (! is_array($credentials)) {
             return false;
@@ -269,17 +267,14 @@ final readonly class S3DoctorProbe
     }
 
     /**
-     * Run a remote probe against the orbit-rustfs container via docker inspect.
+     * Run a remote probe against the orbit-seaweedfs container via docker inspect.
      *
      * Lane: RemoteHostExecutor — SSH host substrate + Docker container inspection.
      * See apps/docs/content/execution-lanes.md.
      *
-     * The RUSTFS_ADDRESS env variable is extracted to determine the bind
-     * posture of the container. A bind to the WireGuard address is correct;
-     * a bind to 0.0.0.0 or any non-WireGuard address is drift. We prefer
-     * container env introspection over host-shell `ss`/`netstat` because
-     * the renderer sets RUSTFS_ADDRESS explicitly and that is the authoritative
-     * binding intent.
+     * The host-side published port is extracted to determine the bind posture
+     * of the container. A bind to the WireGuard address is correct; a bind to
+     * 0.0.0.0 or any non-WireGuard address is drift.
      */
     private function containerProbe(Node $node): RemoteShellResult
     {
@@ -292,14 +287,14 @@ set -eu
 container=%s
 
 if ! docker container inspect "$container" >/dev/null 2>&1; then
-    printf 'exists=0\nrunning=false\nenv_address=\n'
+    printf 'exists=0\nrunning=false\npublished_address=\n'
     exit 0
 fi
 
 running="$(docker container inspect --format '{{.State.Running}}' "$container" 2>/dev/null || printf 'false')"
-env_address="$(docker container inspect --format '{{range .Config.Env}}{{println .}}{{end}}' "$container" 2>/dev/null | awk -F= '$1 == "RUSTFS_ADDRESS" {print $2; exit}')"
+published_address="$(docker container inspect --format '{{range $p, $bindings := .NetworkSettings.Ports}}{{if eq $p "8333/tcp"}}{{range $bindings}}{{printf "%%s:%%s\n" .HostIp .HostPort}}{{end}}{{end}}{{end}}' "$container" 2>/dev/null | head -n 1)"
 
-printf 'exists=1\nrunning=%%s\nenv_address=%%s\n' "$running" "$env_address"
+printf 'exists=1\nrunning=%%s\npublished_address=%%s\n' "$running" "$published_address"
 SH,
             escapeshellarg($container),
         ), 's3-runtime-doctor-probe');
@@ -329,14 +324,13 @@ SH,
      */
     private function observedBindAddress(array $state): ?string
     {
-        $envAddress = trim($state['env_address'] ?? '');
+        $envAddress = trim($state['published_address'] ?? '');
 
         return $envAddress !== '' ? $envAddress : null;
     }
 
     private function extractBindHost(string $address): string
     {
-        // RUSTFS_ADDRESS is "host:port" — extract host portion only.
         $lastColon = strrpos($address, ':');
 
         if ($lastColon !== false) {
@@ -365,11 +359,11 @@ SH,
         return $values;
     }
 
-    private function rustfsToolFor(Node $node): ?NodeTool
+    private function seaweedfsToolFor(Node $node): ?NodeTool
     {
         return NodeTool::query()
             ->where('node_id', $node->id)
-            ->where('name', 'rustfs')
+            ->where('name', 'seaweedfs')
             ->first();
     }
 }

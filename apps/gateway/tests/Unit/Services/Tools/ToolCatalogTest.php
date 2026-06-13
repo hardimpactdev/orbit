@@ -11,7 +11,7 @@ use App\Tools\CaddyTool;
 use App\Tools\GhTool;
 use App\Tools\OpenCodeServerTool;
 use App\Tools\PolyscopeServerTool;
-use App\Tools\RustfsTool;
+use App\Tools\SeaweedfsTool;
 use Tests\TestCase;
 
 uses(TestCase::class);
@@ -238,31 +238,31 @@ describe('tool catalog definitions', function (): void {
             ->toContain('exit 69');
     });
 
-    it('catalogs rustfs as the s3 role storage tool with credentials capability and Docker-first runtime metadata', function (): void {
+    it('catalogs seaweedfs as the s3 role storage tool with credentials capability and Docker-first runtime metadata', function (): void {
         $catalog = app(ToolCatalog::class);
-        $metadata = $catalog->probeMetadata('rustfs');
+        $metadata = $catalog->probeMetadata('seaweedfs');
         $repairCommands = is_array($metadata['repair_commands'] ?? null)
             ? $metadata['repair_commands']
             : [];
 
-        expect($catalog->definition('rustfs'))->toBeInstanceOf(RustfsTool::class)
-            ->and($catalog->requiredNodeRole('rustfs'))->toBe('s3')
-            ->and($catalog->category('rustfs'))->toBe('storage')
-            ->and($catalog->hasCapability('rustfs', 'credentials'))->toBeTrue()
-            ->and($catalog->hasCapability('rustfs', 'safe-fix'))->toBeTrue()
-            ->and($catalog->hasCapability('rustfs', 'safe-adopt'))->toBeTrue()
+        expect($catalog->definition('seaweedfs'))->toBeInstanceOf(SeaweedfsTool::class)
+            ->and($catalog->requiredNodeRole('seaweedfs'))->toBe('s3')
+            ->and($catalog->category('seaweedfs'))->toBe('storage')
+            ->and($catalog->hasCapability('seaweedfs', 'credentials'))->toBeTrue()
+            ->and($catalog->hasCapability('seaweedfs', 'safe-fix'))->toBeTrue()
+            ->and($catalog->hasCapability('seaweedfs', 'safe-adopt'))->toBeTrue()
             ->and($metadata)->toMatchArray([
                 'binary' => 'docker',
-                'container' => 'orbit-rustfs',
-                'image' => 'rustfs/rustfs',
+                'container' => 'orbit-seaweedfs',
+                'image' => 'chrislusf/seaweedfs:4.33',
             ])
             ->and($repairCommands['lifecycle_running'] ?? null)->toContain('docker start')
-            ->and($repairCommands['lifecycle_running'] ?? null)->toContain('orbit-rustfs')
+            ->and($repairCommands['lifecycle_running'] ?? null)->toContain('orbit-seaweedfs')
             ->and($repairCommands['lifecycle_stopped'] ?? null)->toContain('docker stop')
-            ->and($repairCommands['lifecycle_stopped'] ?? null)->toContain('orbit-rustfs')
+            ->and($repairCommands['lifecycle_stopped'] ?? null)->toContain('orbit-seaweedfs')
             ->and($repairCommands['lifecycle_restarted'] ?? null)->toContain('docker restart')
-            ->and($repairCommands['lifecycle_restarted'] ?? null)->toContain('orbit-rustfs')
-            ->and($catalog->logCommand('rustfs', 50))->toContain('docker logs')
-            ->and($catalog->logCommand('rustfs', 50))->toContain('orbit-rustfs');
+            ->and($repairCommands['lifecycle_restarted'] ?? null)->toContain('orbit-seaweedfs')
+            ->and($catalog->logCommand('seaweedfs', 50))->toContain('docker logs')
+            ->and($catalog->logCommand('seaweedfs', 50))->toContain('orbit-seaweedfs');
     });
 });

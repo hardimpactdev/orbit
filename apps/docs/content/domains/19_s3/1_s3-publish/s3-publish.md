@@ -18,7 +18,7 @@ orbit s3:publish [host] [--node=<node>] [--json]
 `s3.example.com`.
 
 The command writes ingress route intent for the public host, forwards that host
-to router, records the host on the selected `rustfs` tool row, and ensures the
+to router, records the host on the selected `seaweedfs` tool row, and ensures the
 router-owned private service route and S3 backend pool exist. Public traffic
 flows through `ingress -> router -> S3 backend pool`; ingress must not route
 directly to an s3 role node.

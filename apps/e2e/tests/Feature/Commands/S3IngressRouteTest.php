@@ -7,7 +7,7 @@ use App\E2E\Support\E2EGatewayApi;
 use App\E2E\Support\E2ETopologyHarness;
 use App\E2E\Support\E2ETopologyKind;
 
-it('flows public s3 ingress through router to rustfs backend and includes public endpoint in credentials', function (): void {
+it('flows public s3 ingress through router to seaweedfs backend and includes public endpoint in credentials', function (): void {
     $config = E2EConfig::fromEnvironment();
     $topology = e2eTopology(E2ETopologyKind::OperatorGatewayAppdevAppprod, withGatewayApi: true);
     $suffix = strtolower(bin2hex(random_bytes(3)));
@@ -46,10 +46,10 @@ it('flows public s3 ingress through router to rustfs backend and includes public
             'kind' => 'proxy',
         ])
             ->and($serviceConfig['protocol'])->toBe('s3')
-            ->and($serviceConfig['owner_name'])->toBe('rustfs')
+            ->and($serviceConfig['owner_name'])->toBe('seaweedfs')
             ->and($serviceConfig['upstreams'][0]['scheme'])->toBe('http')
             ->and($serviceConfig['upstreams'][0]['host'])->toBe('app-dev-1.s3.orbit')
-            ->and($serviceConfig['upstreams'][0]['port'])->toBe(9000);
+            ->and($serviceConfig['upstreams'][0]['port'])->toBe(8333);
 
         // Run orbit s3:publish from the operator node.
         $publishResult = $topology->ssh(
@@ -75,7 +75,7 @@ it('flows public s3 ingress through router to rustfs backend and includes public
         expect($publishedS3['node'])->toBe('app-dev-1')
             ->and($publishedS3['private_endpoint'])->toBe('https://s3.orbit')
             ->and($publishedS3['public_endpoints'])->toContain("https://{$publicHost}")
-            ->and($publishedS3['backend_pool'])->toContain('http://app-dev-1.s3.orbit:9000')
+            ->and($publishedS3['backend_pool'])->toContain('http://app-dev-1.s3.orbit:8333')
             ->and($publishedMeta['host'])->toBe($publicHost)
             ->and($publishedMeta['action'])->toBe('published')
             ->and($publishedMeta['already_published'])->toBeFalse();
@@ -93,7 +93,7 @@ it('flows public s3 ingress through router to rustfs backend and includes public
         ])
             ->and($publicRoute['source_hash'])->toBe($publicRoute['expected_source_hash'])
             ->and($publicConfig['placement'])->toBe('ingress')
-            ->and($publicConfig['owner_name'])->toBe('rustfs')
+            ->and($publicConfig['owner_name'])->toBe('seaweedfs')
             ->and($publicConfig['protocol'])->toBe('s3')
             ->and($publicConfig['target']['value'])->toBe('https://s3.orbit')
             ->and($publicConfig['router_upstream']['node'])->toBe('gateway');
@@ -103,7 +103,7 @@ it('flows public s3 ingress through router to rustfs backend and includes public
         $refreshedServiceConfig = $refreshedService['config'];
 
         expect($refreshedServiceConfig['upstreams'][0]['host'])->toBe('app-dev-1.s3.orbit')
-            ->and($refreshedServiceConfig['upstreams'][0]['port'])->toBe(9000)
+            ->and($refreshedServiceConfig['upstreams'][0]['port'])->toBe(8333)
             ->and($refreshedServiceConfig['upstreams'][0]['scheme'])->toBe('http');
 
         // Assert the rendered ingress Caddy route contains the expected substrings.
@@ -134,16 +134,16 @@ it('flows public s3 ingress through router to rustfs backend and includes public
             ->and($credentials['access_key_id'])->toBe('TESTKEYID12345678901')
             ->and($credentials['secret_access_key'])->toBe('test-secret-access-key-e2e')
             ->and($credentials['bucket_endpoint_style'])->toBe('path')
-            ->and($credentials['backend_pool'])->toContain('http://app-dev-1.s3.orbit:9000')
+            ->and($credentials['backend_pool'])->toContain('http://app-dev-1.s3.orbit:8333')
             ->and($credentials['public_endpoints'])->toContain("https://{$publicHost}")
-            ->and($credMeta['tool'])->toBe('rustfs');
+            ->and($credMeta['tool'])->toBe('seaweedfs');
     } finally {
         s3IngressRouteCleanup($topology, $publicHost);
         $topology->cleanup();
     }
 })->group('e2e-feature', 'e2e-feature-operator_gateway_app-dev_app-prod');
 
-it('proves RustFS binds only to the WireGuard interface and is not exposed on the public-interface', function (): void {
+it('proves SeaweedFS binds only to the WireGuard interface and is not exposed on the public-interface', function (): void {
     $config = E2EConfig::fromEnvironment();
     $topology = e2eTopology(E2ETopologyKind::OperatorGatewayAppdevAppprod, withGatewayApi: true);
 
@@ -168,20 +168,20 @@ it('proves RustFS binds only to the WireGuard interface and is not exposed on th
         $wgAddress = $snapshot['wireguard_address'];
         $host = $snapshot['host'];
         $publishedPorts = $snapshot['published_ports'];
-        $rustfsAddress = $snapshot['rustfs_address'];
+        $seaweedfsAddress = $snapshot['seaweedfs_address'];
 
         // The WireGuard address must be present and non-empty.
         expect($wgAddress)->not->toBeEmpty();
 
         // The port is published ONLY on the WireGuard IP — not on 0.0.0.0.
-        expect($publishedPorts)->toBe(["{$wgAddress}:9000:9000"]);
+        expect($publishedPorts)->toBe(["{$wgAddress}:8333:8333"]);
 
-        // RustFS binds only to the WireGuard IP.
-        expect($rustfsAddress)->toBe("{$wgAddress}:9000");
+        // SeaweedFS binds only to the WireGuard IP.
+        expect($seaweedfsAddress)->toBe("{$wgAddress}:8333");
 
-        // Neither published_ports nor rustfs_address may expose 0.0.0.0.
+        // Neither published_ports nor seaweedfs_address may expose 0.0.0.0.
         expect(implode(',', $publishedPorts))->not->toContain('0.0.0.0')
-            ->and($rustfsAddress)->not->toContain('0.0.0.0');
+            ->and($seaweedfsAddress)->not->toContain('0.0.0.0');
 
         // Every published-ports entry starts with the WireGuard IP.
         foreach ($publishedPorts as $entry) {
@@ -189,10 +189,10 @@ it('proves RustFS binds only to the WireGuard interface and is not exposed on th
         }
 
         // When the public host differs from the WireGuard address, neither
-        // published_ports nor rustfs_address may reference the public interface.
+        // published_ports nor seaweedfs_address may reference the public interface.
         if ($host !== $wgAddress) {
             expect(implode(',', $publishedPorts))->not->toContain($host)
-                ->and($rustfsAddress)->not->toContain($host);
+                ->and($seaweedfsAddress)->not->toContain($host);
         }
     } finally {
         $topology->cleanup();
@@ -201,13 +201,13 @@ it('proves RustFS binds only to the WireGuard interface and is not exposed on th
 
 /**
  * Seed the gateway database with an active s3 role on app-dev-1 and render the
- * RustFS runtime container, returning a snapshot of the bind posture.
+ * SeaweedFS runtime container, returning a snapshot of the bind posture.
  *
  * @return array{
  *     wireguard_address: string,
  *     host: string,
  *     published_ports: list<string>,
- *     rustfs_address: string|null,
+ *     seaweedfs_address: string|null,
  * }
  */
 function s3RuntimeContainerBindSnapshot(E2ETopologyHarness $topology): array
@@ -238,12 +238,16 @@ $settings = \App\Data\Nodes\RoleSettings\S3RoleSettings::fromArray(
 );
 
 $container = app(\App\Services\S3\S3RuntimeContainerRenderer::class)->render($node, $settings);
+$publishedPorts = $container->publishedPorts();
+$publishedAddress = isset($publishedPorts[0])
+    ? implode(':', array_slice(explode(':', $publishedPorts[0]), 0, 2))
+    : null;
 
 echo json_encode([
     'wireguard_address' => $node->wireguard_address,
     'host' => $node->host,
-    'published_ports' => $container->publishedPorts(),
-    'rustfs_address' => $container->environment()['RUSTFS_ADDRESS'] ?? null,
+    'published_ports' => $publishedPorts,
+    'seaweedfs_address' => $publishedAddress,
 ], JSON_THROW_ON_ERROR);
 PHP;
 
@@ -261,7 +265,7 @@ PHP;
 }
 
 /**
- * Seed the gateway database with an active s3 role on app-dev-1 and a rustfs
+ * Seed the gateway database with an active s3 role on app-dev-1 and a seaweedfs
  * tool row, sync the private s3.orbit service route, and return a snapshot of
  * the service route together with the active role assignments for the prod and
  * dev nodes.
@@ -305,7 +309,7 @@ $appProdNode = \App\Models\Node::query()->where('name', 'app-prod-1')->firstOrFa
 \App\Models\NodeTool::query()->updateOrCreate(
     [
         'node_id' => $appDevNode->id,
-        'name' => 'rustfs',
+        'name' => 'seaweedfs',
     ],
     [
         'expected_state' => 'running',

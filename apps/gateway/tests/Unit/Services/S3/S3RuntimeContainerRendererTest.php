@@ -27,11 +27,11 @@ function s3RuntimeNode(array $overrides = []): Node
     ], $overrides));
 }
 
-it('renders the rustfs/rustfs image', function (): void {
+it('renders the chrislusf/seaweedfs:4.33 image', function (): void {
     $node = s3RuntimeNode();
     $container = s3RuntimeRenderer()->render($node, new S3RoleSettings);
 
-    expect($container->image())->toBe('rustfs/rustfs');
+    expect($container->image())->toBe('chrislusf/seaweedfs:4.33');
 });
 
 it('renders the default data path mounted at /data', function (): void {
@@ -57,14 +57,22 @@ it('renders a configured data path mounted at /data', function (): void {
     ]);
 });
 
-it('binds the S3 API only to the node WireGuard address on port 9000', function (): void {
+it('binds the S3 API only to the node WireGuard address on port 8333', function (): void {
     $node = s3RuntimeNode(['wireguard_address' => '10.6.0.10']);
     $container = s3RuntimeRenderer()->render($node, new S3RoleSettings);
 
-    expect($container->publishedPorts())->toBe(['10.6.0.10:9000:9000'])
-        ->and($container->environment())->toMatchArray([
-            'RUSTFS_ADDRESS' => '10.6.0.10:9000',
-        ]);
+    expect($container->publishedPorts())->toBe(['10.6.0.10:8333:8333'])
+        ->and($container->environment())->toBe([]);
+});
+
+it('renders the SeaweedFS server command with the S3 config path', function (): void {
+    $node = s3RuntimeNode();
+    $container = s3RuntimeRenderer()->render($node, new S3RoleSettings);
+
+    expect($container->command())
+        ->toContain('weed server -filer -s3')
+        ->toContain('-s3.port=8333')
+        ->toContain('-s3.config=/etc/seaweedfs/s3.json');
 });
 
 it('does not bind to 0.0.0.0 or a public interface', function (): void {
@@ -76,7 +84,7 @@ it('does not bind to 0.0.0.0 or a public interface', function (): void {
 
     expect($ports)->not->toContain('0.0.0.0')
         ->and($envValues)->not->toContain('0.0.0.0')
-        ->and($ports)->not->toContain(':9000:9000', 2);
+        ->and($ports)->not->toContain(':8333:8333', 2);
 });
 
 it('renders a deterministic S3 runtime container', function (): void {
@@ -84,16 +92,21 @@ it('renders a deterministic S3 runtime container', function (): void {
     $container = s3RuntimeRenderer()->render($node, new S3RoleSettings);
 
     expect($container)->toBeInstanceOf(S3RuntimeContainer::class)
-        ->and($container->name())->toBe('orbit-rustfs')
-        ->and($container->image())->toBe('rustfs/rustfs')
+        ->and($container->name())->toBe('orbit-seaweedfs')
+        ->and($container->image())->toBe('chrislusf/seaweedfs:4.33')
         ->and($container->network())->toBe('orbit-network')
         ->and($container->restartPolicy())->toBe('unless-stopped')
         ->and($container->wireGuardAddress())->toBe('10.6.0.10')
-        ->and($container->mounts())->toHaveCount(1)
+        ->and($container->mounts())->toHaveCount(2)
         ->and($container->mounts())->toContain([
             'source' => '/srv/orbit/s3/data',
             'target' => '/data',
             'read_only' => false,
+        ])
+        ->and($container->mounts())->toContain([
+            'source' => '/srv/orbit/s3/data/s3.json',
+            'target' => '/etc/seaweedfs/s3.json',
+            'read_only' => true,
         ]);
 });
 

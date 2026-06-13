@@ -96,7 +96,7 @@ final readonly class S3UnpublishAction
         if ($existing instanceof ProxyRoute) {
             $isS3Tool = $existing->owner_type === 's3'
                 && isset($existing->config['owner_name'])
-                && $existing->config['owner_name'] === 'rustfs'
+                && $existing->config['owner_name'] === 'seaweedfs'
                 && isset($existing->config['protocol'])
                 && $existing->config['protocol'] === 's3';
 
@@ -114,26 +114,26 @@ final readonly class S3UnpublishAction
 
         $emitter->stepEvent('remove_ingress', 'done', "Ingress route removed for '{$host}'");
 
-        // Step 5: Remove RustFS public host config.
-        $emitter->stepEvent('remove_rustfs_config', 'running', 'Removing public host from RustFS config');
+        // Step 5: Remove SeaweedFS public host config.
+        $emitter->stepEvent('remove_seaweedfs_config', 'running', 'Removing public host from SeaweedFS config');
 
-        $rustfs = NodeTool::query()
+        $seaweedfs = NodeTool::query()
             ->where('node_id', $s3Node->id)
-            ->where('name', 'rustfs')
+            ->where('name', 'seaweedfs')
             ->first();
 
-        if (! $rustfs instanceof NodeTool) {
-            $emitter->stepEvent('remove_rustfs_config', 'failed', 'No rustfs tool row found on node.');
+        if (! $seaweedfs instanceof NodeTool) {
+            $emitter->stepEvent('remove_seaweedfs_config', 'failed', 'No seaweedfs tool row found on node.');
 
             return $this->error(
                 'validation_failed',
-                'The selected s3 node does not have a rustfs tool row.',
+                'The selected s3 node does not have a seaweedfs tool row.',
                 ['field' => 'node'],
                 422,
             );
         }
 
-        $config = is_array($rustfs->config) ? $rustfs->config : [];
+        $config = is_array($seaweedfs->config) ? $seaweedfs->config : [];
         $publicHosts = is_array($config['public_hosts'] ?? null) ? $config['public_hosts'] : [];
 
         /** @var list<string> $publicHosts */
@@ -142,17 +142,17 @@ final readonly class S3UnpublishAction
 
         if (! $alreadyAbsent) {
             $publicHosts = array_values(array_filter($publicHosts, fn (string $h): bool => $h !== $host));
-            $rustfs->config = array_merge($config, ['public_hosts' => $publicHosts]);
-            $rustfs->save();
+            $seaweedfs->config = array_merge($config, ['public_hosts' => $publicHosts]);
+            $seaweedfs->save();
         }
 
-        $emitter->stepEvent('remove_rustfs_config', 'done', 'Public host removed from RustFS config');
+        $emitter->stepEvent('remove_seaweedfs_config', 'done', 'Public host removed from SeaweedFS config');
 
         // Step 6: Apply route cleanup.
         $emitter->stepEvent('apply_cleanup', 'running', 'Applying route cleanup');
 
         try {
-            $this->routeRegistrar->removePublicHost($rustfs, $host);
+            $this->routeRegistrar->removePublicHost($seaweedfs, $host);
         } catch (\RuntimeException $e) {
             $emitter->stepEvent('apply_cleanup', 'failed', $e->getMessage());
 
@@ -176,9 +176,9 @@ final readonly class S3UnpublishAction
             }
         }
 
-        // Collect all remaining public endpoints for this node's rustfs tool.
-        $rustfs->refresh();
-        $refreshedConfig = is_array($rustfs->config) ? $rustfs->config : [];
+        // Collect all remaining public endpoints for this node's seaweedfs tool.
+        $seaweedfs->refresh();
+        $refreshedConfig = is_array($seaweedfs->config) ? $seaweedfs->config : [];
         $allPublicHosts = is_array($refreshedConfig['public_hosts'] ?? null) ? $refreshedConfig['public_hosts'] : [];
 
         /** @var list<string> $allPublicHosts */

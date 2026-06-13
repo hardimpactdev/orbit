@@ -20,7 +20,7 @@ final class S3CredentialsCommand extends GatewayCommand
         {--json : Output JSON}';
 
     #[\Override]
-    protected $description = 'Show RustFS service credentials and endpoint metadata.';
+    protected $description = 'Show SeaweedFS service credentials and endpoint metadata.';
 
     public function handle(): int
     {

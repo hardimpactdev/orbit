@@ -91,7 +91,7 @@ orbit node:new agent-1 --roles=agent --host=192.0.2.10 --grant-to=all --grant-to
   traffic itself.
 - `--redis-node`: existing active `database` node whose Redis service backs a
   requested `websocket` role. Required when `--roles` includes `websocket`.
-- `--s3-data-path`: host path mounted into the RustFS container as `/data`.
+- `--s3-data-path`: host path mounted into the SeaweedFS container as `/data`.
   Optional when `--roles` includes `s3`; defaults to `/srv/orbit/s3/data`.
   Must be an absolute path.
 - `--self-grant`: `default` to apply the role-union self-preset, `custom`
@@ -183,7 +183,7 @@ Requires `--host` and `--redis-node`. Implementation pending.
 **`s3` template**
 
 Provisions a private object-storage node and creates an active `s3` role
-assignment whose settings include the RustFS data path.
+assignment whose settings include the SeaweedFS data path.
 
 Requires `--host`. Implementation pending.
 

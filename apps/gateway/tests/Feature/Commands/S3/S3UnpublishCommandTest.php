@@ -94,11 +94,11 @@ function s3UnpublishIngressNode(): Node
 /**
  * @param  array<string, mixed>  $config
  */
-function s3UnpublishRustfsTool(Node $storage, array $config = []): NodeTool
+function s3UnpublishSeaweedfsTool(Node $storage, array $config = []): NodeTool
 {
     return NodeTool::factory()->create([
         'node_id' => $storage->id,
-        'name' => 'rustfs',
+        'name' => 'seaweedfs',
         'expected_state' => 'installed',
         'config' => array_merge([
             'backend_host' => 'storage-1.s3.orbit',
@@ -155,7 +155,7 @@ describe('S3Unpublish input validation', function (): void {
     it('auto-resolves node when exactly one active s3 node exists', function (): void {
         s3UnpublishCallerNode(role: 'gateway');
         $storage = s3UnpublishStorageNode();
-        s3UnpublishRustfsTool($storage);
+        s3UnpublishSeaweedfsTool($storage);
         s3UnpublishRouterNode();
 
         $response = s3UnpublishStream($this);
@@ -197,7 +197,7 @@ describe('S3Unpublish prerequisites', function (): void {
     it('fails when no active router exists', function (): void {
         s3UnpublishCallerNode(role: 'gateway');
         $storage = s3UnpublishStorageNode();
-        s3UnpublishRustfsTool($storage);
+        s3UnpublishSeaweedfsTool($storage);
         // No router.
 
         $response = s3UnpublishStream($this, 's3.example.com', ['node' => 'storage-1']);
@@ -208,11 +208,11 @@ describe('S3Unpublish prerequisites', function (): void {
             ->and($content)->toContain('"required_role":"router"');
     });
 
-    it('fails when the s3 node has no rustfs tool row', function (): void {
+    it('fails when the s3 node has no seaweedfs tool row', function (): void {
         s3UnpublishCallerNode(role: 'gateway');
         s3UnpublishStorageNode();
         s3UnpublishRouterNode();
-        // No rustfs tool row.
+        // No seaweedfs tool row.
 
         $response = s3UnpublishStream($this, 's3.example.com', ['node' => 'storage-1']);
 
@@ -230,7 +230,7 @@ describe('S3Unpublish owned-route denial', function (): void {
     it('rejects a host owned by a non-S3 proxy route', function (): void {
         s3UnpublishCallerNode(role: 'gateway');
         $storage = s3UnpublishStorageNode();
-        s3UnpublishRustfsTool($storage);
+        s3UnpublishSeaweedfsTool($storage);
         s3UnpublishRouterNode();
         $ingress = s3UnpublishIngressNode();
 
@@ -259,7 +259,7 @@ describe('S3Unpublish absent idempotency', function (): void {
     it('returns success with already_absent=true when the host is not published', function (): void {
         s3UnpublishCallerNode(role: 'gateway');
         $storage = s3UnpublishStorageNode();
-        s3UnpublishRustfsTool($storage, ['public_hosts' => []]);
+        s3UnpublishSeaweedfsTool($storage, ['public_hosts' => []]);
         s3UnpublishRouterNode();
 
         $response = s3UnpublishStream($this, 's3.example.com', ['node' => 'storage-1']);
@@ -279,7 +279,7 @@ describe('S3Unpublish success', function (): void {
     it('unpublishes the host and returns the expected success shape', function (): void {
         s3UnpublishCallerNode(role: 'gateway');
         $storage = s3UnpublishStorageNode();
-        s3UnpublishRustfsTool($storage);
+        s3UnpublishSeaweedfsTool($storage);
         s3UnpublishRouterNode();
 
         $response = s3UnpublishStream($this, 's3.example.com', ['node' => 'storage-1']);
@@ -300,10 +300,10 @@ describe('S3Unpublish success', function (): void {
             ->and($frame['data']['s3']['public_endpoints'])->not->toContain('https://s3.example.com');
     });
 
-    it('removes the public host from the rustfs tool row', function (): void {
+    it('removes the public host from the seaweedfs tool row', function (): void {
         s3UnpublishCallerNode(role: 'gateway');
         $storage = s3UnpublishStorageNode();
-        $tool = s3UnpublishRustfsTool($storage);
+        $tool = s3UnpublishSeaweedfsTool($storage);
         s3UnpublishRouterNode();
 
         $response = s3UnpublishStream($this, 's3.example.com', ['node' => 'storage-1']);
@@ -316,7 +316,7 @@ describe('S3Unpublish success', function (): void {
     it('removes the ingress proxy route for the unpublished host', function (): void {
         s3UnpublishCallerNode(role: 'gateway');
         $storage = s3UnpublishStorageNode();
-        s3UnpublishRustfsTool($storage);
+        s3UnpublishSeaweedfsTool($storage);
         $router = s3UnpublishRouterNode();
         $ingress = s3UnpublishIngressNode();
 
@@ -326,7 +326,7 @@ describe('S3Unpublish success', function (): void {
             'owner_type' => 's3',
             'kind' => 'proxy',
             'config' => [
-                'owner_name' => 'rustfs',
+                'owner_name' => 'seaweedfs',
                 'protocol' => 's3',
                 'target' => ['type' => 'upstream', 'value' => 'https://s3.orbit'],
             ],
@@ -338,10 +338,10 @@ describe('S3Unpublish success', function (): void {
         expect(ProxyRoute::query()->where('domain', 's3.example.com')->exists())->toBeFalse();
     });
 
-    it('does not remove other published hosts from the rustfs tool row', function (): void {
+    it('does not remove other published hosts from the seaweedfs tool row', function (): void {
         s3UnpublishCallerNode(role: 'gateway');
         $storage = s3UnpublishStorageNode();
-        $tool = s3UnpublishRustfsTool($storage, ['public_hosts' => ['s3.example.com', 's3.other.com']]);
+        $tool = s3UnpublishSeaweedfsTool($storage, ['public_hosts' => ['s3.example.com', 's3.other.com']]);
         s3UnpublishRouterNode();
 
         $response = s3UnpublishStream($this, 's3.example.com', ['node' => 'storage-1']);
