@@ -53,6 +53,16 @@ implicitly. Docker and Incus lanes run concurrently by default. Pass
 `--sequential-lanes` for single-lane debugging output and
 `--sequential-tests` when selected Pest files should run in one process.
 
+The Docker lane probes configured test runners immediately before execution.
+Unreachable runners are ignored only when the remaining reachable capacity still
+meets `ORBIT_E2E_DOCKER_MIN_PROCESSES`. The default minimum is the lower of
+eight workers and the planned Docker worker count. Restore the unavailable
+runners before comparing E2E duration to the baseline, or lower
+`ORBIT_E2E_DOCKER_MIN_PROCESSES` only for an intentionally degraded diagnostic
+run. The aggregate command still starts Docker and Incus lanes in parallel, but
+running both lanes on the same remaining host can produce host contention and
+does not represent the expected multi-runner baseline.
+
 ## Provider capability matrix
 
 Use this matrix to choose Docker only when the provider has the capability under

@@ -373,6 +373,7 @@ it('filters unavailable docker runners before starting Pest workers', function (
     withE2EEnvironment([], [
         'ORBIT_E2E_DOCKER_TEST_RUNNERS' => 'sidecar1:4:28,macbook:4:28',
         'ORBIT_E2E_DOCKER_SOURCE_PATH_SIDECAR1' => '/srv/orbit/source',
+        'ORBIT_E2E_DOCKER_MIN_PROCESSES' => '4',
     ], function (): void {
         $this->artisan('e2e:test --lanes=docker')
             ->expectsOutputToContain('E2E Docker runner [macbook] ignored: docker daemon is not reachable')
@@ -383,6 +384,75 @@ it('filters unavailable docker runners before starting Pest workers', function (
         && in_array('test', $process->command, true)
         && in_array('--processes=4', $process->command, true)
         && ($process->environment['ORBIT_E2E_DOCKER_TEST_RUNNERS'] ?? null) === 'sidecar1:4:28'
+        && ($process->environment['ORBIT_E2E_PARALLEL_PROCESSES'] ?? null) === '4');
+});
+
+it('fails the docker lane when reachable runner capacity drops below the minimum', function (): void {
+    Process::fake(function ($process) {
+        if ($process->command === 'command -v docker >/dev/null') {
+            return Process::result();
+        }
+
+        if ($process->command === 'docker info >/dev/null') {
+            return ($process->environment['DOCKER_HOST'] ?? null) === 'ssh://beast'
+                ? Process::result()
+                : Process::result(exitCode: 1, errorOutput: 'offline');
+        }
+
+        return Process::result();
+    });
+    Process::preventStrayProcesses();
+
+    withE2EEnvironment([], [
+        'ORBIT_E2E_DOCKER_TEST_RUNNERS' => 'sidecar1:4:28,sidecar2:4:28,nmbp:4:28,beast:4:28',
+    ], function (): void {
+        $this->artisan('e2e:test --lanes=docker')
+            ->expectsOutputToContain('E2E Docker runner [sidecar1] ignored: docker daemon is not reachable')
+            ->expectsOutputToContain('E2E Docker runner [sidecar2] ignored: docker daemon is not reachable')
+            ->expectsOutputToContain('E2E Docker runner [nmbp] ignored: docker daemon is not reachable')
+            ->expectsOutputToContain('reachable Docker capacity is 4 process(es), below required minimum 8')
+            ->assertFailed();
+    });
+
+    Process::assertRanTimes(fn ($process): bool => is_array($process->command)
+        && in_array('test', $process->command, true), 0);
+});
+
+it('allows an explicitly degraded docker capacity run', function (): void {
+    Process::fake(function ($process) {
+        if ($process->command === 'command -v docker >/dev/null') {
+            return Process::result();
+        }
+
+        if ($process->command === 'docker info >/dev/null') {
+            return ($process->environment['DOCKER_HOST'] ?? null) === 'ssh://beast'
+                ? Process::result()
+                : Process::result(exitCode: 1, errorOutput: 'offline');
+        }
+
+        if (is_array($process->command) && in_array('test', $process->command, true)) {
+            return Process::result();
+        }
+
+        return Process::result();
+    });
+    Process::preventStrayProcesses();
+
+    withE2EEnvironment([], [
+        'ORBIT_E2E_DOCKER_TEST_RUNNERS' => 'sidecar1:4:28,sidecar2:4:28,nmbp:4:28,beast:4:28',
+        'ORBIT_E2E_DOCKER_MIN_PROCESSES' => '4',
+    ], function (): void {
+        $this->artisan('e2e:test --lanes=docker')
+            ->expectsOutputToContain('E2E Docker runner [sidecar1] ignored: docker daemon is not reachable')
+            ->expectsOutputToContain('E2E Docker runner [sidecar2] ignored: docker daemon is not reachable')
+            ->expectsOutputToContain('E2E Docker runner [nmbp] ignored: docker daemon is not reachable')
+            ->assertSuccessful();
+    });
+
+    Process::assertRan(fn ($process): bool => is_array($process->command)
+        && in_array('test', $process->command, true)
+        && in_array('--processes=4', $process->command, true)
+        && ($process->environment['ORBIT_E2E_DOCKER_TEST_RUNNERS'] ?? null) === 'beast:4:28'
         && ($process->environment['ORBIT_E2E_PARALLEL_PROCESSES'] ?? null) === '4');
 });
 

@@ -134,3 +134,23 @@ The full Docker lane passed three consecutive runs with 81 tests / 727
 assertions in `113.45s`, `112.49s`, and `114.88s` real time (`113.61s` mean,
 `1.20s` sample stdev). A post-regression repair spot-check on May 21, 2026,
 passed with 94 tests / 779 assertions in `137.24s` real time.
+
+## Capacity guard diagnostics
+
+When the Docker lane is configured for multiple runners, a broad E2E run is not
+representative if runner probing leaves only a small subset reachable. The
+runner fails execution when reachable Docker capacity is below
+`ORBIT_E2E_DOCKER_MIN_PROCESSES`; when the variable is unset, the minimum is the
+lower of eight workers and the planned Docker worker count. Set
+`ORBIT_E2E_DOCKER_MIN_PROCESSES` to the reachable worker count only when the
+goal is to run a degraded diagnostic pass rather than compare performance to the
+baseline.
+
+The June 13, 2026 slowdown investigation found `sidecar1`, `sidecar2`, and
+`nmbp` unreachable over SSH, leaving only `beast:4` for Docker. A Docker canary
+on that degraded pool took about `208s` wall time, while the May 19 canary
+baseline was `47.55s` with eight workers on `sidecar1` and `sidecar2`.
+Incus-only remained near the previous order of magnitude, but the aggregate run
+stretched because Docker and Incus both contended for Beast. Restore the sidecar
+Docker runners before treating aggregate wall time as an Orbit performance
+regression.

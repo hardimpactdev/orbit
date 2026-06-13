@@ -1138,11 +1138,12 @@ class E2ETestCommand extends Command
             return $plans;
         }
 
-        /** @var array{host_slots: array<string, int>, processes: int, test_runners: string, unavailable: array<string, string>} $availability */
+        /** @var array{host_slots: array<string, int>, processes: int, minimum_processes: int, test_runners: string, unavailable: array<string, string>} $availability */
         $availability = $this->withPlanEnvironment($plans['docker'], function (): array {
             $config = E2EConfig::fromEnvironment();
             $hostSlots = [];
             $unavailable = [];
+            $plannedProcesses = $this->envInt('ORBIT_E2E_PARALLEL_PROCESSES', array_sum($config->dockerHostSlots));
 
             foreach ($config->dockerHostSlots as $host => $slots) {
                 $reason = $this->dockerRunnerUnavailableReason($config, $host);
@@ -1159,6 +1160,7 @@ class E2ETestCommand extends Command
             return [
                 'host_slots' => $hostSlots,
                 'processes' => array_sum($hostSlots),
+                'minimum_processes' => $this->minimumDockerProcessCapacity($plannedProcesses),
                 'test_runners' => $hostSlots === [] ? '' : $this->renderDockerTestRunners($hostSlots, $config),
                 'unavailable' => $unavailable,
             ];
@@ -1185,11 +1187,41 @@ class E2ETestCommand extends Command
             throw new \InvalidArgumentException($message);
         }
 
+        if ($availability['processes'] < $availability['minimum_processes']) {
+            $details = implode('; ', array_map(
+                fn (string $host, string $reason): string => "{$host}: {$reason}",
+                array_keys($availability['unavailable']),
+                array_values($availability['unavailable']),
+            ));
+            $message = "E2E lane [docker] unavailable: reachable Docker capacity is {$availability['processes']} process(es), below required minimum {$availability['minimum_processes']}.";
+
+            if ($details !== '') {
+                $message .= " Unavailable runners: {$details}.";
+            }
+
+            $message .= " Restore the configured Docker runners or set ORBIT_E2E_DOCKER_MIN_PROCESSES={$availability['processes']} for an intentionally degraded run.";
+
+            $this->emitCheckpoint('e2e.lane.docker', 'failed');
+
+            throw new \InvalidArgumentException($message);
+        }
+
         $plans['docker']['environment']['ORBIT_E2E_DOCKER_TEST_RUNNERS'] = $availability['test_runners'];
         $plans['docker']['environment']['ORBIT_E2E_PARALLEL_PROCESSES'] = (string) $availability['processes'];
         $plans['docker']['command'] = $this->applyPestProcessCount($plans['docker']['command'], $availability['processes']);
 
         return $plans;
+    }
+
+    private function minimumDockerProcessCapacity(int $plannedProcesses): int
+    {
+        $configuredMinimum = $this->envNonNegativeIntOrNull('ORBIT_E2E_DOCKER_MIN_PROCESSES');
+
+        if ($configuredMinimum !== null) {
+            return $configuredMinimum;
+        }
+
+        return min(8, $plannedProcesses);
     }
 
     private function dockerRunnerUnavailableReason(E2EConfig $config, string $host): ?string
@@ -1880,6 +1912,17 @@ class E2ETestCommand extends Command
         }
 
         return max(1, (int) $value);
+    }
+
+    private function envNonNegativeIntOrNull(string $key): ?int
+    {
+        $value = getenv($key);
+
+        if (! is_string($value) || $value === '') {
+            return null;
+        }
+
+        return max(0, (int) $value);
     }
 
     private function failCommand(string $message): int
