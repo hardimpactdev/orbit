@@ -91,7 +91,7 @@ default). It builds one reusable base image plus prepared source snapshots:
    `composer e2e:prepare-base-image -- --force` from the non-cloud Ubuntu 26.04
    VM image through direct Incus-agent bootstrap. It contains the bootstrap
    user, the `orbit` user, sshd, the E2E OS dependency set, WireGuard, Docker
-   Engine, Docker Swarm initialized on first boot, Supervisor, PHP CLI, and
+   Engine, Docker Swarm initialized on first boot, PHP CLI, and
    Composer. It also preloads the Caddy, FrankenPHP, and wg-easy Docker images
    that topologies prepared from source require. It does not contain Orbit
    source. It

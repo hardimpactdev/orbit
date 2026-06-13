@@ -15,7 +15,7 @@ orbit process:edit vite --app=docs --command="npm run dev"
 orbit process:edit queue --app=docs --restart-policy=on_failure --restart
 orbit process:edit horizon --app=docs --workspace=feature-docs --command="php artisan horizon"
 orbit process:edit opencode-server --node=app-dev-1 --command="opencode serve -a" --runtime=systemd
-orbit process:edit watcher --app=docs --runtime=supervisor
+orbit process:edit watcher --app=docs --runtime=systemd
 orbit process:edit vite --app=docs --command="npm run dev" --json
 ```
 

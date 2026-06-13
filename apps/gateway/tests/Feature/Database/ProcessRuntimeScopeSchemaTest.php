@@ -119,7 +119,7 @@ it('stores app owned process runtime configuration', function (): void {
         'node_id' => $node->id,
         'name' => 'queue',
         'command' => 'php artisan queue:work',
-        'runtime' => ProcessRuntime::Supervisor,
+        'runtime' => ProcessRuntime::Systemd,
         'tool' => 'php-cli',
         'runtime_config' => [
             'directory' => '/home/orbit/apps/abc',
@@ -144,7 +144,7 @@ it('stores workspace owned process runtime configuration', function (): void {
     $process = $workspace->processes()->create([
         'node_id' => $node->id,
         'name' => 'horizon-redesign',
-        'runtime' => ProcessRuntime::Supervisor,
+        'runtime' => ProcessRuntime::Systemd,
         'tool' => 'php-cli',
         'command' => 'php artisan horizon',
         'runtime_config' => [
@@ -162,7 +162,7 @@ it('stores workspace owned process runtime configuration', function (): void {
         ]);
 });
 
-it('defaults app and workspace host command processes to supervisor when runtime is omitted', function (): void {
+it('defaults app and workspace host command processes to systemd when runtime is omitted', function (): void {
     $node = Node::factory()->create(['name' => 'app-dev-1']);
     $app = App::factory()->create(['node_id' => $node->id, 'name' => 'abc']);
     $workspace = Workspace::factory()->create(['app_id' => $app->id, 'name' => 'redesign']);
@@ -189,7 +189,7 @@ it('defaults app and workspace host command processes to supervisor when runtime
         'updated_at' => now(),
     ]);
 
-    expect($relationProcess->refresh()->runtime)->toBe(ProcessRuntime::Supervisor)
-        ->and($factoryProcess->refresh()->runtime)->toBe(ProcessRuntime::Supervisor)
-        ->and(DB::table('processes')->where('name', 'vite-redesign')->value('runtime'))->toBe(ProcessRuntime::Supervisor->value);
+    expect($relationProcess->refresh()->runtime)->toBe(ProcessRuntime::Systemd)
+        ->and($factoryProcess->refresh()->runtime)->toBe(ProcessRuntime::Systemd)
+        ->and(DB::table('processes')->where('name', 'vite-redesign')->value('runtime'))->toBe(ProcessRuntime::Systemd->value);
 });

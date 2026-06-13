@@ -239,21 +239,20 @@ describe('node role assignment service', function (): void {
             ->get();
 
         expect($tools->pluck('name')->all())
-            ->toBe(['caddy', 'composer', 'laravel-installer', 'php-cli', 'supervisor'])
+            ->toBe(['caddy', 'composer', 'laravel-installer', 'php-cli'])
             ->and($tools->mapWithKeys(fn (NodeTool $tool): array => [$tool->name => $tool->expected_state])->all())
             ->toBe([
                 'caddy' => 'installed',
                 'composer' => 'installed',
                 'laravel-installer' => 'installed',
                 'php-cli' => 'installed',
-                'supervisor' => 'installed',
             ]);
 
         app(NodeRoleAssignmentService::class)->remove($node->refresh(), 'app-dev', force: true);
 
         expect(NodeTool::query()
             ->where('node_id', $node->id)
-            ->whereIn('name', ['caddy', 'composer', 'laravel-installer', 'php-cli', 'supervisor'])
+            ->whereIn('name', ['caddy', 'composer', 'laravel-installer', 'php-cli'])
             ->exists())->toBeFalse();
     });
 
@@ -287,14 +286,13 @@ describe('node role assignment service', function (): void {
             ->get();
 
         expect($tools->pluck('name')->all())
-            ->toBe(['caddy', 'composer', 'laravel-installer', 'php-cli', 'supervisor'])
+            ->toBe(['caddy', 'composer', 'laravel-installer', 'php-cli'])
             ->and($tools->mapWithKeys(fn (NodeTool $tool): array => [$tool->name => $tool->expected_state])->all())
             ->toBe([
                 'caddy' => 'installed',
                 'composer' => 'installed',
                 'laravel-installer' => 'installed',
                 'php-cli' => 'installed',
-                'supervisor' => 'installed',
             ]);
     });
 

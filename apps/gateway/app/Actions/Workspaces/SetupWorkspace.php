@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Actions\Workspaces;
 
-use App\Contracts\RemoteShell;
 use App\Contracts\SiteCertificateInstaller;
 use App\Enums\Apps\AppRuntimeKind;
 use App\Enums\WorkspaceLifecyclePhase;
@@ -12,12 +11,12 @@ use App\Enums\WorkspaceLifecycleStatus;
 use App\Exceptions\WorkspaceUnsupportedForProduction;
 use App\Models\App;
 use App\Models\Node;
+use App\Models\Process;
 use App\Models\Workspace;
 use App\Models\WorkspaceRun;
 use App\Models\WorkspaceStep;
 use App\Services\Processes\EnsureFrankenPhpRuntimeProcess;
-use App\Services\Processes\SupervisorProgramRenderer;
-use App\Services\RuntimeBackend\RuntimeBackendProbe;
+use App\Services\Processes\ProcessRuntimeDriverRegistry;
 use App\Services\Workspaces\EnsureWorkspaceProxyRoute;
 use App\Services\Workspaces\WorkspaceReadinessProbe;
 use App\Services\Workspaces\WorkspaceRoleGuard;
@@ -32,14 +31,12 @@ use Throwable;
 final readonly class SetupWorkspace
 {
     public function __construct(
-        private RemoteShell $remoteShell,
         private EnsureWorkspaceProxyRoute $proxyRoute,
         private WorkspaceRuntimeContainerRenderer $runtimeContainerRenderer,
         private WorkspaceRuntimeContainerManager $runtimeContainerManager,
         private WorkspaceSetupStepRunner $stepRunner,
         private WorkspaceReadinessProbe $readinessProbe,
-        private RuntimeBackendProbe $runtimeBackendProbe,
-        private SupervisorProgramRenderer $supervisorRenderer,
+        private ProcessRuntimeDriverRegistry $runtimeDrivers,
         private SiteCertificateInstaller $siteCertificateInstaller,
         private WorkspaceRoleGuard $roleGuard,
         private EnsureFrankenPhpRuntimeProcess $ensureFrankenPhpRuntimeProcess,
@@ -300,18 +297,7 @@ final readonly class SetupWorkspace
             return ['success' => true, 'message' => 'No processes', 'count' => 0, 'names' => []];
         }
 
-        $probe = $this->runtimeBackendProbe->check($node);
-
-        if (! $probe->available) {
-            return [
-                'success' => false,
-                'message' => "Supervisor is not available on '{$node->name}'. Run doctor to converge process runtime units.",
-                'count' => 0,
-                'names' => [],
-            ];
-        }
-
-        $host = $this->supervisorRenderer->host($app, $workspace);
+        $host = $this->host($app, $workspace);
 
         try {
             $this->siteCertificateInstaller->ensureFor($node, $host);
@@ -327,10 +313,14 @@ final readonly class SetupWorkspace
         $names = [];
 
         foreach ($appProcesses as $process) {
-            $script = $this->supervisorRenderer->installScript($app, $process, $workspace);
-            $result = $this->remoteShell->run($node, $script);
+            if (! $process instanceof Process) {
+                continue;
+            }
 
-            if (! $result->successful()) {
+            $driver = $this->runtimeDrivers->forProcess($process);
+            $runtimeUnit = $driver->runtimeUnitName($app, $process, $workspace);
+
+            if (! $driver->apply($node, $app, $process, $workspace)) {
                 return [
                     'success' => false,
                     'message' => "Failed to start process '{$process->name}'. Run doctor to converge process runtime units.",
@@ -339,10 +329,7 @@ final readonly class SetupWorkspace
                 ];
             }
 
-            $programName = $this->supervisorRenderer->programName($app, $process, $workspace);
-            $startResult = $this->remoteShell->run($node, $this->startProcessScript($programName));
-
-            if (! $startResult->successful()) {
+            if (! $driver->start($node, $runtimeUnit)) {
                 return [
                     'success' => false,
                     'message' => "Failed to start process '{$process->name}'. Run doctor to converge process runtime units.",
@@ -357,16 +344,9 @@ final readonly class SetupWorkspace
         return [
             'success' => true,
             'message' => implode(', ', $names),
-            'count' => count($appProcesses),
+            'count' => count($names),
             'names' => $names,
         ];
-    }
-
-    private function startProcessScript(string $programName): string
-    {
-        $escapedProgramName = escapeshellarg($programName);
-
-        return "sudo supervisorctl start {$escapedProgramName} || sudo supervisorctl restart {$escapedProgramName}";
     }
 
     /**
@@ -442,5 +422,17 @@ final readonly class SetupWorkspace
             'VITE_APP_URL' => $workspace->url(),
             'VITE_VALET_HOST' => $domain,
         ];
+    }
+
+    private function host(App $app, Workspace $workspace): string
+    {
+        $url = $workspace->url();
+        $host = parse_url($url, PHP_URL_HOST);
+
+        if (is_string($host) && $host !== '') {
+            return $host;
+        }
+
+        return preg_replace('#^https?://#', '', $url) ?: $app->name;
     }
 }

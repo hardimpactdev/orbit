@@ -19,7 +19,6 @@ ORBIT_E2E_BASE_PACKAGES=(
     gnupg
     openssh-client
     openssh-server
-    supervisor
     tar
     unzip
     ufw

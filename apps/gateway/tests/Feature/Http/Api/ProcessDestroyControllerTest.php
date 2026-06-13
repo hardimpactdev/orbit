@@ -109,7 +109,7 @@ describe('ProcessDestroyController', function (): void {
         $workspace = Workspace::factory()->for($app)->create(['name' => 'feature-docs', 'path' => '/srv/docs-feature']);
         Process::factory()->forOwner($workspace)->create([
             'name' => 'worker',
-            'runtime' => 'supervisor',
+            'runtime' => 'systemd',
         ]);
         app()->instance(RemoteShell::class, new ProcessDestroyRemoteShell([
             new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),

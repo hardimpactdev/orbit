@@ -287,7 +287,7 @@ describe('ToolsProbe', function (): void {
         $snapshot = $probe->introspect($tool);
         $input = json_decode($shell->input, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($input['supervisor_program'])->toBe('')
+        expect($input)->not->toHaveKey('supervisor_program')
             ->and($snapshot->get('opencode-server'))->toMatchArray([
                 'installed' => true,
                 'path' => '/home/orbit/.opencode/bin/opencode',

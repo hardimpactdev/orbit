@@ -111,7 +111,7 @@ The other seven are workload roles applied to nodes in the fleet.
 
 Application roles use a per-artifact production substrate. PHP apps and PHP
 workspaces run in dedicated FrankenPHP containers represented as process-backed
-runtime units. Orbit-defined host command processes run as Supervisor-backed
+runtime units. Orbit-defined Linux host command processes run as systemd-backed
 process units, while containerized app and workspace runtimes use Docker-backed
 process units. Host PHP-FPM is not an app or workspace runtime fallback.
 Gateway Laravel/artisan/PDO work runs inside the gateway container or the
@@ -362,7 +362,7 @@ The gateway database is Orbit's source of truth. It stores four kinds of records
 - **Policy** — repeatable workflows (deployment step definitions).
 - **History** — what happened (deployment runs, activity logs).
 
-For standing configuration, a database row is not a cache. It describes a desired physical fact on a node — a FrankenPHP app process that should exist, a proxy route that should resolve, a Supervisor-backed or Docker-backed process unit that should be running. The node-side artifact is the *applied* representation of that row.
+For standing configuration, a database row is not a cache. It describes a desired physical fact on a node — a FrankenPHP app process that should exist, a proxy route that should resolve, a systemd-backed or Docker-backed process unit that should be running. The node-side artifact is the *applied* representation of that row.
 
 The core invariant:
 
@@ -395,7 +395,7 @@ isolation under `workspace.security.*`, and firewall-owned representation drift
 under `firewall_rule.security.*` when needed. `doctor --family=security` is not
 accepted.
 
-These names are how Orbit thinks about each thing. The tools behind them — `orbit-caddy` for proxy routes, UFW for firewall rules, Docker for containerized process units, and Supervisor for host command process units — are implementation choices. The family names stay stable even when the backend changes. See [tech-stack.md](tech-stack.md) for the backends in use today.
+These names are how Orbit thinks about each thing. The tools behind them — `orbit-caddy` for proxy routes, UFW for firewall rules, Docker for containerized process units, and systemd for Linux host command process units — are implementation choices. The family names stay stable even when the backend changes. See [tech-stack.md](tech-stack.md) for the backends in use today.
 
 ### Keeping nodes in sync
 

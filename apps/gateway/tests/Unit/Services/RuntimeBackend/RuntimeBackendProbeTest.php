@@ -7,34 +7,34 @@ use App\Data\RemoteShell\RemoteShellResult;
 use App\Models\Node;
 use App\Services\RuntimeBackend\RuntimeBackendProbe;
 
-it('reports the runtime backend as available when supervisorctl responds', function (): void {
+it('reports the runtime backend as available when systemd responds', function (): void {
     $node = new Node(['name' => 'app-1']);
     $remoteShell = new RuntimeBackendProbeRecordingRemoteShell(
-        new RemoteShellResult(exitCode: 0, stdout: "4.2.5\n", stderr: '', durationMs: 1),
+        new RemoteShellResult(exitCode: 0, stdout: "systemd 255\n", stderr: '', durationMs: 1),
     );
 
     $result = (new RuntimeBackendProbe($remoteShell))->check($node);
 
     expect($result->available)->toBeTrue()
         ->and($result->exitCode)->toBe(0)
-        ->and($result->output)->toBe('4.2.5')
+        ->and($result->output)->toBe('systemd 255')
         ->and($remoteShell->scripts)->toBe([
-            'command -v supervisorctl >/dev/null 2>&1 && sudo supervisorctl version >/dev/null 2>&1',
+            'command -v systemctl >/dev/null 2>&1 && systemctl --version >/dev/null 2>&1',
         ])
         ->and($remoteShell->options[0]['timeout'])->toBe(15);
 });
 
-it('reports the runtime backend as unavailable when supervisorctl is missing or unreachable', function (): void {
+it('reports the runtime backend as unavailable when systemd is missing or unreachable', function (): void {
     $node = new Node(['name' => 'app-1']);
     $remoteShell = new RuntimeBackendProbeRecordingRemoteShell(
-        new RemoteShellResult(exitCode: 127, stdout: '', stderr: 'missing supervisorctl', durationMs: 1),
+        new RemoteShellResult(exitCode: 127, stdout: '', stderr: 'missing systemctl', durationMs: 1),
     );
 
     $result = (new RuntimeBackendProbe($remoteShell))->check($node);
 
     expect($result->available)->toBeFalse()
         ->and($result->exitCode)->toBe(127)
-        ->and($result->output)->toBe('missing supervisorctl');
+        ->and($result->output)->toBe('missing systemctl');
 });
 
 final class RuntimeBackendProbeRecordingRemoteShell implements RemoteShell

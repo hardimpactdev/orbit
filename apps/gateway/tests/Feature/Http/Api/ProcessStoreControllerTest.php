@@ -57,7 +57,6 @@ describe('ProcessStoreController', function (): void {
         grantProcessStoreAccess($caller, $appNode);
         App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
         app()->instance(RemoteShell::class, new ProcessStoreRemoteShell([
-            new RemoteShellResult(exitCode: 0, stdout: 'supervisor OK', stderr: '', durationMs: 1),
             new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
         ]));
 
@@ -71,14 +70,14 @@ describe('ProcessStoreController', function (): void {
 
         $response->assertOk()
             ->assertJsonPath('success.data.process.name', 'vite')
-            ->assertJsonPath('success.data.process.runtime', 'supervisor')
+            ->assertJsonPath('success.data.process.runtime', 'systemd')
             ->assertJsonPath('success.data.runtime_units.0.name', 'orbit_docs_main_vite')
             ->assertJsonPath('success.meta.warnings', []);
 
-        expect(Process::query()->where('name', 'vite')->value('runtime'))->toBe(ProcessRuntime::Supervisor);
+        expect(Process::query()->where('name', 'vite')->value('runtime'))->toBe(ProcessRuntime::Systemd);
     });
 
-    it('defaults workspace command processes to supervisor for PHP app workspaces', function (): void {
+    it('defaults workspace command processes to systemd for PHP app workspaces', function (): void {
         createProcessStoreCallerNode(role: 'gateway');
         $appNode = createTestAppHostNode();
         $app = App::factory()->create([
@@ -101,14 +100,14 @@ describe('ProcessStoreController', function (): void {
         $response->assertOk()
             ->assertJsonPath('success.data.process.name', 'horizon')
             ->assertJsonPath('success.data.process.workspace', 'feature-docs')
-            ->assertJsonPath('success.data.process.runtime', 'supervisor')
+            ->assertJsonPath('success.data.process.runtime', 'systemd')
             ->assertJsonPath('success.data.runtime_units.0.name', 'orbit_docs_feature-docs_horizon');
 
         $process = Process::query()->where('name', 'horizon')->firstOrFail();
 
         expect($process->owner_type)->toBe($workspace->getMorphClass())
             ->and($process->owner_id)->toBe($workspace->id)
-            ->and($process->runtime)->toBe(ProcessRuntime::Supervisor);
+            ->and($process->runtime)->toBe(ProcessRuntime::Systemd);
     });
 
     it('rejects unauthorized callers before writing intent', function (): void {
@@ -166,14 +165,32 @@ describe('ProcessStoreController', function (): void {
         'invalid restart' => [['app' => 'docs', 'name' => 'vite', 'command' => 'npm run dev', 'restart_policy' => 'sometimes'], 'restart_policy'],
     ]);
 
-    it('persists and returns an explicit runtime when supplied', function (): void {
+    it('persists and returns an explicit systemd runtime when supplied', function (): void {
         createProcessStoreCallerNode(role: 'gateway');
         $appNode = createTestAppHostNode();
         App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
         app()->instance(RemoteShell::class, new ProcessStoreRemoteShell([
-            new RemoteShellResult(exitCode: 0, stdout: 'supervisor OK', stderr: '', durationMs: 1),
             new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
         ]));
+
+        $response = $this->call('POST', '/api/processes', [
+            'app' => 'docs',
+            'name' => 'legacy',
+            'command' => './legacy.sh',
+            'runtime' => 'systemd',
+        ], [], [], ['REMOTE_ADDR' => PROCESS_STORE_CALLER_WG_IP]);
+
+        $response->assertOk()
+            ->assertJsonPath('success.data.process.runtime', 'systemd');
+
+        expect(Process::query()->where('name', 'legacy')->value('runtime')->value)->toBe('systemd');
+    });
+
+    it('rejects supervisor runtime values before writing intent', function (): void {
+        createProcessStoreCallerNode(role: 'gateway');
+        $appNode = createTestAppHostNode();
+        App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
+        app()->instance(RemoteShell::class, new ProcessStoreRemoteShell([]));
 
         $response = $this->call('POST', '/api/processes', [
             'app' => 'docs',
@@ -182,10 +199,13 @@ describe('ProcessStoreController', function (): void {
             'runtime' => 'supervisor',
         ], [], [], ['REMOTE_ADDR' => PROCESS_STORE_CALLER_WG_IP]);
 
-        $response->assertOk()
-            ->assertJsonPath('success.data.process.runtime', 'supervisor');
+        $response->assertStatus(422)
+            ->assertJsonPath('error.code', 'validation_failed')
+            ->assertJsonPath('error.meta.field', 'runtime')
+            ->assertJsonPath('error.meta.value', 'supervisor')
+            ->assertJsonPath('error.meta.allowed', ['docker', 'docker-swarm', 'systemd']);
 
-        expect(Process::query()->where('name', 'legacy')->value('runtime')->value)->toBe('supervisor');
+        expect(Process::query()->where('name', 'legacy')->exists())->toBeFalse();
     });
 
     it('rejects invalid runtime values with the documented validation envelope', function (): void {
@@ -205,33 +225,9 @@ describe('ProcessStoreController', function (): void {
             ->assertJsonPath('error.code', 'validation_failed')
             ->assertJsonPath('error.meta.field', 'runtime')
             ->assertJsonPath('error.meta.value', 'podman')
-            ->assertJsonPath('error.meta.allowed', ['docker', 'docker-swarm', 'supervisor', 'systemd']);
+            ->assertJsonPath('error.meta.allowed', ['docker', 'docker-swarm', 'systemd']);
 
         expect(Process::query()->where('name', 'queue')->exists())->toBeFalse();
-    });
-
-    it('rejects systemd for app scoped process creation before runtime side effects', function (): void {
-        createProcessStoreCallerNode(role: 'gateway');
-        $appNode = createTestAppHostNode();
-        App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
-        $remoteShell = new ProcessStoreRemoteShell([]);
-        app()->instance(RemoteShell::class, $remoteShell);
-
-        $response = $this->call('POST', '/api/processes', [
-            'app' => 'docs',
-            'name' => 'opencode-server',
-            'command' => 'opencode serve -a',
-            'runtime' => 'systemd',
-        ], [], [], ['REMOTE_ADDR' => PROCESS_STORE_CALLER_WG_IP]);
-
-        $response->assertStatus(422)
-            ->assertJsonPath('error.code', 'validation_failed')
-            ->assertJsonPath('error.meta.field', 'runtime')
-            ->assertJsonPath('error.meta.value', 'systemd')
-            ->assertJsonPath('error.meta.reason', 'systemd_requires_node_owned_process');
-
-        expect(Process::query()->where('name', 'opencode-server')->exists())->toBeFalse()
-            ->and($remoteShell->scripts)->toBe([]);
     });
 
     it('rejects docker swarm for app scoped process creation before runtime side effects', function (): void {

@@ -11,7 +11,7 @@ return new class extends Migration
     public function up(): void
     {
         Schema::table('processes', function (Blueprint $table): void {
-            $table->string('runtime')->default('supervisor')->after('crash_notification');
+            $table->string('runtime')->default('systemd')->after('crash_notification');
         });
     }
 

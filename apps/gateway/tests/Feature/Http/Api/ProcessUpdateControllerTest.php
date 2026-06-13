@@ -56,7 +56,6 @@ describe('ProcessUpdateController', function (): void {
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
         Process::factory()->forOwner($app)->create(['name' => 'vite', 'command' => 'npm run dev']);
         app()->instance(RemoteShell::class, new ProcessUpdateRemoteShell([
-            new RemoteShellResult(exitCode: 0, stdout: 'supervisor OK', stderr: '', durationMs: 1),
             new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
         ]));
 
@@ -116,20 +115,19 @@ describe('ProcessUpdateController', function (): void {
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
         Process::factory()->forOwner($app)->create(['name' => 'queue', 'runtime' => 'docker']);
         app()->instance(RemoteShell::class, new ProcessUpdateRemoteShell([
-            new RemoteShellResult(exitCode: 0, stdout: 'supervisor OK', stderr: '', durationMs: 1),
             new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
         ]));
 
         $response = $this->call('PATCH', '/api/processes/queue', [
             'app' => 'docs',
-            'runtime' => 'supervisor',
+            'runtime' => 'systemd',
         ], [], [], ['REMOTE_ADDR' => PROCESS_UPDATE_CALLER_WG_IP]);
 
         $response->assertOk()
-            ->assertJsonPath('success.data.process.runtime', 'supervisor')
+            ->assertJsonPath('success.data.process.runtime', 'systemd')
             ->assertJsonPath('success.data.changed', ['runtime']);
 
-        expect(Process::query()->where('name', 'queue')->value('runtime')->value)->toBe('supervisor');
+        expect(Process::query()->where('name', 'queue')->value('runtime')->value)->toBe('systemd');
     });
 
     it('updates node owned systemd process intent', function (): void {
@@ -173,7 +171,7 @@ describe('ProcessUpdateController', function (): void {
         Process::factory()->forOwner($workspace)->create([
             'name' => 'worker',
             'command' => 'php artisan queue:work',
-            'runtime' => 'supervisor',
+            'runtime' => 'systemd',
         ]);
         app()->instance(RemoteShell::class, new ProcessUpdateRemoteShell([
             new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
@@ -211,12 +209,12 @@ describe('ProcessUpdateController', function (): void {
             ->assertJsonPath('error.code', 'validation_failed')
             ->assertJsonPath('error.meta.field', 'runtime')
             ->assertJsonPath('error.meta.value', 'podman')
-            ->assertJsonPath('error.meta.allowed', ['docker', 'docker-swarm', 'supervisor', 'systemd']);
+            ->assertJsonPath('error.meta.allowed', ['docker', 'docker-swarm', 'systemd']);
 
         expect(Process::query()->where('name', 'queue')->value('runtime')->value)->toBe('docker');
     });
 
-    it('rejects systemd for app scoped process updates before runtime side effects', function (): void {
+    it('rejects supervisor for app scoped process updates before runtime side effects', function (): void {
         $caller = createProcessUpdateCallerNode();
         $appNode = createTestAppHostNode();
         grantProcessUpdateAccess($caller, $appNode);
@@ -227,14 +225,14 @@ describe('ProcessUpdateController', function (): void {
 
         $response = $this->call('PATCH', '/api/processes/queue', [
             'app' => 'docs',
-            'runtime' => 'systemd',
+            'runtime' => 'supervisor',
         ], [], [], ['REMOTE_ADDR' => PROCESS_UPDATE_CALLER_WG_IP]);
 
         $response->assertStatus(422)
             ->assertJsonPath('error.code', 'validation_failed')
             ->assertJsonPath('error.meta.field', 'runtime')
-            ->assertJsonPath('error.meta.value', 'systemd')
-            ->assertJsonPath('error.meta.reason', 'systemd_requires_node_owned_process');
+            ->assertJsonPath('error.meta.value', 'supervisor')
+            ->assertJsonPath('error.meta.allowed', ['docker', 'docker-swarm', 'systemd']);
 
         expect(Process::query()->where('name', 'queue')->value('runtime')->value)->toBe('docker')
             ->and($remoteShell->scripts)->toBe([]);
@@ -269,7 +267,7 @@ describe('ProcessUpdateController', function (): void {
         $appNode = createTestAppHostNode();
         grantProcessUpdateAccess($caller, $appNode);
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
-        Process::factory()->forOwner($app)->create(['name' => 'queue', 'runtime' => 'supervisor']);
+        Process::factory()->forOwner($app)->create(['name' => 'queue', 'runtime' => 'systemd']);
         $remoteShell = new ProcessUpdateRemoteShell([]);
         app()->instance(RemoteShell::class, $remoteShell);
 
@@ -284,7 +282,7 @@ describe('ProcessUpdateController', function (): void {
             ->assertJsonPath('error.meta.value', 'docker')
             ->assertJsonPath('error.meta.reason', 'docker_runtime_requires_service_or_managed_process');
 
-        expect(Process::query()->where('name', 'queue')->value('runtime')->value)->toBe('supervisor')
+        expect(Process::query()->where('name', 'queue')->value('runtime')->value)->toBe('systemd')
             ->and($remoteShell->scripts)->toBe([]);
     });
 
@@ -294,7 +292,7 @@ describe('ProcessUpdateController', function (): void {
         grantProcessUpdateAccess($caller, $appNode);
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
         $workspace = Workspace::factory()->for($app)->create(['name' => 'feature-docs']);
-        Process::factory()->forOwner($workspace)->create(['name' => 'queue', 'runtime' => 'supervisor']);
+        Process::factory()->forOwner($workspace)->create(['name' => 'queue', 'runtime' => 'systemd']);
         $remoteShell = new ProcessUpdateRemoteShell([]);
         app()->instance(RemoteShell::class, $remoteShell);
 
@@ -310,7 +308,7 @@ describe('ProcessUpdateController', function (): void {
             ->assertJsonPath('error.meta.value', 'docker')
             ->assertJsonPath('error.meta.reason', 'docker_runtime_requires_service_or_managed_process');
 
-        expect($workspace->processes()->where('name', 'queue')->value('runtime')->value)->toBe('supervisor')
+        expect($workspace->processes()->where('name', 'queue')->value('runtime')->value)->toBe('systemd')
             ->and($remoteShell->scripts)->toBe([]);
     });
 

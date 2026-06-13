@@ -7,11 +7,12 @@ namespace App\Actions\Workspaces;
 use App\Contracts\RemoteShell;
 use App\Enums\Apps\AppRuntimeKind;
 use App\Enums\WorkspaceLifecyclePhase;
+use App\Models\App;
 use App\Models\Process;
 use App\Models\ProxyRoute;
 use App\Models\Workspace;
 use App\Models\WorkspaceStep;
-use App\Services\Processes\SupervisorProgramRenderer;
+use App\Services\Processes\ProcessRuntimeDriverRegistry;
 use App\Services\Workspaces\WorkspaceRuntimeArtifactRemovalOutcome;
 use App\Services\Workspaces\WorkspaceRuntimeContainerManager;
 use Illuminate\Support\Facades\DB;
@@ -21,7 +22,7 @@ final readonly class RemoveWorkspace
 {
     public function __construct(
         private RemoteShell $remoteShell,
-        private SupervisorProgramRenderer $supervisorProgramRenderer,
+        private ProcessRuntimeDriverRegistry $runtimeDrivers,
         private WorkspaceRuntimeContainerManager $workspaceRuntimeContainerManager,
     ) {}
 
@@ -42,23 +43,21 @@ final readonly class RemoveWorkspace
     {
         $workspace->loadMissing(['app.node', 'app.processes']);
 
+        $app = $workspace->app;
         $name = $workspace->name;
-        $appName = (string) $workspace->app?->name;
-        $isPhpWorkspace = $workspace->app?->runtime_kind === AppRuntimeKind::Php;
+        $appName = (string) $app?->name;
+        $isPhpWorkspace = $app?->runtime_kind === AppRuntimeKind::Php;
         $proxyRouteIds = ProxyRoute::query()
             ->where('workspace_id', $workspace->id)
             ->pluck('id')
             ->all();
-        $processProgramNames = $workspace->app?->processes
-            ->map(fn (Process $process): string => $this->supervisorProgramRenderer->programName($workspace->app, $process, $workspace))
-            ->values()
-            ->all() ?? [];
+        $processCleanupScripts = $this->processCleanupScripts($workspace, $app);
         $teardownSteps = WorkspaceStep::query()
             ->where('app_id', $workspace->app_id)
             ->where('phase', WorkspaceLifecyclePhase::Teardown)
             ->orderBy('sort_order')
             ->get();
-        $node = $workspace->app?->node;
+        $node = $app?->node;
 
         DB::transaction(function () use ($workspace, $proxyRouteIds): void {
             if ($proxyRouteIds !== []) {
@@ -109,8 +108,8 @@ final readonly class RemoveWorkspace
                 }
             }
 
-            $processResult = $this->remoteShell->run($node, $this->renderProcessRemovalScript($processProgramNames));
-            $processesRemoved = $processResult->successful() ? count($processProgramNames) : 0;
+            $processResult = $this->remoteShell->run($node, $this->renderProcessRemovalScript($processCleanupScripts));
+            $processesRemoved = $processResult->successful() ? count($processCleanupScripts) : 0;
 
             if (! $processResult->successful()) {
                 $warnings[] = [
@@ -170,25 +169,35 @@ final readonly class RemoveWorkspace
     }
 
     /**
-     * @param  list<string>  $processProgramNames
+     * @return list<string>
      */
-    private function renderProcessRemovalScript(array $processProgramNames): string
+    private function processCleanupScripts(Workspace $workspace, ?App $app): array
     {
-        if ($processProgramNames === []) {
+        if (! $app instanceof App) {
+            return [];
+        }
+
+        return $app->processes
+            ->map(function (Process $process) use ($app, $workspace): string {
+                $driver = $this->runtimeDrivers->forProcess($process);
+                $runtimeUnit = $driver->runtimeUnitName($app, $process, $workspace);
+
+                return $driver->cleanupScript($runtimeUnit);
+            })
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @param  list<string>  $processCleanupScripts
+     */
+    private function renderProcessRemovalScript(array $processCleanupScripts): string
+    {
+        if ($processCleanupScripts === []) {
             return 'true';
         }
 
-        $commands = [];
-
-        foreach ($processProgramNames as $programName) {
-            $commands[] = 'sudo supervisorctl stop '.escapeshellarg($programName).' || true';
-            $commands[] = 'sudo rm -f '.escapeshellarg("/etc/supervisor/conf.d/{$programName}.conf");
-        }
-
-        $commands[] = 'sudo supervisorctl reread || true';
-        $commands[] = 'sudo supervisorctl update || true';
-
-        return implode("\n", $commands);
+        return implode("\n", $processCleanupScripts);
     }
 
     /**

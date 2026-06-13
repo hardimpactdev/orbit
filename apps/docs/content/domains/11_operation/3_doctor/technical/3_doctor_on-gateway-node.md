@@ -64,7 +64,7 @@ The gateway owns the family dispatch loop for the single-node target. Each selec
 | `node` | Check the target node's gateway record, identity, WireGuard peer configuration, reachability, bootstrap reality, and current DNS/TLD facts. |
 | `app` | Check app configuration and app-role runtime facts on the target node, including paths, document roots, runtime configuration, and app health probes declared by the app family. |
 | `workspace` | Check workspace configuration and the target node's workspace reality, using app-suffixed workspace identifiers in human output. |
-| `process` | Check process configuration and process supervisor/runtime reality on the target node. |
+| `process` | Check process configuration and process runtime reality on the target node. |
 | `proxy` | Check proxy route configuration and `orbit-caddy` backend reality on the target node. |
 | `firewall_rule` | Check firewall rule configuration and backend firewall reality on the target node. |
 | `tool` | Check tool configuration, installed versions, configuration, and lifecycle state on the target node. |

@@ -14,7 +14,7 @@
 ## Signature
 
 ```bash
-orbit process:add [name] [process_command] [--app=<app>] [--workspace=<workspace>] [--node=<node>] [--tool=<tool>] [--definition=<mysql|redis>] [--definition-version=<version-or-family>] [--restart-policy=<never|on_failure|always>] [--crash-notification=<none|agent_ide>] [--runtime=<docker|docker-swarm|supervisor|systemd>] [--start] [--json]
+orbit process:add [name] [process_command] [--app=<app>] [--workspace=<workspace>] [--node=<node>] [--tool=<tool>] [--definition=<mysql|redis>] [--definition-version=<version-or-family>] [--restart-policy=<never|on_failure|always>] [--crash-notification=<none|agent_ide>] [--runtime=<docker|docker-swarm|systemd>] [--start] [--json]
 ```
 
 ## Input Contract
@@ -33,7 +33,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | `version` | `--definition-version` | Optional for one-version definitions; required when the definition has multiple version families. | When `definition` is absent. | Definition default when unambiguous. | Supported service process definition version or version family. |
 | `restart_policy` | `--restart-policy` | Optional. | Never. | `never`. | One of `never`, `on_failure`, `always`. |
 | `crash_notification` | `--crash-notification` | Optional. | Never. | `none`. | One of `none`, `agent_ide`. |
-| `runtime` | `--runtime` | Optional. | Never. | `docker` for service definitions; `systemd` for other node-owned processes; `supervisor` for app/workspace host-command processes. | One of `docker`, `docker-swarm`, `supervisor`, `systemd`. App/workspace processes accept only `supervisor`; `systemd` and `docker-swarm` require node ownership. Service definitions accept `docker` and `docker-swarm`. |
+| `runtime` | `--runtime` | Optional. | Never. | `docker` for service definitions; `systemd` for node-, app-, and workspace-owned host command processes. | One of `docker`, `docker-swarm`, `systemd`. App/workspace host-command processes accept `systemd`; `docker-swarm` requires node ownership. Service definitions accept `docker` and `docker-swarm`. |
 | `start` | `--start` | Optional. | Never. | `false`. | Boolean flag. Starts rendered runtime units after applying when true. |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer and non-interactive input mode. |
 

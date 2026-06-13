@@ -21,7 +21,7 @@ return new class extends Migration
                 $table->text('command');
                 $table->string('restart_policy')->default('never');
                 $table->string('crash_notification')->default('none');
-                $table->string('runtime')->default('supervisor');
+                $table->string('runtime')->default('systemd');
                 $table->string('tool')->nullable();
                 $table->json('runtime_config')->default('[]');
                 $table->unsignedInteger('sort_order');
@@ -45,7 +45,7 @@ return new class extends Migration
                 $table->text('command');
                 $table->string('restart_policy')->default('never');
                 $table->string('crash_notification')->default('none');
-                $table->string('runtime')->default('supervisor');
+                $table->string('runtime')->default('systemd');
                 $table->unsignedInteger('sort_order');
                 $table->timestamps();
 

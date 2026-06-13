@@ -156,7 +156,7 @@ it('reconciles an existing FrankenPHP workspace runtime process row', function (
         'command' => 'stale command',
         'restart_policy' => ProcessRestartPolicy::Never,
         'crash_notification' => ProcessCrashNotification::AgentIde,
-        'runtime' => ProcessRuntime::Supervisor,
+        'runtime' => ProcessRuntime::Systemd,
         'runtime_config' => [
             'container_name' => 'stale-container',
             'php_ini_path' => '/stale.ini',
@@ -357,9 +357,9 @@ it('starts configured app processes for the workspace after rendering runtime un
     ])
         ->and($certificates->hosts)->toBe(['feature-a.demo', 'feature-a.demo.beast'])
         ->and(collect($shell->scripts)->contains(
-            fn (string $script): bool => str_contains($script, '/etc/supervisor/conf.d/orbit_demo_feature-a_vite.conf')
+            fn (string $script): bool => str_contains($script, '/etc/systemd/system/orbit_demo_feature-a_vite.service')
         ))->toBeTrue()
-        ->and($shell->scripts)->toContain("sudo supervisorctl start 'orbit_demo_feature-a_vite' || sudo supervisorctl restart 'orbit_demo_feature-a_vite'");
+        ->and($shell->scripts)->toContain("sudo systemctl start 'orbit_demo_feature-a_vite.service'");
 });
 
 it('reports converged for already-active workspace', function (): void {

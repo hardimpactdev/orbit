@@ -15,7 +15,7 @@ abstract class ProcessGatewayCommand extends GatewayCommand
 
     private const array CRASH_NOTIFICATIONS = ['none', 'agent_ide'];
 
-    private const array RUNTIMES = ['docker', 'docker-swarm', 'supervisor', 'systemd'];
+    private const array RUNTIMES = ['docker', 'docker-swarm', 'systemd'];
 
     /**
      * @param  array<string, mixed>  $extraMeta
@@ -93,7 +93,7 @@ abstract class ProcessGatewayCommand extends GatewayCommand
 
     protected function validateAppWorkspaceCommandRuntime(?string $runtime, ?string $node, ?string $definition = null): ?int
     {
-        if ($runtime === null || $node !== null || $definition !== null || $runtime === 'supervisor') {
+        if ($runtime === null || $node !== null || $definition !== null || $runtime === 'systemd') {
             return null;
         }
 
@@ -105,10 +105,6 @@ abstract class ProcessGatewayCommand extends GatewayCommand
             'docker-swarm' => $this->failValidation('runtime', 'The docker-swarm runtime is only valid for node-owned processes.', [
                 'value' => $runtime,
                 'reason' => 'docker_swarm_requires_node_owned_process',
-            ]),
-            'systemd' => $this->failValidation('runtime', 'The systemd runtime is only valid for node-owned processes.', [
-                'value' => $runtime,
-                'reason' => 'systemd_requires_node_owned_process',
             ]),
             default => null,
         };

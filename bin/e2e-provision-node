@@ -354,9 +354,6 @@ install_e2e_dependencies() {
     sudo_run apt-get update
     sudo_run env DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=300 install -y "${packages[@]}"
 
-    if command -v systemctl >/dev/null 2>&1 && systemctl list-unit-files supervisor.service >/dev/null 2>&1; then
-        sudo_run systemctl enable --now supervisor.service
-    fi
 }
 
 install_orbit_for_node_kind() {

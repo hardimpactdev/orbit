@@ -54,17 +54,16 @@ owning family concept document.
 - **FrankenPHP app runtime** — the PHP web runtime used by app and workspace containers. Classic mode is the default; worker mode is opt-in. See [App Concepts](domains/5_app/app-concepts.md).
 - **Worker mode** — opt-in FrankenPHP mode that keeps a validated Laravel app in memory. See [App Concepts](domains/5_app/app-concepts.md).
 - **Worker config** — gateway-tracked worker settings stored separately from the enabled flag. See [App Concepts](domains/5_app/app-concepts.md).
-- **Process runtime** — backend selection for process units scoped to a node, app, or workspace; supported runtime families are `supervisor`, `docker`, `docker-swarm`, and `systemd`, with owner-scope restrictions documented in [Process Concepts](domains/7_process/process-concepts.md).
-- **Supervisor process runtime** — host Supervisor backend for long-running host command processes. See [Process Concepts](domains/7_process/process-concepts.md).
+- **Process runtime** — backend selection for process units scoped to a node, app, or workspace; supported runtime families are `systemd`, `docker`, and `docker-swarm`, with owner-scope restrictions documented in [Process Concepts](domains/7_process/process-concepts.md).
 - **Docker process runtime** — Docker backend for containerized processes such as databases, caches, and FrankenPHP app or workspace web runtimes. See [Process Concepts](domains/7_process/process-concepts.md).
-- **Systemd process runtime** — Linux service backend for node-level process units such as OpenCode Server or PolyScope Server; `systemctl` is only the command adapter. See [Process Concepts](domains/7_process/process-concepts.md).
+- **Systemd process runtime** — Linux service backend for host-command process units scoped to nodes, apps, or workspaces; `systemctl` is only the command adapter. See [Process Concepts](domains/7_process/process-concepts.md).
 - **Host cwd context** — entrypoint-provided `ORBIT_HOST_CWD` value used to preserve local app/workspace context for the dispatched node-local Orbit CLI entry point. The source CLI entrypoint initializes it from the process cwd when absent and preserves supplied values. Production installs still use the native CLI binary artifact; source-mounted Docker and Incus development/E2E topologies point `/usr/local/bin/orbit` directly at `<source>/apps/cli/orbit`. See [Workspace Concepts](domains/6_workspace/workspace-concepts.md).
 - **VPN role settings** — `public_endpoint`, `wireguard_cidr`, `wireguard_port`, and `dns_ip` settings stored on the `vpn` role assignment. See [Node Concepts](domains/1_node/node-concepts.md).
 - **VPN-role runtime administration** — VPN command-domain exception where `vpn-client:*` and `vpn-web-ui:*` commands are authorized by the gateway and execute against the active `vpn` role runtime. See [VPN Concepts](domains/13_vpn/vpn-concepts.md).
-- **Process manager** — the runtime backend that runs Orbit process units. Supervisor handles retained host command processes, Docker handles containerized process units, and systemd handles node-level Linux service processes. See [Tech Stack: Process Manager](tech-stack.md#process-manager).
+- **Process manager** — the runtime backend that runs Orbit process units. Systemd handles Linux host-command process units, Docker handles containerized process units, and Docker Swarm handles selected node-owned service processes. See [Tech Stack: Process Manager](tech-stack.md#process-manager).
 - **Runtime unit** — concrete runnable realization of a process definition in a node, app, or workspace context. See [Process Concepts](domains/7_process/process-concepts.md).
 - **Orbit Scheduler** — the resident schedule executor loop that runs as the `orbit-scheduler` Swarm service using the Orbit gateway image. It owns schedule evaluation, dispatch (locally for gateway-target schedules, through `RemoteShell` for every other target), overlap policy, run history, and heartbeat. See [Schedule Concepts](domains/9_schedule/schedule-concepts.md).
-- **Host init** — the host's own service manager. In the production substrate, its steady-state Orbit responsibility is keeping Docker available for Docker-backed artifacts and Supervisor available for host command processes.
+- **Host init** — the host's own service manager. In the production substrate, its steady-state Orbit responsibility is keeping Docker available for Docker-backed artifacts and systemd available for Linux host command processes.
 - **RemoteShell** — gateway-to-node transport primitive; workload classification belongs to the execution lanes, not the transport itself. See [Runtime Execution Lanes](execution-lanes.md) and [Tech Stack: Gateway To Node](tech-stack.md#gateway-to-node).
 - **Security section** — cross-family doctor issue-code section for security-owned state. Security is not a state family; findings live under owning families such as `node.security.*`, `app.security.*`, and `workspace.security.*`. See [Architecture: State Families](architecture.md#state-families).
 - **CLI caller** — an Orbit CLI invocation from a client, the gateway host, or any other node. See [Architecture: Trust And Transport](architecture.md#trust-and-transport).
@@ -262,7 +261,6 @@ Source: [Process Concepts](domains/7_process/process-concepts.md).
 - **Process order**
 - **Runtime unit**
 - **Process runtime**
-- **Supervisor process runtime**
 - **Docker process runtime**
 - **Docker Swarm process runtime**
 - **Systemd process runtime**

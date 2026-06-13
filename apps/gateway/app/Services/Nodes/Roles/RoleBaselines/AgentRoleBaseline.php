@@ -46,7 +46,7 @@ class AgentRoleBaseline implements RoleBaseline
         }
 
         $this->convergeAgentUser($node);
-        $this->convergeTools($node, ['caddy', 'supervisor']);
+        $this->convergeTools($node, ['caddy']);
     }
 
     public function remove(Node $node, NodeRoleAssignment $assignment, bool $purgeData): void
@@ -63,7 +63,7 @@ class AgentRoleBaseline implements RoleBaseline
             }
         }
 
-        $this->removeTools($node, ['caddy', 'supervisor']);
+        $this->removeTools($node, ['caddy']);
     }
 
     private function convergeAgentUser(Node $node): void

@@ -493,7 +493,7 @@ describe('external service stubs', function (): void {
         expect($ssh)->toHaveCount(0);
         expect(array_slice($remoteShell->scripts, 0, 2))->toBe([
             'true',
-            'command -v supervisorctl >/dev/null 2>&1 && sudo supervisorctl version >/dev/null 2>&1',
+            'command -v systemctl >/dev/null 2>&1 && systemctl --version >/dev/null 2>&1',
         ]);
         expect($remoteShell->scripts)->toHaveCount(3);
         expect($remoteShell->scripts[2])->toContain('"runtime_user"');
@@ -570,7 +570,7 @@ describe('external service stubs', function (): void {
     it('accepts available app runtime backend', function (): void {
         $remoteShell = new NodesProbeRecordingRemoteShell([
             new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
-            new RemoteShellResult(exitCode: 0, stdout: 'supervisor OK', stderr: '', durationMs: 1),
+            new RemoteShellResult(exitCode: 0, stdout: 'systemd OK', stderr: '', durationMs: 1),
         ]);
         $probe = new NodesProbe(remoteShell: $remoteShell);
 
@@ -592,7 +592,7 @@ describe('external service stubs', function (): void {
         expect($runtime)->toHaveCount(0);
         expect(array_slice($remoteShell->scripts, 0, 2))->toBe([
             'true',
-            'command -v supervisorctl >/dev/null 2>&1 && sudo supervisorctl version >/dev/null 2>&1',
+            'command -v systemctl >/dev/null 2>&1 && systemctl --version >/dev/null 2>&1',
         ]);
         expect($remoteShell->scripts)->toHaveCount(3);
         expect($remoteShell->scripts[2])->toContain('"runtime_user"');
@@ -601,7 +601,7 @@ describe('external service stubs', function (): void {
     it('detects missing app runtime backend', function (): void {
         $probe = new NodesProbe(remoteShell: new NodesProbeRecordingRemoteShell([
             new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
-            new RemoteShellResult(exitCode: 127, stdout: '', stderr: 'missing supervisorctl', durationMs: 1),
+            new RemoteShellResult(exitCode: 127, stdout: '', stderr: 'missing systemctl', durationMs: 1),
         ]));
 
         $node = Node::create([
@@ -623,7 +623,7 @@ describe('external service stubs', function (): void {
         expect($runtime[0]->kind)->toBe(DriftKind::Unverifiable);
         expect($runtime[0]->detail)->toBe([
             'exit_code' => 127,
-            'output' => 'missing supervisorctl',
+            'output' => 'missing systemctl',
         ]);
     });
 
@@ -1108,7 +1108,7 @@ describe('adoption', function (): void {
 
         $probe = new NodesProbe(remoteShell: new NodesProbeRecordingRemoteShell([
             new RemoteShellResult(exitCode: 0, stdout: nodeIdentityArtifactPayload(), stderr: '', durationMs: 1),
-            new RemoteShellResult(exitCode: 0, stdout: 'supervisor OK', stderr: '', durationMs: 1),
+            new RemoteShellResult(exitCode: 0, stdout: 'systemd OK', stderr: '', durationMs: 1),
         ]));
 
         $node = Node::create([
@@ -1148,7 +1148,7 @@ describe('adoption', function (): void {
 
         $probe = new NodesProbe(remoteShell: new NodesProbeRecordingRemoteShell([
             new RemoteShellResult(exitCode: 0, stdout: nodeIdentityArtifactPayload(['role' => 'unknown', 'local_role' => 'unknown']), stderr: '', durationMs: 1),
-            new RemoteShellResult(exitCode: 0, stdout: 'supervisor OK', stderr: '', durationMs: 1),
+            new RemoteShellResult(exitCode: 0, stdout: 'systemd OK', stderr: '', durationMs: 1),
         ]));
 
         $node = Node::create([
@@ -1172,7 +1172,7 @@ describe('adoption', function (): void {
 
     it('does not snapshot hosted app adoption for unassigned nodes', function (): void {
         $remoteShell = new NodesProbeRecordingRemoteShell([
-            new RemoteShellResult(exitCode: 0, stdout: 'supervisor OK', stderr: '', durationMs: 1),
+            new RemoteShellResult(exitCode: 0, stdout: 'systemd OK', stderr: '', durationMs: 1),
         ]);
         $probe = new NodesProbe(remoteShell: $remoteShell);
 
@@ -1200,7 +1200,7 @@ describe('adoption', function (): void {
 
         $probe = new NodesProbe(remoteShell: new NodesProbeRecordingRemoteShell([
             new RemoteShellResult(exitCode: 0, stdout: nodeIdentityArtifactPayload(['name' => 'other']), stderr: '', durationMs: 1),
-            new RemoteShellResult(exitCode: 0, stdout: 'supervisor OK', stderr: '', durationMs: 1),
+            new RemoteShellResult(exitCode: 0, stdout: 'systemd OK', stderr: '', durationMs: 1),
         ]));
 
         $node = Node::create([
@@ -1220,7 +1220,7 @@ describe('adoption', function (): void {
 
     it('snapshots available app runtime readiness for adopt', function (): void {
         $remoteShell = new NodesProbeRecordingRemoteShell([
-            new RemoteShellResult(exitCode: 0, stdout: "4.2.5\n", stderr: '', durationMs: 1),
+            new RemoteShellResult(exitCode: 0, stdout: "systemd 255\n", stderr: '', durationMs: 1),
         ]);
         $probe = new NodesProbe(remoteShell: $remoteShell);
 
@@ -1244,16 +1244,16 @@ describe('adoption', function (): void {
         expect($snapshot->get('node.runtime_missing'))->toBe([
             'available' => true,
             'exit_code' => 0,
-            'output' => '4.2.5',
+            'output' => 'systemd 255',
         ]);
         expect($remoteShell->scripts)->toBe([
-            'command -v supervisorctl >/dev/null 2>&1 && sudo supervisorctl version >/dev/null 2>&1',
+            'command -v systemctl >/dev/null 2>&1 && systemctl --version >/dev/null 2>&1',
         ]);
     });
 
     it('snapshots unavailable app runtime readiness for adopt', function (): void {
         $probe = new NodesProbe(remoteShell: new NodesProbeRecordingRemoteShell([
-            new RemoteShellResult(exitCode: 127, stdout: '', stderr: 'command not found: supervisorctl', durationMs: 1),
+            new RemoteShellResult(exitCode: 127, stdout: '', stderr: 'command not found: systemctl', durationMs: 1),
         ]));
 
         $node = Node::create([
@@ -1276,7 +1276,7 @@ describe('adoption', function (): void {
         expect($snapshot->get('node.runtime_missing'))->toBe([
             'available' => false,
             'exit_code' => 127,
-            'output' => 'command not found: supervisorctl',
+            'output' => 'command not found: systemctl',
         ]);
     });
 
@@ -1410,7 +1410,7 @@ describe('adoption', function (): void {
 
         $probe = new NodesProbe(remoteShell: new NodesProbeRecordingRemoteShell([
             new RemoteShellResult(exitCode: 0, stdout: nodeIdentityArtifactPayload(), stderr: '', durationMs: 1),
-            new RemoteShellResult(exitCode: 0, stdout: 'supervisor OK', stderr: '', durationMs: 1),
+            new RemoteShellResult(exitCode: 0, stdout: 'systemd OK', stderr: '', durationMs: 1),
         ]));
 
         $node = Node::create([
@@ -1437,7 +1437,7 @@ describe('adoption', function (): void {
 
     it('adopts available app runtime readiness', function (): void {
         $probe = new NodesProbe(remoteShell: new NodesProbeRecordingRemoteShell([
-            new RemoteShellResult(exitCode: 0, stdout: 'supervisor OK', stderr: '', durationMs: 1),
+            new RemoteShellResult(exitCode: 0, stdout: 'systemd OK', stderr: '', durationMs: 1),
         ]));
 
         $node = Node::create([
@@ -1463,13 +1463,13 @@ describe('adoption', function (): void {
         expect($runtime[0]->detail)->toBe([
             'available' => true,
             'exit_code' => 0,
-            'output' => 'supervisor OK',
+            'output' => 'systemd OK',
         ]);
     });
 
     it('conflicts unavailable app runtime readiness during adopt', function (): void {
         $probe = new NodesProbe(remoteShell: new NodesProbeRecordingRemoteShell([
-            new RemoteShellResult(exitCode: 127, stdout: '', stderr: 'missing supervisorctl', durationMs: 1),
+            new RemoteShellResult(exitCode: 127, stdout: '', stderr: 'missing systemctl', durationMs: 1),
         ]));
 
         $node = Node::create([
@@ -1495,7 +1495,7 @@ describe('adoption', function (): void {
         expect($runtime[0]->detail)->toBe([
             'available' => false,
             'exit_code' => 127,
-            'output' => 'missing supervisorctl',
+            'output' => 'missing systemctl',
         ]);
     });
 });
@@ -1577,38 +1577,6 @@ describe('agent role baseline', function (): void {
         expect($baseline[0]->kind)->toBe(DriftKind::Missing);
     });
 
-    it('detects missing supervisor baseline tool for agent nodes', function (): void {
-        $node = Node::create([
-            'name' => 'agent-1',
-            'host' => '10.0.0.1',
-            'orbit_path' => '/orbit',
-            'status' => 'active',
-            'platform' => 'ubuntu_24-04',
-            'wireguard_address' => '10.6.0.5',
-            'tld' => 'agent',
-        ]);
-        $node->roleAssignments()->create([
-            'role' => 'agent',
-            'status' => 'active',
-            'settings' => ['tld' => 'agent'],
-        ]);
-        File::ensureDirectoryExists(nodesProbeDevelopmentDnsPath());
-        File::put(nodesProbeDevelopmentDnsPath('agent.conf'), implode("\n", [
-            '# orbit-managed=node-development-dns',
-            '# node=agent-1',
-            '# bind-scope=orbit_network',
-            'address=/agent/10.6.0.5',
-            '',
-        ]));
-        NodeTool::factory()->create(['node_id' => $node->id, 'name' => 'caddy']);
-
-        $drift = $this->probe->diff($node, new ProbeSnapshot([]));
-        $baseline = array_values(array_filter($drift, fn (DriftEntry $e): bool => $e->key === 'node.role_baseline_mismatch' && ($e->detail['tool'] ?? null) === 'supervisor'));
-
-        expect($baseline)->toHaveCount(1);
-        expect($baseline[0]->kind)->toBe(DriftKind::Missing);
-    });
-
     it('detects missing agent runtime user for agent nodes', function (): void {
         $remoteShell = new NodesProbeRecordingRemoteShell([
             new RemoteShellResult(exitCode: 1, stdout: '', stderr: 'no such user', durationMs: 1),
@@ -1638,7 +1606,6 @@ describe('agent role baseline', function (): void {
             '',
         ]));
         NodeTool::factory()->create(['node_id' => $node->id, 'name' => 'caddy']);
-        NodeTool::factory()->create(['node_id' => $node->id, 'name' => 'supervisor']);
 
         $drift = $probe->diff($node, new ProbeSnapshot([]));
         $baseline = array_values(array_filter($drift, fn (DriftEntry $e): bool => $e->key === 'node.role_baseline_mismatch' && ($e->detail['component'] ?? null) === 'agent_user'));
@@ -1671,7 +1638,6 @@ describe('agent role baseline', function (): void {
             '',
         ]));
         NodeTool::factory()->create(['node_id' => $node->id, 'name' => 'caddy']);
-        NodeTool::factory()->create(['node_id' => $node->id, 'name' => 'supervisor']);
 
         $drift = $this->probe->diff($node, new ProbeSnapshot([]));
         $baseline = array_filter($drift, fn (DriftEntry $e): bool => $e->key === 'node.role_baseline_mismatch');

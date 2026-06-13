@@ -20,7 +20,7 @@ describe('process write commands', function (): void {
             '--app' => 'docs',
             '--restart-policy' => 'always',
             '--crash-notification' => 'agent_ide',
-            '--runtime' => 'supervisor',
+            '--runtime' => 'systemd',
             '--start' => true,
             '--json' => true,
         ]);
@@ -36,7 +36,7 @@ describe('process write commands', function (): void {
                 'restart_policy' => 'always',
                 'crash_notification' => 'agent_ide',
                 'start' => true,
-                'runtime' => 'supervisor',
+                'runtime' => 'systemd',
             ]);
 
         expect($exitCode)->toBe(0)
@@ -247,7 +247,7 @@ describe('process write commands', function (): void {
             '--command' => 'npm run dev -- --host 0.0.0.0',
             '--restart-policy' => 'on_failure',
             '--crash-notification' => 'none',
-            '--runtime' => 'supervisor',
+            '--runtime' => 'systemd',
             '--restart' => true,
             '--json' => true,
         ]);
@@ -261,7 +261,7 @@ describe('process write commands', function (): void {
                 'command' => 'npm run dev -- --host 0.0.0.0',
                 'restart_policy' => 'on_failure',
                 'crash_notification' => 'none',
-                'runtime' => 'supervisor',
+                'runtime' => 'systemd',
                 'restart' => true,
             ]);
 

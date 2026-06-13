@@ -62,14 +62,14 @@ it('serializes an explicit runtime override into the request body', function ():
         app: 'docs',
         name: 'legacy',
         command: './legacy.sh',
-        runtime: 'supervisor',
+        runtime: 'systemd',
     );
 
     expect($request->body()->all())->toMatchArray([
         'app' => 'docs',
         'name' => 'legacy',
         'command' => './legacy.sh',
-        'runtime' => 'supervisor',
+        'runtime' => 'systemd',
     ]);
 });
 

@@ -176,23 +176,23 @@ describe('ToolStream commands', function (): void {
                     ['key' => 'service', 'label' => 'Start service unit'],
                 ],
             ])
-            .gatewayProgressFrame('step', ['key' => 'service', 'status' => 'running', 'message' => 'Starting supervisor'])
+            .gatewayProgressFrame('step', ['key' => 'service', 'status' => 'running', 'message' => 'Starting caddy'])
             .gatewayProgressFrame('complete', [
                 'exit_code' => 0,
-                'data' => ['footer' => "Tool 'supervisor' started."],
+                'data' => ['footer' => "Tool 'caddy' started."],
             ]),
         );
 
         [$exitCode, $output] = runCommand($this, 'tool:update', [
-            'tool' => 'supervisor',
+            'tool' => 'caddy',
             '--node' => 'app-1',
         ]);
 
         expect($exitCode)->toBe(0)
             ->and($output)->toContain('Starting Tool')
             ->and($output)->toContain('Start service unit')
-            ->and($output)->toContain('Starting supervisor')
-            ->and($output)->toContain("Tool 'supervisor' started.");
+            ->and($output)->toContain('Starting caddy')
+            ->and($output)->toContain("Tool 'caddy' started.");
     });
 
     it('emits only the final tool error frame in json mode', function (): void {

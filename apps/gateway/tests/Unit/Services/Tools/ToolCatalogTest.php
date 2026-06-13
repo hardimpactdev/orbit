@@ -48,6 +48,7 @@ describe('tool catalog definitions', function (): void {
         'mysql',
         'postgres',
         'redis',
+        'supervisor',
     ]);
 
     it('catalogs MySQL and Redis as process service definitions instead', function (): void {

@@ -70,7 +70,6 @@ use App\Tools\PhpTool;
 use App\Tools\PolyscopeServerTool;
 use App\Tools\ReverbTool;
 use App\Tools\RustfsTool;
-use App\Tools\SupervisorTool;
 use App\Tools\VitePlusTool;
 use Illuminate\Support\ServiceProvider;
 use Orbit\Core\Security\OperationTokenSigner;
@@ -128,7 +127,6 @@ class AppServiceProvider extends ServiceProvider
         $this->app->bind(WorkspaceSourceDrivers::class, WorkspaceSourceDriverResolver::class);
         $this->app->singleton(ToolDefinitionRegistry::class, fn ($app): ToolDefinitionRegistry => new ToolDefinitionRegistry([
             $app->make(CaddyTool::class),
-            $app->make(SupervisorTool::class),
             $app->make(DockerTool::class),
             $app->make(VitePlusTool::class),
             $app->make(PhpCliTool::class),

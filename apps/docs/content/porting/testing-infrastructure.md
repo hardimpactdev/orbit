@@ -80,15 +80,13 @@ Prepared Docker topologies model the target runtime contract:
   bypasses the public launcher and uses `bin/orbit-gateway-artisan` or direct
   `php apps/gateway/artisan` from a controlled gateway shell;
 - app and workspace PHP runtimes are FrankenPHP containers;
-- PHP app and workspace configured process units render as host Supervisor
-  programs;
+- PHP app and workspace configured process units render as host systemd units on
+  Linux;
 - service dependencies, including WebSocket and S3-compatible services, run as
   Docker sibling containers via the host Docker socket;
 - production Orbit CLI artifacts carry their own embedded PHP runtime;
   source-mounted topologies execute `apps/cli/orbit` from the mounted checkout;
-  host Composer, host Caddy, and PHP-FPM are intentionally absent; host
-  Supervisor is present only when the topology exercises configured process
-  units.
+  host Composer, host Caddy, PHP-FPM, and Supervisor are intentionally absent.
 
 Public production HTTP tests must preserve the landed ingress contract:
 `ingress -> router -> backend`. Downstream WebSocket and S3 topology support

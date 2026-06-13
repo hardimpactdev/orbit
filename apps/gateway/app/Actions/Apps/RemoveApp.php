@@ -6,7 +6,6 @@ namespace App\Actions\Apps;
 
 use App\Contracts\RemoteShell;
 use App\Enums\Apps\AppRuntimeKind;
-use App\Enums\Processes\ProcessRuntime;
 use App\Models\App;
 use App\Models\Process;
 use App\Models\ProxyRoute;
@@ -14,7 +13,7 @@ use App\Models\Schedule;
 use App\Models\Workspace;
 use App\Services\Apps\AppRuntimeArtifactRemovalOutcome;
 use App\Services\Apps\AppRuntimeContainerManager;
-use App\Services\Processes\SupervisorProgramRenderer;
+use App\Services\Processes\ProcessRuntimeDriverRegistry;
 use App\Tools\CaddyTool;
 use Illuminate\Support\Facades\DB;
 use Throwable;
@@ -23,7 +22,7 @@ final readonly class RemoveApp
 {
     public function __construct(
         private RemoteShell $remoteShell,
-        private SupervisorProgramRenderer $supervisorProgramRenderer,
+        private ProcessRuntimeDriverRegistry $runtimeDrivers,
         private AppRuntimeContainerManager $appRuntimeContainerManager,
     ) {}
 
@@ -49,11 +48,7 @@ final readonly class RemoveApp
         $appPayload = $this->appPayload($app);
         $appName = $app->name;
         $isPhpApp = $app->runtime_kind === AppRuntimeKind::Php;
-        $processProgramNames = $app->processes
-            ->filter(fn (Process $process): bool => $process->runtime === ProcessRuntime::Supervisor)
-            ->map(fn (Process $process): string => $this->supervisorProgramRenderer->programName($app, $process))
-            ->values()
-            ->all();
+        $processCleanupScripts = $this->processCleanupScripts($app);
         $proxyRouteIds = ProxyRoute::query()
             ->where('app_id', $app->id)
             ->pluck('id')
@@ -134,12 +129,12 @@ final readonly class RemoveApp
             }
 
             // Best-effort cleanup of non-runtime artifacts (caddy site,
-            // supervisor configs, optional app path). Failures here surface as
+            // process runtime units, optional app path). Failures here surface as
             // proxy/process drift through their own families on the next
             // doctor pass.
             $this->remoteShell->run(
                 $app->node,
-                $this->renderNonRuntimeCleanupScript($app, $processProgramNames, $removeAppPath),
+                $this->renderNonRuntimeCleanupScript($app, $processCleanupScripts, $removeAppPath),
             );
         }
 
@@ -179,24 +174,32 @@ final readonly class RemoveApp
     }
 
     /**
-     * @param  list<string>  $processProgramNames
+     * @return list<string>
      */
-    private function renderNonRuntimeCleanupScript(App $app, array $processProgramNames, bool $removeAppPath): string
+    private function processCleanupScripts(App $app): array
+    {
+        return $app->processes
+            ->map(function (Process $process) use ($app): string {
+                $driver = $this->runtimeDrivers->forProcess($process);
+                $runtimeUnit = $driver->runtimeUnitName($app, $process);
+
+                return $driver->cleanupScript($runtimeUnit);
+            })
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @param  list<string>  $processCleanupScripts
+     */
+    private function renderNonRuntimeCleanupScript(App $app, array $processCleanupScripts, bool $removeAppPath): string
     {
         $domain = parse_url($app->url(), PHP_URL_HOST) ?: $app->name;
         $commands = [
             'sudo rm -f '.escapeshellarg("/etc/caddy/sites/{$domain}.caddy"),
         ];
 
-        foreach ($processProgramNames as $programName) {
-            $commands[] = 'sudo supervisorctl stop '.escapeshellarg($programName).' || true';
-            $commands[] = 'sudo rm -f '.escapeshellarg("/etc/supervisor/conf.d/{$programName}.conf");
-        }
-
-        if ($processProgramNames !== []) {
-            $commands[] = 'sudo supervisorctl reread || true';
-            $commands[] = 'sudo supervisorctl update || true';
-        }
+        array_push($commands, ...$processCleanupScripts);
 
         $commands[] = CaddyTool::reloadCommand().' || true';
 

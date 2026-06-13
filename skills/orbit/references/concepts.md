@@ -8,7 +8,7 @@ Authoritative source: [`apps/docs/content/architecture.md`](../../../apps/docs/c
 |---|---|---|
 | **Gateway** | Ubuntu | Canonical SQLite DB, typed HTTPS API, Orbit root CA, WireGuard, DNS, SSH to app nodes, the only writer of fleet intent |
 | **Operator node** | macOS or Ubuntu | Runs the CLI; stores local gateway endpoint, WireGuard identity, trusted CA. No durable Orbit state |
-| **App node** | Ubuntu | Runs PHP-FPM, Caddy, Supervisor, Docker services, app/workspace files. Stateless CLI client to the gateway |
+| **App node** | Ubuntu | Runs PHP-FPM, Caddy, systemd process units, Docker services, app/workspace files. Stateless CLI client to the gateway |
 
 The local caller role comes from the gateway-owned node identity. Operator callers have no hosted workload role; gateway and app bootstrap write their local readiness state after provisioning.
 
@@ -21,7 +21,7 @@ CLI caller (operator / app / gateway-local)
 Gateway (Laravel app, SQLite intent, typed API, doctor)
         │ SSH via RemoteShell
         ▼
-App nodes (PHP-FPM, Caddy, Supervisor, Docker)
+App nodes (PHP-FPM, Caddy, systemd, Docker)
 ```
 
 App nodes never talk to each other. App-node CLI calls go to the gateway like any operator-node call.
@@ -35,11 +35,11 @@ Standing configuration is tracked as **state families**. Each family is a gatewa
 | `node` | Fleet membership, roles, gateway identity, node reachability |
 | `app` | App registry and app-owned runtime intent |
 | `workspace` | Per-workspace Caddy vhost + PHP-FPM pool + cert |
-| `process` | Supervisor program units for app processes |
+| `process` | Runtime units for app, workspace, and node processes |
 | `proxy` | HTTP ingress for apps, workspaces, custom routes, tool routes, redirects, gateway API |
 | `firewall_rule` | Expected UFW policy on each node |
 | `tool` | Expected tool installs and lifecycle on each node |
-| `schedule` | `schedule:add` recurring tasks (Supervisor-backed Orbit Scheduler daemon) |
+| `schedule` | `schedule:add` recurring tasks (Orbit Scheduler daemon) |
 
 Doctor modes:
 

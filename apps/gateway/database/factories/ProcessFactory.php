@@ -32,7 +32,7 @@ class ProcessFactory extends Factory
             'command' => 'php artisan queue:work',
             'restart_policy' => ProcessRestartPolicy::Never,
             'crash_notification' => ProcessCrashNotification::None,
-            'runtime' => ProcessRuntime::Supervisor,
+            'runtime' => ProcessRuntime::Systemd,
             'tool' => null,
             'runtime_config' => [],
             'sort_order' => fake()->numberBetween(1, 100),
@@ -52,7 +52,7 @@ class ProcessFactory extends Factory
     private function runtimeForOwner(Model $owner): ProcessRuntime
     {
         if ($owner instanceof App || $owner instanceof Workspace) {
-            return ProcessRuntime::Supervisor;
+            return ProcessRuntime::Systemd;
         }
 
         return ProcessRuntime::Docker;

@@ -114,18 +114,4 @@ BASH;
 
         return $commands;
     }
-
-    /**
-     * @return array<string, string>
-     */
-    protected function supervisorProgramRepairCommands(string $program): array
-    {
-        $programArgument = escapeshellarg($program);
-
-        return [
-            'lifecycle_running' => "sudo supervisorctl status {$programArgument} 2>/dev/null | awk '{print \$2}' | grep -qx RUNNING || sudo supervisorctl start {$programArgument}",
-            'lifecycle_stopped' => "sudo supervisorctl stop {$programArgument} >/dev/null 2>&1 || true",
-            'lifecycle_restarted' => "sudo supervisorctl stop {$programArgument} >/dev/null 2>&1 || true\nsudo supervisorctl start {$programArgument}",
-        ];
-    }
 }

@@ -74,7 +74,7 @@ class Process extends Model
 
     #[\Override]
     protected $attributes = [
-        'runtime' => 'supervisor',
+        'runtime' => 'systemd',
         'runtime_config' => '[]',
     ];
 

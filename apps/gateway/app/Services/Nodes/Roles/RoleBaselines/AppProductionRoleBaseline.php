@@ -34,7 +34,7 @@ class AppProductionRoleBaseline implements RoleBaseline
         }
 
         $this->removeTools($node, ['php']);
-        $this->convergeTools($node, ['caddy', 'supervisor']);
+        $this->convergeTools($node, ['caddy']);
         $this->convergeTool($node, 'php-cli', 'installed');
         $this->convergeTool($node, 'composer', 'installed');
         $this->convergeTool($node, 'gh', 'installed');
@@ -43,7 +43,7 @@ class AppProductionRoleBaseline implements RoleBaseline
 
     public function remove(Node $node, NodeRoleAssignment $assignment, bool $purgeData): void
     {
-        $this->removeTools($node, ['caddy', 'php', 'supervisor', 'php-cli', 'composer', 'gh', 'laravel-installer']);
+        $this->removeTools($node, ['caddy', 'php', 'php-cli', 'composer', 'gh', 'laravel-installer']);
     }
 
     protected function toolCatalog(): ToolCatalog

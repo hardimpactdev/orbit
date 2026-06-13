@@ -52,11 +52,11 @@ describe('interface contract', function (): void {
 });
 
 describe('runtime backend availability', function (): void {
-    it('introspects supervisor runtime backend availability on the owner app node', function (): void {
+    it('introspects systemd runtime backend availability on the owner app node', function (): void {
         $app = processableApp();
         $process = processFor($app, ['name' => 'vite']);
         $shell = new ProcessesProbeRecordingRemoteShell([
-            new RemoteShellResult(exitCode: 0, stdout: 'supervisor OK', stderr: '', durationMs: 1),
+            new RemoteShellResult(exitCode: 0, stdout: 'systemd OK', stderr: '', durationMs: 1),
             new RemoteShellResult(exitCode: 0, stdout: "orbit_{$app->name}_main_vite\t1\t1\t1\t1\n__notifier\t1\t1\t1\t1\t1\n__extra\torbit_docs_old_queue\n", stderr: '', durationMs: 1),
         ]);
 
@@ -65,9 +65,9 @@ describe('runtime backend availability', function (): void {
         expect($snapshot->get('vite'))->toMatchArray([
             'runtime_backend_available' => true,
             'runtime_backend_exit_code' => 0,
-            'runtime_backend_output' => 'supervisor OK',
+            'runtime_backend_output' => 'systemd OK',
         ]);
-        expect($shell->scripts[0])->toBe('command -v supervisorctl >/dev/null 2>&1 && sudo supervisorctl version >/dev/null 2>&1');
+        expect($shell->scripts[0])->toBe('command -v systemctl >/dev/null 2>&1 && systemctl --version >/dev/null 2>&1');
         expect($shell->scripts[1])->toContain('php -r');
         expect(json_decode((string) ($shell->options[1]['input'] ?? ''), true))->toHaveKeys(['units', 'event_notifier']);
         expect($shell->nodes[0]->is($app->node))->toBeTrue();
@@ -80,7 +80,7 @@ describe('runtime backend availability', function (): void {
         expect($snapshot->get('vite')['runtime_unit_extras'])->toBe(['orbit_docs_old_queue']);
     });
 
-    it('detects unavailable supervisor runtime backends and leaves downstream checks to later layers', function (): void {
+    it('detects unavailable systemd runtime backends and leaves downstream checks to later layers', function (): void {
         $app = processableApp();
         $process = processFor($app, ['name' => 'vite']);
 
@@ -88,7 +88,7 @@ describe('runtime backend availability', function (): void {
             'vite' => [
                 'runtime_backend_available' => false,
                 'runtime_backend_exit_code' => 127,
-                'runtime_backend_output' => 'missing supervisorctl',
+                'runtime_backend_output' => 'missing systemctl',
             ],
         ]);
 
@@ -98,7 +98,7 @@ describe('runtime backend availability', function (): void {
         expect(issue($drift, 'process.runtime_backend_unavailable')?->detail)->toMatchArray([
             'node' => $app->node->name,
             'exit_code' => 127,
-            'output' => 'missing supervisorctl',
+            'output' => 'missing systemctl',
         ]);
     });
 
@@ -229,7 +229,7 @@ describe('lifecycle event notifier reality', function (): void {
             'crash_notification' => ProcessCrashNotification::AgentIde,
         ]);
         $shell = new ProcessesProbeRecordingRemoteShell([
-            new RemoteShellResult(exitCode: 0, stdout: 'supervisor OK', stderr: '', durationMs: 1),
+            new RemoteShellResult(exitCode: 0, stdout: 'systemd OK', stderr: '', durationMs: 1),
             new RemoteShellResult(exitCode: 0, stdout: "orbit_{$app->name}_main_vite\t1\t1\t1\t1\n__notifier\t1\t1\t1\t1\t1\n", stderr: '', durationMs: 1),
         ]);
 
@@ -318,8 +318,8 @@ describe('lifecycle event notifier reality', function (): void {
     });
 });
 
-describe('stale supervisor program reality', function (): void {
-    it('detects stale Orbit-owned supervisor programs without active gateway process intent', function (): void {
+describe('stale systemd unit reality', function (): void {
+    it('detects stale Orbit-owned systemd units without active gateway process intent', function (): void {
         $app = processableApp(['name' => 'docs']);
         $process = processFor($app, ['name' => 'vite']);
 
@@ -335,11 +335,11 @@ describe('stale supervisor program reality', function (): void {
         expect(issue($drift, 'process.runtime_unit_extra')?->kind)->toBe(DriftKind::Extra);
         expect(issue($drift, 'process.runtime_unit_extra')?->detail)->toMatchArray([
             'runtime_unit' => 'orbit_docs_old_queue',
-            'expected_path' => '/etc/supervisor/conf.d/orbit_docs_old_queue.conf',
+            'expected_path' => '/etc/systemd/system/orbit_docs_old_queue.service',
         ]);
     });
 
-    it('skips stale supervisor program checks while runtime backend is unavailable', function (): void {
+    it('skips stale systemd unit checks while runtime backend is unavailable', function (): void {
         $app = processableApp(['name' => 'docs']);
         $process = processFor($app, ['name' => 'vite']);
 
@@ -356,8 +356,8 @@ describe('stale supervisor program reality', function (): void {
     });
 });
 
-describe('supervisor program reality', function (): void {
-    it('detects missing supervisor programs for expected runtime contexts', function (): void {
+describe('systemd unit reality', function (): void {
+    it('detects missing systemd units for expected runtime contexts', function (): void {
         $app = processableApp(['name' => 'docs']);
         Workspace::factory()
             ->for($app, 'app')
@@ -392,11 +392,11 @@ describe('supervisor program reality', function (): void {
         expect(issue($drift, 'process.runtime_unit_missing')?->kind)->toBe(DriftKind::Missing);
         expect(issue($drift, 'process.runtime_unit_missing')?->detail)->toMatchArray([
             'runtime_unit' => 'orbit_docs_feature-docs_vite',
-            'expected' => '/etc/supervisor/conf.d/orbit_docs_feature-docs_vite.conf',
+            'expected' => '/etc/systemd/system/orbit_docs_feature-docs_vite.service',
         ]);
     });
 
-    it('detects supervisor program content mismatches', function (): void {
+    it('detects systemd unit content mismatches', function (): void {
         $app = processableApp(['name' => 'docs']);
         $process = processFor($app, ['name' => 'vite']);
 
@@ -419,7 +419,7 @@ describe('supervisor program reality', function (): void {
         expect(issue($drift, 'process.runtime_unit_mismatch')?->kind)->toBe(DriftKind::Divergent);
     });
 
-    it('skips supervisor program checks while runtime backend is unavailable', function (): void {
+    it('skips systemd unit checks while runtime backend is unavailable', function (): void {
         $app = processableApp(['name' => 'docs']);
         $process = processFor($app, ['name' => 'vite']);
 
@@ -444,8 +444,8 @@ describe('supervisor program reality', function (): void {
     });
 });
 
-describe('supervisor program restart and environment reality', function (): void {
-    it('detects supervisor restart policy mismatches separately from generic unit drift', function (): void {
+describe('systemd unit restart and environment reality', function (): void {
+    it('detects systemd restart policy mismatches separately from generic unit drift', function (): void {
         $app = processableApp(['name' => 'docs']);
         $process = processFor($app, ['name' => 'vite']);
 
@@ -469,7 +469,7 @@ describe('supervisor program restart and environment reality', function (): void
         expect(issue($drift, 'process.runtime_unit_mismatch'))->toBeNull();
     });
 
-    it('detects supervisor runtime environment mismatches separately from generic unit drift', function (): void {
+    it('detects systemd runtime environment mismatches separately from generic unit drift', function (): void {
         $app = processableApp(['name' => 'docs']);
         $process = processFor($app, ['name' => 'vite']);
 
@@ -599,7 +599,7 @@ describe('owner app eligibility', function (): void {
 });
 
 describe('runtime context expansion', function (): void {
-    it('detects runtime contexts that cannot produce safe supervisor program names', function (): void {
+    it('detects runtime contexts that cannot produce safe systemd unit names', function (): void {
         $app = processableApp(['name' => 'Docs_App']);
         $process = processFor($app, ['name' => 'vite']);
 
@@ -1069,11 +1069,11 @@ function processFor(App $app, array $overrides = []): Process
             'command' => 'npm run dev -- --host=0.0.0.0',
             'restart_policy' => ProcessRestartPolicy::Never,
             'crash_notification' => ProcessCrashNotification::None,
-            // The probe pipeline below targets supervisor runtime artifacts.
+            // The probe pipeline below targets systemd runtime artifacts.
             // Docker runtime probe coverage is intentionally skipped (see
             // ProcessesProbe::introspect runtime guard) and is asserted by
             // its own describe block.
-            'runtime' => ProcessRuntime::Supervisor,
+            'runtime' => ProcessRuntime::Systemd,
             'sort_order' => 1,
             ...$overrides,
         ]);

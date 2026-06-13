@@ -1145,7 +1145,7 @@ describe('DoctorReportRunner', function (): void {
         ]);
         app()->instance(RemoteShell::class, new DoctorReportRunnerRemoteShell([
             new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
-            new RemoteShellResult(exitCode: 0, stdout: 'supervisor OK', stderr: '', durationMs: 1),
+            new RemoteShellResult(exitCode: 0, stdout: 'systemd OK', stderr: '', durationMs: 1),
         ]));
 
         $report = app(DoctorReportRunner::class)->run($node, mode: 'restore', families: ['node']);
@@ -1188,7 +1188,7 @@ describe('DoctorReportRunner', function (): void {
         ]);
         app()->instance(RemoteShell::class, new DoctorReportRunnerRemoteShell([
             new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
-            new RemoteShellResult(exitCode: 0, stdout: 'supervisor OK', stderr: '', durationMs: 1),
+            new RemoteShellResult(exitCode: 0, stdout: 'systemd OK', stderr: '', durationMs: 1),
         ]));
 
         $report = app(DoctorReportRunner::class)->run($node, mode: 'restore', families: ['node']);

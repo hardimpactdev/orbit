@@ -231,11 +231,7 @@ describe('DoctorRunController', function (): void {
             'path' => '/home/orbit/apps/docs']);
         Process::factory()->forOwner($app)->create([
             'name' => 'queue',
-            // Pin to supervisor runtime so the probe exercises the
-            // supervisorctl availability layer. Docker-runtime processes
-            // short-circuit the live probe until ORBIT-RUNTIME-08B wires the
-            // Docker container probe path.
-            'runtime' => ProcessRuntime::Supervisor]);
+            'runtime' => ProcessRuntime::Systemd]);
         app()->instance(RemoteShell::class, new DoctorRunRemoteShell(perRouteStdout: '', exitCode: 1));
 
         $response = $this->call('POST', '/api/doctor/run', [

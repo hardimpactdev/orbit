@@ -51,7 +51,7 @@ function fakeAgentRemoteShell(): RemoteShell
 }
 
 describe('agent role baseline', function (): void {
-    it('converges caddy and supervisor as desired tools', function (): void {
+    it('converges caddy as a desired tool', function (): void {
         $node = Node::factory()->create([
             'platform' => 'ubuntu',
             'wireguard_address' => '10.6.0.50',
@@ -76,11 +76,10 @@ describe('agent role baseline', function (): void {
             ->orderBy('name')
             ->get();
 
-        expect($tools->pluck('name')->all())->toBe(['caddy', 'supervisor'])
+        expect($tools->pluck('name')->all())->toBe(['caddy'])
             ->and($tools->mapWithKeys(fn (NodeTool $tool): array => [$tool->name => $tool->expected_state])->all())
             ->toBe([
                 'caddy' => 'installed',
-                'supervisor' => 'installed',
             ]);
     });
 

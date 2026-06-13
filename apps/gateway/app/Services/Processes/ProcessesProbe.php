@@ -22,7 +22,7 @@ use InvalidArgumentException;
 final readonly class ProcessesProbe
 {
     public function __construct(
-        private ?SupervisorProgramRenderer $supervisorProgramRenderer = null,
+        private ?SystemdUnitRenderer $systemdUnitRenderer = null,
         private ?RuntimeBackendProbe $runtimeBackendProbe = null,
         private ?ProcessEventNotifierRenderer $processEventNotifierRenderer = null,
         private ?ProcessDockerContainerRenderer $dockerContainerRenderer = null,
@@ -55,13 +55,7 @@ final readonly class ProcessesProbe
             return $this->introspectDockerSwarm($process, $node);
         }
 
-        $this->loadProcessApp($process);
-
-        if (! $process->app instanceof App || ! $process->app->node instanceof Node) {
-            return new ProbeSnapshot([]);
-        }
-
-        return $this->introspectSupervisor($process);
+        return $this->introspectSystemd($process, $node);
     }
 
     private function introspectDocker(Process $process, Node $node): ProbeSnapshot
@@ -262,10 +256,10 @@ final readonly class ProcessesProbe
         ]);
     }
 
-    private function introspectSupervisor(Process $process): ProbeSnapshot
+    private function introspectSystemd(Process $process, Node $node): ProbeSnapshot
     {
-        $probe = $this->runtimeBackendProbe()->check($process->app->node);
-        $spec = $this->expectedSupervisorUnitSpecs($process);
+        $probe = $this->runtimeBackendProbe()->check($node);
+        $spec = $this->expectedSystemdUnitSpecs($process);
         $notifier = [
             'required' => $this->requiresEventNotifier($process),
             'script_hash' => $this->processEventNotifierRenderer()->hash(),
@@ -299,12 +293,23 @@ foreach ($units as $unit) {
     $path = (string) ($unit['config_path'] ?? '');
     $hash = (string) ($unit['config_hash'] ?? '');
     $restartPolicy = (string) ($unit['restart_policy'] ?? '');
-    $environmentLine = (string) ($unit['environment_line'] ?? '');
+    $environmentLines = is_array($unit['environment_lines'] ?? null) ? $unit['environment_lines'] : [];
     $exists = is_file($path) ? '1' : '0';
     $content = $exists === '1' ? (string) file_get_contents($path) : '';
     $matches = $exists === '1' && hash('sha256', $content) === $hash ? '1' : '0';
-    $restartMatches = $exists === '1' && preg_match('/^autorestart='.preg_quote($restartPolicy, '/').'$/m', $content) === 1 ? '1' : '0';
-    $environmentMatches = $exists === '1' && preg_match('/^'.preg_quote($environmentLine, '/').'$/m', $content) === 1 ? '1' : '0';
+    $restartMatches = $exists === '1' && preg_match('/^Restart='.preg_quote($restartPolicy, '/').'$/m', $content) === 1 ? '1' : '0';
+    $environmentMatches = $exists === '1' ? '1' : '0';
+
+    foreach ($environmentLines as $environmentLine) {
+        if (! is_string($environmentLine) || $environmentLine === '') {
+            continue;
+        }
+
+        if (preg_match('/^'.preg_quote($environmentLine, '/').'$/m', $content) !== 1) {
+            $environmentMatches = '0';
+            break;
+        }
+    }
 
     printf("%s\t%s\t%s\t%s\t%s\n", $name, $exists, $matches, $restartMatches, $environmentMatches);
 }
@@ -320,8 +325,8 @@ $endpointMatches = $expectedEndpoint !== '' && $endpointExists === '1' && rtrim(
 
 printf("__notifier\t%s\t%s\t%s\t%s\t%s\n", $notifierExists, $notifierExecutable, $notifierMatches, $endpointExists, $endpointMatches);
 
-foreach (glob('/etc/supervisor/conf.d/orbit_*.conf') ?: [] as $path) {
-    $name = basename($path, '.conf');
+foreach (glob('/etc/systemd/system/orbit_*.service') ?: [] as $path) {
+    $name = basename($path, '.service');
 
     if (! isset($expectedNames[$name])) {
         printf("__extra\t%s\n", $name);
@@ -333,7 +338,7 @@ PHP;
 
         $result = $this->runtimeBackendProbe()
             ->remoteShell()
-            ->run($process->app->node, $script, [
+            ->run($node, $script, [
                 'throw' => true,
                 'input' => (string) json_encode([
                     'units' => $spec,
@@ -578,7 +583,7 @@ PHP;
                 ]);
 
                 if (! $isDocker) {
-                    $detail['expected_path'] = "/etc/supervisor/conf.d/{$runtimeUnit}.conf";
+                    $detail['expected_path'] = "/etc/systemd/system/{$runtimeUnit}.service";
                 }
 
                 return new DriftEntry(
@@ -768,8 +773,7 @@ PHP;
                 continue;
             }
 
-            // For Docker runtime, any mismatch in config_matches is a runtime_unit_mismatch
-            // For Supervisor, config_matches false with restart_policy_matches true and environment_matches true is a mismatch
+            // For host runtimes, restart and environment drift get their own entries.
             $isMismatch = ($runtimeUnit['config_matches'] ?? null) === false;
 
             if (! in_array($this->runtimeFor($process), [ProcessRuntime::Docker, ProcessRuntime::DockerSwarm], true)) {
@@ -813,7 +817,6 @@ PHP;
             $backendName = match ($this->runtimeFor($process)) {
                 ProcessRuntime::Docker, ProcessRuntime::DockerSwarm => 'Docker',
                 ProcessRuntime::Systemd => 'systemd',
-                ProcessRuntime::Supervisor => 'Supervisor',
             };
 
             return [
@@ -988,13 +991,13 @@ PHP;
         }
 
         return collect($this->runtimeContexts($process))
-            ->map(fn (?Workspace $workspace): string => $this->supervisorProgramRenderer()->programName($process->app, $process, $workspace))
+            ->map(fn (?Workspace $workspace): string => $this->systemdUnitRenderer()->unitName($process->app, $process, $workspace))
             ->values()
             ->all();
     }
 
     /**
-     * @return list<array{name: string, config_path: string, config_hash: string, config_hash_label: string, restart_policy: string, environment_line: string}>
+     * @return list<array{name: string, config_path: string, config_hash: string, config_hash_label: string, restart_policy: string, environment_lines: list<string>}>
      */
     private function expectedRuntimeUnitSpecs(Process $process): array
     {
@@ -1009,7 +1012,7 @@ PHP;
                 return $this->expectedDockerSwarmUnitSpecs($process);
             }
 
-            return [];
+            return $this->expectedSystemdUnitSpecs($process);
         }
 
         $this->loadProcessApp($process, withWorkspaces: true);
@@ -1022,11 +1025,11 @@ PHP;
             return $this->expectedDockerUnitSpecs($process);
         }
 
-        return $this->expectedSupervisorUnitSpecs($process);
+        return $this->expectedSystemdUnitSpecs($process);
     }
 
     /**
-     * @return list<array{name: string, config_path: string, config_hash: string, config_hash_label: string, restart_policy: string, environment_line: string}>
+     * @return list<array{name: string, config_path: string, config_hash: string, config_hash_label: string, restart_policy: string, environment_lines: list<string>}>
      */
     private function expectedDockerUnitSpecs(Process $process): array
     {
@@ -1048,7 +1051,7 @@ PHP;
                     ? $configuredHashLabel
                     : ProcessDockerContainer::SpecHashLabel,
                 'restart_policy' => '',
-                'environment_line' => '',
+                'environment_lines' => [],
             ]];
         }
 
@@ -1075,7 +1078,7 @@ PHP;
                         ? $configuredHashLabel
                         : ProcessDockerContainer::SpecHashLabel,
                     'restart_policy' => '',
-                    'environment_line' => '',
+                    'environment_lines' => [],
                 ];
             })
             ->values()
@@ -1083,7 +1086,7 @@ PHP;
     }
 
     /**
-     * @return list<array{name: string, config_path: string, config_hash: string, config_hash_label: string, restart_policy: string, environment_line: string}>
+     * @return list<array{name: string, config_path: string, config_hash: string, config_hash_label: string, restart_policy: string, environment_lines: list<string>}>
      */
     private function expectedDockerSwarmUnitSpecs(Process $process): array
     {
@@ -1099,15 +1102,32 @@ PHP;
             'config_hash' => $configuredHash,
             'config_hash_label' => ProcessDockerContainer::SpecHashLabel,
             'restart_policy' => '',
-            'environment_line' => '',
+            'environment_lines' => [],
         ]];
     }
 
     /**
-     * @return list<array{name: string, config_path: string, config_hash: string, config_hash_label: string, restart_policy: string, environment_line: string}>
+     * @return list<array{name: string, config_path: string, config_hash: string, config_hash_label: string, restart_policy: string, environment_lines: list<string>}>
      */
-    private function expectedSupervisorUnitSpecs(Process $process): array
+    private function expectedSystemdUnitSpecs(Process $process): array
     {
+        $process->loadMissing('owner');
+
+        if ($process->owner instanceof Node) {
+            $app = $this->surrogateAppForNode($process->owner);
+            $runtimeUnit = $this->systemdUnitRenderer()->unitName($app, $process);
+            $content = $this->systemdUnitRenderer()->render($process->owner, $app, $process);
+
+            return [[
+                'name' => $runtimeUnit,
+                'config_path' => $this->systemdUnitRenderer()->unitPath($runtimeUnit),
+                'config_hash' => hash('sha256', $content),
+                'config_hash_label' => '',
+                'restart_policy' => $process->restart_policy->toSystemd(),
+                'environment_lines' => $this->environmentLines($content),
+            ]];
+        }
+
         $this->loadProcessApp($process, withWorkspaces: true);
 
         if (! $process->app instanceof App) {
@@ -1116,31 +1136,43 @@ PHP;
 
         return collect($this->runtimeContexts($process))
             ->map(function (?Workspace $workspace) use ($process): array {
-                $definition = $this->supervisorProgramRenderer()->definition($process->app, $process, $workspace);
-                $content = $this->supervisorProgramRenderer()->render($process->app, $process, $workspace);
+                $node = $process->app->node;
+
+                if (! $node instanceof Node) {
+                    return [];
+                }
+
+                $runtimeUnit = $this->systemdUnitRenderer()->unitName($process->app, $process, $workspace);
+                $content = $this->systemdUnitRenderer()->render($node, $process->app, $process, $workspace);
 
                 return [
-                    'name' => $definition->name,
-                    'config_path' => $this->supervisorProgramRenderer()->configPath($process->app, $process, $workspace),
+                    'name' => $runtimeUnit,
+                    'config_path' => $this->systemdUnitRenderer()->unitPath($runtimeUnit),
                     'config_hash' => hash('sha256', $content),
                     'config_hash_label' => '',
-                    'restart_policy' => $definition->restartPolicy,
-                    'environment_line' => $this->environmentLine($content),
+                    'restart_policy' => $process->restart_policy->toSystemd(),
+                    'environment_lines' => $this->environmentLines($content),
                 ];
             })
+            ->filter(fn (array $unit): bool => $unit !== [])
             ->values()
             ->all();
     }
 
-    private function environmentLine(string $content): string
+    /**
+     * @return list<string>
+     */
+    private function environmentLines(string $content): array
     {
+        $lines = [];
+
         foreach (explode("\n", $content) as $line) {
-            if (str_starts_with($line, 'environment=')) {
-                return $line;
+            if (str_starts_with($line, 'Environment=')) {
+                $lines[] = $line;
             }
         }
 
-        return 'environment=';
+        return $lines;
     }
 
     private function requiresEventNotifier(Process $process): bool
@@ -1153,10 +1185,10 @@ PHP;
         $raw = $process->getRawOriginal('runtime');
 
         if (is_string($raw)) {
-            return ProcessRuntime::tryFrom($raw) ?? ProcessRuntime::Docker;
+            return ProcessRuntime::tryFrom($raw) ?? ProcessRuntime::Systemd;
         }
 
-        return $process->runtime ?? ProcessRuntime::Docker;
+        return $process->runtime ?? ProcessRuntime::Systemd;
     }
 
     /**
@@ -1334,9 +1366,9 @@ PHP;
         }
     }
 
-    private function supervisorProgramRenderer(): SupervisorProgramRenderer
+    private function systemdUnitRenderer(): SystemdUnitRenderer
     {
-        return $this->supervisorProgramRenderer ?? app(SupervisorProgramRenderer::class);
+        return $this->systemdUnitRenderer ?? app(SystemdUnitRenderer::class);
     }
 
     private function runtimeBackendProbe(): RuntimeBackendProbe

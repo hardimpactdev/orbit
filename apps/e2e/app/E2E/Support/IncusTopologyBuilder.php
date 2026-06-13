@@ -1055,7 +1055,7 @@ class IncusTopologyBuilder
     {
         $script = <<<'BASH'
 missing=''
-for command in composer git supervisorctl wg wg-quick dig ufw; do
+for command in composer git systemctl wg wg-quick dig ufw; do
     if ! command -v "$command" >/dev/null 2>&1; then
         missing="${missing} ${command}"
     fi
@@ -1066,9 +1066,6 @@ if [ -n "$missing" ]; then
     exit 1
 fi
 
-if command -v systemctl >/dev/null 2>&1; then
-    sudo systemctl enable --now supervisor.service || true
-fi
 BASH;
 
         return 'bash -lc '.escapeshellarg($script);

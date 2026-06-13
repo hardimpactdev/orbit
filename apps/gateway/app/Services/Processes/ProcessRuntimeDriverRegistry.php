@@ -11,13 +11,11 @@ use App\Models\Process;
 use App\Services\Processes\ProcessRuntimeDrivers\DockerProcessRuntimeDriver;
 use App\Services\Processes\ProcessRuntimeDrivers\DockerSwarmProcessRuntimeDriver;
 use App\Services\Processes\ProcessRuntimeDrivers\ProcessRuntimeDriver;
-use App\Services\Processes\ProcessRuntimeDrivers\SupervisorProcessRuntimeDriver;
 use App\Services\Processes\ProcessRuntimeDrivers\SystemdProcessRuntimeDriver;
 
 final readonly class ProcessRuntimeDriverRegistry
 {
     public function __construct(
-        private SupervisorProcessRuntimeDriver $supervisor,
         private DockerProcessRuntimeDriver $docker,
         private DockerSwarmProcessRuntimeDriver $dockerSwarm,
         private SystemdProcessRuntimeDriver $systemd,
@@ -43,7 +41,6 @@ final readonly class ProcessRuntimeDriverRegistry
     private function driverFor(ProcessRuntime $runtime): ProcessRuntimeDriver
     {
         return match ($runtime) {
-            ProcessRuntime::Supervisor => $this->supervisor,
             ProcessRuntime::Docker => $this->docker,
             ProcessRuntime::DockerSwarm => $this->dockerSwarm,
             ProcessRuntime::Systemd => $this->systemd,

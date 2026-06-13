@@ -70,7 +70,6 @@ tool-specific contracts live in [`catalog/`](catalog/README.md).
 | Slug | Label | Backend | Support model | Category | Primary capability surface |
 | --- | --- | --- | --- | --- | --- |
 | [`caddy`](catalog/caddy.md) | Caddy | `orbit-caddy` Docker container | Role baseline where HTTP routing is needed, adopted and kept converged | `always` | reconfigure, update, fix, adopt; lifecycle and logs through `process:*` |
-| [`supervisor`](catalog/supervisor.md) | Supervisor | system service | Explicit residual runtime only where configured | `runtime` | capability probe, repair, adopt |
 | [`docker`](catalog/docker.md) | Docker | system service | Required baseline, adopted and kept converged | `always` | probe, fix, adopt, prerequisite for Docker-backed processes |
 | [`viteplus`](catalog/viteplus.md) | VitePlus | system binary | Role baseline tool for the `app-dev` and `app-prod` roles | `runtime` | probe, adopt |
 | [`php-cli`](catalog/php-cli.md) | PHP CLI | prebuilt static host binaries (dl.static-php.dev bulk preset) | Installable/updatable host toolchain on `app-dev` and `app-prod` | `runtime` | install, update, probe, adopt |

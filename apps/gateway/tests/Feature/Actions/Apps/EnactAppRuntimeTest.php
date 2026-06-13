@@ -241,7 +241,7 @@ it('reconciles an existing FrankenPHP app runtime process row', function (): voi
         'command' => 'stale command',
         'restart_policy' => ProcessRestartPolicy::Never,
         'crash_notification' => ProcessCrashNotification::AgentIde,
-        'runtime' => ProcessRuntime::Supervisor,
+        'runtime' => ProcessRuntime::Systemd,
         'runtime_config' => [
             'container_name' => 'stale-container',
             'php_ini_path' => '/stale.ini',

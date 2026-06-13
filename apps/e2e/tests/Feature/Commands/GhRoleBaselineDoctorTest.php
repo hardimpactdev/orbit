@@ -78,7 +78,7 @@ function ghRoleBaselineConvergeAppRoles(E2ETopologyHarness $topology): void
 $converger = app(\App\Services\Nodes\Roles\NodeRoleBaselineConverger::class);
 $allowedByNode = [
     'app-dev-1' => ['caddy', 'php-cli', 'composer', 'gh', 'laravel-installer'],
-    'app-prod-1' => ['caddy', 'supervisor', 'php-cli', 'composer', 'gh', 'laravel-installer'],
+    'app-prod-1' => ['caddy', 'php-cli', 'composer', 'gh', 'laravel-installer'],
 ];
 
 foreach ([

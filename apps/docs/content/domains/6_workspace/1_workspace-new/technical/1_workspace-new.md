@@ -71,7 +71,7 @@ for this default.
      (`{workspace}.{app}.{tld}`), so the workspace identity limit is
      independent of the parent app slug. Backend artifact renderers must
      still validate final generated names such as runtime containers, Docker
-     process units, explicit Supervisor process units, and certificate paths
+     process units, explicit systemd process units, and certificate paths
      before writing them.
    - Per-app uniqueness: the workspace name must not already exist for the
      resolved parent app. Workspace identity is unique within an app, not
@@ -135,8 +135,8 @@ register an existing path use
    - **Setup steps:** execute configured workspace setup steps in the
      workspace path with the lifecycle environment defined in
      [Workspaces README](../../README.md#lifecycle-step-environment).
-   - **Inherited runtime units:** render and (re)install Supervisor process
-     programs derived from the parent app's process definitions.
+   - **Inherited runtime units:** render and (re)install systemd process units
+     derived from the parent app's process definitions.
    - **HTTP probe:** perform the same HTTP probe that `workspace:setup`
      performs at setup time. Probe failures are command warnings, not durable
      workspace state and not doctor issue codes.
@@ -202,7 +202,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | Path | Coverage |
 | --- | --- |
 | `apps/gateway/tests/Feature/Commands/Workspaces/WorkspaceNewCommandTest.php` | Input resolution, name/slug validation, reserved-`main` rejection, per-app collision rejection, `--php-version` validation, gateway write, driver dispatch and adapter id capture, `success.meta.warnings[]` shape, and shared exit-status behavior. |
-| `apps/gateway/tests/E2E/WorkspaceNewTest.php` | End-to-end workspace creation against a real node: worktree creation, runtime container artifact installation, workspace-owned proxy route, and inherited runtime unit rendering as Supervisor process programs. |
+| `apps/gateway/tests/E2E/WorkspaceNewTest.php` | End-to-end workspace creation against a real node: worktree creation, runtime container artifact installation, workspace-owned proxy route, and inherited runtime unit rendering as systemd process units. |
 
 Role-specific behavior and test mapping live in:
 

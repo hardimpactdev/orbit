@@ -6,7 +6,7 @@ Generic surface for installable and observational node tools. The catalog is fix
 
 **Required baseline tools** (provisioned by node bootstrap; Orbit observes and keeps converged):
 
-- `caddy`, `supervisor`, `docker`, `viteplus`, `php-cli`, `gh`, `composer`, `dns`
+- `caddy`, `docker`, `viteplus`, `php-cli`, `gh`, `composer`, `dns`
 
 **Installable tools** (provisioned by `tool:install`, removed by `tool:remove`):
 

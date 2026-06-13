@@ -72,7 +72,7 @@ it('installs E2E base dependencies before running install-orbit', function (): v
     expect($provisioner)
         ->toContain('install_e2e_dependencies')
         ->toContain('"${SCRIPT_DIR}/_e2e-deps.sh" --base')
-        ->toContain('systemctl enable --now supervisor.service');
+        ->not->toContain('supervisor.service');
 });
 
 it('installs host Composer dependencies after install-orbit for prepared Incus templates', function (): void {
@@ -322,7 +322,8 @@ it('deps helper prints all packages by default', function (): void {
 
     $lines = array_filter(array_map('trim', explode("\n", $result->output())));
 
-    expect($lines)->toContain('bind9-dnsutils', 'ca-certificates', 'composer', 'git', 'supervisor', 'ufw', 'wireguard');
+    expect($lines)->toContain('bind9-dnsutils', 'ca-certificates', 'composer', 'git', 'ufw', 'wireguard');
+    expect($lines)->not->toContain('supervisor');
     expect($lines)->toContain('php8.5-cli', 'php8.5-bcmath', 'php8.5-zip');
 });
 

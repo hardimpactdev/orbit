@@ -20,7 +20,7 @@ final class ProcessAddCommand extends ProcessGatewayCommand
         {--definition-version= : Service process definition version or version family}
         {--restart-policy=never : Restart policy (never|on_failure|always)}
         {--crash-notification=none : Crash notification policy (none|agent_ide)}
-        {--runtime= : Process runtime (docker|docker-swarm|supervisor|systemd); defaults to docker for service definitions, systemd for other node processes, and supervisor for app/workspace host commands}
+        {--runtime= : Process runtime (docker|docker-swarm|systemd); defaults to docker for service definitions and systemd for host commands}
         {--start : Start rendered runtime units after creation}
         {--json : Output JSON}';
 

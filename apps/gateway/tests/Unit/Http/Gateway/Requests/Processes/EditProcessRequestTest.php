@@ -58,12 +58,12 @@ it('serializes a runtime change into the request body', function (): void {
     $request = new EditProcessRequest(
         app: 'docs',
         name: 'queue',
-        runtime: 'supervisor',
+        runtime: 'systemd',
     );
 
     expect($request->body()->all())->toMatchArray([
         'app' => 'docs',
-        'runtime' => 'supervisor',
+        'runtime' => 'systemd',
     ]);
 });
 

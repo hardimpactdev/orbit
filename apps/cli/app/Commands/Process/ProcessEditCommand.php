@@ -17,7 +17,7 @@ final class ProcessEditCommand extends ProcessGatewayCommand
         {--command= : New command}
         {--restart-policy= : Restart policy (never|on_failure|always)}
         {--crash-notification= : Crash notification policy (none|agent_ide)}
-        {--runtime= : Process runtime (docker|docker-swarm|supervisor|systemd)}
+        {--runtime= : Process runtime (docker|docker-swarm|systemd)}
         {--restart : Restart affected runtime units after update}
         {--json : Output JSON}';
 

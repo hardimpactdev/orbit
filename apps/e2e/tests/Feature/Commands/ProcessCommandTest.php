@@ -456,7 +456,7 @@ function processCommandCleanup(E2ETopologyHarness $topology, string $app, string
     );
     $topology->ssh(
         'dev',
-        'docker rm -f '.escapeshellarg($runtimeUnit).' '.escapeshellarg($workspaceRuntimeUnit).' >/dev/null 2>&1 || true; sudo supervisorctl stop '.escapeshellarg($runtimeUnit).' >/dev/null 2>&1 || true; sudo rm -f '.escapeshellarg("/etc/supervisor/conf.d/{$runtimeUnit}.conf").'; sudo supervisorctl reread >/dev/null 2>&1 || true; sudo supervisorctl update >/dev/null 2>&1 || true; rm -rf '.escapeshellarg($workspacePath).' '.escapeshellarg($path),
+        'docker rm -f '.escapeshellarg($runtimeUnit).' '.escapeshellarg($workspaceRuntimeUnit).' >/dev/null 2>&1 || true; sudo systemctl stop '.escapeshellarg("{$runtimeUnit}.service").' >/dev/null 2>&1 || true; sudo systemctl disable '.escapeshellarg("{$runtimeUnit}.service").' >/dev/null 2>&1 || true; sudo rm -f '.escapeshellarg("/etc/systemd/system/{$runtimeUnit}.service").'; sudo systemctl daemon-reload >/dev/null 2>&1 || true; rm -rf '.escapeshellarg($workspacePath).' '.escapeshellarg($path),
         timeoutSeconds: 120,
         allowFailure: true,
     );

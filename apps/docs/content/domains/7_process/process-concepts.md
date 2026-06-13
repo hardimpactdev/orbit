@@ -35,21 +35,12 @@ These terms describe the runtime objects that Orbit derives from process definit
 - **Runtime unit:** Concrete runnable realization of a process definition in
   its selected node, app, or workspace context.
 - **Process runtime:** Backend that runs a process. Supported runtime families
-  are `supervisor`, `docker`, `docker-swarm`, and `systemd`. Supervisor is the
-  host long-running command runner for app/workspace commands where retained.
-  Docker is used for containerized processes such as databases, caches, and
-  FrankenPHP app or workspace web runtimes. Docker Swarm is valid only for
-  node-owned managed service processes created from process service
-  definitions.
-  Systemd is the Linux service runtime at the node level; `systemctl` is only the
-  command adapter used to control those units.
-- **Supervisor process runtime:** Runtime backend that runs a process unit as a
-  host Supervisor program with Supervisor logs and lifecycle controls.
-  App-scoped units run as the resolved app runtime user in the app source
-  directory. Workspace-scoped units run as the resolved workspace runtime user
-  in the workspace source directory. Orbit still performs Supervisor
-  control-plane actions through the operator SSH user with `sudo supervisorctl`;
-  that control user does not become the program runtime user.
+  are `systemd`, `docker`, and `docker-swarm`. Systemd is the Linux host-command
+  process runtime for node-, app-, and workspace-scoped commands. Docker is used
+  for containerized processes such as databases, caches, and FrankenPHP app or
+  workspace web runtimes. Docker Swarm is valid only for node-owned managed
+  service processes created from process service definitions. Future macOS host
+  command support should add `launchd` as the platform runtime.
 - **Docker process runtime:** Runtime backend that runs a process as an
   Orbit-managed Docker container. It is used for containerized database, cache,
   agent, app, and workspace runtime units.
@@ -58,26 +49,27 @@ These terms describe the runtime objects that Orbit derives from process definit
   admitted for process-defined MySQL and Redis service processes.
   App/workspace Swarm runtime remains deferred and is rejected before runtime
   side effects.
-- **Systemd process runtime:** Runtime backend for node-level Linux services
-  such as OpenCode Server or PolyScope Server. The process row owns
-  start/stop/restart/log lifecycle; any related tool row supplies only the
-  installed capability.
+- **Systemd process runtime:** Runtime backend for Linux host command units,
+  including node-level services such as OpenCode Server or PolyScope Server and
+  app/workspace command processes. The process row owns start/stop/restart/log
+  lifecycle; any related tool row supplies only the installed capability.
 - **Runtime unit expansion:** One process definition renders one or more
   runtime units as required by its scope. Node-level and workspace-scoped
   process definitions normally render one unit. App-scoped inherited process
   definitions may render one main-app unit plus one unit for each workspace.
 - **Runtime unit filename:** Backend-safe identity for a rendered runtime unit.
-  Supervisor units use `orbit_<scope>_<process>` segment names; Docker units use
-  equivalent Orbit-owned container names. The `orbit_` prefix marks Orbit
-  ownership, and underscores are reserved as backend segment delimiters.
+  Systemd units use `orbit_<scope>_<process>` segment names for app/workspace
+  command processes; Docker units use equivalent Orbit-owned container names.
+  The `orbit_` prefix marks Orbit ownership, and underscores are reserved as
+  backend segment delimiters.
 - **Runtime unit environment:** Predictable runtime environment exposed to
   derived runtime units, including `PATH`, `HOME`, `APP_URL`, `VITE_APP_URL`,
   and TLS path variables that Orbit manages. Separate from workspace lifecycle
   step environment.
 - **Runtime backend artifact:** Backend-specific rendering of a runtime unit.
-  Supervisor runtime units are host Supervisor programs. Docker runtime units
-  are container definitions. The artifact starts the process command or image in
-  the resolved node, app, or workspace context.
+  Systemd runtime units are host service files. Docker runtime units are
+  container definitions. The artifact starts the process command or image in the
+  resolved node, app, or workspace context.
 
 ## Policy
 
@@ -90,11 +82,9 @@ These terms define per-process behavioral rules that apply to every derived runt
   delivery. When the policy is enabled, `crashed` events resolve the effective
   agent IDE and notify the active session when one is available.
 - **Process runtime selection:** Process-definition field that records which
-  backend renders the runtime units. Existing process command compatibility may
-  default app and workspace command processes to `supervisor` until the runtime
-  migration is complete; the product model admits `supervisor`, `docker`,
-  `docker-swarm`, and `systemd` process runtimes with the owner-scope
-  restrictions documented above.
+  backend renders the runtime units. App and workspace host-command processes
+  default to `systemd` on Linux. Existing `supervisor` rows are migrated to
+  `systemd`; `supervisor` is not a supported runtime.
 
 ## Events
 

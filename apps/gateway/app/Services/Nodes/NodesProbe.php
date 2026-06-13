@@ -420,7 +420,7 @@ final readonly class NodesProbe
             }
         }
 
-        foreach (['caddy', 'supervisor'] as $tool) {
+        foreach (['caddy'] as $tool) {
             if (! NodeTool::query()->where('node_id', $node->id)->where('name', $tool)->exists()) {
                 $drift[] = new DriftEntry(
                     family: $this->key(),

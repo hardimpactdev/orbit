@@ -6,7 +6,7 @@ allowed-tools: Bash(orbit *)
 
 # Orbit CLI
 
-Orbit is a sovereign Laravel environment. The **gateway** is the control plane and owns all durable state. **App nodes** (Ubuntu) run apps, PHP-FPM, Caddy, Supervisor, and Docker services. **Operator nodes** (macOS or Ubuntu) just run the CLI and call the gateway over WireGuard.
+Orbit is a sovereign Laravel environment. The **gateway** is the control plane and owns all durable state. **App nodes** (Ubuntu) run apps, PHP-FPM, Caddy, systemd process units, and Docker services. **Operator nodes** (macOS or Ubuntu) just run the CLI and call the gateway over WireGuard.
 
 The CLI is the product contract. Every command works the same way regardless of which node it runs on — operator nodes and app nodes call the gateway typed API; the gateway uses `RemoteShell` (SSH) to enact changes on app nodes.
 
@@ -87,7 +87,7 @@ Commands are grouped by family. Each reference file lists every command in that 
 
 | Command | What it does |
 |---|---|
-| `orbit process:add [name] [cmd]` | Add a process definition for an app (Supervisor-backed) |
+| `orbit process:add [name] [cmd]` | Add a process definition for an app (systemd-backed on Linux) |
 | `orbit process:edit [name]` | Edit a process definition |
 | `orbit process:remove [name]` | Remove a process definition |
 | `orbit process:list` | List configured processes |
@@ -107,7 +107,7 @@ Commands are grouped by family. Each reference file lists every command in that 
 
 ### Tools and services — [`references/tool.md`](references/tool.md)
 
-Generic surface for installable tools (postgres, mysql, redis, mailpit, reverb, php, opencode-server, polyscope-server) and observational baseline tools (caddy, supervisor, docker, viteplus, php-cli, gh, composer, dns).
+Generic surface for installable tools (postgres, mysql, redis, mailpit, reverb, php, opencode-server, polyscope-server) and observational baseline tools (caddy, docker, viteplus, php-cli, gh, composer, dns).
 
 | Command | What it does |
 |---|---|

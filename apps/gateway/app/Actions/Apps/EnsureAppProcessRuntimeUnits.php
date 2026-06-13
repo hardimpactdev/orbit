@@ -5,21 +5,16 @@ declare(strict_types=1);
 namespace App\Actions\Apps;
 
 use App\Contracts\SiteCertificateInstaller;
-use App\Enums\Processes\ProcessRuntime;
 use App\Models\App;
 use App\Models\Process;
 use App\Models\Workspace;
 use App\Services\Processes\ProcessRuntimeDriverRegistry;
-use App\Services\Processes\SupervisorProgramRenderer;
-use App\Services\RuntimeBackend\RuntimeBackendProbe;
 use RuntimeException;
 use Throwable;
 
 final readonly class EnsureAppProcessRuntimeUnits
 {
     public function __construct(
-        private SupervisorProgramRenderer $renderer,
-        private RuntimeBackendProbe $runtimeBackendProbe,
         private SiteCertificateInstaller $siteCertificateInstaller,
         private ProcessRuntimeDriverRegistry $runtimeDrivers,
     ) {}
@@ -40,19 +35,6 @@ final readonly class EnsureAppProcessRuntimeUnits
         }
 
         $this->validateProcessRuntimes($app);
-
-        if ($this->anyProcessNeedsSupervisor($app)) {
-            $probe = $this->runtimeBackendProbe->check($app->node);
-
-            if (! $probe->available) {
-                return [[
-                    'code' => 'process.runtime_backend_unavailable',
-                    'family' => 'process',
-                    'message' => "Supervisor is not available on '{$app->node->name}'. Run doctor to converge process runtime units.",
-                    'next_command' => 'doctor --family=process --restore',
-                ]];
-            }
-        }
 
         $warnings = [];
 
@@ -91,12 +73,8 @@ final readonly class EnsureAppProcessRuntimeUnits
     {
         $driver = $this->runtimeDrivers->forProcess($process);
         $unitName = $driver->runtimeUnitName($app, $process, $workspace);
-        $staleRuntime = $this->staleRuntime($process);
-        $cleanupScript = $staleRuntime instanceof ProcessRuntime
-            ? $this->runtimeDrivers->for($staleRuntime)->cleanupScript($unitName)
-            : null;
 
-        if (! $driver->apply($app->node, $app, $process, $workspace, $cleanupScript)) {
+        if (! $driver->apply($app->node, $app, $process, $workspace)) {
             return [[
                 'code' => 'process.runtime_unit_missing',
                 'family' => 'process',
@@ -121,23 +99,6 @@ final readonly class EnsureAppProcessRuntimeUnits
         $app->processes->each(fn (Process $process): mixed => $this->runtimeDrivers->forProcess($process));
     }
 
-    private function anyProcessNeedsSupervisor(App $app): bool
-    {
-        return $app->processes->contains(
-            fn (Process $process): bool => $process->getRawOriginal('runtime') === ProcessRuntime::Supervisor->value,
-        );
-    }
-
-    private function staleRuntime(Process $process): ?ProcessRuntime
-    {
-        return match ($process->runtime) {
-            ProcessRuntime::Docker => ProcessRuntime::Supervisor,
-            ProcessRuntime::Supervisor => ProcessRuntime::Docker,
-            ProcessRuntime::DockerSwarm,
-            ProcessRuntime::Systemd => null,
-        };
-    }
-
     /**
      * @return array<string, string>|null
      */
@@ -147,7 +108,7 @@ final readonly class EnsureAppProcessRuntimeUnits
             throw new RuntimeException("App '{$app->name}' has no owning node.");
         }
 
-        $host = $this->renderer->host($app, $workspace);
+        $host = $this->host($app, $workspace);
 
         try {
             $this->siteCertificateInstaller->ensureFor($app->node, $host);
@@ -161,6 +122,18 @@ final readonly class EnsureAppProcessRuntimeUnits
                 'next_command' => 'doctor --family=process --restore',
             ];
         }
+    }
+
+    private function host(App $app, ?Workspace $workspace): string
+    {
+        $url = $workspace instanceof Workspace ? $workspace->url() : $app->url();
+        $host = parse_url($url, PHP_URL_HOST);
+
+        if (is_string($host) && $host !== '') {
+            return $host;
+        }
+
+        return preg_replace('#^https?://#', '', $url) ?: $app->name;
     }
 
     /**

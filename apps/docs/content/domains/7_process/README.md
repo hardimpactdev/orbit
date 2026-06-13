@@ -39,12 +39,11 @@ These rules describe how runtime units are derived from process definitions.
   runtime unit. App-scoped inherited process definitions may render one runtime
   unit for the main app instance and one runtime unit for each workspace of
   that app.
-- Each rendered runtime unit is applied by its selected process runtime backend,
-  such as `supervisor` for retained host commands, `docker` for containerized
-  processes, `docker-swarm` for node-owned managed service processes, or
-  `systemd` for node-level Linux services.
-- Public app/workspace host-command process definitions use the `supervisor`
-  runtime. App/workspace `docker` rows are reserved for Orbit-managed runtime
+- Each rendered runtime unit is applied by its selected process runtime backend:
+  `systemd` for Linux host commands, `docker` for containerized processes, or
+  `docker-swarm` for node-owned managed service processes.
+- Public app/workspace host-command process definitions use the `systemd`
+  runtime on Linux. App/workspace `docker` rows are reserved for Orbit-managed runtime
   processes such as generated FrankenPHP web-runtime units, not arbitrary
   public host commands.
 - The process definition supplies shared fields such as command, restart policy,
@@ -55,7 +54,7 @@ These rules describe how runtime units are derived from process definitions.
   `orbit_<scope>_<process>`.
 - The `orbit_` prefix marks Orbit ownership, and underscores are reserved as
   backend segment delimiters.
-- Supervisor program names, Docker container names, and Swarm service names
+- Systemd unit names, Docker container names, and Swarm service names
   derive from the same product identity.
 
 ### Restart policy
@@ -165,7 +164,7 @@ branch on the node-role column locally.
   presets.
 
 Every process command is a request to the gateway typed API. The CLI never
-writes process configuration, reads Docker or Supervisor logs directly, or
+writes process configuration, reads Docker or systemd logs directly, or
 operates a runtime backend directly.
 
 ## Runtime Unit Environment

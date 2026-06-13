@@ -58,10 +58,10 @@ The sections below walk through each layer of the stack in the same order as the
 | Gateway to node | SSH through `RemoteShell`, classified by execution lane |
 | Proxy | Dockerized Caddy in one `orbit-caddy` container per node |
 | PHP runtime | FrankenPHP app/workspace containers |
-| Host init | Docker daemon plus Docker Swarm for gateway services and Docker-backed runtime units; Supervisor for host command process programs |
-| Process manager | Process runtime backends: Supervisor for retained host command processes, Docker for containerized process units, systemd for node-level Linux service processes, Docker Swarm for selected production artifacts |
+| Host init | Docker daemon plus Docker Swarm for gateway services and Docker-backed runtime units; systemd for Linux host command process units |
+| Process manager | Process runtime backends: systemd for Linux host command process units, Docker for containerized process units, Docker Swarm for selected node-owned service processes |
 | Scheduler | One-replica `orbit-scheduler` Swarm service using the Orbit gateway image |
-| Process logs | Runtime-backend log capture for process units; Supervisor stdout/stderr for host command processes and Docker logs for containerized processes |
+| Process logs | Runtime-backend log capture for process units; journald for systemd-backed host command processes and Docker logs for containerized processes |
 | Service containers | Docker for Orbit runtime containers and backing services |
 | Node provisioning and host prerequisites | Provisioning creates or adopts WireGuard/SSH identity, node-local Orbit config, service-address routing, and the node-local Orbit CLI entry point for every managed Ubuntu node. Those are topology infrastructure, not app, process, tool, or database runtime prerequisites. Production gateway-only nodes additionally require Docker Engine/CLI, Docker Swarm, gateway config root, and the native Orbit CLI binary. `app-dev` and `app-prod` nodes additionally require host PHP and Composer for app-source workflows; the Laravel installer is required on `app-dev` only. Git and `gh` are required where cloning/deployment needs repository access, not for no-source gateway-only production. Source-dev topologies may bind-mount or copy the worktree and point `/usr/local/bin/orbit` at `<source>/apps/cli/orbit`; artifact-prod topologies use built CLI binaries and production images. |
 | Production HTTP ingress | `orbit-caddy` on `ingress` nodes terminating public HTTPS and forwarding to `router` over WireGuard |
@@ -121,7 +121,7 @@ See [Architecture: State Model](architecture.md#state-model) and [Architecture: 
 - Process lifecycle events are stored as durable history, not as a separate process-state table.
 - Agent IDE defaults are gateway configuration owned by nodes and apps — not a separate state family.
 - Renderers turn gateway-tracked configuration into the artifacts a node should hold. They must take target-specific inputs from gateway data or explicit probe results, never from gateway-local host state, when rendering for another node.
-- Implementation-specific names (`orbit-caddy` sites, UFW rules, Docker container names, explicit Supervisor programs, package installs) live in renderer, probe, and migration code. They are not product-level Orbit concepts.
+- Implementation-specific names (`orbit-caddy` sites, UFW rules, Docker container names, systemd unit names, package installs) live in renderer, probe, and migration code. They are not product-level Orbit concepts.
 
 ## Infrastructure
 
@@ -262,14 +262,14 @@ Release-aware deployments may switch the source path the container bind mounts,
 but the mount boundary stays inside the app source or active release plus
 explicitly managed shared paths. The container is represented as the
 process-owned long-running HTTP runtime unit with Docker runtime; configured
-host command processes remain Supervisor-backed under the process family. A
+host command processes are systemd-backed on Linux under the process family. A
 fully baked app-runtime Docker Swarm service remains a deferred phase.
 
 ### WebSocket runtime
 
 The `websocket` role runs Laravel Reverb for fleet realtime traffic. Reverb
 runs in the dedicated `orbit-reverb` Docker runtime container managed by Orbit
-on the node that carries the websocket role; it is not a host Supervisor program
+on the node that carries the websocket role; it is not a host systemd command process
 and does not use the gateway or FrankenPHP runtime images. The Reverb runtime
 application lives at `apps/reverb/` and is packaged as the
 `hardimpact/orbit-reverb` image, where Composer dependencies are installed at
@@ -329,7 +329,7 @@ RustFS, or HA guarantees.
 Focused S3 E2E coverage is pending the S3 role runtime. When that role lands,
 coverage must use the prepared Docker/Incus topology lane, keep RustFS on the
 role runtime container substrate, and must not add role-local Docker Compose,
-host Caddy, host PHP, PHP-FPM, or host Supervisor to make object-storage
+host Caddy, host PHP, PHP-FPM, or Supervisor to make object-storage
 assertions pass. S3 E2E starts in the dedicated `apps/e2e` runner, not in the
 gateway test harness, and drives object storage through external CLI/API
 boundaries rather than gateway service or model instantiation. See
@@ -340,26 +340,22 @@ boundaries rather than gateway service or model instantiation. See
 Processes are the Orbit lifecycle-managed long-running units. Each process
 runtime unit uses its owning node/app/workspace context, selected runtime
 backend, restart policy, and Orbit-managed environment or container
-configuration. The supported runtime backends are Supervisor for retained host
-command processes, Docker for containerized process units, and systemd for
-node-level Linux service processes; Docker Swarm is used for selected
-production artifacts and remains the planned general production process runtime
-family.
+configuration. The supported runtime backends are systemd for Linux host command
+process units, Docker for containerized process units, and Docker Swarm for
+selected node-owned service processes.
 
-Supervisor-backed units render as host Supervisor programs and surface
-stdout/stderr through `process:logs`. Docker-backed units render as
-Orbit-managed containers and surface Docker log streams through the process
-family. Systemd-backed units render as host systemd services and surface
-journald streams through the process family. Tools may supply the node-level
-capability a process depends on, but start, stop, restart, and logs belong to
-the process record.
+Systemd-backed units render as host systemd services and surface journald
+streams through the process family. Docker-backed units render as Orbit-managed
+containers and surface Docker log streams through the process family. Tools may
+supply the node-level capability a process depends on, but start, stop,
+restart, and logs belong to the process record.
 
 Swarm is a per-artifact production backend, not a node-wide execution mode.
 Gateway API and scheduler lifecycles are Swarm services (`orbit-gateway` and
 `orbit-scheduler`). Other artifacts choose their own backend by product
 contract: `orbit-caddy`, app/workspace web runtimes, role services, and
 Docker-backed process units are Docker-managed containers or services;
-configured host command processes are Supervisor programs.
+configured Linux host command processes are systemd services.
 
 ### Scheduler
 
@@ -389,8 +385,8 @@ Each tick:
 The tick interval is an implementation detail. It may be tightened (for example to evaluate every ten seconds) without changing the schedule expression contract, which remains minute-resolution. Sub-minute work is not a schedule — it belongs in a process runtime unit.
 
 Periodic execution comes from the daemon's internal sleep loop. Docker Swarm
-keeps the `orbit-scheduler` service alive; Supervisor is not the scheduler's
-steady-state runtime.
+keeps the `orbit-scheduler` service alive; systemd host command processes are
+not the scheduler's steady-state runtime.
 
 The daemon's per-tick logic is shared with the `orbit schedule:run` command. The daemon is the steady-state path; `schedule:run` is the on-demand path used for testing, troubleshooting, and recovery.
 

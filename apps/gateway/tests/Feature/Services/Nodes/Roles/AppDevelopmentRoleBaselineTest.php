@@ -120,7 +120,7 @@ describe('AppDevelopmentRoleBaseline host toolchain', function (): void {
             ->and($tool->expected_state)->toBe('installed');
     });
 
-    it('converges supervisor with expected_state running', function (): void {
+    it('does not converge supervisor as a supported tool', function (): void {
         $node = appDevBaselineNode();
         $assignment = appDevBaselineAssignment($node);
 
@@ -135,8 +135,7 @@ describe('AppDevelopmentRoleBaseline host toolchain', function (): void {
             ->where('name', 'supervisor')
             ->first();
 
-        expect($tool)->not->toBeNull()
-            ->and($tool->expected_state)->toBe('installed');
+        expect($tool)->toBeNull();
     });
 
     it('does not converge the legacy php runtime tool row', function (): void {
@@ -165,10 +164,10 @@ describe('AppDevelopmentRoleBaseline host toolchain', function (): void {
 
         $baseline->converge($node, $assignment);
 
-        expect(NodeTool::query()->where('node_id', $node->id)->whereIn('name', ['php-cli', 'composer', 'laravel-installer', 'gh', 'supervisor'])->count())->toBe(5);
+        expect(NodeTool::query()->where('node_id', $node->id)->whereIn('name', ['php-cli', 'composer', 'laravel-installer', 'gh'])->count())->toBe(4);
 
         $baseline->remove($node, $assignment, purgeData: false);
 
-        expect(NodeTool::query()->where('node_id', $node->id)->whereIn('name', ['php-cli', 'composer', 'laravel-installer', 'gh', 'supervisor'])->count())->toBe(0);
+        expect(NodeTool::query()->where('node_id', $node->id)->whereIn('name', ['php-cli', 'composer', 'laravel-installer', 'gh'])->count())->toBe(0);
     });
 });

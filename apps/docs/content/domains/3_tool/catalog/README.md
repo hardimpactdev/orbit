@@ -73,9 +73,8 @@ create them from scratch unless the tool file says otherwise.
 The `php` runtime images and `caddy` proxy run in Orbit-managed containers. The
 host PHP toolchain — `php-cli`, `composer`, and `laravel-installer` — installs
 on `app-dev`/`app-prod` nodes (the Laravel installer on `app-dev` only).
-Supervisor is the host process manager for configured app/workspace
-process programs; whether it is installed as a baseline prerequisite or on demand remains owned
-by node/tool provisioning contracts.
+Linux host command process units use the process family's `systemd` runtime;
+there is no Supervisor tool or runtime fallback.
 
 Role baseline tools are not in the fleet-wide table above. They are
 materialized by their owning role and only required on nodes carrying that role:

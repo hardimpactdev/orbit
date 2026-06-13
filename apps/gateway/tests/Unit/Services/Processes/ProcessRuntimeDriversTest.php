@@ -12,78 +12,11 @@ use App\Models\Node;
 use App\Models\Process;
 use App\Services\Processes\ProcessRuntimeDrivers\DockerProcessRuntimeDriver;
 use App\Services\Processes\ProcessRuntimeDrivers\DockerSwarmProcessRuntimeDriver;
-use App\Services\Processes\ProcessRuntimeDrivers\SupervisorProcessRuntimeDriver;
 use App\Services\Processes\ProcessRuntimeDrivers\SystemdProcessRuntimeDriver;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
 uses(TestCase::class, RefreshDatabase::class);
-
-it('runs supervisor process lifecycle through the supervisor runtime driver', function (): void {
-    $shell = new ProcessRuntimeDriverRecordingShell([
-        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
-        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
-        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
-    ]);
-    app()->instance(RemoteShell::class, $shell);
-
-    $node = Node::factory()->create(['name' => 'app-dev-1']);
-    $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id, 'path' => '/srv/docs']);
-    $process = Process::factory()->forOwner($app)->create([
-        'name' => 'queue',
-        'command' => 'php artisan queue:work',
-        'runtime' => ProcessRuntime::Supervisor,
-    ]);
-
-    $driver = app(SupervisorProcessRuntimeDriver::class);
-    $runtimeUnit = $driver->runtimeUnitName($app, $process);
-
-    expect($runtimeUnit)->toBe('orbit_docs_main_queue')
-        ->and($driver->start($node, $runtimeUnit))->toBeTrue()
-        ->and($driver->stop($node, $runtimeUnit))->toBeTrue()
-        ->and($driver->restart($node, $runtimeUnit))->toBeTrue()
-        ->and($driver->logScript($app, $process, null, $runtimeUnit, 25, false))
-        ->toBe("sudo tail -n 25 '/home/orbit/.config/orbit/logs/orbit_docs_main_queue.log'")
-        ->and($driver->logScript($app, $process, null, $runtimeUnit, 25, true))
-        ->toBe("sudo tail -n 25 -F '/home/orbit/.config/orbit/logs/orbit_docs_main_queue.log'");
-
-    expect($shell->scripts)->toBe([
-        "sudo supervisorctl start 'orbit_docs_main_queue'",
-        "sudo supervisorctl stop 'orbit_docs_main_queue'",
-        "sudo supervisorctl restart 'orbit_docs_main_queue'",
-    ]);
-});
-
-it('applies, removes, and cleans up supervisor process runtime units through the supervisor runtime driver', function (): void {
-    $shell = new ProcessRuntimeDriverRecordingShell([
-        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
-        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
-    ]);
-    app()->instance(RemoteShell::class, $shell);
-
-    $node = Node::factory()->create(['name' => 'app-dev-1']);
-    $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id, 'path' => '/srv/docs']);
-    $process = Process::factory()->forOwner($app)->create([
-        'name' => 'queue',
-        'command' => 'php artisan queue:work',
-        'runtime' => ProcessRuntime::Supervisor,
-    ]);
-
-    $driver = app(SupervisorProcessRuntimeDriver::class);
-    $runtimeUnit = $driver->runtimeUnitName($app, $process);
-
-    expect($driver->cleanupScript($runtimeUnit))
-        ->toBe("sudo rm -f /etc/supervisor/conf.d/orbit_docs_main_queue.conf 2>/dev/null; sudo supervisorctl reread 2>/dev/null; sudo supervisorctl remove 'orbit_docs_main_queue' 2>/dev/null; true")
-        ->and($driver->apply($node, $app, $process))->toBeTrue()
-        ->and($driver->remove($node, $runtimeUnit))->toBeTrue();
-
-    expect($shell->scripts[0])
-        ->toContain('/etc/supervisor/conf.d/orbit_docs_main_queue.conf')
-        ->toContain('sudo supervisorctl update')
-        ->and($shell->scripts[1])
-        ->toContain("sudo supervisorctl stop 'orbit_docs_main_queue'")
-        ->toContain("sudo supervisorctl remove 'orbit_docs_main_queue'");
-});
 
 it('runs docker process lifecycle through the docker runtime driver', function (): void {
     $shell = new ProcessRuntimeDriverRecordingShell([

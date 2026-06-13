@@ -61,8 +61,7 @@ final readonly class SystemdUnitRenderer
             'Type=simple',
             "User={$user}",
             'WorkingDirectory='.$this->workingDirectory($node, $app, $process, $workspace, $home),
-            "Environment=\"PATH={$home}/.local/bin:{$home}/.bun/bin:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/bin:/bin\"",
-            "Environment=\"HOME={$home}\"",
+            ...$this->environmentLines($app, $workspace, $home),
             'ExecStart=/bin/bash -lc '.escapeshellarg($process->command),
             'Restart='.$process->restart_policy->toSystemd(),
             'RestartSec=2',
@@ -104,6 +103,47 @@ SH,
         }
 
         return $app->path;
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function environmentLines(App $app, ?Workspace $workspace, string $home): array
+    {
+        $url = $workspace instanceof Workspace ? $workspace->url() : $app->url();
+        $host = $this->host($app, $workspace);
+        $tlsBase = "{$home}/.config/orbit/certs/{$host}";
+        $environment = [
+            'PATH' => "{$home}/.local/bin:{$home}/.bun/bin:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/bin:/bin",
+            'HOME' => $home,
+            'APP_URL' => $url,
+            'VITE_APP_URL' => $url,
+            'VITE_VALET_HOST' => $host,
+            'VITE_DEV_SERVER_KEY' => "{$tlsBase}.key",
+            'VITE_DEV_SERVER_CERT' => "{$tlsBase}.crt",
+        ];
+
+        return collect($environment)
+            ->map(fn (string $value, string $key): string => 'Environment="'.$key.'='.$this->escapeEnvironmentValue($value).'"')
+            ->values()
+            ->all();
+    }
+
+    private function host(App $app, ?Workspace $workspace): string
+    {
+        $url = $workspace instanceof Workspace ? $workspace->url() : $app->url();
+        $host = parse_url($url, PHP_URL_HOST);
+
+        if (is_string($host) && $host !== '') {
+            return $host;
+        }
+
+        return preg_replace('#^https?://#', '', $url) ?: $app->name;
+    }
+
+    private function escapeEnvironmentValue(string $value): string
+    {
+        return str_replace(['\\', '"'], ['\\\\', '\"'], $value);
     }
 
     private function assertIdentitySlug(string $value): string

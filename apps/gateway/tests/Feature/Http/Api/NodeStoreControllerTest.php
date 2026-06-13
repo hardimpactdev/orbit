@@ -364,7 +364,6 @@ describe('NodeStoreController', function (): void {
                 'gh',
                 'laravel-installer',
                 'php-cli',
-                'supervisor',
             ]);
 
         expect($shell->toolNodeStatuses)->toHaveCount(1)
@@ -529,7 +528,7 @@ describe('NodeStoreController', function (): void {
                 'registry_public_key' => null,
                 'interface_public_key' => 'app-public-key',
             ], JSON_THROW_ON_ERROR), stderr: '', durationMs: 1),
-            new RemoteShellResult(exitCode: 0, stdout: 'supervisor OK', stderr: '', durationMs: 1),
+            new RemoteShellResult(exitCode: 0, stdout: 'systemd OK', stderr: '', durationMs: 1),
         ]));
 
         Process::fake([

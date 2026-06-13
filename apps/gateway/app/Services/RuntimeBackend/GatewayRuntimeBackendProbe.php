@@ -17,9 +17,8 @@ use App\Services\Runtime\OrbitContainerNames;
  * Gateway-only runtime backend probe.
  *
  * Inspects the gateway `orbit-gateway` container state over SSH. This probe
- * is scoped to gateway nodes only; app-host nodes continue to use the legacy
- * {@see RuntimeBackendProbe} (supervisorctl-based) until a matching app-host
- * baseline + role-aware probe rewiring lands in a later todo.
+ * is scoped to gateway nodes only; app-host nodes use {@see RuntimeBackendProbe}
+ * for the host process runtime.
  *
  * Mirrors the structured output pattern from {@see ProxyRouteProbe::introspectCaddyContainer}.
  */

@@ -16,8 +16,8 @@ The process family owns these facts:
   restart policy, crash-notification policy, optional tool dependency, runtime,
   runtime configuration, and service endpoint metadata;
 - derived runtime-unit identity for the main app instance and every workspace: `orbit_<app>_<workspace|main>_<process>`;
-- Supervisor process runtime units rendered from process, app, workspace, and
-  node configuration, including command, working directory, restart policy, and
+- systemd process runtime units rendered from process, app, workspace, and node
+  configuration, including command, working directory, restart policy, and
   runtime environment;
 - Docker containers and Docker Swarm services rendered from node-owned service
   process definitions, including service definition, version family, concrete
@@ -52,17 +52,18 @@ The owning app resolves to an active app record and the expected runtime context
 ### Process manager availability
 
 The owning node has the selected runtime backend available and responsive.
-Supervisor-backed process units require `supervisord` and its control socket.
+Systemd-backed process units require `systemctl` and journald access.
 Docker-backed service process units require Docker container inspection.
 Docker Swarm-backed service process units require Docker service inspection.
 When this layer fails, the probe stops and reports
 `process.runtime_backend_unavailable` instead of cascading to downstream
 checks.
 
-The probe reads `/etc/supervisor/conf.d/orbit_*.conf` files and compares their
-content hash, restart policy, and environment line against the rendered gateway
-spec. For Docker and Docker Swarm runtime units, the probe compares the
-Orbit-managed process spec hash on the concrete container or service labels.
+For systemd runtime units, the probe reads rendered Orbit-owned service files
+and compares their content hash, restart policy, and environment lines against
+the rendered gateway spec. For Docker and Docker Swarm runtime units, the probe
+compares the Orbit-managed process spec hash on the concrete container or
+service labels.
 
 ### Runtime-unit identity
 
@@ -81,9 +82,9 @@ to node provisioning/topology work.
 
 ### Runtime artifact presence
 
-Each expected runtime unit exists as the selected backend artifact: a
-Supervisor program, Docker container, or Docker Swarm service. Checked only
-when the selected runtime backend is reachable.
+Each expected runtime unit exists as the selected backend artifact: a systemd
+service, Docker container, or Docker Swarm service. Checked only when the
+selected runtime backend is reachable.
 
 ### Runtime artifact shape
 
@@ -127,7 +128,7 @@ Use `doctor --restore` to trigger the repair action listed for each code.
 
 | Code | `doctor --restore` behavior |
 | --- | --- |
-| `process.runtime_backend_unavailable` | No `doctor --restore` action. Process manager installation and recovery belong to `tool` family doctor and node operations. Process doctor reports the dependency and does not attempt to install Docker or Supervisor. |
+| `process.runtime_backend_unavailable` | No `doctor --restore` action. Process manager installation and recovery belong to node operations. Process doctor reports the dependency and does not attempt to install Docker or systemd. |
 | `process.wireguard_self_route_unavailable` | No `doctor --restore` action. WireGuard self-route mutation belongs to node provisioning/topology repair, not the process family. |
 | `process.runtime_unit_missing` | Re-render and reload the missing backend artifact from gateway app, workspace, and process configuration. |
 | `process.runtime_unit_extra` | Stop and remove the stale Orbit-owned backend artifact whose identity has no match in active gateway app, workspace, and process configuration. |
@@ -169,7 +170,7 @@ Required test files:
 | --- | --- |
 | `apps/gateway/tests/Feature/Doctor/ProcessesFamilyDoctorContractTest.php` | Processes-family contract for the global doctor command (see breakdown below). |
 | `apps/gateway/tests/Unit/Services/Processes/ProcessesProbeTest.php` | In-memory probe diff behavior for the processes family (see breakdown below). |
-| `apps/gateway/tests/E2E/Read/ProcessesDoctorTest.php` | Real read-only `doctor --family=process --json` on a topology with host Supervisor process runtime units. |
+| `apps/gateway/tests/E2E/Read/ProcessesDoctorTest.php` | Real read-only `doctor --family=process --json` on a topology with host systemd process runtime units. |
 | `apps/gateway/tests/E2E/Ephemeral/ProcessesDoctorFixTest.php` | Real `doctor --family=process --restore` repair of missing or divergent process runtime artifacts and lifecycle event notifier material. |
 
 `ProcessesFamilyDoctorContractTest` covers processes-family dispatch,

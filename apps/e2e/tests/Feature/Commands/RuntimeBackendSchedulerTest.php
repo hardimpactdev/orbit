@@ -17,19 +17,12 @@ it('verifies Docker runtime backend and scheduler liveness', function (): void {
             ),
             timeoutSeconds: 60,
         );
-        $legacySupervisorProgram = $topology->ssh(
-            'gateway',
-            'test ! -e /etc/supervisor/conf.d/orbit_scheduler.conf && echo absent',
-            timeoutSeconds: 60,
-        );
         $schedulerTick = e2eRunInRoleRuntime($topology, 'gateway', 'orbit orbit-scheduler --once', timeoutSeconds: 60);
 
         expect($inspection->successful())->toBeTrue()
             ->and($inspection->output())
             ->toContain('true')
             ->toContain('unless-stopped')
-            ->and($legacySupervisorProgram->successful())->toBeTrue()
-            ->and(trim($legacySupervisorProgram->output()))->toBe('absent')
             ->and($schedulerTick->successful())->toBeTrue()
             ->and($schedulerTick->output())->toContain('Orbit Scheduler tick completed');
     } finally {

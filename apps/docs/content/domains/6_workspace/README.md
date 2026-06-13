@@ -97,9 +97,9 @@ Workspace registry-only reads — `workspace:show`, `workspace:history`,
 `workspace:list`, and `workspace:log` for stored history — do not require a
 live process manager. `workspace:new`, `workspace:setup`, and
 `workspace:remove` require a live process manager on the owning node
-when they create, update, remove, or verify inherited runtime units.
-Supervisor is the current backend for host command processes; Docker is the
-backend for containerized workspace web runtimes.
+when they create, update, remove, or verify inherited runtime units. Systemd is
+the Linux backend for host command processes; Docker is the backend for
+containerized workspace web runtimes.
 
 ## Workspace JSON Entity
 

@@ -1,6 +1,6 @@
 # Schedule Commands
 
-Recurring tasks evaluated by the Orbit Scheduler daemon (one Supervisor program per gateway / app node). Minute-resolution. Spec: [`docs/domains/9_schedule/`](../../../docs/domains/9_schedule/).
+Recurring tasks evaluated by the Orbit Scheduler daemon. Minute-resolution. Spec: [`docs/domains/9_schedule/`](../../../docs/domains/9_schedule/).
 
 Schedule scopes:
 
