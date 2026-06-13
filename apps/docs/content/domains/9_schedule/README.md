@@ -72,7 +72,7 @@ gateway/schedule recovery explicitly.
 
 - Schedule reads use gateway configuration and durable run history by default.
 - Live scheduler reality belongs to `doctor --family=schedule`.
-- The schedule family does not adopt arbitrary observed processes as schedules. Adoption is reserved for explicitly selected runs reported by the Orbit Scheduler that match an existing or operator-supplied schedule shape.
+- The schedule family does not adopt observed artifacts as schedules. Schedules are gateway configuration with no observed-artifact-as-configuration path; create a schedule from an observed candidate with `schedule:add` directly.
 
 ### Permissions
 

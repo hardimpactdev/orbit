@@ -14,8 +14,11 @@ VPN-role runtime clients and the backend admin credential.
 
 [`doctor --family=node`](../1_node/node-doctor.md) owns Orbit node WireGuard
 identity, node peers managed by the gateway, WireGuard readiness for the `vpn`
-role, drift in DNS served by the `vpn` role, and stale node-peer drift. There is
-no `doctor --family=vpn` contract.
+role, the gateway-owned DNS mappings the `vpn` role serves, and stale node-peer
+drift. [`doctor --family=tool`](../3_tool/tool-doctor.md) owns drift in the
+`dns` tool row that backs the VPN-facing DNS runtime (the orbit-dns/dnsmasq
+substrate); `doctor --family=node --restore` re-applies the active `vpn` role
+baseline wholesale. There is no `doctor --family=vpn` contract.
 
 ## Domain Rules
 
