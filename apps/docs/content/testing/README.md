@@ -15,7 +15,7 @@ prepared-topology/provider support layer, the test suites driven externally, and
 the runner itself (`e2e:test` plus the `e2e:prepare-*`, `e2e:reap-*`,
 `e2e:preflight`, and `e2e:ensure-artifacts` commands). The root Composer E2E
 scripts run through `apps/e2e` (via `bin/orbit-e2e-artisan` and `apps/e2e`
-Pest); there is no E2E runner owned by the gateway. New S3/RustFS E2E coverage
+Pest); there is no E2E runner owned by the gateway. New S3/SeaweedFS E2E coverage
 is added under `apps/e2e`, never under `apps/gateway/tests/E2E`.
 
 A small set of unit tests in `apps/gateway/tests/Feature/E2ESupport` remain

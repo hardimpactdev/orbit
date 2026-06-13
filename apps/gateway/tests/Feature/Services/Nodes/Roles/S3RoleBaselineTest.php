@@ -67,36 +67,36 @@ it('dispatches the s3 role to S3RoleBaseline via NodeRoleBaselineConverger', fun
 });
 
 // ---------------------------------------------------------------------------
-// converge() — creates rustfs tool row and writes credentials
+// converge() — creates seaweedfs tool row and writes credentials
 // ---------------------------------------------------------------------------
 
-it('creates the rustfs NodeTool row on first converge', function (): void {
+it('creates the seaweedfs NodeTool row on first converge', function (): void {
     $node = s3BaselineNode();
     $assignment = s3BaselineAssignment($node);
 
     app(NodeRoleBaselineConverger::class)->converge($node, $assignment);
 
-    $rustfsTool = NodeTool::query()
+    $seaweedfsTool = NodeTool::query()
         ->where('node_id', $node->id)
-        ->where('name', 'rustfs')
+        ->where('name', 'seaweedfs')
         ->first();
 
-    expect($rustfsTool)->not->toBeNull()
-        ->and($rustfsTool->expected_state)->toBe('installed');
+    expect($seaweedfsTool)->not->toBeNull()
+        ->and($seaweedfsTool->expected_state)->toBe('installed');
 });
 
-it('writes credentials to the rustfs NodeTool row on first converge', function (): void {
+it('writes credentials to the seaweedfs NodeTool row on first converge', function (): void {
     $node = s3BaselineNode();
     $assignment = s3BaselineAssignment($node);
 
     app(NodeRoleBaselineConverger::class)->converge($node, $assignment);
 
-    $rustfsTool = NodeTool::query()
+    $seaweedfsTool = NodeTool::query()
         ->where('node_id', $node->id)
-        ->where('name', 'rustfs')
+        ->where('name', 'seaweedfs')
         ->firstOrFail();
 
-    $fields = $rustfsTool->credentials['fields'] ?? null;
+    $fields = $seaweedfsTool->credentials['fields'] ?? null;
 
     expect($fields)->toBeArray()
         ->and($fields['access_key_id'])->toBeString()->not->toBeEmpty()
@@ -111,27 +111,27 @@ it('renders the runtime container config and persists container metadata', funct
 
     app(NodeRoleBaselineConverger::class)->converge($node, $assignment);
 
-    $rustfsTool = NodeTool::query()
+    $seaweedfsTool = NodeTool::query()
         ->where('node_id', $node->id)
-        ->where('name', 'rustfs')
+        ->where('name', 'seaweedfs')
         ->firstOrFail();
 
-    expect($rustfsTool->config['container_name'])->toBe(S3RuntimeContainer::ContainerName)
-        ->and($rustfsTool->config['runtime'])->toBe('docker-container');
+    expect($seaweedfsTool->config['container_name'])->toBe(S3RuntimeContainer::ContainerName)
+        ->and($seaweedfsTool->config['runtime'])->toBe('docker-container');
 });
 
-it('preserves the role-owned data path in the rustfs tool config', function (): void {
+it('preserves the role-owned data path in the seaweedfs tool config', function (): void {
     $node = s3BaselineNode();
     $assignment = s3BaselineAssignment($node, settings: ['data_path' => '/mnt/fast-disk/s3']);
 
     app(NodeRoleBaselineConverger::class)->converge($node, $assignment);
 
-    $rustfsTool = NodeTool::query()
+    $seaweedfsTool = NodeTool::query()
         ->where('node_id', $node->id)
-        ->where('name', 'rustfs')
+        ->where('name', 'seaweedfs')
         ->firstOrFail();
 
-    expect($rustfsTool->config['data_path'])->toBe('/mnt/fast-disk/s3');
+    expect($seaweedfsTool->config['data_path'])->toBe('/mnt/fast-disk/s3');
 });
 
 // ---------------------------------------------------------------------------
@@ -149,7 +149,7 @@ it('does not rotate credentials on re-converge', function (): void {
 
     $afterFirst = NodeTool::query()
         ->where('node_id', $node->id)
-        ->where('name', 'rustfs')
+        ->where('name', 'seaweedfs')
         ->firstOrFail();
 
     $firstFields = $afterFirst->credentials['fields'];
@@ -159,7 +159,7 @@ it('does not rotate credentials on re-converge', function (): void {
 
     $afterSecond = NodeTool::query()
         ->where('node_id', $node->id)
-        ->where('name', 'rustfs')
+        ->where('name', 'seaweedfs')
         ->firstOrFail();
 
     $secondFields = $afterSecond->credentials['fields'];
@@ -169,17 +169,17 @@ it('does not rotate credentials on re-converge', function (): void {
 });
 
 // ---------------------------------------------------------------------------
-// remove() — deletes the rustfs tool row; does not touch data path
+// remove() — deletes the seaweedfs tool row; does not touch data path
 // ---------------------------------------------------------------------------
 
-it('removes the rustfs NodeTool row on remove', function (): void {
+it('removes the seaweedfs NodeTool row on remove', function (): void {
     $node = s3BaselineNode();
     $assignment = s3BaselineAssignment($node, NodeRoleStatus::Active);
 
-    // Seed a rustfs tool row to be deleted.
+    // Seed a seaweedfs tool row to be deleted.
     NodeTool::factory()->create([
         'node_id' => $node->id,
-        'name' => 'rustfs',
+        'name' => 'seaweedfs',
         'expected_state' => 'installed',
     ]);
 
@@ -187,7 +187,7 @@ it('removes the rustfs NodeTool row on remove', function (): void {
 
     $remaining = NodeTool::query()
         ->where('node_id', $node->id)
-        ->where('name', 'rustfs')
+        ->where('name', 'seaweedfs')
         ->first();
 
     expect($remaining)->toBeNull();
@@ -203,7 +203,7 @@ it('does not purge the host data path when purgeData is true (configurator bound
 
     NodeTool::factory()->create([
         'node_id' => $node->id,
-        'name' => 'rustfs',
+        'name' => 'seaweedfs',
         'expected_state' => 'installed',
     ]);
 
@@ -212,7 +212,7 @@ it('does not purge the host data path when purgeData is true (configurator bound
 
     $remaining = NodeTool::query()
         ->where('node_id', $node->id)
-        ->where('name', 'rustfs')
+        ->where('name', 'seaweedfs')
         ->first();
 
     expect($remaining)->toBeNull();

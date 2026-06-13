@@ -136,7 +136,7 @@ describe('S3Credentials CLI command', function (): void {
             ->and($decoded['success']['data']['credentials']['access_key_id'])->toBe('MYACCESSKEYID12345678')
             ->and($decoded['success']['data']['credentials']['secret_access_key'])->toBe('my-secret-access-key-value')
             ->and($decoded['success']['data']['credentials']['bucket_endpoint_style'])->toBe('path')
-            ->and($decoded['success']['meta']['tool'])->toBe('rustfs');
+            ->and($decoded['success']['meta']['tool'])->toBe('seaweedfs');
     });
 
     it('places secret_access_key after access_key_id in --json output', function (): void {
@@ -208,9 +208,9 @@ describe('S3Credentials CLI command', function (): void {
     // -----------------------------------------------------------------------
 
     it('maps s3.credentials_missing from the gateway in --json mode', function (): void {
-        fakeGateway(fakeErrorEnvelope('s3.credentials_missing', "RustFS service credentials are missing for 'storage-1'.", [
+        fakeGateway(fakeErrorEnvelope('s3.credentials_missing', "SeaweedFS service credentials are missing for 'storage-1'.", [
             'node' => 'storage-1',
-            'tool' => 'rustfs',
+            'tool' => 'seaweedfs',
             'next_command' => 'doctor --family=tool --restore --node=storage-1',
         ]), 422);
 
@@ -308,13 +308,13 @@ function fakeS3CredentialsSuccessEnvelope(string $node = 'storage-1', array $fie
         'access_key_id' => 'TESTACCESSKEYID12345',
         'secret_access_key' => 'test-secret-access-key-value',
         'bucket_endpoint_style' => 'path',
-        'backend_pool' => ["http://{$node}.s3.orbit:9000"],
+        'backend_pool' => ["http://{$node}.s3.orbit:8333"],
     ], $fieldOverrides);
 
     return [
         'success' => [
             'data' => ['credentials' => $credentials],
-            'meta' => ['tool' => 'rustfs'],
+            'meta' => ['tool' => 'seaweedfs'],
         ],
     ];
 }

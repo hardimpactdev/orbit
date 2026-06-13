@@ -59,7 +59,7 @@ These rules govern what the tool command family owns and what it may not touch.
   schema inspection, audited SQL execution, and backup/restore where
   applicable belong to the `database:*` family, not per-database command
   families. S3 publication and service credential workflows belong to the
-  `s3:*` family; generic RustFS lifecycle and inventory remain under `tool:*`.
+  `s3:*` family; generic SeaweedFS lifecycle and inventory remain under `tool:*`.
 
 ## Supported Tool Catalog
 
@@ -80,7 +80,7 @@ tool-specific contracts live in [`catalog/`](catalog/README.md).
 | [`php`](catalog/php.md) | PHP images | FrankenPHP Docker image capability | Selected by app/workspace runtime configuration | `runtime` | image inventory, update, fix, adopt |
 | [`mailpit`](catalog/mailpit.md) | Mailpit | Docker service | Installable and removable by Orbit | `development` | install, remove, update, credentials, service endpoint, fix, adopt; lifecycle and logs through `process:*` |
 | [`reverb`](catalog/reverb.md) | Reverb | Docker service | Compatibility tool; the `websocket` role is the current choice for fleet realtime | `communication` | install, remove, update, credentials, service endpoint, fix, adopt; lifecycle and logs through `process:*` |
-| [`rustfs`](catalog/rustfs.md) | RustFS | Docker runtime container | Role baseline tool for the `s3` role | `storage` | update, credentials, service endpoint, fix, adopt; lifecycle and logs through `process:*` |
+| [`seaweedfs`](catalog/seaweedfs.md) | SeaweedFS | Docker runtime container | Role baseline tool for the `s3` role | `storage` | update, credentials, service endpoint, fix, adopt; lifecycle and logs through `process:*` |
 | [`polyscope-server`](catalog/polyscope-server.md) | PolyScope Server | Node-owned `systemd` process with `tool=polyscope` | Installable and removable by Orbit | `development` | install, remove, reconfigure, update, fix, adopt; lifecycle and logs through `process:*` |
 | [`opencode-server`](catalog/opencode-server.md) | OpenCode Server | Node-owned `systemd` process with `tool=opencode` | Installable and removable by Orbit | `development` | install, remove, reconfigure, password reset, update, credentials, service endpoint, fix, adopt; lifecycle and logs through `process:*` |
 | [`openclaw`](catalog/openclaw.md) | OpenClaw | Docker-managed runtime as `agent` | Installable and removable by Orbit | `agent` | install, remove, update, credentials, service endpoint, fix, adopt; lifecycle and logs through `process:*` |
@@ -89,7 +89,7 @@ tool-specific contracts live in [`catalog/`](catalog/README.md).
 Required baseline tools are expected to exist as part of node provisioning or
 host bootstrap. `tool:install` does not create those tools from scratch unless
 a future tool definition explicitly changes their support model. Role baseline
-tools, such as `rustfs`, are materialized by their owning role and may only be
+tools, such as `seaweedfs`, are materialized by their owning role and may only be
 installed or reconverged through `tool:*` when the target node already has the
 required active role. Installable tools are provisioned by
 `tool:install`, removed by `tool:remove`, and verified by

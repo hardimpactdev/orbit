@@ -1561,7 +1561,7 @@ describe('DoctorReportRunner s3 role categories', function (): void {
             ->and($categories)->toContain('proxy');
     });
 
-    it('dispatches tool.rustfs.row_missing when an s3 node has no rustfs tool row', function (): void {
+    it('dispatches tool.seaweedfs.row_missing when an s3 node has no seaweedfs tool row', function (): void {
         $node = Node::factory()->create([
             'name' => 's3-disp-1',
             'status' => 'active',
@@ -1574,13 +1574,13 @@ describe('DoctorReportRunner s3 role categories', function (): void {
             'status' => 'active',
             'settings' => ['data_path' => '/srv/orbit/s3/data'],
         ]);
-        // No rustfs NodeTool row
+        // No seaweedfs NodeTool row
         app()->instance(RemoteShell::class, new DoctorReportRunnerRemoteShell([]));
 
         $report = app(DoctorReportRunner::class)->probe($node, families: ['tool']);
 
         $keys = collect($report['issues'])->pluck('key')->all();
-        expect($keys)->toContain('tool.rustfs.row_missing');
+        expect($keys)->toContain('tool.seaweedfs.row_missing');
     });
 
     it('dispatches node.s3.wireguard_missing when an s3 node has no wireguard address', function (): void {

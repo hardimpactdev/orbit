@@ -68,11 +68,11 @@ function s3UnpublishHumanRouterNode(): Node
 /**
  * @param  array<string, mixed>  $config
  */
-function s3UnpublishHumanRustfsTool(Node $storage, array $config = []): NodeTool
+function s3UnpublishHumanSeaweedfsTool(Node $storage, array $config = []): NodeTool
 {
     return NodeTool::factory()->create([
         'node_id' => $storage->id,
-        'name' => 'rustfs',
+        'name' => 'seaweedfs',
         'expected_state' => 'installed',
         'config' => array_merge([
             'backend_host' => 'storage-1.s3.orbit',
@@ -106,7 +106,7 @@ describe('S3UnpublishHumanRenderer progress tree', function (): void {
     it('emits the 6-step progress tree with the documented step labels', function (): void {
         s3UnpublishHumanCallerNode();
         $storage = s3UnpublishHumanStorageNode();
-        s3UnpublishHumanRustfsTool($storage);
+        s3UnpublishHumanSeaweedfsTool($storage);
         s3UnpublishHumanRouterNode();
 
         $content = s3UnpublishHumanStream($this, 's3.example.com', ['node' => 'storage-1']);
@@ -117,14 +117,14 @@ describe('S3UnpublishHumanRenderer progress tree', function (): void {
             ->and($content)->toContain('Resolve S3 node')
             ->and($content)->toContain('Check router')
             ->and($content)->toContain('Remove ingress host')
-            ->and($content)->toContain('Remove RustFS public host config')
+            ->and($content)->toContain('Remove SeaweedFS public host config')
             ->and($content)->toContain('Apply route cleanup');
     });
 
     it('emits step events for each progress phase', function (): void {
         s3UnpublishHumanCallerNode();
         $storage = s3UnpublishHumanStorageNode();
-        s3UnpublishHumanRustfsTool($storage);
+        s3UnpublishHumanSeaweedfsTool($storage);
         s3UnpublishHumanRouterNode();
 
         $content = s3UnpublishHumanStream($this, 's3.example.com', ['node' => 'storage-1']);
@@ -134,7 +134,7 @@ describe('S3UnpublishHumanRenderer progress tree', function (): void {
             ->and($content)->toContain('resolve_node')
             ->and($content)->toContain('check_router')
             ->and($content)->toContain('remove_ingress')
-            ->and($content)->toContain('remove_rustfs_config')
+            ->and($content)->toContain('remove_seaweedfs_config')
             ->and($content)->toContain('apply_cleanup');
     });
 });
@@ -147,7 +147,7 @@ describe('S3UnpublishHumanRenderer success summary', function (): void {
     it('emits a complete frame containing node, private endpoint, host, action, and already_absent', function (): void {
         s3UnpublishHumanCallerNode();
         $storage = s3UnpublishHumanStorageNode();
-        s3UnpublishHumanRustfsTool($storage);
+        s3UnpublishHumanSeaweedfsTool($storage);
         s3UnpublishHumanRouterNode();
 
         $content = s3UnpublishHumanStream($this, 's3.example.com', ['node' => 'storage-1']);
@@ -173,7 +173,7 @@ describe('S3UnpublishHumanRenderer absent output', function (): void {
     it('sets already_absent=true and action=unpublished when host was already absent', function (): void {
         s3UnpublishHumanCallerNode();
         $storage = s3UnpublishHumanStorageNode();
-        s3UnpublishHumanRustfsTool($storage, ['public_hosts' => []]);
+        s3UnpublishHumanSeaweedfsTool($storage, ['public_hosts' => []]);
         s3UnpublishHumanRouterNode();
 
         $content = s3UnpublishHumanStream($this, 's3.example.com', ['node' => 'storage-1']);
@@ -233,7 +233,7 @@ describe('S3UnpublishHumanRenderer prerequisite failure', function (): void {
     it('names the missing router prerequisite in the error frame', function (): void {
         s3UnpublishHumanCallerNode();
         $storage = s3UnpublishHumanStorageNode();
-        s3UnpublishHumanRustfsTool($storage);
+        s3UnpublishHumanSeaweedfsTool($storage);
         // No router.
 
         $response = $this->call('DELETE', '/api/s3/public-hosts/s3.example.com', [

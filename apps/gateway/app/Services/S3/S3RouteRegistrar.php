@@ -27,9 +27,9 @@ final readonly class S3RouteRegistrar
     /**
      * Register or update the router-owned private s3.orbit service route.
      *
-     * Resolves the active router node and all active rustfs tool rows to build
-     * the S3 backend pool. The pool stores concrete RustFS backend URLs in the
-     * form http://<node>.s3.orbit:9000 (WireGuard:9000).
+     * Resolves the active router node and all active seaweedfs tool rows to build
+     * the S3 backend pool. The pool stores concrete SeaweedFS backend URLs in the
+     * form http://<node>.s3.orbit:8333 (WireGuard:8333).
      */
     public function syncServiceRoute(): ProxyRoute
     {
@@ -62,8 +62,8 @@ final readonly class S3RouteRegistrar
     public function serviceRouteIntent(): ProxyRoute
     {
         $router = $this->routerNode();
-        $rustfsTools = $this->activeRustfsTools();
-        $config = $this->serviceRouteConfig($rustfsTools);
+        $seaweedfsTools = $this->activeSeaweedfsTools();
+        $config = $this->serviceRouteConfig($seaweedfsTools);
 
         $sourceHash = $this->proxyRouteRenderer->sourceHash(new ProxyRoute([
             'node_id' => $router->id,
@@ -87,13 +87,13 @@ final readonly class S3RouteRegistrar
 
     /**
      * Register or update ingress routes for all public hosts listed on the
-     * given rustfs tool row. Each public host gets a separate ingress route
+     * given seaweedfs tool row. Each public host gets a separate ingress route
      * on the ingress node that forwards to router, which relays S3 traffic to
      * the stable https://s3.orbit service endpoint.
      */
-    public function syncPublicHosts(NodeTool $rustfs): void
+    public function syncPublicHosts(NodeTool $seaweedfs): void
     {
-        $publicHosts = $this->readPublicHosts($rustfs);
+        $publicHosts = $this->readPublicHosts($seaweedfs);
 
         if ($publicHosts === []) {
             return;
@@ -103,13 +103,13 @@ final readonly class S3RouteRegistrar
         $router = $this->routerNode();
 
         foreach ($publicHosts as $host) {
-            $this->syncPublicHost($ingress, $router, $rustfs, $host);
+            $this->syncPublicHost($ingress, $router, $seaweedfs, $host);
         }
     }
 
     /**
      * Build the expected ingress ProxyRoute models for all public hosts listed
-     * on the given rustfs tool row, without persisting them.
+     * on the given seaweedfs tool row, without persisting them.
      *
      * Returns an unsaved ProxyRoute per host, carrying the canonical field
      * values (node_id, domain, owner_type, kind, config, source_hash,
@@ -118,9 +118,9 @@ final readonly class S3RouteRegistrar
      *
      * @return list<ProxyRoute>
      */
-    public function publicRouteIntents(NodeTool $rustfs): array
+    public function publicRouteIntents(NodeTool $seaweedfs): array
     {
-        $publicHosts = $this->readPublicHosts($rustfs);
+        $publicHosts = $this->readPublicHosts($seaweedfs);
 
         if ($publicHosts === []) {
             return [];
@@ -165,15 +165,15 @@ final readonly class S3RouteRegistrar
 
     /**
      * Remove the ingress route for a single public host when it is owned by
-     * the rustfs tool. Ownership is confirmed by owner_type, owner_name, and
+     * the seaweedfs tool. Ownership is confirmed by owner_type, owner_name, and
      * the protocol discriminator so unrelated tool routes are never removed.
      */
-    public function removePublicHost(NodeTool $rustfs, string $host): void
+    public function removePublicHost(NodeTool $seaweedfs, string $host): void
     {
         ProxyRoute::query()
             ->where('domain', $host)
             ->where('owner_type', 's3')
-            ->whereJsonContains('config->owner_name', 'rustfs')
+            ->whereJsonContains('config->owner_name', 'seaweedfs')
             ->whereJsonContains('config->protocol', 's3')
             ->delete();
     }
@@ -207,7 +207,7 @@ final readonly class S3RouteRegistrar
     /**
      * @return Collection<int, NodeTool>
      */
-    private function activeRustfsTools(): Collection
+    private function activeSeaweedfsTools(): Collection
     {
         $s3NodeIds = $this->nodeRoleAssignments->activeNodeIdsForRole(NodeRoleName::S3->value);
 
@@ -217,33 +217,33 @@ final readonly class S3RouteRegistrar
 
         /** @var Collection<int, NodeTool> */
         $tools = NodeTool::query()
-            ->where('name', 'rustfs')
+            ->where('name', 'seaweedfs')
             ->whereIn('node_id', $s3NodeIds)
             ->orderBy('id')
             ->get();
 
         if ($tools->isEmpty()) {
-            throw new RuntimeException('The S3 service route requires at least one active rustfs tool row.');
+            throw new RuntimeException('The S3 service route requires at least one active seaweedfs tool row.');
         }
 
         return $tools;
     }
 
     /**
-     * Build the service route config from the active rustfs tool rows.
+     * Build the service route config from the active seaweedfs tool rows.
      *
-     * The pool stores concrete RustFS backend URLs using the backend_host from
-     * the tool config (e.g. storage-1.s3.orbit) on WireGuard port 9000.
+     * The pool stores concrete SeaweedFS backend URLs using the backend_host from
+     * the tool config (e.g. storage-1.s3.orbit) on WireGuard port 8333.
      *
      * V1 supports one backend; the pool shape is stored so multi-backend
      * support can be added without a schema change.
      *
-     * @param  Collection<int, NodeTool>  $rustfsTools
+     * @param  Collection<int, NodeTool>  $seaweedfsTools
      * @return array<string, mixed>
      */
-    private function serviceRouteConfig(Collection $rustfsTools): array
+    private function serviceRouteConfig(Collection $seaweedfsTools): array
     {
-        $upstreams = $rustfsTools
+        $upstreams = $seaweedfsTools
             ->map(function (NodeTool $tool): array {
                 $backendHost = $this->backendHost($tool);
 
@@ -260,7 +260,7 @@ final readonly class S3RouteRegistrar
         $targetUrl = "{$firstUpstream['scheme']}://{$firstUpstream['host']}:{$firstUpstream['port']}";
 
         return [
-            'owner_name' => 'rustfs',
+            'owner_name' => 'seaweedfs',
             'protocol' => 's3',
             'target' => [
                 'type' => 'upstream',
@@ -276,13 +276,13 @@ final readonly class S3RouteRegistrar
         $backendHost = $config['backend_host'] ?? null;
 
         if (! is_string($backendHost) || $backendHost === '') {
-            throw new RuntimeException("The rustfs tool row (id={$tool->id}) is missing a backend_host in config.");
+            throw new RuntimeException("The seaweedfs tool row (id={$tool->id}) is missing a backend_host in config.");
         }
 
         return $backendHost;
     }
 
-    private function syncPublicHost(Node $ingress, Node $router, NodeTool $rustfs, string $host): void
+    private function syncPublicHost(Node $ingress, Node $router, NodeTool $seaweedfs, string $host): void
     {
         $intent = $this->publicRouteIntent($ingress, $router, $host);
 
@@ -320,7 +320,7 @@ final readonly class S3RouteRegistrar
 
         return [
             'placement' => 'ingress',
-            'owner_name' => 'rustfs',
+            'owner_name' => 'seaweedfs',
             'protocol' => 's3',
             'target' => [
                 'type' => 'upstream',
@@ -341,9 +341,9 @@ final readonly class S3RouteRegistrar
     /**
      * @return list<string>
      */
-    private function readPublicHosts(NodeTool $rustfs): array
+    private function readPublicHosts(NodeTool $seaweedfs): array
     {
-        $config = is_array($rustfs->config) ? $rustfs->config : [];
+        $config = is_array($seaweedfs->config) ? $seaweedfs->config : [];
         $hosts = $config['public_hosts'] ?? [];
 
         if (! is_array($hosts)) {

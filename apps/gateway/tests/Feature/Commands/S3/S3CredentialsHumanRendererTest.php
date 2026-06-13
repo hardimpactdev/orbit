@@ -69,11 +69,11 @@ function s3CredHumanRouterNode(): Node
  * @param  array<string, mixed>  $credentials
  * @param  array<string, mixed>  $config
  */
-function s3CredHumanRustfsTool(Node $storage, array $credentials = [], array $config = []): NodeTool
+function s3CredHumanSeaweedfsTool(Node $storage, array $credentials = [], array $config = []): NodeTool
 {
     return NodeTool::factory()->create([
         'node_id' => $storage->id,
-        'name' => 'rustfs',
+        'name' => 'seaweedfs',
         'expected_state' => 'installed',
         'config' => array_merge([
             'backend_host' => "{$storage->name}.s3.orbit",
@@ -116,7 +116,7 @@ describe('S3CredentialsHumanRenderer no progress tree', function (): void {
         s3CredHumanCallerNode();
         $storage = s3CredHumanStorageNode();
         s3CredHumanRouterNode();
-        s3CredHumanRustfsTool($storage);
+        s3CredHumanSeaweedfsTool($storage);
 
         $content = s3CredHumanGet($this, ['node' => 'storage-1']);
 
@@ -136,7 +136,7 @@ describe('S3CredentialsHumanRenderer credential fields', function (): void {
         s3CredHumanCallerNode();
         $storage = s3CredHumanStorageNode();
         s3CredHumanRouterNode();
-        s3CredHumanRustfsTool($storage);
+        s3CredHumanSeaweedfsTool($storage);
 
         $response = $this->get('/api/s3/credentials?node=storage-1', [
             'REMOTE_ADDR' => S3_CRED_HUMAN_CALLER_WG_IP,
@@ -149,7 +149,7 @@ describe('S3CredentialsHumanRenderer credential fields', function (): void {
             ->assertJsonPath('success.data.credentials.access_key_id', 'TESTACCESSKEYID12345')
             ->assertJsonPath('success.data.credentials.secret_access_key', 'test-secret-access-key-value')
             ->assertJsonPath('success.data.credentials.bucket_endpoint_style', 'path')
-            ->assertJsonPath('success.meta.tool', 'rustfs');
+            ->assertJsonPath('success.meta.tool', 'seaweedfs');
     });
 });
 
@@ -165,7 +165,7 @@ describe('S3CredentialsHumanRenderer missing credentials', function (): void {
 
         NodeTool::factory()->create([
             'node_id' => $storage->id,
-            'name' => 'rustfs',
+            'name' => 'seaweedfs',
             'expected_state' => 'installed',
             'config' => ['backend_host' => 'storage-1.s3.orbit', 'public_hosts' => []],
             'credentials' => null,

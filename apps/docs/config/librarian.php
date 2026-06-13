@@ -139,6 +139,12 @@ return [
      */
     'banned_terms' => [
         [
+            'terms' => ['RustFS', 'rustfs'],
+            'decision' => '2026-06-13 S3 backend is SeaweedFS',
+            'replacement' => 'SeaweedFS / seaweedfs',
+            'allow_paths' => ['product-decisions.md'],
+        ],
+        [
             'terms' => ['tool:start', 'tool:stop', 'tool:restart', 'tool:logs', 'tool:reload'],
             'decision' => '2026-06-06 tool lifecycle is process-owned (solo todo #703)',
             'replacement' => '`process:start` / `process:stop` / `process:restart` / `process:logs`',

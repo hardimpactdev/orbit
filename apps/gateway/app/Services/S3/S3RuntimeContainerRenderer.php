@@ -20,6 +20,7 @@ class S3RuntimeContainerRenderer
         Node $node,
         S3RoleSettings $settings,
         string $image = S3RuntimeContainer::Image,
+        ?S3ServiceConfig $serviceConfig = null,
     ): S3RuntimeContainer {
         $wireGuardAddress = $this->wireGuardAddress($node);
         $dataPath = $this->normalizeDataPath($settings->dataPath);
@@ -36,8 +37,39 @@ class S3RuntimeContainerRenderer
                     'target' => S3RuntimeContainer::DataTarget,
                     'read_only' => false,
                 ],
+                [
+                    'source' => "{$dataPath}/s3.json",
+                    'target' => S3RuntimeContainer::S3ConfigTarget,
+                    'read_only' => true,
+                ],
             ],
+            s3Config: $this->s3Config($serviceConfig),
         );
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function s3Config(?S3ServiceConfig $serviceConfig): array
+    {
+        if (! $serviceConfig instanceof S3ServiceConfig) {
+            return ['identities' => []];
+        }
+
+        return [
+            'identities' => [
+                [
+                    'name' => 'orbit',
+                    'credentials' => [
+                        [
+                            'accessKey' => $serviceConfig->accessKeyId,
+                            'secretKey' => $serviceConfig->secretAccessKey,
+                        ],
+                    ],
+                    'actions' => ['Admin', 'Read', 'List', 'Tagging', 'Write'],
+                ],
+            ],
+        ];
     }
 
     private function wireGuardAddress(Node $node): string

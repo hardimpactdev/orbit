@@ -42,7 +42,7 @@ Internet
   -> ingress edge orbit-caddy
   -> private WireGuard route to router
   -> router orbit-caddy for `s3.orbit`, public S3 host relay, and S3 backend pool
-  -> RustFS in a Docker runtime container rendered by Orbit
+  -> SeaweedFS in a Docker runtime container rendered by Orbit
 ```
 
 The sections below walk through each layer of the stack in the same order as the table.
@@ -68,7 +68,7 @@ The sections below walk through each layer of the stack in the same order as the
 | Private production routing | `orbit-caddy` on the gateway-coupled `router` role selecting private HTTP/WebSocket/S3 routes, `.orbit` service names, and backend pools |
 | Production app backend | App-role-owned `orbit-caddy` on `app-prod` nodes bound to the node's WireGuard address and forwarding to per-app FrankenPHP Docker runtime containers on internal port `8080` over the node Docker network |
 | Realtime service backend | Laravel Reverb in a Docker runtime container managed by Orbit on `websocket` nodes, bound only to the node's WireGuard address and reached through router-owned WebSocket routes |
-| S3 service backend | RustFS in a Docker runtime container rendered by Orbit on `s3` nodes, bound only to the node's WireGuard address and reached through router-owned S3 routes |
+| S3 service backend | SeaweedFS in a Docker runtime container rendered by Orbit on `s3` nodes, bound only to the node's WireGuard address and reached through router-owned S3 routes |
 | Agent runtime | OpenClaw and Hermes as first-party agent tools, installed through `tool:install` on nodes with the `agent` role and run as the shared unprivileged `agent` user |
 | Network | WireGuard, served by the gateway-coupled `vpn` role |
 | Public DNS/CDN | Cloudflare integration for production domains |
@@ -302,16 +302,16 @@ websocket backends fail clearly instead of silently fanning out.
 
 ### S3 runtime
 
-The `s3` role runs RustFS for fleet object storage. RustFS runs in a Docker
+The `s3` role runs SeaweedFS for fleet object storage. SeaweedFS runs in a Docker
 runtime container rendered by Orbit's role runtime container services;
 it is not rendered from role-local Docker Compose and does not use host package
-installation as a fallback. The container uses the `rustfs/rustfs` image,
+installation as a fallback. The container uses the `chrislusf/seaweedfs:4.33` image,
 mounts the role-owned `data_path` as `/data`, and binds the S3 API only to the
-node's WireGuard address on port `9000`. The RustFS console is not publicly
+node's WireGuard address on port `8333`. The SeaweedFS console is not publicly
 exposed in v1.
 
 The `router` role owns `s3.orbit`, the S3 backend pool, upload-compatible proxy
-settings, and private router-to-RustFS routing. Apps and VPN clients use
+settings, and private router-to-SeaweedFS routing. Apps and VPN clients use
 `https://s3.orbit`. Public S3 clients use operator-published hosts such as
 `https://s3.example.com`; `ingress` terminates public TLS and forwards those
 hosts to `router`, never directly to S3 nodes.
@@ -319,15 +319,15 @@ hosts to `router`, never directly to S3 nodes.
 Router and ingress proxy rendering for S3 must preserve the original `Host`
 header and forwarded protocol headers so S3 signatures are validated against
 the requested endpoint. S3 routes must allow large uploads and avoid request
-buffering that would make object uploads fail before RustFS receives them.
+buffering that would make object uploads fail before SeaweedFS receives them.
 
-S3 credentials are service-level RustFS credentials stored on the `rustfs` tool
+S3 credentials are service-level SeaweedFS credentials stored on the `seaweedfs` tool
 row. V1 does not create per-app bucket credentials, bucket lifecycle commands,
 virtual-hosted bucket routes, wildcard DNS/TLS for bucket hostnames, distributed
-RustFS, or HA guarantees.
+SeaweedFS, or HA guarantees.
 
 Focused S3 E2E coverage is pending the S3 role runtime. When that role lands,
-coverage must use the prepared Docker/Incus topology lane, keep RustFS on the
+coverage must use the prepared Docker/Incus topology lane, keep SeaweedFS on the
 role runtime container substrate, and must not add role-local Docker Compose,
 host Caddy, host PHP, PHP-FPM, or Supervisor to make object-storage
 assertions pass. S3 E2E starts in the dedicated `apps/e2e` runner, not in the
@@ -398,7 +398,7 @@ Docker is the baseline substrate for Orbit runtime containers and backing
 services. Orbit uses Docker for `orbit-gateway`, `orbit-scheduler`,
 `orbit-caddy`, FrankenPHP app/workspace containers, databases, caches, mail
 servers, Laravel Reverb containers for the
-`websocket` role, RustFS containers for the `s3` role, and similar backing
+`websocket` role, SeaweedFS containers for the `s3` role, and similar backing
 infrastructure. Docker E2E topologies use sibling containers through the host
 Docker socket, not Docker-in-Docker.
 

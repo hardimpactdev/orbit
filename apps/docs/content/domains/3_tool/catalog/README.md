@@ -54,7 +54,7 @@ Admitted examples:
   SQL execution, and database backup/restore workflows belong to `database:*`,
   not separate `mysql:*` and `postgres:*` families.
 - `s3:*` owns role-backed object-storage publication and service credentials
-  for the RustFS-backed S3 role. Generic RustFS capability update and inventory
+  for the SeaweedFS-backed S3 role. Generic SeaweedFS capability update and inventory
   remain under `tool:*`; lifecycle and logs belong to the related runtime
   process.
 
@@ -86,7 +86,7 @@ materialized by their owning role and only required on nodes carrying that role:
 | [`composer`](composer.md) | `app-dev`, `app-prod` |
 | [`laravel-installer`](laravel-installer.md) | `app-dev` |
 | [`gh`](gh.md) | `app-dev`, `app-prod` (repository cloning and deployment) |
-| [`rustfs`](rustfs.md) | `s3` |
+| [`seaweedfs`](seaweedfs.md) | `s3` |
 
 ## Installable Tools
 

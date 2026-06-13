@@ -54,7 +54,7 @@ final class S3UnpublishController implements Loggable
                 ['key' => 'resolve_node', 'label' => 'Resolve S3 node'],
                 ['key' => 'check_router', 'label' => 'Check router'],
                 ['key' => 'remove_ingress', 'label' => 'Remove ingress host'],
-                ['key' => 'remove_rustfs_config', 'label' => 'Remove RustFS public host config'],
+                ['key' => 'remove_seaweedfs_config', 'label' => 'Remove SeaweedFS public host config'],
                 ['key' => 'apply_cleanup', 'label' => 'Apply route cleanup'],
             ]);
 

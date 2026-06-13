@@ -70,11 +70,11 @@ function s3CredJsonRouterNode(): Node
  * @param  array<string, mixed>  $credentials
  * @param  array<string, mixed>  $config
  */
-function s3CredJsonRustfsTool(Node $storage, array $credentials = [], array $config = []): NodeTool
+function s3CredJsonSeaweedfsTool(Node $storage, array $credentials = [], array $config = []): NodeTool
 {
     return NodeTool::factory()->create([
         'node_id' => $storage->id,
-        'name' => 'rustfs',
+        'name' => 'seaweedfs',
         'expected_state' => 'installed',
         'config' => array_merge([
             'backend_host' => "{$storage->name}.s3.orbit",
@@ -100,10 +100,10 @@ function s3CredJsonServiceRoute(Node $router): ProxyRoute
         'owner_type' => 'router',
         'kind' => 'proxy',
         'config' => [
-            'owner_name' => 'rustfs',
+            'owner_name' => 'seaweedfs',
             'protocol' => 's3',
             'upstreams' => [
-                ['scheme' => 'http', 'host' => 'storage-1.s3.orbit', 'port' => 9000],
+                ['scheme' => 'http', 'host' => 'storage-1.s3.orbit', 'port' => 8333],
             ],
         ],
     ]);
@@ -118,7 +118,7 @@ describe('S3CredentialsJsonRenderer success shape', function (): void {
         s3CredJsonCallerNode();
         $storage = s3CredJsonStorageNode();
         $router = s3CredJsonRouterNode();
-        s3CredJsonRustfsTool($storage, credentials: [
+        s3CredJsonSeaweedfsTool($storage, credentials: [
             'fields' => [
                 'access_key_id' => 'MYACCESSKEYID12345678',
                 'secret_access_key' => 'my-secret-access-key-value',
@@ -143,7 +143,7 @@ describe('S3CredentialsJsonRenderer success shape', function (): void {
             ->and($body['success'])->toHaveKey('data')
             ->and($body['success'])->toHaveKey('meta')
             ->and($body['success']['data'])->toHaveKey('credentials')
-            ->and($body['success']['meta']['tool'])->toBe('rustfs');
+            ->and($body['success']['meta']['tool'])->toBe('seaweedfs');
 
         $credentials = $body['success']['data']['credentials'];
 
@@ -154,14 +154,14 @@ describe('S3CredentialsJsonRenderer success shape', function (): void {
             ->and($credentials['access_key_id'])->toBe('MYACCESSKEYID12345678')
             ->and($credentials['secret_access_key'])->toBe('my-secret-access-key-value')
             ->and($credentials['bucket_endpoint_style'])->toBe('path')
-            ->and($credentials['backend_pool'])->toBe(['http://storage-1.s3.orbit:9000']);
+            ->and($credentials['backend_pool'])->toBe(['http://storage-1.s3.orbit:8333']);
     });
 
     it('places secret_access_key after access_key_id in the credentials object', function (): void {
         s3CredJsonCallerNode();
         $storage = s3CredJsonStorageNode();
         s3CredJsonRouterNode();
-        s3CredJsonRustfsTool($storage);
+        s3CredJsonSeaweedfsTool($storage);
 
         $response = $this->get('/api/s3/credentials?node=storage-1', [
             'REMOTE_ADDR' => S3_CRED_JSON_CALLER_WG_IP,
@@ -177,18 +177,18 @@ describe('S3CredentialsJsonRenderer success shape', function (): void {
             ->and($skPos)->toBeGreaterThan($akPos);
     });
 
-    it('includes meta.tool=rustfs in the success envelope', function (): void {
+    it('includes meta.tool=seaweedfs in the success envelope', function (): void {
         s3CredJsonCallerNode();
         $storage = s3CredJsonStorageNode();
         s3CredJsonRouterNode();
-        s3CredJsonRustfsTool($storage);
+        s3CredJsonSeaweedfsTool($storage);
 
         $response = $this->get('/api/s3/credentials?node=storage-1', [
             'REMOTE_ADDR' => S3_CRED_JSON_CALLER_WG_IP,
         ]);
 
         $response->assertOk()
-            ->assertJsonPath('success.meta.tool', 'rustfs');
+            ->assertJsonPath('success.meta.tool', 'seaweedfs');
     });
 });
 
@@ -232,7 +232,7 @@ describe('S3CredentialsJsonRenderer error codes', function (): void {
         s3CredJsonCallerNode(role: 'app-production');
         $storage = s3CredJsonStorageNode();
         s3CredJsonRouterNode();
-        s3CredJsonRustfsTool($storage);
+        s3CredJsonSeaweedfsTool($storage);
 
         $response = $this->get('/api/s3/credentials?node=storage-1', [
             'REMOTE_ADDR' => S3_CRED_JSON_CALLER_WG_IP,
@@ -249,7 +249,7 @@ describe('S3CredentialsJsonRenderer error codes', function (): void {
 
         NodeTool::factory()->create([
             'node_id' => $storage->id,
-            'name' => 'rustfs',
+            'name' => 'seaweedfs',
             'expected_state' => 'installed',
             'config' => ['backend_host' => 'storage-1.s3.orbit', 'public_hosts' => []],
             'credentials' => null,
@@ -261,9 +261,9 @@ describe('S3CredentialsJsonRenderer error codes', function (): void {
 
         $response->assertStatus(422)
             ->assertJsonPath('error.code', 's3.credentials_missing')
-            ->assertJsonPath('error.message', "RustFS service credentials are missing for 'storage-1'.")
+            ->assertJsonPath('error.message', "SeaweedFS service credentials are missing for 'storage-1'.")
             ->assertJsonPath('error.meta.node', 'storage-1')
-            ->assertJsonPath('error.meta.tool', 'rustfs')
+            ->assertJsonPath('error.meta.tool', 'seaweedfs')
             ->assertJsonPath('error.meta.next_command', 'doctor --family=tool --restore --node=storage-1');
     });
 });

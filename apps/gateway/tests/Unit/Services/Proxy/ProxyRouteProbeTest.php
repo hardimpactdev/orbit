@@ -999,11 +999,11 @@ describe('s3 upload-safe proxy route probe', function (): void {
         $node = createTestAppHostNode();
         $renderer = new ProxyRouteRenderer;
         $config = [
-            'owner_name' => 'rustfs',
+            'owner_name' => 'seaweedfs',
             'protocol' => 's3',
-            'target' => ['type' => 'upstream', 'value' => 'http://storage-1.s3.orbit:9000'],
+            'target' => ['type' => 'upstream', 'value' => 'http://storage-1.s3.orbit:8333'],
             'upstreams' => [
-                ['scheme' => 'http', 'host' => 'storage-1.s3.orbit', 'port' => 9000],
+                ['scheme' => 'http', 'host' => 'storage-1.s3.orbit', 'port' => 8333],
             ],
         ];
         $route = ProxyRoute::factory()->create([
@@ -1035,11 +1035,11 @@ describe('s3 upload-safe proxy route probe', function (): void {
         $node = createTestAppHostNode();
         $renderer = new ProxyRouteRenderer;
         $config = [
-            'owner_name' => 'rustfs',
+            'owner_name' => 'seaweedfs',
             'protocol' => 's3',
-            'target' => ['type' => 'upstream', 'value' => 'http://storage-1.s3.orbit:9000'],
+            'target' => ['type' => 'upstream', 'value' => 'http://storage-1.s3.orbit:8333'],
             'upstreams' => [
-                ['scheme' => 'http', 'host' => 'storage-1.s3.orbit', 'port' => 9000],
+                ['scheme' => 'http', 'host' => 'storage-1.s3.orbit', 'port' => 8333],
             ],
         ];
         $route = ProxyRoute::factory()->create([
@@ -1075,7 +1075,7 @@ describe('s3 upload-safe proxy route probe', function (): void {
         $renderer = new ProxyRouteRenderer;
         $config = [
             'placement' => 'ingress',
-            'owner_name' => 'rustfs',
+            'owner_name' => 'seaweedfs',
             'protocol' => 's3',
             'target' => ['type' => 'upstream', 'value' => 'https://s3.orbit'],
             'router_upstream' => [
@@ -1274,11 +1274,11 @@ describe('s3 service route node eligibility in ProxyRouteProbe', function (): vo
             'owner_type' => 'router',
             'kind' => 'proxy',
             'config' => [
-                'owner_name' => 'rustfs',
+                'owner_name' => 'seaweedfs',
                 'protocol' => 's3',
-                'target' => ['type' => 'upstream', 'value' => 'http://storage-1.s3.orbit:9000'],
+                'target' => ['type' => 'upstream', 'value' => 'http://storage-1.s3.orbit:8333'],
                 'upstreams' => [
-                    ['scheme' => 'http', 'host' => 'storage-1.s3.orbit', 'port' => 9000],
+                    ['scheme' => 'http', 'host' => 'storage-1.s3.orbit', 'port' => 8333],
                 ],
             ],
         ]);
@@ -1302,7 +1302,7 @@ describe('s3 service route node eligibility in ProxyRouteProbe', function (): vo
             'kind' => 'proxy',
             'config' => [
                 'placement' => 'ingress',
-                'owner_name' => 'rustfs',
+                'owner_name' => 'seaweedfs',
                 'protocol' => 's3',
                 'target' => ['type' => 'upstream', 'value' => 'https://s3.orbit'],
                 'router_upstream' => [
@@ -1332,11 +1332,11 @@ describe('s3 service route node eligibility in ProxyRouteProbe', function (): vo
             'owner_type' => 'router',
             'kind' => 'proxy',
             'config' => [
-                'owner_name' => 'rustfs',
+                'owner_name' => 'seaweedfs',
                 'protocol' => 's3',
-                'target' => ['type' => 'upstream', 'value' => 'http://storage-1.s3.orbit:9000'],
+                'target' => ['type' => 'upstream', 'value' => 'http://storage-1.s3.orbit:8333'],
                 'upstreams' => [
-                    ['scheme' => 'http', 'host' => 'storage-1.s3.orbit', 'port' => 9000],
+                    ['scheme' => 'http', 'host' => 'storage-1.s3.orbit', 'port' => 8333],
                 ],
             ],
         ]);

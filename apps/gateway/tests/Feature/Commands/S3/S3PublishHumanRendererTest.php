@@ -83,11 +83,11 @@ function s3HumanIngressNode(): Node
     return $node;
 }
 
-function s3HumanRustfsTool(Node $storage, array $config = []): NodeTool
+function s3HumanSeaweedfsTool(Node $storage, array $config = []): NodeTool
 {
     return NodeTool::factory()->create([
         'node_id' => $storage->id,
-        'name' => 'rustfs',
+        'name' => 'seaweedfs',
         'expected_state' => 'installed',
         'config' => array_merge([
             'backend_host' => 'storage-1.s3.orbit',
@@ -121,7 +121,7 @@ describe('S3PublishHumanRenderer progress tree', function (): void {
     it('emits the 7-step progress tree with the documented step labels', function (): void {
         s3HumanCallerNode();
         $storage = s3HumanStorageNode();
-        s3HumanRustfsTool($storage);
+        s3HumanSeaweedfsTool($storage);
         s3HumanRouterNode();
         s3HumanIngressNode();
 
@@ -132,7 +132,7 @@ describe('S3PublishHumanRenderer progress tree', function (): void {
             ->and($content)->toContain('Publishing S3 Host')
             ->and($content)->toContain('Resolve S3 node')
             ->and($content)->toContain('Check router and ingress')
-            ->and($content)->toContain('Ensure RustFS credentials')
+            ->and($content)->toContain('Ensure SeaweedFS credentials')
             ->and($content)->toContain('Ensure private s3.orbit route')
             ->and($content)->toContain('Ensure S3 backend pool')
             ->and($content)->toContain('Publish ingress host')
@@ -142,7 +142,7 @@ describe('S3PublishHumanRenderer progress tree', function (): void {
     it('emits step events for each progress phase', function (): void {
         s3HumanCallerNode();
         $storage = s3HumanStorageNode();
-        s3HumanRustfsTool($storage);
+        s3HumanSeaweedfsTool($storage);
         s3HumanRouterNode();
         s3HumanIngressNode();
 
@@ -167,7 +167,7 @@ describe('S3PublishHumanRenderer success summary', function (): void {
     it('emits a complete frame containing node, private endpoint, host, action, and already_published', function (): void {
         s3HumanCallerNode();
         $storage = s3HumanStorageNode();
-        s3HumanRustfsTool($storage);
+        s3HumanSeaweedfsTool($storage);
         s3HumanRouterNode();
         s3HumanIngressNode();
 
@@ -185,16 +185,16 @@ describe('S3PublishHumanRenderer success summary', function (): void {
             ->and($frame['data']['s3']['public_endpoints'])->toContain('https://s3.example.com');
     });
 
-    it('emits credentials_ref with tool=rustfs and node name', function (): void {
+    it('emits credentials_ref with tool=seaweedfs and node name', function (): void {
         s3HumanCallerNode();
         $storage = s3HumanStorageNode();
-        s3HumanRustfsTool($storage);
+        s3HumanSeaweedfsTool($storage);
         s3HumanRouterNode();
         s3HumanIngressNode();
 
         $content = s3HumanStream($this, ['host' => 's3.example.com', 'node' => 'storage-1']);
 
-        expect($content)->toContain('"tool":"rustfs"')
+        expect($content)->toContain('"tool":"seaweedfs"')
             ->and($content)->toContain('"node":"storage-1"');
     });
 });
@@ -207,7 +207,7 @@ describe('S3PublishHumanRenderer idempotent output', function (): void {
     it('sets already_published=true and action=published when host was already registered', function (): void {
         s3HumanCallerNode();
         $storage = s3HumanStorageNode();
-        s3HumanRustfsTool($storage, ['public_hosts' => ['s3.example.com']]);
+        s3HumanSeaweedfsTool($storage, ['public_hosts' => ['s3.example.com']]);
         s3HumanRouterNode();
         s3HumanIngressNode();
 
@@ -246,7 +246,7 @@ describe('S3PublishHumanRenderer prerequisite failure', function (): void {
     it('names the missing router prerequisite in the error frame', function (): void {
         s3HumanCallerNode();
         $storage = s3HumanStorageNode();
-        s3HumanRustfsTool($storage);
+        s3HumanSeaweedfsTool($storage);
         // No router.
 
         $response = $this->call('POST', '/api/s3/public-hosts', [
@@ -267,7 +267,7 @@ describe('S3PublishHumanRenderer prerequisite failure', function (): void {
     it('names the missing ingress prerequisite in the error frame', function (): void {
         s3HumanCallerNode();
         $storage = s3HumanStorageNode();
-        s3HumanRustfsTool($storage);
+        s3HumanSeaweedfsTool($storage);
         s3HumanRouterNode();
         // No ingress.
 

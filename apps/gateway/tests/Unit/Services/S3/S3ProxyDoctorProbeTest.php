@@ -80,7 +80,7 @@ function s3ProxyStorageNode(string $backendHost = 'storage-1.s3.orbit', array $t
 
     $tool = NodeTool::factory()->create(array_merge([
         'node_id' => $node->id,
-        'name' => 'rustfs',
+        'name' => 'seaweedfs',
         'config' => [
             'backend_host' => $backendHost,
             'public_hosts' => [],
@@ -123,11 +123,11 @@ it('s3 router_route_missing when s3.orbit route is divergent from intent', funct
         'kind' => 'proxy',
         'source_hash' => 'wrong-hash',
         'config' => [
-            'owner_name' => 'rustfs',
+            'owner_name' => 'seaweedfs',
             'protocol' => 's3',
-            'target' => ['type' => 'upstream', 'value' => 'http://storage-1.s3.orbit:9000'],
+            'target' => ['type' => 'upstream', 'value' => 'http://storage-1.s3.orbit:8333'],
             'upstreams' => [
-                ['scheme' => 'http', 'host' => 'storage-1.s3.orbit', 'port' => 9000],
+                ['scheme' => 'http', 'host' => 'storage-1.s3.orbit', 'port' => 8333],
             ],
         ],
     ]);
@@ -197,9 +197,9 @@ it('s3 router_backend_invalid when the upstreams list is empty', function (): vo
         'kind' => 'proxy',
         'source_hash' => 'some-hash',
         'config' => [
-            'owner_name' => 'rustfs',
+            'owner_name' => 'seaweedfs',
             'protocol' => 's3',
-            'target' => ['type' => 'upstream', 'value' => 'http://storage-1.s3.orbit:9000'],
+            'target' => ['type' => 'upstream', 'value' => 'http://storage-1.s3.orbit:8333'],
             'upstreams' => [],
         ],
     ]);
@@ -228,11 +228,11 @@ it('s3 router_backend_invalid when upstreams point to a raw IP (non-.s3.orbit ho
         'kind' => 'proxy',
         'source_hash' => 'some-hash',
         'config' => [
-            'owner_name' => 'rustfs',
+            'owner_name' => 'seaweedfs',
             'protocol' => 's3',
-            'target' => ['type' => 'upstream', 'value' => 'http://10.6.0.10:9000'],
+            'target' => ['type' => 'upstream', 'value' => 'http://10.6.0.10:8333'],
             'upstreams' => [
-                ['scheme' => 'http', 'host' => '10.6.0.10', 'port' => 9000],
+                ['scheme' => 'http', 'host' => '10.6.0.10', 'port' => 8333],
             ],
         ],
     ]);
@@ -255,11 +255,11 @@ it('s3 router_backend_invalid when upstreams point to a host not ending with .s3
         'kind' => 'proxy',
         'source_hash' => 'some-hash',
         'config' => [
-            'owner_name' => 'rustfs',
+            'owner_name' => 'seaweedfs',
             'protocol' => 's3',
-            'target' => ['type' => 'upstream', 'value' => 'http://external.example.com:9000'],
+            'target' => ['type' => 'upstream', 'value' => 'http://external.example.com:8333'],
             'upstreams' => [
-                ['scheme' => 'http', 'host' => 'external.example.com', 'port' => 9000],
+                ['scheme' => 'http', 'host' => 'external.example.com', 'port' => 8333],
             ],
         ],
     ]);
@@ -301,11 +301,11 @@ it('s3 pure intent-drift reports router_route_missing not router_backend_invalid
         'kind' => 'proxy',
         'source_hash' => 'intentionally-wrong-hash',
         'config' => [
-            'owner_name' => 'rustfs',
+            'owner_name' => 'seaweedfs',
             'protocol' => 's3',
-            'target' => ['type' => 'upstream', 'value' => 'http://storage-1.s3.orbit:9000'],
+            'target' => ['type' => 'upstream', 'value' => 'http://storage-1.s3.orbit:8333'],
             'upstreams' => [
-                ['scheme' => 'http', 'host' => 'storage-1.s3.orbit', 'port' => 9000],
+                ['scheme' => 'http', 'host' => 'storage-1.s3.orbit', 'port' => 8333],
             ],
         ],
     ]);
@@ -376,7 +376,7 @@ it('s3 public_route_missing when public host route is divergent', function (): v
         'source_hash' => 'wrong-public-hash',
         'config' => [
             'placement' => 'ingress',
-            'owner_name' => 'rustfs',
+            'owner_name' => 'seaweedfs',
             'protocol' => 's3',
             'target' => ['type' => 'upstream', 'value' => 'https://s3.orbit'],
             'router_upstream' => [
@@ -427,7 +427,7 @@ it('s3 no public drift when node is not ingress', function (): void {
     expect($keys)->not->toContain(S3ProxyDoctorProbe::PublicRouteKey);
 })->group('s3', 'proxy-doctor');
 
-it('s3 public drift detail contains rustfs_tool_id for restore', function (): void {
+it('s3 public drift detail contains seaweedfs_tool_id for restore', function (): void {
     $router = s3ProxyRouter();
     $ingress = s3ProxyIngress();
     [, $tool] = s3ProxyStorageNode(toolConfig: ['public_hosts' => ['s3.example.com']]);
@@ -439,8 +439,8 @@ it('s3 public drift detail contains rustfs_tool_id for restore', function (): vo
     expect($keys)->toContain(S3ProxyDoctorProbe::PublicRouteKey);
 
     $entry = $drift[array_search(S3ProxyDoctorProbe::PublicRouteKey, $keys)];
-    expect($entry->detail)->toHaveKey('rustfs_tool_id');
-    expect($entry->detail['rustfs_tool_id'])->toBe($tool->id);
+    expect($entry->detail)->toHaveKey('seaweedfs_tool_id');
+    expect($entry->detail['seaweedfs_tool_id'])->toBe($tool->id);
 })->group('s3', 'proxy-doctor');
 
 // ---------------------------------------------------------------------------
@@ -503,7 +503,7 @@ it('s3 restore public_route_missing calls syncPublicHosts and returns fix result
         key: S3ProxyDoctorProbe::PublicRouteKey,
         kind: DriftKind::Missing,
         summary: 'test',
-        detail: ['rustfs_tool_id' => $tool->id],
+        detail: ['seaweedfs_tool_id' => $tool->id],
     );
 
     $result = $probe->restore($ingress, $entry);
@@ -514,7 +514,7 @@ it('s3 restore public_route_missing calls syncPublicHosts and returns fix result
         ->and($result['mode'])->toBe('fix');
 })->group('s3', 'proxy-doctor');
 
-it('s3 restore public_route_missing returns null when rustfs_tool_id is missing from detail', function (): void {
+it('s3 restore public_route_missing returns null when seaweedfs_tool_id is missing from detail', function (): void {
     $router = s3ProxyRouter();
     $ingress = s3ProxyIngress();
 
@@ -588,7 +588,7 @@ it('s3 router_route_orphaned when s3.orbit route exists and no active s3 role re
         'node_id' => $router->id,
         'owner_type' => 'router',
         'kind' => 'proxy',
-        'config' => ['owner_name' => 'rustfs', 'protocol' => 's3'],
+        'config' => ['owner_name' => 'seaweedfs', 'protocol' => 's3'],
     ]);
 
     $probe = app(S3ProxyDoctorProbe::class);
@@ -610,7 +610,7 @@ it('s3 router_route_orphaned not emitted when active s3 role exists', function (
         'node_id' => $router->id,
         'owner_type' => 'router',
         'kind' => 'proxy',
-        'config' => ['owner_name' => 'rustfs', 'protocol' => 's3'],
+        'config' => ['owner_name' => 'seaweedfs', 'protocol' => 's3'],
     ]);
 
     $probe = app(S3ProxyDoctorProbe::class);
@@ -640,7 +640,7 @@ it('s3 router_route_orphaned not emitted for non-router nodes', function (): voi
         'node_id' => $ingress->id,
         'owner_type' => 'router',
         'kind' => 'proxy',
-        'config' => ['owner_name' => 'rustfs', 'protocol' => 's3'],
+        'config' => ['owner_name' => 'seaweedfs', 'protocol' => 's3'],
     ]);
 
     $probe = app(S3ProxyDoctorProbe::class);
@@ -658,7 +658,7 @@ it('s3 restore router_route_orphaned removes the s3.orbit service route row', fu
         'node_id' => $router->id,
         'owner_type' => 'router',
         'kind' => 'proxy',
-        'config' => ['owner_name' => 'rustfs', 'protocol' => 's3'],
+        'config' => ['owner_name' => 'seaweedfs', 'protocol' => 's3'],
     ]);
 
     $probe = app(S3ProxyDoctorProbe::class);

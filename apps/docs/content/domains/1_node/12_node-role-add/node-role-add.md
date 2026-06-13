@@ -29,7 +29,7 @@ This command validates the role assignment, applies role-local options, and repo
 - `websocket` requires `--redis-node`; the selected node must have an active
   `database` role and Redis expected or installed.
 - `s3` accepts optional `--s3-data-path`; it defaults to
-  `/srv/orbit/s3/data`, must be absolute, and is mounted into RustFS as
+  `/srv/orbit/s3/data`, must be absolute, and is mounted into SeaweedFS as
   `/data`.
 - `app-prod` and `database` reject unsupported role-local options.
 - Human output shows progress because convergence can be slow.

@@ -65,8 +65,8 @@ These terms define the types of routes that the proxy family owns and manages.
   supports one active backend and fails clearly if more than one websocket
   backend is active. The pool shape remains so later multi-node Reverb scaling
   does not change app or browser configuration.
-- **S3 backend pool:** Ordered list of RustFS backend URLs, such as
-  `http://storage-1.s3.orbit:9000`, owned by `router`. V1 creates one active
+- **S3 backend pool:** Ordered list of SeaweedFS backend URLs, such as
+  `http://storage-1.s3.orbit:8333`, owned by `router`. V1 creates one active
   backend but stores a pool shape so later S3 scaling does not change app or
   client configuration.
 
@@ -121,5 +121,5 @@ These terms define what the proxy family owns and what remains outside its scope
   `websocket.orbit`, websocket backend pools, and private router-to-websocket
   TLS verification. Public S3 hosts are ingress routes that forward to router.
   Router owns `s3.orbit`, S3 backend pools, S3 upload-compatible proxy settings,
-  and private router-to-RustFS routing. Ingress must not route directly to
+  and private router-to-SeaweedFS routing. Ingress must not route directly to
   websocket or s3 role nodes.

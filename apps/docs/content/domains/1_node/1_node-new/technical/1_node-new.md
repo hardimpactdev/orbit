@@ -40,7 +40,7 @@ This command follows the shared
 | `user` | `--user` | Never required from the operator; resolved when SSH provisioning is used. | Client identity with no host provisioning. | `root`. | Bootstrap SSH user. The gateway stores the steady-state runtime user after provisioning. |
 | `ingress_node` | `--ingress` | Private `app-prod` placement. | Every path other than private `app-prod` placement. | None. | Must match an active node with the `ingress` role. |
 | `redis_node` | `--redis-node` | `websocket`. | Every path that does not include `websocket`. | None. | Must match an active node with the `database` role and Redis expected or installed. |
-| `s3_data_path` | `--s3-data-path` | Never. | Every path that does not include `s3`. | `/srv/orbit/s3/data`. | Absolute host path mounted into RustFS as `/data`. |
+| `s3_data_path` | `--s3-data-path` | Never. | Every path that does not include `s3`. | `/srv/orbit/s3/data`. | Absolute host path mounted into SeaweedFS as `/data`. |
 | `host_key_fingerprint` | `--host-key-fingerprint` | Optional. | Never. | None. | Expected SSH host key SHA256 fingerprint for verification during provisioning. |
 | `self_grant` | `--self-grant` | Optional. | Never. | None. | Self-grant mode applied to this node identity. |
 | `self_grant_permissions` | `--self-grant-permissions` | Optional. | Never. | None. | Custom permission set for the self-grant. Requires `--self-grant`. |
@@ -207,7 +207,7 @@ Caller-path behavior is split out into:
   Orbit and binds only to the node's WireGuard address.
 
 S3 assignment convergence stores `settings.data_path`, defaulting to
-`/srv/orbit/s3/data`. RustFS runs in a Docker runtime container rendered by
+`/srv/orbit/s3/data`. SeaweedFS runs in a Docker runtime container rendered by
 Orbit, mounts that path as `/data`, binds only to the node's WireGuard address,
 and receives traffic only through router-owned S3 service routes.
 - If an initial role is persisted with `status=error` because its first

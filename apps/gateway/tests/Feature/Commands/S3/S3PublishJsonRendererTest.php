@@ -84,11 +84,11 @@ function s3JsonIngressNode(): Node
     return $node;
 }
 
-function s3JsonRustfsTool(Node $storage, array $config = []): NodeTool
+function s3JsonSeaweedfsTool(Node $storage, array $config = []): NodeTool
 {
     return NodeTool::factory()->create([
         'node_id' => $storage->id,
-        'name' => 'rustfs',
+        'name' => 'seaweedfs',
         'expected_state' => 'installed',
         'config' => array_merge([
             'backend_host' => 'storage-1.s3.orbit',
@@ -130,7 +130,7 @@ describe('S3PublishJsonRenderer success shape', function (): void {
     it('emits the documented success envelope with all required fields', function (): void {
         s3JsonCallerNode();
         $storage = s3JsonStorageNode();
-        s3JsonRustfsTool($storage);
+        s3JsonSeaweedfsTool($storage);
         s3JsonRouterNode();
         s3JsonIngressNode();
 
@@ -141,7 +141,7 @@ describe('S3PublishJsonRenderer success shape', function (): void {
             ->and($frame['data']['s3']['private_endpoint'])->toBe('https://s3.orbit')
             ->and($frame['data']['s3']['public_endpoints'])->toContain('https://s3.example.com')
             ->and($frame['data']['s3']['backend_pool'])->toBeArray()
-            ->and($frame['data']['s3']['credentials_ref']['tool'])->toBe('rustfs')
+            ->and($frame['data']['s3']['credentials_ref']['tool'])->toBe('seaweedfs')
             ->and($frame['data']['s3']['credentials_ref']['node'])->toBe('storage-1');
 
         // success.meta shape.
@@ -159,7 +159,7 @@ describe('S3PublishJsonRenderer action metadata', function (): void {
     it('returns action=published and already_published=false on first publish', function (): void {
         s3JsonCallerNode();
         $storage = s3JsonStorageNode();
-        s3JsonRustfsTool($storage);
+        s3JsonSeaweedfsTool($storage);
         s3JsonRouterNode();
         s3JsonIngressNode();
 
@@ -172,7 +172,7 @@ describe('S3PublishJsonRenderer action metadata', function (): void {
     it('returns already_published=true on idempotent re-publish', function (): void {
         s3JsonCallerNode();
         $storage = s3JsonStorageNode();
-        s3JsonRustfsTool($storage, ['public_hosts' => ['s3.example.com']]);
+        s3JsonSeaweedfsTool($storage, ['public_hosts' => ['s3.example.com']]);
         s3JsonRouterNode();
         s3JsonIngressNode();
 
@@ -210,7 +210,7 @@ describe('S3PublishJsonRenderer error codes', function (): void {
     it('emits validation_failed for missing router', function (): void {
         s3JsonCallerNode();
         $storage = s3JsonStorageNode();
-        s3JsonRustfsTool($storage);
+        s3JsonSeaweedfsTool($storage);
         // No router.
 
         $response = $this->call('POST', '/api/s3/public-hosts', [
@@ -229,7 +229,7 @@ describe('S3PublishJsonRenderer error codes', function (): void {
     it('emits validation_failed for missing ingress', function (): void {
         s3JsonCallerNode();
         $storage = s3JsonStorageNode();
-        s3JsonRustfsTool($storage);
+        s3JsonSeaweedfsTool($storage);
         s3JsonRouterNode();
         // No ingress.
 
@@ -249,7 +249,7 @@ describe('S3PublishJsonRenderer error codes', function (): void {
     it('emits proxy.domain_conflict when host is owned by a non-S3 route', function (): void {
         s3JsonCallerNode();
         $storage = s3JsonStorageNode();
-        s3JsonRustfsTool($storage);
+        s3JsonSeaweedfsTool($storage);
         s3JsonRouterNode();
         $ingress = s3JsonIngressNode();
 

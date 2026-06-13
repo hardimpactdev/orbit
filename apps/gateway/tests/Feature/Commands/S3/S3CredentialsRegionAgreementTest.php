@@ -11,13 +11,13 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 uses(RefreshDatabase::class);
 
 /**
- * Regression tests ensuring `tool:credentials rustfs` and `s3:credentials` agree on the
+ * Regression tests ensuring `tool:credentials seaweedfs` and `s3:credentials` agree on the
  * region value — both must surface 'orbit', and the stored credential field written by
  * S3ServiceConfigurator must also be 'orbit'.
  *
- * Both surfaces read the same service-level credentials from the `rustfs` NodeTool row,
+ * Both surfaces read the same service-level credentials from the `seaweedfs` NodeTool row,
  * so the field values agree by construction. The `s3` role is a tool-host role (the
- * `rustfs` tool's credentials, logs, and lifecycle are visible through the tool command
+ * `seaweedfs` tool's credentials, logs, and lifecycle are visible through the tool command
  * family on the s3 node), so both commands resolve the same pure-s3 node. S3ServiceConfig::Region
  * is the canonical constant S3ServiceConfigurator::writeCredentials must use.
  */
@@ -52,7 +52,7 @@ function regionAgreementStorageNode(): Node
 
     // Pure s3 role — the only valid topology for an S3 serving node (s3 conflicts
     // with the agent/app tool-host roles). The s3 role is itself a tool host, so the
-    // rustfs tool is reachable through the tool command family on this node.
+    // seaweedfs tool is reachable through the tool command family on this node.
     NodeRoleAssignment::factory()->create([
         'node_id' => $node->id,
         'role' => 's3',
@@ -81,14 +81,14 @@ function regionAgreementRouterNode(): Node
 }
 
 /**
- * Seed a rustfs tool row with an 'orbit' region in fields — as S3ServiceConfigurator
+ * Seed a seaweedfs tool row with an 'orbit' region in fields — as S3ServiceConfigurator
  * now writes it.
  */
-function regionAgreementRustfsTool(Node $storage): NodeTool
+function regionAgreementSeaweedfsTool(Node $storage): NodeTool
 {
     return NodeTool::factory()->create([
         'node_id' => $storage->id,
-        'name' => 'rustfs',
+        'name' => 'seaweedfs',
         'expected_state' => 'installed',
         'config' => ['backend_host' => 'storage-1.s3.orbit', 'public_hosts' => []],
         'credentials' => [
@@ -104,14 +104,14 @@ function regionAgreementRustfsTool(Node $storage): NodeTool
 }
 
 describe('S3 region agreement between tool:credentials and s3:credentials', function (): void {
-    it('tool:credentials rustfs surfaces region=orbit on a pure-s3 node', function (): void {
+    it('tool:credentials seaweedfs surfaces region=orbit on a pure-s3 node', function (): void {
         regionAgreementCallerNode(); // gateway role — bypasses tool:credentials auth
         $storage = regionAgreementStorageNode();
-        regionAgreementRustfsTool($storage);
+        regionAgreementSeaweedfsTool($storage);
 
         $response = $this->call(
             'GET',
-            '/api/tools/rustfs/credentials?node=storage-1',
+            '/api/tools/seaweedfs/credentials?node=storage-1',
             [],
             [],
             [],
@@ -126,7 +126,7 @@ describe('S3 region agreement between tool:credentials and s3:credentials', func
         regionAgreementCallerNode();
         $storage = regionAgreementStorageNode();
         regionAgreementRouterNode();
-        regionAgreementRustfsTool($storage);
+        regionAgreementSeaweedfsTool($storage);
 
         $response = $this->call(
             'GET',
@@ -145,11 +145,11 @@ describe('S3 region agreement between tool:credentials and s3:credentials', func
         regionAgreementCallerNode();
         $storage = regionAgreementStorageNode();
         regionAgreementRouterNode();
-        regionAgreementRustfsTool($storage);
+        regionAgreementSeaweedfsTool($storage);
 
         $toolResponse = $this->call(
             'GET',
-            '/api/tools/rustfs/credentials?node=storage-1',
+            '/api/tools/seaweedfs/credentials?node=storage-1',
             [],
             [],
             [],
@@ -189,11 +189,11 @@ describe('S3 region agreement between tool:credentials and s3:credentials', func
 
         app(S3ServiceConfigurator::class)->configure($node, $assignment);
 
-        $rustfsTool = NodeTool::query()
+        $seaweedfsTool = NodeTool::query()
             ->where('node_id', $node->id)
-            ->where('name', 'rustfs')
+            ->where('name', 'seaweedfs')
             ->firstOrFail();
 
-        expect($rustfsTool->credentials['fields']['region'])->toBe('orbit');
+        expect($seaweedfsTool->credentials['fields']['region'])->toBe('orbit');
     });
 });

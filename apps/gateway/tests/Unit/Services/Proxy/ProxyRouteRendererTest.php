@@ -879,14 +879,14 @@ describe('s3 upload-safe proxy rendering', function (): void {
             'owner_type' => 'router',
             'kind' => 'proxy',
             'config' => [
-                'owner_name' => 'rustfs',
+                'owner_name' => 'seaweedfs',
                 'protocol' => 's3',
                 'target' => [
                     'type' => 'upstream',
-                    'value' => 'http://storage-1.s3.orbit:9000',
+                    'value' => 'http://storage-1.s3.orbit:8333',
                 ],
                 'upstreams' => [
-                    ['scheme' => 'http', 'host' => 'storage-1.s3.orbit', 'port' => 9000],
+                    ['scheme' => 'http', 'host' => 'storage-1.s3.orbit', 'port' => 8333],
                 ],
             ],
         ]);
@@ -896,7 +896,7 @@ describe('s3 upload-safe proxy rendering', function (): void {
         expect($content)->toBe(<<<'CADDY'
 s3.orbit {
     tls /etc/orbit/certs/s3.orbit.crt /etc/orbit/certs/s3.orbit.key
-    reverse_proxy http://storage-1.s3.orbit:9000 {
+    reverse_proxy http://storage-1.s3.orbit:8333 {
         flush_interval -1
         header_up Host {host}
         header_up X-Forwarded-Host {host}
@@ -919,7 +919,7 @@ CADDY)
             'kind' => 'proxy',
             'config' => [
                 'placement' => 'ingress',
-                'owner_name' => 'rustfs',
+                'owner_name' => 'seaweedfs',
                 'protocol' => 's3',
                 'target' => [
                     'type' => 'upstream',
@@ -965,11 +965,11 @@ CADDY)
             'owner_type' => 'router',
             'kind' => 'proxy',
             'config' => [
-                'owner_name' => 'rustfs',
+                'owner_name' => 'seaweedfs',
                 'protocol' => 's3',
-                'target' => ['type' => 'upstream', 'value' => 'http://storage-1.s3.orbit:9000'],
+                'target' => ['type' => 'upstream', 'value' => 'http://storage-1.s3.orbit:8333'],
                 'upstreams' => [
-                    ['scheme' => 'http', 'host' => 'storage-1.s3.orbit', 'port' => 9000],
+                    ['scheme' => 'http', 'host' => 'storage-1.s3.orbit', 'port' => 8333],
                 ],
             ],
         ]);

@@ -8,7 +8,7 @@ use App\Models\Node;
 
 final class S3BackendName
 {
-    public const int BackendPort = 9000;
+    public const int BackendPort = 8333;
 
     public const string BackendScheme = 'http';
 

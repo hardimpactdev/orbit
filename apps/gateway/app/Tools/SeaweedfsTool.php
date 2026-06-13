@@ -4,11 +4,11 @@ declare(strict_types=1);
 
 namespace App\Tools;
 
-final class RustfsTool extends BaseTool
+final class SeaweedfsTool extends BaseTool
 {
     public function slug(): string
     {
-        return 'rustfs';
+        return 'seaweedfs';
     }
 
     #[\Override]
@@ -35,12 +35,12 @@ final class RustfsTool extends BaseTool
         return [
             'binary' => 'docker',
             'version_command' => 'docker --version',
-            'container' => 'orbit-rustfs',
-            'image' => 'rustfs/rustfs',
+            'container' => 'orbit-seaweedfs',
+            'image' => 'chrislusf/seaweedfs:4.33',
             'repair_commands' => [
-                'lifecycle_running' => 'docker start '.escapeshellarg('orbit-rustfs'),
-                'lifecycle_stopped' => 'docker stop '.escapeshellarg('orbit-rustfs'),
-                'lifecycle_restarted' => 'docker restart '.escapeshellarg('orbit-rustfs'),
+                'lifecycle_running' => 'docker start '.escapeshellarg('orbit-seaweedfs'),
+                'lifecycle_stopped' => 'docker stop '.escapeshellarg('orbit-seaweedfs'),
+                'lifecycle_restarted' => 'docker restart '.escapeshellarg('orbit-seaweedfs'),
             ],
         ];
     }
