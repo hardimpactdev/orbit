@@ -60,7 +60,8 @@ Treats a completed HTTP response as a successful profile run, even for responses
 - The CLI caller can reach the Orbit gateway.
 - The gateway authorizes the calling WireGuard peer to read the resolved app.
 - The target app is an Orbit-managed app.
-- The resolved request URL is reachable from the selected request origin.
+- The resolved request URL is reachable from the caller machine. Caller-local
+  DNS overrides and routing determine where the profile request goes.
 - Authenticated profiles require app-side support for Orbit's Toolbar auth headers.
 
 ## Output Summary

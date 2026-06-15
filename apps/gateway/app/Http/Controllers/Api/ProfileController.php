@@ -22,6 +22,73 @@ final class ProfileController implements Loggable
 
     public function __invoke(Request $request, ShowProfile $showProfile): JsonResponse
     {
+        $resolution = $this->resolveProfileRequest($request);
+
+        if ($resolution instanceof JsonResponse) {
+            return $resolution;
+        }
+
+        $this->activitySubject = $resolution['app'];
+        $result = $showProfile->handle(
+            url: $resolution['request']['url'],
+            authMode: $resolution['auth_mode'],
+            target: $resolution['target'],
+            origin: 'gateway',
+            user: $resolution['user'],
+        );
+
+        if (($result['success'] ?? false) !== true) {
+            $error = $result['error'] ?? [];
+
+            return response()->json([
+                'error' => [
+                    'code' => is_string($error['code'] ?? null) ? $error['code'] : 'profile_request_failed',
+                    'message' => is_string($error['message'] ?? null) ? $error['message'] : 'Failed to complete profile request.',
+                    'data' => is_array($error['data'] ?? null) ? $error['data'] : [],
+                    'meta' => is_array($error['meta'] ?? null) ? $error['meta'] : [],
+                ],
+            ], 422);
+        }
+
+        return response()->json([
+            'success' => [
+                'data' => is_array($result['data'] ?? null) ? $result['data'] : [],
+            ],
+        ]);
+    }
+
+    public function resolve(Request $request): JsonResponse
+    {
+        $resolution = $this->resolveProfileRequest($request);
+
+        if ($resolution instanceof JsonResponse) {
+            return $resolution;
+        }
+
+        $this->activitySubject = $resolution['app'];
+
+        return response()->json([
+            'success' => [
+                'data' => [
+                    'auth_mode' => $resolution['auth_mode'],
+                    'target' => $resolution['target'],
+                    'request' => $resolution['request'],
+                ],
+            ],
+        ]);
+    }
+
+    /**
+     * @return array{
+     *     app: AppModel,
+     *     auth_mode: string,
+     *     user: string|null,
+     *     target: array{app: string, workspace: null, node: string|null, domain: string},
+     *     request: array{method: string, url: string, uri: string}
+     * }|JsonResponse
+     */
+    private function resolveProfileRequest(Request $request): array|JsonResponse
+    {
         $caller = $request->user();
 
         if (! $caller instanceof Node) {
@@ -78,40 +145,25 @@ final class ProfileController implements Loggable
             ], 404);
         }
 
-        $this->activitySubject = $app;
         $authMode = $this->stringQuery($request, 'auth_mode') ?? 'guest';
         $user = $this->stringQuery($request, 'user');
-        $result = $showProfile->handle(
-            url: $this->profileUrl($app, $uri),
-            authMode: $authMode,
-            target: [
+
+        return [
+            'app' => $app,
+            'auth_mode' => $authMode,
+            'user' => $user,
+            'target' => [
                 'app' => $app->name,
                 'workspace' => null,
                 'node' => $app->node?->name,
                 'domain' => $this->domain($app),
             ],
-            origin: 'gateway',
-            user: $user,
-        );
-
-        if (($result['success'] ?? false) !== true) {
-            $error = $result['error'] ?? [];
-
-            return response()->json([
-                'error' => [
-                    'code' => is_string($error['code'] ?? null) ? $error['code'] : 'profile_request_failed',
-                    'message' => is_string($error['message'] ?? null) ? $error['message'] : 'Failed to complete profile request.',
-                    'data' => is_array($error['data'] ?? null) ? $error['data'] : [],
-                    'meta' => is_array($error['meta'] ?? null) ? $error['meta'] : [],
-                ],
-            ], 422);
-        }
-
-        return response()->json([
-            'success' => [
-                'data' => is_array($result['data'] ?? null) ? $result['data'] : [],
+            'request' => [
+                'method' => 'GET',
+                'url' => $this->profileUrl($app, $uri),
+                'uri' => $uri,
             ],
-        ]);
+        ];
     }
 
     private function resolveVisibleApp(string $selector, Node $caller, ?string $nodeConstraint): ?AppModel

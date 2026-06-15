@@ -12,6 +12,8 @@ use App\Services\Profile\ProfileHumanRenderer;
 use App\Services\Profile\ProfileInput;
 use App\Services\Profile\ProfileInputFailure;
 use App\Services\Profile\ProfileInputResolver;
+use App\Services\Profile\ProfileRequestProfiler;
+use Illuminate\Support\Str;
 
 final class ProfileCommand extends GatewayCommand
 {
@@ -34,6 +36,7 @@ final class ProfileCommand extends GatewayCommand
         ProfileInputResolver $inputResolver,
         ProfileAppSelector $selector,
         ProfileHumanRenderer $renderer,
+        ProfileRequestProfiler $profiler,
     ): int {
         $input = $this->resolveInput($inputResolver, $selector);
 
@@ -41,30 +44,44 @@ final class ProfileCommand extends GatewayCommand
             return $this->renderProfileFailure($input->code, $input->message, $input->meta);
         }
 
-        return $this->runProfile($input, $selector, $renderer);
+        return $this->runProfile($input, $selector, $renderer, $profiler);
     }
 
-    private function runProfile(ProfileInput $input, ProfileAppSelector $selector, ProfileHumanRenderer $renderer): int
-    {
+    private function runProfile(
+        ProfileInput $input,
+        ProfileAppSelector $selector,
+        ProfileHumanRenderer $renderer,
+        ProfileRequestProfiler $profiler,
+    ): int {
         try {
-            $response = $this->profileThroughGateway($input);
+            $response = $this->resolveThroughGateway($input);
         } catch (GatewayApiException $exception) {
             if (
                 $input->targetWasOmitted
                 && $this->canPromptForApp()
                 && $exception->gatewayErrorCode() === 'app.not_found'
             ) {
-                return $this->runPromptedProfile($input, $selector, $renderer);
+                return $this->runPromptedProfile($input, $selector, $renderer, $profiler);
             }
 
             return $this->renderProfileGatewayFailure($exception);
         }
 
-        return $this->renderProfileResponse($response, $renderer);
+        $resolution = $this->profileData($response);
+
+        if ($resolution === []) {
+            return $this->renderProfileFailure('profile_request_failed', 'Failed to complete profile request.');
+        }
+
+        return $this->runCallerProfile($input, $resolution, $renderer, $profiler);
     }
 
-    private function runPromptedProfile(ProfileInput $input, ProfileAppSelector $selector, ProfileHumanRenderer $renderer): int
-    {
+    private function runPromptedProfile(
+        ProfileInput $input,
+        ProfileAppSelector $selector,
+        ProfileHumanRenderer $renderer,
+        ProfileRequestProfiler $profiler,
+    ): int {
         try {
             $selected = $this->promptForApp($selector, $input->node);
         } catch (GatewayApiException $exception) {
@@ -77,19 +94,74 @@ final class ProfileCommand extends GatewayCommand
             ]);
         }
 
-        return $this->runProfile($input->withTarget($selected), $selector, $renderer);
+        return $this->runProfile($input->withTarget($selected), $selector, $renderer, $profiler);
     }
 
-    private function renderProfileResponse(array $response, ProfileHumanRenderer $renderer): int
-    {
-        if ($this->wantsJson()) {
-            return $this->renderSuccess($response, ['warnings' => []]);
+    /**
+     * @param  array<string, mixed>  $resolution
+     */
+    private function runCallerProfile(
+        ProfileInput $input,
+        array $resolution,
+        ProfileHumanRenderer $renderer,
+        ProfileRequestProfiler $profiler,
+    ): int {
+        $url = $this->resolvedProfileUrl($resolution);
+
+        if ($url === null) {
+            return $this->renderProfileFailure('profile_request_failed', 'Failed to complete profile request.');
         }
 
-        $data = $this->profileData($response);
+        $requestId = (string) Str::uuid();
+        $authMode = $this->resolvedAuthMode($resolution, $input);
+        $probe = $profiler->profile($url, $this->profileHeaders($authMode, $requestId, $input->user));
+        $request = is_array($probe['request'] ?? null) ? $probe['request'] : [];
 
-        if ($data === []) {
-            return $this->renderProfileFailure('profile_request_failed', 'Failed to complete profile request.');
+        if (($request['completed'] ?? false) !== true) {
+            return $this->renderProfileFailure(
+                'profile_request_failed',
+                'Failed to complete profile request.',
+                [
+                    'origin' => 'caller',
+                    'url' => $url,
+                ],
+                [
+                    'request' => $request,
+                    'timings' => is_array($probe['timings'] ?? null) ? $probe['timings'] : [],
+                    'profile_error' => is_array($probe['error'] ?? null) ? $probe['error'] : ['message' => 'Profile request failed.'],
+                ],
+            );
+        }
+
+        $data = [
+            ...$probe,
+            'source' => 'baseline',
+            'instrumented' => false,
+            'auth_mode' => $authMode,
+            'request_id' => $requestId,
+            'origin' => 'caller',
+            'target' => is_array($resolution['target'] ?? null) ? $resolution['target'] : [],
+        ];
+
+        $headers = is_array($probe['response_headers'] ?? null) ? $probe['response_headers'] : [];
+        $summary = $this->extractToolbarSummary($headers);
+
+        if ($summary !== null) {
+            $data['source'] = 'baseline+toolbar';
+            $data['instrumented'] = true;
+            $data['toolbar'] = $summary;
+        }
+
+        return $this->renderProfileData($data, $renderer);
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     */
+    private function renderProfileData(array $data, ProfileHumanRenderer $renderer): int
+    {
+        if ($this->wantsJson()) {
+            return $this->renderSuccess($data, ['warnings' => []]);
         }
 
         foreach ($renderer->lines($data) as $line) {
@@ -152,9 +224,9 @@ final class ProfileCommand extends GatewayCommand
     /**
      * @return array<string, mixed>
      */
-    private function profileThroughGateway(ProfileInput $input): array
+    private function resolveThroughGateway(ProfileInput $input): array
     {
-        return $this->gatewayGet('/api/profile', $input->query());
+        return $this->gatewayGet('/api/profile/resolve', $input->query());
     }
 
     /**
@@ -172,6 +244,67 @@ final class ProfileCommand extends GatewayCommand
     private function canPromptForApp(): bool
     {
         return ! $this->wantsJson() && $this->input->isInteractive();
+    }
+
+    /**
+     * @param  array<string, mixed>  $resolution
+     */
+    private function resolvedProfileUrl(array $resolution): ?string
+    {
+        $request = is_array($resolution['request'] ?? null) ? $resolution['request'] : [];
+        $url = $request['url'] ?? null;
+
+        return is_string($url) && $url !== '' ? $url : null;
+    }
+
+    /**
+     * @param  array<string, mixed>  $resolution
+     */
+    private function resolvedAuthMode(array $resolution, ProfileInput $input): string
+    {
+        $authMode = $resolution['auth_mode'] ?? null;
+
+        return is_string($authMode) && $authMode !== '' ? $authMode : $input->authMode;
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    private function profileHeaders(string $authMode, string $requestId, ?string $user): array
+    {
+        $headers = [
+            'X-REQUEST-ID' => $requestId,
+            'X-TOOLBAR-AUTH' => $authMode,
+        ];
+
+        if (is_string($user) && $user !== '') {
+            $headers['X-TOOLBAR-USER'] = $user;
+        }
+
+        return $headers;
+    }
+
+    /**
+     * @param  array<string, mixed>  $responseHeaders
+     * @return array<string, mixed>|null
+     */
+    private function extractToolbarSummary(array $responseHeaders): ?array
+    {
+        $encoded = $responseHeaders['x-toolbar-summary'] ?? null;
+
+        if (! is_string($encoded) || $encoded === '') {
+            return null;
+        }
+
+        $decoded = base64_decode($encoded, true);
+
+        if ($decoded === false) {
+            return null;
+        }
+
+        $summary = json_decode($decoded, associative: true);
+
+        return is_array($summary) ? $summary : null;
     }
 
     private function renderProfileGatewayFailure(GatewayApiException $exception): int

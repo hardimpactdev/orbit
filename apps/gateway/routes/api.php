@@ -153,6 +153,7 @@ Route::middleware(CorrelationHeader::class)->group(function (): void {
         Route::get('/processes/{name}/log', ProcessLogController::class);
         Route::delete('/processes/{name}', ProcessDestroyController::class);
         Route::patch('/processes/{name}', ProcessUpdateController::class);
+        Route::get('/profile/resolve', [ProfileController::class, 'resolve']);
         Route::get('/profile', ProfileController::class);
         Route::get('/php/runtime', PhpRuntimeController::class);
         Route::post('/php/use', PhpUseController::class);

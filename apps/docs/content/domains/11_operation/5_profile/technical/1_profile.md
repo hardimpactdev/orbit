@@ -7,9 +7,9 @@
 **Effects:** `read`.
 
 **Prerequisites:**
-- The CLI caller can reach the Orbit gateway for gateway app resolution, authorization, and gateway-origin profiling.
+- The CLI caller can reach the Orbit gateway for app resolution and authorization.
 - The gateway identifies the calling WireGuard peer and authorizes that peer to read the resolved app.
-- The target app route is reachable from the selected request origin.
+- The target app route is reachable from the caller machine.
 - Authenticated profiles require app-side support for the explicit Toolbar auth header contract.
 
 ## Signature
@@ -54,10 +54,12 @@ This command follows the shared
    - unresolved omitted target in interactive mode opens the app selector.
 5. Apply `--node=<node>` as a node constraint during app resolution or app
    selection.
-6. The gateway authorizes the calling peer for the resolved app.
-7. Resolve request origin:
-   - `caller` when the CLI's calling peer is identified as an operator peer and the resolved URL is reachable from that machine;
-   - `gateway` for gateway peers, app peers, and operator peers whose environment cannot resolve or reach the route but whose gateway can.
+6. The gateway authorizes the calling peer for the resolved app and returns the
+   resolved request URL and target metadata.
+7. Use the caller machine as the only request origin. Caller-local DNS overrides
+   and routing must affect the measured request. If the caller cannot resolve
+   or reach the resolved URL, fail with `profile_request_failed`; do not retry
+   or fall back from the gateway.
 8. Generate a per-run request id.
 9. Resolve Toolbar auth headers:
     - no auth flags: `X-TOOLBAR-AUTH: guest`;
@@ -82,7 +84,11 @@ This command follows the shared
 
 ### Request Measurement Rules
 
-- Perform exactly one timed HTTP `GET` request to the resolved URL and URI.
+- Perform exactly one timed HTTP `GET` request from the caller to the resolved
+  URL and URI.
+- Do not perform the timed request from the gateway in the CLI command path.
+- Do not fall back to a gateway-origin request after caller-side DNS,
+  connection, TLS, timeout, or HTTP transport failure.
 - Follow redirects and report the final effective URL when it differs from the
   requested URL.
 - Preserve baseline timing fields equivalent to cURL output: `dns_ms`, `connect_ms`,
@@ -168,7 +174,8 @@ Primary test owners:
 
 | Path | Coverage |
 | --- | --- |
-| `apps/gateway/tests/Feature/Commands/Operations/ProfileCommandTest.php` | Target resolution from cwd, absolute path, app/domain/URL target, `--node` scoping, auth-mode validation, gateway authorization by peer role, request-origin selection, completion semantics, non-2xx success, failure diagnostics, and read-only guarantee. |
+| `apps/cli/tests/Feature/Commands/Operation/ProfileCommandTest.php` | Target resolution from cwd, app/domain/URL target, `--node` scoping, auth-mode validation, caller-origin request execution, no gateway-origin CLI fallback, completion semantics, Toolbar enrichment, and caller-side failure diagnostics. |
+| `apps/gateway/tests/Feature/Http/Api/ProfileControllerTest.php` | Gateway target resolution, authorization by peer role, derived development domains, absolute path resolution, resolve-only metadata, and gateway API compatibility profiling. |
 | `apps/gateway/tests/Unit/Services/CurlRequestProfilerTest.php` | Baseline HTTP timing extraction, request status/bytes/effective URL, response-header capture, completed non-2xx handling, failed request diagnostics, timeout behavior, and stable millisecond conversion. |
 
 Input-mode-specific test mapping lives in:

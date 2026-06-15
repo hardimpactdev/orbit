@@ -17,6 +17,8 @@ use App\Services\GatewayOperationEventStreamClient;
 use App\Services\GatewayOperationFollower;
 use App\Services\GatewayStreamClient;
 use App\Services\OrbitConfigStore;
+use App\Services\Profile\CurlProfileRequestProfiler;
+use App\Services\Profile\ProfileRequestProfiler;
 use App\Services\Trust\LinuxTrustStoreInstaller;
 use App\Services\Trust\MacOsTrustStoreInstaller;
 use App\Services\Trust\TrustStoreInstaller;
@@ -43,6 +45,8 @@ final class GatewayApiServiceProvider extends ServiceProvider
     public function register(): void
     {
         $this->app->bind(ResolvesLocalDns::class, fn (): ResolvesLocalDns => new LocalResolver);
+
+        $this->app->bind(ProfileRequestProfiler::class, CurlProfileRequestProfiler::class);
 
         $this->app->bind(RunsLocalUpdate::class, LocalCheckoutUpdater::class);
 

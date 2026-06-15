@@ -43,6 +43,43 @@ function assignProfileAppHostRole(Node $node, string $role = 'app-dev', array $s
 }
 
 describe('ProfileController', function (): void {
+    it('resolves a visible app for caller-side profiling without running the gateway profiler', function (): void {
+        $caller = createProfileCallerNode();
+        $node = Node::factory()->create(['name' => 'app-1']);
+        assignProfileAppHostRole($node);
+        grantProfileAccess($caller, $node);
+
+        App::factory()->create([
+            'name' => 'docs',
+            'node_id' => $node->id,
+            'domain' => 'docs.example.com',
+        ]);
+
+        app()->instance(RequestProfiler::class, new class implements RequestProfiler
+        {
+            public function profile(string $url, array $headers = []): array
+            {
+                throw new RuntimeException('Gateway profiler must not run during profile resolution.');
+            }
+        });
+
+        $response = $this->call('GET', '/api/profile/resolve', [
+            'target' => 'docs',
+            'uri' => '/login',
+            'auth_mode' => 'user',
+            'user' => '42',
+        ], [], [], ['REMOTE_ADDR' => PROFILE_CALLER_WG_IP]);
+
+        $response->assertOk()
+            ->assertJsonPath('success.data.auth_mode', 'user')
+            ->assertJsonPath('success.data.target.app', 'docs')
+            ->assertJsonPath('success.data.target.node', 'app-1')
+            ->assertJsonPath('success.data.target.domain', 'docs.example.com')
+            ->assertJsonPath('success.data.request.method', 'GET')
+            ->assertJsonPath('success.data.request.url', 'https://docs.example.com/login')
+            ->assertJsonPath('success.data.request.uri', '/login');
+    });
+
     it('profiles a visible app from the gateway origin', function (): void {
         $caller = createProfileCallerNode();
         $node = Node::factory()->create(['name' => 'app-1']);
