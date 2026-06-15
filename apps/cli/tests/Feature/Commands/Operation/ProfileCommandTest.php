@@ -368,6 +368,31 @@ describe('profile', function (): void {
             ->and($decoded['error']['meta']['origin'])->toBe('caller');
     });
 
+    it('renders caller-side profile request failure diagnostics in human mode', function (): void {
+        fakeLocalProfile(fakeProfileData([
+            'request' => [
+                'method' => 'GET',
+                'url' => 'https://docs.test/',
+                'uri' => '/',
+                'status' => null,
+                'bytes' => 0,
+                'completed' => false,
+            ],
+            'error' => [
+                'message' => 'Operation timed out',
+            ],
+        ]));
+        fakeGateway(fakeSuccessEnvelope(fakeProfileResolutionData()));
+
+        [$exitCode, $output] = runCommand($this, 'profile', ['target' => 'docs']);
+
+        expect($exitCode)->toBe(1)
+            ->and($output)->toContain('Failed to complete profile request.')
+            ->and($output)->toContain('Origin: caller')
+            ->and($output)->toContain('URL: https://docs.test/')
+            ->and($output)->toContain('Error: Operation timed out');
+    });
+
     it('surfaces wireguard-specific gateway failures', function (): void {
         fakeGatewayDown('No route to host');
 

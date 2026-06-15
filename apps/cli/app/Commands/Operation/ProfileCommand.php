@@ -341,6 +341,44 @@ final class ProfileCommand extends GatewayCommand
             default => $message,
         });
 
+        if ($code === 'profile_request_failed') {
+            foreach ($this->profileFailureDiagnosticLines($meta, $data) as $line) {
+                $this->line($line);
+            }
+        }
+
         return self::FAILURE;
+    }
+
+    /**
+     * @param  array<string, mixed>  $meta
+     * @param  array<string, mixed>  $data
+     * @return list<string>
+     */
+    private function profileFailureDiagnosticLines(array $meta, array $data): array
+    {
+        $origin = $meta['origin'] ?? null;
+        $origin = is_string($origin) ? trim($origin) : null;
+
+        if ($origin !== 'caller') {
+            return [];
+        }
+
+        $lines = ['Origin: caller'];
+
+        $url = $meta['url'] ?? null;
+
+        if (is_string($url) && trim($url) !== '') {
+            $lines[] = "URL: {$url}";
+        }
+
+        $profileError = $data['profile_error'] ?? null;
+        $profileErrorMessage = is_array($profileError) ? $profileError['message'] ?? null : null;
+
+        if (is_string($profileErrorMessage) && trim($profileErrorMessage) !== '') {
+            $lines[] = "Error: {$profileErrorMessage}";
+        }
+
+        return $lines;
     }
 }
