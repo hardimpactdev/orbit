@@ -240,7 +240,7 @@ describe('NodeShowController', function (): void {
             ->assertJsonPath('success.data.node.platform', 'unknown');
     });
 
-    it('falls back to host when wireguard_address is missing', function (): void {
+    it('does not expose host as the WireGuard address when wireguard_address is missing', function (): void {
         DB::table('nodes')->insert([
             apiShowNodeRow([
                 'name' => 'app-1',
@@ -252,7 +252,7 @@ describe('NodeShowController', function (): void {
         $response = getApiNodeJson('/api/nodes/app-1', ['REMOTE_ADDR' => SHOW_CALLER_WG_IP]);
 
         $response->assertOk()
-            ->assertJsonPath('success.data.node.addresses.wireguard', '192.168.1.1');
+            ->assertJsonPath('success.data.node.addresses.wireguard', null);
     });
 
     it('returns correct node shape for gateway node', function (): void {

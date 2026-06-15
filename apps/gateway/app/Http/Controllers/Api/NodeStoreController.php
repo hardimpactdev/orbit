@@ -144,6 +144,7 @@ final readonly class NodeStoreController implements Loggable
         $this->addStringOption($arguments, '--redis-node', $request, 'redis_node');
         $this->addStringOption($arguments, '--s3-data-path', $request, 's3_data_path');
         $this->addStringOption($arguments, '--user', $request, 'user');
+        $this->addStringOption($arguments, '--gateway-endpoint', $request, 'gateway_endpoint');
         $this->addStringOption($arguments, '--host-key-fingerprint', $request, 'host_key_fingerprint');
         $this->addStringOption($arguments, '--self-grant', $request, 'self_grant');
         $this->addStringOption($arguments, '--self-grant-permissions', $request, 'self_grant_permissions');

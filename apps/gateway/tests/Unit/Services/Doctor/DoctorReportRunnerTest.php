@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Contracts\RemoteShell;
+use App\Contracts\SiteCertificateInstaller;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Models\App;
 use App\Models\DatabaseConnection;
@@ -11,6 +12,7 @@ use App\Models\FirewallRule;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Models\NodeTool;
+use App\Models\ProxyRoute;
 use App\Models\SchedulerState;
 use App\Models\WireGuardPeer;
 use App\Models\Workspace;
@@ -21,6 +23,7 @@ use App\Services\Runtime\OrbitCaddyContainer;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Process;
+use Tests\Fakes\SiteCertificateInstallerFake;
 use Tests\TestCase;
 
 uses(TestCase::class);
@@ -954,6 +957,8 @@ describe('DoctorReportRunner', function (): void {
 
     it('installs missing tools through restore mode family dispatch', function (): void {
         $gateway = Node::factory()->gateway()->create(['name' => 'gateway-1', 'status' => 'active']);
+        $decoyNode = Node::factory()->appDev()->create(['name' => 'decoy-app']);
+        NodeTool::factory()->create(['node_id' => $decoyNode->id, 'name' => 'composer']);
         $node = createDoctorRunnerAppHostNode();
         NodeTool::factory()->create(['node_id' => $node->id, 'name' => 'composer']);
         $shell = new DoctorReportRunnerRemoteShell([
@@ -993,7 +998,234 @@ describe('DoctorReportRunner', function (): void {
                 'status' => 'completed',
             ])
             ->and($shell->scripts)->toHaveCount(3)
+            ->and($shell->nodeNames[1])->toBe('app-1')
             ->and($shell->scripts[1])->toContain('composer-setup.php');
+    });
+
+    it('restores duplicate-name firewall rules on the scoped node', function (): void {
+        $decoyNode = Node::factory()->appDev()->create(['name' => 'decoy-app', 'platform' => 'ubuntu']);
+        $node = Node::factory()->appDev()->create(['name' => 'target-app', 'platform' => 'ubuntu']);
+
+        FirewallRule::factory()->create([
+            'node_id' => $decoyNode->id,
+            'name' => 'local-https',
+        ]);
+        FirewallRule::factory()->create([
+            'node_id' => $node->id,
+            'name' => 'local-https',
+        ]);
+
+        $missingFirewallStatus = <<<'TXT'
+Status: active
+
+To                         Action      From
+--                         ------      ----
+TXT;
+        $restoredFirewallStatus = <<<'TXT'
+Status: active
+
+To                         Action      From
+--                         ------      ----
+[ 1] 443/tcp                    ALLOW IN    Anywhere                   # test firewall rule
+TXT;
+
+        $shell = new DoctorReportRunnerRemoteShell([
+            new RemoteShellResult(exitCode: 0, stdout: $missingFirewallStatus, stderr: '', durationMs: 1),
+            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+            new RemoteShellResult(exitCode: 0, stdout: $restoredFirewallStatus, stderr: '', durationMs: 1),
+        ]);
+        app()->instance(RemoteShell::class, $shell);
+
+        $report = app(DoctorReportRunner::class)->run($node, mode: 'restore', families: ['firewall_rule']);
+
+        expect($report['healthy'])->toBeTrue()
+            ->and($report['summary'])->toMatchArray([
+                'issues' => 0,
+                'fixed' => 1,
+                'skipped' => 0,
+            ])
+            ->and($report['actions'][0])->toMatchArray([
+                'family' => 'firewall_rule',
+                'node' => 'target-app',
+                'key' => 'firewall_rule.rule_missing',
+                'mode' => 'restore',
+                'status' => 'completed',
+            ])
+            ->and($shell->nodeNames[1])->toBe('target-app');
+    });
+
+    it('restores agent tool proxy routes through restore mode family dispatch', function (): void {
+        $node = Node::factory()->create([
+            'name' => 'agent-1',
+            'status' => 'active',
+            'platform' => 'ubuntu_24-04',
+            'host' => '10.6.0.11',
+            'wireguard_address' => '10.6.0.11',
+        ]);
+        NodeRoleAssignment::factory()->create([
+            'node_id' => $node->id,
+            'role' => 'agent',
+            'status' => 'active',
+            'settings' => ['tld' => 'agent'],
+        ]);
+        NodeTool::factory()->create([
+            'node_id' => $node->id,
+            'name' => 'openclaw',
+            'expected_state' => 'installed',
+            'credentials' => ['fields' => ['url' => 'https://openclaw.agent']],
+        ]);
+        ProxyRoute::factory()->create([
+            'node_id' => $node->id,
+            'domain' => 'openclaw.agent',
+            'owner_type' => 'tool',
+            'kind' => 'proxy',
+            'source_hash' => str_repeat('b', 64),
+            'config' => [
+                'target' => ['type' => 'upstream', 'value' => 'http://127.0.0.1:9999'],
+                'upstream' => 'http://127.0.0.1:9999',
+                'owner_name' => 'openclaw',
+            ],
+        ]);
+        app()->instance(RemoteShell::class, new DoctorReportRunnerRemoteShell([
+            new RemoteShellResult(
+                exitCode: 0,
+                stdout: "/usr/local/bin/openclaw\tOpenClaw 1.0\trunning\t\t\t\t\t\t\t\n",
+                stderr: '',
+                durationMs: 1,
+            ),
+            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+        ]));
+
+        $report = app(DoctorReportRunner::class)->run($node, mode: 'restore', families: ['tool']);
+        $route = ProxyRoute::query()->where('domain', 'openclaw.agent')->firstOrFail();
+
+        expect($report['healthy'])->toBeTrue()
+            ->and($report['summary'])->toMatchArray([
+                'issues' => 0,
+                'fixed' => 1,
+                'skipped' => 0,
+            ])
+            ->and($report['issues'])->toBe([])
+            ->and($report['actions'][0])->toMatchArray([
+                'family' => 'tool',
+                'node' => 'agent-1',
+                'key' => 'tool.agent_route_missing',
+                'mode' => 'restore',
+                'status' => 'completed',
+            ])
+            ->and($route->config['upstream'])->toBe('http://host.docker.internal:8080');
+    });
+
+    it('restores missing process runtime units through restore mode family dispatch', function (): void {
+        $node = createDoctorRunnerAppHostNode([
+            'name' => 'app-1',
+            'tld' => 'test',
+            'platform' => 'ubuntu_24-04',
+        ]);
+        $app = App::factory()->for($node, 'node')->create([
+            'name' => 'docs',
+            'path' => '/home/orbit/apps/docs',
+        ]);
+        \App\Models\Process::factory()->forOwner($app)->create([
+            'name' => 'vite',
+            'command' => 'npm run dev -- --host=0.0.0.0',
+            'restart_policy' => 'on_failure',
+            'crash_notification' => 'none',
+            'sort_order' => 1,
+        ]);
+        $shell = new DoctorReportRunnerRemoteShell([
+            new RemoteShellResult(exitCode: 0, stdout: 'systemd OK', stderr: '', durationMs: 1),
+            new RemoteShellResult(
+                exitCode: 0,
+                stdout: "orbit_docs_main_vite\t0\t0\t0\t0\n__notifier\t1\t1\t1\t1\t1\n",
+                stderr: '',
+                durationMs: 1,
+            ),
+            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+        ]);
+        app()->instance(RemoteShell::class, $shell);
+        app()->instance(SiteCertificateInstaller::class, new SiteCertificateInstallerFake);
+
+        $report = app(DoctorReportRunner::class)->run($node, mode: 'restore', families: ['process']);
+
+        expect($report['healthy'])->toBeTrue()
+            ->and($report['summary'])->toMatchArray([
+                'issues' => 0,
+                'fixed' => 1,
+                'skipped' => 0,
+            ])
+            ->and($report['issues'])->toBe([])
+            ->and($report['actions'][0])->toMatchArray([
+                'family' => 'process',
+                'node' => 'app-1',
+                'key' => 'process.runtime_unit_missing',
+                'mode' => 'restore',
+                'status' => 'completed',
+            ])
+            ->and($shell->scripts[2])->toContain("sudo tee '/etc/systemd/system/orbit_docs_main_vite.service' >/dev/null");
+    });
+
+    it('restores missing process runtime units for the app named in the runtime unit', function (): void {
+        $node = createDoctorRunnerAppHostNode([
+            'name' => 'app-1',
+            'tld' => 'test',
+            'platform' => 'ubuntu_24-04',
+        ]);
+        $docs = App::factory()->for($node, 'node')->create([
+            'name' => 'docs',
+            'path' => '/home/orbit/apps/docs',
+        ]);
+        $blog = App::factory()->for($node, 'node')->create([
+            'name' => 'blog',
+            'path' => '/home/orbit/apps/blog',
+        ]);
+        \App\Models\Process::factory()->forOwner($docs)->create([
+            'name' => 'vp-dev',
+            'command' => 'npm run docs',
+            'restart_policy' => 'on_failure',
+            'crash_notification' => 'none',
+            'sort_order' => 1,
+        ]);
+        \App\Models\Process::factory()->forOwner($blog)->create([
+            'name' => 'vp-dev',
+            'command' => 'npm run blog',
+            'restart_policy' => 'on_failure',
+            'crash_notification' => 'none',
+            'sort_order' => 1,
+        ]);
+        $shell = new DoctorReportRunnerRemoteShell([
+            new RemoteShellResult(exitCode: 0, stdout: 'systemd OK', stderr: '', durationMs: 1),
+            new RemoteShellResult(
+                exitCode: 0,
+                stdout: "orbit_docs_main_vp-dev\t1\t1\t1\t1\n__notifier\t1\t1\t1\t1\t1\n",
+                stderr: '',
+                durationMs: 1,
+            ),
+            new RemoteShellResult(exitCode: 0, stdout: 'systemd OK', stderr: '', durationMs: 1),
+            new RemoteShellResult(
+                exitCode: 0,
+                stdout: "orbit_blog_main_vp-dev\t0\t0\t0\t0\n__notifier\t1\t1\t1\t1\t1\n",
+                stderr: '',
+                durationMs: 1,
+            ),
+            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+        ]);
+        app()->instance(RemoteShell::class, $shell);
+        app()->instance(SiteCertificateInstaller::class, new SiteCertificateInstallerFake);
+
+        $report = app(DoctorReportRunner::class)->run($node, mode: 'restore', families: ['process']);
+
+        expect($report['healthy'])->toBeTrue()
+            ->and($report['actions'][0])->toMatchArray([
+                'family' => 'process',
+                'node' => 'app-1',
+                'key' => 'process.runtime_unit_missing',
+                'mode' => 'restore',
+                'status' => 'completed',
+                'details' => ['app' => 'blog', 'process' => 'vp-dev'],
+            ])
+            ->and($shell->scripts[4])->toContain("sudo tee '/etc/systemd/system/orbit_blog_main_vp-dev.service' >/dev/null");
     });
 
     it('restores missing orbit-caddy containers through restore mode family dispatch', function (): void {
@@ -1634,6 +1866,11 @@ final class DoctorReportRunnerRemoteShell implements RemoteShell
     public array $scripts = [];
 
     /**
+     * @var list<string>
+     */
+    public array $nodeNames = [];
+
+    /**
      * @param  list<RemoteShellResult|Throwable>  $results
      */
     public function __construct(
@@ -1646,6 +1883,7 @@ final class DoctorReportRunnerRemoteShell implements RemoteShell
     public function run(Node $node, string $script, array $options = []): RemoteShellResult
     {
         $this->scripts[] = $script;
+        $this->nodeNames[] = $node->name;
         $result = array_shift($this->results);
 
         if ($result instanceof Throwable) {

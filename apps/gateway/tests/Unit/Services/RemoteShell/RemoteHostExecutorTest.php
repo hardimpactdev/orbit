@@ -47,6 +47,24 @@ it('preserves host shell env, timeout, input, stdout, and stderr semantics', fun
     });
 });
 
+it('passes configured process environment without adding it to the shell command', function (): void {
+    Process::preventStrayProcesses();
+    Process::fake([
+        '*' => Process::result(output: "host-ok\n"),
+    ]);
+
+    app(RemoteHostExecutor::class)->run(remoteHostExecutorNode(), 'printf "%s" "$APP_KEY"', [
+        'environment' => ['APP_KEY' => 'gateway-secret'],
+    ]);
+
+    Process::assertRan(function (PendingProcess $process): bool {
+        $command = (string) $process->command;
+
+        return ($process->environment['APP_KEY'] ?? null) === 'gateway-secret'
+            && ! str_contains($command, 'gateway-secret');
+    });
+});
+
 it('throws host shell failures with the current RemoteShellFailed semantics', function (): void {
     Process::preventStrayProcesses();
     Process::fake([
@@ -100,6 +118,46 @@ it('carries docker e2e node scope into remote ssh sessions', function (): void {
             putenv('ORBIT_E2E_DOCKER_NETWORK');
         } else {
             putenv("ORBIT_E2E_DOCKER_NETWORK={$previousNetwork}");
+        }
+    }
+});
+
+it('uses ssh for gateway host commands when running inside the gateway container', function (): void {
+    $previousExposureMode = getenv('ORBIT_GATEWAY_EXPOSURE_MODE');
+
+    putenv('ORBIT_GATEWAY_EXPOSURE_MODE=router-colocated');
+    Process::preventStrayProcesses();
+    Process::fake([
+        '*' => Process::result(output: "gateway-host-ok\n"),
+    ]);
+
+    try {
+        $node = remoteHostExecutorNode([
+            'name' => 'gateway',
+            'host' => '10.6.0.2',
+            'wireguard_address' => '10.6.0.2',
+        ]);
+        $node->roleAssignments()->create([
+            'role' => 'gateway',
+            'status' => 'active',
+            'settings' => [],
+        ]);
+
+        app(RemoteHostExecutor::class)->run($node, 'sudo tee /etc/caddy/sites/docs.test.caddy');
+
+        Process::assertRan(function (PendingProcess $process): bool {
+            $command = (string) $process->command;
+
+            return str_contains($command, 'ssh -o StrictHostKeyChecking=yes')
+                && str_contains($command, "'orbit'@'10.6.0.2'")
+                && str_contains($command, 'bash -lc')
+                && ! str_starts_with($command, 'bash -c ');
+        });
+    } finally {
+        if ($previousExposureMode === false) {
+            putenv('ORBIT_GATEWAY_EXPOSURE_MODE');
+        } else {
+            putenv("ORBIT_GATEWAY_EXPOSURE_MODE={$previousExposureMode}");
         }
     }
 });

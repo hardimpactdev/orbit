@@ -24,6 +24,7 @@ final class RemoteShellMetadata
         'ORBIT_TOOL_CONFIG_PATH',
         'ORBIT_TOOL_SERVICE',
         'ORBIT_URL',
+        'ORBIT_WG_EASY_DB_PATH',
         'ORBIT_WORKSPACE_BASE',
         'ORBIT_WORKSPACE_NAME',
         'ORBIT_WORKSPACE_PATH',

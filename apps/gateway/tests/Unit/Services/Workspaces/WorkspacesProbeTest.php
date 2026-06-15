@@ -216,6 +216,23 @@ describe('workspace security reality', function (): void {
             ->and(issue($drift, 'workspace.security.fs_permissions')?->kind)->toBe(DriftKind::Divergent);
     });
 
+    it('does not report host runtime isolation drift for Docker-first PHP workspaces', function (): void {
+        $app = workspaceableApp(['runtime_kind' => AppRuntimeKind::Php]);
+        $workspace = workspaceFor($app, ['name' => 'feature']);
+
+        $snapshot = new ProbeSnapshot([
+            'feature' => convergedRuntimeSnapshot([
+                'system_user_exists' => false,
+                'fs_permissions_ok' => false,
+            ]),
+        ]);
+
+        $drift = (new WorkspacesProbe)->diff($workspace, $snapshot);
+
+        expect(issue($drift, 'workspace.security.system_user'))->toBeNull()
+            ->and(issue($drift, 'workspace.security.fs_permissions'))->toBeNull();
+    });
+
     it('flags workspaces that belong to production app nodes', function (): void {
         $app = workspaceableApp(['environment' => 'production'], role: 'app-prod');
         $workspace = workspaceFor($app, ['name' => 'feature']);

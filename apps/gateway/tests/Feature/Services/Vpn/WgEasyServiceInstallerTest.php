@@ -374,6 +374,7 @@ it('converges the runtime server address and routes supported database updates t
         ->and($serverAddressScript)->not->toContain('setup_step');
 
     $scripts = array_column($this->wgEasyStateTransport->calls, 'script');
+    $metadata = array_column(array_column($this->wgEasyStateTransport->calls, 'options'), 'metadata');
 
     expect($scripts)->toHaveCount(4)
         ->and($scripts[0])->toContain('internal:wg-easy:state')
@@ -387,6 +388,11 @@ it('converges the runtime server address and routes supported database updates t
         ->and($scripts[2])->toContain("--default-persistent-keepalive='25'")
         ->and($scripts[3])->toContain("--action='update-general'")
         ->and($scripts[3])->toContain("--setup-step='0'");
+
+    foreach ($metadata as $entry) {
+        expect($entry)->toBeArray()
+            ->and($entry['ORBIT_WG_EASY_DB_PATH'] ?? null)->toBe($this->statePath.'/wg-easy.db');
+    }
 
     foreach ($scripts as $script) {
         expect($script)->not->toContain('sqlite3')
@@ -568,6 +574,7 @@ function wgEasyServiceInstallerExecutor(WgEasyServiceInstallerStateTransport $tr
         ),
         activityLogger: new ActivityLogger(new ActivityLogCorrelation),
         operationRuns: app(OperationRunRecorder::class),
+        operationTokenSecret: 'gateway-secret',
     );
 }
 

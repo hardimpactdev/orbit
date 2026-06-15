@@ -133,7 +133,7 @@ describe('node role assignment service', function (): void {
             ->and($assignment->fresh()->last_error)->toBeNull();
     });
 
-    it('syncs node tld from active app-dev and agent role settings', function (): void {
+    it('syncs node tld from active app-dev and database roles', function (): void {
         $node = Node::factory()->create([
             'platform' => 'ubuntu',
             'tld' => null,
@@ -151,7 +151,7 @@ describe('node role assignment service', function (): void {
 
         $node->refresh();
 
-        expect($node->tld)->toBeNull();
+        expect($node->tld)->toBe('test');
 
         app(NodeRoleAssignmentService::class)->remove($node, 'database', force: true);
 

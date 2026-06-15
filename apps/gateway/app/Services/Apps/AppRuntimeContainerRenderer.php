@@ -57,9 +57,24 @@ final readonly class AppRuntimeContainerRenderer
                     'read_only' => false,
                 ],
                 [
+                    'source' => $sourcePath,
+                    'target' => $sourcePath,
+                    'read_only' => false,
+                ],
+                [
                     'source' => $this->phpIniHostPath($app),
                     'target' => AppRuntimeContainer::PhpIniMountTarget,
                     'read_only' => true,
+                ],
+                [
+                    'source' => "{$sourcePath}/.orbit/frankenphp/data",
+                    'target' => '/data',
+                    'read_only' => false,
+                ],
+                [
+                    'source' => "{$sourcePath}/.orbit/frankenphp/config",
+                    'target' => '/config',
+                    'read_only' => false,
                 ],
             ],
             networkAliases: [
@@ -97,6 +112,8 @@ final readonly class AppRuntimeContainerRenderer
             // change the served URL boundary.
             'SERVER_NAME' => ':'.self::InternalPort,
             'SERVER_ROOT' => $this->documentRootInContainer($app),
+            'XDG_CONFIG_HOME' => '/config',
+            'XDG_DATA_HOME' => '/data',
             'ORBIT_APP' => $app->name,
             'ORBIT_APP_DOCUMENT_ROOT' => $app->document_root,
             'ORBIT_PHP_VERSION' => $app->php_version,

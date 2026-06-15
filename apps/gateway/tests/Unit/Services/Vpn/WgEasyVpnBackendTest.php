@@ -535,6 +535,7 @@ function wgEasyVpnBackendExecutor(WgEasyVpnBackendStateTransport $transport): Re
         ),
         activityLogger: new ActivityLogger(new ActivityLogCorrelation),
         operationRuns: app(OperationRunRecorder::class),
+        operationTokenSecret: 'gateway-secret',
     );
 }
 

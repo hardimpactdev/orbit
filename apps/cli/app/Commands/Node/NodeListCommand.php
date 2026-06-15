@@ -63,7 +63,7 @@ final class NodeListCommand extends GatewayCommand
             rows: array_map(fn (array $node): array => [
                 $this->statusIndicator($node),
                 $this->nodeString($node, 'name'),
-                $this->nodeString($node, 'host'),
+                $this->peerIp($node),
                 $this->humanPlatform($node),
                 $this->humanRoles($node['roles'] ?? []),
             ], $nodes),
@@ -147,6 +147,27 @@ final class NodeListCommand extends GatewayCommand
         }
 
         return explode('_', $platform, 2)[0] ?: 'unknown';
+    }
+
+    /**
+     * @param  array<string, mixed>  $node
+     */
+    private function peerIp(array $node): string
+    {
+        $addresses = $node['addresses'] ?? null;
+        $wireguardAddress = is_array($addresses) ? ($addresses['wireguard'] ?? null) : null;
+
+        if (is_scalar($wireguardAddress) && (string) $wireguardAddress !== '') {
+            return (string) $wireguardAddress;
+        }
+
+        $legacyWireguardAddress = $node['wireguard_address'] ?? null;
+
+        if (is_scalar($legacyWireguardAddress) && (string) $legacyWireguardAddress !== '') {
+            return (string) $legacyWireguardAddress;
+        }
+
+        return 'unknown';
     }
 
     /**

@@ -30,13 +30,19 @@ final class SshdHardenedInstaller implements SecurityInstaller
     public function script(Node $node): string
     {
         $wireguardAddress = trim((string) $node->wireguard_address);
+        $managedUser = trim((string) $node->user);
 
         return sprintf(
             <<<'SH'
 set -euo pipefail
 WG_ADDRESS=%s
+MANAGED_USER=%s
 if [ -z "$WG_ADDRESS" ]; then
     echo "Orbit WireGuard address is missing." >&2
+    exit 1
+fi
+if [ -z "$MANAGED_USER" ]; then
+    echo "Orbit managed SSH user is missing." >&2
     exit 1
 fi
 sudo install -d -m 0755 /etc/ssh/sshd_config.d
@@ -49,7 +55,7 @@ ChallengeResponseAuthentication no
 PubkeyAuthentication yes
 MaxAuthTries 3
 X11Forwarding no
-AllowUsers orbit
+AllowUsers $MANAGED_USER
 ListenAddress %s
 ListenAddress 127.0.0.1
 EOF
@@ -58,6 +64,7 @@ sudo sshd -t
 sudo systemctl reload ssh 2>/dev/null || sudo systemctl reload sshd
 SH,
             escapeshellarg($wireguardAddress),
+            escapeshellarg($managedUser),
             $wireguardAddress,
         );
     }

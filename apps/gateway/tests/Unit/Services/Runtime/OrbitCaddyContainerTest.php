@@ -18,11 +18,14 @@ describe('orbit caddy container', function (): void {
             ->and($container->network())->toBe('orbit-network')
             ->and($container->publishedPorts())->toBe([])
             ->and($container->mounts())->toBe([
+                ['source' => '/var/lib/caddy/.local/share/caddy', 'target' => '/data/caddy', 'read_only' => false],
+                ['source' => '/var/lib/caddy/.config/caddy', 'target' => '/config/caddy', 'read_only' => false],
                 ['source' => '/etc/caddy/Caddyfile', 'target' => '/etc/caddy/Caddyfile', 'read_only' => true],
                 ['source' => '/etc/caddy/orbit', 'target' => '/etc/caddy/orbit', 'read_only' => true],
                 ['source' => '/etc/caddy/sites', 'target' => '/etc/caddy/sites', 'read_only' => true],
                 ['source' => '/etc/orbit', 'target' => '/etc/orbit', 'read_only' => true],
                 ['source' => '/home', 'target' => '/home', 'read_only' => true],
+                ['source' => '/run/php', 'target' => '/run/php', 'read_only' => false],
             ])
             ->and($container->networkAliases())->toBe(['orbit-caddy'])
             ->and($container->extraHosts())->toBe(['host.docker.internal' => 'host-gateway'])
@@ -37,11 +40,14 @@ describe('orbit caddy container', function (): void {
                 'restart_policy' => 'unless-stopped',
                 'published_ports' => [],
                 'mounts' => [
+                    ['source' => '/var/lib/caddy/.local/share/caddy', 'target' => '/data/caddy', 'read_only' => false],
+                    ['source' => '/var/lib/caddy/.config/caddy', 'target' => '/config/caddy', 'read_only' => false],
                     ['source' => '/etc/caddy/Caddyfile', 'target' => '/etc/caddy/Caddyfile', 'read_only' => true],
                     ['source' => '/etc/caddy/orbit', 'target' => '/etc/caddy/orbit', 'read_only' => true],
                     ['source' => '/etc/caddy/sites', 'target' => '/etc/caddy/sites', 'read_only' => true],
                     ['source' => '/etc/orbit', 'target' => '/etc/orbit', 'read_only' => true],
                     ['source' => '/home', 'target' => '/home', 'read_only' => true],
+                    ['source' => '/run/php', 'target' => '/run/php', 'read_only' => false],
                 ],
                 'network_aliases' => ['orbit-caddy'],
                 'extra_hosts' => ['host.docker.internal' => 'host-gateway'],
@@ -117,6 +123,20 @@ describe('orbit caddy container', function (): void {
         expect($container->extraHosts())->toBe([
             'host.docker.internal' => 'host-gateway',
             'legacy.internal' => '127.0.0.1',
+        ]);
+    });
+
+    it('round-trips mounts through config', function (): void {
+        $container = OrbitCaddyContainer::fromConfig([
+            'mounts' => [
+                ['source' => '/custom/source', 'target' => '/custom/target', 'read_only' => true],
+                ['source' => '/custom/writable', 'target' => '/custom/writable'],
+            ],
+        ]);
+
+        expect($container->mounts())->toBe([
+            ['source' => '/custom/source', 'target' => '/custom/target', 'read_only' => true],
+            ['source' => '/custom/writable', 'target' => '/custom/writable', 'read_only' => false],
         ]);
     });
 });

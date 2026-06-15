@@ -29,6 +29,8 @@ apps/gateway/bootstrap/cache/**
 !apps/gateway/resources/views/**
 !apps/gateway/routes/
 !apps/gateway/routes/**
+!bin/
+!bin/install-orbit
 !packages/
 !packages/core/
 !packages/core/composer.json

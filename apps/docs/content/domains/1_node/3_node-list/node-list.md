@@ -62,6 +62,10 @@ an unlabeled health indicator: a green filled circle for active nodes and a red
 filled circle for inactive nodes. The remaining columns are `NAME`, `PEER IP`,
 `PLATFORM`, and `ROLES`.
 
+`PEER IP` is the node's Orbit WireGuard address. The bootstrap or public
+`host` metadata is never rendered as a peer IP. Nodes without a recorded
+WireGuard address render `unknown` in human output.
+
 JSON output is a structured node array. See the
 [JSON renderer contract](technical/6.2_node-list_output-render_json.md) for the
 envelope shape.

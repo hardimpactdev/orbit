@@ -223,6 +223,34 @@ describe('ToolsFixer', function (): void {
             ->and($shell->scripts[0])->toContain('sudo php composer-setup.php --install-dir=/usr/local/bin --filename=composer');
     });
 
+    it('passes the node managed user into host tool install scripts', function (): void {
+        $node = createTestAppHostNode(['name' => 'app-1', 'status' => 'active', 'user' => 'nckrtl']);
+        $tool = NodeTool::factory()->create([
+            'node_id' => $node->id,
+            'name' => 'laravel-installer',
+            'expected_state' => 'installed',
+        ]);
+        $shell = new ToolsFixerRemoteShell;
+
+        $action = (new ToolsFixer($shell))->fix($tool, new DriftEntry(
+            family: 'tool',
+            key: 'tool.capability_missing',
+            kind: DriftKind::Missing,
+            summary: 'Tool laravel-installer is missing on the target node.',
+            detail: ['tool' => 'laravel-installer'],
+        ));
+
+        expect($action)->toMatchArray([
+            'family' => 'tool',
+            'node' => 'app-1',
+            'key' => 'tool.capability_missing',
+            'mode' => 'fix',
+            'status' => 'completed',
+        ])->and($shell->scripts[0])->toContain("MANAGED_USER='nckrtl'")
+            ->and($shell->scripts[0])->toContain('sudo -u "${MANAGED_USER}"')
+            ->and($shell->scripts[0])->not->toContain("MANAGED_USER='orbit'");
+    });
+
     it('returns null for capability missing when no install script exists', function (): void {
         $node = createTestAppHostNode(['name' => 'app-1', 'status' => 'active']);
         $tool = NodeTool::factory()->create([

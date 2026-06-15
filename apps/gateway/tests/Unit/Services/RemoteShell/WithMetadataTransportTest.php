@@ -97,3 +97,13 @@ it('allows proxy route suffix metadata used by doctor probes', function (): void
 
     Process::assertRan(fn (PendingProcess $process): bool => str_contains((string) $process->command, 'export ORBIT_PROXY_SUFFIX='));
 });
+
+it('allows wg-easy database path metadata used by vpn state commands', function (): void {
+    Process::fake();
+
+    (new SshRemoteShell)->run(nodeWithPinnedHostKeyForMetadata(), 'test -n "$ORBIT_WG_EASY_DB_PATH"', [
+        'metadata' => ['ORBIT_WG_EASY_DB_PATH' => '/home/orbit/.config/orbit/wg-easy/wg-easy.db'],
+    ]);
+
+    Process::assertRan(fn (PendingProcess $process): bool => str_contains((string) $process->command, 'export ORBIT_WG_EASY_DB_PATH='));
+});

@@ -121,8 +121,12 @@ it('creates the orbit network, writes php.ini, and runs the app runtime containe
         ->and($scripts[2])->toContain('docker container inspect')
         ->and($scripts[3])->toContain("docker image inspect 'dunglas/frankenphp:1-php8.5-bookworm'")
         ->and($scripts[4])->toContain('/etc/orbit/apps/docs.ini')
+        ->and($scripts[4])->toContain("sudo install -d -m 0775 '/home/orbit/apps/docs/.orbit/frankenphp/data'")
+        ->and($scripts[4])->toContain("sudo install -d -m 0775 '/home/orbit/apps/docs/.orbit/frankenphp/config'")
         ->and($scripts[4])->toContain('docker run -d')
         ->and($scripts[4])->toContain("--env 'SERVER_NAME=:8080'")
+        ->and($scripts[4])->toContain("--env 'XDG_CONFIG_HOME=/config'")
+        ->and($scripts[4])->toContain("--env 'XDG_DATA_HOME=/data'")
         ->and($scripts[4])->not->toContain(' --publish ')
         ->and($scripts[4])->toContain("'orbit-app-docs'")
         ->and($scripts[4])->toContain("'dunglas/frankenphp:1-php8.5-bookworm'");
@@ -153,6 +157,8 @@ it('resolves production runtime users to numeric uid gid before creating the con
         ->and($container->runtimeUser())->toBe('docs')
         ->and($scripts[3])->toContain("id -u 'docs'")
         ->and($scripts[3])->toContain("id -g 'docs'")
+        ->and($scripts[4])->toContain("sudo chown '1001:1002' '/home/docs/app/.orbit/frankenphp/data'")
+        ->and($scripts[4])->toContain("sudo chown '1001:1002' '/home/docs/app/.orbit/frankenphp/config'")
         ->and($scripts[4])->toContain("--user '1001:1002'")
         ->and($scripts[4])->not->toContain('/var/run/docker.sock')
         ->and($scripts[4])->not->toContain('--group-add');

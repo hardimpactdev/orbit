@@ -49,13 +49,13 @@ final readonly class FirewallRuleProbe
 
     public function introspectNode(Node $node): ProbeSnapshot
     {
-        $result = ($this->remoteShell ?? app(RemoteShell::class))->run($node, 'sudo ufw status numbered', ['throw' => true]);
+        $result = ($this->remoteShell ?? app(RemoteShell::class))->run($node, $this->introspectionScript(), ['throw' => true]);
         $items = [
             '__firewall_backend_inspected' => ['inspected' => true],
         ];
 
         foreach (explode("\n", $result->stdout) as $line) {
-            $parsed = $this->parseUfwLine($line);
+            $parsed = $this->parseUfwLine($line) ?? $this->parseUfwStoredRuleLine($line);
 
             if ($parsed === null) {
                 continue;
@@ -65,6 +65,18 @@ final readonly class FirewallRuleProbe
         }
 
         return new ProbeSnapshot($items);
+    }
+
+    private function introspectionScript(): string
+    {
+        return <<<'SH'
+set -euo pipefail
+sudo ufw status numbered
+sudo awk '
+    FILENAME ~ /user6\.rules$/ && /^-A ufw6-user-input/ { print "__orbit_ufw_file:user6:" $0 }
+    FILENAME ~ /user\.rules$/ && /^-A ufw-user-input/ { print "__orbit_ufw_file:user:" $0 }
+' /etc/ufw/user.rules /etc/ufw/user6.rules 2>/dev/null || true
+SH;
     }
 
     /**
@@ -213,7 +225,7 @@ final readonly class FirewallRuleProbe
             ];
         }
 
-        if ($rule->node->status !== 'active' || $rule->node->platform !== 'ubuntu' || ! $this->canOwnFirewallRules($rule->node)) {
+        if ($rule->node->status !== 'active' || ! $this->isUbuntuPlatform($rule->node) || ! $this->canOwnFirewallRules($rule->node)) {
             return [
                 new DriftEntry(
                     family: $this->key(),
@@ -231,6 +243,11 @@ final readonly class FirewallRuleProbe
         }
 
         return [];
+    }
+
+    private function isUbuntuPlatform(Node $node): bool
+    {
+        return $node->platform === 'ubuntu' || str_starts_with($node->platform, 'ubuntu_');
     }
 
     private function canOwnFirewallRules(Node $node): bool
@@ -315,8 +332,8 @@ final readonly class FirewallRuleProbe
         return [
             'direction' => $rule->direction,
             'action' => $rule->action,
-            'source' => $rule->source,
-            'destination' => $rule->destination,
+            'source' => $this->normalizeAnyEndpoint($rule->source),
+            'destination' => $rule->destination === null ? null : $this->normalizeAnyEndpoint($rule->destination),
             'port' => $rule->port,
             'protocol' => $rule->protocol,
             'address_family' => $rule->address_family,
@@ -370,7 +387,7 @@ final readonly class FirewallRuleProbe
 
         if (preg_match('/^(.+?)\s+on\s+([a-zA-Z0-9_.:-]+)$/', $target, $interfaceMatches)) {
             $target = trim($interfaceMatches[1]);
-            $interface = $interfaceMatches[2] === 'wg0' ? 'wireguard' : null;
+            $interface = $this->normalizeInterface($interfaceMatches[2]);
         }
 
         if (preg_match('/^(\d{1,5}(?::\d{1,5})?)(?:\/(tcp|udp))?$/', $target, $targetMatches)) {
@@ -391,12 +408,83 @@ final readonly class FirewallRuleProbe
         ];
     }
 
+    /**
+     * @return array{direction: string, action: string, source: string, destination: ?string, port: string, protocol: string, address_family: string, interface: ?string, comment: string}|null
+     */
+    private function parseUfwStoredRuleLine(string $line): ?array
+    {
+        $line = trim($line);
+
+        if (! preg_match('/^__orbit_ufw_file:(user6|user):\s*-A\s+ufw6?-user-input\s+(.+)$/', $line, $matches)) {
+            return null;
+        }
+
+        $tokens = preg_split('/\s+/', trim($matches[2])) ?: [];
+        $jump = $this->tokenAfter($tokens, '-j');
+        $action = match ($jump) {
+            'ACCEPT' => 'allow',
+            'DROP', 'REJECT' => 'deny',
+            default => null,
+        };
+        $port = $this->tokenAfter($tokens, '--dport');
+        $protocol = $this->tokenAfter($tokens, '-p');
+
+        if ($action === null || $port === null || $protocol === null) {
+            return null;
+        }
+
+        return [
+            'direction' => 'incoming',
+            'action' => $action,
+            'source' => $this->normalizeAnyEndpoint($this->tokenAfter($tokens, '-s') ?? 'any'),
+            'destination' => null,
+            'port' => $port,
+            'protocol' => $protocol,
+            'address_family' => $matches[1] === 'user6' ? 'v6' : 'v4',
+            'interface' => ($interface = $this->tokenAfter($tokens, '-i')) === null ? null : $this->normalizeInterface($interface),
+            'comment' => '',
+        ];
+    }
+
+    /**
+     * @param  list<string>  $tokens
+     */
+    private function tokenAfter(array $tokens, string $token): ?string
+    {
+        $index = array_search($token, $tokens, true);
+
+        if (! is_int($index)) {
+            return null;
+        }
+
+        $value = $tokens[$index + 1] ?? null;
+
+        return is_string($value) && $value !== '' ? $value : null;
+    }
+
     private function normalizeEndpoint(string $value): string
     {
         return match ($value) {
             'Anywhere' => 'any',
             default => $value,
         };
+    }
+
+    private function normalizeAnyEndpoint(string $value): string
+    {
+        return match ($value) {
+            '0.0.0.0/0', '::/0' => 'any',
+            default => $value,
+        };
+    }
+
+    private function normalizeInterface(string $interface): string
+    {
+        if ($interface === 'wg0' || str_starts_with($interface, 'wg-')) {
+            return 'wireguard';
+        }
+
+        return 'public';
     }
 
     /**

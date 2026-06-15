@@ -20,6 +20,8 @@ use Throwable;
 
 final readonly class RemoteLocalExecutor implements RemoteExecutor
 {
+    private const string LOCAL_EXECUTOR_HOME = '/home/orbit';
+
     private const string OPERATION_ID_METADATA_KEY = 'ORBIT_OPERATION_ID';
 
     private const int OUTPUT_SUMMARY_BYTES = 4_096;
@@ -40,7 +42,12 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor
         private OperationTokenFactory $operationTokens,
         private ActivityLogger $activityLogger,
         private OperationRunRecorder $operationRuns,
-    ) {}
+        private string $operationTokenSecret,
+    ) {
+        if (trim($this->operationTokenSecret) === '') {
+            throw new RuntimeException('Operation token signing secret is required.');
+        }
+    }
 
     /**
      * @param  array{
@@ -828,6 +835,7 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor
      *     timeout?: int,
      *     input?: string,
      *     throw?: bool,
+     *     environment?: array<string, string>,
      *     metadata?: array<string, string>,
      *     strict?: bool,
      * }
@@ -836,7 +844,42 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor
     {
         unset($transportOptions['redact_stdout'], $transportOptions['redact_stderr'], $transportOptions['redact_command_options']);
 
+        $environment = $this->transportEnvironment($transportOptions);
+        $environment['HOME'] = self::LOCAL_EXECUTOR_HOME;
+        $environment['ORBIT_CONFIG_PATH'] = self::LOCAL_EXECUTOR_HOME.'/.config/orbit/config.json';
+        $environment['APP_KEY'] = $this->operationTokenSecret;
+        $transportOptions['environment'] = $environment;
+
         return $transportOptions;
+    }
+
+    /**
+     * @param  array<string, mixed>  $transportOptions
+     * @return array<string, string>
+     */
+    private function transportEnvironment(array $transportOptions): array
+    {
+        $environment = $transportOptions['environment'] ?? [];
+
+        if ($environment === []) {
+            return [];
+        }
+
+        if (! is_array($environment)) {
+            throw new RuntimeException('environment must be an array of string values.');
+        }
+
+        $resolved = [];
+
+        foreach ($environment as $key => $value) {
+            if (! is_string($key) || ! is_string($value)) {
+                throw new RuntimeException('environment must be an array of string values.');
+            }
+
+            $resolved[$key] = $value;
+        }
+
+        return $resolved;
     }
 }
 

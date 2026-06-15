@@ -91,6 +91,55 @@ describe('AppRegisterController', function (): void {
             ->and($remoteShell->scripts[0])->toContain("test -d '/home/orbit/apps/docs'");
     });
 
+    it('moves an existing app when node and path are explicit', function (): void {
+        createTestGatewayNode([
+            'name' => 'gateway-1']);
+
+        $caller = createAppRegisterCallerNode();
+        $oldNode = createTestAppHostNode([
+            'name' => 'old-app',
+            'tld' => 'old',
+            'status' => 'active']);
+        $targetNode = createTestAppHostNode([
+            'name' => 'new-app',
+            'tld' => 'test',
+            'status' => 'active']);
+        grantAppRegisterAccess($caller, $targetNode);
+        App::factory()->create([
+            'name' => 'docs',
+            'node_id' => $oldNode->id,
+            'path' => '/home/orbit/apps/docs',
+            'document_root' => 'public',
+            'adopted' => true,
+        ]);
+
+        $remoteShell = new AppRegisterApiSequencedRemoteShell([
+            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+            new RemoteShellResult(exitCode: 0, stdout: '/usr/sbin/php-fpm8.5', stderr: '', durationMs: 1),
+            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1)]);
+        app()->instance(RemoteShell::class, $remoteShell);
+
+        $response = $this->call('POST', '/api/apps/register', [
+            'name' => 'docs',
+            'node' => 'new-app',
+            'path' => '/srv/docs',
+        ], [], [], ['REMOTE_ADDR' => APP_REGISTER_CALLER_WG_IP]);
+
+        $response->assertOk()
+            ->assertJsonPath('success.data.result.action', 'moved')
+            ->assertJsonPath('success.data.app.node', 'new-app')
+            ->assertJsonPath('success.data.app.path', '/srv/docs');
+
+        $app = App::query()->where('name', 'docs')->firstOrFail();
+
+        expect($app->node_id)->toBe($targetNode->id)
+            ->and($app->path)->toBe('/srv/docs')
+            ->and($app->adopted)->toBeTrue()
+            ->and($remoteShell->nodeNames[0])->toBe('new-app')
+            ->and($remoteShell->scripts[0])->toContain("test -d '/srv/docs'");
+    });
+
     it('rejects registration when the caller lacks app:register on the target app node', function (): void {
         createTestGatewayNode([
             'name' => 'gateway-1']);
@@ -215,6 +264,11 @@ final class AppRegisterApiSequencedRemoteShell implements RemoteShell
     public array $scripts = [];
 
     /**
+     * @var list<string>
+     */
+    public array $nodeNames = [];
+
+    /**
      * @param  list<RemoteShellResult>  $results
      */
     public function __construct(
@@ -224,6 +278,7 @@ final class AppRegisterApiSequencedRemoteShell implements RemoteShell
     public function run(Node $node, string $script, array $options = []): RemoteShellResult
     {
         $this->scripts[] = $script;
+        $this->nodeNames[] = $node->name;
 
         return array_shift($this->results) ?? new RemoteShellResult(
             exitCode: 0,

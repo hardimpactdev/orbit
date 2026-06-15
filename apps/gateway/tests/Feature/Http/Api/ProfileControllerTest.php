@@ -109,6 +109,58 @@ describe('ProfileController', function (): void {
             ->and($profiler->calls[0]['headers']['X-TOOLBAR-USER'])->toBe('42');
     });
 
+    it('profiles a visible development app by derived local domain', function (): void {
+        $caller = createProfileCallerNode();
+        $node = Node::factory()->appDev(['tld' => 'test'])->create(['name' => 'beast']);
+        grantProfileAccess($caller, $node);
+
+        App::factory()->create([
+            'name' => 'docs',
+            'node_id' => $node->id,
+            'domain' => null,
+        ]);
+
+        app()->instance(RequestProfiler::class, new class implements RequestProfiler
+        {
+            public array $calls = [];
+
+            public function profile(string $url, array $headers = []): array
+            {
+                $this->calls[] = compact('url', 'headers');
+
+                return [
+                    'request' => [
+                        'method' => 'GET',
+                        'url' => $url,
+                        'uri' => '/',
+                        'status' => 200,
+                        'bytes' => 1234,
+                        'completed' => true,
+                    ],
+                    'timings' => [
+                        'dns_ms' => 1.0,
+                        'connect_ms' => 2.0,
+                        'tls_ms' => 3.0,
+                        'ttfb_ms' => 4.0,
+                        'download_ms' => 1.5,
+                        'total_ms' => 5.5,
+                    ],
+                    'error' => null,
+                    'response_headers' => [],
+                ];
+            }
+        });
+
+        $response = $this->call('GET', '/api/profile', [
+            'target' => 'docs.test',
+        ], [], [], ['REMOTE_ADDR' => PROFILE_CALLER_WG_IP]);
+
+        $response->assertOk()
+            ->assertJsonPath('success.data.target.app', 'docs')
+            ->assertJsonPath('success.data.target.domain', 'docs.test')
+            ->assertJsonPath('success.data.request.url', 'https://docs.test/');
+    });
+
     it('rejects hidden apps before profiling', function (): void {
         createProfileCallerNode();
         $node = Node::factory()->appDev()->create();

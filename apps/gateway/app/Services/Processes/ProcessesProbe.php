@@ -573,9 +573,11 @@ PHP;
         }
 
         $isDocker = in_array($this->runtimeFor($process), [ProcessRuntime::Docker, ProcessRuntime::DockerSwarm], true);
+        $runtimeUnitPrefix = $this->runtimeUnitPrefix($process);
 
         return collect($observed['runtime_unit_extras'])
             ->filter(fn (mixed $runtimeUnit): bool => is_string($runtimeUnit) && $runtimeUnit !== '')
+            ->filter(fn (string $runtimeUnit): bool => $runtimeUnitPrefix === null || str_starts_with($runtimeUnit, $runtimeUnitPrefix))
             ->map(function (string $runtimeUnit) use ($process, $isDocker): DriftEntry {
                 $detail = $this->runtimeUnitDetail($process, [
                     'name' => $runtimeUnit,
@@ -596,6 +598,17 @@ PHP;
             })
             ->values()
             ->all();
+    }
+
+    private function runtimeUnitPrefix(Process $process): ?string
+    {
+        $app = $process->ownerApp();
+
+        if (! $app instanceof App || $app->name === '') {
+            return null;
+        }
+
+        return "orbit_{$app->name}_";
     }
 
     /**

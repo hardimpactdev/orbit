@@ -297,7 +297,7 @@ it('converges router-colocated Caddy as the only host 80 443 and udp 443 listene
         ->and($caddyScript)->toContain("--publish '80:80'")
         ->and($caddyScript)->toContain("--publish '443:443'")
         ->and($caddyScript)->toContain("--publish '443:443/udp'")
-        ->and($gatewayRoute)->toContain('10.6.0.2 {')
+        ->and($gatewayRoute)->toContain('10.6.0.2 :443 {')
         ->and($gatewayRoute)->toContain('tls /etc/orbit/certs/gateway.crt /etc/orbit/certs/gateway.key')
         ->and($gatewayRoute)->toContain('remote_ip 10.6.0.0/24')
         ->and($gatewayRoute)->not->toContain('client_ip')

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\Doctor;
 
+use App\Actions\Apps\EnsureAppProcessRuntimeUnits;
 use App\Data\Doctor\DriftEntry;
 use App\Enums\Apps\AppRuntimeKind;
 use App\Enums\DriftKind;
@@ -748,7 +749,7 @@ final readonly class DoctorReportRunner
             }
         }
 
-        if (in_array('firewall_rule', $families, true) && $node->status === 'active' && $node->platform === 'ubuntu' && $this->canServeGatewayOrAppHost($node)) {
+        if (in_array('firewall_rule', $families, true) && $node->status === 'active' && $this->isUbuntuPlatform($node) && $this->canServeGatewayOrAppHost($node)) {
             $snapshot = $this->firewallRuleProbe->introspectNode($node);
 
             foreach ($this->firewallRuleProbe->adopt($node, $snapshot) as $result) {
@@ -788,6 +789,11 @@ final readonly class DoctorReportRunner
         return $this->nodeRoleAssignments->nodeCanServeGatewayOrAppHostWorkloads($node);
     }
 
+    private function isUbuntuPlatform(Node $node): bool
+    {
+        return $node->platform === 'ubuntu' || str_starts_with($node->platform, 'ubuntu_');
+    }
+
     private function activeWebSocketAssignment(Node $node): ?NodeRoleAssignment
     {
         return $this->nodeRoleAssignments->activeAssignment($node, NodeRoleName::WebSocket->value);
@@ -817,9 +823,10 @@ final readonly class DoctorReportRunner
             'app' => $this->applyAppIssue($node, $key, $detail),
             'database_connection' => $this->applyDatabaseConnectionIssue($key, $detail),
             'workspace' => $this->applyWorkspaceIssue($node, $key, $detail),
+            'process' => $this->applyProcessIssue($node, $key, $detail),
             'proxy' => $this->applyProxyIssue($node, $mode, $key, $detail, $issue),
-            'firewall_rule' => $this->applyFirewallIssue($key, $detail),
-            'tool' => $this->applyToolIssue($key, $detail),
+            'firewall_rule' => $this->applyFirewallIssue($node, $key, $detail),
+            'tool' => $this->applyToolIssue($node, $key, $detail),
             'schedule' => $this->applyScheduleIssue($node, $key, $detail, $issue),
             default => null,
         };
@@ -1015,6 +1022,105 @@ final readonly class DoctorReportRunner
         }
 
         return $this->handleWorkspaceAction($workspace, $this->driftEntryFromStoredParts('workspace', $key, $detail));
+    }
+
+    /**
+     * @param  array<string, mixed>  $detail
+     * @return array<string, mixed>|null
+     */
+    private function applyProcessIssue(Node $node, string $key, array $detail): ?array
+    {
+        if (! in_array($key, ['process.runtime_unit_missing', 'process.runtime_unit_mismatch'], true)) {
+            return null;
+        }
+
+        $processName = is_string($detail['process'] ?? null) ? $detail['process'] : null;
+
+        if ($processName === null) {
+            return null;
+        }
+
+        $processes = Process::query()
+            ->with('owner')
+            ->where('node_id', $node->id)
+            ->where('name', $processName)
+            ->get();
+        $runtimeUnit = is_string($detail['runtime_unit'] ?? null) ? $detail['runtime_unit'] : null;
+        $process = $this->processForRuntimeUnit($processes, $runtimeUnit) ?? $processes->first();
+
+        if (! $process instanceof Process) {
+            return null;
+        }
+
+        $app = $process->ownerApp();
+
+        if (! $app instanceof App) {
+            return null;
+        }
+
+        try {
+            $warnings = app(EnsureAppProcessRuntimeUnits::class)->handle($app);
+        } catch (\Throwable $e) {
+            return [
+                'family' => 'process',
+                'node' => $node->name,
+                'code' => $key,
+                'key' => $key,
+                'mode' => 'restore',
+                'status' => 'failed',
+                'summary' => "Failed to restore {$key}.",
+                'details' => [
+                    'error' => $e->getMessage(),
+                ],
+            ];
+        }
+
+        if ($warnings !== []) {
+            return [
+                'family' => 'process',
+                'node' => $node->name,
+                'code' => $key,
+                'key' => $key,
+                'mode' => 'restore',
+                'status' => 'failed',
+                'summary' => "Process runtime restore for {$app->name} completed with warnings.",
+                'details' => [
+                    'warnings' => $warnings,
+                ],
+            ];
+        }
+
+        return [
+            'family' => 'process',
+            'node' => $node->name,
+            'code' => $key,
+            'key' => $key,
+            'mode' => 'restore',
+            'status' => 'completed',
+            'summary' => "Restored process runtime units for {$app->name}.",
+            'details' => [
+                'app' => $app->name,
+                'process' => $process->name,
+            ],
+        ];
+    }
+
+    /**
+     * @param  Collection<int, Process>  $processes
+     */
+    private function processForRuntimeUnit(Collection $processes, ?string $runtimeUnit): ?Process
+    {
+        if ($runtimeUnit === null) {
+            return null;
+        }
+
+        return $processes->first(function (Process $process) use ($runtimeUnit): bool {
+            $app = $process->ownerApp();
+
+            return $app instanceof App
+                && $app->name !== ''
+                && str_starts_with($runtimeUnit, "orbit_{$app->name}_");
+        });
     }
 
     /**
@@ -1376,7 +1482,7 @@ final readonly class DoctorReportRunner
      * @param  array<string, mixed>  $detail
      * @return array<string, mixed>|null
      */
-    private function applyFirewallIssue(string $key, array $detail): ?array
+    private function applyFirewallIssue(Node $node, string $key, array $detail): ?array
     {
         $ruleName = is_string($detail['rule'] ?? null) ? $detail['rule'] : null;
 
@@ -1384,7 +1490,10 @@ final readonly class DoctorReportRunner
             return null;
         }
 
-        $rule = FirewallRule::query()->where('name', $ruleName)->first();
+        $rule = FirewallRule::query()
+            ->where('node_id', $node->id)
+            ->where('name', $ruleName)
+            ->first();
 
         return $rule instanceof FirewallRule
             ? $this->handleFirewallAction('restore', $rule, $this->driftEntryFromStoredParts('firewall_rule', $key, $detail))
@@ -1395,7 +1504,7 @@ final readonly class DoctorReportRunner
      * @param  array<string, mixed>  $detail
      * @return array<string, mixed>|null
      */
-    private function applyToolIssue(string $key, array $detail): ?array
+    private function applyToolIssue(Node $node, string $key, array $detail): ?array
     {
         $toolName = is_string($detail['tool'] ?? null) ? $detail['tool'] : null;
 
@@ -1403,7 +1512,10 @@ final readonly class DoctorReportRunner
             return null;
         }
 
-        $tool = NodeTool::query()->where('name', $toolName)->first();
+        $tool = NodeTool::query()
+            ->where('node_id', $node->id)
+            ->where('name', $toolName)
+            ->first();
 
         return $tool instanceof NodeTool
             ? $this->handleToolAction('restore', $tool, $this->driftEntryFromStoredParts('tool', $key, $detail))
@@ -1548,7 +1660,10 @@ final readonly class DoctorReportRunner
             'app.security.runtime_container_isolation',
             'firewall_rule.rule_missing',
             'firewall_rule.rule_mismatch',
+            'process.runtime_unit_missing',
+            'process.runtime_unit_mismatch',
             'tool.capability_missing',
+            'tool.agent_route_missing',
             'tool.container_missing',
             'tool.container_spec_mismatch',
             'tool.version_mismatch',

@@ -73,6 +73,28 @@ describe('ProxyRouteRenderer', function (): void {
             ->and($content)->toContain('redir https://docs.test{uri} 301');
     });
 
+    it('renders custom redirect routes marked for ACME without Orbit internal TLS paths', function (): void {
+        $node = createTestAppHostNode();
+        $route = ProxyRoute::factory()->create([
+            'node_id' => $node->id,
+            'domain' => 'www.docs.test',
+            'owner_type' => 'custom',
+            'kind' => 'redirect',
+            'config' => [
+                'target' => ['type' => 'redirect', 'value' => 'https://docs.test'],
+                'code' => 301,
+                'tls' => ['managed_by' => 'acme'],
+            ],
+        ]);
+
+        $content = (new ProxyRouteRenderer)->render($route);
+
+        expect($content)
+            ->toContain("tls {\n        issuer acme\n    }")
+            ->toContain('redir https://docs.test{uri} 301')
+            ->not->toContain('/etc/orbit/certs/www.docs.test.crt');
+    });
+
     it('accepts numeric string redirect codes in the 3xx range', function (): void {
         $node = createTestAppHostNode();
         $route = ProxyRoute::factory()->create([
@@ -114,7 +136,7 @@ describe('ProxyRouteRenderer', function (): void {
         (new ProxyRouteRenderer)->render($route);
     })->throws(RuntimeException::class, "Proxy route 'old.docs.test' has an invalid redirect code.");
 
-    it('renders ingress routes through the router upstream with forwarded headers', function (): void {
+    it('renders ingress routes through the router upstream with public ACME TLS and forwarded headers', function (): void {
         $ingress = Node::factory()->create(['name' => 'edge-1']);
         $route = ProxyRoute::factory()->create([
             'node_id' => $ingress->id,
@@ -152,7 +174,9 @@ describe('ProxyRouteRenderer', function (): void {
 
         expect($content)->toBe(<<<'CADDY'
 example.com {
-    tls /home/orbit/.config/orbit/certs/example.com.crt /home/orbit/.config/orbit/certs/example.com.key
+    tls {
+        issuer acme
+    }
     encode gzip
 
     reverse_proxy http://10.6.0.2:80 {
@@ -163,6 +187,7 @@ example.com {
 }
 
 CADDY);
+        expect($content)->not->toContain('/home/orbit/.config/orbit/certs/example.com.crt');
     });
 
     it('renders router routes with private backend pools and forwarded headers', function (): void {
@@ -346,7 +371,9 @@ CADDY)
 
         expect($renderer->renderIngress($route))->toBe(<<<'CADDY'
 ws.docs.test {
-    tls /home/orbit/.config/orbit/certs/ws.docs.test.crt /home/orbit/.config/orbit/certs/ws.docs.test.key
+    tls {
+        issuer acme
+    }
 
     reverse_proxy http://10.6.0.2:80 {
         flush_interval -1
@@ -428,7 +455,7 @@ CADDY);
         (new ProxyRouteRenderer)->renderIngress($route);
     })->throws(RuntimeException::class, 'Proxy route router upstream requires a valid http or https url.');
 
-    it('rejects ingress routes with unsafe tls paths', function (): void {
+    it('ignores persisted internal tls paths on public ingress routes', function (): void {
         $ingress = Node::factory()->create(['name' => 'edge-1']);
         $route = ProxyRoute::factory()->create([
             'node_id' => $ingress->id,
@@ -449,8 +476,13 @@ CADDY);
             ],
         ]);
 
-        (new ProxyRouteRenderer)->renderIngress($route);
-    })->throws(RuntimeException::class, "Proxy route 'example.com' has an invalid TLS cert path.");
+        $content = (new ProxyRouteRenderer)->renderIngress($route);
+
+        expect($content)
+            ->toContain("tls {\n        issuer acme\n    }")
+            ->not->toContain('relative/example.com.crt')
+            ->not->toContain('/home/orbit/.config/orbit/certs/example.com.key');
+    });
 
     it('renders private backend routes for PHP apps as HTTP reverse proxies to the FrankenPHP runtime container', function (): void {
         $appNode = Node::factory()->create(['name' => 'web-1']);
@@ -495,7 +527,7 @@ http://example.com:8081 {
     reverse_proxy http://orbit-app-example:8080 {
         header_up Host {host}
         header_up X-Forwarded-Host {host}
-        header_up X-Forwarded-Proto {scheme}
+        header_up X-Forwarded-Proto {http.request.header.X-Forwarded-Proto}
     }
 }
 
@@ -826,7 +858,7 @@ http://feature-a.example.com:8081 {
     reverse_proxy http://orbit-ws-example-feature-a {
         header_up Host {host}
         header_up X-Forwarded-Host {host}
-        header_up X-Forwarded-Proto {scheme}
+        header_up X-Forwarded-Proto {http.request.header.X-Forwarded-Proto}
     }
 }
 
@@ -941,7 +973,9 @@ CADDY)
 
         expect($content)->toBe(<<<'CADDY'
 s3.example.com {
-    tls /etc/orbit/certs/s3.example.com.crt /etc/orbit/certs/s3.example.com.key
+    tls {
+        issuer acme
+    }
 
     reverse_proxy http://10.6.0.1:80 {
         flush_interval -1

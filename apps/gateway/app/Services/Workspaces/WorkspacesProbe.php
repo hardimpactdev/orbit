@@ -272,6 +272,10 @@ PHP;
             return [];
         }
 
+        if ($workspace->app->runtime_kind === AppRuntimeKind::Php) {
+            return [];
+        }
+
         $observed = $snapshot->get($workspace->name);
 
         if ($observed === null || ($observed['path_exists'] ?? null) === false) {

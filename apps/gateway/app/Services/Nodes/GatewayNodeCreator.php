@@ -34,6 +34,7 @@ use App\Services\Tools\ToolCatalog;
 use App\Services\Tools\ToolInstaller;
 use App\Services\Tools\ToolRegistryFailure;
 use App\Services\Vpn\VpnDnsSwarmInstaller;
+use App\Services\Vpn\WgEasyAddressReservationProbe;
 use App\Services\WireGuard\WireGuardKeyGenerator;
 use App\Services\WireGuard\WireGuardPeerRealityProbe;
 use Illuminate\Database\Eloquent\Builder;
@@ -165,6 +166,7 @@ final class GatewayNodeCreator
                         'host' => $inputs['host'],
                         'tld' => $inputs['tld'],
                         'sshUser' => $inputs['sshUser'] ?? 'root',
+                        'gatewayEndpoint' => $inputs['gatewayEndpoint'],
                         'hostKeyFingerprint' => $inputs['hostKeyFingerprint'],
                     ],
                     initialHostedRoles: $placement['roles'],
@@ -207,7 +209,7 @@ final class GatewayNodeCreator
 
     /**
      * @param  list<string>  $roles
-     * @param  array{host: string, tld: ?string, sshUser: ?string, hostKeyFingerprint: ?string}  $inputs
+     * @param  array{host: string, tld: ?string, sshUser: ?string, gatewayEndpoint: ?string, hostKeyFingerprint: ?string}  $inputs
      */
     private function provisionHostedRoleNode(
         OrbitHostInstaller $installer,
@@ -243,6 +245,7 @@ final class GatewayNodeCreator
         $requiresHostProvisioning = array_intersect($roles, [
             NodeRoleName::AppDevelopment->value,
             NodeRoleName::AppProduction->value,
+            NodeRoleName::Database->value,
             NodeRoleName::Ingress->value,
             NodeRoleName::Agent->value,
         ]) !== [];
@@ -259,7 +262,7 @@ final class GatewayNodeCreator
             return $wireguardAddress;
         }
 
-        $gatewayEndpoint = $this->gatewayEndpoint();
+        $gatewayEndpoint = $inputs['gatewayEndpoint'] ?? $this->gatewayEndpoint();
         $platform = 'ubuntu';
         $host = $requiresHostProvisioning ? $inputs['host'] : '';
         $user = $requiresHostProvisioning ? $runtimeUser : self::DEFAULT_RUNTIME_USER;
@@ -318,7 +321,7 @@ final class GatewayNodeCreator
                 return $failure;
             }
 
-            $sshAuthorization = $this->authorizeRuntimeSshUser($node, $sshUser, $runtimeUser);
+            $sshAuthorization = $this->authorizeRuntimeSshUser($node, $runtimeUser, $runtimeUser);
 
             if (is_int($sshAuthorization)) {
                 $this->rollbackProvisioningNode($node, 'runtime_ssh_authorization_failed', [
@@ -340,7 +343,11 @@ final class GatewayNodeCreator
                 return $sshHardening;
             }
 
-            $wireGuardProvisioning = $this->configureProvisionedNodeWireGuard($node, $wireGuardKeyGenerator);
+            $wireGuardProvisioning = $this->configureProvisionedNodeWireGuard(
+                $node,
+                $wireGuardKeyGenerator,
+                gatewayEndpointOverride: $inputs['gatewayEndpoint'],
+            );
 
             if (is_int($wireGuardProvisioning)) {
                 $this->rollbackProvisioningNode($node, 'wireguard_install_failed', [
@@ -582,8 +589,11 @@ final class GatewayNodeCreator
         return null;
     }
 
-    private function configureProvisionedNodeWireGuard(Node $node, WireGuardKeyGenerator $wireGuardKeyGenerator): ?int
-    {
+    private function configureProvisionedNodeWireGuard(
+        Node $node,
+        WireGuardKeyGenerator $wireGuardKeyGenerator,
+        ?string $gatewayEndpointOverride = null,
+    ): ?int {
         $wireguardAddress = is_string($node->wireguard_address) ? trim($node->wireguard_address) : '';
 
         if ($wireguardAddress === '') {
@@ -612,7 +622,7 @@ final class GatewayNodeCreator
             );
         }
 
-        $gatewayEndpoint = $this->gatewayPublicEndpoint($gateway);
+        $gatewayEndpoint = $gatewayEndpointOverride ?? $this->gatewayPublicEndpoint($gateway);
 
         if ($gatewayEndpoint === null) {
             return $this->failCommand(
@@ -1079,7 +1089,7 @@ SH;
     }
 
     /**
-     * @param  array{host: string, tld: ?string, sshUser: string, hostKeyFingerprint: ?string}  $inputs
+     * @param  array{host: string, tld: ?string, sshUser: string, gatewayEndpoint: ?string, hostKeyFingerprint: ?string}  $inputs
      * @param  list<string>  $initialHostedRoles
      */
     private function provisionAppNode(
@@ -1147,7 +1157,7 @@ SH;
         }
 
         $runtimeUser = self::DEFAULT_RUNTIME_USER;
-        $gatewayEndpoint = $this->gatewayEndpoint();
+        $gatewayEndpoint = $inputs['gatewayEndpoint'] ?? $this->gatewayEndpoint();
 
         try {
             $pinnedHostKey = app(SshHostKeyPinner::class)->pin($inputs['host'], $inputs['hostKeyFingerprint']);
@@ -1198,7 +1208,7 @@ SH;
                 return $failure;
             }
 
-            $sshAuthorization = $this->authorizeRuntimeSshUser($node, $inputs['sshUser'], $runtimeUser);
+            $sshAuthorization = $this->authorizeRuntimeSshUser($node, $runtimeUser, $runtimeUser);
 
             if (is_int($sshAuthorization)) {
                 $this->rollbackProvisioningNode($node, 'runtime_ssh_authorization_failed', [
@@ -1220,7 +1230,11 @@ SH;
                 return $sshHardening;
             }
 
-            $wireGuardProvisioning = $this->configureProvisionedNodeWireGuard($node, $wireGuardKeyGenerator);
+            $wireGuardProvisioning = $this->configureProvisionedNodeWireGuard(
+                $node,
+                $wireGuardKeyGenerator,
+                gatewayEndpointOverride: $inputs['gatewayEndpoint'],
+            );
 
             if (is_int($wireGuardProvisioning)) {
                 $this->rollbackProvisioningNode($node, 'wireguard_install_failed', [
@@ -1324,7 +1338,7 @@ SH;
     }
 
     /**
-     * @param  array{host: string, tld: ?string, sshUser: string, hostKeyFingerprint: ?string}  $inputs
+     * @param  array{host: string, tld: ?string, sshUser: string, gatewayEndpoint: ?string, hostKeyFingerprint: ?string}  $inputs
      * @param  list<string>  $initialHostedRoles
      */
     private function materializeUnknownAppNode(
@@ -1343,7 +1357,7 @@ SH;
             'platform' => 'unknown',
             'host' => $inputs['host'],
             'wireguard_address' => '',
-            'gateway_endpoint' => $this->gatewayEndpoint(),
+            'gateway_endpoint' => $inputs['gatewayEndpoint'] ?? $this->gatewayEndpoint(),
             'user' => $inputs['sshUser'],
             'orbit_path' => '/home/'.self::DEFAULT_RUNTIME_USER.'/orbit',
             'status' => 'active',
@@ -1415,7 +1429,7 @@ SH;
             tld: $inputs['tld'],
             host: $inputs['host'],
             wireguardAddress: $wireguardAddress,
-            gatewayEndpoint: $this->gatewayEndpoint(),
+            gatewayEndpoint: $inputs['gatewayEndpoint'] ?? $this->gatewayEndpoint(),
             sshUser: $inputs['sshUser'],
             user: self::DEFAULT_RUNTIME_USER,
             status: Node::STATUS_ACTIVE,
@@ -1447,7 +1461,7 @@ SH;
     }
 
     /**
-     * @param  array{host: string, tld: ?string, sshUser: string, hostKeyFingerprint: ?string}  $inputs
+     * @param  array{host: string, tld: ?string, sshUser: string, gatewayEndpoint: ?string, hostKeyFingerprint: ?string}  $inputs
      * @param  list<string>  $initialHostedRoles
      */
     private function adoptExistingAppNode(
@@ -1962,7 +1976,7 @@ SCRIPT,
 
     private function forbiddenClientIdentityInput(): ?string
     {
-        foreach (['host', 'operator-name', 'tld', 'ingress', 'redis-node', 's3-data-path', 'host-key-fingerprint'] as $option) {
+        foreach (['host', 'operator-name', 'tld', 'ingress', 'redis-node', 's3-data-path', 'gateway-endpoint', 'host-key-fingerprint'] as $option) {
             if ($this->stringOption($option) !== null) {
                 return $option;
             }
@@ -2016,28 +2030,34 @@ SCRIPT,
 
     /**
      * @param  list<string>  $roles
-     * @return array{host: string, tld: ?string, sshUser: ?string, hostKeyFingerprint: ?string}|int
+     * @return array{host: string, tld: ?string, sshUser: ?string, gatewayEndpoint: ?string, hostKeyFingerprint: ?string}|int
      */
     private function resolveHostedRoleInputs(array $roles): array|int
     {
         $needsHost = array_intersect($roles, [
             NodeRoleName::AppDevelopment->value,
             NodeRoleName::AppProduction->value,
+            NodeRoleName::Database->value,
             NodeRoleName::Ingress->value,
             NodeRoleName::Agent->value,
         ]) !== [];
 
         if (! $needsHost && $this->stringOption('host') !== null) {
-            return $this->validationFailed('host', 'Only app-dev, app-prod, ingress, agent, and gateway use host provisioning.');
+            return $this->validationFailed('host', 'Only app-dev, app-prod, database, ingress, agent, and gateway use host provisioning.');
         }
 
         if (! $needsHost && $this->stringOption('host-key-fingerprint') !== null) {
-            return $this->validationFailed('host_key_fingerprint', 'Only app-dev, app-prod, ingress, agent, and gateway use host-key fingerprint pinning.');
+            return $this->validationFailed('host_key_fingerprint', 'Only app-dev, app-prod, database, ingress, agent, and gateway use host-key fingerprint pinning.');
+        }
+
+        if (! $needsHost && $this->stringOption('gateway-endpoint') !== null) {
+            return $this->validationFailed('gateway_endpoint', 'Only app-dev, app-prod, database, ingress, agent, and gateway use WireGuard endpoint overrides.');
         }
 
         $hostRole = array_first(array_intersect($roles, [
             NodeRoleName::AppDevelopment->value,
             NodeRoleName::AppProduction->value,
+            NodeRoleName::Database->value,
             NodeRoleName::Ingress->value,
             NodeRoleName::Agent->value,
         ])) ?? NodeRoleName::Agent->value;
@@ -2050,6 +2070,12 @@ SCRIPT,
 
         if ($host !== null && ! $this->isValidHost($host)) {
             return $this->validationFailed('host', 'Host must be a valid IP address or dotted DNS name.');
+        }
+
+        $gatewayEndpoint = $this->stringOption('gateway-endpoint');
+
+        if ($gatewayEndpoint !== null && ! $this->isValidHost($gatewayEndpoint)) {
+            return $this->validationFailed('gateway_endpoint', 'Gateway endpoint must be a valid IP address or dotted DNS name.');
         }
 
         $tld = $this->stringOption('tld');
@@ -2068,22 +2094,23 @@ SCRIPT,
             ));
         }
 
-        if (array_intersect($roles, [NodeRoleName::AppDevelopment->value, NodeRoleName::Agent->value]) !== []) {
+        if (array_intersect($roles, [NodeRoleName::AppDevelopment->value, NodeRoleName::Database->value, NodeRoleName::Agent->value]) !== []) {
             if ($tld === null) {
-                return $this->validationFailed('tld', 'Development app nodes require a TLD.');
+                return $this->validationFailed('tld', 'App development, database, and agent nodes require a TLD.');
             }
 
             if (! $this->isValidTld($tld)) {
                 return $this->validationFailed('tld', 'TLD must be a lowercase DNS label without a leading dot.');
             }
         } elseif ($tld !== null) {
-            return $this->validationFailed('tld', 'Only app-dev and agent use a TLD.');
+            return $this->validationFailed('tld', 'Only app-dev, database, and agent use a TLD.');
         }
 
         return [
             'host' => $host ?? '',
             'tld' => $tld,
             'sshUser' => $needsHost ? $this->resolveSshUser() : null,
+            'gatewayEndpoint' => $needsHost ? $gatewayEndpoint : null,
             'hostKeyFingerprint' => $needsHost ? $this->stringOption('host-key-fingerprint') : null,
         ];
     }
@@ -2854,7 +2881,26 @@ SCRIPT,
             ->pluck('wireguard_address')
             ->all();
 
-        return array_values(array_unique(array_merge($used, $excluding)));
+        $peerAddresses = WireGuardPeer::query()
+            ->whereNotNull('allowed_ips')
+            ->pluck('allowed_ips')
+            ->flatMap(fn (string $allowedIps): array => $this->wireguardAddressesFromAllowedIps($allowedIps))
+            ->all();
+
+        $wgEasyAddresses = app(WgEasyAddressReservationProbe::class)->addresses();
+
+        return array_values(array_unique(array_merge($used, $peerAddresses, $wgEasyAddresses, $excluding)));
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function wireguardAddressesFromAllowedIps(string $allowedIps): array
+    {
+        return array_values(array_filter(array_map(
+            fn (string $allowedIp): string => trim(explode('/', trim($allowedIp), 2)[0]),
+            explode(',', $allowedIps),
+        ), fn (string $address): bool => $address !== ''));
     }
 
     private function e2eReservedWireguardAddress(): ?string

@@ -38,6 +38,7 @@ direction.
 
 <!-- newest first; add new entries directly under this comment -->
 
+- 2026-06-15 — `database` role nodes are private hosted workload nodes when created through `node:new`: a database-only node provisions an Ubuntu host over SSH, carries a node-level TLD, installs the Docker tool baseline, and may use a per-node WireGuard endpoint override for private-provider gateway reachability.
 - 2026-06-13 — Orbit removes Supervisor as a supported tool and process runtime. Host-command process units use `runtime=systemd` on Linux, existing `runtime=supervisor` rows migrate to `runtime=systemd`, and future macOS support should add a `launchd` runtime instead of retaining Supervisor for cross-platform uniformity.
 - 2026-06-13 — The `s3` role uses SeaweedFS, not RustFS, as its S3-compatible object-storage backend. The v1 implementation remains a single `s3` role node with one SeaweedFS head container, service-level credentials on the `seaweedfs` tool row, router-owned `s3.orbit` routing, and no RustFS data migration.
 - 2026-06-11 — Fleet update activity is gateway-recorded: the `update:all` start API route logs the attempt and the durable update runner records the `completed`/`failed` outcome entry; the CLI emits no activity entries. Supersedes the CLI-emission activity wording in the update:all contract.

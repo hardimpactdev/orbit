@@ -29,6 +29,7 @@ final readonly class RemoteHostExecutor implements RemoteExecutor
      *     timeout?: int,
      *     input?: string,
      *     throw?: bool,
+     *     environment?: array<string, string>,
      *     metadata?: array<string, string>,
      *     strict?: bool,
      * }  $options
@@ -65,6 +66,7 @@ final readonly class RemoteHostExecutor implements RemoteExecutor
      *     timeout?: int,
      *     input?: string,
      *     throw?: bool,
+     *     environment?: array<string, string>,
      *     metadata?: array<string, string>,
      *     strict?: bool,
      * }  $options
@@ -87,6 +89,7 @@ final readonly class RemoteHostExecutor implements RemoteExecutor
      *     timeout?: int,
      *     input?: string,
      *     throw?: bool,
+     *     environment?: array<string, string>,
      *     metadata?: array<string, string>,
      *     strict?: bool,
      * }  $options
@@ -95,11 +98,46 @@ final readonly class RemoteHostExecutor implements RemoteExecutor
     {
         $pendingProcess = Process::timeout((int) ($options['timeout'] ?? self::DEFAULT_TIMEOUT));
 
+        $environment = $this->environment($options);
+
+        if ($environment !== []) {
+            $pendingProcess = $pendingProcess->env($environment);
+        }
+
         if (array_key_exists('input', $options)) {
             return $pendingProcess->input((string) $options['input']);
         }
 
         return $pendingProcess;
+    }
+
+    /**
+     * @param  array<string, mixed>  $options
+     * @return array<string, string>
+     */
+    private function environment(array $options): array
+    {
+        $environment = $options['environment'] ?? [];
+
+        if ($environment === []) {
+            return [];
+        }
+
+        if (! is_array($environment)) {
+            return [];
+        }
+
+        $resolved = [];
+
+        foreach ($environment as $key => $value) {
+            if (! is_string($key) || ! is_string($value)) {
+                continue;
+            }
+
+            $resolved[$key] = $value;
+        }
+
+        return $resolved;
     }
 
     private function command(Node $node, string $script): string
@@ -208,6 +246,12 @@ final readonly class RemoteHostExecutor implements RemoteExecutor
 
     private function runningInsideOrbitGateway(): bool
     {
+        $exposureMode = getenv('ORBIT_GATEWAY_EXPOSURE_MODE');
+
+        if (is_string($exposureMode) && trim($exposureMode) !== '') {
+            return true;
+        }
+
         $hostPath = getenv('ORBIT_HOST_PATH');
 
         if (is_string($hostPath) && trim($hostPath) !== '') {

@@ -200,7 +200,7 @@ http://{$route->domain}:{$port} {
     reverse_proxy {$runtimeUpstream} {
         header_up Host {host}
         header_up X-Forwarded-Host {host}
-        header_up X-Forwarded-Proto {scheme}
+        header_up X-Forwarded-Proto {http.request.header.X-Forwarded-Proto}
     }
 }
 
@@ -383,9 +383,36 @@ CADDY;
 
     private function tlsDirective(ProxyRoute $route): string
     {
+        if ($this->usesPublicAcmeTls($route)) {
+            return "tls {\n        issuer acme\n    }";
+        }
+
         $paths = $this->tlsPaths($route);
 
         return "tls {$paths['cert']} {$paths['key']}";
+    }
+
+    private function usesPublicAcmeTls(ProxyRoute $route): bool
+    {
+        $config = is_array($route->config) ? $route->config : [];
+        $tls = $config['tls'] ?? null;
+        $managedBy = is_array($tls)
+            ? ($tls['managed_by'] ?? $config['tls_managed_by'] ?? null)
+            : ($config['tls_managed_by'] ?? null);
+
+        if ($managedBy === 'acme') {
+            return true;
+        }
+
+        if (! $this->usesIngressPlacement($route)) {
+            return false;
+        }
+
+        if (is_array($tls) && ($tls['managed_by'] ?? null) === 'orbit') {
+            return true;
+        }
+
+        return $tls === null || $tls === [] || is_array($tls);
     }
 
     private function routerSiteAddress(ProxyRoute $route): string

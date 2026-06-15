@@ -60,6 +60,7 @@ describe(RemoteLocalExecutor::class, function (): void {
                     'ORBIT_OPERATION_ID' => $operationId,
                     'ORBIT_REQUEST_ID' => 'local-req',
                 ],
+                'environment' => remoteLocalExecutorEnvironment(),
             ]);
 
         $script = $transport->calls[0]['script'];
@@ -158,7 +159,10 @@ describe(RemoteLocalExecutor::class, function (): void {
 
         expect($result->stdout)->toBe("verified\n")
             ->and($transport->calls)->toHaveCount(1)
-            ->and($transport->calls[0]['options'])->toBe(['timeout' => 10]);
+            ->and($transport->calls[0]['options'])->toBe([
+                'timeout' => 10,
+                'environment' => remoteLocalExecutorEnvironment(),
+            ]);
 
         $script = $transport->calls[0]['script'];
         $compactToken = remoteLocalExecutorTokenFromScript($script);
@@ -170,6 +174,22 @@ describe(RemoteLocalExecutor::class, function (): void {
             options: [],
             operationToken: $compactToken,
         ));
+    });
+
+    it('passes the operation signing key as process environment without adding it to the command line', function (): void {
+        $transport = new RemoteLocalExecutorRecordingTransport(
+            new RemoteShellResult(exitCode: 0, stdout: "verified\n", stderr: '', durationMs: 3),
+        );
+        $executor = remoteLocalExecutor($transport);
+
+        $executor->runInternal(
+            node: remoteLocalExecutorNode(),
+            commandName: 'internal:executor:verify',
+        );
+
+        expect($transport->calls[0]['options']['environment'] ?? null)->toBe(remoteLocalExecutorEnvironment())
+            ->and($transport->calls[0]['script'])->not->toContain('gateway-secret')
+            ->and(remoteLocalExecutorActivityLogBlob())->not->toContain('gateway-secret');
     });
 
     it('rejects long-running local executor dispatch through start before minting a token', function (): void {
@@ -240,6 +260,7 @@ describe(RemoteLocalExecutor::class, function (): void {
             ),
             activityLogger: remoteLocalExecutorActivityLogger(),
             operationRuns: app(OperationRunRecorder::class),
+            operationTokenSecret: 'gateway-secret',
         );
 
         expect(fn (): RemoteShellResult => $executor->runInternal(
@@ -643,7 +664,10 @@ describe(RemoteLocalExecutor::class, function (): void {
         expect($script)->toContain("--password-hash='{$passwordHash}'")
             ->and($script)->toContain("--private-key='{$privateKey}'")
             ->and($script)->toContain("--pre-shared-key='{$preSharedKey}'")
-            ->and($transport->calls[0]['options'])->toBe(['timeout' => 30])
+            ->and($transport->calls[0]['options'])->toBe([
+                'timeout' => 30,
+                'environment' => remoteLocalExecutorEnvironment(),
+            ])
             ->and($dispatchProperties['command_options'])->toMatchArray([
                 'action' => 'upsert-peer',
                 'password-hash' => '<redacted>',
@@ -876,12 +900,25 @@ function remoteLocalExecutor(RemoteLocalExecutorRecordingTransport $transport, ?
         operationTokens: $operationTokens ?? remoteLocalExecutorTokenFactory(),
         activityLogger: remoteLocalExecutorActivityLogger(),
         operationRuns: app(OperationRunRecorder::class),
+        operationTokenSecret: 'gateway-secret',
     );
 }
 
 function remoteLocalExecutorActivityLogger(): ActivityLogger
 {
     return new ActivityLogger(new ActivityLogCorrelation);
+}
+
+/**
+ * @return array<string, string>
+ */
+function remoteLocalExecutorEnvironment(): array
+{
+    return [
+        'HOME' => '/home/orbit',
+        'ORBIT_CONFIG_PATH' => '/home/orbit/.config/orbit/config.json',
+        'APP_KEY' => 'gateway-secret',
+    ];
 }
 
 function remoteLocalExecutorStartUnsupportedMessage(): string

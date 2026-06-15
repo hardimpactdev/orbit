@@ -322,6 +322,24 @@ describe('proxy registry probe foundation', function (): void {
         'inactive app node' => [fn (): Node => Node::factory()->appDev()->create(['status' => 'inactive'])],
     ]);
 
+    it('allows custom redirect routes on active ingress nodes', function (): void {
+        $node = Node::factory()->ingress()->create(['status' => 'active']);
+        $route = ProxyRoute::factory()->create([
+            'node_id' => $node->id,
+            'domain' => 'www.docs.test',
+            'owner_type' => 'custom',
+            'kind' => 'redirect',
+            'config' => [
+                'target' => ['type' => 'redirect', 'value' => 'https://docs.test'],
+                'code' => 301,
+            ],
+        ]);
+
+        $drift = (new ProxyRouteProbe)->diff($route, new ProbeSnapshot([]));
+
+        expect(proxyProbeIssue($drift, 'proxy.node_invalid'))->toBeNull();
+    });
+
     it('detects custom route conflicts with app domains', function (): void {
         $node = createTestAppHostNode();
         App::factory()->create(['name' => 'docs', 'node_id' => $node->id, 'domain' => 'docs.test']);
@@ -658,6 +676,70 @@ describe('proxy backend and TLS reality', function (): void {
         $drift = (new ProxyRouteProbe)->diff($route, $snapshot);
 
         expect(proxyProbeIssue($drift, 'proxy.tls_missing')?->kind)->toBe(DriftKind::Missing);
+    });
+
+    it('does not require Orbit-managed TLS files for public ingress routes', function (): void {
+        $node = createTestAppHostNode();
+        $route = ProxyRoute::factory()->create([
+            'node_id' => $node->id,
+            'domain' => 'www.docs.test',
+            'source_hash' => str_repeat('a', 64),
+            'config' => [
+                'placement' => 'ingress',
+                'router_upstream' => [
+                    'url' => 'http://10.6.0.2:80',
+                ],
+                'tls' => [
+                    'cert_path' => '/home/orbit/.config/orbit/certs/www.docs.test.crt',
+                    'key_path' => '/home/orbit/.config/orbit/certs/www.docs.test.key',
+                    'managed_by' => 'orbit',
+                ],
+            ],
+        ]);
+
+        $snapshot = new ProbeSnapshot([
+            'www.docs.test' => [
+                'route_exists' => true,
+                'route_hash' => str_repeat('a', 64),
+                'public' => [
+                    'route_exists' => true,
+                    'route_hash' => str_repeat('a', 64),
+                    'cert_exists' => false,
+                    'key_exists' => false,
+                ],
+            ],
+        ]);
+
+        $drift = (new ProxyRouteProbe)->diff($route, $snapshot);
+
+        expect(proxyProbeIssue($drift, 'proxy.tls_missing'))->toBeNull()
+            ->and(proxyProbeIssue($drift, 'proxy.tls_mismatch'))->toBeNull();
+    });
+
+    it('does not require Orbit-managed TLS files for routes marked as ACME managed', function (): void {
+        $node = createTestAppHostNode();
+        $route = ProxyRoute::factory()->create([
+            'node_id' => $node->id,
+            'domain' => 'www.docs.test',
+            'source_hash' => str_repeat('a', 64),
+            'config' => [
+                'tls' => ['managed_by' => 'acme'],
+            ],
+        ]);
+
+        $snapshot = new ProbeSnapshot([
+            'www.docs.test' => [
+                'route_exists' => true,
+                'route_hash' => str_repeat('a', 64),
+                'cert_exists' => false,
+                'key_exists' => false,
+            ],
+        ]);
+
+        $drift = (new ProxyRouteProbe)->diff($route, $snapshot);
+
+        expect(proxyProbeIssue($drift, 'proxy.tls_missing'))->toBeNull()
+            ->and(proxyProbeIssue($drift, 'proxy.tls_mismatch'))->toBeNull();
     });
 
     it('detects mismatched Orbit-managed TLS paths', function (): void {

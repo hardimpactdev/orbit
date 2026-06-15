@@ -48,6 +48,14 @@ describe('install-orbit Docker-first gateway contract', function (): void {
             ->not->toContain('sudo_run env DEBIAN_FRONTEND=noninteractive apt-get install -y');
     });
 
+    it('stores installer logs on persistent host storage by default', function (): void {
+        expect($this->installer)
+            ->toContain('default_log_dir="/var/tmp"')
+            ->toContain('tmp_dir="${TMPDIR:-$default_log_dir}"')
+            ->toContain('tmp_file="$(mktemp "$tmp_dir/orbit-install.XXXXXX")"')
+            ->not->toContain('tmp_dir="${TMPDIR:-/tmp}"');
+    });
+
     it('builds orbit-gateway from source while pulling official gateway dependency images', function (): void {
         expect($this->installer)
             ->toContain('docker_cli build')

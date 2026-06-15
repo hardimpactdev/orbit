@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Commands\Internal\InternalExecutorCommand;
+use App\Services\OrbitConfigStore;
 use Illuminate\Console\OutputStyle;
 use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Http\Client\Request;
@@ -185,6 +186,46 @@ describe('InternalExecutorCommand base', function (): void {
         expect($exitCode)->toBe(1)
             ->and($decoded)->toBe(JsonEnvelope::failure('invalid_token', 'Operation token is invalid.'))
             ->and($output)->not->toContain('No route to host');
+    });
+
+    it('accepts a locally valid operation token when the gateway verifier transport fails', function (): void {
+        $previousAppKey = getenv('APP_KEY');
+        $configPath = base_path('tests/.tmp-internal-executor-local-config.json');
+
+        @unlink($configPath);
+
+        fakeGatewayDown('No route to host');
+        config()->set('app.key', null);
+        putenv('APP_KEY=test-secret-key');
+
+        $store = new OrbitConfigStore(overridePath: $configPath);
+        $store->setDefaultNode('test-node');
+
+        app()->instance(OrbitConfigStore::class, $store);
+        configureInternalExecutorTestGuard();
+
+        try {
+            [$exitCode, $output] = runTestInternalExecutorCommand($this, [
+                '--operation-token' => signInternalExecutorToken(),
+                '--json' => true,
+            ]);
+
+            $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+
+            expect($exitCode)->toBe(0)
+                ->and($decoded)->toBe(JsonEnvelope::success([
+                    'verified' => true,
+                    'command' => 'test:internal-executor-command',
+                ]));
+        } finally {
+            @unlink($configPath);
+
+            if ($previousAppKey === false) {
+                putenv('APP_KEY');
+            } else {
+                putenv("APP_KEY={$previousAppKey}");
+            }
+        }
     });
 
     it('outputs human-readable result for a valid token without --json', function (): void {

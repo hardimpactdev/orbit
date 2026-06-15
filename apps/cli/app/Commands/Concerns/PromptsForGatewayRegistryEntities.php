@@ -245,12 +245,23 @@ trait PromptsForGatewayRegistryEntities
             $rows[$name] = [
                 $name,
                 $this->nodeRolesLabel($node),
-                $this->registryString($node['host'] ?? $node['wireguard_address'] ?? null) ?? '-',
+                $this->nodePeerAddressLabel($node),
                 $this->registryString($node['status'] ?? null) ?? '-',
             ];
         }
 
         return $rows;
+    }
+
+    /**
+     * @param  array<string, mixed>  $node
+     */
+    private function nodePeerAddressLabel(array $node): string
+    {
+        $addresses = $node['addresses'] ?? null;
+        $wireguardAddress = is_array($addresses) ? ($addresses['wireguard'] ?? null) : null;
+
+        return $this->registryString($wireguardAddress ?? $node['wireguard_address'] ?? null) ?? '-';
     }
 
     /**

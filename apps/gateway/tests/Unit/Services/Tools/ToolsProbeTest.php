@@ -102,6 +102,25 @@ describe('ToolsProbe', function (): void {
         expect(toolProbeIssue($drift, 'tool.node_invalid')?->kind)->toBe(DriftKind::Divergent);
     });
 
+    it('allows managed caddy on ingress nodes', function (): void {
+        $node = Node::factory()->ingress()->create(['status' => 'active']);
+        $tool = NodeTool::factory()->create(['node_id' => $node->id, 'name' => 'caddy']);
+
+        $drift = (new ToolsProbe)->diff($tool, new ProbeSnapshot([]));
+
+        expect(toolProbeIssue($drift, 'tool.node_invalid'))->toBeNull()
+            ->and(toolProbeIssue($drift, 'tool.capability_missing')?->kind)->toBe(DriftKind::Missing);
+    });
+
+    it('does not allow non-caddy managed tools on ingress-only nodes', function (): void {
+        $node = Node::factory()->ingress()->create(['status' => 'active']);
+        $tool = NodeTool::factory()->create(['node_id' => $node->id, 'name' => 'composer']);
+
+        $drift = (new ToolsProbe)->diff($tool, new ProbeSnapshot([]));
+
+        expect(toolProbeIssue($drift, 'tool.node_invalid')?->kind)->toBe(DriftKind::Divergent);
+    });
+
     it('allows provisioning app nodes during managed setup', function (): void {
         $node = createToolsProbeAppHostNode(['status' => Node::STATUS_PROVISIONING]);
         $tool = NodeTool::factory()->create(['node_id' => $node->id, 'name' => 'composer']);

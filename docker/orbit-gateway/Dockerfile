@@ -63,9 +63,12 @@ COPY apps/gateway/resources/js /srv/orbit/apps/gateway/resources/js
 COPY apps/gateway/resources/node-scripts /srv/orbit/apps/gateway/resources/node-scripts
 COPY apps/gateway/resources/views /srv/orbit/apps/gateway/resources/views
 COPY apps/gateway/routes /srv/orbit/apps/gateway/routes
+COPY bin/install-orbit /srv/orbit/bin/install-orbit
+COPY docker/orbit-gateway /srv/orbit/docker/orbit-gateway
 COPY packages/core/src /srv/orbit/packages/core/src
 
 RUN install -d "$ORBIT_CONFIG_ROOT" \
+    && chmod 755 /srv/orbit/bin/install-orbit \
     && install -d bootstrap/cache storage/app storage/framework/cache storage/framework/sessions storage/framework/views storage/logs \
     && rm -f bootstrap/cache/*.php \
     && cp .env.example "$ORBIT_CONFIG_ROOT/.env" \

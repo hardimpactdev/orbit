@@ -28,6 +28,7 @@ final class NodeNewCommand extends BootstrapGatewayCommand
         {--operator-name= : Initiating operator node name for first-gateway bootstrap}
         {--tld= : Development app-node TLD}
         {--user=root : Bootstrap SSH user for provisioning}
+        {--gateway-endpoint= : WireGuard endpoint host this node should use to reach the gateway}
         {--ingress= : Existing ingress node for private app-prod placement}
         {--redis-node= : Existing database node for websocket Redis}
         {--s3-data-path= : Host data path for the s3 role}
@@ -61,6 +62,7 @@ final class NodeNewCommand extends BootstrapGatewayCommand
                 operatorName: $this->stringOption('operator-name'),
                 tld: $this->stringOption('tld'),
                 user: $this->stringOption('user'),
+                gatewayEndpoint: $this->stringOption('gateway-endpoint'),
                 ingressNode: $this->stringOption('ingress'),
                 redisNode: $this->stringOption('redis-node'),
                 s3DataPath: $this->stringOption('s3-data-path'),

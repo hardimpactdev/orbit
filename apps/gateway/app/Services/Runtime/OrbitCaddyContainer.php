@@ -35,6 +35,7 @@ class OrbitCaddyContainer
      * @param  list<string>  $publishedPorts
      * @param  list<string>  $networkAliases
      * @param  array<string, string>  $extraHosts
+     * @param  list<array{source: string, target: string, read_only?: bool}>  $mounts
      */
     public function __construct(
         private readonly string $name,
@@ -44,6 +45,7 @@ class OrbitCaddyContainer
         private readonly array $publishedPorts,
         private readonly array $networkAliases,
         private readonly array $extraHosts,
+        private readonly array $mounts,
     ) {}
 
     public static function default(?OrbitContainerNames $names = null): self
@@ -99,6 +101,7 @@ class OrbitCaddyContainer
             publishedPorts: $publishedPorts,
             networkAliases: [$names->caddy()],
             extraHosts: self::defaultExtraHosts(),
+            mounts: self::defaultMounts(),
         );
     }
 
@@ -117,6 +120,7 @@ class OrbitCaddyContainer
             publishedPorts: self::stringList($config['published_ports'] ?? null, $default->publishedPorts()),
             networkAliases: self::stringList($config['network_aliases'] ?? null, $default->networkAliases(), sort: true),
             extraHosts: self::stringMap($config['extra_hosts'] ?? null, $default->extraHosts()),
+            mounts: self::mountList($config['mounts'] ?? null, $default->mounts()),
         );
     }
 
@@ -149,13 +153,7 @@ class OrbitCaddyContainer
     /** @return list<array{source: string, target: string, read_only: bool}> */
     public function mounts(): array
     {
-        return [
-            ['source' => '/etc/caddy/Caddyfile', 'target' => '/etc/caddy/Caddyfile', 'read_only' => true],
-            ['source' => '/etc/caddy/orbit', 'target' => '/etc/caddy/orbit', 'read_only' => true],
-            ['source' => '/etc/caddy/sites', 'target' => '/etc/caddy/sites', 'read_only' => true],
-            ['source' => '/etc/orbit', 'target' => '/etc/orbit', 'read_only' => true],
-            ['source' => '/home', 'target' => '/home', 'read_only' => true],
-        ];
+        return $this->mounts;
     }
 
     /**
@@ -258,6 +256,23 @@ class OrbitCaddyContainer
         ];
     }
 
+    /**
+     * @return list<array{source: string, target: string, read_only: bool}>
+     */
+    private static function defaultMounts(): array
+    {
+        return [
+            ['source' => '/var/lib/caddy/.local/share/caddy', 'target' => '/data/caddy', 'read_only' => false],
+            ['source' => '/var/lib/caddy/.config/caddy', 'target' => '/config/caddy', 'read_only' => false],
+            ['source' => '/etc/caddy/Caddyfile', 'target' => '/etc/caddy/Caddyfile', 'read_only' => true],
+            ['source' => '/etc/caddy/orbit', 'target' => '/etc/caddy/orbit', 'read_only' => true],
+            ['source' => '/etc/caddy/sites', 'target' => '/etc/caddy/sites', 'read_only' => true],
+            ['source' => '/etc/orbit', 'target' => '/etc/orbit', 'read_only' => true],
+            ['source' => '/home', 'target' => '/home', 'read_only' => true],
+            ['source' => '/run/php', 'target' => '/run/php', 'read_only' => false],
+        ];
+    }
+
     private static function stringValue(mixed $value, string $default): string
     {
         if (! is_string($value) || trim($value) === '') {
@@ -333,5 +348,46 @@ class OrbitCaddyContainer
         ksort($map);
 
         return $map;
+    }
+
+    /**
+     * @param  list<array{source: string, target: string, read_only: bool}>  $default
+     * @return list<array{source: string, target: string, read_only: bool}>
+     */
+    private static function mountList(mixed $value, array $default): array
+    {
+        if (! is_array($value)) {
+            return $default;
+        }
+
+        $mounts = [];
+
+        foreach ($value as $mount) {
+            if (! is_array($mount)) {
+                continue;
+            }
+
+            $source = $mount['source'] ?? null;
+            $target = $mount['target'] ?? null;
+
+            if (! is_scalar($source) || ! is_scalar($target)) {
+                continue;
+            }
+
+            $source = trim((string) $source);
+            $target = trim((string) $target);
+
+            if ($source === '' || $target === '') {
+                continue;
+            }
+
+            $mounts[] = [
+                'source' => $source,
+                'target' => $target,
+                'read_only' => (bool) ($mount['read_only'] ?? false),
+            ];
+        }
+
+        return $mounts === [] ? $default : $mounts;
     }
 }

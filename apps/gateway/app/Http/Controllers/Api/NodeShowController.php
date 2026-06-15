@@ -49,7 +49,7 @@ final class NodeShowController implements Loggable
                             ->map(fn (NodeRoleAssignment $assignment): array => NodeRoleAssignmentPayload::fromModel($assignment))
                             ->all(),
                         'addresses' => [
-                            'wireguard' => $node->wireguard_address ?? $node->host,
+                            'wireguard' => $node->wireguard_address,
                         ],
                         'agent_ide' => NodeAgentIdeDefaults::payloadFor($node),
                         'grants' => [

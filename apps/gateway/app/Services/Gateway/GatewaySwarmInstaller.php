@@ -91,7 +91,7 @@ class GatewaySwarmInstaller
         $this->runRequiredWithInput(
             'sudo tee /etc/caddy/orbit/orbit-gateway.caddy > /dev/null',
             $this->gatewayRouteRenderer->render(
-                serverNames: [$wireguardAddress],
+                serverNames: [$wireguardAddress, ':443'],
                 wireguardCidr: $wireguardCidr,
                 certPath: self::GatewayCertPath,
                 keyPath: self::GatewayKeyPath,

@@ -116,6 +116,7 @@ class AppServiceProvider extends ServiceProvider
             operationTokens: $app->make(OperationTokenFactory::class),
             activityLogger: $app->make(ActivityLogger::class),
             operationRuns: $app->make(OperationRunRecorder::class),
+            operationTokenSecret: $this->operationTokenSigningKey(),
         ));
         $this->app->bind(RemoteShellStream::class, SshRemoteShellStream::class);
         $this->app->bind(PolyscopeWorkspaceDriver::class, fn ($app): PolyscopeWorkspaceDriver => new PolyscopeWorkspaceDriver(
@@ -163,7 +164,7 @@ class AppServiceProvider extends ServiceProvider
 
         $this->app->singleton(VpnDnsSwarmInstaller::class, fn ($app): VpnDnsSwarmInstaller => new VpnDnsSwarmInstaller(
             rootPath: $this->orbitConfigPath(),
-            statePath: $this->wgEasyStatePath(),
+            statePath: $this->orbitConfigPath().'/wg-easy',
             localExecutor: $this->hasOperationTokenSigningKey() ? $app->make(RemoteLocalExecutor::class) : null,
             vpnNodeResolver: $app->make(VpnNodeResolver::class),
         ));

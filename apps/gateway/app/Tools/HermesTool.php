@@ -36,6 +36,11 @@ final class HermesTool extends BaseTool
 # orbit install hermes
 set -e
 sudo -u agent -H bash -lc 'curl -fsSL https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.sh | bash -s -- --skip-setup'
+sudo tee /usr/local/bin/hermes >/dev/null <<'SH'
+#!/usr/bin/env bash
+exec sudo -u agent -H /home/agent/.local/bin/hermes "$@"
+SH
+sudo chmod 0755 /usr/local/bin/hermes
 BASH;
     }
 
@@ -47,6 +52,7 @@ BASH;
 set -e
 sudo -u agent -H bash -lc 'rm -rf "${HOME}/.hermes" 2>/dev/null || true'
 sudo -u agent -H bash -lc 'rm -f "${HOME}/.local/bin/hermes" 2>/dev/null || true'
+sudo rm -f /usr/local/bin/hermes
 BASH;
     }
 
@@ -89,8 +95,8 @@ BASH;
     public function probeMetadata(): array
     {
         return [
-            'binary' => 'hermes',
-            'version_command' => 'sudo -u agent -H bash -lc "hermes --version 2>/dev/null || true"',
+            'binary' => '/usr/local/bin/hermes',
+            'version_command' => '/usr/local/bin/hermes --version 2>/dev/null || true',
             'service' => 'hermes',
             'update_command' => $this->updateScript(),
             'repair_commands' => [

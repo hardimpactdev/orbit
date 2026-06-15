@@ -308,7 +308,7 @@ YAML;
         return "      - '".$key.'='.str_replace("'", "''", $value)."'\n";
     }
 
-    private function statePath(): string
+    protected function statePath(): string
     {
         if ($this->statePath !== null) {
             return $this->statePath;
@@ -441,6 +441,7 @@ YAML;
             transportOptions: [
                 'timeout' => 30,
                 'metadata' => [
+                    'ORBIT_WG_EASY_DB_PATH' => $this->statePath().'/wg-easy.db',
                     'ORBIT_OPERATION_ID' => (string) Str::uuid(),
                 ],
                 ...$transportOptions,

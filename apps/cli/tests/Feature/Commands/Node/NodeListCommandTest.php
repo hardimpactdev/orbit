@@ -34,7 +34,8 @@ describe('node:list', function (): void {
             'nodes' => [
                 [
                     'name' => 'app-1',
-                    'host' => '10.6.0.4',
+                    'host' => '203.0.113.10',
+                    'addresses' => ['wireguard' => '10.6.0.4'],
                     'platform' => 'ubuntu_24-04',
                     'status' => 'active',
                     'roles' => [
@@ -44,14 +45,16 @@ describe('node:list', function (): void {
                 ],
                 [
                     'name' => 'operator-1',
-                    'host' => '10.6.0.3',
+                    'host' => '198.51.100.20',
+                    'addresses' => ['wireguard' => '10.6.0.3'],
                     'platform' => 'ubuntu',
                     'status' => 'inactive',
                     'roles' => [],
                 ],
                 [
                     'name' => 'gateway',
-                    'host' => '10.6.0.2',
+                    'host' => '188.245.156.201',
+                    'addresses' => ['wireguard' => '10.6.0.2'],
                     'platform' => 'ubuntu',
                     'status' => 'active',
                     'roles' => [
@@ -75,11 +78,36 @@ describe('node:list', function (): void {
             ->and($output)->toContain('app-dev, database (error)')
             ->and($output)->toContain('app-1')
             ->and($output)->toContain('10.6.0.4')
+            ->and($output)->not->toContain('203.0.113.10')
             ->and($output)->toContain('ubuntu')
             ->and($output)->toContain('operator-1')
             ->and($output)->toContain('10.6.0.3')
+            ->and($output)->not->toContain('198.51.100.20')
             ->and($output)->toContain('gateway, vpn, router')
+            ->and($output)->not->toContain('188.245.156.201')
             ->and($output)->not->toContain('nodes: [');
+    });
+
+    it('does not render a bootstrap host as peer ip when the WireGuard address is missing', function (): void {
+        fakeGateway(fakeSuccessEnvelope([
+            'nodes' => [
+                [
+                    'name' => 'app-1',
+                    'host' => '203.0.113.10',
+                    'addresses' => ['wireguard' => null],
+                    'platform' => 'ubuntu',
+                    'status' => 'active',
+                    'roles' => [],
+                ],
+            ],
+        ]));
+
+        [$exitCode, $output] = runCommand($this, 'node:list');
+
+        expect($exitCode)->toBe(0)
+            ->and($output)->toContain('app-1')
+            ->and($output)->toContain('unknown')
+            ->and($output)->not->toContain('203.0.113.10');
     });
 
     it('renders human empty output when no nodes are visible', function (): void {

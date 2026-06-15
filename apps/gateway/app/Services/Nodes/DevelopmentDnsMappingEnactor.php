@@ -256,7 +256,7 @@ class DevelopmentDnsMappingEnactor
 
     public function configDir(): string
     {
-        return $this->configDir ?? storage_path('app/orbit/node-development-dns.d');
+        return $this->configDir ?? rtrim((string) config('orbit.paths.config_root', storage_path('app/orbit')), '/').'/node-development-dns.d';
     }
 
     /**

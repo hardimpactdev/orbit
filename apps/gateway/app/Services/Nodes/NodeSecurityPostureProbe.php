@@ -146,14 +146,14 @@ final readonly class NodeSecurityPostureProbe
             );
         }
 
-        if ($node->user !== 'orbit') {
+        if ($this->managedUser($node) === '') {
             $drift[] = new DriftEntry(
                 family: 'node',
                 key: 'node.security.runtime_user',
                 kind: DriftKind::Divergent,
-                summary: "Node {$node->name} persists '{$node->user}' instead of the canonical orbit SSH user.",
+                summary: "Node {$node->name} is missing a steady-state SSH runtime user.",
                 detail: [
-                    'expected' => 'orbit',
+                    'expected' => 'non-empty managed SSH user',
                     'actual' => $node->user,
                 ],
             );
@@ -203,7 +203,7 @@ final readonly class NodeSecurityPostureProbe
     private function remoteDrift(Node $node): array
     {
         try {
-            $result = $this->remoteShell?->run($node, $this->postureScript(), [
+            $result = $this->remoteShell?->run($node, $this->postureScript($node), [
                 'timeout' => 30,
                 'throw' => false,
             ]);
@@ -251,22 +251,38 @@ final readonly class NodeSecurityPostureProbe
         return $drift;
     }
 
-    private function postureScript(): string
+    private function postureScript(Node $node): string
     {
-        return <<<'SH'
+        $managedUser = $this->managedUser($node);
+        $managedHome = "/home/{$managedUser}";
+
+        return sprintf(<<<'SH'
 php -r '
+$managedUser = %s;
+$managedHome = %s;
+$sshdConfig = is_file("/etc/ssh/sshd_config.d/99-orbit-hardening.conf")
+    ? file_get_contents("/etc/ssh/sshd_config.d/99-orbit-hardening.conf")
+    : false;
 $checks = [
-    "runtime_user" => trim(shell_exec("id -u orbit 2>/dev/null") ?? "") !== "",
-    "sshd_config" => is_file("/etc/ssh/sshd_config.d/99-orbit-hardening.conf")
-        && str_contains(file_get_contents("/etc/ssh/sshd_config.d/99-orbit-hardening.conf") ?: "", "PasswordAuthentication no")
-        && str_contains(file_get_contents("/etc/ssh/sshd_config.d/99-orbit-hardening.conf") ?: "", "AllowUsers orbit"),
+    "runtime_user" => $managedUser !== "" && trim(shell_exec("id -u ".escapeshellarg($managedUser)." 2>/dev/null") ?? "") !== "",
+    "sshd_config" => is_string($sshdConfig)
+        && str_contains($sshdConfig, "PasswordAuthentication no")
+        && str_contains($sshdConfig, "AllowUsers ".$managedUser),
     "sshd_listen" => true,
     "sysctl" => is_file("/etc/sysctl.d/60-orbit.conf"),
-    "home_perms" => substr(sprintf("%o", fileperms("/home/orbit") ?: 0), -4) === "0700",
+    "home_perms" => is_dir($managedHome) && substr(sprintf("%%o", fileperms($managedHome) ?: 0), -4) === "0700",
 ];
 echo json_encode($checks, JSON_THROW_ON_ERROR);
 '
-SH;
+SH,
+            var_export($managedUser, true),
+            var_export($managedHome, true),
+        );
+    }
+
+    private function managedUser(Node $node): string
+    {
+        return trim((string) $node->user);
     }
 
     private function hostKeyMissing(Node $node): bool

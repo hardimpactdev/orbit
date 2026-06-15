@@ -54,7 +54,7 @@ complete before side effects that the gateway owns begin.
 | omitted `--template`, `--operator`, and `--roles` | Enroll a client identity with no roles by minting a WireGuard peer and active node record. |
 | `app-dev` role set | Provision or adopt an app-dev node over SSH, then create the role assignment. |
 | `app-prod` role set | Provision or adopt an app-prod node over SSH, then create the role assignment. |
-| `database` role set | Create the base node identity plus an active database role assignment. When requested alone, no SSH provisioning path runs. |
+| `database` role set | Provision a private Ubuntu database node over SSH, configure WireGuard, then create the active database role assignment and Docker tool baseline. |
 | `agent` role set | Provision or adopt an agent node over SSH, then create the role assignment with `tld`. |
 | `websocket` role set | Reserved stable input surface; returns `role_not_implemented` before side effects until the WebSocket todo lands. |
 | `s3` role set | Reserved stable input surface; returns `role_not_implemented` before side effects until the S3 todo lands. |
@@ -67,6 +67,10 @@ complete before side effects that the gateway owns begin.
 - The active WireGuard runtime for the gateway-coupled `vpn` role is `wg-easy`;
   the gateway host `wg-orbit` interface is a peer/client of that runtime and
   must not bind UDP `51820`.
+- WireGuard address allocation must reserve every address already visible in
+  gateway node records, gateway WireGuard peer records, wg-easy client state,
+  saved wg-easy config files, and the live wg-easy `wg0` runtime. A missing or
+  stale gateway row must not make a live VPN client address reusable.
 - Gateway execution may write durable node state directly.
 - Gateway execution may use SSH to provision app-hosting nodes.
 - Gateway execution must not SSH to client identities created with no

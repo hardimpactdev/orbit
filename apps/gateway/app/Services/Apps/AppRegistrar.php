@@ -107,7 +107,9 @@ final class AppRegistrar
             );
         }
 
-        if ($existingApp instanceof App && $existingApp->node_id !== $node->id) {
+        $explicitMove = $this->isExplicitMove($input, $path, $node, $existingApp);
+
+        if ($existingApp instanceof App && $existingApp->node_id !== $node->id && ! $explicitMove) {
             return $this->failCommand(
                 code: 'app.path_collision',
                 message: "App '{$input['name']}' is already registered on node '{$existingApp->node?->name}'.",
@@ -119,7 +121,7 @@ final class AppRegistrar
             );
         }
 
-        if ($existingApp instanceof App && $existingApp->path !== $path) {
+        if ($existingApp instanceof App && $existingApp->path !== $path && ! $explicitMove) {
             return $this->failCommand(
                 code: 'app.path_collision',
                 message: "App '{$input['name']}' is already registered at '{$existingApp->path}'.",
@@ -149,7 +151,7 @@ final class AppRegistrar
             return $this->registerForHuman($input, $node, $path, $existingApp, $enactAppRuntime);
         }
 
-        $action = $existingApp instanceof App ? 'converged' : 'adopted';
+        $action = $this->registrationAction($existingApp, $explicitMove);
         $app = $this->registerAppRecord($input, $node, $path, $existingApp);
         $warnings = $enactAppRuntime->handle($app);
 
@@ -169,7 +171,10 @@ final class AppRegistrar
         ?App $existingApp,
         EnactAppRuntime $enactAppRuntime,
     ): int {
-        $action = $existingApp instanceof App ? 'converged' : 'adopted';
+        $action = $this->registrationAction(
+            $existingApp,
+            $this->isExplicitMove($input, $path, $node, $existingApp),
+        );
         $app = $this->registerAppRecord($input, $node, $path, $existingApp);
         $warnings = $enactAppRuntime->handle($app);
 
@@ -177,6 +182,31 @@ final class AppRegistrar
             'result' => ['action' => $action],
             'app' => $this->appPayload($app),
         ], $warnings, $node->name);
+    }
+
+    /**
+     * @param  array{name: string, node: ?string, path: ?string, root: string, php_version: string, domain: ?string}  $input
+     */
+    private function isExplicitMove(array $input, string $path, Node $node, ?App $existingApp): bool
+    {
+        if (! $existingApp instanceof App) {
+            return false;
+        }
+
+        if ($input['node'] === null || $input['path'] === null) {
+            return false;
+        }
+
+        return $existingApp->node_id !== $node->id || $existingApp->path !== $path;
+    }
+
+    private function registrationAction(?App $existingApp, bool $explicitMove): string
+    {
+        if (! $existingApp instanceof App) {
+            return 'adopted';
+        }
+
+        return $explicitMove ? 'moved' : 'converged';
     }
 
     /**

@@ -447,13 +447,13 @@ BASH;
         $allowedStatus = $tool->node->status === 'active'
             || ($allowProvisioning && $tool->node->status === Node::STATUS_PROVISIONING);
 
-        if (! $allowedStatus || ! $this->isToolNode($tool->node)) {
+        if (! $allowedStatus || ! $this->isToolNode($tool)) {
             return [
                 new DriftEntry(
                     family: $this->key(),
                     key: 'tool.node_invalid',
                     kind: DriftKind::Divergent,
-                    summary: "Tool {$tool->name} targets node {$tool->node->name}, which is not an active gateway or app node.",
+                    summary: "Tool {$tool->name} targets node {$tool->node->name}, which is not an active managed-tool node.",
                     detail: [
                         'node' => $tool->node->name,
                         'role' => $tool->node->displayRole(),
@@ -466,9 +466,15 @@ BASH;
         return [];
     }
 
-    private function isToolNode(Node $node): bool
+    private function isToolNode(NodeTool $tool): bool
     {
-        return app(NodeRoleAssignments::class)->nodeCanHostManagedTools($node);
+        $assignments = app(NodeRoleAssignments::class);
+
+        if ($tool->name === 'caddy') {
+            return $assignments->nodeHostsOrbitCaddy($tool->node);
+        }
+
+        return $assignments->nodeCanHostManagedTools($tool->node);
     }
 
     /**

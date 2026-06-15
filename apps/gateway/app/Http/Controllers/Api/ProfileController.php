@@ -146,9 +146,17 @@ final class ProfileController implements Loggable
             return $nameMatch;
         }
 
-        return $baseQuery
+        $domainMatch = (clone $baseQuery)
             ->where('domain', $selector)
             ->first();
+
+        if ($domainMatch instanceof AppModel) {
+            return $domainMatch;
+        }
+
+        return $baseQuery
+            ->get()
+            ->first(fn (AppModel $app): bool => $this->domain($app) === $selector);
     }
 
     /**

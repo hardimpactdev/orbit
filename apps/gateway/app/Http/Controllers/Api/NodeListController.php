@@ -122,6 +122,9 @@ final readonly class NodeListController implements Loggable
         return $nodes->map(fn (Node $node): array => [
             'name' => $node->name,
             'host' => $node->host,
+            'addresses' => [
+                'wireguard' => $node->wireguard_address,
+            ],
             'platform' => $node->platform ?? 'unknown',
             'status' => $node->status,
             'roles' => $node->roleAssignments

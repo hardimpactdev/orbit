@@ -79,6 +79,7 @@ class VpnDnsSwarmInstaller extends WgEasyServiceInstaller
         $this->swarm->deployStack($stackPath);
 
         $this->waitUntilReady();
+        $this->ensureStateWritableForHostExecutor();
         $this->ensureWgEasyStateWritable();
         $this->convergeServerAddress($publicHost, $wireguardCidr, $dnsIp);
         $this->manager->convergeDnsForwarding();
@@ -173,6 +174,27 @@ SH);
         );
     }
 
+    private function ensureStateWritableForHostExecutor(): void
+    {
+        $result = Process::timeout(30)->run(sprintf(
+            <<<'SH'
+set -e
+chmod 0777 %s
+chmod 0666 %s
+SH,
+            escapeshellarg($this->statePath()),
+            escapeshellarg($this->statePath().'/wg-easy.db'),
+        ));
+
+        if ($result->successful()) {
+            return;
+        }
+
+        throw new RuntimeException(
+            'Failed to make wg-easy Swarm state writable: '.trim($result->errorOutput().' '.$result->output())
+        );
+    }
+
     private function convergeServerAddress(string $publicHost, string $wireguardCidr, string $dnsIp): void
     {
         $containerId = $this->manager->vpnTaskContainer();
@@ -202,7 +224,8 @@ SH,
         $this->updateWgEasyGeneralSetupStep(0);
     }
 
-    private function statePath(): string
+    #[\Override]
+    protected function statePath(): string
     {
         return $this->statePath ?? $this->rootPath.'/wg-easy';
     }

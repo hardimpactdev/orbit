@@ -276,6 +276,9 @@ describe('NodeListController', function (): void {
         expect($appNode)->toBe([
             'name' => 'app-1',
             'host' => '10.6.0.7',
+            'addresses' => [
+                'wireguard' => '10.6.0.7',
+            ],
             'platform' => 'ubuntu_24-04',
             'status' => 'active',
             'roles' => [
@@ -330,6 +333,25 @@ describe('NodeListController', function (): void {
                 ],
                 'last_error' => null,
             ]);
+    });
+
+    it('serializes WireGuard peer address separately from public host metadata', function (): void {
+        DB::table('nodes')->insert([
+            apiNodeRow([
+                'name' => 'prod-app',
+                'host' => '203.0.113.10',
+                'wireguard_address' => '10.6.0.13',
+            ]),
+        ]);
+        assignApiNodeRole('prod-app', 'app-prod');
+
+        $response = getApiNodesJson('/api/nodes', ['REMOTE_ADDR' => CALLER_WG_IP]);
+
+        $node = collect($response->json('success.data.nodes'))
+            ->first(fn (array $node): bool => $node['name'] === 'prod-app');
+
+        expect($node['host'])->toBe('203.0.113.10')
+            ->and($node['addresses']['wireguard'])->toBe('10.6.0.13');
     });
 
     it('keeps app role environment out of node serialization', function (): void {

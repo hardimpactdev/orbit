@@ -36,10 +36,13 @@ describe('LaravelInstallerTool', function (): void {
         expect($tool->installScript())->toContain('/usr/local/bin/laravel');
     });
 
-    it('installScript runs as the orbit system user', function (): void {
+    it('installScript runs as the configured managed system user', function (): void {
         $tool = new LaravelInstallerTool;
 
-        expect($tool->installScript())->toContain('sudo -u orbit');
+        expect($tool->installScript(['managed_user' => 'nckrtl']))
+            ->toContain("MANAGED_USER='nckrtl'")
+            ->toContain('COMPOSER_HOME="/home/${MANAGED_USER}/.config/composer"')
+            ->toContain('sudo -u "${MANAGED_USER}"');
     });
 
     it('configures Composer and gh auth from a staged GitHub token file', function (): void {
@@ -79,11 +82,11 @@ describe('LaravelInstallerTool', function (): void {
         expect($metadata['binary'])->toBe('/usr/local/bin/laravel');
     });
 
-    it('probeMetadata runs the installer version command from the orbit home directory', function (): void {
+    it('probeMetadata runs the installer version command from the system path', function (): void {
         $tool = new LaravelInstallerTool;
         $metadata = $tool->probeMetadata();
 
-        expect($metadata['version_command'])->toBe('cd /home/orbit && /usr/local/bin/laravel --version');
+        expect($metadata['version_command'])->toBe('/usr/local/bin/laravel --version');
     });
 
     it('is resolvable by slug from the tool catalog', function (): void {

@@ -83,10 +83,12 @@ The node probe reads gateway node records and checks these layers:
     `firewall_rule`.
 11. **Node security posture:** provisioned Linux nodes satisfy node-owned
    security checks. These issue keys use the `node.security.*` prefix and remain
-   inside the `node` family; `security` is not a doctor family. Persisted
-   `nodes.user` values other than `orbit` are reported as drift. The
-   `node:new --user` option remains valid as a bootstrap-only SSH user and is
-   not itself drift.
+   inside the `node` family; `security` is not a doctor family. The persisted
+   `nodes.user` value is the managed steady-state SSH and maintenance user.
+   Provisioned nodes default to `orbit`, but compatible existing nodes may
+   intentionally use another managed user. Empty managed-user records are
+   drift. The `node:new --user` option remains valid as a bootstrap-only SSH
+   user and is not itself drift.
 12. **Node update posture:** managed Ubuntu server nodes may expose
    `node.updates` posture when the operator selects the exact
    `--key=node.updates` filter. The update layer runs only when a registered
@@ -214,10 +216,10 @@ Each code below identifies a specific kind of node-family drift that `doctor --f
 | `node.node_identity_artifact_missing` | A node is missing bootstrap identity material required to prove its node record. |
 | `node.bootstrap_network_policy_mismatch` | A gateway or node's role bootstrap network policy is missing, unsafe, or inconsistent with its role assignments. |
 | `node.security.host_key.<node>` | A managed Linux node has no pinned host key, a mismatched host key, or host-key metadata that cannot be verified. First pin is adoptable only with explicit operator consent. |
-| `node.security.ssh_user` | A persisted managed node record uses a steady-state SSH user other than `orbit`. |
+| `node.security.runtime_user` | A persisted managed node record has no steady-state SSH and maintenance user, or the managed user is absent on the host. |
 | `node.security.public_ssh_deny` | A provisioned Linux node does not deny public SSH exposure according to node-owned bootstrap policy. |
 | `node.security.sysctl` | A provisioned Linux node is missing or diverges from the node-owned sysctl baseline. |
-| `node.security.home_perms` | `/home/orbit` or `/home/orbit/.ssh` permissions are weaker than the bake-time baseline. Report-only; restore requires operator re-bake. |
+| `node.security.home_perms` | The managed user's home directory permissions are weaker than the bake-time baseline. Report-only; restore requires operator re-bake. |
 | `node.updates_config_missing` | A supported update driver found that `unattended-upgrades` or required apt auto-upgrade config is absent. The issue object uses `key=node.updates` and this value as `code`. |
 | `node.updates_config_mismatch` | A supported update driver found apt auto-upgrade config that differs from Orbit's expected policy. The issue object uses `key=node.updates` and this value as `code`. |
 | `node.updates_dry_run_failed` | A supported update driver found that `sudo unattended-upgrade --dry-run` failed. The issue object uses `key=node.updates` and this value as `code`. |
@@ -256,7 +258,7 @@ This table describes what `doctor --restore --family=node` does for each resolva
 `node.role_settings_invalid`,
 `node.identity_unresolved`, `node.platform_unsupported`,
 `node.platform_record_mismatch`, `node.ssh_unreachable`,
-`node.security.host_key.<node>`, `node.security.ssh_user`,
+`node.security.host_key.<node>`, `node.security.runtime_user`,
 `node.security.home_perms`, `node.local_default_invalid`, or
 `node.agent_ide_default_invalid`.
 

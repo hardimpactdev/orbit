@@ -387,6 +387,195 @@ describe('NodeStoreController', function (): void {
             && str_contains($process->command, 'ssh-ed25519 AAAATEST gateway'));
     });
 
+    it('skips WireGuard addresses already present in wg-easy runtime state when provisioning', function (): void {
+        $gatewayId = (int) DB::table('nodes')->insertGetId(apiStoreNodeRow());
+        assignStoreNodeRole($gatewayId, 'gateway');
+        assignStoreNodeRole($gatewayId, 'vpn');
+
+        $callerId = (int) DB::table('nodes')->insertGetId(apiStoreNodeRow([
+            'name' => 'control-1',
+            'host' => '10.6.0.3',
+            'wireguard_address' => '10.6.0.3',
+            'gateway_endpoint' => '10.6.0.2',
+            'user' => 'tester',
+            'orbit_path' => '/home/tester/orbit',
+        ]));
+        grantStoreNodeAccess($callerId, $gatewayId, ['node:new']);
+
+        DB::table('nodes')->insert(apiStoreNodeRow([
+            'name' => 'database-1',
+            'host' => '10.6.0.4',
+            'wireguard_address' => '10.6.0.4',
+        ]));
+
+        WireGuardPeer::query()->create([
+            'node_id' => $gatewayId,
+            'public_key' => 'gateway-public-key',
+            'private_key' => 'gateway-private-key',
+            'pre_shared_key' => 'gateway-psk',
+            'allowed_ips' => '10.6.0.2/32',
+        ]);
+
+        Process::fake(function ($process) {
+            $command = (string) $process->command;
+
+            if ($command === 'wg genkey') {
+                return Process::result(output: "app-private-key\n");
+            }
+
+            if ($command === 'wg pubkey') {
+                return Process::result(output: "app-public-key\n");
+            }
+
+            if (str_contains($command, 'ssh-keygen -y')) {
+                return Process::result(output: "ssh-ed25519 AAAATEST gateway\n");
+            }
+
+            if (str_contains($command, 'wg show wg0 public-key')) {
+                return Process::result(output: "wg-easy-public-key\n");
+            }
+
+            if (str_contains($command, 'wg show wg0 allowed-ips')) {
+                return Process::result(output: "phone-public-key\t10.6.0.5/32\n");
+            }
+
+            if (str_contains($command, 'internal:wg-easy:state')) {
+                return Process::result(output: json_encode(['success' => ['data' => [], 'meta' => []]], JSON_THROW_ON_ERROR)."\n");
+            }
+
+            if (str_contains($command, 'com.docker.swarm.service.name=orbit_orbit-vpn')) {
+                return Process::result(output: "vpn-container-id\n");
+            }
+
+            return Process::result();
+        });
+        Process::preventStrayProcesses();
+        app()->instance(RemoteShell::class, new NodeStoreConvergenceRemoteShell);
+
+        $response = $this
+            ->withServerVariables(['REMOTE_ADDR' => '10.6.0.3'])
+            ->postJson('/api/nodes', [
+                'name' => 'app-dev-2',
+                'roles' => ['app-dev'],
+                'host' => '192.0.2.22',
+                'tld' => 'test2',
+            ]);
+
+        $response->assertOk()
+            ->assertJsonPath('success.data.node.name', 'app-dev-2')
+            ->assertJsonPath('success.data.node.addresses.wireguard', '10.6.0.6');
+
+        expect(DB::table('nodes')->where('name', 'app-dev-2')->value('wireguard_address'))->toBe('10.6.0.6');
+    });
+
+    it('provisions a database host with a custom WireGuard endpoint', function (): void {
+        $gatewayId = (int) DB::table('nodes')->insertGetId(apiStoreNodeRow([
+            'gateway_endpoint' => '188.245.156.201',
+        ]));
+        assignStoreNodeRole($gatewayId, 'gateway');
+        assignStoreNodeRole($gatewayId, 'vpn');
+
+        $callerId = (int) DB::table('nodes')->insertGetId(apiStoreNodeRow([
+            'name' => 'control-1',
+            'host' => '10.6.0.3',
+            'wireguard_address' => '10.6.0.3',
+            'gateway_endpoint' => '10.6.0.2',
+            'user' => 'tester',
+            'orbit_path' => '/home/tester/orbit',
+        ]));
+        grantStoreNodeAccess($callerId, $gatewayId, ['node:new']);
+
+        WireGuardPeer::query()->create([
+            'node_id' => $gatewayId,
+            'public_key' => 'gateway-public-key',
+            'private_key' => 'gateway-private-key',
+            'pre_shared_key' => 'gateway-psk',
+            'allowed_ips' => '10.6.0.2/32',
+        ]);
+
+        $wireGuardConfigs = [];
+
+        Process::fake(function ($process) use (&$wireGuardConfigs) {
+            $command = (string) $process->command;
+
+            if ($command === 'wg genkey') {
+                return Process::result(output: "database-private-key\n");
+            }
+
+            if ($command === 'wg pubkey') {
+                return Process::result(output: "database-public-key\n");
+            }
+
+            if (str_contains($command, 'ssh-keygen -y')) {
+                return Process::result(output: "ssh-ed25519 AAAATEST gateway\n");
+            }
+
+            if (str_contains($command, 'wg show wg0 public-key')) {
+                return Process::result(output: "wg-easy-public-key\n");
+            }
+
+            if (str_contains($command, 'internal:wg-easy:state')) {
+                return Process::result(output: json_encode(['success' => ['data' => [], 'meta' => []]], JSON_THROW_ON_ERROR)."\n");
+            }
+
+            if (str_contains($command, 'com.docker.swarm.service.name=orbit_orbit-vpn')) {
+                return Process::result(output: "vpn-container-id\n");
+            }
+
+            if (str_contains($command, 'wg-quick@wg-orbit')) {
+                $wireGuardConfigs[] = (string) $process->input;
+            }
+
+            return Process::result();
+        });
+        Process::preventStrayProcesses();
+        app()->instance(RemoteShell::class, new NodeStoreConvergenceRemoteShell);
+
+        $response = $this
+            ->withServerVariables(['REMOTE_ADDR' => '10.6.0.3'])
+            ->postJson('/api/nodes', [
+                'name' => 'database1',
+                'roles' => ['database'],
+                'host' => '116.203.220.206',
+                'tld' => 'db1',
+                'user' => 'root',
+                'gateway_endpoint' => '10.3.0.2',
+                'host_key_fingerprint' => 'SHA256:database1',
+            ]);
+
+        $response->assertOk()
+            ->assertJsonPath('success.data.node.name', 'database1')
+            ->assertJsonPath('success.data.provisioning.transport', 'ssh')
+            ->assertJsonPath('success.data.provisioning.host', '116.203.220.206');
+
+        $node = DB::table('nodes')->where('name', 'database1')->first();
+
+        expect($node)->not->toBeNull()
+            ->and($node->tld)->toBe('db1')
+            ->and($node->host)->toBe('116.203.220.206')
+            ->and($node->gateway_endpoint)->toBe('10.3.0.2')
+            ->and($node->user)->toBe('orbit')
+            ->and($node->status)->toBe('active')
+            ->and($wireGuardConfigs)->toHaveCount(1)
+            ->and($wireGuardConfigs[0])->toContain('Endpoint = 10.3.0.2:51820');
+
+        expect(NodeRoleAssignment::query()
+            ->where('node_id', $node->id)
+            ->where('role', 'database')
+            ->where('status', 'active')
+            ->exists())->toBeTrue();
+
+        expect(DB::table('node_tools')
+            ->where('node_id', $node->id)
+            ->pluck('name')
+            ->all())->toBe(['docker']);
+
+        Process::assertRan(fn ($process): bool => str_contains($process->command, 'ssh-ed25519 AAAATEST gateway')
+            && str_contains($process->command, "'orbit'@'116.203.220.206'"));
+        Process::assertRanTimes(fn ($process): bool => str_contains($process->command, 'ssh-ed25519 AAAATEST gateway')
+            && str_contains($process->command, "'root'@'116.203.220.206'"), 0);
+    });
+
     it('rejects app callers before provisioning', function (): void {
         $gatewayId = (int) DB::table('nodes')->insertGetId(apiStoreNodeRow());
         assignStoreNodeRole($gatewayId, 'gateway');

@@ -9,6 +9,7 @@ use App\Services\Runtime\OrbitCaddyContainer;
 use App\Services\Tools\ToolCatalog;
 use App\Tools\CaddyTool;
 use App\Tools\GhTool;
+use App\Tools\HermesTool;
 use App\Tools\OpenCodeServerTool;
 use App\Tools\PolyscopeServerTool;
 use App\Tools\SeaweedfsTool;
@@ -151,6 +152,9 @@ describe('tool catalog definitions', function (): void {
             ->toContain('--mount '.escapeshellarg('type=bind,source=/etc/caddy/sites,target=/etc/caddy/sites,readonly'))
             ->toContain('--mount '.escapeshellarg('type=bind,source=/etc/orbit,target=/etc/orbit,readonly'))
             ->toContain('--mount '.escapeshellarg('type=bind,source=/home,target=/home,readonly'))
+            ->toContain('--mount '.escapeshellarg('type=bind,source=/run/php,target=/run/php'))
+            ->toContain('--mount '.escapeshellarg('type=bind,source=/var/lib/caddy/.local/share/caddy,target=/data/caddy'))
+            ->toContain('--mount '.escapeshellarg('type=bind,source=/var/lib/caddy/.config/caddy,target=/config/caddy'))
             ->toContain('--add-host '.escapeshellarg('host.docker.internal:host-gateway'))
             ->toContain('orbit.caddy.spec_hash')
             ->toContain('actual_hash=')
@@ -169,7 +173,7 @@ describe('tool catalog definitions', function (): void {
 
         $directories = (OrbitCaddyContainer::default())->hostMountDirectories();
 
-        expect($directories)->toContain('/etc/caddy', '/etc/caddy/orbit', '/etc/caddy/sites', '/etc/orbit', '/home');
+        expect($directories)->toContain('/etc/caddy', '/etc/caddy/orbit', '/etc/caddy/sites', '/etc/orbit', '/home', '/run/php', '/var/lib/caddy/.local/share/caddy', '/var/lib/caddy/.config/caddy');
 
         $installLine = collect(explode("\n", $script))
             ->first(fn (string $line): bool => str_starts_with(trim($line), 'sudo install -d -m 0755'));
@@ -265,5 +269,15 @@ describe('tool catalog definitions', function (): void {
             ->and($repairCommands['lifecycle_restarted'] ?? null)->toContain('orbit-seaweedfs')
             ->and($catalog->logCommand('seaweedfs', 50))->toContain('docker logs')
             ->and($catalog->logCommand('seaweedfs', 50))->toContain('orbit-seaweedfs');
+    });
+
+    it('probes Hermes through the system wrapper that delegates to the agent user', function (): void {
+        $metadata = app(ToolCatalog::class)->probeMetadata('hermes');
+
+        expect(app(ToolCatalog::class)->definition('hermes'))->toBeInstanceOf(HermesTool::class)
+            ->and($metadata)->toMatchArray([
+                'binary' => '/usr/local/bin/hermes',
+                'version_command' => '/usr/local/bin/hermes --version 2>/dev/null || true',
+            ]);
     });
 });

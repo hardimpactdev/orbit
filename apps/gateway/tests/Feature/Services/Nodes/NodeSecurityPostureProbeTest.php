@@ -34,11 +34,11 @@ final class RecordingNodeSecurityShell implements RemoteShell
     }
 }
 
-it('reports missing host key material and legacy runtime users under node security keys', function (): void {
+it('reports missing host key material and missing runtime users under node security keys', function (): void {
     $node = Node::factory()->create([
         'platform' => 'ubuntu_24-04',
         'status' => Node::STATUS_ACTIVE,
-        'user' => 'ubuntu',
+        'user' => '',
         'host_key_type' => null,
         'host_key_public' => null,
         'host_key_fingerprint' => null,
@@ -50,6 +50,55 @@ it('reports missing host key material and legacy runtime users under node securi
         ->toContain("node.security.host_key.{$node->name}")
         ->toContain('node.security.runtime_user')
         ->toContain('node.security.public_ssh_deny');
+});
+
+it('accepts a custom steady-state SSH runtime user from the node record', function (): void {
+    $node = Node::factory()->create([
+        'platform' => 'ubuntu_24-04',
+        'status' => Node::STATUS_ACTIVE,
+        'wireguard_address' => '10.6.0.7',
+        'user' => 'nckrtl',
+        'host_key_type' => 'ssh-ed25519',
+        'host_key_public' => 'AAAAC3NzaC1lZDI1NTE5AAAAIMockEd25519KeyForOrbitTests',
+        'host_key_fingerprint' => 'SHA256:test',
+        'host_key_pin_mode' => 'verified',
+        'host_key_pinned_at' => now(),
+    ]);
+    FirewallRule::factory()->create([
+        'node_id' => $node->id,
+        'address_family' => 'v4',
+        'owner' => 'node-security',
+        'protected' => true,
+        'port' => '22',
+        'action' => 'deny',
+        'direction' => 'incoming',
+        'interface' => 'public',
+    ]);
+    FirewallRule::factory()->create([
+        'node_id' => $node->id,
+        'address_family' => 'v6',
+        'owner' => 'node-security',
+        'protected' => true,
+        'port' => '22',
+        'action' => 'deny',
+        'direction' => 'incoming',
+        'interface' => 'public',
+    ]);
+    $shell = new RecordingNodeSecurityShell(json_encode([
+        'runtime_user' => true,
+        'sshd_config' => true,
+        'sshd_listen' => true,
+        'sysctl' => true,
+        'home_perms' => true,
+    ], JSON_THROW_ON_ERROR));
+
+    $drift = (new NodeSecurityPostureProbe($shell))->diff($node);
+
+    expect($drift)->toBe([])
+        ->and($shell->scripts[0])->toContain('$managedUser = \'nckrtl\'')
+        ->and($shell->scripts[0])->toContain('id -u ".escapeshellarg($managedUser)')
+        ->and($shell->scripts[0])->toContain('"AllowUsers ".$managedUser')
+        ->and($shell->scripts[0])->toContain('/home/nckrtl');
 });
 
 it('reports remote node security drift from the posture script', function (): void {

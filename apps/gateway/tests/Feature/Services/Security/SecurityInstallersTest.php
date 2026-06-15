@@ -77,10 +77,26 @@ describe('security installers', function (): void {
         expect($report->successful)->toBeTrue()
             ->and($shell->runs[0]['script'])->toContain('PermitRootLogin no')
             ->and($shell->runs[0]['script'])->toContain('PasswordAuthentication no')
-            ->and($shell->runs[0]['script'])->toContain('AllowUsers orbit')
+            ->and($shell->runs[0]['script'])->toContain("MANAGED_USER='orbit'")
+            ->and($shell->runs[0]['script'])->toContain('AllowUsers $MANAGED_USER')
             ->and($shell->runs[0]['script'])->toContain('ListenAddress 10.6.0.44')
             ->and($shell->runs[0]['script'])->toContain('ListenAddress 127.0.0.1')
             ->and($shell->runs[0]['script'])->toContain('sudo sshd -t');
+    });
+
+    it('renders hardened sshd configuration for a custom managed SSH user', function (): void {
+        $node = Node::factory()->create([
+            'wireguard_address' => '10.6.0.44',
+            'user' => 'nckrtl',
+        ]);
+        $shell = new RecordingSecurityInstallerShell;
+
+        $report = app(SshdHardenedInstaller::class)->installFor($node, $shell);
+
+        expect($report->successful)->toBeTrue()
+            ->and($shell->runs[0]['script'])->toContain("MANAGED_USER='nckrtl'")
+            ->and($shell->runs[0]['script'])->toContain('AllowUsers $MANAGED_USER')
+            ->and($shell->runs[0]['script'])->not->toContain("MANAGED_USER='orbit'");
     });
 
     it('installs unattended security upgrades without enabling automatic reboots', function (): void {
@@ -106,8 +122,12 @@ describe('security installers', function (): void {
             ->and(FirewallRule::query()->where('owner', 'node-security')->where('protected', true)->count())->toBe(3)
             ->and(FirewallRule::query()->pluck('address_family')->sort()->values()->all())->toBe(['v4', 'v4', 'v6'])
             ->and($shell->runs[0]['script'])->toContain('install -y -qq ufw')
+            ->and($shell->runs[0]['script'])->toContain('UFW is inactive; public SSH deny rules were staged but UFW was not enabled.')
+            ->and($shell->runs[0]['script'])->toContain('ip -o link show type wireguard')
+            ->and($shell->runs[0]['script'])->toContain('Could not resolve WireGuard interface.')
             ->and($shell->runs[0]['script'])->toContain('ufw allow in on "$WG_IFACE" proto tcp from 10.6.0.0/24')
             ->and($shell->runs[0]['script'])->toContain('ufw deny in on "$PUBLIC_IFACE" proto tcp from 0.0.0.0/0')
-            ->and($shell->runs[0]['script'])->toContain('ufw deny in on "$PUBLIC_IFACE" proto tcp from ::/0');
+            ->and($shell->runs[0]['script'])->toContain('ufw deny in on "$PUBLIC_IFACE" proto tcp from ::/0')
+            ->and($shell->runs[0]['script'])->not->toContain('ufw --force enable');
     });
 });

@@ -89,10 +89,28 @@ it('deploys the colocated vpn and dns Swarm services and converges forwarding', 
 
     expect($commands)->toContain("docker node update --label-add 'orbit.role.gateway=true' --label-add 'orbit.role.vpn=true' --label-add 'orbit.role.dns=true' 'node-123'")
         ->and($commands)->toContain("docker stack deploy -c '{$this->root}/swarm/orbit-vpn-dns-stack.yml' 'orbit'")
+        ->and($commands)->toContain("set -e\nchmod 0777 '{$this->root}/wg-easy'\nchmod 0666 '{$this->root}/wg-easy/wg-easy.db'")
         ->and($commands)->toContain("docker exec 'vpn-container-id' wg show wg0 public-key")
         ->and(implode("\n", $commands))->toContain("docker exec 'vpn-container-id' sh -lc")
         ->and(implode("\n", $commands))->toContain('PREROUTING')
         ->and(implode("\n", $commands))->toContain('wg set wg0 peer');
+});
+
+it('uses the Swarm wg-easy state path for inherited state commands', function (): void {
+    $installer = new class($this->root) extends VpnDnsSwarmInstaller
+    {
+        public function __construct(string $root)
+        {
+            parent::__construct(rootPath: $root);
+        }
+
+        public function exposedStatePath(): string
+        {
+            return $this->statePath();
+        }
+    };
+
+    expect($installer->exposedStatePath())->toBe($this->root.'/wg-easy');
 });
 
 function vpnDnsSwarmInstaller(string $root): VpnDnsSwarmInstaller

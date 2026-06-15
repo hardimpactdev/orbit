@@ -21,7 +21,9 @@ orbit app:register [name] [--node=] [--path=] [--root=] [--php-version=] [--doma
 repository URL is metadata that is captured only at creation time by `app:new`.
 `app:register` re-applies management for an existing path; it never clones,
 re-clones, mutates app source, or changes repository metadata. Re-registering an
-existing app preserves its stored repository value. Adopting an unmanaged path
+existing app preserves its stored repository value. Explicitly supplying both
+`--node` and `--path` for an existing app may move the app record to that
+pre-existing path on another eligible app node. Adopting an unmanaged path
 through `app:register` stores `repository=null`.
 
 ## Input Contract
@@ -63,7 +65,9 @@ This command follows the shared
      registration mode: `app-dev` when `--domain` is absent,
      `app-prod` when `--domain` is supplied.
    - Provided `--path` must exist on the target node.
-   - Provided `name` must not be owned by a different path or node.
+  - Provided `name` must not be owned by a different path or node unless both
+    `--node` and `--path` are explicit. Explicit app moves require the target
+    path to already exist and pass the same path-collision checks as adoption.
    - Provided `--path` on the resolved node must not already be owned by a
      different registered app. A collision fails before side effects with
      `error.code=app.path_collision` and `error.meta.path`,
@@ -113,6 +117,8 @@ This command follows the shared
     but was unmanaged. The durable `app.adopted` boolean on the app entity is
     set to `true` for this run only; subsequent re-runs report
     `result.action=converged` with `app.adopted=true` preserved.
+  - `moved` — explicit re-application of an already-managed app to a different
+    eligible node/path, requested with both `--node` and `--path`.
   - `converged` — idempotent re-application of an already-managed app where no
     observable artifact change was needed.
   This separation keeps durable adoption state on the app entity while letting

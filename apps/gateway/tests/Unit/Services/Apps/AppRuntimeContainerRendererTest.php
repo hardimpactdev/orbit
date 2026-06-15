@@ -52,6 +52,25 @@ it('renders a FrankenPHP app runtime container for a PHP app with deterministic 
             'source' => '/home/orbit/apps/docs',
             'target' => '/app',
             'read_only' => false,
+        ])
+        ->and($container->mounts())->toContain([
+            'source' => '/home/orbit/apps/docs',
+            'target' => '/home/orbit/apps/docs',
+            'read_only' => false,
+        ])
+        ->and($container->mounts())->toContain([
+            'source' => '/home/orbit/apps/docs/.orbit/frankenphp/data',
+            'target' => '/data',
+            'read_only' => false,
+        ])
+        ->and($container->mounts())->toContain([
+            'source' => '/home/orbit/apps/docs/.orbit/frankenphp/config',
+            'target' => '/config',
+            'read_only' => false,
+        ])
+        ->and($container->environment())->toMatchArray([
+            'XDG_CONFIG_HOME' => '/config',
+            'XDG_DATA_HOME' => '/data',
         ]);
 });
 

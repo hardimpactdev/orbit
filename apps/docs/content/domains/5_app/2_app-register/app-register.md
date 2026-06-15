@@ -54,7 +54,9 @@ repository URL is metadata that is captured only at creation time by
 [`app:new`](../1_app-new/app-new.md). `app:register` re-applies management for
 an existing path; it never clones, re-clones, mutates app source, or changes
 repository metadata. Re-registering an existing app preserves its stored
-repository value. Adopting an unmanaged path through `app:register` stores
+repository value. Explicitly supplying both `--node` and `--path` for an
+existing app moves the app record to that pre-existing path on another eligible
+app node. Adopting an unmanaged path through `app:register` stores
 `repository=null`.
 
 ## What Happens
@@ -66,7 +68,7 @@ gateway and that its runtime artifacts are properly applied on the target app
 node.
 
 1. **Resolution**: Identifies the app and target node from the provided name, options, or the CLI's stored `node:default` development node.
-2. **Registration/Adoption**: Writes the app's configuration to the gateway database. An existing path not yet managed by Orbit is adopted at this step.
+2. **Registration/Adoption**: Writes the app's configuration to the gateway database. An existing path not yet managed by Orbit is adopted at this step. Existing apps can move to another eligible node/path only when both `--node` and `--path` are explicit.
 3. **Apply**: Connects to the node over SSH to configure runtime container and install runtime configuration. It then records app-owned proxy route configuration for the `proxy` family to converge.
 4. **Production Activation**: Performs DNS and TLS checks to activate production routing.
 
@@ -78,7 +80,7 @@ If DNS or TLS prerequisites are pending at Production Activation time, registrat
 
 ### Idempotency
 
-This command is idempotent. Re-running it on an app that is already managed re-renders artifacts and verifies the result; if nothing changes, the command still succeeds. The result reports which path the run took (`registered`, `adopted`, or `converged`) so operators and agents can see what changed.
+This command is idempotent. Re-running it on an app that is already managed re-renders artifacts and verifies the result; if nothing changes, the command still succeeds. The result reports which path the run took (`registered`, `adopted`, `moved`, or `converged`) so operators and agents can see what changed.
 
 ## Output
 
@@ -86,7 +88,7 @@ You receive output in the format determined by the presence of `--json`.
 
 ### Human
 
-Progress showing each phase, followed by a success line keyed to the result (`registered`, `adopted`, or `converged`) and any non-fatal warnings.
+Progress showing each phase, followed by a success line keyed to the result (`registered`, `adopted`, `moved`, or `converged`) and any non-fatal warnings.
 
 ### JSON
 
@@ -98,6 +100,7 @@ A machine-readable result with the app's registry data. It includes a durable `a
 - The gateway must be able to reach the target node over SSH.
 - The target node must be an active node.
 - The supplied `--path` on the resolved node must not already be owned by a different registered app. A path collision fails before side effects with `app.path_collision`.
+- Moving an existing app to another node/path requires explicit `--node` and `--path`.
 
 ## Related Commands
 

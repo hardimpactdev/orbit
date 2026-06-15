@@ -82,18 +82,34 @@ final readonly class ToolsFixer
     private function repairCommand(NodeTool $tool, DriftEntry $entry): ?string
     {
         $catalog = $this->catalog ?? app(ToolCatalog::class);
+        $config = $this->configForToolScript($tool);
 
         if ($entry->key === 'tool.capability_missing') {
-            return $catalog->installScript($tool->name, is_array($tool->config) ? $tool->config : []);
+            return $catalog->installScript($tool->name, $config);
         }
 
         if ($entry->key !== 'tool.version_mismatch') {
             return null;
         }
 
-        $command = $catalog->updateScript($tool->name, is_array($tool->config) ? $tool->config : []);
+        $command = $catalog->updateScript($tool->name, $config);
 
         return is_string($command) && $command !== '' ? $command : null;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function configForToolScript(NodeTool $tool): array
+    {
+        $config = is_array($tool->config) ? $tool->config : [];
+        $tool->loadMissing('node');
+        $managedUser = $tool->node?->user;
+
+        return [
+            ...$config,
+            'managed_user' => is_string($managedUser) && trim($managedUser) !== '' ? trim($managedUser) : 'orbit',
+        ];
     }
 
     private function containerRepairCommand(NodeTool $tool): ?string

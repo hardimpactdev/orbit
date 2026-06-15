@@ -121,6 +121,7 @@ describe('install-orbit always-cli launcher contract', function (): void {
 
         expect(array_keys($config))->toBe(['gateway']);
     });
+
 });
 
 /**

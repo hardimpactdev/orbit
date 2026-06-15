@@ -114,6 +114,7 @@ function coreAgentIdeWorkspacePathResolverExecutor(CoreAgentIdeWorkspacePathReso
         ),
         activityLogger: new ActivityLogger(new ActivityLogCorrelation),
         operationRuns: app(OperationRunRecorder::class),
+        operationTokenSecret: 'gateway-secret',
     );
 }
 

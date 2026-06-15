@@ -68,6 +68,14 @@ post-filter the result, or run separate scoped invocations.
   by effective role assignment and then by node name. Renderer contracts own
   presentation shape.
 
+### Address Rules
+
+- Treat `host` as bootstrap or public endpoint metadata, not as the node's peer
+  address.
+- Render and serialize the peer address from `addresses.wireguard`.
+- When a node has no recorded WireGuard address, do not fall back to `host`.
+  Renderer contracts own the missing-address presentation.
+
 ### Scope Boundaries
 
 `node:list` must not:

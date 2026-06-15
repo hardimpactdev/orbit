@@ -97,7 +97,7 @@ UFW);
             'protocol' => 'tcp',
         ])
             ->and($shell->nodes[0]->is($node))->toBeTrue()
-            ->and($shell->scripts[0])->toBe('sudo ufw status numbered');
+            ->and($shell->scripts[0])->toContain('sudo ufw status numbered');
     });
 
     it('detects missing backend rules after UFW inspection', function (): void {
@@ -166,6 +166,107 @@ UFW);
         $drift = (new FirewallRuleProbe)->diff($rule, $snapshot);
 
         expect($drift)->toBe([]);
+    });
+
+    it('matches node security baseline rules rendered with concrete UFW interfaces', function (): void {
+        $node = createFirewallRuleProbeAppHostNode();
+        $publicDeny = FirewallRule::factory()->create([
+            'node_id' => $node->id,
+            'name' => 'orbit-public-ssh-deny-v4',
+            'action' => 'deny',
+            'source' => '0.0.0.0/0',
+            'port' => '22',
+            'address_family' => 'v4',
+            'interface' => 'public',
+            'owner' => 'node-security',
+            'protected' => true,
+        ]);
+        $wireguardAllow = FirewallRule::factory()->create([
+            'node_id' => $node->id,
+            'name' => 'orbit-wireguard-ssh-allow-v4',
+            'source' => '10.6.0.0/24',
+            'port' => '22',
+            'address_family' => 'v4',
+            'interface' => 'wireguard',
+            'owner' => 'node-security',
+            'protected' => true,
+        ]);
+        $publicDenyV6 = FirewallRule::factory()->create([
+            'node_id' => $node->id,
+            'name' => 'orbit-public-ssh-deny-v6',
+            'action' => 'deny',
+            'source' => '::/0',
+            'port' => '22',
+            'address_family' => 'v6',
+            'interface' => 'public',
+            'owner' => 'node-security',
+            'protected' => true,
+        ]);
+        $shell = new FirewallProbeRecordingRemoteShell(<<<'UFW'
+Status: active
+
+     To                         Action      From
+     --                         ------      ----
+[ 1] 22/tcp on wg-orbit         ALLOW IN    10.6.0.0/24                # Orbit node security baseline permits SSH only through WireGuard.
+[ 2] 22/tcp on enp11s0          DENY IN     Anywhere                   # Orbit node security baseline denies public SSH after bootstrap.
+[ 3] 22/tcp (v6) on enp11s0     DENY IN     Anywhere (v6)              # Orbit node security baseline denies public SSH after bootstrap.
+UFW);
+
+        $snapshot = new FirewallRuleProbe($shell)->introspect($publicDeny);
+        $probe = new FirewallRuleProbe;
+
+        expect($probe->diff($publicDeny, $snapshot))->toBe([])
+            ->and($probe->diff($wireguardAllow, $snapshot))->toBe([])
+            ->and($probe->diff($publicDenyV6, $snapshot))->toBe([]);
+    });
+
+    it('matches inactive UFW staged node security rules from stored rule files', function (): void {
+        $node = createFirewallRuleProbeAppHostNode();
+        $publicDeny = FirewallRule::factory()->create([
+            'node_id' => $node->id,
+            'name' => 'orbit-public-ssh-deny-v4',
+            'action' => 'deny',
+            'source' => '0.0.0.0/0',
+            'port' => '22',
+            'address_family' => 'v4',
+            'interface' => 'public',
+            'owner' => 'node-security',
+            'protected' => true,
+        ]);
+        $wireguardAllow = FirewallRule::factory()->create([
+            'node_id' => $node->id,
+            'name' => 'orbit-wireguard-ssh-allow-v4',
+            'source' => '10.6.0.0/24',
+            'port' => '22',
+            'address_family' => 'v4',
+            'interface' => 'wireguard',
+            'owner' => 'node-security',
+            'protected' => true,
+        ]);
+        $publicDenyV6 = FirewallRule::factory()->create([
+            'node_id' => $node->id,
+            'name' => 'orbit-public-ssh-deny-v6',
+            'action' => 'deny',
+            'source' => '::/0',
+            'port' => '22',
+            'address_family' => 'v6',
+            'interface' => 'public',
+            'owner' => 'node-security',
+            'protected' => true,
+        ]);
+        $shell = new FirewallProbeRecordingRemoteShell(<<<'UFW'
+Status: inactive
+__orbit_ufw_file:user:-A ufw-user-input -i wg-orbit -p tcp --dport 22 -s 10.6.0.0/24 -j ACCEPT
+__orbit_ufw_file:user:-A ufw-user-input -i eth0 -p tcp --dport 22 -j DROP
+__orbit_ufw_file:user6:-A ufw6-user-input -i eth0 -p tcp --dport 22 -j DROP
+UFW);
+
+        $snapshot = new FirewallRuleProbe($shell)->introspect($publicDeny);
+        $probe = new FirewallRuleProbe;
+
+        expect($probe->diff($publicDeny, $snapshot))->toBe([])
+            ->and($probe->diff($wireguardAllow, $snapshot))->toBe([])
+            ->and($probe->diff($publicDenyV6, $snapshot))->toBe([]);
     });
 });
 
@@ -261,6 +362,21 @@ describe('firewall registry probe foundation', function (): void {
 
         expect(firewallProbeIssue($drift, 'firewall_rule.node_invalid'))->toBeNull();
     })->with(['gateway', 'router', 'app-dev', 'app-prod', 'database', 'agent', 'ingress']);
+
+    it('treats versioned Ubuntu platforms as valid firewall target nodes', function (): void {
+        $node = Node::factory()->create(['name' => 'app-fw-node', 'status' => 'active', 'platform' => 'ubuntu_24-04']);
+        NodeRoleAssignment::factory()->create([
+            'node_id' => $node->id,
+            'role' => 'app-dev',
+            'status' => 'active',
+            'settings' => ['tld' => 'test'],
+        ]);
+        $rule = FirewallRule::factory()->create(['node_id' => $node->id, 'name' => 'app-rule']);
+
+        $drift = (new FirewallRuleProbe)->diff($rule, new ProbeSnapshot([]));
+
+        expect(firewallProbeIssue($drift, 'firewall_rule.node_invalid'))->toBeNull();
+    });
 
     it('detects baseline policy boundary conflicts', function (): void {
         $node = createFirewallRuleProbeAppHostNode();

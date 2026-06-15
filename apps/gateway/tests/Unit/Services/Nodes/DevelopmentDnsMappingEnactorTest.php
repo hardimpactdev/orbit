@@ -45,6 +45,13 @@ it('converges a gateway-owned development dns mapping from active app node inten
         ->toContain('address=/test/10.6.0.7');
 });
 
+it('stores default mappings under the persistent Orbit config root', function (): void {
+    config()->set('orbit.paths.config_root', '/home/orbit/.config/orbit');
+
+    expect((new DevelopmentDnsMappingEnactor)->configDir())
+        ->toBe('/home/orbit/.config/orbit/node-development-dns.d');
+});
+
 it('does not create mappings for production app nodes', function (): void {
     $node = developmentDnsMappingNode([
         'tld' => null,

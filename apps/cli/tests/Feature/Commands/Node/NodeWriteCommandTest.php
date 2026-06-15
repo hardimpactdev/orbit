@@ -26,6 +26,7 @@ describe('node write commands', function (): void {
             'name' => 'app-1',
             '--roles' => 'app-dev,database',
             '--host' => '192.0.2.20',
+            '--gateway-endpoint' => '10.3.0.2',
             '--tld' => 'test',
             '--grant-to' => ['agent-1'],
             '--agent-tool' => ['openclaw'],
@@ -40,6 +41,7 @@ describe('node write commands', function (): void {
             && $request['name'] === 'app-1'
             && $request['roles'] === ['app-dev', 'database']
             && $request['host'] === '192.0.2.20'
+            && $request['gateway_endpoint'] === '10.3.0.2'
             && $request['tld'] === 'test'
             && $request['grant_to'] === ['agent-1']
             && $request['agent_tools'] === ['openclaw']

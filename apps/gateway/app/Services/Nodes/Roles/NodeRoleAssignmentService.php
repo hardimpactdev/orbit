@@ -261,6 +261,7 @@ class NodeRoleAssignmentService
 
         $appDevelopment = $activeAssignments->firstWhere('role', NodeRoleName::AppDevelopment->value);
         $agent = $activeAssignments->firstWhere('role', NodeRoleName::Agent->value);
+        $database = $activeAssignments->firstWhere('role', NodeRoleName::Database->value);
 
         if ($appDevelopment instanceof NodeRoleAssignment) {
             $developmentTld = $appDevelopment->settings['tld'] ?? null;
@@ -268,6 +269,9 @@ class NodeRoleAssignmentService
         } elseif ($agent instanceof NodeRoleAssignment) {
             $agentTld = $agent->settings['tld'] ?? null;
             $tld = is_string($agentTld) ? $agentTld : null;
+        } elseif ($database instanceof NodeRoleAssignment) {
+            $nodeTld = is_string($node->tld) ? trim($node->tld) : '';
+            $tld = $nodeTld !== '' ? $nodeTld : null;
         }
 
         $node->forceFill(['tld' => $tld])->save();

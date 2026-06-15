@@ -160,6 +160,7 @@ require_command() {
 }
 
 ensure_log_file() {
+    local default_log_dir
     local tmp_dir
     local tmp_file
 
@@ -167,7 +168,13 @@ ensure_log_file() {
         return
     fi
 
-    tmp_dir="${TMPDIR:-/tmp}"
+    default_log_dir="/var/tmp"
+
+    if [ ! -d "$default_log_dir" ] || [ ! -w "$default_log_dir" ]; then
+        default_log_dir="/tmp"
+    fi
+
+    tmp_dir="${TMPDIR:-$default_log_dir}"
     tmp_dir="${tmp_dir%/}"
     tmp_file="$(mktemp "$tmp_dir/orbit-install.XXXXXX")"
     LOG_FILE="${tmp_file}.log"

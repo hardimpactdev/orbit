@@ -43,6 +43,7 @@ class NodeNewPayloadBuilder
         ?string $operatorName,
         ?string $tld,
         ?string $user,
+        ?string $gatewayEndpoint,
         ?string $ingressNode,
         ?string $redisNode,
         ?string $s3DataPath,
@@ -97,6 +98,7 @@ class NodeNewPayloadBuilder
         $this->putString($payload, 'operator_name', $operatorName);
         $this->putString($payload, 'tld', $tld);
         $this->putString($payload, 'user', $user);
+        $this->putString($payload, 'gateway_endpoint', $gatewayEndpoint);
         $this->putString($payload, 'ingress_node', $ingressNode);
         $this->putString($payload, 'redis_node', $redisNode);
         $this->putString($payload, 's3_data_path', $s3DataPath);
@@ -150,6 +152,7 @@ class NodeNewPayloadBuilder
             'operator_name' => 'operator-name',
             'tld' => 'tld',
             'user' => 'user',
+            'gateway_endpoint' => 'gateway-endpoint',
             'ingress_node' => 'ingress',
             'redis_node' => 'redis-node',
             's3_data_path' => 's3-data-path',

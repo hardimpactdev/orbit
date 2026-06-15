@@ -574,7 +574,14 @@ BASH;
             return app(NodeRoleAssignments::class)->nodeCanServeRouter($node);
         }
 
-        return app(NodeRoleAssignments::class)->nodeCanServeGatewayOrAppHostWorkloads($node);
+        $assignments = app(NodeRoleAssignments::class);
+
+        if ($route->owner_type === 'custom') {
+            return $assignments->nodeCanServeGatewayOrAppHostWorkloads($node)
+                || $assignments->nodeCanServeIngress($node);
+        }
+
+        return $assignments->nodeCanServeGatewayOrAppHostWorkloads($node);
     }
 
     /**
@@ -910,6 +917,10 @@ BASH;
 
     private function expectsOrbitTls(ProxyRoute $route): bool
     {
+        if ($this->usesIngressPlacement($route)) {
+            return false;
+        }
+
         $config = is_array($route->config) ? $route->config : [];
         $tls = $config['tls'] ?? null;
 
@@ -920,6 +931,10 @@ BASH;
         $managedBy = is_array($tls)
             ? ($tls['managed_by'] ?? $config['tls_managed_by'] ?? 'orbit')
             : ($config['tls_managed_by'] ?? 'orbit');
+
+        if ($managedBy === 'acme') {
+            return false;
+        }
 
         return $managedBy === 'orbit';
     }

@@ -339,6 +339,22 @@ describe('stale systemd unit reality', function (): void {
         ]);
     });
 
+    it('ignores stale systemd units owned by a different app process on the same node', function (): void {
+        $app = processableApp(['name' => 'docs']);
+        $process = processFor($app, ['name' => 'vite']);
+
+        $snapshot = new ProbeSnapshot([
+            'vite' => [
+                'runtime_backend_available' => true,
+                'runtime_unit_extras' => ['orbit_blog_main_vite'],
+            ],
+        ]);
+
+        $drift = $this->probe->diff($process, $snapshot);
+
+        expect(issue($drift, 'process.runtime_unit_extra'))->toBeNull();
+    });
+
     it('skips stale systemd unit checks while runtime backend is unavailable', function (): void {
         $app = processableApp(['name' => 'docs']);
         $process = processFor($app, ['name' => 'vite']);
