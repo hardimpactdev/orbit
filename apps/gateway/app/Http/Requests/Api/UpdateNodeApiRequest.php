@@ -24,6 +24,7 @@ class UpdateNodeApiRequest extends FormRequest
         return [
             'host' => ['sometimes', 'string', 'filled', 'max:255'],
             'tld' => ['sometimes', 'string', 'filled', 'regex:/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/'],
+            'gateway_endpoint' => ['sometimes', 'string', 'filled', 'max:253', $this->validGatewayEndpoint(...)],
             'public_ipv4' => ['sometimes', 'string', 'filled', 'ipv4'],
             'public_ipv6' => ['sometimes', 'string', 'filled', 'ipv6'],
             'role' => ['prohibited'],
@@ -34,7 +35,7 @@ class UpdateNodeApiRequest extends FormRequest
     public function withValidator(Validator $validator): void
     {
         $validator->after(function (Validator $validator): void {
-            if ($this->hasAny(['host', 'tld', 'public_ipv4', 'public_ipv6', 'role', 'environment'])) {
+            if ($this->hasAny(['host', 'tld', 'gateway_endpoint', 'public_ipv4', 'public_ipv6', 'role', 'environment'])) {
                 return;
             }
 
@@ -48,7 +49,7 @@ class UpdateNodeApiRequest extends FormRequest
     public function updateFields(): array
     {
         /** @var array<string, string> $fields */
-        $fields = $this->safe()->only(['host', 'tld', 'public_ipv4', 'public_ipv6']);
+        $fields = $this->safe()->only(['host', 'tld', 'gateway_endpoint', 'public_ipv4', 'public_ipv6']);
 
         return $fields;
     }
@@ -74,6 +75,7 @@ class UpdateNodeApiRequest extends FormRequest
             'fields' => 'At least one field must be provided to update a node.',
             'role', 'environment' => "Field '{$field}' is not supported for node:update.",
             'tld' => "Invalid value for --tld: '{$value}'. TLD must be a lowercase DNS label without a leading dot.",
+            'gateway_endpoint' => "Invalid value for --gateway-endpoint: '{$value}'. Gateway endpoint must be a valid IP address or dotted DNS name.",
             'public_ipv4' => "Invalid IPv4 address: '{$value}'.",
             'public_ipv6' => "Invalid IPv6 address: '{$value}'.",
             default => "Field '{$field}' cannot be empty.",
@@ -85,7 +87,7 @@ class UpdateNodeApiRequest extends FormRequest
      */
     private function metaFor(string $field, ?string $value): array
     {
-        if (in_array($field, ['tld', 'public_ipv4', 'public_ipv6'], true)) {
+        if (in_array($field, ['tld', 'gateway_endpoint', 'public_ipv4', 'public_ipv6'], true)) {
             return [
                 'field' => $field,
                 'value' => $value,
@@ -93,5 +95,41 @@ class UpdateNodeApiRequest extends FormRequest
         }
 
         return ['field' => $field];
+    }
+
+    private function validGatewayEndpoint(string $attribute, mixed $value, \Closure $fail): void
+    {
+        if (! is_string($value) || ! $this->isValidHost($value)) {
+            $fail('validation.gateway_endpoint')->translate();
+        }
+    }
+
+    private function isValidHost(string $host): bool
+    {
+        if (filter_var($host, FILTER_VALIDATE_IP) !== false) {
+            return true;
+        }
+
+        if (! str_contains($host, '.')) {
+            return false;
+        }
+
+        if (strlen($host) > 253 || str_contains($host, '..')) {
+            return false;
+        }
+
+        $labels = explode('.', trim($host, '.'));
+
+        foreach ($labels as $label) {
+            if ($label === '' || strlen($label) > 63) {
+                return false;
+            }
+
+            if (! preg_match('/^[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?$/', $label)) {
+                return false;
+            }
+        }
+
+        return true;
     }
 }

@@ -260,7 +260,7 @@ describe('node write commands', function (): void {
     it('puts node:update payloads to the typed gateway API', function (): void {
         fakeGateway(fakeSuccessEnvelope([
             'name' => 'app-1',
-            'changed' => ['host', 'tld'],
+            'changed' => ['host', 'tld', 'gateway_endpoint'],
             'action' => 'updated',
         ]));
 
@@ -268,6 +268,7 @@ describe('node write commands', function (): void {
             'name' => 'app-1',
             '--host' => '192.0.2.21',
             '--tld' => 'dev',
+            '--gateway-endpoint' => '10.3.0.2',
             '--json' => true,
         ]);
 
@@ -277,6 +278,7 @@ describe('node write commands', function (): void {
             && str_contains($request->url(), '/api/nodes/app-1')
             && $request['host'] === '192.0.2.21'
             && $request['tld'] === 'dev'
+            && $request['gateway_endpoint'] === '10.3.0.2'
             && ! isset($request['environment']));
 
         expect($exitCode)->toBe(0)

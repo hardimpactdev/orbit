@@ -31,10 +31,12 @@ execution.
 3. Validate role-conditional field eligibility.
 4. Validate `node_update.tld` when present: the target must carry an active
    `app-dev` or `agent` role assignment, and no other active node may already own that TLD.
-5. Compute the configuration delta (which fields actually changed).
-6. Write the updated node record.
-7. Re-apply node-owned host artifacts for changed fields.
-8. Return the result.
+5. Validate `node_update.gateway_endpoint` when present: it must be a valid IP
+   address or dotted DNS name.
+6. Compute the configuration delta (which fields actually changed).
+7. Write the updated node record.
+8. Re-apply node-owned host artifacts for changed fields.
+9. Return the result.
 
 Environment switching between `app-dev` and `app-prod` is a role-assignment
 change outside `node:update`.
@@ -45,7 +47,8 @@ change outside `node:update`.
 - Fail before side effects when no supported field flags are provided in
   non-interactive input mode.
 - Fail before side effects when a field is supplied for an incompatible target
-  (`--host`, `--public-ipv4`, or `--public-ipv6` on an operator-identity node).
+  (`--host`, `--gateway-endpoint`, `--public-ipv4`, or `--public-ipv6` on an
+  operator-identity node).
 - Fail before side effects when `--tld` is supplied for a gateway target,
   operator-identity target, or a node without an active `app-dev` or `agent`
   role assignment.

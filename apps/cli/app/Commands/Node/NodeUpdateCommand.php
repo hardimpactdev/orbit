@@ -14,6 +14,7 @@ final class NodeUpdateCommand extends GatewayCommand
         {name? : Node name to update}
         {--host= : New SSH/bootstrap endpoint}
         {--tld= : Development TLD for app-dev role assignments}
+        {--gateway-endpoint= : WireGuard endpoint host this node should use to reach the gateway}
         {--public-ipv4= : Public IPv4 address metadata}
         {--public-ipv6= : Public IPv6 address metadata}
         {--json : Output JSON}';
@@ -32,6 +33,7 @@ final class NodeUpdateCommand extends GatewayCommand
         $payload = array_filter([
             'host' => $this->stringOption('host'),
             'tld' => $this->stringOption('tld'),
+            'gateway_endpoint' => $this->stringOption('gateway-endpoint'),
             'public_ipv4' => $this->stringOption('public-ipv4'),
             'public_ipv6' => $this->stringOption('public-ipv6'),
         ], fn (?string $value): bool => $value !== null);
