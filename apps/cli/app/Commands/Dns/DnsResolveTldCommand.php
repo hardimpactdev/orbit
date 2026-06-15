@@ -94,6 +94,18 @@ final class DnsResolveTldCommand extends LocalOnlyCommand
 
         $result = $resolver->resolve($tld, $target);
 
+        $data = [
+            'dns' => [
+                'tld' => $tld,
+                'target' => $target,
+                'action' => 'resolve',
+                'status' => $result['status'],
+                'changed' => $result['changed'],
+                'source' => 'local_resolver',
+                'resolver_backend' => $resolver->backend(),
+            ],
+        ];
+
         if ($result['status'] === 'write_failed') {
             return $this->renderFailure(
                 'local_resolver_write_failed',
@@ -106,21 +118,10 @@ final class DnsResolveTldCommand extends LocalOnlyCommand
             return $this->renderFailure(
                 'local_resolver_refresh_failed',
                 'Local DNS resolver configuration changed, but the resolver could not be refreshed.',
-                ['tld' => $tld, 'resolver_backend' => $resolver->backend()],
+                $this->resolverFailureMeta($resolver, $tld, $result),
+                $data,
             );
         }
-
-        $data = [
-            'dns' => [
-                'tld' => $tld,
-                'target' => $target,
-                'action' => 'resolve',
-                'status' => $result['status'],
-                'changed' => $result['changed'],
-                'source' => 'local_resolver',
-                'resolver_backend' => $resolver->backend(),
-            ],
-        ];
 
         if ($this->wantsJson()) {
             return $this->renderSuccess($data);
@@ -173,6 +174,18 @@ final class DnsResolveTldCommand extends LocalOnlyCommand
 
         $result = $resolver->reset($tld);
 
+        $data = [
+            'dns' => [
+                'tld' => $tld,
+                'target' => null,
+                'action' => 'reset',
+                'status' => $result['status'],
+                'changed' => $result['changed'],
+                'source' => 'local_resolver',
+                'resolver_backend' => $resolver->backend(),
+            ],
+        ];
+
         if ($result['status'] === 'write_failed') {
             return $this->renderFailure(
                 'local_resolver_write_failed',
@@ -185,21 +198,10 @@ final class DnsResolveTldCommand extends LocalOnlyCommand
             return $this->renderFailure(
                 'local_resolver_refresh_failed',
                 'Local DNS resolver configuration changed, but the resolver could not be refreshed.',
-                ['tld' => $tld, 'resolver_backend' => $resolver->backend()],
+                $this->resolverFailureMeta($resolver, $tld, $result),
+                $data,
             );
         }
-
-        $data = [
-            'dns' => [
-                'tld' => $tld,
-                'target' => null,
-                'action' => 'reset',
-                'status' => $result['status'],
-                'changed' => $result['changed'],
-                'source' => 'local_resolver',
-                'resolver_backend' => $resolver->backend(),
-            ],
-        ];
 
         if ($this->wantsJson()) {
             return $this->renderSuccess($data);
@@ -297,5 +299,23 @@ final class DnsResolveTldCommand extends LocalOnlyCommand
     protected function isInteractiveInput(): bool
     {
         return ! $this->option('json') && $this->input->isInteractive();
+    }
+
+    /**
+     * @param  array{status: string, changed: bool, error?: string}  $result
+     * @return array<string, string>
+     */
+    private function resolverFailureMeta(ResolvesLocalDns $resolver, string $tld, array $result): array
+    {
+        $meta = [
+            'tld' => $tld,
+            'resolver_backend' => $resolver->backend(),
+        ];
+
+        if (isset($result['error']) && $result['error'] !== '') {
+            $meta['diagnostics'] = $result['error'];
+        }
+
+        return $meta;
     }
 }

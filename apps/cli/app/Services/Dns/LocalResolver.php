@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Services\Dns;
 
+use Illuminate\Contracts\Process\ProcessResult as ProcessResultContract;
+use Illuminate\Process\Exceptions\ProcessTimedOutException;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Process;
 
@@ -72,7 +74,7 @@ class LocalResolver implements ResolvesLocalDns
 
         $content = File::get($configPath);
 
-        if (preg_match('/address=\/\\.'.preg_quote($tld, '/').'\/(.+)/', $content, $matches)) {
+        if (preg_match('/^address=\/\.?'.preg_quote($tld, '/').'\/([^\r\n#]+)\s*$/m', $content, $matches)) {
             return trim($matches[1]);
         }
 
@@ -124,16 +126,31 @@ class LocalResolver implements ResolvesLocalDns
     public function resolve(string $tld, string $target): array
     {
         $existing = $this->existingTarget($tld);
-
-        if ($existing === $target) {
-            return ['status' => 'already_resolved', 'changed' => false];
-        }
-
         $configDir = $this->configDir();
         File::ensureDirectoryExists($configDir);
 
         $masterConfig = $this->masterConfigPath();
-        $this->ensureConfDirLine($masterConfig, $configDir);
+        $configChanged = $this->ensureConfDirLine($masterConfig, $configDir);
+
+        if ($existing === $target) {
+            $healthError = $configChanged
+                ? 'dnsmasq configuration changed.'
+                : $this->verifyDnsmasqServesTarget($tld, $target, includeServiceDiagnostics: false);
+
+            if ($healthError !== null) {
+                $refreshError = $this->refreshDnsmasq($tld, $target);
+
+                if ($refreshError !== null) {
+                    return ['status' => 'refresh_failed', 'changed' => $configChanged, 'error' => $refreshError];
+                }
+            }
+
+            if ($configChanged) {
+                return ['status' => 'resolved', 'changed' => true];
+            }
+
+            return ['status' => 'already_resolved', 'changed' => false];
+        }
 
         File::put($this->configPath($tld), "address=/{$tld}/{$target}\n");
 
@@ -145,10 +162,10 @@ class LocalResolver implements ResolvesLocalDns
             return ['status' => 'write_failed', 'changed' => false, 'error' => $resolverResult->errorOutput()];
         }
 
-        $restartResult = Process::timeout(30)->run('brew services restart dnsmasq');
+        $refreshError = $this->refreshDnsmasq($tld, $target);
 
-        if (! $restartResult->successful()) {
-            return ['status' => 'refresh_failed', 'changed' => true, 'error' => $restartResult->errorOutput()];
+        if ($refreshError !== null) {
+            return ['status' => 'refresh_failed', 'changed' => true, 'error' => $refreshError];
         }
 
         return ['status' => 'resolved', 'changed' => true];
@@ -161,7 +178,7 @@ class LocalResolver implements ResolvesLocalDns
     {
         $configPath = $this->configPath($tld);
         $hasConfig = File::exists($configPath);
-        $hasResolver = Process::timeout(10)->run("test -f /etc/resolver/{$tld}")->successful();
+        $hasResolver = Process::timeout(10)->run('test -f '.escapeshellarg("/etc/resolver/{$tld}"))->successful();
 
         if (! $hasConfig && ! $hasResolver) {
             return ['status' => 'already_absent', 'changed' => false];
@@ -179,10 +196,10 @@ class LocalResolver implements ResolvesLocalDns
             }
         }
 
-        $restartResult = Process::timeout(30)->run('brew services restart dnsmasq');
+        $refreshError = $this->refreshDnsmasq();
 
-        if (! $restartResult->successful()) {
-            return ['status' => 'refresh_failed', 'changed' => true, 'error' => $restartResult->errorOutput()];
+        if ($refreshError !== null) {
+            return ['status' => 'refresh_failed', 'changed' => true, 'error' => $refreshError];
         }
 
         return ['status' => 'reset', 'changed' => true];
@@ -201,20 +218,179 @@ class LocalResolver implements ResolvesLocalDns
         return "{$prefix}/etc/dnsmasq.conf";
     }
 
-    private function ensureConfDirLine(string $masterConfig, string $configDir): void
+    private function ensureConfDirLine(string $masterConfig, string $configDir): bool
     {
         File::ensureDirectoryExists(dirname($masterConfig));
 
         $confDirLine = "conf-dir={$configDir}/,*.conf";
 
-        if (File::exists($masterConfig)) {
-            $contents = File::get($masterConfig);
-
-            if (! str_contains($contents, $confDirLine)) {
-                File::append($masterConfig, "\n{$confDirLine}\n");
-            }
-        } else {
+        if (! File::exists($masterConfig)) {
             File::put($masterConfig, "{$confDirLine}\n");
+
+            return true;
         }
+
+        $contents = File::get($masterConfig);
+
+        if (str_contains($contents, $confDirLine)) {
+            return false;
+        }
+
+        File::append($masterConfig, "\n{$confDirLine}\n");
+
+        return true;
+    }
+
+    private function refreshDnsmasq(?string $tld = null, ?string $target = null): ?string
+    {
+        try {
+            $restartResult = Process::timeout(30)->run('sudo brew services restart dnsmasq');
+        } catch (ProcessTimedOutException $exception) {
+            return $this->formatTimeoutFailure('sudo brew services restart dnsmasq', $exception);
+        }
+
+        if (! $restartResult->successful()) {
+            return trim($restartResult->errorOutput()) ?: 'Failed to restart dnsmasq with sudo brew services restart dnsmasq.';
+        }
+
+        if ($tld === null || $target === null) {
+            $command = 'dig @127.0.0.1 localhost +short';
+
+            try {
+                $healthResult = Process::timeout(10)->run($command);
+            } catch (ProcessTimedOutException $exception) {
+                return $this->formatTimeoutFailure($command, $exception, includeServiceDiagnostics: true);
+            }
+
+            if ($healthResult->successful()) {
+                return null;
+            }
+
+            return $this->formatDigFailure('localhost', null, $healthResult);
+        }
+
+        return $this->verifyDnsmasqServesTarget($tld, $target);
+    }
+
+    private function verifyDnsmasqServesTarget(string $tld, string $target, bool $includeServiceDiagnostics = true): ?string
+    {
+        $hostname = "orbit-local-resolver-health.{$tld}";
+        $command = "dig @127.0.0.1 {$hostname} +short";
+
+        try {
+            $healthResult = Process::timeout(10)->run($command);
+        } catch (ProcessTimedOutException $exception) {
+            return $this->formatTimeoutFailure($command, $exception, $hostname, $target, $includeServiceDiagnostics);
+        }
+
+        if ($healthResult->successful() && in_array($target, $this->digAnswers($healthResult->output()), true)) {
+            return null;
+        }
+
+        return $this->formatDigFailure($hostname, $target, $healthResult, $includeServiceDiagnostics);
+    }
+
+    private function formatTimeoutFailure(
+        string $command,
+        ProcessTimedOutException $exception,
+        ?string $hostname = null,
+        ?string $target = null,
+        bool $includeServiceDiagnostics = false,
+    ): string {
+        if ($hostname !== null && $target !== null) {
+            $message = "dnsmasq did not return {$target} for {$hostname}. Error: {$exception->getMessage()}";
+        } else {
+            $message = "Process timed out while running {$command}. Error: {$exception->getMessage()}";
+        }
+
+        if ($includeServiceDiagnostics) {
+            return $this->withDnsmasqServiceDiagnostics($message);
+        }
+
+        return $message;
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function digAnswers(string $output): array
+    {
+        return array_values(array_filter(
+            array_map(trim(...), preg_split('/\R+/', $output) ?: []),
+            fn (string $answer): bool => $answer !== '',
+        ));
+    }
+
+    private function formatDigFailure(
+        string $hostname,
+        ?string $target,
+        ProcessResultContract $result,
+        bool $includeServiceDiagnostics = true,
+    ): string {
+        $output = trim($result->output());
+        $errorOutput = trim($result->errorOutput());
+
+        if ($target === null) {
+            $message = "dnsmasq did not answer local health check {$hostname}.";
+        } else {
+            $message = "dnsmasq did not return {$target} for {$hostname}.";
+        }
+
+        if ($output !== '') {
+            $message .= " Output: {$output}";
+        }
+
+        if ($errorOutput !== '') {
+            $message .= " Error: {$errorOutput}";
+        }
+
+        if ($includeServiceDiagnostics) {
+            return $this->withDnsmasqServiceDiagnostics($message);
+        }
+
+        return $message;
+    }
+
+    private function withDnsmasqServiceDiagnostics(string $message): string
+    {
+        $diagnostics = $this->dnsmasqServiceDiagnostics();
+
+        if ($diagnostics === '') {
+            return $message;
+        }
+
+        return "{$message} Service diagnostics: {$diagnostics}";
+    }
+
+    private function dnsmasqServiceDiagnostics(): string
+    {
+        try {
+            $result = Process::timeout(10)->run('sudo brew services info dnsmasq');
+        } catch (ProcessTimedOutException $exception) {
+            return "sudo brew services info dnsmasq timed out: {$exception->getMessage()}";
+        }
+
+        $details = [];
+        $output = $this->squishProcessOutput($result->output());
+        $errorOutput = $this->squishProcessOutput($result->errorOutput());
+
+        if ($output !== '') {
+            $details[] = "output: {$output}";
+        }
+
+        if ($errorOutput !== '') {
+            $details[] = "error: {$errorOutput}";
+        }
+
+        if ($details === [] && ! $result->successful()) {
+            $details[] = 'sudo brew services info dnsmasq exited unsuccessfully';
+        }
+
+        return implode('; ', $details);
+    }
+
+    private function squishProcessOutput(string $output): string
+    {
+        return trim((string) preg_replace('/\s+/', ' ', $output));
     }
 }

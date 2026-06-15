@@ -108,6 +108,31 @@ describe('dns:resolve-tld', function (): void {
                 ->expectsQuestion('Target IP address', '10.6.0.7')
                 ->assertExitCode(0);
         });
+
+        it('returns refresh failure diagnostics and partial DNS data', function (): void {
+            $this->resolver->resolveResult = [
+                'status' => 'refresh_failed',
+                'changed' => true,
+                'error' => 'dnsmasq did not return 192.168.1.150 for orbit-local-resolver-health.test.',
+            ];
+
+            [$exitCode, $output] = runCommand($this, 'dns:resolve-tld', ['tld' => 'test', 'target' => '192.168.1.150', '--json' => true]);
+
+            $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+
+            expect($exitCode)->toBe(1)
+                ->and($decoded['error']['code'])->toBe('local_resolver_refresh_failed')
+                ->and($decoded['error']['meta']['diagnostics'])->toContain('dnsmasq did not return 192.168.1.150')
+                ->and($decoded['error']['data']['dns'])->toMatchArray([
+                    'tld' => 'test',
+                    'target' => '192.168.1.150',
+                    'action' => 'resolve',
+                    'status' => 'refresh_failed',
+                    'changed' => true,
+                    'source' => 'local_resolver',
+                    'resolver_backend' => 'dnsmasq',
+                ]);
+        });
     });
 
     describe('reset sub-action', function (): void {
