@@ -103,7 +103,11 @@ trait ManagesNodeToolBaseline
             return OrbitCaddyContainer::default($names);
         }
 
-        return OrbitCaddyContainer::forPrivateNode($wireGuardAddress, $names);
+        return OrbitCaddyContainer::forPrivateNode(
+            wireGuardAddress: $wireGuardAddress,
+            names: $names,
+            callerFacingAddress: $this->appDevelopmentCallerFacingAddress($node),
+        );
     }
 
     private function nodeHasIngressRole(Node $node): bool
@@ -111,6 +115,29 @@ trait ManagesNodeToolBaseline
         return NodeRoleAssignment::query()
             ->where('node_id', $node->id)
             ->where('role', NodeRoleName::Ingress->value)
+            ->whereIn('status', [
+                NodeRoleStatus::Pending->value,
+                NodeRoleStatus::Active->value,
+            ])
+            ->exists();
+    }
+
+    private function appDevelopmentCallerFacingAddress(Node $node): ?string
+    {
+        if (! $this->nodeHasAppDevelopmentRole($node)) {
+            return null;
+        }
+
+        return is_string($node->public_ipv4)
+            ? trim($node->public_ipv4)
+            : null;
+    }
+
+    private function nodeHasAppDevelopmentRole(Node $node): bool
+    {
+        return NodeRoleAssignment::query()
+            ->where('node_id', $node->id)
+            ->where('role', NodeRoleName::AppDevelopment->value)
             ->whereIn('status', [
                 NodeRoleStatus::Pending->value,
                 NodeRoleStatus::Active->value,

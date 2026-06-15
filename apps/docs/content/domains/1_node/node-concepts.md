@@ -464,6 +464,13 @@ node-family desired state, but they are not the public `dns:*` command surface.
   dot, and the node row has a non-empty WireGuard address.
   The canonical domain is `*.{tld}` and the canonical target is the
   node's WireGuard address.
+- **App-dev HTTP address for callers:** Optional node `public_ipv4`
+  metadata used when an operator wants local resolver overrides to send
+  `*.{tld}` traffic to a trusted RFC1918 LAN address instead of the WireGuard
+  service address. When that value is a private IPv4 on an `app-dev` node, the
+  managed `orbit-caddy` container publishes HTTP/HTTPS on that IPv4 as well as
+  on the WireGuard address; its private backend port stays bound only to the
+  WireGuard address.
 - **Development DNS applier:** Internal node-family gateway service that
   uses desired DNS mappings and policy owned by the gateway to converge or remove
   resolver artifacts on the active `vpn` role runtime. In v1 that runtime is

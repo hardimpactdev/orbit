@@ -320,8 +320,10 @@ is role-aware:
   open for in-network traffic;
 - gateway nodes expose only the WireGuard endpoint publicly. Gateway API HTTPS
   ingress is an Orbit-network service bound to the gateway's WireGuard address;
-- nodes with `app-dev` do not expose app routes publicly by baseline. Their
-  Orbit-managed HTTPS routes are reachable through the Orbit network;
+- nodes with `app-dev` expose Orbit-managed HTTPS routes on the Orbit network.
+  When the node has a configured private caller-facing `public_ipv4`, the same
+  HTTP/HTTPS listeners are also published on that RFC1918 IPv4 for trusted
+  local resolver overrides; private backend ports remain WireGuard-only;
 - only nodes with active `ingress` expose public production HTTP/HTTPS;
 - `app-prod` backend port `80` is private backend traffic reachable only through the Orbit/WireGuard network;
 - SSH and other node-management access stay on the Orbit network.

@@ -9,6 +9,7 @@ use App\Models\NodeRoleAssignment;
 use App\Models\NodeTool;
 use App\Services\Nodes\DevelopmentDnsMappingEnactor;
 use App\Services\Nodes\Roles\RoleBaselines\AppDevelopmentRoleBaseline;
+use App\Services\Runtime\OrbitCaddyContainer;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\File;
 
@@ -23,13 +24,17 @@ afterEach(function (): void {
     File::deleteDirectory($this->configDir);
 });
 
-function appDevBaselineNode(): Node
+/**
+ * @param  array<string, mixed>  $attributes
+ */
+function appDevBaselineNode(array $attributes = []): Node
 {
     return Node::factory()->create([
         'platform' => 'ubuntu',
         'host' => '10.6.0.20',
         'wireguard_address' => '10.6.0.20',
         'status' => Node::STATUS_ACTIVE,
+        ...$attributes,
     ]);
 }
 
@@ -152,6 +157,34 @@ describe('AppDevelopmentRoleBaseline host toolchain', function (): void {
             ->where('node_id', $node->id)
             ->where('name', 'php')
             ->exists())->toBeFalse();
+    });
+
+    it('publishes app-dev caddy HTTP listeners on the node public IPv4 when present', function (): void {
+        $node = appDevBaselineNode([
+            'public_ipv4' => '192.168.1.150',
+        ]);
+        $assignment = appDevBaselineAssignment($node);
+
+        $baseline = new AppDevelopmentRoleBaseline(
+            new DevelopmentDnsMappingEnactor($this->configDir),
+        );
+
+        $baseline->converge($node, $assignment);
+
+        $tool = NodeTool::query()
+            ->where('node_id', $node->id)
+            ->where('name', 'caddy')
+            ->firstOrFail();
+
+        expect($tool->config['container']['published_ports'])->toBe([
+            '10.6.0.20:80:80',
+            '10.6.0.20:443:443',
+            '10.6.0.20:443:443/udp',
+            '192.168.1.150:80:80',
+            '192.168.1.150:443:443',
+            '192.168.1.150:443:443/udp',
+            '10.6.0.20:'.OrbitCaddyContainer::PrivateBackendPort.':'.OrbitCaddyContainer::PrivateBackendPort,
+        ]);
     });
 
     it('removes host toolchain rows on role removal', function (): void {

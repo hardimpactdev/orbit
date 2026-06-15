@@ -156,6 +156,9 @@ Input mode behavior is split out of the canonical command contract:
 - Changing `gateway_endpoint` updates the endpoint stored at node level. The
   changed field triggers node-owned artifact re-applying for workload-role
   targets.
+- Changing `public_ipv4` on an `app-dev` node may change the managed
+  `orbit-caddy` HTTP/HTTPS bindings when the value is an RFC1918 caller-facing
+  LAN address. The private backend port remains WireGuard-only.
 
 ### Artifact Re-applying Rules
 

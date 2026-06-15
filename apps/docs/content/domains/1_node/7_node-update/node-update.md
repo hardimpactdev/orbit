@@ -57,7 +57,9 @@ orbit node:update app-1 --host=203.0.113.20 --public-ipv4=203.0.113.20 --json
   the gateway public endpoint. Orbit appends the WireGuard port.
 - `--public-ipv4=<address>`: public IPv4 metadata supplied by the operator.
   Valid for `gateway` and workload-role-bearing nodes. Forbidden on
-  operator-identity nodes.
+  operator-identity nodes. On `app-dev` nodes, RFC1918 values also act as the
+  caller-facing LAN address where managed `orbit-caddy` publishes HTTP/HTTPS
+  for trusted local resolver overrides.
 - `--public-ipv6=<address>`: public IPv6 metadata supplied by the operator.
   Valid for `gateway` and workload-role-bearing nodes. Forbidden on
   operator-identity nodes.

@@ -160,6 +160,7 @@ Source: [Node Concepts](domains/1_node/node-concepts.md).
 - **Development DNS mapping owned by the gateway**
 - **Agent DNS mapping owned by the gateway**
 - **Development DNS configuration model**
+- **App-dev HTTP address for callers**
 - **Development DNS applier**
 - **Development DNS probe**
 <!-- /concept-index -->

@@ -70,20 +70,53 @@ class OrbitCaddyContainer
         return self::withPublishedPorts($ports, $names);
     }
 
-    public static function forPrivateNode(string $wireGuardAddress, ?OrbitContainerNames $names = null): self
-    {
+    public static function forPrivateNode(
+        string $wireGuardAddress,
+        ?OrbitContainerNames $names = null,
+        ?string $callerFacingAddress = null,
+    ): self {
         $wireGuardAddress = trim($wireGuardAddress);
 
         if ($wireGuardAddress === '') {
             throw new InvalidArgumentException('The orbit-caddy private listener requires a WireGuard address.');
         }
 
-        return self::withPublishedPorts([
+        $ports = [
             "{$wireGuardAddress}:80:80",
             "{$wireGuardAddress}:443:443",
             "{$wireGuardAddress}:443:443/udp",
-            "{$wireGuardAddress}:".self::PrivateBackendPort.':'.self::PrivateBackendPort,
-        ], $names);
+        ];
+
+        $callerFacingAddress = self::privateCallerFacingAddress($callerFacingAddress, $wireGuardAddress);
+
+        if ($callerFacingAddress !== null) {
+            $ports[] = "{$callerFacingAddress}:80:80";
+            $ports[] = "{$callerFacingAddress}:443:443";
+            $ports[] = "{$callerFacingAddress}:443:443/udp";
+        }
+
+        $ports[] = "{$wireGuardAddress}:".self::PrivateBackendPort.':'.self::PrivateBackendPort;
+
+        return self::withPublishedPorts($ports, $names);
+    }
+
+    private static function privateCallerFacingAddress(?string $address, string $wireGuardAddress): ?string
+    {
+        $address = $address === null ? '' : trim($address);
+
+        if ($address === '' || $address === $wireGuardAddress) {
+            return null;
+        }
+
+        if (filter_var($address, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) === false) {
+            return null;
+        }
+
+        if (filter_var($address, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4 | FILTER_FLAG_NO_PRIV_RANGE) !== false) {
+            return null;
+        }
+
+        return $address;
     }
 
     /**

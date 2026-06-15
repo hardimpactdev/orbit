@@ -112,6 +112,39 @@ describe('orbit caddy container', function (): void {
         ]);
     });
 
+    it('can also publish private HTTP listeners on a caller-facing IPv4 without exposing the backend port there', function (): void {
+        $container = OrbitCaddyContainer::forPrivateNode(
+            '10.6.0.50',
+            names: new OrbitContainerNames,
+            callerFacingAddress: '192.168.1.150',
+        );
+
+        expect($container->publishedPorts())->toBe([
+            '10.6.0.50:80:80',
+            '10.6.0.50:443:443',
+            '10.6.0.50:443:443/udp',
+            '192.168.1.150:80:80',
+            '192.168.1.150:443:443',
+            '192.168.1.150:443:443/udp',
+            '10.6.0.50:8081:8081',
+        ])->not->toContain('192.168.1.150:'.OrbitCaddyContainer::PrivateBackendPort.':'.OrbitCaddyContainer::PrivateBackendPort);
+    });
+
+    it('ignores non-private caller-facing IPv4 values for private node listeners', function (): void {
+        $container = OrbitCaddyContainer::forPrivateNode(
+            '10.6.0.50',
+            names: new OrbitContainerNames,
+            callerFacingAddress: '8.8.8.8',
+        );
+
+        expect($container->publishedPorts())->toBe([
+            '10.6.0.50:80:80',
+            '10.6.0.50:443:443',
+            '10.6.0.50:443:443/udp',
+            '10.6.0.50:8081:8081',
+        ]);
+    });
+
     it('round-trips extra hosts through config', function (): void {
         $container = OrbitCaddyContainer::fromConfig([
             'extra_hosts' => [
