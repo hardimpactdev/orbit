@@ -24,7 +24,7 @@
 ## Signature
 
 ```bash
-orbit node:update [name] [--host=<host>] [--tld=<tld>] [--public-ipv4=<address>] [--public-ipv6=<address>] [--json]
+orbit node:update [name] [--host=<host>] [--tld=<tld>] [--gateway-endpoint=<endpoint>] [--public-ipv4=<address>] [--public-ipv6=<address>] [--json]
 ```
 
 ## Input Contract
@@ -35,8 +35,9 @@ This command follows the shared
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
 | `name` | `[name]` | Always. | Never. | None. | Must match an existing active node record. |
-| `host` | `--host` | Optional. | Target is an operator-identity node with no host metadata. | None. | SSH/bootstrap endpoint, never the canonical node address. Updating this does not change the gateway endpoint used in WireGuard peer configs. |
+| `host` | `--host` | Optional. | Target is an operator-identity node with no host metadata. | None. | SSH/bootstrap endpoint, never the canonical node address. Updating this does not change the gateway endpoint used in WireGuard peer configs; use `--gateway-endpoint` for that. |
 | `tld` | `--tld` | Optional. | Target carries neither an active `app-dev` nor an active `agent` role assignment. | None. | Single lowercase DNS label without a leading dot. Unique among active node TLDs. |
+| `gateway_endpoint` | `--gateway-endpoint` | Optional. | Target is an operator-identity node. | None. | IP address or dotted DNS name that this node's WireGuard peer should use to reach the gateway. The WireGuard port is appended by Orbit. |
 | `public_ipv4` | `--public-ipv4` | Optional. | Target is an operator-identity node. | None. | Operator-supplied public IPv4 metadata. |
 | `public_ipv6` | `--public-ipv6` | Optional. | Target is an operator-identity node. | None. | Operator-supplied public IPv6 metadata. |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer and non-interactive input mode according to the shared invocation model in [`docs/domains/README.md`](../../../README.md#invocation-model). |
@@ -55,15 +56,16 @@ metadata is valid only for gateway and nodes. Concretely:
 | --- | --- | --- |
 | `--host` | `gateway`, workload-role-bearing nodes | Operator-identity target with no host metadata. |
 | `--tld` | nodes with an active `app-dev` or `agent` role assignment | Gateway targets, operator-identity targets, and nodes without an `app-dev` or `agent` assignment. |
+| `--gateway-endpoint` | `gateway`, workload-role-bearing nodes | Operator-identity targets. |
 | `--public-ipv4` | `gateway`, workload-role-bearing nodes | Operator-identity targets. |
 | `--public-ipv6` | `gateway`, workload-role-bearing nodes | Operator-identity targets. |
 
-Clients are CLI callers reached through WireGuard. They have no SSH
-bootstrap endpoint and no ingress, so `--host`, `--public-ipv4`, and
-`--public-ipv6` are forbidden on operator-identity targets. Public IPv4 and IPv6
-metadata is supported on `gateway` and workload-role-bearing nodes; the gateway
-endpoint used in WireGuard peer configs lives on a separate field and is not
-updated by `--public-ipv4` or `--public-ipv6`.
+Clients are CLI callers reached through WireGuard. They have no SSH bootstrap
+endpoint and no ingress, so `--host`, `--gateway-endpoint`, `--public-ipv4`,
+and `--public-ipv6` are forbidden on operator-identity targets. Public IPv4 and
+IPv6 metadata is supported on `gateway` and workload-role-bearing nodes; the
+gateway endpoint used in WireGuard peer configs lives on a separate field and is
+not updated by `--public-ipv4` or `--public-ipv6`.
 
 `node:update --tld` updates the node-level `tld` for nodes carrying an active
 `app-dev` or `agent` role assignment. The `tld` is a shared node-level field
@@ -76,12 +78,12 @@ operator-identity targets, and nodes without an `app-dev` or `agent`
 assignment, fail with `node.field_role_incompatible`, `meta.field=tld`, and the
 target role in metadata.
 
-`node:update --host` also does not update the gateway endpoint used in
-WireGuard peer configs that have already been issued. During first-gateway
-`node:new --template=gateway --host=<host>`, no peer configs exist yet, so the
-bootstrap host seeds the initial gateway endpoint. After bootstrap, gateway
-endpoint rotation needs a separate identity/network contract and is outside
-`node:update`.
+`node:update --gateway-endpoint` updates the gateway endpoint stored for the
+target node. For nodes with workload roles, Orbit updates the WireGuard endpoint
+in `/etc/wireguard/wg-orbit.conf` or `/etc/wireguard/wg0.conf` when present,
+writes a timestamped backup before editing, and applies the live peer endpoint
+with `wg set` without restarting the interface. For gateway nodes, the field is
+advertised endpoint metadata used by future peer configs.
 
 Role-conditional validity is enforced after the target node is resolved.
 Incompatible fields fail with `node.field_role_incompatible` before any
@@ -97,12 +99,14 @@ gateway-owned side effects.
 3. Resolve field flags.
    - Resolve `node_update.host` from `--host` when present.
    - Resolve `node_update.tld` from `--tld` when present.
+   - Resolve `node_update.gateway_endpoint` from `--gateway-endpoint` when
+     present.
    - Resolve `node_update.public_ipv4` from `--public-ipv4` when present.
    - Resolve `node_update.public_ipv6` from `--public-ipv6` when present.
 4. Validate role-conditional field eligibility.
-   - If `--host`, `--public-ipv4`, or `--public-ipv6` is present and the target
-     is an operator-identity node, fail before side effects with
-     `node.field_role_incompatible`.
+   - If `--host`, `--gateway-endpoint`, `--public-ipv4`, or `--public-ipv6` is
+     present and the target is an operator-identity node, fail before side
+     effects with `node.field_role_incompatible`.
    - If `--tld` is present and the target carries neither an active `app-dev`
      nor an active `agent` role assignment, fail before side effects with
      `node.field_role_incompatible` and `meta.field=tld`.
@@ -149,6 +153,9 @@ Input mode behavior is split out of the canonical command contract:
 - Changing `tld` updates the development TLD stored at node level, which the
   gateway owns for the `app-dev` or `agent` node. Any wider convergence or
   repair after that metadata write belongs to the node-family doctor path.
+- Changing `gateway_endpoint` updates the endpoint stored at node level. The
+  changed field triggers node-owned artifact re-applying for workload-role
+  targets.
 
 ### Artifact Re-applying Rules
 

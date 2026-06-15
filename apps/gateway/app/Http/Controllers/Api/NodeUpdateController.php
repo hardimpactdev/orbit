@@ -167,6 +167,10 @@ final class NodeUpdateController implements Loggable
             }
         }
 
+        if (isset($providedFields['gateway_endpoint']) && $node->isOperator()) {
+            return ['field' => 'gateway_endpoint', 'role' => $role];
+        }
+
         if (isset($providedFields['public_ipv4']) && $node->isOperator()) {
             return ['field' => 'public_ipv4', 'role' => $role];
         }
@@ -192,6 +196,10 @@ final class NodeUpdateController implements Loggable
 
         if (isset($providedFields['tld']) && $providedFields['tld'] !== $node->tld) {
             $changes['tld'] = $providedFields['tld'];
+        }
+
+        if (isset($providedFields['gateway_endpoint']) && $providedFields['gateway_endpoint'] !== $node->gateway_endpoint) {
+            $changes['gateway_endpoint'] = $providedFields['gateway_endpoint'];
         }
 
         if (isset($providedFields['public_ipv4']) && $providedFields['public_ipv4'] !== $node->public_ipv4) {

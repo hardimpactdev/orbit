@@ -162,6 +162,42 @@ describe('NodeUpdateController', function (): void {
             ->and($node->public_ipv4)->toBe('203.0.113.10');
     });
 
+    it('updates gateway endpoint metadata and re-enacts node artifacts', function (): void {
+        $reenactor = new class extends ReenactNodeArtifacts
+        {
+            public ?string $nodeName = null;
+
+            /** @var list<string> */
+            public array $changed = [];
+
+            public function handle(Node $node, array $changed): array
+            {
+                $this->nodeName = $node->name;
+                $this->changed = $changed;
+
+                return [];
+            }
+        };
+
+        app()->instance(ReenactNodeArtifacts::class, $reenactor);
+
+        $callerId = createUpdateCallerNode();
+        $gatewayId = createUpdateGatewayNode();
+        grantUpdateGatewayAccess($callerId, $gatewayId);
+        createApiUpdateNode(['gateway_endpoint' => '188.245.156.201']);
+
+        $response = putUpdateNodeJson('/api/nodes/app-1', [
+            'gateway_endpoint' => '10.3.0.2',
+        ], ['REMOTE_ADDR' => UPDATE_CALLER_WG_IP]);
+
+        $response->assertOk()
+            ->assertJsonPath('success.data.changed', ['gateway_endpoint']);
+
+        expect(DB::table('nodes')->where('name', 'app-1')->value('gateway_endpoint'))->toBe('10.3.0.2')
+            ->and($reenactor->nodeName)->toBe('app-1')
+            ->and($reenactor->changed)->toBe(['gateway_endpoint']);
+    });
+
     it('logs activity for a successful node update write', function (): void {
         $callerId = createUpdateCallerNode();
         $gatewayId = createUpdateGatewayNode();
@@ -373,6 +409,43 @@ describe('NodeUpdateController', function (): void {
             ->assertJsonPath('error.code', 'validation_failed')
             ->assertJsonPath('error.message', "Field 'environment' is not supported for node:update.")
             ->assertJsonPath('error.meta.field', 'environment');
+    });
+
+    it('rejects invalid gateway endpoint updates', function (): void {
+        $callerId = createUpdateCallerNode();
+        $gatewayId = createUpdateGatewayNode();
+        grantUpdateGatewayAccess($callerId, $gatewayId);
+        createApiUpdateNode(['gateway_endpoint' => '188.245.156.201']);
+
+        $response = putUpdateNodeJson('/api/nodes/app-1', ['gateway_endpoint' => 'not a host'], ['REMOTE_ADDR' => UPDATE_CALLER_WG_IP]);
+
+        $response->assertUnprocessable()
+            ->assertJsonPath('error.code', 'validation_failed')
+            ->assertJsonPath('error.message', "Invalid value for --gateway-endpoint: 'not a host'. Gateway endpoint must be a valid IP address or dotted DNS name.")
+            ->assertJsonPath('error.meta.field', 'gateway_endpoint')
+            ->assertJsonPath('error.meta.value', 'not a host');
+
+        expect(DB::table('nodes')->where('name', 'app-1')->value('gateway_endpoint'))->toBe('188.245.156.201');
+    });
+
+    it('rejects gateway endpoint updates for operator identity targets', function (): void {
+        $callerId = createUpdateCallerNode();
+        $gatewayId = createUpdateGatewayNode();
+        grantUpdateGatewayAccess($callerId, $gatewayId);
+        DB::table('nodes')->insert(apiUpdateNodeRow([
+            'name' => 'operator-target',
+            'host' => '10.6.0.10',
+            'wireguard_address' => '10.6.0.10',
+            'gateway_endpoint' => null,
+        ]));
+
+        $response = putUpdateNodeJson('/api/nodes/operator-target', ['gateway_endpoint' => '10.3.0.2'], ['REMOTE_ADDR' => UPDATE_CALLER_WG_IP]);
+
+        $response->assertUnprocessable()
+            ->assertJsonPath('error.code', 'node.field_role_incompatible')
+            ->assertJsonPath('error.meta.field', 'gateway_endpoint')
+            ->assertJsonPath('error.meta.name', 'operator-target')
+            ->assertJsonPath('error.meta.role', 'operator');
     });
 
     it('returns validation error for role-incompatible fields', function (): void {

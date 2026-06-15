@@ -16,7 +16,7 @@ and [`node role:add`](../12_node-role-add/node-role-add.md).
 ## Usage
 
 ```bash
-orbit node:update [name] [--host=<host>] [--tld=<tld>] [--public-ipv4=<address>] [--public-ipv6=<address>] [--json]
+orbit node:update [name] [--host=<host>] [--tld=<tld>] [--gateway-endpoint=<endpoint>] [--public-ipv4=<address>] [--public-ipv6=<address>] [--json]
 ```
 
 Run without arguments in a TTY to let the interactive input mode prompt for
@@ -33,6 +33,7 @@ otherwise the command fails before side effects.
 ```bash
 orbit node:update app-1 --host=app-1.ssh.example.com
 orbit node:update app-1 --tld=test
+orbit node:update app-1 --gateway-endpoint=10.3.0.2
 orbit node:update gateway-1 --public-ipv4=203.0.113.2
 orbit node:update app-1 --host=203.0.113.20 --public-ipv4=203.0.113.20 --json
 ```
@@ -42,12 +43,18 @@ orbit node:update app-1 --host=203.0.113.20 --public-ipv4=203.0.113.20 --json
 - `name`: node name to update. Must exist in gateway node configuration.
 - `--host=<host>`: SSH/bootstrap endpoint. Valid for `gateway` and any
   workload-role-bearing node. Forbidden on operator-identity nodes. Updating
-  this does not change the gateway endpoint used in WireGuard peer configs.
+  this does not change the gateway endpoint used in WireGuard peer configs; use
+  `--gateway-endpoint` for that.
   `node:new --template=gateway --host=<host>` seeds that endpoint only during
   first-gateway bootstrap before peer configs have been issued;
   `node:update --host` is later node metadata.
 - `--tld=<tld>`: development/agent TLD. Valid only for nodes carrying an active
   `app-dev` or `agent` role assignment.
+- `--gateway-endpoint=<endpoint>`: WireGuard endpoint host this node should use
+  to reach the gateway. Valid for `gateway` and workload-role-bearing nodes.
+  Forbidden on operator-identity nodes. Use this for private-network endpoints
+  such as a Hetzner private gateway IP, or for rotating an existing node back to
+  the gateway public endpoint. Orbit appends the WireGuard port.
 - `--public-ipv4=<address>`: public IPv4 metadata supplied by the operator.
   Valid for `gateway` and workload-role-bearing nodes. Forbidden on
   operator-identity nodes.
@@ -74,6 +81,12 @@ that are directly affected by the changed metadata.
   SSH reachability, or egress checks.
 - Treats public IPv4/IPv6 values as operator-supplied metadata only. Updating
   them does not change the gateway endpoint used in WireGuard peer configs.
+- Updates `gateway_endpoint` when `--gateway-endpoint` is provided. For nodes
+  with workload roles, Orbit updates the WireGuard endpoint in
+  `/etc/wireguard/wg-orbit.conf` or `/etc/wireguard/wg0.conf` when present,
+  writes a timestamped backup before editing, and applies the live peer endpoint
+  without restarting the interface. For gateway nodes, the field is advertised
+  endpoint metadata used by future peer configs.
 - Re-applies node-owned host artifacts when a changed setting has node-side
   effects. Re-applying unchanged configuration is owned by
   [`doctor --family=node --restore`](../node-doctor.md), not `node:update`.
