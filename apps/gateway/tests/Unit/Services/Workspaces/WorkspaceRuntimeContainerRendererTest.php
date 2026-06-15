@@ -19,7 +19,7 @@ uses(RefreshDatabase::class);
 
 function makePhpWorkspace(array $appOverrides = [], array $workspaceOverrides = []): Workspace
 {
-    $node = Node::factory()->create(['user' => 'orbit']);
+    $node = createTestAppHostNode(['user' => 'orbit']);
 
     $app = App::factory()->for($node, 'node')->create(array_merge([
         'name' => 'demo',
@@ -66,6 +66,55 @@ it('renders a FrankenPHP workspace runtime container for a PHP workspace with de
         ]);
 });
 
+it('mounts the owning app-dev node user packages directory at /packages', function (): void {
+    $node = createTestAppHostNode(['user' => 'nckrtl']);
+    $app = App::factory()->for($node, 'node')->create([
+        'name' => 'nckrtl',
+        'path' => '/home/nckrtl/apps/nckrtl',
+        'document_root' => 'public',
+        'php_version' => '8.5',
+        'runtime_kind' => AppRuntimeKind::Php,
+    ]);
+    $workspace = Workspace::factory()->for($app, 'app')->create([
+        'name' => 'feature-a',
+        'path' => '/home/nckrtl/apps/nckrtl/.worktrees/feature-a',
+        'php_version' => null,
+    ]);
+
+    $container = workspaceRendererForTest()->render($workspace);
+
+    expect($container->mounts())->toContain([
+        'source' => '/home/nckrtl/packages',
+        'target' => '/packages',
+        'read_only' => false,
+    ]);
+});
+
+it('does not mount the packages directory for app-prod PHP workspace runtimes', function (): void {
+    $node = createTestAppHostNode(['user' => 'orbit'], 'app-prod');
+    $app = App::factory()->for($node, 'node')->create([
+        'name' => 'demo-prod',
+        'environment' => 'production',
+        'path' => '/home/demo/app',
+        'document_root' => 'public',
+        'php_version' => '8.5',
+        'runtime_kind' => AppRuntimeKind::Php,
+    ]);
+    $workspace = Workspace::factory()->for($app, 'app')->create([
+        'name' => 'feature-a',
+        'path' => '/home/demo/app/.worktrees/feature-a',
+        'php_version' => null,
+    ]);
+
+    $container = workspaceRendererForTest()->render($workspace);
+
+    expect($container->mounts())->not->toContain([
+        'source' => '/home/orbit/packages',
+        'target' => '/packages',
+        'read_only' => false,
+    ]);
+});
+
 it('uses the workspace php_version override when set', function (): void {
     $workspace = makePhpWorkspace(workspaceOverrides: ['php_version' => '8.4']);
 
@@ -106,6 +155,24 @@ it('changes the spec hash when php_version changes so the manager recreates the 
     $b = $renderer->render(makePhpWorkspace(appOverrides: ['name' => 'b'], workspaceOverrides: ['name' => 'feature-b', 'php_version' => '8.4']));
 
     expect($a->specHash())->not->toBe($b->specHash());
+});
+
+it('changes the spec hash when the app-dev packages mount policy changes', function (): void {
+    $renderer = workspaceRendererForTest();
+    $workspace = makePhpWorkspace();
+
+    $withPackagesMount = $renderer->render($workspace)->specHash();
+    $app = $workspace->app;
+    assert($app instanceof App);
+    $node = $app->node;
+    assert($node instanceof Node);
+
+    $node->roleAssignments()->update(['status' => 'pending']);
+    $node->unsetRelation('roleAssignments');
+    $app->unsetRelation('node');
+    $workspace->unsetRelation('app');
+
+    expect($withPackagesMount)->not->toBe($renderer->render($workspace)->specHash());
 });
 
 it('renders opcache directives from the PHP runtime policy', function (): void {

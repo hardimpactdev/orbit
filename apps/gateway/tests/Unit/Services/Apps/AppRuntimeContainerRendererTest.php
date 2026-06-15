@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 use App\Enums\Apps\AppRuntimeKind;
 use App\Models\App;
-use App\Models\Node;
 use App\Services\Apps\AppRuntimeContainerRenderer;
 use App\Services\Php\PhpRuntimeCatalog;
 use App\Services\Php\PhpRuntimePolicy;
@@ -18,7 +17,7 @@ uses(RefreshDatabase::class);
 
 function makePhpApp(array $overrides = []): App
 {
-    $node = Node::factory()->create(['user' => 'orbit']);
+    $node = createTestAppHostNode(['user' => 'orbit']);
 
     return App::factory()->for($node, 'node')->create(array_merge([
         'name' => 'docs',
@@ -72,6 +71,45 @@ it('renders a FrankenPHP app runtime container for a PHP app with deterministic 
             'XDG_CONFIG_HOME' => '/config',
             'XDG_DATA_HOME' => '/data',
         ]);
+});
+
+it('mounts the owning app-dev node user packages directory at /packages', function (): void {
+    $node = createTestAppHostNode(['user' => 'nckrtl']);
+    $app = App::factory()->for($node, 'node')->create([
+        'name' => 'nckrtl',
+        'path' => '/home/nckrtl/apps/nckrtl',
+        'document_root' => 'public',
+        'php_version' => '8.5',
+        'runtime_kind' => AppRuntimeKind::Php,
+    ]);
+
+    $container = rendererForTest()->render($app);
+
+    expect($container->mounts())->toContain([
+        'source' => '/home/nckrtl/packages',
+        'target' => '/packages',
+        'read_only' => false,
+    ]);
+});
+
+it('does not mount the packages directory for app-prod PHP app runtimes', function (): void {
+    $node = createTestAppHostNode(['user' => 'orbit'], 'app-prod');
+    $app = App::factory()->for($node, 'node')->create([
+        'name' => 'docs-prod',
+        'environment' => 'production',
+        'path' => '/home/docs/app',
+        'document_root' => 'public',
+        'php_version' => '8.5',
+        'runtime_kind' => AppRuntimeKind::Php,
+    ]);
+
+    $container = rendererForTest()->render($app);
+
+    expect($container->mounts())->not->toContain([
+        'source' => '/home/orbit/packages',
+        'target' => '/packages',
+        'read_only' => false,
+    ]);
 });
 
 it('renders a production app runtime user from the app source owner but leaves development containers on the node user', function (): void {
@@ -129,6 +167,26 @@ it('changes the spec hash when php_version changes so the manager recreates the 
     $php84 = $renderer->render(makePhpApp(['name' => 'b', 'php_version' => '8.4']));
 
     expect($php85->specHash())->not->toBe($php84->specHash());
+});
+
+it('changes the spec hash when the app-dev packages mount policy changes', function (): void {
+    $renderer = rendererForTest();
+    $node = createTestAppHostNode(['user' => 'orbit']);
+    $app = App::factory()->for($node, 'node')->create([
+        'name' => 'docs-dev',
+        'path' => '/home/orbit/apps/docs',
+        'document_root' => 'public',
+        'php_version' => '8.5',
+        'runtime_kind' => AppRuntimeKind::Php,
+    ]);
+
+    $withPackagesMount = $renderer->render($app)->specHash();
+
+    $node->roleAssignments()->update(['status' => 'pending']);
+    $node->unsetRelation('roleAssignments');
+    $app->unsetRelation('node');
+
+    expect($withPackagesMount)->not->toBe($renderer->render($app)->specHash());
 });
 
 it('renders opcache directives from the PHP runtime policy', function (): void {

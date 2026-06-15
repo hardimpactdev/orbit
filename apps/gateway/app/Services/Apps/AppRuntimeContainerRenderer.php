@@ -25,6 +25,7 @@ final readonly class AppRuntimeContainerRenderer
         private PhpRuntimePolicy $phpRuntimePolicy,
         private OrbitContainerNames $names,
         private AppRuntimeUser $appRuntimeUser = new AppRuntimeUser,
+        private AppDevelopmentPackagesMount $appDevelopmentPackagesMount = new AppDevelopmentPackagesMount,
     ) {}
 
     public function render(App $app, ?string $preloadPath = null): AppRuntimeContainer
@@ -42,6 +43,38 @@ final readonly class AppRuntimeContainerRenderer
             throw new InvalidArgumentException("App '{$app->name}' has no source path; cannot render runtime container.");
         }
 
+        $mounts = [
+            [
+                'source' => $sourcePath,
+                'target' => AppRuntimeContainer::SourceTarget,
+                'read_only' => false,
+            ],
+            [
+                'source' => $sourcePath,
+                'target' => $sourcePath,
+                'read_only' => false,
+            ],
+            [
+                'source' => $this->phpIniHostPath($app),
+                'target' => AppRuntimeContainer::PhpIniMountTarget,
+                'read_only' => true,
+            ],
+            [
+                'source' => "{$sourcePath}/.orbit/frankenphp/data",
+                'target' => '/data',
+                'read_only' => false,
+            ],
+            [
+                'source' => "{$sourcePath}/.orbit/frankenphp/config",
+                'target' => '/config',
+                'read_only' => false,
+            ],
+        ];
+
+        if (($packagesMount = $this->appDevelopmentPackagesMount->forApp($app)) !== null) {
+            $mounts[] = $packagesMount;
+        }
+
         return new AppRuntimeContainer(
             name: $this->containerName($app),
             image: $policy->image,
@@ -50,33 +83,7 @@ final readonly class AppRuntimeContainerRenderer
             appSlug: $app->name,
             runtimeUser: $this->appRuntimeUser->containerUserForApp($app),
             environment: $this->environmentFor($app),
-            mounts: [
-                [
-                    'source' => $sourcePath,
-                    'target' => AppRuntimeContainer::SourceTarget,
-                    'read_only' => false,
-                ],
-                [
-                    'source' => $sourcePath,
-                    'target' => $sourcePath,
-                    'read_only' => false,
-                ],
-                [
-                    'source' => $this->phpIniHostPath($app),
-                    'target' => AppRuntimeContainer::PhpIniMountTarget,
-                    'read_only' => true,
-                ],
-                [
-                    'source' => "{$sourcePath}/.orbit/frankenphp/data",
-                    'target' => '/data',
-                    'read_only' => false,
-                ],
-                [
-                    'source' => "{$sourcePath}/.orbit/frankenphp/config",
-                    'target' => '/config',
-                    'read_only' => false,
-                ],
-            ],
+            mounts: $mounts,
             networkAliases: [
                 $this->containerName($app),
                 "app-{$app->name}",

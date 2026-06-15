@@ -378,6 +378,7 @@ SH,
         $phpIniDirectory = dirname($phpIniHostPath);
         $phpIniContent = $container->phpIniContent();
         $runtimeStateScript = $this->renderRuntimeStateDirectoryScript($container);
+        $packagesMountScript = $this->renderPackagesMountDirectoryScript($container);
 
         return sprintf(
             <<<'SH'
@@ -385,11 +386,13 @@ set -e
 sudo install -d -m 0755 %s
 printf %%s %s | base64 -d | sudo tee %s >/dev/null
 %s
+%s
 SH,
             escapeshellarg($phpIniDirectory),
             escapeshellarg(base64_encode($phpIniContent)),
             escapeshellarg($phpIniHostPath),
             $runtimeStateScript,
+            $packagesMountScript,
         );
     }
 
@@ -426,6 +429,42 @@ SH,
             foreach ($sources as $source) {
                 $lines[] = 'sudo chown '.escapeshellarg($dockerUser).' '.escapeshellarg($source);
             }
+        }
+
+        return implode("\n", $lines);
+    }
+
+    private function renderPackagesMountDirectoryScript(AppRuntimeContainer $container): string
+    {
+        $sources = [];
+
+        foreach ($container->mounts() as $mount) {
+            if ($mount['target'] !== AppDevelopmentPackagesMount::Target) {
+                continue;
+            }
+
+            $sourceUser = AppDevelopmentPackagesMount::userForSafeSource($mount['source']);
+
+            if ($sourceUser === null) {
+                throw new RuntimeException("App runtime container {$container->name()} has an unsafe packages mount source.");
+            }
+
+            $sources[$mount['source']] = $sourceUser;
+        }
+
+        if ($sources === []) {
+            return '';
+        }
+
+        $lines = [];
+
+        foreach ($sources as $source => $sourceUser) {
+            $lines[] = sprintf(
+                'sudo install -d -m 0775 -o %s -g %s %s',
+                escapeshellarg($sourceUser),
+                escapeshellarg($sourceUser),
+                escapeshellarg($source),
+            );
         }
 
         return implode("\n", $lines);

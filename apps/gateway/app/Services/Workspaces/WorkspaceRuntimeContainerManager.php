@@ -7,6 +7,7 @@ namespace App\Services\Workspaces;
 use App\Contracts\RemoteShell;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Models\Node;
+use App\Services\Apps\AppDevelopmentPackagesMount;
 use App\Services\Runtime\DockerCommandBuilder;
 use RuntimeException;
 use Throwable;
@@ -301,17 +302,56 @@ SH,
         $phpIniHostPath = $this->findPhpIniMountSource($container);
         $phpIniDirectory = dirname($phpIniHostPath);
         $phpIniContent = $container->phpIniContent();
+        $packagesMountScript = $this->renderPackagesMountDirectoryScript($container);
 
         return sprintf(
             <<<'SH'
 set -e
 sudo install -d -m 0755 %s
 printf %%s %s | base64 -d | sudo tee %s >/dev/null
+%s
 SH,
             escapeshellarg($phpIniDirectory),
             escapeshellarg(base64_encode($phpIniContent)),
             escapeshellarg($phpIniHostPath),
+            $packagesMountScript,
         );
+    }
+
+    private function renderPackagesMountDirectoryScript(WorkspaceRuntimeContainer $container): string
+    {
+        $sources = [];
+
+        foreach ($container->mounts() as $mount) {
+            if ($mount['target'] !== AppDevelopmentPackagesMount::Target) {
+                continue;
+            }
+
+            $sourceUser = AppDevelopmentPackagesMount::userForSafeSource($mount['source']);
+
+            if ($sourceUser === null) {
+                throw new RuntimeException("Workspace runtime container {$container->name()} has an unsafe packages mount source.");
+            }
+
+            $sources[$mount['source']] = $sourceUser;
+        }
+
+        if ($sources === []) {
+            return '';
+        }
+
+        $lines = [];
+
+        foreach ($sources as $source => $sourceUser) {
+            $lines[] = sprintf(
+                'sudo install -d -m 0775 -o %s -g %s %s',
+                escapeshellarg($sourceUser),
+                escapeshellarg($sourceUser),
+                escapeshellarg($source),
+            );
+        }
+
+        return implode("\n", $lines);
     }
 
     private function findPhpIniMountSource(WorkspaceRuntimeContainer $container): string

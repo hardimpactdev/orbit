@@ -54,6 +54,12 @@ record.
   environment, and is targeted by `orbit-caddy` over the node Docker network.
   Static apps do not have a runtime container. The concrete app runtime, managed
   through the process lifecycle, is represented as a process with Docker runtime.
+- **Development packages mount:** PHP app runtime containers on `app-dev` nodes
+  mount the owning node user's conventional packages root
+  (`/home/<node-user>/packages`) at `/packages`. This keeps Composer path
+  repository symlinks usable inside `/app/vendor` without mounting the host
+  home directory wholesale. `app-prod` runtime containers and static apps do
+  not receive this mount.
 - **Production app runtime container:** App-prod PHP runtime rendered as a
   per-app Docker container running FrankenPHP on the owning node. It
   listens on internal port `8080`, publishes no public host ports, and is

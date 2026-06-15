@@ -7,6 +7,7 @@ namespace App\Services\Workspaces;
 use App\Enums\Apps\AppRuntimeKind;
 use App\Models\App;
 use App\Models\Workspace;
+use App\Services\Apps\AppDevelopmentPackagesMount;
 use App\Services\Php\PhpRuntimePolicy;
 use App\Services\Runtime\OrbitContainerNames;
 use InvalidArgumentException;
@@ -16,6 +17,7 @@ final readonly class WorkspaceRuntimeContainerRenderer
     public function __construct(
         private PhpRuntimePolicy $phpRuntimePolicy,
         private OrbitContainerNames $names,
+        private AppDevelopmentPackagesMount $appDevelopmentPackagesMount = new AppDevelopmentPackagesMount,
     ) {}
 
     public function render(Workspace $workspace, ?string $preloadPath = null): WorkspaceRuntimeContainer
@@ -46,6 +48,23 @@ final readonly class WorkspaceRuntimeContainerRenderer
             throw new InvalidArgumentException("Workspace '{$workspace->name}' has no source path; cannot render runtime container.");
         }
 
+        $mounts = [
+            [
+                'source' => $sourcePath,
+                'target' => WorkspaceRuntimeContainer::SourceTarget,
+                'read_only' => false,
+            ],
+            [
+                'source' => $this->phpIniHostPath($workspace),
+                'target' => WorkspaceRuntimeContainer::PhpIniMountTarget,
+                'read_only' => true,
+            ],
+        ];
+
+        if (($packagesMount = $this->appDevelopmentPackagesMount->forApp($app)) !== null) {
+            $mounts[] = $packagesMount;
+        }
+
         return new WorkspaceRuntimeContainer(
             name: $this->containerName($workspace),
             image: $policy->image,
@@ -54,18 +73,7 @@ final readonly class WorkspaceRuntimeContainerRenderer
             appSlug: $app->name,
             workspaceSlug: $workspace->name,
             environment: $this->environmentFor($app, $workspace, $phpVersion),
-            mounts: [
-                [
-                    'source' => $sourcePath,
-                    'target' => WorkspaceRuntimeContainer::SourceTarget,
-                    'read_only' => false,
-                ],
-                [
-                    'source' => $this->phpIniHostPath($workspace),
-                    'target' => WorkspaceRuntimeContainer::PhpIniMountTarget,
-                    'read_only' => true,
-                ],
-            ],
+            mounts: $mounts,
             networkAliases: [
                 $this->containerName($workspace),
                 "ws-{$app->name}-{$workspace->name}",

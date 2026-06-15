@@ -27,8 +27,12 @@ The terms below define the core identity vocabulary for the workspace family.
   configuration, parent app configuration, and the selected PHP image. It
   serves the workspace's web route through FrankenPHP. Ad-hoc workspace
   PHP/Composer/Artisan run on the node's host PHP toolchain, not inside the
-  container. The concrete workspace web runtime, managed through the process
-  lifecycle, is represented as a process with Docker runtime.
+  container. Workspaces whose parent app is on an `app-dev` node receive the
+  same dev-only packages mount as app runtimes:
+  `/home/<node-user>/packages` on the owning node appears at `/packages` in the
+  container. Workspaces for `app-prod` apps do not receive this mount. The
+  concrete workspace web runtime, managed through the process lifecycle, is
+  represented as a process with Docker runtime.
 - **Host cwd context:** Caller-side working-directory hint used only to resolve
   defaults such as app and workspace identity. It is not an authorization
   source and does not make the CLI operate on local artifacts directly.

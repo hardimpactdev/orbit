@@ -117,6 +117,79 @@ it('creates the orbit network, writes php.ini, and runs the workspace runtime co
         ->and($scripts[4])->toContain("'dunglas/frankenphp:1-php8.5-bookworm'");
 });
 
+it('creates the app-dev packages bind mount source before running the workspace runtime container', function (): void {
+    $node = createTestAppHostNode(['user' => 'nckrtl']);
+    $app = App::factory()->for($node, 'node')->create([
+        'name' => 'nckrtl',
+        'path' => '/home/nckrtl/apps/nckrtl',
+        'php_version' => '8.5',
+        'runtime_kind' => AppRuntimeKind::Php,
+    ]);
+    $workspace = Workspace::factory()->for($app, 'app')->create([
+        'name' => 'feature-a',
+        'path' => '/home/nckrtl/apps/nckrtl/.worktrees/feature-a',
+        'php_version' => null,
+    ]);
+    $workspace->setRelation('app', $app);
+    $container = renderTestWorkspaceContainer($workspace);
+
+    $shell = new WorkspaceRuntimeRecordingShell(
+        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+        new RemoteShellResult(exitCode: 1, stdout: '', stderr: '', durationMs: 1),
+        new RemoteShellResult(exitCode: 0, stdout: '[{"Id":"sha256:abc"}]', stderr: '', durationMs: 1),
+        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+    );
+
+    (new WorkspaceRuntimeContainerManager($shell, new DockerCommandBuilder))->apply($node, $container);
+
+    $script = $shell->calls[3]['script'];
+
+    expect($script)->toContain("sudo install -d -m 0775 -o 'nckrtl' -g 'nckrtl' '/home/nckrtl/packages'")
+        ->and($script)->toContain("--mount 'type=bind,source=/home/nckrtl/packages,target=/packages'")
+        ->and(strpos($script, "sudo install -d -m 0775 -o 'nckrtl' -g 'nckrtl' '/home/nckrtl/packages'"))
+        ->toBeLessThan(strpos($script, 'docker run -d'));
+});
+
+it('rejects unsafe app-dev packages bind mount sources before running the workspace runtime container', function (): void {
+    [$workspace, $node] = workspaceAndNodeForManagerTest();
+    $container = new WorkspaceRuntimeContainer(
+        name: 'orbit-ws-demo-feature-a',
+        image: 'dunglas/frankenphp:1-php8.5-bookworm',
+        network: 'orbit-network',
+        restartPolicy: 'unless-stopped',
+        appSlug: $workspace->app->name,
+        workspaceSlug: $workspace->name,
+        environment: ['SERVER_NAME' => ':80'],
+        mounts: [
+            [
+                'source' => '/etc/orbit/workspaces/demo-feature-a.ini',
+                'target' => WorkspaceRuntimeContainer::PhpIniMountTarget,
+                'read_only' => true,
+            ],
+            [
+                'source' => '/home/../packages',
+                'target' => '/packages',
+                'read_only' => false,
+            ],
+        ],
+        networkAliases: ['orbit-ws-demo-feature-a'],
+        phpIni: ['memory_limit' => '256M'],
+    );
+
+    $shell = new WorkspaceRuntimeRecordingShell(
+        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+        new RemoteShellResult(exitCode: 1, stdout: '', stderr: '', durationMs: 1),
+        new RemoteShellResult(exitCode: 0, stdout: '[{"Id":"sha256:abc"}]', stderr: '', durationMs: 1),
+    );
+
+    expect(fn () => (new WorkspaceRuntimeContainerManager($shell, new DockerCommandBuilder))->apply($node, $container))
+        ->toThrow(WorkspaceRuntimeContainerApplyException::class, 'unsafe packages mount source');
+
+    expect(collect($shell->calls)->contains(
+        fn (array $call): bool => str_contains($call['script'], 'docker run -d')
+    ))->toBeFalse();
+});
+
 it('verifies image presence on the matching-running ("Unchanged") path before returning healthy', function (): void {
     [$workspace, $node] = workspaceAndNodeForManagerTest();
     $container = renderTestWorkspaceContainer($workspace);

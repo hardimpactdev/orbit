@@ -255,6 +255,13 @@ executor artifact runs in the native CLI binary's embedded PHP; source-mounted
 Docker/Incus development and E2E nodes invoke `<source>/apps/cli/orbit`. Host
 PHP and PHP-FPM are not app/workspace runtime fallbacks.
 
+On `app-dev` nodes, PHP app and workspace FrankenPHP containers also mount the
+owning node user's conventional packages directory from
+`/home/<node-user>/packages` to `/packages`. This dev-only mount lets Composer
+path repository symlinks under `/app/vendor` resolve without mounting the host
+home directory or changing the FrankenPHP runtime model. Static runtimes and
+`app-prod` runtimes do not receive this mount.
+
 Production public HTTP traffic enters the fleet through an active
 `ingress` role. `app-prod` nodes are production runtime backends:
 they own app files, FrankenPHP runtime policy, process-backed runtime units,

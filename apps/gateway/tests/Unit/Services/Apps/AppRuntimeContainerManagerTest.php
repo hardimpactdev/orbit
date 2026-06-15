@@ -132,6 +132,73 @@ it('creates the orbit network, writes php.ini, and runs the app runtime containe
         ->and($scripts[4])->toContain("'dunglas/frankenphp:1-php8.5-bookworm'");
 });
 
+it('creates the app-dev packages bind mount source before running the app runtime container', function (): void {
+    $node = createTestAppHostNode(['user' => 'nckrtl']);
+    $app = App::factory()->for($node, 'node')->create([
+        'name' => 'nckrtl',
+        'path' => '/home/nckrtl/apps/nckrtl',
+        'php_version' => '8.5',
+        'runtime_kind' => AppRuntimeKind::Php,
+    ]);
+    $container = renderTestAppContainer($app);
+
+    $shell = new AppRuntimeRecordingShell(
+        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+        new RemoteShellResult(exitCode: 1, stdout: '', stderr: '', durationMs: 1),
+        new RemoteShellResult(exitCode: 0, stdout: '[{"Id":"sha256:abc"}]', stderr: '', durationMs: 1),
+        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+    );
+
+    (new AppRuntimeContainerManager($shell, new DockerCommandBuilder))->apply($node, $container);
+
+    $script = $shell->calls[3]['script'];
+
+    expect($script)->toContain("sudo install -d -m 0775 -o 'nckrtl' -g 'nckrtl' '/home/nckrtl/packages'")
+        ->and($script)->toContain("--mount 'type=bind,source=/home/nckrtl/packages,target=/packages'")
+        ->and(strpos($script, "sudo install -d -m 0775 -o 'nckrtl' -g 'nckrtl' '/home/nckrtl/packages'"))
+        ->toBeLessThan(strpos($script, 'docker run -d'));
+});
+
+it('rejects unsafe app-dev packages bind mount sources before running the app runtime container', function (): void {
+    [$app, $node] = appAndNodeForManagerTest();
+    $container = new AppRuntimeContainer(
+        name: 'orbit-app-docs',
+        image: 'dunglas/frankenphp:1-php8.5-bookworm',
+        network: 'orbit-network',
+        restartPolicy: 'unless-stopped',
+        appSlug: $app->name,
+        runtimeUser: null,
+        environment: ['SERVER_NAME' => ':8080'],
+        mounts: [
+            [
+                'source' => '/etc/orbit/apps/docs.ini',
+                'target' => AppRuntimeContainer::PhpIniMountTarget,
+                'read_only' => true,
+            ],
+            [
+                'source' => '/home/../packages',
+                'target' => '/packages',
+                'read_only' => false,
+            ],
+        ],
+        networkAliases: ['orbit-app-docs'],
+        phpIni: ['memory_limit' => '256M'],
+    );
+
+    $shell = new AppRuntimeRecordingShell(
+        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+        new RemoteShellResult(exitCode: 1, stdout: '', stderr: '', durationMs: 1),
+        new RemoteShellResult(exitCode: 0, stdout: '[{"Id":"sha256:abc"}]', stderr: '', durationMs: 1),
+    );
+
+    expect(fn () => (new AppRuntimeContainerManager($shell, new DockerCommandBuilder))->apply($node, $container))
+        ->toThrow(AppRuntimeContainerApplyException::class, 'unsafe packages mount source');
+
+    expect(collect($shell->calls)->contains(
+        fn (array $call): bool => str_contains($call['script'], 'docker run -d')
+    ))->toBeFalse();
+});
+
 it('resolves production runtime users to numeric uid gid before creating the container', function (): void {
     [$app, $node] = productionAppAndNodeForManagerTest();
     $container = renderTestAppContainer($app);
