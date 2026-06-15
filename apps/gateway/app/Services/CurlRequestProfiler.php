@@ -69,20 +69,7 @@ class CurlRequestProfiler implements RequestProfiler
 
         return [
             'request' => $request,
-            'timings' => [
-                'dns_ms' => $this->toMilliseconds($this->floatInfo($info, 'namelookup_time')),
-                'connect_ms' => $this->toMilliseconds($this->floatInfo($info, 'connect_time')),
-                'tls_ms' => max(
-                    0.0,
-                    $this->toMilliseconds($this->floatInfo($info, 'appconnect_time') - $this->floatInfo($info, 'connect_time')),
-                ),
-                'ttfb_ms' => $this->toMilliseconds($this->floatInfo($info, 'starttransfer_time')),
-                'download_ms' => max(
-                    0.0,
-                    $this->toMilliseconds($this->floatInfo($info, 'total_time') - $this->floatInfo($info, 'starttransfer_time')),
-                ),
-                'total_ms' => $this->toMilliseconds($this->floatInfo($info, 'total_time')),
-            ],
+            'timings' => $this->timingsFromCurlInfo($info),
             'error' => $errorMessage !== null ? ['message' => $errorMessage] : null,
             'response_headers' => $responseHeaders,
         ];
@@ -155,6 +142,68 @@ class CurlRequestProfiler implements RequestProfiler
         return is_string($effectiveUrl) && $effectiveUrl !== '' ? $effectiveUrl : null;
     }
 
+    /**
+     * @param  array<string, mixed>  $info
+     * @return array{dns_ms: float, connect_ms: float, tls_ms: float, ttfb_ms: float, download_ms: float, total_ms: float}
+     */
+    private function timingsFromCurlInfo(array $info): array
+    {
+        return [
+            'dns_ms' => $this->timingMilliseconds($info, 'namelookup'),
+            'connect_ms' => $this->timingMilliseconds($info, 'connect'),
+            'tls_ms' => $this->tlsMilliseconds($info),
+            'ttfb_ms' => $this->timingMilliseconds($info, 'starttransfer'),
+            'download_ms' => $this->durationMilliseconds($info, 'starttransfer', 'total') ?? 0.0,
+            'total_ms' => $this->timingMilliseconds($info, 'total'),
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $info
+     */
+    private function tlsMilliseconds(array $info): float
+    {
+        return $this->durationMilliseconds($info, 'connect', 'appconnect')
+            ?? $this->durationMilliseconds($info, 'connect', 'pretransfer')
+            ?? 0.0;
+    }
+
+    /**
+     * @param  array<string, mixed>  $info
+     */
+    private function timingMilliseconds(array $info, string $name): float
+    {
+        $microseconds = $this->numericInfo($info, "{$name}_time_us");
+
+        if ($microseconds !== null) {
+            return $this->microsecondsToMilliseconds($microseconds);
+        }
+
+        return $this->toMilliseconds($this->numericInfo($info, "{$name}_time") ?? 0.0);
+    }
+
+    /**
+     * @param  array<string, mixed>  $info
+     */
+    private function durationMilliseconds(array $info, string $start, string $end): ?float
+    {
+        $startMicroseconds = $this->numericInfo($info, "{$start}_time_us");
+        $endMicroseconds = $this->numericInfo($info, "{$end}_time_us");
+
+        if ($startMicroseconds !== null && $endMicroseconds !== null) {
+            return $this->microsecondsToMilliseconds($endMicroseconds - $startMicroseconds);
+        }
+
+        $startSeconds = $this->numericInfo($info, "{$start}_time");
+        $endSeconds = $this->numericInfo($info, "{$end}_time");
+
+        if ($startSeconds !== null && $endSeconds !== null) {
+            return $this->toMilliseconds($endSeconds - $startSeconds);
+        }
+
+        return null;
+    }
+
     private function requestUri(string $url): string
     {
         $path = (string) (parse_url($url, PHP_URL_PATH) ?: '/');
@@ -167,7 +216,7 @@ class CurlRequestProfiler implements RequestProfiler
 
     private function toMilliseconds(float $seconds): float
     {
-        return $seconds * 1000;
+        return max(0.0, $seconds) * 1000;
     }
 
     /**
@@ -175,8 +224,21 @@ class CurlRequestProfiler implements RequestProfiler
      */
     private function floatInfo(array $info, string $key): float
     {
+        return $this->numericInfo($info, $key) ?? 0.0;
+    }
+
+    /**
+     * @param  array<string, mixed>  $info
+     */
+    private function numericInfo(array $info, string $key): ?float
+    {
         $value = $info[$key] ?? null;
 
-        return is_int($value) || is_float($value) ? (float) $value : 0.0;
+        return is_numeric($value) ? (float) $value : null;
+    }
+
+    private function microsecondsToMilliseconds(float $microseconds): float
+    {
+        return max(0.0, $microseconds) / 1000;
     }
 }
