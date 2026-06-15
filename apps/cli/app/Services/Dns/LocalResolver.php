@@ -130,7 +130,7 @@ class LocalResolver implements ResolvesLocalDns
         File::ensureDirectoryExists($configDir);
 
         $masterConfig = $this->masterConfigPath();
-        $configChanged = $this->syncMasterConfig($masterConfig, $configDir, $tld);
+        $configChanged = $this->ensureConfDirLine($masterConfig, $configDir);
 
         if ($existing === $target) {
             $healthError = $configChanged
@@ -218,7 +218,7 @@ class LocalResolver implements ResolvesLocalDns
         return "{$prefix}/etc/dnsmasq.conf";
     }
 
-    private function syncMasterConfig(string $masterConfig, string $configDir, string $tld): bool
+    private function ensureConfDirLine(string $masterConfig, string $configDir): bool
     {
         File::ensureDirectoryExists(dirname($masterConfig));
 
@@ -231,42 +231,14 @@ class LocalResolver implements ResolvesLocalDns
         }
 
         $contents = File::get($masterConfig);
-        $lines = preg_split('/\R/', $contents) ?: [];
-        $nextLines = [];
 
-        foreach ($lines as $line) {
-            if ($this->isOrbitDnsmasqConfDirLine($line) || $this->isDnsmasqAddressLineForTld($line, $tld)) {
-                continue;
-            }
-
-            $nextLines[] = $line;
-        }
-
-        while ($nextLines !== [] && end($nextLines) === '') {
-            array_pop($nextLines);
-        }
-
-        $nextLines[] = $confDirLine;
-
-        $nextContents = implode("\n", $nextLines)."\n";
-
-        if ($nextContents === $contents) {
+        if (str_contains($contents, $confDirLine)) {
             return false;
         }
 
-        File::put($masterConfig, $nextContents);
+        File::append($masterConfig, "\n{$confDirLine}\n");
 
         return true;
-    }
-
-    private function isOrbitDnsmasqConfDirLine(string $line): bool
-    {
-        return preg_match('#^conf-dir=.+/(?:\.config/orbit|orbit)/dnsmasq\.d/,\*\.conf$#', trim($line)) === 1;
-    }
-
-    private function isDnsmasqAddressLineForTld(string $line, string $tld): bool
-    {
-        return preg_match('/^address=\/\.?'.preg_quote($tld, '/').'\/.+$/', trim($line)) === 1;
     }
 
     private function refreshDnsmasq(?string $tld = null, ?string $target = null): ?string

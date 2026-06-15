@@ -159,7 +159,7 @@ describe(LocalResolver::class, function (): void {
             ->and($result['error'])->toContain('Running: false');
     });
 
-    it('removes stale Orbit dnsmasq master config entries before refreshing an existing mapping', function (): void {
+    it('preserves existing dnsmasq master config entries when appending the current Orbit config dir', function (): void {
         fakeSuccessfulLocalResolverProcesses($this, '192.168.1.150');
         File::ensureDirectoryExists("{$this->tempHome}/.config/orbit/dnsmasq.d");
         File::ensureDirectoryExists("{$this->tempPrefix}/etc");
@@ -186,10 +186,10 @@ describe(LocalResolver::class, function (): void {
         expect($masterConfig)
             ->toContain("conf-dir={$this->tempHome}/.config/orbit/dnsmasq.d/,*.conf")
             ->toContain('conf-dir=/opt/homebrew/etc/custom-dnsmasq.d,*.conf')
-            ->not->toContain('address=/.test/127.0.0.1')
-            ->not->toContain('orbit-resolver-test-old')
-            ->not->toContain('/storage/app/orbit/dnsmasq.d/')
-            ->not->toContain('/app/orbit/dnsmasq.d/');
+            ->toContain('address=/.test/127.0.0.1')
+            ->toContain('orbit-resolver-test-old')
+            ->toContain('/storage/app/orbit/dnsmasq.d/')
+            ->toContain('/app/orbit/dnsmasq.d/');
         Process::assertRan(fn (PendingProcess $process): bool => $process->command === 'sudo brew services restart dnsmasq');
     });
 
