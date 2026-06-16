@@ -25,6 +25,7 @@ afterEach(function (): void {
     putenv('ORBIT_E2E_DEV_TOPOLOGY_MANIFEST_DIRECTORY');
     putenv('ORBIT_E2E_LIVE_WIREGUARD_ENDPOINT');
     putenv('ORBIT_E2E_LIVE_WG_ENDPOINT');
+    unset($_ENV['ORBIT_E2E_LIVE_WIREGUARD_ENDPOINT'], $_SERVER['ORBIT_E2E_LIVE_WIREGUARD_ENDPOINT']);
     remove_directory($this->manifestDirectory);
 });
 
@@ -392,6 +393,28 @@ it('creates a live accessible Incus topology and prints local onboarding instruc
         ->and($log['local_runs'])->toContain("wg-quick up {$wireGuardConfigPath}")
         ->and($log['local_runs'])->toContain('orbit gateway:add 10.6.0.2 --name=incus-dev-abc123 --json')
         ->and($log['local_runs'])->toContain('curl http://10.6.0.2/api/ca/root');
+});
+
+it('reads live WireGuard endpoint from the PHP environment store', function (): void {
+    $_ENV['ORBIT_E2E_LIVE_WIREGUARD_ENDPOINT'] = '192.168.1.151:51820';
+
+    incusDevTopologyCommandWith(fn (E2ETopologyKind $kind, array $roles): array => fakeIncusPreparedTopology());
+
+    $log = new ArrayObject(['runs' => [], 'local_runs' => []]);
+    incusLiveCommandWith($log);
+
+    $output = new BufferedOutput;
+    $exitCode = app(Kernel::class)->call('e2e:incus', [
+        '--live' => true,
+        '--manual' => true,
+        '--json' => true,
+    ], $output);
+
+    $payload = json_decode(trim($output->fetch()), true, flags: JSON_THROW_ON_ERROR);
+
+    expect($exitCode)->toBe(0)
+        ->and($payload['success']['live_topology']['wireguard_endpoint'])->toBe('192.168.1.151:51820')
+        ->and($payload['success']['live_topology']['wireguard']['endpoint'])->toBe('192.168.1.151:51820');
 });
 
 it('prints the live WireGuard config and follow-up gateway commands in human mode', function (): void {

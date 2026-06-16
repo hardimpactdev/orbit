@@ -846,15 +846,13 @@ class E2EIncusCommand extends Command
 
     private function envString(string $key): ?string
     {
-        $value = env($key);
-
-        if (is_string($value) && trim($value) !== '') {
-            return trim($value);
+        foreach ([$_ENV[$key] ?? null, $_SERVER[$key] ?? null, getenv($key)] as $value) {
+            if (is_string($value) && trim($value) !== '') {
+                return trim($value);
+            }
         }
 
-        $value = getenv($key);
-
-        return is_string($value) && trim($value) !== '' ? trim($value) : null;
+        return null;
     }
 
     private function nodeName(string $value): string
