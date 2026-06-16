@@ -12,6 +12,7 @@ use App\Http\Controllers\Api\AppPruneController;
 use App\Http\Controllers\Api\AppRegisterController;
 use App\Http\Controllers\Api\AppRemoveController;
 use App\Http\Controllers\Api\AppRootController;
+use App\Http\Controllers\Api\AppRuntimeMountController;
 use App\Http\Controllers\Api\AppShowController;
 use App\Http\Controllers\Api\AppStoreController;
 use App\Http\Controllers\Api\AppWebSocketController;
@@ -190,6 +191,9 @@ Route::middleware(CorrelationHeader::class)->group(function (): void {
         Route::post('/apps/{app}/websocket/enable', [AppWebSocketController::class, 'enable']);
         Route::post('/apps/{app}/websocket/disable', [AppWebSocketController::class, 'disable']);
         Route::get('/apps/{app}/websocket/credentials', [AppWebSocketController::class, 'credentials']);
+        Route::get('/apps/{app}/mounts', [AppRuntimeMountController::class, 'index']);
+        Route::post('/apps/{app}/mounts', [AppRuntimeMountController::class, 'store']);
+        Route::delete('/apps/{app}/mounts', [AppRuntimeMountController::class, 'destroy']);
         Route::get('/apps/{app}/worker', [AppWorkerController::class, 'show']);
         Route::post('/apps/{app}/worker/enable', [AppWorkerController::class, 'enable']);
         Route::post('/apps/{app}/worker/disable', [AppWorkerController::class, 'disable']);

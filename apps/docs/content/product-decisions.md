@@ -38,6 +38,7 @@ direction.
 
 <!-- newest first; add new entries directly under this comment -->
 
+- 2026-06-16 — App-level runtime mounts are the current package-symlink support direction for PHP apps on `app-dev` nodes: `app:mount` stores explicit safe bind-mount intent on the app, app and workspace FrankenPHP containers inherit it, mounts default to read-only, and PHP-FPM runtime selection remains deferred. (solo todo #729)
 - 2026-06-15 — App-development `orbit-caddy` binds HTTP/HTTPS to a configured node caller-facing private IPv4 in addition to the WireGuard address, while the private backend port remains WireGuard-only. This lets locally resolved development TLDs use trusted LAN addresses without exposing backend routing. (solo todo #724)
 - 2026-06-15 — `profile` CLI requests are always measured from the caller machine: the gateway may resolve and authorize the target, but it must not perform or fall back to gateway-origin HTTP profiling for `orbit profile`. (solo todo #722)
 - 2026-06-15 — `database` role nodes are private hosted workload nodes when created through `node:new`: a database-only node provisions an Ubuntu host over SSH, carries a node-level TLD, installs the Docker tool baseline, and may use a per-node WireGuard endpoint override for private-provider gateway reachability.

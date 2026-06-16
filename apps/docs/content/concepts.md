@@ -206,6 +206,7 @@ Source: [App Concepts](domains/5_app/app-concepts.md).
 - **App runtime kind**
 - **App runtime container**
 - **Development packages mount**
+- **App runtime mount**
 - **Production app runtime container**
 - **Production app runtime user**
 - **Production release mount boundary**

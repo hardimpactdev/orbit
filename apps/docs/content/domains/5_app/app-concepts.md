@@ -60,6 +60,12 @@ record.
   repository symlinks usable inside `/app/vendor` without mounting the host
   home directory wholesale. `app-prod` runtime containers and static apps do
   not receive this mount.
+- **App runtime mount:** Extra Docker bind mount stored on the app and managed
+  through `app:mount`. In the current slice, configurable runtime mounts are
+  accepted only for PHP apps on `app-dev` nodes. Sources must live under the
+  owning node user's home without exposing credential paths, and mounts default
+  to read-only. Configured app runtime mounts are rendered into the app runtime
+  container and inherited by all workspace runtime containers for the app.
 - **Production app runtime container:** App-prod PHP runtime rendered as a
   per-app Docker container running FrankenPHP on the owning node. It
   listens on internal port `8080`, publishes no public host ports, and is

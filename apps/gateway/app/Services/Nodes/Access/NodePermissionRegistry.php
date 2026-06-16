@@ -42,6 +42,7 @@ final class NodePermissionRegistry
             'app:update',
             'app:new',
             'app:worker',
+            'app:mount',
 
             // Cloudflare
             'cf:*',

@@ -379,6 +379,7 @@ SH,
         $phpIniContent = $container->phpIniContent();
         $runtimeStateScript = $this->renderRuntimeStateDirectoryScript($container);
         $packagesMountScript = $this->renderPackagesMountDirectoryScript($container);
+        $configuredMountScript = $this->renderConfiguredMountDirectoryScript($container);
 
         return sprintf(
             <<<'SH'
@@ -387,12 +388,14 @@ sudo install -d -m 0755 %s
 printf %%s %s | base64 -d | sudo tee %s >/dev/null
 %s
 %s
+%s
 SH,
             escapeshellarg($phpIniDirectory),
             escapeshellarg(base64_encode($phpIniContent)),
             escapeshellarg($phpIniHostPath),
             $runtimeStateScript,
             $packagesMountScript,
+            $configuredMountScript,
         );
     }
 
@@ -468,6 +471,99 @@ SH,
         }
 
         return implode("\n", $lines);
+    }
+
+    private function renderConfiguredMountDirectoryScript(AppRuntimeContainer $container): string
+    {
+        $builtInSources = $this->builtInMountSources($container);
+        $sources = [];
+
+        foreach ($container->mounts() as $mount) {
+            if ($this->isBuiltInRuntimeMountTarget($mount['target'])) {
+                continue;
+            }
+
+            if (in_array($mount['source'], $builtInSources, true)) {
+                continue;
+            }
+
+            $sourceUser = $this->userForSafeConfiguredMountSource($mount['source']);
+
+            if ($sourceUser === null) {
+                throw new RuntimeException("App runtime container {$container->name()} has an unsafe configured runtime mount source.");
+            }
+
+            $sources[$mount['source']] = $sourceUser;
+        }
+
+        if ($sources === []) {
+            return '';
+        }
+
+        $lines = [];
+
+        foreach ($sources as $source => $sourceUser) {
+            $lines[] = sprintf(
+                'sudo install -d -m 0775 -o %s -g %s %s',
+                escapeshellarg($sourceUser),
+                escapeshellarg($sourceUser),
+                escapeshellarg($source),
+            );
+        }
+
+        return implode("\n", $lines);
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function builtInMountSources(AppRuntimeContainer $container): array
+    {
+        $sources = [];
+
+        foreach ($container->mounts() as $mount) {
+            if ($this->isBuiltInRuntimeMountTarget($mount['target'])) {
+                $sources[] = $mount['source'];
+            }
+        }
+
+        return array_values(array_unique($sources));
+    }
+
+    private function isBuiltInRuntimeMountTarget(string $target): bool
+    {
+        return in_array($target, [
+            AppRuntimeContainer::SourceTarget,
+            AppRuntimeContainer::PhpIniMountTarget,
+            AppDevelopmentPackagesMount::Target,
+            '/config',
+            '/data',
+        ], true);
+    }
+
+    private function userForSafeConfiguredMountSource(string $source): ?string
+    {
+        if (preg_match('#^/home/(?<user>[A-Za-z0-9._-]+)/(?<path>.+)$#', $source, $matches) !== 1) {
+            return null;
+        }
+
+        $path = $matches['path'];
+
+        foreach (['.aws', '.config', '.gnupg', '.ssh'] as $sensitiveDirectory) {
+            if ($path === $sensitiveDirectory || str_starts_with($path, "{$sensitiveDirectory}/")) {
+                return null;
+            }
+        }
+
+        if (in_array($path, ['.netrc', '.npmrc', '.composer/auth.json'], true)) {
+            return null;
+        }
+
+        if (str_starts_with($path, '.composer/auth.json/')) {
+            return null;
+        }
+
+        return $matches['user'];
     }
 
     private function findPhpIniMountSource(AppRuntimeContainer $container): string

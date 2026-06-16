@@ -39,6 +39,7 @@ use Illuminate\Support\Str;
  * @property-read Collection<int, DatabaseConnection> $databaseConnections
  * @property-read Collection<int, DatabaseConnectionTarget> $databaseConnectionTargets
  * @property-read Collection<int, Process> $processes
+ * @property-read Collection<int, AppRuntimeMount> $runtimeMounts
  * @property-read Collection<int, Schedule> $schedules
  * @property-read AppWebSocketBinding|null $webSocketBinding
  * @property-read Collection<int, Workspace> $workspaces
@@ -166,6 +167,14 @@ class App extends Model
     public function webSocketBinding(): HasOne
     {
         return $this->hasOne(AppWebSocketBinding::class);
+    }
+
+    /**
+     * @return HasMany<AppRuntimeMount, $this>
+     */
+    public function runtimeMounts(): HasMany
+    {
+        return $this->hasMany(AppRuntimeMount::class)->orderBy('target');
     }
 
     public function url(): string

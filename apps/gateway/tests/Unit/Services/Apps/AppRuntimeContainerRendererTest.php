@@ -92,6 +92,34 @@ it('mounts the owning app-dev node user packages directory at /packages', functi
     ]);
 });
 
+it('renders configured app runtime mounts after built-in mounts', function (): void {
+    $node = createTestAppHostNode(['user' => 'nckrtl']);
+    $app = App::factory()->for($node, 'node')->create([
+        'name' => 'nckrtl',
+        'path' => '/home/nckrtl/apps/nckrtl',
+        'document_root' => 'public',
+        'php_version' => '8.5',
+        'runtime_kind' => AppRuntimeKind::Php,
+    ]);
+    $app->runtimeMounts()->create([
+        'source' => '/home/nckrtl/packages',
+        'target' => '/home/nckrtl/packages',
+        'read_only' => true,
+    ]);
+
+    $mounts = rendererForTest()->render($app)->mounts();
+
+    expect($mounts)->toContain([
+        'source' => '/home/nckrtl/packages',
+        'target' => '/packages',
+        'read_only' => false,
+    ])->and($mounts)->toContain([
+        'source' => '/home/nckrtl/packages',
+        'target' => '/home/nckrtl/packages',
+        'read_only' => true,
+    ]);
+});
+
 it('does not mount the packages directory for app-prod PHP app runtimes', function (): void {
     $node = createTestAppHostNode(['user' => 'orbit'], 'app-prod');
     $app = App::factory()->for($node, 'node')->create([
@@ -187,6 +215,22 @@ it('changes the spec hash when the app-dev packages mount policy changes', funct
     $app->unsetRelation('node');
 
     expect($withPackagesMount)->not->toBe($renderer->render($app)->specHash());
+});
+
+it('changes the spec hash when configured app runtime mounts change', function (): void {
+    $renderer = rendererForTest();
+    $app = makePhpApp(['name' => 'docs-dev']);
+
+    $withoutConfiguredMount = $renderer->render($app)->specHash();
+
+    $app->runtimeMounts()->create([
+        'source' => '/home/orbit/packages',
+        'target' => '/home/orbit/packages',
+        'read_only' => true,
+    ]);
+    $app->unsetRelation('runtimeMounts');
+
+    expect($withoutConfiguredMount)->not->toBe($renderer->render($app)->specHash());
 });
 
 it('renders opcache directives from the PHP runtime policy', function (): void {

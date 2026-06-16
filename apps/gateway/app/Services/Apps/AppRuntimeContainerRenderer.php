@@ -26,6 +26,7 @@ final readonly class AppRuntimeContainerRenderer
         private OrbitContainerNames $names,
         private AppRuntimeUser $appRuntimeUser = new AppRuntimeUser,
         private AppDevelopmentPackagesMount $appDevelopmentPackagesMount = new AppDevelopmentPackagesMount,
+        private AppRuntimeMountService $appRuntimeMounts = new AppRuntimeMountService,
     ) {}
 
     public function render(App $app, ?string $preloadPath = null): AppRuntimeContainer
@@ -73,6 +74,10 @@ final readonly class AppRuntimeContainerRenderer
 
         if (($packagesMount = $this->appDevelopmentPackagesMount->forApp($app)) !== null) {
             $mounts[] = $packagesMount;
+        }
+
+        foreach ($this->appRuntimeMounts->mountsForRuntime($app) as $mount) {
+            $mounts[] = $mount;
         }
 
         return new AppRuntimeContainer(

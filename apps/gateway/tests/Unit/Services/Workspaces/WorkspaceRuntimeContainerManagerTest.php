@@ -150,6 +150,44 @@ it('creates the app-dev packages bind mount source before running the workspace 
         ->toBeLessThan(strpos($script, 'docker run -d'));
 });
 
+it('creates inherited configured runtime mount sources before running the workspace runtime container', function (): void {
+    $node = createTestAppHostNode(['user' => 'nckrtl']);
+    $app = App::factory()->for($node, 'node')->create([
+        'name' => 'nckrtl',
+        'path' => '/home/nckrtl/apps/nckrtl',
+        'php_version' => '8.5',
+        'runtime_kind' => AppRuntimeKind::Php,
+    ]);
+    $app->runtimeMounts()->create([
+        'source' => '/home/nckrtl/packages',
+        'target' => '/home/nckrtl/packages',
+        'read_only' => true,
+    ]);
+    $workspace = Workspace::factory()->for($app, 'app')->create([
+        'name' => 'feature-a',
+        'path' => '/home/nckrtl/apps/nckrtl/.worktrees/feature-a',
+        'php_version' => null,
+    ]);
+    $workspace->setRelation('app', $app);
+    $container = renderTestWorkspaceContainer($workspace);
+
+    $shell = new WorkspaceRuntimeRecordingShell(
+        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+        new RemoteShellResult(exitCode: 1, stdout: '', stderr: '', durationMs: 1),
+        new RemoteShellResult(exitCode: 0, stdout: '[{"Id":"sha256:abc"}]', stderr: '', durationMs: 1),
+        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+    );
+
+    (new WorkspaceRuntimeContainerManager($shell, new DockerCommandBuilder))->apply($node, $container);
+
+    $script = $shell->calls[3]['script'];
+
+    expect($script)->toContain("sudo install -d -m 0775 -o 'nckrtl' -g 'nckrtl' '/home/nckrtl/packages'")
+        ->and($script)->toContain("--mount 'type=bind,source=/home/nckrtl/packages,target=/home/nckrtl/packages,readonly'")
+        ->and(strpos($script, "sudo install -d -m 0775 -o 'nckrtl' -g 'nckrtl' '/home/nckrtl/packages'"))
+        ->toBeLessThan(strpos($script, 'docker run -d'));
+});
+
 it('rejects unsafe app-dev packages bind mount sources before running the workspace runtime container', function (): void {
     [$workspace, $node] = workspaceAndNodeForManagerTest();
     $container = new WorkspaceRuntimeContainer(

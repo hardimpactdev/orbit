@@ -262,6 +262,15 @@ path repository symlinks under `/app/vendor` resolve without mounting the host
 home directory or changing the FrankenPHP runtime model. Static runtimes and
 `app-prod` runtimes do not receive this mount.
 
+PHP apps on `app-dev` nodes may also store app-level additional runtime mount
+intent through `app:mount`. These mounts are rendered into the app runtime
+container and inherited by workspace runtime containers for that app. Sources
+must be explicit safe paths under `/home/<node-user>/`, sensitive home paths are
+rejected, reserved runtime targets such as `/app`, `/packages`, `/data`, and
+`/config` are blocked, and mounts default to read-only. This keeps package
+symlink support configurable without reintroducing PHP-FPM or mounting the
+entire host home directory by default.
+
 Production public HTTP traffic enters the fleet through an active
 `ingress` role. `app-prod` nodes are production runtime backends:
 they own app files, FrankenPHP runtime policy, process-backed runtime units,

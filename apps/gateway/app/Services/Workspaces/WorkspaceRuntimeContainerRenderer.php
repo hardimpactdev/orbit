@@ -8,6 +8,7 @@ use App\Enums\Apps\AppRuntimeKind;
 use App\Models\App;
 use App\Models\Workspace;
 use App\Services\Apps\AppDevelopmentPackagesMount;
+use App\Services\Apps\AppRuntimeMountService;
 use App\Services\Php\PhpRuntimePolicy;
 use App\Services\Runtime\OrbitContainerNames;
 use InvalidArgumentException;
@@ -18,6 +19,7 @@ final readonly class WorkspaceRuntimeContainerRenderer
         private PhpRuntimePolicy $phpRuntimePolicy,
         private OrbitContainerNames $names,
         private AppDevelopmentPackagesMount $appDevelopmentPackagesMount = new AppDevelopmentPackagesMount,
+        private AppRuntimeMountService $appRuntimeMounts = new AppRuntimeMountService,
     ) {}
 
     public function render(Workspace $workspace, ?string $preloadPath = null): WorkspaceRuntimeContainer
@@ -63,6 +65,10 @@ final readonly class WorkspaceRuntimeContainerRenderer
 
         if (($packagesMount = $this->appDevelopmentPackagesMount->forApp($app)) !== null) {
             $mounts[] = $packagesMount;
+        }
+
+        foreach ($this->appRuntimeMounts->mountsForRuntime($app) as $mount) {
+            $mounts[] = $mount;
         }
 
         return new WorkspaceRuntimeContainer(

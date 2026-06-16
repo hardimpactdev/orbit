@@ -30,9 +30,13 @@ The terms below define the core identity vocabulary for the workspace family.
   container. Workspaces whose parent app is on an `app-dev` node receive the
   same dev-only packages mount as app runtimes:
   `/home/<node-user>/packages` on the owning node appears at `/packages` in the
-  container. Workspaces for `app-prod` apps do not receive this mount. The
-  concrete workspace web runtime, managed through the process lifecycle, is
-  represented as a process with Docker runtime.
+  container. Workspaces also inherit configurable app runtime mounts managed
+  through `app:mount`; the workspace family does not own separate runtime mount
+  intent.
+
+  Workspaces for `app-prod` apps do not receive this mount. The concrete
+  workspace web runtime, managed through the process lifecycle, is represented
+  as a process with Docker runtime.
 - **Host cwd context:** Caller-side working-directory hint used only to resolve
   defaults such as app and workspace identity. It is not an authorization
   source and does not make the CLI operate on local artifacts directly.
@@ -100,5 +104,5 @@ These boundaries define what the workspace family owns and what belongs to other
   workspace. The workspace family owns branch/path/setup state; the process
   family owns start/stop/restart/log lifecycle for the long-running units. They
   do not own proxy route convergence, process-unit convergence, app
-  configuration, or node-level firewall policy. Workspace commands do not
-  install host PHP, Composer, or Caddy.
+  configuration, app runtime mount intent, or node-level firewall policy.
+  Workspace commands do not install host PHP, Composer, or Caddy.

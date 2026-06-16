@@ -42,6 +42,8 @@ These rules govern all app family commands.
 - Worker mode is an opt-in app runtime setting. It is disabled by default and
   `app:worker enable` must validate app readiness before changing gateway
   configuration.
+- App runtime mounts are extra bind mounts stored on the app for PHP runtimes
+  on `app-dev` nodes. Workspaces inherit the parent app's configured mounts.
 - App WebSocket bindings are explicit app-owned configuration. They enable one
   app to use the fleet websocket service, own per-app Reverb credentials,
   allowed origins, public WebSocket hosts, and private `websocket.orbit`
@@ -172,6 +174,7 @@ The following commands are available in the `app` family.
 12. [`orbit app:websocket enable [app]`](12_app-websocket-enable/app-websocket-enable.md)
 13. [`orbit app:websocket disable [app]`](13_app-websocket-disable/app-websocket-disable.md)
 14. [`orbit app:websocket credentials [app]`](14_app-websocket-credentials/app-websocket-credentials.md)
+15. [`orbit app:mount list|add|remove [app]`](15_app-mount/app-mount.md)
 
 ## Related
 

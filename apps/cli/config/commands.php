@@ -7,6 +7,7 @@ use App\Commands\Activity\ActivityShowCommand;
 use App\Commands\AgentIde\AgentIdeMessageCommand;
 use App\Commands\App\AppAgentIdeCommand;
 use App\Commands\App\AppListCommand;
+use App\Commands\App\AppMountCommand;
 use App\Commands\App\AppNewCommand;
 use App\Commands\App\AppPruneCommand;
 use App\Commands\App\AppRegisterCommand;
@@ -153,6 +154,7 @@ return [
         AgentIdeMessageCommand::class,
         AppAgentIdeCommand::class,
         AppListCommand::class,
+        AppMountCommand::class,
         AppNewCommand::class,
         AppPruneCommand::class,
         AppRegisterCommand::class,
