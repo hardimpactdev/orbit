@@ -5,6 +5,25 @@ declare(strict_types=1);
 use App\Services\Profile\ProfileRequestProfiler;
 
 describe(ProfileRequestProfiler::class, function (): void {
+    it('uses the active gateway timeout for slow caller-side profiles', function (): void {
+        $server = startSlowCurlProfileHttpTestServer();
+
+        config()->set('orbit.gateway.timeout', 5);
+        app()->forgetInstance(ProfileRequestProfiler::class);
+
+        try {
+            $profile = app(ProfileRequestProfiler::class)
+                ->profile("http://127.0.0.1:{$server['port']}/");
+        } finally {
+            stopSlowCurlProfileHttpTestServer($server);
+        }
+
+        expect($profile['request']['completed'])->toBeTrue()
+            ->and($profile['request']['status'])->toBe(200)
+            ->and($profile['error'])->toBeNull()
+            ->and($profile['timings']['total_ms'])->toBeGreaterThan(3000.0);
+    });
+
     it('trusts the active gateway CA PEM for caller-side HTTPS profiles', function (): void {
         if (! curlProfileOpenSslAvailable()) {
             $this->markTestSkipped('The openssl CLI is required for this TLS profile test.');
@@ -27,6 +46,88 @@ describe(ProfileRequestProfiler::class, function (): void {
             ->and($profile['error'])->toBeNull();
     });
 });
+
+/**
+ * @return array{process: resource, directory: string, port: int}
+ */
+function startSlowCurlProfileHttpTestServer(): array
+{
+    $directory = sys_get_temp_dir().'/orbit-curl-profile-slow-'.bin2hex(random_bytes(4));
+
+    if (! mkdir($directory, 0777, true) && ! is_dir($directory)) {
+        throw new RuntimeException("Unable to create test directory: {$directory}");
+    }
+
+    file_put_contents("{$directory}/index.php", <<<'PHP'
+<?php
+
+usleep(4_000_000);
+
+header('Content-Type: text/plain');
+
+echo 'profile-ok';
+PHP);
+
+    $port = unusedCurlProfileTestPort();
+    $process = proc_open(
+        [
+            PHP_BINARY,
+            '-S',
+            "127.0.0.1:{$port}",
+            '-t',
+            $directory,
+        ],
+        [
+            0 => ['pipe', 'r'],
+            1 => ['file', '/dev/null', 'w'],
+            2 => ['file', '/dev/null', 'w'],
+        ],
+        $pipes,
+        $directory,
+    );
+
+    if (! is_resource($process)) {
+        removeCurlProfileTestDirectory($directory);
+
+        throw new RuntimeException('Unable to start slow profile test server.');
+    }
+
+    fclose($pipes[0]);
+
+    for ($attempt = 0; $attempt < 50; $attempt++) {
+        $socket = @fsockopen('127.0.0.1', $port, $errno, $error, 0.1);
+
+        if (is_resource($socket)) {
+            fclose($socket);
+
+            return [
+                'process' => $process,
+                'directory' => $directory,
+                'port' => $port,
+            ];
+        }
+
+        usleep(100_000);
+    }
+
+    stopSlowCurlProfileHttpTestServer([
+        'process' => $process,
+        'directory' => $directory,
+        'port' => $port,
+    ]);
+
+    throw new RuntimeException('Slow profile test server did not become ready.');
+}
+
+/**
+ * @param  array{process: resource, directory: string, port: int}  $server
+ */
+function stopSlowCurlProfileHttpTestServer(array $server): void
+{
+    proc_terminate($server['process']);
+    proc_close($server['process']);
+    removeCurlProfileTestDirectory($server['directory']);
+}
 
 function curlProfileOpenSslAvailable(): bool
 {

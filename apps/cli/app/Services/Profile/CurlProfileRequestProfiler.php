@@ -6,12 +6,13 @@ namespace App\Services\Profile;
 
 final readonly class CurlProfileRequestProfiler implements ProfileRequestProfiler
 {
-    private const int TOTAL_TIMEOUT_SECONDS = 3;
+    private const int DEFAULT_TIMEOUT_SECONDS = 30;
 
     private const int CONNECT_TIMEOUT_SECONDS = 2;
 
     public function __construct(
         private ?string $caPemPath = null,
+        private int $timeoutSeconds = self::DEFAULT_TIMEOUT_SECONDS,
     ) {}
 
     /**
@@ -33,7 +34,7 @@ final readonly class CurlProfileRequestProfiler implements ProfileRequestProfile
             CURLOPT_RETURNTRANSFER => true,
             CURLOPT_FOLLOWLOCATION => false,
             CURLOPT_HTTPGET => true,
-            CURLOPT_TIMEOUT => self::TOTAL_TIMEOUT_SECONDS,
+            CURLOPT_TIMEOUT => $this->profileTimeoutSeconds(),
             CURLOPT_CONNECTTIMEOUT => self::CONNECT_TIMEOUT_SECONDS,
             CURLOPT_SSL_VERIFYPEER => true,
             CURLOPT_SSL_VERIFYHOST => 2,
@@ -122,6 +123,13 @@ final readonly class CurlProfileRequestProfiler implements ProfileRequestProfile
             'error' => ['message' => $message],
             'response_headers' => [],
         ];
+    }
+
+    private function profileTimeoutSeconds(): int
+    {
+        return $this->timeoutSeconds > 0
+            ? $this->timeoutSeconds
+            : self::DEFAULT_TIMEOUT_SECONDS;
     }
 
     /**

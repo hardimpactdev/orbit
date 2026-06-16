@@ -51,6 +51,7 @@ final class GatewayApiServiceProvider extends ServiceProvider
 
             return new CurlProfileRequestProfiler(
                 caPemPath: $config['ca_pem_path'],
+                timeoutSeconds: $config['timeout'],
             );
         });
 

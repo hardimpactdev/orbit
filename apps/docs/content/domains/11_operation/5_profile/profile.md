@@ -38,7 +38,8 @@ Resolves a target app from `[target]`, `--app`, or the current directory. A full
 ### Request
 
 Sends one HTTP `GET` request with a per-run request id. Redirect responses are
-reported as completed HTTP responses; the CLI does not follow them.
+reported as completed HTTP responses; the CLI does not follow them. The request
+uses the active gateway timeout as its total timeout.
 
 ### Timing
 

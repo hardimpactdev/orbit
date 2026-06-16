@@ -91,6 +91,10 @@ This command follows the shared
   connection, TLS, timeout, or HTTP transport failure.
 - Do not follow redirects in the CLI command path. A 3xx response is a completed
   profile result for the resolved URL.
+- Bound the caller-side HTTP request by the active gateway timeout setting. The
+  connect phase keeps its shorter fast-fail connection timeout, but slow app
+  responses may run until the configured total timeout so `profile` can report
+  the app's own timing breakdown.
 - Use TLS certificate verification from the caller machine. When the active
   gateway has a local CA PEM, add that CA to the caller's cURL trust material so
   Orbit-managed HTTPS routes signed by the gateway CA validate from
@@ -181,7 +185,7 @@ Primary test owners:
 | Path | Coverage |
 | --- | --- |
 | `apps/cli/tests/Feature/Commands/Operation/ProfileCommandTest.php` | Target resolution from cwd, app/domain/URL target, `--node` scoping, auth-mode validation, caller-origin request execution, no gateway-origin CLI fallback, completion semantics, Toolbar enrichment, and caller-side failure diagnostics. |
-| `apps/cli/tests/Feature/Services/CurlProfileRequestProfilerTest.php` | Caller-side cURL TLS verification with the active gateway CA PEM. |
+| `apps/cli/tests/Feature/Services/CurlProfileRequestProfilerTest.php` | Caller-side cURL TLS verification with the active gateway CA PEM and use of the active gateway timeout for slow app responses. |
 | `apps/gateway/tests/Feature/Http/Api/ProfileControllerTest.php` | Gateway target resolution, authorization by peer role, derived development domains, absolute path resolution, resolve-only metadata, and gateway API compatibility profiling. |
 | `apps/gateway/tests/Unit/Services/CurlRequestProfilerTest.php` | Baseline HTTP timing extraction, request status/bytes/effective URL, response-header capture, completed non-2xx handling, failed request diagnostics, timeout behavior, and stable millisecond conversion. |
 
