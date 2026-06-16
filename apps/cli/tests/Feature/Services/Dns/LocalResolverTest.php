@@ -202,6 +202,7 @@ describe(LocalResolver::class, function (): void {
             ->toBe("address=/test/10.6.0.7\n");
 
         Process::assertRan(fn (PendingProcess $process): bool => $process->command === 'dscacheutil -flushcache');
+        Process::assertRan(fn (PendingProcess $process): bool => $process->command === 'sudo killall -HUP mDNSResponder');
     });
 
     it('returns refresh_failed when an existing mapping cannot be served after refresh', function (): void {
@@ -273,6 +274,7 @@ describe(LocalResolver::class, function (): void {
 
         Process::assertRan(fn (PendingProcess $process): bool => $process->command === 'sudo rm \'/etc/resolver/test\'');
         Process::assertRan(fn (PendingProcess $process): bool => $process->command === 'dscacheutil -flushcache');
+        Process::assertRan(fn (PendingProcess $process): bool => $process->command === 'sudo killall -HUP mDNSResponder');
     });
 
     it('refreshes macOS dnsmasq as a root Homebrew service and verifies the target is served locally', function (): void {
@@ -390,6 +392,10 @@ function fakeLocalResolverProcesses(
         }
 
         if ($command === 'dscacheutil -flushcache') {
+            return Process::result('', '', 0);
+        }
+
+        if ($command === 'sudo killall -HUP mDNSResponder') {
             return Process::result('', '', 0);
         }
 

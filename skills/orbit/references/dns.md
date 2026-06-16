@@ -45,7 +45,8 @@ On macOS, Orbit writes per-TLD files under the host user's
 `~/.config/orbit/dnsmasq.d`, keeps the Homebrew `dnsmasq.conf` pointed at that
 directory, removes stale Orbit-managed entries for the selected TLD, and
 preserves operator-owned dnsmasq config. Changed mappings also flush the macOS
-system resolver cache so cached answers do not outlive the override update.
+system resolver cache and reload `mDNSResponder` so cached answers do not
+outlive the override update.
 
 When you provision a development node with `node:new --template=app-development
 --tld=...`, the gateway records the development DNS mapping; `dns:resolve-tld`

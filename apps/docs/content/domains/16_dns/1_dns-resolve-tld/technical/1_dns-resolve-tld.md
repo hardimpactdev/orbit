@@ -68,8 +68,9 @@ This command follows the shared
   entries for the selected TLD while preserving operator-owned dnsmasq config.
 - On macOS, keep `/etc/resolver/{tld}` pointed at `127.0.0.1` so the caller's
   system resolver hands the selected TLD to the local dnsmasq backend.
-- On macOS, flush the system resolver cache after changing resolver handoff or
-  dnsmasq mapping state so stale answers do not survive a changed override.
+- On macOS, flush the system resolver cache and reload `mDNSResponder` after
+  changing resolver handoff or dnsmasq mapping state so stale answers do not
+  survive a changed override.
 - Verify an existing mapping against `dnsmasq` before returning
   `already_resolved`, and repair stale macOS system resolver handoff before
   reporting convergence.

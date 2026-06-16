@@ -301,6 +301,7 @@ class LocalResolver implements ResolvesLocalDns
         }
 
         Process::timeout(10)->run('dscacheutil -flushcache');
+        Process::timeout(10)->run('sudo killall -HUP mDNSResponder');
     }
 
     private function configPath(string $tld): string
