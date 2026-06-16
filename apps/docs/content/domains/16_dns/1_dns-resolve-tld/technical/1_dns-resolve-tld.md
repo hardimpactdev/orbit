@@ -66,8 +66,11 @@ This command follows the shared
   under the host user's `~/.config/orbit/dnsmasq.d`, keep the Homebrew
   `dnsmasq.conf` pointed at that directory, and remove stale Orbit-managed
   entries for the selected TLD while preserving operator-owned dnsmasq config.
+- On macOS, keep `/etc/resolver/{tld}` pointed at `127.0.0.1` so the caller's
+  system resolver hands the selected TLD to the local dnsmasq backend.
 - Verify an existing mapping against `dnsmasq` before returning
-  `already_resolved`; refresh the backend when local resolver reality is stale.
+  `already_resolved`, and repair stale macOS system resolver handoff before
+  reporting convergence.
 - Return success when the requested mapping already exists or the requested
   reset is already absent.
 - Refresh or restart the local resolver backend only when the platform requires

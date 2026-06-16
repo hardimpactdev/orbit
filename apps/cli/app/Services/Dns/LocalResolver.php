@@ -148,6 +148,13 @@ class LocalResolver implements ResolvesLocalDns
 
         $masterConfig = $this->masterConfigPath();
         $configChanged = $this->syncMasterConfig($masterConfig, $configDir, $tld);
+        $systemResolverResult = $this->syncSystemResolver($tld);
+
+        if (isset($systemResolverResult['error'])) {
+            return ['status' => 'write_failed', 'changed' => $configChanged, 'error' => $systemResolverResult['error']];
+        }
+
+        $systemResolverChanged = $systemResolverResult['changed'];
 
         if ($existing === $target) {
             $healthError = $configChanged
@@ -158,11 +165,11 @@ class LocalResolver implements ResolvesLocalDns
                 $refreshError = $this->refreshDnsmasq($tld, $target);
 
                 if ($refreshError !== null) {
-                    return ['status' => 'refresh_failed', 'changed' => $configChanged, 'error' => $refreshError];
+                    return ['status' => 'refresh_failed', 'changed' => $configChanged || $systemResolverChanged, 'error' => $refreshError];
                 }
             }
 
-            if ($configChanged) {
+            if ($configChanged || $systemResolverChanged) {
                 return ['status' => 'resolved', 'changed' => true];
             }
 
@@ -220,6 +227,67 @@ class LocalResolver implements ResolvesLocalDns
         }
 
         return ['status' => 'reset', 'changed' => true];
+    }
+
+    /**
+     * @return array{changed: bool, error?: string}
+     */
+    private function syncSystemResolver(string $tld): array
+    {
+        if ($this->platform() !== 'macos') {
+            return ['changed' => false];
+        }
+
+        if ($this->systemResolverUsesLocalDnsmasq($tld)) {
+            return ['changed' => false];
+        }
+
+        $writeCommand = "sudo mkdir -p /etc/resolver && echo 'nameserver 127.0.0.1' | sudo tee ".escapeshellarg("/etc/resolver/{$tld}").' > /dev/null';
+        $writeResult = Process::timeout(10)->run($writeCommand);
+
+        if (! $writeResult->successful()) {
+            return [
+                'changed' => false,
+                'error' => trim($writeResult->errorOutput()) ?: "Failed to update /etc/resolver/{$tld}.",
+            ];
+        }
+
+        Process::timeout(10)->run('dscacheutil -flushcache');
+
+        return ['changed' => true];
+    }
+
+    private function systemResolverUsesLocalDnsmasq(string $tld): bool
+    {
+        $result = Process::timeout(10)->run('cat '.escapeshellarg("/etc/resolver/{$tld}"));
+
+        if (! $result->successful()) {
+            return false;
+        }
+
+        return $this->resolverNameservers($result->output()) === ['127.0.0.1'];
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function resolverNameservers(string $contents): array
+    {
+        $nameservers = [];
+
+        foreach (preg_split('/\R/', $contents) ?: [] as $line) {
+            $line = trim($line);
+
+            if ($line === '' || str_starts_with($line, '#')) {
+                continue;
+            }
+
+            if (preg_match('/^nameserver\s+(.+)$/', $line, $matches) === 1) {
+                $nameservers[] = trim($matches[1]);
+            }
+        }
+
+        return $nameservers;
     }
 
     private function configPath(string $tld): string

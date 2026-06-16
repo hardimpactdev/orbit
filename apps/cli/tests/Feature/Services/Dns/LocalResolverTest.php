@@ -147,6 +147,25 @@ describe(LocalResolver::class, function (): void {
         Process::assertNotRan(fn (PendingProcess $process): bool => $process->command === 'sudo brew services restart dnsmasq');
     });
 
+    it('repairs the macOS resolver file when an existing mapping points at the requested target', function (): void {
+        fakeSuccessfulLocalResolverProcesses($this, '192.168.1.150', resolverContents: "nameserver 10.6.0.1\n");
+        writeCurrentMasterDnsmasqConfig($this);
+        File::ensureDirectoryExists("{$this->tempHome}/.config/orbit/dnsmasq.d");
+        File::put("{$this->tempHome}/.config/orbit/dnsmasq.d/test.conf", "address=/test/192.168.1.150\n");
+
+        $resolver = new LocalResolver;
+        $resolver->setPlatform('macos');
+
+        expect($resolver->resolve('test', '192.168.1.150'))->toBe([
+            'status' => 'resolved',
+            'changed' => true,
+        ]);
+
+        Process::assertRan(fn (PendingProcess $process): bool => $process->command === 'cat \'/etc/resolver/test\'');
+        Process::assertRan(fn (PendingProcess $process): bool => $process->command === 'sudo mkdir -p /etc/resolver && echo \'nameserver 127.0.0.1\' | sudo tee \'/etc/resolver/test\' > /dev/null');
+        Process::assertNotRan(fn (PendingProcess $process): bool => $process->command === 'sudo brew services restart dnsmasq');
+    });
+
     it('refreshes dnsmasq when the requested mapping exists but is not served locally', function (): void {
         fakeLocalResolverProcesses($this, healthOutput: ['', "192.168.1.150\n"]);
         writeCurrentMasterDnsmasqConfig($this);
@@ -276,9 +295,9 @@ describe(LocalResolver::class, function (): void {
     });
 });
 
-function fakeSuccessfulLocalResolverProcesses(object $test, string $target): void
+function fakeSuccessfulLocalResolverProcesses(object $test, string $target, ?string $resolverContents = "nameserver 127.0.0.1\n"): void
 {
-    fakeLocalResolverProcesses($test, healthOutput: "{$target}\n");
+    fakeLocalResolverProcesses($test, healthOutput: "{$target}\n", resolverContents: $resolverContents);
 }
 
 function writeCurrentMasterDnsmasqConfig(object $test): void
@@ -293,18 +312,36 @@ function writeCurrentMasterDnsmasqConfig(object $test): void
 /**
  * @param  string|array<int, string>  $healthOutput
  */
-function fakeLocalResolverProcesses(object $test, string|array $healthOutput, string $healthErrorOutput = '', int $healthExitCode = 0, bool $healthThrowsTimeout = false): void
-{
+function fakeLocalResolverProcesses(
+    object $test,
+    string|array $healthOutput,
+    string $healthErrorOutput = '',
+    int $healthExitCode = 0,
+    bool $healthThrowsTimeout = false,
+    ?string $resolverContents = "nameserver 127.0.0.1\n",
+): void {
     $healthOutputs = is_array($healthOutput) ? array_values($healthOutput) : [$healthOutput];
 
-    Process::fake(function (PendingProcess $process) use ($test, &$healthOutputs, $healthErrorOutput, $healthExitCode, $healthThrowsTimeout) {
+    Process::fake(function (PendingProcess $process) use ($test, &$healthOutputs, $healthErrorOutput, $healthExitCode, $healthThrowsTimeout, $resolverContents) {
         $command = $process->command;
 
         if ($command === 'brew --prefix') {
             return Process::result($test->tempPrefix, '', 0);
         }
 
+        if ($command === 'cat \'/etc/resolver/test\'') {
+            if ($resolverContents === null) {
+                return Process::result('', 'No such file or directory', 1);
+            }
+
+            return Process::result($resolverContents, '', 0);
+        }
+
         if ($command === 'sudo mkdir -p /etc/resolver && echo \'nameserver 127.0.0.1\' | sudo tee \'/etc/resolver/test\' > /dev/null') {
+            return Process::result('', '', 0);
+        }
+
+        if ($command === 'dscacheutil -flushcache') {
             return Process::result('', '', 0);
         }
 
