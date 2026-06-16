@@ -21,6 +21,12 @@ These fields describe the PolyScope Server tool's identity, backend, and support
 Start, stop, restart, and logs for the long-running server belong to the
 related `polyscope-server` process.
 
+`polyscope-server` declares a related singleton process, so `tool:install
+polyscope-server` configures that process by default: a node-owned `systemd`
+process named `polyscope-server`, command `polyscope-server`, with a
+`tool=polyscope` dependency. The convergence is idempotent. Pass
+`--no-process` to install the capability only.
+
 ## Credentials
 
 `polyscope-server` does not currently support `tool:credentials` in the catalog

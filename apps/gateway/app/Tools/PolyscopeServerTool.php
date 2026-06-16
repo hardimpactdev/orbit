@@ -23,6 +23,20 @@ final class PolyscopeServerTool extends BaseTool
         return ['install', 'remove', 'update', 'reconfigure', 'safe-fix', 'safe-adopt'];
     }
 
+    /**
+     * @return array{name: string, command: string, runtime: string, tool: string}
+     */
+    #[\Override]
+    public function relatedProcess(): array
+    {
+        return [
+            'name' => 'polyscope-server',
+            'command' => 'polyscope-server',
+            'runtime' => 'systemd',
+            'tool' => 'polyscope',
+        ];
+    }
+
     public function installScript(array $config = []): string
     {
         $localTarget = $config['local_target'] ?? false;

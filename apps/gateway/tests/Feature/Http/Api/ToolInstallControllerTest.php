@@ -146,6 +146,73 @@ describe('ToolInstallController', function (): void {
         expect(DB::table('processes')->where('node_id', $node->id)->where('name', 'opencode-server')->count())->toBe(1);
     });
 
+    it('configures the related singleton process by default when installing polyscope server', function (): void {
+        $caller = createToolInstallApiCallerNode();
+        assignToolInstallApiRole($caller, 'gateway');
+        $node = Node::factory()->create(['name' => 'app-ps-1', 'status' => 'active', 'platform' => 'ubuntu_24-04']);
+        assignToolInstallApiRole($node, 'app-dev');
+        app()->instance(RemoteShell::class, new ToolInstallApiRecordingShell);
+
+        $response = $this->call('POST', '/api/tools/polyscope-server/install', [
+            'node' => 'app-ps-1',
+        ], [], [], ['REMOTE_ADDR' => TOOL_INSTALL_API_CALLER_WG_IP]);
+
+        $response->assertOk()
+            ->assertJsonPath('success.data.tool.name', 'polyscope-server')
+            ->assertJsonPath('success.data.tool.process.name', 'polyscope-server')
+            ->assertJsonPath('success.data.tool.process.runtime', 'systemd')
+            ->assertJsonPath('success.data.tool.process.tool', 'polyscope')
+            ->assertJsonPath('success.data.tool.process.action', 'configured');
+
+        $process = DB::table('processes')
+            ->where('node_id', $node->id)
+            ->where('name', 'polyscope-server')
+            ->first();
+
+        expect($process)->not->toBeNull()
+            ->and($process->command)->toBe('polyscope-server')
+            ->and($process->runtime)->toBe('systemd')
+            ->and($process->tool)->toBe('polyscope');
+    });
+
+    it('skips polyscope server process configuration when with_process is false', function (): void {
+        $caller = createToolInstallApiCallerNode();
+        assignToolInstallApiRole($caller, 'gateway');
+        $node = Node::factory()->create(['name' => 'app-ps-2', 'status' => 'active', 'platform' => 'ubuntu_24-04']);
+        assignToolInstallApiRole($node, 'app-dev');
+        app()->instance(RemoteShell::class, new ToolInstallApiRecordingShell);
+
+        $response = $this->call('POST', '/api/tools/polyscope-server/install', [
+            'node' => 'app-ps-2',
+            'with_process' => false,
+        ], [], [], ['REMOTE_ADDR' => TOOL_INSTALL_API_CALLER_WG_IP]);
+
+        $response->assertOk()
+            ->assertJsonPath('success.data.tool.process', null);
+
+        expect(DB::table('processes')->where('node_id', $node->id)->where('name', 'polyscope-server')->exists())->toBeFalse();
+    });
+
+    it('converges the polyscope server related process idempotently on re-install', function (): void {
+        $caller = createToolInstallApiCallerNode();
+        assignToolInstallApiRole($caller, 'gateway');
+        $node = Node::factory()->create(['name' => 'app-ps-3', 'status' => 'active', 'platform' => 'ubuntu_24-04']);
+        assignToolInstallApiRole($node, 'app-dev');
+        app()->instance(RemoteShell::class, new ToolInstallApiRecordingShell);
+
+        $payload = ['node' => 'app-ps-3'];
+        $headers = ['REMOTE_ADDR' => TOOL_INSTALL_API_CALLER_WG_IP];
+
+        $this->call('POST', '/api/tools/polyscope-server/install', $payload, [], [], $headers)->assertOk();
+
+        $response = $this->call('POST', '/api/tools/polyscope-server/install', $payload, [], [], $headers);
+
+        $response->assertOk()
+            ->assertJsonPath('success.data.tool.process.action', 'converged');
+
+        expect(DB::table('processes')->where('node_id', $node->id)->where('name', 'polyscope-server')->count())->toBe(1);
+    });
+
     it('does not treat an unassigned caller as gateway tool authority', function (): void {
         createToolInstallApiCallerNode([
             'name' => 'plain-gateway-install-api-caller',
