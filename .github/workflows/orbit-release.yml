@@ -89,14 +89,16 @@ jobs:
           GATEWAY_DIGEST: ${{ steps.gateway_image.outputs.digest }}
         run: |
           set -euo pipefail
+          cp apps/cli/builds/dist/linux/linux-x64 orbit-linux-x64
+          cp apps/cli/builds/dist/mac/mac-arm orbit-macos-arm64
 
           bin/orbit-release-manifest \
             --version="${VERSION}" \
             --gateway-image="${GATEWAY_IMAGE}" \
             --gateway-digest="${GATEWAY_DIGEST}" \
             --repository="${GITHUB_REPOSITORY}" \
-            --cli-artifact="linux-amd64=orbit-linux-x64=apps/cli/builds/dist/linux/linux-x64" \
-            --cli-artifact="darwin-arm64=orbit-macos-arm64=apps/cli/builds/dist/mac/mac-arm" \
+            --cli-artifact="linux-amd64=orbit-linux-x64=orbit-linux-x64" \
+            --cli-artifact="darwin-arm64=orbit-macos-arm64=orbit-macos-arm64" \
             --role-image="orbit-caddy=caddy:2-alpine" \
             --role-image="orbit-websocket=ghcr.io/hardimpactdev/orbit-websocket:${VERSION}" \
             --output="orbit-release-manifest.json"
@@ -109,7 +111,7 @@ jobs:
           set -euo pipefail
 
           gh release upload "$TAG" \
-            apps/cli/builds/dist/linux/linux-x64#orbit-linux-x64 \
-            apps/cli/builds/dist/mac/mac-arm#orbit-macos-arm64 \
+            orbit-linux-x64 \
+            orbit-macos-arm64 \
             orbit-release-manifest.json \
             --clobber
