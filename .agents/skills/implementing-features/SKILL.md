@@ -1,6 +1,6 @@
 ---
 name: implementing-features
-description: Use when implementing an Orbit feature, bug fix, command behavior change, documentation update, or scoped Solo todo handoff.
+description: Use when implementing an Orbit feature, bug fix, command behavior change, documentation update, project Orbit skill sync, or scoped Solo todo handoff.
 ---
 
 # Implementing Features
@@ -8,7 +8,8 @@ description: Use when implementing an Orbit feature, bug fix, command behavior c
 ## Overview
 
 Implement a scoped Orbit change from a clear handoff or Solo todo. Documentation
-updates are implementation work here, alongside tests and code.
+updates and project Orbit skill updates are implementation work here, alongside
+tests and code.
 
 ## Preconditions
 
@@ -209,36 +210,41 @@ moving on to durable E2E.
 3. Confirm owned files or domains and existing dirty work before editing.
 4. Align documentation inside this worktree when the handoff identifies missing
    or contradictory docs.
-5. Follow TDD (see Test-Driven Development below): write or update failing Pest
+5. Check whether the project-owned Orbit skill under `skills/orbit/**` is
+   affected. Update it in the same worktree when the change alters public CLI
+   behavior, command signatures, node roles, state families, app/workspace
+   runtime behavior, deployment/profile/update flows, or operational guidance
+   another LLM would need to use Orbit correctly.
+6. Follow TDD (see Test-Driven Development below): write or update failing Pest
    tests first, then implement.
-6. Implement the smallest working vertical slice to make the tests pass.
-7. For VM/node/tool/package/doctor/role-baseline behavior, run the retained
+7. Implement the smallest working vertical slice to make the tests pass.
+8. For VM/node/tool/package/doctor/role-baseline behavior, run the retained
    Incus inspection gate from this worktree before durable Incus E2E. Retained
    topologies sync the current worktree into a runner-host source mount and
    execute from each VM's runtime mirror, so they are suitable for real VM
    inspection. Release and verify cleanup before continuing.
-8. Run focused in-memory and prepared-topology feature verification.
-9. Run artifact-backed feature verification when production artifact behavior
+9. Run focused in-memory and prepared-topology feature verification.
+10. Run artifact-backed feature verification when production artifact behavior
    matters and that lane exists for the provider.
-10. Run provider provision gates only as final/nightly substrate verification
+11. Run provider provision gates only as final/nightly substrate verification
    when installer, host mutation, image, binary, or topology-preparation
    behavior changed. Docker provision is only for Docker artifact/image or
    Docker topology-preparer changes; do not run it as a generic post-`composer
    test:e2e` gate.
-11. If PHP changed, run:
+12. If PHP changed, run:
 
    ```bash
    vendor/bin/pint --dirty --format agent
    ```
 
-12. Before reporting completion, run the project quality gate:
+13. Before reporting completion, run the project quality gate:
 
    ```bash
    composer quality-check
    ```
 
-13. Commit the verified worktree changes on the worktree branch.
-14. Merge the branch back into `main` from the primary `~/orbit` checkout,
+14. Commit the verified worktree changes on the worktree branch.
+15. Merge the branch back into `main` from the primary `~/orbit` checkout,
     remove the completed worktree/branch, and leave `~/orbit` on updated
     `main`. Preserve unrelated dirty files in `~/orbit`; if they overlap with
     the merge, stop for direction instead of discarding them.
@@ -314,6 +320,12 @@ is not required after ordinary `composer test:e2e` runs.
 - Apply documentation updates in the same implementation worktree as the related
   tests and code. Do not rely on a separate documentation-only implementation
   pass for feature work.
+- Keep the project-owned Orbit skill in sync with product and implementation
+  changes. `skills/orbit/SKILL.md` is the concise external-LLM entry point;
+  `skills/orbit/references/*.md` carries command-family detail. If a change
+  affects how another LLM should operate Orbit, update the matching skill
+  reference file in the same commit. If the skill is not affected, say so in
+  the report instead of leaving the check implicit.
 - When the change lands a direction change or reversal, append a one-line entry
   to `apps/docs/content/product-decisions.md` (newest first,
   `- YYYY-MM-DD — <decision with topic noun>. (solo todo #NNNN)`), linking the
@@ -343,6 +355,9 @@ Changed files:
 
 Product-decisions ledger:
 - <appended line, or none>
+
+Orbit skill:
+- <updated files, or not affected>
 
 Tests:
 - Pest unit/feature: <test added or changed>
