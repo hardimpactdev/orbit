@@ -153,8 +153,10 @@ describe('tool catalog definitions', function (): void {
             ->toContain('--mount '.escapeshellarg('type=bind,source=/etc/orbit,target=/etc/orbit,readonly'))
             ->toContain('--mount '.escapeshellarg('type=bind,source=/home,target=/home,readonly'))
             ->toContain('--mount '.escapeshellarg('type=bind,source=/run/php,target=/run/php'))
-            ->toContain('--mount '.escapeshellarg('type=bind,source=/var/lib/caddy/.local/share/caddy,target=/data/caddy'))
-            ->toContain('--mount '.escapeshellarg('type=bind,source=/var/lib/caddy/.config/caddy,target=/config/caddy'))
+            ->toContain('--mount '.escapeshellarg('type=bind,source=/var/lib/orbit/caddy/data,target=/data/caddy'))
+            ->toContain('--mount '.escapeshellarg('type=bind,source=/var/lib/orbit/caddy/config,target=/config/caddy'))
+            ->not->toContain('/var/lib/caddy/.local/share/caddy')
+            ->not->toContain('/var/lib/caddy/.config/caddy')
             ->toContain('--add-host '.escapeshellarg('host.docker.internal:host-gateway'))
             ->toContain('orbit.caddy.spec_hash')
             ->toContain('actual_hash=')
@@ -173,7 +175,9 @@ describe('tool catalog definitions', function (): void {
 
         $directories = (OrbitCaddyContainer::default())->hostMountDirectories();
 
-        expect($directories)->toContain('/etc/caddy', '/etc/caddy/orbit', '/etc/caddy/sites', '/etc/orbit', '/home', '/run/php', '/var/lib/caddy/.local/share/caddy', '/var/lib/caddy/.config/caddy');
+        expect($directories)
+            ->toContain('/etc/caddy', '/etc/caddy/orbit', '/etc/caddy/sites', '/etc/orbit', '/home', '/run/php', '/var/lib/orbit/caddy/data', '/var/lib/orbit/caddy/config')
+            ->not->toContain('/var/lib/caddy/.local/share/caddy', '/var/lib/caddy/.config/caddy');
 
         $installLine = collect(explode("\n", $script))
             ->first(fn (string $line): bool => str_starts_with(trim($line), 'sudo install -d -m 0755'));

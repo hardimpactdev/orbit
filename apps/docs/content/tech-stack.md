@@ -222,6 +222,11 @@ of the current security baseline.
 
 `orbit-caddy` is the standalone fleet proxy container on every node that needs HTTP routing. It terminates TLS for managed routes, fronts the gateway API only in `router-colocated` mode, serves public ingress routes on `ingress` nodes, serves private router/backend routes, and serves app and workspace routes on nodes with application roles. App-route certificates are issued by the Orbit root CA, so nodes serve HTTPS without ever holding the root CA private key or any general signing authority.
 
+`orbit-caddy` persists Caddy-generated storage, including public ACME account
+and certificate state, through Orbit-owned host paths under
+`/var/lib/orbit/caddy`. It must not bind host Caddy service directories under
+`/var/lib/caddy` into the managed container.
+
 #### Caddy include boundaries
 
 Caddy configuration is split by exposure boundary, not by who happens to write the file. The managed config mounted into `orbit-caddy` imports both managed include trees:

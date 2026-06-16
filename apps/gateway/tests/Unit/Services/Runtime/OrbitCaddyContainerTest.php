@@ -18,8 +18,8 @@ describe('orbit caddy container', function (): void {
             ->and($container->network())->toBe('orbit-network')
             ->and($container->publishedPorts())->toBe([])
             ->and($container->mounts())->toBe([
-                ['source' => '/var/lib/caddy/.local/share/caddy', 'target' => '/data/caddy', 'read_only' => false],
-                ['source' => '/var/lib/caddy/.config/caddy', 'target' => '/config/caddy', 'read_only' => false],
+                ['source' => '/var/lib/orbit/caddy/data', 'target' => '/data/caddy', 'read_only' => false],
+                ['source' => '/var/lib/orbit/caddy/config', 'target' => '/config/caddy', 'read_only' => false],
                 ['source' => '/etc/caddy/Caddyfile', 'target' => '/etc/caddy/Caddyfile', 'read_only' => true],
                 ['source' => '/etc/caddy/orbit', 'target' => '/etc/caddy/orbit', 'read_only' => true],
                 ['source' => '/etc/caddy/sites', 'target' => '/etc/caddy/sites', 'read_only' => true],
@@ -40,8 +40,8 @@ describe('orbit caddy container', function (): void {
                 'restart_policy' => 'unless-stopped',
                 'published_ports' => [],
                 'mounts' => [
-                    ['source' => '/var/lib/caddy/.local/share/caddy', 'target' => '/data/caddy', 'read_only' => false],
-                    ['source' => '/var/lib/caddy/.config/caddy', 'target' => '/config/caddy', 'read_only' => false],
+                    ['source' => '/var/lib/orbit/caddy/data', 'target' => '/data/caddy', 'read_only' => false],
+                    ['source' => '/var/lib/orbit/caddy/config', 'target' => '/config/caddy', 'read_only' => false],
                     ['source' => '/etc/caddy/Caddyfile', 'target' => '/etc/caddy/Caddyfile', 'read_only' => true],
                     ['source' => '/etc/caddy/orbit', 'target' => '/etc/caddy/orbit', 'read_only' => true],
                     ['source' => '/etc/caddy/sites', 'target' => '/etc/caddy/sites', 'read_only' => true],
@@ -52,6 +52,16 @@ describe('orbit caddy container', function (): void {
                 'network_aliases' => ['orbit-caddy'],
                 'extra_hosts' => ['host.docker.internal' => 'host-gateway'],
             ]);
+    });
+
+    it('keeps Caddy generated storage out of legacy host Caddy directories', function (): void {
+        $mountSources = collect(OrbitCaddyContainer::default()->mounts())
+            ->pluck('source')
+            ->all();
+
+        expect($mountSources)
+            ->toContain('/var/lib/orbit/caddy/data', '/var/lib/orbit/caddy/config')
+            ->not->toContain('/var/lib/caddy/.local/share/caddy', '/var/lib/caddy/.config/caddy');
     });
 
     it('exposes host paths required by managed route artifacts', function (): void {

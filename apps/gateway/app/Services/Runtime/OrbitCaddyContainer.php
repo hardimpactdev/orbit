@@ -295,8 +295,8 @@ class OrbitCaddyContainer
     private static function defaultMounts(): array
     {
         return [
-            ['source' => '/var/lib/caddy/.local/share/caddy', 'target' => '/data/caddy', 'read_only' => false],
-            ['source' => '/var/lib/caddy/.config/caddy', 'target' => '/config/caddy', 'read_only' => false],
+            ['source' => '/var/lib/orbit/caddy/data', 'target' => '/data/caddy', 'read_only' => false],
+            ['source' => '/var/lib/orbit/caddy/config', 'target' => '/config/caddy', 'read_only' => false],
             ['source' => '/etc/caddy/Caddyfile', 'target' => '/etc/caddy/Caddyfile', 'read_only' => true],
             ['source' => '/etc/caddy/orbit', 'target' => '/etc/caddy/orbit', 'read_only' => true],
             ['source' => '/etc/caddy/sites', 'target' => '/etc/caddy/sites', 'read_only' => true],
