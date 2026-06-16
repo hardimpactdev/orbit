@@ -80,3 +80,15 @@ it('returns idempotent enable and disable results', function (): void {
         ->and($disabled->alreadyInDesiredState)->toBeFalse()
         ->and($disabled->client->enabled)->toBeFalse();
 });
+
+it('does not mutate existing backend client values when toggling the array backend', function (): void {
+    $original = new VpnBackendClient('client-1', 'laptop', '10.6.0.7', true, null);
+    $backend = new ArrayVpnBackend([$original]);
+
+    $disabled = $backend->disableClient('laptop');
+
+    expect($original->enabled)->toBeTrue()
+        ->and($disabled)->not->toBe($original)
+        ->and($disabled->enabled)->toBeFalse()
+        ->and($backend->clients()[0])->toBe($disabled);
+});

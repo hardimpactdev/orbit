@@ -57,18 +57,12 @@ final class ArrayVpnBackend implements VpnBackend
 
     public function enableClient(string $name, ?string $totp = null): VpnBackendClient
     {
-        $client = $this->requireClient($name);
-        $client->enabled = true;
-
-        return $client;
+        return $this->setClientEnabled($name, true);
     }
 
     public function disableClient(string $name, ?string $totp = null): VpnBackendClient
     {
-        $client = $this->requireClient($name);
-        $client->enabled = false;
-
-        return $client;
+        return $this->setClientEnabled($name, false);
     }
 
     public function removeClient(string $name, ?string $totp = null): void
@@ -92,5 +86,13 @@ final class ArrayVpnBackend implements VpnBackend
     private function requireClient(string $name): VpnBackendClient
     {
         return $this->clients[$name] ?? throw new RuntimeException('VPN client does not exist.');
+    }
+
+    private function setClientEnabled(string $name, bool $enabled): VpnBackendClient
+    {
+        $client = $this->requireClient($name)->withEnabled($enabled);
+        $this->clients[$name] = $client;
+
+        return $client;
     }
 }
