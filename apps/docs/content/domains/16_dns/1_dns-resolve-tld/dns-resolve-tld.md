@@ -40,7 +40,8 @@ Run `dns:resolve-tld` to write or remove a local resolver entry for a developmen
 
 1. Validates the TLD and target IP address.
 2. Writes caller-local resolver configuration for `*.{tld}`.
-3. Refreshes the local resolver backend when required by the platform.
+3. Refreshes the local resolver backend and system resolver cache when required
+   by the platform.
 4. Reports the active local resolver mapping.
 
 For the reset path, it removes only the local resolver override that Orbit manages

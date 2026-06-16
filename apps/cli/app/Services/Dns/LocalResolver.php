@@ -192,6 +192,8 @@ class LocalResolver implements ResolvesLocalDns
             return ['status' => 'refresh_failed', 'changed' => true, 'error' => $refreshError];
         }
 
+        $this->flushMacOSResolverCache();
+
         return ['status' => 'resolved', 'changed' => true];
     }
 
@@ -226,6 +228,8 @@ class LocalResolver implements ResolvesLocalDns
             return ['status' => 'refresh_failed', 'changed' => true, 'error' => $refreshError];
         }
 
+        $this->flushMacOSResolverCache();
+
         return ['status' => 'reset', 'changed' => true];
     }
 
@@ -252,7 +256,7 @@ class LocalResolver implements ResolvesLocalDns
             ];
         }
 
-        Process::timeout(10)->run('dscacheutil -flushcache');
+        $this->flushMacOSResolverCache();
 
         return ['changed' => true];
     }
@@ -288,6 +292,15 @@ class LocalResolver implements ResolvesLocalDns
         }
 
         return $nameservers;
+    }
+
+    private function flushMacOSResolverCache(): void
+    {
+        if ($this->platform() !== 'macos') {
+            return;
+        }
+
+        Process::timeout(10)->run('dscacheutil -flushcache');
     }
 
     private function configPath(string $tld): string

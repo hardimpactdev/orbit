@@ -184,6 +184,26 @@ describe(LocalResolver::class, function (): void {
         Process::assertRanTimes(fn (PendingProcess $process): bool => $process->command === 'dig @127.0.0.1 orbit-local-resolver-health.test +short', 2);
     });
 
+    it('flushes the macOS resolver cache when an existing mapping target changes', function (): void {
+        fakeSuccessfulLocalResolverProcesses($this, '10.6.0.7');
+        writeCurrentMasterDnsmasqConfig($this);
+        File::ensureDirectoryExists("{$this->tempHome}/.config/orbit/dnsmasq.d");
+        File::put("{$this->tempHome}/.config/orbit/dnsmasq.d/test.conf", "address=/test/192.168.1.150\n");
+
+        $resolver = new LocalResolver;
+        $resolver->setPlatform('macos');
+
+        expect($resolver->resolve('test', '10.6.0.7'))->toBe([
+            'status' => 'resolved',
+            'changed' => true,
+        ]);
+
+        expect(File::get("{$this->tempHome}/.config/orbit/dnsmasq.d/test.conf"))
+            ->toBe("address=/test/10.6.0.7\n");
+
+        Process::assertRan(fn (PendingProcess $process): bool => $process->command === 'dscacheutil -flushcache');
+    });
+
     it('returns refresh_failed when an existing mapping cannot be served after refresh', function (): void {
         fakeLocalResolverProcesses($this, healthOutput: ['', '']);
         writeCurrentMasterDnsmasqConfig($this);
@@ -233,6 +253,26 @@ describe(LocalResolver::class, function (): void {
             ->not->toContain('/storage/app/orbit/dnsmasq.d/')
             ->not->toContain('/app/orbit/dnsmasq.d/');
         Process::assertRan(fn (PendingProcess $process): bool => $process->command === 'sudo brew services restart dnsmasq');
+    });
+
+    it('flushes the macOS resolver cache when resetting an existing mapping', function (): void {
+        fakeSuccessfulLocalResolverProcesses($this, '127.0.0.1');
+        writeCurrentMasterDnsmasqConfig($this);
+        File::ensureDirectoryExists("{$this->tempHome}/.config/orbit/dnsmasq.d");
+        File::put("{$this->tempHome}/.config/orbit/dnsmasq.d/test.conf", "address=/test/192.168.1.150\n");
+
+        $resolver = new LocalResolver;
+        $resolver->setPlatform('macos');
+
+        expect($resolver->reset('test'))->toBe([
+            'status' => 'reset',
+            'changed' => true,
+        ]);
+
+        expect(File::exists("{$this->tempHome}/.config/orbit/dnsmasq.d/test.conf"))->toBeFalse();
+
+        Process::assertRan(fn (PendingProcess $process): bool => $process->command === 'sudo rm \'/etc/resolver/test\'');
+        Process::assertRan(fn (PendingProcess $process): bool => $process->command === 'dscacheutil -flushcache');
     });
 
     it('refreshes macOS dnsmasq as a root Homebrew service and verifies the target is served locally', function (): void {
@@ -337,7 +377,15 @@ function fakeLocalResolverProcesses(
             return Process::result($resolverContents, '', 0);
         }
 
+        if ($command === 'test -f \'/etc/resolver/test\'') {
+            return Process::result('', '', 0);
+        }
+
         if ($command === 'sudo mkdir -p /etc/resolver && echo \'nameserver 127.0.0.1\' | sudo tee \'/etc/resolver/test\' > /dev/null') {
+            return Process::result('', '', 0);
+        }
+
+        if ($command === 'sudo rm \'/etc/resolver/test\'') {
             return Process::result('', '', 0);
         }
 
@@ -363,6 +411,10 @@ function fakeLocalResolverProcesses(
                 : $healthOutputs[0];
 
             return Process::result($healthOutput, $healthErrorOutput, $healthExitCode);
+        }
+
+        if ($command === 'dig @127.0.0.1 localhost +short') {
+            return Process::result("127.0.0.1\n", '', 0);
         }
 
         return Process::result('', "Unexpected command: {$command}", 1);
