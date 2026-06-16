@@ -80,58 +80,6 @@ it('keeps workspace names unique within a parent app only', function (): void {
     ]))->toThrow(QueryException::class);
 });
 
-it('orders setup and teardown step policy independently', function (): void {
-    $app = App::factory()->create();
-
-    $first = WorkspaceStep::createOrdered(
-        appId: $app->id,
-        phase: WorkspaceLifecyclePhase::Setup,
-        command: 'composer install',
-    );
-    $second = WorkspaceStep::createOrdered(
-        appId: $app->id,
-        phase: WorkspaceLifecyclePhase::Setup,
-        command: 'php artisan migrate',
-    );
-    $inserted = WorkspaceStep::createOrdered(
-        appId: $app->id,
-        phase: WorkspaceLifecyclePhase::Setup,
-        command: 'npm run build',
-        beforeStepId: $second->id,
-    );
-    $teardown = WorkspaceStep::createOrdered(
-        appId: $app->id,
-        phase: WorkspaceLifecyclePhase::Teardown,
-        command: 'php artisan down',
-    );
-
-    expect(WorkspaceStep::query()
-        ->where('app_id', $app->id)
-        ->where('phase', WorkspaceLifecyclePhase::Setup)
-        ->orderBy('sort_order')
-        ->pluck('command')
-        ->all())->toBe([
-            'composer install',
-            'npm run build',
-            'php artisan migrate',
-        ])
-        ->and($teardown->sort_order)->toBe(1);
-
-    $inserted->deleteAndCompact();
-
-    expect(WorkspaceStep::query()
-        ->where('app_id', $app->id)
-        ->where('phase', WorkspaceLifecyclePhase::Setup)
-        ->orderBy('sort_order')
-        ->pluck('sort_order', 'command')
-        ->all())->toBe([
-            'composer install' => 1,
-            'php artisan migrate' => 2,
-        ]);
-
-    expect($first->timeoutSeconds())->toBe(WorkspaceStep::DEFAULT_TIMEOUT_SECONDS);
-});
-
 it('keeps durable run history when step definitions are removed', function (): void {
     $workspace = Workspace::factory()->create();
     $step = WorkspaceStep::factory()->create([

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Api;
 
+use App\Actions\Workspaces\RemoveWorkspaceStep;
 use App\Contracts\Loggable;
 use App\Enums\ActivityLogType;
 use App\Enums\WorkspaceLifecyclePhase;
@@ -30,6 +31,7 @@ final class WorkspaceStepDeleteController implements Loggable
     public function __construct(
         private readonly NodeAccessAuthorizer $authorizer,
         private readonly WorkspaceRoleGuard $workspaceRoleGuard,
+        private readonly RemoveWorkspaceStep $removeWorkspaceStep,
     ) {}
 
     public function __invoke(string $phase, int $step, Request $request, WorkspaceStepListPayload $payload): JsonResponse
@@ -101,7 +103,7 @@ final class WorkspaceStepDeleteController implements Loggable
         $removed = $payload->forStep($model);
         $this->activitySubject = $model;
 
-        $model->deleteAndCompact();
+        $this->removeWorkspaceStep->handle($model);
 
         $remaining = WorkspaceStep::query()
             ->where('app_id', $app->id)

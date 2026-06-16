@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Api;
 
+use App\Actions\Workspaces\AddWorkspaceStep;
 use App\Contracts\Loggable;
 use App\Enums\ActivityLogType;
 use App\Enums\WorkspaceLifecyclePhase;
@@ -30,6 +31,7 @@ final class WorkspaceStepStoreController implements Loggable
     public function __construct(
         private readonly NodeAccessAuthorizer $authorizer,
         private readonly WorkspaceRoleGuard $workspaceRoleGuard,
+        private readonly AddWorkspaceStep $addWorkspaceStep,
     ) {}
 
     public function __invoke(string $phase, Request $request, WorkspaceStepListPayload $payload): JsonResponse
@@ -120,7 +122,7 @@ final class WorkspaceStepStoreController implements Loggable
             return $this->stepNotFound((int) ($before ?? $after), $app->name, $phaseEnum);
         }
 
-        $step = WorkspaceStep::createOrdered(
+        $step = $this->addWorkspaceStep->handle(
             appId: $app->id,
             phase: $phaseEnum,
             command: $command,

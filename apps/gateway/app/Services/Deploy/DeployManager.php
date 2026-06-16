@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Services\Deploy;
 
+use App\Actions\Deploy\AddDeployStep;
+use App\Actions\Deploy\RemoveDeployStep;
 use App\Contracts\AppRuntimeUserResolver;
 use App\Contracts\ProgressReporter;
 use App\Contracts\RemoteShell;
@@ -24,6 +26,8 @@ final readonly class DeployManager
     public function __construct(
         private RemoteShell $remoteShell,
         private AppRuntimeUserResolver $appRuntimeUser = new AppRuntimeUser,
+        private AddDeployStep $addDeployStep = new AddDeployStep,
+        private RemoveDeployStep $removeDeployStep = new RemoveDeployStep,
     ) {}
 
     /**
@@ -33,7 +37,7 @@ final readonly class DeployManager
     {
         $model = $this->productionApp($app);
 
-        $step = DeployStep::createOrdered(
+        $step = $this->addDeployStep->handle(
             appId: $model->id,
             title: $title ?? $this->titleFromCommand($command),
             command: $command,
@@ -88,7 +92,7 @@ final readonly class DeployManager
         }
 
         $entity = $this->stepEntity($step);
-        $step->deleteAndCompact();
+        $this->removeDeployStep->handle($step);
 
         return [
             'step' => $entity,
