@@ -60,8 +60,11 @@ The S3 command domain does not own a state family in v1.
 
 ## E2E Coverage
 
-Focused S3 E2E coverage is pending the S3 role runtime. Until that runtime
-exists, S3 behavior stays covered by in-memory command and service tests.
+Focused S3 E2E coverage lives in `apps/e2e`. Current coverage exercises the
+private `s3.orbit` route, credentials output, public ingress publication, and
+SeaweedFS WireGuard-only bind posture through prepared topologies. In-memory
+gateway command and service tests continue to cover validation, authorization,
+route intent, and error envelopes.
 
 ## Concepts
 

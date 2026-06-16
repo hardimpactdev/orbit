@@ -62,6 +62,12 @@ This command follows the shared
 - Reset path: remove only the local resolver override that Orbit manages for the selected TLD.
 - Use stable Orbit-managed file labels or config blocks so repeated runs
   converge the same local mapping.
+- On macOS, manage dnsmasq through the Homebrew service: write per-TLD files
+  under the host user's `~/.config/orbit/dnsmasq.d`, keep the Homebrew
+  `dnsmasq.conf` pointed at that directory, and remove stale Orbit-managed
+  entries for the selected TLD while preserving operator-owned dnsmasq config.
+- Verify an existing mapping against `dnsmasq` before returning
+  `already_resolved`; refresh the backend when local resolver reality is stale.
 - Return success when the requested mapping already exists or the requested
   reset is already absent.
 - Refresh or restart the local resolver backend only when the platform requires
@@ -135,11 +141,11 @@ change the documented command result.
 
 Required split contract tests:
 
+There is no gateway-side coverage for this command: `dns:resolve-tld` is
+CLI-local and never calls a gateway command handler.
+
 | Path | Coverage |
 | --- | --- |
-| `apps/gateway/tests/Feature/Commands/Dns/DnsResolveTldCommandTest.php` | Command contract: gateway-node rejection, field validation, local resolver write behavior, reset behavior, idempotent convergence, unsupported-platform failure, no gateway configuration writes, no public DNS writes, and no arbitrary per-host mappings. |
-| `apps/gateway/tests/Feature/Commands/Dns/DnsResolveTldInteractiveInputModeTest.php` | Interactive input mode: TTY selection, `--json` opt-out, prompt order, prompt IDs, labels, primitives, field validation, reset confirmation, `--force` confirmation bypass, and prompt abort behavior. |
-| `apps/gateway/tests/Feature/Commands/Dns/DnsResolveTldNonInteractiveInputModeTest.php` | Non-interactive input mode: no-prompt selection, `--json` forcing non-interactive mode, missing input failures, forbidden target with `--reset`, `--reset` requiring `--force`, and invalid value failures. |
-| `apps/gateway/tests/Feature/Commands/Dns/DnsResolveTldJsonRendererTest.php` | JSON renderer selection, success envelope, resolved/reset/already-converged statuses, every `error.code` value, error metadata, and `--json` forcing non-interactive mode. |
-| `apps/gateway/tests/Feature/Commands/Dns/DnsResolveTldHumanRendererTest.php` | Human renderer progress trees, resolved success prose, already-resolved prose, reset prose, already-absent prose, validation failure prose, unsupported-platform prose, resolver failure prose, and absence of JSON envelopes in human mode. |
-| `apps/gateway/tests/E2E/Ephemeral/DnsResolveTldTest.php` | Real local resolver configuration and reset against an ephemeral supported client platform. |
+| `apps/cli/tests/Feature/Commands/Dns/DnsResolveTldCommandTest.php` | Command contract, input modes, renderers, validation, reset destructive consent, unsupported-platform failure, refresh-failure diagnostics, and no gateway/public DNS writes. |
+| `apps/cli/tests/Feature/Services/Dns/LocalResolverTest.php` | Local resolver mechanics: host-writable Orbit config home, Homebrew dnsmasq master config convergence, stale Orbit dnsmasq entry cleanup, local health verification, refresh behavior, and diagnostics. |
+| `apps/e2e/tests/Feature/Commands/DnsResolveTldTest.php` | Real local resolver configuration and reset against an ephemeral supported client platform. |

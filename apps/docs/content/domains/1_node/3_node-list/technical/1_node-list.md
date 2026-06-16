@@ -122,9 +122,8 @@ Primary test owners:
 
 | Path | Coverage |
 | --- | --- |
-| `apps/gateway/tests/Feature/Commands/Nodes/NodeListCommandTest.php` | Command contract: listing all visible nodes, role filtering, gateway-unavailable failure, invalid filter validation, authorization failure, and read-only guarantee (no SSH, no configuration mutation). |
-| `apps/gateway/tests/Feature/Commands/Nodes/NodeListJsonRendererTest.php` | JSON envelope shape, success payload with node array, filter error JSON shape, and enum values. |
-| `apps/gateway/tests/Feature/Commands/Nodes/NodeListHumanRendererTest.php` | Human renderer selection, table grouping by role, success prose, filter error prose, and exact error messages. |
+| `apps/cli/tests/Feature/Commands/Node/NodeListCommandTest.php` | Command contract, JSON and human renderers, listing visible nodes, role filtering, WireGuard peer address rendering, gateway-unavailable failure, invalid filter validation, authorization failure, and read-only guarantee. |
+| `apps/gateway/tests/Feature/Http/Api/NodeListControllerTest.php` | Gateway API visibility, role filtering, node payload shape, WireGuard address serialization, authorization, and no host fallback for peer addresses. |
 
 Renderer-specific test mapping lives in:
 

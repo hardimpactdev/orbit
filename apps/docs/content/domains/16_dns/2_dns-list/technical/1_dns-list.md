@@ -96,9 +96,10 @@ the documented command result.
 
 Required split contract tests:
 
+There is no gateway-side coverage for this command: `dns:list` is CLI-local and
+only reads caller-local resolver state.
+
 | Path | Coverage |
 | --- | --- |
-| `apps/gateway/tests/Feature/Commands/Dns/DnsListCommandTest.php` | Command contract: gateway-node rejection, Linux and macOS local resolver read behavior, empty result success, unsupported-platform failure, resolver read failure, read-only guarantee, no gateway configuration reads, and no public DNS reads. |
-| `apps/gateway/tests/Feature/Commands/Dns/DnsListJsonRendererTest.php` | JSON renderer selection, success envelope, empty result shape, resolver entry DTO shape, every `error.code` value, and `--json` forcing non-interactive mode. |
-| `apps/gateway/tests/Feature/Commands/Dns/DnsListHumanRendererTest.php` | Human renderer local DNS summary, empty result prose, no-progress-tree behavior, gateway-node rejection prose, unsupported-platform prose, resolver read failure prose, and absence of JSON envelopes in human mode. |
-| `apps/gateway/tests/E2E/DnsListTest.php` | Incus-backed Linux client feature gate: install the current checkout into a disposable operator VM, seed an Orbit-managed local resolver override, and verify `orbit dns:list --json` reports it. |
+| `apps/cli/tests/Feature/Commands/Dns/DnsListCommandTest.php` | Command contract, JSON renderer, human renderer, empty result success, resolver entry DTO shape, unsupported-platform failure, resolver read failure, read-only guarantee, no gateway configuration reads, and no public DNS reads. |
+| `apps/e2e/tests/Feature/Commands/DnsListTest.php` | Incus-backed Linux client feature gate: install the current checkout into a disposable operator VM, seed an Orbit-managed local resolver override, and verify `orbit dns:list --json` reports it. |

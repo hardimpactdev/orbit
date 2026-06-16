@@ -37,7 +37,8 @@ Resolves a target app from `[target]`, `--app`, or the current directory. A full
 
 ### Request
 
-Sends one HTTP `GET` request with a per-run request id.
+Sends one HTTP `GET` request with a per-run request id. Redirect responses are
+reported as completed HTTP responses; the CLI does not follow them.
 
 ### Timing
 
@@ -53,7 +54,8 @@ Enriches the baseline timings with Laravel Toolbar summary data exposed by the a
 
 ### Success Condition
 
-Treats a completed HTTP response as a successful profile run, even for responses outside the 2xx range.
+Treats a completed HTTP response as a successful profile run, even for responses
+outside the 2xx range.
 
 ## Requirements
 

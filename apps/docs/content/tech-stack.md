@@ -341,14 +341,12 @@ row. V1 does not create per-app bucket credentials, bucket lifecycle commands,
 virtual-hosted bucket routes, wildcard DNS/TLS for bucket hostnames, distributed
 SeaweedFS, or HA guarantees.
 
-Focused S3 E2E coverage is pending the S3 role runtime. When that role lands,
-coverage must use the prepared Docker/Incus topology lane, keep SeaweedFS on the
-role runtime container substrate, and must not add role-local Docker Compose,
-host Caddy, host PHP, PHP-FPM, or Supervisor to make object-storage
-assertions pass. S3 E2E starts in the dedicated `apps/e2e` runner, not in the
-gateway test harness, and drives object storage through external CLI/API
-boundaries rather than gateway service or model instantiation. See
-[Testing](testing/README.md).
+Focused S3 E2E coverage lives in the dedicated `apps/e2e` runner. It covers the
+private `s3.orbit` route, credentials output, public ingress publication, and
+SeaweedFS WireGuard-only bind posture through prepared topologies. New S3 E2E
+coverage must keep SeaweedFS on the role runtime container substrate and must
+not add role-local Docker Compose, host Caddy, host PHP, PHP-FPM, or Supervisor
+to make object-storage assertions pass. See [Testing](testing/README.md).
 
 ### Process manager
 

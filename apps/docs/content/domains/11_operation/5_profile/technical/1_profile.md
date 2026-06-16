@@ -89,8 +89,10 @@ This command follows the shared
 - Do not perform the timed request from the gateway in the CLI command path.
 - Do not fall back to a gateway-origin request after caller-side DNS,
   connection, TLS, timeout, or HTTP transport failure.
-- Follow redirects and report the final effective URL when it differs from the
-  requested URL.
+- Do not follow redirects in the CLI command path. A 3xx response is a completed
+  profile result for the resolved URL.
+- Use the caller machine's normal cURL TLS certificate verification. Certificate
+  validation failures return `profile_request_failed`; do not retry insecurely.
 - Preserve baseline timing fields equivalent to cURL output: `dns_ms`, `connect_ms`,
   `tls_ms`, `ttfb_ms`, `download_ms`, and `total_ms`.
 - Derive `tls_ms` from TLS handshake time, treat `ttfb_ms` as total time until

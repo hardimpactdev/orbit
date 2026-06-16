@@ -107,4 +107,4 @@ requests.
 | --- | --- |
 | `apps/gateway/tests/Feature/Commands/S3/S3UnpublishCommandTest.php` | Input validation, active s3/router prerequisites, authorization, destructive consent, idempotent absent behavior, owned-route denial, and cleanup failure handoff. |
 | `apps/gateway/tests/Unit/Services/S3/S3RouteRegistrarTest.php` | In-memory removal from S3 public hosts, SeaweedFS config, ingress routes, and router relay intent. |
-| `apps/e2e/tests/Feature/Commands/S3IngressRouteTest.php` | Planned public S3 host removal coverage once the S3 role runtime exists. |
+| `apps/e2e/tests/Feature/Commands/S3IngressRouteTest.php` | Prepared-topology public S3 publication and route placement coverage. Dedicated public host removal E2E assertions are still pending. |
