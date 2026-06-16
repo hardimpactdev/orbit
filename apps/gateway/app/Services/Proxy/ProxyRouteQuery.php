@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\Proxy;
 
+use App\Enums\Nodes\NodeStatus;
 use App\Http\Gateway\GatewayApiException;
 use App\Models\Node;
 use App\Models\ProxyRoute;
@@ -144,7 +145,7 @@ class ProxyRouteQuery
 
         $authorizer = app(NodeAccessAuthorizer::class);
         $nodes = Node::query()
-            ->where('status', 'active')
+            ->where('status', NodeStatus::Active->value)
             ->get();
 
         $visibleNodeIds = [];

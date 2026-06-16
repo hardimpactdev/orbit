@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\Schedules;
 
+use App\Enums\Nodes\NodeStatus;
 use App\Http\Gateway\GatewayApiException;
 use App\Models\Node;
 use App\Models\Schedule;
@@ -143,7 +144,7 @@ class SchedulePayload
 
         $authorizer = app(NodeAccessAuthorizer::class);
         $nodes = Node::query()
-            ->where('status', 'active')
+            ->where('status', NodeStatus::Active->value)
             ->where(function (Builder $query): void {
                 $query
                     ->whereIn('id', app(NodeRoleAssignments::class)->activeGatewayOrAppHostNodeIds());

@@ -10,6 +10,7 @@ use App\Data\Doctor\ProbeSnapshot;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Enums\AdoptAction;
 use App\Enums\DriftKind;
+use App\Enums\Nodes\NodeStatus;
 use App\Models\Node;
 use App\Models\NodeAccess;
 use App\Models\NodeRoleAssignment;
@@ -1398,7 +1399,7 @@ describe('adoption', function (): void {
             'observed' => '10.6.0.8',
             'allowed_ips' => ['10.6.0.8/32'],
         ]);
-        expect($node->refresh()->status)->toBe('active');
+        expect($node->refresh()->status)->toBe(NodeStatus::Active);
         expect($node->wireguard_address)->toBe('10.6.0.8');
     });
 

@@ -7,6 +7,7 @@ namespace App\Services\Tools;
 use App\Actions\Processes\AddProcess;
 use App\Contracts\RemoteShell;
 use App\Data\RemoteShell\RemoteShellResult;
+use App\Enums\Nodes\NodeStatus;
 use App\Enums\ProcessCrashNotification;
 use App\Enums\Processes\ProcessRuntime;
 use App\Enums\ProcessRestartPolicy;
@@ -378,7 +379,7 @@ final readonly class ToolInstaller
             if ($requiredRole !== null) {
                 $resolved = Node::query()
                     ->where('name', $node)
-                    ->where('status', 'active')
+                    ->where('status', NodeStatus::Active->value)
                     ->first();
 
                 if ($resolved instanceof Node) {
@@ -389,7 +390,7 @@ final readonly class ToolInstaller
             $resolved = Node::query()
                 ->where('name', $node)
                 ->whereIn('id', $this->nodeRoleAssignments->activeToolHostNodeIds())
-                ->where('status', 'active')
+                ->where('status', NodeStatus::Active->value)
                 ->first();
 
             if ($resolved instanceof Node) {

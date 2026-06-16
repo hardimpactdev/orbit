@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Enums\Nodes\NodeRoleName;
 use App\Enums\Nodes\NodeRoleStatus;
+use App\Enums\Nodes\NodeStatus;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Models\NodeTool;
@@ -18,7 +19,7 @@ function appProdBaselineNode(): Node
         'platform' => 'ubuntu',
         'host' => '10.6.0.30',
         'wireguard_address' => '10.6.0.30',
-        'status' => Node::STATUS_ACTIVE,
+        'status' => NodeStatus::Active,
     ]);
 }
 

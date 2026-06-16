@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services\Nodes;
 
 use App\Data\Security\PinnedHostKey;
+use App\Enums\Nodes\NodeStatus;
 use App\Models\Node;
 use App\Services\Dns\DnsmasqReconciler;
 
@@ -23,7 +24,7 @@ final readonly class NodeRegistryWriter
         ?string $gatewayEndpoint,
         string $user,
         string $orbitPath,
-        string $status = Node::STATUS_ACTIVE,
+        NodeStatus $status = NodeStatus::Active,
         ?PinnedHostKey $hostKey = null,
     ): Node {
         $attributes = [
@@ -62,7 +63,7 @@ final readonly class NodeRegistryWriter
         ?string $gatewayEndpoint,
         string $sshUser,
         string $user,
-        string $status = Node::STATUS_PROVISIONING,
+        NodeStatus $status = NodeStatus::Provisioning,
         ?PinnedHostKey $hostKey = null,
     ): Node {
         $node = $this->writeNodeIdentity(
@@ -85,6 +86,6 @@ final readonly class NodeRegistryWriter
 
     public function markActive(Node $node): void
     {
-        $node->forceFill(['status' => Node::STATUS_ACTIVE])->save();
+        $node->forceFill(['status' => NodeStatus::Active])->save();
     }
 }

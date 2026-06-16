@@ -6,6 +6,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Contracts\Loggable;
 use App\Enums\ActivityLogType;
+use App\Enums\Nodes\NodeStatus;
 use App\Http\Authorization\RequiresPermission;
 use App\Http\Authorization\ServingNode;
 use App\Http\Requests\Api\NodeRoleListApiRequest;
@@ -24,7 +25,7 @@ final class NodeRoleListController implements Loggable
         $node = Node::query()
             ->with('roleAssignments')
             ->where('name', $name)
-            ->where('status', 'active')
+            ->where('status', NodeStatus::Active->value)
             ->first();
 
         if (! $node instanceof Node) {

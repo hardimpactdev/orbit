@@ -6,6 +6,8 @@ namespace App\Http\Controllers\Api;
 
 use App\Contracts\Loggable;
 use App\Enums\ActivityLogType;
+use App\Enums\Nodes\NodeRoleStatus;
+use App\Enums\Nodes\NodeStatus;
 use App\Http\Authorization\RequiresPermission;
 use App\Http\Authorization\ServingNode;
 use App\Http\Requests\Api\AddNodeRoleApiRequest;
@@ -35,7 +37,7 @@ final class NodeRoleAddController implements Loggable
             );
         }
 
-        $node = Node::query()->where('name', $name)->where('status', 'active')->first();
+        $node = Node::query()->where('name', $name)->where('status', NodeStatus::Active->value)->first();
         if (! $node instanceof Node) {
             return $this->error('node.not_found', "Node '{$name}' not found.", ['name' => $name], 404);
         }
@@ -86,7 +88,7 @@ final class NodeRoleAddController implements Loggable
     {
         $ingressAssignment = $node->roleAssignments()
             ->where('role', 'ingress')
-            ->where('status', 'active')
+            ->where('status', NodeRoleStatus::Active->value)
             ->first();
 
         if ($ingressAssignment instanceof NodeRoleAssignment) {
@@ -115,10 +117,10 @@ final class NodeRoleAddController implements Loggable
 
         $ingressNode = Node::query()
             ->where('name', $ingressNodeName)
-            ->where('status', 'active')
+            ->where('status', NodeStatus::Active->value)
             ->whereHas('roleAssignments', fn ($query) => $query
                 ->where('role', 'ingress')
-                ->where('status', 'active'))
+                ->where('status', NodeRoleStatus::Active->value))
             ->first();
 
         if (! $ingressNode instanceof Node) {

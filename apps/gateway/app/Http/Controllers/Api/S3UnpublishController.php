@@ -6,6 +6,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Contracts\Loggable;
 use App\Enums\ActivityLogType;
+use App\Enums\Nodes\NodeStatus;
 use App\Models\Node;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
 use App\Services\S3\S3UnpublishAction;
@@ -135,7 +136,7 @@ final class S3UnpublishController implements Loggable
 
         if ($nodeRoleAssignments->nodeIsGateway($caller)) {
             $nodes = Node::query()
-                ->where('status', 'active')
+                ->where('status', NodeStatus::Active->value)
                 ->whereIn('id', $s3NodeIds)
                 ->limit(2)
                 ->get();
@@ -148,7 +149,7 @@ final class S3UnpublishController implements Loggable
         }
 
         $visibleS3Nodes = Node::query()
-            ->where('status', 'active')
+            ->where('status', NodeStatus::Active->value)
             ->whereIn('id', $s3NodeIds)
             ->get();
 

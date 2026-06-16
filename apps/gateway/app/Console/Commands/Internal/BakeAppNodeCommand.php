@@ -8,6 +8,7 @@ use App\Data\Security\PinnedHostKey;
 use App\Enums\Nodes\NodeConvergenceContext;
 use App\Enums\Nodes\NodeRoleName;
 use App\Enums\Nodes\NodeRoleStatus;
+use App\Enums\Nodes\NodeStatus;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Services\Nodes\NodeConverger;
@@ -73,7 +74,7 @@ class BakeAppNodeCommand extends Command
                 gatewayEndpoint: $gatewayEndpoint,
                 sshUser: $user,
                 user: $user,
-                status: Node::STATUS_ACTIVE,
+                status: NodeStatus::Active,
                 hostKey: $hostKey,
             ),
         );

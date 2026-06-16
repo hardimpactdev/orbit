@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Enums\Nodes\NodeRoleStatus;
 use App\Models\NodeAccess;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
@@ -25,7 +26,7 @@ describe('NodeRoleAddController', function (): void {
             ->assertJsonPath('success.data.assignment.settings', [])
             ->assertJsonPath('success.data.assignment.last_error', null);
 
-        expect($target->roleAssignments()->where('role', 'database')->where('status', 'active')->exists())->toBeTrue();
+        expect($target->roleAssignments()->where('role', 'database')->where('status', NodeRoleStatus::Active->value)->exists())->toBeTrue();
     });
 
     it('rejects gateway role additions before side effects', function (): void {

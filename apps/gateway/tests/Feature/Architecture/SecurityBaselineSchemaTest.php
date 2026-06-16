@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-use App\Models\Node;
+use App\Enums\Nodes\NodeStatus;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Schema;
 
@@ -28,6 +28,6 @@ it('has firewall rule ownership and network-scope columns', function (): void {
 });
 
 it('documents provisioning as a transient node status', function (): void {
-    expect(Node::STATUS_PROVISIONING)->toBe('provisioning')
-        ->and(Node::STATUS_ACTIVE)->toBe('active');
+    expect(NodeStatus::Provisioning->value)->toBe('provisioning')
+        ->and(NodeStatus::Active->value)->toBe('active');
 });

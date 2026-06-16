@@ -7,6 +7,7 @@ use App\Data\RemoteShell\RemoteShellResult;
 use App\Data\Security\PinnedHostKey;
 use App\Enums\Nodes\NodeRoleName;
 use App\Enums\Nodes\NodeRoleStatus;
+use App\Enums\Nodes\NodeStatus;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Models\NodeTool;
@@ -71,7 +72,7 @@ describe('orbit:internal:bake-app-node', function (): void {
             ->and($node->user)->toBe('orbit')
             ->and($node->orbit_path)->toBe('/home/orbit/orbit')
             ->and($node->tld)->toBe('test')
-            ->and($node->status)->toBe('active')
+            ->and($node->status)->toBe(NodeStatus::Active)
             ->and($node->host_key_type)->toBe('ssh-ed25519')
             ->and($node->host_key_public)->toBe('AAAAC3NzaC1lZDI1NTE5AAAAIBakeAppNodeHostKey')
             ->and($node->host_key_fingerprint)->toBe('SHA256:bake-app-node-host-key')
@@ -158,7 +159,7 @@ describe('orbit:internal:bake-app-node', function (): void {
             ->first();
 
         expect($assignment)->not->toBeNull()
-            ->and($assignment?->status)->toBe(NodeRoleStatus::Active->value)
+            ->and($assignment?->status)->toBe(NodeRoleStatus::Active)
             ->and($assignment?->settings)->toBe(['tld' => 'test']);
     });
 
@@ -248,7 +249,7 @@ describe('orbit:internal:bake-app-node', function (): void {
             ->get()
             ->map(fn (NodeRoleAssignment $assignment): array => [
                 'role' => $assignment->role,
-                'status' => $assignment->status,
+                'status' => $assignment->status->value,
                 'settings' => $assignment->settings,
             ])
             ->all();

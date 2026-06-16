@@ -6,7 +6,7 @@ namespace App\Console\Commands\Internal;
 
 use App\Enums\Nodes\NodeRoleName;
 use App\Enums\Nodes\NodeRoleStatus;
-use App\Models\Node;
+use App\Enums\Nodes\NodeStatus;
 use App\Models\NodeRoleAssignment;
 use App\Services\Nodes\NodeRegistryWriter;
 use App\Services\Security\SshHostKeyPinner;
@@ -52,7 +52,7 @@ class BakeIngressNodeCommand extends Command
             gatewayEndpoint: $gatewayEndpoint,
             user: $user,
             orbitPath: "/home/{$user}/orbit",
-            status: Node::STATUS_ACTIVE,
+            status: NodeStatus::Active,
             hostKey: $hostKey,
         );
 

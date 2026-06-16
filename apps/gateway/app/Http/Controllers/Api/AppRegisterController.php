@@ -6,6 +6,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Contracts\Loggable;
 use App\Enums\ActivityLogType;
+use App\Enums\Nodes\NodeStatus;
 use App\Http\Authorization\RequiresPermission;
 use App\Http\Authorization\ServingNode;
 use App\Models\App;
@@ -99,7 +100,7 @@ final class AppRegisterController implements Loggable
     {
         $nodes = Node::query()
             ->whereIn('id', $this->nodeRoleAssignments->activeAppHostNodeIds())
-            ->where('status', 'active')
+            ->where('status', NodeStatus::Active->value)
             ->orderBy('name')
             ->limit(2)
             ->get();

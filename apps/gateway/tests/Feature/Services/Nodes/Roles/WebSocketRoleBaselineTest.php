@@ -7,6 +7,7 @@ use App\Data\Nodes\RoleSettings\WebSocketRoleSettings;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Enums\Nodes\NodeRoleName;
 use App\Enums\Nodes\NodeRoleStatus;
+use App\Enums\Nodes\NodeStatus;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Models\NodeTool;
@@ -174,7 +175,7 @@ function webSocketBaselineNode(array $overrides = []): Node
         'platform' => 'ubuntu',
         'host' => 'app-dev-1.example.com',
         'wireguard_address' => '10.6.0.44',
-        'status' => Node::STATUS_ACTIVE,
+        'status' => NodeStatus::Active,
     ], $overrides));
 }
 
@@ -185,7 +186,7 @@ function webSocketBaselineRedisNode(array $overrides = []): Node
         'platform' => 'ubuntu',
         'host' => 'redis-1.example.com',
         'wireguard_address' => '10.6.0.3',
-        'status' => Node::STATUS_ACTIVE,
+        'status' => NodeStatus::Active,
     ], $overrides));
 
     Process::factory()->forOwner($node)->create([

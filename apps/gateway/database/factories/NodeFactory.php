@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Database\Factories;
 
+use App\Enums\Nodes\NodeRoleStatus;
+use App\Enums\Nodes\NodeStatus;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use Illuminate\Database\Eloquent\Factories\Factory;
@@ -20,7 +22,7 @@ class NodeFactory extends Factory
             'host' => fake()->unique()->bothify('node-####.test'),
             'user' => 'orbit',
             'orbit_path' => '/home/orbit/orbit',
-            'status' => 'active',
+            'status' => NodeStatus::Active,
         ];
     }
 
@@ -40,7 +42,7 @@ class NodeFactory extends Factory
             NodeRoleAssignment::factory()->create([
                 'node_id' => $node->id,
                 'role' => $role,
-                'status' => 'active',
+                'status' => NodeRoleStatus::Active,
                 'settings' => $settings,
             ]);
         });

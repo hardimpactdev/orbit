@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Database\Factories;
 
+use App\Enums\Nodes\NodeRoleStatus;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use Illuminate\Database\Eloquent\Factories\Factory;
@@ -20,7 +21,7 @@ class NodeRoleAssignmentFactory extends Factory
         return [
             'node_id' => Node::factory(),
             'role' => 'database',
-            'status' => 'active',
+            'status' => NodeRoleStatus::Active,
             'settings' => [],
             'last_error' => null,
             'converged_at' => now(),

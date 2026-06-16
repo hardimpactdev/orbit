@@ -13,6 +13,7 @@ use App\Enums\AdoptAction;
 use App\Enums\DriftKind;
 use App\Enums\Nodes\NodeRoleName;
 use App\Enums\Nodes\NodeRoleStatus;
+use App\Enums\Nodes\NodeStatus;
 use App\Models\Node;
 use App\Models\NodeAccess;
 use App\Models\NodeRoleAssignment;
@@ -131,8 +132,10 @@ final readonly class NodesProbe
 
     private function nodeIsMissingRequiredRecordFields(Node $node): bool
     {
-        return ! is_string($node->status)
-            || $node->status === ''
+        $rawStatus = $node->getRawOriginal('status');
+
+        return ! is_string($rawStatus)
+            || $rawStatus === ''
             || ! is_string($node->platform)
             || $node->platform === ''
             || ! is_string($node->wireguard_address)
@@ -180,7 +183,7 @@ final readonly class NodesProbe
                 continue;
             }
 
-            if (! in_array($assignment->status, $this->validRoleAssignmentStatuses(), true)) {
+            if (! in_array($assignment->status, NodeRoleStatus::cases(), true)) {
                 $invalidRoles[] = $assignment->role;
 
                 continue;
@@ -204,7 +207,7 @@ final readonly class NodesProbe
                 continue;
             }
 
-            if ($assignment->status === NodeRoleStatus::Error->value) {
+            if ($assignment->status === NodeRoleStatus::Error) {
                 $drift[] = new DriftEntry(
                     family: $this->key(),
                     key: 'node.role_convergence_failed',
@@ -218,7 +221,7 @@ final readonly class NodesProbe
                 continue;
             }
 
-            if ($assignment->status !== NodeRoleStatus::Active->value) {
+            if ($assignment->status !== NodeRoleStatus::Active) {
                 continue;
             }
 
@@ -244,7 +247,7 @@ final readonly class NodesProbe
         }
 
         foreach ($assignments as $assignment) {
-            if ($assignment->status !== NodeRoleStatus::Active->value) {
+            if ($assignment->status !== NodeRoleStatus::Active) {
                 continue;
             }
 
@@ -304,9 +307,9 @@ final readonly class NodesProbe
     private function assignmentStatusIsUnresolved(NodeRoleAssignment $assignment): bool
     {
         return in_array($assignment->status, [
-            NodeRoleStatus::Active->value,
-            NodeRoleStatus::Pending->value,
-            NodeRoleStatus::Error->value,
+            NodeRoleStatus::Active,
+            NodeRoleStatus::Pending,
+            NodeRoleStatus::Error,
         ], true);
     }
 
@@ -466,7 +469,7 @@ final readonly class NodesProbe
     private function developmentNodeFromAssignment(Node $node, string $tld): Node
     {
         $developmentNode = clone $node;
-        $developmentNode->status = 'active';
+        $developmentNode->status = NodeStatus::Active;
         $developmentNode->tld = $tld;
 
         return $developmentNode;
@@ -520,14 +523,14 @@ final readonly class NodesProbe
         $staleConsuming = NodeAccess::query()
             ->where('consumer_node_id', $node->id)
             ->whereNotIn('serving_node_id', function ($query): void {
-                $query->select('id')->from('nodes')->where('status', 'active');
+                $query->select('id')->from('nodes')->where('status', NodeStatus::Active->value);
             })
             ->exists();
 
         $staleServing = NodeAccess::query()
             ->where('serving_node_id', $node->id)
             ->whereNotIn('consumer_node_id', function ($query): void {
-                $query->select('id')->from('nodes')->where('status', 'active');
+                $query->select('id')->from('nodes')->where('status', NodeStatus::Active->value);
             })
             ->exists();
 
@@ -645,7 +648,7 @@ final readonly class NodesProbe
             ->where('node_id', $node->id)
             ->first();
 
-        if ($node->status !== 'active') {
+        if (! $node->isActive()) {
             if ($peer instanceof WireGuardPeer) {
                 return [
                     new DriftEntry(
@@ -763,7 +766,7 @@ final readonly class NodesProbe
     private function checkSshReachability(Node $node): array
     {
         if (
-            $node->status !== 'active'
+            ! $node->isActive()
             || ! app(NodeRoleAssignments::class)->nodeHasActiveAppHostRole($node)
             || $this->nodeIsMissingRequiredRecordFields($node)
         ) {
@@ -821,7 +824,7 @@ final readonly class NodesProbe
     private function checkAppRuntime(Node $node): array
     {
         if (
-            $node->status !== 'active'
+            ! $node->isActive()
             || ! app(NodeRoleAssignments::class)->nodeHasActiveAppHostRole($node)
             || $this->nodeIsMissingRequiredRecordFields($node)
         ) {
@@ -1055,14 +1058,14 @@ final readonly class NodesProbe
         NodeAccess::query()
             ->where('consumer_node_id', $node->id)
             ->whereNotIn('serving_node_id', function ($query): void {
-                $query->select('id')->from('nodes')->where('status', 'active');
+                $query->select('id')->from('nodes')->where('status', NodeStatus::Active->value);
             })
             ->delete();
 
         NodeAccess::query()
             ->where('serving_node_id', $node->id)
             ->whereNotIn('consumer_node_id', function ($query): void {
-                $query->select('id')->from('nodes')->where('status', 'active');
+                $query->select('id')->from('nodes')->where('status', NodeStatus::Active->value);
             })
             ->delete();
     }
@@ -1129,17 +1132,6 @@ final readonly class NodesProbe
             ->first();
     }
 
-    /**
-     * @return list<string>
-     */
-    private function validRoleAssignmentStatuses(): array
-    {
-        return array_map(
-            static fn (NodeRoleStatus $status): string => $status->value,
-            NodeRoleStatus::cases(),
-        );
-    }
-
     public function snapshotForAdopt(Node $node): ProbeSnapshot
     {
         $items = [];
@@ -1149,7 +1141,7 @@ final readonly class NodesProbe
             ->first();
 
         if (
-            $node->status === 'active'
+            $node->isActive()
             && app(NodeRoleAssignments::class)->nodeHasActiveAppHostRole($node)
             && is_string($node->wireguard_address)
             && $node->wireguard_address !== ''
@@ -1194,7 +1186,7 @@ final readonly class NodesProbe
         }
 
         if (
-            $node->status !== 'active'
+            ! $node->isActive()
             && ! app(NodeRoleAssignments::class)->nodeIsGateway($node)
             && $peer instanceof WireGuardPeer
             && is_string($peer->public_key)
@@ -1208,7 +1200,7 @@ final readonly class NodesProbe
 
             if ($peerReality !== null && count($peerReality->allowedAddresses) === 1) {
                 $items['node.wireguard_peer_extra'] = [
-                    'recorded_status' => $node->status,
+                    'recorded_status' => $node->status->value,
                     'public_key' => $peer->public_key,
                     'observed' => $peerReality->allowedAddresses[0],
                     'allowed_ips' => $peerReality->allowedIps,
@@ -1217,7 +1209,7 @@ final readonly class NodesProbe
         }
 
         if (
-            $node->status === 'active'
+            $node->isActive()
             && ! app(NodeRoleAssignments::class)->nodeIsGateway($node)
             && is_string($node->wireguard_address)
             && $node->wireguard_address !== ''
@@ -1235,7 +1227,7 @@ final readonly class NodesProbe
             }
         }
 
-        if ($node->status === 'active' && app(NodeRoleAssignments::class)->nodeHasActiveAppHostRole($node)) {
+        if ($node->isActive() && app(NodeRoleAssignments::class)->nodeHasActiveAppHostRole($node)) {
             try {
                 $runtimeBackend = $this->runtimeBackendProbe()->check($node);
 

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Middleware;
 
+use App\Enums\Nodes\NodeStatus;
 use App\Models\Node;
 use Closure;
 use Illuminate\Http\JsonResponse;
@@ -24,7 +25,7 @@ final readonly class WireGuardIdentity
 
         $node = Node::query()
             ->where('wireguard_address', $this->peerAddress($request))
-            ->where('status', 'active')
+            ->where('status', NodeStatus::Active->value)
             ->first();
 
         if (! $node instanceof Node) {

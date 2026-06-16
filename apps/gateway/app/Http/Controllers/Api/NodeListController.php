@@ -126,7 +126,7 @@ final readonly class NodeListController implements Loggable
                 'wireguard' => $node->wireguard_address,
             ],
             'platform' => $node->platform ?? 'unknown',
-            'status' => $node->status,
+            'status' => $node->status->value,
             'roles' => $node->roleAssignments
                 ->map(fn (NodeRoleAssignment $assignment): array => NodeRoleAssignmentPayload::fromModel($assignment))
                 ->all(),

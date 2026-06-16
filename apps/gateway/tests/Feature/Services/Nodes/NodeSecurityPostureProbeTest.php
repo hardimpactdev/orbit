@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Contracts\RemoteShell;
 use App\Data\Doctor\DriftEntry;
 use App\Data\RemoteShell\RemoteShellResult;
+use App\Enums\Nodes\NodeStatus;
 use App\Models\FirewallRule;
 use App\Models\Node;
 use App\Services\Nodes\NodeSecurityPostureProbe;
@@ -37,7 +38,7 @@ final class RecordingNodeSecurityShell implements RemoteShell
 it('reports missing host key material and missing runtime users under node security keys', function (): void {
     $node = Node::factory()->create([
         'platform' => 'ubuntu_24-04',
-        'status' => Node::STATUS_ACTIVE,
+        'status' => NodeStatus::Active,
         'user' => '',
         'host_key_type' => null,
         'host_key_public' => null,
@@ -55,7 +56,7 @@ it('reports missing host key material and missing runtime users under node secur
 it('accepts a custom steady-state SSH runtime user from the node record', function (): void {
     $node = Node::factory()->create([
         'platform' => 'ubuntu_24-04',
-        'status' => Node::STATUS_ACTIVE,
+        'status' => NodeStatus::Active,
         'wireguard_address' => '10.6.0.7',
         'user' => 'nckrtl',
         'host_key_type' => 'ssh-ed25519',
@@ -104,7 +105,7 @@ it('accepts a custom steady-state SSH runtime user from the node record', functi
 it('reports remote node security drift from the posture script', function (): void {
     $node = Node::factory()->create([
         'platform' => 'ubuntu_24-04',
-        'status' => Node::STATUS_ACTIVE,
+        'status' => NodeStatus::Active,
         'wireguard_address' => '10.6.0.5',
         'user' => 'orbit',
         'host_key_type' => 'ssh-ed25519',
@@ -156,7 +157,7 @@ it('can adopt the first host key pin for legacy nodes', function (): void {
     $node = Node::factory()->create([
         'host' => '203.0.113.44',
         'platform' => 'ubuntu_24-04',
-        'status' => Node::STATUS_ACTIVE,
+        'status' => NodeStatus::Active,
         'host_key_type' => null,
         'host_key_public' => null,
         'host_key_fingerprint' => null,

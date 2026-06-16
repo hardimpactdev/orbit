@@ -6,6 +6,7 @@ namespace App\Services\Nodes\Roles;
 
 use App\Enums\Nodes\NodeRoleName;
 use App\Enums\Nodes\NodeRoleStatus;
+use App\Enums\Nodes\NodeStatus;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Services\Nodes\Roles\RoleBaselines\ManagesNodeToolBaseline;
@@ -59,7 +60,7 @@ class NodeRoleAssignments
         if ($node->relationLoaded('roleAssignments')) {
             return $node->roleAssignments
                 ->first(fn (NodeRoleAssignment $assignment): bool => $assignment->role === $role
-                    && $assignment->status === NodeRoleStatus::Active->value);
+                    && $assignment->status === NodeRoleStatus::Active);
         }
 
         return $node->roleAssignments()
@@ -99,7 +100,7 @@ class NodeRoleAssignments
     public function activeGatewayNodeQuery(): Builder
     {
         return Node::query()
-            ->where('status', 'active')
+            ->where('status', NodeStatus::Active->value)
             ->whereIn('id', $this->activeNodeIdsForRole(NodeRoleName::Gateway->value));
     }
 
@@ -109,7 +110,7 @@ class NodeRoleAssignments
     public function activeVpnNodeQuery(): Builder
     {
         return Node::query()
-            ->where('status', 'active')
+            ->where('status', NodeStatus::Active->value)
             ->whereIn('id', $this->activeNodeIdsForRole(NodeRoleName::Vpn->value));
     }
 
@@ -119,7 +120,7 @@ class NodeRoleAssignments
     public function activeRouterNodeQuery(): Builder
     {
         return Node::query()
-            ->where('status', 'active')
+            ->where('status', NodeStatus::Active->value)
             ->whereIn('id', $this->activeNodeIdsForRole(NodeRoleName::Router->value));
     }
 
@@ -129,25 +130,25 @@ class NodeRoleAssignments
     public function activeIngressNodeQuery(): Builder
     {
         return Node::query()
-            ->where('status', 'active')
+            ->where('status', NodeStatus::Active->value)
             ->whereIn('id', $this->activeIngressNodeIds());
     }
 
     public function nodeIsGateway(Node $node): bool
     {
-        return $node->status === 'active'
+        return $node->status === NodeStatus::Active
             && $this->nodeHasActiveGatewayRole($node);
     }
 
     public function nodeCanServeIngress(Node $node): bool
     {
-        return $node->status === 'active'
+        return $node->status === NodeStatus::Active
             && $this->nodeHasActiveIngressRole($node);
     }
 
     public function nodeCanServeRouter(Node $node): bool
     {
-        return $node->status === 'active'
+        return $node->status === NodeStatus::Active
             && $this->nodeHasActiveRouterRole($node);
     }
 
@@ -254,7 +255,7 @@ class NodeRoleAssignments
 
         return $node->roleAssignments
             ->contains(fn (NodeRoleAssignment $assignment): bool => in_array($assignment->role, $roles, true)
-                && $assignment->status === NodeRoleStatus::Active->value);
+                && $assignment->status === NodeRoleStatus::Active);
     }
 
     /**

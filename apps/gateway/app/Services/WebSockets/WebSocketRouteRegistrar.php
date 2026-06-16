@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services\WebSockets;
 
 use App\Enums\Nodes\NodeRoleName;
+use App\Enums\Nodes\NodeStatus;
 use App\Models\App;
 use App\Models\AppWebSocketBinding;
 use App\Models\Node;
@@ -300,7 +301,7 @@ class WebSocketRouteRegistrar
     {
         /** @var list<Node> $nodes */
         $nodes = Node::query()
-            ->where('status', Node::STATUS_ACTIVE)
+            ->where('status', NodeStatus::Active->value)
             ->whereIn('id', $this->nodeRoleAssignments->activeNodeIdsForRole(NodeRoleName::WebSocket->value))
             ->orderBy('name')
             ->get()

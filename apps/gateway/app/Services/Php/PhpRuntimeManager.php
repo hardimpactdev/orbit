@@ -6,6 +6,7 @@ namespace App\Services\Php;
 
 use App\Data\Php\PhpRuntimeFailure;
 use App\Data\Php\PhpRuntimeOperation;
+use App\Enums\Nodes\NodeStatus;
 use App\Models\App;
 use App\Models\Node;
 use App\Models\NodeTool;
@@ -550,7 +551,7 @@ final readonly class PhpRuntimeManager
 
         return Node::query()
             ->where('name', $selector)
-            ->where('status', 'active')
+            ->where('status', NodeStatus::Active->value)
             ->first();
     }
 
@@ -558,7 +559,7 @@ final readonly class PhpRuntimeManager
     {
         $nodes = Node::query()
             ->whereIn('id', $this->nodeRoleAssignments->activeAppHostNodeIds())
-            ->where('status', 'active')
+            ->where('status', NodeStatus::Active->value)
             ->limit(2)
             ->get();
 

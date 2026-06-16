@@ -122,7 +122,7 @@ final readonly class NodeSecurityPostureProbe
 
     private function appliesTo(Node $node): bool
     {
-        return $node->status === Node::STATUS_ACTIVE
+        return $node->isActive()
             && str_starts_with((string) $node->platform, 'ubuntu');
     }
 

@@ -6,6 +6,7 @@ namespace App\Services\Nodes\Roles;
 
 use App\Enums\Nodes\NodeRoleName;
 use App\Enums\Nodes\NodeRoleStatus;
+use App\Enums\Nodes\NodeStatus;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Services\WebSockets\WebSocketRedisResolver;
@@ -296,7 +297,7 @@ class NodeRoleAssignmentService
             return;
         }
 
-        throw new InvalidArgumentException("Role '{$definition->name}' conflicts with {$conflict->status} role '{$conflict->role}'.");
+        throw new InvalidArgumentException("Role '{$definition->name}' conflicts with {$conflict->status->value} role '{$conflict->role}'.");
     }
 
     /**
@@ -345,7 +346,7 @@ class NodeRoleAssignmentService
 
     private function nodeCanServeIngress(Node $node): bool
     {
-        if ($node->status !== Node::STATUS_ACTIVE) {
+        if (! $node->isActive()) {
             return false;
         }
 
@@ -376,7 +377,7 @@ class NodeRoleAssignmentService
         }
 
         $nodeTldCollision = Node::query()
-            ->where('status', 'active')
+            ->where('status', NodeStatus::Active->value)
             ->where('tld', $tld)
             ->whereKeyNot($node->id)
             ->exists();

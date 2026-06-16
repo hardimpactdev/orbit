@@ -10,6 +10,7 @@ use App\Contracts\RemoteShell;
 use App\Contracts\StartsRemoteShellProcesses;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Enums\ActivityLogType;
+use App\Enums\Nodes\NodeStatus;
 use App\Http\Authorization\RequiresPermission;
 use App\Http\Authorization\ServingNode;
 use App\Models\Node;
@@ -135,7 +136,7 @@ final class UpdateAllController implements Loggable
     private function runUpdateAll(OrbitUpdater $updater, ?ProgressReporter $reporter = null): array
     {
         $nodes = Node::query()
-            ->where('status', 'active')
+            ->where('status', NodeStatus::Active->value)
             ->whereIn('id', app(NodeRoleAssignments::class)->activeAppHostNodeIds())
             ->orderBy('name')
             ->get();

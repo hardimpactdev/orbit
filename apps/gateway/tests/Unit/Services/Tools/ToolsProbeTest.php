@@ -6,6 +6,7 @@ use App\Contracts\RemoteShell;
 use App\Data\Doctor\ProbeSnapshot;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Enums\DriftKind;
+use App\Enums\Nodes\NodeStatus;
 use App\Models\Node;
 use App\Models\NodeTool;
 use App\Models\ProxyRoute;
@@ -122,7 +123,7 @@ describe('ToolsProbe', function (): void {
     });
 
     it('allows provisioning app nodes during managed setup', function (): void {
-        $node = createToolsProbeAppHostNode(['status' => Node::STATUS_PROVISIONING]);
+        $node = createToolsProbeAppHostNode(['status' => NodeStatus::Provisioning]);
         $tool = NodeTool::factory()->create(['node_id' => $node->id, 'name' => 'composer']);
 
         $drift = (new ToolsProbe)->diff($tool, new ProbeSnapshot([]), allowProvisioning: true);

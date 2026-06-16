@@ -11,6 +11,7 @@ use App\Enums\AdoptAction;
 use App\Enums\Nodes\NodeConvergenceContext;
 use App\Enums\Nodes\NodeRoleName;
 use App\Enums\Nodes\NodeRoleStatus;
+use App\Enums\Nodes\NodeStatus;
 use App\Models\LocalGatewaySettings;
 use App\Models\Node;
 use App\Models\NodeAccess;
@@ -223,7 +224,7 @@ final class GatewayNodeCreator
     ): int {
         $existing = Node::query()->where('name', $name)->first();
 
-        if ($existing instanceof Node && $existing->status === 'active') {
+        if ($existing instanceof Node && $existing->isActive()) {
             return $this->failCommand(
                 code: 'node.incompatible',
                 message: "Node '{$name}' already exists.",
@@ -231,7 +232,7 @@ final class GatewayNodeCreator
             );
         }
 
-        if ($inputs['tld'] !== null && Node::query()->where('tld', $inputs['tld'])->where('status', 'active')->exists()) {
+        if ($inputs['tld'] !== null && Node::query()->where('tld', $inputs['tld'])->where('status', NodeStatus::Active->value)->exists()) {
             return $this->failCommand(
                 code: 'node.incompatible',
                 message: "Development TLD '{$inputs['tld']}' is already assigned to another node.",
@@ -297,7 +298,7 @@ final class GatewayNodeCreator
                 gatewayEndpoint: $gatewayEndpoint,
                 user: $user,
                 orbitPath: $orbitPath,
-                status: Node::STATUS_PROVISIONING,
+                status: NodeStatus::Provisioning,
                 hostKey: $pinnedHostKey,
             );
 
@@ -394,7 +395,7 @@ final class GatewayNodeCreator
 
             $assignment = $roleAssignmentService->addDuringCreation($node, $role, $settings);
 
-            if ($assignment->status !== NodeRoleStatus::Error->value) {
+            if ($assignment->status !== NodeRoleStatus::Error) {
                 continue;
             }
 
@@ -410,7 +411,7 @@ final class GatewayNodeCreator
                 meta: [
                     'node' => $name,
                     'role' => $failedAssignment->role,
-                    'status' => $failedAssignment->status,
+                    'status' => $failedAssignment->status->value,
                     'settings' => $failedAssignment->settings ?? [],
                     'last_error' => $failedAssignment->last_error,
                 ],
@@ -501,9 +502,9 @@ final class GatewayNodeCreator
                 ],
                 'status' => 'active',
             ],
-            'roles' => $node->fresh()->roleAssignments->map(fn ($assignment): array => [
+            'roles' => $node->fresh()->roleAssignments->map(fn (NodeRoleAssignment $assignment): array => [
                 'role' => $assignment->role,
-                'status' => $assignment->status,
+                'status' => $assignment->status->value,
                 'settings' => $assignment->settings ?? [],
                 'last_error' => $assignment->last_error,
             ])->values()->all(),
@@ -1108,14 +1109,14 @@ SH;
 
         if (
             $existing instanceof Node
-            && $existing->status === 'active'
+            && $existing->isActive()
             && app(NodeRoleAssignments::class)->nodeHasActiveAppHostRole($existing)
             && ! WireGuardPeer::query()->where('node_id', $existing->id)->exists()
         ) {
             return $this->adoptExistingAppNode($nodesProbe, $nodeConverger, $existing, $inputs, $roleAssignmentService, $initialHostedRoles, $appProductionIngressNodeId);
         }
 
-        if ($existing instanceof Node && $existing->status === 'active') {
+        if ($existing instanceof Node && $existing->isActive()) {
             return $this->failCommand(
                 code: 'node.incompatible',
                 message: "Node '{$name}' already exists.",
@@ -1127,7 +1128,7 @@ SH;
             return $this->adoptExistingAppNode($nodesProbe, $nodeConverger, $existing, $inputs, $roleAssignmentService, $initialHostedRoles, $appProductionIngressNodeId);
         }
 
-        if ($inputs['tld'] !== null && Node::query()->where('tld', $inputs['tld'])->where('status', 'active')->exists()) {
+        if ($inputs['tld'] !== null && Node::query()->where('tld', $inputs['tld'])->where('status', NodeStatus::Active->value)->exists()) {
             return $this->failCommand(
                 code: 'node.incompatible',
                 message: "Development TLD '{$inputs['tld']}' is already assigned to another node.",
@@ -1183,7 +1184,7 @@ SH;
             gatewayEndpoint: $gatewayEndpoint,
             sshUser: $inputs['sshUser'],
             user: $runtimeUser,
-            status: Node::STATUS_PROVISIONING,
+            status: NodeStatus::Provisioning,
             hostKey: $pinnedHostKey,
         );
 
@@ -1432,7 +1433,7 @@ SH;
             gatewayEndpoint: $inputs['gatewayEndpoint'] ?? $this->gatewayEndpoint(),
             sshUser: $inputs['sshUser'],
             user: self::DEFAULT_RUNTIME_USER,
-            status: Node::STATUS_ACTIVE,
+            status: NodeStatus::Active,
         );
 
         $node->update([
@@ -1499,7 +1500,7 @@ SH;
             );
         }
 
-        if ($node->status === 'active') {
+        if ($node->isActive()) {
             $roleAssignmentFailure = $this->ensureInitialHostedRoles($node, $roleAssignmentService, $initialHostedRoles, $inputs['tld'], $appProductionIngressNodeId);
 
             if (is_int($roleAssignmentFailure)) {
@@ -1528,7 +1529,7 @@ SH;
 
         $node->refresh();
 
-        if ($hasConflict || ! $activated || $node->status !== 'active') {
+        if ($hasConflict || ! $activated || ! $node->isActive()) {
             return $this->failCommand(
                 code: 'node.provisioning_incomplete',
                 message: "App node '{$node->name}' could not be safely adopted.",
@@ -2170,7 +2171,7 @@ SCRIPT,
                 ? $roleAssignmentService->update($node, $role, $settings)
                 : $roleAssignmentService->addDuringCreation($node, $role, $settings);
 
-            if ($assignment->status !== NodeRoleStatus::Error->value) {
+            if ($assignment->status !== NodeRoleStatus::Error) {
                 continue;
             }
 
@@ -2180,7 +2181,7 @@ SCRIPT,
                 meta: [
                     'node' => $node->name,
                     'role' => $assignment->role,
-                    'status' => $assignment->status,
+                    'status' => $assignment->status->value,
                     'settings' => $assignment->settings ?? [],
                     'last_error' => $assignment->last_error,
                 ],
@@ -2336,7 +2337,7 @@ SCRIPT,
     private function activeIngressNodes(): array
     {
         return Node::query()
-            ->where('status', Node::STATUS_ACTIVE)
+            ->where('status', NodeStatus::Active->value)
             ->whereHas('roleAssignments', fn (Builder $query) => $query
                 ->where('role', NodeRoleName::Ingress->value)
                 ->where('status', NodeRoleStatus::Active->value))
@@ -2349,7 +2350,7 @@ SCRIPT,
     {
         return Node::query()
             ->where('name', $name)
-            ->where('status', Node::STATUS_ACTIVE)
+            ->where('status', NodeStatus::Active->value)
             ->whereHas('roleAssignments', fn (Builder $query) => $query
                 ->where('role', NodeRoleName::Ingress->value)
                 ->where('status', NodeRoleStatus::Active->value))
@@ -2484,7 +2485,7 @@ SCRIPT,
 
             $targetNode = Node::query()
                 ->where('name', $option)
-                ->where('status', 'active')
+                ->where('status', NodeStatus::Active->value)
                 ->first();
 
             if (! $targetNode instanceof Node) {
@@ -2500,7 +2501,7 @@ SCRIPT,
 
         if ($hasAll) {
             $allNodes = Node::query()
-                ->where('status', 'active')
+                ->where('status', NodeStatus::Active->value)
                 ->get();
 
             foreach ($allNodes as $allNode) {

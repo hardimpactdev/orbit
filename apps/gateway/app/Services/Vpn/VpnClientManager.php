@@ -8,6 +8,7 @@ use App\Data\Vpn\VpnBackendClient;
 use App\Data\Vpn\VpnClient;
 use App\Data\Vpn\VpnClientMutationResult;
 use App\Data\Vpn\VpnPasswordRotationResult;
+use App\Enums\Nodes\NodeStatus;
 use App\Models\Node;
 use RuntimeException;
 
@@ -172,7 +173,7 @@ final readonly class VpnClientManager
     private function activeNodePeerExists(VpnBackendClient $client): bool
     {
         return Node::query()
-            ->where('status', 'active')
+            ->where('status', NodeStatus::Active->value)
             ->where(function ($query) use ($client): void {
                 $query->where('name', $client->name);
 
@@ -186,7 +187,7 @@ final readonly class VpnClientManager
     private function activeNodeNameExists(string $name): bool
     {
         return Node::query()
-            ->where('status', 'active')
+            ->where('status', NodeStatus::Active->value)
             ->where('name', $name)
             ->exists();
     }

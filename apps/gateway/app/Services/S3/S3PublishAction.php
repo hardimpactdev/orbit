@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\S3;
 
+use App\Enums\Nodes\NodeStatus;
 use App\Models\Node;
 use App\Models\NodeTool;
 use App\Models\ProxyRoute;
@@ -426,7 +427,7 @@ final readonly class S3PublishAction
 
         return Node::query()
             ->where('name', $nodeName)
-            ->where('status', 'active')
+            ->where('status', NodeStatus::Active->value)
             ->whereIn('id', $s3NodeIds)
             ->first();
     }

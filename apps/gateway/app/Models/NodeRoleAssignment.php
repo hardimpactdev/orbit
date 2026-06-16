@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\Enums\Nodes\NodeRoleStatus;
 use Database\Factories\NodeRoleAssignmentFactory;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -16,7 +17,7 @@ use Illuminate\Support\Carbon;
  * @property int $id
  * @property int $node_id
  * @property string $role
- * @property string $status
+ * @property NodeRoleStatus $status
  * @property array<string, mixed>|null $settings
  * @property string|null $last_error
  * @property Carbon|null $converged_at
@@ -47,6 +48,7 @@ class NodeRoleAssignment extends Model
         return [
             'settings' => 'array',
             'converged_at' => 'datetime',
+            'status' => NodeRoleStatus::class,
         ];
     }
 

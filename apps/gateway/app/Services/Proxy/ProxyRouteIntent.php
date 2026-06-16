@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\Proxy;
 
+use App\Enums\Nodes\NodeStatus;
 use App\Http\Gateway\GatewayApiException;
 use App\Models\Node;
 use App\Models\ProxyRoute;
@@ -121,7 +122,7 @@ class ProxyRouteIntent
     {
         $node = Node::query()
             ->where('name', $nodeName)
-            ->where('status', 'active')
+            ->where('status', NodeStatus::Active->value)
             ->first();
 
         if (! $node instanceof Node || ! $this->canServeProxyRoutes($node)) {

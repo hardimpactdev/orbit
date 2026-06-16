@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\Tools;
 
+use App\Enums\Nodes\NodeStatus;
 use App\Models\App;
 use App\Models\Node;
 use App\Models\NodeTool;
@@ -151,7 +152,7 @@ final readonly class ToolRegistry
         return Node::query()
             ->where('name', $node)
             ->whereIn('id', $this->nodeRoleAssignments->activeToolHostNodeIds())
-            ->where('status', 'active')
+            ->where('status', NodeStatus::Active->value)
             ->first();
     }
 
@@ -179,7 +180,7 @@ final readonly class ToolRegistry
                     ->whereHas('node', function (Builder $query) use ($nodeTld): void {
                         $query
                             ->whereIn('id', $this->nodeRoleAssignments->activeAppHostNodeIds())
-                            ->where('status', 'active')
+                            ->where('status', NodeStatus::Active->value)
                             ->where('tld', $nodeTld);
                     })
                     ->first();
@@ -190,7 +191,7 @@ final readonly class ToolRegistry
             return null;
         }
 
-        if ($model->node->status !== 'active' || ! $this->nodeRoleAssignments->nodeHasActiveAppHostRole($model->node)) {
+        if (! $model->node->isActive() || ! $this->nodeRoleAssignments->nodeHasActiveAppHostRole($model->node)) {
             return null;
         }
 
@@ -201,6 +202,6 @@ final readonly class ToolRegistry
     {
         return $query
             ->whereIn('id', $this->nodeRoleAssignments->activeToolHostNodeIds())
-            ->where('status', 'active');
+            ->where('status', NodeStatus::Active->value);
     }
 }

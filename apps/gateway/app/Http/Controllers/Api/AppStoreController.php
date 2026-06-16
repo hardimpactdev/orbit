@@ -295,11 +295,11 @@ final class AppStoreController implements Loggable
             return $this->validationFailed('node', "Node '{$nodeName}' was not found.");
         }
 
-        if ($node->status !== 'active' || ! $this->nodeRoleAssignments->nodeHasActiveRole($node, $requiredRole)) {
+        if (! $node->isActive() || ! $this->nodeRoleAssignments->nodeHasActiveRole($node, $requiredRole)) {
             return $this->error('app.ineligible_node', "Node '{$node->name}' is not an active app node.", [
                 'node' => $node->name,
                 'required_role' => $requiredRole,
-                'status' => $node->status,
+                'status' => $node->status->value,
             ], 400);
         }
 

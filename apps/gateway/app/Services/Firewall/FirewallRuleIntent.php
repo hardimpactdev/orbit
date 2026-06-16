@@ -6,6 +6,7 @@ namespace App\Services\Firewall;
 
 use App\Data\Doctor\DriftEntry;
 use App\Enums\DriftKind;
+use App\Enums\Nodes\NodeStatus;
 use App\Http\Gateway\GatewayApiException;
 use App\Models\FirewallRule;
 use App\Models\Node;
@@ -176,7 +177,7 @@ class FirewallRuleIntent
     {
         $node = Node::query()
             ->where('name', $nodeName)
-            ->where('status', 'active')
+            ->where('status', NodeStatus::Active->value)
             ->where('platform', 'ubuntu')
             ->whereIn('id', app(NodeRoleAssignments::class)->activeNodeIdsForRoles($this->eligibleTargetRoles()))
             ->first();

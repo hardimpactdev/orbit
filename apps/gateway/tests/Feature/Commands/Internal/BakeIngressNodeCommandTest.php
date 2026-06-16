@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Data\Security\PinnedHostKey;
 use App\Enums\Nodes\NodeRoleName;
 use App\Enums\Nodes\NodeRoleStatus;
+use App\Enums\Nodes\NodeStatus;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Services\Security\SshHostKeyPinner;
@@ -57,7 +58,7 @@ describe('orbit:internal:bake-ingress-node', function (): void {
             ->and($node->gateway_endpoint)->toBe('10.6.0.2')
             ->and($node->user)->toBe('orbit')
             ->and($node->orbit_path)->toBe('/home/orbit/orbit')
-            ->and($node->status)->toBe('active')
+            ->and($node->status)->toBe(NodeStatus::Active)
             ->and($node->host_key_type)->toBe('ssh-ed25519')
             ->and($node->host_key_public)->toBe('AAAAC3NzaC1lZDI1NTE5AAAAIBakeIngressNodeHostKey')
             ->and($node->host_key_fingerprint)->toBe('SHA256:bake-ingress-node-host-key')
@@ -67,7 +68,7 @@ describe('orbit:internal:bake-ingress-node', function (): void {
                 ['host' => '10.6.0.7', 'expected' => null],
             ])
             ->and($assignment)->not->toBeNull()
-            ->and($assignment?->status)->toBe(NodeRoleStatus::Active->value)
+            ->and($assignment?->status)->toBe(NodeRoleStatus::Active)
             ->and($assignment?->settings)->toBe([]);
     });
 });

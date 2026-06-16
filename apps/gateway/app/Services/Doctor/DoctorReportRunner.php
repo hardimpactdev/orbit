@@ -388,7 +388,7 @@ final readonly class DoctorReportRunner
                 $issues[] = $this->nodeScopedIssuePayload($entry, $node);
             }
 
-            if ($node->status === 'active' && $this->nodeRoleAssignments->nodeHostsOrbitCaddy($node)) {
+            if ($node->isActive() && $this->nodeRoleAssignments->nodeHostsOrbitCaddy($node)) {
                 $caddySnapshot = $this->proxyRouteProbe->introspectCaddyContainer($node);
 
                 foreach ($this->proxyRouteProbe->diffCaddyContainer($node, $caddySnapshot) as $entry) {
@@ -403,7 +403,7 @@ final readonly class DoctorReportRunner
                 }
             }
 
-            if ($node->status === 'active' && $this->canServeGatewayOrAppHost($node)) {
+            if ($node->isActive() && $this->canServeGatewayOrAppHost($node)) {
                 $snapshot = $this->proxyRouteProbe->introspectNode($node);
                 $expectedDomains = $this->proxyRouteProbe->expectedDomainsForNode($node);
 
@@ -732,7 +732,7 @@ final readonly class DoctorReportRunner
             }
         }
 
-        if (in_array('proxy', $families, true) && $node->status === 'active' && $this->canServeGatewayOrAppHost($node)) {
+        if (in_array('proxy', $families, true) && $node->isActive() && $this->canServeGatewayOrAppHost($node)) {
             $snapshot = $this->proxyRouteProbe->snapshotForAdopt($node);
 
             foreach ($this->proxyRouteAdopter->adopt($node, $snapshot) as $result) {
@@ -749,7 +749,7 @@ final readonly class DoctorReportRunner
             }
         }
 
-        if (in_array('firewall_rule', $families, true) && $node->status === 'active' && $this->isUbuntuPlatform($node) && $this->canServeGatewayOrAppHost($node)) {
+        if (in_array('firewall_rule', $families, true) && $node->isActive() && $this->isUbuntuPlatform($node) && $this->canServeGatewayOrAppHost($node)) {
             $snapshot = $this->firewallRuleProbe->introspectNode($node);
 
             foreach ($this->firewallRuleProbe->adopt($node, $snapshot) as $result) {

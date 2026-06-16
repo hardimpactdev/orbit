@@ -187,7 +187,7 @@ final readonly class SchedulesProbe
             ];
         }
 
-        if ($node->status !== 'active' || ! $this->canRunSchedules($node)) {
+        if (! $node->isActive() || ! $this->canRunSchedules($node)) {
             return [
                 new DriftEntry(
                     family: $this->key(),

@@ -507,7 +507,7 @@ final class DatabaseConnectionController extends Controller implements Loggable
         /** @var mixed $caller */
         $caller = $request->user();
 
-        if (! $caller instanceof Node || $caller->status !== 'active') {
+        if (! $caller instanceof Node || ! $caller->isActive()) {
             return response()->json([
                 'error' => [
                     'code' => 'authorization_failed',

@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Enums\Nodes\NodeRoleStatus;
 use App\Models\Node;
 use App\Models\NodeAccess;
 use App\Models\NodeRoleAssignment;
@@ -413,7 +414,7 @@ describe('NodeRoleRemoveController', function (): void {
             ->assertJsonPath('error.code', 'node_role.remove_failed')
             ->assertJsonPath('error.meta.last_error', 'Cleanup failed.');
 
-        expect($assignment->fresh()->status)->toBe('error')
+        expect($assignment->fresh()->status)->toBe(NodeRoleStatus::Error)
             ->and($assignment->fresh()->last_error)->toBe('Cleanup failed.');
     });
 });

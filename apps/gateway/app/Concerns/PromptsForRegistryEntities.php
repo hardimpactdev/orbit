@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Concerns;
 
 use App\Enums\Nodes\NodeRoleName;
+use App\Enums\Nodes\NodeStatus;
 use App\Exceptions\PromptAborted;
 use App\Http\Gateway\GatewayApiException;
 use App\Models\App;
@@ -168,7 +169,7 @@ trait PromptsForRegistryEntities
     {
         $query = Node::query()
             ->with('roleAssignments')
-            ->when($activeOnly, fn (Builder $query): Builder => $query->where('status', 'active'))
+            ->when($activeOnly, fn (Builder $query): Builder => $query->where('status', NodeStatus::Active->value))
             ->orderBy('name');
 
         $this->applyNodePromptRoleFilter($query, $role, $environment);
@@ -479,7 +480,7 @@ trait PromptsForRegistryEntities
                 ->all(),
             'host' => $node->host,
             'wireguard_address' => $node->wireguard_address,
-            'status' => $node->status,
+            'status' => $node->status->value,
         ];
     }
 

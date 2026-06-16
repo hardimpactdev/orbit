@@ -6,6 +6,7 @@ namespace App\Services\WebSockets;
 
 use App\Contracts\RemoteShell;
 use App\Enums\Nodes\NodeRoleName;
+use App\Enums\Nodes\NodeStatus;
 use App\Models\AppWebSocketBinding;
 use App\Models\Node;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
@@ -52,7 +53,7 @@ class WebSocketRuntimeAppConfigSyncer
     {
         /** @var list<Node> $nodes */
         $nodes = Node::query()
-            ->where('status', Node::STATUS_ACTIVE)
+            ->where('status', NodeStatus::Active->value)
             ->whereIn('id', $this->nodeRoleAssignments->activeNodeIdsForRole(NodeRoleName::WebSocket->value))
             ->orderBy('name')
             ->get()

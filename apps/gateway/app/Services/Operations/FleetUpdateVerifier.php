@@ -6,6 +6,7 @@ namespace App\Services\Operations;
 
 use App\Contracts\RemoteShell;
 use App\Enums\Nodes\NodeRoleName;
+use App\Enums\Nodes\NodeStatus;
 use App\Models\Node;
 use App\Models\OperationRun;
 use App\Models\OperationUpdatePlan;
@@ -147,7 +148,7 @@ class FleetUpdateVerifier
         $gatewayIds = $this->roles->activeNodeIdsForRole(NodeRoleName::Gateway->value);
 
         return Node::query()
-            ->where('status', 'active')
+            ->where('status', NodeStatus::Active->value)
             ->whereIn('id', $this->roles->activeAppHostNodeIds())
             ->when($gatewayIds !== [], fn ($query) => $query->whereNotIn('id', $gatewayIds))
             ->with('roleAssignments')

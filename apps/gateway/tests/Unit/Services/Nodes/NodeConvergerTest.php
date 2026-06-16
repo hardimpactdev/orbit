@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Contracts\RemoteShell;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Enums\Nodes\NodeConvergenceContext;
+use App\Enums\Nodes\NodeStatus;
 use App\Models\Node;
 use App\Models\NodeTool;
 use App\Services\Nodes\DevelopmentDnsMappingEnactor;
@@ -29,7 +30,7 @@ describe('NodeConverger', function (): void {
     it('applies app-dev setup role baseline and tools before activation', function (): void {
         $node = createTestAppHostNode([
             'name' => 'app-dev-1',
-            'status' => Node::STATUS_PROVISIONING,
+            'status' => NodeStatus::Provisioning,
             'wireguard_address' => '10.6.0.50',
         ]);
         $shell = new NodeConvergerSetupRemoteShell;
@@ -77,7 +78,7 @@ describe('NodeConverger', function (): void {
     it('keeps setup drift visible when repair fails', function (): void {
         $node = createTestAppHostNode([
             'name' => 'app-dev-1',
-            'status' => Node::STATUS_PROVISIONING,
+            'status' => NodeStatus::Provisioning,
             'wireguard_address' => '10.6.0.50',
         ]);
         NodeTool::factory()->create([

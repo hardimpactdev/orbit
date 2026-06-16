@@ -540,7 +540,7 @@ BASH;
             ];
         }
 
-        if ($route->node->status !== 'active' || ! $this->canServeProxyRoutes($route, $route->node)) {
+        if (! $route->node->isActive() || ! $this->canServeProxyRoutes($route, $route->node)) {
             return [
                 new DriftEntry(
                     family: $this->key(),
@@ -792,7 +792,7 @@ BASH;
             $nodeId = $artifact['node_id'] ?? null;
             $node = is_int($nodeId) ? Node::query()->find($nodeId) : null;
 
-            if ($node instanceof Node && $node->status === 'active' && app(NodeRoleAssignments::class)->nodeHasActiveRole($node, 'app-prod')) {
+            if ($node instanceof Node && $node->isActive() && app(NodeRoleAssignments::class)->nodeHasActiveRole($node, 'app-prod')) {
                 continue;
             }
 

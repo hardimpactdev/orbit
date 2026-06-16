@@ -5,6 +5,8 @@ declare(strict_types=1);
 use App\Contracts\RemoteShell;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Data\Security\PinnedHostKey;
+use App\Enums\Nodes\NodeRoleStatus;
+use App\Enums\Nodes\NodeStatus;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Models\WireGuardPeer;
@@ -350,7 +352,7 @@ describe('NodeStoreController', function (): void {
         expect(NodeRoleAssignment::query()
             ->where('node_id', $node->id)
             ->where('role', 'app-dev')
-            ->where('status', 'active')
+            ->where('status', NodeRoleStatus::Active->value)
             ->exists())->toBeTrue();
 
         expect(DB::table('node_tools')
@@ -367,7 +369,7 @@ describe('NodeStoreController', function (): void {
             ]);
 
         expect($shell->toolNodeStatuses)->toHaveCount(1)
-            ->and(array_values(array_unique($shell->toolNodeStatuses)))->toBe([Node::STATUS_PROVISIONING]);
+            ->and(array_values(array_unique($shell->toolNodeStatuses)))->toBe([NodeStatus::Provisioning->value]);
 
         $entry = Activity::query()
             ->where('event', 'node.created')
@@ -555,14 +557,14 @@ describe('NodeStoreController', function (): void {
             ->and($node->host)->toBe('116.203.220.206')
             ->and($node->gateway_endpoint)->toBe('10.3.0.2')
             ->and($node->user)->toBe('orbit')
-            ->and($node->status)->toBe('active')
+            ->and($node->status)->toBe(NodeStatus::Active->value)
             ->and($wireGuardConfigs)->toHaveCount(1)
             ->and($wireGuardConfigs[0])->toContain('Endpoint = 10.3.0.2:51820');
 
         expect(NodeRoleAssignment::query()
             ->where('node_id', $node->id)
             ->where('role', 'database')
-            ->where('status', 'active')
+            ->where('status', NodeRoleStatus::Active->value)
             ->exists())->toBeTrue();
 
         expect(DB::table('node_tools')
@@ -668,7 +670,7 @@ describe('NodeStoreController', function (): void {
         $node = DB::table('nodes')->where('name', 'app-adopt-1')->first();
 
         expect($node)->not->toBeNull()
-            ->and($node->status)->toBe('active')
+            ->and($node->status)->toBe(NodeStatus::Active->value)
             ->and($node->wireguard_address)->toBe('10.6.0.9');
 
         $entry = Activity::query()
@@ -747,7 +749,7 @@ describe('NodeStoreController', function (): void {
 
         expect($node)->not->toBeNull()
             ->and($node->host)->toBe('192.0.2.33')
-            ->and($node->status)->toBe('active')
+            ->and($node->status)->toBe(NodeStatus::Active->value)
             ->and($peer)->not->toBeNull()
             ->and($peer->public_key)->toBe('app-public-key')
             ->and($peer->private_key)->toBe('')
@@ -800,7 +802,7 @@ final class NodeStoreConvergenceRemoteShell implements RemoteShell
             return new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1);
         }
 
-        $this->toolNodeStatuses[] = $node->status;
+        $this->toolNodeStatuses[] = $node->status->value;
         $payload = json_decode((string) ($options['input'] ?? ''), associative: true, flags: JSON_THROW_ON_ERROR);
 
         if (is_array($payload['tools'] ?? null)) {

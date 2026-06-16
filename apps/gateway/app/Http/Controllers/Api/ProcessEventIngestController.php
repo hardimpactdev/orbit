@@ -30,7 +30,7 @@ final readonly class ProcessEventIngestController implements Loggable
         /** @var mixed $caller */
         $caller = $request->user();
 
-        if (! $caller instanceof Node || $caller->status !== 'active' || ! $this->nodeRoleAssignments->nodeHasActiveAppHostRole($caller)) {
+        if (! $caller instanceof Node || ! $caller->isActive() || ! $this->nodeRoleAssignments->nodeHasActiveAppHostRole($caller)) {
             return response()->json([
                 'error' => [
                     'code' => 'authorization_failed',

@@ -6,6 +6,7 @@ namespace App\Services\Authorization;
 
 use App\Enums\Nodes\NodeRoleName;
 use App\Enums\Nodes\NodeRoleStatus;
+use App\Enums\Nodes\NodeStatus;
 use App\Http\Authorization\ServingNode;
 use App\Models\App as OrbitApp;
 use App\Models\Node;
@@ -32,7 +33,7 @@ final class ServingNodeResolver
     private function resolveGateway(): ?Node
     {
         return Node::query()
-            ->where('status', 'active')
+            ->where('status', NodeStatus::Active->value)
             ->whereHas('roleAssignments', fn ($query) => $query
                 ->where('role', NodeRoleName::Gateway->value)
                 ->where('status', NodeRoleStatus::Active->value))

@@ -338,7 +338,7 @@ PHP;
 
         if (
             ! $workspace->app->node instanceof Node
-            || $workspace->app->node->status !== 'active'
+            || ! $workspace->app->node->isActive()
             || ! $this->nodeRoleAssignments()->nodeHasActiveAppHostRole($workspace->app->node)
         ) {
             return [

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\S3;
 
+use App\Enums\Nodes\NodeStatus;
 use App\Models\Node;
 use App\Models\NodeTool;
 use App\Models\ProxyRoute;
@@ -186,7 +187,7 @@ final readonly class S3CredentialsAction
         if ($nodeName !== null) {
             return Node::query()
                 ->where('name', $nodeName)
-                ->where('status', 'active')
+                ->where('status', NodeStatus::Active->value)
                 ->whereIn('id', $s3NodeIds)
                 ->first();
         }
@@ -194,7 +195,7 @@ final readonly class S3CredentialsAction
         // Auto-resolve when exactly one active s3 node is visible.
         if ($this->nodeRoleAssignments->nodeIsGateway($caller)) {
             $nodes = Node::query()
-                ->where('status', 'active')
+                ->where('status', NodeStatus::Active->value)
                 ->whereIn('id', $s3NodeIds)
                 ->limit(2)
                 ->get();
@@ -207,7 +208,7 @@ final readonly class S3CredentialsAction
         }
 
         $visibleNodes = Node::query()
-            ->where('status', 'active')
+            ->where('status', NodeStatus::Active->value)
             ->whereIn('id', $s3NodeIds)
             ->get();
 

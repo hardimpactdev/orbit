@@ -225,7 +225,7 @@ SH;
             ];
         }
 
-        if ($rule->node->status !== 'active' || ! $this->isUbuntuPlatform($rule->node) || ! $this->canOwnFirewallRules($rule->node)) {
+        if (! $rule->node->isActive() || ! $this->isUbuntuPlatform($rule->node) || ! $this->canOwnFirewallRules($rule->node)) {
             return [
                 new DriftEntry(
                     family: $this->key(),

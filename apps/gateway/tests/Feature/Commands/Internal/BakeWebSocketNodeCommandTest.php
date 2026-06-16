@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Data\Security\PinnedHostKey;
 use App\Enums\Nodes\NodeRoleName;
 use App\Enums\Nodes\NodeRoleStatus;
+use App\Enums\Nodes\NodeStatus;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Models\Process;
@@ -76,7 +77,7 @@ describe('orbit:internal:bake-websocket-node', function (): void {
             ->and($node->gateway_endpoint)->toBe('gateway')
             ->and($node->user)->toBe('orbit')
             ->and($node->orbit_path)->toBe('/home/orbit/orbit')
-            ->and($node->status)->toBe('active')
+            ->and($node->status)->toBe(NodeStatus::Active)
             ->and($node->host_key_type)->toBe('ssh-ed25519')
             ->and($node->host_key_public)->toBe('AAAAC3NzaC1lZDI1NTE5AAAAIBakeWebSocketNodeHostKey')
             ->and($node->host_key_fingerprint)->toBe('SHA256:bake-websocket-node-host-key')
@@ -86,7 +87,7 @@ describe('orbit:internal:bake-websocket-node', function (): void {
                 ['host' => '10.6.0.4', 'expected' => null],
             ])
             ->and($assignment)->not->toBeNull()
-            ->and($assignment?->status)->toBe(NodeRoleStatus::Active->value)
+            ->and($assignment?->status)->toBe(NodeRoleStatus::Active)
             ->and($assignment?->settings)->toBe(['redis_node_id' => $redis->id])
             ->and($assignment?->last_error)->toBeNull()
             ->and($assignment?->converged_at)->not->toBeNull();
@@ -95,7 +96,7 @@ describe('orbit:internal:bake-websocket-node', function (): void {
     it('requires an active database node with a Redis process', function (): void {
         Node::factory()->database()->create([
             'name' => 'app-dev-1',
-            'status' => Node::STATUS_ACTIVE,
+            'status' => NodeStatus::Active,
         ]);
 
         expect(fn () => $this->artisan('orbit:internal:bake-websocket-node', [
@@ -149,7 +150,7 @@ function createBakeWebSocketRedisNode(): Node
 {
     $node = Node::factory()->appDev(['tld' => 'test'])->create([
         'name' => 'app-dev-1',
-        'status' => Node::STATUS_ACTIVE,
+        'status' => NodeStatus::Active,
     ]);
 
     NodeRoleAssignment::factory()->for($node)->create([

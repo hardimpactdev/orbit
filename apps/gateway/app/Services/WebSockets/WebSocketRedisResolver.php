@@ -23,7 +23,7 @@ final readonly class WebSocketRedisResolver
             return null;
         }
 
-        if ($node->status !== Node::STATUS_ACTIVE) {
+        if (! $node->isActive()) {
             return null;
         }
 

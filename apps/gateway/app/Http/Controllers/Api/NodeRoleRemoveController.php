@@ -6,6 +6,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Contracts\Loggable;
 use App\Enums\ActivityLogType;
+use App\Enums\Nodes\NodeStatus;
 use App\Http\Authorization\RequiresPermission;
 use App\Http\Authorization\ServingNode;
 use App\Http\Requests\Api\RemoveNodeRoleApiRequest;
@@ -37,7 +38,7 @@ final class NodeRoleRemoveController implements Loggable
 
     public function __invoke(RemoveNodeRoleApiRequest $request, string $name, string $role): JsonResponse
     {
-        $node = Node::query()->where('name', $name)->where('status', 'active')->first();
+        $node = Node::query()->where('name', $name)->where('status', NodeStatus::Active->value)->first();
         if (! $node instanceof Node) {
             return $this->error('node.not_found', "Node '{$name}' not found.", ['name' => $name], 404);
         }

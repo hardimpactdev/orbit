@@ -48,7 +48,7 @@ describe('node role assignment service', function (): void {
         $assignment = app(NodeRoleAssignmentService::class)->add($node, 'database', []);
 
         expect($assignment->status)
-            ->toBe(NodeRoleStatus::Active->value)
+            ->toBe(NodeRoleStatus::Active)
             ->and($assignment->role)
             ->toBe('database')
             ->and($assignment->converged_at)
@@ -129,7 +129,7 @@ describe('node role assignment service', function (): void {
             ->toThrow(InvalidArgumentException::class, "Development TLD 'test' is already assigned to another node.");
 
         expect($assignment->fresh()->settings)->toBe(['tld' => 'old'])
-            ->and($assignment->fresh()->status)->toBe(NodeRoleStatus::Active->value)
+            ->and($assignment->fresh()->status)->toBe(NodeRoleStatus::Active)
             ->and($assignment->fresh()->last_error)->toBeNull();
     });
 
@@ -391,7 +391,7 @@ describe('node role assignment service', function (): void {
             'ingress_node_id' => $node->id,
         ]);
 
-        expect($assignment->status)->toBe(NodeRoleStatus::Active->value)
+        expect($assignment->status)->toBe(NodeRoleStatus::Active)
             ->and($assignment->settings)->toBe([
                 'ingress_node_id' => $node->id,
             ]);
@@ -468,7 +468,7 @@ describe('node role assignment service', function (): void {
         ]))->toThrow(InvalidArgumentException::class, 'The app-prod role requires an active ingress node.');
 
         expect($assignment->fresh()->settings)->toBe(['ingress_node_id' => 999])
-            ->and($assignment->fresh()->status)->toBe(NodeRoleStatus::Active->value)
+            ->and($assignment->fresh()->status)->toBe(NodeRoleStatus::Active)
             ->and($assignment->fresh()->last_error)->toBeNull();
     });
 
@@ -544,7 +544,7 @@ describe('node role assignment service', function (): void {
             'redis_node_id' => $databaseNode->id,
         ]);
 
-        expect($assignment->status)->toBe(NodeRoleStatus::Active->value)
+        expect($assignment->status)->toBe(NodeRoleStatus::Active)
             ->and($assignment->settings)->toBe(['redis_node_id' => $databaseNode->id]);
     });
 
@@ -589,7 +589,7 @@ describe('node role assignment service', function (): void {
         ]))->toThrow(InvalidArgumentException::class, 'The websocket role requires redis_node_id to reference an active database node with a Redis process.');
 
         expect($assignment->fresh()->settings)->toBe(['redis_node_id' => $validRedisNode->id])
-            ->and($assignment->fresh()->status)->toBe(NodeRoleStatus::Active->value)
+            ->and($assignment->fresh()->status)->toBe(NodeRoleStatus::Active)
             ->and($assignment->fresh()->last_error)->toBeNull();
     });
 
@@ -636,7 +636,7 @@ describe('node role assignment service', function (): void {
             ->toThrow(InvalidArgumentException::class, "Role 'app-dev' conflicts with {$status} role 'app-prod'.");
 
         expect($assignment->fresh()->settings)->toBe(['tld' => 'old'])
-            ->and($assignment->fresh()->status)->toBe(NodeRoleStatus::Active->value)
+            ->and($assignment->fresh()->status)->toBe(NodeRoleStatus::Active)
             ->and($assignment->fresh()->last_error)->toBeNull();
     })->with([
         NodeRoleStatus::Pending->value,
@@ -688,7 +688,7 @@ describe('node role assignment service', function (): void {
         ]);
 
         expect($assignment->status)
-            ->toBe(NodeRoleStatus::Active->value)
+            ->toBe(NodeRoleStatus::Active)
             ->and($assignment->role)
             ->toBe('app-prod');
     });
@@ -718,7 +718,7 @@ describe('node role assignment service', function (): void {
         $assignment = app(NodeRoleAssignmentService::class)->add($node, 'database', []);
 
         expect($assignment->status)
-            ->toBe(NodeRoleStatus::Error->value)
+            ->toBe(NodeRoleStatus::Error)
             ->and($assignment->last_error)
             ->toBe('Docker is missing.')
             ->and($assignment->converged_at)
@@ -735,7 +735,7 @@ describe('node role assignment service', function (): void {
         $assignment = app(NodeRoleAssignmentService::class)->add($node, 'app-dev', ['tld' => 'test']);
 
         expect($assignment->status)
-            ->toBe(NodeRoleStatus::Error->value)
+            ->toBe(NodeRoleStatus::Error)
             ->and($assignment->last_error)
             ->toBe('The app-dev role requires a WireGuard address so the development DNS mapping can be materialized.')
             ->and($assignment->converged_at)
@@ -790,7 +790,7 @@ describe('node role assignment service', function (): void {
         $assignment = app(NodeRoleAssignmentService::class)->update($node, 'app-dev', ['tld' => 'new']);
 
         expect($assignment->status)
-            ->toBe(NodeRoleStatus::Active->value)
+            ->toBe(NodeRoleStatus::Active)
             ->and($assignment->settings)
             ->toBe(['tld' => 'new'])
             ->and($assignment->last_error)
@@ -822,7 +822,7 @@ describe('node role assignment service', function (): void {
 
         $assignment = app(NodeRoleAssignmentService::class)->update($node, 'app-dev', ['tld' => 'new']);
 
-        expect($assignment->status)->toBe(NodeRoleStatus::Active->value)
+        expect($assignment->status)->toBe(NodeRoleStatus::Active)
             ->and($assignment->settings)->toBe(['tld' => 'new'])
             ->and("{$configDir}/old.conf")->not->toBeFile()
             ->and("{$configDir}/new.conf")->toBeFile();
@@ -851,7 +851,7 @@ describe('node role assignment service', function (): void {
             ->toThrow(InvalidArgumentException::class, "Role 'app-dev' conflicts with active role 'app-prod'.");
 
         expect($assignment->fresh()->settings)->toBe(['tld' => 'old'])
-            ->and($assignment->fresh()->status)->toBe(NodeRoleStatus::Active->value)
+            ->and($assignment->fresh()->status)->toBe(NodeRoleStatus::Active)
             ->and($assignment->fresh()->last_error)->toBeNull();
     });
 
@@ -950,7 +950,7 @@ describe('node role assignment service', function (): void {
         $assignment = app(NodeRoleAssignmentService::class)->addDuringCreation($node, 'agent', ['tld' => 'agent']);
 
         expect($assignment->role)->toBe('agent')
-            ->and($assignment->status)->toBe(NodeRoleStatus::Active->value);
+            ->and($assignment->status)->toBe(NodeRoleStatus::Active);
     });
 
     it('blocks removal when dependents exist and force is false', function (): void {
@@ -1000,7 +1000,7 @@ describe('node role assignment service', function (): void {
         expect(fn () => app(NodeRoleAssignmentService::class)->remove($node, 'app-dev'))
             ->toThrow(InvalidArgumentException::class, "Role 'app-dev' cannot be removed while dependents exist.");
 
-        expect($assignment->fresh()->status)->toBe(NodeRoleStatus::Active->value)
+        expect($assignment->fresh()->status)->toBe(NodeRoleStatus::Active)
             ->and($inspector->calls)->toBe(2)
             ->and($inspector->removed)->toBeFalse();
     });
@@ -1340,7 +1340,7 @@ describe('node role assignment service', function (): void {
             ->toThrow(RuntimeException::class, 'Cleanup failed.');
 
         expect($assignment->fresh()->status)
-            ->toBe(NodeRoleStatus::Error->value)
+            ->toBe(NodeRoleStatus::Error)
             ->and($assignment->fresh()->last_error)
             ->toBe('Cleanup failed.')
             ->and($inspector->removed)

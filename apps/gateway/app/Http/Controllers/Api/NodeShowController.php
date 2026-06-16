@@ -43,7 +43,7 @@ final class NodeShowController implements Loggable
                 'data' => [
                     'node' => [
                         'name' => $node->name,
-                        'status' => $node->status,
+                        'status' => $node->status->value,
                         'platform' => $node->platform ?? 'unknown',
                         'roles' => $node->roleAssignments
                             ->map(fn (NodeRoleAssignment $assignment): array => NodeRoleAssignmentPayload::fromModel($assignment))

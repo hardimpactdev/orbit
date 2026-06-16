@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Enums\Nodes\NodeStatus;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Services\Updates\UpdateApplyResult;
@@ -72,7 +73,7 @@ describe('UpdateDriverRegistry', function (): void {
     it('builds a managed target for active Ubuntu server-role nodes', function (): void {
         $node = Node::factory()->create([
             'platform' => 'ubuntu_24-04',
-            'status' => Node::STATUS_ACTIVE,
+            'status' => NodeStatus::Active,
         ]);
 
         NodeRoleAssignment::factory()->create([
@@ -92,7 +93,7 @@ describe('UpdateDriverRegistry', function (): void {
     it('builds an unsupported target for macOS control nodes', function (): void {
         $node = Node::factory()->create([
             'platform' => 'macos_15',
-            'status' => Node::STATUS_ACTIVE,
+            'status' => NodeStatus::Active,
         ]);
 
         $target = app(UpdateTargetFactory::class)->forNode($node);

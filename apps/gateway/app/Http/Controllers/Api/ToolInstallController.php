@@ -6,6 +6,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Contracts\Loggable;
 use App\Enums\ActivityLogType;
+use App\Enums\Nodes\NodeStatus;
 use App\Http\Controllers\Api\Concerns\ResolvesVisibleToolNodes;
 use App\Http\Controllers\Api\Concerns\StreamsToolActionProgress;
 use App\Models\Node;
@@ -95,7 +96,7 @@ final class ToolInstallController implements Loggable
         $meta = (object) [];
 
         if ($node !== null) {
-            $targetNode = Node::query()->where('name', $node)->where('status', 'active')->first();
+            $targetNode = Node::query()->where('name', $node)->where('status', NodeStatus::Active->value)->first();
 
             if ($targetNode instanceof Node) {
                 $warning = app(AgentToolAuthorizer::class)->multipleAgentToolsWarning($targetNode, $tool);

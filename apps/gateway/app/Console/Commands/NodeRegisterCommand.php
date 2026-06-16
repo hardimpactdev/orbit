@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Console\Commands;
 
+use App\Enums\Nodes\NodeStatus;
 use App\Models\Node;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
@@ -24,9 +25,9 @@ class NodeRegisterCommand extends Command
 
     public function handle(): int
     {
-        $status = (string) $this->option('status');
+        $status = NodeStatus::tryFrom((string) $this->option('status'));
 
-        if (! in_array($status, ['active', 'inactive'], true)) {
+        if (! $status instanceof NodeStatus || ! in_array($status, [NodeStatus::Active, NodeStatus::Inactive], true)) {
             $this->error('Status must be one of: active, inactive.');
 
             return self::FAILURE;

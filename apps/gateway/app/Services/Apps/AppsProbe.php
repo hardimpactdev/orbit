@@ -900,7 +900,7 @@ BASH;
 
         $requiredRole = $app->environment === 'production' ? 'app-prod' : 'app-dev';
 
-        if ($app->node->status !== 'active' || ! $this->nodeRoleAssignments()->nodeHasActiveRole($app->node, $requiredRole)) {
+        if (! $app->node->isActive() || ! $this->nodeRoleAssignments()->nodeHasActiveRole($app->node, $requiredRole)) {
             return [
                 new DriftEntry(
                     family: $this->key(),

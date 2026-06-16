@@ -7,6 +7,7 @@ namespace App\Services\Apps;
 use App\Actions\Apps\EnactAppRuntime;
 use App\Concerns\PromptsForRegistryEntities;
 use App\Contracts\RemoteShell;
+use App\Enums\Nodes\NodeStatus;
 use App\Exceptions\PromptAborted;
 use App\Http\Gateway\GatewayApiException;
 use App\Models\App;
@@ -319,7 +320,7 @@ final class AppRegistrar
             if ($nodeName === null) {
                 $nodeNames = Node::query()
                     ->whereIn('id', app(NodeRoleAssignments::class)->activeAppHostNodeIds())
-                    ->where('status', 'active')
+                    ->where('status', NodeStatus::Active->value)
                     ->orderBy('name')
                     ->pluck('name')
                     ->all();
@@ -343,7 +344,7 @@ final class AppRegistrar
 
     private function ensureEligibleNode(Node $node, string $requiredRole): Node|int
     {
-        if ($node->status === 'active' && app(NodeRoleAssignments::class)->nodeHasActiveRole($node, $requiredRole)) {
+        if ($node->isActive() && app(NodeRoleAssignments::class)->nodeHasActiveRole($node, $requiredRole)) {
             return $node;
         }
 
@@ -353,7 +354,7 @@ final class AppRegistrar
             meta: [
                 'node' => $node->name,
                 'required_role' => $requiredRole,
-                'status' => $node->status,
+                'status' => $node->status->value,
             ],
         );
     }

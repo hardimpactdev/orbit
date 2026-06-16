@@ -16,7 +16,7 @@ final class NodeRoleAssignmentPayload
     {
         return [
             'role' => $assignment->role,
-            'status' => $assignment->status,
+            'status' => $assignment->status->value,
             'settings' => self::settings($assignment->settings),
             'last_error' => $assignment->last_error,
             'converged_at' => $assignment->converged_at?->toJSON(),

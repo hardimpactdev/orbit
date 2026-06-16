@@ -66,13 +66,13 @@ $peer = App\Models\WireGuardPeer::query()
     ->where("public_key", trim((string) getenv("ORBIT_WIREGUARD_PUBLIC_KEY")))
     ->first();
 $node = $peer instanceof App\Models\WireGuardPeer
-    ? $peer->node()->where("status", "active")->first()
+    ? $peer->node()->where("status", App\Enums\Nodes\NodeStatus::Active->value)->first()
     : null;
 echo json_encode([
     "name" => $node?->name,
     "role" => $node?->displayRole(),
     "local_role" => $node?->displayRole(),
-    "status" => $node?->status,
+    "status" => $node?->status?->value,
     "platform" => $node?->platform,
     "wireguard_address" => $node?->wireguard_address,
     "registry_public_key" => $peer?->public_key,

@@ -358,7 +358,7 @@ it('retries baseline convergence for error assignments during reconcile', functi
     ));
 
     expect($assignment->fresh())
-        ->status->toBe(NodeRoleStatus::Active->value)
+        ->status->toBe(NodeRoleStatus::Active)
         ->last_error->toBeNull()
         ->converged_at->not->toBeNull();
 });
@@ -410,7 +410,7 @@ it('keeps role assignments errored when convergence retry fails during reconcile
     )))->toThrow(RuntimeException::class, 'baseline still failed');
 
     expect($assignment->fresh())
-        ->status->toBe(NodeRoleStatus::Error->value)
+        ->status->toBe(NodeRoleStatus::Error)
         ->last_error->toBe('baseline still failed')
         ->converged_at->toBeNull();
 });

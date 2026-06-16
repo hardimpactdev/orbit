@@ -7,6 +7,7 @@ namespace App\Console\Commands\Internal;
 use App\Data\Security\PinnedHostKey;
 use App\Enums\Nodes\NodeRoleName;
 use App\Enums\Nodes\NodeRoleStatus;
+use App\Enums\Nodes\NodeStatus;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Models\Process;
@@ -109,7 +110,7 @@ class BakeWebSocketNodeCommand extends Command
     {
         $node = Node::query()
             ->where('name', $name)
-            ->where('status', Node::STATUS_ACTIVE)
+            ->where('status', NodeStatus::Active->value)
             ->whereHas('roleAssignments', fn ($query) => $query
                 ->where('role', NodeRoleName::Database->value)
                 ->where('status', NodeRoleStatus::Active->value))
@@ -165,7 +166,7 @@ class BakeWebSocketNodeCommand extends Command
             'gateway_endpoint' => $gatewayEndpoint,
             'user' => $user,
             'orbit_path' => "/home/{$user}/orbit",
-            'status' => Node::STATUS_ACTIVE,
+            'status' => NodeStatus::Active,
             'host_key_type' => $hostKey->type,
             'host_key_fingerprint' => $hostKey->fingerprint,
             'host_key_public' => $hostKey->publicKey,

@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\Enums\Nodes\NodeRoleStatus;
+use App\Enums\Nodes\NodeStatus;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -31,7 +33,7 @@ use Illuminate\Support\Carbon;
  * @property string|null $host_key_pin_mode
  * @property string|null $user
  * @property string $orbit_path
- * @property string $status
+ * @property NodeStatus $status
  * @property-read Collection<int, NodeTool> $nodeTools
  * @property-read Collection<int, NodeRoleAssignment> $roleAssignments
  * @property-read Collection<int, FirewallRule> $firewallRules
@@ -42,10 +44,6 @@ use Illuminate\Support\Carbon;
 class Node extends Model
 {
     use HasFactory;
-
-    public const string STATUS_PROVISIONING = 'provisioning';
-
-    public const string STATUS_ACTIVE = 'active';
 
     #[\Override]
     protected $fillable = [
@@ -74,6 +72,7 @@ class Node extends Model
         return [
             'agent_ide_config' => 'array',
             'host_key_pinned_at' => 'datetime',
+            'status' => NodeStatus::class,
         ];
     }
 
@@ -148,18 +147,28 @@ class Node extends Model
         if (! $this->relationLoaded('roleAssignments')) {
             return $this->roleAssignments()
                 ->where('role', $role)
-                ->where('status', 'active')
+                ->where('status', NodeRoleStatus::Active->value)
                 ->exists();
         }
 
         return $this->roleAssignments
-            ->contains(fn (NodeRoleAssignment $assignment): bool => $assignment->role === $role && $assignment->status === 'active');
+            ->contains(fn (NodeRoleAssignment $assignment): bool => $assignment->role === $role && $assignment->status === NodeRoleStatus::Active);
+    }
+
+    public function isActive(): bool
+    {
+        return $this->status === NodeStatus::Active;
+    }
+
+    public function isProvisioning(): bool
+    {
+        return $this->status === NodeStatus::Provisioning;
     }
 
     public function isOperator(): bool
     {
         return ! $this->roleAssignments()
-            ->where('status', 'active')
+            ->where('status', NodeRoleStatus::Active->value)
             ->exists();
     }
 
@@ -170,7 +179,7 @@ class Node extends Model
         }
 
         /** @var NodeRoleAssignment|null $primary */
-        $primary = $this->roleAssignments()->where('status', 'active')->orderBy('role')->first();
+        $primary = $this->roleAssignments()->where('status', NodeRoleStatus::Active->value)->orderBy('role')->first();
 
         return $primary->role;
     }

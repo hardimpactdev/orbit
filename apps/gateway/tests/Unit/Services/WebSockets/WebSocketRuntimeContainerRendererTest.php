@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Data\Nodes\RoleSettings\WebSocketRoleSettings;
+use App\Enums\Nodes\NodeStatus;
 use App\Models\Node;
 use App\Models\Process;
 use App\Services\Nodes\NodeWireGuardServiceAddress;
@@ -42,7 +43,7 @@ function websocketRuntimeRedisNode(array $overrides = []): Node
     $node = Node::factory()->database()->create(array_merge([
         'name' => 'redis-1',
         'wireguard_address' => '10.6.0.3',
-        'status' => Node::STATUS_ACTIVE,
+        'status' => NodeStatus::Active,
     ], $overrides));
 
     Process::factory()->forOwner($node)->create([

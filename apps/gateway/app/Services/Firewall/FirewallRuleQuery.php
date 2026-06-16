@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\Firewall;
 
+use App\Enums\Nodes\NodeStatus;
 use App\Http\Gateway\GatewayApiException;
 use App\Models\FirewallRule;
 use App\Models\Node;
@@ -103,7 +104,7 @@ class FirewallRuleQuery
     private function eligibleNodeQuery(Builder $query): Builder
     {
         return $query
-            ->where('status', 'active')
+            ->where('status', NodeStatus::Active->value)
             ->where('platform', 'ubuntu')
             ->whereIn('id', app(NodeRoleAssignments::class)->activeNodeIdsForRoles($this->eligibleTargetRoles()));
     }

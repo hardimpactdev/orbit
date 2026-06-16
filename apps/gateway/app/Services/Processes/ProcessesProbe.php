@@ -464,7 +464,7 @@ PHP;
         $process->loadMissing('owner');
 
         if ($process->owner instanceof Node) {
-            if ($process->owner->status === Node::STATUS_ACTIVE) {
+            if ($process->owner->isActive()) {
                 return [];
             }
 
@@ -493,7 +493,7 @@ PHP;
 
         if (
             ! $process->app->node instanceof Node
-            || $process->app->node->status !== 'active'
+            || ! $process->app->node->isActive()
             || ! app(NodeRoleAssignments::class)->nodeHasActiveAppHostRole($process->app->node)
         ) {
             return [

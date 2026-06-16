@@ -43,11 +43,11 @@ final readonly class MeController
     {
         return [
             'name' => $node->name,
-            'status' => $node->status ?? 'active',
+            'status' => $node->status->value,
             'platform' => $node->platform ?? 'unknown',
             'roles' => $node->roleAssignments->map(fn (NodeRoleAssignment $assignment): array => [
                 'role' => $assignment->role,
-                'status' => $assignment->status,
+                'status' => $assignment->status->value,
                 'settings' => $this->normalizeRoleSettings($assignment->settings),
             ])->all(),
             'addresses' => [

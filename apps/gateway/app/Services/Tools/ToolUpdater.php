@@ -6,6 +6,7 @@ namespace App\Services\Tools;
 
 use App\Contracts\RemoteShell;
 use App\Data\RemoteShell\RemoteShellResult;
+use App\Enums\Nodes\NodeStatus;
 use App\Models\App;
 use App\Models\Node;
 use App\Models\NodeTool;
@@ -100,7 +101,7 @@ final readonly class ToolUpdater
             $nodeModel = Node::query()
                 ->where('name', $node)
                 ->whereIn('id', $this->nodeRoleAssignments->activeToolHostNodeIds())
-                ->where('status', 'active')
+                ->where('status', NodeStatus::Active->value)
                 ->first();
 
             if ($nodeModel instanceof Node) {

@@ -444,8 +444,8 @@ BASH;
             ];
         }
 
-        $allowedStatus = $tool->node->status === 'active'
-            || ($allowProvisioning && $tool->node->status === Node::STATUS_PROVISIONING);
+        $allowedStatus = $tool->node->isActive()
+            || ($allowProvisioning && $tool->node->isProvisioning());
 
         if (! $allowedStatus || ! $this->isToolNode($tool)) {
             return [
@@ -457,7 +457,7 @@ BASH;
                     detail: [
                         'node' => $tool->node->name,
                         'role' => $tool->node->displayRole(),
-                        'status' => $tool->node->status,
+                        'status' => $tool->node->status->value,
                     ],
                 ),
             ];
