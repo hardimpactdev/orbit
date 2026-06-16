@@ -13,6 +13,10 @@ runtime selection and recreates the affected FrankenPHP runtime artifact from
 the selected image through the owning node. PHP-FPM is not a fallback and must
 not be restored manually.
 
+On `app-dev` nodes, classic PHP app and workspace containers include native
+FrankenPHP thread-pool tuning (`max_threads auto`, `max_idle_time 1h`).
+Laravel Octane worker mode remains opt-in through `app:worker`.
+
 ## `orbit php:list`
 
 List PHP support, installed facts, and selected runtime intent.

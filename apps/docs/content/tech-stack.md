@@ -262,6 +262,12 @@ path repository symlinks under `/app/vendor` resolve without mounting the host
 home directory or changing the FrankenPHP runtime model. Static runtimes and
 `app-prod` runtimes do not receive this mount.
 
+`app-dev` PHP app and workspace containers render a small native
+`FRANKENPHP_CONFIG` snippet in classic mode: `max_threads auto` and
+`max_idle_time 1h`. These are FrankenPHP thread-pool settings, not Laravel
+Octane worker mode; worker mode stays opt-in through `app:worker` after
+readiness validation.
+
 PHP apps on `app-dev` nodes may also store app-level additional runtime mount
 intent through `app:mount`. These mounts are rendered into the app runtime
 container and inherited by workspace runtime containers for that app. Sources

@@ -251,6 +251,37 @@ it('renders realpath cache directives from the PHP runtime policy', function ():
     ]);
 });
 
+it('renders app-dev FrankenPHP thread pool settings for classic workspace runtimes', function (): void {
+    $workspace = makePhpWorkspace();
+
+    $container = workspaceRendererForTest()->render($workspace);
+
+    expect($container->environment())->toMatchArray([
+        'FRANKENPHP_CONFIG' => "max_threads auto\nmax_idle_time 1h",
+    ]);
+});
+
+it('does not render app-dev FrankenPHP thread pool settings for app-prod workspace runtimes', function (): void {
+    $node = createTestAppHostNode(['user' => 'orbit'], 'app-prod');
+    $app = App::factory()->for($node, 'node')->create([
+        'name' => 'demo-prod',
+        'environment' => 'production',
+        'path' => '/home/demo/app',
+        'document_root' => 'public',
+        'php_version' => '8.5',
+        'runtime_kind' => AppRuntimeKind::Php,
+    ]);
+    $workspace = Workspace::factory()->for($app, 'app')->create([
+        'name' => 'feature-a',
+        'path' => '/home/demo/app/.worktrees/feature-a',
+        'php_version' => null,
+    ]);
+
+    $container = workspaceRendererForTest()->render($workspace);
+
+    expect(array_key_exists('FRANKENPHP_CONFIG', $container->environment()))->toBeFalse();
+});
+
 it('omits opcache.preload from rendered php ini when the workspace has no preload script', function (): void {
     $workspace = makePhpWorkspace();
 

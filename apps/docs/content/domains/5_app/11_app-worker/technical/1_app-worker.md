@@ -67,12 +67,10 @@ the worker after that many requests.
 
 A `max_consecutive_failures` knob is intentionally not modeled by Orbit
 today. FrankenPHP does document `max_consecutive_failures` as a worker
-Caddyfile option, but Orbit's current runtime renderer contract emits the
-inline `FRANKENPHP_CONFIG=worker FILE [NUM]` form alongside `MAX_REQUESTS`
-and does not surface that worker option. No `MAX_CONSECUTIVE_FAILURES` env
-is consumed by the rendered runtime either. Orbit will add the knob — and
-render it through whichever surface actually consumes it — once the
-renderer is extended to do so.
+Caddyfile option, but Orbit's current worker configuration does not surface
+that option. No `MAX_CONSECUTIVE_FAILURES` env is consumed by the rendered
+runtime either. Orbit will add the knob once the command contract and
+renderer expose it deliberately.
 
 ## Readiness
 
@@ -146,7 +144,8 @@ all other documented `error.code` values, `403` for permission denials.
    source to make readiness pass.
 7. **No workspace worker mode.** Worker mode is an app-level setting only.
    Workspaces always run in classic mode regardless of the owning app's
-   worker setting.
+   worker setting. On `app-dev` nodes, workspaces may still receive the
+   classic FrankenPHP thread-pool settings documented below.
 
 ## Failure Semantics
 
@@ -184,28 +183,49 @@ Neither command:
 - Restarts or recreates the FrankenPHP runtime container directly. The
   app runtime renderer picks up the new worker setting the next time the
   runtime is enacted (for example through `app:root` or doctor adopt).
-- Changes workspace runtime behavior.
+- Enables worker mode for workspaces.
 
 ## Runtime Renderer Integration
 
-When `worker_enabled=true`, the app runtime container is rendered with two
-env vars that the runtime actually consumes:
+On nodes with `app-dev`, classic PHP app and workspace containers render
+`FRANKENPHP_CONFIG` with native FrankenPHP thread-pool settings even when
+worker mode is disabled:
+
+```caddyfile
+max_threads auto
+max_idle_time 1h
+```
+
+These settings tune FrankenPHP's request-thread pool and keep idle development
+capacity warm. They do not enable Laravel Octane worker mode.
+
+When `worker_enabled=true`, the app runtime container is rendered with the
+same app-dev thread-pool settings when applicable, plus two worker-mode env
+vars that the runtime actually consumes:
 
 | Env var | Consumer | Source |
 | --- | --- | --- |
-| `FRANKENPHP_CONFIG` | FrankenPHP reads this as a Caddyfile snippet inside the global `frankenphp` block. | `worker_config.workers` + `document_root` |
+| `FRANKENPHP_CONFIG` | FrankenPHP reads this as a Caddyfile snippet inside the global `frankenphp` block. | app-dev thread-pool policy + `worker_config.workers` + `document_root` |
 | `MAX_REQUESTS` | Laravel's stock `public/frankenphp-worker.php` reads `$_SERVER['MAX_REQUESTS']`. | `worker_config.max_requests` |
 
-The `FRANKENPHP_CONFIG` value uses the documented inline directive form
-`worker FILE [NUM]`:
+The worker portion of `FRANKENPHP_CONFIG` uses FrankenPHP's documented block
+directive form:
 
-- `worker /app/<document_root>/frankenphp-worker.php <num>` when
-  `worker_config.workers` is a positive integer.
-- `worker /app/<document_root>/frankenphp-worker.php` when it is `"auto"`.
-  FrankenPHP picks a default count based on CPU.
+```caddyfile
+worker {
+    file /app/<document_root>/frankenphp-worker.php
+    num <num>
+}
+```
 
-When `worker_enabled=false`, none of these env vars are rendered and the
-container runs the classic FrankenPHP request path.
+The `num` line is included only when `worker_config.workers` is a positive
+integer. When `workers` is `"auto"`, Orbit omits `num` and FrankenPHP picks a
+default count based on CPU.
+
+When `worker_enabled=false`, `MAX_REQUESTS` is not rendered and the container
+runs the classic FrankenPHP request path. `app-dev` classic containers still
+render the thread-pool `FRANKENPHP_CONFIG` shown above; `app-prod` classic
+containers render no `FRANKENPHP_CONFIG` unless worker mode is enabled.
 
 The runtime container `spec_hash` differs between classic and worker mode so
 the runtime manager recreates the container after a toggle.
@@ -213,10 +233,9 @@ the runtime manager recreates the container after a toggle.
 `OCTANE_*` and `MAX_CONSECUTIVE_FAILURES` env vars are intentionally not
 emitted. Stock Laravel Octane does not read its config from environment
 variables of that shape. FrankenPHP does support a `max_consecutive_failures`
-Caddyfile option inside the `worker` block, but Orbit's current
-`FRANKENPHP_CONFIG=worker FILE [NUM]` inline form does not include it and
-no env consumer reads `MAX_CONSECUTIVE_FAILURES`; emitting either today
-would be naming theater.
+Caddyfile option inside the `worker` block, but Orbit's current worker
+contract does not include it and no env consumer reads
+`MAX_CONSECUTIVE_FAILURES`; emitting either today would be naming theater.
 
 ## Test Mapping
 
@@ -225,4 +244,5 @@ would be naming theater.
 | `apps/gateway/tests/Feature/Commands/Apps/AppWorkerCommandTest.php` | Action validation, app resolution, show/enable/disable state mutations, readiness failure leaves state unchanged, and the `app.not_found` and `app.worker_unsupported_runtime` paths. |
 | `apps/gateway/tests/Feature/Http/Api/AppWorkerControllerTest.php` | API surface for `show`, `enable`, `disable`; HTTP status mapping; `app:worker` vs `app:read` permission split; `app.not_found` 404; readiness failure 422. |
 | `apps/gateway/tests/Unit/Services/Apps/AppWorkerReadinessTest.php` | Probe token vocabulary and false-positive guards: bare composer.json, missing vendor, comment-only configuration (line and block), and the trailing-comment positive case. |
-| `apps/gateway/tests/Unit/Services/Apps/AppRuntimeContainerRendererTest.php` | Worker-mode runtime env vars consumed by FrankenPHP and Octane, the `worker` directive shape for `auto` and integer worker counts, the configured `document_root` worker-file path, and the spec hash change on toggle. |
+| `apps/gateway/tests/Unit/Services/Apps/AppRuntimeContainerRendererTest.php` | App-dev thread-pool config, worker env vars, worker block shapes, document-root paths, and spec-hash changes. |
+| `apps/gateway/tests/Unit/Services/Workspaces/WorkspaceRuntimeContainerRendererTest.php` | App-dev workspace classic FrankenPHP thread-pool config and the absence of that config for app-prod workspace runtimes. |

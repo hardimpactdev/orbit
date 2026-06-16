@@ -331,7 +331,7 @@ it('does not render any worker-mode runtime config when worker_enabled is false'
 
     $container = rendererForTest()->render($app);
 
-    expect(array_key_exists('FRANKENPHP_CONFIG', $container->environment()))->toBeFalse()
+    expect($container->environment()['FRANKENPHP_CONFIG'] ?? null)->toBe("max_threads auto\nmax_idle_time 1h")
         ->and(array_key_exists('MAX_REQUESTS', $container->environment()))->toBeFalse();
 });
 
@@ -341,12 +341,28 @@ it('does not include any FRANKENPHP_CONFIG worker directive in the docker run co
 
     $command = (new DockerCommandBuilder)->runDetached($container);
 
-    expect($command)->not->toContain('FRANKENPHP_CONFIG')
+    expect($command)->toContain("FRANKENPHP_CONFIG=max_threads auto\nmax_idle_time 1h")
         ->and($command)->not->toContain('worker /app')
         ->and($command)->not->toContain('MAX_REQUESTS');
 });
 
-it('renders the FrankenPHP worker directive against public/frankenphp-worker.php with workers=auto', function (): void {
+it('does not render app-dev FrankenPHP thread pool settings for app-prod classic runtimes', function (): void {
+    $node = createTestAppHostNode(['user' => 'orbit'], 'app-prod');
+    $app = App::factory()->for($node, 'node')->create([
+        'name' => 'docs-prod',
+        'environment' => 'production',
+        'path' => '/home/docs/app',
+        'document_root' => 'public',
+        'php_version' => '8.5',
+        'runtime_kind' => AppRuntimeKind::Php,
+    ]);
+
+    $container = rendererForTest()->render($app);
+
+    expect(array_key_exists('FRANKENPHP_CONFIG', $container->environment()))->toBeFalse();
+});
+
+it('renders the FrankenPHP worker block against public/frankenphp-worker.php with workers=auto', function (): void {
     $app = makePhpApp([
         'worker_enabled' => true,
         'worker_config' => [
@@ -358,12 +374,12 @@ it('renders the FrankenPHP worker directive against public/frankenphp-worker.php
     $container = rendererForTest()->render($app);
 
     expect($container->environment())->toMatchArray([
-        'FRANKENPHP_CONFIG' => 'worker /app/public/frankenphp-worker.php',
+        'FRANKENPHP_CONFIG' => "max_threads auto\nmax_idle_time 1h\nworker {\n\tfile /app/public/frankenphp-worker.php\n}",
         'MAX_REQUESTS' => '500',
     ]);
 });
 
-it('renders the inline `worker FILE NUM` directive when worker_config.workers is an integer', function (): void {
+it('renders the block-form `worker` directive with num when worker_config.workers is an integer', function (): void {
     $app = makePhpApp([
         'worker_enabled' => true,
         'worker_config' => [
@@ -375,7 +391,7 @@ it('renders the inline `worker FILE NUM` directive when worker_config.workers is
     $container = rendererForTest()->render($app);
 
     expect($container->environment())->toMatchArray([
-        'FRANKENPHP_CONFIG' => 'worker /app/public/frankenphp-worker.php 4',
+        'FRANKENPHP_CONFIG' => "max_threads auto\nmax_idle_time 1h\nworker {\n\tfile /app/public/frankenphp-worker.php\n\tnum 4\n}",
         'MAX_REQUESTS' => '1000',
     ]);
 });
@@ -404,7 +420,7 @@ it('points the worker directive at the configured document root, not always /app
 
     $container = rendererForTest()->render($app);
 
-    expect($container->environment()['FRANKENPHP_CONFIG'])->toBe('worker /app/web/frankenphp-worker.php');
+    expect($container->environment()['FRANKENPHP_CONFIG'])->toBe("max_threads auto\nmax_idle_time 1h\nworker {\n\tfile /app/web/frankenphp-worker.php\n}");
 });
 
 it('exposes the worker directive and MAX_REQUESTS env on the rendered docker run command so FrankenPHP and the Laravel worker actually consume them', function (): void {
@@ -416,7 +432,7 @@ it('exposes the worker directive and MAX_REQUESTS env on the rendered docker run
 
     $command = (new DockerCommandBuilder)->runDetached($container);
 
-    expect($command)->toContain("--env 'FRANKENPHP_CONFIG=worker /app/public/frankenphp-worker.php 4'")
+    expect($command)->toContain("FRANKENPHP_CONFIG=max_threads auto\nmax_idle_time 1h\nworker {\n\tfile /app/public/frankenphp-worker.php\n\tnum 4\n}")
         ->and($command)->toContain("--env 'MAX_REQUESTS=500'");
 });
 
@@ -453,7 +469,7 @@ it('uses worker config defaults when worker_enabled is true and worker_config is
     $container = rendererForTest()->render($app);
 
     expect($container->environment())->toMatchArray([
-        'FRANKENPHP_CONFIG' => 'worker /app/public/frankenphp-worker.php',
+        'FRANKENPHP_CONFIG' => "max_threads auto\nmax_idle_time 1h\nworker {\n\tfile /app/public/frankenphp-worker.php\n}",
         'MAX_REQUESTS' => '500',
     ]);
 });

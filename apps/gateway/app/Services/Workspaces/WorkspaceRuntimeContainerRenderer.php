@@ -9,6 +9,7 @@ use App\Models\App;
 use App\Models\Workspace;
 use App\Services\Apps\AppDevelopmentPackagesMount;
 use App\Services\Apps\AppRuntimeMountService;
+use App\Services\Apps\FrankenPhpRuntimeConfigRenderer;
 use App\Services\Php\PhpRuntimePolicy;
 use App\Services\Runtime\OrbitContainerNames;
 use InvalidArgumentException;
@@ -20,6 +21,7 @@ final readonly class WorkspaceRuntimeContainerRenderer
         private OrbitContainerNames $names,
         private AppDevelopmentPackagesMount $appDevelopmentPackagesMount = new AppDevelopmentPackagesMount,
         private AppRuntimeMountService $appRuntimeMounts = new AppRuntimeMountService,
+        private FrankenPhpRuntimeConfigRenderer $frankenPhpConfig = new FrankenPhpRuntimeConfigRenderer,
     ) {}
 
     public function render(Workspace $workspace, ?string $preloadPath = null): WorkspaceRuntimeContainer
@@ -119,11 +121,7 @@ final readonly class WorkspaceRuntimeContainerRenderer
      */
     private function environmentFor(App $app, Workspace $workspace, string $phpVersion): array
     {
-        return [
-            // FrankenPHP-consumed envs: SERVER_NAME sets the Caddy listener
-            // address; SERVER_ROOT sets the document root served inside the
-            // container. The workspace inherits the app's document_root so the
-            // served URL boundary matches the owning app.
+        $environment = [
             'SERVER_NAME' => ':80',
             'SERVER_ROOT' => $this->documentRootInContainer($app),
             'ORBIT_APP' => $app->name,
@@ -131,6 +129,14 @@ final readonly class WorkspaceRuntimeContainerRenderer
             'ORBIT_WORKSPACE' => $workspace->name,
             'ORBIT_PHP_VERSION' => $phpVersion,
         ];
+
+        $frankenPhpConfig = $this->frankenPhpConfig->classic($app);
+
+        if ($frankenPhpConfig !== null) {
+            $environment['FRANKENPHP_CONFIG'] = $frankenPhpConfig;
+        }
+
+        return $environment;
     }
 
     public function documentRootInContainer(App $app): string

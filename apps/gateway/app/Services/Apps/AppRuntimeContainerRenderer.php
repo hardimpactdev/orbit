@@ -27,6 +27,7 @@ final readonly class AppRuntimeContainerRenderer
         private AppRuntimeUser $appRuntimeUser = new AppRuntimeUser,
         private AppDevelopmentPackagesMount $appDevelopmentPackagesMount = new AppDevelopmentPackagesMount,
         private AppRuntimeMountService $appRuntimeMounts = new AppRuntimeMountService,
+        private FrankenPhpRuntimeConfigRenderer $frankenPhpConfig = new FrankenPhpRuntimeConfigRenderer,
     ) {}
 
     public function render(App $app, ?string $preloadPath = null): AppRuntimeContainer
@@ -118,10 +119,6 @@ final readonly class AppRuntimeContainerRenderer
     private function environmentFor(App $app): array
     {
         $environment = [
-            // FrankenPHP-consumed envs: SERVER_NAME sets the Caddy listener
-            // address; SERVER_ROOT sets the document root served inside the
-            // container. Together they make app:root and app:new actually
-            // change the served URL boundary.
             'SERVER_NAME' => ':'.self::InternalPort,
             'SERVER_ROOT' => $this->documentRootInContainer($app),
             'XDG_CONFIG_HOME' => '/config',
@@ -133,6 +130,14 @@ final readonly class AppRuntimeContainerRenderer
 
         if ($app->worker_enabled) {
             $environment = array_merge($environment, $this->workerEnvironmentFor($app));
+
+            return $environment;
+        }
+
+        $frankenPhpConfig = $this->frankenPhpConfig->classic($app);
+
+        if ($frankenPhpConfig !== null) {
+            $environment['FRANKENPHP_CONFIG'] = $frankenPhpConfig;
         }
 
         return $environment;
@@ -145,9 +150,9 @@ final readonly class AppRuntimeContainerRenderer
      *
      * Active levers:
      * - `FRANKENPHP_CONFIG`: FrankenPHP natively reads this as a Caddyfile
-     *   snippet at boot and switches the runtime into worker mode against the
-     *   Laravel Octane FrankenPHP worker file. The directive uses the
-     *   documented inline form `worker FILE [NUM]`.
+     *   snippet at boot. App-dev runtimes add thread-pool settings here; worker
+     *   mode appends the documented block form against Laravel Octane's
+     *   FrankenPHP worker file.
      * - `MAX_REQUESTS`: Laravel's stock `public/frankenphp-worker.php` reads
      *   `$_SERVER['MAX_REQUESTS']` and recycles the worker after that many
      *   requests.
@@ -160,23 +165,9 @@ final readonly class AppRuntimeContainerRenderer
         $workerFile = $this->frankenPhpWorkerFilePath($app);
 
         return [
-            'FRANKENPHP_CONFIG' => $this->frankenPhpConfigDirective($workerFile, $config->workers),
+            'FRANKENPHP_CONFIG' => $this->frankenPhpConfig->worker($app, $workerFile, $config->workers),
             'MAX_REQUESTS' => (string) $config->maxRequests,
         ];
-    }
-
-    /**
-     * Render the FrankenPHP `worker` directive in the documented inline form
-     * `worker FILE [NUM]`. `auto` (or any non-positive count) omits NUM so
-     * FrankenPHP picks a default based on CPU count.
-     */
-    private function frankenPhpConfigDirective(string $workerFile, string|int $workers): string
-    {
-        if (is_string($workers) || $workers <= 0) {
-            return "worker {$workerFile}";
-        }
-
-        return "worker {$workerFile} {$workers}";
     }
 
     public function frankenPhpWorkerFilePath(App $app): string

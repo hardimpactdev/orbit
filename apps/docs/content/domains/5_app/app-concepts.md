@@ -82,9 +82,13 @@ record.
 - **FrankenPHP app runtime:** PHP app/workspace web runtime. Classic mode is
   the default. It serves HTTP for PHP apps and workspaces and must carry
   OPcache, realpath cache, Composer autoload optimization, Laravel cache warmup,
-  and optional preload configuration. The lifecycle-managed FrankenPHP runtime
-  for a concrete app or workspace is represented as a process with Docker
-  runtime. The app family owns desired app configuration, URL,
+  and optional preload configuration. On `app-dev` nodes, classic app and
+  workspace runtimes also render native FrankenPHP thread-pool tuning through
+  `FRANKENPHP_CONFIG` (`max_threads auto` and `max_idle_time 1h`) so development
+  runtimes keep idle capacity warm without enabling worker mode. The
+  lifecycle-managed FrankenPHP runtime for a concrete app or workspace is
+  represented as a process with Docker runtime. The app family owns desired app
+  configuration, URL,
   source path, deployment policy, and runtime selection; the process family owns
   the concrete long-running lifecycle unit.
 - **Worker mode:** Opt-in FrankenPHP mode that keeps a validated Laravel app in
