@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace App\Services\Trust;
+namespace App\Enums\Trust;
 
 enum TrustStoreInstallReason: string
 {

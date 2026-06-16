@@ -7,10 +7,10 @@ namespace App\Commands\Node;
 use App\Commands\BootstrapGatewayCommand;
 use App\Commands\Concerns\StreamsGatewayProgress;
 use App\Exceptions\GatewayApiException;
+use App\Exceptions\NodeWriteInputException;
 use App\Exceptions\OrbitConfigStoreException;
 use App\Services\Node\NodeGatewayBootstrapper;
 use App\Services\Node\NodeNewPayloadBuilder;
-use App\Services\Node\NodeWriteInputException;
 use App\Services\OrbitConfigStore;
 use Orbit\Core\Progress\ProgressEventType;
 

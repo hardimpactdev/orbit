@@ -6,8 +6,8 @@ namespace App\Commands\Node;
 
 use App\Commands\GatewayCommand;
 use App\Exceptions\GatewayApiException;
+use App\Exceptions\NodeWriteInputException;
 use App\Services\Node\NodeRoleAddPayloadBuilder;
-use App\Services\Node\NodeWriteInputException;
 use Symfony\Component\Console\Input\InputArgument;
 use Symfony\Component\Console\Input\InputOption;
 

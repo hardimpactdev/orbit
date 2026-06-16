@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Providers;
 
+use App\Enums\Trust\TrustStoreInstallReason;
 use App\Exceptions\OrbitConfigStoreException;
 use App\Services\Dns\LocalResolver;
 use App\Services\Dns\ResolvesLocalDns;
@@ -23,7 +24,6 @@ use App\Services\Trust\LinuxTrustStoreInstaller;
 use App\Services\Trust\MacOsTrustStoreInstaller;
 use App\Services\Trust\TrustStoreInstaller;
 use App\Services\Trust\TrustStoreInstallException;
-use App\Services\Trust\TrustStoreInstallReason;
 use App\Services\Updates\LocalCheckoutUpdater;
 use App\Services\Updates\RunsLocalUpdate;
 use App\Services\WireGuard\ResolvesGatewayAddress;

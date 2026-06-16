@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Services\Node;
 
+use App\Exceptions\NodeWriteInputException;
+
 class NodeNewPayloadBuilder
 {
     private const array TEMPLATES = [

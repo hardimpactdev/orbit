@@ -2,13 +2,13 @@
 
 declare(strict_types=1);
 
-namespace App\Services\Operations;
+namespace App\Exceptions;
 
 use App\Models\UpdateLease;
 use Illuminate\Support\Carbon;
 use RuntimeException;
 
-class UpdateLeaseConflict extends RuntimeException
+final class UpdateLeaseConflict extends RuntimeException
 {
     public function __construct(
         public readonly string $resourceType,

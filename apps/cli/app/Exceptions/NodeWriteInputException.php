@@ -2,11 +2,11 @@
 
 declare(strict_types=1);
 
-namespace App\Services\Node;
+namespace App\Exceptions;
 
 use InvalidArgumentException;
 
-class NodeWriteInputException extends InvalidArgumentException
+final class NodeWriteInputException extends InvalidArgumentException
 {
     /**
      * @param  array<string, mixed>  $meta

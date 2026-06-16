@@ -8,6 +8,8 @@ use App\Contracts\RemoteShell;
 use App\Data\Doctor\DriftEntry;
 use App\Data\Doctor\ProbeSnapshot;
 use App\Enums\Apps\AppRuntimeKind;
+use App\Enums\Apps\NodeRuntimeConfigsProbeStatus;
+use App\Enums\Apps\NodeRuntimeContainersProbeStatus;
 use App\Enums\DriftKind;
 use App\Models\App;
 use App\Models\Node;

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\Operations;
 
+use App\Exceptions\UpdateLeaseConflict;
 use App\Models\OperationRun;
 use App\Models\OperationUpdatePlan;
 use App\Services\ActivityLogger;

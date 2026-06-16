@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace App\Services\Workspaces;
+namespace App\Enums\Workspaces;
 
 /**
  * Tri-state outcome for removing a managed workspace runtime artifact (the

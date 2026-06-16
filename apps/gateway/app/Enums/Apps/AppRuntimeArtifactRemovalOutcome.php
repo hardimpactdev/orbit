@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace App\Services\Apps;
+namespace App\Enums\Apps;
 
 /**
  * Tri-state outcome for removing a managed app runtime artifact (the

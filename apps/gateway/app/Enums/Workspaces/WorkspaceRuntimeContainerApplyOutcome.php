@@ -2,9 +2,9 @@
 
 declare(strict_types=1);
 
-namespace App\Services\Apps;
+namespace App\Enums\Workspaces;
 
-enum AppRuntimeContainerApplyOutcome: string
+enum WorkspaceRuntimeContainerApplyOutcome: string
 {
     case Created = 'created';
     case Recreated = 'recreated';

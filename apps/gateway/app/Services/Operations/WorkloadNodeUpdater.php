@@ -8,6 +8,7 @@ use App\Contracts\RemoteShell;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Enums\Nodes\NodeRoleName;
 use App\Enums\Nodes\NodeStatus;
+use App\Exceptions\UpdateLeaseConflict;
 use App\Models\Node;
 use App\Models\OperationRun;
 use App\Models\OperationUpdatePlan;

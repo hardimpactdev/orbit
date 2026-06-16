@@ -5,11 +5,11 @@ declare(strict_types=1);
 namespace App\Commands\Gateway;
 
 use App\Commands\LocalOnlyCommand;
+use App\Enums\Trust\TrustStoreInstallReason;
 use App\Services\Gateway\FetchesGatewayRootCa;
 use App\Services\OrbitConfigStore;
 use App\Services\Trust\TrustStoreInstaller;
 use App\Services\Trust\TrustStoreInstallException;
-use App\Services\Trust\TrustStoreInstallReason;
 use Illuminate\Http\Client\ConnectionException;
 use RuntimeException;
 

@@ -2,10 +2,10 @@
 
 declare(strict_types=1);
 
+use App\Exceptions\UpdateLeaseConflict;
 use App\Models\OperationRun;
 use App\Models\UpdateLease;
 use App\Services\Operations\OperationRunRecorder;
-use App\Services\Operations\UpdateLeaseConflict;
 use App\Services\Operations\UpdateLeaseManager;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;

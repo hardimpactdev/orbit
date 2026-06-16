@@ -2,12 +2,12 @@
 
 declare(strict_types=1);
 
+use App\Enums\Trust\TrustStoreInstallReason;
 use App\Services\Gateway\FetchesGatewayRootCa;
 use App\Services\Gateway\RootCaFetchResult;
 use App\Services\OrbitConfigStore;
 use App\Services\Trust\TrustStoreInstaller;
 use App\Services\Trust\TrustStoreInstallException;
-use App\Services\Trust\TrustStoreInstallReason;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\Http;
 

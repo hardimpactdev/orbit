@@ -2,12 +2,12 @@
 
 declare(strict_types=1);
 
-namespace App\Services\Processes;
+namespace App\Exceptions;
 
 use RuntimeException;
 use Throwable;
 
-class ProcessDockerContainerApplyException extends RuntimeException
+final class ProcessDockerContainerApplyException extends RuntimeException
 {
     public function __construct(
         public readonly bool $hadExistingContainer,

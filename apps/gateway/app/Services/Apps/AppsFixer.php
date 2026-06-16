@@ -6,6 +6,7 @@ namespace App\Services\Apps;
 
 use App\Contracts\RemoteShell;
 use App\Data\Doctor\DriftEntry;
+use App\Enums\Apps\AppRuntimeArtifactRemovalOutcome;
 use App\Enums\Apps\AppRuntimeKind;
 use App\Models\App;
 use App\Models\Node;

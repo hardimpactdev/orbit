@@ -2,9 +2,9 @@
 
 declare(strict_types=1);
 
-namespace App\Services\Workspaces;
+namespace App\Enums\Processes;
 
-enum WorkspaceRuntimeContainerApplyOutcome: string
+enum ProcessDockerContainerApplyOutcome: string
 {
     case Created = 'created';
     case Recreated = 'recreated';

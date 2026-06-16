@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\Operations;
 
+use App\Exceptions\UpdateLeaseConflict;
 use App\Models\OperationRun;
 use App\Models\UpdateLease;
 use Illuminate\Database\QueryException;

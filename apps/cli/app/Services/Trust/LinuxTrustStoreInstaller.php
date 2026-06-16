@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\Trust;
 
+use App\Enums\Trust\TrustStoreInstallReason;
 use Closure;
 use Illuminate\Support\Facades\Process;
 

@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace App\Services\Apps;
+namespace App\Enums\Apps;
 
 enum NodeRuntimeContainersProbeStatus: string
 {
