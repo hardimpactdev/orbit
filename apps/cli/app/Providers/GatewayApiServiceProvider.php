@@ -46,7 +46,13 @@ final class GatewayApiServiceProvider extends ServiceProvider
     {
         $this->app->bind(ResolvesLocalDns::class, fn (): ResolvesLocalDns => new LocalResolver);
 
-        $this->app->bind(ProfileRequestProfiler::class, CurlProfileRequestProfiler::class);
+        $this->app->bind(ProfileRequestProfiler::class, function (): ProfileRequestProfiler {
+            $config = $this->gatewayConnectionConfig();
+
+            return new CurlProfileRequestProfiler(
+                caPemPath: $config['ca_pem_path'],
+            );
+        });
 
         $this->app->bind(RunsLocalUpdate::class, LocalCheckoutUpdater::class);
 

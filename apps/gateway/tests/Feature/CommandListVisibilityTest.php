@@ -423,5 +423,5 @@ it('uses the Orbit CLI name independent of local environment drift', function ()
     ]);
     $process->mustRun();
 
-    expect(trim($process->getOutput()))->toBe('Orbit 0.1.0');
+    expect(trim($process->getOutput()))->toBe('Orbit '.config('app.version'));
 });

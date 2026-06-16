@@ -4,11 +4,15 @@ declare(strict_types=1);
 
 namespace App\Services\Profile;
 
-final class CurlProfileRequestProfiler implements ProfileRequestProfiler
+final readonly class CurlProfileRequestProfiler implements ProfileRequestProfiler
 {
     private const int TOTAL_TIMEOUT_SECONDS = 3;
 
     private const int CONNECT_TIMEOUT_SECONDS = 2;
+
+    public function __construct(
+        private ?string $caPemPath = null,
+    ) {}
 
     /**
      * @param  array<string, string>  $headers
@@ -23,8 +27,9 @@ final class CurlProfileRequestProfiler implements ProfileRequestProfiler
         }
 
         $responseHeaders = [];
+        $temporaryCaBundlePath = null;
 
-        curl_setopt_array($handle, [
+        $options = [
             CURLOPT_RETURNTRANSFER => true,
             CURLOPT_FOLLOWLOCATION => false,
             CURLOPT_HTTPGET => true,
@@ -43,11 +48,21 @@ final class CurlProfileRequestProfiler implements ProfileRequestProfiler
 
                 return strlen($header);
             },
-        ]);
+        ];
+
+        $caInfoPath = $this->caInfoPath($temporaryCaBundlePath);
+
+        if ($caInfoPath !== null) {
+            $options[CURLOPT_CAINFO] = $caInfoPath;
+        }
+
+        curl_setopt_array($handle, $options);
 
         $response = curl_exec($handle);
         $errorMessage = $response === false ? curl_error($handle) : null;
         $info = curl_getinfo($handle);
+
+        $this->removeTemporaryCaBundle($temporaryCaBundlePath);
 
         if (! is_array($info)) {
             $info = [];
@@ -240,5 +255,88 @@ final class CurlProfileRequestProfiler implements ProfileRequestProfiler
     private function toMilliseconds(float $seconds): float
     {
         return round(max(0.0, $seconds) * 1000, 2);
+    }
+
+    private function caInfoPath(?string &$temporaryCaBundlePath): ?string
+    {
+        if (! is_string($this->caPemPath) || $this->caPemPath === '' || ! is_file($this->caPemPath)) {
+            return null;
+        }
+
+        $defaultCaBundlePath = $this->defaultCaBundlePath();
+
+        if ($defaultCaBundlePath === null || $defaultCaBundlePath === $this->caPemPath) {
+            return $this->caPemPath;
+        }
+
+        $temporaryCaBundlePath = $this->mergedCaBundlePath($defaultCaBundlePath, $this->caPemPath);
+
+        return $temporaryCaBundlePath ?? $this->caPemPath;
+    }
+
+    private function defaultCaBundlePath(): ?string
+    {
+        $candidates = [
+            ini_get('curl.cainfo') ?: null,
+            ini_get('openssl.cafile') ?: null,
+        ];
+
+        if (function_exists('openssl_get_cert_locations')) {
+            $locations = openssl_get_cert_locations();
+
+            foreach (['ini_cafile', 'default_cert_file'] as $key) {
+                $candidate = $locations[$key] ?? null;
+
+                if (is_string($candidate)) {
+                    $candidates[] = $candidate;
+                }
+            }
+        }
+
+        foreach (array_unique($candidates) as $candidate) {
+            if (is_string($candidate) && $candidate !== '' && is_file($candidate)) {
+                return $candidate;
+            }
+        }
+
+        return null;
+    }
+
+    private function mergedCaBundlePath(string $defaultCaBundlePath, string $gatewayCaPemPath): ?string
+    {
+        $defaultCaBundle = file_get_contents($defaultCaBundlePath);
+        $gatewayCaPem = file_get_contents($gatewayCaPemPath);
+
+        if (! is_string($defaultCaBundle) || ! is_string($gatewayCaPem)) {
+            return null;
+        }
+
+        $temporaryCaBundlePath = tempnam(sys_get_temp_dir(), 'orbit-profile-ca-');
+
+        if (! is_string($temporaryCaBundlePath)) {
+            return null;
+        }
+
+        $written = file_put_contents(
+            $temporaryCaBundlePath,
+            rtrim($defaultCaBundle).PHP_EOL.rtrim($gatewayCaPem).PHP_EOL,
+        );
+
+        if ($written === false) {
+            $this->removeTemporaryCaBundle($temporaryCaBundlePath);
+
+            return null;
+        }
+
+        return $temporaryCaBundlePath;
+    }
+
+    private function removeTemporaryCaBundle(?string $temporaryCaBundlePath): void
+    {
+        if ($temporaryCaBundlePath === null) {
+            return;
+        }
+
+        @unlink($temporaryCaBundlePath);
     }
 }

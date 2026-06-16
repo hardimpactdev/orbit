@@ -89,5 +89,7 @@ orbit profile --app=myapp --user=42 --json
 ```
 
 The CLI does not follow redirects; a 3xx response is a completed profile
-result. Caller-side DNS, connection, TLS, timeout, or HTTP transport failures
-return `profile_request_failed` and never fall back to a gateway-origin request.
+result. TLS remains verified; when the active gateway has a local CA PEM, Orbit
+adds that CA to the profile request trust material. Caller-side DNS,
+connection, TLS, timeout, or HTTP transport failures return
+`profile_request_failed` and never fall back to a gateway-origin request.

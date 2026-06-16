@@ -91,8 +91,12 @@ This command follows the shared
   connection, TLS, timeout, or HTTP transport failure.
 - Do not follow redirects in the CLI command path. A 3xx response is a completed
   profile result for the resolved URL.
-- Use the caller machine's normal cURL TLS certificate verification. Certificate
-  validation failures return `profile_request_failed`; do not retry insecurely.
+- Use TLS certificate verification from the caller machine. When the active
+  gateway has a local CA PEM, add that CA to the caller's cURL trust material so
+  Orbit-managed HTTPS routes signed by the gateway CA validate from
+  self-contained binaries; otherwise leave the default cURL trust behavior
+  unchanged. Certificate validation failures return `profile_request_failed`;
+  do not retry insecurely.
 - Preserve baseline timing fields equivalent to cURL output: `dns_ms`, `connect_ms`,
   `tls_ms`, `ttfb_ms`, `download_ms`, and `total_ms`.
 - Derive `tls_ms` from TLS handshake time, treat `ttfb_ms` as total time until
@@ -177,6 +181,7 @@ Primary test owners:
 | Path | Coverage |
 | --- | --- |
 | `apps/cli/tests/Feature/Commands/Operation/ProfileCommandTest.php` | Target resolution from cwd, app/domain/URL target, `--node` scoping, auth-mode validation, caller-origin request execution, no gateway-origin CLI fallback, completion semantics, Toolbar enrichment, and caller-side failure diagnostics. |
+| `apps/cli/tests/Feature/Services/CurlProfileRequestProfilerTest.php` | Caller-side cURL TLS verification with the active gateway CA PEM. |
 | `apps/gateway/tests/Feature/Http/Api/ProfileControllerTest.php` | Gateway target resolution, authorization by peer role, derived development domains, absolute path resolution, resolve-only metadata, and gateway API compatibility profiling. |
 | `apps/gateway/tests/Unit/Services/CurlRequestProfilerTest.php` | Baseline HTTP timing extraction, request status/bytes/effective URL, response-header capture, completed non-2xx handling, failed request diagnostics, timeout behavior, and stable millisecond conversion. |
 
