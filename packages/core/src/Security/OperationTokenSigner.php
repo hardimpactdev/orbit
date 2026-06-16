@@ -30,8 +30,8 @@ final class OperationTokenSigner
             id: $id,
             node: $node,
             command: $command,
-            issued_at: $issuedAt,
-            expires_at: $expiresAt,
+            issuedAt: $issuedAt,
+            expiresAt: $expiresAt,
             signature: $signature,
         );
     }

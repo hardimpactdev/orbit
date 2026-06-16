@@ -170,7 +170,7 @@ describe(OperationTokenIntrospector::class, function (): void {
 function operationTokenIntrospector(?int $now = 1_798_105_200): OperationTokenIntrospector
 {
     return new OperationTokenIntrospector(
-        verifier: new OperationTokenVerifier,
+        verifier: new OperationTokenVerifier(new OperationTokenSigner),
         secret: 'gateway-secret',
         clock: $now === null ? null : static fn (): int => $now,
     );

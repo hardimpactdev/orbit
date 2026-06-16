@@ -14,8 +14,8 @@ final readonly class OperationToken
         public string $id,
         public string $node,
         public string $command,
-        public int $issued_at,
-        public int $expires_at,
+        public int $issuedAt,
+        public int $expiresAt,
         public string $signature,
     ) {}
 
@@ -25,8 +25,8 @@ final readonly class OperationToken
             self::base64UrlEncode($this->id),
             self::base64UrlEncode($this->node),
             self::base64UrlEncode($this->command),
-            self::base64UrlEncode((string) $this->issued_at),
-            self::base64UrlEncode((string) $this->expires_at),
+            self::base64UrlEncode((string) $this->issuedAt),
+            self::base64UrlEncode((string) $this->expiresAt),
             $this->signature,
         ]);
     }
@@ -54,8 +54,8 @@ final readonly class OperationToken
             id: $id,
             node: $node,
             command: $command,
-            issued_at: $issuedAt,
-            expires_at: $expiresAt,
+            issuedAt: $issuedAt,
+            expiresAt: $expiresAt,
             signature: $signature,
         );
     }

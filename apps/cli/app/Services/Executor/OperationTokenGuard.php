@@ -10,6 +10,7 @@ use App\Services\OrbitConfigStore;
 use Closure;
 use InvalidArgumentException;
 use Orbit\Core\Security\OperationToken;
+use Orbit\Core\Security\OperationTokenSigner;
 use Orbit\Core\Security\OperationTokenVerifier;
 use Throwable;
 
@@ -138,6 +139,6 @@ final readonly class OperationTokenGuard
 
     private function localVerifier(): OperationTokenVerifier
     {
-        return $this->localVerifier ?? new OperationTokenVerifier;
+        return $this->localVerifier ?? new OperationTokenVerifier(new OperationTokenSigner);
     }
 }

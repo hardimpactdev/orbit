@@ -12,32 +12,33 @@ describe(OperationToken::class, function (): void {
             id: '018fded1-f2f4-72c4-9c33-62978d6f26f5',
             node: 'app-dev',
             command: 'internal:workspace-adapter',
-            issued_at: 1_798_105_200,
-            expires_at: 1_798_105_320,
+            issuedAt: 1_798_105_200,
+            expiresAt: 1_798_105_320,
             signature: 'c2lnbmF0dXJl',
         );
 
         expect($token->id)->toBe('018fded1-f2f4-72c4-9c33-62978d6f26f5')
             ->and($token->node)->toBe('app-dev')
             ->and($token->command)->toBe('internal:workspace-adapter')
-            ->and($token->issued_at)->toBe(1_798_105_200)
-            ->and($token->expires_at)->toBe(1_798_105_320)
+            ->and($token->issuedAt)->toBe(1_798_105_200)
+            ->and($token->expiresAt)->toBe(1_798_105_320)
             ->and($token->signature)->toBe('c2lnbmF0dXJl');
     });
 
-    it('serializes to a compact string and parses back to the same fields', function (): void {
-        $token = (new OperationTokenSigner)->sign(
-            secret: 'gateway-secret',
+    it('serializes to the same compact wire format and parses back to the same fields', function (): void {
+        $token = new OperationToken(
             id: '018fded1-f2f4-72c4-9c33-62978d6f26f5',
             node: 'app-dev',
             command: 'internal:workspace-adapter',
             issuedAt: 1_798_105_200,
             expiresAt: 1_798_105_320,
+            signature: 'c2lnbmF0dXJl',
         );
 
         $parsed = OperationToken::parse($token->toString());
 
-        expect($parsed)->toEqual($token);
+        expect($token->toString())->toBe('MDE4ZmRlZDEtZjJmNC03MmM0LTljMzMtNjI5NzhkNmYyNmY1.YXBwLWRldg.aW50ZXJuYWw6d29ya3NwYWNlLWFkYXB0ZXI.MTc5ODEwNTIwMA.MTc5ODEwNTMyMA.c2lnbmF0dXJl')
+            ->and($parsed)->toEqual($token);
     });
 
     it('serializes the base64url signature segment verbatim', function (): void {
@@ -111,7 +112,7 @@ describe(OperationTokenVerifier::class, function (): void {
     it('accepts a valid token for the expected node and command before expiry', function (): void {
         $token = validOperationToken();
 
-        expect((new OperationTokenVerifier)->verify(
+        expect(operationTokenVerifier()->verify(
             secret: 'gateway-secret',
             token: $token,
             expectedNode: 'app-dev',
@@ -123,7 +124,7 @@ describe(OperationTokenVerifier::class, function (): void {
     it('rejects tokens signed with the wrong secret', function (): void {
         $token = validOperationToken();
 
-        expect((new OperationTokenVerifier)->verify(
+        expect(operationTokenVerifier()->verify(
             secret: 'wrong-secret',
             token: $token,
             expectedNode: 'app-dev',
@@ -135,7 +136,7 @@ describe(OperationTokenVerifier::class, function (): void {
     it('rejects tokens for the wrong node', function (): void {
         $token = validOperationToken();
 
-        expect((new OperationTokenVerifier)->verify(
+        expect(operationTokenVerifier()->verify(
             secret: 'gateway-secret',
             token: $token,
             expectedNode: 'app-prod',
@@ -147,7 +148,7 @@ describe(OperationTokenVerifier::class, function (): void {
     it('rejects tokens for the wrong command', function (): void {
         $token = validOperationToken();
 
-        expect((new OperationTokenVerifier)->verify(
+        expect(operationTokenVerifier()->verify(
             secret: 'gateway-secret',
             token: $token,
             expectedNode: 'app-dev',
@@ -159,7 +160,7 @@ describe(OperationTokenVerifier::class, function (): void {
     it('rejects expired tokens', function (): void {
         $token = validOperationToken();
 
-        expect((new OperationTokenVerifier)->verify(
+        expect(operationTokenVerifier()->verify(
             secret: 'gateway-secret',
             token: $token,
             expectedNode: 'app-dev',
@@ -175,12 +176,12 @@ describe(OperationTokenVerifier::class, function (): void {
             id: $token->id,
             node: 'app-prod',
             command: $token->command,
-            issued_at: $token->issued_at,
-            expires_at: $token->expires_at,
+            issuedAt: $token->issuedAt,
+            expiresAt: $token->expiresAt,
             signature: $token->signature,
         );
 
-        expect((new OperationTokenVerifier)->verify(
+        expect(operationTokenVerifier()->verify(
             secret: 'gateway-secret',
             token: $tampered,
             expectedNode: 'app-prod',
@@ -191,7 +192,7 @@ describe(OperationTokenVerifier::class, function (): void {
 
     it('rejects payloads where field boundaries are forgeable by NUL bytes', function (): void {
         $signer = new OperationTokenSigner;
-        $verifier = new OperationTokenVerifier;
+        $verifier = operationTokenVerifier();
 
         $original = $signer->sign('gateway-secret', 'op', 'node-a', "cmd-a\0cmd-b", 100, 200);
 
@@ -199,8 +200,8 @@ describe(OperationTokenVerifier::class, function (): void {
             id: "op\0node-a",
             node: 'cmd-a',
             command: 'cmd-b',
-            issued_at: 100,
-            expires_at: 200,
+            issuedAt: 100,
+            expiresAt: 200,
             signature: $original->signature,
         );
 
@@ -213,7 +214,7 @@ describe(OperationTokenVerifier::class, function (): void {
 
         // This regression test documents the security contract: verifier string
         // comparisons must use hash_equals(), not direct equality checks.
-        expect((new OperationTokenVerifier)->verify(
+        expect(operationTokenVerifier()->verify(
             secret: 'gateway-secret',
             token: $token,
             expectedNode: 'app-dev',
@@ -233,6 +234,11 @@ function validOperationToken(): OperationToken
         issuedAt: 1_798_105_200,
         expiresAt: 1_798_105_320,
     );
+}
+
+function operationTokenVerifier(): OperationTokenVerifier
+{
+    return new OperationTokenVerifier(new OperationTokenSigner);
 }
 
 function base64UrlEncodeForOperationTokenTest(string $value): string

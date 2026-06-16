@@ -95,9 +95,9 @@ describe(RemoteLocalExecutor::class, function (): void {
             ->and($token->id)->toBe($operationId)
             ->and($token->node)->toBe($node->name)
             ->and($token->command)->toBe('internal:workspace-adapter:lookup')
-            ->and($token->issued_at)->toBe(1_798_105_200)
-            ->and($token->expires_at)->toBe(1_798_105_320)
-            ->and((new OperationTokenVerifier)->verify(
+            ->and($token->issuedAt)->toBe(1_798_105_200)
+            ->and($token->expiresAt)->toBe(1_798_105_320)
+            ->and((new OperationTokenVerifier(new OperationTokenSigner))->verify(
                 secret: 'gateway-secret',
                 token: $token,
                 expectedNode: $node->name,

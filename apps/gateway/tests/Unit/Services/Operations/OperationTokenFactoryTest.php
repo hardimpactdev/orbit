@@ -24,8 +24,8 @@ describe(OperationTokenFactory::class, function (): void {
             ->and($token->id)->toBe('operation-verify-1')
             ->and($token->node)->toBe('app-dev')
             ->and($token->command)->toBe('internal:executor:verify')
-            ->and($token->issued_at)->toBe($issuedAt)
-            ->and($token->expires_at)->toBe($issuedAt + 120)
+            ->and($token->issuedAt)->toBe($issuedAt)
+            ->and($token->expiresAt)->toBe($issuedAt + 120)
             ->and($token->signature)->not->toBe('')
             ->and(explode('.', $token->toString()))->toHaveCount(6)
             ->and(OperationToken::parse($token->toString()))->toEqual($token)
@@ -139,13 +139,13 @@ describe(OperationTokenFactory::class, function (): void {
             command: 'internal:executor:verify',
         );
 
-        expect($token->expires_at - $token->issued_at)->toBe(30)
+        expect($token->expiresAt - $token->issuedAt)->toBe(30)
             ->and(operationTokenFactoryTestVerifier()->verify(
                 secret: 'gateway-app-key',
                 token: $token,
                 expectedNode: 'app-dev',
                 expectedCommand: 'internal:executor:verify',
-                now: $token->issued_at,
+                now: $token->issuedAt,
             ))->toBeTrue();
     });
 });
@@ -165,7 +165,7 @@ function operationTokenFactoryTestFactory(
 
 function operationTokenFactoryTestVerifier(): OperationTokenVerifier
 {
-    return new OperationTokenVerifier;
+    return new OperationTokenVerifier(new OperationTokenSigner);
 }
 
 function operationTokenFactoryTestBase64UrlEncode(string $value): string
