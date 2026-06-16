@@ -1,8 +1,8 @@
 # Proxy Commands
 
-Manage **custom** proxy routes (Caddy site intent) — for routes that aren't owned by an app, workspace, or tool. App and workspace ingress are managed automatically by `app:*` and `workspace:*`; `proxy:*` adds redirects and side-channel domains. Spec: [`docs/domains/8_proxy/`](../../../docs/domains/8_proxy/).
+Manage **custom** proxy routes (Caddy site intent)  -  for routes that aren't owned by an app, workspace, or tool. App and workspace ingress are managed automatically by `app:*` and `workspace:*`; `proxy:*` adds redirects and side-channel domains. Spec: [`apps/docs/content/domains/8_proxy/`](../../../apps/docs/content/domains/8_proxy/).
 
-The `proxy` state family also covers app, workspace, gateway, and tool-owned routes — `proxy:list` shows all of them, but you can only mutate **custom** ones with `proxy:add` / `proxy:remove`. Drift in the other route kinds is repaired through `doctor --fix --family=proxy --restore`.
+The `proxy` state family also covers app, workspace, gateway, and tool-owned routes  -  `proxy:list` shows all of them, but you can only mutate **custom** ones with `proxy:add` / `proxy:remove`. Drift in the other route kinds is repaired through `doctor --fix --family=proxy --restore`.
 
 ## `orbit proxy:add [domain]`
 
@@ -18,8 +18,8 @@ orbit proxy:add [<domain>] [--node=<name>]
 |---|---|
 | `domain` | Hostname to serve. |
 | `--node` | Serving node. |
-| `--upstream` | HTTP or HTTPS upstream URL — proxied. |
-| `--redirect` | HTTP or HTTPS redirect target — issues a redirect. |
+| `--upstream` | HTTP or HTTPS upstream URL  -  proxied. |
+| `--redirect` | HTTP or HTTPS redirect target  -  issues a redirect. |
 | `--code` | Redirect status code (e.g. `301`, `302`, `308`). Only valid with `--redirect`. |
 | `--force` | Replace an existing custom route with different intent. |
 

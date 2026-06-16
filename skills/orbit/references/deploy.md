@@ -1,8 +1,10 @@
 # Deploy Commands
 
-Run the deployment pipeline for production apps. Pipeline steps are stored on the gateway and executed in order on the app node. Spec: [`docs/domains/10_deploy/`](../../../docs/domains/10_deploy/).
+Run the deployment pipeline for production apps. Pipeline steps are stored on
+the gateway and executed in order on the app's owning `app-prod` node. Spec:
+[`apps/docs/content/domains/10_deploy/`](../../../apps/docs/content/domains/10_deploy/).
 
-Production-only — development apps use `workspace:setup` instead.
+Production-only  -  development apps use `workspace:setup` instead.
 
 ## `orbit deploy:run [app]`
 
@@ -56,12 +58,12 @@ orbit deploy:step-add [<app>] [<command>] [--title='<text>']
 
 | Option | Default | Notes |
 |---|---|---|
-| `app` | — | Production app slug or domain. |
-| `command` | — | Shell command run on the app node, in the app's release path. |
+| `app` |  -  | Production app slug or domain. |
+| `command` |  -  | Shell command run on the owning app-prod node, in the app's release path. |
 | `--title` | command | Display title in step lists / output. |
 | `--order` | append | Positive integer insertion order. |
 | `--timeout` | 600 | Seconds. |
-| `--retention` | — | Optional release-retention metadata used by retention-aware steps. |
+| `--retention` |  -  | Optional release-retention metadata used by retention-aware steps. |
 
 Examples:
 
@@ -69,7 +71,7 @@ Examples:
 orbit deploy:step-add myapp 'composer install --no-dev --optimize-autoloader' --title='install deps'
 orbit deploy:step-add myapp 'php artisan migrate --force' --title='migrate'
 orbit deploy:step-add myapp 'php artisan optimize' --title='cache'
-orbit deploy:step-add myapp 'sudo systemctl reload php8.5-fpm' --title='fpm reload'
+orbit deploy:step-add myapp 'php artisan optimize' --title='optimize'
 ```
 
 ## `orbit deploy:step-list [app]`

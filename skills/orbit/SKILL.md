@@ -1,32 +1,48 @@
 ---
 name: orbit
-description: Operate the Orbit CLI for sovereign Laravel environments — provision gateway/operator/app nodes, create dev and production apps, manage workspaces/processes/schedules, install services, deploy, and diagnose drift via `orbit doctor`. Use when the user wants to set up a Laravel environment, create or modify an app, enable a service (postgres/redis/mailpit), run a deployment, profile a request, manage VPN/firewall/DNS, change PHP versions, or repair a node. Triggers include "set up orbit", "set up this app", "register an app", "create a workspace", "install postgres", "what's running", "check orbit health", "fix drift", "deploy myapp", "switch PHP version", "create a node", "list nodes", "vpn client", or any Orbit fleet task.
+description: Operate the Orbit CLI for sovereign Laravel environments  -  bootstrap gateways and clients, provision workload-role nodes, create development and production apps, manage workspaces/processes/schedules, configure database connections, publish S3/Cloudflare surfaces, deploy, profile, and diagnose drift via `orbit doctor`. Use when the user wants to set up Orbit, create or modify an app, create a workspace, manage database/S3/DNS/VPN/firewall, run a deployment, profile a request, change PHP runtime selection, repair a node, or inspect fleet state. Triggers include "set up orbit", "set up this app", "register an app", "create a workspace", "database connection", "publish S3", "Cloudflare DNS", "what's running", "check orbit health", "fix drift", "deploy myapp", "switch PHP version", "create a node", "list nodes", "vpn client", or any Orbit fleet task.
 allowed-tools: Bash(orbit *)
 ---
 
 # Orbit CLI
 
-Orbit is a sovereign Laravel environment. The **gateway** is the control plane and owns all durable state. **App nodes** (Ubuntu) run apps, PHP-FPM, Caddy, systemd process units, and Docker services. **Operator nodes** (macOS or Ubuntu) just run the CLI and call the gateway over WireGuard.
+Orbit is a sovereign Laravel environment. The **gateway** is the control plane
+and owns all durable state. Every other machine is a gateway client when it runs
+`orbit`: it presents a WireGuard identity, calls the gateway typed API, and lets
+the gateway decide authorization from node grants.
 
-The CLI is the product contract. Every command works the same way regardless of which node it runs on — operator nodes and app nodes call the gateway typed API; the gateway uses `RemoteShell` (SSH) to enact changes on app nodes.
+Nodes carry role assignments such as `app-dev`, `app-prod`, `database`,
+`agent`, `ingress`, `websocket`, and `s3`. Workload nodes run role-specific
+artifacts: `orbit-caddy`, FrankenPHP app/workspace containers, systemd host
+command units, Docker-backed process units, Laravel Reverb, SeaweedFS, and
+similar backing services. PHP-FPM and Supervisor are not app/workspace runtime
+fallbacks.
+
+The CLI is the public product contract. Gateway Artisan is maintenance/internal
+automation only. When work must happen on a node, the gateway uses SSH
+execution lanes (`RemoteShell`, local executor, or gateway runtime executor)
+over the Orbit/WireGuard network.
 
 ## Universal output rules
 
 - Every command supports `--help` for signature, arguments, and options.
-- Every command that returns structured data supports `--json` (`{"success":{"data":{…}}}` or `{"success":false,"error":…}`).
+- Every command that returns structured data supports `--json` (`{"success":{"data":{...}}}` or `{"success":false,"error":...}`).
 - Non-interactive mode (`-n`) auto-enables JSON. Always pass `--json` when parsing programmatically.
 - Destructive commands take `--force` to skip confirmation.
 - Nothing prints secrets to logs; use `tool:credentials` for those.
 
 ## Core concepts (load on demand)
 
-See [`references/concepts.md`](references/concepts.md) for: node roles (gateway / operator / app), state families and `doctor`, identity slug rules, the `RemoteShell` enactment model, JSON envelope shape, and the `--node` / `--app` / `--workspace` resolution order.
+See [`references/concepts.md`](references/concepts.md) for: gateway/client
+terminology, node roles, state families and `doctor`, identity slug rules,
+execution lanes, JSON envelope shape, and the `--node` / `--app` /
+`--workspace` resolution order.
 
 ## Command index
 
 Commands are grouped by family. Each reference file lists every command in that family with its signature, options, defaults, and a couple of examples.
 
-### Setup and ops — [`references/operation.md`](references/operation.md)
+### Setup and ops  -  [`references/operation.md`](references/operation.md)
 
 | Command | What it does |
 |---|---|
@@ -35,32 +51,35 @@ Commands are grouped by family. Each reference file lists every command in that 
 | `orbit update:all` | Update local checkout and every active registered node |
 | `orbit profile [target]` | Profile one HTTP request against an Orbit-managed app (DNS/connect/TLS/TTFB + Toolbar enrichment) |
 
-### Node fleet — [`references/node.md`](references/node.md)
+### Node fleet  -  [`references/node.md`](references/node.md)
 
 | Command | What it does |
 |---|---|
-| `orbit node:new [name]` | Create or provision a gateway / operator / app node |
-| `orbit node:list` | List nodes in the gateway registry (`--doctor` for live readiness) |
+| `orbit node:new [name]` | Create a client identity or provision a workload-role node |
+| `orbit node:list` | List nodes in the gateway registry |
 | `orbit node:show [name]` | Show one node's registry record |
-| `orbit node:update [name]` | Update node host, environment, or public IPv4/IPv6 metadata |
+| `orbit node:update [name]` | Update node host, TLD, gateway endpoint, or public IP metadata |
 | `orbit node:remove [name]` | Remove a node from the registry |
-| `orbit node:default [name]` | Choose, show, or clear the local operator node's default development app node |
+| `orbit node:default [name]` | Choose, show, or clear the local default development node |
 | `orbit node:grant <consumer> <server>` | Grant one node access to another |
 | `orbit node:revoke [c] [s]` | Revoke a node-to-node grant |
+| `orbit node:permissions` | Manage explicit node access permissions |
+| `orbit node role:add\|list\|remove` | Manage assignable workload roles on an existing node |
 | `orbit node:agent-ide [name] [adapter]` | Set the default Agent IDE adapter for a node |
 
-### Gateway onboarding — [`references/gateway.md`](references/gateway.md)
+### Gateway onboarding  -  [`references/gateway.md`](references/gateway.md)
 
 | Command | What it does |
 |---|---|
-| `orbit gateway:add [gateway_ip]` | Trust the gateway CA and configure the local operator-node connection |
+| `orbit gateway:add [gateway_ip]` | Trust the gateway CA and configure the local client connection |
 | `orbit gateway:trust` | Trust the gateway root CA in the local OS trust store |
+| `orbit gateway:list\|use\|status` | Inspect or switch local gateway entries |
 
-### Apps — [`references/app.md`](references/app.md)
+### Apps  -  [`references/app.md`](references/app.md)
 
 | Command | What it does |
 |---|---|
-| `orbit app:new [name]` | Create or clone a new app on an app node |
+| `orbit app:new [name]` | Create or clone a new app on an app-role node |
 | `orbit app:register [name]` | Register or re-apply Orbit management for an existing app path |
 | `orbit app:list` | List registered apps |
 | `orbit app:show [app]` | Show app intent, owning node, URL, agent IDE, owned routes |
@@ -68,8 +87,10 @@ Commands are grouped by family. Each reference file lists every command in that 
 | `orbit app:remove [app]` | Remove an app and its owned artifacts |
 | `orbit app:prune [app]` | Remove stale workspaces (`--dry-run` to preview) |
 | `orbit app:agent-ide [app] [adapter]` | Set or inherit the Agent IDE adapter for an app |
+| `orbit app:worker [app]` | Inspect or change FrankenPHP worker mode |
+| `orbit app:websocket enable\|disable\|credentials` | Manage app WebSocket binding and credentials |
 
-### Workspaces — [`references/workspace.md`](references/workspace.md)
+### Workspaces  -  [`references/workspace.md`](references/workspace.md)
 
 | Command | What it does |
 |---|---|
@@ -83,7 +104,7 @@ Commands are grouped by family. Each reference file lists every command in that 
 | `orbit workspace-setup-step:add\|list\|remove` | Manage app-scoped workspace setup pipeline |
 | `orbit workspace-teardown-step:add\|list\|remove` | Manage app-scoped workspace teardown pipeline |
 
-### Processes — [`references/process.md`](references/process.md)
+### Processes  -  [`references/process.md`](references/process.md)
 
 | Command | What it does |
 |---|---|
@@ -94,7 +115,7 @@ Commands are grouped by family. Each reference file lists every command in that 
 | `orbit process:start\|stop\|restart [name]` | Control runtime units |
 | `orbit process:logs [name]` | Read runtime logs (`--follow`, `--lines`) |
 
-### Schedules — [`references/schedule.md`](references/schedule.md)
+### Schedules  -  [`references/schedule.md`](references/schedule.md)
 
 | Command | What it does |
 |---|---|
@@ -105,9 +126,10 @@ Commands are grouped by family. Each reference file lists every command in that 
 | `orbit schedule:run <name>` | Run a schedule once, immediately |
 | `orbit schedule:logs <name>` | Show captured run output |
 
-### Tools and services — [`references/tool.md`](references/tool.md)
+### Tools and services  -  [`references/tool.md`](references/tool.md)
 
-Generic surface for installable tools (postgres, mysql, redis, mailpit, reverb, php, opencode-server, polyscope-server) and observational baseline tools (caddy, docker, viteplus, php-cli, gh, composer, dns).
+Generic surface for node capabilities. Tools do not own start/stop/restart/log
+lifecycle directly; process rows own lifecycle for runnable services.
 
 | Command | What it does |
 |---|---|
@@ -116,19 +138,27 @@ Generic surface for installable tools (postgres, mysql, redis, mailpit, reverb, 
 | `orbit tool:install <tool>` | Install a managed tool (`--status=running` to also start) |
 | `orbit tool:update [tool]` | Update a managed tool |
 | `orbit tool:remove <tool>` | Remove a managed tool |
-| `orbit tool:start\|stop\|restart\|reload <tool>` | Lifecycle control |
 | `orbit tool:reconfigure <tool>` | Rotate auth or re-provision (e.g. `--password=`) |
-| `orbit tool:logs <tool>` | Read managed tool logs |
 | `orbit tool:credentials [tool]` | Read connection credentials |
 
-### PHP runtime — [`references/php.md`](references/php.md)
+### Databases  -  [`references/database.md`](references/database.md)
+
+| Command | What it does |
+|---|---|
+| `orbit database:list\|show` | Read reusable database connection intent |
+| `orbit database:add\|update\|remove` | Manage reusable connection records |
+| `orbit database:attach\|detach` | Map a connection to an app/workspace `.env` prefix |
+| `orbit database:query` | Run audited SQL through a registered connection |
+| `orbit database:tables\|schema\|describe` | Inspect database schema metadata |
+
+### PHP runtime  -  [`references/php.md`](references/php.md)
 
 | Command | What it does |
 |---|---|
 | `orbit php:list` | List PHP runtime support, installed facts, and selected intent (`--live` for live probe) |
 | `orbit php:use [version]` | Select PHP for an app, workspace, node CLI default, or `--inherit` |
 
-### Deployments — [`references/deploy.md`](references/deploy.md)
+### Deployments  -  [`references/deploy.md`](references/deploy.md)
 
 | Command | What it does |
 |---|---|
@@ -139,7 +169,25 @@ Generic surface for installable tools (postgres, mysql, redis, mailpit, reverb, 
 | `orbit deploy:step-list [app]` | List pipeline steps |
 | `orbit deploy:step-remove [app] [step]` | Remove a step |
 
-### Proxy routes — [`references/proxy.md`](references/proxy.md)
+### S3 object storage  -  [`references/s3.md`](references/s3.md)
+
+| Command | What it does |
+|---|---|
+| `orbit s3:credentials` | Show SeaweedFS service credentials and endpoint metadata |
+| `orbit s3:publish [host]` | Publish a public HTTPS hostname for the fleet S3 service |
+| `orbit s3:unpublish [host]` | Remove a public HTTPS hostname from the fleet S3 service |
+
+### Cloudflare  -  [`references/cf.md`](references/cf.md)
+
+| Command | What it does |
+|---|---|
+| `orbit cf-zone:list` | List Cloudflare zones visible to the gateway token |
+| `orbit cf-dns:list\|add\|remove` | Manage Cloudflare A/AAAA DNS records |
+| `orbit cf-cache:flush` | Flush Cloudflare cache for a zone |
+| `orbit cf-cache-rule:add\|remove` | Manage Orbit's standard app cache rule |
+| `orbit cf-ssl:enable\|disable` | Manage Cloudflare SSL mode for a zone |
+
+### Proxy routes  -  [`references/proxy.md`](references/proxy.md)
 
 | Command | What it does |
 |---|---|
@@ -147,7 +195,7 @@ Generic surface for installable tools (postgres, mysql, redis, mailpit, reverb, 
 | `orbit proxy:list` | List proxy routes (`--filter=app\|workspace\|gateway\|tool\|custom\|redirect`) |
 | `orbit proxy:remove [domain]` | Remove a custom proxy route |
 
-### Firewall — [`references/firewall.md`](references/firewall.md)
+### Firewall  -  [`references/firewall.md`](references/firewall.md)
 
 | Command | What it does |
 |---|---|
@@ -156,28 +204,28 @@ Generic surface for installable tools (postgres, mysql, redis, mailpit, reverb, 
 | `orbit firewall:list` | List rule intent |
 | `orbit firewall:remove [name]` | Remove a rule |
 
-### Local DNS — [`references/dns.md`](references/dns.md)
+### Local DNS  -  [`references/dns.md`](references/dns.md)
 
 | Command | What it does |
 |---|---|
 | `orbit dns:list` | List caller-local DNS resolver overrides |
 | `orbit dns:resolve-tld [tld] [target]` | Configure or remove a development TLD resolver override |
 
-### Activity log — [`references/activity.md`](references/activity.md)
+### Activity log  -  [`references/activity.md`](references/activity.md)
 
 | Command | What it does |
 |---|---|
 | `orbit activity:list` | List gateway activity history (filter by `--app` / `--node` / `--effect` / `--correlation`) |
 | `orbit activity:show [id]` | Show one activity entry |
 
-### Agent IDE — [`references/agent-ide.md`](references/agent-ide.md)
+### Agent IDE  -  [`references/agent-ide.md`](references/agent-ide.md)
 
 | Command | What it does |
 |---|---|
 | `orbit agent-ide:message [message]` | Send a message to an active Agent IDE session for an app/workspace |
 | `orbit node:agent-ide` / `orbit app:agent-ide` | Set the adapter (covered in node.md / app.md) |
 
-### VPN — [`references/vpn.md`](references/vpn.md)
+### VPN  -  [`references/vpn.md`](references/vpn.md)
 
 | Command | What it does |
 |---|---|
@@ -186,11 +234,11 @@ Generic surface for installable tools (postgres, mysql, redis, mailpit, reverb, 
 
 ## Common workflows
 
-**Bootstrap an operator node onto an existing gateway**
+**Bootstrap a client onto an existing gateway**
 
 ```bash
 # On the gateway:
-orbit node:new my-mac --role=operator
+orbit node:new my-mac --operator
 # Install the returned WireGuard config on the Mac, then on the Mac:
 orbit gateway:add 10.6.0.1
 ```
@@ -198,16 +246,17 @@ orbit gateway:add 10.6.0.1
 **Bootstrap the first gateway from a fresh Mac**
 
 ```bash
-orbit node:new gateway-1 --role=gateway --host=203.0.113.2 --operator-name=my-mac
+orbit node:new gateway-1 --template=gateway --host=203.0.113.2 --operator-name=my-mac
 ```
 
 **Create a development app + database**
 
 ```bash
-orbit node:default beast              # set local default app node (one-time)
+orbit node:default beast              # set local default development node (one-time)
 orbit app:new myapp --repo=acme/myapp # served at myapp.<beast-tld>
-orbit tool:install postgres
-orbit tool:credentials postgres       # connection details
+orbit database:add myapp --driver=pgsql --host=10.6.0.50 --database=myapp --username=orbit
+orbit database:attach myapp --app=myapp --env-prefix=DB
+orbit doctor --app=myapp --family=database_connection --fix --restore
 ```
 
 **Deploy a production app**
@@ -218,6 +267,14 @@ orbit deploy:step-add myapp 'composer install --no-dev' --title='install deps'
 orbit deploy:step-add myapp 'php artisan migrate --force' --title='migrate'
 orbit deploy:run myapp
 orbit deploy:history myapp
+```
+
+**Publish the fleet S3 endpoint**
+
+```bash
+orbit node:new storage-1 --template=s3 --host=10.0.0.20 --s3-data-path=/srv/orbit/s3/data
+orbit s3:credentials --node=storage-1
+orbit s3:publish s3.example.com --node=storage-1
 ```
 
 **Diagnose and repair drift**
@@ -232,7 +289,7 @@ orbit doctor --node=beast --fix --adopt --family=app  # adopt node reality (DR /
 **Move an app to a different PHP version**
 
 ```bash
-orbit php:use 8.4 --app=myapp        # changes app FPM pool live, ~1-2s blip
+orbit php:use 8.4 --app=myapp        # recreates app FrankenPHP runtime artifact
 orbit php:use 8.5 --cli --node=beast # default CLI PHP for that node
 ```
 
@@ -246,26 +303,33 @@ orbit app:agent-ide myapp polyscope  # per-app override
 
 ## Conventions when calling Orbit
 
-- Resolve target order for `--node`-aware commands: explicit `--node` → app/workspace ownership → local `node:default` → interactive prompt or non-interactive failure.
-- Slugs are `^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$`. App ≤40, node ≤63, workspace ≤63, process ≤64 chars.
+- Resolve target order for `--node`-aware commands: explicit `--node` -> app/workspace ownership -> local `node:default` -> interactive prompt or non-interactive failure.
+- Slugs are `^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$`. App <=40, node <=63, workspace <=63, process <=64 chars.
 - Development apps are served at `{name}.{node-tld}`; workspaces at `{workspace}.{app}.{tld}`. Production apps at the configured `--domain`.
-- App, workspace, process, schedule, proxy, firewall, and tool state are gateway-owned **state families**. Use `doctor --family=<key>` to scope drift checks; family keys are `node`, `app`, `workspace`, `process`, `proxy`, `schedule`, `tool`, `firewall_rule`.
-- Don't SSH to nodes manually to "fix" Orbit state — use `doctor --fix` so intent and reality stay aligned.
+- App, workspace, process, schedule, proxy, firewall, tool, and database
+  connection state are gateway-owned **state families**. Use
+  `doctor --family=<key>` to scope drift checks; family keys are `node`, `app`,
+  `workspace`, `process`, `proxy`, `schedule`, `tool`, `firewall_rule`, and
+  `database_connection`.
+- Don't SSH to nodes manually to "fix" Orbit state  -  use `doctor --fix` so intent and reality stay aligned.
 
 ## When to read which reference
 
-- Setting up a node, configuring grants, choosing a default → [`node.md`](references/node.md), [`gateway.md`](references/gateway.md)
-- Creating, removing, registering, or pruning apps → [`app.md`](references/app.md)
-- Workspace lifecycle, setup/teardown step pipelines → [`workspace.md`](references/workspace.md)
-- Long-running app processes (queues, websockets, vite) → [`process.md`](references/process.md)
-- Recurring jobs and Laravel scheduler integration → [`schedule.md`](references/schedule.md)
-- Databases, caches, mail, agent-ide servers → [`tool.md`](references/tool.md)
-- PHP version selection at app/workspace/CLI scope → [`php.md`](references/php.md)
-- Production deployments and pipelines → [`deploy.md`](references/deploy.md)
-- Custom domains, redirects, ingress drift → [`proxy.md`](references/proxy.md)
-- UFW intent, opening or closing ports → [`firewall.md`](references/firewall.md)
-- Local TLD resolution on an operator node → [`dns.md`](references/dns.md)
-- Audit trail / who did what → [`activity.md`](references/activity.md)
-- Sending messages into a workspace's coding agent → [`agent-ide.md`](references/agent-ide.md)
-- WireGuard client provisioning, web UI password → [`vpn.md`](references/vpn.md)
-- Node roles, doctor model, slugs, JSON shape → [`concepts.md`](references/concepts.md)
+- Setting up a node, configuring grants, choosing a default -> [`node.md`](references/node.md), [`gateway.md`](references/gateway.md)
+- Creating, removing, registering, or pruning apps -> [`app.md`](references/app.md)
+- Workspace lifecycle, setup/teardown step pipelines -> [`workspace.md`](references/workspace.md)
+- Long-running app processes (queues, websockets, vite) -> [`process.md`](references/process.md)
+- Recurring jobs and Laravel scheduler integration -> [`schedule.md`](references/schedule.md)
+- Node capabilities, mail, agent runtimes, service tools -> [`tool.md`](references/tool.md)
+- Database connection intent, target `.env` convergence, SQL/schema inspection -> [`database.md`](references/database.md)
+- PHP version selection at app/workspace/CLI scope -> [`php.md`](references/php.md)
+- Production deployments and pipelines -> [`deploy.md`](references/deploy.md)
+- S3 service credentials and public S3 hosts -> [`s3.md`](references/s3.md)
+- Cloudflare DNS/cache/SSL commands -> [`cf.md`](references/cf.md)
+- Custom domains, redirects, ingress drift -> [`proxy.md`](references/proxy.md)
+- UFW intent, opening or closing ports -> [`firewall.md`](references/firewall.md)
+- Local TLD resolution on a caller machine -> [`dns.md`](references/dns.md)
+- Audit trail / who did what -> [`activity.md`](references/activity.md)
+- Sending messages into a workspace's coding agent -> [`agent-ide.md`](references/agent-ide.md)
+- WireGuard client provisioning, web UI password -> [`vpn.md`](references/vpn.md)
+- Node roles, doctor model, slugs, JSON shape -> [`concepts.md`](references/concepts.md)

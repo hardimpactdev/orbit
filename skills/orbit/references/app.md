@@ -1,14 +1,21 @@
 # App Commands
 
-Manage Orbit apps. Apps live on app nodes; gateway and operator nodes are never valid app targets. All app commands flow through the gateway. Spec: [`apps/docs/content/domains/5_app/`](../../../apps/docs/content/domains/5_app/).
+Manage Orbit apps. Apps live on nodes with an active `app-dev` or `app-prod`
+role; gateway-only nodes and client identities with no app role are never valid
+app targets. All app commands flow through the gateway. Spec:
+[`apps/docs/content/domains/5_app/`](../../../apps/docs/content/domains/5_app/).
 
 Development apps are served at `{name}.{node-tld}` (e.g. `myapp.beast`). Production apps are served at the configured `--domain`, which must be globally unique across the fleet.
 
-Each app gets a dedicated PHP-FPM pool at `/etc/php/{version}/fpm/pool.d/orbit-{slug}.conf`, owns its own OPcache segment, and (for production) runs as a dedicated non-login Unix user with files at `/home/{slug}/app`.
+PHP apps use dedicated FrankenPHP runtime containers represented by
+process-backed Docker runtime units. Static apps serve files through
+`orbit-caddy` and do not get a PHP runtime container. Production PHP apps run
+as a dedicated app runtime user and are reachable only through the private
+app-role backend route unless the same node also carries `ingress`.
 
 ## `orbit app:new [name]`
 
-Create or clone a new app on an app node.
+Create or clone a new app on an app-role node.
 
 ```bash
 orbit app:new [<name>] [--node=<name>] [--repo=<git>] [--root=public]
@@ -17,12 +24,12 @@ orbit app:new [<name>] [--node=<name>] [--repo=<git>] [--root=public]
 
 | Option | Default | Notes |
 |---|---|---|
-| `name` | — | App slug (≤40 chars, globally unique). |
-| `--node` | local default | Target app node. Required when no `node:default`. |
-| `--repo` | — | Git URL or `owner/repo` GitHub shorthand (expands to `git@github.com:owner/repo.git`). Cloning runs as the SSH user already configured on the node — Orbit doesn't proxy git credentials. Omitted = empty directory. |
+| `name` |  -  | App slug (<=40 chars, globally unique). |
+| `--node` | local default | Target app-role node. Required when no `node:default`. |
+| `--repo` |  -  | Git URL or `owner/repo` GitHub shorthand (expands to `git@github.com:owner/repo.git`). Cloning runs as the SSH user already configured on the node  -  Orbit doesn't proxy git credentials. Omitted = empty directory. |
 | `--root` | `public` | Document root relative to app path. |
 | `--php-version` | `8.5` | Initial PHP version (one of 8.3, 8.4, 8.5). |
-| `--domain` | — | Production: triggers production setup. If DNS/TLS isn't ready yet, the app installs but the domain stays inactive — re-run `app:register --domain=…` to retry. |
+| `--domain` |  -  | Production: triggers production setup. If DNS/TLS isn't ready yet, the app installs but the domain stays inactive  -  re-run `app:register --domain=...` to retry. |
 
 Examples:
 
@@ -35,7 +42,9 @@ orbit app:new shop --node=prod-1 --repo=acme/shop --domain=shop.example.com
 
 ## `orbit app:register [name]`
 
-Register or re-apply Orbit management for an existing app path. Idempotent — adopts an existing path, regenerates the FPM pool, re-applies proxy routes, and retries production domain activation. No clone.
+Register or re-apply Orbit management for an existing app path. Idempotent:
+adopts an existing path, reconciles the app runtime/route intent, and retries
+production domain activation. No clone.
 
 ```bash
 orbit app:register [<name>] [--node=<name>] [--path=<path>] [--root=public]
@@ -45,7 +54,7 @@ orbit app:register [<name>] [--node=<name>] [--path=<path>] [--root=public]
 Use this:
 
 - After moving an existing project under Orbit management.
-- To regenerate the per-app FPM pool after upgrading apps that pre-date dedicated pools.
+- To re-converge app runtime and route artifacts after upgrading older apps.
 - To retry production domain activation after DNS propagated.
 
 ## `orbit app:list`
@@ -56,11 +65,12 @@ List registered apps.
 orbit app:list [--node=<name>] [--environment=development|production] [--json]
 ```
 
-Reads gateway DB only — no SSH.
+Reads gateway DB only  -  no SSH.
 
 ## `orbit app:show [app]`
 
-Show app intent, owning node, URL, effective Agent IDE, app-owned route summary, FPM pool location, and PHP version.
+Show app intent, owning node, URL, effective Agent IDE, app-owned route summary,
+runtime kind, worker mode, and PHP version.
 
 ```bash
 orbit app:show [<app>] [--json]
@@ -80,13 +90,17 @@ orbit app:root [<app>] [<root>] [--json]
 
 ## `orbit app:remove [app]`
 
-Remove an app and its owned artifacts: gateway registry row, FPM pool, Caddy config, owned routes, deployment intent. For production apps, also removes the dedicated user and `/home/{slug}`.
+Remove an app and its owned artifacts: gateway registry row, app runtime
+container/process intent, Caddy config, owned routes, deployment intent, and
+workspace state. For production apps, also removes the dedicated app user and
+owned app path.
 
 ```bash
 orbit app:remove [<app>] [--force] [--json]
 ```
 
-PHP-FPM is restarted so the socket is cleanly released.
+Orbit removes the app runtime artifact and route intent through the gateway;
+do not manually delete runtime containers or Caddy config.
 
 ## `orbit app:prune [app]`
 
@@ -106,4 +120,29 @@ Set or inherit the Agent IDE adapter for one app.
 orbit app:agent-ide [<app>] [opencode|polyscope|inherit|none] [--force] [--json]
 ```
 
-`inherit` means "use the node default" (set with `node:agent-ide`). Switching adapter may invalidate workspaces created by the old one — `--force` confirms the resulting workspace cleanup without prompting.
+`inherit` means "use the node default" (set with `node:agent-ide`). Switching adapter may invalidate workspaces created by the old one  -  `--force` confirms the resulting workspace cleanup without prompting.
+
+## `orbit app:worker [app]`
+
+Inspect or change FrankenPHP worker mode for a PHP app.
+
+```bash
+orbit app:worker [show|enable|disable] [<app>] [--json]
+```
+
+Worker mode is opt-in. Keep it disabled unless the app has been validated for
+long-lived Laravel workers.
+
+## `orbit app:websocket enable | disable | credentials`
+
+Manage one app's binding to the fleet websocket service.
+
+```bash
+orbit app:websocket enable [<app>] [--host=<public-host>] [--json]
+orbit app:websocket disable [<app>] [--json]
+orbit app:websocket credentials [<app>] [--json]
+```
+
+The websocket runtime itself belongs to nodes carrying the `websocket` role.
+App commands only manage the app-owned binding, credentials, allowed origins,
+and public WebSocket route intent.

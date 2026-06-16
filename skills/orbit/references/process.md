@@ -1,6 +1,6 @@
 # Process Commands
 
-Long-running app-owned processes (queue workers, websocket servers, vite dev server, ...). On Linux, each app/workspace host-command process definition renders as one systemd unit per target. Runtime unit name: `orbit_<app>_<workspace|main>_<process>`. Spec: [`docs/domains/7_process/`](../../../docs/domains/7_process/).
+Long-running app-owned processes (queue workers, websocket servers, vite dev server, ...). On Linux, each app/workspace host-command process definition renders as one systemd unit per target. Runtime unit name: `orbit_<app>_<workspace|main>_<process>`. Spec: [`apps/docs/content/domains/7_process/`](../../../apps/docs/content/domains/7_process/).
 
 ## `orbit process:add [name] [command]`
 
@@ -15,9 +15,9 @@ orbit process:add [<name>] [<command>] [--app=<name>]
 
 | Option | Default | Notes |
 |---|---|---|
-| `name` | — | Process slug (≤64 chars). |
-| `command` | — | Shell command (run inside the app/workspace path). |
-| `--app` | — | Parent app slug. |
+| `name` |  -  | Process slug (<=64 chars). |
+| `command` |  -  | Shell command (run inside the app/workspace path). |
+| `--app` |  -  | Parent app slug. |
 | `--restart-policy` | `never` | Runtime restart behavior. |
 | `--crash-notification` | `none` | `agent_ide` posts crash notes to the effective Agent IDE adapter. |
 | `--start` | off | Start the rendered runtime units immediately. |

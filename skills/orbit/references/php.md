@@ -1,10 +1,17 @@
 # PHP Runtime Commands
 
-Select PHP runtime intent for apps, workspaces, and the node CLI default. The actual PHP runtime is installed via the [`php` catalog tool](../../../docs/domains/3_tool/catalog/php.md). Spec: [`docs/domains/14_php/`](../../../docs/domains/14_php/).
+Select PHP runtime intent for apps, workspaces, and the node CLI default. App
+and workspace web runtimes use FrankenPHP containers; host PHP is for
+ad-hoc/app-source workflows. The PHP image catalog is documented under the
+[`php` tool](../../../apps/docs/content/domains/3_tool/catalog/php.md). Spec:
+[`apps/docs/content/domains/14_php/`](../../../apps/docs/content/domains/14_php/).
 
 Supported versions: `8.3`, `8.4`, `8.5` (default for new apps).
 
-When changing an app's PHP version, Orbit moves the per-app FPM pool to the new version's `pool.d/`, restarts both the old and new PHP-FPM, and updates Caddy. The affected app sees a ~1–2 second blip while the socket transfers; other apps are unaffected. The DB is updated only after the new pool is serving, with full rollback on any failure.
+When changing an app or workspace PHP version, Orbit updates gateway-tracked
+runtime selection and recreates the affected FrankenPHP runtime artifact from
+the selected image through the owning node. PHP-FPM is not a fallback and must
+not be restored manually.
 
 ## `orbit php:list`
 
@@ -35,18 +42,20 @@ orbit php:use [<version>] [--app=<name>] [--workspace=<name>] [--node=<name>]
 | Option | Notes |
 |---|---|
 | `version` | `8.3` / `8.4` / `8.5`. Required unless `--inherit`. |
-| `--app` | Scope: app PHP version (controls FPM pool and CLI inside the app path). |
+| `--app` | Scope: app PHP image selection for the app runtime. |
 | `--workspace` | Scope: workspace PHP override (otherwise inherits the app). |
 | `--node` | Scope target node. Combine with `--cli` for the node CLI default. |
-| `--inherit` | Workspace only — clear the override and re-inherit the app's PHP. |
+| `--inherit` | Workspace only  -  clear the override and re-inherit the app's PHP. |
 | `--cli` | With `--node`, sets the node-wide CLI default PHP version. |
 
 Examples:
 
 ```bash
-orbit php:use 8.4 --app=myapp                  # change app PHP (live FPM swap)
+orbit php:use 8.4 --app=myapp                  # change app FrankenPHP image selection
 orbit php:use --inherit --workspace=feature-x --app=myapp
 orbit php:use 8.5 --cli --node=beast           # default CLI PHP on the node
 ```
 
-If a target version isn't installed yet, the partial-enactment warning points to `tool:install php --expected-version=<v>` (or `tool:update` if a different version of `php` is already installed).
+If a target version isn't installed yet, the partial-enactment warning points to
+`tool:install php --tool-version=<v>` (or `tool:update --expected-version=<v>`
+when updating an existing managed capability).

@@ -1,6 +1,10 @@
 # Workspace Commands
 
-Workspaces are isolated working copies of an app for parallel development (per branch, per agent, per task). Each workspace gets its own Caddy vhost (`{workspace}.{app}.{tld}`), PHP-FPM pool, and certificate. Spec: [`docs/domains/6_workspace/`](../../../docs/domains/6_workspace/).
+Workspaces are isolated working copies of an app for parallel development (per
+branch, per agent, per task). Each workspace gets its own route
+(`{workspace}.{app}.{tld}` for development apps) and, for PHP apps, its own
+FrankenPHP runtime container. Spec:
+[`apps/docs/content/domains/6_workspace/`](../../../apps/docs/content/domains/6_workspace/).
 
 ## `orbit workspace:new [name]`
 
@@ -12,8 +16,8 @@ orbit workspace:new [<name>] [--app=<name>] [--base=main] [--php-version=<v>] [-
 
 | Option | Default | Notes |
 |---|---|---|
-| `name` | — | Workspace slug (≤63 chars, independent of parent app). |
-| `--app` | — | Parent app slug. |
+| `name` |  -  | Workspace slug (<=63 chars, independent of parent app). |
+| `--app` |  -  | Parent app slug. |
 | `--base` | `main` | Base git ref to branch from. |
 | `--php-version` | inherit | Optional PHP version override (otherwise inherits the app's PHP version). |
 
@@ -45,13 +49,15 @@ Workspace setup runs the steps configured for the parent app via `workspace-setu
 
 ## `orbit workspace:remove [name]`
 
-Remove a workspace and its artifacts (Caddy site, FPM pool, cert, files).
+Remove a workspace and its artifacts (route intent, runtime container/process
+intent, certificate material, history, and files).
 
 ```bash
 orbit workspace:remove [<name>] [--app=<name>] [--keep-files] [--force] [--json]
 ```
 
-`--keep-files` preserves the workspace directory on the app node — useful when copying changes off the node first.
+`--keep-files` preserves the workspace directory on the owning app-role node;
+useful when copying changes off the node first.
 
 ## `orbit workspace:history [name]`
 

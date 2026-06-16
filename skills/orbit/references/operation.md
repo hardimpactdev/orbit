@@ -1,6 +1,7 @@
 # Operation Commands
 
-Cross-family or local commands. Spec: [`docs/domains/11_operation/`](../../../docs/domains/11_operation/).
+Cross-family or local commands. Spec:
+[`apps/docs/content/domains/11_operation/`](../../../apps/docs/content/domains/11_operation/).
 
 ## `orbit doctor`
 
@@ -13,11 +14,11 @@ orbit doctor [--node=<name>] [--self] [--app=<name>] [--workspace=<name>]
 
 | Option | Default | Notes |
 |---|---|---|
-| `--node` | — | Target node name. |
-| `--self` | — | Limit to the calling node identity. |
-| `--app` | — | Scope to one app. |
-| `--workspace` | — | Scope to one workspace. |
-| `--family` | all | State family key (repeatable): `node`, `app`, `workspace`, `process`, `proxy`, `firewall_rule`, `tool`, `schedule`. |
+| `--node` |  -  | Target node name. |
+| `--self` |  -  | Limit to the calling node identity. |
+| `--app` |  -  | Scope to one app. |
+| `--workspace` |  -  | Scope to one workspace. |
+| `--family` | all | State family key (repeatable): `node`, `app`, `workspace`, `process`, `proxy`, `firewall_rule`, `tool`, `schedule`, `database_connection`. |
 | `--fix` | off | Enter resolution mode (required for `--restore` or `--adopt`). |
 | `--restore` | off | Re-enact gateway intent on node reality. |
 | `--adopt` | off | Pull observed node reality into gateway intent (DR / fleet adoption). |
@@ -52,11 +53,16 @@ Update the local checkout and every active registered node sequentially. Streams
 orbit update:all [--json]
 ```
 
-Runs from the gateway or an operator node. Failures on one node don't abort the others.
+Runs from the gateway or an authorized client. Failures on one node do not
+abort the others.
 
 ## `orbit profile`
 
-Profile one HTTP request against an Orbit-managed app. Reports DNS, connect, TLS, TTFB, and total timing. When the target app has Laravel Toolbar installed, enriches with route, memory, and query data.
+Profile one HTTP request against an Orbit-managed app. The gateway resolves and
+authorizes the target, then the CLI performs the timed HTTP request from the
+caller machine. Reports DNS, connect, TLS, TTFB, download, and total timing.
+When the target app has Laravel Toolbar installed, enriches with route, memory,
+and query data.
 
 ```bash
 orbit profile [<target>] [--app=<name>] [--node=<name>] [--uri=/]
@@ -76,8 +82,12 @@ orbit profile [<target>] [--app=<name>] [--node=<name>] [--uri=/]
 Examples:
 
 ```bash
-orbit profile                                  # cwd app on an app node
+orbit profile                                  # cwd app on an app-role node
 orbit profile myapp.beast --uri=/login
 orbit profile https://myapp.beast/dashboard --as-first-user
 orbit profile --app=myapp --user=42 --json
 ```
+
+The CLI does not follow redirects; a 3xx response is a completed profile
+result. Caller-side DNS, connection, TLS, timeout, or HTTP transport failures
+return `profile_request_failed` and never fall back to a gateway-origin request.

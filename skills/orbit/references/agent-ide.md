@@ -1,8 +1,8 @@
 # Agent IDE Commands
 
-Agent IDE adapters integrate Orbit with headless coding-agent IDEs (OpenCode, Polyscope) so workspace creation, crash notifications, and session messaging route through the right adapter. Spec: [`docs/domains/15_agent-ide/`](../../../docs/domains/15_agent-ide/).
+Agent IDE adapters integrate Orbit with headless coding-agent IDEs (OpenCode, Polyscope) so workspace creation, crash notifications, and session messaging route through the right adapter. Spec: [`apps/docs/content/domains/15_agent-ide/`](../../../apps/docs/content/domains/15_agent-ide/).
 
-Default resolution: app override → node default → none. Set defaults with [`node:agent-ide`](node.md#orbit-node-agent-ide-name-adapter) and [`app:agent-ide`](app.md#orbit-app-agent-ide-app-adapter). Per-tool credentials (e.g. OpenCode auth password) live in the `tool` family — see [`tool.md`](tool.md).
+Default resolution: app override -> node default -> none. Set defaults with [`node:agent-ide`](node.md#orbit-node-agent-ide-name-adapter) and [`app:agent-ide`](app.md#orbit-app-agent-ide-app-adapter). Per-tool credentials (e.g. OpenCode auth password) live in the `tool` family  -  see [`tool.md`](tool.md).
 
 ## `orbit agent-ide:message [message]`
 
@@ -23,7 +23,7 @@ orbit agent-ide:message [<message>] [--app=<name>] [--workspace=<name>]
 Examples:
 
 ```bash
-orbit agent-ide:message --app=myapp 'Tests pass on feature-x — please review.'
+orbit agent-ide:message --app=myapp 'Tests pass on feature-x  -  please review.'
 
 # Pipe a long message
 git log --oneline -20 | orbit agent-ide:message --workspace=feature-x --app=myapp --stdin

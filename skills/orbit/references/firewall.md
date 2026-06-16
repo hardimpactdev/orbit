@@ -1,8 +1,12 @@
 # Firewall Commands
 
-UFW rule intent on each node. Spec: [`docs/domains/4_firewall/`](../../../docs/domains/4_firewall/).
+UFW rule intent on each node. Spec: [`apps/docs/content/domains/4_firewall/`](../../../apps/docs/content/domains/4_firewall/).
 
-Bootstrap baselines are created by node provisioning — production nodes open 80/443 publicly, SSH stays open over WireGuard only, app nodes deny inbound from the internet. Use `firewall:*` to add, override, or audit policy on top of that baseline.
+Bootstrap baselines are created by node provisioning. Only nodes carrying
+`ingress` should expose public HTTP/HTTPS; SSH stays reachable over WireGuard
+only. App-role backend nodes without `ingress` should not expose public app
+traffic. Use `firewall:*` to add, override, or audit policy on top of that
+baseline.
 
 ## `orbit firewall:allow [name]`
 
@@ -17,14 +21,14 @@ orbit firewall:allow [<name>] [--node=<name>] [--port=<spec>]
 
 | Option | Default | Notes |
 |---|---|---|
-| `name` | — | Rule slug. |
-| `--node` | — | Target node. |
-| `--port` | — | Destination port or range (e.g. `22`, `8000:8100`). |
+| `name` |  -  | Rule slug. |
+| `--node` |  -  | Target node. |
+| `--port` |  -  | Destination port or range (e.g. `22`, `8000:8100`). |
 | `--direction` | `incoming` | `incoming` or `outgoing`. |
-| `--from` | — | Source CIDR or `any`. |
-| `--to` | — | Destination CIDR. |
+| `--from` |  -  | Source CIDR or `any`. |
+| `--to` |  -  | Destination CIDR. |
 | `--protocol` | `tcp` | `tcp` or `udp`. |
-| `--reason` | — | Operator note saved with the rule. |
+| `--reason` |  -  | Operator note saved with the rule. |
 
 Examples:
 

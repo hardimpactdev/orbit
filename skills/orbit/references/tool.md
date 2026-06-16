@@ -1,23 +1,30 @@
 # Tool Commands
 
-Generic surface for installable and observational node tools. The catalog is fixed and lives in [`docs/domains/3_tool/catalog/`](../../../docs/domains/3_tool/catalog/).
+Generic surface for installable, role-baseline, and observational node
+capabilities. A tool is not itself the lifecycle-managed runnable unit;
+processes own lifecycle. The catalog is fixed and lives in
+[`apps/docs/content/domains/3_tool/catalog/`](../../../apps/docs/content/domains/3_tool/catalog/).
 
 ## Catalog
 
-**Required baseline tools** (provisioned by node bootstrap; Orbit observes and keeps converged):
+**Required / role-baseline tools** (provisioned by node bootstrap or role
+baseline; Orbit observes and keeps converged):
 
-- `caddy`, `docker`, `viteplus`, `php-cli`, `gh`, `composer`, `dns`
+- `caddy`, `docker`, `viteplus`, `php-cli`, `gh`, `composer`,
+  `laravel-installer`, `dns`, `php`, `seaweedfs`
 
 **Installable tools** (provisioned by `tool:install`, removed by `tool:remove`):
 
-- `php` — additional PHP runtime versions
-- `postgres`, `mysql`, `redis` — databases and caches (Docker)
-- `mailpit` — local SMTP capture (Docker)
-- `reverb` — Laravel WebSocket server
-- `polyscope-server` — Polyscope headless coding-agent server
-- `opencode-server` — OpenCode HTTP server for programmatic LLM interaction
+- `mailpit`  -  local SMTP capture (Docker)
+- `reverb`  -  compatibility WebSocket service; prefer the `websocket` role for fleet realtime
+- `polyscope-server`  -  Polyscope headless coding-agent server
+- `opencode-server`  -  OpenCode HTTP server for programmatic LLM interaction
+- `openclaw`, `hermes`  -  first-party autonomous agent runtimes on `agent` nodes
 
-Service hostnames on development nodes use the node TLD: `mailpit.<tld>`, `orbit.<tld>:5432` for postgres, etc. HTTP/WS tools surface as proxy routes; TCP tools are WireGuard-only host/port records.
+HTTP/WS tool endpoints surface as tool-owned proxy routes. TCP service
+endpoints are WireGuard-only host/port records. Database connection inventory,
+env convergence, schema inspection, and audited SQL execution live under
+`database:*`, not `postgres:*` or `mysql:*` command families.
 
 For `php:*` workflow (selecting a runtime for an app/workspace/CLI), see [`php.md`](php.md). The `php` catalog tool installs the runtime; `php:use` selects it.
 
@@ -45,20 +52,19 @@ Provision a managed tool on a node.
 
 ```bash
 orbit tool:install <tool> [--app=<name>] [--node=<name>]
-                   [--status=installed|running] [--expected-version=<v>] [--json]
+                   [--status=installed|running] [--tool-version=<v>] [--json]
 ```
 
 | Option | Default | Notes |
 |---|---|---|
-| `--status` | `installed` | `running` also starts the service after install. |
-| `--expected-version` | — | Version constraint (catalog-dependent). |
+| `--status` | `installed` | Desired capability state. Tool definitions that declare a related process configure that process idempotently unless `--no-process` is used. |
+| `--tool-version` |  -  | Version or version family to install (catalog-dependent). |
 
 Examples:
 
 ```bash
-orbit tool:install postgres --node=beast --status=running
 orbit tool:install opencode-server --node=beast --status=running
-orbit tool:install php --expected-version=8.4 --node=beast
+orbit tool:install php --tool-version=8.4 --node=beast
 ```
 
 ## `orbit tool:update [tool]`
@@ -75,17 +81,6 @@ orbit tool:update [<tool>] [--app=<name>] [--node=<name>] [--expected-version=<v
 orbit tool:remove <tool> [--app=<name>] [--node=<name>] [--force] [--json]
 ```
 
-## `orbit tool:start | stop | restart | reload <tool>`
-
-Lifecycle control. `reload` is for tools with reload semantics (e.g. Caddy `reload` vs `restart`).
-
-```bash
-orbit tool:start   <tool> [--app=<name>] [--node=<name>] [--json]
-orbit tool:stop    <tool> [--app=<name>] [--node=<name>] [--json]
-orbit tool:restart <tool> [--app=<name>] [--node=<name>] [--json]
-orbit tool:reload  [<tool>] [--app=<name>] [--node=<name>] [--json]
-```
-
 ## `orbit tool:reconfigure <tool>`
 
 Re-provision or rotate tool-owned configuration. Tool-specific options.
@@ -97,14 +92,8 @@ orbit tool:reconfigure <tool> [--app=<name>] [--node=<name>]
 
 Examples:
 
-- `orbit tool:reconfigure opencode-server --password='…'` — rotate basic-auth password.
-- `orbit tool:reconfigure polyscope-server` — rotate Polyscope auth and restart.
-
-## `orbit tool:logs <tool>`
-
-```bash
-orbit tool:logs <tool> [--app=<name>] [--node=<name>] [--lines=100] [--follow] [--json]
-```
+- `orbit tool:reconfigure opencode-server --password='...'`  -  rotate basic-auth password.
+- `orbit tool:reconfigure polyscope-server`  -  rotate Polyscope auth and restart.
 
 ## `orbit tool:credentials [tool]`
 
@@ -119,6 +108,6 @@ Without `<tool>`, returns credentials for every credential-bearing tool on the r
 Examples:
 
 ```bash
-orbit tool:credentials postgres --node=beast
+orbit tool:credentials opencode-server --node=beast --json
 orbit tool:credentials opencode-server --node=beast --json
 ```
