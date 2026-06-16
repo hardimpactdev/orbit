@@ -101,8 +101,9 @@ operation token before side effects.
 The Orbit CLI is a self-contained native binary with PHP 8.5 embedded, built
 per OS/arch and downloaded by the installer. The binary embeds PHP 8.5 and the
 extensions the CLI requires (`pdo_sqlite`, `openssl`, `curl`, `mbstring`,
-`tokenizer`, `ctype`, `filter`, `fileinfo`, `json`, `phar`); no host PHP is
-required to run it. Source-dev Docker and Incus topologies may point
+`tokenizer`, `ctype`, `filter`, `fileinfo`, `json`, `phar`, `zlib`); no host
+PHP is required to run it. Release binaries are wrapped from a compressed PHAR
+built from a no-dev CLI dependency install. Source-dev Docker and Incus topologies may point
 `/usr/local/bin/orbit` directly at `<source>/apps/cli/orbit` and bind-mount or
 copy the worktree for fast iteration. Artifact-prod topologies use the native
 CLI binary plus production images and validate the actual release artifacts.
@@ -240,7 +241,7 @@ PHP app execution runs in FrankenPHP containers. The gateway API runtime runs
 in the `orbit-gateway` FrankenPHP image; production installs run the
 CLI/local-executor artifact in the native CLI binary's embedded PHP 8.5
 (`pdo_sqlite`, `openssl`, `curl`, `mbstring`, `tokenizer`, `ctype`,
-`filter`, `fileinfo`, `json`, `phar`).
+`filter`, `fileinfo`, `json`, `phar`, `zlib`).
 Source-mounted Docker/Incus development and E2E nodes invoke
 `<source>/apps/cli/orbit`. Apps and workspaces run in dedicated long-lived
 app/workspace containers when their runtime kind is PHP. Static or non-PHP
@@ -482,7 +483,7 @@ curl -fsSL https://raw.githubusercontent.com/hardimpactdev/orbit/main/bin/instal
 The installer prepares the host before Orbit can run. In production installs it
 installs or verifies Docker Engine and CLI, Docker Swarm for gateway-role
 nodes, the prebuilt Orbit CLI binary (embedded PHP 8.5 +
-`pdo_sqlite`/`openssl`/`curl`/`mbstring`/`tokenizer`/`ctype`/`filter`/`fileinfo`/`json`/`phar`) downloaded and linked as the host `orbit`
+`pdo_sqlite`/`openssl`/`curl`/`mbstring`/`tokenizer`/`ctype`/`filter`/`fileinfo`/`json`/`phar`/`zlib`) downloaded and linked as the host `orbit`
 launcher target, the digest-pinned `orbit-gateway` image or
 `ORBIT_GATEWAY_IMAGE_ARCHIVE` when the node carries the gateway role, the
 default FrankenPHP app/workspace runtime image for app-role nodes, the

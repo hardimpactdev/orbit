@@ -10,13 +10,8 @@ use RuntimeException;
 /**
  * Builds the linux x64 orbit CLI binary and stages it into a bundle directory.
  *
- * Mirrors the `test:e2e:binary:linux` composer script exactly:
- *   1. Copy orbit-core src + composer.json into apps/cli/vendor/hardimpactdev/orbit-core
- *   2. Build the .phar via `php orbit app:build` with COMPOSER_MIRROR_PATH_REPOS=1
- *   3. Pack into a linux x64 native binary via phpacker
- *   4. Assert the result is a Linux ELF x86-64 executable (throw on mismatch)
- *   5. Copy to $bundleDir/orbit-binary (chmod 0755)
- *   6. Restore apps/cli dev deps so vendor/bin tools remain available
+ * Mirrors the `test:e2e:binary:linux` composer script by calling the shared
+ * root build helper, then verifies and copies the generated Linux ELF binary.
  */
 final class OrbitCliBinaryBundle
 {
@@ -47,50 +42,22 @@ final class OrbitCliBinaryBundle
             return;
         }
 
-        $cliDir = repo_path('apps/cli');
-        $coreDir = repo_path('packages/core');
-        $orbitCoreVendorDir = "{$cliDir}/vendor/hardimpactdev/orbit-core";
-
-        // Step 1: Inject orbit-core source directly (no vendor symlink needed).
-        Process::timeout(30)->run("rm -rf {$orbitCoreVendorDir}")->throw();
-        Process::timeout(30)->run("mkdir -p {$orbitCoreVendorDir}")->throw();
-        Process::timeout(30)->run(sprintf(
-            'cp -r %s %s %s',
-            escapeshellarg("{$coreDir}/src"),
-            escapeshellarg("{$coreDir}/composer.json"),
-            escapeshellarg($orbitCoreVendorDir),
-        ))->throw();
-
-        // Step 2: Build the .phar.
-        $buildResult = Process::timeout(300)
-            ->env(['COMPOSER_MIRROR_PATH_REPOS' => '1'])
-            ->path($cliDir)
-            ->run('php orbit app:build orbit.phar --build-version=0.1.0 --no-interaction --timeout=0');
+        $buildResult = Process::timeout(600)
+            ->path(repo_path())
+            ->run('bin/orbit-build-cli-binary linux x64 0.1.0');
 
         if (! $buildResult->successful()) {
             throw new RuntimeException(
-                "Failed to build orbit.phar: {$buildResult->output()}{$buildResult->errorOutput()}"
+                "Failed to build linux CLI binary: {$buildResult->output()}{$buildResult->errorOutput()}"
             );
         }
 
-        // Step 3: Pack into a linux x64 self-contained binary.
-        $phpackerResult = Process::timeout(300)
-            ->path($cliDir)
-            ->run('vendor/bin/phpacker build linux x64 --src=./builds/orbit.phar --php=8.5 --no-interaction');
-
-        if (! $phpackerResult->successful()) {
-            throw new RuntimeException(
-                "phpacker failed: {$phpackerResult->output()}{$phpackerResult->errorOutput()}"
-            );
-        }
-
-        $binarySource = "{$cliDir}/builds/dist/linux/linux-x64";
+        $binarySource = repo_path('apps/cli/builds/dist/linux/linux-x64');
 
         if (! is_file($binarySource)) {
             throw new RuntimeException("Expected linux binary not found at {$binarySource}");
         }
 
-        // Step 4: Confirm ELF before bundling.
         $fileResult = Process::timeout(10)->run(sprintf('file %s', escapeshellarg($binarySource)));
         $fileOutput = $fileResult->output();
 
@@ -100,7 +67,6 @@ final class OrbitCliBinaryBundle
             );
         }
 
-        // Step 5: Copy into bundle.
         if (! @copy($binarySource, $bundleBinary)) {
             throw new RuntimeException("Could not copy linux binary to bundle: {$binarySource} -> {$bundleBinary}");
         }
@@ -120,12 +86,6 @@ final class OrbitCliBinaryBundle
 
             chmod($cacheBinary, 0755);
         }
-
-        // Step 6: Restore apps/cli dev deps so vendor/bin tools (phpstan/pint/pest) remain usable.
-        Process::timeout(300)
-            ->path($cliDir)
-            ->run('composer install --no-interaction')
-            ->throw();
     }
 
     private function cachedBinaryPath(string $fingerprint): string

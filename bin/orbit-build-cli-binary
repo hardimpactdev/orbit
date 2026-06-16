@@ -1,0 +1,126 @@
+#!/usr/bin/env bash
+
+set -Eeuo pipefail
+
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." >/dev/null 2>&1 && pwd)"
+cli_dir="$repo_root/apps/cli"
+core_dir="$repo_root/packages/core"
+
+usage() {
+    cat <<'EOF'
+Usage:
+  bin/orbit-build-cli-binary <platform> <architecture> [build-version]
+
+Builds the Orbit CLI native binary from a temporary no-dev PHAR staging
+directory, then packages it with the checkout's dev PHPacker install.
+
+Supported targets:
+  mac arm
+  linux x64
+EOF
+}
+
+fail() {
+    printf 'orbit-build-cli-binary: %s\n' "$*" >&2
+    exit 1
+}
+
+platform="${1:-}"
+architecture="${2:-}"
+version="${3:-0.1.0}"
+
+if [ "$platform" = "-h" ] || [ "$platform" = "--help" ]; then
+    usage
+    exit 0
+fi
+
+[ -n "$platform" ] && [ -n "$architecture" ] || {
+    usage >&2
+    exit 2
+}
+
+case "$platform:$architecture" in
+    mac:arm|linux:x64)
+        ;;
+    *)
+        fail "unsupported target: ${platform} ${architecture}"
+        ;;
+esac
+
+command -v composer >/dev/null 2>&1 || fail 'composer is required to build the CLI binary.'
+command -v php >/dev/null 2>&1 || fail 'php is required to build the CLI binary.'
+command -v rsync >/dev/null 2>&1 || fail 'rsync is required to stage the CLI source.'
+php -r 'exit(extension_loaded("zlib") ? 0 : 1);' || fail 'Host PHP must have the zlib extension to compress the PHAR.'
+
+[ -x "$cli_dir/vendor/bin/phpacker" ] || fail 'PHPacker is not installed. Run `composer install --working-dir=apps/cli` first.'
+[ -f "$cli_dir/composer.lock" ] || fail 'apps/cli/composer.lock is required.'
+[ -f "$core_dir/composer.json" ] || fail 'packages/core/composer.json is required.'
+
+stage_dir="$(mktemp -d "${TMPDIR:-/tmp}/orbit-cli-build.XXXXXX")"
+stage_root="$stage_dir/repo"
+stage_cli_dir="$stage_root/apps/cli"
+stage_core_dir="$stage_root/packages/core"
+
+cleanup() {
+    rm -rf "$stage_dir"
+}
+
+trap cleanup EXIT
+
+mkdir -p "$stage_root/apps" "$stage_root/packages"
+
+rsync -a --delete \
+    --exclude vendor \
+    --exclude build \
+    --exclude builds \
+    --exclude node_modules \
+    "$cli_dir/" \
+    "$stage_cli_dir/"
+
+rsync -a --delete \
+    --exclude vendor \
+    --exclude build \
+    --exclude builds \
+    --exclude node_modules \
+    "$core_dir/" \
+    "$stage_core_dir/"
+
+COMPOSER_MIRROR_PATH_REPOS=1 composer --working-dir="$stage_cli_dir" install \
+    --no-dev \
+    --optimize-autoloader \
+    --no-interaction \
+    --no-progress \
+    --prefer-dist
+
+orbit_core_vendor_dir="$stage_cli_dir/vendor/hardimpactdev/orbit-core"
+rm -rf "$orbit_core_vendor_dir"
+mkdir -p "$orbit_core_vendor_dir"
+cp -R "$stage_core_dir/src" "$stage_core_dir/composer.json" "$orbit_core_vendor_dir/"
+
+(
+    cd "$stage_cli_dir"
+    COMPOSER_MIRROR_PATH_REPOS=1 php orbit app:build orbit.phar \
+        --build-version="$version" \
+        --no-interaction \
+        --timeout=0
+)
+
+stage_phar="$stage_cli_dir/builds/orbit.phar"
+
+[ -f "$stage_phar" ] || fail "expected PHAR was not built at $stage_phar"
+
+php -d phar.readonly=0 -r '
+$phar = new Phar($argv[1]);
+$phar->compressFiles(Phar::GZ);
+' "$stage_phar"
+
+mkdir -p "$cli_dir/builds"
+cp "$stage_phar" "$cli_dir/builds/orbit.phar"
+
+(
+    cd "$cli_dir"
+    vendor/bin/phpacker build "$platform" "$architecture" \
+        --src=./builds/orbit.phar \
+        --php=8.5 \
+        --no-interaction
+)

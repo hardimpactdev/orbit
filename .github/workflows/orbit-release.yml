@@ -25,7 +25,7 @@ jobs:
         uses: shivammathur/setup-php@v2
         with:
           php-version: "8.5"
-          extensions: pdo_sqlite, sqlite3, curl, openssl, mbstring, tokenizer, ctype, filter, fileinfo, phar
+          extensions: pdo_sqlite, sqlite3, curl, openssl, mbstring, tokenizer, ctype, filter, fileinfo, phar, zlib
           tools: composer
 
       - name: Set up Docker Buildx
@@ -43,35 +43,11 @@ jobs:
       - name: Install CLI dependencies
         run: composer install --working-dir=apps/cli --no-interaction --prefer-dist --optimize-autoloader
 
-      - name: Build CLI PHAR
-        env:
-          COMPOSER_MIRROR_PATH_REPOS: "1"
-        run: |
-          set -euo pipefail
-          rm -rf apps/cli/vendor/hardimpactdev/orbit-core
-          mkdir -p apps/cli/vendor/hardimpactdev/orbit-core
-          cp -r packages/core/src packages/core/composer.json apps/cli/vendor/hardimpactdev/orbit-core/
-          cd apps/cli
-          php orbit app:build orbit.phar \
-            --build-version=${{ steps.version.outputs.value }} \
-            --no-interaction \
-            --timeout=0
+      - name: Build macOS arm64 binary
+        run: bin/orbit-build-cli-binary mac arm "${{ steps.version.outputs.value }}"
 
-      - name: Bundle macOS arm64 binary
-        run: |
-          cd apps/cli
-          vendor/bin/phpacker build mac arm \
-            --src=./builds/orbit.phar \
-            --php=8.5 \
-            --no-interaction
-
-      - name: Bundle Ubuntu x86_64 binary
-        run: |
-          cd apps/cli
-          vendor/bin/phpacker build linux x64 \
-            --src=./builds/orbit.phar \
-            --php=8.5 \
-            --no-interaction
+      - name: Build Ubuntu x86_64 binary
+        run: bin/orbit-build-cli-binary linux x64 "${{ steps.version.outputs.value }}"
 
       - name: Log in to GHCR
         run: |

@@ -277,7 +277,7 @@ roles. That state belongs to topology/provisioning, not to app, process, tool,
 or database runtime prerequisite inventories.
 
 Production artifact installs use the prebuilt Orbit CLI binary (embedded PHP 8.5 +
-`pdo_sqlite`/`openssl`/`curl`/`mbstring`/`tokenizer`/`ctype`/`filter`/`fileinfo`/`json`/`phar`). A node running the gateway role in production requires Docker Engine/CLI,
+`pdo_sqlite`/`openssl`/`curl`/`mbstring`/`tokenizer`/`ctype`/`filter`/`fileinfo`/`json`/`phar`/`zlib`). A node running the gateway role in production requires Docker Engine/CLI,
 initialized Docker Swarm, the gateway config root, and the native Orbit CLI
 binary. It does not require host PHP, host Composer, Git, or an Orbit source
 checkout. Source-mounted Docker and Incus topologies are development and E2E

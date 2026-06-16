@@ -308,21 +308,24 @@ it('stages the linux binary into the bundled binary path', function (): void {
     $bundleDir = make_temp_directory('binary-bundle-stage');
     $linuxDistDir = repo_path('apps/cli/builds/dist/linux');
     $binarySource = "{$linuxDistDir}/linux-x64";
+    $fakeBinaryContents = 'fake-linux-binary-'.bin2hex(random_bytes(8));
     $createdBinarySource = false;
 
-    if (! is_file($binarySource)) {
-        if (! is_dir($linuxDistDir)) {
-            mkdir($linuxDistDir, 0777, recursive: true);
+    Process::fake(function ($process) use ($binarySource, $fakeBinaryContents, $linuxDistDir, &$createdBinarySource) {
+        if ($process->command === 'bin/orbit-build-cli-binary linux x64 0.1.0') {
+            if (! is_file($binarySource)) {
+                if (! is_dir($linuxDistDir)) {
+                    mkdir($linuxDistDir, 0777, recursive: true);
+                }
+
+                file_put_contents($binarySource, $fakeBinaryContents);
+                chmod($binarySource, 0755);
+                $createdBinarySource = true;
+            }
+
+            return Process::result();
         }
 
-        file_put_contents($binarySource, 'fake-linux-binary-'.bin2hex(random_bytes(8)));
-        chmod($binarySource, 0755);
-        $createdBinarySource = true;
-    }
-
-    $sourceHash = hash_file('sha256', $binarySource);
-
-    Process::fake(function ($process) {
         if (is_string($process->command) && str_starts_with($process->command, 'file ')) {
             return Process::result(output: 'ELF 64-bit LSB executable, x86-64');
         }
@@ -335,12 +338,16 @@ it('stages the linux binary into the bundled binary path', function (): void {
         (new OrbitCliBinaryBundle)->buildLinuxBinaryInto($bundleDir);
 
         $bundleBinary = OrbitCliBinaryBundle::bundledBinaryPath($bundleDir);
+        $sourceHash = hash_file('sha256', $binarySource);
 
         expect($bundleBinary)
             ->toBeFile()
             ->not->toContain('apps/cli/orbit')
             ->and(hash_file('sha256', $bundleBinary))->toBe($sourceHash)
             ->and(substr(sprintf('%o', fileperms($bundleBinary)), -3))->toBe('755');
+
+        Process::assertRan(fn ($process): bool => $process->path === repo_path()
+            && $process->command === 'bin/orbit-build-cli-binary linux x64 0.1.0');
     } finally {
         remove_directory($bundleDir);
 
