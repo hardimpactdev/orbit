@@ -4,16 +4,18 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Api;
 
-use App\Data\Vpn\VpnClientMutationResult;
 use App\Http\Authorization\RequiresPermission;
 use App\Http\Authorization\ServingNode;
+use App\Http\Controllers\Api\Concerns\RespondsWithVpnClientMutation;
 use App\Services\Vpn\VpnFailure;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
 #[RequiresPermission('vpn:write', servingNode: ServingNode::Gateway)]
-class VpnClientEnableController extends VpnControllerSupport
+final class VpnClientEnableController extends VpnControllerSupport
 {
+    use RespondsWithVpnClientMutation;
+
     public function __invoke(Request $request, string $name): JsonResponse
     {
         $manager = $this->manager();
@@ -22,27 +24,6 @@ class VpnClientEnableController extends VpnControllerSupport
             return $this->fail($manager);
         }
 
-        return $this->respond($manager->enable($name, $request->string('totp')->trim()->toString() ?: null));
-    }
-
-    protected function respond(VpnClientMutationResult|VpnFailure $result): JsonResponse
-    {
-        if ($result instanceof VpnFailure) {
-            return $this->fail($result, 422);
-        }
-
-        return response()->json([
-            'success' => [
-                'data' => [
-                    'client' => [
-                        'name' => $result->client->name,
-                        'enabled' => $result->client->enabled,
-                        'action' => $result->action,
-                        'already_enabled' => $result->alreadyInDesiredState,
-                    ],
-                ],
-                'meta' => (object) [],
-            ],
-        ]);
+        return $this->respondWithVpnClientMutation($manager->enable($name, $request->string('totp')->trim()->toString() ?: null));
     }
 }

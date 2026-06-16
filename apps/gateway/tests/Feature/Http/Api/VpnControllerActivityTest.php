@@ -143,6 +143,37 @@ it('allows non-gateway api callers with vpn read grants', function (): void {
         ->assertJsonPath('success.data.clients.0.name', 'laptop');
 });
 
+it('enables and disables vpn clients through independent endpoints', function (): void {
+    $gateway = createTestGatewayNode([
+        'name' => 'gateway-1',
+        'wireguard_address' => '10.6.0.2',
+        'status' => 'active']);
+    NodeRoleAssignment::factory()->create([
+        'node_id' => $gateway->id,
+        'role' => 'vpn',
+        'status' => 'active']);
+    app()->instance(VpnBackend::class, new ArrayVpnBackend([
+        new VpnBackendClient('client-1', 'laptop', '10.6.0.7', false, null)]));
+
+    $this
+        ->withServerVariables(['REMOTE_ADDR' => '10.6.0.2'])
+        ->postJson('/api/vpn/clients/laptop/enable')
+        ->assertOk()
+        ->assertJsonPath('success.data.client.name', 'laptop')
+        ->assertJsonPath('success.data.client.enabled', true)
+        ->assertJsonPath('success.data.client.action', 'enabled')
+        ->assertJsonPath('success.data.client.already_enabled', false);
+
+    $this
+        ->withServerVariables(['REMOTE_ADDR' => '10.6.0.2'])
+        ->postJson('/api/vpn/clients/laptop/disable')
+        ->assertOk()
+        ->assertJsonPath('success.data.client.name', 'laptop')
+        ->assertJsonPath('success.data.client.enabled', false)
+        ->assertJsonPath('success.data.client.action', 'disabled')
+        ->assertJsonPath('success.data.client.already_disabled', false);
+});
+
 it('requires vpn write grants for non-gateway api writes', function (): void {
     $gateway = createTestGatewayNode([
         'name' => 'gateway-1',

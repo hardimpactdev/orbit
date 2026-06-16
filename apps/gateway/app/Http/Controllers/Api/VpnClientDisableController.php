@@ -6,14 +6,16 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Authorization\RequiresPermission;
 use App\Http\Authorization\ServingNode;
+use App\Http\Controllers\Api\Concerns\RespondsWithVpnClientMutation;
 use App\Services\Vpn\VpnFailure;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
 #[RequiresPermission('vpn:write', servingNode: ServingNode::Gateway)]
-final class VpnClientDisableController extends VpnClientEnableController
+final class VpnClientDisableController extends VpnControllerSupport
 {
-    #[\Override]
+    use RespondsWithVpnClientMutation;
+
     public function __invoke(Request $request, string $name): JsonResponse
     {
         $manager = $this->manager();
@@ -22,6 +24,6 @@ final class VpnClientDisableController extends VpnClientEnableController
             return $this->fail($manager);
         }
 
-        return $this->respond($manager->disable($name, $request->string('totp')->trim()->toString() ?: null));
+        return $this->respondWithVpnClientMutation($manager->disable($name, $request->string('totp')->trim()->toString() ?: null));
     }
 }
