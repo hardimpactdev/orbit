@@ -61,7 +61,24 @@ class LocalResolver implements ResolvesLocalDns
     {
         $result = Process::timeout(10)->run('which dnsmasq');
 
-        return $result->successful();
+        if ($result->successful()) {
+            return true;
+        }
+
+        if ($this->platform() !== 'macos') {
+            return false;
+        }
+
+        $prefixResult = Process::timeout(10)->run('brew --prefix');
+
+        if (! $prefixResult->successful()) {
+            return false;
+        }
+
+        $prefix = trim($prefixResult->output());
+
+        return is_executable("{$prefix}/sbin/dnsmasq")
+            || is_executable("{$prefix}/bin/dnsmasq");
     }
 
     public function existingTarget(string $tld): ?string

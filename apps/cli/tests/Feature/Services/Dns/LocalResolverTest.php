@@ -52,6 +52,29 @@ describe(LocalResolver::class, function (): void {
         expect(fn () => $resolver->configDir())->toThrow(RuntimeException::class, 'HOME environment variable is not set.');
     });
 
+    it('detects Homebrew dnsmasq under sbin when it is not on PATH', function (): void {
+        File::ensureDirectoryExists("{$this->tempPrefix}/sbin");
+        File::put("{$this->tempPrefix}/sbin/dnsmasq", '#!/bin/sh');
+        chmod("{$this->tempPrefix}/sbin/dnsmasq", 0o755);
+
+        Process::fake(function (PendingProcess $process) {
+            if ($process->command === 'which dnsmasq') {
+                return Process::result('', 'dnsmasq not found', 1);
+            }
+
+            if ($process->command === 'brew --prefix') {
+                return Process::result($this->tempPrefix, '', 0);
+            }
+
+            return Process::result('', "Unexpected command: {$process->command}", 1);
+        });
+
+        $resolver = new LocalResolver;
+        $resolver->setPlatform('macos');
+
+        expect($resolver->isDnsmasqInstalled())->toBeTrue();
+    });
+
     it('resolve writes the dnsmasq conf under the host-writable Orbit config home', function (): void {
         fakeSuccessfulLocalResolverProcesses($this, '10.6.0.1');
 
