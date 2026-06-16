@@ -79,43 +79,43 @@ final class PublicSshDenyInstaller implements SecurityInstaller
 
     public function script(): string
     {
-        return <<<'SH'
-set -euo pipefail
-if ! command -v ufw >/dev/null 2>&1; then
-    sudo apt-get -o DPkg::Lock::Timeout=300 update -qq
-    sudo DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=300 install -y -qq ufw
-fi
-UFW_INACTIVE=0
-if sudo ufw status 2>/dev/null | grep -qi '^Status: inactive'; then
-    UFW_INACTIVE=1
-fi
-WG_IFACE=""
-if ip -o link show wg-orbit >/dev/null 2>&1; then
-    WG_IFACE="wg-orbit"
-else
-    WG_IFACE="$(ip -o link show type wireguard 2>/dev/null | awk -F': ' '{print $2; exit}')"
-fi
-if [ -n "$WG_IFACE" ]; then
-    sudo ufw allow in on "$WG_IFACE" proto tcp from 10.6.0.0/24 to any port 22 >/dev/null
-else
-    echo "Could not resolve WireGuard interface." >&2
-    exit 1
-fi
-PUBLIC_IFACE="$(ip route show default 0.0.0.0/0 2>/dev/null | awk '{print $5; exit}')"
-if [ -z "$PUBLIC_IFACE" ]; then
-    PUBLIC_IFACE="$(ip -o -4 route show to default 2>/dev/null | awk '{print $5; exit}')"
-fi
-if [ -z "$PUBLIC_IFACE" ]; then
-    echo "Could not resolve public network interface." >&2
-    exit 1
-fi
-sudo ufw deny in on "$PUBLIC_IFACE" proto tcp from 0.0.0.0/0 to any port 22 >/dev/null
-if [ -e /proc/sys/net/ipv6/conf/all/disable_ipv6 ] && [ "$(cat /proc/sys/net/ipv6/conf/all/disable_ipv6)" = "0" ]; then
-    sudo ufw deny in on "$PUBLIC_IFACE" proto tcp from ::/0 to any port 22 >/dev/null || true
-fi
-if [ "$UFW_INACTIVE" = "1" ]; then
-    echo "UFW is inactive; public SSH deny rules were staged but UFW was not enabled." >&2
-fi
-SH;
+        return <<<'SH_WRAP'
+        set -euo pipefail
+        if ! command -v ufw >/dev/null 2>&1; then
+            sudo apt-get -o DPkg::Lock::Timeout=300 update -qq
+            sudo DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=300 install -y -qq ufw
+        fi
+        UFW_INACTIVE=0
+        if sudo ufw status 2>/dev/null | grep -qi '^Status: inactive'; then
+            UFW_INACTIVE=1
+        fi
+        WG_IFACE=""
+        if ip -o link show wg-orbit >/dev/null 2>&1; then
+            WG_IFACE="wg-orbit"
+        else
+            WG_IFACE="$(ip -o link show type wireguard 2>/dev/null | awk -F': ' '{print $2; exit}')"
+        fi
+        if [ -n "$WG_IFACE" ]; then
+            sudo ufw allow in on "$WG_IFACE" proto tcp from 10.6.0.0/24 to any port 22 >/dev/null
+        else
+            echo "Could not resolve WireGuard interface." >&2
+            exit 1
+        fi
+        PUBLIC_IFACE="$(ip route show default 0.0.0.0/0 2>/dev/null | awk '{print $5; exit}')"
+        if [ -z "$PUBLIC_IFACE" ]; then
+            PUBLIC_IFACE="$(ip -o -4 route show to default 2>/dev/null | awk '{print $5; exit}')"
+        fi
+        if [ -z "$PUBLIC_IFACE" ]; then
+            echo "Could not resolve public network interface." >&2
+            exit 1
+        fi
+        sudo ufw deny in on "$PUBLIC_IFACE" proto tcp from 0.0.0.0/0 to any port 22 >/dev/null
+        if [ -e /proc/sys/net/ipv6/conf/all/disable_ipv6 ] && [ "$(cat /proc/sys/net/ipv6/conf/all/disable_ipv6)" = "0" ]; then
+            sudo ufw deny in on "$PUBLIC_IFACE" proto tcp from ::/0 to any port 22 >/dev/null || true
+        fi
+        if [ "$UFW_INACTIVE" = "1" ]; then
+            echo "UFW is inactive; public SSH deny rules were staged but UFW was not enabled." >&2
+        fi
+        SH_WRAP;
     }
 }

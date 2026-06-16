@@ -8,10 +8,10 @@ use Illuminate\Support\Facades\Process;
 use PDO;
 use Throwable;
 
-final class WgEasyAddressReservationProbe
+final readonly class WgEasyAddressReservationProbe
 {
     public function __construct(
-        private readonly ?string $statePath = null,
+        private ?string $statePath = null,
     ) {}
 
     /**
@@ -176,8 +176,8 @@ final class WgEasyAddressReservationProbe
         preg_match_all('/(?<!\d)(10\.6\.0\.[0-9]{1,3})(?:\/[0-9]{1,2})?(?!\d)/', $value, $matches);
 
         return $this->uniqueAddresses(array_values(array_filter(
-            $matches[1] ?? [],
-            fn (string $address): bool => $this->isManagedWireguardAddress($address),
+            $matches[1],
+            $this->isManagedWireguardAddress(...),
         )));
     }
 

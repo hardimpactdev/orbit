@@ -791,7 +791,7 @@ final readonly class DoctorReportRunner
 
     private function isUbuntuPlatform(Node $node): bool
     {
-        return $node->platform === 'ubuntu' || str_starts_with($node->platform, 'ubuntu_');
+        return $node->platform === 'ubuntu' || str_starts_with((string) $node->platform, 'ubuntu_');
     }
 
     private function activeWebSocketAssignment(Node $node): ?NodeRoleAssignment
