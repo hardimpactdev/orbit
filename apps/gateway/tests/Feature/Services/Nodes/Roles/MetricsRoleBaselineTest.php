@@ -114,11 +114,57 @@ it('converges metrics role intent as process-owned Prometheus Grafana and host e
             'protocol' => 'http',
             'target' => [
                 'type' => 'upstream',
-                'value' => 'http://metrics-1.metrics.orbit:3000',
+                'value' => 'http://host.docker.internal:3000',
             ],
             'upstreams' => [
-                ['scheme' => 'http', 'host' => 'metrics-1.metrics.orbit', 'port' => 3000],
+                ['scheme' => 'http', 'host' => 'host.docker.internal', 'port' => 3000],
             ],
+        ]);
+});
+
+it('rewrites stale metrics service route intent when the metrics baseline reconverges', function (): void {
+    $node = Node::factory()->create([
+        'name' => 'gateway',
+        'platform' => 'debian_12',
+        'wireguard_address' => '10.6.0.1',
+        'status' => NodeStatus::Active,
+    ]);
+    NodeRoleAssignment::factory()->for($node)->create([
+        'role' => 'router',
+        'status' => NodeRoleStatus::Active,
+    ]);
+    $assignment = NodeRoleAssignment::factory()->for($node)->create([
+        'role' => 'metrics',
+        'status' => NodeRoleStatus::Pending,
+    ]);
+
+    ProxyRoute::factory()->create([
+        'node_id' => $node->id,
+        'domain' => 'metrics.orbit',
+        'owner_type' => 'router',
+        'kind' => 'proxy',
+        'config' => [
+            'owner_name' => 'grafana',
+            'protocol' => 'http',
+            'target' => [
+                'type' => 'upstream',
+                'value' => 'http://gateway.metrics.orbit:3000',
+            ],
+            'upstreams' => [
+                ['scheme' => 'http', 'host' => 'gateway.metrics.orbit', 'port' => 3000],
+            ],
+        ],
+    ]);
+
+    app(NodeRoleBaselineConverger::class)->converge($node, $assignment);
+
+    $route = ProxyRoute::query()->where('domain', 'metrics.orbit')->sole();
+
+    expect($route->config['target']['value'])->toBe('http://host.docker.internal:3000')
+        ->and($route->config['upstreams'][0])->toBe([
+            'scheme' => 'http',
+            'host' => 'host.docker.internal',
+            'port' => 3000,
         ]);
 });
 

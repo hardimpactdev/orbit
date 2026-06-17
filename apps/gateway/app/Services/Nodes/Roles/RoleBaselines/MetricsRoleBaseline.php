@@ -14,6 +14,7 @@ use App\Models\NodeRoleAssignment;
 use App\Models\NodeTool;
 use App\Models\Process;
 use App\Models\ProxyRoute;
+use App\Services\Metrics\MetricsServiceRoute;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
 use App\Services\Operations\FleetUpdateTargetSelector;
 use App\Services\Processes\ProcessOwnerContext;
@@ -31,7 +32,7 @@ class MetricsRoleBaseline implements RoleBaseline
 {
     use ManagesNodeToolBaseline;
 
-    private const string ServiceDomain = 'metrics.orbit';
+    private const string ServiceDomain = MetricsServiceRoute::Domain;
 
     private const array HostExporterPlatforms = ['ubuntu', 'debian'];
 
@@ -499,18 +500,7 @@ SH,
             return;
         }
 
-        $backendHost = "{$node->name}.metrics.orbit";
-        $config = [
-            'owner_name' => 'grafana',
-            'protocol' => 'http',
-            'target' => [
-                'type' => 'upstream',
-                'value' => "http://{$backendHost}:3000",
-            ],
-            'upstreams' => [
-                ['scheme' => 'http', 'host' => $backendHost, 'port' => 3000],
-            ],
-        ];
+        $config = MetricsServiceRoute::config();
         $sourceHash = $this->proxyRouteRenderer->sourceHash(new ProxyRoute([
             'node_id' => $router->id,
             'domain' => self::ServiceDomain,
