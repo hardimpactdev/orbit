@@ -27,6 +27,10 @@ manifests.
 - `orbit update:all` is the acceptance path. It updates the operator CLI,
   gateway service, scheduler service, and selected workload node CLIs from the
   published manifest.
+- No release may be published without E2E proof that the release candidate
+  artifacts are functional. The proof must apply to the target version and
+  commit being released, not an older branch, previous artifact set, or stale
+  prepared topology.
 
 ## Workflow
 
@@ -41,13 +45,27 @@ manifests.
    bin/orbit-gateway-pest --compact tests/Feature/Release tests/Feature/Services/Operations/WorkloadNodeUpdaterTest.php
    ```
 
-5. Run the broad quality gate before tagging:
+5. Run release-candidate E2E proof before publishing anything. Without passing
+   E2E proof, stop; do not merge, tag, or publish a GitHub release.
+
+   ```bash
+   composer test:e2e
+   composer test:e2e:binary
+   composer test:e2e:docker:binary-acceptance
+   ```
+
+   Run any additional provider-specific or artifact-backed E2E lane required by
+   `apps/docs/content/testing/README.md` for the release assets or behavior
+   being shipped. Use `composer e2e:ensure-artifacts` only to prepare missing
+   artifacts; artifact preparation output is not proof by itself.
+
+6. Run the broad quality gate before tagging:
 
    ```bash
    composer quality-check
    ```
 
-6. Merge the worktree branch back to `main`, push `main`, then publish the
+7. Merge the worktree branch back to `main`, push `main`, then publish the
    monorepo GitHub release. The release workflow runs on the
    `release.published` event, so a tag push alone is not enough:
 
@@ -57,8 +75,8 @@ manifests.
    gh release create "v${version}" --target main --title "Orbit v${version}" --notes "Orbit ${version}."
    ```
 
-7. Watch the `Orbit Release` workflow until it succeeds.
-8. Verify public artifacts without authentication:
+8. Watch the `Orbit Release` workflow until it succeeds.
+9. Verify public artifacts without authentication:
 
    ```bash
    version="$(bin/orbit-version)"
@@ -70,21 +88,22 @@ manifests.
    DOCKER_CONFIG="$tmp" docker pull "ghcr.io/hardimpactdev/orbit-gateway:${version}"
    ```
 
-9. Run the live fleet acceptance from the operator node:
+10. Run the live fleet acceptance from the operator node:
 
    ```bash
    orbit update:all
    orbit node:list
    ```
 
-10. Confirm:
+11. Confirm:
     - gateway service image is `ghcr.io/hardimpactdev/orbit-gateway:<VERSION>`;
     - scheduler service image matches gateway;
     - every selected workload node reports `Orbit <VERSION>`;
     - `orbit node:list` succeeds after the update.
 
-The release is not complete until the GitHub workflow and live fleet acceptance
-both pass.
+The release is not eligible to publish until release-candidate E2E proof passes.
+It is not complete until the GitHub workflow and live fleet acceptance both
+pass.
 
 ## Failure Handling
 
