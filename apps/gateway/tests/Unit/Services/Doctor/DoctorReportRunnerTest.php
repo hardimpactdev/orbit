@@ -1890,6 +1890,36 @@ describe('DoctorReportRunner metrics role categories', function (): void {
             ->and($categories)->toContain('process')
             ->and($categories)->toContain('proxy');
     });
+
+    it('includes metrics categories when the metrics role is co-located with gateway', function (): void {
+        $node = Node::factory()->create([
+            'name' => 'gateway-metrics-node-cat',
+            'status' => 'active',
+            'platform' => 'debian_12',
+            'wireguard_address' => '10.6.0.61',
+        ]);
+        NodeRoleAssignment::factory()->create([
+            'node_id' => $node->id,
+            'role' => 'gateway',
+            'status' => 'active',
+        ]);
+        NodeRoleAssignment::factory()->create([
+            'node_id' => $node->id,
+            'role' => 'metrics',
+            'status' => 'active',
+        ]);
+        app()->instance(RemoteShell::class, new DoctorReportRunnerRemoteShell([]));
+
+        $runner = app(DoctorReportRunner::class);
+
+        $categories = $runner->categoriesForNode($node);
+
+        expect($categories)->toContain('node')
+            ->and($categories)->toContain('schedule')
+            ->and($categories)->toContain('tool')
+            ->and($categories)->toContain('process')
+            ->and($categories)->toContain('proxy');
+    });
 });
 
 final class DoctorReportRunnerRemoteShell implements RemoteShell

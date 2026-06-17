@@ -74,6 +74,19 @@ final readonly class DoctorReportRunner
 
     private const array METRICS_CATEGORIES = ['node', 'tool', 'process', 'proxy'];
 
+    private const array ROLE_CATEGORY_PRIORITY = [
+        NodeRoleName::Gateway->value,
+        NodeRoleName::AppDevelopment->value,
+        NodeRoleName::AppProduction->value,
+        NodeRoleName::Database->value,
+        NodeRoleName::Agent->value,
+        NodeRoleName::Ingress->value,
+        NodeRoleName::Router->value,
+        NodeRoleName::WebSocket->value,
+        NodeRoleName::S3->value,
+        NodeRoleName::Metrics->value,
+    ];
+
     public function __construct(
         private NodesProbe $nodesProbe,
         private AppsProbe $appsProbe,
@@ -134,47 +147,22 @@ final readonly class DoctorReportRunner
      */
     public function categoriesForNode(Node $node): array
     {
-        if ($this->nodeRoleAssignments->nodeIsGateway($node)) {
-            return self::GATEWAY_CATEGORIES;
+        $categories = [];
+
+        foreach (self::ROLE_CATEGORY_PRIORITY as $role) {
+            if (! $this->nodeRoleAssignments->nodeHasActiveRole($node, $role)) {
+                continue;
+            }
+
+            $categories = [
+                ...$categories,
+                ...$this->categoriesForRole($role),
+            ];
         }
 
-        if ($this->nodeRoleAssignments->nodeHasActiveRole($node, NodeRoleName::AppDevelopment->value)) {
-            return self::APP_CATEGORIES;
-        }
+        $categories = array_values(array_unique($categories));
 
-        if ($this->nodeRoleAssignments->nodeHasActiveRole($node, NodeRoleName::AppProduction->value)) {
-            return self::APP_PRODUCTION_CATEGORIES;
-        }
-
-        if ($this->nodeRoleAssignments->nodeHasActiveRole($node, NodeRoleName::Database->value)) {
-            return self::DATABASE_CATEGORIES;
-        }
-
-        if ($this->nodeRoleAssignments->nodeHasActiveAgentRole($node)) {
-            return self::AGENT_CATEGORIES;
-        }
-
-        if ($this->nodeRoleAssignments->nodeHasActiveRole($node, NodeRoleName::Ingress->value)) {
-            return self::INGRESS_CATEGORIES;
-        }
-
-        if ($this->nodeRoleAssignments->nodeHasActiveRole($node, NodeRoleName::Router->value)) {
-            return self::ROUTER_CATEGORIES;
-        }
-
-        if ($this->nodeRoleAssignments->nodeHasActiveRole($node, NodeRoleName::WebSocket->value)) {
-            return self::WEBSOCKET_CATEGORIES;
-        }
-
-        if ($this->nodeRoleAssignments->nodeHasActiveRole($node, NodeRoleName::S3->value)) {
-            return self::S3_CATEGORIES;
-        }
-
-        if ($this->nodeRoleAssignments->nodeHasActiveRole($node, NodeRoleName::Metrics->value)) {
-            return self::METRICS_CATEGORIES;
-        }
-
-        return self::CONTROL_CATEGORIES;
+        return $categories === [] ? self::CONTROL_CATEGORIES : $categories;
     }
 
     /**

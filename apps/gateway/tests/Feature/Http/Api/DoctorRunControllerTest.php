@@ -9,6 +9,7 @@ use App\Models\App;
 use App\Models\FirewallRule;
 use App\Models\Node;
 use App\Models\NodeAccess;
+use App\Models\NodeRoleAssignment;
 use App\Models\NodeTool;
 use App\Models\Process;
 use App\Models\ProxyRoute;
@@ -243,6 +244,30 @@ describe('DoctorRunController', function (): void {
             ->assertJsonPath('success.data.doctor.healthy', false)
             ->assertJsonPath('success.data.doctor.scope.families', ['process'])
             ->assertJsonPath('success.data.doctor.issues.0.key', 'process.runtime_backend_unavailable');
+    });
+
+    it('accepts the process family scope when metrics is co-located with gateway', function (): void {
+        createDoctorRunCallerNode();
+        $gateway = Node::factory()->gateway()->create([
+            'name' => 'gateway',
+            'status' => 'active',
+            'platform' => 'debian_12',
+            'wireguard_address' => '10.6.0.2',
+        ]);
+        NodeRoleAssignment::factory()->create([
+            'node_id' => $gateway->id,
+            'role' => 'metrics',
+            'status' => 'active',
+        ]);
+
+        $response = $this->call('POST', '/api/doctor/run', [
+            'mode' => 'verify',
+            'families' => ['process'],
+            'node' => 'gateway'], [], [], ['REMOTE_ADDR' => DOCTOR_RUN_CALLER_WG_IP]);
+
+        $response->assertOk()
+            ->assertJsonPath('success.data.doctor.healthy', true)
+            ->assertJsonPath('success.data.doctor.scope.families', ['process']);
     });
 
     it('restores tool drift through the doctor fix endpoint', function (): void {
