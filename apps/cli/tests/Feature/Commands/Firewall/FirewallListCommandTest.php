@@ -75,7 +75,7 @@ describe('firewall:list', function (): void {
             ->and($decoded['success']['meta']['node'])->toBe('app-1');
     });
 
-    it('renders human output containing firewall rule fields', function (): void {
+    it('renders human output grouped by node as tables with uppercase headers', function (): void {
         fakeGateway(fakeSuccessEnvelope([
             'rules' => [
                 [
@@ -83,18 +83,69 @@ describe('firewall:list', function (): void {
                     'node' => 'app-1',
                     'direction' => 'incoming',
                     'action' => 'allow',
+                    'source' => '10.6.0.0/24',
+                    'destination' => null,
+                    'port' => 5173,
+                    'protocol' => 'tcp',
+                    'status' => 'expected',
+                ],
+                [
+                    'name' => 'block-ssh',
+                    'node' => 'app-2',
+                    'direction' => 'incoming',
+                    'action' => 'deny',
+                    'source' => 'any',
+                    'destination' => null,
+                    'port' => 22,
+                    'protocol' => 'tcp',
+                    'status' => 'enacted',
                 ],
             ],
         ], [
             'node' => null,
-            'count' => 1,
+            'count' => 2,
         ]));
 
         [$exitCode, $output] = runCommand($this, 'firewall:list');
 
         expect($exitCode)->toBe(0)
-            ->and($output)->toContain('rules')
-            ->and($output)->toContain('local-vite');
+            ->and($output)->toContain('Node: app-1')
+            ->and($output)->toContain('Node: app-2')
+            ->and($output)->toContain('NAME')
+            ->and($output)->toContain('DIRECTION')
+            ->and($output)->toContain('ACTION')
+            ->and($output)->toContain('SOURCE')
+            ->and($output)->toContain('DESTINATION')
+            ->and($output)->toContain('PORT')
+            ->and($output)->toContain('PROTOCOL')
+            ->and($output)->toContain('STATUS')
+            ->and($output)->toContain('local-vite')
+            ->and($output)->toContain('allow')
+            ->and($output)->toContain('10.6.0.0/24')
+            ->and($output)->toContain('5173')
+            ->and($output)->toContain('block-ssh')
+            ->and($output)->toContain('deny')
+            ->and($output)->toContain('—')
+            ->and($output)->not->toContain('rules: [')
+            ->and($output)->not->toContain('"protocol"');
+    });
+
+    it('renders a scope-aware empty state when filtered with no matches', function (): void {
+        fakeGateway(fakeSuccessEnvelope(['rules' => []], ['node' => 'app-1', 'count' => 0]));
+
+        [$exitCode, $output] = runCommand($this, 'firewall:list', ['--node' => 'app-1']);
+
+        expect($exitCode)->toBe(0)
+            ->and($output)->toBe('No firewall rules found on node app-1.');
+    });
+
+    it('renders a plain empty state when unfiltered with no rules', function (): void {
+        fakeGateway(fakeSuccessEnvelope(['rules' => []], ['node' => null, 'count' => 0]));
+
+        [$exitCode, $output] = runCommand($this, 'firewall:list');
+
+        expect($exitCode)->toBe(0)
+            ->and($output)->toBe('No firewall rules found.');
     });
 
     it('rejects invalid node input before calling the gateway', function (): void {

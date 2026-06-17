@@ -7,6 +7,8 @@ namespace App\Commands\Cloudflare;
 use App\Commands\GatewayCommand;
 use App\Exceptions\GatewayApiException;
 
+use function Laravel\Prompts\table;
+
 final class CfZoneListCommand extends GatewayCommand
 {
     #[\Override]
@@ -23,6 +25,56 @@ final class CfZoneListCommand extends GatewayCommand
             return $this->renderGatewayFailure($exception);
         }
 
-        return $this->renderSuccess($response);
+        if ($this->wantsJson()) {
+            return $this->renderSuccess($response);
+        }
+
+        $zones = $this->zonesFromGatewayResponse($response);
+
+        if ($zones === []) {
+            $this->line('No Cloudflare zones found.');
+
+            return self::SUCCESS;
+        }
+
+        table(
+            headers: ['ZONE ID', 'DOMAIN', 'STATUS'],
+            rows: array_map(fn (array $zone): array => [
+                $this->zoneString($zone, 'id'),
+                $this->zoneString($zone, 'name'),
+                $this->zoneString($zone, 'status'),
+            ], $zones),
+        );
+
+        return self::SUCCESS;
+    }
+
+    /**
+     * @param  array<string, mixed>  $response
+     * @return list<array<string, mixed>>
+     */
+    private function zonesFromGatewayResponse(array $response): array
+    {
+        $zones = $response['success']['data']['zones'] ?? null;
+
+        if (! is_array($zones)) {
+            return [];
+        }
+
+        return array_values(array_filter($zones, is_array(...)));
+    }
+
+    /**
+     * @param  array<string, mixed>  $zone
+     */
+    private function zoneString(array $zone, string $key): string
+    {
+        $value = $zone[$key] ?? null;
+
+        if (is_scalar($value) && (string) $value !== '') {
+            return (string) $value;
+        }
+
+        return '—';
     }
 }

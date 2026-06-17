@@ -8,6 +8,8 @@ use App\Commands\Concerns\ResolvesHostContext;
 use App\Commands\GatewayCommand;
 use App\Exceptions\GatewayApiException;
 
+use function Laravel\Prompts\table;
+
 final class DeployHistoryCommand extends GatewayCommand
 {
     use ResolvesHostContext;
@@ -42,6 +44,60 @@ final class DeployHistoryCommand extends GatewayCommand
             return $this->renderGatewayFailure($exception);
         }
 
-        return $this->renderSuccess($response);
+        if ($this->wantsJson()) {
+            return $this->renderSuccess($response);
+        }
+
+        $runs = $this->runsFromResponse($response);
+
+        if ($runs === []) {
+            $this->line("No deployment history found for {$app}.");
+
+            return self::SUCCESS;
+        }
+
+        $this->line("Deployment History: {$app}");
+        $this->newLine();
+
+        table(
+            headers: ['ID', 'STATUS', 'EXIT', 'STARTED'],
+            rows: array_map(fn (array $run): array => [
+                $this->runString($run, 'id'),
+                $this->runString($run, 'status'),
+                $this->runString($run, 'exit_code'),
+                $this->runString($run, 'started_at'),
+            ], $runs),
+        );
+
+        return self::SUCCESS;
+    }
+
+    /**
+     * @param  array<string, mixed>  $response
+     * @return list<array<string, mixed>>
+     */
+    private function runsFromResponse(array $response): array
+    {
+        $runs = $response['success']['data']['runs'] ?? null;
+
+        if (! is_array($runs)) {
+            return [];
+        }
+
+        return array_values(array_filter($runs, is_array(...)));
+    }
+
+    /**
+     * @param  array<string, mixed>  $run
+     */
+    private function runString(array $run, string $key): string
+    {
+        $value = $run[$key] ?? null;
+
+        if (is_scalar($value) && (string) $value !== '') {
+            return (string) $value;
+        }
+
+        return '—';
     }
 }

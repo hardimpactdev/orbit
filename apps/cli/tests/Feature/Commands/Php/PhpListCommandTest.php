@@ -96,19 +96,57 @@ describe('php:list', function (): void {
         @unlink($store->path());
     });
 
-    it('renders human output containing php runtime fields', function (): void {
+    it('renders human output as a compact runtime table with uppercase headers', function (): void {
         fakeGateway(fakeSuccessEnvelope([
             'php' => [
                 'node' => 'app-1',
+                'supported' => ['8.3', '8.4', '8.5'],
+                'available_images' => ['8.4', '8.5'],
                 'cli' => '8.5',
+                'app' => ['name' => 'docs', 'php_version' => '8.4'],
+                'workspace' => ['name' => 'feature-docs', 'php_version' => '8.4', 'inherits' => true],
             ],
         ]));
 
         [$exitCode, $output] = runCommand($this, 'php:list', ['--node' => 'app-1']);
 
         expect($exitCode)->toBe(0)
-            ->and($output)->toContain('php')
-            ->and($output)->toContain('app-1');
+            ->and($output)->toContain('ATTRIBUTE')
+            ->and($output)->toContain('VALUE')
+            ->and($output)->toContain('NODE')
+            ->and($output)->toContain('SUPPORTED')
+            ->and($output)->toContain('AVAILABLE IMAGES')
+            ->and($output)->toContain('CLI')
+            ->and($output)->toContain('APP')
+            ->and($output)->toContain('WORKSPACE')
+            ->and($output)->toContain('app-1')
+            ->and($output)->toContain('8.3, 8.4, 8.5')
+            ->and($output)->toContain('8.4, 8.5')
+            ->and($output)->toContain('docs')
+            ->and($output)->toContain('feature-docs')
+            ->and($output)->toContain('inherited')
+            ->and($output)->not->toContain('php: {');
+    });
+
+    it('renders em dash for absent runtime context cells in human output', function (): void {
+        fakeGateway(fakeSuccessEnvelope([
+            'php' => [
+                'node' => 'app-1',
+                'supported' => ['8.5'],
+                'available_images' => [],
+                'cli' => null,
+                'app' => null,
+                'workspace' => null,
+            ],
+        ]));
+
+        [$exitCode, $output] = runCommand($this, 'php:list', ['--node' => 'app-1']);
+
+        expect($exitCode)->toBe(0)
+            ->and($output)->toContain('NODE')
+            ->and($output)->toContain('app-1')
+            ->and($output)->toContain('—')
+            ->and($output)->not->toContain('php: {');
     });
 
     it('passes through gateway error codes from HTTP failures', function (): void {

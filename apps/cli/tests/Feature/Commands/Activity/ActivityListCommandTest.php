@@ -58,13 +58,54 @@ describe('activity:list', function (): void {
             ->and($decoded['success']['meta']['filters']['effect'])->toBe('destructive');
     });
 
-    it('renders human output containing activity fields', function (): void {
-        fakeGateway(fakeSuccessEnvelope(['activities' => [['id' => 1, 'effect' => 'read']]]));
+    it('renders human output as a table with uppercase headers and newest-first rows', function (): void {
+        fakeGateway(fakeSuccessEnvelope([
+            'activities' => [
+                [
+                    'id' => 43,
+                    'occurred_at' => '2026-05-02T08:31:12+00:00',
+                    'correlation_id' => '9f7307e8-38b2-45b8-9b94-cfc341456b85',
+                    'type' => 'node.removed',
+                    'effect' => 'destructive',
+                    'subject' => ['type' => 'node', 'name' => 'app-2'],
+                    'actor' => ['node' => 'operator-1'],
+                    'command' => 'node:remove',
+                    'summary' => 'Removed node app-2.',
+                ],
+                [
+                    'id' => 41,
+                    'occurred_at' => '2026-05-02T08:29:58+00:00',
+                    'correlation_id' => null,
+                    'type' => 'node.list',
+                    'effect' => 'read',
+                    'subject' => null,
+                    'actor' => null,
+                    'command' => null,
+                    'summary' => 'Listed nodes.',
+                ],
+            ],
+        ]));
 
         [$exitCode, $output] = runCommand($this, 'activity:list');
 
         expect($exitCode)->toBe(0)
-            ->and($output)->toContain('activities');
+            ->and($output)->toContain('TIME')
+            ->and($output)->toContain('ID')
+            ->and($output)->toContain('EFFECT')
+            ->and($output)->toContain('TYPE')
+            ->and($output)->toContain('SUBJECT')
+            ->and($output)->toContain('ACTOR')
+            ->and($output)->toContain('COMMAND')
+            ->and($output)->toContain('2026-05-02 08:31:12')
+            ->and($output)->toContain('destructive')
+            ->and($output)->toContain('node.removed')
+            ->and($output)->toContain('app-2')
+            ->and($output)->toContain('operator-1')
+            ->and($output)->toContain('node:remove')
+            ->and($output)->toContain('—')
+            ->and(mb_strpos($output, '43'))->toBeLessThan(mb_strpos($output, '41'))
+            ->and($output)->not->toContain('activities: [')
+            ->and($output)->not->toContain('"summary"');
     });
 
     it('renders empty human output without a JSON envelope', function (): void {

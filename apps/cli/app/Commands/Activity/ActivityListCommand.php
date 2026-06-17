@@ -6,7 +6,10 @@ namespace App\Commands\Activity;
 
 use App\Commands\GatewayCommand;
 use App\Exceptions\GatewayApiException;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Str;
+
+use function Laravel\Prompts\table;
 
 final class ActivityListCommand extends GatewayCommand
 {
@@ -38,13 +41,109 @@ final class ActivityListCommand extends GatewayCommand
             return $this->renderGatewayFailure($exception);
         }
 
-        if (! $this->wantsJson() && $this->hasNoActivities($response)) {
+        if ($this->wantsJson()) {
+            return $this->renderSuccess($response);
+        }
+
+        if ($this->hasNoActivities($response)) {
             $this->line('No activity found.');
 
             return self::SUCCESS;
         }
 
-        return $this->renderSuccess($response);
+        table(
+            headers: ['TIME', 'ID', 'EFFECT', 'TYPE', 'SUBJECT', 'ACTOR', 'COMMAND'],
+            rows: array_map(fn (array $activity): array => [
+                $this->occurredAt($activity),
+                $this->activityString($activity, 'id'),
+                $this->activityString($activity, 'effect'),
+                $this->activityString($activity, 'type'),
+                $this->subjectLabel($activity),
+                $this->actorLabel($activity),
+                $this->activityString($activity, 'command'),
+            ], $this->activitiesFromResponse($response)),
+        );
+
+        return self::SUCCESS;
+    }
+
+    /**
+     * @param  array<string, mixed>  $response
+     * @return list<array<string, mixed>>
+     */
+    private function activitiesFromResponse(array $response): array
+    {
+        $activities = $response['success']['data']['activities'] ?? null;
+
+        if (! is_array($activities)) {
+            return [];
+        }
+
+        return array_values(array_filter($activities, is_array(...)));
+    }
+
+    /**
+     * @param  array<string, mixed>  $activity
+     */
+    private function occurredAt(array $activity): string
+    {
+        $occurredAt = $activity['occurred_at'] ?? null;
+
+        if (! is_string($occurredAt) || $occurredAt === '') {
+            return '—';
+        }
+
+        try {
+            return Carbon::parse($occurredAt)->format('Y-m-d H:i:s');
+        } catch (\Throwable) {
+            return $occurredAt;
+        }
+    }
+
+    /**
+     * @param  array<string, mixed>  $activity
+     */
+    private function subjectLabel(array $activity): string
+    {
+        $subject = $activity['subject'] ?? null;
+
+        if (! is_array($subject)) {
+            return '—';
+        }
+
+        $name = $subject['name'] ?? null;
+
+        return is_scalar($name) && (string) $name !== '' ? (string) $name : '—';
+    }
+
+    /**
+     * @param  array<string, mixed>  $activity
+     */
+    private function actorLabel(array $activity): string
+    {
+        $actor = $activity['actor'] ?? null;
+
+        if (! is_array($actor)) {
+            return '—';
+        }
+
+        $node = $actor['node'] ?? null;
+
+        return is_scalar($node) && (string) $node !== '' ? (string) $node : '—';
+    }
+
+    /**
+     * @param  array<string, mixed>  $activity
+     */
+    private function activityString(array $activity, string $key): string
+    {
+        $value = $activity[$key] ?? null;
+
+        if (is_scalar($value) && (string) $value !== '') {
+            return (string) $value;
+        }
+
+        return '—';
     }
 
     /**

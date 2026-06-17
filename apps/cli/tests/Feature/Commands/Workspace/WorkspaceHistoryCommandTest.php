@@ -82,17 +82,57 @@ describe('workspace:history', function (): void {
             ->and($decoded['success']['data']['runs'])->toBe([]);
     });
 
-    it('renders human output containing run fields', function (): void {
+    it('renders human output as a run-history table with header and columns', function (): void {
         fakeGateway(fakeSuccessEnvelope([
             'runs' => [
-                ['id' => 12, 'workspace' => 'feature-docs', 'status' => 'completed'],
+                [
+                    'id' => 12,
+                    'workspace' => 'feature-docs',
+                    'app' => 'ohdear',
+                    'action' => 'setup',
+                    'status' => 'completed',
+                    'started_at' => now()->subMinutes(2)->toIso8601String(),
+                    'finished_at' => now()->subMinutes(2)->addSeconds(45)->toIso8601String(),
+                ],
+                [
+                    'id' => 11,
+                    'workspace' => 'feature-docs',
+                    'app' => 'ohdear',
+                    'action' => 'setup',
+                    'status' => 'running',
+                    'started_at' => now()->subMinute()->toIso8601String(),
+                    'finished_at' => null,
+                ],
             ],
         ]));
 
         [$exitCode, $output] = runCommand($this, 'workspace:history', ['name' => 'feature-docs']);
 
         expect($exitCode)->toBe(0)
-            ->and($output)->toContain('runs');
+            ->and($output)->toContain('Workspace History: ohdear/feature-docs')
+            ->and($output)->toContain('ID')
+            ->and($output)->toContain('ACTION')
+            ->and($output)->toContain('STATUS')
+            ->and($output)->toContain('STARTED')
+            ->and($output)->toContain('DURATION')
+            ->and($output)->toContain('setup')
+            ->and($output)->toContain('completed')
+            ->and($output)->toContain('45s')
+            ->and($output)->toContain('ago')
+            ->and($output)->toContain('—')
+            ->and($output)->not->toContain('runs: [')
+            ->and($output)->not->toContain('"started_at"');
+    });
+
+    it('renders human empty output when no runs exist', function (): void {
+        fakeGateway(fakeSuccessEnvelope([
+            'runs' => [],
+        ]));
+
+        [$exitCode, $output] = runCommand($this, 'workspace:history', ['name' => 'feature-docs']);
+
+        expect($exitCode)->toBe(0)
+            ->and($output)->toBe('No run history found.');
     });
 
     it('surfaces wireguard-specific gateway failures', function (): void {

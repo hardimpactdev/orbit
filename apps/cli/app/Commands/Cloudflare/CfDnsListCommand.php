@@ -8,6 +8,8 @@ use App\Commands\Concerns\ResolvesHostContext;
 use App\Commands\GatewayCommand;
 use App\Exceptions\GatewayApiException;
 
+use function Laravel\Prompts\table;
+
 final class CfDnsListCommand extends GatewayCommand
 {
     use ResolvesHostContext;
@@ -32,6 +34,72 @@ final class CfDnsListCommand extends GatewayCommand
             return $this->renderGatewayFailure($exception);
         }
 
-        return $this->renderSuccess($response);
+        if ($this->wantsJson()) {
+            return $this->renderSuccess($response);
+        }
+
+        $records = $this->recordsFromGatewayResponse($response);
+
+        if ($records === []) {
+            $this->line("No Cloudflare DNS records found for {$zone}.");
+
+            return self::SUCCESS;
+        }
+
+        table(
+            headers: ['RECORD ID', 'TYPE', 'NAME', 'CONTENT', 'PROXIED'],
+            rows: array_map(fn (array $record): array => [
+                $this->recordString($record, 'id'),
+                $this->recordString($record, 'type'),
+                $this->recordString($record, 'name'),
+                $this->recordString($record, 'content'),
+                $this->proxiedLabel($record),
+            ], $records),
+        );
+
+        return self::SUCCESS;
+    }
+
+    /**
+     * @param  array<string, mixed>  $response
+     * @return list<array<string, mixed>>
+     */
+    private function recordsFromGatewayResponse(array $response): array
+    {
+        $records = $response['success']['data']['records'] ?? null;
+
+        if (! is_array($records)) {
+            return [];
+        }
+
+        return array_values(array_filter($records, is_array(...)));
+    }
+
+    /**
+     * @param  array<string, mixed>  $record
+     */
+    private function proxiedLabel(array $record): string
+    {
+        $proxied = $record['proxied'] ?? null;
+
+        if (! is_bool($proxied)) {
+            return '—';
+        }
+
+        return $proxied ? 'yes' : 'no';
+    }
+
+    /**
+     * @param  array<string, mixed>  $record
+     */
+    private function recordString(array $record, string $key): string
+    {
+        $value = $record[$key] ?? null;
+
+        if (is_scalar($value) && (string) $value !== '') {
+            return (string) $value;
+        }
+
+        return '—';
     }
 }

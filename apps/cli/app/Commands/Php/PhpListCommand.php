@@ -9,6 +9,8 @@ use App\Commands\GatewayCommand;
 use App\Exceptions\GatewayApiException;
 use App\Exceptions\OrbitConfigStoreException;
 
+use function Laravel\Prompts\table;
+
 final class PhpListCommand extends GatewayCommand
 {
     use ResolvesHostContext;
@@ -47,6 +49,117 @@ final class PhpListCommand extends GatewayCommand
             return $this->renderGatewayFailure($exception);
         }
 
-        return $this->renderSuccess($response);
+        if ($this->wantsJson()) {
+            return $this->renderSuccess($response);
+        }
+
+        $runtime = $this->runtimeFromGatewayResponse($response);
+
+        table(
+            headers: ['ATTRIBUTE', 'VALUE'],
+            rows: [
+                ['NODE', $this->runtimeString($runtime, 'node')],
+                ['SUPPORTED', $this->versionList($runtime, 'supported')],
+                ['AVAILABLE IMAGES', $this->versionList($runtime, 'available_images')],
+                ['CLI', $this->runtimeString($runtime, 'cli')],
+                ['APP', $this->appLabel($runtime)],
+                ['WORKSPACE', $this->workspaceLabel($runtime)],
+            ],
+        );
+
+        return self::SUCCESS;
+    }
+
+    /**
+     * @param  array<string, mixed>  $response
+     * @return array<string, mixed>
+     */
+    private function runtimeFromGatewayResponse(array $response): array
+    {
+        $runtime = $response['success']['data']['php'] ?? null;
+
+        return is_array($runtime) ? $runtime : [];
+    }
+
+    /**
+     * @param  array<string, mixed>  $runtime
+     */
+    private function appLabel(array $runtime): string
+    {
+        $app = $runtime['app'] ?? null;
+
+        if (! is_array($app)) {
+            return '—';
+        }
+
+        $name = $this->runtimeString($app, 'name');
+        $version = $this->runtimeString($app, 'php_version');
+
+        if ($name === '—') {
+            return '—';
+        }
+
+        return $version === '—' ? $name : "{$name} (PHP {$version})";
+    }
+
+    /**
+     * @param  array<string, mixed>  $runtime
+     */
+    private function workspaceLabel(array $runtime): string
+    {
+        $workspace = $runtime['workspace'] ?? null;
+
+        if (! is_array($workspace)) {
+            return '—';
+        }
+
+        $name = $this->runtimeString($workspace, 'name');
+
+        if ($name === '—') {
+            return '—';
+        }
+
+        $version = $this->runtimeString($workspace, 'php_version');
+        $inheritance = ($workspace['inherits'] ?? null) === true ? 'inherited' : 'pinned';
+
+        return $version === '—'
+            ? "{$name} ({$inheritance})"
+            : "{$name} (PHP {$version}, {$inheritance})";
+    }
+
+    /**
+     * @param  array<string, mixed>  $runtime
+     */
+    private function versionList(array $runtime, string $key): string
+    {
+        $versions = $runtime[$key] ?? null;
+
+        if (! is_array($versions)) {
+            return '—';
+        }
+
+        $labels = array_values(array_filter(
+            array_map(
+                fn (mixed $version): ?string => is_scalar($version) && (string) $version !== '' ? (string) $version : null,
+                $versions,
+            ),
+            fn (?string $version): bool => $version !== null,
+        ));
+
+        return $labels === [] ? '—' : implode(', ', $labels);
+    }
+
+    /**
+     * @param  array<string, mixed>  $runtime
+     */
+    private function runtimeString(array $runtime, string $key): string
+    {
+        $value = $runtime[$key] ?? null;
+
+        if (is_scalar($value) && (string) $value !== '') {
+            return (string) $value;
+        }
+
+        return '—';
     }
 }

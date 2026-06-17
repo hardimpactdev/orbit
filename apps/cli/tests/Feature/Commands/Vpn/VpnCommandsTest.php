@@ -35,6 +35,57 @@ describe('vpn commands', function (): void {
             ->and($decoded['success']['meta']['count'])->toBe(1);
     });
 
+    it('renders human vpn client output as a table with uppercase headers and classified fields', function (): void {
+        fakeGateway(fakeSuccessEnvelope([
+            'clients' => [
+                [
+                    'id' => 'client-1',
+                    'name' => 'laptop',
+                    'address' => '10.6.0.7',
+                    'enabled' => true,
+                    'latest_handshake_at' => '2026-06-17T09:00:00+00:00',
+                    'kind' => 'admin',
+                ],
+                [
+                    'id' => 'client-2',
+                    'name' => 'app-1',
+                    'address' => '10.6.0.8',
+                    'enabled' => false,
+                    'latest_handshake_at' => null,
+                    'kind' => 'node',
+                ],
+            ],
+        ], ['count' => 2]));
+
+        [$exitCode, $output] = runCommand($this, 'vpn-client:list', ['--totp' => '123456']);
+
+        expect($exitCode)->toBe(0)
+            ->and($output)->toContain('NAME')
+            ->and($output)->toContain('ADDRESS')
+            ->and($output)->toContain('ENABLED')
+            ->and($output)->toContain('KIND')
+            ->and($output)->toContain('LATEST HANDSHAKE')
+            ->and($output)->toContain('laptop')
+            ->and($output)->toContain('10.6.0.7')
+            ->and($output)->toContain('yes')
+            ->and($output)->toContain('admin')
+            ->and($output)->toContain('2026-06-17T09:00:00+00:00')
+            ->and($output)->toContain('app-1')
+            ->and($output)->toContain('no')
+            ->and($output)->toContain('node')
+            ->and($output)->toContain('never')
+            ->and($output)->not->toContain('clients: [');
+    });
+
+    it('renders the documented empty state when no vpn clients are configured', function (): void {
+        fakeGateway(fakeSuccessEnvelope(['clients' => []], ['count' => 0]));
+
+        [$exitCode, $output] = runCommand($this, 'vpn-client:list', ['--totp' => '123456']);
+
+        expect($exitCode)->toBe(0)
+            ->and($output)->toBe('No VPN clients configured.');
+    });
+
     it('creates vpn clients through the gateway', function (): void {
         fakeGateway(fakeSuccessEnvelope([
             'client' => [

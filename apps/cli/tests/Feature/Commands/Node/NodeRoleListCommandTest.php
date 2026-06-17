@@ -69,18 +69,55 @@ describe('node role:list', function (): void {
         @unlink($store->path());
     });
 
-    it('renders human output containing role fields', function (): void {
+    it('renders human output as a table with uppercase headers and role cells', function (): void {
         fakeGateway(fakeSuccessEnvelope([
             'node' => 'gateway-1',
             'roles' => [
-                ['role' => 'gateway', 'status' => 'active'],
+                [
+                    'role' => 'gateway',
+                    'status' => 'active',
+                    'settings' => ['port' => 8443],
+                    'last_error' => null,
+                    'converged_at' => '2026-05-02T08:31:12.000000Z',
+                ],
+                [
+                    'role' => 'router',
+                    'status' => 'failed',
+                    'settings' => [],
+                    'last_error' => 'boom',
+                    'converged_at' => null,
+                ],
             ],
         ]));
 
         [$exitCode, $output] = runCommand($this, 'node role:list', ['node' => 'gateway-1']);
 
         expect($exitCode)->toBe(0)
-            ->and($output)->toContain('roles');
+            ->and($output)->toContain('ROLE')
+            ->and($output)->toContain('STATUS')
+            ->and($output)->toContain('SETTINGS')
+            ->and($output)->toContain('LAST ERROR')
+            ->and($output)->toContain('CONVERGED AT')
+            ->and($output)->toContain('gateway')
+            ->and($output)->toContain('active')
+            ->and($output)->toContain('router')
+            ->and($output)->toContain('failed')
+            ->and($output)->toContain('boom')
+            ->and($output)->toContain('—')
+            ->and($output)->not->toContain('roles: [')
+            ->and($output)->not->toContain('"converged_at"');
+    });
+
+    it('renders empty human output naming the node when it has no role assignments', function (): void {
+        fakeGateway(fakeSuccessEnvelope([
+            'node' => 'gateway-1',
+            'roles' => [],
+        ]));
+
+        [$exitCode, $output] = runCommand($this, 'node role:list', ['node' => 'gateway-1']);
+
+        expect($exitCode)->toBe(0)
+            ->and($output)->toBe('No role assignments found for node gateway-1.');
     });
 
     it('surfaces wireguard-specific gateway failures', function (): void {

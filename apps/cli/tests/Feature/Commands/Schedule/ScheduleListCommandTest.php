@@ -43,18 +43,68 @@ describe('schedule:list', function (): void {
             ->and($decoded['success']['meta']['count'])->toBe(1);
     });
 
-    it('renders human output containing schedule fields', function (): void {
+    it('renders human output as a table with uppercase headers and schedule cells', function (): void {
         fakeGateway(fakeSuccessEnvelope([
             'schedules' => [
-                ['name' => 'laravel-scheduler', 'scope' => 'app'],
+                [
+                    'name' => 'laravel-scheduler',
+                    'scope' => 'app',
+                    'target' => ['type' => 'app', 'name' => 'docs', 'node' => 'app-1'],
+                    'interval' => 'every minute',
+                    'execution' => ['type' => 'command', 'value' => 'php artisan schedule:run'],
+                    'status' => 'expected',
+                    'last_run' => ['status' => 'completed', 'finished_at' => '2026-06-17T10:00:00+00:00'],
+                ],
+                [
+                    'name' => 'prune',
+                    'scope' => 'orbit',
+                    'target' => ['type' => 'orbit', 'name' => 'orbit', 'node' => 'gateway-1'],
+                    'interval' => 'daily',
+                    'execution' => ['type' => 'script', 'value' => 'prune.sh'],
+                    'status' => 'expected',
+                    'last_run' => null,
+                ],
             ],
         ]));
 
         [$exitCode, $output] = runCommand($this, 'schedule:list', ['--app' => 'docs']);
 
         expect($exitCode)->toBe(0)
-            ->and($output)->toContain('schedules')
-            ->and($output)->toContain('laravel-scheduler');
+            ->and($output)->toContain('NAME')
+            ->and($output)->toContain('SCOPE')
+            ->and($output)->toContain('TARGET')
+            ->and($output)->toContain('NODE')
+            ->and($output)->toContain('INTERVAL')
+            ->and($output)->toContain('EXECUTION')
+            ->and($output)->toContain('LAST RUN')
+            ->and($output)->toContain('STATUS')
+            ->and($output)->toContain('laravel-scheduler')
+            ->and($output)->toContain('app-1')
+            ->and($output)->toContain('every minute')
+            ->and($output)->toContain('command: php artisan schedule:run')
+            ->and($output)->toContain('completed')
+            ->and($output)->toContain('prune')
+            ->and($output)->toContain('—')
+            ->and($output)->not->toContain('schedules: [')
+            ->and($output)->not->toContain('"execution"');
+    });
+
+    it('renders a scope-aware empty state when filtered with no matches', function (): void {
+        fakeGateway(fakeSuccessEnvelope(['schedules' => []], ['app' => 'docs', 'node' => null, 'count' => 0]));
+
+        [$exitCode, $output] = runCommand($this, 'schedule:list', ['--app' => 'docs']);
+
+        expect($exitCode)->toBe(0)
+            ->and($output)->toBe('No schedules found for app docs.');
+    });
+
+    it('renders a plain empty state when unfiltered with no schedules', function (): void {
+        fakeGateway(fakeSuccessEnvelope(['schedules' => []], ['app' => null, 'node' => null, 'count' => 0]));
+
+        [$exitCode, $output] = runCommand($this, 'schedule:list');
+
+        expect($exitCode)->toBe(0)
+            ->and($output)->toBe('No schedules found.');
     });
 
     it('fails validation before opening the gateway request when app and node filters are combined', function (): void {

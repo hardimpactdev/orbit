@@ -127,17 +127,82 @@ describe('workspace step read commands', function (): void {
         expect($exitCode)->toBe(0);
     });
 
-    it('renders human output containing step fields', function (): void {
+    it('renders setup steps as a table with an app header and columns', function (): void {
         fakeGateway(fakeSuccessEnvelope([
             'steps' => [
-                ['id' => 10, 'app' => 'docs', 'phase' => 'setup', 'command' => 'composer install'],
+                ['id' => 12, 'app' => 'docs', 'phase' => 'setup', 'order' => 1, 'command' => 'composer install', 'timeout_seconds' => 600],
+                ['id' => 13, 'app' => 'docs', 'phase' => 'setup', 'order' => 2, 'command' => 'npm install', 'timeout_seconds' => 300],
             ],
         ]));
 
         [$exitCode, $output] = runCommand($this, 'workspace-setup-step:list', ['--app' => 'docs']);
 
         expect($exitCode)->toBe(0)
-            ->and($output)->toContain('steps');
+            ->and($output)->toContain('Setup steps for docs:')
+            ->and($output)->toContain('ID')
+            ->and($output)->toContain('ORDER')
+            ->and($output)->toContain('COMMAND')
+            ->and($output)->toContain('TIMEOUT')
+            ->and($output)->toContain('composer install')
+            ->and($output)->toContain('600s')
+            ->and($output)->not->toContain('steps: [')
+            ->and($output)->not->toContain('"timeout_seconds"');
+    });
+
+    it('renders teardown steps as a table with an app header and columns', function (): void {
+        fakeGateway(fakeSuccessEnvelope([
+            'steps' => [
+                ['id' => 18, 'app' => 'docs', 'phase' => 'teardown', 'order' => 1, 'command' => 'dropdb docs_db', 'timeout_seconds' => 600],
+            ],
+        ]));
+
+        [$exitCode, $output] = runCommand($this, 'workspace-teardown-step:list', ['--app' => 'docs']);
+
+        expect($exitCode)->toBe(0)
+            ->and($output)->toContain('Teardown steps for docs:')
+            ->and($output)->toContain('ID')
+            ->and($output)->toContain('ORDER')
+            ->and($output)->toContain('COMMAND')
+            ->and($output)->toContain('TIMEOUT')
+            ->and($output)->toContain('dropdb docs_db')
+            ->and($output)->toContain('600s')
+            ->and($output)->not->toContain('steps: [')
+            ->and($output)->not->toContain('"timeout_seconds"');
+    });
+
+    it('renders a missing setup-step timeout cell as an em dash', function (): void {
+        fakeGateway(fakeSuccessEnvelope([
+            'steps' => [
+                ['id' => 12, 'app' => 'docs', 'phase' => 'setup', 'order' => 1, 'command' => 'composer install'],
+            ],
+        ]));
+
+        [$exitCode, $output] = runCommand($this, 'workspace-setup-step:list', ['--app' => 'docs']);
+
+        expect($exitCode)->toBe(0)
+            ->and($output)->toContain('—');
+    });
+
+    it('renders the exact empty-state prose for setup steps', function (): void {
+        fakeGateway(fakeSuccessEnvelope([
+            'steps' => [],
+        ]));
+
+        [$exitCode, $output] = runCommand($this, 'workspace-setup-step:list', ['--app' => 'docs']);
+
+        expect($exitCode)->toBe(0)
+            ->and($output)->toBe('No setup steps defined for docs.');
+    });
+
+    it('renders the exact empty-state prose for teardown steps', function (): void {
+        fakeGateway(fakeSuccessEnvelope([
+            'steps' => [],
+        ]));
+
+        [$exitCode, $output] = runCommand($this, 'workspace-teardown-step:list', ['--app' => 'docs']);
+
+        expect($exitCode)->toBe(0)
+            ->and($output)->toBe('No teardown steps defined for docs.');
     });
 
     it('surfaces wireguard-specific gateway failures', function (): void {

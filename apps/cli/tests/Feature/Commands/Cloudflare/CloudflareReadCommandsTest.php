@@ -29,7 +29,7 @@ describe('cf-zone:list', function (): void {
             ->and($decoded['success']['meta']['count'])->toBe(1);
     });
 
-    it('renders human output containing zone fields', function (): void {
+    it('renders human output as a table with uppercase headers and zone fields', function (): void {
         fakeGateway(fakeSuccessEnvelope([
             'zones' => [
                 [
@@ -37,14 +37,35 @@ describe('cf-zone:list', function (): void {
                     'name' => 'example.com',
                     'status' => 'active',
                 ],
+                [
+                    'id' => 'zone-2',
+                    'name' => 'pending.test',
+                    'status' => null,
+                ],
             ],
-        ], ['count' => 1]));
+        ], ['count' => 2]));
 
         [$exitCode, $output] = runCommand($this, 'cf-zone:list');
 
         expect($exitCode)->toBe(0)
-            ->and($output)->toContain('zones')
-            ->and($output)->toContain('example.com');
+            ->and($output)->toContain('ZONE ID')
+            ->and($output)->toContain('DOMAIN')
+            ->and($output)->toContain('STATUS')
+            ->and($output)->toContain('zone-1')
+            ->and($output)->toContain('example.com')
+            ->and($output)->toContain('active')
+            ->and($output)->toContain('pending.test')
+            ->and($output)->toContain('—')
+            ->and($output)->not->toContain('zones: [');
+    });
+
+    it('renders the documented empty state when no zones are visible', function (): void {
+        fakeGateway(fakeSuccessEnvelope(['zones' => []], ['count' => 0]));
+
+        [$exitCode, $output] = runCommand($this, 'cf-zone:list');
+
+        expect($exitCode)->toBe(0)
+            ->and($output)->toBe('No Cloudflare zones found.');
     });
 
     it('passes through Cloudflare gateway error codes', function (): void {
@@ -99,23 +120,54 @@ describe('cf-dns:list', function (): void {
             ]);
     });
 
-    it('renders human output containing record fields', function (): void {
+    it('renders human output as a table with uppercase headers and proxied yes/no', function (): void {
         fakeGateway(fakeSuccessEnvelope([
             'records' => [
                 [
                     'id' => 'record-1',
+                    'zone' => 'example.com',
                     'type' => 'A',
                     'name' => 'docs.example.com',
                     'content' => '203.0.113.10',
+                    'proxied' => true,
+                    'status' => 'observed',
+                ],
+                [
+                    'id' => 'record-2',
+                    'zone' => 'example.com',
+                    'type' => 'CNAME',
+                    'name' => 'www.example.com',
+                    'content' => 'example.com',
+                    'proxied' => false,
+                    'status' => 'observed',
                 ],
             ],
-        ], ['zone' => 'example.com', 'count' => 1]));
+        ], ['zone' => 'example.com', 'count' => 2]));
 
         [$exitCode, $output] = runCommand($this, 'cf-dns:list', ['zone' => 'example.com']);
 
         expect($exitCode)->toBe(0)
-            ->and($output)->toContain('records')
-            ->and($output)->toContain('docs.example.com');
+            ->and($output)->toContain('RECORD ID')
+            ->and($output)->toContain('TYPE')
+            ->and($output)->toContain('NAME')
+            ->and($output)->toContain('CONTENT')
+            ->and($output)->toContain('PROXIED')
+            ->and($output)->toContain('record-1')
+            ->and($output)->toContain('docs.example.com')
+            ->and($output)->toContain('203.0.113.10')
+            ->and($output)->toContain('yes')
+            ->and($output)->toContain('www.example.com')
+            ->and($output)->toContain('no')
+            ->and($output)->not->toContain('records: [');
+    });
+
+    it('renders the documented empty state with the requested zone when no records exist', function (): void {
+        fakeGateway(fakeSuccessEnvelope(['records' => []], ['zone' => 'example.com', 'count' => 0]));
+
+        [$exitCode, $output] = runCommand($this, 'cf-dns:list', ['zone' => 'example.com']);
+
+        expect($exitCode)->toBe(0)
+            ->and($output)->toBe('No Cloudflare DNS records found for example.com.');
     });
 
     it('requires the zone argument in JSON mode before calling the gateway', function (): void {

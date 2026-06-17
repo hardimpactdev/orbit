@@ -36,17 +36,62 @@ describe('app:list', function (): void {
         expect($command->getDefinition()->hasOption('environment'))->toBeFalse();
     });
 
-    it('renders human output containing app fields', function (): void {
+    it('renders human output grouped by node as tables with workspace child rows', function (): void {
         fakeGateway(fakeSuccessEnvelope([
             'apps' => [
-                ['name' => 'orbit-docs', 'node' => 'app-1'],
+                [
+                    'name' => 'docs',
+                    'node' => 'app-1',
+                    'url' => 'https://docs.test',
+                    'workspaces' => [
+                        ['name' => 'feature-a', 'url' => 'https://feature-a.docs.test', 'lifecycle_status' => 'active'],
+                        ['name' => 'feature-b', 'url' => 'https://feature-b.docs.test', 'lifecycle_status' => 'setting_up'],
+                    ],
+                ],
+                [
+                    'name' => 'blog',
+                    'node' => 'app-1',
+                    'url' => 'https://blog.test',
+                    'workspaces' => [],
+                ],
+                [
+                    'name' => 'api',
+                    'node' => 'app-2',
+                    'url' => 'https://api.test',
+                    'workspaces' => [],
+                ],
             ],
         ]));
 
         [$exitCode, $output] = runCommand($this, 'app:list');
 
         expect($exitCode)->toBe(0)
-            ->and($output)->toContain('apps');
+            ->and($output)->toContain('Node: app-1')
+            ->and($output)->toContain('Node: app-2')
+            ->and($output)->toContain('NAME')
+            ->and($output)->toContain('URL')
+            ->and($output)->toContain('STATUS')
+            ->and($output)->toContain('docs')
+            ->and($output)->toContain('blog')
+            ->and($output)->toContain('api')
+            ->and($output)->toContain('expected')
+            ->and($output)->toContain('├─ feature-a')
+            ->and($output)->toContain('└─ feature-b')
+            ->and($output)->toContain('active')
+            ->and($output)->toContain('setting_up')
+            ->and($output)->not->toContain('apps: [')
+            ->and($output)->not->toContain('"lifecycle_status"');
+    });
+
+    it('renders human empty output when no apps are visible', function (): void {
+        fakeGateway(fakeSuccessEnvelope([
+            'apps' => [],
+        ]));
+
+        [$exitCode, $output] = runCommand($this, 'app:list');
+
+        expect($exitCode)->toBe(0)
+            ->and($output)->toBe('No apps found.');
     });
 
     it('surfaces gateway_unavailable on gateway HTTP errors', function (): void {

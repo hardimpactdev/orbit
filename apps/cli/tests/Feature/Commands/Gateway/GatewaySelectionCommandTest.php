@@ -80,6 +80,39 @@ describe('gateway:list', function (): void {
         cleanupGatewaySelectionStore($tempDir);
     });
 
+    it('renders human output with the active gateway line and a marked table', function (): void {
+        [, $tempDir] = setupGatewaySelectionStore();
+
+        [$exitCode, $output] = runCommand($this, 'gateway:list');
+
+        expect($exitCode)->toBe(0)
+            ->and($output)->toContain('Active gateway: default')
+            ->and($output)->toContain('NAME')
+            ->and($output)->toContain('URL')
+            ->and($output)->toContain('WIREGUARD IP')
+            ->and($output)->toContain('default')
+            ->and($output)->toContain('incus-dev')
+            ->and($output)->toContain('https://10.6.0.2')
+            ->and($output)->toContain('10.6.0.12')
+            ->and($output)->not->toContain('gateways: [')
+            ->and($output)->not->toContain('"ca_fingerprint"');
+
+        cleanupGatewaySelectionStore($tempDir);
+    });
+
+    it('renders the no-gateways prose in human mode', function (): void {
+        $tempDir = sys_get_temp_dir().'/orbit-gateway-empty-human-test-'.bin2hex(random_bytes(4));
+        $store = new OrbitConfigStore(overridePath: $tempDir.'/config.json');
+        app()->instance(OrbitConfigStore::class, $store);
+
+        [$exitCode, $output] = runCommand($this, 'gateway:list');
+
+        expect($exitCode)->toBe(1)
+            ->and($output)->toBe('validation_failed: No gateways are configured. Run orbit gateway:add first.');
+
+        @rmdir($tempDir);
+    });
+
     it('fails when no gateways are configured', function (): void {
         $tempDir = sys_get_temp_dir().'/orbit-gateway-empty-test-'.bin2hex(random_bytes(4));
         $store = new OrbitConfigStore(overridePath: $tempDir.'/config.json');

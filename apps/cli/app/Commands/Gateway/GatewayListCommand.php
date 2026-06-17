@@ -7,8 +7,12 @@ namespace App\Commands\Gateway;
 use App\Commands\LocalOnlyCommand;
 use App\Services\OrbitConfigStore;
 
+use function Laravel\Prompts\table;
+
 final class GatewayListCommand extends LocalOnlyCommand
 {
+    private const string ActiveMarker = "\e[32m●\e[0m";
+
     #[\Override]
     protected $signature = 'gateway:list {--json}';
 
@@ -29,14 +33,47 @@ final class GatewayListCommand extends LocalOnlyCommand
 
         $activeGateway = $configStore->activeGatewayName();
 
-        return $this->renderSuccess([
-            'active_gateway' => $activeGateway,
-            'gateways' => array_map(
-                fn (string $name, array $entry): array => $this->gatewayPayload($name, $entry, $name === $activeGateway),
-                array_keys($gateways),
-                array_values($gateways),
-            ),
-        ]);
+        $payloads = array_map(
+            fn (string $name, array $entry): array => $this->gatewayPayload($name, $entry, $name === $activeGateway),
+            array_keys($gateways),
+            array_values($gateways),
+        );
+
+        if ($this->wantsJson()) {
+            return $this->renderSuccess([
+                'active_gateway' => $activeGateway,
+                'gateways' => $payloads,
+            ]);
+        }
+
+        $this->line('Active gateway: '.($activeGateway ?? '—'));
+        $this->newLine();
+
+        table(
+            headers: ['', 'NAME', 'URL', 'WIREGUARD IP'],
+            rows: array_map(fn (array $gateway): array => [
+                ($gateway['active'] ?? false) === true ? self::ActiveMarker : '',
+                $this->gatewayString($gateway, 'name'),
+                $this->gatewayString($gateway, 'url'),
+                $this->gatewayString($gateway, 'wireguard_ip'),
+            ], $payloads),
+        );
+
+        return self::SUCCESS;
+    }
+
+    /**
+     * @param  array<string, mixed>  $gateway
+     */
+    private function gatewayString(array $gateway, string $key): string
+    {
+        $value = $gateway[$key] ?? null;
+
+        if (is_scalar($value) && (string) $value !== '') {
+            return (string) $value;
+        }
+
+        return '—';
     }
 
     /**
