@@ -95,7 +95,7 @@ class GatewayServiceUpdater
     private function updateGatewayService(GatewayImageReference $targetImage): null
     {
         $this->swarm()->updateServiceImage(self::GatewayService, $targetImage, 'start-first');
-        $this->waitForGatewayHealth();
+        $this->waitForGatewayHealth($targetImage);
 
         return null;
     }
@@ -108,12 +108,16 @@ class GatewayServiceUpdater
         return null;
     }
 
-    private function waitForGatewayHealth(): void
+    private function waitForGatewayHealth(GatewayImageReference $targetImage): void
     {
         for ($attempt = 1; $attempt <= self::GatewayHealthCheckAttempts; $attempt++) {
             $state = $this->swarm()->serviceUpdateState(self::GatewayService);
 
             if ($state === 'completed') {
+                return;
+            }
+
+            if ($state === null && $this->gatewayServiceIsConverged($targetImage)) {
                 return;
             }
 
@@ -127,6 +131,15 @@ class GatewayServiceUpdater
         }
 
         throw new RuntimeException('Gateway service health check failed.');
+    }
+
+    private function gatewayServiceIsConverged(GatewayImageReference $targetImage): bool
+    {
+        if ($this->swarm()->serviceImage(self::GatewayService) !== $targetImage->canonical()) {
+            return false;
+        }
+
+        return $this->swarm()->serviceReplicas(self::GatewayService) === '1/1';
     }
 
     private function recoverScheduler(OperationRun $operationRun, ?string $previousSchedulerImage, Throwable $original): void

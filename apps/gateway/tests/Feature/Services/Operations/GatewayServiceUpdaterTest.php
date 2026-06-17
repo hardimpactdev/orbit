@@ -141,6 +141,60 @@ it('waits for a detached gateway service update to complete before starting the 
     Sleep::assertSleptTimes(1);
 });
 
+it('treats a same-image gateway service update with no Docker update status as healthy when the service is converged', function (): void {
+    Sleep::fake();
+
+    $run = gatewayServiceUpdaterRun();
+    $plan = gatewayServiceUpdaterPlan($run);
+    $previousImage = gatewayServiceUpdaterPreviousImage();
+    $operations = [];
+
+    Artisan::shouldReceive('call')
+        ->once()
+        ->with('migrate', ['--force' => true, '--no-interaction' => true])
+        ->andReturnUsing(function () use (&$operations): int {
+            $operations[] = 'artisan:migrate';
+
+            return 0;
+        });
+
+    Process::fake(function ($process) use (&$operations, $plan, $previousImage) {
+        $command = (string) $process->command;
+        $operations[] = $command;
+
+        return match ($command) {
+            "docker service inspect --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' 'orbit_orbit-scheduler'" => Process::result(output: "{$previousImage}\n"),
+            "docker service scale --detach=true 'orbit_orbit-scheduler=0'" => Process::result(),
+            "docker service update --detach=true --image '{$plan->gateway_image}' --update-order 'start-first' --update-failure-action rollback --update-monitor 60s 'orbit_orbit-gateway'" => Process::result(),
+            "docker service inspect --format '{{.UpdateStatus.State}}' 'orbit_orbit-gateway'" => Process::result(
+                errorOutput: "template: :1:15: executing \"\" at <.UpdateStatus.State>: map has no entry for key \"UpdateStatus\"\n",
+                exitCode: 1,
+            ),
+            "docker service inspect --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' 'orbit_orbit-gateway'" => Process::result(output: "{$plan->gateway_image}\n"),
+            "docker service ls --filter 'name=orbit_orbit-gateway' --format '{{.Replicas}}'" => Process::result(output: "1/1\n"),
+            "docker service update --detach=true --image '{$plan->gateway_image}' --update-order 'stop-first' --update-failure-action rollback --update-monitor 60s 'orbit_orbit-scheduler'" => Process::result(),
+            "docker service scale --detach=true 'orbit_orbit-scheduler=1'" => Process::result(),
+            default => throw new RuntimeException("Unexpected process command [{$command}]."),
+        };
+    });
+
+    app(GatewayServiceUpdater::class)->update($run, $plan);
+
+    expect($operations)->toBe([
+        "docker service inspect --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' 'orbit_orbit-scheduler'",
+        "docker service scale --detach=true 'orbit_orbit-scheduler=0'",
+        'artisan:migrate',
+        "docker service update --detach=true --image '{$plan->gateway_image}' --update-order 'start-first' --update-failure-action rollback --update-monitor 60s 'orbit_orbit-gateway'",
+        "docker service inspect --format '{{.UpdateStatus.State}}' 'orbit_orbit-gateway'",
+        "docker service inspect --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' 'orbit_orbit-gateway'",
+        "docker service ls --filter 'name=orbit_orbit-gateway' --format '{{.Replicas}}'",
+        "docker service update --detach=true --image '{$plan->gateway_image}' --update-order 'stop-first' --update-failure-action rollback --update-monitor 60s 'orbit_orbit-scheduler'",
+        "docker service scale --detach=true 'orbit_orbit-scheduler=1'",
+    ]);
+
+    Sleep::assertSleptTimes(0);
+});
+
 it('restores the scheduler previous image and replica when the updated gateway fails health', function (): void {
     $run = gatewayServiceUpdaterRun();
     $plan = gatewayServiceUpdaterPlan($run);
