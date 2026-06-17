@@ -22,7 +22,15 @@ class UpdateRunnerPipeline
 
     public function updateWorkloads(OperationRun $operationRun, OperationUpdatePlan $plan): void
     {
-        $this->workloadNodes->update($operationRun, $plan);
+        $results = $this->workloadNodes->update($operationRun, $plan);
+        $failed = array_values(array_filter(
+            $results,
+            fn (array $result): bool => ($result['status'] ?? null) !== 'completed',
+        ));
+
+        if ($failed !== []) {
+            throw new WorkloadNodeUpdateFailed($results, $failed);
+        }
     }
 
     public function verifyFleet(OperationRun $operationRun, OperationUpdatePlan $plan): void

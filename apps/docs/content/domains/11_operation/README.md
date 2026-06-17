@@ -31,6 +31,11 @@ These rules constrain all commands in the operation domain.
   one-shot runner. Host PHP and host Composer are not supported gateway update
   fallbacks; production host PHP/Composer is required only on app-role nodes
   where app-source workflows need it.
+- Orbit releases are monorepo releases. The root `VERSION` file is the single
+  version source for the CLI binary, core package, gateway package, gateway
+  image, and release manifest. `update:all` must use a persisted release
+  manifest snapshot instead of independently resolving mutable release tags
+  during a run.
 - Updates do not replace doctor.
 - For drift or runtime readiness questions after an update, run the doctor family that owns the changed artifact.
 - `doctor` owns cross-family verification and resolution. Verify mode is read-only. `--fix` enables interactive resolution; `--restore` and `--adopt` force a single direction non-interactively.

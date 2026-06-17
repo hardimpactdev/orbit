@@ -27,7 +27,7 @@ fail() {
 
 platform="${1:-}"
 architecture="${2:-}"
-version="${3:-0.1.0}"
+version="${3:-$("$repo_root/bin/orbit-version")}"
 
 if [ "$platform" = "-h" ] || [ "$platform" = "--help" ]; then
     usage

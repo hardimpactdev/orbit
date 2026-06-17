@@ -312,7 +312,7 @@ it('stages the linux binary into the bundled binary path', function (): void {
     $createdBinarySource = false;
 
     Process::fake(function ($process) use ($binarySource, $fakeBinaryContents, $linuxDistDir, &$createdBinarySource) {
-        if ($process->command === 'bin/orbit-build-cli-binary linux x64 0.1.0') {
+        if ($process->command === 'bin/orbit-build-cli-binary linux x64 "$(bin/orbit-version)"') {
             if (! is_file($binarySource)) {
                 if (! is_dir($linuxDistDir)) {
                     mkdir($linuxDistDir, 0777, recursive: true);
@@ -347,7 +347,7 @@ it('stages the linux binary into the bundled binary path', function (): void {
             ->and(substr(sprintf('%o', fileperms($bundleBinary)), -3))->toBe('755');
 
         Process::assertRan(fn ($process): bool => $process->path === repo_path()
-            && $process->command === 'bin/orbit-build-cli-binary linux x64 0.1.0');
+            && $process->command === 'bin/orbit-build-cli-binary linux x64 "$(bin/orbit-version)"');
     } finally {
         remove_directory($bundleDir);
 

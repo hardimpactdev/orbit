@@ -38,6 +38,7 @@ direction.
 
 <!-- newest first; add new entries directly under this comment -->
 
+- 2026-06-17 — Orbit releases are monorepo-versioned: the root `VERSION` file is the single release number, a `v<VERSION>` tag on `hardimpactdev/orbit` publishes the core, CLI, and gateway split package repos plus CLI binaries, gateway image, and release manifest, and `update:all` consumes that immutable manifest for fleet updates.
 - 2026-06-16 — `orbit-caddy` persists Caddy-generated storage through Orbit-owned host paths under `/var/lib/orbit/caddy`, not host Caddy service directories under `/var/lib/caddy`. Restore/adopt must not replay stale host Caddy data into the managed container. (solo todo #725)
 - 2026-06-16 — App-level runtime mounts are the current package-symlink support direction for PHP apps on `app-dev` nodes: `app:mount` stores explicit safe bind-mount intent on the app, app and workspace FrankenPHP containers inherit it, mounts default to read-only, and PHP-FPM runtime selection remains deferred. (solo todo #729)
 - 2026-06-15 — App-development `orbit-caddy` binds HTTP/HTTPS to a configured node caller-facing private IPv4 in addition to the WireGuard address, while the private backend port remains WireGuard-only. This lets locally resolved development TLDs use trusted LAN addresses without exposing backend routing. (solo todo #724)

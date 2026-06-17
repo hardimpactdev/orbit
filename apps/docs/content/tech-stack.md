@@ -103,7 +103,13 @@ per OS/arch and downloaded by the installer. The binary embeds PHP 8.5 and the
 extensions the CLI requires (`pdo_sqlite`, `openssl`, `curl`, `mbstring`,
 `tokenizer`, `ctype`, `filter`, `fileinfo`, `json`, `phar`, `zlib`); no host
 PHP is required to run it. Release binaries are wrapped from a compressed PHAR
-built from a no-dev CLI dependency install. Source-dev Docker and Incus topologies may point
+built from a no-dev CLI dependency install. Orbit releases are versioned from
+the monorepo root `VERSION` file: a matching `v<VERSION>` tag on
+`hardimpactdev/orbit` publishes the `hardimpactdev/orbit-core`,
+`hardimpactdev/orbit-cli`, and `hardimpactdev/orbit-gateway` split package
+repositories, the CLI binary release assets, the
+`ghcr.io/hardimpactdev/orbit-gateway:<version>` image, and the release
+manifest consumed by fleet updates. Source-dev Docker and Incus topologies may point
 `/usr/local/bin/orbit` directly at `<source>/apps/cli/orbit` and bind-mount or
 copy the worktree for fast iteration. Artifact-prod topologies use the native
 CLI binary plus production images and validate the actual release artifacts.

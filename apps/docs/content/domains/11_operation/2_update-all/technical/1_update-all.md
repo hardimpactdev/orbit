@@ -129,6 +129,10 @@ The expected target shape per calling context:
   installations are updated in parallel, up to four targets at a time.
   Production artifact targets run the binary-update path. Source-dev targets
   keep `/usr/local/bin/orbit` pointed at `<source>/apps/cli/orbit`.
+- Production workload updates install the binary into the node user's Orbit
+  install root. When the host launcher parent directory is not writable, the
+  remote update may use non-interactive `sudo -n` only to relink the system
+  launcher to that user-owned binary; it must fail rather than prompt.
 - Workload fan-out uses the same persisted manifest snapshot as the gateway
   update for CLI artifacts and required role image metadata.
 - Remote update execution is gateway-owned node execution through `RemoteShell`.
@@ -136,6 +140,9 @@ The expected target shape per calling context:
   workstations as part of the command contract. The gateway does not SSH to
   operator workstations as part of the command contract.
 - Continue updating remaining installations after a target fails.
+- If any workload target result is failed, the workload phase fails with
+  `workload_update_failed` and preserves the selected target results before
+  final verification starts.
 - Preserve every target result for the selected output renderer in selected
   target order, regardless of the order in which parallel workers finish.
 

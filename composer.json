@@ -62,16 +62,16 @@
         ],
         "test:e2e:binary": [
             "Composer\\Config::disableProcessTimeout",
-            "bin/orbit-build-cli-binary mac arm 0.1.0",
+            "bin/orbit-build-cli-binary mac arm \"$(bin/orbit-version)\"",
             "ORBIT_E2E_BINARY_PATH=$(pwd)/apps/cli/builds/dist/mac/mac-arm; export ORBIT_E2E_BINARY_PATH; cd apps/e2e && vendor/bin/pest --group=e2e-binary --compact @additional_args"
         ],
         "test:e2e:binary:linux": [
             "Composer\\Config::disableProcessTimeout",
-            "bin/orbit-build-cli-binary linux x64 0.1.0"
+            "bin/orbit-build-cli-binary linux x64 \"$(bin/orbit-version)\""
         ],
         "test:e2e:docker:binary-acceptance": [
             "Composer\\Config::disableProcessTimeout",
-            "bin/orbit-build-cli-binary linux x64 0.1.0",
+            "bin/orbit-build-cli-binary linux x64 \"$(bin/orbit-version)\"",
             "set -a; [ ! -f .env.e2e ] || . ./.env.e2e; set +a; export ORBIT_E2E_BINARY_PATH_LINUX=$(pwd)/apps/cli/builds/dist/linux/linux-x64; cd apps/e2e && ORBIT_E2E=1 ORBIT_E2E_TOPOLOGY_PROVIDER=docker vendor/bin/pest --group=e2e-binary-acceptance --fail-on-empty-test-suite @additional_args"
         ],
         "test:e2e:docker": [

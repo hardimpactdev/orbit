@@ -1,0 +1,196 @@
+#!/usr/bin/env php
+<?php
+
+declare(strict_types=1);
+
+$options = getopt('', [
+    'package:',
+    'version:',
+    'output:',
+]);
+
+try {
+    $package = required_string($options, 'package');
+    $version = normalize_version(required_string($options, 'version'));
+    $output = required_string($options, 'output');
+    $repoRoot = dirname(__DIR__);
+
+    $sources = [
+        'core' => 'packages/core',
+        'cli' => 'apps/cli',
+        'gateway' => 'apps/gateway',
+    ];
+
+    if (! array_key_exists($package, $sources)) {
+        fail('Unsupported package ['.$package.']. Expected one of: core, cli, gateway.');
+    }
+
+    $source = $repoRoot.'/'.$sources[$package];
+
+    if (! is_dir($source)) {
+        fail('Package source directory not found: '.$source);
+    }
+
+    reset_directory($output);
+    copy_directory($source, $output);
+    rewrite_composer_json($output.'/composer.json', $version, $package);
+} catch (Throwable $exception) {
+    fail($exception->getMessage());
+}
+
+/**
+ * @param  array<string, mixed>  $options
+ */
+function required_string(array $options, string $key): string
+{
+    $value = $options[$key] ?? null;
+
+    if (is_array($value)) {
+        $value = end($value);
+    }
+
+    if (! is_string($value) || trim($value) === '') {
+        fail("Missing required --{$key} option.");
+    }
+
+    return trim($value);
+}
+
+function normalize_version(string $version): string
+{
+    $version = ltrim(trim($version), 'v');
+
+    if (preg_match('/^\d+\.\d+\.\d+$/', $version) !== 1) {
+        fail('Version must be semver without a v prefix.');
+    }
+
+    return $version;
+}
+
+function reset_directory(string $path): void
+{
+    if (is_dir($path)) {
+        remove_directory($path);
+    }
+
+    if (! mkdir($path, 0755, true) && ! is_dir($path)) {
+        fail('Could not create output directory: '.$path);
+    }
+}
+
+function remove_directory(string $path): void
+{
+    $iterator = new RecursiveIteratorIterator(
+        new RecursiveDirectoryIterator($path, FilesystemIterator::SKIP_DOTS),
+        RecursiveIteratorIterator::CHILD_FIRST,
+    );
+
+    foreach ($iterator as $item) {
+        $item->isDir() ? rmdir($item->getPathname()) : unlink($item->getPathname());
+    }
+
+    rmdir($path);
+}
+
+function copy_directory(string $source, string $destination): void
+{
+    $iterator = new RecursiveIteratorIterator(
+        new RecursiveDirectoryIterator($source, FilesystemIterator::SKIP_DOTS),
+        RecursiveIteratorIterator::SELF_FIRST,
+    );
+
+    foreach ($iterator as $item) {
+        $relative = substr($item->getPathname(), strlen($source) + 1);
+
+        if (should_skip($relative, $item)) {
+            continue;
+        }
+
+        $target = $destination.'/'.$relative;
+
+        if ($item->isDir()) {
+            if (! is_dir($target) && ! mkdir($target, 0755, true) && ! is_dir($target)) {
+                fail('Could not create directory: '.$target);
+            }
+
+            continue;
+        }
+
+        $parent = dirname($target);
+
+        if (! is_dir($parent) && ! mkdir($parent, 0755, true) && ! is_dir($parent)) {
+            fail('Could not create directory: '.$parent);
+        }
+
+        if (! copy($item->getPathname(), $target)) {
+            fail('Could not copy file: '.$item->getPathname());
+        }
+
+        chmod($target, $item->getPerms() & 0777);
+    }
+}
+
+function should_skip(string $relative, SplFileInfo $item): bool
+{
+    $segments = explode(DIRECTORY_SEPARATOR, $relative);
+    $first = $segments[0] ?? '';
+
+    if (in_array($first, ['.git', 'vendor', 'node_modules', 'build', 'builds'], true)) {
+        return true;
+    }
+
+    if (in_array($relative, ['.env', '.env.testing', 'composer.lock'], true)) {
+        return true;
+    }
+
+    if (str_starts_with($relative, 'storage/logs/')
+        || str_starts_with($relative, 'storage/framework/cache/')
+        || str_starts_with($relative, 'storage/framework/sessions/')
+        || str_starts_with($relative, 'storage/framework/testing/')
+        || str_starts_with($relative, 'storage/framework/views/')
+        || str_starts_with($relative, 'bootstrap/cache/')) {
+        return true;
+    }
+
+    return $item->isFile() && (str_ends_with($relative, '.sqlite') || str_ends_with($relative, '.log'));
+}
+
+function rewrite_composer_json(string $path, string $version, string $package): void
+{
+    if (! is_file($path)) {
+        fail('composer.json not found in split package.');
+    }
+
+    $json = json_decode((string) file_get_contents($path), true, flags: JSON_THROW_ON_ERROR);
+
+    if (! is_array($json)) {
+        fail('composer.json did not decode to an object.');
+    }
+
+    $json['version'] = $version;
+
+    if ($package !== 'core') {
+        unset($json['repositories']);
+
+        if (! isset($json['require']) || ! is_array($json['require'])) {
+            $json['require'] = [];
+        }
+
+        $json['require']['hardimpactdev/orbit-core'] = $version;
+        ksort($json['require']);
+    }
+
+    $encoded = json_encode($json, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
+
+    if (! is_string($encoded)) {
+        fail('Could not encode composer.json.');
+    }
+
+    file_put_contents($path, $encoded."\n");
+}
+
+function fail(string $message): never
+{
+    fwrite(STDERR, "orbit-prepare-release-package: {$message}\n");
+    exit(1);
+}

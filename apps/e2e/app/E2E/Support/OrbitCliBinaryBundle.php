@@ -44,7 +44,7 @@ final class OrbitCliBinaryBundle
 
         $buildResult = Process::timeout(600)
             ->path(repo_path())
-            ->run('bin/orbit-build-cli-binary linux x64 0.1.0');
+            ->run('bin/orbit-build-cli-binary linux x64 "$(bin/orbit-version)"');
 
         if (! $buildResult->successful()) {
             throw new RuntimeException(

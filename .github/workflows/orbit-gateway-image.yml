@@ -26,10 +26,11 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Read gateway version
+      - name: Read canonical version
         id: version
         run: |
-          VERSION=$(sed -n "s/.*'version' => '\([^']*\)'.*/\1/p" apps/gateway/config/app.php | head -n 1)
+          set -euo pipefail
+          VERSION="$(bin/orbit-version)"
           echo "value=${VERSION}" >> "$GITHUB_OUTPUT"
 
       - name: Log in to GHCR

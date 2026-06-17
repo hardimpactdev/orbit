@@ -24,7 +24,19 @@ return [
     |
     */
 
-    'version' => '0.1.5',
+    'version' => env('ORBIT_VERSION', (static function (): string {
+        $versionFile = dirname(__DIR__, 3).'/VERSION';
+
+        if (is_file($versionFile)) {
+            $version = trim((string) file_get_contents($versionFile));
+
+            if ($version !== '') {
+                return $version;
+            }
+        }
+
+        return '0.0.0';
+    })()),
 
     /*
     |--------------------------------------------------------------------------

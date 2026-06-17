@@ -210,6 +210,10 @@ final readonly class UpdateRunner
             return 'verification';
         }
 
+        if ($exception instanceof WorkloadNodeUpdateFailed) {
+            return 'workloads';
+        }
+
         if ($exception instanceof UpdateLeaseConflict) {
             return match ($exception->resourceType) {
                 'gateway', 'scheduler' => 'gateway',
@@ -231,6 +235,17 @@ final readonly class UpdateRunner
                 'code' => $exception->failureCode,
                 'message' => $exception->publicMessage,
                 'data' => [],
+            ];
+        }
+
+        if ($exception instanceof WorkloadNodeUpdateFailed) {
+            return [
+                'code' => 'workload_update_failed',
+                'message' => $exception->getMessage(),
+                'data' => [
+                    'failed_targets' => $exception->failedTargets,
+                    'target_results' => $exception->targetResults,
+                ],
             ];
         }
 

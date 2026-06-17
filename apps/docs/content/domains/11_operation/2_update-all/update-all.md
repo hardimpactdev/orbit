@@ -51,6 +51,11 @@ orbit update:all --json
 7. Report every per-installation result and the terminal operation status,
    including partial failures.
 
+Workload-node fan-out continues remaining selected nodes after one target fails,
+but the workload phase fails before final verification if any selected node did
+not update. The failure result includes the failed node results so operators see
+the update failure directly instead of only a later version-verification error.
+
 `update:all` updates the local installation, the gateway, and active nodes.
 **Clients other than the caller are never remote update targets.** Each
 client is an operator workstation and updates through `orbit update` on

@@ -153,7 +153,12 @@ final readonly class WorkloadNodeUpdater
             'echo install_cli',
             'install -d "$INSTALL_ROOT/bin"',
             'install -m 0755 "$tmp/orbit" "$INSTALL_ROOT/bin/orbit-binary"',
-            'ln -sf "$INSTALL_ROOT/bin/orbit-binary" "$BIN_PATH"',
+            'link_parent="$(dirname "$BIN_PATH")"',
+            'if [ -w "$link_parent" ]; then',
+            '    ln -sfn "$INSTALL_ROOT/bin/orbit-binary" "$BIN_PATH"',
+            'else',
+            '    sudo -n ln -sfn "$INSTALL_ROOT/bin/orbit-binary" "$BIN_PATH"',
+            'fi',
             'echo verify_cli',
             '"$BIN_PATH" --version',
         ];

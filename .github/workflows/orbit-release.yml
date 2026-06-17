@@ -20,6 +20,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Set up PHP
         uses: shivammathur/setup-php@v2
@@ -37,8 +39,64 @@ jobs:
           set -euo pipefail
           tag="${GITHUB_REF_NAME}"
           version="${tag#v}"
+          canonical_version="$(bin/orbit-version)"
+
+          if [ "$tag" = "$version" ]; then
+            echo "Release tag must start with v, got [$tag]." >&2
+            exit 1
+          fi
+
+          if [ "$version" != "$canonical_version" ]; then
+            echo "Release tag [$tag] does not match VERSION [$canonical_version]." >&2
+            exit 1
+          fi
+
           echo "tag=${tag}" >> "$GITHUB_OUTPUT"
           echo "value=${version}" >> "$GITHUB_OUTPUT"
+
+      - name: Publish split package repositories
+        env:
+          TAG: ${{ steps.version.outputs.tag }}
+          VERSION: ${{ steps.version.outputs.value }}
+          SPLIT_PUSH_TOKEN: ${{ secrets.ORBIT_RELEASE_TOKEN || github.token }}
+          PACKAGIST_USERNAME: ${{ secrets.PACKAGIST_USERNAME }}
+          PACKAGIST_TOKEN: ${{ secrets.PACKAGIST_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          publish_split() {
+            package="$1"
+            repository="$2"
+            output="$RUNNER_TEMP/orbit-splits/$package"
+
+            rm -rf "$output"
+            bin/orbit-prepare-release-package --package="$package" --version="$VERSION" --output="$output"
+
+            git -C "$output" init
+            git -C "$output" config user.name "github-actions[bot]"
+            git -C "$output" config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git -C "$output" add -A
+            git -C "$output" commit -m "Release $TAG"
+            git -C "$output" branch -M main
+            git -C "$output" tag -f "$TAG"
+            git -C "$output" remote add origin "https://x-access-token:${SPLIT_PUSH_TOKEN}@github.com/${repository}.git"
+            git -C "$output" push --force origin HEAD:main
+            git -C "$output" push --force origin "refs/tags/${TAG}"
+          }
+
+          publish_split core hardimpactdev/orbit-core
+          publish_split cli hardimpactdev/orbit-cli
+          publish_split gateway hardimpactdev/orbit-gateway
+
+          if [ -n "${PACKAGIST_USERNAME:-}" ] && [ -n "${PACKAGIST_TOKEN:-}" ]; then
+            curl -fsS \
+              -X POST \
+              -H "Content-Type: application/json" \
+              -d '{"repository":{"url":"https://github.com/hardimpactdev/orbit-core"}}' \
+              "https://packagist.org/api/update-package?username=${PACKAGIST_USERNAME}&apiToken=${PACKAGIST_TOKEN}"
+          else
+            echo "Packagist credentials not configured; skipping hardimpactdev/orbit-core API update."
+          fi
 
       - name: Install CLI dependencies
         run: composer install --working-dir=apps/cli --no-interaction --prefer-dist --optimize-autoloader

@@ -18,6 +18,7 @@ use App\Services\Operations\OperationRunRecorder;
 use App\Services\Operations\OperationUpdatePlanStore;
 use App\Services\Operations\UpdateLeaseManager;
 use App\Services\Operations\UpdateRunner;
+use App\Services\Operations\WorkloadNodeUpdateFailed;
 use App\Services\Operations\WorkloadNodeUpdater;
 use App\Services\RemoteShell\RemoteShellMetadata;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -95,6 +96,7 @@ it('updates active non-gateway app-role nodes from the persisted manifest snapsh
         ->toContain('download_cli')
         ->toContain('install_cli')
         ->toContain('verify_cli')
+        ->toContain('sudo -n ln -sfn')
         ->toContain('pull_required_images')
         ->toContain('https://github.com/hardimpactdev/orbit/releases/download/v2.0.0/orbit-linux-amd64')
         ->toContain(str_repeat('e', 64))
@@ -137,6 +139,101 @@ it('continues updating later workload nodes when one remote update fails', funct
     ])
         ->and($shell->calls)->toHaveCount(2)
         ->and(UpdateLease::query()->whereNotNull('active_resource_key')->count())->toBe(0);
+});
+
+it('fails the runner workload phase with target results when any workload update fails', function (): void {
+    $shell = new WorkloadUpdaterFakeShell(failures: [
+        'app-dev-1' => new RemoteShellResult(exitCode: 12, stdout: '', stderr: 'download failed', durationMs: 10),
+    ]);
+    app()->instance(RemoteShell::class, $shell);
+    app()->instance(GatewayServiceUpdater::class, new WorkloadUpdaterNoopGatewayUpdater);
+    app()->instance(FleetUpdateVerifier::class, new WorkloadUpdaterFailIfCalledFleetVerifier);
+
+    $run = workloadUpdaterRun();
+    Node::factory()->appDev()->create(['name' => 'app-dev-1', 'platform' => 'linux']);
+    Node::factory()->appProd()->create(['name' => 'app-prod-1', 'platform' => 'linux']);
+    app(OperationUpdatePlanStore::class)->create($run, workloadUpdaterSnapshot());
+
+    expect(fn () => app(UpdateRunner::class)->run($run->id))
+        ->toThrow(WorkloadNodeUpdateFailed::class, 'One or more workload nodes failed to update.');
+
+    $run->refresh();
+    $error = OperationEvent::query()
+        ->where('operation_run_id', $run->id)
+        ->where('event_type', 'error')
+        ->firstOrFail();
+
+    expect($run->status)->toBe(OperationStatus::Failed)
+        ->and($run->error)->toMatchArray([
+            'code' => 'workload_update_failed',
+            'message' => 'One or more workload nodes failed to update.',
+            'data' => [
+                'failed_targets' => [
+                    [
+                        'target' => 'app-dev-1',
+                        'node' => 'app-dev-1',
+                        'role' => 'app-dev',
+                        'status' => 'failed',
+                        'failed_step' => 'remote_update',
+                        'output' => 'download failed',
+                    ],
+                ],
+                'target_results' => [
+                    [
+                        'target' => 'app-dev-1',
+                        'node' => 'app-dev-1',
+                        'role' => 'app-dev',
+                        'status' => 'failed',
+                        'failed_step' => 'remote_update',
+                        'output' => 'download failed',
+                    ],
+                    [
+                        'target' => 'app-prod-1',
+                        'node' => 'app-prod-1',
+                        'role' => 'app-prod',
+                        'status' => 'completed',
+                    ],
+                ],
+            ],
+        ])
+        ->and($error->payload)->toMatchArray([
+            'exit_code' => 1,
+            'data' => [
+                'code' => 'workload_update_failed',
+                'failed_targets' => [
+                    [
+                        'target' => 'app-dev-1',
+                        'node' => 'app-dev-1',
+                        'role' => 'app-dev',
+                        'status' => 'failed',
+                        'failed_step' => 'remote_update',
+                        'output' => 'download failed',
+                    ],
+                ],
+                'target_results' => [
+                    [
+                        'target' => 'app-dev-1',
+                        'node' => 'app-dev-1',
+                        'role' => 'app-dev',
+                        'status' => 'failed',
+                        'failed_step' => 'remote_update',
+                        'output' => 'download failed',
+                    ],
+                    [
+                        'target' => 'app-prod-1',
+                        'node' => 'app-prod-1',
+                        'role' => 'app-prod',
+                        'status' => 'completed',
+                    ],
+                ],
+            ],
+        ])
+        ->and(workloadUpdaterStepEvents($run))->toContain(
+            ['workload.app-dev-1', 'fail'],
+            ['workload.app-prod-1', 'done'],
+            ['workload-nodes', 'fail'],
+        )
+        ->and(workloadUpdaterStepEvents($run))->not->toContain(['verification', 'running']);
 });
 
 it('fails the update operation when a workload node lease is already held', function (): void {
@@ -260,6 +357,17 @@ final class WorkloadUpdaterNoopFleetVerifier extends FleetUpdateVerifier
     public function verify(OperationRun $operationRun, OperationUpdatePlan $plan): void
     {
         //
+    }
+}
+
+final class WorkloadUpdaterFailIfCalledFleetVerifier extends FleetUpdateVerifier
+{
+    public function __construct() {}
+
+    #[Override]
+    public function verify(OperationRun $operationRun, OperationUpdatePlan $plan): void
+    {
+        throw new RuntimeException('Fleet verification should not run after a workload update failure.');
     }
 }
 

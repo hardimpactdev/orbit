@@ -22,13 +22,11 @@ jobs:
           extensions: pdo_sqlite, sqlite3, curl, openssl, mbstring, tokenizer, ctype, filter, fileinfo, phar, zlib
           tools: composer
 
-      - name: Read app version
+      - name: Read canonical version
         id: version
         run: |
-          # config/app.php calls env() (a Laravel helper) on other keys, so it
-          # cannot be require()'d from a bare `php -r`. The version is a literal;
-          # extract it directly.
-          VERSION=$(sed -n "s/.*'version' => '\([^']*\)'.*/\1/p" apps/cli/config/app.php | head -n 1)
+          set -euo pipefail
+          VERSION="$(bin/orbit-version)"
           echo "value=${VERSION}" >> "$GITHUB_OUTPUT"
 
       - name: Install CLI dependencies
