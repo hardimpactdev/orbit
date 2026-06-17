@@ -38,12 +38,17 @@ use Tests\TestCase;
     }
 
     $envPath = $configRoot.'/.env';
+    $appKey = getenv('APP_KEY');
+
+    if (! is_string($appKey) || trim($appKey) === '') {
+        $appKey = 'base64:'.base64_encode(str_repeat('0', 32));
+    }
 
     if (! is_file($envPath)) {
         file_put_contents($envPath, implode(PHP_EOL, [
             'APP_NAME=Orbit',
             'APP_ENV=testing',
-            'APP_KEY=base64:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=',
+            "APP_KEY={$appKey}",
             '',
         ]));
     }

@@ -15,6 +15,17 @@ it('boots as an external harness and resolves Orbit entry points', function (): 
         ->and($paths->gatewayArtisan())->toBeFile();
 });
 
+it('provides a runtime test app key without committing key material', function (): void {
+    $envTesting = file_get_contents(repo_path('apps/e2e/.env.testing')) ?: '';
+    $phpunit = file_get_contents(repo_path('apps/e2e/phpunit.xml')) ?: '';
+
+    expect(config('app.key'))
+        ->toStartWith('base64:')
+        ->and($envTesting)->not->toContain('APP_KEY=base64:')
+        ->and($phpunit)->not->toContain('APP_KEY')
+        ->and($phpunit)->toContain('bootstrap="tests/bootstrap.php"');
+});
+
 it('documents the apps/e2e internal support boundary', function (): void {
     $readme = file_get_contents(repo_path('apps/e2e/README.md')) ?: '';
     $normalizedReadme = preg_replace('/\s+/', ' ', $readme) ?? '';
