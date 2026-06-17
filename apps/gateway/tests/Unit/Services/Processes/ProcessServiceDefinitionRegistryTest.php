@@ -127,6 +127,7 @@ it('resolves metrics service definitions for Prometheus, Grafana, and node-expor
             'version_family' => '13',
             'version' => '13.0.2',
             'image' => 'grafana/grafana:13.0.2',
+            'command_mode' => 'image_entrypoint',
             'service_name' => 'orbit-grafana',
             'environment' => [
                 'GF_SECURITY_ADMIN_USER' => 'admin',

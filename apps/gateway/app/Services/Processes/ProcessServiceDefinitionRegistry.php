@@ -94,6 +94,10 @@ final readonly class ProcessServiceDefinitionRegistry
             $runtimeConfig['image'] = "{$service['image']}:{$resolved['version']}";
         }
 
+        if (is_string($service['command_mode'] ?? null) && $service['command_mode'] !== '') {
+            $runtimeConfig['command_mode'] = $service['command_mode'];
+        }
+
         if (is_int($service['target_port'] ?? null)) {
             $runtimeConfig['ports'] = [
                 [
@@ -227,6 +231,7 @@ final readonly class ProcessServiceDefinitionRegistry
             'grafana' => [
                 'runtimes' => [ProcessRuntime::DockerSwarm],
                 'image' => 'grafana/grafana',
+                'command_mode' => 'image_entrypoint',
                 'command' => '/run.sh',
                 'target_port' => 3000,
                 'data_path' => '/var/lib/grafana',

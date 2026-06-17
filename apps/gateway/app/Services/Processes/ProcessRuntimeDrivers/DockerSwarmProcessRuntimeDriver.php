@@ -105,6 +105,7 @@ SH,
      */
     private function createCommand(Process $process, string $runtimeUnit, array $config): string
     {
+        $usesImageEntrypoint = $this->usesImageEntrypoint($config);
         $parts = [
             'docker service create',
             '--name',
@@ -143,13 +144,32 @@ SH,
         $parts[] = escapeshellarg($updateOrder);
         $parts[] = '--update-parallelism';
         $parts[] = escapeshellarg($updateParallelism);
-        $parts[] = '--entrypoint';
-        $parts[] = escapeshellarg('sh');
+
+        if (! $usesImageEntrypoint) {
+            $parts[] = '--entrypoint';
+            $parts[] = escapeshellarg('sh');
+        }
+
         $parts[] = escapeshellarg($this->requiredString($config, 'image', $process));
-        $parts[] = escapeshellarg('-lc');
-        $parts[] = escapeshellarg($process->command);
+
+        if (! $usesImageEntrypoint) {
+            $parts[] = escapeshellarg('-lc');
+            $parts[] = escapeshellarg($process->command);
+        }
 
         return implode(' ', $parts);
+    }
+
+    /**
+     * @param  array<string, mixed>  $config
+     */
+    private function usesImageEntrypoint(array $config): bool
+    {
+        return match ($this->optionalString($config, 'command_mode') ?? 'shell') {
+            'shell' => false,
+            'image_entrypoint' => true,
+            default => throw new \InvalidArgumentException('Docker Swarm command_mode must be shell or image_entrypoint.'),
+        };
     }
 
     private function restartCondition(Process $process): string

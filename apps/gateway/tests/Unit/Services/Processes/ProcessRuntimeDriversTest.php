@@ -263,6 +263,35 @@ it('applies, removes, and cleans up docker swarm process runtime services from r
         ->not->toContain("--restart-condition 'always'");
 });
 
+it('uses the image entrypoint for docker swarm service processes configured for it', function (): void {
+    $shell = new ProcessRuntimeDriverRecordingShell([
+        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+    ]);
+    app()->instance(RemoteShell::class, $shell);
+
+    $node = Node::factory()->create(['name' => 'metrics-1']);
+    $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id, 'path' => '/srv/docs']);
+    $process = Process::factory()->forOwner($node)->create([
+        'name' => 'grafana',
+        'command' => '/run.sh',
+        'restart_policy' => ProcessRestartPolicy::Always,
+        'runtime' => ProcessRuntime::DockerSwarm,
+        'runtime_config' => [
+            'command_mode' => 'image_entrypoint',
+            'image' => 'grafana/grafana:13.0.2',
+            'service_name' => 'orbit-grafana',
+        ],
+    ]);
+
+    $driver = app(DockerSwarmProcessRuntimeDriver::class);
+
+    expect($driver->apply($node, $app, $process))->toBeTrue()
+        ->and($shell->scripts[0])->toContain('docker service create')
+        ->and($shell->scripts[0])->toContain("'grafana/grafana:13.0.2'")
+        ->and($shell->scripts[0])->not->toContain("--entrypoint 'sh'")
+        ->and($shell->scripts[0])->not->toContain("'-lc' '/run.sh'");
+});
+
 it('runs systemd process lifecycle through the systemd runtime driver', function (): void {
     $shell = new ProcessRuntimeDriverRecordingShell([
         new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
