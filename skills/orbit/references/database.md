@@ -1,14 +1,15 @@
 # Database Commands
 
-Database commands manage reusable database connection intent, app/workspace
-target mappings, `.env` convergence, schema inspection, and audited SQL
-execution. Spec:
+Database commands manage reusable database connection intent, app,
+app-instance, and workspace target mappings, `.env` convergence, schema
+inspection, and audited SQL execution. Spec:
 [`apps/docs/content/domains/18_database/`](../../../apps/docs/content/domains/18_database/).
 
 `database_connection` is a state family. Use
 `doctor --family=database_connection --fix --restore` to write gateway-owned
 connection values into app/workspace `.env` files, or `--adopt` to materialize
-existing supported env prefixes into gateway state.
+existing supported env prefixes into gateway state. App-instance mappings render
+through `app:env render` in this slice.
 
 Database commands do not install database services. Managed service lifecycle,
 when present, belongs to process-owned runtime units; database commands own
@@ -46,15 +47,19 @@ the node that owns the SQLite file path.
 
 ```bash
 orbit database:attach [<connection>] [--app=<app>|--workspace=<workspace>]
-                       [--env-prefix=DB] [--json]
+                       [--instance=<name>] [--env-prefix=DB] [--json]
 
 orbit database:detach [<connection>] [--app=<app>|--workspace=<workspace>]
-                       [--env-prefix=DB] [--json]
+                       [--instance=<name>] [--env-prefix=DB] [--json]
 ```
 
 `DB` expands to `DB_CONNECTION`, `DB_HOST`, `DB_PORT`, `DB_DATABASE`,
 `DB_USERNAME`, and `DB_PASSWORD`. Custom prefixes such as `ANALYTICS_DB` are
 uppercase underscore tokens.
+
+Use `--instance=<name>` with `--app=<app>` to attach the connection to a
+specific app instance. Instance env rendering then injects the database keys for
+that instance.
 
 ## Query And Schema
 

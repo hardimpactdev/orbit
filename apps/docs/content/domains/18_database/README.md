@@ -11,13 +11,13 @@ touch.
 
 - The database command family owns the `database:*` command prefix.
 - `database_connection` is a state family. Gateway database-connection records
-  and target mappings are the expected state for app and workspace database
-  access.
+  and target mappings are the expected state for app, app-instance, and
+  workspace database access.
 - A database connection record stores reusable connection facts such as driver,
   host, port, database name, SQLite path, username, and encrypted credentials.
-- A database connection target maps one connection record to exactly one app or
-  one workspace plus the environment-variable prefix used in that target's
-  `.env`.
+- A database connection target maps one connection record to exactly one app,
+  one app instance, or one workspace plus the environment-variable prefix used in
+  that target's `.env`.
 - CLI callers resolve input locally, then the gateway reads or writes durable
   database connection state and performs any target `.env` inspection or update.
 - `doctor --family=database_connection` owns drift between gateway
@@ -74,11 +74,12 @@ inspection is not the same authority as reading table rows. `database:write`
 intentionally does not imply `database:query:write`: mutating Orbit's
 connection registry is not the same authority as mutating application data.
 
-For target-scoped commands, the serving node is the app/workspace owner node.
-For direct connection commands, the serving node is the connection's owning
-node when it has one, otherwise the node reached through an attached app or
-workspace target. Connections without an owning node or target are
-gateway-owned and require gateway authority.
+For target-scoped commands, the serving node is the app/workspace owner node or
+the selected app instance's app node during the compatibility phase. For direct
+connection commands, the serving node is the connection's owning node when it
+has one, otherwise the node reached through an attached app, app instance, or
+workspace target. Connections without an owning node or target are gateway-owned
+and require gateway authority.
 
 Authorization failures use `authorization_failed` with standard
 `missing_permission` metadata.
@@ -102,7 +103,8 @@ The database command domain owns the `database_connection` state family.
 Database-family JSON renderers that return one connection entity embed this
 shape under `success.data.connection`, or under
 `success.data.connections[]` for list items. Target-specific renderers may add
-target data beside the connection entity.
+target data beside the connection entity. App-instance targets use
+`type=app_instance` and carry both `app` and `instance`.
 
 ```json
 {
@@ -119,6 +121,12 @@ target data beside the connection entity.
       "type": "app",
       "name": "acme",
       "env_prefix": "DB"
+    },
+    {
+      "type": "app_instance",
+      "app": "acme",
+      "instance": "development",
+      "env_prefix": "DB"
     }
   ]
 }
@@ -134,7 +142,7 @@ target data beside the connection entity.
 | `path` | string \| null | SQLite file path when `driver=sqlite`. |
 | `username` | string \| null | Non-secret username associated with the connection. |
 | `node` | string \| null | Owning node when the connection is node-scoped; `null` when not node-bound. |
-| `targets` | array | App/workspace mappings that expose this connection into `.env` files. |
+| `targets` | array | App, app-instance, or workspace mappings that expose this connection into `.env` files. |
 
 ## Concepts
 
@@ -165,7 +173,8 @@ Use these commands to create, update, or remove reusable connection records.
 
 ### Target mapping
 
-Use these commands to bind stored connections into app or workspace env space.
+Use these commands to bind stored connections into app, app-instance, or
+workspace env space.
 
 6. [`orbit database:attach <connection>`](6_database-attach/database-attach.md)
 7. [`orbit database:detach <connection>`](7_database-detach/database-detach.md)

@@ -8,11 +8,23 @@ the [Architecture](../../architecture.md).
 
 The terms below define the core identity vocabulary for the app family.
 
-- **App:** An application record owned by the gateway, bound to one node, with a
-  stable identity slug, primary URL, app path, document root, and optional
-  repository. The app's environment (development versus production) is derived
-  from the owning node's active app role and is not a separate field on the app
-  record.
+- **App:** Logical application record owned by the gateway, with a stable
+  identity slug, default source metadata, runtime policy, deployment policy, and
+  optional repository. An app may have multiple app instances.
+- **App instance:** Concrete runtime or deployment target for one app. An
+  instance belongs to exactly one app, has a name unique within that app, selects
+  one driver, owns driver configuration, owns app env values, and is the target
+  for instance-scoped resources such as database attachments.
+- **App instance driver:** Backend that knows how an instance is placed and
+  operated. Current drivers are `orbit` for Orbit-managed app-role nodes and
+  `laravel-cloud` for Laravel Cloud application/environment targets.
+- **Driver config:** Driver-specific configuration stored as a Spatie Laravel
+  Data object under `driver_config`. `orbit` config records node/path/root/domain
+  placement. `laravel-cloud` config records organization, application,
+  environment, and domain selectors.
+- **Default app instance:** Compatibility Orbit instance created for existing
+  and newly registered apps from the app's current node/path/root fields.
+  App-level command families use those fields until they become instance-aware.
 - **App identity slug:** Lowercase identity slug used as the app's globally
   unique gateway registry key. Maximum 40 characters.
 - **App name argument:** Positional `[name]` argument used by commands that
@@ -21,17 +33,17 @@ The terms below define the core identity vocabulary for the app family.
   read, update, prune, or remove an existing app. May be a name or hostname when
   the command contract opts into hostname resolution; name matches win over
   hostname matches.
-- **Owning node:** The node slug that hosts the app's path, runtime, and
-  app-derived artifacts. Apps may only run on nodes with an active
-  `app-dev` or `app-prod` role; a node without an active app
-  role is not a valid app target.
+- **Owning node:** Compatibility/default node slug currently stored on the app
+  record. New placement-specific behavior should use app instances. Orbit
+  instances may only run on nodes with an active `app-dev` or `app-prod` role; a
+  node without an active app role is not a valid Orbit app instance target.
 
 ## Environment and hosting
 
-These terms describe the two environments an app may occupy. An app's
-environment is determined by the owning node's active app role —
-`app-dev` or `app-prod` — not a separate field stored on the app
-record.
+These terms describe runtime/deployment environments. The app record remains the
+logical identity. The concrete environment is represented by an app instance and
+its driver/placement. App-level environment fields remain compatibility metadata
+derived from the default node role.
 
 - **Development app:** App whose owning node carries the `app-dev`
   role. Hostname uses the development TLD. Workspaces may attach to the app for
@@ -97,6 +109,16 @@ record.
 - **Worker config:** Gateway-tracked object for worker settings such as worker
   count, max requests, and failure thresholds. It is stored separately from the
   on/off decision.
+- **Required PHP extensions:** Instance-owned list of PHP extensions required by
+  the app on that target. The list is normalized for stable output. Orbit driver
+  instances are checked against the running FrankenPHP container by app doctor;
+  Laravel Cloud instances use compatibility metadata as a preflight signal.
+- **App instance env:** Instance-owned non-secret env values stored in the
+  gateway and rendered on demand. Secret env storage is intentionally deferred in
+  this slice.
+- **App instance database target:** Mapping from a reusable database connection
+  to one app instance and env prefix. Rendering the instance env injects
+  supported database keys and redacts secret values in API responses.
 - **App WebSocket binding:** Gateway-owned app configuration that enables one
   app to use the fleet websocket service. It owns per-app Reverb credentials,
   allowed origins, public WebSocket hosts, and the app's private
@@ -142,11 +164,12 @@ These boundaries define what the app family owns and what belongs to other famil
 
 - **App-owned route:** Proxy route whose lifecycle is owned by the app, edited
   through app commands, and surfaced as inventory by the `proxy` family.
-- **App-family boundaries:** App commands own app registry, runtime policy,
-  deployment policy, app health configuration, app WebSocket binding state, and
-  app analytics binding state. They do not own proxy route registry, workspace
-  policy, process configuration, schedule definitions, tool registration, or
-  firewall policy beyond what derives from app configuration.
+- **App-family boundaries:** App commands own app registry, app-instance
+  registry, instance env rendering, runtime policy, deployment policy, app health
+  configuration, app WebSocket binding state, and app analytics binding state.
+  They do not own proxy route registry, workspace policy, process configuration,
+  schedule definitions, tool registration, or firewall policy beyond what derives
+  from app configuration.
 
   Production route exposure belongs to `ingress`; private route selection and
   backend-pool targeting belong to `router`; `app-prod` owns the private

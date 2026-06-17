@@ -5,8 +5,10 @@ family owns the `deploy:*` command prefix.
 
 Deployments are an operator workflow, not a standalone state family. Deployment
 step definitions, deployment runs, run logs, and latest deployment status are
-app-owned gateway state. App doctor may use deployment policy and latest run
-state when evaluating production app health.
+app-owned gateway state in the current compatibility surface. The app-instance
+direction is for this state to move to the production app instance so deployment
+can become driver-aware without changing the logical app identity. App doctor may
+use deployment policy and latest run state when evaluating production app health.
 
 ## State Ownership
 
@@ -24,7 +26,8 @@ adoptable by doctor.
 These rules define what the deploy command family owns and how it behaves.
 
 - The deploy command family owns the `deploy:*` command prefix.
-- Deployment policy and history belong to production apps.
+- Deployment policy and history currently belong to production apps for
+  compatibility. Future driver-aware deployment policy belongs to app instances.
 - The gateway is the source of truth for deployment step definitions, step
   metadata, run history, and latest deployment status.
 - Deployment commands apply only to production apps.
@@ -48,6 +51,8 @@ These rules define what the deploy command family owns and how it behaves.
   live node state.
 - Deployment health is part of production app health and belongs to
   `doctor --family=app`.
+- App instances already reserve latest deployment fields, but `deploy:*`
+  commands do not accept `--instance` yet.
 
 ## Deploy Step JSON Entity
 

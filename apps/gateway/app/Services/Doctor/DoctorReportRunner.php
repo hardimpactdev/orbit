@@ -25,6 +25,7 @@ use App\Models\Process;
 use App\Models\ProxyRoute;
 use App\Models\Schedule;
 use App\Models\Workspace;
+use App\Services\Apps\AppRuntimeRequirementProbe;
 use App\Services\Apps\AppsFixer;
 use App\Services\Apps\AppsProbe;
 use App\Services\DatabaseConnections\DatabaseConnectionAdopter;
@@ -118,6 +119,7 @@ final readonly class DoctorReportRunner
         private WebSocketProxyDoctorProbe $webSocketProxyDoctorProbe,
         private S3DoctorProbe $s3DoctorProbe,
         private S3ProxyDoctorProbe $s3ProxyDoctorProbe,
+        private AppRuntimeRequirementProbe $appRuntimeRequirementProbe,
     ) {}
 
     /**
@@ -331,6 +333,14 @@ final readonly class DoctorReportRunner
 
                 foreach ($this->appsProbe->diff($app, $snapshot) as $entry) {
                     $issues[] = $this->appIssuePayload($entry, $app);
+                }
+
+                $app->loadMissing('instances');
+
+                foreach ($app->instances as $instance) {
+                    foreach ($this->appRuntimeRequirementProbe->drift($instance) as $entry) {
+                        $issues[] = $this->appIssuePayload($entry, $app);
+                    }
                 }
             }
 

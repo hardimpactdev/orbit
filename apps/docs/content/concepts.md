@@ -205,6 +205,10 @@ Source: [App Concepts](domains/5_app/app-concepts.md).
 
 <!-- concept-index:domains/5_app/app-concepts.md -->
 - **App**
+- **App instance**
+- **App instance driver**
+- **Driver config**
+- **Default app instance**
 - **App identity slug**
 - **App name argument**
 - **App selector argument**
@@ -222,6 +226,9 @@ Source: [App Concepts](domains/5_app/app-concepts.md).
 - **FrankenPHP app runtime**
 - **Worker mode**
 - **Worker config**
+- **Required PHP extensions**
+- **App instance env**
+- **App instance database target**
 - **App WebSocket binding**
 - **App analytics binding**
 - **Reverb app credentials**

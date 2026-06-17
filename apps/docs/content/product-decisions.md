@@ -38,6 +38,8 @@ direction.
 
 <!-- newest first; add new entries directly under this comment -->
 
+- 2026-06-17 — FrankenPHP remains Orbit's single first-class PHP app/workspace web runtime; host PHP-FPM is not reintroduced, app instances record required PHP extensions, and app doctor reports runtime extension drift for Orbit-driven instances. (solo todo #733)
+- 2026-06-17 — Apps are logical gateway records with one or more concrete app instances; each instance owns its driver, driver configuration, runtime requirements, env values, and database targets, while legacy app-level deployment commands remain a compatibility surface until deployments move to instances. (solo todo #734)
 - 2026-06-17 — Metrics enablement converges and starts its owned Prometheus, Grafana, and node-exporter runtime units immediately; doctor remains the repair path for later drift.
 - 2026-06-17 — Doctor includes the `process` family in the baseline category set for every node with at least one active role assignment; role-less client/operator identities remain node-family only.
 - 2026-06-17 — Metrics baseline records node-exporter host binary tool intent alongside node-exporter process intent on the metrics node and active workload nodes; tool doctor repairs the binary, while process doctor owns the systemd lifecycle.

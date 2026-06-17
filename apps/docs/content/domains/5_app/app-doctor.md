@@ -14,11 +14,12 @@ recreating deleted app records.
 
 The app family owns these facts:
 
-- gateway-owned app records: name, owning node, app path, document root, PHP
-  version, production policy, deployment pipeline configuration, and the agent
-  IDE default set at the app level (an app's environment is derived from the
-  owning node's `app-dev` or `app-prod` role and is not stored
-  separately on the app record);
+- gateway-owned app records: name, default owning node, app path, document root,
+  PHP version, production policy, deployment pipeline configuration, and the
+  agent IDE default set at the app level;
+- gateway-owned app instance records: instance name, driver, driver
+  configuration, required PHP extensions, instance env values, and related
+  instance database targets;
 - app source location: the managed app path exists on the owning node and
   the configured document root exists inside that path;
 - app runtime artifacts: app FrankenPHP runtime configuration, production app
@@ -101,6 +102,8 @@ Each code below corresponds to a specific layer in the apps probe.
 | `app.runtime_config_extra` | An Orbit-owned app runtime artifact exists on a node with an app role without matching active app configuration. |
 | `app.runtime_config_probe_failed` | The managed runtime configuration directory could not be reliably scanned for orphan artifacts. Reported once per node so stale `app.runtime_config_extra` is not hidden. |
 | `app.runtime_container_probe_failed` | The node-wide app runtime container scan failed. Reported once per node so stale `app.runtime_container_extra` is not hidden. |
+| `app.runtime_extensions_unverifiable` | Required PHP extensions are configured for an Orbit app instance, but the FrankenPHP runtime cannot be queried. |
+| `app.runtime_extension_missing` | Required PHP extensions are configured for an Orbit app instance and one or more are absent from the running FrankenPHP runtime. |
 | `app.production_user_missing` | A production app that requires app-user isolation has no matching path-derived app user or ownership policy. |
 | `app.production_user_mismatch` | Production app user, ownership, or runtime container identity differs from gateway app configuration. |
 | `app.security.system_user` | A production app is missing its expected path-derived runtime user or group, or that user has forbidden privileges such as Docker group membership. |

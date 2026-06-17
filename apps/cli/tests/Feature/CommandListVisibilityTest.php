@@ -71,6 +71,8 @@ describe('command list visibility', function (): void {
             'app:analytics disable',
             'app:analytics enable',
             'app:analytics show',
+            'app:env',
+            'app:instance',
             'app:list',
             'app:mount',
             'app:new',

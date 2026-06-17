@@ -42,13 +42,15 @@ final class DatabaseConnectionAttachController extends DatabaseConnectionApiCont
         $this->setActivityProperties($request, [
             'slug' => $connection,
             'target_type' => $type,
-            'target_name' => $owner->name,
+            'target_name' => $type === 'app_instance' ? $owner->app->name.':'.$owner->name : $owner->name,
             'env_prefix' => $envPrefix,
         ]);
 
         $result = $type === 'app'
             ? $this->registry->attachToApp($connection, $owner, $envPrefix)
-            : $this->registry->attachToWorkspace($connection, $owner, $envPrefix);
+            : ($type === 'app_instance'
+                ? $this->registry->attachToAppInstance($connection, $owner, $envPrefix)
+                : $this->registry->attachToWorkspace($connection, $owner, $envPrefix));
 
         if ($result instanceof DatabaseConnectionRegistryFailure) {
             return $this->failureResponse($result);

@@ -90,6 +90,8 @@ Commands are grouped by family. Each reference file lists every command in that 
 | `orbit app:agent-ide [app] [adapter]` | Set or inherit the Agent IDE adapter for an app |
 | `orbit app:worker [app]` | Inspect or change FrankenPHP worker mode |
 | `orbit app:websocket enable\|disable\|credentials` | Manage app WebSocket binding and credentials |
+| `orbit app:instance list\|show\|add\|remove` | Manage concrete app runtime/deploy instances |
+| `orbit app:env list\|set\|render` | Manage and render app-instance env values |
 
 ### Workspaces  -  [`references/workspace.md`](references/workspace.md)
 

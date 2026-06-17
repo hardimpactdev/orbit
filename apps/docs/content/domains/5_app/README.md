@@ -1,19 +1,34 @@
 # App Commands
 
-App commands manage gateway-owned app configuration and the app-role artifacts derived
-from that configuration. Apps belong to nodes. Gateway and clients are not
-valid app targets.
+App commands manage gateway-owned app configuration and the concrete runtime or
+deployment instances derived from that configuration. An app is a logical
+application record. An app instance is one concrete place that app can run, such
+as an Orbit-managed development node, an Orbit-managed production node, or a
+Laravel Cloud environment.
 
 ## Domain Rules
 
 These rules govern all app family commands.
 
-- The gateway owns app registry, runtime policy, deployment policy, and app
-  health configuration.
+- The gateway owns app registry, app-instance registry, runtime policy,
+  deployment policy, and app health configuration.
 - App names are identity slugs: lowercase letters, digits, and hyphens only.
   They cannot start or end with a hyphen and are limited to 40 characters.
 - App-role artifacts are applied by the gateway over SSH.
-- Apps may be development or production apps.
+- Apps may have one or more app instances. Instance names are unique within the
+  app.
+- An app instance has exactly one driver. Current drivers are `orbit` and
+  `laravel-cloud`.
+- `orbit` instances describe Orbit-managed placements on app-role nodes.
+  `laravel-cloud` instances describe external Laravel Cloud application and
+  environment targets; Orbit stores the relationship but does not deploy to
+  Laravel Cloud in this slice.
+- The app `node`, `path`, `root`, URL, and environment fields remain the current
+  compatibility/default development placement used by app-level commands until
+  those command families are fully instance-aware.
+- App instance env values and database targets belong to the instance, not the
+  logical app. Rendering an instance env merges explicit app env values with
+  database attachments for that instance.
 - App hostnames are represented in `proxy` as app-owned route records.
   App commands create, update, and remove the app configuration that owns those
   routes; proxy route registry, router route convergence, and backend artifact
@@ -44,6 +59,9 @@ These rules govern all app family commands.
   configuration.
 - App runtime mounts are extra bind mounts stored on the app for PHP runtimes
   on `app-dev` nodes. Workspaces inherit the parent app's configured mounts.
+- App instances record required PHP extensions. For Orbit-driven PHP instances,
+  `doctor --family=app` reports missing or unverifiable extensions against the
+  concrete FrankenPHP runtime container.
 - App WebSocket bindings are explicit app-owned configuration. They enable one
   app to use the fleet websocket service, own per-app Reverb credentials,
   allowed origins, public WebSocket hosts, and private `websocket.orbit`
@@ -57,8 +75,10 @@ These rules govern all app family commands.
   selection and backend pools, and the `analytics` role owns the Plausible CE
   runtime. V1 does not inject scripts, provision Plausible sites, or expose the
   Plausible dashboard publicly.
-- Production deployment pipeline definitions belong to apps. Deployments and
-  releases are not standalone state families.
+- Production deployment pipeline definitions currently remain app-owned for
+  compatibility. The product direction is for deployment steps, runs, logs, and
+  latest deployment status to move to app instances so `app:deploy` can be
+  driver-aware.
 - `app:prune` is source-of-truth cleanup, not doctor drift repair. It checks
   configured agent IDE adapters for the app, uses workspace removal semantics
   for stale workspaces, and can be scheduled through normal schedules.
@@ -70,14 +90,16 @@ gateway-to-node application and process managers live in
 [tech-stack.md#gateway-to-node](../../tech-stack.md#gateway-to-node) and
 [tech-stack.md#process-manager](../../tech-stack.md#process-manager).
 
-Production app routes enter through `ingress`, are forwarded over
+Orbit-managed production app routes enter through `ingress`, are forwarded over
 WireGuard to the gateway-coupled `router`, and only then fan out to private
-`app-prod` backend artifacts. App commands choose the ingress
-placement; the router owns private route selection and backend-pool targeting.
-The app-prod backend artifact is app-role-owned and separate from the
-API Caddy route that is colocated with the gateway router. It terminates at `orbit-caddy` on the
-app-prod node and then reaches the app's FrankenPHP Docker runtime container
-on internal port `8080` over the node Docker network.
+`app-prod` backend artifacts. App commands choose the ingress placement for
+Orbit-driven production. The router owns private route selection and
+backend-pool targeting. The app-prod backend artifact is app-role-owned and
+separate from the API Caddy route that is colocated with the gateway router. It
+terminates at `orbit-caddy` on the app-prod node and then reaches the app's
+FrankenPHP Docker runtime container on internal port `8080` over the node Docker
+network. Laravel Cloud production instances are represented as external
+driver-backed instances instead of Orbit-owned ingress/router/app-prod artifacts.
 
 Production app runtime policy is app-owned, while the concrete long-running
 runtime unit is process-owned. The runtime container uses a
@@ -145,6 +167,50 @@ canonical app entity.
 Structural fields are always present. Use `null` only for structural fields
 whose value is inapplicable, such as an absent repository.
 
+## App Instance JSON Entity
+
+App-instance renderers return this shape under `success.data.instance`, or under
+`success.data.instances[]` for list output.
+
+```json
+{
+  "app": "docs",
+  "name": "production-cloud",
+  "driver": "laravel-cloud",
+  "driver_config": {
+    "application_id": "app_123",
+    "environment_id": "env_123",
+    "domain": "docs.example.com"
+  },
+  "runtime": {
+    "runtime_kind": "php",
+    "php_version": "8.5",
+    "frankenphp_image": "dunglas/frankenphp:1-php8.5",
+    "mode": "classic",
+    "configured_mounts": [],
+    "required_php_extensions": ["intl", "redis"]
+  },
+  "latest_deployment_status": null,
+  "latest_deployment_run_id": null
+}
+```
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `app` | string | Logical app identity slug. |
+| `name` | string | Instance name, unique within the app. |
+| `driver` | string | Instance driver: `orbit` or `laravel-cloud`. |
+| `driver_config` | object | Driver-specific Laravel Data object serialized through the gateway. |
+| `runtime` | object | Effective runtime metadata for this instance. |
+| `runtime.runtime_kind` | string | Logical app runtime kind. |
+| `runtime.php_version` | string | PHP version recorded for the app runtime. |
+| `runtime.frankenphp_image` | string \| null | Resolved FrankenPHP image for PHP apps. |
+| `runtime.mode` | string | `classic` or `worker` for PHP apps. |
+| `runtime.configured_mounts` | array | App-level runtime mounts rendered into Orbit PHP runtimes. |
+| `runtime.required_php_extensions` | array | Required PHP extensions tracked for the instance. |
+| `latest_deployment_status` | string \| null | Reserved for instance-scoped deployment history. |
+| `latest_deployment_run_id` | integer \| null | Reserved for instance-scoped deployment history. |
+
 In the current converted app command surface, `app:new` is the only command that
 records repository metadata. `app:register` preserves an existing app's stored
 repository value and stores `repository=null` when adopting an unmanaged path.
@@ -185,6 +251,8 @@ The following commands are available in the `app` family.
 16. [`orbit app:analytics enable [app]`](16_app-analytics-enable/app-analytics-enable.md)
 17. [`orbit app:analytics disable [app]`](17_app-analytics-disable/app-analytics-disable.md)
 18. [`orbit app:analytics show [app]`](18_app-analytics-show/app-analytics-show.md)
+19. [`orbit app:instance list|show|add|remove [app]`](19_app-instance/app-instance.md)
+20. [`orbit app:env list|set|render [app]`](20_app-env/app-env.md)
 
 ## Related
 

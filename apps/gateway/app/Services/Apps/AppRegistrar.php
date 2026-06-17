@@ -7,6 +7,9 @@ namespace App\Services\Apps;
 use App\Actions\Apps\EnactAppRuntime;
 use App\Concerns\PromptsForRegistryEntities;
 use App\Contracts\RemoteShell;
+use App\Data\Apps\AppInstanceRuntimeRequirementsData;
+use App\Data\Apps\OrbitAppInstanceDriverConfigData;
+use App\Enums\Apps\AppInstanceDriver;
 use App\Enums\Nodes\NodeStatus;
 use App\Exceptions\PromptAborted;
 use App\Http\Gateway\GatewayApiException;
@@ -230,8 +233,27 @@ final class AppRegistrar
         );
 
         $app->setRelation('node', $node);
+        $this->ensureDefaultInstance($app, $node);
 
         return $app;
+    }
+
+    private function ensureDefaultInstance(App $app, Node $node): void
+    {
+        $app->instances()->firstOrCreate(
+            ['name' => $app->environment],
+            [
+                'driver' => AppInstanceDriver::Orbit,
+                'driver_config' => new OrbitAppInstanceDriverConfigData(
+                    node_id: $node->id,
+                    node: $node->name,
+                    path: $app->path,
+                    document_root: $app->document_root,
+                    domain: $app->domain,
+                ),
+                'runtime_requirements' => new AppInstanceRuntimeRequirementsData,
+            ],
+        );
     }
 
     /**

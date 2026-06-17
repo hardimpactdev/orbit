@@ -12,6 +12,7 @@ final class DatabaseAttachCommand extends DatabaseGatewayCommand
     protected $signature = 'database:attach
         {connection? : Database connection slug}
         {--app= : App selector}
+        {--instance= : App instance selector}
         {--workspace= : Workspace selector}
         {--env-prefix=DB : Environment variable prefix}
         {--json : Output JSON}';

@@ -15,6 +15,8 @@ use App\Contracts\SiteCertificateInstaller;
 use App\Contracts\StartsRemoteShellProcesses;
 use App\Contracts\UpdateAllGatewayStream;
 use App\Contracts\WorkspaceSourceDrivers;
+use App\Data\Apps\LaravelCloudAppInstanceDriverConfigData;
+use App\Data\Apps\OrbitAppInstanceDriverConfigData;
 use App\Http\Gateway\GatewayConnector;
 use App\Http\Gateway\UpdateAllGatewayStreamClient;
 use App\Services\ActivityLogCorrelation;
@@ -76,6 +78,7 @@ use Illuminate\Support\ServiceProvider;
 use Orbit\Core\Security\OperationTokenSigner;
 use Orbit\Core\Security\OperationTokenVerifier;
 use RuntimeException;
+use Spatie\LaravelData\Support\DataConfig;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -204,6 +207,11 @@ class AppServiceProvider extends ServiceProvider
     public function boot(): void
     {
         $this->loadMigrationsFrom(base_path('database/migrations'));
+
+        app(DataConfig::class)->enforceMorphMap([
+            'orbit_app_instance_driver_config' => OrbitAppInstanceDriverConfigData::class,
+            'laravel_cloud_app_instance_driver_config' => LaravelCloudAppInstanceDriverConfigData::class,
+        ]);
     }
 
     private function orbitConfigPath(): string

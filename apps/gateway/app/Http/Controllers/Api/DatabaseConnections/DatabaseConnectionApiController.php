@@ -7,6 +7,7 @@ namespace App\Http\Controllers\Api\DatabaseConnections;
 use App\Contracts\Loggable;
 use App\Enums\ActivityLogType;
 use App\Models\App;
+use App\Models\AppInstance;
 use App\Models\DatabaseConnection;
 use App\Models\Node;
 use App\Models\Workspace;
@@ -202,7 +203,7 @@ abstract class DatabaseConnectionApiController implements Loggable
      */
     protected function connectionServingNodes(DatabaseConnection $connection): array
     {
-        $connection->loadMissing(['node', 'targets.app.node', 'targets.workspace.app.node']);
+        $connection->loadMissing(['node', 'targets.app.node', 'targets.workspace.app.node', 'instanceTargets.instance.app.node']);
 
         $nodes = [];
 
@@ -217,6 +218,12 @@ abstract class DatabaseConnectionApiController implements Loggable
 
             if ($target->workspace?->app?->node instanceof Node) {
                 $nodes[$target->workspace->app->node->id] = $target->workspace->app->node;
+            }
+        }
+
+        foreach ($connection->instanceTargets as $target) {
+            if ($target->instance->app->node instanceof Node) {
+                $nodes[$target->instance->app->node->id] = $target->instance->app->node;
             }
         }
 
@@ -240,8 +247,14 @@ abstract class DatabaseConnectionApiController implements Loggable
         return null;
     }
 
-    protected function ownerNode(App|Workspace $owner): ?Node
+    protected function ownerNode(App|Workspace|AppInstance $owner): ?Node
     {
+        if ($owner instanceof AppInstance) {
+            $owner->loadMissing('app.node');
+
+            return $owner->app->node;
+        }
+
         if ($owner instanceof App) {
             $owner->loadMissing('node');
 
@@ -323,12 +336,17 @@ abstract class DatabaseConnectionApiController implements Loggable
     }
 
     /**
-     * @return array{0: string, 1: App|Workspace}|JsonResponse
+     * @return array{0: string, 1: App|Workspace|AppInstance}|JsonResponse
      */
     protected function resolveTargetScope(Request $request, string $envPrefix): array|JsonResponse
     {
         $app = $this->stringValue($request->input('app'));
+        $instance = $this->stringValue($request->input('instance'));
         $workspace = $this->stringValue($request->input('workspace'));
+
+        if ($instance !== null && $app === null) {
+            return $this->validationFailed('app', 'The --app option is required when --instance is used.', ['field' => 'app'], 422);
+        }
 
         if (($app === null && $workspace === null) || ($app !== null && $workspace !== null)) {
             return $this->validationFailed('scope', 'Exactly one of app or workspace is required.', ['field' => 'scope'], 422);
@@ -346,6 +364,20 @@ abstract class DatabaseConnectionApiController implements Loggable
 
             if ($appModel === null) {
                 return $this->validationFailed('app', "Invalid value for --app: '{$app}'.", ['field' => 'app', 'value' => $app], 422);
+            }
+
+            if ($instance !== null) {
+                $instanceModel = $this->resolver->resolveAppInstance($appModel, $instance);
+
+                if (! $instanceModel instanceof AppInstance) {
+                    return $this->validationFailed('instance', "Invalid value for --instance: '{$instance}'.", [
+                        'field' => 'instance',
+                        'app' => $appModel->name,
+                        'value' => $instance,
+                    ], 422);
+                }
+
+                return ['app_instance', $instanceModel];
             }
 
             return ['app', $appModel];

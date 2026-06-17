@@ -12,6 +12,7 @@ final class DatabaseDetachCommand extends DatabaseGatewayCommand
     protected $signature = 'database:detach
         {connection? : Database connection slug}
         {--app= : App selector}
+        {--instance= : App instance selector}
         {--workspace= : Workspace selector}
         {--env-prefix=DB : Environment variable prefix}
         {--json : Output JSON}';

@@ -34,6 +34,7 @@ use Illuminate\Support\Str;
  * @property string|null $latest_deployment_status
  * @property int|null $latest_deployment_run_id
  * @property-read Node|null $node
+ * @property-read Collection<int, AppInstance> $instances
  * @property-read Collection<int, DeployStep> $deploySteps
  * @property-read Collection<int, DeploymentRun> $deploymentRuns
  * @property-read Collection<int, DatabaseConnection> $databaseConnections
@@ -99,6 +100,14 @@ class App extends Model
     public function node(): BelongsTo
     {
         return $this->belongsTo(Node::class);
+    }
+
+    /**
+     * @return HasMany<AppInstance, $this>
+     */
+    public function instances(): HasMany
+    {
+        return $this->hasMany(AppInstance::class)->orderBy('name');
     }
 
     /**

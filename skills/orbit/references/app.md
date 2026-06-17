@@ -1,8 +1,11 @@
 # App Commands
 
-Manage Orbit apps. Apps live on nodes with an active `app-dev` or `app-prod`
-role; gateway-only nodes and client identities with no app role are never valid
-app targets. All app commands flow through the gateway. Spec:
+Manage Orbit apps. Apps are logical gateway records with one or more concrete
+app instances. Orbit-driven instances live on nodes with an active `app-dev` or
+`app-prod` role; Laravel Cloud instances store the external app/environment
+relationship. Gateway-only nodes and client identities with no app role are
+never valid Orbit app-instance targets. All app commands flow through the
+gateway. Spec:
 [`apps/docs/content/domains/5_app/`](../../../apps/docs/content/domains/5_app/).
 
 Development apps are served at `{name}.{node-tld}` (e.g. `myapp.beast`). Production apps are served at the configured `--domain`, which must be globally unique across the fleet.
@@ -12,6 +15,10 @@ process-backed Docker runtime units. Static apps serve files through
 `orbit-caddy` and do not get a PHP runtime container. Production PHP apps run
 as a dedicated app runtime user and are reachable only through the private
 app-role backend route unless the same node also carries `ingress`.
+
+App instances record driver config, required PHP extensions, and instance env
+state. Keep FrankenPHP as the web runtime; do not switch app/workspace runtime
+workflows to host PHP-FPM.
 
 ## `orbit app:new [name]`
 
@@ -132,6 +139,42 @@ orbit app:worker [show|enable|disable] [<app>] [--json]
 
 Worker mode is opt-in. Keep it disabled unless the app has been validated for
 long-lived Laravel workers.
+
+## `orbit app:instance [action] [app]`
+
+Manage concrete runtime/deploy targets for a logical app.
+
+```bash
+orbit app:instance list [<app>] [--app=<app>] [--json]
+orbit app:instance show [<app>] [--app=<app>] --instance=<name> [--json]
+orbit app:instance add [<app>] [--app=<app>] --instance=<name> [--driver=orbit|laravel-cloud] [--json]
+orbit app:instance remove [<app>] [--app=<app>] --instance=<name> --force [--json]
+```
+
+Use `--app` for scripts/agents when positional parsing is awkward. If `[app]`
+and `--app` are both supplied, they must match. `--php-extension` is repeatable
+and records required PHP extensions for runtime/Cloud compatibility checks.
+
+Examples:
+
+```bash
+orbit app:instance add billing --instance=development --driver=orbit --node=app-dev-1
+orbit app:instance add billing --instance=production-cloud --driver=laravel-cloud --cloud-app=app_123 --cloud-environment=env_123 --php-extension=redis --php-extension=intl
+```
+
+## `orbit app:env [action] [app]`
+
+Manage and render non-secret env values for one app instance.
+
+```bash
+orbit app:env list [<app>] [--app=<app>] --instance=<name> [--json]
+orbit app:env set [<app>] [--app=<app>] --instance=<name> --key=<KEY> --value=<value> [--json]
+orbit app:env render [<app>] [--app=<app>] --instance=<name> [--json]
+```
+
+Secret env writes are intentionally rejected for now. Attach database
+connections with `database:attach --app=<app> --instance=<name>` and use
+`app:env render` to see the effective env with secret values redacted.
 
 ## `orbit app:websocket enable | disable | credentials`
 

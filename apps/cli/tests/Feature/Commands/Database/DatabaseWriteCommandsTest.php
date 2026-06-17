@@ -122,6 +122,35 @@ describe('database write commands', function (): void {
         expect($exitCode)->toBe(0);
     });
 
+    it('attaches database connections to app instance targets', function (): void {
+        fakeGateway(fakeSuccessEnvelope([
+            'connection' => [
+                'slug' => 'primary-db',
+                'targets' => [['type' => 'app_instance', 'app' => 'docs', 'instance' => 'production', 'env_prefix' => 'DB']],
+            ],
+        ]));
+
+        [$exitCode] = runCommand($this, 'database:attach', [
+            'connection' => 'primary-db',
+            '--app' => 'docs',
+            '--instance' => 'production',
+            '--env-prefix' => 'DB',
+            '--json' => true,
+        ]);
+
+        Http::assertSent(function (Request $request): bool {
+            return $request->method() === 'POST'
+                && str_contains($request->url(), '/api/database-connections/primary-db/targets')
+                && $request->data() === [
+                    'app' => 'docs',
+                    'instance' => 'production',
+                    'env_prefix' => 'DB',
+                ];
+        });
+
+        expect($exitCode)->toBe(0);
+    });
+
     it('detaches database connections from workspace targets', function (): void {
         fakeGateway(fakeSuccessEnvelope([
             'result' => [
@@ -169,6 +198,24 @@ describe('database write commands', function (): void {
         expect($exitCode)->toBe(1)
             ->and($decoded['error']['code'])->toBe('validation_failed')
             ->and($decoded['error']['meta']['field'])->toBe('scope');
+    });
+
+    it('rejects instance database targets without an app selector before contacting the gateway', function (): void {
+        Http::fake();
+
+        [$exitCode, $output] = runCommand($this, 'database:attach', [
+            'connection' => 'primary-db',
+            '--instance' => 'production',
+            '--json' => true,
+        ]);
+
+        $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+
+        Http::assertNothingSent();
+
+        expect($exitCode)->toBe(1)
+            ->and($decoded['error']['code'])->toBe('validation_failed')
+            ->and($decoded['error']['meta']['field'])->toBe('app');
     });
 
     it('validates required database write inputs before contacting the gateway', function (string $command, array $params, string $field): void {

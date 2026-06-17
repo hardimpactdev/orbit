@@ -2,12 +2,13 @@
 
 [Back to Database commands.](../README.md)
 
-Attach a stored connection to one app or one workspace using an env prefix.
+Attach a stored connection to one app, one app instance, or one workspace using
+an env prefix.
 
 ## Usage
 
 ```bash
-orbit database:attach {connection} (--app=<app>|--workspace=<workspace>) [--env-prefix=DB] [--json]
+orbit database:attach {connection} (--app=<app> [--instance=<name>]|--workspace=<workspace>) [--env-prefix=DB] [--json]
 ```
 
 ## Technical Contract

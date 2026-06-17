@@ -7,7 +7,10 @@ namespace App\Http\Controllers\Api;
 use App\Actions\Apps\CreateAppSourceOnNode;
 use App\Actions\Apps\EnactAppRuntime;
 use App\Contracts\Loggable;
+use App\Data\Apps\AppInstanceRuntimeRequirementsData;
+use App\Data\Apps\OrbitAppInstanceDriverConfigData;
 use App\Enums\ActivityLogType;
+use App\Enums\Apps\AppInstanceDriver;
 use App\Http\Authorization\RequiresPermission;
 use App\Http\Authorization\ServingNode;
 use App\Models\App;
@@ -104,6 +107,7 @@ final class AppStoreController implements Loggable
         ]);
 
         $app->setRelation('node', $node);
+        $this->ensureDefaultInstance($app, $node);
         $this->activitySubject = $app;
         $warnings = $enactAppRuntime->handle($app);
 
@@ -193,6 +197,7 @@ final class AppStoreController implements Loggable
                 ]);
 
                 $app->setRelation('node', $node);
+                $this->ensureDefaultInstance($app, $node);
                 $this->activitySubject = $app;
                 $events->stepEvent('registry', 'done', 'App registered');
                 $events->stepEvent('runtime', 'running', "Applying runtime for {$app->name}");
@@ -235,6 +240,24 @@ final class AppStoreController implements Loggable
     private function wantsEventStream(Request $request): bool
     {
         return in_array('text/event-stream', $request->getAcceptableContentTypes(), true);
+    }
+
+    private function ensureDefaultInstance(App $app, Node $node): void
+    {
+        $app->instances()->firstOrCreate(
+            ['name' => $app->environment],
+            [
+                'driver' => AppInstanceDriver::Orbit,
+                'driver_config' => new OrbitAppInstanceDriverConfigData(
+                    node_id: $node->id,
+                    node: $node->name,
+                    path: $app->path,
+                    document_root: $app->document_root,
+                    domain: $app->domain,
+                ),
+                'runtime_requirements' => new AppInstanceRuntimeRequirementsData,
+            ],
+        );
     }
 
     /**

@@ -10,6 +10,8 @@ use App\Commands\App\AppAgentIdeCommand;
 use App\Commands\App\AppAnalyticsDisableCommand;
 use App\Commands\App\AppAnalyticsEnableCommand;
 use App\Commands\App\AppAnalyticsShowCommand;
+use App\Commands\App\AppEnvCommand;
+use App\Commands\App\AppInstanceCommand;
 use App\Commands\App\AppListCommand;
 use App\Commands\App\AppMountCommand;
 use App\Commands\App\AppNewCommand;
@@ -165,6 +167,8 @@ return [
         AppAnalyticsDisableCommand::class,
         AppAnalyticsEnableCommand::class,
         AppAnalyticsShowCommand::class,
+        AppEnvCommand::class,
+        AppInstanceCommand::class,
         AppListCommand::class,
         AppMountCommand::class,
         AppNewCommand::class,
