@@ -16,7 +16,9 @@ use App\Models\ProxyRoute;
 use App\Models\Schedule;
 use App\Models\SchedulerState;
 use App\Models\Workspace;
+use App\Services\Ca\OrbitCaService;
 use App\Services\Platform\PlatformDetector;
+use App\Services\Proxy\ProxyRouteRenderer;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);
@@ -121,13 +123,24 @@ describe('DoctorRunController', function (): void {
     it('restores proxy drift through the doctor fix endpoint', function (): void {
         createDoctorRunCallerNode();
         $appNode = createTestAppHostNode(['name' => 'app-1', 'status' => 'active']);
-        ProxyRoute::factory()->create([
+        $route = ProxyRoute::factory()->create([
             'node_id' => $appNode->id,
             'domain' => 'vite.docs.test',
             'owner_type' => 'custom',
             'kind' => 'proxy',
             'config' => ['target' => ['type' => 'upstream', 'value' => 'http://127.0.0.1:5173'], 'upstream' => 'http://127.0.0.1:5173']]);
-        app()->instance(RemoteShell::class, new DoctorRunRemoteShell(perRouteStdout: "0\t\t\t\t0\t0\n", nodeLevelStdout: ''));
+        $restoredHash = (new ProxyRouteRenderer)->sourceHash($route);
+        app()->instance(OrbitCaService::class, new DoctorRunFakeCa);
+        app()->instance(RemoteShell::class, new DoctorRunRemoteShell(
+            perRouteStdout: "0\t\t\t\t0\t0\n",
+            nodeLevelStdout: '',
+            perRouteStdouts: [
+                "0\t\t\t\t0\t0\n",
+                '',
+                '',
+                "1\t{$restoredHash}\t/etc/orbit/certs/vite.docs.test.crt\t/etc/orbit/certs/vite.docs.test.key\t1\t1\n",
+            ],
+        ));
 
         $response = $this->call('POST', '/api/doctor/fix', [
             'mode' => 'restore',
@@ -425,5 +438,26 @@ final class DoctorRunRemoteShell implements RemoteShell
             : (array_shift($this->perRouteStdouts) ?? '');
 
         return new RemoteShellResult(exitCode: $this->exitCode, stdout: $stdout, stderr: '', durationMs: 1);
+    }
+}
+
+final readonly class DoctorRunFakeCa extends OrbitCaService
+{
+    /** @return array{cert: string, key: string} */
+    public function issueLeaf(string $host, array $additionalSans = []): array
+    {
+        $dir = sys_get_temp_dir().'/orbit-doctor-run-ca';
+
+        if (! is_dir($dir)) {
+            mkdir($dir, 0777, true);
+        }
+
+        $cert = "{$dir}/{$host}.crt";
+        $key = "{$dir}/{$host}.key";
+
+        file_put_contents($cert, "fake-cert-for-{$host}");
+        file_put_contents($key, "fake-key-for-{$host}");
+
+        return ['cert' => $cert, 'key' => $key];
     }
 }

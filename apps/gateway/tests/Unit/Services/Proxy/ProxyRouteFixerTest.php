@@ -43,7 +43,7 @@ describe('ProxyRouteFixer', function (): void {
             kind: DriftKind::Missing,
             summary: 'missing',
         ));
-        $caddySite = base64_decode((string) str($shell->scripts[0])->match("/printf %s\\s+'([^']+)'/")->toString(), true);
+        $caddySite = base64_decode((string) str($shell->scripts[1])->match("/printf %s\\s+'([^']+)'/")->toString(), true);
 
         expect($action)->toMatchArray([
             'family' => 'proxy',
@@ -51,14 +51,98 @@ describe('ProxyRouteFixer', function (): void {
             'key' => 'proxy.route_missing',
             'status' => 'completed',
         ])
-            ->and($shell->scripts[0])->toContain('/etc/caddy/sites/vite.docs.test.caddy')
+            ->and($shell->scripts[0])->toContain('/etc/orbit/certs/vite.docs.test.crt')
+            ->and($shell->scripts[0])->toContain('/etc/orbit/certs/vite.docs.test.key')
+            ->and($shell->scripts[0])->toContain(CaddyTool::reloadCommand())
+            ->and($shell->scripts[1])->toContain('/etc/caddy/sites/vite.docs.test.caddy')
             ->and($caddySite)->toContain('reverse_proxy http://host.docker.internal:5173')
             ->and($caddySite)->not->toContain('127.0.0.1')
-            ->and($shell->scripts[0])->toContain(CaddyTool::reloadCommand())
-            ->and($shell->scripts[0])->not->toContain("docker restart 'orbit-caddy'")
-            ->and($shell->scripts[0])->not->toContain('sudo systemctl reload caddy')
+            ->and($shell->scripts[1])->toContain(CaddyTool::reloadCommand())
+            ->and($shell->scripts[1])->not->toContain("docker restart 'orbit-caddy'")
+            ->and($shell->scripts[1])->not->toContain('sudo systemctl reload caddy')
             ->and($route->refresh()->source_hash)->toBe(hash('sha256', $caddySite))
             ->and($route->refresh()->source_hash)->toBe($renderer->sourceHash($route));
+    });
+
+    it('repairs Orbit-managed TLS before restoring the metrics router route', function (): void {
+        $router = Node::factory()->router()->create(['name' => 'gateway']);
+        $route = ProxyRoute::factory()->create([
+            'node_id' => $router->id,
+            'domain' => 'metrics.orbit',
+            'owner_type' => 'router',
+            'kind' => 'proxy',
+            'source_hash' => str_repeat('0', 64),
+            'config' => [
+                'owner_name' => 'grafana',
+                'protocol' => 'http',
+                'target' => [
+                    'type' => 'upstream',
+                    'value' => 'http://gateway.metrics.orbit:3000',
+                ],
+                'upstreams' => [
+                    ['scheme' => 'http', 'host' => 'gateway.metrics.orbit', 'port' => 3000],
+                ],
+            ],
+        ]);
+        $shell = new ProxyFixerRecordingRemoteShell;
+        $renderer = new ProxyRouteRenderer;
+
+        $action = (new ProxyRouteFixer($shell, $renderer, new ProxyFixerFakeCa, new SiteCertificateInstallerFake))->fix($route, new DriftEntry(
+            family: 'proxy',
+            key: 'proxy.route_missing',
+            kind: DriftKind::Missing,
+            summary: 'missing',
+        ));
+        $caddySite = base64_decode((string) str($shell->scripts[1])->match("/printf %s\\s+'([^']+)'/")->toString(), true);
+
+        expect($action)->toMatchArray([
+            'family' => 'proxy',
+            'node' => 'gateway',
+            'key' => 'proxy.route_missing',
+            'status' => 'completed',
+        ])
+            ->and($shell->nodes[0]->is($router))->toBeTrue()
+            ->and($shell->scripts[0])->toContain('/etc/orbit/certs/metrics.orbit.crt')
+            ->and($shell->scripts[0])->toContain('/etc/orbit/certs/metrics.orbit.key')
+            ->and($shell->scripts[0])->toContain(base64_encode('fake-cert-for-metrics.orbit'))
+            ->and($shell->scripts[0])->toContain(base64_encode('fake-key-for-metrics.orbit'))
+            ->and($shell->scripts[1])->toContain('/etc/caddy/sites/metrics.orbit.caddy')
+            ->and($caddySite)->toContain('tls /etc/orbit/certs/metrics.orbit.crt /etc/orbit/certs/metrics.orbit.key')
+            ->and($caddySite)->toContain('reverse_proxy http://gateway.metrics.orbit:3000')
+            ->and($route->refresh()->source_hash)->toBe(hash('sha256', $caddySite))
+            ->and($route->refresh()->source_hash)->toBe($renderer->sourceHash($route));
+    });
+
+    it('does not issue Orbit TLS before restoring ACME-managed routes', function (): void {
+        $node = createTestAppHostNode(['name' => 'app-1']);
+        $route = ProxyRoute::factory()->create([
+            'node_id' => $node->id,
+            'domain' => 'www.docs.test',
+            'owner_type' => 'custom',
+            'kind' => 'redirect',
+            'source_hash' => str_repeat('0', 64),
+            'config' => [
+                'target' => ['type' => 'redirect', 'value' => 'https://docs.test'],
+                'code' => 301,
+                'tls' => ['managed_by' => 'acme'],
+            ],
+        ]);
+        $shell = new ProxyFixerRecordingRemoteShell;
+
+        $action = (new ProxyRouteFixer($shell, new ProxyRouteRenderer, new ProxyFixerFakeCa, new SiteCertificateInstallerFake))->fix($route, new DriftEntry(
+            family: 'proxy',
+            key: 'proxy.route_missing',
+            kind: DriftKind::Missing,
+            summary: 'missing',
+        ));
+        $caddySite = base64_decode((string) str($shell->scripts[0])->match("/printf %s\\s+'([^']+)'/")->toString(), true);
+
+        expect($action['status'])->toBe('completed')
+            ->and($shell->scripts)->toHaveCount(1)
+            ->and($shell->scripts[0])->toContain('/etc/caddy/sites/www.docs.test.caddy')
+            ->and($shell->scripts[0])->not->toContain('/etc/orbit/certs/www.docs.test.crt')
+            ->and($caddySite)->toContain("tls {\n        issuer acme\n    }")
+            ->and($caddySite)->toContain('redir https://docs.test{uri} 301');
     });
 
     it('re-applies ingress routes and names the public side', function (): void {
@@ -205,7 +289,7 @@ describe('ProxyRouteFixer', function (): void {
             kind: DriftKind::Missing,
             summary: 'missing',
         ));
-        $caddySite = base64_decode((string) str($shell->scripts[1])->match("/printf %s\\s+'([^']+)'/")->toString(), true);
+        $caddySite = base64_decode((string) str($shell->scripts[2])->match("/printf %s\\s+'([^']+)'/")->toString(), true);
 
         expect($action['status'])->toBe('completed')
             ->and($shell->nodes[0]->is($router))->toBeTrue()
@@ -213,8 +297,11 @@ describe('ProxyRouteFixer', function (): void {
             ->and($shell->scripts[0])->toContain('/etc/orbit/ca/root.crt')
             ->and(base64_decode((string) str($shell->scripts[0])->match("/printf %s\\s+'([^']+)'/")->toString(), true))->toBe('fake-root-ca')
             ->and($shell->nodes[1]->is($router))->toBeTrue()
-            ->and($shell->scripts[1])->toContain('/etc/caddy/sites/websocket.orbit.caddy')
-            ->and($shell->scripts[1])->toContain(CaddyTool::reloadCommand('orbit-e2e-gateway-orbit-caddy'))
+            ->and($shell->scripts[1])->toContain('/etc/orbit/certs/websocket.orbit.crt')
+            ->and($shell->scripts[1])->toContain('/etc/orbit/certs/websocket.orbit.key')
+            ->and($shell->nodes[2]->is($router))->toBeTrue()
+            ->and($shell->scripts[2])->toContain('/etc/caddy/sites/websocket.orbit.caddy')
+            ->and($shell->scripts[2])->toContain(CaddyTool::reloadCommand('orbit-e2e-gateway-orbit-caddy'))
             ->and($caddySite)->toContain('tls /etc/orbit/certs/websocket.orbit.crt /etc/orbit/certs/websocket.orbit.key')
             ->and($caddySite)->toContain('reverse_proxy https://10.6.0.44:8080')
             ->and($caddySite)->toContain('tls_trust_pool file /etc/orbit/ca/root.crt')

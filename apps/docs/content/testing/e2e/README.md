@@ -42,7 +42,7 @@ topologies first, run only the affected provider artifact/provision gate, then
 run the feature flow that consumes the built CLI/gateway assets when that
 artifact-backed lane exists.
 
-`composer test:e2e` runs `bin/orbit-gateway-artisan e2e:test`, which selects prepared-topology
+`composer test:e2e` runs `bin/orbit-e2e-artisan e2e:test`, which selects prepared-topology
 lanes from `ORBIT_E2E_LANES` (`docker,incus` by default) and excludes
 `e2e-provision`. Every selected lane must have its prepared artifacts, runner
 capacity, and provider hosts available before feature tests start. Missing

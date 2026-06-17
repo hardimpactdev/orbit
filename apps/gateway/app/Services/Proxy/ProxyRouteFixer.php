@@ -75,11 +75,12 @@ final readonly class ProxyRouteFixer
         }
 
         $content = $this->renderer->render($route);
-        $this->ensureSiteCertificateForOwnedPhpRoute($route);
 
         if ($route->owner_type === 'router') {
             $this->ensureRouterTrustPool($route->node, $route);
         }
+
+        $this->ensureRouteTlsMaterial($route);
 
         $this->remoteShell->run($route->node, $this->installScript($route->node, $route->domain, $content), ['throw' => true]);
 
@@ -204,6 +205,46 @@ final readonly class ProxyRouteFixer
         $this->siteCertificateInstaller->ensureFor($route->node, $route->domain);
 
         return true;
+    }
+
+    private function ensureRouteTlsMaterial(ProxyRoute $route): void
+    {
+        if ($this->ensureSiteCertificateForOwnedPhpRoute($route)) {
+            return;
+        }
+
+        if (! $this->expectsOrbitManagedTls($route)) {
+            return;
+        }
+
+        $this->repairTls($route);
+    }
+
+    private function expectsOrbitManagedTls(ProxyRoute $route): bool
+    {
+        if ($this->usesIngressPlacement($route)) {
+            return false;
+        }
+
+        $config = is_array($route->config) ? $route->config : [];
+        $tls = $config['tls'] ?? null;
+
+        if ($tls === 'internal') {
+            return false;
+        }
+
+        $managedBy = is_array($tls)
+            ? ($tls['managed_by'] ?? $config['tls_managed_by'] ?? 'orbit')
+            : ($config['tls_managed_by'] ?? 'orbit');
+
+        return $managedBy === 'orbit';
+    }
+
+    private function usesIngressPlacement(ProxyRoute $route): bool
+    {
+        $config = is_array($route->config) ? $route->config : [];
+
+        return ($config['placement'] ?? null) === 'ingress';
     }
 
     private function installScript(Node $node, string $domain, string $content, bool $backend = false): string
