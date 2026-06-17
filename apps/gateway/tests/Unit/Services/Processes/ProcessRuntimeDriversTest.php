@@ -202,6 +202,7 @@ it('applies, removes, and cleans up docker swarm process runtime services from r
     $process = Process::factory()->forOwner($node)->create([
         'name' => 'mysql8',
         'command' => 'mysqld',
+        'restart_policy' => ProcessRestartPolicy::Always,
         'runtime' => ProcessRuntime::DockerSwarm,
         'runtime_config' => [
             'image' => 'mysql:8.4',
@@ -246,6 +247,7 @@ it('applies, removes, and cleans up docker swarm process runtime services from r
         ->toContain("docker service inspect 'orbit-mysql-8' >/dev/null 2>&1")
         ->toContain('docker service create')
         ->toContain("--name 'orbit-mysql-8'")
+        ->toContain("--restart-condition 'any'")
         ->toContain("--label 'orbit.process.definition=mysql'")
         ->toContain("--label 'orbit.process.spec_hash=abc123'")
         ->toContain("--publish 'published=3308,target=3306,protocol=tcp'")
@@ -256,6 +258,9 @@ it('applies, removes, and cleans up docker swarm process runtime services from r
         ->toContain("'-lc' 'mysqld'")
         ->and($shell->scripts[1])
         ->toBe("docker service rm 'orbit-mysql-8'");
+
+    expect($shell->scripts[0])
+        ->not->toContain("--restart-condition 'always'");
 });
 
 it('runs systemd process lifecycle through the systemd runtime driver', function (): void {

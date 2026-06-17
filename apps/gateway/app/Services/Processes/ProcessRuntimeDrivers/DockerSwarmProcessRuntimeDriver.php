@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services\Processes\ProcessRuntimeDrivers;
 
 use App\Contracts\RemoteShell;
+use App\Enums\ProcessRestartPolicy;
 use App\Models\App;
 use App\Models\Node;
 use App\Models\Process;
@@ -111,7 +112,7 @@ SH,
             '--replicas',
             '0',
             '--restart-condition',
-            escapeshellarg($process->restart_policy->toDocker()),
+            escapeshellarg($this->restartCondition($process)),
         ];
 
         foreach ($this->stringMap($config['labels'] ?? []) as $key => $value) {
@@ -149,6 +150,15 @@ SH,
         $parts[] = escapeshellarg($process->command);
 
         return implode(' ', $parts);
+    }
+
+    private function restartCondition(Process $process): string
+    {
+        return match ($process->restart_policy) {
+            ProcessRestartPolicy::Never => 'none',
+            ProcessRestartPolicy::OnFailure => 'on-failure',
+            ProcessRestartPolicy::Always => 'any',
+        };
     }
 
     /**
