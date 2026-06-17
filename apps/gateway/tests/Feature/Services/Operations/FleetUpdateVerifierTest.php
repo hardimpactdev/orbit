@@ -35,19 +35,37 @@ it('verifies gateway scheduler workload CLI and required role images', function 
     app()->instance(RemoteShell::class, $shell);
 
     $run = fleetVerifierRun();
-    $node = Node::factory()->appDev()->create(['name' => 'app-dev-1', 'platform' => 'linux']);
+    Node::factory()->agent()->create(['name' => 'agent-1', 'platform' => 'ubuntu_24-04']);
+    Node::factory()->appDev()->create(['name' => 'app-dev-1', 'platform' => 'linux']);
+    Node::factory()->database()->create(['name' => 'database-1', 'platform' => 'ubuntu']);
+    Node::factory()->gateway()->create(['name' => 'gateway-1', 'platform' => 'debian_12']);
+    Node::factory()->ingress()->create(['name' => 'ingress-1', 'platform' => 'ubuntu_24-04']);
+    Node::factory()->operator()->create(['name' => 'operator-1']);
     $plan = app(OperationUpdatePlanStore::class)->create($run, fleetVerifierSnapshot());
 
     app(FleetUpdateVerifier::class)->verify($run, $plan);
 
-    expect($shell->calls)->toHaveCount(2)
+    expect($shell->calls)->toHaveCount(6)
         ->and($shell->calls[0])->toMatchArray([
-            'node' => $node->name,
+            'node' => 'agent-1',
             'script' => 'orbit --version',
         ])
         ->and($shell->calls[0]['options']['metadata'])->toBe(['ORBIT_OPERATION_ID' => $run->id])
-        ->and($shell->calls[1]['options']['metadata'])->toBe(['ORBIT_OPERATION_ID' => $run->id])
-        ->and($shell->calls[1]['script'])->toContain("docker image inspect 'caddy:2-alpine' >/dev/null");
+        ->and($shell->calls[3])->toMatchArray([
+            'node' => 'ingress-1',
+            'script' => 'orbit --version',
+        ])
+        ->and($shell->calls[5]['options']['metadata'])->toBe(['ORBIT_OPERATION_ID' => $run->id])
+        ->and(array_column($shell->calls, 'node'))->toBe([
+            'agent-1',
+            'app-dev-1',
+            'database-1',
+            'ingress-1',
+            'app-dev-1',
+            'ingress-1',
+        ])
+        ->and($shell->calls[4]['script'])->toContain("docker image inspect 'caddy:2-alpine' >/dev/null")
+        ->and($shell->calls[5]['script'])->toContain("docker image inspect 'caddy:2-alpine' >/dev/null");
 });
 
 it('fails when workload CLI verification fails', function (): void {

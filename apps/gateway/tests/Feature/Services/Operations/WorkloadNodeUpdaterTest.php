@@ -27,7 +27,7 @@ use Orbit\Core\Enums\OperationStatus;
 
 uses(RefreshDatabase::class);
 
-it('updates active non-gateway app-role nodes from the persisted manifest snapshot', function (): void {
+it('updates active non-gateway managed nodes from the persisted manifest snapshot', function (): void {
     $shell = new WorkloadUpdaterFakeShell;
     app()->instance(RemoteShell::class, $shell);
 
@@ -47,8 +47,11 @@ it('updates active non-gateway app-role nodes from the persisted manifest snapsh
         'role' => 'websocket',
         'status' => 'active',
     ]);
-    Node::factory()->database()->create(['name' => 'database-1']);
+    Node::factory()->agent()->create(['name' => 'agent-1', 'platform' => 'ubuntu_24-04']);
+    Node::factory()->database()->create(['name' => 'database-1', 'platform' => 'ubuntu']);
+    Node::factory()->ingress()->create(['name' => 'ingress-1', 'platform' => 'ubuntu_24-04']);
     Node::factory()->gateway()->appDev()->create(['name' => 'gateway-app']);
+    Node::factory()->operator()->create(['name' => 'operator-1']);
 
     $plan = app(OperationUpdatePlanStore::class)->create(
         $run,
@@ -71,6 +74,12 @@ it('updates active non-gateway app-role nodes from the persisted manifest snapsh
 
     expect($results)->toMatchArray([
         [
+            'target' => 'agent-1',
+            'node' => 'agent-1',
+            'role' => 'agent',
+            'status' => 'completed',
+        ],
+        [
             'target' => 'app-dev-1',
             'node' => 'app-dev-1',
             'role' => 'app-dev',
@@ -82,15 +91,34 @@ it('updates active non-gateway app-role nodes from the persisted manifest snapsh
             'role' => 'app-prod',
             'status' => 'completed',
         ],
+        [
+            'target' => 'database-1',
+            'node' => 'database-1',
+            'role' => 'database',
+            'status' => 'completed',
+        ],
+        [
+            'target' => 'ingress-1',
+            'node' => 'ingress-1',
+            'role' => 'ingress',
+            'status' => 'completed',
+        ],
     ])
-        ->and($shell->calls)->toHaveCount(2)
+        ->and($shell->calls)->toHaveCount(5)
         ->and($shell->calls[0]['options']['metadata'])->toBe(['ORBIT_OPERATION_ID' => $run->id])
-        ->and($shell->calls[1]['options']['metadata'])->toBe(['ORBIT_OPERATION_ID' => $run->id])
+        ->and($shell->calls[4]['options']['metadata'])->toBe(['ORBIT_OPERATION_ID' => $run->id])
         ->and($shell->activeLeases)->toBe([
+            'agent-1' => ['node:agent-1'],
             'app-dev-1' => ['node:app-dev-1'],
             'app-prod-1' => ['node:app-prod-1'],
+            'database-1' => ['node:database-1'],
+            'ingress-1' => ['node:ingress-1'],
         ])
         ->and(UpdateLease::query()->whereNotNull('active_resource_key')->count())->toBe(0);
+
+    expect($shell->scriptFor('agent-1'))
+        ->toContain('download_cli')
+        ->not->toContain('pull_required_images');
 
     expect($shell->scriptFor('app-dev-1'))
         ->toContain('download_cli')
@@ -106,6 +134,14 @@ it('updates active non-gateway app-role nodes from the persisted manifest snapsh
     expect($shell->scriptFor('app-prod-1'))
         ->toContain("docker pull 'caddy:2.9-alpine'")
         ->toContain("docker pull 'hardimpact/orbit-reverb:2.0.0@sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff'");
+
+    expect($shell->scriptFor('database-1'))
+        ->toContain('download_cli')
+        ->not->toContain('pull_required_images');
+
+    expect($shell->scriptFor('ingress-1'))
+        ->toContain("docker pull 'caddy:2.9-alpine'")
+        ->not->toContain('orbit-websocket:2.0.0');
 });
 
 it('continues updating later workload nodes when one remote update fails', function (): void {

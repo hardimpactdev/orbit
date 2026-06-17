@@ -7,13 +7,11 @@ namespace App\Services\Operations;
 use App\Contracts\RemoteShell;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Enums\Nodes\NodeRoleName;
-use App\Enums\Nodes\NodeStatus;
 use App\Exceptions\UpdateLeaseConflict;
 use App\Models\Node;
 use App\Models\OperationRun;
 use App\Models\OperationUpdatePlan;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
-use Illuminate\Database\Eloquent\Collection;
 use RuntimeException;
 use Throwable;
 
@@ -24,6 +22,7 @@ final readonly class WorkloadNodeUpdater
         private RemoteShell $remoteShell,
         private UpdateLeaseManager $leases,
         private OperationRunRecorder $operationRuns,
+        private FleetUpdateTargetSelector $targets,
     ) {}
 
     /**
@@ -33,27 +32,11 @@ final readonly class WorkloadNodeUpdater
     {
         $results = [];
 
-        foreach ($this->targets() as $node) {
+        foreach ($this->targets->workloadNodes() as $node) {
             $results[] = $this->updateNode($operationRun, $plan, $node);
         }
 
         return $results;
-    }
-
-    /**
-     * @return Collection<int, Node>
-     */
-    private function targets(): Collection
-    {
-        $gatewayIds = $this->roles->activeNodeIdsForRole(NodeRoleName::Gateway->value);
-
-        return Node::query()
-            ->where('status', NodeStatus::Active->value)
-            ->whereIn('id', $this->roles->activeAppHostNodeIds())
-            ->when($gatewayIds !== [], fn ($query) => $query->whereNotIn('id', $gatewayIds))
-            ->with('roleAssignments')
-            ->orderBy('name')
-            ->get();
     }
 
     /**
@@ -249,11 +232,7 @@ final readonly class WorkloadNodeUpdater
 
     private function roleLabel(Node $node): string
     {
-        if ($this->roles->nodeHasActiveRole($node, NodeRoleName::AppDevelopment->value)) {
-            return NodeRoleName::AppDevelopment->value;
-        }
-
-        return NodeRoleName::AppProduction->value;
+        return $this->roles->assignmentRoleLabel($node);
     }
 
     private function output(RemoteShellResult $result): string

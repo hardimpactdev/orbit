@@ -6,13 +6,11 @@ namespace App\Services\Operations;
 
 use App\Contracts\RemoteShell;
 use App\Enums\Nodes\NodeRoleName;
-use App\Enums\Nodes\NodeStatus;
 use App\Models\Node;
 use App\Models\OperationRun;
 use App\Models\OperationUpdatePlan;
 use App\Services\Gateway\GatewaySwarmManager;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
-use Illuminate\Database\Eloquent\Collection;
 
 class FleetUpdateVerifier
 {
@@ -21,6 +19,7 @@ class FleetUpdateVerifier
         private readonly NodeRoleAssignments $roles,
         private readonly RemoteShell $remoteShell,
         private readonly OperationRunRecorder $operationRuns,
+        private readonly FleetUpdateTargetSelector $targets,
     ) {}
 
     public function verify(OperationRun $operationRun, OperationUpdatePlan $plan): void
@@ -75,7 +74,7 @@ class FleetUpdateVerifier
 
     private function verifyWorkloadCli(OperationRun $operationRun): null
     {
-        foreach ($this->targets() as $node) {
+        foreach ($this->targets->workloadNodes() as $node) {
             $result = $this->remoteShell->run($node, 'orbit --version', [
                 'cwd' => $node->orbit_path,
                 'timeout' => 30,
@@ -94,7 +93,7 @@ class FleetUpdateVerifier
 
     private function verifyRequiredRoleImages(OperationRun $operationRun, OperationUpdatePlan $plan): null
     {
-        foreach ($this->targets() as $node) {
+        foreach ($this->targets->workloadNodes() as $node) {
             $images = $this->requiredRoleImages($plan, $node);
 
             if ($images === []) {
@@ -136,22 +135,6 @@ class FleetUpdateVerifier
         $this->operationRuns->appendStep($operationRun->id, $key, 'done', $doneMessage);
 
         return null;
-    }
-
-    /**
-     * @return Collection<int, Node>
-     */
-    private function targets(): Collection
-    {
-        $gatewayIds = $this->roles->activeNodeIdsForRole(NodeRoleName::Gateway->value);
-
-        return Node::query()
-            ->where('status', NodeStatus::Active->value)
-            ->whereIn('id', $this->roles->activeAppHostNodeIds())
-            ->when($gatewayIds !== [], fn ($query) => $query->whereNotIn('id', $gatewayIds))
-            ->with('roleAssignments')
-            ->orderBy('name')
-            ->get();
     }
 
     /**

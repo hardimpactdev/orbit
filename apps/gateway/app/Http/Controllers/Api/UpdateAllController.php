@@ -10,11 +10,11 @@ use App\Contracts\RemoteShell;
 use App\Contracts\StartsRemoteShellProcesses;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Enums\ActivityLogType;
-use App\Enums\Nodes\NodeStatus;
 use App\Http\Authorization\RequiresPermission;
 use App\Http\Authorization\ServingNode;
 use App\Models\Node;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
+use App\Services\Operations\FleetUpdateTargetSelector;
 use App\Services\OrbitUpdater;
 use App\Support\Streaming\ProgressEventStreamResponseFactory;
 use Illuminate\Contracts\Process\InvokedProcess;
@@ -135,11 +135,7 @@ final class UpdateAllController implements Loggable
      */
     private function runUpdateAll(OrbitUpdater $updater, ?ProgressReporter $reporter = null): array
     {
-        $nodes = Node::query()
-            ->where('status', NodeStatus::Active->value)
-            ->whereIn('id', app(NodeRoleAssignments::class)->activeAppHostNodeIds())
-            ->orderBy('name')
-            ->get();
+        $nodes = app(FleetUpdateTargetSelector::class)->workloadNodes();
 
         $localTarget = $this->localGatewayTarget();
         $updates = [];
