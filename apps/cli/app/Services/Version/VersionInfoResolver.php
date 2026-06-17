@@ -10,6 +10,10 @@ use Throwable;
 
 final readonly class VersionInfoResolver
 {
+    private const string LatestManifestUrl = 'https://github.com/hardimpactdev/orbit/releases/latest/download/orbit-release-manifest.json';
+
+    private const string VersionManifestUrl = 'https://github.com/hardimpactdev/orbit/releases/download/v%s/orbit-release-manifest.json';
+
     private const string ReleasesApi = 'https://api.github.com/repos/hardimpactdev/orbit/releases';
 
     public function __construct(
@@ -19,7 +23,7 @@ final readonly class VersionInfoResolver
     public function resolve(): VersionInfo
     {
         $version = $this->currentVersion();
-        $latestRelease = $this->release('latest');
+        $latestRelease = $this->releaseManifest(self::LatestManifestUrl) ?? $this->apiRelease('latest');
         $latestVersion = $latestRelease['version'] ?? null;
         $releasedAt = null;
 
@@ -28,7 +32,8 @@ final readonly class VersionInfoResolver
         }
 
         if ($releasedAt === null) {
-            $currentRelease = $this->release("tags/v{$version}");
+            $currentRelease = $this->releaseManifest(sprintf(self::VersionManifestUrl, $version))
+                ?? $this->apiRelease("tags/v{$version}");
             $releasedAt = $currentRelease['published_at'] ?? null;
         }
 
@@ -42,9 +47,44 @@ final readonly class VersionInfoResolver
     }
 
     /**
-     * @return array{version: string, published_at: string}|null
+     * @return array{version: string, published_at: string|null}|null
      */
-    private function release(string $selector): ?array
+    private function releaseManifest(string $url): ?array
+    {
+        try {
+            $response = Http::acceptJson()
+                ->timeout(2)
+                ->get($url);
+        } catch (Throwable) {
+            return null;
+        }
+
+        if (! $response->successful()) {
+            return null;
+        }
+
+        $body = $response->json();
+
+        if (! is_array($body)) {
+            return null;
+        }
+
+        $version = $body['version'] ?? null;
+
+        if (! is_string($version) || trim($version) === '') {
+            return null;
+        }
+
+        return [
+            'version' => ltrim(trim($version), 'v'),
+            'published_at' => $this->timestamp($body['released_at'] ?? null),
+        ];
+    }
+
+    /**
+     * @return array{version: string, published_at: string|null}|null
+     */
+    private function apiRelease(string $selector): ?array
     {
         try {
             $response = Http::acceptJson()
@@ -71,9 +111,9 @@ final readonly class VersionInfoResolver
             return null;
         }
 
-        try {
-            $publishedAt = CarbonImmutable::parse($publishedAt)->toIso8601String();
-        } catch (Throwable) {
+        $publishedAt = $this->timestamp($publishedAt);
+
+        if ($publishedAt === null) {
             return null;
         }
 
@@ -81,6 +121,19 @@ final readonly class VersionInfoResolver
             'version' => ltrim($tag, 'v'),
             'published_at' => $publishedAt,
         ];
+    }
+
+    private function timestamp(mixed $value): ?string
+    {
+        if (! is_string($value) || trim($value) === '') {
+            return null;
+        }
+
+        try {
+            return CarbonImmutable::parse($value)->toIso8601String();
+        } catch (Throwable) {
+            return null;
+        }
     }
 
     private function currentVersion(): string

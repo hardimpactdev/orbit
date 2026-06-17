@@ -154,6 +154,7 @@ jobs:
       - name: Generate release manifest
         env:
           VERSION: ${{ steps.version.outputs.value }}
+          RELEASED_AT: ${{ github.event.release.published_at }}
           GATEWAY_IMAGE: ${{ steps.gateway_image.outputs.image }}
           GATEWAY_DIGEST: ${{ steps.gateway_image.outputs.digest }}
         run: |
@@ -163,6 +164,7 @@ jobs:
 
           bin/orbit-release-manifest \
             --version="${VERSION}" \
+            --released-at="${RELEASED_AT}" \
             --gateway-image="${GATEWAY_IMAGE}" \
             --gateway-digest="${GATEWAY_DIGEST}" \
             --repository="${GITHUB_REPOSITORY}" \

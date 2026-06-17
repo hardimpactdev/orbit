@@ -33,8 +33,9 @@ orbit --version --json
 ## What Happens
 
 `version` reads the installed CLI version, checks the public
-`hardimpactdev/orbit` GitHub Releases metadata on a best-effort basis, and
-reads local install metadata from the operator host.
+`hardimpactdev/orbit` release manifest assets on a best-effort basis, and reads
+local install metadata from the operator host. The GitHub Releases API is only a
+fallback when public manifest metadata is missing.
 
 Use it when you need to confirm the installed Orbit version before or after an
 update.
@@ -44,8 +45,9 @@ The installed timestamp comes from `ORBIT_INSTALL_METADATA_PATH` when set, or
 write this metadata after the linked CLI binary verifies. Older installs fall
 back to the linked binary mtime when no matching metadata exists.
 
-Release lookups are non-fatal. If GitHub Releases is unreachable, the command
-still exits successfully and renders unknown release metadata.
+Release lookups are non-fatal. If public release manifests and GitHub Releases
+metadata are unreachable, the command still exits successfully and renders
+unknown release metadata.
 
 ## Output
 

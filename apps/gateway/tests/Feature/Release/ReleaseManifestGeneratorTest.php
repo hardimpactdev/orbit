@@ -19,6 +19,7 @@ it('generates a release manifest with gateway digest cli hashes and role image m
             PHP_BINARY,
             repo_path('bin/orbit-release-manifest'),
             '--version=1.2.3',
+            '--released-at=2026-06-17T13:08:41Z',
             '--gateway-image=ghcr.io/hardimpactdev/orbit-gateway:1.2.3',
             '--gateway-digest=sha256:'.str_repeat('a', 64),
             '--repository=hardimpactdev/orbit',
@@ -37,6 +38,7 @@ it('generates a release manifest with gateway digest cli hashes and role image m
         expect($manifest)->toMatchArray([
             'schema_version' => 1,
             'version' => '1.2.3',
+            'released_at' => '2026-06-17T13:08:41+00:00',
             'source' => 'github-release',
             'images' => [
                 'gateway' => 'ghcr.io/hardimpactdev/orbit-gateway:1.2.3@sha256:'.str_repeat('a', 64),

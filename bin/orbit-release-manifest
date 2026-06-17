@@ -5,6 +5,7 @@ declare(strict_types=1);
 
 $options = getopt('', [
     'version:',
+    'released-at::',
     'gateway-image:',
     'gateway-digest::',
     'repository::',
@@ -16,6 +17,7 @@ $options = getopt('', [
 
 try {
     $version = normalize_version(required_string($options, 'version'));
+    $releasedAt = optional_released_at(optional_string($options, 'released-at', ''));
     $repository = optional_string($options, 'repository', 'hardimpactdev/orbit');
     $source = optional_string($options, 'source', 'github-release');
     $gatewayImage = gateway_image(
@@ -28,6 +30,13 @@ try {
     $manifest = [
         'schema_version' => 1,
         'version' => $version,
+    ];
+
+    if ($releasedAt !== null) {
+        $manifest['released_at'] = $releasedAt;
+    }
+
+    $manifest += [
         'source' => $source,
         'images' => [
             'gateway' => $gatewayImage,
@@ -118,6 +127,21 @@ function normalize_version(string $version): string
     }
 
     return $version;
+}
+
+function optional_released_at(string $value): ?string
+{
+    if ($value === '') {
+        return null;
+    }
+
+    try {
+        $timestamp = new DateTimeImmutable($value);
+    } catch (Throwable) {
+        fail('Release manifest released-at must be a valid timestamp.');
+    }
+
+    return $timestamp->setTimezone(new DateTimeZone('UTC'))->format(DateTimeInterface::ATOM);
 }
 
 function gateway_image(string $image, string $digest): string

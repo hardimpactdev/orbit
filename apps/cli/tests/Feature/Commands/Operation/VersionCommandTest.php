@@ -39,10 +39,7 @@ describe('version', function (): void {
         ], JSON_THROW_ON_ERROR));
 
         Http::fake([
-            'https://api.github.com/repos/hardimpactdev/orbit/releases/latest' => Http::response([
-                'tag_name' => 'v0.1.105',
-                'published_at' => '2026-06-17T10:47:00Z',
-            ]),
+            'https://github.com/hardimpactdev/orbit/releases/latest/download/orbit-release-manifest.json' => Http::response(releaseManifest('0.1.105', '2026-06-17T10:47:00Z')),
         ]);
 
         [$exitCode, $output] = runCommand($this, 'version');
@@ -62,14 +59,8 @@ describe('version', function (): void {
         ], JSON_THROW_ON_ERROR));
 
         Http::fake([
-            'https://api.github.com/repos/hardimpactdev/orbit/releases/latest' => Http::response([
-                'tag_name' => 'v0.1.108',
-                'published_at' => '2026-06-17T11:04:00Z',
-            ]),
-            'https://api.github.com/repos/hardimpactdev/orbit/releases/tags/v0.1.105' => Http::response([
-                'tag_name' => 'v0.1.105',
-                'published_at' => '2026-06-17T10:47:00Z',
-            ]),
+            'https://github.com/hardimpactdev/orbit/releases/latest/download/orbit-release-manifest.json' => Http::response(releaseManifest('0.1.108', '2026-06-17T11:04:00Z')),
+            'https://github.com/hardimpactdev/orbit/releases/download/v0.1.105/orbit-release-manifest.json' => Http::response(releaseManifest('0.1.105', '2026-06-17T10:47:00Z')),
         ]);
 
         [$exitCode, $output] = runCommand($this, 'version');
@@ -88,14 +79,8 @@ describe('version', function (): void {
         ], JSON_THROW_ON_ERROR));
 
         Http::fake([
-            'https://api.github.com/repos/hardimpactdev/orbit/releases/latest' => Http::response([
-                'tag_name' => 'v0.1.108',
-                'published_at' => '2026-06-17T11:04:00Z',
-            ]),
-            'https://api.github.com/repos/hardimpactdev/orbit/releases/tags/v0.1.105' => Http::response([
-                'tag_name' => 'v0.1.105',
-                'published_at' => '2026-06-17T10:47:00Z',
-            ]),
+            'https://github.com/hardimpactdev/orbit/releases/latest/download/orbit-release-manifest.json' => Http::response(releaseManifest('0.1.108', '2026-06-17T11:04:00Z')),
+            'https://github.com/hardimpactdev/orbit/releases/download/v0.1.105/orbit-release-manifest.json' => Http::response(releaseManifest('0.1.105', '2026-06-17T10:47:00Z')),
         ]);
 
         [$exitCode, $output] = runCommand($this, 'version', ['--json' => true]);
@@ -120,6 +105,8 @@ describe('version', function (): void {
         ], JSON_THROW_ON_ERROR));
 
         Http::fake([
+            'https://github.com/hardimpactdev/orbit/releases/latest/download/orbit-release-manifest.json' => Http::response([], 503),
+            'https://github.com/hardimpactdev/orbit/releases/download/v0.1.105/orbit-release-manifest.json' => Http::response([], 503),
             'https://api.github.com/repos/hardimpactdev/orbit/releases/latest' => Http::response([], 503),
             'https://api.github.com/repos/hardimpactdev/orbit/releases/tags/v0.1.105' => Http::response([], 503),
         ]);
@@ -138,6 +125,30 @@ describe('version', function (): void {
             ]);
     });
 
+    it('falls back to the GitHub releases API when public manifests are unavailable', function (): void {
+        file_put_contents($this->installMetadataPath, json_encode([
+            'schema_version' => 1,
+            'version' => '0.1.105',
+            'installed_at' => '2026-06-17T10:54:00+00:00',
+        ], JSON_THROW_ON_ERROR));
+
+        Http::fake([
+            'https://github.com/hardimpactdev/orbit/releases/latest/download/orbit-release-manifest.json' => Http::response([], 404),
+            'https://api.github.com/repos/hardimpactdev/orbit/releases/latest' => Http::response([
+                'tag_name' => 'v0.1.105',
+                'published_at' => '2026-06-17T10:47:00Z',
+            ]),
+        ]);
+
+        [$exitCode, $output] = runCommand($this, 'version', ['--json' => true]);
+
+        $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(0)
+            ->and($decoded['success']['data']['latest_version'])->toBe('0.1.105')
+            ->and($decoded['success']['data']['released_at'])->toBe('2026-06-17T10:47:00+00:00');
+    });
+
     it('falls back to the user-local binary mtime when install metadata is missing', function (): void {
         $home = $this->versionTempRoot.'/home';
         $binaryPath = $home.'/.local/bin/orbit';
@@ -151,10 +162,7 @@ describe('version', function (): void {
         putenv("HOME={$home}");
 
         Http::fake([
-            'https://api.github.com/repos/hardimpactdev/orbit/releases/latest' => Http::response([
-                'tag_name' => 'v0.1.105',
-                'published_at' => '2026-06-17T10:47:00Z',
-            ]),
+            'https://github.com/hardimpactdev/orbit/releases/latest/download/orbit-release-manifest.json' => Http::response(releaseManifest('0.1.105', '2026-06-17T10:47:00Z')),
         ]);
 
         try {
@@ -172,3 +180,25 @@ describe('version', function (): void {
         }
     });
 });
+
+function releaseManifest(string $version, string $releasedAt): array
+{
+    return [
+        'schema_version' => 1,
+        'version' => $version,
+        'released_at' => $releasedAt,
+        'source' => 'github-release',
+        'images' => [
+            'gateway' => "ghcr.io/hardimpactdev/orbit-gateway:{$version}@sha256:".str_repeat('a', 64),
+        ],
+        'cli_artifacts' => [
+            'linux-amd64' => [
+                'url' => "https://github.com/hardimpactdev/orbit/releases/download/v{$version}/orbit-linux-x64",
+                'sha256' => str_repeat('b', 64),
+            ],
+        ],
+        'role_images' => [
+            'orbit-caddy' => 'caddy:2-alpine',
+        ],
+    ];
+}

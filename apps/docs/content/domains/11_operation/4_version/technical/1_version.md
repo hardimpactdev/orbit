@@ -8,8 +8,8 @@
 
 **Prerequisites:**
 - The CLI can read its own configured `app.version`.
-- Release metadata is available from public GitHub Releases for full freshness,
-  but release lookup failures must not fail the command.
+- Release metadata is available from public GitHub Release assets for full
+  freshness, but release lookup failures must not fail the command.
 
 ## Signature
 
@@ -43,13 +43,17 @@ available.
 
 - `version` is the current CLI version from application configuration, which
   is sourced from the monorepo release version.
-- `latest_version` is read from
-  `https://api.github.com/repos/hardimpactdev/orbit/releases/latest` on a
-  best-effort basis. The command uses a short timeout and treats network,
-  response, or schema failures as missing metadata.
+- `latest_version` is read first from the public release manifest at
+  `https://github.com/hardimpactdev/orbit/releases/latest/download/orbit-release-manifest.json`.
+  If that manifest is unavailable or malformed, fall back to the GitHub
+  Releases API on a best-effort basis. The command uses a short timeout and
+  treats network, response, or schema failures as missing metadata.
 - `released_at` is the publish timestamp for the installed version. If the
-  latest release is the installed version, reuse the latest release timestamp.
-  Otherwise, fetch `releases/tags/v<version>` on a best-effort basis.
+  latest manifest is the installed version, reuse the latest manifest
+  timestamp. Otherwise, fetch the installed version manifest at
+  `https://github.com/hardimpactdev/orbit/releases/download/v<version>/orbit-release-manifest.json`.
+  If the manifest lookup cannot provide the timestamp, fall back to the GitHub
+  Releases API on a best-effort basis.
 - `installed_at` is read from `ORBIT_INSTALL_METADATA_PATH` when set, or
   `$HOME/.config/orbit/install.json` by default, only when the metadata version
   matches the installed version. If no matching metadata exists, fall back to
@@ -87,7 +91,7 @@ responds to `--version`.
 
 | Failure | Condition | Outcome |
 | --- | --- | --- |
-| Release metadata unavailable | GitHub Releases cannot be reached, returns an error, or returns an unexpected body. | Success with `latest_version=null`, `update_available=false`, and unknown release metadata. |
+| Release metadata unavailable | GitHub Release assets and API metadata cannot be reached, return an error, or return an unexpected body. | Success with `latest_version=null`, `update_available=false`, and unknown release metadata. |
 | Install metadata unavailable | No matching install metadata or binary mtime exists. | Success with unknown install metadata. |
 
 ## Activity Logging
