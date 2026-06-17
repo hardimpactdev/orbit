@@ -48,7 +48,7 @@ it('renders scheduler repair through the gateway Swarm scheduler service instead
     $gateway = createOrbitSchedulerGatewayNode();
     Process::fake([
         "docker service inspect --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' 'orbit_orbit-scheduler'" => Process::result(output: "ghcr.io/hardimpactdev/orbit-gateway:1.2.3@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n"),
-        "docker service scale 'orbit_orbit-scheduler=1'" => Process::result(),
+        "docker service scale --detach=true 'orbit_orbit-scheduler=1'" => Process::result(),
     ]);
 
     (new SchedulesFixer)->fixGateway($gateway, new DriftEntry(
@@ -59,7 +59,7 @@ it('renders scheduler repair through the gateway Swarm scheduler service instead
     ));
 
     Process::assertRan("docker service inspect --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' 'orbit_orbit-scheduler'");
-    Process::assertRan("docker service scale 'orbit_orbit-scheduler=1'");
+    Process::assertRan("docker service scale --detach=true 'orbit_orbit-scheduler=1'");
     Process::assertNotRan(fn ($process): bool => str_contains((string) $process->command, 'orbit'.'-runtime'));
     Process::assertNotRan(fn ($process): bool => str_contains((string) $process->command, 'supervisor'));
     Process::assertNotRan(fn ($process): bool => str_contains((string) $process->command, 'docker restart'));

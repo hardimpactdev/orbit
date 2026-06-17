@@ -43,7 +43,7 @@ describe('SchedulesFixer', function (): void {
         $shell = new SchedulesFixerRemoteShell;
         Process::fake([
             "docker service inspect --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' 'orbit_orbit-scheduler'" => Process::result(output: "ghcr.io/hardimpactdev/orbit-gateway:1.2.3@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n"),
-            "docker service scale 'orbit_orbit-scheduler=1'" => Process::result(),
+            "docker service scale --detach=true 'orbit_orbit-scheduler=1'" => Process::result(),
         ]);
 
         $action = (new SchedulesFixer)->fixGateway($gateway, new DriftEntry(
@@ -62,7 +62,7 @@ describe('SchedulesFixer', function (): void {
         ])->and($shell->scripts)->toBe([]);
 
         Process::assertRan("docker service inspect --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' 'orbit_orbit-scheduler'");
-        Process::assertRan("docker service scale 'orbit_orbit-scheduler=1'");
+        Process::assertRan("docker service scale --detach=true 'orbit_orbit-scheduler=1'");
         Process::assertNotRan(fn ($process): bool => str_contains((string) $process->command, 'orbit'.'-runtime'));
     });
 
@@ -71,7 +71,7 @@ describe('SchedulesFixer', function (): void {
         $shell = new SchedulesFixerRemoteShell;
         Process::fake([
             "docker service inspect --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' 'orbit_orbit-scheduler'" => Process::result(output: "ghcr.io/hardimpactdev/orbit-gateway:1.2.3@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n"),
-            "docker service scale 'orbit_orbit-scheduler=1'" => Process::result(),
+            "docker service scale --detach=true 'orbit_orbit-scheduler=1'" => Process::result(),
         ]);
 
         $action = (new SchedulesFixer)->fixGateway($gateway, new DriftEntry(
@@ -90,7 +90,7 @@ describe('SchedulesFixer', function (): void {
         ])->and($shell->scripts)->toBe([]);
 
         Process::assertRan("docker service inspect --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' 'orbit_orbit-scheduler'");
-        Process::assertRan("docker service scale 'orbit_orbit-scheduler=1'");
+        Process::assertRan("docker service scale --detach=true 'orbit_orbit-scheduler=1'");
         Process::assertNotRan(fn ($process): bool => str_contains((string) $process->command, 'orbit'.'-runtime'));
     });
 
@@ -102,7 +102,7 @@ describe('SchedulesFixer', function (): void {
         Process::fake([
             "docker service inspect --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' 'orbit_orbit-scheduler'" => Process::result(output: "ghcr.io/hardimpactdev/orbit-gateway:1.2.3@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n"),
             "docker service update --image '{$desiredImage}' --update-order 'stop-first' --update-failure-action rollback --update-monitor 60s 'orbit_orbit-scheduler'" => Process::result(),
-            "docker service scale 'orbit_orbit-scheduler=1'" => Process::result(),
+            "docker service scale --detach=true 'orbit_orbit-scheduler=1'" => Process::result(),
         ]);
 
         $action = (new SchedulesFixer)->fixGateway($gateway, new DriftEntry(
@@ -122,7 +122,7 @@ describe('SchedulesFixer', function (): void {
         ])->and($shell->scripts)->toBe([]);
 
         Process::assertRan("docker service update --image '{$desiredImage}' --update-order 'stop-first' --update-failure-action rollback --update-monitor 60s 'orbit_orbit-scheduler'");
-        Process::assertRan("docker service scale 'orbit_orbit-scheduler=1'");
+        Process::assertRan("docker service scale --detach=true 'orbit_orbit-scheduler=1'");
     });
 
     it('scales the gateway orbit-scheduler Swarm service back to one replica when replica state drifts', function (): void {
@@ -130,7 +130,7 @@ describe('SchedulesFixer', function (): void {
         $shell = new SchedulesFixerRemoteShell;
         Process::fake([
             "docker service inspect --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' 'orbit_orbit-scheduler'" => Process::result(output: "ghcr.io/hardimpactdev/orbit-gateway:1.2.3@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n"),
-            "docker service scale 'orbit_orbit-scheduler=1'" => Process::result(),
+            "docker service scale --detach=true 'orbit_orbit-scheduler=1'" => Process::result(),
         ]);
 
         $action = (new SchedulesFixer)->fixGateway($gateway, new DriftEntry(
@@ -149,7 +149,7 @@ describe('SchedulesFixer', function (): void {
             'status' => 'completed',
         ])->and($shell->scripts)->toBe([]);
 
-        Process::assertRan("docker service scale 'orbit_orbit-scheduler=1'");
+        Process::assertRan("docker service scale --detach=true 'orbit_orbit-scheduler=1'");
     });
 
     it('releases stale gateway schedule locks and marks running history failed', function (): void {

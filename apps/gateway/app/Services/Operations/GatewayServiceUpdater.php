@@ -172,7 +172,7 @@ class GatewayServiceUpdater
 
     private function schedulerRecoveryCommand(?string $previousSchedulerImage): string
     {
-        $scaleCommand = 'docker service scale '.escapeshellarg(self::SchedulerService.'=1');
+        $scaleCommand = 'docker service scale --detach=true '.escapeshellarg(self::SchedulerService.'=1');
 
         if ($previousSchedulerImage === null) {
             return $scaleCommand;

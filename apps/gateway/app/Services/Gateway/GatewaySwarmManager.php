@@ -133,7 +133,7 @@ final readonly class GatewaySwarmManager
         $service = $this->normalizeName($service, 'service');
 
         $this->run(
-            'docker service scale '.escapeshellarg("{$service}={$replicas}"),
+            'docker service scale --detach=true '.escapeshellarg("{$service}={$replicas}"),
             "scale {$service}",
         );
     }

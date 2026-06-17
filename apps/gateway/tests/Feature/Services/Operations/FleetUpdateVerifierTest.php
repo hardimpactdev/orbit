@@ -183,11 +183,11 @@ function fakeFleetVerifierGatewayUpdateProcesses(string $gatewayImage): void
 {
     Process::fake([
         "docker service inspect --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' 'orbit_orbit-scheduler'" => Process::result(output: "{$gatewayImage}\n"),
-        "docker service scale 'orbit_orbit-scheduler=0'" => Process::result(),
+        "docker service scale --detach=true 'orbit_orbit-scheduler=0'" => Process::result(),
         "docker service update --image '{$gatewayImage}' --update-order 'start-first' --update-failure-action rollback --update-monitor 60s 'orbit_orbit-gateway'" => Process::result(),
         "docker service inspect --format '{{.UpdateStatus.State}}' 'orbit_orbit-gateway'" => Process::result(output: "completed\n"),
         "docker service update --image '{$gatewayImage}' --update-order 'stop-first' --update-failure-action rollback --update-monitor 60s 'orbit_orbit-scheduler'" => Process::result(),
-        "docker service scale 'orbit_orbit-scheduler=1'" => Process::result(),
+        "docker service scale --detach=true 'orbit_orbit-scheduler=1'" => Process::result(),
         "docker service inspect --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' 'orbit_orbit-gateway'" => Process::result(output: "{$gatewayImage}\n"),
     ]);
 }

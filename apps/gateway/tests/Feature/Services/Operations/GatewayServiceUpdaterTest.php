@@ -39,11 +39,11 @@ it('updates gateway and scheduler services to the plan image after in-process mi
 
         return match ($command) {
             "docker service inspect --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' 'orbit_orbit-scheduler'" => Process::result(output: "{$previousImage}\n"),
-            "docker service scale 'orbit_orbit-scheduler=0'" => Process::result(),
+            "docker service scale --detach=true 'orbit_orbit-scheduler=0'" => Process::result(),
             "docker service update --image '{$plan->gateway_image}' --update-order 'start-first' --update-failure-action rollback --update-monitor 60s 'orbit_orbit-gateway'" => Process::result(),
             "docker service inspect --format '{{.UpdateStatus.State}}' 'orbit_orbit-gateway'" => Process::result(output: "completed\n"),
             "docker service update --image '{$plan->gateway_image}' --update-order 'stop-first' --update-failure-action rollback --update-monitor 60s 'orbit_orbit-scheduler'" => Process::result(),
-            "docker service scale 'orbit_orbit-scheduler=1'" => Process::result(),
+            "docker service scale --detach=true 'orbit_orbit-scheduler=1'" => Process::result(),
             default => throw new RuntimeException("Unexpected process command [{$command}]."),
         };
     });
@@ -52,12 +52,12 @@ it('updates gateway and scheduler services to the plan image after in-process mi
 
     expect($operations)->toBe([
         "docker service inspect --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' 'orbit_orbit-scheduler'",
-        "docker service scale 'orbit_orbit-scheduler=0'",
+        "docker service scale --detach=true 'orbit_orbit-scheduler=0'",
         'artisan:migrate',
         "docker service update --image '{$plan->gateway_image}' --update-order 'start-first' --update-failure-action rollback --update-monitor 60s 'orbit_orbit-gateway'",
         "docker service inspect --format '{{.UpdateStatus.State}}' 'orbit_orbit-gateway'",
         "docker service update --image '{$plan->gateway_image}' --update-order 'stop-first' --update-failure-action rollback --update-monitor 60s 'orbit_orbit-scheduler'",
-        "docker service scale 'orbit_orbit-scheduler=1'",
+        "docker service scale --detach=true 'orbit_orbit-scheduler=1'",
     ])
         ->and(array_filter($operations, fn (string $operation): bool => str_starts_with($operation, 'docker run')))->toBe([]);
 
@@ -79,17 +79,17 @@ it('restores the scheduler previous image and replica when gateway migrations fa
 
     Process::fake([
         "docker service inspect --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' 'orbit_orbit-scheduler'" => Process::result(output: "{$previousImage}\n"),
-        "docker service scale 'orbit_orbit-scheduler=0'" => Process::result(),
+        "docker service scale --detach=true 'orbit_orbit-scheduler=0'" => Process::result(),
         "docker service update --image '{$previousImage}' --update-order 'stop-first' --update-failure-action rollback --update-monitor 60s 'orbit_orbit-scheduler'" => Process::result(),
-        "docker service scale 'orbit_orbit-scheduler=1'" => Process::result(),
+        "docker service scale --detach=true 'orbit_orbit-scheduler=1'" => Process::result(),
     ]);
 
     expect(fn () => app(GatewayServiceUpdater::class)->update($run, $plan))
         ->toThrow(RuntimeException::class, 'migration failed');
 
-    Process::assertRan("docker service scale 'orbit_orbit-scheduler=0'");
+    Process::assertRan("docker service scale --detach=true 'orbit_orbit-scheduler=0'");
     Process::assertRan("docker service update --image '{$previousImage}' --update-order 'stop-first' --update-failure-action rollback --update-monitor 60s 'orbit_orbit-scheduler'");
-    Process::assertRan("docker service scale 'orbit_orbit-scheduler=1'");
+    Process::assertRan("docker service scale --detach=true 'orbit_orbit-scheduler=1'");
     Process::assertNotRan(fn ($process): bool => str_contains((string) $process->command, "docker service update --image '{$plan->gateway_image}'")
         && str_contains((string) $process->command, "'orbit_orbit-gateway'"));
 });
@@ -106,11 +106,11 @@ it('restores the scheduler previous image and replica when the updated gateway f
 
     Process::fake([
         "docker service inspect --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' 'orbit_orbit-scheduler'" => Process::result(output: "{$previousImage}\n"),
-        "docker service scale 'orbit_orbit-scheduler=0'" => Process::result(),
+        "docker service scale --detach=true 'orbit_orbit-scheduler=0'" => Process::result(),
         "docker service update --image '{$plan->gateway_image}' --update-order 'start-first' --update-failure-action rollback --update-monitor 60s 'orbit_orbit-gateway'" => Process::result(),
         "docker service inspect --format '{{.UpdateStatus.State}}' 'orbit_orbit-gateway'" => Process::result(output: "rollback_completed\n"),
         "docker service update --image '{$previousImage}' --update-order 'stop-first' --update-failure-action rollback --update-monitor 60s 'orbit_orbit-scheduler'" => Process::result(),
-        "docker service scale 'orbit_orbit-scheduler=1'" => Process::result(),
+        "docker service scale --detach=true 'orbit_orbit-scheduler=1'" => Process::result(),
     ]);
 
     expect(fn () => app(GatewayServiceUpdater::class)->update($run, $plan))
@@ -119,7 +119,7 @@ it('restores the scheduler previous image and replica when the updated gateway f
     Process::assertRan("docker service update --image '{$plan->gateway_image}' --update-order 'start-first' --update-failure-action rollback --update-monitor 60s 'orbit_orbit-gateway'");
     Process::assertRan("docker service inspect --format '{{.UpdateStatus.State}}' 'orbit_orbit-gateway'");
     Process::assertRan("docker service update --image '{$previousImage}' --update-order 'stop-first' --update-failure-action rollback --update-monitor 60s 'orbit_orbit-scheduler'");
-    Process::assertRan("docker service scale 'orbit_orbit-scheduler=1'");
+    Process::assertRan("docker service scale --detach=true 'orbit_orbit-scheduler=1'");
 });
 
 it('records a recovery failed event when the scheduler cannot be scaled back to one replica', function (): void {
@@ -134,9 +134,9 @@ it('records a recovery failed event when the scheduler cannot be scaled back to 
 
     Process::fake([
         "docker service inspect --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' 'orbit_orbit-scheduler'" => Process::result(output: "{$previousImage}\n"),
-        "docker service scale 'orbit_orbit-scheduler=0'" => Process::result(),
+        "docker service scale --detach=true 'orbit_orbit-scheduler=0'" => Process::result(),
         "docker service update --image '{$previousImage}' --update-order 'stop-first' --update-failure-action rollback --update-monitor 60s 'orbit_orbit-scheduler'" => Process::result(),
-        "docker service scale 'orbit_orbit-scheduler=1'" => Process::result(exitCode: 1, errorOutput: "scheduler scale failed\n"),
+        "docker service scale --detach=true 'orbit_orbit-scheduler=1'" => Process::result(exitCode: 1, errorOutput: "scheduler scale failed\n"),
     ]);
 
     expect(fn () => app(GatewayServiceUpdater::class)->update($run, $plan))
@@ -155,7 +155,7 @@ it('records a recovery failed event when the scheduler cannot be scaled back to 
         ->and($event?->payload['message'])->toContain('Scheduler recovery failed')
         ->and($event?->payload['data']['code'])->toBe('update.scheduler_recovery_failed')
         ->and($event?->payload['data']['recovery_command'])->toContain($previousImage)
-        ->and($event?->payload['data']['recovery_command'])->toContain("docker service scale 'orbit_orbit-scheduler=1'");
+        ->and($event?->payload['data']['recovery_command'])->toContain("docker service scale --detach=true 'orbit_orbit-scheduler=1'");
 });
 
 function gatewayServiceUpdaterRun(): OperationRun
