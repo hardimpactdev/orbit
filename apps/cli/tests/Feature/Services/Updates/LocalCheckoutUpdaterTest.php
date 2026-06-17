@@ -28,6 +28,7 @@ describe('LocalCheckoutUpdater', function (): void {
         $this->previousBinaryUrl = getenv('ORBIT_BINARY_URL');
         $this->previousBinPath = getenv('ORBIT_BIN_PATH');
         $this->previousMetadataPath = getenv('ORBIT_INSTALL_METADATA_PATH');
+        $this->previousHome = getenv('HOME');
 
         putenv("ORBIT_INSTALL_PATH={$this->installRoot}");
         putenv("ORBIT_BINARY_URL={$this->binaryUrl}");
@@ -40,6 +41,7 @@ describe('LocalCheckoutUpdater', function (): void {
         $this->previousBinaryUrl === false ? putenv('ORBIT_BINARY_URL') : putenv("ORBIT_BINARY_URL={$this->previousBinaryUrl}");
         $this->previousBinPath === false ? putenv('ORBIT_BIN_PATH') : putenv("ORBIT_BIN_PATH={$this->previousBinPath}");
         $this->previousMetadataPath === false ? putenv('ORBIT_INSTALL_METADATA_PATH') : putenv("ORBIT_INSTALL_METADATA_PATH={$this->previousMetadataPath}");
+        $this->previousHome === false ? putenv('HOME') : putenv("HOME={$this->previousHome}");
 
         foreach (glob($this->binaryDest.'.download.*') ?: [] as $path) {
             @unlink($path);
@@ -51,6 +53,39 @@ describe('LocalCheckoutUpdater', function (): void {
         @unlink($this->linkPath);
         @rmdir($this->installRoot.'/bin');
         @rmdir($this->installRoot);
+    });
+
+    it('defaults the host launcher to the user-local bin path without sudo', function (): void {
+        $home = $this->installRoot.'/home';
+        $expectedLinkPath = $home.'/.local/bin/orbit';
+
+        @mkdir($home, recursive: true);
+        putenv('ORBIT_BIN_PATH');
+        putenv("HOME={$home}");
+
+        Process::fake(['*' => Process::result(output: 'Version       1.2.3', exitCode: 0)]);
+        Process::preventStrayProcesses();
+
+        $result = (new LocalCheckoutUpdater(new CheckoutPathResolver))->pullSource();
+
+        $metadata = json_decode(file_get_contents($this->installRoot.'/install.json'), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($result['successful'])->toBeTrue()
+            ->and($metadata['binary_path'])->toBe($expectedLinkPath);
+
+        Process::assertRan(fn (PendingProcess $process): bool => is_array($process->command)
+            && $process->command === ['ln', '-sfn', $this->binaryDest, $expectedLinkPath]);
+
+        Process::assertRan(fn (PendingProcess $process): bool => is_array($process->command)
+            && $process->command === [$expectedLinkPath, '--version']);
+
+        Process::assertNotRan(fn (PendingProcess $process): bool => is_array($process->command)
+            && ($process->command[0] ?? null) === 'sudo');
+
+        @unlink($expectedLinkPath);
+        @rmdir(dirname($expectedLinkPath));
+        @rmdir(dirname(dirname($expectedLinkPath)));
+        @rmdir($home);
     });
 
     it('downloads the binary and relinks the host launcher on pull_source', function (): void {
@@ -122,29 +157,33 @@ describe('LocalCheckoutUpdater', function (): void {
             ->and(CarbonImmutable::parse($metadata['installed_at'])->toIso8601String())->toBe($metadata['installed_at']);
     });
 
-    it('uses non-interactive sudo when the host launcher directory is not writable', function (): void {
+    it('does not use sudo when the configured host launcher directory is not writable', function (): void {
         $protectedRoot = $this->installRoot.'/protected-bin';
         @mkdir($protectedRoot);
         @chmod($protectedRoot, 0555);
         putenv("ORBIT_BIN_PATH={$protectedRoot}/orbit");
 
-        Process::fake(['*' => Process::result(output: 'orbit 1.2.3', exitCode: 0)]);
+        Process::fake(function (PendingProcess $process): ProcessResult {
+            if (is_array($process->command) && ($process->command[0] ?? null) === 'ln') {
+                return Process::result(errorOutput: 'ln: Permission denied', exitCode: 1);
+            }
+
+            if (is_array($process->command) && ($process->command[0] ?? null) === 'sudo') {
+                return Process::result(errorOutput: 'sudo: a password is required', exitCode: 1);
+            }
+
+            return Process::result(output: 'orbit 1.2.3', exitCode: 0);
+        });
         Process::preventStrayProcesses();
 
         try {
             $result = (new LocalCheckoutUpdater(new CheckoutPathResolver))->pullSource();
 
-            expect($result['successful'])->toBeTrue();
+            expect($result['successful'])->toBeFalse()
+                ->and($result['output'])->toBe('ln: Permission denied');
 
-            Process::assertRan(fn (PendingProcess $process): bool => is_array($process->command)
-                && $process->command === [
-                    'sudo',
-                    '-n',
-                    'ln',
-                    '-sfn',
-                    $this->binaryDest,
-                    "{$protectedRoot}/orbit",
-                ]);
+            Process::assertNotRan(fn (PendingProcess $process): bool => is_array($process->command)
+                && ($process->command[0] ?? null) === 'sudo');
         } finally {
             @chmod($protectedRoot, 0755);
             @rmdir($protectedRoot);

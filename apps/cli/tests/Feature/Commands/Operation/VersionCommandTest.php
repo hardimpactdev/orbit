@@ -2,28 +2,37 @@
 
 declare(strict_types=1);
 
+use Carbon\CarbonImmutable;
+use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Http;
 
 describe('version', function (): void {
     beforeEach(function (): void {
         $this->previousTimezone = date_default_timezone_get();
         $this->previousDisplayTimezone = getenv('ORBIT_DISPLAY_TIMEZONE');
+        $this->previousBinPath = getenv('ORBIT_BIN_PATH');
+        $this->previousHome = getenv('HOME');
+        $this->versionTempRoot = sys_get_temp_dir().'/orbit-version-test-'.getmypid();
+        $this->installMetadataPath = $this->versionTempRoot.'/install.json';
+        File::deleteDirectory($this->versionTempRoot);
+        File::ensureDirectoryExists($this->versionTempRoot);
         date_default_timezone_set('Europe/Amsterdam');
         putenv('ORBIT_DISPLAY_TIMEZONE=Europe/Amsterdam');
         config()->set('app.version', '0.1.105');
-        putenv('ORBIT_INSTALL_METADATA_PATH='.base_path('tests/.tmp-version-install.json'));
-        @unlink(base_path('tests/.tmp-version-install.json'));
+        putenv("ORBIT_INSTALL_METADATA_PATH={$this->installMetadataPath}");
     });
 
     afterEach(function (): void {
         date_default_timezone_set($this->previousTimezone);
         $this->previousDisplayTimezone === false ? putenv('ORBIT_DISPLAY_TIMEZONE') : putenv("ORBIT_DISPLAY_TIMEZONE={$this->previousDisplayTimezone}");
+        $this->previousBinPath === false ? putenv('ORBIT_BIN_PATH') : putenv("ORBIT_BIN_PATH={$this->previousBinPath}");
+        $this->previousHome === false ? putenv('HOME') : putenv("HOME={$this->previousHome}");
         putenv('ORBIT_INSTALL_METADATA_PATH');
-        @unlink(base_path('tests/.tmp-version-install.json'));
+        File::deleteDirectory($this->versionTempRoot);
     });
 
     it('renders installed and release metadata for humans', function (): void {
-        file_put_contents(base_path('tests/.tmp-version-install.json'), json_encode([
+        file_put_contents($this->installMetadataPath, json_encode([
             'schema_version' => 1,
             'version' => '0.1.105',
             'installed_at' => '2026-06-17T10:54:00+00:00',
@@ -46,7 +55,7 @@ describe('version', function (): void {
     });
 
     it('annotates the human version line when a newer release exists', function (): void {
-        file_put_contents(base_path('tests/.tmp-version-install.json'), json_encode([
+        file_put_contents($this->installMetadataPath, json_encode([
             'schema_version' => 1,
             'version' => '0.1.105',
             'installed_at' => '2026-06-17T10:54:00+00:00',
@@ -72,7 +81,7 @@ describe('version', function (): void {
     });
 
     it('returns the same metadata in the JSON envelope', function (): void {
-        file_put_contents(base_path('tests/.tmp-version-install.json'), json_encode([
+        file_put_contents($this->installMetadataPath, json_encode([
             'schema_version' => 1,
             'version' => '0.1.105',
             'installed_at' => '2026-06-17T10:54:00+00:00',
@@ -104,7 +113,7 @@ describe('version', function (): void {
     });
 
     it('does not fail when release lookups are unavailable', function (): void {
-        file_put_contents(base_path('tests/.tmp-version-install.json'), json_encode([
+        file_put_contents($this->installMetadataPath, json_encode([
             'schema_version' => 1,
             'version' => '0.1.105',
             'installed_at' => '2026-06-17T10:54:00+00:00',
@@ -127,5 +136,39 @@ describe('version', function (): void {
                 'released_at' => null,
                 'installed_at' => '2026-06-17T10:54:00+00:00',
             ]);
+    });
+
+    it('falls back to the user-local binary mtime when install metadata is missing', function (): void {
+        $home = $this->versionTempRoot.'/home';
+        $binaryPath = $home.'/.local/bin/orbit';
+        $installedAt = CarbonImmutable::parse('2026-06-17T10:54:00+00:00');
+
+        @mkdir(dirname($binaryPath), 0755, recursive: true);
+        file_put_contents($binaryPath, '');
+        touch($binaryPath, $installedAt->timestamp);
+
+        putenv('ORBIT_BIN_PATH');
+        putenv("HOME={$home}");
+
+        Http::fake([
+            'https://api.github.com/repos/hardimpactdev/orbit/releases/latest' => Http::response([
+                'tag_name' => 'v0.1.105',
+                'published_at' => '2026-06-17T10:47:00Z',
+            ]),
+        ]);
+
+        try {
+            [$exitCode, $output] = runCommand($this, 'version', ['--json' => true]);
+
+            $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+
+            expect($exitCode)->toBe(0)
+                ->and($decoded['success']['data']['installed_at'])->toBe(CarbonImmutable::createFromTimestamp($installedAt->timestamp)->toIso8601String());
+        } finally {
+            @unlink($binaryPath);
+            @rmdir(dirname($binaryPath));
+            @rmdir(dirname(dirname($binaryPath)));
+            @rmdir($home);
+        }
     });
 });

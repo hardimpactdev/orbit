@@ -66,8 +66,8 @@ metadata.
 - The Orbit install root is writable (`ORBIT_INSTALL_PATH` or `$HOME/orbit`).
 - Production artifact installs require a reachable release source (GitHub
   Releases by default, or the `ORBIT_BINARY_URL` override for offline and E2E
-  artifact scenarios) plus permission to write the binary and update the host
-  launcher link.
+  artifact scenarios) plus permission to write the binary and update the
+  user-local host launcher link.
 - Source-mounted Docker/Incus development and E2E lanes require access to the
   mounted checkout and keep `/usr/local/bin/orbit` pointed at
   `<source>/apps/cli/orbit`.

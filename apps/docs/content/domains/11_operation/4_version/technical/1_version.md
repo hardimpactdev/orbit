@@ -62,7 +62,7 @@ Install metadata uses this JSON shape:
     "schema_version": 1,
     "version": "0.1.105",
     "installed_at": "2026-06-17T10:54:00+00:00",
-    "binary_path": "/usr/local/bin/orbit",
+    "binary_path": "/home/orbit/.local/bin/orbit",
     "install_root": "/home/orbit/orbit"
 }
 ```

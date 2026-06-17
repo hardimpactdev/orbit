@@ -43,6 +43,12 @@ describe('install-orbit prebuilt CLI binary download contract', function (): voi
             ->toContain('chmod 0755');
     });
 
+    it('defaults the host orbit link to the current user local bin directory', function (): void {
+        expect($this->installer)
+            ->toContain('LINK_PATH="${ORBIT_BIN_PATH:-$HOME/.local/bin/orbit}"')
+            ->toContain('Defaults to "$HOME/.local/bin/orbit".');
+    });
+
     it('honors ORBIT_BINARY_URL to skip gh and fetch via curl instead (local file:// artifacts or mirrors)', function (): void {
         expect($this->installer)
             ->toContain('ORBIT_BINARY_URL')
@@ -51,6 +57,8 @@ describe('install-orbit prebuilt CLI binary download contract', function (): voi
 
     it('links the downloaded binary at the host orbit path and confirms it runs via --version', function (): void {
         expect($this->installer)
+            ->toContain('run mkdir -p "$link_dir"')
+            ->toContain('run ln -sf "$TARGET_DIR/bin/orbit-binary" "$LINK_PATH"')
             ->toContain('ln -sf "$TARGET_DIR/bin/orbit-binary" "$LINK_PATH"')
             ->toContain('"$LINK_PATH" --version');
     });

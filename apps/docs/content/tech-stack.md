@@ -115,9 +115,10 @@ copy the worktree for fast iteration. Artifact-prod topologies use the native
 CLI binary plus production images and validate the actual release artifacts.
 Production installs record local CLI install metadata at
 `$HOME/.config/orbit/install.json` by default, or `ORBIT_INSTALL_METADATA_PATH`
-when set, after the linked binary verifies. `orbit version` reads that metadata
-to render the installed timestamp and falls back to the binary mtime for older
-installs.
+when set, after the linked binary verifies. The production host launcher is
+`$HOME/.local/bin/orbit` by default, or `ORBIT_BIN_PATH` when set. `orbit
+version` reads that metadata to render the installed timestamp and falls back
+to the binary mtime for older installs.
 Host PHP is not an app/workspace runtime fallback and must not replace
 FrankenPHP app/workspace containers.
 
@@ -507,11 +508,14 @@ default FrankenPHP app/workspace runtime image for app-role nodes, the
 WireGuard/SSH identity material. Production gateway-only nodes do not need host
 PHP, Composer, Git, or a source checkout. `app-dev` and `app-prod` production
 nodes install host PHP and Composer for app-source workflows; the Laravel
-installer installs on `app-dev` only. In source-dev Docker and Incus topologies, `/usr/local/bin/orbit`
-points directly at `<source>/apps/cli/orbit`, the current checkout is mounted
-or copied into the topology, and mutable node-local Orbit state lives under
-`~/.config/orbit`. Internal executor commands verify operation tokens through
-the gateway API, and nodes do not store executor token signing material. The
+installer installs on `app-dev` only. Production artifact installs link the
+host `orbit` launcher at `$HOME/.local/bin/orbit` by default; set
+`ORBIT_BIN_PATH` or pass `--bin` to choose another path. In source-dev Docker
+and Incus topologies, `/usr/local/bin/orbit` points directly at
+`<source>/apps/cli/orbit`, the current checkout is mounted or copied into the
+topology, and mutable node-local Orbit state lives under `~/.config/orbit`.
+Internal executor commands verify operation tokens through the gateway API, and
+nodes do not store executor token signing material. The
 installer creates the local SQLite database where appropriate, enables SQLite
 WAL/busy-timeout settings for the gateway database, runs migrations through the
 gateway image before starting Swarm services, and links `orbit` into the local

@@ -10,8 +10,8 @@
 - The Orbit install root is writable (`ORBIT_INSTALL_PATH` or `$HOME/orbit`).
 - Production artifact installs require a reachable release source (GitHub
   Releases by default, or the `ORBIT_BINARY_URL` override for offline and E2E
-  artifact scenarios) plus permission to write the binary and update the host
-  launcher link.
+  artifact scenarios) plus permission to write the binary and update the
+  user-local host launcher link.
 - Source-mounted Docker/Incus development and E2E lanes require access to the
   mounted checkout and keep `/usr/local/bin/orbit` pointed at
   `<source>/apps/cli/orbit`.
@@ -65,7 +65,7 @@ fields and does not prompt.
   by default.
 - After a production download, relink the host `orbit` launcher: `ln -sf
   <install-root>/bin/orbit-binary <link-path>` where `<link-path>` is
-  `ORBIT_BIN_PATH` when set, or `/usr/local/bin/orbit` by default.
+  `ORBIT_BIN_PATH` when set, or `$HOME/.local/bin/orbit` by default.
 - Verify the resolved local Orbit entry point responds to `--version`.
   Production artifact installs verify the updated binary; source-mounted
   Docker/Incus development and E2E lanes verify the resolved

@@ -15,7 +15,7 @@ CADDY_IMAGE_ARCHIVE="${ORBIT_CADDY_IMAGE_ARCHIVE:-}"
 DNSMASQ_IMAGE_ARCHIVE="${ORBIT_DNSMASQ_IMAGE_ARCHIVE:-}"
 FRANKENPHP_IMAGE_ARCHIVE="${ORBIT_FRANKENPHP_IMAGE_ARCHIVE:-}"
 WG_EASY_IMAGE_ARCHIVE="${ORBIT_WG_EASY_IMAGE_ARCHIVE:-}"
-LINK_PATH="${ORBIT_BIN_PATH:-/usr/local/bin/orbit}"
+LINK_PATH="${ORBIT_BIN_PATH:-$HOME/.local/bin/orbit}"
 USE_SUDO=1
 SKIP_PREREQUISITES="${ORBIT_INSTALL_SKIP_PREREQUISITES:-0}"
 APT_LOCK_TIMEOUT_SECONDS="${ORBIT_APT_LOCK_TIMEOUT_SECONDS:-300}"
@@ -80,7 +80,7 @@ Options:
                                image archive before the gateway VPN service
                                starts.
   --bin=PATH                   Symlink path for the orbit executable.
-                               Defaults to "/usr/local/bin/orbit".
+                               Defaults to "$HOME/.local/bin/orbit".
   --skip-prerequisites         Skip Docker / package prerequisite installation.
                                Intended for prepared E2E images that already
                                contain gateway packages.
@@ -780,12 +780,25 @@ download_cli_binary() {
 }
 
 link_orbit() {
+    local link_dir
+
+    link_dir="$(dirname "$LINK_PATH")"
+
     if [ -e "$LINK_PATH" ] && [ ! -L "$LINK_PATH" ]; then
         fail validation_failed "$LINK_PATH exists and is not a symlink"
     fi
 
     if [ ! -f "$TARGET_DIR/bin/orbit-binary" ]; then
         fail validation_failed "Orbit CLI binary missing: $TARGET_DIR/bin/orbit-binary"
+    fi
+
+    if [ ! -d "$link_dir" ]; then
+        run mkdir -p "$link_dir"
+    fi
+
+    if [ -w "$link_dir" ]; then
+        run ln -sf "$TARGET_DIR/bin/orbit-binary" "$LINK_PATH"
+        return
     fi
 
     sudo_run ln -sf "$TARGET_DIR/bin/orbit-binary" "$LINK_PATH"

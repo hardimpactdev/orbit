@@ -45,7 +45,7 @@ class LocalCheckoutUpdater implements RunsLocalUpdate
 
     /**
      * Download the prebuilt Orbit CLI binary for this host OS/arch and relink
-     * the host `orbit` launcher (`ORBIT_BIN_PATH` or `/usr/local/bin/orbit`).
+     * the host `orbit` launcher (`ORBIT_BIN_PATH` or `$HOME/.local/bin/orbit`).
      *
      * The downloaded binary replaces the existing one at
      * `<install-root>/bin/orbit-binary`; the launcher symlink already points
@@ -104,6 +104,12 @@ class LocalCheckoutUpdater implements RunsLocalUpdate
 
             $stagedBinary = null;
 
+            $linkDirectoryResult = $this->ensureLinkDirectory($linkPath);
+
+            if ($linkDirectoryResult !== null) {
+                return $linkDirectoryResult;
+            }
+
             $linkResult = $this->runCommand($this->linkCommand($binaryDest, $linkPath), 10);
 
             if (! $linkResult->successful()) {
@@ -161,6 +167,28 @@ class LocalCheckoutUpdater implements RunsLocalUpdate
     private function stagedBinaryPath(string $binaryDest): string
     {
         return $binaryDest.'.download.'.bin2hex(random_bytes(8));
+    }
+
+    /**
+     * @return array{successful: false, exit_code: int, output: string}|null
+     */
+    private function ensureLinkDirectory(string $linkPath): ?array
+    {
+        $linkDirectory = dirname($linkPath);
+
+        if (is_dir($linkDirectory)) {
+            return null;
+        }
+
+        if (@mkdir($linkDirectory, 0755, recursive: true) || is_dir($linkDirectory)) {
+            return null;
+        }
+
+        return [
+            'successful' => false,
+            'exit_code' => 1,
+            'output' => "Unable to create Orbit launcher directory: {$linkDirectory}",
+        ];
     }
 
     private function versionFromOutput(string $output): string
@@ -269,13 +297,23 @@ class LocalCheckoutUpdater implements RunsLocalUpdate
      * Resolve the host launcher symlink path.
      *
      * Reads `ORBIT_BIN_PATH` (the env var honoured by `bin/install-orbit`),
-     * falling back to the installer's default `/usr/local/bin/orbit`.
+     * falling back to the user-local launcher path.
      */
     private function resolveLinkPath(): string
     {
         $override = getenv('ORBIT_BIN_PATH');
 
-        return is_string($override) && $override !== '' ? $override : '/usr/local/bin/orbit';
+        if (is_string($override) && $override !== '') {
+            return $override;
+        }
+
+        $home = getenv('HOME');
+
+        if (is_string($home) && $home !== '') {
+            return rtrim($home, '/').'/.local/bin/orbit';
+        }
+
+        return '/usr/local/bin/orbit';
     }
 
     /**
@@ -283,12 +321,6 @@ class LocalCheckoutUpdater implements RunsLocalUpdate
      */
     private function linkCommand(string $binaryDest, string $linkPath): array
     {
-        $linkDirectory = dirname($linkPath);
-
-        if (is_writable($linkDirectory)) {
-            return ['ln', '-sfn', $binaryDest, $linkPath];
-        }
-
-        return ['sudo', '-n', 'ln', '-sfn', $binaryDest, $linkPath];
+        return ['ln', '-sfn', $binaryDest, $linkPath];
     }
 }

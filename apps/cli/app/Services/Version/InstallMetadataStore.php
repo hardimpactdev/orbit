@@ -145,6 +145,16 @@ final class InstallMetadataStore
             return $configured;
         }
 
+        $home = getenv('HOME');
+
+        if (is_string($home) && $home !== '') {
+            $userLocalPath = rtrim($home, '/').'/.local/bin/orbit';
+
+            if (is_file($userLocalPath)) {
+                return $userLocalPath;
+            }
+        }
+
         if (is_file('/usr/local/bin/orbit')) {
             return '/usr/local/bin/orbit';
         }

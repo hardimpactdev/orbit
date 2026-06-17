@@ -93,7 +93,8 @@ the exact shape.
 - Each selected workload installation has a writable Orbit install root and a
   host `orbit` launcher or an equivalent Orbit CLI entry point local to the node.
 - Production artifact update targets require a reachable release source for the
-  CLI binary plus permission to write the binary and update the launcher link.
+  CLI binary plus permission to write the binary and update the user-local
+  launcher link.
 - Gateway update targets require Docker Engine/CLI, Docker Swarm, the
   digest-pinned `orbit-gateway` image or `ORBIT_GATEWAY_IMAGE_ARCHIVE`, the
   gateway config root, and Orbit CA/certificate material.
