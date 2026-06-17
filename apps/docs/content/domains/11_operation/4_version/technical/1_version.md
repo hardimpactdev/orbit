@@ -57,7 +57,8 @@ available.
 - `installed_at` is read from `ORBIT_INSTALL_METADATA_PATH` when set, or
   `$HOME/.config/orbit/install.json` by default, only when the metadata version
   matches the installed version. If no matching metadata exists, fall back to
-  the linked binary mtime when available.
+  the mtime for the invoked Orbit launcher when available. Known launcher
+  paths are only fallbacks after the invoked path.
 
 Install metadata uses this JSON shape:
 
@@ -92,7 +93,7 @@ responds to `--version`.
 | Failure | Condition | Outcome |
 | --- | --- | --- |
 | Release metadata unavailable | GitHub Release assets and API metadata cannot be reached, return an error, or return an unexpected body. | Success with `latest_version=null`, `update_available=false`, and unknown release metadata. |
-| Install metadata unavailable | No matching install metadata or binary mtime exists. | Success with unknown install metadata. |
+| Install metadata unavailable | No matching install metadata, invoked launcher mtime, or known launcher mtime exists. | Success with unknown install metadata. |
 
 ## Activity Logging
 

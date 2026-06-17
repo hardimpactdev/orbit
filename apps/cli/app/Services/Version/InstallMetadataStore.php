@@ -145,6 +145,12 @@ final class InstallMetadataStore
             return $configured;
         }
 
+        $argvPath = $this->existingPath($_SERVER['argv'][0] ?? null);
+
+        if ($argvPath !== null) {
+            return $argvPath;
+        }
+
         $home = getenv('HOME');
 
         if (is_string($home) && $home !== '') {
@@ -159,13 +165,16 @@ final class InstallMetadataStore
             return '/usr/local/bin/orbit';
         }
 
-        $argvPath = $_SERVER['argv'][0] ?? null;
+        return null;
+    }
 
-        if (is_string($argvPath) && $argvPath !== '') {
-            return $argvPath;
+    private function existingPath(mixed $path): ?string
+    {
+        if (! is_string($path) || trim($path) === '') {
+            return null;
         }
 
-        return null;
+        return is_file($path) ? $path : null;
     }
 
     private function isIsoTimestamp(mixed $value): bool

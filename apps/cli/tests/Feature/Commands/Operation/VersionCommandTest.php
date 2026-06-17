@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Services\Version\InstallMetadataStore;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Http;
@@ -20,6 +21,7 @@ describe('version', function (): void {
         putenv('ORBIT_DISPLAY_TIMEZONE=Europe/Amsterdam');
         config()->set('app.version', '0.1.105');
         putenv("ORBIT_INSTALL_METADATA_PATH={$this->installMetadataPath}");
+        $this->previousArgvPath = $_SERVER['argv'][0] ?? null;
     });
 
     afterEach(function (): void {
@@ -28,6 +30,11 @@ describe('version', function (): void {
         $this->previousBinPath === false ? putenv('ORBIT_BIN_PATH') : putenv("ORBIT_BIN_PATH={$this->previousBinPath}");
         $this->previousHome === false ? putenv('HOME') : putenv("HOME={$this->previousHome}");
         putenv('ORBIT_INSTALL_METADATA_PATH');
+        if ($this->previousArgvPath === null) {
+            unset($_SERVER['argv'][0]);
+        } else {
+            $_SERVER['argv'][0] = $this->previousArgvPath;
+        }
         File::deleteDirectory($this->versionTempRoot);
     });
 
@@ -160,6 +167,7 @@ describe('version', function (): void {
 
         putenv('ORBIT_BIN_PATH');
         putenv("HOME={$home}");
+        $_SERVER['argv'][0] = $this->versionTempRoot.'/missing-orbit';
 
         Http::fake([
             'https://github.com/hardimpactdev/orbit/releases/latest/download/orbit-release-manifest.json' => Http::response(releaseManifest('0.1.105', '2026-06-17T10:47:00Z')),
@@ -176,6 +184,37 @@ describe('version', function (): void {
             @unlink($binaryPath);
             @rmdir(dirname($binaryPath));
             @rmdir(dirname(dirname($binaryPath)));
+            @rmdir($home);
+        }
+    });
+
+    it('prefers the invoked launcher mtime over a stale user-local binary fallback', function (): void {
+        $home = $this->versionTempRoot.'/home';
+        $staleUserLocalBinary = $home.'/.local/bin/orbit';
+        $invokedLauncher = $this->versionTempRoot.'/usr-local-bin-orbit';
+        $staleInstalledAt = CarbonImmutable::parse('2026-02-15T21:30:00+00:00');
+        $actualInstalledAt = CarbonImmutable::parse('2026-06-17T13:19:00+00:00');
+
+        @mkdir(dirname($staleUserLocalBinary), 0755, recursive: true);
+        file_put_contents($staleUserLocalBinary, '');
+        touch($staleUserLocalBinary, $staleInstalledAt->timestamp);
+
+        file_put_contents($invokedLauncher, '');
+        touch($invokedLauncher, $actualInstalledAt->timestamp);
+
+        putenv('ORBIT_BIN_PATH');
+        putenv("HOME={$home}");
+        $_SERVER['argv'][0] = $invokedLauncher;
+
+        try {
+            $installedAt = (new InstallMetadataStore)->installedAtFor('0.1.105');
+
+            expect($installedAt)->toBe($actualInstalledAt->toIso8601String());
+        } finally {
+            @unlink($staleUserLocalBinary);
+            @unlink($invokedLauncher);
+            @rmdir(dirname($staleUserLocalBinary));
+            @rmdir(dirname(dirname($staleUserLocalBinary)));
             @rmdir($home);
         }
     });

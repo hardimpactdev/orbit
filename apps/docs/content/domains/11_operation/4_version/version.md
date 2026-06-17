@@ -43,7 +43,7 @@ update.
 The installed timestamp comes from `ORBIT_INSTALL_METADATA_PATH` when set, or
 `$HOME/.config/orbit/install.json` by default. The installer and local updater
 write this metadata after the linked CLI binary verifies. Older installs fall
-back to the linked binary mtime when no matching metadata exists.
+back to the invoked launcher mtime when no matching metadata exists.
 
 Release lookups are non-fatal. If public release manifests and GitHub Releases
 metadata are unreachable, the command still exits successfully and renders
