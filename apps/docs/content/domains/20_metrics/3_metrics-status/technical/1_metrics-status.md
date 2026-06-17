@@ -40,6 +40,9 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 - Return process definitions named `prometheus`, `grafana`, and
   `node-exporter` when they exist for the selected metrics node.
+- Workload node-exporter process intent created by metrics convergence is not
+  included in the metrics status payload; inspect it through the process family
+  for each workload node.
 - Do not probe live process runtime state.
 
 ## Renderer Contracts
@@ -59,7 +62,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 ## Doctor Relationship
 
 `metrics:status` reads gateway configuration only. Runtime health and drift for
-Prometheus, Grafana, and node-exporter belong to
+Prometheus, Grafana, and node-exporter on metrics and workload nodes belong to
 [`doctor --family=process`](../../../7_process/process-doctor.md). Route drift
 for `metrics.orbit` belongs to
 [`doctor --family=proxy`](../../../8_proxy/proxy-doctor.md).

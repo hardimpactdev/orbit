@@ -103,3 +103,129 @@ it('adds the metrics role through the role assignment service', function (): voi
             ->whereIn('name', ['grafana', 'node-exporter', 'prometheus'])
             ->count())->toBe(3);
 });
+
+it('adds the metrics role to the debian gateway node', function (): void {
+    $node = Node::factory()->gateway()->create([
+        'name' => 'gateway',
+        'platform' => 'debian_12',
+        'wireguard_address' => '10.6.0.1',
+        'status' => NodeStatus::Active,
+    ]);
+
+    $assignment = app(NodeRoleAssignmentService::class)->add($node, 'metrics', []);
+
+    expect($assignment->status)->toBe(NodeRoleStatus::Active)
+        ->and(Process::query()
+            ->where('node_id', $node->id)
+            ->whereIn('name', ['grafana', 'node-exporter', 'prometheus'])
+            ->count())->toBe(3);
+});
+
+it('converges node exporter process intent for active workload nodes', function (): void {
+    $gateway = Node::factory()->gateway()->create([
+        'name' => 'gateway',
+        'platform' => 'debian_12',
+        'wireguard_address' => '10.6.0.1',
+        'status' => NodeStatus::Active,
+    ]);
+    $assignment = NodeRoleAssignment::factory()->for($gateway)->create([
+        'role' => 'metrics',
+        'status' => NodeRoleStatus::Pending,
+    ]);
+
+    Node::factory()->agent()->create([
+        'name' => 'agent-1',
+        'platform' => 'ubuntu',
+        'wireguard_address' => '10.6.0.10',
+        'status' => NodeStatus::Active,
+    ]);
+    Node::factory()->appDev()->create([
+        'name' => 'app-1',
+        'platform' => 'ubuntu',
+        'wireguard_address' => '10.6.0.11',
+        'status' => NodeStatus::Active,
+    ]);
+    Node::factory()->appProd()->create([
+        'name' => 'main-1',
+        'platform' => 'ubuntu',
+        'wireguard_address' => '10.6.0.12',
+        'status' => NodeStatus::Active,
+    ]);
+    Node::factory()->database()->create([
+        'name' => 'database-1',
+        'platform' => 'ubuntu',
+        'wireguard_address' => '10.6.0.13',
+        'status' => NodeStatus::Active,
+    ]);
+    Node::factory()->ingress()->create([
+        'name' => 'ingress-1',
+        'platform' => 'ubuntu',
+        'wireguard_address' => '10.6.0.14',
+        'status' => NodeStatus::Active,
+    ]);
+    Node::factory()->database()->create([
+        'name' => 'inactive-1',
+        'platform' => 'ubuntu',
+        'wireguard_address' => '10.6.0.15',
+        'status' => NodeStatus::Inactive,
+    ]);
+    Node::factory()->create([
+        'name' => 'client-1',
+        'platform' => 'darwin',
+        'wireguard_address' => '10.6.0.16',
+        'status' => NodeStatus::Active,
+    ]);
+
+    app(NodeRoleBaselineConverger::class)->converge($gateway, $assignment);
+
+    $exporterNodes = Process::query()
+        ->where('name', 'node-exporter')
+        ->with('node')
+        ->get()
+        ->map(fn (Process $process): string => $process->node->name)
+        ->sort()
+        ->values()
+        ->all();
+
+    expect($exporterNodes)->toBe([
+        'agent-1',
+        'app-1',
+        'database-1',
+        'gateway',
+        'ingress-1',
+        'main-1',
+    ]);
+});
+
+it('removes workload node exporter process intent when the last metrics role is removed', function (): void {
+    $gateway = Node::factory()->gateway()->create([
+        'name' => 'gateway',
+        'platform' => 'debian_12',
+        'wireguard_address' => '10.6.0.1',
+        'status' => NodeStatus::Active,
+    ]);
+    $assignment = NodeRoleAssignment::factory()->for($gateway)->create([
+        'role' => 'metrics',
+        'status' => NodeRoleStatus::Active,
+    ]);
+    $workload = Node::factory()->appDev()->create([
+        'name' => 'app-1',
+        'platform' => 'ubuntu',
+        'wireguard_address' => '10.6.0.11',
+        'status' => NodeStatus::Active,
+    ]);
+
+    app(NodeRoleBaselineConverger::class)->converge($gateway, $assignment);
+
+    expect(Process::query()
+        ->where('name', 'node-exporter')
+        ->whereIn('node_id', [$gateway->id, $workload->id])
+        ->count())->toBe(2);
+
+    app(NodeRoleBaselineConverger::class)->remove($gateway, $assignment, purgeData: false);
+
+    expect(Process::query()
+        ->where('name', 'node-exporter')
+        ->whereIn('node_id', [$gateway->id, $workload->id])
+        ->exists())->toBeFalse();
+});

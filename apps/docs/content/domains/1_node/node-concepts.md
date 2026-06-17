@@ -80,10 +80,10 @@ Each term below has a precise meaning in the node command family.
   rendered by Orbit, binds the S3 API only to the node's WireGuard address, and
   receives private and public S3 traffic through router-owned service routes.
 - **Metrics role:** Optional private workload role for host-resource
-  observability. A metrics node records Prometheus, Grafana, and node-exporter
-  process intent, exposes Grafana through the router-owned private
-  `metrics.orbit` route, and can be dedicated or co-located with any
-  non-agent role.
+  observability. A metrics node records Prometheus and Grafana process intent,
+  records node-exporter process intent for itself and active workload nodes,
+  exposes Grafana through the router-owned private `metrics.orbit` route, and
+  can be dedicated or co-located with any non-agent role.
 - **Analytics role:** Private workload role for Plausible CE analytics. An
   analytics node runs Plausible CE as a process-owned Docker/Swarm service,
   binds only to the node's WireGuard address, receives dashboard traffic through
@@ -239,7 +239,7 @@ Role baselines are code-defined desired state, not editable package lists.
 | `ingress` | `orbit-caddy` running as the public production HTTP ingress boundary, forwarding public routes to `router` |
 | `websocket` | Laravel Reverb in a Docker runtime container managed by Orbit, private TLS backend binding on WireGuard, backend certificate material, and Redis-backed scaling configuration |
 | `s3` | SeaweedFS in a Docker runtime container rendered by Orbit, private S3 API binding on WireGuard, service-level credentials on the `seaweedfs` tool row, backend pool registration, and role-owned data path |
-| `metrics` | Docker substrate intent, Prometheus and Grafana Docker Swarm process definitions, node-exporter systemd process definition, the router-owned `metrics.orbit` route, and generated Grafana admin credentials |
+| `metrics` | Docker substrate intent, Prometheus and Grafana Docker Swarm process definitions, node-exporter systemd process definitions on metrics and active workload nodes, the router-owned `metrics.orbit` route, and generated Grafana admin credentials |
 | `analytics` | Plausible CE in a process-owned Docker/Swarm service, private `analytics.orbit` router route, per-app public tracking route support, analytics backend pool registration, and runtime configuration derived from PostgreSQL and ClickHouse process endpoints |
 
 Baseline convergence first stores the gateway intent for the selected role.
@@ -288,7 +288,7 @@ Each role is supported on a specific set of host platforms.
 | `ingress` | Ubuntu |
 | `websocket` | Ubuntu |
 | `s3` | Ubuntu |
-| `metrics` | Ubuntu |
+| `metrics` | Ubuntu, Debian |
 | `analytics` | Ubuntu |
 
 Commands that provision a host or apply node-side artifacts must verify that the

@@ -11,10 +11,11 @@ Use these terms when reading or writing metrics command contracts.
 - **Metrics command domain:** Command family for role-backed host-resource
   observability workflows. It owns `metrics:*` command contracts but does not
   own a state family.
-- **Metrics role:** Optional private workload role that records Prometheus,
-  Grafana, and node-exporter process intent for one node. It can be dedicated
-  or co-located with any non-agent role.
-- **Metrics backend:** The process-owned runtime set created by the metrics
+- **Metrics role:** Optional private workload role that records Prometheus and
+  Grafana process intent for the metrics node and node-exporter process intent
+  for the metrics node plus active workload nodes. It can be dedicated or
+  co-located with any non-agent role, including a Debian gateway.
+- **Metrics backend:** The process-owned runtime set coordinated by the metrics
   role baseline: Prometheus, Grafana, and node-exporter.
 - **Metrics service endpoint:** Stable private HTTPS endpoint
   `https://metrics.orbit`, served by router-owned proxy state and targeting
@@ -25,7 +26,8 @@ Use these terms when reading or writing metrics command contracts.
   serves dashboards behind `metrics.orbit` and stores generated admin
   credentials in process runtime configuration.
 - **node-exporter host process:** Systemd process definition named
-  `node-exporter`; exposes host resource metrics for the metrics node.
+  `node-exporter`; exposes host resource metrics for the metrics node and
+  active workload nodes.
 - **Grafana admin credentials:** Generated `admin` username and password for
   Grafana, returned by `metrics:credentials` and rotated by
   `metrics:credentials --reset`.
@@ -33,5 +35,5 @@ Use these terms when reading or writing metrics command contracts.
   assignment, Docker capability, process definitions, and private proxy route
   intent. Drift and repair remain with `node`, `tool`, `process`, and `proxy`.
 - **Metrics-domain exclusions:** Metrics does not own app metrics, container
-  metrics, database metrics, alerting, public Grafana ingress, distributed
-  scrape discovery, or a `metrics` doctor state family.
+  metrics, database metrics, alerting, public Grafana ingress, dynamic scrape
+  discovery, or a `metrics` doctor state family.

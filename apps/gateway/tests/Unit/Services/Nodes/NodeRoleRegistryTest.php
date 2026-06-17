@@ -191,7 +191,7 @@ describe('node role registry', function (): void {
             ->and($registry->definition('s3')->supportedPlatforms)->toBe(['ubuntu'])
             ->and($registry->definition('s3')->assignableByRoleCommand)->toBeTrue()
             ->and($registry->definition('s3')->assignableByNodeNew)->toBeTrue()
-            ->and($registry->definition('metrics')->supportedPlatforms)->toBe(['ubuntu'])
+            ->and($registry->definition('metrics')->supportedPlatforms)->toBe(['ubuntu', 'debian'])
             ->and($registry->definition('metrics')->assignableByRoleCommand)->toBeTrue()
             ->and($registry->definition('metrics')->assignableByNodeNew)->toBeTrue()
             ->and($registry->definition('analytics')->supportedPlatforms)->toBe(['ubuntu'])

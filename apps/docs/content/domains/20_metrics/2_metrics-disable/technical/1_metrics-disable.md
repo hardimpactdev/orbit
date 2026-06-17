@@ -53,6 +53,9 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 - On success, the metrics role assignment is removed or marked through the
   gateway role-removal contract, and metrics-owned process/proxy intent is
   cleaned up.
+- If no other active metrics role remains, metrics-owned node-exporter process
+  intent is removed from active workload nodes as well as the removed metrics
+  node.
 
 ## Renderer Contracts
 
@@ -84,4 +87,4 @@ proxy-family drift.
 | Path | Coverage |
 | --- | --- |
 | `apps/cli/tests/Feature/Commands/Metrics/MetricsCommandsTest.php` | Required `--node`, required `--force`, purge flag forwarding, and gateway path. |
-| `apps/gateway/tests/Feature/Services/Nodes/Roles/MetricsRoleBaselineTest.php` | Metrics role cleanup of process and route intent. |
+| `apps/gateway/tests/Feature/Services/Nodes/Roles/MetricsRoleBaselineTest.php` | Metrics role cleanup of process, workload exporter, and route intent. |

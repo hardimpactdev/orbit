@@ -28,7 +28,9 @@ orbit metrics:status --json
 Run this command to read gateway-owned metrics role and process intent. It returns the
 private Grafana URL and the metrics process definitions recorded for each
 visible metrics node. It does not SSH to nodes, probe live process managers, or
-check whether Grafana or Prometheus is currently healthy.
+check whether Grafana or Prometheus is currently healthy. Workload
+node-exporter intent created by the metrics role is inspected through
+`process:list` and `doctor --family=process` for those workload nodes.
 
 ## Output
 

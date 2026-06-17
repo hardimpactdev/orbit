@@ -131,7 +131,7 @@ Supported definitions in this vertical slice:
 | `redis` | `7` -> `7.2` | `docker` | Publishes the Redis TCP endpoint from the owning node's WireGuard service address. |
 | `prometheus` | `3` -> `v3.12.0` | `docker-swarm` | Metrics-role service process for host-resource time-series storage. Uses local TSDB retention of 15 days. |
 | `grafana` | `13` -> `13.0.2` | `docker-swarm` | Metrics-role service process for dashboards, exposed through the private `metrics.orbit` route. |
-| `node-exporter` | `1` -> `1.11.1` | `systemd` | Metrics-role host process that exposes host resource metrics on the owning node's WireGuard service address. |
+| `node-exporter` | `1` -> `1.11.1` | `systemd` | Metrics-role host process that exposes host resource metrics on metrics and active workload nodes through the owning node's WireGuard service address. |
 
 `docker-swarm` is also admitted for node-owned service process definitions
 whose definition declares Swarm support. `node-exporter` declares only

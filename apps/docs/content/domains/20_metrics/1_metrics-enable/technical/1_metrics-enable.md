@@ -41,6 +41,9 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 - On success, the target node has an active `metrics` role assignment and the
   metrics baseline intent is recorded.
+- The baseline records Prometheus and Grafana process intent on the target
+  metrics node, node-exporter process intent on the target metrics node and
+  every active workload node, and the `metrics.orbit` proxy route.
 
 ## Renderer Contracts
 

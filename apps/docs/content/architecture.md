@@ -51,7 +51,8 @@ Private metrics:
 VPN client browser
   -> router private `metrics.orbit` route
   -> metrics node Grafana Docker Swarm service
-  -> Prometheus Docker Swarm service scraping node-exporter on the metrics host
+  -> Prometheus Docker Swarm service on the metrics node
+  -> node-exporter systemd process intent on metrics and workload nodes
 
 Private analytics:
 
@@ -159,13 +160,14 @@ In v1 the backend pool contains one SeaweedFS node. Apps and VPN clients use the
 stable `s3.orbit` endpoint and never target a concrete S3 node.
 
 The `metrics` role is a private workload role for host-resource observability.
-A metrics node records Prometheus, Grafana, and node-exporter process intent:
-Prometheus and Grafana run as Docker Swarm service processes, while
-node-exporter runs as a host systemd process. The role exposes Grafana through
-the router-owned private route `metrics.orbit`. In v1 the metrics slice tracks
-host resources only and does not scrape app-, container-, or database-specific
-metrics. The role can run on a dedicated node or be co-located with any
-non-agent role, including a gateway/router node.
+A metrics node records Prometheus and Grafana process intent on the selected
+metrics host and node-exporter process intent on the metrics host plus every
+active workload node. Prometheus and Grafana run as Docker Swarm service
+processes, while node-exporter runs as a host systemd process. The role exposes
+Grafana through the router-owned private route `metrics.orbit`. In v1 the
+metrics slice tracks host resources only and does not scrape app-, container-,
+or database-specific metrics. The role can run on a dedicated node or be
+co-located with any non-agent role, including a Debian gateway/router node.
 
 The `analytics` role is a private workload role for Orbit-managed Plausible CE
 analytics. An analytics node runs Plausible CE as a process-owned Docker/Swarm

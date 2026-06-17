@@ -45,8 +45,9 @@ Orbit distinguishes these concepts:
   `s3` is a private workload role for SeaweedFS object storage; it binds only to
   WireGuard and receives traffic through router-owned S3 service routes.
   `metrics` is an optional host-resource observability role; it records
-  Prometheus, Grafana, and node-exporter process intent and exposes Grafana
-  through `metrics.orbit`.
+  Prometheus and Grafana process intent on the metrics node, records
+  node-exporter process intent on metrics and active workload nodes, and exposes
+  Grafana through `metrics.orbit`.
   `analytics` is a private workload role for Plausible CE; it binds only to
   WireGuard and receives dashboard plus tracking traffic through router-owned
   analytics service routes.
@@ -129,7 +130,7 @@ Roles materialize baseline tool intent when a role assignment converges.
 | `ingress` | `orbit-caddy` running as the public production HTTP ingress boundary, forwarding public routes to `router` |
 | `websocket` | Laravel Reverb in a Docker runtime container managed by Orbit, private TLS backend binding on WireGuard, backend certificate material, and Redis-backed scaling configuration |
 | `s3` | SeaweedFS in a Docker runtime container rendered by Orbit, private S3 API binding on WireGuard, service-level credentials on the `seaweedfs` tool row, backend pool registration, and role-owned data path |
-| `metrics` | Docker substrate intent, Prometheus and Grafana Docker Swarm process definitions, node-exporter systemd process definition, the router-owned `metrics.orbit` route, and generated Grafana admin credentials |
+| `metrics` | Docker substrate intent, Prometheus and Grafana Docker Swarm process definitions, node-exporter systemd process definitions on metrics and active workload nodes, the router-owned `metrics.orbit` route, and generated Grafana admin credentials |
 | `analytics` | Plausible CE in a process-owned Docker/Swarm service, private `analytics.orbit` router route, per-app public tracking route support, analytics backend pool registration, and runtime configuration derived from PostgreSQL and ClickHouse process endpoints |
 
 Local database client binaries (`sqlite3`, `psql`, `mysql`) are not part of

@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Services\Nodes\Roles\RoleBaselines;
 
+use App\Enums\Nodes\NodeRoleName;
+use App\Enums\Nodes\NodeRoleStatus;
 use App\Enums\ProcessCrashNotification;
 use App\Enums\Processes\ProcessRuntime;
 use App\Enums\ProcessRestartPolicy;
@@ -12,6 +14,7 @@ use App\Models\NodeRoleAssignment;
 use App\Models\Process;
 use App\Models\ProxyRoute;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
+use App\Services\Operations\FleetUpdateTargetSelector;
 use App\Services\Processes\ProcessServiceDefinitionRegistry;
 use App\Services\Proxy\ProxyRouteRenderer;
 use App\Services\Tools\ToolCatalog;
@@ -24,23 +27,27 @@ class MetricsRoleBaseline implements RoleBaseline
 
     private const string ServiceDomain = 'metrics.orbit';
 
+    private const array HostExporterPlatforms = ['ubuntu', 'debian'];
+
     public function __construct(
         private readonly ProcessServiceDefinitionRegistry $serviceDefinitions,
         private readonly ProxyRouteRenderer $proxyRouteRenderer,
         private readonly ?ToolCatalog $toolCatalog = null,
         private readonly ?NodeRoleAssignments $nodeRoleAssignments = null,
+        private readonly ?FleetUpdateTargetSelector $fleetUpdateTargets = null,
     ) {}
 
     public function converge(Node $node, NodeRoleAssignment $assignment): void
     {
-        if (! str_starts_with((string) $node->platform, 'ubuntu')) {
-            throw new RuntimeException('The metrics role requires an Ubuntu host.');
+        if (! $this->nodeSupportsHostExporter($node)) {
+            throw new RuntimeException('The metrics role requires an Ubuntu or Debian host.');
         }
 
         $this->convergeTools($node, ['docker']);
         $this->convergeProcess($node, 'prometheus', ProcessRuntime::DockerSwarm);
         $this->convergeGrafana($node);
         $this->convergeProcess($node, 'node-exporter', ProcessRuntime::Systemd);
+        $this->convergeWorkloadNodeExporters($node);
         $this->syncMetricsRoute($node);
     }
 
@@ -52,6 +59,10 @@ class MetricsRoleBaseline implements RoleBaseline
             ->where('owner_id', $node->id)
             ->whereIn('name', ['prometheus', 'grafana', 'node-exporter'])
             ->delete();
+
+        if (! $this->hasOtherActiveMetricsRole($assignment)) {
+            $this->removeWorkloadNodeExporters($node);
+        }
 
         ProxyRoute::query()
             ->where('domain', self::ServiceDomain)
@@ -107,6 +118,21 @@ class MetricsRoleBaseline implements RoleBaseline
         $this->persistProcess($node, $name, $definition->command, $runtime, $definition->runtimeConfig);
     }
 
+    private function convergeWorkloadNodeExporters(Node $metricsNode): void
+    {
+        foreach ($this->fleetUpdateTargets()->workloadNodes() as $workloadNode) {
+            if ($workloadNode->is($metricsNode)) {
+                continue;
+            }
+
+            if (! $this->nodeSupportsHostExporter($workloadNode)) {
+                continue;
+            }
+
+            $this->convergeProcess($workloadNode, 'node-exporter', ProcessRuntime::Systemd);
+        }
+    }
+
     /**
      * @param  array<string, mixed>  $runtimeConfig
      */
@@ -150,6 +176,51 @@ class MetricsRoleBaseline implements RoleBaseline
             ->where('owner_type', $node->getMorphClass())
             ->where('owner_id', $node->id)
             ->max('sort_order')) + 1;
+    }
+
+    private function removeWorkloadNodeExporters(Node $metricsNode): void
+    {
+        $nodeIds = $this->fleetUpdateTargets()
+            ->workloadNodes()
+            ->map(fn (Node $node): int => $node->id)
+            ->push($metricsNode->id)
+            ->unique()
+            ->values()
+            ->all();
+
+        Process::query()
+            ->whereIn('node_id', $nodeIds)
+            ->where('owner_type', $metricsNode->getMorphClass())
+            ->whereColumn('owner_id', 'node_id')
+            ->where('name', 'node-exporter')
+            ->delete();
+    }
+
+    private function hasOtherActiveMetricsRole(NodeRoleAssignment $assignment): bool
+    {
+        return NodeRoleAssignment::query()
+            ->where('role', NodeRoleName::Metrics->value)
+            ->where('status', NodeRoleStatus::Active->value)
+            ->whereKeyNot($assignment->getKey())
+            ->exists();
+    }
+
+    private function nodeSupportsHostExporter(Node $node): bool
+    {
+        $platform = $this->normalizedPlatform($node);
+
+        return $platform !== null && in_array($platform, self::HostExporterPlatforms, true);
+    }
+
+    private function normalizedPlatform(Node $node): ?string
+    {
+        $platform = $node->platform;
+
+        if (! is_string($platform) || trim($platform) === '') {
+            return null;
+        }
+
+        return explode('_', $platform, 2)[0];
     }
 
     private function existingGrafanaPassword(?Process $process): ?string
@@ -247,5 +318,10 @@ class MetricsRoleBaseline implements RoleBaseline
     private function nodeRoleAssignments(): NodeRoleAssignments
     {
         return $this->nodeRoleAssignments ?? app(NodeRoleAssignments::class);
+    }
+
+    private function fleetUpdateTargets(): FleetUpdateTargetSelector
+    {
+        return $this->fleetUpdateTargets ?? app(FleetUpdateTargetSelector::class);
     }
 }

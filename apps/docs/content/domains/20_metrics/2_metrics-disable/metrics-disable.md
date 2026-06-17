@@ -31,7 +31,9 @@ orbit metrics:disable --node=metrics-1 --force --purge-data --json
 Run this command to remove the `metrics` role through the same role removal path as
 `node role:remove`. It removes Orbit-owned metrics process intent and the
 router-owned `metrics.orbit` route while preserving user data unless
-`--purge-data` is supplied.
+`--purge-data` is supplied. When the removed role is the last active metrics
+role, Orbit also removes the workload node-exporter process intent created by
+metrics convergence.
 
 ## Output
 

@@ -3,8 +3,9 @@
 ## Purpose
 
 Metrics is Orbit's optional host-resource observability surface. Enable the
-`metrics` role on a node when you want Prometheus, Grafana, node-exporter, and
-the private `metrics.orbit` route.
+`metrics` role on a node when you want Prometheus and Grafana on that node,
+node-exporter on metrics and workload nodes, and the private `metrics.orbit`
+route.
 
 ## Responsibilities
 

@@ -20,12 +20,14 @@ touch.
 - The private fleet endpoint is `https://metrics.orbit`. It exposes Grafana
   through router-owned private routing only.
 - Prometheus and Grafana run as Docker Swarm process definitions on the metrics
-  node. node-exporter runs as a host systemd process definition.
+  node. node-exporter runs as a host systemd process definition on the metrics
+  node and every active workload node selected by the fleet update target
+  selector.
 - The first metrics slice tracks host resources only. It does not claim
-  container-specific, app-specific, database-specific, or distributed fleet
-  scrape coverage.
+  container-specific, app-specific, database-specific, or dynamic scrape
+  discovery coverage.
 - Metrics can run on a dedicated node or be co-located with any non-agent role,
-  including a gateway/router node.
+  including a Debian gateway/router node.
 - The metrics command family coordinates node, tool, process, and proxy state.
   It does not own an independent `doctor --family=metrics` state family.
 
@@ -55,7 +57,8 @@ The metrics command domain coordinates state owned by other families:
   `doctor --family=tool`.
 - [`process`](../7_process/README.md) owns Prometheus, Grafana, and
   node-exporter process definitions, runtime artifacts, lifecycle, logs, and
-  runtime drift. Metrics runtime drift is verified and repaired through
+  runtime drift on the metrics node and workload nodes. Metrics runtime drift is
+  verified and repaired through
   `doctor --family=process`.
 - [`proxy`](../8_proxy/README.md) owns the router-owned `metrics.orbit` route
   and derived proxy/TLS artifacts. Route drift is verified and repaired through
