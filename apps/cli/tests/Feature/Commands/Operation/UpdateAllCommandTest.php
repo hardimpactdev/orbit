@@ -70,21 +70,37 @@ it('fails before gateway start when the local update preflight fails', function 
         ->and($decoded['error']['data'])->toBe(['output' => 'local binary update failed']);
 });
 
-it('renders followed progress events in human mode without a parallel renderer', function (): void {
+it('renders update-all target progress in human mode', function (): void {
     fakeGateway(fakeUpdateAllStartEnvelope());
     app()->instance(GatewayOperationFollower::class, new UpdateAllCommandFakeFollower([
         ['type' => ProgressEventType::Tree, 'payload' => ['title' => 'Update all', 'steps' => [['label' => 'Update gateway']]]],
-        ['type' => ProgressEventType::Step, 'payload' => ['message' => 'Updating gateway service']],
-        ['type' => ProgressEventType::Complete, 'payload' => ['footer' => 'Updated Orbit fleet.']],
+        ['type' => ProgressEventType::Step, 'payload' => ['message' => 'Fleet update lease acquired']],
+        ['type' => ProgressEventType::Step, 'payload' => ['message' => 'Updating orbit-gateway service']],
+        ['type' => ProgressEventType::Step, 'payload' => ['message' => 'Gateway services updated']],
+        ['type' => ProgressEventType::Step, 'payload' => ['message' => 'Updating workload node agent']],
+        ['type' => ProgressEventType::Step, 'payload' => ['message' => 'Workload node agent updated']],
+        ['type' => ProgressEventType::Step, 'payload' => ['message' => 'Verifying fleet update']],
+        ['type' => ProgressEventType::Step, 'payload' => ['message' => 'Fleet update verified']],
+        ['type' => ProgressEventType::Complete, 'payload' => [
+            'status' => 'succeeded',
+            'target_version' => '1.2.3',
+            'manifest_version' => '1.2.3',
+        ]],
     ]));
 
     [$exitCode, $output] = runCommand($this, 'update:all');
 
     expect($exitCode)->toBe(0)
-        ->and($output)->toContain('[tree] Update all')
-        ->and($output)->toContain('[step] Update gateway')
-        ->and($output)->toContain('[step] Updating gateway service')
-        ->and($output)->toContain('Updated Orbit fleet.')
+        ->and($output)->toContain('Updating Orbit nodes')
+        ->and($output)->toMatch('/local\s+Updating CLI/')
+        ->and($output)->toMatch('/local\s+Done/')
+        ->and($output)->toMatch('/gateway\s+Updating gateway service/')
+        ->and($output)->toMatch('/agent\s+Updating node CLI/')
+        ->and($output)->toMatch('/agent\s+Done/')
+        ->and($output)->toContain('Successfully updated 3 nodes')
+        ->and($output)->not->toContain('[tree]')
+        ->and($output)->not->toContain('[step]')
+        ->and($output)->not->toContain('status: succeeded')
         ->and($output)->not->toContain('"success"');
 });
 
