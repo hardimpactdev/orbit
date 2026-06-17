@@ -43,19 +43,24 @@ This command follows the shared
 
 The rendered category set is derived from the target node's active role
 assignments. The compatibility node role field is a shadow for identity and
-output only; workload-family doctor eligibility comes from `node_role`.
+output only; workload-family doctor eligibility comes from `node_role`. Every
+node with at least one active role assignment includes `Processes`. A
+client/operator identity with no active role assignment renders only `Node`.
 
 | Target role assignment state | Categories |
 | --- | --- |
 | client with no active role | `Node` |
-| active `gateway` role | `Node`, `Scheduling` |
-| active `database` role only | `Node`, `Tools` |
-| active `agent` role | `Node`, `Tools` |
+| active `gateway` role | `Node`, `Processes`, `Scheduling` |
+| active `database` role only | `Node`, `Tools`, `Processes` |
+| active `agent` role | `Node`, `Tools`, `Processes` |
+| active `router` role | `Node`, `Proxy routes`, `Processes` |
 | active `app-dev` role | `Node`, `Apps`, `Workspaces`, `Processes`, `Proxy routes`, `Firewall`, `Tools`, `Scheduling`, `Databases` |
 | active `app-prod` role | `Node`, `Apps`, `Processes`, `Proxy routes`, `Firewall`, `Tools`, `Scheduling`, `Databases` |
-| active `ingress` role | `Node`, `Proxy routes`, `Firewall`, `Tools` |
-| active `websocket` role | `Node`, `Tools`, `Proxy routes` |
-| active `s3` role | `Node`, `Tools`, `Proxy routes` |
+| active `ingress` role | `Node`, `Proxy routes`, `Firewall`, `Tools`, `Processes` |
+| active `websocket` role | `Node`, `Tools`, `Processes` |
+| active `s3` role | `Node`, `Tools`, `Proxy routes`, `Processes` |
+| active `metrics` role | `Node`, `Tools`, `Processes`, `Proxy routes` |
+| active `vpn` or `analytics` role without another role-specific category | `Node`, `Processes` |
 
 Families outside the target's role-assignment set are rejected before probes. A narrow `--family` filter intersects with that set. The renderer never shows placeholder rows for families that are not in the target's set.
 
@@ -224,7 +229,7 @@ Required contract tests:
 | Path | Coverage |
 | --- | --- |
 | `apps/gateway/tests/Feature/Commands/Operations/DoctorCommandContractTest.php` | Generic input contract, `--key`, `--dry-run`, scope resolution, mutually exclusive flags, mode selection, family-key validation, gateway authorization failures, exit-code semantics, JSON envelope, and family dispatch boundaries. |
-| `apps/gateway/tests/Feature/Commands/Operations/DoctorRoleAwareCategoriesTest.php` | Single-node scope default to `--self`, role-aware category set per target active roles, app-dev/app-prod workspace split, `--family` rejection for families outside the target's role-assignment set, and per-node probe scoping for app/workspace/proxy families. |
+| `apps/gateway/tests/Unit/Services/Doctor/DoctorReportRunnerTest.php` | Role-aware category set per target active roles, universal process-family support for role-bearing nodes, app-dev/app-prod workspace split, `--family` rejection through scope validation, and per-node probe scoping for app/workspace/proxy families. |
 | `apps/gateway/tests/Feature/Http/Api/DoctorRunControllerTest.php` | Gateway API verify and fix endpoints, target node resolution from request body, caller authorization, and family dispatch over the API path. |
 | `apps/gateway/tests/Unit/Services/Doctor/DoctorReportRunnerTest.php` | Per-target probe scoping, restore-mode action suppression, action failure recording, and family dispatch through the in-process runner. |
 

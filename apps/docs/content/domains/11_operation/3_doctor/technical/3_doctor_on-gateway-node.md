@@ -33,19 +33,24 @@ Gateway peers are the authority path for doctor.
 ## Category Set by Target Roles
 
 The rendered category set is derived from the *target* node's active roles, not
-the calling peer's role.
+the calling peer's role. Every node with at least one active role assignment
+includes `Processes`. A client/operator identity with no active role assignment
+renders only `Node`.
 
 | Target role assignment state | Categories |
 | --- | --- |
-| active `gateway` role (default or `--self`) | `Node`, `Scheduling` |
+| active `gateway` role (default or `--self`) | `Node`, `Processes`, `Scheduling` |
 | client with no active role | `Node` |
-| active `database` role only | `Node`, `Tools` |
-| active `agent` role | `Node`, `Tools` |
+| active `database` role only | `Node`, `Tools`, `Processes` |
+| active `agent` role | `Node`, `Tools`, `Processes` |
+| active `router` role | `Node`, `Proxy routes`, `Processes` |
 | active `app-dev` role | `Node`, `Apps`, `Workspaces`, `Processes`, `Proxy routes`, `Firewall`, `Tools`, `Scheduling`, `Databases` |
 | active `app-prod` role | `Node`, `Apps`, `Processes`, `Proxy routes`, `Firewall`, `Tools`, `Scheduling`, `Databases` |
-| active `ingress` role | `Node`, `Proxy routes`, `Firewall`, `Tools` |
-| active `websocket` role | `Node`, `Tools`, `Proxy routes` |
-| active `s3` role | `Node`, `Tools`, `Proxy routes` |
+| active `ingress` role | `Node`, `Proxy routes`, `Firewall`, `Tools`, `Processes` |
+| active `websocket` role | `Node`, `Tools`, `Processes` |
+| active `s3` role | `Node`, `Tools`, `Proxy routes`, `Processes` |
+| active `metrics` role | `Node`, `Tools`, `Processes`, `Proxy routes` |
+| active `vpn` or `analytics` role without another role-specific category | `Node`, `Processes` |
 
 A narrow `--family` filter intersects with the target active-role set; families
 outside the set are rejected before probes.
@@ -106,5 +111,5 @@ Primary test owners:
 | Path | Coverage |
 | --- | --- |
 | `apps/gateway/tests/Feature/Commands/Operations/DoctorCommandContractTest.php` | Gateway-local execution for the node family, drift-detected exit semantics, restore/adopt action rendering, mutually exclusive flag rejection, unsupported family rejection, and `--node=<other>` cross-targeting from a gateway peer. |
-| `apps/gateway/tests/Feature/Commands/Operations/DoctorRoleAwareCategoriesTest.php` | Role-aware category set for gateway target, single-node scope default to `--self`, and rejection of out-of-role families. |
+| `apps/gateway/tests/Unit/Services/Doctor/DoctorReportRunnerTest.php` | Role-aware category set for gateway and other role-bearing targets, universal process-family support for role-bearing nodes, and family scope validation. |
 | `apps/gateway/tests/Unit/Services/Doctor/DoctorReportRunnerTest.php` | Per-node probe scoping, restore action suppression, action failure recording, and family dispatch through the gateway-local runner path. |

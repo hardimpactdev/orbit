@@ -35,6 +35,9 @@ orbit doctor --node=beast --fix --adopt --family=app  # adopt only apps
 orbit doctor --app=myapp                            # app-scoped report
 ```
 
+The process family is available for every node with at least one active role
+assignment. Role-less client/operator identities remain node-family only.
+
 **Important:** `--fix --adopt` for the `app` family treats filesystem presence as intent. A directory left over from a previous `app:remove` will be re-created. Clean the node first.
 
 ## `orbit update`

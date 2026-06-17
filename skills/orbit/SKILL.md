@@ -321,6 +321,9 @@ orbit app:agent-ide myapp polyscope  # per-app override
   `doctor --family=<key>` to scope drift checks; family keys are `node`, `app`,
   `workspace`, `process`, `proxy`, `schedule`, `tool`, `firewall_rule`, and
   `database_connection`.
+- `doctor --family=process --node=<node>` is valid for every node with at
+  least one active role assignment. Role-less client/operator identities remain
+  node-family only.
 - Don't SSH to nodes manually to "fix" Orbit state  -  use `doctor --fix` so intent and reality stay aligned.
 
 ## When to read which reference

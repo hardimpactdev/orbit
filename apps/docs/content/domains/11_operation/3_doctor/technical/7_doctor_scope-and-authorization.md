@@ -20,7 +20,7 @@ and [`3_doctor_on-gateway-node.md`](3_doctor_on-gateway-node.md).
 - Reject mutually exclusive option combinations before probes.
 - Mutually exclusive pairs: `--fix`/`--restore`, `--fix`/`--adopt`, `--restore`/`--adopt`, and `--self`/`--node`.
 - Reject unresolvable family, node, app, or workspace scopes before probes.
-- Reject family selections outside the target node's active-role category set before probes.
+- Reject family selections outside the target node's active-role category set before probes. The `process` family is inside that set for every node with at least one active role assignment.
 - Reject mode requests unsupported by the selected family before side effects.
 
 ## Grant Boundaries
@@ -37,4 +37,4 @@ and [`3_doctor_on-gateway-node.md`](3_doctor_on-gateway-node.md).
 | Path | Coverage |
 | --- | --- |
 | `apps/gateway/tests/Feature/Commands/Operations/DoctorCommandContractTest.php` | Scope resolution, mutually exclusive flag rejection, family-key validation, and gateway authorization failures. |
-| `apps/gateway/tests/Feature/Commands/Operations/DoctorRoleAwareCategoriesTest.php` | Rejection of family selections outside the target node's active-role category set. |
+| `apps/gateway/tests/Unit/Services/Doctor/DoctorReportRunnerTest.php` | Family scope validation against the target node's active-role category set, including process-family support for every role-bearing node. |

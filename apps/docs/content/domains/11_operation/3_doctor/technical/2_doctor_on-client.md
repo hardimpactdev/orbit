@@ -37,18 +37,23 @@ Operator peers do not probe fleet reality directly. The CLI is a client of the g
 The rendered category set is derived from the *target* node's active roles, not
 the calling peer's role. The CLI forwards the request, the gateway authorizes
 and probes, and the renderer shows only categories that apply to the target.
+Every node with at least one active role assignment includes `Processes`. A
+client/operator identity with no active role assignment renders only `Node`.
 
 | Target role assignment state | Categories |
 | --- | --- |
 | client with no active role (default or `--self`) | `Node` |
-| active `gateway` role (via `--node=<gateway>`) | `Node`, `Scheduling` |
-| active `database` role only | `Node`, `Tools` |
-| active `agent` role | `Node`, `Tools` |
+| active `gateway` role (via `--node=<gateway>`) | `Node`, `Processes`, `Scheduling` |
+| active `database` role only | `Node`, `Tools`, `Processes` |
+| active `agent` role | `Node`, `Tools`, `Processes` |
+| active `router` role | `Node`, `Proxy routes`, `Processes` |
 | active `app-dev` role | `Node`, `Apps`, `Workspaces`, `Processes`, `Proxy routes`, `Firewall`, `Tools`, `Scheduling`, `Databases` |
 | active `app-prod` role | `Node`, `Apps`, `Processes`, `Proxy routes`, `Firewall`, `Tools`, `Scheduling`, `Databases` |
-| active `ingress` role | `Node`, `Proxy routes`, `Firewall`, `Tools` |
-| active `websocket` role | `Node`, `Tools`, `Proxy routes` |
-| active `s3` role | `Node`, `Tools`, `Proxy routes` |
+| active `ingress` role | `Node`, `Proxy routes`, `Firewall`, `Tools`, `Processes` |
+| active `websocket` role | `Node`, `Tools`, `Processes` |
+| active `s3` role | `Node`, `Tools`, `Proxy routes`, `Processes` |
+| active `metrics` role | `Node`, `Tools`, `Processes`, `Proxy routes` |
+| active `vpn` or `analytics` role without another role-specific category | `Node`, `Processes` |
 
 A narrow `--family` filter intersects with the target active-role set; families
 outside the set are rejected before probes.
@@ -106,5 +111,5 @@ Primary test owners:
 
 | Path | Coverage |
 | --- | --- |
-| `apps/gateway/tests/Feature/Commands/Operations/DoctorRoleAwareCategoriesTest.php` | Single-node scope default to `--self`, role-aware category set per target active roles, `--family` rejection for families outside the target active-role set, and `--node=<other>` role-assignment scoping for app-family probes. |
+| `apps/gateway/tests/Unit/Services/Doctor/DoctorReportRunnerTest.php` | Role-aware category set per target active roles, universal process-family support for role-bearing nodes, and family scope validation against the target category set. |
 | `apps/gateway/tests/Feature/Commands/Operations/DoctorCommandContractTest.php` | Operator-node forwarding through the typed gateway request, mutually exclusive flag rejection, unsupported family rejection, authorization failure handling, verify request shape, and rendered panel structure. |

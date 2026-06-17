@@ -18,6 +18,7 @@ use App\Models\SchedulerState;
 use App\Models\WireGuardPeer;
 use App\Models\Workspace;
 use App\Services\Doctor\DoctorReportRunner;
+use App\Services\Doctor\DoctorScopeValidator;
 use App\Services\Nodes\DevelopmentDnsMappingEnactor;
 use App\Services\Nodes\DevelopmentDnsMappingProbe;
 use App\Services\Runtime\OrbitCaddyContainer;
@@ -1560,6 +1561,52 @@ TXT;
             ->and($runner->categoriesForNode($appNode))->toContain('database_connection')
             ->and($runner->categoriesForNode($databaseNode))->not->toContain('database_connection')
             ->and($runner->categoriesForNode($databaseNode))->toContain('process');
+    });
+
+    it('supports the process family on every node with an active role assignment', function (string $role): void {
+        $node = Node::factory()->create(['status' => 'active']);
+        NodeRoleAssignment::factory()->create([
+            'node_id' => $node->id,
+            'role' => $role,
+            'status' => 'active',
+        ]);
+
+        $categories = app(DoctorReportRunner::class)->categoriesForNode($node);
+
+        expect($categories)->toContain('process');
+    })->with([
+        'gateway' => ['gateway'],
+        'vpn' => ['vpn'],
+        'router' => ['router'],
+        'app-dev' => ['app-dev'],
+        'app-prod' => ['app-prod'],
+        'database' => ['database'],
+        'agent' => ['agent'],
+        'ingress' => ['ingress'],
+        'websocket' => ['websocket'],
+        's3' => ['s3'],
+        'metrics' => ['metrics'],
+        'analytics' => ['analytics'],
+    ]);
+
+    it('does not support the process family on nodes without an active role assignment', function (): void {
+        $node = Node::factory()->create(['status' => 'active']);
+
+        $categories = app(DoctorReportRunner::class)->categoriesForNode($node);
+
+        expect($categories)->toBe(['node']);
+    });
+
+    it('allows explicit process doctor scope on role-bearing nodes', function (): void {
+        $node = Node::factory()->agent()->create(['status' => 'active']);
+
+        $failure = app(DoctorScopeValidator::class)->validate(
+            families: ['process'],
+            runner: app(DoctorReportRunner::class),
+            target: $node,
+        );
+
+        expect($failure)->toBeNull();
     });
 
     it('does not mark database connection unverifiable issues as adoptable', function (): void {

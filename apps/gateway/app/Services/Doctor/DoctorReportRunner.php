@@ -151,21 +151,33 @@ final readonly class DoctorReportRunner
     public function categoriesForNode(Node $node): array
     {
         $categories = [];
+        $hasActiveRole = false;
 
         foreach (self::ROLE_CATEGORY_PRIORITY as $role) {
             if (! $this->nodeRoleAssignments->nodeHasActiveRole($node, $role)) {
                 continue;
             }
 
+            $hasActiveRole = true;
             $categories = [
                 ...$categories,
                 ...$this->categoriesForRole($role),
             ];
         }
 
-        $categories = array_values(array_unique($categories));
+        if (! $hasActiveRole) {
+            $hasActiveRole = $this->nodeHasAnyActiveRole($node);
+        }
 
-        return $categories === [] ? self::CONTROL_CATEGORIES : $categories;
+        if ($categories === []) {
+            $categories = self::CONTROL_CATEGORIES;
+        }
+
+        if ($hasActiveRole) {
+            $categories[] = 'process';
+        }
+
+        return array_values(array_unique($categories));
     }
 
     /**
@@ -800,6 +812,17 @@ final readonly class DoctorReportRunner
     private function activeS3Assignment(Node $node): ?NodeRoleAssignment
     {
         return $this->nodeRoleAssignments->activeAssignment($node, NodeRoleName::S3->value);
+    }
+
+    private function nodeHasAnyActiveRole(Node $node): bool
+    {
+        return $this->nodeRoleAssignments->nodeHasAnyActiveRole(
+            $node,
+            array_map(
+                static fn (NodeRoleName $role): string => $role->value,
+                NodeRoleName::cases(),
+            ),
+        );
     }
 
     /**
