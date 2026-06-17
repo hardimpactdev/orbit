@@ -17,6 +17,7 @@ use App\Models\NodeRoleAssignment;
 use App\Models\NodeTool;
 use App\Models\Process;
 use App\Models\ProxyRoute;
+use App\Services\Dns\DnsmasqReconciler;
 use App\Services\Firewall\FirewallRuleFixer;
 use App\Services\Metrics\MetricsServiceRoute;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
@@ -58,6 +59,7 @@ class MetricsRoleBaseline implements RoleBaseline
         private readonly ?ToolsFixer $toolsFixer = null,
         private readonly ?ProcessRuntimeDriverRegistry $processRuntimeDrivers = null,
         private readonly ?FirewallRuleFixer $firewallRuleFixer = null,
+        private readonly ?DnsmasqReconciler $dnsmasqReconciler = null,
     ) {}
 
     public function converge(Node $node, NodeRoleAssignment $assignment): void
@@ -101,6 +103,8 @@ class MetricsRoleBaseline implements RoleBaseline
             ->where('owner_type', 'router')
             ->whereJsonContains('config->owner_name', 'grafana')
             ->delete();
+
+        $this->dnsmasqReconciler()->reconcile();
     }
 
     protected function toolCatalog(): ToolCatalog
@@ -638,6 +642,8 @@ SH,
                 'source_hash' => $sourceHash,
             ],
         );
+
+        $this->dnsmasqReconciler()->reconcile();
     }
 
     /**
@@ -672,6 +678,11 @@ SH,
         ksort($spec);
 
         return substr(hash('sha256', json_encode($spec, JSON_THROW_ON_ERROR)), 0, 16);
+    }
+
+    private function dnsmasqReconciler(): DnsmasqReconciler
+    {
+        return $this->dnsmasqReconciler ?? app(DnsmasqReconciler::class);
     }
 
     /**

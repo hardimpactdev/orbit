@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Services\Vpn;
 
-use App\Models\Node;
 use App\Services\Dns\DnsmasqConfigBuilder;
 use App\Services\Gateway\GatewaySwarmManager;
 use App\Services\Gateway\GatewaySwarmStackRenderer;
@@ -58,7 +57,7 @@ class VpnDnsSwarmInstaller extends WgEasyServiceInstaller
 
         File::ensureDirectoryExists($this->rootPath, 0700);
         File::ensureDirectoryExists($this->statePath(), 0700);
-        File::put($this->rootPath.'/dnsmasq.conf', $this->configBuilder->build(Node::query()->get()));
+        File::put($this->rootPath.'/dnsmasq.conf', $this->configBuilder->buildGatewayState());
 
         $this->swarm->ensureSwarm();
         $this->swarm->ensureGatewayEdgeNodeLabels();

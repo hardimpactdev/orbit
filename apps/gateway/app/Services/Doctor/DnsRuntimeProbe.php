@@ -6,7 +6,6 @@ namespace App\Services\Doctor;
 
 use App\Data\Doctor\DriftEntry;
 use App\Enums\DriftKind;
-use App\Models\Node;
 use App\Services\Dns\DnsmasqConfigBuilder;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Process;
@@ -118,7 +117,7 @@ final readonly class DnsRuntimeProbe
             return true;
         }
 
-        $expected = $this->configBuilder->build(Node::query()->get());
+        $expected = $this->configBuilder->buildGatewayState();
 
         return File::get($confPath) !== $expected;
     }
@@ -142,7 +141,7 @@ final readonly class DnsRuntimeProbe
 
     private function restoreConfig(): bool
     {
-        $expected = $this->configBuilder->build(Node::query()->get());
+        $expected = $this->configBuilder->buildGatewayState();
         File::put($this->confPath(), $expected);
         $result = Process::timeout(30)->run('docker restart orbit-dns');
 

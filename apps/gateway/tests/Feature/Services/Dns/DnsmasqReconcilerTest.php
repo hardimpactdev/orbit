@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Models\Node;
+use App\Models\ProxyRoute;
 use App\Services\Dns\DnsmasqConfigBuilder;
 use App\Services\Dns\DnsmasqReconciler;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -97,6 +98,33 @@ it('rewrites the conf and restarts dns when fleet state changes', function (): v
     $reconciler->reconcile();
 
     expect(File::get($this->confPath))->toContain('address=/app-1.test/10.6.0.3');
+});
+
+it('writes router-owned orbit service route names into dnsmasq.conf', function (): void {
+    Process::fake([
+        "docker service inspect 'orbit_orbit-dns'" => Process::result(exitCode: 1),
+        'docker restart orbit-dns' => Process::result(),
+    ]);
+
+    $router = Node::factory()->create([
+        'name' => 'gateway',
+        'tld' => 'gateway',
+        'wireguard_address' => '10.6.0.2',
+    ]);
+    ProxyRoute::factory()->create([
+        'node_id' => $router->id,
+        'domain' => 'metrics.orbit',
+        'owner_type' => 'router',
+        'kind' => 'proxy',
+    ]);
+
+    (new DnsmasqReconciler(
+        configBuilder: new DnsmasqConfigBuilder,
+        rootPath: $this->workdir,
+    ))->reconcile();
+
+    expect(File::get($this->confPath))->toContain('address=/metrics.orbit/10.6.0.2')
+        ->and(File::get($this->confPath))->toContain('local=/metrics.orbit/');
 });
 
 it('does not rewrite the compose topology while reconciling dns state', function (): void {

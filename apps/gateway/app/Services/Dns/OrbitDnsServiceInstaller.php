@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Services\Dns;
 
-use App\Models\Node;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Process;
 use RuntimeException;
@@ -23,7 +22,7 @@ class OrbitDnsServiceInstaller
         File::ensureDirectoryExists($this->rootPath);
 
         $confPath = $this->rootPath.'/dnsmasq.conf';
-        $config = $this->configBuilder->build(Node::query()->get());
+        $config = $this->configBuilder->buildGatewayState();
         $existingConfig = File::exists($confPath) ? File::get($confPath) : null;
 
         if ($existingConfig !== $config) {

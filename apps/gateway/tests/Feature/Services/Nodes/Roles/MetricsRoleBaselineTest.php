@@ -13,6 +13,7 @@ use App\Models\NodeRoleAssignment;
 use App\Models\NodeTool;
 use App\Models\Process;
 use App\Models\ProxyRoute;
+use App\Services\Dns\DnsmasqReconciler;
 use App\Services\Nodes\Roles\NodeRoleAssignmentService;
 use App\Services\Nodes\Roles\NodeRoleBaselineConverger;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -21,8 +22,10 @@ uses(RefreshDatabase::class);
 
 beforeEach(function (): void {
     $this->metricsShell = new MetricsRoleBaselineRecordingShell;
+    $this->metricsDnsmasqReconciler = new MetricsRoleBaselineRecordingDnsmasqReconciler;
 
     app()->instance(RemoteShell::class, $this->metricsShell);
+    app()->instance(DnsmasqReconciler::class, $this->metricsDnsmasqReconciler);
 });
 
 it('converges metrics role intent as process-owned Prometheus Grafana and host exporter services', function (): void {
@@ -120,7 +123,8 @@ it('converges metrics role intent as process-owned Prometheus Grafana and host e
             'upstreams' => [
                 ['scheme' => 'http', 'host' => 'host.docker.internal', 'port' => 3000],
             ],
-        ]);
+        ])
+        ->and($this->metricsDnsmasqReconciler->reconciles)->toBe(1);
 });
 
 it('rewrites stale metrics service route intent when the metrics baseline reconverges', function (): void {
@@ -440,5 +444,17 @@ final class MetricsRoleBaselineRecordingShell implements RemoteShell
             fn (array $run): string => $run['script'],
             array_filter($this->runs, fn (array $run): bool => $run['node'] === $node),
         ));
+    }
+}
+
+final class MetricsRoleBaselineRecordingDnsmasqReconciler extends DnsmasqReconciler
+{
+    public int $reconciles = 0;
+
+    public function __construct() {}
+
+    public function reconcile(): void
+    {
+        $this->reconciles++;
     }
 }
