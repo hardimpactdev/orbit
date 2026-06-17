@@ -11,10 +11,10 @@ function processListSeed(E2ETopologyHarness $topology): void
 {
     $script = <<<'PHP'
 $nodes = \App\Models\Node::query()
-    ->whereIn('name', ['operator-1', 'app-dev-1'])
+    ->whereIn('name', ['operator-1', 'gateway', 'app-dev-1'])
     ->pluck('id', 'name');
 
-foreach (['operator-1', 'app-dev-1'] as $name) {
+foreach (['operator-1', 'gateway', 'app-dev-1'] as $name) {
     if (! $nodes->has($name)) {
         throw new \RuntimeException("Missing prepared node [{$name}].");
     }
@@ -26,12 +26,22 @@ foreach (['operator-1', 'app-dev-1'] as $name) {
 \App\Models\App::query()->delete();
 \Illuminate\Support\Facades\DB::table('node_access')->delete();
 \Illuminate\Support\Facades\DB::table('node_access')->insert([
-    'consumer_node_id' => $nodes->get('operator-1'),
-    'serving_node_id' => $nodes->get('app-dev-1'),
-    'permissions' => json_encode(['process:read'], JSON_THROW_ON_ERROR),
-    'custom_permissions' => json_encode([], JSON_THROW_ON_ERROR),
-    'created_at' => now(),
-    'updated_at' => now(),
+    [
+        'consumer_node_id' => $nodes->get('operator-1'),
+        'serving_node_id' => $nodes->get('app-dev-1'),
+        'permissions' => json_encode(['process:read'], JSON_THROW_ON_ERROR),
+        'custom_permissions' => json_encode([], JSON_THROW_ON_ERROR),
+        'created_at' => now(),
+        'updated_at' => now(),
+    ],
+    [
+        'consumer_node_id' => $nodes->get('operator-1'),
+        'serving_node_id' => $nodes->get('gateway'),
+        'permissions' => json_encode(['process:read'], JSON_THROW_ON_ERROR),
+        'custom_permissions' => json_encode([], JSON_THROW_ON_ERROR),
+        'created_at' => now(),
+        'updated_at' => now(),
+    ],
 ]);
 
 \App\Models\NodeRoleAssignment::query()->updateOrCreate(
@@ -46,6 +56,18 @@ foreach (['operator-1', 'app-dev-1'] as $name) {
         'converged_at' => now(),
     ],
 );
+
+$gateway = \App\Models\Node::query()->where('name', 'gateway')->firstOrFail();
+$gateway->processes()->create([
+    'node_id' => $gateway->id,
+    'name' => 'prometheus',
+    'command' => 'prometheus --config.file=/etc/prometheus/prometheus.yml',
+    'restart_policy' => \App\Enums\ProcessRestartPolicy::Always,
+    'crash_notification' => \App\Enums\ProcessCrashNotification::None,
+    'runtime' => \App\Enums\Processes\ProcessRuntime::DockerSwarm,
+    'runtime_config' => ['service_name' => 'orbit-prometheus'],
+    'sort_order' => 1,
+]);
 
 $app = \App\Models\App::query()->create([
     'name' => 'docs',
@@ -175,6 +197,28 @@ it('lists app processes from a operator caller through the gateway api', functio
             ->and(array_column($workspacePayload['success']['data']['processes'], 'name'))->toBe(['frankenphp-docs-feature-docs', 'vite', 'queue'])
             ->and($workspacePayload['success']['data']['processes'][0]['runtime_unit'])->toBe('orbit-ws-docs-feature-docs')
             ->and($workspacePayload['success']['data']['processes'][1]['runtime_unit'])->toBe('orbit_docs_feature-docs_vite');
+
+        $gatewayResult = $topology->ssh(
+            'operator',
+            sprintf(
+                'cd %s && orbit process:list --node=gateway --json',
+                escapeshellarg($topology->checkout('operator')),
+            ),
+            timeoutSeconds: 120,
+        );
+
+        $gatewayPayload = json_decode(trim($gatewayResult->output()), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($gatewayResult->successful())->toBeTrue($gatewayResult->output().$gatewayResult->errorOutput())
+            ->and($gatewayPayload['success']['data']['context'])->toBe(['node' => 'gateway', 'app' => null, 'workspace' => null])
+            ->and($gatewayPayload['success']['data']['processes'][0])->toMatchArray([
+                'node' => 'gateway',
+                'app' => null,
+                'workspace' => null,
+                'name' => 'prometheus',
+                'runtime' => 'docker-swarm',
+                'runtime_unit' => 'orbit-prometheus',
+            ]);
 
         // Empty state: app with no processes — clear processes on gateway then re-list
         processListRunGatewayTinker($topology, "\\App\\Models\\Process::query()->delete(); echo 'cleared';");

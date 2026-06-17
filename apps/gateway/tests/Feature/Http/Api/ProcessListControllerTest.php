@@ -125,6 +125,26 @@ describe('ProcessListController', function (): void {
             ->assertJsonPath('success.data.processes.0.runtime_unit', 'opencode-server');
     });
 
+    it('lets authorized callers list processes for active role-bearing nodes', function (): void {
+        $caller = createProcessListCallerNode();
+        $gateway = createTestGatewayNode(['name' => 'gateway']);
+        grantProcessListAccess($caller, $gateway);
+        Process::factory()->forOwner($gateway)->create([
+            'name' => 'prometheus',
+            'runtime' => ProcessRuntime::DockerSwarm,
+            'runtime_config' => ['service_name' => 'orbit-prometheus'],
+            'sort_order' => 1,
+        ]);
+
+        $response = $this->call('GET', '/api/processes?node=gateway', [], [], [], ['REMOTE_ADDR' => PROCESS_LIST_CALLER_WG_IP]);
+
+        $response->assertOk()
+            ->assertJsonPath('success.data.context', ['node' => 'gateway', 'app' => null, 'workspace' => null])
+            ->assertJsonPath('success.data.processes.0.name', 'prometheus')
+            ->assertJsonPath('success.data.processes.0.runtime', 'docker-swarm')
+            ->assertJsonPath('success.data.processes.0.runtime_unit', 'orbit-prometheus');
+    });
+
     it('lists service definition connection metadata for node owned service processes without exposing credential values', function (): void {
         createProcessListCallerNode(role: 'gateway');
         $node = createTestAppHostNode([
