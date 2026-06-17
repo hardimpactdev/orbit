@@ -93,6 +93,13 @@ class AppServiceProvider extends ServiceProvider
         $this->app->scoped(ActivityLogCorrelation::class);
         $this->app->scoped(WebSocketRoleBaselineTiming::class);
         $this->app->singleton(OperationResultRegistry::class);
+        $this->app->afterResolving(DataConfig::class, function (DataConfig $config): void {
+            $config->enforceMorphMap([
+                'orbit_app_instance_driver_config' => OrbitAppInstanceDriverConfigData::class,
+                'laravel_cloud_app_instance_driver_config' => LaravelCloudAppInstanceDriverConfigData::class,
+            ]);
+        });
+
         $this->app->bind(OperationTokenFactory::class, fn ($app): OperationTokenFactory => new OperationTokenFactory(
             signer: $app->make(OperationTokenSigner::class),
             secret: $this->operationTokenSigningKey(),
@@ -207,11 +214,6 @@ class AppServiceProvider extends ServiceProvider
     public function boot(): void
     {
         $this->loadMigrationsFrom(base_path('database/migrations'));
-
-        app(DataConfig::class)->enforceMorphMap([
-            'orbit_app_instance_driver_config' => OrbitAppInstanceDriverConfigData::class,
-            'laravel_cloud_app_instance_driver_config' => LaravelCloudAppInstanceDriverConfigData::class,
-        ]);
     }
 
     private function orbitConfigPath(): string
