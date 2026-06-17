@@ -50,4 +50,5 @@ These are the commands in the operation domain.
 1. [`orbit update`](1_update/update.md)
 2. [`orbit update:all`](2_update-all/update-all.md)
 3. [`orbit doctor`](3_doctor/doctor.md)
-4. [`orbit profile [target]`](5_profile/profile.md)
+4. [`orbit version`](4_version/version.md)
+5. [`orbit profile [target]`](5_profile/profile.md)

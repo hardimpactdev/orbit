@@ -113,6 +113,11 @@ manifest consumed by fleet updates. Source-dev Docker and Incus topologies may p
 `/usr/local/bin/orbit` directly at `<source>/apps/cli/orbit` and bind-mount or
 copy the worktree for fast iteration. Artifact-prod topologies use the native
 CLI binary plus production images and validate the actual release artifacts.
+Production installs record local CLI install metadata at
+`$HOME/.config/orbit/install.json` by default, or `ORBIT_INSTALL_METADATA_PATH`
+when set, after the linked binary verifies. `orbit version` reads that metadata
+to render the installed timestamp and falls back to the binary mtime for older
+installs.
 Host PHP is not an app/workspace runtime fallback and must not replace
 FrankenPHP app/workspace containers.
 

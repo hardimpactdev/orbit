@@ -12,7 +12,7 @@ describe('CLI source entrypoint', function (): void {
         expect($capture['ORBIT_APP'])->toBe('cli')
             ->and($capture['ORBIT_HOST_CWD'])->toBe($capture['host_cwd'])
             ->and($capture['PWD'])->toBe($capture['host_cwd'])
-            ->and($capture['args'])->toBe('[--version]');
+            ->and($capture['args'])->toBe('[version]');
     });
 
     it('preserves a supplied host cwd when invoked directly from source', function (): void {
@@ -25,7 +25,7 @@ describe('CLI source entrypoint', function (): void {
             ->and($capture['ENV_ORBIT_HOST_CWD'])->toBe('/tmp/orbit-custom-cwd')
             ->and($capture['SERVER_ORBIT_HOST_CWD'])->toBe('/tmp/orbit-custom-cwd')
             ->and($capture['PWD'])->toBe($capture['host_cwd'])
-            ->and($capture['args'])->toBe('[--version]');
+            ->and($capture['args'])->toBe('[version]');
     });
 
     it('preserves a supplied host cwd exactly, including surrounding spaces', function (): void {

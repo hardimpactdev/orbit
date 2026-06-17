@@ -111,6 +111,10 @@ quote() {
     printf '%q' "$1"
 }
 
+json_escape() {
+    printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'
+}
+
 run() {
     ensure_log_file
 
@@ -845,6 +849,56 @@ JSON
     run rm -f "$tmp_file"
 }
 
+write_install_metadata() {
+    local target_home
+    local metadata_file
+    local metadata_dir
+    local tmp_file
+    local owner
+    local group
+    local version
+    local installed_at
+
+    target_home="${ORBIT_CONFIG_HOME:-$HOME}"
+    metadata_file="${ORBIT_INSTALL_METADATA_PATH:-}"
+
+    if [ -z "$metadata_file" ]; then
+        if [ -z "$target_home" ]; then
+            # No HOME — skip silently; the CLI will fall back to binary mtime.
+            return 0
+        fi
+
+        metadata_file="${target_home}/.config/orbit/install.json"
+    fi
+
+    owner="$(id -un)"
+    group="$(id -gn)"
+    metadata_dir="$(dirname "$metadata_file")"
+
+    version="$("$LINK_PATH" --version 2>/dev/null | sed -nE 's/.*([0-9]+\.[0-9]+\.[0-9]+([-+][A-Za-z0-9.-]+)?).*/\1/p' | head -n 1 || true)"
+
+    if [ -z "$version" ]; then
+        version="0.0.0"
+    fi
+
+    installed_at="$(date -u '+%Y-%m-%dT%H:%M:%S+00:00')"
+    tmp_file="$(mktemp "${TMPDIR:-/tmp}/orbit-install-metadata.XXXXXX")"
+
+    cat > "$tmp_file" <<JSON
+{
+    "schema_version": 1,
+    "version": "$(json_escape "$version")",
+    "installed_at": "$(json_escape "$installed_at")",
+    "binary_path": "$(json_escape "$LINK_PATH")",
+    "install_root": "$(json_escape "$TARGET_DIR")"
+}
+JSON
+
+    sudo_run install -d -m 0700 -o "$owner" -g "$group" "$metadata_dir"
+    sudo_run install -m 0600 -o "$owner" -g "$group" "$tmp_file" "$metadata_file"
+    run rm -f "$tmp_file"
+}
+
 verify_install() {
     if [ ! -x "$TARGET_DIR/bin/orbit-binary" ]; then
         fail validation_failed "Orbit CLI binary is not executable: $TARGET_DIR/bin/orbit-binary"
@@ -949,6 +1003,10 @@ main() {
 
     start_step "Verify Orbit"
     verify_install
+    complete_step
+
+    start_step "Write CLI install metadata"
+    write_install_metadata
     complete_step
 
     finish_tree

@@ -17,8 +17,55 @@ const ORBIT_NATIVE_MULTI_TOKEN_COMMANDS = [
 function normalizeNativeCommandArgv(array $argv): array
 {
     return normalizeNativeToolInstallVersionArgv(
-        normalizeNativeMultiTokenCommandArgv($argv),
+        normalizeNativeVersionCommandArgv(
+            normalizeNativeMultiTokenCommandArgv($argv),
+        ),
     );
+}
+
+/**
+ * Rewrite root `orbit --version` invocations to the first-party version command
+ * so Orbit can render release and install metadata while preserving Symfony's
+ * global version option when an actual command name is present.
+ *
+ * @param  list<string>  $argv
+ * @return list<string>
+ */
+function normalizeNativeVersionCommandArgv(array $argv): array
+{
+    if (count($argv) < 2 || nativeArgvHasCommandName($argv)) {
+        return $argv;
+    }
+
+    $versionOptionIndex = null;
+
+    foreach (array_slice($argv, 1, null, true) as $index => $argument) {
+        if ($argument === '--') {
+            return $argv;
+        }
+
+        if ($argument === '--version' || $argument === '-V') {
+            $versionOptionIndex = $index;
+
+            break;
+        }
+    }
+
+    if ($versionOptionIndex === null) {
+        return $argv;
+    }
+
+    $rewritten = [$argv[0], 'version'];
+
+    foreach (array_slice($argv, 1) as $index => $argument) {
+        if ($index + 1 === $versionOptionIndex) {
+            continue;
+        }
+
+        $rewritten[] = $argument;
+    }
+
+    return $rewritten;
 }
 
 /**
@@ -184,4 +231,24 @@ function nativeMultiTokenCommandNameFromArgv(array $argv): ?string
     }
 
     return null;
+}
+
+/**
+ * @param  list<string>  $argv
+ */
+function nativeArgvHasCommandName(array $argv): bool
+{
+    foreach (array_slice($argv, 1) as $argument) {
+        if ($argument === '--') {
+            return false;
+        }
+
+        if ($argument === '' || str_starts_with($argument, '-')) {
+            continue;
+        }
+
+        return true;
+    }
+
+    return false;
 }

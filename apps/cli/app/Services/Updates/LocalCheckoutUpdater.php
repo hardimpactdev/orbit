@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\Updates;
 
+use App\Services\Version\InstallMetadataStore;
 use Illuminate\Contracts\Process\ProcessResult;
 use Illuminate\Support\Facades\Process;
 use Throwable;
@@ -33,9 +34,14 @@ class LocalCheckoutUpdater implements RunsLocalUpdate
      */
     private const string DEFAULT_BINARY_BASE_URL = 'https://github.com/hardimpactdev/orbit/releases/latest/download';
 
+    private readonly InstallMetadataStore $installMetadata;
+
     public function __construct(
         private readonly CheckoutPathResolver $checkoutPathResolver,
-    ) {}
+        ?InstallMetadataStore $installMetadata = null,
+    ) {
+        $this->installMetadata = $installMetadata ?? new InstallMetadataStore;
+    }
 
     /**
      * Download the prebuilt Orbit CLI binary for this host OS/arch and relink
@@ -110,6 +116,12 @@ class LocalCheckoutUpdater implements RunsLocalUpdate
                 return $this->failedResult($verifyResult);
             }
 
+            $this->installMetadata->write(
+                version: $this->versionFromOutput($verifyResult->output()),
+                binaryPath: $linkPath,
+                installRoot: $installRoot,
+            );
+
             return [
                 'successful' => true,
                 'exit_code' => 0,
@@ -149,6 +161,17 @@ class LocalCheckoutUpdater implements RunsLocalUpdate
     private function stagedBinaryPath(string $binaryDest): string
     {
         return $binaryDest.'.download.'.bin2hex(random_bytes(8));
+    }
+
+    private function versionFromOutput(string $output): string
+    {
+        if (preg_match('/\b\d+\.\d+\.\d+(?:[-+][A-Za-z0-9.-]+)?\b/', $output, $matches) === 1) {
+            return $matches[0];
+        }
+
+        $configured = config('app.version');
+
+        return is_string($configured) && trim($configured) !== '' ? trim($configured) : '0.0.0';
     }
 
     /**

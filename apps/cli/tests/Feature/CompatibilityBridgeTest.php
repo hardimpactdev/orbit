@@ -60,6 +60,17 @@ describe('native multi-token command normalization', function (): void {
 });
 
 describe('native command option normalization', function (): void {
+    it('rewrites root version options to the first-party version command', function (): void {
+        expect(normalizeNativeCommandArgv(['orbit', '--version']))
+            ->toBe(['orbit', 'version'])
+            ->and(normalizeNativeCommandArgv(['orbit', '--version', '--json']))
+            ->toBe(['orbit', 'version', '--json'])
+            ->and(normalizeNativeCommandArgv(['orbit', '--json', '--version']))
+            ->toBe(['orbit', 'version', '--json'])
+            ->and(normalizeNativeCommandArgv(['orbit', '-V']))
+            ->toBe(['orbit', 'version']);
+    });
+
     it('rewrites tool install version options after the command name', function (): void {
         expect(normalizeNativeCommandArgv(['orbit', 'tool:install', 'mysql', '--version=8.4', '--runtime=docker-swarm']))
             ->toBe(['orbit', 'tool:install', 'mysql', '--tool-version=8.4', '--runtime=docker-swarm'])
@@ -67,10 +78,8 @@ describe('native command option normalization', function (): void {
             ->toBe(['orbit', 'tool:install', 'mysql', '--tool-version=8.4']);
     });
 
-    it('preserves the global version option before a command name', function (): void {
-        expect(normalizeNativeCommandArgv(['orbit', '--version']))
-            ->toBe(['orbit', '--version'])
-            ->and(normalizeNativeCommandArgv(['orbit', '--version', 'tool:install', 'mysql']))
+    it('preserves the global version option when a command name is present', function (): void {
+        expect(normalizeNativeCommandArgv(['orbit', '--version', 'tool:install', 'mysql']))
             ->toBe(['orbit', '--version', 'tool:install', 'mysql']);
     });
 });

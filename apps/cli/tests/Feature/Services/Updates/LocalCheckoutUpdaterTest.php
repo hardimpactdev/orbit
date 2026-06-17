@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Services\Updates\CheckoutPathResolver;
 use App\Services\Updates\LocalCheckoutUpdater;
+use Carbon\CarbonImmutable;
 use Illuminate\Contracts\Process\ProcessResult;
 use Illuminate\Process\PendingProcess;
 use Illuminate\Support\Facades\Process;
@@ -26,22 +27,26 @@ describe('LocalCheckoutUpdater', function (): void {
         $this->previousInstall = getenv('ORBIT_INSTALL_PATH');
         $this->previousBinaryUrl = getenv('ORBIT_BINARY_URL');
         $this->previousBinPath = getenv('ORBIT_BIN_PATH');
+        $this->previousMetadataPath = getenv('ORBIT_INSTALL_METADATA_PATH');
 
         putenv("ORBIT_INSTALL_PATH={$this->installRoot}");
         putenv("ORBIT_BINARY_URL={$this->binaryUrl}");
         putenv("ORBIT_BIN_PATH={$this->linkPath}");
+        putenv("ORBIT_INSTALL_METADATA_PATH={$this->installRoot}/install.json");
     });
 
     afterEach(function (): void {
         $this->previousInstall === false ? putenv('ORBIT_INSTALL_PATH') : putenv("ORBIT_INSTALL_PATH={$this->previousInstall}");
         $this->previousBinaryUrl === false ? putenv('ORBIT_BINARY_URL') : putenv("ORBIT_BINARY_URL={$this->previousBinaryUrl}");
         $this->previousBinPath === false ? putenv('ORBIT_BIN_PATH') : putenv("ORBIT_BIN_PATH={$this->previousBinPath}");
+        $this->previousMetadataPath === false ? putenv('ORBIT_INSTALL_METADATA_PATH') : putenv("ORBIT_INSTALL_METADATA_PATH={$this->previousMetadataPath}");
 
         foreach (glob($this->binaryDest.'.download.*') ?: [] as $path) {
             @unlink($path);
         }
 
         // Clean up temp files.
+        @unlink($this->installRoot.'/install.json');
         @unlink($this->binaryDest);
         @unlink($this->linkPath);
         @rmdir($this->installRoot.'/bin');
@@ -99,6 +104,22 @@ describe('LocalCheckoutUpdater', function (): void {
         Process::assertRan(fn (PendingProcess $process): bool => is_array($process->command)
             && $process->command[0] === $this->linkPath
             && in_array('--version', $process->command, strict: true));
+    });
+
+    it('writes install metadata after relinking the host launcher', function (): void {
+        Process::fake(['*' => Process::result(output: 'Version       1.2.3', exitCode: 0)]);
+        Process::preventStrayProcesses();
+
+        $result = (new LocalCheckoutUpdater(new CheckoutPathResolver))->pullSource();
+
+        $metadata = json_decode(file_get_contents($this->installRoot.'/install.json'), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($result['successful'])->toBeTrue()
+            ->and($metadata['schema_version'])->toBe(1)
+            ->and($metadata['version'])->toBe('1.2.3')
+            ->and($metadata['binary_path'])->toBe($this->linkPath)
+            ->and($metadata['install_root'])->toBe($this->installRoot)
+            ->and(CarbonImmutable::parse($metadata['installed_at'])->toIso8601String())->toBe($metadata['installed_at']);
     });
 
     it('uses non-interactive sudo when the host launcher directory is not writable', function (): void {

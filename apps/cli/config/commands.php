@@ -77,6 +77,7 @@ use App\Commands\Operation\DoctorCommand;
 use App\Commands\Operation\ProfileCommand;
 use App\Commands\Operation\UpdateAllCommand;
 use App\Commands\Operation\UpdateCommand;
+use App\Commands\Operation\VersionCommand;
 use App\Commands\Php\PhpListCommand;
 use App\Commands\Php\PhpUseCommand;
 use App\Commands\Process\ProcessAddCommand;
@@ -254,6 +255,7 @@ return [
         VpnClientRemoveCommand::class,
         VpnWebUiChangePasswordCommand::class,
         UpdateCommand::class,
+        VersionCommand::class,
         WorkspaceHistoryCommand::class,
         WorkspaceListCommand::class,
         WorkspaceLogCommand::class,

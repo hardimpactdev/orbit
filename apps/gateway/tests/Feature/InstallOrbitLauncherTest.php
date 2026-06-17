@@ -26,6 +26,20 @@ describe('install-orbit always-cli launcher contract', function (): void {
             ->toContain('"schema_version": 1');
     });
 
+    it('writes per-operator-host CLI install metadata after the binary verifies', function (): void {
+        $installer = File::get(repo_path('bin/install-orbit'));
+
+        expect($installer)
+            ->toContain('write_install_metadata')
+            ->toContain('ORBIT_INSTALL_METADATA_PATH')
+            ->toContain('.config/orbit/install.json')
+            ->toContain('"installed_at": "$(json_escape "$installed_at")"')
+            ->toContain('"binary_path": "$(json_escape "$LINK_PATH")"')
+            ->toContain('"install_root": "$(json_escape "$TARGET_DIR")"');
+
+        expect(strrpos($installer, 'verify_install'))->toBeLessThan(strrpos($installer, 'write_install_metadata'));
+    });
+
     it('writes the CLI config skeleton through sudo install so container-owned config roots are repaired', function (): void {
         $installer = File::get(repo_path('bin/install-orbit'));
 
