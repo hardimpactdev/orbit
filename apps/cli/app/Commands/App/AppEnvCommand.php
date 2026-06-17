@@ -6,6 +6,8 @@ namespace App\Commands\App;
 
 use App\Exceptions\GatewayApiException;
 
+use function Laravel\Prompts\table;
+
 final class AppEnvCommand extends AppGatewayCommand
 {
     #[\Override]
@@ -69,7 +71,56 @@ final class AppEnvCommand extends AppGatewayCommand
             return $this->renderGatewayFailure($exception);
         }
 
-        return $this->renderSuccess($response);
+        if ($this->wantsJson()) {
+            return $this->renderSuccess($response);
+        }
+
+        $variables = $this->variablesFromGatewayResponse($response);
+
+        if ($variables === []) {
+            $this->line('No environment values found.');
+
+            return self::SUCCESS;
+        }
+
+        table(
+            headers: ['KEY', 'VALUE'],
+            rows: array_map(fn (array $variable): array => [
+                $this->variableString($variable, 'key'),
+                $this->variableString($variable, 'value'),
+            ], $variables),
+        );
+
+        return self::SUCCESS;
+    }
+
+    /**
+     * @param  array<string, mixed>  $response
+     * @return list<array<string, mixed>>
+     */
+    private function variablesFromGatewayResponse(array $response): array
+    {
+        $variables = $response['success']['data']['variables'] ?? null;
+
+        if (! is_array($variables)) {
+            return [];
+        }
+
+        return array_values(array_filter($variables, is_array(...)));
+    }
+
+    /**
+     * @param  array<string, mixed>  $variable
+     */
+    private function variableString(array $variable, string $key): string
+    {
+        $value = $variable[$key] ?? null;
+
+        if (is_scalar($value) && (string) $value !== '') {
+            return (string) $value;
+        }
+
+        return '—';
     }
 
     private function setEnv(string $app, string $instance): int

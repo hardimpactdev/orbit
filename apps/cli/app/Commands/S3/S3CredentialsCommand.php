@@ -152,20 +152,28 @@ final class S3CredentialsCommand extends GatewayCommand
             : '';
 
         table(
-            ['Field', 'Value'],
+            ['FIELD', 'VALUE'],
             [
-                ['Node', $node],
-                ['Private Endpoint', $privateEndpoint],
-                ['Public Endpoints', $publicEndpoints],
-                ['Region', $region],
-                ['Access Key ID', $accessKeyId],
-                ['Secret Access Key', $secretAccessKey],
-                ['Endpoint Style', $bucketStyle],
-                ['Backend Pool', $backendPool],
+                ['Node', $this->humanValue($node)],
+                ['Private Endpoint', $this->humanValue($privateEndpoint)],
+                ['Public Endpoints', $this->humanValue($publicEndpoints)],
+                ['Region', $this->humanValue($region)],
+                ['Access Key ID', $this->humanValue($accessKeyId)],
+                ['Secret Access Key', $this->humanValue($secretAccessKey)],
+                ['Endpoint Style', $this->humanValue($bucketStyle)],
+                ['Backend Pool', $this->humanValue($backendPool)],
             ],
         );
 
         return self::SUCCESS;
+    }
+
+    /**
+     * Render an empty cell value as an em dash for human display.
+     */
+    private function humanValue(string $value): string
+    {
+        return $value !== '' ? $value : '—';
     }
 
     /**

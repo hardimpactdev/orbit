@@ -47,11 +47,11 @@ final class MetricsStatusCommand extends GatewayCommand
         $metrics = $this->metricsPayloads($response);
 
         table(
-            ['Node', 'URL', 'Processes'],
+            ['NODE', 'URL', 'PROCESSES'],
             array_map(
                 fn (array $metric): array => [
-                    is_string($metric['node'] ?? null) ? $metric['node'] : '',
-                    is_string($metric['url'] ?? null) ? $metric['url'] : '',
+                    is_string($metric['node'] ?? null) && $metric['node'] !== '' ? $metric['node'] : '—',
+                    is_string($metric['url'] ?? null) && $metric['url'] !== '' ? $metric['url'] : '—',
                     $this->processSummary($metric),
                 ],
                 $metrics,
@@ -87,6 +87,6 @@ final class MetricsStatusCommand extends GatewayCommand
             }
         }
 
-        return implode(', ', $names);
+        return $names === [] ? '—' : implode(', ', $names);
     }
 }

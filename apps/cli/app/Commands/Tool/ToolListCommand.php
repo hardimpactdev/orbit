@@ -50,7 +50,7 @@ final class ToolListCommand extends GatewayCommand
             $this->line("Node: {$node}");
 
             table(
-                headers: ['Tool', 'Expected', 'Managed', 'Version'],
+                headers: ['TOOL', 'EXPECTED', 'MANAGED', 'VERSION'],
                 rows: array_map(fn (array $tool): array => [
                     $this->toolString($tool, 'name'),
                     $this->toolString($tool, 'expected_state'),
@@ -111,7 +111,7 @@ final class ToolListCommand extends GatewayCommand
             return (string) $value;
         }
 
-        return '-';
+        return '—';
     }
 
     /**
@@ -121,6 +121,6 @@ final class ToolListCommand extends GatewayCommand
     {
         $value = $tool[$key] ?? null;
 
-        return is_bool($value) ? ($value ? 'yes' : 'no') : '-';
+        return is_bool($value) ? ($value ? 'yes' : 'no') : '—';
     }
 }

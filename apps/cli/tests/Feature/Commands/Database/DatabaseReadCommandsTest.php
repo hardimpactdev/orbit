@@ -90,6 +90,55 @@ describe('database:list', function (): void {
         expect($exitCode)->toBe(1)
             ->and($decoded['error']['code'])->toBe('authorization_failed');
     });
+
+    it('renders human output as a table with documented columns', function (): void {
+        fakeGateway(fakeSuccessEnvelope([
+            'connections' => [
+                [
+                    'slug' => 'primary-db',
+                    'driver' => 'pgsql',
+                    'node' => 'db-node',
+                    'targets' => [
+                        ['type' => 'app', 'name' => 'docs', 'env_prefix' => 'DB'],
+                        ['type' => 'workspace', 'name' => 'feature-docs', 'env_prefix' => 'DB'],
+                    ],
+                ],
+                [
+                    'slug' => 'sqlite-db',
+                    'driver' => 'sqlite',
+                    'node' => null,
+                    'targets' => [],
+                ],
+            ],
+        ], ['count' => 2]));
+
+        [$exitCode, $output] = runCommand($this, 'database:list');
+
+        expect($exitCode)->toBe(0)
+            ->and($output)->toContain('Showing 2 database connection(s).')
+            ->and($output)->toContain('SLUG')
+            ->and($output)->toContain('DRIVER')
+            ->and($output)->toContain('NODE')
+            ->and($output)->toContain('TARGETS')
+            ->and($output)->toContain('primary-db')
+            ->and($output)->toContain('pgsql')
+            ->and($output)->toContain('db-node')
+            ->and($output)->toContain('docs')
+            ->and($output)->toContain('feature-docs')
+            ->and($output)->toContain('sqlite-db')
+            ->and($output)->toContain('—')
+            ->and($output)->not->toContain('connections: [')
+            ->and($output)->not->toContain('"env_prefix"');
+    });
+
+    it('renders the documented empty-state line when no connections match', function (): void {
+        fakeGateway(fakeSuccessEnvelope(['connections' => []], ['count' => 0]));
+
+        [$exitCode, $output] = runCommand($this, 'database:list');
+
+        expect($exitCode)->toBe(0)
+            ->and($output)->toBe('No database connections matched this scope.');
+    });
 });
 
 describe('database:show', function (): void {
@@ -155,6 +204,69 @@ describe('database:show', function (): void {
             ->and($decoded['success']['meta'])->toBe([])
             ->and($output)->not->toContain('must-not-leak');
     });
+
+    it('renders human output as a show-detail tree with documented labels', function (): void {
+        fakeGateway(fakeSuccessEnvelope([
+            'connection' => [
+                'slug' => 'ditis-hr',
+                'driver' => 'pgsql',
+                'host' => '127.0.0.1',
+                'port' => 5434,
+                'database' => 'ditis_hr',
+                'path' => null,
+                'username' => 'orbit',
+                'node' => 'beast',
+                'targets' => [
+                    ['type' => 'app', 'name' => 'ditis-hr.test', 'env_prefix' => 'DB'],
+                ],
+            ],
+        ]));
+
+        [$exitCode, $output] = runCommand($this, 'database:show', ['connection' => 'ditis-hr']);
+
+        expect($exitCode)->toBe(0)
+            ->and($output)->toContain('┌  Database connection: ditis-hr')
+            ->and($output)->toContain('Driver')
+            ->and($output)->toContain('pgsql')
+            ->and($output)->toContain('Host')
+            ->and($output)->toContain('127.0.0.1')
+            ->and($output)->toContain('Port')
+            ->and($output)->toContain('5434')
+            ->and($output)->toContain('Name')
+            ->and($output)->toContain('ditis_hr')
+            ->and($output)->toContain('User')
+            ->and($output)->toContain('orbit')
+            ->and($output)->toContain('Apps')
+            ->and($output)->toContain('ditis-hr.test')
+            ->and($output)->toContain('Node')
+            ->and($output)->toContain('beast')
+            ->and($output)->not->toContain('connection: {')
+            ->and($output)->not->toContain('"env_prefix"');
+    });
+
+    it('renders Path for sqlite connections and em dash for missing values', function (): void {
+        fakeGateway(fakeSuccessEnvelope([
+            'connection' => [
+                'slug' => 'local-sqlite',
+                'driver' => 'sqlite',
+                'host' => null,
+                'port' => null,
+                'database' => null,
+                'path' => '/srv/app/database.sqlite',
+                'username' => null,
+                'node' => 'beast',
+                'targets' => [],
+            ],
+        ]));
+
+        [$exitCode, $output] = runCommand($this, 'database:show', ['connection' => 'local-sqlite']);
+
+        expect($exitCode)->toBe(0)
+            ->and($output)->toContain('┌  Database connection: local-sqlite')
+            ->and($output)->toContain('Path')
+            ->and($output)->toContain('/srv/app/database.sqlite')
+            ->and($output)->toContain('—');
+    });
 });
 
 describe('database:tables', function (): void {
@@ -192,6 +304,40 @@ describe('database:tables', function (): void {
             ->and($decoded['error']['code'])->toBe('validation_failed')
             ->and($decoded['error']['meta']['field'])->toBe('target');
     });
+
+    it('renders human output as a table of driver-reported rows', function (): void {
+        fakeGateway(fakeSuccessEnvelope([
+            'columns' => ['name', 'kind'],
+            'rows' => [
+                ['name' => 'users', 'kind' => 'base_table'],
+                ['name' => 'sessions', 'kind' => 'base_table'],
+            ],
+        ], ['connection' => 'primary-db', 'driver' => 'pgsql']));
+
+        [$exitCode, $output] = runCommand($this, 'database:tables', ['target' => 'docs']);
+
+        expect($exitCode)->toBe(0)
+            ->and($output)->toContain('Showing 2 table(s).')
+            ->and($output)->toContain('NAME')
+            ->and($output)->toContain('KIND')
+            ->and($output)->toContain('users')
+            ->and($output)->toContain('sessions')
+            ->and($output)->toContain('base_table')
+            ->and($output)->not->toContain('rows: [')
+            ->and($output)->not->toContain('"kind"');
+    });
+
+    it('renders an empty table count when no tables are returned', function (): void {
+        fakeGateway(fakeSuccessEnvelope([
+            'columns' => ['name'],
+            'rows' => [],
+        ], ['connection' => 'primary-db', 'driver' => 'pgsql']));
+
+        [$exitCode, $output] = runCommand($this, 'database:tables', ['target' => 'docs']);
+
+        expect($exitCode)->toBe(0)
+            ->and($output)->toContain('Showing 0 table(s).');
+    });
 });
 
 describe('database:schema', function (): void {
@@ -225,6 +371,28 @@ describe('database:schema', function (): void {
         expect($exitCode)->toBe(1)
             ->and($decoded['error']['code'])->toBe('validation_failed')
             ->and($decoded['error']['meta']['field'])->toBe('target');
+    });
+
+    it('renders human output as a table of schema metadata rows', function (): void {
+        fakeGateway(fakeSuccessEnvelope([
+            'columns' => ['table_name', 'table_type'],
+            'rows' => [
+                ['table_name' => 'users', 'table_type' => 'BASE TABLE'],
+                ['table_name' => 'reports', 'table_type' => 'VIEW'],
+            ],
+        ], ['connection' => 'primary-db', 'driver' => 'pgsql']));
+
+        [$exitCode, $output] = runCommand($this, 'database:schema', ['target' => 'docs']);
+
+        expect($exitCode)->toBe(0)
+            ->and($output)->toContain("Showing schema metadata for database connection 'primary-db'.")
+            ->and($output)->toContain('TABLE_NAME')
+            ->and($output)->toContain('TABLE_TYPE')
+            ->and($output)->toContain('users')
+            ->and($output)->toContain('reports')
+            ->and($output)->toContain('VIEW')
+            ->and($output)->not->toContain('rows: [')
+            ->and($output)->not->toContain('"table_type"');
     });
 });
 
@@ -264,5 +432,33 @@ describe('database:describe', function (): void {
         expect($exitCode)->toBe(1)
             ->and($decoded['error']['code'])->toBe('validation_failed')
             ->and($decoded['error']['meta']['field'])->toBe('table');
+    });
+
+    it('renders human output as a table of column metadata rows', function (): void {
+        fakeGateway(fakeSuccessEnvelope([
+            'columns' => ['column_name', 'data_type', 'is_nullable', 'column_default'],
+            'rows' => [
+                ['column_name' => 'id', 'data_type' => 'integer', 'is_nullable' => 'NO', 'column_default' => null],
+                ['column_name' => 'email', 'data_type' => 'varchar', 'is_nullable' => 'NO', 'column_default' => null],
+            ],
+        ], ['connection' => 'primary-db', 'driver' => 'pgsql']));
+
+        [$exitCode, $output] = runCommand($this, 'database:describe', [
+            'target' => 'docs',
+            'table' => 'users',
+        ]);
+
+        expect($exitCode)->toBe(0)
+            ->and($output)->toContain("Showing description for table 'users'.")
+            ->and($output)->toContain('COLUMN_NAME')
+            ->and($output)->toContain('DATA_TYPE')
+            ->and($output)->toContain('IS_NULLABLE')
+            ->and($output)->toContain('COLUMN_DEFAULT')
+            ->and($output)->toContain('id')
+            ->and($output)->toContain('email')
+            ->and($output)->toContain('integer')
+            ->and($output)->toContain('—')
+            ->and($output)->not->toContain('rows: [')
+            ->and($output)->not->toContain('"data_type"');
     });
 });

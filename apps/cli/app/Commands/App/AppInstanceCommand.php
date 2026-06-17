@@ -4,10 +4,15 @@ declare(strict_types=1);
 
 namespace App\Commands\App;
 
+use App\Commands\Concerns\RendersShowDetails;
 use App\Exceptions\GatewayApiException;
+
+use function Laravel\Prompts\table;
 
 final class AppInstanceCommand extends AppGatewayCommand
 {
+    use RendersShowDetails;
+
     #[\Override]
     protected $signature = 'app:instance
         {action? : Action to perform (list|show|add|remove)}
@@ -72,7 +77,32 @@ final class AppInstanceCommand extends AppGatewayCommand
             return $this->renderGatewayFailure($exception);
         }
 
-        return $this->renderSuccess($response);
+        if ($this->wantsJson()) {
+            return $this->renderSuccess($response);
+        }
+
+        $instances = $this->instancesFromGatewayResponse($response);
+
+        if ($instances === []) {
+            $this->line('No instances found.');
+
+            return self::SUCCESS;
+        }
+
+        table(
+            headers: ['APP', 'NAME', 'DRIVER', 'MODE', 'PHP', 'EXTENSIONS', 'DEPLOYMENT'],
+            rows: array_map(fn (array $instance): array => [
+                $this->instanceString($instance, 'app'),
+                $this->instanceString($instance, 'name'),
+                $this->instanceString($instance, 'driver'),
+                $this->runtimeString($instance, 'mode'),
+                $this->runtimeString($instance, 'php_version'),
+                $this->extensionsLabel($instance),
+                $this->instanceString($instance, 'latest_deployment_status'),
+            ], $instances),
+        );
+
+        return self::SUCCESS;
     }
 
     private function showInstance(string $app): int
@@ -89,7 +119,142 @@ final class AppInstanceCommand extends AppGatewayCommand
             return $this->renderGatewayFailure($exception);
         }
 
-        return $this->renderSuccess($response);
+        if ($this->wantsJson()) {
+            return $this->renderSuccess($response);
+        }
+
+        $payload = $this->instanceFromGatewayResponse($response);
+
+        if ($payload === null) {
+            return $this->renderFailure('gateway_unavailable', 'Gateway response missing required instance data.');
+        }
+
+        $this->renderInstance($payload);
+
+        return self::SUCCESS;
+    }
+
+    /**
+     * @param  array<string, mixed>  $response
+     * @return list<array<string, mixed>>
+     */
+    private function instancesFromGatewayResponse(array $response): array
+    {
+        $instances = $response['success']['data']['instances'] ?? null;
+
+        if (! is_array($instances)) {
+            return [];
+        }
+
+        return array_values(array_filter($instances, is_array(...)));
+    }
+
+    /**
+     * @param  array<string, mixed>  $response
+     * @return array<string, mixed>|null
+     */
+    private function instanceFromGatewayResponse(array $response): ?array
+    {
+        $instance = $response['success']['data']['instance'] ?? null;
+
+        return is_array($instance) ? $instance : null;
+    }
+
+    /**
+     * @param  array<string, mixed>  $instance
+     */
+    private function renderInstance(array $instance): void
+    {
+        $name = $this->instanceString($instance, 'name');
+        $runtime = is_array($instance['runtime'] ?? null) ? $instance['runtime'] : [];
+
+        $this->renderShowDetails("Instance: {$name}", [
+            'App' => $instance['app'] ?? null,
+            'Driver' => $instance['driver'] ?? null,
+            'Mode' => $runtime['mode'] ?? null,
+            'PHP' => $runtime['php_version'] ?? null,
+            'Extensions' => $this->extensionsList($runtime['required_php_extensions'] ?? null),
+            'Deployment' => $instance['latest_deployment_status'] ?? null,
+            'Config' => $this->driverConfigPairs($instance['driver_config'] ?? null),
+        ]);
+    }
+
+    /**
+     * @param  array<string, mixed>  $instance
+     */
+    private function runtimeString(array $instance, string $key): string
+    {
+        $runtime = is_array($instance['runtime'] ?? null) ? $instance['runtime'] : [];
+        $value = $runtime[$key] ?? null;
+
+        if (is_scalar($value) && (string) $value !== '') {
+            return (string) $value;
+        }
+
+        return '—';
+    }
+
+    /**
+     * @param  array<string, mixed>  $instance
+     */
+    private function extensionsLabel(array $instance): string
+    {
+        $extensions = $this->extensionsList(
+            is_array($instance['runtime'] ?? null) ? ($instance['runtime']['required_php_extensions'] ?? null) : null,
+        );
+
+        return $extensions === [] ? '—' : implode(', ', $extensions);
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function extensionsList(mixed $extensions): array
+    {
+        if (! is_array($extensions)) {
+            return [];
+        }
+
+        return array_values(array_filter(
+            array_map(static fn (mixed $extension): ?string => is_string($extension) && $extension !== '' ? $extension : null, $extensions),
+            static fn (?string $extension): bool => $extension !== null,
+        ));
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function driverConfigPairs(mixed $config): array
+    {
+        if (! is_array($config)) {
+            return [];
+        }
+
+        $pairs = [];
+
+        foreach ($config as $key => $value) {
+            if (! is_string($key) || ! is_scalar($value) || (string) $value === '') {
+                continue;
+            }
+
+            $pairs[] = "{$key}={$value}";
+        }
+
+        return $pairs;
+    }
+
+    /**
+     * @param  array<string, mixed>  $instance
+     */
+    private function instanceString(array $instance, string $key): string
+    {
+        $value = $instance[$key] ?? null;
+
+        if (is_scalar($value) && (string) $value !== '') {
+            return (string) $value;
+        }
+
+        return '—';
     }
 
     private function addInstance(string $app): int

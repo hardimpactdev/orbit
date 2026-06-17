@@ -119,6 +119,29 @@ describe('metrics commands', function (): void {
             ->and($decoded['success']['data']['metrics'][0]['node'])->toBe('metrics-1');
     });
 
+    it('renders metrics status as a human table with uppercase headers', function (): void {
+        fakeGateway(fakeSuccessEnvelope([
+            'metrics' => [
+                [
+                    'node' => 'metrics-1',
+                    'url' => 'https://metrics.orbit',
+                    'processes' => [],
+                ],
+            ],
+        ]));
+
+        [$exitCode, $output] = runCommand($this, 'metrics:status', [
+            '--node' => 'metrics-1',
+        ]);
+
+        expect($exitCode)->toBe(0)
+            ->and($output)->toContain('NODE')
+            ->and($output)->toContain('URL')
+            ->and($output)->toContain('PROCESSES')
+            ->and($output)->toContain('metrics-1')
+            ->and($output)->toContain('—');
+    });
+
     it('reads Grafana credentials from the gateway', function (): void {
         fakeGateway(fakeMetricsCredentialsEnvelope('metrics-1'));
 
@@ -155,6 +178,30 @@ describe('metrics commands', function (): void {
 
         expect($exitCode)->toBe(0)
             ->and($decoded['success']['data']['credentials']['admin_password'])->toBe('new-secret-password');
+    });
+
+    it('renders Grafana credentials as a human table with uppercase headers', function (): void {
+        fakeGateway(fakeSuccessEnvelope([
+            'credentials' => [
+                'node' => 'metrics-1',
+                'url' => 'https://metrics.orbit',
+                'admin_user' => 'admin',
+                'admin_password' => null,
+            ],
+        ], [
+            'process' => 'grafana',
+        ]));
+
+        [$exitCode, $output] = runCommand($this, 'metrics:credentials', [
+            '--node' => 'metrics-1',
+        ]);
+
+        expect($exitCode)->toBe(0)
+            ->and($output)->toContain('FIELD')
+            ->and($output)->toContain('VALUE')
+            ->and($output)->toContain('metrics-1')
+            ->and($output)->toContain('https://metrics.orbit')
+            ->and($output)->toContain('—');
     });
 });
 

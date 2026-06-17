@@ -46,7 +46,7 @@ describe('tool:list', function (): void {
                     'node' => 'app-1',
                     'expected_state' => 'installed',
                     'observed_state' => null,
-                    'version' => '2.8',
+                    'version' => null,
                     'managed' => true,
                     'endpoints' => [],
                 ],
@@ -57,9 +57,13 @@ describe('tool:list', function (): void {
 
         expect($exitCode)->toBe(0)
             ->and($output)->toContain('Node: app-1')
+            ->and($output)->toContain('TOOL')
+            ->and($output)->toContain('EXPECTED')
+            ->and($output)->toContain('MANAGED')
+            ->and($output)->toContain('VERSION')
             ->and($output)->toContain('composer')
             ->and($output)->toContain('installed')
-            ->and($output)->toContain('2.8');
+            ->and($output)->toContain('—');
     });
 
     it('passes through gateway error codes from HTTP failures', function (): void {

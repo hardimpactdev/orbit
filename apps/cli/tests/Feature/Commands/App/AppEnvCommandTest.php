@@ -57,6 +57,50 @@ describe('app:env', function (): void {
         expect($exitCode)->toBe(0);
     });
 
+    it('renders human list output as a table of non-secret env variables', function (): void {
+        fakeGateway(fakeSuccessEnvelope([
+            'app' => 'billing',
+            'instance' => 'production',
+            'variables' => [
+                ['key' => 'APP_ENV', 'value' => 'production', 'secret' => false],
+                ['key' => 'APP_DEBUG', 'value' => 'false', 'secret' => false],
+            ],
+        ]));
+
+        [$exitCode, $output] = runCommand($this, 'app:env', [
+            'action' => 'list',
+            'app' => 'billing',
+            '--instance' => 'production',
+        ]);
+
+        expect($exitCode)->toBe(0)
+            ->and($output)->toContain('KEY')
+            ->and($output)->toContain('VALUE')
+            ->and($output)->toContain('APP_ENV')
+            ->and($output)->toContain('production')
+            ->and($output)->toContain('APP_DEBUG')
+            ->and($output)->toContain('false')
+            ->and($output)->not->toContain('variables: [')
+            ->and($output)->not->toContain('"secret"');
+    });
+
+    it('renders human empty list output when no env variables exist', function (): void {
+        fakeGateway(fakeSuccessEnvelope([
+            'app' => 'billing',
+            'instance' => 'production',
+            'variables' => [],
+        ]));
+
+        [$exitCode, $output] = runCommand($this, 'app:env', [
+            'action' => 'list',
+            'app' => 'billing',
+            '--instance' => 'production',
+        ]);
+
+        expect($exitCode)->toBe(0)
+            ->and($output)->toBe('No environment values found.');
+    });
+
     it('fails before gateway io when app selectors conflict', function (): void {
         Http::fake();
 

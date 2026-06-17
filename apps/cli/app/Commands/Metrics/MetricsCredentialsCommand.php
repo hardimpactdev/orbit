@@ -53,15 +53,25 @@ final class MetricsCredentialsCommand extends GatewayCommand
         $credentials = is_array($data['credentials'] ?? null) ? $data['credentials'] : [];
 
         table(
-            ['Field', 'Value'],
+            ['FIELD', 'VALUE'],
             [
-                ['Node', is_string($credentials['node'] ?? null) ? $credentials['node'] : ''],
-                ['URL', is_string($credentials['url'] ?? null) ? $credentials['url'] : ''],
-                ['Admin User', is_string($credentials['admin_user'] ?? null) ? $credentials['admin_user'] : ''],
-                ['Admin Password', is_string($credentials['admin_password'] ?? null) ? $credentials['admin_password'] : ''],
+                ['Node', $this->credentialValue($credentials, 'node')],
+                ['URL', $this->credentialValue($credentials, 'url')],
+                ['Admin User', $this->credentialValue($credentials, 'admin_user')],
+                ['Admin Password', $this->credentialValue($credentials, 'admin_password')],
             ],
         );
 
         return self::SUCCESS;
+    }
+
+    /**
+     * @param  array<string, mixed>  $credentials
+     */
+    private function credentialValue(array $credentials, string $key): string
+    {
+        $value = $credentials[$key] ?? null;
+
+        return is_string($value) && $value !== '' ? $value : '—';
     }
 }

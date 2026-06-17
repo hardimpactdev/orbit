@@ -65,6 +65,121 @@ describe('app:instance', function (): void {
         expect($exitCode)->toBe(0);
     });
 
+    it('renders human list output as a table of instances', function (): void {
+        fakeGateway(fakeSuccessEnvelope([
+            'app' => 'billing',
+            'instances' => [
+                [
+                    'app' => 'billing',
+                    'name' => 'production',
+                    'driver' => 'orbit',
+                    'driver_config' => ['node' => 'app-1'],
+                    'runtime' => [
+                        'mode' => 'worker',
+                        'php_version' => '8.5',
+                        'required_php_extensions' => ['intl', 'redis'],
+                    ],
+                    'latest_deployment_status' => 'succeeded',
+                ],
+                [
+                    'app' => 'billing',
+                    'name' => 'cloud',
+                    'driver' => 'laravel-cloud',
+                    'driver_config' => [],
+                    'runtime' => [
+                        'mode' => 'classic',
+                        'php_version' => null,
+                        'required_php_extensions' => [],
+                    ],
+                    'latest_deployment_status' => null,
+                ],
+            ],
+        ], ['count' => 2]));
+
+        [$exitCode, $output] = runCommand($this, 'app:instance', [
+            'action' => 'list',
+            'app' => 'billing',
+        ]);
+
+        expect($exitCode)->toBe(0)
+            ->and($output)->toContain('APP')
+            ->and($output)->toContain('NAME')
+            ->and($output)->toContain('DRIVER')
+            ->and($output)->toContain('MODE')
+            ->and($output)->toContain('PHP')
+            ->and($output)->toContain('EXTENSIONS')
+            ->and($output)->toContain('DEPLOYMENT')
+            ->and($output)->toContain('production')
+            ->and($output)->toContain('orbit')
+            ->and($output)->toContain('worker')
+            ->and($output)->toContain('8.5')
+            ->and($output)->toContain('intl, redis')
+            ->and($output)->toContain('succeeded')
+            ->and($output)->toContain('cloud')
+            ->and($output)->toContain('laravel-cloud')
+            ->and($output)->toContain('classic')
+            ->and($output)->toContain('—')
+            ->and($output)->not->toContain('instances: [')
+            ->and($output)->not->toContain('"runtime"');
+    });
+
+    it('renders human empty list output when no instances exist', function (): void {
+        fakeGateway(fakeSuccessEnvelope([
+            'app' => 'billing',
+            'instances' => [],
+        ], ['count' => 0]));
+
+        [$exitCode, $output] = runCommand($this, 'app:instance', [
+            'action' => 'list',
+            'app' => 'billing',
+        ]);
+
+        expect($exitCode)->toBe(0)
+            ->and($output)->toBe('No instances found.');
+    });
+
+    it('renders human show output as an instance detail summary', function (): void {
+        fakeGateway(fakeSuccessEnvelope([
+            'instance' => [
+                'app' => 'billing',
+                'name' => 'production',
+                'driver' => 'orbit',
+                'driver_config' => ['node' => 'app-1', 'document_root' => '/srv/billing/public'],
+                'runtime' => [
+                    'runtime_kind' => 'php',
+                    'php_version' => '8.5',
+                    'mode' => 'worker',
+                    'required_php_extensions' => ['intl', 'redis'],
+                ],
+                'latest_deployment_status' => 'succeeded',
+            ],
+            'cloud_compatibility' => [],
+        ]));
+
+        [$exitCode, $output] = runCommand($this, 'app:instance', [
+            'action' => 'show',
+            'app' => 'billing',
+            '--instance' => 'production',
+        ]);
+
+        expect($exitCode)->toBe(0)
+            ->and($output)->toContain('Instance: production')
+            ->and($output)->toContain('App')
+            ->and($output)->toContain('billing')
+            ->and($output)->toContain('Driver')
+            ->and($output)->toContain('orbit')
+            ->and($output)->toContain('Mode')
+            ->and($output)->toContain('worker')
+            ->and($output)->toContain('PHP')
+            ->and($output)->toContain('8.5')
+            ->and($output)->toContain('Extensions')
+            ->and($output)->toContain('intl, redis')
+            ->and($output)->toContain('Deployment')
+            ->and($output)->toContain('succeeded')
+            ->and($output)->not->toContain('instance: {')
+            ->and($output)->not->toContain('"driver_config"');
+    });
+
     it('fails deterministic validation when positional app and --app differ', function (): void {
         Http::fake();
 

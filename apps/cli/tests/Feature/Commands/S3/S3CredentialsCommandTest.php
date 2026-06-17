@@ -178,6 +178,7 @@ describe('S3Credentials CLI command', function (): void {
         fakeGateway(fakeS3CredentialsSuccessEnvelope('storage-1', [
             'access_key_id' => 'MYACCESSKEYID12345678',
             'secret_access_key' => 'my-secret-access-key-value',
+            'public_endpoints' => [],
         ]));
 
         [$exitCode, $output] = runCommand($this, 's3:credentials', [
@@ -185,10 +186,13 @@ describe('S3Credentials CLI command', function (): void {
         ]);
 
         expect($exitCode)->toBe(0)
+            ->and($output)->toContain('FIELD')
+            ->and($output)->toContain('VALUE')
             ->and($output)->toContain('storage-1')
             ->and($output)->toContain('https://s3.orbit')
             ->and($output)->toContain('MYACCESSKEYID12345678')
-            ->and($output)->toContain('my-secret-access-key-value');
+            ->and($output)->toContain('my-secret-access-key-value')
+            ->and($output)->toContain('—');
     });
 
     it('does not emit a progress tree in human mode', function (): void {

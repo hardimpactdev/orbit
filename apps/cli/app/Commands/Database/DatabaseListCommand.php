@@ -8,6 +8,8 @@ use App\Commands\Concerns\ResolvesHostContext;
 use App\Commands\GatewayCommand;
 use App\Exceptions\GatewayApiException;
 
+use function Laravel\Prompts\table;
+
 final class DatabaseListCommand extends GatewayCommand
 {
     use ResolvesHostContext;
@@ -52,10 +54,88 @@ final class DatabaseListCommand extends GatewayCommand
     {
         $data = $this->successData($response);
         $meta = $this->successMeta($response);
-        $connections = is_array($data['connections'] ?? null) ? $data['connections'] : [];
+        $connections = is_array($data['connections'] ?? null)
+            ? array_values(array_filter($data['connections'], is_array(...)))
+            : [];
         $renderMeta = isset($meta['count']) ? ['count' => $meta['count']] : [];
 
-        return $this->renderSuccess(['connections' => $connections], $renderMeta);
+        if ($this->wantsJson()) {
+            return $this->renderSuccess(['connections' => $connections], $renderMeta);
+        }
+
+        if ($connections === []) {
+            $this->line('No database connections matched this scope.');
+
+            return self::SUCCESS;
+        }
+
+        $this->line('Showing '.count($connections).' database connection(s).');
+
+        table(
+            headers: ['SLUG', 'DRIVER', 'NODE', 'TARGETS'],
+            rows: array_map(fn (array $connection): array => [
+                $this->connectionString($connection, 'slug'),
+                $this->connectionString($connection, 'driver'),
+                $this->connectionString($connection, 'node'),
+                $this->targetLabels($connection['targets'] ?? null),
+            ], $connections),
+        );
+
+        return self::SUCCESS;
+    }
+
+    private function targetLabels(mixed $targets): string
+    {
+        if (! is_array($targets) || $targets === []) {
+            return '—';
+        }
+
+        $labels = [];
+
+        foreach ($targets as $target) {
+            if (! is_array($target)) {
+                continue;
+            }
+
+            $label = is_string($target['name'] ?? null) && $target['name'] !== ''
+                ? $target['name']
+                : $this->appInstanceLabel($target);
+
+            if ($label !== null) {
+                $labels[] = $label;
+            }
+        }
+
+        return $labels === [] ? '—' : implode(', ', $labels);
+    }
+
+    /**
+     * @param  array<string, mixed>  $target
+     */
+    private function appInstanceLabel(array $target): ?string
+    {
+        $app = is_string($target['app'] ?? null) && $target['app'] !== '' ? $target['app'] : null;
+        $instance = is_string($target['instance'] ?? null) && $target['instance'] !== '' ? $target['instance'] : null;
+
+        if ($app === null) {
+            return null;
+        }
+
+        return $instance === null ? $app : "{$app} ({$instance})";
+    }
+
+    /**
+     * @param  array<string, mixed>  $connection
+     */
+    private function connectionString(array $connection, string $key): string
+    {
+        $value = $connection[$key] ?? null;
+
+        if (is_scalar($value) && (string) $value !== '') {
+            return (string) $value;
+        }
+
+        return '—';
     }
 
     /**
