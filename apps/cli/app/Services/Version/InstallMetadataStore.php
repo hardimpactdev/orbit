@@ -174,7 +174,42 @@ final class InstallMetadataStore
             return null;
         }
 
+        $path = trim($path);
+
+        if (! str_contains($path, '/')) {
+            return $this->pathExecutable($path) ?? (is_file($path) ? $path : null);
+        }
+
         return is_file($path) ? $path : null;
+    }
+
+    private function pathExecutable(string $name): ?string
+    {
+        $path = getenv('PATH');
+
+        if (! is_string($path) || trim($path) === '') {
+            return null;
+        }
+
+        foreach (explode(PATH_SEPARATOR, $path) as $directory) {
+            if ($directory === '') {
+                $currentDirectory = getcwd();
+
+                if ($currentDirectory === false) {
+                    continue;
+                }
+
+                $directory = $currentDirectory;
+            }
+
+            $candidate = rtrim($directory, '/')."/{$name}";
+
+            if (is_file($candidate)) {
+                return $candidate;
+            }
+        }
+
+        return null;
     }
 
     private function isIsoTimestamp(mixed $value): bool

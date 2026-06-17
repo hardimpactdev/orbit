@@ -218,6 +218,49 @@ describe('version', function (): void {
             @rmdir($home);
         }
     });
+
+    it('resolves a bare invoked launcher name through PATH before user-local fallback', function (): void {
+        $home = $this->versionTempRoot.'/home';
+        $pathDirectory = $this->versionTempRoot.'/usr-local-bin';
+        $staleUserLocalBinary = $home.'/.local/bin/orbit';
+        $invokedLauncher = $pathDirectory.'/orbit';
+        $staleInstalledAt = CarbonImmutable::parse('2026-02-15T21:30:00+00:00');
+        $actualInstalledAt = CarbonImmutable::parse('2026-06-17T13:32:00+00:00');
+        $previousPath = getenv('PATH');
+        $previousCwd = getcwd();
+
+        @mkdir(dirname($staleUserLocalBinary), 0755, recursive: true);
+        file_put_contents($staleUserLocalBinary, '');
+        touch($staleUserLocalBinary, $staleInstalledAt->timestamp);
+
+        @mkdir($pathDirectory, 0755, recursive: true);
+        file_put_contents($invokedLauncher, '');
+        touch($invokedLauncher, $actualInstalledAt->timestamp);
+
+        putenv('ORBIT_BIN_PATH');
+        putenv("HOME={$home}");
+        putenv("PATH={$pathDirectory}");
+        $_SERVER['argv'][0] = 'orbit';
+        chdir($this->versionTempRoot);
+
+        try {
+            $installedAt = (new InstallMetadataStore)->installedAtFor('0.1.105');
+
+            expect($installedAt)->toBe($actualInstalledAt->toIso8601String());
+        } finally {
+            if (is_string($previousCwd)) {
+                chdir($previousCwd);
+            }
+
+            $previousPath === false ? putenv('PATH') : putenv("PATH={$previousPath}");
+            @unlink($staleUserLocalBinary);
+            @unlink($invokedLauncher);
+            @rmdir($pathDirectory);
+            @rmdir(dirname($staleUserLocalBinary));
+            @rmdir(dirname(dirname($staleUserLocalBinary)));
+            @rmdir($home);
+        }
+    });
 });
 
 function releaseManifest(string $version, string $releasedAt): array

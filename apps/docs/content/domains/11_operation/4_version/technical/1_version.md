@@ -57,8 +57,9 @@ available.
 - `installed_at` is read from `ORBIT_INSTALL_METADATA_PATH` when set, or
   `$HOME/.config/orbit/install.json` by default, only when the metadata version
   matches the installed version. If no matching metadata exists, fall back to
-  the mtime for the invoked Orbit launcher when available. Known launcher
-  paths are only fallbacks after the invoked path.
+  the mtime for the invoked Orbit launcher when available. Bare launcher names
+  such as `orbit` are resolved through `PATH` before known launcher paths are
+  considered.
 
 Install metadata uses this JSON shape:
 
