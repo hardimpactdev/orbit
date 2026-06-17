@@ -22,5 +22,6 @@ Use the command pages below for the stable operator contract.
 ## Boundaries
 
 Metrics does not own a state family. Node role readiness, Docker and
-node-exporter host binary capabilities, process runtimes, and proxy routes
-remain owned by `node`, `tool`, `process`, and `proxy`.
+node-exporter host binary capabilities, process runtimes, private scrape
+firewall rules, and proxy routes remain owned by `node`, `tool`, `process`,
+`firewall_rule`, and `proxy`.

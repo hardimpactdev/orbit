@@ -35,11 +35,15 @@ Role convergence records:
 - Docker substrate and node-exporter host binary tool intent.
 - Prometheus and Grafana Docker Swarm process definitions on the metrics node.
 - node-exporter systemd process definitions on metrics and active workload nodes.
+- Protected firewall intent that allows the metrics node to scrape
+  node-exporter on TCP port 9100 through the private WireGuard interface.
 - The router-owned `metrics.orbit` route and Grafana admin credentials.
 
 The command immediately converges and starts Prometheus, Grafana, and
-node-exporter. Later runtime drift is repaired through
-`doctor --family=process`; direct lifecycle actions still belong to `process:*`.
+node-exporter. Later runtime drift is repaired through `doctor --family=process`;
+private scrape firewall drift is repaired through
+`doctor --family=firewall_rule`. Direct lifecycle actions still belong to
+`process:*`.
 
 ## Output
 

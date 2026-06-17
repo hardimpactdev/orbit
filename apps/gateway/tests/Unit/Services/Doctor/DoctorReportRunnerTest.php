@@ -1999,6 +1999,26 @@ TXT;
     });
 });
 
+describe('DoctorReportRunner firewall categories', function (): void {
+    it('includes firewall rules for active Ubuntu agent nodes', function (): void {
+        $node = Node::factory()->agent()->create([
+            'name' => 'agent-firewall-cat',
+            'status' => 'active',
+            'platform' => 'ubuntu_24-04',
+            'wireguard_address' => '10.6.0.42',
+        ]);
+
+        $runner = app(DoctorReportRunner::class);
+
+        $categories = $runner->categoriesForNode($node);
+
+        expect($categories)->toContain('node')
+            ->and($categories)->toContain('tool')
+            ->and($categories)->toContain('process')
+            ->and($categories)->toContain('firewall_rule');
+    });
+});
+
 // ---------------------------------------------------------------------------
 // S3 role: category mapping + s3 probe dispatch
 // ---------------------------------------------------------------------------

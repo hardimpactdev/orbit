@@ -54,8 +54,9 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
   gateway role-removal contract, and metrics-owned process/proxy intent is
   cleaned up.
 - If no other active metrics role remains, metrics-owned node-exporter process
-  intent and node-exporter tool intent are removed from active workload nodes
-  as well as the removed metrics node.
+  intent, node-exporter tool intent, and protected firewall intent for
+  node-exporter are removed from active workload nodes as well as the removed
+  metrics node.
 
 ## Renderer Contracts
 
@@ -79,12 +80,13 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 `metrics:disable` changes desired role state and requests cleanup. Failed role
 cleanup remains node-family drift and is retried through
 [`doctor --family=node`](../../../1_node/node-doctor.md). Leftover process
-runtime artifacts are process-family drift; leftover proxy artifacts are
-proxy-family drift.
+runtime artifacts are process-family drift; leftover node-exporter firewall
+rules are firewall-rule-family drift; leftover proxy artifacts are proxy-family
+drift.
 
 ## Test Mapping
 
 | Path | Coverage |
 | --- | --- |
 | `apps/cli/tests/Feature/Commands/Metrics/MetricsCommandsTest.php` | Required `--node`, required `--force`, purge flag forwarding, and gateway path. |
-| `apps/gateway/tests/Feature/Services/Nodes/Roles/MetricsRoleBaselineTest.php` | Metrics role cleanup of process, workload exporter, and route intent. |
+| `apps/gateway/tests/Feature/Services/Nodes/Roles/MetricsRoleBaselineTest.php` | Metrics role cleanup of process, workload exporter, node-exporter firewall, and route intent. |

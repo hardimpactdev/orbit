@@ -406,6 +406,7 @@ Source: [Metrics Concepts](domains/20_metrics/metrics-concepts.md).
 - **Prometheus service process**
 - **Grafana service process**
 - **node-exporter host process**
+- **Exporter firewall rule**
 - **Grafana admin credentials**
 - **Metrics-domain boundaries**
 - **Metrics-domain exclusions**

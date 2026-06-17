@@ -7,6 +7,7 @@ use App\Data\RemoteShell\RemoteShellResult;
 use App\Enums\Nodes\NodeRoleStatus;
 use App\Enums\Nodes\NodeStatus;
 use App\Enums\Processes\ProcessRuntime;
+use App\Models\FirewallRule;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Models\NodeTool;
@@ -305,6 +306,35 @@ it('converges node exporter process intent for active workload nodes', function 
 
     expect($exporterToolNodes)->toBe($exporterNodes);
 
+    $firewallRuleNodes = FirewallRule::query()
+        ->where('name', 'orbit-metrics-node-exporter')
+        ->where('owner', 'metrics')
+        ->with('node')
+        ->get()
+        ->mapWithKeys(fn (FirewallRule $rule): array => [$rule->node->name => $rule])
+        ->sortKeys();
+
+    expect($firewallRuleNodes->keys()->all())->toBe([
+        'agent-1',
+        'app-1',
+        'database-1',
+        'ingress-1',
+        'main-1',
+    ]);
+
+    $firewallRuleNodes->each(function (FirewallRule $rule) use ($gateway): void {
+        expect($rule->direction)->toBe('incoming')
+            ->and($rule->action)->toBe('allow')
+            ->and($rule->source)->toBe($gateway->wireguard_address)
+            ->and($rule->destination)->toBeNull()
+            ->and($rule->port)->toBe('9100')
+            ->and($rule->protocol)->toBe('tcp')
+            ->and($rule->address_family)->toBe('v4')
+            ->and($rule->interface)->toBe('wireguard')
+            ->and($rule->protected)->toBeTrue()
+            ->and($rule->reason)->toBe('Allow metrics node gateway to scrape node-exporter.');
+    });
+
     $prometheus = Process::query()
         ->where('node_id', $gateway->id)
         ->where('name', 'prometheus')
@@ -322,7 +352,9 @@ it('converges node exporter process intent for active workload nodes', function 
         ->not->toContain('10.6.0.16:9100');
 
     expect($this->metricsShell->scriptsForNode('agent-1'))
-        ->toContain("sudo systemctl start 'node-exporter.service'");
+        ->toContain("sudo systemctl start 'node-exporter.service'")
+        ->toContain('sudo ufw allow in on $(ip -o link show type wireguard')
+        ->toContain("from '10.6.0.1' to 0.0.0.0/0 port '9100' proto 'tcp'");
 });
 
 it('removes workload node exporter process intent when the last metrics role is removed', function (): void {
@@ -352,7 +384,12 @@ it('removes workload node exporter process intent when the last metrics role is 
         ->and(NodeTool::query()
             ->where('name', 'node-exporter')
             ->whereIn('node_id', [$gateway->id, $workload->id])
-            ->count())->toBe(2);
+            ->count())->toBe(2)
+        ->and(FirewallRule::query()
+            ->where('name', 'orbit-metrics-node-exporter')
+            ->where('node_id', $workload->id)
+            ->where('owner', 'metrics')
+            ->count())->toBe(1);
 
     app(NodeRoleBaselineConverger::class)->remove($gateway, $assignment, purgeData: false);
 
@@ -363,6 +400,11 @@ it('removes workload node exporter process intent when the last metrics role is 
         ->and(NodeTool::query()
             ->where('name', 'node-exporter')
             ->whereIn('node_id', [$gateway->id, $workload->id])
+            ->exists())->toBeFalse()
+        ->and(FirewallRule::query()
+            ->where('name', 'orbit-metrics-node-exporter')
+            ->where('node_id', $workload->id)
+            ->where('owner', 'metrics')
             ->exists())->toBeFalse();
 });
 
