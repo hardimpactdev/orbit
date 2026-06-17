@@ -140,6 +140,17 @@ jobs:
           echo "image=${image}:${VERSION}" >> "$GITHUB_OUTPUT"
           echo "digest=${digest}" >> "$GITHUB_OUTPUT"
 
+      - name: Verify gateway image is publicly pullable
+        env:
+          GATEWAY_IMAGE: ${{ steps.gateway_image.outputs.image }}
+          GATEWAY_DIGEST: ${{ steps.gateway_image.outputs.digest }}
+        run: |
+          set -euo pipefail
+          docker_config="$(mktemp -d)"
+          trap 'rm -rf "$docker_config"' EXIT
+
+          DOCKER_CONFIG="$docker_config" docker pull "${GATEWAY_IMAGE}@${GATEWAY_DIGEST}"
+
       - name: Generate release manifest
         env:
           VERSION: ${{ steps.version.outputs.value }}

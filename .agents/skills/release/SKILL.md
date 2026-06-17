@@ -65,7 +65,9 @@ manifests.
    curl -fsSI "https://github.com/hardimpactdev/orbit/releases/download/v${version}/orbit-release-manifest.json"
    curl -fsSI "https://github.com/hardimpactdev/orbit/releases/download/v${version}/orbit-linux-x64"
    curl -fsSI "https://github.com/hardimpactdev/orbit/releases/download/v${version}/orbit-macos-arm64"
-   docker pull "ghcr.io/hardimpactdev/orbit-gateway:${version}"
+   tmp="$(mktemp -d)"
+   trap 'rm -rf "$tmp"' EXIT
+   DOCKER_CONFIG="$tmp" docker pull "ghcr.io/hardimpactdev/orbit-gateway:${version}"
    ```
 
 9. Run the live fleet acceptance from the operator node:
@@ -92,8 +94,10 @@ both pass.
 - If Packagist does not show `hardimpactdev/orbit-core` after the split tag is
   pushed, check whether Packagist webhook/API credentials are configured. The
   GitHub split tag is still the source artifact.
-- If GHCR pulls return 403, make the `orbit-gateway` container package public
-  before rerunning `update:all`.
+- If GHCR pulls return 403 or unauthorized from an empty Docker config, make the
+  `orbit-gateway` container package public before accepting the release. A
+  credentialed gateway pre-pull is only a temporary live-diagnosis workaround,
+  not release acceptance.
 - If workload node updates fail, inspect the durable operation error first.
   Workload fan-out failures should fail before final verification and include
   per-node results.
