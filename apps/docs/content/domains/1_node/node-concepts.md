@@ -18,10 +18,10 @@ Each term below has a precise meaning in the node command family.
   not mutually exclusive with workload roles; any gateway-known node can be an
   operator when its grants allow that work.
 - **Node role:** A fixed code-defined bundle attached through a role
-  assignment. The ten roles are `gateway` (singleton authority), `vpn` and
+  assignment. The eleven roles are `gateway` (singleton authority), `vpn` and
   `router` (gateway-coupled infrastructure), `app-dev`,
-  `app-prod`, `database`, `agent`, `ingress`, `websocket`, and `s3`.
-  The latter seven are workload roles.
+  `app-prod`, `database`, `agent`, `ingress`, `websocket`, `s3`, and
+  `metrics`. The latter eight are workload roles.
 - **Gateway role:** The singleton authority role. The `gateway` role owns
   durable Orbit state, the typed API, root CA material, node access policy, and
   doctor convergence. It is stored as a role assignment, but normal
@@ -79,10 +79,15 @@ Each term below has a precise meaning in the node command family.
   API. An S3 node runs one SeaweedFS instance in a Docker runtime container
   rendered by Orbit, binds the S3 API only to the node's WireGuard address, and
   receives private and public S3 traffic through router-owned service routes.
+- **Metrics role:** Optional private workload role for host-resource
+  observability. A metrics node records Prometheus, Grafana, and node-exporter
+  process intent, exposes Grafana through the router-owned private
+  `metrics.orbit` route, and can be dedicated or co-located with any
+  non-agent role.
 - **Agent role:** Exclusive workload role for first-party autonomous agent
   workloads. Conflicts with `gateway`, `vpn`, `router`, `app-dev`,
-  `app-prod`, `database`, `ingress`, `websocket`, and `s3`. Selectable
-  only during `node:new`.
+  `app-prod`, `database`, `ingress`, `websocket`, `s3`, and `metrics`.
+  Selectable only during `node:new`.
 - **Ingress role:** Workload role that owns public production HTTP
   ingress, public Caddy route artifacts, public TLS, and public edge
   hardening. It forwards public routes to `router` and may coexist with
@@ -133,16 +138,17 @@ Assignments in `active`, `pending`, or `error` must satisfy this matrix:
 
 | Role | Combines with | Conflicts with |
 | --- | --- | --- |
-| `gateway` | `vpn`, `router` | `app-dev`, `app-prod`, `database`, `agent`, `ingress`, `websocket`, `s3` |
-| `vpn` | `gateway`, `router` | `app-dev`, `app-prod`, `database`, `agent`, `ingress`, `websocket`, `s3` |
-| `router` | `gateway`, `vpn` | `app-dev`, `app-prod`, `database`, `agent`, `ingress`, `websocket`, `s3` |
-| `app-dev` | `database`, `websocket`, `s3` | `gateway`, `vpn`, `router`, `app-prod`, `agent`, `ingress` |
-| `app-prod` | `ingress` | `gateway`, `vpn`, `router`, `app-dev`, `database`, `agent`, `websocket`, `s3` |
-| `database` | `app-dev`, `websocket`, `s3` | `gateway`, `vpn`, `router`, `app-prod`, `agent`, `ingress` |
-| `agent` | none | `gateway`, `vpn`, `router`, `app-dev`, `app-prod`, `database`, `ingress`, `websocket`, `s3` |
-| `ingress` | `app-prod` | `gateway`, `vpn`, `router`, `app-dev`, `database`, `agent`, `websocket`, `s3` |
-| `websocket` | `app-dev`, `database`, `s3` | `gateway`, `vpn`, `router`, `ingress`, `app-prod`, `agent` |
-| `s3` | `app-dev`, `database`, `websocket` | `gateway`, `vpn`, `router`, `ingress`, `app-prod`, `agent` |
+| `gateway` | `vpn`, `router`, `metrics` | `app-dev`, `app-prod`, `database`, `agent`, `ingress`, `websocket`, `s3` |
+| `vpn` | `gateway`, `router`, `metrics` | `app-dev`, `app-prod`, `database`, `agent`, `ingress`, `websocket`, `s3` |
+| `router` | `gateway`, `vpn`, `metrics` | `app-dev`, `app-prod`, `database`, `agent`, `ingress`, `websocket`, `s3` |
+| `app-dev` | `database`, `websocket`, `s3`, `metrics` | `gateway`, `vpn`, `router`, `app-prod`, `agent`, `ingress` |
+| `app-prod` | `ingress`, `metrics` | `gateway`, `vpn`, `router`, `app-dev`, `database`, `agent`, `websocket`, `s3` |
+| `database` | `app-dev`, `websocket`, `s3`, `metrics` | `gateway`, `vpn`, `router`, `app-prod`, `agent`, `ingress` |
+| `agent` | none | `gateway`, `vpn`, `router`, `app-dev`, `app-prod`, `database`, `ingress`, `websocket`, `s3`, `metrics` |
+| `ingress` | `app-prod`, `metrics` | `gateway`, `vpn`, `router`, `app-dev`, `database`, `agent`, `websocket`, `s3` |
+| `websocket` | `app-dev`, `database`, `s3`, `metrics` | `gateway`, `vpn`, `router`, `ingress`, `app-prod`, `agent` |
+| `s3` | `app-dev`, `database`, `websocket`, `metrics` | `gateway`, `vpn`, `router`, `ingress`, `app-prod`, `agent` |
+| `metrics` | `gateway`, `vpn`, `router`, `app-dev`, `app-prod`, `database`, `ingress`, `websocket`, `s3` | `agent` |
 
 Compatibility checks treat assignments in `active`, `pending`, or `error` as
 unresolved conflicts. Assignments already in `removing` are ignored.
@@ -171,6 +177,7 @@ require, read, and write.
 | `ingress` | — | — |
 | `websocket` | `redis_node_id` | — |
 | `s3` | `data_path` | — |
+| `metrics` | — | — |
 
 A node can hold at most one `tld` value at a time. Roles that depend on `tld`
 read and write the same node-level field. This shared field keeps the data
@@ -215,6 +222,7 @@ Role baselines are code-defined desired state, not editable package lists.
 | `ingress` | `orbit-caddy` running as the public production HTTP ingress boundary, forwarding public routes to `router` |
 | `websocket` | Laravel Reverb in a Docker runtime container managed by Orbit, private TLS backend binding on WireGuard, backend certificate material, and Redis-backed scaling configuration |
 | `s3` | SeaweedFS in a Docker runtime container rendered by Orbit, private S3 API binding on WireGuard, service-level credentials on the `seaweedfs` tool row, backend pool registration, and role-owned data path |
+| `metrics` | Docker substrate intent, Prometheus and Grafana Docker Swarm process definitions, node-exporter systemd process definition, the router-owned `metrics.orbit` route, and generated Grafana admin credentials |
 
 Baseline convergence first stores the gateway intent for the selected role.
 When `node:new` provisions a real managed workload host, node setup then
@@ -262,6 +270,7 @@ Each role is supported on a specific set of host platforms.
 | `ingress` | Ubuntu |
 | `websocket` | Ubuntu |
 | `s3` | Ubuntu |
+| `metrics` | Ubuntu |
 
 Commands that provision a host or apply node-side artifacts must verify that the
 observed host platform is supported for the node's gateway role assignment or

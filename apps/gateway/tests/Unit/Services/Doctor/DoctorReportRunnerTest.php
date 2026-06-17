@@ -1858,6 +1858,40 @@ describe('DoctorReportRunner s3 role categories', function (): void {
     });
 });
 
+describe('DoctorReportRunner metrics role categories', function (): void {
+    it('resolves metrics role to node, tool, process, and proxy categories', function (): void {
+        $runner = app(DoctorReportRunner::class);
+
+        $categories = $runner->categoriesForRole('metrics');
+
+        expect($categories)->toBe(['node', 'tool', 'process', 'proxy']);
+    });
+
+    it('resolves a dedicated metrics node to node, tool, process, and proxy categories', function (): void {
+        $node = Node::factory()->create([
+            'name' => 'metrics-node-cat',
+            'status' => 'active',
+            'platform' => 'ubuntu_24-04',
+            'wireguard_address' => '10.6.0.60',
+        ]);
+        NodeRoleAssignment::factory()->create([
+            'node_id' => $node->id,
+            'role' => 'metrics',
+            'status' => 'active',
+        ]);
+        app()->instance(RemoteShell::class, new DoctorReportRunnerRemoteShell([]));
+
+        $runner = app(DoctorReportRunner::class);
+
+        $categories = $runner->categoriesForNode($node);
+
+        expect($categories)->toContain('node')
+            ->and($categories)->toContain('tool')
+            ->and($categories)->toContain('process')
+            ->and($categories)->toContain('proxy');
+    });
+});
+
 final class DoctorReportRunnerRemoteShell implements RemoteShell
 {
     /**

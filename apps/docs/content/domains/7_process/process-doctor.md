@@ -23,6 +23,9 @@ The process family owns these facts:
   process definitions, including service definition, version family, concrete
   version, runtime unit name, spec hash, endpoint metadata, and credential
   field names;
+- metrics-role Prometheus, Grafana, and node-exporter runtime artifacts created
+  from process definitions; the metrics command domain does not add a separate
+  doctor family;
 - lifecycle event notifier material that Orbit manages, required to record runtime `crashed` events from app-host units whose process definitions require crash event reporting;
 - stale process runtime artifacts owned by Orbit whose identity maps to
   nothing active — no matching app, workspace, or process definition.
@@ -58,6 +61,10 @@ Docker Swarm-backed service process units require Docker service inspection.
 When this layer fails, the probe stops and reports
 `process.runtime_backend_unavailable` instead of cascading to downstream
 checks.
+
+When a gateway process row cannot render its expected runtime unit from stored
+intent, the probe reports `process.runtime_unit_unrenderable` and continues
+with the remaining selected process rows.
 
 For systemd runtime units, the probe reads rendered Orbit-owned service files
 and compares their content hash, restart policy, and environment lines against
@@ -114,6 +121,7 @@ Each code below identifies a specific process-family drift condition that the pr
 | `process.runtime_context_unresolved` | The expected main app or workspace runtime context cannot be derived from gateway configuration. |
 | `process.wireguard_self_route_unavailable` | A node-owned service endpoint points at the owning node's own WireGuard service address, but Linux self-route diagnostics are missing/unhealthy or the platform does not support this diagnostic. |
 | `process.runtime_backend_unavailable` | The selected process runtime backend is unavailable. Downstream runtime-unit checks are skipped while this code is active. |
+| `process.runtime_unit_unrenderable` | Gateway process intent is incomplete or invalid, so the expected runtime unit cannot be rendered. |
 | `process.runtime_unit_missing` | An expected Orbit-owned runtime unit has no corresponding backend artifact. |
 | `process.runtime_unit_extra` | An Orbit-owned backend artifact exists without matching active app, workspace, and process configuration. |
 | `process.runtime_unit_mismatch` | The runtime artifact command, working directory, user, or unit name differs from gateway process configuration. |
@@ -130,6 +138,7 @@ Use `doctor --restore` to trigger the repair action listed for each code.
 | --- | --- |
 | `process.runtime_backend_unavailable` | No `doctor --restore` action. Process manager installation and recovery belong to node operations. Process doctor reports the dependency and does not attempt to install Docker or systemd. |
 | `process.wireguard_self_route_unavailable` | No `doctor --restore` action. WireGuard self-route mutation belongs to node provisioning/topology repair, not the process family. |
+| `process.runtime_unit_unrenderable` | No `doctor --restore` action. Fix the process definition or run the role baseline that owns the incomplete service process intent. |
 | `process.runtime_unit_missing` | Re-render and reload the missing backend artifact from gateway app, workspace, and process configuration. |
 | `process.runtime_unit_extra` | Stop and remove the stale Orbit-owned backend artifact whose identity has no match in active gateway app, workspace, and process configuration. |
 | `process.runtime_unit_mismatch` | Rewrite the backend artifact from gateway app, workspace, and process configuration. |
@@ -142,7 +151,8 @@ Use `doctor --restore` to trigger the repair action listed for each code.
 `process.owner_app_invalid`, `process.owner_node_invalid`,
 `process.runtime_context_unresolved`,
 `process.wireguard_self_route_unavailable`, or
-`process.runtime_backend_unavailable`.
+`process.runtime_backend_unavailable`, or
+`process.runtime_unit_unrenderable`.
 
 Missing or invalid process definitions and app ownership problems remain explicit process, app, or workspace command work. Process doctor never creates process definitions, changes process names, edits app or workspace records, or adopts arbitrary runtime-unit files as gateway configuration.
 
@@ -154,6 +164,7 @@ Use `doctor --adopt` to apply the adoption action listed for each code.
 | --- | --- |
 | `process.runtime_backend_unavailable` | No adoption action. |
 | `process.wireguard_self_route_unavailable` | No adoption action. |
+| `process.runtime_unit_unrenderable` | No adoption action. Invalid gateway intent must be corrected instead of adopted from runtime state. |
 | `process.runtime_unit_extra` | No adoption action. Runtime artifacts are derived and must not create process configuration. |
 | `process.runtime_unit_mismatch` | No adoption action. Update process configuration with `process:edit` when the observed runtime command should become configuration. |
 | `process.restart_policy_mismatch` | No adoption action. Update restart policy with `process:edit` when the observed policy should become configuration. |

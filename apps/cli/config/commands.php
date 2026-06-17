@@ -60,6 +60,10 @@ use App\Commands\Internal\VerifyExecutorCommand;
 use App\Commands\Internal\WgEasyStateCommand;
 use App\Commands\Internal\WorkspaceAdapterLookupCommand;
 use App\Commands\Internal\WorkspaceAdapterUpdateCommand;
+use App\Commands\Metrics\MetricsCredentialsCommand;
+use App\Commands\Metrics\MetricsDisableCommand;
+use App\Commands\Metrics\MetricsEnableCommand;
+use App\Commands\Metrics\MetricsStatusCommand;
 use App\Commands\Node\NodeAgentIdeCommand;
 use App\Commands\Node\NodeDefaultCommand;
 use App\Commands\Node\NodeGrantCommand;
@@ -203,6 +207,10 @@ return [
         GatewayTrustCommand::class,
         GatewayUseCommand::class,
         GatewayStatusCommand::class,
+        MetricsCredentialsCommand::class,
+        MetricsDisableCommand::class,
+        MetricsEnableCommand::class,
+        MetricsStatusCommand::class,
         NodeAgentIdeCommand::class,
         NodeDefaultCommand::class,
         NodeGrantCommand::class,

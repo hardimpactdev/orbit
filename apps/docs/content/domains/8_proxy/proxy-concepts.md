@@ -48,6 +48,9 @@ These terms define the types of routes that the proxy family owns and manages.
   the topology and is removed when none remains. It targets the S3 backend
   pool owned by the router and is the stable private S3 endpoint apps and
   VPN clients use.
+- **Metrics service route:** Private router route for `metrics.orbit`, owned by
+  `router`. It exists while an active `metrics` role assignment has converged
+  route intent and targets the selected metrics node's Grafana backend.
 - **Public route artifact:** `orbit-caddy` site rendered on a `ingress` node.
   It terminates public HTTPS and reverse proxies to the active `router` over
   WireGuard.
@@ -69,6 +72,9 @@ These terms define the types of routes that the proxy family owns and manages.
   `http://storage-1.s3.orbit:8333`, owned by `router`. V1 creates one active
   backend but stores a pool shape so later S3 scaling does not change app or
   client configuration.
+- **Metrics service target:** Grafana backend URL owned by `router`, such as
+  `http://metrics-1.metrics.orbit:3000`, used by the private `metrics.orbit`
+  route. V1 selects one active metrics backend.
 
 ## TLS
 
@@ -121,5 +127,7 @@ These terms define what the proxy family owns and what remains outside its scope
   `websocket.orbit`, websocket backend pools, and private router-to-websocket
   TLS verification. Public S3 hosts are ingress routes that forward to router.
   Router owns `s3.orbit`, S3 backend pools, S3 upload-compatible proxy settings,
-  and private router-to-SeaweedFS routing. Ingress must not route directly to
-  websocket or s3 role nodes.
+  and private router-to-SeaweedFS routing. Router also owns the private
+  `metrics.orbit` route to Grafana; metrics has no public ingress route in this
+  slice. Ingress must not route directly to websocket, s3, or metrics role
+  nodes.

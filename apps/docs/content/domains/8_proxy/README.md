@@ -25,7 +25,9 @@ These rules govern ownership, route kinds, and the boundaries of the proxy comma
   `tool`, `custom`, and `redirect`. `websocket` and `s3` are service filters:
   `websocket` selects the router-owned `websocket.orbit` service route, and
   `s3` selects the router-owned `s3.orbit` service route plus public S3 host
-  routes. They are not owner-enum mirrors.
+  routes. They are not owner-enum mirrors. The router-owned `metrics.orbit`
+  route is visible in the unified/default inventory; no dedicated metrics
+  filter is exposed in this slice.
 - App, workspace, gateway, and tool-owned routes are visible through proxy
   commands but edited through their owning domain commands.
 - App WebSocket routes are visible through proxy commands but edited through
@@ -40,6 +42,9 @@ These rules govern ownership, route kinds, and the boundaries of the proxy comma
   routes that forward to `router`; they must not route directly to s3 role
   nodes. Router owns `s3.orbit`, S3 backend pools, S3 upload-compatible proxy
   settings, and private router-to-SeaweedFS routing.
+- The router-owned metrics service route is visible through proxy commands but
+  edited by metrics role convergence. Router owns `metrics.orbit` and private
+  router-to-Grafana routing. Metrics has no public ingress route in this slice.
 - Tool-owned `proxy` routes are HTTP or WebSocket ingress routes only. TCP
   service endpoints such as PostgreSQL, MySQL, and Redis are WireGuard service
   endpoints owned by process definitions and do not appear as HTTP proxy
@@ -126,6 +131,9 @@ Custom, redirect, and tool routes are separate route kinds. They may share TLS, 
 - **S3 backend pool:** Ordered list of SeaweedFS backend URLs, such as
   `http://storage-1.s3.orbit:8333`, owned by `router`. V1 creates one target
   but stores a list.
+- **Metrics service target:** Grafana backend URL owned by `router`, such as
+  `http://metrics-1.metrics.orbit:3000`, used by the private
+  `metrics.orbit` route.
 
 ## TLS Authority Model
 
@@ -198,3 +206,4 @@ Each command links to its public documentation and technical contract.
 - [`orbit workspace:*`](../6_workspace/README.md)
 - [`orbit tool:*`](../3_tool/README.md)
 - [`orbit s3:*`](../19_s3/README.md)
+- [`orbit metrics:*`](../20_metrics/README.md)

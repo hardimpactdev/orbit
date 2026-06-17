@@ -138,6 +138,7 @@ final class NodeRoleRegistry
                     NodeRoleName::Ingress->value,
                     NodeRoleName::WebSocket->value,
                     NodeRoleName::S3->value,
+                    NodeRoleName::Metrics->value,
                 ],
                 supportedPlatforms: ['ubuntu'],
                 settingsClass: AgentRoleSettings::class,
@@ -184,6 +185,14 @@ final class NodeRoleRegistry
                 ],
                 supportedPlatforms: ['ubuntu'],
                 settingsClass: S3RoleSettings::class,
+            ),
+            NodeRoleName::Metrics->value => new NodeRoleDefinition(
+                name: NodeRoleName::Metrics->value,
+                conflictsWith: [
+                    NodeRoleName::Agent->value,
+                ],
+                supportedPlatforms: ['ubuntu'],
+                settingsClass: EmptyRoleSettings::class,
             ),
         ];
     }

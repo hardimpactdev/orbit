@@ -47,15 +47,19 @@ final readonly class ProcessesProbe
             return new ProbeSnapshot([]);
         }
 
-        if ($this->runtimeFor($process) === ProcessRuntime::Docker) {
-            return $this->introspectDocker($process, $node);
-        }
+        try {
+            if ($this->runtimeFor($process) === ProcessRuntime::Docker) {
+                return $this->introspectDocker($process, $node);
+            }
 
-        if ($this->runtimeFor($process) === ProcessRuntime::DockerSwarm) {
-            return $this->introspectDockerSwarm($process, $node);
-        }
+            if ($this->runtimeFor($process) === ProcessRuntime::DockerSwarm) {
+                return $this->introspectDockerSwarm($process, $node);
+            }
 
-        return $this->introspectSystemd($process, $node);
+            return $this->introspectSystemd($process, $node);
+        } catch (InvalidArgumentException $exception) {
+            return $this->unrenderableRuntimeUnitSnapshot($process, $exception);
+        }
     }
 
     private function introspectDocker(Process $process, Node $node): ProbeSnapshot
@@ -411,6 +415,7 @@ PHP;
         $drift = array_merge($drift, $this->checkRuntimeContexts($process));
         $drift = array_merge($drift, $this->checkWireGuardSelfRoute($process));
         $drift = array_merge($drift, $this->checkRuntimeBackend($process, $snapshot));
+        $drift = array_merge($drift, $this->checkRuntimeUnitRenderability($process, $snapshot));
         $drift = array_merge($drift, $this->checkRuntimeUnits($process, $snapshot));
         $drift = array_merge($drift, $this->checkRestartPolicy($process, $snapshot));
         $drift = array_merge($drift, $this->checkRuntimeEnvironment($process, $snapshot));
@@ -724,6 +729,7 @@ PHP;
         if (
             $observed === null
             || ($observed['runtime_backend_available'] ?? null) === false
+            || ($observed['runtime_unit_renderable'] ?? null) === false
             || ! is_array($observed['runtime_units'] ?? null)
         ) {
             return [];
@@ -763,6 +769,7 @@ PHP;
         if (
             $observed === null
             || ($observed['runtime_backend_available'] ?? null) === false
+            || ($observed['runtime_unit_renderable'] ?? null) === false
             || ! is_array($observed['runtime_units'] ?? null)
         ) {
             return [];
@@ -851,6 +858,36 @@ PHP;
         }
 
         return [];
+    }
+
+    /**
+     * @return list<DriftEntry>
+     */
+    private function checkRuntimeUnitRenderability(Process $process, ProbeSnapshot $snapshot): array
+    {
+        $observed = $snapshot->get($process->name);
+
+        if (
+            $observed === null
+            || ($observed['runtime_unit_renderable'] ?? null) !== false
+        ) {
+            return [];
+        }
+
+        return [
+            new DriftEntry(
+                family: $this->key(),
+                key: 'process.runtime_unit_unrenderable',
+                kind: DriftKind::Unverifiable,
+                summary: "Process {$process->name} runtime unit cannot be rendered from gateway intent.",
+                detail: array_filter([
+                    'process' => $process->name,
+                    'runtime' => $this->runtimeFor($process)->value,
+                    ...$this->serviceRuntimeDetail($process),
+                    'reason' => $observed['runtime_unit_render_error'] ?? null,
+                ], $this->filledDetail(...)),
+            ),
+        ];
     }
 
     /**
@@ -1246,6 +1283,22 @@ PHP;
         $parts[] = "--format '{{.Names}}'";
 
         return implode(' ', $parts);
+    }
+
+    private function unrenderableRuntimeUnitSnapshot(Process $process, InvalidArgumentException $exception): ProbeSnapshot
+    {
+        return new ProbeSnapshot([
+            $process->name => [
+                'runtime_unit_renderable' => false,
+                'runtime_unit_render_error' => $exception->getMessage(),
+                'runtime_backend_available' => null,
+                'runtime_backend_exit_code' => 0,
+                'runtime_backend_output' => '',
+                'runtime_units' => [],
+                'runtime_unit_extras' => [],
+                'event_notifier' => null,
+            ],
+        ]);
     }
 
     /**

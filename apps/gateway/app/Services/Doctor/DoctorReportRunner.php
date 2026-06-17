@@ -72,6 +72,8 @@ final readonly class DoctorReportRunner
 
     private const array S3_CATEGORIES = ['node', 'tool', 'proxy'];
 
+    private const array METRICS_CATEGORIES = ['node', 'tool', 'process', 'proxy'];
+
     public function __construct(
         private NodesProbe $nodesProbe,
         private AppsProbe $appsProbe,
@@ -122,6 +124,7 @@ final readonly class DoctorReportRunner
             NodeRoleName::Router->value => self::ROUTER_CATEGORIES,
             NodeRoleName::WebSocket->value => self::WEBSOCKET_CATEGORIES,
             NodeRoleName::S3->value => self::S3_CATEGORIES,
+            NodeRoleName::Metrics->value => self::METRICS_CATEGORIES,
             default => [],
         };
     }
@@ -165,6 +168,10 @@ final readonly class DoctorReportRunner
 
         if ($this->nodeRoleAssignments->nodeHasActiveRole($node, NodeRoleName::S3->value)) {
             return self::S3_CATEGORIES;
+        }
+
+        if ($this->nodeRoleAssignments->nodeHasActiveRole($node, NodeRoleName::Metrics->value)) {
+            return self::METRICS_CATEGORIES;
         }
 
         return self::CONTROL_CATEGORIES;

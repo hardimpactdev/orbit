@@ -31,7 +31,8 @@ This command validates the role assignment, applies role-local options, and repo
 - `s3` accepts optional `--s3-data-path`; it defaults to
   `/srv/orbit/s3/data`, must be absolute, and is mounted into SeaweedFS as
   `/data`.
-- `app-prod` and `database` reject unsupported role-local options.
+- `metrics` has no role-local options.
+- `app-prod`, `database`, and `metrics` reject unsupported role-local options.
 - Human output shows progress because convergence can be slow.
 - Configured non-gateway callers forward through the typed gateway API and need
   `role:add` on the target node.

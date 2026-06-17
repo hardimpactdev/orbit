@@ -36,6 +36,7 @@ class NodeRoleAssignments
             NodeRoleName::Database->value,
             NodeRoleName::Agent->value,
             NodeRoleName::S3->value,
+            NodeRoleName::Metrics->value,
         ];
     }
 
@@ -186,6 +187,7 @@ class NodeRoleAssignments
             NodeRoleName::Ingress,
             NodeRoleName::Vpn,
             NodeRoleName::Router,
+            NodeRoleName::Metrics,
         ] as $role) {
             if ($this->nodeHasActiveRole($node, $role->value)) {
                 return $role->value;

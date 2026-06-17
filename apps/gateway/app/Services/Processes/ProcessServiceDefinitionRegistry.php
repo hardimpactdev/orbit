@@ -43,13 +43,15 @@ final readonly class ProcessServiceDefinitionRegistry
             ]);
         }
 
-        if (! in_array($runtime, [ProcessRuntime::Docker, ProcessRuntime::DockerSwarm], true)) {
+        $allowedRuntimes = $this->allowedRuntimes($service);
+
+        if (! in_array($runtime, $allowedRuntimes, true)) {
             throw new GatewayApiException("Process definition '{$definition}' does not support runtime '{$runtime->value}'.", 'validation_failed', [
                 'field' => 'runtime',
                 'value' => $runtime->value,
                 'reason' => 'process_definition_runtime_unsupported',
                 'definition' => $definition,
-                'allowed' => [ProcessRuntime::Docker->value, ProcessRuntime::DockerSwarm->value],
+                'allowed' => array_map(static fn (ProcessRuntime $runtime): string => $runtime->value, $allowedRuntimes),
             ]);
         }
 
@@ -63,7 +65,6 @@ final readonly class ProcessServiceDefinitionRegistry
             'definition' => $definition,
             'version_family' => $resolved['family'],
             'version' => $resolved['version'],
-            'image' => "{$service['image']}:{$resolved['version']}",
             'endpoint' => [
                 'name' => $processName,
                 'kind' => 'tcp',
@@ -78,25 +79,6 @@ final readonly class ProcessServiceDefinitionRegistry
                     'port' => $resolved['published_port'],
                 ],
             ],
-            'ports' => [
-                [
-                    'published' => $resolved['published_port'],
-                    'target' => $service['target_port'],
-                    'protocol' => 'tcp',
-                ],
-            ],
-            'mounts' => [
-                [
-                    'source' => $dataPath,
-                    'target' => $service['data_path'],
-                ],
-            ],
-            'volumes' => [
-                [
-                    'name' => $volumeName,
-                    'target' => $service['data_path'],
-                ],
-            ],
             'service_name' => $serviceName,
             'environment' => $service['environment'],
             'network_aliases' => array_values(array_unique([$definition, $processName])),
@@ -107,6 +89,35 @@ final readonly class ProcessServiceDefinitionRegistry
                 'parallelism' => 1,
             ],
         ];
+
+        if (is_string($service['image'] ?? null) && $service['image'] !== '') {
+            $runtimeConfig['image'] = "{$service['image']}:{$resolved['version']}";
+        }
+
+        if (is_int($service['target_port'] ?? null)) {
+            $runtimeConfig['ports'] = [
+                [
+                    'published' => $resolved['published_port'],
+                    'target' => $service['target_port'],
+                    'protocol' => 'tcp',
+                ],
+            ];
+        }
+
+        if (is_string($service['data_path'] ?? null) && $service['data_path'] !== '') {
+            $runtimeConfig['mounts'] = [
+                [
+                    'source' => $dataPath,
+                    'target' => $service['data_path'],
+                ],
+            ];
+            $runtimeConfig['volumes'] = [
+                [
+                    'name' => $volumeName,
+                    'target' => $service['data_path'],
+                ],
+            ];
+        }
 
         $specHash = $this->specHash([
             ...$runtimeConfig,
@@ -134,33 +145,13 @@ final readonly class ProcessServiceDefinitionRegistry
     }
 
     /**
-     * @return array{
-     *     mysql: array{
-     *         image: string,
-     *         command: string,
-     *         target_port: int,
-     *         data_path: string,
-     *         environment: array<string, string>,
-     *         credentials: array<string, string>,
-     *         healthcheck: array<string, string>,
-     *         versions: array<array-key, array{default: string, versions: list<string>, port: int}>
-     *     },
-     *     redis: array{
-     *         image: string,
-     *         command: string,
-     *         target_port: int,
-     *         data_path: string,
-     *         environment: array<string, string>,
-     *         credentials: array<string, string>,
-     *         healthcheck: array<string, string>,
-     *         versions: array<array-key, array{default: string, versions: list<string>, port: int}>
-     *     }
-     * }
+     * @return array<string, array<string, mixed>>
      */
     private function definitions(): array
     {
         return [
             'mysql' => [
+                'runtimes' => [ProcessRuntime::Docker, ProcessRuntime::DockerSwarm],
                 'image' => 'mysql',
                 'command' => 'mysqld',
                 'target_port' => 3306,
@@ -194,6 +185,7 @@ final readonly class ProcessServiceDefinitionRegistry
                 ],
             ],
             'redis' => [
+                'runtimes' => [ProcessRuntime::Docker, ProcessRuntime::DockerSwarm],
                 'image' => 'redis',
                 'command' => 'redis-server --appendonly yes --bind 0.0.0.0 --protected-mode no',
                 'target_port' => 6379,
@@ -212,7 +204,87 @@ final readonly class ProcessServiceDefinitionRegistry
                     ],
                 ],
             ],
+            'prometheus' => [
+                'runtimes' => [ProcessRuntime::DockerSwarm],
+                'image' => 'prom/prometheus',
+                'command' => 'prometheus --config.file=/etc/prometheus/prometheus.yml --storage.tsdb.path=/prometheus --storage.tsdb.retention.time=15d --web.listen-address=0.0.0.0:9090',
+                'target_port' => 9090,
+                'data_path' => '/prometheus',
+                'environment' => [],
+                'credentials' => [],
+                'healthcheck' => [
+                    'command' => 'wget -qO- http://127.0.0.1:9090/-/ready >/dev/null',
+                    'kind' => 'command',
+                ],
+                'versions' => [
+                    '3' => [
+                        'default' => 'v3.12.0',
+                        'versions' => ['v3.12.0'],
+                        'port' => 9090,
+                    ],
+                ],
+            ],
+            'grafana' => [
+                'runtimes' => [ProcessRuntime::DockerSwarm],
+                'image' => 'grafana/grafana',
+                'command' => '/run.sh',
+                'target_port' => 3000,
+                'data_path' => '/var/lib/grafana',
+                'environment' => [
+                    'GF_SECURITY_ADMIN_USER' => 'admin',
+                    'GF_SERVER_ROOT_URL' => 'https://metrics.orbit',
+                ],
+                'credentials' => [
+                    'admin_user' => 'admin',
+                ],
+                'healthcheck' => [
+                    'command' => 'wget -qO- http://127.0.0.1:3000/api/health >/dev/null',
+                    'kind' => 'command',
+                ],
+                'versions' => [
+                    '13' => [
+                        'default' => '13.0.2',
+                        'versions' => ['13.0.2'],
+                        'port' => 3000,
+                    ],
+                ],
+            ],
+            'node-exporter' => [
+                'runtimes' => [ProcessRuntime::Systemd],
+                'command' => '/usr/local/bin/node_exporter --web.listen-address=0.0.0.0:9100',
+                'environment' => [],
+                'credentials' => [],
+                'healthcheck' => [
+                    'command' => 'curl -fsS http://127.0.0.1:9100/metrics >/dev/null',
+                    'kind' => 'command',
+                ],
+                'versions' => [
+                    '1' => [
+                        'default' => '1.11.1',
+                        'versions' => ['1.11.1'],
+                        'port' => 9100,
+                    ],
+                ],
+            ],
         ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $service
+     * @return list<ProcessRuntime>
+     */
+    private function allowedRuntimes(array $service): array
+    {
+        $runtimes = $service['runtimes'] ?? null;
+
+        if (! is_array($runtimes) || $runtimes === []) {
+            return [ProcessRuntime::Docker, ProcessRuntime::DockerSwarm];
+        }
+
+        return array_values(array_filter(
+            $runtimes,
+            static fn (mixed $runtime): bool => $runtime instanceof ProcessRuntime,
+        ));
     }
 
     /**

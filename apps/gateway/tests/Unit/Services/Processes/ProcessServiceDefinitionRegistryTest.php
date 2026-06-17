@@ -79,6 +79,78 @@ it('keeps MySQL 8 and MySQL 9 process definitions distinct', function (): void {
         ->and($mysql8->runtimeConfig['spec_hash'])->not->toBe($mysql9->runtimeConfig['spec_hash']);
 });
 
+it('resolves metrics service definitions for Prometheus, Grafana, and node-exporter', function (): void {
+    $node = Node::factory()->create([
+        'name' => 'metrics-1',
+        'wireguard_address' => '10.6.0.55',
+    ]);
+
+    $registry = app(ProcessServiceDefinitionRegistry::class);
+
+    $prometheus = $registry->resolve(
+        definition: 'prometheus',
+        version: null,
+        runtime: ProcessRuntime::DockerSwarm,
+        node: $node,
+        processName: 'prometheus',
+    );
+    $grafana = $registry->resolve(
+        definition: 'grafana',
+        version: null,
+        runtime: ProcessRuntime::DockerSwarm,
+        node: $node,
+        processName: 'grafana',
+    );
+    $nodeExporter = $registry->resolve(
+        definition: 'node-exporter',
+        version: null,
+        runtime: ProcessRuntime::Systemd,
+        node: $node,
+        processName: 'node-exporter',
+    );
+
+    expect($prometheus->version)->toBe('v3.12.0')
+        ->and($prometheus->command)->toContain('--storage.tsdb.retention.time=15d')
+        ->and($prometheus->runtimeConfig)->toMatchArray([
+            'definition' => 'prometheus',
+            'version_family' => '3',
+            'version' => 'v3.12.0',
+            'image' => 'prom/prometheus:v3.12.0',
+            'service_name' => 'orbit-prometheus',
+        ])
+        ->and($prometheus->runtimeConfig['endpoint']['host'])->toBe('10.6.0.55')
+        ->and($prometheus->runtimeConfig['endpoint']['port'])->toBe(9090)
+        ->and($prometheus->runtimeConfig['labels']['orbit.process.definition'])->toBe('prometheus')
+        ->and($grafana->version)->toBe('13.0.2')
+        ->and($grafana->runtimeConfig)->toMatchArray([
+            'definition' => 'grafana',
+            'version_family' => '13',
+            'version' => '13.0.2',
+            'image' => 'grafana/grafana:13.0.2',
+            'service_name' => 'orbit-grafana',
+            'environment' => [
+                'GF_SECURITY_ADMIN_USER' => 'admin',
+                'GF_SERVER_ROOT_URL' => 'https://metrics.orbit',
+            ],
+        ])
+        ->and($grafana->runtimeConfig['endpoint']['host'])->toBe('10.6.0.55')
+        ->and($grafana->runtimeConfig['endpoint']['port'])->toBe(3000)
+        ->and($nodeExporter->version)->toBe('1.11.1')
+        ->and($nodeExporter->command)->toContain('node_exporter')
+        ->and($nodeExporter->runtimeConfig)->toMatchArray([
+            'definition' => 'node-exporter',
+            'version_family' => '1',
+            'version' => '1.11.1',
+            'endpoint' => [
+                'name' => 'node-exporter',
+                'kind' => 'tcp',
+                'host' => '10.6.0.55',
+                'port' => 9100,
+            ],
+        ])
+        ->and($nodeExporter->runtimeConfig['labels']['orbit.process.definition'])->toBe('node-exporter');
+});
+
 it('requires service process endpoints to use the owner node WireGuard address', function (): void {
     $node = Node::factory()->create([
         'name' => 'database-1',
@@ -150,6 +222,11 @@ it('rejects unsupported service process definition inputs', function (Closure $o
     ],
     'runtime unsupported' => [
         fn (ProcessServiceDefinitionRegistry $registry, Node $node) => $registry->resolve('redis', '7', ProcessRuntime::Systemd, $node, 'redis'),
+        'runtime',
+        'process_definition_runtime_unsupported',
+    ],
+    'node exporter docker unsupported' => [
+        fn (ProcessServiceDefinitionRegistry $registry, Node $node) => $registry->resolve('node-exporter', null, ProcessRuntime::DockerSwarm, $node, 'node-exporter'),
         'runtime',
         'process_definition_runtime_unsupported',
     ],

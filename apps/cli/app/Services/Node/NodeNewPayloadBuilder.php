@@ -16,6 +16,7 @@ class NodeNewPayloadBuilder
         'ingress',
         'database',
         's3',
+        'metrics',
         'websocket',
         'agent',
     ];
@@ -26,6 +27,7 @@ class NodeNewPayloadBuilder
         'database',
         'agent',
         'ingress',
+        'metrics',
         'websocket',
         's3',
     ];
@@ -210,7 +212,7 @@ class NodeNewPayloadBuilder
         if (! in_array($template, self::TEMPLATES, true)) {
             throw new NodeWriteInputException(
                 'validation_failed',
-                'Node template must be one of operator, app-development, app-production, gateway, ingress, database, s3, websocket, or agent.',
+                'Node template must be one of operator, app-development, app-production, gateway, ingress, database, s3, metrics, websocket, or agent.',
                 ['field' => 'template'],
             );
         }
@@ -242,7 +244,7 @@ class NodeNewPayloadBuilder
             if (! in_array($role, self::ROLES, true)) {
                 throw new NodeWriteInputException(
                     'validation_failed',
-                    'Node roles must be one or more of app-dev, app-prod, database, agent, ingress, websocket, or s3.',
+                    'Node roles must be one or more of app-dev, app-prod, database, agent, ingress, metrics, websocket, or s3.',
                     ['field' => 'roles'],
                 );
             }

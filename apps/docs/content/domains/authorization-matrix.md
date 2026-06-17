@@ -63,6 +63,11 @@ authority](../architecture.md#gateway-implicit-authority).
 | `firewall:remove` | `firewall_rule:write` | target node | None | `authorization_failed` | Standard missing-permission meta plus target node |
 | `gateway:add` | n/a - pre-grants bootstrap | n/a | Deployment-context command | n/a | n/a |
 | `gateway:trust` | n/a - local-only | n/a | Deployment-context command | n/a | n/a |
+| `metrics:credentials` read mode | `tool:credentials` | selected active metrics node | V1 process-backed permission for Grafana credentials | `authorization_failed` | Standard missing-permission meta plus selected node and process |
+| `metrics:credentials --reset` | `tool:credentials` | selected active metrics node | V1 uses the explicit credentials permission for Grafana password rotation | `authorization_failed` | Standard missing-permission meta plus selected node and process |
+| `metrics:disable` | `role:remove` | target node | Delegates to metrics role removal; `--force` required before side effects | `authorization_failed` | Standard missing-permission meta plus target node and role |
+| `metrics:enable` | `role:add` | target node | Delegates to metrics role assignment and role baseline convergence | `authorization_failed` | Standard missing-permission meta plus target node and role |
+| `metrics:status` | `process:read` | selected metrics node, or each visible metrics node | Row-level filtering applies when `--node` is absent | `authorization_failed` | Standard missing-permission meta plus selected node when requested |
 | `node:agent-ide` | `node:agent` | target node | None | `authorization_failed` | Standard missing-permission meta plus target node |
 | `node:default` | n/a - local-only | n/a | Deployment-context command | n/a | n/a |
 | `node:grant` | `node:grant` | gateway | None | `authorization_failed` | Standard missing-permission meta |

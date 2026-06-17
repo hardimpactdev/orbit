@@ -40,6 +40,7 @@ final readonly class NonStateDomainHandoffRule implements GroupedRule
         'operation' => ['node', 'app', 'workspace', 'process', 'proxy', 'schedule', 'tool', 'firewall_rule'],
         'vpn' => ['node'],
         's3' => ['node', 'tool', 'proxy'],
+        'metrics' => ['node', 'tool', 'process', 'proxy'],
     ];
 
     public function __construct(

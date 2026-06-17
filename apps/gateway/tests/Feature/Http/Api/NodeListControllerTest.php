@@ -130,14 +130,21 @@ describe('NodeListController', function (): void {
             apiNodeRow(['name' => 'app-1']),
             apiNodeRow(['name' => 'gateway-1']),
             apiNodeRow(['name' => 'control-1']),
+            apiNodeRow(['name' => 'metrics-1']),
         ]);
         assignApiNodeRole('app-1', 'app-dev', ['tld' => 'test']);
+        assignApiNodeRole('metrics-1', 'metrics');
 
         $response = getApiNodesJson('/api/nodes?role=app-dev', ['REMOTE_ADDR' => CALLER_WG_IP]);
+        $metricsResponse = getApiNodesJson('/api/nodes?role=metrics', ['REMOTE_ADDR' => CALLER_WG_IP]);
 
         $response->assertOk()
             ->assertJsonCount(1, 'success.data.nodes')
             ->assertJsonPath('success.data.nodes.0.name', 'app-1');
+
+        $metricsResponse->assertOk()
+            ->assertJsonCount(1, 'success.data.nodes')
+            ->assertJsonPath('success.data.nodes.0.name', 'metrics-1');
     });
 
     it('filters nodes by concrete role assignments', function (): void {
@@ -199,11 +206,11 @@ describe('NodeListController', function (): void {
             ->assertJson([
                 'error' => [
                     'code' => 'validation_failed',
-                    'message' => "Invalid value for role: 'invalid'. Allowed values: gateway, vpn, router, app-dev, app-prod, database, agent, ingress, websocket, s3.",
+                    'message' => "Invalid value for role: 'invalid'. Allowed values: gateway, vpn, router, app-dev, app-prod, database, agent, ingress, websocket, s3, metrics.",
                     'meta' => [
                         'field' => 'role',
                         'value' => 'invalid',
-                        'allowed' => ['gateway', 'vpn', 'router', 'app-dev', 'app-prod', 'database', 'agent', 'ingress', 'websocket', 's3'],
+                        'allowed' => ['gateway', 'vpn', 'router', 'app-dev', 'app-prod', 'database', 'agent', 'ingress', 'websocket', 's3', 'metrics'],
                     ],
                 ],
             ]);

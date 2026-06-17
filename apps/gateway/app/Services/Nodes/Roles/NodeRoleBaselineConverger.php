@@ -13,6 +13,7 @@ use App\Services\Nodes\Roles\RoleBaselines\AppProductionRoleBaseline;
 use App\Services\Nodes\Roles\RoleBaselines\DatabaseRoleBaseline;
 use App\Services\Nodes\Roles\RoleBaselines\GatewayRoleBaseline;
 use App\Services\Nodes\Roles\RoleBaselines\IngressRoleBaseline;
+use App\Services\Nodes\Roles\RoleBaselines\MetricsRoleBaseline;
 use App\Services\Nodes\Roles\RoleBaselines\RoleBaseline;
 use App\Services\Nodes\Roles\RoleBaselines\RouterRoleBaseline;
 use App\Services\Nodes\Roles\RoleBaselines\S3RoleBaseline;
@@ -33,6 +34,7 @@ class NodeRoleBaselineConverger
         private readonly ?VpnRoleBaseline $vpnRoleBaseline = null,
         private readonly ?WebSocketRoleBaseline $webSocketRoleBaseline = null,
         private readonly ?S3RoleBaseline $s3RoleBaseline = null,
+        private readonly ?MetricsRoleBaseline $metricsRoleBaseline = null,
     ) {}
 
     public function converge(Node $node, NodeRoleAssignment $assignment): void
@@ -58,6 +60,7 @@ class NodeRoleBaselineConverger
             NodeRoleName::Ingress->value => $this->ingressRoleBaseline(),
             NodeRoleName::WebSocket->value => $this->webSocketRoleBaseline(),
             NodeRoleName::S3->value => $this->s3RoleBaseline(),
+            NodeRoleName::Metrics->value => $this->metricsRoleBaseline(),
             default => throw new InvalidArgumentException("Unsupported node role baseline [{$role}]."),
         };
     }
@@ -85,5 +88,10 @@ class NodeRoleBaselineConverger
     protected function s3RoleBaseline(): S3RoleBaseline
     {
         return $this->s3RoleBaseline ?? app(S3RoleBaseline::class);
+    }
+
+    protected function metricsRoleBaseline(): MetricsRoleBaseline
+    {
+        return $this->metricsRoleBaseline ?? app(MetricsRoleBaseline::class);
     }
 }

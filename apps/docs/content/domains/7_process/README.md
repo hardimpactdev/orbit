@@ -105,8 +105,9 @@ These rules describe how lifecycle commands address runtime units.
 ### Service process definitions
 
 Service process definitions are the supported way to create node-owned
-database/cache services. They own service version, image, endpoint, credentials,
-ports, volumes, labels, lifecycle, and logs on the process row.
+database/cache services and selected node-owned platform services. They own
+service version, image, endpoint, credentials, ports, volumes, labels,
+lifecycle, and logs on the process row.
 The endpoint host is always the owning node's WireGuard service address. Orbit
 does not fall back to the node SSH host, node name, loopback, or Docker network
 alias for managed service endpoints.
@@ -128,8 +129,13 @@ Supported definitions in this vertical slice:
 | --- | --- | --- | --- |
 | `mysql` | `8` -> `8.4`, `9` -> `9` | `docker` | Published ports are version-family specific, so MySQL 8 and 9 can coexist on one node. |
 | `redis` | `7` -> `7.2` | `docker` | Publishes the Redis TCP endpoint from the owning node's WireGuard service address. |
+| `prometheus` | `3` -> `v3.12.0` | `docker-swarm` | Metrics-role service process for host-resource time-series storage. Uses local TSDB retention of 15 days. |
+| `grafana` | `13` -> `13.0.2` | `docker-swarm` | Metrics-role service process for dashboards, exposed through the private `metrics.orbit` route. |
+| `node-exporter` | `1` -> `1.11.1` | `systemd` | Metrics-role host process that exposes host resource metrics on the owning node's WireGuard service address. |
 
-`docker-swarm` is also admitted for node-owned service process definitions.
+`docker-swarm` is also admitted for node-owned service process definitions
+whose definition declares Swarm support. `node-exporter` declares only
+`systemd` because it observes host resources directly.
 PostgreSQL follows the same process-owned product direction, but it is not
 advertised as a supported process definition until its definition lands.
 

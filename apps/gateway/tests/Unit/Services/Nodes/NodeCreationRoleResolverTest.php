@@ -40,20 +40,24 @@ it('expands node templates to canonical stored roles', function (string $templat
     'app production' => ['app-production', ['app-prod'], false, false],
     'ingress' => ['ingress', ['ingress'], false, false],
     'database' => ['database', ['database'], false, false],
+    'metrics' => ['metrics', ['metrics'], false, false],
     'agent' => ['agent', ['agent'], false, false],
 ]);
 
-it('resolves comma-separated programmatic roles without template expansion', function (): void {
+it('resolves comma-separated programmatic roles without template expansion', function (string $roles, array $hosted, string $requestedRole): void {
     $selection = app(NodeCreationRoleResolver::class)->resolve(
         template: null,
         operator: false,
-        roles: 'app-dev,database',
+        roles: $roles,
     );
 
     expect($selection->template)->toBeNull()
-        ->and($selection->hosted)->toBe(['app-dev', 'database'])
-        ->and($selection->requestedRoleMeta)->toBe('app-dev');
-});
+        ->and($selection->hosted)->toBe($hosted)
+        ->and($selection->requestedRoleMeta)->toBe($requestedRole);
+})->with([
+    'app dev with database' => ['app-dev,database', ['app-dev', 'database'], 'app-dev'],
+    'metrics' => ['metrics', ['metrics'], 'metrics'],
+]);
 
 it('rejects template and explicit roles together', function (): void {
     try {

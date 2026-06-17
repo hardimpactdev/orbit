@@ -34,6 +34,10 @@ Node reachability belongs to `node`. App, workspace, process, schedule, proxy
 route, and firewall drift remain outside the tool family even when those
 families depend on a tool.
 
+For the `metrics` role, tool doctor verifies the Docker substrate capability
+that Prometheus and Grafana need. Prometheus, Grafana, and node-exporter
+runtime lifecycle and drift are process-family facts, not tool facts.
+
 ## Probe Layers
 
 The tools probe reads gateway tool rows and checks these layers:

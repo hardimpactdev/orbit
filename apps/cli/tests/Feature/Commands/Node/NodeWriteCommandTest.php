@@ -77,6 +77,30 @@ describe('node write commands', function (): void {
         expect($exitCode)->toBe(0);
     });
 
+    it('accepts metrics role node:new payloads for programmatic callers', function (): void {
+        fakeGatewayProgressStream(gatewayProgressFrame('complete', [
+            'exit_code' => 0,
+            'data' => fakeSuccessEnvelope([
+                'node' => ['name' => 'metrics-1'],
+                'action' => 'created',
+            ]),
+        ]));
+
+        [$exitCode] = runCommand($this, 'node:new', [
+            'name' => 'metrics-1',
+            '--roles' => 'metrics',
+            '--host' => '192.0.2.55',
+            '--json' => true,
+        ]);
+
+        Http::assertSent(fn (Request $request): bool => $request->method() === 'POST'
+            && str_contains($request->url(), '/api/nodes')
+            && $request['roles'] === ['metrics']
+            && ! isset($request['template']));
+
+        expect($exitCode)->toBe(0);
+    });
+
     it('runs the bootstrap path for first gateway node creation when no gateway is configured', function (): void {
         config()->set('orbit.gateway.url', null);
         app()->forgetInstance(GatewayApiClient::class);

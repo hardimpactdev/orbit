@@ -18,6 +18,7 @@ describe('node role assignments', function (): void {
         $pendingAppNode = Node::factory()->create(['status' => 'active']);
         $databaseNode = Node::factory()->create(['status' => 'active']);
         $agentNode = Node::factory()->create(['status' => 'active']);
+        $metricsNode = Node::factory()->create(['status' => 'active']);
 
         NodeRoleAssignment::factory()->create([
             'node_id' => $developmentNode->id,
@@ -46,6 +47,11 @@ describe('node role assignments', function (): void {
             'role' => 'agent',
             'status' => 'active',
         ]);
+        NodeRoleAssignment::factory()->create([
+            'node_id' => $metricsNode->id,
+            'role' => 'metrics',
+            'status' => 'active',
+        ]);
 
         $assignments = app(NodeRoleAssignments::class);
 
@@ -58,6 +64,7 @@ describe('node role assignments', function (): void {
                 $productionNode->id,
                 $databaseNode->id,
                 $agentNode->id,
+                $metricsNode->id,
             ])
             ->and($assignments->nodeHasActiveAppHostRole($developmentNode))->toBeTrue()
             ->and($assignments->nodeHasActiveAppHostRole($productionNode))->toBeTrue()
@@ -66,6 +73,7 @@ describe('node role assignments', function (): void {
             ->and($assignments->nodeHasActiveAppHostRole($databaseNode))->toBeFalse()
             ->and($assignments->nodeHasActiveToolHostRole($databaseNode))->toBeTrue()
             ->and($assignments->nodeHasActiveToolHostRole($agentNode))->toBeTrue()
+            ->and($assignments->nodeHasActiveToolHostRole($metricsNode))->toBeTrue()
             ->and($assignments->activeAppHostEnvironment($developmentNode))->toBe('development')
             ->and($assignments->activeAppHostEnvironment($productionNode))->toBe('production')
             ->and($assignments->activeAppHostEnvironment($unassignedAppNode))->toBeNull();
@@ -131,6 +139,7 @@ describe('node role assignments', function (): void {
         $gateway = Node::factory()->create([]);
         $development = Node::factory()->create([]);
         $database = Node::factory()->create([]);
+        $metrics = Node::factory()->create([]);
         $control = Node::factory()->create([]);
 
         NodeRoleAssignment::factory()->create([
@@ -149,12 +158,18 @@ describe('node role assignments', function (): void {
             'role' => 'database',
             'status' => 'active',
         ]);
+        NodeRoleAssignment::factory()->create([
+            'node_id' => $metrics->id,
+            'role' => 'metrics',
+            'status' => 'active',
+        ]);
 
         $assignments = app(NodeRoleAssignments::class);
 
         expect($assignments->assignmentRoleLabel($gateway))->toBe('gateway')
             ->and($assignments->assignmentRoleLabel($development))->toBe('app-dev')
             ->and($assignments->assignmentRoleLabel($database))->toBe('database')
+            ->and($assignments->assignmentRoleLabel($metrics))->toBe('metrics')
             ->and($assignments->assignmentRoleLabel($control))->toBe('operator');
     });
 });

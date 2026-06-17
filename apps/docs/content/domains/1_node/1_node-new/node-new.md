@@ -40,6 +40,8 @@ orbit node:new web-1 --template=app-production --host=203.0.113.21
 orbit node:new web-2 --roles=app-prod --ingress=edge-1 --host=203.0.113.22
 orbit node:new realtime-1 --template=websocket --host=203.0.113.30 --redis-node=db-1
 orbit node:new storage-1 --template=s3 --host=203.0.113.31 --s3-data-path=/srv/orbit/s3/data
+orbit node:new metrics-1 --template=metrics --host=203.0.113.40
+orbit node:new app-1 --roles=app-dev,metrics --host=203.0.113.41 --tld=test
 orbit node:new gateway-1 --template=gateway --host=203.0.113.2 --operator-name=operator-1
 orbit node:new agent-1 --template=agent --host=192.0.2.10 --tld=agent --self-grant=default
 orbit node:new agent-1 --roles=agent --host=192.0.2.10 --agent-tool=openclaw --agent-tool=hermes
@@ -53,7 +55,7 @@ orbit node:new agent-1 --roles=agent --host=192.0.2.10 --grant-to=all --grant-to
 - `--template`: named provisioning template that expands to a role composition
   before validation. Supported templates: `operator`, `app-development`,
   `app-production`, `gateway`, `ingress`, `database`, `s3`, `websocket`,
-  and `agent`. Mutually exclusive with `--roles` and with `--operator` except
+  `metrics`, and `agent`. Mutually exclusive with `--roles` and with `--operator` except
   for `--template=operator`.
 - `--operator`: create a client identity with the operator permission preset and
   no workload role assignments. Operator is not a node role; use this flag
@@ -62,7 +64,7 @@ orbit node:new agent-1 --roles=agent --host=192.0.2.10 --grant-to=all --grant-to
 - `--roles`: role assignments as a comma-separated list, for programmatic callers
   that need an explicit composition instead of a template. Supported role
   values are `app-dev`, `app-prod`, `database`, `agent`, `ingress`,
-  `websocket`, and `s3`. Role aliases are not accepted; `app-development`
+  `websocket`, `s3`, and `metrics`. Role aliases are not accepted; `app-development`
   and `app-production` are template names only. No assigned role means a
   client identity. `gateway`, `vpn`, and `router` are not accepted through
   `--roles`; use `--template=gateway`. `agent` is exclusive and may only be
@@ -70,7 +72,7 @@ orbit node:new agent-1 --roles=agent --host=192.0.2.10 --grant-to=all --grant-to
   effects.
 - `--host`: required for gateway bootstrap and for every path that provisions a
   workload role (`app-dev`, `app-prod`, `ingress`, `agent`, `websocket`, `s3`,
-  and gateway bootstrap/convergence). Forbidden for bare client identities,
+  `metrics`, and gateway bootstrap/convergence). Forbidden for bare client identities,
   `--operator`, and `database`-only identities that do not provision a host.
   This is the SSH/bootstrap endpoint and never the canonical node address.
 - `--operator-name`: initiating client name for first-gateway bootstrap
@@ -127,6 +129,7 @@ Each template pre-selects a role set and provisioning path. Use a template when 
 | `database` | `database` | `s3`, `websocket` | yes | live |
 | `s3` | `s3` | — | yes | implementation pending |
 | `websocket` | `websocket` | — | yes | implementation pending |
+| `metrics` | `metrics` | — | yes | live |
 | `agent` | `agent` | agent tools via `--agent-tool=` | yes | live |
 
 > **Status:** Templates `s3` and `websocket` are documented so the CLI surface
@@ -187,6 +190,16 @@ assignment whose settings include the SeaweedFS data path.
 
 Requires `--host`. Implementation pending.
 
+**`metrics` template**
+
+Provisions a private host-resource observability node and creates an active
+`metrics` role assignment. The role baseline records Docker substrate intent,
+Prometheus and Grafana Docker Swarm process definitions, a node-exporter
+systemd process definition, the router-owned `metrics.orbit` route, and
+generated Grafana admin credentials.
+
+Requires `--host`.
+
 **`agent` template**
 
 Provisions an isolated agent host with the exclusive `agent` role assignment.
@@ -204,11 +217,12 @@ host requires `--host`. `--roles` is mutually exclusive with `--template` and
 
 `app-dev` and `app-prod` are mutually exclusive. In v1, `gateway`, `vpn`, and
 `router` are gateway-coupled and conflict with `app-dev`, `app-prod`,
-`database`, `agent`, `ingress`, `websocket`, and `s3`. The `agent` role
-conflicts with every other workload role. `ingress` may combine only with
-`app-prod`. `websocket` and `s3` may combine with `app-dev`, `database`, and
-each other. `gateway`, `vpn`, and `router` are not command-assignable through
-the public role flow.
+`database`, `agent`, `ingress`, `websocket`, and `s3`; `metrics` may be
+co-located with that gateway-coupled node. The `agent` role conflicts with
+every other workload role. `ingress` may combine with `app-prod` and
+`metrics`. `websocket` and `s3` may combine with `app-dev`, `database`,
+`metrics`, and each other. `gateway`, `vpn`, and `router` are not
+command-assignable through the public role flow.
 
 **Gateway bootstrap**
 
@@ -267,8 +281,8 @@ and requires a future explicit reset contract.
 
 When no `--template` or `--operator` is supplied, `--roles=<csv>` remains
 available for explicit programmatic compositions. Canonical stored role values
-are `app-dev`, `app-prod`, `database`, `agent`, `ingress`, `websocket`, and
-`s3`. The sections below describe agent-tool and grant behavior that applies
+are `app-dev`, `app-prod`, `database`, `agent`, `ingress`, `websocket`, `s3`,
+and `metrics`. The sections below describe agent-tool and grant behavior that applies
 regardless of whether a template or explicit role list was used.
 
 **`agent` role details**

@@ -43,6 +43,13 @@ Internet
   -> private WireGuard route to router
   -> router orbit-caddy for `s3.orbit`, public S3 host relay, and S3 backend pool
   -> SeaweedFS in a Docker runtime container rendered by Orbit
+
+Private metrics:
+
+VPN client browser
+  -> router orbit-caddy for `metrics.orbit`
+  -> Grafana Docker Swarm service on the metrics role node
+  -> Prometheus Docker Swarm service scraping host node-exporter
 ```
 
 The sections below walk through each layer of the stack in the same order as the table.
@@ -69,6 +76,7 @@ The sections below walk through each layer of the stack in the same order as the
 | Production app backend | App-role-owned `orbit-caddy` on `app-prod` nodes bound to the node's WireGuard address and forwarding to per-app FrankenPHP Docker runtime containers on internal port `8080` over the node Docker network |
 | Realtime service backend | Laravel Reverb in a Docker runtime container managed by Orbit on `websocket` nodes, bound only to the node's WireGuard address and reached through router-owned WebSocket routes |
 | S3 service backend | SeaweedFS in a Docker runtime container rendered by Orbit on `s3` nodes, bound only to the node's WireGuard address and reached through router-owned S3 routes |
+| Metrics backend | Prometheus and Grafana as Docker Swarm process definitions on metrics role nodes; node-exporter as a host systemd process; Grafana private route `metrics.orbit` |
 | Agent runtime | OpenClaw and Hermes as first-party agent tools, installed through `tool:install` on nodes with the `agent` role and run as the shared unprivileged `agent` user |
 | Network | WireGuard, served by the gateway-coupled `vpn` role |
 | Public DNS/CDN | Cloudflare integration for production domains |
@@ -381,6 +389,27 @@ coverage must keep SeaweedFS on the role runtime container substrate and must
 not add role-local Docker Compose, host Caddy, host PHP, PHP-FPM, or Supervisor
 to make object-storage assertions pass. See [Testing](testing/README.md).
 
+### Metrics runtime
+
+The `metrics` role runs Orbit's host-resource observability backend. Prometheus
+and Grafana are node-owned service process definitions using the Docker Swarm
+runtime. node-exporter is a node-owned host command process using systemd. The
+role baseline creates the expected process rows and the Docker substrate intent;
+start, stop, restart, logs, and runtime drift remain process-family behavior.
+
+Grafana is exposed only on the private Orbit network through the router-owned
+`metrics.orbit` route. The role stores generated Grafana admin credentials in
+gateway-owned process runtime configuration and exposes them through
+`metrics:credentials`. The first slice tracks host resources only: Prometheus
+scrapes node-exporter on the metrics node and does not claim app,
+container-specific, database-specific, or distributed fleet scrape coverage.
+
+The metrics command family coordinates existing state families rather than
+creating a `metrics` state family. Node role assignment and readiness belong to
+`node`, Docker substrate capability belongs to `tool`, Prometheus/Grafana and
+node-exporter lifecycle belongs to `process`, and `metrics.orbit` route drift
+belongs to `proxy`.
+
 ### Process manager
 
 Processes are the Orbit lifecycle-managed long-running units. Each process
@@ -444,7 +473,8 @@ Docker is the baseline substrate for Orbit runtime containers and backing
 services. Orbit uses Docker for `orbit-gateway`, `orbit-scheduler`,
 `orbit-caddy`, FrankenPHP app/workspace containers, databases, caches, mail
 servers, Laravel Reverb containers for the
-`websocket` role, SeaweedFS containers for the `s3` role, and similar backing
+`websocket` role, SeaweedFS containers for the `s3` role, Prometheus and
+Grafana Swarm services for the `metrics` role, and similar backing
 infrastructure. Docker E2E topologies use sibling containers through the host
 Docker socket, not Docker-in-Docker.
 
@@ -538,7 +568,7 @@ gateway entries and use `gateway:use <name>` to switch the active one.
 
 ### Platform and roles
 
-The Orbit CLI binary targets macOS arm64 and Ubuntu x86_64. The `gateway`, `vpn`, `router`, `app-dev`, `app-prod`, `database`, `agent`, `ingress`, `websocket`, and `s3` role drivers currently support Ubuntu only. macOS is therefore a supported client OS but cannot host a role assignment until a driver gains macOS support. See [Architecture: Node roles](architecture.md#node-roles) for the driver concept.
+The Orbit CLI binary targets macOS arm64 and Ubuntu x86_64. The `gateway`, `vpn`, `router`, `app-dev`, `app-prod`, `database`, `agent`, `ingress`, `websocket`, `s3`, and `metrics` role drivers currently support Ubuntu only. macOS is therefore a supported client OS but cannot host a role assignment until a driver gains macOS support. See [Architecture: Node roles](architecture.md#node-roles) for the driver concept.
 
 The CLI is always a thin gateway client. It has no client-side role awareness. On any machine, the CLI gathers local context (current app, workspace, paths), calls the gateway over the VPN, and renders the result. The gateway authenticates the WireGuard peer, derives grants from its own node records, and decides what to do. When work needs to run on a node (file writes, service control, log access), the gateway opens an SSH connection back to that node via `RemoteShell` — even if the CLI that initiated the work is on that same node.
 

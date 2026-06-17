@@ -20,11 +20,12 @@ These terms define how process definitions are identified, scoped, and ordered.
   asserts required capability; it does not transfer lifecycle ownership to the
   tool.
 - **Service process definition:** Process-family catalog entry for a runnable
-  service such as MySQL or Redis. Service version, runtime, endpoint,
-  credentials, lifecycle, and logs belong to the process row produced from the
-  definition. The service endpoint host is the owning node's WireGuard service
-  address. Consumers on the same node rely on the provisioning-owned
-  WireGuard self-route, not on loopback or Docker aliases.
+  service such as MySQL, Redis, Prometheus, Grafana, or node-exporter. Service
+  version, runtime, endpoint, credentials, lifecycle, and logs belong to the
+  process row produced from the definition. The service endpoint host is the
+  owning node's WireGuard service address. Consumers on the same node rely on
+  the provisioning-owned WireGuard self-route, not on loopback or Docker
+  aliases.
 - **Process order:** Stable order of process definitions inside their owning
   scope. Read and bulk lifecycle commands use that order.
 
@@ -46,7 +47,8 @@ These terms describe the runtime objects that Orbit derives from process definit
   agent, app, and workspace runtime units.
 - **Docker Swarm process runtime:** Runtime backend that runs a node-owned
   managed service process as an Orbit-managed Swarm service. It is currently
-  admitted for process-defined MySQL and Redis service processes.
+  admitted for process-defined MySQL, Redis, Prometheus, and Grafana service
+  processes.
   App/workspace Swarm runtime remains deferred and is rejected before runtime
   side effects.
 - **Systemd process runtime:** Runtime backend for Linux host command units,

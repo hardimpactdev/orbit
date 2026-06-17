@@ -789,6 +789,38 @@ describe('docker runtime probe scope', function (): void {
             ]);
     });
 
+    it('reports unrenderable node-owned Docker process intent without aborting doctor', function (): void {
+        $node = Node::factory()->database()->create([
+            'name' => 'database-1',
+            'status' => 'active',
+            'wireguard_address' => '10.6.0.7',
+        ]);
+        $process = Process::factory()->forOwner($node)->create([
+            'name' => 'redis',
+            'command' => 'redis-server --appendonly yes',
+            'runtime' => ProcessRuntime::Docker,
+            'runtime_config' => [
+                'definition' => 'redis',
+                'version_family' => '7',
+                'version' => '7.2',
+            ],
+        ]);
+
+        $snapshot = (new ProcessesProbe)->introspect($process);
+        $drift = $this->probe->diff($process, $snapshot);
+
+        expect(issue($drift, 'process.runtime_unit_unrenderable')?->kind)->toBe(DriftKind::Unverifiable)
+            ->and(issue($drift, 'process.runtime_unit_unrenderable')?->detail)->toMatchArray([
+                'process' => 'redis',
+                'runtime' => 'docker',
+                'definition' => 'redis',
+                'version_family' => '7',
+                'version' => '7.2',
+            ])
+            ->and(issue($drift, 'process.runtime_unit_unrenderable')?->detail['reason'] ?? null)
+            ->toContain('missing runtime_config.image');
+    });
+
     it('reports concrete service metadata for missing Docker Swarm service units', function (): void {
         $node = Node::factory()->database()->create([
             'name' => 'database-1',

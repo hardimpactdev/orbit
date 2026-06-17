@@ -45,12 +45,14 @@ same blocker. All path eligibility must complete before side effects begin.
 | `--template=agent` or `--roles=agent` | Resolve canonical role inputs, then forward to the gateway over HTTPS as `roles: ['agent']`. Requires `node_new.host`, `node_new.user`, and optional `node_new.tld`; forwards any selected agent tools. |
 | `--template=websocket` or `--roles=websocket` | Reserved stable input surface. Current behavior fails before forwarding with `template_not_implemented` for the template path or `role_not_implemented` for explicit `--roles` until the WebSocket todo lands. |
 | `--template=s3` or `--roles=s3` | Reserved stable input surface. Current behavior fails before forwarding with `template_not_implemented` for the template path or `role_not_implemented` for explicit `--roles` until the S3 todo lands. |
+| `--template=metrics` or `--roles=metrics` | Resolve canonical role inputs, then forward to the gateway over HTTPS as `roles: ['metrics']`. Requires `node_new.host` and `node_new.user`. |
 | `--roles=<csv>` | Forward compatible canonical role arrays with shared host/user fields and any role-specific fields already resolved. |
 
 Explicit live-role examples include `roles: ['app-prod', 'ingress']` and
 `roles: ['app-dev', 'database']`. Development app roles also forward
-`node_new.tld`. WebSocket and S3 role inputs are reserved but fail before
-forwarding until their implementation todos land.
+`node_new.tld`. Metrics forwards host/user inputs like other live hosted-role
+paths. WebSocket and S3 role inputs are reserved but fail before forwarding
+until their implementation todos land.
 
 ## First-Gateway Bootstrap
 
@@ -87,7 +89,8 @@ When a gateway is configured:
   - canonical `roles[]` arrays for role requests;
   - `node_new.tld` for development app-role and agent provisioning;
   - `node_new.redis_node` for future websocket role provisioning;
-  - `node_new.s3_data_path` for future S3 role provisioning.
+  - `node_new.s3_data_path` for future S3 role provisioning;
+  - host and user fields for metrics role provisioning.
 - Use the CLI's WireGuard identity for gateway API authorization.
 - Do not write durable node records locally.
 - Do not SSH directly to nodes from the CLI.

@@ -60,9 +60,12 @@ These rules govern every command contract in this directory.
   `redis:*`. Database connection inventory, env convergence, schema
   inspection, audited SQL execution, and database backup/restore workflows
   belong to `database:*` instead of `mysql:*` or `postgres:*` command
-  families. `s3:*` owns role-backed object-storage publication and service
-  credentials for the SeaweedFS-backed S3 role; generic SeaweedFS lifecycle remains
-  under `tool:*`.
+  families.
+- `s3:*` owns role-backed object-storage publication and service credentials
+  for the SeaweedFS-backed S3 role; generic SeaweedFS lifecycle remains under
+  `tool:*`. `metrics:*` owns role-backed observability enablement, status, and
+  Grafana credentials for the metrics role; Prometheus, Grafana, and
+  node-exporter lifecycle remains under `process:*`.
 - Commands must state whether they mutate gateway configuration, apply node artifacts, stream runtime data, or only read state.
 - The CLI is a thin gateway client. Every command call is a request to the
   gateway over HTTPS, regardless of which machine the operator runs it on. The
@@ -638,7 +641,8 @@ operations on top of the foundation.
 ### Runtime integration and observability domains
 
 These domains integrate Orbit with Cloudflare, VPN, PHP runtimes, agent IDEs,
-DNS, activity logs, and the object-storage workflows owned by the S3 role.
+DNS, activity logs, object-storage workflows owned by the S3 role, and
+observability workflows owned by the metrics role.
 
 13. [Cloudflare](12_cf/README.md)
 14. [VPN Administration](13_vpn/README.md)
@@ -647,3 +651,4 @@ DNS, activity logs, and the object-storage workflows owned by the S3 role.
 17. [DNS](16_dns/README.md)
 18. [Activity](17_activity/README.md)
 19. [S3](19_s3/README.md)
+20. [Metrics](20_metrics/README.md)

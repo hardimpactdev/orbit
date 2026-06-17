@@ -16,4 +16,5 @@ enum NodeRoleName: string
     case Ingress = 'ingress';
     case WebSocket = 'websocket';
     case S3 = 's3';
+    case Metrics = 'metrics';
 }

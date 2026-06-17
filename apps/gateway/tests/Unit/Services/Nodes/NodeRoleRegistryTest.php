@@ -87,6 +87,7 @@ describe('node role registry', function (): void {
             'ingress',
             'websocket',
             's3',
+            'metrics',
         ]);
 
         expect($registry->definition('ingress')->conflictsWith)->toBe([
@@ -127,6 +128,10 @@ describe('node role registry', function (): void {
             ->not->toContain('app-dev')
             ->not->toContain('database')
             ->not->toContain('websocket');
+
+        expect($registry->definition('metrics')->conflictsWith)->toBe([
+            'agent',
+        ]);
     });
 
     it('defines supported platforms and assignability for the initial roles', function (): void {
@@ -161,7 +166,10 @@ describe('node role registry', function (): void {
             ->and($registry->definition('vpn')->assignableByNodeNew)->toBeFalse()
             ->and($registry->definition('s3')->supportedPlatforms)->toBe(['ubuntu'])
             ->and($registry->definition('s3')->assignableByRoleCommand)->toBeTrue()
-            ->and($registry->definition('s3')->assignableByNodeNew)->toBeTrue();
+            ->and($registry->definition('s3')->assignableByNodeNew)->toBeTrue()
+            ->and($registry->definition('metrics')->supportedPlatforms)->toBe(['ubuntu'])
+            ->and($registry->definition('metrics')->assignableByRoleCommand)->toBeTrue()
+            ->and($registry->definition('metrics')->assignableByNodeNew)->toBeTrue();
     });
 
     it('hydrates role-specific settings dtos', function (): void {
@@ -281,6 +289,7 @@ describe('node role registry', function (): void {
         ['router', EmptyRoleSettings::class],
         ['database', DatabaseRoleSettings::class],
         ['ingress', EmptyRoleSettings::class],
+        ['metrics', EmptyRoleSettings::class],
     ]);
 
     it('rejects invalid app development settings', function (): void {
@@ -357,7 +366,7 @@ describe('node role registry', function (): void {
             ->definition($role)
             ->settingsFromArray(['unexpected' => 'value']))
             ->toThrow(InvalidArgumentException::class, 'This role does not accept settings.');
-    })->with(['gateway', 'router', 'database', 'ingress']);
+    })->with(['gateway', 'router', 'database', 'ingress', 'metrics']);
 
     it('accepts empty app production settings for compatibility with existing rows', function (): void {
         $settings = (new NodeRoleRegistry)
@@ -401,6 +410,7 @@ describe('node role registry', function (): void {
             'ingress',
             'websocket',
             's3',
+            'metrics',
         ]);
     });
 

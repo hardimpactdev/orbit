@@ -19,7 +19,7 @@ use Illuminate\Http\Request;
 
 final readonly class NodeListController implements Loggable
 {
-    private const array VALID_ROLES = ['gateway', 'vpn', 'router', 'app-dev', 'app-prod', 'database', 'agent', 'ingress', 'websocket', 's3'];
+    private const array VALID_ROLES = ['gateway', 'vpn', 'router', 'app-dev', 'app-prod', 'database', 'agent', 'ingress', 'websocket', 's3', 'metrics'];
 
     public function __invoke(Request $request, NodesDoctorSummary $doctorSummary): JsonResponse
     {

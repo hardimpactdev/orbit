@@ -31,10 +31,10 @@ This command follows the shared
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
 | `name` | `[name]` | Always. | Never. | None. | Valid gateway-registry node name following the [identity slug](../../../../architecture.md#identity-names) contract. Must be unique among active node records unless the existing record is compatible and the selected path is convergence or adoption. |
-| `template` | `--template` | Never required. | When `--operator` is present unless `--template=operator`, or when `--roles` is present. | None. | One of `operator`, `app-development`, `app-production`, `gateway`, `ingress`, `database`, `s3`, `websocket`, or `agent`. |
+| `template` | `--template` | Never required. | When `--operator` is present unless `--template=operator`, or when `--roles` is present. | None. | One of `operator`, `app-development`, `app-production`, `gateway`, `ingress`, `database`, `s3`, `websocket`, `metrics`, or `agent`. |
 | `operator` | `--operator` | Never required. | When `--template` is present unless `--template=operator`, or when `--roles` is present. | `false`. | Creates a client identity with the operator permission preset and no workload roles. Operator is not a node role. |
 | `roles` | `--roles` | Never required. | When `--template` or `--operator` is present. | `[]`. | Comma-separated canonical role values (see role values below). |
-| `host` | `--host` | First-gateway bootstrap, gateway convergence, `app-dev`, `app-prod`, `database`, `ingress`, `agent`, `websocket`, `s3`, and every template that provisions a host. | Client identity with no roles or `--operator`. | None. | SSH/bootstrap endpoint, never the canonical node address. Must be an IP address or dotted DNS name. |
+| `host` | `--host` | First-gateway bootstrap, gateway convergence, `app-dev`, `app-prod`, `database`, `ingress`, `agent`, `websocket`, `s3`, `metrics`, and every template that provisions a host. | Client identity with no roles or `--operator`. | None. | SSH/bootstrap endpoint, never the canonical node address. Must be an IP address or dotted DNS name. |
 | `operator_name` | `--operator-name` | `--template=gateway` and no gateway is configured locally (first-gateway bootstrap). | Outside first-gateway bootstrap. | Normalized local short hostname. | Valid [identity slug](../../../../architecture.md#identity-names). Must not equal `node_new.name`. Must be unique among active node records unless the existing record is the compatible initiating client for first-gateway convergence. |
 | `tld` | `--tld` | `app-dev`, `app-development`, `database`, or `agent` template/path. | Client identity, gateway bootstrap, or `app-prod`. | `agent` for agent role nodes. | Single lowercase DNS label without a leading dot. Unique among active node TLDs and gateway development DNS mappings. Database TLDs are node labels and do not create development DNS mappings. |
 | `user` | `--user` | Never required from the operator; resolved when SSH provisioning is used. | Client identity with no host provisioning. | `root`. | Bootstrap SSH user. The gateway stores the steady-state runtime user after provisioning. |
@@ -55,7 +55,7 @@ This command follows the shared
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer and non-interactive input mode. |
 
 Canonical stored role values accepted through `--roles` are `app-dev`,
-`app-prod`, `database`, `agent`, `ingress`, `websocket`, and `s3`. Role
+`app-prod`, `database`, `agent`, `ingress`, `websocket`, `s3`, and `metrics`. Role
 aliases are not accepted through `--roles`; `app-development` and
 `app-production` are template names only. `gateway`, `vpn`, and `router` are internal assignments coupled to the gateway,
 expanded only by `--template=gateway`, not public role values.
@@ -75,6 +75,7 @@ before role validation:
 | `database` | `database` |
 | `s3` | `s3` (implementation pending) |
 | `websocket` | `websocket` (implementation pending) |
+| `metrics` | `metrics` |
 | `agent` | `agent` |
 
 Templates `s3` and `websocket` fail with `template_not_implemented` until
@@ -104,6 +105,7 @@ their implementations land.
      `node_new.redis_node`.
    - For `s3`, resolve `node_new.host`, `node_new.user`, and
      `node_new.s3_data_path`.
+   - For `metrics`, resolve `node_new.host` and `node_new.user`.
    - For `database`, no extra input is required unless another requested role
      requires provisioning.
    - For `gateway`, resolve `node_new.host` always, plus
@@ -193,16 +195,17 @@ Caller-path behavior is split out into:
 - Create the node identity first, then add each requested role. Role settings
   stay minimal: `app-prod` assignments store `settings.ingress_node_id`,
   `websocket` assignments store `settings.redis_node_id`, and `s3` assignments
-  store `settings.data_path`. `database` assignments use empty settings. The
-  `app-dev`, `database`, and `agent` paths require the node-level `tld` field,
-  not a role-assignment setting.
+  store `settings.data_path`. `database` and `metrics` assignments use empty
+  settings. The `app-dev`, `database`, and `agent` paths require the
+  node-level `tld` field, not a role-assignment setting.
 - `app-prod` placement must be explicit. The command's public and
   companion contracts own the exact prompt, placement choices, and failure
   shape for missing ingress.
-- `database` may be combined only with `app-dev`, `websocket`, and `s3`
-  on the same provisioned host; `websocket` may be combined with `app-dev`,
-  `database`, and `s3`; `s3` may be combined with `app-dev`,
-  `database`, and `websocket`. WebSocket assignments require
+- `database` may be combined only with `app-dev`, `websocket`, `s3`, and
+  `metrics` on the same provisioned host; `websocket` may be combined with
+  `app-dev`, `database`, `s3`, and `metrics`; `s3` may be combined with
+  `app-dev`, `database`, `websocket`, and `metrics`; `metrics` may be combined
+  with any non-agent role. WebSocket assignments require
   `settings.redis_node_id` to reference an active database role node with Redis
   expected or installed. Reverb runs in a Docker runtime container managed by
   Orbit and binds only to the node's WireGuard address.
@@ -211,6 +214,12 @@ S3 assignment convergence stores `settings.data_path`, defaulting to
 `/srv/orbit/s3/data`. SeaweedFS runs in a Docker runtime container rendered by
 Orbit, mounts that path as `/data`, binds only to the node's WireGuard address,
 and receives traffic only through router-owned S3 service routes.
+
+Metrics assignment convergence creates Docker substrate intent, node-owned
+Prometheus and Grafana Docker Swarm process definitions, a node-exporter
+systemd process definition, the router-owned `metrics.orbit` route, and
+generated Grafana admin credentials. Metrics has no role-local settings and
+records host-resource observability only in this slice.
 - If an initial role is persisted with `status=error` because its first
   convergence failed, `node:new` fails and returns the role status and
   `last_error` in failure metadata. The persisted assignment remains available

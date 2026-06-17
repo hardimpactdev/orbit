@@ -49,6 +49,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 - `s3` accepts optional `--s3-data-path`. The resolved path defaults to
   `/srv/orbit/s3/data`, must be absolute, is stored as `settings.data_path`,
   and is mounted into SeaweedFS as `/data`.
+- `metrics` accepts no role-local options.
 - `app-prod`, `database`, and other roles reject role-local options they
   do not support.
 - Role conflicts are validated by `NodeRoleAssignmentService`.
