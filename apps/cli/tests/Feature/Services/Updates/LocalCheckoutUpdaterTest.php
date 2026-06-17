@@ -62,7 +62,7 @@ describe('LocalCheckoutUpdater', function (): void {
         // Assert the ln relink step ran pointing at the install root binary.
         Process::assertRan(fn (PendingProcess $process): bool => is_array($process->command)
             && $process->command[0] === 'ln'
-            && $process->command[1] === '-sf'
+            && $process->command[1] === '-sfn'
             && $process->command[2] === $this->binaryDest
             && $process->command[3] === $this->linkPath);
 
@@ -70,6 +70,35 @@ describe('LocalCheckoutUpdater', function (): void {
         Process::assertRan(fn (PendingProcess $process): bool => is_array($process->command)
             && $process->command[0] === $this->linkPath
             && in_array('--version', $process->command, strict: true));
+    });
+
+    it('uses non-interactive sudo when the host launcher directory is not writable', function (): void {
+        $protectedRoot = $this->installRoot.'/protected-bin';
+        @mkdir($protectedRoot);
+        @chmod($protectedRoot, 0555);
+        putenv("ORBIT_BIN_PATH={$protectedRoot}/orbit");
+
+        Process::fake(['*' => Process::result(output: 'orbit 1.2.3', exitCode: 0)]);
+        Process::preventStrayProcesses();
+
+        try {
+            $result = (new LocalCheckoutUpdater(new CheckoutPathResolver))->pullSource();
+
+            expect($result['successful'])->toBeTrue();
+
+            Process::assertRan(fn (PendingProcess $process): bool => is_array($process->command)
+                && $process->command === [
+                    'sudo',
+                    '-n',
+                    'ln',
+                    '-sfn',
+                    $this->binaryDest,
+                    "{$protectedRoot}/orbit",
+                ]);
+        } finally {
+            @chmod($protectedRoot, 0755);
+            @rmdir($protectedRoot);
+        }
     });
 
     it('reports failure when the download step fails', function (): void {

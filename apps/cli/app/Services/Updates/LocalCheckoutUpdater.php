@@ -41,8 +41,8 @@ class LocalCheckoutUpdater implements RunsLocalUpdate
      *
      * The downloaded binary replaces the existing one at
      * `<install-root>/bin/orbit-binary`; the launcher symlink already points
-     * there and does not change. The relink step (`ln -sf`) is run for
-     * idempotency and to handle any path drift since install.
+     * there and does not change. The relink step is run for idempotency and to
+     * handle any path drift since install.
      *
      * Verify with `--version` after relinking. Reports the captured output (or
      * stderr when stdout is empty) on failure.
@@ -90,7 +90,7 @@ class LocalCheckoutUpdater implements RunsLocalUpdate
         }
 
         // Relink the host launcher to the updated binary (idempotent).
-        $linkResult = Process::timeout(10)->run(['ln', '-sf', $binaryDest, $linkPath]);
+        $linkResult = Process::timeout(10)->run($this->linkCommand($binaryDest, $linkPath));
 
         if (! $linkResult->successful()) {
             return [
@@ -220,5 +220,19 @@ class LocalCheckoutUpdater implements RunsLocalUpdate
         $override = getenv('ORBIT_BIN_PATH');
 
         return is_string($override) && $override !== '' ? $override : '/usr/local/bin/orbit';
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function linkCommand(string $binaryDest, string $linkPath): array
+    {
+        $linkDirectory = dirname($linkPath);
+
+        if (is_writable($linkDirectory)) {
+            return ['ln', '-sfn', $binaryDest, $linkPath];
+        }
+
+        return ['sudo', '-n', 'ln', '-sfn', $binaryDest, $linkPath];
     }
 }
