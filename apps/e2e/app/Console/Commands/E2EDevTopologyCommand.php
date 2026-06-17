@@ -311,7 +311,7 @@ class E2EDevTopologyCommand extends Command
             'run_id' => $runId,
             'ssh_key_path' => $lease->sshKeyPair()->privateKeyPath,
             'gateway_ip' => $lease->gatewayApiIp(),
-            'instances' => $this->instanceNamesByRole($lease, $overlayRoles),
+            'instances' => $this->instanceNamesByRole($lease, $this->manifestRolesForKind($kind)),
             'checkouts' => $harness->checkouts(),
             'timings' => $this->normalizeTimings($timer->events()),
         ];
@@ -853,6 +853,14 @@ class E2EDevTopologyCommand extends Command
         }
 
         return array_values(array_unique($roles));
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function manifestRolesForKind(E2ETopologyKind $kind): array
+    {
+        return $this->overlayCheckoutRoles($kind, $this->displayCheckoutRolesForKind($kind));
     }
 
     private function renderError(string $code, string $message, bool $json): int

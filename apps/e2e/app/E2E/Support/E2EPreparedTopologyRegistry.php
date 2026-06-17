@@ -12,6 +12,13 @@ final readonly class E2EPreparedTopologyRegistry
 
         return <<<PHP
 \$node = \\App\\Models\\Node::query()->where('name', {$nodeNameValue})->firstOrFail();
+\$definition = app(\\App\\Services\\Processes\\ProcessServiceDefinitionRegistry::class)->resolve(
+    definition: 'redis',
+    version: '7',
+    runtime: \\App\\Enums\\Processes\\ProcessRuntime::Docker,
+    node: \$node,
+    processName: 'redis',
+);
 
 \\App\\Models\\NodeRoleAssignment::query()->updateOrCreate(
     [
@@ -34,17 +41,12 @@ final readonly class E2EPreparedTopologyRegistry
     ],
     [
         'node_id' => \$node->id,
-        'command' => 'redis-server --appendonly yes --bind 0.0.0.0 --protected-mode no',
+        'command' => \$definition->command,
         'restart_policy' => \\App\\Enums\\ProcessRestartPolicy::Always->value,
         'crash_notification' => \\App\\Enums\\ProcessCrashNotification::None->value,
         'runtime' => \\App\\Enums\\Processes\\ProcessRuntime::Docker->value,
         'tool' => null,
-        'runtime_config' => [
-            'definition' => 'redis',
-            'version_family' => '7',
-            'version' => '7.2',
-            'endpoints' => [],
-        ],
+        'runtime_config' => \$definition->runtimeConfig,
         'sort_order' => 10,
     ],
 );

@@ -209,7 +209,7 @@ it('runs acquisition retarget bakes for downstream roles in one parallel gateway
         ->toContain('& PID_TASK_');
 
     $parallelBake = strpos($joined, 'orbit:internal:bake-app-node app-dev-1');
-    $seed = strpos($joined, 'redis-server --appendonly yes');
+    $seed = strpos($joined, 'ProcessServiceDefinitionRegistry::class');
 
     expect($parallelBake)->toBeInt()
         ->and($seed)->toBeInt()
