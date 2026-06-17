@@ -29,7 +29,8 @@ describe('metrics commands', function (): void {
         Http::assertSent(fn (Request $request): bool => $request->method() === 'POST'
             && str_contains($request->url(), '/api/nodes/app-1/roles')
             && $request['role'] === 'metrics'
-            && $request['settings'] === []);
+            && $request['settings'] === []
+            && $request['reconverge_existing'] === true);
 
         expect($exitCode)->toBe(0);
         expect($timeout)->toBe(300);

@@ -4,9 +4,9 @@
 
 **Owner:** `metrics`.
 
-**Effects:** `write`. Writes gateway role assignment intent, records
-role-baseline process/proxy/tool intent through the gateway, and converges the
-owned metrics runtime units.
+**Effects:** `write`. Writes or refreshes gateway role assignment intent,
+records role-baseline process/proxy/tool intent through the gateway, and
+converges the owned metrics runtime units.
 
 **Prerequisites:**
 - The CLI caller can reach the Orbit gateway.
@@ -34,6 +34,9 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 - Send a gateway request equivalent to adding the `metrics` role with empty
   role settings to the target node.
+- Include the gateway reconvergence flag so an existing metrics assignment is
+  updated and reconverged instead of returning an already-assigned validation
+  failure.
 - Reject missing `--node` before side effects with `validation_failed`.
 - Reject role conflicts, unsupported platforms, missing nodes, and gateway
   authorization failures through the gateway role-assignment contract.
@@ -41,7 +44,8 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 ### Success Rules
 
 - On success, the target node has an active `metrics` role assignment and the
-  metrics baseline intent is recorded and applied.
+  metrics baseline intent is recorded and applied. When the assignment already
+  existed, the existing assignment is reconverged with empty metrics settings.
 - The baseline records and starts Prometheus and Grafana Docker Swarm process
   units on the target metrics node.
 - The baseline records node-exporter tool/process intent on the target metrics
@@ -65,8 +69,8 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 
 ## Doctor Relationship
 
-`metrics:enable` creates desired state and immediately converges the metrics
-runtime units it owns. Later role assignment readiness belongs to
+`metrics:enable` creates or refreshes desired state and immediately converges
+the metrics runtime units it owns. Later role assignment readiness belongs to
 [`doctor --family=node`](../../../1_node/node-doctor.md). Docker substrate drift
 and node-exporter host binary drift belong to
 [`doctor --family=tool`](../../../3_tool/tool-doctor.md). Metrics process
@@ -80,4 +84,5 @@ runtime drift belongs to
 | Path | Coverage |
 | --- | --- |
 | `apps/cli/tests/Feature/Commands/Metrics/MetricsCommandsTest.php` | CLI request path, required node validation, and JSON forwarding. |
+| `apps/gateway/tests/Feature/Http/Api/NodeRoleAddControllerTest.php` | Existing metrics assignments reconverge when the metrics enable request carries the reconvergence flag. |
 | `apps/gateway/tests/Feature/Services/Nodes/Roles/MetricsRoleBaselineTest.php` | Role baseline intent and runtime convergence for Docker, process definitions, Prometheus scrape config, Grafana datasource config, credentials, node-exporter, and `metrics.orbit`. |

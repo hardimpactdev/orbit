@@ -474,6 +474,10 @@ BASH;
             return $assignments->nodeHostsOrbitCaddy($tool->node);
         }
 
+        if ($tool->name === 'node-exporter') {
+            return $assignments->nodeCanHostMetricsExporter($tool->node);
+        }
+
         return $assignments->nodeCanHostManagedTools($tool->node);
     }
 

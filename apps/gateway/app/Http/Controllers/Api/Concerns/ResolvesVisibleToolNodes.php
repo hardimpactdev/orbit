@@ -19,8 +19,12 @@ trait ResolvesVisibleToolNodes
     /**
      * @return list<int>
      */
-    private function visibleToolNodeIds(Node $caller, bool $allowAnyActiveNode = false, ?string $requiredPermission = null): array
-    {
+    private function visibleToolNodeIds(
+        Node $caller,
+        bool $allowAnyActiveNode = false,
+        ?string $requiredPermission = null,
+        bool $includeMetricsExporterNodes = false,
+    ): array {
         $requiredPermission ??= 'tool:read';
 
         if ($this->nodeRoleAssignments()->nodeIsGateway($caller)) {
@@ -28,7 +32,7 @@ trait ResolvesVisibleToolNodes
                 ->where('status', NodeStatus::Active->value);
 
             if (! $allowAnyActiveNode) {
-                $query->whereIn('id', $this->nodeRoleAssignments()->activeToolHostNodeIds());
+                $query->whereIn('id', $this->visibleManagedToolNodeIds($includeMetricsExporterNodes));
             }
 
             return $query->pluck('id')->all();
@@ -40,7 +44,7 @@ trait ResolvesVisibleToolNodes
             ->where('status', NodeStatus::Active->value);
 
         if (! $allowAnyActiveNode) {
-            $query->whereIn('id', $this->nodeRoleAssignments()->activeToolHostNodeIds());
+            $query->whereIn('id', $this->visibleManagedToolNodeIds($includeMetricsExporterNodes));
         }
 
         $visibleNodeIds = [];
@@ -124,15 +128,20 @@ trait ResolvesVisibleToolNodes
     /**
      * @param  list<int>  $visibleNodeIds
      */
-    private function resolveNodeFilter(string $node, Node $caller, array $visibleNodeIds, bool $allowAnyActiveNode = false): ?Node
-    {
+    private function resolveNodeFilter(
+        string $node,
+        Node $caller,
+        array $visibleNodeIds,
+        bool $allowAnyActiveNode = false,
+        bool $includeMetricsExporterNodes = false,
+    ): ?Node {
         $query = Node::query()
             ->where('name', $node)
             ->where('status', NodeStatus::Active->value)
             ->when(! $this->nodeRoleAssignments()->nodeIsGateway($caller), fn (Builder $query): Builder => $query->whereIn('id', $visibleNodeIds));
 
         if (! $allowAnyActiveNode) {
-            $query->whereIn('id', $this->nodeRoleAssignments()->activeToolHostNodeIds());
+            $query->whereIn('id', $this->visibleManagedToolNodeIds($includeMetricsExporterNodes));
         }
 
         return $query->first();
@@ -254,6 +263,23 @@ trait ResolvesVisibleToolNodes
                     ->whereNotIn('id', $visibleNodeIds);
             })
             ->exists();
+    }
+
+    /**
+     * @return list<int>
+     */
+    private function visibleManagedToolNodeIds(bool $includeMetricsExporterNodes): array
+    {
+        $nodeIds = $this->nodeRoleAssignments()->activeToolHostNodeIds();
+
+        if ($includeMetricsExporterNodes) {
+            $nodeIds = [
+                ...$nodeIds,
+                ...$this->nodeRoleAssignments()->activeMetricsExporterNodeIds(),
+            ];
+        }
+
+        return array_values(array_unique($nodeIds));
     }
 
     private function nodeRoleAssignments(): NodeRoleAssignments

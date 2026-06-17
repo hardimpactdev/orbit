@@ -34,6 +34,7 @@ final class MetricsEnableCommand extends GatewayCommand
             $response = $this->gateway()->withMinimumTimeout(self::GatewayTimeoutSeconds)->post('/api/nodes/'.rawurlencode($node).'/roles', [
                 'role' => 'metrics',
                 'settings' => [],
+                'reconverge_existing' => true,
             ]);
         } catch (GatewayApiException $exception) {
             return $this->renderGatewayFailure($exception);

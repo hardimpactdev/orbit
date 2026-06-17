@@ -2,7 +2,7 @@
 
 [Back to Metrics commands.](../README.md)
 
-Enable the metrics role on an existing node.
+Enable or reconverge the metrics role on an existing node.
 
 ## Usage
 
@@ -25,7 +25,10 @@ orbit metrics:enable --node=gateway-1 --json
 ## What Happens
 
 Run this command to add the `metrics` role to the target node through the same
-role assignment path as `node role:add`.
+role assignment path as `node role:add`. If the node already has a metrics role
+assignment, the command reconverges that assignment instead of failing, so it can
+be used to refresh metrics-owned process, tool, and proxy intent after an Orbit
+upgrade.
 
 Role convergence records:
 
@@ -40,8 +43,8 @@ node-exporter. Later runtime drift is repaired through
 
 ## Output
 
-Human output reports that the metrics role was assigned. Pass `--json` to
-receive the role assignment payload returned by the gateway.
+Human output reports that the metrics role was assigned or reconverged. Pass
+`--json` to receive the role assignment payload returned by the gateway.
 
 ## Requirements
 

@@ -29,7 +29,7 @@ final readonly class ToolListController implements Loggable
             return $this->authorizationFailed('Peer identity unknown.');
         }
 
-        $visibleNodeIds = $this->visibleToolNodeIds($caller);
+        $visibleNodeIds = $this->visibleToolNodeIds($caller, includeMetricsExporterNodes: true);
 
         if (! $this->nodeRoleAssignments()->nodeIsGateway($caller) && $visibleNodeIds === []) {
             return $this->authorizationFailed('This node is not authorized to read the tool registry.');
@@ -40,7 +40,7 @@ final readonly class ToolListController implements Loggable
         $nodeFilter = null;
 
         if (is_string($node) && $node !== '') {
-            $nodeFilter = $this->resolveNodeFilter($node, $caller, $visibleNodeIds);
+            $nodeFilter = $this->resolveNodeFilter($node, $caller, $visibleNodeIds, includeMetricsExporterNodes: true);
 
             if (! $nodeFilter instanceof Node) {
                 return $this->validationFailed('node', $node, "Invalid value for --node: '{$node}'. Expected a visible tool node name.");

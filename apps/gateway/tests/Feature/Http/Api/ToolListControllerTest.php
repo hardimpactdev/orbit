@@ -126,6 +126,27 @@ describe('ToolListController', function (): void {
             ->assertJsonCount(2, 'success.data.tools');
     });
 
+    it('lets gateway callers read metrics node exporter rows on ingress workload nodes', function (): void {
+        $caller = createToolListCallerNode([]);
+        assignToolListGatewayRole($caller);
+        $ingress = Node::factory()->ingress()->create([
+            'name' => 'ingress-1',
+            'status' => 'active',
+        ]);
+
+        NodeTool::factory()->create([
+            'name' => 'node-exporter',
+            'node_id' => $ingress->id,
+        ]);
+
+        $response = $this->call('GET', '/api/tools?node=ingress-1', [], [], [], ['REMOTE_ADDR' => TOOL_LIST_CALLER_WG_IP]);
+
+        $response->assertOk()
+            ->assertJsonCount(1, 'success.data.tools')
+            ->assertJsonPath('success.data.tools.0.name', 'node-exporter')
+            ->assertJsonPath('success.data.tools.0.node', 'ingress-1');
+    });
+
     it('does not treat unassigned nodes as gateway-visible tool hosts', function (): void {
         createToolListCallerNode([]);
         $node = createTestAppHostNode(['name' => 'app-1']);

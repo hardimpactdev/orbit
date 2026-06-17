@@ -27,6 +27,7 @@ class AddNodeRoleApiRequest extends FormRequest
             'ingress_node' => ['nullable', 'string'],
             'postgres_node' => ['nullable', 'string'],
             'clickhouse_node' => ['nullable', 'string'],
+            'reconverge_existing' => ['nullable', 'boolean'],
         ];
     }
 
@@ -66,9 +67,14 @@ class AddNodeRoleApiRequest extends FormRequest
         return is_string($value) && $value !== '' ? $value : null;
     }
 
+    public function reconvergeExisting(): bool
+    {
+        return $this->boolean('reconverge_existing');
+    }
+
     protected function validationFailureFields(): array
     {
-        return ['role', 'settings', 'ingress_node', 'postgres_node', 'clickhouse_node'];
+        return ['role', 'settings', 'ingress_node', 'postgres_node', 'clickhouse_node', 'reconverge_existing'];
     }
 
     protected function validationMessageFor(string $field): string
@@ -78,6 +84,7 @@ class AddNodeRoleApiRequest extends FormRequest
             'ingress_node' => 'Ingress node must be a string.',
             'postgres_node' => 'PostgreSQL node must be a string.',
             'clickhouse_node' => 'ClickHouse node must be a string.',
+            'reconverge_existing' => 'Reconverge existing must be a boolean.',
             default => 'Role is required.',
         };
     }

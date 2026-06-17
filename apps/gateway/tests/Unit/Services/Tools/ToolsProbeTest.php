@@ -113,6 +113,16 @@ describe('ToolsProbe', function (): void {
             ->and(toolProbeIssue($drift, 'tool.capability_missing')?->kind)->toBe(DriftKind::Missing);
     });
 
+    it('allows metrics node exporter on ingress nodes', function (): void {
+        $node = Node::factory()->ingress()->create(['status' => 'active']);
+        $tool = NodeTool::factory()->create(['node_id' => $node->id, 'name' => 'node-exporter']);
+
+        $drift = (new ToolsProbe)->diff($tool, new ProbeSnapshot([]));
+
+        expect(toolProbeIssue($drift, 'tool.node_invalid'))->toBeNull()
+            ->and(toolProbeIssue($drift, 'tool.capability_missing')?->kind)->toBe(DriftKind::Missing);
+    });
+
     it('does not allow non-caddy managed tools on ingress-only nodes', function (): void {
         $node = Node::factory()->ingress()->create(['status' => 'active']);
         $tool = NodeTool::factory()->create(['node_id' => $node->id, 'name' => 'composer']);

@@ -42,6 +42,20 @@ class NodeRoleAssignments
     }
 
     /**
+     * Metrics node-exporter is baseline-owned on every active role-bearing node
+     * that metrics convergence scrapes, not only generic tool-host roles.
+     *
+     * @return list<string>
+     */
+    public function metricsExporterHostRoles(): array
+    {
+        return array_map(
+            static fn (NodeRoleName $role): string => $role->value,
+            NodeRoleName::cases(),
+        );
+    }
+
+    /**
      * @return list<string>
      */
     public function gatewayOrAppHostRoles(): array
@@ -245,6 +259,12 @@ class NodeRoleAssignments
             || $this->nodeHasActiveToolHostRole($node);
     }
 
+    public function nodeCanHostMetricsExporter(Node $node): bool
+    {
+        return $node->status === NodeStatus::Active
+            && $this->nodeHasAnyActiveRole($node, $this->metricsExporterHostRoles());
+    }
+
     /**
      * @param  list<string>  $roles
      */
@@ -284,6 +304,20 @@ class NodeRoleAssignments
     public function activeToolHostNodeIds(): array
     {
         return $this->activeNodeIdsForRoles($this->toolHostRoles());
+    }
+
+    /**
+     * @return list<int>
+     */
+    public function activeMetricsExporterNodeIds(): array
+    {
+        return Node::query()
+            ->where('status', NodeStatus::Active->value)
+            ->whereIn('id', $this->activeAssignedNodeIds())
+            ->orderBy('id')
+            ->pluck('id')
+            ->map(fn (mixed $nodeId): int => (int) $nodeId)
+            ->all();
     }
 
     /**

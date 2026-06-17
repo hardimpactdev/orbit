@@ -83,8 +83,19 @@ final class NodeRoleAddController implements Loggable
             }
         }
 
+        if ($request->reconvergeExisting() && $request->role() !== 'metrics') {
+            return $this->error(
+                'validation_failed',
+                "Role '{$request->role()}' does not accept reconverge_existing.",
+                ['field' => 'reconverge_existing', 'role' => $request->role()],
+                422,
+            );
+        }
+
         try {
-            $assignment = $this->service->add($node, $request->role(), $settings);
+            $assignment = $request->reconvergeExisting() && $this->existingRoleAssigned($node, $request->role())
+                ? $this->service->update($node, $request->role(), $settings)
+                : $this->service->add($node, $request->role(), $settings);
         } catch (InvalidArgumentException $exception) {
             return $this->error('validation_failed', $exception->getMessage(), ['role' => $request->role()], 422);
         }
@@ -97,6 +108,13 @@ final class NodeRoleAddController implements Loggable
                 ],
             ],
         ]);
+    }
+
+    private function existingRoleAssigned(Node $node, string $role): bool
+    {
+        return $node->roleAssignments()
+            ->where('role', $role)
+            ->exists();
     }
 
     /**

@@ -13,8 +13,8 @@ touch.
 
 - The metrics command family owns the `metrics:*` command prefix.
 - The `metrics` role is optional and disabled by default.
-- `metrics:enable` assigns the `metrics` role to an existing node and converges
-  the role baseline.
+- `metrics:enable` assigns the `metrics` role to an existing node or
+  reconverges an existing metrics role, then converges the role baseline.
 - `metrics:disable` removes the `metrics` role from a node after explicit
   `--force` consent.
 - The private fleet endpoint is `https://metrics.orbit`. It exposes Grafana
