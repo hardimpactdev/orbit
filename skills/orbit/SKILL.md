@@ -1,6 +1,6 @@
 ---
 name: orbit
-description: Operate the Orbit CLI for sovereign Laravel environments  -  bootstrap gateways and clients, provision workload-role nodes, create development and production apps, manage workspaces/processes/schedules, configure database connections, publish S3/Cloudflare surfaces, deploy, profile, and diagnose drift via `orbit doctor`. Use when the user wants to set up Orbit, create or modify an app, create a workspace, manage database/S3/DNS/VPN/firewall, run a deployment, profile a request, change PHP runtime selection, repair a node, or inspect fleet state. Triggers include "set up orbit", "set up this app", "register an app", "create a workspace", "database connection", "publish S3", "Cloudflare DNS", "what's running", "check orbit health", "fix drift", "deploy myapp", "switch PHP version", "create a node", "list nodes", "vpn client", or any Orbit fleet task.
+description: Operate the Orbit CLI for sovereign Laravel environments  -  bootstrap gateways and clients, provision workload-role nodes, create development and production apps, manage workspaces/processes/schedules, configure database connections, publish S3/Cloudflare/metrics surfaces, deploy, profile, and diagnose drift via `orbit doctor`. Use when the user wants to set up Orbit, create or modify an app, create a workspace, manage database/S3/metrics/DNS/VPN/firewall, run a deployment, profile a request, change PHP runtime selection, repair a node, or inspect fleet state. Triggers include "set up orbit", "set up this app", "register an app", "create a workspace", "database connection", "publish S3", "metrics", "Cloudflare DNS", "what's running", "check orbit health", "fix drift", "deploy myapp", "switch PHP version", "create a node", "list nodes", "vpn client", or any Orbit fleet task.
 allowed-tools: Bash(orbit *)
 ---
 
@@ -12,9 +12,10 @@ and owns all durable state. Every other machine is a gateway client when it runs
 the gateway decide authorization from node grants.
 
 Nodes carry role assignments such as `app-dev`, `app-prod`, `database`,
-`agent`, `ingress`, `websocket`, and `s3`. Workload nodes run role-specific
-artifacts: `orbit-caddy`, FrankenPHP app/workspace containers, systemd host
-command units, Docker-backed process units, Laravel Reverb, SeaweedFS, and
+`agent`, `ingress`, `websocket`, `s3`, and `metrics`. Workload nodes run
+role-specific artifacts: `orbit-caddy`, FrankenPHP app/workspace containers,
+systemd host command units, Docker-backed process units, Laravel Reverb,
+SeaweedFS, Prometheus/Grafana metrics services, node-exporter, and
 similar backing services. PHP-FPM and Supervisor are not app/workspace runtime
 fallbacks.
 
@@ -176,6 +177,15 @@ lifecycle directly; process rows own lifecycle for runnable services.
 | `orbit s3:credentials` | Show SeaweedFS service credentials and endpoint metadata |
 | `orbit s3:publish [host]` | Publish a public HTTPS hostname for the fleet S3 service |
 | `orbit s3:unpublish [host]` | Remove a public HTTPS hostname from the fleet S3 service |
+
+### Metrics  -  [`references/metrics.md`](references/metrics.md)
+
+| Command | What it does |
+|---|---|
+| `orbit metrics:enable --node=<node>` | Assign the optional metrics role and record Prometheus/Grafana/node-exporter intent |
+| `orbit metrics:disable --node=<node> --force` | Remove the metrics role and owned metrics intent |
+| `orbit metrics:status` | Read metrics role and process intent from gateway configuration |
+| `orbit metrics:credentials` | Show or rotate Grafana admin credentials |
 
 ### Cloudflare  -  [`references/cf.md`](references/cf.md)
 

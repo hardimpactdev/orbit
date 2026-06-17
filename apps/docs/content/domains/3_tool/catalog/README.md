@@ -87,6 +87,7 @@ materialized by their owning role and only required on nodes carrying that role:
 | [`laravel-installer`](laravel-installer.md) | `app-dev` |
 | [`gh`](gh.md) | `app-dev`, `app-prod` (repository cloning and deployment) |
 | [`seaweedfs`](seaweedfs.md) | `s3` |
+| [`node-exporter`](node-exporter.md) | `metrics`; active workload nodes selected by metrics convergence |
 
 ## Installable Tools
 

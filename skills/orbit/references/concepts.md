@@ -16,6 +16,7 @@ Authoritative source: [`apps/docs/content/architecture.md`](../../../apps/docs/c
 | `ingress` | Ubuntu | Public production HTTP/HTTPS edge and forwarding to `router` over WireGuard |
 | `websocket` | Ubuntu | Private Laravel Reverb backend, reached through router-owned routes |
 | `s3` | Ubuntu | Private SeaweedFS backend, reached through router-owned S3 routes |
+| `metrics` | Ubuntu/Debian | Private Prometheus/Grafana host-resource metrics backend, reached through `metrics.orbit` |
 
 An **operator** is a node identity with the operator permission preset and
 grants. It is not a stored role. Any gateway-known node can be a client when it

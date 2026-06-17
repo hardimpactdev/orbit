@@ -41,11 +41,15 @@ it('converges metrics role intent as process-owned Prometheus Grafana and host e
 
     app(NodeRoleBaselineConverger::class)->converge($node, $assignment);
 
-    expect(NodeTool::query()
+    $tools = NodeTool::query()
         ->where('node_id', $node->id)
-        ->where('name', 'docker')
-        ->where('expected_state', 'installed')
-        ->exists())->toBeTrue();
+        ->pluck('expected_state', 'name')
+        ->all();
+
+    expect($tools)->toMatchArray([
+        'docker' => 'installed',
+        'node-exporter' => 'installed',
+    ]);
 
     $processes = Process::query()
         ->where('node_id', $node->id)
@@ -66,6 +70,7 @@ it('converges metrics role intent as process-owned Prometheus Grafana and host e
         ->and($processes['prometheus']->runtime_config['definition'])->toBe('prometheus')
         ->and($processes['prometheus']->runtime_config['endpoint']['port'])->toBe(9090)
         ->and($processes['node-exporter']->runtime)->toBe(ProcessRuntime::Systemd)
+        ->and($processes['node-exporter']->tool)->toBe('node-exporter')
         ->and($processes['node-exporter']->runtime_config['definition'])->toBe('node-exporter')
         ->and($processes['node-exporter']->runtime_config['endpoint']['port'])->toBe(9100);
 
@@ -195,6 +200,17 @@ it('converges node exporter process intent for active workload nodes', function 
         'ingress-1',
         'main-1',
     ]);
+
+    $exporterToolNodes = NodeTool::query()
+        ->where('name', 'node-exporter')
+        ->with('node')
+        ->get()
+        ->map(fn (NodeTool $tool): string => $tool->node->name)
+        ->sort()
+        ->values()
+        ->all();
+
+    expect($exporterToolNodes)->toBe($exporterNodes);
 });
 
 it('removes workload node exporter process intent when the last metrics role is removed', function (): void {
@@ -220,12 +236,20 @@ it('removes workload node exporter process intent when the last metrics role is 
     expect(Process::query()
         ->where('name', 'node-exporter')
         ->whereIn('node_id', [$gateway->id, $workload->id])
-        ->count())->toBe(2);
+        ->count())->toBe(2)
+        ->and(NodeTool::query()
+            ->where('name', 'node-exporter')
+            ->whereIn('node_id', [$gateway->id, $workload->id])
+            ->count())->toBe(2);
 
     app(NodeRoleBaselineConverger::class)->remove($gateway, $assignment, purgeData: false);
 
     expect(Process::query()
         ->where('name', 'node-exporter')
         ->whereIn('node_id', [$gateway->id, $workload->id])
-        ->exists())->toBeFalse();
+        ->exists())->toBeFalse()
+        ->and(NodeTool::query()
+            ->where('name', 'node-exporter')
+            ->whereIn('node_id', [$gateway->id, $workload->id])
+            ->exists())->toBeFalse();
 });

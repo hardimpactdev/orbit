@@ -33,7 +33,7 @@ Run this command to remove the `metrics` role through the same role removal path
 router-owned `metrics.orbit` route while preserving user data unless
 `--purge-data` is supplied. When the removed role is the last active metrics
 role, Orbit also removes the workload node-exporter process intent created by
-metrics convergence.
+metrics convergence and the matching node-exporter tool intent.
 
 ## Output
 

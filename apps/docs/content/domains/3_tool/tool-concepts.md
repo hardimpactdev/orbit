@@ -29,8 +29,8 @@ These terms define the core vocabulary used across tool command contracts and th
   produced from the definition, not to a tool row.
 - **Tool category:** Catalog-declared classification for a tool, such as
   `always`, `runtime`, `database`, `cache`, `development`, `communication`,
-  `infrastructure`, `storage`, or `agent`. Used by authorization and routing
-  rules.
+  `infrastructure`, `storage`, `observability`, or `agent`. Used by
+  authorization and routing rules.
 - **Storage tool category:** Tool category `storage`. Tools in this category
   back object-storage services owned by a role and expose service credentials
   and WireGuard-private endpoints through their catalog entry.

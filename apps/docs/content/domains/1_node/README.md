@@ -38,16 +38,16 @@ Orbit distinguishes these concepts:
   private HTTP/WebSocket/S3 routing.
 - **Node roles:** composable roles that prepare a node to serve a kind of
   workload. Workload roles are `app-dev`, `app-prod`, `database`, `agent`,
-  `ingress`, `websocket`, `s3`, `metrics`, and `analytics`. `agent` is
-  exclusive during `node:new`; `node role:add` rejects it.
+  `ingress`, `websocket`, `s3`, `metrics`, and `analytics`.
+  `agent` is exclusive during `node:new`; `node role:add` rejects it.
   `websocket` is a private workload role for Laravel Reverb; it binds only to
   WireGuard and receives traffic through router-owned private service routes.
   `s3` is a private workload role for SeaweedFS object storage; it binds only to
   WireGuard and receives traffic through router-owned S3 service routes.
   `metrics` is an optional host-resource observability role; it records
   Prometheus and Grafana process intent on the metrics node, records
-  node-exporter process intent on metrics and active workload nodes, and exposes
-  Grafana through `metrics.orbit`.
+  node-exporter tool/process intent on metrics and active workload nodes, and
+  exposes Grafana through `metrics.orbit`.
   `analytics` is a private workload role for Plausible CE; it binds only to
   WireGuard and receives dashboard plus tracking traffic through router-owned
   analytics service routes.
@@ -130,7 +130,7 @@ Roles materialize baseline tool intent when a role assignment converges.
 | `ingress` | `orbit-caddy` running as the public production HTTP ingress boundary, forwarding public routes to `router` |
 | `websocket` | Laravel Reverb in a Docker runtime container managed by Orbit, private TLS backend binding on WireGuard, backend certificate material, and Redis-backed scaling configuration |
 | `s3` | SeaweedFS in a Docker runtime container rendered by Orbit, private S3 API binding on WireGuard, service-level credentials on the `seaweedfs` tool row, backend pool registration, and role-owned data path |
-| `metrics` | Docker substrate intent, Prometheus and Grafana Docker Swarm process definitions, node-exporter systemd process definitions on metrics and active workload nodes, the router-owned `metrics.orbit` route, and generated Grafana admin credentials |
+| `metrics` | Docker substrate, node-exporter binary, Prometheus/Grafana Swarm processes, node-exporter systemd processes on metrics/workload nodes, `metrics.orbit`, and Grafana credentials |
 | `analytics` | Plausible CE in a process-owned Docker/Swarm service, private `analytics.orbit` router route, per-app public tracking route support, analytics backend pool registration, and runtime configuration derived from PostgreSQL and ClickHouse process endpoints |
 
 Local database client binaries (`sqlite3`, `psql`, `mysql`) are not part of

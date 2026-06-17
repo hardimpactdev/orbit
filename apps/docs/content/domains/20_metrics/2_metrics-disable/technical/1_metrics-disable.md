@@ -54,8 +54,8 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
   gateway role-removal contract, and metrics-owned process/proxy intent is
   cleaned up.
 - If no other active metrics role remains, metrics-owned node-exporter process
-  intent is removed from active workload nodes as well as the removed metrics
-  node.
+  intent and node-exporter tool intent are removed from active workload nodes
+  as well as the removed metrics node.
 
 ## Renderer Contracts
 

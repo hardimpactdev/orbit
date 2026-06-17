@@ -19,9 +19,9 @@ orbit node:new [<name>] [--template=<template>] [--operator] [--roles=<roles>]
 | Option | Default | Notes |
 |---|---|---|
 | `name` |  -  | Registry slug (unique). |
-| `--template` |  -  | One of `operator`, `app-development`, `app-production`, `gateway`, `ingress`, `database`, `s3`, `websocket`, or `agent`. Templates expand to role sets. |
+| `--template` |  -  | One of `operator`, `app-development`, `app-production`, `gateway`, `ingress`, `database`, `s3`, `websocket`, `metrics`, or `agent`. Templates expand to role sets. |
 | `--operator` | off | Create a client identity with the operator permission preset and no workload roles. Operator is not a node role. |
-| `--roles` |  -  | Comma-separated canonical public roles: `app-dev`, `app-prod`, `database`, `agent`, `ingress`, `websocket`, `s3`. |
+| `--roles` |  -  | Comma-separated canonical public roles: `app-dev`, `app-prod`, `database`, `agent`, `ingress`, `websocket`, `s3`, `metrics`. |
 | `--host` |  -  | SSH/bootstrap endpoint. Required for gateway bootstrap and host-capable workload roles. Forbidden for client identities with no roles. |
 | `--operator-name` | local short hostname | First-gateway bootstrap only  -  the initiating client identity's name. |
 | `--tld` |  -  | Node TLD (no leading dot). Required for `app-dev`, `database`, and `agent` paths; database TLDs are node labels and do not create development DNS mappings. |
@@ -43,8 +43,8 @@ By role:
 - **`--template=app-production`**: provisions `app-prod`; it either colocates
   `ingress` or requires `--ingress` for private app-prod placement.
 - **`--template=database`, `--template=agent`, `--template=ingress`,
-  `--template=websocket`, `--template=s3`**: provisions the corresponding
-  workload role.
+  `--template=websocket`, `--template=s3`, `--template=metrics`**: provisions
+  the corresponding workload role.
 - **`--template=gateway`**: bootstraps or adopts the gateway with coupled
   `gateway`, `vpn`, and `router` assignments. During first-gateway bootstrap it
   also onboards the initiating client identity; do not run `gateway:add`
@@ -65,7 +65,7 @@ orbit node:new gateway-1 --template=gateway --host=203.0.113.2 --operator-name=m
 List nodes from the gateway registry.
 
 ```bash
-orbit node:list [--role=gateway|vpn|router|app-dev|app-prod|database|agent|ingress|websocket|s3] [--json]
+orbit node:list [--role=gateway|vpn|router|app-dev|app-prod|database|agent|ingress|websocket|s3|metrics] [--json]
 ```
 
 `node:list` reads gateway registry state only. The `PEER IP`/WireGuard address

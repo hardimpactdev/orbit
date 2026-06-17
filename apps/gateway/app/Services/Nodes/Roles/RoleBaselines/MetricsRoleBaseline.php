@@ -11,6 +11,7 @@ use App\Enums\Processes\ProcessRuntime;
 use App\Enums\ProcessRestartPolicy;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
+use App\Models\NodeTool;
 use App\Models\Process;
 use App\Models\ProxyRoute;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
@@ -43,7 +44,7 @@ class MetricsRoleBaseline implements RoleBaseline
             throw new RuntimeException('The metrics role requires an Ubuntu or Debian host.');
         }
 
-        $this->convergeTools($node, ['docker']);
+        $this->convergeTools($node, ['docker', 'node-exporter']);
         $this->convergeProcess($node, 'prometheus', ProcessRuntime::DockerSwarm);
         $this->convergeGrafana($node);
         $this->convergeProcess($node, 'node-exporter', ProcessRuntime::Systemd);
@@ -58,6 +59,11 @@ class MetricsRoleBaseline implements RoleBaseline
             ->where('owner_type', $node->getMorphClass())
             ->where('owner_id', $node->id)
             ->whereIn('name', ['prometheus', 'grafana', 'node-exporter'])
+            ->delete();
+
+        NodeTool::query()
+            ->where('node_id', $node->id)
+            ->where('name', 'node-exporter')
             ->delete();
 
         if (! $this->hasOtherActiveMetricsRole($assignment)) {
@@ -129,6 +135,7 @@ class MetricsRoleBaseline implements RoleBaseline
                 continue;
             }
 
+            $this->convergeTool($workloadNode, 'node-exporter');
             $this->convergeProcess($workloadNode, 'node-exporter', ProcessRuntime::Systemd);
         }
     }
@@ -152,7 +159,7 @@ class MetricsRoleBaseline implements RoleBaseline
                 'restart_policy' => ProcessRestartPolicy::Always,
                 'crash_notification' => ProcessCrashNotification::None,
                 'runtime' => $runtime,
-                'tool' => null,
+                'tool' => $name === 'node-exporter' ? 'node-exporter' : null,
                 'runtime_config' => $runtimeConfig,
                 'sort_order' => $process instanceof Process
                     ? $process->sort_order
@@ -192,6 +199,11 @@ class MetricsRoleBaseline implements RoleBaseline
             ->whereIn('node_id', $nodeIds)
             ->where('owner_type', $metricsNode->getMorphClass())
             ->whereColumn('owner_id', 'node_id')
+            ->where('name', 'node-exporter')
+            ->delete();
+
+        NodeTool::query()
+            ->whereIn('node_id', $nodeIds)
             ->where('name', 'node-exporter')
             ->delete();
     }

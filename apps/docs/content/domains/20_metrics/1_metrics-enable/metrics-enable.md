@@ -24,12 +24,15 @@ orbit metrics:enable --node=gateway-1 --json
 
 ## What Happens
 
-Run this command to add the `metrics` role to the target node through the same role
-assignment path as `node role:add`. Role convergence records Docker substrate
-intent, Prometheus and Grafana Docker Swarm process definitions on the metrics
-node, node-exporter systemd process definitions on the metrics node and active
-workload nodes, the router-owned `metrics.orbit` route, and Grafana admin
-credentials.
+Run this command to add the `metrics` role to the target node through the same
+role assignment path as `node role:add`.
+
+Role convergence records:
+
+- Docker substrate and node-exporter host binary tool intent.
+- Prometheus and Grafana Docker Swarm process definitions on the metrics node.
+- node-exporter systemd process definitions on metrics and active workload nodes.
+- The router-owned `metrics.orbit` route and Grafana admin credentials.
 
 The command does not synchronously start Prometheus, Grafana, or node-exporter.
 Runtime lifecycle belongs to `process:*` and process doctor.

@@ -11,7 +11,11 @@ processes own lifecycle. The catalog is fixed and lives in
 baseline; Orbit observes and keeps converged):
 
 - `caddy`, `docker`, `viteplus`, `php-cli`, `gh`, `composer`,
-  `laravel-installer`, `dns`, `php`, `seaweedfs`
+  `laravel-installer`, `dns`, `php`, `seaweedfs`, `node-exporter`
+
+For the `metrics` role, `tool` owns the Docker substrate on the metrics node
+and the node-exporter host binary on metrics/workload nodes. The
+`node-exporter` systemd lifecycle, logs, and runtime drift stay in `process`.
 
 **Installable tools** (provisioned by `tool:install`, removed by `tool:remove`):
 

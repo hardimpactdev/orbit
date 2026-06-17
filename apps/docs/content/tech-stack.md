@@ -50,7 +50,7 @@ VPN client browser
   -> router orbit-caddy for `metrics.orbit`
   -> Grafana Docker Swarm service on the metrics role node
   -> Prometheus Docker Swarm service on the metrics role node
-  -> node-exporter systemd process intent on metrics and workload nodes
+  -> node-exporter host binary tool and systemd process intent on metrics and workload nodes
 
 Private analytics:
 
@@ -92,7 +92,7 @@ The sections below walk through each layer of the stack in the same order as the
 | Production app backend | App-role-owned `orbit-caddy` on `app-prod` nodes bound to the node's WireGuard address and forwarding to per-app FrankenPHP Docker runtime containers on internal port `8080` over the node Docker network |
 | Realtime service backend | Laravel Reverb in a Docker runtime container managed by Orbit on `websocket` nodes, bound only to the node's WireGuard address and reached through router-owned WebSocket routes |
 | S3 service backend | SeaweedFS in a Docker runtime container rendered by Orbit on `s3` nodes, bound only to the node's WireGuard address and reached through router-owned S3 routes |
-| Metrics backend | Prometheus and Grafana as Docker Swarm process definitions on metrics role nodes; node-exporter as a host systemd process on metrics and workload nodes; Grafana private route `metrics.orbit` |
+| Metrics backend | Prometheus and Grafana as Docker Swarm process definitions on metrics role nodes; node-exporter as a host binary tool plus systemd process on metrics and workload nodes; Grafana private route `metrics.orbit` |
 | Analytics service backend | Plausible CE in a Docker/Swarm service process managed by Orbit on `analytics` nodes, bound only to the node's WireGuard address and reached through router-owned analytics routes. PostgreSQL and ClickHouse run as process-owned service definitions on active `database` role nodes. |
 | Agent runtime | OpenClaw and Hermes as first-party agent tools, installed through `tool:install` on nodes with the `agent` role and run as the shared unprivileged `agent` user |
 | Network | WireGuard, served by the gateway-coupled `vpn` role |
@@ -410,10 +410,11 @@ to make object-storage assertions pass. See [Testing](testing/README.md).
 
 The `metrics` role runs Orbit's host-resource observability backend. Prometheus
 and Grafana are node-owned service process definitions using the Docker Swarm
-runtime on the selected metrics node. node-exporter is a node-owned host
-command process using systemd on the metrics node and every active workload node
-selected by the same target selector used by `update:all`. The role baseline
-creates the expected process rows and the Docker substrate intent; start, stop,
+runtime on the selected metrics node. node-exporter is a node-owned host binary
+tool with a node-owned host command process using systemd on the metrics node
+and every active workload node selected by the same target selector used by
+`update:all`. The role baseline creates the expected process rows, Docker
+substrate intent, and node-exporter host binary tool intent; start, stop,
 restart, logs, and runtime drift remain process-family behavior.
 
 Grafana is exposed only on the private Orbit network through the router-owned
@@ -425,9 +426,9 @@ coverage.
 
 The metrics command family coordinates existing state families rather than
 creating a `metrics` state family. Node role assignment and readiness belong to
-`node`, Docker substrate capability belongs to `tool`, Prometheus/Grafana and
-node-exporter lifecycle belongs to `process`, and `metrics.orbit` route drift
-belongs to `proxy`.
+`node`, Docker substrate and node-exporter host binary capabilities belong to
+`tool`, Prometheus/Grafana and node-exporter lifecycle belongs to `process`,
+and `metrics.orbit` route drift belongs to `proxy`.
 
 ### Process manager
 

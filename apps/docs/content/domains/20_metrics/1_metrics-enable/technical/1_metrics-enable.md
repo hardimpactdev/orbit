@@ -42,8 +42,8 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 - On success, the target node has an active `metrics` role assignment and the
   metrics baseline intent is recorded.
 - The baseline records Prometheus and Grafana process intent on the target
-  metrics node, node-exporter process intent on the target metrics node and
-  every active workload node, and the `metrics.orbit` proxy route.
+  metrics node, node-exporter tool/process intent on the target metrics node
+  and every active workload node, and the `metrics.orbit` proxy route.
 
 ## Renderer Contracts
 
@@ -63,8 +63,9 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 
 `metrics:enable` creates desired state. Role assignment readiness belongs to
 [`doctor --family=node`](../../../1_node/node-doctor.md). Docker substrate drift
-belongs to [`doctor --family=tool`](../../../3_tool/tool-doctor.md). Metrics
-process runtime drift belongs to
+and node-exporter host binary drift belong to
+[`doctor --family=tool`](../../../3_tool/tool-doctor.md). Metrics process
+runtime drift belongs to
 [`doctor --family=process`](../../../7_process/process-doctor.md), and
 `metrics.orbit` route drift belongs to
 [`doctor --family=proxy`](../../../8_proxy/proxy-doctor.md).

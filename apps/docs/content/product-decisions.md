@@ -38,6 +38,7 @@ direction.
 
 <!-- newest first; add new entries directly under this comment -->
 
+- 2026-06-17 — Metrics baseline records node-exporter host binary tool intent alongside node-exporter process intent on the metrics node and active workload nodes; tool doctor repairs the binary, while process doctor owns the systemd lifecycle.
 - 2026-06-17 — Metrics may run on Ubuntu or Debian hosts, including the Debian gateway, and its baseline records node-exporter process intent for the metrics host plus every active workload node selected by the fleet update target selector; Prometheus and Grafana remain Docker Swarm processes on the selected metrics role node.
 - 2026-06-17 — Orbit analytics is a private workload role backed by process-owned Plausible CE: PostgreSQL and ClickHouse run as service processes on active database role nodes, `analytics.orbit` is the private dashboard/admin endpoint, and per-app public `analytics.<app-domain>` hosts proxy tracking paths only. (solo todo #731)
 - 2026-06-17 — Production Orbit CLI installs use a user-local host launcher by default: `bin/install-orbit` and `orbit update` link the native CLI binary at `$HOME/.local/bin/orbit` unless `ORBIT_BIN_PATH` or `--bin` chooses another path, and `orbit update` must never invoke `sudo`.

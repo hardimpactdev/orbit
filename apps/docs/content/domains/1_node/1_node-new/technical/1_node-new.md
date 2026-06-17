@@ -224,11 +224,12 @@ S3 assignment convergence stores `settings.data_path`, defaulting to
 Orbit, mounts that path as `/data`, binds only to the node's WireGuard address,
 and receives traffic only through router-owned S3 service routes.
 
-Metrics assignment convergence creates Docker substrate intent, node-owned
-Prometheus and Grafana Docker Swarm process definitions, node-exporter systemd
-process definitions on metrics and active workload nodes, the router-owned
-`metrics.orbit` route, and generated Grafana admin credentials. Metrics has no
-role-local settings and records host-resource observability only in this slice.
+Metrics assignment convergence creates Docker substrate intent,
+node-exporter host binary tool intent, node-owned Prometheus and Grafana Docker
+Swarm process definitions, node-exporter systemd process definitions on metrics
+and active workload nodes, the router-owned `metrics.orbit` route, and generated
+Grafana admin credentials. Metrics has no role-local settings and records
+host-resource observability only in this slice.
 
 Analytics assignment convergence stores `settings.postgres_node_id` and
 `settings.clickhouse_node_id`. Plausible CE runs as a process-owned

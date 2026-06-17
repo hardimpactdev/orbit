@@ -81,7 +81,7 @@ Each term below has a precise meaning in the node command family.
   receives private and public S3 traffic through router-owned service routes.
 - **Metrics role:** Optional private workload role for host-resource
   observability. A metrics node records Prometheus and Grafana process intent,
-  records node-exporter process intent for itself and active workload nodes,
+  records node-exporter tool/process intent for itself and active workload nodes,
   exposes Grafana through the router-owned private `metrics.orbit` route, and
   can be dedicated or co-located with any non-agent role.
 - **Analytics role:** Private workload role for Plausible CE analytics. An
@@ -239,7 +239,7 @@ Role baselines are code-defined desired state, not editable package lists.
 | `ingress` | `orbit-caddy` running as the public production HTTP ingress boundary, forwarding public routes to `router` |
 | `websocket` | Laravel Reverb in a Docker runtime container managed by Orbit, private TLS backend binding on WireGuard, backend certificate material, and Redis-backed scaling configuration |
 | `s3` | SeaweedFS in a Docker runtime container rendered by Orbit, private S3 API binding on WireGuard, service-level credentials on the `seaweedfs` tool row, backend pool registration, and role-owned data path |
-| `metrics` | Docker substrate intent, Prometheus and Grafana Docker Swarm process definitions, node-exporter systemd process definitions on metrics and active workload nodes, the router-owned `metrics.orbit` route, and generated Grafana admin credentials |
+| `metrics` | Docker substrate, node-exporter binary, Prometheus/Grafana Swarm processes, node-exporter systemd processes on metrics/workload nodes, `metrics.orbit`, and Grafana credentials |
 | `analytics` | Plausible CE in a process-owned Docker/Swarm service, private `analytics.orbit` router route, per-app public tracking route support, analytics backend pool registration, and runtime configuration derived from PostgreSQL and ClickHouse process endpoints |
 
 Baseline convergence first stores the gateway intent for the selected role.

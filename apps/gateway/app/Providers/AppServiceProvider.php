@@ -63,6 +63,7 @@ use App\Tools\GhTool;
 use App\Tools\HermesTool;
 use App\Tools\LaravelInstallerTool;
 use App\Tools\MailpitTool;
+use App\Tools\NodeExporterTool;
 use App\Tools\OpenClawTool;
 use App\Tools\OpenCodeServerTool;
 use App\Tools\PhpCliTool;
@@ -138,6 +139,7 @@ class AppServiceProvider extends ServiceProvider
             $app->make(MailpitTool::class),
             $app->make(ReverbTool::class),
             $app->make(SeaweedfsTool::class),
+            $app->make(NodeExporterTool::class),
             $app->make(PolyscopeServerTool::class),
             $app->make(OpenCodeServerTool::class),
             $app->make(OpenClawTool::class),

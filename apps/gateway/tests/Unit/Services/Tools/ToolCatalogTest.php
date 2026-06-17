@@ -64,6 +64,25 @@ describe('tool catalog definitions', function (): void {
             ->and($registry->supports('redis'))->toBeTrue();
     });
 
+    it('catalogs node-exporter as a host binary tool with process-owned lifecycle', function (): void {
+        $catalog = app(ToolCatalog::class);
+        $installScript = $catalog->installScript('node-exporter');
+        $metadata = $catalog->probeMetadata('node-exporter');
+
+        expect($catalog->supports('node-exporter'))->toBeTrue()
+            ->and($catalog->category('node-exporter'))->toBe('observability')
+            ->and($catalog->hasCapability('node-exporter', 'install'))->toBeTrue()
+            ->and($catalog->hasCapability('node-exporter', 'update'))->toBeTrue()
+            ->and($installScript)->toContain('node_exporter-1.11.1.linux-${node_exporter_arch}.tar.gz')
+            ->and($installScript)->toContain('/usr/local/bin/node_exporter')
+            ->and($metadata)->toMatchArray([
+                'binary' => '/usr/local/bin/node_exporter',
+                'version_command' => '/usr/local/bin/node_exporter --version 2>/dev/null | head -n 1',
+            ])
+            ->and($metadata)->not->toHaveKey('service')
+            ->and($catalog->logCommand('node-exporter', 50))->toBeNull();
+    });
+
     it('catalogs agent IDE servers as installed capabilities with process-owned lifecycle', function (string $tool, string $binary, string $definition): void {
         $catalog = app(ToolCatalog::class);
         $metadata = $catalog->probeMetadata($tool);

@@ -52,7 +52,7 @@ VPN client browser
   -> router private `metrics.orbit` route
   -> metrics node Grafana Docker Swarm service
   -> Prometheus Docker Swarm service on the metrics node
-  -> node-exporter systemd process intent on metrics and workload nodes
+  -> node-exporter host binary tool and systemd process intent on metrics and workload nodes
 
 Private analytics:
 
@@ -161,9 +161,10 @@ stable `s3.orbit` endpoint and never target a concrete S3 node.
 
 The `metrics` role is a private workload role for host-resource observability.
 A metrics node records Prometheus and Grafana process intent on the selected
-metrics host and node-exporter process intent on the metrics host plus every
-active workload node. Prometheus and Grafana run as Docker Swarm service
-processes, while node-exporter runs as a host systemd process. The role exposes
+metrics host and node-exporter tool/process intent on the metrics host plus
+every active workload node. Prometheus and Grafana run as Docker Swarm service
+processes, while node-exporter is a host binary capability with a systemd
+process. The role exposes
 Grafana through the router-owned private route `metrics.orbit`. In v1 the
 metrics slice tracks host resources only and does not scrape app-, container-,
 or database-specific metrics. The role can run on a dedicated node or be
