@@ -44,14 +44,14 @@ class FleetUpdateVerifier
             'verification.cli',
             'Verifying workload CLI artifacts',
             'Workload CLI artifacts verified',
-            fn (): null => $this->verifyWorkloadCli($plan),
+            fn (): null => $this->verifyWorkloadCli($operationRun),
         );
         $this->runVerificationStep(
             $operationRun,
             'verification.role-images',
             'Verifying required role images',
             'Required role images verified',
-            fn (): null => $this->verifyRequiredRoleImages($plan),
+            fn (): null => $this->verifyRequiredRoleImages($operationRun, $plan),
         );
     }
 
@@ -73,15 +73,14 @@ class FleetUpdateVerifier
         return null;
     }
 
-    private function verifyWorkloadCli(OperationUpdatePlan $plan): null
+    private function verifyWorkloadCli(OperationRun $operationRun): null
     {
         foreach ($this->targets() as $node) {
             $result = $this->remoteShell->run($node, 'orbit --version', [
                 'cwd' => $node->orbit_path,
                 'timeout' => 30,
                 'metadata' => [
-                    'operation' => 'update:all',
-                    'stage' => 'verify_cli',
+                    'ORBIT_OPERATION_ID' => $operationRun->id,
                 ],
             ]);
 
@@ -93,7 +92,7 @@ class FleetUpdateVerifier
         return null;
     }
 
-    private function verifyRequiredRoleImages(OperationUpdatePlan $plan): null
+    private function verifyRequiredRoleImages(OperationRun $operationRun, OperationUpdatePlan $plan): null
     {
         foreach ($this->targets() as $node) {
             $images = $this->requiredRoleImages($plan, $node);
@@ -110,8 +109,7 @@ class FleetUpdateVerifier
                 'cwd' => $node->orbit_path,
                 'timeout' => 60,
                 'metadata' => [
-                    'operation' => 'update:all',
-                    'stage' => 'verify_role_images',
+                    'ORBIT_OPERATION_ID' => $operationRun->id,
                 ],
             ]);
 

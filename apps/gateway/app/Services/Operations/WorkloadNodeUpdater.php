@@ -70,7 +70,7 @@ final readonly class WorkloadNodeUpdater
                 operationRun: $operationRun,
                 ownerToken: $this->ownerToken($operationRun, $node),
                 ttlSeconds: $this->leaseTtlSeconds(),
-                callback: fn (): array => $this->runRemoteUpdate($plan, $node),
+                callback: fn (): array => $this->runRemoteUpdate($operationRun, $plan, $node),
             );
         } catch (UpdateLeaseConflict $exception) {
             $this->operationRuns->appendStep(
@@ -109,15 +109,14 @@ final readonly class WorkloadNodeUpdater
     /**
      * @return array<string, mixed>
      */
-    private function runRemoteUpdate(OperationUpdatePlan $plan, Node $node): array
+    private function runRemoteUpdate(OperationRun $operationRun, OperationUpdatePlan $plan, Node $node): array
     {
         $script = $this->remoteUpdateScript($plan, $node);
         $result = $this->remoteShell->run($node, $script, [
             'cwd' => $node->orbit_path,
             'timeout' => 300,
             'metadata' => [
-                'operation' => 'update:all',
-                'stage' => 'workload_update',
+                'ORBIT_OPERATION_ID' => $operationRun->id,
             ],
         ]);
 
@@ -196,12 +195,18 @@ final readonly class WorkloadNodeUpdater
     {
         $platform = strtolower(trim((string) $node->platform));
 
-        if ($platform === '' || $platform === 'linux' || str_contains($platform, 'amd64') || str_contains($platform, 'x86_64') || str_contains($platform, 'x64')) {
-            return 'linux-amd64';
-        }
-
         if (str_contains($platform, 'arm64') || str_contains($platform, 'aarch64')) {
             return 'linux-arm64';
+        }
+
+        if ($platform === ''
+            || str_contains($platform, 'linux')
+            || str_contains($platform, 'ubuntu')
+            || str_contains($platform, 'debian')
+            || str_contains($platform, 'amd64')
+            || str_contains($platform, 'x86_64')
+            || str_contains($platform, 'x64')) {
+            return 'linux-amd64';
         }
 
         throw new RuntimeException("Unsupported workload update platform [{$node->platform}] for node [{$node->name}].");

@@ -19,6 +19,7 @@ use App\Services\Operations\OperationUpdatePlanStore;
 use App\Services\Operations\UpdateLeaseManager;
 use App\Services\Operations\UpdateRunner;
 use App\Services\Operations\WorkloadNodeUpdater;
+use App\Services\RemoteShell\RemoteShellMetadata;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Str;
 use Orbit\Core\Enums\OperationStatus;
@@ -32,12 +33,12 @@ it('updates active non-gateway app-role nodes from the persisted manifest snapsh
     $run = workloadUpdaterRun();
     $appDev = Node::factory()->appDev()->create([
         'name' => 'app-dev-1',
-        'platform' => 'linux',
+        'platform' => 'ubuntu_24-04',
         'orbit_path' => '/opt/orbit-app-dev',
     ]);
     $appProd = Node::factory()->appProd()->create([
         'name' => 'app-prod-1',
-        'platform' => 'linux-amd64',
+        'platform' => 'ubuntu',
         'orbit_path' => '/opt/orbit-app-prod',
     ]);
     NodeRoleAssignment::factory()->create([
@@ -82,6 +83,8 @@ it('updates active non-gateway app-role nodes from the persisted manifest snapsh
         ],
     ])
         ->and($shell->calls)->toHaveCount(2)
+        ->and($shell->calls[0]['options']['metadata'])->toBe(['ORBIT_OPERATION_ID' => $run->id])
+        ->and($shell->calls[1]['options']['metadata'])->toBe(['ORBIT_OPERATION_ID' => $run->id])
         ->and($shell->activeLeases)->toBe([
             'app-dev-1' => ['node:app-dev-1'],
             'app-prod-1' => ['node:app-prod-1'],
@@ -322,6 +325,8 @@ final class WorkloadUpdaterFakeShell implements RemoteShell
     #[Override]
     public function run(Node $node, string $script, array $options = []): RemoteShellResult
     {
+        (new RemoteShellMetadata)->prologue($options['metadata'] ?? []);
+
         $this->calls[] = [
             'node' => $node->name,
             'script' => $script,

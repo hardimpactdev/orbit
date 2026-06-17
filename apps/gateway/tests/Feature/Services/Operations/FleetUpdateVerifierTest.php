@@ -12,6 +12,7 @@ use App\Services\Operations\FleetUpdateVerifier;
 use App\Services\Operations\OperationRunRecorder;
 use App\Services\Operations\OperationUpdatePlanStore;
 use App\Services\Operations\UpdateRunner;
+use App\Services\RemoteShell\RemoteShellMetadata;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Process;
@@ -44,6 +45,8 @@ it('verifies gateway scheduler workload CLI and required role images', function 
             'node' => $node->name,
             'script' => 'orbit --version',
         ])
+        ->and($shell->calls[0]['options']['metadata'])->toBe(['ORBIT_OPERATION_ID' => $run->id])
+        ->and($shell->calls[1]['options']['metadata'])->toBe(['ORBIT_OPERATION_ID' => $run->id])
         ->and($shell->calls[1]['script'])->toContain("docker image inspect 'caddy:2-alpine' >/dev/null");
 });
 
@@ -269,6 +272,8 @@ final class FleetVerifierFakeShell implements RemoteShell
     #[Override]
     public function run(Node $node, string $script, array $options = []): RemoteShellResult
     {
+        (new RemoteShellMetadata)->prologue($options['metadata'] ?? []);
+
         $this->calls[] = [
             'node' => $node->name,
             'script' => $script,
