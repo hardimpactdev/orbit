@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace App\Services\Updates;
 
+use Illuminate\Contracts\Process\ProcessResult;
 use Illuminate\Support\Facades\Process;
+use Throwable;
 
 /**
  * Performs the three-step local Orbit update sequence:
@@ -53,69 +55,100 @@ class LocalCheckoutUpdater implements RunsLocalUpdate
     {
         $installRoot = $this->checkoutPathResolver->resolve();
         $binaryDest = $installRoot.'/bin/orbit-binary';
+        $stagedBinary = $this->stagedBinaryPath($binaryDest);
         $linkPath = $this->resolveLinkPath();
 
         $binaryUrl = $this->resolveBinaryUrl();
 
-        if ($binaryUrl === null) {
+        try {
+            if ($binaryUrl === null) {
+                return [
+                    'successful' => false,
+                    'exit_code' => 1,
+                    'output' => 'Unsupported platform: cannot determine Orbit CLI binary asset for this OS/arch.',
+                ];
+            }
+
+            // Download away from the running binary, then swap after verification.
+            $downloadResult = $this->runCommand([
+                'curl', '-fsSL', '--retry', '3', '--retry-delay', '2', '-o', $stagedBinary, $binaryUrl,
+            ], 120);
+
+            if (! $downloadResult->successful()) {
+                return $this->failedResult($downloadResult);
+            }
+
+            $chmodResult = $this->runCommand(['chmod', '0755', $stagedBinary], 10);
+
+            if (! $chmodResult->successful()) {
+                return $this->failedResult($chmodResult);
+            }
+
+            $stagedVerifyResult = $this->runCommand([$stagedBinary, '--version'], 30);
+
+            if (! $stagedVerifyResult->successful()) {
+                return $this->failedResult($stagedVerifyResult);
+            }
+
+            $moveResult = $this->runCommand(['mv', '-f', $stagedBinary, $binaryDest], 10);
+
+            if (! $moveResult->successful()) {
+                return $this->failedResult($moveResult);
+            }
+
+            $stagedBinary = null;
+
+            $linkResult = $this->runCommand($this->linkCommand($binaryDest, $linkPath), 10);
+
+            if (! $linkResult->successful()) {
+                return $this->failedResult($linkResult);
+            }
+
+            $verifyResult = $this->runCommand([$linkPath, '--version'], 30);
+
+            if (! $verifyResult->successful()) {
+                return $this->failedResult($verifyResult);
+            }
+
             return [
-                'successful' => false,
-                'exit_code' => 1,
-                'output' => 'Unsupported platform: cannot determine Orbit CLI binary asset for this OS/arch.',
+                'successful' => true,
+                'exit_code' => 0,
+                'output' => trim($verifyResult->output()),
             ];
+        } finally {
+            if (is_string($stagedBinary) && $stagedBinary !== '' && is_file($stagedBinary)) {
+                @unlink($stagedBinary);
+            }
         }
+    }
 
-        // Download the binary into the install root.
-        $downloadResult = Process::timeout(120)->run([
-            'curl', '-fsSL', '--retry', '3', '--retry-delay', '2', '-o', $binaryDest, $binaryUrl,
-        ]);
-
-        if (! $downloadResult->successful()) {
-            return [
-                'successful' => false,
-                'exit_code' => $downloadResult->exitCode() ?? 1,
-                'output' => trim($downloadResult->errorOutput() ?: $downloadResult->output()),
-            ];
+    /**
+     * @param  list<string>  $command
+     */
+    private function runCommand(array $command, int $timeout): ProcessResult
+    {
+        try {
+            return Process::timeout($timeout)->run($command);
+        } catch (Throwable $exception) {
+            return Process::result(errorOutput: $exception->getMessage(), exitCode: 1);
         }
+    }
 
-        // Make executable.
-        $chmodResult = Process::timeout(10)->run(['chmod', '0755', $binaryDest]);
-
-        if (! $chmodResult->successful()) {
-            return [
-                'successful' => false,
-                'exit_code' => $chmodResult->exitCode() ?? 1,
-                'output' => trim($chmodResult->errorOutput() ?: $chmodResult->output()),
-            ];
-        }
-
-        // Relink the host launcher to the updated binary (idempotent).
-        $linkResult = Process::timeout(10)->run($this->linkCommand($binaryDest, $linkPath));
-
-        if (! $linkResult->successful()) {
-            return [
-                'successful' => false,
-                'exit_code' => $linkResult->exitCode() ?? 1,
-                'output' => trim($linkResult->errorOutput() ?: $linkResult->output()),
-            ];
-        }
-
-        // Verify the updated binary responds to --version.
-        $verifyResult = Process::timeout(30)->run([$linkPath, '--version']);
-
-        if (! $verifyResult->successful()) {
-            return [
-                'successful' => false,
-                'exit_code' => $verifyResult->exitCode() ?? 1,
-                'output' => trim($verifyResult->errorOutput() ?: $verifyResult->output()),
-            ];
-        }
-
+    /**
+     * @return array{successful: false, exit_code: int, output: string}
+     */
+    private function failedResult(ProcessResult $result): array
+    {
         return [
-            'successful' => true,
-            'exit_code' => 0,
-            'output' => trim($verifyResult->output()),
+            'successful' => false,
+            'exit_code' => $result->exitCode() ?? 1,
+            'output' => trim($result->errorOutput() ?: $result->output()),
         ];
+    }
+
+    private function stagedBinaryPath(string $binaryDest): string
+    {
+        return $binaryDest.'.download.'.bin2hex(random_bytes(8));
     }
 
     /**

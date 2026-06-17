@@ -37,6 +37,10 @@ describe('LocalCheckoutUpdater', function (): void {
         $this->previousBinaryUrl === false ? putenv('ORBIT_BINARY_URL') : putenv("ORBIT_BINARY_URL={$this->previousBinaryUrl}");
         $this->previousBinPath === false ? putenv('ORBIT_BIN_PATH') : putenv("ORBIT_BIN_PATH={$this->previousBinPath}");
 
+        foreach (glob($this->binaryDest.'.download.*') ?: [] as $path) {
+            @unlink($path);
+        }
+
         // Clean up temp files.
         @unlink($this->binaryDest);
         @unlink($this->linkPath);
@@ -53,11 +57,36 @@ describe('LocalCheckoutUpdater', function (): void {
         expect($result['successful'])->toBeTrue()
             ->and($result['exit_code'])->toBe(0);
 
+        $stagedBinary = null;
+
         // Assert the curl download step ran with the ORBIT_BINARY_URL override.
+        Process::assertRan(function (PendingProcess $process) use (&$stagedBinary): bool {
+            if (! is_array($process->command) || $process->command[0] !== 'curl' || ! in_array($this->binaryUrl, $process->command, strict: true)) {
+                return false;
+            }
+
+            $outputOption = array_search('-o', $process->command, true);
+
+            if (! is_int($outputOption) || ! is_string($process->command[$outputOption + 1] ?? null)) {
+                return false;
+            }
+
+            $stagedBinary = $process->command[$outputOption + 1];
+
+            return $stagedBinary !== $this->binaryDest
+                && str_starts_with($stagedBinary, $this->binaryDest.'.download.');
+        });
+
+        expect($stagedBinary)->toBeString();
+
         Process::assertRan(fn (PendingProcess $process): bool => is_array($process->command)
-            && $process->command[0] === 'curl'
-            && in_array($this->binaryUrl, $process->command, strict: true)
-            && in_array($this->binaryDest, $process->command, strict: true));
+            && $process->command === ['chmod', '0755', $stagedBinary]);
+
+        Process::assertRan(fn (PendingProcess $process): bool => is_array($process->command)
+            && $process->command === [$stagedBinary, '--version']);
+
+        Process::assertRan(fn (PendingProcess $process): bool => is_array($process->command)
+            && $process->command === ['mv', '-f', $stagedBinary, $this->binaryDest]);
 
         // Assert the ln relink step ran pointing at the install root binary.
         Process::assertRan(fn (PendingProcess $process): bool => is_array($process->command)
@@ -121,10 +150,15 @@ describe('LocalCheckoutUpdater', function (): void {
     });
 
     it('reports failure when the verify step fails', function (): void {
-        $linkPath = $this->linkPath;
+        $binaryDest = $this->binaryDest;
 
-        Process::fake(function (PendingProcess $process) use ($linkPath): ProcessResult {
-            if (is_array($process->command) && $process->command[0] === $linkPath) {
+        Process::fake(function (PendingProcess $process) use ($binaryDest): ProcessResult {
+            if (
+                is_array($process->command)
+                && is_string($process->command[0] ?? null)
+                && str_starts_with($process->command[0], $binaryDest.'.download.')
+                && in_array('--version', $process->command, strict: true)
+            ) {
                 return Process::result(errorOutput: 'Segmentation fault', exitCode: 1);
             }
 
@@ -136,6 +170,22 @@ describe('LocalCheckoutUpdater', function (): void {
         expect($result['successful'])->toBeFalse()
             ->and($result['exit_code'])->toBe(1)
             ->and($result['output'])->toBe('Segmentation fault');
+    });
+
+    it('reports process exceptions as pull_source failures', function (): void {
+        Process::fake(function (PendingProcess $process): ProcessResult {
+            if (is_array($process->command) && $process->command[0] === 'curl') {
+                throw new RuntimeException('The process has been signaled with signal "9".');
+            }
+
+            return Process::result(output: '', exitCode: 0);
+        });
+
+        $result = (new LocalCheckoutUpdater(new CheckoutPathResolver))->pullSource();
+
+        expect($result['successful'])->toBeFalse()
+            ->and($result['exit_code'])->toBe(1)
+            ->and($result['output'])->toBe('The process has been signaled with signal "9".');
     });
 
     it('installs dependencies inside orbit-gateway', function (): void {
