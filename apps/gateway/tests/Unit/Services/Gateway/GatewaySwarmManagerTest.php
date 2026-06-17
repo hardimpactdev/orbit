@@ -115,7 +115,7 @@ it('updates and scales Swarm services using the planned command shapes', functio
     $image = GatewayImageReference::fromString('ghcr.io/hardimpactdev/orbit-gateway:1.2.3@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa');
 
     Process::fake([
-        "docker service update --image 'ghcr.io/hardimpactdev/orbit-gateway:1.2.3@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' --update-order 'start-first' --update-failure-action rollback --update-monitor 60s 'orbit_orbit-gateway'" => Process::result(),
+        "docker service update --detach=true --image 'ghcr.io/hardimpactdev/orbit-gateway:1.2.3@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' --update-order 'start-first' --update-failure-action rollback --update-monitor 60s 'orbit_orbit-gateway'" => Process::result(),
         "docker service scale --detach=true 'orbit_orbit-scheduler=0'" => Process::result(),
         "docker service inspect --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' 'orbit_orbit-scheduler'" => Process::result(output: "ghcr.io/hardimpactdev/orbit-gateway:1.2.2@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\n"),
         "docker service ls --filter 'name=orbit_orbit-scheduler' --format '{{.Replicas}}'" => Process::result(output: "1/1\n"),
@@ -131,7 +131,7 @@ it('updates and scales Swarm services using the planned command shapes', functio
         ->and($manager->serviceReplicas('orbit_orbit-scheduler'))->toBe('1/1')
         ->and($manager->serviceUpdateState('orbit_orbit-gateway'))->toBe('completed');
 
-    Process::assertRan("docker service update --image 'ghcr.io/hardimpactdev/orbit-gateway:1.2.3@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' --update-order 'start-first' --update-failure-action rollback --update-monitor 60s 'orbit_orbit-gateway'");
+    Process::assertRan("docker service update --detach=true --image 'ghcr.io/hardimpactdev/orbit-gateway:1.2.3@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' --update-order 'start-first' --update-failure-action rollback --update-monitor 60s 'orbit_orbit-gateway'");
     Process::assertRan("docker service scale --detach=true 'orbit_orbit-scheduler=0'");
     Process::assertRan("docker service ls --filter 'name=orbit_orbit-scheduler' --format '{{.Replicas}}'");
     Process::assertRan("docker service inspect --format '{{.UpdateStatus.State}}' 'orbit_orbit-gateway'");
@@ -154,5 +154,26 @@ it('scales Swarm services without waiting for Docker stability verification', fu
 
     expect($commands)->toBe([
         "docker service scale --detach=true 'orbit_orbit-scheduler=0'",
+    ]);
+});
+
+it('updates Swarm service images without waiting for Docker stability verification', function (): void {
+    $commands = [];
+    $image = GatewayImageReference::fromString('ghcr.io/hardimpactdev/orbit-gateway:1.2.3@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa');
+
+    Process::fake(function ($process) use (&$commands) {
+        $command = (string) $process->command;
+
+        if (str_starts_with($command, 'docker service update')) {
+            $commands[] = $command;
+        }
+
+        return Process::result();
+    });
+
+    (new GatewaySwarmManager)->updateServiceImage('orbit_orbit-gateway', $image, 'start-first');
+
+    expect($commands)->toBe([
+        "docker service update --detach=true --image 'ghcr.io/hardimpactdev/orbit-gateway:1.2.3@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' --update-order 'start-first' --update-failure-action rollback --update-monitor 60s 'orbit_orbit-gateway'",
     ]);
 });

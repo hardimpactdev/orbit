@@ -922,7 +922,7 @@ describe('DoctorReportRunner', function (): void {
         Process::fake([
             "docker service inspect --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' 'orbit_orbit-scheduler'" => Process::result(output: "ghcr.io/hardimpactdev/orbit-gateway:1.2.3@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n"),
             "docker service ls --filter 'name=orbit_orbit-scheduler' --format '{{.Replicas}}'" => Process::result(output: "1/1\n"),
-            "docker service update --image '{$desiredImage}' --update-order 'stop-first' --update-failure-action rollback --update-monitor 60s 'orbit_orbit-scheduler'" => Process::result(),
+            "docker service update --detach=true --image '{$desiredImage}' --update-order 'stop-first' --update-failure-action rollback --update-monitor 60s 'orbit_orbit-scheduler'" => Process::result(),
             "docker service scale --detach=true 'orbit_orbit-scheduler=1'" => Process::result(),
         ]);
 
@@ -951,7 +951,7 @@ describe('DoctorReportRunner', function (): void {
             ])
             ->and($shell->scripts)->toBe([]);
 
-        Process::assertRan("docker service update --image '{$desiredImage}' --update-order 'stop-first' --update-failure-action rollback --update-monitor 60s 'orbit_orbit-scheduler'");
+        Process::assertRan("docker service update --detach=true --image '{$desiredImage}' --update-order 'stop-first' --update-failure-action rollback --update-monitor 60s 'orbit_orbit-scheduler'");
         Process::assertRan("docker service scale --detach=true 'orbit_orbit-scheduler=1'");
     });
 

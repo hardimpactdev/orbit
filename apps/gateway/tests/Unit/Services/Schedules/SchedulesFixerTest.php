@@ -101,7 +101,7 @@ describe('SchedulesFixer', function (): void {
         config()->set('orbit.updates.gateway_image', $desiredImage);
         Process::fake([
             "docker service inspect --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' 'orbit_orbit-scheduler'" => Process::result(output: "ghcr.io/hardimpactdev/orbit-gateway:1.2.3@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n"),
-            "docker service update --image '{$desiredImage}' --update-order 'stop-first' --update-failure-action rollback --update-monitor 60s 'orbit_orbit-scheduler'" => Process::result(),
+            "docker service update --detach=true --image '{$desiredImage}' --update-order 'stop-first' --update-failure-action rollback --update-monitor 60s 'orbit_orbit-scheduler'" => Process::result(),
             "docker service scale --detach=true 'orbit_orbit-scheduler=1'" => Process::result(),
         ]);
 
@@ -121,7 +121,7 @@ describe('SchedulesFixer', function (): void {
             'status' => 'completed',
         ])->and($shell->scripts)->toBe([]);
 
-        Process::assertRan("docker service update --image '{$desiredImage}' --update-order 'stop-first' --update-failure-action rollback --update-monitor 60s 'orbit_orbit-scheduler'");
+        Process::assertRan("docker service update --detach=true --image '{$desiredImage}' --update-order 'stop-first' --update-failure-action rollback --update-monitor 60s 'orbit_orbit-scheduler'");
         Process::assertRan("docker service scale --detach=true 'orbit_orbit-scheduler=1'");
     });
 

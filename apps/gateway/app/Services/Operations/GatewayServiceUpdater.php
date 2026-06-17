@@ -9,6 +9,7 @@ use App\Models\OperationUpdatePlan;
 use App\Services\Gateway\GatewayImageReference;
 use App\Services\Gateway\GatewaySwarmManager;
 use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Sleep;
 use RuntimeException;
 use Throwable;
 
@@ -17,6 +18,10 @@ class GatewayServiceUpdater
     private const string GatewayService = 'orbit_orbit-gateway';
 
     private const string SchedulerService = 'orbit_orbit-scheduler';
+
+    private const int GatewayHealthCheckAttempts = 90;
+
+    private const int GatewayHealthCheckSleepSeconds = 2;
 
     public function __construct(
         private readonly ?GatewaySwarmManager $swarm = null,
@@ -105,10 +110,20 @@ class GatewayServiceUpdater
 
     private function waitForGatewayHealth(): void
     {
-        $state = $this->swarm()->serviceUpdateState(self::GatewayService);
+        for ($attempt = 1; $attempt <= self::GatewayHealthCheckAttempts; $attempt++) {
+            $state = $this->swarm()->serviceUpdateState(self::GatewayService);
 
-        if ($state === 'completed') {
-            return;
+            if ($state === 'completed') {
+                return;
+            }
+
+            if ($state !== null && $state !== 'updating') {
+                throw new RuntimeException('Gateway service health check failed.');
+            }
+
+            if ($attempt < self::GatewayHealthCheckAttempts) {
+                Sleep::for(self::GatewayHealthCheckSleepSeconds)->seconds();
+            }
         }
 
         throw new RuntimeException('Gateway service health check failed.');
@@ -178,7 +193,7 @@ class GatewayServiceUpdater
             return $scaleCommand;
         }
 
-        return 'docker service update --image '.escapeshellarg($previousSchedulerImage)
+        return 'docker service update --detach=true --image '.escapeshellarg($previousSchedulerImage)
             .' --update-order '.escapeshellarg('stop-first')
             .' --update-failure-action rollback --update-monitor 60s '
             .escapeshellarg(self::SchedulerService)

@@ -116,7 +116,7 @@ final readonly class GatewaySwarmManager
         $order = $this->normalizeUpdateOrder($order);
 
         $this->run(
-            'docker service update --image '.escapeshellarg($image->canonical())
+            'docker service update --detach=true --image '.escapeshellarg($image->canonical())
             .' --update-order '.escapeshellarg($order)
             .' --update-failure-action rollback --update-monitor 60s '
             .escapeshellarg($service),
