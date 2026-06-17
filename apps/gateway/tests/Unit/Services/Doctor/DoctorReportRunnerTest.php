@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Contracts\RemoteShell;
 use App\Contracts\SiteCertificateInstaller;
 use App\Data\RemoteShell\RemoteShellResult;
+use App\Enums\Processes\ProcessRuntime;
 use App\Models\App;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseConnectionTarget;
@@ -1226,6 +1227,115 @@ TXT;
                 'details' => ['app' => 'blog', 'process' => 'vp-dev'],
             ])
             ->and($shell->scripts[4])->toContain("sudo tee '/etc/systemd/system/orbit_blog_main_vp-dev.service' >/dev/null");
+    });
+
+    it('restores missing node-owned process runtime units through restore mode family dispatch', function (): void {
+        $node = Node::factory()->database()->create([
+            'name' => 'metrics-worker-1',
+            'status' => 'active',
+            'platform' => 'ubuntu_24-04',
+            'user' => 'orbit',
+        ]);
+        \App\Models\Process::factory()->forOwner($node)->create([
+            'name' => 'node-exporter',
+            'runtime' => ProcessRuntime::Systemd,
+            'command' => 'node_exporter --web.listen-address=0.0.0.0:9100',
+            'restart_policy' => 'always',
+            'crash_notification' => 'none',
+            'sort_order' => 1,
+        ]);
+        $shell = new DoctorReportRunnerRemoteShell([
+            new RemoteShellResult(exitCode: 0, stdout: 'systemd OK', stderr: '', durationMs: 1),
+            new RemoteShellResult(
+                exitCode: 0,
+                stdout: "node-exporter\t0\t0\t0\t0\n",
+                stderr: '',
+                durationMs: 1,
+            ),
+            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+        ]);
+        app()->instance(RemoteShell::class, $shell);
+
+        $report = app(DoctorReportRunner::class)->run($node, mode: 'restore', families: ['process']);
+
+        expect($report['healthy'])->toBeTrue()
+            ->and($report['summary'])->toMatchArray([
+                'issues' => 0,
+                'fixed' => 1,
+                'skipped' => 0,
+            ])
+            ->and($report['issues'])->toBe([])
+            ->and($report['actions'][0])->toMatchArray([
+                'family' => 'process',
+                'node' => 'metrics-worker-1',
+                'key' => 'process.runtime_unit_missing',
+                'mode' => 'restore',
+                'status' => 'completed',
+                'details' => [
+                    'node' => 'metrics-worker-1',
+                    'process' => 'node-exporter',
+                    'runtime_unit' => 'node-exporter',
+                ],
+            ])
+            ->and($shell->scripts[2])->toContain("sudo tee '/etc/systemd/system/node-exporter.service' >/dev/null");
+    });
+
+    it('restores missing node-owned docker swarm process runtime units through restore mode family dispatch', function (): void {
+        $node = Node::factory()->database()->create([
+            'name' => 'metrics-worker-1',
+            'status' => 'active',
+            'platform' => 'ubuntu_24-04',
+            'user' => 'orbit',
+        ]);
+        \App\Models\Process::factory()->forOwner($node)->create([
+            'name' => 'grafana',
+            'runtime' => ProcessRuntime::DockerSwarm,
+            'command' => 'grafana server --homepath=/usr/share/grafana',
+            'restart_policy' => 'always',
+            'crash_notification' => 'none',
+            'runtime_config' => [
+                'service_name' => 'orbit-grafana',
+                'image' => 'grafana/grafana:12.0.1',
+                'labels' => [
+                    'orbit.managed' => 'true',
+                    'orbit.process' => 'grafana',
+                    'orbit.process.spec_hash' => str_repeat('a', 64),
+                ],
+            ],
+            'sort_order' => 1,
+        ]);
+        $shell = new DoctorReportRunnerRemoteShell([
+            new RemoteShellResult(exitCode: 1, stdout: '', stderr: 'no such service: orbit-grafana', durationMs: 1),
+            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+        ]);
+        app()->instance(RemoteShell::class, $shell);
+
+        $report = app(DoctorReportRunner::class)->run($node, mode: 'restore', families: ['process']);
+
+        expect($report['healthy'])->toBeTrue()
+            ->and($report['summary'])->toMatchArray([
+                'issues' => 0,
+                'fixed' => 1,
+                'skipped' => 0,
+            ])
+            ->and($report['issues'])->toBe([])
+            ->and($report['actions'][0])->toMatchArray([
+                'family' => 'process',
+                'node' => 'metrics-worker-1',
+                'key' => 'process.runtime_unit_missing',
+                'mode' => 'restore',
+                'status' => 'completed',
+                'details' => [
+                    'node' => 'metrics-worker-1',
+                    'process' => 'grafana',
+                    'runtime_unit' => 'orbit-grafana',
+                ],
+            ])
+            ->and($shell->scripts[2])->toContain('docker service create')
+            ->and($shell->scripts[2])->toContain("--name 'orbit-grafana'")
+            ->and($shell->scripts[2])->toContain('--replicas 0')
+            ->and($shell->scripts[2])->toContain("'grafana/grafana:12.0.1'");
     });
 
     it('restores missing orbit-caddy containers through restore mode family dispatch', function (): void {

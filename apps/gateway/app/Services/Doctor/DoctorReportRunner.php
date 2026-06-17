@@ -34,6 +34,8 @@ use App\Services\Nodes\NodeConverger;
 use App\Services\Nodes\NodesProbe;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
 use App\Services\Processes\ProcessesProbe;
+use App\Services\Processes\ProcessOwnerContext;
+use App\Services\Processes\ProcessRuntimeDriverRegistry;
 use App\Services\Proxy\ProxyRouteAdopter;
 use App\Services\Proxy\ProxyRouteFixer;
 use App\Services\Proxy\ProxyRouteProbe;
@@ -96,6 +98,7 @@ final readonly class DoctorReportRunner
         private DatabaseConnectionAdopter $databaseConnectionAdopter,
         private WorkspacesProbe $workspacesProbe,
         private ProcessesProbe $processesProbe,
+        private ProcessRuntimeDriverRegistry $processRuntimeDrivers,
         private ProxyRouteProbe $proxyRouteProbe,
         private FirewallRuleProbe $firewallRuleProbe,
         private FirewallRuleFixer $firewallRuleFixer,
@@ -1041,7 +1044,7 @@ final readonly class DoctorReportRunner
             ->where('name', $processName)
             ->get();
         $runtimeUnit = is_string($detail['runtime_unit'] ?? null) ? $detail['runtime_unit'] : null;
-        $process = $this->processForRuntimeUnit($processes, $runtimeUnit) ?? $processes->first();
+        $process = $this->processForRuntimeUnit($node, $processes, $runtimeUnit) ?? $processes->first();
 
         if (! $process instanceof Process) {
             return null;
@@ -1050,7 +1053,7 @@ final readonly class DoctorReportRunner
         $app = $process->ownerApp();
 
         if (! $app instanceof App) {
-            return null;
+            return $this->applyNodeOwnedProcessIssue($node, $key, $process);
         }
 
         try {
@@ -1101,21 +1104,149 @@ final readonly class DoctorReportRunner
     }
 
     /**
+     * @return array<string, mixed>|null
+     */
+    private function applyNodeOwnedProcessIssue(Node $node, string $key, Process $process): ?array
+    {
+        $context = $this->processOwnerContext($node, $process);
+
+        if (! ($context instanceof ProcessOwnerContext) || ! ($context->owner instanceof Node)) {
+            return null;
+        }
+
+        try {
+            $runtimeApp = $context->runtimeApp();
+            $workspace = $context->runtimeWorkspaceFor($process);
+            $driver = $this->processRuntimeDrivers->forProcess($process);
+            $runtimeUnit = $driver->runtimeUnitName($runtimeApp, $process, $workspace);
+            $restored = $driver->apply($node, $runtimeApp, $process, $workspace);
+        } catch (\Throwable $e) {
+            return [
+                'family' => 'process',
+                'node' => $node->name,
+                'code' => $key,
+                'key' => $key,
+                'mode' => 'restore',
+                'status' => 'failed',
+                'summary' => "Failed to restore {$key}.",
+                'details' => [
+                    'node' => $node->name,
+                    'process' => $process->name,
+                    'error' => $e->getMessage(),
+                ],
+            ];
+        }
+
+        if (! $restored) {
+            return [
+                'family' => 'process',
+                'node' => $node->name,
+                'code' => $key,
+                'key' => $key,
+                'mode' => 'restore',
+                'status' => 'failed',
+                'summary' => "Failed to restore process runtime unit {$runtimeUnit}.",
+                'details' => [
+                    'node' => $node->name,
+                    'process' => $process->name,
+                    'runtime_unit' => $runtimeUnit,
+                ],
+            ];
+        }
+
+        return [
+            'family' => 'process',
+            'node' => $node->name,
+            'code' => $key,
+            'key' => $key,
+            'mode' => 'restore',
+            'status' => 'completed',
+            'summary' => "Restored process runtime unit {$runtimeUnit}.",
+            'details' => [
+                'node' => $node->name,
+                'process' => $process->name,
+                'runtime_unit' => $runtimeUnit,
+            ],
+        ];
+    }
+
+    /**
      * @param  Collection<int, Process>  $processes
      */
-    private function processForRuntimeUnit(Collection $processes, ?string $runtimeUnit): ?Process
+    private function processForRuntimeUnit(Node $node, Collection $processes, ?string $runtimeUnit): ?Process
     {
         if ($runtimeUnit === null) {
             return null;
         }
 
-        return $processes->first(function (Process $process) use ($runtimeUnit): bool {
+        return $processes->first(function (Process $process) use ($node, $runtimeUnit): bool {
+            if ($this->runtimeUnitNameForProcess($node, $process) === $runtimeUnit) {
+                return true;
+            }
+
             $app = $process->ownerApp();
 
             return $app instanceof App
                 && $app->name !== ''
                 && str_starts_with($runtimeUnit, "orbit_{$app->name}_");
         });
+    }
+
+    private function runtimeUnitNameForProcess(Node $node, Process $process): ?string
+    {
+        $context = $this->processOwnerContext($node, $process);
+
+        if (! ($context instanceof ProcessOwnerContext)) {
+            return null;
+        }
+
+        try {
+            $driver = $this->processRuntimeDrivers->forProcess($process);
+
+            return $driver->runtimeUnitName($context->runtimeApp(), $process, $context->runtimeWorkspaceFor($process));
+        } catch (\Throwable) {
+            return null;
+        }
+    }
+
+    private function processOwnerContext(Node $node, Process $process): ?ProcessOwnerContext
+    {
+        $process->loadMissing('owner');
+
+        if ($process->owner instanceof Node) {
+            return new ProcessOwnerContext(
+                node: $node,
+                app: null,
+                workspace: null,
+                owner: $process->owner,
+            );
+        }
+
+        if ($process->owner instanceof App) {
+            return new ProcessOwnerContext(
+                node: $node,
+                app: $process->owner,
+                workspace: null,
+                owner: $process->owner,
+            );
+        }
+
+        if ($process->owner instanceof Workspace) {
+            $process->owner->loadMissing('app');
+
+            if (! $process->owner->app instanceof App) {
+                return null;
+            }
+
+            return new ProcessOwnerContext(
+                node: $node,
+                app: $process->owner->app,
+                workspace: $process->owner,
+                owner: $process->owner,
+            );
+        }
+
+        return null;
     }
 
     /**
