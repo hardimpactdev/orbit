@@ -50,6 +50,9 @@ describe('LocalCheckoutUpdater', function (): void {
         // Clean up temp files.
         @unlink($this->installRoot.'/install.json');
         @unlink($this->binaryDest);
+        foreach (glob($this->installRoot.'/bin/orbit-binary-*') ?: [] as $path) {
+            @unlink($path);
+        }
         @unlink($this->linkPath);
         @rmdir($this->installRoot.'/bin');
         @rmdir($this->installRoot);
@@ -68,13 +71,14 @@ describe('LocalCheckoutUpdater', function (): void {
 
         $result = (new LocalCheckoutUpdater(new CheckoutPathResolver))->pullSource();
 
+        $versionedBinary = $this->installRoot.'/bin/orbit-binary-1.2.3';
         $metadata = json_decode(file_get_contents($this->installRoot.'/install.json'), associative: true, flags: JSON_THROW_ON_ERROR);
 
         expect($result['successful'])->toBeTrue()
             ->and($metadata['binary_path'])->toBe($expectedLinkPath);
 
         Process::assertRan(fn (PendingProcess $process): bool => is_array($process->command)
-            && $process->command === ['ln', '-sfn', $this->binaryDest, $expectedLinkPath]);
+            && $process->command === ['ln', '-sfn', $versionedBinary, $expectedLinkPath]);
 
         Process::assertRan(fn (PendingProcess $process): bool => is_array($process->command)
             && $process->command === [$expectedLinkPath, '--version']);
@@ -126,19 +130,63 @@ describe('LocalCheckoutUpdater', function (): void {
             && $process->command === [$stagedBinary, '--version']);
 
         Process::assertRan(fn (PendingProcess $process): bool => is_array($process->command)
-            && $process->command === ['mv', '-f', $stagedBinary, $this->binaryDest]);
+            && $process->command === ['mv', '-f', $stagedBinary, $this->installRoot.'/bin/orbit-binary-1.2.3']);
 
-        // Assert the ln relink step ran pointing at the install root binary.
+        // Assert the ln relink step ran pointing at the versioned install root binary.
         Process::assertRan(fn (PendingProcess $process): bool => is_array($process->command)
             && $process->command[0] === 'ln'
             && $process->command[1] === '-sfn'
-            && $process->command[2] === $this->binaryDest
+            && $process->command[2] === $this->installRoot.'/bin/orbit-binary-1.2.3'
             && $process->command[3] === $this->linkPath);
 
         // Assert the --version verify step ran against the link path.
         Process::assertRan(fn (PendingProcess $process): bool => is_array($process->command)
             && $process->command[0] === $this->linkPath
             && in_array('--version', $process->command, strict: true));
+    });
+
+    it('installs updates to a versioned binary without replacing the running binary path', function (): void {
+        Process::fake(['*' => Process::result(output: 'Version       9.8.7', exitCode: 0)]);
+        Process::preventStrayProcesses();
+
+        $result = (new LocalCheckoutUpdater(new CheckoutPathResolver))->pullSource();
+
+        $versionedBinary = $this->installRoot.'/bin/orbit-binary-9.8.7';
+
+        expect($result['successful'])->toBeTrue();
+
+        Process::assertRan(fn (PendingProcess $process): bool => is_array($process->command)
+            && $process->command[0] === 'mv'
+            && str_starts_with($process->command[2] ?? '', $this->binaryDest.'.download.')
+            && $process->command[3] === $versionedBinary);
+
+        Process::assertNotRan(fn (PendingProcess $process): bool => is_array($process->command)
+            && ($process->command[0] ?? null) === 'mv'
+            && ($process->command[1] ?? null) === '-f'
+            && ($process->command[3] ?? null) === $this->binaryDest);
+
+        Process::assertRan(fn (PendingProcess $process): bool => is_array($process->command)
+            && $process->command === ['ln', '-sfn', $versionedBinary, $this->linkPath]);
+    });
+
+    it('does not overwrite an existing versioned binary for same-version updates', function (): void {
+        $versionedBinary = $this->installRoot.'/bin/orbit-binary-1.2.3';
+        file_put_contents($versionedBinary, 'existing binary');
+
+        Process::fake(['*' => Process::result(output: 'Version       1.2.3', exitCode: 0)]);
+        Process::preventStrayProcesses();
+
+        $result = (new LocalCheckoutUpdater(new CheckoutPathResolver))->pullSource();
+
+        expect($result['successful'])->toBeTrue();
+
+        Process::assertNotRan(fn (PendingProcess $process): bool => is_array($process->command)
+            && ($process->command[0] ?? null) === 'mv'
+            && ($process->command[1] ?? null) === '-f'
+            && ($process->command[3] ?? null) === $versionedBinary);
+
+        Process::assertRan(fn (PendingProcess $process): bool => is_array($process->command)
+            && $process->command === ['ln', '-sfn', $versionedBinary, $this->linkPath]);
     });
 
     it('writes install metadata after relinking the host launcher', function (): void {

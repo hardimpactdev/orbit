@@ -13,8 +13,7 @@ use Throwable;
  * Performs the three-step local Orbit update sequence:
  *
  * 1. Download the prebuilt CLI binary for this host OS/arch and relink the
- *    host `orbit` launcher — mirrors `bin/install-orbit`'s
- *    `detect_cli_binary_asset` + `download_cli_binary` + `link_orbit`.
+ *    host `orbit` launcher to a versioned binary file.
  * 2. Install gateway Composer dependencies inside `orbit-gateway`.
  * 3. Run gateway Orbit migrations inside `orbit-gateway`.
  *
@@ -47,10 +46,10 @@ class LocalCheckoutUpdater implements RunsLocalUpdate
      * Download the prebuilt Orbit CLI binary for this host OS/arch and relink
      * the host `orbit` launcher (`ORBIT_BIN_PATH` or `$HOME/.local/bin/orbit`).
      *
-     * The downloaded binary replaces the existing one at
-     * `<install-root>/bin/orbit-binary`; the launcher symlink already points
-     * there and does not change. The relink step is run for idempotency and to
-     * handle any path drift since install.
+     * The downloaded binary is installed as
+     * `<install-root>/bin/orbit-binary-<version>` and the launcher is relinked
+     * to that immutable path. Keeping the currently running binary path intact
+     * avoids invalidating a PHAR while it is still loading classes.
      *
      * Verify with `--version` after relinking. Reports the captured output (or
      * stderr when stdout is empty) on failure.
@@ -60,8 +59,8 @@ class LocalCheckoutUpdater implements RunsLocalUpdate
     public function pullSource(): array
     {
         $installRoot = $this->checkoutPathResolver->resolve();
-        $binaryDest = $installRoot.'/bin/orbit-binary';
-        $stagedBinary = $this->stagedBinaryPath($binaryDest);
+        $legacyBinaryPath = $installRoot.'/bin/orbit-binary';
+        $stagedBinary = $this->stagedBinaryPath($legacyBinaryPath);
         $linkPath = $this->resolveLinkPath();
 
         $binaryUrl = $this->resolveBinaryUrl();
@@ -96,13 +95,21 @@ class LocalCheckoutUpdater implements RunsLocalUpdate
                 return $this->failedResult($stagedVerifyResult);
             }
 
-            $moveResult = $this->runCommand(['mv', '-f', $stagedBinary, $binaryDest], 10);
+            $version = $this->versionFromOutput($stagedVerifyResult->output());
+            $versionedBinary = $this->versionedBinaryPath($installRoot, $version);
 
-            if (! $moveResult->successful()) {
-                return $this->failedResult($moveResult);
+            if (is_file($versionedBinary)) {
+                @unlink($stagedBinary);
+                $stagedBinary = null;
+            } else {
+                $moveResult = $this->runCommand(['mv', '-f', $stagedBinary, $versionedBinary], 10);
+
+                if (! $moveResult->successful()) {
+                    return $this->failedResult($moveResult);
+                }
+
+                $stagedBinary = null;
             }
-
-            $stagedBinary = null;
 
             $linkDirectoryResult = $this->ensureLinkDirectory($linkPath);
 
@@ -110,7 +117,7 @@ class LocalCheckoutUpdater implements RunsLocalUpdate
                 return $linkDirectoryResult;
             }
 
-            $linkResult = $this->runCommand($this->linkCommand($binaryDest, $linkPath), 10);
+            $linkResult = $this->runCommand($this->linkCommand($versionedBinary, $linkPath), 10);
 
             if (! $linkResult->successful()) {
                 return $this->failedResult($linkResult);
@@ -200,6 +207,18 @@ class LocalCheckoutUpdater implements RunsLocalUpdate
         $configured = config('app.version');
 
         return is_string($configured) && trim($configured) !== '' ? trim($configured) : '0.0.0';
+    }
+
+    private function versionedBinaryPath(string $installRoot, string $version): string
+    {
+        $safeVersion = preg_replace('/[^A-Za-z0-9._+-]/', '-', $version) ?? '';
+        $safeVersion = trim($safeVersion, '.-');
+
+        if ($safeVersion === '') {
+            $safeVersion = 'unknown';
+        }
+
+        return "{$installRoot}/bin/orbit-binary-{$safeVersion}";
     }
 
     /**
