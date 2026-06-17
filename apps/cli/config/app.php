@@ -7,7 +7,7 @@ use App\Providers\OperationTokenGuardServiceProvider;
 
 return [
     'name' => 'Orbit',
-    'version' => '0.1.4',
+    'version' => '0.1.5',
     'env' => env('APP_ENV', 'development'),
     'providers' => [
         GatewayApiServiceProvider::class,
