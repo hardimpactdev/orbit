@@ -577,6 +577,12 @@ PHP;
             return [];
         }
 
+        $process->loadMissing('owner');
+
+        if ($process->owner instanceof Node && $this->runtimeFor($process) === ProcessRuntime::Systemd) {
+            return [];
+        }
+
         $isDocker = in_array($this->runtimeFor($process), [ProcessRuntime::Docker, ProcessRuntime::DockerSwarm], true);
         $runtimeUnitPrefix = $this->runtimeUnitPrefix($process);
 

@@ -355,6 +355,34 @@ describe('stale systemd unit reality', function (): void {
         expect(issue($drift, 'process.runtime_unit_extra'))->toBeNull();
     });
 
+    it('ignores app-owned stale systemd units for node-owned host processes', function (): void {
+        $node = Node::factory()->database()->create([
+            'name' => 'metrics-worker-1',
+            'status' => 'active',
+            'platform' => 'ubuntu_24-04',
+            'user' => 'orbit',
+        ]);
+        $process = Process::factory()->forOwner($node)->create([
+            'name' => 'node-exporter',
+            'command' => '/usr/local/bin/node_exporter --web.listen-address=0.0.0.0:9100',
+            'restart_policy' => ProcessRestartPolicy::Always,
+            'crash_notification' => ProcessCrashNotification::None,
+            'runtime' => ProcessRuntime::Systemd,
+            'sort_order' => 1,
+        ]);
+
+        $snapshot = new ProbeSnapshot([
+            'node-exporter' => [
+                'runtime_backend_available' => true,
+                'runtime_unit_extras' => ['orbit_docs_main_vite'],
+            ],
+        ]);
+
+        $drift = $this->probe->diff($process, $snapshot);
+
+        expect(issue($drift, 'process.runtime_unit_extra'))->toBeNull();
+    });
+
     it('skips stale systemd unit checks while runtime backend is unavailable', function (): void {
         $app = processableApp(['name' => 'docs']);
         $process = processFor($app, ['name' => 'vite']);
