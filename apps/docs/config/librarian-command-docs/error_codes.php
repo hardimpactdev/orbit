@@ -57,5 +57,9 @@ return [
             'not_found',
             'runtime_action_failed',
         ],
+        'analytics' => [
+            'binding_missing',
+            'prerequisite_failed',
+        ],
     ],
 ];

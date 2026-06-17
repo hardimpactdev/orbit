@@ -6,7 +6,9 @@ use App\Http\Controllers\Api\ActivityListController;
 use App\Http\Controllers\Api\ActivityShowController;
 use App\Http\Controllers\Api\AgentIdeAdapterChoicesController;
 use App\Http\Controllers\Api\AgentIdeMessageController;
+use App\Http\Controllers\Api\AnalyticsUpdateController;
 use App\Http\Controllers\Api\AppAgentIdeController;
+use App\Http\Controllers\Api\AppAnalyticsController;
 use App\Http\Controllers\Api\AppListController;
 use App\Http\Controllers\Api\AppPruneController;
 use App\Http\Controllers\Api\AppRegisterController;
@@ -125,6 +127,7 @@ Route::middleware(CorrelationHeader::class)->group(function (): void {
         Route::get('/activity/{id}', ActivityShowController::class);
         Route::get('/agent-ide/adapters', AgentIdeAdapterChoicesController::class);
         Route::post('/agent-ide/message', AgentIdeMessageController::class);
+        Route::post('/analytics/update', AnalyticsUpdateController::class);
         Route::get('/cloudflare/zones', [CloudflareController::class, 'zones']);
         Route::get('/cloudflare/zones/{zone}/dns', [CloudflareController::class, 'dnsRecords']);
         Route::post('/cloudflare/zones/{zone}/dns', [CloudflareController::class, 'storeDnsRecord']);
@@ -203,6 +206,9 @@ Route::middleware(CorrelationHeader::class)->group(function (): void {
         Route::post('/apps', AppStoreController::class);
         Route::post('/apps/prune', AppPruneController::class);
         Route::post('/apps/{app}/agent-ide', AppAgentIdeController::class);
+        Route::post('/apps/{app}/analytics/enable', [AppAnalyticsController::class, 'enable']);
+        Route::post('/apps/{app}/analytics/disable', [AppAnalyticsController::class, 'disable']);
+        Route::get('/apps/{app}/analytics', [AppAnalyticsController::class, 'show']);
         Route::post('/apps/{app}/root', AppRootController::class);
         Route::post('/apps/{app}/websocket/enable', [AppWebSocketController::class, 'enable']);
         Route::post('/apps/{app}/websocket/disable', [AppWebSocketController::class, 'disable']);

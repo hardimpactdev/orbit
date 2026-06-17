@@ -103,6 +103,13 @@ record.
   `websocket.orbit` publishing configuration. Disabling an app WebSocket
   binding clears active public route intent without deleting the app's Reverb
   credential record.
+- **App analytics binding:** Gateway-owned app configuration that enables one
+  app to proxy browser analytics traffic to the fleet Plausible CE service. It
+  owns the enabled flag and public tracking hostnames such as
+  `analytics.example.com`. In v1 it does not provision Plausible sites,
+  generate credentials, or inject scripts into the app. App owners add the
+  Plausible script manually. Public analytics hosts proxy tracking paths only;
+  the dashboard and admin UI stay private at `analytics.orbit`.
 - **Reverb app credentials:** Reverb application id, key, and secret material
   for one app, owned by an app WebSocket binding. These credentials are not
   shared across apps; rotating or disabling one binding must not invalidate
@@ -136,14 +143,15 @@ These boundaries define what the app family owns and what belongs to other famil
 - **App-owned route:** Proxy route whose lifecycle is owned by the app, edited
   through app commands, and surfaced as inventory by the `proxy` family.
 - **App-family boundaries:** App commands own app registry, runtime policy,
-  deployment policy, app health configuration, and app WebSocket binding state.
-  They do not own proxy route registry, workspace policy, process
-  configuration, schedule definitions, tool registration, or firewall policy
-  beyond what derives from app configuration.
+  deployment policy, app health configuration, app WebSocket binding state, and
+  app analytics binding state. They do not own proxy route registry, workspace
+  policy, process configuration, schedule definitions, tool registration, or
+  firewall policy beyond what derives from app configuration.
 
   Production route exposure belongs to `ingress`; private route selection and
   backend-pool targeting belong to `router`; `app-prod` owns the private
-  backend runtime; `websocket` owns the Reverb runtime.
+  backend runtime; `websocket` owns the Reverb runtime; `analytics` owns the
+  Plausible runtime.
 
   App commands do not install or own host Caddy, Reverb, or the host PHP
   toolchain. The `app-dev`/`app-prod` node role provisions the host PHP toolchain

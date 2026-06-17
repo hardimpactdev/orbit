@@ -20,7 +20,7 @@
 ## Signature
 
 ```bash
-orbit node:new [name] [--template=<template>] [--operator] [--roles=<roles>] [--host=<host>] [--operator-name=<name>] [--tld=<tld>] [--user=<user>] [--gateway-endpoint=<endpoint>] [--ingress=<node>] [--redis-node=<node>] [--s3-data-path=<path>] [--host-key-fingerprint=<fingerprint>] [--self-grant=<mode>] [--self-grant-permissions=<permissions>] [--grant-to=<node>] [--grant-to-preset=<preset>] [--grant-to-permissions=<permissions>] [--grant-from=<node>] [--grant-from-preset=<preset>] [--grant-from-permissions=<permissions>] [--agent-tool=<tool>] [--json]
+orbit node:new [name] [--template=<template>] [--operator] [--roles=<roles>] [--host=<host>] [--operator-name=<name>] [--tld=<tld>] [--user=<user>] [--gateway-endpoint=<endpoint>] [--ingress=<node>] [--redis-node=<node>] [--postgres-node=<node>] [--clickhouse-node=<node>] [--s3-data-path=<path>] [--host-key-fingerprint=<fingerprint>] [--self-grant=<mode>] [--self-grant-permissions=<permissions>] [--grant-to=<node>] [--grant-to-preset=<preset>] [--grant-to-permissions=<permissions>] [--grant-from=<node>] [--grant-from-preset=<preset>] [--grant-from-permissions=<permissions>] [--agent-tool=<tool>] [--json]
 ```
 
 ## Input Contract
@@ -31,16 +31,18 @@ This command follows the shared
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
 | `name` | `[name]` | Always. | Never. | None. | Valid gateway-registry node name following the [identity slug](../../../../architecture.md#identity-names) contract. Must be unique among active node records unless the existing record is compatible and the selected path is convergence or adoption. |
-| `template` | `--template` | Never required. | When `--operator` is present unless `--template=operator`, or when `--roles` is present. | None. | One of `operator`, `app-development`, `app-production`, `gateway`, `ingress`, `database`, `s3`, `websocket`, `metrics`, or `agent`. |
+| `template` | `--template` | Never required. | When `--operator` is present unless `--template=operator`, or when `--roles` is present. | None. | One of `operator`, `app-development`, `app-production`, `gateway`, `ingress`, `database`, `s3`, `metrics`, `websocket`, `analytics`, or `agent`. |
 | `operator` | `--operator` | Never required. | When `--template` is present unless `--template=operator`, or when `--roles` is present. | `false`. | Creates a client identity with the operator permission preset and no workload roles. Operator is not a node role. |
 | `roles` | `--roles` | Never required. | When `--template` or `--operator` is present. | `[]`. | Comma-separated canonical role values (see role values below). |
-| `host` | `--host` | First-gateway bootstrap, gateway convergence, `app-dev`, `app-prod`, `database`, `ingress`, `agent`, `websocket`, `s3`, `metrics`, and every template that provisions a host. | Client identity with no roles or `--operator`. | None. | SSH/bootstrap endpoint, never the canonical node address. Must be an IP address or dotted DNS name. |
+| `host` | `--host` | First-gateway bootstrap, gateway convergence, `app-dev`, `app-prod`, `database`, `ingress`, `agent`, `websocket`, `s3`, `metrics`, `analytics`, and every template that provisions a host. | Client identity with no roles or `--operator`. | None. | SSH/bootstrap endpoint, never the canonical node address. Must be an IP address or dotted DNS name. |
 | `operator_name` | `--operator-name` | `--template=gateway` and no gateway is configured locally (first-gateway bootstrap). | Outside first-gateway bootstrap. | Normalized local short hostname. | Valid [identity slug](../../../../architecture.md#identity-names). Must not equal `node_new.name`. Must be unique among active node records unless the existing record is the compatible initiating client for first-gateway convergence. |
 | `tld` | `--tld` | `app-dev`, `app-development`, `database`, or `agent` template/path. | Client identity, gateway bootstrap, or `app-prod`. | `agent` for agent role nodes. | Single lowercase DNS label without a leading dot. Unique among active node TLDs and gateway development DNS mappings. Database TLDs are node labels and do not create development DNS mappings. |
 | `user` | `--user` | Never required from the operator; resolved when SSH provisioning is used. | Client identity with no host provisioning. | `root`. | Bootstrap SSH user. The gateway stores the steady-state runtime user after provisioning. |
 | `gateway_endpoint` | `--gateway-endpoint` | Never required. | Client identity with no roles or `--operator`. | Gateway VPN public endpoint. | IP address or dotted DNS name that this node's WireGuard peer should use to reach the gateway. The WireGuard port is appended by Orbit. |
 | `ingress_node` | `--ingress` | Private `app-prod` placement. | Every path other than private `app-prod` placement. | None. | Must match an active node with the `ingress` role. |
 | `redis_node` | `--redis-node` | `websocket`. | Every path that does not include `websocket`. | None. | Must match an active node with the `database` role and Redis expected or installed. |
+| `postgres_node` | `--postgres-node` | `analytics`. | Every path that does not include `analytics`. | None. | Must match an active node with the `database` role and PostgreSQL expected or installed. |
+| `clickhouse_node` | `--clickhouse-node` | `analytics`. | Every path that does not include `analytics`. | None. | Must match an active node with the `database` role and ClickHouse expected or installed. |
 | `s3_data_path` | `--s3-data-path` | Never. | Every path that does not include `s3`. | `/srv/orbit/s3/data`. | Absolute host path mounted into SeaweedFS as `/data`. |
 | `host_key_fingerprint` | `--host-key-fingerprint` | Optional. | Never. | None. | Expected SSH host key SHA256 fingerprint for verification during provisioning. |
 | `self_grant` | `--self-grant` | Optional. | Never. | None. | Self-grant mode applied to this node identity. |
@@ -55,7 +57,8 @@ This command follows the shared
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer and non-interactive input mode. |
 
 Canonical stored role values accepted through `--roles` are `app-dev`,
-`app-prod`, `database`, `agent`, `ingress`, `websocket`, `s3`, and `metrics`. Role
+`app-prod`, `database`, `agent`, `ingress`, `websocket`, `s3`, and
+`metrics`, and `analytics`. Role
 aliases are not accepted through `--roles`; `app-development` and
 `app-production` are template names only. `gateway`, `vpn`, and `router` are internal assignments coupled to the gateway,
 expanded only by `--template=gateway`, not public role values.
@@ -76,6 +79,7 @@ before role validation:
 | `s3` | `s3` (implementation pending) |
 | `websocket` | `websocket` (implementation pending) |
 | `metrics` | `metrics` |
+| `analytics` | `analytics` |
 | `agent` | `agent` |
 
 Templates `s3` and `websocket` fail with `template_not_implemented` until
@@ -106,6 +110,8 @@ their implementations land.
    - For `s3`, resolve `node_new.host`, `node_new.user`, and
      `node_new.s3_data_path`.
    - For `metrics`, resolve `node_new.host` and `node_new.user`.
+   - For `analytics`, resolve `node_new.host`, `node_new.user`,
+     `node_new.postgres_node`, and `node_new.clickhouse_node`.
    - For `database`, no extra input is required unless another requested role
      requires provisioning.
    - For `gateway`, resolve `node_new.host` always, plus
@@ -194,18 +200,21 @@ Caller-path behavior is split out into:
   provisioning.
 - Create the node identity first, then add each requested role. Role settings
   stay minimal: `app-prod` assignments store `settings.ingress_node_id`,
-  `websocket` assignments store `settings.redis_node_id`, and `s3` assignments
-  store `settings.data_path`. `database` and `metrics` assignments use empty
-  settings. The `app-dev`, `database`, and `agent` paths require the
-  node-level `tld` field, not a role-assignment setting.
+  `websocket` assignments store `settings.redis_node_id`, `s3` assignments
+  store `settings.data_path`, and `analytics` assignments store
+  `settings.postgres_node_id` and `settings.clickhouse_node_id`. `database`
+  and `metrics` assignments use empty settings. The
+  `app-dev`, `database`, and `agent` paths require the node-level `tld` field,
+  not a role-assignment setting.
 - `app-prod` placement must be explicit. The command's public and
   companion contracts own the exact prompt, placement choices, and failure
   shape for missing ingress.
-- `database` may be combined only with `app-dev`, `websocket`, `s3`, and
-  `metrics` on the same provisioned host; `websocket` may be combined with
-  `app-dev`, `database`, `s3`, and `metrics`; `s3` may be combined with
-  `app-dev`, `database`, `websocket`, and `metrics`; `metrics` may be combined
-  with any non-agent role. WebSocket assignments require
+- `database` may be combined only with `app-dev`, `websocket`, `s3`,
+  `metrics`, and `analytics` on the same provisioned host; `websocket` and `s3`
+  may combine with `app-dev`, `database`, `metrics`, `analytics`, and each
+  other; `analytics` may combine with `app-dev`, `database`, `websocket`, `s3`,
+  and `metrics`; `metrics` may be combined with any non-agent role.
+  WebSocket assignments require
   `settings.redis_node_id` to reference an active database role node with Redis
   expected or installed. Reverb runs in a Docker runtime container managed by
   Orbit and binds only to the node's WireGuard address.
@@ -220,6 +229,13 @@ Prometheus and Grafana Docker Swarm process definitions, a node-exporter
 systemd process definition, the router-owned `metrics.orbit` route, and
 generated Grafana admin credentials. Metrics has no role-local settings and
 records host-resource observability only in this slice.
+
+Analytics assignment convergence stores `settings.postgres_node_id` and
+`settings.clickhouse_node_id`. Plausible CE runs as a process-owned
+Docker/Swarm service, binds only to the node's WireGuard address, reads
+PostgreSQL and ClickHouse endpoints from those database-role process
+definitions, and receives traffic only through router-owned analytics service
+routes.
 - If an initial role is persisted with `status=error` because its first
   convergence failed, `node:new` fails and returns the role status and
   `last_error` in failure metadata. The persisted assignment remains available

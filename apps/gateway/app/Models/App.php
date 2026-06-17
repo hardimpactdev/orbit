@@ -41,6 +41,7 @@ use Illuminate\Support\Str;
  * @property-read Collection<int, Process> $processes
  * @property-read Collection<int, AppRuntimeMount> $runtimeMounts
  * @property-read Collection<int, Schedule> $schedules
+ * @property-read AppAnalyticsBinding|null $analyticsBinding
  * @property-read AppWebSocketBinding|null $webSocketBinding
  * @property-read Collection<int, Workspace> $workspaces
  */
@@ -167,6 +168,14 @@ class App extends Model
     public function webSocketBinding(): HasOne
     {
         return $this->hasOne(AppWebSocketBinding::class);
+    }
+
+    /**
+     * @return HasOne<AppAnalyticsBinding, $this>
+     */
+    public function analyticsBinding(): HasOne
+    {
+        return $this->hasOne(AppAnalyticsBinding::class);
     }
 
     /**

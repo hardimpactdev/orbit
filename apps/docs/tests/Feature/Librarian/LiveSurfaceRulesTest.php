@@ -148,6 +148,23 @@ it('passes signatures that match the live command definition', function (): void
     expect(liveSurfaceFindings($payload, 'command_docs.signature_live_surface'))->toBeEmpty();
 });
 
+it('maps analytics update internal version option onto the public signature', function (): void {
+    config()->set('librarian.rules', [SignatureLiveSurfaceRule::class]);
+    bindLiveSurfaceFake([
+        new CliCommand(name: 'analytics:update', options: ['requested-version', 'node', 'json']),
+    ]);
+    writeLiveSurfaceCommandDirectory(
+        $this->fixtureRoot,
+        'domains/21_analytics/1_analytics-update',
+        'analytics-update',
+        'orbit analytics:update [--node=<node>] [--version=<version>] [--json]',
+    );
+
+    $payload = runLiveSurfaceLint();
+
+    expect(liveSurfaceFindings($payload, 'command_docs.signature_live_surface'))->toBeEmpty();
+});
+
 it('skips signature checks for commands without a live counterpart', function (): void {
     config()->set('librarian.rules', [SignatureLiveSurfaceRule::class]);
     bindLiveSurfaceFake([]);

@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Data\Nodes\RoleSettings\AgentRoleSettings;
+use App\Data\Nodes\RoleSettings\AnalyticsRoleSettings;
 use App\Data\Nodes\RoleSettings\AppDevelopmentRoleSettings;
 use App\Data\Nodes\RoleSettings\AppProductionRoleSettings;
 use App\Data\Nodes\RoleSettings\DatabaseRoleSettings;
@@ -26,6 +27,7 @@ describe('node role registry', function (): void {
             'ingress',
             'websocket',
             's3',
+            'analytics',
         ]);
 
         expect($registry->definition('vpn')->conflictsWith)->toBe([
@@ -36,6 +38,7 @@ describe('node role registry', function (): void {
             'ingress',
             'websocket',
             's3',
+            'analytics',
         ]);
 
         expect($registry->definition('router')->conflictsWith)->toBe([
@@ -46,6 +49,7 @@ describe('node role registry', function (): void {
             'ingress',
             'websocket',
             's3',
+            'analytics',
         ]);
 
         expect($registry->definition('app-dev')->conflictsWith)->toBe([
@@ -66,6 +70,7 @@ describe('node role registry', function (): void {
             'agent',
             'websocket',
             's3',
+            'analytics',
         ]);
 
         expect($registry->definition('database')->conflictsWith)->toBe([
@@ -88,6 +93,7 @@ describe('node role registry', function (): void {
             'websocket',
             's3',
             'metrics',
+            'analytics',
         ]);
 
         expect($registry->definition('ingress')->conflictsWith)->toBe([
@@ -99,6 +105,7 @@ describe('node role registry', function (): void {
             'agent',
             'websocket',
             's3',
+            'analytics',
         ]);
 
         expect($registry->definition('websocket')->conflictsWith)->toBe([
@@ -113,7 +120,8 @@ describe('node role registry', function (): void {
         expect($registry->definition('websocket')->conflictsWith)
             ->not->toContain('app-dev')
             ->not->toContain('database')
-            ->not->toContain('s3');
+            ->not->toContain('s3')
+            ->not->toContain('analytics');
 
         expect($registry->definition('s3')->conflictsWith)->toBe([
             'gateway',
@@ -127,11 +135,27 @@ describe('node role registry', function (): void {
         expect($registry->definition('s3')->conflictsWith)
             ->not->toContain('app-dev')
             ->not->toContain('database')
-            ->not->toContain('websocket');
+            ->not->toContain('websocket')
+            ->not->toContain('analytics');
 
         expect($registry->definition('metrics')->conflictsWith)->toBe([
             'agent',
         ]);
+
+        expect($registry->definition('analytics')->conflictsWith)->toBe([
+            'gateway',
+            'vpn',
+            'router',
+            'app-prod',
+            'agent',
+            'ingress',
+        ]);
+
+        expect($registry->definition('analytics')->conflictsWith)
+            ->not->toContain('app-dev')
+            ->not->toContain('database')
+            ->not->toContain('websocket')
+            ->not->toContain('s3');
     });
 
     it('defines supported platforms and assignability for the initial roles', function (): void {
@@ -169,7 +193,10 @@ describe('node role registry', function (): void {
             ->and($registry->definition('s3')->assignableByNodeNew)->toBeTrue()
             ->and($registry->definition('metrics')->supportedPlatforms)->toBe(['ubuntu'])
             ->and($registry->definition('metrics')->assignableByRoleCommand)->toBeTrue()
-            ->and($registry->definition('metrics')->assignableByNodeNew)->toBeTrue();
+            ->and($registry->definition('metrics')->assignableByNodeNew)->toBeTrue()
+            ->and($registry->definition('analytics')->supportedPlatforms)->toBe(['ubuntu'])
+            ->and($registry->definition('analytics')->assignableByRoleCommand)->toBeTrue()
+            ->and($registry->definition('analytics')->assignableByNodeNew)->toBeTrue();
     });
 
     it('hydrates role-specific settings dtos', function (): void {
@@ -275,6 +302,23 @@ describe('node role registry', function (): void {
             ->toBe(['redis_node_id' => 12]);
     });
 
+    it('hydrates analytics settings dtos', function (): void {
+        $settings = (new NodeRoleRegistry)
+            ->definition('analytics')
+            ->settingsFromArray([
+                'postgres_node_id' => 12,
+                'clickhouse_node_id' => 13,
+            ]);
+
+        expect($settings)
+            ->toBeInstanceOf(AnalyticsRoleSettings::class)
+            ->and($settings->toArray())
+            ->toBe([
+                'postgres_node_id' => 12,
+                'clickhouse_node_id' => 13,
+            ]);
+    });
+
     it('hydrates empty settings dtos for roles without settings', function (string $role, string $class): void {
         $settings = (new NodeRoleRegistry)
             ->definition($role)
@@ -368,6 +412,35 @@ describe('node role registry', function (): void {
             ->toThrow(InvalidArgumentException::class, 'This role does not accept settings.');
     })->with(['gateway', 'router', 'database', 'ingress', 'metrics']);
 
+    it('rejects invalid analytics settings', function (array $settings, string $message): void {
+        expect(fn () => (new NodeRoleRegistry)
+            ->definition('analytics')
+            ->settingsFromArray($settings))
+            ->toThrow(InvalidArgumentException::class, $message);
+    })->with([
+        'unknown key' => [[
+            'postgres_node_id' => 12,
+            'clickhouse_node_id' => 13,
+            'unexpected' => true,
+        ], 'The analytics role does not accept unknown settings.'],
+        'missing postgres' => [
+            ['clickhouse_node_id' => 13],
+            'The analytics role requires valid postgres_node_id and clickhouse_node_id settings.',
+        ],
+        'missing clickhouse' => [
+            ['postgres_node_id' => 12],
+            'The analytics role requires valid postgres_node_id and clickhouse_node_id settings.',
+        ],
+        'non integer postgres' => [
+            ['postgres_node_id' => '12', 'clickhouse_node_id' => 13],
+            'The analytics role requires valid postgres_node_id and clickhouse_node_id settings.',
+        ],
+        'non positive clickhouse' => [
+            ['postgres_node_id' => 12, 'clickhouse_node_id' => 0],
+            'The analytics role requires valid postgres_node_id and clickhouse_node_id settings.',
+        ],
+    ]);
+
     it('accepts empty app production settings for compatibility with existing rows', function (): void {
         $settings = (new NodeRoleRegistry)
             ->definition('app-prod')
@@ -411,6 +484,7 @@ describe('node role registry', function (): void {
             'websocket',
             's3',
             'metrics',
+            'analytics',
         ]);
     });
 

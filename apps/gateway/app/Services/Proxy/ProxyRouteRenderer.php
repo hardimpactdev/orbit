@@ -62,6 +62,10 @@ final readonly class ProxyRouteRenderer
         $tls = $this->tlsDirective($route);
         $encode = ($this->isWebSocketProtocol($route) || $this->isS3Protocol($route)) ? "\n" : "    encode gzip\n\n";
         $streaming = $this->uploadSafeStreamingDirectives($route);
+        $analyticsMatcher = $this->isPublicAnalyticsRoute($route) ? $this->analyticsTrackingMatcher($route) : '';
+        $analyticsProxyMatcher = $this->isPublicAnalyticsRoute($route) ? ' @plausible_tracking' : '';
+        $analyticsForwardedFor = $this->isAnalyticsProtocol($route) ? '        header_up X-Forwarded-For {remote_host}'."\n" : '';
+        $analyticsFallback = $this->isPublicAnalyticsRoute($route) ? '    respond 404'."\n" : '';
 
         if (! is_array($routerUpstream)) {
             throw new RuntimeException("Proxy route '{$route->domain}' is missing a router upstream.");
@@ -78,12 +82,12 @@ final readonly class ProxyRouteRenderer
         return <<<CADDY
 {$route->domain} {
     {$tls}
-{$encode}    reverse_proxy {$routerUrl} {
+{$encode}{$analyticsMatcher}    reverse_proxy{$analyticsProxyMatcher} {$routerUrl} {
 {$streaming}        header_up Host {host}
         header_up X-Forwarded-Host {host}
         header_up X-Forwarded-Proto {scheme}
-    }
-}
+{$analyticsForwardedFor}    }
+{$analyticsFallback}}
 
 CADDY;
     }
@@ -138,16 +142,20 @@ CADDY;
         $siteAddress = $this->routerSiteAddress($route);
         $siteTls = $this->routerSiteTlsDirective($route);
         $backendTransport = $this->routerBackendTransportDirectives($route);
+        $analyticsMatcher = $this->isPublicAnalyticsRoute($route) ? $this->analyticsTrackingMatcher($route) : '';
+        $analyticsProxyMatcher = $this->isPublicAnalyticsRoute($route) ? ' @plausible_tracking' : '';
+        $analyticsForwardedFor = $this->isAnalyticsProtocol($route) ? '        header_up X-Forwarded-For {http.request.header.X-Forwarded-For}'."\n" : '';
+        $analyticsFallback = $this->isPublicAnalyticsRoute($route) ? '    respond 404'."\n" : '';
 
         return <<<CADDY
 {$siteAddress} {
-{$siteTls}{$encode}    reverse_proxy {$upstreams} {
+{$siteTls}{$encode}{$analyticsMatcher}    reverse_proxy{$analyticsProxyMatcher} {$upstreams} {
         lb_policy first
 {$streaming}        header_up Host {host}
         header_up X-Forwarded-Host {host}
         header_up X-Forwarded-Proto {http.request.header.X-Forwarded-Proto}
-{$backendTransport}    }
-}
+{$analyticsForwardedFor}{$backendTransport}    }
+{$analyticsFallback}}
 
 CADDY;
     }
@@ -516,6 +524,49 @@ CADDY;
         $config = is_array($route->config) ? $route->config : [];
 
         return ($config['protocol'] ?? null) === 's3';
+    }
+
+    private function isAnalyticsProtocol(ProxyRoute $route): bool
+    {
+        $config = is_array($route->config) ? $route->config : [];
+
+        return ($config['protocol'] ?? null) === 'analytics';
+    }
+
+    private function isPublicAnalyticsRoute(ProxyRoute $route): bool
+    {
+        return $route->owner_type === 'app-analytics'
+            && $this->isAnalyticsProtocol($route);
+    }
+
+    private function analyticsTrackingMatcher(ProxyRoute $route): string
+    {
+        return '    @plausible_tracking path '.implode(' ', $this->analyticsTrackingPaths($route))."\n";
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function analyticsTrackingPaths(ProxyRoute $route): array
+    {
+        $config = is_array($route->config) ? $route->config : [];
+        $paths = $config['tracking_paths'] ?? null;
+
+        if (! is_array($paths)) {
+            return ['/js/*', '/api/event'];
+        }
+
+        $validPaths = [];
+
+        foreach ($paths as $path) {
+            if (! is_string($path) || $path === '' || $this->containsUnsafeCharacters($path)) {
+                throw new RuntimeException("Proxy route '{$route->domain}' has an invalid analytics tracking path.");
+            }
+
+            $validPaths[] = $path;
+        }
+
+        return $validPaths !== [] ? array_values(array_unique($validPaths)) : ['/js/*', '/api/event'];
     }
 
     /**

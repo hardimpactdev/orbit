@@ -210,7 +210,7 @@ final class GatewayNodeCreator
 
     /**
      * @param  list<string>  $roles
-     * @param  array{host: string, tld: ?string, sshUser: ?string, gatewayEndpoint: ?string, hostKeyFingerprint: ?string}  $inputs
+     * @param  array{host: string, tld: ?string, sshUser: ?string, gatewayEndpoint: ?string, hostKeyFingerprint: ?string, postgresNodeId?: int|null, clickhouseNodeId?: int|null}  $inputs
      */
     private function provisionHostedRoleNode(
         OrbitHostInstaller $installer,
@@ -249,6 +249,7 @@ final class GatewayNodeCreator
             NodeRoleName::Database->value,
             NodeRoleName::Ingress->value,
             NodeRoleName::Agent->value,
+            NodeRoleName::Analytics->value,
         ]) !== [];
 
         $preflight = $this->preflightAgentSetup($roles);
@@ -391,7 +392,12 @@ final class GatewayNodeCreator
         foreach ($this->orderHostedRoles($roles) as $role) {
             $settings = $role === NodeRoleName::AppProduction->value
                 ? ['ingress_node_id' => $appProductionIngressNodeId ?? $node->id]
-                : $this->settingsForRole($role, $inputs['tld']);
+                : $this->settingsForRole(
+                    role: $role,
+                    tld: $inputs['tld'],
+                    postgresNodeId: $inputs['postgresNodeId'] ?? null,
+                    clickhouseNodeId: $inputs['clickhouseNodeId'] ?? null,
+                );
 
             $assignment = $roleAssignmentService->addDuringCreation($node, $role, $settings);
 
@@ -1948,7 +1954,7 @@ SCRIPT,
             return null;
         }
 
-        if (! in_array($role, ['app-dev', 'app-prod', 'agent', 'ingress', 'gateway'], true)) {
+        if (! in_array($role, ['app-dev', 'app-prod', 'agent', 'ingress', 'analytics', 'gateway'], true)) {
             return null;
         }
 
@@ -1977,7 +1983,7 @@ SCRIPT,
 
     private function forbiddenClientIdentityInput(): ?string
     {
-        foreach (['host', 'operator-name', 'tld', 'ingress', 'redis-node', 's3-data-path', 'gateway-endpoint', 'host-key-fingerprint'] as $option) {
+        foreach (['host', 'operator-name', 'tld', 'ingress', 'redis-node', 'postgres-node', 'clickhouse-node', 's3-data-path', 'gateway-endpoint', 'host-key-fingerprint'] as $option) {
             if ($this->stringOption($option) !== null) {
                 return $option;
             }
@@ -2031,7 +2037,7 @@ SCRIPT,
 
     /**
      * @param  list<string>  $roles
-     * @return array{host: string, tld: ?string, sshUser: ?string, gatewayEndpoint: ?string, hostKeyFingerprint: ?string}|int
+     * @return array{host: string, tld: ?string, sshUser: ?string, gatewayEndpoint: ?string, hostKeyFingerprint: ?string, postgresNodeId: ?int, clickhouseNodeId: ?int}|int
      */
     private function resolveHostedRoleInputs(array $roles): array|int
     {
@@ -2041,18 +2047,19 @@ SCRIPT,
             NodeRoleName::Database->value,
             NodeRoleName::Ingress->value,
             NodeRoleName::Agent->value,
+            NodeRoleName::Analytics->value,
         ]) !== [];
 
         if (! $needsHost && $this->stringOption('host') !== null) {
-            return $this->validationFailed('host', 'Only app-dev, app-prod, database, ingress, agent, and gateway use host provisioning.');
+            return $this->validationFailed('host', 'Only app-dev, app-prod, database, ingress, agent, analytics, and gateway use host provisioning.');
         }
 
         if (! $needsHost && $this->stringOption('host-key-fingerprint') !== null) {
-            return $this->validationFailed('host_key_fingerprint', 'Only app-dev, app-prod, database, ingress, agent, and gateway use host-key fingerprint pinning.');
+            return $this->validationFailed('host_key_fingerprint', 'Only app-dev, app-prod, database, ingress, agent, analytics, and gateway use host-key fingerprint pinning.');
         }
 
         if (! $needsHost && $this->stringOption('gateway-endpoint') !== null) {
-            return $this->validationFailed('gateway_endpoint', 'Only app-dev, app-prod, database, ingress, agent, and gateway use WireGuard endpoint overrides.');
+            return $this->validationFailed('gateway_endpoint', 'Only app-dev, app-prod, database, ingress, agent, analytics, and gateway use WireGuard endpoint overrides.');
         }
 
         $hostRole = array_first(array_intersect($roles, [
@@ -2061,6 +2068,7 @@ SCRIPT,
             NodeRoleName::Database->value,
             NodeRoleName::Ingress->value,
             NodeRoleName::Agent->value,
+            NodeRoleName::Analytics->value,
         ])) ?? NodeRoleName::Agent->value;
 
         $host = $needsHost ? $this->resolveHost($hostRole) : null;
@@ -2107,12 +2115,71 @@ SCRIPT,
             return $this->validationFailed('tld', 'Only app-dev, database, and agent use a TLD.');
         }
 
+        $analyticsDatabaseNodes = $this->resolveAnalyticsDatabaseNodes($roles);
+
+        if (is_int($analyticsDatabaseNodes)) {
+            return $analyticsDatabaseNodes;
+        }
+
         return [
             'host' => $host ?? '',
             'tld' => $tld,
             'sshUser' => $needsHost ? $this->resolveSshUser() : null,
             'gatewayEndpoint' => $needsHost ? $gatewayEndpoint : null,
             'hostKeyFingerprint' => $needsHost ? $this->stringOption('host-key-fingerprint') : null,
+            'postgresNodeId' => $analyticsDatabaseNodes['postgres_node_id'],
+            'clickhouseNodeId' => $analyticsDatabaseNodes['clickhouse_node_id'],
+        ];
+    }
+
+    /**
+     * @param  list<string>  $roles
+     * @return array{postgres_node_id: ?int, clickhouse_node_id: ?int}|int
+     */
+    private function resolveAnalyticsDatabaseNodes(array $roles): array|int
+    {
+        $hasAnalytics = in_array(NodeRoleName::Analytics->value, $roles, true);
+        $postgresNodeName = $this->stringOption('postgres-node');
+        $clickhouseNodeName = $this->stringOption('clickhouse-node');
+
+        if (! $hasAnalytics) {
+            if ($postgresNodeName !== null) {
+                return $this->validationFailed('postgres_node', 'Only analytics nodes use --postgres-node.');
+            }
+
+            if ($clickhouseNodeName !== null) {
+                return $this->validationFailed('clickhouse_node', 'Only analytics nodes use --clickhouse-node.');
+            }
+
+            return [
+                'postgres_node_id' => null,
+                'clickhouse_node_id' => null,
+            ];
+        }
+
+        if ($postgresNodeName === null) {
+            return $this->validationFailed('postgres_node', 'Analytics nodes require --postgres-node.');
+        }
+
+        if ($clickhouseNodeName === null) {
+            return $this->validationFailed('clickhouse_node', 'Analytics nodes require --clickhouse-node.');
+        }
+
+        $postgresNode = $this->findActiveDatabaseNodeByName($postgresNodeName);
+
+        if (! $postgresNode instanceof Node) {
+            return $this->validationFailed('postgres_node', 'Analytics nodes require an active database node for PostgreSQL.');
+        }
+
+        $clickhouseNode = $this->findActiveDatabaseNodeByName($clickhouseNodeName);
+
+        if (! $clickhouseNode instanceof Node) {
+            return $this->validationFailed('clickhouse_node', 'Analytics nodes require an active database node for ClickHouse.');
+        }
+
+        return [
+            'postgres_node_id' => $postgresNode->id,
+            'clickhouse_node_id' => $clickhouseNode->id,
         ];
     }
 
@@ -2142,10 +2209,17 @@ SCRIPT,
     /**
      * @return array<string, mixed>
      */
-    private function settingsForRole(string $role, ?string $tld): array
+    private function settingsForRole(string $role, ?string $tld, ?int $postgresNodeId = null, ?int $clickhouseNodeId = null): array
     {
         if (in_array($role, [NodeRoleName::AppDevelopment->value, NodeRoleName::Agent->value], true)) {
             return ['tld' => $tld];
+        }
+
+        if ($role === NodeRoleName::Analytics->value) {
+            return [
+                'postgres_node_id' => $postgresNodeId,
+                'clickhouse_node_id' => $clickhouseNodeId,
+            ];
         }
 
         return [];
@@ -2353,6 +2427,17 @@ SCRIPT,
             ->where('status', NodeStatus::Active->value)
             ->whereHas('roleAssignments', fn (Builder $query) => $query
                 ->where('role', NodeRoleName::Ingress->value)
+                ->where('status', NodeRoleStatus::Active->value))
+            ->first();
+    }
+
+    private function findActiveDatabaseNodeByName(string $name): ?Node
+    {
+        return Node::query()
+            ->where('name', $name)
+            ->where('status', NodeStatus::Active->value)
+            ->whereHas('roleAssignments', fn (Builder $query) => $query
+                ->where('role', NodeRoleName::Database->value)
                 ->where('status', NodeRoleStatus::Active->value))
             ->first();
     }

@@ -404,6 +404,118 @@ http://ws.docs.test {
 CADDY);
     });
 
+    it('renders app analytics public ingress and router routes as tracking-only proxies preserving forwarding identity', function (): void {
+        $ingress = Node::factory()->ingress()->create(['name' => 'edge-1']);
+        $router = Node::factory()->router()->create(['name' => 'gateway-1']);
+        $app = App::factory()->create(['name' => 'docs']);
+        $route = ProxyRoute::factory()->create([
+            'node_id' => $ingress->id,
+            'app_id' => $app->id,
+            'domain' => 'analytics.docs.test',
+            'owner_type' => 'app-analytics',
+            'kind' => 'proxy',
+            'config' => [
+                'placement' => 'ingress',
+                'protocol' => 'analytics',
+                'target' => ['type' => 'analytics', 'value' => 'https://analytics.orbit'],
+                'router_upstream' => [
+                    'node_id' => $router->id,
+                    'node' => 'gateway-1',
+                    'url' => 'http://10.6.0.2:80',
+                ],
+                'router_backend_pool' => [
+                    [
+                        'node_id' => 42,
+                        'node' => 'analytics-1',
+                        'url' => 'http://10.6.0.50:8000',
+                    ],
+                ],
+                'tracking_paths' => ['/js/*', '/api/event'],
+                'tls' => [
+                    'cert_path' => '/home/orbit/.config/orbit/certs/analytics.docs.test.crt',
+                    'key_path' => '/home/orbit/.config/orbit/certs/analytics.docs.test.key',
+                ],
+            ],
+        ]);
+
+        $renderer = new ProxyRouteRenderer;
+
+        expect($renderer->renderIngress($route))->toBe(<<<'CADDY'
+analytics.docs.test {
+    tls {
+        issuer acme
+    }
+    encode gzip
+
+    @plausible_tracking path /js/* /api/event
+    reverse_proxy @plausible_tracking http://10.6.0.2:80 {
+        header_up Host {host}
+        header_up X-Forwarded-Host {host}
+        header_up X-Forwarded-Proto {scheme}
+        header_up X-Forwarded-For {remote_host}
+    }
+    respond 404
+}
+
+CADDY);
+
+        expect($renderer->renderRouterRoute($route))->toBe(<<<'CADDY'
+http://analytics.docs.test {
+    encode gzip
+
+    @plausible_tracking path /js/* /api/event
+    reverse_proxy @plausible_tracking http://10.6.0.50:8000 {
+        lb_policy first
+        header_up Host {host}
+        header_up X-Forwarded-Host {host}
+        header_up X-Forwarded-Proto {http.request.header.X-Forwarded-Proto}
+        header_up X-Forwarded-For {http.request.header.X-Forwarded-For}
+    }
+    respond 404
+}
+
+CADDY);
+    });
+
+    it('renders the private analytics service route without tracking-only path restrictions', function (): void {
+        $router = Node::factory()->router()->create(['name' => 'gateway-1']);
+        $route = ProxyRoute::factory()->create([
+            'node_id' => $router->id,
+            'domain' => 'analytics.orbit',
+            'owner_type' => 'router',
+            'kind' => 'proxy',
+            'config' => [
+                'protocol' => 'analytics',
+                'router_upstream' => [
+                    'node_id' => $router->id,
+                    'node' => 'gateway-1',
+                    'url' => 'http://10.6.0.2:80',
+                ],
+                'router_backend_pool' => [
+                    [
+                        'node_id' => 42,
+                        'node' => 'analytics-1',
+                        'url' => 'http://10.6.0.50:8000',
+                    ],
+                ],
+                'tls' => [
+                    'managed_by' => 'internal',
+                    'trusted_by_gateway_ca' => true,
+                    'cert_path' => '/etc/orbit/certs/analytics.orbit.crt',
+                    'key_path' => '/etc/orbit/certs/analytics.orbit.key',
+                ],
+            ],
+        ]);
+
+        $content = (new ProxyRouteRenderer)->renderRouterRoute($route);
+
+        expect($content)->toContain('analytics.orbit {')
+            ->toContain('reverse_proxy http://10.6.0.50:8000')
+            ->toContain('header_up X-Forwarded-For {http.request.header.X-Forwarded-For}')
+            ->not->toContain('@plausible_tracking')
+            ->not->toContain('respond 404');
+    });
+
     it('rejects router routes whose upstream host is not a valid IP address', function (): void {
         $router = Node::factory()->create(['name' => 'gateway-1']);
         $route = ProxyRoute::factory()->create([

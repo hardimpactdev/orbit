@@ -32,6 +32,7 @@ owning family concept document.
 - **WebSocket role** — private workload role that runs Laravel Reverb in a Docker runtime container managed by Orbit, binds only to WireGuard, and receives traffic through router-owned private service routes. See [Node Concepts](domains/1_node/node-concepts.md).
 - **S3 role** — private workload role that runs one SeaweedFS S3-compatible object storage backend in a Docker runtime container managed by Orbit, binds only to WireGuard, and receives traffic through router-owned S3 service routes. See [Node Concepts](domains/1_node/node-concepts.md).
 - **Metrics role** — optional private workload role that records Prometheus, Grafana, and node-exporter process intent for host-resource observability. See [Node Concepts](domains/1_node/node-concepts.md) and [Metrics Concepts](domains/20_metrics/metrics-concepts.md).
+- **Analytics role** — private workload role that runs Plausible CE, binds only to WireGuard, and receives dashboard and tracking traffic through router-owned analytics routes. See [Node Concepts](domains/1_node/node-concepts.md) and [Analytics Concepts](domains/21_analytics/analytics-concepts.md).
 - **Gateway-coupled infrastructure role** — role assignment stored separately from `gateway` but coupled to it in v1, so first gateway bootstrap assigns it together with `gateway` and normal `node role:*` commands cannot manage it independently. See [Node Concepts](domains/1_node/node-concepts.md).
 - **Production public HTTP traffic** — traffic that enters the fleet through an active `ingress` role. `app-prod` nodes are production runtime backends: they own app files, FrankenPHP app runtime policy, process-backed runtime units, and a private `orbit-caddy` listener, but they do not own public route exposure unless they also carry `ingress`. See [Architecture: Node roles](architecture.md#node-roles).
 - **App WebSocket binding** — gateway-owned app configuration that enables one app to use the fleet websocket service, including per-app Reverb credentials, allowed origins, public WebSocket hosts, and private `websocket.orbit` publishing configuration. See [App Concepts](domains/5_app/app-concepts.md).
@@ -44,6 +45,8 @@ owning family concept document.
 - **Metrics service endpoint** — stable router-owned private HTTPS endpoint `https://metrics.orbit` for Grafana. See [Metrics Concepts](domains/20_metrics/metrics-concepts.md).
 - **Metrics backend** — node-owned Prometheus, Grafana, and node-exporter process intent created by the `metrics` role baseline. See [Metrics Concepts](domains/20_metrics/metrics-concepts.md).
 - **Grafana admin credentials** — generated service-level Grafana admin username and password exposed through `metrics:credentials`. See [Metrics Concepts](domains/20_metrics/metrics-concepts.md).
+- **Private analytics endpoint** — stable router-owned private HTTPS endpoint `https://analytics.orbit` for the Plausible dashboard and admin UI. See [Analytics Concepts](domains/21_analytics/analytics-concepts.md).
+- **App analytics binding** — gateway-owned app configuration that enables public tracking hosts for one app without provisioning Plausible sites or injecting scripts. See [Analytics Concepts](domains/21_analytics/analytics-concepts.md).
 - **Orbit launcher** — host `orbit` entry point. Production installs still use the native CLI binary artifact; source-mounted Docker and Incus development/E2E topologies point `/usr/local/bin/orbit` directly at `<source>/apps/cli/orbit`. Mutable node-local Orbit state lives under `~/.config/orbit`. See [Node Concepts](domains/1_node/node-concepts.md).
 - **Orbit gateway image** — first-party `ghcr.io/hardimpactdev/orbit-gateway:<version>` FrankenPHP image that bundles the gateway application code and is used by both gateway Swarm services. See [Node Concepts](domains/1_node/node-concepts.md).
 - **Orbit gateway service** — Swarm-managed `orbit-gateway` service that serves the typed gateway API and mounts `ORBIT_CONFIG_ROOT` for mutable gateway state. See [Node Concepts](domains/1_node/node-concepts.md).
@@ -118,6 +121,7 @@ Source: [Node Concepts](domains/1_node/node-concepts.md).
 - **WebSocket role**
 - **S3 role**
 - **Metrics role**
+- **Analytics role**
 - **Agent role**
 - **Ingress role**
 - **Role assignability**
@@ -219,6 +223,7 @@ Source: [App Concepts](domains/5_app/app-concepts.md).
 - **Worker mode**
 - **Worker config**
 - **App WebSocket binding**
+- **App analytics binding**
 - **Reverb app credentials**
 - **App agent IDE adapter**
 - **App registration**
@@ -299,6 +304,8 @@ Source: [Proxy Concepts](domains/8_proxy/proxy-concepts.md).
 - **Redirect route**
 - **Tool-owned route**
 - **App WebSocket route**
+- **App analytics route**
+- **Analytics service route**
 - **WebSocket service route**
 - **Public S3 route**
 - **S3 service route**
@@ -310,6 +317,7 @@ Source: [Proxy Concepts](domains/8_proxy/proxy-concepts.md).
 - **WebSocket backend pool**
 - **S3 backend pool**
 - **Metrics service target**
+- **Analytics backend pool**
 - **Orbit-managed TLS**
 - **Route leaf certificate**
 - **Intermediate CA certificate**
@@ -394,6 +402,20 @@ Source: [Metrics Concepts](domains/20_metrics/metrics-concepts.md).
 - **Grafana admin credentials**
 - **Metrics-domain boundaries**
 - **Metrics-domain exclusions**
+
+<!-- /concept-index -->
+
+## Analytics Concepts
+
+Source: [Analytics Concepts](domains/21_analytics/analytics-concepts.md).
+
+<!-- concept-index:domains/21_analytics/analytics-concepts.md -->
+- **Analytics role**
+- **Plausible CE process**
+- **Analytics backing database**
+- **Private analytics endpoint**
+- **Public app analytics host**
+- **App analytics binding**
 <!-- /concept-index -->
 
 ## Deploy Concepts

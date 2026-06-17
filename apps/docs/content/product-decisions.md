@@ -38,6 +38,7 @@ direction.
 
 <!-- newest first; add new entries directly under this comment -->
 
+- 2026-06-17 — Orbit analytics is a private workload role backed by process-owned Plausible CE: PostgreSQL and ClickHouse run as service processes on active database role nodes, `analytics.orbit` is the private dashboard/admin endpoint, and per-app public `analytics.<app-domain>` hosts proxy tracking paths only. (solo todo #731)
 - 2026-06-17 — Production Orbit CLI installs use a user-local host launcher by default: `bin/install-orbit` and `orbit update` link the native CLI binary at `$HOME/.local/bin/orbit` unless `ORBIT_BIN_PATH` or `--bin` chooses another path, and `orbit update` must never invoke `sudo`.
 - 2026-06-17 — Metrics is an optional host-resource observability role backed by node-owned Prometheus, Grafana, and node-exporter process intent; `metrics.orbit` is the private Grafana route and credentials are exposed through `metrics:credentials`.
 - 2026-06-17 — Orbit releases are monorepo-versioned: the root `VERSION` file is the single release number, a `v<VERSION>` tag on `hardimpactdev/orbit` publishes the core, CLI, and gateway split package repos plus CLI binaries, gateway image, and release manifest, and `update:all` consumes that immutable manifest for fleet updates.

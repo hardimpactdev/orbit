@@ -142,6 +142,8 @@ final readonly class NodeStoreController implements Loggable
         $this->addStringOption($arguments, '--tld', $request, 'tld');
         $this->addStringOption($arguments, '--operator-name', $request, 'operator_name');
         $this->addStringOption($arguments, '--redis-node', $request, 'redis_node');
+        $this->addStringOption($arguments, '--postgres-node', $request, 'postgres_node');
+        $this->addStringOption($arguments, '--clickhouse-node', $request, 'clickhouse_node');
         $this->addStringOption($arguments, '--s3-data-path', $request, 's3_data_path');
         $this->addStringOption($arguments, '--user', $request, 'user');
         $this->addStringOption($arguments, '--gateway-endpoint', $request, 'gateway_endpoint');
@@ -334,6 +336,8 @@ final readonly class NodeStoreController implements Loggable
             'roles' => request('roles'),
             'tld' => $this->requestString('tld'),
             'redis_node' => $this->requestString('redis_node'),
+            'postgres_node' => $this->requestString('postgres_node'),
+            'clickhouse_node' => $this->requestString('clickhouse_node'),
             's3_data_path' => $this->requestString('s3_data_path'),
         ];
     }

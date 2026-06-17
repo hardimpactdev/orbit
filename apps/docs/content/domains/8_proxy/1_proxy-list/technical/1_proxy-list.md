@@ -22,7 +22,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
-| `filter` | `--filter` | `Optional.` | `Never.` | `all` | `all`, `app`, `app-websocket`, `workspace`, `gateway`, `websocket`, `s3`, `tool`, `custom`, or `redirect`. |
+| `filter` | `--filter` | `Optional.` | `Never.` | `all` | `all`, `app`, `app-websocket`, `app-analytics`, `workspace`, `gateway`, `websocket`, `s3`, `analytics`, `tool`, `custom`, or `redirect`. |
 | `node` | `--node` | `Optional.` | `Never.` | `None.` | Visible node slug used as serving-node filter. |
 | `json` | `--json` | `Optional.` | `Never.` | `false` | Selects the JSON renderer. |
 
@@ -40,12 +40,13 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 ### Filter Rules
 
 - `all` includes every visible route.
-- `app`, `app-websocket`, `workspace`, `gateway`, and `tool` filter by owner
+- `app`, `app-websocket`, `app-analytics`, `workspace`, `gateway`, and `tool` filter by owner
   type.
-- `websocket` and `s3` are service filters, not owner-enum mirrors:
+- `websocket`, `s3`, and `analytics` are service filters, not owner-enum mirrors:
   `websocket` selects the router-owned `websocket.orbit` service route; `s3`
   selects the router-owned `s3.orbit` service route plus public S3 host routes
-  (owner `s3`).
+  (owner `s3`); and `analytics` selects the router-owned `analytics.orbit`
+  service route plus public app analytics host routes (owner `app-analytics`).
 - `custom` filters user-authored upstream routes with owner `custom` and kind
   `proxy`.
 - `redirect` filters routes with kind `redirect`.

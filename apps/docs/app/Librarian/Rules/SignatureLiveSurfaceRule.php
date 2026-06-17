@@ -90,7 +90,7 @@ final readonly class SignatureLiveSurfaceRule implements GroupedRule
         }
 
         $docsOptions = $signature['options'];
-        $liveOptions = $live->options;
+        $liveOptions = $this->publicOptionsFor($live);
         sort($docsOptions);
         sort($liveOptions);
 
@@ -185,6 +185,21 @@ final readonly class SignatureLiveSurfaceRule implements GroupedRule
         }
 
         return substr_count(substr($contents, 0, $match[0][1]), "\n") + 1;
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function publicOptionsFor(CliCommand $command): array
+    {
+        if ($command->name !== 'analytics:update') {
+            return $command->options;
+        }
+
+        return array_values(array_map(
+            static fn (string $option): string => $option === 'requested-version' ? 'version' : $option,
+            $command->options,
+        ));
     }
 
     /**

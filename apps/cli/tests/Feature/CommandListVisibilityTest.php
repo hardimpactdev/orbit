@@ -66,7 +66,11 @@ describe('command list visibility', function (): void {
             'activity:list',
             'activity:show',
             'agent-ide:message',
+            'analytics:update',
             'app:agent-ide',
+            'app:analytics disable',
+            'app:analytics enable',
+            'app:analytics show',
             'app:list',
             'app:mount',
             'app:new',
@@ -205,6 +209,9 @@ describe('command list visibility', function (): void {
         'activity:show',
         'agent-ide:message',
         'app:agent-ide',
+        'app:analytics disable',
+        'app:analytics enable',
+        'app:analytics show',
         'app:list',
         'app:mount',
         'app:new',
@@ -324,6 +331,7 @@ describe('command list visibility', function (): void {
         'workspace-teardown-step:add',
         'workspace-teardown-step:list',
         'workspace-teardown-step:remove',
+        'analytics:update',
     ]);
 
     it('hides internal:executor:verify', function (): void {

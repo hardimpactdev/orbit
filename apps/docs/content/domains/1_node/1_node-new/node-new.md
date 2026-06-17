@@ -17,7 +17,7 @@ initiating client and stores the local gateway configuration.
 Run this command to register a new node and provision it when required.
 
 ```bash
-orbit node:new [name] [--template=<template>] [--operator] [--roles=<roles>] [--host=<host>] [--operator-name=<name>] [--tld=<tld>] [--user=<user>] [--ingress=<node>] [--redis-node=<node>] [--s3-data-path=<path>] [--self-grant=<mode>] [--agent-tool=<tool>]... [--grant-to=<node|all>] [--grant-to-preset=<preset>] [--grant-to-permissions=<list>] [--grant-from=<node|all>] [--grant-from-preset=<preset>] [--grant-from-permissions=<list>] [--json]
+orbit node:new [name] [--template=<template>] [--operator] [--roles=<roles>] [--host=<host>] [--operator-name=<name>] [--tld=<tld>] [--user=<user>] [--ingress=<node>] [--redis-node=<node>] [--postgres-node=<node>] [--clickhouse-node=<node>] [--s3-data-path=<path>] [--self-grant=<mode>] [--agent-tool=<tool>]... [--grant-to=<node|all>] [--grant-to-preset=<preset>] [--grant-to-permissions=<list>] [--grant-from=<node|all>] [--grant-from-preset=<preset>] [--grant-from-permissions=<list>] [--json]
 orbit node:new
 ```
 
@@ -42,6 +42,7 @@ orbit node:new realtime-1 --template=websocket --host=203.0.113.30 --redis-node=
 orbit node:new storage-1 --template=s3 --host=203.0.113.31 --s3-data-path=/srv/orbit/s3/data
 orbit node:new metrics-1 --template=metrics --host=203.0.113.40
 orbit node:new app-1 --roles=app-dev,metrics --host=203.0.113.41 --tld=test
+orbit node:new analytics-1 --template=analytics --host=203.0.113.32 --postgres-node=db-1 --clickhouse-node=db-1
 orbit node:new gateway-1 --template=gateway --host=203.0.113.2 --operator-name=operator-1
 orbit node:new agent-1 --template=agent --host=192.0.2.10 --tld=agent --self-grant=default
 orbit node:new agent-1 --roles=agent --host=192.0.2.10 --agent-tool=openclaw --agent-tool=hermes
@@ -55,8 +56,8 @@ orbit node:new agent-1 --roles=agent --host=192.0.2.10 --grant-to=all --grant-to
 - `--template`: named provisioning template that expands to a role composition
   before validation. Supported templates: `operator`, `app-development`,
   `app-production`, `gateway`, `ingress`, `database`, `s3`, `websocket`,
-  `metrics`, and `agent`. Mutually exclusive with `--roles` and with `--operator` except
-  for `--template=operator`.
+  `metrics`, `analytics`, and `agent`. Mutually exclusive with `--roles` and with
+  `--operator` except for `--template=operator`.
 - `--operator`: create a client identity with the operator permission preset and
   no workload role assignments. Operator is not a node role; use this flag
   instead of a role value. Mutually exclusive with `--roles` and with
@@ -64,15 +65,15 @@ orbit node:new agent-1 --roles=agent --host=192.0.2.10 --grant-to=all --grant-to
 - `--roles`: role assignments as a comma-separated list, for programmatic callers
   that need an explicit composition instead of a template. Supported role
   values are `app-dev`, `app-prod`, `database`, `agent`, `ingress`,
-  `websocket`, `s3`, and `metrics`. Role aliases are not accepted; `app-development`
-  and `app-production` are template names only. No assigned role means a
+  `websocket`, `s3`, `metrics`, and `analytics`. Role aliases are not accepted;
+  `app-development` and `app-production` are template names only. No assigned role means a
   client identity. `gateway`, `vpn`, and `router` are not accepted through
   `--roles`; use `--template=gateway`. `agent` is exclusive and may only be
   selected during `node:new`; combining it with another role fails before side
   effects.
 - `--host`: required for gateway bootstrap and for every path that provisions a
   workload role (`app-dev`, `app-prod`, `ingress`, `agent`, `websocket`, `s3`,
-  `metrics`, and gateway bootstrap/convergence). Forbidden for bare client identities,
+  `metrics`, `analytics`, and gateway bootstrap/convergence). Forbidden for bare client identities,
   `--operator`, and `database`-only identities that do not provision a host.
   This is the SSH/bootstrap endpoint and never the canonical node address.
 - `--operator-name`: initiating client name for first-gateway bootstrap
@@ -93,6 +94,12 @@ orbit node:new agent-1 --roles=agent --host=192.0.2.10 --grant-to=all --grant-to
   traffic itself.
 - `--redis-node`: existing active `database` node whose Redis service backs a
   requested `websocket` role. Required when `--roles` includes `websocket`.
+- `--postgres-node`: existing active `database` node whose PostgreSQL service
+  backs a requested `analytics` role. Required when `--roles` includes
+  `analytics`.
+- `--clickhouse-node`: existing active `database` node whose ClickHouse service
+  backs a requested `analytics` role. Required when `--roles` includes
+  `analytics`.
 - `--s3-data-path`: host path mounted into the SeaweedFS container as `/data`.
   Optional when `--roles` includes `s3`; defaults to `/srv/orbit/s3/data`.
   Must be an absolute path.
@@ -126,10 +133,11 @@ Each template pre-selects a role set and provisioning path. Use a template when 
 | `app-production` | `app-prod` + `ingress` (colocated) or `app-prod` alone (requires `--ingress=<node>`) | — | yes | live |
 | `gateway` | `gateway` + `vpn` + `router` | — | yes | live |
 | `ingress` | `ingress` | — | yes | live |
-| `database` | `database` | `s3`, `websocket` | yes | live |
+| `database` | `database` | `s3`, `websocket`, `analytics` | yes | live |
 | `s3` | `s3` | — | yes | implementation pending |
 | `websocket` | `websocket` | — | yes | implementation pending |
 | `metrics` | `metrics` | — | yes | live |
+| `analytics` | `analytics` | — | yes | live |
 | `agent` | `agent` | agent tools via `--agent-tool=` | yes | live |
 
 > **Status:** Templates `s3` and `websocket` are documented so the CLI surface
@@ -172,7 +180,7 @@ existing active `ingress` node.
 **`database` template**
 
 Creates an active `database` role assignment. It may combine with `app-dev`,
-`websocket`, and `s3` on the same provisioned host.
+`websocket`, `s3`, and `analytics` on the same provisioned host.
 
 Requires `--host` when the template provisions a host.
 
@@ -200,6 +208,14 @@ generated Grafana admin credentials.
 
 Requires `--host`.
 
+**`analytics` template**
+
+Provisions a private analytics node and creates an active `analytics` role
+assignment whose settings point at the selected PostgreSQL and ClickHouse
+service nodes.
+
+Requires `--host`, `--postgres-node`, and `--clickhouse-node`.
+
 **`agent` template**
 
 Provisions an isolated agent host with the exclusive `agent` role assignment.
@@ -217,11 +233,13 @@ host requires `--host`. `--roles` is mutually exclusive with `--template` and
 
 `app-dev` and `app-prod` are mutually exclusive. In v1, `gateway`, `vpn`, and
 `router` are gateway-coupled and conflict with `app-dev`, `app-prod`,
-`database`, `agent`, `ingress`, `websocket`, and `s3`; `metrics` may be
-co-located with that gateway-coupled node. The `agent` role conflicts with
-every other workload role. `ingress` may combine with `app-prod` and
+`database`, `agent`, `ingress`, `websocket`, `s3`, and `analytics`; `metrics`
+may be co-located with that gateway-coupled node. The `agent` role conflicts
+with every other workload role. `ingress` may combine with `app-prod` and
 `metrics`. `websocket` and `s3` may combine with `app-dev`, `database`,
-`metrics`, and each other. `gateway`, `vpn`, and `router` are not
+`metrics`, `analytics`, and each other. `analytics` may also combine with
+`database` and `metrics`, but conflicts with gateway-coupled infrastructure,
+`app-prod`, `ingress`, and `agent`. `gateway`, `vpn`, and `router` are not
 command-assignable through the public role flow.
 
 **Gateway bootstrap**

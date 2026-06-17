@@ -46,18 +46,22 @@ describe('tool catalog definitions', function (): void {
             ->and($catalog->definition($tool))->toBeNull()
             ->and($catalog->installScript($tool))->toBeNull();
     })->with([
+        'clickhouse',
         'mysql',
+        'plausible',
         'postgres',
         'redis',
         'supervisor',
     ]);
 
-    it('catalogs MySQL and Redis as process service definitions instead', function (): void {
+    it('catalogs runnable services as process service definitions instead', function (): void {
         $registry = app(ProcessServiceDefinitionRegistry::class);
 
-        expect($registry->supports('mysql'))->toBeTrue()
-            ->and($registry->supports('redis'))->toBeTrue()
-            ->and($registry->supports('postgres'))->toBeFalse();
+        expect($registry->supports('clickhouse'))->toBeTrue()
+            ->and($registry->supports('mysql'))->toBeTrue()
+            ->and($registry->supports('plausible'))->toBeTrue()
+            ->and($registry->supports('postgres'))->toBeTrue()
+            ->and($registry->supports('redis'))->toBeTrue();
     });
 
     it('catalogs agent IDE servers as installed capabilities with process-owned lifecycle', function (string $tool, string $binary, string $definition): void {

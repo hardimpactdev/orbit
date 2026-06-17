@@ -46,6 +46,8 @@ final class NodeRoleAddController implements Loggable
 
         $settings = $request->settings();
         $ingressNode = $request->ingressNode();
+        $postgresNode = $request->postgresNode();
+        $clickhouseNode = $request->clickhouseNode();
 
         if ($request->role() !== 'app-prod' && $ingressNode !== null) {
             return $this->error(
@@ -56,8 +58,25 @@ final class NodeRoleAddController implements Loggable
             );
         }
 
+        if ($request->role() !== 'analytics' && ($postgresNode !== null || $clickhouseNode !== null)) {
+            return $this->error(
+                'validation_failed',
+                "Role '{$request->role()}' does not accept analytics database nodes.",
+                ['field' => $postgresNode !== null ? 'postgres_node' : 'clickhouse_node', 'role' => $request->role()],
+                422,
+            );
+        }
+
         if ($request->role() === 'app-prod') {
             $settings = $this->resolveAppProductionSettings($node, $ingressNode, $settings);
+
+            if ($settings instanceof JsonResponse) {
+                return $settings;
+            }
+        }
+
+        if ($request->role() === 'analytics') {
+            $settings = $this->resolveAnalyticsSettings($settings, $postgresNode, $clickhouseNode);
 
             if ($settings instanceof JsonResponse) {
                 return $settings;
@@ -135,6 +154,79 @@ final class NodeRoleAddController implements Loggable
         $settings['ingress_node_id'] = $ingressNode->id;
 
         return $settings;
+    }
+
+    /**
+     * @param  array<string, mixed>  $settings
+     * @return array<string, mixed>|JsonResponse
+     */
+    private function resolveAnalyticsSettings(array $settings, ?string $postgresNodeName, ?string $clickhouseNodeName): array|JsonResponse
+    {
+        $postgresNodeName ??= is_string($settings['postgres_node'] ?? null) ? $settings['postgres_node'] : null;
+        $clickhouseNodeName ??= is_string($settings['clickhouse_node'] ?? null) ? $settings['clickhouse_node'] : null;
+
+        unset($settings['postgres_node'], $settings['clickhouse_node']);
+
+        if (! array_key_exists('postgres_node_id', $settings)) {
+            if ($postgresNodeName === null) {
+                return $this->error(
+                    'validation_failed',
+                    'The analytics role requires an active database node for PostgreSQL.',
+                    ['field' => 'postgres_node', 'required_role' => 'database'],
+                    422,
+                );
+            }
+
+            $postgresNode = $this->findActiveDatabaseNodeByName($postgresNodeName);
+
+            if (! $postgresNode instanceof Node) {
+                return $this->error(
+                    'validation_failed',
+                    'The analytics role requires an active database node for PostgreSQL.',
+                    ['field' => 'postgres_node', 'required_role' => 'database'],
+                    422,
+                );
+            }
+
+            $settings['postgres_node_id'] = $postgresNode->id;
+        }
+
+        if (! array_key_exists('clickhouse_node_id', $settings)) {
+            if ($clickhouseNodeName === null) {
+                return $this->error(
+                    'validation_failed',
+                    'The analytics role requires an active database node for ClickHouse.',
+                    ['field' => 'clickhouse_node', 'required_role' => 'database'],
+                    422,
+                );
+            }
+
+            $clickhouseNode = $this->findActiveDatabaseNodeByName($clickhouseNodeName);
+
+            if (! $clickhouseNode instanceof Node) {
+                return $this->error(
+                    'validation_failed',
+                    'The analytics role requires an active database node for ClickHouse.',
+                    ['field' => 'clickhouse_node', 'required_role' => 'database'],
+                    422,
+                );
+            }
+
+            $settings['clickhouse_node_id'] = $clickhouseNode->id;
+        }
+
+        return $settings;
+    }
+
+    private function findActiveDatabaseNodeByName(string $name): ?Node
+    {
+        return Node::query()
+            ->where('name', $name)
+            ->where('status', NodeStatus::Active->value)
+            ->whereHas('roleAssignments', fn ($query) => $query
+                ->where('role', 'database')
+                ->where('status', NodeRoleStatus::Active->value))
+            ->first();
     }
 
     /**

@@ -31,6 +31,8 @@ final class NodeNewCommand extends BootstrapGatewayCommand
         {--gateway-endpoint= : WireGuard endpoint host this node should use to reach the gateway}
         {--ingress= : Existing ingress node for private app-prod placement}
         {--redis-node= : Existing database node for websocket Redis}
+        {--postgres-node= : Existing database node for analytics PostgreSQL}
+        {--clickhouse-node= : Existing database node for analytics ClickHouse}
         {--s3-data-path= : Host data path for the s3 role}
         {--host-key-fingerprint= : Expected SSH host key SHA256 fingerprint}
         {--self-grant= : Self-grant mode}
@@ -65,6 +67,8 @@ final class NodeNewCommand extends BootstrapGatewayCommand
                 gatewayEndpoint: $this->stringOption('gateway-endpoint'),
                 ingressNode: $this->stringOption('ingress'),
                 redisNode: $this->stringOption('redis-node'),
+                postgresNode: $this->stringOption('postgres-node'),
+                clickhouseNode: $this->stringOption('clickhouse-node'),
                 s3DataPath: $this->stringOption('s3-data-path'),
                 hostKeyFingerprint: $this->stringOption('host-key-fingerprint'),
                 selfGrant: $this->stringOption('self-grant'),

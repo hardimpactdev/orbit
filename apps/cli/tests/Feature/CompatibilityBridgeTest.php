@@ -78,6 +78,13 @@ describe('native command option normalization', function (): void {
             ->toBe(['orbit', 'tool:install', 'mysql', '--tool-version=8.4']);
     });
 
+    it('rewrites analytics update version options after the command name', function (): void {
+        expect(normalizeNativeCommandArgv(['orbit', 'analytics:update', '--version=3.2.2', '--json']))
+            ->toBe(['orbit', 'analytics:update', '--requested-version=3.2.2', '--json'])
+            ->and(normalizeNativeCommandArgv(['orbit', 'analytics:update', '--version', '3.2.2']))
+            ->toBe(['orbit', 'analytics:update', '--requested-version=3.2.2']);
+    });
+
     it('preserves the global version option when a command name is present', function (): void {
         expect(normalizeNativeCommandArgv(['orbit', '--version', 'tool:install', 'mysql']))
             ->toBe(['orbit', '--version', 'tool:install', 'mysql']);

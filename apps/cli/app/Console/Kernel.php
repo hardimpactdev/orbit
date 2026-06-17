@@ -23,6 +23,13 @@ final class Kernel extends LaravelZeroKernel
      */
     private function normalizeParameters(mixed $command, array $parameters): array
     {
+        if ($command === 'analytics:update' && array_key_exists('--version', $parameters)) {
+            $parameters['--requested-version'] = $parameters['--version'];
+            unset($parameters['--version']);
+
+            return $parameters;
+        }
+
         if ($command !== 'tool:install') {
             return $parameters;
         }

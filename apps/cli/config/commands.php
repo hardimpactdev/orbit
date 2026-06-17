@@ -5,7 +5,11 @@ declare(strict_types=1);
 use App\Commands\Activity\ActivityListCommand;
 use App\Commands\Activity\ActivityShowCommand;
 use App\Commands\AgentIde\AgentIdeMessageCommand;
+use App\Commands\Analytics\AnalyticsUpdateCommand;
 use App\Commands\App\AppAgentIdeCommand;
+use App\Commands\App\AppAnalyticsDisableCommand;
+use App\Commands\App\AppAnalyticsEnableCommand;
+use App\Commands\App\AppAnalyticsShowCommand;
 use App\Commands\App\AppListCommand;
 use App\Commands\App\AppMountCommand;
 use App\Commands\App\AppNewCommand;
@@ -158,6 +162,9 @@ return [
         ActivityShowCommand::class,
         AgentIdeMessageCommand::class,
         AppAgentIdeCommand::class,
+        AppAnalyticsDisableCommand::class,
+        AppAnalyticsEnableCommand::class,
+        AppAnalyticsShowCommand::class,
         AppListCommand::class,
         AppMountCommand::class,
         AppNewCommand::class,
@@ -277,6 +284,7 @@ return [
         WorkspaceTeardownStepAddCommand::class,
         WorkspaceTeardownStepListCommand::class,
         WorkspaceTeardownStepRemoveCommand::class,
+        AnalyticsUpdateCommand::class,
     ],
 
     'hidden' => [

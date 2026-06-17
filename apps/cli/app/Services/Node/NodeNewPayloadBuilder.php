@@ -18,6 +18,7 @@ class NodeNewPayloadBuilder
         's3',
         'metrics',
         'websocket',
+        'analytics',
         'agent',
     ];
 
@@ -30,6 +31,7 @@ class NodeNewPayloadBuilder
         'metrics',
         'websocket',
         's3',
+        'analytics',
     ];
 
     /**
@@ -50,6 +52,8 @@ class NodeNewPayloadBuilder
         ?string $gatewayEndpoint,
         ?string $ingressNode,
         ?string $redisNode,
+        ?string $postgresNode,
+        ?string $clickhouseNode,
         ?string $s3DataPath,
         ?string $hostKeyFingerprint,
         ?string $selfGrant,
@@ -105,6 +109,8 @@ class NodeNewPayloadBuilder
         $this->putString($payload, 'gateway_endpoint', $gatewayEndpoint);
         $this->putString($payload, 'ingress_node', $ingressNode);
         $this->putString($payload, 'redis_node', $redisNode);
+        $this->putString($payload, 'postgres_node', $postgresNode);
+        $this->putString($payload, 'clickhouse_node', $clickhouseNode);
         $this->putString($payload, 's3_data_path', $s3DataPath);
         $this->putString($payload, 'host_key_fingerprint', $hostKeyFingerprint);
         $this->putString($payload, 'self_grant', $selfGrant);
@@ -134,7 +140,7 @@ class NodeNewPayloadBuilder
             $payload['agent_tools'] = $agentTools;
         }
 
-        return $payload;
+        return $this->withRoleSpecificValidation($payload, $rolesList);
     }
 
     /**
@@ -159,6 +165,8 @@ class NodeNewPayloadBuilder
             'gateway_endpoint' => 'gateway-endpoint',
             'ingress_node' => 'ingress',
             'redis_node' => 'redis-node',
+            'postgres_node' => 'postgres-node',
+            'clickhouse_node' => 'clickhouse-node',
             's3_data_path' => 's3-data-path',
             'host_key_fingerprint' => 'host-key-fingerprint',
             'self_grant' => 'self-grant',
@@ -212,7 +220,7 @@ class NodeNewPayloadBuilder
         if (! in_array($template, self::TEMPLATES, true)) {
             throw new NodeWriteInputException(
                 'validation_failed',
-                'Node template must be one of operator, app-development, app-production, gateway, ingress, database, s3, metrics, websocket, or agent.',
+                'Node template must be one of operator, app-development, app-production, gateway, ingress, database, s3, metrics, websocket, analytics, or agent.',
                 ['field' => 'template'],
             );
         }
@@ -244,13 +252,47 @@ class NodeNewPayloadBuilder
             if (! in_array($role, self::ROLES, true)) {
                 throw new NodeWriteInputException(
                     'validation_failed',
-                    'Node roles must be one or more of app-dev, app-prod, database, agent, ingress, metrics, websocket, or s3.',
+                    'Node roles must be one or more of app-dev, app-prod, database, agent, ingress, metrics, websocket, s3, or analytics.',
                     ['field' => 'roles'],
                 );
             }
         }
 
         return $parsed;
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     * @param  list<string>  $roles
+     * @return array<string, mixed>
+     */
+    private function withRoleSpecificValidation(array $payload, array $roles): array
+    {
+        $hasAnalytics = in_array('analytics', $roles, true) || ($payload['template'] ?? null) === 'analytics';
+        $postgresNode = $payload['postgres_node'] ?? null;
+        $clickhouseNode = $payload['clickhouse_node'] ?? null;
+
+        if ($hasAnalytics) {
+            if (! is_string($postgresNode) || $postgresNode === '') {
+                throw new NodeWriteInputException('validation_failed', 'The analytics role requires --postgres-node.', ['field' => 'postgres_node']);
+            }
+
+            if (! is_string($clickhouseNode) || $clickhouseNode === '') {
+                throw new NodeWriteInputException('validation_failed', 'The analytics role requires --clickhouse-node.', ['field' => 'clickhouse_node']);
+            }
+
+            return $payload;
+        }
+
+        if ($postgresNode !== null) {
+            throw new NodeWriteInputException('validation_failed', 'Only the analytics role accepts --postgres-node.', ['field' => 'postgres_node']);
+        }
+
+        if ($clickhouseNode !== null) {
+            throw new NodeWriteInputException('validation_failed', 'Only the analytics role accepts --clickhouse-node.', ['field' => 'clickhouse_node']);
+        }
+
+        return $payload;
     }
 
     /**

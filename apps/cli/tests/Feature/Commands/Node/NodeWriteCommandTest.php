@@ -533,6 +533,102 @@ describe('node write commands', function (): void {
         expect($exitCode)->toBe(0);
     });
 
+    it('posts analytics node:new backing node selectors to the typed gateway API', function (): void {
+        fakeGatewayProgressStream(gatewayProgressFrame('complete', [
+            'exit_code' => 0,
+            'data' => fakeSuccessEnvelope([
+                'node' => ['name' => 'analytics-1'],
+                'action' => 'created',
+            ]),
+        ]));
+
+        [$exitCode] = runCommand($this, 'node:new', [
+            'name' => 'analytics-1',
+            '--roles' => 'analytics',
+            '--host' => '192.0.2.30',
+            '--postgres-node' => 'database-1',
+            '--clickhouse-node' => 'database-2',
+            '--json' => true,
+        ]);
+
+        Http::assertSent(fn (Request $request): bool => $request->method() === 'POST'
+            && str_contains($request->url(), '/api/nodes')
+            && $request['roles'] === ['analytics']
+            && $request['postgres_node'] === 'database-1'
+            && $request['clickhouse_node'] === 'database-2');
+
+        expect($exitCode)->toBe(0);
+    });
+
+    it('posts node role:add analytics backing node selectors to the typed gateway API', function (): void {
+        fakeGateway(fakeSuccessEnvelope([
+            'node' => 'analytics-1',
+            'assignment' => ['role' => 'analytics', 'status' => 'active'],
+        ]));
+
+        [$exitCode] = runCommand($this, 'node role:add', [
+            'node' => 'analytics-1',
+            'role' => 'analytics',
+            '--postgres-node' => 'database-1',
+            '--clickhouse-node' => 'database-2',
+            '--json' => true,
+        ]);
+
+        Http::assertSent(fn (Request $request): bool => $request->method() === 'POST'
+            && str_contains($request->url(), '/api/nodes/analytics-1/roles')
+            && $request['role'] === 'analytics'
+            && $request['settings'] === [
+                'postgres_node' => 'database-1',
+                'clickhouse_node' => 'database-2',
+            ]);
+
+        expect($exitCode)->toBe(0);
+    });
+
+    it('requires analytics backing node selectors before node:new gateway IO', function (array $params, string $field): void {
+        Http::fake();
+
+        [$exitCode, $output] = runCommand($this, 'node:new', [
+            'name' => 'analytics-1',
+            '--roles' => 'analytics',
+            '--json' => true,
+            ...$params,
+        ]);
+
+        $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+
+        Http::assertNothingSent();
+
+        expect($exitCode)->toBe(1)
+            ->and($decoded['error']['code'])->toBe('validation_failed')
+            ->and($decoded['error']['meta']['field'])->toBe($field);
+    })->with([
+        'missing postgres' => [['--clickhouse-node' => 'database-2'], 'postgres_node'],
+        'missing clickhouse' => [['--postgres-node' => 'database-1'], 'clickhouse_node'],
+    ]);
+
+    it('requires analytics backing node selectors before node role:add gateway IO', function (array $params, string $field): void {
+        Http::fake();
+
+        [$exitCode, $output] = runCommand($this, 'node role:add', [
+            'node' => 'analytics-1',
+            'role' => 'analytics',
+            '--json' => true,
+            ...$params,
+        ]);
+
+        $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+
+        Http::assertNothingSent();
+
+        expect($exitCode)->toBe(1)
+            ->and($decoded['error']['code'])->toBe('validation_failed')
+            ->and($decoded['error']['meta']['field'])->toBe($field);
+    })->with([
+        'missing postgres' => [['--clickhouse-node' => 'database-2'], 'postgres_node'],
+        'missing clickhouse' => [['--postgres-node' => 'database-1'], 'clickhouse_node'],
+    ]);
+
     it('rejects gateway-coupled node role:add roles before gateway IO', function (): void {
         Http::fake();
 

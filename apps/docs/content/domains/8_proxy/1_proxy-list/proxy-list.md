@@ -26,10 +26,12 @@ Use `--filter` to narrow the list:
 | `all` | All visible proxy routes. |
 | `app` | App-owned hostnames. |
 | `app-websocket` | App-owned public WebSocket hostnames. |
+| `app-analytics` | App-owned public analytics tracking hostnames. |
 | `workspace` | Workspace-owned hostnames. |
 | `gateway` | Gateway-owned internal routes such as the gateway API ingress. |
 | `websocket` | Router-owned private websocket service routes such as `websocket.orbit`. |
 | `s3` | S3 public host routes and router-owned private S3 service routes such as `s3.orbit`. |
+| `analytics` | Public app analytics host routes and router-owned private analytics service routes such as `analytics.orbit`. |
 | `tool` | Tool-owned proxy routes for node tools or services. |
 | `custom` | User-authored upstream routes created by `proxy:add --upstream`. |
 | `redirect` | User-authored redirect routes created by `proxy:add --redirect`. |

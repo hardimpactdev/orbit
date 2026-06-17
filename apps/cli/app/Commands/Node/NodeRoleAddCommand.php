@@ -27,6 +27,8 @@ final class NodeRoleAddCommand extends GatewayCommand
         $this->addArgument('role', InputArgument::REQUIRED, 'Role to add');
         $this->addOption('tld', null, InputOption::VALUE_REQUIRED, 'Development TLD for app-dev');
         $this->addOption('redis-node', null, InputOption::VALUE_REQUIRED, 'Existing database node for websocket Redis');
+        $this->addOption('postgres-node', null, InputOption::VALUE_REQUIRED, 'Existing database node for analytics PostgreSQL');
+        $this->addOption('clickhouse-node', null, InputOption::VALUE_REQUIRED, 'Existing database node for analytics ClickHouse');
         $this->addOption('s3-data-path', null, InputOption::VALUE_REQUIRED, 'Host data path for the s3 role');
         $this->addOption('json', null, InputOption::VALUE_NONE, 'Output JSON');
     }
@@ -41,6 +43,8 @@ final class NodeRoleAddCommand extends GatewayCommand
                 role: $role,
                 tld: $this->stringOption('tld'),
                 redisNode: $this->stringOption('redis-node'),
+                postgresNode: $this->stringOption('postgres-node'),
+                clickhouseNode: $this->stringOption('clickhouse-node'),
                 s3DataPath: $this->stringOption('s3-data-path'),
             );
         } catch (NodeWriteInputException $exception) {

@@ -50,6 +50,13 @@ These rules govern all app family commands.
   publishing configuration. App commands own the binding state; `ingress`
   owns public route exposure, `router` owns route selection and backend pools,
   and the `websocket` role owns the Reverb runtime.
+- App analytics bindings are explicit app-owned configuration. They enable one
+  app to use the fleet analytics service through public tracking hostnames such
+  as `analytics.example.com`. App commands own the binding state and host list;
+  `ingress` owns public route exposure, `router` owns tracking-only route
+  selection and backend pools, and the `analytics` role owns the Plausible CE
+  runtime. V1 does not inject scripts, provision Plausible sites, or expose the
+  Plausible dashboard publicly.
 - Production deployment pipeline definitions belong to apps. Deployments and
   releases are not standalone state families.
 - `app:prune` is source-of-truth cleanup, not doctor drift repair. It checks
@@ -175,6 +182,9 @@ The following commands are available in the `app` family.
 13. [`orbit app:websocket disable [app]`](13_app-websocket-disable/app-websocket-disable.md)
 14. [`orbit app:websocket credentials [app]`](14_app-websocket-credentials/app-websocket-credentials.md)
 15. [`orbit app:mount list|add|remove [app]`](15_app-mount/app-mount.md)
+16. [`orbit app:analytics enable [app]`](16_app-analytics-enable/app-analytics-enable.md)
+17. [`orbit app:analytics disable [app]`](17_app-analytics-disable/app-analytics-disable.md)
+18. [`orbit app:analytics show [app]`](18_app-analytics-show/app-analytics-show.md)
 
 ## Related
 

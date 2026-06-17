@@ -9,6 +9,7 @@ use App\Enums\Nodes\NodeRoleStatus;
 use App\Enums\Nodes\NodeStatus;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
+use App\Services\Analytics\AnalyticsDatabaseResolver;
 use App\Services\WebSockets\WebSocketRedisResolver;
 use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
@@ -23,6 +24,7 @@ class NodeRoleAssignmentService
         private readonly NodeRoleDependencyInspector $dependencyInspector,
         private readonly RoleSelfGrantMaterializer $roleSelfGrantMaterializer,
         private readonly WebSocketRedisResolver $webSocketRedisResolver,
+        private readonly AnalyticsDatabaseResolver $analyticsDatabaseResolver,
     ) {}
 
     /**
@@ -73,6 +75,7 @@ class NodeRoleAssignmentService
 
         $settingsData = $definition->settingsFromArray($settings)->toArray();
         $this->guardWebSocketRedisNode($role, $settingsData);
+        $this->guardAnalyticsDatabaseNodes($role, $settingsData);
         $this->guardAppProductionIngressNode($node, $role, $settingsData);
         $this->guardUniqueDevelopmentTld($node, $role, $settingsData);
 
@@ -111,6 +114,7 @@ class NodeRoleAssignmentService
 
         $settingsData = $definition->settingsFromArray($settings)->toArray();
         $this->guardWebSocketRedisNode($role, $settingsData);
+        $this->guardAnalyticsDatabaseNodes($role, $settingsData);
         $this->guardAppProductionIngressNode($node, $role, $settingsData);
         $this->guardUniqueDevelopmentTld($node, $role, $settingsData);
 
@@ -316,6 +320,30 @@ class NodeRoleAssignmentService
         }
 
         throw new InvalidArgumentException('The websocket role requires redis_node_id to reference an active database node with a Redis process.');
+    }
+
+    /**
+     * @param  array<string, mixed>  $settings
+     */
+    private function guardAnalyticsDatabaseNodes(string $role, array $settings): void
+    {
+        if ($role !== NodeRoleName::Analytics->value) {
+            return;
+        }
+
+        $postgresNodeId = $settings['postgres_node_id'] ?? null;
+        $clickhouseNodeId = $settings['clickhouse_node_id'] ?? null;
+
+        if (
+            is_int($postgresNodeId)
+            && is_int($clickhouseNodeId)
+            && $this->analyticsDatabaseResolver->usablePostgresNode($postgresNodeId) instanceof Node
+            && $this->analyticsDatabaseResolver->usableClickHouseNode($clickhouseNodeId) instanceof Node
+        ) {
+            return;
+        }
+
+        throw new InvalidArgumentException('The analytics role requires postgres_node_id and clickhouse_node_id to reference active database nodes with PostgreSQL and ClickHouse processes.');
     }
 
     /**

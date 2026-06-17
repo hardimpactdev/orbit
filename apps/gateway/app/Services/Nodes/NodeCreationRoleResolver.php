@@ -18,6 +18,7 @@ final class NodeCreationRoleResolver
         's3',
         'metrics',
         'websocket',
+        'analytics',
         'agent',
     ];
 
@@ -30,6 +31,7 @@ final class NodeCreationRoleResolver
         NodeRoleName::Metrics->value,
         NodeRoleName::WebSocket->value,
         's3',
+        NodeRoleName::Analytics->value,
     ];
 
     private const array IMPLEMENTATION_PENDING_ROLES = [
@@ -96,7 +98,7 @@ final class NodeCreationRoleResolver
     }
 
     /**
-     * @return 'agent'|'app-development'|'app-production'|'database'|'gateway'|'ingress'|'metrics'|'operator'|'s3'|'websocket'|null
+     * @return 'agent'|'analytics'|'app-development'|'app-production'|'database'|'gateway'|'ingress'|'metrics'|'operator'|'s3'|'websocket'|null
      */
     private function normalizeTemplate(?string $template): ?string
     {
@@ -117,7 +119,7 @@ final class NodeCreationRoleResolver
         if (! in_array($template, self::TEMPLATES, true)) {
             throw new NodeCreationRoleInputException(
                 errorCode: 'validation_failed',
-                message: 'Node template must be one of operator, app-development, app-production, gateway, ingress, database, s3, metrics, websocket, or agent.',
+                message: 'Node template must be one of operator, app-development, app-production, gateway, ingress, database, s3, metrics, websocket, analytics, or agent.',
                 meta: ['field' => 'template'],
             );
         }
@@ -151,7 +153,7 @@ final class NodeCreationRoleResolver
     }
 
     /**
-     * @param  'agent'|'app-development'|'app-production'|'database'|'gateway'|'ingress'|'metrics'|'operator'|'s3'|'websocket'  $template
+     * @param  'agent'|'analytics'|'app-development'|'app-production'|'database'|'gateway'|'ingress'|'metrics'|'operator'|'s3'|'websocket'  $template
      */
     private function fromTemplate(string $template): NodeCreationRoleSelection
     {
@@ -185,6 +187,9 @@ final class NodeCreationRoleResolver
             'agent' => new NodeCreationRoleSelection(false, false, false, [
                 NodeRoleName::Agent->value,
             ], $template, NodeRoleName::Agent->value),
+            'analytics' => new NodeCreationRoleSelection(false, false, false, [
+                NodeRoleName::Analytics->value,
+            ], $template, NodeRoleName::Analytics->value),
         };
     }
 
@@ -197,7 +202,7 @@ final class NodeCreationRoleResolver
             if (! in_array($role, self::EXPLICIT_ROLES, true)) {
                 throw new NodeCreationRoleInputException(
                     errorCode: 'validation_failed',
-                    message: 'Node roles must be one or more of app-dev, app-prod, database, agent, ingress, metrics, websocket, or s3.',
+                    message: 'Node roles must be one or more of app-dev, app-prod, database, agent, ingress, metrics, websocket, s3, or analytics.',
                     meta: ['field' => 'roles'],
                 );
             }

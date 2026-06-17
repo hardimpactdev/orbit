@@ -18,9 +18,11 @@ class ProxyRouteQuery
     public const array AllowedFilters = [
         'all',
         'app',
+        'app-analytics',
         'app-websocket',
         'workspace',
         'gateway',
+        'analytics',
         'websocket',
         's3',
         'tool',
@@ -180,6 +182,10 @@ class ProxyRouteQuery
             return $query->where('domain', 'websocket.orbit');
         }
 
+        if ($filter === 'analytics') {
+            return $query->where('domain', 'analytics.orbit');
+        }
+
         if ($filter === 's3') {
             return $query->where(function (Builder $q): void {
                 $q->where('domain', 's3.orbit')
@@ -234,6 +240,7 @@ class ProxyRouteQuery
     {
         return match ($route->owner_type) {
             'app' => $route->app?->name,
+            'app-analytics' => $route->app?->name,
             'app-websocket' => $route->app?->name,
             'workspace' => $route->workspace?->name,
             'router' => $route->domain,
@@ -250,6 +257,7 @@ class ProxyRouteQuery
 
         return match ($route->owner_type) {
             'app' => 'app',
+            'app-analytics' => 'analytics',
             'app-websocket' => 'websocket',
             'workspace' => 'workspace',
             'gateway' => 'gateway',
@@ -269,6 +277,7 @@ class ProxyRouteQuery
 
         return match ($route->owner_type) {
             'app' => $route->app?->name,
+            'app-analytics' => $this->stringConfig($config, ['target.value', 'target', 'upstream']),
             'app-websocket' => $this->stringConfig($config, ['target.value', 'target', 'upstream']),
             'workspace' => $route->workspace?->name,
             'router' => $this->stringConfig($config, ['target.value', 'target', 'upstream']) ?? $route->domain,

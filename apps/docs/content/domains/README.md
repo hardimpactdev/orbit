@@ -642,7 +642,8 @@ operations on top of the foundation.
 
 These domains integrate Orbit with Cloudflare, VPN, PHP runtimes, agent IDEs,
 DNS, activity logs, object-storage workflows owned by the S3 role, and
-observability workflows owned by the metrics role.
+observability workflows owned by the metrics role, and analytics workflows
+owned by the analytics role.
 
 13. [Cloudflare](12_cf/README.md)
 14. [VPN Administration](13_vpn/README.md)
@@ -650,5 +651,10 @@ observability workflows owned by the metrics role.
 16. [Agent IDE](15_agent-ide/README.md)
 17. [DNS](16_dns/README.md)
 18. [Activity](17_activity/README.md)
+
+Storage and observability integrations follow the network and activity
+surfaces:
+
 19. [S3](19_s3/README.md)
 20. [Metrics](20_metrics/README.md)
+21. [Analytics](21_analytics/README.md)

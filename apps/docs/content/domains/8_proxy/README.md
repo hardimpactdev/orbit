@@ -11,29 +11,37 @@ These rules govern ownership, route kinds, and the boundaries of the proxy comma
 - The proxy command family owns the `proxy:*` command prefix.
 - The `proxy` state family is the canonical registry of every hostname Orbit
   exposes.
-- Every proxy route has an owner: `app`, `app-websocket`, `workspace`,
-  `gateway`, `router`, `s3`, `tool`, or `custom`. The owner value classifies
-  which domain's convergence edits the route record; the private
-  `websocket.orbit` and `s3.orbit` service routes are owned by `router`.
+- Every proxy route has an owner: `app`, `app-websocket`, `app-analytics`,
+  `workspace`, `gateway`, `router`, `s3`, `tool`, or `custom`. The owner value
+  classifies which domain's convergence edits the route record; the private
+  `websocket.orbit`, `s3.orbit`, and `analytics.orbit` service routes are owned
+  by `router`.
 - Every proxy route has a kind: `app`, `workspace`, `internal`, `proxy`, or
   `redirect`.
 - `proxy:list` shows all proxy routes by default, including app routes,
   workspace routes, gateway/internal routes, tool-owned routes, custom upstream
   routes, and redirects.
 - `proxy:list --filter=<filter>` narrows the unified view. Supported filters are
-  `all`, `app`, `app-websocket`, `workspace`, `gateway`, `websocket`, `s3`,
-  `tool`, `custom`, and `redirect`. `websocket` and `s3` are service filters:
+  `all`, `app`, `app-websocket`, `app-analytics`, `workspace`, `gateway`,
+  `websocket`, `s3`, `analytics`, `tool`, `custom`, and `redirect`.
+  `websocket`, `s3`, and `analytics` are service filters:
   `websocket` selects the router-owned `websocket.orbit` service route, and
   `s3` selects the router-owned `s3.orbit` service route plus public S3 host
-  routes. They are not owner-enum mirrors. The router-owned `metrics.orbit`
-  route is visible in the unified/default inventory; no dedicated metrics
-  filter is exposed in this slice.
+  routes, and `analytics` selects the router-owned `analytics.orbit` service
+  route plus public app analytics host routes. They are not owner-enum mirrors.
+  The router-owned `metrics.orbit` route is visible in the unified/default
+  inventory; no dedicated metrics filter is exposed in this slice.
 - App, workspace, gateway, and tool-owned routes are visible through proxy
   commands but edited through their owning domain commands.
 - App WebSocket routes are visible through proxy commands but edited through
   app WebSocket binding commands. Public WebSocket hosts are `ingress` routes
   that forward to `router`; they must not route directly to websocket role
   nodes.
+- App analytics routes are visible through proxy commands but edited through
+  app analytics binding commands. Public analytics hosts are `ingress` routes
+  that forward to `router`, preserve forwarding identity for event attribution,
+  and expose only Plausible tracking paths; they must not route directly to
+  analytics role nodes or expose the Plausible dashboard publicly.
 - Router-owned websocket service routes are visible through proxy commands but
   edited by websocket route convergence. Router owns `websocket.orbit`,
   websocket backend pools, and private router-to-websocket TLS verification.
@@ -45,6 +53,10 @@ These rules govern ownership, route kinds, and the boundaries of the proxy comma
 - The router-owned metrics service route is visible through proxy commands but
   edited by metrics role convergence. Router owns `metrics.orbit` and private
   router-to-Grafana routing. Metrics has no public ingress route in this slice.
+- Router-owned analytics service routes are visible through proxy commands but
+  edited by analytics route convergence. Router owns `analytics.orbit`,
+  analytics backend pools, private router-to-Plausible routing, and public
+  tracking-only path selection.
 - Tool-owned `proxy` routes are HTTP or WebSocket ingress routes only. TCP
   service endpoints such as PostgreSQL, MySQL, and Redis are WireGuard service
   endpoints owned by process definitions and do not appear as HTTP proxy
@@ -134,6 +146,9 @@ Custom, redirect, and tool routes are separate route kinds. They may share TLS, 
 - **Metrics service target:** Grafana backend URL owned by `router`, such as
   `http://metrics-1.metrics.orbit:3000`, used by the private
   `metrics.orbit` route.
+- **Analytics backend pool:** Ordered list of Plausible CE backend URLs using
+  WireGuard IP targets such as `http://10.6.0.9:8000`, owned by `router`. V1
+  supports one active backend and stores a pool shape for later scaling.
 
 ## TLS Authority Model
 
@@ -182,10 +197,10 @@ Proxy JSON renderers that return one route entity embed this shape under `succes
 | --- | --- | --- |
 | `domain` | string | Hostname or host/path route identity. |
 | `kind` | `app`, `workspace`, `internal`, `proxy`, or `redirect` | Route behavior at ingress. |
-| `owner.type` | `app`, `app-websocket`, `workspace`, `gateway`, `router`, `s3`, `tool`, or `custom` | Domain whose convergence edits the route record. Router-owned service routes (`websocket.orbit`, `s3.orbit`) use `router`; `s3` is used by public S3 host routes. |
+| `owner.type` | `app`, `app-websocket`, `app-analytics`, `workspace`, `gateway`, `router`, `s3`, `tool`, or `custom` | Domain whose convergence edits the route record. Router-owned service routes (`websocket.orbit`, `s3.orbit`, `analytics.orbit`) use `router`; `s3` is used by public S3 host routes and `app-analytics` by public analytics host routes. |
 | `owner.name` | string \| null | Owning app, app WebSocket binding, workspace, gateway route, router service, S3 publication, or tool identity when applicable. |
 | `node` | string | Serving node where proxy artifacts are expected. |
-| `target.type` | string | Target behavior, such as `upstream`, `redirect`, `app`, `workspace`, `gateway`, `websocket`, `s3`, or `tool`. |
+| `target.type` | string | Target behavior, such as `upstream`, `redirect`, `app`, `workspace`, `gateway`, `websocket`, `s3`, `analytics`, or `tool`. |
 | `target.value` | string | Upstream URL, redirect URL, or owner-specific target value. |
 | `redirect_code` | integer \| null | HTTP redirect status code for redirect routes. |
 | `tls` | object | Orbit-managed TLS state expected for the route. |
@@ -207,3 +222,4 @@ Each command links to its public documentation and technical contract.
 - [`orbit tool:*`](../3_tool/README.md)
 - [`orbit s3:*`](../19_s3/README.md)
 - [`orbit metrics:*`](../20_metrics/README.md)
+- [`orbit analytics:*`](../21_analytics/README.md)

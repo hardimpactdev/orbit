@@ -52,6 +52,21 @@ VPN client browser
   -> router private `metrics.orbit` route
   -> metrics node Grafana Docker Swarm service
   -> Prometheus Docker Swarm service scraping node-exporter on the metrics host
+
+Private analytics:
+
+VPN client browser
+  -> router private `analytics.orbit` route
+  -> analytics node Plausible CE runtime container
+
+Public app analytics tracking:
+
+Browser
+  -> public 443
+  -> ingress edge orbit-caddy
+  -> private WireGuard route to router
+  -> router app analytics route and backend pool
+  -> analytics node Plausible CE runtime container
 ```
 
 One hub, one path: there is exactly one place to answer "what should exist?", and exactly one place changes are written. Spokes initiate commands and serve workloads, but durable configuration always lives on the gateway.
@@ -104,7 +119,7 @@ happen only on the gateway.
 
 ### Node roles
 
-A node carries one or more **roles** assigned by the gateway. Roles are fixed code-defined bundles: `gateway`, `vpn`, `router`, `app-dev`, `app-prod`, `database`, `agent`, `ingress`, `websocket`, `s3`, and `metrics`. The `gateway` role is the singleton authority role described above.
+A node carries one or more **roles** assigned by the gateway. Roles are fixed code-defined bundles: `gateway`, `vpn`, `router`, `app-dev`, `app-prod`, `database`, `agent`, `ingress`, `websocket`, `s3`, `metrics`, and `analytics`. The `gateway` role is the singleton authority role described above.
 
 The `vpn` role is a gateway-coupled infrastructure role in this version. It
 owns the WireGuard server runtime, public WireGuard endpoint settings, VPN
@@ -112,7 +127,7 @@ peer defaults, and the VPN-facing DNS runtime. First gateway bootstrap assigns
 `gateway`, `vpn`, and `router` to the same node, and normal role commands
 cannot manage those roles independently.
 
-The remaining roles are workload roles applied to nodes in the fleet.
+The other nine are workload roles applied to nodes in the fleet.
 
 `app-dev` uses a local TLD for URLs (`myapp.test`, for example); `app-prod` serves real domains. Staging is a usage pattern of `app-prod`, not a separate role.
 
@@ -152,17 +167,32 @@ host resources only and does not scrape app-, container-, or database-specific
 metrics. The role can run on a dedicated node or be co-located with any
 non-agent role, including a gateway/router node.
 
-The `agent` role runs first-party autonomous agent tools — OpenClaw and Hermes — that operate Orbit through the gateway API on the fleet's behalf. The `agent` role is exclusive: it cannot combine with `gateway`, `vpn`, `router`, `app-dev`, `app-prod`, `database`, `ingress`, `websocket`, `s3`, or `metrics`, and it can only be selected during `node:new`. `node role:add` rejects `agent` because adding it to an existing node bypasses the isolation model the role enforces. A node carrying the `agent` role combines that workload role with explicit scoped grants so the agent can call the gateway like any other caller. Agent tool web UIs are exposed only as internal HTTPS routes under the agent role TLD (for example `https://openclaw.agent` and `https://hermes.agent`); they have no ingress baseline. Activity emitted while autonomous agent tools work is attributed to the node identity — Orbit does not claim per-tool sub-identities.
+The `analytics` role is a private workload role for Orbit-managed Plausible CE
+analytics. An analytics node runs Plausible CE as a process-owned Docker/Swarm
+service, binds only to the node's WireGuard address, and receives dashboard and
+tracking traffic through router-owned private service routes. The private
+dashboard/admin endpoint is `analytics.orbit`. App-owned public analytics hosts
+such as `analytics.example.com` enter through `ingress`, flow to `router`, and
+proxy only Plausible script and event-ingest paths to the analytics backend.
+The role depends on PostgreSQL and ClickHouse service processes selected from
+active `database` role nodes. Those database processes may live on the same
+node as each other, and may live on the analytics node only when that node also
+has the active `database` role.
+
+The `agent` role runs first-party autonomous agent tools — OpenClaw and Hermes — that operate Orbit through the gateway API on the fleet's behalf. The `agent` role is exclusive: it cannot combine with `gateway`, `vpn`, `router`, `app-dev`, `app-prod`, `database`, `ingress`, `websocket`, `s3`, `metrics`, or `analytics`, and it can only be selected during `node:new`. `node role:add` rejects `agent` because adding it to an existing node bypasses the isolation model the role enforces. A node carrying the `agent` role combines that workload role with explicit scoped grants so the agent can call the gateway like any other caller. Agent tool web UIs are exposed only as internal HTTPS routes under the agent role TLD (for example `https://openclaw.agent` and `https://hermes.agent`); they have no ingress baseline. Activity emitted while autonomous agent tools work is attributed to the node identity — Orbit does not claim per-tool sub-identities.
 
 Roles compose only where the role matrix allows it. In v1, `gateway`, `vpn`,
 and `router` are coupled to each other, but the `metrics` role may be added to
 that coupled node because it observes host resources and owns no public edge.
 `app-dev` may combine with `database`, `websocket`, `s3`, and `metrics`.
 `app-prod` may combine with `ingress` and `metrics`, but conflicts with
-`database`, `websocket`, and `s3`. `websocket` and `s3` may combine with each
-other on dev services nodes, and both may combine with `metrics`. The `agent`
-role remains exclusive. The full compatibility matrix lives in
-[Node Concepts](domains/1_node/node-concepts.md#role-compatibility).
+`database`, `websocket`, `s3`, and `analytics`. `websocket` and `s3` may
+combine with each other on dev services nodes, and both may combine with
+`metrics` and `analytics`. `analytics` may also combine with `database` and
+`metrics`, but conflicts with gateway-coupled infrastructure, public edge,
+production app, and agent roles. The `agent` role remains exclusive and
+conflicts with both `metrics` and `analytics`. The full compatibility matrix
+lives in [Node Concepts](domains/1_node/node-concepts.md#role-compatibility).
 
 Each role has a **driver** — the code that knows how to install, configure, and verify that role on a node. A role can only be assigned to a node whose host operating system is supported by that role's driver. New OS support for an existing role is a driver change, not an architecture change. Current driver OS support is enumerated in [Node Concepts: Role Platform Support](domains/1_node/node-concepts.md#role-platform-support).
 
@@ -176,7 +206,7 @@ nodes, and events those nodes send back. The `vpn` role owns the WireGuard
 server runtime, the public endpoint settings peers use to reach it, peer
 defaults, and the VPN-facing DNS runtime. In v1 that role is gateway-coupled,
 so the active `vpn` role runs on the same node as the active `gateway` role.
-Nodes with only `app-dev`, `database`, `websocket`, `s3`, `metrics`, or private
+Nodes with only `app-dev`, `database`, `websocket`, `s3`, `metrics`, `analytics`, or private
 `app-prod` roles do not need a public face. Only nodes with an active
 `ingress` role expose public production HTTP/HTTPS. SSH and the Orbit API stay
 reachable only over the VPN. The current VPN implementation is WireGuard; see

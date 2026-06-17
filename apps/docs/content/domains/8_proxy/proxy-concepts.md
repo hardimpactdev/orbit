@@ -10,10 +10,10 @@ These terms define the types of routes that the proxy family owns and manages.
   exposes through its HTTP ingress, with an owner, a kind, a serving node, a
   target, and TLS configuration.
 - **Route owner:** The domain that owns route lifecycle. One of `app`,
-  `app-websocket`, `workspace`, `gateway`, `router`, `s3`, `tool`, or
-  `custom`. The `owner` value classifies which domain's convergence edits the
-  route record; it is not necessarily the role that owns the hostname or
-  artifact.
+  `app-websocket`, `app-analytics`, `workspace`, `gateway`, `router`, `s3`,
+  `tool`, or `custom`. The `owner` value classifies which domain's convergence
+  edits the route record; it is not necessarily the role that owns the hostname
+  or artifact.
 - **Route kind:** Route behavior at ingress. One of `app`, `workspace`,
   `internal`, `proxy`, or `redirect`.
 - **App route:** Proxy route whose owner is an app and whose kind is `app`.
@@ -34,6 +34,15 @@ These terms define the types of routes that the proxy family owns and manages.
   `app-websocket` and whose kind is `proxy`. It is created from an app
   WebSocket binding, rendered on an `ingress` node, and forwards to `router`;
   it must not target a concrete websocket node.
+- **App analytics route:** Public analytics tracking route whose owner is
+  `app-analytics` and whose kind is `proxy`. It is created from an app
+  analytics binding, rendered on an `ingress` node, forwards to `router`, and
+  proxies only Plausible script and event-ingest paths. It must not expose the
+  Plausible dashboard or target a concrete analytics node.
+- **Analytics service route:** Private router route for `analytics.orbit`,
+  owned by `router`. It exists while at least one active `analytics` role
+  assignment exists in the topology and targets the analytics backend pool
+  owned by router.
 - **WebSocket service route:** Private router route for `websocket.orbit`,
   owned by `router`. It exists while at least one active `websocket` role
   assignment exists in the topology and is removed when none remains. It
@@ -75,6 +84,9 @@ These terms define the types of routes that the proxy family owns and manages.
 - **Metrics service target:** Grafana backend URL owned by `router`, such as
   `http://metrics-1.metrics.orbit:3000`, used by the private `metrics.orbit`
   route. V1 selects one active metrics backend.
+- **Analytics backend pool:** Ordered list of Plausible CE backend URLs using
+  WireGuard IP targets such as `http://10.6.0.9:8000`, owned by `router`. V1
+  supports one active backend and stores a pool shape for later scaling.
 
 ## TLS
 
@@ -118,10 +130,10 @@ These terms define what the proxy family owns and what remains outside its scope
 
 - **Proxy-family boundaries:** Proxy commands own the unified ingress
   registry, route TLS configuration, ingress contracts, and convergence of derived
-  proxy and TLS artifacts. They do not own app, app WebSocket binding,
-  workspace, gateway, websocket service, S3 service, or tool identity, do not
-  create or remove owner-side records, and do not manage TCP tool service
-  endpoints or firewall policy.
+  proxy and TLS artifacts. They do not own app, app WebSocket binding, app
+  analytics binding, workspace, gateway, websocket service, S3 service,
+  analytics service, or tool identity, do not create or remove owner-side
+  records, and do not manage TCP tool service endpoints or firewall policy.
 
   Public WebSocket hosts are ingress routes that forward to router. Router owns
   `websocket.orbit`, websocket backend pools, and private router-to-websocket
@@ -129,5 +141,10 @@ These terms define what the proxy family owns and what remains outside its scope
   Router owns `s3.orbit`, S3 backend pools, S3 upload-compatible proxy settings,
   and private router-to-SeaweedFS routing. Router also owns the private
   `metrics.orbit` route to Grafana; metrics has no public ingress route in this
-  slice. Ingress must not route directly to websocket, s3, or metrics role
-  nodes.
+  slice.
+
+  Public analytics hosts are ingress routes that forward to router and preserve
+  forwarding identity for Plausible event attribution. Router owns
+  `analytics.orbit`, analytics backend pools, private router-to-Plausible
+  routing, and public path selection that allows tracking only. Ingress must not
+  route directly to websocket, s3, metrics, or analytics role nodes.

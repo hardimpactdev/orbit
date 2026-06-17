@@ -151,6 +151,47 @@ it('resolves metrics service definitions for Prometheus, Grafana, and node-expor
         ->and($nodeExporter->runtimeConfig['labels']['orbit.process.definition'])->toBe('node-exporter');
 });
 
+it('resolves PostgreSQL, ClickHouse, and Plausible service definitions into process runtime config', function (): void {
+    $node = Node::factory()->create([
+        'name' => 'analytics-1',
+        'wireguard_address' => '10.6.0.50',
+    ]);
+
+    $registry = app(ProcessServiceDefinitionRegistry::class);
+
+    $postgres = $registry->resolve('postgres', '16', ProcessRuntime::DockerSwarm, $node, 'postgres16');
+    $clickhouse = $registry->resolve('clickhouse', '24', ProcessRuntime::DockerSwarm, $node, 'clickhouse24');
+    $plausible = $registry->resolve('plausible', '3.2.2', ProcessRuntime::DockerSwarm, $node, 'plausible');
+
+    expect($registry->names())->toContain('postgres', 'clickhouse', 'plausible')
+        ->and($postgres->runtimeConfig)->toMatchArray([
+            'definition' => 'postgres',
+            'version_family' => '16',
+            'version' => '16',
+            'image' => 'postgres:16',
+        ])
+        ->and($postgres->runtimeConfig['endpoint']['port'])->toBe(5432)
+        ->and($clickhouse->runtimeConfig)->toMatchArray([
+            'definition' => 'clickhouse',
+            'version_family' => '24',
+            'version' => '24',
+            'image' => 'clickhouse/clickhouse-server:24',
+        ])
+        ->and($clickhouse->runtimeConfig['endpoint']['port'])->toBe(8123)
+        ->and($plausible->runtimeConfig)->toMatchArray([
+            'definition' => 'plausible',
+            'version_family' => '3.2.2',
+            'version' => '3.2.2',
+            'image' => 'ghcr.io/plausible/community-edition:3.2.2',
+        ])
+        ->and($plausible->runtimeConfig['endpoint']['port'])->toBe(8000)
+        ->and($plausible->runtimeConfig['environment'])->toMatchArray([
+            'BASE_URL' => 'https://analytics.orbit',
+        ])
+        ->and($plausible->runtimeConfig['labels']['orbit.process.definition'])->toBe('plausible')
+        ->and($plausible->runtimeConfig['labels']['orbit.process.version'])->toBe('3.2.2');
+});
+
 it('requires service process endpoints to use the owner node WireGuard address', function (): void {
     $node = Node::factory()->create([
         'name' => 'database-1',
@@ -206,7 +247,7 @@ it('rejects unsupported service process definition inputs', function (Closure $o
     $this->fail('Expected GatewayApiException was not thrown.');
 })->with([
     'definition' => [
-        fn (ProcessServiceDefinitionRegistry $registry, Node $node) => $registry->resolve('postgres', '16', ProcessRuntime::Docker, $node, 'postgres16'),
+        fn (ProcessServiceDefinitionRegistry $registry, Node $node) => $registry->resolve('queue', '1', ProcessRuntime::Docker, $node, 'queue'),
         'definition',
         'unsupported_value',
     ],

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services\Nodes\Roles;
 
 use App\Data\Nodes\RoleSettings\AgentRoleSettings;
+use App\Data\Nodes\RoleSettings\AnalyticsRoleSettings;
 use App\Data\Nodes\RoleSettings\AppDevelopmentRoleSettings;
 use App\Data\Nodes\RoleSettings\AppProductionRoleSettings;
 use App\Data\Nodes\RoleSettings\DatabaseRoleSettings;
@@ -47,6 +48,7 @@ final class NodeRoleRegistry
                     NodeRoleName::Ingress->value,
                     NodeRoleName::WebSocket->value,
                     NodeRoleName::S3->value,
+                    NodeRoleName::Analytics->value,
                 ],
                 supportedPlatforms: ['ubuntu'],
                 settingsClass: EmptyRoleSettings::class,
@@ -63,6 +65,7 @@ final class NodeRoleRegistry
                     NodeRoleName::Ingress->value,
                     NodeRoleName::WebSocket->value,
                     NodeRoleName::S3->value,
+                    NodeRoleName::Analytics->value,
                 ],
                 supportedPlatforms: ['ubuntu'],
                 settingsClass: VpnRoleSettings::class,
@@ -79,6 +82,7 @@ final class NodeRoleRegistry
                     NodeRoleName::Ingress->value,
                     NodeRoleName::WebSocket->value,
                     NodeRoleName::S3->value,
+                    NodeRoleName::Analytics->value,
                 ],
                 supportedPlatforms: ['ubuntu'],
                 settingsClass: EmptyRoleSettings::class,
@@ -109,6 +113,7 @@ final class NodeRoleRegistry
                     NodeRoleName::Agent->value,
                     NodeRoleName::WebSocket->value,
                     NodeRoleName::S3->value,
+                    NodeRoleName::Analytics->value,
                 ],
                 supportedPlatforms: ['ubuntu'],
                 settingsClass: AppProductionRoleSettings::class,
@@ -139,6 +144,7 @@ final class NodeRoleRegistry
                     NodeRoleName::WebSocket->value,
                     NodeRoleName::S3->value,
                     NodeRoleName::Metrics->value,
+                    NodeRoleName::Analytics->value,
                 ],
                 supportedPlatforms: ['ubuntu'],
                 settingsClass: AgentRoleSettings::class,
@@ -156,6 +162,7 @@ final class NodeRoleRegistry
                     NodeRoleName::Agent->value,
                     NodeRoleName::WebSocket->value,
                     NodeRoleName::S3->value,
+                    NodeRoleName::Analytics->value,
                 ],
                 supportedPlatforms: ['ubuntu'],
                 settingsClass: EmptyRoleSettings::class,
@@ -193,6 +200,19 @@ final class NodeRoleRegistry
                 ],
                 supportedPlatforms: ['ubuntu'],
                 settingsClass: EmptyRoleSettings::class,
+            ),
+            NodeRoleName::Analytics->value => new NodeRoleDefinition(
+                name: NodeRoleName::Analytics->value,
+                conflictsWith: [
+                    NodeRoleName::Gateway->value,
+                    NodeRoleName::Vpn->value,
+                    NodeRoleName::Router->value,
+                    NodeRoleName::AppProduction->value,
+                    NodeRoleName::Agent->value,
+                    NodeRoleName::Ingress->value,
+                ],
+                supportedPlatforms: ['ubuntu'],
+                settingsClass: AnalyticsRoleSettings::class,
             ),
         ];
     }

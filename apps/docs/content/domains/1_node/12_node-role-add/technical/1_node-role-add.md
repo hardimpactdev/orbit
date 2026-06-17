@@ -15,7 +15,7 @@
 ## Signature
 
 ```bash
-orbit node role:add [node] [role] [--tld=] [--redis-node=] [--s3-data-path=<path>] [--json]
+orbit node role:add [node] [role] [--tld=] [--redis-node=] [--postgres-node=<node>] [--clickhouse-node=<node>] [--s3-data-path=<path>] [--json]
 ```
 
 ## Input Contract
@@ -28,6 +28,8 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | `role` | `[role]` | Always. | Never. | None. | `gateway`, `vpn`, `router`, and `agent` are rejected. |
 | `tld` | `--tld` | Required for `app-dev`. | Forbidden for roles that do not support it. | None. | Must be a single lowercase DNS label without a leading dot. |
 | `redis_node` | `--redis-node` | Required for `websocket`. | Forbidden for roles that do not support it. | None. | Must match an active node with the `database` role and Redis expected or installed. |
+| `postgres_node` | `--postgres-node` | Required for `analytics`. | Forbidden for roles that do not support it. | None. | Must match an active node with the `database` role and PostgreSQL expected or installed. |
+| `clickhouse_node` | `--clickhouse-node` | Required for `analytics`. | Forbidden for roles that do not support it. | None. | Must match an active node with the `database` role and ClickHouse expected or installed. |
 | `s3_data_path` | `--s3-data-path` | Never. | Forbidden for roles that do not support it. | `/srv/orbit/s3/data` for `s3`. | Absolute host path mounted into SeaweedFS as `/data`. |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer and forces non-interactive input mode. |
 
@@ -46,6 +48,11 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 - `app-dev` requires `--tld`.
 - `websocket` requires `--redis-node`. The resolved node must have an active
   `database` role and Redis expected or installed.
+- `analytics` requires `--postgres-node` and `--clickhouse-node`. The resolved
+  nodes must have active `database` roles and matching PostgreSQL and ClickHouse
+  service processes expected or installed. Both options may point at the same
+  database node. Either option may point at the target analytics node only when
+  the target node also has an active `database` role.
 - `s3` accepts optional `--s3-data-path`. The resolved path defaults to
   `/srv/orbit/s3/data`, must be absolute, is stored as `settings.data_path`,
   and is mounted into SeaweedFS as `/data`.

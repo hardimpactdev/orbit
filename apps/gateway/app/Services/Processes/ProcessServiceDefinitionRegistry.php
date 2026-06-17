@@ -266,6 +266,79 @@ final readonly class ProcessServiceDefinitionRegistry
                     ],
                 ],
             ],
+            'postgres' => [
+                'runtimes' => [ProcessRuntime::Docker, ProcessRuntime::DockerSwarm],
+                'image' => 'postgres',
+                'command' => 'postgres',
+                'target_port' => 5432,
+                'data_path' => '/var/lib/postgresql/data',
+                'environment' => [
+                    'POSTGRES_DB' => 'orbit',
+                    'POSTGRES_PASSWORD' => 'orbit',
+                    'POSTGRES_USER' => 'orbit',
+                ],
+                'credentials' => [
+                    'database' => 'orbit',
+                    'password' => 'orbit',
+                    'username' => 'orbit',
+                ],
+                'healthcheck' => [
+                    'command' => 'pg_isready -U orbit',
+                    'kind' => 'command',
+                ],
+                'versions' => [
+                    '16' => [
+                        'default' => '16',
+                        'versions' => ['16'],
+                        'port' => 5432,
+                    ],
+                ],
+            ],
+            'clickhouse' => [
+                'runtimes' => [ProcessRuntime::Docker, ProcessRuntime::DockerSwarm],
+                'image' => 'clickhouse/clickhouse-server',
+                'command' => 'clickhouse-server',
+                'target_port' => 8123,
+                'data_path' => '/var/lib/clickhouse',
+                'environment' => [],
+                'credentials' => [],
+                'healthcheck' => [
+                    'command' => 'wget --spider -q http://127.0.0.1:8123/ping || exit 1',
+                    'kind' => 'command',
+                ],
+                'versions' => [
+                    '24' => [
+                        'default' => '24',
+                        'versions' => ['24'],
+                        'port' => 8123,
+                    ],
+                ],
+            ],
+            'plausible' => [
+                'runtimes' => [ProcessRuntime::Docker, ProcessRuntime::DockerSwarm],
+                'image' => 'ghcr.io/plausible/community-edition',
+                'command' => 'plausible start',
+                'target_port' => 8000,
+                'data_path' => '/var/lib/plausible',
+                'environment' => [
+                    'BASE_URL' => 'https://analytics.orbit',
+                    'CLICKHOUSE_DATABASE_URL' => 'http://clickhouse:8123/plausible',
+                    'DATABASE_URL' => 'postgres://orbit:orbit@postgres:5432/plausible',
+                    'SECRET_KEY_BASE' => 'change-me',
+                ],
+                'credentials' => [],
+                'healthcheck' => [
+                    'command' => 'wget --spider -q http://127.0.0.1:8000 || exit 1',
+                    'kind' => 'command',
+                ],
+                'versions' => [
+                    '3.2.2' => [
+                        'default' => '3.2.2',
+                        'versions' => ['3.2.2'],
+                        'port' => 8000,
+                    ],
+                ],
+            ],
         ];
     }
 

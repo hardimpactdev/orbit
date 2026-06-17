@@ -17,4 +17,5 @@ enum NodeRoleName: string
     case WebSocket = 'websocket';
     case S3 = 's3';
     case Metrics = 'metrics';
+    case Analytics = 'analytics';
 }

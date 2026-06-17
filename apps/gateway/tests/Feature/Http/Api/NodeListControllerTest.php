@@ -206,11 +206,11 @@ describe('NodeListController', function (): void {
             ->assertJson([
                 'error' => [
                     'code' => 'validation_failed',
-                    'message' => "Invalid value for role: 'invalid'. Allowed values: gateway, vpn, router, app-dev, app-prod, database, agent, ingress, websocket, s3, metrics.",
+                    'message' => "Invalid value for role: 'invalid'. Allowed values: gateway, vpn, router, app-dev, app-prod, database, agent, ingress, websocket, s3, metrics, analytics.",
                     'meta' => [
                         'field' => 'role',
                         'value' => 'invalid',
-                        'allowed' => ['gateway', 'vpn', 'router', 'app-dev', 'app-prod', 'database', 'agent', 'ingress', 'websocket', 's3', 'metrics'],
+                        'allowed' => ['gateway', 'vpn', 'router', 'app-dev', 'app-prod', 'database', 'agent', 'ingress', 'websocket', 's3', 'metrics', 'analytics'],
                     ],
                 ],
             ]);

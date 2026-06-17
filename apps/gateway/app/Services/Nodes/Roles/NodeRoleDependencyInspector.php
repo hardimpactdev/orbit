@@ -30,6 +30,7 @@ class NodeRoleDependencyInspector
         'mysql',
         'postgres',
         'redis',
+        'clickhouse',
     ];
 
     /**

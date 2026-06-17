@@ -11,7 +11,7 @@ class NodeRoleAddPayloadBuilder
     /**
      * @return array<string, mixed>
      */
-    public function build(string $role, ?string $tld, ?string $redisNode, ?string $s3DataPath): array
+    public function build(string $role, ?string $tld, ?string $redisNode, ?string $postgresNode, ?string $clickhouseNode, ?string $s3DataPath): array
     {
         if (in_array($role, ['gateway', 'vpn', 'router'], true)) {
             throw new NodeWriteInputException(
@@ -49,6 +49,27 @@ class NodeRoleAddPayloadBuilder
             $settings['redis_node'] = $redisNode;
         } elseif ($redisNode !== null) {
             throw new NodeWriteInputException('validation_failed', "Role '{$role}' does not accept --redis-node.", ['field' => 'redis_node', 'role' => $role]);
+        }
+
+        if ($role === 'analytics') {
+            if ($postgresNode === null) {
+                throw new NodeWriteInputException('validation_failed', 'The analytics role requires --postgres-node.', ['field' => 'postgres_node']);
+            }
+
+            if ($clickhouseNode === null) {
+                throw new NodeWriteInputException('validation_failed', 'The analytics role requires --clickhouse-node.', ['field' => 'clickhouse_node']);
+            }
+
+            $settings['postgres_node'] = $postgresNode;
+            $settings['clickhouse_node'] = $clickhouseNode;
+        } else {
+            if ($postgresNode !== null) {
+                throw new NodeWriteInputException('validation_failed', "Role '{$role}' does not accept --postgres-node.", ['field' => 'postgres_node', 'role' => $role]);
+            }
+
+            if ($clickhouseNode !== null) {
+                throw new NodeWriteInputException('validation_failed', "Role '{$role}' does not accept --clickhouse-node.", ['field' => 'clickhouse_node', 'role' => $role]);
+            }
         }
 
         if ($role === 's3') {

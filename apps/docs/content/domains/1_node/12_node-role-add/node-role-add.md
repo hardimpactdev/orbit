@@ -10,7 +10,7 @@ You can run this command to add an additional role assignment to an
 existing node.
 
 ```bash
-orbit node role:add [node] [role] [--tld=] [--redis-node=] [--s3-data-path=<path>] [--json]
+orbit node role:add [node] [role] [--tld=] [--redis-node=] [--postgres-node=<node>] [--clickhouse-node=<node>] [--s3-data-path=<path>] [--json]
 ```
 
 ## Behavior
@@ -28,6 +28,9 @@ This command validates the role assignment, applies role-local options, and repo
 - `app-dev` requires `--tld`.
 - `websocket` requires `--redis-node`; the selected node must have an active
   `database` role and Redis expected or installed.
+- `analytics` requires `--postgres-node` and `--clickhouse-node`; the selected
+  nodes must have active `database` roles and PostgreSQL or ClickHouse expected
+  or installed. The same database node can satisfy both options.
 - `s3` accepts optional `--s3-data-path`; it defaults to
   `/srv/orbit/s3/data`, must be absolute, and is mounted into SeaweedFS as
   `/data`.

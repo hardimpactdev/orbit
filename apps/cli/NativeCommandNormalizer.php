@@ -16,9 +16,11 @@ const ORBIT_NATIVE_MULTI_TOKEN_COMMANDS = [
  */
 function normalizeNativeCommandArgv(array $argv): array
 {
-    return normalizeNativeToolInstallVersionArgv(
-        normalizeNativeVersionCommandArgv(
-            normalizeNativeMultiTokenCommandArgv($argv),
+    return normalizeNativeAnalyticsUpdateVersionArgv(
+        normalizeNativeToolInstallVersionArgv(
+            normalizeNativeVersionCommandArgv(
+                normalizeNativeMultiTokenCommandArgv($argv),
+            ),
         ),
     );
 }
@@ -188,6 +190,72 @@ function normalizeNativeToolInstallVersionArgv(array $argv): array
 
         if ($insideToolInstall && $argument === '--version' && $index + 1 < $count && ! str_starts_with($argv[$index + 1], '-')) {
             $rewritten[] = '--tool-version='.$argv[$index + 1];
+            $index++;
+
+            continue;
+        }
+
+        $rewritten[] = $argument;
+    }
+
+    return $rewritten;
+}
+
+/**
+ * Rewrite the public `analytics:update --version=<version>` contract to an
+ * internal option name because Symfony reserves `--version` globally.
+ *
+ * @param  list<string>  $argv
+ * @return list<string>
+ */
+function normalizeNativeAnalyticsUpdateVersionArgv(array $argv): array
+{
+    if ($argv === []) {
+        return [];
+    }
+
+    $rewritten = [];
+    $insideAnalyticsUpdate = false;
+    $afterEndOfOptions = false;
+    $count = count($argv);
+
+    for ($index = 0; $index < $count; $index++) {
+        $argument = $argv[$index];
+
+        if ($index === 0) {
+            $rewritten[] = $argument;
+
+            continue;
+        }
+
+        if ($afterEndOfOptions) {
+            $rewritten[] = $argument;
+
+            continue;
+        }
+
+        if ($argument === '--') {
+            $rewritten[] = $argument;
+            $afterEndOfOptions = true;
+
+            continue;
+        }
+
+        if (! $insideAnalyticsUpdate && $argument !== '' && ! str_starts_with($argument, '-')) {
+            $insideAnalyticsUpdate = $argument === 'analytics:update';
+            $rewritten[] = $argument;
+
+            continue;
+        }
+
+        if ($insideAnalyticsUpdate && str_starts_with($argument, '--version=')) {
+            $rewritten[] = '--requested-version='.substr($argument, strlen('--version='));
+
+            continue;
+        }
+
+        if ($insideAnalyticsUpdate && $argument === '--version' && $index + 1 < $count && ! str_starts_with($argv[$index + 1], '-')) {
+            $rewritten[] = '--requested-version='.$argv[$index + 1];
             $index++;
 
             continue;

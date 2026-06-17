@@ -32,6 +32,7 @@ final readonly class NonStateDomainHandoffRule implements GroupedRule
     private const array REQUIRED_DOCTOR_HANDOFFS = [
         'activity' => ['node', 'app', 'workspace', 'process', 'proxy', 'schedule', 'tool', 'firewall_rule'],
         'agent-ide' => ['node', 'app', 'workspace', 'process', 'tool'],
+        'analytics' => ['node', 'app', 'process', 'proxy'],
         'cf' => ['proxy', 'app'],
         'deploy' => ['app'],
         'dns' => ['node'],

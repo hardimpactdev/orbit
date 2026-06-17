@@ -18,10 +18,10 @@ Each term below has a precise meaning in the node command family.
   not mutually exclusive with workload roles; any gateway-known node can be an
   operator when its grants allow that work.
 - **Node role:** A fixed code-defined bundle attached through a role
-  assignment. The eleven roles are `gateway` (singleton authority), `vpn` and
+  assignment. The twelve roles are `gateway` (singleton authority), `vpn` and
   `router` (gateway-coupled infrastructure), `app-dev`,
   `app-prod`, `database`, `agent`, `ingress`, `websocket`, `s3`, and
-  `metrics`. The latter eight are workload roles.
+  `metrics`, and `analytics`. The latter nine are workload roles.
 - **Gateway role:** The singleton authority role. The `gateway` role owns
   durable Orbit state, the typed API, root CA material, node access policy, and
   doctor convergence. It is stored as a role assignment, but normal
@@ -84,9 +84,15 @@ Each term below has a precise meaning in the node command family.
   process intent, exposes Grafana through the router-owned private
   `metrics.orbit` route, and can be dedicated or co-located with any
   non-agent role.
+- **Analytics role:** Private workload role for Plausible CE analytics. An
+  analytics node runs Plausible CE as a process-owned Docker/Swarm service,
+  binds only to the node's WireGuard address, receives dashboard traffic through
+  `analytics.orbit`, and receives tracking traffic for each app through public
+  ingress-to-router routes.
 - **Agent role:** Exclusive workload role for first-party autonomous agent
   workloads. Conflicts with `gateway`, `vpn`, `router`, `app-dev`,
-  `app-prod`, `database`, `ingress`, `websocket`, `s3`, and `metrics`.
+  `app-prod`, `database`, `ingress`, `websocket`, `s3`, `metrics`, and
+  `analytics`.
   Selectable only during `node:new`.
 - **Ingress role:** Workload role that owns public production HTTP
   ingress, public Caddy route artifacts, public TLS, and public edge
@@ -138,17 +144,18 @@ Assignments in `active`, `pending`, or `error` must satisfy this matrix:
 
 | Role | Combines with | Conflicts with |
 | --- | --- | --- |
-| `gateway` | `vpn`, `router`, `metrics` | `app-dev`, `app-prod`, `database`, `agent`, `ingress`, `websocket`, `s3` |
-| `vpn` | `gateway`, `router`, `metrics` | `app-dev`, `app-prod`, `database`, `agent`, `ingress`, `websocket`, `s3` |
-| `router` | `gateway`, `vpn`, `metrics` | `app-dev`, `app-prod`, `database`, `agent`, `ingress`, `websocket`, `s3` |
-| `app-dev` | `database`, `websocket`, `s3`, `metrics` | `gateway`, `vpn`, `router`, `app-prod`, `agent`, `ingress` |
-| `app-prod` | `ingress`, `metrics` | `gateway`, `vpn`, `router`, `app-dev`, `database`, `agent`, `websocket`, `s3` |
-| `database` | `app-dev`, `websocket`, `s3`, `metrics` | `gateway`, `vpn`, `router`, `app-prod`, `agent`, `ingress` |
-| `agent` | none | `gateway`, `vpn`, `router`, `app-dev`, `app-prod`, `database`, `ingress`, `websocket`, `s3`, `metrics` |
-| `ingress` | `app-prod`, `metrics` | `gateway`, `vpn`, `router`, `app-dev`, `database`, `agent`, `websocket`, `s3` |
-| `websocket` | `app-dev`, `database`, `s3`, `metrics` | `gateway`, `vpn`, `router`, `ingress`, `app-prod`, `agent` |
-| `s3` | `app-dev`, `database`, `websocket`, `metrics` | `gateway`, `vpn`, `router`, `ingress`, `app-prod`, `agent` |
-| `metrics` | `gateway`, `vpn`, `router`, `app-dev`, `app-prod`, `database`, `ingress`, `websocket`, `s3` | `agent` |
+| `gateway` | `vpn`, `router`, `metrics` | `app-dev`, `app-prod`, `database`, `agent`, `ingress`, `websocket`, `s3`, `analytics` |
+| `vpn` | `gateway`, `router`, `metrics` | `app-dev`, `app-prod`, `database`, `agent`, `ingress`, `websocket`, `s3`, `analytics` |
+| `router` | `gateway`, `vpn`, `metrics` | `app-dev`, `app-prod`, `database`, `agent`, `ingress`, `websocket`, `s3`, `analytics` |
+| `app-dev` | `database`, `websocket`, `s3`, `metrics`, `analytics` | `gateway`, `vpn`, `router`, `app-prod`, `agent`, `ingress` |
+| `app-prod` | `ingress`, `metrics` | `gateway`, `vpn`, `router`, `app-dev`, `database`, `agent`, `websocket`, `s3`, `analytics` |
+| `database` | `app-dev`, `websocket`, `s3`, `metrics`, `analytics` | `gateway`, `vpn`, `router`, `app-prod`, `agent`, `ingress` |
+| `agent` | none | `gateway`, `vpn`, `router`, `app-dev`, `app-prod`, `database`, `ingress`, `websocket`, `s3`, `metrics`, `analytics` |
+| `ingress` | `app-prod`, `metrics` | `gateway`, `vpn`, `router`, `app-dev`, `database`, `agent`, `websocket`, `s3`, `analytics` |
+| `websocket` | `app-dev`, `database`, `s3`, `metrics`, `analytics` | `gateway`, `vpn`, `router`, `ingress`, `app-prod`, `agent` |
+| `s3` | `app-dev`, `database`, `websocket`, `metrics`, `analytics` | `gateway`, `vpn`, `router`, `ingress`, `app-prod`, `agent` |
+| `metrics` | `gateway`, `vpn`, `router`, `app-dev`, `app-prod`, `database`, `ingress`, `websocket`, `s3`, `analytics` | `agent` |
+| `analytics` | `app-dev`, `database`, `websocket`, `s3`, `metrics` | `gateway`, `vpn`, `router`, `ingress`, `app-prod`, `agent` |
 
 Compatibility checks treat assignments in `active`, `pending`, or `error` as
 unresolved conflicts. Assignments already in `removing` are ignored.
@@ -178,6 +185,7 @@ require, read, and write.
 | `websocket` | `redis_node_id` | — |
 | `s3` | `data_path` | — |
 | `metrics` | — | — |
+| `analytics` | `postgres_node_id`, `clickhouse_node_id` | — |
 
 A node can hold at most one `tld` value at a time. Roles that depend on `tld`
 read and write the same node-level field. This shared field keeps the data
@@ -199,12 +207,21 @@ adding the role.
 `wireguard_port` defaults to `51820`.
 `dns_ip` defaults to `10.6.0.1` and is the DNS endpoint written into peer
 configs. In v1 the DNS resolver runtime is coupled to the `vpn` role.
+
 `redis_node_id` references the active `database` role node whose managed Redis
 service backs Reverb scaling for the `websocket` role. The websocket role uses
 that Redis service but does not install or own Redis.
+
 `data_path` defaults to `/srv/orbit/s3/data`. It is the host path mounted into
 the SeaweedFS container as `/data` and is role-owned persistent data. Removing the
 role without `--purge-data` must not delete this path.
+
+`postgres_node_id` and `clickhouse_node_id` reference active `database` role
+nodes whose managed PostgreSQL and ClickHouse service processes back
+Plausible CE. The two references may point at the same database role node. They
+may point at the analytics node only when that node also has an active
+`database` role. The analytics role uses those service processes but does not
+install or own PostgreSQL or ClickHouse itself.
 
 ## Role Baselines
 
@@ -223,6 +240,7 @@ Role baselines are code-defined desired state, not editable package lists.
 | `websocket` | Laravel Reverb in a Docker runtime container managed by Orbit, private TLS backend binding on WireGuard, backend certificate material, and Redis-backed scaling configuration |
 | `s3` | SeaweedFS in a Docker runtime container rendered by Orbit, private S3 API binding on WireGuard, service-level credentials on the `seaweedfs` tool row, backend pool registration, and role-owned data path |
 | `metrics` | Docker substrate intent, Prometheus and Grafana Docker Swarm process definitions, node-exporter systemd process definition, the router-owned `metrics.orbit` route, and generated Grafana admin credentials |
+| `analytics` | Plausible CE in a process-owned Docker/Swarm service, private `analytics.orbit` router route, per-app public tracking route support, analytics backend pool registration, and runtime configuration derived from PostgreSQL and ClickHouse process endpoints |
 
 Baseline convergence first stores the gateway intent for the selected role.
 When `node:new` provisions a real managed workload host, node setup then
@@ -271,6 +289,7 @@ Each role is supported on a specific set of host platforms.
 | `websocket` | Ubuntu |
 | `s3` | Ubuntu |
 | `metrics` | Ubuntu |
+| `analytics` | Ubuntu |
 
 Commands that provision a host or apply node-side artifacts must verify that the
 observed host platform is supported for the node's gateway role assignment or

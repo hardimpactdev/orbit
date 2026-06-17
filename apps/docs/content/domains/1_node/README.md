@@ -37,10 +37,9 @@ Orbit distinguishes these concepts:
   `.orbit` DNS/service names, private route artifacts, backend pools, and
   private HTTP/WebSocket/S3 routing.
 - **Node roles:** composable roles that prepare a node to serve a kind of
-  workload. The initial workload roles are `app-dev`,
-  `app-prod`, `database`, `agent`, `ingress`, `websocket`, `s3`, and
-  `metrics`. `agent` is
-  exclusive and selectable only during `node:new`; `node role:add` rejects it.
+  workload. Workload roles are `app-dev`, `app-prod`, `database`, `agent`,
+  `ingress`, `websocket`, `s3`, `metrics`, and `analytics`. `agent` is
+  exclusive during `node:new`; `node role:add` rejects it.
   `websocket` is a private workload role for Laravel Reverb; it binds only to
   WireGuard and receives traffic through router-owned private service routes.
   `s3` is a private workload role for SeaweedFS object storage; it binds only to
@@ -48,6 +47,9 @@ Orbit distinguishes these concepts:
   `metrics` is an optional host-resource observability role; it records
   Prometheus, Grafana, and node-exporter process intent and exposes Grafana
   through `metrics.orbit`.
+  `analytics` is a private workload role for Plausible CE; it binds only to
+  WireGuard and receives dashboard plus tracking traffic through router-owned
+  analytics service routes.
 - **Client identity:** a CLI installation that has gateway configuration
   and a gateway-issued WireGuard identity. A client may have no workload role
   assignments. It can request self-scoped actions and can operate other nodes only
@@ -93,17 +95,18 @@ Active role assignments must satisfy this matrix:
 
 | Role | Combines with | Conflicts with |
 | --- | --- | --- |
-| `gateway` | `vpn`, `router`, `metrics` | `app-dev`, `app-prod`, `database`, `agent`, `ingress`, `websocket`, `s3` |
-| `vpn` | `gateway`, `router`, `metrics` | `app-dev`, `app-prod`, `database`, `agent`, `ingress`, `websocket`, `s3` |
-| `router` | `gateway`, `vpn`, `metrics` | `app-dev`, `app-prod`, `database`, `agent`, `ingress`, `websocket`, `s3` |
-| `app-dev` | `database`, `websocket`, `s3`, `metrics` | `gateway`, `vpn`, `router`, `app-prod`, `agent`, `ingress` |
-| `app-prod` | `ingress`, `metrics` | `gateway`, `vpn`, `router`, `app-dev`, `database`, `agent`, `websocket`, `s3` |
-| `database` | `app-dev`, `websocket`, `s3`, `metrics` | `gateway`, `vpn`, `router`, `app-prod`, `agent`, `ingress` |
-| `agent` | none | `gateway`, `vpn`, `router`, `app-dev`, `app-prod`, `database`, `ingress`, `websocket`, `s3`, `metrics` |
-| `ingress` | `app-prod`, `metrics` | `gateway`, `vpn`, `router`, `app-dev`, `database`, `agent`, `websocket`, `s3` |
-| `websocket` | `app-dev`, `database`, `s3`, `metrics` | `gateway`, `vpn`, `router`, `ingress`, `app-prod`, `agent` |
-| `s3` | `app-dev`, `database`, `websocket`, `metrics` | `gateway`, `vpn`, `router`, `ingress`, `app-prod`, `agent` |
-| `metrics` | `gateway`, `vpn`, `router`, `app-dev`, `app-prod`, `database`, `ingress`, `websocket`, `s3` | `agent` |
+| `gateway` | `vpn`, `router`, `metrics` | `app-dev`, `app-prod`, `database`, `agent`, `ingress`, `websocket`, `s3`, `analytics` |
+| `vpn` | `gateway`, `router`, `metrics` | `app-dev`, `app-prod`, `database`, `agent`, `ingress`, `websocket`, `s3`, `analytics` |
+| `router` | `gateway`, `vpn`, `metrics` | `app-dev`, `app-prod`, `database`, `agent`, `ingress`, `websocket`, `s3`, `analytics` |
+| `app-dev` | `database`, `websocket`, `s3`, `metrics`, `analytics` | `gateway`, `vpn`, `router`, `app-prod`, `agent`, `ingress` |
+| `app-prod` | `ingress`, `metrics` | `gateway`, `vpn`, `router`, `app-dev`, `database`, `agent`, `websocket`, `s3`, `analytics` |
+| `database` | `app-dev`, `websocket`, `s3`, `metrics`, `analytics` | `gateway`, `vpn`, `router`, `app-prod`, `agent`, `ingress` |
+| `agent` | none | `gateway`, `vpn`, `router`, `app-dev`, `app-prod`, `database`, `ingress`, `websocket`, `s3`, `metrics`, `analytics` |
+| `ingress` | `app-prod`, `metrics` | `gateway`, `vpn`, `router`, `app-dev`, `database`, `agent`, `websocket`, `s3`, `analytics` |
+| `websocket` | `app-dev`, `database`, `s3`, `metrics`, `analytics` | `gateway`, `vpn`, `router`, `ingress`, `app-prod`, `agent` |
+| `s3` | `app-dev`, `database`, `websocket`, `metrics`, `analytics` | `gateway`, `vpn`, `router`, `ingress`, `app-prod`, `agent` |
+| `metrics` | `gateway`, `vpn`, `router`, `app-dev`, `app-prod`, `database`, `ingress`, `websocket`, `s3`, `analytics` | `agent` |
+| `analytics` | `app-dev`, `database`, `websocket`, `s3`, `metrics` | `gateway`, `vpn`, `router`, `ingress`, `app-prod`, `agent` |
 
 In this version, `gateway`, `vpn`, and `router` are gateway-coupled
 infrastructure roles. They are stored as separate role assignments and shown
@@ -127,6 +130,7 @@ Roles materialize baseline tool intent when a role assignment converges.
 | `websocket` | Laravel Reverb in a Docker runtime container managed by Orbit, private TLS backend binding on WireGuard, backend certificate material, and Redis-backed scaling configuration |
 | `s3` | SeaweedFS in a Docker runtime container rendered by Orbit, private S3 API binding on WireGuard, service-level credentials on the `seaweedfs` tool row, backend pool registration, and role-owned data path |
 | `metrics` | Docker substrate intent, Prometheus and Grafana Docker Swarm process definitions, node-exporter systemd process definition, the router-owned `metrics.orbit` route, and generated Grafana admin credentials |
+| `analytics` | Plausible CE in a process-owned Docker/Swarm service, private `analytics.orbit` router route, per-app public tracking route support, analytics backend pool registration, and runtime configuration derived from PostgreSQL and ClickHouse process endpoints |
 
 Local database client binaries (`sqlite3`, `psql`, `mysql`) are not part of
 any role or tool baseline. Orbit interacts with databases through the
@@ -252,6 +256,9 @@ These rules apply to all node commands and define the invariants the family enfo
   service backs Reverb scaling; `database`, `gateway`, and `metrics` have no
   role-assignment settings. `s3` stores `data_path`, which defaults to
   `/srv/orbit/s3/data` and is mounted into the SeaweedFS container as `/data`.
+  `analytics` stores `postgres_node_id` and `clickhouse_node_id`, which point
+  at active `database` role nodes whose managed PostgreSQL and ClickHouse
+  service processes back Plausible CE.
 - Role add and role update converge synchronously. Failed convergence leaves the
   role assignment in `error` for a later `doctor --family=node --restore`
   retry.

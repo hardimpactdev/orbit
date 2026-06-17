@@ -20,12 +20,12 @@ These terms define how process definitions are identified, scoped, and ordered.
   asserts required capability; it does not transfer lifecycle ownership to the
   tool.
 - **Service process definition:** Process-family catalog entry for a runnable
-  service such as MySQL, Redis, Prometheus, Grafana, or node-exporter. Service
-  version, runtime, endpoint, credentials, lifecycle, and logs belong to the
-  process row produced from the definition. The service endpoint host is the
-  owning node's WireGuard service address. Consumers on the same node rely on
-  the provisioning-owned WireGuard self-route, not on loopback or Docker
-  aliases.
+  service such as MySQL, PostgreSQL, Redis, ClickHouse, Prometheus, Grafana,
+  node-exporter, or Plausible CE. Service version, runtime, endpoint,
+  credentials, lifecycle, and logs belong to the process row produced from the
+  definition. The service endpoint host is the owning node's WireGuard service
+  address. Consumers on the same node rely on the provisioning-owned
+  WireGuard self-route, not on loopback or Docker aliases.
 - **Process order:** Stable order of process definitions inside their owning
   scope. Read and bulk lifecycle commands use that order.
 
@@ -47,8 +47,8 @@ These terms describe the runtime objects that Orbit derives from process definit
   agent, app, and workspace runtime units.
 - **Docker Swarm process runtime:** Runtime backend that runs a node-owned
   managed service process as an Orbit-managed Swarm service. It is currently
-  admitted for process-defined MySQL, Redis, Prometheus, and Grafana service
-  processes.
+  admitted for process-defined MySQL, PostgreSQL, Redis, ClickHouse,
+  Prometheus, Grafana, and Plausible CE service processes.
   App/workspace Swarm runtime remains deferred and is rejected before runtime
   side effects.
 - **Systemd process runtime:** Runtime backend for Linux host command units,
@@ -113,6 +113,9 @@ These terms define what the process family owns and what remains outside its sco
   history. WireGuard interface setup and self-route mutation belong to node
   provisioning/topology work; process doctor may only diagnose self-route
   health when a process endpoint depends on it.
+- Plausible CE is a process-owned service. Its configured image version,
+  lifecycle, environment, endpoint, and logs live on the process row generated
+  for the analytics role, not on a tool row.
 - They do not own app or workspace registry configuration, proxy routes,
   firewall policy, schedule definitions, tool catalog membership, or tool
   installation/update/removal. Orbit does not add a separate service family for
