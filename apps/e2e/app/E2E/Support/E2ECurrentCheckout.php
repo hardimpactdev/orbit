@@ -77,7 +77,7 @@ final class E2ECurrentCheckout
         // tests run `orbit` against the gateway API as a self-call to the
         // gateway's own WireGuard IP (routed locally), so the gateway's CLI
         // needs the same ~/.config/orbit gateway entry + CA trust as clients.
-        $refreshLocalGatewaySettings = $topology->gateway() !== null && ! self::usesDockerRuntime($instance)
+        $refreshLocalGatewaySettings = $topology->gateway() !== null
             ? function (string $remotePath, bool $sourceMountedCheckout = false) use ($instance, $user, $topology, $roleTimer): void {
                 self::refreshLocalGatewaySettings($instance, $user, $topology->sshKeyPair(), $remotePath, $topology->gatewayApiIp(), $roleTimer, $sourceMountedCheckout);
             }
@@ -1043,30 +1043,120 @@ if (\\Illuminate\\Support\\Facades\\Schema::hasTable('local_gateway_settings')) 
 PHP;
 
         // The gateway-app LocalGatewaySettings write above only configures the
-        // gateway application's store. The `orbit` CLI (which the feature tests
-        // invoke as the role user) needs its own ~/.config/orbit gateway entry
-        // AND the gateway root CA recorded as ca_pem_path so its HTTPS calls
-        // verify — otherwise CLI calls fail with "Gateway URL is not configured"
-        // (no config) or cURL error 60 (CA not trusted). `gateway:add` fetches
-        // the CA over http bootstrap, installs trust, verifies node identity,
-        // and persists the CLI gateway config (url + ca_pem_path) in one step.
-        // Source-mounted runs call the mounted CLI directly so this step cannot
-        // accidentally use a stale prepared-image launcher. The WireGuard route
-        // to the gateway can take a moment to come up after the topology starts,
-        // so retry until it reports success.
-        // Best-effort: a node that never reaches the gateway fails its own
-        // assertions later with a clear gateway_unavailable error.
-        $gatewayIpArg = escapeshellarg($gatewayApiIp);
-        $orbitCommand = $sourceMountedCheckout
-            ? escapeshellarg("{$remotePath}/apps/cli/orbit")
-            : 'orbit';
-        $gatewayAddWithRetry = 'i=0; while [ "$i" -lt 8 ]; do '
-            .$orbitCommand.' gateway:add '.$gatewayIpArg.' --json 2>&1 | grep -q \'"success"\' && break; '
-            .'i=$((i+1)); sleep 3; done; true';
+        // gateway application's store. The `orbit` CLI also needs its own
+        // ~/.config/orbit gateway entry with a ca_pem_path. E2E Docker gateway
+        // addresses are dynamic 10.90.x hosts, so the production `gateway:add`
+        // WireGuard-IP validation is intentionally bypassed here by writing the
+        // hermetic test config directly from the gateway's actual root CA.
+        $cliGatewayConfig = self::cliGatewayConfigCommand($gatewayApiIp);
 
         return 'cd '.escapeshellarg($remotePath)
             .' && '.self::artisanCommand('tinker --execute='.escapeshellarg($php), false, $remotePath, null, $sourceMountedCheckout)
-            .' && ('.$gatewayAddWithRetry.')';
+            .' && '.$cliGatewayConfig;
+    }
+
+    private static function cliGatewayConfigCommand(string $gatewayApiIp): string
+    {
+        $gatewayApiIpValue = var_export($gatewayApiIp, true);
+        $php = <<<PHP
+\$gatewayIp = {$gatewayApiIpValue};
+\$rootCa = null;
+\$lastError = null;
+
+for (\$attempt = 0; \$attempt < 8; \$attempt++) {
+    \$body = @file_get_contents("http://{\$gatewayIp}/api/ca/root", false, stream_context_create([
+        'http' => ['timeout' => 5],
+    ]));
+
+    if (is_string(\$body) && \$body !== '') {
+        \$decoded = json_decode(\$body, true);
+        \$candidate = is_array(\$decoded)
+            ? (\$decoded['success']['data']['root_ca'] ?? \$decoded['data']['root_ca'] ?? null)
+            : \$body;
+
+        if (is_string(\$candidate) && str_starts_with(\$candidate, '{')) {
+            \$inner = json_decode(\$candidate, true);
+            \$candidate = is_array(\$inner)
+                ? (\$inner['success']['data']['root_ca'] ?? \$inner['data']['root_ca'] ?? null)
+                : null;
+        }
+
+        if (is_string(\$candidate)
+            && str_contains(\$candidate, '-----BEGIN CERTIFICATE-----')
+            && str_contains(\$candidate, '-----END CERTIFICATE-----')) {
+            \$rootCa = \$candidate;
+            break;
+        }
+
+        \$lastError = 'gateway returned invalid CA material';
+    } else {
+        \$lastError = 'gateway CA endpoint did not respond';
+    }
+
+    sleep(3);
+}
+
+if (! is_string(\$rootCa)) {
+    fwrite(STDERR, 'Could not fetch gateway root CA: '.(\$lastError ?? 'unknown error').PHP_EOL);
+    exit(1);
+}
+
+\$home = getenv('HOME');
+
+if (! is_string(\$home) || \$home === '') {
+    fwrite(STDERR, 'HOME is not set for CLI gateway config.'.PHP_EOL);
+    exit(1);
+}
+
+\$configRoot = rtrim(\$home, '/').'/.config/orbit';
+\$gatewayDir = \$configRoot.'/gateways/default';
+\$pemPath = \$gatewayDir.'/ca.pem';
+\$configPath = \$configRoot.'/config.json';
+
+if (! is_dir(\$gatewayDir) && ! mkdir(\$gatewayDir, 0700, true) && ! is_dir(\$gatewayDir)) {
+    fwrite(STDERR, 'Could not create CLI gateway config directory.'.PHP_EOL);
+    exit(1);
+}
+
+if (file_put_contents(\$pemPath, \$rootCa, LOCK_EX) === false) {
+    fwrite(STDERR, 'Could not write CLI gateway CA PEM.'.PHP_EOL);
+    exit(1);
+}
+
+chmod(\$gatewayDir, 0700);
+chmod(\$pemPath, 0600);
+
+\$caSha256 = hash('sha256', \$rootCa);
+\$config = [
+    'schema_version' => 1,
+    'active_gateway' => 'default',
+    'gateways' => [
+        'default' => [
+            'url' => "https://{\$gatewayIp}",
+            'wireguard_ip' => \$gatewayIp,
+            'ca_pem_path' => \$pemPath,
+            'ca_sha256' => \$caSha256,
+            'ca_fingerprint' => 'sha256:'.\$caSha256,
+            'timeout' => 30,
+            'self_mode' => 'wireguard_https',
+            'trusted_at' => date(DATE_ATOM),
+        ],
+    ],
+    'defaults' => ['node' => null, 'profile' => null],
+    'meta' => ['imported_from' => 'e2e-current-checkout', 'imported_at' => date(DATE_ATOM)],
+];
+
+if (file_put_contents(\$configPath, json_encode(\$config, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES).PHP_EOL, LOCK_EX) === false) {
+    fwrite(STDERR, 'Could not write CLI gateway config.'.PHP_EOL);
+    exit(1);
+}
+
+chmod(\$configRoot, 0700);
+chmod(\$configPath, 0600);
+echo 'configured';
+PHP;
+
+        return 'php -r '.escapeshellarg($php);
     }
 
     private static function refreshGatewayHostKeys(E2EInstance $instance, string $user, SshKeyPair $keyPair, string $remotePath, ?E2EPhaseTimer $timer, bool $hostLauncher = false, bool $sourceMountedCheckout = false): void

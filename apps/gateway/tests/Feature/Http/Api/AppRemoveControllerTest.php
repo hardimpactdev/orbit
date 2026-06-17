@@ -97,7 +97,8 @@ describe('AppRemoveController', function (): void {
             ->and(ProxyRoute::query()->where('domain', 'docs.test')->exists())->toBeFalse()
             ->and(OrbitProcess::query()->where('name', 'frankenphp-docs')->exists())->toBeFalse()
             ->and(collect($shell->scripts)->contains(fn (string $script): bool => str_contains($script, "docker rm -f 'orbit-app-docs'")))->toBeTrue()
-            ->and(collect($shell->scripts)->contains(fn (string $script): bool => str_contains($script, "sudo rm -f '/etc/orbit/apps/docs.ini'")))->toBeTrue();
+            ->and(collect($shell->scripts)->contains(fn (string $script): bool => str_contains($script, "sudo rm -f '/etc/orbit/apps/docs.ini'")))->toBeTrue()
+            ->and(collect($shell->scripts)->contains(fn (string $script): bool => str_contains($script, "sudo rm -rf '/home/orbit/apps/docs'")))->toBeTrue();
     });
 
     it('requires destructive consent before removing app intent', function (): void {

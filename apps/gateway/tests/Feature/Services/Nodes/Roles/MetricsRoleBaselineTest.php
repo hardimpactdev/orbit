@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+use App\Contracts\RemoteShell;
+use App\Data\RemoteShell\RemoteShellResult;
 use App\Enums\Nodes\NodeRoleStatus;
 use App\Enums\Nodes\NodeStatus;
 use App\Enums\Processes\ProcessRuntime;
@@ -15,6 +17,12 @@ use App\Services\Nodes\Roles\NodeRoleBaselineConverger;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);
+
+beforeEach(function (): void {
+    $this->metricsShell = new MetricsRoleBaselineRecordingShell;
+
+    app()->instance(RemoteShell::class, $this->metricsShell);
+});
 
 it('converges metrics role intent as process-owned Prometheus Grafana and host exporter services', function (): void {
     $router = Node::factory()->create([
@@ -66,13 +74,35 @@ it('converges metrics role intent as process-owned Prometheus Grafana and host e
         ->and($processes['grafana']->runtime_config['credentials']['admin_password'])->toBe(
             $processes['grafana']->runtime_config['environment']['GF_SECURITY_ADMIN_PASSWORD'],
         )
+        ->and($processes['grafana']->runtime_config['managed_files'][0]['content'])->toContain("url: 'http://10.6.0.55:9090'")
+        ->and($processes['grafana']->runtime_config['bind_mounts'][0])->toMatchArray([
+            'source' => '/var/lib/orbit/processes/grafana/provisioning/datasources/prometheus.yml',
+            'target' => '/etc/grafana/provisioning/datasources/prometheus.yml',
+            'read_only' => true,
+        ])
         ->and($processes['prometheus']->runtime)->toBe(ProcessRuntime::DockerSwarm)
         ->and($processes['prometheus']->runtime_config['definition'])->toBe('prometheus')
         ->and($processes['prometheus']->runtime_config['endpoint']['port'])->toBe(9090)
+        ->and($processes['prometheus']->runtime_config['managed_files'][0]['content'])->toContain("'10.6.0.55:9100'")
+        ->and($processes['prometheus']->runtime_config['bind_mounts'][0])->toMatchArray([
+            'source' => '/var/lib/orbit/processes/prometheus/prometheus.yml',
+            'target' => '/etc/prometheus/prometheus.yml',
+            'read_only' => true,
+        ])
         ->and($processes['node-exporter']->runtime)->toBe(ProcessRuntime::Systemd)
         ->and($processes['node-exporter']->tool)->toBe('node-exporter')
         ->and($processes['node-exporter']->runtime_config['definition'])->toBe('node-exporter')
         ->and($processes['node-exporter']->runtime_config['endpoint']['port'])->toBe(9100);
+
+    $scripts = $this->metricsShell->scripts();
+
+    expect($scripts)
+        ->toContain('node_exporter_url=')
+        ->toContain('/var/lib/orbit/processes/prometheus/prometheus.yml')
+        ->toContain('/var/lib/orbit/processes/grafana/provisioning/datasources/prometheus.yml')
+        ->toContain("docker service update --replicas 1 'orbit-prometheus'")
+        ->toContain("docker service update --replicas 1 'orbit-grafana'")
+        ->toContain("sudo systemctl start 'node-exporter.service'");
 
     $route = ProxyRoute::query()->where('domain', 'metrics.orbit')->sole();
 
@@ -124,6 +154,23 @@ it('adds the metrics role to the debian gateway node', function (): void {
             ->where('node_id', $node->id)
             ->whereIn('name', ['grafana', 'node-exporter', 'prometheus'])
             ->count())->toBe(3);
+});
+
+it('renders metrics node processes after syncing role-derived node fields', function (): void {
+    $node = Node::factory()->gateway()->create([
+        'name' => 'gateway',
+        'platform' => 'debian_12',
+        'wireguard_address' => '10.6.0.1',
+        'status' => NodeStatus::Active,
+        'tld' => 'gateway',
+    ]);
+
+    app(NodeRoleAssignmentService::class)->add($node, 'metrics', []);
+
+    expect($node->refresh()->tld)->toBeNull()
+        ->and($this->metricsShell->scriptsForNode('gateway'))
+        ->toContain('Environment="APP_URL=https://gateway"')
+        ->not->toContain('https://gateway.gateway');
 });
 
 it('converges node exporter process intent for active workload nodes', function (): void {
@@ -211,6 +258,25 @@ it('converges node exporter process intent for active workload nodes', function 
         ->all();
 
     expect($exporterToolNodes)->toBe($exporterNodes);
+
+    $prometheus = Process::query()
+        ->where('node_id', $gateway->id)
+        ->where('name', 'prometheus')
+        ->sole();
+    $config = $prometheus->runtime_config['managed_files'][0]['content'];
+
+    expect($config)
+        ->toContain("'10.6.0.1:9100'")
+        ->toContain("'10.6.0.10:9100'")
+        ->toContain("'10.6.0.11:9100'")
+        ->toContain("'10.6.0.12:9100'")
+        ->toContain("'10.6.0.13:9100'")
+        ->toContain("'10.6.0.14:9100'")
+        ->not->toContain('10.6.0.15:9100')
+        ->not->toContain('10.6.0.16:9100');
+
+    expect($this->metricsShell->scriptsForNode('agent-1'))
+        ->toContain("sudo systemctl start 'node-exporter.service'");
 });
 
 it('removes workload node exporter process intent when the last metrics role is removed', function (): void {
@@ -253,3 +319,38 @@ it('removes workload node exporter process intent when the last metrics role is 
             ->whereIn('node_id', [$gateway->id, $workload->id])
             ->exists())->toBeFalse();
 });
+
+final class MetricsRoleBaselineRecordingShell implements RemoteShell
+{
+    /**
+     * @var list<array{node: string, script: string}>
+     */
+    public array $runs = [];
+
+    public function run(Node $node, string $script, array $options = []): RemoteShellResult
+    {
+        $this->runs[] = [
+            'node' => $node->name,
+            'script' => $script,
+        ];
+
+        if (str_contains($script, 'stream_get_contents(STDIN)')) {
+            return new RemoteShellResult(exitCode: 1, stdout: '', stderr: '', durationMs: 1);
+        }
+
+        return new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1);
+    }
+
+    public function scripts(): string
+    {
+        return implode("\n", array_column($this->runs, 'script'));
+    }
+
+    public function scriptsForNode(string $node): string
+    {
+        return implode("\n", array_map(
+            fn (array $run): string => $run['script'],
+            array_filter($this->runs, fn (array $run): bool => $run['node'] === $node),
+        ));
+    }
+}

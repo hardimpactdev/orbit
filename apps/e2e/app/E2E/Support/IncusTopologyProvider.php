@@ -1138,7 +1138,7 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
             return;
         }
 
-        $targets = array_intersect_key($instances, array_flip(['dev', 'prod', 'agent', 'ingress', 'websocket']));
+        $targets = array_intersect_key($instances, array_flip(['gateway', 'dev', 'prod', 'agent', 'ingress', 'websocket']));
 
         if ($targets === []) {
             return;

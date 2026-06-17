@@ -31,6 +31,14 @@ describe('PhpCliTool', function (): void {
             ->and($tool->installScript())->toContain('bulk');
     });
 
+    it('retries transient static PHP download failures', function (): void {
+        $tool = new PhpCliTool;
+
+        expect($tool->installScript())
+            ->toContain('curl -fsSL --retry 5 --retry-delay 2 --retry-all-errors')
+            ->and($tool->updateScript())->toContain('curl -fsSL --retry 5 --retry-delay 2 --retry-all-errors');
+    });
+
     it('installScript includes pinned patch versions for all supported minors', function (): void {
         $tool = new PhpCliTool;
         $script = $tool->installScript();

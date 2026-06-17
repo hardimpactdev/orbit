@@ -411,6 +411,7 @@ SH;
         $scriptPathArgument = escapeshellarg($scriptPath);
         $httpRouterPathArgument = escapeshellarg($httpRouterPath);
         $certificatePayload = <<<'PHP'
+$hostKey = app(\App\Services\Security\SshHostKeyPinner::class)->pin('gateway');
 $node = \App\Models\Node::query()->updateOrCreate(
     ['name' => 'gateway'],
     [
@@ -419,12 +420,17 @@ $node = \App\Models\Node::query()->updateOrCreate(
         'gateway_endpoint' => 'https://gateway',
         'user' => 'orbit',
         'orbit_path' => '/home/orbit/orbit',
-        'status' => \App\Models\Node::STATUS_ACTIVE,
+        'status' => 'active',
+        'host_key_type' => $hostKey->type,
+        'host_key_fingerprint' => $hostKey->fingerprint,
+        'host_key_public' => $hostKey->publicKey,
+        'host_key_pin_mode' => $hostKey->pinMode,
+        'host_key_pinned_at' => now(),
     ],
 );
 \App\Models\NodeRoleAssignment::query()->updateOrCreate(
     ['node_id' => $node->id, 'role' => 'gateway'],
-    ['status' => \App\Models\Node::STATUS_ACTIVE],
+    ['status' => 'active'],
 );
 $ca = app(\App\Services\Ca\OrbitCaService::class);
 $ca->ensureRootCa();

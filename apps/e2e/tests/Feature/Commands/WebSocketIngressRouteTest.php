@@ -105,9 +105,11 @@ it('delivers public websocket events through ingress and router to websocket-rol
 
         expect($snapshot['rendered_ingress_route'])
             ->toContain("{$publicHost} {")
+            ->toContain("tls /etc/orbit/certs/{$publicHost}.crt /etc/orbit/certs/{$publicHost}.key")
             ->toContain('reverse_proxy http://10.6.0.2:80 {')
             ->toContain('stream_close_delay 5m')
             ->toContain('flush_interval -1')
+            ->not->toContain('issuer acme')
             ->not->toContain('.websocket.orbit:8080');
 
         expect($snapshot['rendered_public_router_route'])
@@ -196,6 +198,9 @@ $publicRoute = \App\Models\ProxyRoute::query()
     ->with('node')
     ->where('domain', $publicHost)
     ->firstOrFail();
+$publicConfig = is_array($publicRoute->config) ? $publicRoute->config : [];
+$publicConfig['tls'] = 'internal';
+$publicRoute->forceFill(['config' => $publicConfig])->save();
 $serviceRoute = \App\Models\ProxyRoute::query()
     ->with('node')
     ->where('domain', \App\Services\WebSockets\WebSocketRouteRegistrar::ServiceDomain)

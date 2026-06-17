@@ -136,6 +136,8 @@ final class DockerInstance implements E2EInstance, SourceMountedCheckoutInstance
             'docker volume rm -f %s >/dev/null 2>&1 || true',
             implode(' ', array_map(escapeshellarg(...), [
                 "{$this->name}-home-orbit",
+                "{$this->name}-var-lib-orbit",
+                "{$this->name}-run-php",
             ])),
         ), timeoutSeconds: 120);
     }

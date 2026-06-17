@@ -37,6 +37,7 @@ it('streams doctor verify progress from the gateway', function (): void {
     $response = $this->call('POST', '/api/doctor/run', [
         'families' => ['node'],
         'mode' => 'verify',
+        'self' => true,
     ], [], [], [
         'HTTP_ACCEPT' => 'text/event-stream',
         'REMOTE_ADDR' => DOCTOR_RUN_STREAM_CALLER_WG_IP,

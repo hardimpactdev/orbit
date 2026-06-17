@@ -11,10 +11,11 @@ Use these terms when reading or writing metrics command contracts.
 - **Metrics command domain:** Command family for role-backed host-resource
   observability workflows. It owns `metrics:*` command contracts but does not
   own a state family.
-- **Metrics role:** Optional private workload role that records Prometheus and
-  Grafana process intent for the metrics node and node-exporter tool/process
-  intent for the metrics node plus active workload nodes. It can be dedicated or
-  co-located with any non-agent role, including a Debian gateway.
+- **Metrics role:** Optional private workload role that records and starts
+  Prometheus and Grafana process runtimes for the metrics node and records,
+  installs, and starts node-exporter tool/process runtime for the metrics node
+  plus active workload nodes. It can be dedicated or co-located with any
+  non-agent role, including a Debian gateway.
 - **Metrics backend:** The process-owned runtime set coordinated by the metrics
   role baseline: Prometheus, Grafana, and node-exporter. The node-exporter host
   binary capability is recorded as tool intent.
@@ -34,8 +35,8 @@ Use these terms when reading or writing metrics command contracts.
   `metrics:credentials --reset`.
 - **Metrics-domain boundaries:** Metrics commands coordinate node role
   assignment, Docker capability, node-exporter host binary capability, process
-  definitions, and private proxy route intent. Drift and repair remain with
-  `node`, `tool`, `process`, and `proxy`.
+  definitions, immediate runtime convergence, and private proxy route intent.
+  Later drift and repair remain with `node`, `tool`, `process`, and `proxy`.
 - **Metrics-domain exclusions:** Metrics does not own app metrics, container
   metrics, database metrics, alerting, public Grafana ingress, dynamic scrape
   discovery, or a `metrics` doctor state family.

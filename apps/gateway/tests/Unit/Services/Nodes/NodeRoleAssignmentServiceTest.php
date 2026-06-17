@@ -160,6 +160,22 @@ describe('node role assignment service', function (): void {
         expect($node->tld)->toBeNull();
     });
 
+    it('preserves a fresh database node tld when the model instance is stale', function (): void {
+        $node = Node::factory()->create([
+            'platform' => 'ubuntu',
+            'tld' => null,
+            'wireguard_address' => '10.0.0.10',
+        ]);
+
+        Node::query()
+            ->whereKey($node->id)
+            ->update(['tld' => 'db1']);
+
+        app(NodeRoleAssignmentService::class)->add($node, 'database', []);
+
+        expect($node->fresh()->tld)->toBe('db1');
+    });
+
     it('materializes and reconciles role-derived self grants through role mutations', function (): void {
         $node = Node::factory()->create([
             'platform' => 'ubuntu',

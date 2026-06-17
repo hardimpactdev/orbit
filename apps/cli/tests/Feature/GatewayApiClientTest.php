@@ -156,6 +156,23 @@ describe('GatewayApiClient', function (): void {
             ->and($timeout)->toBe(12);
     });
 
+    it('can raise the timeout for long gateway requests without mutating the base client', function (): void {
+        $timeouts = [];
+
+        Http::fake(function (Request $request, array $options) use (&$timeouts) {
+            $timeouts[] = $options['timeout'] ?? null;
+
+            return Http::response(['ok' => true], 200);
+        });
+
+        $client = new GatewayApiClient('https://gateway.test', 30);
+
+        $client->withMinimumTimeout(300)->post('/api/slow', []);
+        $client->get('/api/fast');
+
+        expect($timeouts)->toBe([300, 30]);
+    });
+
     it('resolves the gateway CA PEM path from the provider binding and verifies against it', function (): void {
         $pemPath = tempnam(sys_get_temp_dir(), 'orbit-ca-').'.pem';
         file_put_contents($pemPath, "-----BEGIN CERTIFICATE-----\nfake\n-----END CERTIFICATE-----\n");

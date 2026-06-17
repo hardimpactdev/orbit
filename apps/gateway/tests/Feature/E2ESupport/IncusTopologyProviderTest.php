@@ -101,7 +101,7 @@ it('waits for stable gateway ssh reachability after prepared incus retargeting',
         ->and($retarget)->toBeLessThan($networkReady);
 });
 
-it('seeds the gateway ssh key into prepared incus downstream clones', function (): void {
+it('seeds the gateway ssh key into prepared incus clones and gateway self ssh', function (): void {
     $commands = [];
     $host = new class(incusTopologyProviderTestConfig(), $commands) extends IncusHost
     {
@@ -142,6 +142,7 @@ it('seeds the gateway ssh key into prepared incus downstream clones', function (
 
     expect($joined)->toContain('cat ~/.ssh/id_ed25519.pub')
         ->and($joined)->toContain('ssh-keygen -y -f ~/.ssh/id_ed25519 > ~/.ssh/id_ed25519.pub')
+        ->and($joined)->toContain("incus exec 'gateway' -- sh -lc")
         ->and($joined)->toContain("incus exec 'dev' -- sh -lc")
         ->and($joined)->toContain("incus exec 'prod' -- sh -lc")
         ->and($joined)->toContain("incus exec 'agent' -- sh -lc")

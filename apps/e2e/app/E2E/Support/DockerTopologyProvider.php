@@ -600,7 +600,7 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
             : '';
 
         return sprintf(
-            'docker run -d --name %s --network %s%s --ip %s --cap-add NET_ADMIN --cap-add NET_BIND_SERVICE %s --volume %s --mount %s%s --mount %s --mount %s --mount %s --env %s --env %s --env %s%s %s',
+            'docker run -d --name %s --network %s%s --ip %s --cap-add NET_ADMIN --cap-add NET_BIND_SERVICE %s --volume %s --mount %s%s --mount %s --mount %s --mount %s --mount %s --mount %s --env %s --env %s --env %s%s %s',
             escapeshellarg($name),
             escapeshellarg($network),
             $networkAlias,
@@ -612,6 +612,8 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
             escapeshellarg($this->nodeVolumeMount($name, 'etc-caddy', '/etc/caddy')),
             escapeshellarg($this->nodeVolumeMount($name, 'etc-orbit', '/etc/orbit')),
             escapeshellarg($this->nodeVolumeMount($name, 'opt-orbit', '/opt/orbit')),
+            escapeshellarg($this->nodeVolumeMount($name, 'var-lib-orbit', '/var/lib/orbit')),
+            escapeshellarg($this->nodeVolumeMount($name, 'run-php', '/run/php')),
             escapeshellarg("ORBIT_E2E_DOCKER_NETWORK={$network}"),
             escapeshellarg("ORBIT_NODE_CONTAINER={$name}"),
             escapeshellarg('ORBIT_CONFIG_ROOT='.self::OrbitConfigRoot),
@@ -718,13 +720,20 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
                 local etc_caddy
                 local etc_orbit
                 local opt_orbit
+                local var_lib_orbit
+                local run_php
 
                 home_orbit="$(volume_mountpoint "${node_container}-home-orbit")"
                 etc_caddy="$(volume_mountpoint "${node_container}-etc-caddy")"
                 etc_orbit="$(volume_mountpoint "${node_container}-etc-orbit")"
                 opt_orbit="$(volume_mountpoint "${node_container}-opt-orbit")"
+                var_lib_orbit="$(volume_mountpoint "${node_container}-var-lib-orbit")"
+                run_php="$(volume_mountpoint "${node_container}-run-php")"
 
                 case "${path}" in
+                    /home)
+                        if [ -n "${home_orbit}" ]; then printf '%s' "${home_orbit}"; else printf '%s' "${path}"; fi
+                        ;;
                     /home/orbit)
                         if [ -n "${home_orbit}" ]; then printf '%s' "${home_orbit}"; else printf '%s' "${path}"; fi
                         ;;
@@ -748,6 +757,18 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
                         ;;
                     /opt/orbit/*)
                         printf '%s%s' "${opt_orbit}" "${path#/opt/orbit}"
+                        ;;
+                    /var/lib/orbit)
+                        printf '%s' "${var_lib_orbit}"
+                        ;;
+                    /var/lib/orbit/*)
+                        printf '%s%s' "${var_lib_orbit}" "${path#/var/lib/orbit}"
+                        ;;
+                    /run/php)
+                        printf '%s' "${run_php}"
+                        ;;
+                    /run/php/*)
+                        printf '%s%s' "${run_php}" "${path#/run/php}"
                         ;;
                     *)
                         printf '%s' "${path}"
@@ -778,19 +799,33 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
                 remainder="${argument#"${prefix}"}"
                 source="${remainder%%,*}"
                 rest="${remainder#"${source}"}"
-                printf '%s%s%s' "${prefix}" "$(rewrite_path "${source}")" "${rest}"
+                rewritten_source="$(rewrite_path "${source}")"
+
+                if [ "${source}" = "/home" ] && [ "${rewritten_source}" != "${source}" ]; then
+                    rest="${rest//,target=\/home/,target=\/home\/orbit}"
+                    rest="${rest//,dst=\/home/,dst=\/home\/orbit}"
+                fi
+
+                printf '%s%s%s' "${prefix}" "${rewritten_source}" "${rest}"
             }
 
             rewrite_volume() {
                 local argument="$1"
                 local source
                 local rest
+                local rewritten_source
 
                 case "${argument}" in
                     /*:*)
                         source="${argument%%:*}"
                         rest="${argument#"${source}"}"
-                        printf '%s%s' "$(rewrite_path "${source}")" "${rest}"
+                        rewritten_source="$(rewrite_path "${source}")"
+
+                        if [ "${source}" = "/home" ] && [ "${rewritten_source}" != "${source}" ]; then
+                            rest="${rest/:\/home/:\/home\/orbit}"
+                        fi
+
+                        printf '%s%s' "${rewritten_source}" "${rest}"
                         ;;
                     *)
                         printf '%s' "${argument}"
@@ -859,7 +894,7 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
             return;
         }
 
-        $targets = array_intersect_key($instances, array_flip(['dev', 'prod', 'agent', 'ingress', 'websocket']));
+        $targets = array_intersect_key($instances, array_flip(['gateway', 'dev', 'prod', 'agent', 'ingress', 'websocket']));
 
         if ($targets === []) {
             return;
@@ -1390,6 +1425,8 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
             "{$nodeContainer}-etc-caddy",
             "{$nodeContainer}-etc-orbit",
             "{$nodeContainer}-opt-orbit",
+            "{$nodeContainer}-var-lib-orbit",
+            "{$nodeContainer}-run-php",
         ];
     }
 

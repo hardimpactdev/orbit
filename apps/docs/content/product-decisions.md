@@ -38,6 +38,7 @@ direction.
 
 <!-- newest first; add new entries directly under this comment -->
 
+- 2026-06-17 — Metrics enablement converges and starts its owned Prometheus, Grafana, and node-exporter runtime units immediately; doctor remains the repair path for later drift.
 - 2026-06-17 — Doctor includes the `process` family in the baseline category set for every node with at least one active role assignment; role-less client/operator identities remain node-family only.
 - 2026-06-17 — Metrics baseline records node-exporter host binary tool intent alongside node-exporter process intent on the metrics node and active workload nodes; tool doctor repairs the binary, while process doctor owns the systemd lifecycle.
 - 2026-06-17 — Metrics may run on Ubuntu or Debian hosts, including the Debian gateway, and its baseline records node-exporter process intent for the metrics host plus every active workload node selected by the fleet update target selector; Prometheus and Grafana remain Docker Swarm processes on the selected metrics role node.

@@ -8,10 +8,9 @@ it('adopts observed UFW rules into the gateway registry', function (): void {
     $topology = e2eTopology(E2ETopologyKind::OperatorGatewayAppdev)
         ->withCurrentCheckout(roles: ['gateway']);
 
-    $gatewayWireGuardIp = $topology->lease()->gatewayApiIp();
     $gatewayLanIp = $topology->instance('gateway')->waitForIpv4();
     $devLanIp = $topology->instance('dev')->waitForIpv4();
-    $wireGuardCidr = firewallDoctorAdoptWireGuardCidr($gatewayWireGuardIp);
+    $wireGuardCidr = firewallDoctorAdoptWireGuardCidr($topology->lease()->gatewayApiIp());
 
     try {
         $gatewayCheckout = $topology->checkout('gateway');
@@ -19,8 +18,7 @@ it('adopts observed UFW rules into the gateway registry', function (): void {
         $topology->ssh(
             'dev',
             sprintf(
-                'command -v ufw >/dev/null 2>&1 || { echo "ufw is missing from the prepared Incus artifact. Rebuild the base image and prepared topology." >&2; exit 1; }; sudo ufw --force reset && sudo ufw default deny incoming && sudo ufw default allow outgoing && sudo ufw allow from %s to any port 22 proto tcp comment "orbit:e2e-gateway-wg-ssh" && sudo ufw allow from %s to any port 22 proto tcp comment "orbit:e2e-gateway-lan-ssh" && sudo ufw allow from %s to any port 5173 proto tcp comment "orbit:local-vite" && sudo ufw --force enable',
-                escapeshellarg("{$gatewayWireGuardIp}/32"),
+                'command -v ufw >/dev/null 2>&1 || { echo "ufw is missing from the prepared Incus artifact. Rebuild the base image and prepared topology." >&2; exit 1; }; sudo ufw --force reset && sudo ufw default deny incoming && sudo ufw default allow outgoing && sudo ufw allow from %s to any port 22 proto tcp comment "orbit:e2e-gateway-lan-ssh" && sudo ufw allow from %s to any port 5173 proto tcp comment "orbit:local-vite" && sudo ufw --force enable',
                 escapeshellarg("{$gatewayLanIp}/32"),
                 escapeshellarg($wireGuardCidr),
             ),
@@ -63,7 +61,7 @@ it('adopts observed UFW rules into the gateway registry', function (): void {
             sprintf(
                 'cd %s && php apps/gateway/artisan tinker --execute=%s',
                 escapeshellarg($gatewayCheckout),
-                escapeshellarg('echo \App\Models\FirewallRule::query()->where("name", "local-vite")->where("reason", "orbit:local-vite")->first() ? "found" : "missing";'),
+                escapeshellarg('echo \App\Models\FirewallRule::query()->where("name", "incoming-allow-5173-tcp")->where("source", "10.6.0.0/24")->where("port", "5173")->first() ? "found" : "missing";'),
             ),
             timeoutSeconds: 120,
         );

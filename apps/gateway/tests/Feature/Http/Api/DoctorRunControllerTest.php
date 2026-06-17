@@ -53,7 +53,8 @@ describe('DoctorRunController', function (): void {
         createDoctorRunCallerNode(['platform' => 'linux']);
         $response = $this->call('POST', '/api/doctor/run', [
             'families' => ['node'],
-            'mode' => 'verify'], [], [], ['REMOTE_ADDR' => DOCTOR_RUN_CALLER_WG_IP]);
+            'mode' => 'verify',
+            'self' => true], [], [], ['REMOTE_ADDR' => DOCTOR_RUN_CALLER_WG_IP]);
 
         $response->assertOk()
             ->assertJsonPath('success.data.doctor.healthy', true)
@@ -268,6 +269,29 @@ describe('DoctorRunController', function (): void {
         $response->assertOk()
             ->assertJsonPath('success.data.doctor.healthy', true)
             ->assertJsonPath('success.data.doctor.scope.families', ['process']);
+    });
+
+    it('runs process family doctor across active role nodes when no node scope is provided', function (): void {
+        createDoctorRunCallerNode();
+        createTestAppHostNode(['name' => 'app-1', 'status' => 'active']);
+        Node::factory()->create([
+            'name' => 'operator-1',
+            'status' => 'active',
+            'platform' => 'ubuntu',
+            'wireguard_address' => '10.6.0.3',
+        ]);
+
+        $response = $this->call('POST', '/api/doctor/run', [
+            'mode' => 'verify',
+            'families' => ['process']], [], [], ['REMOTE_ADDR' => DOCTOR_RUN_CALLER_WG_IP]);
+
+        $response->assertOk()
+            ->assertJsonPath('success.data.doctor.healthy', true)
+            ->assertJsonPath('success.data.doctor.scope.role', 'fleet')
+            ->assertJsonPath('success.data.doctor.scope.node', null)
+            ->assertJsonPath('success.data.doctor.scope.targets', ['app-1', 'caller'])
+            ->assertJsonPath('success.data.doctor.nodes.0.node', 'app-1')
+            ->assertJsonPath('success.data.doctor.nodes.1.node', 'caller');
     });
 
     it('restores tool drift through the doctor fix endpoint', function (): void {

@@ -40,6 +40,35 @@ final class DoctorRunController implements Loggable
 
         $families = $this->families($request);
         $key = $this->key($request);
+
+        if ($this->usesFleetScope($request)) {
+            $failure = $validator->validate($families, $runner);
+
+            if ($failure instanceof DoctorValidationFailure) {
+                return response()->json([
+                    'error' => [
+                        'code' => $failure->code,
+                        'message' => $failure->message,
+                        'meta' => $failure->meta,
+                    ],
+                ], 422);
+            }
+
+            if ($this->wantsEventStream($request)) {
+                return $this->streamFleet($streams, $runner, $families, $key);
+            }
+
+            $doctor = $runner->probeFleet(families: $families, key: $key);
+
+            return response()->json([
+                'success' => [
+                    'data' => [
+                        'doctor' => $doctor,
+                    ],
+                ],
+            ]);
+        }
+
         $target = $this->resolveTarget($request, $caller);
 
         if ($target === null) {
@@ -128,9 +157,72 @@ final class DoctorRunController implements Loggable
         });
     }
 
+    /**
+     * @param  list<string>  $families
+     */
+    private function streamFleet(
+        ProgressEventStreamResponseFactory $streams,
+        DoctorReportRunner $runner,
+        array $families,
+        ?string $key,
+    ): StreamedResponse {
+        return $streams->make(function (ProgressEventStreamEmitter $events) use ($runner, $families, $key): void {
+            $targets = $runner->fleetTargetsForFamilies($families);
+            $events->tree('Running Doctor', $targets
+                ->map(fn (Node $node): array => [
+                    'key' => $node->name,
+                    'label' => "Check {$node->name}",
+                ])
+                ->values()
+                ->all());
+
+            foreach ($targets as $node) {
+                $events->stepEvent($node->name, 'running', "Checking {$node->name}");
+            }
+
+            $doctor = $runner->probeFleet(families: $families, key: $key);
+
+            foreach ($targets as $node) {
+                $events->stepEvent($node->name, 'done', "{$node->name} checked");
+            }
+
+            if (($doctor['healthy'] ?? false) === true) {
+                $events->complete(0, [
+                    'footer' => 'Doctor completed.',
+                    'doctor' => $doctor,
+                ]);
+
+                return;
+            }
+
+            $events->error('Doctor detected drift.', 1, [
+                'code' => 'drift_detected',
+                'message' => 'Doctor detected drift.',
+                'meta' => [],
+                'data' => ['doctor' => $doctor],
+                'footer' => 'Doctor detected drift.',
+            ]);
+        });
+    }
+
     private function wantsEventStream(Request $request): bool
     {
         return in_array('text/event-stream', $request->getAcceptableContentTypes(), true);
+    }
+
+    private function usesFleetScope(Request $request): bool
+    {
+        return $this->scopeValue($request, 'node') === null
+            && ! $request->boolean('self')
+            && $this->scopeValue($request, 'app') === null
+            && $this->scopeValue($request, 'workspace') === null;
+    }
+
+    private function scopeValue(Request $request, string $key): ?string
+    {
+        $value = $request->input($key);
+
+        return is_string($value) && trim($value) !== '' ? trim($value) : null;
     }
 
     /**

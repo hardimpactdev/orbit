@@ -12,6 +12,8 @@ final class MetricsEnableCommand extends GatewayCommand
 {
     use ResolvesHostContext;
 
+    private const int GatewayTimeoutSeconds = 300;
+
     #[\Override]
     protected $signature = 'metrics:enable
         {--node= : Node to enable the metrics role on}
@@ -29,7 +31,7 @@ final class MetricsEnableCommand extends GatewayCommand
         }
 
         try {
-            $response = $this->gatewayPost('/api/nodes/'.rawurlencode($node).'/roles', [
+            $response = $this->gateway()->withMinimumTimeout(self::GatewayTimeoutSeconds)->post('/api/nodes/'.rawurlencode($node).'/roles', [
                 'role' => 'metrics',
                 'settings' => [],
             ]);

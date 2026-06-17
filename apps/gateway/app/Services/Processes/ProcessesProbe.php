@@ -1088,7 +1088,7 @@ PHP;
         if ($process->owner instanceof Node) {
             $container = $this->dockerContainerRenderer()->render($this->surrogateAppForNode($process->owner), $process);
             $config = is_array($process->runtime_config) ? $process->runtime_config : [];
-            $configuredHash = $config['container_spec_hash'] ?? $config['spec_hash'] ?? null;
+            $configuredHash = $config['container_spec_hash'] ?? null;
             $configuredHashLabel = $config['container_spec_hash_label'] ?? null;
 
             return [[

@@ -50,7 +50,7 @@ VPN client browser
   -> router orbit-caddy for `metrics.orbit`
   -> Grafana Docker Swarm service on the metrics role node
   -> Prometheus Docker Swarm service on the metrics role node
-  -> node-exporter host binary tool and systemd process intent on metrics and workload nodes
+  -> node-exporter host binary tool and systemd process on metrics and workload nodes
 
 Private analytics:
 

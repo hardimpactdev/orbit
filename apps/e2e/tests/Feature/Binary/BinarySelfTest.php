@@ -15,7 +15,7 @@ use Symfony\Component\Process\Process as SymfonyProcess;
  * path relative to the repo root.
  *
  * Self-test coverage:
- *   - version   : --version prints the expected version from apps/cli/config/app.php.
+ *   - version   : --version prints the expected version from VERSION.
  *   - list      : `list` exits 0 and shows command groups (proves phar:// autoload +
  *                 NativeCommandNormalizer resolve phar-relative).
  *   - extensions: a gateway command --help loads without missing-extension errors
@@ -395,13 +395,9 @@ it('reuses a cached linux binary for matching fingerprints', function (): void {
 it('--version prints the expected version', function (): void {
     requireOrbitBinaryBuilt();
 
-    // Parse the version from apps/cli/config/app.php without executing it (env() is not
-    // available outside the Laravel boot context, so require would throw).
-    $configSource = file_get_contents(repo_path('apps/cli/config/app.php')) ?: '';
-    preg_match("/'version'\s*=>\s*'([^']+)'/", $configSource, $matches);
-    $version = $matches[1] ?? '';
+    $version = trim((string) file_get_contents(repo_path('VERSION')));
 
-    expect($version)->not->toBeEmpty('Could not parse version from apps/cli/config/app.php');
+    expect($version)->not->toBeEmpty('Could not parse version from VERSION');
 
     $sandboxHome = makeSandboxHome();
 

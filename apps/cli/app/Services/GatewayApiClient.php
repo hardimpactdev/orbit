@@ -27,6 +27,19 @@ final readonly class GatewayApiClient
         private ?string $caPemPath = null,
     ) {}
 
+    public function withMinimumTimeout(int $seconds): self
+    {
+        if ($seconds <= $this->timeout) {
+            return $this;
+        }
+
+        return new self(
+            baseUrl: $this->baseUrl,
+            timeout: $seconds,
+            caPemPath: $this->caPemPath,
+        );
+    }
+
     /**
      * @param  array<string, mixed>  $query
      * @return array<string, mixed>

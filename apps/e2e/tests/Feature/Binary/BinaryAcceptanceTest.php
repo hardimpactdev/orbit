@@ -160,11 +160,9 @@ it('linux x64 binary boots on the real container and --version reports the expec
     try {
         $binaryPath = dropBinaryOntoContainer($topology, 'gateway');
 
-        $configSource = file_get_contents(repo_path('apps/cli/config/app.php')) ?: '';
-        preg_match("/'version'\s*=>\s*'([^']+)'/", $configSource, $matches);
-        $version = $matches[1] ?? '';
+        $version = trim((string) file_get_contents(repo_path('VERSION')));
 
-        expect($version)->not->toBeEmpty('Could not parse version from apps/cli/config/app.php');
+        expect($version)->not->toBeEmpty('Could not parse version from VERSION');
 
         $result = runBinaryOnContainer(
             $topology,

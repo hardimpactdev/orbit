@@ -238,7 +238,7 @@ it('runs source-mounted Incus checkouts from a VM-local overlay runtime path', f
         ->and(array_column($timer->events(), 'name'))->toContain('checkout.source-overlay');
 });
 
-it('refreshes source-mounted Incus gateway settings through the mounted CLI', function (): void {
+it('refreshes source-mounted Incus gateway settings and CLI trust config', function (): void {
     $operatorCommands = [];
     $gatewayCommands = [];
     $devCommands = [];
@@ -256,14 +256,38 @@ it('refreshes source-mounted Incus gateway settings through the mounted CLI', fu
     E2ECurrentCheckout::installOnTopology($topology, roles: ['operator', 'gateway', 'dev']);
 
     expect(implode("\n", $operatorCommands))
-        ->toContain("'/home/orbit/orbit-run/apps/cli/orbit' gateway:add '10.6.0.2' --json")
-        ->not->toContain('orbit gateway:add')
+        ->toContain('LocalGatewaySettings::current()')
+        ->toContain('https://10.6.0.2')
+        ->toContain('http://{$gatewayIp}/api/ca/root')
+        ->toContain('/.config/orbit')
+        ->toContain('/gateways/default')
+        ->toContain('/config.json')
+        ->toContain('/ca.pem')
+        ->toContain('wireguard_https')
+        ->toContain('e2e-current-checkout')
+        ->not->toContain('gateway:add')
         ->and(implode("\n", $gatewayCommands))
-        ->toContain("'/home/orbit/orbit-run/apps/cli/orbit' gateway:add '10.6.0.2' --json")
-        ->not->toContain('orbit gateway:add')
+        ->toContain('LocalGatewaySettings::current()')
+        ->toContain('https://10.6.0.2')
+        ->toContain('http://{$gatewayIp}/api/ca/root')
+        ->toContain('/.config/orbit')
+        ->toContain('/gateways/default')
+        ->toContain('/config.json')
+        ->toContain('/ca.pem')
+        ->toContain('wireguard_https')
+        ->toContain('e2e-current-checkout')
+        ->not->toContain('gateway:add')
         ->and(implode("\n", $devCommands))
-        ->toContain("'/home/orbit/orbit-run/apps/cli/orbit' gateway:add '10.6.0.2' --json")
-        ->not->toContain('orbit gateway:add');
+        ->toContain('LocalGatewaySettings::current()')
+        ->toContain('https://10.6.0.2')
+        ->toContain('http://{$gatewayIp}/api/ca/root')
+        ->toContain('/.config/orbit')
+        ->toContain('/gateways/default')
+        ->toContain('/config.json')
+        ->toContain('/ca.pem')
+        ->toContain('wireguard_https')
+        ->toContain('e2e-current-checkout')
+        ->not->toContain('gateway:add');
 });
 
 it('writes source-mounted gateway state under the node config root instead of the mounted source tree', function (): void {

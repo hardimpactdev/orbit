@@ -75,6 +75,8 @@ it('starts Docker build topology client nodes with the host Docker socket and no
         ->toContain("--mount 'type=volume,src=orbit-e2e-prepared-build-operator-operator-etc-caddy,dst=/etc/caddy'")
         ->toContain("--mount 'type=volume,src=orbit-e2e-prepared-build-operator-operator-etc-orbit,dst=/etc/orbit'")
         ->toContain("--mount 'type=volume,src=orbit-e2e-prepared-build-operator-operator-opt-orbit,dst=/opt/orbit'")
+        ->toContain("--mount 'type=volume,src=orbit-e2e-prepared-build-operator-operator-var-lib-orbit,dst=/var/lib/orbit'")
+        ->toContain("--mount 'type=volume,src=orbit-e2e-prepared-build-operator-operator-run-php,dst=/run/php'")
         ->toContain("--env 'ORBIT_E2E_DOCKER_NETWORK=orbit-e2e-prepared-build-operator'")
         ->toContain("--env 'ORBIT_NODE_CONTAINER=orbit-e2e-prepared-build-operator-operator'")
         ->toContain("--env 'ORBIT_CONFIG_ROOT=/home/orbit/.config/orbit'")
@@ -767,8 +769,11 @@ it('builds operator_gateway prepared images through transient docker resources',
         "docker exec --user 'orbit' 'orbit-e2e-prepared-build-operator_gateway-gateway' sh -lc *bootstrap-gateway-local*" => Process::result(),
         "docker exec --detach --workdir '/home/orbit/orbit' 'orbit-e2e-prepared-build-operator_gateway-gateway-orbit-gateway' orbit orbit-scheduler" => Process::result(),
         "docker exec --user 'orbit' 'orbit-e2e-prepared-build-operator_gateway-gateway' sh -lc *orbit doctor*--family=schedule*" => Process::result(),
+        "docker exec --user 'orbit' 'orbit-e2e-prepared-build-operator_gateway-gateway' sh -lc *ssh-keyscan*" => Process::result(),
+        "docker exec --user 'orbit' 'orbit-e2e-prepared-build-operator_gateway-gateway' sh -lc *id_ed25519.pub*" => Process::result(output: "ssh-ed25519 AAAATEST orbit-e2e-gateway\n"),
         "docker exec 'orbit-e2e-prepared-build-operator_gateway-gateway' sh -lc *tinker*" => Process::result(),
         "docker exec 'orbit-e2e-prepared-build-operator_gateway-gateway' sh -lc *cat*" => Process::result(),
+        "docker exec 'orbit-e2e-prepared-build-operator_gateway-gateway' sh -lc *authorized_keys*" => Process::result(),
         "docker exec 'orbit-e2e-prepared-build-operator_gateway-gateway' sh -lc 'if [ -f /home/orbit/.ssh/id_ed25519 ]; then install -d -m 700 /root/.ssh && cp /home/orbit/.ssh/id_ed25519 /root/.ssh/id_ed25519 && chmod 600 /root/.ssh/id_ed25519 && if [ -f /home/orbit/.ssh/id_ed25519.pub ]; then cp /home/orbit/.ssh/id_ed25519.pub /root/.ssh/id_ed25519.pub; fi; fi'" => Process::result(),
         "docker exec 'orbit-e2e-prepared-build-operator_gateway-gateway' sh -lc *sudo docker exec*id_ed25519*" => Process::result(),
         "docker exec 'orbit-e2e-prepared-build-operator_gateway-gateway' sh -lc *php -d display_errors=0 -d max_execution_time=0 -S*" => Process::result(),
@@ -796,7 +801,14 @@ it('builds operator_gateway prepared images through transient docker resources',
         && str_contains($process->command, 'ORBIT_E2E_RUNTIME_DOCKER_SHIM')
         && str_contains($process->command, 'elif [ ! -x /usr/bin/docker.real ]; then')
         && str_contains($process->command, '${node_container}-home-orbit')
+        && str_contains($process->command, '${node_container}-var-lib-orbit')
+        && str_contains($process->command, '${node_container}-run-php')
+        && str_contains($process->command, '/home)')
         && str_contains($process->command, '/home/orbit/*)')
+        && str_contains($process->command, '/var/lib/orbit/*)')
+        && str_contains($process->command, '/run/php/*)')
+        && str_contains($process->command, 'rest="${rest//,target=\/home/,target=\/home\/orbit}"')
+        && str_contains($process->command, 'rest="${rest/:\/home/:\/home\/orbit}"')
         && str_contains($process->command, 'rewrite_volume'));
     Process::assertRan(fn ($process): bool => is_string($process->command)
         && str_contains($process->command, 'docker commit')
@@ -838,6 +850,7 @@ it('seeds gateway to app node ssh access for remote shell feature tests', functi
         'docker exec *cat*' => Process::result(),
         'docker exec *orbit-e2e-docker-downstream.sh*' => Process::result(),
         "docker exec 'orbit-e2e-prepared-build-operator_gateway_app-dev-gateway' sh -lc 'if [ -f /home/orbit/.ssh/id_ed25519 ]; then install -d -m 700 /root/.ssh && cp /home/orbit/.ssh/id_ed25519 /root/.ssh/id_ed25519 && chmod 600 /root/.ssh/id_ed25519 && if [ -f /home/orbit/.ssh/id_ed25519.pub ]; then cp /home/orbit/.ssh/id_ed25519.pub /root/.ssh/id_ed25519.pub; fi; fi'" => Process::result(),
+        "docker exec 'orbit-e2e-prepared-build-operator_gateway_app-dev-gateway' sh -lc *authorized_keys*" => Process::result(),
         "docker exec 'orbit-e2e-prepared-build-operator_gateway_app-dev-dev' sh -lc *authorized_keys*" => Process::result(),
         'docker exec --user *ssh-keyscan*' => Process::result(),
         'docker exec --user *bake-ingress-node*' => Process::result(),
@@ -858,6 +871,10 @@ it('seeds gateway to app node ssh access for remote shell feature tests', functi
     Process::assertRan(fn ($process): bool => is_string($process->command)
         && str_contains($process->command, 'authorized_keys')
         && str_contains($process->command, 'ssh-ed25519 AAAATEST orbit-e2e-gateway'));
+    Process::assertRan(fn ($process): bool => is_string($process->command)
+        && str_contains($process->command, "docker exec 'orbit-e2e-prepared-build-operator_gateway_app-dev-gateway' sh -lc")
+        && str_contains($process->command, 'authorized_keys')
+        && str_contains($process->command, 'ssh-ed25519 AAAATEST orbit-e2e-gateway'));
 });
 
 it('uses the configured instance prefix for transient resources but stable image tags', function (): void {
@@ -872,6 +889,7 @@ it('uses the configured instance prefix for transient resources but stable image
         "docker run -d --restart unless-stopped --name 'ci-foo-prepared-build-operator_gateway-gateway-orbit-gateway' *" => Process::result(output: "runtime-id\n"),
         'COPYFILE_DISABLE=1 tar *' => Process::result(),
         'docker exec -i *tar --warning=no-unknown-keyword*orbit-current-*' => Process::result(),
+        "docker exec --user 'orbit' 'ci-foo-prepared-build-operator_gateway-gateway' sh -lc *id_ed25519.pub*" => Process::result(output: "ssh-ed25519 AAAATEST orbit-e2e-gateway\n"),
         'docker exec --user *' => Process::result(),
         'docker exec *' => Process::result(),
         "docker commit --change * 'ci-foo-prepared-build-operator_gateway-operator' 'orbit-e2e:operator_base'" => Process::result(),

@@ -44,10 +44,10 @@ Orbit distinguishes these concepts:
   WireGuard and receives traffic through router-owned private service routes.
   `s3` is a private workload role for SeaweedFS object storage; it binds only to
   WireGuard and receives traffic through router-owned S3 service routes.
-  `metrics` is an optional host-resource observability role; it records
-  Prometheus and Grafana process intent on the metrics node, records
-  node-exporter tool/process intent on metrics and active workload nodes, and
-  exposes Grafana through `metrics.orbit`.
+  `metrics` is an optional host-resource observability role; it records and
+  starts Prometheus and Grafana process runtimes on the metrics node, records
+  and starts node-exporter tool/process runtimes on metrics and active workload
+  nodes, and exposes Grafana through `metrics.orbit`.
   `analytics` is a private workload role for Plausible CE; it binds only to
   WireGuard and receives dashboard plus tracking traffic through router-owned
   analytics service routes.

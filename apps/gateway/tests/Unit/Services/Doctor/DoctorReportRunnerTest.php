@@ -1339,6 +1339,92 @@ TXT;
             ->and($shell->scripts[2])->toContain("'grafana/grafana:12.0.1'");
     });
 
+    it('rehydrates service definition runtime config for unrenderable node-owned Docker process units', function (): void {
+        $node = Node::factory()->database()->create([
+            'name' => 'database-1',
+            'status' => 'active',
+            'platform' => 'ubuntu_24-04',
+            'user' => 'orbit',
+            'wireguard_address' => '10.6.0.7',
+        ]);
+        $process = \App\Models\Process::factory()->forOwner($node)->create([
+            'name' => 'redis',
+            'runtime' => ProcessRuntime::Docker,
+            'command' => 'redis-server --appendonly yes',
+            'restart_policy' => 'always',
+            'crash_notification' => 'none',
+            'runtime_config' => [
+                'definition' => 'redis',
+                'version_family' => '7',
+                'version' => '7.2',
+            ],
+            'sort_order' => 1,
+        ]);
+        $shell = new DoctorReportRunnerRemoteShell([
+            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+            new RemoteShellResult(exitCode: 1, stdout: '', stderr: 'No such network', durationMs: 1),
+            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+            new RemoteShellResult(exitCode: 1, stdout: '', stderr: 'No such container: redis', durationMs: 1),
+            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+        ]);
+        app()->instance(RemoteShell::class, $shell);
+
+        $probe = app(DoctorReportRunner::class)->probe($node, families: ['process']);
+
+        expect($probe['issues'][0])->toMatchArray([
+            'family' => 'process',
+            'node' => 'database-1',
+            'key' => 'process.runtime_unit_unrenderable',
+            'restorable' => true,
+        ]);
+
+        $report = app(DoctorReportRunner::class)->run($node, mode: 'restore', families: ['process']);
+        $process->refresh();
+
+        expect($report['healthy'])->toBeTrue()
+            ->and($report['summary'])->toMatchArray([
+                'issues' => 0,
+                'fixed' => 1,
+                'skipped' => 0,
+            ])
+            ->and($report['actions'][0])->toMatchArray([
+                'family' => 'process',
+                'node' => 'database-1',
+                'key' => 'process.runtime_unit_unrenderable',
+                'mode' => 'restore',
+                'status' => 'completed',
+                'details' => [
+                    'node' => 'database-1',
+                    'process' => 'redis',
+                    'definition' => 'redis',
+                    'version' => '7.2',
+                    'runtime' => 'docker',
+                    'runtime_unit' => 'redis',
+                ],
+            ])
+            ->and($process->runtime_config)->toMatchArray([
+                'definition' => 'redis',
+                'version_family' => '7',
+                'version' => '7.2',
+                'image' => 'redis:7.2',
+                'service_name' => 'orbit-redis',
+                'endpoint' => [
+                    'name' => 'redis',
+                    'kind' => 'tcp',
+                    'host' => '10.6.0.7',
+                    'port' => 6379,
+                ],
+            ]);
+
+        $create = collect($shell->scripts)->first(fn (string $script): bool => str_contains($script, 'docker create'));
+
+        expect($shell->scripts)->toContain("docker pull 'redis:7.2'")
+            ->and($shell->scripts)->toContain("sudo mkdir -p '/var/lib/orbit/processes/redis'")
+            ->and($create)->toContain('docker create')
+            ->and($create)->toContain("'redis:7.2'");
+    });
+
     it('restores missing orbit-caddy containers through restore mode family dispatch', function (): void {
         $gateway = Node::factory()->gateway()->create(['name' => 'gateway-1', 'status' => 'active']);
         $node = createDoctorRunnerAppHostNode();

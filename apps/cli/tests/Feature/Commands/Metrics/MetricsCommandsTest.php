@@ -7,10 +7,19 @@ use Illuminate\Support\Facades\Http;
 
 describe('metrics commands', function (): void {
     it('enables metrics by adding the metrics role to the selected node', function (): void {
-        fakeGateway(fakeSuccessEnvelope([
+        $timeout = null;
+        $body = fakeSuccessEnvelope([
             'node' => 'app-1',
             'assignment' => ['role' => 'metrics', 'status' => 'active'],
-        ]));
+        ]);
+
+        fakeGateway($body);
+
+        Http::fake(function (Request $request, array $options) use (&$timeout, $body) {
+            $timeout = $options['timeout'] ?? null;
+
+            return Http::response($body, 200);
+        });
 
         [$exitCode] = runCommand($this, 'metrics:enable', [
             '--node' => 'app-1',
@@ -23,6 +32,7 @@ describe('metrics commands', function (): void {
             && $request['settings'] === []);
 
         expect($exitCode)->toBe(0);
+        expect($timeout)->toBe(300);
     });
 
     it('requires --node before enabling metrics', function (): void {

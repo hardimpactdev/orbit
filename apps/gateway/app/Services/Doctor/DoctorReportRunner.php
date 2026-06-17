@@ -12,6 +12,8 @@ use App\Enums\Apps\NodeRuntimeContainersProbeStatus;
 use App\Enums\DriftKind;
 use App\Enums\Nodes\NodeConvergenceContext;
 use App\Enums\Nodes\NodeRoleName;
+use App\Enums\Nodes\NodeRoleStatus;
+use App\Enums\Nodes\NodeStatus;
 use App\Models\App;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseConnectionTarget;
@@ -36,6 +38,7 @@ use App\Services\Nodes\Roles\NodeRoleAssignments;
 use App\Services\Processes\ProcessesProbe;
 use App\Services\Processes\ProcessOwnerContext;
 use App\Services\Processes\ProcessRuntimeDriverRegistry;
+use App\Services\Processes\ProcessServiceDefinitionRegistry;
 use App\Services\Proxy\ProxyRouteAdopter;
 use App\Services\Proxy\ProxyRouteFixer;
 use App\Services\Proxy\ProxyRouteProbe;
@@ -99,6 +102,7 @@ final readonly class DoctorReportRunner
         private WorkspacesProbe $workspacesProbe,
         private ProcessesProbe $processesProbe,
         private ProcessRuntimeDriverRegistry $processRuntimeDrivers,
+        private ProcessServiceDefinitionRegistry $processServiceDefinitions,
         private ProxyRouteProbe $proxyRouteProbe,
         private FirewallRuleProbe $firewallRuleProbe,
         private FirewallRuleFixer $firewallRuleFixer,
@@ -178,6 +182,76 @@ final readonly class DoctorReportRunner
         }
 
         return array_values(array_unique($categories));
+    }
+
+    /**
+     * @param  list<string>  $families
+     * @return Collection<int, Node>
+     */
+    public function fleetTargetsForFamilies(array $families = []): Collection
+    {
+        /** @var Collection<int, Node> $nodes */
+        $nodes = Node::query()
+            ->where('status', NodeStatus::Active->value)
+            ->whereHas('roleAssignments', fn ($query) => $query->where('status', NodeRoleStatus::Active->value))
+            ->with('roleAssignments')
+            ->orderBy('name')
+            ->get()
+            ->filter(fn (Node $node): bool => $this->nodeSupportsFamilies($node, $families))
+            ->values();
+
+        return $nodes;
+    }
+
+    /**
+     * @param  list<string>  $families
+     * @return array<string, mixed>
+     */
+    public function probeFleet(array $families = [], ?string $key = null): array
+    {
+        $targets = $this->fleetTargetsForFamilies($families);
+        $issues = [];
+        $nodes = [];
+
+        foreach ($targets as $node) {
+            $report = $this->probe($node, families: $families, key: $key);
+            $reportIssues = is_array($report['issues'] ?? null) ? $report['issues'] : [];
+            $reportSummary = is_array($report['summary'] ?? null) ? $report['summary'] : [];
+            $reportScope = is_array($report['scope'] ?? null) ? $report['scope'] : [];
+
+            $issues = [
+                ...$issues,
+                ...array_values(array_filter($reportIssues, is_array(...))),
+            ];
+            $nodes[] = [
+                'node' => $node->name,
+                'role' => $node->displayRole(),
+                'healthy' => ($report['healthy'] ?? false) === true,
+                'families' => is_array($reportScope['families'] ?? null) ? $reportScope['families'] : [],
+                'summary' => $reportSummary,
+            ];
+        }
+
+        $summary = $this->summary('verify', $issues, []);
+
+        return [
+            'healthy' => $issues === [],
+            'mode' => 'verify',
+            'scope' => [
+                'families' => $this->fleetFamilies($targets, $families),
+                'node' => null,
+                'role' => 'fleet',
+                'self' => false,
+                'app' => null,
+                'workspace' => null,
+                'key' => $key,
+                'targets' => $targets->map(fn (Node $node): string => $node->name)->values()->all(),
+            ],
+            'summary' => $summary,
+            'issues' => $issues,
+            'actions' => [],
+            'nodes' => $nodes,
+        ];
     }
 
     /**
@@ -826,6 +900,38 @@ final readonly class DoctorReportRunner
     }
 
     /**
+     * @param  list<string>  $families
+     */
+    private function nodeSupportsFamilies(Node $node, array $families): bool
+    {
+        if ($families === []) {
+            return true;
+        }
+
+        $categories = $this->categoriesForNode($node);
+
+        return array_all($families, fn (string $family): bool => in_array($family, $categories, true));
+    }
+
+    /**
+     * @param  Collection<int, Node>  $targets
+     * @param  list<string>  $families
+     * @return list<string>
+     */
+    private function fleetFamilies(Collection $targets, array $families): array
+    {
+        if ($families !== []) {
+            return $families;
+        }
+
+        return $targets
+            ->flatMap(fn (Node $node): array => $this->categoriesForNode($node))
+            ->unique()
+            ->values()
+            ->all();
+    }
+
+    /**
      * @param  array<string, mixed>  $issue
      * @return array<string, mixed>|null
      */
@@ -1051,23 +1157,15 @@ final readonly class DoctorReportRunner
      */
     private function applyProcessIssue(Node $node, string $key, array $detail): ?array
     {
+        if ($key === 'process.runtime_unit_unrenderable') {
+            return $this->restoreUnrenderableProcessIssue($node, $key, $detail);
+        }
+
         if (! in_array($key, ['process.runtime_unit_missing', 'process.runtime_unit_mismatch'], true)) {
             return null;
         }
 
-        $processName = is_string($detail['process'] ?? null) ? $detail['process'] : null;
-
-        if ($processName === null) {
-            return null;
-        }
-
-        $processes = Process::query()
-            ->with('owner')
-            ->where('node_id', $node->id)
-            ->where('name', $processName)
-            ->get();
-        $runtimeUnit = is_string($detail['runtime_unit'] ?? null) ? $detail['runtime_unit'] : null;
-        $process = $this->processForRuntimeUnit($node, $processes, $runtimeUnit) ?? $processes->first();
+        $process = $this->processFromIssueDetail($node, $detail);
 
         if (! $process instanceof Process) {
             return null;
@@ -1124,6 +1222,83 @@ final readonly class DoctorReportRunner
                 'process' => $process->name,
             ],
         ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $detail
+     * @return array<string, mixed>|null
+     */
+    private function restoreUnrenderableProcessIssue(Node $node, string $key, array $detail): ?array
+    {
+        $process = $this->processFromIssueDetail($node, $detail);
+        $definition = is_string($detail['definition'] ?? null) ? $detail['definition'] : null;
+        $version = is_string($detail['version'] ?? null)
+            ? $detail['version']
+            : (is_string($detail['version_family'] ?? null) ? $detail['version_family'] : null);
+
+        if (! $process instanceof Process || $definition === null) {
+            return null;
+        }
+
+        $context = $this->processOwnerContext($node, $process);
+
+        if (! ($context instanceof ProcessOwnerContext) || ! ($context->owner instanceof Node)) {
+            return null;
+        }
+
+        try {
+            $resolved = $this->processServiceDefinitions->resolve(
+                definition: $definition,
+                version: $version,
+                runtime: $process->runtime,
+                node: $node,
+                processName: $process->name,
+            );
+
+            $process->forceFill([
+                'command' => $resolved->command,
+                'runtime_config' => $resolved->runtimeConfig,
+            ])->save();
+
+            $process->refresh();
+            $action = $this->applyNodeOwnedProcessIssue($node, $key, $process);
+        } catch (\Throwable $e) {
+            return [
+                'family' => 'process',
+                'node' => $node->name,
+                'code' => $key,
+                'key' => $key,
+                'mode' => 'restore',
+                'status' => 'failed',
+                'summary' => "Failed to restore {$key}.",
+                'details' => [
+                    'node' => $node->name,
+                    'process' => $process->name,
+                    'definition' => $definition,
+                    'version' => $version,
+                    'runtime' => $process->runtime->value,
+                    'error' => $e->getMessage(),
+                ],
+            ];
+        }
+
+        if ($action === null) {
+            return null;
+        }
+
+        $details = is_array($action['details'] ?? null) ? $action['details'] : [];
+        $action['details'] = [
+            ...$details,
+            'definition' => $definition,
+            'version' => $process->runtime_config['version'] ?? $version,
+            'runtime' => $process->runtime->value,
+        ];
+
+        if (($action['status'] ?? null) === 'completed') {
+            $action['summary'] = "Restored service definition runtime config for process {$process->name}.";
+        }
+
+        return $action;
     }
 
     /**
@@ -1191,6 +1366,27 @@ final readonly class DoctorReportRunner
                 'runtime_unit' => $runtimeUnit,
             ],
         ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $detail
+     */
+    private function processFromIssueDetail(Node $node, array $detail): ?Process
+    {
+        $processName = is_string($detail['process'] ?? null) ? $detail['process'] : null;
+
+        if ($processName === null) {
+            return null;
+        }
+
+        $processes = Process::query()
+            ->with('owner')
+            ->where('node_id', $node->id)
+            ->where('name', $processName)
+            ->get();
+        $runtimeUnit = is_string($detail['runtime_unit'] ?? null) ? $detail['runtime_unit'] : null;
+
+        return $this->processForRuntimeUnit($node, $processes, $runtimeUnit) ?? $processes->first();
     }
 
     /**
@@ -1811,6 +2007,7 @@ final readonly class DoctorReportRunner
             'firewall_rule.rule_mismatch',
             'process.runtime_unit_missing',
             'process.runtime_unit_mismatch',
+            'process.runtime_unit_unrenderable',
             'tool.capability_missing',
             'tool.agent_route_missing',
             'tool.container_missing',

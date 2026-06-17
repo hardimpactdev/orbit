@@ -31,7 +31,7 @@ execution.
 - `s3` and `websocket` role requests are reserved but fail before side effects
   until their implementation todos land.
 - `metrics` role requests provision or adopt the target host, then create the
-  role assignment and metrics process/proxy intent.
+  role assignment and converge metrics process/proxy/tool runtime.
 - For host-provisioned workload requests, the target host platform is supported
   for the requested role set.
 - For `--template=gateway`, `node_new.host` can be resolved and is compatible
@@ -60,7 +60,7 @@ complete before side effects that the gateway owns begin.
 | `agent` role set | Provision or adopt an agent node over SSH, then create the role assignment with `tld`. |
 | `websocket` role set | Reserved stable input surface; returns `role_not_implemented` before side effects until the WebSocket todo lands. |
 | `s3` role set | Reserved stable input surface; returns `role_not_implemented` before side effects until the S3 todo lands. |
-| `metrics` role set | Provision or adopt a metrics node over SSH, then create the role assignment and converge metrics intent. |
+| `metrics` role set | Provision or adopt a metrics node over SSH, then create the role assignment and converge metrics runtime intent. |
 | explicit multi-role set | Provision or adopt one compatible host, then create each role assignment. Live combinations include `app-dev` + `database`, `app-prod` + `ingress`, and any non-agent live role set that also includes `metrics`. `websocket` and `s3` combinations are reserved. |
 
 ## Gateway Authority Rules

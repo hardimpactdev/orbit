@@ -9,6 +9,7 @@ use App\Models\App;
 use App\Models\Node;
 use App\Models\Process;
 use App\Models\Workspace;
+use App\Services\Processes\ProcessDockerContainer;
 use App\Services\Processes\ProcessDockerContainerRenderer;
 use App\Services\Processes\ProcessDockerRuntimeManager;
 use Throwable;
@@ -34,6 +35,17 @@ final readonly class DockerProcessRuntimeDriver implements ProcessRuntimeDriver
             }
 
             $container = $this->renderer->render($app, $process, $workspace);
+
+            if ($process->owner instanceof Node) {
+                if (! $this->pullImage($node, $container->image())) {
+                    return false;
+                }
+
+                if (! $this->prepareMountSources($node, $container)) {
+                    return false;
+                }
+            }
+
             $this->manager->apply($node, $container);
 
             return true;
@@ -65,6 +77,27 @@ final readonly class DockerProcessRuntimeDriver implements ProcessRuntimeDriver
     public function restart(Node $node, string $runtimeUnit): bool
     {
         return $this->manager->restart($node, $runtimeUnit);
+    }
+
+    private function pullImage(Node $node, string $image): bool
+    {
+        return $this->remoteShell->run($node, 'docker pull '.escapeshellarg($image))->successful();
+    }
+
+    private function prepareMountSources(Node $node, ProcessDockerContainer $container): bool
+    {
+        $sources = array_values(array_unique(array_map(
+            static fn (array $mount): string => $mount['source'],
+            $container->mounts(),
+        )));
+
+        if ($sources === []) {
+            return true;
+        }
+
+        $script = 'sudo mkdir -p '.implode(' ', array_map(escapeshellarg(...), $sources));
+
+        return $this->remoteShell->run($node, $script)->successful();
     }
 
     public function logScript(App $app, Process $process, ?Workspace $workspace, string $runtimeUnit, int $lines, bool $follow): string

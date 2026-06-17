@@ -91,7 +91,7 @@ function e2eRestartGatewayApi(E2ETopologyHarness $topology, string $label): void
             wireguardIdentity: '10.6.0.2',
             bindAddress: '0.0.0.0',
             certKey: 'gateway',
-            certSans: ['10.6.0.2', 'gateway'],
+            certSans: ['10.6.0.2', $gatewayApiIp, 'gateway'],
             peerIdentityMap: e2eDockerDnsAliasPeerIdentityMap($topology),
         );
         e2eConfigureCurrentCheckoutGatewaySettingsIfAvailable($topology);

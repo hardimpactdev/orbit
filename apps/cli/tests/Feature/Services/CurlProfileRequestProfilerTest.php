@@ -41,9 +41,9 @@ describe(ProfileRequestProfiler::class, function (): void {
             stopCurlProfileHttpsTestServer($server);
         }
 
-        expect($profile['request']['completed'])->toBeTrue()
-            ->and($profile['request']['status'])->toBe(200)
-            ->and($profile['error'])->toBeNull();
+        expect($profile['error'])->toBeNull()
+            ->and($profile['request']['completed'])->toBeTrue()
+            ->and($profile['request']['status'])->toBe(200);
     });
 });
 
@@ -153,7 +153,7 @@ function curlProfileOpenSslAvailable(): bool
 }
 
 /**
- * @return array{process: resource, stdin: resource, directory: string, ca_pem: string, port: int}
+ * @return array{process: resource, directory: string, ca_pem: string, port: int}
  */
 function startCurlProfileHttpsTestServer(): array
 {
@@ -169,6 +169,10 @@ function startCurlProfileHttpsTestServer(): array
     $serverCsr = "{$directory}/server.csr";
     $serverCert = "{$directory}/server.crt";
     $serverConfig = "{$directory}/server.cnf";
+    $serverPem = "{$directory}/server.pem";
+    $serverScript = "{$directory}/server.php";
+    $readyFile = "{$directory}/ready";
+    $errorFile = "{$directory}/server.err";
 
     file_put_contents($serverConfig, <<<'CONF'
 [req]
@@ -239,24 +243,108 @@ CONF);
         $serverConfig,
     ], $directory);
 
+    $certificate = file_get_contents($serverCert);
+    $privateKey = file_get_contents($serverKey);
+
+    if (! is_string($certificate) || ! is_string($privateKey)) {
+        removeCurlProfileTestDirectory($directory);
+
+        throw new RuntimeException('Unable to read HTTPS profile test certificate.');
+    }
+
+    file_put_contents($serverPem, $certificate.PHP_EOL.$privateKey);
+    file_put_contents($serverScript, <<<'PHP'
+<?php
+
+declare(strict_types=1);
+
+$port = (int) $argv[1];
+$certificate = (string) $argv[2];
+$readyFile = (string) $argv[3];
+
+$context = stream_context_create([
+    'ssl' => [
+        'allow_self_signed' => true,
+        'local_cert' => $certificate,
+        'verify_peer' => false,
+    ],
+]);
+
+$server = stream_socket_server(
+    "tcp://127.0.0.1:{$port}",
+    $errno,
+    $error,
+    STREAM_SERVER_BIND | STREAM_SERVER_LISTEN,
+    $context,
+);
+
+if (! is_resource($server)) {
+    fwrite(STDERR, "Unable to start TLS test server: {$error}\n");
+
+    exit(1);
+}
+
+file_put_contents($readyFile, 'ready');
+
+while (true) {
+    $client = @stream_socket_accept($server, 1);
+
+    if (! is_resource($client)) {
+        continue;
+    }
+
+    $tls = @stream_socket_enable_crypto($client, true, STREAM_CRYPTO_METHOD_TLS_SERVER);
+
+    if ($tls !== true) {
+        fclose($client);
+
+        continue;
+    }
+
+    stream_set_timeout($client, 2);
+
+    $request = '';
+
+    while (! feof($client)) {
+        $line = fgets($client);
+
+        if ($line === false) {
+            break;
+        }
+
+        $request .= $line;
+
+        if (str_ends_with($request, "\r\n\r\n") || str_ends_with($request, "\n\n")) {
+            break;
+        }
+    }
+
+    $body = 'profile-ok';
+
+    fwrite($client, "HTTP/1.1 200 OK\r\n");
+    fwrite($client, "Content-Type: text/plain\r\n");
+    fwrite($client, 'Content-Length: '.strlen($body)."\r\n");
+    fwrite($client, "Connection: close\r\n\r\n");
+    fwrite($client, $body);
+
+    @stream_socket_enable_crypto($client, false);
+    fclose($client);
+}
+PHP);
+
     $port = unusedCurlProfileTestPort();
     $process = proc_open(
         [
-            'openssl',
-            's_server',
-            '-quiet',
-            '-www',
-            '-accept',
+            PHP_BINARY,
+            $serverScript,
             (string) $port,
-            '-cert',
-            $serverCert,
-            '-key',
-            $serverKey,
+            $serverPem,
+            $readyFile,
         ],
         [
             0 => ['pipe', 'r'],
             1 => ['file', '/dev/null', 'w'],
-            2 => ['file', '/dev/null', 'w'],
+            2 => ['file', $errorFile, 'w'],
         ],
         $pipes,
         $directory,
@@ -268,15 +356,26 @@ CONF);
         throw new RuntimeException('Unable to start HTTPS profile test server.');
     }
 
+    fclose($pipes[0]);
+
     for ($attempt = 0; $attempt < 50; $attempt++) {
-        $socket = @fsockopen('127.0.0.1', $port, $errno, $error, 0.1);
+        $status = proc_get_status($process);
 
-        if (is_resource($socket)) {
-            fclose($socket);
+        if (($status['running'] ?? false) !== true) {
+            $error = is_file($errorFile) ? (string) file_get_contents($errorFile) : '';
+            stopCurlProfileHttpsTestServer([
+                'process' => $process,
+                'directory' => $directory,
+                'ca_pem' => $caPem,
+                'port' => $port,
+            ]);
 
+            throw new RuntimeException('HTTPS profile test server exited early. '.$error);
+        }
+
+        if (is_file($readyFile)) {
             return [
                 'process' => $process,
-                'stdin' => $pipes[0],
                 'directory' => $directory,
                 'ca_pem' => $caPem,
                 'port' => $port,
@@ -288,7 +387,6 @@ CONF);
 
     stopCurlProfileHttpsTestServer([
         'process' => $process,
-        'stdin' => $pipes[0],
         'directory' => $directory,
         'ca_pem' => $caPem,
         'port' => $port,
@@ -350,11 +448,10 @@ function unusedCurlProfileTestPort(): int
 }
 
 /**
- * @param  array{process: resource, stdin: resource, directory: string, ca_pem: string, port: int}  $server
+ * @param  array{process: resource, directory: string, ca_pem: string, port: int}  $server
  */
 function stopCurlProfileHttpsTestServer(array $server): void
 {
-    fclose($server['stdin']);
     proc_terminate($server['process']);
     proc_close($server['process']);
     removeCurlProfileTestDirectory($server['directory']);

@@ -131,6 +131,11 @@ SH,
             $parts[] = escapeshellarg($volume);
         }
 
+        foreach ($this->bindMounts($config['bind_mounts'] ?? []) as $mount) {
+            $parts[] = '--mount';
+            $parts[] = escapeshellarg($mount);
+        }
+
         foreach ($this->stringMap($config['environment'] ?? []) as $key => $value) {
             $parts[] = '--env';
             $parts[] = escapeshellarg("{$key}={$value}");
@@ -260,6 +265,31 @@ SH,
             }
 
             return "published={$published},target={$target},protocol=".($protocol !== '' ? $protocol : 'tcp');
+        }, $value)));
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function bindMounts(mixed $value): array
+    {
+        if (! is_array($value)) {
+            return [];
+        }
+
+        return array_values(array_filter(array_map(function (mixed $mount): ?string {
+            if (! is_array($mount)) {
+                return null;
+            }
+
+            $source = is_string($mount['source'] ?? null) ? trim($mount['source']) : '';
+            $target = is_string($mount['target'] ?? null) ? trim($mount['target']) : '';
+
+            if ($source === '' || $target === '' || ! str_starts_with($source, '/') || ! str_starts_with($target, '/')) {
+                return null;
+            }
+
+            return 'type=bind,source='.$source.',target='.$target.((bool) ($mount['read_only'] ?? false) ? ',readonly' : '');
         }, $value)));
     }
 

@@ -34,8 +34,9 @@ Role convergence records:
 - node-exporter systemd process definitions on metrics and active workload nodes.
 - The router-owned `metrics.orbit` route and Grafana admin credentials.
 
-The command does not synchronously start Prometheus, Grafana, or node-exporter.
-Runtime lifecycle belongs to `process:*` and process doctor.
+The command immediately converges and starts Prometheus, Grafana, and
+node-exporter. Later runtime drift is repaired through
+`doctor --family=process`; direct lifecycle actions still belong to `process:*`.
 
 ## Output
 
@@ -56,5 +57,6 @@ Use these commands to inspect or repair metrics after enabling the role.
 - [`orbit metrics:status`](../3_metrics-status/metrics-status.md)
 - [`orbit metrics:credentials`](../4_metrics-credentials/metrics-credentials.md)
 - [`orbit process:list --node=<node>`](../../7_process/4_process-list/process-list.md)
+- [`orbit process:restart --node=<node>`](../../7_process/7_process-restart/process-restart.md)
 - [`orbit doctor --family=process`](../../7_process/process-doctor.md)
 - [Technical contract](technical/1_metrics-enable.md)

@@ -37,7 +37,6 @@ it('reports missing unattended-upgrades posture on an Incus app node from the ga
                 'restorable' => true,
             ]);
     } finally {
-        nodeUpdatesDoctorRestoreExpectedAptConfig($topology);
         $topology->cleanup();
     }
 })->group('e2e-feature', 'e2e-provider-incus', 'e2e-feature-operator_gateway_app-dev', 'e2e-feature-operator-gateway-dev');
@@ -115,9 +114,12 @@ function nodeUpdatesDoctorRestoreExpectedAptConfig(E2ETopologyHarness $topology)
     $autoUpgrades = rtrim($config->autoUpgrades(), "\n");
     $unattendedUpgrades = rtrim($config->unattendedUpgrades(), "\n");
     $script = <<<SH
-if ! dpkg-query -W -f='\${Status}' unattended-upgrades 2>/dev/null | grep -q 'install ok installed'; then
-    sudo apt-get update -qq
-    sudo apt-get install -y -qq unattended-upgrades
+if ! command -v unattended-upgrade >/dev/null 2>&1; then
+    sudo tee /usr/local/bin/unattended-upgrade >/dev/null <<'EOF'
+#!/usr/bin/env bash
+exit 0
+EOF
+    sudo chmod 0755 /usr/local/bin/unattended-upgrade
 fi
 sudo tee /etc/apt/apt.conf.d/20auto-upgrades >/dev/null <<'EOF'
 {$autoUpgrades}
@@ -127,11 +129,13 @@ sudo tee /etc/apt/apt.conf.d/50unattended-upgrades >/dev/null <<'EOF'
 EOF
 SH;
 
-    $topology->ssh(
+    $result = $topology->ssh(
         'dev',
         $script,
-        timeoutSeconds: 60,
+        timeoutSeconds: 180,
     );
+
+    expect($result->successful())->toBeTrue($result->output().$result->errorOutput());
 }
 
 function nodeUpdatesDoctorRun(E2ETopologyHarness $topology, bool $allowFailure = false): ProcessResult

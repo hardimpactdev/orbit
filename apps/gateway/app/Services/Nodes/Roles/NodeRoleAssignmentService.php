@@ -210,6 +210,9 @@ class NodeRoleAssignmentService
     private function converge(Node $node, NodeRoleAssignment $assignment, ?NodeRoleAssignment $previousAssignment = null): NodeRoleAssignment
     {
         try {
+            $this->syncNodeTldFromRoles($node, $assignment);
+            $node->refresh();
+
             $this->converger->converge($node, $assignment);
             $this->removePreviousDevelopmentDnsMapping($node, $assignment, $previousAssignment);
 
@@ -219,7 +222,8 @@ class NodeRoleAssignmentService
                 'last_error' => null,
             ])->save();
 
-            $this->syncNodeTldFromRoles($node);
+            $this->syncNodeTldFromRoles($node, $assignment);
+            $node->refresh();
             $this->roleSelfGrantMaterializer->materializeOnRoleApplied($node, NodeRoleName::from($assignment->role));
         } catch (Throwable $throwable) {
             $assignment->forceFill([
@@ -255,12 +259,21 @@ class NodeRoleAssignmentService
         $this->converger->remove($node, $previousAssignment, purgeData: false);
     }
 
-    private function syncNodeTldFromRoles(Node $node): void
+    private function syncNodeTldFromRoles(Node $node, ?NodeRoleAssignment $convergingAssignment = null): void
     {
+        $node->refresh();
+
         $activeAssignments = $node->roleAssignments()
             ->where('status', NodeRoleStatus::Active->value)
             ->orderBy('role')
             ->get();
+
+        if (
+            $convergingAssignment instanceof NodeRoleAssignment
+            && ! $activeAssignments->contains('id', $convergingAssignment->id)
+        ) {
+            $activeAssignments->push($convergingAssignment);
+        }
 
         $tld = null;
 

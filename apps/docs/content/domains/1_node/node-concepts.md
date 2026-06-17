@@ -80,10 +80,11 @@ Each term below has a precise meaning in the node command family.
   rendered by Orbit, binds the S3 API only to the node's WireGuard address, and
   receives private and public S3 traffic through router-owned service routes.
 - **Metrics role:** Optional private workload role for host-resource
-  observability. A metrics node records Prometheus and Grafana process intent,
-  records node-exporter tool/process intent for itself and active workload nodes,
-  exposes Grafana through the router-owned private `metrics.orbit` route, and
-  can be dedicated or co-located with any non-agent role.
+  observability. A metrics node records and starts Prometheus and Grafana
+  process runtimes, records and starts node-exporter tool/process runtimes for
+  itself and active workload nodes, exposes Grafana through the router-owned
+  private `metrics.orbit` route, and can be dedicated or co-located with any
+  non-agent role.
 - **Analytics role:** Private workload role for Plausible CE analytics. An
   analytics node runs Plausible CE as a process-owned Docker/Swarm service,
   binds only to the node's WireGuard address, receives dashboard traffic through

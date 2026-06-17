@@ -4,8 +4,9 @@
 
 **Owner:** `metrics`.
 
-**Effects:** `write`. Writes gateway role assignment intent and role-baseline
-process/proxy/tool intent through the gateway.
+**Effects:** `write`. Writes gateway role assignment intent, records
+role-baseline process/proxy/tool intent through the gateway, and converges the
+owned metrics runtime units.
 
 **Prerequisites:**
 - The CLI caller can reach the Orbit gateway.
@@ -40,10 +41,13 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 ### Success Rules
 
 - On success, the target node has an active `metrics` role assignment and the
-  metrics baseline intent is recorded.
-- The baseline records Prometheus and Grafana process intent on the target
-  metrics node, node-exporter tool/process intent on the target metrics node
-  and every active workload node, and the `metrics.orbit` proxy route.
+  metrics baseline intent is recorded and applied.
+- The baseline records and starts Prometheus and Grafana Docker Swarm process
+  units on the target metrics node.
+- The baseline records node-exporter tool/process intent on the target metrics
+  node and every active workload node, installs the node-exporter host binary
+  when missing, and starts the node-exporter systemd process units.
+- The baseline records the `metrics.orbit` proxy route.
 
 ## Renderer Contracts
 
@@ -61,7 +65,8 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 
 ## Doctor Relationship
 
-`metrics:enable` creates desired state. Role assignment readiness belongs to
+`metrics:enable` creates desired state and immediately converges the metrics
+runtime units it owns. Later role assignment readiness belongs to
 [`doctor --family=node`](../../../1_node/node-doctor.md). Docker substrate drift
 and node-exporter host binary drift belong to
 [`doctor --family=tool`](../../../3_tool/tool-doctor.md). Metrics process
@@ -75,4 +80,4 @@ runtime drift belongs to
 | Path | Coverage |
 | --- | --- |
 | `apps/cli/tests/Feature/Commands/Metrics/MetricsCommandsTest.php` | CLI request path, required node validation, and JSON forwarding. |
-| `apps/gateway/tests/Feature/Services/Nodes/Roles/MetricsRoleBaselineTest.php` | Role baseline intent for Docker, process definitions, credentials, and `metrics.orbit`. |
+| `apps/gateway/tests/Feature/Services/Nodes/Roles/MetricsRoleBaselineTest.php` | Role baseline intent and runtime convergence for Docker, process definitions, Prometheus scrape config, Grafana datasource config, credentials, node-exporter, and `metrics.orbit`. |

@@ -204,7 +204,7 @@ final readonly class RemoveApp
         $commands[] = CaddyTool::reloadCommand().' || true';
 
         if ($removeAppPath) {
-            $commands[] = 'rm -rf '.escapeshellarg($app->path);
+            $commands[] = 'sudo rm -rf '.escapeshellarg($app->path);
         }
 
         return implode("\n", $commands);

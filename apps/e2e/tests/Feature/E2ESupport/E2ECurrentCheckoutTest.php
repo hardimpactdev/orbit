@@ -46,3 +46,16 @@ it('passes Docker gateway state environment through the current checkout wrapper
         ->toContain("--env 'DB_DATABASE=/home/orbit/.config/orbit/gateway.sqlite'")
         ->toContain("--env 'SESSION_DRIVER=file'");
 });
+
+it('writes direct CLI gateway config while refreshing current checkout gateway settings', function (): void {
+    $method = new ReflectionMethod(E2ECurrentCheckout::class, 'localGatewaySettingsCommand');
+
+    $command = $method->invoke(null, '/home/orbit/orbit-current', '10.6.0.2', true);
+
+    expect($command)
+        ->toContain('/api/ca/root')
+        ->toContain('config.json')
+        ->toContain('wireguard_https')
+        ->toContain('exit(1)')
+        ->not->toContain('gateway:add');
+});

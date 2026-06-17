@@ -202,10 +202,10 @@ Requires `--host`. Implementation pending.
 
 Provisions a private host-resource observability node and creates an active
 `metrics` role assignment. The role baseline records Docker substrate intent,
-node-exporter host binary tool intent, Prometheus and Grafana Docker Swarm
-process definitions, node-exporter systemd process definitions on metrics and
-active workload nodes, the router-owned `metrics.orbit` route, and generated
-Grafana admin credentials.
+records and starts node-exporter host binary/tool-backed systemd process
+runtimes, records and starts Prometheus and Grafana Docker Swarm process
+runtimes, records the router-owned `metrics.orbit` route, and generates Grafana
+admin credentials.
 
 Requires `--host`.
 

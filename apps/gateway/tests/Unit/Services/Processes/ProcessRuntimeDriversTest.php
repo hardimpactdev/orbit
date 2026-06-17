@@ -94,6 +94,8 @@ it('applies, removes, and cleans up docker process runtime units through the doc
 
 it('applies node owned docker service processes from runtime config', function (): void {
     $shell = new ProcessRuntimeDriverRecordingShell([
+        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
         new RemoteShellResult(exitCode: 1, stdout: '', stderr: 'No such network', durationMs: 1),
         new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
         new RemoteShellResult(exitCode: 1, stdout: '', stderr: 'No such container', durationMs: 1),
@@ -146,6 +148,8 @@ it('applies node owned docker service processes from runtime config', function (
         ->toContain("'-lc' 'redis-server --bind 0.0.0.0 --protected-mode no'");
 
     expect($shell->scripts)->toContain(
+        "docker pull 'redis:7.2'",
+        "sudo mkdir -p '/var/lib/orbit/redis'",
         "docker start 'redis'",
         "docker stop 'redis'",
         "docker restart 'redis'",
@@ -221,6 +225,13 @@ it('applies, removes, and cleans up docker swarm process runtime services from r
                     'protocol' => 'tcp',
                 ],
             ],
+            'bind_mounts' => [
+                [
+                    'source' => '/var/lib/orbit/processes/mysql8/mysql.cnf',
+                    'target' => '/etc/mysql/conf.d/orbit.cnf',
+                    'read_only' => true,
+                ],
+            ],
             'service_name' => 'orbit-mysql-8',
             'update_strategy' => [
                 'order' => 'stop-first',
@@ -252,6 +263,7 @@ it('applies, removes, and cleans up docker swarm process runtime services from r
         ->toContain("--label 'orbit.process.spec_hash=abc123'")
         ->toContain("--publish 'published=3308,target=3306,protocol=tcp'")
         ->toContain("--mount 'type=volume,source=orbit-mysql-8,target=/var/lib/mysql'")
+        ->toContain("--mount 'type=bind,source=/var/lib/orbit/processes/mysql8/mysql.cnf,target=/etc/mysql/conf.d/orbit.cnf,readonly'")
         ->toContain("--update-order 'stop-first'")
         ->toContain("--update-parallelism '1'")
         ->toContain("'mysql:8.4'")

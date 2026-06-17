@@ -745,7 +745,7 @@ describe('docker runtime probe scope', function (): void {
                 'version_family' => '7',
                 'version' => '7.2',
                 'image' => 'redis:7.2',
-                'spec_hash' => 'redis-spec-hash',
+                'spec_hash' => 'service-definition-hash',
                 'endpoint' => [
                     'name' => 'redis',
                     'kind' => 'tcp',
@@ -758,14 +758,17 @@ describe('docker runtime probe scope', function (): void {
                     'orbit.process.definition' => 'redis',
                     'orbit.process.version_family' => '7',
                     'orbit.process.version' => '7.2',
-                    'orbit.process.spec_hash' => 'redis-spec-hash',
+                    'orbit.process.spec_hash' => 'service-definition-hash',
                 ],
             ],
         ]);
+        $containerHash = app(ProcessDockerContainerRenderer::class)
+            ->render(new App(['name' => 'runtime']), $process)
+            ->specHash();
         $shell = new ProcessesProbeRecordingRemoteShell([
             new RemoteShellResult(exitCode: 0, stdout: json_encode([
                 'State' => ['Status' => 'running'],
-                'Config' => ['Labels' => ['orbit.process.spec_hash' => 'redis-spec-hash']],
+                'Config' => ['Labels' => ['orbit.process.spec_hash' => $containerHash]],
             ], JSON_THROW_ON_ERROR), stderr: '', durationMs: 1),
             new RemoteShellResult(exitCode: 0, stdout: "redis-old\n", stderr: '', durationMs: 1),
         ]);

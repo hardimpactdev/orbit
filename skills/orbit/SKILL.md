@@ -182,7 +182,7 @@ lifecycle directly; process rows own lifecycle for runnable services.
 
 | Command | What it does |
 |---|---|
-| `orbit metrics:enable --node=<node>` | Assign the optional metrics role and record Prometheus/Grafana/node-exporter intent |
+| `orbit metrics:enable --node=<node>` | Assign the optional metrics role and start Prometheus/Grafana/node-exporter runtimes |
 | `orbit metrics:disable --node=<node> --force` | Remove the metrics role and owned metrics intent |
 | `orbit metrics:status` | Read metrics role and process intent from gateway configuration |
 | `orbit metrics:credentials` | Show or rotate Grafana admin credentials |
