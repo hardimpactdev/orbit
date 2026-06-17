@@ -16,6 +16,10 @@ final readonly class UpdateRunnerLauncher
 {
     private const string ContainerConfigRoot = '/home/orbit/.config/orbit';
 
+    private const string HostSshRoot = '/home/orbit/.ssh';
+
+    private const string ContainerSshRoot = '/root/.ssh';
+
     public function __construct(
         private OperationUpdatePlanStore $plans,
     ) {}
@@ -70,6 +74,7 @@ final readonly class UpdateRunnerLauncher
             '--network '.$this->escape(GatewaySwarmStackRenderer::Network),
             '--mount '.$this->escape('type=bind,source=/var/run/docker.sock,target=/var/run/docker.sock'),
             '--mount '.$this->escape("type=bind,source={$hostConfigRoot},target=".self::ContainerConfigRoot),
+            '--mount '.$this->escape('type=bind,source='.self::HostSshRoot.',target='.self::ContainerSshRoot.',readonly'),
             '--env '.$this->escape('ORBIT_CONFIG_ROOT='.self::ContainerConfigRoot),
             $this->escape($image),
             $this->escape('artisan'),

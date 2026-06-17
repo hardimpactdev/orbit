@@ -51,6 +51,7 @@ it('launches the one shot runner from the persisted digest pinned gateway image'
             ->toContain("--network 'orbit-network'")
             ->toContain("--mount 'type=bind,source=/var/run/docker.sock,target=/var/run/docker.sock'")
             ->toContain("--mount 'type=bind,source={$this->configRoot},target=/home/orbit/.config/orbit'")
+            ->toContain("--mount 'type=bind,source=/home/orbit/.ssh,target=/root/.ssh,readonly'")
             ->toContain("--env 'ORBIT_CONFIG_ROOT=/home/orbit/.config/orbit'")
             ->toContain("'{$plan->gateway_image}'")
             ->toContain("'orbit:update-runner'")
