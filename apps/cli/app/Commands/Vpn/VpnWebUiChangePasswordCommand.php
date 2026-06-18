@@ -73,9 +73,7 @@ final class VpnWebUiChangePasswordCommand extends VpnGatewayCommand
                 ['label' => 'Rotate admin sessions'],
                 ['label' => 'Apply and verify credential rotation'],
             ],
-            work: function () use ($password): array {
-                return $this->rotatePasswordForHuman($password);
-            },
+            work: fn (): array => $this->rotatePasswordForHuman($password),
             doneFooter: 'VPN web UI password rotated',
         );
 

@@ -29,7 +29,7 @@ trait WithStepTree
      */
     protected function runStepTree(string $title, array $steps, string|Closure $doneFooter, ?string $failFooter = null): StepTreeResult
     {
-        return (new StepTree($this->output))->run($title, $steps, $doneFooter, $failFooter);
+        return new StepTree($this->output)->run($title, $steps, $doneFooter, $failFooter);
     }
 
     /**
@@ -43,6 +43,6 @@ trait WithStepTree
      */
     protected function runStepOperation(string $title, array $phases, Closure $work, string|Closure $doneFooter, ?string $failFooter = null): StepTreeResult
     {
-        return (new StepTree($this->output))->runOperation($title, $phases, $work, $doneFooter, $failFooter);
+        return new StepTree($this->output)->runOperation($title, $phases, $work, $doneFooter, $failFooter);
     }
 }
