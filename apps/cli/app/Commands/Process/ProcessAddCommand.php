@@ -78,26 +78,67 @@ final class ProcessAddCommand extends ProcessGatewayCommand
             return $validation;
         }
 
-        try {
-            $response = $this->gatewayPost('/api/processes', $this->filledQuery([
-                'node' => $node,
-                'app' => $app,
-                'workspace' => $workspace,
-                'name' => $name,
-                'command' => $command,
-                'restart_policy' => $restartPolicy,
-                'crash_notification' => $crashNotification,
-                'start' => $this->option('start') === true,
-                'runtime' => $runtime,
-                'tool' => $tool,
-                'definition' => $definition,
-                'version' => $version,
-            ]));
-        } catch (GatewayApiException $exception) {
-            return $this->renderGatewayFailure($exception);
+        $payload = $this->filledQuery([
+            'node' => $node,
+            'app' => $app,
+            'workspace' => $workspace,
+            'name' => $name,
+            'command' => $command,
+            'restart_policy' => $restartPolicy,
+            'crash_notification' => $crashNotification,
+            'start' => $this->option('start') === true,
+            'runtime' => $runtime,
+            'tool' => $tool,
+            'definition' => $definition,
+            'version' => $version,
+        ]);
+
+        if ($this->wantsJson()) {
+            try {
+                $response = $this->gatewayPost('/api/processes', $payload);
+            } catch (GatewayApiException $exception) {
+                return $this->renderGatewayFailure($exception);
+            }
+
+            return $this->renderSuccess($response);
         }
 
-        return $this->renderSuccess($response);
+        return $this->renderAddTree($payload, (string) $name, $this->contextLabel($node, $app, $workspace));
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     */
+    private function renderAddTree(array $payload, string $name, string $label): int
+    {
+        $response = [];
+
+        $phases = [
+            ['label' => 'Validate process', 'doneLabel' => 'Validated process'],
+            ['label' => 'Create process configuration', 'doneLabel' => 'Created process configuration'],
+            ['label' => 'Render runtime units', 'doneLabel' => 'Rendered runtime units'],
+        ];
+
+        if ($this->option('start') === true) {
+            $phases[] = ['label' => 'Start runtime units', 'doneLabel' => 'Started runtime units'];
+        }
+
+        $outcome = $this->runStepOperation(
+            'Adding Process',
+            $phases,
+            work: function () use ($payload, &$response): array {
+                return $response = $this->gatewayCallForHuman(fn (): array => $this->gatewayPost('/api/processes', $payload));
+            },
+            doneFooter: fn (): string => "Process '{$name}' added for {$label}",
+        );
+
+        if (! $outcome->isCompleted()) {
+            return self::FAILURE;
+        }
+
+        $this->renderDriftNotes($response);
+
+        return self::SUCCESS;
     }
 
     private function validateTool(?string $tool): ?int

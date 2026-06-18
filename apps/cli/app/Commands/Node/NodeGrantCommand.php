@@ -48,7 +48,98 @@ final class NodeGrantCommand extends GatewayCommand
             return $this->renderGatewayFailure($exception);
         }
 
-        return $this->renderSuccess($response);
+        if ($this->wantsJson()) {
+            return $this->renderSuccess($response);
+        }
+
+        return $this->renderGrant($consumingNode, $servingNode, $response);
+    }
+
+    /**
+     * @param  array<string, mixed>  $response
+     */
+    private function renderGrant(string $consumingNode, string $servingNode, array $response): int
+    {
+        $data = $this->successData($response);
+        $permissions = $this->permissions($data);
+
+        if (($data['already_granted'] ?? null) === true) {
+            $this->line("'{$consumingNode}' already has access to '{$servingNode}'");
+            $this->line('Permissions: '.implode(', ', $permissions));
+            $this->line("Run `orbit node:permissions {$consumingNode} {$servingNode}` to edit this grant.");
+        } else {
+            $this->line("Granted '{$consumingNode}' access to '{$servingNode}'");
+            $this->line('Permissions: '.implode(', ', $permissions));
+        }
+
+        $warnings = $this->warningMessages($response);
+
+        if ($warnings !== []) {
+            $this->line('Warnings:');
+
+            foreach ($warnings as $message) {
+                $this->line("- {$message}");
+            }
+        }
+
+        return self::SUCCESS;
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     * @return list<string>
+     */
+    private function permissions(array $data): array
+    {
+        $permissions = $data['permissions'] ?? null;
+
+        if (! is_array($permissions)) {
+            return [];
+        }
+
+        $values = [];
+
+        foreach ($permissions as $permission) {
+            if (is_string($permission) && $permission !== '') {
+                $values[] = $permission;
+            }
+        }
+
+        return $values;
+    }
+
+    /**
+     * @param  array<string, mixed>  $response
+     * @return list<string>
+     */
+    private function warningMessages(array $response): array
+    {
+        $warnings = $response['success']['meta']['warnings'] ?? null;
+
+        if (! is_array($warnings)) {
+            return [];
+        }
+
+        $messages = [];
+
+        foreach ($warnings as $entry) {
+            if (is_array($entry) && is_string($entry['message'] ?? null) && trim($entry['message']) !== '') {
+                $messages[] = trim($entry['message']);
+            }
+        }
+
+        return $messages;
+    }
+
+    /**
+     * @param  array<string, mixed>  $response
+     * @return array<string, mixed>
+     */
+    private function successData(array $response): array
+    {
+        $data = $response['success']['data'] ?? null;
+
+        return is_array($data) ? $data : [];
     }
 
     private function stringArgument(string $key): ?string

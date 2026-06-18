@@ -163,4 +163,28 @@ describe('gateway:use', function (): void {
 
         cleanupGatewaySelectionStore($tempDir);
     });
+
+    it('renders the selected gateway name and endpoint as prose in human mode', function (): void {
+        [, $tempDir] = setupGatewaySelectionStore();
+
+        [$exitCode, $output] = runCommand($this, 'gateway:use', ['name' => 'incus-dev']);
+
+        expect($exitCode)->toBe(0)
+            ->and($output)->toBe("Now using gateway 'incus-dev' (https://10.6.0.12).");
+
+        cleanupGatewaySelectionStore($tempDir);
+    });
+
+    it('renders unknown-gateway failures as prose in human mode', function (): void {
+        [, $tempDir] = setupGatewaySelectionStore();
+
+        [$exitCode, $output] = runCommand($this, 'gateway:use', ['name' => 'missing']);
+
+        expect($exitCode)->toBe(1)
+            ->and($output)->not->toContain('"error"')
+            ->and($output)->not->toContain('{')
+            ->and($output)->not->toContain('gateway:');
+
+        cleanupGatewaySelectionStore($tempDir);
+    });
 });

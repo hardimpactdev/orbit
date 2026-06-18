@@ -58,22 +58,64 @@ final class ProcessEditCommand extends ProcessGatewayCommand
             return $validation;
         }
 
-        try {
-            $response = $this->gatewayPatch('/api/processes/'.rawurlencode((string) $name), $this->filledQuery([
-                'node' => $node,
-                'app' => $app,
-                'workspace' => $workspace,
-                'command' => $command,
-                'restart_policy' => $restartPolicy,
-                'crash_notification' => $crashNotification,
-                'runtime' => $runtime,
-                'restart' => $this->option('restart') === true,
-            ]));
-        } catch (GatewayApiException $exception) {
-            return $this->renderGatewayFailure($exception);
+        $path = '/api/processes/'.rawurlencode((string) $name);
+        $payload = $this->filledQuery([
+            'node' => $node,
+            'app' => $app,
+            'workspace' => $workspace,
+            'command' => $command,
+            'restart_policy' => $restartPolicy,
+            'crash_notification' => $crashNotification,
+            'runtime' => $runtime,
+            'restart' => $this->option('restart') === true,
+        ]);
+
+        if ($this->wantsJson()) {
+            try {
+                $response = $this->gatewayPatch($path, $payload);
+            } catch (GatewayApiException $exception) {
+                return $this->renderGatewayFailure($exception);
+            }
+
+            return $this->renderSuccess($response);
         }
 
-        return $this->renderSuccess($response);
+        return $this->renderEditTree($path, $payload, (string) $name, $this->contextLabel($node, $app, $workspace));
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     */
+    private function renderEditTree(string $path, array $payload, string $name, string $label): int
+    {
+        $response = [];
+
+        $phases = [
+            ['label' => 'Validate process', 'doneLabel' => 'Validated process'],
+            ['label' => 'Apply and verify process change', 'doneLabel' => 'Applied and verified process change'],
+            ['label' => 'Render runtime units', 'doneLabel' => 'Rendered runtime units'],
+        ];
+
+        if ($this->option('restart') === true) {
+            $phases[] = ['label' => 'Restart runtime units', 'doneLabel' => 'Restarted runtime units'];
+        }
+
+        $outcome = $this->runStepOperation(
+            'Editing Process',
+            $phases,
+            work: function () use ($path, $payload, &$response): array {
+                return $response = $this->gatewayCallForHuman(fn (): array => $this->gatewayPatch($path, $payload));
+            },
+            doneFooter: fn (): string => "Process '{$name}' updated for {$label}",
+        );
+
+        if (! $outcome->isCompleted()) {
+            return self::FAILURE;
+        }
+
+        $this->renderDriftNotes($response);
+
+        return self::SUCCESS;
     }
 
     private function validateEditableFields(?string $command, ?string $restartPolicy, ?string $crashNotification, ?string $runtime): ?int

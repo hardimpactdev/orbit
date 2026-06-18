@@ -5,11 +5,15 @@ declare(strict_types=1);
 namespace App\Commands\Process;
 
 use App\Commands\Concerns\ResolvesHostContext;
+use App\Commands\Concerns\WithStepTree;
 use App\Commands\GatewayCommand;
+use App\Exceptions\GatewayApiException;
+use RuntimeException;
 
 abstract class ProcessGatewayCommand extends GatewayCommand
 {
     use ResolvesHostContext;
+    use WithStepTree;
 
     private const array RESTART_POLICIES = ['never', 'on_failure', 'always'];
 
@@ -108,5 +112,101 @@ abstract class ProcessGatewayCommand extends GatewayCommand
             ]),
             default => null,
         };
+    }
+
+    /**
+     * Resolve the operator-facing owner label for progress-tree footers,
+     * mirroring the gateway's resolution order: workspace, then app, then node.
+     */
+    protected function contextLabel(?string $node, ?string $app, ?string $workspace): string
+    {
+        if ($workspace !== null) {
+            return "workspace '{$workspace}'";
+        }
+
+        if ($app !== null) {
+            return "app '{$app}'";
+        }
+
+        return "node '{$node}'";
+    }
+
+    /**
+     * Run a gateway mutation inside the progress tree, re-throwing gateway
+     * failures with their operator-facing message so the failed footer renders
+     * the documented prose rather than a JSON envelope.
+     *
+     * @param  callable(): array<string, mixed>  $call
+     * @return array<string, mixed>
+     */
+    protected function gatewayCallForHuman(callable $call): array
+    {
+        try {
+            return $call();
+        } catch (GatewayApiException $exception) {
+            throw new RuntimeException(
+                $exception->gatewayErrorMessage() ?? $exception->getMessage(),
+                previous: $exception,
+            );
+        }
+    }
+
+    /**
+     * @param  array<string, mixed>  $response
+     * @return array<string, mixed>
+     */
+    protected function successData(array $response): array
+    {
+        $data = $response['success']['data'] ?? null;
+
+        return is_array($data) ? $data : [];
+    }
+
+    /**
+     * @param  array<string, mixed>  $response
+     * @return array<string, mixed>
+     */
+    protected function successMeta(array $response): array
+    {
+        $meta = $response['success']['meta'] ?? null;
+
+        return is_array($meta) ? $meta : [];
+    }
+
+    /**
+     * Repairable runtime-unit drift surfaced by the gateway as `meta.warnings`.
+     *
+     * @param  array<string, mixed>  $response
+     * @return list<string>
+     */
+    protected function driftMessages(array $response): array
+    {
+        $warnings = $this->successMeta($response)['warnings'] ?? null;
+
+        if (! is_array($warnings)) {
+            return [];
+        }
+
+        $messages = [];
+
+        foreach ($warnings as $warning) {
+            if (is_string($warning) && trim($warning) !== '') {
+                $messages[] = trim($warning);
+            } elseif (is_array($warning) && is_string($warning['message'] ?? null) && trim($warning['message']) !== '') {
+                $messages[] = trim($warning['message']);
+            }
+        }
+
+        return $messages;
+    }
+
+    /**
+     * @param  array<string, mixed>  $response
+     */
+    protected function renderDriftNotes(array $response): void
+    {
+        foreach ($this->driftMessages($response) as $message) {
+            $this->line("  Drift detected: {$message}");
+        }
     }
 }

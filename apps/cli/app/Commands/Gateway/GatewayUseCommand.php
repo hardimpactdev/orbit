@@ -48,12 +48,24 @@ final class GatewayUseCommand extends LocalOnlyCommand
             );
         }
 
-        return $this->renderSuccess([
-            'result' => [
-                'action' => 'selected',
-            ],
-            'gateway' => $this->gatewayPayload($name, $entry),
-        ]);
+        $payload = $this->gatewayPayload($name, $entry);
+
+        if ($this->wantsJson()) {
+            return $this->renderSuccess([
+                'result' => [
+                    'action' => 'selected',
+                ],
+                'gateway' => $payload,
+            ]);
+        }
+
+        $url = is_string($payload['url'] ?? null) ? $payload['url'] : null;
+
+        $this->line($url !== null
+            ? "Now using gateway '{$name}' ({$url})."
+            : "Now using gateway '{$name}'.");
+
+        return self::SUCCESS;
     }
 
     /**

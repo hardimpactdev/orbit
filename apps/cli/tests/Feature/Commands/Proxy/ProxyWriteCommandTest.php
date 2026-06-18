@@ -218,4 +218,124 @@ describe('proxy write commands', function (): void {
         Http::assertSent(fn (Request $request): bool => $request->method() === 'DELETE'
             && $request->url() === 'https://gateway.test/api/proxy-routes/old.test');
     });
+
+    it('renders proxy:add human output as a progress tree with route detail', function (): void {
+        fakeGateway(fakeSuccessEnvelope([
+            'route' => [
+                'domain' => 'vite.docs.test',
+                'kind' => 'proxy',
+                'owner' => ['type' => 'custom', 'name' => null],
+                'node' => 'app-1',
+                'target' => ['type' => 'upstream', 'value' => 'http://127.0.0.1:5173'],
+                'redirect_code' => null,
+                'tls' => ['managed_by' => 'orbit', 'trusted_by_gateway_ca' => true],
+                'status' => 'enacted',
+            ],
+        ], [
+            'action' => 'created',
+        ]));
+
+        [$exitCode, $output] = runCommand($this, 'proxy:add', [
+            'domain' => 'vite.docs.test',
+            '--node' => 'app-1',
+            '--upstream' => 'http://127.0.0.1:5173',
+            '--force' => true,
+        ]);
+
+        expect($exitCode)->toBe(0)
+            ->and($output)->toContain('Adding Proxy Route')
+            ->and($output)->toContain('Apply and verify TLS material')
+            ->and($output)->toContain("Proxy route 'vite.docs.test' added")
+            ->and($output)->toContain('Domain: vite.docs.test')
+            ->and($output)->toContain('Serving node: app-1')
+            ->and($output)->toContain('Target: upstream http://127.0.0.1:5173')
+            ->and($output)->toContain('Backend apply: enacted')
+            ->and($output)->not->toContain('{');
+    });
+
+    it('renders proxy:add redirect code detail for redirect routes', function (): void {
+        fakeGateway(fakeSuccessEnvelope([
+            'route' => [
+                'domain' => 'redirect.docs.test',
+                'kind' => 'redirect',
+                'owner' => ['type' => 'custom', 'name' => null],
+                'node' => 'app-1',
+                'target' => ['type' => 'redirect', 'value' => 'https://docs.test'],
+                'redirect_code' => 302,
+                'tls' => ['managed_by' => 'orbit', 'trusted_by_gateway_ca' => true],
+                'status' => 'enacted',
+            ],
+        ], [
+            'action' => 'created',
+        ]));
+
+        [$exitCode, $output] = runCommand($this, 'proxy:add', [
+            'domain' => 'redirect.docs.test',
+            '--node' => 'app-1',
+            '--redirect' => 'https://docs.test',
+            '--code' => '302',
+            '--force' => true,
+        ]);
+
+        expect($exitCode)->toBe(0)
+            ->and($output)->toContain('Kind: redirect')
+            ->and($output)->toContain('Redirect code: 302');
+    });
+
+    it('renders proxy:add gateway failures as prose in human mode', function (): void {
+        fakeGateway(fakeErrorEnvelope('proxy.domain_conflict', "Domain 'docs.test' is owned by app."), 409);
+
+        [$exitCode, $output] = runCommand($this, 'proxy:add', [
+            'domain' => 'docs.test',
+            '--node' => 'app-1',
+            '--upstream' => 'http://127.0.0.1:5173',
+        ]);
+
+        expect($exitCode)->toBe(1)
+            ->and($output)->toContain('is owned by app')
+            ->and($output)->not->toContain('"error"');
+    });
+
+    it('renders proxy:remove human output as a progress tree with cleanup detail', function (): void {
+        fakeGateway(fakeSuccessEnvelope([
+            'route' => [
+                'domain' => 'old.test',
+                'kind' => 'redirect',
+                'node' => 'app-1',
+                'target' => ['type' => 'redirect', 'value' => 'https://docs.test'],
+                'status' => 'removed',
+            ],
+        ], [
+            'backend_removed' => true,
+            'tls_removed' => false,
+        ]));
+
+        [$exitCode, $output] = runCommand($this, 'proxy:remove', [
+            'domain' => 'old.test',
+            '--force' => true,
+        ]);
+
+        expect($exitCode)->toBe(0)
+            ->and($output)->toContain('Removing Proxy Route')
+            ->and($output)->toContain('Apply and verify proxy removal')
+            ->and($output)->toContain("Proxy route 'old.test' removed")
+            ->and($output)->toContain('Domain: old.test')
+            ->and($output)->toContain('Serving node: app-1')
+            ->and($output)->toContain('Backend cleanup: completed')
+            ->and($output)->toContain('TLS cleanup: skipped')
+            ->and($output)->not->toContain('{');
+    });
+
+    it('renders proxy:remove gateway failures as prose in human mode', function (): void {
+        fakeGateway(fakeErrorEnvelope('proxy.cleanup_failed', 'Backend cleanup failed.'), 500);
+
+        [$exitCode, $output] = runCommand($this, 'proxy:remove', [
+            'domain' => 'old.test',
+            '--force' => true,
+        ]);
+
+        expect($exitCode)->toBe(1)
+            ->and($output)->toContain('Backend cleanup failed')
+            ->and($output)->not->toContain('"error"');
+    });
 });

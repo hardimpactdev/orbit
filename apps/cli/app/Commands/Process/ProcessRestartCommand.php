@@ -21,4 +21,14 @@ final class ProcessRestartCommand extends ProcessRuntimeActionCommand
     {
         return 'restart';
     }
+
+    protected function treeTitle(): string
+    {
+        return 'Restarting Processes';
+    }
+
+    protected function pastTense(): string
+    {
+        return 'restarted';
+    }
 }

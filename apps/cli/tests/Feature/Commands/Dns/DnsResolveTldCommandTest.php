@@ -18,6 +18,8 @@ final class DnsResolveFakeResolver implements ResolvesLocalDns
 
     public bool $dnsmasqInstalledValue = true;
 
+    public ?string $existingTargetValue = null;
+
     /** @var array{status: string, changed: bool, error?: string} */
     public array $resolveResult = ['status' => 'resolved', 'changed' => true];
 
@@ -54,7 +56,7 @@ final class DnsResolveFakeResolver implements ResolvesLocalDns
 
     public function existingTarget(string $tld): ?string
     {
-        return null;
+        return $this->existingTargetValue;
     }
 
     public function isDnsmasqInstalled(): bool
@@ -203,6 +205,101 @@ describe('dns:resolve-tld', function (): void {
             expect($exitCode)->toBe(1)
                 ->and($decoded['error']['code'])->toBe('node.unsupported_platform')
                 ->and($decoded['error']['meta']['platform'])->toBe('linux');
+        });
+    });
+
+    describe('human render', function (): void {
+        it('renders the resolve progress tree with a resolved success line', function (): void {
+            $this->resolver->resolveResult = ['status' => 'resolved', 'changed' => true];
+
+            [$exitCode, $output] = runCommand($this, 'dns:resolve-tld', ['tld' => 'test', 'target' => '10.6.0.7']);
+
+            expect($exitCode)->toBe(0)
+                ->and($output)->toContain('Configuring Local DNS')
+                ->and($output)->toContain('Validate .test')
+                ->and($output)->toContain('Write resolver override')
+                ->and($output)->toContain('Refresh resolver')
+                ->and($output)->toContain('.test resolves to 10.6.0.7.')
+                ->and($output)->not->toContain('{')
+                ->and($output)->not->toContain('dns:');
+        });
+
+        it('renders the already-converged resolve tree without a write step', function (): void {
+            $this->resolver->existingTargetValue = '10.6.0.7';
+            $this->resolver->resolveResult = ['status' => 'already_resolved', 'changed' => false];
+
+            [$exitCode, $output] = runCommand($this, 'dns:resolve-tld', ['tld' => 'test', 'target' => '10.6.0.7']);
+
+            expect($exitCode)->toBe(0)
+                ->and($output)->toContain('Configuring Local DNS')
+                ->and($output)->toContain('Validate .test')
+                ->and($output)->toContain('Check resolver override')
+                ->and($output)->toContain('.test already resolves to 10.6.0.7.')
+                ->and($output)->not->toContain('Write resolver override');
+        });
+
+        it('renders the reset progress tree with a removed success line', function (): void {
+            $this->resolver->existingTargetValue = '10.6.0.7';
+            $this->resolver->resetResult = ['status' => 'reset', 'changed' => true];
+
+            [$exitCode, $output] = runCommand($this, 'dns:resolve-tld', ['tld' => 'test', '--reset' => true, '--force' => true]);
+
+            expect($exitCode)->toBe(0)
+                ->and($output)->toContain('Resetting Local DNS')
+                ->and($output)->toContain('Validate .test')
+                ->and($output)->toContain('Remove resolver override')
+                ->and($output)->toContain('Refresh resolver')
+                ->and($output)->toContain('.test resolver override removed.')
+                ->and($output)->not->toContain('{');
+        });
+
+        it('renders the already-absent reset tree without a remove step', function (): void {
+            $this->resolver->resetResult = ['status' => 'already_absent', 'changed' => false];
+
+            [$exitCode, $output] = runCommand($this, 'dns:resolve-tld', ['tld' => 'test', '--reset' => true, '--force' => true]);
+
+            expect($exitCode)->toBe(0)
+                ->and($output)->toContain('Resetting Local DNS')
+                ->and($output)->toContain('Validate .test')
+                ->and($output)->toContain('Check resolver override')
+                ->and($output)->toContain('.test resolver override already absent.')
+                ->and($output)->not->toContain('Remove resolver override');
+        });
+
+        it('renders resolver write failures as prose in the failing tree', function (): void {
+            $this->resolver->resolveResult = ['status' => 'write_failed', 'changed' => false];
+
+            [$exitCode, $output] = runCommand($this, 'dns:resolve-tld', ['tld' => 'test', 'target' => '10.6.0.7']);
+
+            expect($exitCode)->toBe(1)
+                ->and($output)->toContain('Failed to update local DNS resolver configuration.')
+                ->and($output)->not->toContain('{')
+                ->and($output)->not->toContain('local_resolver_write_failed:');
+        });
+
+        it('renders resolver refresh failures as prose in the failing tree', function (): void {
+            $this->resolver->resolveResult = [
+                'status' => 'refresh_failed',
+                'changed' => true,
+                'error' => 'dnsmasq did not return 10.6.0.7.',
+            ];
+
+            [$exitCode, $output] = runCommand($this, 'dns:resolve-tld', ['tld' => 'test', 'target' => '10.6.0.7']);
+
+            expect($exitCode)->toBe(1)
+                ->and($output)->toContain('Local DNS resolver configuration changed, but the resolver could not be refreshed.')
+                ->and($output)->not->toContain('{');
+        });
+
+        it('renders unsupported-platform failures as prose without a JSON envelope', function (): void {
+            $this->resolver->mutationSupportedValue = false;
+            $this->resolver->platformValue = 'linux';
+
+            [$exitCode, $output] = runCommand($this, 'dns:resolve-tld', ['tld' => 'test', 'target' => '10.6.0.7']);
+
+            expect($exitCode)->toBe(1)
+                ->and($output)->toContain('This platform does not support automatic local DNS resolver configuration.')
+                ->and($output)->not->toContain('{');
         });
     });
 });

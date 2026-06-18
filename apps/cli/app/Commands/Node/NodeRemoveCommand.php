@@ -62,9 +62,11 @@ final class NodeRemoveCommand extends GatewayCommand
             work: function () use ($name, &$response): array {
                 return $response = $this->removeNodeForHuman($name);
             },
-            doneFooter: fn (): string => $this->driftIsPresent($response)
-                ? "Node '{$name}' removed with drift"
-                : "Node '{$name}' removed",
+            doneFooter: function () use (&$response, $name): string {
+                return $this->driftIsPresent($response)
+                    ? "Node '{$name}' removed with drift"
+                    : "Node '{$name}' removed";
+            },
         );
 
         if (! $outcome->isCompleted()) {

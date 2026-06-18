@@ -32,9 +32,63 @@ final class GatewayStatusCommand extends OrbitCommand
             return $this->renderSuccess($response, ['endpoint' => self::ENDPOINT]);
         }
 
-        return $this->renderSuccess([
-            'gateway' => $response['gateway'] ?? $response,
-        ], ['endpoint' => self::ENDPOINT]);
+        return $this->renderGatewayStatus($response);
+    }
+
+    /**
+     * Render the `gateway` status fields as flat key-value lines. Top-level
+     * response keys outside `gateway` are not shown. When `gateway` is absent,
+     * the full response is rendered so an older gateway shape stays readable.
+     *
+     * @param  array<string, mixed>  $response
+     */
+    private function renderGatewayStatus(array $response): int
+    {
+        $body = $this->unwrapEnvelope($response);
+        $gateway = $body['gateway'] ?? $body;
+
+        if (! is_array($gateway)) {
+            $gateway = ['status' => $gateway];
+        }
+
+        foreach ($gateway as $key => $value) {
+            $this->line("{$key}: {$this->statusValue($value)}");
+        }
+
+        return self::SUCCESS;
+    }
+
+    /**
+     * Unwrap a gateway success envelope so the documented status fields render
+     * directly, never the raw `success` wrapper.
+     *
+     * @param  array<string, mixed>  $response
+     * @return array<string, mixed>
+     */
+    private function unwrapEnvelope(array $response): array
+    {
+        $success = $response['success'] ?? null;
+
+        if (is_array($success)) {
+            $data = $success['data'] ?? null;
+
+            return is_array($data) ? $data : [];
+        }
+
+        return $response;
+    }
+
+    private function statusValue(mixed $value): string
+    {
+        if (is_bool($value)) {
+            return $value ? 'true' : 'false';
+        }
+
+        if (is_scalar($value) || $value === null) {
+            return (string) $value;
+        }
+
+        return json_encode($value, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
     }
 
     /**

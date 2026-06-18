@@ -21,4 +21,14 @@ final class ProcessStopCommand extends ProcessRuntimeActionCommand
     {
         return 'stop';
     }
+
+    protected function treeTitle(): string
+    {
+        return 'Stopping Processes';
+    }
+
+    protected function pastTense(): string
+    {
+        return 'stopped';
+    }
 }

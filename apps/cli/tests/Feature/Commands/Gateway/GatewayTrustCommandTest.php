@@ -234,13 +234,55 @@ describe('gateway:trust', function (): void {
         cleanupTrust($tempDir);
     });
 
-    it('renders human output on success', function (): void {
+    it('renders human output as a progress tree with the trusted footer', function (): void {
         [, , , $tempDir] = setupTrustFakes();
 
         [$exitCode, $output] = runCommand($this, 'gateway:trust');
 
         expect($exitCode)->toBe(0)
-            ->and($output)->toContain('gateway_trust');
+            ->and($output)->toContain('Trusting Gateway CA')
+            ->and($output)->toContain('Install local trust')
+            ->and($output)->toContain('Gateway CA trusted for https://10.6.0.2.')
+            ->and($output)->not->toContain('gateway_trust:')
+            ->and($output)->not->toContain('{');
+
+        cleanupTrust($tempDir);
+    });
+
+    it('renders the already-trusted footer in human mode on idempotent re-run', function (): void {
+        [, , , $tempDir, $tempPemPath] = setupTrustFakes(alreadyTrusted: true);
+        file_put_contents($tempPemPath, TRUST_FAKE_PEM);
+
+        [$exitCode, $output] = runCommand($this, 'gateway:trust');
+
+        expect($exitCode)->toBe(0)
+            ->and($output)->toContain('Trusting Gateway CA')
+            ->and($output)->toContain('Gateway CA already trusted for https://10.6.0.2.')
+            ->and($output)->not->toContain('{');
+
+        cleanupTrust($tempDir);
+    });
+
+    it('renders gateway:trust missing-gateway failures as prose in human mode', function (): void {
+        setupTrustFakes(withGateway: false);
+
+        [$exitCode, $output] = runCommand($this, 'gateway:trust');
+
+        expect($exitCode)->toBe(1)
+            ->and($output)->toContain('No gateway is configured. Run orbit gateway:add first.')
+            ->and($output)->not->toContain('"error"')
+            ->and($output)->not->toContain('{');
+    });
+
+    it('renders gateway:trust gateway-unavailable failures as prose in human mode', function (): void {
+        [, , $fetch, $tempDir] = setupTrustFakes();
+        $fetch->throws = new ConnectionException('connection refused');
+
+        [$exitCode, $output] = runCommand($this, 'gateway:trust');
+
+        expect($exitCode)->toBe(1)
+            ->and($output)->toContain('Could not fetch the gateway CA from https://10.6.0.2.')
+            ->and($output)->not->toContain('"error"');
 
         cleanupTrust($tempDir);
     });

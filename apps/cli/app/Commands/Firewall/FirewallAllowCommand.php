@@ -25,4 +25,9 @@ final class FirewallAllowCommand extends FirewallStoreCommand
     {
         return 'allow';
     }
+
+    protected function treeTitle(): string
+    {
+        return 'Allowing Firewall Rule';
+    }
 }

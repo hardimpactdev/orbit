@@ -216,4 +216,159 @@ describe('firewall write commands', function (): void {
             ->and($decoded['error']['code'])->toBe('firewall_rule.baseline_conflict')
             ->and($decoded['error']['meta']['name'])->toBe('ssh');
     });
+
+    it('renders firewall:allow human output as a progress tree with rule prose', function (): void {
+        fakeGateway(fakeSuccessEnvelope([
+            'rule' => [
+                'name' => 'local-vite',
+                'node' => 'app-1',
+                'direction' => 'incoming',
+                'action' => 'allow',
+                'source' => '10.6.0.0/24',
+                'destination' => null,
+                'port' => '5173',
+                'protocol' => 'tcp',
+                'status' => 'enacted',
+            ],
+        ], [
+            'backend_enacted' => true,
+            'warnings' => [],
+        ]));
+
+        [$exitCode, $output] = runCommand($this, 'firewall:allow', [
+            'name' => 'local-vite',
+            '--node' => 'app-1',
+            '--port' => '5173',
+            '--from' => '10.6.0.0/24',
+        ]);
+
+        expect($exitCode)->toBe(0)
+            ->and($output)->toContain('Allowing Firewall Rule')
+            ->and($output)->toContain('Apply and verify firewall rule')
+            ->and($output)->toContain('local-vite')
+            ->and($output)->toContain('app-1')
+            ->and($output)->toContain('allow')
+            ->and($output)->toContain('5173')
+            ->and($output)->not->toContain('rule:')
+            ->and($output)->not->toContain('{');
+    });
+
+    it('renders firewall:deny human output as a progress tree with rule prose', function (): void {
+        fakeGateway(fakeSuccessEnvelope([
+            'rule' => [
+                'name' => 'block-admin',
+                'node' => 'app-1',
+                'direction' => 'incoming',
+                'action' => 'deny',
+                'source' => 'any',
+                'port' => '9000',
+                'protocol' => 'tcp',
+                'status' => 'enacted',
+            ],
+        ], [
+            'backend_enacted' => true,
+            'warnings' => [],
+        ]));
+
+        [$exitCode, $output] = runCommand($this, 'firewall:deny', [
+            'name' => 'block-admin',
+            '--node' => 'app-1',
+            '--port' => '9000',
+        ]);
+
+        expect($exitCode)->toBe(0)
+            ->and($output)->toContain('Denying Firewall Rule')
+            ->and($output)->toContain('Apply and verify firewall rule')
+            ->and($output)->toContain('block-admin')
+            ->and($output)->toContain('deny')
+            ->and($output)->not->toContain('rule:')
+            ->and($output)->not->toContain('{');
+    });
+
+    it('renders firewall:allow backend apply failure recovery output in human mode', function (): void {
+        fakeGateway(fakeErrorEnvelope(
+            'firewall_rule.enactment_failed',
+            'The firewall rule was saved, but the backend apply failed.',
+            ['next_command' => 'doctor --family=firewall_rule --restore --node=app-1'],
+        ), 502);
+
+        [$exitCode, $output] = runCommand($this, 'firewall:allow', [
+            'name' => 'local-vite',
+            '--node' => 'app-1',
+            '--port' => '5173',
+        ]);
+
+        expect($exitCode)->toBe(1)
+            ->and($output)->toContain('The firewall rule was saved, but the backend apply failed.')
+            ->and($output)->not->toContain('"error"');
+    });
+
+    it('renders firewall:remove human output as a progress tree with the removed footer', function (): void {
+        fakeGateway(fakeSuccessEnvelope([
+            'rule' => [
+                'name' => 'local-vite',
+                'node' => 'app-1',
+                'status' => 'removed',
+            ],
+        ], [
+            'backend_removed' => true,
+            'warnings' => [],
+        ]));
+
+        [$exitCode, $output] = runCommand($this, 'firewall:remove', [
+            'name' => 'local-vite',
+            '--node' => 'app-1',
+            '--force' => true,
+        ]);
+
+        expect($exitCode)->toBe(0)
+            ->and($output)->toContain('Removing Firewall Rule')
+            ->and($output)->toContain('Apply and verify firewall removal')
+            ->and($output)->toContain('local-vite')
+            ->and($output)->toContain('app-1')
+            ->and($output)->not->toContain('rule:')
+            ->and($output)->not->toContain('{');
+    });
+
+    it('renders firewall:remove idempotent absence prose in human mode', function (): void {
+        fakeGateway(fakeSuccessEnvelope([
+            'rule' => [
+                'name' => 'local-vite',
+                'node' => 'app-1',
+                'status' => 'already_absent',
+            ],
+        ], [
+            'backend_removed' => false,
+            'warnings' => [],
+        ]));
+
+        [$exitCode, $output] = runCommand($this, 'firewall:remove', [
+            'name' => 'local-vite',
+            '--node' => 'app-1',
+            '--force' => true,
+        ]);
+
+        expect($exitCode)->toBe(0)
+            ->and($output)->toContain('Removing Firewall Rule')
+            ->and($output)->toContain('already absent')
+            ->and($output)->not->toContain('{');
+    });
+
+    it('renders firewall:remove cleanup failure recovery output in human mode', function (): void {
+        fakeGateway(fakeErrorEnvelope(
+            'firewall_rule.cleanup_failed',
+            'The backend firewall rule could not be removed, so gateway configuration was kept.',
+            ['next_command' => 'doctor --family=firewall_rule --restore --node=app-1'],
+        ), 502);
+
+        [$exitCode, $output] = runCommand($this, 'firewall:remove', [
+            'name' => 'local-vite',
+            '--node' => 'app-1',
+            '--force' => true,
+        ]);
+
+        expect($exitCode)->toBe(1)
+            ->and($output)->toContain('The backend firewall rule could not be removed, so gateway configuration was kept.')
+            ->and($output)->not->toContain('"error"');
+    });
 });

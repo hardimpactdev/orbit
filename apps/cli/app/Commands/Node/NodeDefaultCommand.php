@@ -4,12 +4,16 @@ declare(strict_types=1);
 
 namespace App\Commands\Node;
 
+use App\Commands\Concerns\WithStepTree;
 use App\Commands\LocalOnlyCommand;
 use App\Services\Node\NodeDefaultActions;
 use App\Services\OrbitConfigStore;
+use RuntimeException;
 
 final class NodeDefaultCommand extends LocalOnlyCommand
 {
+    use WithStepTree;
+
     #[\Override]
     protected $signature = 'node:default
         {name? : Development node to set as the local default}
@@ -51,36 +55,87 @@ final class NodeDefaultCommand extends LocalOnlyCommand
     {
         $result = $actions->show();
 
-        return $this->renderSuccess([
-            'action' => $result['action'],
-            'default_node' => $result['default_node'],
-        ]);
+        if ($this->wantsJson()) {
+            return $this->renderSuccess([
+                'action' => $result['action'],
+                'default_node' => $result['default_node'],
+            ]);
+        }
+
+        $default = $result['default_node'];
+
+        if ($default === null) {
+            $this->line('No default development node is set.');
+            $this->line('Run `orbit node:default <name>` to set one.');
+
+            return self::SUCCESS;
+        }
+
+        $this->line("Default development node: {$default['name']}");
+
+        return self::SUCCESS;
     }
 
     private function handleSet(NodeDefaultActions $actions, string $name): int
     {
-        $result = $actions->set($name);
+        if ($this->wantsJson()) {
+            $result = $actions->set($name);
 
-        if (isset($result['code'])) {
-            /** @var array{code: string, message: string, meta: array<string, mixed>} $result */
-            return $this->renderFailure($result['code'], $result['message'], $result['meta']);
+            if (isset($result['code'])) {
+                /** @var array{code: string, message: string, meta: array<string, mixed>} $result */
+                return $this->renderFailure($result['code'], $result['message'], $result['meta']);
+            }
+
+            /** @var array{action: string, default_node: array{name: string, role: string}, meta: array<string, mixed>} $result */
+            return $this->renderSuccess([
+                'action' => $result['action'],
+                'default_node' => $result['default_node'],
+            ]);
         }
 
-        /** @var array{action: string, default_node: array{name: string, role: string}, meta: array<string, mixed>} $result */
-        return $this->renderSuccess([
-            'action' => $result['action'],
-            'default_node' => $result['default_node'],
-        ]);
+        return $this->renderSetTree($actions, $name);
+    }
+
+    private function renderSetTree(NodeDefaultActions $actions, string $name): int
+    {
+        $outcome = $this->runStepOperation(
+            'Setting Default Node',
+            [
+                ['label' => 'Load visible development nodes', 'doneLabel' => 'Loaded visible development nodes'],
+                ['label' => 'Store local default', 'doneLabel' => 'Stored local default'],
+            ],
+            work: function () use ($actions, $name): void {
+                $result = $actions->set($name);
+
+                if (isset($result['code'])) {
+                    /** @var array{code: string, message: string, meta: array<string, mixed>} $result */
+                    throw new RuntimeException($result['message']);
+                }
+            },
+            doneFooter: "Default development node set to {$name}.",
+        );
+
+        return $outcome->isCompleted() ? self::SUCCESS : self::FAILURE;
     }
 
     private function handleClear(NodeDefaultActions $actions): int
     {
         $result = $actions->clear();
 
-        return $this->renderSuccess([
-            'action' => $result['action'],
-            'default_node' => $result['default_node'],
-        ], $result['meta']);
+        if ($this->wantsJson()) {
+            return $this->renderSuccess([
+                'action' => $result['action'],
+                'default_node' => $result['default_node'],
+            ], $result['meta']);
+        }
+
+        if ($result['meta']['was_set']) {
+            $this->line('Default development node cleared.');
+        } else {
+            $this->line('No default development node was set.');
+        }
+
+        return self::SUCCESS;
     }
 
     private function handleChoose(NodeDefaultActions $actions): int

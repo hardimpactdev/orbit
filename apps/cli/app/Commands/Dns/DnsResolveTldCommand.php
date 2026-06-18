@@ -4,14 +4,18 @@ declare(strict_types=1);
 
 namespace App\Commands\Dns;
 
+use App\Commands\Concerns\WithStepTree;
 use App\Commands\LocalOnlyCommand;
 use App\Services\Dns\ResolvesLocalDns;
+use RuntimeException;
 
 use function Laravel\Prompts\confirm;
 use function Laravel\Prompts\text;
 
 final class DnsResolveTldCommand extends LocalOnlyCommand
 {
+    use WithStepTree;
+
     #[\Override]
     protected $signature = 'dns:resolve-tld
         {tld? : Development TLD to configure, without a leading dot}
@@ -92,19 +96,13 @@ final class DnsResolveTldCommand extends LocalOnlyCommand
             );
         }
 
+        if (! $this->wantsJson()) {
+            return $this->renderResolveTree($resolver, $tld, $target);
+        }
+
         $result = $resolver->resolve($tld, $target);
 
-        $data = [
-            'dns' => [
-                'tld' => $tld,
-                'target' => $target,
-                'action' => 'resolve',
-                'status' => $result['status'],
-                'changed' => $result['changed'],
-                'source' => 'local_resolver',
-                'resolver_backend' => $resolver->backend(),
-            ],
-        ];
+        $data = $this->resolveData($resolver, $tld, $target, $result);
 
         if ($result['status'] === 'write_failed') {
             return $this->renderFailure(
@@ -123,17 +121,78 @@ final class DnsResolveTldCommand extends LocalOnlyCommand
             );
         }
 
-        if ($this->wantsJson()) {
-            return $this->renderSuccess($data);
+        return $this->renderSuccess($data);
+    }
+
+    /**
+     * Render the documented animated tree for the resolve path. Convergence is
+     * detected before any mutation so the tree shows the documented two-step
+     * "Check resolver override" shape when nothing would change, and the
+     * three-step Write/Refresh shape otherwise.
+     */
+    private function renderResolveTree(ResolvesLocalDns $resolver, string $tld, string $target): int
+    {
+        $alreadyResolved = $resolver->supportsMutation()
+            && $resolver->isDnsmasqInstalled()
+            && $resolver->existingTarget($tld) === $target;
+
+        if ($alreadyResolved) {
+            $outcome = $this->runStepOperation(
+                'Configuring Local DNS',
+                [
+                    ['label' => "Validate .{$tld}"],
+                    ['label' => 'Check resolver override'],
+                ],
+                work: fn (): bool => true,
+                doneFooter: ".{$tld} already resolves to {$target}.",
+            );
+
+            return $outcome->isCompleted() ? self::SUCCESS : self::FAILURE;
         }
 
-        if ($result['status'] === 'already_resolved') {
-            $this->line(".{$tld} already resolves to {$target}.");
-        } else {
-            $this->line(".{$tld} resolves to {$target}.");
-        }
+        $outcome = $this->runStepOperation(
+            'Configuring Local DNS',
+            [
+                ['label' => "Validate .{$tld}"],
+                ['label' => 'Write resolver override'],
+                ['label' => 'Refresh resolver'],
+            ],
+            work: function () use ($resolver, $tld, $target): void {
+                $this->guardResolverForHuman($resolver);
 
-        return self::SUCCESS;
+                $result = $resolver->resolve($tld, $target);
+
+                if ($result['status'] === 'write_failed') {
+                    throw new RuntimeException('Failed to update local DNS resolver configuration.');
+                }
+
+                if ($result['status'] === 'refresh_failed') {
+                    throw new RuntimeException('Local DNS resolver configuration changed, but the resolver could not be refreshed.');
+                }
+            },
+            doneFooter: ".{$tld} resolves to {$target}.",
+        );
+
+        return $outcome->isCompleted() ? self::SUCCESS : self::FAILURE;
+    }
+
+    /**
+     * @param  array{status: string, changed: bool, error?: string}  $result
+     * @return array<string, array<string, mixed>>
+     */
+    private function resolveData(ResolvesLocalDns $resolver, string $tld, string $target, array $result): array
+    {
+        return [
+            'dns' => [
+                'tld' => $tld,
+                'target' => $target,
+                'action' => 'resolve',
+                'status' => $result['status'],
+                'changed' => $result['changed'],
+                'source' => 'local_resolver',
+                'resolver_backend' => $resolver->backend(),
+            ],
+        ];
     }
 
     private function handleReset(ResolvesLocalDns $resolver, string $tld): int
@@ -156,6 +215,10 @@ final class DnsResolveTldCommand extends LocalOnlyCommand
             }
         }
 
+        if (! $this->wantsJson()) {
+            return $this->renderResetTree($resolver, $tld);
+        }
+
         if (! $resolver->supportsMutation()) {
             return $this->renderFailure(
                 'node.unsupported_platform',
@@ -174,17 +237,7 @@ final class DnsResolveTldCommand extends LocalOnlyCommand
 
         $result = $resolver->reset($tld);
 
-        $data = [
-            'dns' => [
-                'tld' => $tld,
-                'target' => null,
-                'action' => 'reset',
-                'status' => $result['status'],
-                'changed' => $result['changed'],
-                'source' => 'local_resolver',
-                'resolver_backend' => $resolver->backend(),
-            ],
-        ];
+        $data = $this->resetData($resolver, $tld, $result);
 
         if ($result['status'] === 'write_failed') {
             return $this->renderFailure(
@@ -203,17 +256,89 @@ final class DnsResolveTldCommand extends LocalOnlyCommand
             );
         }
 
-        if ($this->wantsJson()) {
-            return $this->renderSuccess($data);
+        return $this->renderSuccess($data);
+    }
+
+    /**
+     * Render the documented animated tree for the reset path. Convergence is
+     * detected before any mutation so the tree shows the documented two-step
+     * "Check resolver override" shape when the override is already absent, and
+     * the three-step Remove/Refresh shape otherwise.
+     */
+    private function renderResetTree(ResolvesLocalDns $resolver, string $tld): int
+    {
+        $alreadyAbsent = $resolver->supportsMutation()
+            && $resolver->isDnsmasqInstalled()
+            && $resolver->existingTarget($tld) === null;
+
+        if ($alreadyAbsent) {
+            $outcome = $this->runStepOperation(
+                'Resetting Local DNS',
+                [
+                    ['label' => "Validate .{$tld}"],
+                    ['label' => 'Check resolver override'],
+                ],
+                work: fn (): bool => true,
+                doneFooter: ".{$tld} resolver override already absent.",
+            );
+
+            return $outcome->isCompleted() ? self::SUCCESS : self::FAILURE;
         }
 
-        if ($result['status'] === 'already_absent') {
-            $this->line(".{$tld} resolver override already absent.");
-        } else {
-            $this->line(".{$tld} resolver override removed.");
-        }
+        $outcome = $this->runStepOperation(
+            'Resetting Local DNS',
+            [
+                ['label' => "Validate .{$tld}"],
+                ['label' => 'Remove resolver override'],
+                ['label' => 'Refresh resolver'],
+            ],
+            work: function () use ($resolver, $tld): void {
+                $this->guardResolverForHuman($resolver);
 
-        return self::SUCCESS;
+                $result = $resolver->reset($tld);
+
+                if ($result['status'] === 'write_failed') {
+                    throw new RuntimeException('Failed to update local DNS resolver configuration.');
+                }
+
+                if ($result['status'] === 'refresh_failed') {
+                    throw new RuntimeException('Local DNS resolver configuration changed, but the resolver could not be refreshed.');
+                }
+            },
+            doneFooter: ".{$tld} resolver override removed.",
+        );
+
+        return $outcome->isCompleted() ? self::SUCCESS : self::FAILURE;
+    }
+
+    /**
+     * @param  array{status: string, changed: bool, error?: string}  $result
+     * @return array<string, array<string, mixed>>
+     */
+    private function resetData(ResolvesLocalDns $resolver, string $tld, array $result): array
+    {
+        return [
+            'dns' => [
+                'tld' => $tld,
+                'target' => null,
+                'action' => 'reset',
+                'status' => $result['status'],
+                'changed' => $result['changed'],
+                'source' => 'local_resolver',
+                'resolver_backend' => $resolver->backend(),
+            ],
+        ];
+    }
+
+    /**
+     * Throw the documented unsupported-platform prose so the human tree footer
+     * surfaces the failure instead of a structured envelope.
+     */
+    private function guardResolverForHuman(ResolvesLocalDns $resolver): void
+    {
+        if (! $resolver->supportsMutation() || ! $resolver->isDnsmasqInstalled()) {
+            throw new RuntimeException('This platform does not support automatic local DNS resolver configuration.');
+        }
     }
 
     private function resolveTld(): string|int

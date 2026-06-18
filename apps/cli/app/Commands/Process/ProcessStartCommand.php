@@ -21,4 +21,14 @@ final class ProcessStartCommand extends ProcessRuntimeActionCommand
     {
         return 'start';
     }
+
+    protected function treeTitle(): string
+    {
+        return 'Starting Processes';
+    }
+
+    protected function pastTense(): string
+    {
+        return 'started';
+    }
 }

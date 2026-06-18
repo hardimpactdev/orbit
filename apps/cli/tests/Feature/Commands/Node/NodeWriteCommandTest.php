@@ -502,6 +502,86 @@ describe('node write commands', function (): void {
         expect($exitCode)->toBe(0);
     });
 
+    it('renders node:revoke human output as a progress tree with a success footer', function (): void {
+        fakeGateway(fakeSuccessEnvelope([
+            'consuming_node' => 'operator-1',
+            'serving_node' => 'app-1',
+            'action' => 'revoked',
+            'already_absent' => false,
+            'self_lockout' => false,
+            'was_gateway_admin' => false,
+        ]));
+
+        [$exitCode, $output] = runCommand($this, 'node:revoke', [
+            'consuming_node' => 'operator-1',
+            'serving_node' => 'app-1',
+            '--force' => true,
+        ]);
+
+        expect($exitCode)->toBe(0)
+            ->and($output)->toContain('Revoking Grant')
+            ->and($output)->toContain('Revoke access')
+            ->and($output)->toContain("Access from 'operator-1' to 'app-1' revoked")
+            ->and($output)->not->toContain('action:')
+            ->and($output)->not->toContain('{');
+    });
+
+    it('renders node:revoke idempotent absent grants as already revoked prose', function (): void {
+        fakeGateway(fakeSuccessEnvelope([
+            'consuming_node' => 'operator-1',
+            'serving_node' => 'app-1',
+            'action' => 'revoked',
+            'already_absent' => true,
+            'self_lockout' => false,
+            'was_gateway_admin' => false,
+        ]));
+
+        [$exitCode, $output] = runCommand($this, 'node:revoke', [
+            'consuming_node' => 'operator-1',
+            'serving_node' => 'app-1',
+            '--force' => true,
+        ]);
+
+        expect($exitCode)->toBe(0)
+            ->and($output)->toContain("Access from 'operator-1' to 'app-1' was already revoked")
+            ->and($output)->not->toContain('{');
+    });
+
+    it('renders node:revoke self-lockout warning after the tree', function (): void {
+        fakeGateway(fakeSuccessEnvelope([
+            'consuming_node' => 'operator-1',
+            'serving_node' => 'gateway-1',
+            'action' => 'revoked',
+            'already_absent' => false,
+            'self_lockout' => true,
+            'was_gateway_admin' => true,
+        ]));
+
+        [$exitCode, $output] = runCommand($this, 'node:revoke', [
+            'consuming_node' => 'operator-1',
+            'serving_node' => 'gateway-1',
+            '--force' => true,
+        ]);
+
+        expect($exitCode)->toBe(0)
+            ->and($output)->toContain("Access from 'operator-1' to 'gateway-1' revoked")
+            ->and($output)->toContain('This machine no longer has Orbit gateway access.');
+    });
+
+    it('renders node:revoke gateway failures as prose in human mode', function (): void {
+        fakeGateway(fakeErrorEnvelope('authorization_failed', 'This action requires the node:revoke permission on a grant to the gateway.'), 403);
+
+        [$exitCode, $output] = runCommand($this, 'node:revoke', [
+            'consuming_node' => 'operator-1',
+            'serving_node' => 'app-1',
+            '--force' => true,
+        ]);
+
+        expect($exitCode)->toBe(1)
+            ->and($output)->toContain('node:revoke permission')
+            ->and($output)->not->toContain('"error"');
+    });
+
     it('rejects ambiguous node:permissions modes before gateway IO', function (): void {
         Http::fake();
 
@@ -544,6 +624,92 @@ describe('node write commands', function (): void {
         expect($exitCode)->toBe(0);
     });
 
+    it('renders node:permissions mutations as a progress tree with prose detail', function (): void {
+        fakeGateway(fakeSuccessEnvelope([
+            'consuming_node' => 'agent-1',
+            'serving_node' => 'app-1',
+            'action' => 'updated',
+            'mode' => 'permissions',
+            'permissions' => ['node:read', 'tool:read'],
+        ]));
+
+        [$exitCode, $output] = runCommand($this, 'node:permissions', [
+            'consuming_node' => 'agent-1',
+            'serving_node' => 'app-1',
+            '--permissions' => 'tool:read,node:read',
+        ]);
+
+        expect($exitCode)->toBe(0)
+            ->and($output)->toContain('Updating Node Permissions')
+            ->and($output)->toContain('Apply permission change')
+            ->and($output)->toContain("Permissions for 'agent-1' on 'app-1' updated")
+            ->and($output)->toContain('Permissions: node:read, tool:read')
+            ->and($output)->not->toContain('action:')
+            ->and($output)->not->toContain('{');
+    });
+
+    it('renders node:permissions read mode as prose without a tree', function (): void {
+        fakeGateway(fakeSuccessEnvelope([
+            'consuming_node' => 'agent-1',
+            'serving_node' => 'app-1',
+            'action' => 'read',
+            'mode' => 'read',
+            'permissions' => ['node:read', 'tool:read'],
+        ]));
+
+        [$exitCode, $output] = runCommand($this, 'node:permissions', [
+            'consuming_node' => 'agent-1',
+            'serving_node' => 'app-1',
+        ]);
+
+        expect($exitCode)->toBe(0)
+            ->and($output)->toContain("Permissions for 'agent-1' on 'app-1': node:read, tool:read")
+            ->and($output)->not->toContain('Updating Node Permissions')
+            ->and($output)->not->toContain('{');
+    });
+
+    it('renders node:permissions redundant-permission warnings after the tree', function (): void {
+        fakeGateway(fakeSuccessEnvelope([
+            'consuming_node' => 'agent-1',
+            'serving_node' => 'app-1',
+            'action' => 'updated',
+            'mode' => 'permissions',
+            'permissions' => ['tool:read'],
+        ], [
+            'warnings' => [[
+                'code' => 'node.redundant_permissions',
+                'family' => 'node',
+                'message' => 'Redundant permissions were removed: tool:list.',
+                'next_command' => null,
+                'permissions' => ['tool:list'],
+            ]],
+        ]));
+
+        [$exitCode, $output] = runCommand($this, 'node:permissions', [
+            'consuming_node' => 'agent-1',
+            'serving_node' => 'app-1',
+            '--permissions' => 'tool:read,tool:list',
+        ]);
+
+        expect($exitCode)->toBe(0)
+            ->and($output)->toContain('Redundant permissions were removed: tool:list.')
+            ->and($output)->not->toContain('{');
+    });
+
+    it('renders node:permissions gateway failures as prose in human mode', function (): void {
+        fakeGateway(fakeErrorEnvelope('authorization_failed', 'This action requires the node:permissions permission on a grant to the gateway.'), 403);
+
+        [$exitCode, $output] = runCommand($this, 'node:permissions', [
+            'consuming_node' => 'agent-1',
+            'serving_node' => 'app-1',
+            '--permissions' => 'tool:read',
+        ]);
+
+        expect($exitCode)->toBe(1)
+            ->and($output)->toContain('node:permissions permission')
+            ->and($output)->not->toContain('"error"');
+    });
+
     it('posts node role:add payloads to the typed gateway API', function (): void {
         fakeGateway(fakeSuccessEnvelope([
             'node' => 'app-1',
@@ -563,6 +729,40 @@ describe('node write commands', function (): void {
             && $request['settings'] === ['tld' => 'test']);
 
         expect($exitCode)->toBe(0);
+    });
+
+    it('renders node role:add human output as a progress tree with a success footer', function (): void {
+        fakeGateway(fakeSuccessEnvelope([
+            'node' => 'app-1',
+            'assignment' => ['role' => 'app-dev', 'status' => 'active'],
+        ]));
+
+        [$exitCode, $output] = runCommand($this, 'node role:add', [
+            'node' => 'app-1',
+            'role' => 'app-dev',
+            '--tld' => 'test',
+        ]);
+
+        expect($exitCode)->toBe(0)
+            ->and($output)->toContain('Adding Node Role')
+            ->and($output)->toContain('Apply role convergence')
+            ->and($output)->toContain("Role 'app-dev' added to 'app-1'")
+            ->and($output)->not->toContain('node:')
+            ->and($output)->not->toContain('{');
+    });
+
+    it('renders node role:add gateway failures as prose in human mode', function (): void {
+        fakeGateway(fakeErrorEnvelope('node.not_found', "Node 'app-1' not found."), 404);
+
+        [$exitCode, $output] = runCommand($this, 'node role:add', [
+            'node' => 'app-1',
+            'role' => 'app-dev',
+            '--tld' => 'test',
+        ]);
+
+        expect($exitCode)->toBe(1)
+            ->and($output)->toContain("Node 'app-1' not found.")
+            ->and($output)->not->toContain('"error"');
     });
 
     it('posts analytics node:new backing node selectors to the typed gateway API', function (): void {
@@ -720,6 +920,60 @@ describe('node write commands', function (): void {
         expect($exitCode)->toBe(0);
     });
 
+    it('renders node role:remove human output as a progress tree with a success footer', function (): void {
+        fakeGateway(fakeSuccessEnvelope([
+            'node' => 'app-1',
+            'role' => 'database',
+            'purged_data' => false,
+        ]));
+
+        [$exitCode, $output] = runCommand($this, 'node role:remove', [
+            'node' => 'app-1',
+            'role' => 'database',
+            '--force' => true,
+        ]);
+
+        expect($exitCode)->toBe(0)
+            ->and($output)->toContain('Removing Node Role')
+            ->and($output)->toContain('Remove role convergence')
+            ->and($output)->toContain("Role 'database' removed from 'app-1'")
+            ->and($output)->not->toContain('node:')
+            ->and($output)->not->toContain('{');
+    });
+
+    it('reports purged data in the node role:remove success footer', function (): void {
+        fakeGateway(fakeSuccessEnvelope([
+            'node' => 'app-1',
+            'role' => 'database',
+            'purged_data' => true,
+        ]));
+
+        [$exitCode, $output] = runCommand($this, 'node role:remove', [
+            'node' => 'app-1',
+            'role' => 'database',
+            '--force' => true,
+            '--purge-data' => true,
+        ]);
+
+        expect($exitCode)->toBe(0)
+            ->and($output)->toContain("Role 'database' removed from 'app-1' with data purged")
+            ->and($output)->not->toContain('{');
+    });
+
+    it('renders node role:remove gateway failures as prose in human mode', function (): void {
+        fakeGateway(fakeErrorEnvelope('node_role.remove_blocked', "Role 'database' cannot be removed while dependents exist."), 422);
+
+        [$exitCode, $output] = runCommand($this, 'node role:remove', [
+            'node' => 'app-1',
+            'role' => 'database',
+            '--force' => true,
+        ]);
+
+        expect($exitCode)->toBe(1)
+            ->and($output)->toContain('cannot be removed while dependents exist')
+            ->and($output)->not->toContain('"error"');
+    });
+
     it('posts node:agent-ide payloads to the typed gateway API', function (): void {
         fakeGateway(fakeSuccessEnvelope([
             'node' => 'app-1',
@@ -738,5 +992,236 @@ describe('node write commands', function (): void {
             && $request['agent_ide'] === 'opencode');
 
         expect($exitCode)->toBe(0);
+    });
+
+    it('renders node:agent-ide set success as prose without a tree', function (): void {
+        fakeGateway(fakeSuccessEnvelope([
+            'name' => 'app-1',
+            'agent_ide' => ['adapter' => 'opencode', 'source' => 'node'],
+            'action' => 'set',
+        ]));
+
+        [$exitCode, $output] = runCommand($this, 'node:agent-ide', [
+            'name' => 'app-1',
+            'agent_ide' => 'opencode',
+        ]);
+
+        expect($exitCode)->toBe(0)
+            ->and($output)->toContain("Node 'app-1' agent IDE set to 'opencode'")
+            ->and($output)->not->toContain('action:')
+            ->and($output)->not->toContain('{');
+    });
+
+    it('renders node:agent-ide converged success as already-set prose', function (): void {
+        fakeGateway(fakeSuccessEnvelope([
+            'name' => 'app-1',
+            'agent_ide' => ['adapter' => 'opencode', 'source' => 'node'],
+            'action' => 'converged',
+        ]));
+
+        [$exitCode, $output] = runCommand($this, 'node:agent-ide', [
+            'name' => 'app-1',
+            'agent_ide' => 'opencode',
+        ]);
+
+        expect($exitCode)->toBe(0)
+            ->and($output)->toContain("Node 'app-1' agent IDE already set to 'opencode'")
+            ->and($output)->not->toContain('{');
+    });
+
+    it('renders node:agent-ide clear success as cleared prose', function (): void {
+        fakeGateway(fakeSuccessEnvelope([
+            'name' => 'app-1',
+            'agent_ide' => ['adapter' => null, 'source' => 'default'],
+            'action' => 'set',
+        ]));
+
+        [$exitCode, $output] = runCommand($this, 'node:agent-ide', [
+            'name' => 'app-1',
+            'agent_ide' => 'none',
+        ]);
+
+        expect($exitCode)->toBe(0)
+            ->and($output)->toContain("Node 'app-1' agent IDE cleared")
+            ->and($output)->not->toContain('{');
+    });
+
+    it('renders node:agent-ide gateway failures as prose in human mode', function (): void {
+        fakeGateway(fakeErrorEnvelope('node.unsupported_adapter', "Adapter 'unknown-ide' is not supported."), 422);
+
+        [$exitCode, $output] = runCommand($this, 'node:agent-ide', [
+            'name' => 'app-1',
+            'agent_ide' => 'unknown-ide',
+        ]);
+
+        expect($exitCode)->toBe(1)
+            ->and($output)->toContain("Adapter 'unknown-ide' is not supported.")
+            ->and($output)->not->toContain('"error"');
+    });
+
+    it('renders node:grant new grant success as prose without a tree', function (): void {
+        fakeGateway(fakeSuccessEnvelope([
+            'consuming_node' => 'operator-1',
+            'serving_node' => 'app-1',
+            'action' => 'granted',
+            'already_granted' => false,
+            'permissions' => ['node:read', 'tool:read'],
+        ]));
+
+        [$exitCode, $output] = runCommand($this, 'node:grant', [
+            'consuming_node' => 'operator-1',
+            'serving_node' => 'app-1',
+            '--preset' => 'developer',
+        ]);
+
+        expect($exitCode)->toBe(0)
+            ->and($output)->toContain("Granted 'operator-1' access to 'app-1'")
+            ->and($output)->toContain('Permissions: node:read, tool:read')
+            ->and($output)->not->toContain('action:')
+            ->and($output)->not->toContain('{');
+    });
+
+    it('renders node:grant idempotent already-granted success as prose', function (): void {
+        fakeGateway(fakeSuccessEnvelope([
+            'consuming_node' => 'operator-1',
+            'serving_node' => 'app-1',
+            'action' => 'granted',
+            'already_granted' => true,
+            'permissions' => ['node:read', 'tool:read'],
+        ]));
+
+        [$exitCode, $output] = runCommand($this, 'node:grant', [
+            'consuming_node' => 'operator-1',
+            'serving_node' => 'app-1',
+            '--preset' => 'developer',
+        ]);
+
+        expect($exitCode)->toBe(0)
+            ->and($output)->toContain("'operator-1' already has access to 'app-1'")
+            ->and($output)->toContain('Permissions: node:read, tool:read')
+            ->and($output)->toContain('Run `orbit node:permissions operator-1 app-1` to edit this grant.')
+            ->and($output)->not->toContain('{');
+    });
+
+    it('renders node:grant redundant-permission warnings after the grant line', function (): void {
+        fakeGateway(fakeSuccessEnvelope([
+            'consuming_node' => 'operator-1',
+            'serving_node' => 'app-1',
+            'action' => 'granted',
+            'already_granted' => false,
+            'permissions' => ['tool:read'],
+        ], [
+            'warnings' => [[
+                'code' => 'node.redundant_permissions',
+                'family' => 'node',
+                'message' => 'Redundant permissions were removed: tool:list.',
+                'next_command' => null,
+                'permissions' => ['tool:list'],
+            ]],
+        ]));
+
+        [$exitCode, $output] = runCommand($this, 'node:grant', [
+            'consuming_node' => 'operator-1',
+            'serving_node' => 'app-1',
+            '--permissions' => 'tool:read,tool:list',
+        ]);
+
+        expect($exitCode)->toBe(0)
+            ->and($output)->toContain("Granted 'operator-1' access to 'app-1'")
+            ->and($output)->toContain('Redundant permissions were removed: tool:list.')
+            ->and($output)->not->toContain('{');
+    });
+
+    it('renders node:grant gateway failures as prose in human mode', function (): void {
+        fakeGateway(fakeErrorEnvelope('node.not_found', "Serving node 'app-1' not found."), 404);
+
+        [$exitCode, $output] = runCommand($this, 'node:grant', [
+            'consuming_node' => 'operator-1',
+            'serving_node' => 'app-1',
+            '--preset' => 'developer',
+        ]);
+
+        expect($exitCode)->toBe(1)
+            ->and($output)->toContain("Serving node 'app-1' not found.")
+            ->and($output)->not->toContain('"error"');
+    });
+
+    it('renders node:update human output as a progress tree with changed detail', function (): void {
+        fakeGateway(fakeSuccessEnvelope([
+            'name' => 'app-1',
+            'changed' => ['host', 'public_ipv4'],
+            'action' => 'updated',
+        ]));
+
+        [$exitCode, $output] = runCommand($this, 'node:update', [
+            'name' => 'app-1',
+            '--host' => '192.0.2.21',
+            '--public-ipv4' => '192.0.2.21',
+        ]);
+
+        expect($exitCode)->toBe(0)
+            ->and($output)->toContain('Updating Node')
+            ->and($output)->toContain('Apply and verify node change')
+            ->and($output)->toContain("Node 'app-1' updated")
+            ->and($output)->toContain('Changed: host, public_ipv4')
+            ->and($output)->not->toContain('action:')
+            ->and($output)->not->toContain('{');
+    });
+
+    it('renders node:update no-op changes as unchanged prose', function (): void {
+        fakeGateway(fakeSuccessEnvelope([
+            'name' => 'app-1',
+            'changed' => [],
+            'action' => 'updated',
+        ]));
+
+        [$exitCode, $output] = runCommand($this, 'node:update', [
+            'name' => 'app-1',
+            '--host' => '192.0.2.21',
+        ]);
+
+        expect($exitCode)->toBe(0)
+            ->and($output)->toContain("Node 'app-1' unchanged")
+            ->and($output)->toContain('No fields were modified.')
+            ->and($output)->not->toContain('{');
+    });
+
+    it('renders node:update drift warnings after the tree', function (): void {
+        fakeGateway(fakeSuccessEnvelope([
+            'name' => 'app-1',
+            'changed' => ['host'],
+            'action' => 'updated',
+        ], [
+            'warnings' => [[
+                'code' => 'node.artifact_enactment_failed',
+                'family' => 'node',
+                'message' => 'Node artifact re-enactment failed after intent update.',
+                'next_command' => 'doctor --family=node --restore',
+            ]],
+        ]));
+
+        [$exitCode, $output] = runCommand($this, 'node:update', [
+            'name' => 'app-1',
+            '--host' => '192.0.2.21',
+        ]);
+
+        expect($exitCode)->toBe(0)
+            ->and($output)->toContain("Node 'app-1' updated with drift")
+            ->and($output)->toContain('Changed: host')
+            ->and($output)->toContain('Drift detected:')
+            ->and($output)->not->toContain('{');
+    });
+
+    it('renders node:update gateway failures as prose in human mode', function (): void {
+        fakeGateway(fakeErrorEnvelope('authorization_failed', "This node is not authorized for 'node:update' on 'app-1'."), 403);
+
+        [$exitCode, $output] = runCommand($this, 'node:update', [
+            'name' => 'app-1',
+            '--host' => '192.0.2.21',
+        ]);
+
+        expect($exitCode)->toBe(1)
+            ->and($output)->toContain('not authorized')
+            ->and($output)->not->toContain('"error"');
     });
 });

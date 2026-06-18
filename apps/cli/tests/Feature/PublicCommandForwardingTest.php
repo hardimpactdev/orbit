@@ -26,8 +26,9 @@ describe('gateway API-backed public commands', function (): void {
         [$exitCode, $output] = runPublicCommand($this, 'gateway:status');
 
         expect($exitCode)->toBe(0)
-            ->and($output)->toContain('gateway')
-            ->and($output)->toContain('healthy');
+            ->and($output)->toContain('status: healthy')
+            ->and($output)->toContain('version: 0.1.0')
+            ->and($output)->not->toContain('{');
 
         Http::assertSent(fn (Request $request): bool => $request->method() === 'GET'
             && $request->url() === 'https://gateway.test/api/status');

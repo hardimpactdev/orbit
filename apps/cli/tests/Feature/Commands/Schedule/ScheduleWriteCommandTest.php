@@ -303,4 +303,150 @@ describe('schedule write commands', function (): void {
             ->and($decoded['error']['code'])->toBe('schedule.run_failed')
             ->and($decoded['error']['meta']['name'])->toBe('nightly');
     });
+
+    it('renders schedule:add human output as a progress tree with schedule detail', function (): void {
+        fakeGateway(fakeSuccessEnvelope([
+            'result' => ['action' => 'created', 'scheduler_pickup' => 'confirmed'],
+            'schedule' => [
+                'name' => 'laravel-scheduler',
+                'scope' => 'app',
+                'target' => ['type' => 'app', 'name' => 'docs', 'node' => 'app-1'],
+                'interval' => 'every minute',
+                'timezone' => 'Europe/Amsterdam',
+                'execution' => ['type' => 'command', 'value' => 'php artisan schedule:run'],
+                'enabled' => true,
+                'status' => 'expected',
+                'last_run' => null,
+            ],
+        ]));
+
+        [$exitCode, $output] = runCommand($this, 'schedule:add', [
+            'name' => 'laravel-scheduler',
+            '--app' => 'docs',
+            '--command' => 'php artisan schedule:run',
+            '--interval' => 'every minute',
+            '--timezone' => 'Europe/Amsterdam',
+        ]);
+
+        expect($exitCode)->toBe(0)
+            ->and($output)->toContain('Adding Schedule')
+            ->and($output)->toContain('Notify Orbit Scheduler')
+            ->and($output)->toContain("Schedule 'laravel-scheduler' added")
+            ->and($output)->toContain('Name: laravel-scheduler')
+            ->and($output)->toContain('Scope: app')
+            ->and($output)->toContain('Target: app docs on app-1')
+            ->and($output)->toContain('Interval: every minute')
+            ->and($output)->toContain('Timezone: Europe/Amsterdam')
+            ->and($output)->toContain('Execution: command php artisan schedule:run')
+            ->and($output)->toContain('Enabled: true')
+            ->and($output)->toContain('Scheduler pickup: confirmed')
+            ->and($output)->not->toContain('{');
+    });
+
+    it('renders schedule:add gateway failures as prose in human mode', function (): void {
+        fakeGateway(fakeErrorEnvelope('schedule.name_collision', "Schedule 'nightly' already exists."), 409);
+
+        [$exitCode, $output] = runCommand($this, 'schedule:add', [
+            'name' => 'nightly',
+            '--app' => 'docs',
+            '--command' => 'date',
+            '--interval' => 'daily at 09:00',
+        ]);
+
+        expect($exitCode)->toBe(1)
+            ->and($output)->toContain('already exists')
+            ->and($output)->not->toContain('"error"');
+    });
+
+    it('renders schedule:remove human output as a progress tree with detail', function (): void {
+        fakeGateway(fakeSuccessEnvelope([
+            'schedule' => [
+                'name' => 'nightly',
+                'scope' => 'app',
+                'target' => ['type' => 'app', 'name' => 'docs', 'node' => 'app-1'],
+                'status' => 'removed',
+            ],
+        ], [
+            'scheduler_pickup' => 'confirmed',
+            'history_retained' => true,
+        ]));
+
+        [$exitCode, $output] = runCommand($this, 'schedule:remove', [
+            'name' => 'nightly',
+            '--app' => 'docs',
+            '--force' => true,
+        ]);
+
+        expect($exitCode)->toBe(0)
+            ->and($output)->toContain('Removing Schedule')
+            ->and($output)->toContain('Apply and verify removal')
+            ->and($output)->toContain("Schedule 'nightly' removed")
+            ->and($output)->toContain('Name: nightly')
+            ->and($output)->toContain('Scope: app')
+            ->and($output)->toContain('Target: app docs on app-1')
+            ->and($output)->toContain('Scheduler pickup: confirmed')
+            ->and($output)->not->toContain('{');
+    });
+
+    it('renders schedule:remove gateway failures as prose in human mode', function (): void {
+        fakeGateway(fakeErrorEnvelope('schedule.target_unreachable', "Schedule 'nightly' was removed, but dispatch could not be confirmed."), 502);
+
+        [$exitCode, $output] = runCommand($this, 'schedule:remove', [
+            'name' => 'nightly',
+            '--app' => 'docs',
+            '--force' => true,
+        ]);
+
+        expect($exitCode)->toBe(1)
+            ->and($output)->toContain('could not be confirmed')
+            ->and($output)->not->toContain('"error"');
+    });
+
+    it('renders schedule:run human output as a progress tree with run detail', function (): void {
+        fakeGateway(fakeSuccessEnvelope([
+            'run' => [
+                'id' => 18,
+                'schedule' => 'nightly',
+                'scope' => 'app',
+                'target' => ['type' => 'app', 'name' => 'docs', 'node' => 'app-1'],
+                'status' => 'completed',
+                'exit_code' => 0,
+                'started_at' => '2026-05-02T08:10:00Z',
+                'finished_at' => '2026-05-02T08:10:03Z',
+            ],
+            'output' => ['stdout' => "scheduled task ran\n", 'stderr' => ''],
+        ], [
+            'duration_ms' => 3000,
+        ]));
+
+        [$exitCode, $output] = runCommand($this, 'schedule:run', [
+            'name' => 'nightly',
+            '--app' => 'docs',
+        ]);
+
+        expect($exitCode)->toBe(0)
+            ->and($output)->toContain('Running Schedule')
+            ->and($output)->toContain('Record run history')
+            ->and($output)->toContain("Schedule 'nightly' completed")
+            ->and($output)->toContain('Run id: 18')
+            ->and($output)->toContain('Status: completed')
+            ->and($output)->toContain('Exit code: 0')
+            ->and($output)->toContain('Started at: 2026-05-02T08:10:00Z')
+            ->and($output)->toContain('Finished at: 2026-05-02T08:10:03Z')
+            ->and($output)->toContain('scheduled task ran')
+            ->and($output)->not->toContain('{');
+    });
+
+    it('renders schedule:run gateway failures as prose in human mode', function (): void {
+        fakeGateway(fakeErrorEnvelope('schedule.run_failed', "Schedule 'nightly' exited with status 1."), 422);
+
+        [$exitCode, $output] = runCommand($this, 'schedule:run', [
+            'name' => 'nightly',
+            '--app' => 'docs',
+        ]);
+
+        expect($exitCode)->toBe(1)
+            ->and($output)->toContain('exited with status 1')
+            ->and($output)->not->toContain('"error"');
+    });
 });

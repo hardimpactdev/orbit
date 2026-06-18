@@ -574,4 +574,290 @@ describe('process write commands', function (): void {
         'stop' => 'process:stop',
         'restart' => 'process:restart',
     ]);
+
+    it('renders process:add human output as a progress tree with a success footer', function (): void {
+        fakeGateway(fakeSuccessEnvelope([
+            'process' => ['name' => 'vite', 'node' => 'app-1', 'app' => 'docs', 'workspace' => null],
+            'runtime_units' => [],
+        ], [
+            'warnings' => [],
+        ]));
+
+        [$exitCode, $output] = runCommand($this, 'process:add', [
+            'name' => 'vite',
+            'process_command' => 'npm run dev',
+            '--app' => 'docs',
+        ]);
+
+        expect($exitCode)->toBe(0)
+            ->and($output)->toContain('Adding Process')
+            ->and($output)->toContain('Create process configuration')
+            ->and($output)->not->toContain('Start runtime units')
+            ->and($output)->toContain("Process 'vite' added for app 'docs'")
+            ->and($output)->not->toContain('process:')
+            ->and($output)->not->toContain('{');
+    });
+
+    it('shows the process:add start step only when --start is present', function (): void {
+        fakeGateway(fakeSuccessEnvelope([
+            'process' => ['name' => 'vite', 'node' => 'app-1', 'app' => 'docs', 'workspace' => null],
+            'runtime_units' => [],
+        ], [
+            'warnings' => [],
+        ]));
+
+        [$exitCode, $output] = runCommand($this, 'process:add', [
+            'name' => 'vite',
+            'process_command' => 'npm run dev',
+            '--app' => 'docs',
+            '--runtime' => 'systemd',
+            '--start' => true,
+        ]);
+
+        expect($exitCode)->toBe(0)
+            ->and($output)->toContain('Adding Process')
+            ->and($output)->toContain('Start runtime units')
+            ->and($output)->toContain("Process 'vite' added for app 'docs'");
+    });
+
+    it('renders process:add runtime drift as a success footer with a drift note', function (): void {
+        fakeGateway(fakeSuccessEnvelope([
+            'process' => ['name' => 'vite', 'node' => 'app-1', 'app' => 'docs', 'workspace' => null],
+            'runtime_units' => [],
+        ], [
+            'warnings' => [
+                ['code' => 'process.runtime_unit_apply_failed', 'message' => 'process.runtime_unit_missing'],
+            ],
+        ]));
+
+        [$exitCode, $output] = runCommand($this, 'process:add', [
+            'name' => 'vite',
+            'process_command' => 'npm run dev',
+            '--app' => 'docs',
+        ]);
+
+        expect($exitCode)->toBe(0)
+            ->and($output)->toContain("Process 'vite' added for app 'docs'")
+            ->and($output)->toContain('Drift detected: process.runtime_unit_missing');
+    });
+
+    it('renders process:add gateway failures as prose in human mode', function (): void {
+        fakeGateway(fakeErrorEnvelope('authorization_failed', "This node is not authorized for 'process:add' on 'app-1'."), 403);
+
+        [$exitCode, $output] = runCommand($this, 'process:add', [
+            'name' => 'vite',
+            'process_command' => 'npm run dev',
+            '--app' => 'docs',
+        ]);
+
+        expect($exitCode)->toBe(1)
+            ->and($output)->toContain('not authorized')
+            ->and($output)->not->toContain('"error"');
+    });
+
+    it('keeps process:add validation failures as prose before the tree', function (): void {
+        Http::fake();
+
+        [$exitCode, $output] = runCommand($this, 'process:add', [
+            'name' => 'Vite',
+            'process_command' => 'npm run dev',
+            '--app' => 'docs',
+        ]);
+
+        Http::assertNothingSent();
+
+        expect($exitCode)->toBe(1)
+            ->and($output)->not->toContain('Adding Process')
+            ->and($output)->toContain('validation_failed');
+    });
+
+    it('renders process:edit human output as a progress tree with a success footer', function (): void {
+        fakeGateway(fakeSuccessEnvelope([
+            'process' => ['name' => 'vite', 'node' => 'app-1', 'app' => 'docs', 'workspace' => null],
+            'changed' => ['command'],
+            'runtime_units' => [],
+        ], [
+            'warnings' => [],
+        ]));
+
+        [$exitCode, $output] = runCommand($this, 'process:edit', [
+            'name' => 'vite',
+            '--app' => 'docs',
+            '--command' => 'npm run dev -- --host 0.0.0.0',
+        ]);
+
+        expect($exitCode)->toBe(0)
+            ->and($output)->toContain('Editing Process')
+            ->and($output)->toContain('Apply and verify process change')
+            ->and($output)->not->toContain('Restart runtime units')
+            ->and($output)->toContain("Process 'vite' updated for app 'docs'")
+            ->and($output)->not->toContain('process:')
+            ->and($output)->not->toContain('{');
+    });
+
+    it('shows the process:edit restart step only when --restart is present', function (): void {
+        fakeGateway(fakeSuccessEnvelope([
+            'process' => ['name' => 'vite', 'node' => 'app-1', 'app' => 'docs', 'workspace' => null],
+            'changed' => ['command'],
+            'runtime_units' => [],
+        ], [
+            'warnings' => [],
+        ]));
+
+        [$exitCode, $output] = runCommand($this, 'process:edit', [
+            'name' => 'vite',
+            '--app' => 'docs',
+            '--command' => 'npm run dev',
+            '--restart' => true,
+        ]);
+
+        expect($exitCode)->toBe(0)
+            ->and($output)->toContain('Restart runtime units')
+            ->and($output)->toContain("Process 'vite' updated for app 'docs'");
+    });
+
+    it('renders process:edit gateway failures as prose in human mode', function (): void {
+        fakeGateway(fakeErrorEnvelope('process.not_found', "Process 'vite' not found for app 'docs'."), 404);
+
+        [$exitCode, $output] = runCommand($this, 'process:edit', [
+            'name' => 'vite',
+            '--app' => 'docs',
+            '--command' => 'npm run dev',
+        ]);
+
+        expect($exitCode)->toBe(1)
+            ->and($output)->toContain('not found')
+            ->and($output)->not->toContain('"error"');
+    });
+
+    it('renders process:remove human output as a progress tree with a success footer', function (): void {
+        fakeGateway(fakeSuccessEnvelope([
+            'process' => ['name' => 'vite', 'node' => 'app-1', 'app' => 'docs', 'workspace' => null],
+            'removed_runtime_units' => [],
+        ], [
+            'warnings' => [],
+        ]));
+
+        [$exitCode, $output] = runCommand($this, 'process:remove', [
+            'name' => 'vite',
+            '--app' => 'docs',
+            '--force' => true,
+        ]);
+
+        expect($exitCode)->toBe(0)
+            ->and($output)->toContain('Removing Process')
+            ->and($output)->toContain('Apply and verify process removal')
+            ->and($output)->toContain("Process 'vite' removed from app 'docs'")
+            ->and($output)->not->toContain('process:')
+            ->and($output)->not->toContain('{');
+    });
+
+    it('keeps the process:remove cancelled-confirmation prose before the tree', function (): void {
+        Http::fake();
+
+        $this->artisan('process:remove', [
+            'name' => 'vite',
+            '--app' => 'docs',
+        ])
+            ->expectsConfirmation("Remove process 'vite'?", 'no')
+            ->doesntExpectOutputToContain('Removing Process')
+            ->doesntExpectOutputToContain('{')
+            ->assertExitCode(1);
+
+        Http::assertNothingSent();
+    });
+
+    it('renders process:remove gateway failures as prose in human mode', function (): void {
+        fakeGateway(fakeErrorEnvelope('process.not_found', "Process 'vite' not found for app 'docs'."), 404);
+
+        [$exitCode, $output] = runCommand($this, 'process:remove', [
+            'name' => 'vite',
+            '--app' => 'docs',
+            '--force' => true,
+        ]);
+
+        expect($exitCode)->toBe(1)
+            ->and($output)->toContain('not found')
+            ->and($output)->not->toContain('"error"');
+    });
+
+    it('renders named process runtime actions as a progress tree with a success footer', function (string $command, string $title, string $pastTense): void {
+        fakeGateway(fakeSuccessEnvelope([
+            'runtimes' => [
+                ['process' => 'vite', 'node' => 'app-1', 'app' => 'docs', 'workspace' => null, 'state' => 'running'],
+            ],
+        ]));
+
+        [$exitCode, $output] = runCommand($this, $command, [
+            'name' => 'vite',
+            '--app' => 'docs',
+        ]);
+
+        expect($exitCode)->toBe(0)
+            ->and($output)->toContain($title)
+            ->and($output)->toContain('Resolve runtime units')
+            ->and($output)->toContain("Process 'vite' {$pastTense} for app 'docs'")
+            ->and($output)->not->toContain('runtimes:')
+            ->and($output)->not->toContain('{');
+    })->with([
+        ['process:start', 'Starting Processes', 'started'],
+        ['process:stop', 'Stopping Processes', 'stopped'],
+        ['process:restart', 'Restarting Processes', 'restarted'],
+    ]);
+
+    it('renders bulk process runtime actions with a counted success footer', function (string $command, string $pastTense): void {
+        fakeGateway(fakeSuccessEnvelope([
+            'runtimes' => [
+                ['process' => 'vite', 'node' => 'app-1', 'app' => null, 'workspace' => 'feature-docs', 'state' => 'running'],
+                ['process' => 'worker', 'node' => 'app-1', 'app' => null, 'workspace' => 'feature-docs', 'state' => 'running'],
+            ],
+        ]));
+
+        [$exitCode, $output] = runCommand($this, $command, [
+            '--workspace' => 'feature-docs',
+        ]);
+
+        expect($exitCode)->toBe(0)
+            ->and($output)->toContain("2 processes {$pastTense} for workspace 'feature-docs'")
+            ->and($output)->not->toContain('{');
+    })->with([
+        ['process:start', 'started'],
+        ['process:stop', 'stopped'],
+        ['process:restart', 'restarted'],
+    ]);
+
+    it('renders process runtime action gateway failures as prose in human mode', function (string $command): void {
+        fakeGateway(fakeErrorEnvelope('process.runtime_action_failed', "The runtime unit could not be {$command}."), 422);
+
+        [$exitCode, $output] = runCommand($this, $command, [
+            'name' => 'vite',
+            '--app' => 'docs',
+        ]);
+
+        expect($exitCode)->toBe(1)
+            ->and($output)->toContain('runtime unit could not be')
+            ->and($output)->not->toContain('"error"');
+    })->with([
+        'start' => 'process:start',
+        'stop' => 'process:stop',
+        'restart' => 'process:restart',
+    ]);
+
+    it('keeps process runtime action validation failures as prose before the tree', function (string $command): void {
+        Http::fake();
+
+        [$exitCode, $output] = runCommand($this, $command, [
+            'name' => 'vite',
+        ]);
+
+        Http::assertNothingSent();
+
+        expect($exitCode)->toBe(1)
+            ->and($output)->not->toContain('Processes')
+            ->and($output)->toContain('validation_failed');
+    })->with([
+        'start' => 'process:start',
+        'stop' => 'process:stop',
+        'restart' => 'process:restart',
+    ]);
 });

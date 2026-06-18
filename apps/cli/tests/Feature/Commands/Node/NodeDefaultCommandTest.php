@@ -197,6 +197,90 @@ describe('node:default', function (): void {
         });
     });
 
+    describe('human renderer', function (): void {
+        it('renders show with a default as prose', function (): void {
+            $this->store->setDefaultNode('app-1');
+
+            [$exitCode, $output] = runCommand($this, 'node:default', []);
+
+            expect($exitCode)->toBe(0)
+                ->and($output)->toContain('Default development node: app-1')
+                ->and($output)->not->toContain('action:')
+                ->and($output)->not->toContain('{');
+        });
+
+        it('renders show with no default as empty-state prose with guidance', function (): void {
+            [$exitCode, $output] = runCommand($this, 'node:default', []);
+
+            expect($exitCode)->toBe(0)
+                ->and($output)->toContain('No default development node is set.')
+                ->and($output)->toContain('Run `orbit node:default <name>` to set one.')
+                ->and($output)->not->toContain('{');
+        });
+
+        it('renders set through a progress tree with a success footer', function (): void {
+            fakeGateway(fakeSuccessEnvelope([
+                'nodes' => [
+                    ['name' => 'app-1', 'role' => 'app-dev'],
+                ],
+            ]));
+
+            [$exitCode, $output] = runCommand($this, 'node:default', ['name' => 'app-1']);
+
+            expect($exitCode)->toBe(0)
+                ->and($output)->toContain('Setting Default Node')
+                ->and($output)->toContain('Store local default')
+                ->and($output)->toContain('Default development node set to app-1.')
+                ->and($output)->not->toContain('action:')
+                ->and($output)->not->toContain('{')
+                ->and($this->store->defaultNode())->toBe('app-1');
+        });
+
+        it('renders set node-not-found failures as a failed tree footer', function (): void {
+            fakeGateway(fakeSuccessEnvelope([
+                'nodes' => [
+                    ['name' => 'app-2', 'role' => 'app-dev'],
+                ],
+            ]));
+
+            [$exitCode, $output] = runCommand($this, 'node:default', ['name' => 'app-unknown']);
+
+            expect($exitCode)->toBe(1)
+                ->and($output)->toContain("Node 'app-unknown' not found or not visible.")
+                ->and($output)->not->toContain('"error"')
+                ->and($output)->not->toContain('{');
+        });
+
+        it('renders set gateway-unavailable failures as prose', function (): void {
+            fakeGatewayDown('connection refused');
+
+            [$exitCode, $output] = runCommand($this, 'node:default', ['name' => 'app-1']);
+
+            expect($exitCode)->toBe(1)
+                ->and($output)->toContain('Gateway connection is required to set a default node.')
+                ->and($output)->not->toContain('"error"');
+        });
+
+        it('renders clear with an existing default as prose', function (): void {
+            $this->store->setDefaultNode('app-1');
+
+            [$exitCode, $output] = runCommand($this, 'node:default', ['--clear' => true]);
+
+            expect($exitCode)->toBe(0)
+                ->and($output)->toContain('Default development node cleared.')
+                ->and($output)->not->toContain('action:')
+                ->and($output)->not->toContain('{');
+        });
+
+        it('renders clear with no existing default as no-op prose', function (): void {
+            [$exitCode, $output] = runCommand($this, 'node:default', ['--clear' => true]);
+
+            expect($exitCode)->toBe(0)
+                ->and($output)->toContain('No default development node was set.')
+                ->and($output)->not->toContain('{');
+        });
+    });
+
     describe('mutually exclusive guard', function (): void {
         it('returns validation_failed when name and --clear are both provided', function (): void {
             [$exitCode, $output] = runCommand($this, 'node:default', [

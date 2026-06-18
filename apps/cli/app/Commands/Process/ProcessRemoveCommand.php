@@ -48,19 +48,55 @@ final class ProcessRemoveCommand extends ProcessGatewayCommand
             return $validation;
         }
 
-        try {
-            $response = $this->gatewayDelete('/api/processes/'.rawurlencode((string) $name), $this->filledQuery([
-                'node' => $node,
-                'app' => $app,
-                'workspace' => $workspace,
-                'destructive_consent' => true,
-                'destructive_consent_source' => 'force',
-            ]));
-        } catch (GatewayApiException $exception) {
-            return $this->renderGatewayFailure($exception);
+        $path = '/api/processes/'.rawurlencode((string) $name);
+        $payload = $this->filledQuery([
+            'node' => $node,
+            'app' => $app,
+            'workspace' => $workspace,
+            'destructive_consent' => true,
+            'destructive_consent_source' => 'force',
+        ]);
+
+        if ($this->wantsJson()) {
+            try {
+                $response = $this->gatewayDelete($path, $payload);
+            } catch (GatewayApiException $exception) {
+                return $this->renderGatewayFailure($exception);
+            }
+
+            return $this->renderSuccess($response);
         }
 
-        return $this->renderSuccess($response);
+        return $this->renderRemoveTree($path, $payload, (string) $name, $this->contextLabel($node, $app, $workspace));
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     */
+    private function renderRemoveTree(string $path, array $payload, string $name, string $label): int
+    {
+        $response = [];
+
+        $outcome = $this->runStepOperation(
+            'Removing Process',
+            [
+                ['label' => 'Validate process', 'doneLabel' => 'Validated process'],
+                ['label' => 'Remove runtime units', 'doneLabel' => 'Removed runtime units'],
+                ['label' => 'Apply and verify process removal', 'doneLabel' => 'Applied and verified process removal'],
+            ],
+            work: function () use ($path, $payload, &$response): array {
+                return $response = $this->gatewayCallForHuman(fn (): array => $this->gatewayDelete($path, $payload));
+            },
+            doneFooter: fn (): string => "Process '{$name}' removed from {$label}",
+        );
+
+        if (! $outcome->isCompleted()) {
+            return self::FAILURE;
+        }
+
+        $this->renderDriftNotes($response);
+
+        return self::SUCCESS;
     }
 
     private function confirmRemoval(string $name): ?int

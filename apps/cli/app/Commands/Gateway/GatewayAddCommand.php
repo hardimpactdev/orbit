@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Commands\Gateway;
 
 use App\Commands\BootstrapGatewayCommand;
+use App\Commands\Concerns\WithStepTree;
 use App\Enums\Trust\TrustStoreInstallReason;
 use App\Services\Gateway\FetchesGatewayRootCa;
 use App\Services\Gateway\VerifiesGatewayIdentity;
@@ -17,6 +18,8 @@ use RuntimeException;
 
 final class GatewayAddCommand extends BootstrapGatewayCommand
 {
+    use WithStepTree;
+
     private const string LABEL = 'orbit';
 
     #[\Override]
@@ -62,116 +65,232 @@ final class GatewayAddCommand extends BootstrapGatewayCommand
             );
         }
 
-        if ($this->isConverged($gatewayName, $gatewayIp, $installer, $configStore)) {
-            return $this->handleConverged($gatewayName, $gatewayIp, $verifyIdentity, $configStore);
+        $converged = $this->isConverged($gatewayName, $gatewayIp, $installer, $configStore);
+
+        $work = $converged
+            ? fn (): array => $this->converge($gatewayName, $gatewayIp, $verifyIdentity, $configStore)
+            : fn (): array => $this->join($gatewayName, $gatewayIp, $fetch, $verifyIdentity, $configStore, $installer);
+
+        if ($this->wantsJson()) {
+            $outcome = $work();
+
+            if (array_key_exists('code', $outcome)) {
+                /** @var array{code: string, message: string, meta: array<string, mixed>} $outcome */
+                return $this->renderFailure($outcome['code'], $outcome['message'], $outcome['meta']);
+            }
+
+            /** @var array{data: array<string, mixed>} $outcome */
+            return $this->renderSuccess($outcome['data']);
         }
 
+        return $this->renderJoinTree($gatewayIp, $converged, $work);
+    }
+
+    /**
+     * @param  callable(): array<string, mixed>  $work
+     */
+    private function renderJoinTree(string $gatewayIp, bool $converged, callable $work): int
+    {
+        $outcome = [];
+
+        $phases = $converged
+            ? [
+                ['label' => 'Resolve gateway'],
+                ['label' => 'Verify gateway API'],
+                ['label' => 'Verify identity'],
+            ]
+            : [
+                ['label' => 'Resolve gateway'],
+                ['label' => 'Fetch trust material'],
+                ['label' => 'Trust gateway CA'],
+                ['label' => 'Verify gateway API'],
+                ['label' => 'Verify identity'],
+                ['label' => 'Store local config'],
+            ];
+
+        $result = $this->runStepOperation(
+            'Joining Gateway',
+            $phases,
+            work: function () use ($work, &$outcome): void {
+                $outcome = $work();
+
+                if (array_key_exists('code', $outcome)) {
+                    /** @var array{code: string, message: string, meta: array<string, mixed>} $outcome */
+                    throw new RuntimeException($outcome['message']);
+                }
+            },
+            doneFooter: function () use ($converged, $gatewayIp, &$outcome): string {
+                return $converged
+                    ? "Gateway {$gatewayIp} is already configured"
+                    : "Joined gateway '{$this->footerGatewayName($outcome)}'";
+            },
+        );
+
+        if (! $result->isCompleted()) {
+            return self::FAILURE;
+        }
+
+        $this->renderJoinSummary($outcome);
+
+        return self::SUCCESS;
+    }
+
+    /**
+     * @param  array<string, mixed>  $outcome
+     */
+    private function renderJoinSummary(array $outcome): void
+    {
+        $data = is_array($outcome['data'] ?? null) ? $outcome['data'] : [];
+        $gateway = is_array($data['gateway'] ?? null) ? $data['gateway'] : [];
+        $localNode = is_array($data['local_node'] ?? null) ? $data['local_node'] : [];
+        $result = is_array($data['result'] ?? null) ? $data['result'] : [];
+
+        $this->line('  Gateway: '.$this->stringField($gateway, 'name'));
+        $this->line('  Local node: '.$this->stringField($localNode, 'name'));
+        $this->line('  Action: '.$this->stringField($result, 'action'));
+    }
+
+    /**
+     * @param  array<string, mixed>  $outcome
+     */
+    private function footerGatewayName(array $outcome): string
+    {
+        $data = is_array($outcome['data'] ?? null) ? $outcome['data'] : [];
+        $gateway = is_array($data['gateway'] ?? null) ? $data['gateway'] : [];
+
+        return $this->stringField($gateway, 'name');
+    }
+
+    /**
+     * @param  array<string, mixed>  $values
+     */
+    private function stringField(array $values, string $key): string
+    {
+        $value = $values[$key] ?? null;
+
+        return is_scalar($value) && (string) $value !== '' ? (string) $value : '—';
+    }
+
+    /**
+     * @return array{data: array<string, mixed>}|array{code: string, message: string, meta: array<string, mixed>}
+     */
+    private function join(
+        string $gatewayName,
+        string $gatewayIp,
+        FetchesGatewayRootCa $fetch,
+        VerifiesGatewayIdentity $verifyIdentity,
+        OrbitConfigStore $configStore,
+        TrustStoreInstaller $installer,
+    ): array {
         try {
             $caResult = $fetch->handle($gatewayIp);
         } catch (ConnectionException) {
-            return $this->renderFailure(
-                'gateway_unavailable',
-                "Could not fetch the gateway CA from {$gatewayIp}.",
-                ['gateway_ip' => $gatewayIp, 'endpoint' => '/api/ca/root'],
-            );
+            return [
+                'code' => 'gateway_unavailable',
+                'message' => "Could not fetch the gateway CA from {$gatewayIp}.",
+                'meta' => ['gateway_ip' => $gatewayIp, 'endpoint' => '/api/ca/root'],
+            ];
         } catch (RuntimeException $e) {
             $msg = $e->getMessage();
             if (str_contains($msg, 'HTTP') || str_contains($msg, 'Failed to fetch')) {
-                return $this->renderFailure(
-                    'gateway_unavailable',
-                    "Could not fetch the gateway CA from {$gatewayIp}.",
-                    ['gateway_ip' => $gatewayIp, 'endpoint' => '/api/ca/root'],
-                );
+                return [
+                    'code' => 'gateway_unavailable',
+                    'message' => "Could not fetch the gateway CA from {$gatewayIp}.",
+                    'meta' => ['gateway_ip' => $gatewayIp, 'endpoint' => '/api/ca/root'],
+                ];
             }
 
-            return $this->renderFailure(
-                'node.gateway_api_error',
-                'Gateway returned invalid CA material.',
-                ['gateway_ip' => $gatewayIp, 'endpoint' => '/api/ca/root', 'reason' => 'invalid_trust_material'],
-            );
+            return [
+                'code' => 'node.gateway_api_error',
+                'message' => 'Gateway returned invalid CA material.',
+                'meta' => ['gateway_ip' => $gatewayIp, 'endpoint' => '/api/ca/root', 'reason' => 'invalid_trust_material'],
+            ];
         }
 
         $pemPath = $this->persistPem($gatewayName, $caResult->pem, $configStore);
 
         if ($pemPath === null) {
-            return $this->renderFailure(
-                'node.local_config_write_failed',
-                'Failed to store local gateway configuration.',
-                ['gateway_ip' => $gatewayIp],
-            );
+            return [
+                'code' => 'node.local_config_write_failed',
+                'message' => 'Failed to store local gateway configuration.',
+                'meta' => ['gateway_ip' => $gatewayIp],
+            ];
         }
 
         try {
             $installer->trustCa($pemPath, self::LABEL);
         } catch (TrustStoreInstallException $e) {
             if ($e->reason === TrustStoreInstallReason::UnsupportedPlatform) {
-                return $this->renderFailure(
-                    'node.unsupported_platform',
-                    'This platform does not support automatic gateway CA trust installation.',
-                    ['platform' => PHP_OS_FAMILY, 'reason' => 'unsupported_trust_store'],
-                );
+                return [
+                    'code' => 'node.unsupported_platform',
+                    'message' => 'This platform does not support automatic gateway CA trust installation.',
+                    'meta' => ['platform' => PHP_OS_FAMILY, 'reason' => 'unsupported_trust_store'],
+                ];
             }
 
-            return $this->renderFailure(
-                'node.local_config_write_failed',
-                'Failed to install the gateway CA into the local trust store.',
-                ['gateway_ip' => $gatewayIp],
-            );
+            return [
+                'code' => 'node.local_config_write_failed',
+                'message' => 'Failed to install the gateway CA into the local trust store.',
+                'meta' => ['gateway_ip' => $gatewayIp],
+            ];
         }
 
         $verifyResult = $verifyIdentity->handle($gatewayIp, $pemPath);
 
         if (array_key_exists('code', $verifyResult)) {
             /** @var array{code: string, message: string, meta: array<string, mixed>} $verifyResult */
-            return $this->renderFailure($verifyResult['code'], $verifyResult['message'], $verifyResult['meta']);
+            return $verifyResult;
         }
 
         /** @var array{gateway_name: string, gateway_ip: string, gateway_status: string, gateway_platform: string, local_node_name: string, local_node_status: string, local_node_platform: string, local_node_wg_ip: string} $verifyResult */
         if (! $this->persistGatewayConfig($gatewayName, $gatewayIp, $caResult->sha256, $pemPath, $configStore)) {
-            return $this->renderFailure(
-                'node.local_config_write_failed',
-                'Failed to store local gateway configuration.',
-                ['gateway_ip' => $gatewayIp, 'gateway_name' => $gatewayName],
-            );
+            return [
+                'code' => 'node.local_config_write_failed',
+                'message' => 'Failed to store local gateway configuration.',
+                'meta' => ['gateway_ip' => $gatewayIp, 'gateway_name' => $gatewayName],
+            ];
         }
 
-        return $this->renderSuccess($this->buildSuccessData($verifyResult, 'added', $gatewayIp, $gatewayName));
+        return ['data' => $this->buildSuccessData($verifyResult, 'added', $gatewayIp, $gatewayName)];
     }
 
-    private function handleConverged(
+    /**
+     * @return array{data: array<string, mixed>}|array{code: string, message: string, meta: array<string, mixed>}
+     */
+    private function converge(
         string $gatewayName,
         string $gatewayIp,
         VerifiesGatewayIdentity $verifyIdentity,
         OrbitConfigStore $configStore,
-    ): int {
+    ): array {
         $entry = $configStore->gatewayEntry($gatewayName);
         $pemPath = is_array($entry) ? (string) ($entry['ca_pem_path'] ?? '') : '';
 
         if ($pemPath === '' || ! is_file($pemPath)) {
-            return $this->renderFailure(
-                'node.local_config_write_failed',
-                'Failed to store local gateway configuration.',
-                ['gateway_ip' => $gatewayIp],
-            );
+            return [
+                'code' => 'node.local_config_write_failed',
+                'message' => 'Failed to store local gateway configuration.',
+                'meta' => ['gateway_ip' => $gatewayIp],
+            ];
         }
 
         $verifyResult = $verifyIdentity->handle($gatewayIp, $pemPath);
 
         if (array_key_exists('code', $verifyResult)) {
             /** @var array{code: string, message: string, meta: array<string, mixed>} $verifyResult */
-            return $this->renderFailure($verifyResult['code'], $verifyResult['message'], $verifyResult['meta']);
+            return $verifyResult;
         }
 
         /** @var array{gateway_name: string, gateway_ip: string, gateway_status: string, gateway_platform: string, local_node_name: string, local_node_status: string, local_node_platform: string, local_node_wg_ip: string} $verifyResult */
         if (! $configStore->setActiveGateway($gatewayName)) {
-            return $this->renderFailure(
-                'node.local_config_write_failed',
-                'Failed to store local gateway configuration.',
-                ['gateway_ip' => $gatewayIp, 'gateway_name' => $gatewayName],
-            );
+            return [
+                'code' => 'node.local_config_write_failed',
+                'message' => 'Failed to store local gateway configuration.',
+                'meta' => ['gateway_ip' => $gatewayIp, 'gateway_name' => $gatewayName],
+            ];
         }
 
-        return $this->renderSuccess($this->buildSuccessData($verifyResult, 'converged', $gatewayIp, $gatewayName));
+        return ['data' => $this->buildSuccessData($verifyResult, 'converged', $gatewayIp, $gatewayName)];
     }
 
     private function resolveGatewayIp(ResolvesGatewayAddress $resolver): ?string

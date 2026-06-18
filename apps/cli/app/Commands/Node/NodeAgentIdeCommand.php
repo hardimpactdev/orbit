@@ -39,7 +39,46 @@ final class NodeAgentIdeCommand extends GatewayCommand
             return $this->renderGatewayFailure($exception);
         }
 
-        return $this->renderSuccess($response);
+        if ($this->wantsJson()) {
+            return $this->renderSuccess($response);
+        }
+
+        $this->line($this->successLine($name, $response));
+
+        return self::SUCCESS;
+    }
+
+    /**
+     * @param  array<string, mixed>  $response
+     */
+    private function successLine(string $name, array $response): string
+    {
+        $data = $this->successData($response);
+        $agentIde = is_array($data['agent_ide'] ?? null) ? $data['agent_ide'] : [];
+        $adapter = is_string($agentIde['adapter'] ?? null) && $agentIde['adapter'] !== ''
+            ? $agentIde['adapter']
+            : null;
+
+        if ($adapter === null) {
+            return "Node '{$name}' agent IDE cleared";
+        }
+
+        if (($data['action'] ?? null) === 'converged') {
+            return "Node '{$name}' agent IDE already set to '{$adapter}'";
+        }
+
+        return "Node '{$name}' agent IDE set to '{$adapter}'";
+    }
+
+    /**
+     * @param  array<string, mixed>  $response
+     * @return array<string, mixed>
+     */
+    private function successData(array $response): array
+    {
+        $data = $response['success']['data'] ?? null;
+
+        return is_array($data) ? $data : [];
     }
 
     private function stringArgument(string $key): ?string

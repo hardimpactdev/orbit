@@ -25,4 +25,9 @@ final class FirewallDenyCommand extends FirewallStoreCommand
     {
         return 'deny';
     }
+
+    protected function treeTitle(): string
+    {
+        return 'Denying Firewall Rule';
+    }
 }

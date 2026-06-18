@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Commands\Gateway;
 
+use App\Commands\Concerns\WithStepTree;
 use App\Commands\LocalOnlyCommand;
 use App\Enums\Trust\TrustStoreInstallReason;
 use App\Services\Gateway\FetchesGatewayRootCa;
@@ -15,6 +16,8 @@ use RuntimeException;
 
 final class GatewayTrustCommand extends LocalOnlyCommand
 {
+    use WithStepTree;
+
     private const string LABEL = 'orbit';
 
     #[\Override]
@@ -36,6 +39,83 @@ final class GatewayTrustCommand extends LocalOnlyCommand
         }
 
         /** @var array{url: string, ip: string} $gateway */
+        if ($this->wantsJson()) {
+            $outcome = $this->performTrust($gateway, $fetch, $configStore, $installer);
+
+            if (array_key_exists('code', $outcome)) {
+                /** @var array{code: string, message: string, meta: array<string, mixed>} $outcome */
+                return $this->renderFailure($outcome['code'], $outcome['message'], $outcome['meta']);
+            }
+
+            /** @var array{data: array<string, mixed>, meta: array<string, mixed>} $outcome */
+            return $this->renderSuccess($outcome['data'], $outcome['meta']);
+        }
+
+        return $this->renderTrustTree($gateway, $fetch, $configStore, $installer);
+    }
+
+    /**
+     * @param  array{url: string, ip: string}  $gateway
+     */
+    private function renderTrustTree(
+        array $gateway,
+        FetchesGatewayRootCa $fetch,
+        OrbitConfigStore $configStore,
+        TrustStoreInstaller $installer,
+    ): int {
+        $gatewayUrl = $gateway['url'];
+        $outcome = [];
+
+        $result = $this->runStepOperation(
+            'Trusting Gateway CA',
+            [
+                ['label' => 'Resolve configured gateway'],
+                ['label' => 'Fetch trust material'],
+                ['label' => 'Install local trust'],
+                ['label' => 'Store trust metadata'],
+            ],
+            work: function () use ($gateway, $fetch, $configStore, $installer, &$outcome): void {
+                $outcome = $this->performTrust($gateway, $fetch, $configStore, $installer);
+
+                if (array_key_exists('code', $outcome)) {
+                    /** @var array{code: string, message: string, meta: array<string, mixed>} $outcome */
+                    throw new RuntimeException($outcome['message']);
+                }
+            },
+            doneFooter: function () use ($gatewayUrl, &$outcome): string {
+                return $this->trustStatus($outcome) === 'already_trusted'
+                    ? "Gateway CA already trusted for {$gatewayUrl}."
+                    : "Gateway CA trusted for {$gatewayUrl}.";
+            },
+        );
+
+        return $result->isCompleted() ? self::SUCCESS : self::FAILURE;
+    }
+
+    /**
+     * @param  array<string, mixed>  $outcome
+     */
+    private function trustStatus(array $outcome): ?string
+    {
+        $data = is_array($outcome['data'] ?? null) ? $outcome['data'] : [];
+        $trust = is_array($data['gateway_trust'] ?? null) ? $data['gateway_trust'] : [];
+        $status = $trust['status'] ?? null;
+
+        return is_string($status) ? $status : null;
+    }
+
+    /**
+     * Perform the network fetch, local trust installation, and metadata write.
+     *
+     * @param  array{url: string, ip: string}  $gateway
+     * @return array{data: array<string, mixed>, meta: array<string, mixed>}|array{code: string, message: string, meta: array<string, mixed>}
+     */
+    private function performTrust(
+        array $gateway,
+        FetchesGatewayRootCa $fetch,
+        OrbitConfigStore $configStore,
+        TrustStoreInstaller $installer,
+    ): array {
         $gatewayUrl = $gateway['url'];
         $gatewayIp = $gateway['ip'];
         $gatewayName = $configStore->activeGatewayName() ?? OrbitConfigStore::DEFAULT_GATEWAY_NAME;
@@ -43,65 +123,68 @@ final class GatewayTrustCommand extends LocalOnlyCommand
         try {
             $caResult = $fetch->handle($gatewayIp);
         } catch (ConnectionException) {
-            return $this->renderFailure(
-                'gateway_unavailable',
-                "Could not fetch the gateway CA from {$gatewayUrl}.",
-                ['gateway_url' => $gatewayUrl, 'endpoint' => '/api/ca/root'],
-            );
+            return [
+                'code' => 'gateway_unavailable',
+                'message' => "Could not fetch the gateway CA from {$gatewayUrl}.",
+                'meta' => ['gateway_url' => $gatewayUrl, 'endpoint' => '/api/ca/root'],
+            ];
         } catch (RuntimeException $e) {
             $msg = $e->getMessage();
             if (str_contains($msg, 'HTTP') || str_contains($msg, 'Failed to fetch')) {
-                return $this->renderFailure(
-                    'gateway_unavailable',
-                    "Could not fetch the gateway CA from {$gatewayUrl}.",
-                    ['gateway_url' => $gatewayUrl, 'endpoint' => '/api/ca/root'],
-                );
+                return [
+                    'code' => 'gateway_unavailable',
+                    'message' => "Could not fetch the gateway CA from {$gatewayUrl}.",
+                    'meta' => ['gateway_url' => $gatewayUrl, 'endpoint' => '/api/ca/root'],
+                ];
             }
 
-            return $this->renderFailure(
-                'node.gateway_api_error',
-                'Gateway returned invalid CA material.',
-                ['gateway_url' => $gatewayUrl, 'endpoint' => '/api/ca/root', 'reason' => 'invalid_trust_material'],
-            );
+            return [
+                'code' => 'node.gateway_api_error',
+                'message' => 'Gateway returned invalid CA material.',
+                'meta' => ['gateway_url' => $gatewayUrl, 'endpoint' => '/api/ca/root', 'reason' => 'invalid_trust_material'],
+            ];
         }
 
         $pemPath = $this->persistPem($gatewayName, $caResult->pem, $configStore);
 
         if ($pemPath === null) {
-            return $this->renderFailure(
-                'node.local_config_write_failed',
-                'Failed to store local gateway CA material.',
-                ['gateway_url' => $gatewayUrl, 'reason' => 'metadata_write_failed'],
-            );
+            return [
+                'code' => 'node.local_config_write_failed',
+                'message' => 'Failed to store local gateway CA material.',
+                'meta' => ['gateway_url' => $gatewayUrl, 'reason' => 'metadata_write_failed'],
+            ];
         }
 
         if ($this->isAlreadyTrusted($installer, $configStore, $pemPath, $caResult->sha256)) {
-            return $this->renderSuccess([
-                'gateway_trust' => [
-                    'gateway_url' => $gatewayUrl,
-                    'trusted' => true,
-                    'status' => 'already_trusted',
-                    'ca_sha256' => $caResult->sha256,
+            return [
+                'data' => [
+                    'gateway_trust' => [
+                        'gateway_url' => $gatewayUrl,
+                        'trusted' => true,
+                        'status' => 'already_trusted',
+                        'ca_sha256' => $caResult->sha256,
+                    ],
                 ],
-            ], ['trusted_at' => $this->trustedAt($configStore)]);
+                'meta' => ['trusted_at' => $this->trustedAt($configStore)],
+            ];
         }
 
         try {
             $installer->trustCa($pemPath, self::LABEL);
         } catch (TrustStoreInstallException $e) {
             if ($e->reason === TrustStoreInstallReason::UnsupportedPlatform) {
-                return $this->renderFailure(
-                    'node.unsupported_platform',
-                    'This platform does not support automatic gateway CA trust installation.',
-                    ['platform' => PHP_OS_FAMILY, 'reason' => 'unsupported_trust_store'],
-                );
+                return [
+                    'code' => 'node.unsupported_platform',
+                    'message' => 'This platform does not support automatic gateway CA trust installation.',
+                    'meta' => ['platform' => PHP_OS_FAMILY, 'reason' => 'unsupported_trust_store'],
+                ];
             }
 
-            return $this->renderFailure(
-                'node.local_config_write_failed',
-                'Failed to install the gateway CA into the local trust store.',
-                ['gateway_url' => $gatewayUrl, 'reason' => 'trust_store_failed'],
-            );
+            return [
+                'code' => 'node.local_config_write_failed',
+                'message' => 'Failed to install the gateway CA into the local trust store.',
+                'meta' => ['gateway_url' => $gatewayUrl, 'reason' => 'trust_store_failed'],
+            ];
         }
 
         try {
@@ -126,21 +209,24 @@ final class GatewayTrustCommand extends LocalOnlyCommand
 
             $configStore->save($config);
         } catch (\Throwable) {
-            return $this->renderFailure(
-                'node.local_config_write_failed',
-                'Failed to write local trust metadata.',
-                ['gateway_url' => $gatewayUrl, 'reason' => 'metadata_write_failed'],
-            );
+            return [
+                'code' => 'node.local_config_write_failed',
+                'message' => 'Failed to write local trust metadata.',
+                'meta' => ['gateway_url' => $gatewayUrl, 'reason' => 'metadata_write_failed'],
+            ];
         }
 
-        return $this->renderSuccess([
-            'gateway_trust' => [
-                'gateway_url' => $gatewayUrl,
-                'trusted' => true,
-                'status' => 'trusted',
-                'ca_sha256' => $caResult->sha256,
+        return [
+            'data' => [
+                'gateway_trust' => [
+                    'gateway_url' => $gatewayUrl,
+                    'trusted' => true,
+                    'status' => 'trusted',
+                    'ca_sha256' => $caResult->sha256,
+                ],
             ],
-        ], ['trusted_at' => now()->toIso8601String()]);
+            'meta' => ['trusted_at' => now()->toIso8601String()],
+        ];
     }
 
     /**

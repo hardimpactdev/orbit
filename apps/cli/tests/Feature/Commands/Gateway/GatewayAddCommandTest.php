@@ -362,13 +362,57 @@ describe('gateway:add', function (): void {
         cleanupAdd($tempDir);
     });
 
-    it('renders human output on success', function (): void {
+    it('renders human output as a progress tree with gateway, node, and added footer', function (): void {
         [, , , , , $tempDir] = setupAddFakes();
 
         [$exitCode, $output] = runCommand($this, 'gateway:add', ['gateway_ip' => '10.6.0.2']);
 
         expect($exitCode)->toBe(0)
-            ->and($output)->toContain('result');
+            ->and($output)->toContain('Joining Gateway')
+            ->and($output)->toContain('Store local config')
+            ->and($output)->toContain("Joined gateway 'gateway-1'")
+            ->and($output)->toContain('Local node: client-1')
+            ->and($output)->toContain('Action: added')
+            ->and($output)->not->toContain('result:')
+            ->and($output)->not->toContain('local_onboarding')
+            ->and($output)->not->toContain('{');
+
+        cleanupAdd($tempDir);
+    });
+
+    it('renders the converged footer in human mode when already configured', function (): void {
+        [, , , , , $tempDir] = setupAddFakes(converged: true);
+
+        [$exitCode, $output] = runCommand($this, 'gateway:add', ['gateway_ip' => '10.6.0.2']);
+
+        expect($exitCode)->toBe(0)
+            ->and($output)->toContain('Joining Gateway')
+            ->and($output)->toContain('Action: converged')
+            ->and($output)->not->toContain('{');
+
+        cleanupAdd($tempDir);
+    });
+
+    it('renders gateway:add validation failures as prose in human mode', function (): void {
+        setupAddFakes();
+
+        [$exitCode, $output] = runCommand($this, 'gateway:add', ['gateway_ip' => '192.168.1.1']);
+
+        expect($exitCode)->toBe(1)
+            ->and($output)->toContain('Gateway IP must be a valid Orbit WireGuard address.')
+            ->and($output)->not->toContain('"error"')
+            ->and($output)->not->toContain('{');
+    });
+
+    it('renders gateway:add gateway-unavailable failures as prose in human mode', function (): void {
+        [, , $fetch, , , $tempDir] = setupAddFakes();
+        $fetch->throws = new ConnectionException('connection refused');
+
+        [$exitCode, $output] = runCommand($this, 'gateway:add', ['gateway_ip' => '10.6.0.2']);
+
+        expect($exitCode)->toBe(1)
+            ->and($output)->toContain('Could not fetch the gateway CA from 10.6.0.2.')
+            ->and($output)->not->toContain('"error"');
 
         cleanupAdd($tempDir);
     });
