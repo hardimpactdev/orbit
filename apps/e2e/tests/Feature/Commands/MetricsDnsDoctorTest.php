@@ -5,11 +5,11 @@ declare(strict_types=1);
 use App\E2E\Support\E2ETopologyHarness;
 use App\E2E\Support\E2ETopologyKind;
 
-it('publishes metrics.orbit DNS from gateway proxy intent on Docker prepared topology', function (): void {
+it('publishes the private orbit DNS tld from gateway proxy intent on Docker prepared topology', function (): void {
     metricsDnsDoctorPublishesRoute();
 })->group('e2e-feature', 'e2e-feature-operator_gateway', 'e2e-feature-operator-gateway');
 
-it('publishes metrics.orbit DNS from gateway proxy intent on Incus prepared topology', function (): void {
+it('publishes the private orbit DNS tld from gateway proxy intent on Incus prepared topology', function (): void {
     metricsDnsDoctorPublishesRoute();
 })->group('e2e-feature', 'e2e-provider-incus', 'e2e-feature-operator_gateway', 'e2e-feature-operator-gateway');
 
@@ -30,8 +30,9 @@ function metricsDnsDoctorPublishesRoute(): void
 
         $published = $topology->ssh(
             'gateway',
-            'grep -Fx '.escapeshellarg("address=/metrics.orbit/{$state['wireguard_address']}").' '.escapeshellarg($confPath)
-                .' && grep -Fx '.escapeshellarg('local=/metrics.orbit/').' '.escapeshellarg($confPath),
+            'grep -Fx '.escapeshellarg("address=/orbit/{$state['wireguard_address']}").' '.escapeshellarg($confPath)
+                .' && grep -Fx '.escapeshellarg('local=/orbit/').' '.escapeshellarg($confPath)
+                .' && ! grep -F '.escapeshellarg('address=/metrics.orbit/').' '.escapeshellarg($confPath),
             timeoutSeconds: 60,
         );
 
@@ -97,7 +98,7 @@ function metricsDnsDoctorRemovePublication(E2ETopologyHarness $topology, string 
         <<<'SH'
 if [ -f %1$s ]; then
     tmp="$(mktemp)"
-    grep -v 'metrics\.orbit' %1$s > "$tmp" || true
+    grep -v -e '^address=/orbit/' -e '^local=/orbit/' -e 'metrics\.orbit' %1$s > "$tmp" || true
     cat "$tmp" > %1$s
     rm -f "$tmp"
 fi

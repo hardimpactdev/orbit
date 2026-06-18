@@ -37,12 +37,18 @@ final class DnsmasqConfigBuilder
             $lines[] = "local=/{$tld}/";
         }
 
-        foreach ($routes as $route) {
-            $domain = $route->domain;
-            $address = (string) $this->routeNode($route, $allNodes)?->wireguard_address;
+        $orbitRouters = $routes
+            ->map(fn (ProxyRoute $route): ?Node => $this->routeNode($route, $allNodes))
+            ->filter(fn (?Node $node): bool => $node instanceof Node)
+            ->unique(fn (Node $node): string => (string) $node->wireguard_address)
+            ->sortBy(fn (Node $node): string => (string) $node->wireguard_address)
+            ->values();
 
-            $lines[] = "address=/{$domain}/{$address}";
-            $lines[] = "local=/{$domain}/";
+        foreach ($orbitRouters as $router) {
+            $address = (string) $router->wireguard_address;
+
+            $lines[] = "address=/orbit/{$address}";
+            $lines[] = 'local=/orbit/';
         }
 
         $lines[] = 'no-resolv';

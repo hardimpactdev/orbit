@@ -100,7 +100,7 @@ it('rewrites the conf and restarts dns when fleet state changes', function (): v
     expect(File::get($this->confPath))->toContain('address=/app-1.test/10.6.0.3');
 });
 
-it('writes router-owned orbit service route names into dnsmasq.conf', function (): void {
+it('writes router-owned orbit service routes as an orbit tld mapping into dnsmasq.conf', function (): void {
     Process::fake([
         "docker service inspect 'orbit_orbit-dns'" => Process::result(exitCode: 1),
         'docker restart orbit-dns' => Process::result(),
@@ -123,8 +123,9 @@ it('writes router-owned orbit service route names into dnsmasq.conf', function (
         rootPath: $this->workdir,
     ))->reconcile();
 
-    expect(File::get($this->confPath))->toContain('address=/metrics.orbit/10.6.0.2')
-        ->and(File::get($this->confPath))->toContain('local=/metrics.orbit/');
+    expect(File::get($this->confPath))->toContain('address=/orbit/10.6.0.2')
+        ->and(File::get($this->confPath))->toContain('local=/orbit/')
+        ->and(File::get($this->confPath))->not->toContain('address=/metrics.orbit/');
 });
 
 it('does not rewrite the compose topology while reconciling dns state', function (): void {
