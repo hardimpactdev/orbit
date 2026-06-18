@@ -169,7 +169,7 @@ final class UpdateHumanProgressRenderer
         $this->expanded = true;
         $this->checkDonePending = false;
         $this->tree->tree(self::TITLE, array_map(
-            fn (string $key): array => $this->row($key),
+            $this->row(...),
             array_keys(self::STEP_LABELS),
         ));
         $this->tree->step(LocalUpdateRunner::STEP_CHECK, 'done', $this->checkDoneMessage);
