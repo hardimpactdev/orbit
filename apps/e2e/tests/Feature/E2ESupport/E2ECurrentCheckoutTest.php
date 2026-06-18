@@ -6,6 +6,11 @@ use App\E2E\Support\DockerHost;
 use App\E2E\Support\DockerInstance;
 use App\E2E\Support\E2EConfig;
 use App\E2E\Support\E2ECurrentCheckout;
+use Illuminate\Support\Facades\File;
+
+afterEach(function (): void {
+    E2ECurrentCheckout::flushCache();
+});
 
 it('hydrates reused vendor dependencies inside the current checkout instead of symlinking to the base checkout', function (): void {
     $method = new ReflectionMethod(E2ECurrentCheckout::class, 'reusePreparedVendorWithLocalAutoloadCommand');
@@ -58,4 +63,96 @@ it('writes direct CLI gateway config while refreshing current checkout gateway s
         ->toContain('wireguard_https')
         ->toContain('exit(1)')
         ->not->toContain('gateway:add');
+});
+
+it('prunes stale checkout archive cache tarballs and locks', function (): void {
+    $previousCacheDirectory = getenv('ORBIT_E2E_CHECKOUT_ARCHIVE_CACHE_DIR');
+    $cacheDirectory = sys_get_temp_dir().'/orbit-checkout-cache-'.bin2hex(random_bytes(6));
+
+    File::ensureDirectoryExists($cacheDirectory);
+
+    try {
+        putenv("ORBIT_E2E_CHECKOUT_ARCHIVE_CACHE_DIR={$cacheDirectory}");
+
+        $currentArchive = $cacheDirectory.'/'.E2ECurrentCheckout::treeHash().'.tar.gz';
+        $currentLock = "{$currentArchive}.lock";
+        $staleArchive = "{$cacheDirectory}/stale-tree.tar.gz";
+        $staleLock = "{$staleArchive}.lock";
+
+        File::put($currentArchive, 'current archive');
+        File::put($currentLock, 'current lock');
+        File::put($staleArchive, 'stale archive');
+        File::put($staleLock, 'stale lock');
+        touch($staleArchive, time() - 90000);
+        touch($staleLock, time() - 90000);
+
+        $method = new ReflectionMethod(E2ECurrentCheckout::class, 'cachedArchive');
+
+        expect($method->invoke(null))->toBe($currentArchive)
+            ->and($currentArchive)->toBeFile()
+            ->and($currentLock)->toBeFile()
+            ->and($staleArchive)->not->toBeFile()
+            ->and($staleLock)->not->toBeFile();
+    } finally {
+        $previousCacheDirectory === false
+            ? putenv('ORBIT_E2E_CHECKOUT_ARCHIVE_CACHE_DIR')
+            : putenv("ORBIT_E2E_CHECKOUT_ARCHIVE_CACHE_DIR={$previousCacheDirectory}");
+
+        File::deleteDirectory($cacheDirectory);
+    }
+});
+
+it('prunes stale checkout archive artifacts while building temporary archives', function (): void {
+    $previousCacheDirectory = getenv('ORBIT_E2E_CHECKOUT_ARCHIVE_CACHE_DIR');
+    $cacheDirectory = sys_get_temp_dir().'/orbit-checkout-cache-'.bin2hex(random_bytes(6));
+    $staleTemporaryArchive = sys_get_temp_dir().'/orbit-current-stale-prune-'.bin2hex(random_bytes(6)).'.tar.gz';
+    $builtArchive = null;
+
+    File::ensureDirectoryExists($cacheDirectory);
+
+    try {
+        putenv("ORBIT_E2E_CHECKOUT_ARCHIVE_CACHE_DIR={$cacheDirectory}");
+
+        $staleArchive = "{$cacheDirectory}/stale-tree.tar.gz";
+        $staleLock = "{$staleArchive}.lock";
+
+        File::put($staleArchive, 'stale archive');
+        File::put($staleLock, 'stale lock');
+        File::put($staleTemporaryArchive, 'stale temporary archive');
+        touch($staleArchive, time() - 90000);
+        touch($staleLock, time() - 90000);
+        touch($staleTemporaryArchive, time() - 90000);
+
+        $builtArchive = E2ECurrentCheckout::buildArchive();
+
+        expect($builtArchive)->toBeFile()
+            ->and($staleArchive)->not->toBeFile()
+            ->and($staleLock)->not->toBeFile()
+            ->and($staleTemporaryArchive)->not->toBeFile();
+    } finally {
+        if (is_string($builtArchive)) {
+            File::delete($builtArchive);
+        }
+
+        $previousCacheDirectory === false
+            ? putenv('ORBIT_E2E_CHECKOUT_ARCHIVE_CACHE_DIR')
+            : putenv("ORBIT_E2E_CHECKOUT_ARCHIVE_CACHE_DIR={$previousCacheDirectory}");
+
+        File::deleteDirectory($cacheDirectory);
+        File::delete($staleTemporaryArchive);
+    }
+});
+
+it('excludes generated versioned Orbit binaries from checkout archives', function (): void {
+    $binary = repo_path('bin/orbit-binary-test');
+
+    File::put($binary, 'generated binary');
+
+    try {
+        $method = new ReflectionMethod(E2ECurrentCheckout::class, 'shouldIncludeArchivePath');
+
+        expect($method->invoke(null, 'bin/orbit-binary-test'))->toBeFalse();
+    } finally {
+        File::delete($binary);
+    }
 });

@@ -106,6 +106,22 @@ Incus acquisition `incus.source-sync` skips full-tree ownership repair and
 permission normalization when rsync reports an unchanged checkout; only
 changed syncs pay the chown and chmod passes.
 
+## Checkout archive cache
+
+Prepared checkout archives are cached under
+`ORBIT_E2E_CHECKOUT_ARCHIVE_CACHE_DIR` or the default temporary
+`orbit-e2e-checkout-archives` directory. Each checkout build prunes cached
+archives and orphaned lock files older than 24 hours, while preserving the
+current archive and any fresh cache entry. Checkout builds also remove stale
+temporary `orbit-current-*.tar.gz` archives older than 24 hours before creating
+a new source archive. Custom cache paths must be dedicated to Orbit checkout
+archives because stale `*.tar.gz` files in that directory are eligible for
+pruning.
+
+Generated CLI binaries such as `bin/orbit-binary-*` are ignored and excluded
+from checkout archives. Release artifacts belong in the binary artifact lane,
+not in every prepared-topology source checkout.
+
 Prepared Docker feature lanes should not emit `docker.source-sync` or
 `reset.source-sync`; those events belong to retained development topologies with
 a source mount. If a normal `composer test:e2e:docker` or
@@ -138,11 +154,15 @@ passed with 94 tests / 779 assertions in `137.24s` real time.
 ## Capacity guard diagnostics
 
 When the Docker lane is configured for multiple runners, a broad E2E run is not
-representative if runner probing leaves only a small subset reachable. The
-runner fails execution when reachable Docker capacity is below
+representative if runner probing leaves only a small subset reachable. In the
+Docker plus Incus aggregate, the Docker lane first removes selected Incus hosts
+from its runner plan; Beast must not be counted as Docker capacity while the
+Incus lane is selected.
+
+The runner fails execution when reachable Docker capacity is below
 `ORBIT_E2E_DOCKER_MIN_PROCESSES`; when the variable is unset, the minimum is the
-lower of eight workers and the planned Docker worker count. Set
-`ORBIT_E2E_DOCKER_MIN_PROCESSES` to the reachable worker count only when the
+lower of eight workers and the planned Docker worker count.
+Set `ORBIT_E2E_DOCKER_MIN_PROCESSES` to the reachable worker count only when the
 goal is to run a degraded diagnostic pass rather than compare performance to the
 baseline.
 

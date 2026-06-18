@@ -1139,13 +1139,20 @@ class E2ETestCommand extends Command
         }
 
         /** @var array{host_slots: array<string, int>, processes: int, minimum_processes: int, test_runners: string, unavailable: array<string, string>} $availability */
-        $availability = $this->withPlanEnvironment($plans['docker'], function (): array {
+        $availability = $this->withPlanEnvironment($plans['docker'], function () use ($plans): array {
             $config = E2EConfig::fromEnvironment();
             $hostSlots = [];
             $unavailable = [];
             $plannedProcesses = $this->envInt('ORBIT_E2E_PARALLEL_PROCESSES', array_sum($config->dockerHostSlots));
+            $reservedHosts = $this->reservedDockerHostsForSelectedIncusLane($plans);
 
             foreach ($config->dockerHostSlots as $host => $slots) {
+                if (isset($reservedHosts[strtolower($host)])) {
+                    $unavailable[$host] = 'reserved for selected Incus lane';
+
+                    continue;
+                }
+
                 $reason = $this->dockerRunnerUnavailableReason($config, $host);
 
                 if ($reason !== null) {
@@ -1211,6 +1218,28 @@ class E2ETestCommand extends Command
         $plans['docker']['command'] = $this->applyPestProcessCount($plans['docker']['command'], $availability['processes']);
 
         return $plans;
+    }
+
+    /**
+     * @param  array<string, array{lane: string, command: list<string>, environment: array<string, string>, test_path?: string, test_files?: list<string>, timings_file?: string}>  $plans
+     * @return array<string, true>
+     */
+    private function reservedDockerHostsForSelectedIncusLane(array $plans): array
+    {
+        if (! isset($plans['incus'])) {
+            return [];
+        }
+
+        return $this->withPlanEnvironment($plans['incus'], function (): array {
+            $config = E2EConfig::fromEnvironment();
+            $hosts = [];
+
+            foreach ($config->incusHostCandidates() as $host) {
+                $hosts[strtolower($host)] = true;
+            }
+
+            return $hosts;
+        });
     }
 
     private function minimumDockerProcessCapacity(int $plannedProcesses): int

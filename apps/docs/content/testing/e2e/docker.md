@@ -167,7 +167,9 @@ from acquisition time; reacquire before verifying later edits.
 
 The recommended local topology is to run Docker containers on `sidecar1` and
 `sidecar2`. Incus runs on `beast` only. Beast may be added to the Docker runner
-pool as overflow capacity when it is also listed in `ORBIT_E2E_EXCLUSIVE_HOSTS`.
+pool as Docker-only overflow capacity when it is also listed in
+`ORBIT_E2E_EXCLUSIVE_HOSTS`. The Docker plus Incus aggregate ignores Beast for
+Docker because Beast is the selected Incus host.
 
 ```bash
 ORBIT_E2E_DOCKER_TEST_RUNNERS=sidecar1:4:28,sidecar2:4:28 \

@@ -102,9 +102,13 @@ lease namespaces in the same shared lease directory. Docker feature tests read
 `ORBIT_E2E_DOCKER_TEST_RUNNERS`; Incus image-preparation commands read
 `ORBIT_E2E_INCUS_HOST_SLOTS`.
 
-By default those namespaces do not block each other. Add a host to
-`ORBIT_E2E_EXCLUSIVE_HOSTS` when the same machine appears in more than one
-backend pool and the backend families must not overlap.
+By default those namespaces do not block each other. In the Docker plus Incus
+aggregate, the orchestrator reserves selected Incus hosts out of the Docker plan
+before probing Docker reachability, so Docker does not fall back to Beast while
+Incus is selected. That reservation applies to aggregate runs even when
+`--sequential-lanes` is set. For independently launched provider commands, add a
+host to `ORBIT_E2E_EXCLUSIVE_HOSTS` when the same machine appears in more than
+one backend pool and the backend families must not overlap.
 
 ## Live Incus endpoint
 

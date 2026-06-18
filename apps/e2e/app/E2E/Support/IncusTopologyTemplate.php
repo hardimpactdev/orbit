@@ -108,12 +108,20 @@ final readonly class IncusTopologyTemplate
         $result = $timer->measure('batch.copy-start', fn () => $host->runWithoutMultiplexing($script));
 
         if (! $result->successful()) {
+            self::deleteClonesIfPresent($host, $runId, $roles);
+
             throw new \RuntimeException(
                 "Topology batch failed for {$kind->value}: {$result->errorOutput()}"
             );
         }
 
-        $timer->measure('clone-ready', fn () => self::awaitClonesReady($host, $runId, $roles, $timer));
+        try {
+            $timer->measure('clone-ready', fn () => self::awaitClonesReady($host, $runId, $roles, $timer));
+        } catch (\Throwable $exception) {
+            self::deleteClonesIfPresent($host, $runId, $roles);
+
+            throw $exception;
+        }
 
         $instances = [];
         foreach ($roles as $role) {
@@ -121,6 +129,21 @@ final readonly class IncusTopologyTemplate
         }
 
         return $instances;
+    }
+
+    /**
+     * @param  list<string>  $roles
+     */
+    private static function deleteClonesIfPresent(IncusHost $host, string $runId, array $roles): void
+    {
+        try {
+            $host->deleteInstancesIfPresent(array_map(
+                static fn (string $role): string => self::cloneName($runId, $role),
+                $roles,
+            ));
+        } catch (\Throwable) {
+            // Keep the original acquisition failure visible.
+        }
     }
 
     /**

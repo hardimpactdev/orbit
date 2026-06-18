@@ -350,6 +350,39 @@ it('caps docker workers per host container capacity', function (): void {
     });
 });
 
+it('keeps aggregate docker workers off shared incus hosts', function (): void {
+    Process::fake(function ($process) {
+        if ($process->command === 'command -v docker >/dev/null' || $process->command === 'docker info >/dev/null') {
+            return Process::result();
+        }
+
+        if (is_array($process->command) && in_array('test', $process->command, true)) {
+            return Process::result();
+        }
+
+        return Process::result();
+    });
+    Process::preventStrayProcesses();
+
+    withE2EEnvironment([], [
+        'ORBIT_E2E_DOCKER_TEST_RUNNERS' => 'sidecar1:4:28,sidecar2:4:28,Beast:4:28',
+        'ORBIT_E2E_INCUS_HOSTS' => 'beast',
+        'ORBIT_E2E_INCUS_HOST_VM_CAPS' => 'beast:12',
+        'ORBIT_E2E_INCUS_PARALLEL_PROCESSES' => '2',
+    ], function (): void {
+        $this->artisan('e2e:test --lanes=all')
+            ->expectsOutputToContain('E2E Docker runner [beast] ignored: reserved for selected Incus lane')
+            ->assertSuccessful();
+    });
+
+    Process::assertRan(fn ($process): bool => is_array($process->command)
+        && in_array('test', $process->command, true)
+        && in_array('--processes=8', $process->command, true)
+        && ($process->environment['ORBIT_E2E_TOPOLOGY_PROVIDER'] ?? null) === 'docker'
+        && ($process->environment['ORBIT_E2E_DOCKER_TEST_RUNNERS'] ?? null) === 'sidecar1:4:28,sidecar2:4:28'
+        && ($process->environment['ORBIT_E2E_PARALLEL_PROCESSES'] ?? null) === '8');
+});
+
 it('filters unavailable docker runners before starting Pest workers', function (): void {
     Process::fake(function ($process) {
         if ($process->command === 'command -v docker >/dev/null') {

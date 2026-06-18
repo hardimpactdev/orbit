@@ -15,6 +15,8 @@ final class E2ECurrentCheckout
 
     private const string OrbitConfigRoot = '/home/orbit/.config/orbit';
 
+    private const int ArchiveCacheRetentionSeconds = 86400;
+
     private static ?string $cachedArchive = null;
 
     private static bool $cachedArchiveIsShared = false;
@@ -1379,6 +1381,8 @@ PHP;
 
     public static function buildArchive(): string
     {
+        self::pruneStaleCheckoutArchives();
+
         $tarball = sys_get_temp_dir().'/orbit-current-'.bin2hex(random_bytes(6)).'.tar.gz';
         $attempts = 0;
 
@@ -1435,6 +1439,7 @@ PHP;
             './.env.e2e',
             './auth.json',
             './build',
+            './bin/orbit-binary-*',
             './apps/gateway/database/*.sqlite',
             './apps/gateway/database/*.sqlite-*',
             './node_modules',
@@ -1509,6 +1514,10 @@ PHP;
                     chmod($archive, 0644);
                 }
             }
+
+            touch($archive);
+
+            self::pruneCheckoutArchiveCache($directory, $archive, $lockPath);
         } finally {
             flock($lock, LOCK_UN);
             fclose($lock);
@@ -1518,6 +1527,115 @@ PHP;
         self::$cachedArchiveIsShared = true;
 
         return self::$cachedArchive;
+    }
+
+    private static function pruneStaleCheckoutArchives(): void
+    {
+        self::pruneTemporaryCheckoutArchives(sys_get_temp_dir());
+
+        $cacheDirectory = self::archiveCacheDirectory();
+
+        if (is_dir($cacheDirectory)) {
+            self::pruneCheckoutArchiveCache($cacheDirectory);
+        }
+    }
+
+    private static function pruneTemporaryCheckoutArchives(string $directory): void
+    {
+        foreach (glob($directory.'/orbit-current-*.tar.gz') ?: [] as $archive) {
+            if (! is_file($archive)) {
+                continue;
+            }
+
+            if (! self::archiveCachePathExpired($archive)) {
+                continue;
+            }
+
+            @unlink($archive);
+        }
+    }
+
+    private static function pruneCheckoutArchiveCache(string $directory, ?string $currentArchive = null, ?string $currentLockPath = null): void
+    {
+        foreach (glob($directory.'/*.tar.gz') ?: [] as $archive) {
+            if ($archive === $currentArchive || ! is_file($archive)) {
+                continue;
+            }
+
+            if (! self::archiveCachePathExpired($archive)) {
+                continue;
+            }
+
+            self::deleteCheckoutArchiveCacheEntry($archive);
+        }
+
+        foreach (glob($directory.'/*.tar.gz.lock') ?: [] as $lockPath) {
+            if ($lockPath === $currentLockPath || ! is_file($lockPath)) {
+                continue;
+            }
+
+            $archive = substr($lockPath, 0, -strlen('.lock'));
+
+            if (is_file($archive) || ! self::archiveCachePathExpired($lockPath)) {
+                continue;
+            }
+
+            self::deleteCheckoutArchiveCacheLock($lockPath);
+        }
+    }
+
+    private static function archiveCachePathExpired(string $path): bool
+    {
+        $modifiedAt = @filemtime($path);
+
+        if (! is_int($modifiedAt)) {
+            return true;
+        }
+
+        return time() - $modifiedAt >= self::ArchiveCacheRetentionSeconds;
+    }
+
+    private static function deleteCheckoutArchiveCacheEntry(string $archive): void
+    {
+        $lockPath = "{$archive}.lock";
+        $lock = fopen($lockPath, 'c');
+
+        if ($lock === false) {
+            return;
+        }
+
+        try {
+            if (! flock($lock, LOCK_EX | LOCK_NB)) {
+                return;
+            }
+
+            // Atomic archive publishing makes a stale lock race a cache miss, not a partial read.
+            @unlink($archive);
+            @unlink($lockPath);
+        } finally {
+            flock($lock, LOCK_UN);
+            fclose($lock);
+        }
+    }
+
+    private static function deleteCheckoutArchiveCacheLock(string $lockPath): void
+    {
+        $lock = fopen($lockPath, 'c');
+
+        if ($lock === false) {
+            return;
+        }
+
+        try {
+            if (! flock($lock, LOCK_EX | LOCK_NB)) {
+                return;
+            }
+
+            @unlink($lockPath);
+        } finally {
+            flock($lock, LOCK_UN);
+            fclose($lock);
+        }
     }
 
     private static function archiveCacheDirectory(): string

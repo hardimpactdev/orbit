@@ -59,9 +59,12 @@ meets `ORBIT_E2E_DOCKER_MIN_PROCESSES`. The default minimum is the lower of
 eight workers and the planned Docker worker count. Restore the unavailable
 runners before comparing E2E duration to the baseline, or lower
 `ORBIT_E2E_DOCKER_MIN_PROCESSES` only for an intentionally degraded diagnostic
-run. The aggregate command still starts Docker and Incus lanes in parallel, but
-running both lanes on the same remaining host can produce host contention and
-does not represent the expected multi-runner baseline.
+run.
+
+When the aggregate selects both Docker and Incus, Docker ignores hosts that are
+configured as Incus hosts before probing runner reachability. That keeps Docker
+workers off Beast while the Incus lane is selected, including
+`--sequential-lanes` aggregate runs where only one lane executes at a time.
 
 ## Provider capability matrix
 

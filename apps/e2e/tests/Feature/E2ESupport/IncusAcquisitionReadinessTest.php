@@ -46,12 +46,12 @@ function incusAcquisitionReadinessConfig(): E2EConfig
     );
 }
 
-function incusAcquisitionReadinessResult(string $output = '', bool $successful = true): ProcessResult
+function incusAcquisitionReadinessResult(string $output = '', bool $successful = true, string $errorOutput = ''): ProcessResult
 {
     $result = m::mock(ProcessResult::class);
     $result->shouldReceive('successful')->andReturn($successful);
     $result->shouldReceive('output')->andReturn($output);
-    $result->shouldReceive('errorOutput')->andReturn('');
+    $result->shouldReceive('errorOutput')->andReturn($errorOutput);
 
     return $result;
 }
@@ -123,6 +123,154 @@ it('awaits clone agents and refreshes network identity through one parallel host
         ->toContain('& PID_TASK_')
         ->and($agentProbeCalls)->toHaveCount(1)
         ->and($agentProbeCalls[0])->toBe($readinessCalls[0]);
+});
+
+it('deletes started clones when readiness never completes', function (): void {
+    $commands = [];
+    $host = new class(incusAcquisitionReadinessConfig(), $commands) extends IncusHost
+    {
+        /**
+         * @param  array<int, string>  $commands
+         */
+        public function __construct(E2EConfig $config, public array &$commands)
+        {
+            parent::__construct($config);
+        }
+
+        #[Override]
+        public function run(string $command, ?int $timeoutSeconds = null): ProcessResult
+        {
+            $this->commands[] = $command;
+
+            if (str_contains($command, 'Incus agent never became ready')) {
+                return incusAcquisitionReadinessResult(
+                    output: '__orbit_task_status operator 1',
+                    successful: false,
+                    errorOutput: 'task operator failed',
+                );
+            }
+
+            return incusAcquisitionReadinessResult();
+        }
+
+        #[Override]
+        public function runWithoutMultiplexing(string $command, ?int $timeoutSeconds = null): ProcessResult
+        {
+            $this->commands[] = $command;
+
+            return incusAcquisitionReadinessResult();
+        }
+    };
+
+    expect(fn () => IncusTopologyTemplate::clone($host, E2ETopologyKind::OperatorGatewayAppdev, 'runFailed'))
+        ->toThrow(RuntimeException::class, 'Prepared topology clones never became ready');
+
+    $deleteCalls = array_values(array_filter($commands, function (string $command): bool {
+        return str_contains($command, 'incus delete --force');
+    }));
+
+    expect($deleteCalls)->toHaveCount(1)
+        ->and($deleteCalls[0])
+        ->toContain("'orbit-e2e-runFailed-operator'")
+        ->toContain("'orbit-e2e-runFailed-gateway'")
+        ->toContain("'orbit-e2e-runFailed-dev'");
+});
+
+it('deletes partially created clones when batch copy fails', function (): void {
+    $commands = [];
+    $host = new class(incusAcquisitionReadinessConfig(), $commands) extends IncusHost
+    {
+        /**
+         * @param  array<int, string>  $commands
+         */
+        public function __construct(E2EConfig $config, public array &$commands)
+        {
+            parent::__construct($config);
+        }
+
+        #[Override]
+        public function run(string $command, ?int $timeoutSeconds = null): ProcessResult
+        {
+            $this->commands[] = $command;
+
+            return incusAcquisitionReadinessResult();
+        }
+
+        #[Override]
+        public function runWithoutMultiplexing(string $command, ?int $timeoutSeconds = null): ProcessResult
+        {
+            $this->commands[] = $command;
+
+            return incusAcquisitionReadinessResult(successful: false, errorOutput: 'copy failed');
+        }
+    };
+
+    expect(fn () => IncusTopologyTemplate::clone($host, E2ETopologyKind::OperatorGatewayAppdev, 'runBatchFailed'))
+        ->toThrow(RuntimeException::class, 'Topology batch failed');
+
+    $deleteCalls = array_values(array_filter($commands, function (string $command): bool {
+        return str_contains($command, 'incus delete --force');
+    }));
+
+    expect($deleteCalls)->toHaveCount(1)
+        ->and($deleteCalls[0])
+        ->toContain("'orbit-e2e-runBatchFailed-operator'")
+        ->toContain("'orbit-e2e-runBatchFailed-gateway'")
+        ->toContain("'orbit-e2e-runBatchFailed-dev'");
+});
+
+it('keeps the original readiness failure visible when clone cleanup fails', function (): void {
+    $commands = [];
+    $host = new class(incusAcquisitionReadinessConfig(), $commands) extends IncusHost
+    {
+        /**
+         * @param  array<int, string>  $commands
+         */
+        public function __construct(E2EConfig $config, public array &$commands)
+        {
+            parent::__construct($config);
+        }
+
+        #[Override]
+        public function run(string $command, ?int $timeoutSeconds = null): ProcessResult
+        {
+            $this->commands[] = $command;
+
+            if (str_contains($command, 'Incus agent never became ready')) {
+                return incusAcquisitionReadinessResult(
+                    output: '__orbit_task_status operator 1',
+                    successful: false,
+                    errorOutput: 'task operator failed',
+                );
+            }
+
+            return incusAcquisitionReadinessResult();
+        }
+
+        #[Override]
+        public function runWithoutMultiplexing(string $command, ?int $timeoutSeconds = null): ProcessResult
+        {
+            $this->commands[] = $command;
+
+            return incusAcquisitionReadinessResult();
+        }
+
+        /**
+         * @param  list<string>  $names
+         */
+        #[Override]
+        public function deleteInstancesIfPresent(array $names): ProcessResult
+        {
+            $this->commands[] = 'delete failed: '.implode(',', $names);
+
+            throw new RuntimeException('delete failed');
+        }
+    };
+
+    expect(fn () => IncusTopologyTemplate::clone($host, E2ETopologyKind::OperatorGateway, 'runCleanupFailed'))
+        ->toThrow(RuntimeException::class, 'Prepared topology clones never became ready');
+
+    expect($commands)->toContain('delete failed: orbit-e2e-runCleanupFailed-operator,orbit-e2e-runCleanupFailed-gateway');
 });
 
 it('waits for peer routes through one parallel host call chaining gateway probe before operator scan', function (): void {

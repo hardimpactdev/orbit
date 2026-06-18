@@ -15,6 +15,7 @@
 /.worktrees
 /.idea
 /bin/orbit-binary
+/bin/orbit-binary-*
 /.nova
 /.phpunit.cache
 /.vscode
