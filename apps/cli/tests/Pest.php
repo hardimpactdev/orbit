@@ -7,6 +7,7 @@ use App\Services\GatewayLogStreamClient;
 use App\Services\GatewayOperationEventStreamClient;
 use App\Services\GatewayOperationFollower;
 use App\Services\GatewayStreamClient;
+use App\Services\OrbitConfigStore;
 use Illuminate\Console\OutputStyle;
 use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Http\Client\ConnectionException;
@@ -112,6 +113,21 @@ function fakeGatewayDown(string $message = 'connection refused'): void
     Http::fake(function () use ($message): never {
         throw new ConnectionException($message);
     });
+}
+
+function fakeNoGatewayConfig(string $configPath): void
+{
+    config()->set('orbit.gateway.url', null);
+    config()->set('orbit.gateway.timeout', null);
+    config()->set('orbit.gateway.ca_pem_path', null);
+    @unlink($configPath);
+
+    app()->instance(OrbitConfigStore::class, new OrbitConfigStore(overridePath: $configPath));
+    app()->forgetInstance(GatewayApiClient::class);
+    app()->forgetInstance(GatewayLogStreamClient::class);
+    app()->forgetInstance(GatewayOperationEventStreamClient::class);
+    app()->forgetInstance(GatewayOperationFollower::class);
+    app()->forgetInstance(GatewayStreamClient::class);
 }
 
 /**

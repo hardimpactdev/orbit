@@ -39,8 +39,7 @@ describe('GatewayVersionProbe', function (): void {
     });
 
     it('returns null when no gateway url is configured', function (): void {
-        config()->set('orbit.gateway.url', null);
-        app()->forgetInstance(GatewayApiClient::class);
+        fakeNoGatewayConfig(base_path('tests/.tmp-gateway-version-probe-empty-config.json'));
 
         $probe = new GatewayVersionProbe(app(GatewayApiClient::class));
 

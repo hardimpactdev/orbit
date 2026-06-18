@@ -229,8 +229,7 @@ describe('LocalUpdateRunner', function (): void {
     it('proceeds without a ceiling when no gateway is configured', function (): void {
         config()->set('app.version', '0.1.130');
         fakeRunnerLatest('0.1.131');
-        config()->set('orbit.gateway.url', null);
-        app()->forgetInstance(GatewayApiClient::class);
+        fakeNoGatewayConfig(base_path('tests/.tmp-local-update-runner-empty-config.json'));
 
         $updater = new RunnerFakeUpdater;
 
