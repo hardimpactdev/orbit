@@ -4,8 +4,8 @@
 
 Metrics is Orbit's optional host-resource observability surface. Enable the
 `metrics` role on a node when you want Prometheus and Grafana on that node,
-node-exporter on metrics and workload nodes, and the private `metrics.orbit`
-route.
+node-exporter on metrics and workload nodes, a Grafana dashboard named
+`Orbit Node Resources`, and the private `metrics.orbit` route.
 
 ## Responsibilities
 

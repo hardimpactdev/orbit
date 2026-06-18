@@ -9,6 +9,11 @@ metrics node, records and starts node-exporter host binary/tool-backed systemd
 processes on the metrics node and active workload nodes, and exposes Grafana
 through the private router-owned `https://metrics.orbit` route.
 
+Grafana is provisioned with the Orbit Prometheus datasource and the built-in
+`Orbit Node Resources` dashboard. The dashboard has a `node` selector populated
+from node-exporter target labels so operators can switch between the metrics
+node and scraped workload nodes.
+
 Metrics is not its own doctor state family. State is coordinated through:
 `node` for the role assignment, `tool` for Docker and node-exporter host
 binary capabilities, `process` for Prometheus/Grafana/node-exporter lifecycle,

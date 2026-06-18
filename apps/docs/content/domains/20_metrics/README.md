@@ -19,6 +19,9 @@ touch.
   `--force` consent.
 - The private fleet endpoint is `https://metrics.orbit`. It exposes Grafana
   through router-owned private routing only.
+- Grafana is provisioned with an Orbit Prometheus datasource and the built-in
+  `Orbit Node Resources` dashboard. That dashboard uses the Prometheus `node`
+  label from node-exporter targets as its node selector.
 - Prometheus and Grafana run as Docker Swarm process definitions on the metrics
   node. node-exporter is recorded as a host binary tool and host systemd
   process definition on the metrics node and every active workload node
@@ -94,7 +97,7 @@ credentials.
 
 ## Non-Goals
 
-V1 does not include alert rules, notification channels, custom dashboards,
+V1 does not include alert rules, notification channels, user-authored custom dashboards,
 distributed Prometheus, remote write, fleet-wide scrape discovery, app metrics,
 container metrics, database metrics, public Grafana ingress, or per-user
 Grafana accounts.

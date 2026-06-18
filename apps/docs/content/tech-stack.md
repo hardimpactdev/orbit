@@ -420,9 +420,12 @@ restart, logs, and runtime drift remain process-family behavior.
 Grafana is exposed only on the private Orbit network through the router-owned
 `metrics.orbit` route. The role stores generated Grafana admin credentials in
 gateway-owned process runtime configuration and exposes them through
-`metrics:credentials`. The first slice tracks host resources only and does not
-claim app, container-specific, database-specific, or dynamic scrape discovery
-coverage.
+`metrics:credentials`. Grafana is file-provisioned with the Orbit Prometheus
+datasource and the built-in `Orbit Node Resources` dashboard. That dashboard
+uses the node-exporter `node` label as a selector so operators can view the
+metrics node or any active workload node scraped by Prometheus. The first slice
+tracks host resources only and does not claim app, container-specific,
+database-specific, or dynamic scrape discovery coverage.
 
 The metrics command family coordinates existing state families rather than
 creating a `metrics` state family. Node role assignment and readiness belong to

@@ -48,6 +48,9 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
   existed, the existing assignment is reconverged with empty metrics settings.
 - The baseline records and starts Prometheus and Grafana Docker Swarm process
   units on the target metrics node.
+- The Grafana process intent includes file provisioning for the Orbit
+  Prometheus datasource, a Grafana dashboard provider, and the built-in
+  `Orbit Node Resources` dashboard with a `node` selector.
 - The baseline records node-exporter tool/process intent on the target metrics
   node and every active workload node, installs the node-exporter host binary
   when missing, and starts the node-exporter systemd process units.
@@ -91,4 +94,4 @@ drift for private node-exporter scrape access belongs to
 | --- | --- |
 | `apps/cli/tests/Feature/Commands/Metrics/MetricsCommandsTest.php` | CLI request path, required node validation, and JSON forwarding. |
 | `apps/gateway/tests/Feature/Http/Api/NodeRoleAddControllerTest.php` | Existing metrics assignments reconverge when the metrics enable request carries the reconvergence flag. |
-| `apps/gateway/tests/Feature/Services/Nodes/Roles/MetricsRoleBaselineTest.php` | Role baseline intent and runtime convergence for Docker, process definitions, Prometheus scrape config, Grafana datasource config, credentials, node-exporter, node-exporter firewall intent, and `metrics.orbit`. |
+| `apps/gateway/tests/Feature/Services/Nodes/Roles/MetricsRoleBaselineTest.php` | Role baseline intent and runtime convergence for Docker, process definitions, Prometheus scrape config, Grafana datasource/dashboard provisioning, credentials, node-exporter, node-exporter firewall intent, and `metrics.orbit`. |

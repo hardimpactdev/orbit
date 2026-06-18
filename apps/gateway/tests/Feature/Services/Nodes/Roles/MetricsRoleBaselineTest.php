@@ -69,19 +69,41 @@ it('converges metrics role intent as process-owned Prometheus Grafana and host e
         ->get()
         ->keyBy('name');
 
+    $grafanaConfig = $processes['grafana']->runtime_config;
+    $grafanaManagedFiles = collect($grafanaConfig['managed_files'])->keyBy('path');
+    $grafanaBindMounts = collect($grafanaConfig['bind_mounts'])->keyBy('target');
+
     expect($processes->keys()->all())->toBe(['grafana', 'node-exporter', 'prometheus'])
         ->and($processes['grafana']->owner_type)->toBe($node->getMorphClass())
         ->and($processes['grafana']->runtime)->toBe(ProcessRuntime::DockerSwarm)
-        ->and($processes['grafana']->runtime_config['definition'])->toBe('grafana')
-        ->and($processes['grafana']->runtime_config['endpoint']['port'])->toBe(3000)
-        ->and($processes['grafana']->runtime_config['environment']['GF_SECURITY_ADMIN_PASSWORD'])->toBeString()
-        ->and($processes['grafana']->runtime_config['credentials']['admin_password'])->toBe(
-            $processes['grafana']->runtime_config['environment']['GF_SECURITY_ADMIN_PASSWORD'],
+        ->and($grafanaConfig['definition'])->toBe('grafana')
+        ->and($grafanaConfig['endpoint']['port'])->toBe(3000)
+        ->and($grafanaConfig['environment']['GF_SECURITY_ADMIN_PASSWORD'])->toBeString()
+        ->and($grafanaConfig['credentials']['admin_password'])->toBe(
+            $grafanaConfig['environment']['GF_SECURITY_ADMIN_PASSWORD'],
         )
-        ->and($processes['grafana']->runtime_config['managed_files'][0]['content'])->toContain("url: 'http://10.6.0.55:9090'")
-        ->and($processes['grafana']->runtime_config['bind_mounts'][0])->toMatchArray([
+        ->and($grafanaManagedFiles->keys()->all())->toContain(
+            '/var/lib/orbit/processes/grafana/provisioning/datasources/prometheus.yml',
+            '/var/lib/orbit/processes/grafana/provisioning/dashboards/orbit-node-resources.yml',
+            '/var/lib/orbit/processes/grafana/dashboards/orbit-node-resources.json',
+        )
+        ->and($grafanaManagedFiles['/var/lib/orbit/processes/grafana/provisioning/datasources/prometheus.yml']['content'])->toContain("url: 'http://10.6.0.55:9090'")
+        ->and($grafanaManagedFiles['/var/lib/orbit/processes/grafana/provisioning/dashboards/orbit-node-resources.yml']['content'])->toContain(
+            'path: /var/lib/grafana/dashboards',
+        )
+        ->and($grafanaBindMounts['/etc/grafana/provisioning/datasources/prometheus.yml'])->toMatchArray([
             'source' => '/var/lib/orbit/processes/grafana/provisioning/datasources/prometheus.yml',
             'target' => '/etc/grafana/provisioning/datasources/prometheus.yml',
+            'read_only' => true,
+        ])
+        ->and($grafanaBindMounts['/etc/grafana/provisioning/dashboards/orbit-node-resources.yml'])->toMatchArray([
+            'source' => '/var/lib/orbit/processes/grafana/provisioning/dashboards/orbit-node-resources.yml',
+            'target' => '/etc/grafana/provisioning/dashboards/orbit-node-resources.yml',
+            'read_only' => true,
+        ])
+        ->and($grafanaBindMounts['/var/lib/grafana/dashboards/orbit-node-resources.json'])->toMatchArray([
+            'source' => '/var/lib/orbit/processes/grafana/dashboards/orbit-node-resources.json',
+            'target' => '/var/lib/grafana/dashboards/orbit-node-resources.json',
             'read_only' => true,
         ])
         ->and($processes['prometheus']->runtime)->toBe(ProcessRuntime::DockerSwarm)
@@ -98,12 +120,41 @@ it('converges metrics role intent as process-owned Prometheus Grafana and host e
         ->and($processes['node-exporter']->runtime_config['definition'])->toBe('node-exporter')
         ->and($processes['node-exporter']->runtime_config['endpoint']['port'])->toBe(9100);
 
+    $grafanaDashboard = json_decode(
+        $grafanaManagedFiles['/var/lib/orbit/processes/grafana/dashboards/orbit-node-resources.json']['content'],
+        true,
+        512,
+        JSON_THROW_ON_ERROR,
+    );
+    $grafanaNodeVariable = collect($grafanaDashboard['templating']['list'])->firstWhere('name', 'node');
+    $grafanaPanelExpressions = collect($grafanaDashboard['panels'])
+        ->flatMap(fn (array $panel): array => collect($panel['targets'] ?? [])->pluck('expr')->all())
+        ->all();
+
+    expect($grafanaDashboard['title'])->toBe('Orbit Node Resources')
+        ->and($grafanaNodeVariable)->toMatchArray([
+            'label' => 'Node',
+            'query' => 'label_values(up{job="orbit-node-exporter"}, node)',
+            'current' => [
+                'selected' => true,
+                'text' => 'metrics-1',
+                'value' => 'metrics-1',
+            ],
+        ])
+        ->and($grafanaPanelExpressions)->toContain(
+            'up{job="orbit-node-exporter",node="$node"}',
+            '100 * (1 - (node_memory_MemAvailable_bytes{job="orbit-node-exporter",node="$node"} / node_memory_MemTotal_bytes{job="orbit-node-exporter",node="$node"}))',
+            'sum by (node) (rate(node_network_receive_bytes_total{job="orbit-node-exporter",node="$node",device!~"lo|docker.*|br-.*|veth.*"}[5m]))',
+        );
+
     $scripts = $this->metricsShell->scripts();
 
     expect($scripts)
         ->toContain('node_exporter_url=')
         ->toContain('/var/lib/orbit/processes/prometheus/prometheus.yml')
         ->toContain('/var/lib/orbit/processes/grafana/provisioning/datasources/prometheus.yml')
+        ->toContain('/var/lib/orbit/processes/grafana/provisioning/dashboards/orbit-node-resources.yml')
+        ->toContain('/var/lib/orbit/processes/grafana/dashboards/orbit-node-resources.json')
         ->toContain("docker service update --replicas 1 'orbit-prometheus'")
         ->toContain("docker service update --replicas 1 'orbit-grafana'")
         ->toContain("sudo systemctl start 'node-exporter.service'");

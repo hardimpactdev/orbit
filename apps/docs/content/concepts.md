@@ -405,6 +405,7 @@ Source: [Metrics Concepts](domains/20_metrics/metrics-concepts.md).
 - **Metrics service endpoint**
 - **Prometheus service process**
 - **Grafana service process**
+- **Orbit node resources dashboard**
 - **node-exporter host process**
 - **Exporter firewall rule**
 - **Grafana admin credentials**

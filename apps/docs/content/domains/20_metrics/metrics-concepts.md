@@ -27,6 +27,10 @@ Use these terms when reading or writing metrics command contracts.
 - **Grafana service process:** Docker Swarm process definition named `grafana`;
   serves dashboards behind `metrics.orbit` and stores generated admin
   credentials in process runtime configuration.
+- **Orbit node resources dashboard:** Grafana dashboard named
+  `Orbit Node Resources`. The metrics role provisions it with the Orbit
+  Prometheus datasource and a `node` variable sourced from node-exporter target
+  labels so operators can switch between metrics and workload nodes.
 - **node-exporter host process:** Systemd process definition named
   `node-exporter`; depends on the `node-exporter` host binary tool and exposes
   host resource metrics for the metrics node and active workload nodes.
