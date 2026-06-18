@@ -12,7 +12,9 @@ through the private router-owned `https://metrics.orbit` route.
 Grafana is provisioned with the Orbit Prometheus datasource and the built-in
 `Orbit Node Resources` dashboard. The dashboard has a `node` selector populated
 from node-exporter target labels so operators can switch between the metrics
-node and scraped workload nodes.
+node and scraped workload nodes. Metrics reconvergence also migrates older
+Grafana volumes by deleting a stale `Prometheus` datasource in organization 1
+before provisioning the pinned `orbit-prometheus` datasource UID.
 
 Metrics is not its own doctor state family. State is coordinated through:
 `node` for the role assignment, `tool` for Docker and node-exporter host

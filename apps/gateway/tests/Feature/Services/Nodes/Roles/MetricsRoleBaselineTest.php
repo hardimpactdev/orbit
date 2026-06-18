@@ -87,7 +87,15 @@ it('converges metrics role intent as process-owned Prometheus Grafana and host e
             '/var/lib/orbit/processes/grafana/provisioning/dashboards/orbit-node-resources.yml',
             '/var/lib/orbit/processes/grafana/dashboards/orbit-node-resources.json',
         )
-        ->and($grafanaManagedFiles['/var/lib/orbit/processes/grafana/provisioning/datasources/prometheus.yml']['content'])->toContain("url: 'http://10.6.0.55:9090'")
+        ->and($grafanaManagedFiles['/var/lib/orbit/processes/grafana/provisioning/datasources/prometheus.yml']['content'])->toContain(
+            'deleteDatasources:',
+            '    orgId: 1',
+            'prune: true',
+            '    uid: orbit-prometheus',
+            '    orgId: 1',
+            "url: 'http://10.6.0.55:9090'",
+            '    version: 1',
+        )
         ->and($grafanaManagedFiles['/var/lib/orbit/processes/grafana/provisioning/dashboards/orbit-node-resources.yml']['content'])->toContain(
             'path: /var/lib/grafana/dashboards',
         )

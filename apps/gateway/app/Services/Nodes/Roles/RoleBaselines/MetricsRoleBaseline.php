@@ -437,14 +437,20 @@ SH,
 
         return implode(PHP_EOL, [
             'apiVersion: 1',
+            'deleteDatasources:',
+            '  - name: Prometheus',
+            '    orgId: 1',
+            'prune: true',
             'datasources:',
             '  - name: Prometheus',
             '    uid: orbit-prometheus',
+            '    orgId: 1',
             '    type: prometheus',
             '    access: proxy',
             "    url: '{$this->yamlSingleQuoted($prometheusEndpoint)}'",
             '    isDefault: true',
             '    editable: true',
+            '    version: 1',
             '',
         ]);
     }

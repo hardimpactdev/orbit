@@ -51,6 +51,10 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 - The Grafana process intent includes file provisioning for the Orbit
   Prometheus datasource, a Grafana dashboard provider, and the built-in
   `Orbit Node Resources` dashboard with a `node` selector.
+- Grafana datasource provisioning deletes any existing `Prometheus` datasource
+  in organization 1 before creating the pinned `orbit-prometheus` datasource,
+  so reconvergence repairs older Grafana volumes that used a generated
+  datasource UID.
 - The baseline records node-exporter tool/process intent on the target metrics
   node and every active workload node, installs the node-exporter host binary
   when missing, and starts the node-exporter systemd process units.
