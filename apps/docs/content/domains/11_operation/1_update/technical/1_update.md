@@ -72,6 +72,47 @@ fields and does not prompt.
   `/usr/local/bin/orbit -> <source>/apps/cli/orbit` entry point. A failed
   verify step returns failure and identifies the failed step.
 
+### Version check and the gateway-first gate
+
+- `update` always runs a `Checking for updates` step first. It resolves the
+  latest available release version from the configured release source without
+  downloading the full binary, and compares it to the installed CLI version.
+- When the installed version already equals the latest release, `update`
+  performs no download and returns a success/skip result reporting that the
+  current version is already installed.
+- The local CLI version must never exceed the version its gateway runs. When a
+  newer release exists, `update` reads the gateway's current version (a
+  read-only gateway status query) and only proceeds when the gateway is already
+  on that release. When the gateway is still behind, `update` stops after the
+  check step and returns a success/skip result directing the operator to update
+  the gateway first (via `orbit update:all`). This is the gateway-first version
+  gate.
+- Reading the gateway version for the gate is the only gateway interaction
+  `update` performs. It never mutates gateway fleet configuration and never
+  updates other nodes.
+
+<a id="gateway-first-version-gate"></a>
+
+### Update Steps
+
+When the gate allows an update, `update` runs these steps, each surfaced as a
+progress-tree row:
+
+1. `Downloading binary` — download the versioned binary asset to a staged path
+   away from the running binary.
+2. `Replacing binary` — move the verified binary to
+   `<install-root>/bin/orbit-binary-<version>` and relink the host launcher.
+   Skipped when the versioned binary is already present locally.
+3. `Running doctor` — run `orbit doctor` in verify mode for the local node.
+
+### Doctor Verification
+
+- After the binary is relinked, `update` runs `orbit doctor` in verify mode for
+  the local node and reports the issue count in the `Running doctor` step.
+- The doctor step is verification only (read-only); it never repairs drift.
+- A non-zero issue count does not fail the update — the binary swap already
+  succeeded. The count is operator guidance to run `orbit doctor --fix`.
+
 ### Gateway-Service Boundary
 
 - `orbit update` does not replace `orbit-gateway`, update
@@ -102,10 +143,10 @@ fields and does not prompt.
 `update` must not:
 - Update other nodes.
 - SSH to the gateway or nodes.
-- Query or mutate gateway fleet configuration as a command behavior.
+- Mutate gateway fleet configuration (reading the gateway's version for the
+  gateway-first gate is a read-only status query and is permitted).
 - Repair node, app, workspace, process, proxy route, schedule, tool, or
-  firewall drift.
-- Replace `doctor` verification after an update.
+  firewall drift (the `Running doctor` step is verify-only).
 
 ## Renderer Contracts
 
@@ -116,16 +157,20 @@ fields and does not prompt.
 
 | Failure | Condition | Outcome |
 | --- | --- | --- |
+| Update check failed | The latest release version cannot be resolved from the release source. | Failure |
 | Binary unavailable | A production artifact download fails or the production release source is unreachable. | Failure |
 | Unsupported platform | The host OS/arch is not a supported binary target. | Failure |
 | Verify failed | The resolved local Orbit entry point does not respond to `--version`. | Failure |
+| Gateway behind (skip) | A newer release exists but the gateway has not updated to it. | Success / skip (no side effect; directs the operator to update the gateway first). |
+| Doctor reported drift | The post-update `doctor` verify reports issues. | Success (the update completed; the issue count is surfaced for follow-up). |
 
 ## Doctor Relationship
 
-- `update` changes the local Orbit installation.
-- It does not verify fleet drift or runtime readiness.
-- After updating a gateway or node, run the `doctor --family=<family>`
-  command for the family whose artifacts or readiness need verification.
+- `update` changes the local Orbit installation, then runs `orbit doctor` in
+  verify mode for the local node as its final step and reports the issue count.
+- The doctor step verifies only; it does not repair drift or runtime readiness.
+- A non-zero issue count does not fail the update. Run `orbit doctor --fix` to
+  resolve reported drift.
 
 ## Activity Logging
 

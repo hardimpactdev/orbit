@@ -50,6 +50,20 @@ execution details live in the renderer contracts.
 
 ## Behavior Contract
 
+### Version check and fleet version probe
+
+- `update:all` runs a `Checking for updates` step first, resolving the latest
+  available release version from the configured release source.
+- It then runs a `Checking fleet versions` step that probes each selected
+  installation's current orbit version and counts how many are behind the latest
+  release. When every node is already on the latest release, the run completes
+  after the two check steps with no update side effects.
+- A node already on the latest release is skipped (it renders
+  `Skipped: already up to date`) and runs no download. Only outdated nodes are
+  updated.
+- The gateway is the fleet version ceiling: it updates first, before any
+  workload node is updated, so no node is ever taken past the gateway's version.
+
 ### Fleet Selection Rules
 
 - Include the caller's local Orbit installation.
@@ -129,6 +143,10 @@ The expected target shape per calling context:
   installations are updated in parallel, up to four targets at a time.
   Production artifact targets run the binary-update path. Source-dev targets
   keep `/usr/local/bin/orbit` pointed at `<source>/apps/cli/orbit`.
+- Each updated installation runs `orbit doctor` in verify mode for that node as
+  the final per-node step (the `Running doctor` stage). This is verification
+  only; a non-zero issue count is surfaced per node but does not by itself fail
+  the node's update.
 - Production workload updates install the binary into the node user's Orbit
   install root. When the host launcher parent directory is not writable, the
   remote update may use non-interactive `sudo -n` only to relink the system
