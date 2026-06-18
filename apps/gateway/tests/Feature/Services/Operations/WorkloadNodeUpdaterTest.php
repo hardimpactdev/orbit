@@ -209,6 +209,66 @@ it('runs orbit doctor after a node update and reports the issue count in the don
         );
 });
 
+it('emits per-node sub-steps: downloading, replacing cli binary, running doctor, done', function (): void {
+    $shell = new WorkloadUpdaterFakeShell;
+    app()->instance(RemoteShell::class, $shell);
+
+    $run = workloadUpdaterRun();
+    Node::factory()->appDev()->create(['name' => 'app-dev-1', 'platform' => 'linux']);
+    $plan = app(OperationUpdatePlanStore::class)->create($run, workloadUpdaterSnapshot(targetVersion: '2.0.0'));
+
+    app(WorkloadNodeUpdater::class)->update($run, $plan);
+
+    $messages = workloadUpdaterStepMessages($run);
+
+    expect($messages)->toContain(
+        ['workload.app-dev-1', 'running', 'Downloading 2.0.0'],
+        ['workload.app-dev-1', 'running', 'Replacing cli binary'],
+        ['workload.app-dev-1', 'running', 'Running doctor'],
+        ['workload.app-dev-1', 'done', 'Workload node app-dev-1 updated'],
+    );
+
+    // Sub-steps must arrive in order
+    $nodeMessages = array_values(array_filter(
+        $messages,
+        fn (array $m): bool => $m[0] === 'workload.app-dev-1',
+    ));
+
+    $statuses = array_column($nodeMessages, 1);
+    $texts = array_column($nodeMessages, 2);
+
+    $downloadIndex = array_search('Downloading 2.0.0', $texts, true);
+    $replaceIndex = array_search('Replacing cli binary', $texts, true);
+    $doctorIndex = array_search('Running doctor', $texts, true);
+    $doneIndex = array_search('done', $statuses, true);
+
+    expect($downloadIndex)->toBeLessThan($replaceIndex)
+        ->and($replaceIndex)->toBeLessThan($doctorIndex)
+        ->and($doctorIndex)->toBeLessThan($doneIndex);
+});
+
+it('emits skipped sub-step (no download/replace/doctor) for a node already on target', function (): void {
+    $shell = new WorkloadUpdaterFakeShell(versions: ['app-dev-1' => '2.0.0']);
+    app()->instance(RemoteShell::class, $shell);
+
+    $run = workloadUpdaterRun();
+    Node::factory()->appDev()->create(['name' => 'app-dev-1', 'platform' => 'linux']);
+    $plan = app(OperationUpdatePlanStore::class)->create($run, workloadUpdaterSnapshot(targetVersion: '2.0.0'));
+
+    app(WorkloadNodeUpdater::class)->update($run, $plan);
+
+    $messages = workloadUpdaterStepMessages($run);
+    $nodeMessages = array_values(array_filter(
+        $messages,
+        fn (array $m): bool => $m[0] === 'workload.app-dev-1',
+    ));
+    $texts = array_column($nodeMessages, 2);
+
+    expect($texts)->not->toContain('Downloading 2.0.0')
+        ->and($texts)->not->toContain('Replacing cli binary')
+        ->and($texts)->not->toContain('Running doctor');
+});
+
 it('keeps a non-zero doctor issue count from failing the node update', function (): void {
     $shell = new WorkloadUpdaterFakeShell(doctorIssues: ['app-dev-1' => 5]);
     app()->instance(RemoteShell::class, $shell);
