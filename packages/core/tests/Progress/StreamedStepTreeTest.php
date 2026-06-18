@@ -2,12 +2,12 @@
 
 declare(strict_types=1);
 
-use App\Support\Cli\RemoteProgressRenderer;
+use Orbit\Core\Progress\StreamedStepTree;
 use Symfony\Component\Console\Output\BufferedOutput;
 
-it('uses the canonical spinner frame order for active remote progress steps', function (): void {
+it('uses the canonical spinner frame order for active streamed steps', function (): void {
     $output = new BufferedOutput(decorated: false);
-    $renderer = new RemoteProgressRenderer($output);
+    $renderer = new StreamedStepTree($output);
 
     $renderer->tree('Creating Workspace', [
         [
@@ -28,9 +28,9 @@ it('uses the canonical spinner frame order for active remote progress steps', fu
     ]);
 });
 
-it('renders progress messages for active remote progress steps', function (): void {
+it('renders progress messages for active streamed steps', function (): void {
     $output = new BufferedOutput(decorated: false);
-    $renderer = new RemoteProgressRenderer($output);
+    $renderer = new StreamedStepTree($output);
 
     $renderer->tree('Setting Up Workspace', [
         [
@@ -48,23 +48,19 @@ it('renders progress messages for active remote progress steps', function (): vo
         ->toContain('Running setup step 1/2: composer install --no-interaction');
 });
 
-it('keeps progress messages visible across spinner ticks', function (): void {
+it('settles a streamed step to done and renders the footer', function (): void {
     $output = new BufferedOutput(decorated: false);
-    $renderer = new RemoteProgressRenderer($output);
+    $renderer = new StreamedStepTree($output);
 
-    $renderer->tree('Setting Up Workspace', [
-        [
-            'key' => 'setup',
-            'label' => 'Run workspace setup steps',
-            'doneLabel' => 'Ran workspace setup steps',
-        ],
+    $renderer->tree('Creating App', [
+        ['key' => 'register', 'label' => 'Register app record', 'doneLabel' => 'Registered app record'],
     ]);
 
-    $renderer->step('setup', 'start');
-    $renderer->step('setup', 'progress', 'Running setup step 1/2: composer install');
-    $renderer->tick();
+    $renderer->step('register', 'start');
+    $renderer->step('register', 'done');
+    $renderer->finish("App 'docs' created");
 
-    $lines = array_values(array_filter(explode("\n", $output->fetch())));
-
-    expect(end($lines))->toContain('Running setup step 1/2: composer install');
+    expect($output->fetch())
+        ->toContain('Registered app record')
+        ->toContain("App 'docs' created");
 });

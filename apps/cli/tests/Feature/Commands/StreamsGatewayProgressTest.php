@@ -108,16 +108,28 @@ describe('StreamsGatewayProgress', function (): void {
         expect(count(array_filter(explode("\n", $output))))->toBe(1);
     });
 
-    it('renders intermediate frames to console in human mode', function (): void {
+    it('renders intermediate frames as an animated tree in human mode', function (): void {
         fakeStreamClient([
-            ['type' => ProgressEventType::Step, 'payload' => ['message' => 'installing packages']],
-            ['type' => ProgressEventType::Complete, 'payload' => ['done' => true]],
+            ['type' => ProgressEventType::Tree, 'payload' => [
+                'title' => 'Setting up',
+                'steps' => [
+                    ['key' => 'install', 'label' => 'Install packages', 'doneLabel' => 'Installed packages'],
+                ],
+            ]],
+            ['type' => ProgressEventType::Step, 'payload' => ['key' => 'install', 'status' => 'progress', 'message' => 'installing packages']],
+            ['type' => ProgressEventType::Step, 'payload' => ['key' => 'install', 'status' => 'done']],
+            ['type' => ProgressEventType::Complete, 'payload' => ['footer' => 'Setup complete.']],
         ]);
 
         [$exitCode, $output] = runStreamingCommand($this);
 
         expect($exitCode)->toBe(0)
-            ->and($output)->toContain('installing packages');
+            ->and($output)->toContain('Setting up')
+            ->and($output)->toContain('installing packages')
+            ->and($output)->toContain('Installed packages')
+            ->and($output)->toContain('Setup complete.')
+            ->and($output)->not->toContain('[tree]')
+            ->and($output)->not->toContain('[step]');
     });
 
     it('surfaces gateway_unavailable when the stream closes before a terminal frame', function (): void {

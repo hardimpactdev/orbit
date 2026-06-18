@@ -73,7 +73,7 @@ describe('doctor --fix', function (): void {
 
         $this->artisan('doctor --fix --node=app-1 --family=node')
             ->expectsQuestion('Resolve Node config is missing.', 'restore')
-            ->expectsOutputToContain('[tree] Running Doctor')
+            ->expectsOutputToContain('Running Doctor')
             ->expectsOutputToContain('Doctor completed.')
             ->assertExitCode(0);
 

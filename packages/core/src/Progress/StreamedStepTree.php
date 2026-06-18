@@ -2,13 +2,22 @@
 
 declare(strict_types=1);
 
-namespace App\Support\Cli;
+namespace Orbit\Core\Progress;
 
-use Orbit\Core\Progress\LifecycleSummaryRenderer;
-use Orbit\Core\Progress\SpinnerTreeRenderer;
 use Symfony\Component\Console\Output\OutputInterface;
 
-final class RemoteProgressRenderer
+/**
+ * Event-driven progress tree for a stream of external step events (gateway SSE
+ * progress frames, or remote SSH progress relayed frame-by-frame).
+ *
+ * Unlike {@see StepTree}, the caller does not own the work — it feeds discrete
+ * events as they arrive: {@see self::tree()} to paint the idle tree, then
+ * {@see self::step()} with `start`/`done`/`fail`/`skip`/progress statuses, and
+ * {@see self::finish()} for the footer. The active row animates between events
+ * via a forked ticker, so the operator sees motion while the main process
+ * blocks reading the next frame.
+ */
+final class StreamedStepTree
 {
     private ?SpinnerTreeRenderer $tree = null;
 
@@ -109,6 +118,29 @@ final class RemoteProgressRenderer
         $this->frame++;
     }
 
+    public function finish(string $footer, bool $success = true): void
+    {
+        if ($this->tree === null) {
+            return;
+        }
+
+        $this->stopSpinnerProcess();
+
+        $color = $success ? SpinnerTreeRenderer::ACCENT : SpinnerTreeRenderer::RED;
+        $this->tree->updateFooter($this->output, $this->tree->footerLine($footer, $color));
+
+        if ($this->output->isDecorated()) {
+            $this->tree->showCursor($this->output);
+        }
+
+        $this->output->writeln('');
+    }
+
+    public function isStarted(): bool
+    {
+        return $this->tree !== null;
+    }
+
     private function progressStep(int $index, string $key, string $message): void
     {
         $this->stopSpinnerProcess();
@@ -127,24 +159,6 @@ final class RemoteProgressRenderer
         );
         $this->frame++;
         $this->startSpinnerProcess();
-    }
-
-    public function finish(string $footer, bool $success = true): void
-    {
-        if ($this->tree === null) {
-            return;
-        }
-
-        $this->stopSpinnerProcess();
-
-        $color = $success ? SpinnerTreeRenderer::ACCENT : SpinnerTreeRenderer::RED;
-        $this->tree->updateFooter($this->output, $this->tree->footerLine($footer, $color));
-
-        if ($this->output->isDecorated()) {
-            $this->tree->showCursor($this->output);
-        }
-
-        $this->output->writeln('');
     }
 
     private function startStep(string $key): void

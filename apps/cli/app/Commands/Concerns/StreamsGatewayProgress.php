@@ -8,6 +8,7 @@ use App\Exceptions\GatewayApiException;
 use App\Services\GatewayOperationFollower;
 use App\Services\GatewayStreamClient;
 use Orbit\Core\Progress\ProgressEventType;
+use Orbit\Core\Progress\StreamedStepTree;
 
 /**
  * Provides streamProgress() for commands that consume gateway SSE progress streams.
@@ -16,10 +17,14 @@ use Orbit\Core\Progress\ProgressEventType;
  *
  * In --json mode the stream is consumed silently and only the terminal
  * (complete / error) frame is emitted.
- * In human mode each tree/step line is written to the console as it arrives.
+ * In human mode the SSE tree/step frames drive an animated {@see StreamedStepTree}:
+ * the idle tree paints on the first `tree` frame, the active step animates while
+ * the stream blocks, and the terminal frame settles the footer.
  */
 trait StreamsGatewayProgress
 {
+    private ?StreamedStepTree $progressTree = null;
+
     /**
      * Stream progress events from the gateway path.
      *
@@ -147,6 +152,16 @@ trait StreamsGatewayProgress
         }
 
         if ($finalType instanceof ProgressEventType) {
+            if (! $wantsJson && $this->progressTree?->isStarted()) {
+                $data = $this->frameData($finalPayload);
+                $footer = $this->frameString($data, 'footer') ?? $this->frameString($finalPayload, 'footer');
+
+                $this->progressTree->finish(
+                    $footer ?? ($finalType === ProgressEventType::Complete ? 'Done' : 'Failed'),
+                    success: $finalType === ProgressEventType::Complete,
+                );
+            }
+
             return [
                 'type' => $finalType,
                 'payload' => $finalPayload,
@@ -180,6 +195,12 @@ trait StreamsGatewayProgress
         $data = $this->frameData($payload);
         $footer = $this->frameString($data, 'footer') ?? $this->frameString($payload, 'footer');
 
+        if ($this->progressTree?->isStarted()) {
+            $this->progressTree->finish($footer ?? 'Done', success: true);
+
+            return self::SUCCESS;
+        }
+
         if ($footer !== null) {
             $this->line($footer);
 
@@ -195,34 +216,31 @@ trait StreamsGatewayProgress
     private function renderProgressFrame(ProgressEventType $type, array $eventPayload): void
     {
         if ($type === ProgressEventType::Tree) {
-            $title = $this->frameString($eventPayload, 'title') ?? $this->frameString($eventPayload, 'name');
+            $title = $this->frameString($eventPayload, 'title')
+                ?? $this->frameString($eventPayload, 'name')
+                ?? 'Working';
 
-            $this->line($title === null ? '[tree]' : "[tree] {$title}");
+            $steps = is_array($eventPayload['steps'] ?? null) ? $eventPayload['steps'] : [];
 
-            $steps = $eventPayload['steps'] ?? [];
-
-            if (is_array($steps)) {
-                foreach ($steps as $step) {
-                    if (! is_array($step)) {
-                        continue;
-                    }
-
-                    $label = $this->frameString($step, 'label');
-
-                    if ($label !== null) {
-                        $this->line("  [step] {$label}");
-                    }
-                }
-            }
+            $this->progressTree ??= new StreamedStepTree($this->output);
+            $this->progressTree->tree($title, array_values(array_filter($steps, is_array(...))));
 
             return;
         }
 
-        $message = $this->frameString($eventPayload, 'message')
-            ?? $this->frameString($eventPayload, 'status')
-            ?? $this->frameString($eventPayload, 'key');
+        if ($type === ProgressEventType::Step && $this->progressTree !== null) {
+            $key = $this->frameString($eventPayload, 'key');
 
-        $this->line($message === null ? "[{$type->value}]" : "[{$type->value}] {$message}");
+            if ($key === null) {
+                return;
+            }
+
+            $this->progressTree->step(
+                $key,
+                $this->frameString($eventPayload, 'status') ?? 'progress',
+                $this->frameString($eventPayload, 'message'),
+            );
+        }
     }
 
     /**
@@ -234,6 +252,12 @@ trait StreamsGatewayProgress
         $code = $this->frameString($data, 'code') ?? $this->frameString($payload, 'code') ?? 'gateway_stream_error';
         $message = $this->frameString($data, 'message') ?? $this->frameString($payload, 'message') ?? 'Gateway progress stream failed.';
         $meta = $this->frameArray($data, 'meta') ?? $this->frameArray($payload, 'meta') ?? [];
+
+        if ($this->progressTree?->isStarted()) {
+            $this->progressTree->finish($message, success: false);
+
+            return self::FAILURE;
+        }
 
         return $this->renderFailure($code, $message, $meta);
     }
