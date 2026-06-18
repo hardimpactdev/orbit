@@ -36,6 +36,10 @@ This command follows the shared
 
 Driver-specific fields are accepted only by `add`.
 
+Laravel Cloud adapter flows may also send gateway API discovery metadata:
+`cloud_default_environment_id` and `cloud_environments[]` with `id` and `name`
+fields. These are adapter inputs, not primary manual CLI flags.
+
 ## State Model
 
 Gateway-owned `app_instances` rows belong to one app. Each row stores:
@@ -72,6 +76,22 @@ Gateway-owned `app_instances` rows belong to one app. Each row stores:
 5. **Destructive remove.** Removing an instance requires `--force` or
    `destructive_consent=true`.
 
+### Laravel Cloud Environment Selection
+
+When adding a `laravel-cloud` instance, an explicit `--cloud-environment`,
+`--cloud-environment-id`, or `--cloud-environment-name` wins. When no
+environment is supplied but the adapter has discovered existing Cloud
+environments, Orbit reuses one in this order:
+
+1. The environment matching `cloud_default_environment_id`.
+2. An existing environment named `main`.
+3. The only existing environment, when exactly one exists.
+
+If multiple existing environments remain possible, Orbit returns
+`validation_failed` with `error.meta.reason=ambiguous_cloud_environment` and the
+candidate list. Orbit must not create a new Laravel Cloud environment unless the
+operator or agent explicitly requested creation.
+
 ## Renderer Contracts
 
 - [Human renderer](6.1_app-instance_output-render_human.md)
@@ -83,6 +103,7 @@ Gateway-owned `app_instances` rows belong to one app. Each row stores:
 | --- | --- | --- |
 | App not found | No app record matches `app`. | `error.code=app.not_found`. |
 | Instance not found | No instance record matches `instance` for the app. | `error.code=app_instance.not_found`. |
+| Ambiguous Cloud environment | Laravel Cloud discovery returned multiple candidates and no default or `main` environment could be selected. | `error.code=validation_failed`, `error.meta.field=cloud_environment`, `error.meta.reason=ambiguous_cloud_environment`. |
 
 ## Doctor Relationship
 

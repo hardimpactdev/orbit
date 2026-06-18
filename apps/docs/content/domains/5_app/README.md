@@ -23,6 +23,12 @@ These rules govern all app family commands.
   `laravel-cloud` instances describe external Laravel Cloud application and
   environment targets; Orbit stores the relationship but does not deploy to
   Laravel Cloud in this slice.
+- Laravel Cloud driver flows reuse an existing Cloud environment by default.
+  When the adapter has discovery data and the operator did not choose an
+  environment, Orbit selects the Cloud default environment, then an environment
+  named `main`, then the sole existing environment. If multiple environments
+  remain possible, Orbit fails and returns the candidates instead of creating
+  another environment.
 - The app `node`, `path`, `root`, URL, and environment fields remain the current
   compatibility/default development placement used by app-level commands until
   those command families are fully instance-aware.
@@ -180,6 +186,8 @@ App-instance renderers return this shape under `success.data.instance`, or under
   "driver_config": {
     "application_id": "app_123",
     "environment_id": "env_123",
+    "environment_reused": true,
+    "environment_created": false,
     "domain": "docs.example.com"
   },
   "runtime": {

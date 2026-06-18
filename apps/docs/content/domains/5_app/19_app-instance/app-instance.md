@@ -52,6 +52,14 @@ instances describe the Laravel Cloud app/environment relationship. The current
 slice records Laravel Cloud placement and compatibility data; it does not run
 Laravel Cloud deployments.
 
+Laravel Cloud adapter flows reuse existing Cloud environments by default. When
+the adapter provides discovered environments and the command did not name one,
+Orbit chooses the Cloud default environment first, then `main`, then the sole
+existing environment. If multiple existing environments remain possible, Orbit
+returns a validation error with the candidates instead of creating another
+environment. Creating a new Cloud environment requires explicit intent from the
+operator or agent.
+
 ## Output
 
 Use `--json` when another tool needs the machine-readable envelope. Instance

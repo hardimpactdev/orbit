@@ -116,6 +116,80 @@ describe('AppInstanceController', function (): void {
         expect(AppInstance::query()->count())->toBe(0);
     });
 
+    it('reuses the default Laravel Cloud environment when the environment is omitted', function (): void {
+        $caller = createAppInstanceApiCaller();
+        $node = Node::factory()->appDev()->create(['name' => 'app-dev-1']);
+        grantAppInstanceApiAccess($caller, $node);
+        App::factory()->for($node, 'node')->create(['name' => 'billing']);
+
+        $created = appInstanceApiJson('POST', '/api/apps/billing/instances', [
+            'name' => 'production-cloud',
+            'driver' => 'laravel-cloud',
+            'cloud_application_id' => 'app_123',
+            'cloud_application_name' => 'billing',
+            'cloud_default_environment_id' => 'env_main',
+            'cloud_environments' => [
+                ['id' => 'env_preview', 'name' => 'preview'],
+                ['id' => 'env_main', 'name' => 'main'],
+            ],
+        ]);
+
+        $created->assertOk()
+            ->assertJsonPath('success.data.instance.driver_config.environment_id', 'env_main')
+            ->assertJsonPath('success.data.instance.driver_config.environment_name', 'main')
+            ->assertJsonPath('success.data.instance.driver_config.environment_reused', true)
+            ->assertJsonPath('success.data.instance.driver_config.environment_created', false);
+    });
+
+    it('reuses Laravel Cloud main environment when no default is provided', function (): void {
+        $caller = createAppInstanceApiCaller();
+        $node = Node::factory()->appDev()->create(['name' => 'app-dev-1']);
+        grantAppInstanceApiAccess($caller, $node);
+        App::factory()->for($node, 'node')->create(['name' => 'billing']);
+
+        $created = appInstanceApiJson('POST', '/api/apps/billing/instances', [
+            'name' => 'production-cloud',
+            'driver' => 'laravel-cloud',
+            'cloud_application_id' => 'app_123',
+            'cloud_application_name' => 'billing',
+            'cloud_environments' => [
+                ['id' => 'env_staging', 'name' => 'staging'],
+                ['id' => 'env_main', 'name' => 'main'],
+            ],
+        ]);
+
+        $created->assertOk()
+            ->assertJsonPath('success.data.instance.driver_config.environment_id', 'env_main')
+            ->assertJsonPath('success.data.instance.driver_config.environment_name', 'main')
+            ->assertJsonPath('success.data.instance.driver_config.environment_reused', true)
+            ->assertJsonPath('success.data.instance.driver_config.environment_created', false);
+    });
+
+    it('rejects omitted Laravel Cloud environments when discovery is ambiguous', function (): void {
+        $caller = createAppInstanceApiCaller();
+        $node = Node::factory()->appDev()->create(['name' => 'app-dev-1']);
+        grantAppInstanceApiAccess($caller, $node);
+        App::factory()->for($node, 'node')->create(['name' => 'billing']);
+
+        $created = appInstanceApiJson('POST', '/api/apps/billing/instances', [
+            'name' => 'production-cloud',
+            'driver' => 'laravel-cloud',
+            'cloud_application_id' => 'app_123',
+            'cloud_application_name' => 'billing',
+            'cloud_environments' => [
+                ['id' => 'env_staging', 'name' => 'staging'],
+                ['id' => 'env_preview', 'name' => 'preview'],
+            ],
+        ]);
+
+        $created->assertUnprocessable()
+            ->assertJsonPath('error.code', 'validation_failed')
+            ->assertJsonPath('error.meta.field', 'cloud_environment')
+            ->assertJsonPath('error.meta.reason', 'ambiguous_cloud_environment')
+            ->assertJsonPath('error.meta.environments.0.name', 'staging')
+            ->assertJsonPath('error.meta.environments.1.name', 'preview');
+    });
+
     it('stores orbit driver config with node placement and rejects invalid driver config', function (): void {
         $caller = createAppInstanceApiCaller();
         $devNode = Node::factory()->appDev()->create(['name' => 'app-dev-1']);

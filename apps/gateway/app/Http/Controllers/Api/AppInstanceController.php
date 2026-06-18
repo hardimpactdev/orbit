@@ -208,8 +208,10 @@ final class AppInstanceController implements Loggable
             return $this->validationFailed('cloud_application', 'Laravel Cloud app selector is required for laravel-cloud instances.');
         }
 
-        if ($environment === null) {
-            return $this->validationFailed('cloud_environment', 'Laravel Cloud environment selector is required for laravel-cloud instances.');
+        $environmentSelection = $this->laravelCloudEnvironmentSelection($request, $environment);
+
+        if ($environmentSelection instanceof JsonResponse) {
+            return $environmentSelection;
         }
 
         return new LaravelCloudAppInstanceDriverConfigData(
@@ -217,12 +219,176 @@ final class AppInstanceController implements Loggable
             organization_name: $this->stringInput($request, 'cloud_organization_name'),
             application_id: $this->stringInput($request, 'cloud_application_id'),
             application_name: $this->stringInput($request, 'cloud_application_name'),
-            environment_id: $this->stringInput($request, 'cloud_environment_id'),
-            environment_name: $this->stringInput($request, 'cloud_environment_name'),
+            environment_id: $environmentSelection['id'],
+            environment_name: $environmentSelection['name'],
+            environment_reused: $environmentSelection['reused'],
+            environment_created: $environmentSelection['created'],
             application: $application,
-            environment: $environment,
+            environment: $environmentSelection['selector'],
             domain: $this->stringInput($request, 'domain'),
         );
+    }
+
+    /**
+     * @return array{id: ?string, name: ?string, selector: string, reused: bool, created: bool}|JsonResponse
+     */
+    private function laravelCloudEnvironmentSelection(Request $request, ?string $environment): array|JsonResponse
+    {
+        $explicitId = $this->stringInput($request, 'cloud_environment_id');
+        $explicitName = $this->stringInput($request, 'cloud_environment_name');
+        $environmentCreated = $this->booleanInput($request, 'cloud_environment_created') ?? false;
+        $environmentReused = $this->booleanInput($request, 'cloud_environment_reused');
+        $environments = $this->laravelCloudEnvironmentCandidates($request);
+
+        if ($environment !== null) {
+            $candidate = $this->matchingLaravelCloudEnvironment($environments, $explicitId, $explicitName, $environment);
+
+            return [
+                'id' => $explicitId ?? $candidate['id'] ?? null,
+                'name' => $explicitName ?? $candidate['name'] ?? null,
+                'selector' => $environment,
+                'reused' => $environmentReused ?? ($candidate !== null && ! $environmentCreated),
+                'created' => $environmentCreated,
+            ];
+        }
+
+        if (($this->booleanInput($request, 'cloud_environment_create') ?? false) || ($this->booleanInput($request, 'cloud_create_environment') ?? false)) {
+            return $this->validationFailed('cloud_environment', 'Laravel Cloud environment selector is required when creating a new environment.', [
+                'reason' => 'cloud_environment_creation_requires_selector',
+            ], 422);
+        }
+
+        $defaultEnvironmentId = $this->stringInput($request, 'cloud_default_environment_id');
+
+        if ($defaultEnvironmentId !== null) {
+            $candidate = $this->matchingLaravelCloudEnvironment($environments, $defaultEnvironmentId, null, $defaultEnvironmentId);
+
+            return $this->selectedLaravelCloudEnvironment($candidate['id'] ?? $defaultEnvironmentId, $candidate['name'] ?? null);
+        }
+
+        $mainEnvironment = $this->namedLaravelCloudEnvironment($environments, 'main');
+
+        if ($mainEnvironment !== null) {
+            return $this->selectedLaravelCloudEnvironment($mainEnvironment['id'], $mainEnvironment['name']);
+        }
+
+        if (count($environments) === 1) {
+            $environment = $environments[0];
+
+            return $this->selectedLaravelCloudEnvironment($environment['id'], $environment['name']);
+        }
+
+        if (count($environments) > 1) {
+            return $this->validationFailed('cloud_environment', 'Laravel Cloud environment is ambiguous; choose an existing environment explicitly.', [
+                'reason' => 'ambiguous_cloud_environment',
+                'environments' => $environments,
+            ], 422);
+        }
+
+        return $this->validationFailed('cloud_environment', 'Laravel Cloud environment selector is required for laravel-cloud instances.');
+    }
+
+    /**
+     * @return list<array{id: ?string, name: ?string}>
+     */
+    private function laravelCloudEnvironmentCandidates(Request $request): array
+    {
+        $environments = $request->input('cloud_environments', []);
+
+        if (! is_array($environments)) {
+            return [];
+        }
+
+        $normalized = [];
+
+        foreach ($environments as $environment) {
+            $candidate = $this->laravelCloudEnvironmentCandidate($environment);
+
+            if ($candidate === null || in_array($candidate, $normalized, true)) {
+                continue;
+            }
+
+            $normalized[] = $candidate;
+        }
+
+        return $normalized;
+    }
+
+    /**
+     * @return array{id: ?string, name: ?string}|null
+     */
+    private function laravelCloudEnvironmentCandidate(mixed $environment): ?array
+    {
+        if (is_string($environment)) {
+            $environment = trim($environment);
+
+            return $environment === '' ? null : ['id' => null, 'name' => $environment];
+        }
+
+        if (! is_array($environment)) {
+            return null;
+        }
+
+        $id = $this->arrayStringInput($environment, 'id')
+            ?? $this->arrayStringInput($environment, 'environment_id')
+            ?? $this->arrayStringInput($environment, 'uuid');
+        $name = $this->arrayStringInput($environment, 'name')
+            ?? $this->arrayStringInput($environment, 'environment_name')
+            ?? $this->arrayStringInput($environment, 'slug');
+
+        return $id === null && $name === null ? null : ['id' => $id, 'name' => $name];
+    }
+
+    /**
+     * @param  list<array{id: ?string, name: ?string}>  $environments
+     * @return array{id: ?string, name: ?string}|null
+     */
+    private function matchingLaravelCloudEnvironment(array $environments, ?string $id, ?string $name, string $selector): ?array
+    {
+        foreach ($environments as $environment) {
+            if ($id !== null && $environment['id'] === $id) {
+                return $environment;
+            }
+
+            if ($name !== null && $environment['name'] === $name) {
+                return $environment;
+            }
+
+            if ($environment['id'] === $selector || $environment['name'] === $selector) {
+                return $environment;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * @param  list<array{id: ?string, name: ?string}>  $environments
+     * @return array{id: ?string, name: ?string}|null
+     */
+    private function namedLaravelCloudEnvironment(array $environments, string $name): ?array
+    {
+        foreach ($environments as $environment) {
+            if ($environment['name'] !== null && strtolower($environment['name']) === $name) {
+                return $environment;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * @return array{id: ?string, name: ?string, selector: string, reused: bool, created: bool}
+     */
+    private function selectedLaravelCloudEnvironment(?string $id, ?string $name): array
+    {
+        return [
+            'id' => $id,
+            'name' => $name,
+            'selector' => $id ?? $name ?? '',
+            'reused' => true,
+            'created' => false,
+        ];
     }
 
     /**
@@ -295,6 +461,45 @@ final class AppInstanceController implements Loggable
     private function stringInput(Request $request, string $key): ?string
     {
         $value = $request->input($key);
+
+        if (! is_string($value)) {
+            return null;
+        }
+
+        $value = trim($value);
+
+        return $value === '' ? null : $value;
+    }
+
+    private function booleanInput(Request $request, string $key): ?bool
+    {
+        if (! $request->has($key)) {
+            return null;
+        }
+
+        $value = $request->input($key);
+
+        if (is_bool($value)) {
+            return $value;
+        }
+
+        if (is_int($value)) {
+            return $value === 1;
+        }
+
+        if (! is_string($value)) {
+            return null;
+        }
+
+        return filter_var($value, FILTER_VALIDATE_BOOL, FILTER_NULL_ON_FAILURE);
+    }
+
+    /**
+     * @param  array<mixed>  $values
+     */
+    private function arrayStringInput(array $values, string $key): ?string
+    {
+        $value = $values[$key] ?? null;
 
         if (! is_string($value)) {
             return null;
