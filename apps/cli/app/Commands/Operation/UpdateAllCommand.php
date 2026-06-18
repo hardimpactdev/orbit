@@ -144,6 +144,12 @@ final class UpdateAllCommand extends GatewayCommand
             return $this->renderProgressTerminalFrame($terminal['type'], $terminal['payload']);
         }
 
+        // Local already on the target: skip its download and output the gateway
+        // terminal frame directly (mirrors the human-mode local skip).
+        if ($this->localIsCurrent($this->terminalTargetVersion($terminal['payload']))) {
+            return $this->renderProgressTerminalFrame($terminal['type'], $terminal['payload']);
+        }
+
         // Gateway phase succeeded — run local update as a fan-out target.
         $download = $localUpdater->downloadBinary();
 
@@ -184,6 +190,14 @@ final class UpdateAllCommand extends GatewayCommand
         UpdateAllHumanProgressRenderer $progress,
         ?string $targetVersion,
     ): void {
+        // Skip the download when the caller-local CLI is already on the target
+        // (mirrors the per-node skip; the gateway-first gate is already met).
+        if ($this->localIsCurrent($targetVersion)) {
+            $progress->localNodeSkipped($this->output);
+
+            return;
+        }
+
         $progress->localNodeSubStep($this->output, 'downloading', $targetVersion ?? '');
 
         $download = $localUpdater->downloadBinary();
@@ -207,6 +221,27 @@ final class UpdateAllCommand extends GatewayCommand
         $doctor = $localUpdater->runDoctor();
 
         $progress->localNodeSucceeded($this->output, $doctor['issues']);
+    }
+
+    /**
+     * Whether the caller-local CLI is already on (or ahead of) the target
+     * version, so the local fan-out can skip its download.
+     */
+    private function localIsCurrent(?string $targetVersion): bool
+    {
+        if ($targetVersion === null || $targetVersion === '') {
+            return false;
+        }
+
+        $localVersion = (string) config('app.version', '');
+
+        // Only skip on real semantic versions; for anything unparseable (e.g. a
+        // synthetic E2E target) run the update rather than risk skipping wrongly.
+        if (preg_match('/^\d+\.\d+/', $localVersion) !== 1 || preg_match('/^\d+\.\d+/', $targetVersion) !== 1) {
+            return false;
+        }
+
+        return version_compare($localVersion, $targetVersion, '>=');
     }
 
     /**

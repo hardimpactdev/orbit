@@ -218,6 +218,39 @@ it('skips the local update in json mode on the all-current short-circuit', funct
         ]);
 });
 
+it('renders the local fan-out node as skipped when the caller is already on the target version', function (): void {
+    config()->set('app.version', '1.2.3');
+
+    fakeGateway(fakeUpdateAllStartEnvelope());
+    app()->instance(GatewayOperationFollower::class, new UpdateAllCommandFakeFollower([
+        ['type' => ProgressEventType::Step, 'payload' => ['key' => 'check-updates', 'status' => 'done', 'message' => 'Done: latest version is 1.2.3']],
+        ['type' => ProgressEventType::Step, 'payload' => ['key' => 'check-fleet-versions', 'status' => 'done', 'message' => 'Done: 1 outdated node found']],
+        ['type' => ProgressEventType::Step, 'payload' => ['key' => 'workload.beast', 'status' => 'done', 'message' => 'Workload node beast updated']],
+        ['type' => ProgressEventType::Complete, 'payload' => ['status' => 'succeeded', 'target_version' => '1.2.3']],
+    ]));
+
+    [$exitCode, $output] = runCommand($this, 'update:all');
+
+    expect($exitCode)->toBe(0)
+        // Local is already current → no download/replace/doctor; row settles skipped.
+        ->and($this->localUpdater->calls)->toBe([])
+        ->and($output)->toMatch('/local\s+Skipped: already up to date/');
+});
+
+it('skips the local download in json mode when the caller is already on the target version', function (): void {
+    config()->set('app.version', '1.2.3');
+
+    fakeGateway(fakeUpdateAllStartEnvelope());
+    app()->instance(GatewayOperationFollower::class, new UpdateAllCommandFakeFollower([
+        ['type' => ProgressEventType::Complete, 'payload' => ['exit_code' => 0, 'data' => ['updates' => []], 'target_version' => '1.2.3']],
+    ]));
+
+    [$exitCode] = runCommand($this, 'update:all', ['--json' => true]);
+
+    expect($exitCode)->toBe(0)
+        ->and($this->localUpdater->calls)->toBe([]);
+});
+
 it('returns failure exit code and json output for terminal operation errors', function (): void {
     fakeGateway(fakeUpdateAllStartEnvelope());
     app()->instance(GatewayOperationFollower::class, new UpdateAllCommandFakeFollower([
